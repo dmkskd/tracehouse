@@ -1,0 +1,8 @@
+<clickhouse>
+    <!-- Server-level query profiler configuration -->
+    <!-- NOTE: Profile-level settings (query_profiler_*_period_ns, -->
+    <!-- allow_introspection_functions, etc.) have been moved to -->
+    <!-- ../clickhouse-users/query_profiler.xml (users.d/) because -->
+    <!-- ClickHouse ignores <profiles> in config.d/. -->
+    <!-- See: https://github.com/ClickHouse/ClickHouse/issues/9051 -->
+</clickhouse>

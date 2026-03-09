@@ -1,0 +1,68 @@
+# Multi-stage build: compiles ClickHouse from source inside Docker,
+# then produces a server image identical to the official one but with your binary.
+#
+# Usage:
+#   docker build -f Dockerfile.build \
+#     --build-arg CH_REPO=/path/to/ClickHouse \
+#     -t custom-clickhouse:latest .
+#
+# Or more practically — run from your ClickHouse source checkout:
+#   docker build -f /path/to/Dockerfile.build -t custom-clickhouse:latest .
+#
+# Build args:
+#   BUILD_TYPE=Release|Debug (default: Release)
+
+# --- Stage 1: Build ---
+FROM ubuntu:22.04 AS builder
+
+ARG DEBIAN_FRONTEND=noninteractive
+ARG BUILD_TYPE=Release
+
+RUN apt-get update && apt-get install -y --no-install-recommends \
+    build-essential \
+    cmake \
+    ninja-build \
+    git \
+    python3 \
+    ccache \
+    nasm \
+    yasm \
+    gawk \
+    wget \
+    lsb-release \
+    software-properties-common \
+    gnupg \
+    && rm -rf /var/lib/apt/lists/*
+
+# Install clang (ClickHouse requires clang 21+)
+RUN wget https://apt.llvm.org/llvm.sh && chmod +x llvm.sh && ./llvm.sh 21 && rm llvm.sh
+
+ENV CC=clang-21
+ENV CXX=clang++-21
+
+WORKDIR /build
+
+# Copy the ClickHouse source tree (build context should be the CH repo root)
+COPY . /build/
+
+# Init submodules if needed
+RUN git config --global --add safe.directory /build \
+    && git submodule sync \
+    && git submodule init \
+    && git submodule update --recursive --depth 1 || true
+
+# Configure and build
+RUN cmake -S /build -B /build/output \
+    -DCMAKE_BUILD_TYPE=${BUILD_TYPE} \
+    -DCMAKE_C_COMPILER=clang-21 \
+    -DCMAKE_CXX_COMPILER=clang++-21 \
+    -DENABLE_TESTS=0 \
+    -DENABLE_UTILS=0
+
+RUN ninja -C /build/output clickhouse
+
+# --- Stage 2: Package into official image ---
+FROM clickhouse/clickhouse-server:latest
+
+COPY --from=builder /build/output/programs/clickhouse /usr/bin/clickhouse
+RUN chmod +x /usr/bin/clickhouse

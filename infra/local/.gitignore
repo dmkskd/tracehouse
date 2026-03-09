@@ -1,0 +1,7 @@
+# ClickHouse data and logs (generated at runtime)
+data/
+logs/
+clickhouse.pid
+
+# Downloaded binary
+clickhouse

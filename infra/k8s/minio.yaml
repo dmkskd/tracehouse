@@ -1,0 +1,116 @@
+# MinIO — S3-compatible object storage for ClickHouse tiered storage
+# Matches the Docker Compose setup: same credentials, same bucket name
+---
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: minio-data
+  namespace: clickhouse
+spec:
+  accessModes:
+    - ReadWriteOnce
+  resources:
+    requests:
+      storage: 20Gi
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: minio
+  namespace: clickhouse
+  labels:
+    app: minio
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: minio
+  template:
+    metadata:
+      labels:
+        app: minio
+    spec:
+      containers:
+        - name: minio
+          image: minio/minio:latest
+          args: ["server", "/data", "--console-address", ":9001"]
+          env:
+            - name: MINIO_ROOT_USER
+              value: "clickhouse"
+            - name: MINIO_ROOT_PASSWORD
+              value: "clickhouse_secret"
+          ports:
+            - containerPort: 9000
+              name: s3
+            - containerPort: 9001
+              name: console
+          volumeMounts:
+            - name: data
+              mountPath: /data
+          readinessProbe:
+            httpGet:
+              path: /minio/health/ready
+              port: 9000
+            initialDelaySeconds: 5
+            periodSeconds: 10
+          livenessProbe:
+            httpGet:
+              path: /minio/health/live
+              port: 9000
+            initialDelaySeconds: 5
+            periodSeconds: 10
+          resources:
+            requests:
+              cpu: "100m"
+              memory: "256Mi"
+            limits:
+              cpu: "500m"
+              memory: "512Mi"
+      volumes:
+        - name: data
+          persistentVolumeClaim:
+            claimName: minio-data
+---
+# Service name "minio" so ClickHouse can reach it at http://minio:9000
+# (same hostname as Docker Compose network)
+apiVersion: v1
+kind: Service
+metadata:
+  name: minio
+  namespace: clickhouse
+spec:
+  selector:
+    app: minio
+  ports:
+    - name: s3
+      port: 9000
+      targetPort: 9000
+    - name: console
+      port: 9001
+      targetPort: 9001
+---
+# One-shot Job to create the "clickhouse" bucket
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: minio-init
+  namespace: clickhouse
+spec:
+  backoffLimit: 5
+  template:
+    spec:
+      restartPolicy: OnFailure
+      initContainers:
+        # Wait for MinIO to be ready
+        - name: wait-for-minio
+          image: busybox:1.36
+          command: ["sh", "-c", "until wget -qO- http://minio:9000/minio/health/ready; do sleep 2; done"]
+      containers:
+        - name: mc
+          image: minio/mc:latest
+          command:
+            - /bin/sh
+            - -c
+            - |
+              mc alias set local http://minio:9000 clickhouse clickhouse_secret
+              mc mb --ignore-existing local/clickhouse

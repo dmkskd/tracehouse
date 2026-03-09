@@ -1,0 +1,161 @@
+# TraceHouse - Development Environment
+# This docker-compose file sets up a local ClickHouse instance for development and testing
+
+services:
+  # MinIO — S3-compatible object storage for ClickHouse tiered storage
+  minio:
+    image: minio/minio:latest
+    container_name: tracehouse-minio
+    ports:
+      - "9001:9000"   # S3 API (9000 conflicts with CH native port)
+      - "9002:9001"   # MinIO Console UI
+    volumes:
+      - minio-data:/data
+    environment:
+      MINIO_ROOT_USER: clickhouse
+      MINIO_ROOT_PASSWORD: clickhouse_secret
+    command: server /data --console-address ":9001"
+    healthcheck:
+      test: ["CMD", "mc", "ready", "local"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 10s
+    restart: unless-stopped
+
+  # Create the ClickHouse bucket on first start
+  minio-init:
+    image: minio/mc:latest
+    container_name: tracehouse-minio-init
+    depends_on:
+      minio:
+        condition: service_healthy
+    entrypoint: >
+      /bin/sh -c "
+      mc alias set local http://minio:9000 clickhouse clickhouse_secret;
+      mc mb --ignore-existing local/clickhouse;
+      exit 0;
+      "
+
+  clickhouse:
+    image: custom-clickhouse
+    container_name: tracehouse-dev
+    ports:
+      # Native protocol port (used by clickhouse-driver)
+      - "9000:9000"
+      # HTTP interface port
+      - "8123:8123"
+      # Prometheus metrics
+      - "9363:9363"
+      # Interserver HTTP port (for replication, optional)
+      - "9009:9009"
+    volumes:
+      # Persist data between container restarts
+      - clickhouse-data:/var/lib/clickhouse
+      # Persist logs
+      - clickhouse-logs:/var/log/clickhouse-server
+      # Custom server-level configuration (config.d)
+      - ./clickhouse-config:/etc/clickhouse-server/config.d
+      # Custom user-level configuration — profiles, quotas, user settings (users.d)
+      # IMPORTANT: <profiles> must be in users.d/, NOT config.d/ — ClickHouse
+      # silently ignores profile settings placed in config.d/.
+      # See: https://github.com/ClickHouse/ClickHouse/issues/9051
+      - ./clickhouse-users:/etc/clickhouse-server/users.d
+      # Init script to create read-only user (runs on first start)
+      - ../scripts/setup_read_only_user.sql:/docker-entrypoint-initdb.d/setup_read_only_user.sql:ro
+    environment:
+      # Default user password (empty for development)
+      CLICKHOUSE_DEFAULT_ACCESS_MANAGEMENT: 1
+      # Enable query logging for monitoring features
+      CLICKHOUSE_DB: default
+    depends_on:
+      minio-init:
+        condition: service_completed_successfully
+    ulimits:
+      nofile:
+        soft: 262144
+        hard: 262144
+    healthcheck:
+      test: ["CMD", "clickhouse-client", "--query", "SELECT 1"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 30s
+    restart: unless-stopped
+
+  prometheus:
+    image: prom/prometheus:v3.2.1
+    container_name: tracehouse-prometheus
+    ports:
+      - "9090:9090"
+    volumes:
+      - ./prometheus/prometheus.yml:/etc/prometheus/prometheus.yml:ro
+      - prometheus-data:/prometheus
+    depends_on:
+      clickhouse:
+        condition: service_healthy
+    restart: unless-stopped
+
+  grafana:
+    image: grafana/grafana:12.3.2
+    container_name: tracehouse-grafana
+    ports:
+      - "3001:3000"
+    volumes:
+      # Persist Grafana data
+      - grafana-data:/var/lib/grafana
+      # Provisioning configuration (auto-loads datasources and dashboards)
+      - ./grafana/provisioning:/etc/grafana/provisioning
+      # Dashboard JSON files
+      - ./grafana/dashboards:/var/lib/grafana/dashboards
+      # Custom app plugin (dev) - full TraceHouse
+      - ../../grafana-app-plugin/dist:/var/lib/grafana/plugins/tracehouse-app
+    environment:
+      # Disable login for development
+      GF_AUTH_ANONYMOUS_ENABLED: "true"
+      GF_AUTH_ANONYMOUS_ORG_ROLE: Admin
+      # Allow embedding
+      GF_SECURITY_ALLOW_EMBEDDING: "true"
+      # Install ClickHouse plugin
+      GF_INSTALL_PLUGINS: grafana-clickhouse-datasource
+      # Allow unsigned dev plugins
+      GF_PLUGINS_ALLOW_LOADING_UNSIGNED_PLUGINS: tracehouse-app
+      # ── Frontend Sandbox Toggle ──
+      # Set to "true" to enable the Grafana frontend sandbox for plugins.
+      # This runs plugins in an isolated <iframe> with restricted capabilities.
+      # Useful for testing plugin behavior under sandbox restrictions.
+      # Docs: https://grafana.com/docs/grafana/latest/administration/plugin-management/plugin-frontend-sandbox/
+      GF_PLUGINS_ENABLE_FRONTEND_SANDBOX: "true"
+    depends_on:
+      clickhouse:
+        condition: service_healthy
+      prometheus:
+        condition: service_started
+    restart: unless-stopped
+
+  # Tempo for OpenTelemetry trace visualization (Grafana native)
+  tempo:
+    image: grafana/tempo:2.3.1
+    container_name: tracehouse-tempo
+    command: ["-config.file=/etc/tempo.yaml"]
+    ports:
+      - "3200:3200"    # Tempo API
+      - "9411:9411"    # Zipkin compatible endpoint
+    volumes:
+      - ./tempo/tempo.yaml:/etc/tempo.yaml:ro
+      - tempo-data:/var/tempo
+    restart: unless-stopped
+
+volumes:
+  clickhouse-data:
+    driver: local
+  clickhouse-logs:
+    driver: local
+  minio-data:
+    driver: local
+  prometheus-data:
+    driver: local
+  grafana-data:
+    driver: local
+  tempo-data:
+    driver: local

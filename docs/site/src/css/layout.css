@@ -1,0 +1,186 @@
+/* Shared layout — structural styles that don't change between themes.
+   Each theme file imports this, then overrides colors. */
+
+.hero-clickhouse {
+  padding: 6rem 0 4rem;
+  text-align: center;
+  position: relative;
+  overflow: hidden;
+}
+
+.hero-clickhouse::before {
+  content: '';
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  pointer-events: none;
+}
+
+.hero-clickhouse::after {
+  display: none;
+}
+
+.hero-video-bg {
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  min-width: 100%;
+  min-height: 100%;
+  transform: translate(-50%, -50%);
+  object-fit: cover;
+  z-index: 0;
+  opacity: 0.7;
+  pointer-events: none;
+}
+
+.hero-clickhouse .container {
+  position: relative;
+  z-index: 1;
+}
+
+.hero-clickhouse h1 {
+  font-size: 3.5rem;
+  font-weight: 800;
+  margin-bottom: 1rem;
+  letter-spacing: -0.02em;
+}
+
+.hero-clickhouse h1 span {
+  -webkit-background-clip: text;
+  -webkit-text-fill-color: transparent;
+  background-clip: text;
+}
+
+.hero-clickhouse p {
+  font-size: 1.25rem;
+  max-width: 640px;
+  margin: 0 auto 2rem;
+  line-height: 1.6;
+}
+
+.hero-buttons {
+  display: flex;
+  gap: 1rem;
+  justify-content: center;
+  flex-wrap: wrap;
+}
+
+.hero-buttons .button--primary {
+  border: none;
+  font-weight: 700;
+  padding: 0.75rem 2rem;
+  font-size: 1.05rem;
+  transition: transform 0.15s ease, box-shadow 0.15s ease;
+}
+
+.hero-buttons .button--primary:hover {
+  transform: translateY(-1px);
+}
+
+.hero-buttons .button--outline {
+  font-weight: 600;
+  padding: 0.75rem 2rem;
+  font-size: 1.05rem;
+  transition: border-color 0.15s ease, color 0.15s ease;
+}
+
+.features-section {
+  padding: 4rem 0;
+}
+
+.feature-card {
+  border-radius: 12px;
+  padding: 2rem;
+  height: 100%;
+  transition: border-color 0.2s ease, transform 0.2s ease;
+}
+
+.feature-card:hover {
+  transform: translateY(-2px);
+}
+
+.feature-card h3 {
+  font-size: 1.2rem;
+  margin-bottom: 0.5rem;
+}
+
+.feature-card p {
+  font-size: 0.95rem;
+  line-height: 1.6;
+  margin: 0;
+}
+
+.architecture-section {
+  padding: 4rem 0;
+}
+
+.architecture-section h2 {
+  text-align: center;
+  font-size: 2rem;
+  margin-bottom: 0.5rem;
+}
+
+.architecture-section .subtitle {
+  text-align: center;
+  margin-bottom: 3rem;
+  font-size: 1.1rem;
+}
+
+.arch-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+  gap: 1.5rem;
+  max-width: 900px;
+  margin: 0 auto;
+}
+
+.arch-item {
+  text-align: center;
+  padding: 1.5rem;
+  border-radius: 8px;
+}
+
+.arch-item h4 {
+  margin: 0 0 0.25rem;
+  font-size: 1rem;
+}
+
+.arch-item p {
+  font-size: 0.85rem;
+  margin: 0;
+}
+
+.quickstart-section {
+  padding: 4rem 0;
+}
+
+.quickstart-section h2 {
+  text-align: center;
+  font-size: 2rem;
+  margin-bottom: 2rem;
+}
+
+.quickstart-code {
+  max-width: 700px;
+  margin: 0 auto;
+  border-radius: 12px;
+  padding: 2rem;
+  font-family: 'SF Mono', 'Fira Code', monospace;
+  font-size: 0.9rem;
+  line-height: 1.8;
+  overflow-x: auto;
+}
+
+@media screen and (max-width: 996px) {
+  .hero-clickhouse {
+    padding: 3rem 1rem 2rem;
+  }
+  .hero-clickhouse h1 {
+    font-size: 2.2rem;
+  }
+  .arch-grid {
+    grid-template-columns: repeat(2, 1fr);
+  }
+}

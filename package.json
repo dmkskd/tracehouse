@@ -1,0 +1,21 @@
+{
+  "name": "tracehouse",
+  "private": true,
+  "workspaces": [
+    "packages/*",
+    "frontend",
+    "grafana-app-plugin"
+  ],
+  "scripts": {
+    "test": "npm run test --workspaces --if-present",
+    "test:report": "npm run test --workspaces --if-present -- --reporter=verbose",
+    "security:scan": "semgrep --config auto packages/ frontend/src/"
+  },
+  "overrides": {
+    "three": "^0.182.0",
+    "@types/three": "^0.182.0",
+    "serialize-javascript": "7.0.4",
+    "dompurify": "3.3.2",
+    "immutable": "5.1.5"
+  }
+}

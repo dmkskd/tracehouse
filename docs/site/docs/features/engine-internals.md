@@ -1,0 +1,51 @@
+# Engine Internals
+
+An attempt to visualise the internals of the ClickHouse engine as described in [*ClickHouse - Lightning Fast Analytics for Everyone*](https://www.vldb.org/pvldb/vol17/p3731-schulze.pdf) (VLDB 2024).
+
+See what's going on inside ClickHouse - thread pools, memory allocators, CPU sampling, and more.
+
+## Thread Pools
+
+Visualization of ClickHouse's thread pool utilization:
+- **MergeTree background executor** - merge and mutation threads
+- **Background schedule pool** - distributed operations
+- **Background common pool** - general background tasks
+- Active vs. total threads, queue depth, and scheduling patterns
+
+## Memory X-Ray
+
+Detailed memory breakdown beyond the high-level RSS number:
+- Per-allocator statistics (jemalloc arenas)
+- Cache sizes (mark cache, uncompressed cache, compiled expression cache)
+- Primary key memory consumption
+- Dictionary memory usage
+- Memory waterfall showing allocation patterns over time
+
+## CPU Sampling
+
+CPU core utilization map showing:
+- Per-core usage from `system.asynchronous_metrics`
+- Core-to-workload attribution (when available)
+- Sampling-based profiling data from `system.trace_log`
+
+## PK Index Analysis
+
+Primary key index efficiency analysis:
+- Index granularity statistics
+- Mark distribution across parts
+- Selectivity analysis for common query patterns
+
+## Dictionaries
+
+External dictionary monitoring:
+- Load status and timing
+- Memory consumption per dictionary
+- Hit rates and lookup performance
+- Source configuration and refresh intervals
+
+## Monitoring Capabilities
+
+Auto-detection of available monitoring features based on ClickHouse version and configuration:
+- ProfileEvents availability in `system.processes` (requires CH 22.x+)
+- Log table presence and flush intervals
+- Trace log and CPU profiling support

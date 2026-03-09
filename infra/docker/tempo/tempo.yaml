@@ -1,0 +1,19 @@
+server:
+  http_listen_port: 3200
+
+distributor:
+  receivers:
+    zipkin:
+      endpoint: 0.0.0.0:9411
+
+storage:
+  trace:
+    backend: local
+    local:
+      path: /var/tempo/traces
+    wal:
+      path: /var/tempo/wal
+
+querier:
+  frontend_worker:
+    frontend_address: ""

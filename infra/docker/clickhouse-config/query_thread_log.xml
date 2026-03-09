@@ -1,0 +1,8 @@
+<clickhouse>
+    <!-- Enable system.query_thread_log for per-thread query breakdown -->
+    <query_thread_log>
+        <database>system</database>
+        <table>query_thread_log</table>
+        <flush_interval_milliseconds>7500</flush_interval_milliseconds>
+    </query_thread_log>
+</clickhouse>

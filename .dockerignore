@@ -1,0 +1,10 @@
+node_modules
+frontend/node_modules
+packages/*/node_modules
+frontend/dist
+.git
+logs
+infra
+tmp.ignore
+grafana-app-plugin
+*.md

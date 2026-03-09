@@ -1,0 +1,15 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="32" height="32" viewBox="0 0 32 32">
+  <defs>
+    <linearGradient id="bg" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0%" stop-color="#1a1a2e"/>
+      <stop offset="100%" stop-color="#0a0a1a"/>
+    </linearGradient>
+  </defs>
+  <rect width="32" height="32" rx="7" fill="url(#bg)"/>
+  <!-- House roof (subtle) -->
+  <polygon points="16,4 5,14 27,14" fill="none" stroke="#C084FC" stroke-width="1.5" opacity="0.5"/>
+  <!-- Trace spans — staggered, warm observability colours -->
+  <rect x="5"  y="16"   width="18" height="2.5" rx="1.2" fill="#C084FC"/>
+  <rect x="9"  y="20.5" width="14" height="2.5" rx="1.2" fill="#F87171"/>
+  <rect x="7"  y="25"   width="19" height="2.5" rx="1.2" fill="#FB923C"/>
+</svg>

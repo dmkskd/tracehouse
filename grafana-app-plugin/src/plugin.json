@@ -1,0 +1,84 @@
+{
+  "type": "app",
+  "name": "TraceHouse",
+  "id": "tracehouse-app",
+  "info": {
+    "description": "Comprehensive ClickHouse monitoring with 3D visualizations, merge tracking, query analysis, and time travel",
+    "author": {
+      "name": "TraceHouse"
+    },
+    "keywords": ["clickhouse", "monitoring", "3d", "merges", "queries", "parts", "visualization"],
+    "version": "1.0.39",
+    "updated": "2026-02-17"
+  },
+  "includes": [
+    {
+      "type": "page",
+      "name": "Overview",
+      "path": "/a/tracehouse-app/overview",
+      "role": "Viewer",
+      "addToNav": true,
+      "defaultNav": true
+    },
+    {
+      "type": "page",
+      "name": "Engine Internals",
+      "path": "/a/tracehouse-app/engine-internals",
+      "role": "Viewer",
+      "addToNav": true
+    },
+    {
+      "type": "page",
+      "name": "Cluster",
+      "path": "/a/tracehouse-app/cluster",
+      "role": "Viewer",
+      "addToNav": true
+    },
+    {
+      "type": "page",
+      "name": "Explorer",
+      "path": "/a/tracehouse-app/databases",
+      "role": "Viewer",
+      "addToNav": true
+    },
+    {
+      "type": "page",
+      "name": "Time Travel",
+      "path": "/a/tracehouse-app/timetravel",
+      "role": "Viewer",
+      "addToNav": true
+    },
+    {
+      "type": "page",
+      "name": "Queries",
+      "path": "/a/tracehouse-app/queries",
+      "role": "Viewer",
+      "addToNav": true
+    },
+    {
+      "type": "page",
+      "name": "Merges",
+      "path": "/a/tracehouse-app/merges",
+      "role": "Viewer",
+      "addToNav": true
+    },
+    {
+      "type": "page",
+      "name": "Replication",
+      "path": "/a/tracehouse-app/replication",
+      "role": "Viewer",
+      "addToNav": true
+    },
+    {
+      "type": "page",
+      "name": "Analytics",
+      "path": "/a/tracehouse-app/analytics",
+      "role": "Viewer",
+      "addToNav": true
+    }
+  ],
+  "dependencies": {
+    "grafanaDependency": ">=10.0.0",
+    "plugins": []
+  }
+}

@@ -1,0 +1,8 @@
+# Namespace for ClickHouse resources
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: clickhouse
+  labels:
+    app.kubernetes.io/name: clickhouse
+    app.kubernetes.io/part-of: tracehouse

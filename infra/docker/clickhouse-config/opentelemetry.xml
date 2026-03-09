@@ -1,0 +1,7 @@
+<clickhouse>
+    <!-- Server-level OpenTelemetry configuration -->
+    <!-- NOTE: Profile-level settings (opentelemetry_start_trace_probability, etc.) -->
+    <!-- have been moved to ../clickhouse-users/opentelemetry.xml (users.d/) -->
+    <!-- because ClickHouse ignores <profiles> in config.d/. -->
+    <!-- See: https://github.com/ClickHouse/ClickHouse/issues/9051 -->
+</clickhouse>

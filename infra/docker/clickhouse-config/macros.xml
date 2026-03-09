@@ -1,0 +1,9 @@
+<clickhouse>
+    <!-- Macros used in S3 endpoint paths and Replicated engine paths.
+         In the K8s cluster these are injected by the operator;
+         for the single-node Docker setup we define them explicitly. -->
+    <macros>
+        <shard>01</shard>
+        <replica>01</replica>
+    </macros>
+</clickhouse>

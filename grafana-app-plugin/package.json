@@ -1,0 +1,52 @@
+{
+  "name": "tracehouse-app",
+  "version": "1.0.39",
+  "description": "Full TraceHouse application as a Grafana App Plugin",
+  "type": "module",
+  "scripts": {
+    "build": "npx webpack -c ./.config/webpack/webpack.config.cjs --env production",
+    "dev": "npx webpack -w -c ./.config/webpack/webpack.config.cjs --env development",
+    "test": "vitest run --passWithNoTests"
+  },
+  "author": "TraceHouse",
+  "license": "Apache-2.0",
+  "devDependencies": {
+    "@swc/core": "^1.11.29",
+    "@swc/helpers": "^0.5.17",
+    "@tailwindcss/postcss": "^4.1.18",
+    "@types/node": "^22.15.0",
+    "@types/react": "^18.3.0",
+    "@types/react-dom": "^18.3.0",
+    "@types/three": "^0.182.0",
+    "copy-webpack-plugin": "^14.0.0",
+    "css-loader": "^7.1.2",
+    "mini-css-extract-plugin": "^2.9.2",
+    "postcss": "^8.5.4",
+    "postcss-loader": "^8.1.1",
+    "style-loader": "^4.0.0",
+    "swc-loader": "^0.2.6",
+    "tailwindcss": "^4.1.18",
+    "ts-node": "^10.9.2",
+    "typescript": "~5.8.3",
+    "vitest": "^3.2.0",
+    "webpack": "^5.99.0",
+    "webpack-cli": "^6.0.0"
+  },
+  "dependencies": {
+    "@tracehouse/core": "file:../packages/core",
+    "@tracehouse/ui-shared": "file:../packages/ui-shared",
+    "@grafana/data": "^11.6.0",
+    "@grafana/runtime": "^11.6.0",
+    "@grafana/ui": "^11.6.0",
+    "@react-three/drei": "^9.120.0",
+    "@react-three/fiber": "^8.17.0",
+    "react": "^18.3.1",
+    "react-dom": "^18.3.1",
+    "react-router-dom": "^6.22.0",
+    "three": "^0.182.0",
+    "zustand": "^5.0.10"
+  },
+  "engines": {
+    "node": ">=20"
+  }
+}

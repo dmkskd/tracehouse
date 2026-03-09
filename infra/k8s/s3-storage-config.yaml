@@ -1,0 +1,48 @@
+# S3 storage configuration for ClickHouse
+# Mounted as raw XML to control disk initialization order
+# (the operator's extraConfig serializes maps alphabetically,
+#  which breaks cache→s3disk dependency ordering)
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: s3-storage-config
+  namespace: clickhouse
+data:
+  s3_storage.xml: |
+    <clickhouse>
+        <storage_configuration>
+            <disks>
+                <s3disk>
+                    <type>s3</type>
+                    <endpoint>http://minio:9000/clickhouse/{shard}/{replica}/data/</endpoint>
+                    <access_key_id>clickhouse</access_key_id>
+                    <secret_access_key>clickhouse_secret</secret_access_key>
+                </s3disk>
+                <s3cache>
+                    <type>cache</type>
+                    <disk>s3disk</disk>
+                    <path>/var/lib/clickhouse/disks/s3_cache/</path>
+                    <max_size>1Gi</max_size>
+                </s3cache>
+            </disks>
+            <policies>
+                <s3tiered>
+                    <volumes>
+                        <default>
+                            <disk>default</disk>
+                        </default>
+                        <s3cached>
+                            <disk>s3cache</disk>
+                        </s3cached>
+                    </volumes>
+                </s3tiered>
+                <s3only>
+                    <volumes>
+                        <main>
+                            <disk>s3cache</disk>
+                        </main>
+                    </volumes>
+                </s3only>
+            </policies>
+        </storage_configuration>
+    </clickhouse>

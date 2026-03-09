@@ -1,0 +1,26 @@
+{
+  "compilerOptions": {
+    "target": "ES2021",
+    "module": "ESNext",
+    "moduleResolution": "bundler",
+    "lib": ["ES2021", "DOM", "DOM.Iterable"],
+    "jsx": "react-jsx",
+    "strict": true,
+    "esModuleInterop": true,
+    "skipLibCheck": true,
+    "forceConsistentCasingInFileNames": true,
+    "resolveJsonModule": true,
+    "declaration": false,
+    "noEmit": true,
+    "baseUrl": ".",
+    "paths": {
+      "@tracehouse/core": ["../packages/core/dist"],
+      "@tracehouse/core/*": ["../packages/core/dist/*"],
+      "@tracehouse/ui-shared": ["../packages/ui-shared/dist"],
+      "@tracehouse/ui-shared/*": ["../packages/ui-shared/dist/*"],
+      "@frontend/*": ["../frontend/src/*"]
+    }
+  },
+  "include": ["src/**/*", "../frontend/src/**/*"],
+  "exclude": ["node_modules", "dist"]
+}

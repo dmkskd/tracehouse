@@ -1,0 +1,45 @@
+# Logs
+logs/
+*.log
+
+# Environment files
+.env
+.env.*
+!.env.example
+
+# OS files
+.DS_Store
+Thumbs.db
+
+# IDE
+.idea/
+*.swp
+*.swo
+*~
+
+# Node (covered more in frontend/.gitignore)
+node_modules/
+
+# Build outputs
+dist/
+build/
+
+# Testing artifacts
+.coverage
+htmlcov/
+
+# Python
+__pycache__/
+*.pyc
+
+# Rust
+target/
+
+# Temporary files
+*.tmp
+*.temp
+
+tmp.ignore/
+
+# Agent files
+.agent/

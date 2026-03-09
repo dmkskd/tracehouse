@@ -1,0 +1,42 @@
+<clickhouse>
+    <storage_configuration>
+        <disks>
+            <!-- S3-compatible disk backed by MinIO -->
+            <!-- S3 path includes shard/replica so each node gets its own prefix.
+                 Single-node Docker defaults: {shard}=01, {replica}=tracehouse-dev -->
+            <s3>
+                <type>s3</type>
+                <endpoint>http://minio:9000/clickhouse/{shard}/{replica}/data/</endpoint>
+                <access_key_id>clickhouse</access_key_id>
+                <secret_access_key>clickhouse_secret</secret_access_key>
+                <metadata_path>/var/lib/clickhouse/disks/s3/</metadata_path>
+            </s3>
+            <!-- Local cache in front of S3 for read performance -->
+            <s3cache>
+                <type>cache</type>
+                <disk>s3</disk>
+                <path>/var/lib/clickhouse/disks/s3_cache/</path>
+                <max_size>1Gi</max_size>
+            </s3cache>
+        </disks>
+        <policies>
+            <s3tiered>
+                <volumes>
+                    <default>
+                        <disk>default</disk>
+                    </default>
+                    <s3cached>
+                        <disk>s3cache</disk>
+                    </s3cached>
+                </volumes>
+            </s3tiered>
+            <s3only>
+                <volumes>
+                    <main>
+                        <disk>s3cache</disk>
+                    </main>
+                </volumes>
+            </s3only>
+        </policies>
+    </storage_configuration>
+</clickhouse>

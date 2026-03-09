@@ -1,0 +1,143 @@
+# Analytics Query Language
+
+:::caution Work in Progress
+This page documents the SQL meta-comment language used by the Analytics / Query Explorer. The feature and its syntax are under active development and may change.
+:::
+
+The Query Explorer uses a lightweight **meta-comment language** embedded in SQL comments to drive chart rendering, drill-down navigation, and time-range filtering. Any ClickHouse SQL query can become a fully interactive preset by adding a few `-- @directive` lines at the top.
+
+## Directives
+
+### `@meta` - Query metadata
+
+Defines the query's identity and display properties.
+
+```sql
+-- @meta: title='Memory Usage Trend' group='Resources' description='Memory usage over the last 24 hours' interval='1 DAY'
+```
+
+| Parameter     | Required | Description |
+|---------------|----------|-------------|
+| `title`       | Yes      | Display name shown in the sidebar and query header |
+| `group`       | Yes      | Category tab (`Overview`, `Inserts`, `Selects`, `Parts`, `Merges`, `Resources`, `Advanced Dashboard`, `Self-Monitoring`, or any custom name) |
+| `description` | No       | Short description shown as a tooltip / subtitle |
+| `interval`    | No       | Default time range, e.g. `1 DAY`, `2 HOUR`, `7 DAY`. Used with `{{time_range}}` placeholders |
+
+### `@chart` - Chart configuration
+
+Tells the explorer how to visualise the result set.
+
+```sql
+-- @chart: type=bar labels=table values=bytes_size style=3d
+```
+
+| Parameter     | Required | Description |
+|---------------|----------|-------------|
+| `type`        | Yes      | Chart type: `bar`, `line`, `pie`, `area`, `grouped_bar`, `stacked_bar`, `grouped_line` |
+| `labels`      | Yes      | Column name to use for the X-axis / labels |
+| `values`      | Yes      | Column name to use for the Y-axis / values |
+| `group`       | No       | Column name used for series grouping (for `grouped_bar`, `stacked_bar`, `grouped_line`) |
+| `style`       | No       | `2d` (default SVG/recharts) or `3d` (Three.js) |
+| `unit`        | No       | Unit suffix for value axis ticks, e.g. `ms`, `s`, `MB`, `%`. Time units (`ms`, `s`) auto-scale (e.g. 1400 ms → 1.4 s) |
+| `orientation` | No       | `horizontal` (default for grouped/stacked bars) or `vertical`. Controls bar direction - horizontal puts labels on the left for readability |
+
+### `@drill` - Drill-down navigation
+
+Enables click-to-drill: clicking a chart segment navigates to another query, passing the clicked value as a filter.
+
+```sql
+-- @drill: on=database into='Table Sizes'
+```
+
+| Parameter | Required | Description |
+|-----------|----------|-------------|
+| `on`      | Yes      | Column whose clicked value is passed to the target query |
+| `into`    | Yes      | Title of the target query to navigate to |
+
+### `@link` - Popup link to another query
+
+Makes a table column clickable. Clicking a cell value opens a **modal popup** that runs a target query with the clicked value passed as a drill parameter. Unlike `@drill` which navigates away, `@link` keeps your current view and overlays the results.
+
+```sql
+-- @link: on=query_hash into='App Query Executions'
+```
+
+| Parameter | Required | Description                                          |
+|-----------|----------|------------------------------------------------------|
+| `on`      | Yes      | Column whose clicked value is passed to the target query |
+| `into`    | Yes      | Title of the target query to open in the popup       |
+
+The target query receives the clicked value via the standard `{{drill:column | fallback}}` or `{{drill_value:column | fallback}}` placeholders.
+
+### `@rag` - Cell decoration (Red / Amber / Green)
+
+Applies conditional coloring to table cells based on numeric thresholds. Values below the green threshold render green, below amber render amber, and anything above renders red. Only affects table view - charts are not changed.
+
+```sql
+-- @rag: column=avg_bytes_read green<2000 amber<40000
+```
+
+| Parameter | Required | Description |
+|-----------|----------|-------------|
+| `column`  | Yes      | Column name to apply the decoration to |
+| `green<`  | Yes      | Values strictly below this number are green |
+| `amber<`  | Yes      | Values strictly below this number (but above green) are amber. Values at or above are red |
+
+Multiple `@rag` directives can be added to a single query to decorate different columns:
+
+```sql
+-- @rag: column=avg_bytes_read green<2000 amber<40000
+-- @rag: column=avg_duration_ms green<5 amber<50
+```
+
+## Template placeholders
+
+### `{{time_range}}`
+
+Replaced at execution time with a ClickHouse time expression based on the user-selected time range or the `@meta interval` default.
+
+```sql
+WHERE event_time > {{time_range}}
+```
+
+When using the time picker's custom range, `{{time_range}}` resolves to a `toDateTime('...')` expression with both start and end bounds injected automatically.
+
+### `{{drill:column | fallback}}`
+
+Replaced with a filter condition when the query is reached via drill-down, or with the fallback expression otherwise.
+
+```sql
+WHERE {{drill:database | 1=1}}
+```
+
+- When drilled into with `database = 'nyc_taxi'` &rarr; `WHERE database = 'nyc_taxi'`
+- When opened directly &rarr; `WHERE 1=1`
+
+### `{{drill_value:column | fallback}}`
+
+Like `{{drill:column | fallback}}` but resolves to just the **quoted value** instead of a full equality condition. Useful when the drill parameter needs a custom expression (e.g. computed column matching):
+
+```sql
+WHERE lower(hex(normalized_query_hash)) = {{drill_value:query_hash | ''}}
+```
+
+- When linked/drilled with `query_hash = '52794d32e666dd45'` &rarr; `WHERE lower(hex(normalized_query_hash)) = '52794d32e666dd45'`
+- When opened directly &rarr; `WHERE lower(hex(normalized_query_hash)) = ''`
+
+## Full example
+
+```sql
+-- @meta: title='Database Sizes' group='Overview' description='Total disk usage per database'
+-- @chart: type=pie labels=database values=total_bytes style=3d
+-- @drill: on=database into='Table Sizes'
+-- @rag: column=total_bytes green<1000000000 amber<10000000000
+SELECT
+    database,
+    sum(bytes_on_disk) AS total_bytes
+FROM system.parts
+WHERE active
+GROUP BY database
+ORDER BY total_bytes DESC
+```
+
+This query appears in the **Overview** group, renders as a 3D pie chart, clicking a slice drills into the "Table Sizes" query filtered to that database, and in table view the `total_bytes` column is color-coded green/amber/red based on size.

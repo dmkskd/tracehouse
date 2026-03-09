@@ -1,0 +1,36 @@
+# Quickstart: run the app + ClickHouse with a single command.
+# No dependencies beyond Docker.
+#
+#   docker compose up
+#
+# Open http://localhost:8990 — the connection form is pre-filled.
+
+services:
+  clickhouse:
+    image: clickhouse/clickhouse-server:latest
+    volumes:
+      - clickhouse-data:/var/lib/clickhouse
+      - ../docker/clickhouse-config/listen.xml:/etc/clickhouse-server/config.d/listen.xml:ro
+      - ../docker/clickhouse-users/default-user.xml:/etc/clickhouse-server/users.d/default-user.xml:ro
+    healthcheck:
+      test: ["CMD", "clickhouse-client", "--query", "SELECT 1"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+      start_period: 10s
+
+  app:
+    build:
+      context: ../..
+      dockerfile: infra/docker/Dockerfile
+      args:
+        DEFAULT_CH_HOST: clickhouse
+    ports:
+      - "8990:8990"
+    depends_on:
+      clickhouse:
+        condition: service_healthy
+    init: true
+
+volumes:
+  clickhouse-data:

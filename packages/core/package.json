@@ -1,0 +1,72 @@
+{
+  "name": "@tracehouse/core",
+  "version": "0.1.0",
+  "type": "module",
+  "main": "dist/index.js",
+  "types": "dist/index.d.ts",
+  "exports": {
+    ".": {
+      "import": "./dist/index.js",
+      "types": "./dist/index.d.ts"
+    },
+    "./adapters/browser-adapter": {
+      "import": "./dist/adapters/browser-adapter.js",
+      "types": "./dist/adapters/browser-adapter.d.ts"
+    },
+    "./adapters/http-adapter": {
+      "import": "./dist/adapters/http-adapter.js",
+      "types": "./dist/adapters/http-adapter.d.ts"
+    },
+    "./adapters/grafana-adapter": {
+      "import": "./dist/adapters/grafana-adapter.js",
+      "types": "./dist/adapters/grafana-adapter.d.ts"
+    },
+    "./adapters/proxy-adapter": {
+      "import": "./dist/adapters/proxy-adapter.js",
+      "types": "./dist/adapters/proxy-adapter.d.ts"
+    },
+    "./adapters/types": {
+      "import": "./dist/adapters/types.js",
+      "types": "./dist/adapters/types.d.ts"
+    },
+    "./services/database-explorer": {
+      "import": "./dist/services/database-explorer.js",
+      "types": "./dist/services/database-explorer.d.ts"
+    },
+    "./services/merge-tracker": {
+      "import": "./dist/services/merge-tracker.js",
+      "types": "./dist/services/merge-tracker.d.ts"
+    },
+    "./types/database": {
+      "import": "./dist/types/database.js",
+      "types": "./dist/types/database.d.ts"
+    },
+    "./types/merge": {
+      "import": "./dist/types/merge.js",
+      "types": "./dist/types/merge.d.ts"
+    },
+    "./types/lineage": {
+      "import": "./dist/types/lineage.js",
+      "types": "./dist/types/lineage.d.ts"
+    }
+  },
+  "scripts": {
+    "build": "tsc",
+    "test": "vitest run",
+    "test:pbt": "vitest run --testNamePattern='Property'",
+    "test:integration": "vitest run --config vitest.integration.config.ts",
+    "test:integration:watch": "vitest --config vitest.integration.config.ts"
+  },
+  "dependencies": {
+    "@clickhouse/client": "^1.0.0",
+    "@clickhouse/client-web": "^1.17.0"
+  },
+  "devDependencies": {
+    "@testcontainers/clickhouse": "^11.12.0",
+    "@vitest/ui": "^3.2.0",
+    "fast-check": "^4.1.0",
+    "testcontainers": "^11.12.0",
+    "typescript": "~5.8.0",
+    "vitest": "^3.2.0"
+  }
+}

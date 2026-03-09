@@ -1,0 +1,12 @@
+# Observability Map
+
+An interactive sunburst visualization of ClickHouse's entire observability surface - every system table, diagnostic query, and metric organized by subsystem.
+
+Inspired by [Brendan Gregg's Linux Performance Tools map](https://www.brendangregg.com/linuxperf.html) and [Azat Khuzhin's "Know Your ClickHouse" presentation](https://azat.sh/presentations/2022-know-your-clickhouse/), the idea is the same: instead of memorizing which of 30+ system tables has the data you need, navigate a visual map organized by the subsystem you're investigating.
+
+## How to Use
+
+- **Click** a segment to select a system table and open its detail panel
+- **Hover** to preview table descriptions
+- **Search** to filter across table names, column names, descriptions, and diagnostic queries
+- **Run queries** directly from the detail sidebar - each table comes with curated diagnostic queries you can execute in one click

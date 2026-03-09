@@ -1,0 +1,169 @@
+/* Theme B: Electric
+   LIGHT-first theme. Clean white backgrounds, cyan/teal accent,
+   Inter font, pill-shaped buttons, large rounded corners, airy spacing.
+   Feels like Stripe or Vercel docs. */
+@import './layout.css';
+
+@import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap');
+
+:root {
+  --ifm-color-primary: #0d9488;
+  --ifm-color-primary-dark: #0b7f74;
+  --ifm-color-primary-darker: #0a786e;
+  --ifm-color-primary-darkest: #08635b;
+  --ifm-color-primary-light: #0fa99c;
+  --ifm-color-primary-lighter: #10b3a5;
+  --ifm-color-primary-lightest: #14ccbd;
+  --ifm-code-font-size: 95%;
+  --ifm-font-family-base: 'Inter', -apple-system, BlinkMacSystemFont, sans-serif;
+  --ifm-heading-font-family: 'Inter', -apple-system, BlinkMacSystemFont, sans-serif;
+  --ifm-font-size-base: 16px;
+  --ifm-line-height-base: 1.7;
+  --ifm-background-color: #ffffff;
+  --ifm-background-surface-color: #f9fafb;
+  --ifm-navbar-background-color: #ffffff;
+  --ifm-navbar-shadow: 0 1px 2px rgba(0, 0, 0, 0.05);
+  --ifm-footer-background-color: #111827;
+  --ifm-footer-color: #d1d5db;
+  --ifm-heading-color: #111827;
+  --ifm-font-color-base: #374151;
+  --docusaurus-highlighted-code-line-bg: rgba(0, 0, 0, 0.05);
+}
+
+[data-theme='dark'] {
+  --ifm-color-primary: #2dd4bf;
+  --ifm-color-primary-dark: #20c5b0;
+  --ifm-color-primary-darker: #1eb8a4;
+  --ifm-color-primary-darkest: #189587;
+  --ifm-color-primary-light: #4adcc9;
+  --ifm-color-primary-lighter: #56dece;
+  --ifm-color-primary-lightest: #7ee7db;
+  --ifm-background-color: #0f172a;
+  --ifm-background-surface-color: #1e293b;
+  --ifm-navbar-background-color: #0f172a;
+  --ifm-heading-color: #f1f5f9;
+  --ifm-font-color-base: #cbd5e1;
+  --docusaurus-highlighted-code-line-bg: rgba(0, 0, 0, 0.3);
+}
+
+/* --- Hero (light by default) --- */
+.hero-clickhouse {
+  background: linear-gradient(160deg, #f0fdfa 0%, #ccfbf1 40%, #e0f2fe 100%);
+  color: #111827;
+  padding: 7rem 0 5rem;
+}
+[data-theme='dark'] .hero-clickhouse {
+  background: linear-gradient(160deg, #0f172a 0%, #1e293b 50%, #0f172a 100%);
+}
+.hero-clickhouse::before {
+  background:
+    radial-gradient(ellipse at 30% 60%, rgba(13, 148, 136, 0.06) 0%, transparent 50%),
+    radial-gradient(ellipse at 70% 30%, rgba(6, 182, 212, 0.04) 0%, transparent 50%);
+}
+.hero-clickhouse h1 {
+  color: #111827;
+  font-size: 3.8rem;
+  font-weight: 800;
+  letter-spacing: -0.03em;
+}
+[data-theme='dark'] .hero-clickhouse h1 { color: #f1f5f9; }
+.hero-clickhouse h1 span {
+  background: linear-gradient(135deg, #0d9488, #0891b2);
+}
+[data-theme='dark'] .hero-clickhouse h1 span {
+  background: linear-gradient(135deg, #2dd4bf, #22d3ee);
+}
+.hero-clickhouse p {
+  color: #6b7280;
+  font-size: 1.3rem;
+  max-width: 680px;
+}
+[data-theme='dark'] .hero-clickhouse p { color: #94a3b8; }
+
+.hero-buttons .button--primary {
+  background: linear-gradient(135deg, #0d9488, #0891b2);
+  color: #fff;
+  border-radius: 50px;
+  padding: 0.85rem 2.5rem;
+  font-size: 1.05rem;
+  letter-spacing: 0.01em;
+}
+[data-theme='dark'] .hero-buttons .button--primary {
+  background: linear-gradient(135deg, #2dd4bf, #22d3ee);
+  color: #0f172a;
+}
+.hero-buttons .button--primary:hover {
+  box-shadow: 0 4px 24px rgba(13, 148, 136, 0.25);
+  color: #fff;
+}
+[data-theme='dark'] .hero-buttons .button--primary:hover { color: #0f172a; }
+.hero-buttons .button--outline {
+  border: 1.5px solid #d1d5db;
+  color: #374151;
+  border-radius: 50px;
+  padding: 0.85rem 2.5rem;
+}
+[data-theme='dark'] .hero-buttons .button--outline { border-color: #334155; color: #cbd5e1; }
+.hero-buttons .button--outline:hover { border-color: #0d9488; color: #0d9488; }
+[data-theme='dark'] .hero-buttons .button--outline:hover { border-color: #2dd4bf; color: #2dd4bf; }
+
+/* --- Features --- */
+.features-section { background: #fff; }
+[data-theme='dark'] .features-section { background: #0f172a; }
+
+.feature-card {
+  background: #f9fafb;
+  border: 1px solid #e5e7eb;
+  border-radius: 16px;
+  padding: 2.25rem;
+}
+.feature-card:hover {
+  border-color: #0d9488;
+  box-shadow: 0 4px 16px rgba(13, 148, 136, 0.08);
+}
+[data-theme='dark'] .feature-card { background: #1e293b; border-color: #334155; }
+[data-theme='dark'] .feature-card:hover { border-color: #2dd4bf; box-shadow: 0 4px 16px rgba(45, 212, 191, 0.08); }
+.feature-card h3 { color: #111827; font-weight: 600; letter-spacing: -0.01em; }
+[data-theme='dark'] .feature-card h3 { color: #f1f5f9; }
+.feature-card p { color: #6b7280; }
+[data-theme='dark'] .feature-card p { color: #94a3b8; }
+
+/* --- Architecture --- */
+.architecture-section { background: #f9fafb; }
+[data-theme='dark'] .architecture-section { background: #1e293b; }
+.architecture-section h2 { color: #111827; letter-spacing: -0.02em; }
+[data-theme='dark'] .architecture-section h2 { color: #f1f5f9; }
+.architecture-section .subtitle { color: #6b7280; }
+[data-theme='dark'] .architecture-section .subtitle { color: #94a3b8; }
+
+.arch-item {
+  background: #fff;
+  border: 1px solid #e5e7eb;
+  border-radius: 12px;
+  padding: 1.75rem;
+}
+[data-theme='dark'] .arch-item { background: #0f172a; border-color: #334155; }
+.arch-item p { color: #6b7280; }
+[data-theme='dark'] .arch-item p { color: #94a3b8; }
+
+/* --- Quickstart --- */
+.quickstart-section { background: #fff; }
+[data-theme='dark'] .quickstart-section { background: #0f172a; }
+.quickstart-section h2 { color: #111827; }
+[data-theme='dark'] .quickstart-section h2 { color: #f1f5f9; }
+.quickstart-code {
+  background: #1e293b;
+  border: none;
+  color: #e2e8f0;
+  border-radius: 16px;
+  padding: 2.25rem;
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.1);
+}
+[data-theme='dark'] .quickstart-code { background: #1e293b; color: #e2e8f0; }
+.quickstart-code .comment { color: #64748b; }
+.quickstart-code .command { color: #2dd4bf; }
+
+@media screen and (max-width: 996px) {
+  .hero-clickhouse { padding: 4rem 1rem 3rem; }
+  .hero-clickhouse h1 { font-size: 2.4rem; }
+}

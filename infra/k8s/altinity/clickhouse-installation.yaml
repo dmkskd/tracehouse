@@ -1,0 +1,142 @@
+# ClickHouse cluster using Altinity Kubernetes Operator
+# 2 shards, 2 replicas — equivalent to the ClickHouse Cloud operator setup
+apiVersion: "clickhouse.altinity.com/v1"
+kind: "ClickHouseInstallation"
+metadata:
+  name: dev-cluster
+  namespace: clickhouse
+spec:
+  defaults:
+    templates:
+      dataVolumeClaimTemplate: data-volume
+      podTemplate: clickhouse-pod
+  configuration:
+    zookeeper:
+      nodes:
+        - host: keeper-dev-keeper.clickhouse.svc.cluster.local
+          port: 2181
+    clusters:
+      - name: dev
+        layout:
+          shardsCount: 2
+          replicasCount: 2
+    settings:
+      # System log tables
+      query_log/database: system
+      query_log/table: query_log
+      query_log/flush_interval_milliseconds: "7500"
+      query_thread_log/database: system
+      query_thread_log/table: query_thread_log
+      query_thread_log/flush_interval_milliseconds: "7500"
+      part_log/database: system
+      part_log/table: part_log
+      part_log/flush_interval_milliseconds: "7500"
+      text_log/database: system
+      text_log/table: text_log
+      text_log/flush_interval_milliseconds: "7500"
+      trace_log/database: system
+      trace_log/table: trace_log
+      trace_log/flush_interval_milliseconds: "7500"
+      metric_log/database: system
+      metric_log/table: metric_log
+      metric_log/collect_interval_milliseconds: "1000"
+      asynchronous_metric_log/database: system
+      asynchronous_metric_log/table: asynchronous_metric_log
+      asynchronous_metric_log/flush_interval_milliseconds: "7500"
+      crash_log/database: system
+      crash_log/table: crash_log
+      crash_log/flush_interval_milliseconds: "7500"
+      processors_profile_log/database: system
+      processors_profile_log/table: processors_profile_log
+      processors_profile_log/flush_interval_milliseconds: "7500"
+      opentelemetry_span_log/database: system
+      opentelemetry_span_log/table: opentelemetry_span_log
+      opentelemetry_span_log/flush_interval_milliseconds: "7500"
+    profiles:
+      default/allow_introspection_functions: "1"
+      default/query_profiler_cpu_time_period_ns: "10000000"
+      default/query_profiler_real_time_period_ns: "10000000"
+      default/memory_profiler_step: "1048576"
+      default/log_processors_profiles: "1"
+      default/opentelemetry_start_trace_probability: "1"
+      default/opentelemetry_trace_processors: "1"
+    users:
+      # Allow the default user to connect from any IP (needed for NodePort access)
+      default/networks/ip:
+        - "::/0"
+        - "0.0.0.0/0"
+    files:
+      # CORS configuration (OPTIONS preflight only — don't override http_handlers
+      # as the Altinity operator generates its own handler config)
+      config.d/cors.xml: |
+        <clickhouse>
+          <http_options_response>
+            <header>
+              <name>Access-Control-Allow-Origin</name>
+              <value>*</value>
+            </header>
+            <header>
+              <name>Access-Control-Allow-Headers</name>
+              <value>origin, x-requested-with, x-clickhouse-format, x-clickhouse-user, x-clickhouse-key, content-type, authorization</value>
+            </header>
+            <header>
+              <name>Access-Control-Allow-Methods</name>
+              <value>POST, GET, OPTIONS</value>
+            </header>
+            <header>
+              <name>Access-Control-Max-Age</name>
+              <value>86400</value>
+            </header>
+          </http_options_response>
+        </clickhouse>
+  templates:
+    podTemplates:
+      - name: clickhouse-pod
+        spec:
+          securityContext:
+            fsGroup: 101
+          affinity:
+            podAntiAffinity:
+              requiredDuringSchedulingIgnoredDuringExecution:
+                - labelSelector:
+                    matchLabels:
+                      clickhouse.altinity.com/app: chop
+                  topologyKey: kubernetes.io/hostname
+          containers:
+            - name: clickhouse
+              image: clickhouse/clickhouse-server:26.1
+              resources:
+                requests:
+                  memory: "8Gi"
+                  cpu: "2"
+                limits:
+                  memory: "12Gi"
+                  cpu: "3"
+    volumeClaimTemplates:
+      - name: data-volume
+        spec:
+          accessModes:
+            - ReadWriteOnce
+          resources:
+            requests:
+              storage: 40Gi
+---
+# NodePort service to expose ClickHouse on fixed ports
+apiVersion: v1
+kind: Service
+metadata:
+  name: clickhouse-external
+  namespace: clickhouse
+spec:
+  type: NodePort
+  selector:
+    clickhouse.altinity.com/chi: dev-cluster
+  ports:
+    - name: native
+      port: 9000
+      targetPort: 9000
+      nodePort: 30900
+    - name: http
+      port: 8123
+      targetPort: 8123
+      nodePort: 30123

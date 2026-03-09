@@ -1,0 +1,22 @@
+# Grafana Integration
+
+TraceHouse can be deployed as a Grafana app plugin. The same static frontend you run standalone is packaged inside Grafana, so you get the full experience - cluster overview, merge tracker, query monitor, database explorer - without leaving your Grafana instance.
+
+## How It Works
+
+In standalone mode, the app connects to ClickHouse directly using `@clickhouse/client-web` over HTTP/HTTPS. In Grafana mode, that connection layer is swapped out: instead of talking to ClickHouse directly, the app sends queries through the [Grafana ClickHouse data source plugin](https://grafana.com/grafana/plugins/grafana-clickhouse-datasource/), which is an external plugin maintained by Grafana.
+
+```
+Standalone:   Browser ──HTTP──▶ ClickHouse
+
+Grafana:      Browser ──▶ Grafana backend ──▶ ClickHouse data source plugin ──▶ ClickHouse
+```
+
+The app itself is identical - same React UI, same `packages/core` query logic, same attribution models. Only the transport changes.
+
+## What You Get
+
+- **No connection setup** - Users don't enter host, port, or credentials. They pick from the Grafana ClickHouse data sources already configured in their Grafana instance.
+- **Permissions handled by Grafana** - Access control, team permissions, and credential management are all delegated to Grafana. If a user has access to a data source, they can use it in TraceHouse.
+- **No CORS proxy needed** - Queries are routed through the Grafana backend, so there's no browser-to-ClickHouse CORS issue to solve.
+- **Single deployment** - The app is hosted inside Grafana. No separate static site, no extra infrastructure.

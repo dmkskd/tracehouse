@@ -1,0 +1,207 @@
+/* Theme D: Frost
+   Refined, spacious, premium feel. DM Sans body, JetBrains Mono code,
+   no visible borders — soft shadows everywhere, generous whitespace,
+   subtle violet gradient backgrounds. Feels like Linear or Raycast docs. */
+@import './layout.css';
+
+@import url('https://fonts.googleapis.com/css2?family=DM+Sans:wght@400;500;600;700;800&family=JetBrains+Mono:wght@400;500&display=swap');
+
+:root {
+  --ifm-color-primary: #6366f1;
+  --ifm-color-primary-dark: #4f46e5;
+  --ifm-color-primary-darker: #4338ca;
+  --ifm-color-primary-darkest: #3730a3;
+  --ifm-color-primary-light: #818cf8;
+  --ifm-color-primary-lighter: #a5b4fc;
+  --ifm-color-primary-lightest: #c7d2fe;
+  --ifm-code-font-size: 95%;
+  --ifm-font-family-base: 'DM Sans', -apple-system, BlinkMacSystemFont, sans-serif;
+  --ifm-heading-font-family: 'DM Sans', -apple-system, BlinkMacSystemFont, sans-serif;
+  --ifm-font-family-monospace: 'JetBrains Mono', 'SF Mono', 'Fira Code', monospace;
+  --ifm-font-size-base: 16px;
+  --ifm-line-height-base: 1.7;
+  --docusaurus-highlighted-code-line-bg: rgba(0, 0, 0, 0.1);
+}
+
+[data-theme='dark'] {
+  --ifm-color-primary: #818cf8;
+  --ifm-color-primary-dark: #6366f1;
+  --ifm-color-primary-darker: #4f46e5;
+  --ifm-color-primary-darkest: #4338ca;
+  --ifm-color-primary-light: #a5b4fc;
+  --ifm-color-primary-lighter: #c7d2fe;
+  --ifm-color-primary-lightest: #e0e7ff;
+  --ifm-background-color: #09090b;
+  --ifm-background-surface-color: #18181b;
+  --ifm-navbar-background-color: rgba(9, 9, 11, 0.8);
+  --docusaurus-highlighted-code-line-bg: rgba(0, 0, 0, 0.3);
+}
+
+/* Frosted glass navbar */
+[data-theme='dark'] .navbar {
+  backdrop-filter: blur(12px);
+  -webkit-backdrop-filter: blur(12px);
+  border-bottom: 1px solid rgba(255, 255, 255, 0.06);
+}
+
+/* --- Hero --- */
+.hero-clickhouse {
+  background: #09090b;
+  color: #fff;
+  padding: 8rem 0 6rem;
+}
+[data-theme='light'] .hero-clickhouse {
+  background: linear-gradient(160deg, #faf5ff 0%, #ede9fe 50%, #e0e7ff 100%);
+}
+.hero-clickhouse::before {
+  background:
+    radial-gradient(ellipse at 20% 40%, rgba(99, 102, 241, 0.12) 0%, transparent 60%),
+    radial-gradient(ellipse at 80% 60%, rgba(139, 92, 246, 0.08) 0%, transparent 60%),
+    radial-gradient(ellipse at 50% 100%, rgba(99, 102, 241, 0.05) 0%, transparent 40%);
+}
+.hero-clickhouse h1 {
+  color: #fafafa;
+  font-size: 4rem;
+  font-weight: 700;
+  letter-spacing: -0.04em;
+}
+[data-theme='light'] .hero-clickhouse h1 { color: #18181b; }
+.hero-clickhouse h1 span { background: linear-gradient(135deg, #818cf8, #c084fc); }
+[data-theme='light'] .hero-clickhouse h1 span { background: linear-gradient(135deg, #6366f1, #8b5cf6); }
+.hero-clickhouse p {
+  color: #71717a;
+  font-size: 1.3rem;
+  max-width: 660px;
+  font-weight: 400;
+}
+[data-theme='light'] .hero-clickhouse p { color: #52525b; }
+
+.hero-buttons .button--primary {
+  background: linear-gradient(135deg, #6366f1, #8b5cf6);
+  color: #fff;
+  border-radius: 10px;
+  padding: 0.9rem 2.5rem;
+  font-weight: 600;
+  font-size: 1.05rem;
+}
+.hero-buttons .button--primary:hover {
+  box-shadow: 0 0 32px rgba(99, 102, 241, 0.4);
+  color: #fff;
+}
+.hero-buttons .button--outline {
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  color: #a1a1aa;
+  border-radius: 10px;
+  padding: 0.9rem 2.5rem;
+  background: rgba(255, 255, 255, 0.03);
+}
+[data-theme='light'] .hero-buttons .button--outline {
+  border-color: #d4d4d8;
+  color: #52525b;
+  background: rgba(255, 255, 255, 0.6);
+}
+.hero-buttons .button--outline:hover {
+  border-color: #818cf8;
+  color: #818cf8;
+  background: rgba(129, 140, 248, 0.05);
+}
+
+/* --- Features --- */
+.features-section { background: #09090b; }
+[data-theme='light'] .features-section { background: #fafafa; }
+
+.feature-card {
+  background: #18181b;
+  border: none;
+  border-radius: 16px;
+  padding: 2.5rem;
+  box-shadow:
+    0 0 0 1px rgba(255, 255, 255, 0.05),
+    0 2px 8px rgba(0, 0, 0, 0.4);
+}
+.feature-card:hover {
+  box-shadow:
+    0 0 0 1px rgba(129, 140, 248, 0.2),
+    0 8px 32px rgba(99, 102, 241, 0.12);
+  transform: translateY(-3px);
+}
+[data-theme='light'] .feature-card {
+  background: #fff;
+  box-shadow:
+    0 0 0 1px rgba(0, 0, 0, 0.04),
+    0 2px 8px rgba(0, 0, 0, 0.04);
+}
+[data-theme='light'] .feature-card:hover {
+  box-shadow:
+    0 0 0 1px rgba(99, 102, 241, 0.15),
+    0 8px 32px rgba(99, 102, 241, 0.08);
+}
+.feature-card h3 {
+  color: #fafafa;
+  font-weight: 600;
+  font-size: 1.25rem;
+  letter-spacing: -0.02em;
+}
+[data-theme='light'] .feature-card h3 { color: #18181b; }
+.feature-card p { color: #71717a; font-size: 0.95rem; }
+[data-theme='light'] .feature-card p { color: #71717a; }
+
+/* --- Architecture --- */
+.architecture-section { background: #18181b; }
+[data-theme='light'] .architecture-section { background: #fff; }
+.architecture-section h2 {
+  letter-spacing: -0.03em;
+  font-size: 2.2rem;
+  color: #fafafa;
+}
+[data-theme='light'] .architecture-section h2 { color: #18181b; }
+.architecture-section .subtitle { color: #71717a; }
+
+.arch-item {
+  background: #09090b;
+  border: none;
+  border-radius: 12px;
+  padding: 2rem;
+  box-shadow:
+    0 0 0 1px rgba(255, 255, 255, 0.05),
+    0 2px 8px rgba(0, 0, 0, 0.4);
+}
+[data-theme='light'] .arch-item {
+  background: #fafafa;
+  box-shadow:
+    0 0 0 1px rgba(0, 0, 0, 0.04),
+    0 2px 8px rgba(0, 0, 0, 0.04);
+}
+.arch-item h4 { color: #fafafa; }
+[data-theme='light'] .arch-item h4 { color: #18181b; }
+.arch-item p { color: #71717a; }
+
+/* --- Quickstart --- */
+.quickstart-section { background: #09090b; }
+[data-theme='light'] .quickstart-section { background: #fafafa; }
+.quickstart-section h2 { color: #fafafa; }
+[data-theme='light'] .quickstart-section h2 { color: #18181b; }
+.quickstart-code {
+  background: #18181b;
+  border: none;
+  color: #d4d4d8;
+  border-radius: 16px;
+  padding: 2.5rem;
+  font-family: 'JetBrains Mono', 'SF Mono', monospace;
+  font-size: 0.88rem;
+  box-shadow:
+    0 0 0 1px rgba(255, 255, 255, 0.05),
+    0 4px 16px rgba(0, 0, 0, 0.4);
+}
+[data-theme='light'] .quickstart-code {
+  background: #18181b;
+  color: #d4d4d8;
+  box-shadow: 0 4px 16px rgba(0, 0, 0, 0.1);
+}
+.quickstart-code .comment { color: #52525b; }
+.quickstart-code .command { color: #a5b4fc; }
+
+@media screen and (max-width: 996px) {
+  .hero-clickhouse { padding: 4rem 1rem 3rem; }
+  .hero-clickhouse h1 { font-size: 2.6rem; }
+}

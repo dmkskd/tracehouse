@@ -1,0 +1,186 @@
+/* Theme C: Ember
+   Bold editorial style. Slab-serif headings, warm stone backgrounds,
+   thick left-border accents, uppercase buttons, compact density.
+   Feels like a technical publication — Hacker News meets engineering blog. */
+@import './layout.css';
+
+@import url('https://fonts.googleapis.com/css2?family=Roboto+Slab:wght@400;500;600;700;800&family=Source+Sans+3:wght@400;500;600&display=swap');
+
+:root {
+  --ifm-color-primary: #c2410c;
+  --ifm-color-primary-dark: #ae3a0b;
+  --ifm-color-primary-darker: #a4370a;
+  --ifm-color-primary-darkest: #872d08;
+  --ifm-color-primary-light: #d6490d;
+  --ifm-color-primary-lighter: #dc4d0e;
+  --ifm-color-primary-lightest: #e86420;
+  --ifm-code-font-size: 95%;
+  --ifm-font-family-base: 'Source Sans 3', Georgia, -apple-system, sans-serif;
+  --ifm-heading-font-family: 'Roboto Slab', Georgia, 'Times New Roman', serif;
+  --ifm-font-size-base: 17px;
+  --ifm-line-height-base: 1.75;
+  --ifm-background-color: #faf5f0;
+  --ifm-background-surface-color: #f5ebe0;
+  --ifm-navbar-background-color: #292524;
+  --ifm-navbar-link-color: #e7e5e4;
+  --ifm-navbar-link-hover-color: #f97316;
+  --ifm-footer-background-color: #1c1917;
+  --ifm-heading-color: #292524;
+  --ifm-font-color-base: #44403c;
+  --docusaurus-highlighted-code-line-bg: rgba(0, 0, 0, 0.06);
+}
+
+/* Force dark navbar in light mode */
+[data-theme='light'] .navbar {
+  background: #292524;
+  --ifm-navbar-link-color: #e7e5e4;
+  --ifm-navbar-link-hover-color: #f97316;
+}
+[data-theme='light'] .navbar__title {
+  color: #fafaf9;
+}
+
+[data-theme='dark'] {
+  --ifm-color-primary: #fb923c;
+  --ifm-color-primary-dark: #fa8316;
+  --ifm-color-primary-darker: #f97c09;
+  --ifm-color-primary-darkest: #d46604;
+  --ifm-color-primary-light: #fba162;
+  --ifm-color-primary-lighter: #fca96f;
+  --ifm-color-primary-lightest: #fdc295;
+  --ifm-background-color: #1c1917;
+  --ifm-background-surface-color: #292524;
+  --ifm-heading-color: #fafaf9;
+  --ifm-font-color-base: #d6d3d1;
+  --docusaurus-highlighted-code-line-bg: rgba(0, 0, 0, 0.3);
+}
+
+/* --- Hero (warm dark) --- */
+.hero-clickhouse {
+  background: linear-gradient(145deg, #1c1917 0%, #292524 50%, #1c1917 100%);
+  color: #fff;
+  padding: 5.5rem 0 4rem;
+}
+.hero-clickhouse::before {
+  background:
+    radial-gradient(ellipse at 25% 50%, rgba(249, 115, 22, 0.1) 0%, transparent 50%),
+    radial-gradient(ellipse at 75% 25%, rgba(239, 68, 68, 0.06) 0%, transparent 50%);
+}
+.hero-clickhouse h1 {
+  color: #fafaf9;
+  font-family: 'Roboto Slab', Georgia, serif;
+  font-size: 3.2rem;
+  font-weight: 700;
+  letter-spacing: -0.01em;
+}
+.hero-clickhouse h1 span { background: linear-gradient(135deg, #f97316, #ef4444); }
+.hero-clickhouse p {
+  color: #a8a29e;
+  font-family: 'Source Sans 3', sans-serif;
+  font-size: 1.2rem;
+}
+
+.hero-buttons .button--primary {
+  background: linear-gradient(135deg, #f97316, #ef4444);
+  color: #fff;
+  border-radius: 3px;
+  font-family: 'Roboto Slab', Georgia, serif;
+  font-weight: 600;
+  text-transform: uppercase;
+  font-size: 0.85rem;
+  letter-spacing: 0.08em;
+  padding: 0.85rem 2rem;
+}
+.hero-buttons .button--primary:hover {
+  box-shadow: 0 4px 24px rgba(249, 115, 22, 0.35);
+  color: #fff;
+}
+.hero-buttons .button--outline {
+  border: 2px solid #57534e;
+  color: #d6d3d1;
+  border-radius: 3px;
+  font-family: 'Roboto Slab', Georgia, serif;
+  text-transform: uppercase;
+  font-size: 0.85rem;
+  letter-spacing: 0.08em;
+  padding: 0.85rem 2rem;
+}
+.hero-buttons .button--outline:hover { border-color: #f97316; color: #f97316; }
+
+/* --- Features (warm paper background in light) --- */
+.features-section { background: #faf5f0; }
+[data-theme='dark'] .features-section { background: #1c1917; }
+
+.feature-card {
+  background: #fff;
+  border: 1px solid #e7e5e4;
+  border-left: 4px solid #c2410c;
+  border-radius: 2px;
+  padding: 1.75rem 2rem;
+}
+.feature-card:hover {
+  border-left-color: #ef4444;
+  background: #fffbf5;
+}
+[data-theme='dark'] .feature-card {
+  background: #292524;
+  border-color: #44403c;
+  border-left: 4px solid #fb923c;
+}
+[data-theme='dark'] .feature-card:hover { border-left-color: #ef4444; background: #302c28; }
+.feature-card h3 {
+  color: #292524;
+  font-family: 'Roboto Slab', Georgia, serif;
+  font-weight: 600;
+  font-size: 1.15rem;
+}
+[data-theme='dark'] .feature-card h3 { color: #fafaf9; }
+.feature-card p { color: #78716c; }
+[data-theme='dark'] .feature-card p { color: #a8a29e; }
+
+/* --- Architecture --- */
+.architecture-section { background: #f5ebe0; }
+[data-theme='dark'] .architecture-section { background: #292524; }
+.architecture-section h2 {
+  font-family: 'Roboto Slab', Georgia, serif;
+  color: #292524;
+}
+[data-theme='dark'] .architecture-section h2 { color: #fafaf9; }
+.architecture-section .subtitle { color: #78716c; }
+[data-theme='dark'] .architecture-section .subtitle { color: #a8a29e; }
+
+.arch-item {
+  background: #fff;
+  border: 1px solid #e7e5e4;
+  border-top: 3px solid #c2410c;
+  border-radius: 2px;
+}
+[data-theme='dark'] .arch-item {
+  background: #1c1917;
+  border-color: #44403c;
+  border-top: 3px solid #fb923c;
+}
+.arch-item h4 { font-family: 'Roboto Slab', Georgia, serif; color: #292524; }
+[data-theme='dark'] .arch-item h4 { color: #fafaf9; }
+.arch-item p { color: #78716c; }
+[data-theme='dark'] .arch-item p { color: #a8a29e; }
+
+/* --- Quickstart --- */
+.quickstart-section { background: #faf5f0; }
+[data-theme='dark'] .quickstart-section { background: #1c1917; }
+.quickstart-section h2 {
+  font-family: 'Roboto Slab', Georgia, serif;
+  color: #292524;
+}
+[data-theme='dark'] .quickstart-section h2 { color: #fafaf9; }
+.quickstart-code {
+  background: #292524;
+  border: none;
+  border-left: 4px solid #c2410c;
+  color: #d6d3d1;
+  border-radius: 2px;
+  font-size: 0.88rem;
+}
+[data-theme='dark'] .quickstart-code { border-left-color: #fb923c; }
+.quickstart-code .comment { color: #78716c; }
+.quickstart-code .command { color: #fb923c; }

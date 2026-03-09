@@ -1,0 +1,28 @@
+# ClickHouse Keeper cluster for distributed coordination
+# Single replica for development - increase for production
+apiVersion: clickhouse.com/v1alpha1
+kind: KeeperCluster
+metadata:
+  name: dev-keeper
+  namespace: clickhouse
+spec:
+  # Single replica for dev (use 3+ for production)
+  replicas: 1
+  
+  # Persistent storage for Keeper data
+  dataVolumeClaimSpec:
+    accessModes:
+      - ReadWriteOnce
+    resources:
+      requests:
+        storage: 1Gi
+  
+  # Resource limits for development
+  containerTemplate:
+    resources:
+      requests:
+        cpu: "100m"
+        memory: "256Mi"
+      limits:
+        cpu: "500m"
+        memory: "512Mi"
