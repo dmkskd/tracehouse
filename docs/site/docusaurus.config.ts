@@ -12,7 +12,7 @@ const config: Config = {
   },
 
   url: 'https://tracehouse.dev',
-  baseUrl: '/',
+  baseUrl: '/tracehouse/',
 
   organizationName: 'dmkskd',
   projectName: 'tracehouse',
