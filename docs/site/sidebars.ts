@@ -36,6 +36,7 @@ const sidebars: SidebarsConfig = {
         'development/building',
         'development/testing',
         'development/security-scanning',
+        'development/documentation',
       ],
     },
     {
