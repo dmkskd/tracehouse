@@ -21,7 +21,7 @@ TraceHouse polls system tables at regular intervals to power its dashboards. Whi
 
 After deploying, check the **Self-Monitoring dashboard** (Analytics > Self-Monitoring > App Query Cost Details) to see exactly what the app is reading and how often. Different environments have different cost profiles, so review the numbers for your setup. We are constantly reviewing and improving the app's query efficiency.
 
-See the [Polling Reference](/reference/polling) for tuning intervals or disabling specific pollers.
+See the [Polling Reference](/docs/reference/polling) for tuning intervals or disabling specific pollers.
 :::
 
 ## Standalone Binary
