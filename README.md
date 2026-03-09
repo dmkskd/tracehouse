@@ -4,7 +4,7 @@ An open-source tool to visually explore and monitor ClickHouse.
 
 > **Early stage.** This project is under heavy development. Breaking changes are expected. Saved dashboards and queries are stored in browser localStorage and may be lost after updates.
 
-## Quick Try
+## Quickstart
 
 Requires only Docker.
 

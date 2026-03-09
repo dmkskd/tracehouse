@@ -87,7 +87,7 @@ function QuickStartSection(): ReactNode {
   return (
     <section className="quickstart-section">
       <div className="container">
-        <h2>Quick Try</h2>
+        <h2>Quickstart</h2>
         <div className="quickstart-code">
           <div><span className="comment"># Clone the repo</span></div>
           <div><span className="command">git clone https://github.com/dmkskd/tracehouse.git && cd tracehouse</span></div>

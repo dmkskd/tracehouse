@@ -8,7 +8,7 @@ This project is under heavy development. Breaking changes are expected. Saved da
 This project has only been tested on macOS (Apple Silicon / ARM). It should work on other platforms but your mileage may vary.
 :::
 
-## Quick Try
+## Quickstart
 
 The fastest way to try the app. Requires Docker.
 

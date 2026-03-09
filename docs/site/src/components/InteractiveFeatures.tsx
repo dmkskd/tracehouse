@@ -1,4 +1,4 @@
-import React, { useEffect, useRef, useState } from 'react';
+import React, { useEffect, useState } from 'react';
 import useDocusaurusContext from '@docusaurus/useDocusaurusContext';
 import styles from './InteractiveFeatures.module.css';
 
@@ -75,8 +75,6 @@ const features: Feature[] = [
 const InteractiveFeatures = () => {
   const { siteConfig } = useDocusaurusContext();
   const assetsBaseUrl = siteConfig.customFields?.assetsBaseUrl as string;
-  const featureRefs = useRef<(HTMLDivElement | null)[]>([]);
-  const videoRefs = useRef<(HTMLVideoElement | null)[]>([]);
   const [expandedSrc, setExpandedSrc] = useState<string | null>(null);
 
   useEffect(() => {
@@ -87,60 +85,6 @@ const InteractiveFeatures = () => {
     return () => document.removeEventListener('keydown', handleKeyDown);
   }, []);
 
-  useEffect(() => {
-    const observer = new IntersectionObserver(
-      (entries) => {
-        entries.forEach((entry) => {
-          if (entry.isIntersecting) {
-            entry.target.classList.add(styles.visible);
-            const video = (entry.target as HTMLElement).querySelector('video');
-            if (video) {
-              video.currentTime = 0;
-              video.play().catch(() => { });
-            }
-          } else {
-            entry.target.classList.remove(styles.visible);
-            const video = (entry.target as HTMLElement).querySelector('video');
-            if (video) {
-              video.pause();
-            }
-          }
-        });
-      },
-      {
-        threshold: 0.5, // Start playing when 50% of the item is visible
-      }
-    );
-
-    featureRefs.current.forEach((ref) => {
-      if (ref) {
-        observer.observe(ref);
-      }
-    });
-
-    // Fade out → reset → fade in on each loop restart
-    const handleEnded = (e: Event) => {
-      const video = e.target as HTMLVideoElement;
-      video.classList.add(styles.videoFadedOut);
-      setTimeout(() => {
-        video.currentTime = 0;
-        video.classList.remove(styles.videoFadedOut);
-        video.play().catch(() => { });
-      }, 400);
-    };
-    const videos = videoRefs.current.filter(Boolean) as HTMLVideoElement[];
-    videos.forEach((v) => v.addEventListener('ended', handleEnded));
-
-    return () => {
-      featureRefs.current.forEach((ref) => {
-        if (ref) {
-          observer.unobserve(ref);
-        }
-      });
-      videos.forEach((v) => v.removeEventListener('ended', handleEnded));
-    };
-  }, []);
-
   return (
     <section className={styles.featuresSection}>
       <div className="container">
@@ -149,7 +93,6 @@ const InteractiveFeatures = () => {
             <div
               key={index}
               className={`${styles.featureItem} ${index % 2 === 0 ? styles.textLeft : styles.textRight}`}
-              ref={(el) => (featureRefs.current[index] = el)}
             >
               <div className={styles.textContainer}>
                 <h2>{feature.title}</h2>
@@ -158,8 +101,9 @@ const InteractiveFeatures = () => {
               <div className={styles.imageContainer}>
                 {feature.videoFile ? (
                   <video
-                    ref={(el) => (videoRefs.current[index] = el)}
                     src={`${assetsBaseUrl}/${feature.videoFile}`}
+                    autoPlay
+                    loop
                     muted
                     playsInline
                     className={styles.media}
