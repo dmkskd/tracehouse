@@ -13,7 +13,7 @@ const faqItems: FAQItem[] = [
     title: 'Why 3D?',
     description:
       'Some views use 3D to show relationships between parts, merges, and resources that are hard to represent in flat charts. If you prefer a simpler view, every screen has a 2D mode.',
-    videoFile: 'videos/2d.mp4',
+    videoFile: '2d.mp4',
   },
   {
     title: 'Does TraceHouse require any changes to my ClickHouse configuration?',

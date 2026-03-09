@@ -20,8 +20,7 @@ const config: Config = {
   onBrokenLinks: 'throw',
 
   customFields: {
-//     assetsBaseUrl: 'https://github.com/dmkskd/tracehouse/releases/download/docs-assets-v1',
-    assetsBaseUrl: '',
+assetsBaseUrl: 'https://github.com/dmkskd/tracehouse/releases/download/docs-assets-v1',
 
   },
 

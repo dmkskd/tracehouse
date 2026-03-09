@@ -499,12 +499,12 @@ dist-binary-run port="8990": dist-binary
 
 # Build the documentation site (static output in docs/site/build)
 [group('docs')]
-docs-build:
+docs-build: docs-install
     cd docs/site && npm run build
 
 # Start documentation dev server
 [group('docs')]
-docs-dev:
+docs-dev: docs-install
     cd docs/site && npm start
 
 # Install documentation dependencies
@@ -514,7 +514,7 @@ docs-install:
 
 # Serve the built documentation site locally
 [group('docs')]
-docs-serve:
+docs-serve: docs-install
     cd docs/site && npm run serve
 
 # ─────────────────────────────────────────────────────────────────
