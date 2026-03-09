@@ -165,12 +165,12 @@ local-restart: local-stop local-start
 
 # Start ClickHouse + Prometheus + Grafana (Docker) - foreground
 [group('docker')]
-docker-start:
+docker-start: grafana-plugin-build
     docker-compose -f infra/docker/docker-compose.yml up
 
 # Start docker infra in background
 [group('docker')]
-docker-start-bg:
+docker-start-bg: grafana-plugin-build
     @docker-compose -f infra/docker/docker-compose.yml up -d
     @echo "Waiting for ClickHouse..."
     @sleep 3
@@ -412,7 +412,9 @@ security-scan:
 # Build the Grafana app plugin (full TraceHouse)
 [group('grafana-app')]
 grafana-plugin-build: install grafana-plugin-install
+    @echo "Building Grafana app plugin..."
     cd grafana-app-plugin && npm run build
+    @echo "Grafana app plugin built → grafana-app-plugin/dist/"
 
 # Dev build with watch mode
 [group('grafana-app')]

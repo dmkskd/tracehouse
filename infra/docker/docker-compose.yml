@@ -38,7 +38,7 @@ services:
       "
 
   clickhouse:
-    image: custom-clickhouse
+    image: clickhouse:latest
     container_name: tracehouse-dev
     ports:
       # Native protocol port (used by clickhouse-driver)
@@ -108,7 +108,7 @@ services:
       - ./grafana/provisioning:/etc/grafana/provisioning
       # Dashboard JSON files
       - ./grafana/dashboards:/var/lib/grafana/dashboards
-      # Custom app plugin (dev) - full TraceHouse
+      # TraceHouse Grafana app plugin (built by `just grafana-plugin-build`)
       - ../../grafana-app-plugin/dist:/var/lib/grafana/plugins/tracehouse-app
     environment:
       # Disable login for development
@@ -120,11 +120,6 @@ services:
       GF_INSTALL_PLUGINS: grafana-clickhouse-datasource
       # Allow unsigned dev plugins
       GF_PLUGINS_ALLOW_LOADING_UNSIGNED_PLUGINS: tracehouse-app
-      # ── Frontend Sandbox Toggle ──
-      # Set to "true" to enable the Grafana frontend sandbox for plugins.
-      # This runs plugins in an isolated <iframe> with restricted capabilities.
-      # Useful for testing plugin behavior under sandbox restrictions.
-      # Docs: https://grafana.com/docs/grafana/latest/administration/plugin-management/plugin-frontend-sandbox/
       GF_PLUGINS_ENABLE_FRONTEND_SANDBOX: "true"
     depends_on:
       clickhouse:
