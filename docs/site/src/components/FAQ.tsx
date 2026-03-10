@@ -17,7 +17,7 @@ const faqItems: FAQItem[] = [
   {
     title: 'Does TraceHouse require any changes to my ClickHouse configuration?',
     description:
-      <>TraceHouse connects as a read-only client and queries system tables. On connect it probes the server for available capabilities (log tables, introspection functions, profiler settings, cluster topology, Keeper, Cloud mode) and gracefully disables features that aren't available. Some features (e.g. query profiling, trace_log) may require enabling specific settings on your server. See <a href="/docs/guides/connecting">Connecting to ClickHouse</a> for details.</>,
+      <>TraceHouse only runs read-only queries against system tables. On connect it probes the server for available capabilities (log tables, introspection functions, profiler settings, cluster topology, Keeper, Cloud mode) and gracefully disables features that aren't available. Some features (e.g. query profiling, trace_log) may require enabling specific settings on your server. See <a href="/docs/guides/connecting">Connecting to ClickHouse</a> for details.</>,
   },
   {
     title: 'Which ClickHouse versions are supported?',
