@@ -173,6 +173,36 @@
   overflow-x: auto;
 }
 
+.quickstart-or {
+  display: flex;
+  align-items: center;
+  gap: 1rem;
+  max-width: 700px;
+  margin: 1.5rem auto;
+}
+
+.quickstart-or::before,
+.quickstart-or::after {
+  content: '';
+  flex: 1;
+  height: 1px;
+  background: var(--ifm-color-emphasis-300);
+}
+
+.quickstart-or span {
+  font-size: 0.9rem;
+  color: var(--ifm-color-emphasis-500);
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+}
+
+.quickstart-hint {
+  margin-top: 0.75rem;
+  font-size: 0.85rem;
+  color: var(--ifm-color-emphasis-500);
+  line-height: 1.5;
+}
+
 @media screen and (max-width: 996px) {
   .hero-clickhouse {
     padding: 3rem 1rem 2rem;

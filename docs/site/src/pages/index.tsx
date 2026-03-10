@@ -84,6 +84,9 @@ function HeroSection(): ReactNode {
 
 
 function QuickStartSection(): ReactNode {
+  const { siteConfig } = useDocusaurusContext();
+  const assetsBaseUrl = siteConfig.customFields?.assetsBaseUrl as string;
+
   return (
     <section className="quickstart-section">
       <div className="container">
@@ -95,6 +98,30 @@ function QuickStartSection(): ReactNode {
           <div><span className="command">cd infra/quickstart && docker compose up</span></div>
           <br />
           <div><span className="comment"># Open http://localhost:8990</span></div>
+        </div>
+        <div className="quickstart-or">
+          <span>or</span>
+        </div>
+        <div style={{ textAlign: 'center' }}>
+          <Link
+            className="button button--primary button--lg"
+            to={`${assetsBaseUrl}/tracehouse.html`}
+          >
+            Try Online
+          </Link>
+          <p className="quickstart-hint">
+            Single-file HTML — runs entirely in your browser, no install needed.
+            <br />
+            Works with any ClickHouse instance that has{' '}
+            <Link to="/docs/guides/connecting#cors-proxy">CORS enabled</Link>.
+          </p>
+          <p className="quickstart-hint">
+            This page will ask for your ClickHouse credentials.
+            If you prefer not to enter them on a third-party page,
+            grab it from the{' '}
+            <Link to="https://github.com/dmkskd/tracehouse/releases/latest">releases page</Link>{' '}
+            or <Link to="/docs/guides/deployment">build it yourself</Link>.
+          </p>
         </div>
       </div>
     </section>

@@ -4,13 +4,14 @@
 @import './layout.css';
 
 :root {
-  --ifm-color-primary: #f5c542;
-  --ifm-color-primary-dark: #f3bc24;
-  --ifm-color-primary-darker: #edb515;
-  --ifm-color-primary-darkest: #c49610;
-  --ifm-color-primary-light: #f7ce60;
-  --ifm-color-primary-lighter: #f8d36f;
-  --ifm-color-primary-lightest: #fbe09d;
+  /* Light mode: darker gold shades for readable contrast on white */
+  --ifm-color-primary: #9a7b0a;
+  --ifm-color-primary-dark: #8a6e09;
+  --ifm-color-primary-darker: #826808;
+  --ifm-color-primary-darkest: #6b5607;
+  --ifm-color-primary-light: #ab880b;
+  --ifm-color-primary-lighter: #b3900c;
+  --ifm-color-primary-lightest: #cca60e;
   --ifm-code-font-size: 95%;
   --ifm-font-family-base: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Oxygen, Ubuntu, sans-serif;
   --ifm-heading-font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Oxygen, Ubuntu, sans-serif;
@@ -109,3 +110,4 @@
 [data-theme='light'] .quickstart-code { background: #fff; border-color: #d0d7de; color: #1f2328; }
 .quickstart-code .comment { color: #8b949e; }
 .quickstart-code .command { color: #f5c542; }
+[data-theme='light'] .quickstart-code .command { color: #9a7b0a; }

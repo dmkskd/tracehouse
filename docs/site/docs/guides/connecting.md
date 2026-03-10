@@ -22,7 +22,7 @@ The `.env` file configures connection details for CLI scripts (`just load-data`,
 
 ## CORS Proxy
 
-When connecting to a ClickHouse instance that doesn't return CORS headers (common with self-managed and Aiven), the app routes requests through a lightweight proxy that forwards them server-side.
+When connecting to a ClickHouse instance that doesn't return CORS headers (common with self-managed and Aiven), the browser will block requests. The app routes these through a lightweight proxy that forwards them server-side. See [Deployment](./deployment.md) for the different ways to run TraceHouse with the proxy included.
 
 **Docker image** - the proxy is bundled and always active. No setup needed - just enter your ClickHouse host in the connection form and the proxy handles the rest.
 

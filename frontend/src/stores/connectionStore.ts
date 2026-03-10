@@ -243,23 +243,30 @@ export const useConnectionStore = create<ConnectionState>()(
       testConnection: async (config: ConnectionConfig) => {
         set({ isTestingConnection: true, error: null, testResult: null });
         const startTime = performance.now();
-        
+        const proxyState = useProxyStore.getState();
+
         try {
-          const proxyState = useProxyStore.getState();
           const adapter = proxyState.enabled
             ? new ProxyAdapter(config, proxyState.url)
             : new BrowserAdapter(config);
-          
-          // Query server version to test connection
-          const rows = await adapter.executeQuery<{ version: string; timezone: string; display_name: string }>(
-            `SELECT version() as version, timezone() as timezone, hostName() as display_name`
+
+          // Race the real query against a 10s timeout so CORS-blocked requests
+          // don't hang for the full send_receive_timeout (300s).
+          const timeout = new Promise<never>((_, reject) =>
+            setTimeout(() => reject(new Error('Connection timed out')), 10_000),
           );
-          
+          const rows = await Promise.race([
+            adapter.executeQuery<{ version: string; timezone: string; display_name: string }>(
+              `SELECT version() as version, timezone() as timezone, hostName() as display_name`
+            ),
+            timeout,
+          ]);
+
           await adapter.close();
-          
+
           const latencyMs = performance.now() - startTime;
           const row = rows[0];
-          
+
           const result: ConnectionTestResult = {
             success: true,
             server_version: row?.version ?? null,
@@ -269,22 +276,27 @@ export const useConnectionStore = create<ConnectionState>()(
             error_type: null,
             latency_ms: latencyMs,
           };
-          
+
           set({ testResult: result, isTestingConnection: false });
           return result;
         } catch (error: unknown) {
           const latencyMs = performance.now() - startTime;
           let errorMessage = 'Failed to connect to ClickHouse';
           let errorType = 'unknown';
-          
+
           if (error instanceof Error) {
             errorMessage = error.message;
-            // Try to extract error type from AdapterError
             if ('category' in error) {
               errorType = (error as { category: string }).category;
             }
           }
-          
+
+          // When proxy is off and we get a network error or timeout,
+          // it's likely a CORS issue — tag it so the UI can show a hint.
+          if (!proxyState.enabled && (errorType === 'network' || errorMessage === 'Connection timed out')) {
+            errorType = 'cors';
+          }
+
           const failedResult: ConnectionTestResult = {
             success: false,
             server_version: null,
@@ -294,7 +306,7 @@ export const useConnectionStore = create<ConnectionState>()(
             error_type: errorType,
             latency_ms: latencyMs,
           };
-          
+
           set({ testResult: failedResult, isTestingConnection: false });
           return failedResult;
         }

@@ -632,9 +632,23 @@ export const ConnectionForm: React.FC<ConnectionFormProps> = ({ onClose, onSucce
                     </p>
                   )}
                   {!testResult.success && testResult.error_message && (
-                    <p style={{ fontSize: '12px', color: 'rgba(var(--color-error-rgb), 0.8)' }}>
-                      {testResult.error_message}
-                    </p>
+                    <div style={{ fontSize: '12px', color: 'rgba(var(--color-error-rgb), 0.8)' }}>
+                      <p style={{ margin: 0 }}>{testResult.error_message}</p>
+                      {testResult.error_type === 'cors' && (
+                        <p style={{ marginTop: '8px', color: 'var(--text-secondary)' }}>
+                          This is likely caused by CORS restrictions. Try enabling the proxy option above, or see the{' '}
+                          <a
+                            href="https://dmkskd.github.io/tracehouse/docs/guides/connecting"
+                            target="_blank"
+                            rel="noopener noreferrer"
+                            style={{ color: 'var(--accent-secondary)', textDecoration: 'underline' }}
+                          >
+                            connection guide
+                          </a>
+                          {' '}for more options.
+                        </p>
+                      )}
+                    </div>
                   )}
                 </div>
               </div>
