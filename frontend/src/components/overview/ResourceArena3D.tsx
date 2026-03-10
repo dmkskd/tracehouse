@@ -15,6 +15,16 @@ import { Link } from 'react-router-dom';
 import type { RunningQueryInfo, ActiveMergeInfo, TraceLog } from '@tracehouse/core';
 import { truncateQuery, formatBytes } from '../../utils/formatters';
 import { useClickHouseServices } from '../../providers/ClickHouseProvider';
+import {
+  Ts, Cs, MIN_DIM, LANE_GAP, DECK_GAP,
+  DECK_ORDER, deckOf, deckBaseY,
+  type BlockEntry, type Deck,
+} from './arena-types';
+import {
+  useCheatMode, useShootingSystem, CheatHUD, CheatSceneElements,
+  type CheatModeState, type BlockCheatInfo,
+  getOrCreateCheatInfo,
+} from './ArenaCheatMode';
 
 /* ── palette ─────────────────────────────────────────── */
 
@@ -50,64 +60,10 @@ const colorOf = (k: string) => {
   return `hsl(${b[0]}, ${b[1] * 100}%, ${b[2] * 100}%)`;
 };
 
-/* ── scale factors ───────────────────────────────────── */
+/* ── local constants ─────────────────────────────────── */
 
-const Ts = 0.12;
-const Cs = 0.6;
-const MIN_DIM = 0.06;
-const LANE_GAP = 0.55;
-const DECK_GAP = 1.2;
 const FADE_SECS = 60;
 const HORIZON = 120;
-
-/* ── deck assignment ─────────────────────────────────── */
-
-type Deck = 'select' | 'insert' | 'merge';
-const DECK_ORDER: Deck[] = ['select', 'insert', 'merge'];
-
-function deckOf(kind: string, isMerge: boolean): Deck {
-  if (isMerge) return 'merge';
-  const k = kind.toUpperCase();
-  if (k === 'INSERT') return 'insert';
-  return 'select';
-}
-
-function deckBaseY(deck: Deck): number {
-  return DECK_ORDER.indexOf(deck) * DECK_GAP;
-}
-
-/* ── block registry ──────────────────────────────────── */
-
-interface BlockEntry {
-  id: string;
-  kind: string;
-  color: string;
-  label: string;
-  tableHint: string;
-  isMerge: boolean;
-  deck: Deck;
-  lane: number;
-  startTime: number;
-  endTime: number | null;
-  cpu: number;
-  mem: number;
-  elapsed: number;
-  queryId?: string;
-  user?: string;
-  progress: number;
-  ioReadRate: number;
-  rowsRead: number;
-  bytesRead: number;
-  profileEvents?: RunningQueryInfo['profileEvents'];
-  readBytesPerSec?: number;
-  writeBytesPerSec?: number;
-  numParts?: number;
-  mergeType?: string;
-  database?: string;
-  table?: string;
-  partName?: string;
-  hostname?: string;
-}
 
 /* ── shared geometries ───────────────────────────────── */
 
@@ -486,12 +442,13 @@ function Sparkline({ data, color, width = 140, height = 32, label, currentValue 
 
 /* ── LiveBlock ───────────────────────────────────────── */
 
-function LiveBlock({ entry, hoveredId, selectedId, onHover, onClick }: {
+function LiveBlock({ entry, hoveredId, selectedId, onHover, onClick, cheatInfo }: {
   entry: BlockEntry;
   hoveredId: string | null;
   selectedId: string | null;
   onHover: (v: BlockEntry | null) => void;
   onClick: (v: BlockEntry) => void;
+  cheatInfo?: BlockCheatInfo;
 }) {
   const boxRef = useRef<THREE.Group>(null);
   const plateRef = useRef<THREE.Mesh>(null);
@@ -529,8 +486,16 @@ function LiveBlock({ entry, hoveredId, selectedId, onHover, onClick }: {
     const baseY = deckBaseY(entry.deck);
 
     const GAP = 0.03;
-    const rightX = (running ? 0 : -((now - entry.endTime!) / 1000) * Ts) - GAP;
-    const leftX = -((now - entry.startTime) / 1000) * Ts + GAP;
+    let rightX = (running ? 0 : -((now - entry.endTime!) / 1000) * Ts) - GAP;
+    let leftX = -((now - entry.startTime) / 1000) * Ts + GAP;
+
+    // Cheat mode: accumulate extra X offset to rush blocks toward camera
+    if (cheatInfo) {
+      cheatInfo.xOffset -= delta * Ts * cheatInfo.speedMultiplier;
+      rightX += cheatInfo.xOffset;
+      leftX += cheatInfo.xOffset;
+    }
+
     const width = Math.max(MIN_DIM, rightX - leftX);
     const centerX = (leftX + rightX) / 2;
 
@@ -551,6 +516,15 @@ function LiveBlock({ entry, hoveredId, selectedId, onHover, onClick }: {
       edgeOpacity *= 0.3;
     }
 
+    // Cheat mode: damage flash — bright white flash when hit
+    if (cheatInfo && cheatInfo.damageFlash > 0) {
+      const flashAge = (performance.now() / 1000) - cheatInfo.damageFlash;
+      if (flashAge < 0.15) {
+        opacity = 0.95;
+        edgeOpacity = 1;
+      }
+    }
+
     const py = baseY + (cpuH * popScale) / 2;
 
     if (boxRef.current) {
@@ -563,10 +537,19 @@ function LiveBlock({ entry, hoveredId, selectedId, onHover, onClick }: {
     }
     if (matRef.current) {
       const t = clock.elapsedTime;
+      // Cheat mode: tint toward white when damaged
+      let emissiveIntensity: number;
+      if (cheatInfo && cheatInfo.hp < cheatInfo.maxHp) {
+        const dmgRatio = 1 - cheatInfo.hp / cheatInfo.maxHp;
+        matRef.current.emissive.copy(col).lerp(new THREE.Color('#ffffff'), dmgRatio * 0.5);
+        emissiveIntensity = 0.2 + dmgRatio * 0.4;
+      } else {
+        emissiveIntensity = isHighlighted
+          ? 0.5 + Math.sin(t * 3) * 0.15
+          : running ? 0.15 + Math.sin(t * 2.2 + laneZ * 2) * 0.05 : 0.02;
+      }
       matRef.current.opacity = opacity + (running ? Math.sin(t * 1.8 + laneZ * 3) * 0.06 : 0);
-      matRef.current.emissiveIntensity = isHighlighted
-        ? 0.5 + Math.sin(t * 3) * 0.15
-        : running ? 0.15 + Math.sin(t * 2.2 + laneZ * 2) * 0.05 : 0.02;
+      matRef.current.emissiveIntensity = emissiveIntensity;
     }
     if (edgeMatRef.current) edgeMatRef.current.opacity = edgeOpacity;
     if (plateMatRef.current) plateMatRef.current.opacity = isHighlighted ? 0.25 : running ? 0.12 : opacity * 0.3;
@@ -1342,7 +1325,16 @@ function CinematicOrbit({ settings }: { settings: CinematicSettings }) {
   );
 }
 
-function ArenaScene({ entries, hoveredId, selectedId, hoveredEntry, selectedEntry, onHover, onClick, hoverDomRef, hostNames, cinematic }: {
+/** Cheat mode bundle passed to ArenaScene — null when cheat is off */
+interface CheatBundle {
+  state: CheatModeState;
+  infoMap: Map<string, BlockCheatInfo>;
+  shooting: ReturnType<typeof useShootingSystem>;
+  onHit: (entry: BlockEntry, position: THREE.Vector3, killed: boolean) => void;
+  onAimUpdate: (entry: BlockEntry | null) => void;
+}
+
+function ArenaScene({ entries, hoveredId, selectedId, hoveredEntry, selectedEntry, onHover, onClick, hoverDomRef, hostNames, cinematic, cheat }: {
   entries: BlockEntry[];
   hoveredId: string | null;
   selectedId: string | null;
@@ -1353,38 +1345,57 @@ function ArenaScene({ entries, hoveredId, selectedId, hoveredEntry, selectedEntr
   hoverDomRef: React.RefObject<HTMLDivElement | null>;
   hostNames: string[];
   cinematic: CinematicSettings;
+  cheat: CheatBundle | null;
 }) {
+  const cheating = !!cheat;
+  const visibleEntries = cheat
+    ? entries.filter(e => !cheat.state.destroyedIds.has(e.id))
+    : entries;
+
   return (
     <>
-      <color attach="background" args={['#1a1a2e']} />
-      <fog attach="fog" args={['#1a1a2e', 15, 30]} />
-      <ambientLight intensity={0.3} />
-      <directionalLight position={[5, 15, 10]} intensity={0.8} />
+      <color attach="background" args={[cheating ? '#0a0a18' : '#1a1a2e']} />
+      <fog attach="fog" args={[cheating ? '#0a0a18' : '#1a1a2e', cheating ? 20 : 15, cheating ? 45 : 30]} />
+      <ambientLight intensity={cheating ? 0.15 : 0.3} />
+      <directionalLight position={[5, 15, 10]} intensity={cheating ? 0.5 : 0.8} />
       <directionalLight position={[-5, 8, -5]} intensity={0.3} color="#8B5CF6" />
       <pointLight position={[0, 6, -3]} intensity={0.5} color="#3B82F6" distance={20} />
 
       <Floor maxLane={entries.reduce((m, e) => Math.max(m, e.lane), 0)} />
       <HostLabels hosts={hostNames} />
-      {entries.map(e => (
+      {visibleEntries.map(e => (
         <LiveBlock
           key={e.id}
           entry={e}
-          hoveredId={hoveredId}
-          selectedId={selectedId}
-          onHover={onHover}
-          onClick={onClick}
+          hoveredId={cheating ? null : hoveredId}
+          selectedId={cheating ? null : selectedId}
+          onHover={cheating ? () => {} : onHover}
+          onClick={cheating ? () => {} : onClick}
+          cheatInfo={cheat ? getOrCreateCheatInfo(cheat.infoMap, e) : undefined}
         />
       ))}
 
-      {/* Position bridges: project 3D positions to DOM overlay coords */}
-      <CardPositionBridge
-        entry={hoveredEntry && !selectedEntry ? hoveredEntry : null}
-        domRef={hoverDomRef}
-        offsetY={0.15}
-        offsetZ={0.5}
-      />
+      {!cheating && (
+        <CardPositionBridge
+          entry={hoveredEntry && !selectedEntry ? hoveredEntry : null}
+          domRef={hoverDomRef}
+          offsetY={0.15}
+          offsetZ={0.5}
+        />
+      )}
 
-      <CinematicOrbit settings={cinematic} />
+      {cheat ? (
+        <CheatSceneElements
+          entries={entries}
+          cheatState={cheat.state}
+          cheatInfoMap={cheat.infoMap}
+          shooting={cheat.shooting}
+          onCheatHit={cheat.onHit}
+          onAimUpdate={cheat.onAimUpdate}
+        />
+      ) : (
+        <CinematicOrbit settings={cinematic} />
+      )}
     </>
   );
 }
@@ -1427,6 +1438,13 @@ export const ResourceArena3D: React.FC<ResourceArena3DProps> = ({
   const [isFullscreen, setIsFullscreen] = useState(false);
   const [showCinematic, setShowCinematic] = useState(false);
   const [cinematic, setCinematic] = useState<CinematicSettings>({ ...DEFAULT_CINEMATIC });
+
+  // ── Cheat mode ──
+  const clearSelection = useCallback(() => { setSelected(null); setHovered(null); }, []);
+  const {
+    cheatState, cheatInfoMap, shootingSystem, aimedEntry,
+    toggleCheatMode, handleCheatHit, handleAimUpdate, handleKeyDown,
+  } = useCheatMode({ containerRef, clearSelection });
 
   const metricHistory = useMetricHistory(selected);
   const { logs: traceLogs, prefetch: prefetchLogs } = useLogTail(selected);
@@ -1474,17 +1492,18 @@ export const ResourceArena3D: React.FC<ResourceArena3DProps> = ({
     return () => document.removeEventListener('fullscreenchange', onFsChange);
   }, []);
 
-  // 'f' key for fullscreen, 'c' key for cinematic panel
+  // Keyboard shortcuts: f=fullscreen, c=cinematic, x/ESC=cheat mode
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
       if (e.ctrlKey || e.metaKey || e.altKey) return;
       if (e.target instanceof HTMLInputElement || e.target instanceof HTMLTextAreaElement) return;
+      if (handleKeyDown(e)) return; // cheat mode consumed the key
       if (e.key === 'f') toggleFullscreen();
       if (e.key === 'c') setShowCinematic(v => !v);
     };
     window.addEventListener('keydown', onKey);
     return () => window.removeEventListener('keydown', onKey);
-  }, [toggleFullscreen]);
+  }, [toggleFullscreen, handleKeyDown]);
 
   // Update registry when poll data changes
   const prevPollRef = useRef<{ q: RunningQueryInfo[]; m: ActiveMergeInfo[] }>({ q: [], m: [] });
@@ -1792,19 +1811,29 @@ export const ResourceArena3D: React.FC<ResourceArena3DProps> = ({
           hoverDomRef={hoverCardRef}
           hostNames={activeHostNames}
           cinematic={cinematic}
+          cheat={cheatState.active ? {
+            state: cheatState,
+            infoMap: cheatInfoMap,
+            shooting: shootingSystem,
+            onHit: handleCheatHit,
+            onAimUpdate: handleAimUpdate,
+          } : null}
         />
       </Canvas>
 
+      {/* Cheat mode HUD */}
+      <CheatHUD state={cheatState} onExit={toggleCheatMode} aimedEntry={aimedEntry} cheatInfoMap={cheatInfoMap} />
+
       {/* DOM overlay cards */}
-      {showHover && (
+      {showHover && !cheatState.active && (
         <HoverCardOverlay entry={hovered} domRef={hoverCardRef} />
       )}
-      {selected && (
+      {selected && !cheatState.active && (
         <ImmersiveHUD entry={selected} onClose={handleBgClick} history={metricHistory} logs={traceLogs} />
       )}
 
       {/* Cinematic camera controller */}
-      {showCinematic && (
+      {showCinematic && !cheatState.active && (
         <div
           style={{
             position: 'absolute', bottom: 44, right: 10, zIndex: 20,
