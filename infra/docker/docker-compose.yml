@@ -10,7 +10,7 @@ services:
       - "9001:9000"   # S3 API (9000 conflicts with CH native port)
       - "9002:9001"   # MinIO Console UI
     volumes:
-      - minio-data:/data
+      - tracehouse-minio-data:/data
     environment:
       MINIO_ROOT_USER: clickhouse
       MINIO_ROOT_PASSWORD: clickhouse_secret
@@ -51,9 +51,9 @@ services:
       - "9009:9009"
     volumes:
       # Persist data between container restarts
-      - clickhouse-data:/var/lib/clickhouse
+      - tracehouse-clickhouse-data:/var/lib/clickhouse
       # Persist logs
-      - clickhouse-logs:/var/log/clickhouse-server
+      - tracehouse-clickhouse-logs:/var/log/clickhouse-server
       # Custom server-level configuration (config.d)
       - ./clickhouse-config:/etc/clickhouse-server/config.d
       # Custom user-level configuration — profiles, quotas, user settings (users.d)
@@ -90,7 +90,7 @@ services:
       - "9090:9090"
     volumes:
       - ./prometheus/prometheus.yml:/etc/prometheus/prometheus.yml:ro
-      - prometheus-data:/prometheus
+      - tracehouse-prometheus-data:/prometheus
     depends_on:
       clickhouse:
         condition: service_healthy
@@ -103,7 +103,7 @@ services:
       - "3001:3000"
     volumes:
       # Persist Grafana data
-      - grafana-data:/var/lib/grafana
+      - tracehouse-grafana-data:/var/lib/grafana
       # Provisioning configuration (auto-loads datasources and dashboards)
       - ./grafana/provisioning:/etc/grafana/provisioning
       # Dashboard JSON files
@@ -138,19 +138,19 @@ services:
       - "9411:9411"    # Zipkin compatible endpoint
     volumes:
       - ./tempo/tempo.yaml:/etc/tempo.yaml:ro
-      - tempo-data:/var/tempo
+      - tracehouse-tempo-data:/var/tempo
     restart: unless-stopped
 
 volumes:
-  clickhouse-data:
+  tracehouse-clickhouse-data:
     driver: local
-  clickhouse-logs:
+  tracehouse-clickhouse-logs:
     driver: local
-  minio-data:
+  tracehouse-minio-data:
     driver: local
-  prometheus-data:
+  tracehouse-prometheus-data:
     driver: local
-  grafana-data:
+  tracehouse-grafana-data:
     driver: local
-  tempo-data:
+  tracehouse-tempo-data:
     driver: local

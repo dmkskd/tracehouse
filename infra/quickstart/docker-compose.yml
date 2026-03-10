@@ -9,7 +9,7 @@ services:
   clickhouse:
     image: clickhouse/clickhouse-server:latest
     volumes:
-      - clickhouse-data:/var/lib/clickhouse
+      - tracehouse-clickhouse-data:/var/lib/clickhouse
       - ../docker/clickhouse-config/listen.xml:/etc/clickhouse-server/config.d/listen.xml:ro
       - ../docker/clickhouse-users/default-user.xml:/etc/clickhouse-server/users.d/default-user.xml:ro
     healthcheck:
@@ -33,4 +33,4 @@ services:
     init: true
 
 volumes:
-  clickhouse-data:
+  tracehouse-clickhouse-data:
