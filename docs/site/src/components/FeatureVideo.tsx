@@ -77,6 +77,7 @@ export default function FeatureVideo({ src }: { src: string }) {
             autoPlay
             loop
             muted
+            controls
             playsInline
             style={styles.overlayVideo}
             onClick={(e) => e.stopPropagation()}
