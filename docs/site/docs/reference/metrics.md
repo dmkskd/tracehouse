@@ -60,7 +60,7 @@ Index pruning = (SelectedMarksTotal - SelectedMarks) / SelectedMarksTotal × 100
 Cache hit rate = MarkCacheHits / (MarkCacheHits + MarkCacheMisses) × 100
 ```
 
-Higher pruning % = better primary key usage (more data skipped). See [Query Details](../features/analytics-query-language.md) for interpretation thresholds.
+Higher pruning % = better primary key usage (more data skipped). See [Query Details](../features/analytics-query-language.mdx) for interpretation thresholds.
 
 ## Key Caveats
 
