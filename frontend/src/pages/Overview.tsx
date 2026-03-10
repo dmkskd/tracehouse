@@ -38,7 +38,7 @@ import { formatBytes } from '../utils/formatters';
 import { TruncatedHost } from '../components/common/TruncatedHost';
 import { ObservabilitySunburst, DetailSidebar, OBSERVABILITY_DATA, enrichWithAvailability, mergeAvailability, fetchColumnComments } from '../components/observability-map';
 import type { SunburstNodeData, QueryResult, ObservabilityData, ColumnCommentMap } from '../components/observability-map';
-import { useViewPreferenceStore } from '../stores/viewPreferenceStore';
+import { useUserPreferenceStore } from '../stores/userPreferenceStore';
 
 // Format duration from seconds
 const formatDuration = (seconds: number): string => {
@@ -114,7 +114,7 @@ export const Overview: React.FC = () => {
   const [selectedHost, setSelectedHost] = useState<string | null>(null);
   const [splitView, setSplitView] = useState(false);
   const [arenaSplitView, setArenaSplitView] = useState(false);
-  const preferredViewMode = useViewPreferenceStore(s => s.preferredViewMode);
+  const preferredViewMode = useUserPreferenceStore(s => s.preferredViewMode);
 
   // Cluster hostnames from server info (reliable — always returns all nodes)
   const arenaHosts = liveData?.serverInfo?.clusterHosts ?? [];

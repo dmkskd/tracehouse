@@ -7,6 +7,7 @@ import { formatBytes, formatDuration, formatNumber } from '../../stores/querySto
 import { QueryFilterBar } from './QueryFilterBar';
 import type { QueryFilterState } from './QueryFilterBar';
 import type { QueryAnalyzer } from '@tracehouse/core';
+import { useUserPreferenceStore } from '../../stores/userPreferenceStore';
 
 interface RunningQueryListProps {
   queries: RunningQuery[];
@@ -71,6 +72,7 @@ const QueryKindBadge: React.FC<{ kind: string }> = ({ kind }) => {
 export const RunningQueryList: React.FC<RunningQueryListProps> = ({
   queries, selectedQueryId, onSelectQuery, onKillQuery, isKillingQuery, coordinatorIds, queryAnalyzer,
 }) => {
+  const killQueriesEnabled = useUserPreferenceStore((s) => s.killQueriesEnabled);
   const [sortKey, setSortKey] = React.useState<SortKey>(null);
   const [sortDir, setSortDir] = React.useState<'asc' | 'desc'>('desc');
   const [filter, setFilter] = useState<QueryFilterState>({ limit: 100 });
@@ -198,7 +200,7 @@ export const RunningQueryList: React.FC<RunningQueryListProps> = ({
             {sortableTh('Progress', 'progress')}
             {sortableTh('Memory', 'memory_usage', 'right')}
             {sortableTh('Rows Read', 'read_rows', 'right')}
-            <th style={{ ...thStyle, textAlign: 'center' }}></th>
+            {killQueriesEnabled && <th style={{ ...thStyle, textAlign: 'center' }}></th>}
           </tr>
         </thead>
         <tbody>
@@ -246,6 +248,7 @@ export const RunningQueryList: React.FC<RunningQueryListProps> = ({
                 <td style={tdStyle}><ProgressBar progress={q.progress} /></td>
                 <td style={{ ...tdStyle, textAlign: 'right', fontFamily: 'monospace', whiteSpace: 'nowrap' }}>{formatBytes(q.memory_usage)}</td>
                 <td style={{ ...tdStyle, textAlign: 'right', fontFamily: 'monospace', whiteSpace: 'nowrap' }}>{formatNumber(q.read_rows)}</td>
+                {killQueriesEnabled && (
                 <td style={{ ...tdStyle, textAlign: 'center', whiteSpace: 'nowrap' }}>
                   <button
                     onClick={(e) => { e.stopPropagation(); onKillQuery(q.query_id); }}
@@ -262,6 +265,7 @@ export const RunningQueryList: React.FC<RunningQueryListProps> = ({
                     Kill
                   </button>
                 </td>
+                )}
               </tr>
             );
           })}

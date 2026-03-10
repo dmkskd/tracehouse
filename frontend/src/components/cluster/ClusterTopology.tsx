@@ -10,7 +10,7 @@ import { Html, OrbitControls } from '@react-three/drei';
 import * as THREE from 'three';
 import { shortenHostname } from '@tracehouse/core';
 import { ErrorBoundary3D } from '../3d/ErrorBoundary3D';
-import { useViewPreferenceStore } from '../../stores/viewPreferenceStore';
+import { useUserPreferenceStore } from '../../stores/userPreferenceStore';
 import { useThemeDetection } from '../../hooks/useThemeDetection';
 import { formatBytes } from '../../utils/formatters';
 import { computeLayout } from './clusterLayout';
@@ -790,7 +790,7 @@ const Fallback2D: React.FC<ClusterTopologyProps> = ({ nodes, keeperNodes, hostMe
 export const ClusterTopology: React.FC<ClusterTopologyProps> = (props) => {
   const theme = useThemeDetection();
   const { clusterName, nodes, keeperNodes, hostMetrics } = props;
-  const { preferredViewMode: viewMode } = useViewPreferenceStore();
+  const { preferredViewMode: viewMode } = useUserPreferenceStore();
 
   // Camera position based on layout size
   const camDistance = Math.max(4, nodes.length * 0.8 + keeperNodes.length * 0.5);

@@ -15,7 +15,7 @@ import type { PartInfo } from '../stores/databaseStore';
 import { useClickHouseServices } from '../providers/ClickHouseProvider';
 import { useRefreshConfig, clampToAllowed } from '@tracehouse/ui-shared';
 import { useRefreshSettingsStore, useGlobalLastUpdatedStore } from '../stores/refreshSettingsStore';
-import { useViewPreferenceStore } from '../stores/viewPreferenceStore';
+import { useUserPreferenceStore } from '../stores/userPreferenceStore';
 import { 
   Scene3D, 
   createSceneConfig,
@@ -795,7 +795,7 @@ export const DatabaseExplorer: React.FC = () => {
   const [selectedPartition, setSelectedPartition] = useState<string | null>(null);
   
   // View mode state (3D or 2D) - synced with global preference
-  const { preferredViewMode } = useViewPreferenceStore();
+  const { preferredViewMode } = useUserPreferenceStore();
   const viewMode = preferredViewMode;
   
   // Performance mode state for 3D view

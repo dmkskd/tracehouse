@@ -7,7 +7,7 @@ import React, { useState, useRef, useEffect } from 'react';
 import { NavLink } from 'react-router-dom';
 import { ConnectionSelector } from './connection/ConnectionSelector';
 import { useTheme } from '../providers/ThemeProvider';
-import { useViewPreferenceStore } from '../stores/viewPreferenceStore';
+import { useUserPreferenceStore } from '../stores/userPreferenceStore';
 import { useRefreshConfig, type RefreshRateOption } from '@tracehouse/ui-shared';
 import { useRefreshSettingsStore, useGlobalLastUpdatedStore } from '../stores/refreshSettingsStore';
 import { resetDashboardsToBuiltin } from './analytics/dashboards';
@@ -33,7 +33,7 @@ const SettingsPopover: React.FC = () => {
   const [open, setOpen] = useState(false);
   const ref = useRef<HTMLDivElement>(null);
   const { theme, toggleTheme } = useTheme();
-  const { preferredViewMode, setPreferredViewMode } = useViewPreferenceStore();
+  const { preferredViewMode, setPreferredViewMode, killQueriesEnabled, setKillQueriesEnabled } = useUserPreferenceStore();
   const refreshConfig = useRefreshConfig();
   const { refreshRateSeconds, setRefreshRate } = useRefreshSettingsStore();
 
@@ -222,6 +222,24 @@ const SettingsPopover: React.FC = () => {
                 </button>
               ))}
             </div>
+          </div>
+
+          <div style={{ height: 1, background: 'var(--border-primary)', margin: '4px 12px' }} />
+
+          {/* Kill Queries Toggle */}
+          <div style={{ padding: '6px 12px' }}>
+            <label style={{
+              display: 'flex', alignItems: 'center', gap: 8, cursor: 'pointer',
+              fontSize: 11, color: 'var(--text-secondary)',
+            }}>
+              <input
+                type="checkbox"
+                checked={killQueriesEnabled}
+                onChange={(e) => setKillQueriesEnabled(e.target.checked)}
+                style={{ accentColor: '#f85149' }}
+              />
+              Allow Kill Query
+            </label>
           </div>
 
           <div style={{ height: 1, background: 'var(--border-primary)', margin: '4px 12px' }} />
