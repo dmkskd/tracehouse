@@ -224,10 +224,19 @@ cpu_percentage = (cpu_us_per_second / (NumberOfCPUCores × 1,000,000)) × 100
 query_cpu_us = ProfileEvents['OSCPUVirtualTimeMicroseconds']
 ```
 
+**Visualization as a flat band:**
+
+Each query/merge/mutation has two datapoints: total CPU consumed and wall-clock duration. Since we don't know the CPU profile within the operation, we convert the cumulative total to a per-second rate and display it as a flat band across the operation's time range:
+
+```
+band_height_us_per_sec = query_cpu_us / max(duration_ms / 1000, 0.001)
+```
+
+This same cumulative-to-rate conversion applies to **all cumulative metrics** (CPU, network, disk). Memory is the exception — it uses peak value directly (see below).
+
 **Gotchas:**
 1. This is the total CPU time for the query duration, not per-second
-2. For visualization, we spread this across the query's time range as a flat band
-3. Running queries have live-updating ProfileEvents; completed queries have final values
+2. Running queries have live-updating ProfileEvents; completed queries have final values
 
 ---
 
@@ -239,6 +248,61 @@ query_cpu_us = ProfileEvents['OSCPUVirtualTimeMicroseconds']
 - Server: `system.metric_log.CurrentMetric_MemoryTracking`
 - Queries (completed): `system.query_log.memory_usage` (peak memory)
 - Queries (running): `system.processes.memory_usage` (current memory)
+
+**Visualization:** Unlike CPU/network/disk, memory is an **instantaneous peak**, not a cumulative total. The band height is the raw `peak_memory` value — no division by duration.
+
+---
+
+### Network Usage
+
+**What we want:** Network I/O by server and individual queries
+
+**Sources:**
+
+- Server send: `system.metric_log.ProfileEvent_NetworkSendBytes`
+- Server recv: `system.metric_log.ProfileEvent_NetworkReceiveBytes`
+- Queries: `system.query_log.ProfileEvents['NetworkSendBytes']` + `ProfileEvents['NetworkReceiveBytes']`
+
+**Visualization:** Network bytes are cumulative totals, so the band uses the same rate conversion as CPU:
+
+```
+band_height_bytes_per_sec = (net_send + net_recv) / max(duration_ms / 1000, 0.001)
+```
+
+---
+
+### Disk Usage
+
+**What we want:** Disk I/O by server and individual queries
+
+**Sources:**
+
+- Queries: `system.query_log.ProfileEvents['ReadBufferFromFileDescriptorReadBytes']` + `ProfileEvents['WriteBufferFromFileDescriptorWriteBytes']`
+
+**Visualization:** Disk bytes are cumulative totals, same rate conversion:
+
+```
+band_height_bytes_per_sec = (disk_read + disk_write) / max(duration_ms / 1000, 0.001)
+```
+
+---
+
+### Band Metric Summary
+
+| Mode | Band height | Reasoning |
+| ---- | ----------- | --------- |
+| memory | `peak_memory` (as-is) | Instantaneous high-water mark |
+| cpu | `cpu_us / duration_s` | Cumulative → rate |
+| network | `(net_send + net_recv) / duration_s` | Cumulative bytes → bytes/sec |
+| disk | `(disk_read + disk_write) / duration_s` | Cumulative bytes → bytes/sec |
+
+**Approximation limitations — bands are not precise measurements:**
+
+The flat-band model is a best-effort visualization, not a precise reconstruction. Users should be aware of these trade-offs:
+
+- **Memory overcounts when bands overlap.** Each query's band shows its *peak* memory for the entire duration, but that peak was likely a brief moment. When multiple queries overlap, their peaks are stacked as if they occurred simultaneously — in reality they probably didn't. The stacked bands will exceed the server memory line, and that gap is the overcount.
+- **CPU/network/disk lose temporal shape.** The total resource consumed is correct (area under the curve is preserved), but the actual profile within the query is unknown. A query that burns 8 cores for 1s then waits on IO for 7s looks identical to one that uses 1 core steadily for 8s. Bursts are smoothed away, idle periods are filled in.
+- **The server line is the closest reference.** The `metric_log`-based server line shows real per-second measurements, so it's generally more accurate than the flat bands. When stacked bands diverge significantly from the server line, it suggests the flat-band approximation is at its weakest. This is expected and informative — it's not a bug.
 
 ---
 
