@@ -220,21 +220,6 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "3a822ea5bc7590f9d40f1ba12c0dc3c2760f3482c6984db1573ad11031420831"
 
 [[package]]
-name = "clickhouse-monitor"
-version = "0.1.0"
-dependencies = [
- "axum",
- "clap",
- "http",
- "mime_guess",
- "reqwest",
- "rust-embed",
- "serde_json",
- "tokio",
- "url",
-]
-
-[[package]]
 name = "colorchoice"
 version = "1.0.4"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -1451,6 +1436,21 @@ name = "tower-service"
 version = "0.3.3"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "8df9b6e13f2d32c91b9bd719c00d1958837bc7dec474d94952798cc8e69eeec3"
+
+[[package]]
+name = "tracehouse"
+version = "0.1.0"
+dependencies = [
+ "axum",
+ "clap",
+ "http",
+ "mime_guess",
+ "reqwest",
+ "rust-embed",
+ "serde_json",
+ "tokio",
+ "url",
+]
 
 [[package]]
 name = "tracing"

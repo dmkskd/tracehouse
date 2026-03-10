@@ -35,6 +35,9 @@ __pycache__/
 # Rust
 target/
 
+# Release artifacts
+release/
+
 # Temporary files
 *.tmp
 *.temp

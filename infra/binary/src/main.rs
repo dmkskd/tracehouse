@@ -7,11 +7,11 @@ use clap::Parser;
 #[command(version, about)]
 struct Cli {
     /// Port to listen on
-    #[arg(short, long, default_value_t = 8990, env = "CLICKHOUSE_MONITOR_PORT")]
+    #[arg(short, long, default_value_t = 8990, env = "TRACEHOUSE_PORT")]
     port: u16,
 
     /// Skip TLS certificate verification for upstream ClickHouse connections
-    #[arg(long, env = "CLICKHOUSE_MONITOR_INSECURE")]
+    #[arg(long, env = "TRACEHOUSE_INSECURE")]
     insecure: bool,
 }
 
@@ -19,7 +19,7 @@ struct Cli {
 async fn main() {
     let cli = Cli::parse();
 
-    let app = clickhouse_monitor::build_router_with(clickhouse_monitor::RouterOptions {
+    let app = tracehouse::build_router_with(tracehouse::RouterOptions {
         insecure: cli.insecure,
     });
 
