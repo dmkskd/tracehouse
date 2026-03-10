@@ -1,6 +1,5 @@
-import React, { useEffect, useRef, useState } from 'react';
+import React, { useEffect, useState } from 'react';
 import useDocusaurusContext from '@docusaurus/useDocusaurusContext';
-import styles from './InteractiveFeatures.module.css';
 
 type FAQItem = {
   title: string;
@@ -47,10 +46,58 @@ const faqItems: FAQItem[] = [
   },
 ];
 
+const accordionStyles: Record<string, React.CSSProperties> = {
+  section: {
+    padding: '4rem 0',
+  },
+  list: {
+    maxWidth: 960,
+    margin: '0 auto',
+    listStyle: 'none',
+    padding: 0,
+  },
+  item: {
+    borderBottom: '1px solid var(--ifm-color-emphasis-200)',
+  },
+  button: {
+    width: '100%',
+    display: 'flex',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    padding: '1rem 0',
+    background: 'none',
+    border: 'none',
+    cursor: 'pointer',
+    textAlign: 'left',
+    color: 'var(--ifm-font-color-base)',
+    fontSize: '1rem',
+    fontWeight: 600,
+    fontFamily: 'inherit',
+    lineHeight: 1.4,
+  },
+  chevron: {
+    flexShrink: 0,
+    marginLeft: '1rem',
+    transition: 'transform 0.2s ease',
+    fontSize: '0.8rem',
+    color: 'var(--ifm-color-emphasis-500)',
+  },
+  body: {
+    overflow: 'hidden',
+    transition: 'max-height 0.3s ease, opacity 0.3s ease',
+  },
+  bodyInner: {
+    paddingBottom: '1rem',
+    fontSize: '1.05rem',
+    lineHeight: 1.7,
+    color: 'var(--ifm-color-emphasis-700)',
+  },
+};
+
 const FAQ = () => {
   const { siteConfig } = useDocusaurusContext();
   const assetsBaseUrl = siteConfig.customFields?.assetsBaseUrl as string;
-  const itemRefs = useRef<(HTMLDivElement | null)[]>([]);
+  const [openIndex, setOpenIndex] = useState<number | null>(null);
   const [expandedSrc, setExpandedSrc] = useState<string | null>(null);
 
   useEffect(() => {
@@ -61,76 +108,80 @@ const FAQ = () => {
     return () => document.removeEventListener('keydown', handleKeyDown);
   }, []);
 
-  useEffect(() => {
-    const observer = new IntersectionObserver(
-      (entries) => {
-        entries.forEach((entry) => {
-          if (entry.isIntersecting) {
-            entry.target.classList.add(styles.visible);
-            const video = (entry.target as HTMLElement).querySelector('video');
-            if (video) video.play().catch(() => {});
-          } else {
-            const video = (entry.target as HTMLElement).querySelector('video');
-            if (video) video.pause();
-          }
-        });
-      },
-      { threshold: 0.3 }
-    );
-
-    itemRefs.current.forEach((ref) => {
-      if (ref) observer.observe(ref);
-    });
-
-    return () => {
-      itemRefs.current.forEach((ref) => {
-        if (ref) observer.unobserve(ref);
-      });
-    };
-  }, []);
-
   return (
-    <section className={styles.featuresSection}>
+    <section style={accordionStyles.section}>
       <div className="container">
-        <h2 style={{ textAlign: 'center', fontSize: '2.5rem', marginBottom: '4rem' }}>
+        <h2 style={{ textAlign: 'center', fontSize: '1.8rem', marginBottom: '2.5rem' }}>
           Frequently Asked Questions
         </h2>
-        <div className={styles.stickyContainer}>
-          {faqItems.map((item, index) => (
-            <div
-              key={index}
-              className={`${styles.featureItem} ${index % 2 === 0 ? styles.textLeft : styles.textRight}`}
-              ref={(el) => (itemRefs.current[index] = el)}
-            >
-              <div className={styles.textContainer}>
-                <h2>{item.title}</h2>
-                <p>{item.description}</p>
-              </div>
-              {item.videoFile && (
-                <div className={styles.imageContainer}>
-                  <video
-                    src={`${assetsBaseUrl}/${item.videoFile}`}
-                    loop
-                    muted
-                    playsInline
-                    className={styles.media}
-                    onClick={() => setExpandedSrc(`${assetsBaseUrl}/${item.videoFile}`)}
-                  />
+        <ul style={accordionStyles.list}>
+          {faqItems.map((item, index) => {
+            const isOpen = openIndex === index;
+            return (
+              <li key={index} style={accordionStyles.item}>
+                <button
+                  style={accordionStyles.button}
+                  onClick={() => setOpenIndex(isOpen ? null : index)}
+                  aria-expanded={isOpen}
+                >
+                  {item.title}
+                  <span style={{
+                    ...accordionStyles.chevron,
+                    transform: isOpen ? 'rotate(180deg)' : 'rotate(0deg)',
+                  }}>
+                    &#9660;
+                  </span>
+                </button>
+                <div style={{
+                  ...accordionStyles.body,
+                  maxHeight: isOpen ? 1200 : 0,
+                  opacity: isOpen ? 1 : 0,
+                }}>
+                  <div style={accordionStyles.bodyInner}>
+                    <p style={{ margin: 0 }}>{item.description}</p>
+                    {item.videoFile && (
+                      <video
+                        ref={(el) => {
+                          if (el && isOpen) el.play().catch(() => {});
+                          if (el && !isOpen) el.pause();
+                        }}
+                        src={`${assetsBaseUrl}/${item.videoFile}`}
+                        loop
+                        muted
+                        playsInline
+                        style={{
+                          width: '100%',
+                          borderRadius: 8,
+                          marginTop: '1rem',
+                          cursor: 'pointer',
+                        }}
+                        onClick={() => setExpandedSrc(`${assetsBaseUrl}/${item.videoFile}`)}
+                      />
+                    )}
+                  </div>
                 </div>
-              )}
-            </div>
-          ))}
-        </div>
+              </li>
+            );
+          })}
+        </ul>
       </div>
       {expandedSrc && (
-        <div className={styles.overlay} onClick={() => setExpandedSrc(null)}>
+        <div
+          style={{
+            position: 'fixed', top: 0, left: 0, width: '100vw', height: '100vh',
+            background: 'rgba(0,0,0,0.85)', display: 'flex', justifyContent: 'center',
+            alignItems: 'center', zIndex: 9999, cursor: 'pointer',
+          }}
+          onClick={() => setExpandedSrc(null)}
+        >
           <video
             src={expandedSrc}
             autoPlay
             loop
             muted
+            controls
             playsInline
-            className={styles.overlayMedia}
+            style={{ maxWidth: '90vw', maxHeight: '90vh', borderRadius: 8 }}
             onClick={(e) => e.stopPropagation()}
           />
         </div>
