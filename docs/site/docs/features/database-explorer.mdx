@@ -1,0 +1,46 @@
+import FeatureVideo from '@site/src/components/FeatureVideo';
+
+# Database Explorer
+
+<FeatureVideo src="database-explorer-1920.mp4" />
+
+
+Browse your ClickHouse databases, tables, parts, and columns with detailed metadata and visualizations.
+
+## Database Tree
+
+The left panel shows a hierarchical tree of all databases and tables. Click any table to see its detail view.
+
+## Table Detail
+
+For each table, you can inspect:
+
+- **Schema** - Column names, types, compression codecs, and sizes
+- **Parts** - Active data parts with size, rows, level, and partition info
+- **Part Inspector** - Inspect individual parts with column-level statistics
+- **Merge Timeline** - Historical merge activity for the table
+- **Lineage** - Visual merge lineage tree showing how parts were created and merged
+
+## Parts Visualization
+
+The 3D parts view is a learning tool for understanding how ClickHouse's MergeTree engine works. Each data part is rendered as a block, sized proportionally to its data volume. Colors indicate:
+
+- **Part level** - how many merges a part has been through, from freshly inserted (level 0) up through successive merge rounds
+- **Partition membership** - which partition each part belongs to
+- **Active vs. inactive state** - whether a part is still live or has been replaced by a merge result
+
+By watching parts appear from inserts and gradually consolidate through merges, you can build an intuition for how the merge algorithm selects parts to combine - typically picking groups of similarly-sized parts within the same partition to keep the tree balanced and write amplification low.
+
+## Merge Lineage
+
+The lineage visualization traces the full lifecycle of parts over time:
+
+1. New parts created by INSERTs arrive at level 0
+2. The merge algorithm selects groups of parts and combines them into larger, higher-level parts
+3. Mutations rewrite parts in place, creating new versions
+4. The resulting hierarchy shows the progression from many small parts to fewer large ones
+
+This makes it easy to see how ClickHouse decides what to merge and when, and to spot problems like:
+- Parts not merging (too many small parts accumulating)
+- Unbalanced merge trees (some partitions merging faster than others)
+- Stuck mutations blocking normal merge progress

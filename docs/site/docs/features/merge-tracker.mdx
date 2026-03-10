@@ -1,0 +1,33 @@
+import FeatureVideo from '@site/src/components/FeatureVideo';
+
+# Merge Tracker
+
+<FeatureVideo src="merge-tracker-1920.mp4" />
+
+Real-time monitoring of ClickHouse merge operations with dependency diagrams and throughput analysis.
+
+## Active Merges
+
+The active merge list shows all currently running merges with:
+- Source and result part names
+- Progress percentage and elapsed time
+- Rows and bytes processed
+- Memory usage
+- Table and partition info
+
+## Dependency Diagram
+
+The dependency diagram is especially useful for understanding mutation behavior. In ClickHouse, an `ALTER TABLE ... UPDATE` or `DELETE` mutation must rewrite every existing part. Until all parts have been mutated, the mutation is not complete - and new merges may need to wait.
+
+The diagram visualizes these dependencies:
+- Which parts still need to be mutated and which are done
+- Merge operations that are blocked because their source parts are waiting for a mutation to finish
+- Cascading delays when multiple mutations are queued - each must complete in order before the next can begin
+- Regular merge chains where the output of one merge becomes input to another
+
+## Merge History
+
+Historical merge data from `system.part_log` with:
+- Duration and throughput statistics
+- Merge type (regular, mutation, TTL)
+- TTL moves to S3 or other remote storage, including the destination disk/volume

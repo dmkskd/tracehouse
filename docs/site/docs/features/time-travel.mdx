@@ -1,0 +1,23 @@
+import FeatureVideo from '@site/src/components/FeatureVideo';
+
+# Time Travel
+
+<FeatureVideo src="time-travel-1920.mp4" />
+
+A ClickHouse cluster is constantly busy - merges, mutations, replication, background moves - even when no user queries are running. Most users only think about their own queries, but all this background activity competes for the same CPU, memory, and I/O. Time Travel lets you see everything that was happening at any point in time, so you can understand what else might have affected your workload's performance.
+
+## How It Works
+
+The time travel slider lets you move through historical cluster state. All views update to reflect the selected moment:
+
+- **Running queries** - Which queries were executing and their resource usage
+- **Active merges** - Which merges were in progress, their source parts and progress
+- **Part state** - What the part tree looked like at that instant
+- **Resource attribution** - CPU, memory, and I/O attributed to the workload at that point
+
+## Use Cases
+
+- **Post-incident analysis** - Replay what was happening during a performance degradation
+- **Merge investigation** - See which merges were running when insert latency spiked
+- **Query forensics** - Find the exact queries that caused resource contention
+- **Capacity planning** - Understand peak workload patterns over time

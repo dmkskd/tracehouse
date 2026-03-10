@@ -43,7 +43,7 @@ const faqItems: FAQItem[] = [
   {
     title: 'Is TraceHouse suitable for production use?',
     description:
-      <>TraceHouse only performs read-only queries over the HTTP interface, but we strongly recommend using a dedicated <strong>read-only</strong> ClickHouse account. We strongly suggest testing it against a staging or development cluster first. Pay attention to query load, memory usage, and network overhead that matter for your environment. It can run on a separate machine or container and connect to your production cluster remotely. That said, we haven't tested it at every scale. If you run into issues with large clusters or high-cardinality workloads, we'd love to hear about it.</>,
+      <>TraceHouse only performs read-only queries over the HTTP interface, but we strongly recommend using a dedicated <strong>read-only</strong> ClickHouse account. We strongly suggest testing it against a staging or development cluster first. Pay attention to query load, memory usage, and network overhead that matter for your environment. That said, we haven't tested it at every scale. If you run into issues with large clusters or high-cardinality workloads, we'd love to hear about it.</>,
   },
 ];
 

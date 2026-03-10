@@ -23,6 +23,12 @@ This starts the app and a local ClickHouse instance. Open [http://localhost:8990
 
 If you already have a ClickHouse instance you want to monitor instead, see [Connecting to ClickHouse](./guides/connecting).
 
+### Try Online
+
+You can also [try TraceHouse online](https://dmkskd.github.io/tracehouse-assets/tracehouse.html) without installing anything. It is a single-file HTML that runs entirely in your browser with any [CORS-enabled](./guides/connecting#cors-proxy) ClickHouse instance.
+
+The online version will ask for your ClickHouse credentials. If you prefer not to enter them on a third-party page, download the HTML file from the [releases page](https://github.com/dmkskd/tracehouse/releases/latest) and open it locally.
+
 :::note Resource Usage
 The app polls ClickHouse system tables at regular intervals. You can review the cost via the built-in Self-Monitoring dashboard (Analytics > Self-Monitoring). See [Deployment - Resource Usage](./guides/deployment) for details.
 :::

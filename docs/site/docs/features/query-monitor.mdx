@@ -1,0 +1,61 @@
+import FeatureVideo from '@site/src/components/FeatureVideo';
+
+# Query Monitor
+
+<FeatureVideo src="query-details-1920.mp4" />
+
+Monitor running and historical queries with per-query resource attribution and analysis breakdowns.
+
+## Running Queries
+
+Live view of all currently executing queries from `system.processes`:
+- Query text and query ID
+- Elapsed time and progress
+- Memory usage
+- CPU time (from ProfileEvents)
+- Read rows and bytes
+- User and client info
+
+## Query Analytics
+
+Drill into any query to understand exactly where time and resources were spent. The analytics view decomposes a single query into its resource dimensions — helping you spot whether a query is I/O-bound, CPU-bound, or simply reading too much data.
+
+- **Read profile** — rows read, bytes read, marks read
+- **Write profile** — rows written, bytes written
+- **CPU profile** — user time, system time, wait time
+- **I/O profile** — disk reads, disk writes, network bytes
+- **Cache hits** — mark cache, uncompressed cache, compiled expression cache
+
+### Scan Efficiency
+
+Visual breakdown of how ClickHouse pruned data before reading it. Shows the funnel from all columns/parts/marks down to what was actually read, with a combined **Index Effectiveness** verdict.
+
+The pruning score combines both stages: `1 − (parts surviving partition pruning / total parts) × (marks surviving PK pruning / total marks)`. This avoids the pitfall of reporting "poor" when partition pruning already eliminated most data but the surviving part happens to have few marks.
+
+## Flamegraph
+
+The query analytics includes a flamegraph view for visualizing query execution.
+
+:::note ClickHouse Cloud
+On ClickHouse Cloud, introspection functions are disabled by default. You need to enable them before flamegraph data can be collected.
+
+Per session:
+```sql
+SET allow_introspection_functions = 1;
+```
+
+To enable permanently, set it at the user or role level:
+```sql
+ALTER USER my_user SETTINGS allow_introspection_functions = 1;
+-- or
+ALTER ROLE my_role SETTINGS allow_introspection_functions = 1;
+```
+:::
+
+## Historical Analysis
+
+Query history from `system.query_log` with:
+- Execution statistics and trends
+- Slow query identification
+- Resource consumption patterns over time
+- Query fingerprinting and grouping

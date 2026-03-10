@@ -1,0 +1,35 @@
+import FeatureVideo from '@site/src/components/FeatureVideo';
+
+# Analytics
+
+<FeatureVideo src="analytics-1920.mp4" />
+
+A query editor and dashboard builder for creating reusable views of cluster metrics. Queries can be saved, shared, and pinned to dashboards.
+
+## Query Editor
+
+Write and execute ClickHouse SQL queries with:
+
+- **Syntax highlighting** and auto-completion
+- **Time range picker** with preset intervals and custom ranges
+- **Result views** - switch between table view and chart visualizations (bar, line, pie, area)
+- **3D charts** - optional Three.js rendering for bar and pie charts
+
+## Presets
+
+Presets are pre-built queries bundled with TraceHouse that cover common monitoring scenarios. They are organized into groups:
+
+- **Overview** - Database sizes, table sizes, part counts
+- **Selects** - Query throughput, duration, and resource usage
+- **Inserts** - Insert rates, row counts, and latency
+- **Merges** - Merge throughput and backlog
+- **Parts** - Part sizes, levels, and partition distribution
+- **Resources** - CPU, memory, disk I/O trends
+
+## Drill-Down Navigation
+
+Charts support click-to-drill: clicking a chart segment navigates to a related query with the clicked value passed as a filter. This enables interactive exploration from high-level overviews down to specific tables, queries, or time ranges.
+
+## Query Language
+
+Queries use a lightweight meta-comment language (`@meta`, `@chart`, `@drill`, `@rag`) to configure visualization and navigation. See the [Analytics Query Language](analytics-query-language) reference for full details.

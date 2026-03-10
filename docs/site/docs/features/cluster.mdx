@@ -1,0 +1,36 @@
+import FeatureVideo from '@site/src/components/FeatureVideo';
+
+# Cluster
+
+<FeatureVideo src="cluster-1920.mp4" />
+
+The Cluster page visualizes your ClickHouse cluster topology, replication health, and node status.
+
+## Cluster Topology
+
+An interactive 3D diagram of your cluster's structure:
+
+- **Shards** shown as enclosures containing their replica nodes
+- **Keeper/ZooKeeper nodes** displayed separately with connection lines to the cluster
+- Nodes are color-coded by health: green (healthy), red (error), blue (local node), purple (Keeper)
+- Hover over any node to see its version, uptime, CPU cores, load, and memory usage
+
+## Replication Health
+
+A per-database view of replication status:
+
+- Replicated vs. non-replicated engine types
+- Active and total replica counts per database
+- Leader status
+- Max replication delay (color-coded: red if over 300s, orange if over 60s)
+- Replication queue size
+
+## Cluster Nodes
+
+A table of all nodes in the cluster showing:
+
+- Host, address, and port
+- Shard and replica numbers
+- Error and slowdown counts
+
+For single-node setups without a cluster configuration, the page shows a simplified summary.

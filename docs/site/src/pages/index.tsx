@@ -11,7 +11,7 @@ function HeroSection(): ReactNode {
   const { siteConfig } = useDocusaurusContext();
   const assetsBaseUrl = siteConfig.customFields?.assetsBaseUrl as string;
   const videoRef = useRef<HTMLVideoElement>(null);
-  const fadeTime = 5; // seconds for fade in/out
+  const fadeTime = 2; // seconds for fade in/out
 
   useEffect(() => {
     const video = videoRef.current;
@@ -110,15 +110,13 @@ function QuickStartSection(): ReactNode {
             Try Online
           </Link>
           <p className="quickstart-hint">
-            Single-file HTML — runs entirely in your browser, no install needed.
-            <br />
-            Works with any ClickHouse instance that has{' '}
-            <Link to="/docs/guides/connecting#cors-proxy">CORS enabled</Link>.
+            Single-file HTML that runs entirely in your browser with any{' '}
+            <Link to="/docs/guides/connecting#cors-proxy">CORS-enabled</Link> ClickHouse instance.
           </p>
           <p className="quickstart-hint">
-            This page will ask for your ClickHouse credentials.
+            The online version will ask for your ClickHouse credentials.
             If you prefer not to enter them on a third-party page,
-            grab it from the{' '}
+            download it from the{' '}
             <Link to="https://github.com/dmkskd/tracehouse/releases/latest">releases page</Link>{' '}
             or <Link to="/docs/guides/deployment">build it yourself</Link>.
           </p>

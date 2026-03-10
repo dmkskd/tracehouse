@@ -1,0 +1,24 @@
+import FeatureVideo from '@site/src/components/FeatureVideo';
+
+# Overview
+
+<FeatureVideo src="overview-1920.mp4" />
+
+The real-time overview shows your cluster workload as it happens. CPU, memory, disk I/O, and network are attributed to individual queries, merges, and background operations in real time.
+
+From here you can deep dive into any metric to inspect the queries, merges, or parts driving it.
+
+## What You See
+
+- **CPU** - Total CPU broken down by queries, merges, mutations, replication, and other
+- **Memory** - RSS decomposed into query buffers, mark cache, uncompressed cache, primary keys, dictionaries, and jemalloc overhead
+- **Disk I/O** - Read/write throughput attributed to queries, merges, and background operations
+- **Network** - Inter-node replication and distributed query traffic
+
+## Navigation
+
+Click any metric attribution to jump directly to the relevant detail view:
+
+- Click a query's CPU slice to open it in the **Query Monitor**
+- Click a merge's I/O bar to see it in the **Merge Tracker**
+- Click a table's disk usage to inspect it in the **Database Explorer**
