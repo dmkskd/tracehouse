@@ -7,7 +7,7 @@
  */
 
 import React, { useMemo, useEffect, useState, useCallback } from 'react';
-import type { QueryDetail } from '@tracehouse/core';
+import { calculatePruning, formatPruningDetail, type QueryDetail } from '@tracehouse/core';
 import { useClickHouseServices } from '../../providers/ClickHouseProvider';
 
 /* ------------------------------------------------------------------ */
@@ -41,7 +41,7 @@ const scanColor = (pct: number): string =>
 /*  ScanEfficiency data model                                                 */
 /* ------------------------------------------------------------------ */
 
-interface ScanEfficiencyData {
+export interface ScanEfficiencyData {
   tables: string[];
   columns: string[];
   allColumns: string[];
@@ -59,7 +59,7 @@ interface ScanEfficiencyData {
   verdict: { label: string; color: string; detail: string; icon: string };
 }
 
-function buildScanEfficiency(d: QueryDetail, allTableColumns: Record<string, string[]>): ScanEfficiencyData {
+export function buildScanEfficiency(d: QueryDetail, allTableColumns: Record<string, string[]>): ScanEfficiencyData {
   const pe = d.ProfileEvents || {};
   const sp = pe['SelectedParts'] || 0;
   const spt = pe['SelectedPartsTotal'] || 0;
@@ -70,16 +70,19 @@ function buildScanEfficiency(d: QueryDetail, allTableColumns: Record<string, str
   const mcm = pe['MarkCacheMisses'] || 0;
   const mct = mch + mcm;
 
-  let verdict: ScanEfficiencyData['verdict'];
-  if (smt > 0) {
-    const p = ((smt - sm) / smt) * 100;
-    if (p >= 90) verdict = { label: 'Excellent', color: '#3fb950', detail: `${p.toFixed(1)}% of granules pruned — primary key is working great.`, icon: '✓' };
-    else if (p >= 70) verdict = { label: 'Good', color: '#7ee787', detail: `${p.toFixed(1)}% of granules pruned — reasonable index usage.`, icon: '○' };
-    else if (p >= 50) verdict = { label: 'Fair', color: '#d29922', detail: `Only ${p.toFixed(1)}% pruned. WHERE may not align with the ordering key.`, icon: '△' };
-    else verdict = { label: 'Poor', color: '#f85149', detail: `Only ${p.toFixed(1)}% pruned — near full scan. WHERE doesn't match the ordering key.`, icon: '✗' };
-  } else {
-    verdict = { label: 'N/A', color: '#8b949e', detail: 'No granule-level data for this query.', icon: '?' };
-  }
+  const pruningInput = { selectedParts: sp, totalParts: spt, selectedMarks: sm, totalMarks: smt };
+  const pruning = calculatePruning(pruningInput);
+  const detail = formatPruningDetail(pruningInput, pruning);
+
+  const VERDICT_MAP: Record<string, Omit<ScanEfficiencyData['verdict'], 'detail'>> = {
+    excellent: { label: 'Excellent', color: '#3fb950', icon: '✓' },
+    good:      { label: 'Good',      color: '#7ee787', icon: '○' },
+    fair:      { label: 'Fair',      color: '#d29922', icon: '△' },
+    poor:      { label: 'Poor',      color: '#f85149', icon: '✗' },
+    none:      { label: 'N/A',       color: '#8b949e', icon: '?' },
+  };
+  const v = VERDICT_MAP[pruning.severity] ?? VERDICT_MAP.none;
+  const verdict: ScanEfficiencyData['verdict'] = { ...v, detail };
 
   const allColsSet = new Set<string>();
   for (const cols of Object.values(allTableColumns)) {
@@ -618,8 +621,13 @@ export const QueryScanEfficiency: React.FC<QueryScanEfficiencyProps> = ({ queryD
           {a.verdict.icon}
         </div>
         <div>
-          <div style={{ fontSize: 13, fontWeight: 600, color: a.verdict.color, marginBottom: 2 }}>
+          <div style={{ fontSize: 13, fontWeight: 600, color: a.verdict.color, marginBottom: 2, display: 'flex', alignItems: 'center', gap: 8 }}>
             Index Effectiveness: {a.verdict.label}
+            <span style={{
+              fontSize: 9, fontWeight: 700, textTransform: 'uppercase', letterSpacing: '1.5px',
+              padding: '2px 7px', borderRadius: 4,
+              background: 'rgba(210, 153, 34, 0.2)', color: '#d29922',
+            }}>Experimental</span>
           </div>
           <div style={{ fontSize: 12, color: 'var(--text-secondary)', lineHeight: 1.4 }}>
             {a.verdict.detail}

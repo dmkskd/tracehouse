@@ -39,6 +39,13 @@ export {
   calculateAverageCpu,
   isThreadPoolSaturated,
 } from './engine-internals.js';
+export {
+  calculatePruning,
+  formatPruningDetail,
+  type PruningInput,
+  type PruningResult,
+  type PruningSeverity,
+} from './pruning.js';
 export { ClusterService } from './cluster-service.js';
 export type { ClusterInfo } from './cluster-service.js';
 export { EnvironmentDetector } from './environment-detector.js';

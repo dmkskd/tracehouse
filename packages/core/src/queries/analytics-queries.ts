@@ -40,15 +40,17 @@ FROM (
         arrayStringConcat(arraySlice(splitByChar('.', full_table_name), 2), '.') AS tbl_name,
         count() AS query_count,
         avg(
-            if(ProfileEvents['SelectedMarksTotal'] > 0,
-               (ProfileEvents['SelectedMarksTotal'] - ProfileEvents['SelectedMarks'])
-               / ProfileEvents['SelectedMarksTotal'] * 100,
+            if(ProfileEvents['SelectedMarksTotal'] > 0 OR ProfileEvents['SelectedPartsTotal'] > 0,
+               (1 - if(ProfileEvents['SelectedPartsTotal'] > 0, ProfileEvents['SelectedParts'] / ProfileEvents['SelectedPartsTotal'], 1)
+                  * if(ProfileEvents['SelectedMarksTotal'] > 0, ProfileEvents['SelectedMarks'] / ProfileEvents['SelectedMarksTotal'], 1)
+               ) * 100,
                NULL)
         ) AS avg_pruning_pct,
         countIf(
-            ProfileEvents['SelectedMarksTotal'] > 0
-            AND (ProfileEvents['SelectedMarksTotal'] - ProfileEvents['SelectedMarks'])
-                / ProfileEvents['SelectedMarksTotal'] < 0.5
+            (ProfileEvents['SelectedMarksTotal'] > 0 OR ProfileEvents['SelectedPartsTotal'] > 0)
+            AND (1 - if(ProfileEvents['SelectedPartsTotal'] > 0, ProfileEvents['SelectedParts'] / ProfileEvents['SelectedPartsTotal'], 1)
+                   * if(ProfileEvents['SelectedMarksTotal'] > 0, ProfileEvents['SelectedMarks'] / ProfileEvents['SelectedMarksTotal'], 1)
+            ) < 0.5
         ) AS poor_pruning_queries,
         avg(
             if(ProfileEvents['SelectedPartsTotal'] > 0,
@@ -110,15 +112,17 @@ SELECT
     any(query) AS sample_query,
     count() AS execution_count,
     avg(
-        if(ProfileEvents['SelectedMarksTotal'] > 0,
-           (ProfileEvents['SelectedMarksTotal'] - ProfileEvents['SelectedMarks'])
-           / ProfileEvents['SelectedMarksTotal'] * 100,
+        if(ProfileEvents['SelectedMarksTotal'] > 0 OR ProfileEvents['SelectedPartsTotal'] > 0,
+           (1 - if(ProfileEvents['SelectedPartsTotal'] > 0, ProfileEvents['SelectedParts'] / ProfileEvents['SelectedPartsTotal'], 1)
+              * if(ProfileEvents['SelectedMarksTotal'] > 0, ProfileEvents['SelectedMarks'] / ProfileEvents['SelectedMarksTotal'], 1)
+           ) * 100,
            NULL)
     ) AS avg_pruning_pct,
     countIf(
-        ProfileEvents['SelectedMarksTotal'] > 0
-        AND (ProfileEvents['SelectedMarksTotal'] - ProfileEvents['SelectedMarks'])
-            / ProfileEvents['SelectedMarksTotal'] < 0.5
+        (ProfileEvents['SelectedMarksTotal'] > 0 OR ProfileEvents['SelectedPartsTotal'] > 0)
+        AND (1 - if(ProfileEvents['SelectedPartsTotal'] > 0, ProfileEvents['SelectedParts'] / ProfileEvents['SelectedPartsTotal'], 1)
+               * if(ProfileEvents['SelectedMarksTotal'] > 0, ProfileEvents['SelectedMarks'] / ProfileEvents['SelectedMarksTotal'], 1)
+        ) < 0.5
     ) AS poor_pruning_count,
     avg(query_duration_ms) AS avg_duration_ms,
     quantile(0.50)(query_duration_ms) AS p50_duration_ms,

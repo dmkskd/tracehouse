@@ -244,8 +244,13 @@ export const Analytics: React.FC = () => {
         {activeTab === 'tables' && (
           <div style={{ padding: '8px 24px 12px' }}>
             <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 4 }}>
-              <span style={{ color: 'var(--text-muted)', fontSize: 12 }}>
+              <span style={{ color: 'var(--text-muted)', fontSize: 12, display: 'flex', alignItems: 'center', gap: 8 }}>
                 Ordering key efficiency across your query workload
+                <span style={{
+                  fontSize: 9, fontWeight: 700, textTransform: 'uppercase', letterSpacing: '1.5px',
+                  padding: '2px 7px', borderRadius: 4,
+                  background: 'rgba(210, 153, 34, 0.2)', color: '#d29922',
+                }}>Experimental</span>
               </span>
               <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
                 <span style={{ fontSize: 11, color: 'var(--text-muted)' }}>Lookback:</span>
