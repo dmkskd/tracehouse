@@ -30,3 +30,6 @@ export { ResultPartGhost, type ResultPartGhostProps } from './ResultPartGhost.js
 
 // Unified parts scene
 export { PartsScene, type PartsSceneProps } from './PartsScene.js';
+
+// Safe Text fallback (Html when blob-URL workers are blocked)
+export { SafeText } from './SafeText.js';

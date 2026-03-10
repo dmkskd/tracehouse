@@ -8,7 +8,8 @@
 
 import React, { useMemo, useState, useCallback, useRef } from 'react';
 import { useFrame } from '@react-three/fiber';
-import { Text, Html, Line } from '@react-three/drei';
+import { Html, Line } from '@react-three/drei';
+import { SafeText as Text } from '@tracehouse/ui-shared';
 import * as THREE from 'three';
 import { usePerformanceMode } from './PerformanceContext';
 import type { ExplainResult, TraceLog } from '../../stores/traceStore';

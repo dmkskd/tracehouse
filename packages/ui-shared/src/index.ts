@@ -21,6 +21,7 @@ export {
   type ResultPartGhostProps,
   PartsScene,
   type PartsSceneProps,
+  SafeText,
 } from './3d/index.js';
 
 // Headless hooks

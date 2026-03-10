@@ -9,7 +9,7 @@
  */
 
 import React, { useMemo } from 'react';
-import { Text } from '@react-three/drei';
+import { SafeText as Text } from './SafeText.js';
 import * as THREE from 'three';
 import type { PartInfo } from '@tracehouse/core';
 import { GlassBox } from './GlassBox.js';

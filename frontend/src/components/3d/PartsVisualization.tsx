@@ -11,7 +11,7 @@
 
 import React, { useMemo, useState, useCallback, useRef, useEffect } from 'react';
 import { useFrame } from '@react-three/fiber';
-import { Text } from '@react-three/drei';
+import { SafeText as Text } from '@tracehouse/ui-shared';
 import * as THREE from 'three';
 import { usePerformanceMode } from './PerformanceContext';
 import type { PartInfo } from '../../stores/databaseStore';
