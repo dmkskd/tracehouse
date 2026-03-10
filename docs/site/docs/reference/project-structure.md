@@ -84,8 +84,8 @@ Run `just` to see all available commands, organized by group:
 | Group | Commands |
 |-------|----------|
 | `services` | `start`, `stop`, `restart`, `frontend-start` |
-| `docker` | `docker-start`, `docker-stop`, `dev-docker` |
-| `k8s` | `k8s-start`, `k8s-stop`, `k8s-status`, `dev-k8s` |
+| `docker` | `docker-start`, `docker-start-full`, `docker-stop` |
+| `k8s` | `k8s-start`, `k8s-stop`, `k8s-status` |
 | `local` | `local-start`, `local-stop` |
 | `data` | `load-data`, `run-queries`, `run-mutations`, `drop-data` |
 | `test` | `test`, `test-frontend`, `test-core`, `test-core-integration` |

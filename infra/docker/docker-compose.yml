@@ -1,5 +1,20 @@
 # TraceHouse - Development Environment
-# This docker-compose file sets up a local ClickHouse instance for development and testing
+#
+# Profiles:
+#   (default)    — ClickHouse + MinIO only (fast, no npm builds needed)
+#   monitoring   — adds Prometheus + Grafana (requires Grafana plugin build)
+#   tracing      — adds Tempo (OpenTelemetry)
+#   full         — everything
+#
+# Via just (recommended):
+#   just docker-start                                  # ClickHouse only (fast)
+#   just docker-start-full                             # everything (builds Grafana plugin first)
+#
+# Via docker compose directly:
+#   docker compose up                                  # ClickHouse only
+#   docker compose --profile monitoring up             # + Prometheus & Grafana
+#   docker compose --profile tracing up                # + Tempo
+#   docker compose --profile full up                   # everything
 
 services:
   # MinIO — S3-compatible object storage for ClickHouse tiered storage
@@ -86,6 +101,7 @@ services:
   prometheus:
     image: prom/prometheus:v3.2.1
     container_name: tracehouse-prometheus
+    profiles: [monitoring, full]
     ports:
       - "9090:9090"
     volumes:
@@ -99,6 +115,7 @@ services:
   grafana:
     image: grafana/grafana:12.3.2
     container_name: tracehouse-grafana
+    profiles: [monitoring, full]
     ports:
       - "3001:3000"
     volumes:
@@ -132,6 +149,7 @@ services:
   tempo:
     image: grafana/tempo:2.3.1
     container_name: tracehouse-tempo
+    profiles: [tracing, full]
     command: ["-config.file=/etc/tempo.yaml"]
     ports:
       - "3200:3200"    # Tempo API

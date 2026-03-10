@@ -255,7 +255,7 @@ check_optional() {
     if has docker; then
         ok "docker" "$(docker --version | awk '{print $3}' | tr -d ',')"
     else
-        warn "docker" "not installed — needed for 'just dev-docker' / 'just start'"
+        warn "docker" "not installed — needed for 'just docker-start' / 'just start'"
     fi
 
     if has kind; then

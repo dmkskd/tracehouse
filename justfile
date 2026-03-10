@@ -83,9 +83,9 @@ status:
 # SERVICES
 # ─────────────────────────────────────────────────────────────────
 
-# Start everything: infra (Docker Compose) + frontend
+# Start everything: infra (Docker Compose with all profiles) + frontend
 [group('services')]
-start: (docker-start-bg) (frontend-start-bg)
+start: (docker-start-full-bg) (frontend-start-bg)
     @echo ""
     @echo "All services started"
     @echo "  ClickHouse: localhost:9000 / :8123"
@@ -163,38 +163,38 @@ local-restart: local-stop local-start
 # INFRASTRUCTURE (Docker)
 # ─────────────────────────────────────────────────────────────────
 
-# Start ClickHouse + Prometheus + Grafana (Docker) - foreground
+# Start ClickHouse + MinIO (fast, no npm builds)
 [group('docker')]
-docker-start: grafana-plugin-build
+docker-start:
     docker-compose -f infra/docker/docker-compose.yml up
 
-# Start docker infra in background
+# Start ClickHouse + MinIO in background (fast, no npm builds)
 [group('docker')]
-docker-start-bg: grafana-plugin-build
+docker-start-bg:
     @docker-compose -f infra/docker/docker-compose.yml up -d
     @echo "Waiting for ClickHouse..."
     @sleep 3
 
-# Stop docker infrastructure
+# Start everything: ClickHouse + MinIO + Prometheus + Grafana + Tempo (builds Grafana plugin first)
+[group('docker')]
+docker-start-full: grafana-plugin-build
+    docker-compose -f infra/docker/docker-compose.yml --profile full up
+
+# Start everything in background (builds Grafana plugin first)
+[group('docker')]
+docker-start-full-bg: grafana-plugin-build
+    @docker-compose -f infra/docker/docker-compose.yml --profile full up -d
+    @echo "Waiting for ClickHouse..."
+    @sleep 3
+
+# Stop docker infrastructure (all profiles)
 [group('docker')]
 docker-stop:
-    @docker-compose -f infra/docker/docker-compose.yml down
+    @docker-compose -f infra/docker/docker-compose.yml --profile full down
 
 # Restart docker infrastructure
 [group('docker')]
 docker-restart: docker-stop docker-start
-
-# Full dev with Docker (ClickHouse + Prometheus + Grafana + frontend)
-[group('docker')]
-dev-docker: docker-start-bg frontend-start-bg
-    @echo ""
-    @echo "Dev environment started (Docker + frontend)"
-    @echo "  ClickHouse: localhost:9000 / :8123"
-    @echo "  Prometheus: localhost:9090"
-    @echo "  Grafana:    localhost:3001"
-    @echo "  Frontend:   localhost:5173"
-    @echo ""
-    @echo "Open browser on http://localhost:5173 to access the app"
 
 # ─────────────────────────────────────────────────────────────────
 # INFRASTRUCTURE (Kubernetes / Kind)
@@ -248,14 +248,6 @@ k8s-operator-logs:
 k8s-restart:
     @kubectl rollout restart statefulset -n clickhouse
 
-# Full dev setup with Kind (alternative to docker-compose)
-[group('k8s')]
-dev-k8s: (k8s-start) (frontend-start-bg)
-    @echo ""
-    @echo "All services started (K8s + app)"
-    @echo ""
-    @echo "Open browser on http://localhost:5173 to access the app"
-
 # ─────────────────────────────────────────────────────────────────
 # LOGS
 # ─────────────────────────────────────────────────────────────────
@@ -263,12 +255,16 @@ dev-k8s: (k8s-start) (frontend-start-bg)
 # View frontend logs
 [group('logs')]
 logs-frontend:
+    @mkdir -p logs
+    @touch logs/frontend.log
     @tail -f logs/frontend.log
 
 # View all logs
 [group('logs')]
 logs:
-    @tail -f logs/frontend.log
+    @mkdir -p logs
+    @touch logs/frontend.log logs/proxy.log
+    @tail -f logs/frontend.log logs/proxy.log
 
 # ─────────────────────────────────────────────────────────────────
 # TEST DATA
@@ -494,6 +490,11 @@ dist-binary-frontend: build
 dist-binary-run port="8990": dist-binary
     @echo "App available at http://localhost:{{port}}"
     ./infra/binary/target/release/tracehouse --port {{port}}
+
+# Build all release artifacts (binary + single HTML) into release/
+[group('dist')]
+dist-release:
+    ./scripts/build-release.sh
 
 # ─────────────────────────────────────────────────────────────────
 # DOCUMENTATION
