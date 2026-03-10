@@ -7,6 +7,15 @@
 /** Max rows returned per activity type (queries, merges, mutations). */
 export const TIMELINE_ACTIVITY_LIMIT = 100;
 
+/** Minimum memory (bytes) to include an activity row — filters out noise from tiny operations. */
+const MIN_MEMORY_BYTES = 1048576; // 1 MB
+
+/** Seconds → milliseconds multiplier. */
+const SEC_TO_MS = 1000;
+
+/** Default metric_log sampling interval (ms) — used when the actual gap is missing or out of range. */
+const DEFAULT_INTERVAL_MS = 1000;
+
 /** Server memory timeseries from metric_log */
 export const SERVER_MEMORY_TIMESERIES = `
   SELECT
@@ -38,7 +47,7 @@ export const SERVER_CPU_TIMESERIES = `
         dateDiff('millisecond', lagInFrame(event_time) OVER (PARTITION BY hostname() ORDER BY event_time), event_time) > 0
         AND dateDiff('millisecond', lagInFrame(event_time) OVER (PARTITION BY hostname() ORDER BY event_time), event_time) < 10000,
         dateDiff('millisecond', lagInFrame(event_time) OVER (PARTITION BY hostname() ORDER BY event_time), event_time),
-        1000
+        ${DEFAULT_INTERVAL_MS}
       ) AS interval_ms
     FROM {{cluster_aware:system.metric_log}}
     WHERE event_time >= {start_time}
@@ -159,7 +168,7 @@ export const ACTIVE_QUERIES = `
     AND query_start_time <= {end_time}
     AND (query_start_time + toIntervalMillisecond(query_duration_ms)) >= {start_time}
     AND query NOT LIKE '%source:Monitor:%'
-    AND memory_usage > 1048576
+    AND memory_usage > ${MIN_MEMORY_BYTES}
   ORDER BY {query_order_by} DESC
   LIMIT {activity_limit}
 `;
@@ -172,7 +181,7 @@ export const ACTIVE_QUERIES_COUNT = `
     AND query_start_time <= {end_time}
     AND (query_start_time + toIntervalMillisecond(query_duration_ms)) >= {start_time}
     AND query NOT LIKE '%source:Monitor:%'
-    AND memory_usage > 1048576
+    AND memory_usage > ${MIN_MEMORY_BYTES}
 `;
 
 /**
@@ -188,7 +197,7 @@ export const ACTIVE_MERGES_COUNT = `
     AND event_date >= {start_date}
     AND (event_time - toIntervalMillisecond(duration_ms)) <= {end_time}
     AND event_time >= {start_time}
-    AND (peak_memory_usage > 1048576 OR event_type = 'MovePart')
+    AND (peak_memory_usage > ${MIN_MEMORY_BYTES} OR event_type = 'MovePart')
 `;
 
 /** Individual merges active during the window (includes TTL moves) */
@@ -208,7 +217,7 @@ export const ACTIVE_MERGES_DETAIL = `
     AND event_date >= {start_date}
     AND (event_time - toIntervalMillisecond(duration_ms)) <= {end_time}
     AND event_time >= {start_time}
-    AND (peak_memory_usage > 1048576 OR event_type = 'MovePart')
+    AND (peak_memory_usage > ${MIN_MEMORY_BYTES} OR event_type = 'MovePart')
   ORDER BY {merge_order_by} DESC
   LIMIT {activity_limit}
 `;
@@ -227,7 +236,7 @@ export const ACTIVE_MERGES_PROFILE = `
     AND event_date >= {start_date}
     AND (event_time - toIntervalMillisecond(duration_ms)) <= {end_time}
     AND event_time >= {start_time}
-    AND (peak_memory_usage > 1048576 OR event_type = 'MovePart')
+    AND (peak_memory_usage > ${MIN_MEMORY_BYTES} OR event_type = 'MovePart')
   ORDER BY {merge_order_by} DESC
   LIMIT {activity_limit}
 `;
@@ -291,7 +300,7 @@ export const RUNNING_QUERIES_TIMELINE = `
     hostname() AS host,
     substring(query, 1, 500) AS query_short,
     memory_usage,
-    toUInt64(elapsed * 1000) AS query_duration_ms,
+    toUInt64(elapsed * ${SEC_TO_MS}) AS query_duration_ms,
     query_kind,
     toString(now() - toIntervalSecond(toUInt32(elapsed))) AS qst,
     ProfileEvents['UserTimeMicroseconds'] + ProfileEvents['SystemTimeMicroseconds'] AS cpu_us,
@@ -302,7 +311,7 @@ export const RUNNING_QUERIES_TIMELINE = `
   FROM system.processes
   WHERE is_initial_query = 1
     AND query NOT LIKE '%source:Monitor:%'
-    AND memory_usage > 1048576
+    AND memory_usage > ${MIN_MEMORY_BYTES}
   ORDER BY {query_order_by} DESC
   LIMIT {activity_limit}
 `;
@@ -314,7 +323,7 @@ export const RUNNING_MERGES_TIMELINE = `
     hostname() AS host,
     database || '.' || table AS tbl,
     memory_usage AS peak_memory_usage,
-    toUInt64(elapsed * 1000) AS duration_ms,
+    toUInt64(elapsed * ${SEC_TO_MS}) AS duration_ms,
     merge_type,
     toString(now() - toIntervalSecond(toUInt32(elapsed))) AS merge_start,
     progress,
@@ -322,7 +331,7 @@ export const RUNNING_MERGES_TIMELINE = `
     bytes_written_uncompressed AS disk_write,
     is_mutation
   FROM {{cluster_aware:system.merges}}
-  WHERE memory_usage > 1048576
+  WHERE memory_usage > ${MIN_MEMORY_BYTES}
   ORDER BY memory_usage DESC
   LIMIT {activity_limit}
 `;
@@ -347,7 +356,7 @@ export const CPU_SPIKE_TIMESERIES = `
         dateDiff('millisecond', lagInFrame(event_time) OVER (PARTITION BY hostname() ORDER BY event_time), event_time) > 0
         AND dateDiff('millisecond', lagInFrame(event_time) OVER (PARTITION BY hostname() ORDER BY event_time), event_time) < 10000,
         dateDiff('millisecond', lagInFrame(event_time) OVER (PARTITION BY hostname() ORDER BY event_time), event_time),
-        1000
+        ${DEFAULT_INTERVAL_MS}
       ) AS interval_ms
     FROM {{cluster_aware:system.metric_log}}
     WHERE event_time >= {start_time}
@@ -379,7 +388,7 @@ export const CLUSTER_MEMORY_TIMESERIES = `
 export const CLUSTER_CPU_TIMESERIES = `
   SELECT
     t, host, v,
-    if(interval_ms > 0 AND interval_ms < 10000, interval_ms, 1000) AS interval_ms
+    if(interval_ms > 0 AND interval_ms < 10000, interval_ms, ${DEFAULT_INTERVAL_MS}) AS interval_ms
   FROM (
     SELECT
       toString(event_time) AS t,

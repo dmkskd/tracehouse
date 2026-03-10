@@ -3,6 +3,9 @@
  * Provides deep-dive engine diagnostics
  */
 
+/** Time slot bucket size (microseconds) for high-resolution trace timeseries — 100ms. */
+const SLOT_INTERVAL_MICROSECONDS = 100000;
+
 // =============================================================================
 // Memory X-Ray Queries
 // =============================================================================
@@ -375,7 +378,7 @@ LIMIT 20
 export const GET_CORE_TIMELINE = `
 SELECT
     toUInt32(cpu_id) AS core,
-    toStartOfInterval(event_time_microseconds, INTERVAL 100000 microsecond) AS slot,
+    toStartOfInterval(event_time_microseconds, INTERVAL ${SLOT_INTERVAL_MICROSECONDS} microsecond) AS slot,
     thread_name,
     query_id,
     count() AS samples,
@@ -392,7 +395,7 @@ ORDER BY core, slot, samples DESC
 export const GET_CORE_TIMELINE_FALLBACK = `
 SELECT
     toUInt32(cpu_id) AS core,
-    toStartOfInterval(event_time_microseconds, INTERVAL 100000 microsecond) AS slot,
+    toStartOfInterval(event_time_microseconds, INTERVAL ${SLOT_INTERVAL_MICROSECONDS} microsecond) AS slot,
     CAST(thread_id, 'String') AS thread_name,
     query_id,
     count() AS samples,
@@ -415,7 +418,7 @@ ORDER BY core, slot, samples DESC
 export const GET_CORE_TIMELINE_NO_CPU_ID = `
 SELECT
     toUInt32(thread_id % {core_count:UInt32}) AS core,
-    toStartOfInterval(event_time_microseconds, INTERVAL 100000 microsecond) AS slot,
+    toStartOfInterval(event_time_microseconds, INTERVAL ${SLOT_INTERVAL_MICROSECONDS} microsecond) AS slot,
     thread_name,
     query_id,
     count() AS samples,
@@ -432,7 +435,7 @@ ORDER BY core, slot, samples DESC
 export const GET_CORE_TIMELINE_NO_CPU_ID_NO_THREAD_NAME = `
 SELECT
     toUInt32(thread_id % {core_count:UInt32}) AS core,
-    toStartOfInterval(event_time_microseconds, INTERVAL 100000 microsecond) AS slot,
+    toStartOfInterval(event_time_microseconds, INTERVAL ${SLOT_INTERVAL_MICROSECONDS} microsecond) AS slot,
     CAST(thread_id, 'String') AS thread_name,
     query_id,
     count() AS samples,
