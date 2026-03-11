@@ -1,4 +1,4 @@
-"""Shared helpers for table setup modules."""
+"""Shared helpers for dataset setup modules."""
 
 from __future__ import annotations
 
@@ -6,8 +6,13 @@ import sys
 import threading
 import time
 import random
+from collections.abc import Callable
 from datetime import datetime, timedelta
 from clickhouse_driver import Client
+
+# Callback signature for build_insert_sql functions used by run_batched_insert.
+# Args: (partition_key, batch_index, batch_size, current_batch, partition_rows, partition_offset)
+BuildInsertSQL = Callable[[str, int, int, int, int, int], str]
 
 
 # ── Progress tracker for parallel table loading ─────────────────────
@@ -134,7 +139,7 @@ def engine_clause(replicated: bool) -> str:
     return "MergeTree()"
 
 
-def retry_on_drop_race(fn, max_retries: int = 5):
+def retry_on_drop_race(fn: Callable[[], None], max_retries: int = 5) -> None:
     """Retry a callable when ClickHouse reports a transient DDL state.
 
     Handles two cases:
@@ -244,7 +249,7 @@ def run_batched_insert(
     rows: int,
     partitions: list[tuple[str, str]],
     batch_size: int,
-    build_insert_sql,
+    build_insert_sql: BuildInsertSQL,
     tracker: ProgressTracker | None = None,
     throttle_min: float = 0.0,
     throttle_max: float = 0.0,

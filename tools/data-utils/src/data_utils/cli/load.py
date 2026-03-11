@@ -39,7 +39,7 @@ from data_utils.env import (
     add_connection_args, make_client, pre_parse_env_file, confirm_or_exit,
 )
 from data_utils.tables import (
-    SyntheticData, NycTaxi, UkHousePrices, WebAnalytics, InsertConfig,
+    Dataset, SyntheticData, NycTaxi, UkHousePrices, WebAnalytics, InsertConfig,
     ProgressTracker,
 )
 
@@ -95,7 +95,7 @@ Tables are created with the best engine available for the target server.
 # ── Dataset selection ──────────────────────────────────────────────
 
 
-def _build_datasets(args: argparse.Namespace, caps: Capabilities) -> list:
+def _build_datasets(args: argparse.Namespace, caps: Capabilities) -> list[Dataset]:
     """Instantiate dataset plugins, filtered by CLI flags."""
     replicated = caps.has_keeper
     all_datasets = [
@@ -111,7 +111,7 @@ def _build_datasets(args: argparse.Namespace, caps: Capabilities) -> list:
 # ── Prepare (create databases + tables) ───────────────────────────
 
 
-def _prepare_datasets(datasets: list, config: InsertConfig, args: argparse.Namespace) -> dict[str, Client]:
+def _prepare_datasets(datasets: list[Dataset], config: InsertConfig, args: argparse.Namespace) -> dict[str, Client]:
     """Drop (if requested), create each dataset's database and tables, return per-dataset clients."""
     clients: dict[str, Client] = {}
     for ds in datasets:
@@ -127,14 +127,14 @@ def _prepare_datasets(datasets: list, config: InsertConfig, args: argparse.Names
 # ── Insert orchestration ────────────────────────────────────────────
 
 
-def _run_sequential(datasets: list, config: InsertConfig, clients: dict[str, Client]) -> None:
+def _run_sequential(datasets: list[Dataset], config: InsertConfig, clients: dict[str, Client]) -> None:
     for ds in datasets:
         print(f"\n── Loading {ds.name} ──")
         ds.insert(clients[ds.name], config)
 
 
 def _run_parallel(
-    datasets: list,
+    datasets: list[Dataset],
     config: InsertConfig,
     clients: dict[str, Client],
     max_workers: int,
@@ -147,7 +147,7 @@ def _run_parallel(
     print(f"\nLoading with {max_workers} concurrent workers...\n")
     tracker.start()
 
-    def _run_insert(ds):
+    def _run_insert(ds: Dataset) -> None:
         try:
             ds.insert(clients[ds.name], config, tracker=tracker)
         except Exception:
@@ -187,7 +187,7 @@ def _run_parallel(
 # ── Printing helpers ────────────────────────────────────────────────
 
 
-def _print_config(config: InsertConfig, caps: Capabilities, parallelism: int, datasets: list) -> None:
+def _print_config(config: InsertConfig, caps: Capabilities, parallelism: int, datasets: list[Dataset]) -> None:
     engine = 'ReplicatedMergeTree' if caps.has_keeper else 'MergeTree'
     batches = (config.rows // config.partitions + config.batch_size - 1) // config.batch_size
     par_label = 'all datasets' if parallelism == 0 else f'{parallelism} concurrent'
@@ -225,7 +225,7 @@ def _print_verify_query() -> None:
 # ── Main ────────────────────────────────────────────────────────────
 
 
-def main():
+def main() -> None:
     args, env_path = _parse_args()
     print_connection(args, env_path)
 

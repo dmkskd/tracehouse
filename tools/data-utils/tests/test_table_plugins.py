@@ -1,10 +1,12 @@
-"""Integration tests for table plugins.
+"""Integration tests for dataset plugins.
 
 Verifies that each plugin satisfies the Dataset protocol and can
-create tables + insert data into a real ClickHouse instance.
+create databases + insert data into a real ClickHouse instance.
 """
 
 from __future__ import annotations
+
+from collections.abc import Generator
 
 import pytest
 from clickhouse_driver import Client
@@ -19,7 +21,7 @@ from data_utils.tables import (
 
 
 # Instantiate with minimal config (replicated=False, no caps)
-ALL_PLUGINS = [
+ALL_DATASETS: list[Dataset] = [
     SyntheticData(replicated=False),
     NycTaxi(replicated=False),
     UkHousePrices(replicated=False),
@@ -27,105 +29,107 @@ ALL_PLUGINS = [
 ]
 
 
-@pytest.mark.parametrize("plugin", ALL_PLUGINS, ids=lambda p: type(p).__name__)
-def test_satisfies_protocol(plugin):
+@pytest.mark.parametrize("dataset", ALL_DATASETS, ids=lambda ds: type(ds).__name__)
+def test_satisfies_protocol(dataset: Dataset) -> None:
     """Each plugin instance must satisfy the runtime-checkable Dataset."""
-    assert isinstance(plugin, Dataset)
+    assert isinstance(dataset, Dataset)
 
 
-@pytest.mark.parametrize("plugin", ALL_PLUGINS, ids=lambda p: type(p).__name__)
-def test_has_required_attrs(plugin):
+@pytest.mark.parametrize("dataset", ALL_DATASETS, ids=lambda ds: type(ds).__name__)
+def test_has_required_attrs(dataset: Dataset) -> None:
     """Each plugin must declare name and flag."""
-    assert isinstance(plugin.name, str) and plugin.name
-    assert isinstance(plugin.flag, str) and plugin.flag
+    assert isinstance(dataset.name, str) and dataset.name
+    assert isinstance(dataset.flag, str) and dataset.flag
 
 
-# ── Integration tests (one per table) ──────────────────────────────
+# ── Integration tests (one per dataset) ───────────────────────────
 
 SMALL_CONFIG = InsertConfig(rows=1000, partitions=1, batch_size=500)
 
 
 class TestSyntheticData:
     @pytest.fixture(autouse=True)
-    def setup(self, client: Client):
-        self.plugin = SyntheticData(replicated=False)
+    def setup(self, client: Client) -> Generator[None]:
+        self.dataset = SyntheticData(replicated=False)
         self.client = client
         yield
+        client.execute("DROP TABLE IF EXISTS synthetic_data.user_tiers SYNC")
         client.execute("DROP TABLE IF EXISTS synthetic_data.events SYNC")
         client.execute("DROP DATABASE IF EXISTS synthetic_data SYNC")
 
-    def test_create_and_insert(self):
-        self.plugin.create(self.client)
-        self.plugin.insert(self.client, SMALL_CONFIG)
-        rows = self.client.execute("SELECT count() FROM synthetic_data.events")[0][0]
+    def test_create_and_insert(self) -> None:
+        self.dataset.create(self.client)
+        self.dataset.insert(self.client, SMALL_CONFIG)
+        rows: int = self.client.execute("SELECT count() FROM synthetic_data.events")[0][0]
         assert rows == SMALL_CONFIG.rows
 
-    def test_drop(self):
-        self.plugin.create(self.client)
-        self.plugin.drop(self.client)
-        dbs = [r[0] for r in self.client.execute("SHOW DATABASES")]
+    def test_drop(self) -> None:
+        self.dataset.create(self.client)
+        self.dataset.drop(self.client)
+        dbs: list[str] = [r[0] for r in self.client.execute("SHOW DATABASES")]
         assert "synthetic_data" not in dbs
 
 
 class TestNycTaxi:
     @pytest.fixture(autouse=True)
-    def setup(self, client: Client):
-        self.plugin = NycTaxi(replicated=False)
+    def setup(self, client: Client) -> Generator[None]:
+        self.dataset = NycTaxi(replicated=False)
         self.client = client
         yield
+        client.execute("DROP TABLE IF EXISTS nyc_taxi.locations SYNC")
         client.execute("DROP TABLE IF EXISTS nyc_taxi.trips SYNC")
         client.execute("DROP DATABASE IF EXISTS nyc_taxi SYNC")
 
-    def test_create_and_insert(self):
-        self.plugin.create(self.client)
-        self.plugin.insert(self.client, SMALL_CONFIG)
-        rows = self.client.execute("SELECT count() FROM nyc_taxi.trips")[0][0]
+    def test_create_and_insert(self) -> None:
+        self.dataset.create(self.client)
+        self.dataset.insert(self.client, SMALL_CONFIG)
+        rows: int = self.client.execute("SELECT count() FROM nyc_taxi.trips")[0][0]
         assert rows == SMALL_CONFIG.rows
 
 
 class TestUkHousePrices:
     @pytest.fixture(autouse=True)
-    def setup(self, client: Client):
-        self.plugin = UkHousePrices(replicated=False)
+    def setup(self, client: Client) -> Generator[None]:
+        self.dataset = UkHousePrices(replicated=False)
         self.client = client
         yield
         client.execute("DROP TABLE IF EXISTS uk_price_paid.uk_price_paid SYNC")
         client.execute("DROP DATABASE IF EXISTS uk_price_paid SYNC")
 
-    def test_create_and_insert(self):
-        self.plugin.create(self.client)
-        self.plugin.insert(self.client, SMALL_CONFIG)
-        rows = self.client.execute("SELECT count() FROM uk_price_paid.uk_price_paid")[0][0]
+    def test_create_and_insert(self) -> None:
+        self.dataset.create(self.client)
+        self.dataset.insert(self.client, SMALL_CONFIG)
+        rows: int = self.client.execute("SELECT count() FROM uk_price_paid.uk_price_paid")[0][0]
         assert rows == SMALL_CONFIG.rows
 
 
 class TestWebAnalytics:
     @pytest.fixture(autouse=True)
-    def setup(self, client: Client):
-        self.plugin = WebAnalytics(caps=None)
+    def setup(self, client: Client) -> Generator[None]:
+        self.dataset = WebAnalytics(caps=None)
         self.client = client
         yield
         client.execute("DROP TABLE IF EXISTS web_analytics.pageviews SYNC")
         client.execute("DROP DATABASE IF EXISTS web_analytics SYNC")
 
-    def test_create_and_insert(self):
-        self.plugin.create(self.client)
-        self.plugin.insert(self.client, SMALL_CONFIG)
-        rows = self.client.execute("SELECT count() FROM web_analytics.pageviews")[0][0]
+    def test_create_and_insert(self) -> None:
+        self.dataset.create(self.client)
+        self.dataset.insert(self.client, SMALL_CONFIG)
+        rows: int = self.client.execute("SELECT count() FROM web_analytics.pageviews")[0][0]
         assert rows == SMALL_CONFIG.rows
 
 
 # ── InsertConfig defaults ──────────────────────────────────────────
 
 
-def test_insert_config_defaults():
+def test_insert_config_defaults() -> None:
     cfg = InsertConfig(rows=100, partitions=1, batch_size=50)
     assert cfg.drop is False
     assert cfg.throttle_min == 0.0
     assert cfg.throttle_max == 0.0
 
 
-def test_insert_config_frozen():
+def test_insert_config_frozen() -> None:
     cfg = InsertConfig(rows=100, partitions=1, batch_size=50)
     with pytest.raises(AttributeError):
         cfg.rows = 200  # type: ignore[misc]
@@ -134,25 +138,25 @@ def test_insert_config_frozen():
 # ── QuerySet tests ─────────────────────────────────────────────────
 
 
-@pytest.mark.parametrize("plugin", ALL_PLUGINS, ids=lambda p: type(p).__name__)
-def test_queries_returns_queryset(plugin):
-    """Each plugin's queries property must return a QuerySet."""
-    qs = plugin.queries
+@pytest.mark.parametrize("dataset", ALL_DATASETS, ids=lambda ds: type(ds).__name__)
+def test_queries_returns_queryset(dataset: Dataset) -> None:
+    """Each dataset's queries property must return a QuerySet."""
+    qs: QuerySet = dataset.queries
     assert isinstance(qs, QuerySet)
 
 
-@pytest.mark.parametrize("plugin", ALL_PLUGINS, ids=lambda p: type(p).__name__)
-def test_queries_not_empty(plugin):
-    """Each plugin should provide at least some queries."""
-    qs = plugin.queries
+@pytest.mark.parametrize("dataset", ALL_DATASETS, ids=lambda ds: type(ds).__name__)
+def test_queries_not_empty(dataset: Dataset) -> None:
+    """Each dataset should provide at least some queries."""
+    qs: QuerySet = dataset.queries
     total = len(qs.slow) + len(qs.fast) + len(qs.pk_generators) + len(qs.join_generators) + len(qs.settings_generators)
-    assert total > 0, f"{type(plugin).__name__} has no queries"
+    assert total > 0, f"{type(dataset).__name__} has no queries"
 
 
-@pytest.mark.parametrize("plugin", ALL_PLUGINS, ids=lambda p: type(p).__name__)
-def test_generators_return_sql(plugin):
+@pytest.mark.parametrize("dataset", ALL_DATASETS, ids=lambda ds: type(ds).__name__)
+def test_generators_return_sql(dataset: Dataset) -> None:
     """All query generators must return non-empty SQL strings."""
-    qs = plugin.queries
+    qs: QuerySet = dataset.queries
     for gen in qs.pk_generators + qs.join_generators + qs.settings_generators:
-        sql = gen()
+        sql: str = gen()
         assert isinstance(sql, str) and sql.strip()

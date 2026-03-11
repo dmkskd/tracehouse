@@ -71,7 +71,7 @@ def _rand_postcodes(n: int = 5) -> str:
 def _rand_postcode2() -> str:
     return random.choice(['1AA', '2AB', '3BC', '4CD', '5DE', '6EF', '7FG', '8GH', '9HJ'])
 
-def _rand_year_range() -> tuple:
+def _rand_year_range() -> tuple[str, str]:
     start_year = random.randint(2020, 2025)
     return f'{start_year}-01-01', f'{start_year}-07-01'
 
@@ -127,7 +127,7 @@ def create_uk_house_prices(client: Client, replicated: bool) -> None:
 
 def insert_uk_house_prices(
     client: Client, rows: int, partitions: int, batch_size: int, drop: bool = False,
-    tracker=None, throttle_min: float = 0.0, throttle_max: float = 0.0,
+    tracker: ProgressTracker | None = None, throttle_min: float = 0.0, throttle_max: float = 0.0,
 ) -> None:
     remaining = check_existing_rows(client, "uk_price_paid.uk_price_paid", rows, drop)
     if remaining is None:
@@ -145,7 +145,7 @@ def insert_uk_house_prices(
     counties_sql = "['" + "','".join(COUNTIES) + "']"
     streets_sql = "['" + "','".join(STREETS) + "']"
 
-    def build_sql(year_str, batch, bs, current_batch, year_rows, _offset):
+    def build_sql(year_str: str, batch: int, bs: int, current_batch: int, year_rows: int, _offset: int) -> str:
         return f"""
             INSERT INTO uk_price_paid.uk_price_paid
             SELECT

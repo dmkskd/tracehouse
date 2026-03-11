@@ -303,7 +303,7 @@ def main():
     print_connection(args, env_path)
 
     print(f"\nConnecting to ClickHouse at {args.host}:{args.port}...")
-    client = make_client(args, compression=None)
+    client = make_client(args)
 
     # Verify table exists
     result = client.execute(f"""

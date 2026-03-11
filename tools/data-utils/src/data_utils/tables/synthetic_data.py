@@ -96,7 +96,7 @@ def create_synthetic_data(client: Client, replicated: bool) -> None:
 
 def insert_synthetic_data(
     client: Client, rows: int, partitions: int, batch_size: int, drop: bool = False,
-    tracker=None, throttle_min: float = 0.0, throttle_max: float = 0.0,
+    tracker: ProgressTracker | None = None, throttle_min: float = 0.0, throttle_max: float = 0.0,
 ) -> None:
     remaining = check_existing_rows(client, "synthetic_data.events", rows, drop)
     if remaining is None:
@@ -107,7 +107,7 @@ def insert_synthetic_data(
 
     months = generate_month_list(partitions)
 
-    def build_sql(month_start, batch, bs, current_batch, month_rows, _offset):
+    def build_sql(month_start: str, batch: int, bs: int, current_batch: int, month_rows: int, _offset: int) -> str:
         return f"""
             INSERT INTO synthetic_data.events
             SELECT

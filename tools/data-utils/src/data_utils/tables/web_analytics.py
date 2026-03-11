@@ -116,7 +116,7 @@ def insert_web_analytics(
     batch_size: int,
     drop: bool = False,
     caps: Capabilities | None = None,
-    tracker=None,
+    tracker: ProgressTracker | None = None,
     throttle_min: float = 0.0,
     throttle_max: float = 0.0,
 ) -> None:
@@ -133,7 +133,7 @@ def insert_web_analytics(
 
     use_sharded, cluster = _is_sharded(caps)
 
-    def build_sql(month_start, batch, bs, current_batch, month_rows, _offset):
+    def build_sql(month_start: str, batch: int, bs: int, current_batch: int, month_rows: int, _offset: int) -> str:
         return f"""
             INSERT INTO web_analytics.pageviews
             SELECT
