@@ -46,8 +46,8 @@ Reload the Grafana page after each rebuild.
 - **No React Router:** Grafana's plugin sandbox doesn't provide a Router context. The plugin stubs out `react-router-dom` entirely (see `src/stubs/react-router-dom.tsx`) and replaces navigation hooks with a custom `LocationContext`-based implementation (`src/hooks/useAppLocation.ts`)
 - **Store aliasing:** The standalone app's `connectionStore` and `ClickHouseProvider` are aliased at webpack level to Grafana-compatible shims that source the connection from the selected datasource instead of user-entered credentials
 - **`useUrlState` via `locationService`:** Analytics state syncs to URL query params using Grafana's `locationService`, so links like `/a/tracehouse-app/analytics?tab=misc&preset=3` are fully shareable, same as in the standalone app
-- **Node.js polyfill stubs:** Webpack config stubs all Node.js core modules (`stream`, `zlib`, `crypto`, etc.) to `false` since the plugin runs in the browser but some transitive dependencies reference them
 - **AMD output format:** Grafana's plugin loader requires AMD modules. The webpack config sets `output.library.type: 'amd'` with `uniqueName: 'tracehouse-app'` for namespace isolation
+- **Node.js polyfill stubs:** Webpack config stubs all Node.js core modules (`stream`, `zlib`, `crypto`, etc.) to `false` since the plugin runs in the browser but some transitive dependencies reference them
 - **Unsigned plugin allowlist:** For local development, `GF_PLUGINS_ALLOW_LOADING_UNSIGNED_PLUGINS=tracehouse-app` is set in the Docker Compose config
 
 ## Building the Plugin
@@ -58,5 +58,3 @@ just grafana-plugin-build
 
 # Output: grafana-app-plugin/dist/ (module.js, plugin.json, README.md)
 ```
-
-The build runs webpack with SWC (TypeScript) + PostCSS (Tailwind) and outputs an AMD bundle that Grafana loads at `/public/plugins/tracehouse-app/`.
