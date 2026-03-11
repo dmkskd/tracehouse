@@ -41,6 +41,10 @@ from data_utils.env import (
     add_connection_args,
     make_client,
 )
+from data_utils.users import (
+    create_test_users, lock_test_users, make_user_client,
+    pick_random_user, print_test_users, TestUser,
+)
 
 
 # ── Dedicated test database & tables ────────────────────────────────
@@ -512,9 +516,18 @@ Merge types you can trigger:
     # Connect
     print_connection(args, env_path)
     print(f"Connecting to ClickHouse at {args.host}:{args.port}...")
-    client = make_client(args)
-    version = client.execute("SELECT version()")[0][0]
+    admin_client = make_client(args)
+    version = admin_client.execute("SELECT version()")[0][0]
     print(f"  ClickHouse {version}\n")
+
+    # Create test users if requested
+    test_users: list[TestUser] | None = None
+    if args.users > 0:
+        print(f"Creating {args.users} test users...")
+        test_users = create_test_users(admin_client, args.users)
+        print_test_users(test_users, skew=args.user_skew)
+
+    client = admin_client
 
     # Check part_log availability
     has_part_log = False
@@ -546,11 +559,19 @@ Merge types you can trigger:
     print("=" * 60)
 
     results = []
-    for merge_type in requested_types:
-        print(f"\n▸ {merge_type.upper()}")
+    for i, merge_type in enumerate(requested_types):
+        if test_users:
+            user = pick_random_user(test_users, skew=args.user_skew)
+            trigger_client = make_user_client(args, user)
+            user_label = f" (as {user.name})"
+        else:
+            trigger_client = client
+            user_label = ""
+
+        print(f"\n▸ {merge_type.upper()}{user_label}")
         fn = TRIGGER_MAP[merge_type]
         try:
-            result = fn(client)
+            result = fn(trigger_client)
             results.append(result)
             print(f"  ✓ Triggered")
         except Exception as e:
@@ -624,6 +645,10 @@ Merge types you can trigger:
     # Cleanup
     if not args.no_cleanup:
         cleanup_test_tables(client)
+
+    if test_users:
+        lock_test_users(admin_client, test_users)
+        print("  ✓ Test users locked (HOST NONE)")
 
     print("\n✓ Merge trigger test complete")
 

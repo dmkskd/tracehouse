@@ -53,6 +53,10 @@ from datetime import datetime
 from clickhouse_driver import Client
 
 from data_utils.env import env_int, pre_parse_env_file, print_connection, add_connection_args, make_client
+from data_utils.users import (
+    create_test_users, lock_test_users, make_user_client,
+    pick_random_user, print_test_users, TestUser,
+)
 
 
 def get_random_partition(client: Client, database: str, table: str) -> str | None:
@@ -303,7 +307,16 @@ def main():
     print_connection(args, env_path)
 
     print(f"\nConnecting to ClickHouse at {args.host}:{args.port}...")
-    client = make_client(args)
+    admin_client = make_client(args)
+
+    # Create test users if requested
+    test_users: list[TestUser] | None = None
+    if args.users > 0:
+        print(f"Creating {args.users} test users...")
+        test_users = create_test_users(admin_client, args.users)
+        print_test_users(test_users, skew=args.user_skew)
+
+    client = admin_client
 
     # Verify table exists
     result = client.execute(f"""
@@ -347,12 +360,27 @@ def main():
     print(f"  Mode: {args.sync} (mutations_sync={mutations_sync})")
     print()
 
+    # Pre-create per-user clients for weighted-random assignment
+    user_clients: dict[str, Client] = {}
+    if test_users:
+        for u in test_users:
+            user_clients[u.name] = make_user_client(args, u)
+
     for i in range(args.count):
         mutation_fn = random.choice(mutations)
-        print(f"[{i+1}/{args.count}] Running {mutation_fn.__name__}...", end=" ")
+
+        if test_users:
+            user = pick_random_user(test_users, skew=args.user_skew)
+            mutation_client = user_clients[user.name]
+            user_label = f" (as {user.name})"
+        else:
+            mutation_client = client
+            user_label = ""
+
+        print(f"[{i+1}/{args.count}] Running {mutation_fn.__name__}{user_label}...", end=" ")
 
         try:
-            result = mutation_fn(client, args.database, args.table, mutations_sync=mutations_sync)
+            result = mutation_fn(mutation_client, args.database, args.table, mutations_sync=mutations_sync)
         except KeyboardInterrupt:
             print("INTERRUPTED")
             break
@@ -396,17 +424,26 @@ def main():
         else:
             print("  No active mutations (all completed)")
 
+        if test_users:
+            lock_test_users(admin_client, test_users)
+            print("  ✓ Test users locked (HOST NONE)")
+
         print("\n✓ Mutation load test complete")
         return
 
     # Interrupted — kill in-flight mutations from our session
     print("\nCancelling in-flight mutations...")
     try:
-        client.execute(
+        admin_client.execute(
             "KILL QUERY WHERE query LIKE '%ALTER TABLE%' AND user = currentUser() ASYNC"
         )
     except Exception:
         pass
+
+    if test_users:
+        lock_test_users(admin_client, test_users)
+        print("  ✓ Test users locked (HOST NONE)")
+
     print("✗ Mutation load test interrupted")
 
 

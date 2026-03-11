@@ -86,6 +86,42 @@ CH_MUTATION_SYNC=sync just run-mutations
 Lightweight `DELETE FROM` is synchronous by default in ClickHouse. The `--sync` flag overrides this with `mutations_sync=0` so all mutation types behave consistently.
 :::
 
+## Multi-User Simulation
+
+All tools support `--users N` to create temporary ClickHouse users (alice, bob, charlie, ...) so that activity shows up under different usernames in `system.query_log`, `system.processes`, etc. This is useful for testing per-user dashboards and spotting "noisy neighbor" patterns.
+
+```bash
+# Run queries as 5 different users
+just run-queries --users 5
+
+# With skewed distribution (alice gets ~55% of traffic)
+just run-queries --users 5 --user-skew 1
+
+# Very skewed (alice gets ~74%)
+just run-queries --users 5 --user-skew 2
+
+# Works with all tools
+just load-data --users 3
+just run-mutations --users 5 --user-skew 1
+```
+
+Or set via environment variables:
+
+```bash
+CH_USERS=5
+CH_USER_SKEW=1
+```
+
+**Security:** Users are created with random passwords (fresh each run). On exit, all test users are locked with `HOST NONE` — no one can connect as them. If the script crashes, the random 128-bit password provides protection until the next run resets it.
+
+**Skew values:**
+
+| `--user-skew` | alice | bob | charlie | Effect                  |
+| ------------- | ----- | --- | ------- | ----------------------- |
+| 0 (default)   | 33%   | 33% | 33%     | Equal                   |
+| 1             | 55%   | 27% | 18%     | Zipf — clear noisy user |
+| 2             | 74%   | 18% | 8%      | Very noisy alice        |
+
 ## Resetting Data
 
 ```bash

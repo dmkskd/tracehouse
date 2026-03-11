@@ -42,6 +42,10 @@ from data_utils.tables import (
     Dataset, SyntheticData, NycTaxi, UkHousePrices, WebAnalytics, InsertConfig,
     ProgressTracker,
 )
+from data_utils.users import (
+    create_test_users, lock_test_users, make_user_client,
+    get_user_for_index, print_test_users, verify_test_user, TestUser,
+)
 
 
 # ── CLI ─────────────────────────────────────────────────────────────
@@ -111,16 +115,31 @@ def _build_datasets(args: argparse.Namespace, caps: Capabilities) -> list[Datase
 # ── Prepare (create databases + tables) ───────────────────────────
 
 
-def _prepare_datasets(datasets: list[Dataset], config: InsertConfig, args: argparse.Namespace) -> dict[str, Client]:
-    """Drop (if requested), create each dataset's database and tables, return per-dataset clients."""
+def _prepare_datasets(
+    datasets: list[Dataset],
+    config: InsertConfig,
+    args: argparse.Namespace,
+    test_users: list[TestUser] | None = None,
+) -> dict[str, Client]:
+    """Drop (if requested), create each dataset's database and tables, return per-dataset clients.
+
+    When *test_users* is provided, each dataset gets a client connected as a
+    different test user (round-robin).  Schema DDL is always run as the admin
+    (default) user — test users only do the inserts.
+    """
     clients: dict[str, Client] = {}
-    for ds in datasets:
+    admin = make_client(args)
+    for i, ds in enumerate(datasets):
         print(f"\n── Preparing {ds.name} ──")
-        c = make_client(args)
         if config.drop:
-            ds.drop(c)
-        ds.create(c)
-        clients[ds.name] = c
+            ds.drop(admin)
+        ds.create(admin)
+        if test_users:
+            user = get_user_for_index(test_users, i)
+            clients[ds.name] = make_user_client(args, user)
+            print(f"   (insert as {user.name})")
+        else:
+            clients[ds.name] = make_client(args)
     return clients
 
 
@@ -247,21 +266,36 @@ def main() -> None:
 
     datasets = _build_datasets(args, caps)
     _print_config(config, caps, args.parallelism, datasets)
+
+    # Create test users if requested
+    test_users: list[TestUser] | None = None
+    if args.users > 0:
+        print(f"Creating {args.users} test users...")
+        test_users = create_test_users(client, args.users)
+        print_test_users(test_users, skew=args.user_skew)
+        verify_test_user(args, test_users[0])
+
     confirm_or_exit(args)
 
-    # Phase 1: Create databases and tables
-    clients = _prepare_datasets(datasets, config, args)
+    try:
+        # Phase 1: Create databases and tables
+        clients = _prepare_datasets(datasets, config, args, test_users)
 
-    # Phase 2: Insert data
-    max_workers = len(datasets) if args.parallelism == 0 else min(args.parallelism, len(datasets))
+        # Phase 2: Insert data
+        max_workers = len(datasets) if args.parallelism == 0 else min(args.parallelism, len(datasets))
 
-    if max_workers <= 1:
-        _run_sequential(datasets, config, clients)
-    else:
-        print(f"\nLoading {len(datasets)} datasets...")
-        _run_parallel(datasets, config, clients, max_workers, args)
+        if max_workers <= 1:
+            _run_sequential(datasets, config, clients)
+        else:
+            print(f"\nLoading {len(datasets)} datasets...")
+            _run_parallel(datasets, config, clients, max_workers, args)
 
-    _print_verify_query()
+        _print_verify_query()
+    finally:
+        if test_users:
+            print("\nLocking test users...")
+            lock_test_users(client, test_users)
+            print("  ✓ All test users locked (HOST NONE)")
 
 
 if __name__ == "__main__":

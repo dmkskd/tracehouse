@@ -102,6 +102,8 @@ def add_connection_args(parser: argparse.ArgumentParser) -> None:
     parser.add_argument("--password", default=os.environ.get("CH_PASSWORD", ""), help="ClickHouse password (default: $CH_PASSWORD or empty)")
     parser.add_argument("--secure", action="store_true", default=os.environ.get("CH_SECURE", "").lower() in ("1", "true", "yes"), help="Use TLS (default: $CH_SECURE or false)")
     parser.add_argument("-y", "--assume-yes", action="store_true", default=os.environ.get("CH_ASSUME_YES", "").lower() in ("1", "true", "yes"), help="Skip confirmation prompt (default: $CH_ASSUME_YES or false)")
+    parser.add_argument("--users", type=int, default=env_int("CH_USERS", "0"), help="Number of test users (1-10) to distribute work across. 0 = use default user only (default: $CH_USERS or 0)")
+    parser.add_argument("--user-skew", type=float, default=float(os.environ.get("CH_USER_SKEW", "0")), help="Skew user distribution: 0 = equal, 1 = Zipf, 2+ = very skewed (default: $CH_USER_SKEW or 0)")
 
 
 def make_client(args: argparse.Namespace, **kwargs) -> Client:

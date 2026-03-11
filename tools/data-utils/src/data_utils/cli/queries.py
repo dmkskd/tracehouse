@@ -28,6 +28,10 @@ from clickhouse_driver import Client
 from data_utils.capabilities import probe, Capabilities
 from data_utils.env import env_int, pre_parse_env_file, print_connection, add_connection_args, make_client
 from data_utils.tables import SyntheticData, NycTaxi, UkHousePrices, WebAnalytics
+from data_utils.users import (
+    create_test_users, lock_test_users, make_user_client,
+    pick_random_user, print_test_users, TestUser,
+)
 
 # Suppress noisy "Error on socket shutdown" messages from clickhouse-driver
 # when TLS connections are closed by the server (common on managed services).
@@ -187,7 +191,7 @@ _stop_event = threading.Event()
 
 
 def run_query(client_holder: list, host: str, port: int, conn_kwargs: dict,
-              query: str, query_type: str) -> None:
+              query: str, query_type: str, username: str = "") -> None:
     """Execute a single query, reconnecting on socket errors.
 
     client_holder is a 1-element list so we can swap the client on reconnect.
@@ -215,7 +219,8 @@ def run_query(client_holder: list, host: str, port: int, conn_kwargs: dict,
                 result = client_holder[0].execute(tagged_query)
             elapsed = time.time() - start
             rows = len(result) if result else 0
-            print(f"[{datetime.now().strftime('%H:%M:%S')}] {query_type:5} {table:30} {elapsed:.2f}s ({rows} rows)")
+            user_tag = f" {username:>10}" if username else ""
+            print(f"[{datetime.now().strftime('%H:%M:%S')}]{user_tag} {query_type:5} {table:30} {elapsed:.2f}s ({rows} rows)")
             return
         except Exception as e:
             err_str = str(e)
@@ -236,7 +241,8 @@ def run_query(client_holder: list, host: str, port: int, conn_kwargs: dict,
             elapsed = time.time() - start
             error_msg = err_str[:80]
             query_preview = query.replace('\n', ' ')[:100]
-            print(f"[{datetime.now().strftime('%H:%M:%S')}] {query_type:5} {table:30} FAILED {elapsed:.2f}s: {error_msg}")
+            user_tag = f" {username:>10}" if username else ""
+            print(f"[{datetime.now().strftime('%H:%M:%S')}]{user_tag} {query_type:5} {table:30} FAILED {elapsed:.2f}s: {error_msg}")
             print(f"    SQL: {query_preview}...")
             return
 
@@ -248,9 +254,12 @@ def _query_worker(
     queries: list[str] | None = None,
     generators: list[Callable[[], str]] | None = None,
     jitter: float = 0.5,
+    test_user: TestUser | None = None,
     **conn_kwargs,
 ) -> None:
     """Generic worker loop. Supply either static queries or generators."""
+    if test_user:
+        conn_kwargs = {**conn_kwargs, 'user': test_user.name, 'password': test_user.password}
     client_holder = [_make_client(host, port, **conn_kwargs)]
     while not _stop_event.is_set():
         if generators:
@@ -259,7 +268,8 @@ def _query_worker(
             query = random.choice(queries)
         else:
             return
-        run_query(client_holder, host, port, conn_kwargs, query, label)
+        run_query(client_holder, host, port, conn_kwargs, query, label,
+                  username=test_user.name if test_user else "")
         _stop_event.wait(interval + random.uniform(0, interval * jitter))
 
 
@@ -348,15 +358,23 @@ def main():
     # ── Probe capabilities ──────────────────────────────────────────
     print_connection(args, env_path)
     print(f"\nConnecting to {args.host}:{args.port}...")
-    probe_client = make_client(args)
+    admin_client = make_client(args)
 
     print("Probing server capabilities...")
-    caps = probe(probe_client)
+    caps = probe(admin_client)
     print(caps.summary())
 
-    available_tables = _detect_available_tables(probe_client)
+    available_tables = _detect_available_tables(admin_client)
     print(f"\n  Available tables:      {', '.join(sorted(available_tables)) or '(none found)'}")
-    probe_client.disconnect()
+
+    # ── Create test users if requested ─────────────────────────────
+    test_users: list[TestUser] | None = None
+    if args.users > 0:
+        print(f"\nCreating {args.users} test users...")
+        test_users = create_test_users(admin_client, args.users)
+        print_test_users(test_users, skew=args.user_skew)
+
+    admin_client.disconnect()
 
     # ── Collect queries from table plugins ─────────────────────────
     pools = _collect_queries(caps, available_tables)
@@ -384,6 +402,7 @@ def main():
 
     print(f"\nStarting workers:")
     threads = []
+    worker_index = 0
 
     for label, queries, generators, num_workers, interval, jitter in worker_configs:
         pool = queries or generators
@@ -393,15 +412,17 @@ def main():
         actual = min(num_workers, len(pool)) if queries else num_workers
         print(f"  {label:5} {actual} workers (interval: {interval}s)")
         for i in range(actual):
+            user = pick_random_user(test_users, skew=args.user_skew) if test_users else None
             t = threading.Thread(
                 target=_query_worker,
                 args=(args.host, args.port, interval, label),
-                kwargs={**conn_kwargs, 'queries': queries, 'generators': generators, 'jitter': jitter},
+                kwargs={**conn_kwargs, 'queries': queries, 'generators': generators, 'jitter': jitter, 'test_user': user},
                 daemon=True,
                 name=f"{label.lower()}-worker-{i}",
             )
             t.start()
             threads.append(t)
+            worker_index += 1
 
     print(f"\n{len(threads)} workers running. Press Ctrl+C to stop.\n")
 
@@ -425,6 +446,15 @@ def main():
 
         for t in threads:
             t.join(timeout=2)
+
+        if test_users:
+            try:
+                lock_client = make_client(args)
+                lock_test_users(lock_client, test_users)
+                lock_client.disconnect()
+                print("  ✓ Test users locked (HOST NONE)")
+            except Exception:
+                pass
 
         print("Stopped")
 
