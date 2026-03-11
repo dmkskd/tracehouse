@@ -1,31 +1,25 @@
-# TraceHouse Test Scripts
+# TraceHouse Infrastructure Scripts
 
-Test data and query generator for the monitoring dashboard.
+SQL scripts for one-off ClickHouse setup tasks.
 
-## Usage
+## Files
+
+- `setup_jaeger_export.sql` — Configure Jaeger trace export
+- `setup_read_only_user.sql` — Create a read-only ClickHouse user
+- `uk_house_queries.sql` — Example UK house price queries
+
+## Data Tools
+
+The Python data loading, query generation, and mutation tooling has moved to
+[`tools/data-utils/`](../../tools/data-utils/).
 
 ```bash
-# 1. Setup test data (creates ~10M rows per table)
-uv run scripts/setup_test_data.py
+# Load test data
+just load-data
 
-# 2. Run continuous queries (generates slow + fast queries)
-uv run scripts/run_queries.py
+# Run continuous queries
+just run-queries
+
+# Run mutations
+just run-mutations
 ```
-
-## Options
-
-```bash
-# Smaller dataset for quick testing
-uv run scripts/setup_test_data.py --rows 1000000
-
-# Custom ClickHouse host
-uv run scripts/setup_test_data.py --host myhost --port 9000
-uv run scripts/run_queries.py --host myhost --port 9000
-```
-
-## What it creates
-
-- `synthetic_data.events` - Web analytics events
-- `nyc_taxi.trips` - Taxi trip data
-
-Both are MergeTree tables partitioned by month.

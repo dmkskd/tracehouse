@@ -2,11 +2,18 @@
 
 from __future__ import annotations
 
+import random
+from typing import TYPE_CHECKING
+
 from clickhouse_driver import Client
-from ._helpers import (
+from .helpers import (
     engine_clause, retry_on_drop_race, create_database,
     check_existing_rows, run_batched_insert,
 )
+
+if TYPE_CHECKING:
+    from .helpers import ProgressTracker
+    from .protocol import InsertConfig, QuerySet, Dataset
 
 # ── Reference data ──────────────────────────────────────────────────
 
@@ -52,6 +59,33 @@ STREETS = [
     'NORTH STREET', 'SOUTH STREET', 'EAST STREET', 'NEW ROAD', 'BRIDGE STREET',
     'MARKET STREET', 'CASTLE STREET', 'WATER LANE', 'MILL ROAD', 'HILL ROAD',
 ]
+
+
+def _rand_postcode1() -> str:
+    return random.choice(['SW1', 'SW3', 'SW7', 'W1', 'W8', 'EC1', 'EC2', 'N1', 'SE1', 'NW1'])
+
+def _rand_postcodes(n: int = 5) -> str:
+    codes = random.sample(['SW1', 'SW3', 'SW7', 'W1', 'W8', 'EC1', 'EC2', 'N1', 'SE1', 'NW1', 'E1', 'WC1', 'WC2'], min(n, 13))
+    return ', '.join(f"'{c}'" for c in codes)
+
+def _rand_postcode2() -> str:
+    return random.choice(['1AA', '2AB', '3BC', '4CD', '5DE', '6EF', '7FG', '8GH', '9HJ'])
+
+def _rand_year_range() -> tuple:
+    start_year = random.randint(2020, 2025)
+    return f'{start_year}-01-01', f'{start_year}-07-01'
+
+def _rand_town() -> str:
+    return random.choice(['LONDON', 'MANCHESTER', 'BIRMINGHAM', 'LEEDS', 'BRISTOL', 'LIVERPOOL', 'EDINBURGH'])
+
+def _rand_county() -> str:
+    return random.choice(['GREATER LONDON', 'GREATER MANCHESTER', 'WEST MIDLANDS', 'WEST YORKSHIRE', 'AVON', 'MERSEYSIDE'])
+
+def _rand_limit() -> int:
+    return random.choice([10, 20, 30, 50, 100])
+
+def _rand_max_threads() -> int:
+    return random.choice([1, 2, 4, 8, 16, 32])
 
 
 def drop_uk_house_prices(client: Client) -> None:
@@ -136,3 +170,111 @@ def insert_uk_house_prices(
         client, "uk_price_paid.uk_price_paid", remaining, year_partitions, batch_size, build_sql,
         tracker=tracker, throttle_min=throttle_min, throttle_max=throttle_max,
     )
+
+
+# ── Plugin class ───────────────────────────────────────────────────
+
+
+class UkHousePrices:
+    """Dataset implementation for uk_price_paid."""
+
+    name = "uk_price_paid"
+    flag = "uk_only"
+
+    def __init__(self, replicated: bool):
+        self._replicated = replicated
+
+    def drop(self, client: Client) -> None:
+        drop_uk_house_prices(client)
+
+    def create(self, client: Client) -> None:
+        create_uk_house_prices(client, self._replicated)
+
+    def insert(
+        self,
+        client: Client,
+        config: InsertConfig,
+        tracker: ProgressTracker | None = None,
+    ) -> None:
+        insert_uk_house_prices(
+            client, config.rows, config.partitions, config.batch_size,
+            config.drop, tracker=tracker,
+            throttle_min=config.throttle_min, throttle_max=config.throttle_max,
+        )
+
+    @property
+    def queries(self) -> QuerySet:
+        from .protocol import QuerySet
+        return QuerySet(
+            pk_generators=[
+                # Full key match — all 3 ORDER BY columns
+                lambda: f"""
+    SELECT count(), avg(price), max(price)
+    FROM uk_price_paid.uk_price_paid
+    WHERE postcode1 = '{_rand_postcode1()}'
+      AND postcode2 = '{_rand_postcode2()}'
+      AND date >= '{random.randint(2020, 2025)}-01-01'
+    SETTINGS use_query_cache = 0
+    """,
+                # Partial key (1/3) — leftmost only
+                lambda: f"""
+    SELECT type, count() AS sales, avg(price) AS avg_price
+    FROM uk_price_paid.uk_price_paid
+    WHERE postcode1 = '{_rand_postcode1()}'
+    GROUP BY type
+    ORDER BY sales DESC
+    SETTINGS use_query_cache = 0
+    """,
+                # Partial key (2/3) — leftmost + second
+                lambda: f"""
+    SELECT toYear(date) AS yr, count(), avg(price)
+    FROM uk_price_paid.uk_price_paid
+    WHERE postcode1 IN ({_rand_postcodes()})
+      AND postcode2 = '{_rand_postcode2()}'
+    GROUP BY yr
+    ORDER BY yr
+    SETTINGS use_query_cache = 0
+    """,
+                # Skips leftmost key — filters on date only (3rd key column)
+                lambda: f"""
+    SELECT postcode1, count(), avg(price)
+    FROM uk_price_paid.uk_price_paid
+    WHERE date >= '{_rand_year_range()[0]}' AND date < '{_rand_year_range()[1]}'
+    GROUP BY postcode1
+    ORDER BY count() DESC
+    LIMIT {_rand_limit()}
+    SETTINGS use_query_cache = 0
+    """,
+                # No key match — WHERE on non-key columns (town, county)
+                lambda: f"""
+    SELECT street, count(), avg(price)
+    FROM uk_price_paid.uk_price_paid
+    WHERE town = '{_rand_town()}' AND county = '{_rand_county()}'
+    GROUP BY street
+    ORDER BY avg(price) DESC
+    LIMIT {_rand_limit()}
+    SETTINGS use_query_cache = 0
+    """,
+            ],
+            settings_generators=[
+                # Price analysis with variable parallelism
+                lambda: f"""
+    SELECT
+        postcode1,
+        type,
+        count() AS sales,
+        avg(price) AS avg_price,
+        max(price) AS max_price,
+        min(price) AS min_price
+    FROM uk_price_paid.uk_price_paid
+    WHERE town = '{_rand_town()}'
+    GROUP BY postcode1, type
+    ORDER BY avg_price DESC
+    SETTINGS max_threads = {_rand_max_threads()}, use_query_cache = 0
+    """,
+            ],
+        )
+
+
+if TYPE_CHECKING:
+    _: type[Dataset] = UkHousePrices  # satisfies Dataset

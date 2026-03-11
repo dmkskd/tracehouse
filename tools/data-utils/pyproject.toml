@@ -1,0 +1,34 @@
+[project]
+name = "data-utils"
+version = "0.1.0"
+description = "Data loading, query workload, and mutation tooling for TraceHouse"
+requires-python = ">=3.10"
+dependencies = [
+    "clickhouse-driver",
+    "python-dotenv",
+]
+
+[project.scripts]
+tracehouse-load = "data_utils.cli.load:main"
+tracehouse-queries = "data_utils.cli.queries:main"
+tracehouse-mutations = "data_utils.cli.mutations:main"
+tracehouse-merge-triggers = "data_utils.cli.merge_triggers:main"
+
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/data_utils"]
+
+[tool.uv]
+environments = ["implementation_name == 'cpython'"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+
+[dependency-groups]
+test = [
+    "pytest",
+    "testcontainers[clickhouse]",
+]

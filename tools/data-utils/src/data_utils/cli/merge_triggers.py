@@ -1,8 +1,3 @@
-#!/usr/bin/env python3
-# /// script
-# requires-python = ">=3.10"
-# dependencies = ["clickhouse-driver", "python-dotenv"]
-# ///
 """
 ClickHouse Merge Type Trigger & Classifier
 
@@ -19,59 +14,33 @@ Merge types triggered:
   6. OPTIMIZE      — user-initiated forced merge
 
 Usage:
-    uv run infra/scripts/run_merge_triggers.py [options]
+    tracehouse-merge-triggers [options]
 
 Examples:
     # Trigger all merge types (default)
-    uv run infra/scripts/run_merge_triggers.py
+    tracehouse-merge-triggers
 
     # Only trigger TTL merges
-    uv run infra/scripts/run_merge_triggers.py --types ttl_delete,ttl_recompress
+    tracehouse-merge-triggers --types ttl_delete,ttl_recompress
 
     # Trigger regular + optimize, then watch for 60s
-    uv run infra/scripts/run_merge_triggers.py --types regular,optimize --watch 60
+    tracehouse-merge-triggers --types regular,optimize --watch 60
 """
 
 import argparse
-import os
 import sys
 import time
-import random
 from datetime import datetime
 from clickhouse_driver import Client
 
-sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
-from ch_capabilities import probe
-
-
-# ── Env / config helpers (same pattern as run_mutations.py) ─────────
-
-
-def _env_int(key: str, default: str) -> int:
-    return int(os.environ.get(key, default).replace("_", ""))
-
-
-def _load_env_file(env_file: str | None = None) -> str | None:
-    from dotenv import load_dotenv
-    if env_file:
-        path = env_file
-    elif os.environ.get("CH_ENV_FILE"):
-        path = os.environ["CH_ENV_FILE"]
-    else:
-        path = os.path.join(os.path.dirname(__file__), "..", "..", ".env")
-    path = os.path.abspath(path)
-    if os.path.isfile(path):
-        load_dotenv(path, override=False)
-        return path
-    return None
-
-
-def _obfuscate(password: str) -> str:
-    if not password:
-        return "(empty)"
-    if len(password) <= 4:
-        return "****"
-    return password[:2] + "*" * (len(password) - 4) + password[-2:]
+from data_utils.capabilities import probe
+from data_utils.env import (
+    env_int,
+    pre_parse_env_file,
+    print_connection,
+    add_connection_args,
+    make_client,
+)
 
 
 # ── Dedicated test database & tables ────────────────────────────────
@@ -507,10 +476,7 @@ ALL_TYPES = list(TRIGGER_MAP.keys())
 
 
 def main():
-    pre = argparse.ArgumentParser(add_help=False)
-    pre.add_argument("--env-file", default=None)
-    pre_args, _ = pre.parse_known_args()
-    env_path = _load_env_file(pre_args.env_file)
+    env_path = pre_parse_env_file()
 
     parser = argparse.ArgumentParser(
         description="Trigger & classify all ClickHouse merge types",
@@ -525,13 +491,7 @@ Merge types you can trigger:
   optimize       OPTIMIZE TABLE FINAL → forced merge of all parts
         """,
     )
-    parser.add_argument("--env-file", default=None, help="Path to .env file")
-    parser.add_argument("--host", default=os.environ.get("CH_HOST", "localhost"))
-    parser.add_argument("--port", type=int, default=_env_int("CH_PORT", "9000"))
-    parser.add_argument("--user", default=os.environ.get("CH_USER", "default"))
-    parser.add_argument("--password", default=os.environ.get("CH_PASSWORD", ""))
-    parser.add_argument("--secure", action="store_true",
-                        default=os.environ.get("CH_SECURE", "").lower() in ("1", "true", "yes"))
+    add_connection_args(parser)
     parser.add_argument("--types", default=",".join(ALL_TYPES),
                         help=f"Comma-separated merge types to trigger (default: all). "
                              f"Options: {', '.join(ALL_TYPES)}")
@@ -550,12 +510,9 @@ Merge types you can trigger:
             sys.exit(1)
 
     # Connect
+    print_connection(args, env_path)
     print(f"Connecting to ClickHouse at {args.host}:{args.port}...")
-    client = Client(
-        host=args.host, port=args.port,
-        user=args.user, password=args.password,
-        secure=args.secure,
-    )
+    client = make_client(args)
     version = client.execute("SELECT version()")[0][0]
     print(f"  ClickHouse {version}\n")
 

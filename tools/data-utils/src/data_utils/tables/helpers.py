@@ -98,24 +98,24 @@ class ProgressTracker:
 
                 if status == "done":
                     pct = 100
-                    bar = "█" * 20
-                    line = f"  ✓ {name:<20s} [{bar}] 100%  {done:>14,} rows"
+                    bar = "\u2588" * 20
+                    line = f"  \u2713 {name:<20s} [{bar}] 100%  {done:>14,} rows"
                 elif status == "cancelled":
                     filled = int(done * 20 / total) if total else 0
-                    bar = "█" * filled + "░" * (20 - filled)
-                    line = f"  ✗ {name:<20s} [{bar}] cancelled at {done:,} rows"
+                    bar = "\u2588" * filled + "\u2591" * (20 - filled)
+                    line = f"  \u2717 {name:<20s} [{bar}] cancelled at {done:,} rows"
                 elif status in ("skipped", "exceeds target"):
-                    bar = "─" * 20
-                    line = f"  ⊘ {name:<20s} [{bar}] {status}"
+                    bar = "\u2500" * 20
+                    line = f"  \u2298 {name:<20s} [{bar}] {status}"
                 elif total > 0:
                     pct = min(int(done * 100 / total), 99) if total else 0
                     filled = int(done * 20 / total) if total else 0
-                    bar = "█" * filled + "░" * (20 - filled)
+                    bar = "\u2588" * filled + "\u2591" * (20 - filled)
                     part_str = f"  {partition}" if partition else ""
-                    line = f"  ⏳ {name:<20s} [{bar}] {pct:>3d}%  {done:>14,} / {total:,} rows{part_str}"
+                    line = f"  \u231b {name:<20s} [{bar}] {pct:>3d}%  {done:>14,} / {total:,} rows{part_str}"
                 else:
-                    bar = "░" * 20
-                    line = f"  ⏳ {name:<20s} [{bar}]   0%  {status}"
+                    bar = "\u2591" * 20
+                    line = f"  \u231b {name:<20s} [{bar}]   0%  {status}"
 
                 # Pad to clear previous content, then carriage return
                 sys.stdout.write(f"\r{line:<100s}\n")
@@ -184,7 +184,7 @@ def wait_for_table(client: Client, table: str, max_retries: int = 10) -> None:
     just created on one replica may not be visible on another for a few
     seconds.  This helper retries a lightweight ``EXISTS`` check with
     exponential back-off so that subsequent DML doesn't blow up with
-    "Database … does not exist" / "Table … doesn't exist".
+    "Database \u2026 does not exist" / "Table \u2026 doesn't exist".
     """
     for attempt in range(max_retries):
         try:
@@ -327,7 +327,7 @@ def run_batched_insert(
 
         partition_offset += rows_per_partition
         if not tracker:
-            print(f"    ✓ {partition_label} complete" + " " * 20)
+            print(f"    \u2713 {partition_label} complete" + " " * 20)
 
     if tracker:
         tracker.complete(short_name)

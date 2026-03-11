@@ -101,19 +101,27 @@ just drop-data -y
 
 ## Configuration
 
-All CLI scripts (`just load-data`, `just run-queries`, `just run-mutations`, etc.) read connection details and parameters from a `.env` file in the repo root. This file is **not** used by the frontend app - only by scripts.
+All CLI scripts (`just load-data`, `just run-queries`, `just run-mutations`, etc.) automatically load `.env` from the repo root if it exists. This file is **not** used by the frontend app — only by the data-utils CLI tools.
 
 ```bash
 cp .env.example .env
 ```
 
+To use a different env file, set `CH_ENV_FILE` or pass `--env-file`:
+
 ```bash
-# .env - used by CLI scripts only, not the app UI
-CLICKHOUSE_HOST=your-cluster.example.com
-CLICKHOUSE_PORT=8443
-CLICKHOUSE_USER=default
-CLICKHOUSE_PASSWORD=your-password
-CLICKHOUSE_PROTOCOL=https
+CH_ENV_FILE=.env.clickhouse just load-data
+# or
+just load-data --env-file .env.aiven
+```
+
+```bash
+# .env — used by CLI scripts only, not the app UI
+CH_HOST=your-cluster.example.com
+CH_PORT=9440
+CH_USER=default
+CH_PASSWORD=your-password
+CH_SECURE=true
 
 # Data loading parameters
 CH_LOAD_ROWS=1000000
@@ -121,4 +129,16 @@ CH_LOAD_PARTITIONS=1
 CH_LOAD_BATCH_SIZE=10000
 ```
 
-For local development with Docker Compose or Local Binary, the defaults (`localhost:9000`, user `default`, no password) work out of the box - no `.env` needed.
+See `.env.example` for the full list of available options.
+
+CLI tools prompt for confirmation before starting. To skip the prompt, pass `-y` / `--assume-yes` or set `CH_ASSUME_YES=true` in your `.env`:
+
+```bash
+just load-data -y
+# or
+CH_ASSUME_YES=true just load-data
+```
+
+:::info
+By default, all CLI tools automatically look for a `.env` file in the repo root. If no `.env` is found and no `CH_ENV_FILE` is set, the tools fall back to built-in defaults (`localhost:9000`, user `default`, no password) — which works out of the box for local Docker Compose or Local Binary setups.
+:::

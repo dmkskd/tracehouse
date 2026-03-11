@@ -1,15 +1,11 @@
-#!/usr/bin/env python3
-# /// script
-# requires-python = ">=3.10"
-# dependencies = ["clickhouse-driver"]
-# ///
-"""
-ClickHouse capability probing.
+"""ClickHouse capability probing.
 
 Connects to a ClickHouse instance and detects which features are available.
-Used by setup_test_data.py and run_queries.py to gracefully skip
-features that aren't supported (e.g. S3 on Aiven, Distributed on single-node).
+Used by the CLI tools to gracefully skip features that aren't supported
+(e.g. S3 on Aiven, Distributed on single-node).
 """
+
+from __future__ import annotations
 
 import logging
 from dataclasses import dataclass, field
@@ -54,7 +50,6 @@ def probe(client: Client) -> Capabilities:
     caps = Capabilities()
 
     log.info("probing version")
-    # Version
     try:
         rows = client.execute("SELECT version()")
         caps.version = rows[0][0] if rows else "unknown"
@@ -62,7 +57,6 @@ def probe(client: Client) -> Capabilities:
         caps.version = "unknown"
 
     log.info("probing S3 storage policy")
-    # S3 storage policy
     try:
         rows = client.execute(
             "SELECT policy_name FROM system.storage_policies WHERE policy_name = 's3tiered'"
@@ -72,9 +66,6 @@ def probe(client: Client) -> Capabilities:
         caps.has_s3_storage_policy = False
 
     log.info("probing s3() table function (5s timeout)")
-    # s3() table function — try a minimal query
-    # Use a short timeout: on managed services like Aiven, outbound S3 may be
-    # blocked and the query would hang for a very long time without this.
     try:
         client.execute(
             "SELECT 1 FROM s3('https://datasets-documentation.s3.eu-west-3.amazonaws.com/"
@@ -86,7 +77,6 @@ def probe(client: Client) -> Capabilities:
         caps.has_s3_function = False
 
     log.info("probing cluster topology")
-    # Cluster detection
     try:
         rows = client.execute(
             "SELECT cluster, count() AS replicas, uniq(shard_num) AS shards "
@@ -107,7 +97,6 @@ def probe(client: Client) -> Capabilities:
         pass
 
     log.info("probing Keeper/ZooKeeper")
-    # Keeper/ZooKeeper
     try:
         rows = client.execute("SELECT count() FROM system.zookeeper WHERE path = '/'")
         caps.has_keeper = rows[0][0] > 0 if rows else False
@@ -115,7 +104,6 @@ def probe(client: Client) -> Capabilities:
         caps.has_keeper = False
 
     log.info("probing restricted settings")
-    # Probe restricted settings
     test_settings = [
         ('memory_profiler_sample_probability', 1),
         ('log_query_threads', 1),
@@ -131,7 +119,6 @@ def probe(client: Client) -> Capabilities:
                 caps.restricted_settings.append(setting_name)
 
     log.info("probing existing databases")
-    # Existing databases
     try:
         rows = client.execute(
             "SELECT name FROM system.databases WHERE name NOT IN ('system', 'information_schema', 'INFORMATION_SCHEMA', 'default')"

@@ -4,7 +4,7 @@ Detailed reference of the monorepo layout and key files.
 
 ## Root
 
-```
+```text
 ├── package.json           # npm workspaces root
 ├── justfile               # Development commands (run `just` to list)
 ├── .env                   # Environment configuration
@@ -17,7 +17,7 @@ Detailed reference of the monorepo layout and key files.
 
 ## Frontend (`frontend/`)
 
-```
+```text
 frontend/
 ├── src/
 │   ├── App.tsx                    # Root app component with routing
@@ -43,7 +43,7 @@ frontend/
 
 ## Core Library (`packages/core/`)
 
-```
+```text
 packages/core/
 ├── src/
 │   ├── adapters/
@@ -55,9 +55,34 @@ packages/core/
 └── vitest.config.ts
 ```
 
+## Data Utils (`tools/data-utils/`)
+
+Python package for data loading, query workload generation, and mutation testing.
+
+```text
+tools/data-utils/
+├── pyproject.toml                     # Package config + entry points
+├── src/data_utils/
+│   ├── capabilities.py                # ClickHouse capability probing
+│   ├── env.py                         # Shared connection/env helpers
+│   ├── cli/
+│   │   ├── load.py                    # tracehouse-load entry point
+│   │   ├── queries.py                 # tracehouse-queries entry point
+│   │   ├── mutations.py               # tracehouse-mutations entry point
+│   │   └── merge_triggers.py          # tracehouse-merge-triggers entry point
+│   └── tables/
+│       ├── protocol.py                # Dataset Protocol + QuerySet
+│       ├── synthetic_data.py          # synthetic_data.events
+│       ├── nyc_taxi.py                # nyc_taxi.trips
+│       ├── uk_house_prices.py         # uk_price_paid.uk_price_paid
+│       ├── web_analytics.py           # web_analytics.pageviews
+│       └── dimensions.py              # Dimension/lookup tables
+└── tests/                             # Integration tests (testcontainers)
+```
+
 ## Infrastructure (`infra/`)
 
-```
+```text
 infra/
 ├── quickstart/
 │   └── docker-compose.yml         # All-in-one quickstart (app + ClickHouse)
@@ -71,10 +96,9 @@ infra/
 │   ├── setup.sh                   # Local binary setup
 │   └── config/                    # ClickHouse config files
 └── scripts/
-    ├── setup_test_data.py         # Data loading orchestrator
-    ├── run_queries.py             # Query load generator
-    ├── run_mutations.py           # Mutation load generator
-    └── tables/                    # Per-dataset loading scripts
+    ├── setup_jaeger_export.sql    # Jaeger trace export setup
+    ├── setup_read_only_user.sql   # Read-only user setup
+    └── uk_house_queries.sql       # Example UK house price queries
 ```
 
 ## Development Commands
@@ -88,5 +112,5 @@ Run `just` to see all available commands, organized by group:
 | `k8s` | `k8s-start`, `k8s-stop`, `k8s-status` |
 | `local` | `local-start`, `local-stop` |
 | `data` | `load-data`, `run-queries`, `run-mutations`, `drop-data` |
-| `test` | `test`, `test-frontend`, `test-core`, `test-core-integration` |
+| `test` | `test`, `test-frontend`, `test-core`, `test-core-integration`, `test-data-utils` |
 | `build` | `build`, `dist-frontend`, `dist-docker-build` |

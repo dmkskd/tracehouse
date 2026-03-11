@@ -161,6 +161,31 @@ afterAll(async () => {
 
 4. Name the file `*.integration.test.ts` so it's picked up by the integration test runner.
 
+## Data Utils tests (Python)
+
+The `tools/data-utils/` package has its own test suite using pytest and testcontainers. These tests validate the table plugin contracts, create/insert operations, and query generation against a real ClickHouse instance.
+
+```
+tools/data-utils/tests/
+├── conftest.py              # Testcontainers fixture (session-scoped)
+└── test_table_plugins.py    # Protocol conformance + integration tests
+```
+
+### Running
+
+```bash
+just test-data-utils
+```
+
+Docker must be running — the tests spin up a ClickHouse container automatically.
+
+### What they cover
+
+- **Protocol conformance**: each dataset plugin satisfies the `Dataset` protocol
+- **Create + insert**: tables are created and data is inserted correctly
+- **QuerySet validation**: each plugin's `queries` property returns well-formed SQL
+- **InsertConfig**: frozen dataclass behaviour and defaults
+
 ## Quick reference
 
 ```bash
@@ -168,4 +193,5 @@ just test                    # Run all tests (unit + frontend + integration)
 just test-core               # Unit tests only (packages/core)
 just test-frontend           # Frontend tests only
 just test-core-integration   # Integration tests only (requires Docker)
+just test-data-utils         # Data utils tests (requires Docker)
 ```

@@ -283,45 +283,45 @@ load-data table="all" *args="":
         uk) TABLE_FLAG="--uk-only" ;;
         web) TABLE_FLAG="--web-only" ;;
     esac
-    uv run infra/scripts/setup_test_data.py $TABLE_FLAG {{args}}
+    uv run --project tools/data-utils tracehouse-load $TABLE_FLAG {{args}}
 
 # Load test data (quick - 1M rows, small batches for many parts)
 [group('data')]
 load-data-quick:
-    uv run infra/scripts/setup_test_data.py --rows 1000000 --partitions 1 --batch-size 10000
+    uv run --project tools/data-utils tracehouse-load --rows 1000000 --partitions 1 --batch-size 10000
 
 # Load test data (heavy - many small batches to trigger lots of merges)
 [group('data')]
 load-data-heavy:
-    uv run infra/scripts/setup_test_data.py --rows 10000000 --partitions 1 --batch-size 10000
+    uv run --project tools/data-utils tracehouse-load --rows 10000000 --partitions 1 --batch-size 10000
 
 # Run queries to generate activity for monitoring
 # When args are omitted, the script reads defaults from .env (CH_QUERY_*)
 # Example for heavy load: just run-queries --slow-workers 10 --s3-workers 6 --slow-interval 0.3
 [group('data')]
 run-queries *args="":
-    uv run infra/scripts/run_queries.py {{args}}
+    uv run --project tools/data-utils tracehouse-queries {{args}}
 
 # Run mutations (UPDATE/DELETE) to test mutation monitoring
 # When args are omitted, the script reads defaults from .env (CH_MUTATION_*)
 [group('data')]
 run-mutations *args="":
-    uv run infra/scripts/run_mutations.py {{args}}
+    uv run --project tools/data-utils tracehouse-mutations {{args}}
 
 # Run heavy mutations only
 [group('data')]
 run-mutations-heavy *args="":
-    uv run infra/scripts/run_mutations.py --heavy-only {{args}}
+    uv run --project tools/data-utils tracehouse-mutations --heavy-only {{args}}
 
 # Run lightweight mutations only
 [group('data')]
 run-mutations-light *args="":
-    uv run infra/scripts/run_mutations.py --lightweight-only {{args}}
+    uv run --project tools/data-utils tracehouse-mutations --lightweight-only {{args}}
 
 # Reset and reload test data
 [group('data')]
 reload-data *args="":
-    uv run infra/scripts/setup_test_data.py --drop {{args}}
+    uv run --project tools/data-utils tracehouse-load --drop {{args}}
 
 # Drop test tables (works with both Docker and K8s via localhost)
 [group('data')]
@@ -359,9 +359,9 @@ drop-data confirm="":
 # TESTING & QUALITY
 # ─────────────────────────────────────────────────────────────────
 
-# Run all tests (frontend + core unit + core integration)
+# Run all tests (frontend + core unit + core integration + scripts)
 [group('test')]
-test: test-frontend test-core test-core-integration
+test: test-frontend test-core test-core-integration test-data-utils
 
 # Run frontend tests
 [group('test')]
@@ -377,6 +377,11 @@ test-core:
 [group('test')]
 test-core-integration:
     cd packages/core && npx vitest run --config vitest.integration.config.ts
+
+# Run Python data-utils tests (requires Docker)
+[group('test')]
+test-data-utils:
+    cd tools/data-utils && uv run --group test python -m pytest tests/ -v
 
 # Format code
 [group('test')]
