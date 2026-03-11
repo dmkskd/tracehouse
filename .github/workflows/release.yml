@@ -13,8 +13,32 @@ permissions:
   contents: write
 
 jobs:
+  # ── Run tests before building ──────────────────────────────
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+
+      - name: Install dependencies
+        run: |
+          rm -f package-lock.json
+          npm install
+          npm run build --workspace=packages/core
+          npm run build --workspace=packages/ui-shared
+
+      - name: Run frontend tests
+        run: cd frontend && npm test
+
+      - name: Run core tests
+        run: cd packages/core && npx vitest run
+
   # ── Build the single-file HTML (platform-independent) ────────
   html:
+    needs: [test]
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
@@ -38,8 +62,42 @@ jobs:
           name: tracehouse-html
           path: frontend/dist/tracehouse.html
 
+  # ── Build Grafana plugin ─────────────────────────────────────
+  grafana-plugin:
+    needs: [test]
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+
+      - name: Install dependencies
+        run: |
+          rm -f package-lock.json
+          npm install
+          npm run build --workspace=packages/core
+          npm run build --workspace=packages/ui-shared
+
+      - name: Build Grafana plugin
+        run: |
+          cd grafana-app-plugin && npm install && npm run build
+
+      - name: Package plugin
+        run: |
+          mkdir -p release/tracehouse-grafana-plugin
+          cp -r grafana-app-plugin/dist/* release/tracehouse-grafana-plugin/
+          cd release && zip -r tracehouse-grafana-plugin.zip tracehouse-grafana-plugin
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: tracehouse-grafana-plugin
+          path: release/tracehouse-grafana-plugin.zip
+
   # ── Build Rust binaries for each platform ────────────────────
   binary:
+    needs: [test]
     strategy:
       matrix:
         include:
@@ -97,7 +155,7 @@ jobs:
 
   # ── Upload all artifacts to the GitHub release ───────────────
   upload:
-    needs: [html, binary]
+    needs: [html, binary, grafana-plugin]
     runs-on: ubuntu-latest
     if: github.event_name == 'release'
     steps:
@@ -114,4 +172,5 @@ jobs:
             artifacts/tracehouse-x86_64-unknown-linux-gnu/tracehouse-x86_64-unknown-linux-gnu.tar.gz \
             artifacts/tracehouse-aarch64-unknown-linux-gnu/tracehouse-aarch64-unknown-linux-gnu.tar.gz \
             artifacts/tracehouse-aarch64-apple-darwin/tracehouse-aarch64-apple-darwin.tar.gz \
+            artifacts/tracehouse-grafana-plugin/tracehouse-grafana-plugin.zip \
             --repo "${{ github.repository }}"

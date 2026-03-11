@@ -1,17 +1,20 @@
 #!/usr/bin/env bash
-# Build release artifacts: standalone binary + single-file HTML.
+# Build release artifacts: standalone binary + single-file HTML + Grafana plugin.
 # Usage:
 #   ./scripts/build-release.sh              # build for current platform
 #   ./scripts/build-release.sh --target aarch64-apple-darwin
+#   ./scripts/build-release.sh --skip-tests  # skip the pre-release test suite
 #
 # Outputs go to release/ directory.
 
 set -euo pipefail
 
 TARGET=""
+SKIP_TESTS=false
 while [[ $# -gt 0 ]]; do
   case "$1" in
     --target) TARGET="$2"; shift 2 ;;
+    --skip-tests) SKIP_TESTS=true; shift ;;
     *) echo "Unknown option: $1"; exit 1 ;;
   esac
 done
@@ -27,6 +30,19 @@ npm install
 npm run build --workspace=packages/core
 npm run build --workspace=packages/ui-shared
 
+# ── Tests ─────────────────────────────────────────────────────
+if [[ "$SKIP_TESTS" == "true" ]]; then
+  echo ""
+  echo "=== Skipping tests (--skip-tests) ==="
+else
+  echo ""
+  echo "=== Running tests ==="
+  cd "$ROOT/frontend" && npm test
+  cd "$ROOT/packages/core" && npx vitest run
+  cd "$ROOT/packages/core" && npx vitest run --config vitest.integration.config.ts
+  echo "  ✓ All tests passed"
+fi
+
 # ── Single-file HTML ────────────────────────────────────────────
 echo ""
 echo "=== Building single-file HTML ==="
@@ -34,6 +50,20 @@ cd "$ROOT/frontend"
 npm run build:single
 cp dist/tracehouse.html "$RELEASE_DIR/tracehouse.html"
 echo "  → release/tracehouse.html"
+
+# ── Grafana plugin ────────────────────────────────────────────
+echo ""
+echo "=== Building Grafana plugin ==="
+cd "$ROOT/grafana-app-plugin"
+npm install
+npm run build
+PLUGIN_ARCHIVE="tracehouse-grafana-plugin"
+mkdir -p "$RELEASE_DIR/$PLUGIN_ARCHIVE"
+cp -r dist/* "$RELEASE_DIR/$PLUGIN_ARCHIVE/"
+cd "$RELEASE_DIR"
+zip -r "${PLUGIN_ARCHIVE}.zip" "$PLUGIN_ARCHIVE"
+rm -rf "$PLUGIN_ARCHIVE"
+echo "  → release/${PLUGIN_ARCHIVE}.zip"
 
 # ── Standalone binary ───────────────────────────────────────────
 echo ""
@@ -80,4 +110,4 @@ echo "  → release/${ARCHIVE_NAME}.tar.gz"
 # ── Summary ─────────────────────────────────────────────────────
 echo ""
 echo "=== Release artifacts ==="
-ls -lh "$RELEASE_DIR"/
+ls -lh "$RELEASE_DIR"

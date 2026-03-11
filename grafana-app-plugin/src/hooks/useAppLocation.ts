@@ -1,11 +1,12 @@
 /**
  * useAppLocation - Grafana plugin implementation
- * 
- * Uses our own LocationContext instead of react-router to avoid
- * context issues with Grafana's plugin loading system.
+ *
+ * Uses LocationContext for navigation and Grafana's locationService
+ * for URL search params, so query parameters work across all pages.
  */
 
-import { createContext, useContext, useState, useCallback } from 'react';
+import { createContext, useContext, useState, useCallback, useEffect, useMemo } from 'react';
+import { locationService } from '@grafana/runtime';
 
 export interface AppLocation {
   pathname: string;
@@ -45,11 +46,72 @@ export function useParams<T extends Record<string, string | undefined> = Record<
   return {} as T;
 }
 
-// Stub for useSearchParams - returns empty URLSearchParams
-export function useSearchParams(): [URLSearchParams, (params: URLSearchParams) => void] {
-  const [params] = useState(() => new URLSearchParams());
-  const setParams = useCallback((_newParams: URLSearchParams) => {
-    // No-op in Grafana context
+function getSearch(): string {
+  try {
+    return locationService.getLocation().search;
+  } catch {
+    return window.location.search;
+  }
+}
+
+/**
+ * Reads/writes URL search params via Grafana's locationService.
+ * This replaces the no-op stub so pages like QueryTracer and
+ * DashboardViewer can pass state through the URL.
+ */
+export function useSearchParams(): [URLSearchParams, (params: URLSearchParams, opts?: { replace?: boolean }) => void] {
+  const [search, setSearch] = useState(getSearch);
+
+  useEffect(() => {
+    try {
+      const unlisten = locationService.getHistory().listen((location: { search: string }) => {
+        setSearch(location.search);
+      });
+      return unlisten;
+    } catch {
+      const interval = setInterval(() => {
+        setSearch(prev => {
+          const current = window.location.search;
+          return current !== prev ? current : prev;
+        });
+      }, 300);
+      return () => clearInterval(interval);
+    }
   }, []);
+
+  const params = useMemo(() => new URLSearchParams(search), [search]);
+
+  const setParams = useCallback(
+    (newParams: URLSearchParams, opts?: { replace?: boolean }) => {
+      const query: Record<string, string | null> = {};
+
+      // Null out all current params first
+      const currentParams = new URLSearchParams(getSearch());
+      currentParams.forEach((_val, key) => {
+        query[key] = null;
+      });
+
+      // Set new params
+      newParams.forEach((val, key) => {
+        query[key] = val;
+      });
+
+      try {
+        const replace = opts?.replace !== false; // default to replace
+        locationService.partial(query, replace);
+      } catch {
+        const qs = newParams.toString();
+        const url = qs ? `${window.location.pathname}?${qs}` : window.location.pathname;
+        if (opts?.replace === false) {
+          window.history.pushState(null, '', url);
+        } else {
+          window.history.replaceState(null, '', url);
+        }
+        setSearch(window.location.search);
+      }
+    },
+    [],
+  );
+
   return [params, setParams];
 }

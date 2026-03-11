@@ -5,7 +5,7 @@ import { ServiceProvider, useServices } from './ServiceProvider';
 import { PluginConfigProvider } from './PluginConfigContext';
 import { DatasourceSelector } from './components/DatasourceSelector';
 import { LocationContext, AppLocation } from './hooks/useAppLocation';
-import { useViewPreferenceStore } from '@frontend/stores/viewPreferenceStore';
+import { useUserPreferenceStore } from '@frontend/stores/userPreferenceStore';
 import { useRefreshSettingsStore, useGlobalLastUpdatedStore } from '@frontend/stores/refreshSettingsStore';
 import { useRefreshConfig, type RefreshRateOption } from '@tracehouse/ui-shared';
 
@@ -34,7 +34,7 @@ const Overview = lazy(() => import('@frontend/pages/Overview').then(m => ({ defa
 const ViewModeToggle: React.FC = () => {
   const [open, setOpen] = useState(false);
   const ref = useRef<HTMLDivElement>(null);
-  const { preferredViewMode, setPreferredViewMode } = useViewPreferenceStore();
+  const { preferredViewMode, setPreferredViewMode } = useUserPreferenceStore();
 
   useEffect(() => {
     if (!open) return;

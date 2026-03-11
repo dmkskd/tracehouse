@@ -9,3 +9,4 @@ export {
   ALL_MERGE_CATEGORIES,
 } from './merge-classification.js';
 export type { MergeCategory, MergeCategoryInfo } from './merge-classification.js';
+export { parseTimeValue } from './time.js';

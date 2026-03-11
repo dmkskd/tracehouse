@@ -20,7 +20,7 @@ import {
   getRagColor,
 } from './presetQueries';
 import { QueryDetailModal } from '../query/QueryDetailModal';
-import type { QuerySeries } from '@tracehouse/core';
+import { type QuerySeries, parseTimeValue } from '@tracehouse/core';
 import { formatCell, isNumericValue, extractNumeric } from './charts';
 
 export interface LinkQueryModalProps {
@@ -51,9 +51,8 @@ interface QueryRow {
 /** Build a QuerySeries from a query_log row so QueryDetailModal can take over. */
 function rowToQuerySeries(row: QueryRow): QuerySeries {
   const durationMs = Number(row.query_duration_ms ?? 0);
-  const startTime = String(row.event_time ?? new Date().toISOString());
-  const startDate = new Date(startTime);
-  const endTime = new Date(startDate.getTime() + durationMs).toISOString();
+  const { timeMs, timeStr: startTime } = parseTimeValue(row.event_time ?? new Date().toISOString());
+  const endTime = new Date(timeMs + durationMs).toISOString();
 
   return {
     query_id: String(row.query_id ?? ''),

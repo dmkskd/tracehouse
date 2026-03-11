@@ -37,6 +37,7 @@ const sidebars: SidebarsConfig = {
       items: [
         'development/project-structure',
         'development/building',
+        'development/grafana-plugin',
         'development/testing',
         'development/security-scanning',
         'development/documentation',
