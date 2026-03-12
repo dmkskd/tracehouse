@@ -55,6 +55,7 @@ const EMPTY_FLAGS: MonitoringFlags = {
   hasS3QueueLog: false,
   hasBlobStorageLog: false,
   hasIntrospectionFunctions: false,
+  hasCPUProfilerActive: false,
   hasClickStack: false,
   isCloudService: false,
 };
