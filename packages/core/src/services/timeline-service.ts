@@ -76,7 +76,7 @@ export class TimelineService {
   constructor(private adapter: IClickHouseAdapter) {}
 
   async getTimeline(options: TimelineOptions): Promise<MemoryTimeline> {
-    const { timestamp, windowSeconds, includeRunning = true, hostname = null, activityLimit = 100, sortMetric = 'memory' } = options;
+    const { timestamp, windowSeconds, includeRunning = true, hostname = null, activityLimit = 100, activeMetric = 'memory' } = options;
 
     const start = new Date(timestamp.getTime() - windowSeconds * 1000);
     const end = new Date(timestamp.getTime() + windowSeconds * 1000);
@@ -96,13 +96,13 @@ export class TimelineService {
       network: "ProfileEvents['NetworkSendBytes'] + ProfileEvents['NetworkReceiveBytes']",
       disk: "ProfileEvents['OSReadBytes'] + ProfileEvents['OSWriteBytes']",
     };
-    const queryOrderBy = QUERY_ORDER[sortMetric] || 'memory_usage';
-    const mergeOrderBy = MERGE_ORDER[sortMetric] || 'peak_memory_usage';
+    const queryOrderBy = QUERY_ORDER[activeMetric] || 'memory_usage';
+    const mergeOrderBy = MERGE_ORDER[activeMetric] || 'peak_memory_usage';
 
     // Client-side sort to match the SQL ORDER BY metric
     type HasMetrics = { peak_memory: number; cpu_us: number; net_send: number; net_recv: number; disk_read: number; disk_write: number };
     const sortByMetric = (a: HasMetrics, b: HasMetrics): number => {
-      switch (sortMetric) {
+      switch (activeMetric) {
         case 'cpu': return b.cpu_us - a.cpu_us;
         case 'network': return (b.net_send + b.net_recv) - (a.net_send + a.net_recv);
         case 'disk': return (b.disk_read + b.disk_write) - (a.disk_read + a.disk_write);
@@ -206,14 +206,14 @@ export class TimelineService {
       runningQueries,
       runningMergesAndMutations,
     ] = await Promise.all([
-      sortMetric === 'memory' ? this.fetchServerMemory(params, withHost) : Promise.resolve([]),
-      sortMetric === 'cpu' ? this.fetchServerCpu(params, withHost) : Promise.resolve([]),
-      sortMetric === 'network' ? this.fetchNetworkData(params, withHost) : Promise.resolve({ send: [], recv: [] }),
-      sortMetric === 'disk' ? this.fetchDiskData(params, withHost) : Promise.resolve({ read: [], write: [] }),
+      activeMetric === 'memory' ? this.fetchServerMemory(params, withHost) : Promise.resolve([]),
+      activeMetric === 'cpu' ? this.fetchServerCpu(params, withHost) : Promise.resolve([]),
+      activeMetric === 'network' ? this.fetchNetworkData(params, withHost) : Promise.resolve({ send: [], recv: [] }),
+      activeMetric === 'disk' ? this.fetchDiskData(params, withHost) : Promise.resolve({ read: [], write: [] }),
       this._cachedRam ? Promise.resolve(this._cachedRam) : this.fetchTotalRam(params, withHost),
       this._cachedCpuCores !== null ? Promise.resolve(this._cachedCpuCores) : this.fetchCpuCores(params, withHost),
       // Per-host CPU breakdown for cluster tooltip (only in "All" mode)
-      !hostname && sortMetric === 'cpu' ? this.fetchPerHostCpu(params) : Promise.resolve({}),
+      !hostname && activeMetric === 'cpu' ? this.fetchPerHostCpu(params) : Promise.resolve({}),
       this.fetchQueries(params, start, end, (sql) => applyOrder(withHost(sql))),
       this.fetchQueryCount(params, withHost),
       this.fetchMergeStats(params, withHost),

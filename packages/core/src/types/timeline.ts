@@ -98,8 +98,8 @@ export interface TimelineOptions {
   hostname?: string | null;
   /** Max rows per activity type (queries, merges, mutations). Default: 100 */
   activityLimit?: number;
-  /** Metric to sort/limit by. Determines which "top N" items are returned. Default: 'memory' */
-  sortMetric?: 'memory' | 'cpu' | 'network' | 'disk';
+  /** Active metric tab. Controls which server metrics are fetched and which "top N" sort is used. Default: 'memory' */
+  activeMetric?: 'memory' | 'cpu' | 'network' | 'disk';
 }
 
 /**

@@ -146,7 +146,7 @@ export const TimeTravelPage: React.FC = () => {
         includeRunning,
         hostname: selectedHost,
         activityLimit,
-        sortMetric: metricMode,
+        activeMetric: metricMode,
       });
       // In live mode, slide zoom/pin forward to follow the advancing time window
       const newEndMs = new Date(result.window_end).getTime();
@@ -261,7 +261,7 @@ export const TimeTravelPage: React.FC = () => {
         windowSeconds: navigatorWindowSec,
         hostname: selectedHost,
         activityLimit,
-        sortMetric: metricMode,
+        activeMetric: metricMode,
       });
       setNavigatorData(result);
       lastNavigatorFetchTime.current = endTimeKey;

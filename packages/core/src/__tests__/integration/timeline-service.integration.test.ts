@@ -7,7 +7,7 @@
  * - query_kind field is populated for queries
  * - merge_reason field uses canonical MergeCategory values from classifyMergeHistory
  * - MovePart events (TTL Move) bypass the 1MB memory filter
- * - sortMetric controls which ORDER BY column is used
+ * - activeMetric controls which ORDER BY column is used
  * - Count queries return totals independent of the LIMIT
  */
 
@@ -236,14 +236,14 @@ describe('TimelineService integration', () => {
     });
   });
 
-  // ── sortMetric controls ORDER BY ───────────────────────────────────
+  // ── activeMetric controls ORDER BY ───────────────────────────────────
 
-  describe('sortMetric controls ordering', () => {
-    it('sortMetric=memory returns items sorted by memory', async () => {
+  describe('activeMetric controls ordering', () => {
+    it('activeMetric=memory returns items sorted by memory', async () => {
       const result = await service.getTimeline({
         timestamp: new Date(),
         windowSeconds: 300,
-        sortMetric: 'memory',
+        activeMetric: 'memory',
       });
 
       // Queries should be in descending memory order (from SQL)
@@ -252,18 +252,18 @@ describe('TimelineService integration', () => {
       }
     });
 
-    it('sortMetric=cpu returns items (may differ from memory order)', async () => {
+    it('activeMetric=cpu returns items (may differ from memory order)', async () => {
       const byMemory = await service.getTimeline({
         timestamp: new Date(),
         windowSeconds: 300,
-        sortMetric: 'memory',
+        activeMetric: 'memory',
         activityLimit: 50,
       });
 
       const byCpu = await service.getTimeline({
         timestamp: new Date(),
         windowSeconds: 300,
-        sortMetric: 'cpu',
+        activeMetric: 'cpu',
         activityLimit: 50,
       });
 
@@ -275,12 +275,12 @@ describe('TimelineService integration', () => {
       // (not guaranteed to differ with small datasets, but the queries should succeed)
     });
 
-    it('different sortMetric values produce valid results', async () => {
+    it('different activeMetric values produce valid results', async () => {
       for (const metric of ['memory', 'cpu', 'network', 'disk'] as const) {
         const result = await service.getTimeline({
           timestamp: new Date(),
           windowSeconds: 300,
-          sortMetric: metric,
+          activeMetric: metric,
           activityLimit: 5,
         });
 
