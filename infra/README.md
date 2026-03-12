@@ -42,13 +42,13 @@ Simplest way to get started. Runs ClickHouse, Prometheus, and Grafana.
 
 ```bash
 # Start everything
-docker-compose -f infra/docker/docker-compose.yml up
+docker compose -f infra/docker/docker-compose.yml up
 
 # Or background + app services
 just dev
 
 # Stop
-docker-compose -f infra/docker/docker-compose.yml down
+docker compose -f infra/docker/docker-compose.yml down
 ```
 
 ### What's included

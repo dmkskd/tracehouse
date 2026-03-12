@@ -12,6 +12,9 @@ services:
       - tracehouse-clickhouse-data:/var/lib/clickhouse
       - ../docker/clickhouse-config/listen.xml:/etc/clickhouse-server/config.d/listen.xml:ro
       - ../docker/clickhouse-users/default-user.xml:/etc/clickhouse-server/users.d/default-user.xml:ro
+    ports:
+      - "9000:9000"
+      - "8123:8123"
     healthcheck:
       test: ["CMD", "clickhouse-client", "--query", "SELECT 1"]
       interval: 5s

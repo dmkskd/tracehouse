@@ -24,17 +24,17 @@ status:
     fi
     echo ""
     echo "=== Docker Compose ==="
-    if docker-compose -f infra/docker/docker-compose.yml ps --status running 2>/dev/null | grep -q "tracehouse-dev"; then
+    if docker compose -f infra/docker/docker-compose.yml ps --status running 2>/dev/null | grep -q "tracehouse-dev"; then
         up "ClickHouse" "localhost:9000 / :8123"
     else
         down "ClickHouse"
     fi
-    if docker-compose -f infra/docker/docker-compose.yml ps --status running 2>/dev/null | grep -q "tracehouse-prometheus"; then
+    if docker compose -f infra/docker/docker-compose.yml ps --status running 2>/dev/null | grep -q "tracehouse-prometheus"; then
         up "Prometheus" "localhost:9090"
     else
         down "Prometheus"
     fi
-    if docker-compose -f infra/docker/docker-compose.yml ps --status running 2>/dev/null | grep -q "tracehouse-grafana"; then
+    if docker compose -f infra/docker/docker-compose.yml ps --status running 2>/dev/null | grep -q "tracehouse-grafana"; then
         up "Grafana" "localhost:3001"
     else
         down "Grafana"
@@ -166,31 +166,31 @@ local-restart: local-stop local-start
 # Start ClickHouse + MinIO (fast, no npm builds)
 [group('docker')]
 docker-start:
-    docker-compose -f infra/docker/docker-compose.yml up
+    docker compose -f infra/docker/docker-compose.yml up
 
 # Start ClickHouse + MinIO in background (fast, no npm builds)
 [group('docker')]
 docker-start-bg:
-    @docker-compose -f infra/docker/docker-compose.yml up -d
+    @docker compose -f infra/docker/docker-compose.yml up -d
     @echo "Waiting for ClickHouse..."
     @sleep 3
 
 # Start everything: ClickHouse + MinIO + Prometheus + Grafana + Tempo (builds Grafana plugin first)
 [group('docker')]
 docker-start-full: grafana-plugin-build
-    docker-compose -f infra/docker/docker-compose.yml --profile full up
+    docker compose -f infra/docker/docker-compose.yml --profile full up
 
 # Start everything in background (builds Grafana plugin first)
 [group('docker')]
 docker-start-full-bg: grafana-plugin-build
-    @docker-compose -f infra/docker/docker-compose.yml --profile full up -d
+    @docker compose -f infra/docker/docker-compose.yml --profile full up -d
     @echo "Waiting for ClickHouse..."
     @sleep 3
 
 # Stop docker infrastructure (all profiles)
 [group('docker')]
 docker-stop:
-    @docker-compose -f infra/docker/docker-compose.yml --profile full down
+    @docker compose -f infra/docker/docker-compose.yml --profile full down
 
 # Restart docker infrastructure
 [group('docker')]
@@ -284,6 +284,11 @@ load-data table="all" *args="":
         web) TABLE_FLAG="--web-only" ;;
     esac
     uv run --project tools/data-utils tracehouse-load $TABLE_FLAG {{args}}
+
+# Launch TUI to orchestrate data tools with shared test users
+[group('data')]
+tui *args="":
+    uv run --project tools/data-utils tracehouse-tui {{args}}
 
 # Load test data (quick - 1M rows, small batches for many parts)
 [group('data')]
