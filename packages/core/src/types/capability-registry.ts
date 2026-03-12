@@ -106,6 +106,12 @@ export const CAPABILITY_REGISTRY: CapabilityRegistryEntry[] = [
     ],
   },
   {
+    capabilityId: 'cpu_profiler_active',
+    consumers: [
+      { screen: 'CPU Sampling', tab: 'Engine Internals', route: '/engine-internals', enables: 'Verifies CPU profiler is actually capturing samples (SYS_PTRACE present)', importance: 'optional' },
+    ],
+  },
+  {
     capabilityId: 'query_log_profile_events',
     consumers: [
       { screen: 'Query Monitor', tab: 'Queries', route: '/query-monitor', enables: 'Resource attribution columns (CPU time, read bytes, cache hits)', importance: 'optional' },

@@ -160,13 +160,27 @@ export class TimelineService {
       }
       
       if (deepestWhereIdx >= 0 && maxDepth > 0) {
-        // There's a WHERE inside a subquery. Find the end of its conditions:
-        // look for the closing paren at the same depth, or ORDER BY / GROUP BY at same depth.
+        // There's a WHERE inside a subquery. Insert the filter after the WHERE
+        // conditions but before GROUP BY / ORDER BY / closing paren at the same depth.
         let insertPos = sql.length;
-        for (let i = deepestWhereIdx; i < sql.length; i++) {
-          if (sql[i] === ')' && depthAt[i] === maxDepth) {
-            insertPos = i;
+
+        // First, look for GROUP BY or ORDER BY at the same depth (comes before closing paren)
+        const clauseRe = /\b(GROUP\s+BY|ORDER\s+BY)\b/gi;
+        let clauseMatch;
+        while ((clauseMatch = clauseRe.exec(sql)) !== null) {
+          if (clauseMatch.index > deepestWhereIdx && depthAt[clauseMatch.index] === maxDepth) {
+            insertPos = clauseMatch.index;
             break;
+          }
+        }
+
+        // Fall back to closing paren at the same depth
+        if (insertPos === sql.length) {
+          for (let i = deepestWhereIdx; i < sql.length; i++) {
+            if (sql[i] === ')' && depthAt[i] === maxDepth) {
+              insertPos = i;
+              break;
+            }
           }
         }
         return sql.slice(0, insertPos) + `\n    ${filter}\n  ` + sql.slice(insertPos);
@@ -269,7 +283,7 @@ export class TimelineService {
       server_memory: serverMemory,
       // Clamp CPU values: under heavy load, metric_log collection can be delayed,
       // causing accumulated CPU µs to exceed the reported wall-clock interval.
-      // Max µs/s = cpuCores × 1,000,000. See docs/metrics-calculations.md for details.
+      // Max µs/s = cpuCores × 1,000,000. See docs/metrics/cpu.md for details.
       server_cpu: cpuCores > 0
         ? serverCpu.map(p => ({
             t: p.t,

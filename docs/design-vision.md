@@ -2,7 +2,7 @@
 
 > Consolidated from the original design documents. This captures the conceptual model
 > and architectural decisions. For implementation details, see:
-> - [metrics-calculations.md](metrics-calculations.md) — actual formulas used
+> - [metrics/](metrics/) — actual formulas used (split by topic)
 > - [dashboard-data-sources.md](dashboard-data-sources.md) — UI element → system table mapping
 > - [clickhouse-observability-tiers.md](clickhouse-observability-tiers.md) — system table architecture
 
@@ -74,7 +74,7 @@ Total CPU = Query CPU + Merge CPU + Mutation CPU + Replication CPU + Other
 
 The merge CPU gap: `system.merges` has no ProfileEvents. We use heuristic estimation
 for in-flight merges (count × estimated cores per merge) and actual CPU data from
-`system.part_log` for completed merges. See [metrics-calculations.md](metrics-calculations.md)
+`system.part_log` for completed merges. See [metrics/overview.md](metrics/overview.md)
 for the full formula.
 
 ### Memory Attribution (instantaneous)

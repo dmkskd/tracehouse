@@ -112,12 +112,18 @@ export function CPUSamplingCard({ className = '', adapter: adapterOverride }: CP
   }
 
   if (!data || data.totalSamples === 0) {
-    // Check if CPU profiler is actually enabled
+    // Check capability details to give an actionable hint
     const caps = useMonitoringCapabilitiesStore.getState().capabilities;
     const traceLogCap = caps?.capabilities.find(c => c.id === 'trace_log');
-    const profilerHint = traceLogCap?.detail?.includes('CPU profiler: off')
-      ? 'CPU profiler is disabled. Set query_profiler_cpu_time_period_ns > 0 to enable sampling.'
-      : `No CPU samples in the last ${data?.windowSeconds || 30}s`;
+    const cpuProfilerCap = caps?.capabilities.find(c => c.id === 'cpu_profiler_active');
+    let profilerHint: string;
+    if (traceLogCap?.detail?.includes('CPU profiler: off')) {
+      profilerHint = 'CPU profiler is disabled. Set query_profiler_cpu_time_period_ns > 0 to enable sampling.';
+    } else if (cpuProfilerCap && !cpuProfilerCap.available && cpuProfilerCap.detail?.includes('SYS_PTRACE')) {
+      profilerHint = 'CPU profiler is enabled but no samples are being collected. The container is likely missing the SYS_PTRACE capability — add it to the pod securityContext in your Kubernetes manifest.';
+    } else {
+      profilerHint = `No CPU samples in the last ${data?.windowSeconds || 30}s`;
+    }
 
     return (
       <div className={`rounded-lg border ${className}`} style={{ background: 'var(--bg-card)', borderColor: 'var(--border-primary)' }}>

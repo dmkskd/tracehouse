@@ -19,6 +19,7 @@ import {
   CLUSTER_TOTAL_RAM,
   CLUSTER_CGROUP_MEMORY,
   CLUSTER_CPU_CORES,
+  CLUSTER_CGROUP_CPU,
 } from '../queries/timeline-queries.js';
 import { buildQuery, tagQuery } from '../queries/builder.js';
 import { TAB_OVERVIEW, sourceTag } from '../queries/source-tags.js';
@@ -137,7 +138,7 @@ export class MetricsCollector {
         end_time: this.toClickHouseDateTime(toTime),
       };
 
-      const [cpuRows, memoryRows, diskRows, networkRows, ramRows, cgroupMemRows, coreRows] = await Promise.all([
+      const [cpuRows, memoryRows, diskRows, networkRows, ramRows, cgroupMemRows, coreRows, cgroupCpuRows] = await Promise.all([
         this.fetchHostTimeseries(CLUSTER_CPU_TIMESERIES, params),
         this.fetchHostTimeseries(CLUSTER_MEMORY_TIMESERIES, params),
         this.fetchHostDualTimeseries(CLUSTER_DISK_IO_TIMESERIES, params, 'read_v', 'write_v'),
@@ -145,6 +146,7 @@ export class MetricsCollector {
         this.fetchHostScalar(CLUSTER_TOTAL_RAM, params),
         this.fetchHostScalar(CLUSTER_CGROUP_MEMORY, params),
         this.fetchHostScalar(CLUSTER_CPU_CORES, params),
+        this.fetchHostScalar(CLUSTER_CGROUP_CPU, params),
       ]);
 
       if (cpuRows.length === 0 && memoryRows.length === 0) {
@@ -166,7 +168,10 @@ export class MetricsCollector {
       for (const row of baseRows) {
         const key = `${row.host}|${row.t}`;
         const timestamp = this.parseTimestamp(row.t);
-        const cpuCores = coreRows.get(row.host) ?? 1;
+        // Prefer cgroup CPU limit (k8s/container) over host physical cores
+        const hostCores = coreRows.get(row.host) ?? 1;
+        const cgroupCpu = cgroupCpuRows.get(row.host) ?? 0;
+        const cpuCores = (cgroupCpu > 0 && cgroupCpu < hostCores) ? cgroupCpu : hostCores;
         const hostRam = ramRows.get(row.host) ?? 0;
         const cgroupMem = cgroupMemRows.get(row.host) ?? 0;
         // In containers, OSMemoryTotal reports host RAM — use cgroup limit if available

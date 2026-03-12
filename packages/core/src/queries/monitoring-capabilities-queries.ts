@@ -93,6 +93,20 @@ SELECT version() AS version
 `;
 
 /**
+ * Check if the CPU profiler is actually producing samples in trace_log.
+ * The profiler settings can be enabled but still produce 0 samples when
+ * the SYS_PTRACE capability is missing (common in Kubernetes).
+ * We check for any CPU trace_type rows in the last 5 minutes as a signal.
+ */
+export const PROBE_CPU_PROFILER_SAMPLES = `
+SELECT count() AS cnt
+FROM system.trace_log
+WHERE trace_type = 'CPU'
+  AND event_date >= today() - 1
+  AND event_time >= now() - INTERVAL 5 MINUTE
+`;
+
+/**
  * Detect ClickHouse Cloud by checking for cloud-specific build options
  * or settings. Returns 1 if any cloud indicator is found.
  * 

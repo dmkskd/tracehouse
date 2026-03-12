@@ -105,6 +105,10 @@ spec:
           containers:
             - name: clickhouse
               image: clickhouse/clickhouse-server:26.1
+              securityContext:
+                capabilities:
+                  add:
+                    - SYS_PTRACE
               resources:
                 requests:
                   memory: "8Gi"

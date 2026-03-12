@@ -17,6 +17,7 @@ import {
   PROBE_ZOOKEEPER,
   PROBE_SERVER_VERSION,
   PROBE_CLOUD_SERVICE,
+  PROBE_CPU_PROFILER_SAMPLES,
 } from '../queries/monitoring-capabilities-queries.js';
 import { tagQuery } from '../queries/builder.js';
 import { TAB_INTERNAL, sourceTag } from '../queries/source-tags.js';
@@ -140,13 +141,14 @@ export class MonitoringCapabilitiesService {
    * per-probe so partial results are still returned.
    */
   async probe(): Promise<MonitoringCapabilities> {
-    const [version, logTables, settings, hasZk, hasIntrospection, isCloud] = await Promise.all([
+    const [version, logTables, settings, hasZk, hasIntrospection, isCloud, cpuProfilerSampleCount] = await Promise.all([
       this.probeVersion(),
       this.probeLogTables(),
       this.probeSettings(),
       this.probeZookeeper(),
       this.probeIntrospectionFunctions(),
       this.probeCloudService(),
+      this.probeCPUProfilerSamples(),
     ]);
 
     const capabilities: MonitoringCapability[] = [];
@@ -216,6 +218,34 @@ export class MonitoringCapabilitiesService {
       else parts.push('Real profiler: off');
       traceLogCap.detail = `${traceLogCap.detail} · ${parts.join(', ')}`;
     }
+
+    // Add CPU profiler active capability — detects whether the profiler is
+    // actually producing samples. Settings can say "on" but samples will be
+    // empty when the container lacks the SYS_PTRACE Linux capability (common
+    // in Kubernetes without explicit securityContext configuration).
+    const hasTraceLog = logTables.has('trace_log');
+    const cpuNs = cpuProfilerPeriod ? parseInt(cpuProfilerPeriod.value, 10) : 0;
+    const profilerSettingOn = cpuNs > 0;
+    const hasCpuSamples = cpuProfilerSampleCount > 0;
+    const cpuProfilerActive = hasTraceLog && profilerSettingOn && hasCpuSamples;
+    let cpuProfilerDetail: string;
+    if (!hasTraceLog) {
+      cpuProfilerDetail = 'trace_log not available';
+    } else if (!profilerSettingOn) {
+      cpuProfilerDetail = 'CPU profiler disabled — set query_profiler_cpu_time_period_ns > 0';
+    } else if (!hasCpuSamples) {
+      cpuProfilerDetail = 'Profiler enabled but no samples collected — container may be missing SYS_PTRACE capability (required on Kubernetes)';
+    } else {
+      cpuProfilerDetail = `Active — ${cpuProfilerSampleCount} samples in last 5 min`;
+    }
+    capabilities.push({
+      id: 'cpu_profiler_active',
+      label: 'CPU Profiler',
+      description: 'Verifies that the CPU query profiler is actually capturing stack trace samples (not just configured).',
+      available: cpuProfilerActive,
+      category: 'profiling',
+      detail: cpuProfilerDetail,
+    });
 
     // Add ZooKeeper capability
     capabilities.push({
@@ -366,6 +396,23 @@ export class MonitoringCapabilitiesService {
       return true;
     } catch {
       return false;
+    }
+  }
+
+  /**
+   * Check if the CPU profiler is actually producing samples in trace_log.
+   * Returns the sample count (0 means profiler is broken or server is idle).
+   * Only meaningful when trace_log exists and profiler settings are enabled.
+   */
+  private async probeCPUProfilerSamples(): Promise<number> {
+    try {
+      const rows = await this.adapter.executeQuery<{ cnt: number }>(
+        tagQuery(PROBE_CPU_PROFILER_SAMPLES, sourceTag(TAB_INTERNAL, 'cpuProfilerProbe'))
+      );
+      return Number(rows[0]?.cnt ?? 0);
+    } catch {
+      // trace_log might not exist or be inaccessible
+      return 0;
     }
   }
 

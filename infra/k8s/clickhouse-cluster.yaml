@@ -33,6 +33,12 @@ spec:
       limits:
         memory: "12Gi"
         cpu: "3"
+    # SYS_PTRACE is required for the CPU query profiler to capture stack traces.
+    # Without it, query_profiler settings are silently ignored (no samples in trace_log).
+    securityContext:
+      capabilities:
+        add:
+          - SYS_PTRACE
 
   # Spread replicas across worker nodes
   podTemplate:
@@ -53,6 +59,19 @@ spec:
       enabled: true
       serverCertSecret:
         name: clickhouse-tls
+    # User/profile settings — must go in extraUsersConfig (not extraConfig)
+    # because ClickHouse ignores <profiles> and <users> in config.d/
+    # (https://github.com/ClickHouse/ClickHouse/issues/9051)
+    extraUsersConfig:
+      profiles:
+        default:
+          opentelemetry_start_trace_probability: 1
+          opentelemetry_trace_processors: 1
+          allow_introspection_functions: 1
+          query_profiler_cpu_time_period_ns: 10000000
+          query_profiler_real_time_period_ns: 10000000
+          memory_profiler_step: 1048576
+          log_processors_profiles: 1
     extraConfig:
       # Disable client certificate requirement (server TLS only, no mTLS)
       openSSL:
@@ -126,16 +145,6 @@ spec:
         database: system
         table: opentelemetry_span_log
         flush_interval_milliseconds: 7500
-      # User profile settings
-      profiles:
-        default:
-          opentelemetry_start_trace_probability: 1
-          opentelemetry_trace_processors: 1
-          allow_introspection_functions: 1
-          query_profiler_cpu_time_period_ns: 10000000
-          query_profiler_real_time_period_ns: 10000000
-          memory_profiler_step: 1048576
-          log_processors_profiles: 1
       # CORS
       http_options_response:
         header:

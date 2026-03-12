@@ -1,7 +1,7 @@
 # Dashboard Data Sources — Complete Mapping
 
 > Moved from `.kiro/read_please/dashboard_sources.md`. See also
-> [metrics-calculations.md](metrics-calculations.md) for the formulas that use these sources,
+> [metrics/](metrics/) for the formulas that use these sources,
 > and [clickhouse-observability-tiers.md](clickhouse-observability-tiers.md) for the system table architecture.
 
 Every metric displayed in the Overview and Engine Internals views, mapped to its exact ClickHouse source.

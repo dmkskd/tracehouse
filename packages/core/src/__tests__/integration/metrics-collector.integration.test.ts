@@ -5,7 +5,7 @@
  * system.metric_log / system.asynchronous_metric_log, seeds them with
  * known data, and validates the math in getHistoricalMetrics().
  *
- * These tests verify the formulas documented in docs/metrics-calculations.md:
+ * These tests verify the formulas documented in docs/metrics/cpu.md:
  *   CPU%  = (OSCPUVirtualTimeMicroseconds / (cores × 1_000_000 × interval_s)) × 100
  *   Mem%  = (MemoryTracking / OSMemoryTotal) × 100
  *   Disk  = OSReadBytes / interval_s, OSWriteBytes / interval_s
@@ -154,6 +154,109 @@ describe('MetricsCollector integration (shadow tables)', () => {
       const stablePoints = points.slice(1);
       expect(stablePoints.length).toBeGreaterThan(0);
       for (const p of stablePoints) {
+        expect(p.cpu_usage).toBeCloseTo(50, 0);
+      }
+    });
+    it('prefers CGroupMaxCPU over NumberOfCPUCores in k8s/containers', async () => {
+      await truncateShadowTables(ctx.client);
+
+      // Scenario: host has 12 cores, but cgroup limit is 3 cores
+      // CPU time = 1_500_000 µs per tick (1-second intervals)
+      // With host cores (12): (1_500_000 / (12 × 1_000_000)) × 100 = 12.5% — WRONG
+      // With cgroup cores (3): (1_500_000 / (3 × 1_000_000)) × 100 = 50% — CORRECT
+      const times = Array.from({ length: 4 }, (_, i) => {
+        const sec = String(i).padStart(2, '0');
+        return `2025-06-01 20:00:${sec}`;
+      });
+
+      await seedMetricLog(ctx.client, times.map(t => ({
+        event_time: t,
+        cpu_us: 1_500_000,
+        memory_tracking: 1_073_741_824,
+      })));
+
+      await seedAsyncMetricLog(ctx.client, [
+        { event_time: times[0], metric: 'NumberOfCPUCores', value: 12 },
+        { event_time: times[0], metric: 'CGroupMaxCPU', value: 3 },
+        { event_time: times[0], metric: 'OSMemoryTotal', value: 17_179_869_184 },
+      ]);
+
+      const points = await collector.getHistoricalMetrics(
+        new Date('2025-06-01T19:59:50Z'),
+        new Date('2025-06-01T20:00:10Z'),
+      );
+
+      const stablePoints = points.slice(1);
+      expect(stablePoints.length).toBeGreaterThan(0);
+      for (const p of stablePoints) {
+        // Should be ~50% (cgroup 3 cores), not ~12.5% (host 12 cores)
+        expect(p.cpu_usage).toBeCloseTo(50, 0);
+      }
+    });
+
+    it('falls back to NumberOfCPUCores when CGroupMaxCPU is absent', async () => {
+      await truncateShadowTables(ctx.client);
+
+      // Scenario: bare-metal, no cgroup limit — 4 cores, 2_000_000 µs → 50%
+      const times = Array.from({ length: 4 }, (_, i) => {
+        const sec = String(i).padStart(2, '0');
+        return `2025-06-01 21:00:${sec}`;
+      });
+
+      await seedMetricLog(ctx.client, times.map(t => ({
+        event_time: t,
+        cpu_us: 2_000_000,
+      })));
+
+      await seedAsyncMetricLog(ctx.client, [
+        { event_time: times[0], metric: 'NumberOfCPUCores', value: 4 },
+        { event_time: times[0], metric: 'OSMemoryTotal', value: 8_589_934_592 },
+        // No CGroupMaxCPU seeded
+      ]);
+
+      const points = await collector.getHistoricalMetrics(
+        new Date('2025-06-01T20:59:50Z'),
+        new Date('2025-06-01T21:00:10Z'),
+      );
+
+      const stablePoints = points.slice(1);
+      expect(stablePoints.length).toBeGreaterThan(0);
+      for (const p of stablePoints) {
+        expect(p.cpu_usage).toBeCloseTo(50, 0);
+      }
+    });
+
+    it('ignores CGroupMaxCPU when it exceeds NumberOfCPUCores', async () => {
+      await truncateShadowTables(ctx.client);
+
+      // Scenario: CGroupMaxCPU reports 0 or larger than host cores (no real limit)
+      // Should fall back to NumberOfCPUCores = 4
+      // CPU time = 2_000_000 µs → 50%
+      const times = Array.from({ length: 4 }, (_, i) => {
+        const sec = String(i).padStart(2, '0');
+        return `2025-06-01 22:00:${sec}`;
+      });
+
+      await seedMetricLog(ctx.client, times.map(t => ({
+        event_time: t,
+        cpu_us: 2_000_000,
+      })));
+
+      await seedAsyncMetricLog(ctx.client, [
+        { event_time: times[0], metric: 'NumberOfCPUCores', value: 4 },
+        { event_time: times[0], metric: 'CGroupMaxCPU', value: 16 }, // larger than host cores
+        { event_time: times[0], metric: 'OSMemoryTotal', value: 8_589_934_592 },
+      ]);
+
+      const points = await collector.getHistoricalMetrics(
+        new Date('2025-06-01T21:59:50Z'),
+        new Date('2025-06-01T22:00:10Z'),
+      );
+
+      const stablePoints = points.slice(1);
+      expect(stablePoints.length).toBeGreaterThan(0);
+      for (const p of stablePoints) {
+        // Should use 4 cores (host), not 16 (bogus cgroup)
         expect(p.cpu_usage).toBeCloseTo(50, 0);
       }
     });

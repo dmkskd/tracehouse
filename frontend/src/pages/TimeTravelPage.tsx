@@ -95,6 +95,7 @@ export const TimeTravelPage: React.FC = () => {
   const [navigatorData, setNavigatorData] = useState<MemoryTimeline | null>(null);
   const [navigatorLoading, setNavigatorLoading] = useState(false);
   const lastNavigatorFetchTime = useRef<string | null>(null);
+  const lastNavigatorMetric = useRef<MetricMode | null>(null);
 
   // Dragging state: visual-only viewport position during drag (no main chart fetch)
   const [dragEndMs, setDragEndMs] = useState<number | null>(null);
@@ -243,9 +244,9 @@ export const TimeTravelPage: React.FC = () => {
   const fetchNavigatorData = useCallback(async (force = false) => {
     if (!services) return;
     const endDate = isLive ? new Date() : (customEndTime ? new Date(customEndTime) : new Date());
-    const endTimeKey = endDate.toISOString().slice(0, 13);
+    const endTimeKey = `${endDate.toISOString().slice(0, 13)}_${metricMode}`;
     if (!force && lastNavigatorFetchTime.current === endTimeKey) return;
-    if (!force && navigatorData) {
+    if (!force && navigatorData && lastNavigatorMetric.current === metricMode) {
       const navStart = new Date(navigatorData.window_start).getTime();
       const navEnd = new Date(navigatorData.window_end).getTime();
       const viewportEnd = endDate.getTime();
@@ -266,6 +267,7 @@ export const TimeTravelPage: React.FC = () => {
       });
       setNavigatorData(result);
       lastNavigatorFetchTime.current = endTimeKey;
+      lastNavigatorMetric.current = metricMode;
     } catch (e) {
       console.error('[TimeTravelPage] Navigator fetch error:', e);
     } finally { setNavigatorLoading(false); }

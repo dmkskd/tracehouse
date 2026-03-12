@@ -28,30 +28,32 @@ export const SERVER_MEMORY_TIMESERIES = `
   ORDER BY event_time ASC
 `;
 
-/** Server CPU timeseries from metric_log with interval calculation.
- *  On clusters, each host computes its own lag-based interval (PARTITION BY hostname())
- *  and the outer query averages across hosts per timestamp so the result represents
- *  average per-host CPU usage. The Y-axis ceiling is single-host capacity.
+/** Server CPU timeseries from asynchronous_metric_log.
+ *  Uses CGroup CPU metrics (captures ALL process CPU including background merges/mutations)
+ *  instead of metric_log's ProfileEvent_OSCPUVirtualTimeMicroseconds (query threads only).
+ *  In k8s/containers, prefers CGroupUserTime+CGroupSystemTime (container-scoped).
+ *  Falls back to OSUserTime+OSSystemTime on bare metal.
+ *  Output is in microseconds (×1e6) with interval_ms=1000 for pipeline compatibility.
  */
 export const SERVER_CPU_TIMESERIES = `
   SELECT
     t,
     avg(v) AS v,
-    avg(interval_ms) AS interval_ms
+    toUInt32(${DEFAULT_INTERVAL_MS}) AS interval_ms
   FROM (
     SELECT
       toString(event_time) AS t,
       hostname() AS host,
-      ProfileEvent_OSCPUVirtualTimeMicroseconds AS v,
       if(
-        dateDiff('millisecond', lagInFrame(event_time) OVER (PARTITION BY hostname() ORDER BY event_time), event_time) > 0
-        AND dateDiff('millisecond', lagInFrame(event_time) OVER (PARTITION BY hostname() ORDER BY event_time), event_time) < 10000,
-        dateDiff('millisecond', lagInFrame(event_time) OVER (PARTITION BY hostname() ORDER BY event_time), event_time),
-        ${DEFAULT_INTERVAL_MS}
-      ) AS interval_ms
-    FROM {{cluster_aware:system.metric_log}}
-    WHERE event_time >= {start_time}
+        countIf(metric IN ('CGroupUserTime', 'CGroupSystemTime')) > 0,
+        sumIf(value, metric IN ('CGroupUserTime', 'CGroupSystemTime')),
+        sumIf(value, metric IN ('OSUserTime', 'OSSystemTime'))
+      ) * 1000000 AS v
+    FROM {{cluster_aware:system.asynchronous_metric_log}}
+    WHERE metric IN ('CGroupUserTime', 'CGroupSystemTime', 'OSUserTime', 'OSSystemTime')
+      AND event_time >= {start_time}
       AND event_time <= {end_time}
+    GROUP BY event_time, hostname()
   )
   GROUP BY t
   ORDER BY t ASC
@@ -331,36 +333,36 @@ export const RUNNING_MERGES_TIMELINE = `
     bytes_written_uncompressed AS disk_write,
     is_mutation
   FROM {{cluster_aware:system.merges}}
-  WHERE memory_usage > ${MIN_MEMORY_BYTES}
+  WHERE memory_usage > ${MIN_MEMORY_BYTES} OR is_mutation = 1
   ORDER BY memory_usage DESC
   LIMIT {activity_limit}
 `;
 
 /**
  * CPU spike analysis: fetch per-second CPU data with percentage calculation.
- * Returns each metric_log row with its CPU percentage relative to all cores.
+ * Uses asynchronous_metric_log for OS-level CPU (captures all process threads).
  * The spike grouping logic is done in TypeScript for flexibility.
- * On clusters, partitions lag by hostname and averages across hosts per timestamp.
+ * On clusters, averages across hosts per timestamp.
  */
 export const CPU_SPIKE_TIMESERIES = `
   SELECT
     t,
     avg(cpu_us) AS cpu_us,
-    avg(interval_ms) AS interval_ms
+    toUInt32(${DEFAULT_INTERVAL_MS}) AS interval_ms
   FROM (
     SELECT
       toString(event_time) AS t,
       hostname() AS host,
-      ProfileEvent_OSCPUVirtualTimeMicroseconds AS cpu_us,
       if(
-        dateDiff('millisecond', lagInFrame(event_time) OVER (PARTITION BY hostname() ORDER BY event_time), event_time) > 0
-        AND dateDiff('millisecond', lagInFrame(event_time) OVER (PARTITION BY hostname() ORDER BY event_time), event_time) < 10000,
-        dateDiff('millisecond', lagInFrame(event_time) OVER (PARTITION BY hostname() ORDER BY event_time), event_time),
-        ${DEFAULT_INTERVAL_MS}
-      ) AS interval_ms
-    FROM {{cluster_aware:system.metric_log}}
-    WHERE event_time >= {start_time}
+        countIf(metric IN ('CGroupUserTime', 'CGroupSystemTime')) > 0,
+        sumIf(value, metric IN ('CGroupUserTime', 'CGroupSystemTime')),
+        sumIf(value, metric IN ('OSUserTime', 'OSSystemTime'))
+      ) * 1000000 AS cpu_us
+    FROM {{cluster_aware:system.asynchronous_metric_log}}
+    WHERE metric IN ('CGroupUserTime', 'CGroupSystemTime', 'OSUserTime', 'OSSystemTime')
+      AND event_time >= {start_time}
       AND event_time <= {end_time}
+    GROUP BY event_time, hostname()
   )
   GROUP BY t
   ORDER BY t ASC
@@ -384,22 +386,23 @@ export const CLUSTER_MEMORY_TIMESERIES = `
   ORDER BY host, event_time ASC
 `;
 
-/** Per-host CPU timeseries */
+/** Per-host CPU timeseries from asynchronous_metric_log (captures all process CPU) */
 export const CLUSTER_CPU_TIMESERIES = `
   SELECT
-    t, host, v,
-    if(interval_ms > 0 AND interval_ms < 10000, interval_ms, ${DEFAULT_INTERVAL_MS}) AS interval_ms
-  FROM (
-    SELECT
-      toString(event_time) AS t,
-      hostname() AS host,
-      ProfileEvent_OSCPUVirtualTimeMicroseconds AS v,
-      dateDiff('millisecond', lagInFrame(event_time) OVER (PARTITION BY hostname() ORDER BY event_time), event_time) AS interval_ms
-    FROM {{cluster_aware:system.metric_log}}
-    WHERE event_time >= {start_time}
-      AND event_time <= {end_time}
-    ORDER BY host, event_time ASC
-  )
+    toString(event_time) AS t,
+    hostname() AS host,
+    if(
+      countIf(metric IN ('CGroupUserTime', 'CGroupSystemTime')) > 0,
+      sumIf(value, metric IN ('CGroupUserTime', 'CGroupSystemTime')),
+      sumIf(value, metric IN ('OSUserTime', 'OSSystemTime'))
+    ) * 1000000 AS v,
+    toUInt32(${DEFAULT_INTERVAL_MS}) AS interval_ms
+  FROM {{cluster_aware:system.asynchronous_metric_log}}
+  WHERE metric IN ('CGroupUserTime', 'CGroupSystemTime', 'OSUserTime', 'OSSystemTime')
+    AND event_time >= {start_time}
+    AND event_time <= {end_time}
+  GROUP BY event_time, hostname()
+  ORDER BY host, event_time ASC
 `;
 
 /** Per-host network timeseries */
@@ -459,6 +462,22 @@ export const CLUSTER_CPU_CORES = `
     argMax(value, event_time) AS value
   FROM {{cluster_aware:system.asynchronous_metric_log}}
   WHERE metric = 'NumberOfCPUCores'
+    AND event_time >= {start_time}
+    AND event_time <= {end_time}
+  GROUP BY host
+`;
+
+/**
+ * Per-host cgroup CPU limit for Kubernetes/containerized environments.
+ * CGroupMaxCPU (available since ~23.8) reflects the pod's cgroup CPU limit.
+ * Returns 0 or no rows when no cgroup limit is set.
+ */
+export const CLUSTER_CGROUP_CPU = `
+  SELECT
+    hostname() AS host,
+    argMax(value, event_time) AS value
+  FROM {{cluster_aware:system.asynchronous_metric_log}}
+  WHERE metric = 'CGroupMaxCPU'
     AND event_time >= {start_time}
     AND event_time <= {end_time}
   GROUP BY host
