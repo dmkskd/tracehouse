@@ -70,6 +70,9 @@ function parseChTime(s: string): Date {
 }
 
 export class TimelineService {
+  private _cachedRam: { ram: number; hostCount: number } | null = null;
+  private _cachedCpuCores: number | null = null;
+
   constructor(private adapter: IClickHouseAdapter) {}
 
   async getTimeline(options: TimelineOptions): Promise<MemoryTimeline> {
@@ -203,14 +206,14 @@ export class TimelineService {
       runningQueries,
       runningMergesAndMutations,
     ] = await Promise.all([
-      this.fetchServerMemory(params, withHost),
-      this.fetchServerCpu(params, withHost),
-      this.fetchNetworkData(params, withHost),
-      this.fetchDiskData(params, withHost),
-      this.fetchTotalRam(params, withHost),
-      this.fetchCpuCores(params, withHost),
+      sortMetric === 'memory' ? this.fetchServerMemory(params, withHost) : Promise.resolve([]),
+      sortMetric === 'cpu' ? this.fetchServerCpu(params, withHost) : Promise.resolve([]),
+      sortMetric === 'network' ? this.fetchNetworkData(params, withHost) : Promise.resolve({ send: [], recv: [] }),
+      sortMetric === 'disk' ? this.fetchDiskData(params, withHost) : Promise.resolve({ read: [], write: [] }),
+      this._cachedRam ? Promise.resolve(this._cachedRam) : this.fetchTotalRam(params, withHost),
+      this._cachedCpuCores !== null ? Promise.resolve(this._cachedCpuCores) : this.fetchCpuCores(params, withHost),
       // Per-host CPU breakdown for cluster tooltip (only in "All" mode)
-      !hostname ? this.fetchPerHostCpu(params) : Promise.resolve({}),
+      !hostname && sortMetric === 'cpu' ? this.fetchPerHostCpu(params) : Promise.resolve({}),
       this.fetchQueries(params, start, end, (sql) => applyOrder(withHost(sql))),
       this.fetchQueryCount(params, withHost),
       this.fetchMergeStats(params, withHost),
@@ -251,6 +254,10 @@ export class TimelineService {
     const totalMergePeak = mergeStats.peakTotal + 
       runningMergesAndMutations.merges.reduce((sum, m) => sum + m.peak_memory, 0);
     const totalMutationCount = mutationCount + runningMergesAndMutations.mutations.length;
+
+    // Cache static values after first fetch
+    if (!this._cachedRam) this._cachedRam = ramResult;
+    if (this._cachedCpuCores === null) this._cachedCpuCores = cpuCores;
 
     const totalRam = ramResult.ram;
     const hostCount = ramResult.hostCount;
