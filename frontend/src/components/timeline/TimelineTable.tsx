@@ -249,7 +249,7 @@ export const MergeTable: React.FC<{
               </td>
               <td style={{ padding:'5px 8px', textAlign:'right', fontFamily:'monospace', color:'var(--text-muted)', fontSize:10 }}>{new Date(parseTimestamp(m.start_time)).toLocaleTimeString()}</td>
               <td style={{ padding:'5px 8px', textAlign:'right', color:'var(--text-muted)' }}>{m.is_running && m.progress ? `${Math.round(m.progress * 100)}%` : fmtMs(m.duration_ms)}</td>
-              <td style={{ padding:'5px 12px', textAlign:'right', fontFamily:'monospace', color:'var(--text-primary)', fontWeight:500 }}>{metricForItem(m, metricMode)}</td>
+              <td style={{ padding:'5px 12px', textAlign:'right', fontFamily:'monospace', color:'var(--text-primary)', fontWeight:500 }}>{m.is_running && metricMode === 'cpu' ? `~${metricForItem(m, metricMode)}` : metricForItem(m, metricMode)}</td>
             </tr>
             );
           })}

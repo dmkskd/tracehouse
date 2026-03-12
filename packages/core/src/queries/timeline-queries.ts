@@ -318,7 +318,14 @@ export const RUNNING_QUERIES_TIMELINE = `
   LIMIT {activity_limit}
 `;
 
-/** Currently running merges from system.merges (no ProfileEvents, always sort by memory) */
+/**
+ * Currently running merges from system.merges.
+ * system.merges has no ProfileEvents, so cpu_us is estimated as elapsed × 0.5 core.
+ * Why 0.5: merges are single-threaded (max_merge_threads=1 default), but on busy
+ * clusters with many concurrent merges/queries competing for CPU, a merge rarely
+ * gets a full core. 0.5 is a conservative estimate that avoids overstating merge
+ * CPU when 10+ merges stack up. The server line remains ground truth.
+ */
 export const RUNNING_MERGES_TIMELINE = `
   SELECT
     result_part_name AS part_name,
@@ -329,11 +336,12 @@ export const RUNNING_MERGES_TIMELINE = `
     merge_type,
     toString(now() - toIntervalSecond(toUInt32(elapsed))) AS merge_start,
     progress,
+    toUInt64(elapsed * 500000) AS cpu_us,
     bytes_read_uncompressed AS disk_read,
     bytes_written_uncompressed AS disk_write,
     is_mutation
   FROM {{cluster_aware:system.merges}}
-  WHERE memory_usage > ${MIN_MEMORY_BYTES} OR is_mutation = 1
+  WHERE (memory_usage > ${MIN_MEMORY_BYTES} OR is_mutation = 1)
   ORDER BY memory_usage DESC
   LIMIT {activity_limit}
 `;

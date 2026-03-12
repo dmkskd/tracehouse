@@ -675,9 +675,11 @@ export const TimelineChart: React.FC<{
                   </span>
                   <span style={{ color: 'var(--text-muted)', fontSize: 9 }}>·</span>
                   <span style={{ color: 'var(--text-secondary)', fontSize: 9 }}>{fmtMs(hovItem.duration_ms)}</span>
-                  {/* Progress indicator for running merges/mutations */}
-                  {'progress' in hovItem && typeof hovItem.progress === 'number' && hovItem.is_running && (
-                    <span style={{ fontSize: 9, color: accentColor!, fontWeight: 600 }}>{(hovItem.progress * 100).toFixed(0)}%</span>
+                  {/* Running indicator with progress for merges/mutations */}
+                  {hovItem.is_running && (
+                    <span style={{ fontSize: 9, color: '#3fb950', fontWeight: 600 }}>
+                      Running{'progress' in hovItem && typeof hovItem.progress === 'number' ? ` ${(hovItem.progress * 100).toFixed(0)}%` : ''}
+                    </span>
                   )}
                 </div>
                 {/* Identifier */}
@@ -704,7 +706,7 @@ export const TimelineChart: React.FC<{
                     return (
                       <React.Fragment key={mc.key}>
                         <span style={{ fontSize: 9, fontWeight: isActive ? 700 : 500, color: isActive ? mc.color : 'var(--text-muted)', textTransform: 'uppercase', letterSpacing: '0.5px' }}>
-                          {mc.label}
+                          {mc.label}{hovItem.is_running && mc.key === 'cpu' && band.type !== 'query' ? <span style={{ fontSize: 8, fontStyle: 'italic', fontWeight: 400, textTransform: 'none', opacity: 0.7 }}> est.</span> : ''}
                         </span>
                         <div style={{ height: 6, background: 'rgba(255,255,255,0.06)', borderRadius: 3, overflow: 'hidden', border: isActive ? `1px solid ${mc.color}33` : '1px solid transparent' }}>
                           <div style={{
@@ -714,7 +716,7 @@ export const TimelineChart: React.FC<{
                           }} />
                         </div>
                         <span style={{ fontSize: 10, color: isActive ? 'var(--text-primary)' : 'var(--text-secondary)', fontFamily: 'monospace', textAlign: 'right', fontWeight: isActive ? 600 : 400 }}>
-                          {mc.fmt(val)}
+                          {hovItem.is_running && mc.key === 'cpu' && band.type !== 'query' ? `~${mc.fmt(val)}` : mc.fmt(val)}
                         </span>
                       </React.Fragment>
                     );

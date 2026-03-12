@@ -319,6 +319,71 @@ describe('TimelineService integration', () => {
     });
   });
 
+  // ── Hostname filtering ─────────────────────────────────────────────
+
+  describe('hostname filter applies to all queries including running', () => {
+    it('bogus hostname returns no queries or merges', async () => {
+      const result = await service.getTimeline({
+        timestamp: new Date(),
+        windowSeconds: 300,
+        hostname: 'nonexistent-host-xyz',
+        includeRunning: true,
+      });
+
+      expect(result.queries.length).toBe(0);
+      expect(result.merges.length).toBe(0);
+      expect(result.mutations.length).toBe(0);
+    });
+
+    it('real hostname returns data', async () => {
+      // Get the actual hostname from the container
+      const hostRows = await ctx.rawAdapter.executeQuery<{ host: string }>(`SELECT hostName() AS host`);
+      const realHost = hostRows[0]?.host;
+      expect(realHost).toBeTruthy();
+
+      const result = await service.getTimeline({
+        timestamp: new Date(),
+        windowSeconds: 300,
+        hostname: realHost,
+        includeRunning: true,
+      });
+
+      // Should still find our test data
+      expect(result.queries.length).toBeGreaterThanOrEqual(1);
+    });
+
+    it('running merges SQL has OR condition properly parenthesized for hostname filter', async () => {
+      // Regression test: RUNNING_MERGES_TIMELINE uses "WHERE (... OR is_mutation = 1)"
+      // Without parentheses, "AND hostname() = ..." would only apply to the is_mutation branch
+      // due to AND having higher precedence than OR.
+      const { RUNNING_MERGES_TIMELINE } = await import('../../queries/timeline-queries.js');
+      // The WHERE clause should have parentheses around the OR condition
+      expect(RUNNING_MERGES_TIMELINE).toMatch(/WHERE\s*\(/);
+    });
+  });
+
+  // ── In-flight merge CPU estimate ──────────────────────────────────
+
+  describe('running merge CPU estimate', () => {
+    it('completed merges from part_log have real cpu_us from ProfileEvents', async () => {
+      const result = await service.getTimeline({
+        timestamp: new Date(),
+        windowSeconds: 300,
+        includeRunning: false,
+        activeMetric: 'cpu',
+      });
+
+      // Our OPTIMIZE TABLE should have produced completed merges with ProfileEvents
+      if (result.merges.length > 0) {
+        // cpu_us should be a number (may be 0 for tiny merges, but should exist)
+        for (const m of result.merges) {
+          expect(typeof m.cpu_us).toBe('number');
+          expect(m.cpu_us).toBeGreaterThanOrEqual(0);
+        }
+      }
+    });
+  });
+
   // ── Query shape validation ─────────────────────────────────────────
 
   describe('query and merge item shape', () => {

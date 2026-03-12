@@ -234,8 +234,8 @@ export class TimelineService {
       this.fetchMerges(params, start, end, (sql) => applyOrder(withHost(sql))),
       this.fetchMutationCount(params, withHost),
       this.fetchMutations(params, start, end, (sql) => applyOrder(withHost(sql))),
-      includesNow ? this.fetchRunningQueries(start, end, activityLimit, queryOrderBy) : Promise.resolve([]),
-      includesNow ? this.fetchRunningMergesAndMutations(start, end, activityLimit) : Promise.resolve({ merges: [], mutations: [] }),
+      includesNow ? this.fetchRunningQueries(start, end, activityLimit, queryOrderBy, withHost) : Promise.resolve([]),
+      includesNow ? this.fetchRunningMergesAndMutations(start, end, activityLimit, withHost) : Promise.resolve({ merges: [], mutations: [] }),
     ]);
 
     // Merge completed and running queries (dedupe by query_id)
@@ -778,11 +778,11 @@ export class TimelineService {
   /**
    * Fetch currently running queries from system.processes
    */
-  private async fetchRunningQueries(start: Date, end: Date, activityLimit: number = 100, queryOrderBy: string = 'memory_usage'): Promise<QuerySeries[]> {
+  private async fetchRunningQueries(start: Date, end: Date, activityLimit: number = 100, queryOrderBy: string = 'memory_usage', xform: (s: string) => string = s => s): Promise<QuerySeries[]> {
     try {
-      const sql = RUNNING_QUERIES_TIMELINE
+      const sql = xform(RUNNING_QUERIES_TIMELINE
         .replaceAll('{activity_limit}', String(activityLimit))
-        .replaceAll('{query_order_by}', queryOrderBy);
+        .replaceAll('{query_order_by}', queryOrderBy));
       const rows = await this.adapter.executeQuery(tagQuery(sql, sourceTag(TAB_TIME_TRAVEL, 'runningQueries')));
       const now = new Date();
       const queries: QuerySeries[] = [];
@@ -837,10 +837,11 @@ export class TimelineService {
   private async fetchRunningMergesAndMutations(
     start: Date,
     end: Date,
-    activityLimit: number = 100
+    activityLimit: number = 100,
+    xform: (s: string) => string = s => s
   ): Promise<{ merges: MergeSeries[]; mutations: MutationSeries[] }> {
     try {
-      const sql = RUNNING_MERGES_TIMELINE.replaceAll('{activity_limit}', String(activityLimit));
+      const sql = xform(RUNNING_MERGES_TIMELINE.replaceAll('{activity_limit}', String(activityLimit)));
       const rows = await this.adapter.executeQuery(tagQuery(sql, sourceTag(TAB_TIME_TRAVEL, 'runningMerges')));
       const now = new Date();
       const merges: MergeSeries[] = [];
@@ -865,7 +866,7 @@ export class TimelineService {
           hostname: row.host ? String(row.host) : undefined,
           peak_memory: peak,
           duration_ms: durationMs,
-          cpu_us: 0,  // Not available in system.merges
+          cpu_us: Number(row.cpu_us || 0),  // Estimated: elapsed × 0.5 core (conservative, see query comment)
           net_send: 0,
           net_recv: 0,
           disk_read: Number(row.disk_read || 0),
