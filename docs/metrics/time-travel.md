@@ -39,9 +39,9 @@ Division uses `max(duration_ms / 1000, 0.001)` to avoid divide-by-zero.
 
 **CPU/network/disk lose temporal shape.** Area under the curve is preserved, but bursts are smoothed and idle periods filled. A query burning 8 cores for 1s then waiting 7s looks identical to 1 core steady for 8s.
 
-**In-flight merges use estimated CPU.** `system.merges` does not expose ProfileEvents. Merges are single-threaded by default (`max_merge_threads = 1`), but on busy clusters with many concurrent merges and queries competing for CPU, a merge rarely gets a full core. In-flight merge CPU is estimated as `elapsed × 0.5 core` — a conservative default that avoids overstating when 10+ merges stack up. Once a merge completes and appears in `part_log`, its band switches to real CPU from ProfileEvents. The UI marks estimated values with `~` and "est." in the tooltip. For precise attribution, use the Engine Internals CPU Sampling Attribution panel (see [engine-internals.md](engine-internals.md)).
+**In-flight merges use estimated CPU.** `system.merges` does not expose ProfileEvents. Merges are single-threaded by default (`max_merge_threads = 1`), but on busy clusters with many concurrent merges/queries competing for CPU, a merge rarely gets a full core. In-flight merge CPU is estimated as `elapsed × RUNNING_MERGE_CPU_CORES` (currently **0.5**, defined in `timeline-queries.ts`). Once a merge completes and appears in `part_log`, its band switches to real CPU from ProfileEvents. The UI marks estimated values with `~` and "est." in the tooltip. For precise attribution, use the Engine Internals CPU Sampling Attribution panel (see [engine-internals.md](engine-internals.md)).
 
-**The server line is the ground truth.** It shows real per-second OS-level measurements. When bands diverge significantly from the server line, the flat-band approximation or the in-flight merge gap is usually the cause. This is expected, not a bug.
+**Server line vs. bands.** The server line shows real per-second OS-level measurements. Bands use flat-band approximations and (for in-flight merges) estimated CPU, so they won't always match the server line — especially during bursty workloads or when many merges overlap.
 
 ## Cluster "All" mode aggregation
 

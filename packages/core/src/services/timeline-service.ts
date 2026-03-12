@@ -866,7 +866,7 @@ export class TimelineService {
           hostname: row.host ? String(row.host) : undefined,
           peak_memory: peak,
           duration_ms: durationMs,
-          cpu_us: Number(row.cpu_us || 0),  // Estimated: elapsed × 0.5 core (conservative, see query comment)
+          cpu_us: Number(row.cpu_us || 0),  // Estimated for in-flight merges, see RUNNING_MERGE_CPU_CORES
           net_send: 0,
           net_recv: 0,
           disk_read: Number(row.disk_read || 0),

@@ -16,6 +16,12 @@ const SEC_TO_MS = 1000;
 /** Default metric_log sampling interval (ms) — used when the actual gap is missing or out of range. */
 const DEFAULT_INTERVAL_MS = 1000;
 
+/**
+ * Assumed CPU core utilization for in-flight merges (system.merges has no ProfileEvents).
+ * Multiplied by elapsed seconds to estimate cpu_us. 1.0 = full core, 0.5 = half core.
+ */
+export const RUNNING_MERGE_CPU_CORES = 0.5;
+
 /** Server memory timeseries from metric_log */
 export const SERVER_MEMORY_TIMESERIES = `
   SELECT
@@ -320,11 +326,8 @@ export const RUNNING_QUERIES_TIMELINE = `
 
 /**
  * Currently running merges from system.merges.
- * system.merges has no ProfileEvents, so cpu_us is estimated as elapsed × 0.5 core.
- * Why 0.5: merges are single-threaded (max_merge_threads=1 default), but on busy
- * clusters with many concurrent merges/queries competing for CPU, a merge rarely
- * gets a full core. 0.5 is a conservative estimate that avoids overstating merge
- * CPU when 10+ merges stack up. The server line remains ground truth.
+ * system.merges has no ProfileEvents, so cpu_us is estimated as
+ * elapsed × RUNNING_MERGE_CPU_CORES. Once completed, part_log has real ProfileEvents.
  */
 export const RUNNING_MERGES_TIMELINE = `
   SELECT
@@ -336,7 +339,7 @@ export const RUNNING_MERGES_TIMELINE = `
     merge_type,
     toString(now() - toIntervalSecond(toUInt32(elapsed))) AS merge_start,
     progress,
-    toUInt64(elapsed * 500000) AS cpu_us,
+    toUInt64(elapsed * ${RUNNING_MERGE_CPU_CORES * 1_000_000}) AS cpu_us,
     bytes_read_uncompressed AS disk_read,
     bytes_written_uncompressed AS disk_write,
     is_mutation
