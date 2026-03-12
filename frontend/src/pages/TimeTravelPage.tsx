@@ -189,6 +189,7 @@ export const TimeTravelPage: React.FC = () => {
             includeRunning,
             hostname: host,
             activityLimit,
+            activeMetric: metricMode,
           });
           return [host, result] as const;
         })
@@ -197,7 +198,7 @@ export const TimeTravelPage: React.FC = () => {
     } catch (e) {
       console.error('[TimeTravelPage] Split view fetch error:', e);
     } finally { setSplitLoading(false); }
-  }, [services, clusterHosts, splitView, isLive, customEndTime, windowSec, includeRunning]);
+  }, [services, clusterHosts, splitView, isLive, customEndTime, windowSec, includeRunning, metricMode]);
 
   const splitFetchTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   useEffect(() => {
