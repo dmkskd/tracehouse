@@ -273,13 +273,13 @@ deploy_clickhouse() {
         CH_POD=$(kubectl get pods -n clickhouse -l app=dev-cluster-clickhouse -o jsonpath='{.items[0].metadata.name}' 2>/dev/null || true)
     fi
     if [ -n "$CH_POD" ]; then
-        kubectl exec -n clickhouse "$CH_POD" -- clickhouse-client --multiquery < "${SCRIPT_DIR}/../scripts/setup_read_only_user.sql" && \
+        kubectl exec -n clickhouse "$CH_POD" -- clickhouse client --multiquery < "${SCRIPT_DIR}/../scripts/setup_read_only_user.sql" && \
             log_info "read_only user created" || \
             log_warn "read_only user setup skipped"
 
         # Enable profiling and introspection for the default user
         log_info "Configuring default profile settings..."
-        kubectl exec -n clickhouse "$CH_POD" -- clickhouse-client --multiquery <<'EOF' && \
+        kubectl exec -n clickhouse "$CH_POD" -- clickhouse client --multiquery <<'EOF' && \
             log_info "Profile settings applied" || \
             log_warn "Profile settings skipped"
 ALTER USER default SETTINGS

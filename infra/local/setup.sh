@@ -58,7 +58,7 @@ if [ -f "$PID_FILE" ]; then
     OLD_PID=$(cat "$PID_FILE")
     if kill -0 "$OLD_PID" 2>/dev/null; then
         echo -e "${YELLOW}ClickHouse is already running (PID: $OLD_PID)${NC}"
-        echo "Use ./stop.sh to stop it first, or connect with: clickhouse-client"
+        echo "Use ./stop.sh to stop it first, or connect with: clickhouse client"
         exit 0
     else
         rm -f "$PID_FILE"
@@ -84,7 +84,7 @@ clickhouse server \
 # Wait for server to start
 echo "Waiting for server to start..."
 for i in {1..30}; do
-    if clickhouse-client --query "SELECT 1" &>/dev/null; then
+    if clickhouse client --query "SELECT 1" &>/dev/null; then
         echo ""
         echo -e "${GREEN}✓ ClickHouse is running!${NC}"
         echo ""
@@ -103,7 +103,7 @@ for i in {1..30}; do
         echo "  - HTTP:       8123"
         echo "  - Prometheus: 9363"
         echo ""
-        echo "Connect with: clickhouse-client"
+        echo "Connect with: clickhouse client"
         echo "Stop with:    ./stop.sh"
         echo ""
         echo "Logs: $LOG_DIR/clickhouse-server.log"

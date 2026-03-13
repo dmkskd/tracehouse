@@ -72,8 +72,8 @@ After deployment, ClickHouse is accessible at:
 - **Grafana**: `localhost:3001`
 
 ```bash
-# Using clickhouse-client
-clickhouse-client --host localhost --port 9000
+# Using clickhouse client
+clickhouse client --host localhost --port 9000
 
 # Using HTTP
 curl "http://localhost:8123/?query=SELECT%201"

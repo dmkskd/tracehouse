@@ -1,6 +1,6 @@
 -- UK House Prices Example Queries
 -- These are common ClickHouse example queries adapted for our synthetic uk_price_paid data
--- Run with: clickhouse-client --multiquery < uk_house_queries.sql
+-- Run with: clickhouse client --multiquery < uk_house_queries.sql
 
 -- Enable OpenTelemetry tracing for these queries
 SET opentelemetry_start_trace_probability = 1;

@@ -231,7 +231,7 @@ k8s-status:
 # Connect to ClickHouse via kubectl exec
 [group('k8s')]
 k8s-connect:
-    @kubectl exec -it -n clickhouse $(kubectl get pod -n clickhouse -l app=dev-cluster-clickhouse -o jsonpath='{.items[0].metadata.name}') -- clickhouse-client
+    @kubectl exec -it -n clickhouse $(kubectl get pod -n clickhouse -l app=dev-cluster-clickhouse -o jsonpath='{.items[0].metadata.name}') -- clickhouse client
 
 # View ClickHouse logs
 [group('k8s')]
