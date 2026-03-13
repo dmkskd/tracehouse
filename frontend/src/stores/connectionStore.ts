@@ -291,9 +291,22 @@ export const useConnectionStore = create<ConnectionState>()(
             }
           }
 
+          // Detect mixed-content: HTTPS page trying to reach an HTTP ClickHouse.
+          // Browsers silently block these, surfacing only a generic network error.
+          const isMixedContent =
+            !proxyState.enabled &&
+            window.location.protocol === 'https:' &&
+            !config.secure &&
+            (errorType === 'network' || errorMessage === 'Connection timed out');
+
+          if (isMixedContent) {
+            errorType = 'mixed_content';
+            errorMessage =
+              'Your browser blocked this request because the page is served over HTTPS but ClickHouse is using plain HTTP (mixed content).';
+          }
           // When proxy is off and we get a network error or timeout,
           // it's likely a CORS issue — tag it so the UI can show a hint.
-          if (!proxyState.enabled && (errorType === 'network' || errorMessage === 'Connection timed out')) {
+          else if (!proxyState.enabled && (errorType === 'network' || errorMessage === 'Connection timed out')) {
             errorType = 'cors';
           }
 

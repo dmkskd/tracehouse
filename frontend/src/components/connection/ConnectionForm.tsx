@@ -34,7 +34,7 @@ export const ConnectionForm: React.FC<ConnectionFormProps> = ({ onClose, onSucce
   const isEditing = !!editingProfile;
 
   // Form state
-  const [profileName, setProfileName] = useState(editingProfile?.name ?? '');
+  const [profileName, setProfileName] = useState(editingProfile?.name ?? 'Local ClickHouse');
   const [config, setConfig] = useState<ConnectionConfig>(
     editingProfile
       ? {
@@ -634,6 +634,12 @@ export const ConnectionForm: React.FC<ConnectionFormProps> = ({ onClose, onSucce
                   {!testResult.success && testResult.error_message && (
                     <div style={{ fontSize: '12px', color: 'rgba(var(--color-error-rgb), 0.8)' }}>
                       <p style={{ margin: 0 }}>{testResult.error_message}</p>
+                      {testResult.error_type === 'mixed_content' && (
+                        <p style={{ marginTop: '8px', color: 'var(--text-secondary)' }}>
+                          Either enable TLS on your ClickHouse server, or use the CORS proxy which runs
+                          server-side and is not subject to browser mixed-content restrictions.
+                        </p>
+                      )}
                       {testResult.error_type === 'cors' && (
                         <p style={{ marginTop: '8px', color: 'var(--text-secondary)' }}>
                           This is likely caused by CORS restrictions. Try enabling the proxy option above, or see the{' '}
