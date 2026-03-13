@@ -3,7 +3,7 @@
  * with screen/feature mapping from the capability registry.
  */
 
-import { useState, useMemo } from 'react';
+import { useState, useMemo, useRef } from 'react';
 import { useMonitoringCapabilitiesStore } from '../../stores/monitoringCapabilitiesStore';
 import type { MonitoringCapability } from '@tracehouse/core';
 import {
@@ -31,6 +31,88 @@ const CATEGORY_ORDER: MonitoringCapability['category'][] = [
   'profiling', 'tracing', 'metrics', 'introspection', 'logging',
 ];
 
+const POPOVER_BASE: React.CSSProperties = {
+  position: 'absolute', top: '100%', zIndex: 20,
+  marginTop: 4, padding: '8px 12px',
+  background: '#0d0d1a',
+  border: '1px solid #5b5b80',
+  borderRadius: 6, boxShadow: '0 6px 24px rgba(0,0,0,0.9)',
+};
+const POPOVER_LEFT: React.CSSProperties = { ...POPOVER_BASE, left: 0 };
+const POPOVER_RIGHT: React.CSSProperties = { ...POPOVER_BASE, right: 0 };
+
+/** Truncated description with hover-to-expand popover */
+function ExpandableCell({ text, detail, maxChars = 28, dimmed }: { text: string; detail?: string; maxChars?: number; dimmed?: boolean }) {
+  const [hover, setHover] = useState(false);
+  const ref = useRef<HTMLSpanElement>(null);
+  const truncated = text.length > maxChars ? text.slice(0, maxChars) + '...' : text;
+  const needsExpand = text.length > maxChars || !!detail;
+
+  return (
+    <span
+      ref={ref}
+      onMouseEnter={() => needsExpand && setHover(true)}
+      onMouseLeave={() => setHover(false)}
+      style={{ position: 'relative', cursor: needsExpand ? 'default' : undefined }}
+    >
+      <span style={{ fontSize: 10, color: 'var(--text-muted)', whiteSpace: 'nowrap', opacity: dimmed ? 0.5 : undefined }}>
+        {truncated}
+      </span>
+      {hover && (
+        <div style={{ ...POPOVER_LEFT, minWidth: 240, maxWidth: 360, whiteSpace: 'normal' }}>
+          <div style={{ fontSize: 10, color: '#e2e8f0', lineHeight: 1.4 }}>{text}</div>
+          {detail && (
+            <div style={{ fontSize: 9, color: '#94a3b8', marginTop: 4, fontFamily: 'monospace' }}>{detail}</div>
+          )}
+        </div>
+      )}
+    </span>
+  );
+}
+
+/** Hover-to-expand consumer/screen list */
+function ExpandableConsumers({ consumers, available, dimmed }: { consumers: { screen: string; enables: string; importance: string }[]; available: boolean; dimmed?: boolean }) {
+  const [hover, setHover] = useState(false);
+
+  return (
+    <span
+      onMouseEnter={() => setHover(true)}
+      onMouseLeave={() => setHover(false)}
+      style={{ position: 'relative', cursor: 'default' }}
+    >
+      <span style={{ fontSize: 10, color: 'var(--text-muted)', whiteSpace: 'nowrap', opacity: dimmed ? 0.5 : undefined }}>
+        {consumers.length} screen{consumers.length !== 1 ? 's' : ''}
+      </span>
+      {hover && (
+        <div style={{ ...POPOVER_RIGHT, minWidth: 220, maxWidth: 320 }}>
+          <div style={{ fontSize: 9, color: available ? '#94a3b8' : '#ef4444', marginBottom: 4, textTransform: 'uppercase', letterSpacing: '0.04em' }}>
+            {available ? 'Used by' : 'Blocked screens'}
+          </div>
+          {consumers.map((c, i) => (
+            <div key={i} style={{ padding: '3px 0', borderTop: i > 0 ? '1px solid rgba(255,255,255,0.08)' : undefined }}>
+              <div style={{ fontSize: 10, color: '#e2e8f0', fontWeight: 500, display: 'flex', alignItems: 'center', gap: 6 }}>
+                {c.screen}
+                {!available && (
+                  <span style={{
+                    fontSize: 8, padding: '0 4px', borderRadius: 2,
+                    background: c.importance === 'required' ? '#ef444420' : '#f59e0b20',
+                    color: c.importance === 'required' ? '#ef4444' : '#f59e0b',
+                  }}>
+                    {c.importance}
+                  </span>
+                )}
+              </div>
+              {available && (
+                <div style={{ fontSize: 9, color: '#94a3b8', marginTop: 1, lineHeight: 1.3 }}>{c.enables}</div>
+              )}
+            </div>
+          ))}
+        </div>
+      )}
+    </span>
+  );
+}
+
 type ViewMode = 'capabilities' | 'screens';
 
 interface MonitoringCapabilitiesCardProps {
@@ -41,8 +123,6 @@ export function MonitoringCapabilitiesCard({ className = '' }: MonitoringCapabil
   const { capabilities, probeStatus, probeError } = useMonitoringCapabilitiesStore();
   const [showUnavailable, setShowUnavailable] = useState(false);
   const [viewMode, setViewMode] = useState<ViewMode>('capabilities');
-  const [expandedCap, setExpandedCap] = useState<string | null>(null);
-
   // Compute screen availability summaries from registry + probed capabilities
   const screenSummaries = useMemo(() => {
     if (!capabilities) return [] as { screen: string; tab?: string; route?: string; required: string[]; optional: string[]; requiredMissing: string[]; optionalMissing: string[]; status: 'full' | 'degraded' | 'unavailable' }[];
@@ -140,156 +220,132 @@ export function MonitoringCapabilitiesCard({ className = '' }: MonitoringCapabil
         ))}
       </div>
 
-      {viewMode === 'capabilities' && (
-        <>
-          {/* Grouped capabilities */}
-          <div style={{ padding: '8px 16px 12px', display: 'flex', flexDirection: 'column', gap: 6 }}>
-            {CATEGORY_ORDER.map(category => {
-              const group = grouped.get(category);
-              if (!group || (group.available.length === 0 && group.unavailable.length === 0)) return null;
-              const color = CATEGORY_COLORS[category];
+      {viewMode === 'capabilities' && (() => {
+        // Build ordered flat list of capabilities grouped by category
+        const capRows: { cap: MonitoringCapability; isFirstInGroup: boolean; groupSize: number }[] = [];
+        for (const category of CATEGORY_ORDER) {
+          const group = grouped.get(category);
+          if (!group) continue;
+          const caps = [...group.available, ...(showUnavailable ? group.unavailable : [])];
+          if (caps.length === 0) continue;
+          caps.forEach((cap, i) => {
+            capRows.push({ cap, isFirstInGroup: i === 0, groupSize: caps.length });
+          });
+        }
 
-              return (
-                <div key={category} style={{ display: 'flex', alignItems: 'baseline', gap: 8 }}>
-                  <span style={{
-                    fontSize: 9, fontWeight: 600, color, textTransform: 'uppercase',
-                    letterSpacing: '0.04em', minWidth: 72, flexShrink: 0,
-                  }}>
-                    {CATEGORY_LABELS[category]}
-                    <span style={{ color: 'var(--text-muted)', fontWeight: 400, marginLeft: 4 }}>
-                      {group.available.length}/{group.available.length + group.unavailable.length}
-                    </span>
-                  </span>
+        // Count hidden unavailable to show toggle
+        const hiddenUnavailable = showUnavailable ? 0 : totalUnavailable;
 
-                  <div style={{ display: 'flex', flexWrap: 'wrap', gap: 3 }}>
-                    {group.available.map(cap => {
-                      const consumers = getConsumersForCapability(cap.id);
-                      const isExpanded = expandedCap === cap.id;
-                      return (
-                        <span key={cap.id} style={{ position: 'relative' }}>
-                          <span
-                            onClick={() => consumers.length > 0 && setExpandedCap(isExpanded ? null : cap.id)}
-                            title={`system.${cap.id}\n${cap.description}\n${cap.detail || ''}`}
+        return (
+          <>
+            <div style={{ padding: '4px 12px 12px' }}>
+              <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 11 }}>
+                <thead>
+                  <tr style={{ borderBottom: '1px solid var(--border-secondary)' }}>
+                    <th style={{ textAlign: 'left', padding: '4px 6px', fontSize: 10, fontWeight: 500, color: 'var(--text-muted)', width: 90 }}>Category</th>
+                    <th style={{ textAlign: 'left', padding: '4px 6px', fontSize: 10, fontWeight: 500, color: 'var(--text-muted)' }}>Capability</th>
+                    <th style={{ textAlign: 'center', padding: '4px 6px', fontSize: 10, fontWeight: 500, color: 'var(--text-muted)', width: 16 }}></th>
+                    <th style={{ textAlign: 'left', padding: '4px 6px', fontSize: 10, fontWeight: 500, color: 'var(--text-muted)' }}>Description</th>
+                    <th style={{ textAlign: 'left', padding: '4px 6px', fontSize: 10, fontWeight: 500, color: 'var(--text-muted)', width: 90 }}>Source</th>
+                    <th style={{ textAlign: 'left', padding: '4px 6px', fontSize: 10, fontWeight: 500, color: 'var(--text-muted)', width: 80 }}>Used By</th>
+                    <th style={{ textAlign: 'left', padding: '4px 6px', fontSize: 10, fontWeight: 500, color: 'var(--text-muted)', width: 70 }}>TTL</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {capRows.map(({ cap, isFirstInGroup, groupSize }) => {
+                    const consumers = getConsumersForCapability(cap.id);
+                    const color = CATEGORY_COLORS[cap.category];
+                    const dimmed = !cap.available;
+                    return (
+                      <tr key={cap.id} style={{ borderBottom: '1px solid var(--border-secondary)' }}>
+                        {isFirstInGroup && (
+                          <td
+                            rowSpan={groupSize}
                             style={{
-                              display: 'inline-flex', alignItems: 'center', gap: 3,
-                              padding: '1px 6px', fontSize: 10, borderRadius: 3,
-                              background: `${color}12`, border: `1px solid ${color}25`, color,
-                              cursor: consumers.length > 0 ? 'pointer' : 'default',
-                              whiteSpace: 'nowrap',
+                              padding: '3px 6px', fontWeight: 600, fontSize: 9, color,
+                              verticalAlign: 'top', borderRight: '1px solid var(--border-secondary)',
+                              textTransform: 'uppercase', letterSpacing: '0.04em',
                             }}
                           >
-                            <span style={{ width: 4, height: 4, borderRadius: '50%', background: '#22c55e', flexShrink: 0 }} />
+                            {CATEGORY_LABELS[cap.category]}
+                          </td>
+                        )}
+                        <td style={{ padding: '3px 6px', fontWeight: 500, color: cap.available ? 'var(--text-primary)' : 'var(--text-muted)', opacity: dimmed ? 0.5 : undefined }}>
+                          <span style={{ display: 'inline-flex', alignItems: 'center', gap: 6 }}>
+                            <span style={{
+                              width: 5, height: 5, borderRadius: '50%', flexShrink: 0,
+                              background: cap.available ? '#22c55e' : '#64748b',
+                            }} />
                             {cap.label}
-                            {consumers.length > 0 && (
-                              <span style={{ fontSize: 8, opacity: 0.6, marginLeft: 2 }}>
-                                {isExpanded ? '▾' : `·${consumers.length}`}
-                              </span>
-                            )}
                           </span>
-                          {isExpanded && consumers.length > 0 && (
-                            <div style={{
-                              position: 'absolute', top: '100%', left: 0, zIndex: 20,
-                              marginTop: 4, padding: '6px 10px',
-                              background: 'var(--bg-elevated, var(--bg-card))',
-                              border: '1px solid var(--border-secondary)',
-                              borderRadius: 6, boxShadow: '0 4px 12px rgba(0,0,0,0.3)',
-                              minWidth: 200, maxWidth: 300,
-                            }}>
-                              <div style={{ fontSize: 9, color: 'var(--text-muted)', marginBottom: 4, textTransform: 'uppercase', letterSpacing: '0.04em' }}>
-                                Used by
-                              </div>
-                              {consumers.map((c, i) => (
-                                <div key={i} style={{ fontSize: 10, color: 'var(--text-primary)', padding: '2px 0', display: 'flex', alignItems: 'baseline', gap: 6 }}>
-                                  <span style={{ fontWeight: 500, whiteSpace: 'nowrap' }}>{c.screen}</span>
-                                  <span style={{ fontSize: 9, color: 'var(--text-muted)', flex: 1 }}>{c.enables}</span>
-                                </div>
-                              ))}
-                            </div>
+                        </td>
+                        <td style={{ padding: '3px 2px', textAlign: 'center' }}>
+                          {!cap.available && (
+                            <span style={{ fontSize: 8, color: '#64748b' }} title={cap.detail || ''}>!</span>
                           )}
-                        </span>
-                      );
-                    })}
-                    {group.unavailable.length > 0 && !showUnavailable && (
-                      <span style={{ fontSize: 10, color: 'var(--text-muted)', padding: '1px 4px', opacity: 0.5 }}>
-                        +{group.unavailable.length}
-                      </span>
-                    )}
-                    {showUnavailable && group.unavailable.map(cap => {
-                      const consumers = getConsumersForCapability(cap.id);
-                      const isExpanded = expandedCap === cap.id;
-                      return (
-                        <span key={cap.id} style={{ position: 'relative' }}>
-                          <span
-                            onClick={() => consumers.length > 0 && setExpandedCap(isExpanded ? null : cap.id)}
-                            title={cap.description}
-                            style={{
-                              display: 'inline-flex', alignItems: 'center',
-                              padding: '1px 6px', fontSize: 10, borderRadius: 3,
-                              background: 'var(--bg-tertiary)', color: 'var(--text-muted)',
-                              cursor: consumers.length > 0 ? 'pointer' : 'default',
-                              whiteSpace: 'nowrap', opacity: 0.5,
-                              textDecoration: 'line-through', textDecorationColor: 'var(--border-secondary)',
-                            }}
-                          >
-                            {cap.label}
-                            {consumers.length > 0 && (
-                              <span style={{ fontSize: 8, marginLeft: 2, textDecoration: 'none' }}>
-                                {isExpanded ? '▾' : `·${consumers.length}`}
-                              </span>
-                            )}
-                          </span>
-                          {isExpanded && consumers.length > 0 && (
-                            <div style={{
-                              position: 'absolute', top: '100%', left: 0, zIndex: 20,
-                              marginTop: 4, padding: '6px 10px',
-                              background: 'var(--bg-elevated, var(--bg-card))',
-                              border: '1px solid var(--border-secondary)',
-                              borderRadius: 6, boxShadow: '0 4px 12px rgba(0,0,0,0.3)',
-                              minWidth: 200, maxWidth: 300,
-                            }}>
-                              <div style={{ fontSize: 9, color: 'var(--accent-red, #ef4444)', marginBottom: 4, textTransform: 'uppercase', letterSpacing: '0.04em' }}>
-                                Blocked screens
-                              </div>
-                              {consumers.map((c, i) => (
-                                <div key={i} style={{ fontSize: 10, color: 'var(--text-primary)', padding: '2px 0', display: 'flex', alignItems: 'baseline', gap: 6 }}>
-                                  <span style={{ fontWeight: 500, whiteSpace: 'nowrap' }}>{c.screen}</span>
-                                  <span style={{
-                                    fontSize: 8, padding: '0 4px', borderRadius: 2,
-                                    background: c.importance === 'required' ? '#ef444420' : '#f59e0b20',
-                                    color: c.importance === 'required' ? '#ef4444' : '#f59e0b',
-                                  }}>
-                                    {c.importance}
-                                  </span>
-                                </div>
-                              ))}
-                            </div>
+                        </td>
+                        <td style={{ padding: '3px 6px' }}>
+                          <ExpandableCell text={cap.description} detail={cap.detail} dimmed={dimmed} />
+                        </td>
+                        <td style={{ padding: '3px 6px' }}>
+                          {cap.source ? (
+                            <ExpandableCell text={cap.source} maxChars={16} dimmed={dimmed} />
+                          ) : ''}
+                        </td>
+                        <td style={{ padding: '3px 6px' }}>
+                          {consumers.length > 0 ? (
+                            <ExpandableConsumers consumers={consumers} available={cap.available} dimmed={dimmed} />
+                          ) : (
+                            <span style={{ fontSize: 10, color: 'var(--text-muted)', opacity: dimmed ? 0.5 : undefined }}>—</span>
                           )}
-                        </span>
-                      );
-                    })}
-                  </div>
-                </div>
-              );
-            })}
-          </div>
-
-          {totalUnavailable > 0 && (
-            <div style={{ padding: '0 16px 8px' }}>
-              <button
-                onClick={() => setShowUnavailable(!showUnavailable)}
-                style={{
-                  background: 'none', border: 'none', cursor: 'pointer',
-                  fontSize: 10, color: 'var(--text-muted)', padding: '2px 0',
-                  display: 'flex', alignItems: 'center', gap: 4,
-                }}
-              >
-                <span style={{ fontSize: 8, transition: 'transform 0.15s', transform: showUnavailable ? 'rotate(90deg)' : 'rotate(0deg)', display: 'inline-block' }}>▶</span>
-                {showUnavailable ? 'Hide' : 'Show'} {totalUnavailable} unavailable
-              </button>
+                        </td>
+                        <td style={{ padding: '3px 6px', fontSize: 10, fontFamily: 'monospace', opacity: dimmed ? 0.5 : undefined }}>
+                          {cap.ttl === undefined ? '' : cap.ttl === null ? (
+                            <span title="No TTL configured — data retained indefinitely" style={{ color: '#f59e0b' }}>&#x221e;</span>
+                          ) : (
+                            <span style={{ color: 'var(--text-secondary)' }}>{cap.ttl}</span>
+                          )}
+                        </td>
+                      </tr>
+                    );
+                  })}
+                </tbody>
+              </table>
             </div>
-          )}
-        </>
-      )}
+
+            {hiddenUnavailable > 0 && (
+              <div style={{ padding: '0 16px 8px' }}>
+                <button
+                  onClick={() => setShowUnavailable(!showUnavailable)}
+                  style={{
+                    background: 'none', border: 'none', cursor: 'pointer',
+                    fontSize: 10, color: 'var(--text-muted)', padding: '2px 0',
+                    display: 'flex', alignItems: 'center', gap: 4,
+                  }}
+                >
+                  <span style={{ fontSize: 8, transition: 'transform 0.15s', transform: showUnavailable ? 'rotate(90deg)' : 'rotate(0deg)', display: 'inline-block' }}>▶</span>
+                  Show {hiddenUnavailable} unavailable
+                </button>
+              </div>
+            )}
+            {showUnavailable && totalUnavailable > 0 && (
+              <div style={{ padding: '0 16px 8px' }}>
+                <button
+                  onClick={() => setShowUnavailable(false)}
+                  style={{
+                    background: 'none', border: 'none', cursor: 'pointer',
+                    fontSize: 10, color: 'var(--text-muted)', padding: '2px 0',
+                    display: 'flex', alignItems: 'center', gap: 4,
+                  }}
+                >
+                  <span style={{ fontSize: 8, display: 'inline-block', transform: 'rotate(90deg)' }}>▶</span>
+                  Hide unavailable
+                </button>
+              </div>
+            )}
+          </>
+        );
+      })()}
 
       {viewMode === 'screens' && (() => {
         // Compute rowSpan for each tab group so the tab name only appears once

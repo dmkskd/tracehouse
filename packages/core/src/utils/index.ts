@@ -10,3 +10,4 @@ export {
 } from './merge-classification.js';
 export type { MergeCategory, MergeCategoryInfo } from './merge-classification.js';
 export { parseTimeValue } from './time.js';
+export { parseTTL, formatTTLDuration } from './ttl-parser.js';

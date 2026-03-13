@@ -5,8 +5,10 @@
  * system.metric_log / system.asynchronous_metric_log, seeds them with
  * known data, and validates the math in getHistoricalMetrics().
  *
- * These tests verify the formulas documented in docs/metrics/cpu.md:
- *   CPU%  = (OSCPUVirtualTimeMicroseconds / (cores × 1_000_000 × interval_s)) × 100
+ * These tests verify the CPU formula used by CLUSTER_CPU_TIMESERIES:
+ *   The query reads OSUserTime + OSSystemTime (seconds) from asynchronous_metric_log,
+ *   multiplies by 1_000_000 to get microseconds, then:
+ *   CPU%  = (v / (cores × 1_000_000 × interval_s)) × 100
  *   Mem%  = (MemoryTracking / OSMemoryTotal) × 100
  *   Disk  = OSReadBytes / interval_s, OSWriteBytes / interval_s
  *   Net   = NetworkSendBytes / interval_s, NetworkReceiveBytes / interval_s
@@ -48,6 +50,22 @@ describe('MetricsCollector integration (shadow tables)', () => {
     }
   }, 30_000);
 
+  /**
+   * Helper: seed asynchronous_metric_log with OSUserTime/OSSystemTime rows
+   * that produce a known CPU microsecond value per interval.
+   *
+   * The CLUSTER_CPU_TIMESERIES query sums (OSUserTime + OSSystemTime) per event_time
+   * then multiplies by 1_000_000. So to get `targetUs` microseconds of CPU time
+   * for a given timestamp, we seed OSUserTime = targetUs / 1_000_000 (in seconds).
+   */
+  async function seedCpuTime(times: string[], targetUs: number): Promise<void> {
+    const rows = times.flatMap(t => [
+      { event_time: t, metric: 'OSUserTime', value: targetUs / 1_000_000 },
+      { event_time: t, metric: 'OSSystemTime', value: 0 },
+    ]);
+    await seedAsyncMetricLog(ctx.client, rows);
+  }
+
   // -----------------------------------------------------------------------
   // CPU calculation
   // -----------------------------------------------------------------------
@@ -56,17 +74,19 @@ describe('MetricsCollector integration (shadow tables)', () => {
     it('computes correct CPU% for known values (50% usage on 4 cores)', async () => {
       await truncateShadowTables(ctx.client);
 
-      // Scenario: 4 cores, 1-second intervals, 2_000_000 µs CPU time per tick
+      // Scenario: 4 cores, 1-second intervals (hardcoded), 2_000_000 µs CPU time per tick
       // Expected: (2_000_000 / (4 × 1_000_000 × 1)) × 100 = 50%
-      const baseTime = '2025-06-01 12:00:00';
       const times = Array.from({ length: 5 }, (_, i) => {
         const sec = String(i).padStart(2, '0');
         return `2025-06-01 12:00:${sec}`;
       });
 
+      // Seed CPU time into asynchronous_metric_log (OSUserTime/OSSystemTime)
+      await seedCpuTime(times, 2_000_000);
+
+      // Seed metric_log for memory/disk/network (non-CPU columns)
       await seedMetricLog(ctx.client, times.map(t => ({
         event_time: t,
-        cpu_us: 2_000_000,
         memory_tracking: 1_073_741_824, // 1 GiB
         disk_read: 10_000_000,
         disk_write: 5_000_000,
@@ -76,8 +96,8 @@ describe('MetricsCollector integration (shadow tables)', () => {
 
       // Seed CPU cores = 4 and total RAM = 16 GiB
       await seedAsyncMetricLog(ctx.client, [
-        { event_time: baseTime, metric: 'NumberOfCPUCores', value: 4 },
-        { event_time: baseTime, metric: 'OSMemoryTotal', value: 17_179_869_184 },
+        { event_time: times[0], metric: 'NumberOfCPUCores', value: 4 },
+        { event_time: times[0], metric: 'OSMemoryTotal', value: 17_179_869_184 },
       ]);
 
       const from = new Date('2025-06-01T11:59:50Z');
@@ -86,10 +106,7 @@ describe('MetricsCollector integration (shadow tables)', () => {
 
       expect(points.length).toBeGreaterThan(0);
 
-      // Skip the first point (interval_ms = 0 for the first row, gets defaulted to 1000)
-      // All subsequent points should be ~50% CPU
-      const stablePoints = points.slice(1);
-      for (const p of stablePoints) {
+      for (const p of points) {
         expect(p.cpu_usage).toBeCloseTo(50, 0);
       }
     });
@@ -99,16 +116,13 @@ describe('MetricsCollector integration (shadow tables)', () => {
 
       // Scenario: 2 cores, 1-second intervals, 3_000_000 µs CPU time
       // Raw: (3_000_000 / (2 × 1_000_000 × 1)) × 100 = 150%
-      // Clamped to 100% — metric_log collection delays can inflate values
+      // Clamped to 100%
       const times = Array.from({ length: 4 }, (_, i) => {
         const sec = String(i).padStart(2, '0');
         return `2025-06-01 13:00:${sec}`;
       });
 
-      await seedMetricLog(ctx.client, times.map(t => ({
-        event_time: t,
-        cpu_us: 3_000_000,
-      })));
+      await seedCpuTime(times, 3_000_000);
 
       await seedAsyncMetricLog(ctx.client, [
         { event_time: times[0], metric: 'NumberOfCPUCores', value: 2 },
@@ -120,9 +134,8 @@ describe('MetricsCollector integration (shadow tables)', () => {
         new Date('2025-06-01T13:00:10Z'),
       );
 
-      const stablePoints = points.slice(1);
-      expect(stablePoints.length).toBeGreaterThan(0);
-      for (const p of stablePoints) {
+      expect(points.length).toBeGreaterThan(0);
+      for (const p of points) {
         expect(p.cpu_usage).toBe(100);
       }
     });
@@ -136,10 +149,7 @@ describe('MetricsCollector integration (shadow tables)', () => {
         return `2025-06-01 14:00:${sec}`;
       });
 
-      await seedMetricLog(ctx.client, times.map(t => ({
-        event_time: t,
-        cpu_us: 500_000,
-      })));
+      await seedCpuTime(times, 500_000);
 
       await seedAsyncMetricLog(ctx.client, [
         { event_time: times[0], metric: 'NumberOfCPUCores', value: 1 },
@@ -151,12 +161,12 @@ describe('MetricsCollector integration (shadow tables)', () => {
         new Date('2025-06-01T14:00:10Z'),
       );
 
-      const stablePoints = points.slice(1);
-      expect(stablePoints.length).toBeGreaterThan(0);
-      for (const p of stablePoints) {
+      expect(points.length).toBeGreaterThan(0);
+      for (const p of points) {
         expect(p.cpu_usage).toBeCloseTo(50, 0);
       }
     });
+
     it('prefers CGroupMaxCPU over NumberOfCPUCores in k8s/containers', async () => {
       await truncateShadowTables(ctx.client);
 
@@ -169,9 +179,11 @@ describe('MetricsCollector integration (shadow tables)', () => {
         return `2025-06-01 20:00:${sec}`;
       });
 
+      await seedCpuTime(times, 1_500_000);
+
+      // Seed metric_log for memory
       await seedMetricLog(ctx.client, times.map(t => ({
         event_time: t,
-        cpu_us: 1_500_000,
         memory_tracking: 1_073_741_824,
       })));
 
@@ -203,10 +215,7 @@ describe('MetricsCollector integration (shadow tables)', () => {
         return `2025-06-01 21:00:${sec}`;
       });
 
-      await seedMetricLog(ctx.client, times.map(t => ({
-        event_time: t,
-        cpu_us: 2_000_000,
-      })));
+      await seedCpuTime(times, 2_000_000);
 
       await seedAsyncMetricLog(ctx.client, [
         { event_time: times[0], metric: 'NumberOfCPUCores', value: 4 },
@@ -219,9 +228,8 @@ describe('MetricsCollector integration (shadow tables)', () => {
         new Date('2025-06-01T21:00:10Z'),
       );
 
-      const stablePoints = points.slice(1);
-      expect(stablePoints.length).toBeGreaterThan(0);
-      for (const p of stablePoints) {
+      expect(points.length).toBeGreaterThan(0);
+      for (const p of points) {
         expect(p.cpu_usage).toBeCloseTo(50, 0);
       }
     });
@@ -229,7 +237,7 @@ describe('MetricsCollector integration (shadow tables)', () => {
     it('ignores CGroupMaxCPU when it exceeds NumberOfCPUCores', async () => {
       await truncateShadowTables(ctx.client);
 
-      // Scenario: CGroupMaxCPU reports 0 or larger than host cores (no real limit)
+      // Scenario: CGroupMaxCPU reports larger than host cores (no real limit)
       // Should fall back to NumberOfCPUCores = 4
       // CPU time = 2_000_000 µs → 50%
       const times = Array.from({ length: 4 }, (_, i) => {
@@ -237,10 +245,7 @@ describe('MetricsCollector integration (shadow tables)', () => {
         return `2025-06-01 22:00:${sec}`;
       });
 
-      await seedMetricLog(ctx.client, times.map(t => ({
-        event_time: t,
-        cpu_us: 2_000_000,
-      })));
+      await seedCpuTime(times, 2_000_000);
 
       await seedAsyncMetricLog(ctx.client, [
         { event_time: times[0], metric: 'NumberOfCPUCores', value: 4 },
@@ -253,9 +258,8 @@ describe('MetricsCollector integration (shadow tables)', () => {
         new Date('2025-06-01T22:00:10Z'),
       );
 
-      const stablePoints = points.slice(1);
-      expect(stablePoints.length).toBeGreaterThan(0);
-      for (const p of stablePoints) {
+      expect(points.length).toBeGreaterThan(0);
+      for (const p of points) {
         // Should use 4 cores (host), not 16 (bogus cgroup)
         expect(p.cpu_usage).toBeCloseTo(50, 0);
       }
@@ -275,8 +279,11 @@ describe('MetricsCollector integration (shadow tables)', () => {
       const memTotal = 17_179_869_184; // 16 GiB
 
       await seedMetricLog(ctx.client, [
-        { event_time: time, memory_tracking: memUsed, cpu_us: 0 },
+        { event_time: time, memory_tracking: memUsed },
       ]);
+
+      // Seed CPU time so cpuRows is the base (not memoryRows)
+      await seedCpuTime([time], 0);
 
       await seedAsyncMetricLog(ctx.client, [
         { event_time: time, metric: 'OSMemoryTotal', value: memTotal },
@@ -302,8 +309,10 @@ describe('MetricsCollector integration (shadow tables)', () => {
       const memTotal = 17_179_869_184; // 16 GiB
 
       await seedMetricLog(ctx.client, [
-        { event_time: time, memory_tracking: memUsed, cpu_us: 0 },
+        { event_time: time, memory_tracking: memUsed },
       ]);
+
+      await seedCpuTime([time], 0);
 
       await seedAsyncMetricLog(ctx.client, [
         { event_time: time, metric: 'OSMemoryTotal', value: memTotal },
@@ -336,10 +345,11 @@ describe('MetricsCollector integration (shadow tables)', () => {
 
       await seedMetricLog(ctx.client, times.map(t => ({
         event_time: t,
-        cpu_us: 1_000_000,
         disk_read: diskRead,
         disk_write: diskWrite,
       })));
+
+      await seedCpuTime(times, 1_000_000);
 
       await seedAsyncMetricLog(ctx.client, [
         { event_time: times[0], metric: 'NumberOfCPUCores', value: 4 },
@@ -374,10 +384,11 @@ describe('MetricsCollector integration (shadow tables)', () => {
 
       await seedMetricLog(ctx.client, times.map(t => ({
         event_time: t,
-        cpu_us: 1_000_000,
         net_send: netSend,
         net_recv: netRecv,
       })));
+
+      await seedCpuTime(times, 1_000_000);
 
       await seedAsyncMetricLog(ctx.client, [
         { event_time: times[0], metric: 'NumberOfCPUCores', value: 4 },
@@ -417,16 +428,15 @@ describe('MetricsCollector integration (shadow tables)', () => {
       await truncateShadowTables(ctx.client);
 
       const time = '2025-06-01 18:00:00';
-      await seedMetricLog(ctx.client, [
-        { event_time: time, cpu_us: 1_000_000 },
-      ]);
 
-      // Seed OSMemoryTotal but NO NumberOfCPUCores anywhere — 
+      // Seed CPU time = 1_000_000 µs via asynchronous_metric_log
+      await seedCpuTime([time], 1_000_000);
+
+      // Seed OSMemoryTotal but NO NumberOfCPUCores anywhere —
       // collector should exhaust all fallbacks and default to 1
       await seedAsyncMetricLog(ctx.client, [
         { event_time: time, metric: 'OSMemoryTotal', value: 8_589_934_592 },
       ]);
-      // Don't seed asynchronous_metrics either — all 3 CPU core lookups will fail
 
       const points = await collector.getHistoricalMetrics(
         new Date('2025-06-01T17:59:50Z'),
@@ -442,12 +452,11 @@ describe('MetricsCollector integration (shadow tables)', () => {
     it('first row uses default 1s interval when interval_ms is 0', async () => {
       await truncateShadowTables(ctx.client);
 
-      // Single row — interval_ms will be 0 (no previous row), defaults to 1000ms
+      // Single row — interval_ms is hardcoded to 1000ms in the query
       // With 4 cores and 2_000_000 µs: (2_000_000 / (4 × 1_000_000 × 1)) × 100 = 50%
       const time = '2025-06-01 19:00:00';
-      await seedMetricLog(ctx.client, [
-        { event_time: time, cpu_us: 2_000_000 },
-      ]);
+
+      await seedCpuTime([time], 2_000_000);
 
       await seedAsyncMetricLog(ctx.client, [
         { event_time: time, metric: 'NumberOfCPUCores', value: 4 },
@@ -460,7 +469,7 @@ describe('MetricsCollector integration (shadow tables)', () => {
       );
 
       expect(points.length).toBe(1);
-      // First row defaults to 1s interval → 50% CPU
+      // interval_ms is hardcoded to 1000 → 50% CPU
       expect(points[0].cpu_usage).toBeCloseTo(50, 0);
     });
   });

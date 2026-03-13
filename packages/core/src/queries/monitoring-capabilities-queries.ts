@@ -14,7 +14,8 @@ SELECT
     name,
     any(engine) AS engine,
     any(total_rows) AS total_rows,
-    any(total_bytes) AS total_bytes
+    any(total_bytes) AS total_bytes,
+    any(create_table_query) AS create_table_query
 FROM {{cluster_metadata:system.tables}}
 WHERE database = 'system'
   AND name IN (

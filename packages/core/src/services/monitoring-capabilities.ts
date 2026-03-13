@@ -21,6 +21,7 @@ import {
 } from '../queries/monitoring-capabilities-queries.js';
 import { tagQuery } from '../queries/builder.js';
 import { TAB_INTERNAL, sourceTag } from '../queries/source-tags.js';
+import { parseTTL } from '../utils/ttl-parser.js';
 
 export class MonitoringCapabilitiesServiceError extends Error {
   constructor(message: string, public readonly cause?: Error) {
@@ -30,106 +31,126 @@ export class MonitoringCapabilitiesServiceError extends Error {
 }
 
 /** Metadata for each system log table we probe */
-const LOG_TABLE_META: Record<string, { label: string; description: string; category: MonitoringCapability['category'] }> = {
+const LOG_TABLE_META: Record<string, { label: string; description: string; category: MonitoringCapability['category']; source: string }> = {
   text_log: {
     label: 'Text Log',
     description: 'Server text log messages (errors, warnings, info). Enables log-level filtering in UI.',
     category: 'logging',
+    source: 'system.text_log',
   },
   query_log: {
     label: 'Query Log',
     description: 'Completed query history with timing, memory, and profile events.',
     category: 'profiling',
+    source: 'system.query_log',
   },
   query_thread_log: {
     label: 'Query Thread Log',
     description: 'Per-thread breakdown of query execution. Enables thread-level CPU attribution.',
     category: 'profiling',
+    source: 'system.query_thread_log',
   },
   query_views_log: {
     label: 'Query Views Log',
     description: 'Materialized view execution during queries.',
     category: 'profiling',
+    source: 'system.query_views_log',
   },
   part_log: {
     label: 'Part Log',
     description: 'Merge, mutation, and part lifecycle events. Enables merge history and CPU attribution.',
     category: 'introspection',
+    source: 'system.part_log',
   },
   trace_log: {
     label: 'Trace Log',
     description: 'Stack trace sampling for CPU and memory profiling. Enables flamegraphs.',
     category: 'tracing',
+    source: 'system.trace_log',
   },
   opentelemetry_span_log: {
     label: 'OpenTelemetry Spans',
     description: 'Distributed tracing spans. Enables trace correlation with external systems.',
     category: 'tracing',
+    source: 'system.opentelemetry_span_log',
   },
   metric_log: {
     label: 'Metric Log',
-    description: 'Historical system.metrics snapshots. Enables metric time-series charts.',
+    description: '1-second snapshots of system.metrics (gauges) and system.events (ProfileEvents deltas). Enables metric time-series charts.',
     category: 'metrics',
+    source: 'system.metric_log',
   },
   asynchronous_metric_log: {
     label: 'Async Metric Log',
-    description: 'Historical asynchronous_metrics snapshots (CPU, memory, jemalloc).',
+    description: '~60-second snapshots of OS-level metrics from /proc, cgroups, and jemalloc (system.asynchronous_metrics).',
     category: 'metrics',
+    source: 'system.asynchronous_metric_log',
   },
   crash_log: {
     label: 'Crash Log',
     description: 'Server crash/fatal error records.',
     category: 'logging',
+    source: 'system.crash_log',
   },
   processors_profile_log: {
     label: 'Processors Profile Log',
     description: 'Per-processor pipeline profiling. Enables detailed query pipeline analysis.',
     category: 'profiling',
+    source: 'system.processors_profile_log',
   },
   backup_log: {
     label: 'Backup Log',
     description: 'Backup and restore operation history.',
     category: 'logging',
+    source: 'system.backup_log',
   },
   s3queue_log: {
     label: 'S3Queue Log',
     description: 'S3Queue table engine processing log.',
     category: 'logging',
+    source: 'system.s3queue_log',
   },
   blob_storage_log: {
     label: 'Blob Storage Log',
     description: 'Blob storage (S3/GCS/Azure) operation log.',
     category: 'logging',
+    source: 'system.blob_storage_log',
   },
   session_log: {
     label: 'Session Log',
     description: 'Login/logout and session lifecycle events.',
     category: 'logging',
+    source: 'system.session_log',
   },
   zookeeper_log: {
     label: 'ZooKeeper Log',
     description: 'ZooKeeper/Keeper request log for replication debugging.',
     category: 'introspection',
+    source: 'system.zookeeper_log',
   },
   transactions_info_log: {
     label: 'Transactions Log',
     description: 'Transaction lifecycle events.',
     category: 'introspection',
+    source: 'system.transactions_info_log',
   },
   filesystem_cache_log: {
     label: 'Filesystem Cache Log',
     description: 'Filesystem cache operations for remote storage.',
     category: 'introspection',
+    source: 'system.filesystem_cache_log',
   },
   filesystem_read_prefetches_log: {
     label: 'FS Read Prefetch Log',
     description: 'Filesystem read prefetch operations.',
     category: 'introspection',
+    source: 'system.filesystem_read_prefetches_log',
   },
   asynchronous_insert_log: {
     label: 'Async Insert Log',
     description: 'Asynchronous insert operation log.',
     category: 'logging',
+    source: 'system.asynchronous_insert_log',
   },
 };
 
@@ -168,6 +189,8 @@ export class MonitoringCapabilitiesService {
         available,
         category: meta.category,
         detail,
+        ttl: tableInfo?.ttl ?? null,
+        source: meta.source,
       });
     }
 
@@ -188,6 +211,7 @@ export class MonitoringCapabilitiesService {
         : profileEventsEnabled
           ? 'Enabled (log_profile_events=1)'
           : 'Disabled — set log_profile_events=1 to collect per-query counters',
+      source: 'setting: log_profile_events',
     });
 
     // Add OpenTelemetry tracing probability
@@ -245,6 +269,7 @@ export class MonitoringCapabilitiesService {
       available: cpuProfilerActive,
       category: 'profiling',
       detail: cpuProfilerDetail,
+      source: 'setting: query_profiler_cpu_time_period_ns',
     });
 
     // Add ZooKeeper capability
@@ -255,6 +280,7 @@ export class MonitoringCapabilitiesService {
       available: hasZk,
       category: 'introspection',
       detail: hasZk ? 'Connected' : 'Not configured or not accessible',
+      source: 'config.xml: zookeeper',
     });
 
     // Add introspection functions capability (needed for flamegraphs and CPU sampling)
@@ -273,6 +299,7 @@ export class MonitoringCapabilitiesService {
       detail: introspectionEnabled
         ? `Enabled${settingValue === '1' ? '' : ' (functional test passed)'}`
         : `Disabled (set allow_introspection_functions=1)`,
+      source: 'setting: allow_introspection_functions',
     });
 
     // ClickStack (HyperDX) embedded log viewer — available in CH 26.2+
@@ -287,6 +314,7 @@ export class MonitoringCapabilitiesService {
       detail: hasClickStack
         ? `Available (v${version})`
         : `Requires ClickHouse 26.2+ (current: v${version})`,
+      source: 'server version ≥ 26.2',
     });
 
     // ClickHouse Cloud detection — affects feature availability
@@ -298,6 +326,7 @@ export class MonitoringCapabilitiesService {
       available: isCloud,
       category: 'introspection',
       detail: isCloud ? 'ClickHouse Cloud detected' : 'Self-hosted',
+      source: 'system.clusters',
     });
 
     return {
@@ -316,14 +345,15 @@ export class MonitoringCapabilitiesService {
     }
   }
 
-  private async probeLogTables(): Promise<Map<string, { engine: string; totalRows: number; totalBytes: number }>> {
-    const result = new Map<string, { engine: string; totalRows: number; totalBytes: number }>();
+  private async probeLogTables(): Promise<Map<string, { engine: string; totalRows: number; totalBytes: number; ttl: string | null }>> {
+    const result = new Map<string, { engine: string; totalRows: number; totalBytes: number; ttl: string | null }>();
     try {
       const rows = await this.adapter.executeQuery<{
         name: string;
         engine: string;
         total_rows: number;
         total_bytes: number;
+        create_table_query: string;
       }>(tagQuery(PROBE_SYSTEM_LOG_TABLES, sourceTag(TAB_INTERNAL, 'logTables')));
 
       for (const row of rows) {
@@ -331,6 +361,7 @@ export class MonitoringCapabilitiesService {
           engine: String(row.engine),
           totalRows: Number(row.total_rows) || 0,
           totalBytes: Number(row.total_bytes) || 0,
+          ttl: parseTTL(String(row.create_table_query || '')),
         });
       }
     } catch (error) {
