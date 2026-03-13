@@ -71,23 +71,36 @@ The target query receives the clicked value via the standard `{{drill:column | f
 
 ### `@rag` - Cell decoration (Red / Amber / Green)
 
-Applies conditional coloring to table cells based on numeric thresholds. Values below the green threshold render green, below amber render amber, and anything above renders red. Only affects table view - charts are not changed.
+Applies conditional coloring to table cells based on numeric thresholds. Only affects table view — charts are not changed.
+
+**Ascending** (lower is better) — use `<`:
 
 ```sql
 -- @rag: column=avg_bytes_read green<2000 amber<40000
 ```
 
+Values below `green` are green, below `amber` are amber, otherwise red.
+
+**Descending** (higher is better) — use `>`:
+
+```sql
+-- @rag: column=uptime_days green>30 amber>7
+```
+
+Values above `green` are green, above `amber` are amber, otherwise red.
+
 | Parameter | Required | Description |
 |-----------|----------|-------------|
 | `column`  | Yes      | Column name to apply the decoration to |
-| `green<`  | Yes      | Values strictly below this number are green |
-| `amber<`  | Yes      | Values strictly below this number (but above green) are amber. Values at or above are red |
+| `green<` or `green>` | Yes | Green threshold. `<` = lower is better, `>` = higher is better |
+| `amber<` or `amber>` | Yes | Amber threshold (same direction as green) |
 
 Multiple `@rag` directives can be added to a single query to decorate different columns:
 
 ```sql
 -- @rag: column=avg_bytes_read green<2000 amber<40000
 -- @rag: column=avg_duration_ms green<5 amber<50
+-- @rag: column=cache_hit_rate green>95 amber>80
 ```
 
 ## Template placeholders
