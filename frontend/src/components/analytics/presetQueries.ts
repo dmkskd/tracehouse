@@ -4,7 +4,8 @@
  * Metadata format (parsed from SQL comments):
  *   -- @meta: title='...' group='...' description='...'
  *   -- @chart: type=bar labels=col values=col style=3d
- *   -- @rag: column=col_name green<2000 amber<40000
+ *   -- @rag: column=col_name green<2000 amber<40000   (ascending: lower is better)
+ *   -- @rag: column=col_name green>100 amber>10      (descending: higher is better)
  *   -- Source: <url>
  *
  * Sources & Attribution:
@@ -22,7 +23,7 @@
 export {
   type QueryGroup, type ChartType, type ChartStyle, type RagRule, type PresetQuery, type CustomQuery,
   QUERY_GROUPS, CHART_TYPE_LABELS, MAX_SIDEBAR_QUERIES, TIME_RANGE_OPTIONS,
-  getRagColor, resolveTimeRange, resolveDrillParams, describeTimeRange,
+  getRagColor, parseRagRules, resolveTimeRange, resolveDrillParams, describeTimeRange,
   parseQueryMetadata, buildCustomQuerySql, loadCustomQueries,
   deleteCustomQuery, resetCustomQueries,
 } from './queryUtils';

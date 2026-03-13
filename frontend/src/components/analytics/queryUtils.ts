@@ -13,11 +13,14 @@ export type QueryGroup = 'Overview' | 'Inserts' | 'Selects' | 'Parts' | 'Merges'
 export type ChartType = 'bar' | 'line' | 'pie' | 'area' | 'grouped_bar' | 'stacked_bar' | 'grouped_line';
 export type ChartStyle = '2d' | '3d';
 
-/** RAG (Red/Amber/Green) threshold rule for a column. Values below greenBelow are green, below amberBelow are amber, otherwise red. */
+/** RAG (Red/Amber/Green) threshold rule for a column.
+ *  Ascending (green<X amber<Y): lower is better. green < X, amber < Y, else red.
+ *  Descending (green>X amber>Y): higher is better. green > X, amber > Y, else red. */
 export interface RagRule {
   column: string;
-  greenBelow: number;
-  amberBelow: number;
+  direction: 'asc' | 'desc';
+  greenThreshold: number;
+  amberThreshold: number;
 }
 
 export interface PresetQuery {
@@ -103,8 +106,15 @@ export function getRagColor(column: string, value: unknown, rules?: RagRule[]): 
   if (!rule) return undefined;
   const num = typeof value === 'number' ? value : Number(value);
   if (isNaN(num)) return undefined;
-  if (num < rule.greenBelow) return '#22c55e'; // green
-  if (num < rule.amberBelow) return '#f59e0b'; // amber
+  if (rule.direction === 'desc') {
+    // Higher is better: green > X, amber > Y, else red
+    if (num > rule.greenThreshold) return '#22c55e'; // green
+    if (num > rule.amberThreshold) return '#f59e0b'; // amber
+    return '#ef4444'; // red
+  }
+  // Ascending (default): lower is better
+  if (num < rule.greenThreshold) return '#22c55e'; // green
+  if (num < rule.amberThreshold) return '#f59e0b'; // amber
   return '#ef4444'; // red
 }
 
@@ -200,6 +210,30 @@ export function describeTimeRange(defaultInterval?: string, userInterval?: strin
   return `now() - INTERVAL ${interval}`;
 }
 
+/* ─── RAG rule parser ─── */
+
+/** Parse @rag directives from raw SQL. Usable independently of parseQueryMetadata. */
+export function parseRagRules(sql: string): RagRule[] {
+  const rules: RagRule[] = [];
+  const ragRegex = /--\s*@rag:\s*(.+)/gi;
+  let ragMatch;
+  while ((ragMatch = ragRegex.exec(sql)) !== null) {
+    const r = ragMatch[1];
+    const colMatch = r.match(/column=(\w+)/);
+    const greenMatch = r.match(/green([<>])(\d+(?:\.\d+)?)/);
+    const amberMatch = r.match(/amber([<>])(\d+(?:\.\d+)?)/);
+    if (colMatch && greenMatch && amberMatch) {
+      rules.push({
+        column: colMatch[1],
+        direction: greenMatch[1] === '>' ? 'desc' : 'asc',
+        greenThreshold: Number(greenMatch[2]),
+        amberThreshold: Number(amberMatch[2]),
+      });
+    }
+  }
+  return rules;
+}
+
 /* ─── metadata parser ─── */
 
 export function parseQueryMetadata(sql: string): PresetQuery | null {
@@ -264,22 +298,7 @@ export function parseQueryMetadata(sql: string): PresetQuery | null {
     if (intoMatch) linkIntoQuery = intoMatch[1];
   }
 
-  const ragRules: RagRule[] = [];
-  const ragRegex = /--\s*@rag:\s*(.+)/gi;
-  let ragMatch;
-  while ((ragMatch = ragRegex.exec(sql)) !== null) {
-    const r = ragMatch[1];
-    const colMatch = r.match(/column=(\w+)/);
-    const greenMatch = r.match(/green<(\d+(?:\.\d+)?)/);
-    const amberMatch = r.match(/amber<(\d+(?:\.\d+)?)/);
-    if (colMatch && greenMatch && amberMatch) {
-      ragRules.push({
-        column: colMatch[1],
-        greenBelow: Number(greenMatch[1]),
-        amberBelow: Number(amberMatch[1]),
-      });
-    }
-  }
+  const ragRules = parseRagRules(sql);
 
   return {
     name: titleMatch[1].trim(),

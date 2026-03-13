@@ -18,6 +18,7 @@ import {
   buildCustomQuerySql, resolveTimeRange, resolveDrillParams, describeTimeRange,
   getAllQueries as getAllQueriesFromPresets,
 } from './presetQueries';
+import { parseRagRules } from './queryUtils';
 import { LinkQueryModal } from './LinkQueryModal';
 import {
   isNumericValue, formatCell, parseChartDirective,
@@ -436,11 +437,11 @@ export const QueryExplorer: React.FC<QueryExplorerProps> = ({ urlState, onUrlSta
     document.addEventListener('mouseup', onUp);
   }, [editorHeight]);
 
-  /* ── RAG rules from active preset ── */
+  /* ── RAG rules: parse directly from live SQL so editor changes take effect ── */
   const activeRagRules = useMemo(() => {
-    const preset = currentQuery ?? allQueries.find(p => p.name === activeQueryName);
-    return preset?.ragRules;
-  }, [currentQuery, allQueries, activeQueryName]);
+    const rules = parseRagRules(sql);
+    return rules.length > 0 ? rules : undefined;
+  }, [sql]);
 
   /* ── chart data ── */
   const chartData = useMemo((): ChartDataPoint[] => {
