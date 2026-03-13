@@ -46,5 +46,5 @@ just                  # List all commands
 just start            # Start infra + frontend
 just stop             # Stop all services
 just test             # Run tests
-just load-data        # Load test data into ClickHouse
+just generate-data    # Generate test data into ClickHouse
 ```

@@ -110,14 +110,14 @@ See `k8s/README.md` for more details on the K8s setup.
 ## Test Data
 
 ```bash
-# Quick load (1M rows, many small parts)
-just load-data-quick
+# Quick generate (1M rows, many small parts)
+just generate-data-quick
 
-# Heavy load (10M rows, triggers lots of merges)
-just load-data-heavy
+# Heavy generate (10M rows, triggers lots of merges)
+just generate-data-heavy
 
 # Custom
-just load-data 5000000 2 100000
+just generate-data 5000000 2 100000
 
 # Generate query activity
 just run-queries

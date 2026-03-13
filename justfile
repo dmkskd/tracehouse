@@ -270,11 +270,16 @@ logs:
 # TEST DATA
 # ─────────────────────────────────────────────────────────────────
 
-# Load test data (positional args): just load-data <rows> <partitions> <batch>
+# Generate test data (positional args): just generate-data <rows> <partitions> <batch>
 # Works with both Docker and K8s (connects via localhost:9000)
-# When args are omitted, the script reads defaults from .env (CH_LOAD_*)
+# Launch TUI to orchestrate all data tools from a single dashboard
 [group('data')]
-load-data table="all" *args="":
+data-tools-tui *args="":
+    uv run --project tools/data-utils tracehouse-data-tools-tui {{args}}
+
+# When args are omitted, the script reads defaults from .env (CH_GEN_*)
+[group('data')]
+generate-data table="all" *args="":
     #!/usr/bin/env bash
     TABLE_FLAG=""
     case "{{table}}" in
@@ -283,22 +288,17 @@ load-data table="all" *args="":
         uk) TABLE_FLAG="--uk-only" ;;
         web) TABLE_FLAG="--web-only" ;;
     esac
-    uv run --project tools/data-utils tracehouse-load $TABLE_FLAG {{args}}
+    uv run --project tools/data-utils tracehouse-generate $TABLE_FLAG {{args}}
 
-# Launch TUI to orchestrate data tools with shared test users
+# Generate test data (quick - 1M rows, small batches for many parts)
 [group('data')]
-tui *args="":
-    uv run --project tools/data-utils tracehouse-tui {{args}}
+generate-data-quick:
+    uv run --project tools/data-utils tracehouse-generate --rows 1000000 --partitions 1 --batch-size 10000
 
-# Load test data (quick - 1M rows, small batches for many parts)
+# Generate test data (heavy - many small batches to trigger lots of merges)
 [group('data')]
-load-data-quick:
-    uv run --project tools/data-utils tracehouse-load --rows 1000000 --partitions 1 --batch-size 10000
-
-# Load test data (heavy - many small batches to trigger lots of merges)
-[group('data')]
-load-data-heavy:
-    uv run --project tools/data-utils tracehouse-load --rows 10000000 --partitions 1 --batch-size 10000
+generate-data-heavy:
+    uv run --project tools/data-utils tracehouse-generate --rows 10000000 --partitions 1 --batch-size 10000
 
 # Run queries to generate activity for monitoring
 # When args are omitted, the script reads defaults from .env (CH_QUERY_*)
@@ -323,10 +323,10 @@ run-mutations-heavy *args="":
 run-mutations-light *args="":
     uv run --project tools/data-utils tracehouse-mutations --lightweight-only {{args}}
 
-# Reset and reload test data
+# Reset and regenerate test data
 [group('data')]
-reload-data *args="":
-    uv run --project tools/data-utils tracehouse-load --drop {{args}}
+regenerate-data *args="":
+    uv run --project tools/data-utils tracehouse-generate --drop {{args}}
 
 # Drop test tables (works with both Docker and K8s via localhost)
 [group('data')]

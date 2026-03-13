@@ -1,6 +1,6 @@
-# Loading Test Data
+# Generating Test Data
 
-TraceHouse ships with scripts to load realistic test datasets for development and demo purposes.
+TraceHouse ships with scripts to generate realistic test datasets for development and demo purposes.
 
 ## Available Datasets
 
@@ -11,38 +11,50 @@ TraceHouse ships with scripts to load realistic test datasets for development an
 | UK House Prices | `uk_price_paid.*` | UK property transaction data |
 | Web Analytics | `web_analytics.*` | Simulated web analytics events |
 
-## Loading Data
+## Data Tools TUI
 
-### Load All Datasets
-
-```bash
-just load-data
-```
-
-### Load Specific Datasets
+The TUI dashboard lets you start, stop, and monitor all data tools (generate, queries, mutations, merge-triggers) from a single terminal:
 
 ```bash
-just load-data taxi        # NYC Taxi only
-just load-data synthetic   # Synthetic only
-just load-data uk          # UK House Prices only
-just load-data web         # Web Analytics only
+just data-tools-tui
 ```
 
-### Quick Load (Small Dataset)
+Keyboard shortcuts: `a` start all, `s` stop all, `1`–`4` toggle individual tools, `c` copy log, `x` clear log, `q` quit.
+
+The TUI forwards your `.env` / `CH_ENV_FILE` settings to all child processes and shows live progress for bulk data generation. It also includes a `.env` viewer/editor tab (`Ctrl+S` to save).
+
+## Generating Data
+
+### Generate All Datasets
+
+```bash
+just generate-data
+```
+
+### Generate Specific Datasets
+
+```bash
+just generate-data taxi        # NYC Taxi only
+just generate-data synthetic   # Synthetic only
+just generate-data uk          # UK House Prices only
+just generate-data web         # Web Analytics only
+```
+
+### Quick Generate (Small Dataset)
 
 For fast iteration during development:
 
 ```bash
-just load-data-quick
+just generate-data-quick
 # 1M rows, small batches → many parts for merge visualization
 ```
 
-### Heavy Load (Merge Stress Test)
+### Heavy Generate (Merge Stress Test)
 
 To generate lots of merge activity:
 
 ```bash
-just load-data-heavy
+just generate-data-heavy
 # 10M rows, small batches → triggers many merges
 ```
 
@@ -88,20 +100,20 @@ Lightweight `DELETE FROM` is synchronous by default in ClickHouse. The `--sync` 
 
 ## Multi-User Simulation
 
-All tools support `--users N` to create temporary ClickHouse users (alice, bob, charlie, ...) so that activity shows up under different usernames in `system.query_log`, `system.processes`, etc. This is useful for testing per-user dashboards and spotting "noisy neighbor" patterns.
+All tools support `--users N` to create temporary ClickHouse users (`th_alice`, `th_bob`, `th_charlie`, ...) so that activity shows up under different usernames in `system.query_log`, `system.processes`, etc. This is useful for testing per-user dashboards and spotting "noisy neighbor" patterns.
 
 ```bash
 # Run queries as 5 different users
 just run-queries --users 5
 
-# With skewed distribution (alice gets ~55% of traffic)
+# With skewed distribution (th_alice gets ~55% of traffic)
 just run-queries --users 5 --user-skew 1
 
-# Very skewed (alice gets ~74%)
+# Very skewed (th_alice gets ~74%)
 just run-queries --users 5 --user-skew 2
 
 # Works with all tools
-just load-data --users 3
+just generate-data --users 3
 just run-mutations --users 5 --user-skew 1
 ```
 
@@ -116,17 +128,17 @@ CH_USER_SKEW=1
 
 **Skew values:**
 
-| `--user-skew` | alice | bob | charlie | Effect                  |
-| ------------- | ----- | --- | ------- | ----------------------- |
-| 0 (default)   | 33%   | 33% | 33%     | Equal                   |
-| 1             | 55%   | 27% | 18%     | Zipf — clear noisy user |
-| 2             | 74%   | 18% | 8%      | Very noisy alice        |
+| `--user-skew` | th_alice | th_bob | th_charlie | Effect                  |
+| ------------- | -------- | ------ | ---------- | ----------------------- |
+| 0 (default)   | 33%      | 33%    | 33%        | Equal                   |
+| 1             | 55%      | 27%    | 18%        | Zipf — clear noisy user |
+| 2             | 74%      | 18%    | 8%         | Very noisy th_alice     |
 
 ## Resetting Data
 
 ```bash
-# Drop and reload all test data
-just reload-data
+# Drop and regenerate all test data
+just regenerate-data
 
 # Drop all test tables (with confirmation)
 just drop-data
@@ -137,7 +149,7 @@ just drop-data -y
 
 ## Configuration
 
-All CLI scripts (`just load-data`, `just run-queries`, `just run-mutations`, etc.) automatically load `.env` from the repo root if it exists. This file is **not** used by the frontend app — only by the data-utils CLI tools.
+All CLI scripts (`just generate-data`, `just run-queries`, `just run-mutations`, etc.) automatically load `.env` from the repo root if it exists. This file is **not** used by the frontend app — only by the data-utils CLI tools.
 
 ```bash
 cp .env.example .env
@@ -146,9 +158,9 @@ cp .env.example .env
 To use a different env file, set `CH_ENV_FILE` or pass `--env-file`:
 
 ```bash
-CH_ENV_FILE=.env.clickhouse just load-data
+CH_ENV_FILE=.env.clickhouse just generate-data
 # or
-just load-data --env-file .env.aiven
+just generate-data --env-file .env.aiven
 ```
 
 ```bash
@@ -159,10 +171,10 @@ CH_USER=default
 CH_PASSWORD=your-password
 CH_SECURE=true
 
-# Data loading parameters
-CH_LOAD_ROWS=1000000
-CH_LOAD_PARTITIONS=1
-CH_LOAD_BATCH_SIZE=10000
+# Data generation parameters
+CH_GEN_ROWS=1000000
+CH_GEN_PARTITIONS=1
+CH_GEN_BATCH_SIZE=10000
 ```
 
 See `.env.example` for the full list of available options.
@@ -170,9 +182,9 @@ See `.env.example` for the full list of available options.
 CLI tools prompt for confirmation before starting. To skip the prompt, pass `-y` / `--assume-yes` or set `CH_ASSUME_YES=true` in your `.env`:
 
 ```bash
-just load-data -y
+just generate-data -y
 # or
-CH_ASSUME_YES=true just load-data
+CH_ASSUME_YES=true just generate-data
 ```
 
 :::info

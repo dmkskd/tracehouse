@@ -1,27 +1,27 @@
 """
-TraceHouse Test Data Setup
+TraceHouse Test Data Generator
 
 Creates databases and tables with synthetic data for testing.
-Data is loaded partition-by-partition to simulate real-world ingestion.
+Data is generated partition-by-partition to simulate real-world ingestion.
 
 Usage:
-    tracehouse-load [options]
+    tracehouse-generate [options]
 
 Examples:
     # Quick test (1M rows, 3 partitions, 100K batches)
-    tracehouse-load --rows 1000000 --partitions 3 --batch-size 100000
+    tracehouse-generate --rows 1000000 --partitions 3 --batch-size 100000
 
     # Medium load (10M rows, 4 partitions, 500K batches)
-    tracehouse-load --rows 10000000 --partitions 4 --batch-size 500000
+    tracehouse-generate --rows 10000000 --partitions 4 --batch-size 500000
 
     # Heavy load (100M rows, default settings)
-    tracehouse-load --rows 100000000
+    tracehouse-generate --rows 100000000
 
-    # Reset and reload
-    tracehouse-load --drop --rows 5000000
+    # Reset and regenerate
+    tracehouse-generate --drop --rows 5000000
 
     # Replicated tables (for clustered setups with Keeper)
-    tracehouse-load --replicated --rows 5000000
+    tracehouse-generate --replicated --rows 5000000
 """
 
 from __future__ import annotations
@@ -43,8 +43,9 @@ from data_utils.tables import (
     ProgressTracker,
 )
 from data_utils.users import (
-    create_test_users, lock_test_users, make_user_client,
-    get_user_for_index, print_test_users, verify_test_user, TestUser,
+    create_test_users, load_test_users_from_env, lock_test_users,
+    make_user_client, get_user_for_index, print_test_users,
+    verify_test_user, TestUser,
 )
 
 
@@ -57,33 +58,33 @@ def _parse_args() -> tuple[argparse.Namespace, str | None]:
     env_path = pre_parse_env_file()
 
     parser = argparse.ArgumentParser(
-        description="Setup test data for TraceHouse",
+        description="Generate test data for TraceHouse",
         formatter_class=argparse.RawDescriptionHelpFormatter,
         epilog="""
 Examples:
-  Quick test:   tracehouse-load --rows 1000000 --batch-size 100000
-  Medium load:  tracehouse-load --rows 10000000 --partitions 4
-  Reset data:   tracehouse-load --drop --rows 5000000
-  UK only:      tracehouse-load --uk-only --rows 5000000
+  Quick test:   tracehouse-generate --rows 1000000 --batch-size 100000
+  Medium load:  tracehouse-generate --rows 10000000 --partitions 4
+  Reset data:   tracehouse-generate --drop --rows 5000000
+  UK only:      tracehouse-generate --uk-only --rows 5000000
 
 Server capabilities (S3, cluster, Keeper) are auto-detected.
 Tables are created with the best engine available for the target server.
         """,
     )
     add_connection_args(parser)
-    parser.add_argument("--rows", type=int, default=env_int("CH_LOAD_ROWS", "10000000"), help="Total rows per table (default: $CH_LOAD_ROWS or 10M)")
-    parser.add_argument("--partitions", type=int, default=env_int("CH_LOAD_PARTITIONS", "3"), help="Number of partitions/months (default: $CH_LOAD_PARTITIONS or 3)")
-    parser.add_argument("--batch-size", type=int, default=env_int("CH_LOAD_BATCH_SIZE", "500000"), help="Rows per INSERT batch (default: $CH_LOAD_BATCH_SIZE or 500K)")
-    parser.add_argument("--drop", action="store_true", default=os.environ.get("CH_LOAD_DROP", "").lower() in ("1", "true", "yes"), help="Drop existing tables before creating (default: $CH_LOAD_DROP or false)")
-    parser.add_argument("--parallelism", type=int, default=env_int("CH_LOAD_PARALLELISM", "0"), help="Max tables to load concurrently (0 = all, default: $CH_LOAD_PARALLELISM or 0)")
-    parser.add_argument("--throttle-min", type=float, default=float(os.environ.get("CH_LOAD_THROTTLE_MIN", "0")), help="Min delay in seconds between batches (default: $CH_LOAD_THROTTLE_MIN or 0)")
-    parser.add_argument("--throttle-max", type=float, default=float(os.environ.get("CH_LOAD_THROTTLE_MAX", "0")), help="Max delay in seconds between batches (default: $CH_LOAD_THROTTLE_MAX or 0)")
+    parser.add_argument("--rows", type=int, default=env_int("CH_GEN_ROWS", "10000000"), help="Total rows per table (default: $CH_GEN_ROWS or 10M)")
+    parser.add_argument("--partitions", type=int, default=env_int("CH_GEN_PARTITIONS", "3"), help="Number of partitions/months (default: $CH_GEN_PARTITIONS or 3)")
+    parser.add_argument("--batch-size", type=int, default=env_int("CH_GEN_BATCH_SIZE", "500000"), help="Rows per INSERT batch (default: $CH_GEN_BATCH_SIZE or 500K)")
+    parser.add_argument("--drop", action="store_true", default=os.environ.get("CH_GEN_DROP", "").lower() in ("1", "true", "yes"), help="Drop existing tables before creating (default: $CH_GEN_DROP or false)")
+    parser.add_argument("--parallelism", type=int, default=env_int("CH_GEN_PARALLELISM", "0"), help="Max tables to generate concurrently (0 = all, default: $CH_GEN_PARALLELISM or 0)")
+    parser.add_argument("--throttle-min", type=float, default=float(os.environ.get("CH_GEN_THROTTLE_MIN", "0")), help="Min delay in seconds between batches (default: $CH_GEN_THROTTLE_MIN or 0)")
+    parser.add_argument("--throttle-max", type=float, default=float(os.environ.get("CH_GEN_THROTTLE_MAX", "0")), help="Max delay in seconds between batches (default: $CH_GEN_THROTTLE_MAX or 0)")
     parser.add_argument("--synthetic-only", action="store_true", help="Only create synthetic_data table")
     parser.add_argument("--taxi-only", action="store_true", help="Only create nyc_taxi table")
     parser.add_argument("--uk-only", action="store_true", help="Only create uk_price_paid table")
     parser.add_argument("--web-only", action="store_true", help="Only create web_analytics table")
-    parser.add_argument("--dataset", default=os.environ.get("CH_LOAD_DATASET", ""),
-                        help="Dataset to load: synthetic, taxi, uk, web, or blank for all (default: $CH_LOAD_DATASET)")
+    parser.add_argument("--dataset", default=os.environ.get("CH_GEN_DATASET", ""),
+                        help="Dataset to generate: synthetic, taxi, uk, web, or blank for all (default: $CH_GEN_DATASET)")
     args = parser.parse_args()
 
     # Map --dataset to the *-only flags
@@ -267,9 +268,13 @@ def main() -> None:
     datasets = _build_datasets(args, caps)
     _print_config(config, caps, args.parallelism, datasets)
 
-    # Create test users if requested
-    test_users: list[TestUser] | None = None
-    if args.users > 0:
+    # Create test users if requested (env var takes precedence)
+    test_users: list[TestUser] | None = load_test_users_from_env()
+    users_from_env = test_users is not None
+    if test_users:
+        print(f"Using {len(test_users)} test users from TRACEHOUSE_TEST_USERS")
+        print_test_users(test_users, skew=args.user_skew)
+    elif args.users > 0:
         print(f"Creating {args.users} test users...")
         test_users = create_test_users(client, args.users)
         print_test_users(test_users, skew=args.user_skew)
@@ -292,7 +297,7 @@ def main() -> None:
 
         _print_verify_query()
     finally:
-        if test_users:
+        if test_users and not users_from_env:
             print("\nLocking test users...")
             lock_test_users(client, test_users)
             print("  ✓ All test users locked (HOST NONE)")

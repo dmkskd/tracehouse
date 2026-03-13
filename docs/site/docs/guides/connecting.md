@@ -18,7 +18,7 @@ The primary way to connect is through the **app's connection UI** - enter your h
 
 ### `.env` file (for scripts only)
 
-The `.env` file configures connection details for CLI scripts (`just load-data`, `just run-queries`, etc.) - it is **not** used by the frontend app itself. See [Loading Test Data - Configuration](./test-data#configuration) for details.
+The `.env` file configures connection details for CLI scripts (`just generate-data`, `just run-queries`, etc.) - it is **not** used by the frontend app itself. See [Loading Test Data - Configuration](./test-data#configuration) for details.
 
 ## CORS Proxy
 

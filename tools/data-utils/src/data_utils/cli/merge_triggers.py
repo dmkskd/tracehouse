@@ -42,8 +42,8 @@ from data_utils.env import (
     make_client,
 )
 from data_utils.users import (
-    create_test_users, lock_test_users, make_user_client,
-    pick_random_user, print_test_users, TestUser,
+    create_test_users, load_test_users_from_env, lock_test_users,
+    make_user_client, pick_random_user, print_test_users, TestUser,
 )
 
 
@@ -520,9 +520,13 @@ Merge types you can trigger:
     version = admin_client.execute("SELECT version()")[0][0]
     print(f"  ClickHouse {version}\n")
 
-    # Create test users if requested
-    test_users: list[TestUser] | None = None
-    if args.users > 0:
+    # Create test users if requested (env var takes precedence)
+    test_users: list[TestUser] | None = load_test_users_from_env()
+    users_from_env = test_users is not None
+    if test_users:
+        print(f"Using {len(test_users)} test users from TRACEHOUSE_TEST_USERS")
+        print_test_users(test_users, skew=args.user_skew)
+    elif args.users > 0:
         print(f"Creating {args.users} test users...")
         test_users = create_test_users(admin_client, args.users)
         print_test_users(test_users, skew=args.user_skew)
@@ -646,7 +650,7 @@ Merge types you can trigger:
     if not args.no_cleanup:
         cleanup_test_tables(client)
 
-    if test_users:
+    if test_users and not users_from_env:
         lock_test_users(admin_client, test_users)
         print("  ✓ Test users locked (HOST NONE)")
 

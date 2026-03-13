@@ -14,8 +14,8 @@ The Python data loading, query generation, and mutation tooling has moved to
 [`tools/data-utils/`](../../tools/data-utils/).
 
 ```bash
-# Load test data
-just load-data
+# Generate test data
+just generate-data
 
 # Run continuous queries
 just run-queries

@@ -9,11 +9,16 @@ Security model:
   - Users are created with ``IDENTIFIED BY …`` (plaintext auth).
   - The password appears in query_log, but is a random token with no
     reuse value.
-  - On exit, users are locked with ``HOST NONE`` — no one can connect.
+
+When running multiple tools in parallel, use ``tracehouse-data-tools-tui`` which
+creates users once and shares credentials via the ``TRACEHOUSE_TEST_USERS``
+environment variable.
 """
 
 from __future__ import annotations
 
+import json
+import os
 import random
 import secrets
 import sys
@@ -22,9 +27,10 @@ from dataclasses import dataclass
 from clickhouse_driver import Client
 
 # Static list of friendly user names — max 10.
+# Prefixed with th_ (tracehouse) to avoid collisions with real users.
 TEST_USER_NAMES = [
-    "alice", "bob", "charlie", "diana", "eve",
-    "frank", "grace", "hank", "ivy", "jack",
+    "th_alice", "th_bob", "th_charlie", "th_diana", "th_eve",
+    "th_frank", "th_grace", "th_hank", "th_ivy", "th_jack",
 ]
 
 MAX_USERS = len(TEST_USER_NAMES)
@@ -69,6 +75,26 @@ def create_test_users(admin_client: Client, n: int) -> list[TestUser]:
         users.append(TestUser(name=name, password=password))
 
     return users
+
+
+ENV_VAR = "TRACEHOUSE_TEST_USERS"
+
+
+def serialize_test_users(users: list[TestUser]) -> str:
+    """Serialize test users to JSON for the TRACEHOUSE_TEST_USERS env var."""
+    return json.dumps({u.name: u.password for u in users})
+
+
+def load_test_users_from_env() -> list[TestUser] | None:
+    """Load test users from TRACEHOUSE_TEST_USERS env var, if set.
+
+    Returns None if the env var is not set.
+    """
+    raw = os.environ.get(ENV_VAR)
+    if not raw:
+        return None
+    data = json.loads(raw)
+    return [TestUser(name=name, password=pw) for name, pw in data.items()]
 
 
 def verify_test_user(args, user: TestUser) -> None:

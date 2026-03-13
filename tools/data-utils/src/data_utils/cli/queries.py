@@ -29,8 +29,8 @@ from data_utils.capabilities import probe, Capabilities
 from data_utils.env import env_int, pre_parse_env_file, print_connection, add_connection_args, make_client
 from data_utils.tables import SyntheticData, NycTaxi, UkHousePrices, WebAnalytics
 from data_utils.users import (
-    create_test_users, lock_test_users, make_user_client,
-    pick_random_user, print_test_users, TestUser,
+    create_test_users, load_test_users_from_env, lock_test_users,
+    make_user_client, pick_random_user, print_test_users, TestUser,
 )
 
 # Suppress noisy "Error on socket shutdown" messages from clickhouse-driver
@@ -367,9 +367,13 @@ def main():
     available_tables = _detect_available_tables(admin_client)
     print(f"\n  Available tables:      {', '.join(sorted(available_tables)) or '(none found)'}")
 
-    # ── Create test users if requested ─────────────────────────────
-    test_users: list[TestUser] | None = None
-    if args.users > 0:
+    # ── Create test users if requested (env var takes precedence) ──
+    test_users: list[TestUser] | None = load_test_users_from_env()
+    users_from_env = test_users is not None
+    if test_users:
+        print(f"\nUsing {len(test_users)} test users from TRACEHOUSE_TEST_USERS")
+        print_test_users(test_users, skew=args.user_skew)
+    elif args.users > 0:
         print(f"\nCreating {args.users} test users...")
         test_users = create_test_users(admin_client, args.users)
         print_test_users(test_users, skew=args.user_skew)
@@ -387,7 +391,7 @@ def main():
     print(f"  Settings-variation:    {len(pools['settings_generators'])}")
 
     if not any(pools.values()):
-        print("\nNo queries available — have you loaded test data? (just load-data)")
+        print("\nNo queries available — have you generated test data? (just generate-data)")
         return
 
     # ── Start workers ───────────────────────────────────────────────
@@ -447,7 +451,7 @@ def main():
         for t in threads:
             t.join(timeout=2)
 
-        if test_users:
+        if test_users and not users_from_env:
             try:
                 lock_client = make_client(args)
                 lock_test_users(lock_client, test_users)

@@ -1,18 +1,20 @@
 [project]
 name = "data-utils"
 version = "0.1.0"
-description = "Data loading, query workload, and mutation tooling for TraceHouse"
+description = "Data generation, query workload, and mutation tooling for TraceHouse"
 requires-python = ">=3.10"
 dependencies = [
     "clickhouse-driver",
     "python-dotenv",
+    "textual",
 ]
 
 [project.scripts]
-tracehouse-load = "data_utils.cli.load:main"
+tracehouse-generate = "data_utils.cli.generate:main"
 tracehouse-queries = "data_utils.cli.queries:main"
 tracehouse-mutations = "data_utils.cli.mutations:main"
 tracehouse-merge-triggers = "data_utils.cli.merge_triggers:main"
+tracehouse-data-tools-tui = "data_utils.cli.tui:main"
 
 [build-system]
 requires = ["hatchling"]

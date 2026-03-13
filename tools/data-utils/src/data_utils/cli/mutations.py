@@ -54,8 +54,8 @@ from clickhouse_driver import Client
 
 from data_utils.env import env_int, pre_parse_env_file, print_connection, add_connection_args, make_client
 from data_utils.users import (
-    create_test_users, lock_test_users, make_user_client,
-    pick_random_user, print_test_users, TestUser,
+    create_test_users, load_test_users_from_env, lock_test_users,
+    make_user_client, pick_random_user, print_test_users, TestUser,
 )
 
 
@@ -309,9 +309,13 @@ def main():
     print(f"\nConnecting to ClickHouse at {args.host}:{args.port}...")
     admin_client = make_client(args)
 
-    # Create test users if requested
-    test_users: list[TestUser] | None = None
-    if args.users > 0:
+    # Create test users if requested (env var takes precedence)
+    test_users: list[TestUser] | None = load_test_users_from_env()
+    users_from_env = test_users is not None
+    if test_users:
+        print(f"Using {len(test_users)} test users from TRACEHOUSE_TEST_USERS")
+        print_test_users(test_users, skew=args.user_skew)
+    elif args.users > 0:
         print(f"Creating {args.users} test users...")
         test_users = create_test_users(admin_client, args.users)
         print_test_users(test_users, skew=args.user_skew)
@@ -325,7 +329,7 @@ def main():
     """)
     if result[0][0] == 0:
         print(f"Error: Table {args.database}.{args.table} does not exist")
-        print("Run 'just load-data' first to create test data")
+        print("Run 'just generate-data' first to create test data")
         return
 
     # Build mutation list based on --type filter
@@ -424,7 +428,7 @@ def main():
         else:
             print("  No active mutations (all completed)")
 
-        if test_users:
+        if test_users and not users_from_env:
             lock_test_users(admin_client, test_users)
             print("  ✓ Test users locked (HOST NONE)")
 
@@ -440,7 +444,7 @@ def main():
     except Exception:
         pass
 
-    if test_users:
+    if test_users and not users_from_env:
         lock_test_users(admin_client, test_users)
         print("  ✓ Test users locked (HOST NONE)")
 

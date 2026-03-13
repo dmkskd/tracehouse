@@ -66,7 +66,7 @@ tools/data-utils/
 │   ├── capabilities.py                # ClickHouse capability probing
 │   ├── env.py                         # Shared connection/env helpers
 │   ├── cli/
-│   │   ├── load.py                    # tracehouse-load entry point
+│   │   ├── generate.py                # tracehouse-generate entry point
 │   │   ├── queries.py                 # tracehouse-queries entry point
 │   │   ├── mutations.py               # tracehouse-mutations entry point
 │   │   └── merge_triggers.py          # tracehouse-merge-triggers entry point
@@ -111,6 +111,6 @@ Run `just` to see all available commands, organized by group:
 | `docker` | `docker-start`, `docker-start-full`, `docker-stop` |
 | `k8s` | `k8s-start`, `k8s-stop`, `k8s-status` |
 | `local` | `local-start`, `local-stop` |
-| `data` | `load-data`, `run-queries`, `run-mutations`, `drop-data` |
+| `data` | `data-tools-tui`, `generate-data`, `run-queries`, `run-mutations`, `drop-data` |
 | `test` | `test`, `test-frontend`, `test-core`, `test-core-integration`, `test-data-utils` |
 | `build` | `build`, `dist-frontend`, `dist-docker-build` |
