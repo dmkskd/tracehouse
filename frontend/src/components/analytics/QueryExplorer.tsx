@@ -31,6 +31,8 @@ import { ResultsTable } from './ResultsTable';
 import { highlightSQL } from '../../utils/sqlHighlighter';
 import DOMPurify from 'dompurify';
 import { TimeRangePicker } from './TimeRangePicker';
+import { useClusterStore } from '../../stores/clusterStore';
+import { ClusterService } from '@tracehouse/core';
 
 /* ═══════════════════════════════════════════════════════════════════════════
    SQL Syntax Highlighting — imported from utils/sqlHighlighter
@@ -86,6 +88,7 @@ interface QueryExplorerProps {
 
 export const QueryExplorer: React.FC<QueryExplorerProps> = ({ urlState, onUrlStateChange }) => {
   const services = useClickHouseServices();
+  const { clusterName } = useClusterStore();
   const [customQueries, setCustomQueries] = useState<PresetQuery[]>(() => loadCustomQueries());
   const allQueries = useMemo(() => [...PRESET_QUERIES, ...customQueries], [customQueries]);
 
@@ -121,10 +124,21 @@ export const QueryExplorer: React.FC<QueryExplorerProps> = ({ urlState, onUrlSta
   const [timeRangeOverride, setTimeRangeOverride] = useState<string | null>('1 HOUR');
   const [templateTooltip, setTemplateTooltip] = useState<{ x: number; y: number; text: string } | null>(null);
   const editorContainerRef = useRef<HTMLDivElement>(null);
+  const [showResolved, setShowResolved] = useState(false);
 
   /* ── drill-down state ── */
   const [drillStack, setDrillStack] = useState<DrillStackEntry[]>([]);
   const [rootQueryName, setRootQueryName] = useState<string>('');
+
+  /* ── resolved SQL (template variables replaced) ── */
+  const resolvedSql = useMemo(() => {
+    const activePreset = allQueries.find(p => p.sql.trim() === sql.trim());
+    let resolved = resolveTimeRange(sql, activePreset?.defaultInterval, timeRangeOverride);
+    const params = drillStack.length > 0 ? drillStack[drillStack.length - 1].params : {};
+    resolved = resolveDrillParams(resolved, params);
+    resolved = ClusterService.resolveTableRefs(resolved, clusterName);
+    return resolved;
+  }, [sql, allQueries, timeRangeOverride, drillStack, clusterName]);
 
   /** Sync current explorer state to URL */
   const syncUrl = useCallback((sqlText: string, view: ViewMode, chart: ChartConfig, fs?: boolean) => {
@@ -551,7 +565,25 @@ export const QueryExplorer: React.FC<QueryExplorerProps> = ({ urlState, onUrlSta
         {/* Editor */}
         <div style={{ height: editorHeight, flexShrink: 0, display: 'flex', flexDirection: 'column', overflow: 'hidden' }}>
           <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '6px 16px', background: 'var(--bg-secondary)', borderBottom: '1px solid var(--border-primary)' }}>
-            <span style={{ fontSize: 11, fontWeight: 500, color: 'var(--text-tertiary)' }}>SQL Query</span>
+            <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+              <span style={{ fontSize: 11, fontWeight: 500, color: 'var(--text-tertiary)' }}>SQL Query</span>
+              <button
+                onClick={() => setShowResolved(v => !v)}
+                title={showResolved ? 'Show template query (with variables)' : 'Show resolved query (variables replaced)'}
+                style={{
+                  padding: '2px 8px', fontSize: 10, cursor: 'pointer',
+                  background: showResolved ? 'rgba(209,154,102,0.15)' : 'transparent',
+                  border: `1px solid ${showResolved ? 'rgba(209,154,102,0.4)' : 'var(--border-primary)'}`,
+                  borderRadius: 4,
+                  color: showResolved ? '#d19a66' : 'var(--text-muted)',
+                  fontFamily: "'Share Tech Mono',monospace",
+                  fontWeight: 500,
+                  transition: 'all 0.15s ease',
+                }}
+              >
+                {showResolved ? '{{ }}' : '{ → }'}
+              </button>
+            </div>
             <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
               <TimeRangePicker value={timeRangeOverride} onChange={setTimeRangeOverride} />
               <span style={{ fontSize: 10, color: 'var(--text-muted)', fontFamily: "'Share Tech Mono',monospace", padding: '2px 6px', background: 'rgba(255,255,255,0.05)', borderRadius: 4 }}>⌘ Enter</span>
@@ -580,37 +612,48 @@ export const QueryExplorer: React.FC<QueryExplorerProps> = ({ urlState, onUrlSta
               </button>
             </div>
           </div>
-          <div ref={editorContainerRef} onMouseMove={handleEditorMouseMove} onMouseLeave={() => setTemplateTooltip(null)}
+          <div ref={editorContainerRef} onMouseMove={showResolved ? undefined : handleEditorMouseMove} onMouseLeave={() => setTemplateTooltip(null)}
             style={{ position: 'relative', flex: 1, background: 'var(--bg-code, #0d1117)', overflow: 'hidden' }}>
-              {templateTooltip && (
-                <div style={{
-                  position: 'absolute', left: templateTooltip.x, top: templateTooltip.y,
-                  zIndex: 10, pointerEvents: 'none',
-                  background: 'var(--bg-secondary)', border: '1px solid var(--border-primary)',
-                  borderRadius: 4, padding: '3px 8px', fontSize: 11, fontWeight: 500,
-                  color: 'var(--accent-blue, #58a6ff)', whiteSpace: 'nowrap',
-                  fontFamily: "'Share Tech Mono',monospace",
-                  boxShadow: '0 2px 8px rgba(0,0,0,0.3)',
-                }}>
-                  {templateTooltip.text}
-                </div>
+              {showResolved ? (
+                /* ── Resolved query view (read-only, copyable) ── */
+                <pre
+                  style={{ position: 'absolute', top: 0, left: 0, right: 0, bottom: 0, margin: 0, padding: 16, fontFamily: "'Share Tech Mono','Fira Code',monospace", fontSize: 12, lineHeight: 1.6, letterSpacing: 'normal', tabSize: 4, color: 'var(--text-secondary)', background: 'transparent', border: 'none', whiteSpace: 'pre-wrap', wordWrap: 'break-word', wordBreak: 'break-all', overflowY: 'auto', overflowX: 'hidden', boxSizing: 'border-box', cursor: 'text', userSelect: 'text' }}>
+                  <code style={{ fontFamily: 'inherit', fontSize: 'inherit', lineHeight: 'inherit', letterSpacing: 'inherit', tabSize: 'inherit' }} dangerouslySetInnerHTML={{ __html: DOMPurify.sanitize(highlightSQL(resolvedSql) + '\n') }} />
+                </pre>
+              ) : (
+                /* ── Template query view (editable) ── */
+                <>
+                  {templateTooltip && (
+                    <div style={{
+                      position: 'absolute', left: templateTooltip.x, top: templateTooltip.y,
+                      zIndex: 10, pointerEvents: 'none',
+                      background: 'var(--bg-secondary)', border: '1px solid var(--border-primary)',
+                      borderRadius: 4, padding: '3px 8px', fontSize: 11, fontWeight: 500,
+                      color: 'var(--accent-blue, #58a6ff)', whiteSpace: 'nowrap',
+                      fontFamily: "'Share Tech Mono',monospace",
+                      boxShadow: '0 2px 8px rgba(0,0,0,0.3)',
+                    }}>
+                      {templateTooltip.text}
+                    </div>
+                  )}
+                  <pre ref={highlightRef} aria-hidden="true"
+                    style={{ position: 'absolute', top: 0, left: 0, right: 0, bottom: 0, margin: 0, padding: 16, fontFamily: "'Share Tech Mono','Fira Code',monospace", fontSize: 12, lineHeight: 1.6, letterSpacing: 'normal', tabSize: 4, color: 'var(--text-secondary)', background: 'transparent', border: 'none', whiteSpace: 'pre-wrap', wordWrap: 'break-word', wordBreak: 'break-all', overflowY: 'auto', overflowX: 'hidden', pointerEvents: 'none', zIndex: 0, boxSizing: 'border-box' }}>
+                    <code style={{ fontFamily: 'inherit', fontSize: 'inherit', lineHeight: 'inherit', letterSpacing: 'inherit', tabSize: 'inherit' }} dangerouslySetInnerHTML={{ __html: DOMPurify.sanitize(highlightSQL(sql) + '\n') }} />
+                  </pre>
+                  <textarea ref={textareaRef} value={sql}
+                    onChange={e => setSql(e.target.value)}
+                    onScroll={() => {
+                      if (textareaRef.current && highlightRef.current) {
+                        highlightRef.current.scrollTop = textareaRef.current.scrollTop;
+                        highlightRef.current.scrollLeft = textareaRef.current.scrollLeft;
+                      }
+                    }}
+                    onKeyDown={e => { if ((e.metaKey || e.ctrlKey) && e.key === 'Enter') { e.preventDefault(); runQuery(); } }}
+                    spellCheck={false}
+                    style={{ position: 'absolute', top: 0, left: 0, right: 0, bottom: 0, margin: 0, fontFamily: "'Share Tech Mono','Fira Code',monospace", fontSize: 12, lineHeight: 1.6, letterSpacing: 'normal', tabSize: 4, color: 'transparent', caretColor: 'var(--text-primary)', background: 'transparent', border: 'none', padding: 16, resize: 'none', zIndex: 1, overflowY: 'auto', overflowX: 'hidden', outline: 'none', whiteSpace: 'pre-wrap', wordWrap: 'break-word', wordBreak: 'break-all', boxSizing: 'border-box' }}
+                    placeholder="Enter SQL query…" />
+                </>
               )}
-              <pre ref={highlightRef} aria-hidden="true"
-                style={{ position: 'absolute', top: 0, left: 0, right: 0, bottom: 0, margin: 0, padding: 16, fontFamily: "'Share Tech Mono','Fira Code',monospace", fontSize: 12, lineHeight: 1.6, letterSpacing: 'normal', tabSize: 4, color: 'var(--text-secondary)', background: 'transparent', border: 'none', whiteSpace: 'pre-wrap', wordWrap: 'break-word', wordBreak: 'break-all', overflowY: 'auto', overflowX: 'hidden', pointerEvents: 'none', zIndex: 0, boxSizing: 'border-box' }}>
-                <code style={{ fontFamily: 'inherit', fontSize: 'inherit', lineHeight: 'inherit', letterSpacing: 'inherit', tabSize: 'inherit' }} dangerouslySetInnerHTML={{ __html: DOMPurify.sanitize(highlightSQL(sql) + '\n') }} />
-              </pre>
-              <textarea ref={textareaRef} value={sql}
-                onChange={e => setSql(e.target.value)}
-                onScroll={() => {
-                  if (textareaRef.current && highlightRef.current) {
-                    highlightRef.current.scrollTop = textareaRef.current.scrollTop;
-                    highlightRef.current.scrollLeft = textareaRef.current.scrollLeft;
-                  }
-                }}
-                onKeyDown={e => { if ((e.metaKey || e.ctrlKey) && e.key === 'Enter') { e.preventDefault(); runQuery(); } }}
-                spellCheck={false}
-                style={{ position: 'absolute', top: 0, left: 0, right: 0, bottom: 0, margin: 0, fontFamily: "'Share Tech Mono','Fira Code',monospace", fontSize: 12, lineHeight: 1.6, letterSpacing: 'normal', tabSize: 4, color: 'transparent', caretColor: 'var(--text-primary)', background: 'transparent', border: 'none', padding: 16, resize: 'none', zIndex: 1, overflowY: 'auto', overflowX: 'hidden', outline: 'none', whiteSpace: 'pre-wrap', wordWrap: 'break-word', wordBreak: 'break-all', boxSizing: 'border-box' }}
-                placeholder="Enter SQL query…" />
           </div>
         </div>
 
