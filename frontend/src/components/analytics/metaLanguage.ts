@@ -261,6 +261,24 @@ export function resolveQueryRef<T extends { name: string; group: string }>(
   return queries.find(q => q.name === ref);
 }
 
+/* ─── SQL → Query mapping ─── */
+
+import type { Query, QueryType } from './types';
+
+/** Parse raw SQL into a Query. Returns null if no valid @meta found. */
+export function parseQueryMetadata(sql: string, type: QueryType = 'preset'): Query | null {
+  const directives = parseDirectives(sql);
+  if (!directives) return null;
+  return {
+    name: directives.meta!.title,
+    description: directives.meta!.description ?? '',
+    sql,
+    group: directives.meta!.group as QueryGroup,
+    type,
+    directives,
+  };
+}
+
 /** Build a SQL string with embedded @meta header. */
 export function buildDirectiveHeader(name: string, description: string, group?: string): string {
   const desc = description ? ` description='${description.replace(/'/g, "\\'")}'` : '';

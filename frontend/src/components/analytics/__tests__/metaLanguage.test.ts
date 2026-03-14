@@ -10,7 +10,7 @@ import {
 import {
   resolveTimeRange,
   resolveDrillParams,
-} from '../presetQueries';
+} from '../templateResolution';
 
 /* ═══════════════════════════════════════════════════════════════════════════
  * 1. parseDirectives — table-driven

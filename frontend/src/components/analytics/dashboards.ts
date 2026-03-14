@@ -17,7 +17,9 @@
  * }
  */
 
-import { PRESET_QUERIES, type Query, loadCustomQueries, resetCustomQueries } from './presetQueries';
+import { PRESET_QUERIES } from './presetQueries';
+import { type Query } from './types';
+import { loadCustomQueries, resetCustomQueries } from './customQueries';
 import { resolveQueryRef } from './metaLanguage';
 
 // ─── Types ───

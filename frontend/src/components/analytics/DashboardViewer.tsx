@@ -8,7 +8,9 @@
 import React, { useState, useEffect, useCallback, useMemo, useRef } from 'react';
 import { useSearchParams } from 'react-router-dom';
 import { useClickHouseServices } from '../../providers/ClickHouseProvider';
-import { getAllQueries, type Query, resolveTimeRange, resolveDrillParams } from './presetQueries';
+import { type Query } from './types';
+import { getAllQueries } from './customQueries';
+import { resolveTimeRange, resolveDrillParams } from './templateResolution';
 import { type ChartType, parseChartDirective, resolveQueryRef } from './metaLanguage';
 import { LinkQueryModal } from './LinkQueryModal';
 import { TimeRangePicker } from './TimeRangePicker';

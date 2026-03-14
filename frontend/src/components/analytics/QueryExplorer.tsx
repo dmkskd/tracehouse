@@ -11,13 +11,15 @@
 
 import React, { useState, useCallback, useMemo, useRef, useEffect } from 'react';
 import { useClickHouseServices } from '../../providers/ClickHouseProvider';
+import { PRESET_QUERIES } from './presetQueries';
+import { type Query } from './types';
 import {
-  PRESET_QUERIES, MAX_SIDEBAR_QUERIES,
-  type Query,
   addCustomQuery, deleteCustomQuery, loadCustomQueries, isQueryNameTaken,
-  buildCustomQuerySql, resolveTimeRange, resolveDrillParams, describeTimeRange,
-  getAllQueries as getAllQueriesFromPresets,
-} from './presetQueries';
+  buildCustomQuerySql, getAllQueries as getAllQueriesFromPresets,
+} from './customQueries';
+import { resolveTimeRange, resolveDrillParams, describeTimeRange } from './templateResolution';
+
+const MAX_SIDEBAR_QUERIES = 12;
 import {
   QUERY_GROUPS, CHART_TYPE_LABELS,
   type QueryGroup, type ChartType, type ChartStyle,

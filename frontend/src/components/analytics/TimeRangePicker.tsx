@@ -9,7 +9,7 @@
  */
 
 import React, { useState, useRef, useCallback, useMemo } from 'react';
-import { TIME_RANGE_OPTIONS } from './presetQueries';
+import { TIME_RANGE_OPTIONS } from './templateResolution';
 
 interface Props {
   value: string | null;

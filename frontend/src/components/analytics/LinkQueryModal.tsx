@@ -13,7 +13,8 @@
 import React, { useEffect, useState, useMemo, useCallback } from 'react';
 import { createPortal } from 'react-dom';
 import { useClickHouseServices } from '../../providers/ClickHouseProvider';
-import { type Query, resolveTimeRange, resolveDrillParams } from './presetQueries';
+import { type Query } from './types';
+import { resolveTimeRange, resolveDrillParams } from './templateResolution';
 import { getRagColor } from './metaLanguage';
 import { QueryDetailModal } from '../query/QueryDetailModal';
 import { type QuerySeries, parseTimeValue } from '@tracehouse/core';
