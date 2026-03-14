@@ -13,19 +13,15 @@
 import React, { useEffect, useState, useMemo, useCallback } from 'react';
 import { createPortal } from 'react-dom';
 import { useClickHouseServices } from '../../providers/ClickHouseProvider';
-import {
-  type PresetQuery,
-  resolveTimeRange,
-  resolveDrillParams,
-  getRagColor,
-} from './presetQueries';
+import { type Query, resolveTimeRange, resolveDrillParams } from './presetQueries';
+import { getRagColor } from './metaLanguage';
 import { QueryDetailModal } from '../query/QueryDetailModal';
 import { type QuerySeries, parseTimeValue } from '@tracehouse/core';
 import { formatCell, isNumericValue, extractNumeric } from './charts';
 
 export interface LinkQueryModalProps {
   /** The target preset query to run */
-  targetQuery: PresetQuery;
+  targetQuery: Query;
   /** Column → value pairs to inject as drill params */
   params: Record<string, string>;
   /** Parent query's existing drill params to carry forward */
@@ -95,7 +91,7 @@ export const LinkQueryModal: React.FC<LinkQueryModalProps> = ({
       setLoading(true);
       setError(null);
       try {
-        let sql = resolveTimeRange(targetQuery.sql, targetQuery.defaultInterval);
+        let sql = resolveTimeRange(targetQuery.sql, targetQuery.directives.meta?.interval);
         const mergedParams = { ...(parentDrillParams ?? {}), ...params };
         sql = resolveDrillParams(sql, mergedParams);
         const result = await services.adapter.executeQuery<QueryRow>(sql);
@@ -265,8 +261,8 @@ export const LinkQueryModal: React.FC<LinkQueryModalProps> = ({
                       {columns.map(col => (
                         <td key={col} style={{
                           padding: '6px 12px', borderBottom: '1px solid var(--border-secondary)',
-                          color: getRagColor(col, row[col], targetQuery.ragRules) ?? 'var(--text-secondary)',
-                          fontWeight: getRagColor(col, row[col], targetQuery.ragRules) ? 600 : undefined,
+                          color: getRagColor(col, row[col], targetQuery.directives.rag) ?? 'var(--text-secondary)',
+                          fontWeight: getRagColor(col, row[col], targetQuery.directives.rag) ? 600 : undefined,
                           whiteSpace: 'nowrap', maxWidth: 400, overflow: 'hidden', textOverflow: 'ellipsis',
                         }}>
                           {formatCell(row[col])}

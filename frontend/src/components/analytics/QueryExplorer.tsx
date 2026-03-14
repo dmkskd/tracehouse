@@ -12,16 +12,20 @@
 import React, { useState, useCallback, useMemo, useRef, useEffect } from 'react';
 import { useClickHouseServices } from '../../providers/ClickHouseProvider';
 import {
-  PRESET_QUERIES, QUERY_GROUPS, CHART_TYPE_LABELS, MAX_SIDEBAR_QUERIES,
-  type PresetQuery, type QueryGroup, type ChartType, type ChartStyle,
+  PRESET_QUERIES, MAX_SIDEBAR_QUERIES,
+  type Query,
   addCustomQuery, deleteCustomQuery, loadCustomQueries, isQueryNameTaken,
   buildCustomQuerySql, resolveTimeRange, resolveDrillParams, describeTimeRange,
   getAllQueries as getAllQueriesFromPresets,
 } from './presetQueries';
-import { parseRagRules } from './queryUtils';
+import {
+  QUERY_GROUPS, CHART_TYPE_LABELS,
+  type QueryGroup, type ChartType, type ChartStyle,
+  parseRagRules, parseChartDirective, resolveQueryRef,
+} from './metaLanguage';
 import { LinkQueryModal } from './LinkQueryModal';
 import {
-  isNumericValue, formatCell, parseChartDirective,
+  isNumericValue, formatCell,
   buildChartData, buildGroupedChartData, isGroupedChartType, sortRows,
   ChartRenderer,
   type ChartDataPoint, type ChartConfig, type GroupedChartData, type DrillDownEvent,
@@ -89,7 +93,7 @@ interface QueryExplorerProps {
 export const QueryExplorer: React.FC<QueryExplorerProps> = ({ urlState, onUrlStateChange }) => {
   const services = useClickHouseServices();
   const { clusterName } = useClusterStore();
-  const [customQueries, setCustomQueries] = useState<PresetQuery[]>(() => loadCustomQueries());
+  const [customQueries, setCustomQueries] = useState<Query[]>(() => loadCustomQueries());
   const allQueries = useMemo(() => [...PRESET_QUERIES, ...customQueries], [customQueries]);
 
   // Initialize from URL state if available
@@ -133,7 +137,7 @@ export const QueryExplorer: React.FC<QueryExplorerProps> = ({ urlState, onUrlSta
   /* ── resolved SQL (template variables replaced) ── */
   const resolvedSql = useMemo(() => {
     const activePreset = allQueries.find(p => p.sql.trim() === sql.trim());
-    let resolved = resolveTimeRange(sql, activePreset?.defaultInterval, timeRangeOverride);
+    let resolved = resolveTimeRange(sql, activePreset?.directives.meta?.interval, timeRangeOverride);
     const params = drillStack.length > 0 ? drillStack[drillStack.length - 1].params : {};
     resolved = resolveDrillParams(resolved, params);
     resolved = ClusterService.resolveTableRefs(resolved, clusterName);
@@ -171,7 +175,7 @@ export const QueryExplorer: React.FC<QueryExplorerProps> = ({ urlState, onUrlSta
     try {
       // Resolve {{time_range}} using the active preset's default interval
       const activePreset = allQueries.find(p => p.sql.trim() === q.trim());
-      let resolvedSql = resolveTimeRange(q, activePreset?.defaultInterval, timeRangeOverride);
+      let resolvedSql = resolveTimeRange(q, activePreset?.directives.meta?.interval, timeRangeOverride);
       // Resolve {{drill:col | fallback}} — uses drill params if provided, else current stack, else empty (standalone)
       const params = drillParams ?? (drillStack.length > 0 ? drillStack[drillStack.length - 1].params : {});
       resolvedSql = resolveDrillParams(resolvedSql, params);
@@ -216,7 +220,7 @@ export const QueryExplorer: React.FC<QueryExplorerProps> = ({ urlState, onUrlSta
     }
   }, [services, sql, chartConfig, syncUrl, timeRangeOverride, allQueries, drillStack]);
 
-  const selectPreset = useCallback((p: PresetQuery) => {
+  const selectPreset = useCallback((p: Query) => {
     setSql(p.sql);
     setActiveQueryName(p.name);
     setRootQueryName(p.name);
@@ -239,19 +243,19 @@ export const QueryExplorer: React.FC<QueryExplorerProps> = ({ urlState, onUrlSta
 
   /* ── drill-down handlers ── */
   const currentQuery = useMemo(() => allQueries.find(q => q.sql.trim() === sql.trim()), [allQueries, sql]);
-  const isDrillable = !!(currentQuery?.drillOnColumn && currentQuery?.drillIntoQuery) &&
-    (!result || result.columns.includes(currentQuery.drillOnColumn));
+  const isDrillable = !!(currentQuery?.directives.drill?.on && currentQuery?.directives.drill?.into) &&
+    (!result || result.columns.includes(currentQuery.directives.drill.on));
 
   const handleDrillDown = useCallback((event: DrillDownEvent) => {
-    if (!currentQuery?.drillOnColumn || !currentQuery?.drillIntoQuery) return;
-    const targetQuery = allQueries.find(q => q.name === currentQuery.drillIntoQuery);
+    if (!currentQuery?.directives.drill?.on || !currentQuery?.directives.drill?.into) return;
+    const targetQuery = resolveQueryRef(currentQuery.directives.drill!.into, currentQuery.group, allQueries);
     if (!targetQuery) {
-      setError(`Drill target query not found: "${currentQuery.drillIntoQuery}"`);
+      setError(`Drill target query not found: "${currentQuery.directives.drill!.into}"`);
       return;
     }
     // Carry forward existing drill params and add the new one
     const prevParams = drillStack.length > 0 ? drillStack[drillStack.length - 1].params : {};
-    const newParams = { ...prevParams, [currentQuery.drillOnColumn]: event.label };
+    const newParams = { ...prevParams, [currentQuery.directives.drill!.on]: event.label };
 
     // Track root if this is the first drill
     if (drillStack.length === 0 && activeQueryName) {
@@ -293,17 +297,17 @@ export const QueryExplorer: React.FC<QueryExplorerProps> = ({ urlState, onUrlSta
   }, [drillStack, allQueries, rootQueryName, runQuery]);
 
   /* ── @link modal state ── */
-  const [linkModal, setLinkModal] = useState<{ targetQuery: PresetQuery; params: Record<string, string> } | null>(null);
+  const [linkModal, setLinkModal] = useState<{ targetQuery: Query; params: Record<string, string> } | null>(null);
 
-  const isLinkable = !!(currentQuery?.linkOnColumn && currentQuery?.linkIntoQuery) &&
-    (!result || result.columns.includes(currentQuery.linkOnColumn));
+  const isLinkable = !!(currentQuery?.directives.link?.on && currentQuery?.directives.link?.into) &&
+    (!result || result.columns.includes(currentQuery.directives.link.on));
 
   const handleLinkClick = useCallback((column: string, value: string) => {
-    if (!currentQuery?.linkIntoQuery) return;
+    if (!currentQuery?.directives.link?.into) return;
     const allQs = getAllQueriesFromPresets();
-    const target = allQs.find(q => q.name === currentQuery.linkIntoQuery);
+    const target = allQs.find(q => q.name === currentQuery.directives.link!.into);
     if (!target) {
-      setError(`Link target query not found: "${currentQuery.linkIntoQuery}"`);
+      setError(`Link target query not found: "${currentQuery.directives.link!.into}"`);
       return;
     }
     setLinkModal({ targetQuery: target, params: { [column]: value } });
@@ -335,7 +339,7 @@ export const QueryExplorer: React.FC<QueryExplorerProps> = ({ urlState, onUrlSta
   const handleModalSave = useCallback((name: string, description: string, group: string) => {
     if (!queryModal) return;
     const fullSql = buildCustomQuerySql(name, description, queryModal.bodySql, group);
-    const updated = addCustomQuery({ name, description, sql: fullSql });
+    const updated = addCustomQuery(fullSql);
     setCustomQueries(updated);
     setActiveQueryName(name);
     setQueryModal(null);
@@ -349,11 +353,7 @@ export const QueryExplorer: React.FC<QueryExplorerProps> = ({ urlState, onUrlSta
   /** Save edits to an existing custom query */
   const handleSaveCustomQuery = useCallback(() => {
     if (!activeQueryName || !activeIsCustom) return;
-    const updated = addCustomQuery({
-      name: activeQueryName,
-      description: '',
-      sql,
-    });
+    const updated = addCustomQuery(sql);
     setCustomQueries(updated);
   }, [sql, activeQueryName, activeIsCustom]);
 
@@ -427,7 +427,7 @@ export const QueryExplorer: React.FC<QueryExplorerProps> = ({ urlState, onUrlSta
       let tooltipText = varName;
       if (varName.includes('time_range')) {
         const activePreset = allQueries.find(p => p.sql.trim() === sql.trim());
-        tooltipText = `→ ${describeTimeRange(activePreset?.defaultInterval, timeRangeOverride)}`;
+        tooltipText = `→ ${describeTimeRange(activePreset?.directives.meta?.interval, timeRangeOverride)}`;
       } else if (varName.includes('cluster_aware:')) {
         tooltipText = `→ resolved at runtime by cluster adapter`;
       }
@@ -706,7 +706,7 @@ export const QueryExplorer: React.FC<QueryExplorerProps> = ({ urlState, onUrlSta
                 sortColumn={sortConfig?.column ?? null}
                 sortDirection={sortConfig?.direction ?? 'asc'}
                 onSort={handleSort}
-                linkOnColumn={isLinkable ? currentQuery?.linkOnColumn : undefined}
+                linkOnColumn={isLinkable ? currentQuery?.directives.link?.on : undefined}
                 ragRules={activeRagRules}
                 onLinkClick={isLinkable ? handleLinkClick : undefined}
               />
@@ -799,7 +799,7 @@ export const QueryExplorer: React.FC<QueryExplorerProps> = ({ urlState, onUrlSta
                     <ChartRenderer chartType={chartConfig.type} data={chartData} groupedData={groupedChartData}
                       orientation={chartConfig.orientation} unit={chartConfig.unit}
                       onDrillDown={isDrillable ? handleDrillDown : undefined}
-                      drillIntoQuery={isDrillable ? currentQuery?.drillIntoQuery : undefined} />
+                      drillIntoQuery={isDrillable ? currentQuery?.directives.drill?.into : undefined} />
                     <button
                       onClick={toggleFullscreen}
                       title={isFullscreen ? 'Exit fullscreen (Esc)' : 'Fullscreen (f)'}
@@ -957,7 +957,7 @@ const QueryNameModal: React.FC<{
 };
 
 /** All-queries grid view with search and categories */
-const QueriesGrid: React.FC<{ search: string; onSearchChange: (s: string) => void; onSelect: (p: PresetQuery) => void; customQueries: PresetQuery[]; onDeleteCustom: (name: string) => void }> = ({ search, onSearchChange, onSelect, customQueries, onDeleteCustom }) => {
+const QueriesGrid: React.FC<{ search: string; onSearchChange: (s: string) => void; onSelect: (p: Query) => void; customQueries: Query[]; onDeleteCustom: (name: string) => void }> = ({ search, onSearchChange, onSelect, customQueries, onDeleteCustom }) => {
   const searchLower = search.toLowerCase();
   const allQueries = useMemo(() => [...PRESET_QUERIES, ...customQueries], [customQueries]);
   const customNames = useMemo(() => new Set(customQueries.map(q => q.name)), [customQueries]);
@@ -992,10 +992,10 @@ const QueriesGrid: React.FC<{ search: string; onSearchChange: (s: string) => voi
               {groupQueries.map((p, i) => (
                 <button key={i} onClick={() => onSelect(p)}
                   style={{ display: 'flex', flexDirection: 'column', gap: 6, padding: '14px 16px', background: 'var(--bg-card)', border: '1px solid var(--border-secondary)', borderRadius: 6, textAlign: 'left', cursor: 'pointer', position: 'relative', transition: 'all .15s' }}>
-                  {p.chartType && (
+                  {p.directives.chart?.type && (
                     <span style={{ position: 'absolute', top: 8, right: customNames.has(p.name) ? 28 : 8, display: 'flex', alignItems: 'center', gap: 4, fontSize: 9, fontWeight: 500, color: 'var(--text-muted)', background: 'rgba(99,102,241,0.15)', padding: '2px 6px', borderRadius: 4 }}>
-                      {CHART_TYPE_LABELS[p.chartType] ?? p.chartType}
-                      {p.chartStyle && <span style={{ fontSize: 8, fontWeight: 600, color: 'var(--accent-primary)', background: 'rgba(99,102,241,0.25)', padding: '1px 4px', borderRadius: 2 }}>{p.chartStyle.toUpperCase()}</span>}
+                      {CHART_TYPE_LABELS[p.directives.chart.type] ?? p.directives.chart.type}
+                      {p.directives.chart.style && <span style={{ fontSize: 8, fontWeight: 600, color: 'var(--accent-primary)', background: 'rgba(99,102,241,0.25)', padding: '1px 4px', borderRadius: 2 }}>{p.directives.chart.style.toUpperCase()}</span>}
                     </span>
                   )}
                   {customNames.has(p.name) && (
@@ -1004,14 +1004,14 @@ const QueriesGrid: React.FC<{ search: string; onSearchChange: (s: string) => voi
                       style={{ position: 'absolute', top: 6, right: 6, fontSize: 14, color: 'var(--text-muted)', cursor: 'pointer', padding: '0 4px', borderRadius: 4, lineHeight: 1 }}
                       title="Delete custom query">×</span>
                   )}
-                  <span style={{ fontSize: 13, fontWeight: 500, color: 'var(--text-primary)', paddingRight: p.chartType ? 60 : 0, display: 'flex', alignItems: 'center', gap: 6 }}>
+                  <span style={{ fontSize: 13, fontWeight: 500, color: 'var(--text-primary)', paddingRight: p.directives.chart?.type ? 60 : 0, display: 'flex', alignItems: 'center', gap: 6 }}>
                     {p.name}
                     {customNames.has(p.name) && <span style={{ fontSize: 8, fontWeight: 600, color: '#79c0ff', background: 'rgba(121,192,255,0.12)', padding: '1px 5px', borderRadius: 3, letterSpacing: '0.3px', flexShrink: 0 }}>CUSTOM</span>}
                   </span>
                   <span style={{ fontSize: 11, color: 'var(--text-muted)', lineHeight: 1.4 }}>{p.description}</span>
-                  {p.source && (
-                    <span style={{ fontSize: 9, color: 'var(--text-muted)', opacity: 0.7, marginTop: 2 }} title={p.source}>
-                      Source: {p.source.includes('github.com/ClickHouse') ? 'ClickHouse OSS (Apache 2.0)' : p.source.includes('clickhouse.com/blog') ? 'ClickHouse Blog' : p.source.replace(/^https?:\/\//, '').split('/').slice(0, 2).join('/')}
+                  {p.directives.source && (
+                    <span style={{ fontSize: 9, color: 'var(--text-muted)', opacity: 0.7, marginTop: 2 }} title={p.directives.source}>
+                      Source: {p.directives.source.includes('github.com/ClickHouse') ? 'ClickHouse OSS (Apache 2.0)' : p.directives.source.includes('clickhouse.com/blog') ? 'ClickHouse Blog' : p.directives.source.replace(/^https?:\/\//, '').split('/').slice(0, 2).join('/')}
                     </span>
                   )}
                 </button>

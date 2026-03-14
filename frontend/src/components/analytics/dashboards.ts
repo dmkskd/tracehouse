@@ -11,18 +11,19 @@
  *   "description": "High-level server health",
  *   "columns": 2,
  *   "panels": [
- *     { "queryName": "Queries/second" },
- *     { "queryName": "CPU Usage (cores)" }
+ *     { "queryName": "Advanced Dashboard#Queries/second" },
+ *     { "queryName": "Advanced Dashboard#CPU Usage (cores)" }
  *   ]
  * }
  */
 
-import { PRESET_QUERIES, type PresetQuery, loadCustomQueries, resetCustomQueries } from './presetQueries';
+import { PRESET_QUERIES, type Query, loadCustomQueries, resetCustomQueries } from './presetQueries';
+import { resolveQueryRef } from './metaLanguage';
 
 // ─── Types ───
 
 export interface DashboardPanel {
-  /** Must match a PresetQuery.name exactly */
+  /** Query reference — namespaced as 'Group#Query Name', or bare 'Query Name' for backward compat */
   queryName: string;
 }
 
@@ -36,11 +37,11 @@ export interface Dashboard {
   builtin?: boolean;
 }
 
-// ─── Resolve panel → PresetQuery ───
+// ─── Resolve panel → Query ───
 
-export function resolvePanel(panel: DashboardPanel): PresetQuery | undefined {
-  return PRESET_QUERIES.find(q => q.name === panel.queryName)
-    ?? loadCustomQueries().find(q => q.name === panel.queryName);
+export function resolvePanel(panel: DashboardPanel): Query | undefined {
+  const allQueries = [...PRESET_QUERIES, ...loadCustomQueries()];
+  return resolveQueryRef(panel.queryName, undefined, allQueries);
 }
 
 // ─── localStorage persistence ───
@@ -167,25 +168,25 @@ const BUILTIN_DASHBOARDS: Dashboard[] = [
     description: 'Full server health dashboard — mirrors the ClickHouse built-in "Overview" dashboard',
     columns: 2,
     panels: [
-      { queryName: 'Queries/second' },
-      { queryName: 'CPU Usage (cores)' },
-      { queryName: 'Queries Running' },
-      { queryName: 'Merges Running' },
-      { queryName: 'Selected Bytes/second' },
-      { queryName: 'IO Wait (seconds)' },
-      { queryName: 'CPU Wait (seconds)' },
-      { queryName: 'OS CPU Usage (Userspace)' },
-      { queryName: 'OS CPU Usage (Kernel)' },
-      { queryName: 'Read From Disk (bytes/sec)' },
-      { queryName: 'Read From Filesystem (bytes/sec)' },
-      { queryName: 'Memory Tracked (bytes)' },
-      { queryName: 'In-Memory Caches (bytes)' },
-      { queryName: 'Load Average (15 min)' },
-      { queryName: 'Selected Rows/second' },
-      { queryName: 'Inserted Rows/second' },
-      { queryName: 'Total MergeTree Parts' },
-      { queryName: 'Max Parts For Partition' },
-      { queryName: 'Concurrent Network Connections' },
+      { queryName: 'Advanced Dashboard#Queries/second' },
+      { queryName: 'Advanced Dashboard#CPU Usage (cores)' },
+      { queryName: 'Advanced Dashboard#Queries Running' },
+      { queryName: 'Advanced Dashboard#Merges Running' },
+      { queryName: 'Advanced Dashboard#Selected Bytes/second' },
+      { queryName: 'Advanced Dashboard#IO Wait (seconds)' },
+      { queryName: 'Advanced Dashboard#CPU Wait (seconds)' },
+      { queryName: 'Advanced Dashboard#OS CPU Usage (Userspace)' },
+      { queryName: 'Advanced Dashboard#OS CPU Usage (Kernel)' },
+      { queryName: 'Advanced Dashboard#Read From Disk (bytes/sec)' },
+      { queryName: 'Advanced Dashboard#Read From Filesystem (bytes/sec)' },
+      { queryName: 'Advanced Dashboard#Memory Tracked (bytes)' },
+      { queryName: 'Advanced Dashboard#In-Memory Caches (bytes)' },
+      { queryName: 'Advanced Dashboard#Load Average (15 min)' },
+      { queryName: 'Advanced Dashboard#Selected Rows/second' },
+      { queryName: 'Advanced Dashboard#Inserted Rows/second' },
+      { queryName: 'Advanced Dashboard#Total MergeTree Parts' },
+      { queryName: 'Advanced Dashboard#Max Parts For Partition' },
+      { queryName: 'Advanced Dashboard#Concurrent Network Connections' },
     ],
   },
   {
@@ -194,12 +195,12 @@ const BUILTIN_DASHBOARDS: Dashboard[] = [
     description: 'Monitor ingestion pipeline: new parts, batch rates, durations',
     columns: 2,
     panels: [
-      { queryName: 'New Parts Created' },
-      { queryName: 'Sync Insert Batches' },
-      { queryName: 'Insert Duration & Batch Count' },
-      { queryName: 'Insert Duration Quantiles (hourly)' },
-      { queryName: 'Written Rows & Bytes' },
-      { queryName: 'Inserted Rows/second' },
+      { queryName: 'Inserts#New Parts Created' },
+      { queryName: 'Inserts#Sync Insert Batches' },
+      { queryName: 'Inserts#Insert Duration & Batch Count' },
+      { queryName: 'Inserts#Insert Duration Quantiles (hourly)' },
+      { queryName: 'Inserts#Written Rows & Bytes' },
+      { queryName: 'Advanced Dashboard#Inserted Rows/second' },
     ],
   },
   {
@@ -208,11 +209,11 @@ const BUILTIN_DASHBOARDS: Dashboard[] = [
     description: 'Query latency trends, per-user breakdown, read distribution',
     columns: 2,
     panels: [
-      { queryName: 'SELECT Duration Trend (hourly)' },
-      { queryName: 'Queries by User' },
-      { queryName: 'Read Rows Distribution' },
-      { queryName: 'Selected Rows/second' },
-      { queryName: 'Selected Bytes/second' },
+      { queryName: 'Selects#SELECT Duration Trend (hourly)' },
+      { queryName: 'Selects#Queries by User' },
+      { queryName: 'Selects#Read Rows Distribution' },
+      { queryName: 'Advanced Dashboard#Selected Rows/second' },
+      { queryName: 'Advanced Dashboard#Selected Bytes/second' },
     ],
   },
   {
@@ -221,12 +222,12 @@ const BUILTIN_DASHBOARDS: Dashboard[] = [
     description: 'Disk usage, part counts, and merge pressure indicators',
     columns: 2,
     panels: [
-      { queryName: 'Biggest Tables' },
-      { queryName: 'Database Sizes' },
-      { queryName: 'Active Parts by Table' },
-      { queryName: 'MaxPartCountForPartition' },
-      { queryName: 'Max Parts For Partition' },
-      { queryName: 'Total MergeTree Parts' },
+      { queryName: 'Overview#Biggest Tables' },
+      { queryName: 'Overview#Database Sizes' },
+      { queryName: 'Overview#Active Parts by Table' },
+      { queryName: 'Parts#MaxPartCountForPartition' },
+      { queryName: 'Advanced Dashboard#Max Parts For Partition' },
+      { queryName: 'Advanced Dashboard#Total MergeTree Parts' },
     ],
   },
   {
@@ -235,14 +236,14 @@ const BUILTIN_DASHBOARDS: Dashboard[] = [
     description: 'Track merge health: active merges, throughput, pool utilization, errors, and historical trends',
     columns: 2,
     panels: [
-      { queryName: 'Active Merges' },
-      { queryName: 'Merge Throughput (bytes/sec)' },
-      { queryName: 'Merges Running (trend)' },
-      { queryName: 'Background Pool Utilization' },
-      { queryName: 'Merge Events Over Time' },
-      { queryName: 'Merge Duration by Table' },
-      { queryName: 'Merge I/O Pressure' },
-      { queryName: 'Merge Errors' },
+      { queryName: 'Merges#Active Merges' },
+      { queryName: 'Merges#Merge Throughput (bytes/sec)' },
+      { queryName: 'Merges#Merges Running (trend)' },
+      { queryName: 'Merges#Background Pool Utilization' },
+      { queryName: 'Merges#Merge Events Over Time' },
+      { queryName: 'Merges#Merge Duration by Table' },
+      { queryName: 'Merges#Merge I/O Pressure' },
+      { queryName: 'Merges#Merge Errors' },
     ],
   },
   {
@@ -251,14 +252,14 @@ const BUILTIN_DASHBOARDS: Dashboard[] = [
     description: 'Track our own app footprint: query cost per component, error rates, server load share',
     columns: 2,
     panels: [
-      { queryName: 'App Query Duration by Component' },
-      { queryName: 'App Query Volume by Component' },
-      { queryName: 'App Query Timeline (5min buckets)' },
-      { queryName: 'App Query Cost Details' },
-      { queryName: 'App Query Duration Trend (hourly)' },
-      { queryName: 'App % of Server Load' },
-      { queryName: 'Slowest App Queries' },
-      { queryName: 'App Failed Queries' },
+      { queryName: 'Self-Monitoring#App Query Duration by Component' },
+      { queryName: 'Self-Monitoring#App Query Volume by Component' },
+      { queryName: 'Self-Monitoring#App Query Timeline (5min buckets)' },
+      { queryName: 'Self-Monitoring#App Query Cost Details' },
+      { queryName: 'Self-Monitoring#App Query Duration Trend (hourly)' },
+      { queryName: 'Self-Monitoring#App % of Server Load' },
+      { queryName: 'Self-Monitoring#Slowest App Queries' },
+      { queryName: 'Self-Monitoring#App Failed Queries' },
     ],
   },
 ];

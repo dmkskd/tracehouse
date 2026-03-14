@@ -7,7 +7,7 @@
 
 import React from 'react';
 import { formatCell } from './charts';
-import { getRagColor, type RagRule } from './queryUtils';
+import { getRagColor, type RagRule } from './metaLanguage';
 
 export interface ResultsTableProps {
   columns: string[];

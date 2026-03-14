@@ -23,7 +23,7 @@ import {
   Legend,
   ResponsiveContainer,
 } from 'recharts';
-import type { ChartType } from './presetQueries';
+import type { ChartType } from './metaLanguage';
 
 // ─── Constants ───
 
@@ -135,32 +135,6 @@ function formatCompact(v: number): string {
   if (abs >= 1e3) return `${(v / 1e3).toFixed(1)}K`;
   if (Number.isInteger(v)) return v.toString();
   return v.toFixed(2);
-}
-
-export function parseChartDirective(sql: string): Partial<ChartConfig> | null {
-  const cm = sql.match(/--\s*@chart:\s*(.+)/i);
-  if (!cm) return null;
-  const d = cm[1];
-  const cfg: Partial<ChartConfig> = {};
-  const t = d.match(/type=(\w+)/i); if (t) cfg.type = t[1] as ChartType;
-  const l = d.match(/labels=(\w+)/i); if (l) cfg.labelColumn = l[1];
-  const v = d.match(/values=([\w,]+)/i);
-  if (v) {
-    const cols = v[1].split(',').filter(Boolean);
-    cfg.valueColumn = cols[0];
-    if (cols.length > 1) cfg.valueColumns = cols;
-  }
-  const g = d.match(/group=(\w+)/i); if (g) cfg.groupColumn = g[1];
-  const o = d.match(/orientation=(\w+)/i);
-  if (o) cfg.orientation = o[1].toLowerCase() === 'vertical' || o[1].toLowerCase() === 'v' ? 'vertical' : 'horizontal';
-  const s = d.match(/style=(\w+)/i); if (s) cfg.visualization = s[1] as '2d' | '3d';
-  const u = d.match(/unit=(\S+)/i); if (u) cfg.unit = u[1];
-  const mm = sql.match(/--\s*@meta:\s*(.+)/i);
-  if (mm) {
-    const ti = mm[1].match(/title='([^']+)'/); if (ti) cfg.title = ti[1];
-    const de = mm[1].match(/description='([^']+)'/); if (de) cfg.description = de[1];
-  }
-  return Object.keys(cfg).length > 0 ? cfg : null;
 }
 
 /**

@@ -8,7 +8,7 @@ import React, { useState, useEffect, useMemo, useRef } from 'react';
 import { Canvas, useThree } from '@react-three/fiber';
 import { OrbitControls, RoundedBox, Html } from '@react-three/drei';
 import * as THREE from 'three';
-import type { ChartType } from './presetQueries';
+import type { ChartType } from './metaLanguage';
 import type { ChartDataPoint, DrillDownEvent, GroupedChartData } from './charts';
 import { GROUP_COLORS } from './charts';
 

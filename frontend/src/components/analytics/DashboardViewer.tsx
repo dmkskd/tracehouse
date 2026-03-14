@@ -8,11 +8,12 @@
 import React, { useState, useEffect, useCallback, useMemo, useRef } from 'react';
 import { useSearchParams } from 'react-router-dom';
 import { useClickHouseServices } from '../../providers/ClickHouseProvider';
-import { type ChartType, type PresetQuery, getAllQueries, resolveTimeRange, resolveDrillParams } from './presetQueries';
+import { getAllQueries, type Query, resolveTimeRange, resolveDrillParams } from './presetQueries';
+import { type ChartType, parseChartDirective, resolveQueryRef } from './metaLanguage';
 import { LinkQueryModal } from './LinkQueryModal';
 import { TimeRangePicker } from './TimeRangePicker';
 import {
-  formatCell, parseChartDirective,
+  formatCell,
   buildChartData, buildGroupedChartData, isGroupedChartType, sortRows,
   ChartRenderer,
   type ChartDataPoint, type GroupedChartData, type DrillDownEvent,
@@ -50,7 +51,7 @@ const DashboardPanelCard: React.FC<{
   const services = useClickHouseServices();
   const [, setSearchParams] = useSearchParams();
   const originalPreset = resolvePanel(panel);
-  const [drillPreset, setDrillPreset] = useState<PresetQuery | null>(null);
+  const [drillPreset, setDrillPreset] = useState<Query | null>(null);
   const [drillParams, setDrillParams] = useState<Record<string, string>>({});
   const preset = drillPreset ?? originalPreset;
   const [result, setResult] = useState<PanelResult | null>(null);
@@ -89,13 +90,13 @@ const DashboardPanelCard: React.FC<{
     setSearchParams(new URLSearchParams(params), { replace: false });
   }, [preset, setSearchParams, dashboardId]);
 
-  const run = useCallback(async (overridePreset?: PresetQuery, overrideParams?: Record<string, string>) => {
+  const run = useCallback(async (overridePreset?: Query, overrideParams?: Record<string, string>) => {
     const p = overridePreset ?? preset;
     if (!services || !p) return;
     setLoading(true);
     setError(null);
     try {
-      let sql = resolveTimeRange(p.sql, p.defaultInterval, timeRangeOverride);
+      let sql = resolveTimeRange(p.sql, p.directives.meta?.interval, timeRangeOverride);
       sql = resolveDrillParams(sql, overrideParams ?? drillParams);
       const rows = await services.adapter.executeQuery<Record<string, unknown>>(sql);
       const columns = rows.length > 0 ? Object.keys(rows[0]) : [];
@@ -136,24 +137,24 @@ const DashboardPanelCard: React.FC<{
     return buildGroupedChartData(result.rows, chartDirective.labelColumn, chartDirective.valueColumn, chartDirective.groupColumn, chartDirective.valueColumns, isTimeSeries ? undefined : 30);
   }, [result, chartDirective]);
 
-  const hasChartDirective = !!(chartDirective?.type || preset?.chartType);
-  const chartType: ChartType = chartDirective?.type || preset?.chartType || 'bar';
-  const chartStyle = chartDirective?.visualization || preset?.chartStyle || '2d';
+  const hasChartDirective = !!(chartDirective?.type || preset?.directives.chart?.type);
+  const chartType: ChartType = chartDirective?.type || preset?.directives.chart?.type || 'bar';
+  const chartStyle = chartDirective?.visualization || preset?.directives.chart?.style || '2d';
   const chartUnit = chartDirective?.unit;
   const isGroupedChart = isGroupedChartType(chartType);
   const hasChart = hasChartDirective && (isGroupedChart ? groupedChartData.length > 0 : chartData.length > 0);
 
   // Drill-down support
-  const isDrillable = !!(preset?.drillOnColumn && preset?.drillIntoQuery) &&
-    (!result || result.columns.includes(preset.drillOnColumn));
+  const isDrillable = !!(preset?.directives.drill?.on && preset?.directives.drill?.into) &&
+    (!result || result.columns.includes(preset.directives.drill.on));
   const isDrilled = drillPreset !== null;
 
   const handleDrillDown = useCallback((event: DrillDownEvent) => {
-    if (!preset?.drillOnColumn || !preset?.drillIntoQuery) return;
+    if (!preset?.directives.drill?.on || !preset?.directives.drill?.into) return;
     const all = getAllQueries();
-    const target = all.find(q => q.name === preset.drillIntoQuery);
+    const target = resolveQueryRef(preset.directives.drill.into, preset.group, all);
     if (!target) return;
-    const newParams = { ...drillParams, [preset.drillOnColumn]: event.label };
+    const newParams = { ...drillParams, [preset.directives.drill.on]: event.label };
     setDrillPreset(target);
     setDrillParams(newParams);
     setResult(null);
@@ -168,14 +169,14 @@ const DashboardPanelCard: React.FC<{
   }, [originalPreset, run]);
 
   // @link support
-  const [linkModal, setLinkModal] = useState<{ targetQuery: PresetQuery; params: Record<string, string> } | null>(null);
-  const isLinkable = !!(preset?.linkOnColumn && preset?.linkIntoQuery) &&
-    (!result || result.columns.includes(preset.linkOnColumn));
+  const [linkModal, setLinkModal] = useState<{ targetQuery: Query; params: Record<string, string> } | null>(null);
+  const isLinkable = !!(preset?.directives.link?.on && preset?.directives.link?.into) &&
+    (!result || result.columns.includes(preset.directives.link.on));
 
   const handleLinkClick = useCallback((column: string, value: string) => {
-    if (!preset?.linkIntoQuery) return;
+    if (!preset?.directives.link?.into) return;
     const all = getAllQueries();
-    const target = all.find(q => q.name === preset.linkIntoQuery);
+    const target = resolveQueryRef(preset.directives.link.into, preset.group, all);
     if (!target) return;
     setLinkModal({ targetQuery: target, params: { [column]: value } });
   }, [preset]);
@@ -265,7 +266,7 @@ const DashboardPanelCard: React.FC<{
                   <ChartRenderer chartType={chartType} data={chartData} groupedData={groupedChartData}
                     orientation={chartDirective?.orientation} fullHeight unit={chartUnit}
                     onDrillDown={isDrillable ? handleDrillDown : undefined}
-                    drillIntoQuery={isDrillable ? preset?.drillIntoQuery : undefined} />
+                    drillIntoQuery={isDrillable ? preset?.directives.drill?.into : undefined} />
                 )}
               </div>
             )}
@@ -285,8 +286,8 @@ const DashboardPanelCard: React.FC<{
                     sortColumn={sortCol}
                     sortDirection={sortDir}
                     onSort={handleSort}
-                    linkOnColumn={isLinkable ? preset?.linkOnColumn : undefined}
-                    ragRules={preset?.ragRules}
+                    linkOnColumn={isLinkable ? preset?.directives.link?.on : undefined}
+                    ragRules={preset?.directives.rag}
                     onLinkClick={isLinkable ? handleLinkClick : undefined}
                     compact
                   />
@@ -343,12 +344,12 @@ const DashboardEditor: React.FC<EditorProps> = ({ initial, onSave, onCancel }) =
   const [addQuery, setAddQuery] = useState('');
 
   const availableQueries = getAllQueries()
-    .filter(q => !panels.some(p => p.queryName === q.name))
+    .filter(q => !panels.some(p => p.queryName === `${q.group}#${q.name}`))
     .sort((a, b) => a.group.localeCompare(b.group) || a.name.localeCompare(b.name));
 
   const handleAdd = () => {
     if (!addQuery) return;
-    setPanels(prev => [...prev, { queryName: addQuery }]);
+    setPanels(prev => [...prev, { queryName: addQuery }]);  // addQuery is already namespaced
     setAddQuery('');
   };
 
@@ -419,7 +420,7 @@ const DashboardEditor: React.FC<EditorProps> = ({ initial, onSave, onCancel }) =
               borderBottom: i < panels.length - 1 ? '1px solid var(--border-secondary)' : 'none'
             }}>
               <span style={{ flex: 1, fontSize: 12, color: resolved ? 'var(--text-secondary)' : '#f85149' }}>
-                {p.queryName}{!resolved && ' (not found)'}
+                {resolved?.name ?? p.queryName}{!resolved && ' (not found)'}
               </span>
               <button onClick={() => handleMoveUp(i)} disabled={i === 0} style={iconBtnStyle} title="Move up">↑</button>
               <button onClick={() => handleMoveDown(i)} disabled={i === panels.length - 1} style={iconBtnStyle} title="Move down">↓</button>
@@ -434,7 +435,7 @@ const DashboardEditor: React.FC<EditorProps> = ({ initial, onSave, onCancel }) =
           style={{ ...inputStyle, flex: 1, marginBottom: 0 }}>
           <option value="">Add a preset query…</option>
           {availableQueries.map(q => (
-            <option key={q.name} value={q.name}>{q.group} — {q.name}</option>
+            <option key={q.name} value={`${q.group}#${q.name}`}>{q.group} — {q.name}</option>
           ))}
         </select>
         <button onClick={handleAdd} disabled={!addQuery}
@@ -507,7 +508,7 @@ const MiniPanelCard: React.FC<{ panel: DashboardPanel; timeRangeOverride: string
     if (!services || !preset) return;
     let cancelled = false;
     setLoading(true);
-    const sql = resolveTimeRange(preset.sql, preset.defaultInterval, timeRangeOverride);
+    const sql = resolveTimeRange(preset.sql, preset.directives.meta?.interval, timeRangeOverride);
     services.adapter.executeQuery<Record<string, unknown>>(sql)
       .then(rows => {
         if (cancelled) return;
@@ -532,8 +533,8 @@ const MiniPanelCard: React.FC<{ panel: DashboardPanel; timeRangeOverride: string
     return buildGroupedChartData(result.rows, chartDirective.labelColumn, chartDirective.valueColumn, chartDirective.groupColumn, chartDirective.valueColumns, isTimeSeries ? undefined : 20);
   }, [result, chartDirective]);
 
-  const chartType: ChartType = chartDirective?.type || preset?.chartType || 'bar';
-  const chartStyle = chartDirective?.visualization || preset?.chartStyle || '2d';
+  const chartType: ChartType = chartDirective?.type || preset?.directives.chart?.type || 'bar';
+  const chartStyle = chartDirective?.visualization || preset?.directives.chart?.style || '2d';
   const isGroupedChart2 = isGroupedChartType(chartType);
   const hasChart = isGroupedChart2 ? groupedChartData2.length > 0 : chartData.length > 0;
 
