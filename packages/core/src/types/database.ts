@@ -83,3 +83,14 @@ export interface PartDataResponse {
   total_rows_in_part: number;
   returned_rows: number;
 }
+
+/** A ClickHouse function from system.functions. */
+export interface ChFunction {
+  name: string;
+  is_aggregate: number;
+  case_insensitive: number;
+  alias_to: string;
+  create_query: string;
+  origin: string;
+  description: string;
+}

@@ -9,14 +9,9 @@ import type { TableOrderingKeyEfficiency, TableQueryPattern, ExplainIndexesResul
 import { diagnoseOrderingKeyUsage, type OrderingKeyDiagnostic } from '@tracehouse/core';
 import { useClickHouseServices } from '../../providers/ClickHouseProvider';
 import { QueryDetailModal } from '../query/QueryDetailModal';
-import { Light as SyntaxHighlighter } from 'react-syntax-highlighter';
-import sql from 'react-syntax-highlighter/dist/esm/languages/hljs/sql';
-import { atomOneDark } from 'react-syntax-highlighter/dist/esm/styles/hljs';
-
 import { CopyTableButton } from '../common/CopyTableButton';
+import { SqlHighlight } from '../common/SqlHighlight';
 import { formatBytes } from '../../utils/formatters';
-
-SyntaxHighlighter.registerLanguage('sql', sql);
 
 interface Props {
   data: TableOrderingKeyEfficiency[];
@@ -525,24 +520,18 @@ const QueryPatternsTable: React.FC<{ patterns: TableQueryPattern[]; sortingKey: 
                 <tr>
                   <td colSpan={10} style={{ padding: '10px 16px', background: 'var(--bg-primary, rgba(0,0,0,0.1))' }}>
                     {/* SQL */}
-                    <SyntaxHighlighter
-                      language="sql"
-                      style={atomOneDark}
-                      customStyle={{
-                        fontSize: 11,
-                        fontFamily: "'Share Tech Mono', monospace",
-                        padding: 10,
-                        borderRadius: 4,
-                        overflow: 'auto',
-                        maxHeight: 180,
-                        border: '1px solid var(--border-primary)',
-                        marginBottom: 10,
-                        background: 'var(--bg-card, rgba(0,0,0,0.2))',
-                      }}
-                      wrapLongLines
-                    >
+                    <SqlHighlight style={{
+                      fontSize: 11,
+                      padding: 10,
+                      borderRadius: 4,
+                      overflow: 'auto',
+                      maxHeight: 180,
+                      border: '1px solid var(--border-primary)',
+                      marginBottom: 10,
+                      background: 'var(--bg-card, rgba(0,0,0,0.2))',
+                    }}>
                       {p.sample_query}
-                    </SyntaxHighlighter>
+                    </SqlHighlight>
 
                     {/* Two-column layout: Diagnosis + EXPLAIN */}
                     <div style={{ display: 'flex', gap: 12, marginBottom: 8 }}>

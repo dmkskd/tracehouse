@@ -26,8 +26,7 @@ import { useProfileEventDescriptionsStore } from '../../stores/profileEventDescr
 import { ModalWrapper, MetricItem } from '../shared/ModalWrapper';
 import { QueryComparisonPanel } from './QueryComparisonPanel';
 import type { ComparableQuery } from './QueryComparisonPanel';
-import hljs from 'highlight.js';
-import DOMPurify from 'dompurify';
+import { SqlHighlight } from '../common/SqlHighlight';
 import { PROFILE_EVENT_CATEGORIES } from './profileEventCategories';
 
 export interface TimelineQueryModalProps {
@@ -2778,48 +2777,15 @@ export const QueryDetailModal: React.FC<TimelineQueryModalProps> = ({
                   background: 'var(--bg-code)',
                   border: '1px solid var(--border-primary)',
                 }}>
-                  <pre style={{ margin: 0 }}>
-                    <code
-                      style={{
-                        display: 'block',
-                        padding: 14,
-                        fontSize: 12,
-                        lineHeight: 1.5,
-                        whiteSpace: 'pre-wrap',
-                        wordBreak: 'break-word',
-                        fontFamily: 'monospace',
-                        color: 'var(--text-secondary)',
-                      }}
-                      dangerouslySetInnerHTML={{
-                        __html: DOMPurify.sanitize(hljs.highlight(queryDetail?.query || queryDetail?.formatted_query || q.label || '-- no query text available', { language: 'sql' }).value)
-                      }}
-                    />
-                  </pre>
+                  <SqlHighlight style={{
+                    padding: 14,
+                    fontSize: 12,
+                    lineHeight: 1.5,
+                    color: 'var(--text-secondary)',
+                  }}>
+                    {queryDetail?.query || queryDetail?.formatted_query || q.label || '-- no query text available'}
+                  </SqlHighlight>
                 </div>
-                <style>{`
-                  [data-theme="dark"] .hljs-keyword { color: #ff7b72; }
-                  [data-theme="dark"] .hljs-string { color: #a5d6ff; }
-                  [data-theme="dark"] .hljs-number { color: #79c0ff; }
-                  [data-theme="dark"] .hljs-built_in { color: #ffa657; }
-                  [data-theme="dark"] .hljs-type { color: #7ee787; }
-                  [data-theme="dark"] .hljs-comment { color: #8b949e; }
-                  [data-theme="dark"] .hljs-operator { color: #ff7b72; }
-                  [data-theme="dark"] .hljs-punctuation { color: #c9d1d9; }
-                  [data-theme="dark"] .hljs-variable { color: #c9d1d9; }
-                  [data-theme="dark"] .hljs-title { color: #d2a8ff; }
-                  [data-theme="dark"] .hljs-function { color: #d2a8ff; }
-                  [data-theme="light"] .hljs-keyword { color: #cf222e; }
-                  [data-theme="light"] .hljs-string { color: #0a3069; }
-                  [data-theme="light"] .hljs-number { color: #0550ae; }
-                  [data-theme="light"] .hljs-built_in { color: #953800; }
-                  [data-theme="light"] .hljs-type { color: #116329; }
-                  [data-theme="light"] .hljs-comment { color: #6e7781; }
-                  [data-theme="light"] .hljs-operator { color: #cf222e; }
-                  [data-theme="light"] .hljs-punctuation { color: #24292f; }
-                  [data-theme="light"] .hljs-variable { color: #24292f; }
-                  [data-theme="light"] .hljs-title { color: #8250df; }
-                  [data-theme="light"] .hljs-function { color: #8250df; }
-                `}</style>
               </div>
 
               {/* Metrics Grid - all 3 columns */}

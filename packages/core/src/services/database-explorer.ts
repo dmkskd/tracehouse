@@ -1,5 +1,5 @@
 import type { IClickHouseAdapter } from '../adapters/types.js';
-import type { DatabaseInfo, TableInfo, PartInfo, PartDetailInfo, ColumnSchema, PartColumnInfo, PartDataResponse } from '../types/database.js';
+import type { DatabaseInfo, TableInfo, PartInfo, PartDetailInfo, ColumnSchema, PartColumnInfo, PartDataResponse, ChFunction } from '../types/database.js';
 import type { PartLineage } from '../types/lineage.js';
 import {
   LIST_DATABASES,
@@ -183,6 +183,18 @@ export class DatabaseExplorer {
       });
     } catch (error) {
       throw new DatabaseExplorerError('Failed to get part columns', error as Error);
+    }
+  }
+
+  async getFunctions(): Promise<ChFunction[]> {
+    try {
+      const rows = await this.adapter.executeQuery(tagQuery(
+        'SELECT name, is_aggregate, case_insensitive, alias_to, create_query, origin, description FROM system.functions ORDER BY name',
+        sourceTag(TAB_DATABASES, 'getFunctions'),
+      ));
+      return rows as unknown as ChFunction[];
+    } catch (error) {
+      throw new DatabaseExplorerError('Failed to get functions', error as Error);
     }
   }
 

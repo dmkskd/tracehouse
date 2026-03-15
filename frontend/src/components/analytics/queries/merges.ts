@@ -106,6 +106,7 @@ FROM {{cluster_aware:system.metric_log}}
 WHERE event_time > {{time_range}}
 GROUP BY t
 ORDER BY t ASC`,
+
 ];
 
 export default queries;

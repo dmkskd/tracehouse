@@ -3,16 +3,11 @@
  */
 
 import React, { useState } from 'react';
-import { Light as SyntaxHighlighter } from 'react-syntax-highlighter';
-import sqlLang from 'react-syntax-highlighter/dist/esm/languages/hljs/sql';
-import { atomOneDark, atomOneLight } from 'react-syntax-highlighter/dist/esm/styles/hljs';
 import { useNavigate } from '../../hooks/useAppLocation';
-import { useTheme } from '../../providers/ThemeProvider';
 import { encodeSql } from '../../hooks/useUrlState';
+import { SqlHighlight } from '../common/SqlHighlight';
 import type { SunburstNodeData, DiagnosticQuery, ObservabilityData, ColumnCommentMap } from './data';
 import { OBSERVABILITY_DATA } from './data';
-
-SyntaxHighlighter.registerLanguage('sql', sqlLang);
 
 // ─── Types ───────────────────────────────────────────────────
 
@@ -86,7 +81,6 @@ export const DetailSidebar: React.FC<DetailSidebarProps> = ({
   onToggleExpand,
 }) => {
   const [editingSql, setEditingSql] = useState<string | null>(null);
-  const { theme } = useTheme();
   const sourceData = enrichedData || OBSERVABILITY_DATA;
 
   // Resolve the table-level data
@@ -281,7 +275,6 @@ export const DetailSidebar: React.FC<DetailSidebarProps> = ({
                   editingSql={editingSql}
                   onEdit={setEditingSql}
                   onRun={onRunQuery}
-                  isDark={theme !== 'light'}
                 />
                 {isResultForThis && (
                   <div style={{ marginBottom: 8 }}>
@@ -354,8 +347,7 @@ const QueryBlock: React.FC<{
   editingSql: string | null;
   onEdit: (sql: string | null) => void;
   onRun: (sql: string, queryIndex: number) => void;
-  isDark?: boolean;
-}> = ({ query, queryIndex, isRunning, editingSql, onEdit, onRun, isDark = true }) => {
+}> = ({ query, queryIndex, isRunning, editingSql, onEdit, onRun }) => {
   const navigate = useNavigate();
   const isEditing = editingSql !== null && editingSql === query.sql;
   const needsEdit = hasPlaceholder(query.sql);
@@ -425,21 +417,14 @@ const QueryBlock: React.FC<{
           }}
         />
       ) : (
-        <SyntaxHighlighter
-          language="sql"
-          style={isDark ? atomOneDark : atomOneLight}
-          customStyle={{
-            background: 'transparent',
-            padding: 0,
-            margin: 0,
-            fontSize: 10.5,
-            lineHeight: 1.6,
-            wordBreak: 'break-all',
-            whiteSpace: 'pre-wrap',
-          }}
-        >
+        <SqlHighlight style={{
+          background: 'transparent',
+          padding: 0,
+          fontSize: 10.5,
+          lineHeight: 1.6,
+        }}>
           {query.sql}
-        </SyntaxHighlighter>
+        </SqlHighlight>
       )}
     </div>
   );

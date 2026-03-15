@@ -17,13 +17,13 @@ import {
   addCustomQuery, deleteCustomQuery, loadCustomQueries, isQueryNameTaken,
   buildCustomQuerySql, getAllQueries as getAllQueriesFromPresets,
 } from './customQueries';
-import { resolveTimeRange, resolveDrillParams, describeTimeRange } from './templateResolution';
+import { resolveTimeRange, resolveDrillParams } from './templateResolution';
 
 const MAX_SIDEBAR_QUERIES = 12;
 import {
   QUERY_GROUPS, CHART_TYPE_LABELS,
   type QueryGroup, type ChartType, type ChartStyle,
-  parseRagRules, parseChartDirective, resolveQueryRef,
+  parseRagRules, parseChartDirective, parseDirectives, resolveQueryRef,
 } from './metaLanguage';
 import { LinkQueryModal } from './LinkQueryModal';
 import {
@@ -37,8 +37,9 @@ import { ResultsTable } from './ResultsTable';
 import { highlightSQL } from '../../utils/sqlHighlighter';
 import DOMPurify from 'dompurify';
 import { TimeRangePicker } from './TimeRangePicker';
+import { SqlEditor } from './editor/SqlEditor';
 import { useClusterStore } from '../../stores/clusterStore';
-import { ClusterService } from '@tracehouse/core';
+import { ClusterService, type ChFunction } from '@tracehouse/core';
 
 /* ═══════════════════════════════════════════════════════════════════════════
    SQL Syntax Highlighting — imported from utils/sqlHighlighter
@@ -97,6 +98,7 @@ export const QueryExplorer: React.FC<QueryExplorerProps> = ({ urlState, onUrlSta
   const { clusterName } = useClusterStore();
   const [customQueries, setCustomQueries] = useState<Query[]>(() => loadCustomQueries());
   const allQueries = useMemo(() => [...PRESET_QUERIES, ...customQueries], [customQueries]);
+  const allQueryEntries = useMemo(() => allQueries.map(q => ({ name: q.name, group: q.group })), [allQueries]);
 
   // Initialize from URL state if available
   const initialPreset = urlState?.preset !== undefined ? allQueries[urlState.preset] : undefined;
@@ -122,15 +124,20 @@ export const QueryExplorer: React.FC<QueryExplorerProps> = ({ urlState, onUrlSta
     visualization: (urlState?.style as ChartStyle) ?? '2d',
   });
 
-  const textareaRef = useRef<HTMLTextAreaElement>(null);
-  const highlightRef = useRef<HTMLPreElement>(null);
   const isDragging = useRef(false);
   const hasAutoExecuted = useRef(false);
   const [isFullscreen, setIsFullscreen] = useState(urlState?.fullscreen ?? false);
   const [timeRangeOverride, setTimeRangeOverride] = useState<string | null>('1 HOUR');
-  const [templateTooltip, setTemplateTooltip] = useState<{ x: number; y: number; text: string } | null>(null);
-  const editorContainerRef = useRef<HTMLDivElement>(null);
   const [showResolved, setShowResolved] = useState(false);
+
+  /* ── dynamic ClickHouse function list for editor autocomplete ── */
+  const [chFunctions, setChFunctions] = useState<ChFunction[] | undefined>();
+  useEffect(() => {
+    if (!services) return;
+    services.databaseExplorer.getFunctions()
+      .then(setChFunctions)
+      .catch((err) => console.warn('[QueryExplorer] Failed to load ClickHouse functions for autocomplete:', err.message));
+  }, [services]);
 
   /* ── drill-down state ── */
   const [drillStack, setDrillStack] = useState<DrillStackEntry[]>([]);
@@ -244,7 +251,15 @@ export const QueryExplorer: React.FC<QueryExplorerProps> = ({ urlState, onUrlSta
   const activeIsCustom = activeQueryName ? customQueries.some(q => q.name === activeQueryName) : false;
 
   /* ── drill-down handlers ── */
-  const currentQuery = useMemo(() => allQueries.find(q => q.sql.trim() === sql.trim()), [allQueries, sql]);
+  // Match saved query first; fall back to parsing directives from the live editor SQL
+  const currentQuery = useMemo(() => {
+    const saved = allQueries.find(q => q.sql.trim() === sql.trim());
+    if (saved) return saved;
+    // Parse directives from the live SQL so edits (e.g. adding @drill) work without saving
+    const directives = parseDirectives(sql);
+    if (!directives?.meta) return undefined;
+    return { name: directives.meta.title, group: directives.meta.group, directives, sql } as const;
+  }, [allQueries, sql]);
   const isDrillable = !!(currentQuery?.directives.drill?.on && currentQuery?.directives.drill?.into) &&
     (!result || result.columns.includes(currentQuery.directives.drill.on));
 
@@ -321,8 +336,8 @@ export const QueryExplorer: React.FC<QueryExplorerProps> = ({ urlState, onUrlSta
   /** Open modal to clone a builtin query */
   const handleCloneQuery = useCallback(() => {
     const source = allQueries.find(q => q.name === activeQueryName);
-    // Strip existing meta/chart/drill comment lines to get the body
-    const body = sql.replace(/^--\s*@(meta|chart|drill|link|rag):.*\n?/gim, '').replace(/^--\s*Source:.*\n?/gim, '').trimStart();
+    // Strip only @meta (rebuilt with new name/group) and Source comment; preserve @chart/@rag/@drill/@link
+    const body = sql.replace(/^--\s*@meta:.*\n?/gim, '').replace(/^--\s*Source:.*\n?/gim, '').trimStart();
     setQueryModal({
       mode: 'clone',
       defaultName: source ? `${source.name} (copy)` : '',
@@ -398,8 +413,10 @@ export const QueryExplorer: React.FC<QueryExplorerProps> = ({ urlState, onUrlSta
   useEffect(() => {
     const handleKey = (e: KeyboardEvent) => {
       // Don't trigger when typing in inputs/textareas
-      const tag = (e.target as HTMLElement)?.tagName;
+      const el = e.target as HTMLElement;
+      const tag = el?.tagName;
       if (tag === 'INPUT' || tag === 'TEXTAREA' || tag === 'SELECT') return;
+      if (el?.closest?.('.cm-editor')) return;
 
       if (e.key === 'Escape' && isFullscreen) {
         setIsFullscreen(false);
@@ -416,31 +433,6 @@ export const QueryExplorer: React.FC<QueryExplorerProps> = ({ urlState, onUrlSta
     window.addEventListener('keydown', handleKey);
     return () => window.removeEventListener('keydown', handleKey);
   }, [isFullscreen, sql, viewMode, chartConfig, syncUrl, result]);
-
-  /* ── template variable hover tooltip ── */
-  const handleEditorMouseMove = useCallback((e: React.MouseEvent) => {
-    if (!highlightRef.current) { setTemplateTooltip(null); return; }
-    // Temporarily enable pointer events on the highlight layer to hit-test
-    highlightRef.current.style.pointerEvents = 'auto';
-    const el = document.elementFromPoint(e.clientX, e.clientY);
-    highlightRef.current.style.pointerEvents = 'none';
-    if (el && el.classList.contains('sql-template-var')) {
-      const varName = el.getAttribute('data-var') || '';
-      let tooltipText = varName;
-      if (varName.includes('time_range')) {
-        const activePreset = allQueries.find(p => p.sql.trim() === sql.trim());
-        tooltipText = `→ ${describeTimeRange(activePreset?.directives.meta?.interval, timeRangeOverride)}`;
-      } else if (varName.includes('cluster_aware:')) {
-        tooltipText = `→ resolved at runtime by cluster adapter`;
-      }
-      const rect = editorContainerRef.current?.getBoundingClientRect();
-      if (rect) {
-        setTemplateTooltip({ x: e.clientX - rect.left, y: e.clientY - rect.top - 28, text: tooltipText });
-      }
-    } else {
-      setTemplateTooltip(null);
-    }
-  }, [sql, allQueries, timeRangeOverride]);
 
   /* ── resizer ── */
   const handleResizerDown = useCallback((e: React.MouseEvent) => {
@@ -614,8 +606,7 @@ export const QueryExplorer: React.FC<QueryExplorerProps> = ({ urlState, onUrlSta
               </button>
             </div>
           </div>
-          <div ref={editorContainerRef} onMouseMove={showResolved ? undefined : handleEditorMouseMove} onMouseLeave={() => setTemplateTooltip(null)}
-            style={{ position: 'relative', flex: 1, background: 'var(--bg-code, #0d1117)', overflow: 'hidden' }}>
+          <div style={{ position: 'relative', flex: 1, background: 'var(--bg-code, #0d1117)', overflow: 'hidden' }}>
               {showResolved ? (
                 /* ── Resolved query view (read-only, copyable) ── */
                 <pre
@@ -623,38 +614,7 @@ export const QueryExplorer: React.FC<QueryExplorerProps> = ({ urlState, onUrlSta
                   <code style={{ fontFamily: 'inherit', fontSize: 'inherit', lineHeight: 'inherit', letterSpacing: 'inherit', tabSize: 'inherit' }} dangerouslySetInnerHTML={{ __html: DOMPurify.sanitize(highlightSQL(resolvedSql) + '\n') }} />
                 </pre>
               ) : (
-                /* ── Template query view (editable) ── */
-                <>
-                  {templateTooltip && (
-                    <div style={{
-                      position: 'absolute', left: templateTooltip.x, top: templateTooltip.y,
-                      zIndex: 10, pointerEvents: 'none',
-                      background: 'var(--bg-secondary)', border: '1px solid var(--border-primary)',
-                      borderRadius: 4, padding: '3px 8px', fontSize: 11, fontWeight: 500,
-                      color: 'var(--accent-blue, #58a6ff)', whiteSpace: 'nowrap',
-                      fontFamily: "'Share Tech Mono',monospace",
-                      boxShadow: '0 2px 8px rgba(0,0,0,0.3)',
-                    }}>
-                      {templateTooltip.text}
-                    </div>
-                  )}
-                  <pre ref={highlightRef} aria-hidden="true"
-                    style={{ position: 'absolute', top: 0, left: 0, right: 0, bottom: 0, margin: 0, padding: 16, fontFamily: "'Share Tech Mono','Fira Code',monospace", fontSize: 12, lineHeight: 1.6, letterSpacing: 'normal', tabSize: 4, color: 'var(--text-secondary)', background: 'transparent', border: 'none', whiteSpace: 'pre-wrap', wordWrap: 'break-word', wordBreak: 'break-all', overflowY: 'auto', overflowX: 'hidden', pointerEvents: 'none', zIndex: 0, boxSizing: 'border-box' }}>
-                    <code style={{ fontFamily: 'inherit', fontSize: 'inherit', lineHeight: 'inherit', letterSpacing: 'inherit', tabSize: 'inherit' }} dangerouslySetInnerHTML={{ __html: DOMPurify.sanitize(highlightSQL(sql) + '\n') }} />
-                  </pre>
-                  <textarea ref={textareaRef} value={sql}
-                    onChange={e => setSql(e.target.value)}
-                    onScroll={() => {
-                      if (textareaRef.current && highlightRef.current) {
-                        highlightRef.current.scrollTop = textareaRef.current.scrollTop;
-                        highlightRef.current.scrollLeft = textareaRef.current.scrollLeft;
-                      }
-                    }}
-                    onKeyDown={e => { if ((e.metaKey || e.ctrlKey) && e.key === 'Enter') { e.preventDefault(); runQuery(); } }}
-                    spellCheck={false}
-                    style={{ position: 'absolute', top: 0, left: 0, right: 0, bottom: 0, margin: 0, fontFamily: "'Share Tech Mono','Fira Code',monospace", fontSize: 12, lineHeight: 1.6, letterSpacing: 'normal', tabSize: 4, color: 'transparent', caretColor: 'var(--text-primary)', background: 'transparent', border: 'none', padding: 16, resize: 'none', zIndex: 1, overflowY: 'auto', overflowX: 'hidden', outline: 'none', whiteSpace: 'pre-wrap', wordWrap: 'break-word', wordBreak: 'break-all', boxSizing: 'border-box' }}
-                    placeholder="Enter SQL query…" />
-                </>
+                <SqlEditor value={sql} onChange={setSql} onRun={runQuery} functions={chFunctions} columns={result?.columns} queries={allQueryEntries} />
               )}
           </div>
         </div>
