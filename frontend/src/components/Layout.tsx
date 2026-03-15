@@ -10,7 +10,6 @@ import { useTheme } from '../providers/ThemeProvider';
 import { useUserPreferenceStore } from '../stores/userPreferenceStore';
 import { useRefreshConfig, type RefreshRateOption } from '@tracehouse/ui-shared';
 import { useRefreshSettingsStore, useGlobalLastUpdatedStore } from '../stores/refreshSettingsStore';
-import { resetDashboardsToBuiltin } from './analytics/dashboards';
 
 interface LayoutProps {
   children: React.ReactNode;
@@ -244,31 +243,35 @@ const SettingsPopover: React.FC = () => {
 
           <div style={{ height: 1, background: 'var(--border-primary)', margin: '4px 12px' }} />
 
-          {/* Reset Dashboards */}
+          {/* Clear Tracehouse Data */}
           <div style={{ padding: '6px 12px 10px' }}>
             <button
               onClick={() => {
-                if (!confirm('Reset all dashboards and custom queries to defaults?')) return;
-                resetDashboardsToBuiltin();
+                if (!confirm('Remove all Tracehouse data? This includes saved connections, credentials, dashboards, and preferences.')) return;
+                const PREFIXES = ['tracehouse-', 'hdx-'];
+                [localStorage, sessionStorage].forEach(store => {
+                  const keys = Array.from({ length: store.length }, (_, i) => store.key(i)!);
+                  keys.forEach(k => { if (PREFIXES.some(p => k.startsWith(p))) store.removeItem(k); });
+                });
                 setOpen(false);
                 window.location.reload();
               }}
               style={{
-                width: '100%', padding: '5px 0', border: '1px solid var(--border-primary)',
+                width: '100%', padding: '5px 0', border: '1px solid rgba(248,81,73,0.3)',
                 borderRadius: 6, fontSize: 10, fontWeight: 600, cursor: 'pointer',
-                background: 'var(--bg-primary)', color: 'var(--text-muted)',
+                background: 'var(--bg-primary)', color: '#f85149',
                 transition: 'all 0.15s ease',
               }}
               onMouseEnter={(e) => {
-                e.currentTarget.style.background = 'var(--bg-card-hover)';
-                e.currentTarget.style.color = 'var(--text-secondary)';
+                e.currentTarget.style.background = 'rgba(248,81,73,0.1)';
+                e.currentTarget.style.borderColor = 'rgba(248,81,73,0.5)';
               }}
               onMouseLeave={(e) => {
                 e.currentTarget.style.background = 'var(--bg-primary)';
-                e.currentTarget.style.color = 'var(--text-muted)';
+                e.currentTarget.style.borderColor = 'rgba(248,81,73,0.3)';
               }}
             >
-              Reset Dashboards
+              Clear Tracehouse Data
             </button>
           </div>
         </div>

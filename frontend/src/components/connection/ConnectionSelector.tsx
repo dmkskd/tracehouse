@@ -5,7 +5,7 @@
 import React, { useEffect, useState, useCallback, useRef } from 'react';
 import { createPortal } from 'react-dom';
 import { useConnectionStore } from '../../stores/connectionStore';
-import type { ConnectionProfile } from '../../stores/connectionStore';
+import type { ConnectionProfile, ConnectionConfigResponse } from '../../stores/connectionStore';
 import { useClusterStore } from '../../stores/clusterStore';
 import { ConnectionForm } from './ConnectionForm';
 
@@ -47,9 +47,16 @@ export const ConnectionSelector: React.FC = () => {
   }, []);
 
   const handleSelectProfile = useCallback((profile: ConnectionProfile) => {
+    // If password is required but missing (session/memory mode expired), open edit form to re-enter it
+    if (needsPassword(profile)) {
+      setIsDropdownOpen(false);
+      setConnectionFormOpen(true, profile.id);
+      return;
+    }
     setActiveProfile(profile.id);
     setIsDropdownOpen(false);
-  }, [setActiveProfile]);
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [setActiveProfile, setConnectionFormOpen]);
 
   const handleDelete = useCallback(async (profileId: string, e: React.MouseEvent) => {
     e.stopPropagation();
@@ -85,6 +92,12 @@ export const ConnectionSelector: React.FC = () => {
   const clusterName = useClusterStore((s) => s.clusterName);
   const replicaCount = useClusterStore((s) => s.replicaCount);
 
+  /** True when a profile was saved with a password but currently has none (session/memory expired) */
+  const needsPassword = (p: ConnectionProfile) => {
+    const pw = (p.config as ConnectionConfigResponse & { password?: string }).password;
+    return !!p.requiresPassword && !pw;
+  };
+
   return (
     <>
       <div className="relative" ref={dropdownRef}>
@@ -101,11 +114,25 @@ export const ConnectionSelector: React.FC = () => {
           onMouseLeave={(e) => { if (!isDropdownOpen) e.currentTarget.style.background = 'transparent'; }}
         >
           {selected && (
-            <span className="rounded-full bg-green-500 flex-shrink-0" style={{ width: 6, height: 6 }} />
+            <span className="rounded-full flex-shrink-0" style={{
+              width: 6, height: 6,
+              background: needsPassword(selected) ? '#f59e0b' : '#22c55e',
+            }} />
           )}
           <span style={{ color: 'var(--text-primary)', fontSize: 12, fontWeight: 500 }}>
             {selected ? selected.name : 'No connection'}
           </span>
+          {selected && needsPassword(selected) && (
+            <span style={{
+              fontSize: 9, fontWeight: 500, color: '#f59e0b',
+              background: 'rgba(245,158,11,0.1)', padding: '1px 5px',
+              borderRadius: 3, whiteSpace: 'nowrap',
+            }}
+            title="Password required — click to enter"
+            >
+              password required
+            </span>
+          )}
           <span style={{ color: 'var(--text-muted)', fontSize: 11, display: 'inline-flex', alignItems: 'center', gap: 3 }}>
             {selected ? (
               <>
@@ -217,9 +244,17 @@ export const ConnectionSelector: React.FC = () => {
                     >
                       <div className="flex items-center min-w-0 gap-1.5">
                         <span className="flex-shrink-0" style={{ width: 5 }}>
-                          {isActive && <span className="block rounded-full bg-green-500" style={{ width: 5, height: 5 }} />}
+                          {isActive && <span className="block rounded-full" style={{
+                            width: 5, height: 5,
+                            background: needsPassword(profile) ? '#f59e0b' : '#22c55e',
+                          }} />}
                         </span>
                         <span className="truncate" style={{ color: 'var(--text-primary)', fontSize: 12 }}>{profile.name}</span>
+                        {needsPassword(profile) && (
+                          <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="#f59e0b" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
+                            <path d="M21 2l-2 2m-7.61 7.61a5.5 5.5 0 1 1-7.778 7.778 5.5 5.5 0 0 1 7.777-7.777zm0 0L15.5 7.5m0 0l3 3L22 7l-3-3m-3.5 3.5L19 4" />
+                          </svg>
+                        )}
                         <span className="truncate" style={{ color: 'var(--text-muted)', fontSize: 10, display: 'inline-flex', alignItems: 'center', gap: 2 }}>
                           {profile.config.secure ? (
                             <svg width="9" height="9" viewBox="0 0 24 24" fill="none" stroke="#22c55e" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><rect x="3" y="11" width="18" height="11" rx="2" ry="2"/><path d="M7 11V7a5 5 0 0110 0v4"/></svg>

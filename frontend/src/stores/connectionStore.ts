@@ -7,13 +7,51 @@
  */
 
 import { create } from 'zustand';
-import { persist } from 'zustand/middleware';
+import { persist, createJSONStorage } from 'zustand/middleware';
 import { BrowserAdapter } from '@tracehouse/core/adapters/browser-adapter';
 import { ProxyAdapter } from '@tracehouse/core';
 import { useProxyStore } from './proxyStore';
 
 // LocalStorage key for persisting connection profiles
 const STORAGE_KEY = 'tracehouse-connections';
+
+// Key for the storage mode preference (always in localStorage so it survives session close)
+const STORAGE_MODE_KEY = 'tracehouse-credential-storage-mode';
+
+export type CredentialStorageMode = 'persistent' | 'session' | 'memory';
+
+/** Read the current storage mode preference */
+export function getCredentialStorageMode(): CredentialStorageMode {
+  const v = localStorage.getItem(STORAGE_MODE_KEY);
+  if (v === 'persistent' || v === 'memory') return v;
+  return 'session';
+}
+
+// Separate key for session-mode passwords (sessionStorage only)
+const SESSION_PASSWORDS_KEY = 'tracehouse-session-passwords';
+
+/**
+ * Storage strategy:
+ * - Connection profiles (host, port, user, database, etc.) always go to localStorage
+ *   so they survive tab close in all modes.
+ * - Passwords are handled separately based on mode:
+ *   - persistent → password stored inline in localStorage profiles
+ *   - session    → password stored in sessionStorage under a separate key (cleared on tab close)
+ *   - memory     → password only in Zustand in-memory state (lost on refresh)
+ */
+
+/** Save session-mode passwords to sessionStorage (map of profileId → password) */
+function setSessionPasswords(passwords: Record<string, string>): void {
+  sessionStorage.setItem(SESSION_PASSWORDS_KEY, JSON.stringify(passwords));
+}
+
+/** Read session-mode passwords from sessionStorage */
+function getSessionPasswords(): Record<string, string> {
+  try {
+    const raw = sessionStorage.getItem(SESSION_PASSWORDS_KEY);
+    return raw ? JSON.parse(raw) : {};
+  } catch { return {}; }
+}
 
 // Connection configuration for creating/testing connections
 export interface ConnectionConfig {
@@ -50,6 +88,9 @@ export interface ConnectionProfile {
   updated_at: string;
   last_connected_at: string | null;
   is_connected: boolean;
+  /** True when the profile was saved with a non-empty password.
+   *  Used to distinguish "intentionally no password" from "password cleared by session/memory mode". */
+  requiresPassword?: boolean;
 }
 
 // Connection test result
@@ -97,6 +138,10 @@ interface ConnectionState {
   setConnectionFormOpen: (isOpen: boolean, editProfileId?: string | null) => void;
   clearError: () => void;
   clearTestResult: () => void;
+
+  // Credential storage mode
+  credentialStorageMode: CredentialStorageMode;
+  setCredentialStorageMode: (mode: CredentialStorageMode) => void;
 }
 
 // Default connection configuration.
@@ -175,8 +220,9 @@ export const useConnectionStore = create<ConnectionState>()(
             updated_at: now,
             last_connected_at: connect ? now : null,
             is_connected: connect,
+            requiresPassword: !!config.password,
           };
-          
+
           set(state => ({
             profiles: [...state.profiles, profile],
             isLoading: false,
@@ -215,6 +261,7 @@ export const useConnectionStore = create<ConnectionState>()(
                   password: config.password,
                 } as ConnectionConfigResponse & { password: string },
                 updated_at: now,
+                requiresPassword: !!config.password,
               };
               return updatedProfile;
             });
@@ -378,16 +425,82 @@ export const useConnectionStore = create<ConnectionState>()(
       clearTestResult: () => {
         set({ testResult: null });
       },
+
+      // Credential storage mode
+      credentialStorageMode: getCredentialStorageMode(),
+      setCredentialStorageMode: (mode: CredentialStorageMode) => {
+        const prev = getCredentialStorageMode();
+        if (mode === prev) return;
+
+        // When switching TO session mode, move passwords from localStorage profiles
+        // into sessionStorage
+        if (mode === 'session') {
+          const { profiles } = get();
+          const passwords: Record<string, string> = {};
+          profiles.forEach(p => {
+            const pw = (p.config as ConnectionConfigResponse & { password?: string }).password;
+            if (pw) passwords[p.id] = pw;
+          });
+          setSessionPasswords(passwords);
+        }
+
+        // When switching away FROM session mode, clear session passwords
+        if (prev === 'session') {
+          sessionStorage.removeItem(SESSION_PASSWORDS_KEY);
+        }
+
+        // Persist the preference (always in localStorage)
+        localStorage.setItem(STORAGE_MODE_KEY, mode);
+        set({ credentialStorageMode: mode });
+      },
     }),
     {
       name: STORAGE_KEY,
-      // Only persist profiles and activeProfileId, not transient UI state
+      // Always persist to localStorage — connection config survives in all modes
+      storage: createJSONStorage(() => localStorage),
+      // Persist profiles and activeProfileId, not transient UI state.
+      // In session/memory mode, strip passwords from localStorage.
+      // - session: passwords are stored separately in sessionStorage
+      // - memory: passwords only exist in Zustand in-memory state
       partialize: (state) => ({
-        profiles: state.profiles,
+        profiles: getCredentialStorageMode() === 'persistent'
+          ? state.profiles
+          : state.profiles.map(p => ({
+              ...p,
+              config: { ...p.config, password: '' },
+            })),
         activeProfileId: state.activeProfileId,
       }),
+      // On rehydration, merge session passwords back into profiles
+      merge: (persisted, current) => {
+        const state = { ...current, ...(persisted as Partial<ConnectionState>) };
+        const mode = getCredentialStorageMode();
+        if (mode === 'session') {
+          const passwords = getSessionPasswords();
+          state.profiles = state.profiles.map(p => ({
+            ...p,
+            config: {
+              ...p.config,
+              password: passwords[p.id] ?? (p.config as ConnectionConfigResponse & { password?: string }).password ?? '',
+            } as ConnectionConfigResponse & { password: string },
+          }));
+        }
+        return state;
+      },
     }
   )
 );
+
+// Sync session passwords to sessionStorage whenever profiles change in session mode
+useConnectionStore.subscribe((state) => {
+  if (getCredentialStorageMode() === 'session') {
+    const passwords: Record<string, string> = {};
+    state.profiles.forEach(p => {
+      const pw = (p.config as ConnectionConfigResponse & { password?: string }).password;
+      if (pw) passwords[p.id] = pw;
+    });
+    setSessionPasswords(passwords);
+  }
+});
 
 export default useConnectionStore;

@@ -7,7 +7,7 @@
 
 import React, { useState, useCallback, useEffect } from 'react';
 import { useConnectionStore, defaultConnectionConfig } from '../../stores/connectionStore';
-import type { ConnectionConfig, ConnectionConfigResponse } from '../../stores/connectionStore';
+import type { ConnectionConfig, ConnectionConfigResponse, CredentialStorageMode } from '../../stores/connectionStore';
 import { useProxyStore } from '../../stores/proxyStore';
 
 interface ConnectionFormProps {
@@ -28,6 +28,8 @@ export const ConnectionForm: React.FC<ConnectionFormProps> = ({ onClose, onSucce
     testConnection,
     clearError,
     clearTestResult,
+    credentialStorageMode,
+    setCredentialStorageMode,
   } = useConnectionStore();
 
   const editingProfile = editingProfileId ? profiles.find(p => p.id === editingProfileId) : null;
@@ -337,6 +339,51 @@ export const ConnectionForm: React.FC<ConnectionFormProps> = ({ onClose, onSucce
             </div>
           </div>
 
+          {/* Credential Storage Mode */}
+          <div>
+            <label style={labelStyle}>Credential Storage</label>
+            <div style={{ display: 'flex', gap: '8px' }}>
+              {([
+                { mode: 'memory' as CredentialStorageMode, label: 'Memory only' },
+                { mode: 'session' as CredentialStorageMode, label: 'Session' },
+                { mode: 'persistent' as CredentialStorageMode, label: 'Remember' },
+              ]).map(({ mode, label }) => (
+                <button
+                  key={mode}
+                  type="button"
+                  onClick={() => setCredentialStorageMode(mode)}
+                  style={{
+                    flex: 1,
+                    padding: '8px 12px',
+                    background: credentialStorageMode === mode
+                      ? 'rgba(var(--accent-purple-rgb), 0.2)'
+                      : 'var(--bg-input)',
+                    border: credentialStorageMode === mode
+                      ? '1px solid rgba(var(--accent-purple-rgb), 0.5)'
+                      : '1px solid var(--border-input)',
+                    borderRadius: '8px',
+                    color: credentialStorageMode === mode
+                      ? 'var(--accent-secondary)'
+                      : 'var(--text-secondary)',
+                    fontSize: '13px',
+                    fontWeight: credentialStorageMode === mode ? 500 : 400,
+                    cursor: 'pointer',
+                    transition: 'all 0.2s ease',
+                  }}
+                >
+                  {label}
+                </button>
+              ))}
+            </div>
+            <p style={{ fontSize: '11px', color: 'var(--text-muted)', marginTop: '6px' }}>
+              {credentialStorageMode === 'memory'
+                ? 'Password is kept only in memory — lost on page refresh. Most secure, but you must re-enter it every time.'
+                : credentialStorageMode === 'session'
+                  ? 'Credentials are stored for this browser tab and cleared when you close it.'
+                  : 'Credentials are saved in browser storage and persist across sessions.'}
+            </p>
+          </div>
+
           {/* Database */}
           <div>
             <label style={labelStyle}>Database</label>
@@ -453,7 +500,15 @@ export const ConnectionForm: React.FC<ConnectionFormProps> = ({ onClose, onSucce
                 style={{ display: 'none' }}
               />
               <span style={{ fontSize: '13px', color: 'var(--text-secondary)' }}>
-                Use CORS proxy (for remote servers)
+                Use CORS proxy (for remote servers) —{' '}
+                <a
+                  href="https://dmkskd.github.io/tracehouse/docs/guides/connecting"
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  style={{ fontSize: '11px', color: 'var(--accent-secondary)', textDecoration: 'underline' }}
+                >
+                  Connection guide
+                </a>
               </span>
             </label>
             {proxyEnabled && (
