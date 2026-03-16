@@ -16,6 +16,9 @@ interface UserPreferenceState {
   /** Allow killing queries from the Active Queries view. Off by default. */
   killQueriesEnabled: boolean;
   setKillQueriesEnabled: (enabled: boolean) => void;
+  /** Enable experimental features. Off by default. */
+  experimentalEnabled: boolean;
+  setExperimentalEnabled: (enabled: boolean) => void;
 }
 
 export const useUserPreferenceStore = create<UserPreferenceState>()(
@@ -26,6 +29,8 @@ export const useUserPreferenceStore = create<UserPreferenceState>()(
       toggleViewMode: () => set({ preferredViewMode: get().preferredViewMode === '3d' ? '2d' : '3d' }),
       killQueriesEnabled: false,
       setKillQueriesEnabled: (enabled) => set({ killQueriesEnabled: enabled }),
+      experimentalEnabled: false,
+      setExperimentalEnabled: (enabled) => set({ experimentalEnabled: enabled }),
     }),
     { name: 'tracehouse-view-preference' }
   )
