@@ -32,7 +32,7 @@ const SettingsPopover: React.FC = () => {
   const [open, setOpen] = useState(false);
   const ref = useRef<HTMLDivElement>(null);
   const { theme, toggleTheme } = useTheme();
-  const { preferredViewMode, setPreferredViewMode, killQueriesEnabled, setKillQueriesEnabled } = useUserPreferenceStore();
+  const { preferredViewMode, setPreferredViewMode, killQueriesEnabled, setKillQueriesEnabled, experimentalEnabled, setExperimentalEnabled } = useUserPreferenceStore();
   const refreshConfig = useRefreshConfig();
   const { refreshRateSeconds, setRefreshRate } = useRefreshSettingsStore();
 
@@ -238,6 +238,30 @@ const SettingsPopover: React.FC = () => {
                 style={{ accentColor: '#f85149' }}
               />
               Allow Kill Query
+            </label>
+          </div>
+
+          {/* Experimental Toggle */}
+          <div style={{ padding: '6px 12px' }}>
+            <label style={{
+              display: 'flex', alignItems: 'center', gap: 8, cursor: 'pointer',
+              fontSize: 11, color: 'var(--text-secondary)',
+            }}>
+              <input
+                type="checkbox"
+                checked={experimentalEnabled}
+                onChange={(e) => setExperimentalEnabled(e.target.checked)}
+                style={{ accentColor: '#f0883e' }}
+              />
+              <span style={{ display: 'flex', alignItems: 'center', gap: 5 }}>
+                Experimental Features
+                <span style={{
+                  fontSize: 8, fontWeight: 700, color: '#f0883e',
+                  background: 'rgba(240,136,62,0.12)', border: '1px solid rgba(240,136,62,0.25)',
+                  borderRadius: 3, padding: '0 4px', lineHeight: '14px',
+                  textTransform: 'uppercase', letterSpacing: '0.5px',
+                }}>Beta</span>
+              </span>
             </label>
           </div>
 

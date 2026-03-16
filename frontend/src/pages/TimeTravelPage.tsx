@@ -17,14 +17,17 @@ import { QueryDetailModal } from '../components/query/QueryDetailModal';
 import { MergeDetailModal, MutationDetailModal } from '../components/merge/MergeDetailModal';
 import { TruncatedHost } from '../components/common/TruncatedHost';
 import { formatBytes, parseTimestamp } from '../utils/formatters';
+import { useUserPreferenceStore } from '../stores/userPreferenceStore';
 import { TimelineChart } from '../components/timeline/TimelineChart';
+import { TimelineChart3D } from '../components/timeline/TimelineChart3D';
+import { TimelineChart3DSurface } from '../components/timeline/TimelineChart3DSurface';
 import { QueryTable, MergeTable } from '../components/timeline/TimelineTable';
 import {
   type MetricMode, type HighlightedItem,
   Q_COLORS, M_COLORS, MUT_COLORS, METRIC_CONFIG, getMetricValue,
 } from '../components/timeline/timeline-constants';
 
-// CSS animation for pulse effect
+// CSS animation for pulse effect + experimental badge tooltip
 const pulseKeyframes = `
   @keyframes pulse {
     0%, 100% { opacity: 1; }
@@ -33,6 +36,32 @@ const pulseKeyframes = `
   @keyframes bandPulse {
     0%, 100% { opacity: 0.7; }
     50% { opacity: 0.45; }
+  }
+  .exp-badge { position: relative; }
+  .exp-badge::after {
+    content: 'Experimental feature';
+    position: absolute;
+    top: calc(100% + 6px);
+    left: 50%;
+    transform: translateX(-50%) scale(0.95);
+    white-space: nowrap;
+    font-size: 10px;
+    font-weight: 500;
+    letter-spacing: 0;
+    text-transform: none;
+    color: #f0883e;
+    background: var(--bg-secondary);
+    border: 1px solid rgba(240,136,62,0.25);
+    border-radius: 5px;
+    padding: 3px 8px;
+    pointer-events: none;
+    opacity: 0;
+    transition: opacity 0.15s ease, transform 0.15s ease;
+    z-index: 100;
+  }
+  .exp-badge:hover::after {
+    opacity: 1;
+    transform: translateX(-50%) scale(1);
   }
 `;
 if (typeof document !== 'undefined') {
@@ -52,6 +81,7 @@ export const TimeTravelPage: React.FC = () => {
   const { refreshRateSeconds } = useRefreshSettingsStore();
   const manualRefreshTick = useGlobalLastUpdatedStore(s => s.manualRefreshTick);
   const { available: hasMetricLog, missing: missingCaps, probing: isCapProbing } = useCapabilityCheck(['metric_log', 'query_log']);
+  const { experimentalEnabled } = useUserPreferenceStore();
   const [windowSec, setWindowSec] = useState(150);
   const [isLive, setIsLive] = useState(true);
   const [autoRefresh, setAutoRefresh] = useState(false);
@@ -64,6 +94,9 @@ export const TimeTravelPage: React.FC = () => {
   const [zoomRange, setZoomRange] = useState<[number, number] | null>(null);
   const [metricMode, setMetricMode] = useState<MetricMode>('cpu');
   const [highlightedItem, setHighlightedItem] = useState<HighlightedItem>(null);
+  const [viewMode, setViewMode] = useState<'2d' | '3d' | '3d-surface'>('2d');
+  // Reset to 2D when experimental is turned off
+  useEffect(() => { if (!experimentalEnabled && viewMode !== '2d') setViewMode('2d'); }, [experimentalEnabled]);
   const [hiddenCategories, setHiddenCategories] = useState<Set<'query' | 'merge' | 'mutation'>>(new Set());
   const toggleCategory = useCallback((cat: 'query' | 'merge' | 'mutation') => {
     setHiddenCategories(prev => {
@@ -610,6 +643,37 @@ export const TimeTravelPage: React.FC = () => {
                 aria-label="CPU metric information: values are clamped to 100% to account for metric collection delays under heavy load"
               >?</span>
             )}
+            {experimentalEnabled && (
+              <>
+                <div style={{ width: 1, height: 20, background: 'var(--border-primary)', margin: '0 4px' }} />
+                {([['2d', '2D'], ['3d', '3D'], ['3d-surface', '3D Surface']] as const).map(([mode, label]) => (
+                  <button key={mode} onClick={() => setViewMode(mode)}
+                    style={{
+                      position: 'relative',
+                      background: viewMode === mode ? 'rgba(148,163,184,0.15)' : 'transparent',
+                      color: viewMode === mode ? '#e2e8f0' : 'var(--text-muted)',
+                      border: viewMode === mode ? '1px solid rgba(148,163,184,0.3)' : '1px solid transparent',
+                      borderRadius: 6, padding: '6px 10px', fontSize: 12, fontWeight: viewMode === mode ? 600 : 400,
+                      cursor: 'pointer', transition: 'all 0.15s ease',
+                    }}>
+                    {label}
+                    {mode !== '2d' && (
+                      <span
+                        className="exp-badge"
+                        style={{
+                          position: 'absolute', top: -6, right: -4,
+                          fontSize: 7, fontWeight: 700, color: '#f0883e',
+                          background: 'var(--bg-tertiary)', border: '1px solid rgba(240,136,62,0.3)',
+                          borderRadius: 3, padding: '0 3px', lineHeight: '12px',
+                          textTransform: 'uppercase', letterSpacing: '0.3px',
+                          cursor: 'default',
+                        }}
+                      >exp</span>
+                    )}
+                  </button>
+                ))}
+              </>
+            )}
           </div>
 
           {/* Chart */}
@@ -667,6 +731,12 @@ export const TimeTravelPage: React.FC = () => {
             borderRadius:10, padding:0, background:'var(--bg-secondary)', border:'1px solid var(--border-primary)',
             boxShadow:'0 1px 3px rgba(0,0,0,0.2)', overflow:'hidden', position:'relative',
           }}>
+            {viewMode === '3d' ? (
+              <TimelineChart3D data={data} metricMode={metricMode} height={500} hiddenCategories={hiddenCategories} />
+            ) : viewMode === '3d-surface' ? (
+              <TimelineChart3DSurface data={data} metricMode={metricMode} height={500} hiddenCategories={hiddenCategories} />
+            ) : (
+            <>
             {(pinnedMs !== null || zoomRange !== null) && (
               <div style={{ position:'absolute', top:8, right:8, zIndex:10, display:'flex', alignItems:'center', gap:6 }}>
                 {pinnedMs !== null && (
@@ -701,6 +771,8 @@ export const TimeTravelPage: React.FC = () => {
                 else if (band.type === 'merge' && data.merges[band.idx]) setSelectedTimelineMerge(data.merges[band.idx]);
                 else if (band.type === 'mutation' && (data.mutations ?? [])[band.idx]) setSelectedTimelineMutation((data.mutations ?? [])[band.idx]);
               }} />
+            </>
+            )}
           </div>
           )}
 
