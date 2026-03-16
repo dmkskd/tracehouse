@@ -33,7 +33,7 @@ describe('Part Name Parser', () => {
         // NOTE: This is ambiguous! `2026_02_1_100_5` could be:
         // - Regular part: partition=2026_02, minBlock=1, maxBlock=100, level=5
         // - Mutated part: partition=2026, minBlock=02, maxBlock=1, level=100, mutation=5
-        // 
+        //
         // The parser assumes mutated format when last 4 segments are numeric.
         // In practice, use the `level` column from system.parts for accuracy.
         const result = parsePartName('2026_02_1_100_5');
@@ -203,10 +203,10 @@ describe('Part Name Parser', () => {
             const [min, max] = minBlock <= maxBlock ? [minBlock, maxBlock] : [maxBlock, minBlock];
             const name = `${partition}_${min}_${max}_${level}`;
             const parsed = parsePartName(name);
-            
+
             // Skip if partition looks like it could be numeric (ambiguous)
             if (parsed === null) return true;
-            
+
             expect(parsed.level).toBe(level);
             expect(parsed.minBlock).toBe(min);
             expect(parsed.maxBlock).toBe(max);
@@ -230,9 +230,9 @@ describe('Part Name Parser', () => {
             const [min, max] = minBlock <= maxBlock ? [minBlock, maxBlock] : [maxBlock, minBlock];
             const name = `${partition}_${min}_${max}_${level}_${mutVersion}`;
             const parsed = parsePartName(name);
-            
+
             if (parsed === null) return true;
-            
+
             expect(parsed.level).toBe(level);
             expect(parsed.minBlock).toBe(min);
             expect(parsed.maxBlock).toBe(max);

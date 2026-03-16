@@ -11,3 +11,4 @@ export {
 export type { MergeCategory, MergeCategoryInfo } from './merge-classification.js';
 export { parseTimeValue } from './time.js';
 export { parseTTL, formatTTLDuration } from './ttl-parser.js';
+export { parsePartName, getLevelFromName, isMutatedPart } from './part-name-parser.js';

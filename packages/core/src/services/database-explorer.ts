@@ -23,7 +23,7 @@ import {
   mapColumnSchema,
   mapPartColumnInfo,
 } from '../mappers/database-mappers.js';
-import { buildLineageTree } from '../lineage/builder.js';
+import { LineageService } from './lineage-service.js';
 
 export class DatabaseExplorerError extends Error {
   constructor(message: string, public readonly cause?: Error) {
@@ -140,7 +140,8 @@ export class DatabaseExplorer {
 
   async getPartLineage(database: string, table: string, partName: string): Promise<PartLineage> {
     try {
-      return await buildLineageTree(this.adapter, database, table, partName);
+      const lineageService = new LineageService(this.adapter);
+      return await lineageService.buildLineageTree(database, table, partName);
     } catch (error) {
       throw new DatabaseExplorerError('Failed to get part lineage', error as Error);
     }

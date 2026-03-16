@@ -18,3 +18,28 @@ export function mapMergeEvent(row: RawRow): MergeEvent {
     level: toInt(row.level),
   };
 }
+
+/**
+ * Parse the `merged_from` column which may arrive as an array, JSON string,
+ * or comma-separated string depending on the adapter.
+ */
+export function parseMergedFrom(val: unknown): string[] {
+  if (Array.isArray(val)) return val.map(String);
+  if (typeof val === 'string') {
+    const trimmed = val.trim();
+    if (!trimmed || trimmed === '[]') return [];
+    try {
+      const parsed = JSON.parse(trimmed);
+      if (Array.isArray(parsed)) return parsed.map(String);
+      return [trimmed];
+    } catch {
+      // Handle ClickHouse array format: ['a','b','c'] or comma-separated
+      return trimmed
+        .replace(/^\[|\]$/g, '')
+        .split(',')
+        .map(s => s.trim().replace(/^'|'$/g, ''))
+        .filter(Boolean);
+    }
+  }
+  return [];
+}

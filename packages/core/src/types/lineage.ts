@@ -1,3 +1,27 @@
+/**
+ * Parsed components of a ClickHouse part name.
+ *
+ * Part names follow these patterns:
+ * - Regular: `partition_minBlock_maxBlock_level` (e.g., `202602_1_100_3`)
+ * - Mutated: `partition_minBlock_maxBlock_level_mutationVersion` (e.g., `202602_1_100_3_19118`)
+ */
+export interface ParsedPartName {
+  /** Original part name */
+  name: string;
+  /** Partition ID (may contain underscores) */
+  partition: string;
+  /** Minimum block number */
+  minBlock: number;
+  /** Maximum block number */
+  maxBlock: number;
+  /** Merge level (0 = L0/original part) */
+  level: number;
+  /** Mutation version (undefined if not mutated) */
+  mutationVersion?: number;
+  /** Whether this part was created by a mutation */
+  isMutated: boolean;
+}
+
 export interface MergeEvent {
   part_name: string;
   merged_from: string[];

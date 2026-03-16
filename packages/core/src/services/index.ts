@@ -1,4 +1,5 @@
 export { DatabaseExplorer, DatabaseExplorerError } from './database-explorer.js';
+export { LineageService, LineageServiceError } from './lineage-service.js';
 export { QueryAnalyzer, QueryAnalysisError } from './query-analyzer.js';
 export type { QueryHistoryOptions, QueryDetail, SimilarQuery, SubQueryInfo, SettingDefault, QueryThreadBreakdown, ProfileEventComparison, MultiProfileEventRow } from './query-analyzer.js';
 export { MetricsCollector, MetricsCollectionError } from './metrics-collector.js';

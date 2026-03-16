@@ -8,7 +8,7 @@
 
 import { describe, it, expect, beforeAll, afterAll } from 'vitest';
 import { startClickHouse, stopClickHouse, type TestClickHouseContext } from './setup/clickhouse-container.js';
-import { buildLineageTree } from '../../lineage/builder.js';
+import { LineageService } from '../../services/lineage-service.js';
 import type { LineageNode } from '../../types/lineage.js';
 
 const CONTAINER_TIMEOUT = 120_000;
@@ -70,7 +70,7 @@ describe('Lineage builder integration', () => {
     expect(parts.length).toBeGreaterThanOrEqual(1);
 
     const targetPart = parts[0].name;
-    const lineage = await buildLineageTree(ctx.adapter, TEST_DB, 'events', targetPart);
+    const lineage = await new LineageService(ctx.adapter).buildLineageTree(TEST_DB, 'events', targetPart);
 
     expect(lineage.root.part_name).toBe(targetPart);
     expect(lineage).toHaveProperty('total_merges');
@@ -84,7 +84,7 @@ describe('Lineage builder integration', () => {
     const parts = await ctx.adapter.executeQuery<{ name: string }>(
       `SELECT name FROM system.parts WHERE database = '${TEST_DB}' AND table = 'events' AND active = 1 LIMIT 1`,
     );
-    const lineage = await buildLineageTree(ctx.adapter, TEST_DB, 'events', parts[0].name);
+    const lineage = await new LineageService(ctx.adapter).buildLineageTree(TEST_DB, 'events', parts[0].name);
 
     const allNodes = collectAllNodes(lineage.root);
     const l0Nodes = allNodes.filter(n => n.level === 0);
@@ -97,7 +97,7 @@ describe('Lineage builder integration', () => {
     const parts = await ctx.adapter.executeQuery<{ name: string }>(
       `SELECT name FROM system.parts WHERE database = '${TEST_DB}' AND table = 'events' AND active = 1 LIMIT 1`,
     );
-    const lineage = await buildLineageTree(ctx.adapter, TEST_DB, 'events', parts[0].name);
+    const lineage = await new LineageService(ctx.adapter).buildLineageTree(TEST_DB, 'events', parts[0].name);
 
     const allNodes = collectAllNodes(lineage.root);
     const expectedMerges = allNodes.filter(n => n.children.length > 0).length;
@@ -111,7 +111,7 @@ describe('Lineage builder integration', () => {
     const parts = await ctx.adapter.executeQuery<{ name: string }>(
       `SELECT name FROM system.parts WHERE database = '${TEST_DB}' AND table = 'events' AND active = 1 LIMIT 1`,
     );
-    const lineage = await buildLineageTree(ctx.adapter, TEST_DB, 'events', parts[0].name);
+    const lineage = await new LineageService(ctx.adapter).buildLineageTree(TEST_DB, 'events', parts[0].name);
 
     const allNodes = collectAllNodes(lineage.root);
     // Should be a reasonable number of nodes
@@ -127,7 +127,7 @@ describe('Lineage builder integration', () => {
     // Find a part with level > 0 (merged)
     const mergedPart = parts.find(p => p.level > 0);
     if (mergedPart) {
-      const lineage = await buildLineageTree(ctx.adapter, TEST_DB, 'events', mergedPart.name);
+      const lineage = await new LineageService(ctx.adapter).buildLineageTree(TEST_DB, 'events', mergedPart.name);
       expect(lineage.root.children.length).toBeGreaterThan(0);
       expect(lineage.total_merges).toBeGreaterThanOrEqual(1);
       expect(lineage.total_original_parts).toBeGreaterThanOrEqual(2);
@@ -141,7 +141,7 @@ describe('Lineage builder integration', () => {
 
     const mergedPart = parts.find(p => p.level > 0);
     if (mergedPart) {
-      const lineage = await buildLineageTree(ctx.adapter, TEST_DB, 'events', mergedPart.name);
+      const lineage = await new LineageService(ctx.adapter).buildLineageTree(TEST_DB, 'events', mergedPart.name);
       // Original total size should be >= final size (merges compress/deduplicate)
       // Note: in some edge cases they can be equal
       expect(lineage.original_total_size).toBeGreaterThanOrEqual(0);

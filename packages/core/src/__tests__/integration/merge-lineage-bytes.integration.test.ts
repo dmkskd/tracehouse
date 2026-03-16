@@ -21,7 +21,7 @@ import {
 } from './setup/clickhouse-container.js';
 import { DatabaseExplorer } from '../../services/database-explorer.js';
 import { MergeTracker } from '../../services/merge-tracker.js';
-import { parsePartName } from '../../lineage/part-name-parser.js';
+import { parsePartName } from '../../utils/part-name-parser.js';
 import type { LineageNode } from '../../types/lineage.js';
 import type { PartInfo } from '../../types/database.js';
 import type { PartLineage } from '../../types/lineage.js';
