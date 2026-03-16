@@ -22,6 +22,7 @@ export type CredentialStorageMode = 'persistent' | 'session' | 'memory';
 
 /** Read the current storage mode preference */
 export function getCredentialStorageMode(): CredentialStorageMode {
+  if (typeof localStorage === 'undefined' || typeof localStorage.getItem !== 'function') return 'session';
   const v = localStorage.getItem(STORAGE_MODE_KEY);
   if (v === 'persistent' || v === 'memory') return v;
   return 'session';
