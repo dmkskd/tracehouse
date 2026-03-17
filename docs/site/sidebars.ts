@@ -27,6 +27,12 @@ const sidebars: SidebarsConfig = {
         'features/merge-tracker',
         'features/analytics',
         'features/analytics-query-language',
+        {
+          type: 'doc',
+          id: 'features/query-xray',
+          label: 'Query X-Ray ᵉˣᵖ',
+          className: 'sidebar-experimental',
+        },
         'features/system-map',
         'features/grafana',
       ],

@@ -268,6 +268,23 @@ html:not([data-theme]) {
   color: #9a7b0a;
 }
 
+/* Sidebar: experimental badge */
+li.sidebar-experimental .menu__link::after {
+  content: 'alpha';
+  display: inline-block;
+  margin-left: 0.4rem;
+  font-size: 0.55rem;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  color: #f0883e;
+  border: 1px solid #f0883e;
+  border-radius: 3px;
+  padding: 0 0.25rem;
+  vertical-align: middle;
+  line-height: 1.4;
+}
+
 /* GitHub navbar icon */
 .header-github-link::before {
   content: '';

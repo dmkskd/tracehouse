@@ -1,0 +1,83 @@
+import FeatureVideo from '@site/src/components/FeatureVideo';
+
+# Query X-Ray
+
+:::caution Experimental
+This feature is experimental and under active development. To enable it, open the **Settings** popover (gear icon in the top bar) and check **Experimental Features**. It requires `processes_history` (see below).
+:::
+
+<FeatureVideo src="query-xray-1920.mp4" />
+
+See what a query is doing at every second of its execution. X-Ray uses per-second snapshots of `system.processes` to reconstruct how a query consumed CPU, memory, I/O, and network over time, making it easy to spot the exact moment a query hit a bottleneck.
+
+## What You See
+
+X-Ray renders the query as a corridor shape that changes over time. The width of the corridor at any point represents CPU cores in use, and the height represents memory consumption. A wide, tall corridor means the query was using many cores and a lot of memory at that moment. A narrow, short section means it was idle or doing lightweight work.
+
+As you move along the timeline you can see the corridor expand when the query ramps up (e.g. parallel aggregation across many threads) and contract when it winds down (e.g. sending results to the client).
+
+Inside the corridor, trace lines show additional resource dimensions:
+
+- **I/O wait**: Time spent waiting for disk
+- **Read throughput**: Data read rate
+- **Network traffic**: Bytes sent and received
+
+Hovering over any point shows the exact values at that second: CPU cores, memory in MB, rows read, bytes read, and I/O breakdown.
+
+## Timeline Scrubber
+
+The scrubber at the bottom of the X-Ray view lets you move through a query's execution. Use arrow keys or click anywhere on the timeline to jump to a specific moment. Two modes are available:
+
+- **Time mode**: Each step is one second of wall-clock time. At every position you see the resource deltas for that second: how many CPU cores were active, how much memory changed, how many rows were read, and how much I/O was performed. This is useful for finding the exact second where a spike occurred.
+
+- **Logs mode**: Steps align to `text_log` events for the query. Instead of stepping through uniform time intervals, you step through what ClickHouse was actually doing: reading marks, executing aggregation, sorting, sending data. Each log event is positioned on the timeline at the second it occurred, so you can see which internal operation corresponds to which resource spike.
+
+## Use Cases
+
+- **Bottleneck identification**: See whether a query is CPU-bound, memory-bound, or I/O-bound at each second of execution
+- **Memory spike analysis**: Spot the exact moment memory usage jumped and correlate with the operation in progress
+- **I/O vs CPU correlation**: Understand whether CPU time is spent computing or waiting for I/O
+- **Query comparison**: Compare the resource profiles of multiple queries side by side in the comparison panel
+
+## Query History Timeline
+
+The same `processes_history` data is also used by the **Timeline** tab in the query comparison panel. When you select multiple executions of the same query (from Query History or Similar Queries), the timeline view overlays their resource profiles on the same chart so you can see how performance changed across executions, for example whether a query got slower after a schema change or a config tweak.
+
+## processes_history
+
+X-Ray is built on top of `tracehouse.processes_history`, a table that stores per-second snapshots of `system.processes`. While ClickHouse's built-in `system.query_log` only records a final summary after a query finishes, `processes_history` captures resource usage *while the query is still running*, giving you a time series of CPU, memory, I/O, and network for every second of execution.
+
+:::danger tracehouse writes to ClickHouse
+Unlike every other tracehouse feature (which only reads from system tables), `processes_history` creates a `tracehouse` database and **continuously writes data** into it via a refreshable materialized view. Make sure you understand the write footprint before enabling this on production clusters.
+:::
+
+### Setup
+
+Tracehouse needs a `tracehouse.processes_history` table it can read from. How you populate it is up to you. We provide a setup script as a reference implementation, but you're free to adapt the approach to your cluster topology and preferences. This is an alpha-level feature.
+
+The provided script uses a refreshable materialized view that snapshots `system.processes` every N seconds into a MergeTree table via a Buffer:
+
+:::warning Alpha
+Not recommended for production use. The schema, sampling approach, and storage engine choices may change in future releases. Expect breaking changes.
+:::
+
+```bash
+./infra/scripts/setup_processes_sampling.sh
+```
+
+It auto-detects single-node vs cluster topology and handles ON CLUSTER DDL and Distributed tables accordingly. Use `--dry-run` to preview the generated SQL before executing.
+
+Key options:
+
+```bash
+# Preview the generated SQL without executing
+./infra/scripts/setup_processes_sampling.sh --dry-run
+
+# Custom host and credentials
+./infra/scripts/setup_processes_sampling.sh --host my-ch-node --user admin --password secret
+
+# Custom sampling interval (default: 1s) and retention (default: 7 days)
+./infra/scripts/setup_processes_sampling.sh --interval 5 --ttl 14
+```
+
+See `./infra/scripts/setup_processes_sampling.sh --help` for all options.
