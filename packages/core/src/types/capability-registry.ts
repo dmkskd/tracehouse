@@ -26,6 +26,8 @@ export interface CapabilityRegistryEntry {
   capabilityId: string;
   /** Components/screens that depend on this capability */
   consumers: CapabilityConsumer[];
+  /** Whether this capability (and all its consumers) is experimental */
+  experimental?: boolean;
 }
 
 /**
@@ -138,8 +140,10 @@ export const CAPABILITY_REGISTRY: CapabilityRegistryEntry[] = [
   },
   {
     capabilityId: 'tracehouse_processes_history',
+    experimental: true,
     consumers: [
       { screen: 'Query Resource Timeline', tab: 'Queries', enables: 'Second-by-second CPU, memory, and I/O timeline for individual queries', importance: 'required' },
+      { screen: 'Timeline Comparison', tab: 'Queries', enables: 'Overlaid time-series charts when comparing 2+ queries in History tab', importance: 'required' },
       { screen: '3D Surface View', tab: 'Analytics', enables: 'Time × resource 3D surface visualization across queries', importance: 'required' },
     ],
   },
@@ -149,6 +153,15 @@ export const CAPABILITY_REGISTRY: CapabilityRegistryEntry[] = [
 export function getConsumersForCapability(capabilityId: string): CapabilityConsumer[] {
   return CAPABILITY_REGISTRY.find(e => e.capabilityId === capabilityId)?.consumers ?? [];
 }
+
+/** Check if a capability is marked as experimental */
+export function isCapabilityExperimental(capabilityId: string): boolean {
+  return CAPABILITY_REGISTRY.find(e => e.capabilityId === capabilityId)?.experimental ?? false;
+}
+
+/** IDs of all capabilities marked as experimental */
+export const EXPERIMENTAL_CAPABILITY_IDS: string[] =
+  CAPABILITY_REGISTRY.filter(e => e.experimental).map(e => e.capabilityId);
 
 export interface ScreenCapabilitySummary {
   screen: string;

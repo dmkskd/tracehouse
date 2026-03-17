@@ -120,11 +120,16 @@ describe('PROCESS_SAMPLES_SQL integration (delta calculations)', () => {
     return raw.map(mapProcessSampleRow);
   }
 
-  /** Helper to build a sequence of sample rows with increasing cumulative values. */
+  /**
+   * Helper to build a sequence of sample rows with increasing cumulative values.
+   * `intervalMs` controls the spacing between samples (default 1000ms).
+   * Rate params (cpuPerSec, etc.) are always per-second regardless of interval.
+   */
   function makeSamples(opts: {
     count: number;
     startTime?: string;
     qid?: string;
+    intervalMs?: number;
     cpuPerSec?: number;
     ioWaitPerSec?: number;
     readBytesPerSec?: number;
@@ -140,6 +145,7 @@ describe('PROCESS_SAMPLES_SQL integration (delta calculations)', () => {
       count,
       startTime = '2025-06-01 12:00:00.000',
       qid = TEST_QID,
+      intervalMs = 1000,
       cpuPerSec = 0,
       ioWaitPerSec = 0,
       readBytesPerSec = 0,
@@ -153,28 +159,30 @@ describe('PROCESS_SAMPLES_SQL integration (delta calculations)', () => {
     } = opts;
 
     const base = new Date(startTime.replace(' ', 'T') + 'Z');
+    const intervalSec = intervalMs / 1000;
     const rows: SampleRow[] = [];
 
     for (let i = 0; i < count; i++) {
-      const ts = new Date(base.getTime() + i * 1000);
+      const ts = new Date(base.getTime() + i * intervalMs);
       const timeStr = ts.toISOString().replace('T', ' ').replace('Z', '');
+      const elapsedSec = i * intervalSec;
 
       rows.push({
         sample_time: timeStr,
         query_id: qid,
         initial_query_id: qid,
-        elapsed: i,
+        elapsed: elapsedSec,
         memory_usage: memoryUsage,
         peak_memory_usage: peakMemoryUsage,
-        read_rows: readRowsPerSec * i,
-        read_bytes: readBytesPerSec * i,
-        written_rows: writtenRowsPerSec * i,
+        read_rows: Math.round(readRowsPerSec * elapsedSec),
+        read_bytes: Math.round(readBytesPerSec * elapsedSec),
+        written_rows: Math.round(writtenRowsPerSec * elapsedSec),
         thread_ids: Array.from({ length: threadsPerSample }, (_, t) => t + 1),
         profile_events: {
-          OSCPUVirtualTimeMicroseconds: cpuPerSec * i,
-          OSCPUWaitMicroseconds: ioWaitPerSec * i,
-          NetworkSendBytes: netSendPerSec * i,
-          NetworkReceiveBytes: netRecvPerSec * i,
+          OSCPUVirtualTimeMicroseconds: Math.round(cpuPerSec * elapsedSec),
+          OSCPUWaitMicroseconds: Math.round(ioWaitPerSec * elapsedSec),
+          NetworkSendBytes: Math.round(netSendPerSec * elapsedSec),
+          NetworkReceiveBytes: Math.round(netRecvPerSec * elapsedSec),
         },
       });
     }
@@ -270,13 +278,13 @@ describe('PROCESS_SAMPLES_SQL integration (delta calculations)', () => {
   // -----------------------------------------------------------------------
 
   describe('CPU delta (d_cpu_cores)', () => {
-    it('computes per-interval CPU cores correctly', async () => {
+    it('computes per-second CPU cores correctly (1s interval)', async () => {
       // 2_000_000 µs per second = 2 cores worth of CPU time
       const results = await seedAndQuery(makeSamples({ count: 4, cpuPerSec: 2_000_000 }));
 
-      // i=0: cpu=0, lag default=0, delta=0
+      // i=0: first sample, lag defaults to self → delta=0
       expect(results[0].d_cpu_cores).toBeCloseTo(0, 5);
-      // i=1: cpu=2M, prev=0, delta=2M/1e6=2
+      // i=1+: dt=1s, raw_delta=2M µs, d_cpu = 2M/1e6/1 = 2 cores
       expect(results[1].d_cpu_cores).toBeCloseTo(2, 5);
       expect(results[2].d_cpu_cores).toBeCloseTo(2, 5);
       expect(results[3].d_cpu_cores).toBeCloseTo(2, 5);
@@ -344,6 +352,17 @@ describe('PROCESS_SAMPLES_SQL integration (delta calculations)', () => {
           sample_time: '2025-06-01 12:00:00.000',
           query_id: TEST_QID, initial_query_id: TEST_QID,
           elapsed: 0, memory_usage: 0, peak_memory_usage: 0,
+          read_rows: 0, read_bytes: 0, written_rows: 0,
+          thread_ids: [1],
+          profile_events: {
+            OSCPUVirtualTimeMicroseconds: 0, OSCPUWaitMicroseconds: 0,
+            NetworkSendBytes: 0, NetworkReceiveBytes: 0,
+          },
+        },
+        {
+          sample_time: '2025-06-01 12:00:01.000',
+          query_id: TEST_QID, initial_query_id: TEST_QID,
+          elapsed: 1, memory_usage: 0, peak_memory_usage: 0,
           read_rows: 1000, read_bytes: 1_048_576, written_rows: 500,
           thread_ids: [1],
           profile_events: {
@@ -352,9 +371,10 @@ describe('PROCESS_SAMPLES_SQL integration (delta calculations)', () => {
           },
         },
         {
-          sample_time: '2025-06-01 12:00:01.000',
+          // counters decrease — simulate counter reset
+          sample_time: '2025-06-01 12:00:02.000',
           query_id: TEST_QID, initial_query_id: TEST_QID,
-          elapsed: 1, memory_usage: 0, peak_memory_usage: 0,
+          elapsed: 2, memory_usage: 0, peak_memory_usage: 0,
           read_rows: 500, read_bytes: 524_288, written_rows: 200,
           thread_ids: [1],
           profile_events: {
@@ -365,15 +385,16 @@ describe('PROCESS_SAMPLES_SQL integration (delta calculations)', () => {
       ];
 
       const results = await seedAndQuery(rows);
-      expect(results).toHaveLength(2);
+      expect(results).toHaveLength(3);
 
-      expect(results[1].d_cpu_cores).toBe(0);
-      expect(results[1].d_io_wait_s).toBe(0);
-      expect(results[1].d_read_mb).toBe(0);
-      expect(results[1].d_read_rows).toBe(0);
-      expect(results[1].d_written_rows).toBe(0);
-      expect(results[1].d_net_send_kb).toBe(0);
-      expect(results[1].d_net_recv_kb).toBe(0);
+      // Third sample has lower counters than second → clamped to 0
+      expect(results[2].d_cpu_cores).toBe(0);
+      expect(results[2].d_io_wait_s).toBe(0);
+      expect(results[2].d_read_mb).toBe(0);
+      expect(results[2].d_read_rows).toBe(0);
+      expect(results[2].d_written_rows).toBe(0);
+      expect(results[2].d_net_send_kb).toBe(0);
+      expect(results[2].d_net_recv_kb).toBe(0);
     });
   });
 
@@ -382,7 +403,7 @@ describe('PROCESS_SAMPLES_SQL integration (delta calculations)', () => {
   // -----------------------------------------------------------------------
 
   describe('single sample', () => {
-    it('returns one row with t=0 and all deltas based on lag default of 0', async () => {
+    it('returns one row with t=0 and all deltas = 0 (first sample has no previous)', async () => {
       const rows: SampleRow[] = [{
         sample_time: '2025-06-01 12:00:00.000',
         query_id: TEST_QID, initial_query_id: TEST_QID,
@@ -408,14 +429,14 @@ describe('PROCESS_SAMPLES_SQL integration (delta calculations)', () => {
       expect(r.read_bytes).toBe(10_485_760);
       expect(r.cpu_us).toBe(3_000_000);
 
-      // lag default is 0, so delta = current value (clamped ≥ 0)
-      expect(r.d_cpu_cores).toBeCloseTo(3, 5);
-      expect(r.d_io_wait_s).toBeCloseTo(0.5, 5);
-      expect(r.d_read_mb).toBeCloseTo(10, 1);
-      expect(r.d_read_rows).toBe(10000);
-      expect(r.d_written_rows).toBe(100);
-      expect(r.d_net_send_kb).toBeCloseTo(50, 1);
-      expect(r.d_net_recv_kb).toBeCloseTo(100, 1);
+      // lag defaults to self → first sample raw delta = 0
+      expect(r.d_cpu_cores).toBe(0);
+      expect(r.d_io_wait_s).toBe(0);
+      expect(r.d_read_mb).toBe(0);
+      expect(r.d_read_rows).toBe(0);
+      expect(r.d_written_rows).toBe(0);
+      expect(r.d_net_send_kb).toBe(0);
+      expect(r.d_net_recv_kb).toBe(0);
     });
   });
 
@@ -488,7 +509,7 @@ describe('PROCESS_SAMPLES_SQL integration (delta calculations)', () => {
   // -----------------------------------------------------------------------
 
   describe('non-uniform intervals', () => {
-    it('computes deltas correctly regardless of time gaps', async () => {
+    it('normalizes deltas by dt so rates are per-second', async () => {
       const rows: SampleRow[] = [
         {
           sample_time: '2025-06-01 14:00:00.000',
@@ -507,6 +528,7 @@ describe('PROCESS_SAMPLES_SQL integration (delta calculations)', () => {
           profile_events: { OSCPUVirtualTimeMicroseconds: 2_000_000, OSCPUWaitMicroseconds: 0, NetworkSendBytes: 0, NetworkReceiveBytes: 0 },
         },
         {
+          // 4-second gap: raw CPU delta = 8M µs, dt = 4s → 2 cores/s
           sample_time: '2025-06-01 14:00:05.000',
           query_id: TEST_QID, initial_query_id: TEST_QID,
           elapsed: 5, memory_usage: 0, peak_memory_usage: 0,
@@ -523,11 +545,54 @@ describe('PROCESS_SAMPLES_SQL integration (delta calculations)', () => {
       expect(results[1].t).toBeCloseTo(1, 1);
       expect(results[2].t).toBeCloseTo(5, 1);
 
+      // dt=1s: raw=2M µs → 2M/1e6/1 = 2 cores
       expect(results[1].d_cpu_cores).toBeCloseTo(2, 5);
-      expect(results[2].d_cpu_cores).toBeCloseTo(8, 5); // (10M - 2M) / 1e6
+      // dt=4s: raw=8M µs → 8M/1e6/4 = 2 cores (normalized rate, not raw delta)
+      expect(results[2].d_cpu_cores).toBeCloseTo(2, 5);
 
-      expect(results[1].d_read_rows).toBe(1000);
-      expect(results[2].d_read_rows).toBe(8000);
+      // dt=1s: 1000 rows/1s = 1000 rows/s
+      expect(results[1].d_read_rows).toBeCloseTo(1000, 0);
+      // dt=4s: 8000 rows/4s = 2000 rows/s
+      expect(results[2].d_read_rows).toBeCloseTo(2000, 0);
+    });
+  });
+
+  // -----------------------------------------------------------------------
+  // Variable sampling intervals
+  // -----------------------------------------------------------------------
+
+  describe('variable sampling intervals', () => {
+    it('produces correct rates with 500ms interval', async () => {
+      // 2 CPU cores at 500ms intervals
+      const results = await seedAndQuery(makeSamples({
+        count: 4, intervalMs: 500, cpuPerSec: 2_000_000,
+        readBytesPerSec: 10 * 1024 * 1024,
+      }));
+
+      expect(results[0].d_cpu_cores).toBeCloseTo(0, 5); // first sample
+      // dt=0.5s, raw CPU delta = 1M µs, 1M/1e6/0.5 = 2 cores
+      expect(results[1].d_cpu_cores).toBeCloseTo(2, 4);
+      expect(results[2].d_cpu_cores).toBeCloseTo(2, 4);
+      expect(results[3].d_cpu_cores).toBeCloseTo(2, 4);
+
+      // dt=0.5s, raw read = 5 MiB, 5/0.5 = 10 MB/s
+      expect(results[1].d_read_mb).toBeCloseTo(10, 0);
+    });
+
+    it('produces correct rates with 10s interval', async () => {
+      // 2 CPU cores at 10s intervals
+      const results = await seedAndQuery(makeSamples({
+        count: 4, intervalMs: 10_000, cpuPerSec: 2_000_000,
+        readRowsPerSec: 5000,
+      }));
+
+      expect(results[0].d_cpu_cores).toBeCloseTo(0, 5); // first sample
+      // dt=10s, raw CPU delta = 20M µs, 20M/1e6/10 = 2 cores
+      expect(results[1].d_cpu_cores).toBeCloseTo(2, 4);
+      expect(results[2].d_cpu_cores).toBeCloseTo(2, 4);
+
+      // dt=10s, raw rows = 50000, 50000/10 = 5000 rows/s
+      expect(results[1].d_read_rows).toBeCloseTo(5000, 0);
     });
   });
 });

@@ -157,9 +157,18 @@ export const QueryComparisonPanel: React.FC<QueryComparisonPanelProps> = ({ quer
                   fetchTimeline();
                 }
               }}
-              style={{ textTransform: 'capitalize' }}
+              style={{ textTransform: 'capitalize', position: 'relative' }}
             >
               {view}
+              {view === 'timeline' && (
+                <span style={{
+                  position: 'absolute', top: -4, right: -2,
+                  fontSize: 7, fontWeight: 700, color: '#f0883e',
+                  background: 'var(--bg-tertiary)', border: '1px solid rgba(240,136,62,0.3)',
+                  borderRadius: 3, padding: '0 3px', lineHeight: '12px',
+                  textTransform: 'uppercase', letterSpacing: '0.3px',
+                }}>exp</span>
+              )}
             </button>
           ))}
         </div>

@@ -273,13 +273,17 @@ deploy_clickhouse() {
         CH_POD=$(kubectl get pods -n clickhouse -l app=dev-cluster-clickhouse -o jsonpath='{.items[0].metadata.name}' 2>/dev/null || true)
     fi
     if [ -n "$CH_POD" ]; then
-        kubectl exec -n clickhouse "$CH_POD" -- clickhouse client --multiquery < "${SCRIPT_DIR}/../scripts/setup_read_only_user.sql" && \
+        # Detect container name (Altinity: "clickhouse", ClickHouse.com: "clickhouse-server")
+        local CH_CONTAINER
+        CH_CONTAINER=$(kubectl get pod -n clickhouse "$CH_POD" -o jsonpath='{.spec.containers[0].name}' 2>/dev/null || echo "clickhouse")
+
+        kubectl exec -n clickhouse -c "$CH_CONTAINER" "$CH_POD" -- clickhouse client --multiquery < "${SCRIPT_DIR}/../scripts/setup_read_only_user.sql" && \
             log_info "read_only user created" || \
             log_warn "read_only user setup skipped"
 
         # Enable profiling and introspection for the default user
         log_info "Configuring default profile settings..."
-        kubectl exec -n clickhouse "$CH_POD" -- clickhouse client --multiquery <<'EOF' && \
+        kubectl exec -n clickhouse -c "$CH_CONTAINER" "$CH_POD" -- clickhouse client --multiquery <<'EOF' && \
             log_info "Profile settings applied" || \
             log_warn "Profile settings skipped"
 ALTER USER default SETTINGS
@@ -292,9 +296,9 @@ EOF
 
         # Setup process sampling (auto-detects cluster topology)
         log_info "Setting up process sampling..."
-        kubectl cp "${SCRIPT_DIR}/../scripts/setup_processes_sampling.sh" "clickhouse/${CH_POD}:/tmp/setup_processes_sampling.sh"
-        local SAMPLING_ARGS="--host localhost"
-        kubectl exec -n clickhouse "$CH_POD" -- bash /tmp/setup_processes_sampling.sh $SAMPLING_ARGS && \
+        kubectl cp -c "$CH_CONTAINER" "${SCRIPT_DIR}/../scripts/setup_processes_sampling.sh" "clickhouse/${CH_POD}:/tmp/setup_processes_sampling.sh"
+        local SAMPLING_ARGS="--host localhost --yes"
+        kubectl exec -n clickhouse -c "$CH_CONTAINER" "$CH_POD" -- bash /tmp/setup_processes_sampling.sh $SAMPLING_ARGS && \
             log_info "Process sampling configured" || \
             log_warn "Process sampling setup skipped"
     fi

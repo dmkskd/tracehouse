@@ -1,6 +1,9 @@
 /**
- * SQL query and row-mapping for per-second process samples
+ * SQL query and row-mapping for process samples
  * from tracehouse.processes_history.
+ *
+ * Delta fields are normalized to per-second rates regardless of the
+ * sampling interval (e.g. 0.5s, 1s, 10s).
  *
  * Used by the frontend useProcessSamples hook and validated
  * by integration tests.
@@ -30,20 +33,20 @@ export interface ProcessSample {
   /** Cumulative network recv bytes */
   net_recv_bytes: number;
 
-  // --- Per-interval deltas (between consecutive samples) ---
-  /** CPU cores used in this interval (delta of OSCPUVirtualTimeMicroseconds / 1e6) */
+  // --- Per-second rates (deltas normalized by dt between consecutive samples) ---
+  /** CPU cores (delta µs / 1e6 / dt) */
   d_cpu_cores: number;
-  /** I/O wait seconds in this interval */
+  /** I/O wait seconds per second of wall time */
   d_io_wait_s: number;
-  /** MB read in this interval */
+  /** MB/s read throughput */
   d_read_mb: number;
-  /** Rows read in this interval */
+  /** Rows/s read */
   d_read_rows: number;
-  /** Rows written in this interval */
+  /** Rows/s written */
   d_written_rows: number;
-  /** Network send KB in this interval */
+  /** Network send KB/s */
   d_net_send_kb: number;
-  /** Network recv KB in this interval */
+  /** Network recv KB/s */
   d_net_recv_kb: number;
 }
 
@@ -66,38 +69,61 @@ export function buildProcessSamplesSQL(queryIds: string[]): string {
   const partition = multi ? 'PARTITION BY initial_query_id' : '';
   return `
 SELECT
-    ${multi ? 'initial_query_id AS query_id,' : ''}
-    toFloat64(dateDiff('millisecond', min_time, sample_time)) / 1000 AS t,
-    elapsed, thread_count,
-    memory_usage / (1024 * 1024) AS memory_mb,
-    peak_memory_usage / (1024 * 1024) AS peak_memory_mb,
+    ${multi ? 'query_id,' : ''}
+    t, elapsed, thread_count,
+    memory_mb, peak_memory_mb,
     read_rows, written_rows, read_bytes,
-    pe_cpu AS cpu_us, pe_io_wait AS io_wait_us,
-    pe_net_send AS net_send_bytes, pe_net_recv AS net_recv_bytes,
-    greatest((pe_cpu - lagInFrame(pe_cpu, 1, 0) OVER w) / 1000000, 0) AS d_cpu_cores,
-    greatest((pe_io_wait - lagInFrame(pe_io_wait, 1, 0) OVER w) / 1000000, 0) AS d_io_wait_s,
-    greatest((read_bytes - lagInFrame(read_bytes, 1, 0) OVER w) / (1024 * 1024), 0) AS d_read_mb,
-    greatest(read_rows - lagInFrame(read_rows, 1, 0) OVER w, 0) AS d_read_rows,
-    greatest(written_rows - lagInFrame(written_rows, 1, 0) OVER w, 0) AS d_written_rows,
-    greatest((pe_net_send - lagInFrame(pe_net_send, 1, 0) OVER w) / 1024, 0) AS d_net_send_kb,
-    greatest((pe_net_recv - lagInFrame(pe_net_recv, 1, 0) OVER w) / 1024, 0) AS d_net_recv_kb
+    cpu_us, io_wait_us, net_send_bytes, net_recv_bytes,
+    greatest(raw_d_cpu / dt, 0) AS d_cpu_cores,
+    greatest(raw_d_io / dt, 0) AS d_io_wait_s,
+    greatest(raw_d_read_mb / dt, 0) AS d_read_mb,
+    greatest(raw_d_read_rows / dt, 0) AS d_read_rows,
+    greatest(raw_d_written_rows / dt, 0) AS d_written_rows,
+    greatest(raw_d_net_send / dt, 0) AS d_net_send_kb,
+    greatest(raw_d_net_recv / dt, 0) AS d_net_recv_kb
 FROM (
     SELECT
-        ${multi ? 'initial_query_id,' : ''} sample_time,
-        min(sample_time) OVER (${partition}) AS min_time,
-        elapsed, memory_usage, peak_memory_usage,
-        read_bytes, read_rows, written_rows,
-        length(thread_ids) AS thread_count,
-        ProfileEvents['OSCPUVirtualTimeMicroseconds'] AS pe_cpu,
-        ProfileEvents['OSCPUWaitMicroseconds'] AS pe_io_wait,
-        ProfileEvents['NetworkSendBytes'] AS pe_net_send,
-        ProfileEvents['NetworkReceiveBytes'] AS pe_net_recv
-    FROM tracehouse.processes_history
-    WHERE ${whereClause}
-    ORDER BY ${multi ? 'initial_query_id, ' : ''}sample_time
+        ${multi ? 'initial_query_id AS query_id,' : ''}
+        toFloat64(dateDiff('millisecond', min_time, sample_time)) / 1000 AS t,
+        elapsed, length(thread_ids) AS thread_count,
+        memory_usage / (1024 * 1024) AS memory_mb,
+        peak_memory_usage / (1024 * 1024) AS peak_memory_mb,
+        read_rows, written_rows, read_bytes,
+        pe_cpu AS cpu_us, pe_io_wait AS io_wait_us,
+        pe_net_send AS net_send_bytes, pe_net_recv AS net_recv_bytes,
+        -- dt: seconds since previous sample (floor 0.1s to prevent div-by-zero)
+        greatest(
+            toFloat64(dateDiff('millisecond',
+                lagInFrame(sample_time, 1, sample_time) OVER w,
+                sample_time
+            )) / 1000,
+            0.1
+        ) AS dt,
+        -- raw deltas (lag defaults to self so first sample = 0)
+        (pe_cpu - lagInFrame(pe_cpu, 1, pe_cpu) OVER w) / 1000000 AS raw_d_cpu,
+        (pe_io_wait - lagInFrame(pe_io_wait, 1, pe_io_wait) OVER w) / 1000000 AS raw_d_io,
+        (read_bytes - lagInFrame(read_bytes, 1, read_bytes) OVER w) / (1024 * 1024) AS raw_d_read_mb,
+        toFloat64(read_rows - lagInFrame(read_rows, 1, read_rows) OVER w) AS raw_d_read_rows,
+        toFloat64(written_rows - lagInFrame(written_rows, 1, written_rows) OVER w) AS raw_d_written_rows,
+        (pe_net_send - lagInFrame(pe_net_send, 1, pe_net_send) OVER w) / 1024 AS raw_d_net_send,
+        (pe_net_recv - lagInFrame(pe_net_recv, 1, pe_net_recv) OVER w) / 1024 AS raw_d_net_recv
+    FROM (
+        SELECT
+            ${multi ? 'initial_query_id,' : ''} sample_time,
+            min(sample_time) OVER (${partition}) AS min_time,
+            elapsed, memory_usage, peak_memory_usage,
+            read_bytes, read_rows, written_rows, thread_ids,
+            ProfileEvents['OSCPUVirtualTimeMicroseconds'] AS pe_cpu,
+            ProfileEvents['OSCPUWaitMicroseconds'] AS pe_io_wait,
+            ProfileEvents['NetworkSendBytes'] AS pe_net_send,
+            ProfileEvents['NetworkReceiveBytes'] AS pe_net_recv
+        FROM tracehouse.processes_history
+        WHERE ${whereClause}
+        ORDER BY ${multi ? 'initial_query_id, ' : ''}sample_time
+    )
+    WINDOW w AS (${partition} ORDER BY sample_time)
 )
-WINDOW w AS (${partition} ORDER BY sample_time)
-ORDER BY ${multi ? 'query_id, ' : ''}sample_time
+ORDER BY ${multi ? 'query_id, ' : ''}t
 `;
 }
 
@@ -225,12 +251,17 @@ export function buildTimelineChartData(
   }
   const sortedTimes = Array.from(allTimes).sort((a, b) => a - b);
 
+  // Adaptive match tolerance based on actual sample spacing
+  const tolerance = sortedTimes.length >= 2
+    ? (sortedTimes[sortedTimes.length - 1] - sortedTimes[0]) / (sortedTimes.length - 1) * 0.6
+    : 0.6;
+
   // Build chart points
   const points: TimelineChartPoint[] = sortedTimes.map(t => {
     const point: TimelineChartPoint = { t };
     queryIds.forEach((qid, idx) => {
       const qSamples = perQuery.get(qid);
-      const match = qSamples?.find(s => Math.abs(Math.round(s.t * 10) / 10 - t) < 0.6);
+      const match = qSamples?.find(s => Math.abs(Math.round(s.t * 10) / 10 - t) < tolerance);
       for (const metric of metrics) {
         for (const line of metric.lines) {
           point[`${line.key}_${idx}`] = match ? Number(match[line.key]) : null;

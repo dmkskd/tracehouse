@@ -57,7 +57,7 @@ function mapMem(v: number, maxMem: number): number {
 const fmtMB = (mb: number) =>
   mb < 1024 ? `${mb.toFixed(0)} MB` : `${(mb / 1024).toFixed(1)} GB`;
 
-/** Simple moving average to smooth jagged 1-second samples */
+/** Simple moving average to smooth jagged samples */
 function smooth(values: number[], window = 3): number[] {
   const half = Math.floor(window / 2);
   return values.map((_, i) => {
@@ -617,7 +617,7 @@ const XRayScene: React.FC<XRaySceneProps> = ({ samples, highlightTime, highlight
   const maxCpu = useMemo(() => Math.max(...samples.map(s => s.d_cpu_cores), 1), [samples]);
   const maxMem = useMemo(() => Math.max(...samples.map(s => s.memory_mb), 1), [samples]);
 
-  // Smooth CPU and memory for corridor shape — removes 1-second jitter
+  // Smooth CPU and memory for corridor shape — removes sample-to-sample jitter
   const smoothCpu = useMemo(() => smooth(samples.map(s => s.d_cpu_cores), 5), [samples]);
   const smoothMem = useMemo(() => smooth(samples.map(s => s.memory_mb), 5), [samples]);
 
@@ -1079,7 +1079,7 @@ export const QueryXRay3D: React.FC<QueryXRay3DProps> = ({
             No Process Samples
           </div>
           <div style={{ fontSize: 12, color: 'var(--text-muted)', lineHeight: 1.6 }}>
-            This query ran too fast for the 1-second sampler to capture data,
+            This query ran too fast for the process sampler to capture data,
             or the sampler wasn't active when this query executed.
           </div>
         </div>

@@ -342,7 +342,7 @@ export class MonitoringCapabilitiesService {
       category: 'profiling',
       detail: hasProcessesHistory
         ? `${processesInfo!.engine} · ${formatRowCount(processesInfo!.totalRows)} rows`
-        : 'Not installed — run infra/scripts/setup_processes_sampling.sql',
+        : 'Not installed — run infra/scripts/setup_processes_sampling.sh',
       source: 'tracehouse.processes_history',
     });
 
@@ -465,7 +465,7 @@ export class MonitoringCapabilitiesService {
   }
 
   /**
-   * Check if tracehouse.processes_history exists (created by setup_processes_sampling.sql).
+   * Check if tracehouse.processes_history exists (created by setup_processes_sampling.sh).
    * Uses system.tables directly (not cluster-aware) since the table is local per node.
    */
   private async probeTracehouseProcessesHistory(): Promise<Map<string, { engine: string; totalRows: number; totalBytes: number }>> {

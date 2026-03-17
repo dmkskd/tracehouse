@@ -35,11 +35,11 @@ spec:
       text_log/table: text_log
       text_log/flush_interval_milliseconds: "7500"
       text_log/level: debug
-      text_log/ttl: "event_date + INTERVAL 3 DAY"
+      text_log/engine: "ENGINE = MergeTree PARTITION BY toYYYYMM(event_date) ORDER BY (event_date, event_time) TTL event_date + INTERVAL 3 DAY"
       trace_log/database: system
       trace_log/table: trace_log
       trace_log/flush_interval_milliseconds: "7500"
-      trace_log/ttl: "event_date + INTERVAL 3 DAY"
+      trace_log/engine: "ENGINE = MergeTree PARTITION BY toYYYYMM(event_date) ORDER BY (event_date, event_time) TTL event_date + INTERVAL 3 DAY"
       metric_log/database: system
       metric_log/table: metric_log
       metric_log/collect_interval_milliseconds: "1000"

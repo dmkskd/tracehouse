@@ -2500,7 +2500,7 @@ export const QueryDetailModal: React.FC<TimelineQueryModalProps> = ({
   const fmtUs = (us: number) => us < 1000 ? `${us}µs` : us < 1000000 ? `${(us / 1000).toFixed(1)}ms` : `${(us / 1000000).toFixed(2)}s`;
   const fmtTime = (ts: string) => new Date(ts).toLocaleString();
 
-  const tabs: { key: QueryModalTab; label: string; unavailable?: boolean; reason?: string }[] = [
+  const tabs: { key: QueryModalTab; label: string; unavailable?: boolean; reason?: string; experimental?: boolean }[] = [
     { key: 'overview', label: 'Overview' },
     { key: 'details', label: 'Details' },
     { key: 'analytics', label: 'Analytics' },
@@ -2516,7 +2516,7 @@ export const QueryDetailModal: React.FC<TimelineQueryModalProps> = ({
 
   if (experimentalEnabled) {
     tabs.push(
-      { key: 'xray', label: 'X-Ray', unavailable: !hasProcessesHistory, reason: 'tracehouse.processes_history' },
+      { key: 'xray', label: 'X-Ray', unavailable: !hasProcessesHistory, reason: 'tracehouse.processes_history', experimental: true },
     );
   }
   tabs.push(
@@ -2624,7 +2624,7 @@ export const QueryDetailModal: React.FC<TimelineQueryModalProps> = ({
                 }}
               >
                 {tab.label}
-                {tab.key === 'xray' && (
+                {tab.experimental && (
                   <span style={{
                     position: 'absolute', top: -4, right: -2,
                     fontSize: 7, fontWeight: 700, color: '#f0883e',
