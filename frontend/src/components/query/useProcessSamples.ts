@@ -9,7 +9,7 @@
 import { useState, useCallback } from 'react';
 import { useClickHouseServices } from '../../providers/ClickHouseProvider';
 import {
-  PROCESS_SAMPLES_SQL,
+  buildProcessSamplesSQL,
   mapProcessSampleRow,
   type ProcessSample,
 } from '@tracehouse/core';
@@ -34,7 +34,7 @@ export function useProcessSamples(queryId: string | undefined): ProcessSamplesRe
     setIsLoading(true);
     setError(null);
     try {
-      const sql = PROCESS_SAMPLES_SQL.replace(/\{qid:String\}/g, `'${queryId.replace(/'/g, "''")}'`);
+      const sql = buildProcessSamplesSQL([queryId]);
       const rows = await services.adapter.executeQuery<Record<string, unknown>>(sql);
       setSamples(rows.map(mapProcessSampleRow));
     } catch (e) {

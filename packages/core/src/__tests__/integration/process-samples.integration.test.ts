@@ -9,7 +9,7 @@
 
 import { describe, it, expect, beforeAll, afterAll, beforeEach } from 'vitest';
 import { startClickHouse, stopClickHouse, type TestClickHouseContext } from './setup/clickhouse-container.js';
-import { PROCESS_SAMPLES_SQL, mapProcessSampleRow, type ProcessSample } from '../../queries/process-queries.js';
+import { buildProcessSamplesSQL, mapProcessSampleRow, type ProcessSample } from '../../queries/process-queries.js';
 
 const CONTAINER_TIMEOUT = 120_000;
 
@@ -113,8 +113,7 @@ describe('PROCESS_SAMPLES_SQL integration (delta calculations)', () => {
     });
 
     const result = await ctx.client.query({
-      query: PROCESS_SAMPLES_SQL,
-      query_params: { qid },
+      query: buildProcessSamplesSQL([qid]),
       format: 'JSONEachRow',
     });
     const raw = await result.json<Record<string, unknown>>();
@@ -439,8 +438,7 @@ describe('PROCESS_SAMPLES_SQL integration (delta calculations)', () => {
       });
 
       const result = await ctx.client.query({
-        query: PROCESS_SAMPLES_SQL,
-        query_params: { qid: 'query-A' },
+        query: buildProcessSamplesSQL(['query-A']),
         format: 'JSONEachRow',
       });
       const results = (await result.json<Record<string, unknown>>()).map(mapProcessSampleRow);
@@ -476,8 +474,7 @@ describe('PROCESS_SAMPLES_SQL integration (delta calculations)', () => {
       });
 
       const result = await ctx.client.query({
-        query: PROCESS_SAMPLES_SQL,
-        query_params: { qid: 'parent-Q' },
+        query: buildProcessSamplesSQL(['parent-Q']),
         format: 'JSONEachRow',
       });
       const results = (await result.json<Record<string, unknown>>()).map(mapProcessSampleRow);

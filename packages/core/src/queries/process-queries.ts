@@ -50,79 +50,70 @@ export interface ProcessSample {
 // ── SQL ──
 
 /**
- * Query that returns both cumulative and per-interval delta values
- * for a given query_id (or initial_query_id for distributed sub-queries).
+ * Build SQL to fetch process samples for one or more query IDs.
+ * For multiple IDs, rows are tagged with query_id and window functions
+ * are partitioned per query so each query's time is relative to its own start.
  *
- * Placeholder: {qid:String} — the query ID to filter on.
+ * Single-query mode: pass one ID, returns ProcessSample rows.
+ * Multi-query mode: pass N IDs, returns TaggedProcessSample rows (with query_id column).
  */
-export const PROCESS_SAMPLES_SQL = `
+export function buildProcessSamplesSQL(queryIds: string[]): string {
+  const multi = queryIds.length > 1;
+  const escaped = queryIds.map(id => `'${id.replace(/'/g, "''")}'`);
+  const whereClause = multi
+    ? `query_id IN (${escaped.join(', ')}) OR initial_query_id IN (${escaped.join(', ')})`
+    : `query_id = ${escaped[0]} OR initial_query_id = ${escaped[0]}`;
+  const partition = multi ? 'PARTITION BY initial_query_id' : '';
+  return `
 SELECT
+    ${multi ? 'initial_query_id AS query_id,' : ''}
     toFloat64(dateDiff('millisecond', min_time, sample_time)) / 1000 AS t,
-    elapsed,
-    thread_count,
-
-    -- cumulative
+    elapsed, thread_count,
     memory_usage / (1024 * 1024) AS memory_mb,
     peak_memory_usage / (1024 * 1024) AS peak_memory_mb,
-    read_rows,
-    written_rows,
-    read_bytes,
-    pe_cpu AS cpu_us,
-    pe_io_wait AS io_wait_us,
-    pe_net_send AS net_send_bytes,
-    pe_net_recv AS net_recv_bytes,
-
-    -- per-interval deltas
-    greatest(
-      (pe_cpu - lagInFrame(pe_cpu, 1, 0) OVER (ORDER BY sample_time)) / 1000000,
-      0
-    ) AS d_cpu_cores,
-    greatest(
-      (pe_io_wait - lagInFrame(pe_io_wait, 1, 0) OVER (ORDER BY sample_time)) / 1000000,
-      0
-    ) AS d_io_wait_s,
-    greatest(
-      (read_bytes - lagInFrame(read_bytes, 1, 0) OVER (ORDER BY sample_time)) / (1024 * 1024),
-      0
-    ) AS d_read_mb,
-    greatest(
-      read_rows - lagInFrame(read_rows, 1, 0) OVER (ORDER BY sample_time),
-      0
-    ) AS d_read_rows,
-    greatest(
-      written_rows - lagInFrame(written_rows, 1, 0) OVER (ORDER BY sample_time),
-      0
-    ) AS d_written_rows,
-    greatest(
-      (pe_net_send - lagInFrame(pe_net_send, 1, 0) OVER (ORDER BY sample_time)) / 1024,
-      0
-    ) AS d_net_send_kb,
-    greatest(
-      (pe_net_recv - lagInFrame(pe_net_recv, 1, 0) OVER (ORDER BY sample_time)) / 1024,
-      0
-    ) AS d_net_recv_kb
+    read_rows, written_rows, read_bytes,
+    pe_cpu AS cpu_us, pe_io_wait AS io_wait_us,
+    pe_net_send AS net_send_bytes, pe_net_recv AS net_recv_bytes,
+    greatest((pe_cpu - lagInFrame(pe_cpu, 1, 0) OVER w) / 1000000, 0) AS d_cpu_cores,
+    greatest((pe_io_wait - lagInFrame(pe_io_wait, 1, 0) OVER w) / 1000000, 0) AS d_io_wait_s,
+    greatest((read_bytes - lagInFrame(read_bytes, 1, 0) OVER w) / (1024 * 1024), 0) AS d_read_mb,
+    greatest(read_rows - lagInFrame(read_rows, 1, 0) OVER w, 0) AS d_read_rows,
+    greatest(written_rows - lagInFrame(written_rows, 1, 0) OVER w, 0) AS d_written_rows,
+    greatest((pe_net_send - lagInFrame(pe_net_send, 1, 0) OVER w) / 1024, 0) AS d_net_send_kb,
+    greatest((pe_net_recv - lagInFrame(pe_net_recv, 1, 0) OVER w) / 1024, 0) AS d_net_recv_kb
 FROM (
     SELECT
-        sample_time,
-        min(sample_time) OVER () AS min_time,
-        elapsed,
-        memory_usage,
-        peak_memory_usage,
-        read_bytes,
-        read_rows,
-        written_rows,
+        ${multi ? 'initial_query_id,' : ''} sample_time,
+        min(sample_time) OVER (${partition}) AS min_time,
+        elapsed, memory_usage, peak_memory_usage,
+        read_bytes, read_rows, written_rows,
         length(thread_ids) AS thread_count,
         ProfileEvents['OSCPUVirtualTimeMicroseconds'] AS pe_cpu,
         ProfileEvents['OSCPUWaitMicroseconds'] AS pe_io_wait,
         ProfileEvents['NetworkSendBytes'] AS pe_net_send,
         ProfileEvents['NetworkReceiveBytes'] AS pe_net_recv
     FROM tracehouse.processes_history
-    WHERE query_id = {qid:String}
-       OR initial_query_id = {qid:String}
-    ORDER BY sample_time
+    WHERE ${whereClause}
+    ORDER BY ${multi ? 'initial_query_id, ' : ''}sample_time
 )
-ORDER BY sample_time
+WINDOW w AS (${partition} ORDER BY sample_time)
+ORDER BY ${multi ? 'query_id, ' : ''}sample_time
 `;
+}
+
+/** @deprecated Use buildProcessSamplesSQL([queryId]) instead */
+export const PROCESS_SAMPLES_SQL = '/* use buildProcessSamplesSQL */';
+
+export interface TaggedProcessSample extends ProcessSample {
+  query_id: string;
+}
+
+export function mapTaggedProcessSampleRow(r: Record<string, unknown>): TaggedProcessSample {
+  return {
+    query_id: String(r.query_id || ''),
+    ...mapProcessSampleRow(r),
+  };
+}
 
 // ── Row mapping ──
 
@@ -153,4 +144,113 @@ export function mapProcessSampleRow(r: Record<string, unknown>): ProcessSample {
     d_net_send_kb: Number(r.d_net_send_kb) || 0,
     d_net_recv_kb: Number(r.d_net_recv_kb) || 0,
   };
+}
+
+// ── Timeline comparison data builder ──
+
+export interface TimelineMetricLine {
+  key: keyof ProcessSample;
+  suffix: string;         // appended to line label, e.g. " send"
+  strokeDasharray?: string; // dashed for secondary lines
+}
+
+export interface TimelineMetric {
+  /** Chart ID — used as key for the chart container */
+  id: string;
+  label: string;
+  unit: string;
+  formatter: (v: number) => string;
+  /** One or more data lines to draw on this chart */
+  lines: TimelineMetricLine[];
+}
+
+export const TIMELINE_METRICS: TimelineMetric[] = [
+  { id: 'd_cpu_cores', label: 'CPU Cores', unit: 'cores', formatter: v => `${v.toFixed(2)} cores`,
+    lines: [{ key: 'd_cpu_cores', suffix: '' }] },
+  { id: 'memory_mb', label: 'Memory', unit: 'MB', formatter: v => `${v.toFixed(1)} MB`,
+    lines: [{ key: 'memory_mb', suffix: '' }] },
+  { id: 'd_read_mb', label: 'Read Throughput', unit: 'MB/s', formatter: v => `${v.toFixed(2)} MB/s`,
+    lines: [{ key: 'd_read_mb', suffix: '' }] },
+  { id: 'd_io_wait_s', label: 'I/O Wait', unit: 's', formatter: v => `${v.toFixed(3)} s`,
+    lines: [{ key: 'd_io_wait_s', suffix: '' }] },
+  { id: 'network', label: 'Network', unit: 'KB/s', formatter: v => `${v.toFixed(1)} KB/s`,
+    lines: [
+      { key: 'd_net_send_kb', suffix: ' send' },
+      { key: 'd_net_recv_kb', suffix: ' recv', strokeDasharray: '4 2' },
+    ] },
+];
+
+export interface TimelineChartPoint {
+  t: number;
+  [metricQueryKey: string]: number | null;
+}
+
+export interface TimelineChartData {
+  /** Per-query sample arrays, keyed by query_id */
+  perQuery: Map<string, TaggedProcessSample[]>;
+  /** Unified time-axis data points with metric_queryIdx keys */
+  points: TimelineChartPoint[];
+  /** Metrics that have at least one non-zero value */
+  activeMetrics: TimelineMetric[];
+}
+
+/**
+ * Transform raw tagged samples into chart-ready data for N-query timeline overlay.
+ * Pure function — no React dependency.
+ *
+ * @param samples - Flat array of TaggedProcessSample from buildProcessSamplesSQL
+ * @param queryIds - Ordered list of query IDs (index determines the suffix _0, _1, etc.)
+ * @param metrics - Which metrics to include (defaults to TIMELINE_METRICS)
+ */
+export function buildTimelineChartData(
+  samples: TaggedProcessSample[],
+  queryIds: string[],
+  metrics: TimelineMetric[] = TIMELINE_METRICS,
+): TimelineChartData {
+  // Group samples by query_id
+  const perQuery = new Map<string, TaggedProcessSample[]>();
+  for (const s of samples) {
+    let arr = perQuery.get(s.query_id);
+    if (!arr) {
+      arr = [];
+      perQuery.set(s.query_id, arr);
+    }
+    arr.push(s);
+  }
+
+  // Collect all unique time points (rounded to 0.1s)
+  const allTimes = new Set<number>();
+  for (const arr of perQuery.values()) {
+    for (const s of arr) allTimes.add(Math.round(s.t * 10) / 10);
+  }
+  const sortedTimes = Array.from(allTimes).sort((a, b) => a - b);
+
+  // Build chart points
+  const points: TimelineChartPoint[] = sortedTimes.map(t => {
+    const point: TimelineChartPoint = { t };
+    queryIds.forEach((qid, idx) => {
+      const qSamples = perQuery.get(qid);
+      const match = qSamples?.find(s => Math.abs(Math.round(s.t * 10) / 10 - t) < 0.6);
+      for (const metric of metrics) {
+        for (const line of metric.lines) {
+          point[`${line.key}_${idx}`] = match ? Number(match[line.key]) : null;
+        }
+      }
+    });
+    return point;
+  });
+
+  // Filter to metrics with at least one non-zero value across any line
+  const activeMetrics = metrics.filter(metric =>
+    metric.lines.some(line =>
+      points.some(point =>
+        queryIds.some((_, idx) => {
+          const v = point[`${line.key}_${idx}`];
+          return v !== null && v !== undefined && v > 0;
+        })
+      )
+    )
+  );
+
+  return { perQuery, points, activeMetrics };
 }

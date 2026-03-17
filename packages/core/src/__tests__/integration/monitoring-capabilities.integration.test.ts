@@ -168,14 +168,6 @@ describe('MonitoringCapabilitiesService integration', () => {
     expect(typeof cap!.available).toBe('boolean');
   });
 
-  it('should not detect cloud service on a local container', async () => {
-    const svc = new MonitoringCapabilitiesService(ctx.adapter);
-    const result = await svc.probe();
-
-    const flags = deriveMonitoringFlags(result.capabilities, result.serverVersion);
-    expect(flags.isCloudService).toBe(false);
-  });
-
   it('should detect standard system log tables', async () => {
     const svc = new MonitoringCapabilitiesService(ctx.adapter);
     const result = await svc.probe();

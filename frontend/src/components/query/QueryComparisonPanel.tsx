@@ -8,9 +8,12 @@
  * Renders as a sticky bottom panel so it's always visible regardless of scroll.
  */
 
-import React, { useState } from 'react';
-import type { ProfileEventComparison, MultiProfileEventRow } from '@tracehouse/core';
+import React, { useState, useMemo } from 'react';
+import type { ProfileEventComparison, MultiProfileEventRow, TaggedProcessSample, TimelineChartData } from '@tracehouse/core';
+import { buildProcessSamplesSQL, mapTaggedProcessSampleRow, buildTimelineChartData } from '@tracehouse/core';
+import { LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer } from 'recharts';
 import { useClickHouseServices } from '../../providers/ClickHouseProvider';
+import { useCapabilityCheck } from '../shared/RequiresCapability';
 import { formatBytes } from '../../stores/queryStore';
 
 /** Minimal query shape needed for comparison - works with both SimilarQuery and QueryHistoryItem */
@@ -51,7 +54,7 @@ const fmtTimeShort = (ts: string) => {
 };
 
 export const QueryComparisonPanel: React.FC<QueryComparisonPanelProps> = ({ queries, onClose, mode = 'sticky' }) => {
-  const [compareView, setCompareView] = useState<'overview' | 'detailed'>('overview');
+  const [compareView, setCompareView] = useState<'overview' | 'detailed' | 'timeline'>('overview');
   // Legacy 2-query comparison (kept for backward compat with SimilarQueriesTab)
   const [profileEventComparison, setProfileEventComparison] = useState<ProfileEventComparison[]>([]);
   // N-query comparison
@@ -60,7 +63,12 @@ export const QueryComparisonPanel: React.FC<QueryComparisonPanelProps> = ({ quer
   const [detailedError, setDetailedError] = useState<string | null>(null);
   const [detailedFilter, setDetailedFilter] = useState('');
   const [isCollapsed, setIsCollapsed] = useState(mode === 'overlay');
+  // Timeline state
+  const [timelineSamples, setTimelineSamples] = useState<TaggedProcessSample[]>([]);
+  const [isLoadingTimeline, setIsLoadingTimeline] = useState(false);
+  const [timelineError, setTimelineError] = useState<string | null>(null);
   const services = useClickHouseServices();
+  const { available: hasProcessesHistory } = useCapabilityCheck(['tracehouse_processes_history']);
 
   const fetchDetailedComparison = async () => {
     if (!services) return;
@@ -80,6 +88,22 @@ export const QueryComparisonPanel: React.FC<QueryComparisonPanelProps> = ({ quer
       setDetailedError(e instanceof Error ? e.message : String(e));
     } finally {
       setIsLoadingDetailed(false);
+    }
+  };
+
+  const fetchTimeline = async () => {
+    if (!services) return;
+    setIsLoadingTimeline(true);
+    setTimelineError(null);
+    try {
+      const ids = queries.map(q => q.query_id);
+      const sql = buildProcessSamplesSQL(ids);
+      const rows = await services.adapter.executeQuery<Record<string, unknown>>(sql);
+      setTimelineSamples(rows.map(mapTaggedProcessSampleRow));
+    } catch (e) {
+      setTimelineError(e instanceof Error ? e.message : String(e));
+    } finally {
+      setIsLoadingTimeline(false);
     }
   };
 
@@ -120,7 +144,7 @@ export const QueryComparisonPanel: React.FC<QueryComparisonPanelProps> = ({ quer
         <div className="tabs" style={{ marginLeft: 'auto' }}
           onClick={e => e.stopPropagation()}
         >
-          {(['overview', 'detailed'] as const).map(view => (
+          {(['overview', 'detailed', ...(hasProcessesHistory ? ['timeline'] as const : [])] as const).map(view => (
             <button
               key={view}
               className={`tab ${compareView === view ? 'active' : ''}`}
@@ -128,6 +152,9 @@ export const QueryComparisonPanel: React.FC<QueryComparisonPanelProps> = ({ quer
                 setCompareView(view);
                 if (view === 'detailed' && profileEventComparison.length === 0 && multiComparison.length === 0 && !isLoadingDetailed) {
                   fetchDetailedComparison();
+                }
+                if (view === 'timeline' && timelineSamples.length === 0 && !isLoadingTimeline) {
+                  fetchTimeline();
                 }
               }}
               style={{ textTransform: 'capitalize' }}
@@ -154,7 +181,7 @@ export const QueryComparisonPanel: React.FC<QueryComparisonPanelProps> = ({ quer
 
       {/* Collapsible body */}
       {!isCollapsed && (
-        <div style={{ padding: '0 16px 16px', maxHeight: mode === 'overlay' ? 450 : 400, overflow: 'auto' }}>
+        <div style={{ padding: '0 16px 16px', maxHeight: mode === 'overlay' ? (compareView === 'timeline' ? 600 : 450) : 400, overflow: 'auto' }}>
           {/* Query text preview for cross-hash comparisons */}
           {hasDifferentQueries && (
             <div style={{ marginBottom: 12, display: 'flex', flexDirection: 'column', gap: 4 }}>
@@ -172,6 +199,15 @@ export const QueryComparisonPanel: React.FC<QueryComparisonPanelProps> = ({ quer
           )}
 
           {compareView === 'overview' && <OverviewComparisonTable queries={queries} />}
+
+          {compareView === 'timeline' && (
+            <TimelineComparison
+              queries={queries}
+              samples={timelineSamples}
+              isLoading={isLoadingTimeline}
+              error={timelineError}
+            />
+          )}
 
           {compareView === 'detailed' && (
             queries.length === 2 ? (
@@ -531,6 +567,122 @@ const DetailedComparisonN: React.FC<{
         ProfileEvents from system.query_log. Values colored: <span style={{ color: 'var(--color-success)' }}>lowest</span> / <span style={{ color: 'var(--color-error)' }}>highest</span>. Sorted by spread (max − min).
       </div>
     </>
+  );
+};
+
+// ── Colors for query lines (up to 8) ──
+const QUERY_COLORS = ['#3B82F6', '#F59E0B', '#10B981', '#EF4444', '#8B5CF6', '#EC4899', '#06B6D4', '#84CC16'];
+
+/** Timeline comparison charts — overlays process samples for N queries */
+const TimelineComparison: React.FC<{
+  queries: ComparableQuery[];
+  samples: TaggedProcessSample[];
+  isLoading: boolean;
+  error: string | null;
+}> = ({ queries, samples, isLoading, error }) => {
+  const chartData = useMemo(
+    () => buildTimelineChartData(samples, queries.map(q => q.query_id)),
+    [samples, queries],
+  );
+
+  if (isLoading) return (
+    <div style={{ padding: 20, textAlign: 'center' }}>
+      <div style={{ width: 20, height: 20, borderWidth: 2, borderStyle: 'solid', borderColor: 'var(--border-primary)', borderTopColor: 'var(--text-tertiary)', borderRadius: '50%', animation: 'spin 1s linear infinite', margin: '0 auto 8px' }} />
+      <span style={{ fontSize: 11, color: 'var(--text-muted)' }}>Loading process samples...</span>
+    </div>
+  );
+  if (error) return (
+    <div style={{ padding: 12, borderRadius: 6, background: 'rgba(var(--color-error-rgb), 0.1)', border: '1px solid rgba(var(--color-error-rgb), 0.2)', fontSize: 11, color: 'var(--color-error)' }}>
+      {error}
+    </div>
+  );
+  if (samples.length === 0) return (
+    <div style={{ padding: 16, textAlign: 'center', fontSize: 11, color: 'var(--text-muted)' }}>
+      No process samples found. Queries may have been too short (&lt;1s) or processes_history may not be enabled.
+    </div>
+  );
+
+  const { perQuery, points, activeMetrics } = chartData;
+
+  return (
+    <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
+      {/* Legend */}
+      <div style={{ display: 'flex', gap: 16, flexWrap: 'wrap', fontSize: 10 }}>
+        {queries.map((q, idx) => (
+          <div key={q.query_id} style={{ display: 'flex', alignItems: 'center', gap: 4 }}>
+            <div style={{ width: 12, height: 3, borderRadius: 1, background: QUERY_COLORS[idx % QUERY_COLORS.length] }} />
+            <span style={{ color: QUERY_COLORS[idx % QUERY_COLORS.length], fontWeight: 600 }}>{String.fromCharCode(65 + idx)}</span>
+            <span style={{ color: 'var(--text-muted)', fontFamily: 'monospace' }}>{q.query_id.slice(0, 8)}...</span>
+            <span style={{ color: 'var(--text-muted)' }}>({perQuery.get(q.query_id)?.length || 0} samples)</span>
+          </div>
+        ))}
+      </div>
+
+      {/* Charts */}
+      {activeMetrics.map(metric => (
+        <div key={metric.id}>
+          <div style={{ fontSize: 10, fontWeight: 600, color: 'var(--text-tertiary)', marginBottom: 2, textTransform: 'uppercase', letterSpacing: '0.5px' }}>
+            {metric.label} <span style={{ fontWeight: 400, color: 'var(--text-muted)' }}>({metric.unit})</span>
+            {metric.lines.length > 1 && (
+              <span style={{ fontWeight: 400, color: 'var(--text-muted)', marginLeft: 8, fontSize: 9, textTransform: 'none' }}>
+                solid={metric.lines[0].suffix.trim() || 'primary'} dashed={metric.lines[1].suffix.trim() || 'secondary'}
+              </span>
+            )}
+          </div>
+          <ResponsiveContainer width="100%" height={120}>
+            <LineChart data={points} margin={{ top: 4, right: 8, bottom: 4, left: 0 }}>
+              <CartesianGrid strokeDasharray="3 3" stroke="var(--border-secondary)" />
+              <XAxis
+                dataKey="t"
+                type="number"
+                domain={['dataMin', 'dataMax']}
+                tickFormatter={v => `${v}s`}
+                tick={{ fontSize: 9, fill: 'var(--text-muted)' }}
+                stroke="var(--border-secondary)"
+              />
+              <YAxis
+                tick={{ fontSize: 9, fill: 'var(--text-muted)' }}
+                stroke="var(--border-secondary)"
+                width={50}
+                tickFormatter={v => v >= 1000 ? `${(v/1000).toFixed(1)}K` : String(Math.round(v * 100) / 100)}
+              />
+              <Tooltip
+                contentStyle={{ background: 'var(--bg-primary)', border: '1px solid var(--border-primary)', borderRadius: 6, fontSize: 10, fontFamily: 'monospace' }}
+                labelFormatter={v => `t = ${v}s`}
+                formatter={(value: number, name: string) => {
+                  // name is like "d_net_send_kb_0" — extract query index and line key
+                  const parts = name.split('_');
+                  const idx = parseInt(parts.pop() || '0');
+                  const lineKey = parts.join('_');
+                  const line = metric.lines.find(l => l.key === lineKey);
+                  const label = `${String.fromCharCode(65 + idx)}${line?.suffix || ''}`;
+                  return [metric.formatter(value), label];
+                }}
+              />
+              {metric.lines.flatMap(line =>
+                queries.map((_, idx) => (
+                  <Line
+                    key={`${line.key}_${idx}`}
+                    type="monotone"
+                    dataKey={`${line.key}_${idx}`}
+                    stroke={QUERY_COLORS[idx % QUERY_COLORS.length]}
+                    strokeWidth={1.5}
+                    strokeDasharray={line.strokeDasharray}
+                    dot={false}
+                    connectNulls={false}
+                    isAnimationActive={false}
+                  />
+                ))
+              )}
+            </LineChart>
+          </ResponsiveContainer>
+        </div>
+      ))}
+
+      <div style={{ fontSize: 9, color: 'var(--text-muted)', fontStyle: 'italic' }}>
+        Per-second samples from tracehouse.processes_history. X-axis = relative time from each query's start.
+      </div>
+    </div>
   );
 };
 
