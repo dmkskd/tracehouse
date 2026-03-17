@@ -143,7 +143,7 @@ const DetailsTab: React.FC<{
           </div>
         ))}
       </div>
-      {record.source_part_names && record.source_part_names.length > 0 && (
+      {!isTTLMove && record.source_part_names && record.source_part_names.length > 0 && (
         <div style={{ marginBottom: 16 }}>
           <div style={{ fontSize: 10, marginBottom: 8, color: 'var(--text-muted)' }}>Source Parts ({record.source_part_names.length})</div>
           <div style={{ maxHeight: 120, overflow: 'auto', background: 'var(--bg-tertiary)', borderRadius: 6, padding: 8 }}>
@@ -299,10 +299,11 @@ const MergeDetailInner: React.FC<{
   }, [record.event_time, record.part_name, activeTab, services]);
 
   const hasProfileEvents = !!record.profile_events && Object.keys(record.profile_events).length > 0;
+  const isTTLMoveRecord = record.merge_reason === 'TTLMove';
 
   const tabs: { id: MergeDetailTab; label: string; disabled?: boolean; title?: string }[] = [
     { id: 'details', label: 'Details' },
-    { id: 'logs', label: 'Logs' },
+    { id: 'logs', label: 'Logs', disabled: isTTLMoveRecord, title: isTTLMoveRecord ? 'TTL moves do not produce dedicated log entries' : undefined },
     { id: 'profile', label: 'Profile', disabled: !hasProfileEvents, title: !hasProfileEvents ? 'No ProfileEvents in part_log for this event' : undefined },
   ];
 

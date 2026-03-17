@@ -10,4 +10,5 @@ export * from './monitoring-capabilities-queries.js';
 export * from './analytics-queries.js';
 export * from './cluster-queries.js';
 export * from './lineage-queries.js';
+export * from './process-queries.js';
 export { TIMELINE_ACTIVITY_LIMIT } from './timeline-queries.js';

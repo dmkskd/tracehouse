@@ -97,6 +97,15 @@ for i in {1..30}; do
                 echo -e "${YELLOW}⚠ read_only user setup skipped (may already exist)${NC}"
             echo ""
         fi
+
+        # Setup process sampling (idempotent)
+        if [ -f "$SCRIPT_DIR/../scripts/setup_processes_sampling.sql" ]; then
+            echo "Setting up process sampling..."
+            clickhouse client --multiquery < "$SCRIPT_DIR/../scripts/setup_processes_sampling.sql" 2>/dev/null && \
+                echo -e "${GREEN}✓ process sampling configured${NC}" || \
+                echo -e "${YELLOW}⚠ process sampling setup skipped (may already exist)${NC}"
+            echo ""
+        fi
         
         echo "Ports:"
         echo "  - Native:     9000"

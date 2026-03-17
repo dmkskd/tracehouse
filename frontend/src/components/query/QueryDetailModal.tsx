@@ -28,6 +28,8 @@ import { QueryComparisonPanel } from './QueryComparisonPanel';
 import type { ComparableQuery } from './QueryComparisonPanel';
 import { SqlHighlight } from '../common/SqlHighlight';
 import { PROFILE_EVENT_CATEGORIES } from './profileEventCategories';
+import { QueryXRay3D } from './QueryXRay3D';
+import { useUserPreferenceStore } from '../../stores/userPreferenceStore';
 
 export interface TimelineQueryModalProps {
   /** The query from timeline data (null to hide modal) */
@@ -36,7 +38,7 @@ export interface TimelineQueryModalProps {
   onClose: () => void;
 }
 
-type QueryModalTab = 'overview' | 'details' | 'analytics' | 'history' | 'logs' | 'spans' | 'flamegraph' | 'pipeline' | 'threads';
+type QueryModalTab = 'overview' | 'details' | 'analytics' | 'history' | 'logs' | 'spans' | 'flamegraph' | 'pipeline' | 'threads' | 'xray';
 type DetailsSubTab = 'performance' | 'objects' | 'functions' | 'settings';
 type AnalyticsSubTab = 'scan_efficiency' | 'column_cost';
 
@@ -2117,6 +2119,8 @@ export const QueryDetailModal: React.FC<TimelineQueryModalProps> = ({
   const { available: hasOpenTelemetry } = useCapabilityCheck(['opentelemetry_span_log']);
   const { available: hasQueryLog } = useCapabilityCheck(['query_log']);
   const { available: hasQueryThreadLog } = useCapabilityCheck(['query_thread_log']);
+  const { available: hasProcessesHistory } = useCapabilityCheck(['tracehouse_processes_history']);
+  const { experimentalEnabled } = useUserPreferenceStore();
 
   const [activeTab, setActiveTab] = useState<QueryModalTab>('overview');
   const [detailsSubTab, setDetailsSubTab] = useState<DetailsSubTab>('performance');
@@ -2172,6 +2176,11 @@ export const QueryDetailModal: React.FC<TimelineQueryModalProps> = ({
   // we build a QuerySeries from the SimilarQuery and switch to it
   const [queryOverride, setQueryOverride] = useState<QuerySeries | null>(null);
   const activeQuery = queryOverride ?? query;
+
+  // Reset tab if experimental disabled while on xray
+  useEffect(() => {
+    if (!experimentalEnabled && activeTab === 'xray') setActiveTab('overview');
+  }, [experimentalEnabled]);
 
   // Reset state when query changes
   useEffect(() => {
@@ -2365,7 +2374,7 @@ export const QueryDetailModal: React.FC<TimelineQueryModalProps> = ({
   }, [services, activeQuery]);
 
   useEffect(() => {
-    if (activeTab === 'logs' && activeQuery && logs.length === 0 && !isLoadingLogs && !logsError) {
+    if ((activeTab === 'logs' || activeTab === 'xray') && activeQuery && logs.length === 0 && !isLoadingLogs && !logsError) {
       fetchLogs();
     }
   }, [activeTab, activeQuery, logs.length, isLoadingLogs, logsError, fetchLogs]);
@@ -2505,6 +2514,11 @@ export const QueryDetailModal: React.FC<TimelineQueryModalProps> = ({
     tabs.push({ key: 'pipeline', label: 'Pipeline' });
   }
 
+  if (experimentalEnabled) {
+    tabs.push(
+      { key: 'xray', label: 'X-Ray', unavailable: !hasProcessesHistory, reason: 'tracehouse.processes_history' },
+    );
+  }
   tabs.push(
     { key: 'threads', label: 'Threads', unavailable: !hasQueryThreadLog, reason: 'system.query_thread_log' },
     { key: 'flamegraph', label: 'Flamegraph', unavailable: !hasTraceLog, reason: 'system.trace_log' },
@@ -2610,6 +2624,15 @@ export const QueryDetailModal: React.FC<TimelineQueryModalProps> = ({
                 }}
               >
                 {tab.label}
+                {tab.key === 'xray' && (
+                  <span style={{
+                    position: 'absolute', top: -4, right: -2,
+                    fontSize: 7, fontWeight: 700, color: '#f0883e',
+                    background: 'var(--bg-tertiary)', border: '1px solid rgba(240,136,62,0.3)',
+                    borderRadius: 3, padding: '0 3px', lineHeight: '12px',
+                    textTransform: 'uppercase', letterSpacing: '0.3px',
+                  }}>exp</span>
+                )}
                 {activeTab === tab.key && (
                   <div style={{
                     position: 'absolute',
@@ -2627,7 +2650,7 @@ export const QueryDetailModal: React.FC<TimelineQueryModalProps> = ({
         </div>
 
         {/* Content */}
-        <div style={{ flex: 1, overflow: activeTab === 'history' ? 'hidden' : 'auto', padding: ['logs', 'spans', 'details', 'pipeline', 'history', 'analytics'].includes(activeTab) ? 0 : 24 }}>
+        <div style={{ flex: 1, overflow: activeTab === 'history' ? 'hidden' : 'auto', padding: ['logs', 'spans', 'details', 'pipeline', 'history', 'analytics', 'xray'].includes(activeTab) ? 0 : 24 }}>
           {activeTab === 'overview' && (
             <>
               {/* Query ID + Status row */}
@@ -3224,6 +3247,16 @@ export const QueryDetailModal: React.FC<TimelineQueryModalProps> = ({
                 isLoading={isLoadingThreads || !threadsFetched}
                 error={threadsError}
                 onRefresh={fetchThreads}
+              />
+            </div>
+          )}
+
+          {activeTab === 'xray' && q && (
+            <div style={{ height: '100%' }}>
+              <QueryXRay3D
+                queryId={q.query_id}
+                logs={logs}
+                queryStartTime={q.start_time}
               />
             </div>
           )}

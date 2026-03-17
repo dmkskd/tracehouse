@@ -966,7 +966,7 @@ const MergeHistoryDetailPanel: React.FC<{
             </div>
           ))}
         </div>
-        {record.source_part_names && record.source_part_names.length > 0 && (
+        {!isTTLMove && record.source_part_names && record.source_part_names.length > 0 && (
           <div style={{ marginBottom: 16 }}>
             <div style={{ fontSize: 10, marginBottom: 8, color: 'var(--text-muted)' }}>Source Parts ({record.source_part_names.length})</div>
             <div style={{ maxHeight: 120, overflow: 'auto', background: 'var(--bg-tertiary)', borderRadius: 6, padding: 8 }}>

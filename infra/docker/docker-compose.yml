@@ -76,8 +76,9 @@ services:
       # silently ignores profile settings placed in config.d/.
       # See: https://github.com/ClickHouse/ClickHouse/issues/9051
       - ./clickhouse-users:/etc/clickhouse-server/users.d
-      # Init script to create read-only user (runs on first start)
-      - ../scripts/setup_read_only_user.sql:/docker-entrypoint-initdb.d/setup_read_only_user.sql:ro
+      # Init scripts (run on first start)
+      - ../scripts/setup_read_only_user.sql:/docker-entrypoint-initdb.d/01_setup_read_only_user.sql:ro
+      - ../scripts/setup_processes_sampling.sql:/docker-entrypoint-initdb.d/02_setup_processes_sampling.sql:ro
     environment:
       # Default user password (empty for development)
       CLICKHOUSE_DEFAULT_ACCESS_MANAGEMENT: 1

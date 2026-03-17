@@ -64,6 +64,8 @@ export interface MonitoringFlags {
   hasClickStack: boolean;
   /** Connected to ClickHouse Cloud (some OS-level metrics unavailable) */
   isCloudService: boolean;
+  /** tracehouse.processes_history exists (live process sampling via refreshable MV) */
+  hasProcessesHistory: boolean;
 }
 
 /**
@@ -100,5 +102,6 @@ export function deriveMonitoringFlags(capabilities: MonitoringCapability[], serv
     hasCPUProfilerActive: has('cpu_profiler_active'),
     hasClickStack: has('clickstack') || (major > 26 || (major === 26 && minor >= 2)),
     isCloudService: has('cloud_service'),
+    hasProcessesHistory: has('tracehouse_processes_history'),
   };
 }

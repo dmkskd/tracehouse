@@ -136,6 +136,13 @@ export const CAPABILITY_REGISTRY: CapabilityRegistryEntry[] = [
       { screen: 'Query Detail Modal', tab: 'Queries', enables: 'Deep-link trace logs to ClickStack embedded viewer', importance: 'optional' },
     ],
   },
+  {
+    capabilityId: 'tracehouse_processes_history',
+    consumers: [
+      { screen: 'Query Resource Timeline', tab: 'Queries', enables: 'Second-by-second CPU, memory, and I/O timeline for individual queries', importance: 'required' },
+      { screen: '3D Surface View', tab: 'Analytics', enables: 'Time × resource 3D surface visualization across queries', importance: 'required' },
+    ],
+  },
 ];
 
 /** Lookup consumers for a given capability ID */

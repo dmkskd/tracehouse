@@ -289,6 +289,14 @@ ALTER USER default SETTINGS
     memory_profiler_step = 1048576,
     log_processors_profiles = 1;
 EOF
+
+        # Setup process sampling (auto-detects cluster topology)
+        log_info "Setting up process sampling..."
+        kubectl cp "${SCRIPT_DIR}/../scripts/setup_processes_sampling.sh" "clickhouse/${CH_POD}:/tmp/setup_processes_sampling.sh"
+        local SAMPLING_ARGS="--host localhost"
+        kubectl exec -n clickhouse "$CH_POD" -- bash /tmp/setup_processes_sampling.sh $SAMPLING_ARGS && \
+            log_info "Process sampling configured" || \
+            log_warn "Process sampling setup skipped"
     fi
     
     log_info "Deploying Prometheus..."

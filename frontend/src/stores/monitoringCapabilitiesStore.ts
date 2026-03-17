@@ -58,6 +58,7 @@ const EMPTY_FLAGS: MonitoringFlags = {
   hasCPUProfilerActive: false,
   hasClickStack: false,
   isCloudService: false,
+  hasProcessesHistory: false,
 };
 
 export const useMonitoringCapabilitiesStore = create<MonitoringCapabilitiesState>((set, get) => ({

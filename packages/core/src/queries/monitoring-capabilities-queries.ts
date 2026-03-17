@@ -108,6 +108,22 @@ WHERE trace_type = 'CPU'
 `;
 
 /**
+ * Check if the tracehouse database and processes_history table exist.
+ * This is created by infra/scripts/setup_processes_sampling.sql and enables
+ * live process sampling features (query resource timelines, 3D surfaces).
+ */
+export const PROBE_TRACEHOUSE_PROCESSES_HISTORY = `
+SELECT
+    name,
+    engine,
+    total_rows,
+    total_bytes
+FROM system.tables
+WHERE database = 'tracehouse'
+  AND name = 'processes_history'
+`;
+
+/**
  * Detect ClickHouse Cloud by checking for cloud-specific build options
  * or settings. Returns 1 if any cloud indicator is found.
  * 

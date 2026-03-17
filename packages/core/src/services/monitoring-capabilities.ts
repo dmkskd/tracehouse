@@ -18,6 +18,7 @@ import {
   PROBE_SERVER_VERSION,
   PROBE_CLOUD_SERVICE,
   PROBE_CPU_PROFILER_SAMPLES,
+  PROBE_TRACEHOUSE_PROCESSES_HISTORY,
 } from '../queries/monitoring-capabilities-queries.js';
 import { tagQuery } from '../queries/builder.js';
 import { TAB_INTERNAL, sourceTag } from '../queries/source-tags.js';
@@ -162,7 +163,7 @@ export class MonitoringCapabilitiesService {
    * per-probe so partial results are still returned.
    */
   async probe(): Promise<MonitoringCapabilities> {
-    const [version, logTables, settings, hasZk, hasIntrospection, isCloud, cpuProfilerSampleCount] = await Promise.all([
+    const [version, logTables, settings, hasZk, hasIntrospection, isCloud, cpuProfilerSampleCount, tracehouseTables] = await Promise.all([
       this.probeVersion(),
       this.probeLogTables(),
       this.probeSettings(),
@@ -170,6 +171,7 @@ export class MonitoringCapabilitiesService {
       this.probeIntrospectionFunctions(),
       this.probeCloudService(),
       this.probeCPUProfilerSamples(),
+      this.probeTracehouseProcessesHistory(),
     ]);
 
     const capabilities: MonitoringCapability[] = [];
@@ -329,6 +331,21 @@ export class MonitoringCapabilitiesService {
       source: 'system.clusters',
     });
 
+    // Tracehouse processes_history — live process sampling (setup_processes_sampling.sh)
+    const hasProcessesHistory = tracehouseTables.has('processes_history');
+    const processesInfo = tracehouseTables.get('processes_history');
+    capabilities.push({
+      id: 'tracehouse_processes_history',
+      label: 'Process Sampling',
+      description: 'Live process sampling via refreshable MV (tracehouse.processes_history). Enables query resource timelines.',
+      available: hasProcessesHistory,
+      category: 'profiling',
+      detail: hasProcessesHistory
+        ? `${processesInfo!.engine} · ${formatRowCount(processesInfo!.totalRows)} rows`
+        : 'Not installed — run infra/scripts/setup_processes_sampling.sql',
+      source: 'tracehouse.processes_history',
+    });
+
     return {
       probedAt: new Date(),
       serverVersion: version,
@@ -445,6 +462,33 @@ export class MonitoringCapabilitiesService {
       // trace_log might not exist or be inaccessible
       return 0;
     }
+  }
+
+  /**
+   * Check if tracehouse.processes_history exists (created by setup_processes_sampling.sql).
+   * Uses system.tables directly (not cluster-aware) since the table is local per node.
+   */
+  private async probeTracehouseProcessesHistory(): Promise<Map<string, { engine: string; totalRows: number; totalBytes: number }>> {
+    const result = new Map<string, { engine: string; totalRows: number; totalBytes: number }>();
+    try {
+      const rows = await this.adapter.executeQuery<{
+        name: string;
+        engine: string;
+        total_rows: number;
+        total_bytes: number;
+      }>(tagQuery(PROBE_TRACEHOUSE_PROCESSES_HISTORY, sourceTag(TAB_INTERNAL, 'tracehouseProbe')));
+
+      for (const row of rows) {
+        result.set(String(row.name), {
+          engine: String(row.engine),
+          totalRows: Number(row.total_rows) || 0,
+          totalBytes: Number(row.total_bytes) || 0,
+        });
+      }
+    } catch {
+      // tracehouse database may not exist — that's fine
+    }
+    return result;
   }
 
   private parseVersion(version: string): [number, number] {
