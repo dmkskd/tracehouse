@@ -9,30 +9,18 @@
 /** List all databases with table counts. Natural key: (database name). */
 export const LIST_DATABASES = `
   SELECT
-    db.name,
-    db.engine,
-    db.table_count,
-    COALESCE(p.total_bytes, 0) AS total_bytes
-  FROM (
-    SELECT
-      d.name,
-      any(d.engine) AS engine,
-      COUNT(DISTINCT t.name) AS table_count
-    FROM {{cluster_metadata:system.databases}} AS d
-    LEFT JOIN {{cluster_metadata:system.tables}} AS t ON d.name = t.database
-    GROUP BY d.name
-  ) AS db
+    d.name,
+    any(d.engine) AS engine,
+    countDistinct(t.name) AS table_count,
+    COALESCE(sum(t.table_bytes), 0) AS total_bytes
+  FROM {{cluster_metadata:system.databases}} AS d
   LEFT JOIN (
-    SELECT database, sum(part_bytes) AS total_bytes
-    FROM (
-      SELECT database, table, name, any(bytes_on_disk) AS part_bytes
-      FROM {{cluster_metadata:system.parts}}
-      WHERE active = 1
-      GROUP BY database, table, name
-    )
-    GROUP BY database
-  ) AS p ON db.name = p.database
-  ORDER BY db.name
+    SELECT database, name, any(total_bytes) AS table_bytes
+    FROM {{cluster_metadata:system.tables}}
+    GROUP BY database, name
+  ) AS t ON d.name = t.database
+  GROUP BY d.name
+  ORDER BY d.name
 `;
 
 /** List all tables in a database. Natural key: (database, name). */
