@@ -8,7 +8,7 @@
  * Shows Details (with TTLMove info), Logs, and Profile tabs.
  */
 
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useMemo } from 'react';
 import type { MergeHistoryRecord, MergeInfo } from '@tracehouse/core';
 import type { MergeSeries, MutationSeries } from '@tracehouse/core';
 import { ModalWrapper } from '../shared/ModalWrapper';
@@ -48,6 +48,32 @@ export interface MergeDetailModalFromRecordProps {
 
 type MergeDetailTab = 'details' | 'logs' | 'profile' | 'xray';
 
+/** Build a partial MergeHistoryRecord from an active MergeInfo so the detail modal can render. */
+function mergeInfoToPartialRecord(merge: MergeInfo): MergeHistoryRecord {
+  return {
+    event_time: new Date().toISOString(),
+    event_type: 'MergeParts',
+    database: merge.database,
+    table: merge.table,
+    part_name: merge.result_part_name,
+    partition_id: '',
+    rows: merge.rows_written,
+    size_in_bytes: merge.total_size_bytes_compressed,
+    duration_ms: merge.elapsed * 1000,
+    merge_reason: merge.is_mutation ? 'Mutation' : '',
+    source_part_names: merge.source_part_names,
+    bytes_uncompressed: merge.bytes_read_uncompressed,
+    read_bytes: merge.bytes_read_uncompressed,
+    read_rows: merge.rows_read,
+    peak_memory_usage: merge.memory_usage,
+    size_diff: 0,
+    size_diff_pct: 0,
+    rows_diff: 0,
+    hostname: merge.hostname,
+    merge_algorithm: merge.merge_algorithm,
+  };
+}
+
 const MERGE_PROFILE_EVENTS = new Set([
   'Merge', 'MergeSourceParts', 'MergedRows', 'MergedColumns', 'GatheredColumns',
   'MergedUncompressedBytes', 'MergeTotalMilliseconds', 'MergeExecuteMilliseconds',
@@ -62,7 +88,8 @@ const MERGE_PROFILE_EVENTS = new Set([
 const DetailsTab: React.FC<{
   record: MergeHistoryRecord;
   volumeInfo: { volumeName: string; policyName: string } | null;
-}> = ({ record, volumeInfo }) => {
+  isActive?: boolean;
+}> = ({ record, volumeInfo, isActive }) => {
   const isTTLMove = record.merge_reason === 'TTLMove';
 
   return (
@@ -130,10 +157,10 @@ const DetailsTab: React.FC<{
         {(() => {
           const throughput = record.duration_ms > 0 ? record.size_in_bytes / (record.duration_ms / 1000) : 0;
           const stats: { label: string; value: string; highlight?: string }[] = [
-            { label: 'Duration', value: `${(record.duration_ms / 1000).toFixed(2)}s` },
-            { label: 'Rows (output)', value: record.rows.toLocaleString() },
-            { label: 'Final Size', value: formatBytes(record.size_in_bytes) },
-            { label: 'Peak Memory', value: formatBytes(record.peak_memory_usage) },
+            { label: isActive ? 'Elapsed' : 'Duration', value: `${(record.duration_ms / 1000).toFixed(2)}s` },
+            { label: isActive ? 'Rows Written' : 'Rows (output)', value: record.rows.toLocaleString() },
+            { label: isActive ? 'Size (compressed)' : 'Final Size', value: formatBytes(record.size_in_bytes) },
+            { label: isActive ? 'Memory (current)' : 'Peak Memory', value: formatBytes(record.peak_memory_usage) },
             { label: 'Throughput', value: throughput > 0 ? `${formatBytes(throughput)}/s` : '-' },
           ];
           if (record.read_rows > 0) stats.push({ label: 'Read Rows (input)', value: record.read_rows.toLocaleString() });
@@ -162,10 +189,12 @@ const DetailsTab: React.FC<{
           <code style={{ fontSize: 10, padding: '4px 8px', borderRadius: 4, background: 'var(--bg-tertiary)', color: 'var(--text-muted)', display: 'block', wordBreak: 'break-all' }}>{record.query_id}</code>
         </div>
       )}
-      <div>
-        <div style={{ fontSize: 10, marginBottom: 4, color: 'var(--text-muted)' }}>Event Time</div>
-        <div style={{ fontSize: 11, fontFamily: 'monospace', color: 'var(--text-secondary)' }}>{new Date(record.event_time).toLocaleString()}</div>
-      </div>
+      {!isActive && (
+        <div>
+          <div style={{ fontSize: 10, marginBottom: 4, color: 'var(--text-muted)' }}>Event Time</div>
+          <div style={{ fontSize: 11, fontFamily: 'monospace', color: 'var(--text-secondary)' }}>{new Date(record.event_time).toLocaleString()}</div>
+        </div>
+      )}
     </>
   );
 };
@@ -249,7 +278,11 @@ const MergeDetailInner: React.FC<{
   onClose: () => void;
   /** Label for the header, e.g. "Merge Details" or "Mutation Details" */
   title?: string;
-}> = ({ record, onClose, title = 'Merge Details' }) => {
+  /** True when showing an active (in-progress) merge with synthetic record */
+  isActive?: boolean;
+  /** Original MergeInfo for active merges — used for progress display */
+  activeMerge?: MergeInfo;
+}> = ({ record, onClose, title = 'Merge Details', isActive, activeMerge }) => {
   const services = useClickHouseServices();
   const [activeTab, setActiveTab] = useState<MergeDetailTab>('details');
   const [volumeInfo, setVolumeInfo] = useState<{ volumeName: string; policyName: string } | null>(null);
@@ -314,7 +347,7 @@ const MergeDetailInner: React.FC<{
   const tabs: { id: MergeDetailTab; label: string; disabled?: boolean; title?: string; experimental?: boolean }[] = [
     { id: 'details', label: 'Details' },
     { id: 'logs', label: 'Logs', disabled: isTTLMoveRecord, title: isTTLMoveRecord ? 'TTL moves do not produce dedicated log entries' : undefined },
-    { id: 'profile', label: 'Profile', disabled: !hasProfileEvents, title: !hasProfileEvents ? 'No ProfileEvents in part_log for this event' : undefined },
+    { id: 'profile', label: 'Profile', disabled: !hasProfileEvents, title: !hasProfileEvents ? (isActive ? 'ProfileEvents are available after merge completes' : 'No ProfileEvents in part_log for this event') : undefined },
   ];
   if (experimentalEnabled) {
     tabs.push({
@@ -335,6 +368,17 @@ const MergeDetailInner: React.FC<{
         </div>
         <button onClick={onClose} style={{ color: 'var(--text-muted)', background: 'none', border: 'none', cursor: 'pointer', fontSize: 18, padding: '4px 8px' }}>✕</button>
       </div>
+      {isActive && activeMerge && (
+        <div style={{ padding: '8px 20px', background: 'rgba(240,136,62,0.08)', borderBottom: '1px solid rgba(240,136,62,0.2)', display: 'flex', alignItems: 'center', gap: 12 }}>
+          <div style={{ flex: 1 }}>
+            <div style={{ height: 4, borderRadius: 2, background: 'var(--bg-tertiary)', overflow: 'hidden' }}>
+              <div style={{ height: '100%', borderRadius: 2, background: '#f0883e', width: `${(activeMerge.progress * 100).toFixed(1)}%`, transition: 'width 0.3s' }} />
+            </div>
+          </div>
+          <span style={{ fontSize: 11, fontWeight: 600, color: '#f0883e', fontFamily: 'monospace', whiteSpace: 'nowrap' }}>{(activeMerge.progress * 100).toFixed(1)}%</span>
+          <span style={{ fontSize: 10, color: 'var(--text-muted)', whiteSpace: 'nowrap' }}>In progress — some data may be partial</span>
+        </div>
+      )}
 
       {/* Tabs */}
       <div style={{ display: 'flex', borderBottom: '1px solid var(--border-primary)', padding: '0 20px' }}>
@@ -369,7 +413,7 @@ const MergeDetailInner: React.FC<{
 
       {/* Content */}
       <div style={{ flex: 1, overflow: 'auto', padding: 20 }}>
-        {activeTab === 'details' && <DetailsTab record={record} volumeInfo={volumeInfo} />}
+        {activeTab === 'details' && <DetailsTab record={record} volumeInfo={volumeInfo} isActive={isActive} />}
         {activeTab === 'logs' && (
           <div style={{ height: '100%', margin: -20 }}>
             {record.exception && record.exception.length > 0 && (
@@ -553,6 +597,12 @@ export const ActiveMergeDetailModal: React.FC<ActiveMergeDetailModalProps> = ({ 
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
+  // Memoize synthetic record so it doesn't recreate on every render (avoids cascading re-fetches in X-Ray)
+  const syntheticRecord = useMemo(
+    () => merge ? mergeInfoToPartialRecord(merge) : null,
+    [merge?.database, merge?.table, merge?.result_part_name],  // eslint-disable-line react-hooks/exhaustive-deps
+  );
+
   useEffect(() => {
     setRecord(null);
     setError(null);
@@ -586,13 +636,8 @@ export const ActiveMergeDetailModal: React.FC<ActiveMergeDetailModalProps> = ({ 
           </div>
         </div>
       )}
-      {!loading && !error && !record && (
-        <div style={{ flex: 1, display: 'flex', alignItems: 'center', justifyContent: 'center', color: 'var(--text-muted)' }}>
-          <div style={{ textAlign: 'center' }}>
-            <div style={{ fontSize: 13, marginBottom: 4 }}>No part_log entry found</div>
-            <div style={{ fontSize: 11 }}>This merge may still be in progress — part_log entries are written on completion.</div>
-          </div>
-        </div>
+      {!loading && !error && !record && syntheticRecord && (
+        <MergeDetailInner record={syntheticRecord} onClose={onClose} title="Active Merge — Full Details" isActive activeMerge={merge!} />
       )}
       {record && <MergeDetailInner record={record} onClose={onClose} title="Active Merge — Full Details" />}
     </ModalWrapper>
