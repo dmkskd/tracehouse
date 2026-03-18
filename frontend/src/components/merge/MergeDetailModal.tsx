@@ -24,17 +24,14 @@ import { MergeXRay } from './MergeXRay';
 // Props
 // ---------------------------------------------------------------------------
 
-/** Open from TimeTravelPage — pass a MergeSeries, record is fetched */
+/** Open from TimeTravelPage — pass a MergeSeries or MutationSeries, record is fetched */
 export interface MergeDetailModalProps {
-  merge: MergeSeries | null;
+  merge: MergeSeries | MutationSeries | null;
   onClose: () => void;
+  /** When true, uses "Mutation" titles instead of "Merge" */
+  isMutation?: boolean;
 }
 
-/** Open from TimeTravelPage — pass a MutationSeries, record is fetched */
-export interface MutationDetailModalProps {
-  mutation: MutationSeries | null;
-  onClose: () => void;
-}
 
 /** Open from MergeTracker — pass a MergeHistoryRecord directly */
 export interface MergeDetailModalFromRecordProps {
@@ -496,15 +493,16 @@ export const MergeDetailModalFromRecord: React.FC<MergeDetailModalFromRecordProp
 // Fetches MergeHistoryRecord by part name, then delegates to MergeDetailInner
 // ---------------------------------------------------------------------------
 
-export const MergeDetailModal: React.FC<MergeDetailModalProps> = ({ merge, onClose }) => {
+export const MergeDetailModal: React.FC<MergeDetailModalProps> = ({ merge, onClose, isMutation }) => {
   const services = useClickHouseServices();
   const [record, setRecord] = useState<MergeHistoryRecord | null>(null);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const kind = isMutation ? 'mutation' : 'merge';
 
   const syntheticRecord = useMemo(
-    () => (merge?.is_running ? seriesToPartialRecord(merge, false) : null),
-    [merge?.part_name, merge?.table, merge?.is_running],  // eslint-disable-line react-hooks/exhaustive-deps
+    () => (merge?.is_running ? seriesToPartialRecord(merge, !!isMutation) : null),
+    [merge?.part_name, merge?.table, merge?.is_running, isMutation],  // eslint-disable-line react-hooks/exhaustive-deps
   );
 
   useEffect(() => {
@@ -519,19 +517,21 @@ export const MergeDetailModal: React.FC<MergeDetailModalProps> = ({ merge, onClo
     const tbl = dotIdx > 0 ? merge.table.slice(dotIdx + 1) : merge.table;
     services.mergeTracker.getMergeHistoryByPartName(db, tbl, merge.part_name)
       .then(r => { if (!cancelled) setRecord(r); })
-      .catch(e => { if (!cancelled) setError(e instanceof Error ? e.message : 'Failed to fetch merge details'); })
+      .catch(e => { if (!cancelled) setError(e instanceof Error ? e.message : `Failed to fetch ${kind} details`); })
       .finally(() => { if (!cancelled) setLoading(false); });
     return () => { cancelled = true; };
-  }, [merge?.part_name, merge?.table, services]);
+  }, [merge?.part_name, merge?.table, services, kind]);
 
   if (!merge) return null;
 
+  const titleBase = isMutation ? 'Mutation' : 'Merge';
+
   return (
     <ModalWrapper isOpen={true} onClose={onClose}>
       {loading && (
         <div style={{ flex: 1, display: 'flex', alignItems: 'center', justifyContent: 'center', color: 'var(--text-muted)' }}>
           <div style={{ textAlign: 'center' }}>
-            <div style={{ fontSize: 13, marginBottom: 4 }}>Loading merge details…</div>
+            <div style={{ fontSize: 13, marginBottom: 4 }}>Loading {kind} details…</div>
             <div style={{ fontSize: 11 }}>{merge.table} → {merge.part_name}</div>
           </div>
         </div>
@@ -539,7 +539,7 @@ export const MergeDetailModal: React.FC<MergeDetailModalProps> = ({ merge, onClo
       {error && (
         <div style={{ flex: 1, display: 'flex', alignItems: 'center', justifyContent: 'center', color: '#e5534b' }}>
           <div style={{ textAlign: 'center' }}>
-            <div style={{ fontSize: 13, marginBottom: 4 }}>Failed to load merge details</div>
+            <div style={{ fontSize: 13, marginBottom: 4 }}>Failed to load {kind} details</div>
             <div style={{ fontSize: 11 }}>{error}</div>
           </div>
         </div>
@@ -553,80 +553,16 @@ export const MergeDetailModal: React.FC<MergeDetailModalProps> = ({ merge, onClo
         </div>
       )}
       {!loading && !error && !record && syntheticRecord && (
-        <MergeDetailInner record={syntheticRecord} onClose={onClose} title="Active Merge — Details" isActive />
+        <MergeDetailInner record={syntheticRecord} onClose={onClose} title={`Active ${titleBase} — Details`} isActive />
       )}
-      {record && <MergeDetailInner record={record} onClose={onClose} title="Merge Details" />}
+      {record && <MergeDetailInner record={record} onClose={onClose} title={`${titleBase} Details`} />}
     </ModalWrapper>
   );
 };
 
-// ---------------------------------------------------------------------------
-// MutationDetailModal — opens from TimeTravelPage with a MutationSeries
-// Same as MergeDetailModal but with "Mutation Details" title
-// ---------------------------------------------------------------------------
-
-export const MutationDetailModal: React.FC<MutationDetailModalProps> = ({ mutation, onClose }) => {
-  const services = useClickHouseServices();
-  const [record, setRecord] = useState<MergeHistoryRecord | null>(null);
-  const [loading, setLoading] = useState(false);
-  const [error, setError] = useState<string | null>(null);
-
-  const syntheticRecord = useMemo(
-    () => (mutation?.is_running ? seriesToPartialRecord(mutation, true) : null),
-    [mutation?.part_name, mutation?.table, mutation?.is_running],  // eslint-disable-line react-hooks/exhaustive-deps
-  );
-
-  useEffect(() => {
-    setRecord(null);
-    setError(null);
-    if (!mutation || !services) return;
-    let cancelled = false;
-    setLoading(true);
-    const dotIdx = mutation.table.indexOf('.');
-    const db = dotIdx > 0 ? mutation.table.slice(0, dotIdx) : 'default';
-    const tbl = dotIdx > 0 ? mutation.table.slice(dotIdx + 1) : mutation.table;
-    services.mergeTracker.getMergeHistoryByPartName(db, tbl, mutation.part_name)
-      .then(r => { if (!cancelled) setRecord(r); })
-      .catch(e => { if (!cancelled) setError(e instanceof Error ? e.message : 'Failed to fetch mutation details'); })
-      .finally(() => { if (!cancelled) setLoading(false); });
-    return () => { cancelled = true; };
-  }, [mutation?.part_name, mutation?.table, services]);
-
-  if (!mutation) return null;
-
-  return (
-    <ModalWrapper isOpen={true} onClose={onClose}>
-      {loading && (
-        <div style={{ flex: 1, display: 'flex', alignItems: 'center', justifyContent: 'center', color: 'var(--text-muted)' }}>
-          <div style={{ textAlign: 'center' }}>
-            <div style={{ fontSize: 13, marginBottom: 4 }}>Loading mutation details…</div>
-            <div style={{ fontSize: 11 }}>{mutation.table} → {mutation.part_name}</div>
-          </div>
-        </div>
-      )}
-      {error && (
-        <div style={{ flex: 1, display: 'flex', alignItems: 'center', justifyContent: 'center', color: '#e5534b' }}>
-          <div style={{ textAlign: 'center' }}>
-            <div style={{ fontSize: 13, marginBottom: 4 }}>Failed to load mutation details</div>
-            <div style={{ fontSize: 11 }}>{error}</div>
-          </div>
-        </div>
-      )}
-      {!loading && !error && !record && !syntheticRecord && (
-        <div style={{ flex: 1, display: 'flex', alignItems: 'center', justifyContent: 'center', color: 'var(--text-muted)' }}>
-          <div style={{ textAlign: 'center' }}>
-            <div style={{ fontSize: 13, marginBottom: 4 }}>No part_log entry found</div>
-            <div style={{ fontSize: 11 }}>{mutation.table} → {mutation.part_name}</div>
-          </div>
-        </div>
-      )}
-      {!loading && !error && !record && syntheticRecord && (
-        <MergeDetailInner record={syntheticRecord} onClose={onClose} title="Active Mutation — Details" isActive />
-      )}
-      {record && <MergeDetailInner record={record} onClose={onClose} title="Mutation Details" />}
-    </ModalWrapper>
-  );
-};
+export const MutationDetailModal: React.FC<{ mutation: MutationSeries | null; onClose: () => void }> = ({ mutation, onClose }) => (
+  <MergeDetailModal merge={mutation} onClose={onClose} isMutation />
+);
 
 // ---------------------------------------------------------------------------
 // ActiveMergeDetailModal — Open from MergeTracker active merge panel
