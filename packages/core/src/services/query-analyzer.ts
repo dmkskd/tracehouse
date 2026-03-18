@@ -25,7 +25,7 @@ export interface MultiProfileEventRow {
   values: number[];
 }
 import { buildQuery, tagQuery, eventDateBound, escapeValue } from '../queries/builder.js';
-import { TAB_QUERIES, TAB_INTERNAL, APP_NAME, sourceTag } from '../queries/source-tags.js';
+import { TAB_QUERIES, TAB_INTERNAL, APP_SOURCE_PREFIX, sourceTag } from '../queries/source-tags.js';
 import { mapQueryMetrics, mapQueryHistoryItem } from '../mappers/query-mappers.js';
 import { shortenHostname } from '../mappers/helpers.js';
 
@@ -336,7 +336,7 @@ export class QueryAnalyzer {
 
     if (options.exclude_app_queries) {
       whereConditions.push(`positionCaseInsensitive(query, {exclude_app_tag}) = 0`);
-      params.exclude_app_tag = `source:${APP_NAME}:`;
+      params.exclude_app_tag = APP_SOURCE_PREFIX;
     }
 
     if (options.query_kind) {

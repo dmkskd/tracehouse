@@ -407,7 +407,7 @@ export const QueryMonitor: React.FC = () => {
           <div style={{ padding: '12px 0' }}>
             {activeTab === 'running' ? (
               <RunningQueryList queries={runningQueries} selectedQueryId={selectedQuery?.query_id || null}
-                onSelectQuery={q => selectQuery(q, 'running')} onKillQuery={handleKillQuery} isKillingQuery={isKillingQuery} coordinatorIds={runningCoordinatorIds} queryAnalyzer={services?.queryAnalyzer} />
+                onSelectQuery={q => selectQuery(q, 'running')} onKillQuery={handleKillQuery} isKillingQuery={isKillingQuery} coordinatorIds={runningCoordinatorIds} queryAnalyzer={services?.queryAnalyzer} onFilteredCountChange={setRunningFilteredCount} />
             ) : hasQueryLog || isProbing ? (
               <QueryHistoryTable history={queryHistory} selectedQueryId={selectedQuery?.query_id || null}
                 onSelectQuery={q => selectQuery(q, 'history')} filter={historyFilter} sort={historySort}

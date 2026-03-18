@@ -13,6 +13,8 @@ const MIN_MEMORY_BYTES = 1048576; // 1 MB
 /** Seconds → milliseconds multiplier. */
 const SEC_TO_MS = 1000;
 
+import { APP_SOURCE_LIKE } from './source-tags.js';
+
 /** Default metric_log sampling interval (ms) — used when the actual gap is missing or out of range. */
 const DEFAULT_INTERVAL_MS = 1000;
 
@@ -175,7 +177,7 @@ export const ACTIVE_QUERIES = `
     AND event_date >= {start_date}
     AND query_start_time <= {end_time}
     AND (query_start_time + toIntervalMillisecond(query_duration_ms)) >= {start_time}
-    AND query NOT LIKE '%source:Monitor:%'
+    AND query NOT LIKE ${APP_SOURCE_LIKE}
     AND memory_usage > ${MIN_MEMORY_BYTES}
   ORDER BY {query_order_by} DESC
   LIMIT {activity_limit}
@@ -188,7 +190,7 @@ export const ACTIVE_QUERIES_COUNT = `
     AND event_date >= {start_date}
     AND query_start_time <= {end_time}
     AND (query_start_time + toIntervalMillisecond(query_duration_ms)) >= {start_time}
-    AND query NOT LIKE '%source:Monitor:%'
+    AND query NOT LIKE ${APP_SOURCE_LIKE}
     AND memory_usage > ${MIN_MEMORY_BYTES}
 `;
 
@@ -318,7 +320,7 @@ export const RUNNING_QUERIES_TIMELINE = `
     ProfileEvents['OSWriteBytes'] AS disk_write
   FROM system.processes
   WHERE is_initial_query = 1
-    AND query NOT LIKE '%source:Monitor:%'
+    AND query NOT LIKE ${APP_SOURCE_LIKE}
     AND memory_usage > ${MIN_MEMORY_BYTES}
   ORDER BY {query_order_by} DESC
   LIMIT {activity_limit}

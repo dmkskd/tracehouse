@@ -32,11 +32,11 @@ JOIN {{cluster_aware:system.query_thread_log}} t ON q.query_id = t.query_id`;
 
   it('does not touch system.X inside string literals', () => {
     const sql = `SELECT * FROM {{cluster_aware:system.query_log}}
-WHERE query NOT LIKE '%source:Monitor:%'`;
+WHERE query NOT LIKE '%source:TraceHouse:%'`;
     const result = ClusterService.resolveTableRefs(sql, cluster);
     expect(result).toContain("FROM clusterAllReplicas('default', system.query_log)");
     // The LIKE string should be untouched
-    expect(result).toContain("'%source:Monitor:%'");
+    expect(result).toContain("'%source:TraceHouse:%'");
   });
 
   it('handles multiline SQL', () => {

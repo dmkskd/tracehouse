@@ -6,7 +6,7 @@ import type { RunningQuery } from '../../stores/queryStore';
 import { formatBytes, formatDuration, formatNumber } from '../../stores/queryStore';
 import { QueryFilterBar } from './QueryFilterBar';
 import type { QueryFilterState } from './QueryFilterBar';
-import type { QueryAnalyzer } from '@tracehouse/core';
+import { APP_SOURCE_PREFIX, type QueryAnalyzer } from '@tracehouse/core';
 import { useUserPreferenceStore } from '../../stores/userPreferenceStore';
 
 interface RunningQueryListProps {
@@ -136,7 +136,7 @@ export const RunningQueryList: React.FC<RunningQueryListProps> = ({
       });
     }
     if (filter.excludeAppQueries) {
-      result = result.filter(q => !q.query.includes('source:Monitor:'));
+      result = result.filter(q => !q.query.includes(APP_SOURCE_PREFIX));
     }
     if (filter.queryKind) {
       const k = filter.queryKind.toLowerCase();

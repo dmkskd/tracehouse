@@ -5,6 +5,8 @@
  * https://github.com/ClickHouse/ClickHouse/blob/master/src/Storages/System/StorageSystemDashboards.cpp
  */
 
+import { APP_SOURCE_LIKE } from '@tracehouse/core';
+
 const queries: string[] = [
   `-- @meta: title='Queries/second' group='Advanced Dashboard' interval='1 HOUR' description='Rate of queries processed per second (from metric_log)'
 -- @chart: type=area group_by=t value=qps style=2d
@@ -40,7 +42,7 @@ FROM {{cluster_aware:system.query_log}}
 WHERE event_time >= {{drill_value:t | now() - INTERVAL 1 MINUTE}} - INTERVAL 1 MINUTE
   AND event_time < {{drill_value:t | now()}} + INTERVAL 1 MINUTE
   AND type IN ('QueryFinish', 'ExceptionWhileProcessing', 'ExceptionBeforeStart')
-  AND query NOT LIKE '%-- source:Monitor%'
+  AND query NOT LIKE ${APP_SOURCE_LIKE}
 ORDER BY query_start_time DESC
 LIMIT 100`,
 

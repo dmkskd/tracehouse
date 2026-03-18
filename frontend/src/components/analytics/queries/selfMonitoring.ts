@@ -1,4 +1,5 @@
 /** Self-monitoring queries — track the app's own query footprint on the server. */
+import { APP_SOURCE_LIKE, APP_RE_COMPONENT, APP_RE_COMPONENT_SERVICE } from '@tracehouse/core';
 
 const queries: string[] = [
   `-- @meta: title='App Query Duration by Component' group='Self-Monitoring' interval='1 DAY' description='Stacked percentile bands per component — bar height = p99, segments show p50 / p95−p50 / p99−p95'
@@ -7,13 +8,13 @@ const queries: string[] = [
 SELECT component, metric, value_ms
 FROM (
   SELECT
-      extractAllGroups(query, 'source:Monitor:(\\w+):')[1][1] AS component,
+      extractAllGroups(query, '${APP_RE_COMPONENT}')[1][1] AS component,
       round(quantile(0.5)(query_duration_ms), 1) AS p50,
       round(quantile(0.95)(query_duration_ms) - quantile(0.5)(query_duration_ms), 1) AS p95_delta,
       round(quantile(0.99)(query_duration_ms) - quantile(0.95)(query_duration_ms), 1) AS p99_delta
   FROM {{cluster_aware:system.query_log}}
   WHERE type = 'QueryFinish'
-    AND query LIKE '%source:Monitor:%'
+    AND query LIKE ${APP_SOURCE_LIKE}
     AND event_time > {{time_range}}
   GROUP BY component
   HAVING component != ''
@@ -29,14 +30,14 @@ ORDER BY component, metric`,
 SELECT service, metric, value_ms
 FROM (
   SELECT
-      extractAllGroups(query, 'source:Monitor:(\\w+):(\\w+)')[1][1] AS component,
-      extractAllGroups(query, 'source:Monitor:(\\w+):(\\w+)')[1][2] AS service,
+      extractAllGroups(query, '${APP_RE_COMPONENT_SERVICE}')[1][1] AS component,
+      extractAllGroups(query, '${APP_RE_COMPONENT_SERVICE}')[1][2] AS service,
       round(quantile(0.5)(query_duration_ms), 1) AS p50,
       round(quantile(0.95)(query_duration_ms) - quantile(0.5)(query_duration_ms), 1) AS p95_delta,
       round(quantile(0.99)(query_duration_ms) - quantile(0.95)(query_duration_ms), 1) AS p99_delta
   FROM {{cluster_aware:system.query_log}}
   WHERE type = 'QueryFinish'
-    AND query LIKE '%source:Monitor:%'
+    AND query LIKE ${APP_SOURCE_LIKE}
     AND event_time > {{time_range}}
   GROUP BY component, service
   HAVING component != '' AND service != '' AND {{drill:component | 1=1}}
@@ -50,12 +51,12 @@ ORDER BY service, metric`,
 -- @chart: type=pie group_by=component value=query_count style=3d
 -- @drill: on=component into='App Query Volume by Service'
 SELECT
-    extractAllGroups(query, 'source:Monitor:(\\w+):')[1][1] AS component,
+    extractAllGroups(query, '${APP_RE_COMPONENT}')[1][1] AS component,
     count() AS query_count,
     round(sum(query_duration_ms), 0) AS total_ms
 FROM {{cluster_aware:system.query_log}}
 WHERE type = 'QueryFinish'
-  AND query LIKE '%source:Monitor:%'
+  AND query LIKE ${APP_SOURCE_LIKE}
   AND event_time > {{time_range}}
 GROUP BY component
 HAVING component != ''
@@ -65,13 +66,13 @@ ORDER BY query_count DESC`,
 -- @chart: type=pie group_by=service value=query_count style=3d
 -- @drill: on=service into='App Query Cost Details'
 SELECT
-    extractAllGroups(query, 'source:Monitor:(\\w+):(\\w+)')[1][1] AS component,
-    extractAllGroups(query, 'source:Monitor:(\\w+):(\\w+)')[1][2] AS service,
+    extractAllGroups(query, '${APP_RE_COMPONENT_SERVICE}')[1][1] AS component,
+    extractAllGroups(query, '${APP_RE_COMPONENT_SERVICE}')[1][2] AS service,
     count() AS query_count,
     round(sum(query_duration_ms), 0) AS total_ms
 FROM {{cluster_aware:system.query_log}}
 WHERE type = 'QueryFinish'
-  AND query LIKE '%source:Monitor:%'
+  AND query LIKE ${APP_SOURCE_LIKE}
   AND event_time > {{time_range}}
 GROUP BY component, service
 HAVING component != '' AND service != '' AND {{drill:component | 1=1}}
@@ -82,8 +83,8 @@ ORDER BY query_count DESC`,
 -- @rag: column=avg_result_bytes green<10000 amber<100000
 -- @rag: column=avg_memory_mb green<20 amber<50
 SELECT
-    extractAllGroups(query, 'source:Monitor:(\\w+):(\\w+)')[1][1] AS component,
-    extractAllGroups(query, 'source:Monitor:(\\w+):(\\w+)')[1][2] AS service,
+    extractAllGroups(query, '${APP_RE_COMPONENT_SERVICE}')[1][1] AS component,
+    extractAllGroups(query, '${APP_RE_COMPONENT_SERVICE}')[1][2] AS service,
     lower(hex(normalized_query_hash)) AS query_hash,
     substring(query, 1, 120) AS query_preview,
     count() AS executions,
@@ -109,7 +110,7 @@ SELECT
     round(sum(ProfileEvents['OSCPUVirtualTimeMicroseconds']) / 1e6, 2) AS total_cpu_s
 FROM {{cluster_aware:system.query_log}}
 WHERE type = 'QueryFinish'
-  AND query LIKE '%source:Monitor:%'
+  AND query LIKE ${APP_SOURCE_LIKE}
   AND event_time > {{time_range}}
 GROUP BY component, service, query_hash, query_preview
 HAVING component != '' AND service != '' AND {{drill:component | 1=1}} AND {{drill:service | 1=1}}
@@ -147,7 +148,7 @@ SELECT
     round(avg(query_duration_ms), 1) AS avg_ms
 FROM {{cluster_aware:system.query_log}}
 WHERE type = 'QueryFinish'
-  AND query LIKE '%source:Monitor:%'
+  AND query LIKE ${APP_SOURCE_LIKE}
   AND event_time > {{time_range}}
 GROUP BY t
 ORDER BY t ASC`,
@@ -159,28 +160,28 @@ SELECT
     round(memory_usage / 1048576, 2) AS memory_mb,
     round(read_bytes / 1048576, 2) AS read_mb,
     read_rows,
-    extractAllGroups(query, 'source:Monitor:(\\w+):(\\w+)')[1][1] AS component,
-    extractAllGroups(query, 'source:Monitor:(\\w+):(\\w+)')[1][2] AS service,
+    extractAllGroups(query, '${APP_RE_COMPONENT_SERVICE}')[1][1] AS component,
+    extractAllGroups(query, '${APP_RE_COMPONENT_SERVICE}')[1][2] AS service,
     substring(query, 1, 120) AS query_preview
 FROM {{cluster_aware:system.query_log}}
 WHERE type = 'QueryFinish'
-  AND query LIKE '%source:Monitor:%'
+  AND query LIKE ${APP_SOURCE_LIKE}
   AND event_time > {{time_range}}
-  AND extractAllGroups(query, 'source:Monitor:(\\w+):(\\w+)')[1][1] != ''
+  AND extractAllGroups(query, '${APP_RE_COMPONENT_SERVICE}')[1][1] != ''
 ORDER BY query_duration_ms DESC
 LIMIT 20`,
 
   `-- @meta: title='App Memory & Rows by Component' group='Self-Monitoring' interval='1 DAY' description='Total memory and rows read per component — find the heaviest hitters'
 -- @chart: type=bar group_by=component value=total_memory_mb style=2d
 SELECT
-    extractAllGroups(query, 'source:Monitor:(\\w+):')[1][1] AS component,
+    extractAllGroups(query, '${APP_RE_COMPONENT}')[1][1] AS component,
     count() AS queries,
     round(sum(memory_usage) / 1048576, 1) AS total_memory_mb,
     sum(read_rows) AS total_rows_read,
     round(sum(read_bytes) / 1048576, 1) AS total_read_mb
 FROM {{cluster_aware:system.query_log}}
 WHERE type = 'QueryFinish'
-  AND query LIKE '%source:Monitor:%'
+  AND query LIKE ${APP_SOURCE_LIKE}
   AND event_time > {{time_range}}
 GROUP BY component
 HAVING component != ''
@@ -189,16 +190,16 @@ ORDER BY total_memory_mb DESC`,
   `-- @meta: title='App Failed Queries' group='Self-Monitoring' interval='7 DAY' description='App queries that threw exceptions — helps catch broken polling or bad SQL'
 SELECT
     event_time,
-    extractAllGroups(query, 'source:Monitor:(\\w+):(\\w+)')[1][1] AS component,
-    extractAllGroups(query, 'source:Monitor:(\\w+):(\\w+)')[1][2] AS service,
+    extractAllGroups(query, '${APP_RE_COMPONENT_SERVICE}')[1][1] AS component,
+    extractAllGroups(query, '${APP_RE_COMPONENT_SERVICE}')[1][2] AS service,
     exception_code,
     substring(exception, 1, 150) AS exception_preview,
     substring(query, 1, 120) AS query_preview
 FROM {{cluster_aware:system.query_log}}
 WHERE type = 'ExceptionWhileProcessing'
-  AND query LIKE '%source:Monitor:%'
+  AND query LIKE ${APP_SOURCE_LIKE}
   AND event_time > {{time_range}}
-  AND extractAllGroups(query, 'source:Monitor:(\\w+):(\\w+)')[1][1] != ''
+  AND extractAllGroups(query, '${APP_RE_COMPONENT_SERVICE}')[1][1] != ''
 ORDER BY event_time DESC
 LIMIT 30`,
 
@@ -212,7 +213,7 @@ SELECT
     round(quantile(0.99)(query_duration_ms), 1) AS p99_ms
 FROM {{cluster_aware:system.query_log}}
 WHERE type = 'QueryFinish'
-  AND query LIKE '%source:Monitor:%'
+  AND query LIKE ${APP_SOURCE_LIKE}
   AND event_time > {{time_range}}
 GROUP BY hour
 ORDER BY hour ASC`,
@@ -222,7 +223,7 @@ ORDER BY hour ASC`,
 SELECT
     toStartOfHour(event_time) AS hour,
     sum(query_duration_ms) AS total_server_ms,
-    sumIf(query_duration_ms, query LIKE '%source:Monitor:%') AS app_ms,
+    sumIf(query_duration_ms, query LIKE ${APP_SOURCE_LIKE}) AS app_ms,
     round(if(total_server_ms > 0, app_ms / total_server_ms * 100, 0), 2) AS app_pct
 FROM {{cluster_aware:system.query_log}}
 WHERE type = 'QueryFinish'
