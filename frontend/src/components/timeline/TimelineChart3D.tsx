@@ -64,8 +64,7 @@ interface TimelineChart3DProps {
 
 /* ── Helpers ─────────────────────────────────────────────────────────── */
 
-const fmtMs = (ms: number): string =>
-  ms < 1000 ? `${ms}ms` : ms < 60000 ? `${(ms / 1000).toFixed(1)}s` : `${(ms / 60000).toFixed(1)}m`;
+import { formatDurationMs as fmtMs } from '../../utils/formatters';
 
 function getRate(item: { cpu_us: number; peak_memory: number; duration_ms: number; net_send: number; net_recv: number; disk_read: number; disk_write: number }, mode: MetricMode): number {
   const durS = Math.max(item.duration_ms / 1000, 0.001);

@@ -41,7 +41,7 @@ export function formatNumberCompact(num: number): string {
 
 // ── Durations ──────────────────────────────────────────────────────────────
 
-/** Format seconds → human-readable (e.g. 250ms, 3.14s, 2m 30s, 1h 5m) */
+/** Format seconds → human-readable (e.g. 250ms, 3.14s, 2m 30s, 1h 5m, 2d 3h) */
 export function formatDuration(seconds: number): string {
   if (seconds < 1) {
     return `${Math.round(seconds * 1000)}ms`;
@@ -56,20 +56,25 @@ export function formatDuration(seconds: number): string {
   }
   const hours = Math.floor(minutes / 60);
   const remainingMinutes = minutes % 60;
-  return `${hours}h ${remainingMinutes}m`;
+  if (hours < 24) {
+    return `${hours}h ${remainingMinutes}m`;
+  }
+  const days = Math.floor(hours / 24);
+  return `${days}d ${hours % 24}h`;
 }
 
-/** Format milliseconds → human-readable */
+/** Format milliseconds → human-readable (e.g. 3.14ms, 1.25s, 22:30m, 1:05:03h) */
 export function formatDurationMs(ms: number): string {
-  if (ms < 1000) return `${ms}ms`;
-  if (ms < 60000) return `${(ms / 1000).toFixed(2)}s`;
-  const totalSeconds = Math.floor(ms / 1000);
+  if (ms < 1000) return `${Number(ms.toFixed(2))}ms`;
+  const s = ms / 1000;
+  if (s < 60) return `${s.toFixed(2)}s`;
+  const totalSeconds = Math.floor(s);
   const minutes = Math.floor(totalSeconds / 60);
   const seconds = totalSeconds % 60;
-  if (minutes < 60) return `${minutes}:${String(seconds).padStart(2, '0')}`;
+  if (minutes < 60) return `${minutes}:${String(seconds).padStart(2, '0')}m`;
   const hours = Math.floor(minutes / 60);
   const mins = minutes % 60;
-  return `${hours}:${String(mins).padStart(2, '0')}:${String(seconds).padStart(2, '0')}`;
+  return `${hours}:${String(mins).padStart(2, '0')}:${String(seconds).padStart(2, '0')}h`;
 }
 
 /** Format elapsed seconds with one decimal (e.g. 3.2s, 2m 15s, 1h 5m) */
@@ -81,11 +86,19 @@ export function formatElapsed(seconds: number): string {
 
 // ── Microseconds ───────────────────────────────────────────────────────────
 
-/** Format microseconds → human-readable (e.g. 500µs, 3.1ms, 1.25s) */
+/** Format microseconds → human-readable (e.g. 500µs, 3.1ms, 1.25s, 22:30m, 1:05:03h) */
 export function formatMicroseconds(us: number): string {
   if (us < 1000) return `${us}µs`;
   if (us < 1_000_000) return `${(us / 1000).toFixed(1)}ms`;
-  return `${(us / 1_000_000).toFixed(2)}s`;
+  const s = us / 1_000_000;
+  if (s < 60) return `${s.toFixed(2)}s`;
+  const totalSeconds = Math.floor(s);
+  const minutes = Math.floor(totalSeconds / 60);
+  const seconds = totalSeconds % 60;
+  if (minutes < 60) return `${minutes}:${String(seconds).padStart(2, '0')}m`;
+  const hours = Math.floor(minutes / 60);
+  const mins = minutes % 60;
+  return `${hours}:${String(mins).padStart(2, '0')}:${String(seconds).padStart(2, '0')}h`;
 }
 
 // ── Timestamps ─────────────────────────────────────────────────────────────

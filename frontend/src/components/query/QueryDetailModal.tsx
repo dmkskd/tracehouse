@@ -20,6 +20,7 @@ import { TraceLogViewer } from '../tracing/TraceLogViewer';
 import { Flamegraph } from '../tracing/Flamegraph';
 import { PipelineProfileTab } from '../tracing/PipelineProfileTab';
 import { formatBytes } from '../../stores/databaseStore';
+import { formatDurationMs, formatMicroseconds } from '../../utils/formatters';
 import { useClickHouseServices } from '../../providers/ClickHouseProvider';
 import { useCapabilityCheck } from '../shared/RequiresCapability';
 import { useProfileEventDescriptionsStore } from '../../stores/profileEventDescriptionsStore';
@@ -696,8 +697,8 @@ const HistoryTab: React.FC<{
     );
   }
 
-  const fmtMs = (ms: number) => ms < 1000 ? `${Number(ms.toFixed(2))}ms` : ms < 60000 ? `${(ms / 1000).toFixed(2)}s` : `${(ms / 60000).toFixed(2)}m`;
-  const fmtUs = (us: number) => us < 1000 ? `${us}µs` : us < 1000000 ? `${(us / 1000).toFixed(1)}ms` : `${(us / 1000000).toFixed(2)}s`;
+  const fmtMs = formatDurationMs;
+  const fmtUs = formatMicroseconds;
   const fmtTimeShort = (ts: string) => {
     const d = new Date(ts);
     return `${d.getMonth() + 1}/${d.getDate()} ${d.getHours().toString().padStart(2, '0')}:${d.getMinutes().toString().padStart(2, '0')}`;
@@ -2496,8 +2497,8 @@ export const QueryDetailModal: React.FC<TimelineQueryModalProps> = ({
   // (queryOverride is always non-null when set, and query is non-null here)
   const q = activeQuery!;
 
-  const fmtMs = (ms: number) => ms < 1000 ? `${ms}ms` : ms < 60000 ? `${(ms / 1000).toFixed(2)}s` : `${(ms / 60000).toFixed(2)}m`;
-  const fmtUs = (us: number) => us < 1000 ? `${us}µs` : us < 1000000 ? `${(us / 1000).toFixed(1)}ms` : `${(us / 1000000).toFixed(2)}s`;
+  const fmtMs = formatDurationMs;
+  const fmtUs = formatMicroseconds;
   const fmtTime = (ts: string) => new Date(ts).toLocaleString();
 
   const tabs: { key: QueryModalTab; label: string; unavailable?: boolean; reason?: string; experimental?: boolean }[] = [

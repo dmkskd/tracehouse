@@ -15,6 +15,7 @@ import {
   MetricSelector, 
 } from '../components/metrics/TimeSeriesChart';
 import { useClickHouseServices } from '../providers/ClickHouseProvider';
+import { formatDuration } from '../utils/formatters';
 
 // Format bytes to human readable
 const formatBytes = (bytes: number): string => {
@@ -25,15 +26,6 @@ const formatBytes = (bytes: number): string => {
   return `${parseFloat((bytes / Math.pow(k, i)).toFixed(1))} ${sizes[i]}`;
 };
 
-// Format duration
-const formatDuration = (seconds: number): string => {
-  const days = Math.floor(seconds / 86400);
-  const hours = Math.floor((seconds % 86400) / 3600);
-  const mins = Math.floor((seconds % 3600) / 60);
-  if (days > 0) return `${days}d ${hours}h`;
-  if (hours > 0) return `${hours}h ${mins}m`;
-  return `${mins}m`;
-};
 
 // Stat Card Component
 const StatCard: React.FC<{

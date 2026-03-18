@@ -1,6 +1,6 @@
 import type { IClickHouseAdapter } from '../adapters/types.js';
 import type { QueryMetrics, QueryHistoryItem } from '../types/query.js';
-import { RUNNING_QUERIES, QUERY_DETAIL, QUERY_THREAD_BREAKDOWN, PROFILE_EVENT_DESCRIPTIONS, SUB_QUERIES, COORDINATOR_IDS, RUNNING_COORDINATOR_IDS } from '../queries/query-queries.js';
+import { RUNNING_QUERIES, QUERY_DETAIL, QUERY_THREAD_BREAKDOWN, PROFILE_EVENT_DESCRIPTIONS, SUB_QUERIES, COORDINATOR_IDS, RUNNING_COORDINATOR_IDS, QUERY_LOG_FLUSH_INTERVAL } from '../queries/query-queries.js';
 /**
  * ProfileEvent comparison row between two queries.
  * Inspired by https://clickhouse.com/docs/knowledgebase/comparing-metrics-between-queries
@@ -614,6 +614,24 @@ export class QueryAnalyzer {
     } catch (error) {
       throw new QueryAnalysisError('Failed to get settings defaults', error as Error);
     }
+  }
+
+  /**
+   * Get the query_log flush interval configured on the server, in milliseconds.
+   * Falls back to 7500 ms if the setting cannot be read.
+   */
+  async getQueryLogFlushIntervalMs(): Promise<number> {
+    const rows = await this.adapter.executeQuery<{ value: string }>(
+      tagQuery(QUERY_LOG_FLUSH_INTERVAL, sourceTag(TAB_INTERNAL, 'queryLogFlushInterval'))
+    ).catch((error: Error) => {
+      console.warn('Could not read query_log flush interval from server_settings, using default 7500ms:', error.message);
+      return [] as { value: string }[];
+    });
+    if (rows.length > 0) {
+      const parsed = Number(rows[0].value);
+      if (parsed > 0) return parsed;
+    }
+    return 7500;
   }
 
   /**

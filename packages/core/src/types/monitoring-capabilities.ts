@@ -66,6 +66,20 @@ export interface MonitoringFlags {
   isCloudService: boolean;
   /** tracehouse.processes_history exists (live process sampling via refreshable MV) */
   hasProcessesHistory: boolean;
+  /** system.merges accessible (active merge tracking) */
+  hasSystemMerges: boolean;
+  /** system.mutations accessible */
+  hasSystemMutations: boolean;
+  /** system.clusters accessible (cluster topology) */
+  hasSystemClusters: boolean;
+  /** system.replicas accessible (replication health) */
+  hasSystemReplicas: boolean;
+  /** system.parts accessible (part-level storage detail) */
+  hasSystemParts: boolean;
+  /** system.databases accessible (database listing) */
+  hasSystemDatabases: boolean;
+  /** system.processes accessible (running query list) */
+  hasSystemProcesses: boolean;
 }
 
 /**
@@ -103,5 +117,12 @@ export function deriveMonitoringFlags(capabilities: MonitoringCapability[], serv
     hasClickStack: has('clickstack') || (major > 26 || (major === 26 && minor >= 2)),
     isCloudService: has('cloud_service'),
     hasProcessesHistory: has('tracehouse_processes_history'),
+    hasSystemMerges: has('system_merges'),
+    hasSystemMutations: has('system_mutations'),
+    hasSystemClusters: has('system_clusters'),
+    hasSystemReplicas: has('system_replicas'),
+    hasSystemParts: has('system_parts'),
+    hasSystemDatabases: has('system_databases'),
+    hasSystemProcesses: has('system_processes'),
   };
 }

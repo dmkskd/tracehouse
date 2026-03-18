@@ -12,6 +12,9 @@ import {
   GET_REPLICATION_DETAIL,
   GET_REPLICATION_QUEUE,
 } from '@tracehouse/core';
+import { PermissionGate } from '../components/shared/PermissionGate';
+import { extractErrorMessage } from '../utils/errorFormatters';
+import { useCapabilityCheck } from '../components/shared/RequiresCapability';
 
 const TAB_REPLICATION = 'replication';
 
@@ -200,6 +203,7 @@ export const Replication: React.FC = () => {
   const [replicas, setReplicas] = useState<ReplicaRow[]>([]);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const { available: hasReplicas, probing: isCapProbing } = useCapabilityCheck(['system_replicas']);
 
   // Queue drill-down state
   const [expandedDb, setExpandedDb] = useState<string | null>(null);
@@ -210,6 +214,12 @@ export const Replication: React.FC = () => {
   // Fetch replica data
   useEffect(() => {
     if (!services || !isConnected || !detected) return;
+    if (isCapProbing) return;
+    if (!hasReplicas) {
+      setError('Insufficient privileges to access system.replicas. Ask your administrator to grant SELECT on this table.');
+      setLoading(false);
+      return;
+    }
     let cancelled = false;
     setLoading(true);
     setError(null);
@@ -222,14 +232,14 @@ export const Replication: React.FC = () => {
         if (!cancelled) setReplicas(rows);
         if (!cancelled) useGlobalLastUpdatedStore.getState().touch();
       } catch (err) {
-        if (!cancelled) setError(err instanceof Error ? err.message : 'Failed to fetch replication data');
+        if (!cancelled) setError(extractErrorMessage(err, 'Failed to fetch replication data'));
       } finally {
         if (!cancelled) setLoading(false);
       }
     })();
 
     return () => { cancelled = true; };
-  }, [services, isConnected, detected]);
+  }, [services, isConnected, detected, hasReplicas, isCapProbing]);
 
   // Fetch queue for a database
   const fetchQueue = useCallback(async (database: string) => {
@@ -319,9 +329,7 @@ export const Replication: React.FC = () => {
     return (
       <div className="page-layout">
         <h1 className="text-xl font-semibold" style={{ color: 'var(--text-primary)' }}>Replication</h1>
-        <div className="card" style={{ borderLeftWidth: 3, borderLeftColor: '#ef4444', padding: 16 }}>
-          <span style={{ fontSize: 12, color: '#ef4444' }}>{error}</span>
-        </div>
+        <PermissionGate error={error} title="Replication" variant="page" />
       </div>
     );
   }

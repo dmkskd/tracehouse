@@ -32,6 +32,9 @@ import {
   groupMutationsByMerge,
   computeMutationDependency,
 } from '../../helpers/mutationDependencyHelpers';
+import { PermissionGate } from '../shared/PermissionGate';
+import { extractErrorMessage } from '../../utils/errorFormatters';
+import { useCapabilityCheck } from '../shared/RequiresCapability';
 
 // Stat Card
 const StatCard: React.FC<{
@@ -1588,12 +1591,13 @@ export const MergeTrackerView: React.FC = () => {
 
   const activeProfile = profiles.find(p => p.id === activeProfileId);
   const isConnected = activeProfile?.is_connected ?? false;
-  
+  const { available: hasMerges, probing: isCapProbing } = useCapabilityCheck(['system_merges']);
+
   // Get services from ClickHouseProvider
   const services = useClickHouseServices();
 
   const fetchActiveMerges = useCallback(async (isInitialLoad = false) => {
-    if (!services || !isConnected) return;
+    if (!services || !isConnected || !hasMerges) return;
     // Only show loading state on initial load to prevent flickering during polling
     if (isInitialLoad) {
       setIsLoadingMerges(true);
@@ -1603,16 +1607,16 @@ export const MergeTrackerView: React.FC = () => {
       const merges = await mergeApi.fetchActiveMerges(services.mergeTracker);
       setActiveMerges(merges);
     } catch (err) {
-      setError(err instanceof Error ? err.message : 'Failed to fetch merges');
+      setError(extractErrorMessage(err, 'Failed to fetch merges'));
     } finally {
       if (isInitialLoad) {
         setIsLoadingMerges(false);
       }
     }
-  }, [services, isConnected, setActiveMerges, setIsLoadingMerges, setError, clearError]);
+  }, [services, isConnected, hasMerges, setActiveMerges, setIsLoadingMerges, setError, clearError]);
 
   const fetchMergeHistory = useCallback(async (isInitialLoad = false) => {
-    if (!services || !isConnected) return;
+    if (!services || !isConnected || !hasMerges) return;
     if (isInitialLoad) {
       setIsLoadingHistory(true);
       clearError();
@@ -1621,16 +1625,16 @@ export const MergeTrackerView: React.FC = () => {
       const history = await mergeApi.fetchMergeHistory(services.mergeTracker, historyFilter);
       setMergeHistory(history);
     } catch (err) {
-      setError(err instanceof Error ? err.message : 'Failed to fetch history');
+      setError(extractErrorMessage(err, 'Failed to fetch history'));
     } finally {
       if (isInitialLoad) {
         setIsLoadingHistory(false);
       }
     }
-  }, [services, isConnected, historyFilter, setMergeHistory, setIsLoadingHistory, setError, clearError]);
+  }, [services, isConnected, hasMerges, historyFilter, setMergeHistory, setIsLoadingHistory, setError, clearError]);
 
   const fetchMutations = useCallback(async (isInitialLoad = false) => {
-    if (!services || !isConnected) return;
+    if (!services || !isConnected || !hasMerges) return;
     if (isInitialLoad) {
       setIsLoadingMutations(true);
     }
@@ -1644,10 +1648,10 @@ export const MergeTrackerView: React.FC = () => {
         setIsLoadingMutations(false);
       }
     }
-  }, [services, isConnected, setMutations, setIsLoadingMutations]);
+  }, [services, isConnected, hasMerges, setMutations, setIsLoadingMutations]);
 
   const fetchMutationHistory = useCallback(async (isInitialLoad = false) => {
-    if (!services || !isConnected) return;
+    if (!services || !isConnected || !hasMerges) return;
     if (isInitialLoad) {
       setIsLoadingMutationHistory(true);
     }
@@ -1661,7 +1665,7 @@ export const MergeTrackerView: React.FC = () => {
         setIsLoadingMutationHistory(false);
       }
     }
-  }, [services, isConnected, historyFilter, setMutationHistory, setIsLoadingMutationHistory]);
+  }, [services, isConnected, hasMerges, historyFilter, setMutationHistory, setIsLoadingMutationHistory]);
 
   // Refresh history data when switching to history/mutationHistory tabs
   const setActiveTab = useCallback((tab: MergeTab) => {
@@ -1671,7 +1675,7 @@ export const MergeTrackerView: React.FC = () => {
   }, [fetchMergeHistory, fetchMutationHistory]);
 
   const fetchPoolMetrics = useCallback(async (isInitialLoad = false) => {
-    if (!services || !isConnected) return;
+    if (!services || !isConnected || !hasMerges) return;
     if (isInitialLoad) {
       setIsLoadingPoolMetrics(true);
     }
@@ -1685,7 +1689,7 @@ export const MergeTrackerView: React.FC = () => {
         setIsLoadingPoolMetrics(false);
       }
     }
-  }, [services, isConnected, setPoolMetrics, setIsLoadingPoolMetrics]);
+  }, [services, isConnected, hasMerges, setPoolMetrics, setIsLoadingPoolMetrics]);
 
   const fetchTablesForDatabase = useCallback(async (database: string) => {
     if (!services || !isConnected) return;
@@ -1711,6 +1715,8 @@ export const MergeTrackerView: React.FC = () => {
       if (pollingRef.current) clearInterval(pollingRef.current);
       return;
     }
+    // Wait for capability probe; don't fire queries if system.merges is inaccessible
+    if (isCapProbing || !hasMerges) return;
     // Initial load - show loading states
     fetchActiveMerges(true);
     fetchMergeHistory(true);
@@ -1735,16 +1741,16 @@ export const MergeTrackerView: React.FC = () => {
     return () => {
       if (pollingRef.current) clearInterval(pollingRef.current);
     };
-  }, [services, isConnected, fetchActiveMerges, fetchMergeHistory, fetchMutations, fetchMutationHistory, fetchPoolMetrics, clearAll, refreshRateSeconds, refreshConfig, manualRefreshTick]);
+  }, [services, isConnected, hasMerges, isCapProbing, fetchActiveMerges, fetchMergeHistory, fetchMutations, fetchMutationHistory, fetchPoolMetrics, clearAll, refreshRateSeconds, refreshConfig, manualRefreshTick]);
 
   useEffect(() => {
-    if (services && isConnected) fetchMergeHistory(true);
-  }, [historyFilter, services, isConnected, fetchMergeHistory]);
+    if (services && isConnected && hasMerges) fetchMergeHistory(true);
+  }, [historyFilter, services, isConnected, hasMerges, fetchMergeHistory]);
 
   // Fetch mutation history when filter changes
   useEffect(() => {
-    if (services && isConnected) fetchMutationHistory(true);
-  }, [historyFilter, services, isConnected, fetchMutationHistory]);
+    if (services && isConnected && hasMerges) fetchMutationHistory(true);
+  }, [historyFilter, services, isConnected, hasMerges, fetchMutationHistory]);
 
   // Count pending mutations
   const pendingMutations = mutations.filter(m => !m.is_done).length;
@@ -1853,6 +1859,22 @@ export const MergeTrackerView: React.FC = () => {
     );
   }
 
+  // Capability gate — show centered message when system.merges is inaccessible
+  if (!isCapProbing && !hasMerges) {
+    return (
+      <div className="page-layout">
+        <div className="flex items-center justify-between">
+          <h1 className="text-xl font-semibold" style={{ color: 'var(--text-primary)' }}>Merge Tracker</h1>
+        </div>
+        <PermissionGate
+          error="Insufficient privileges to access system.merges. Ask your administrator to grant SELECT on this table."
+          title="Merge Tracker"
+          variant="page"
+        />
+      </div>
+    );
+  }
+
   return (
     <div className="page-layout">
       {/* Header */}
@@ -1893,14 +1915,7 @@ export const MergeTrackerView: React.FC = () => {
 
       {/* Error */}
       {error && (
-        <div className="card p-4 flex items-start gap-3" style={{ borderColor: 'var(--accent-red)' }}>
-          <span className="font-bold" style={{ color: 'var(--accent-red)' }}>!</span>
-          <div className="flex-1">
-            <div className="font-medium" style={{ color: 'var(--accent-red)' }}>Error</div>
-            <div className="text-sm" style={{ color: 'var(--text-secondary)' }}>{error}</div>
-          </div>
-          <button onClick={clearError} style={{ color: 'var(--text-muted)' }}>×</button>
-        </div>
+        <PermissionGate error={error} title="Merge Tracker" variant="banner" onDismiss={clearError} />
       )}
 
       {/* Main Content */}

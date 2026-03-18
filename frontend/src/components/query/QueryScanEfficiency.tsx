@@ -28,10 +28,7 @@ const fmtNum = (n: number): string => {
   return n.toLocaleString();
 };
 
-const fmtUs = (us: number): string =>
-  us >= 1_000_000 ? `${(us / 1_000_000).toFixed(2)}s`
-    : us >= 1_000 ? `${(us / 1_000).toFixed(1)}ms`
-      : `${us}µs`;
+import { formatMicroseconds as fmtUs } from '../../utils/formatters';
 
 /** Color for the % that passes through: lower = greener (more was filtered) */
 const scanColor = (pct: number): string =>

@@ -599,7 +599,7 @@ const HoverTooltip: React.FC<{
             <div><span style={{ color: '#636EFA' }}>Memory:</span> {fmtMB(s.memory_mb)}</div>
             <div><span style={{ color: '#FECB52' }}>CPU:</span> {s.d_cpu_cores.toFixed(2)} cores</div>
             <div><span style={{ color: '#7B83FF' }}>I/O Wait:</span> {s.d_io_wait_s.toFixed(3)}s</div>
-            <div><span style={{ color: '#00DD99' }}>Read:</span> {s.d_read_mb.toFixed(1)} MB</div>
+            <div><span style={{ color: '#00DD99' }}>read_bytes:</span> {s.d_read_mb.toFixed(1)} MB/s</div>
             {s.d_net_send_kb > 0 && <div><span style={{ color: '#33DDFF' }}>Net Send:</span> {s.d_net_send_kb.toFixed(1)} KB</div>}
             {s.d_net_recv_kb > 0 && <div><span style={{ color: '#33DDFF' }}>Net Recv:</span> {s.d_net_recv_kb.toFixed(1)} KB</div>}
             <div><span style={{ color: '#aaa' }}>Threads:</span> {s.thread_count}</div>
@@ -811,7 +811,7 @@ const Scrubber: React.FC<{
         <span style={{ color: '#5577dd' }}>Mem {fmtMB(s.memory_mb)}</span>
         <span style={{ color: '#ddaa33' }}>CPU {s.d_cpu_cores.toFixed(1)}</span>
         <span style={{ color: '#7B83FF' }}>IO {s.d_io_wait_s.toFixed(2)}s</span>
-        <span style={{ color: '#00DD99' }}>Read {s.d_read_mb.toFixed(0)} MB</span>
+        <span style={{ color: '#00DD99' }}>read_bytes {s.d_read_mb.toFixed(0)} MB/s</span>
         <span style={{ color: '#aaa' }}>{s.thread_count} thr</span>
       </div>
     );

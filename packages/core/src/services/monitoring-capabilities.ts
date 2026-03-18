@@ -19,6 +19,7 @@ import {
   PROBE_CLOUD_SERVICE,
   PROBE_CPU_PROFILER_SAMPLES,
   PROBE_TRACEHOUSE_PROCESSES_HISTORY,
+  PROBE_SYSTEM_TABLE_ACCESS_TABLES,
 } from '../queries/monitoring-capabilities-queries.js';
 import { tagQuery } from '../queries/builder.js';
 import { TAB_INTERNAL, sourceTag } from '../queries/source-tags.js';
@@ -163,7 +164,7 @@ export class MonitoringCapabilitiesService {
    * per-probe so partial results are still returned.
    */
   async probe(): Promise<MonitoringCapabilities> {
-    const [version, logTables, settings, hasZk, hasIntrospection, isCloud, cpuProfilerSampleCount, tracehouseTables] = await Promise.all([
+    const [version, logTables, settings, hasZk, hasIntrospection, isCloud, cpuProfilerSampleCount, tracehouseTables, systemTableAccess] = await Promise.all([
       this.probeVersion(),
       this.probeLogTables(),
       this.probeSettings(),
@@ -172,6 +173,7 @@ export class MonitoringCapabilitiesService {
       this.probeCloudService(),
       this.probeCPUProfilerSamples(),
       this.probeTracehouseProcessesHistory(),
+      this.probeSystemTableAccess(),
     ]);
 
     const capabilities: MonitoringCapability[] = [];
@@ -346,6 +348,63 @@ export class MonitoringCapabilitiesService {
       source: 'tracehouse.processes_history',
     });
 
+    // System table access capabilities — these tables always exist on ClickHouse
+    // but may not be accessible due to privilege restrictions.
+    const SYSTEM_TABLE_META: Record<string, { label: string; description: string; category: MonitoringCapability['category'] }> = {
+      merges: {
+        label: 'Active Merges',
+        description: 'Currently running merges. Enables the Merge Tracker active merges view.',
+        category: 'introspection',
+      },
+      mutations: {
+        label: 'Active Mutations',
+        description: 'Currently running mutations. Enables the Merge Tracker mutations view.',
+        category: 'introspection',
+      },
+      clusters: {
+        label: 'Cluster Topology',
+        description: 'Cluster configuration and node list. Enables the Cluster page.',
+        category: 'introspection',
+      },
+      replicas: {
+        label: 'Replication Status',
+        description: 'Per-table replication health and queue status. Enables the Replication page.',
+        category: 'introspection',
+      },
+      parts: {
+        label: 'Table Parts',
+        description: 'Active data parts per table. Enables part-level detail in Database Explorer and Analytics.',
+        category: 'introspection',
+      },
+      databases: {
+        label: 'Database List',
+        description: 'Database metadata. Enables the Database Explorer top-level view.',
+        category: 'introspection',
+      },
+      processes: {
+        label: 'Running Processes',
+        description: 'Currently executing queries. Enables real-time running query monitoring.',
+        category: 'introspection',
+      },
+    };
+
+    for (const tableName of PROBE_SYSTEM_TABLE_ACCESS_TABLES) {
+      const accessible = systemTableAccess.has(tableName);
+      const meta = SYSTEM_TABLE_META[tableName];
+      if (!meta) continue;
+      capabilities.push({
+        id: `system_${tableName}`,
+        label: meta.label,
+        description: meta.description,
+        available: accessible,
+        category: meta.category,
+        detail: accessible
+          ? 'Accessible'
+          : 'Insufficient privileges to SELECT from system.' + tableName,
+        source: `system.${tableName}`,
+      });
+    }
+
     return {
       probedAt: new Date(),
       serverVersion: version,
@@ -489,6 +548,33 @@ export class MonitoringCapabilitiesService {
       // tracehouse database may not exist — that's fine
     }
     return result;
+  }
+
+  /**
+   * Probe access to operational system tables by attempting a lightweight
+   * SELECT. Returns the set of table names that are accessible.
+   * Each probe is independent — a permission error on one table doesn't
+   * affect the others.
+   */
+  private async probeSystemTableAccess(): Promise<Set<string>> {
+    const accessible = new Set<string>();
+    const results = await Promise.allSettled(
+      PROBE_SYSTEM_TABLE_ACCESS_TABLES.map(async (table) => {
+        await this.adapter.executeQuery(
+          tagQuery(
+            `SELECT 1 FROM system.${table} LIMIT 0`,
+            sourceTag(TAB_INTERNAL, `probe_${table}`)
+          )
+        );
+        return table;
+      })
+    );
+    for (const result of results) {
+      if (result.status === 'fulfilled') {
+        accessible.add(result.value);
+      }
+    }
+    return accessible;
   }
 
   private parseVersion(version: string): [number, number] {

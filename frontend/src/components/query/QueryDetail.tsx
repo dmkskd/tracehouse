@@ -8,6 +8,7 @@
 import React, { useState, useEffect, useCallback, useMemo } from 'react';
 import type { RunningQuery, QueryHistoryItem } from '../../stores/queryStore';
 import { formatBytes, formatDuration, formatNumber } from '../../stores/queryStore';
+import { formatDurationMs, formatMicroseconds } from '../../utils/formatters';
 import { useClickHouseServices } from '../../providers/ClickHouseProvider';
 import { useCapabilityCheck } from '../shared/RequiresCapability';
 import type { QueryThreadBreakdown } from '@tracehouse/core';
@@ -157,7 +158,7 @@ const RunningQueryMetrics: React.FC<{ query: RunningQuery; onKill?: () => void; 
 );
 
 const HistoryQueryMetrics: React.FC<{ query: QueryHistoryItem }> = ({ query }) => {
-  const fmtMs = (ms: number) => ms < 1000 ? `${ms}ms` : ms < 60000 ? `${(ms / 1000).toFixed(2)}s` : `${(ms / 60000).toFixed(2)}m`;
+  const fmtMs = formatDurationMs;
   const fmtTime = (ts: string) => new Date(ts).toLocaleString();
   
   // Calculate derived metrics
@@ -658,7 +659,7 @@ export const ThreadBreakdownSection: React.FC<{
     );
   }
 
-  const fmtUs = (v: number) => v >= 1_000_000 ? `${(v / 1_000_000).toFixed(2)}s` : v >= 1000 ? `${(v / 1000).toFixed(1)}ms` : `${v}µs`;
+  const fmtUs = formatMicroseconds;
   const cols: { key: keyof QueryThreadBreakdown; label: string; fmt: (v: number) => string }[] = [
     { key: 'thread_name', label: 'Thread', fmt: () => '' },
     { key: 'cpu_time_us', label: 'CPU', fmt: fmtUs },

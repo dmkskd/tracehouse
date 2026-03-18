@@ -15,6 +15,7 @@ import { LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContai
 import { useClickHouseServices } from '../../providers/ClickHouseProvider';
 import { useCapabilityCheck } from '../shared/RequiresCapability';
 import { formatBytes } from '../../stores/queryStore';
+import { formatDurationMs, formatMicroseconds } from '../../utils/formatters';
 
 /** Minimal query shape needed for comparison - works with both SimilarQuery and QueryHistoryItem */
 export interface ComparableQuery {
@@ -46,8 +47,8 @@ interface QueryComparisonPanelProps {
   mode?: 'sticky' | 'overlay';
 }
 
-const fmtMs = (ms: number) => ms < 1000 ? `${Number(ms.toFixed(2))}ms` : ms < 60000 ? `${(ms / 1000).toFixed(2)}s` : `${(ms / 60000).toFixed(2)}m`;
-const fmtUs = (us: number) => us < 1000 ? `${us}µs` : us < 1000000 ? `${(us / 1000).toFixed(1)}ms` : `${(us / 1000000).toFixed(2)}s`;
+const fmtMs = formatDurationMs;
+const fmtUs = formatMicroseconds;
 const fmtTimeShort = (ts: string) => {
   const d = new Date(ts);
   return `${d.getMonth()+1}/${d.getDate()} ${d.getHours().toString().padStart(2,'0')}:${d.getMinutes().toString().padStart(2,'0')}`;

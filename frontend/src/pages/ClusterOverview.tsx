@@ -19,6 +19,9 @@ import {
 } from '@tracehouse/core';
 import { ClusterTopology } from '../components/cluster/ClusterTopology';
 import type { HostMetrics } from '../components/cluster/ClusterTopology';
+import { PermissionGate } from '../components/shared/PermissionGate';
+import { extractErrorMessage } from '../utils/errorFormatters';
+import { useCapabilityCheck, RequiresCapability } from '../components/shared/RequiresCapability';
 
 // ── Types ──
 
@@ -343,6 +346,7 @@ export const ClusterOverview: React.FC = () => {
   const [hostMetrics, setHostMetrics] = useState<HostMetrics[]>([]);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const { available: hasClusters, probing: isCapProbing } = useCapabilityCheck(['system_clusters']);
 
   const handleOpenConnectionForm = useCallback(() => {
     setConnectionFormOpen(true);
@@ -351,6 +355,12 @@ export const ClusterOverview: React.FC = () => {
   // Fetch all cluster data
   useEffect(() => {
     if (!services || !isConnected || !detected) return;
+    // Wait for capability probe to finish before querying
+    if (isCapProbing) return;
+    if (!hasClusters) {
+      setError('Insufficient privileges to access system.clusters. Ask your administrator to grant SELECT on this table.');
+      return;
+    }
 
     let cancelled = false;
     setLoading(true);
@@ -389,7 +399,7 @@ export const ClusterOverview: React.FC = () => {
         if (!cancelled) useGlobalLastUpdatedStore.getState().touch();
       } catch (err) {
         if (!cancelled) {
-          setError(err instanceof Error ? err.message : 'Failed to fetch cluster data');
+          setError(extractErrorMessage(err, 'Failed to fetch cluster data'));
         }
       } finally {
         if (!cancelled) setLoading(false);
@@ -417,7 +427,7 @@ export const ClusterOverview: React.FC = () => {
     })();
 
     return () => { cancelled = true; };
-  }, [services, isConnected, detected, clusterName]);
+  }, [services, isConnected, detected, clusterName, hasClusters, isCapProbing]);
 
   // No connection
   if (!activeProfileId || !isConnected) {
@@ -457,11 +467,7 @@ export const ClusterOverview: React.FC = () => {
         <div className="flex items-center justify-between">
           <h1 className="text-xl font-semibold" style={{ color: 'var(--text-primary)' }}>Cluster</h1>
         </div>
-        <div className="card" style={{ borderLeftWidth: 3, borderLeftColor: '#ef4444' }}>
-          <div className="card-body">
-            <span style={{ fontSize: 12, color: '#ef4444' }}>{error}</span>
-          </div>
-        </div>
+        <PermissionGate error={error} title="Cluster" variant="page" />
       </div>
     );
   }

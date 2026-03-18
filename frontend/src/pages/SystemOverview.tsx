@@ -16,17 +16,8 @@ import { useTimeSeriesStore } from '../stores/timeSeriesStore';
 import { TimeSeriesChart } from '../components/metrics/TimeSeriesChart';
 import type { MergeInfo, BackgroundPoolMetrics, HistoricalMetricsPoint } from '@tracehouse/core';
 import type { ChartDataPoint, TrendMetricType, MetricStats } from '../stores/timeSeriesStore';
-import { formatBytes } from '../utils/formatters';
+import { formatBytes, formatDuration } from '../utils/formatters';
 
-// Format duration from seconds
-const formatDuration = (seconds: number): string => {
-  const days = Math.floor(seconds / 86400);
-  const hours = Math.floor((seconds % 86400) / 3600);
-  const mins = Math.floor((seconds % 3600) / 60);
-  if (days > 0) return `${days}d ${hours}h`;
-  if (hours > 0) return `${hours}h ${mins}m`;
-  return `${mins}m`;
-};
 
 // Stat Card - matches MetricsDashboard style
 const StatCard: React.FC<{

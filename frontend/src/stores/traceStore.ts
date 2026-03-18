@@ -7,6 +7,7 @@
  */
 
 import { create } from 'zustand';
+import { formatMicroseconds } from '../utils/formatters';
 
 // Import types from core for use in this file
 import type { TraceLog, ExplainType, ExplainResult, OpenTelemetrySpan } from '@tracehouse/core';
@@ -206,15 +207,7 @@ export function formatTimestamp(timestamp: string): string {
 /**
  * Format duration in microseconds to human-readable string
  */
-export function formatDurationUs(us: number): string {
-  if (us < 1000) {
-    return `${us}µs`;
-  }
-  if (us < 1000000) {
-    return `${(us / 1000).toFixed(2)}ms`;
-  }
-  return `${(us / 1000000).toFixed(2)}s`;
-}
+export const formatDurationUs = formatMicroseconds;
 
 /**
  * Get log level color class

@@ -9,6 +9,7 @@ import { useRefreshConfig, clampToAllowed } from '@tracehouse/ui-shared';
 import { useRefreshSettingsStore } from '../stores/refreshSettingsStore';
 import { useGlobalLastUpdatedStore } from '../stores/refreshSettingsStore';
 import { useCapabilityCheck } from '../components/shared/RequiresCapability';
+import { PermissionGate } from '../components/shared/PermissionGate';
 import { useOverviewStore, OverviewPoller } from '../stores/overviewStore';
 import { BackLink } from '../components/common/BackLink';
 import { useLocation } from 'react-router-dom';
@@ -67,6 +68,7 @@ export const QueryMonitor: React.FC = () => {
   const { refreshRateSeconds } = useRefreshSettingsStore();
   const manualRefreshTick = useGlobalLastUpdatedStore(s => s.manualRefreshTick);
   const { available: hasQueryLog, probing: isProbing } = useCapabilityCheck(['query_log']);
+  const { available: hasProcesses, probing: isProcessesProbing } = useCapabilityCheck(['system_processes']);
 
   const [runningCoordinatorIds, setRunningCoordinatorIds] = useState<Set<string>>(new Set());
   const [historyCoordinatorIds, setHistoryCoordinatorIds] = useState<Set<string>>(new Set());
@@ -199,7 +201,7 @@ export const QueryMonitor: React.FC = () => {
     };
     pollCoordinators();
     const coordInterval = refreshRateSeconds > 0 ? setInterval(pollCoordinators, queryIntervalMs) : null;
-    fetchHistory();
+    if (hasQueryLog) fetchHistory();
     return () => {
       if (wsRef.current) wsRef.current.disconnect();
       if (livePollerRef.current) livePollerRef.current.stop();
@@ -207,9 +209,10 @@ export const QueryMonitor: React.FC = () => {
     };
   }, [services, isConnected, refreshRateSeconds, refreshConfig, manualRefreshTick]);
 
+  // Fetch history when filter changes or when hasQueryLog becomes available
   useEffect(() => {
-    if (services && isConnected) fetchHistory();
-  }, [historyFilter, fetchHistory]);
+    if (services && isConnected && hasQueryLog) fetchHistory();
+  }, [historyFilter, fetchHistory, hasQueryLog]);
 
   if (!activeProfile?.id || !isConnected) {
     return (
@@ -378,8 +381,19 @@ export const QueryMonitor: React.FC = () => {
       </div>
 
       {error && (
-        <div style={{ margin: '12px 24px 0', padding: '10px 14px', borderRadius: 8, fontSize: 13, background: 'rgba(248,81,73,0.08)', color: '#f85149', border: '1px solid rgba(248,81,73,0.2)' }}>
-          {error}
+        <div style={{ margin: '12px 24px 0' }}>
+          <PermissionGate error={error} title="Query Monitor" variant="banner" onDismiss={clearError} />
+        </div>
+      )}
+
+      {/* Degradation banner for running queries */}
+      {activeTab === 'running' && !isProcessesProbing && !hasProcesses && (
+        <div style={{ margin: '12px 24px 0' }}>
+          <PermissionGate
+            error="Insufficient privileges to access system.processes. Ask your administrator to grant SELECT on this table."
+            title="Running Queries"
+            variant="banner"
+          />
         </div>
       )}
 
@@ -399,9 +413,11 @@ export const QueryMonitor: React.FC = () => {
                 onFilterChange={setHistoryFilter} onSortChange={setHistorySort} isLoading={isLoadingHistory}
                 queryAnalyzer={services?.queryAnalyzer} coordinatorIds={historyCoordinatorIds} />
             ) : (
-              <div style={{ textAlign: 'center', fontSize: 12, color: 'var(--text-muted)', padding: 32 }}>
-                Query History requires system.query_log (not available on this server)
-              </div>
+              <PermissionGate
+                error="system.query_log is not available on this server. Query History requires query logging to be enabled."
+                title="Query History"
+                variant="page"
+              />
             )}
           </div>
         </div>

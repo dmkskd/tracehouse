@@ -12,6 +12,7 @@ import type {
   SortDirection,
 } from '../../stores/queryStore';
 import { formatBytes, formatNumber, sortQueryHistory } from '../../stores/queryStore';
+import { formatDurationMs } from '../../utils/formatters';
 import { QueryComparisonPanel } from './QueryComparisonPanel';
 import type { ComparableQuery } from './QueryComparisonPanel';
 import { QueryFilterBar } from './QueryFilterBar';
@@ -49,17 +50,7 @@ const tdStyle: React.CSSProperties = {
   borderBottom: '1px solid var(--border-primary)',
 };
 
-const fmtDuration = (ms: number): string => {
-  if (ms < 1000) return `${ms}ms`;
-  if (ms < 60000) return `${(ms / 1000).toFixed(2)}s`;
-  const totalSeconds = Math.floor(ms / 1000);
-  const minutes = Math.floor(totalSeconds / 60);
-  const seconds = totalSeconds % 60;
-  if (minutes < 60) return `${minutes}:${String(seconds).padStart(2, '0')}m`;
-  const hours = Math.floor(minutes / 60);
-  const mins = minutes % 60;
-  return `${hours}:${String(mins).padStart(2, '0')}:${String(seconds).padStart(2, '0')}h`;
-};
+const fmtDuration = formatDurationMs;
 
 const fmtTime = (ts: string): string => {
   const d = new Date(ts);

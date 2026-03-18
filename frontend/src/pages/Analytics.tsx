@@ -9,6 +9,7 @@ import { useGlobalLastUpdatedStore } from '../stores/refreshSettingsStore';
 import { useClickHouseServices } from '../providers/ClickHouseProvider';
 import { useClusterStore } from '../stores/clusterStore';
 import { useCapabilityCheck } from '../components/shared/RequiresCapability';
+import { PermissionGate } from '../components/shared/PermissionGate';
 import { OrderingKeyTable } from '../components/analytics/OrderingKeyTable';
 import { QueryExplorer } from '../components/analytics/QueryExplorer';
 import { DashboardViewer } from '../components/analytics/DashboardViewer';
@@ -103,8 +104,8 @@ export const Analytics: React.FC = () => {
     }
   }, [services, isConnected, lookbackDays, clusterDetected]);
 
-  useEffect(() => { fetchDatabases(); }, [fetchDatabases]);
-  useEffect(() => { fetchData(); }, [fetchData]);
+  useEffect(() => { if (hasQueryLog || isCapProbing) fetchDatabases(); }, [fetchDatabases, hasQueryLog, isCapProbing]);
+  useEffect(() => { if (hasQueryLog || isCapProbing) fetchData(); }, [fetchData, hasQueryLog, isCapProbing]);
 
   // Merge databases from both sources: actual MergeTree dbs + any dbs in query data
   const databases = useMemo(() => {
@@ -329,14 +330,18 @@ export const Analytics: React.FC = () => {
       {activeTab === 'tables' && (
         <>
           {error && (
-            <div style={{ margin: '12px 24px 0', padding: '10px 14px', borderRadius: 8, fontSize: 13, background: 'rgba(248,81,73,0.08)', color: '#f85149', border: '1px solid rgba(248,81,73,0.2)' }}>
-              {error}
+            <div style={{ margin: '12px 24px 0' }}>
+              <PermissionGate error={error} title="Analytics" variant="banner" />
             </div>
           )}
 
-          {!hasQueryLog && !isLoading && !isCapProbing && (
-            <div style={{ margin: '12px 24px 0', padding: '10px 14px', borderRadius: 8, fontSize: 13, background: 'rgba(210,153,34,0.08)', color: '#d29922', border: '1px solid rgba(210,153,34,0.2)' }}>
-              system.query_log is not available on this server. Analytics requires query logging to be enabled.
+          {!hasQueryLog && !error && !isLoading && !isCapProbing && (
+            <div style={{ margin: '12px 24px 0' }}>
+              <PermissionGate
+                error="system.query_log is not available on this server. Analytics requires query logging to be enabled."
+                title="Analytics"
+                variant="banner"
+              />
             </div>
           )}
 

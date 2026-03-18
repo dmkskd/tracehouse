@@ -34,21 +34,13 @@ import {
 } from '../components/overview';
 import type { ClusterHistoricalMetricsPoint, RunningQueryInfo, ActiveMergeInfo } from '@tracehouse/core';
 import type { ChartDataPoint, TrendMetricType, MetricStats } from '../stores/timeSeriesStore';
-import { formatBytes } from '../utils/formatters';
+import { formatBytes, formatDuration } from '../utils/formatters';
 import { TruncatedHost } from '../components/common/TruncatedHost';
 import { ObservabilitySunburst, DetailSidebar, OBSERVABILITY_DATA, enrichWithAvailability, mergeAvailability, fetchColumnComments } from '../components/observability-map';
 import type { SunburstNodeData, QueryResult, ObservabilityData, ColumnCommentMap } from '../components/observability-map';
 import { useUserPreferenceStore } from '../stores/userPreferenceStore';
+import useMonitoringCapabilitiesStore from '../stores/monitoringCapabilitiesStore';
 
-// Format duration from seconds
-const formatDuration = (seconds: number): string => {
-  const days = Math.floor(seconds / 86400);
-  const hours = Math.floor((seconds % 86400) / 3600);
-  const mins = Math.floor((seconds % 3600) / 60);
-  if (days > 0) return `${days}d ${hours}h`;
-  if (hours > 0) return `${hours}h ${mins}m`;
-  return `${mins}m`;
-};
 
 // No Connection Component
 const NoConnection: React.FC<{ onConnect: () => void }> = ({ onConnect }) => (
@@ -484,6 +476,18 @@ export const Overview: React.FC = () => {
     );
   }
 
+  // Degradation summary — list key capabilities that are missing
+  const { flags: capFlags, probeStatus } = useMonitoringCapabilitiesStore();
+  const degradedFeatures = useMemo(() => {
+    if (probeStatus !== 'done') return [];
+    const items: string[] = [];
+    if (!capFlags.hasQueryLog) items.push('Query history');
+    if (!capFlags.hasMetricLog) items.push('Metric trends');
+    if (!capFlags.hasSystemMerges) items.push('Merge tracking');
+    if (!capFlags.hasSystemProcesses) items.push('Running queries');
+    return items;
+  }, [probeStatus, capFlags]);
+
   // Build breakdown segments from resource attribution (for inline bars in stat cards)
   return (
     <div className="page-layout" style={viewMode === 'map' ? { height: '100%', minHeight: 0, overflow: 'hidden', display: 'flex', flexDirection: 'column' } : undefined}>
@@ -525,6 +529,24 @@ export const Overview: React.FC = () => {
           </div>
         </div>
       </div>
+
+      {/* Degradation banner — shown when key capabilities are missing */}
+      {degradedFeatures.length > 0 && viewMode === 'snapshot' && (
+        <div style={{
+          padding: '8px 14px',
+          borderRadius: 8,
+          fontSize: 12,
+          background: 'rgba(210,153,34,0.08)',
+          color: '#d29922',
+          border: '1px solid rgba(210,153,34,0.2)',
+          lineHeight: 1.5,
+        }}>
+          Some features are limited on this server: {degradedFeatures.join(', ')}.
+          <span style={{ color: 'var(--text-muted)', marginLeft: 6 }}>
+            Check Engine Internals → Monitoring Capabilities for details.
+          </span>
+        </div>
+      )}
 
       {viewMode === 'map' && (
         <div style={{ display: 'flex', alignItems: 'baseline', justifyContent: 'space-between', gap: 16, marginBottom: 4 }}>

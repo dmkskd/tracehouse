@@ -9,8 +9,7 @@ import { parseTimestamp } from '../../utils/formatters';
 import { type MetricMode, type HighlightedItem, METRIC_CONFIG, metricForItem } from './timeline-constants';
 import { TruncatedHost } from '../common/TruncatedHost';
 
-const fmtMs = (ms: number): string =>
-  ms < 1000 ? `${ms}ms` : ms < 60000 ? `${(ms/1000).toFixed(1)}s` : `${(ms/60000).toFixed(1)}m`;
+import { formatDurationMs as fmtMs } from '../../utils/formatters';
 
 const getQueryKindColor = (kind: string): string => {
   switch (kind.toLowerCase()) {

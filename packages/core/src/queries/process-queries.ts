@@ -195,7 +195,7 @@ export const TIMELINE_METRICS: TimelineMetric[] = [
     lines: [{ key: 'd_cpu_cores', suffix: '' }] },
   { id: 'memory_mb', label: 'Memory', unit: 'MB', formatter: v => `${v.toFixed(1)} MB`,
     lines: [{ key: 'memory_mb', suffix: '' }] },
-  { id: 'd_read_mb', label: 'Read Throughput', unit: 'MB/s', formatter: v => `${v.toFixed(2)} MB/s`,
+  { id: 'd_read_mb', label: 'read_bytes', unit: 'MB/s', formatter: v => `${v.toFixed(2)} MB/s`,
     lines: [{ key: 'd_read_mb', suffix: '' }] },
   { id: 'd_io_wait_s', label: 'I/O Wait', unit: 's', formatter: v => `${v.toFixed(3)} s`,
     lines: [{ key: 'd_io_wait_s', suffix: '' }] },

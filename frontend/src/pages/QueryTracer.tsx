@@ -13,6 +13,7 @@ import { useTraceStore, type ExplainType, type TraceLog } from '../stores/traceS
 import { TraceLogViewer } from '../components/tracing/TraceLogViewer';
 import { ExplainViewer } from '../components/tracing/ExplainViewer';
 import { useCapabilityCheck } from '../components/shared/RequiresCapability';
+import { formatMicroseconds, formatDurationMs } from '../utils/formatters';
 import {
   Scene3D,
   PipelineVisualization,
@@ -94,11 +95,7 @@ const SpansViewer: React.FC<{
     setExpandedSpans(newExpanded);
   };
   
-  const formatDuration = (us: number): string => {
-    if (us < 1000) return `${us}µs`;
-    if (us < 1000000) return `${(us / 1000).toFixed(2)}ms`;
-    return `${(us / 1000000).toFixed(2)}s`;
-  };
+  const formatDuration = formatMicroseconds;
   
   if (isLoading) {
     return (
@@ -313,10 +310,7 @@ const TimelineViewer: React.FC<{
     return `hsl(${hue}, 60%, 55%)`;
   };
 
-  const formatDuration = (ms: number) => {
-    if (ms >= 1000) return `${(ms / 1000).toFixed(2)}s`;
-    return `${ms.toFixed(0)}ms`;
-  };
+  const formatDuration = formatDurationMs;
 
   return (
     <div style={{ padding: 16 }}>

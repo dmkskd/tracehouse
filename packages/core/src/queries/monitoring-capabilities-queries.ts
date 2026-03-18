@@ -124,6 +124,24 @@ WHERE database = 'tracehouse'
 `;
 
 /**
+ * Probe access to operational system tables (not log tables) that pages
+ * depend on. A simple `SELECT 1 FROM system.X LIMIT 0` per table.
+ * Returns the table name only if the SELECT succeeds.
+ *
+ * We probe these individually via Promise.allSettled in the service
+ * because a single failing table shouldn't block probing of the others.
+ */
+export const PROBE_SYSTEM_TABLE_ACCESS_TABLES = [
+  'merges',     // Merge Tracker
+  'mutations',  // Merge Tracker mutations tab
+  'clusters',   // Cluster page
+  'replicas',   // Replication page
+  'parts',      // Database Explorer parts, Analytics
+  'databases',  // Database Explorer
+  'processes',  // Query Monitor running queries
+] as const;
+
+/**
  * Detect ClickHouse Cloud by checking for cloud-specific build options
  * or settings. Returns 1 if any cloud indicator is found.
  * 

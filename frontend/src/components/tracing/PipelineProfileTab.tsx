@@ -69,11 +69,7 @@ const STAGE_COLORS: Record<string, string> = {
   Resize:              '#94a3b8', // slate
 };
 
-function fmtUs(us: number): string {
-  if (us < 1000) return `${us}µs`;
-  if (us < 1_000_000) return `${(us / 1000).toFixed(1)}ms`;
-  return `${(us / 1_000_000).toFixed(2)}s`;
-}
+import { formatMicroseconds as fmtUs } from '../../utils/formatters';
 
 function fmtBytes(bytes: number): string {
   if (bytes < 1024) return `${bytes} B`;

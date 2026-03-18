@@ -139,6 +139,50 @@ export const CAPABILITY_REGISTRY: CapabilityRegistryEntry[] = [
     ],
   },
   {
+    capabilityId: 'system_merges',
+    consumers: [
+      { screen: 'Merge Tracker', tab: 'Merges', route: '/merge-tracker', enables: 'Active merge monitoring and background pool utilization', importance: 'required' },
+    ],
+  },
+  {
+    capabilityId: 'system_mutations',
+    consumers: [
+      { screen: 'Merge Tracker', tab: 'Merges', route: '/merge-tracker', enables: 'Active and historical mutation tracking', importance: 'optional' },
+    ],
+  },
+  {
+    capabilityId: 'system_clusters',
+    consumers: [
+      { screen: 'Cluster Overview', tab: 'Cluster', route: '/cluster', enables: 'Cluster topology and node list', importance: 'required' },
+    ],
+  },
+  {
+    capabilityId: 'system_replicas',
+    consumers: [
+      { screen: 'Replication', tab: 'Replication', route: '/replication', enables: 'Per-table replication health and queue inspection', importance: 'required' },
+    ],
+  },
+  {
+    capabilityId: 'system_parts',
+    consumers: [
+      { screen: 'Database Explorer', tab: 'Explorer', route: '/database', enables: 'Part-level storage detail and size breakdown', importance: 'optional' },
+      { screen: 'Analytics', tab: 'Analytics', route: '/analytics', enables: 'Table size and part count data', importance: 'optional' },
+    ],
+  },
+  {
+    capabilityId: 'system_databases',
+    consumers: [
+      { screen: 'Database Explorer', tab: 'Explorer', route: '/database', enables: 'Database listing and metadata', importance: 'required' },
+    ],
+  },
+  {
+    capabilityId: 'system_processes',
+    consumers: [
+      { screen: 'Query Monitor', tab: 'Queries', route: '/query-monitor', enables: 'Running query list and real-time query monitoring', importance: 'required' },
+      { screen: 'Overview', tab: 'Overview', route: '/overview', enables: 'Live running queries in resource arena', importance: 'optional' },
+    ],
+  },
+  {
     capabilityId: 'tracehouse_processes_history',
     experimental: true,
     consumers: [

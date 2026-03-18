@@ -11,7 +11,7 @@ import { useClickHouseServices } from '../../providers/ClickHouseProvider';
 import { QueryDetailModal } from '../query/QueryDetailModal';
 import { CopyTableButton } from '../common/CopyTableButton';
 import { SqlHighlight } from '../common/SqlHighlight';
-import { formatBytes } from '../../utils/formatters';
+import { formatBytes, formatDurationMs } from '../../utils/formatters';
 
 interface Props {
   data: TableOrderingKeyEfficiency[];
@@ -29,10 +29,6 @@ function formatNumber(n: number): string {
   return n.toFixed(0);
 }
 
-function formatDuration(ms: number): string {
-  if (ms >= 1000) return `${(ms / 1000).toFixed(1)}s`;
-  return `${ms.toFixed(0)}ms`;
-}
 
 function pruningColor(pct: number | null): string {
   if (pct == null) return 'var(--text-muted)';
@@ -188,7 +184,7 @@ export const OrderingKeyTable: React.FC<Props> = ({ data, isLoading, lookbackDay
             r.database, r.table_name, formatNumber(r.query_count),
             r.avg_pruning_pct != null ? `${r.avg_pruning_pct.toFixed(1)}%` : '—',
             r.poor_pruning_queries, formatNumber(r.total_rows_read),
-            formatDuration(r.avg_duration_ms), formatBytes(r.avg_memory_bytes),
+            formatDurationMs(r.avg_duration_ms), formatBytes(r.avg_memory_bytes),
             r.sorting_key || '—',
           ])}
         />
@@ -225,7 +221,7 @@ export const OrderingKeyTable: React.FC<Props> = ({ data, isLoading, lookbackDay
                   <td style={cell}><PruningBadge pct={row.avg_pruning_pct} /></td>
                   <td style={{ ...cell, ...mono, textAlign: 'right', color: row.poor_pruning_queries > 0 ? '#f85149' : 'var(--text-muted)' }}>{row.poor_pruning_queries}</td>
                   <td style={{ ...cell, ...mono, textAlign: 'right' }}>{formatNumber(row.total_rows_read)}</td>
-                  <td style={{ ...cell, ...mono, textAlign: 'right' }}>{formatDuration(row.avg_duration_ms)}</td>
+                  <td style={{ ...cell, ...mono, textAlign: 'right' }}>{formatDurationMs(row.avg_duration_ms)}</td>
                   <td style={{ ...cell, ...mono, textAlign: 'right' }}>{formatBytes(row.avg_memory_bytes)}</td>
                   <td style={{ ...cell, fontSize: 11, color: 'var(--text-secondary)', maxWidth: 250, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{row.sorting_key || '—'}</td>
                 </tr>
@@ -499,19 +495,19 @@ const QueryPatternsTable: React.FC<{ patterns: TableQueryPattern[]; sortingKey: 
                 <td style={cell}><PruningBadge pct={p.avg_pruning_pct} /></td>
                 <td style={cell}><DiagBadge diag={diag} /></td>
                 <td style={{ ...cell, ...mono, textAlign: 'right' }}>
-                  <span title={`p50: ${formatDuration(p.p50_duration_ms)} (median)`}>{formatDuration(p.p50_duration_ms)}</span>
+                  <span title={`p50: ${formatDurationMs(p.p50_duration_ms)} (median)`}>{formatDurationMs(p.p50_duration_ms)}</span>
                 </td>
                 {(() => {
                   const r95 = p.p50_duration_ms > 0 ? p.p95_duration_ms / p.p50_duration_ms : 0;
                   const color95 = r95 > 3 ? '#d29922' : 'inherit';
-                  const tip95 = `p95: ${formatDuration(p.p95_duration_ms)} (${r95.toFixed(1)}× p50)${r95 > 3 ? ' — high tail variance' : ''}`;
-                  return <td style={{ ...cell, ...mono, textAlign: 'right', color: color95 }} title={tip95}>{formatDuration(p.p95_duration_ms)}</td>;
+                  const tip95 = `p95: ${formatDurationMs(p.p95_duration_ms)} (${r95.toFixed(1)}× p50)${r95 > 3 ? ' — high tail variance' : ''}`;
+                  return <td style={{ ...cell, ...mono, textAlign: 'right', color: color95 }} title={tip95}>{formatDurationMs(p.p95_duration_ms)}</td>;
                 })()}
                 {(() => {
                   const r99 = p.p50_duration_ms > 0 ? p.p99_duration_ms / p.p50_duration_ms : 0;
                   const color99 = r99 > 10 ? '#f85149' : r99 > 5 ? '#d29922' : 'inherit';
-                  const tip99 = `p99: ${formatDuration(p.p99_duration_ms)} (${r99.toFixed(1)}× p50)${r99 > 10 ? ' — extreme tail, check for resource contention' : r99 > 5 ? ' — heavy tail' : ''}`;
-                  return <td style={{ ...cell, ...mono, textAlign: 'right', color: color99 }} title={tip99}>{formatDuration(p.p99_duration_ms)}</td>;
+                  const tip99 = `p99: ${formatDurationMs(p.p99_duration_ms)} (${r99.toFixed(1)}× p50)${r99 > 10 ? ' — extreme tail, check for resource contention' : r99 > 5 ? ' — heavy tail' : ''}`;
+                  return <td style={{ ...cell, ...mono, textAlign: 'right', color: color99 }} title={tip99}>{formatDurationMs(p.p99_duration_ms)}</td>;
                 })()}
                 <td style={{ ...cell, ...mono, textAlign: 'right' }}>{formatBytes(p.avg_memory_bytes)}</td>
                 <td style={{ ...cell, ...mono, textAlign: 'right' }}>{formatNumber(p.avg_rows_read)}</td>

@@ -16,13 +16,16 @@ import { useClickHouseServices } from '../providers/ClickHouseProvider';
 import { useRefreshConfig, clampToAllowed } from '@tracehouse/ui-shared';
 import { useRefreshSettingsStore, useGlobalLastUpdatedStore } from '../stores/refreshSettingsStore';
 import { useUserPreferenceStore } from '../stores/userPreferenceStore';
-import { 
-  Scene3D, 
+import {
+  Scene3D,
   createSceneConfig,
   ErrorBoundary3D,
   PartsVisualization2D,
   HierarchyVisualization2D,
 } from '../components/3d';
+import { extractErrorMessage } from '../utils/errorFormatters';
+import { useCapabilityCheck } from '../components/shared/RequiresCapability';
+import { PermissionGate } from '../components/shared/PermissionGate';
 import { 
   HierarchyVisualization, 
   type HierarchyItem, 
@@ -876,6 +879,7 @@ export const DatabaseExplorer: React.FC = () => {
   
   // Get services from ClickHouseProvider
   const services = useClickHouseServices();
+  const { available: hasSystemDatabases, probing: isCapProbing } = useCapabilityCheck(['system_databases']);
 
   // Current level
   const currentLevel = breadcrumb[breadcrumb.length - 1].level;
@@ -890,7 +894,7 @@ export const DatabaseExplorer: React.FC = () => {
       setLastRefresh(new Date());
       useGlobalLastUpdatedStore.getState().touch();
     } catch (err) {
-      if (!silent) setError(err instanceof Error ? err.message : 'Failed to fetch databases');
+      if (!silent) setError(extractErrorMessage(err, 'Failed to fetch databases'));
     } finally {
       if (!silent) setIsLoading(false);
     }
@@ -906,7 +910,7 @@ export const DatabaseExplorer: React.FC = () => {
       setLastRefresh(new Date());
       useGlobalLastUpdatedStore.getState().touch();
     } catch (err) {
-      if (!silent) setError(err instanceof Error ? err.message : 'Failed to fetch tables');
+      if (!silent) setError(extractErrorMessage(err, 'Failed to fetch tables'));
     } finally {
       if (!silent) setIsLoading(false);
     }
@@ -922,7 +926,7 @@ export const DatabaseExplorer: React.FC = () => {
       setLastRefresh(new Date());
       useGlobalLastUpdatedStore.getState().touch();
     } catch (err) {
-      if (!silent) setError(err instanceof Error ? err.message : 'Failed to fetch parts');
+      if (!silent) setError(extractErrorMessage(err, 'Failed to fetch parts'));
     } finally {
       if (!silent) setIsLoading(false);
     }
@@ -946,9 +950,10 @@ export const DatabaseExplorer: React.FC = () => {
       clearAll();
       return;
     }
+    if (isCapProbing || !hasSystemDatabases) return;
     fetchDatabases();
     fetchActiveMerges(); // Also fetch merges for the info wall
-  }, [services, isConnected]);
+  }, [services, isConnected, isCapProbing, hasSystemDatabases]);
 
   // Auto-refresh effect - refresh data based on current level
   useEffect(() => {
@@ -1112,6 +1117,19 @@ export const DatabaseExplorer: React.FC = () => {
             Add Connection
           </button>
         </div>
+      </div>
+    );
+  }
+
+  // Capability gate — show centered message when system.databases is inaccessible
+  if (!isCapProbing && !hasSystemDatabases) {
+    return (
+      <div className="h-full flex flex-col" style={{ background: 'var(--bg-primary)' }}>
+        <PermissionGate
+          error="Insufficient privileges to access system.databases. Ask your administrator to grant SELECT on this table."
+          title="Database Explorer"
+          variant="page"
+        />
       </div>
     );
   }

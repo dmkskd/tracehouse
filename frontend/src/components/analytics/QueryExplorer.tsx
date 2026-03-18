@@ -13,6 +13,7 @@ import React, { useState, useCallback, useMemo, useRef, useEffect } from 'react'
 import { useClickHouseServices } from '../../providers/ClickHouseProvider';
 import { PRESET_QUERIES } from './presetQueries';
 import { type Query } from './types';
+import { formatClickHouseError } from '../../utils/errorFormatters';
 import {
   addCustomQuery, deleteCustomQuery, loadCustomQueries, isQueryNameTaken,
   buildCustomQuerySql, getAllQueries as getAllQueriesFromPresets,
@@ -627,11 +628,20 @@ export const QueryExplorer: React.FC<QueryExplorerProps> = ({ urlState, onUrlSta
 
         {/* Results */}
         <div style={{ flex: 1, position: 'relative', minHeight: 0, display: 'flex', flexDirection: 'column', overflow: 'hidden' }}>
-          {error && (
-            <div style={{ padding: '10px 16px', background: 'rgba(248,81,73,0.08)', color: '#f85149', fontSize: 12, borderBottom: '1px solid rgba(248,81,73,0.2)', flexShrink: 0 }}>
-              ⚠ {error}
-            </div>
-          )}
+          {error && (() => {
+            const fmt = formatClickHouseError(error);
+            return (
+              <div style={{
+                padding: '10px 16px', fontSize: 12, flexShrink: 0,
+                borderBottom: '1px solid',
+                ...(fmt.isPermissionError
+                  ? { background: 'rgba(210,153,34,0.08)', color: '#d29922', borderBottomColor: 'rgba(210,153,34,0.2)' }
+                  : { background: 'rgba(248,81,73,0.08)', color: '#f85149', borderBottomColor: 'rgba(248,81,73,0.2)' }),
+              }}>
+                {fmt.message}
+              </div>
+            );
+          })()}
 
           {/* Queries Grid View */}
           {viewMode === 'queries' && <QueriesGrid search={querySearch} onSearchChange={setQuerySearch} onSelect={p => { selectPreset(p); setQuerySearch(''); }} customQueries={customQueries} onDeleteCustom={handleDeleteCustomQuery} />}

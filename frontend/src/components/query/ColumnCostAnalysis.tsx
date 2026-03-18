@@ -9,7 +9,7 @@
  * and the server-side runs one query per column. The user must explicitly trigger them.
  */
 
-import React, { useState, useCallback, useMemo } from 'react';
+import React, { useState, useCallback, useMemo, useEffect } from 'react';
 import type { QueryDetail } from '@tracehouse/core';
 import { HostTargetedAdapter } from '@tracehouse/core';
 import { useClickHouseServices } from '../../providers/ClickHouseProvider';
@@ -43,6 +43,10 @@ interface ServerProgress {
   total: number;
   completed: number;
   currentColumn: string;
+  /** Seconds remaining while waiting for query_log flush */
+  flushCountdown?: number;
+  /** The flush interval read from the server, in ms */
+  flushIntervalMs?: number;
 }
 
 /* ------------------------------------------------------------------ */
@@ -201,6 +205,13 @@ export const ColumnCostAnalysis: React.FC<ColumnCostAnalysisProps> = ({ queryDet
   const [serverError, setServerError] = useState<string | null>(null);
   const [serverDurationMs, setServerDurationMs] = useState<number | null>(null);
 
+  // Flush interval from server (fetched once)
+  const [flushIntervalMs, setFlushIntervalMs] = useState<number | null>(null);
+  useEffect(() => {
+    if (!services) return;
+    services.queryAnalyzer.getQueryLogFlushIntervalMs().then(setFlushIntervalMs);
+  }, [services]);
+
   const queryText = queryDetail?.query || '';
   const isSelect = queryDetail?.query_kind?.toUpperCase() === 'SELECT';
 
@@ -336,13 +347,33 @@ export const ColumnCostAnalysis: React.FC<ColumnCostAnalysisProps> = ({ queryDet
         columnTags.push({ col, tag, failed });
       }
 
-      // Phase 2: Wait for query_log to flush naturally.
-      // ClickHouse flushes query_log every ~7.5s by default. We poll
-      // until our most recent tag appears, with a timeout.
-      setServerProgress({ total: outputColumns.length, completed: outputColumns.length, currentColumn: 'waiting for query_log...' });
+      // Phase 2: Wait for query_log to flush.
+      // Use the flush interval already fetched on mount (fall back to 7500ms).
+      const flushMs = flushIntervalMs ?? 7500;
 
       const lastSuccessTag = [...columnTags].reverse().find(t => !t.failed)?.tag;
       if (lastSuccessTag) {
+        // Countdown: wait the full flush interval before we start polling
+        const waitSec = Math.ceil(flushMs / 1000);
+        for (let remaining = waitSec; remaining > 0; remaining--) {
+          setServerProgress({
+            total: outputColumns.length,
+            completed: outputColumns.length,
+            currentColumn: `waiting for query_log flush (${remaining}s)`,
+            flushCountdown: remaining,
+            flushIntervalMs: flushMs,
+          });
+          await new Promise(r => setTimeout(r, 1000));
+        }
+
+        // Now poll until the tag appears (it should be there already in most cases)
+        setServerProgress({
+          total: outputColumns.length,
+          completed: outputColumns.length,
+          currentColumn: 'checking query_log...',
+          flushIntervalMs: flushMs,
+        });
+
         const pollStart = Date.now();
         const POLL_TIMEOUT_MS = 15_000;
         const POLL_INTERVAL_MS = 1_000;
@@ -429,7 +460,7 @@ export const ColumnCostAnalysis: React.FC<ColumnCostAnalysisProps> = ({ queryDet
       setServerDurationMs(Math.round(performance.now() - start));
       setIsRunningServer(false);
     }
-  }, [queryAdapter, services, queryText, isSelect, discoverOutputColumns]);
+  }, [queryAdapter, services, queryText, isSelect, discoverOutputColumns, flushIntervalMs]);
 
   /* ---------------------------------------------------------------- */
   /*  Render                                                           */
@@ -478,13 +509,16 @@ export const ColumnCostAnalysis: React.FC<ColumnCostAnalysisProps> = ({ queryDet
             marginBottom: 6,
           }}>Experimental</span>
           <br />
-          <strong style={{ color: '#d29922' }}>Expensive to compute — results may not always be available.</strong>{' '}
-          Client-side analysis <strong>re-executes the original query</strong> to measure per-column byte sizes in the result.
-          Server-side analysis <strong>re-runs the query once per output column</strong> and reads{' '}
+          <strong style={{ color: '#d29922' }}>Expensive to compute — results may not always be available.</strong>
+          <br /><br />
+          <strong>Client-side</strong> analysis <strong>re-executes the original query</strong> to measure per-column byte sizes in the result.
+          <br /><br />
+          <strong>Server-side</strong> analysis <strong>re-runs the query once per output column</strong> and reads{' '}
           <code style={{ fontSize: 11, background: 'rgba(255,255,255,0.06)', padding: '1px 5px', borderRadius: 3 }}>read_bytes</code> from{' '}
           <code style={{ fontSize: 11, background: 'rgba(255,255,255,0.06)', padding: '1px 5px', borderRadius: 3 }}>system.query_log</code> to measure
           how much data the server processed for each column.
-          Server-side relies on query_log flush timing and may show 0 B if entries haven't been flushed yet.
+          Automatically waits for the query_log flush interval ({flushIntervalMs != null ? `${(flushIntervalMs / 1000).toFixed(1)}s` : '...'}) before reading results.
+          <br /><br />
           Both are on-demand — click "Run Analysis" when ready.
         </div>
       </div>
@@ -535,16 +569,40 @@ export const ColumnCostAnalysis: React.FC<ColumnCostAnalysisProps> = ({ queryDet
 
         {serverProgress && (
           <div style={{ fontSize: 11, color: 'var(--text-muted)', marginBottom: 8 }}>
-            Running column {serverProgress.completed + 1}/{serverProgress.total}: <span style={{ color: 'var(--text-secondary)', fontFamily: 'monospace' }}>{serverProgress.currentColumn}</span>
-            <div style={{ ...BAR_CONTAINER, height: 4, marginTop: 6 }}>
-              <div style={{
-                width: `${(serverProgress.completed / serverProgress.total) * 100}%`,
-                height: '100%',
-                background: '#58a6ff',
-                borderRadius: 4,
-                transition: 'width 0.3s ease',
-              }} />
-            </div>
+            {serverProgress.flushCountdown != null ? (
+              <>
+                Waiting for query_log flush — <span style={{ color: '#58a6ff', fontFamily: 'monospace' }}>{serverProgress.flushCountdown}s</span> remaining
+                {serverProgress.flushIntervalMs != null && (
+                  <span style={{ opacity: 0.6 }}> (server flush interval: {(serverProgress.flushIntervalMs / 1000).toFixed(1)}s)</span>
+                )}
+                <div style={{ ...BAR_CONTAINER, height: 4, marginTop: 6 }}>
+                  <div style={{
+                    width: `${100 - (serverProgress.flushCountdown / Math.ceil((serverProgress.flushIntervalMs ?? 7500) / 1000)) * 100}%`,
+                    height: '100%',
+                    background: '#58a6ff',
+                    borderRadius: 4,
+                    transition: 'width 1s linear',
+                  }} />
+                </div>
+              </>
+            ) : serverProgress.completed < serverProgress.total ? (
+              <>
+                Running column {serverProgress.completed + 1}/{serverProgress.total}: <span style={{ color: 'var(--text-secondary)', fontFamily: 'monospace' }}>{serverProgress.currentColumn}</span>
+                <div style={{ ...BAR_CONTAINER, height: 4, marginTop: 6 }}>
+                  <div style={{
+                    width: `${(serverProgress.completed / serverProgress.total) * 100}%`,
+                    height: '100%',
+                    background: '#58a6ff',
+                    borderRadius: 4,
+                    transition: 'width 0.3s ease',
+                  }} />
+                </div>
+              </>
+            ) : (
+              <>
+                <span style={{ color: 'var(--text-secondary)', fontFamily: 'monospace' }}>{serverProgress.currentColumn}</span>
+              </>
+            )}
           </div>
         )}
 

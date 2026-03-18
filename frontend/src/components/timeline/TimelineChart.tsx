@@ -13,8 +13,7 @@ import {
   Q_COLORS, M_COLORS, MUT_COLORS, METRIC_CONFIG, METRIC_BAR_CONFIG,
 } from './timeline-constants';
 
-const fmtMs = (ms: number): string =>
-  ms < 1000 ? `${ms}ms` : ms < 60000 ? `${(ms / 1000).toFixed(1)}s` : `${(ms / 60000).toFixed(1)}m`;
+import { formatDurationMs as fmtMs } from '../../utils/formatters';
 
 interface Rng { startMs: number; endMs: number; peak: number; realPeak: number; }
 

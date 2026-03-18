@@ -309,6 +309,17 @@ export const QUERY_PROFILE_EVENTS = `
 `;
 
 /**
+ * Get the query_log flush interval from server settings.
+ * Used to know how long to wait before reading from query_log after executing queries.
+ */
+export const QUERY_LOG_FLUSH_INTERVAL = `
+  SELECT value
+  FROM system.server_settings
+  WHERE name = 'query_log_flush_interval_milliseconds'
+  LIMIT 1
+`;
+
+/**
  * Find similar queries by normalized_query_hash.
  * Useful for finding patterns and comparing performance across similar queries.
  *
