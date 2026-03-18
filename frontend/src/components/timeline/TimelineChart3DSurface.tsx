@@ -10,13 +10,13 @@
  * X = time, Y = stacked metric, Z = memory depth.
  * The result looks like the 2D chart given physical depth — a tunnel of fluid ribbons.
  */
-import React, { useMemo, useState, useCallback } from 'react';
+import React, { useMemo, useState, useCallback, useEffect, useRef } from 'react';
 import { Canvas, useThree } from '@react-three/fiber';
 import { OrbitControls, Text, Line, Html } from '@react-three/drei';
 import * as THREE from 'three';
 import type { MemoryTimeline, QuerySeries, MergeSeries, MutationSeries } from '@tracehouse/core';
 import { parseTimestamp, formatBytes } from '../../utils/formatters';
-import { type MetricMode, Q_COLORS, M_COLORS, MUT_COLORS, METRIC_CONFIG } from './timeline-constants';
+import { type MetricMode, type HighlightedItem, Q_COLORS, M_COLORS, MUT_COLORS, METRIC_CONFIG } from './timeline-constants';
 
 /* ── Constants ──────────────────────────────────────────────────────── */
 
@@ -42,6 +42,8 @@ interface TimelineChart3DSurfaceProps {
   metricMode: MetricMode;
   height?: number;
   hiddenCategories?: Set<'query' | 'merge' | 'mutation'>;
+  onBandClick?: (band: { type: 'query' | 'merge' | 'mutation'; idx: number }) => void;
+  onHighlightItem?: (item: HighlightedItem) => void;
 }
 
 /* ── Helpers ─────────────────────────────────────────────────────────── */
@@ -62,7 +64,7 @@ const CameraSetup: React.FC = () => {
   const { camera } = useThree();
   useMemo(() => {
     camera.position.set(RUNWAY_LENGTH * 0.55, CEILING_Y * 0.9, MAX_Z_DEPTH + 8);
-    camera.lookAt(RUNWAY_LENGTH * 0.45, CEILING_Y * 0.25, MAX_Z_DEPTH * 0.3);
+    camera.lookAt(RUNWAY_LENGTH / 2, CEILING_Y / 3, MAX_Z_DEPTH / 2);
   }, [camera]);
   return null;
 };
@@ -414,7 +416,9 @@ const BandRibbon: React.FC<{
   hovered: boolean;
   bandIdx: number;
   onHover: (idx: number | null) => void;
-}> = ({ xPositions, topY, botY, zDepth, color, hovered, bandIdx, onHover }) => {
+  onClick?: () => void;
+}> = ({ xPositions, topY, botY, zDepth, color, hovered, bandIdx, onHover, onClick }) => {
+  const pointerDownPos = useRef<{ x: number; y: number } | null>(null);
   const threeColor = useMemo(() => new THREE.Color(color), [color]);
 
   const geometry = useMemo(
@@ -444,6 +448,14 @@ const BandRibbon: React.FC<{
     <group
       onPointerEnter={(e) => { e.stopPropagation(); onHover(bandIdx); }}
       onPointerLeave={(e) => { e.stopPropagation(); onHover(null); }}
+      onPointerDown={(e) => { pointerDownPos.current = { x: e.clientX, y: e.clientY }; }}
+      onPointerUp={(e) => {
+        if (!pointerDownPos.current || !onClick) return;
+        const dx = e.clientX - pointerDownPos.current.x;
+        const dy = e.clientY - pointerDownPos.current.y;
+        if (dx * dx + dy * dy < 25) { e.stopPropagation(); onClick(); }
+        pointerDownPos.current = null;
+      }}
     >
       <mesh geometry={geometry}>
         <meshStandardMaterial
@@ -530,6 +542,8 @@ export const TimelineChart3DSurface: React.FC<TimelineChart3DSurfaceProps> = ({
   metricMode,
   height = 500,
   hiddenCategories,
+  onBandClick,
+  onHighlightItem,
 }) => {
   const [hoveredBand, setHoveredBand] = useState<number | null>(null);
 
@@ -698,6 +712,12 @@ export const TimelineChart3DSurface: React.FC<TimelineChart3DSurfaceProps> = ({
 
   const handleBandHover = useCallback((idx: number | null) => setHoveredBand(idx), []);
 
+  // Sync hovered band to parent for table row highlighting
+  useEffect(() => {
+    if (!onHighlightItem) return;
+    onHighlightItem(hoveredBand !== null && bands[hoveredBand] ? { type: bands[hoveredBand].type, idx: bands[hoveredBand].idx } : null);
+  }, [hoveredBand]); // eslint-disable-line react-hooks/exhaustive-deps
+
   return (
     <div style={{ width: '100%', height, position: 'relative' }}>
       <Canvas
@@ -714,6 +734,7 @@ export const TimelineChart3DSurface: React.FC<TimelineChart3DSurfaceProps> = ({
           dampingFactor={0.05}
           maxPolarAngle={Math.PI * 0.85}
           minPolarAngle={Math.PI * 0.05}
+          target={[RUNWAY_LENGTH / 2, CEILING_Y / 3, MAX_Z_DEPTH / 2]}
         />
 
         {/* Lighting */}
@@ -737,6 +758,7 @@ export const TimelineChart3DSurface: React.FC<TimelineChart3DSurfaceProps> = ({
             hovered={hoveredBand === bi}
             bandIdx={bi}
             onHover={handleBandHover}
+            onClick={onBandClick ? () => onBandClick({ type: bands[bi].type, idx: bands[bi].idx }) : undefined}
           />
         ))}
 

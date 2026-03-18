@@ -732,9 +732,21 @@ export const TimeTravelPage: React.FC = () => {
             boxShadow:'0 1px 3px rgba(0,0,0,0.2)', overflow:'hidden', position:'relative',
           }}>
             {viewMode === '3d' ? (
-              <TimelineChart3D data={data} metricMode={metricMode} height={500} hiddenCategories={hiddenCategories} />
+              <TimelineChart3D data={data} metricMode={metricMode} height={500} hiddenCategories={hiddenCategories}
+                onHighlightItem={setHighlightedItem}
+                onBandClick={(band) => {
+                  if (band.type === 'query' && data.queries[band.idx]) setSelectedTimelineQuery(data.queries[band.idx]);
+                  else if (band.type === 'merge' && data.merges[band.idx]) setSelectedTimelineMerge(data.merges[band.idx]);
+                  else if (band.type === 'mutation' && (data.mutations ?? [])[band.idx]) setSelectedTimelineMutation((data.mutations ?? [])[band.idx]);
+                }} />
             ) : viewMode === '3d-surface' ? (
-              <TimelineChart3DSurface data={data} metricMode={metricMode} height={500} hiddenCategories={hiddenCategories} />
+              <TimelineChart3DSurface data={data} metricMode={metricMode} height={500} hiddenCategories={hiddenCategories}
+                onHighlightItem={setHighlightedItem}
+                onBandClick={(band) => {
+                  if (band.type === 'query' && data.queries[band.idx]) setSelectedTimelineQuery(data.queries[band.idx]);
+                  else if (band.type === 'merge' && data.merges[band.idx]) setSelectedTimelineMerge(data.merges[band.idx]);
+                  else if (band.type === 'mutation' && (data.mutations ?? [])[band.idx]) setSelectedTimelineMutation((data.mutations ?? [])[band.idx]);
+                }} />
             ) : (
             <>
             {(pinnedMs !== null || zoomRange !== null) && (
