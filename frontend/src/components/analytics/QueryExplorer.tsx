@@ -4,7 +4,7 @@
  *   - Metadata-driven presets (-- @meta / -- @chart in SQL)
  *   - "Show All" queries grid with categories
  *   - 2D SVG charts + 3D Three.js charts
- *   - Chart controls (type, labels, values, 2D/3D style)
+ *   - Chart controls (type, group_by, value, series, 2D/3D style)
  *   - SQL syntax highlighting overlay
  *   - Resizable editor pane
  */
@@ -118,9 +118,9 @@ export const QueryExplorer: React.FC<QueryExplorerProps> = ({ urlState, onUrlSta
   const [sortConfig, setSortConfig] = useState<{ column: string; direction: 'asc' | 'desc' } | null>(null);
   const [chartConfig, setChartConfig] = useState<ChartConfig>({
     type: (urlState?.chart as ChartType) ?? 'bar',
-    labelColumn: urlState?.labels ?? '',
-    valueColumn: urlState?.values ?? '',
-    groupColumn: urlState?.group,
+    groupByColumn: urlState?.group_by ?? '',
+    valueColumn: urlState?.value ?? '',
+    seriesColumn: urlState?.series,
     orientation: undefined,
     visualization: (urlState?.style as ChartStyle) ?? '2d',
   });
@@ -163,9 +163,9 @@ export const QueryExplorer: React.FC<QueryExplorerProps> = ({ urlState, onUrlSta
       sql: presetIdx < 0 ? sqlText : undefined,
       view: view !== 'table' ? view : undefined,
       chart: view === 'chart' ? chart.type : undefined,
-      labels: view === 'chart' ? chart.labelColumn : undefined,
-      values: view === 'chart' ? chart.valueColumn : undefined,
-      group: view === 'chart' ? chart.groupColumn : undefined,
+      group_by: view === 'chart' ? chart.groupByColumn : undefined,
+      value: view === 'chart' ? chart.valueColumn : undefined,
+      series: view === 'chart' ? chart.seriesColumn : undefined,
       style: view === 'chart' && chart.visualization !== '2d' ? chart.visualization : undefined,
       fullscreen: fs || undefined,
     });
@@ -198,10 +198,10 @@ export const QueryExplorer: React.FC<QueryExplorerProps> = ({ urlState, onUrlSta
         const lblCol = columns.find(c => c !== numCol);
         const newChart: ChartConfig = {
           type: directive.type ?? 'bar',
-          labelColumn: directive.labelColumn ?? lblCol ?? columns[0],
+          groupByColumn: directive.groupByColumn ?? lblCol ?? columns[0],
           valueColumn: directive.valueColumn ?? numCol ?? columns[1] ?? columns[0],
           valueColumns: directive.valueColumns,
-          groupColumn: directive.groupColumn,
+          seriesColumn: directive.seriesColumn,
           orientation: directive.orientation,
           visualization: directive.visualization ?? '2d',
           title: directive.title,
@@ -216,7 +216,7 @@ export const QueryExplorer: React.FC<QueryExplorerProps> = ({ urlState, onUrlSta
         if (columns.length >= 2) {
           const numCol = columns.find(c => rows.some(r => isNumericValue(r[c])));
           const lblCol = columns.find(c => c !== numCol);
-          const newChart = { ...chartConfig, labelColumn: lblCol ?? columns[0], valueColumn: numCol ?? columns[1], groupColumn: undefined, title: undefined, description: undefined };
+          const newChart = { ...chartConfig, groupByColumn: lblCol ?? columns[0], valueColumn: numCol ?? columns[1], seriesColumn: undefined, title: undefined, description: undefined };
           setChartConfig(newChart);
           syncUrl(q, 'table', newChart);
         } else {
@@ -239,7 +239,7 @@ export const QueryExplorer: React.FC<QueryExplorerProps> = ({ urlState, onUrlSta
     setError(null);
     setSortConfig(null);
     setViewMode('table');
-    setChartConfig({ type: 'bar', labelColumn: '', valueColumn: '', groupColumn: undefined, orientation: undefined, visualization: '2d' });
+    setChartConfig({ type: 'bar', groupByColumn: '', valueColumn: '', seriesColumn: undefined, orientation: undefined, visualization: '2d' });
     // auto-run
     setTimeout(() => runQuery(p.sql), 0);
   }, [runQuery]);
@@ -454,17 +454,17 @@ export const QueryExplorer: React.FC<QueryExplorerProps> = ({ urlState, onUrlSta
 
   /* ── chart data ── */
   const chartData = useMemo((): ChartDataPoint[] => {
-    if (!result || !chartConfig.labelColumn || !chartConfig.valueColumn) return [];
+    if (!result || !chartConfig.groupByColumn || !chartConfig.valueColumn) return [];
     const isTimeSeries = chartConfig.type && ['line', 'area', 'grouped_line'].includes(chartConfig.type);
-    return buildChartData(result.rows, result.columns, chartConfig.labelColumn, chartConfig.valueColumn, isTimeSeries ? undefined : 50);
-  }, [result, chartConfig.labelColumn, chartConfig.valueColumn, chartConfig.type]);
+    return buildChartData(result.rows, result.columns, chartConfig.groupByColumn, chartConfig.valueColumn, isTimeSeries ? undefined : 50);
+  }, [result, chartConfig.groupByColumn, chartConfig.valueColumn, chartConfig.type]);
 
   /* ── grouped chart data (for grouped_bar, stacked_bar, grouped_line) ── */
   const groupedChartData = useMemo((): GroupedChartData[] => {
-    if (!result || !chartConfig.labelColumn || !chartConfig.valueColumn) return [];
+    if (!result || !chartConfig.groupByColumn || !chartConfig.valueColumn) return [];
     const isTimeSeries = chartConfig.type && ['line', 'area', 'grouped_line'].includes(chartConfig.type);
-    return buildGroupedChartData(result.rows, chartConfig.labelColumn, chartConfig.valueColumn, chartConfig.groupColumn, chartConfig.valueColumns, isTimeSeries ? undefined : 30);
-  }, [result, chartConfig.labelColumn, chartConfig.valueColumn, chartConfig.valueColumns, chartConfig.groupColumn]);
+    return buildGroupedChartData(result.rows, chartConfig.groupByColumn, chartConfig.valueColumn, chartConfig.seriesColumn, chartConfig.valueColumns, isTimeSeries ? undefined : 30);
+  }, [result, chartConfig.groupByColumn, chartConfig.valueColumn, chartConfig.valueColumns, chartConfig.seriesColumn]);
 
   const isGroupedChart = isGroupedChartType(chartConfig.type);
 
@@ -738,11 +738,11 @@ export const QueryExplorer: React.FC<QueryExplorerProps> = ({ urlState, onUrlSta
               {!isFullscreen && (
               <div style={{ display: 'flex', gap: 16, padding: '6px 16px', background: 'var(--bg-secondary)', borderBottom: '1px solid var(--border-primary)', flexShrink: 0, flexWrap: 'wrap', alignItems: 'center' }}>
                 <ChartControl label="Type" value={chartConfig.type} options={[['bar','Bar'],['line','Line'],['pie','Pie'],['area','Area'],['grouped_bar','Grouped Bar'],['stacked_bar','Stacked Bar'],['grouped_line','Grouped Line']]} onChange={v => setChartConfig(p => ({ ...p, type: v as ChartType }))} />
-                <ChartControl label="Labels" value={chartConfig.labelColumn} options={result.columns.map(c => [c, c])} onChange={v => setChartConfig(p => ({ ...p, labelColumn: v }))} />
-                <ChartControl label="Values" value={chartConfig.valueColumn} options={result.columns.map(c => [c, c])} onChange={v => setChartConfig(p => ({ ...p, valueColumn: v }))} />
-                {/* Group column selector for grouped/stacked charts */}
+                <ChartControl label="Group By" value={chartConfig.groupByColumn} options={result.columns.map(c => [c, c])} onChange={v => setChartConfig(p => ({ ...p, groupByColumn: v }))} />
+                <ChartControl label="Value" value={chartConfig.valueColumn} options={result.columns.map(c => [c, c])} onChange={v => setChartConfig(p => ({ ...p, valueColumn: v }))} />
+                {/* Series column selector for grouped/stacked charts */}
                 {isGroupedChart && (
-                  <ChartControl label="Group" value={chartConfig.groupColumn ?? ''} options={[['','(none)'],...result.columns.map(c => [c, c] as [string,string])]} onChange={v => setChartConfig(p => ({ ...p, groupColumn: v || undefined }))} />
+                  <ChartControl label="Series" value={chartConfig.seriesColumn ?? ''} options={[['','(none)'],...result.columns.map(c => [c, c] as [string,string])]} onChange={v => setChartConfig(p => ({ ...p, seriesColumn: v || undefined }))} />
                 )}
                 {/* 2D / 3D toggle */}
                 <div className="tabs" style={{ padding: 2, marginLeft: 'auto' }}>

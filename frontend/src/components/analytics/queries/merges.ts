@@ -19,7 +19,7 @@ FROM system.merges
 ORDER BY elapsed DESC`,
 
   `-- @meta: title='Merge Throughput (bytes/sec)' group='Merges' description='Estimated merge read throughput for each active merge'
--- @chart: type=bar labels=merge values=bytes_per_sec
+-- @chart: type=bar group_by=merge value=bytes_per_sec
 SELECT
     concat(database, '.', table, ' #', toString(num_parts), 'p') AS merge,
     round(elapsed, 0) AS elapsed_sec,
@@ -31,7 +31,7 @@ FROM system.merges
 ORDER BY bytes_per_sec DESC`,
 
   `-- @meta: title='Merge Events Over Time' group='Merges' interval='1 DAY' description='Completed merge events from part_log — duration and size per hour'
--- @chart: type=line labels=hour values=merge_count style=2d
+-- @chart: type=line group_by=hour value=merge_count style=2d
 SELECT
     toStartOfHour(event_time) AS hour,
     count() AS merge_count,
@@ -61,7 +61,7 @@ ORDER BY event_time DESC
 LIMIT 50`,
 
   `-- @meta: title='Merge Duration by Table' group='Merges' interval='1 DAY' description='Average and p95 merge duration per table'
--- @chart: type=bar labels=table values=avg_duration_ms style=2d
+-- @chart: type=bar group_by=table value=avg_duration_ms style=2d
 SELECT
     concat(database, '.', table) AS table,
     count() AS merge_count,
@@ -76,7 +76,7 @@ ORDER BY avg_duration_ms DESC
 LIMIT 20`,
 
   `-- @meta: title='Background Pool Utilization' group='Merges' interval='1 HOUR' description='Background merge/mutation pool slots in use over time'
--- @chart: type=line labels=t values=merge_slots style=2d
+-- @chart: type=line group_by=t value=merge_slots style=2d
 SELECT
     toStartOfInterval(event_time, INTERVAL 15 SECOND) AS t,
     avg(CurrentMetric_BackgroundMergesAndMutationsPoolTask) AS merge_slots,
@@ -87,7 +87,7 @@ GROUP BY t
 ORDER BY t ASC`,
 
   `-- @meta: title='Merges Running (trend)' group='Merges' interval='1 HOUR' description='Number of concurrent merges over time from metric_log'
--- @chart: type=line labels=t values=merges style=2d
+-- @chart: type=line group_by=t value=merges style=2d
 SELECT
     toStartOfInterval(event_time, INTERVAL 15 SECOND) AS t,
     avg(CurrentMetric_Merge) AS merges
@@ -97,7 +97,7 @@ GROUP BY t
 ORDER BY t ASC`,
 
   `-- @meta: title='Merge I/O Pressure' group='Merges' interval='1 HOUR' description='Disk read/write bytes attributed to merges over time'
--- @chart: type=area labels=t values=merge_read style=2d
+-- @chart: type=area group_by=t value=merge_read style=2d
 SELECT
     toStartOfInterval(event_time, INTERVAL 1 MINUTE) AS t,
     sum(ProfileEvent_MergedRows) AS merged_rows,

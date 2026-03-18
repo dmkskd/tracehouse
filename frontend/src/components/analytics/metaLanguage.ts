@@ -3,7 +3,7 @@
  *
  * Parses structured comments embedded in SQL queries:
  *   -- @meta:  title, group, description, interval
- *   -- @chart: type, labels, values, group, style, unit, orientation
+ *   -- @chart: type, group_by, value, series, style, unit, orientation
  *   -- @rag:   column thresholds (red/amber/green)
  *   -- @drill: click-through navigation between queries
  *   -- @link:  modal popup navigation between queries
@@ -34,9 +34,9 @@ export interface ParsedDirectives {
   chart?: {
     type: ChartType;
     style?: ChartStyle;
-    labelColumn?: string;
+    groupByColumn?: string;
     valueColumn?: string;
-    groupColumn?: string;
+    seriesColumn?: string;
   };
   drill?: {
     on: string;
@@ -54,10 +54,10 @@ export interface ParsedDirectives {
  *  Supports multi-column values, orientation, unit — used for rendering config. */
 export interface ChartDirective {
   type?: ChartType;
-  labelColumn?: string;
+  groupByColumn?: string;
   valueColumn?: string;
   valueColumns?: string[];
-  groupColumn?: string;
+  seriesColumn?: string;
   orientation?: 'horizontal' | 'vertical';
   visualization?: '2d' | '3d';
   title?: string;
@@ -167,16 +167,16 @@ export function parseDirectives(sql: string): ParsedDirectives | null {
     const c = chartMatch[1];
     const t = c.match(/type=(\w+)/);
     const s = c.match(/style=(\w+)/);
-    const l = c.match(/labels=(\w+)/);
-    const v = c.match(/values=(\w+)/);
-    const g = c.match(/group=(\w+)/);
+    const l = c.match(/group_by=(\w+)/);
+    const v = c.match(/value=([\w,]+)/);
+    const g = c.match(/series=(\w+)/);
     if (t) {
       result.chart = {
         type: t[1] as ChartType,
         style: s ? s[1] as ChartStyle : undefined,
-        labelColumn: l?.[1],
+        groupByColumn: l?.[1],
         valueColumn: v?.[1],
-        groupColumn: g?.[1],
+        seriesColumn: g?.[1],
       };
     }
   }
@@ -215,14 +215,14 @@ export function parseChartDirective(sql: string): Partial<ChartDirective> | null
   const d = cm[1];
   const cfg: Partial<ChartDirective> = {};
   const t = d.match(/type=(\w+)/i); if (t) cfg.type = t[1] as ChartType;
-  const l = d.match(/labels=(\w+)/i); if (l) cfg.labelColumn = l[1];
-  const v = d.match(/values=([\w,]+)/i);
+  const l = d.match(/group_by=(\w+)/i); if (l) cfg.groupByColumn = l[1];
+  const v = d.match(/value=([\w,]+)/i);
   if (v) {
     const cols = v[1].split(',').filter(Boolean);
     cfg.valueColumn = cols[0];
     if (cols.length > 1) cfg.valueColumns = cols;
   }
-  const g = d.match(/group=(\w+)/i); if (g) cfg.groupColumn = g[1];
+  const g = d.match(/series=(\w+)/i); if (g) cfg.seriesColumn = g[1];
   const o = d.match(/orientation=(\w+)/i);
   if (o) cfg.orientation = o[1].toLowerCase() === 'vertical' || o[1].toLowerCase() === 'v' ? 'vertical' : 'horizontal';
   const s = d.match(/style=(\w+)/i); if (s) cfg.visualization = s[1] as '2d' | '3d';

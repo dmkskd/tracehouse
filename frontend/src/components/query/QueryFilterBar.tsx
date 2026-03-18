@@ -1,7 +1,7 @@
 /**
  * QueryFilterBar - Shared filter bar with tag-based search input.
  *
- * Layout:  Start Time | End Time | [chip search input] | Limit | ☐ Hide internal | count
+ * Layout:  Start Time | End Time | [chip search input] | Limit | ☐ Hide tracehouse queries
  *
  * The chip search input supports field:value pairs. Typing shows autocomplete
  * for field names; after selecting a field, User/Server show dropdown hints
@@ -37,8 +37,6 @@ interface QueryFilterBarProps {
   filter: QueryFilterState;
   onFilterChange: (patch: Partial<QueryFilterState>) => void;
   queryAnalyzer?: QueryAnalyzer;
-  count: number;
-  isLoading?: boolean;
 }
 
 /* ------------------------------------------------------------------ */
@@ -179,7 +177,7 @@ const dropdownItemStyle: React.CSSProperties = {
 type Phase = 'idle' | 'picking_field' | 'entering_value';
 
 export const QueryFilterBar: React.FC<QueryFilterBarProps> = ({
-  filter, onFilterChange, queryAnalyzer, count, isLoading,
+  filter, onFilterChange, queryAnalyzer,
 }) => {
   /* --- local state for the chip search input --- */
   const [phase, setPhase] = useState<Phase>('idle');
@@ -509,16 +507,13 @@ export const QueryFilterBar: React.FC<QueryFilterBarProps> = ({
 
         {/* Exclude internal + count */}
         <div style={{ display: 'flex', alignItems: 'center', gap: 12, paddingBottom: 2 }}>
-          <label style={{ display: 'flex', alignItems: 'center', gap: 5, fontSize: 11, color: 'var(--text-muted)', cursor: 'pointer', userSelect: 'none', whiteSpace: 'nowrap' }}>
+          <label style={{ display: 'flex', alignItems: 'center', gap: 5, fontSize: 11, color: 'var(--text-muted)', cursor: 'pointer', userSelect: 'none', lineHeight: 1.3 }}>
             <input type="checkbox"
               checked={filter.excludeAppQueries ?? false}
               onChange={e => onFilterChange({ excludeAppQueries: e.target.checked })}
               style={{ margin: 0 }} />
-            Hide internal
+            <span>Hide tracehouse<br />queries</span>
           </label>
-          <span style={{ fontSize: 11, color: 'var(--text-muted)', whiteSpace: 'nowrap' }}>
-            {isLoading ? 'Loading…' : `${count} queries`}
-          </span>
         </div>
       </div>
       {lookbackHours > 1 && (

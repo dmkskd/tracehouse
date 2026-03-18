@@ -28,15 +28,15 @@ Defines the query's identity and display properties.
 Tells the explorer how to visualise the result set.
 
 ```sql
--- @chart: type=bar labels=table values=bytes_size style=3d
+-- @chart: type=bar group_by=table value=bytes_size style=3d
 ```
 
 | Parameter     | Required | Description |
 |---------------|----------|-------------|
 | `type`        | Yes      | Chart type: `bar`, `line`, `pie`, `area`, `grouped_bar`, `stacked_bar`, `grouped_line` |
-| `labels`      | Yes      | Column name to use for the X-axis / labels |
-| `values`      | Yes      | Column name to use for the Y-axis / values |
-| `group`       | No       | Column name used for series grouping (for `grouped_bar`, `stacked_bar`, `grouped_line`) |
+| `group_by`    | Yes      | Column name to use for the X-axis / category grouping |
+| `value`       | Yes      | Column name to use for the Y-axis / numeric values |
+| `series`      | No       | Column name used for series splitting (for `grouped_bar`, `stacked_bar`, `grouped_line`) |
 | `style`       | No       | `2d` (default SVG/recharts) or `3d` (Three.js) |
 | `unit`        | No       | Unit suffix for value axis ticks, e.g. `ms`, `s`, `MB`, `%`. Time units (`ms`, `s`) auto-scale (e.g. 1400 ms → 1.4 s) |
 | `orientation` | No       | `horizontal` (default for grouped/stacked bars) or `vertical`. Controls bar direction - horizontal puts labels on the left for readability |
@@ -141,7 +141,7 @@ WHERE lower(hex(normalized_query_hash)) = {{drill_value:query_hash | ''}}
 
 ```sql
 -- @meta: title='Database Sizes' group='Overview' description='Total disk usage per database'
--- @chart: type=pie labels=database values=total_bytes style=3d
+-- @chart: type=pie group_by=database value=total_bytes style=3d
 -- @drill: on=database into='Table Sizes'
 -- @rag: column=total_bytes green<1000000000 amber<10000000000
 SELECT

@@ -130,13 +130,13 @@ const DashboardPanelCard: React.FC<{
   const chartData = useMemo((): ChartDataPoint[] => {
     if (!result || result.rows.length === 0) return [];
     const isTimeSeries = chartDirective?.type && ['line', 'area', 'grouped_line'].includes(chartDirective.type);
-    return buildChartData(result.rows, result.columns, chartDirective?.labelColumn, chartDirective?.valueColumn, isTimeSeries ? undefined : 50);
+    return buildChartData(result.rows, result.columns, chartDirective?.groupByColumn, chartDirective?.valueColumn, isTimeSeries ? undefined : 50);
   }, [result, chartDirective]);
 
   const groupedChartData = useMemo((): GroupedChartData[] => {
-    if (!result || !chartDirective?.labelColumn || !chartDirective?.valueColumn) return [];
+    if (!result || !chartDirective?.groupByColumn || !chartDirective?.valueColumn) return [];
     const isTimeSeries = chartDirective?.type && ['line', 'area', 'grouped_line'].includes(chartDirective.type);
-    return buildGroupedChartData(result.rows, chartDirective.labelColumn, chartDirective.valueColumn, chartDirective.groupColumn, chartDirective.valueColumns, isTimeSeries ? undefined : 30);
+    return buildGroupedChartData(result.rows, chartDirective.groupByColumn, chartDirective.valueColumn, chartDirective.seriesColumn, chartDirective.valueColumns, isTimeSeries ? undefined : 30);
   }, [result, chartDirective]);
 
   const hasChartDirective = !!(chartDirective?.type || preset?.directives.chart?.type);
@@ -526,13 +526,13 @@ const MiniPanelCard: React.FC<{ panel: DashboardPanel; timeRangeOverride: string
   const chartData = useMemo((): ChartDataPoint[] => {
     if (!result || result.rows.length === 0) return [];
     const isTimeSeries = chartDirective?.type && ['line', 'area', 'grouped_line'].includes(chartDirective.type);
-    return buildChartData(result.rows, result.columns, chartDirective?.labelColumn, chartDirective?.valueColumn, isTimeSeries ? undefined : 20);
+    return buildChartData(result.rows, result.columns, chartDirective?.groupByColumn, chartDirective?.valueColumn, isTimeSeries ? undefined : 20);
   }, [result, chartDirective]);
 
   const groupedChartData2 = useMemo((): GroupedChartData[] => {
-    if (!result || !chartDirective?.labelColumn || !chartDirective?.valueColumn) return [];
+    if (!result || !chartDirective?.groupByColumn || !chartDirective?.valueColumn) return [];
     const isTimeSeries = chartDirective?.type && ['line', 'area', 'grouped_line'].includes(chartDirective.type);
-    return buildGroupedChartData(result.rows, chartDirective.labelColumn, chartDirective.valueColumn, chartDirective.groupColumn, chartDirective.valueColumns, isTimeSeries ? undefined : 20);
+    return buildGroupedChartData(result.rows, chartDirective.groupByColumn, chartDirective.valueColumn, chartDirective.seriesColumn, chartDirective.valueColumns, isTimeSeries ? undefined : 20);
   }, [result, chartDirective]);
 
   const chartType: ChartType = chartDirective?.type || preset?.directives.chart?.type || 'bar';

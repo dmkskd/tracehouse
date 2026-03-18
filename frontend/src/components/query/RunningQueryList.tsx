@@ -1,7 +1,7 @@
 /**
  * RunningQueryList - Active/running queries table with progress bars and kill actions.
  */
-import React, { useState, useMemo } from 'react';
+import React, { useState, useMemo, useEffect } from 'react';
 import type { RunningQuery } from '../../stores/queryStore';
 import { formatBytes, formatDuration, formatNumber } from '../../stores/queryStore';
 import { QueryFilterBar } from './QueryFilterBar';
@@ -17,6 +17,7 @@ interface RunningQueryListProps {
   isKillingQuery: boolean;
   coordinatorIds?: Set<string>;
   queryAnalyzer?: QueryAnalyzer;
+  onFilteredCountChange?: (count: number) => void;
 }
 
 type SortKey = 'query_kind' | 'user' | 'hostname' | 'elapsed_seconds' | 'progress' | 'memory_usage' | 'read_rows' | null;
@@ -70,7 +71,7 @@ const QueryKindBadge: React.FC<{ kind: string }> = ({ kind }) => {
 };
 
 export const RunningQueryList: React.FC<RunningQueryListProps> = ({
-  queries, selectedQueryId, onSelectQuery, onKillQuery, isKillingQuery, coordinatorIds, queryAnalyzer,
+  queries, selectedQueryId, onSelectQuery, onKillQuery, isKillingQuery, coordinatorIds, queryAnalyzer, onFilteredCountChange,
 }) => {
   const killQueriesEnabled = useUserPreferenceStore((s) => s.killQueriesEnabled);
   const [sortKey, setSortKey] = React.useState<SortKey>(null);
@@ -166,6 +167,10 @@ export const RunningQueryList: React.FC<RunningQueryListProps> = ({
     });
   }, [filtered, sortKey, sortDir]);
 
+  useEffect(() => {
+    onFilteredCountChange?.(sorted.length);
+  }, [sorted.length, onFilteredCountChange]);
+
   const sortIndicator = (key: SortKey) =>
     sortKey === key ? (sortDir === 'asc' ? ' ▲' : ' ▼') : '';
 
@@ -180,7 +185,7 @@ export const RunningQueryList: React.FC<RunningQueryListProps> = ({
 
   return (
     <div>
-      <QueryFilterBar filter={filter} onFilterChange={handleFilterChange} count={sorted.length} queryAnalyzer={queryAnalyzer} />
+      <QueryFilterBar filter={filter} onFilterChange={handleFilterChange} queryAnalyzer={queryAnalyzer} />
 
       {sorted.length === 0 ? (
         <div style={{ textAlign: 'center', padding: '40px 0', color: 'var(--text-muted)', fontSize: 13 }}>

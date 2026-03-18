@@ -44,9 +44,9 @@ export interface AnalyticsUrlState {
   sql?: string;          // custom SQL (decoded)
   view?: string;         // 'table' | 'chart' | 'queries'
   chart?: string;        // chart type
-  labels?: string;       // label column
-  values?: string;       // value column
-  group?: string;        // group column
+  group_by?: string;     // group-by column
+  value?: string;        // value column
+  series?: string;       // series column
   style?: string;        // '2d' | '3d'
   db?: string;           // selected database
   lookback?: number;     // lookback days
@@ -74,12 +74,12 @@ function parseAnalyticsParams(params: URLSearchParams): AnalyticsUrlState {
   if (view) state.view = view;
   const chart = params.get('chart');
   if (chart) state.chart = chart;
-  const labels = params.get('labels');
-  if (labels) state.labels = labels;
-  const values = params.get('values');
-  if (values) state.values = values;
-  const group = params.get('group');
-  if (group) state.group = group;
+  const group_by = params.get('group_by');
+  if (group_by) state.group_by = group_by;
+  const value = params.get('value');
+  if (value) state.value = value;
+  const series = params.get('series');
+  if (series) state.series = series;
   const style = params.get('style');
   if (style) state.style = style;
   const db = params.get('db');
@@ -101,9 +101,9 @@ function buildAnalyticsParams(state: AnalyticsUrlState): Record<string, string> 
   if (state.sql && state.preset === undefined) params.sql = encodeSql(state.sql);
   if (state.view && state.view !== ANALYTICS_DEFAULTS.view) params.view = state.view;
   if (state.chart) params.chart = state.chart;
-  if (state.labels) params.labels = state.labels;
-  if (state.values) params.values = state.values;
-  if (state.group) params.group = state.group;
+  if (state.group_by) params.group_by = state.group_by;
+  if (state.value) params.value = state.value;
+  if (state.series) params.series = state.series;
   if (state.style && state.style !== ANALYTICS_DEFAULTS.style) params.style = state.style;
   if (state.db) params.db = state.db;
   if (state.lookback && state.lookback !== ANALYTICS_DEFAULTS.lookback) params.lookback = String(state.lookback);

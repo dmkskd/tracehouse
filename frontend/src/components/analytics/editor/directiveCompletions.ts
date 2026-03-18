@@ -4,7 +4,7 @@
  * Provides completions for:
  *   1. Directive names:      -- @  →  @meta, @chart, @rag, @drill, @link
  *   2. Directive parameters:  -- @chart: type=  →  bar, line, pie …
- *   3. Column-based params:   -- @chart: labels=  →  columns from last query result
+ *   3. Column-based params:   -- @chart: group_by=  →  columns from last query result
  *   4. Template variables:    {{  →  time_range, drill:col, cluster_aware:…
  */
 
@@ -45,21 +45,21 @@ const DIRECTIVES: DirectiveDef[] = [
   {
     label: '@chart',
     detail: 'Chart visualization config',
-    template: '-- @chart: type=$1 labels=$2 values=$3',
+    template: '-- @chart: type=$1 group_by=$2 value=$3',
     params: {
       type: ['bar', 'line', 'pie', 'area', 'grouped_bar', 'stacked_bar', 'grouped_line'],
-      labels: 'column',
-      values: 'column',
-      group: 'column',
+      group_by: 'column',
+      value: 'column',
+      series: 'column',
       style: ['2d', '3d'],
       orientation: ['horizontal', 'vertical'],
       unit: ['ms', 'MB', 'GB', '%', 's', 'rows', 'bytes'],
     },
     paramInfo: {
       type: 'Chart type — determines how data points are rendered',
-      labels: 'Column used for the X-axis / category labels (e.g. database, table)',
-      values: 'Column used for the Y-axis / numeric values (e.g. total_bytes, count)',
-      group: 'Column to split series by — creates one line/bar per unique value',
+      group_by: 'Column used for the X-axis / category grouping (e.g. database, table)',
+      value: 'Column used for the Y-axis / numeric values (e.g. total_bytes, count)',
+      series: 'Column to split series by — creates one line/bar per unique value',
       style: '2d renders an SVG chart, 3d renders an interactive Three.js scene',
       orientation: 'Flip axes — horizontal puts labels on the Y-axis (useful for long names)',
       unit: 'Format suffix for values — controls axis labels and tooltips',

@@ -2,7 +2,7 @@
 
 const queries: string[] = [
   `-- @meta: title='App Query Duration by Component' group='Self-Monitoring' interval='1 DAY' description='Stacked percentile bands per component — bar height = p99, segments show p50 / p95−p50 / p99−p95'
--- @chart: type=stacked_bar labels=component values=value_ms group=metric unit=ms style=2d
+-- @chart: type=stacked_bar group_by=component value=value_ms series=metric unit=ms style=2d
 -- @drill: on=component into='App Query Duration by Service'
 SELECT component, metric, value_ms
 FROM (
@@ -24,7 +24,7 @@ ARRAY JOIN
 ORDER BY component, metric`,
 
   `-- @meta: title='App Query Duration by Service' group='Self-Monitoring' interval='1 DAY' description='Drill from component to individual services — stacked percentile bands per service'
--- @chart: type=stacked_bar labels=service values=value_ms group=metric unit=ms style=2d
+-- @chart: type=stacked_bar group_by=service value=value_ms series=metric unit=ms style=2d
 -- @drill: on=service into='App Query Cost Details'
 SELECT service, metric, value_ms
 FROM (
@@ -47,7 +47,7 @@ ARRAY JOIN
 ORDER BY service, metric`,
 
   `-- @meta: title='App Query Volume by Component' group='Self-Monitoring' interval='1 DAY' description='Number of queries fired by each app component in the last 24h'
--- @chart: type=pie labels=component values=query_count style=3d
+-- @chart: type=pie group_by=component value=query_count style=3d
 -- @drill: on=component into='App Query Volume by Service'
 SELECT
     extractAllGroups(query, 'source:Monitor:(\\w+):')[1][1] AS component,
@@ -62,7 +62,7 @@ HAVING component != ''
 ORDER BY query_count DESC`,
 
   `-- @meta: title='App Query Volume by Service' group='Self-Monitoring' interval='1 DAY' description='Drill from component to individual services — query count per service'
--- @chart: type=pie labels=service values=query_count style=3d
+-- @chart: type=pie group_by=service value=query_count style=3d
 -- @drill: on=service into='App Query Cost Details'
 SELECT
     extractAllGroups(query, 'source:Monitor:(\\w+):(\\w+)')[1][1] AS component,
@@ -140,7 +140,7 @@ ORDER BY event_time DESC
 LIMIT 50`,
 
   `-- @meta: title='App Query Timeline (5min buckets)' group='Self-Monitoring' interval='6 HOUR' description='App query rate and avg duration over time — spot polling spikes'
--- @chart: type=grouped_line labels=t values=query_count,avg_ms style=2d
+-- @chart: type=grouped_line group_by=t value=query_count,avg_ms style=2d
 SELECT
     toStartOfFiveMinutes(event_time) AS t,
     count() AS query_count,
@@ -171,7 +171,7 @@ ORDER BY query_duration_ms DESC
 LIMIT 20`,
 
   `-- @meta: title='App Memory & Rows by Component' group='Self-Monitoring' interval='1 DAY' description='Total memory and rows read per component — find the heaviest hitters'
--- @chart: type=bar labels=component values=total_memory_mb style=2d
+-- @chart: type=bar group_by=component value=total_memory_mb style=2d
 SELECT
     extractAllGroups(query, 'source:Monitor:(\\w+):')[1][1] AS component,
     count() AS queries,
@@ -203,7 +203,7 @@ ORDER BY event_time DESC
 LIMIT 30`,
 
   `-- @meta: title='App Query Duration Trend (hourly)' group='Self-Monitoring' interval='2 DAY' description='Hourly p50/p95/p99 of app query duration — detect regressions over time'
--- @chart: type=grouped_line labels=hour values=p50_ms,p95_ms,p99_ms unit=ms style=2d
+-- @chart: type=grouped_line group_by=hour value=p50_ms,p95_ms,p99_ms unit=ms style=2d
 SELECT
     toStartOfHour(event_time) AS hour,
     count() AS query_count,
@@ -218,7 +218,7 @@ GROUP BY hour
 ORDER BY hour ASC`,
 
   `-- @meta: title='App % of Server Load' group='Self-Monitoring' interval='1 DAY' description='What fraction of total server query time is consumed by the app itself'
--- @chart: type=line labels=hour values=app_pct unit=% style=2d
+-- @chart: type=line group_by=hour value=app_pct unit=% style=2d
 SELECT
     toStartOfHour(event_time) AS hour,
     sum(query_duration_ms) AS total_server_ms,

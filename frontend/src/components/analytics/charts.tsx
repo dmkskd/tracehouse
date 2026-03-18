@@ -57,11 +57,11 @@ export interface ChartDataPoint {
 
 export interface ChartConfig {
   type: ChartType;
-  labelColumn: string;
+  groupByColumn: string;
   valueColumn: string;
-  /** Multiple value columns for multi-series charts (e.g. values=col1,col2,col3). When set, each column becomes a separate series. */
+  /** Multiple value columns for multi-series charts (e.g. value=col1,col2,col3). When set, each column becomes a separate series. */
   valueColumns?: string[];
-  groupColumn?: string;
+  seriesColumn?: string;
   orientation?: 'horizontal' | 'vertical';
   visualization: '2d' | '3d';
   title?: string;
@@ -143,11 +143,11 @@ function formatCompact(v: number): string {
  */
 export function buildMultiColumnGrouped(
   rows: Record<string, unknown>[],
-  labelColumn: string,
+  groupByColumn: string,
   valueColumns: string[],
 ): GroupedChartData[] {
   return rows.map(row => ({
-    label: formatCell(row[labelColumn]),
+    label: formatCell(row[groupByColumn]),
     groups: valueColumns.map((col, i) => ({
       name: col,
       value: extractNumeric(row[col]),
@@ -197,33 +197,33 @@ export function buildChartData(
  */
 export function buildGroupedChartData(
   rows: Record<string, unknown>[],
-  labelColumn: string,
+  groupByColumn: string,
   valueColumn: string,
-  groupColumn?: string,
+  seriesColumn?: string,
   valueColumns?: string[],
   maxRows?: number,
 ): GroupedChartData[] {
-  // Multi-column mode: each valueColumn becomes a series (no group column needed)
+  // Multi-column mode: each valueColumn becomes a series (no series column needed)
   if (valueColumns && valueColumns.length > 1) {
-    const data = buildMultiColumnGrouped(rows, labelColumn, valueColumns);
+    const data = buildMultiColumnGrouped(rows, groupByColumn, valueColumns);
     return maxRows ? data.slice(0, maxRows * 2) : data;
   }
-  // Standard group-column mode
-  if (!groupColumn) return [];
+  // Standard series-column mode
+  if (!seriesColumn) return [];
   const grouped = new Map<string, Map<string, number>>();
   for (const row of rows) {
-    const label = formatCell(row[labelColumn]);
-    const group = formatCell(row[groupColumn]);
+    const label = formatCell(row[groupByColumn]);
+    const series = formatCell(row[seriesColumn]);
     const value = extractNumeric(row[valueColumn]);
     if (!grouped.has(label)) grouped.set(label, new Map());
-    grouped.get(label)!.set(group, value);
+    grouped.get(label)!.set(series, value);
   }
-  const allGroups = [...new Set(rows.map(r => formatCell(r[groupColumn])))];
+  const allSeries = [...new Set(rows.map(r => formatCell(r[seriesColumn])))];
   return Array.from(grouped.entries()).map(([label, groups]) => ({
     label,
-    groups: allGroups.map((groupName, i) => ({
-      name: groupName,
-      value: groups.get(groupName) || 0,
+    groups: allSeries.map((seriesName, i) => ({
+      name: seriesName,
+      value: groups.get(seriesName) || 0,
       color: CHART_COLORS[i % CHART_COLORS.length],
     })),
   })).slice(0, maxRows ?? Infinity);

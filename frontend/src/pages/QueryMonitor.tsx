@@ -72,6 +72,7 @@ export const QueryMonitor: React.FC = () => {
 
   const [runningCoordinatorIds, setRunningCoordinatorIds] = useState<Set<string>>(new Set());
   const [historyCoordinatorIds, setHistoryCoordinatorIds] = useState<Set<string>>(new Set());
+  const [runningFilteredCount, setRunningFilteredCount] = useState<number | null>(null);
 
   const { data: liveData } = useOverviewStore();
   const concurrency = liveData?.queryConcurrency;
@@ -228,7 +229,7 @@ export const QueryMonitor: React.FC = () => {
   }
 
   const tabs: { key: 'running' | 'history'; label: string; count: number }[] = [
-    { key: 'running', label: 'Running', count: runningQueries.length },
+    { key: 'running', label: 'Running', count: runningFilteredCount ?? runningQueries.length },
     { key: 'history', label: 'History', count: queryHistory.length },
   ];
 

@@ -202,7 +202,7 @@ export const QueryHistoryTable: React.FC<QueryHistoryTableProps> = ({
 
   return (
     <div>
-      <QueryFilterBar filter={filter} onFilterChange={onFilterChange} isLoading={isLoading} count={sortedHistory.length} queryAnalyzer={queryAnalyzer} />
+      <QueryFilterBar filter={filter} onFilterChange={onFilterChange} queryAnalyzer={queryAnalyzer} />
 
       {/* Compare mode bar */}
       <div style={{ 

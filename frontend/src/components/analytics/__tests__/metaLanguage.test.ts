@@ -42,30 +42,30 @@ describe('parseDirectives', () => {
     /* ── @chart combos ── */
     {
       name: 'chart: line + 3d',
-      sql: `-- @meta: title='Parts' group='Parts'\n-- @chart: type=line labels=minute values=new_parts style=3d\nSELECT 1`,
+      sql: `-- @meta: title='Parts' group='Parts'\n-- @chart: type=line group_by=minute value=new_parts style=3d\nSELECT 1`,
       expected: {
-        chart: { type: 'line', style: '3d', labelColumn: 'minute', valueColumn: 'new_parts', groupColumn: undefined },
+        chart: { type: 'line', style: '3d', groupByColumn: 'minute', valueColumn: 'new_parts', seriesColumn: undefined },
       },
     },
     {
       name: 'chart: pie + 3d',
-      sql: `-- @meta: title='DB Sizes' group='Overview'\n-- @chart: type=pie labels=database values=total_bytes style=3d\nSELECT 1`,
+      sql: `-- @meta: title='DB Sizes' group='Overview'\n-- @chart: type=pie group_by=database value=total_bytes style=3d\nSELECT 1`,
       expected: {
-        chart: { type: 'pie', style: '3d', labelColumn: 'database', valueColumn: 'total_bytes', groupColumn: undefined },
+        chart: { type: 'pie', style: '3d', groupByColumn: 'database', valueColumn: 'total_bytes', seriesColumn: undefined },
       },
     },
     {
       name: 'chart: stacked_bar with group column',
-      sql: `-- @meta: title='Duration' group='Self-Monitoring'\n-- @chart: type=stacked_bar labels=component values=value_ms group=metric unit=ms style=2d\nSELECT 1`,
+      sql: `-- @meta: title='Duration' group='Self-Monitoring'\n-- @chart: type=stacked_bar group_by=component value=value_ms series=metric unit=ms style=2d\nSELECT 1`,
       expected: {
-        chart: { type: 'stacked_bar', style: '2d', labelColumn: 'component', valueColumn: 'value_ms', groupColumn: 'metric' },
+        chart: { type: 'stacked_bar', style: '2d', groupByColumn: 'component', valueColumn: 'value_ms', seriesColumn: 'metric' },
       },
     },
     {
       name: 'chart: area + 2d',
-      sql: `-- @meta: title='QPS' group='Advanced Dashboard'\n-- @chart: type=area labels=t values=qps style=2d\nSELECT 1`,
+      sql: `-- @meta: title='QPS' group='Advanced Dashboard'\n-- @chart: type=area group_by=t value=qps style=2d\nSELECT 1`,
       expected: {
-        chart: { type: 'area', style: '2d', labelColumn: 't', valueColumn: 'qps', groupColumn: undefined },
+        chart: { type: 'area', style: '2d', groupByColumn: 't', valueColumn: 'qps', seriesColumn: undefined },
       },
     },
 
@@ -127,7 +127,7 @@ describe('parseDirectives', () => {
       name: 'all directives combined',
       sql: [
         `-- @meta: title='Full Query' group='Selects' description='Everything' interval='1 DAY'`,
-        `-- @chart: type=bar labels=col1 values=col2 group=col3 style=2d`,
+        `-- @chart: type=bar group_by=col1 value=col2 series=col3 style=2d`,
         `-- @drill: on=col1 into='Target Query'`,
         `-- @link: on=col4 into='Link Target'`,
         `-- @rag: column=col2 green<100 amber<500`,
@@ -136,7 +136,7 @@ describe('parseDirectives', () => {
       ].join('\n'),
       expected: {
         meta: { title: 'Full Query', group: 'Selects', description: 'Everything', interval: '1 DAY' },
-        chart: { type: 'bar', style: '2d', labelColumn: 'col1', valueColumn: 'col2', groupColumn: 'col3' },
+        chart: { type: 'bar', style: '2d', groupByColumn: 'col1', valueColumn: 'col2', seriesColumn: 'col3' },
         drill: { on: 'col1', into: 'Target Query' },
         link: { on: 'col4', into: 'Link Target' },
         rag: [{ column: 'col2', direction: 'asc', greenThreshold: 100, amberThreshold: 500 }],
@@ -187,53 +187,53 @@ describe('parseChartDirective', () => {
   }[] = [
     {
       name: 'single value column',
-      sql: `-- @chart: type=bar labels=minute values=count style=2d\nSELECT 1`,
-      expected: { type: 'bar', labelColumn: 'minute', valueColumn: 'count', visualization: '2d' },
+      sql: `-- @chart: type=bar group_by=minute value=count style=2d\nSELECT 1`,
+      expected: { type: 'bar', groupByColumn: 'minute', valueColumn: 'count', visualization: '2d' },
     },
     {
       name: 'multi-column values',
-      sql: `-- @chart: type=grouped_line labels=t values=TCP_Connections,MySQL_Connections,HTTP_Connections style=2d\nSELECT 1`,
+      sql: `-- @chart: type=grouped_line group_by=t value=TCP_Connections,MySQL_Connections,HTTP_Connections style=2d\nSELECT 1`,
       expected: {
         type: 'grouped_line',
-        labelColumn: 't',
+        groupByColumn: 't',
         valueColumn: 'TCP_Connections',
         valueColumns: ['TCP_Connections', 'MySQL_Connections', 'HTTP_Connections'],
       },
     },
     {
       name: 'orientation vertical',
-      sql: `-- @chart: type=bar labels=x values=y orientation=vertical\nSELECT 1`,
+      sql: `-- @chart: type=bar group_by=x value=y orientation=vertical\nSELECT 1`,
       expected: { orientation: 'vertical' },
     },
     {
       name: 'orientation horizontal',
-      sql: `-- @chart: type=bar labels=x values=y orientation=horizontal\nSELECT 1`,
+      sql: `-- @chart: type=bar group_by=x value=y orientation=horizontal\nSELECT 1`,
       expected: { orientation: 'horizontal' },
     },
     {
       name: 'orientation shorthand v',
-      sql: `-- @chart: type=bar labels=x values=y orientation=v\nSELECT 1`,
+      sql: `-- @chart: type=bar group_by=x value=y orientation=v\nSELECT 1`,
       expected: { orientation: 'vertical' },
     },
     {
       name: 'unit parsed',
-      sql: `-- @chart: type=stacked_bar labels=x values=y unit=ms\nSELECT 1`,
+      sql: `-- @chart: type=stacked_bar group_by=x value=y unit=ms\nSELECT 1`,
       expected: { unit: 'ms' },
     },
     {
       name: 'style 3d',
-      sql: `-- @chart: type=line labels=x values=y style=3d\nSELECT 1`,
+      sql: `-- @chart: type=line group_by=x value=y style=3d\nSELECT 1`,
       expected: { visualization: '3d' },
     },
     {
       name: 'extracts title and description from @meta',
-      sql: `-- @meta: title='My Chart' description='A description'\n-- @chart: type=pie labels=x values=y\nSELECT 1`,
+      sql: `-- @meta: title='My Chart' description='A description'\n-- @chart: type=pie group_by=x value=y\nSELECT 1`,
       expected: { title: 'My Chart', description: 'A description' },
     },
     {
-      name: 'group column',
-      sql: `-- @chart: type=stacked_bar labels=x values=y group=category\nSELECT 1`,
-      expected: { groupColumn: 'category' },
+      name: 'series column',
+      sql: `-- @chart: type=stacked_bar group_by=x value=y series=category\nSELECT 1`,
+      expected: { seriesColumn: 'category' },
     },
     {
       name: 'no @chart returns null',

@@ -16,9 +16,9 @@ export interface AnalyticsUrlState {
   sql?: string;
   view?: string;
   chart?: string;
-  labels?: string;
-  values?: string;
-  group?: string;
+  group_by?: string;
+  value?: string;
+  series?: string;
   style?: string;
   db?: string;
   lookback?: number;
@@ -58,12 +58,12 @@ function parseParams(search: string): AnalyticsUrlState {
   if (view) state.view = view;
   const chart = params.get('chart');
   if (chart) state.chart = chart;
-  const labels = params.get('labels');
-  if (labels) state.labels = labels;
-  const values = params.get('values');
-  if (values) state.values = values;
-  const group = params.get('group');
-  if (group) state.group = group;
+  const group_by = params.get('group_by');
+  if (group_by) state.group_by = group_by;
+  const value = params.get('value');
+  if (value) state.value = value;
+  const series = params.get('series');
+  if (series) state.series = series;
   const style = params.get('style');
   if (style) state.style = style;
   const db = params.get('db');
@@ -78,7 +78,7 @@ function parseParams(search: string): AnalyticsUrlState {
 }
 
 /** All param keys we manage — used to null out stale keys with locationService.partial() */
-const ALL_KEYS = ['tab', 'preset', 'sql', 'view', 'chart', 'labels', 'values', 'group', 'style', 'db', 'lookback', 'fullscreen', 'fromDashboard'] as const;
+const ALL_KEYS = ['tab', 'preset', 'sql', 'view', 'chart', 'group_by', 'value', 'series', 'style', 'db', 'lookback', 'fullscreen', 'fromDashboard'] as const;
 
 function buildParams(state: AnalyticsUrlState): Record<string, string> {
   const params: Record<string, string> = {};
@@ -87,9 +87,9 @@ function buildParams(state: AnalyticsUrlState): Record<string, string> {
   if (state.sql && state.preset === undefined) params.sql = encodeSql(state.sql);
   if (state.view && state.view !== ANALYTICS_DEFAULTS.view) params.view = state.view;
   if (state.chart) params.chart = state.chart;
-  if (state.labels) params.labels = state.labels;
-  if (state.values) params.values = state.values;
-  if (state.group) params.group = state.group;
+  if (state.group_by) params.group_by = state.group_by;
+  if (state.value) params.value = state.value;
+  if (state.series) params.series = state.series;
   if (state.style && state.style !== ANALYTICS_DEFAULTS.style) params.style = state.style;
   if (state.db) params.db = state.db;
   if (state.lookback && state.lookback !== ANALYTICS_DEFAULTS.lookback) params.lookback = String(state.lookback);

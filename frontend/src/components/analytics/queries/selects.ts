@@ -37,7 +37,7 @@ ORDER BY avg_duration_ms DESC
 LIMIT 20`,
 
   `-- @meta: title='SELECT Duration Trend (hourly)' group='Selects' interval='2 DAY' description='Hourly average and p95 SELECT duration over the last 2 days'
--- @chart: type=grouped_line labels=hour values=avg_duration_ms,p95_duration_ms unit=ms style=2d
+-- @chart: type=grouped_line group_by=hour value=avg_duration_ms,p95_duration_ms unit=ms style=2d
 -- Source: https://clickhouse.com/blog/monitoring-troubleshooting-select-queries-clickhouse
 SELECT
     toStartOfHour(event_time) AS hour,
@@ -52,7 +52,7 @@ GROUP BY hour
 ORDER BY hour ASC`,
 
   `-- @meta: title='Queries by User' group='Selects' interval='1 DAY' description='Number of SELECT queries per user in the last day'
--- @chart: type=pie labels=user values=query_count style=3d
+-- @chart: type=pie group_by=user value=query_count style=3d
 -- Source: https://clickhouse.com/blog/monitoring-troubleshooting-select-queries-clickhouse
 SELECT
     user,
@@ -67,7 +67,7 @@ GROUP BY user
 ORDER BY query_count DESC`,
 
   `-- @meta: title='Read Rows Distribution' group='Selects' interval='1 DAY' description='Distribution of rows read per SELECT query'
--- @chart: type=pie labels=bucket values=query_count style=3d
+-- @chart: type=pie group_by=bucket value=query_count style=3d
 -- Source: https://clickhouse.com/blog/monitoring-troubleshooting-select-queries-clickhouse
 SELECT
     multiIf(
