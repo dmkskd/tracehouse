@@ -121,6 +121,28 @@ const FILTER_FIELDS: FilterFieldDef[] = [
     apply: (v, p) => p.onPartNameChange?.(v || undefined),
     clear: p => p.onPartNameChange?.(undefined),
   },
+  {
+    key: 'min_duration', label: 'Min Duration (s)', placeholder: 'e.g. 5',
+    tabs: ['history'],
+    getSuggestions: () => ['1', '5', '10', '30', '60'],
+    fromProps: p => p.filter.minDurationMs != null ? String(p.filter.minDurationMs / 1000) : undefined,
+    apply: (v, p) => {
+      const secs = parseFloat(v);
+      p.onFilterChange({ minDurationMs: secs > 0 ? Math.round(secs * 1000) : undefined });
+    },
+    clear: p => p.onFilterChange({ minDurationMs: undefined }),
+  },
+  {
+    key: 'min_size', label: 'Min Size (MB)', placeholder: 'e.g. 100',
+    tabs: ['history'],
+    getSuggestions: () => ['10', '100', '500', '1000'],
+    fromProps: p => p.filter.minSizeBytes != null ? String(Math.round(p.filter.minSizeBytes / (1024 * 1024))) : undefined,
+    apply: (v, p) => {
+      const mb = parseFloat(v);
+      p.onFilterChange({ minSizeBytes: mb > 0 ? Math.round(mb * 1024 * 1024) : undefined });
+    },
+    clear: p => p.onFilterChange({ minSizeBytes: undefined }),
+  },
 ];
 
 /* ------------------------------------------------------------------ */

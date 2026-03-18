@@ -296,9 +296,9 @@ EOF
 
         # Setup process sampling (auto-detects cluster topology)
         log_info "Setting up process sampling..."
-        kubectl cp -c "$CH_CONTAINER" "${SCRIPT_DIR}/../scripts/setup_processes_sampling.sh" "clickhouse/${CH_POD}:/tmp/setup_processes_sampling.sh"
+        kubectl cp -c "$CH_CONTAINER" "${SCRIPT_DIR}/../scripts/setup_sampling.sh" "clickhouse/${CH_POD}:/tmp/setup_sampling.sh"
         local SAMPLING_ARGS="--host localhost --yes"
-        kubectl exec -n clickhouse -c "$CH_CONTAINER" "$CH_POD" -- bash /tmp/setup_processes_sampling.sh $SAMPLING_ARGS && \
+        kubectl exec -n clickhouse -c "$CH_CONTAINER" "$CH_POD" -- bash /tmp/setup_sampling.sh $SAMPLING_ARGS && \
             log_info "Process sampling configured" || \
             log_warn "Process sampling setup skipped"
     fi

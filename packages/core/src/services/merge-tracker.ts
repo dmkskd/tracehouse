@@ -30,7 +30,26 @@ export class MergeTrackerError extends Error {
 export interface MergeHistoryOptions {
   database?: string;
   table?: string;
+  minDurationMs?: number;
+  minSizeBytes?: number;
   limit?: number;
+}
+
+/**
+ * Inject optional duration_ms / size_in_bytes threshold filters into a part_log query.
+ * Inserts before the ORDER BY clause so it applies as a WHERE condition.
+ */
+function injectThresholdFilters(sql: string, opts: MergeHistoryOptions): string {
+  const clauses: string[] = [];
+  if (opts.minDurationMs != null && opts.minDurationMs > 0) {
+    clauses.push(`duration_ms >= ${Math.round(opts.minDurationMs)}`);
+  }
+  if (opts.minSizeBytes != null && opts.minSizeBytes > 0) {
+    clauses.push(`size_in_bytes >= ${Math.round(opts.minSizeBytes)}`);
+  }
+  if (clauses.length === 0) return sql;
+  const extra = clauses.map(c => `    AND ${c}`).join('\n');
+  return sql.replace(/(\s+ORDER BY)/, `\n${extra}$1`);
 }
 
 export class MergeTracker {
@@ -68,6 +87,7 @@ export class MergeTracker {
       } else {
         sql = buildQuery(GET_ALL_MERGE_HISTORY, { limit });
       }
+      sql = injectThresholdFilters(sql, options);
       const rows = await this.adapter.executeQuery(tagQuery(sql, sourceTag(TAB_MERGES, 'mergeHistory')));
       return rows.map(mapMergeHistoryRecord);
     } catch (error) {
@@ -96,6 +116,7 @@ export class MergeTracker {
       } else {
         sql = buildQuery(GET_MUTATION_HISTORY, { limit });
       }
+      // Note: do NOT apply injectThresholdFilters here — system.mutations lacks duration_ms/size_in_bytes columns
       const rows = await this.adapter.executeQuery(tagQuery(sql, sourceTag(TAB_MERGES, 'mutationHistory')));
       return rows.map(mapMutationHistoryRecord);
     } catch (error) {

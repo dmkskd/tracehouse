@@ -64,7 +64,7 @@ export const ModalWrapper: React.FC<{
           width: '100%',
           maxWidth,
           height: '85vh',
-          maxHeight: 900,
+          maxHeight: 960,
           background: modalBg,
           borderRadius: 16,
           border: `1px solid ${borderColor}`,

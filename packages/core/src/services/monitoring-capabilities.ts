@@ -18,7 +18,7 @@ import {
   PROBE_SERVER_VERSION,
   PROBE_CLOUD_SERVICE,
   PROBE_CPU_PROFILER_SAMPLES,
-  PROBE_TRACEHOUSE_PROCESSES_HISTORY,
+  PROBE_TRACEHOUSE_SAMPLING_TABLES,
   PROBE_SYSTEM_TABLE_ACCESS_TABLES,
 } from '../queries/monitoring-capabilities-queries.js';
 import { tagQuery } from '../queries/builder.js';
@@ -172,7 +172,7 @@ export class MonitoringCapabilitiesService {
       this.probeIntrospectionFunctions(),
       this.probeCloudService(),
       this.probeCPUProfilerSamples(),
-      this.probeTracehouseProcessesHistory(),
+      this.probeTracehouseSamplingTables(),
       this.probeSystemTableAccess(),
     ]);
 
@@ -333,7 +333,7 @@ export class MonitoringCapabilitiesService {
       source: 'system.clusters',
     });
 
-    // Tracehouse processes_history — live process sampling (setup_processes_sampling.sh)
+    // Tracehouse processes_history — live process sampling (setup_sampling.sh)
     const hasProcessesHistory = tracehouseTables.has('processes_history');
     const processesInfo = tracehouseTables.get('processes_history');
     capabilities.push({
@@ -344,8 +344,23 @@ export class MonitoringCapabilitiesService {
       category: 'profiling',
       detail: hasProcessesHistory
         ? `${processesInfo!.engine} · ${formatRowCount(processesInfo!.totalRows)} rows`
-        : 'Not installed — run infra/scripts/setup_processes_sampling.sh',
+        : 'Not installed — run infra/scripts/setup_sampling.sh',
       source: 'tracehouse.processes_history',
+    });
+
+    // Tracehouse merges_history — live merge sampling (setup_sampling.sh)
+    const hasMergesHistory = tracehouseTables.has('merges_history');
+    const mergesInfo = tracehouseTables.get('merges_history');
+    capabilities.push({
+      id: 'tracehouse_merges_history',
+      label: 'Merge Sampling',
+      description: 'Live merge sampling via refreshable MV (tracehouse.merges_history). Enables merge X-Ray timelines.',
+      available: hasMergesHistory,
+      category: 'profiling',
+      detail: hasMergesHistory
+        ? `${mergesInfo!.engine} · ${formatRowCount(mergesInfo!.totalRows)} rows`
+        : 'Not installed — run infra/scripts/setup_sampling.sh',
+      source: 'tracehouse.merges_history',
     });
 
     // System table access capabilities — these tables always exist on ClickHouse
@@ -524,10 +539,11 @@ export class MonitoringCapabilitiesService {
   }
 
   /**
-   * Check if tracehouse.processes_history exists (created by setup_processes_sampling.sh).
-   * Uses system.tables directly (not cluster-aware) since the table is local per node.
+   * Check if tracehouse sampling tables exist (processes_history, merges_history).
+   * Created by infra/scripts/setup_sampling.sh.
+   * Uses system.tables directly (not cluster-aware) since the tables are local per node.
    */
-  private async probeTracehouseProcessesHistory(): Promise<Map<string, { engine: string; totalRows: number; totalBytes: number }>> {
+  private async probeTracehouseSamplingTables(): Promise<Map<string, { engine: string; totalRows: number; totalBytes: number }>> {
     const result = new Map<string, { engine: string; totalRows: number; totalBytes: number }>();
     try {
       const rows = await this.adapter.executeQuery<{
@@ -535,7 +551,7 @@ export class MonitoringCapabilitiesService {
         engine: string;
         total_rows: number;
         total_bytes: number;
-      }>(tagQuery(PROBE_TRACEHOUSE_PROCESSES_HISTORY, sourceTag(TAB_INTERNAL, 'tracehouseProbe')));
+      }>(tagQuery(PROBE_TRACEHOUSE_SAMPLING_TABLES, sourceTag(TAB_INTERNAL, 'tracehouseProbe')));
 
       for (const row of rows) {
         result.set(String(row.name), {

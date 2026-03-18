@@ -33,6 +33,8 @@ export type {
 export interface MergeHistoryFilter {
   database?: string;
   table?: string;
+  minDurationMs?: number;
+  minSizeBytes?: number;
   limit: number;
 }
 
@@ -231,6 +233,8 @@ export const mergeApi = {
     return service.getMergeHistory({
       database: filter.database,
       table: filter.table,
+      minDurationMs: filter.minDurationMs,
+      minSizeBytes: filter.minSizeBytes,
       limit: filter.limit || 100,
     });
   },
@@ -252,6 +256,8 @@ export const mergeApi = {
     return service.getMutationHistory({
       database: filter.database,
       table: filter.table,
+      minDurationMs: filter.minDurationMs,
+      minSizeBytes: filter.minSizeBytes,
       limit: filter.limit || 100,
     });
   },

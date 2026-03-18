@@ -99,9 +99,9 @@ for i in {1..30}; do
         fi
 
         # Setup process sampling (idempotent)
-        if [ -f "$SCRIPT_DIR/../scripts/setup_processes_sampling.sh" ]; then
-            echo "Setting up process sampling..."
-            bash "$SCRIPT_DIR/../scripts/setup_processes_sampling.sh" --yes && \
+        if [ -f "$SCRIPT_DIR/../scripts/setup_sampling.sh" ]; then
+            echo "Setting up sampling..."
+            bash "$SCRIPT_DIR/../scripts/setup_sampling.sh" --yes && \
                 echo -e "${GREEN}✓ process sampling configured${NC}" || \
                 echo -e "${YELLOW}⚠ process sampling setup skipped (may already exist)${NC}"
             echo ""

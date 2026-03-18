@@ -16,6 +16,9 @@ import { formatBytes } from '../../stores/databaseStore';
 import { useClickHouseServices } from '../../providers/ClickHouseProvider';
 import { TraceLogViewer } from '../tracing/TraceLogViewer';
 import type { TraceLogFilter } from '../../stores/traceStore';
+import { useUserPreferenceStore } from '../../stores/userPreferenceStore';
+import { useCapabilityCheck } from '../shared/RequiresCapability';
+import { MergeXRay } from './MergeXRay';
 
 // ---------------------------------------------------------------------------
 // Props
@@ -43,7 +46,7 @@ export interface MergeDetailModalFromRecordProps {
 // Helpers
 // ---------------------------------------------------------------------------
 
-type MergeDetailTab = 'details' | 'logs' | 'profile';
+type MergeDetailTab = 'details' | 'logs' | 'profile' | 'xray';
 
 const MERGE_PROFILE_EVENTS = new Set([
   'Merge', 'MergeSourceParts', 'MergedRows', 'MergedColumns', 'GatheredColumns',
@@ -254,6 +257,8 @@ const MergeDetailInner: React.FC<{
   const [isLoadingLogs, setIsLoadingLogs] = useState(false);
   const [logsError, setLogsError] = useState<string | null>(null);
   const [logFilter, setLogFilter] = useState<TraceLogFilter>({});
+  const experimentalEnabled = useUserPreferenceStore(s => s.experimentalEnabled);
+  const { available: hasMergesHistory } = useCapabilityCheck(['tracehouse_merges_history']);
 
   // Fetch storage policy volume info for TTLMove
   useEffect(() => {
@@ -301,11 +306,22 @@ const MergeDetailInner: React.FC<{
   const hasProfileEvents = !!record.profile_events && Object.keys(record.profile_events).length > 0;
   const isTTLMoveRecord = record.merge_reason === 'TTLMove';
 
-  const tabs: { id: MergeDetailTab; label: string; disabled?: boolean; title?: string }[] = [
+  // Reset tab if experimental is disabled while viewing X-Ray
+  useEffect(() => {
+    if (!experimentalEnabled && activeTab === 'xray') setActiveTab('details');
+  }, [experimentalEnabled, activeTab]);
+
+  const tabs: { id: MergeDetailTab; label: string; disabled?: boolean; title?: string; experimental?: boolean }[] = [
     { id: 'details', label: 'Details' },
     { id: 'logs', label: 'Logs', disabled: isTTLMoveRecord, title: isTTLMoveRecord ? 'TTL moves do not produce dedicated log entries' : undefined },
     { id: 'profile', label: 'Profile', disabled: !hasProfileEvents, title: !hasProfileEvents ? 'No ProfileEvents in part_log for this event' : undefined },
   ];
+  if (experimentalEnabled) {
+    tabs.push({
+      id: 'xray', label: 'X-Ray', disabled: !hasMergesHistory, experimental: true,
+      title: !hasMergesHistory ? 'Requires tracehouse.merges_history — run infra/scripts/setup_sampling.sh' : undefined,
+    });
+  }
 
   return (
     <>
@@ -328,7 +344,7 @@ const MergeDetailInner: React.FC<{
             onClick={() => !tab.disabled && setActiveTab(tab.id)}
             title={tab.title}
             style={{
-              padding: '10px 14px', fontSize: 12,
+              padding: '10px 14px', fontSize: 12, position: 'relative',
               fontWeight: activeTab === tab.id ? 600 : 400,
               color: tab.disabled ? 'var(--text-muted)' : activeTab === tab.id ? '#f0883e' : 'var(--text-secondary)',
               background: 'none', border: 'none',
@@ -338,6 +354,15 @@ const MergeDetailInner: React.FC<{
             }}
           >
             {tab.label}
+            {tab.experimental && (
+              <span style={{
+                position: 'absolute', top: -4, right: -2,
+                fontSize: 7, fontWeight: 700, color: '#f0883e',
+                background: 'var(--bg-tertiary)', border: '1px solid rgba(240,136,62,0.3)',
+                borderRadius: 3, padding: '0 3px', lineHeight: '12px',
+                textTransform: 'uppercase', letterSpacing: '0.3px',
+              }}>exp</span>
+            )}
           </button>
         ))}
       </div>
@@ -363,6 +388,16 @@ const MergeDetailInner: React.FC<{
           </div>
         )}
         {activeTab === 'profile' && <ProfileTab profileEvents={record.profile_events} record={record} />}
+        {activeTab === 'xray' && (
+          <MergeXRay
+            database={record.database}
+            table={record.table}
+            resultPartName={record.part_name}
+            eventTime={record.event_time}
+            durationMs={record.duration_ms}
+            queryId={record.query_id}
+          />
+        )}
       </div>
     </>
   );

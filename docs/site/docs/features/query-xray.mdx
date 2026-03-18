@@ -62,22 +62,28 @@ Not recommended for production use. The schema, sampling approach, and storage e
 :::
 
 ```bash
-./infra/scripts/setup_processes_sampling.sh
+./infra/scripts/setup_sampling.sh
 ```
 
 It auto-detects single-node vs cluster topology and handles ON CLUSTER DDL and Distributed tables accordingly. Use `--dry-run` to preview the generated SQL before executing.
 
-Key options:
+By default it sets up both `processes_history` and `merges_history`. Use `--target` to install selectively:
 
 ```bash
 # Preview the generated SQL without executing
-./infra/scripts/setup_processes_sampling.sh --dry-run
+./infra/scripts/setup_sampling.sh --dry-run
+
+# Only set up process sampling
+./infra/scripts/setup_sampling.sh --target processes
+
+# Only set up merge sampling
+./infra/scripts/setup_sampling.sh --target merges
 
 # Custom host and credentials
-./infra/scripts/setup_processes_sampling.sh --host my-ch-node --user admin --password secret
+./infra/scripts/setup_sampling.sh --host my-ch-node --user admin --password secret
 
 # Custom sampling interval (default: 1s) and retention (default: 7 days)
-./infra/scripts/setup_processes_sampling.sh --interval 5 --ttl 14
+./infra/scripts/setup_sampling.sh --interval 5 --ttl 14
 ```
 
-See `./infra/scripts/setup_processes_sampling.sh --help` for all options.
+See `./infra/scripts/setup_sampling.sh --help` for all options.

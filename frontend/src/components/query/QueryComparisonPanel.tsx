@@ -9,7 +9,7 @@
  */
 
 import React, { useState, useMemo } from 'react';
-import type { ProfileEventComparison, MultiProfileEventRow, TaggedProcessSample, TimelineChartData } from '@tracehouse/core';
+import type { ProfileEventComparison, MultiProfileEventRow, TaggedProcessSample } from '@tracehouse/core';
 import { buildProcessSamplesSQL, mapTaggedProcessSampleRow, buildTimelineChartData } from '@tracehouse/core';
 import { LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer } from 'recharts';
 import { useClickHouseServices } from '../../providers/ClickHouseProvider';
@@ -659,14 +659,14 @@ const TimelineComparison: React.FC<{
               <Tooltip
                 contentStyle={{ background: 'var(--bg-primary)', border: '1px solid var(--border-primary)', borderRadius: 6, fontSize: 10, fontFamily: 'monospace' }}
                 labelFormatter={v => `t = ${v}s`}
-                formatter={(value: number, name: string) => {
+                formatter={(value, name) => {
                   // name is like "d_net_send_kb_0" — extract query index and line key
-                  const parts = name.split('_');
+                  const parts = String(name).split('_');
                   const idx = parseInt(parts.pop() || '0');
                   const lineKey = parts.join('_');
                   const line = metric.lines.find(l => l.key === lineKey);
                   const label = `${String.fromCharCode(65 + idx)}${line?.suffix || ''}`;
-                  return [metric.formatter(value), label];
+                  return [metric.formatter(Number(value)), label];
                 }}
               />
               {metric.lines.flatMap(line =>

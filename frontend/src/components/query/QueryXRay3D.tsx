@@ -429,7 +429,7 @@ const TimeHighlight: React.FC<{
   maxT: number;
   maxCpu: number;
   maxMem: number;
-}> = ({ samples, highlightTime, highlightLabel, maxT, maxCpu, maxMem }) => {
+}> = ({ samples, highlightTime, highlightLabel, maxT, maxCpu, maxMem: _maxMem }) => {
   // Translucent vertical slice that cuts through the cage at the highlighted time —
   // like a CT-scan plane, fitting the X-Ray theme.
   const sliceGeo = useMemo(() => {
@@ -1050,7 +1050,7 @@ export const QueryXRay3D: React.FC<QueryXRay3DProps> = ({
             This requires <code style={{ background: '#1a1a2e', padding: '1px 4px', borderRadius: 3 }}>
             tracehouse.processes_history</code> — see{' '}
             <code style={{ background: '#1a1a2e', padding: '1px 4px', borderRadius: 3 }}>
-            infra/scripts/setup_processes_sampling.sh</code>
+            infra/scripts/setup_sampling.sh</code>
           </div>
           <button
             onClick={fetchSamples}

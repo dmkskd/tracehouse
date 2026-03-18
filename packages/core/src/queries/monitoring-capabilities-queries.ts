@@ -108,11 +108,10 @@ WHERE trace_type = 'CPU'
 `;
 
 /**
- * Check if the tracehouse database and processes_history table exist.
- * This is created by infra/scripts/setup_processes_sampling.sh and enables
- * live process sampling features (query resource timelines, 3D surfaces).
+ * Check if tracehouse sampling tables exist (processes_history, merges_history).
+ * Created by infra/scripts/setup_sampling.sh.
  */
-export const PROBE_TRACEHOUSE_PROCESSES_HISTORY = `
+export const PROBE_TRACEHOUSE_SAMPLING_TABLES = `
 SELECT
     name,
     engine,
@@ -120,7 +119,7 @@ SELECT
     total_bytes
 FROM system.tables
 WHERE database = 'tracehouse'
-  AND name = 'processes_history'
+  AND name IN ('processes_history', 'merges_history')
 `;
 
 /**

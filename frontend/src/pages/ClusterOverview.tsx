@@ -21,7 +21,7 @@ import { ClusterTopology } from '../components/cluster/ClusterTopology';
 import type { HostMetrics } from '../components/cluster/ClusterTopology';
 import { PermissionGate } from '../components/shared/PermissionGate';
 import { extractErrorMessage } from '../utils/errorFormatters';
-import { useCapabilityCheck, RequiresCapability } from '../components/shared/RequiresCapability';
+import { useCapabilityCheck } from '../components/shared/RequiresCapability';
 
 // ── Types ──
 

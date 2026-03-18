@@ -59,6 +59,14 @@ const EMPTY_FLAGS: MonitoringFlags = {
   hasClickStack: false,
   isCloudService: false,
   hasProcessesHistory: false,
+  hasMergesHistory: false,
+  hasSystemMerges: false,
+  hasSystemMutations: false,
+  hasSystemClusters: false,
+  hasSystemReplicas: false,
+  hasSystemParts: false,
+  hasSystemDatabases: false,
+  hasSystemProcesses: false,
 };
 
 export const useMonitoringCapabilitiesStore = create<MonitoringCapabilitiesState>((set, get) => ({

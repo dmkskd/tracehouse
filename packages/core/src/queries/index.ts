@@ -11,4 +11,5 @@ export * from './analytics-queries.js';
 export * from './cluster-queries.js';
 export * from './lineage-queries.js';
 export * from './process-queries.js';
+export * from './merge-sample-queries.js';
 export { TIMELINE_ACTIVITY_LIMIT } from './timeline-queries.js';
