@@ -116,3 +116,61 @@ export function refineCategoryWithRowDiff(category: MergeCategory, rowsDiff: num
 export const ALL_MERGE_CATEGORIES: MergeCategory[] = [
   'Regular', 'TTLDelete', 'TTLRecompress', 'TTLMove', 'Mutation', 'LightweightDelete',
 ];
+
+// ── Mutation subtype classification ──────────────────────────────────
+
+/**
+ * Mutation subtypes — distinguishes lightweight from heavy mutations.
+ *
+ * ClickHouse doesn't expose this directly in system.mutations, but we can
+ * infer it from the command text and result part names:
+ *
+ *   HeavyDelete   — ALTER TABLE DELETE WHERE ... (rewrites full part, drops rows)
+ *   HeavyUpdate   — ALTER TABLE UPDATE SET ... (rewrites full part, preserves rows)
+ *   LightweightDelete — DELETE FROM ... (internally: UPDATE _row_exists = 0)
+ *   LightweightUpdate — UPDATE ... SET ... WHERE ... (creates patch-* parts, beta)
+ */
+export type MutationSubtype = 'HeavyDelete' | 'HeavyUpdate' | 'LightweightDelete' | 'LightweightUpdate';
+
+export interface MutationSubtypeInfo {
+  label: string;
+  shortLabel: string;
+  color: string;
+  description: string;
+}
+
+export const MUTATION_SUBTYPES: Record<MutationSubtype, MutationSubtypeInfo> = {
+  HeavyDelete:        { label: 'Heavy Delete',        shortLabel: 'Heavy',       color: '#e5534b', description: 'ALTER TABLE DELETE — rewrites full parts' },
+  HeavyUpdate:        { label: 'Heavy Update',        shortLabel: 'Heavy',       color: '#f0883e', description: 'ALTER TABLE UPDATE — rewrites full parts' },
+  LightweightDelete:  { label: 'Lightweight Delete',  shortLabel: 'Lightweight', color: '#d4a72c', description: 'DELETE FROM — masks rows via _row_exists column' },
+  LightweightUpdate:  { label: 'Lightweight Update',  shortLabel: 'Lightweight', color: '#3fb950', description: 'UPDATE SET — creates patch parts (beta)' },
+};
+
+/**
+ * Classify a mutation command into a subtype.
+ *
+ * Detection heuristics:
+ * - _row_exists = 0 in command → LightweightDelete (DELETE FROM internally)
+ * - DELETE WHERE (no _row_exists) → HeavyDelete (ALTER TABLE DELETE)
+ * - UPDATE ... SET ... → HeavyUpdate (ALTER TABLE UPDATE)
+ */
+export function classifyMutationCommand(command: string): MutationSubtype {
+  // ClickHouse converts DELETE FROM → UPDATE _row_exists = 0 WHERE ...
+  if (command.includes('_row_exists') && /=\s*0/.test(command)) {
+    return 'LightweightDelete';
+  }
+  // ALTER TABLE DELETE produces "DELETE WHERE ..."
+  if (/^DELETE\s/i.test(command.trim())) {
+    return 'HeavyDelete';
+  }
+  // Everything else is an UPDATE (ALTER TABLE UPDATE)
+  return 'HeavyUpdate';
+}
+
+/**
+ * Detect if a part name indicates a lightweight update (patch part).
+ * Patch parts have names like: patch-<hash>-<partition>_<min>_<max>_<level>_<version>
+ */
+export function isPatchPart(partName: string): boolean {
+  return partName.startsWith('patch-');
+}

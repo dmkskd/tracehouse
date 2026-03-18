@@ -541,7 +541,7 @@ export class MonitoringCapabilitiesService {
   /**
    * Check if tracehouse sampling tables exist (processes_history, merges_history).
    * Created by infra/scripts/setup_sampling.sh.
-   * Uses system.tables directly (not cluster-aware) since the tables are local per node.
+   * Uses {{cluster_metadata:system.tables}} to find tables across all cluster nodes.
    */
   private async probeTracehouseSamplingTables(): Promise<Map<string, { engine: string; totalRows: number; totalBytes: number }>> {
     const result = new Map<string, { engine: string; totalRows: number; totalBytes: number }>();

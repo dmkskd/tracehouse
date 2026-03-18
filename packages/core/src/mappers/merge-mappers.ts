@@ -77,15 +77,16 @@ export function mapMergeHistoryRecord(row: RawRow): MergeHistoryRecord {
 
 export function mapMutationInfo(row: RawRow): MutationInfo {
   const partsToDo = toInt(row.parts_to_do);
-  const partsInProgress = toInt(row.parts_in_progress);
   const isDone = toBool(row.is_done);
   const isKilled = toBool(row.is_killed);
   const latestFailReason = toStr(row.latest_fail_reason);
   const latestFailedPart = toStr(row.latest_failed_part);
   const latestFailTime = row.latest_fail_time ? normalizeTimestamp(row.latest_fail_time) : '';
 
-  // Total remaining = parts waiting + parts in progress
-  const totalRemaining = partsToDo + partsInProgress;
+  // system.mutations only provides parts_to_do (parts remaining).
+  // In-progress detection comes from cross-referencing with system.merges in the UI.
+  // parts_in_progress_names is left empty here; the UI links mutations to active
+  // merges via getMergeForMutation() in mutationDependencyHelpers.
 
   // Compute status based on mutation state
   let status: string;
@@ -95,7 +96,7 @@ export function mapMutationInfo(row: RawRow): MutationInfo {
     status = 'failed';
   } else if (isDone) {
     status = 'done';
-  } else if (partsInProgress > 0) {
+  } else if (partsToDo > 0) {
     status = 'running';
   } else {
     status = 'queued';
@@ -110,8 +111,8 @@ export function mapMutationInfo(row: RawRow): MutationInfo {
     command: toStr(row.command),
     create_time: normalizeTimestamp(row.create_time),
     parts_to_do: partsToDo,
-    total_parts: totalRemaining,
-    parts_in_progress: partsInProgress,
+    total_parts: partsToDo,
+    parts_in_progress: 0,
     parts_done: 0,
     is_done: isDone,
     latest_failed_part: latestFailedPart,
@@ -121,7 +122,7 @@ export function mapMutationInfo(row: RawRow): MutationInfo {
     status,
     progress,
     parts_to_do_names: toStrArray(row.parts_to_do_names),
-    parts_in_progress_names: toStrArray(row.parts_in_progress_names),
+    parts_in_progress_names: [],
   };
 }
 

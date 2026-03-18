@@ -35,6 +35,7 @@ export interface MergeHistoryFilter {
   table?: string;
   minDurationMs?: number;
   minSizeBytes?: number;
+  excludeSystemDatabases?: boolean;
   limit: number;
 }
 
@@ -69,7 +70,11 @@ interface MergeState {
   
   // Mutations from system.mutations
   mutations: MutationInfo[];
-  
+
+  // Tracks initial parts_to_do per mutation key (db.table.mutation_id) for progress calc.
+  // When a mutation first appears, we snapshot parts_to_do as the denominator.
+  mutationInitialParts: Map<string, number>;
+
   // Mutation history from system.part_log
   mutationHistory: MutationHistoryRecord[];
   
@@ -122,12 +127,14 @@ export const useMergeStore = create<MergeState>((set) => ({
   activeMerges: [],
   mergeHistory: [],
   mutations: [],
+  mutationInitialParts: new Map(),
   mutationHistory: [],
   poolMetrics: null,
   selectedMerge: null,
   
   // Default filter
   historyFilter: {
+    excludeSystemDatabases: true,
     limit: 100,
   },
   
@@ -168,7 +175,34 @@ export const useMergeStore = create<MergeState>((set) => ({
   
   setMergeHistory: (history) => set({ mergeHistory: history }),
   
-  setMutations: (mutations) => set({ mutations }),
+  setMutations: (mutations) => set((state) => {
+    const prev = state.mutationInitialParts;
+    const next = new Map(prev);
+    const currentKeys = new Set<string>();
+
+    for (const m of mutations) {
+      const key = `${m.database}.${m.table}.${m.mutation_id}`;
+      currentKeys.add(key);
+      if (!next.has(key)) {
+        // First time seeing this mutation — snapshot parts_to_do as initial total
+        next.set(key, m.parts_to_do);
+      }
+      // Compute progress: parts completed / initial total
+      const initial = next.get(key)!;
+      if (initial > 0) {
+        m.parts_done = initial - m.parts_to_do;
+        m.total_parts = initial;
+        m.progress = m.parts_done / initial;
+      }
+    }
+
+    // Prune mutations that disappeared (completed)
+    for (const key of prev.keys()) {
+      if (!currentKeys.has(key)) next.delete(key);
+    }
+
+    return { mutations, mutationInitialParts: next };
+  }),
   
   setMutationHistory: (history) => set({ mutationHistory: history }),
   
@@ -235,6 +269,7 @@ export const mergeApi = {
       table: filter.table,
       minDurationMs: filter.minDurationMs,
       minSizeBytes: filter.minSizeBytes,
+      excludeSystemDatabases: filter.excludeSystemDatabases,
       limit: filter.limit || 100,
     });
   },
@@ -258,6 +293,7 @@ export const mergeApi = {
       table: filter.table,
       minDurationMs: filter.minDurationMs,
       minSizeBytes: filter.minSizeBytes,
+      excludeSystemDatabases: filter.excludeSystemDatabases,
       limit: filter.limit || 100,
     });
   },

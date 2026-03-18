@@ -15,7 +15,7 @@ export const LIST_DATABASES = `
     COALESCE(sum(t.table_bytes), 0) AS total_bytes
   FROM {{cluster_metadata:system.databases}} AS d
   LEFT JOIN (
-    SELECT database, name, any(total_bytes) AS table_bytes
+    SELECT database, name, max(total_bytes) AS table_bytes
     FROM {{cluster_metadata:system.tables}}
     GROUP BY database, name
   ) AS t ON d.name = t.database
@@ -29,8 +29,8 @@ export const LIST_TABLES = `
     database,
     name,
     any(engine) AS engine,
-    any(total_rows) AS total_rows,
-    any(total_bytes) AS total_bytes,
+    max(total_rows) AS total_rows,
+    max(total_bytes) AS total_bytes,
     any(partition_key) AS partition_key,
     any(sorting_key) AS sorting_key
   FROM {{cluster_metadata:system.tables}}

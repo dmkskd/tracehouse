@@ -23,6 +23,9 @@ interface MergeFilterBarProps {
   onFilterChange: (patch: Partial<MergeHistoryFilter>) => void;
   availableDatabases: string[];
   availableTables: string[];
+  /** Toggle to exclude system/information_schema databases */
+  excludeSystemDatabases?: boolean;
+  onExcludeSystemChange?: (v: boolean) => void;
   /** For Active Merges: distinct merge_type values */
   mergeTypes?: string[];
   selectedMergeType?: string;
@@ -474,6 +477,23 @@ export const MergeFilterBar: React.FC<MergeFilterBarProps> = (props) => {
               onChange={e => setLocalLimit(e.target.value)}
               style={{ ...inputStyle, width: '100%' }} />
           </div>
+        )}
+
+        {/* Exclude system databases toggle */}
+        {(tab === 'history' || tab === 'mutationHistory') && props.onExcludeSystemChange && (
+          <label style={{
+            display: 'flex', alignItems: 'center', gap: 5,
+            fontSize: 11, color: 'var(--text-secondary)',
+            cursor: 'pointer', whiteSpace: 'nowrap', paddingBottom: 2,
+          }}>
+            <input
+              type="checkbox"
+              checked={props.excludeSystemDatabases ?? false}
+              onChange={e => props.onExcludeSystemChange!(e.target.checked)}
+              style={{ margin: 0 }}
+            />
+            Hide system
+          </label>
         )}
 
         {/* Count + Refresh */}

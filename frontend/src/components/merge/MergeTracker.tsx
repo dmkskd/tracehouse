@@ -35,6 +35,7 @@ import {
 import { PermissionGate } from '../shared/PermissionGate';
 import { extractErrorMessage } from '../../utils/errorFormatters';
 import { useCapabilityCheck } from '../shared/RequiresCapability';
+import { classifyMutationCommand, MUTATION_SUBTYPES } from '@tracehouse/core';
 
 // Stat Card
 const StatCard: React.FC<{
@@ -416,7 +417,7 @@ const MutationsPanel: React.FC<{
                   </div>
                   {targetVersion && (
                     <div style={{ fontSize: 8, color: 'var(--text-muted)', marginTop: 2 }}>
-                      Completes {count} mutation{count !== 1 ? 's' : ''} up to v{targetVersion} ({grpMerge.elapsed.toFixed(0)}s)
+                      Completes {count} mutation{count !== 1 ? 's' : ''}, applies to parts ≤ {targetVersion} ({grpMerge.elapsed.toFixed(0)}s)
                     </div>
                   )}
                 </div>
@@ -474,7 +475,7 @@ const MutationsPanel: React.FC<{
                   return [
                     `${m.database}.${m.table}`, m.mutation_id, m.command,
                     lm ? `${(lm.progress * 100).toFixed(0)}%` : 'waiting',
-                    m.parts_in_progress + m.parts_to_do, formatElapsed(m.create_time),
+                    `${m.parts_done}/${m.total_parts}`, formatElapsed(m.create_time),
                   ];
                 })}
                 size={12}
@@ -495,7 +496,8 @@ const MutationsPanel: React.FC<{
                                selectedMutation?.database === mutation.database &&
                                selectedMutation?.table === mutation.table;
             const linkedMerge = getMergeForMutation(mutation, partToMerge);
-            const totalParts = mutation.parts_in_progress + mutation.parts_to_do;
+            const totalParts = mutation.total_parts;
+            const partsDone = mutation.parts_done;
             return (
               <tr 
                 key={`${mutation.mutation_id}-${idx}`}
@@ -518,7 +520,16 @@ const MutationsPanel: React.FC<{
                   {mutation.mutation_id}
                 </td>
                 <td style={{ padding: '5px 8px', fontFamily: 'monospace', color: 'var(--text-muted)', maxWidth: 200, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }} title={mutation.command}>
-                  {mutation.command.length > 60 ? mutation.command.slice(0, 60) + '...' : mutation.command}
+                  {(() => {
+                    const subtype = classifyMutationCommand(mutation.command);
+                    const info = MUTATION_SUBTYPES[subtype];
+                    return (
+                      <span style={{ padding: '1px 4px', fontSize: 8, borderRadius: 3, background: `${info.color}20`, color: info.color, border: `1px solid ${info.color}40`, marginRight: 4, fontWeight: 500, whiteSpace: 'nowrap' }} title={info.description}>
+                        {info.shortLabel}
+                      </span>
+                    );
+                  })()}
+                  {mutation.command.length > 50 ? mutation.command.slice(0, 50) + '...' : mutation.command}
                 </td>
                 <td style={{ padding: '5px 8px' }}>
                   {linkedMerge ? (
@@ -537,8 +548,15 @@ const MutationsPanel: React.FC<{
                     <span style={{ fontSize: 9, color: 'var(--text-muted)' }}>waiting</span>
                   )}
                 </td>
-                <td style={{ padding: '5px 8px', textAlign: 'right', fontFamily: 'monospace', color: 'var(--text-muted)', fontSize: 10 }}>
-                  {totalParts}
+                <td style={{ padding: '5px 8px', textAlign: 'right', fontFamily: 'monospace', fontSize: 10 }}>
+                  {totalParts > 0 && partsDone > 0 ? (
+                    <span>
+                      <span style={{ color: '#3fb950' }}>{partsDone}</span>
+                      <span style={{ color: 'var(--text-muted)' }}>/{totalParts}</span>
+                    </span>
+                  ) : (
+                    <span style={{ color: 'var(--text-muted)' }}>{mutation.parts_to_do}</span>
+                  )}
                 </td>
                 <td style={{ padding: '5px 12px', textAlign: 'right', fontFamily: 'monospace', color: 'var(--text-muted)', fontSize: 10 }}>
                   {formatElapsed(mutation.create_time)}
@@ -1202,7 +1220,7 @@ const MutationDependencySection: React.FC<{
             )}
             {targetVersion && (
               <span title={`Result part: ${activeMerge.merge_result_part}`}>
-                Applies up to v{targetVersion}
+                Applies to parts ≤ {targetVersion}
               </span>
             )}
           </div>
@@ -1219,7 +1237,7 @@ const MutationDependencySection: React.FC<{
           )}
           {targetVersion && myMutationNum && myMutationNum > parseInt(targetVersion, 10) && (
             <div style={{ marginTop: 8, fontSize: 9, color: 'var(--text-muted)', lineHeight: 1.4 }}>
-              Merge covers up to v{targetVersion}, this mutation (v{myMutationNum}) needs another pass
+              Merge covers parts ≤ {targetVersion}, this mutation ({myMutationNum}) needs another pass
             </div>
           )}
         </div>
@@ -1983,6 +2001,8 @@ export const MergeTrackerView: React.FC = () => {
               onStatusChange={setSelectedStatus}
               selectedPartName={selectedPartName}
               onPartNameChange={setSelectedPartName}
+              excludeSystemDatabases={historyFilter.excludeSystemDatabases}
+              onExcludeSystemChange={(v) => handleFilterChange({ excludeSystemDatabases: v })}
               onRefresh={activeTab === 'history' ? () => fetchMergeHistory(true) : activeTab === 'mutationHistory' ? () => fetchMutationHistory(true) : undefined}
               isLoading={activeTab === 'history' ? isLoadingHistory : activeTab === 'mutationHistory' ? isLoadingMutationHistory : undefined}
               resultCount={filterResultCount}

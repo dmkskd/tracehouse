@@ -114,12 +114,13 @@ WHERE trace_type = 'CPU'
 export const PROBE_TRACEHOUSE_SAMPLING_TABLES = `
 SELECT
     name,
-    engine,
-    total_rows,
-    total_bytes
-FROM system.tables
+    any(engine) AS engine,
+    max(total_rows) AS total_rows,
+    max(total_bytes) AS total_bytes
+FROM {{cluster_metadata:system.tables}}
 WHERE database = 'tracehouse'
   AND name IN ('processes_history', 'merges_history')
+GROUP BY name
 `;
 
 /**

@@ -72,7 +72,7 @@ export class ClusterService {
         `SELECT cluster, count() AS replica_count, uniq(shard_num) AS shard_count
          FROM system.clusters
          GROUP BY cluster
-         ORDER BY replica_count DESC`,
+         ORDER BY replica_count DESC, cluster ASC`,
         sourceTag(TAB_CLUSTER, 'clusterDetect')
       ));
 

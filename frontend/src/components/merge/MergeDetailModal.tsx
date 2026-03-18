@@ -74,6 +74,34 @@ function mergeInfoToPartialRecord(merge: MergeInfo): MergeHistoryRecord {
   };
 }
 
+/** Build a partial MergeHistoryRecord from a MergeSeries/MutationSeries (running, no part_log yet). */
+function seriesToPartialRecord(series: MergeSeries | MutationSeries, isMutation: boolean): MergeHistoryRecord {
+  const dotIdx = series.table.indexOf('.');
+  const db = dotIdx > 0 ? series.table.slice(0, dotIdx) : 'default';
+  const tbl = dotIdx > 0 ? series.table.slice(dotIdx + 1) : series.table;
+  return {
+    event_time: series.start_time,
+    event_type: 'MergeParts',
+    database: db,
+    table: tbl,
+    part_name: series.part_name,
+    partition_id: '',
+    rows: 0,
+    size_in_bytes: 0,
+    duration_ms: series.duration_ms,
+    merge_reason: isMutation ? 'Mutation' : ('merge_reason' in series ? (series as MergeSeries).merge_reason || '' : ''),
+    source_part_names: [],
+    bytes_uncompressed: 0,
+    read_bytes: 0,
+    read_rows: 0,
+    peak_memory_usage: series.peak_memory,
+    size_diff: 0,
+    size_diff_pct: 0,
+    rows_diff: 0,
+    hostname: series.hostname,
+  };
+}
+
 const MERGE_PROFILE_EVENTS = new Set([
   'Merge', 'MergeSourceParts', 'MergedRows', 'MergedColumns', 'GatheredColumns',
   'MergedUncompressedBytes', 'MergeTotalMilliseconds', 'MergeExecuteMilliseconds',
@@ -108,13 +136,16 @@ const DetailsTab: React.FC<{
         <div style={{ fontSize: 10, marginBottom: 4, color: 'var(--text-muted)' }}>Part Name</div>
         <code style={{ fontSize: 11, padding: '4px 8px', borderRadius: 4, background: 'var(--bg-tertiary)', color: 'var(--text-secondary)', display: 'block', wordBreak: 'break-all' }}>{record.part_name}</code>
       </div>
-      {(record.merge_reason || record.merge_algorithm) && (
-        <div style={{ marginBottom: 16, display: 'flex', alignItems: 'center', gap: 8 }}>
+      {(record.merge_reason || record.merge_algorithm || record.part_name.startsWith('patch-')) && (
+        <div style={{ marginBottom: 16, display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
           {record.merge_reason && (
             <span style={{ padding: '2px 8px', fontSize: 10, borderRadius: 4, background: 'rgba(240,136,62,0.15)', color: '#f0883e', border: '1px solid rgba(240,136,62,0.3)' }}>{record.merge_reason}</span>
           )}
           {record.merge_algorithm && record.merge_algorithm !== 'Undecided' && (
             <span style={{ padding: '2px 8px', fontSize: 10, borderRadius: 4, background: 'var(--bg-tertiary)', color: 'var(--text-muted)' }}>{record.merge_algorithm}</span>
+          )}
+          {record.part_name.startsWith('patch-') && (
+            <span style={{ padding: '2px 8px', fontSize: 10, borderRadius: 4, background: 'rgba(63,185,80,0.15)', color: '#3fb950', border: '1px solid rgba(63,185,80,0.3)' }}>Lightweight (Patch)</span>
           )}
         </div>
       )}
@@ -471,6 +502,11 @@ export const MergeDetailModal: React.FC<MergeDetailModalProps> = ({ merge, onClo
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
+  const syntheticRecord = useMemo(
+    () => (merge?.is_running ? seriesToPartialRecord(merge, false) : null),
+    [merge?.part_name, merge?.table, merge?.is_running],  // eslint-disable-line react-hooks/exhaustive-deps
+  );
+
   useEffect(() => {
     setRecord(null);
     setError(null);
@@ -508,13 +544,16 @@ export const MergeDetailModal: React.FC<MergeDetailModalProps> = ({ merge, onClo
           </div>
         </div>
       )}
-      {!loading && !error && !record && (
+      {!loading && !error && !record && !syntheticRecord && (
         <div style={{ flex: 1, display: 'flex', alignItems: 'center', justifyContent: 'center', color: 'var(--text-muted)' }}>
           <div style={{ textAlign: 'center' }}>
             <div style={{ fontSize: 13, marginBottom: 4 }}>No part_log entry found</div>
             <div style={{ fontSize: 11 }}>{merge.table} → {merge.part_name}</div>
           </div>
         </div>
+      )}
+      {!loading && !error && !record && syntheticRecord && (
+        <MergeDetailInner record={syntheticRecord} onClose={onClose} title="Active Merge — Details" isActive />
       )}
       {record && <MergeDetailInner record={record} onClose={onClose} title="Merge Details" />}
     </ModalWrapper>
@@ -531,6 +570,11 @@ export const MutationDetailModal: React.FC<MutationDetailModalProps> = ({ mutati
   const [record, setRecord] = useState<MergeHistoryRecord | null>(null);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
+
+  const syntheticRecord = useMemo(
+    () => (mutation?.is_running ? seriesToPartialRecord(mutation, true) : null),
+    [mutation?.part_name, mutation?.table, mutation?.is_running],  // eslint-disable-line react-hooks/exhaustive-deps
+  );
 
   useEffect(() => {
     setRecord(null);
@@ -568,13 +612,16 @@ export const MutationDetailModal: React.FC<MutationDetailModalProps> = ({ mutati
           </div>
         </div>
       )}
-      {!loading && !error && !record && (
+      {!loading && !error && !record && !syntheticRecord && (
         <div style={{ flex: 1, display: 'flex', alignItems: 'center', justifyContent: 'center', color: 'var(--text-muted)' }}>
           <div style={{ textAlign: 'center' }}>
             <div style={{ fontSize: 13, marginBottom: 4 }}>No part_log entry found</div>
             <div style={{ fontSize: 11 }}>{mutation.table} → {mutation.part_name}</div>
           </div>
         </div>
+      )}
+      {!loading && !error && !record && syntheticRecord && (
+        <MergeDetailInner record={syntheticRecord} onClose={onClose} title="Active Mutation — Details" isActive />
       )}
       {record && <MergeDetailInner record={record} onClose={onClose} title="Mutation Details" />}
     </ModalWrapper>

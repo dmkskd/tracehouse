@@ -5,10 +5,13 @@ export {
   classifyMergeHistory,
   getMergeCategoryInfo,
   refineCategoryWithRowDiff,
+  classifyMutationCommand,
+  isPatchPart,
   MERGE_CATEGORIES,
   ALL_MERGE_CATEGORIES,
+  MUTATION_SUBTYPES,
 } from './merge-classification.js';
-export type { MergeCategory, MergeCategoryInfo } from './merge-classification.js';
+export type { MergeCategory, MergeCategoryInfo, MutationSubtype, MutationSubtypeInfo } from './merge-classification.js';
 export { parseTimeValue } from './time.js';
 export { parseTTL, formatTTLDuration } from './ttl-parser.js';
 export { parsePartName, getLevelFromName, isMutatedPart } from './part-name-parser.js';

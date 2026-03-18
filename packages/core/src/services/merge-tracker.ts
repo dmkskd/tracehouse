@@ -32,6 +32,7 @@ export interface MergeHistoryOptions {
   table?: string;
   minDurationMs?: number;
   minSizeBytes?: number;
+  excludeSystemDatabases?: boolean;
   limit?: number;
 }
 
@@ -46,6 +47,9 @@ function injectThresholdFilters(sql: string, opts: MergeHistoryOptions): string 
   }
   if (opts.minSizeBytes != null && opts.minSizeBytes > 0) {
     clauses.push(`size_in_bytes >= ${Math.round(opts.minSizeBytes)}`);
+  }
+  if (opts.excludeSystemDatabases) {
+    clauses.push(`database NOT IN ('system', 'information_schema', 'INFORMATION_SCHEMA')`);
   }
   if (clauses.length === 0) return sql;
   const extra = clauses.map(c => `    AND ${c}`).join('\n');

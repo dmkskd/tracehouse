@@ -132,8 +132,9 @@ export const GET_DATABASE_MERGE_HISTORY = `
 `;
 
 /** Get mutations from system.mutations with full details.
- * Natural key: (database, table, mutation_id). Dedup across replicas.
- * Uses subquery to filter before GROUP BY to avoid alias collision.
+ * Natural key: (database, table, mutation_id). Dedup across replicas/shards.
+ * Uses HAVING instead of WHERE so that a mutation only appears as active
+ * when ALL shards still have work to do (min(is_done) = 0).
  * Note: parts_to_do_names is an Array column that doesn't resolve through
  * clusterAllReplicas subqueries, so we flatten via toString(). */
 export const GET_MUTATIONS = `
@@ -145,15 +146,15 @@ export const GET_MUTATIONS = `
     any(create_time) AS create_time,
     any(partition_ids) AS partition_ids,
     any(block_numbers) AS block_numbers,
-    any(sub_parts_to_do) AS parts_to_do,
-    any(sub_parts_to_do) AS parts_in_progress,
-    any(parts_to_do_names_str) AS parts_to_do_names,
-    any(parts_to_do_names_str) AS parts_in_progress_names,
-    any(is_done) AS is_done,
+    sum(sub_parts_to_do) AS parts_to_do,
+    0 AS parts_in_progress,
+    anyIf(parts_to_do_names_str, raw_is_done = 0) AS parts_to_do_names,
+    '[]' AS parts_in_progress_names,
+    min(raw_is_done) AS is_done,
     any(latest_failed_part) AS latest_failed_part,
     any(latest_fail_time) AS latest_fail_time,
     any(latest_fail_reason) AS latest_fail_reason,
-    any(is_killed) AS is_killed
+    max(raw_is_killed) AS is_killed
   FROM (
     SELECT
       database,
@@ -165,17 +166,17 @@ export const GET_MUTATIONS = `
       block_numbers.number AS block_numbers,
       parts_to_do AS sub_parts_to_do,
       toString(parts_to_do_names) AS parts_to_do_names_str,
-      is_done,
+      is_done AS raw_is_done,
       latest_failed_part,
       latest_fail_time,
       latest_fail_reason,
-      is_killed
+      is_killed AS raw_is_killed
     FROM {{cluster_metadata:system.mutations}}
-    WHERE is_done = 0
   )
   GROUP BY database, table, mutation_id
-  ORDER BY 
-    parts_in_progress DESC,
+  HAVING min(raw_is_done) = 0 AND max(raw_is_killed) = 0
+  ORDER BY
+    parts_to_do DESC,
     create_time DESC
 `;
 
@@ -228,7 +229,8 @@ export const GET_OUTDATED_PARTS_SIZE = `
 
 /** Get mutation history from system.mutations (completed mutations).
  * Natural key: (database, table, mutation_id).
- * Uses subquery to filter before GROUP BY to avoid alias collision. */
+ * Uses HAVING min(is_done) = 1 so mutations only appear as completed
+ * when ALL shards have finished (not just one shard). */
 export const GET_MUTATION_HISTORY = `
   SELECT
     database,
@@ -236,16 +238,17 @@ export const GET_MUTATION_HISTORY = `
     mutation_id,
     any(command) AS command,
     any(create_time) AS create_time,
-    any(is_done) AS is_done,
-    any(is_killed) AS is_killed,
+    min(raw_is_done) AS is_done,
+    max(raw_is_killed) AS is_killed,
     any(latest_failed_part) AS latest_failed_part,
     any(latest_fail_time) AS latest_fail_time,
     any(latest_fail_reason) AS latest_fail_reason
   FROM (
-    SELECT * FROM {{cluster_metadata:system.mutations}}
-    WHERE is_done = 1 OR is_killed = 1
+    SELECT *, is_done AS raw_is_done, is_killed AS raw_is_killed
+    FROM {{cluster_metadata:system.mutations}}
   )
   GROUP BY database, table, mutation_id
+  HAVING min(raw_is_done) = 1 OR max(raw_is_killed) = 1
   ORDER BY create_time DESC
   LIMIT {limit}
 `;
@@ -259,17 +262,18 @@ export const GET_DATABASE_MUTATION_HISTORY = `
     mutation_id,
     any(command) AS command,
     any(create_time) AS create_time,
-    any(is_done) AS is_done,
-    any(is_killed) AS is_killed,
+    min(raw_is_done) AS is_done,
+    max(raw_is_killed) AS is_killed,
     any(latest_failed_part) AS latest_failed_part,
     any(latest_fail_time) AS latest_fail_time,
     any(latest_fail_reason) AS latest_fail_reason
   FROM (
-    SELECT * FROM {{cluster_metadata:system.mutations}}
-    WHERE (is_done = 1 OR is_killed = 1)
-      AND database = {database}
+    SELECT *, is_done AS raw_is_done, is_killed AS raw_is_killed
+    FROM {{cluster_metadata:system.mutations}}
+    WHERE database = {database}
   )
   GROUP BY database, table, mutation_id
+  HAVING min(raw_is_done) = 1 OR max(raw_is_killed) = 1
   ORDER BY create_time DESC
   LIMIT {limit}
 `;
@@ -283,18 +287,19 @@ export const GET_TABLE_MUTATION_HISTORY = `
     mutation_id,
     any(command) AS command,
     any(create_time) AS create_time,
-    any(is_done) AS is_done,
-    any(is_killed) AS is_killed,
+    min(raw_is_done) AS is_done,
+    max(raw_is_killed) AS is_killed,
     any(latest_failed_part) AS latest_failed_part,
     any(latest_fail_time) AS latest_fail_time,
     any(latest_fail_reason) AS latest_fail_reason
   FROM (
-    SELECT * FROM {{cluster_metadata:system.mutations}}
-    WHERE (is_done = 1 OR is_killed = 1)
-      AND database = {database}
+    SELECT *, is_done AS raw_is_done, is_killed AS raw_is_killed
+    FROM {{cluster_metadata:system.mutations}}
+    WHERE database = {database}
       AND table = {table}
   )
   GROUP BY database, table, mutation_id
+  HAVING min(raw_is_done) = 1 OR max(raw_is_killed) = 1
   ORDER BY create_time DESC
   LIMIT {limit}
 `;
