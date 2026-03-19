@@ -114,6 +114,64 @@ export interface ExplainIndexEntry {
   granules: { selected: number; total: number } | null;
 }
 
+// ─── Surface visualization types ────────────────────────────────────────
+
+/** A single time-bucketed row of aggregated query stress for a table */
+export interface StressSurfaceRow {
+  ts: string;
+  query_count: number;
+  total_duration_ms: number;
+  avg_duration_ms: number;
+  p95_duration_ms: number;
+  total_read_rows: number;
+  total_read_bytes: number;
+  total_memory: number;
+  total_cpu_us: number;
+  total_io_wait_us: number;
+  total_selected_marks: number;
+}
+
+/** Insert activity per time bucket for a table */
+export interface StressSurfaceInsertRow {
+  ts: string;
+  insert_count: number;
+  inserted_rows: number;
+  inserted_bytes: number;
+}
+
+/** Merge activity per time bucket for a table */
+export interface StressSurfaceMergeRow {
+  ts: string;
+  merges: number;
+  new_parts: number;
+  merge_ms: number;
+}
+
+/** Full stress surface dataset for a single table */
+export interface StressSurfaceData {
+  table: string;
+  queries: StressSurfaceRow[];
+  inserts: StressSurfaceInsertRow[];
+  merges: StressSurfaceMergeRow[];
+}
+
+/** A single row for the pattern surface: per (time, pattern) avg duration */
+export interface PatternSurfaceRow {
+  ts: string;
+  normalized_query_hash: string;
+  avg_duration_ms: number;
+  query_count: number;
+  avg_memory: number;
+  sample_query: string;
+}
+
+/** Options for surface queries */
+export interface SurfaceQueryOptions {
+  database: string;
+  table: string;
+  hours?: number;
+}
+
 /** Parsed result of EXPLAIN indexes = 1 for a query */
 export interface ExplainIndexesResult {
   /** All index entries found in the EXPLAIN output */

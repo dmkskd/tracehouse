@@ -6,8 +6,9 @@
  */
 
 import type { IClickHouseAdapter } from '../adapters/types.js';
-import type { TableOrderingKeyEfficiency, OrderingKeyEfficiencyOptions, TableQueryPattern, ExplainIndexesResult } from '../types/analytics.js';
+import type { TableOrderingKeyEfficiency, OrderingKeyEfficiencyOptions, TableQueryPattern, ExplainIndexesResult, StressSurfaceData, StressSurfaceRow, StressSurfaceInsertRow, StressSurfaceMergeRow, PatternSurfaceRow, SurfaceQueryOptions } from '../types/analytics.js';
 import { TABLE_ORDERING_KEY_EFFICIENCY, TABLE_QUERY_PATTERNS } from '../queries/analytics-queries.js';
+import { STRESS_SURFACE_QUERIES, STRESS_SURFACE_INSERTS, STRESS_SURFACE_MERGES, PATTERN_SURFACE } from '../queries/surface-queries.js';
 import { buildQuery, tagQuery } from '../queries/builder.js';
 import { TAB_ANALYTICS, sourceTag } from '../queries/source-tags.js';
 import { parseExplainIndexesJson } from './explain-parser.js';
@@ -170,6 +171,91 @@ export class AnalyticsService {
     } catch (error) {
       const msg = error instanceof Error ? error.message : String(error);
       return { indexes: [], primaryKey: null, skipIndexes: [], success: false, error: msg };
+    }
+  }
+
+  // ─── Surface visualizations ────────────────────────────────────────────
+
+  /**
+   * Fetch stress surface data for a table: per-minute query stress,
+   * insert activity, and merge activity.
+   */
+  async getStressSurfaceData(options: SurfaceQueryOptions): Promise<StressSurfaceData> {
+    const { database, table, hours = 24 } = options;
+    const params = { database, table_name: table, hours };
+    const fullTable = `${database}.${table}`;
+
+    try {
+      const [queries, inserts, merges] = await Promise.all([
+        this.adapter.executeQuery<Record<string, unknown>>(
+          tagQuery(buildQuery(STRESS_SURFACE_QUERIES, params), sourceTag(TAB_ANALYTICS, 'stressSurface')),
+        ),
+        this.adapter.executeQuery<Record<string, unknown>>(
+          tagQuery(buildQuery(STRESS_SURFACE_INSERTS, params), sourceTag(TAB_ANALYTICS, 'stressSurfaceInserts')),
+        ),
+        this.adapter.executeQuery<Record<string, unknown>>(
+          tagQuery(buildQuery(STRESS_SURFACE_MERGES, params), sourceTag(TAB_ANALYTICS, 'stressSurfaceMerges')),
+        ).catch(() => [] as Record<string, unknown>[]), // part_log may not exist
+      ]);
+
+      return {
+        table: fullTable,
+        queries: queries.map((r): StressSurfaceRow => ({
+          ts: String(r.ts ?? ''),
+          query_count: Number(r.query_count ?? 0),
+          total_duration_ms: Number(r.total_duration_ms ?? 0),
+          avg_duration_ms: Number(r.avg_duration_ms ?? 0),
+          p95_duration_ms: Number(r.p95_duration_ms ?? 0),
+          total_read_rows: Number(r.total_read_rows ?? 0),
+          total_read_bytes: Number(r.total_read_bytes ?? 0),
+          total_memory: Number(r.total_memory ?? 0),
+          total_cpu_us: Number(r.total_cpu_us ?? 0),
+          total_io_wait_us: Number(r.total_io_wait_us ?? 0),
+          total_selected_marks: Number(r.total_selected_marks ?? 0),
+        })),
+        inserts: inserts.map((r): StressSurfaceInsertRow => ({
+          ts: String(r.ts ?? ''),
+          insert_count: Number(r.insert_count ?? 0),
+          inserted_rows: Number(r.inserted_rows ?? 0),
+          inserted_bytes: Number(r.inserted_bytes ?? 0),
+        })),
+        merges: merges.map((r): StressSurfaceMergeRow => ({
+          ts: String(r.ts ?? ''),
+          merges: Number(r.merges ?? 0),
+          new_parts: Number(r.new_parts ?? 0),
+          merge_ms: Number(r.merge_ms ?? 0),
+        })),
+      };
+    } catch (error) {
+      const msg = error instanceof Error ? error.message : String(error);
+      throw new AnalyticsServiceError(`Failed to get stress surface data for ${fullTable}: ${msg}`, error as Error);
+    }
+  }
+
+  /**
+   * Fetch pattern surface data: per (time, query pattern) avg duration
+   * for the top 12 most frequent patterns hitting a table.
+   */
+  async getPatternSurfaceData(options: SurfaceQueryOptions): Promise<PatternSurfaceRow[]> {
+    const { database, table, hours = 24 } = options;
+    const params = { database, table_name: table, hours };
+
+    try {
+      const rows = await this.adapter.executeQuery<Record<string, unknown>>(
+        tagQuery(buildQuery(PATTERN_SURFACE, params), sourceTag(TAB_ANALYTICS, 'patternSurface')),
+      );
+
+      return rows.map((r): PatternSurfaceRow => ({
+        ts: String(r.ts ?? ''),
+        normalized_query_hash: String(r.normalized_query_hash ?? ''),
+        avg_duration_ms: Number(r.avg_duration_ms ?? 0),
+        query_count: Number(r.query_count ?? 0),
+        avg_memory: Number(r.avg_memory ?? 0),
+        sample_query: String(r.sample_query ?? ''),
+      }));
+    } catch (error) {
+      const msg = error instanceof Error ? error.message : String(error);
+      throw new AnalyticsServiceError(`Failed to get pattern surface data for ${database}.${table}: ${msg}`, error as Error);
     }
   }
 }

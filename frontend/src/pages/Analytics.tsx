@@ -13,12 +13,17 @@ import { PermissionGate } from '../components/shared/PermissionGate';
 import { OrderingKeyTable } from '../components/analytics/OrderingKeyTable';
 import { QueryExplorer } from '../components/analytics/QueryExplorer';
 import { DashboardViewer } from '../components/analytics/DashboardViewer';
+import { StressSurface } from '../components/analytics/StressSurface';
+import { PatternSurface } from '../components/analytics/PatternSurface';
 import { loadDashboards } from '../components/analytics/dashboards';
 import { useAnalyticsUrlState } from '../hooks/useUrlState';
 import { useNavigate } from '../hooks/useAppLocation';
-import type { TableOrderingKeyEfficiency } from '@tracehouse/core';
+import { useUserPreferenceStore } from '../stores/userPreferenceStore';
+import { QueryDetailModal } from '../components/query/QueryDetailModal';
+import type { TableOrderingKeyEfficiency, StressSurfaceData, PatternSurfaceRow, QuerySeries } from '@tracehouse/core';
 
-type AnalyticsTab = 'tables' | 'misc' | 'dashboards';
+type AnalyticsTab = 'tables' | 'misc' | 'dashboards' | 'surfaces';
+type SurfaceSubTab = 'stress' | 'pattern';
 
 const LOOKBACK_OPTIONS = [
   { label: '1 day', value: 1 },
@@ -33,6 +38,7 @@ export const Analytics: React.FC = () => {
   const services = useClickHouseServices();
   const { detected: clusterDetected } = useClusterStore();
   const { available: hasQueryLog, probing: isCapProbing } = useCapabilityCheck(['query_log']);
+  const { experimentalEnabled } = useUserPreferenceStore();
 
   const navigate = useNavigate();
   // Capture 'from' on mount before useAnalyticsUrlState strips unknown params.
@@ -49,7 +55,12 @@ export const Analytics: React.FC = () => {
   // URL state — tab, lookback, db filter are persisted in the URL
   const { state: urlState, update: updateUrl, copyShareableUrl } = useAnalyticsUrlState();
 
-  const activeTab: AnalyticsTab = (urlState.tab === 'misc' ? 'misc' : urlState.tab === 'dashboards' ? 'dashboards' : 'tables');
+  const activeTab: AnalyticsTab = (
+    urlState.tab === 'misc' ? 'misc' :
+    urlState.tab === 'dashboards' ? 'dashboards' :
+    urlState.tab === 'surfaces' ? 'surfaces' :
+    'tables'
+  );
   const setActiveTab = useCallback((tab: AnalyticsTab) => updateUrl({ tab, fromDashboard: undefined }, { push: true }), [updateUrl]);
 
   const lookbackDays = urlState.lookback ?? 7;
@@ -64,6 +75,22 @@ export const Analytics: React.FC = () => {
   const [error, setError] = useState<string | null>(null);
   const [showSystemDbs, setShowSystemDbs] = useState(false);
   const [linkCopied, setLinkCopied] = useState(false);
+
+  // ── Surfaces tab state ──
+  const [surfaceSubTab, setSurfaceSubTab] = useState<SurfaceSubTab>('stress');
+  const [surfaceDb, setSurfaceDb] = useState<string>('');
+  const [surfaceTableName, setSurfaceTableName] = useState<string>('');
+  const [surfaceHours, setSurfaceHours] = useState(24);
+  const [stressData, setStressData] = useState<StressSurfaceData | null>(null);
+  const [patternData, setPatternData] = useState<PatternSurfaceRow[] | null>(null);
+  const [surfaceLoading, setSurfaceLoading] = useState(false);
+  const [surfaceError, setSurfaceError] = useState<string | null>(null);
+  const [modalQuery, setModalQuery] = useState<QuerySeries | null>(null);
+
+  // Reset to Tables tab if experimental is disabled while on Surfaces
+  useEffect(() => {
+    if (!experimentalEnabled && activeTab === 'surfaces') setActiveTab('tables');
+  }, [experimentalEnabled]);
 
   const fromDashboardName = useMemo(() => {
     if (!urlState.fromDashboard) return null;
@@ -104,8 +131,98 @@ export const Analytics: React.FC = () => {
     }
   }, [services, isConnected, lookbackDays, clusterDetected]);
 
+  const fetchSurfaceData = useCallback(async () => {
+    if (!services || !surfaceDb || !surfaceTableName) return;
+
+    setSurfaceLoading(true);
+    setSurfaceError(null);
+    try {
+      const opts = { database: surfaceDb, table: surfaceTableName, hours: surfaceHours };
+      const [stress, pattern] = await Promise.all([
+        services.analyticsService.getStressSurfaceData(opts),
+        services.analyticsService.getPatternSurfaceData(opts),
+      ]);
+      setStressData(stress);
+      setPatternData(pattern);
+    } catch (e) {
+      setSurfaceError(e instanceof Error ? e.message : 'Failed to load surface data');
+    } finally {
+      setSurfaceLoading(false);
+    }
+  }, [services, surfaceDb, surfaceTableName, surfaceHours]);
+
+  // Open QueryDetailModal for a pattern hash — fetch the most recent query for that hash
+  const handleOpenPatternQuery = useCallback(async (hash: string) => {
+    if (!services) return;
+    try {
+      const rows = await services.adapter.executeQuery<Record<string, unknown>>(
+        `SELECT query_id, query, user, event_time, query_duration_ms, memory_usage,
+                ProfileEvents['RealTimeMicroseconds'] AS cpu_us,
+                ProfileEvents['NetworkSendBytes'] AS net_send,
+                ProfileEvents['NetworkReceiveBytes'] AS net_recv,
+                ProfileEvents['ReadBufferFromFileDescriptorReadBytes'] AS disk_read,
+                ProfileEvents['WriteBufferFromFileDescriptorWriteBytes'] AS disk_write,
+                type AS status
+         FROM system.query_log
+         WHERE type = 'QueryFinish'
+           AND normalized_query_hash = toUInt64(${JSON.stringify(hash)})
+         ORDER BY event_time DESC
+         LIMIT 1`
+      );
+      if (rows.length === 0) return;
+      const r = rows[0];
+      const durationMs = Number(r.query_duration_ms ?? 0);
+      const eventTime = String(r.event_time ?? '');
+      const startTime = eventTime ? new Date(eventTime + (eventTime.includes('Z') ? '' : 'Z')).toISOString() : new Date().toISOString();
+      const endTime = new Date(new Date(startTime).getTime() + durationMs).toISOString();
+      setModalQuery({
+        query_id: String(r.query_id ?? ''),
+        label: String(r.query ?? ''),
+        user: String(r.user ?? 'default'),
+        start_time: startTime,
+        end_time: endTime,
+        duration_ms: durationMs,
+        peak_memory: Number(r.memory_usage ?? 0),
+        cpu_us: Number(r.cpu_us ?? 0),
+        net_send: Number(r.net_send ?? 0),
+        net_recv: Number(r.net_recv ?? 0),
+        disk_read: Number(r.disk_read ?? 0),
+        disk_write: Number(r.disk_write ?? 0),
+        status: String(r.status ?? 'QueryFinish'),
+        points: [],
+      });
+    } catch (e) {
+      console.error('Failed to fetch query for pattern hash:', e);
+    }
+  }, [services]);
+
   useEffect(() => { if (hasQueryLog || isCapProbing) fetchDatabases(); }, [fetchDatabases, hasQueryLog, isCapProbing]);
   useEffect(() => { if (hasQueryLog || isCapProbing) fetchData(); }, [fetchData, hasQueryLog, isCapProbing]);
+
+  // Auto-fetch surface data when parameters change
+  useEffect(() => {
+    if (surfaceDb && surfaceTableName && services) fetchSurfaceData();
+  }, [fetchSurfaceData]);
+
+  // Auto-pick database/table for surfaces from the Tables Efficiency data
+  useEffect(() => {
+    if (!surfaceDb && data.length > 0) {
+      const top = data.reduce((a, b) => a.query_count > b.query_count ? a : b);
+      setSurfaceDb(top.database);
+      setSurfaceTableName(top.table_name);
+    }
+  }, [data, surfaceDb]);
+
+  // Databases and tables available for surfaces (sorted alphabetically, no system dbs)
+  const surfaceDatabases = useMemo(() => {
+    const dbs = [...new Set(data.map(d => d.database))].filter(db => !SYSTEM_DBS.has(db)).sort();
+    return dbs;
+  }, [data]);
+
+  const surfaceTables = useMemo(() => {
+    if (!surfaceDb) return [];
+    return data.filter(d => d.database === surfaceDb).map(d => d.table_name).sort();
+  }, [data, surfaceDb]);
 
   // Merge databases from both sources: actual MergeTree dbs + any dbs in query data
   const databases = useMemo(() => {
@@ -161,6 +278,9 @@ export const Analytics: React.FC = () => {
   });
 
   const tabStyle = (active: boolean): React.CSSProperties => ({
+    display: 'inline-flex',
+    alignItems: 'center',
+    gap: 6,
     padding: '6px 16px',
     fontSize: 12,
     fontWeight: active ? 600 : 400,
@@ -236,6 +356,18 @@ export const Analytics: React.FC = () => {
           {/* Tab bar */}
           <div style={{ display: 'flex', gap: 4, borderBottom: '1px solid var(--border-primary)', marginLeft: -4 }}>
             <button onClick={() => setActiveTab('tables')} style={tabStyle(activeTab === 'tables')}>Tables Efficiency</button>
+            {experimentalEnabled && (
+              <button onClick={() => setActiveTab('surfaces')} style={{ ...tabStyle(activeTab === 'surfaces'), position: 'relative' }}>
+                Surfaces
+                <span style={{
+                  position: 'absolute', top: -4, right: -2,
+                  fontSize: 7, fontWeight: 700, color: '#f0883e',
+                  background: 'var(--bg-secondary)', border: '1px solid rgba(240,136,62,0.3)',
+                  borderRadius: 3, padding: '0 3px', lineHeight: '12px',
+                  textTransform: 'uppercase', letterSpacing: '0.3px',
+                }}>exp</span>
+              </button>
+            )}
             <button onClick={() => setActiveTab('misc')} style={tabStyle(activeTab === 'misc')}>Queries</button>
             <button onClick={() => setActiveTab('dashboards')} style={tabStyle(activeTab === 'dashboards')}>Dashboards</button>
           </div>
@@ -369,12 +501,99 @@ export const Analytics: React.FC = () => {
         </div>
       )}
 
+      {/* ─── Surfaces tab content ─── */}
+      {activeTab === 'surfaces' && experimentalEnabled && (
+        <>
+          <div style={{ flexShrink: 0, padding: '8px 24px 12px', background: 'var(--bg-secondary)', borderBottom: '1px solid var(--border-primary)' }}>
+            <div style={{ display: 'flex', alignItems: 'center', gap: 12, flexWrap: 'wrap' }}>
+              {/* Database selector */}
+              <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+                <span style={{ fontSize: 11, color: 'var(--text-muted)' }}>Database:</span>
+                <select
+                  value={surfaceDb}
+                  onChange={e => {
+                    setSurfaceDb(e.target.value);
+                    // Auto-pick first table in the new database
+                    const tables = data.filter(d => d.database === e.target.value).map(d => d.table_name).sort();
+                    setSurfaceTableName(tables[0] ?? '');
+                  }}
+                  style={{
+                    padding: '3px 8px', fontSize: 11, borderRadius: 4,
+                    border: '1px solid var(--border-primary)', background: 'var(--bg-card)',
+                    color: 'var(--text-primary)', fontFamily: "'Share Tech Mono', monospace",
+                  }}
+                >
+                  <option value="">--</option>
+                  {surfaceDatabases.map(db => (
+                    <option key={db} value={db}>{db}</option>
+                  ))}
+                </select>
+              </div>
+
+              {/* Table selector */}
+              <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+                <span style={{ fontSize: 11, color: 'var(--text-muted)' }}>Table:</span>
+                <select
+                  value={surfaceTableName}
+                  onChange={e => setSurfaceTableName(e.target.value)}
+                  style={{
+                    padding: '3px 8px', fontSize: 11, borderRadius: 4,
+                    border: '1px solid var(--border-primary)', background: 'var(--bg-card)',
+                    color: 'var(--text-primary)', fontFamily: "'Share Tech Mono', monospace",
+                    maxWidth: 280,
+                  }}
+                >
+                  <option value="">--</option>
+                  {surfaceTables.map(tbl => (
+                    <option key={tbl} value={tbl}>{tbl}</option>
+                  ))}
+                </select>
+              </div>
+
+              {/* Hours selector */}
+              <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+                <span style={{ fontSize: 11, color: 'var(--text-muted)' }}>Window:</span>
+                {[1, 6, 24].map(h => (
+                  <button key={h} onClick={() => setSurfaceHours(h)}
+                    style={btnStyle(surfaceHours === h)}>
+                    {h}h
+                  </button>
+                ))}
+              </div>
+
+            </div>
+
+            {/* Sub-tabs */}
+            <div style={{ display: 'flex', gap: 4, marginTop: 8 }}>
+              <button onClick={() => setSurfaceSubTab('stress')} style={btnStyle(surfaceSubTab === 'stress')}>
+                Resource Usage
+              </button>
+              <button onClick={() => setSurfaceSubTab('pattern')} style={btnStyle(surfaceSubTab === 'pattern')}>
+                Query Patterns
+              </button>
+            </div>
+          </div>
+
+          <div style={{ flex: 1, overflow: 'hidden', padding: 12 }}>
+            {surfaceSubTab === 'stress' && (
+              <StressSurface data={stressData} isLoading={surfaceLoading} error={surfaceError} />
+            )}
+            {surfaceSubTab === 'pattern' && (
+              <PatternSurface data={patternData} isLoading={surfaceLoading} error={surfaceError} onOpenQuery={handleOpenPatternQuery} />
+            )}
+          </div>
+        </>
+      )}
+
       {/* ─── Dashboards tab content ─── */}
       {activeTab === 'dashboards' && (
         <div style={{ flex: 1, overflow: 'hidden' }}>
           <DashboardViewer initialDashboardId={urlState.fromDashboard} />
         </div>
       )}
+
+      {/* Query Detail Modal — opened from pattern surface hover cards */}
+      <QueryDetailModal query={modalQuery} onClose={() => setModalQuery(null)} />
     </div>
   );
 };
