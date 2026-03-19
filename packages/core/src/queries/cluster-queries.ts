@@ -56,7 +56,7 @@ SELECT
     any(replica_name) AS replica_name,
     uniq(zookeeper_path) AS shard_count,
     any(zookeeper_path) AS zk_path
-FROM {{cluster_metadata:system.replicas}}
+FROM {{cluster_aware:system.replicas}}
 GROUP BY database, table
 ORDER BY absolute_delay DESC, queue_size DESC
 `;
@@ -113,7 +113,7 @@ SELECT
     any(engine) AS engine,
     any(data_path) AS data_path,
     any(uuid) AS uuid
-FROM {{cluster_metadata:system.databases}}
+FROM {{cluster_aware:system.databases}}
 GROUP BY name
 ORDER BY name
 `;
@@ -136,7 +136,7 @@ SELECT
     last_exception,
     num_postponed,
     postpone_reason
-FROM {{cluster_metadata:system.replication_queue}}
+FROM {{cluster_aware:system.replication_queue}}
 WHERE database = {database}
 ORDER BY create_time ASC
 `;

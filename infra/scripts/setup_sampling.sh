@@ -4,7 +4,7 @@
 #
 # Auto-detects single-node vs cluster and generates the appropriate DDL:
 #   - Single node:  Atomic database, plain MergeTree
-#   - Cluster:      ON CLUSTER DDL, local table + Distributed table
+#   - Cluster:      ON CLUSTER DDL, same table names (app uses clusterAllReplicas)
 #
 # Targets:
 #   --target processes   Only set up processes_history (system.processes sampling)
@@ -18,7 +18,6 @@
 #   ./infra/scripts/setup_sampling.sh --host my-ch-node                # custom host
 #   ./infra/scripts/setup_sampling.sh --user admin --password secret
 #   ./infra/scripts/setup_sampling.sh --cluster dev                    # specify cluster for DDL
-#   ./infra/scripts/setup_sampling.sh --cluster dev --distributed-cluster all-sharded
 #   ./infra/scripts/setup_sampling.sh --interval 5                     # sample every 5 seconds
 #   ./infra/scripts/setup_sampling.sh --dry-run                        # print SQL only
 #
@@ -45,7 +44,7 @@ Connection options:
 
 Cluster options:
   --cluster NAME           Cluster name for ON CLUSTER DDL
-  --distributed-cluster NAME  All-sharded cluster for Distributed table
+  --on-cluster yes|no      Use ON CLUSTER in DDL (default: yes)
 
 Sampling options:
   --target TARGET          What to sample: processes, merges, or all (default: all)
@@ -63,6 +62,7 @@ Examples:
   setup_sampling.sh --target merges --interval 5           # merges only, 5s interval
   setup_sampling.sh --host db1 --interval 5                # remote host, 5s interval
   setup_sampling.sh --cluster prod --yes                   # cluster mode, no prompt
+  setup_sampling.sh --on-cluster no --host xyz.clickhouse.cloud  # skip ON CLUSTER
   setup_sampling.sh --dry-run                              # preview SQL only
 EOF
   exit 0
@@ -95,7 +95,7 @@ PORT="9000"
 USER=""
 PASSWORD=""
 CLUSTER=""
-DIST_CLUSTER=""
+USE_ON_CLUSTER="yes"
 INTERVAL=1
 TTL_DAYS=7
 DRY_RUN=false
@@ -109,7 +109,7 @@ while [[ $# -gt 0 ]]; do
     --user)                USER="$2"; shift 2 ;;
     --password)            PASSWORD="$2"; shift 2 ;;
     --cluster)             CLUSTER="$2"; shift 2 ;;
-    --distributed-cluster) DIST_CLUSTER="$2"; shift 2 ;;
+    --on-cluster)          USE_ON_CLUSTER="$2"; shift 2 ;;
     --target)              TARGET="$2"; shift 2 ;;
     --interval)            INTERVAL="$2"; shift 2 ;;
     --ttl)                 TTL_DAYS="$2"; shift 2 ;;
@@ -227,11 +227,7 @@ else
     SHARDED_CLUSTER=$(select_sharded_cluster "$CLUSTERS")
 
     echo ""
-    if [[ -n "$MAIN_CLUSTER" && -n "$SHARDED_CLUSTER" ]]; then
-      CLUSTER_NAME="$MAIN_CLUSTER"
-      DIST_CLUSTER="$SHARDED_CLUSTER"
-      echo "  Auto-selected: --cluster $MAIN_CLUSTER --distributed-cluster $SHARDED_CLUSTER"
-    elif [[ -n "$MAIN_CLUSTER" ]]; then
+    if [[ -n "$MAIN_CLUSTER" ]]; then
       CLUSTER_NAME="$MAIN_CLUSTER"
       echo "  Auto-selected: --cluster $MAIN_CLUSTER"
     else
@@ -245,78 +241,53 @@ if [[ -z "$CLUSTER_NAME" ]]; then
   MODE="single"
   log "  Mode:    single-node"
   ON_CLUSTER=""
-  DIST_CLUSTER_NAME=""
 else
   NODE_COUNT=$($CH --query "SELECT count() FROM system.clusters WHERE cluster = '$CLUSTER_NAME'")
   SHARD_COUNT=$($CH --query "SELECT uniq(shard_num) FROM system.clusters WHERE cluster = '$CLUSTER_NAME'")
   MODE="cluster"
   log "  Mode:    cluster"
   log "  Cluster: $CLUSTER_NAME ($NODE_COUNT nodes, $SHARD_COUNT shards)"
-  ON_CLUSTER=" ON CLUSTER '$CLUSTER_NAME'"
 
-  # Each node produces unique samples from its local system tables.
-  # The Distributed table must treat every node as a separate shard,
-  # otherwise replicas within a shard are only sampled randomly (1 of N).
-  HAS_REPLICAS=$($CH --query "
-    SELECT max(cnt) > 1 FROM (
-      SELECT shard_num, count() AS cnt
-      FROM system.clusters WHERE cluster = '$CLUSTER_NAME'
-      GROUP BY shard_num
-    )
-  ")
+  if [[ "$USE_ON_CLUSTER" == "yes" ]]; then
+    ON_CLUSTER=" ON CLUSTER '$CLUSTER_NAME'"
+    log "  ON CLUSTER: yes"
 
-  if [[ -n "$DIST_CLUSTER" ]]; then
-    DIST_CLUSTER_NAME="$DIST_CLUSTER"
-    log "  Distributed cluster: $DIST_CLUSTER_NAME"
-  elif [[ "$HAS_REPLICAS" == "1" ]]; then
-    # Find an all-sharded cluster automatically
-    SHARDED_CANDIDATE=$($CH --query "
-      SELECT cluster
-      FROM system.clusters
-      WHERE cluster NOT IN ('test_shard_localhost', 'test_cluster_two_shards_localhost',
-                             'test_cluster_one_shard_three_replicas_localhost',
-                             'test_unavailable_shard')
-      GROUP BY cluster
-      HAVING count() > 1 AND uniq(shard_num) = count()
-      ORDER BY cluster
-      LIMIT 1
-    " || true)
-
-    if [[ -n "$SHARDED_CANDIDATE" ]]; then
-      DIST_CLUSTER_NAME="$SHARDED_CANDIDATE"
-      log "  Distributed cluster: $DIST_CLUSTER_NAME (auto-detected all-sharded cluster)"
+    # Verify all cluster nodes are reachable before running DDL.
+    # ON CLUSTER silently skips unreachable nodes, so we check upfront.
+    log "  Checking cluster node reachability..."
+    REACHABLE=$($CH --query "
+      SELECT count() FROM clusterAllReplicas('$CLUSTER_NAME', system.one)
+    " 2>/dev/null || echo "0")
+    if [[ "$REACHABLE" -lt "$NODE_COUNT" ]]; then
+      log "  WARNING: Only $REACHABLE of $NODE_COUNT nodes are reachable."
+      log "           ON CLUSTER DDL may not propagate to all nodes."
+      log "           Waiting 30s for nodes to come online..."
+      sleep 30
+      REACHABLE=$($CH --query "
+        SELECT count() FROM clusterAllReplicas('$CLUSTER_NAME', system.one)
+      " 2>/dev/null || echo "0")
+      if [[ "$REACHABLE" -lt "$NODE_COUNT" ]]; then
+        log "  WARNING: Still only $REACHABLE of $NODE_COUNT nodes reachable. Proceeding anyway."
+      else
+        log "  All $REACHABLE nodes are now reachable."
+      fi
     else
-      # No all-sharded cluster found — fall back to main cluster.
-      # With replicas sharing a shard, the Distributed table will only
-      # query one replica per shard (not all nodes), so some samples
-      # may be missed. Still better than failing entirely.
-      DIST_CLUSTER_NAME="$CLUSTER_NAME"
-      log "  WARNING: No all-sharded cluster found. Using '$CLUSTER_NAME' for Distributed table."
-      log "           Samples from replica nodes sharing a shard may not all be visible."
-      log "           For full coverage, create an all-sharded cluster and re-run with:"
-      log "             $0 --cluster $CLUSTER_NAME --distributed-cluster <name>"
+      log "  All $REACHABLE nodes are reachable."
     fi
   else
-    # No replicas — same cluster works for both DDL and Distributed
-    DIST_CLUSTER_NAME="$CLUSTER_NAME"
+    ON_CLUSTER=""
+    log "  ON CLUSTER: no (DDL auto-replicates)"
   fi
 fi
 
 log ""
 
-# Table name helpers (local vs cluster naming)
-proc_local_table() {
-  if [[ "$MODE" == "single" ]]; then echo "processes_history"; else echo "processes_history_local"; fi
-}
-proc_buffer_table() {
-  if [[ "$MODE" == "single" ]]; then echo "processes_history_buffer"; else echo "processes_history_local_buffer"; fi
-}
-merge_local_table() {
-  if [[ "$MODE" == "single" ]]; then echo "merges_history"; else echo "merges_history_local"; fi
-}
-merge_buffer_table() {
-  if [[ "$MODE" == "single" ]]; then echo "merges_history_buffer"; else echo "merges_history_local_buffer"; fi
-}
+# Table name helpers — same names in both single and cluster mode.
+# No Distributed table needed; the app uses clusterAllReplicas() to fan out.
+proc_local_table() { echo "processes_history"; }
+proc_buffer_table() { echo "processes_history_buffer"; }
+merge_local_table() { echo "merges_history"; }
+merge_buffer_table() { echo "merges_history_buffer"; }
 
 # ---------------------------------------------------------------------------
 # Confirmation prompt
@@ -329,7 +300,11 @@ if ! $DRY_RUN && ! $ASSUME_YES && [[ -t 0 ]]; then
   echo "  Host:     $HOST:$PORT"
   if [[ "$MODE" == "cluster" ]]; then
     echo "  Cluster:  $CLUSTER_NAME ($NODE_COUNT nodes, $SHARD_COUNT shards)"
-    [[ "$DIST_CLUSTER_NAME" != "$CLUSTER_NAME" ]] && echo "  Distributed cluster: $DIST_CLUSTER_NAME"
+    if [[ -n "$ON_CLUSTER" ]]; then
+      echo "  ON CLUSTER: yes"
+    else
+      echo "  ON CLUSTER: no"
+    fi
   fi
   echo "  Target:   $TARGET"
   echo "  Interval: every ${INTERVAL}s"
@@ -341,17 +316,11 @@ if ! $DRY_RUN && ! $ASSUME_YES && [[ -t 0 ]]; then
     echo "    tracehouse.$(proc_local_table)          (MergeTree, $TTL_DISPLAY)"
     echo "    tracehouse.$(proc_buffer_table)         (Buffer)"
     echo "    tracehouse.processes_sampler            (Refreshable MV, every ${INTERVAL}s)"
-    if [[ "$MODE" == "cluster" && -n "$DIST_CLUSTER_NAME" ]]; then
-      echo "    tracehouse.processes_history            (Distributed)"
-    fi
   fi
   if setup_merges; then
     echo "    tracehouse.$(merge_local_table)            (MergeTree, $TTL_DISPLAY)"
     echo "    tracehouse.$(merge_buffer_table)           (Buffer)"
     echo "    tracehouse.merges_sampler                 (Refreshable MV, every ${INTERVAL}s)"
-    if [[ "$MODE" == "cluster" && -n "$DIST_CLUSTER_NAME" ]]; then
-      echo "    tracehouse.merges_history                 (Distributed)"
-    fi
   fi
   echo ""
   printf "Proceed? [y/N] "
@@ -371,7 +340,11 @@ log ""
 # ---------------------------------------------------------------------------
 # Database
 # ---------------------------------------------------------------------------
-run_query "CREATE DATABASE IF NOT EXISTS tracehouse$ON_CLUSTER ENGINE = Atomic"
+if [[ -n "$ON_CLUSTER" ]]; then
+  run_query "CREATE DATABASE IF NOT EXISTS tracehouse$ON_CLUSTER ENGINE = Atomic"
+else
+  run_query "CREATE DATABASE IF NOT EXISTS tracehouse"
+fi
 
 # Buffer flush timing (shared by both targets)
 BUF_MIN_TIME=$(( INTERVAL * 15 < 15 ? 15 : INTERVAL * 15 ))
@@ -453,6 +426,7 @@ REFRESH EVERY $INTERVAL SECOND
 APPEND
 TO tracehouse.$PROC_BUFFER
 AS
+/* source:TraceHouse:Sampler:processes */
 SELECT
     hostName()          AS hostname,
     now64(3)            AS sample_time,
@@ -490,16 +464,7 @@ SELECT
     ProfileEvents,
     Settings
 FROM system.processes
-WHERE is_initial_query = 1
-  AND query NOT LIKE '%processes_history%'
-  AND query NOT LIKE '%merges_history%'"
-
-  # Distributed table (cluster only)
-  if [[ "$MODE" == "cluster" && -n "$DIST_CLUSTER_NAME" ]]; then
-    run_query "CREATE TABLE IF NOT EXISTS tracehouse.processes_history$ON_CLUSTER
-    AS tracehouse.$PROC_LOCAL
-ENGINE = Distributed('$DIST_CLUSTER_NAME', 'tracehouse', '$PROC_LOCAL', rand())"
-  fi
+WHERE query NOT LIKE '%source:TraceHouse:%'"
 
   log ""
 fi
@@ -573,6 +538,7 @@ REFRESH EVERY $INTERVAL SECOND
 APPEND
 TO tracehouse.$MERGE_BUFFER
 AS
+/* source:TraceHouse:Sampler:merges */
 SELECT
     hostName()          AS hostname,
     now64(3)            AS sample_time,
@@ -602,13 +568,6 @@ SELECT
     memory_usage,
     thread_id
 FROM system.merges"
-
-  # Distributed table (cluster only)
-  if [[ "$MODE" == "cluster" && -n "$DIST_CLUSTER_NAME" ]]; then
-    run_query "CREATE TABLE IF NOT EXISTS tracehouse.merges_history$ON_CLUSTER
-    AS tracehouse.$MERGE_LOCAL
-ENGINE = Distributed('$DIST_CLUSTER_NAME', 'tracehouse', '$MERGE_LOCAL', rand())"
-  fi
 
   log ""
 fi
@@ -664,6 +623,27 @@ else
     FROM system.view_refreshes
     WHERE database = 'tracehouse'
   "
+
+  if [[ "$MODE" == "cluster" ]]; then
+    echo ""
+    echo "--- Cluster coverage ---"
+    COVERAGE=$($CH --query "
+      SELECT
+        hostName() AS host,
+        countIf(name = 'tracehouse') AS has_db
+      FROM clusterAllReplicas('$CLUSTER_NAME', system.databases)
+      GROUP BY host
+      ORDER BY host
+    ")
+    echo "$COVERAGE"
+    MISSING=$(echo "$COVERAGE" | awk '$2 == 0 {print $1}')
+    if [[ -n "$MISSING" ]]; then
+      echo ""
+      echo "WARNING: tracehouse database is MISSING on these nodes:"
+      echo "$MISSING"
+      echo "Re-run this script once all nodes are ready."
+    fi
+  fi
 
   echo ""
   echo "--- Live sample (waiting 3s for data) ---"

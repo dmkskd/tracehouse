@@ -108,7 +108,7 @@ export const Analytics: React.FC = () => {
     if (!services || !clusterDetected) return;
     try {
       const rows = await services.adapter.executeQuery<{ db: string }>(
-        "SELECT DISTINCT database AS db FROM {{cluster_metadata:system.tables}} WHERE engine LIKE '%MergeTree%' ORDER BY db"
+        "SELECT DISTINCT database AS db FROM {{cluster_aware:system.tables}} WHERE engine LIKE '%MergeTree%' ORDER BY db"
       );
       setAllDatabases(rows.map(r => String(r.db)));
     } catch { /* ignore — we'll fall back to databases from query data */ }

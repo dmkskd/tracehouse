@@ -27,6 +27,7 @@ export class BrowserAdapter implements IClickHouseAdapter {
       database: config.database,
       request_timeout: (config.send_receive_timeout ?? 300) * 1000,
       compression: CLIENT_COMPRESSION,
+      keep_alive: { enabled: false },
     });
   }
 
@@ -149,6 +150,7 @@ export class BrowserAdapter implements IClickHouseAdapter {
       msg.includes('CORS') ||
       msg.includes('fetch failed') ||
       msg.includes('Failed to fetch') ||
+      msg.includes('Load failed') ||
       msg.includes('network') ||
       msg.includes('NetworkError')
     ) {

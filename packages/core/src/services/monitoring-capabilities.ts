@@ -493,7 +493,7 @@ export class MonitoringCapabilitiesService {
       // Table exists — check if there are any replicated tables as a stronger signal
       try {
         const replicaRows = await this.adapter.executeQuery<{ cnt: number }>(
-          tagQuery(`SELECT count() AS cnt FROM (SELECT database, table FROM {{cluster_metadata:system.replicas}} GROUP BY database, table) LIMIT 1`, sourceTag(TAB_INTERNAL, 'replicas'))
+          tagQuery(`SELECT count() AS cnt FROM (SELECT database, table FROM {{cluster_aware:system.replicas}} GROUP BY database, table) LIMIT 1`, sourceTag(TAB_INTERNAL, 'replicas'))
         );
         return (replicaRows[0]?.cnt ?? 0) > 0;
       } catch {
@@ -541,7 +541,7 @@ export class MonitoringCapabilitiesService {
   /**
    * Check if tracehouse sampling tables exist (processes_history, merges_history).
    * Created by infra/scripts/setup_sampling.sh.
-   * Uses {{cluster_metadata:system.tables}} to find tables across all cluster nodes.
+   * Uses {{cluster_aware:system.tables}} to find tables across all cluster nodes.
    */
   private async probeTracehouseSamplingTables(): Promise<Map<string, { engine: string; totalRows: number; totalBytes: number }>> {
     const result = new Map<string, { engine: string; totalRows: number; totalBytes: number }>();

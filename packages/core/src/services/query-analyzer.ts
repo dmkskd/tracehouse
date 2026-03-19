@@ -268,7 +268,7 @@ export class QueryAnalyzer {
       // Use system.clusters instead of scanning query_log — it's a tiny virtual
       // table that returns all cluster hostnames instantly, vs scanning 7 days
       // of query_log on a busy cluster (potentially billions of rows).
-      sql = `SELECT DISTINCT host_name AS hostname FROM {{cluster_metadata:system.clusters}} ORDER BY hostname LIMIT ${limit}`;
+      sql = `SELECT DISTINCT host_name AS hostname FROM {{cluster_aware:system.clusters}} ORDER BY hostname LIMIT ${limit}`;
     } else if (column === 'query_kind') {
       // query_kind has very low cardinality (~6 values), so today() is enough
       sql = `SELECT DISTINCT query_kind FROM {{cluster_aware:system.query_log}} WHERE event_date >= today() AND query_kind != '' ORDER BY query_kind LIMIT ${limit}`;
@@ -466,7 +466,7 @@ export class QueryAnalyzer {
       ).join(' OR ');
       const sql = `
         SELECT database, table, groupArray(name) AS columns
-        FROM {{cluster_metadata:system.columns}}
+        FROM {{cluster_aware:system.columns}}
         WHERE ${conditions}
         GROUP BY database, table
       `;

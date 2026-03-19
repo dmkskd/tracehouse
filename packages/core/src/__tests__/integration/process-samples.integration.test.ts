@@ -112,11 +112,7 @@ describe('PROCESS_SAMPLES_SQL integration (delta calculations)', () => {
         VALUES ${values}`,
     });
 
-    const result = await ctx.client.query({
-      query: buildProcessSamplesSQL([qid]),
-      format: 'JSONEachRow',
-    });
-    const raw = await result.json<Record<string, unknown>>();
+    const raw = await ctx.adapter.executeQuery<Record<string, unknown>>(buildProcessSamplesSQL([qid]));
     return raw.map(mapProcessSampleRow);
   }
 
@@ -458,11 +454,7 @@ describe('PROCESS_SAMPLES_SQL integration (delta calculations)', () => {
           VALUES ${values}`,
       });
 
-      const result = await ctx.client.query({
-        query: buildProcessSamplesSQL(['query-A']),
-        format: 'JSONEachRow',
-      });
-      const results = (await result.json<Record<string, unknown>>()).map(mapProcessSampleRow);
+      const results = (await ctx.adapter.executeQuery<Record<string, unknown>>(buildProcessSamplesSQL(['query-A']))).map(mapProcessSampleRow);
 
       expect(results).toHaveLength(3);
       expect(results[1].d_cpu_cores).toBeCloseTo(1, 5);
@@ -494,11 +486,7 @@ describe('PROCESS_SAMPLES_SQL integration (delta calculations)', () => {
           VALUES ${values}`,
       });
 
-      const result = await ctx.client.query({
-        query: buildProcessSamplesSQL(['parent-Q']),
-        format: 'JSONEachRow',
-      });
-      const results = (await result.json<Record<string, unknown>>()).map(mapProcessSampleRow);
+      const results = (await ctx.adapter.executeQuery<Record<string, unknown>>(buildProcessSamplesSQL(['parent-Q']))).map(mapProcessSampleRow);
 
       expect(results).toHaveLength(2);
     });

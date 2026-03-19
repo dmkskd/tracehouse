@@ -171,7 +171,7 @@ export const GET_MUTATIONS = `
       latest_fail_time,
       latest_fail_reason,
       is_killed AS raw_is_killed
-    FROM {{cluster_metadata:system.mutations}}
+    FROM {{cluster_aware:system.mutations}}
   )
   GROUP BY database, table, mutation_id
   HAVING min(raw_is_done) = 0 AND max(raw_is_killed) = 0
@@ -220,7 +220,7 @@ export const GET_OUTDATED_PARTS_SIZE = `
     sum(part_bytes) AS outdated_parts_bytes
   FROM (
     SELECT name, any(bytes_on_disk) AS part_bytes
-    FROM {{cluster_metadata:system.parts}}
+    FROM {{cluster_aware:system.parts}}
     WHERE active = 0
     GROUP BY database, table, name
   )
@@ -245,7 +245,7 @@ export const GET_MUTATION_HISTORY = `
     any(latest_fail_reason) AS latest_fail_reason
   FROM (
     SELECT *, is_done AS raw_is_done, is_killed AS raw_is_killed
-    FROM {{cluster_metadata:system.mutations}}
+    FROM {{cluster_aware:system.mutations}}
   )
   GROUP BY database, table, mutation_id
   HAVING min(raw_is_done) = 1 OR max(raw_is_killed) = 1
@@ -269,7 +269,7 @@ export const GET_DATABASE_MUTATION_HISTORY = `
     any(latest_fail_reason) AS latest_fail_reason
   FROM (
     SELECT *, is_done AS raw_is_done, is_killed AS raw_is_killed
-    FROM {{cluster_metadata:system.mutations}}
+    FROM {{cluster_aware:system.mutations}}
     WHERE database = {database}
   )
   GROUP BY database, table, mutation_id
@@ -294,7 +294,7 @@ export const GET_TABLE_MUTATION_HISTORY = `
     any(latest_fail_reason) AS latest_fail_reason
   FROM (
     SELECT *, is_done AS raw_is_done, is_killed AS raw_is_killed
-    FROM {{cluster_metadata:system.mutations}}
+    FROM {{cluster_aware:system.mutations}}
     WHERE database = {database}
       AND table = {table}
   )
@@ -348,7 +348,7 @@ export const GET_MERGE_TEXT_LOGS_BY_QUERY_ID = `
  */
 export const GET_TABLE_UUID = `
   SELECT any(uuid) AS uuid
-  FROM {{cluster_metadata:system.tables}}
+  FROM {{cluster_aware:system.tables}}
   WHERE database = {database}
     AND name = {table}
   GROUP BY database, name

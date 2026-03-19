@@ -244,7 +244,7 @@ SELECT
     table, 
     partition_id, 
     uniq(name) AS part_count
-FROM {{cluster_metadata:system.parts}} 
+FROM {{cluster_aware:system.parts}} 
 WHERE active
 GROUP BY database, table, partition_id
 HAVING part_count > {parts_threshold:UInt32}
@@ -272,7 +272,7 @@ FROM (
         min(free_space) AS free_space,
         any(total_space) AS total_space
     FROM (
-        SELECT * FROM {{cluster_metadata:system.disks}}
+        SELECT * FROM {{cluster_aware:system.disks}}
         WHERE total_space > 0
     )
     GROUP BY name
@@ -300,7 +300,7 @@ FROM (
         any(absolute_delay) AS absolute_delay,
         any(queue_size) AS queue_size,
         any(active_replicas) AS active_replicas
-    FROM {{cluster_metadata:system.replicas}}
+    FROM {{cluster_aware:system.replicas}}
     GROUP BY database, table
 )
 `;
@@ -314,7 +314,7 @@ export const GET_PK_MEMORY = `
 SELECT sum(pk_bytes) AS pk_bytes
 FROM (
     SELECT name, any(primary_key_bytes_in_memory) AS pk_bytes
-    FROM {{cluster_metadata:system.parts}}
+    FROM {{cluster_aware:system.parts}}
     WHERE active
     GROUP BY database, table, name
 )
@@ -328,7 +328,7 @@ export const GET_DICT_MEMORY = `
 SELECT sum(dict_bytes) AS dict_bytes
 FROM (
     SELECT name, any(bytes_allocated) AS dict_bytes
-    FROM {{cluster_metadata:system.dictionaries}}
+    FROM {{cluster_aware:system.dictionaries}}
     GROUP BY name
 )
 `;
@@ -374,7 +374,7 @@ SELECT
     sum(bytes_on_disk) AS total_bytes,
     sum(rows) AS total_rows,
     uniq(name) AS part_count
-FROM {{cluster_metadata:system.parts}}
+FROM {{cluster_aware:system.parts}}
 WHERE active AND database NOT IN ('system', 'information_schema', 'INFORMATION_SCHEMA')
 GROUP BY database, table
 ORDER BY total_bytes DESC

@@ -22,7 +22,7 @@ FROM (
         any(modification_time) AS mod_time,
         any(primary_key_bytes_in_memory) AS pk_bytes,
         any(engine) AS part_engine
-    FROM {{cluster_metadata:system.parts}}
+    FROM {{cluster_aware:system.parts}}
     WHERE active
     GROUP BY database, table, name
 )
@@ -39,7 +39,7 @@ SELECT
     formatReadableSize(sum(part_disk)) AS disk_size
 FROM (
     SELECT database, table, name, any(rows) AS part_rows, any(bytes_on_disk) AS part_disk
-    FROM {{cluster_metadata:system.parts}}
+    FROM {{cluster_aware:system.parts}}
     WHERE active AND database NOT IN ('system','INFORMATION_SCHEMA','information_schema')
     GROUP BY database, table, name
 )
@@ -57,7 +57,7 @@ SELECT
     count() AS tables
 FROM (
     SELECT database, table, name, any(bytes_on_disk) AS part_disk
-    FROM {{cluster_metadata:system.parts}}
+    FROM {{cluster_aware:system.parts}}
     WHERE active
     GROUP BY database, table, name
 )
@@ -72,7 +72,7 @@ SELECT
     formatReadableSize(sum(bytes_on_disk)) AS size,
     sum(bytes_on_disk) AS total_bytes,
     count() AS parts
-FROM {{cluster_metadata:system.parts}}
+FROM {{cluster_aware:system.parts}}
 WHERE active AND {{drill:database | 1=1}}
 GROUP BY table
 ORDER BY total_bytes DESC
@@ -84,7 +84,7 @@ SELECT
     name,
     formatReadableSize(bytes_on_disk) AS size,
     bytes_on_disk
-FROM {{cluster_metadata:system.parts}}
+FROM {{cluster_aware:system.parts}}
 WHERE active AND {{drill:database | 1=1}} AND {{drill:table | 1=1}}
 ORDER BY bytes_on_disk DESC
 LIMIT 100`,

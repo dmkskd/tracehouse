@@ -679,7 +679,7 @@ const TimelineComparison: React.FC<{
                     strokeWidth={1.5}
                     strokeDasharray={line.strokeDasharray}
                     dot={false}
-                    connectNulls={false}
+                    connectNulls={true}
                     isAnimationActive={false}
                   />
                 ))

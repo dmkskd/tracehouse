@@ -29,10 +29,20 @@ export interface DashboardPanel {
   queryName: string;
 }
 
+/** Dashboard group for visual categorization in the list view. */
+export type DashboardGroup = 'ClickHouse' | 'TraceHouse' | 'Custom';
+
+export const DASHBOARD_GROUPS: { name: DashboardGroup; color: string }[] = [
+  { name: 'ClickHouse', color: '#facc15' },
+  { name: 'TraceHouse', color: '#7c3aed' },
+  { name: 'Custom', color: '#79c0ff' },
+];
+
 export interface Dashboard {
   id: string;
   title: string;
   description?: string;
+  group?: DashboardGroup;
   columns: 1 | 2 | 3 | 4;
   panels: DashboardPanel[];
   /** true for shipped defaults (user can clone but not delete the originals) */
@@ -168,6 +178,7 @@ const BUILTIN_DASHBOARDS: Dashboard[] = [
     id: 'ops-overview',
     title: 'Operations Overview',
     description: 'Full server health dashboard — mirrors the ClickHouse built-in "Overview" dashboard',
+    group: 'ClickHouse',
     columns: 2,
     panels: [
       { queryName: 'Advanced Dashboard#Queries/second' },
@@ -195,6 +206,7 @@ const BUILTIN_DASHBOARDS: Dashboard[] = [
     id: 'insert-health',
     title: 'Insert Health',
     description: 'Monitor ingestion pipeline: new parts, batch rates, durations',
+    group: 'ClickHouse',
     columns: 2,
     panels: [
       { queryName: 'Inserts#New Parts Created' },
@@ -209,6 +221,7 @@ const BUILTIN_DASHBOARDS: Dashboard[] = [
     id: 'select-perf',
     title: 'SELECT Performance',
     description: 'Query latency trends, per-user breakdown, read distribution',
+    group: 'ClickHouse',
     columns: 2,
     panels: [
       { queryName: 'Selects#SELECT Duration Trend (hourly)' },
@@ -222,6 +235,7 @@ const BUILTIN_DASHBOARDS: Dashboard[] = [
     id: 'storage-parts',
     title: 'Storage & Parts',
     description: 'Disk usage, part counts, and merge pressure indicators',
+    group: 'ClickHouse',
     columns: 2,
     panels: [
       { queryName: 'Overview#Biggest Tables' },
@@ -236,6 +250,7 @@ const BUILTIN_DASHBOARDS: Dashboard[] = [
     id: 'merge-monitoring',
     title: 'Merge Monitoring',
     description: 'Track merge health: active merges, throughput, pool utilization, errors, and historical trends',
+    group: 'ClickHouse',
     columns: 2,
     panels: [
       { queryName: 'Merges#Active Merges' },
@@ -250,8 +265,9 @@ const BUILTIN_DASHBOARDS: Dashboard[] = [
   },
   {
     id: 'self-monitoring',
-    title: 'App Self-Monitoring',
-    description: 'Track our own app footprint: query cost per component, error rates, server load share',
+    title: 'App Query Cost',
+    description: 'Track our app footprint: query cost per component, error rates, server load share',
+    group: 'TraceHouse',
     columns: 2,
     panels: [
       { queryName: 'Self-Monitoring#App Query Duration by Component' },
@@ -262,6 +278,43 @@ const BUILTIN_DASHBOARDS: Dashboard[] = [
       { queryName: 'Self-Monitoring#App % of Server Load' },
       { queryName: 'Self-Monitoring#Slowest App Queries' },
       { queryName: 'Self-Monitoring#App Failed Queries' },
+    ],
+  },
+  {
+    id: 'sampler-health',
+    title: 'Sampling Health',
+    description: 'Health of the system.processes & system.merges sampling pipeline — status, gaps, cost, and cluster coverage',
+    group: 'TraceHouse',
+    columns: 2,
+    panels: [
+      { queryName: 'Self-Monitoring#Sampling Status' },
+      { queryName: 'Self-Monitoring#Sampling Refresh Status' },
+      { queryName: 'Self-Monitoring#Sampling Cost Trend (5min)' },
+      { queryName: 'Self-Monitoring#Sampling Cost Summary' },
+      { queryName: 'Self-Monitoring#Sampling Gaps (processes)' },
+      { queryName: 'Self-Monitoring#Sampling Gaps (merges)' },
+      { queryName: 'Self-Monitoring#Sampling Database Coverage' },
+    ],
+  },
+  {
+    id: 'memory-monitoring',
+    title: 'Memory Monitoring',
+    description: 'Deep memory breakdown and trend analysis — based on https://clickhouse.com/docs/guides/developer/debugging-memory-issues and https://kb.altinity.com/altinity-kb-setup-and-maintenance/altinity-kb-who-ate-my-memory/',
+    group: 'ClickHouse',
+    columns: 2,
+    panels: [
+      { queryName: 'Memory#Memory Breakdown' },
+      { queryName: 'Memory#Cache Sizes (current)' },
+      { queryName: 'Memory#Memory Trend (MemoryTracking)' },
+      { queryName: 'Memory#Cache Trend' },
+      { queryName: 'Memory#Primary Key Memory by Database' },
+      { queryName: 'Memory#Memory-Engine Tables' },
+      { queryName: 'Memory#Dictionary Memory' },
+      { queryName: 'Memory#Merge Memory' },
+      { queryName: 'Memory#Memory by Query Kind (hourly)' },
+      { queryName: 'Memory#Memory Peak Analysis (5min)' },
+      { queryName: 'Memory#Top Running Queries by Memory' },
+      { queryName: 'Memory#Historical Top Memory Queries' },
     ],
   },
 ];

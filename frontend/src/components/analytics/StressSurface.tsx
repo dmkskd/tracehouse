@@ -6,7 +6,7 @@
  * Insert diamonds sit below, merge markers along the edge.
  */
 
-import React, { useState, useEffect, useMemo, useCallback } from 'react';
+import React, { useEffect, useMemo } from 'react';
 import { Canvas, useThree } from '@react-three/fiber';
 import { OrbitControls, Html } from '@react-three/drei';
 import * as THREE from 'three';
@@ -53,7 +53,6 @@ const CHANNEL_DEFS = [
   { key: 'total_selected_marks' as const, label: 'Marks Touched' },
 ];
 
-type ChannelKey = (typeof CHANNEL_DEFS)[number]['key'];
 
 /** Simple 1D Gaussian blur (box approximation for speed) */
 function gaussianSmooth1D(arr: number[], sigma: number): number[] {
@@ -120,8 +119,7 @@ function processSurfaceData(rows: StressSurfaceRow[]): ProcessedSurface | null {
   });
   if (activeChannels.length === 0) return null;
 
-  const nChannels = activeChannels.length;
-  const nTime = rows.length;
+
 
   // Build raw grid: [channel][time]
   const Zraw: number[][] = activeChannels.map(ch =>

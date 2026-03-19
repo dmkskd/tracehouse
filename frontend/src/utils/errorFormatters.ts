@@ -60,6 +60,21 @@ export function formatClickHouseError(raw: string): FormattedError {
     };
   }
 
+  // Code 81 — Database doesn't exist
+  if (raw.match(/Code:?\s*81/) || raw.includes('Database') && raw.includes('does not exist')) {
+    const dbMatch = raw.match(/Database\s+([\w.`]+)/i);
+    const db = dbMatch?.[1]?.replace(/`/g, '');
+    const hostMatch = raw.match(/Host:\s*([\w.\-]+)/i);
+    const host = hostMatch?.[1];
+    const where = host ? ` on ${host}` : ' on this server';
+    return {
+      message: db
+        ? `Database ${db} does not exist${where}.`
+        : `Required database does not exist${where}.`,
+      isPermissionError: true,
+    };
+  }
+
   // Code 60 — Table doesn't exist
   if (raw.match(/Code:?\s*60/) || raw.includes("doesn't exist")) {
     const tableMatch = raw.match(/(?:Table|table)\s+([\w.`]+)/i);

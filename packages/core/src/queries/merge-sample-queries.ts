@@ -126,7 +126,7 @@ FROM (
             total_size_bytes_compressed, total_size_bytes_uncompressed, total_size_marks,
             rows_read, bytes_read_uncompressed, rows_written, bytes_written_uncompressed, columns_written,
             memory_usage
-        FROM tracehouse.merges_history
+        FROM {{cluster_aware:tracehouse.merges_history}}
         WHERE ${whereClause}
         ORDER BY result_part_name, sample_time
     )

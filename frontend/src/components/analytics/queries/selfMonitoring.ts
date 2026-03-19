@@ -218,6 +218,174 @@ WHERE type = 'QueryFinish'
 GROUP BY hour
 ORDER BY hour ASC`,
 
+  `-- @meta: title='Sampling Status' group='Self-Monitoring' interval='1 HOUR' description='Health check for the system.processes & system.merges sampling pipeline — shows whether each sampler is running on schedule with no gaps or errors'
+-- @rag: column=status green=ok amber=degraded
+SELECT
+    sampler,
+    status,
+    last_success_time,
+    seconds_since_last_sample,
+    total_samples,
+    gaps_over_10s,
+    exception_preview
+FROM (
+    SELECT
+        r.view AS sampler,
+        r.last_success_time AS last_success_time,
+        r.retry AS retry,
+        substring(r.exception, 1, 120) AS exception_preview,
+        h.total_samples AS total_samples,
+        h.gaps_over_10s AS gaps_over_10s,
+        h.seconds_since_last AS seconds_since_last_sample,
+        multiIf(
+            r.exception != '', 'error',
+            h.total_samples = 0, 'no data',
+            h.gaps_over_10s > 5 OR h.seconds_since_last > 30, 'degraded',
+            'ok'
+        ) AS status
+    FROM {{cluster_aware:system.view_refreshes}} AS r
+    LEFT JOIN (
+        SELECT
+            'processes_sampler' AS view,
+            count() AS total_samples,
+            countIf(gap_s > 10) AS gaps_over_10s,
+            date_diff('second', max(sample_time), now()) AS seconds_since_last
+        FROM (
+            SELECT sample_time,
+                   date_diff('millisecond', lagInFrame(sample_time) OVER (ORDER BY sample_time), sample_time) / 1000.0 AS gap_s
+            FROM {{cluster_aware:tracehouse.processes_history}}
+            WHERE sample_time > {{time_range}}
+        )
+        UNION ALL
+        SELECT
+            'merges_sampler' AS view,
+            count() AS total_samples,
+            countIf(gap_s > 10) AS gaps_over_10s,
+            date_diff('second', max(sample_time), now()) AS seconds_since_last
+        FROM (
+            SELECT sample_time,
+                   date_diff('millisecond', lagInFrame(sample_time) OVER (ORDER BY sample_time), sample_time) / 1000.0 AS gap_s
+            FROM {{cluster_aware:tracehouse.merges_history}}
+            WHERE sample_time > {{time_range}}
+        )
+    ) AS h ON r.view = h.view
+    WHERE r.database = 'tracehouse'
+      AND r.view LIKE '%_sampler'
+)
+ORDER BY sampler`,
+
+  `-- @meta: title='Sampling Refresh Status' group='Self-Monitoring' interval='1 HOUR' description='Detailed refresh state of processes_sampler & merges_sampler refreshable MVs — last success, next refresh, retry count, exceptions'
+SELECT
+    view AS sampler,
+    status,
+    last_success_time,
+    last_refresh_time,
+    next_refresh_time,
+    retry,
+    read_rows,
+    read_bytes,
+    substring(exception, 1, 150) AS exception_preview
+FROM {{cluster_aware:system.view_refreshes}}
+WHERE database = 'tracehouse'
+  AND view LIKE '%_sampler'
+ORDER BY view`,
+
+  `-- @meta: title='Sampling Cost Trend (5min)' group='Self-Monitoring' interval='6 HOUR' description='Cost of sampling system.processes & system.merges over time — duration, memory, CPU per 5-min bucket'
+-- @chart: type=grouped_line group_by=t value=avg_duration_ms,avg_memory_mb,avg_cpu_ms series=sampler style=2d
+SELECT
+    toStartOfFiveMinutes(event_time) AS t,
+    multiIf(
+      query LIKE '%FROM system.processes%', 'processes',
+      query LIKE '%FROM system.merges%', 'merges',
+      'unknown'
+    ) AS sampler,
+    count() AS executions,
+    round(avg(query_duration_ms), 2) AS avg_duration_ms,
+    round(avg(memory_usage) / 1048576, 3) AS avg_memory_mb,
+    round(avg(ProfileEvents['OSCPUVirtualTimeMicroseconds']) / 1e3, 2) AS avg_cpu_ms
+FROM {{cluster_aware:system.query_log}}
+WHERE type = 'QueryFinish'
+  AND (query LIKE '%INSERT INTO tracehouse.processes\\_history%' OR query LIKE '%INSERT INTO tracehouse.merges\\_history%')
+  AND event_time > {{time_range}}
+GROUP BY t, sampler
+ORDER BY t ASC`,
+
+  `-- @meta: title='Sampling Cost Summary' group='Self-Monitoring' interval='1 DAY' description='Aggregate cost of sampling system.processes & system.merges — duration, memory, rows read, CPU time'
+-- @rag: column=avg_duration_ms green<5 amber<50
+-- @rag: column=avg_memory_mb green<1 amber<10
+SELECT
+    multiIf(
+      query LIKE '%FROM system.processes%', 'processes',
+      query LIKE '%FROM system.merges%', 'merges',
+      'unknown'
+    ) AS sampler,
+    count() AS executions,
+    round(avg(query_duration_ms), 2) AS avg_duration_ms,
+    round(quantile(0.99)(query_duration_ms), 2) AS p99_duration_ms,
+    round(sum(query_duration_ms), 0) AS total_duration_ms,
+    round(avg(memory_usage) / 1048576, 3) AS avg_memory_mb,
+    round(max(memory_usage) / 1048576, 3) AS max_memory_mb,
+    round(avg(read_rows)) AS avg_rows_read,
+    round(avg(ProfileEvents['OSCPUVirtualTimeMicroseconds']) / 1e6, 4) AS avg_cpu_s,
+    round(sum(ProfileEvents['OSCPUVirtualTimeMicroseconds']) / 1e6, 2) AS total_cpu_s
+FROM {{cluster_aware:system.query_log}}
+WHERE type = 'QueryFinish'
+  AND (query LIKE '%INSERT INTO tracehouse.processes\\_history%' OR query LIKE '%INSERT INTO tracehouse.merges\\_history%')
+  AND event_time > {{time_range}}
+GROUP BY sampler
+ORDER BY sampler`,
+
+  `-- @meta: title='Sampling Gaps (processes)' group='Self-Monitoring' interval='6 HOUR' description='Gaps in system.processes sampling — periods where no process snapshots were collected, by hostname'
+-- @rag: column=gap_seconds green<10 amber<30
+SELECT
+    hostname,
+    prev_time,
+    sample_time AS gap_start,
+    round(gap_seconds, 1) AS gap_seconds
+FROM (
+    SELECT
+        hostname,
+        sample_time,
+        lagInFrame(sample_time) OVER (PARTITION BY hostname ORDER BY sample_time) AS prev_time,
+        date_diff('millisecond', lagInFrame(sample_time) OVER (PARTITION BY hostname ORDER BY sample_time), sample_time) / 1000.0 AS gap_seconds
+    FROM {{cluster_aware:tracehouse.processes_history}}
+    WHERE sample_time > {{time_range}}
+)
+WHERE gap_seconds > 5
+  AND prev_time > toDateTime64('1970-01-01 00:00:01', 3)
+ORDER BY gap_seconds DESC
+LIMIT 50`,
+
+  `-- @meta: title='Sampling Gaps (merges)' group='Self-Monitoring' interval='6 HOUR' description='Gaps in system.merges sampling — periods where no merge snapshots were collected, by hostname'
+-- @rag: column=gap_seconds green<10 amber<30
+SELECT
+    hostname,
+    prev_time,
+    sample_time AS gap_start,
+    round(gap_seconds, 1) AS gap_seconds
+FROM (
+    SELECT
+        hostname,
+        sample_time,
+        lagInFrame(sample_time) OVER (PARTITION BY hostname ORDER BY sample_time) AS prev_time,
+        date_diff('millisecond', lagInFrame(sample_time) OVER (PARTITION BY hostname ORDER BY sample_time), sample_time) / 1000.0 AS gap_seconds
+    FROM {{cluster_aware:tracehouse.merges_history}}
+    WHERE sample_time > {{time_range}}
+)
+WHERE gap_seconds > 5
+  AND prev_time > toDateTime64('1970-01-01 00:00:01', 3)
+ORDER BY gap_seconds DESC
+LIMIT 50`,
+
+  `-- @meta: title='Sampling Database Coverage' group='Self-Monitoring' interval='1 HOUR' description='Shows which cluster nodes have the tracehouse database — needed for system.processes & system.merges sampling to work on all nodes'
+-- @rag: column=has_tracehouse green=1 amber=0
+SELECT
+    hostName() AS host,
+    countIf(name = 'tracehouse') AS has_tracehouse
+FROM {{cluster_aware:system.databases}}
+GROUP BY host
+ORDER BY host`,
+
   `-- @meta: title='App % of Server Load' group='Self-Monitoring' interval='1 DAY' description='What fraction of total server query time is consumed by the app itself'
 -- @chart: type=line group_by=hour value=app_pct unit=% style=2d
 SELECT

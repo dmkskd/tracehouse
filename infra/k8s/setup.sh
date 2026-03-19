@@ -264,6 +264,16 @@ deploy_clickhouse() {
         deploy_clickhouse_cloud
     fi
 
+    # Wait for ALL ClickHouse pods to be ready before running DDL.
+    # The operator may report "Completed" before all nodes can accept connections,
+    # and ON CLUSTER DDL silently skips unreachable nodes.
+    log_info "Waiting for all ClickHouse pods to be ready..."
+    if [[ "$OPERATOR" == "altinity" ]]; then
+        kubectl wait --for=condition=Ready pod -l "clickhouse.altinity.com/chi=dev-cluster" -n clickhouse --timeout=300s || true
+    else
+        kubectl wait --for=condition=Ready pod -l app=dev-cluster-clickhouse -n clickhouse --timeout=300s || true
+    fi
+
     # Create read-only user via SQL
     log_info "Creating read_only user..."
     local CH_POD
@@ -294,10 +304,63 @@ ALTER USER default SETTINGS
     log_processors_profiles = 1;
 EOF
 
-        # Setup process sampling (auto-detects cluster topology)
+        # Wait for the cluster config to be fully populated by the operator.
+        # The operator rolls out pods incrementally — early pods see a partial
+        # cluster config in system.clusters. ON CLUSTER DDL only reaches nodes
+        # listed there, so we must wait until all replicas appear.
+        local EXPECTED_NODES=0
+        local DETECTED_CLUSTER=""
+        if [[ "$OPERATOR" == "altinity" ]]; then
+            local CHI_SHARDS CHI_REPLICAS
+            CHI_SHARDS=$(kubectl get chi dev-cluster -n clickhouse -o jsonpath='{.spec.configuration.clusters[0].layout.shardsCount}' 2>/dev/null || echo "0")
+            CHI_REPLICAS=$(kubectl get chi dev-cluster -n clickhouse -o jsonpath='{.spec.configuration.clusters[0].layout.replicasCount}' 2>/dev/null || echo "0")
+            EXPECTED_NODES=$((CHI_SHARDS * CHI_REPLICAS))
+            DETECTED_CLUSTER="dev"
+            if [[ "$EXPECTED_NODES" -gt 0 ]]; then
+                log_info "CHI defines ${CHI_SHARDS}s×${CHI_REPLICAS}r = $EXPECTED_NODES nodes. Waiting for cluster config..."
+            fi
+        else
+            local CHC_SHARDS CHC_REPLICAS
+            CHC_SHARDS=$(kubectl get clickhousecluster dev-cluster -n clickhouse -o jsonpath='{.spec.shards}' 2>/dev/null || echo "0")
+            CHC_REPLICAS=$(kubectl get clickhousecluster dev-cluster -n clickhouse -o jsonpath='{.spec.replicas}' 2>/dev/null || echo "0")
+            EXPECTED_NODES=$((CHC_SHARDS * CHC_REPLICAS))
+            if [[ "$EXPECTED_NODES" -gt 0 ]]; then
+                log_info "ClickHouseCluster defines ${CHC_SHARDS}s×${CHC_REPLICAS}r = $EXPECTED_NODES nodes. Waiting for cluster config..."
+            fi
+        fi
+
+        if [[ "$EXPECTED_NODES" -gt 0 ]]; then
+            for i in $(seq 1 60); do
+                # For the CH.com operator, detect cluster name from system.clusters
+                # (pick the largest non-internal cluster). For Altinity, we already know it's 'dev'.
+                if [[ -z "$DETECTED_CLUSTER" ]]; then
+                    DETECTED_CLUSTER=$(kubectl exec -n clickhouse -c "$CH_CONTAINER" "$CH_POD" -- \
+                        clickhouse client --query "SELECT cluster FROM system.clusters GROUP BY cluster ORDER BY count() DESC LIMIT 1" 2>/dev/null || echo "")
+                fi
+                local ACTUAL
+                if [[ -n "$DETECTED_CLUSTER" ]]; then
+                    ACTUAL=$(kubectl exec -n clickhouse -c "$CH_CONTAINER" "$CH_POD" -- \
+                        clickhouse client --query "SELECT count() FROM system.clusters WHERE cluster = '$DETECTED_CLUSTER'" 2>/dev/null || echo "0")
+                else
+                    ACTUAL=0
+                fi
+                if [[ "$ACTUAL" -ge "$EXPECTED_NODES" ]]; then
+                    log_info "Cluster config ready: $ACTUAL nodes in '$DETECTED_CLUSTER' cluster"
+                    break
+                fi
+                log_info "  system.clusters shows ${ACTUAL}/${EXPECTED_NODES} nodes (attempt $i/60)"
+                sleep 5
+            done
+        fi
+
+        # Setup process sampling
         log_info "Setting up process sampling..."
         kubectl cp -c "$CH_CONTAINER" "${SCRIPT_DIR}/../scripts/setup_sampling.sh" "clickhouse/${CH_POD}:/tmp/setup_sampling.sh"
-        local SAMPLING_ARGS="--host localhost --yes"
+        local SAMPLING_CLUSTER=""
+        if [[ -n "$DETECTED_CLUSTER" ]]; then
+            SAMPLING_CLUSTER="--cluster $DETECTED_CLUSTER"
+        fi
+        local SAMPLING_ARGS="--host localhost --yes $SAMPLING_CLUSTER"
         kubectl exec -n clickhouse -c "$CH_CONTAINER" "$CH_POD" -- bash /tmp/setup_sampling.sh $SAMPLING_ARGS && \
             log_info "Process sampling configured" || \
             log_warn "Process sampling setup skipped"

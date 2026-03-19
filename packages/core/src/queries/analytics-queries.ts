@@ -75,7 +75,7 @@ FROM (
 ) t
 LEFT JOIN (
     SELECT database, name, any(sorting_key) AS sorting_key, any(primary_key) AS primary_key
-    FROM {{cluster_metadata:system.tables}}
+    FROM {{cluster_aware:system.tables}}
     GROUP BY database, name
 ) AS tbl
     ON tbl.database = t.tbl_database AND tbl.name = t.tbl_name
@@ -88,7 +88,7 @@ LEFT JOIN (
         sum(part_marks) AS table_marks
     FROM (
         SELECT database, table, name, any(rows) AS part_rows, any(marks) AS part_marks
-        FROM {{cluster_metadata:system.parts}}
+        FROM {{cluster_aware:system.parts}}
         WHERE active = 1
         GROUP BY database, table, name
     )

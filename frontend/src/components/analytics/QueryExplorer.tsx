@@ -207,6 +207,7 @@ export const QueryExplorer: React.FC<QueryExplorerProps> = ({ urlState, onUrlSta
           title: directive.title,
           description: directive.description,
           unit: directive.unit,
+          descriptionColumn: directive.descriptionColumn,
         };
         setChartConfig(newChart);
         setViewMode('chart');
@@ -456,8 +457,8 @@ export const QueryExplorer: React.FC<QueryExplorerProps> = ({ urlState, onUrlSta
   const chartData = useMemo((): ChartDataPoint[] => {
     if (!result || !chartConfig.groupByColumn || !chartConfig.valueColumn) return [];
     const isTimeSeries = chartConfig.type && ['line', 'area', 'grouped_line'].includes(chartConfig.type);
-    return buildChartData(result.rows, result.columns, chartConfig.groupByColumn, chartConfig.valueColumn, isTimeSeries ? undefined : 50);
-  }, [result, chartConfig.groupByColumn, chartConfig.valueColumn, chartConfig.type]);
+    return buildChartData(result.rows, result.columns, chartConfig.groupByColumn, chartConfig.valueColumn, isTimeSeries ? undefined : 50, chartConfig.descriptionColumn);
+  }, [result, chartConfig.groupByColumn, chartConfig.valueColumn, chartConfig.type, chartConfig.descriptionColumn]);
 
   /* ── grouped chart data (for grouped_bar, stacked_bar, grouped_line) ── */
   const groupedChartData = useMemo((): GroupedChartData[] => {
@@ -637,7 +638,8 @@ export const QueryExplorer: React.FC<QueryExplorerProps> = ({ urlState, onUrlSta
                 ...(fmt.isPermissionError
                   ? { background: 'rgba(210,153,34,0.08)', color: '#d29922', borderBottomColor: 'rgba(210,153,34,0.2)' }
                   : { background: 'rgba(248,81,73,0.08)', color: '#f85149', borderBottomColor: 'rgba(248,81,73,0.2)' }),
-              }}>
+              }}
+              title={error}>
                 {fmt.message}
               </div>
             );
@@ -656,16 +658,48 @@ export const QueryExplorer: React.FC<QueryExplorerProps> = ({ urlState, onUrlSta
                   {copied ? '✓' : '⧉'}
                 </button>
               </div>
-              {canShowChart && (
-                <div className="tabs" style={{ padding: 2 }}>
-                  {(['table', 'chart'] as const).map(m => (
-                    <button key={m} className={`tab${viewMode === m ? ' active' : ''}`} onClick={() => setViewMode(m)}
-                      style={{ border: 'none', padding: '4px 12px', fontSize: 11 }}>
-                      {m === 'table' ? 'Table' : 'Chart'}
+              <div className="tabs" style={{ padding: 2 }}>
+                {(['table', 'chart'] as const).map(m => (
+                  <button key={m} className={`tab${viewMode === m ? ' active' : ''}`}
+                    onClick={() => setViewMode(m)}
+                    disabled={m === 'chart' && !canShowChart}
+                    style={{ border: 'none', padding: '4px 12px', fontSize: 11, opacity: m === 'chart' && !canShowChart ? 0.35 : undefined }}>
+                    {m === 'table' ? 'Table' : 'Chart'}
+                  </button>
+                ))}
+              </div>
+            </div>
+          )}
+
+          {/* Drill-down breadcrumbs — shared across table and chart views */}
+          {result && drillStack.length > 0 && (
+            <div style={{ display: 'flex', alignItems: 'center', gap: 4, padding: '5px 16px',
+              background: 'rgba(99,102,241,0.06)', borderBottom: '1px solid var(--border-primary)',
+              fontSize: 11, flexShrink: 0, flexWrap: 'wrap' }}>
+              <span style={{ color: 'var(--text-tertiary)', fontSize: 10, marginRight: 4 }}>DRILL</span>
+              <button onClick={() => handleBreadcrumbClick(-1)}
+                style={{ background: 'none', border: 'none', cursor: 'pointer', padding: '2px 4px',
+                  color: 'var(--accent-primary, #6366f1)', fontSize: 11, fontWeight: 500 }}>
+                {rootQueryName}
+              </button>
+              {drillStack.map((entry, i) => (
+                <React.Fragment key={i}>
+                  <span style={{ color: 'var(--text-tertiary)' }}>/</span>
+                  <span style={{ color: 'var(--text-muted)', fontSize: 10 }}>
+                    {Object.values(entry.params).slice(-1)[0]}
+                  </span>
+                  <span style={{ color: 'var(--text-tertiary)' }}>/</span>
+                  {i < drillStack.length - 1 ? (
+                    <button onClick={() => handleBreadcrumbClick(i)}
+                      style={{ background: 'none', border: 'none', cursor: 'pointer', padding: '2px 4px',
+                        color: 'var(--accent-primary, #6366f1)', fontSize: 11 }}>
+                      {entry.queryName}
                     </button>
-                  ))}
-                </div>
-              )}
+                  ) : (
+                    <span style={{ fontWeight: 600, color: 'var(--text-primary)', fontSize: 11 }}>{entry.queryName}</span>
+                  )}
+                </React.Fragment>
+              ))}
             </div>
           )}
 
@@ -681,6 +715,9 @@ export const QueryExplorer: React.FC<QueryExplorerProps> = ({ urlState, onUrlSta
                 linkOnColumn={isLinkable ? currentQuery?.directives.link?.on : undefined}
                 ragRules={activeRagRules}
                 onLinkClick={isLinkable ? handleLinkClick : undefined}
+                drillOnColumn={isDrillable ? currentQuery?.directives.drill?.on : undefined}
+                onDrillClick={isDrillable ? ((_col, value) => handleDrillDown({ label: value, value: 0 })) : undefined}
+                drillIntoQuery={isDrillable ? currentQuery?.directives.drill?.into : undefined}
               />
             </div>
           )}
@@ -702,38 +739,6 @@ export const QueryExplorer: React.FC<QueryExplorerProps> = ({ urlState, onUrlSta
                 background: 'var(--bg-primary, #030712)',
               } : {}),
             }}>
-              {/* Drill-down breadcrumbs */}
-              {drillStack.length > 0 && (
-                <div style={{ display: 'flex', alignItems: 'center', gap: 4, padding: '5px 16px',
-                  background: 'rgba(99,102,241,0.06)', borderBottom: '1px solid var(--border-primary)',
-                  fontSize: 11, flexShrink: 0, flexWrap: 'wrap' }}>
-                  <span style={{ color: 'var(--text-tertiary)', fontSize: 10, marginRight: 4 }}>DRILL</span>
-                  <button onClick={() => handleBreadcrumbClick(-1)}
-                    style={{ background: 'none', border: 'none', cursor: 'pointer', padding: '2px 4px',
-                      color: 'var(--accent-primary, #6366f1)', fontSize: 11, fontWeight: 500 }}>
-                    {rootQueryName}
-                  </button>
-                  {drillStack.map((entry, i) => (
-                    <React.Fragment key={i}>
-                      <span style={{ color: 'var(--text-tertiary)' }}>/</span>
-                      <span style={{ color: 'var(--text-muted)', fontSize: 10 }}>
-                        {Object.values(entry.params).slice(-1)[0]}
-                      </span>
-                      <span style={{ color: 'var(--text-tertiary)' }}>/</span>
-                      {i < drillStack.length - 1 ? (
-                        <button onClick={() => handleBreadcrumbClick(i)}
-                          style={{ background: 'none', border: 'none', cursor: 'pointer', padding: '2px 4px',
-                            color: 'var(--accent-primary, #6366f1)', fontSize: 11 }}>
-                          {entry.queryName}
-                        </button>
-                      ) : (
-                        <span style={{ fontWeight: 600, color: 'var(--text-primary)', fontSize: 11 }}>{entry.queryName}</span>
-                      )}
-                    </React.Fragment>
-                  ))}
-                </div>
-              )}
-
               {/* Chart controls — hidden in fullscreen */}
               {!isFullscreen && (
               <div style={{ display: 'flex', gap: 16, padding: '6px 16px', background: 'var(--bg-secondary)', borderBottom: '1px solid var(--border-primary)', flexShrink: 0, flexWrap: 'wrap', alignItems: 'center' }}>

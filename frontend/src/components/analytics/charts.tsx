@@ -53,6 +53,8 @@ export interface ChartDataPoint {
   label: string;
   value: number;
   color: string;
+  /** Optional description text, surfaced in tooltip (from @chart description=column) */
+  description?: string;
 }
 
 export interface ChartConfig {
@@ -68,6 +70,8 @@ export interface ChartConfig {
   description?: string;
   /** Unit suffix for value axis ticks, e.g. 'ms', 'MB', '%'. Parsed from @chart unit=... */
   unit?: string;
+  /** Column whose value is shown as description in chart tooltips */
+  descriptionColumn?: string;
 }
 
 export interface GroupedChartData {
@@ -178,6 +182,7 @@ export function buildChartData(
   labelCol?: string,
   valueCol?: string,
   maxRows?: number,
+  descriptionCol?: string,
 ): ChartDataPoint[] {
   if (rows.length === 0) return [];
   const lblCol = labelCol || columns.find(c => !rows.some(r => isNumericValue(r[c]))) || columns[0];
@@ -188,6 +193,7 @@ export function buildChartData(
     label: formatCell(r[lblCol]),
     value: extractNumeric(r[valCol]),
     color: CHART_COLORS[i % CHART_COLORS.length],
+    ...(descriptionCol && r[descriptionCol] != null ? { description: String(r[descriptionCol]) } : {}),
   }));
 }
 
@@ -297,6 +303,8 @@ export const AnalyticsTooltip: React.FC<{
   drillIntoQuery?: string;
 }> = ({ active, payload, label, drillIntoQuery }) => {
   if (!active || !payload?.length) return null;
+  // Extract description from the underlying data point (set by buildChartData)
+  const description = payload[0]?.payload?.description as string | undefined;
   return (
     <div style={tooltipStyle}>
       {label && <div style={tooltipLabelStyle}>{label}</div>}
@@ -313,6 +321,11 @@ export const AnalyticsTooltip: React.FC<{
           )}
         </div>
       ))}
+      {description && (
+        <div style={{ fontSize: 11, color: 'var(--text-muted, #94a3b8)', marginTop: 4, maxWidth: 280, lineHeight: 1.3 }}>
+          {description}
+        </div>
+      )}
       {drillIntoQuery && (
         <div style={drillHintStyle}>Click to drill into {drillIntoQuery}</div>
       )}
@@ -323,7 +336,7 @@ export const AnalyticsTooltip: React.FC<{
 // Pie-specific tooltip
 const PieTooltip: React.FC<{
   active?: boolean;
-  payload?: Array<{ payload: { label: string; value: number; pct: number }; color?: string }>;
+  payload?: Array<{ payload: { label: string; value: number; pct: number; description?: string }; color?: string }>;
   drillIntoQuery?: string;
 }> = ({ active, payload, drillIntoQuery }) => {
   if (!active || !payload?.length) return null;
@@ -337,6 +350,11 @@ const PieTooltip: React.FC<{
           ({d.pct.toFixed(1)}%)
         </span>
       </div>
+      {d.description && (
+        <div style={{ fontSize: 11, color: 'var(--text-muted, #94a3b8)', marginTop: 4, maxWidth: 280, lineHeight: 1.3 }}>
+          {d.description}
+        </div>
+      )}
       {drillIntoQuery && (
         <div style={drillHintStyle}>Click to drill into {drillIntoQuery}</div>
       )}
@@ -350,7 +368,7 @@ const PieTooltip: React.FC<{
 
 export const BarChart2D: React.FC<{ data: ChartDataPoint[]; fullHeight?: boolean; onDrillDown?: (e: DrillDownEvent) => void; unit?: string; drillIntoQuery?: string }> = ({ data, fullHeight, onDrillDown, unit, drillIntoQuery }) => {
   if (!data.length) return null;
-  const rechartsData = data.map(d => ({ name: d.label, value: d.value, fill: d.color }));
+  const rechartsData = data.map(d => ({ name: d.label, value: d.value, fill: d.color, description: d.description }));
   const defaultHeight = Math.max(200, data.length * 28 + 40);
   // Use horizontal layout (bars going right) for readability with labels
   return (
@@ -390,7 +408,7 @@ export const BarChart2D: React.FC<{ data: ChartDataPoint[]; fullHeight?: boolean
 
 export const LineChart2D: React.FC<{ data: ChartDataPoint[]; fullHeight?: boolean; onDrillDown?: (e: DrillDownEvent) => void; unit?: string; drillIntoQuery?: string }> = ({ data, fullHeight, onDrillDown, unit, drillIntoQuery }) => {
   if (data.length < 2) return null;
-  const rechartsData = data.map(d => ({ name: d.label, value: d.value }));
+  const rechartsData = data.map(d => ({ name: d.label, value: d.value, description: d.description }));
   return (
     <ResponsiveContainer width="100%" height={fullHeight ? '100%' : 280}>
       <RLineChart data={rechartsData} margin={{ top: 5, right: 20, left: 10, bottom: 5 }}>
@@ -439,6 +457,7 @@ export const PieChart2D: React.FC<{ data: ChartDataPoint[]; fullHeight?: boolean
     value: d.value,
     pct: total > 0 ? (d.value / total) * 100 : 0,
     color: d.color,
+    description: d.description,
   }));
 
   return (
@@ -494,7 +513,7 @@ export const PieChart2D: React.FC<{ data: ChartDataPoint[]; fullHeight?: boolean
 
 export const AreaChart2D: React.FC<{ data: ChartDataPoint[]; fullHeight?: boolean; onDrillDown?: (e: DrillDownEvent) => void; unit?: string; drillIntoQuery?: string }> = ({ data, fullHeight, onDrillDown, unit, drillIntoQuery }) => {
   if (data.length < 2) return null;
-  const rechartsData = data.map(d => ({ name: d.label, value: d.value }));
+  const rechartsData = data.map(d => ({ name: d.label, value: d.value, description: d.description }));
   return (
     <ResponsiveContainer width="100%" height={fullHeight ? '100%' : 280}>
       <RAreaChart data={rechartsData} margin={{ top: 5, right: 20, left: 10, bottom: 5 }}>

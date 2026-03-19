@@ -11,10 +11,15 @@ import type {
   TimelineOptions,
   CpuSpike,
   CpuSpikeAnalysis,
+  ZoomSample,
 } from '../types/timeline.js';
 import { buildQuery, tagQuery } from '../queries/builder.js';
 import { classifyMergeHistory, classifyActiveMerge } from '../utils/merge-classification.js';
 import { TAB_TIME_TRAVEL, sourceTag } from '../queries/source-tags.js';
+import {
+  buildZoomProcessSamplesSQL,
+  buildZoomMergeSamplesSQL,
+} from '../queries/zoom-queries.js';
 import {
   SERVER_MEMORY_TIMESERIES,
   SERVER_CPU_TIMESERIES,
@@ -306,6 +311,203 @@ export class TimelineService {
       merge_peak_total: totalMergePeak,
       mutation_count: totalMutationCount,
     };
+  }
+
+  /**
+   * Fetch per-second sampled data for zoom mode.
+   *
+   * Enriches the provided MemoryTimeline's queries/merges/mutations with
+   * real per-second ZoomSample arrays from processes_history and merges_history.
+   * Returns a shallow copy of the timeline with zoomSamples attached.
+   *
+   * @param timeline - The existing MemoryTimeline (from getTimeline)
+   * @param startMs - Zoom window start (epoch ms)
+   * @param endMs - Zoom window end (epoch ms)
+   * @param hostname - Optional host filter
+   */
+  async getZoomData(
+    timeline: MemoryTimeline,
+    startMs: number,
+    endMs: number,
+    hostname?: string | null,
+  ): Promise<MemoryTimeline> {
+    const start = new Date(startMs);
+    const end = new Date(endMs);
+    const params: Record<string, string | number> = {
+      start_time: toClickHouseDateTime(start),
+      end_time: toClickHouseDateTime(end),
+    };
+
+    // Fetch process samples and merge samples in parallel
+    const [processSamples, mergeSamples] = await Promise.all([
+      this.fetchZoomProcessSamples(params, hostname ?? undefined),
+      this.fetchZoomMergeSamples(params, hostname ?? undefined),
+    ]);
+
+    // Compute ZoomSamples per query_id from raw process samples
+    const queryZoom = this.computeQueryZoomSamples(processSamples);
+
+    // Compute ZoomSamples per part_name from raw merge samples
+    const mergeZoom = this.computeMergeZoomSamples(mergeSamples);
+
+    // Attach zoom samples to matching series (shallow copy)
+    const queries = timeline.queries.map(q => {
+      const samples = queryZoom.get(q.query_id);
+      return samples ? { ...q, zoomSamples: samples } : q;
+    });
+    const merges = timeline.merges.map(m => {
+      const entry = mergeZoom.get(m.part_name);
+      if (!entry || entry.isMutation) return m;
+      // Fill in flat CPU estimate — merges_history has no CPU ProfileEvents
+      const cpuCores = m.duration_ms > 0 ? (m.cpu_us / 1_000_000) / (m.duration_ms / 1000) : 0;
+      const samples = entry.samples.map(s => ({ ...s, cpu_cores: cpuCores }));
+      return { ...m, zoomSamples: samples };
+    });
+    const mutations = timeline.mutations.map(m => {
+      const entry = mergeZoom.get(m.part_name);
+      if (!entry || !entry.isMutation) return m;
+      const cpuCores = m.duration_ms > 0 ? (m.cpu_us / 1_000_000) / (m.duration_ms / 1000) : 0;
+      const samples = entry.samples.map(s => ({ ...s, cpu_cores: cpuCores }));
+      return { ...m, zoomSamples: samples };
+    });
+
+    return { ...timeline, queries, merges, mutations };
+  }
+
+  private async fetchZoomProcessSamples(
+    params: Record<string, string | number>,
+    hostname?: string,
+  ): Promise<Array<{ query_id: string; ts_ms: number; memory_usage: number; pe_cpu: number; pe_net_send: number; pe_net_recv: number; read_bytes: number; written_bytes: number }>> {
+    try {
+      const sql = buildQuery(buildZoomProcessSamplesSQL(hostname), params);
+      const rows = await this.adapter.executeQuery(tagQuery(sql, sourceTag(TAB_TIME_TRAVEL, 'zoomProcess')));
+      return rows.map(r => {
+        const row = r as Record<string, unknown>;
+        return {
+          query_id: String(row.query_id || ''),
+          ts_ms: Number(row.ts_ms || 0),
+          memory_usage: Number(row.memory_usage || 0),
+          pe_cpu: Number(row.pe_cpu || 0),
+          pe_net_send: Number(row.pe_net_send || 0),
+          pe_net_recv: Number(row.pe_net_recv || 0),
+          read_bytes: Number(row.read_bytes || 0),
+          written_bytes: Number(row.written_bytes || 0),
+        };
+      });
+    } catch (e) {
+      console.error('[TimelineService] zoom process samples error:', e);
+      return [];
+    }
+  }
+
+  private async fetchZoomMergeSamples(
+    params: Record<string, string | number>,
+    hostname?: string,
+  ): Promise<Array<{ part_name: string; is_mutation: boolean; ts_ms: number; memory_usage: number; bytes_read: number; bytes_written: number }>> {
+    try {
+      const sql = buildQuery(buildZoomMergeSamplesSQL(hostname), params);
+      const rows = await this.adapter.executeQuery(tagQuery(sql, sourceTag(TAB_TIME_TRAVEL, 'zoomMerge')));
+      return rows.map(r => {
+        const row = r as Record<string, unknown>;
+        return {
+          part_name: String(row.part_name || ''),
+          is_mutation: Number(row.is_mutation) === 1,
+          ts_ms: Number(row.ts_ms || 0),
+          memory_usage: Number(row.memory_usage || 0),
+          bytes_read: Number(row.bytes_read_uncompressed || 0),
+          bytes_written: Number(row.bytes_written_uncompressed || 0),
+        };
+      });
+    } catch (e) {
+      console.error('[TimelineService] zoom merge samples error:', e);
+      return [];
+    }
+  }
+
+  /**
+   * Convert raw cumulative process samples into per-second ZoomSample arrays.
+   * Groups by query_id, then computes deltas between consecutive samples.
+   */
+  private computeQueryZoomSamples(
+    raw: Array<{ query_id: string; ts_ms: number; memory_usage: number; pe_cpu: number; pe_net_send: number; pe_net_recv: number; read_bytes: number; written_bytes: number }>,
+  ): Map<string, ZoomSample[]> {
+    // Group by query_id (already sorted by query_id, sample_time from SQL)
+    const grouped = new Map<string, typeof raw>();
+    for (const s of raw) {
+      let arr = grouped.get(s.query_id);
+      if (!arr) { arr = []; grouped.set(s.query_id, arr); }
+      arr.push(s);
+    }
+
+    const result = new Map<string, ZoomSample[]>();
+    for (const [qid, samples] of grouped) {
+      const zoomed: ZoomSample[] = [];
+      for (let i = 0; i < samples.length; i++) {
+        const cur = samples[i];
+        if (i === 0) {
+          // First sample: no delta available, use memory only
+          zoomed.push({ ms: cur.ts_ms, memory: cur.memory_usage, cpu_cores: 0, net_rate: 0, disk_rate: 0 });
+          continue;
+        }
+        const prev = samples[i - 1];
+        const dtSec = Math.max((cur.ts_ms - prev.ts_ms) / 1000, 0.1);
+
+        const cpuDelta = Math.max(cur.pe_cpu - prev.pe_cpu, 0);
+        const netDelta = Math.max(cur.pe_net_send - prev.pe_net_send, 0) + Math.max(cur.pe_net_recv - prev.pe_net_recv, 0);
+        const diskDelta = Math.max(cur.read_bytes - prev.read_bytes, 0) + Math.max(cur.written_bytes - prev.written_bytes, 0);
+
+        zoomed.push({
+          ms: cur.ts_ms,
+          memory: cur.memory_usage,
+          cpu_cores: cpuDelta / 1_000_000 / dtSec,  // µs → cores
+          net_rate: netDelta / dtSec,
+          disk_rate: diskDelta / dtSec,
+        });
+      }
+      if (zoomed.length > 0) result.set(qid, zoomed);
+    }
+    return result;
+  }
+
+  /**
+   * Convert raw cumulative merge samples into per-second ZoomSample arrays.
+   * Merges have memory and I/O but no CPU — cpu_cores is always 0.
+   */
+  private computeMergeZoomSamples(
+    raw: Array<{ part_name: string; is_mutation: boolean; ts_ms: number; memory_usage: number; bytes_read: number; bytes_written: number }>,
+  ): Map<string, { isMutation: boolean; samples: ZoomSample[] }> {
+    const grouped = new Map<string, typeof raw>();
+    for (const s of raw) {
+      let arr = grouped.get(s.part_name);
+      if (!arr) { arr = []; grouped.set(s.part_name, arr); }
+      arr.push(s);
+    }
+
+    const result = new Map<string, { isMutation: boolean; samples: ZoomSample[] }>();
+    for (const [partName, samples] of grouped) {
+      const zoomed: ZoomSample[] = [];
+      const isMutation = samples[0]?.is_mutation ?? false;
+      for (let i = 0; i < samples.length; i++) {
+        const cur = samples[i];
+        if (i === 0) {
+          zoomed.push({ ms: cur.ts_ms, memory: cur.memory_usage, cpu_cores: 0, net_rate: 0, disk_rate: 0 });
+          continue;
+        }
+        const prev = samples[i - 1];
+        const dtSec = Math.max((cur.ts_ms - prev.ts_ms) / 1000, 0.1);
+        const diskDelta = Math.max(cur.bytes_read - prev.bytes_read, 0) + Math.max(cur.bytes_written - prev.bytes_written, 0);
+
+        zoomed.push({
+          ms: cur.ts_ms,
+          memory: cur.memory_usage,
+          cpu_cores: 0,  // merges_history has no CPU data
+          net_rate: 0,
+          disk_rate: diskDelta / dtSec,
+        });
+      }
+      if (zoomed.length > 0) result.set(partName, { isMutation, samples: zoomed });
+    }
+    return result;
   }
 
   private async fetchServerMemory(params: Record<string, string | number>, xform: (s: string) => string): Promise<TimeseriesPoint[]> {

@@ -749,14 +749,11 @@ export class OverviewService {
       let totalMemory = 0;
       const hostnames: string[] = [];
 
-      console.debug(`[OverviewService] clusterCapacity: ${rows.length} rows`);
       for (const row of rows) {
         const hostCores = Number(row.host_cores) || 0;
         const cgroupCpu = Number(row.cgroup_cpu) || 0;
         const hostMem = Number(row.host_mem) || 0;
         const cgroupMem = Number(row.cgroup_mem) || 0;
-
-        console.debug(`[OverviewService]   ${row.hostname}: cores=${hostCores} cgCpu=${cgroupCpu} mem=${hostMem} cgMem=${cgroupMem}`);
 
         if (row.hostname) hostnames.push(String(row.hostname));
 

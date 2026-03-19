@@ -5,7 +5,7 @@
  * Extracted from TimeTravelPage for clarity.
  */
 import React, { useState, useCallback, useMemo, useRef, useEffect } from 'react';
-import type { MemoryTimeline } from '@tracehouse/core';
+import type { MemoryTimeline, ZoomSample } from '@tracehouse/core';
 import { getMergeCategoryInfo, type MergeCategory } from '@tracehouse/core';
 import { formatBytes, parseTimestamp } from '../../utils/formatters';
 import {
@@ -15,7 +15,31 @@ import {
 
 import { formatDurationMs as fmtMs } from '../../utils/formatters';
 
-interface Rng { startMs: number; endMs: number; peak: number; realPeak: number; }
+interface Rng { startMs: number; endMs: number; peak: number; realPeak: number; samples?: { ms: number; v: number }[]; }
+
+/** Binary search for nearest sample value at time t. Returns 0 if no match within tolerance. */
+function lookupSample(samples: { ms: number; v: number }[], t: number): number {
+  if (samples.length === 0) return 0;
+  // Binary search for closest sample
+  let lo = 0, hi = samples.length - 1;
+  while (lo < hi) {
+    const mid = (lo + hi) >> 1;
+    if (samples[mid].ms < t) lo = mid + 1;
+    else hi = mid;
+  }
+  // lo is the first sample >= t; check lo and lo-1 for closest
+  const candidates = [lo > 0 ? lo - 1 : 0, lo];
+  let bestIdx = candidates[0];
+  let bestDist = Math.abs(samples[bestIdx].ms - t);
+  for (const idx of candidates) {
+    if (idx >= 0 && idx < samples.length) {
+      const dist = Math.abs(samples[idx].ms - t);
+      if (dist < bestDist) { bestDist = dist; bestIdx = idx; }
+    }
+  }
+  // Tolerance: within 2 seconds of a sample
+  return bestDist <= 2000 ? samples[bestIdx].v : 0;
+}
 
 export const TimelineChart: React.FC<{
   data: MemoryTimeline; metricMode: MetricMode; height?: number;
@@ -78,6 +102,17 @@ export const TimelineChart: React.FC<{
   // Bands show real values — the avg server line + per-host tooltip bars explain the full picture.
   const hc = data.host_count || 1;
 
+  // Map ZoomSample[] to metric-specific {ms,v}[] for the current metricMode
+  const mapZoomToMetric = useCallback((zs: ZoomSample[]): { ms: number; v: number }[] => {
+    return zs.map(s => ({
+      ms: s.ms,
+      v: metricMode === 'memory' ? s.memory
+        : metricMode === 'cpu' ? s.cpu_cores * 1_000_000  // cores → µs/s to match server CPU scale
+        : metricMode === 'network' ? s.net_rate
+        : s.disk_rate,
+    }));
+  }, [metricMode]);
+
   // Compute query/merge ranges for stacked areas
   const qRanges: Rng[] = useMemo(() => {
     return data.queries.map(q => {
@@ -87,9 +122,10 @@ export const TimelineChart: React.FC<{
       else if (metricMode === 'cpu') realPeak = q.cpu_us / durS;
       else if (metricMode === 'network') realPeak = (q.net_send + q.net_recv) / durS;
       else realPeak = (q.disk_read + q.disk_write) / durS;
-      return { startMs: parseTimestamp(q.start_time), endMs: parseTimestamp(q.end_time), peak: realPeak, realPeak };
+      const samples = q.zoomSamples ? mapZoomToMetric(q.zoomSamples) : undefined;
+      return { startMs: parseTimestamp(q.start_time), endMs: parseTimestamp(q.end_time), peak: realPeak, realPeak, samples };
     });
-  }, [data.queries, metricMode]);
+  }, [data.queries, metricMode, mapZoomToMetric]);
   const mRanges: Rng[] = useMemo(() => {
     return data.merges.map(m => {
       const durS = Math.max(m.duration_ms / 1000, 0.001);
@@ -98,9 +134,10 @@ export const TimelineChart: React.FC<{
       else if (metricMode === 'cpu') realPeak = m.cpu_us / durS;
       else if (metricMode === 'network') realPeak = (m.net_send + m.net_recv) / durS;
       else realPeak = (m.disk_read + m.disk_write) / durS;
-      return { startMs: parseTimestamp(m.start_time), endMs: parseTimestamp(m.end_time), peak: realPeak, realPeak };
+      const samples = m.zoomSamples ? mapZoomToMetric(m.zoomSamples) : undefined;
+      return { startMs: parseTimestamp(m.start_time), endMs: parseTimestamp(m.end_time), peak: realPeak, realPeak, samples };
     });
-  }, [data.merges, metricMode]);
+  }, [data.merges, metricMode, mapZoomToMetric]);
   const mutRanges: Rng[] = useMemo(() => {
     return (data.mutations ?? []).map(m => {
       const durS = Math.max(m.duration_ms / 1000, 0.001);
@@ -109,9 +146,10 @@ export const TimelineChart: React.FC<{
       else if (metricMode === 'cpu') realPeak = m.cpu_us / durS;
       else if (metricMode === 'network') realPeak = (m.net_send + m.net_recv) / durS;
       else realPeak = (m.disk_read + m.disk_write) / durS;
-      return { startMs: parseTimestamp(m.start_time), endMs: parseTimestamp(m.end_time), peak: realPeak, realPeak };
+      const samples = m.zoomSamples ? mapZoomToMetric(m.zoomSamples) : undefined;
+      return { startMs: parseTimestamp(m.start_time), endMs: parseTimestamp(m.end_time), peak: realPeak, realPeak, samples };
     });
-  }, [data.mutations, metricMode]);
+  }, [data.mutations, metricMode, mapZoomToMetric]);
 
   // For dual-line modes (network: send/recv, disk: read/write)
   const dualLine1 = useMemo(() => {
@@ -134,19 +172,25 @@ export const TimelineChart: React.FC<{
   const tMax = zoomRange ? zoomRange[1] : fullTMax;
   const tRange = tMax - tMin || 1;
 
+  /** Resolve band value at time t: use zoom samples if available, else flat peak. */
+  const bandVal = useCallback((rng: Rng, t: number): number => {
+    if (rng.samples) return lookupSample(rng.samples, t);
+    return (t >= rng.startMs && t <= rng.endMs) ? rng.peak : 0;
+  }, []);
+
   const maxY = useMemo(() => {
     const visPts = serverPts.filter(p => p.ms >= tMin && p.ms <= tMax);
     const sMax = visPts.length > 0 ? Math.max(...visPts.map(p => p.v)) : 0;
     let stackMax = 0;
     for (const sp of visPts) {
       let stack = 0;
-      for (const qr of qRanges) { if (sp.ms >= qr.startMs && sp.ms <= qr.endMs) stack += qr.peak; }
-      for (const mr of mRanges) { if (sp.ms >= mr.startMs && sp.ms <= mr.endMs) stack += mr.peak; }
-      for (const mu of mutRanges) { if (sp.ms >= mu.startMs && sp.ms <= mu.endMs) stack += mu.peak; }
+      for (const qr of qRanges) stack += bandVal(qr, sp.ms);
+      for (const mr of mRanges) stack += bandVal(mr, sp.ms);
+      for (const mu of mutRanges) stack += bandVal(mu, sp.ms);
       if (stack > stackMax) stackMax = stack;
     }
     return Math.max(sMax, stackMax, 1) * 1.15;
-  }, [serverPts, qRanges, mRanges, mutRanges, tMin, tMax]);
+  }, [serverPts, qRanges, mRanges, mutRanges, tMin, tMax, bandVal]);
 
   const xScale = useCallback((ms: number) => padLeft + ((ms - tMin) / tRange) * cw, [tMin, tRange, cw, padLeft]);
   const yScale = useCallback((v: number) => padTop + ch - (v / maxY) * ch, [maxY, ch, padTop]);
@@ -172,12 +216,12 @@ export const TimelineChart: React.FC<{
     const hideMut = hiddenCategories?.has('mutation') ?? false;
     return serverPts.map(sp => {
       const t = sp.ms;
-      const qv = hideQ ? qRanges.map(() => 0) : qRanges.map(qr => (t >= qr.startMs && t <= qr.endMs) ? qr.peak : 0);
-      const mv = hideM ? mRanges.map(() => 0) : mRanges.map(mr => (t >= mr.startMs && t <= mr.endMs) ? mr.peak : 0);
-      const mutv = hideMut ? mutRanges.map(() => 0) : mutRanges.map(mu => (t >= mu.startMs && t <= mu.endMs) ? mu.peak : 0);
+      const qv = hideQ ? qRanges.map(() => 0) : qRanges.map(qr => bandVal(qr, t));
+      const mv = hideM ? mRanges.map(() => 0) : mRanges.map(mr => bandVal(mr, t));
+      const mutv = hideMut ? mutRanges.map(() => 0) : mutRanges.map(mu => bandVal(mu, t));
       return { t, serverMem: sp.v, qv, mv, mutv };
     });
-  }, [serverPts, qRanges, mRanges, mutRanges, hiddenCategories]);
+  }, [serverPts, qRanges, mRanges, mutRanges, hiddenCategories, bandVal]);
 
   // Precompute cumulative stack heights per bucket per band (data-only, no SVG coords).
   // This is O(bands × buckets) but only recomputes when data changes, not on zoom.

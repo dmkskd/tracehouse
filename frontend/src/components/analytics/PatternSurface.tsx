@@ -226,8 +226,8 @@ function PatternMesh({ pattern }: { pattern: ProcessedPattern }) {
   );
 }
 
-function PatternAxisLabels({ pattern, onOpenQuery }: { pattern: ProcessedPattern; onOpenQuery?: (hash: string) => void }) {
-  const { patternLabels, timeLabels, maxDuration, patternStats } = pattern;
+function PatternAxisLabels({ pattern }: { pattern: ProcessedPattern }) {
+  const { patternLabels, timeLabels, maxDuration } = pattern;
   const nPatterns = patternLabels.length;
   const nTime = timeLabels.length;
   const sceneWidth = 10;
@@ -305,7 +305,7 @@ function PatternAxisLabels({ pattern, onOpenQuery }: { pattern: ProcessedPattern
   );
 }
 
-function PatternSurfaceScene({ data, onOpenQuery }: { data: PatternSurfaceRow[]; onOpenQuery?: (hash: string) => void }) {
+function PatternSurfaceScene({ data }: { data: PatternSurfaceRow[] }) {
   const pattern = useMemo(() => processPatternData(data), [data]);
 
   const { camera } = useThree();
@@ -326,7 +326,7 @@ function PatternSurfaceScene({ data, onOpenQuery }: { data: PatternSurfaceRow[];
       <pointLight position={[0, 6, 0]} intensity={0.2} color="#f97316" />
 
       <PatternMesh pattern={pattern} />
-      <PatternAxisLabels pattern={pattern} onOpenQuery={onOpenQuery} />
+      <PatternAxisLabels pattern={pattern} />
 
       <gridHelper args={[14, 28, '#1e293b', '#0f172a']} position={[0, -0.01, 0]} />
 
@@ -487,7 +487,7 @@ export const PatternSurface: React.FC<PatternSurfaceProps> = ({ data, isLoading,
       )}
 
       <Canvas camera={{ fov: 50 }} style={{ width: '100%', height: '100%' }}>
-        <PatternSurfaceScene data={data} onOpenQuery={onOpenQuery} />
+        <PatternSurfaceScene data={data} />
       </Canvas>
     </div>
   );

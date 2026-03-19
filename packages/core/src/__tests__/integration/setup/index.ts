@@ -33,3 +33,14 @@ export {
   ClusterTestAdapter,
   type ClusterTestContext,
 } from './cluster-container.js';
+export {
+  startAltinityCluster,
+  stopAltinityCluster,
+  type AltinityClusterContext,
+} from './altinity-cluster-container.js';
+export {
+  startSamplingCluster,
+  stopSamplingCluster,
+  type SamplingClusterContext,
+  type SamplingClusterOptions,
+} from './sampling-cluster-container.js';

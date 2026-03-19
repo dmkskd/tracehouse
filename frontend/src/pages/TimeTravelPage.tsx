@@ -109,6 +109,11 @@ export const TimeTravelPage: React.FC = () => {
   const autoRefreshRef = useRef<ReturnType<typeof setInterval> | null>(null);
   const prevDataEndRef = useRef<number | null>(null);
 
+  // Zoom mode: per-second sampled data from processes_history/merges_history
+  const [zoomData, setZoomData] = useState<MemoryTimeline | null>(null);
+  const [zoomLoading, setZoomLoading] = useState(false);
+  const zoomFetchRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+
   // Cluster host selector
   const [clusterHosts, setClusterHosts] = useState<string[]>([]);
   const [selectedHost, setSelectedHost] = useState<string | null>(null);
@@ -272,6 +277,39 @@ export const TimeTravelPage: React.FC = () => {
     }
     return () => { if (autoRefreshRef.current) { clearInterval(autoRefreshRef.current); autoRefreshRef.current = null; } };
   }, [autoRefresh, refreshRateSeconds, refreshConfig, isLive, services, isConnected, fetchData, splitView, fetchSplitData]);
+
+  // Zoom mode: fetch per-second sampled data when zoomed into a narrow window (< 10 min)
+  const ZOOM_MAX_SPAN_MS = 10 * 60 * 1000; // 10 minutes
+  useEffect(() => {
+    if (zoomFetchRef.current) { clearTimeout(zoomFetchRef.current); zoomFetchRef.current = null; }
+    if (!zoomRange || !data || !services) { setZoomData(null); return; }
+    const span = zoomRange[1] - zoomRange[0];
+    if (span > ZOOM_MAX_SPAN_MS) { setZoomData(null); return; }
+
+    // Debounce to avoid firing on every scroll-zoom tick
+    zoomFetchRef.current = setTimeout(async () => {
+      setZoomLoading(true);
+      try {
+        const enriched = await services.timelineService.getZoomData(
+          data, zoomRange[0], zoomRange[1], selectedHost,
+        );
+        setZoomData(enriched);
+      } catch (e) {
+        console.error('[TimeTravelPage] Zoom fetch error:', e);
+        setZoomData(null);
+      } finally {
+        setZoomLoading(false);
+      }
+    }, 300);
+
+    return () => { if (zoomFetchRef.current) clearTimeout(zoomFetchRef.current); };
+  }, [zoomRange, data, services, selectedHost]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  // Clear zoom data when base data changes
+  useEffect(() => { setZoomData(null); }, [data]);
+
+  // Effective data: use zoom-enriched data when available, else base data
+  const effectiveData = zoomData ?? data;
 
   // Fetch extended navigator data (2 hours)
   const fetchNavigatorData = useCallback(async (force = false) => {
@@ -775,6 +813,14 @@ export const TimeTravelPage: React.FC = () => {
                     ✕ Reset zoom
                   </button>
                 )}
+                {zoomData && (
+                  <span style={{ fontSize:10, color:'#3fb950', opacity: 0.8 }}>
+                    {zoomLoading ? 'Loading samples...' : 'Per-second sampled'}
+                  </span>
+                )}
+                {zoomLoading && !zoomData && (
+                  <span style={{ fontSize:10, color:'#58a6ff', opacity: 0.8 }}>Loading samples...</span>
+                )}
               </div>
             )}
             {metricMode === 'cpu' && data.server_cpu.length > 0 && data.server_cpu.every(p => p.v === 0) && (
@@ -785,7 +831,7 @@ export const TimeTravelPage: React.FC = () => {
                 Server CPU reads as 0 — ClickHouse on macOS does not expose CPU metrics. Run in Docker or Linux for CPU data.
               </div>
             )}
-            <TimelineChart data={data} metricMode={metricMode} height={500}
+            <TimelineChart data={effectiveData!} metricMode={metricMode} height={500}
               hoverMs={hoverMs} pinnedMs={pinnedMs}
               onHover={setHoverMs} onPin={setPinnedMs}
               zoomRange={zoomRange} onZoom={setZoomRange}

@@ -119,11 +119,7 @@ describe('merge samples integration (delta calculations)', () => {
         VALUES ${values}`,
     });
 
-    const result = await ctx.client.query({
-      query: buildMergeSamplesSQL(opts),
-      format: 'JSONEachRow',
-    });
-    const raw = await result.json<Record<string, unknown>>();
+    const raw = await ctx.adapter.executeQuery<Record<string, unknown>>(buildMergeSamplesSQL(opts));
     return raw.map(mapMergeSampleRow);
   }
 
@@ -492,11 +488,7 @@ describe('merge samples integration (delta calculations)', () => {
           VALUES ${values}`,
       });
 
-      const result = await ctx.client.query({
-        query: buildMergeSamplesSQL({ database: 'default', table: 'test_table' }),
-        format: 'JSONEachRow',
-      });
-      const results = (await result.json<Record<string, unknown>>()).map(mapMergeSampleRow);
+      const results = (await ctx.adapter.executeQuery<Record<string, unknown>>(buildMergeSamplesSQL({ database: 'default', table: 'test_table' }))).map(mapMergeSampleRow);
 
       expect(results).toHaveLength(6);
 

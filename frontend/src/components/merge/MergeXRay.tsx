@@ -28,7 +28,7 @@ interface MergeXRayProps {
 
 const CHART_HEIGHT = 120;
 const SCRUBBER_LINE_COLOR = '#FECB52';
-const LOG_LEVELS = ['Trace', 'Debug', 'Information', 'Warning', 'Error'];
+
 const ACCENT = '#f0883e';
 const COLORS = {
   progress: '#3fb950',

@@ -23,6 +23,7 @@ const SqlHighlight: React.FC<{ sql: string }> = ({ sql }) => {
   const html = useMemo(() => DOMPurify.sanitize(highlightSQL(sql)), [sql]);
   return (
     <pre className="text-xs whitespace-pre-wrap break-all font-mono" style={{ color: 'var(--text-secondary)', margin: 0 }}
+      // nosemgrep: react-dangerouslysetinnerhtml -- sanitized via DOMPurify above
       dangerouslySetInnerHTML={{ __html: html }} />
   );
 };

@@ -8,7 +8,7 @@
 /** Get active part sizes (compressed on-disk) from system.parts. */
 export const GET_ACTIVE_PART_SIZES = `
   SELECT name, any(rows) AS rows, any(bytes_on_disk) AS bytes_on_disk, any(level) AS level
-  FROM {{cluster_metadata:system.parts}}
+  FROM {{cluster_aware:system.parts}}
   WHERE database = {database} AND table = {table} AND active = 1
   GROUP BY name`;
 

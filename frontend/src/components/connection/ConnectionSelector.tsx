@@ -133,18 +133,30 @@ export const ConnectionSelector: React.FC = () => {
               password required
             </span>
           )}
-          <span style={{ color: 'var(--text-muted)', fontSize: 11, display: 'inline-flex', alignItems: 'center', gap: 3 }}>
-            {selected ? (
-              <>
+          {selected && (() => {
+            const fullHost = `${selected.config.host}:${selected.config.port}`;
+            const truncated = fullHost.length > 18 ? fullHost.slice(0, 18) + '…' : fullHost;
+            return (
+              <span className="group/host" style={{ position: 'relative', display: 'inline-flex', alignItems: 'center', gap: 3, color: 'var(--text-muted)', fontSize: 11 }}>
                 {selected.config.secure ? (
-                  <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="#22c55e" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><rect x="3" y="11" width="18" height="11" rx="2" ry="2"/><path d="M7 11V7a5 5 0 0110 0v4"/></svg>
+                  <svg className="flex-shrink-0" width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="#22c55e" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><rect x="3" y="11" width="18" height="11" rx="2" ry="2"/><path d="M7 11V7a5 5 0 0110 0v4"/></svg>
                 ) : (
-                  <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="#ef4444" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><rect x="3" y="11" width="18" height="11" rx="2" ry="2"/><path d="M7 11V7a5 5 0 019.9-1"/></svg>
+                  <svg className="flex-shrink-0" width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="#ef4444" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><rect x="3" y="11" width="18" height="11" rx="2" ry="2"/><path d="M7 11V7a5 5 0 019.9-1"/></svg>
                 )}
-                {selected.config.host}:{selected.config.port}
-              </>
-            ) : ''}
-          </span>
+                {truncated}
+                {fullHost.length > 18 && (
+                  <span className="pointer-events-none opacity-0 group-hover/host:opacity-100 transition-opacity" style={{
+                    position: 'absolute', top: '100%', left: '50%', transform: 'translateX(-50%)',
+                    marginTop: 6, padding: '4px 8px', borderRadius: 4, fontSize: 11, whiteSpace: 'nowrap',
+                    background: 'var(--bg-tertiary)', border: '1px solid var(--border-primary)',
+                    color: 'var(--text-secondary)', boxShadow: '0 4px 12px rgba(0,0,0,0.3)', zIndex: 50,
+                  }}>
+                    {fullHost}
+                  </span>
+                )}
+              </span>
+            );
+          })()}
           {selected && clusterName && (
             <span style={{
               fontSize: 9,

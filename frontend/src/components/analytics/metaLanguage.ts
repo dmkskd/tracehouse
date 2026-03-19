@@ -37,6 +37,7 @@ export interface ParsedDirectives {
     groupByColumn?: string;
     valueColumn?: string;
     seriesColumn?: string;
+    descriptionColumn?: string;
   };
   drill?: {
     on: string;
@@ -62,6 +63,8 @@ export interface ChartDirective {
   visualization?: '2d' | '3d';
   title?: string;
   description?: string;
+  /** Column name whose value is shown as description in chart tooltips */
+  descriptionColumn?: string;
   unit?: string;
 }
 
@@ -170,6 +173,7 @@ export function parseDirectives(sql: string): ParsedDirectives | null {
     const l = c.match(/group_by=(\w+)/);
     const v = c.match(/value=([\w,]+)/);
     const g = c.match(/series=(\w+)/);
+    const dc = c.match(/description=(\w+)/i);
     if (t) {
       result.chart = {
         type: t[1] as ChartType,
@@ -177,6 +181,7 @@ export function parseDirectives(sql: string): ParsedDirectives | null {
         groupByColumn: l?.[1],
         valueColumn: v?.[1],
         seriesColumn: g?.[1],
+        descriptionColumn: dc?.[1],
       };
     }
   }
@@ -227,6 +232,7 @@ export function parseChartDirective(sql: string): Partial<ChartDirective> | null
   if (o) cfg.orientation = o[1].toLowerCase() === 'vertical' || o[1].toLowerCase() === 'v' ? 'vertical' : 'horizontal';
   const s = d.match(/style=(\w+)/i); if (s) cfg.visualization = s[1] as '2d' | '3d';
   const u = d.match(/unit=(\S+)/i); if (u) cfg.unit = u[1];
+  const dc = d.match(/description=(\w+)/i); if (dc) cfg.descriptionColumn = dc[1];
   const mm = sql.match(/--\s*@meta:\s*(.+)/i);
   if (mm) {
     const ti = mm[1].match(/title='([^']+)'/); if (ti) cfg.title = ti[1];

@@ -7,6 +7,23 @@ export interface TimeseriesPoint {
   v: number;  // Value
 }
 
+/**
+ * Per-second sampled values for zoom mode.
+ * All metrics are included so metric-mode switches don't require re-fetching.
+ */
+export interface ZoomSample {
+  /** Timestamp in milliseconds (epoch) */
+  ms: number;
+  /** Memory usage in bytes */
+  memory: number;
+  /** CPU cores used (delta µs / 1e6 / dt) */
+  cpu_cores: number;
+  /** Network bytes/s (send + recv) */
+  net_rate: number;
+  /** Disk bytes/s (read + write) */
+  disk_rate: number;
+}
+
 export interface QuerySeries {
   query_id: string;
   label: string;
@@ -27,6 +44,8 @@ export interface QuerySeries {
   exception?: string;  // Error message if query failed
   is_running?: boolean;  // True if query is currently in-flight
   points: TimeseriesPoint[];
+  /** Per-second sampled metrics from processes_history (zoom mode only) */
+  zoomSamples?: ZoomSample[];
 }
 
 export interface MergeSeries {
@@ -45,6 +64,8 @@ export interface MergeSeries {
   merge_reason?: string;  // RegularMerge, TTLDeleteMerge, TTLRecompressMerge, etc.
   is_running?: boolean;  // True if merge is currently in-flight
   progress?: number;  // Progress 0-1 for running merges
+  /** Per-second sampled metrics from merges_history (zoom mode only) */
+  zoomSamples?: ZoomSample[];
 }
 
 export interface MutationSeries {
@@ -62,6 +83,8 @@ export interface MutationSeries {
   end_time: string;
   is_running?: boolean;  // True if mutation is currently in-flight
   progress?: number;  // Progress 0-1 for running mutations
+  /** Per-second sampled metrics from merges_history (zoom mode only) */
+  zoomSamples?: ZoomSample[];
 }
 
 export interface MemoryTimeline {

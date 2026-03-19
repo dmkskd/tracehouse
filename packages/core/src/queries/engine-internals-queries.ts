@@ -172,7 +172,7 @@ FROM (
         any(primary_key_bytes_in_memory_allocated) AS pk_allocated,
         any(rows) AS part_rows,
         any(marks) AS part_marks
-    FROM {{cluster_metadata:system.parts}}
+    FROM {{cluster_aware:system.parts}}
     WHERE active
     GROUP BY database, table, name
 )
@@ -198,7 +198,7 @@ SELECT
     any(source) AS source,
     any(status) AS loading_status,
     any(last_successful_update_time) AS last_successful_update_time
-FROM {{cluster_metadata:system.dictionaries}}
+FROM {{cluster_aware:system.dictionaries}}
 GROUP BY name
 ORDER BY bytes_allocated DESC
 `;

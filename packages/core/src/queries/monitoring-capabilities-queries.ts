@@ -16,7 +16,7 @@ SELECT
     any(total_rows) AS total_rows,
     any(total_bytes) AS total_bytes,
     any(create_table_query) AS create_table_query
-FROM {{cluster_metadata:system.tables}}
+FROM {{cluster_aware:system.tables}}
 WHERE database = 'system'
   AND name IN (
     'text_log',
@@ -80,7 +80,7 @@ export const PROBE_ZOOKEEPER = `
 SELECT count() AS cnt
 FROM (
     SELECT name
-    FROM {{cluster_metadata:system.tables}}
+    FROM {{cluster_aware:system.tables}}
     WHERE database = 'system' AND name = 'zookeeper'
     GROUP BY name
 )
@@ -117,7 +117,7 @@ SELECT
     any(engine) AS engine,
     max(total_rows) AS total_rows,
     max(total_bytes) AS total_bytes
-FROM {{cluster_metadata:system.tables}}
+FROM {{cluster_aware:system.tables}}
 WHERE database = 'tracehouse'
   AND name IN ('processes_history', 'merges_history')
 GROUP BY name

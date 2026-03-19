@@ -117,7 +117,6 @@ const TEMPLATE_VARS: Completion[] = [
   { label: '{{drill:column | fallback}}', detail: 'Drill-down filter expression', type: 'variable' },
   { label: '{{drill_value:column | fallback}}', detail: 'Drill-down quoted value', type: 'variable' },
   { label: '{{cluster_aware:system.table}}', detail: 'Cluster-aware table (clusterAllReplicas)', type: 'variable' },
-  { label: '{{cluster_metadata:system.table}}', detail: 'Cluster metadata table reference', type: 'variable' },
 ];
 
 /* ─── completion source factory ─── */

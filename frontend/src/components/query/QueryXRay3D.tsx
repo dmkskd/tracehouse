@@ -185,35 +185,32 @@ const CageAndAxes: React.FC<{ maxT: number; maxCpu: number; maxMem: number }> = 
         <Line key={`grid-${i}`} points={[a, b]} color={cageColor} lineWidth={0.8} />
       ))}
 
-      {/* Time labels — front edge */}
+      {/* Time tick labels — front top edge */}
       {timeLabels.map(({ x, text }, i) => (
-        <Text key={`t${i}`} position={[x, MAX_Y + 0.4, 0]} fontSize={0.28} color="#667" anchorX="center">
-          {text}
-        </Text>
+        <Html key={`t${i}`} position={[x, MAX_Y + 0.3, 0]} center style={{ pointerEvents: 'none' }}>
+          <span style={{ fontFamily: 'monospace', fontSize: 10, color: '#778', whiteSpace: 'nowrap' }}>{text}</span>
+        </Html>
       ))}
-      <Text position={[RUNWAY_X / 2, MAX_Y + 0.9, 0]} fontSize={0.3} color="#778" anchorX="center">
-        Time
-      </Text>
 
-      {/* Memory labels — left front vertical */}
+      {/* Memory tick labels — back-left vertical edge (z-axis at y=0, x=0) */}
       {memLabels.map(({ z, text }, i) => (
-        <Text key={`m${i}`} position={[-0.3, MAX_Y + 0.3, z]} fontSize={0.22} color="#5577bb" anchorX="right">
-          {text}
-        </Text>
+        <Html key={`m${i}`} position={[-0.3, -0.3, z]} center style={{ pointerEvents: 'none' }}>
+          <span style={{ fontFamily: 'monospace', fontSize: 10, color: '#6688cc', whiteSpace: 'nowrap' }}>{text}</span>
+        </Html>
       ))}
-      <Text position={[-0.3, MAX_Y + 0.8, MAX_Z / 2]} fontSize={0.26} color="#5577bb" anchorX="right">
-        Memory
-      </Text>
+      <Html position={[-0.3, -0.3, MAX_Z + 0.5]} center style={{ pointerEvents: 'none' }}>
+        <span style={{ fontFamily: 'monospace', fontSize: 11, color: '#6688cc', whiteSpace: 'nowrap', fontWeight: 600 }}>Memory</span>
+      </Html>
 
-      {/* CPU labels — front bottom edge */}
+      {/* CPU tick labels — front-left bottom edge (y-axis at z=0, x=0) */}
       {cpuLabels.map(({ y, text }, i) => (
-        <Text key={`c${i}`} position={[-0.3, y, -0.3]} fontSize={0.22} color="#aa9944" anchorX="right">
-          {text}
-        </Text>
+        <Html key={`c${i}`} position={[-0.3, y, -0.3]} center style={{ pointerEvents: 'none' }}>
+          <span style={{ fontFamily: 'monospace', fontSize: 10, color: '#ccaa44', whiteSpace: 'nowrap' }}>{text}</span>
+        </Html>
       ))}
-      <Text position={[-0.3, MAX_Y / 2, -0.7]} fontSize={0.26} color="#aa9944" anchorX="right">
-        CPU (cores)
-      </Text>
+      <Html position={[-0.3, MAX_Y + 0.5, -0.3]} center style={{ pointerEvents: 'none' }}>
+        <span style={{ fontFamily: 'monospace', fontSize: 11, color: '#ccaa44', whiteSpace: 'nowrap', fontWeight: 600 }}>cores</span>
+      </Html>
     </group>
   );
 };
@@ -329,6 +326,30 @@ const CorridorMesh: React.FC<{
     return { cpuTop, cpuBot, memBack, memFront };
   }, [samples, n, maxT, maxCpu, maxMem, smoothCpu, smoothMem]);
 
+  // End caps — close the corridor at first and last sample
+  const endCapGeos = useMemo(() => {
+    if (n < 2) return null;
+    const caps: THREE.BufferGeometry[] = [];
+    for (const idx of [0, n - 1]) {
+      const x = mapT(samples[idx].t, maxT);
+      const cpu = mapCpu(smoothCpu[idx], maxCpu);
+      const mem = mapMem(smoothMem[idx], maxMem);
+      // Quad: (x,0,0) → (x,cpu,0) → (x,cpu,mem) → (x,0,mem)
+      const geo = new THREE.BufferGeometry();
+      const verts = new Float32Array([
+        x, 0, 0,
+        x, cpu, 0,
+        x, cpu, mem,
+        x, 0, mem,
+      ]);
+      geo.setAttribute('position', new THREE.Float32BufferAttribute(verts, 3));
+      geo.setIndex([0, 1, 2, 0, 2, 3]);
+      geo.computeVertexNormals();
+      caps.push(geo);
+    }
+    return caps;
+  }, [samples, n, maxT, maxCpu, maxMem, smoothCpu, smoothMem]);
+
   if (!ceilingGeo || !backGeo || !frontGeo || !floorGeo) return null;
 
   const wallMat = (opacity: number) => (
@@ -341,6 +362,13 @@ const CorridorMesh: React.FC<{
       <mesh geometry={backGeo}>{wallMat(0.5)}</mesh>
       <mesh geometry={frontGeo}>{wallMat(0.45)}</mesh>
       <mesh geometry={floorGeo}>{wallMat(0.3)}</mesh>
+
+      {/* End caps to close the corridor */}
+      {endCapGeos && endCapGeos.map((geo, i) => (
+        <mesh key={`cap-${i}`} geometry={geo}>
+          <meshStandardMaterial color="#2a2a50" transparent opacity={0.4} side={THREE.DoubleSide} depthWrite={false} />
+        </mesh>
+      ))}
 
       {/* Bright edge outlines for definition */}
       {edges.cpuTop.length > 1 && <>
@@ -905,6 +933,36 @@ const Scrubber: React.FC<{
   );
 };
 
+/* ── Host tab pill ────────────────────────────────────────────────────── */
+
+const HostTab: React.FC<{
+  label: string;
+  title?: string;
+  active: boolean;
+  onClick: () => void;
+}> = ({ label, title, active, onClick }) => (
+  <span
+    title={title}
+    onClick={onClick}
+    style={{
+      padding: '3px 10px',
+      borderRadius: 12,
+      fontSize: 10,
+      fontWeight: 600,
+      letterSpacing: '0.4px',
+      cursor: 'pointer',
+      border: `1px solid ${active ? '#636EFA66' : '#2a2a3a'}`,
+      background: active ? '#636EFA1a' : 'rgba(255,255,255,0.02)',
+      color: active ? '#636EFA' : '#555',
+      transition: 'all 0.2s ease',
+      userSelect: 'none',
+      whiteSpace: 'nowrap',
+    }}
+  >
+    {label}
+  </span>
+);
+
 /* ── Main component ──────────────────────────────────────────────────── */
 
 export interface QueryXRay3DProps {
@@ -918,9 +976,16 @@ export const QueryXRay3D: React.FC<QueryXRay3DProps> = ({
   logs,
   queryStartTime,
 }) => {
-  const { samples, isLoading: isLoadingSamples, error, fetch: fetchSamples } = useProcessSamples(queryId);
+  const { samples: allSamples, hostSamples, hosts, isLoading: isLoadingSamples, error, fetch: fetchSamples } = useProcessSamples(queryId);
+  const [selectedHost, setSelectedHost] = useState<string | null>(null);
   const [scrubberMode, setScrubberMode] = useState<ScrubberMode>('time');
   const [scrubberIdx, setScrubberIdx] = useState(0);
+
+  // Active samples: "All" (aggregated) or per-host filtered
+  const samples = useMemo(() => {
+    if (selectedHost === null) return allSamples;
+    return hostSamples.get(selectedHost) || [];
+  }, [selectedHost, allSamples, hostSamples]);
 
   // Fetch samples on mount
   useEffect(() => {
@@ -1093,8 +1158,41 @@ export const QueryXRay3D: React.FC<QueryXRay3DProps> = ({
   const duration = samples[samples.length - 1].t;
   const totalRows = Math.max(...samples.map(s => s.read_rows));
 
+  const multiHost = hosts.length > 1;
+
   return (
     <div style={{ display: 'flex', flexDirection: 'column', height: '100%' }}>
+      {/* Host tab bar — only shown for multi-host (distributed) queries */}
+      {multiHost && (
+        <div style={{
+          padding: '4px 16px',
+          background: 'var(--bg-secondary, #111)',
+          borderBottom: '1px solid var(--border-accent, #333)',
+          display: 'flex',
+          gap: 6,
+          fontSize: 10,
+          fontFamily: 'monospace',
+          flexShrink: 0,
+          alignItems: 'center',
+        }}>
+          <HostTab
+            label="All"
+            active={selectedHost === null}
+            onClick={() => { setSelectedHost(null); setScrubberIdx(0); }}
+          />
+          {hosts.map(h => (
+            <HostTab
+              key={h}
+              label={h.length > 18 ? h.slice(0, 8) + '...' + h.slice(-8) : h}
+              title={h}
+              active={selectedHost === h}
+              onClick={() => { setSelectedHost(h); setScrubberIdx(0); }}
+            />
+          ))}
+          <span style={{ color: '#555', marginLeft: 4 }}>{hosts.length} hosts</span>
+        </div>
+      )}
+
       {/* Summary bar */}
       <div style={{
         padding: '6px 16px',
@@ -1116,7 +1214,7 @@ export const QueryXRay3D: React.FC<QueryXRay3DProps> = ({
       </div>
 
       {/* 3D Canvas */}
-      <div style={{ flex: 1, minHeight: 0 }}>
+      <div style={{ flex: 1, minHeight: 0, position: 'relative' }}>
         <Canvas
           gl={{ antialias: true, alpha: false }}
           style={{ background: '#0a0a1a' }}
@@ -1127,6 +1225,23 @@ export const QueryXRay3D: React.FC<QueryXRay3DProps> = ({
             highlightLabel={highlightLabel}
           />
         </Canvas>
+        {/* Axis legend overlay */}
+        <div style={{
+          position: 'absolute',
+          bottom: 12,
+          left: 12,
+          display: 'flex',
+          flexDirection: 'column',
+          gap: 3,
+          fontFamily: 'monospace',
+          fontSize: 10,
+          pointerEvents: 'none',
+          opacity: 0.75,
+        }}>
+          <span style={{ color: '#ccaa44' }}>width  CPU  {peakCpu.toFixed(1)} peak cores</span>
+          <span style={{ color: '#6688cc' }}>height Memory  {fmtMB(peakMem)} peak</span>
+          <span style={{ color: '#8899aa' }}>length Time  {duration.toFixed(1)}s</span>
+        </div>
       </div>
 
       {/* Scrubber */}

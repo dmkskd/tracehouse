@@ -21,7 +21,7 @@ SELECT
     partition_id
 FROM (
     SELECT database, table, name, any(partition_id) AS partition_id
-    FROM {{cluster_metadata:system.parts}}
+    FROM {{cluster_aware:system.parts}}
     WHERE active AND database != 'system'
     GROUP BY database, table, name
 )

@@ -11,6 +11,7 @@ import { useClickHouseServices } from '../../providers/ClickHouseProvider';
 import { type Query } from './types';
 import { getAllQueries } from './customQueries';
 import { resolveTimeRange, resolveDrillParams } from './templateResolution';
+import { formatClickHouseError } from '../../utils/errorFormatters';
 import { type ChartType, parseChartDirective, resolveQueryRef } from './metaLanguage';
 import { LinkQueryModal } from './LinkQueryModal';
 import { TimeRangePicker } from './TimeRangePicker';
@@ -25,6 +26,8 @@ import { ResultsTable } from './ResultsTable';
 import {
   type Dashboard,
   type DashboardPanel,
+  type DashboardGroup,
+  DASHBOARD_GROUPS,
   resolvePanel,
   loadDashboards,
   upsertDashboard,
@@ -130,7 +133,7 @@ const DashboardPanelCard: React.FC<{
   const chartData = useMemo((): ChartDataPoint[] => {
     if (!result || result.rows.length === 0) return [];
     const isTimeSeries = chartDirective?.type && ['line', 'area', 'grouped_line'].includes(chartDirective.type);
-    return buildChartData(result.rows, result.columns, chartDirective?.groupByColumn, chartDirective?.valueColumn, isTimeSeries ? undefined : 50);
+    return buildChartData(result.rows, result.columns, chartDirective?.groupByColumn, chartDirective?.valueColumn, isTimeSeries ? undefined : 50, chartDirective?.descriptionColumn);
   }, [result, chartDirective]);
 
   const groupedChartData = useMemo((): GroupedChartData[] => {
@@ -252,7 +255,14 @@ const DashboardPanelCard: React.FC<{
       </div>
       <div style={{ padding: fullscreen ? '0 8px 8px' : '0 14px 10px', flex: 1, minHeight: 0, overflow: 'hidden', display: 'flex', flexDirection: 'column' }}>
         {loading && <div style={{ color: 'var(--text-muted)', fontSize: 11, padding: '20px 0', textAlign: 'center' }}>Loading…</div>}
-        {error && <div style={{ color: '#f85149', fontSize: 11, padding: '8px 0' }}>⚠ {error}</div>}
+        {error && (() => {
+          const fmt = formatClickHouseError(error);
+          return (
+            <div style={{ color: fmt.isPermissionError ? '#d29922' : '#f85149', fontSize: 11, padding: '8px 0', cursor: 'help' }} title={error}>
+              ⚠ {fmt.message}
+            </div>
+          );
+        })()}
         {!loading && !error && result && (
           <>
             {/* Chart view */}
@@ -291,6 +301,9 @@ const DashboardPanelCard: React.FC<{
                     linkOnColumn={isLinkable ? preset?.directives.link?.on : undefined}
                     ragRules={preset?.directives.rag}
                     onLinkClick={isLinkable ? handleLinkClick : undefined}
+                    drillOnColumn={isDrillable ? preset?.directives.drill?.on : undefined}
+                    onDrillClick={isDrillable ? ((_col: string, value: string) => handleDrillDown({ label: value, value: 0 })) : undefined}
+                    drillIntoQuery={isDrillable ? preset?.directives.drill?.into : undefined}
                     compact
                   />
                 </div>
@@ -526,7 +539,7 @@ const MiniPanelCard: React.FC<{ panel: DashboardPanel; timeRangeOverride: string
   const chartData = useMemo((): ChartDataPoint[] => {
     if (!result || result.rows.length === 0) return [];
     const isTimeSeries = chartDirective?.type && ['line', 'area', 'grouped_line'].includes(chartDirective.type);
-    return buildChartData(result.rows, result.columns, chartDirective?.groupByColumn, chartDirective?.valueColumn, isTimeSeries ? undefined : 20);
+    return buildChartData(result.rows, result.columns, chartDirective?.groupByColumn, chartDirective?.valueColumn, isTimeSeries ? undefined : 20, chartDirective?.descriptionColumn);
   }, [result, chartDirective]);
 
   const groupedChartData2 = useMemo((): GroupedChartData[] => {
@@ -729,9 +742,21 @@ const DashboardListView: React.FC<{
 
   const hoveredDashboard = hoveredId ? dashboards.find(d => d.id === hoveredId) : null;
 
+  // Group dashboards by their group field
+  const grouped = useMemo(() => {
+    const groups: { group: DashboardGroup; color: string; items: Dashboard[] }[] =
+      DASHBOARD_GROUPS.map(g => ({ group: g.name, color: g.color, items: [] }));
+    for (const d of dashboards) {
+      const g = groups.find(g => g.group === (d.group ?? 'Custom'));
+      if (g) g.items.push(d);
+      else groups[groups.length - 1].items.push(d); // fallback to Custom
+    }
+    return groups.filter(g => g.items.length > 0);
+  }, [dashboards]);
+
   return (
     <div ref={containerRef} style={{ padding: 24, overflow: 'auto', height: '100%', position: 'relative' }}>
-      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 16 }}>
+      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 20 }}>
         <span style={{ fontSize: 14, fontWeight: 600, color: 'var(--text-primary)' }}>Dashboards</span>
         <div style={{ display: 'flex', gap: 6 }}>
           <button onClick={onImport} style={secondaryBtnStyle}>Import JSON</button>
@@ -739,25 +764,34 @@ const DashboardListView: React.FC<{
         </div>
       </div>
 
-      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: 12 }}>
-        {dashboards.map(d => (
-          <div
-            key={d.id}
-            onClick={() => onOpen(d.id)}
-            onMouseEnter={e => handleMouseEnter(d.id, e)}
-            onMouseMove={handleMouseMove}
-            onMouseLeave={handleMouseLeave}
-            style={{ ...panelStyle, cursor: 'pointer', padding: 16, transition: 'border-color 0.15s' }}
-          >
-            <div style={{ fontSize: 14, fontWeight: 600, color: 'var(--text-primary)', marginBottom: 4 }}>{d.title}</div>
-            {d.description && <div style={{ fontSize: 11, color: 'var(--text-muted)', marginBottom: 8, lineHeight: 1.4 }}>{d.description}</div>}
-            <div style={{ fontSize: 10, color: 'var(--text-tertiary)' }}>
-              {d.panels.length} panel{d.panels.length !== 1 ? 's' : ''} · {d.columns} col{d.columns !== 1 ? 's' : ''}
-              {d.builtin && <span style={{ marginLeft: 8, color: 'var(--accent-primary)' }}>built-in</span>}
-            </div>
+      {grouped.map(({ group, color, items }) => (
+        <div key={group} style={{ marginBottom: 24 }}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 10 }}>
+            <div style={{ width: 3, height: 16, borderRadius: 2, background: color }} />
+            <span style={{ fontSize: 12, fontWeight: 600, color: 'var(--text-secondary)', textTransform: 'uppercase', letterSpacing: '0.5px' }}>{group}</span>
+            <span style={{ fontSize: 10, color: 'var(--text-tertiary)' }}>({items.length})</span>
           </div>
-        ))}
-      </div>
+          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: 12 }}>
+            {items.map(d => (
+              <div
+                key={d.id}
+                onClick={() => onOpen(d.id)}
+                onMouseEnter={e => handleMouseEnter(d.id, e)}
+                onMouseMove={handleMouseMove}
+                onMouseLeave={handleMouseLeave}
+                style={{ ...panelStyle, cursor: 'pointer', padding: 16, transition: 'border-color 0.15s' }}
+              >
+                <div style={{ fontSize: 14, fontWeight: 600, color: 'var(--text-primary)', marginBottom: 4 }}>{d.title}</div>
+                {d.description && <div style={{ fontSize: 11, color: 'var(--text-muted)', marginBottom: 8, lineHeight: 1.4 }}>{d.description}</div>}
+                <div style={{ fontSize: 10, color: 'var(--text-tertiary)' }}>
+                  {d.panels.length} panel{d.panels.length !== 1 ? 's' : ''} · {d.columns} col{d.columns !== 1 ? 's' : ''}
+                  {d.builtin && <span style={{ marginLeft: 8, color }}>built-in</span>}
+                </div>
+              </div>
+            ))}
+          </div>
+        </div>
+      ))}
 
       {dashboards.length === 0 && (
         <div style={{ textAlign: 'center', padding: '40px 0', color: 'var(--text-muted)', fontSize: 13 }}>

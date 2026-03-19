@@ -220,7 +220,7 @@ export class TraceService {
   async getFlamegraphData(queryId: string, type: FlamegraphType = 'CPU', eventDate?: string): Promise<FlamegraphNode> {
     try {
       // Check if trace_log table exists
-      const checkSql = tagQuery(`SELECT 1 FROM {{cluster_metadata:system.tables}} WHERE database = 'system' AND name = 'trace_log' GROUP BY name LIMIT 1`, sourceTag(TAB_QUERIES, 'traceLogCheck'));
+      const checkSql = tagQuery(`SELECT 1 FROM {{cluster_aware:system.tables}} WHERE database = 'system' AND name = 'trace_log' GROUP BY name LIMIT 1`, sourceTag(TAB_QUERIES, 'traceLogCheck'));
       const checkResult = await this.adapter.executeQuery(checkSql);
       if (checkResult.length === 0) {
         console.log('[TraceService] trace_log table does not exist');

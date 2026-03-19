@@ -23,13 +23,21 @@ export interface ResultsTableProps {
   ragRules?: RagRule[];
   /** Called when a link cell is clicked */
   onLinkClick?: (column: string, value: string) => void;
+  /** Column whose cells are clickable for drill-down */
+  drillOnColumn?: string;
+  /** Called when a drill cell is clicked */
+  onDrillClick?: (column: string, value: string) => void;
+  /** Target query name shown as tooltip on drillable cells */
+  drillIntoQuery?: string;
   /** Visual density variant */
   compact?: boolean;
 }
 
 export const ResultsTable: React.FC<ResultsTableProps> = ({
   columns, rows, sortColumn, sortDirection, onSort,
-  linkOnColumn, ragRules, onLinkClick, compact = false,
+  linkOnColumn, ragRules, onLinkClick,
+  drillOnColumn, onDrillClick, drillIntoQuery,
+  compact = false,
 }) => {
   const fontSize = compact ? 11 : 12;
   const headerFontSize = compact ? 10 : 11;
@@ -37,6 +45,7 @@ export const ResultsTable: React.FC<ResultsTableProps> = ({
   const cellPadding = compact ? '4px 8px' : '6px 12px';
   const maxCellWidth = compact ? 200 : 400;
   const hasLinks = !!linkOnColumn && !!onLinkClick;
+  const hasDrill = !!drillOnColumn && !!onDrillClick;
 
   return (
     <table style={{ width: 'max-content', minWidth: '100%', borderCollapse: 'collapse', fontSize }}>
@@ -61,20 +70,23 @@ export const ResultsTable: React.FC<ResultsTableProps> = ({
           <tr key={i}>
             {columns.map(col => {
               const isLink = hasLinks && col === linkOnColumn;
+              const isDrill = hasDrill && col === drillOnColumn;
+              const isClickable = isLink || isDrill;
               const cellValue = formatCell(row[col]);
               const ragColor = getRagColor(col, row[col], ragRules);
               return (
                 <td key={col} style={{
                   padding: cellPadding, borderBottom: '1px solid var(--border-secondary)',
-                  color: isLink
+                  color: isClickable
                     ? 'var(--accent-primary, #6366f1)'
                     : ragColor ?? 'var(--text-secondary)',
                   fontWeight: ragColor ? 600 : undefined,
                   whiteSpace: 'nowrap', maxWidth: maxCellWidth, overflow: 'hidden', textOverflow: 'ellipsis',
-                  cursor: isLink ? 'pointer' : undefined,
-                  textDecoration: isLink ? 'underline' : undefined,
+                  cursor: isClickable ? 'pointer' : undefined,
+                  textDecoration: isClickable ? 'underline' : undefined,
                 }}
-                onClick={isLink ? () => onLinkClick!(col, cellValue) : undefined}
+                title={isDrill && drillIntoQuery ? `Drill into: ${drillIntoQuery}` : undefined}
+                onClick={isLink ? () => onLinkClick!(col, cellValue) : isDrill ? () => onDrillClick!(col, cellValue) : undefined}
                 >{cellValue}</td>
               );
             })}

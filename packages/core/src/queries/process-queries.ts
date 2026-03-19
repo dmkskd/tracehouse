@@ -66,24 +66,34 @@ export function buildProcessSamplesSQL(queryIds: string[]): string {
   const whereClause = multi
     ? `query_id IN (${escaped.join(', ')}) OR initial_query_id IN (${escaped.join(', ')})`
     : `query_id = ${escaped[0]} OR initial_query_id = ${escaped[0]}`;
-  const partition = multi ? 'PARTITION BY initial_query_id' : '';
+  const minTimePartition = multi ? 'PARTITION BY initial_query_id' : '';
+  const windowPartition = multi ? 'PARTITION BY initial_query_id, query_id' : 'PARTITION BY query_id';
+  const groupBy = multi ? 'initial_query_id, t' : 't';
   return `
 SELECT
-    ${multi ? 'query_id,' : ''}
-    t, elapsed, thread_count,
-    memory_mb, peak_memory_mb,
-    read_rows, written_rows, read_bytes,
-    cpu_us, io_wait_us, net_send_bytes, net_recv_bytes,
-    greatest(raw_d_cpu / dt, 0) AS d_cpu_cores,
-    greatest(raw_d_io / dt, 0) AS d_io_wait_s,
-    greatest(raw_d_read_mb / dt, 0) AS d_read_mb,
-    greatest(raw_d_read_rows / dt, 0) AS d_read_rows,
-    greatest(raw_d_written_rows / dt, 0) AS d_written_rows,
-    greatest(raw_d_net_send / dt, 0) AS d_net_send_kb,
-    greatest(raw_d_net_recv / dt, 0) AS d_net_recv_kb
+    ${multi ? 'initial_query_id AS query_id,' : ''}
+    t,
+    max(elapsed) AS elapsed,
+    sum(thread_count) AS thread_count,
+    sum(memory_mb) AS memory_mb,
+    max(peak_memory_mb) AS peak_memory_mb,
+    sum(read_rows) AS read_rows,
+    sum(written_rows) AS written_rows,
+    sum(read_bytes) AS read_bytes,
+    sum(cpu_us) AS cpu_us,
+    sum(io_wait_us) AS io_wait_us,
+    sum(net_send_bytes) AS net_send_bytes,
+    sum(net_recv_bytes) AS net_recv_bytes,
+    sum(greatest(raw_d_cpu / dt, 0)) AS d_cpu_cores,
+    sum(greatest(raw_d_io / dt, 0)) AS d_io_wait_s,
+    sum(greatest(raw_d_read_mb / dt, 0)) AS d_read_mb,
+    sum(greatest(raw_d_read_rows / dt, 0)) AS d_read_rows,
+    sum(greatest(raw_d_written_rows / dt, 0)) AS d_written_rows,
+    sum(greatest(raw_d_net_send / dt, 0)) AS d_net_send_kb,
+    sum(greatest(raw_d_net_recv / dt, 0)) AS d_net_recv_kb
 FROM (
     SELECT
-        ${multi ? 'initial_query_id AS query_id,' : ''}
+        ${multi ? 'initial_query_id,' : ''} query_id,
         toFloat64(dateDiff('millisecond', min_time, sample_time)) / 1000 AS t,
         elapsed, length(thread_ids) AS thread_count,
         memory_usage / (1024 * 1024) AS memory_mb,
@@ -109,26 +119,111 @@ FROM (
         (pe_net_recv - lagInFrame(pe_net_recv, 1, pe_net_recv) OVER w) / 1024 AS raw_d_net_recv
     FROM (
         SELECT
-            ${multi ? 'initial_query_id,' : ''} sample_time,
-            min(sample_time) OVER (${partition}) AS min_time,
+            ${multi ? 'initial_query_id,' : ''} query_id, sample_time,
+            min(sample_time) OVER (${minTimePartition}) AS min_time,
             elapsed, memory_usage, peak_memory_usage,
             read_bytes, read_rows, written_rows, thread_ids,
             ProfileEvents['OSCPUVirtualTimeMicroseconds'] AS pe_cpu,
             ProfileEvents['OSCPUWaitMicroseconds'] AS pe_io_wait,
             ProfileEvents['NetworkSendBytes'] AS pe_net_send,
             ProfileEvents['NetworkReceiveBytes'] AS pe_net_recv
-        FROM tracehouse.processes_history
+        FROM {{cluster_aware:tracehouse.processes_history}}
         WHERE ${whereClause}
-        ORDER BY ${multi ? 'initial_query_id, ' : ''}sample_time
+        ORDER BY ${multi ? 'initial_query_id, ' : ''}query_id, sample_time
     )
-    WINDOW w AS (${partition} ORDER BY sample_time)
+    WINDOW w AS (${windowPartition} ORDER BY sample_time)
 )
+GROUP BY ${groupBy}
 ORDER BY ${multi ? 'query_id, ' : ''}t
 `;
 }
 
+/**
+ * Build SQL to fetch process samples for a single query, grouped by hostname.
+ * Each host's deltas are computed independently (window partitioned by hostname).
+ * Returns HostProcessSample rows — one time series per host.
+ */
+export function buildHostProcessSamplesSQL(queryId: string): string {
+  const escaped = `'${queryId.replace(/'/g, "''")}'`;
+  return `
+SELECT
+    hostname, t,
+    max(elapsed) AS elapsed,
+    sum(thread_count) AS thread_count,
+    sum(memory_mb) AS memory_mb,
+    max(peak_memory_mb) AS peak_memory_mb,
+    sum(read_rows) AS read_rows,
+    sum(written_rows) AS written_rows,
+    sum(read_bytes) AS read_bytes,
+    sum(cpu_us) AS cpu_us,
+    sum(io_wait_us) AS io_wait_us,
+    sum(net_send_bytes) AS net_send_bytes,
+    sum(net_recv_bytes) AS net_recv_bytes,
+    sum(greatest(raw_d_cpu / dt, 0)) AS d_cpu_cores,
+    sum(greatest(raw_d_io / dt, 0)) AS d_io_wait_s,
+    sum(greatest(raw_d_read_mb / dt, 0)) AS d_read_mb,
+    sum(greatest(raw_d_read_rows / dt, 0)) AS d_read_rows,
+    sum(greatest(raw_d_written_rows / dt, 0)) AS d_written_rows,
+    sum(greatest(raw_d_net_send / dt, 0)) AS d_net_send_kb,
+    sum(greatest(raw_d_net_recv / dt, 0)) AS d_net_recv_kb
+FROM (
+    SELECT
+        hostname, query_id,
+        toFloat64(dateDiff('millisecond', min_time, sample_time)) / 1000 AS t,
+        elapsed, length(thread_ids) AS thread_count,
+        memory_usage / (1024 * 1024) AS memory_mb,
+        peak_memory_usage / (1024 * 1024) AS peak_memory_mb,
+        read_rows, written_rows, read_bytes,
+        pe_cpu AS cpu_us, pe_io_wait AS io_wait_us,
+        pe_net_send AS net_send_bytes, pe_net_recv AS net_recv_bytes,
+        greatest(
+            toFloat64(dateDiff('millisecond',
+                lagInFrame(sample_time, 1, sample_time) OVER w,
+                sample_time
+            )) / 1000,
+            0.1
+        ) AS dt,
+        (pe_cpu - lagInFrame(pe_cpu, 1, pe_cpu) OVER w) / 1000000 AS raw_d_cpu,
+        (pe_io_wait - lagInFrame(pe_io_wait, 1, pe_io_wait) OVER w) / 1000000 AS raw_d_io,
+        (read_bytes - lagInFrame(read_bytes, 1, read_bytes) OVER w) / (1024 * 1024) AS raw_d_read_mb,
+        toFloat64(read_rows - lagInFrame(read_rows, 1, read_rows) OVER w) AS raw_d_read_rows,
+        toFloat64(written_rows - lagInFrame(written_rows, 1, written_rows) OVER w) AS raw_d_written_rows,
+        (pe_net_send - lagInFrame(pe_net_send, 1, pe_net_send) OVER w) / 1024 AS raw_d_net_send,
+        (pe_net_recv - lagInFrame(pe_net_recv, 1, pe_net_recv) OVER w) / 1024 AS raw_d_net_recv
+    FROM (
+        SELECT
+            hostname, query_id, sample_time,
+            min(sample_time) OVER (PARTITION BY hostname) AS min_time,
+            elapsed, memory_usage, peak_memory_usage,
+            read_bytes, read_rows, written_rows, thread_ids,
+            ProfileEvents['OSCPUVirtualTimeMicroseconds'] AS pe_cpu,
+            ProfileEvents['OSCPUWaitMicroseconds'] AS pe_io_wait,
+            ProfileEvents['NetworkSendBytes'] AS pe_net_send,
+            ProfileEvents['NetworkReceiveBytes'] AS pe_net_recv
+        FROM {{cluster_aware:tracehouse.processes_history}}
+        WHERE query_id = ${escaped} OR initial_query_id = ${escaped}
+        ORDER BY hostname, query_id, sample_time
+    )
+    WINDOW w AS (PARTITION BY hostname, query_id ORDER BY sample_time)
+)
+GROUP BY hostname, t
+ORDER BY hostname, t
+`;
+}
+
+export function mapHostProcessSampleRow(r: Record<string, unknown>): HostProcessSample {
+  return {
+    hostname: String(r.hostname || ''),
+    ...mapProcessSampleRow(r),
+  };
+}
+
 /** @deprecated Use buildProcessSamplesSQL([queryId]) instead */
 export const PROCESS_SAMPLES_SQL = '/* use buildProcessSamplesSQL */';
+
+export interface HostProcessSample extends ProcessSample {
+  hostname: string;
+}
 
 export interface TaggedProcessSample extends ProcessSample {
   query_id: string;

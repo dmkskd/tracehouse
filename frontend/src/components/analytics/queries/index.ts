@@ -8,6 +8,7 @@ import merges from './merges';
 import resources from './resources';
 import advancedDashboard from './advancedDashboard';
 import selfMonitoring from './selfMonitoring';
+import memory from './memory';
 
 export const RAW_QUERIES: string[] = [
   ...overview,
@@ -18,4 +19,5 @@ export const RAW_QUERIES: string[] = [
   ...resources,
   ...advancedDashboard,
   ...selfMonitoring,
+  ...memory,
 ];

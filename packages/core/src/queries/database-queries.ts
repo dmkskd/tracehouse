@@ -13,10 +13,10 @@ export const LIST_DATABASES = `
     any(d.engine) AS engine,
     countDistinct(t.name) AS table_count,
     COALESCE(sum(t.table_bytes), 0) AS total_bytes
-  FROM {{cluster_metadata:system.databases}} AS d
+  FROM {{cluster_aware:system.databases}} AS d
   LEFT JOIN (
     SELECT database, name, max(total_bytes) AS table_bytes
-    FROM {{cluster_metadata:system.tables}}
+    FROM {{cluster_aware:system.tables}}
     GROUP BY database, name
   ) AS t ON d.name = t.database
   GROUP BY d.name
@@ -33,7 +33,7 @@ export const LIST_TABLES = `
     max(total_bytes) AS total_bytes,
     any(partition_key) AS partition_key,
     any(sorting_key) AS sorting_key
-  FROM {{cluster_metadata:system.tables}}
+  FROM {{cluster_aware:system.tables}}
   WHERE database = {database}
   GROUP BY database, name
   ORDER BY name
@@ -52,7 +52,7 @@ export const GET_TABLE_SCHEMA = `
     any(is_in_primary_key) AS is_in_primary_key,
     any(is_in_sampling_key) AS is_in_sampling_key,
     any(position) AS position
-  FROM {{cluster_metadata:system.columns}}
+  FROM {{cluster_aware:system.columns}}
   WHERE database = {database}
     AND table = {table}
   GROUP BY name
@@ -72,7 +72,7 @@ export const GET_TABLE_PARTS = `
     any(marks_bytes) AS marks_bytes,
     any(data_compressed_bytes) AS data_compressed_bytes,
     any(data_uncompressed_bytes) AS data_uncompressed_bytes
-  FROM {{cluster_metadata:system.parts}}
+  FROM {{cluster_aware:system.parts}}
   WHERE database = {database}
     AND table = {table}
     AND active = 1
@@ -101,7 +101,7 @@ export const GET_PART_DETAIL = `
     any(disk_name) AS disk_name,
     any(path) AS path,
     any(part_type) AS part_type
-  FROM {{cluster_metadata:system.parts}}
+  FROM {{cluster_aware:system.parts}}
   WHERE database = {database}
     AND table = {table}
     AND name = {part_name}
@@ -117,8 +117,8 @@ export const GET_PART_COLUMNS = `
     any(pc.column_data_compressed_bytes) AS compressed,
     any(pc.column_data_uncompressed_bytes) AS uncompressed,
     any(c.compression_codec) AS codec
-  FROM {{cluster_metadata:system.parts_columns}} AS pc
-  LEFT JOIN {{cluster_metadata:system.columns}} AS c
+  FROM {{cluster_aware:system.parts_columns}} AS pc
+  LEFT JOIN {{cluster_aware:system.columns}} AS c
     ON c.database = pc.database AND c.table = pc.table AND c.name = pc.column
   WHERE pc.database = {database}
     AND pc.table = {table}
@@ -134,7 +134,7 @@ export const GET_TABLE_KEYS = `
     any(partition_key) AS partition_key,
     any(sorting_key) AS sorting_key,
     any(primary_key) AS primary_key
-  FROM {{cluster_metadata:system.tables}}
+  FROM {{cluster_aware:system.tables}}
   WHERE database = {database}
     AND name = {table}
   GROUP BY database, name
@@ -150,7 +150,7 @@ export const GET_PART_ROW_COUNT = `
 /** Get column names for a table. Natural key: (name) within (database, table). */
 export const GET_TABLE_COLUMN_NAMES = `
   SELECT name
-  FROM {{cluster_metadata:system.columns}}
+  FROM {{cluster_aware:system.columns}}
   WHERE database = {database}
     AND table = {table}
   GROUP BY name, position

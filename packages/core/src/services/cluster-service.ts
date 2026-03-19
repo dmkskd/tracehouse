@@ -1,16 +1,17 @@
 /**
  * ClusterService — detects ClickHouse cluster topology and provides
- * a helper to resolve {{cluster_aware:system.X}} placeholders in SQL.
+ * a helper to resolve {{cluster_aware:db.table}} placeholders in SQL.
  *
  * Usage:
  *   const cluster = await ClusterService.detect(adapter);
  *   // In SQL templates, use {{cluster_aware:system.query_log}} for log tables
+ *   // or {{cluster_aware:tracehouse.processes_history}} for sampler tables
  *   // that should be queried across all replicas when a cluster is detected.
  *   const sql = ClusterService.resolveTableRefs(template, clusterName);
  *
  * On a single-node server (no cluster), resolveTableRefs replaces
- * {{cluster_aware:system.X}} with plain system.X.
- * On a cluster, it wraps with clusterAllReplicas('cluster_name', system.X).
+ * {{cluster_aware:db.table}} with plain db.table.
+ * On a cluster, it wraps with clusterAllReplicas('cluster_name', db.table).
  */
 
 import type { IClickHouseAdapter } from '../adapters/types.js';
@@ -38,19 +39,17 @@ function sanitizeClusterName(name: string): string | null {
 }
 
 /**
- * Regex to match {{cluster_aware:system.<table>}} placeholders.
- * Used for log tables where each node has unique data (query_log, part_log, etc.)
+ * Regex to match {{cluster_aware:db.table}} placeholders.
+ * Accepts any database-qualified table (system.query_log, tracehouse.processes_history, etc.)
+ * Used for tables where each node has unique data that should be fanned out to all replicas.
  */
-const CLUSTER_AWARE_RE = /\{\{cluster_aware:(system\.\w+)\}\}/g;
+const CLUSTER_AWARE_RE = /\{\{cluster_aware:(\w+\.\w+)\}\}/g;
 
 /**
- * Regex to match {{cluster_metadata:system.<table>}} placeholders.
- * Used for metadata tables that are identical across replicas within a shard
- * (system.tables, system.parts, system.columns, system.databases, etc.)
- * Resolves to clusterAllReplicas — same as cluster_aware. The queries themselves
- * are responsible for dedup via GROUP BY on the natural key.
+ * Regex to match {{cluster_name}} placeholder.
+ * Resolves to the detected cluster name (quoted string), or empty string on single-node.
  */
-const CLUSTER_METADATA_RE = /\{\{cluster_metadata:(system\.\w+)\}\}/g;
+const CLUSTER_NAME_RE = /\{\{cluster_name\}\}/g;
 
 export class ClusterService {
   /**
@@ -162,38 +161,34 @@ export class ClusterService {
   }
 
   /**
-   * Resolve {{cluster_aware:system.X}} and {{cluster_metadata:system.X}}
+   * Resolve {{cluster_aware:db.table}}
    * placeholders in SQL.
    *
-   * - If clusterName is null (single node): both resolve to plain system.X
-   * - If clusterName is set: both resolve to clusterAllReplicas('name', system.X)
+   * - If clusterName is null (single node): both resolve to plain db.table
+   * - If clusterName is set: both resolve to clusterAllReplicas('name', db.table)
    *
-   * cluster_aware and cluster_metadata both fan out to all replicas.
-   * The distinction is semantic (documentation): cluster_aware marks log tables
-   * with unique per-node data, cluster_metadata marks metadata tables where
-   * replicas have identical data. Metadata queries must include their own
-   * GROUP BY dedup to handle the duplicate rows from clusterAllReplicas.
+   * Resolves {{cluster_aware:db.table}} to clusterAllReplicas('cluster', db.table)
+   * on clusters, or strips the placeholder to bare db.table on single-node.
+   * Metadata queries must include their own GROUP BY dedup to handle
+   * duplicate rows from clusterAllReplicas.
    */
   static resolveTableRefs(sql: string, clusterName: string | null): string {
     if (!clusterName) {
       let result = sql.replace(CLUSTER_AWARE_RE, '$1');
-      result = result.replace(CLUSTER_METADATA_RE, '$1');
+      result = result.replace(CLUSTER_NAME_RE, "''");
       return result;
     }
 
     if (!SAFE_CLUSTER_NAME_RE.test(clusterName)) {
       let result = sql.replace(CLUSTER_AWARE_RE, '$1');
-      result = result.replace(CLUSTER_METADATA_RE, '$1');
+      result = result.replace(CLUSTER_NAME_RE, "''");
       return result;
     }
 
-    // Both placeholder types resolve to clusterAllReplicas
     let result = sql.replace(CLUSTER_AWARE_RE, (_match, tableRef: string) => {
       return `clusterAllReplicas('${clusterName}', ${tableRef})`;
     });
-    result = result.replace(CLUSTER_METADATA_RE, (_match, tableRef: string) => {
-      return `clusterAllReplicas('${clusterName}', ${tableRef})`;
-    });
+    result = result.replace(CLUSTER_NAME_RE, `'${clusterName}'`);
 
     return result;
   }
