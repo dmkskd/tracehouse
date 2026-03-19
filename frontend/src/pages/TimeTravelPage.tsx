@@ -568,15 +568,29 @@ export const TimeTravelPage: React.FC = () => {
           {clusterHosts.length > 1 && (
             <div className="tabs">
               <button className={`tab ${selectedHost === null && !splitView ? 'active' : ''}`} onClick={() => { setSelectedHost(null); setSplitView(false); }}>All</button>
-              <button className={`tab ${splitView ? 'active' : ''}`}
-                onClick={() => { setSelectedHost(null); setSplitView(!splitView); }}
-                title="Split view: one chart per server, stacked vertically"
-                style={{ display:'flex', alignItems:'center', gap:4 }}>
-                <svg width="10" height="10" viewBox="0 0 10 10" style={{ opacity: 0.7 }}>
-                  <rect x="0" y="0" width="10" height="4" rx="1" fill="currentColor" />
-                  <rect x="0" y="6" width="10" height="4" rx="1" fill="currentColor" />
-                </svg> Split
-              </button>
+              <span style={{ position: 'relative', display: 'inline-flex' }}>
+                <button className={`tab ${splitView ? 'active' : ''}`}
+                  onClick={() => { if (viewMode === '2d') { setSelectedHost(null); setSplitView(!splitView); } }}
+                  title={viewMode === '2d' ? 'Split view: one chart per server, stacked vertically' : undefined}
+                  style={{ display:'flex', alignItems:'center', gap:4, ...(viewMode !== '2d' ? { opacity: 0.35, cursor: 'not-allowed' } : {}) }}>
+                  <svg width="10" height="10" viewBox="0 0 10 10" style={{ opacity: 0.7 }}>
+                    <rect x="0" y="0" width="10" height="4" rx="1" fill="currentColor" />
+                    <rect x="0" y="6" width="10" height="4" rx="1" fill="currentColor" />
+                  </svg> Split
+                </button>
+                {viewMode !== '2d' && (
+                  <span className="split-3d-tooltip" style={{
+                    position: 'absolute', bottom: '100%', left: '50%', transform: 'translateX(-50%)',
+                    marginBottom: 6, padding: '6px 10px', borderRadius: 6, fontSize: 11, lineHeight: '1.4',
+                    whiteSpace: 'nowrap', pointerEvents: 'none', opacity: 0, transition: 'opacity 0.15s ease',
+                    background: 'var(--bg-tertiary)', color: 'var(--text-secondary)',
+                    border: '1px solid var(--border-secondary)', boxShadow: '0 4px 12px rgba(0,0,0,0.3)',
+                    zIndex: 50,
+                  }}>
+                    Split is not available in experimental 3D modes
+                  </span>
+                )}
+              </span>
               {clusterHosts.map(host => (
                 <button key={host} className={`tab ${selectedHost === host ? 'active' : ''}`} onClick={() => { setSelectedHost(host); setSplitView(false); }}>
                   <TruncatedHost name={host} />
@@ -647,7 +661,7 @@ export const TimeTravelPage: React.FC = () => {
               <>
                 <div style={{ width: 1, height: 20, background: 'var(--border-primary)', margin: '0 4px' }} />
                 {([['2d', '2D'], ['3d', '3D'], ['3d-surface', '3D Surface']] as const).map(([mode, label]) => (
-                  <button key={mode} onClick={() => setViewMode(mode)}
+                  <button key={mode} onClick={() => { setViewMode(mode); if (mode !== '2d') setSplitView(false); }}
                     style={{
                       position: 'relative',
                       background: viewMode === mode ? 'rgba(148,163,184,0.15)' : 'transparent',

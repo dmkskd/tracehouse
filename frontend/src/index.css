@@ -318,6 +318,11 @@ body {
   color: var(--text-primary);
 }
 
+/* Styled tooltip for disabled split button in 3D modes */
+span:has(> .split-3d-tooltip):hover > .split-3d-tooltip {
+  opacity: 1 !important;
+}
+
 .tab.active {
   background: var(--bg-primary);
   color: var(--text-primary);
