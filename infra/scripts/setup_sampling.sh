@@ -1,20 +1,26 @@
 #!/usr/bin/env bash
 #
-# Setup process sampling for tracehouse.
+# Setup continuous sampling for tracehouse.
 #
 # Auto-detects single-node vs cluster and generates the appropriate DDL:
-#   - Single node:  Atomic database, plain MergeTree (processes_history)
-#   - Cluster:      ON CLUSTER DDL, local table (processes_history_local),
-#                   Distributed table (processes_history) for cross-node queries
+#   - Single node:  Atomic database, plain MergeTree
+#   - Cluster:      ON CLUSTER DDL, local table + Distributed table
+#
+# Targets:
+#   --target processes   Only set up processes_history (system.processes sampling)
+#   --target merges      Only set up merges_history (system.merges sampling)
+#   --target all         Set up both (default)
 #
 # Usage:
-#   ./infra/scripts/setup_processes_sampling.sh                          # localhost:9000
-#   ./infra/scripts/setup_processes_sampling.sh --host my-ch-node        # custom host
-#   ./infra/scripts/setup_processes_sampling.sh --user admin --password secret
-#   ./infra/scripts/setup_processes_sampling.sh --cluster dev            # specify cluster for DDL
-#   ./infra/scripts/setup_processes_sampling.sh --cluster dev --distributed-cluster all-sharded
-#   ./infra/scripts/setup_processes_sampling.sh --interval 5             # sample every 5 seconds
-#   ./infra/scripts/setup_processes_sampling.sh --dry-run                # print SQL only
+#   ./infra/scripts/setup_sampling.sh                                  # both targets, localhost:9000
+#   ./infra/scripts/setup_sampling.sh --target processes               # processes only
+#   ./infra/scripts/setup_sampling.sh --target merges                  # merges only
+#   ./infra/scripts/setup_sampling.sh --host my-ch-node                # custom host
+#   ./infra/scripts/setup_sampling.sh --user admin --password secret
+#   ./infra/scripts/setup_sampling.sh --cluster dev                    # specify cluster for DDL
+#   ./infra/scripts/setup_sampling.sh --cluster dev --distributed-cluster all-sharded
+#   ./infra/scripts/setup_sampling.sh --interval 5                     # sample every 5 seconds
+#   ./infra/scripts/setup_sampling.sh --dry-run                        # print SQL only
 #
 set -euo pipefail
 
@@ -23,11 +29,11 @@ set -euo pipefail
 # ---------------------------------------------------------------------------
 usage() {
   cat <<'EOF'
-Usage: setup_processes_sampling.sh [OPTIONS]
+Usage: setup_sampling.sh [OPTIONS]
 
-Setup continuous process sampling for tracehouse. Creates a refreshable
-materialized view that snapshots system.processes every N seconds into
-a tracehouse.processes_history table.
+Setup continuous sampling for tracehouse. Creates refreshable materialized
+views that snapshot system.processes and/or system.merges every N seconds
+into tracehouse history tables.
 
 Auto-detects single-node vs cluster topology and generates appropriate DDL.
 
@@ -42,6 +48,7 @@ Cluster options:
   --distributed-cluster NAME  All-sharded cluster for Distributed table
 
 Sampling options:
+  --target TARGET          What to sample: processes, merges, or all (default: all)
   --interval N             Sampling interval in seconds (default: 1, minimum: 1)
   --ttl DAYS               Data retention in days (default: 7, 0 to disable)
 
@@ -51,13 +58,37 @@ Execution options:
   --help, -h               Show this help message
 
 Examples:
-  setup_processes_sampling.sh                                    # localhost, 1s interval
-  setup_processes_sampling.sh --host db1 --interval 5            # remote host, 5s interval
-  setup_processes_sampling.sh --cluster prod --yes               # cluster mode, no prompt
-  setup_processes_sampling.sh --dry-run                          # preview SQL only
+  setup_sampling.sh                                        # all targets, localhost, 1s interval
+  setup_sampling.sh --target processes                     # processes only
+  setup_sampling.sh --target merges --interval 5           # merges only, 5s interval
+  setup_sampling.sh --host db1 --interval 5                # remote host, 5s interval
+  setup_sampling.sh --cluster prod --yes                   # cluster mode, no prompt
+  setup_sampling.sh --dry-run                              # preview SQL only
 EOF
   exit 0
 }
+
+# ---------------------------------------------------------------------------
+# Cluster selection functions (tested via setup-sampling-script.integration.test.ts)
+# ---------------------------------------------------------------------------
+# Input: multi-line string, each line: cluster_name  nodes  shards  max_replica
+
+# Select a replicated cluster (shards < nodes, with actual replicas).
+# Accepts both multi-shard replicated and single-shard replicated topologies.
+select_replicated_cluster() {
+  echo "$1" | awk '$3 < $2 && ($3 > 1 || $4 > 1) {print $1; exit}'
+}
+
+# Select an all-sharded cluster (every node is its own shard, no replication).
+select_sharded_cluster() {
+  echo "$1" | awk '$3 == $2 {print $1; exit}'
+}
+
+# Allow sourcing just the functions (for tests) without running the main script.
+# Usage: SETUP_SAMPLING_SOURCE_ONLY=1 source setup_sampling.sh
+if [[ "${SETUP_SAMPLING_SOURCE_ONLY:-}" == "1" ]]; then
+  return 0 2>/dev/null || exit 0
+fi
 
 HOST="localhost"
 PORT="9000"
@@ -69,6 +100,7 @@ INTERVAL=1
 TTL_DAYS=7
 DRY_RUN=false
 ASSUME_YES=false
+TARGET="all"
 
 while [[ $# -gt 0 ]]; do
   case "$1" in
@@ -78,6 +110,7 @@ while [[ $# -gt 0 ]]; do
     --password)            PASSWORD="$2"; shift 2 ;;
     --cluster)             CLUSTER="$2"; shift 2 ;;
     --distributed-cluster) DIST_CLUSTER="$2"; shift 2 ;;
+    --target)              TARGET="$2"; shift 2 ;;
     --interval)            INTERVAL="$2"; shift 2 ;;
     --ttl)                 TTL_DAYS="$2"; shift 2 ;;
     --dry-run)             DRY_RUN=true; shift ;;
@@ -86,6 +119,12 @@ while [[ $# -gt 0 ]]; do
     *)                     echo "Unknown option: $1" >&2; echo "Run with --help for usage." >&2; exit 1 ;;
   esac
 done
+
+# Validate target
+case "$TARGET" in
+  processes|merges|all) ;;
+  *) echo "ERROR: --target must be 'processes', 'merges', or 'all'. Got: $TARGET" >&2; exit 1 ;;
+esac
 
 # Validate interval (must be a positive integer — ClickHouse REFRESH EVERY does not support sub-second)
 if ! [[ "$INTERVAL" =~ ^[0-9]+$ ]] || [[ "$INTERVAL" -lt 1 ]]; then
@@ -128,6 +167,10 @@ if $DRY_RUN; then
 else
   log() { echo "$@"; }
 fi
+
+# Convenience: should we set up processes / merges?
+setup_processes() { [[ "$TARGET" == "all" || "$TARGET" == "processes" ]]; }
+setup_merges()    { [[ "$TARGET" == "all" || "$TARGET" == "merges" ]]; }
 
 # ---------------------------------------------------------------------------
 # Detect environment
@@ -180,10 +223,8 @@ else
       printf "    %-20s %6s  %6s  %s\n" "$name" "$nodes" "$shards" "$topo"
     done
 
-    # Find a shards×replicas cluster (for --cluster / ON CLUSTER DDL)
-    MAIN_CLUSTER=$(echo "$CLUSTERS" | awk '$3 < $2 && $3 > 1 {print $1; exit}')
-    # Find an all-sharded cluster (for --distributed-cluster)
-    SHARDED_CLUSTER=$(echo "$CLUSTERS" | awk '$3 == $2 {print $1; exit}')
+    MAIN_CLUSTER=$(select_replicated_cluster "$CLUSTERS")
+    SHARDED_CLUSTER=$(select_sharded_cluster "$CLUSTERS")
 
     echo ""
     if [[ -n "$MAIN_CLUSTER" && -n "$SHARDED_CLUSTER" ]]; then
@@ -204,8 +245,6 @@ if [[ -z "$CLUSTER_NAME" ]]; then
   MODE="single"
   log "  Mode:    single-node"
   ON_CLUSTER=""
-  LOCAL_TABLE="processes_history"
-  BUFFER_TABLE="processes_history_buffer"
   DIST_CLUSTER_NAME=""
 else
   NODE_COUNT=$($CH --query "SELECT count() FROM system.clusters WHERE cluster = '$CLUSTER_NAME'")
@@ -214,10 +253,8 @@ else
   log "  Mode:    cluster"
   log "  Cluster: $CLUSTER_NAME ($NODE_COUNT nodes, $SHARD_COUNT shards)"
   ON_CLUSTER=" ON CLUSTER '$CLUSTER_NAME'"
-  LOCAL_TABLE="processes_history_local"
-  BUFFER_TABLE="processes_history_local_buffer"
 
-  # Each node produces unique samples from its local system.processes.
+  # Each node produces unique samples from its local system tables.
   # The Distributed table must treat every node as a separate shard,
   # otherwise replicas within a shard are only sampled randomly (1 of N).
   HAS_REPLICAS=$($CH --query "
@@ -267,12 +304,26 @@ fi
 
 log ""
 
+# Table name helpers (local vs cluster naming)
+proc_local_table() {
+  if [[ "$MODE" == "single" ]]; then echo "processes_history"; else echo "processes_history_local"; fi
+}
+proc_buffer_table() {
+  if [[ "$MODE" == "single" ]]; then echo "processes_history_buffer"; else echo "processes_history_local_buffer"; fi
+}
+merge_local_table() {
+  if [[ "$MODE" == "single" ]]; then echo "merges_history"; else echo "merges_history_local"; fi
+}
+merge_buffer_table() {
+  if [[ "$MODE" == "single" ]]; then echo "merges_history_buffer"; else echo "merges_history_local_buffer"; fi
+}
+
 # ---------------------------------------------------------------------------
 # Confirmation prompt
 # ---------------------------------------------------------------------------
 if ! $DRY_RUN && ! $ASSUME_YES && [[ -t 0 ]]; then
   echo "============================================================"
-  echo "Ready to execute DDL ($MODE mode, sampling every ${INTERVAL}s)"
+  echo "Ready to execute DDL ($MODE mode, target=$TARGET, sampling every ${INTERVAL}s)"
   echo "============================================================"
   echo ""
   echo "  Host:     $HOST:$PORT"
@@ -280,16 +331,27 @@ if ! $DRY_RUN && ! $ASSUME_YES && [[ -t 0 ]]; then
     echo "  Cluster:  $CLUSTER_NAME ($NODE_COUNT nodes, $SHARD_COUNT shards)"
     [[ "$DIST_CLUSTER_NAME" != "$CLUSTER_NAME" ]] && echo "  Distributed cluster: $DIST_CLUSTER_NAME"
   fi
+  echo "  Target:   $TARGET"
   echo "  Interval: every ${INTERVAL}s"
   echo "  TTL:      $TTL_DISPLAY"
   echo "  Database: tracehouse"
   echo ""
   echo "  Tables:"
-  echo "    tracehouse.$LOCAL_TABLE          (MergeTree, $TTL_DISPLAY)"
-  echo "    tracehouse.$BUFFER_TABLE         (Buffer → $LOCAL_TABLE)"
-  echo "    tracehouse.processes_sampler     (Refreshable MV, every ${INTERVAL}s)"
-  if [[ "$MODE" == "cluster" && -n "$DIST_CLUSTER_NAME" ]]; then
-    echo "    tracehouse.processes_history     (Distributed → $LOCAL_TABLE)"
+  if setup_processes; then
+    echo "    tracehouse.$(proc_local_table)          (MergeTree, $TTL_DISPLAY)"
+    echo "    tracehouse.$(proc_buffer_table)         (Buffer)"
+    echo "    tracehouse.processes_sampler            (Refreshable MV, every ${INTERVAL}s)"
+    if [[ "$MODE" == "cluster" && -n "$DIST_CLUSTER_NAME" ]]; then
+      echo "    tracehouse.processes_history            (Distributed)"
+    fi
+  fi
+  if setup_merges; then
+    echo "    tracehouse.$(merge_local_table)            (MergeTree, $TTL_DISPLAY)"
+    echo "    tracehouse.$(merge_buffer_table)           (Buffer)"
+    echo "    tracehouse.merges_sampler                 (Refreshable MV, every ${INTERVAL}s)"
+    if [[ "$MODE" == "cluster" && -n "$DIST_CLUSTER_NAME" ]]; then
+      echo "    tracehouse.merges_history                 (Distributed)"
+    fi
   fi
   echo ""
   printf "Proceed? [y/N] "
@@ -302,7 +364,7 @@ if ! $DRY_RUN && ! $ASSUME_YES && [[ -t 0 ]]; then
 fi
 
 log "============================================================"
-log "Generating DDL ($MODE mode, sampling every ${INTERVAL}s)..."
+log "Generating DDL ($MODE mode, target=$TARGET, sampling every ${INTERVAL}s)..."
 log "============================================================"
 log ""
 
@@ -311,10 +373,21 @@ log ""
 # ---------------------------------------------------------------------------
 run_query "CREATE DATABASE IF NOT EXISTS tracehouse$ON_CLUSTER ENGINE = Atomic"
 
-# ---------------------------------------------------------------------------
-# Target table (MergeTree, local per node)
-# ---------------------------------------------------------------------------
-run_query "CREATE TABLE IF NOT EXISTS tracehouse.$LOCAL_TABLE$ON_CLUSTER
+# Buffer flush timing (shared by both targets)
+BUF_MIN_TIME=$(( INTERVAL * 15 < 15 ? 15 : INTERVAL * 15 ))
+BUF_MAX_TIME=$(( BUF_MIN_TIME * 2 ))
+
+# ===========================================================================
+# PROCESSES sampling
+# ===========================================================================
+if setup_processes; then
+  PROC_LOCAL=$(proc_local_table)
+  PROC_BUFFER=$(proc_buffer_table)
+
+  log "--- Setting up processes_history ---"
+
+  # Target table (MergeTree, local per node)
+  run_query "CREATE TABLE IF NOT EXISTS tracehouse.$PROC_LOCAL$ON_CLUSTER
 (
     -- sampling metadata
     hostname            LowCardinality(String) DEFAULT hostName(),
@@ -363,35 +436,22 @@ ORDER BY (query_id, sample_time)
 ${TTL_CLAUSE:+$TTL_CLAUSE
 }SETTINGS index_granularity = 8192"
 
-# ---------------------------------------------------------------------------
-# Buffer table
-# ---------------------------------------------------------------------------
-# Buffer tables are always node-local (not replicated), but ON CLUSTER
-# ensures the DDL runs on every node.
-# Scale buffer flush timing with sampling interval:
-# min_time = max(15, interval * 15), max_time = min_time * 2
-BUF_MIN_TIME=$(( INTERVAL * 15 < 15 ? 15 : INTERVAL * 15 ))
-BUF_MAX_TIME=$(( BUF_MIN_TIME * 2 ))
-
-run_query "CREATE TABLE IF NOT EXISTS tracehouse.$BUFFER_TABLE$ON_CLUSTER
-    AS tracehouse.$LOCAL_TABLE
+  # Buffer table
+  run_query "CREATE TABLE IF NOT EXISTS tracehouse.$PROC_BUFFER$ON_CLUSTER
+    AS tracehouse.$PROC_LOCAL
 ENGINE = Buffer(
-    'tracehouse', '$LOCAL_TABLE',
+    'tracehouse', '$PROC_LOCAL',
     1,            -- num_layers
     $BUF_MIN_TIME, $BUF_MAX_TIME, -- min/max seconds before flush
     100, 10000,   -- min/max rows before flush
     10000, 1000000 -- min/max bytes before flush
 )"
 
-# ---------------------------------------------------------------------------
-# Refreshable materialized view
-# ---------------------------------------------------------------------------
-# APPEND is required on replicated databases. Each node's MV reads its own
-# local system.processes — no cross-node traffic.
-run_query "CREATE MATERIALIZED VIEW IF NOT EXISTS tracehouse.processes_sampler$ON_CLUSTER
+  # Refreshable materialized view
+  run_query "CREATE MATERIALIZED VIEW IF NOT EXISTS tracehouse.processes_sampler$ON_CLUSTER
 REFRESH EVERY $INTERVAL SECOND
 APPEND
-TO tracehouse.$BUFFER_TABLE
+TO tracehouse.$PROC_BUFFER
 AS
 SELECT
     hostName()          AS hostname,
@@ -431,17 +491,131 @@ SELECT
     Settings
 FROM system.processes
 WHERE is_initial_query = 1
-  AND query NOT LIKE '%processes_history%'"
+  AND query NOT LIKE '%processes_history%'
+  AND query NOT LIKE '%merges_history%'"
 
-# ---------------------------------------------------------------------------
-# Distributed table (cluster only)
-# ---------------------------------------------------------------------------
-if [[ "$MODE" == "cluster" && -n "$DIST_CLUSTER_NAME" ]]; then
-  run_query "CREATE TABLE IF NOT EXISTS tracehouse.processes_history$ON_CLUSTER
-    AS tracehouse.$LOCAL_TABLE
-ENGINE = Distributed('$DIST_CLUSTER_NAME', 'tracehouse', '$LOCAL_TABLE', rand())"
+  # Distributed table (cluster only)
+  if [[ "$MODE" == "cluster" && -n "$DIST_CLUSTER_NAME" ]]; then
+    run_query "CREATE TABLE IF NOT EXISTS tracehouse.processes_history$ON_CLUSTER
+    AS tracehouse.$PROC_LOCAL
+ENGINE = Distributed('$DIST_CLUSTER_NAME', 'tracehouse', '$PROC_LOCAL', rand())"
+  fi
+
+  log ""
 fi
 
+# ===========================================================================
+# MERGES sampling
+# ===========================================================================
+if setup_merges; then
+  MERGE_LOCAL=$(merge_local_table)
+  MERGE_BUFFER=$(merge_buffer_table)
+
+  log "--- Setting up merges_history ---"
+
+  # Target table (MergeTree, local per node)
+  run_query "CREATE TABLE IF NOT EXISTS tracehouse.$MERGE_LOCAL$ON_CLUSTER
+(
+    -- sampling metadata
+    hostname            LowCardinality(String) DEFAULT hostName(),
+    sample_time         DateTime64(3) DEFAULT now64(3),
+
+    -- merge identity
+    database            LowCardinality(String),
+    table               LowCardinality(String),
+    result_part_name    String,
+    partition_id        LowCardinality(String),
+
+    -- merge properties
+    elapsed             Float64,
+    progress            Float64,
+    num_parts           UInt64,
+    is_mutation         UInt8,
+    merge_type          LowCardinality(String),
+    merge_algorithm     LowCardinality(String),
+
+    -- size
+    total_size_bytes_compressed   UInt64,
+    total_size_bytes_uncompressed UInt64,
+    total_size_marks              UInt64,
+
+    -- I/O progress
+    rows_read                     UInt64,
+    bytes_read_uncompressed       UInt64,
+    rows_written                  UInt64,
+    bytes_written_uncompressed    UInt64,
+    columns_written               UInt64,
+
+    -- resources
+    memory_usage        UInt64,
+    thread_id           UInt64
+)
+ENGINE = MergeTree
+ORDER BY (database, table, result_part_name, sample_time)
+${TTL_CLAUSE:+$TTL_CLAUSE
+}SETTINGS index_granularity = 8192"
+
+  # Buffer table
+  run_query "CREATE TABLE IF NOT EXISTS tracehouse.$MERGE_BUFFER$ON_CLUSTER
+    AS tracehouse.$MERGE_LOCAL
+ENGINE = Buffer(
+    'tracehouse', '$MERGE_LOCAL',
+    1,            -- num_layers
+    $BUF_MIN_TIME, $BUF_MAX_TIME, -- min/max seconds before flush
+    100, 10000,   -- min/max rows before flush
+    10000, 1000000 -- min/max bytes before flush
+)"
+
+  # Refreshable materialized view
+  # Each node's MV reads its own local system.merges — no cross-node traffic.
+  run_query "CREATE MATERIALIZED VIEW IF NOT EXISTS tracehouse.merges_sampler$ON_CLUSTER
+REFRESH EVERY $INTERVAL SECOND
+APPEND
+TO tracehouse.$MERGE_BUFFER
+AS
+SELECT
+    hostName()          AS hostname,
+    now64(3)            AS sample_time,
+
+    database,
+    table,
+    result_part_name,
+    partition_id,
+
+    elapsed,
+    progress,
+    num_parts,
+    is_mutation,
+    merge_type,
+    merge_algorithm,
+
+    total_size_bytes_compressed,
+    total_size_bytes_uncompressed,
+    total_size_marks,
+
+    rows_read,
+    bytes_read_uncompressed,
+    rows_written,
+    bytes_written_uncompressed,
+    columns_written,
+
+    memory_usage,
+    thread_id
+FROM system.merges"
+
+  # Distributed table (cluster only)
+  if [[ "$MODE" == "cluster" && -n "$DIST_CLUSTER_NAME" ]]; then
+    run_query "CREATE TABLE IF NOT EXISTS tracehouse.merges_history$ON_CLUSTER
+    AS tracehouse.$MERGE_LOCAL
+ENGINE = Distributed('$DIST_CLUSTER_NAME', 'tracehouse', '$MERGE_LOCAL', rand())"
+  fi
+
+  log ""
+fi
+
+# ---------------------------------------------------------------------------
+# Summary
+# ---------------------------------------------------------------------------
 log ""
 log "============================================================"
 if $DRY_RUN; then
@@ -494,14 +668,30 @@ else
   echo ""
   echo "--- Live sample (waiting 3s for data) ---"
   sleep 3
-  $CH --query "
-    SELECT
-      hostname,
-      count() AS samples,
-      min(sample_time) AS first_sample,
-      max(sample_time) AS last_sample
-    FROM tracehouse.processes_history
-    GROUP BY hostname
-    ORDER BY hostname
-  "
+  if setup_processes; then
+    $CH --query "
+      SELECT
+        'processes' AS target,
+        hostname,
+        count() AS samples,
+        min(sample_time) AS first_sample,
+        max(sample_time) AS last_sample
+      FROM tracehouse.processes_history
+      GROUP BY hostname
+      ORDER BY hostname
+    "
+  fi
+  if setup_merges; then
+    $CH --query "
+      SELECT
+        'merges' AS target,
+        hostname,
+        count() AS samples,
+        min(sample_time) AS first_sample,
+        max(sample_time) AS last_sample
+      FROM tracehouse.merges_history
+      GROUP BY hostname
+      ORDER BY hostname
+    "
+  fi
 fi

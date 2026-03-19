@@ -352,3 +352,96 @@ describe('setup_sampling.sh script integration', () => {
     });
   });
 });
+
+// ---------------------------------------------------------------------------
+// Cluster detection function tests (pure bash, no ClickHouse needed)
+// ---------------------------------------------------------------------------
+
+describe('cluster detection functions', () => {
+  /**
+   * Source setup_sampling.sh in function-only mode and call a cluster
+   * selection function with the given input.
+   */
+  function callBashFn(fnName: string, input: string): string {
+    const cmd = `SETUP_SAMPLING_SOURCE_ONLY=1 source "${SCRIPT_PATH}" && echo "$(${fnName} "${input}")"`;
+    return execSync(`bash -c '${cmd}'`, { encoding: 'utf-8' }).trim();
+  }
+
+  // --- Typical 3-shard × 2-replica + all-sharded ---
+  describe('typical topology (3s×2r + all-sharded)', () => {
+    const clusters = 'mycluster\t6\t3\t2\nall-sharded\t6\t6\t1';
+
+    it('selects replicated cluster', () => {
+      expect(callBashFn('select_replicated_cluster', clusters)).toBe('mycluster');
+    });
+
+    it('selects sharded cluster', () => {
+      expect(callBashFn('select_sharded_cluster', clusters)).toBe('all-sharded');
+    });
+  });
+
+  // --- Altinity topology (all 2-node) ---
+  describe('Altinity topology (all-replicated 1s×2r + all-sharded 2s×1r)', () => {
+    const clusters = 'dev\t2\t2\t1\nall-sharded\t2\t2\t1\nall-clusters\t2\t2\t1\nall-replicated\t2\t1\t2';
+
+    it('selects replicated cluster', () => {
+      expect(callBashFn('select_replicated_cluster', clusters)).toBe('all-replicated');
+    });
+
+    it('selects sharded cluster', () => {
+      expect(callBashFn('select_sharded_cluster', clusters)).toBe('dev');
+    });
+  });
+
+  // --- Single replicated cluster (1 shard, 3 replicas) ---
+  describe('single replicated cluster (1s×3r)', () => {
+    const clusters = 'prod\t3\t1\t3';
+
+    it('selects replicated cluster', () => {
+      expect(callBashFn('select_replicated_cluster', clusters)).toBe('prod');
+    });
+
+    it('returns empty for sharded cluster', () => {
+      expect(callBashFn('select_sharded_cluster', clusters)).toBe('');
+    });
+  });
+
+  // --- Single all-sharded cluster ---
+  describe('single all-sharded cluster (3s×1r)', () => {
+    const clusters = 'shards\t3\t3\t1';
+
+    it('returns empty for replicated cluster', () => {
+      expect(callBashFn('select_replicated_cluster', clusters)).toBe('');
+    });
+
+    it('selects sharded cluster', () => {
+      expect(callBashFn('select_sharded_cluster', clusters)).toBe('shards');
+    });
+  });
+
+  // --- Mixed large topology ---
+  describe('mixed topology (2s×3r preferred over 6s×1r)', () => {
+    const clusters = 'big-sharded\t6\t6\t1\nreplicated\t6\t2\t3\nsmall\t2\t2\t1';
+
+    it('selects replicated cluster', () => {
+      expect(callBashFn('select_replicated_cluster', clusters)).toBe('replicated');
+    });
+
+    it('selects sharded cluster', () => {
+      expect(callBashFn('select_sharded_cluster', clusters)).toBe('big-sharded');
+    });
+  });
+
+  // --- Only all-sharded clusters (no replicated) ---
+  describe('only all-sharded clusters', () => {
+    const clusters = 'a\t4\t4\t1\nb\t2\t2\t1';
+
+    it('returns empty for replicated cluster', () => {
+      expect(callBashFn('select_replicated_cluster', clusters)).toBe('');
+    });
+
+    it('selects first sharded cluster', () => {
+      expect(callBashFn('select_sharded_cluster', clusters)).toBe('a');
+    });
+  });
+});
