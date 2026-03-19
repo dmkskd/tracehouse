@@ -15,6 +15,7 @@ import { QueryExplorer } from '../components/analytics/QueryExplorer';
 import { DashboardViewer } from '../components/analytics/DashboardViewer';
 import { StressSurface } from '../components/analytics/StressSurface';
 import { PatternSurface } from '../components/analytics/PatternSurface';
+import { TimeRangePicker } from '../components/analytics/TimeRangePicker';
 import { loadDashboards } from '../components/analytics/dashboards';
 import { useAnalyticsUrlState } from '../hooks/useUrlState';
 import { useNavigate } from '../hooks/useAppLocation';
@@ -80,7 +81,7 @@ export const Analytics: React.FC = () => {
   const [surfaceSubTab, setSurfaceSubTab] = useState<SurfaceSubTab>('stress');
   const [surfaceDb, setSurfaceDb] = useState<string>('');
   const [surfaceTableName, setSurfaceTableName] = useState<string>('');
-  const [surfaceHours, setSurfaceHours] = useState(24);
+  const [surfaceTimeRange, setSurfaceTimeRange] = useState<string | null>('1 DAY');
   const [stressData, setStressData] = useState<StressSurfaceData | null>(null);
   const [patternData, setPatternData] = useState<PatternSurfaceRow[] | null>(null);
   const [surfaceLoading, setSurfaceLoading] = useState(false);
@@ -132,12 +133,25 @@ export const Analytics: React.FC = () => {
   }, [services, isConnected, lookbackDays, clusterDetected]);
 
   const fetchSurfaceData = useCallback(async () => {
-    if (!services || !surfaceDb || !surfaceTableName) return;
+    if (!services || !surfaceDb || !surfaceTableName || !surfaceTimeRange) return;
 
     setSurfaceLoading(true);
     setSurfaceError(null);
     try {
-      const opts = { database: surfaceDb, table: surfaceTableName, hours: surfaceHours };
+      // Convert TimeRangePicker value to SurfaceQueryOptions
+      let timeOpts: { hours?: number; startTime?: string; endTime?: string };
+      if (surfaceTimeRange.startsWith('CUSTOM:')) {
+        const [startTime, endTime] = surfaceTimeRange.slice(7).split(',');
+        timeOpts = { startTime, endTime };
+      } else {
+        // Map ClickHouse interval string to hours
+        const INTERVAL_HOURS: Record<string, number> = {
+          '15 MINUTE': 0.25, '1 HOUR': 1, '6 HOUR': 6,
+          '1 DAY': 24, '2 DAY': 48, '7 DAY': 168, '30 DAY': 720,
+        };
+        timeOpts = { hours: INTERVAL_HOURS[surfaceTimeRange] ?? 24 };
+      }
+      const opts = { database: surfaceDb, table: surfaceTableName, ...timeOpts };
       const [stress, pattern] = await Promise.all([
         services.analyticsService.getStressSurfaceData(opts),
         services.analyticsService.getPatternSurfaceData(opts),
@@ -149,7 +163,7 @@ export const Analytics: React.FC = () => {
     } finally {
       setSurfaceLoading(false);
     }
-  }, [services, surfaceDb, surfaceTableName, surfaceHours]);
+  }, [services, surfaceDb, surfaceTableName, surfaceTimeRange]);
 
   // Open QueryDetailModal for a pattern hash — fetch the most recent query for that hash
   const handleOpenPatternQuery = useCallback(async (hash: string) => {
@@ -550,16 +564,8 @@ export const Analytics: React.FC = () => {
                 </select>
               </div>
 
-              {/* Hours selector */}
-              <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
-                <span style={{ fontSize: 11, color: 'var(--text-muted)' }}>Window:</span>
-                {[1, 6, 24].map(h => (
-                  <button key={h} onClick={() => setSurfaceHours(h)}
-                    style={btnStyle(surfaceHours === h)}>
-                    {h}h
-                  </button>
-                ))}
-              </div>
+              {/* Time range picker */}
+              <TimeRangePicker value={surfaceTimeRange} onChange={setSurfaceTimeRange} />
 
             </div>
 

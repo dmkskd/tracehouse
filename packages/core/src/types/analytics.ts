@@ -169,7 +169,12 @@ export interface PatternSurfaceRow {
 export interface SurfaceQueryOptions {
   database: string;
   table: string;
+  /** Lookback window in hours (ignored when startTime/endTime are set) */
   hours?: number;
+  /** Absolute start time (ISO string, e.g. '2026-03-18T09:00') */
+  startTime?: string;
+  /** Absolute end time (ISO string, e.g. '2026-03-19T09:00') */
+  endTime?: string;
 }
 
 /** Parsed result of EXPLAIN indexes = 1 for a query */

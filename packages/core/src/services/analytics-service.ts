@@ -8,7 +8,7 @@
 import type { IClickHouseAdapter } from '../adapters/types.js';
 import type { TableOrderingKeyEfficiency, OrderingKeyEfficiencyOptions, TableQueryPattern, ExplainIndexesResult, StressSurfaceData, StressSurfaceRow, StressSurfaceInsertRow, StressSurfaceMergeRow, PatternSurfaceRow, SurfaceQueryOptions } from '../types/analytics.js';
 import { TABLE_ORDERING_KEY_EFFICIENCY, TABLE_QUERY_PATTERNS } from '../queries/analytics-queries.js';
-import { STRESS_SURFACE_QUERIES, STRESS_SURFACE_INSERTS, STRESS_SURFACE_MERGES, PATTERN_SURFACE } from '../queries/surface-queries.js';
+import { stressSurfaceQueries, stressSurfaceInserts, stressSurfaceMerges, patternSurface, buildSurfaceTimeFilter } from '../queries/surface-queries.js';
 import { buildQuery, tagQuery } from '../queries/builder.js';
 import { TAB_ANALYTICS, sourceTag } from '../queries/source-tags.js';
 import { parseExplainIndexesJson } from './explain-parser.js';
@@ -181,20 +181,21 @@ export class AnalyticsService {
    * insert activity, and merge activity.
    */
   async getStressSurfaceData(options: SurfaceQueryOptions): Promise<StressSurfaceData> {
-    const { database, table, hours = 24 } = options;
-    const params = { database, table_name: table, hours };
+    const { database, table } = options;
+    const tf = buildSurfaceTimeFilter('event_time', options);
+    const params = { database, table_name: table, ...tf.params };
     const fullTable = `${database}.${table}`;
 
     try {
       const [queries, inserts, merges] = await Promise.all([
         this.adapter.executeQuery<Record<string, unknown>>(
-          tagQuery(buildQuery(STRESS_SURFACE_QUERIES, params), sourceTag(TAB_ANALYTICS, 'stressSurface')),
+          tagQuery(buildQuery(stressSurfaceQueries(tf.clause), params), sourceTag(TAB_ANALYTICS, 'stressSurface')),
         ),
         this.adapter.executeQuery<Record<string, unknown>>(
-          tagQuery(buildQuery(STRESS_SURFACE_INSERTS, params), sourceTag(TAB_ANALYTICS, 'stressSurfaceInserts')),
+          tagQuery(buildQuery(stressSurfaceInserts(tf.clause), params), sourceTag(TAB_ANALYTICS, 'stressSurfaceInserts')),
         ),
         this.adapter.executeQuery<Record<string, unknown>>(
-          tagQuery(buildQuery(STRESS_SURFACE_MERGES, params), sourceTag(TAB_ANALYTICS, 'stressSurfaceMerges')),
+          tagQuery(buildQuery(stressSurfaceMerges(tf.clause), params), sourceTag(TAB_ANALYTICS, 'stressSurfaceMerges')),
         ).catch(() => [] as Record<string, unknown>[]), // part_log may not exist
       ]);
 
@@ -237,12 +238,13 @@ export class AnalyticsService {
    * for the top 12 most frequent patterns hitting a table.
    */
   async getPatternSurfaceData(options: SurfaceQueryOptions): Promise<PatternSurfaceRow[]> {
-    const { database, table, hours = 24 } = options;
-    const params = { database, table_name: table, hours };
+    const { database, table } = options;
+    const tf = buildSurfaceTimeFilter('event_time', options);
+    const params = { database, table_name: table, ...tf.params };
 
     try {
       const rows = await this.adapter.executeQuery<Record<string, unknown>>(
-        tagQuery(buildQuery(PATTERN_SURFACE, params), sourceTag(TAB_ANALYTICS, 'patternSurface')),
+        tagQuery(buildQuery(patternSurface(tf.clause), params), sourceTag(TAB_ANALYTICS, 'patternSurface')),
       );
 
       return rows.map((r): PatternSurfaceRow => ({

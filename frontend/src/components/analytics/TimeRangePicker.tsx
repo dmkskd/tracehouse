@@ -8,7 +8,7 @@
  * MergeTracker and other views (subtle bg swap, no accent colours).
  */
 
-import React, { useState, useRef, useCallback, useMemo } from 'react';
+import React, { useState, useRef, useCallback, useMemo, useEffect } from 'react';
 import { TIME_RANGE_OPTIONS } from './templateResolution';
 
 interface Props {
@@ -26,11 +26,35 @@ const SLIDER_ZOOMS = [
   { label: '30d', ms: 30 * 86400000 },
 ];
 
+/** Map ClickHouse interval strings to milliseconds */
+const INTERVAL_TO_MS: Record<string, number> = {
+  '15 MINUTE': 15 * 60000,
+  '1 HOUR':    3600000,
+  '6 HOUR':    6 * 3600000,
+  '1 DAY':     86400000,
+  '2 DAY':     2 * 86400000,
+  '7 DAY':     7 * 86400000,
+  '30 DAY':    30 * 86400000,
+};
+
 export const TimeRangePicker: React.FC<Props> = ({ value, onChange }) => {
   const [showCustom, setShowCustom] = useState(false);
   const [customStart, setCustomStart] = useState('');
   const [customEnd, setCustomEnd] = useState('');
   const [sliderZoomMs, setSliderZoomMs] = useState(SLIDER_ZOOMS[3].ms); // default 1d
+  const popoverRef = useRef<HTMLDivElement>(null);
+
+  // Close on click-outside or Escape
+  useEffect(() => {
+    if (!showCustom) return;
+    const onKey = (e: KeyboardEvent) => { if (e.key === 'Escape') setShowCustom(false); };
+    const onClick = (e: MouseEvent) => {
+      if (popoverRef.current && !popoverRef.current.contains(e.target as Node)) setShowCustom(false);
+    };
+    document.addEventListener('keydown', onKey);
+    document.addEventListener('mousedown', onClick);
+    return () => { document.removeEventListener('keydown', onKey); document.removeEventListener('mousedown', onClick); };
+  }, [showCustom]);
 
   const isCustomActive = value?.startsWith('CUSTOM:') ?? false;
   const isPresetActive = (interval: string) => value === interval;
@@ -51,10 +75,13 @@ export const TimeRangePicker: React.FC<Props> = ({ value, onChange }) => {
         setCustomStart(parts[0]);
         setCustomEnd(parts[1]);
       } else {
+        const presetMs = value ? (INTERVAL_TO_MS[value] ?? 86400000) : 86400000;
         const now = new Date();
-        const dayAgo = new Date(now.getTime() - 86400000);
         setCustomEnd(toLocalISOString(now));
-        setCustomStart(toLocalISOString(dayAgo));
+        setCustomStart(toLocalISOString(new Date(now.getTime() - presetMs)));
+        // Match slider zoom to preset (pick same or next-larger zoom)
+        const zoom = SLIDER_ZOOMS.find(z => z.ms >= presetMs) ?? SLIDER_ZOOMS[SLIDER_ZOOMS.length - 1];
+        setSliderZoomMs(zoom.ms);
       }
     }
   };
@@ -121,7 +148,7 @@ export const TimeRangePicker: React.FC<Props> = ({ value, onChange }) => {
 
       {/* Custom range popover */}
       {showCustom && (
-        <div style={{
+        <div ref={popoverRef} style={{
           position: 'absolute', top: 'calc(100% + 6px)', right: 0, zIndex: 100,
           background: 'var(--bg-secondary)', border: '1px solid var(--border-primary)',
           borderRadius: 8, padding: '10px 12px', boxShadow: '0 4px 16px rgba(0,0,0,0.25)',
@@ -196,7 +223,7 @@ interface RangeSliderProps {
 
 const RangeSlider: React.FC<RangeSliderProps> = ({ rangeMs, start, end, onStartChange, onEndChange }) => {
   const trackRef = useRef<HTMLDivElement>(null);
-  const dragging = useRef<'start' | 'end' | null>(null);
+  const dragging = useRef<'start' | 'end' | 'range' | null>(null);
 
   const rangeEnd = Date.now();
   const rangeStart = rangeEnd - rangeMs;
@@ -221,9 +248,13 @@ const RangeSlider: React.FC<RangeSliderProps> = ({ rangeMs, start, end, onStartC
   const startFrac = toFrac(start);
   const endFrac = toFrac(end);
 
+  const setCursor = (cursor: string) => { document.body.style.cursor = cursor; };
+  const clearCursor = () => { document.body.style.cursor = ''; };
+
   const onMouseDown = (which: 'start' | 'end') => (e: React.MouseEvent) => {
     e.preventDefault();
     dragging.current = which;
+    setCursor('ew-resize');
     const onMove = (ev: MouseEvent) => {
       const f = fracFromEvent(ev);
       if (dragging.current === 'start') {
@@ -234,6 +265,33 @@ const RangeSlider: React.FC<RangeSliderProps> = ({ rangeMs, start, end, onStartC
     };
     const onUp = () => {
       dragging.current = null;
+      clearCursor();
+      window.removeEventListener('mousemove', onMove);
+      window.removeEventListener('mouseup', onUp);
+    };
+    window.addEventListener('mousemove', onMove);
+    window.addEventListener('mouseup', onUp);
+  };
+
+  // Drag the entire selected range bar
+  const onRangeMouseDown = (e: React.MouseEvent) => {
+    e.preventDefault();
+    e.stopPropagation();
+    dragging.current = 'range';
+    setCursor('grabbing');
+    const span = endFrac - startFrac;
+    const grabOffset = fracFromEvent(e) - startFrac;
+    const onMove = (ev: MouseEvent) => {
+      const f = fracFromEvent(ev);
+      let newStart = f - grabOffset;
+      // Clamp so the whole range stays within [0, 1]
+      newStart = Math.max(0, Math.min(1 - span, newStart));
+      onStartChange(toIso(newStart));
+      onEndChange(toIso(newStart + span));
+    };
+    const onUp = () => {
+      dragging.current = null;
+      clearCursor();
       window.removeEventListener('mousemove', onMove);
       window.removeEventListener('mouseup', onUp);
     };
@@ -336,13 +394,14 @@ const RangeSlider: React.FC<RangeSliderProps> = ({ rangeMs, start, end, onStartC
           left: 0, right: 0, height: TRACK_HEIGHT, borderRadius: TRACK_HEIGHT / 2,
           background: 'var(--bg-card)', opacity: 0.5,
         }} />
-        {/* Selected range bar — bright & highlighted */}
-        <div style={{
+        {/* Selected range bar — bright & highlighted, draggable */}
+        <div onMouseDown={onRangeMouseDown} style={{
           position: 'absolute', top: trackY - 1,
           left: `${startFrac * 100}%`, width: `${(endFrac - startFrac) * 100}%`,
           height: TRACK_HEIGHT + 2, borderRadius: (TRACK_HEIGHT + 2) / 2,
           background: 'rgba(99, 102, 241, 0.85)',
           boxShadow: '0 0 6px rgba(99, 102, 241, 0.5)',
+          cursor: 'grab', zIndex: 1,
         }} />
         {/* Start handle */}
         <div onMouseDown={onMouseDown('start')} style={{
@@ -350,7 +409,7 @@ const RangeSlider: React.FC<RangeSliderProps> = ({ rangeMs, start, end, onStartC
           left: `${startFrac * 100}%`, marginLeft: -HANDLE_SIZE / 2,
           width: HANDLE_SIZE, height: HANDLE_SIZE, borderRadius: '50%',
           background: '#e0e0ff', border: '2px solid rgba(99, 102, 241, 0.9)',
-          cursor: 'grab', zIndex: 2,
+          cursor: 'ew-resize', zIndex: 2,
           boxShadow: '0 0 4px rgba(99, 102, 241, 0.4)',
         }} />
         {/* End handle */}
@@ -359,7 +418,7 @@ const RangeSlider: React.FC<RangeSliderProps> = ({ rangeMs, start, end, onStartC
           left: `${endFrac * 100}%`, marginLeft: -HANDLE_SIZE / 2,
           width: HANDLE_SIZE, height: HANDLE_SIZE, borderRadius: '50%',
           background: '#e0e0ff', border: '2px solid rgba(99, 102, 241, 0.9)',
-          cursor: 'grab', zIndex: 2,
+          cursor: 'ew-resize', zIndex: 2,
           boxShadow: '0 0 4px rgba(99, 102, 241, 0.4)',
         }} />
       </div>
