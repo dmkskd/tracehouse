@@ -12,6 +12,7 @@ import type { ExplainResult, TraceLog } from '../../stores/traceStore';
 import type { PipelineNode } from './PipelineVisualization';
 import { parsePipelineOutput } from './PipelineVisualization';
 import { formatBytes, formatNumber, formatDuration } from '../../utils/formatters';
+import { classifyActiveMerge, getMergeCategoryInfo } from '@tracehouse/core';
 
 // Parts Fallback 2D Component
 
@@ -489,7 +490,7 @@ export const MergeFallback2D: React.FC<MergeFallback2DProps> = ({
           <tbody>
             {merges.map((merge, index) => {
               const isSelected = selectedMerge === index;
-              const typeLabel = merge.is_mutation ? 'Mutation' : merge.merge_type || 'Regular';
+              const typeLabel = getMergeCategoryInfo(classifyActiveMerge(merge.merge_type, merge.is_mutation, merge.result_part_name)).label;
               
               return (
                 <React.Fragment key={index}>

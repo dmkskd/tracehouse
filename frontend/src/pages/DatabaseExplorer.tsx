@@ -24,6 +24,7 @@ import {
   HierarchyVisualization2D,
 } from '../components/3d';
 import { extractErrorMessage } from '../utils/errorFormatters';
+import { classifyActiveMerge, getMergeCategoryInfo } from '@tracehouse/core';
 import { useCapabilityCheck } from '../components/shared/RequiresCapability';
 import { PermissionGate } from '../components/shared/PermissionGate';
 import { 
@@ -652,7 +653,7 @@ const MergeInfoCardCompact: React.FC<MergeInfoCardCompactProps> = ({ merge, comp
                 className="text-[10px] font-semibold uppercase tracking-wide"
                 style={{ color: mergeColor.light }}
               >
-                {merge.merge_type} {merge.is_mutation ? '(Mutation)' : ''}
+                {getMergeCategoryInfo(classifyActiveMerge(merge.merge_type, merge.is_mutation, merge.result_part_name)).label}
               </span>
               {/* Small status indicator */}
               {completed ? (

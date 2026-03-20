@@ -364,6 +364,25 @@ describe('merge history enrichment integration', () => {
     it('unknown merge_reason falls back to Regular', () => {
       expect(classifyMergeHistory('MergeParts', 'SomeFutureReason')).toBe('Regular');
     });
+
+    it('patch-* part name detected as Mutation even with RegularMerge reason', () => {
+      expect(classifyMergeHistory('MergeParts', 'RegularMerge', 'patch-1e5b2ee-202602_779_807_2_1934')).toBe('Mutation');
+      expect(classifyMergeHistory('MergeParts', '', 'patch-abc-202602_1_5_1_42')).toBe('Mutation');
+    });
+
+    it('MutatePart takes precedence over patch detection', () => {
+      expect(classifyMergeHistory('MutatePart', 'NotAMerge', 'patch-abc-202602_1_1_0_5')).toBe('Mutation');
+    });
+
+    it('normal part name not affected by patch detection', () => {
+      expect(classifyMergeHistory('MergeParts', 'RegularMerge', '202602_779_807_2')).toBe('Regular');
+      expect(classifyMergeHistory('MergeParts', '', '202602_1_5_1')).toBe('Regular');
+    });
+
+    it('missing part name falls back to normal classification', () => {
+      expect(classifyMergeHistory('MergeParts', 'RegularMerge')).toBe('Regular');
+      expect(classifyMergeHistory('MergeParts', 'RegularMerge', '')).toBe('Regular');
+    });
   });
 
   describe('refineCategoryWithRowDiff — lightweight delete inference', () => {
@@ -404,6 +423,24 @@ describe('merge history enrichment integration', () => {
 
     it('unknown merge_type falls back to Regular', () => {
       expect(classifyActiveMerge('SomeFutureType', false)).toBe('Regular');
+    });
+
+    it('patch-* result part detected as Mutation even when is_mutation=false', () => {
+      expect(classifyActiveMerge('Regular', false, 'patch-1e5b2ee238fbe84a863b-202602_739_744_1_1934')).toBe('Mutation');
+    });
+
+    it('patch-* result part with is_mutation=true still Mutation', () => {
+      expect(classifyActiveMerge('Regular', true, 'patch-abc-202602_1_1_0_5')).toBe('Mutation');
+    });
+
+    it('normal result part not affected by patch detection', () => {
+      expect(classifyActiveMerge('Regular', false, '202602_739_744_1')).toBe('Regular');
+      expect(classifyActiveMerge('TTLDelete', false, '202602_1_5_2')).toBe('TTLDelete');
+    });
+
+    it('missing result part name falls back to normal classification', () => {
+      expect(classifyActiveMerge('Regular', false)).toBe('Regular');
+      expect(classifyActiveMerge('Regular', false, '')).toBe('Regular');
     });
   });
 

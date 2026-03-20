@@ -11,6 +11,7 @@
 import React, { useState, useEffect, useMemo } from 'react';
 import type { MergeHistoryRecord, MergeInfo } from '@tracehouse/core';
 import type { MergeSeries, MutationSeries } from '@tracehouse/core';
+import { classifyActiveMerge } from '@tracehouse/core';
 import { ModalWrapper } from '../shared/ModalWrapper';
 import { formatBytes } from '../../stores/databaseStore';
 import { useClickHouseServices } from '../../providers/ClickHouseProvider';
@@ -57,7 +58,7 @@ function mergeInfoToPartialRecord(merge: MergeInfo): MergeHistoryRecord {
     rows: merge.rows_written,
     size_in_bytes: merge.total_size_bytes_compressed,
     duration_ms: merge.elapsed * 1000,
-    merge_reason: merge.is_mutation ? 'Mutation' : '',
+    merge_reason: classifyActiveMerge(merge.merge_type, merge.is_mutation, merge.result_part_name),
     source_part_names: merge.source_part_names,
     bytes_uncompressed: merge.bytes_read_uncompressed,
     read_bytes: merge.bytes_read_uncompressed,

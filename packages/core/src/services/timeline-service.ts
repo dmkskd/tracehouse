@@ -850,7 +850,7 @@ export class TimelineService {
           disk_write: 0,
           start_time: visStart.toISOString(),
           end_time: visEnd.toISOString(),
-          merge_reason: classifyMergeHistory(String(row.event_type || 'MergeParts'), String(row.merge_reason || '')),
+          merge_reason: classifyMergeHistory(String(row.event_type || 'MergeParts'), String(row.merge_reason || ''), String(row.part_name || '')),
         });
       }
     } catch (e) {
@@ -1075,7 +1075,7 @@ export class TimelineService {
           disk_write: Number(row.disk_write || 0),
           start_time: msStart.toISOString(),
           end_time: now.toISOString(),  // Running - use current time
-          merge_reason: classifyActiveMerge(String(row.merge_type || 'Regular'), isMutation),
+          merge_reason: classifyActiveMerge(String(row.merge_type || 'Regular'), isMutation, String(row.part_name || '')),
           is_running: true,
           progress,
         };

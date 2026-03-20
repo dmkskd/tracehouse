@@ -42,7 +42,7 @@ export function mapMergeHistoryRecord(row: RawRow): MergeHistoryRecord {
   const rowsDiff = readRows > 0 ? outputRows - readRows : 0;
   // Classify merge reason, then refine: a Regular merge with row loss
   // is likely a lightweight delete cleanup.
-  const baseCategory = classifyMergeHistory(toStr(row.event_type), toStr(row.merge_reason));
+  const baseCategory = classifyMergeHistory(toStr(row.event_type), toStr(row.merge_reason), toStr(row.part_name));
   const category = refineCategoryWithRowDiff(baseCategory, rowsDiff);
   
   return {

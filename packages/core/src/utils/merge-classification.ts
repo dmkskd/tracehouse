@@ -14,11 +14,19 @@
  *   Mutation       — ALTER TABLE UPDATE/DELETE applied to parts
  *   LightweightDelete — regular merge that cleaned up rows masked by DELETE FROM
  *
- * Not yet classified:
- *   Lightweight UPDATE (UPDATE table SET ... WHERE ...) — beta feature in CH 26.1.
- *   Creates patch-<hash>-* parts that are materialized during a subsequent regular
- *   merge (rows_diff = 0). Currently shows as Regular. Unstable: consecutive
- *   updates before patch materialization fail with internal errors.
+ * Patch-part detection (lightweight UPDATE, beta in CH 26.1):
+ *   UPDATE table SET ... WHERE ... creates patch-<hash>-* parts. ClickHouse sets
+ *   is_mutation=false for these merges, but we detect them via the patch- prefix
+ *   on result_part_name and classify as Mutation.
+ *
+ *   Observability gap (as of CH 26.1): patch part creation and consolidation
+ *   (patch+patch→patch) are NOT logged in system.part_log. Only RemovePart
+ *   events appear after patches are consumed. This means:
+ *     - Active merges (system.merges): detected via patch- prefix on result_part_name
+ *     - Merge history (system.part_log): invisible — no MergeParts/MutatePart events
+ *   The mutation version is embedded in the part name (e.g. patch-<hash>-..._1934
+ *   where 1934 is the mutation version from system.mutations), which could be used
+ *   for correlation if CH adds part_log coverage in the future.
  */
 
 /** Canonical merge category used throughout the app. */
@@ -77,8 +85,9 @@ const MERGE_REASON_MAP: Record<string, MergeCategory> = {
  * Classify an active merge (from system.merges).
  * Uses merge_type + is_mutation fields.
  */
-export function classifyActiveMerge(mergeType: string, isMutation: boolean): MergeCategory {
+export function classifyActiveMerge(mergeType: string, isMutation: boolean, resultPartName?: string): MergeCategory {
   if (isMutation) return 'Mutation';
+  if (resultPartName && isPatchPart(resultPartName)) return 'Mutation';
   return MERGE_TYPE_MAP[mergeType] ?? 'Regular';
 }
 
@@ -86,9 +95,10 @@ export function classifyActiveMerge(mergeType: string, isMutation: boolean): Mer
  * Classify a historical merge/move event (from system.part_log).
  * Uses event_type + merge_reason fields.
  */
-export function classifyMergeHistory(eventType: string, mergeReason: string): MergeCategory {
+export function classifyMergeHistory(eventType: string, mergeReason: string, partName?: string): MergeCategory {
   if (eventType === 'MovePart') return 'TTLMove';
   if (eventType === 'MutatePart') return 'Mutation';
+  if (partName && isPatchPart(partName)) return 'Mutation';
   if (!mergeReason) return 'Regular';
   return MERGE_REASON_MAP[mergeReason] ?? 'Regular';
 }

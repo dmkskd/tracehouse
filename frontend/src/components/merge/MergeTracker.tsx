@@ -35,7 +35,7 @@ import {
 import { PermissionGate } from '../shared/PermissionGate';
 import { extractErrorMessage } from '../../utils/errorFormatters';
 import { useCapabilityCheck } from '../shared/RequiresCapability';
-import { classifyMutationCommand, MUTATION_SUBTYPES } from '@tracehouse/core';
+import { classifyActiveMerge, getMergeCategoryInfo, classifyMutationCommand, MUTATION_SUBTYPES } from '@tracehouse/core';
 
 // Stat Card
 const StatCard: React.FC<{
@@ -744,11 +744,9 @@ const MergeDetailPanel: React.FC<{
   }
 
   const percentage = (merge.progress * 100).toFixed(1);
-  const getTypeColor = () => {
-    if (merge.is_mutation) return '#a855f7';
-    if (merge.merge_type === 'TTL') return '#f97316';
-    return '#f0883e';
-  };
+  const category = classifyActiveMerge(merge.merge_type, merge.is_mutation, merge.result_part_name);
+  const categoryInfo = getMergeCategoryInfo(category);
+  const getTypeColor = () => categoryInfo.color;
 
   return (
     <div style={{ height: '100%', display: 'flex', flexDirection: 'column' }}>
@@ -788,7 +786,7 @@ const MergeDetailPanel: React.FC<{
             background: `${getTypeColor()}20`, color: getTypeColor(),
             border: `1px solid ${getTypeColor()}33`,
           }}>
-            {merge.is_mutation ? 'Mutation' : (merge.merge_type || 'Regular')}
+            {categoryInfo.label}
           </span>
           {merge.merge_algorithm && (
             <span style={{ 
@@ -1832,8 +1830,7 @@ export const MergeTrackerView: React.FC = () => {
   const availableMergeTypes = React.useMemo(() => {
     const types = new Set<string>();
     activeMerges.forEach(m => {
-      if (m.is_mutation) types.add('Mutation');
-      else if (m.merge_type) types.add(m.merge_type);
+      types.add(classifyActiveMerge(m.merge_type, m.is_mutation, m.result_part_name));
     });
     return Array.from(types).sort();
   }, [activeMerges]);

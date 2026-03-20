@@ -93,6 +93,8 @@ export const MergeHistoryTable: React.FC<MergeHistoryTableProps> = ({
         <div style={{ overflow: 'auto' }}>
           <style>{`
             .merge-history-row:hover { background: var(--bg-hover) !important; }
+            .merge-history-row.selected,
+            .merge-history-row.selected:hover { background: rgba(240,136,62,0.2) !important; }
           `}</style>
           <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 11 }}>
             <thead>
@@ -124,17 +126,18 @@ export const MergeHistoryTable: React.FC<MergeHistoryTableProps> = ({
             </thead>
             <tbody>
               {sortedHistory.map((record, idx) => {
-                const isSelected = selectedRecord && 
-                  selectedRecord.event_time === record.event_time && 
-                  selectedRecord.part_name === record.part_name;
+                const isSelected = selectedRecord &&
+                  selectedRecord.event_time === record.event_time &&
+                  selectedRecord.part_name === record.part_name &&
+                  selectedRecord.hostname === record.hostname;
                 return (
                 <tr 
                   key={`${record.event_time}-${record.part_name}-${idx}`}
-                  className="merge-history-row"
+                  className={`merge-history-row${isSelected ? ' selected' : ''}`}
                   onClick={() => onSelectRecord?.(record)}
-                  style={{ 
+                  style={{
                     borderBottom: '1px solid var(--border-primary)',
-                    background: isSelected ? 'rgba(240,136,62,0.2)' : (idx % 2 === 0 ? 'transparent' : 'var(--bg-tertiary)'),
+                    background: idx % 2 === 0 ? 'transparent' : 'var(--bg-tertiary)',
                     cursor: onSelectRecord ? 'pointer' : 'default',
                     transition: 'background 0.15s ease',
                   }}

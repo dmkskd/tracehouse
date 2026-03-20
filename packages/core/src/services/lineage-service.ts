@@ -88,7 +88,7 @@ export class LineageService {
           bytes_uncompressed: toInt(r.bytes_uncompressed),
           read_bytes: toInt(r.read_bytes),
           peak_memory_usage: toInt(r.peak_memory_usage),
-          merge_reason: classifyMergeHistory(eventType, toStr(r.merge_reason)),
+          merge_reason: classifyMergeHistory(eventType, toStr(r.merge_reason), pname),
           merge_algorithm: toStr(r.merge_algorithm) || 'Horizontal',
           level: getLevelFromName(pname),
           event_type: eventType,

@@ -178,7 +178,7 @@ export const ActiveMergeList: React.FC<ActiveMergeListProps> = ({
   }
 
   const getCategory = (merge: MergeInfo) => {
-    const cat = classifyActiveMerge(merge.merge_type, merge.is_mutation);
+    const cat = classifyActiveMerge(merge.merge_type, merge.is_mutation, merge.result_part_name);
     return getMergeCategoryInfo(cat);
   };
 
