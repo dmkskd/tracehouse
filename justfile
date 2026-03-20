@@ -248,6 +248,11 @@ k8s-operator-logs:
 k8s-restart:
     @kubectl rollout restart statefulset -n clickhouse
 
+# Create Kind cluster with Altinity operator — large (4 shards × 2 replicas, 8 workers)
+[group('k8s')]
+k8s-start-altinity-large:
+    @./infra/k8s/altinity-large/setup.sh
+
 # ─────────────────────────────────────────────────────────────────
 # LOGS
 # ─────────────────────────────────────────────────────────────────
