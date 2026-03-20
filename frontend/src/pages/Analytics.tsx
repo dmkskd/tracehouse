@@ -44,14 +44,14 @@ export const Analytics: React.FC = () => {
   const navigate = useNavigate();
   // Capture 'from' on mount before useAnalyticsUrlState strips unknown params.
   // HashRouter puts search params inside the hash, so parse from window.location.hash.
-  const [fromObsMap] = useState(() => {
-    const hash = window.location.hash; // e.g. #/analytics?tab=misc&from=obsmap
+  const [fromPage] = useState(() => {
+    const hash = window.location.hash;
     const qIdx = hash.indexOf('?');
-    if (qIdx === -1) { console.log('[Analytics fromObsMap] no ? in hash:', hash); return false; }
-    const val = new URLSearchParams(hash.slice(qIdx)).get('from') === 'obsmap';
-    console.log('[Analytics fromObsMap]', val, 'hash:', hash);
-    return val;
+    if (qIdx === -1) return null;
+    return new URLSearchParams(hash.slice(qIdx)).get('from');
   });
+  const fromObsMap = fromPage === 'obsmap';
+  const fromMerges = fromPage === 'merges';
 
   // URL state — tab, lookback, db filter are persisted in the URL
   const { state: urlState, update: updateUrl, copyShareableUrl } = useAnalyticsUrlState();
@@ -179,7 +179,7 @@ export const Analytics: React.FC = () => {
                 type AS status
          FROM system.query_log
          WHERE type = 'QueryFinish'
-           AND normalized_query_hash = toUInt64(${JSON.stringify(hash)})
+           AND normalized_query_hash = toUInt64('${hash.replace(/[^0-9]/g, '')}')
          ORDER BY event_time DESC
          LIMIT 1`
       );
@@ -330,6 +330,23 @@ export const Analytics: React.FC = () => {
                 >
                   <span>←</span>
                   <span>Back to System Map</span>
+                </button>
+              )}
+              {fromMerges && activeTab === 'misc' && (
+                <button
+                  onClick={() => navigate('/merges')}
+                  style={{
+                    display: 'inline-flex', alignItems: 'center', gap: 4,
+                    padding: '2px 8px', fontSize: 11, color: 'var(--text-muted)',
+                    background: 'transparent', border: '1px solid var(--border-secondary)',
+                    borderRadius: 4, cursor: 'pointer', fontFamily: 'inherit',
+                    transition: 'color 0.15s ease, border-color 0.15s ease',
+                  }}
+                  onMouseEnter={(e) => { e.currentTarget.style.color = 'var(--text-primary)'; e.currentTarget.style.borderColor = 'var(--border-primary)'; }}
+                  onMouseLeave={(e) => { e.currentTarget.style.color = 'var(--text-muted)'; e.currentTarget.style.borderColor = 'var(--border-secondary)'; }}
+                >
+                  <span>←</span>
+                  <span>Back to Merge Tracker</span>
                 </button>
               )}
               {urlState.fromDashboard && activeTab === 'misc' && (

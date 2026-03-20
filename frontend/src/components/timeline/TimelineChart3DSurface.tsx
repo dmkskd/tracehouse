@@ -12,6 +12,7 @@
  */
 import React, { useMemo, useState, useCallback, useEffect, useRef } from 'react';
 import { Canvas, useThree } from '@react-three/fiber';
+import { useTheme } from '../../providers/ThemeProvider';
 import { OrbitControls, Text, Line, Html } from '@react-three/drei';
 import * as THREE from 'three';
 import type { MemoryTimeline, QuerySeries, MergeSeries, MutationSeries } from '@tracehouse/core';
@@ -546,6 +547,8 @@ export const TimelineChart3DSurface: React.FC<TimelineChart3DSurfaceProps> = ({
   onHighlightItem,
 }) => {
   const [hoveredBand, setHoveredBand] = useState<number | null>(null);
+  const { theme } = useTheme();
+  const bg3d = theme === 'light' ? '#2a2e3e' : '#0a0a1a';
 
   // Build band info list (same order as 2D: queries, merges, mutations)
   const bands: BandInfo[] = useMemo(() => {
@@ -726,7 +729,7 @@ export const TimelineChart3DSurface: React.FC<TimelineChart3DSurfaceProps> = ({
         gl={{ antialias: true, powerPreference: 'high-performance' }}
         frameloop="demand"
       >
-        <color attach="background" args={['#0a0a1a']} />
+        <color attach="background" args={[bg3d]} />
         <CameraSetup />
 
         <OrbitControls

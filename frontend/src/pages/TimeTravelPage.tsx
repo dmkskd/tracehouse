@@ -702,9 +702,9 @@ export const TimeTravelPage: React.FC = () => {
                   <button key={mode} onClick={() => { setViewMode(mode); if (mode !== '2d') setSplitView(false); }}
                     style={{
                       position: 'relative',
-                      background: viewMode === mode ? 'rgba(148,163,184,0.15)' : 'transparent',
-                      color: viewMode === mode ? '#e2e8f0' : 'var(--text-muted)',
-                      border: viewMode === mode ? '1px solid rgba(148,163,184,0.3)' : '1px solid transparent',
+                      background: viewMode === mode ? 'var(--bg-hover)' : 'transparent',
+                      color: viewMode === mode ? 'var(--text-primary)' : 'var(--text-muted)',
+                      border: viewMode === mode ? '1px solid var(--border-primary)' : '1px solid transparent',
                       borderRadius: 6, padding: '6px 10px', fontSize: 12, fontWeight: viewMode === mode ? 600 : 400,
                       cursor: 'pointer', transition: 'all 0.15s ease',
                     }}>

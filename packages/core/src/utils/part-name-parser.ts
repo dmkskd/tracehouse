@@ -69,6 +69,14 @@ export function getLevelFromName(name: string): number {
 }
 
 /**
+ * Check if a part was produced by a merge (level > 0).
+ * Level-0 parts are original inserts with no merge history.
+ */
+export function isMergedPart(name: string): boolean {
+  return getLevelFromName(name) > 0;
+}
+
+/**
  * Check if a part name represents a mutated part.
  *
  * @param name - The part name
@@ -77,4 +85,37 @@ export function getLevelFromName(name: string): number {
 export function isMutatedPart(name: string): boolean {
   const parsed = parsePartName(name);
   return parsed?.isMutated ?? false;
+}
+
+/**
+ * Sentinel value for the mutation group in level-based visualizations.
+ * Mutated parts are grouped together regardless of their actual merge level.
+ */
+export const MUTATION_GROUP_KEY = -1;
+
+/**
+ * Return the grouping key for a part in level-based visualizations.
+ * Mutated parts (those with a mutation version suffix) are grouped under
+ * MUTATION_GROUP_KEY; all other parts are grouped by their merge level.
+ *
+ * @param partName - The part name (e.g., `all_1_585_123` or `all_1_100_3_19118`)
+ * @returns The merge level, or MUTATION_GROUP_KEY for mutated parts
+ */
+export function getPartLevelGroupKey(partName: string): number {
+  const parsed = parsePartName(partName);
+  if (!parsed) return 0;
+  return parsed.isMutated ? MUTATION_GROUP_KEY : parsed.level;
+}
+
+/**
+ * Strip the mutation version from a part name, returning the base name.
+ * e.g. `202602_651_873_3_709` → `202602_651_873_3`
+ *
+ * Returns null if the part is not mutated (already a base name).
+ */
+export function stripMutationVersion(name: string): string | null {
+  const parsed = parsePartName(name);
+  if (!parsed?.isMutated) return null;
+  // Rebuild without the mutation version: partition_min_max_level
+  return `${parsed.partition}_${parsed.minBlock}_${parsed.maxBlock}_${parsed.level}`;
 }

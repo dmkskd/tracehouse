@@ -9,7 +9,7 @@ import { APP_SOURCE_LIKE } from '@tracehouse/core';
 
 const queries: string[] = [
   `-- @meta: title='Queries/second' group='Advanced Dashboard' interval='1 HOUR' description='Rate of queries processed per second (from metric_log)'
--- @chart: type=area group_by=t value=qps style=2d
+-- @chart: type=area group_by=t value=qps style=2d color=#f59e0b
 -- @drill: on=t into='Queries at Time'
 -- Source: https://github.com/ClickHouse/ClickHouse/blob/master/src/Storages/System/StorageSystemDashboards.cpp
 SELECT
@@ -68,7 +68,7 @@ ORDER BY event_time DESC
 LIMIT 1`,
 
   `-- @meta: title='CPU Usage (cores)' group='Advanced Dashboard' interval='1 HOUR' description='Average CPU virtual time in cores (from metric_log)'
--- @chart: type=area group_by=t value=cpu_cores style=2d
+-- @chart: type=area group_by=t value=cpu_cores style=2d color=#3b82f6
 -- Source: https://github.com/ClickHouse/ClickHouse/blob/master/src/Storages/System/StorageSystemDashboards.cpp
 SELECT
     toStartOfInterval(event_time, INTERVAL 1 MINUTE) AS t,
@@ -79,7 +79,7 @@ GROUP BY t
 ORDER BY t ASC`,
 
   `-- @meta: title='Queries Running' group='Advanced Dashboard' interval='1 HOUR' description='Average number of concurrently running queries'
--- @chart: type=area group_by=t value=running style=2d
+-- @chart: type=area group_by=t value=running style=2d color=#f59e0b
 -- Source: https://github.com/ClickHouse/ClickHouse/blob/master/src/Storages/System/StorageSystemDashboards.cpp
 SELECT
     toStartOfInterval(event_time, INTERVAL 1 MINUTE) AS t,
@@ -90,7 +90,7 @@ GROUP BY t
 ORDER BY t ASC`,
 
   `-- @meta: title='Merges Running' group='Advanced Dashboard' interval='1 HOUR' description='Average number of concurrently running merges'
--- @chart: type=area group_by=t value=merges style=2d
+-- @chart: type=area group_by=t value=merges style=2d color=#14b8a6
 -- Source: https://github.com/ClickHouse/ClickHouse/blob/master/src/Storages/System/StorageSystemDashboards.cpp
 SELECT
     toStartOfInterval(event_time, INTERVAL 1 MINUTE) AS t,
@@ -101,7 +101,7 @@ GROUP BY t
 ORDER BY t ASC`,
 
   `-- @meta: title='Selected Bytes/second' group='Advanced Dashboard' interval='1 HOUR' description='Average bytes read by SELECT queries per second'
--- @chart: type=area group_by=t value=bytes_sec style=2d
+-- @chart: type=area group_by=t value=bytes_sec style=2d color=#ec4899
 -- Source: https://github.com/ClickHouse/ClickHouse/blob/master/src/Storages/System/StorageSystemDashboards.cpp
 SELECT
     toStartOfInterval(event_time, INTERVAL 1 MINUTE) AS t,
@@ -112,7 +112,7 @@ GROUP BY t
 ORDER BY t ASC`,
 
   `-- @meta: title='IO Wait (seconds)' group='Advanced Dashboard' interval='1 HOUR' description='Average I/O wait time in seconds'
--- @chart: type=area group_by=t value=io_wait style=2d
+-- @chart: type=area group_by=t value=io_wait style=2d color=#ef4444
 -- Source: https://github.com/ClickHouse/ClickHouse/blob/master/src/Storages/System/StorageSystemDashboards.cpp
 SELECT
     toStartOfInterval(event_time, INTERVAL 1 MINUTE) AS t,
@@ -123,7 +123,7 @@ GROUP BY t
 ORDER BY t ASC`,
 
   `-- @meta: title='CPU Wait (seconds)' group='Advanced Dashboard' interval='1 HOUR' description='Average CPU wait time in seconds'
--- @chart: type=area group_by=t value=cpu_wait style=2d
+-- @chart: type=area group_by=t value=cpu_wait style=2d color=#8b5cf6
 -- Source: https://github.com/ClickHouse/ClickHouse/blob/master/src/Storages/System/StorageSystemDashboards.cpp
 SELECT
     toStartOfInterval(event_time, INTERVAL 1 MINUTE) AS t,
@@ -134,7 +134,7 @@ GROUP BY t
 ORDER BY t ASC`,
 
   `-- @meta: title='OS CPU Usage (Userspace)' group='Advanced Dashboard' interval='1 HOUR' description='Normalized userspace CPU usage from async metrics'
--- @chart: type=area group_by=t value=user_cpu style=2d
+-- @chart: type=area group_by=t value=user_cpu style=2d color=#84cc16
 -- Source: https://github.com/ClickHouse/ClickHouse/blob/master/src/Storages/System/StorageSystemDashboards.cpp
 SELECT
     toStartOfInterval(event_time, INTERVAL 1 MINUTE) AS t,
@@ -146,7 +146,7 @@ GROUP BY t
 ORDER BY t ASC`,
 
   `-- @meta: title='OS CPU Usage (Kernel)' group='Advanced Dashboard' interval='1 HOUR' description='Normalized kernel CPU usage from async metrics'
--- @chart: type=area group_by=t value=kernel_cpu style=2d
+-- @chart: type=area group_by=t value=kernel_cpu style=2d color=#ef4444
 -- Source: https://github.com/ClickHouse/ClickHouse/blob/master/src/Storages/System/StorageSystemDashboards.cpp
 SELECT
     toStartOfInterval(event_time, INTERVAL 1 MINUTE) AS t,
@@ -158,7 +158,7 @@ GROUP BY t
 ORDER BY t ASC`,
 
   `-- @meta: title='Read From Disk (bytes/sec)' group='Advanced Dashboard' interval='1 HOUR' description='Average bytes read from disk per second'
--- @chart: type=area group_by=t value=disk_read style=2d
+-- @chart: type=area group_by=t value=disk_read style=2d color=#06b6d4
 -- Source: https://github.com/ClickHouse/ClickHouse/blob/master/src/Storages/System/StorageSystemDashboards.cpp
 SELECT
     toStartOfInterval(event_time, INTERVAL 1 MINUTE) AS t,
@@ -169,7 +169,7 @@ GROUP BY t
 ORDER BY t ASC`,
 
   `-- @meta: title='Read From Filesystem (bytes/sec)' group='Advanced Dashboard' interval='1 HOUR' description='Average bytes read from filesystem including page cache'
--- @chart: type=area group_by=t value=fs_read style=2d
+-- @chart: type=area group_by=t value=fs_read style=2d color=#06b6d4
 -- Source: https://github.com/ClickHouse/ClickHouse/blob/master/src/Storages/System/StorageSystemDashboards.cpp
 SELECT
     toStartOfInterval(event_time, INTERVAL 1 MINUTE) AS t,
@@ -180,7 +180,7 @@ GROUP BY t
 ORDER BY t ASC`,
 
   `-- @meta: title='Memory Tracked (bytes)' group='Advanced Dashboard' interval='1 HOUR' description='Average tracked memory usage by ClickHouse processes'
--- @chart: type=area group_by=t value=memory style=2d
+-- @chart: type=area group_by=t value=memory style=2d color=#a855f7
 -- Source: https://github.com/ClickHouse/ClickHouse/blob/master/src/Storages/System/StorageSystemDashboards.cpp
 SELECT
     toStartOfInterval(event_time, INTERVAL 1 MINUTE) AS t,
@@ -191,7 +191,7 @@ GROUP BY t
 ORDER BY t ASC`,
 
   `-- @meta: title='In-Memory Caches (bytes)' group='Advanced Dashboard' interval='1 HOUR' description='Size of in-memory caches (mark, uncompressed, index, etc.)'
--- @chart: type=area group_by=t value=cache_bytes style=2d
+-- @chart: type=area group_by=t value=cache_bytes style=2d color=#a855f7
 -- Source: https://github.com/ClickHouse/ClickHouse/blob/master/src/Storages/System/StorageSystemDashboards.cpp
 SELECT
     toStartOfInterval(event_time, INTERVAL 1 MINUTE) AS t,
@@ -205,7 +205,7 @@ GROUP BY t
 ORDER BY t ASC`,
 
   `-- @meta: title='Load Average (15 min)' group='Advanced Dashboard' interval='1 HOUR' description='15-minute load average from async metrics'
--- @chart: type=area group_by=t value=load_avg style=2d
+-- @chart: type=area group_by=t value=load_avg style=2d color=#f97316
 -- Source: https://github.com/ClickHouse/ClickHouse/blob/master/src/Storages/System/StorageSystemDashboards.cpp
 SELECT
     toStartOfInterval(event_time, INTERVAL 1 MINUTE) AS t,
@@ -217,7 +217,7 @@ GROUP BY t
 ORDER BY t ASC`,
 
   `-- @meta: title='Selected Rows/second' group='Advanced Dashboard' interval='1 HOUR' description='Average rows read by SELECT queries per second'
--- @chart: type=area group_by=t value=rows_sec style=2d
+-- @chart: type=area group_by=t value=rows_sec style=2d color=#22c55e
 -- Source: https://github.com/ClickHouse/ClickHouse/blob/master/src/Storages/System/StorageSystemDashboards.cpp
 SELECT
     toStartOfInterval(event_time, INTERVAL 1 MINUTE) AS t,
@@ -228,7 +228,7 @@ GROUP BY t
 ORDER BY t ASC`,
 
   `-- @meta: title='Inserted Rows/second' group='Advanced Dashboard' interval='1 HOUR' description='Average rows inserted per second'
--- @chart: type=area group_by=t value=rows_sec style=2d
+-- @chart: type=area group_by=t value=rows_sec style=2d color=#10b981
 -- Source: https://github.com/ClickHouse/ClickHouse/blob/master/src/Storages/System/StorageSystemDashboards.cpp
 SELECT
     toStartOfInterval(event_time, INTERVAL 1 MINUTE) AS t,
@@ -239,7 +239,7 @@ GROUP BY t
 ORDER BY t ASC`,
 
   `-- @meta: title='Total MergeTree Parts' group='Advanced Dashboard' interval='1 HOUR' description='Average total number of parts across all MergeTree tables'
--- @chart: type=area group_by=t value=total_parts style=2d
+-- @chart: type=area group_by=t value=total_parts style=2d color=#f59e0b
 -- Source: https://github.com/ClickHouse/ClickHouse/blob/master/src/Storages/System/StorageSystemDashboards.cpp
 SELECT
     toStartOfInterval(event_time, INTERVAL 1 MINUTE) AS t,
@@ -251,7 +251,7 @@ GROUP BY t
 ORDER BY t ASC`,
 
   `-- @meta: title='Max Parts For Partition' group='Advanced Dashboard' interval='1 HOUR' description='Maximum part count in any single partition — early warning for too-many-parts'
--- @chart: type=area group_by=t value=max_parts style=2d
+-- @chart: type=area group_by=t value=max_parts style=2d color=#ef4444
 -- Source: https://github.com/ClickHouse/ClickHouse/blob/master/src/Storages/System/StorageSystemDashboards.cpp
 SELECT
     toStartOfInterval(event_time, INTERVAL 1 MINUTE) AS t,

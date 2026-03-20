@@ -317,4 +317,43 @@ const BUILTIN_DASHBOARDS: Dashboard[] = [
       { queryName: 'Memory#Historical Top Memory Queries' },
     ],
   },
+  {
+    id: 'replication-health',
+    title: 'Replication Health',
+    description: 'Replica status, replication queue depth and errors, lag trends, and ZooKeeper health — based on https://clickhouse.com/docs/operations/system-tables/replicas and https://kb.altinity.com/altinity-kb-setup-and-maintenance/altinity-kb-replication-queue/',
+    group: 'ClickHouse',
+    columns: 2,
+    panels: [
+      { queryName: 'Replication#Replica Status' },
+      { queryName: 'Replication#Replication Queue Summary' },
+      { queryName: 'Replication#Replication Lag Trend' },
+      { queryName: 'Replication#Replication Queue Size Trend' },
+      { queryName: 'Replication#Replication Queue Errors' },
+      { queryName: 'Replication#ZooKeeper Operations' },
+      { queryName: 'Replication#ZooKeeper Wait Time' },
+      { queryName: 'Replication#ZooKeeper Sessions & Exceptions' },
+    ],
+  },
+  {
+    id: 'mutations-monitoring',
+    title: 'Mutations',
+    description: 'Track ALTER TABLE mutations — active, stuck/failed, and recently completed — based on https://clickhouse.com/docs/operations/system-tables/mutations',
+    group: 'ClickHouse',
+    columns: 2,
+    panels: [
+      { queryName: 'Mutations#Active Mutations' },
+      { queryName: 'Mutations#Failed / Stuck Mutations' },
+      { queryName: 'Mutations#Recent Completed Mutations' },
+    ],
+  },
+  {
+    id: 'disk-monitoring',
+    title: 'Disk Usage',
+    description: 'Disk free space and capacity across all cluster nodes — based on https://clickhouse.com/docs/operations/system-tables/disks',
+    group: 'ClickHouse',
+    columns: 2,
+    panels: [
+      { queryName: 'Disks#Disk Free Space' },
+    ],
+  },
 ];

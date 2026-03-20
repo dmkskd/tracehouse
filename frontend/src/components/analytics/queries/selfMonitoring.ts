@@ -48,7 +48,7 @@ ARRAY JOIN
 ORDER BY service, metric`,
 
   `-- @meta: title='App Query Volume by Component' group='Self-Monitoring' interval='1 DAY' description='Number of queries fired by each app component in the last 24h'
--- @chart: type=pie group_by=component value=query_count style=3d
+-- @chart: type=pie group_by=component value=query_count style=2d
 -- @drill: on=component into='App Query Volume by Service'
 SELECT
     extractAllGroups(query, '${APP_RE_COMPONENT}')[1][1] AS component,
@@ -63,7 +63,7 @@ HAVING component != ''
 ORDER BY query_count DESC`,
 
   `-- @meta: title='App Query Volume by Service' group='Self-Monitoring' interval='1 DAY' description='Drill from component to individual services — query count per service'
--- @chart: type=pie group_by=service value=query_count style=3d
+-- @chart: type=pie group_by=service value=query_count style=2d
 -- @drill: on=service into='App Query Cost Details'
 SELECT
     extractAllGroups(query, '${APP_RE_COMPONENT_SERVICE}')[1][1] AS component,

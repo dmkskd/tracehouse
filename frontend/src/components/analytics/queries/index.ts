@@ -9,6 +9,9 @@ import resources from './resources';
 import advancedDashboard from './advancedDashboard';
 import selfMonitoring from './selfMonitoring';
 import memory from './memory';
+import replication from './replication';
+import mutations from './mutations';
+import disks from './disks';
 
 export const RAW_QUERIES: string[] = [
   ...overview,
@@ -20,4 +23,7 @@ export const RAW_QUERIES: string[] = [
   ...advancedDashboard,
   ...selfMonitoring,
   ...memory,
+  ...replication,
+  ...mutations,
+  ...disks,
 ];

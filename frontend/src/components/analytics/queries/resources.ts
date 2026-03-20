@@ -48,7 +48,7 @@ ORDER BY event_time DESC
 LIMIT 30`,
 
   `-- @meta: title='Memory Usage Trend' group='Resources' interval='1 DAY' description='Memory usage over the last 24 hours'
--- @chart: type=area group_by=minute value=avg_memory style=3d
+-- @chart: type=area group_by=minute value=avg_memory style=2d color=#a855f7
 SELECT
     toStartOfMinute(event_time) AS minute,
     avg(value) AS avg_memory

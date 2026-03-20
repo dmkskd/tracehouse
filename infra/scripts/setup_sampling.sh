@@ -41,6 +41,7 @@ Connection options:
   --port PORT              ClickHouse native port (default: 9000)
   --user USER              ClickHouse user
   --password PASSWORD      ClickHouse password
+  --secure yes|no          Use TLS (default: yes for remote hosts, no for localhost)
 
 Cluster options:
   --cluster NAME           Cluster name for ON CLUSTER DDL
@@ -94,6 +95,7 @@ HOST="localhost"
 PORT="9000"
 USER=""
 PASSWORD=""
+SECURE=""
 CLUSTER=""
 USE_ON_CLUSTER="yes"
 INTERVAL=1
@@ -108,6 +110,7 @@ while [[ $# -gt 0 ]]; do
     --port)                PORT="$2"; shift 2 ;;
     --user)                USER="$2"; shift 2 ;;
     --password)            PASSWORD="$2"; shift 2 ;;
+    --secure)              [[ "$2" == "false" || "$2" == "no" ]] && SECURE=false || SECURE=true; shift 2 ;;
     --cluster)             CLUSTER="$2"; shift 2 ;;
     --on-cluster)          USE_ON_CLUSTER="$2"; shift 2 ;;
     --target)              TARGET="$2"; shift 2 ;;
@@ -119,6 +122,15 @@ while [[ $# -gt 0 ]]; do
     *)                     echo "Unknown option: $1" >&2; echo "Run with --help for usage." >&2; exit 1 ;;
   esac
 done
+
+# Default --secure: true unless connecting to localhost
+if [[ -z "$SECURE" ]]; then
+  if [[ "$HOST" == "localhost" || "$HOST" == "127.0.0.1" ]]; then
+    SECURE=false
+  else
+    SECURE=true
+  fi
+fi
 
 # Validate target
 case "$TARGET" in
@@ -148,8 +160,18 @@ else
 fi
 
 CH="clickhouse client --host $HOST --port $PORT"
+$SECURE && CH="$CH --secure"
 [[ -n "$USER" ]] && CH="$CH --user $USER"
 [[ -n "$PASSWORD" ]] && CH="$CH --password $PASSWORD"
+
+# Detect if peak_threads_usage exists in system.processes
+# Aiven strips this column from their managed ClickHouse (as of March 2026, v25.3.14)
+HAS_PEAK_THREADS=$($CH --query "SELECT count() FROM system.columns WHERE table = 'processes' AND database = 'system' AND name = 'peak_threads_usage'" 2>/dev/null || echo "0")
+if [[ "$HAS_PEAK_THREADS" -gt 0 ]]; then
+  PEAK_THREADS_EXPR="peak_threads_usage"
+else
+  PEAK_THREADS_EXPR="0 AS peak_threads_usage"
+fi
 
 run_query() {
   if $DRY_RUN; then
@@ -298,6 +320,11 @@ if ! $DRY_RUN && ! $ASSUME_YES && [[ -t 0 ]]; then
   echo "============================================================"
   echo ""
   echo "  Host:     $HOST:$PORT"
+  if $SECURE; then
+    echo "  TLS:      yes (encrypted)"
+  else
+    echo "  TLS:      no (plaintext)"
+  fi
   if [[ "$MODE" == "cluster" ]]; then
     echo "  Cluster:  $CLUSTER_NAME ($NODE_COUNT nodes, $SHARD_COUNT shards)"
     if [[ -n "$ON_CLUSTER" ]]; then
@@ -398,7 +425,7 @@ if setup_processes; then
     memory_usage        Int64,
     peak_memory_usage   Int64,
     thread_ids          Array(UInt64),
-    peak_threads_usage  UInt64,
+    peak_threads_usage  UInt64 DEFAULT 0,  -- Aiven strips this from system.processes
 
     -- maps
     ProfileEvents       Map(String, UInt64),
@@ -459,7 +486,7 @@ SELECT
     memory_usage,
     peak_memory_usage,
     thread_ids,
-    peak_threads_usage,
+    $PEAK_THREADS_EXPR,
 
     ProfileEvents,
     Settings

@@ -317,7 +317,7 @@ export const GET_STORAGE_POLICY_VOLUMES = `
 
 
 /**
- * Fetch text_log messages for a merge/mutation event by query_id.
+ * Fetch text_log messages for a merge/mutation event by exact query_id.
  *
  * ClickHouse logs background merges to system.text_log with query_id
  * formatted as `{table_uuid}::{result_part_name}`. The caller constructs
@@ -340,9 +340,7 @@ export const GET_MERGE_TEXT_LOGS_BY_QUERY_ID = `
   LIMIT 500
 `;
 
-/** Same as GET_MERGE_TEXT_LOGS_BY_QUERY_ID but filtered to a specific hostname.
- * On clusters, text_log entries for the same merge exist on every replica
- * (same query_id = table_uuid::part_name). Filter to one node to avoid mixing. */
+/** Same as GET_MERGE_TEXT_LOGS_BY_QUERY_ID but filtered to a specific hostname. */
 export const GET_MERGE_TEXT_LOGS_BY_QUERY_ID_HOST = `
   SELECT
     toString(event_time) AS event_time,
@@ -362,6 +360,61 @@ export const GET_MERGE_TEXT_LOGS_BY_QUERY_ID_HOST = `
 `;
 
 /**
+ * Fetch text_log messages by part name suffix match.
+ *
+ * The internal UUID used in text_log query_ids may differ from system.tables.uuid
+ * on Replicated database clusters. This query uses a suffix LIKE pattern
+ * (`%::{part_name}`) to match regardless of which UUID prefix is used.
+ * Combined with event_date pruning this is fast (~150ms).
+ */
+export const GET_MERGE_TEXT_LOGS_BY_PART_SUFFIX = `
+  SELECT
+    toString(event_time) AS event_time,
+    toString(event_time_microseconds) AS event_time_microseconds,
+    query_id,
+    level,
+    message,
+    logger_name AS source,
+    thread_id,
+    thread_name
+  FROM {{cluster_aware:system.text_log}}
+  WHERE query_id LIKE {query_id_suffix}
+    AND event_date >= {event_date_bound}
+  ORDER BY event_time_microseconds ASC
+  LIMIT 500
+`;
+
+/** Same as above but filtered to a specific hostname. */
+export const GET_MERGE_TEXT_LOGS_BY_PART_SUFFIX_HOST = `
+  SELECT
+    toString(event_time) AS event_time,
+    toString(event_time_microseconds) AS event_time_microseconds,
+    query_id,
+    level,
+    message,
+    logger_name AS source,
+    thread_id,
+    thread_name
+  FROM {{cluster_aware:system.text_log}}
+  WHERE query_id LIKE {query_id_suffix}
+    AND event_date >= {event_date_bound}
+    AND hostName() = {hostname}
+  ORDER BY event_time_microseconds ASC
+  LIMIT 500
+`;
+
+/** Get column names for a table (used for vertical merge progress).
+ * Uses GROUP BY to deduplicate across replicas in cluster-aware queries. */
+export const GET_TABLE_COLUMNS = `
+  SELECT name, min(position) AS pos
+  FROM {{cluster_aware:system.columns}}
+  WHERE database = {database}
+    AND table = {table}
+  GROUP BY name
+  ORDER BY pos
+`;
+
+/**
  * Get the table UUID from system.tables.
  * Background merges use `{table_uuid}::{result_part_name}` as query_id in
  * system.text_log, even though part_log.query_id is empty.
@@ -373,6 +426,28 @@ export const GET_TABLE_UUID = `
   WHERE database = {database}
     AND name = {table}
   GROUP BY database, name
+`;
+
+/**
+ * Get average merge throughput for a table, grouped by merge algorithm.
+ * Used to estimate remaining time for active merges.
+ * Only considers successful merges (duration > 0, size > 0).
+ */
+export const GET_MERGE_THROUGHPUT_ESTIMATE = `
+  SELECT
+    merge_algorithm,
+    count() AS merge_count,
+    avg(size_in_bytes / (duration_ms / 1000)) AS avg_bytes_per_sec,
+    median(size_in_bytes / (duration_ms / 1000)) AS median_bytes_per_sec,
+    avg(duration_ms) AS avg_duration_ms,
+    avg(size_in_bytes) AS avg_size_bytes
+  FROM {{cluster_aware:system.part_log}}
+  WHERE database = {database}
+    AND table = {table}
+    AND event_type = 'MergeParts'
+    AND duration_ms > 100
+    AND size_in_bytes > 0
+  GROUP BY merge_algorithm
 `;
 
 /**

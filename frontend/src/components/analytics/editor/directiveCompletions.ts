@@ -54,6 +54,7 @@ const DIRECTIVES: DirectiveDef[] = [
       style: ['2d', '3d'],
       orientation: ['horizontal', 'vertical'],
       unit: ['ms', 'MB', 'GB', '%', 's', 'rows', 'bytes'],
+      color: null,
     },
     paramInfo: {
       type: 'Chart type — determines how data points are rendered',
@@ -63,6 +64,7 @@ const DIRECTIVES: DirectiveDef[] = [
       style: '2d renders an SVG chart, 3d renders an interactive Three.js scene',
       orientation: 'Flip axes — horizontal puts labels on the Y-axis (useful for long names)',
       unit: 'Format suffix for values — controls axis labels and tooltips',
+      color: 'Hex color for chart stroke and fill (e.g. #f59e0b). Overrides the default indigo.',
     },
   },
   {

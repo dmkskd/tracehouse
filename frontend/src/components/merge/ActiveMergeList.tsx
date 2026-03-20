@@ -221,7 +221,7 @@ export const ActiveMergeList: React.FC<ActiveMergeListProps> = ({
         </thead>
         <tbody>
           {sortedMerges.map((merge, i) => {
-            const mergeKey = `${merge.database}.${merge.table}.${merge.result_part_name}`;
+            const mergeKey = `${merge.database}.${merge.table}.${merge.result_part_name}.${merge.hostname || ''}.${merge.thread_id}`;
             const isSelected = selectedMerge !== null &&
               selectedMerge.database === merge.database &&
               selectedMerge.table === merge.table &&

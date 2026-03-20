@@ -2,7 +2,7 @@
 
 const queries: string[] = [
   `-- @meta: title='Biggest Tables' group='Overview' description='Tables ranked by on-disk size with row counts and primary key memory'
--- @chart: type=bar group_by=table value=bytes_size style=3d
+-- @chart: type=bar group_by=table value=bytes_size style=2d
 SELECT
     database,
     table,
@@ -31,7 +31,7 @@ ORDER BY bytes_size DESC
 LIMIT 30`,
 
   `-- @meta: title='Active Parts by Table' group='Overview' description='Number of active parts per table — high counts may indicate merge pressure'
--- @chart: type=bar group_by=table value=part_count style=3d
+-- @chart: type=bar group_by=table value=part_count style=2d
 SELECT
     concat(database, '.', table) AS table,
     count() AS part_count,
@@ -48,7 +48,7 @@ ORDER BY part_count DESC
 LIMIT 25`,
 
   `-- @meta: title='Database Sizes' group='Overview' description='Total disk usage per database'
--- @chart: type=pie group_by=database value=total_bytes style=3d
+-- @chart: type=pie group_by=database value=total_bytes style=2d
 -- @drill: on=database into='Table Sizes'
 SELECT
     database,
@@ -65,7 +65,7 @@ GROUP BY database
 ORDER BY total_bytes DESC`,
 
   `-- @meta: title='Table Sizes' group='Overview' description='Disk usage per table (drill from Database Sizes or view all)'
--- @chart: type=pie group_by=table value=total_bytes style=3d
+-- @chart: type=pie group_by=table value=total_bytes style=2d
 -- @drill: on=table into='Part Sizes'
 SELECT
     table,

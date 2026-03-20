@@ -173,6 +173,65 @@ export const QUERY_FLAMEGRAPH_MEMORY_LEGACY = `
 `;
 
 /**
+ * Per-second hot (leaf) functions from trace_log.
+ *
+ * Returns the leaf function (trace[1] = innermost frame) counted per 1-second
+ * bucket, so the frontend can show "what the query was doing" at any point
+ * on the X-Ray timeline.
+ *
+ * Time buckets are relative to the query's first trace_log event, matching
+ * the same zero-origin used by processes_history samples.
+ *
+ * The query is interval-agnostic: always 1-second granularity. The frontend
+ * aggregates buckets when the process sampler uses a coarser interval.
+ */
+/**
+ * Lightweight probe: count CPU profiler samples per second for a query.
+ * No introspection functions needed — just counts rows.
+ * Used to know which seconds have flamegraph data before the user asks.
+ */
+export const QUERY_TRACE_SAMPLE_COUNTS = `
+  SELECT
+    toUInt32(dateDiff('second', toDateTime64({query_start_time}, 6), event_time_microseconds)) AS t_second,
+    count() AS samples
+  FROM {{cluster_aware:system.trace_log}}
+  WHERE query_id = {query_id} AND trace_type = 'CPU'
+    AND event_date >= {event_date_bound}
+  GROUP BY t_second
+  ORDER BY t_second
+`;
+
+/**
+ * Time-scoped flamegraph: same as QUERY_FLAMEGRAPH_CPU but filtered to a
+ * specific time window within the query. Used by X-Ray to show "what was
+ * happening at this second" via the speedscope viewer.
+ *
+ * {from_time} and {to_time} are absolute DateTime strings (ClickHouse format,
+ * e.g. '2026-03-20 13:52:17'). The service converts ISO timestamps.
+ */
+export const QUERY_FLAMEGRAPH_CPU_TIME_SCOPED = `
+  SELECT arrayJoin(flameGraph(arrayReverse(trace))) AS line
+  FROM {{cluster_aware:system.trace_log}}
+  WHERE query_id = {query_id} AND trace_type = 'CPU'
+    AND event_date >= {event_date_bound}
+    AND event_time_microseconds >= {from_time}
+    AND event_time_microseconds < {to_time}
+`;
+
+/** Legacy fallback for time-scoped flamegraph (works on clusters) */
+export const QUERY_FLAMEGRAPH_CPU_TIME_SCOPED_LEGACY = `
+  SELECT
+    arrayStringConcat(arrayMap(x -> demangle(addressToSymbol(x)), trace), ';') AS stack,
+    count() AS value
+  FROM {{cluster_aware:system.trace_log}}
+  WHERE query_id = {query_id} AND trace_type = 'CPU'
+    AND event_date >= {event_date_bound}
+    AND event_time_microseconds >= {from_time}
+    AND event_time_microseconds < {to_time}
+  GROUP BY trace
+`;
+
+/**
  * Fetch per-processor execution stats from system.processors_profile_log.
  * Same partition pruning rationale as trace_log above.
  */

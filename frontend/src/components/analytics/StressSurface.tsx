@@ -452,26 +452,26 @@ function StressLegend() {
   return (
     <div style={{
       position: 'absolute', bottom: 16, left: 20, zIndex: 10,
-      background: 'rgba(15,23,42,0.8)', backdropFilter: 'blur(8px)',
+      background: 'var(--bg-3d-overlay)', backdropFilter: 'blur(8px)',
       borderRadius: 8, padding: '10px 14px',
-      border: '1px solid rgba(255,255,255,0.06)',
+      border: '1px solid var(--bg-3d-overlay-border)',
       display: 'flex', gap: 16, alignItems: 'center', fontSize: 11,
       fontFamily: "'Share Tech Mono', monospace",
     }}>
       <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
         <div style={{ width: 8, height: 8, borderRadius: '50%', background: '#64b4ff' }} />
-        <span style={{ color: '#94a3b8' }}>Inserts</span>
+        <span style={{ color: 'var(--text-3d-label)' }}>Inserts</span>
       </div>
       <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
         <div style={{ width: 8, height: 8, background: '#ffb432' }} />
-        <span style={{ color: '#94a3b8' }}>Merges</span>
+        <span style={{ color: 'var(--text-3d-label)' }}>Merges</span>
       </div>
       <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
         <div style={{
           width: 60, height: 8, borderRadius: 3,
           background: 'linear-gradient(90deg, rgb(10,10,25), rgb(20,80,140), rgb(120,200,50), rgb(240,120,20), rgb(180,10,60))',
         }} />
-        <span style={{ color: '#94a3b8' }}>Idle → Peak</span>
+        <span style={{ color: 'var(--text-3d-label)' }}>Idle → Peak</span>
       </div>
     </div>
   );
@@ -511,14 +511,14 @@ export const StressSurface: React.FC<StressSurfaceProps> = ({ data, isLoading, e
   }
 
   return (
-    <div style={{ width: '100%', height: '100%', position: 'relative', background: 'linear-gradient(180deg, #0c0c16 0%, #020617 100%)', borderRadius: 8, overflow: 'hidden' }}>
+    <div style={{ width: '100%', height: '100%', position: 'relative', background: `linear-gradient(180deg, var(--bg-3d-from) 0%, var(--bg-3d-to) 100%)`, borderRadius: 8, overflow: 'hidden' }}>
       <div style={{
         position: 'absolute', top: 16, left: 20, zIndex: 10, pointerEvents: 'none',
       }}>
-        <div style={{ fontSize: 14, fontWeight: 700, color: '#e2e8f0', fontFamily: "'Inter', sans-serif" }}>
+        <div style={{ fontSize: 14, fontWeight: 700, color: 'var(--text-3d-title)', fontFamily: "'Inter', sans-serif" }}>
           {data.table}
         </div>
-        <div style={{ fontSize: 11, color: '#64748b', marginTop: 2 }}>
+        <div style={{ fontSize: 11, color: 'var(--text-3d-sublabel)', marginTop: 2 }}>
           {data.queries.length} time buckets · {data.inserts.length > 0 ? `${data.inserts.reduce((s, r) => s + r.insert_count, 0)} inserts · ` : ''}
           {data.merges.length > 0 ? `${data.merges.reduce((s, r) => s + r.merges, 0)} merges` : 'no merge activity'}
         </div>

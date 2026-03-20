@@ -8,6 +8,7 @@
 import React, { useState, useMemo, useCallback, useRef } from 'react';
 import type { HierarchyItem } from './HierarchyVisualization';
 import { formatBytes } from '../../utils/formatters';
+import { getPartLevelGroupKey, MUTATION_GROUP_KEY } from '@tracehouse/core';
 
 // Colors for merge levels
 const MERGE_LEVEL_COLORS = [
@@ -21,17 +22,7 @@ const MERGE_LEVEL_COLORS = [
   '#ec4899', // L7+ - Pink
 ];
 
-// Mutation parts in ClickHouse use very high level numbers (hundreds+).
-// We group them separately so they don't create dozens of individual level rows.
-const MUTATION_LEVEL_THRESHOLD = 100;
 const MUTATION_COLOR = '#f43f5e'; // Rose — distinct from merge level colors
-
-function isMutationLevel(level: number): boolean {
-  return level >= MUTATION_LEVEL_THRESHOLD;
-}
-
-// Sentinel value used as the grouping key for all mutation parts
-const MUTATION_GROUP_KEY = -1;
 
 // Colors for different merge groups
 const MERGE_GROUP_COLORS = [
@@ -66,16 +57,13 @@ function getMergeLevelFromMetrics(item: HierarchyItem): number {
   return 0;
 }
 
-/** Returns the color for a given level, handling mutation levels specially. */
+/** Returns the color for a given level, handling mutation group specially. */
 function getLevelColor(level: number): string {
-  if (level === MUTATION_GROUP_KEY || isMutationLevel(level)) return MUTATION_COLOR;
+  if (level === MUTATION_GROUP_KEY) return MUTATION_COLOR;
   return MERGE_LEVEL_COLORS[Math.min(level, MERGE_LEVEL_COLORS.length - 1)];
 }
 
-/** Maps a raw level to its grouping key — mutation levels collapse into one group. */
-function toGroupKey(level: number): number {
-  return isMutationLevel(level) ? MUTATION_GROUP_KEY : level;
-}
+
 
 interface PartsVisualization2DProps {
   items: HierarchyItem[];
@@ -123,8 +111,7 @@ export const PartsVisualization2D: React.FC<PartsVisualization2DProps> = ({
     const groups = new Map<number, HierarchyItem[]>();
     
     items.forEach(item => {
-      const rawLevel = getMergeLevelFromMetrics(item);
-      const key = toGroupKey(rawLevel);
+      const key = getPartLevelGroupKey(item.name);
       if (!groups.has(key)) groups.set(key, []);
       groups.get(key)!.push(item);
     });
@@ -164,17 +151,14 @@ export const PartsVisualization2D: React.FC<PartsVisualization2DProps> = ({
     items.forEach(item => {
       if (item.merging && item.mergeId && item.mergeTarget) {
         if (!merges.has(item.mergeId)) {
-          // Parse target level from target name (format: partition_min_max_LEVEL)
           const targetParts = item.mergeTarget.split('_');
-          const targetLevel = targetParts.length >= 4 ? parseInt(targetParts[targetParts.length - 1], 10) || 0 : 0;
-          // Parse minBlock from target name for positioning
           const targetMinBlock = targetParts.length >= 2 ? parseInt(targetParts[1], 10) || 0 : 0;
           
           merges.set(item.mergeId, {
             sources: [],
             target: item.mergeTarget,
             progress: item.mergeProgress || 0,
-            targetLevel: toGroupKey(targetLevel),
+            targetLevel: getPartLevelGroupKey(item.mergeTarget || ''),
             targetMinBlock,
             totalSize: 0,
           });

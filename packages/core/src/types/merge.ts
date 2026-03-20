@@ -175,3 +175,12 @@ export interface MergeTextLog {
   thread_id: number;
   thread_name: string;
 }
+
+export interface MergeThroughputEstimate {
+  merge_algorithm: string;
+  merge_count: number;
+  avg_bytes_per_sec: number;
+  median_bytes_per_sec: number;
+  avg_duration_ms: number;
+  avg_size_bytes: number;
+}

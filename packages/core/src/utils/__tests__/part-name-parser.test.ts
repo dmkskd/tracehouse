@@ -1,6 +1,6 @@
 import { describe, it, expect } from 'vitest';
 import * as fc from 'fast-check';
-import { parsePartName, getLevelFromName, isMutatedPart } from '../part-name-parser.js';
+import { parsePartName, getLevelFromName, isMutatedPart, getPartLevelGroupKey, MUTATION_GROUP_KEY } from '../part-name-parser.js';
 
 describe('Part Name Parser', () => {
   describe('parsePartName', () => {
@@ -180,6 +180,32 @@ describe('Part Name Parser', () => {
     it('returns false for invalid names', () => {
       expect(isMutatedPart('')).toBe(false);
       expect(isMutatedPart('invalid')).toBe(false);
+    });
+  });
+
+  describe('getPartLevelGroupKey', () => {
+    it('returns the merge level for regular parts', () => {
+      expect(getPartLevelGroupKey('all_1_100_3')).toBe(3);
+      expect(getPartLevelGroupKey('all_754_754_0')).toBe(0);
+      expect(getPartLevelGroupKey('202602_1_15139_8')).toBe(8);
+    });
+
+    it('returns the merge level for high-level regular parts (not mutations)', () => {
+      // These are heavily-merged parts, NOT mutations — the old level>=100 heuristic was wrong
+      expect(getPartLevelGroupKey('all_1_585_123')).toBe(123);
+      expect(getPartLevelGroupKey('all_1_510_132')).toBe(132);
+      expect(getPartLevelGroupKey('all_387_699_109')).toBe(109);
+    });
+
+    it('returns MUTATION_GROUP_KEY for mutated parts', () => {
+      expect(getPartLevelGroupKey('all_1_100_3_19118')).toBe(MUTATION_GROUP_KEY);
+      expect(getPartLevelGroupKey('202602_1_15139_8_19118')).toBe(MUTATION_GROUP_KEY);
+      expect(getPartLevelGroupKey('all_1_585_123_456')).toBe(MUTATION_GROUP_KEY);
+    });
+
+    it('returns 0 for invalid names', () => {
+      expect(getPartLevelGroupKey('')).toBe(0);
+      expect(getPartLevelGroupKey('invalid')).toBe(0);
     });
   });
 

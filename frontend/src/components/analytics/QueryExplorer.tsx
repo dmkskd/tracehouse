@@ -208,6 +208,7 @@ export const QueryExplorer: React.FC<QueryExplorerProps> = ({ urlState, onUrlSta
           description: directive.description,
           unit: directive.unit,
           descriptionColumn: directive.descriptionColumn,
+          color: directive.color,
         };
         setChartConfig(newChart);
         setViewMode('chart');
@@ -774,7 +775,7 @@ export const QueryExplorer: React.FC<QueryExplorerProps> = ({ urlState, onUrlSta
                 {chartConfig.visualization === '2d' ? (
                   <div style={{ position: 'relative', width: '100%', height: '100%' }}>
                     <ChartRenderer chartType={chartConfig.type} data={chartData} groupedData={groupedChartData}
-                      orientation={chartConfig.orientation} unit={chartConfig.unit}
+                      orientation={chartConfig.orientation} unit={chartConfig.unit} color={chartConfig.color}
                       onDrillDown={isDrillable ? handleDrillDown : undefined}
                       drillIntoQuery={isDrillable ? currentQuery?.directives.drill?.into : undefined} />
                     <button

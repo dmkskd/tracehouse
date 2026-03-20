@@ -9,6 +9,7 @@
   },
   "scripts": {
     "build": "tsc",
+    "prepare": "tsc",
     "dev": "node --loader ts-node/esm src/index.ts",
     "start": "node dist/index.js",
     "test:integration": "vitest run --config vitest.integration.config.ts"

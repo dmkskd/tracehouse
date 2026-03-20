@@ -95,6 +95,16 @@
   --scrollbar-track: rgba(255, 255, 255, 0.05);
   --scrollbar-thumb: rgba(255, 255, 255, 0.2);
   --scrollbar-thumb-hover: rgba(255, 255, 255, 0.3);
+
+  /* 3D visualization backgrounds */
+  --bg-3d: #0a0a1a;
+  --bg-3d-from: #0c0c16;
+  --bg-3d-to: #020617;
+  --bg-3d-overlay: rgba(15, 23, 42, 0.8);
+  --bg-3d-overlay-border: rgba(255, 255, 255, 0.06);
+  --text-3d-label: #94a3b8;
+  --text-3d-sublabel: #64748b;
+  --text-3d-title: #e2e8f0;
 }
 
 /* Light Theme - applied to html element and portal wrappers */
@@ -178,6 +188,16 @@
   --scrollbar-track: rgba(0, 0, 0, 0.05);
   --scrollbar-thumb: rgba(0, 0, 0, 0.2);
   --scrollbar-thumb-hover: rgba(0, 0, 0, 0.3);
+
+  /* 3D visualization backgrounds — lighter but still dark enough for colored meshes */
+  --bg-3d: #2a2e3e;
+  --bg-3d-from: #2e3248;
+  --bg-3d-to: #222638;
+  --bg-3d-overlay: rgba(255, 255, 255, 0.85);
+  --bg-3d-overlay-border: rgba(0, 0, 0, 0.1);
+  --text-3d-label: #475569;
+  --text-3d-sublabel: #64748b;
+  --text-3d-title: #1e293b;
 }
 
 /* Global scrollbar styling */

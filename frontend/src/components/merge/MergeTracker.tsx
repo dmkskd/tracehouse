@@ -2,7 +2,7 @@
  * MergeTracker - Dark theme merge tracking view
  */
 
-import React, { useEffect, useCallback, useState, useRef } from 'react';
+import React, { useEffect, useCallback, useState, useRef, useMemo } from 'react';
 import { useConnectionStore } from '../../stores/connectionStore';
 import { 
   useMergeStore, 
@@ -1779,25 +1779,29 @@ export const MergeTrackerView: React.FC = () => {
   const tblFilter = historyFilter.table;
 
   // Filtered active merges (client-side: database, table, merge type, host, part)
-  // Plain derived computation (not useMemo) — active merges are small (<100 items)
-  // and the array reference changes on every poll, so memoization adds no benefit.
-  let filteredActiveMerges = activeMerges;
-  if (dbFilter) filteredActiveMerges = filteredActiveMerges.filter(m => m.database === dbFilter);
-  if (tblFilter) filteredActiveMerges = filteredActiveMerges.filter(m => m.table === tblFilter);
-  if (selectedMergeType) {
-    if (selectedMergeType === 'Mutation') {
-      filteredActiveMerges = filteredActiveMerges.filter(m => m.is_mutation);
-    } else {
-      filteredActiveMerges = filteredActiveMerges.filter(m => !m.is_mutation && m.merge_type === selectedMergeType);
+  const filteredActiveMerges = useMemo(() => {
+    let result = activeMerges;
+    if (historyFilter.excludeSystemDatabases) {
+      result = result.filter(m => !['system', 'information_schema', 'INFORMATION_SCHEMA'].includes(m.database));
     }
-  }
-  if (selectedHost) filteredActiveMerges = filteredActiveMerges.filter(m => m.hostname === selectedHost);
-  if (selectedPartName) {
-    const q = selectedPartName.toLowerCase();
-    filteredActiveMerges = filteredActiveMerges.filter(m =>
-      m.result_part_name.toLowerCase().includes(q) || m.source_part_names?.some(p => p.toLowerCase().includes(q))
-    );
-  }
+    if (dbFilter) result = result.filter(m => m.database === dbFilter);
+    if (tblFilter) result = result.filter(m => m.table === tblFilter);
+    if (selectedMergeType) {
+      if (selectedMergeType === 'Mutation') {
+        result = result.filter(m => m.is_mutation);
+      } else {
+        result = result.filter(m => !m.is_mutation && m.merge_type === selectedMergeType);
+      }
+    }
+    if (selectedHost) result = result.filter(m => m.hostname === selectedHost);
+    if (selectedPartName) {
+      const q = selectedPartName.toLowerCase();
+      result = result.filter(m =>
+        m.result_part_name.toLowerCase().includes(q) || m.source_part_names?.some(p => p.toLowerCase().includes(q))
+      );
+    }
+    return result;
+  }, [activeMerges, historyFilter.excludeSystemDatabases, dbFilter, tblFilter, selectedMergeType, selectedHost, selectedPartName]);
 
   // Filtered mutations (client-side: database, table)
   const filteredMutations = React.useMemo(() => {

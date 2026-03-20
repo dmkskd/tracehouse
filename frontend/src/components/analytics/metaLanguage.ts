@@ -18,9 +18,15 @@ export type ChartStyle = '2d' | '3d';
 /** RAG (Red/Amber/Green) threshold rule for a column. */
 export interface RagRule {
   column: string;
-  direction: 'asc' | 'desc';
-  greenThreshold: number;
-  amberThreshold: number;
+  mode: 'numeric' | 'text';
+  /** Numeric mode */
+  direction?: 'asc' | 'desc';
+  greenThreshold?: number;
+  amberThreshold?: number;
+  /** Text mode — comma-separated values for each level */
+  greenValues?: string[];
+  amberValues?: string[];
+  redValues?: string[];
 }
 
 /** Result of parsing all -- directives from a SQL string. */
@@ -66,6 +72,8 @@ export interface ChartDirective {
   /** Column name whose value is shown as description in chart tooltips */
   descriptionColumn?: string;
   unit?: string;
+  /** Override the default chart color (hex, e.g. '#f59e0b'). Used for stroke and area fill. */
+  color?: string;
 }
 
 /* ─── constants ─── */
@@ -101,21 +109,33 @@ export function getRagColor(column: string, value: unknown, rules?: RagRule[]): 
   if (!rules) return undefined;
   const rule = rules.find(r => r.column === column);
   if (!rule) return undefined;
+
+  if (rule.mode === 'text') {
+    const s = String(value).toLowerCase().trim();
+    if (rule.greenValues?.some(v => v === s)) return '#22c55e';
+    if (rule.amberValues?.some(v => v === s)) return '#f59e0b';
+    if (rule.redValues?.some(v => v === s)) return '#ef4444';
+    return undefined;
+  }
+
   const num = typeof value === 'number' ? value : Number(value);
   if (isNaN(num)) return undefined;
   if (rule.direction === 'desc') {
-    if (num > rule.greenThreshold) return '#22c55e';
-    if (num > rule.amberThreshold) return '#f59e0b';
+    if (num > rule.greenThreshold!) return '#22c55e';
+    if (num > rule.amberThreshold!) return '#f59e0b';
     return '#ef4444';
   }
-  if (num < rule.greenThreshold) return '#22c55e';
-  if (num < rule.amberThreshold) return '#f59e0b';
+  if (num < rule.greenThreshold!) return '#22c55e';
+  if (num < rule.amberThreshold!) return '#f59e0b';
   return '#ef4444';
 }
 
 /* ─── parsers ─── */
 
-/** Parse @rag directives from raw SQL. */
+/** Parse @rag directives from raw SQL.
+ *  Numeric: `-- @rag: column=col green>100 amber>50`
+ *  Text:    `-- @rag: column=status green=ok,healthy amber=degraded red=error,down`
+ */
 export function parseRagRules(sql: string): RagRule[] {
   const rules: RagRule[] = [];
   const ragRegex = /--\s*@rag:\s*(.+)/gi;
@@ -123,14 +143,33 @@ export function parseRagRules(sql: string): RagRule[] {
   while ((ragMatch = ragRegex.exec(sql)) !== null) {
     const r = ragMatch[1];
     const colMatch = r.match(/column=(\w+)/);
-    const greenMatch = r.match(/green([<>])(\d+(?:\.\d+)?)/);
-    const amberMatch = r.match(/amber([<>])(\d+(?:\.\d+)?)/);
-    if (colMatch && greenMatch && amberMatch) {
+    if (!colMatch) continue;
+
+    // Try numeric format: green>N amber>N or green<N amber<N
+    const greenNum = r.match(/green([<>])(\d+(?:\.\d+)?)/);
+    const amberNum = r.match(/amber([<>])(\d+(?:\.\d+)?)/);
+    if (greenNum && amberNum) {
       rules.push({
         column: colMatch[1],
-        direction: greenMatch[1] === '>' ? 'desc' : 'asc',
-        greenThreshold: Number(greenMatch[2]),
-        amberThreshold: Number(amberMatch[2]),
+        mode: 'numeric',
+        direction: greenNum[1] === '>' ? 'desc' : 'asc',
+        greenThreshold: Number(greenNum[2]),
+        amberThreshold: Number(amberNum[2]),
+      });
+      continue;
+    }
+
+    // Text format: green=val1,val2 amber=val3 red=val4,val5
+    const greenText = r.match(/green=([^\s]+)/);
+    const amberText = r.match(/amber=([^\s]+)/);
+    const redText = r.match(/red=([^\s]+)/);
+    if (greenText || amberText || redText) {
+      rules.push({
+        column: colMatch[1],
+        mode: 'text',
+        greenValues: greenText?.[1].toLowerCase().split(','),
+        amberValues: amberText?.[1].toLowerCase().split(','),
+        redValues: redText?.[1].toLowerCase().split(','),
       });
     }
   }
@@ -233,6 +272,7 @@ export function parseChartDirective(sql: string): Partial<ChartDirective> | null
   const s = d.match(/style=(\w+)/i); if (s) cfg.visualization = s[1] as '2d' | '3d';
   const u = d.match(/unit=(\S+)/i); if (u) cfg.unit = u[1];
   const dc = d.match(/description=(\w+)/i); if (dc) cfg.descriptionColumn = dc[1];
+  const co = d.match(/color=(#[0-9a-fA-F]{3,8}|\w+)/i); if (co) cfg.color = co[1];
   const mm = sql.match(/--\s*@meta:\s*(.+)/i);
   if (mm) {
     const ti = mm[1].match(/title='([^']+)'/); if (ti) cfg.title = ti[1];

@@ -5,7 +5,7 @@ import type { IClickHouseAdapter } from '../adapters/types.js';
 import type { TraceLog, ExplainType, ExplainResult, OpenTelemetrySpan, FlamegraphSample, ProcessorProfile } from '../types/trace.js';
 import { buildQuery, tagQuery, eventDateBound } from '../queries/builder.js';
 import { TAB_QUERIES, sourceTag } from '../queries/source-tags.js';
-import { QUERY_TRACE_LOGS, QUERY_FLAMEGRAPH_CPU, QUERY_FLAMEGRAPH_REAL, QUERY_FLAMEGRAPH_MEMORY, QUERY_FLAMEGRAPH_DATA, QUERY_FLAMEGRAPH_REAL_LEGACY, QUERY_FLAMEGRAPH_MEMORY_LEGACY, QUERY_PROCESSORS_PROFILE } from '../queries/trace-queries.js';
+import { QUERY_TRACE_LOGS, QUERY_FLAMEGRAPH_CPU, QUERY_FLAMEGRAPH_REAL, QUERY_FLAMEGRAPH_MEMORY, QUERY_FLAMEGRAPH_DATA, QUERY_FLAMEGRAPH_REAL_LEGACY, QUERY_FLAMEGRAPH_MEMORY_LEGACY, QUERY_FLAMEGRAPH_CPU_TIME_SCOPED, QUERY_FLAMEGRAPH_CPU_TIME_SCOPED_LEGACY, QUERY_TRACE_SAMPLE_COUNTS, QUERY_PROCESSORS_PROFILE } from '../queries/trace-queries.js';
 
 export type FlamegraphType = 'CPU' | 'Real' | 'Memory';
 
@@ -320,6 +320,119 @@ export class TraceService {
     return simplified;
   }
 
+
+  /**
+   * Fetch flamegraph folded-stack data for a specific time window within a query.
+   * Used by X-Ray to show "what was happening at this second" via speedscope.
+   *
+   * @param fromTime - Absolute start time (ISO string, e.g. '2026-03-20T13:52:17.000Z')
+   * @param toTime   - Absolute end time (exclusive)
+   */
+  /**
+   * Lightweight probe: returns a Map of second → sample count for CPU profiler
+   * samples in trace_log. No introspection needed — just counts rows.
+   * Returns null if trace_log is unavailable.
+   */
+  async getTraceSampleCounts(queryId: string, queryStartTime: string, eventDate?: string): Promise<Map<number, number>> {
+    const dateBound = eventDateBound(eventDate);
+    const chStart = queryStartTime.replace('T', ' ').replace(/\.\d+Z?$/, '').replace('Z', '');
+    const sql = buildQuery(
+      QUERY_TRACE_SAMPLE_COUNTS.replace('{event_date_bound}', dateBound),
+      { query_id: queryId, query_start_time: chStart },
+    );
+    const rows = await this.adapter.executeQuery(
+      tagQuery(sql, sourceTag(TAB_QUERIES, 'traceSampleCounts')),
+    );
+    const result = new Map<number, number>();
+    for (const r of rows) {
+      const row = r as Record<string, unknown>;
+      result.set(Number(row.t_second) || 0, Number(row.samples) || 0);
+    }
+    return result;
+  }
+
+  /**
+   * Fetch flamegraph folded-stack data for a specific time window within a query.
+   * Used by X-Ray to show "what was happening at this second" via speedscope.
+   *
+   * @param fromTime - Absolute start time (ISO string)
+   * @param toTime   - Absolute end time (exclusive)
+   */
+  async getFlamegraphFoldedForTimeRange(
+    queryId: string,
+    fromTime: string,
+    toTime: string,
+    eventDate?: string,
+  ): Promise<{ folded: string; unavailableReason?: string }> {
+    try {
+      const dateBound = eventDateBound(eventDate);
+      // Convert ISO to ClickHouse-friendly format: '2026-03-20 13:52:17'
+      const chFrom = fromTime.replace('T', ' ').replace(/\.\d+Z?$/, '').replace('Z', '');
+      const chTo = toTime.replace('T', ' ').replace(/\.\d+Z?$/, '').replace('Z', '');
+      const params = { query_id: queryId, from_time: chFrom, to_time: chTo };
+
+      let rows: Record<string, unknown>[];
+      let usedLegacy = false;
+
+      try {
+        const sql = buildQuery(
+          QUERY_FLAMEGRAPH_CPU_TIME_SCOPED.replace('{event_date_bound}', dateBound),
+          params,
+        );
+        rows = await this.adapter.executeQuery(
+          tagQuery(sql, sourceTag(TAB_QUERIES, 'flamegraphTimeScoped')),
+        );
+      } catch (primaryError) {
+        const primaryMsg = primaryError instanceof Error ? primaryError.message : String(primaryError);
+        if (primaryMsg.includes('allow_introspection_functions') || primaryMsg.includes('Code: 446')) {
+          throw primaryError;
+        }
+        // flameGraph() fails on clusters (NOT_IMPLEMENTED) or old versions — fall back to legacy
+        const sql = buildQuery(
+          QUERY_FLAMEGRAPH_CPU_TIME_SCOPED_LEGACY.replace('{event_date_bound}', dateBound),
+          params,
+        );
+        rows = await this.adapter.executeQuery(
+          tagQuery(sql, sourceTag(TAB_QUERIES, 'flamegraphTimeScopedLegacy')),
+        );
+        usedLegacy = true;
+      }
+
+      const samples: FlamegraphSample[] = usedLegacy
+        ? rows.map(r => ({
+            stack: String((r as Record<string, unknown>).stack || ''),
+            value: Number((r as Record<string, unknown>).value) || 1,
+          }))
+        : rows.map(r => {
+            const line = String((r as Record<string, unknown>).line || '');
+            const lastSpaceIdx = line.lastIndexOf(' ');
+            if (lastSpaceIdx === -1) return { stack: line, value: 1 };
+            return { stack: line.substring(0, lastSpaceIdx), value: parseInt(line.substring(lastSpaceIdx + 1), 10) || 1 };
+          });
+
+      const folded = samples
+        .filter(s => s.stack)
+        .map(s => {
+          const simplified = s.stack.split(';').map(f => this.simplifyFunctionName(f.trim())).join(';');
+          return `${simplified} ${s.value}`;
+        })
+        .join('\n');
+
+      return { folded };
+    } catch (error) {
+      const msg = error instanceof Error ? error.message : String(error);
+      if (msg.includes('allow_introspection_functions') || msg.includes('Code: 446')) {
+        return {
+          folded: '',
+          unavailableReason: 'Introspection functions are not enabled on this server.',
+        };
+      }
+      if (msg.includes('Empty query') || msg.includes('UNKNOWN_TABLE')) {
+        return { folded: '' };
+      }
+      throw error;
+    }
+  }
 
     /**
      * Fetch per-processor execution stats from system.processors_profile_log

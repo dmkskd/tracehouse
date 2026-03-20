@@ -18,6 +18,8 @@ import * as THREE from 'three';
 import type { TraceLog } from '@tracehouse/core';
 import { useProcessSamples } from './useProcessSamples';
 import type { ProcessSample } from './useProcessSamples';
+import { useTraceSampleCounts, hasTraceSamplesInRange, useTimeScopedFlamegraph } from './useHotFunctions';
+import { SpeedscopeViewer } from '../tracing/SpeedscopeViewer';
 
 /* ── Constants ──────────────────────────────────────────────────────── */
 
@@ -38,6 +40,9 @@ interface XRaySceneProps {
   samples: ProcessSample[];
   highlightTime: number | null;  // seconds from start, null = no highlight
   highlightLabel?: string;       // optional label at crosshair
+  sampleCounts?: Map<number, number> | null;  // profiler sample counts per second
+  sampleOffset?: number;  // offset between queryStartTime and first process sample
+  onShowFlamegraphForT?: (t: number) => void;
 }
 
 /* ── Helpers ─────────────────────────────────────────────────────────── */
@@ -537,7 +542,10 @@ const HoverTooltip: React.FC<{
   maxMem: number;
   smoothCpu: number[];
   smoothMem: number[];
-}> = ({ samples, maxT, maxCpu, maxMem, smoothCpu, smoothMem }) => {
+  sampleCounts?: Map<number, number> | null;
+  sampleOffset?: number;
+  onShowFlamegraphForT?: (t: number) => void;
+}> = ({ samples, maxT, maxCpu, maxMem, smoothCpu, smoothMem, sampleCounts, sampleOffset = 0, onShowFlamegraphForT }) => {
   const meshRef = useRef<THREE.Mesh>(null);
   const [hoverIdx, setHoverIdx] = useState<number | null>(null);
   const [hoverPos, setHoverPos] = useState<THREE.Vector3 | null>(null);
@@ -556,6 +564,15 @@ const HoverTooltip: React.FC<{
     setHoverPos(null);
   }, []);
 
+  const handleClick = useCallback(() => {
+    if (hoverIdx === null || !onShowFlamegraphForT) return;
+    const s = samples[hoverIdx];
+    if (!s || !sampleCounts) return;
+    if (hasTraceSamplesInRange(sampleCounts, s.t + sampleOffset, s.t + sampleOffset + 1)) {
+      onShowFlamegraphForT(s.t);
+    }
+  }, [hoverIdx, samples, sampleCounts, onShowFlamegraphForT]);
+
   const s = hoverIdx !== null ? samples[hoverIdx] : null;
 
   return (
@@ -566,6 +583,7 @@ const HoverTooltip: React.FC<{
         position={[RUNWAY_X / 2, MAX_Y / 2, MAX_Z / 2]}
         onPointerMove={handlePointerMove}
         onPointerLeave={handlePointerLeave}
+        onClick={handleClick}
       >
         <planeGeometry args={[RUNWAY_X, MAX_Y]} />
         <meshBasicMaterial transparent opacity={0} side={THREE.DoubleSide} />
@@ -631,6 +649,14 @@ const HoverTooltip: React.FC<{
             {s.d_net_send_kb > 0 && <div><span style={{ color: '#33DDFF' }}>Net Send:</span> {s.d_net_send_kb.toFixed(1)} KB</div>}
             {s.d_net_recv_kb > 0 && <div><span style={{ color: '#33DDFF' }}>Net Recv:</span> {s.d_net_recv_kb.toFixed(1)} KB</div>}
             <div><span style={{ color: '#aaa' }}>Threads:</span> {s.thread_count}</div>
+            {sampleCounts && hasTraceSamplesInRange(sampleCounts, s.t + sampleOffset, s.t + sampleOffset + 1) && (
+              <div style={{
+                borderTop: '1px solid #333', paddingTop: 3, marginTop: 3,
+                color: '#636EFA', fontSize: 10,
+              }}>
+                Click for Flamegraph
+              </div>
+            )}
           </div>
         </Html>
       )}
@@ -640,7 +666,7 @@ const HoverTooltip: React.FC<{
 
 /* ── 3D Scene ──────────────────────────────────────────────────────── */
 
-const XRayScene: React.FC<XRaySceneProps> = ({ samples, highlightTime, highlightLabel }) => {
+const XRayScene: React.FC<XRaySceneProps> = ({ samples, highlightTime, highlightLabel, sampleCounts, sampleOffset = 0, onShowFlamegraphForT }) => {
   const maxT = useMemo(() => Math.max(...samples.map(s => s.t), 1), [samples]);
   const maxCpu = useMemo(() => Math.max(...samples.map(s => s.d_cpu_cores), 1), [samples]);
   const maxMem = useMemo(() => Math.max(...samples.map(s => s.memory_mb), 1), [samples]);
@@ -679,6 +705,9 @@ const XRayScene: React.FC<XRaySceneProps> = ({ samples, highlightTime, highlight
         maxMem={maxMem}
         smoothCpu={smoothCpu}
         smoothMem={smoothMem}
+        sampleCounts={sampleCounts}
+        sampleOffset={sampleOffset}
+        onShowFlamegraphForT={onShowFlamegraphForT}
       />
     </>
   );
@@ -926,7 +955,7 @@ const Scrubber: React.FC<{
       </div>
 
       {/* Detail row */}
-      <div style={{ lineHeight: 1.5, minHeight: 18 }}>
+      <div style={{ lineHeight: 1.5, minHeight: 18, display: 'flex', alignItems: 'center', gap: 10 }}>
         {detailContent}
       </div>
     </div>
@@ -977,6 +1006,9 @@ export const QueryXRay3D: React.FC<QueryXRay3DProps> = ({
   queryStartTime,
 }) => {
   const { samples: allSamples, hostSamples, hosts, isLoading: isLoadingSamples, error, fetch: fetchSamples } = useProcessSamples(queryId);
+  const { sampleCounts, fetch: fetchSampleCounts } = useTraceSampleCounts(queryId, queryStartTime, queryStartTime);
+  const timeScopedFlamegraph = useTimeScopedFlamegraph();
+  const [showFlamegraphPopup, setShowFlamegraphPopup] = useState(false);
   const [selectedHost, setSelectedHost] = useState<string | null>(null);
   const [scrubberMode, setScrubberMode] = useState<ScrubberMode>('time');
   const [scrubberIdx, setScrubberIdx] = useState(0);
@@ -987,10 +1019,11 @@ export const QueryXRay3D: React.FC<QueryXRay3DProps> = ({
     return hostSamples.get(selectedHost) || [];
   }, [selectedHost, allSamples, hostSamples]);
 
-  // Fetch samples on mount
+  // Fetch samples and probe trace_log on mount
   useEffect(() => {
     fetchSamples();
-  }, [fetchSamples]);
+    fetchSampleCounts();
+  }, [fetchSamples, fetchSampleCounts]);
 
   // Convert TraceLog[] to LogEvent[] relative to query start
   const logEvents = useMemo(() => {
@@ -1054,6 +1087,73 @@ export const QueryXRay3D: React.FC<QueryXRay3DProps> = ({
   const highlightLabel = scrubberMode === 'logs' && logEvents[clampedIdx]
     ? logEvents[clampedIdx].source.split('(')[0].trim().slice(0, 25)
     : undefined;
+
+  // Offset between queryStartTime and the first process sample.
+  // Process sample t=0 corresponds to queryStartTime + sampleOffset seconds.
+  // The probe's t_second values are relative to queryStartTime, so we add this offset
+  // when mapping scrubber positions to probe keys and absolute times.
+  const sampleOffset = samples.length > 0 ? samples[0].elapsed : 0;
+
+  // Compute absolute time window for current scrubber position (for flamegraph popup)
+  // Only returns non-null when we know there are profiler samples in this window.
+  // Works in both time and logs mode.
+  const currentTimeWindow = useMemo(() => {
+    if (samples.length === 0 || !queryStartTime || !sampleCounts) return null;
+    const startMs = new Date(queryStartTime).getTime();
+    let currentT: number;
+    let nextT: number;
+    if (scrubberMode === 'logs') {
+      currentT = logEvents[clampedIdx]?.t ?? 0;
+      nextT = currentT + 1;
+    } else {
+      currentT = samples[clampedIdx]?.t ?? 0;
+      nextT = clampedIdx < samples.length - 1 ? samples[clampedIdx + 1].t : currentT + 1;
+    }
+    // Convert from process-sample-relative t to queryStartTime-relative t_second
+    const probeFrom = currentT + sampleOffset;
+    const probeTo = nextT + sampleOffset;
+    if (!hasTraceSamplesInRange(sampleCounts, probeFrom, probeTo)) return null;
+    return {
+      from: new Date(startMs + probeFrom * 1000).toISOString(),
+      to: new Date(startMs + probeTo * 1000).toISOString(),
+      label: `${currentT.toFixed(0)}s – ${nextT.toFixed(0)}s`,
+    };
+  }, [scrubberMode, samples, logEvents, clampedIdx, queryStartTime, sampleCounts, sampleOffset]);
+
+  // Open flamegraph popup for current time window
+  const handleShowFlamegraph = useCallback(() => {
+    if (!currentTimeWindow) return;
+    timeScopedFlamegraph.clear();
+    setShowFlamegraphPopup(true);
+    timeScopedFlamegraph.fetch(queryId, currentTimeWindow.from, currentTimeWindow.to, queryStartTime);
+  }, [queryId, queryStartTime, currentTimeWindow, timeScopedFlamegraph]);
+
+  // Open flamegraph for a specific t value (from hover card click)
+  // t is process-sample-relative; add sampleOffset to get queryStartTime-relative
+  const handleShowFlamegraphForT = useCallback((t: number) => {
+    if (!queryStartTime || !sampleCounts) return;
+    const startMs = new Date(queryStartTime).getTime();
+    const absT = t + sampleOffset;
+    const from = new Date(startMs + absT * 1000).toISOString();
+    const to = new Date(startMs + (absT + 1) * 1000).toISOString();
+    timeScopedFlamegraph.clear();
+    setShowFlamegraphPopup(true);
+    timeScopedFlamegraph.fetch(queryId, from, to, queryStartTime);
+  }, [queryId, queryStartTime, sampleCounts, sampleOffset, timeScopedFlamegraph]);
+
+  // Esc closes flamegraph popup (capture phase to prevent parent modal from closing)
+  useEffect(() => {
+    if (!showFlamegraphPopup) return;
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') {
+        e.stopImmediatePropagation();
+        e.preventDefault();
+        setShowFlamegraphPopup(false);
+      }
+    };
+    window.addEventListener('keydown', onKey, true); // capture phase
+    return () => window.removeEventListener('keydown', onKey, true);
+  }, [showFlamegraphPopup]);
 
   // Reset index on mode change
   const handleModeChange = useCallback((m: ScrubberMode) => {
@@ -1223,9 +1323,35 @@ export const QueryXRay3D: React.FC<QueryXRay3DProps> = ({
             samples={samples}
             highlightTime={highlightTime}
             highlightLabel={highlightLabel}
+            sampleCounts={sampleCounts}
+            sampleOffset={sampleOffset}
+            onShowFlamegraphForT={handleShowFlamegraphForT}
           />
         </Canvas>
         {/* Axis legend overlay */}
+        {/* Flamegraph button — floats above the scrubber in the canvas area */}
+        {currentTimeWindow && (
+          <button
+            onClick={handleShowFlamegraph}
+            style={{
+              position: 'absolute',
+              bottom: 8,
+              left: 16,
+              padding: '4px 10px',
+              fontSize: 10,
+              fontFamily: 'monospace',
+              borderRadius: 4,
+              border: '1px solid #636EFA55',
+              background: 'rgba(10,10,26,0.9)',
+              color: '#636EFA',
+              cursor: 'pointer',
+              zIndex: 10,
+              whiteSpace: 'nowrap',
+            }}
+          >
+            Flamegraph
+          </button>
+        )}
       </div>
 
       {/* Scrubber */}
@@ -1237,6 +1363,53 @@ export const QueryXRay3D: React.FC<QueryXRay3DProps> = ({
         activeIdx={scrubberIdx}
         onChange={setScrubberIdx}
       />
+
+      {/* Time-scoped flamegraph popup */}
+      {showFlamegraphPopup && (
+        <div style={{
+          position: 'fixed',
+          top: 0, left: 0, right: 0, bottom: 0,
+          zIndex: 9999,
+          display: 'flex',
+          flexDirection: 'column',
+          background: '#000',
+        }}>
+          <div style={{
+            padding: '10px 16px',
+            background: '#111',
+            borderBottom: '1px solid #333',
+            display: 'flex',
+            justifyContent: 'space-between',
+            alignItems: 'center',
+          }}>
+            <span style={{ color: '#ccc', fontSize: 13, fontFamily: 'monospace' }}>
+              Flamegraph @ {currentTimeWindow?.label}
+            </span>
+            <button
+              onClick={() => setShowFlamegraphPopup(false)}
+              style={{
+                padding: '4px 12px', fontSize: 12, borderRadius: 4,
+                border: '1px solid #444', background: '#222', color: '#ccc', cursor: 'pointer',
+              }}
+            >
+              Close (Esc)
+            </button>
+          </div>
+          <div style={{ flex: 1, minHeight: 0 }}>
+            <SpeedscopeViewer
+              folded={timeScopedFlamegraph.folded}
+              isLoading={timeScopedFlamegraph.isLoading}
+              error={timeScopedFlamegraph.error}
+              unavailableReason={timeScopedFlamegraph.unavailableReason}
+              onRefresh={() => {
+                if (currentTimeWindow) {
+                  timeScopedFlamegraph.fetch(queryId, currentTimeWindow.from, currentTimeWindow.to, queryStartTime);
+                }
+              }}
+            />
+          </div>
+        </div>
+      )}
     </div>
   );
 };

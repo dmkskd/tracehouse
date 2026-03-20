@@ -2,7 +2,7 @@
 
 const queries: string[] = [
   `-- @meta: title='MaxPartCountForPartition' group='Parts' interval='1 DAY' description='Trend of the highest part count per partition — early warning for too many parts'
--- @chart: type=line group_by=minute value=avg_max_parts style=3d
+-- @chart: type=area group_by=minute value=avg_max_parts style=2d color=#ef4444
 -- Source: https://clickhouse.com/blog/monitoring-troubleshooting-insert-queries-clickhouse
 SELECT
     toStartOfMinute(event_time) AS minute,

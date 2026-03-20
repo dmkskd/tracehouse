@@ -14,4 +14,6 @@ export {
 export type { MergeCategory, MergeCategoryInfo, MutationSubtype, MutationSubtypeInfo } from './merge-classification.js';
 export { parseTimeValue } from './time.js';
 export { parseTTL, formatTTLDuration } from './ttl-parser.js';
-export { parsePartName, getLevelFromName, isMutatedPart } from './part-name-parser.js';
+export { parsePartName, getLevelFromName, isMergedPart, isMutatedPart, stripMutationVersion, getPartLevelGroupKey, MUTATION_GROUP_KEY } from './part-name-parser.js';
+export { parseVerticalMergeProgress } from './vertical-merge-progress.js';
+export type { VerticalMergeProgress, VerticalMergeSegment } from './vertical-merge-progress.js';

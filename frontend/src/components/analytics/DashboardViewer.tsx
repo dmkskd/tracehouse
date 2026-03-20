@@ -18,8 +18,8 @@ import { TimeRangePicker } from './TimeRangePicker';
 import {
   formatCell,
   buildChartData, buildGroupedChartData, isGroupedChartType, sortRows,
-  ChartRenderer,
-  type ChartDataPoint, type GroupedChartData, type DrillDownEvent,
+  ChartRenderer, isTimeSeriesChartType,
+  type ChartDataPoint, type GroupedChartData, type DrillDownEvent, type CorrelationEntry,
 } from './charts';
 import { Chart3DCanvas } from './charts3d';
 import { ResultsTable } from './ResultsTable';
@@ -45,6 +45,15 @@ interface PanelResult {
 
 type PanelView = 'chart' | 'table';
 
+/** Data reported by a panel for cross-panel correlation. */
+export interface PanelTimeSeriesInfo {
+  name: string;
+  color: string;
+  unit?: string;
+  /** Map from label (timestamp string) → numeric value */
+  dataByLabel: Map<string, number>;
+}
+
 const DashboardPanelCard: React.FC<{
   panel: DashboardPanel;
   timeRangeOverride: string | null;
@@ -52,7 +61,12 @@ const DashboardPanelCard: React.FC<{
   isFullscreen: boolean;
   onToggleFullscreen: () => void;
   isHidden: boolean;
-}> = ({ panel, timeRangeOverride, dashboardId, isFullscreen, onToggleFullscreen, isHidden }) => {
+  hoveredTimestamp?: string | null;
+  onTimestampHover?: (label: string | null) => void;
+  onTimeSeriesData?: (info: PanelTimeSeriesInfo | null) => void;
+  correlationValues?: CorrelationEntry[];
+  isHoveredPanel?: boolean;
+}> = ({ panel, timeRangeOverride, dashboardId, isFullscreen, onToggleFullscreen, isHidden, hoveredTimestamp, onTimestampHover, onTimeSeriesData, correlationValues, isHoveredPanel }) => {
   const services = useClickHouseServices();
   const [, setSearchParams] = useSearchParams();
   const originalPreset = resolvePanel(panel);
@@ -146,8 +160,27 @@ const DashboardPanelCard: React.FC<{
   const chartType: ChartType = chartDirective?.type || preset?.directives.chart?.type || 'bar';
   const chartStyle = chartDirective?.visualization || preset?.directives.chart?.style || '2d';
   const chartUnit = chartDirective?.unit;
+  const chartColor = chartDirective?.color;
   const isGroupedChart = isGroupedChartType(chartType);
+  const isTimeSeries = isTimeSeriesChartType(chartType);
   const hasChart = hasChartDirective && (isGroupedChart ? groupedChartData.length > 0 : chartData.length > 0);
+
+  // Report time-series data upward for correlation
+  useEffect(() => {
+    if (!onTimeSeriesData) return;
+    if (!isTimeSeries || !hasChart || !preset) { onTimeSeriesData(null); return; }
+    const dataByLabel = new Map<string, number>();
+    if (isGroupedChart && groupedChartData.length > 0) {
+      // Sum all series values per timestamp (e.g. TCP + MySQL + HTTP + Interserver)
+      for (const d of groupedChartData) {
+        const sum = d.groups.reduce((acc, g) => acc + g.value, 0);
+        dataByLabel.set(d.label, sum);
+      }
+    } else {
+      for (const d of chartData) dataByLabel.set(d.label, d.value);
+    }
+    onTimeSeriesData({ name: preset.name, color: chartColor || '#6366f1', unit: chartUnit, dataByLabel });
+  }, [onTimeSeriesData, isTimeSeries, isGroupedChart, hasChart, chartData, groupedChartData, preset, chartColor, chartUnit]);
 
   // Drill-down support
   const isDrillable = !!(preset?.directives.drill?.on && preset?.directives.drill?.into) &&
@@ -163,6 +196,8 @@ const DashboardPanelCard: React.FC<{
     setDrillPreset(target);
     setDrillParams(newParams);
     setResult(null);
+    // Push history entry so browser back undoes the drill-down
+    window.history.pushState({ drill: true }, '');
     setTimeout(() => run(target, newParams), 0);
   }, [preset, drillParams, run]);
 
@@ -172,6 +207,14 @@ const DashboardPanelCard: React.FC<{
     setResult(null);
     setTimeout(() => run(originalPreset ?? undefined, {}), 0);
   }, [originalPreset, run]);
+
+  // Browser back button undoes drill-down
+  useEffect(() => {
+    if (!isDrilled) return;
+    const onPopState = () => { handleDrillReset(); };
+    window.addEventListener('popstate', onPopState);
+    return () => window.removeEventListener('popstate', onPopState);
+  }, [isDrilled, handleDrillReset]);
 
   // @link support
   const [linkModal, setLinkModal] = useState<{ targetQuery: Query; params: Record<string, string> } | null>(null);
@@ -253,7 +296,7 @@ const DashboardPanelCard: React.FC<{
           </button>
         </div>
       </div>
-      <div style={{ padding: fullscreen ? '0 8px 8px' : '0 14px 10px', flex: 1, minHeight: 0, overflow: 'hidden', display: 'flex', flexDirection: 'column' }}>
+      <div style={{ padding: fullscreen ? '0 8px 8px' : '0 14px 10px', flex: 1, minHeight: 0, overflowX: 'hidden', overflowY: 'visible', display: 'flex', flexDirection: 'column' }}>
         {loading && <div style={{ color: 'var(--text-muted)', fontSize: 11, padding: '20px 0', textAlign: 'center' }}>Loading…</div>}
         {error && (() => {
           const fmt = formatClickHouseError(error);
@@ -276,9 +319,10 @@ const DashboardPanelCard: React.FC<{
                     onDrillDown={isDrillable ? handleDrillDown : undefined} />
                 ) : (
                   <ChartRenderer chartType={chartType} data={chartData} groupedData={groupedChartData}
-                    orientation={chartDirective?.orientation} fullHeight unit={chartUnit}
+                    orientation={chartDirective?.orientation} fullHeight unit={chartUnit} color={chartColor}
                     onDrillDown={isDrillable ? handleDrillDown : undefined}
-                    drillIntoQuery={isDrillable ? preset?.directives.drill?.into : undefined} />
+                    drillIntoQuery={isDrillable ? preset?.directives.drill?.into : undefined}
+                    hoveredTimestamp={hoveredTimestamp} onTimestampHover={onTimestampHover} correlationValues={correlationValues} currentPanelName={preset?.name} isHoveredPanel={isHoveredPanel} />
                 )}
               </div>
             )}
@@ -339,7 +383,8 @@ const panelStyle: React.CSSProperties = {
   borderRadius: 8,
   display: 'flex',
   flexDirection: 'column',
-  overflow: 'hidden',
+  overflowX: 'hidden',
+  overflowY: 'visible',
   height: '100%',
 };
 
@@ -550,6 +595,7 @@ const MiniPanelCard: React.FC<{ panel: DashboardPanel; timeRangeOverride: string
 
   const chartType: ChartType = chartDirective?.type || preset?.directives.chart?.type || 'bar';
   const chartStyle = chartDirective?.visualization || preset?.directives.chart?.style || '2d';
+  const miniChartColor = chartDirective?.color;
   const isGroupedChart2 = isGroupedChartType(chartType);
   const hasChart = isGroupedChart2 ? groupedChartData2.length > 0 : chartData.length > 0;
 
@@ -576,7 +622,7 @@ const MiniPanelCard: React.FC<{ panel: DashboardPanel; timeRangeOverride: string
               <Chart3DCanvas data={chartData} type={chartType} orientation={chartDirective?.orientation} groupedData={isGroupedChart2 ? groupedChartData2 : undefined} />
             ) : (
               <ChartRenderer chartType={chartType} data={chartData} groupedData={groupedChartData2}
-                orientation={chartDirective?.orientation} fullHeight />
+                orientation={chartDirective?.orientation} fullHeight color={miniChartColor} />
             )}
           </>
         )}
@@ -811,6 +857,8 @@ const DashboardListView: React.FC<{
   );
 };
 
+// ─── Correlation summary strip ───
+
 // ─── Main DashboardViewer ───
 
 type ViewState = { mode: 'list' } | { mode: 'view'; dashboardId: string } | { mode: 'edit'; dashboard?: Dashboard } | { mode: 'import' };
@@ -835,6 +883,41 @@ export const DashboardViewer: React.FC<{ initialDashboardId?: string }> = ({ ini
     }
   }, [initialDashboardId, dashboards]);
   const [timeRangeOverride, setTimeRangeOverride] = useState<string | null>('1 HOUR');
+
+  // ─── Cross-panel correlation ───
+  const [correlationEnabled, setCorrelationEnabled] = useState(false);
+  const [hoveredTimestamp, setHoveredTimestamp] = useState<string | null>(null);
+  const [hoveredPanelIndex, setHoveredPanelIndex] = useState<number | null>(null);
+  // Keep last non-null timestamp so the strip doesn't flicker away on mouse leave
+  const lastTimestampRef = useRef<string | null>(null);
+  if (hoveredTimestamp) lastTimestampRef.current = hoveredTimestamp;
+  const displayTimestamp = hoveredTimestamp ?? lastTimestampRef.current;
+  const panelDataRef = useRef<Map<number, PanelTimeSeriesInfo>>(new Map());
+
+  const handlePanelData = useCallback((panelIndex: number) => (info: PanelTimeSeriesInfo | null) => {
+    if (info) panelDataRef.current.set(panelIndex, info);
+    else panelDataRef.current.delete(panelIndex);
+  }, []);
+
+  // Collect correlation values sorted by panel order (matching dashboard layout)
+  const correlationValues = useMemo(() => {
+    if (!correlationEnabled || !displayTimestamp) return [];
+    const entries: [number, CorrelationEntry][] = [];
+    for (const [idx, info] of panelDataRef.current) {
+      const val = info.dataByLabel.get(displayTimestamp) ?? null;
+      entries.push([idx, { name: info.name, color: info.color, value: val, unit: info.unit }]);
+    }
+    entries.sort((a, b) => a[0] - b[0]);
+    return entries.map(([, e]) => e);
+  }, [correlationEnabled, displayTimestamp]);
+
+  // Clear correlation state when switching dashboards
+  const activeDashboardId = view.mode === 'view' ? view.dashboardId : null;
+  useEffect(() => {
+    panelDataRef.current.clear();
+    setHoveredTimestamp(null);
+    lastTimestampRef.current = null;
+  }, [activeDashboardId]);
 
   const activeDashboard = view.mode === 'view'
     ? dashboards.find(d => d.id === view.dashboardId)
@@ -943,6 +1026,14 @@ export const DashboardViewer: React.FC<{ initialDashboardId?: string }> = ({ ini
         </div>
         <div style={{ display: 'flex', gap: 6, alignItems: 'center' }}>
           <TimeRangePicker value={timeRangeOverride} onChange={setTimeRangeOverride} />
+          <button
+            onClick={() => { setCorrelationEnabled(e => !e); setHoveredTimestamp(null); }}
+            className={`tab${correlationEnabled ? ' active' : ''}`}
+            style={{ border: '1px solid var(--border-primary)', padding: '6px 16px', fontSize: 12, cursor: 'pointer' }}
+            title="Cross-panel time correlation — hover one chart to see values across all panels"
+          >
+            Correlate
+          </button>
           <button onClick={() => handleExport(activeDashboard)} style={secondaryBtnStyle} title="Copy JSON to clipboard">Export</button>
           <button onClick={() => handleClone(activeDashboard)} style={secondaryBtnStyle}>Clone</button>
           <button onClick={() => setView({ mode: 'edit', dashboard: activeDashboard })} style={secondaryBtnStyle}>Edit</button>
@@ -970,6 +1061,11 @@ export const DashboardViewer: React.FC<{ initialDashboardId?: string }> = ({ ini
               isFullscreen={fullscreenPanelIndex === i}
               onToggleFullscreen={() => setFullscreenPanelIndex(prev => prev === i ? null : i)}
               isHidden={fullscreenPanelIndex !== null && fullscreenPanelIndex !== i}
+              hoveredTimestamp={correlationEnabled ? hoveredTimestamp : undefined}
+              onTimestampHover={correlationEnabled ? (ts: string | null) => { setHoveredTimestamp(ts); if (ts !== null) setHoveredPanelIndex(i); } : undefined}
+              onTimeSeriesData={correlationEnabled ? handlePanelData(i) : undefined}
+              correlationValues={correlationEnabled ? correlationValues : undefined}
+              isHoveredPanel={correlationEnabled ? hoveredPanelIndex === i : undefined}
             />
           ))}
         </div>

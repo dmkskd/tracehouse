@@ -1,5 +1,5 @@
 import type { IClickHouseAdapter } from '../adapters/types.js';
-import type { MergeInfo, MergeHistoryRecord, MutationInfo, MutationHistoryRecord, BackgroundPoolMetrics, MutationDependencyInfo, MutationPartStatus, CoDependentMutation, StoragePolicyVolume, MergeTextLog } from '../types/merge.js';
+import type { MergeInfo, MergeHistoryRecord, MutationInfo, MutationHistoryRecord, BackgroundPoolMetrics, MutationDependencyInfo, MutationPartStatus, CoDependentMutation, StoragePolicyVolume, MergeTextLog, MergeThroughputEstimate } from '../types/merge.js';
 import {
   GET_ACTIVE_MERGES,
   GET_MERGE_HISTORY,
@@ -14,12 +14,17 @@ import {
   GET_STORAGE_POLICY_VOLUMES,
   GET_MERGE_TEXT_LOGS_BY_QUERY_ID,
   GET_MERGE_TEXT_LOGS_BY_QUERY_ID_HOST,
+  GET_MERGE_TEXT_LOGS_BY_PART_SUFFIX,
+  GET_MERGE_TEXT_LOGS_BY_PART_SUFFIX_HOST,
   GET_TABLE_UUID,
   GET_MERGE_HISTORY_BY_PART_NAME,
+  GET_TABLE_COLUMNS,
+  GET_MERGE_THROUGHPUT_ESTIMATE,
 } from '../queries/merge-queries.js';
 import { buildQuery, tagQuery, eventDateBound } from '../queries/builder.js';
 import { TAB_MERGES, sourceTag } from '../queries/source-tags.js';
 import { mapMergeInfo, mapMergeHistoryRecord, mapMutationInfo, mapMutationHistoryRecord, mapBackgroundPoolMetrics, mapMergeTextLog } from '../mappers/merge-mappers.js';
+import { stripMutationVersion } from '../utils/part-name-parser.js';
 
 export class MergeTrackerError extends Error {
   constructor(message: string, public readonly cause?: Error) {
@@ -185,6 +190,23 @@ export class MergeTracker {
   }
 
   /**
+   * Get the column names for a table, ordered by position.
+   * Used for vertical merge progress (showing remaining columns).
+   */
+  async getTableColumns(database: string, table: string): Promise<string[]> {
+    try {
+      const sql = buildQuery(GET_TABLE_COLUMNS, { database, table });
+      const rows = await this.adapter.executeQuery<{ name: string }>(tagQuery(sql, sourceTag(TAB_MERGES, 'tableColumns')));
+      // Deduplicate in case GROUP BY wasn't sufficient (e.g. subcolumns)
+      const seen = new Set<string>();
+      return rows.map(r => String(r.name)).filter(n => seen.has(n) ? false : (seen.add(n), true));
+    } catch (error) {
+      console.error('[MergeTracker] getTableColumns error:', error);
+      return [];
+    }
+  }
+
+  /**
    * Fetch text_log messages correlated to a merge/mutation event.
    *
    * Strategy:
@@ -223,6 +245,10 @@ export class MergeTracker {
         hostname?: string;
       }): Promise<MergeTextLog[]> {
         try {
+          const dateBound = eventDateBound(record.event_time);
+
+          // Strategy 1: exact match on uuid::part_name (fast path).
+          // ClickHouse logs background merges with query_id = {uuid}::{part_name}.
           const cacheKey = `${record.database}.${record.table}`;
           let uuid = this.uuidCache.get(cacheKey);
           if (!uuid) {
@@ -233,25 +259,91 @@ export class MergeTracker {
               this.uuidCache.set(cacheKey, uuid);
             }
           }
-          if (!uuid || uuid === '00000000-0000-0000-0000-000000000000') return [];
+          if (uuid && uuid !== '00000000-0000-0000-0000-000000000000') {
+            const queryId = `${uuid}::${record.part_name}`;
+            const exactTemplate = record.hostname
+              ? GET_MERGE_TEXT_LOGS_BY_QUERY_ID_HOST
+              : GET_MERGE_TEXT_LOGS_BY_QUERY_ID;
+            const exactParams: Record<string, string> = { query_id: queryId };
+            if (record.hostname) exactParams.hostname = record.hostname;
+            const exactSql = buildQuery(exactTemplate.replace('{event_date_bound}', dateBound), exactParams);
+            const exactRows = await this.adapter.executeQuery(tagQuery(exactSql, sourceTag(TAB_MERGES, 'mergeTextLogs')));
+            if (exactRows.length > 0) return exactRows.map(mapMergeTextLog);
+          }
 
-          const queryId = `${uuid}::${record.part_name}`;
-          const dateBound = eventDateBound(record.event_time);
-          // When hostname is known, filter to that node's logs to avoid mixing
-          // logs from multiple replicas running the same merge.
-          const template = record.hostname
-            ? GET_MERGE_TEXT_LOGS_BY_QUERY_ID_HOST
-            : GET_MERGE_TEXT_LOGS_BY_QUERY_ID;
-          const params: Record<string, string> = { query_id: queryId };
-          if (record.hostname) params.hostname = record.hostname;
-          const sql = buildQuery(template.replace('{event_date_bound}', dateBound), params);
-          const rows = await this.adapter.executeQuery(tagQuery(sql, sourceTag(TAB_MERGES, 'mergeTextLogs')));
-          return rows.map(mapMergeTextLog);
+          // Strategy 2: if part_log has a query_id (e.g. user-triggered mutation),
+          // try exact match on that.
+          if (record.query_id) {
+            const exactTemplate = record.hostname
+              ? GET_MERGE_TEXT_LOGS_BY_QUERY_ID_HOST
+              : GET_MERGE_TEXT_LOGS_BY_QUERY_ID;
+            const partLogParams: Record<string, string> = { query_id: record.query_id };
+            if (record.hostname) partLogParams.hostname = record.hostname;
+            const partLogSql = buildQuery(exactTemplate.replace('{event_date_bound}', dateBound), partLogParams);
+            const partLogRows = await this.adapter.executeQuery(tagQuery(partLogSql, sourceTag(TAB_MERGES, 'mergeTextLogsPartLogQid')));
+            if (partLogRows.length > 0) return partLogRows.map(mapMergeTextLog);
+          }
+
+          // Strategy 3: suffix LIKE — match query_id ending with '::{part_name}'.
+          // On Replicated database clusters the internal UUID used in text_log
+          // may differ from system.tables.uuid. The suffix LIKE pattern matches
+          // regardless of which UUID prefix is used. Fast (~150ms) with
+          // event_date partition pruning.
+          const suffixTemplate = record.hostname
+            ? GET_MERGE_TEXT_LOGS_BY_PART_SUFFIX_HOST
+            : GET_MERGE_TEXT_LOGS_BY_PART_SUFFIX;
+          const suffixParams: Record<string, string> = { query_id_suffix: `%::${record.part_name}` };
+          if (record.hostname) suffixParams.hostname = record.hostname;
+          const suffixSql = buildQuery(suffixTemplate.replace('{event_date_bound}', dateBound), suffixParams);
+          const suffixRows = await this.adapter.executeQuery(tagQuery(suffixSql, sourceTag(TAB_MERGES, 'mergeTextLogsSuffix')));
+          if (suffixRows.length > 0) return suffixRows.map(mapMergeTextLog);
+
+          // Strategy 3b: for mutated parts, also try the base part name
+          // (without mutation version). e.g. 202602_651_873_3_709 → %::202602_651_873_3
+          const baseName = stripMutationVersion(record.part_name);
+          if (baseName) {
+            const baseParams: Record<string, string> = { query_id_suffix: `%::${baseName}` };
+            if (record.hostname) baseParams.hostname = record.hostname;
+            const baseSql = buildQuery(suffixTemplate.replace('{event_date_bound}', dateBound), baseParams);
+            const baseRows = await this.adapter.executeQuery(tagQuery(baseSql, sourceTag(TAB_MERGES, 'mergeTextLogsBasePart')));
+            if (baseRows.length > 0) return baseRows.map(mapMergeTextLog);
+          }
+
+          return [];
         } catch (error) {
           console.error('[MergeTracker] getMergeEventTextLogs error:', error);
           return [];
         }
       }
+
+  /**
+   * Get historical merge throughput estimates for a table, grouped by algorithm.
+   * Used to estimate remaining time for active merges.
+   */
+  async getMergeThroughputEstimate(database: string, table: string): Promise<MergeThroughputEstimate[]> {
+    try {
+      const sql = buildQuery(GET_MERGE_THROUGHPUT_ESTIMATE, { database, table });
+      const rows = await this.adapter.executeQuery<{
+        merge_algorithm: string;
+        merge_count: string | number;
+        avg_bytes_per_sec: string | number;
+        median_bytes_per_sec: string | number;
+        avg_duration_ms: string | number;
+        avg_size_bytes: string | number;
+      }>(tagQuery(sql, sourceTag(TAB_MERGES, 'throughputEstimate')));
+      return rows.map(r => ({
+        merge_algorithm: String(r.merge_algorithm),
+        merge_count: Number(r.merge_count),
+        avg_bytes_per_sec: Number(r.avg_bytes_per_sec),
+        median_bytes_per_sec: Number(r.median_bytes_per_sec),
+        avg_duration_ms: Number(r.avg_duration_ms),
+        avg_size_bytes: Number(r.avg_size_bytes),
+      }));
+    } catch (error) {
+      console.error('[MergeTracker] getMergeThroughputEstimate error:', error);
+      return [];
+    }
+  }
 
   /**
    * Compute mutation dependency info by cross-referencing mutations with active merges.

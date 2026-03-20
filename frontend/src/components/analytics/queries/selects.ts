@@ -52,7 +52,7 @@ GROUP BY hour
 ORDER BY hour ASC`,
 
   `-- @meta: title='Queries by User' group='Selects' interval='1 DAY' description='Number of SELECT queries per user in the last day'
--- @chart: type=pie group_by=user value=query_count style=3d
+-- @chart: type=pie group_by=user value=query_count style=2d
 -- Source: https://clickhouse.com/blog/monitoring-troubleshooting-select-queries-clickhouse
 SELECT
     user,
@@ -67,7 +67,7 @@ GROUP BY user
 ORDER BY query_count DESC`,
 
   `-- @meta: title='Read Rows Distribution' group='Selects' interval='1 DAY' description='Distribution of rows read per SELECT query'
--- @chart: type=pie group_by=bucket value=query_count style=3d
+-- @chart: type=pie group_by=bucket value=query_count style=2d
 -- Source: https://clickhouse.com/blog/monitoring-troubleshooting-select-queries-clickhouse
 SELECT
     multiIf(

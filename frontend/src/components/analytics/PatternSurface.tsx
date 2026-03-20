@@ -348,18 +348,18 @@ function ColorScaleLegend({ maxDuration }: { maxDuration: number }) {
   return (
     <div style={{
       position: 'absolute', bottom: 16, left: 20, zIndex: 10,
-      background: 'rgba(15,23,42,0.8)', backdropFilter: 'blur(8px)',
+      background: 'var(--bg-3d-overlay)', backdropFilter: 'blur(8px)',
       borderRadius: 8, padding: '10px 14px',
-      border: '1px solid rgba(255,255,255,0.06)',
+      border: '1px solid var(--bg-3d-overlay-border)',
       display: 'flex', gap: 12, alignItems: 'center', fontSize: 11,
       fontFamily: "'Share Tech Mono', monospace",
     }}>
-      <span style={{ color: '#94a3b8' }}>Duration</span>
+      <span style={{ color: 'var(--text-3d-label)' }}>Duration</span>
       <div style={{
         width: 80, height: 8, borderRadius: 3,
         background: 'linear-gradient(90deg, rgb(0,0,4), rgb(59,15,112), rgb(142,41,129), rgb(222,98,78), rgb(252,253,191))',
       }} />
-      <span style={{ color: '#94a3b8' }}>0 → {Math.round(maxDuration)}ms</span>
+      <span style={{ color: 'var(--text-3d-label)' }}>0 → {Math.round(maxDuration)}ms</span>
     </div>
   );
 }
@@ -403,14 +403,14 @@ export const PatternSurface: React.FC<PatternSurfaceProps> = ({ data, isLoading,
   const [expandedPattern, setExpandedPattern] = React.useState<number | null>(null);
 
   return (
-    <div style={{ width: '100%', height: '100%', position: 'relative', background: 'linear-gradient(180deg, #0c0c16 0%, #020617 100%)', borderRadius: 8, overflow: 'hidden' }}>
+    <div style={{ width: '100%', height: '100%', position: 'relative', background: `linear-gradient(180deg, var(--bg-3d-from) 0%, var(--bg-3d-to) 100%)`, borderRadius: 8, overflow: 'hidden' }}>
       <div style={{
         position: 'absolute', top: 16, left: 20, zIndex: 10, pointerEvents: 'none',
       }}>
-        <div style={{ fontSize: 14, fontWeight: 700, color: '#e2e8f0', fontFamily: "'Inter', sans-serif" }}>
+        <div style={{ fontSize: 14, fontWeight: 700, color: 'var(--text-3d-title)', fontFamily: "'Inter', sans-serif" }}>
           Query Pattern Surface
         </div>
-        <div style={{ fontSize: 11, color: '#64748b', marginTop: 2 }}>
+        <div style={{ fontSize: 11, color: 'var(--text-3d-sublabel)', marginTop: 2 }}>
           Each row = a query pattern. Height = duration. Click a pattern to see details.
         </div>
       </div>
@@ -435,42 +435,42 @@ export const PatternSurface: React.FC<PatternSurfaceProps> = ({ data, isLoading,
                   style={{
                     display: 'flex', alignItems: 'center', gap: 8, width: '100%',
                     padding: '4px 10px', border: 'none', borderRadius: 4,
-                    background: isOpen ? 'rgba(88,166,255,0.15)' : 'rgba(15,23,42,0.7)',
+                    background: isOpen ? 'rgba(88,166,255,0.15)' : 'var(--bg-3d-overlay)',
                     cursor: 'pointer', textAlign: 'left',
-                    fontSize: 10, color: isOpen ? '#58a6ff' : '#94a3b8',
+                    fontSize: 10, color: isOpen ? 'var(--accent-blue)' : 'var(--text-3d-label)',
                     fontFamily: "'Share Tech Mono', monospace",
                   }}
                 >
                   <span style={{ fontWeight: 600 }}>#{i + 1}</span>
-                  <span style={{ color: '#64748b' }}>
+                  <span style={{ color: 'var(--text-3d-sublabel)' }}>
                     {stats.avgDurationMs < 1000 ? `${Math.round(stats.avgDurationMs)}ms` : `${(stats.avgDurationMs / 1000).toFixed(1)}s`}
                   </span>
-                  <span style={{ color: '#64748b' }}>{stats.totalQueryCount.toLocaleString()} queries</span>
+                  <span style={{ color: 'var(--text-3d-sublabel)' }}>{stats.totalQueryCount.toLocaleString()} queries</span>
                 </button>
                 {isOpen && (
                   <div style={{
                     padding: '8px 12px', marginTop: 2, borderRadius: 6,
-                    background: 'rgba(15,23,42,0.95)', border: '1px solid rgba(148,163,184,0.2)',
+                    background: 'var(--bg-3d-overlay)', border: '1px solid var(--bg-3d-overlay-border)',
                     backdropFilter: 'blur(8px)', width: 320,
-                    fontSize: 10, lineHeight: '16px', color: '#cbd5e1',
+                    fontSize: 10, lineHeight: '16px', color: 'var(--text-3d-label)',
                     fontFamily: "'Share Tech Mono', monospace",
                   }}>
                     <div style={{ display: 'flex', gap: 12, marginBottom: 6 }}>
-                      <div><span style={{ color: '#64748b' }}>Avg duration </span><span style={{ color: '#e2e8f0' }}>{stats.avgDurationMs < 1000 ? `${Math.round(stats.avgDurationMs)}ms` : `${(stats.avgDurationMs / 1000).toFixed(1)}s`}</span></div>
-                      <div><span style={{ color: '#64748b' }}>Queries </span><span style={{ color: '#e2e8f0' }}>{stats.totalQueryCount.toLocaleString()}</span></div>
-                      <div><span style={{ color: '#64748b' }}>Avg mem </span><span style={{ color: '#e2e8f0' }}>{formatBytes(stats.avgMemory)}</span></div>
+                      <div><span style={{ color: 'var(--text-3d-sublabel)' }}>Avg duration </span><span style={{ color: 'var(--text-3d-title)' }}>{stats.avgDurationMs < 1000 ? `${Math.round(stats.avgDurationMs)}ms` : `${(stats.avgDurationMs / 1000).toFixed(1)}s`}</span></div>
+                      <div><span style={{ color: 'var(--text-3d-sublabel)' }}>Queries </span><span style={{ color: 'var(--text-3d-title)' }}>{stats.totalQueryCount.toLocaleString()}</span></div>
+                      <div><span style={{ color: 'var(--text-3d-sublabel)' }}>Avg mem </span><span style={{ color: 'var(--text-3d-title)' }}>{formatBytes(stats.avgMemory)}</span></div>
                     </div>
                     {stats.sampleQuery && (
-                      <div style={{ color: '#94a3b8', wordBreak: 'break-all', whiteSpace: 'pre-wrap', marginBottom: 6 }}>
+                      <div style={{ color: 'var(--text-3d-label)', wordBreak: 'break-all', whiteSpace: 'pre-wrap', marginBottom: 6 }}>
                         {short}
                       </div>
                     )}
                     {onOpenQuery && (
                       <button
-                        onClick={() => onOpenQuery(stats.hash)}
+                        onClick={(e) => { e.stopPropagation(); onOpenQuery(stats.hash); }}
                         style={{
                           padding: '3px 8px', fontSize: 9, fontWeight: 600,
-                          color: '#58a6ff', background: 'rgba(88,166,255,0.1)',
+                          color: 'var(--accent-blue)', background: 'rgba(88,166,255,0.1)',
                           border: '1px solid rgba(88,166,255,0.25)', borderRadius: 4,
                           cursor: 'pointer', fontFamily: "'Share Tech Mono', monospace",
                         }}

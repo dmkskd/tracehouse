@@ -92,14 +92,14 @@ describe('parseDirectives', () => {
       name: 'with ascending rag rule',
       sql: `-- @meta: title='Q' group='Overview'\n-- @rag: column=avg_memory_mb green<20 amber<50\nSELECT 1`,
       expected: {
-        rag: [{ column: 'avg_memory_mb', direction: 'asc', greenThreshold: 20, amberThreshold: 50 }],
+        rag: [{ column: 'avg_memory_mb', mode: 'numeric', direction: 'asc', greenThreshold: 20, amberThreshold: 50 }],
       },
     },
     {
       name: 'with descending rag rule',
       sql: `-- @meta: title='Q' group='Overview'\n-- @rag: column=hit_rate green>90 amber>70\nSELECT 1`,
       expected: {
-        rag: [{ column: 'hit_rate', direction: 'desc', greenThreshold: 90, amberThreshold: 70 }],
+        rag: [{ column: 'hit_rate', mode: 'numeric', direction: 'desc', greenThreshold: 90, amberThreshold: 70 }],
       },
     },
     {
@@ -107,8 +107,8 @@ describe('parseDirectives', () => {
       sql: `-- @meta: title='Q' group='Overview'\n-- @rag: column=avg_result_bytes green<10000 amber<100000\n-- @rag: column=avg_memory_mb green<20 amber<50\nSELECT 1`,
       expected: {
         rag: [
-          { column: 'avg_result_bytes', direction: 'asc', greenThreshold: 10000, amberThreshold: 100000 },
-          { column: 'avg_memory_mb', direction: 'asc', greenThreshold: 20, amberThreshold: 50 },
+          { column: 'avg_result_bytes', mode: 'numeric', direction: 'asc', greenThreshold: 10000, amberThreshold: 100000 },
+          { column: 'avg_memory_mb', mode: 'numeric', direction: 'asc', greenThreshold: 20, amberThreshold: 50 },
         ],
       },
     },
@@ -139,7 +139,7 @@ describe('parseDirectives', () => {
         chart: { type: 'bar', style: '2d', groupByColumn: 'col1', valueColumn: 'col2', seriesColumn: 'col3' },
         drill: { on: 'col1', into: 'Target Query' },
         link: { on: 'col4', into: 'Link Target' },
-        rag: [{ column: 'col2', direction: 'asc', greenThreshold: 100, amberThreshold: 500 }],
+        rag: [{ column: 'col2', mode: 'numeric', direction: 'asc', greenThreshold: 100, amberThreshold: 500 }],
         source: 'https://example.com/docs',
       },
     },
@@ -236,6 +236,21 @@ describe('parseChartDirective', () => {
       expected: { seriesColumn: 'category' },
     },
     {
+      name: 'color hex parsed',
+      sql: `-- @chart: type=area group_by=t value=qps color=#f59e0b\nSELECT 1`,
+      expected: { type: 'area', color: '#f59e0b' },
+    },
+    {
+      name: 'color 3-digit hex parsed',
+      sql: `-- @chart: type=line group_by=t value=v color=#f00\nSELECT 1`,
+      expected: { color: '#f00' },
+    },
+    {
+      name: 'no color → color undefined',
+      sql: `-- @chart: type=bar group_by=x value=y\nSELECT 1`,
+      expected: { type: 'bar' },
+    },
+    {
       name: 'no @chart returns null',
       sql: `-- @meta: title='Q' group='Overview'\nSELECT 1`,
       expected: null,
@@ -263,30 +278,30 @@ describe('parseRagRules', () => {
   const cases: {
     name: string;
     sql: string;
-    expected: { column: string; direction: 'asc' | 'desc'; greenThreshold: number; amberThreshold: number }[];
+    expected: { column: string; mode: string; direction: 'asc' | 'desc'; greenThreshold: number; amberThreshold: number }[];
   }[] = [
     {
       name: 'ascending rule (lower is better)',
       sql: `-- @rag: column=latency green<50 amber<200`,
-      expected: [{ column: 'latency', direction: 'asc', greenThreshold: 50, amberThreshold: 200 }],
+      expected: [{ column: 'latency', mode: 'numeric', direction: 'asc', greenThreshold: 50, amberThreshold: 200 }],
     },
     {
       name: 'descending rule (higher is better)',
       sql: `-- @rag: column=cache_hit green>95 amber>80`,
-      expected: [{ column: 'cache_hit', direction: 'desc', greenThreshold: 95, amberThreshold: 80 }],
+      expected: [{ column: 'cache_hit', mode: 'numeric', direction: 'desc', greenThreshold: 95, amberThreshold: 80 }],
     },
     {
       name: 'multiple rules',
       sql: `-- @rag: column=memory green<100 amber<500\n-- @rag: column=hit_rate green>90 amber>70`,
       expected: [
-        { column: 'memory', direction: 'asc', greenThreshold: 100, amberThreshold: 500 },
-        { column: 'hit_rate', direction: 'desc', greenThreshold: 90, amberThreshold: 70 },
+        { column: 'memory', mode: 'numeric', direction: 'asc', greenThreshold: 100, amberThreshold: 500 },
+        { column: 'hit_rate', mode: 'numeric', direction: 'desc', greenThreshold: 90, amberThreshold: 70 },
       ],
     },
     {
       name: 'decimal thresholds',
       sql: `-- @rag: column=ratio green<0.5 amber<0.8`,
-      expected: [{ column: 'ratio', direction: 'asc', greenThreshold: 0.5, amberThreshold: 0.8 }],
+      expected: [{ column: 'ratio', mode: 'numeric', direction: 'asc', greenThreshold: 0.5, amberThreshold: 0.8 }],
     },
     {
       name: 'no @rag returns empty array',
@@ -306,10 +321,10 @@ describe('parseRagRules', () => {
 
 describe('getRagColor', () => {
   const ascRule: RagRule[] = [
-    { column: 'latency', direction: 'asc', greenThreshold: 50, amberThreshold: 200 },
+    { column: 'latency', mode: 'numeric', direction: 'asc', greenThreshold: 50, amberThreshold: 200 },
   ];
   const descRule: RagRule[] = [
-    { column: 'hit_rate', direction: 'desc', greenThreshold: 90, amberThreshold: 70 },
+    { column: 'hit_rate', mode: 'numeric', direction: 'desc', greenThreshold: 90, amberThreshold: 70 },
   ];
 
   const cases: { name: string; column: string; value: unknown; rules?: RagRule[]; expected: string | undefined }[] = [
