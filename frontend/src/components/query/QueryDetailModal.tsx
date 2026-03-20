@@ -8,7 +8,7 @@
  */
 
 import React, { useEffect, useCallback, useState } from 'react';
-import type { QuerySeries, TraceLog, OpenTelemetrySpan, FlamegraphNode } from '@tracehouse/core';
+import type { QuerySeries, TraceLog, OpenTelemetrySpan } from '@tracehouse/core';
 import type { QueryDetail as QueryDetailType, SimilarQuery, SubQueryInfo, QueryThreadBreakdown } from '@tracehouse/core';
 import type { FlamegraphType } from '@tracehouse/core';
 import { extractLiterals, diffLiterals, formatLiteral } from '@tracehouse/core';
@@ -17,7 +17,7 @@ import { ThreadBreakdownSection } from './QueryDetail';
 import { QueryScanEfficiency } from './QueryScanEfficiency';
 import { ColumnCostAnalysis } from './ColumnCostAnalysis';
 import { TraceLogViewer } from '../tracing/TraceLogViewer';
-import { Flamegraph } from '../tracing/Flamegraph';
+import { SpeedscopeViewer } from '../tracing/SpeedscopeViewer';
 import { PipelineProfileTab } from '../tracing/PipelineProfileTab';
 import { formatBytes } from '../../stores/databaseStore';
 import { formatDurationMs, formatMicroseconds } from '../../utils/formatters';
@@ -30,6 +30,8 @@ import type { ComparableQuery } from './QueryComparisonPanel';
 import { SqlHighlight } from '../common/SqlHighlight';
 import { PROFILE_EVENT_CATEGORIES } from './profileEventCategories';
 import { QueryXRay3D } from './QueryXRay3D';
+import { DistributedQueryTopology } from './DistributedQueryTopology';
+import type { TopologyCoordinator } from './DistributedQueryTopology';
 import { useUserPreferenceStore } from '../../stores/userPreferenceStore';
 
 export interface TimelineQueryModalProps {
@@ -2137,7 +2139,8 @@ export const QueryDetailModal: React.FC<TimelineQueryModalProps> = ({
   const [spansError, setSpansError] = useState<string | null>(null);
 
   // Flamegraph state
-  const [flamegraphData, setFlamegraphData] = useState<FlamegraphNode | null>(null);
+  const [flamegraphFolded, setFlamegraphFolded] = useState('');
+  const [flamegraphUnavailable, setFlamegraphUnavailable] = useState<string | undefined>();
   const [isLoadingFlamegraph, setIsLoadingFlamegraph] = useState(false);
   const [flamegraphError, setFlamegraphError] = useState<string | null>(null);
   const [flamegraphType, setFlamegraphType] = useState<FlamegraphType>('CPU');
@@ -2162,6 +2165,8 @@ export const QueryDetailModal: React.FC<TimelineQueryModalProps> = ({
   // Sub-queries state (for distributed coordinator queries)
   const [subQueries, setSubQueries] = useState<SubQueryInfo[]>([]);
   const [isLoadingSubQueries, setIsLoadingSubQueries] = useState(false);
+  // Coordinator info (populated when viewing a sub-query, so we can show the full topology)
+  const [topologyCoordinator, setTopologyCoordinator] = useState<TopologyCoordinator | null>(null);
 
   // Memory timeline state for history chart overlay
   const [memTimeline, setMemTimeline] = useState<{ t: string; mem_pct: number }[]>([]);
@@ -2193,7 +2198,8 @@ export const QueryDetailModal: React.FC<TimelineQueryModalProps> = ({
     setLogFilter({});
     setSpans([]);
     setSpansError(null);
-    setFlamegraphData(null);
+    setFlamegraphFolded('');
+    setFlamegraphUnavailable(undefined);
     setFlamegraphError(null);
     setFlamegraphType('CPU');
     setQueryDetail(null);
@@ -2210,6 +2216,7 @@ export const QueryDetailModal: React.FC<TimelineQueryModalProps> = ({
     setThreadsFetched(false);
     setSubQueries([]);
     setIsLoadingSubQueries(false);
+    setTopologyCoordinator(null);
   }, [query?.query_id]);
 
   // Reset tab-specific state when activeQuery changes (e.g. clicking a history row)
@@ -2222,7 +2229,8 @@ export const QueryDetailModal: React.FC<TimelineQueryModalProps> = ({
     setLogFilter({});
     setSpans([]);
     setSpansError(null);
-    setFlamegraphData(null);
+    setFlamegraphFolded('');
+    setFlamegraphUnavailable(undefined);
     setFlamegraphError(null);
     setFlamegraphType('CPU');
     setQueryDetail(null);
@@ -2233,6 +2241,7 @@ export const QueryDetailModal: React.FC<TimelineQueryModalProps> = ({
     setThreadsFetched(false);
     setSubQueries([]);
     setIsLoadingSubQueries(false);
+    setTopologyCoordinator(null);
   }, [queryOverride?.query_id]);
 
   // Fetch logs when Logs tab is selected
@@ -2291,9 +2300,11 @@ export const QueryDetailModal: React.FC<TimelineQueryModalProps> = ({
     if (!services || !activeQuery) return;
     setIsLoadingFlamegraph(true);
     setFlamegraphError(null);
+    setFlamegraphUnavailable(undefined);
     try {
-      const result = await services.traceService.getFlamegraphData(activeQuery.query_id, type, activeQuery.start_time);
-      setFlamegraphData(result);
+      const result = await services.traceService.getFlamegraphFolded(activeQuery.query_id, type, activeQuery.start_time);
+      setFlamegraphFolded(result.folded);
+      setFlamegraphUnavailable(result.unavailableReason);
     } catch (e) {
       setFlamegraphError(e instanceof Error ? e.message : 'Failed to fetch flamegraph data');
     } finally {
@@ -2388,10 +2399,10 @@ export const QueryDetailModal: React.FC<TimelineQueryModalProps> = ({
 
   // Fetch flamegraph when Flamegraph tab is selected
   useEffect(() => {
-    if (activeTab === 'flamegraph' && query && !flamegraphData && !isLoadingFlamegraph && !flamegraphError) {
+    if (activeTab === 'flamegraph' && query && !flamegraphFolded && !isLoadingFlamegraph && !flamegraphError && !flamegraphUnavailable) {
       fetchFlamegraph();
     }
-  }, [activeTab, activeQuery, flamegraphData, isLoadingFlamegraph, flamegraphError, fetchFlamegraph]);
+  }, [activeTab, activeQuery, flamegraphFolded, flamegraphUnavailable, isLoadingFlamegraph, flamegraphError, fetchFlamegraph]);
 
   // Fetch threads when Threads tab is selected
   useEffect(() => {
@@ -2403,7 +2414,8 @@ export const QueryDetailModal: React.FC<TimelineQueryModalProps> = ({
   // Handle flamegraph type change
   const handleFlamegraphTypeChange = useCallback((newType: FlamegraphType) => {
     setFlamegraphType(newType);
-    setFlamegraphData(null);
+    setFlamegraphFolded('');
+    setFlamegraphUnavailable(undefined);
     setFlamegraphError(null);
     fetchFlamegraph(newType);
   }, [fetchFlamegraph]);
@@ -2415,13 +2427,48 @@ export const QueryDetailModal: React.FC<TimelineQueryModalProps> = ({
     }
   }, [activeQuery, queryDetail, isLoadingDetail, detailError, fetchQueryDetail]);
 
-  // Fetch sub-queries when we detect this is a coordinator query
+  // Fetch distributed query topology (sub-queries + coordinator info)
   useEffect(() => {
-    if (queryDetail && queryDetail.is_initial_query === 1 && services && subQueries.length === 0 && !isLoadingSubQueries) {
+    if (!queryDetail || !services || subQueries.length > 0 || isLoadingSubQueries) return;
+
+    if (queryDetail.is_initial_query === 1) {
+      // Viewing the coordinator — fetch its sub-queries
       setIsLoadingSubQueries(true);
+      setTopologyCoordinator({
+        query_id: queryDetail.query_id,
+        hostname: queryDetail.hostname,
+        query_duration_ms: queryDetail.query_duration_ms,
+        query_start_time_microseconds: queryDetail.query_start_time_microseconds,
+        memory_usage: queryDetail.memory_usage,
+        read_rows: queryDetail.read_rows,
+        exception: queryDetail.exception,
+      });
       services.queryAnalyzer.getSubQueries(activeQuery!.query_id, activeQuery!.start_time)
         .then(setSubQueries)
-        .catch(() => { /* best-effort */ })
+        .catch((err) => console.error('Failed to fetch sub-queries:', err))
+        .finally(() => setIsLoadingSubQueries(false));
+    } else if (queryDetail.is_initial_query === 0 && queryDetail.initial_query_id) {
+      // Viewing a sub-query — fetch coordinator detail + all sibling sub-queries
+      setIsLoadingSubQueries(true);
+      Promise.all([
+        services.queryAnalyzer.getQueryDetail(queryDetail.initial_query_id),
+        services.queryAnalyzer.getSubQueries(queryDetail.initial_query_id, activeQuery!.start_time),
+      ])
+        .then(([coordDetail, siblings]) => {
+          if (coordDetail) {
+            setTopologyCoordinator({
+              query_id: coordDetail.query_id,
+              hostname: coordDetail.hostname,
+              query_duration_ms: coordDetail.query_duration_ms,
+              query_start_time_microseconds: coordDetail.query_start_time_microseconds,
+              memory_usage: coordDetail.memory_usage,
+              read_rows: coordDetail.read_rows,
+              exception: coordDetail.exception,
+            });
+          }
+          setSubQueries(siblings);
+        })
+        .catch((err) => console.error('Failed to fetch topology:', err))
         .finally(() => setIsLoadingSubQueries(false));
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -2471,7 +2518,7 @@ export const QueryDetailModal: React.FC<TimelineQueryModalProps> = ({
       setIsLoadingCpu(true);
       services.queryAnalyzer.getServerCpuForRange(startTime, endTime)
         .then(data => setCpuTimeline(data))
-        .catch(() => { /* CPU overlay is best-effort */ })
+        .catch((err) => console.error('Failed to fetch CPU timeline:', err))
         .finally(() => setIsLoadingCpu(false));
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -2485,7 +2532,7 @@ export const QueryDetailModal: React.FC<TimelineQueryModalProps> = ({
       setIsLoadingMem(true);
       services.queryAnalyzer.getServerMemoryForRange(startTime, endTime)
         .then(data => setMemTimeline(data))
-        .catch(() => { /* Memory overlay is best-effort */ })
+        .catch((err) => console.error('Failed to fetch memory timeline:', err))
         .finally(() => setIsLoadingMem(false));
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -2871,69 +2918,19 @@ export const QueryDetailModal: React.FC<TimelineQueryModalProps> = ({
                 </div>
               )}
 
-              {/* Sub-queries for coordinator queries */}
-              {queryDetail && queryDetail.is_initial_query === 1 && subQueries.length > 0 && (
+              {/* Distributed query topology (Gantt view) */}
+              {topologyCoordinator && subQueries.length > 0 && (
                 <div style={{ marginTop: 16 }}>
-                  <div style={{ fontSize: 9, color: 'var(--text-muted)', textTransform: 'uppercase', letterSpacing: '1px', marginBottom: 8 }}>
-                    Shard Sub-queries ({subQueries.length})
-                  </div>
-                  <div style={{
-                    border: '1px solid var(--border-secondary)',
-                    borderRadius: 6,
-                    overflow: 'hidden',
-                    maxHeight: 240,
-                    overflowY: 'auto',
-                  }}>
-                    <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 11 }}>
-                      <thead>
-                        <tr style={{ background: 'var(--bg-tertiary)' }}>
-                          <th style={{ padding: '6px 10px', textAlign: 'left', color: 'var(--text-muted)', fontWeight: 500, fontSize: 9, textTransform: 'uppercase', letterSpacing: '0.5px' }}>Query ID</th>
-                          <th style={{ padding: '6px 10px', textAlign: 'left', color: 'var(--text-muted)', fontWeight: 500, fontSize: 9, textTransform: 'uppercase', letterSpacing: '0.5px' }}>Shard</th>
-                          <th style={{ padding: '6px 10px', textAlign: 'right', color: 'var(--text-muted)', fontWeight: 500, fontSize: 9, textTransform: 'uppercase', letterSpacing: '0.5px' }}>Duration</th>
-                          <th style={{ padding: '6px 10px', textAlign: 'right', color: 'var(--text-muted)', fontWeight: 500, fontSize: 9, textTransform: 'uppercase', letterSpacing: '0.5px' }}>Memory</th>
-                          <th style={{ padding: '6px 10px', textAlign: 'right', color: 'var(--text-muted)', fontWeight: 500, fontSize: 9, textTransform: 'uppercase', letterSpacing: '0.5px' }}>Rows Read</th>
-                          <th style={{ padding: '6px 10px', textAlign: 'center', color: 'var(--text-muted)', fontWeight: 500, fontSize: 9, textTransform: 'uppercase', letterSpacing: '0.5px' }}>Status</th>
-                        </tr>
-                      </thead>
-                      <tbody>
-                        {subQueries.map((sq) => (
-                          <tr
-                            key={sq.query_id}
-                            style={{ borderTop: '1px solid var(--border-primary)' }}
-                          >
-                            <td style={{ padding: '6px 10px' }}>
-                              <button
-                                onClick={() => navigateToQuery(sq.query_id)}
-                                style={{
-                                  fontFamily: 'monospace', fontSize: 11, color: '#58a6ff',
-                                  background: 'none', border: 'none', cursor: 'pointer', padding: 0,
-                                  textDecoration: 'underline', textDecorationStyle: 'dotted',
-                                }}
-                                title={sq.query_id}
-                              >
-                                {sq.query_id.slice(0, 12)}…
-                              </button>
-                            </td>
-                            <td style={{ padding: '6px 10px', fontFamily: 'monospace', fontSize: 11, color: 'var(--text-secondary)' }}>{sq.hostname}</td>
-                            <td style={{ padding: '6px 10px', textAlign: 'right', fontFamily: 'monospace', color: 'var(--text-secondary)' }}>{fmtMs(sq.query_duration_ms)}</td>
-                            <td style={{ padding: '6px 10px', textAlign: 'right', fontFamily: 'monospace', color: 'var(--text-secondary)' }}>{formatBytes(sq.memory_usage)}</td>
-                            <td style={{ padding: '6px 10px', textAlign: 'right', fontFamily: 'monospace', color: 'var(--text-secondary)' }}>{sq.read_rows.toLocaleString()}</td>
-                            <td style={{ padding: '6px 10px', textAlign: 'center' }}>
-                              {sq.exception_code ? (
-                                <span style={{ color: 'var(--color-error)', fontSize: 10 }}>✗ {sq.exception_code}</span>
-                              ) : (
-                                <span style={{ color: 'var(--color-success)', fontSize: 10 }}>✓</span>
-                              )}
-                            </td>
-                          </tr>
-                        ))}
-                      </tbody>
-                    </table>
-                  </div>
+                  <DistributedQueryTopology
+                    coordinator={topologyCoordinator}
+                    subQueries={subQueries}
+                    activeQueryId={activeQuery!.query_id}
+                    onNavigate={navigateToQuery}
+                  />
                 </div>
               )}
-              {queryDetail && queryDetail.is_initial_query === 1 && isLoadingSubQueries && (
-                <div style={{ marginTop: 16, fontSize: 11, color: 'var(--text-muted)' }}>Loading sub-queries…</div>
+              {isLoadingSubQueries && (
+                <div style={{ marginTop: 16, fontSize: 11, color: 'var(--text-muted)' }}>Loading topology…</div>
               )}
 
               {/* Index Selectivity - shows how well the primary key pruned data */}
@@ -3031,10 +3028,11 @@ export const QueryDetailModal: React.FC<TimelineQueryModalProps> = ({
 
           {activeTab === 'flamegraph' && (
             <div style={{ height: '100%' }}>
-              <Flamegraph
-                data={flamegraphData}
+              <SpeedscopeViewer
+                folded={flamegraphFolded}
                 isLoading={isLoadingFlamegraph}
                 error={flamegraphError}
+                unavailableReason={flamegraphUnavailable}
                 onRefresh={fetchFlamegraph}
                 profileType={flamegraphType}
                 onTypeChange={handleFlamegraphTypeChange}

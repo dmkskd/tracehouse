@@ -14,6 +14,7 @@ import { buildMergeSamplesSQL, mapMergeSampleRow, type MergeSample } from '../..
 const CONTAINER_TIMEOUT = 120_000;
 
 interface MergeSampleRow {
+  hostname?: string;
   sample_time: string;
   database: string;
   table: string;
@@ -38,13 +39,25 @@ interface MergeSampleRow {
 }
 
 function buildInsertValues(rows: MergeSampleRow[]): string {
-  return rows.map(r =>
-    `('${r.sample_time}', '${r.database}', '${r.table}', '${r.result_part_name}', '${r.partition_id}', ` +
-    `${r.elapsed}, ${r.progress}, ${r.num_parts}, ${r.is_mutation}, '${r.merge_type}', '${r.merge_algorithm}', ` +
-    `${r.total_size_bytes_compressed}, ${r.total_size_bytes_uncompressed}, ${r.total_size_marks}, ` +
-    `${r.rows_read}, ${r.bytes_read_uncompressed}, ${r.rows_written}, ${r.bytes_written_uncompressed}, ` +
-    `${r.columns_written}, ${r.memory_usage}, ${r.thread_id})`
-  ).join(',\n');
+  const hasHostname = rows.some(r => r.hostname);
+  return rows.map(r => {
+    const hostCol = hasHostname ? `'${r.hostname ?? ''}', ` : '';
+    return `(${hostCol}'${r.sample_time}', '${r.database}', '${r.table}', '${r.result_part_name}', '${r.partition_id}', ` +
+      `${r.elapsed}, ${r.progress}, ${r.num_parts}, ${r.is_mutation}, '${r.merge_type}', '${r.merge_algorithm}', ` +
+      `${r.total_size_bytes_compressed}, ${r.total_size_bytes_uncompressed}, ${r.total_size_marks}, ` +
+      `${r.rows_read}, ${r.bytes_read_uncompressed}, ${r.rows_written}, ${r.bytes_written_uncompressed}, ` +
+      `${r.columns_written}, ${r.memory_usage}, ${r.thread_id})`;
+  }).join(',\n');
+}
+
+/** Column list for INSERT — includes hostname when rows have it set. */
+function insertColumns(rows: MergeSampleRow[]): string {
+  const hostCol = rows.some(r => r.hostname) ? 'hostname, ' : '';
+  return `(${hostCol}sample_time, database, table, result_part_name, partition_id,
+         elapsed, progress, num_parts, is_mutation, merge_type, merge_algorithm,
+         total_size_bytes_compressed, total_size_bytes_uncompressed, total_size_marks,
+         rows_read, bytes_read_uncompressed, rows_written, bytes_written_uncompressed,
+         columns_written, memory_usage, thread_id)`;
 }
 
 describe('merge samples integration (delta calculations)', () => {
@@ -111,11 +124,7 @@ describe('merge samples integration (delta calculations)', () => {
     const values = buildInsertValues(rows);
     await ctx.client.command({
       query: `INSERT INTO tracehouse.merges_history
-        (sample_time, database, table, result_part_name, partition_id,
-         elapsed, progress, num_parts, is_mutation, merge_type, merge_algorithm,
-         total_size_bytes_compressed, total_size_bytes_uncompressed, total_size_marks,
-         rows_read, bytes_read_uncompressed, rows_written, bytes_written_uncompressed,
-         columns_written, memory_usage, thread_id)
+        ${insertColumns(rows)}
         VALUES ${values}`,
     });
 
@@ -129,6 +138,7 @@ describe('merge samples integration (delta calculations)', () => {
   function makeMergeSamples(opts: {
     count: number;
     startTime?: string;
+    hostname?: string;
     database?: string;
     table?: string;
     resultPartName?: string;
@@ -148,6 +158,7 @@ describe('merge samples integration (delta calculations)', () => {
     const {
       count,
       startTime = '2025-06-01 12:00:00.000',
+      hostname,
       database = 'default',
       table = 'test_table',
       resultPartName = 'all_0_1_1',
@@ -176,6 +187,7 @@ describe('merge samples integration (delta calculations)', () => {
       const progress = count > 1 ? i / (count - 1) : 0;
 
       rows.push({
+        ...(hostname ? { hostname } : {}),
         sample_time: timeStr,
         database,
         table,
@@ -480,11 +492,7 @@ describe('merge samples integration (delta calculations)', () => {
       const values = buildInsertValues(allRows);
       await ctx.client.command({
         query: `INSERT INTO tracehouse.merges_history
-          (sample_time, database, table, result_part_name, partition_id,
-           elapsed, progress, num_parts, is_mutation, merge_type, merge_algorithm,
-           total_size_bytes_compressed, total_size_bytes_uncompressed, total_size_marks,
-           rows_read, bytes_read_uncompressed, rows_written, bytes_written_uncompressed,
-           columns_written, memory_usage, thread_id)
+          ${insertColumns(allRows)}
           VALUES ${values}`,
       });
 
@@ -593,6 +601,115 @@ describe('merge samples integration (delta calculations)', () => {
       // dt=10s, raw delta = 500000, 500000/10 = 50000 rows/s
       expect(results[1].d_rows_read).toBeCloseTo(50000, 0);
       expect(results[2].d_rows_read).toBeCloseTo(50000, 0);
+    });
+  });
+
+  // -----------------------------------------------------------------------
+  // Multi-host isolation (cluster / replicated tables)
+  // -----------------------------------------------------------------------
+
+  describe('multi-host isolation', () => {
+    it('does not mix samples from different hostnames in delta calculations', async () => {
+      // Simulate two nodes running the same merge independently.
+      // Node A reads at 10k rows/s, Node B reads at 50k rows/s.
+      // Without hostname isolation, interleaved samples produce bogus deltas.
+      const nodeA = makeMergeSamples({
+        count: 5, hostname: 'chi-node-0', rowsReadPerSec: 10000,
+        bytesReadPerSec: 10 * 1024 * 1024,
+      });
+      const nodeB = makeMergeSamples({
+        count: 5, hostname: 'chi-node-1', rowsReadPerSec: 50000,
+        bytesReadPerSec: 50 * 1024 * 1024,
+      });
+
+      const results = await seedAndQuery(
+        [...nodeA, ...nodeB],
+        { database: 'default', table: 'test_table', resultPartName: 'all_0_1_1' },
+      );
+
+      // Should return samples from only one node (both have equal count,
+      // so either is valid, but deltas must be consistent within)
+      expect(results).toHaveLength(5);
+
+      // All deltas must be from the same node — either ~10k or ~50k, never mixed
+      const rate = results[1].d_rows_read;
+      expect(rate === 0 || Math.abs(rate - 10000) < 100 || Math.abs(rate - 50000) < 100).toBe(true);
+
+      // All non-zero rates should be the same (consistent single-node series)
+      const nonZeroRates = results.slice(1).map(r => r.d_rows_read);
+      for (const r of nonZeroRates) {
+        expect(r).toBeCloseTo(nonZeroRates[0], -1);
+      }
+    });
+
+    it('picks the node with the most samples as representative', async () => {
+      // Node A has 6 samples, Node B has 3 — should pick Node A
+      const nodeA = makeMergeSamples({
+        count: 6, hostname: 'chi-primary', rowsReadPerSec: 20000,
+      });
+      const nodeB = makeMergeSamples({
+        count: 3, hostname: 'chi-secondary', rowsReadPerSec: 80000,
+      });
+
+      const results = await seedAndQuery(
+        [...nodeA, ...nodeB],
+        { database: 'default', table: 'test_table', resultPartName: 'all_0_1_1' },
+      );
+
+      // Should return Node A's 6 samples (it has more)
+      expect(results).toHaveLength(6);
+
+      // Rates should be ~20000 (Node A), not ~80000 (Node B)
+      expect(results[1].d_rows_read).toBeCloseTo(20000, 0);
+      expect(results[2].d_rows_read).toBeCloseTo(20000, 0);
+    });
+
+    it('isolates per-host deltas even in multi-merge table-level query', async () => {
+      // Two merges, each running on two nodes
+      const merge1_nodeA = makeMergeSamples({
+        count: 3, hostname: 'node-0', resultPartName: 'all_0_1_1',
+        rowsReadPerSec: 10000,
+      });
+      const merge1_nodeB = makeMergeSamples({
+        count: 3, hostname: 'node-1', resultPartName: 'all_0_1_1',
+        rowsReadPerSec: 40000,
+      });
+      const merge2_nodeA = makeMergeSamples({
+        count: 3, hostname: 'node-0', resultPartName: 'all_2_3_1',
+        rowsReadPerSec: 25000,
+      });
+      const merge2_nodeB = makeMergeSamples({
+        count: 3, hostname: 'node-1', resultPartName: 'all_2_3_1',
+        rowsReadPerSec: 60000,
+      });
+
+      const allRows = [...merge1_nodeA, ...merge1_nodeB, ...merge2_nodeA, ...merge2_nodeB];
+      const values = buildInsertValues(allRows);
+      await ctx.client.command({
+        query: `INSERT INTO tracehouse.merges_history
+          ${insertColumns(allRows)}
+          VALUES ${values}`,
+      });
+
+      const results = (await ctx.adapter.executeQuery<Record<string, unknown>>(
+        buildMergeSamplesSQL({ database: 'default', table: 'test_table' }),
+      )).map(mapMergeSampleRow);
+
+      // Each merge should have 3 samples from one node only
+      const part1 = results.filter(r => r.result_part_name === 'all_0_1_1');
+      const part2 = results.filter(r => r.result_part_name === 'all_2_3_1');
+
+      expect(part1).toHaveLength(3);
+      expect(part2).toHaveLength(3);
+
+      // Rates must be consistent within each merge (single-node)
+      const rate1 = part1[1].d_rows_read;
+      expect(rate1 === 0 || Math.abs(rate1 - 10000) < 100 || Math.abs(rate1 - 40000) < 100).toBe(true);
+      expect(part1[2].d_rows_read).toBeCloseTo(rate1, -1);
+
+      const rate2 = part2[1].d_rows_read;
+      expect(rate2 === 0 || Math.abs(rate2 - 25000) < 100 || Math.abs(rate2 - 60000) < 100).toBe(true);
+      expect(part2[2].d_rows_read).toBeCloseTo(rate2, -1);
     });
   });
 });

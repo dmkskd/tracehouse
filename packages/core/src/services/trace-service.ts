@@ -2,7 +2,7 @@
  * TraceService - Fetches query trace logs, EXPLAIN results, and OpenTelemetry spans.
  */
 import type { IClickHouseAdapter } from '../adapters/types.js';
-import type { TraceLog, ExplainType, ExplainResult, OpenTelemetrySpan, FlamegraphSample, FlamegraphNode, ProcessorProfile } from '../types/trace.js';
+import type { TraceLog, ExplainType, ExplainResult, OpenTelemetrySpan, FlamegraphSample, ProcessorProfile } from '../types/trace.js';
 import { buildQuery, tagQuery, eventDateBound } from '../queries/builder.js';
 import { TAB_QUERIES, sourceTag } from '../queries/source-tags.js';
 import { QUERY_TRACE_LOGS, QUERY_FLAMEGRAPH_CPU, QUERY_FLAMEGRAPH_REAL, QUERY_FLAMEGRAPH_MEMORY, QUERY_FLAMEGRAPH_DATA, QUERY_FLAMEGRAPH_REAL_LEGACY, QUERY_FLAMEGRAPH_MEMORY_LEGACY, QUERY_PROCESSORS_PROFILE } from '../queries/trace-queries.js';
@@ -214,20 +214,18 @@ export class TraceService {
   }
 
   /**
-   * Fetch CPU or Memory profiling data from system.trace_log for flamegraph visualization
-   * Uses ClickHouse's built-in flameGraph() function which outputs collapsed stack format
+   * Fetch flamegraph data as folded-stack text for speedscope-widget.
+   * Returns lines of "frame1;frame2;frame3 count\n..." or an object with
+   * { unavailableReason } when introspection is disabled.
    */
-  async getFlamegraphData(queryId: string, type: FlamegraphType = 'CPU', eventDate?: string): Promise<FlamegraphNode> {
+  async getFlamegraphFolded(queryId: string, type: FlamegraphType = 'CPU', eventDate?: string): Promise<{ folded: string; unavailableReason?: string }> {
     try {
-      // Check if trace_log table exists
       const checkSql = tagQuery(`SELECT 1 FROM {{cluster_aware:system.tables}} WHERE database = 'system' AND name = 'trace_log' GROUP BY name LIMIT 1`, sourceTag(TAB_QUERIES, 'traceLogCheck'));
       const checkResult = await this.adapter.executeQuery(checkSql);
       if (checkResult.length === 0) {
-        console.log('[TraceService] trace_log table does not exist');
-        return { name: 'root', value: 0, children: [] };
+        return { folded: '' };
       }
 
-      // Try the built-in flameGraph() function first, fall back to legacy manual stacks
       let rows: Record<string, unknown>[];
       let usedLegacy = false;
       const dateBound = eventDateBound(eventDate);
@@ -243,13 +241,10 @@ export class TraceService {
         rows = await this.adapter.executeQuery(tagQuery(sql, sourceTag(TAB_QUERIES, 'flamegraph')));
       } catch (primaryError) {
         const primaryMsg = primaryError instanceof Error ? primaryError.message : String(primaryError);
-        // Introspection disabled (Code 446) — don't bother with legacy fallback, it also needs introspection
         if (primaryMsg.includes('allow_introspection_functions') || primaryMsg.includes('Code: 446')) {
           throw primaryError;
         }
-        // flameGraph() not available — fall back to legacy demangle/addressToSymbol approach
         if (primaryMsg.includes('flameGraph') || primaryMsg.includes('not implemented') || primaryMsg.includes('Unknown function')) {
-          console.log('[TraceService] flameGraph() not available, using legacy stack building');
           const legacyTemplate = type === 'Memory'
             ? QUERY_FLAMEGRAPH_MEMORY_LEGACY
             : type === 'Real'
@@ -263,95 +258,41 @@ export class TraceService {
         }
       }
 
-      if (usedLegacy) {
-        // Legacy format: { stack: "func1;func2;func3", value: 42 }
-        const samples: FlamegraphSample[] = rows.map(r => ({
-          stack: String((r as Record<string, unknown>).stack || ''),
-          value: Number((r as Record<string, unknown>).value) || 1,
-        }));
-        return this.buildFlamegraphTree(samples);
-      }
-      
-      // Parse flameGraph() output: each line is "stack count" (space-separated)
-      // e.g. "func1;func2;func3 42"
-      const samples: FlamegraphSample[] = rows.map(r => {
-        const row = r as Record<string, unknown>;
-        const line = String(row.line || '');
-        // Split on last space to separate stack from count
-        const lastSpaceIdx = line.lastIndexOf(' ');
-        if (lastSpaceIdx === -1) {
-          return { stack: line, value: 1 };
-        }
-        const stack = line.substring(0, lastSpaceIdx);
-        const value = parseInt(line.substring(lastSpaceIdx + 1), 10) || 1;
-        return { stack, value };
-      });
+      const samples: FlamegraphSample[] = usedLegacy
+        ? rows.map(r => ({
+            stack: String((r as Record<string, unknown>).stack || ''),
+            value: Number((r as Record<string, unknown>).value) || 1,
+          }))
+        : rows.map(r => {
+            const line = String((r as Record<string, unknown>).line || '');
+            const lastSpaceIdx = line.lastIndexOf(' ');
+            if (lastSpaceIdx === -1) return { stack: line, value: 1 };
+            return { stack: line.substring(0, lastSpaceIdx), value: parseInt(line.substring(lastSpaceIdx + 1), 10) || 1 };
+          });
 
-      // Build hierarchical tree from stack samples
-      return this.buildFlamegraphTree(samples);
+      // Build folded text: simplify function names and join
+      const folded = samples
+        .filter(s => s.stack)
+        .map(s => {
+          const simplified = s.stack.split(';').map(f => this.simplifyFunctionName(f.trim())).join(';');
+          return `${simplified} ${s.value}`;
+        })
+        .join('\n');
+
+      return { folded };
     } catch (error) {
       const msg = error instanceof Error ? error.message : String(error);
-      // Check for introspection functions error (Code 446)
       if (msg.includes('allow_introspection_functions') || msg.includes('addressToSymbol') || msg.includes('Code: 446')) {
-        console.log('[TraceService] Introspection functions not enabled');
         return {
-          name: 'root',
-          value: 0,
-          children: [],
+          folded: '',
           unavailableReason: 'Introspection functions are not enabled on this server. Enable allow_introspection_functions in your ClickHouse config to use flamegraphs.',
         };
       }
-      // Check for no data
       if (msg.includes('Empty query')) {
-        return { name: 'root', value: 0, children: [] };
+        return { folded: '' };
       }
-      console.error('[TraceService] Failed to get flamegraph data:', msg);
       throw new TraceServiceError(`Failed to get flamegraph data: ${msg}`, error as Error);
     }
-  }
-
-  /**
-   * Build hierarchical flamegraph tree from stack samples
-   */
-  private buildFlamegraphTree(samples: FlamegraphSample[]): FlamegraphNode {
-    const root: FlamegraphNode = { name: 'root', value: 0, children: [] };
-    
-    for (const sample of samples) {
-      if (!sample.stack) continue;
-      
-      // Stack is semicolon-separated, from bottom (root) to top (leaf)
-      const frames = sample.stack.split(';').filter(f => f.trim());
-      let currentNode = root;
-      
-      for (const frame of frames) {
-        const simplifiedName = this.simplifyFunctionName(frame);
-        let childNode = currentNode.children.find(c => c.name === simplifiedName);
-        
-        if (!childNode) {
-          childNode = { name: simplifiedName, value: 0, children: [] };
-          currentNode.children.push(childNode);
-        }
-        
-        currentNode = childNode;
-      }
-      
-      // Add sample value to the leaf node
-      currentNode.value += sample.value;
-    }
-    
-    // Propagate values up the tree (inclusive time)
-    this.propagateValues(root);
-    
-    return root;
-  }
-
-  /**
-   * Propagate values from leaves up to parents (inclusive time calculation)
-   */
-  private propagateValues(node: FlamegraphNode): number {
-    const childrenValue = node.children.reduce((sum, child) => sum + this.propagateValues(child), 0);
-    node.value += childrenValue;
-    return node.value;
   }
 
   /**

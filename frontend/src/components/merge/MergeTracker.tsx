@@ -759,7 +759,7 @@ const MergeDetailPanel: React.FC<{
         <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
           <button
             onClick={() => onOpenFullDetails(merge)}
-            style={{ padding: '4px 10px', fontSize: 10, borderRadius: 4, background: 'rgba(240,136,62,0.12)', color: '#f0883e', border: '1px solid rgba(240,136,62,0.3)', cursor: 'pointer' }}
+            style={{ padding: '4px 10px', fontSize: 10, borderRadius: 4, background: `${getTypeColor()}20`, color: getTypeColor(), border: `1px solid ${getTypeColor()}33`, cursor: 'pointer' }}
           >
             Open full details
           </button>
@@ -898,6 +898,8 @@ const MergeHistoryDetailPanel: React.FC<{
   }
 
   const isTTLMove = record.merge_reason === 'TTLMove';
+  const isMutationRecord = record.merge_reason === 'Mutation' || record.event_type === 'MutatePart';
+  const accentColor = isMutationRecord ? '#a855f7' : '#f0883e';
 
   return (
     <div style={{ height: '100%', display: 'flex', flexDirection: 'column' }}>
@@ -906,7 +908,7 @@ const MergeHistoryDetailPanel: React.FC<{
         <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
           <button
             onClick={() => onOpenFullDetails(record)}
-            style={{ padding: '4px 10px', fontSize: 10, borderRadius: 4, background: 'rgba(240,136,62,0.12)', color: '#f0883e', border: '1px solid rgba(240,136,62,0.3)', cursor: 'pointer' }}
+            style={{ padding: '4px 10px', fontSize: 10, borderRadius: 4, background: `${accentColor}20`, color: accentColor, border: `1px solid ${accentColor}33`, cursor: 'pointer' }}
           >
             Open full details
           </button>
@@ -925,7 +927,7 @@ const MergeHistoryDetailPanel: React.FC<{
         {(record.merge_reason || record.merge_algorithm) && (
           <div style={{ marginBottom: 16, display: 'flex', alignItems: 'center', gap: 8 }}>
             {record.merge_reason && (
-              <span style={{ padding: '2px 8px', fontSize: 10, borderRadius: 4, background: 'rgba(240,136,62,0.15)', color: '#f0883e', border: '1px solid rgba(240,136,62,0.3)' }}>{record.merge_reason}</span>
+              <span style={{ padding: '2px 8px', fontSize: 10, borderRadius: 4, background: `${accentColor}26`, color: accentColor, border: `1px solid ${accentColor}4d` }}>{record.merge_reason}</span>
             )}
             {record.merge_algorithm && record.merge_algorithm !== 'Undecided' && (
               <span style={{ padding: '2px 8px', fontSize: 10, borderRadius: 4, background: 'var(--bg-tertiary)', color: 'var(--text-muted)' }}>{record.merge_algorithm}</span>

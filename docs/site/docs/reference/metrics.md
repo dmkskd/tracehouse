@@ -62,6 +62,35 @@ Cache hit rate = MarkCacheHits / (MarkCacheHits + MarkCacheMisses) × 100
 
 Higher pruning % = better primary key usage (more data skipped). See [Query Details](../features/analytics-query-language.mdx) for interpretation thresholds.
 
+## X-Ray
+
+The X-Ray tab provides a 3D corridor visualization of query resource consumption over time, sampled from `tracehouse.processes_history`:
+
+- **Width** = CPU cores used (`Δ(OSCPUVirtualTimeMicroseconds) / 1e6 / Δt`)
+- **Height** = memory MB (`memory_usage / 1048576`)
+
+Additional timeline charts show I/O wait, read throughput (MB/s), and network (KB/s). All delta metrics are normalized to per-second rates via `lagInFrame` window functions.
+
+For distributed queries, X-Ray collects samples from all hosts (`WHERE query_id = {id} OR initial_query_id = {id}`). "ALL" mode sums across hosts; per-host mode isolates individual nodes.
+
+## Distributed Query Topology
+
+A Gantt-style timeline showing coordinator and shard sub-queries. Each bar is time-aligned using `query_start_time_microseconds` and shows duration, memory, and rows inline.
+
+```
+Coordinator overhead = coordinator_duration - max(shard_duration)
+```
+
+Clicking any bar navigates to that query's detail view.
+
+## Pipeline Profile
+
+Visual DAG from `EXPLAIN PIPELINE` with per-processor metrics from `processors_profile_log`: elapsed time, input/output wait, rows processed. Requires `log_processors_profiles = 1`.
+
+## Thread Breakdown
+
+Per-thread attribution from `query_thread_log`: CPU time, I/O wait, peak memory, rows read/written. Rendered as a Gantt timeline or sortable table, colored by thread type.
+
 ## Key Caveats
 
 1. **ProfileEvents in processes** requires ClickHouse 22.x+

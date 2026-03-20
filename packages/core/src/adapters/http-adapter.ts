@@ -117,7 +117,8 @@ export class HttpAdapter implements IClickHouseAdapter {
       msg.includes('Syntax error') ||
       msg.includes('DB::Exception') ||
       msg.includes('Unknown') ||
-      msg.includes('Code:')
+      msg.includes('Code:') ||
+      msg.includes('[Code ')
     ) {
       return new AdapterError(msg, 'query', cause);
     }

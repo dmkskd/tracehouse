@@ -1,0 +1,45 @@
+# ClickHouse Keeper for altinity-large cluster
+# 3 replicas for proper quorum with 8 ClickHouse nodes
+apiVersion: "clickhouse-keeper.altinity.com/v1"
+kind: "ClickHouseKeeperInstallation"
+metadata:
+  name: dev-keeper
+  namespace: clickhouse
+spec:
+  configuration:
+    clusters:
+      - name: "keeper"
+        layout:
+          replicasCount: 3
+  defaults:
+    templates:
+      podTemplate: default
+      volumeClaimTemplate: keeper-storage
+  templates:
+    podTemplates:
+      - name: default
+        metadata:
+          labels:
+            app: dev-keeper
+        spec:
+          containers:
+            - name: clickhouse-keeper
+              imagePullPolicy: IfNotPresent
+              image: "clickhouse/clickhouse-keeper:26.1"
+              resources:
+                requests:
+                  cpu: "100m"
+                  memory: "256Mi"
+                limits:
+                  cpu: "500m"
+                  memory: "512Mi"
+          securityContext:
+            fsGroup: 101
+    volumeClaimTemplates:
+      - name: keeper-storage
+        spec:
+          accessModes:
+            - ReadWriteOnce
+          resources:
+            requests:
+              storage: 1Gi

@@ -14,7 +14,7 @@ import { useCapabilityCheck } from '../shared/RequiresCapability';
 import type { QueryThreadBreakdown } from '@tracehouse/core';
 import type { TraceLog, TraceLogFilter, OpenTelemetrySpan } from '../../stores/traceStore';
 import { TraceLogViewer } from '../tracing/TraceLogViewer';
-import { Flamegraph, type FlamegraphNode } from '../tracing/Flamegraph';
+import { SpeedscopeViewer } from '../tracing/SpeedscopeViewer';
 import { highlightSQL } from '../../utils/sqlHighlighter';
 import DOMPurify from 'dompurify';
 
@@ -319,7 +319,8 @@ const QueryLogsSection: React.FC<{ queryId: string; eventDate?: string; autoExpa
   const [logs, setLogs] = useState<TraceLog[]>([]);
   const [spans, setSpans] = useState<OpenTelemetrySpan[]>([]);
   const [threads, setThreads] = useState<QueryThreadBreakdown[]>([]);
-  const [flamegraphData, setFlamegraphData] = useState<FlamegraphNode | null>(null);
+  const [flamegraphFolded, setFlamegraphFolded] = useState('');
+  const [flamegraphUnavailable, setFlamegraphUnavailable] = useState<string | undefined>();
   const [flamegraphType, setFlamegraphType] = useState<'CPU' | 'Real' | 'Memory'>('CPU');
   const [isLoadingLogs, setIsLoadingLogs] = useState(false);
   const [isLoadingSpans, setIsLoadingSpans] = useState(false);
@@ -363,9 +364,11 @@ const QueryLogsSection: React.FC<{ queryId: string; eventDate?: string; autoExpa
     if (!services) return;
     setIsLoadingFlamegraph(true);
     setFlamegraphError(null);
+    setFlamegraphUnavailable(undefined);
     try {
-      const result = await services.traceService.getFlamegraphData(queryId, type, eventDate);
-      setFlamegraphData(result);
+      const result = await services.traceService.getFlamegraphFolded(queryId, type, eventDate);
+      setFlamegraphFolded(result.folded);
+      setFlamegraphUnavailable(result.unavailableReason);
     } catch (e) {
       setFlamegraphError(e instanceof Error ? e.message : 'Failed to fetch flamegraph data');
     } finally {
@@ -375,7 +378,8 @@ const QueryLogsSection: React.FC<{ queryId: string; eventDate?: string; autoExpa
 
   const handleFlamegraphTypeChange = useCallback((newType: 'CPU' | 'Real' | 'Memory') => {
     setFlamegraphType(newType);
-    setFlamegraphData(null);
+    setFlamegraphFolded('');
+    setFlamegraphUnavailable(undefined);
     setFlamegraphError(null);
     fetchFlamegraph(newType);
   }, [fetchFlamegraph]);
@@ -398,7 +402,8 @@ const QueryLogsSection: React.FC<{ queryId: string; eventDate?: string; autoExpa
     setLogs([]);
     setSpans([]);
     setThreads([]);
-    setFlamegraphData(null);
+    setFlamegraphFolded('');
+    setFlamegraphUnavailable(undefined);
     setFlamegraphType('CPU');
     setLogsError(null);
     setSpansError(null);
@@ -518,10 +523,11 @@ const QueryLogsSection: React.FC<{ queryId: string; eventDate?: string; autoExpa
           />
         )}
         {activeTab === 'flamegraph' && (
-          <Flamegraph
-            data={flamegraphData}
+          <SpeedscopeViewer
+            folded={flamegraphFolded}
             isLoading={isLoadingFlamegraph}
             error={flamegraphError}
+            unavailableReason={flamegraphUnavailable}
             onRefresh={fetchFlamegraph}
             profileType={flamegraphType}
             onTypeChange={handleFlamegraphTypeChange}

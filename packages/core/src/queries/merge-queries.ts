@@ -340,6 +340,27 @@ export const GET_MERGE_TEXT_LOGS_BY_QUERY_ID = `
   LIMIT 500
 `;
 
+/** Same as GET_MERGE_TEXT_LOGS_BY_QUERY_ID but filtered to a specific hostname.
+ * On clusters, text_log entries for the same merge exist on every replica
+ * (same query_id = table_uuid::part_name). Filter to one node to avoid mixing. */
+export const GET_MERGE_TEXT_LOGS_BY_QUERY_ID_HOST = `
+  SELECT
+    toString(event_time) AS event_time,
+    toString(event_time_microseconds) AS event_time_microseconds,
+    query_id,
+    level,
+    message,
+    logger_name AS source,
+    thread_id,
+    thread_name
+  FROM {{cluster_aware:system.text_log}}
+  WHERE query_id = {query_id}
+    AND event_date >= {event_date_bound}
+    AND hostName() = {hostname}
+  ORDER BY event_time_microseconds ASC
+  LIMIT 500
+`;
+
 /**
  * Get the table UUID from system.tables.
  * Background merges use `{table_uuid}::{result_part_name}` as query_id in

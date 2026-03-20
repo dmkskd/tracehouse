@@ -174,7 +174,8 @@ export class BrowserAdapter implements IClickHouseAdapter {
       msg.includes('Syntax error') ||
       msg.includes('DB::Exception') ||
       msg.includes('Unknown') ||
-      msg.includes('Code:')
+      msg.includes('Code:') ||
+      msg.includes('[Code ')
     ) {
       category = 'query';
     } else {

@@ -5,9 +5,24 @@
   "info": {
     "description": "Comprehensive ClickHouse monitoring with 3D visualizations, merge tracking, query analysis, and time travel",
     "author": {
-      "name": "TraceHouse"
+      "name": "TraceHouse",
+      "url": "https://github.com/tracehouse/tracehouse"
     },
     "keywords": ["clickhouse", "monitoring", "3d", "merges", "queries", "parts", "visualization"],
+    "logos": {
+      "small": "img/logo.svg",
+      "large": "img/logo.png"
+    },
+    "links": [
+      { "name": "GitHub", "url": "https://github.com/tracehouse/tracehouse" },
+      { "name": "Documentation", "url": "https://github.com/tracehouse/tracehouse/blob/main/README.md" },
+      { "name": "Issues", "url": "https://github.com/tracehouse/tracehouse/issues" }
+    ],
+    "screenshots": [
+      { "name": "Overview", "path": "img/screenshots/overview.png" },
+      { "name": "Merges", "path": "img/screenshots/merges.png" },
+      { "name": "Time Travel", "path": "img/screenshots/timetravel.png" }
+    ],
     "version": "1.0.39",
     "updated": "2026-02-17"
   },

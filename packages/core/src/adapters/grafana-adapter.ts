@@ -115,7 +115,7 @@ export class GrafanaAdapter implements IClickHouseAdapter {
     if (msg.includes('network') || msg.includes('ECONNREFUSED') || msg.includes('Failed to fetch')) {
       return new AdapterError(msg, 'network', cause);
     }
-    if (msg.includes('DB::Exception') || msg.includes('Syntax error') || msg.includes('Code:')) {
+    if (msg.includes('DB::Exception') || msg.includes('Syntax error') || msg.includes('Code:') || msg.includes('[Code ')) {
       return new AdapterError(msg, 'query', cause);
     }
     return new AdapterError(msg, 'unknown', cause);

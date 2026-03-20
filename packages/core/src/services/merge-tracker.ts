@@ -13,6 +13,7 @@ import {
   GET_OUTDATED_PARTS_SIZE,
   GET_STORAGE_POLICY_VOLUMES,
   GET_MERGE_TEXT_LOGS_BY_QUERY_ID,
+  GET_MERGE_TEXT_LOGS_BY_QUERY_ID_HOST,
   GET_TABLE_UUID,
   GET_MERGE_HISTORY_BY_PART_NAME,
 } from '../queries/merge-queries.js';
@@ -219,6 +220,7 @@ export class MergeTracker {
         database: string;
         table: string;
         part_name: string;
+        hostname?: string;
       }): Promise<MergeTextLog[]> {
         try {
           const cacheKey = `${record.database}.${record.table}`;
@@ -235,7 +237,14 @@ export class MergeTracker {
 
           const queryId = `${uuid}::${record.part_name}`;
           const dateBound = eventDateBound(record.event_time);
-          const sql = buildQuery(GET_MERGE_TEXT_LOGS_BY_QUERY_ID.replace('{event_date_bound}', dateBound), { query_id: queryId });
+          // When hostname is known, filter to that node's logs to avoid mixing
+          // logs from multiple replicas running the same merge.
+          const template = record.hostname
+            ? GET_MERGE_TEXT_LOGS_BY_QUERY_ID_HOST
+            : GET_MERGE_TEXT_LOGS_BY_QUERY_ID;
+          const params: Record<string, string> = { query_id: queryId };
+          if (record.hostname) params.hostname = record.hostname;
+          const sql = buildQuery(template.replace('{event_date_bound}', dateBound), params);
           const rows = await this.adapter.executeQuery(tagQuery(sql, sourceTag(TAB_MERGES, 'mergeTextLogs')));
           return rows.map(mapMergeTextLog);
         } catch (error) {

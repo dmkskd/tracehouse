@@ -1226,22 +1226,6 @@ export const QueryXRay3D: React.FC<QueryXRay3DProps> = ({
           />
         </Canvas>
         {/* Axis legend overlay */}
-        <div style={{
-          position: 'absolute',
-          bottom: 12,
-          left: 12,
-          display: 'flex',
-          flexDirection: 'column',
-          gap: 3,
-          fontFamily: 'monospace',
-          fontSize: 10,
-          pointerEvents: 'none',
-          opacity: 0.75,
-        }}>
-          <span style={{ color: '#ccaa44' }}>width  CPU  {peakCpu.toFixed(1)} peak cores</span>
-          <span style={{ color: '#6688cc' }}>height Memory  {fmtMB(peakMem)} peak</span>
-          <span style={{ color: '#8899aa' }}>length Time  {duration.toFixed(1)}s</span>
-        </div>
       </div>
 
       {/* Scrubber */}

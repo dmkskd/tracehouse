@@ -160,6 +160,7 @@ export interface SubQueryInfo {
   query_preview: string;
   exception_code: number;
   exception: string;
+  query_start_time_microseconds: string;
 }
 
 /**
@@ -500,6 +501,7 @@ export class QueryAnalyzer {
         query_preview: String(r.query_preview || ''),
         exception_code: Number(r.exception_code) || 0,
         exception: String(r.exception || ''),
+        query_start_time_microseconds: String(r.query_start_time_microseconds || ''),
       }));
     } catch (error) {
       throw new QueryAnalysisError('Failed to get sub-queries', error as Error);

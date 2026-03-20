@@ -41,14 +41,6 @@ export interface FlamegraphSample {
   value: number;  // sample count
 }
 
-/** Hierarchical node for d3-flame-graph */
-export interface FlamegraphNode {
-  name: string;
-  value: number;
-  children: FlamegraphNode[];
-  /** When set, indicates the data could not be fetched for a known reason (e.g. introspection disabled) */
-  unavailableReason?: string;
-}
 
 /** Per-processor execution stats from system.processors_profile_log */
 export interface ProcessorProfile {

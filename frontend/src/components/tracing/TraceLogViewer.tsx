@@ -946,7 +946,7 @@ const LogRow: React.FC<{
         </span>
 
         {/* Message */}
-        <span style={{ 
+        <span style={{
           color: 'var(--text-secondary)',
           overflow: 'hidden',
           textOverflow: 'ellipsis',
@@ -1042,6 +1042,7 @@ export const TraceLogViewer: React.FC<TraceLogViewerProps> = ({
   const [activeView, setActiveView] = useState<'logs' | 'timeline'>('logs');
   const [showFilter, setShowFilter] = useState(false);
   const [searchTerm, setSearchTerm] = useState('');
+  const [copied, setCopied] = useState(false);
 
   // ClickStack integration
   const clickStackEnabled = useClickStackStore(s => s.enabled);
@@ -1153,6 +1154,29 @@ export const TraceLogViewer: React.FC<TraceLogViewerProps> = ({
             <span style={{ fontSize: 12, color: 'var(--text-muted)' }}>
               {filteredLogs.length} / {logs.length} logs · {threadCount} threads
             </span>
+            <button
+              onClick={() => {
+                const text = filteredLogs
+                  .map(l => `${formatTime(l.event_time_microseconds || l.event_time)}\t${l.source}\t${l.thread_name}(${l.thread_id})\t${l.level}\t${l.message}`)
+                  .join('\n');
+                navigator.clipboard.writeText(text);
+                setCopied(true);
+                setTimeout(() => setCopied(false), 1500);
+              }}
+              style={{
+                padding: '5px 12px',
+                fontSize: 11,
+                fontWeight: 500,
+                borderRadius: 6,
+                border: 'none',
+                background: copied ? 'rgba(var(--color-success-rgb), 0.15)' : 'var(--bg-card)',
+                color: copied ? 'var(--color-success)' : 'var(--text-tertiary)',
+                cursor: 'pointer',
+                transition: 'all 0.15s ease',
+              }}
+            >
+              {copied ? 'Copied!' : filteredLogs.length < logs.length ? `Copy ${filteredLogs.length} Filtered` : 'Copy All'}
+            </button>
             <button
               onClick={() => setShowFilter(!showFilter)}
               style={{

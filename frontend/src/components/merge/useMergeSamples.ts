@@ -26,6 +26,7 @@ export function useMergeSamples(opts: {
   database: string | undefined;
   table: string | undefined;
   resultPartName: string | undefined;
+  hostname?: string;
 }): MergeSamplesResult {
   const services = useClickHouseServices();
   const [samples, setSamples] = useState<MergeSample[]>([]);
@@ -41,6 +42,7 @@ export function useMergeSamples(opts: {
         database: opts.database,
         table: opts.table,
         resultPartName: opts.resultPartName,
+        hostname: opts.hostname,
       });
       const rows = await services.adapter.executeQuery<Record<string, unknown>>(sql);
       setSamples(rows.map(mapMergeSampleRow));
@@ -49,7 +51,7 @@ export function useMergeSamples(opts: {
     } finally {
       setIsLoading(false);
     }
-  }, [services, opts.database, opts.table, opts.resultPartName]);
+  }, [services, opts.database, opts.table, opts.resultPartName, opts.hostname]);
 
   return { samples, isLoading, error, fetch };
 }

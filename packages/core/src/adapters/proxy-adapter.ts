@@ -138,7 +138,7 @@ export class ProxyAdapter implements IClickHouseAdapter {
       category = 'authentication';
     } else if (msg.includes('timeout') || msg.includes('Timeout') || msg.includes('ETIMEDOUT')) {
       category = 'timeout';
-    } else if (msg.includes('Syntax error') || msg.includes('DB::Exception') || msg.includes('Code:')) {
+    } else if (msg.includes('Syntax error') || msg.includes('DB::Exception') || msg.includes('Code:') || msg.includes('[Code ')) {
       category = 'query';
     } else {
       category = 'unknown';

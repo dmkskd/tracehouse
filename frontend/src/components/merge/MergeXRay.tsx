@@ -24,6 +24,8 @@ interface MergeXRayProps {
   durationMs?: number;
   /** query_id from part_log (often empty for background merges) */
   queryId?: string;
+  /** Hostname of the node that ran this merge — filters samples & logs to one replica */
+  hostname?: string;
 }
 
 const CHART_HEIGHT = 120;
@@ -89,12 +91,13 @@ const CustomTooltip: React.FC<{
   );
 };
 
-export const MergeXRay: React.FC<MergeXRayProps> = ({ database, table, resultPartName, eventTime, durationMs, queryId }) => {
+export const MergeXRay: React.FC<MergeXRayProps> = ({ database, table, resultPartName, eventTime, durationMs, queryId, hostname }) => {
   const services = useClickHouseServices();
   const { samples, isLoading, error, fetch } = useMergeSamples({
     database,
     table,
     resultPartName,
+    hostname,
   });
 
   // Text log entries correlated to this merge
@@ -117,6 +120,7 @@ export const MergeXRay: React.FC<MergeXRayProps> = ({ database, table, resultPar
         database,
         table,
         part_name: resultPartName,
+        hostname,
       });
       setTextLogs(logs);
     } catch {

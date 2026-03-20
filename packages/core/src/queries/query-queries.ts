@@ -141,20 +141,34 @@ export const QUERY_HISTORY = buildQueryHistorySQL();
 export const SUB_QUERIES = `
   SELECT
     query_id,
-    hostName() AS hostname,
-    query_duration_ms,
-    memory_usage,
-    read_rows,
-    read_bytes,
-    is_initial_query,
-    substring(query, 1, 120) AS query_preview,
-    exception_code,
-    exception
-  FROM {{cluster_aware:system.query_log}}
-  WHERE initial_query_id = {initial_query_id}
-    AND is_initial_query = 0
-    AND type IN ('QueryFinish', 'ExceptionWhileProcessing', 'ExceptionBeforeStart')
-    AND event_date >= {event_date_bound}
+    any(hostname) AS hostname,
+    any(query_duration_ms) AS query_duration_ms,
+    any(memory_usage) AS memory_usage,
+    any(read_rows) AS read_rows,
+    any(read_bytes) AS read_bytes,
+    any(query_preview) AS query_preview,
+    any(exception_code) AS exception_code,
+    any(exception) AS exception,
+    any(query_start_time_microseconds) AS query_start_time_microseconds
+  FROM (
+    SELECT
+      query_id,
+      hostName() AS hostname,
+      query_duration_ms,
+      memory_usage,
+      read_rows,
+      read_bytes,
+      substring(query, 1, 120) AS query_preview,
+      exception_code,
+      exception,
+      query_start_time_microseconds
+    FROM {{cluster_aware:system.query_log}}
+    WHERE initial_query_id = {initial_query_id}
+      AND is_initial_query = 0
+      AND type IN ('QueryFinish', 'ExceptionWhileProcessing', 'ExceptionBeforeStart')
+      AND event_date >= {event_date_bound}
+  )
+  GROUP BY query_id
   ORDER BY query_duration_ms DESC
   LIMIT 50
 `;

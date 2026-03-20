@@ -69,8 +69,10 @@ export function buildMergeSamplesSQL(opts: {
   database: string;
   table: string;
   resultPartName?: string;
+  /** When provided, filter to this hostname directly instead of auto-picking. */
+  hostname?: string;
 }): string {
-  const { database, table, resultPartName } = opts;
+  const { database, table, resultPartName, hostname } = opts;
   const escDb = database.replace(/'/g, "''");
   const escTable = table.replace(/'/g, "''");
 
@@ -78,7 +80,10 @@ export function buildMergeSamplesSQL(opts: {
     ? `database = '${escDb}' AND table = '${escTable}' AND result_part_name = '${resultPartName.replace(/'/g, "''")}'`
     : `database = '${escDb}' AND table = '${escTable}'`;
 
-  const partition = resultPartName ? '' : 'PARTITION BY result_part_name';
+  // Window must partition by hostname so that delta calculations don't mix
+  // samples from different nodes (each node runs its own merge independently).
+  // We pick one representative node (the one with the most samples) for display.
+  const partitionCols = resultPartName ? 'hostname' : 'result_part_name, hostname';
 
   return `
 SELECT
@@ -95,7 +100,7 @@ SELECT
     greatest(raw_d_written_mb / dt, 0)   AS d_written_mb
 FROM (
     SELECT
-        result_part_name,
+        result_part_name, hostname,
         toFloat64(dateDiff('millisecond', min_time, sample_time)) / 1000 AS t,
         elapsed, progress,
         database, table, partition_id,
@@ -118,8 +123,8 @@ FROM (
         (bytes_written_uncompressed - lagInFrame(bytes_written_uncompressed, 1, bytes_written_uncompressed) OVER w) / (1024 * 1024) AS raw_d_written_mb
     FROM (
         SELECT
-            result_part_name, sample_time,
-            min(sample_time) OVER (${partition}) AS min_time,
+            result_part_name, hostname, sample_time,
+            min(sample_time) OVER (PARTITION BY ${partitionCols}) AS min_time,
             elapsed, progress,
             database, table, partition_id,
             num_parts, is_mutation, merge_type, merge_algorithm,
@@ -128,10 +133,20 @@ FROM (
             memory_usage
         FROM {{cluster_aware:tracehouse.merges_history}}
         WHERE ${whereClause}
-        ORDER BY result_part_name, sample_time
+        ORDER BY result_part_name, hostname, sample_time
     )
-    WINDOW w AS (${partition} ORDER BY sample_time)
+    WINDOW w AS (PARTITION BY ${partitionCols} ORDER BY sample_time)
 )
+WHERE hostname = ${hostname
+    ? `'${hostname.replace(/'/g, "''")}'`
+    : `(
+    SELECT hostname
+    FROM {{cluster_aware:tracehouse.merges_history}}
+    WHERE ${whereClause}
+    GROUP BY hostname
+    ORDER BY count() DESC
+    LIMIT 1
+)`}
 ORDER BY result_part_name, t
 `;
 }

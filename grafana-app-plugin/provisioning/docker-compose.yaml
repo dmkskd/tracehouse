@@ -1,0 +1,40 @@
+# TraceHouse Grafana Plugin - Review Environment
+#
+# Usage:
+#   docker compose up
+#
+# This starts ClickHouse and Grafana with the TraceHouse plugin
+# pre-loaded and enabled. Open http://localhost:3000 to explore.
+
+services:
+  clickhouse:
+    image: clickhouse:latest
+    container_name: tracehouse-review-clickhouse
+    ports:
+      - "8123:8123"
+    environment:
+      CLICKHOUSE_DEFAULT_ACCESS_MANAGEMENT: 1
+    healthcheck:
+      test: ["CMD", "clickhouse-client", "--query", "SELECT 1"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+      start_period: 15s
+
+  grafana:
+    image: grafana/grafana:12.3.2
+    container_name: tracehouse-review-grafana
+    ports:
+      - "3000:3000"
+    volumes:
+      - ./datasources.yaml:/etc/grafana/provisioning/datasources/clickhouse.yaml:ro
+      - ./plugins.yaml:/etc/grafana/provisioning/plugins/tracehouse.yaml:ro
+      - ../dist:/var/lib/grafana/plugins/tracehouse-app:ro
+    environment:
+      GF_AUTH_ANONYMOUS_ENABLED: "true"
+      GF_AUTH_ANONYMOUS_ORG_ROLE: Admin
+      GF_INSTALL_PLUGINS: grafana-clickhouse-datasource
+      GF_PLUGINS_ALLOW_LOADING_UNSIGNED_PLUGINS: tracehouse-app
+    depends_on:
+      clickhouse:
+        condition: service_healthy

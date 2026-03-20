@@ -116,6 +116,8 @@ const DetailsTab: React.FC<{
   isActive?: boolean;
 }> = ({ record, volumeInfo, isActive }) => {
   const isTTLMove = record.merge_reason === 'TTLMove';
+  const isMutation = record.merge_reason === 'Mutation' || record.event_type === 'MutatePart';
+  const reasonColor = isMutation ? '#a855f7' : '#f0883e';
 
   return (
     <>
@@ -136,7 +138,7 @@ const DetailsTab: React.FC<{
       {(record.merge_reason || record.merge_algorithm || record.part_name.startsWith('patch-')) && (
         <div style={{ marginBottom: 16, display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
           {record.merge_reason && (
-            <span style={{ padding: '2px 8px', fontSize: 10, borderRadius: 4, background: 'rgba(240,136,62,0.15)', color: '#f0883e', border: '1px solid rgba(240,136,62,0.3)' }}>{record.merge_reason}</span>
+            <span style={{ padding: '2px 8px', fontSize: 10, borderRadius: 4, background: `${reasonColor}26`, color: reasonColor, border: `1px solid ${reasonColor}4d` }}>{record.merge_reason}</span>
           )}
           {record.merge_algorithm && record.merge_algorithm !== 'Undecided' && (
             <span style={{ padding: '2px 8px', fontSize: 10, borderRadius: 4, background: 'var(--bg-tertiary)', color: 'var(--text-muted)' }}>{record.merge_algorithm}</span>
@@ -354,6 +356,7 @@ const MergeDetailInner: React.FC<{
       database: record.database,
       table: record.table,
       part_name: record.part_name,
+      hostname: record.hostname,
     }).then(logs => {
       if (!cancelled) setTextLogs(logs);
     }).catch(e => {
@@ -366,6 +369,8 @@ const MergeDetailInner: React.FC<{
 
   const hasProfileEvents = !!record.profile_events && Object.keys(record.profile_events).length > 0;
   const isTTLMoveRecord = record.merge_reason === 'TTLMove';
+  const isMutationRecord = record.merge_reason === 'Mutation' || record.event_type === 'MutatePart';
+  const accent = isMutationRecord ? '#a855f7' : '#f0883e';
 
   // Reset tab if experimental is disabled while viewing X-Ray
   useEffect(() => {
@@ -393,17 +398,22 @@ const MergeDetailInner: React.FC<{
           <div style={{ fontSize: 11, color: 'var(--text-muted)', marginTop: 2, fontFamily: 'monospace' }}>
             {record.database}.{record.table} → {record.part_name}
           </div>
+          {record.hostname && (
+            <div style={{ fontSize: 10, color: 'var(--text-secondary)', marginTop: 2, fontFamily: 'monospace' }}>
+              Server: {record.hostname}
+            </div>
+          )}
         </div>
         <button onClick={onClose} style={{ color: 'var(--text-muted)', background: 'none', border: 'none', cursor: 'pointer', fontSize: 18, padding: '4px 8px' }}>✕</button>
       </div>
       {isActive && activeMerge && (
-        <div style={{ padding: '8px 20px', background: 'rgba(240,136,62,0.08)', borderBottom: '1px solid rgba(240,136,62,0.2)', display: 'flex', alignItems: 'center', gap: 12 }}>
+        <div style={{ padding: '8px 20px', background: `${accent}14`, borderBottom: `1px solid ${accent}33`, display: 'flex', alignItems: 'center', gap: 12 }}>
           <div style={{ flex: 1 }}>
             <div style={{ height: 4, borderRadius: 2, background: 'var(--bg-tertiary)', overflow: 'hidden' }}>
-              <div style={{ height: '100%', borderRadius: 2, background: '#f0883e', width: `${(activeMerge.progress * 100).toFixed(1)}%`, transition: 'width 0.3s' }} />
+              <div style={{ height: '100%', borderRadius: 2, background: accent, width: `${(activeMerge.progress * 100).toFixed(1)}%`, transition: 'width 0.3s' }} />
             </div>
           </div>
-          <span style={{ fontSize: 11, fontWeight: 600, color: '#f0883e', fontFamily: 'monospace', whiteSpace: 'nowrap' }}>{(activeMerge.progress * 100).toFixed(1)}%</span>
+          <span style={{ fontSize: 11, fontWeight: 600, color: accent, fontFamily: 'monospace', whiteSpace: 'nowrap' }}>{(activeMerge.progress * 100).toFixed(1)}%</span>
           <span style={{ fontSize: 10, color: 'var(--text-muted)', whiteSpace: 'nowrap' }}>In progress — some data may be partial</span>
         </div>
       )}
@@ -418,9 +428,9 @@ const MergeDetailInner: React.FC<{
             style={{
               padding: '10px 14px', fontSize: 12, position: 'relative',
               fontWeight: activeTab === tab.id ? 600 : 400,
-              color: tab.disabled ? 'var(--text-muted)' : activeTab === tab.id ? '#f0883e' : 'var(--text-secondary)',
+              color: tab.disabled ? 'var(--text-muted)' : activeTab === tab.id ? accent : 'var(--text-secondary)',
               background: 'none', border: 'none',
-              borderBottom: activeTab === tab.id ? '2px solid #f0883e' : '2px solid transparent',
+              borderBottom: activeTab === tab.id ? `2px solid ${accent}` : '2px solid transparent',
               cursor: tab.disabled ? 'not-allowed' : 'pointer',
               opacity: tab.disabled ? 0.5 : 1,
             }}
@@ -429,8 +439,8 @@ const MergeDetailInner: React.FC<{
             {tab.experimental && (
               <span style={{
                 position: 'absolute', top: -4, right: -2,
-                fontSize: 7, fontWeight: 700, color: '#f0883e',
-                background: 'var(--bg-tertiary)', border: '1px solid rgba(240,136,62,0.3)',
+                fontSize: 7, fontWeight: 700, color: accent,
+                background: 'var(--bg-tertiary)', border: `1px solid ${accent}4d`,
                 borderRadius: 3, padding: '0 3px', lineHeight: '12px',
                 textTransform: 'uppercase', letterSpacing: '0.3px',
               }}>exp</span>
@@ -468,6 +478,7 @@ const MergeDetailInner: React.FC<{
             eventTime={record.event_time}
             durationMs={record.duration_ms}
             queryId={record.query_id}
+            hostname={record.hostname}
           />
         )}
       </div>
