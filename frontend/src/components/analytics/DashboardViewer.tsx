@@ -85,8 +85,9 @@ const DashboardPanelCard: React.FC<{
   // Escape exits fullscreen, 'f' toggles fullscreen when hovered
   useEffect(() => {
     const handler = (e: KeyboardEvent) => {
+      if (e.target instanceof HTMLInputElement || e.target instanceof HTMLTextAreaElement) return;
       if (e.key === 'Escape' && fullscreen) onToggleFullscreen();
-      if (e.key === 'f' && hovered && !fullscreen && !(e.target instanceof HTMLInputElement || e.target instanceof HTMLTextAreaElement)) onToggleFullscreen();
+      if (e.key === 'f' && hovered && !fullscreen) onToggleFullscreen();
     };
     window.addEventListener('keydown', handler);
     return () => window.removeEventListener('keydown', handler);
@@ -196,8 +197,6 @@ const DashboardPanelCard: React.FC<{
     setDrillPreset(target);
     setDrillParams(newParams);
     setResult(null);
-    // Push history entry so browser back undoes the drill-down
-    window.history.pushState({ drill: true }, '');
     setTimeout(() => run(target, newParams), 0);
   }, [preset, drillParams, run]);
 
@@ -208,13 +207,18 @@ const DashboardPanelCard: React.FC<{
     setTimeout(() => run(originalPreset ?? undefined, {}), 0);
   }, [originalPreset, run]);
 
-  // Browser back button undoes drill-down
+  // ArrowLeft key undoes drill-down
+  const drillResetRef = useRef(handleDrillReset);
+  drillResetRef.current = handleDrillReset;
   useEffect(() => {
     if (!isDrilled) return;
-    const onPopState = () => { handleDrillReset(); };
-    window.addEventListener('popstate', onPopState);
-    return () => window.removeEventListener('popstate', onPopState);
-  }, [isDrilled, handleDrillReset]);
+    const onKey = (e: KeyboardEvent) => {
+      if (e.target instanceof HTMLInputElement || e.target instanceof HTMLTextAreaElement) return;
+      if (e.key === 'ArrowLeft') { e.preventDefault(); drillResetRef.current(); }
+    };
+    window.addEventListener('keydown', onKey);
+    return () => window.removeEventListener('keydown', onKey);
+  }, [isDrilled]);
 
   // @link support
   const [linkModal, setLinkModal] = useState<{ targetQuery: Query; params: Record<string, string> } | null>(null);
@@ -322,6 +326,7 @@ const DashboardPanelCard: React.FC<{
                     orientation={chartDirective?.orientation} fullHeight unit={chartUnit} color={chartColor}
                     onDrillDown={isDrillable ? handleDrillDown : undefined}
                     drillIntoQuery={isDrillable ? preset?.directives.drill?.into : undefined}
+                    valueColumns={chartDirective?.valueColumns}
                     hoveredTimestamp={hoveredTimestamp} onTimestampHover={onTimestampHover} correlationValues={correlationValues} currentPanelName={preset?.name} isHoveredPanel={isHoveredPanel} />
                 )}
               </div>
@@ -622,7 +627,8 @@ const MiniPanelCard: React.FC<{ panel: DashboardPanel; timeRangeOverride: string
               <Chart3DCanvas data={chartData} type={chartType} orientation={chartDirective?.orientation} groupedData={isGroupedChart2 ? groupedChartData2 : undefined} />
             ) : (
               <ChartRenderer chartType={chartType} data={chartData} groupedData={groupedChartData2}
-                orientation={chartDirective?.orientation} fullHeight color={miniChartColor} />
+                orientation={chartDirective?.orientation} fullHeight color={miniChartColor}
+                valueColumns={chartDirective?.valueColumns} />
             )}
           </>
         )}

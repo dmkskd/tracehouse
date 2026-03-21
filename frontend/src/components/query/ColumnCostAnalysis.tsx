@@ -507,7 +507,7 @@ export const ColumnCostAnalysis: React.FC<ColumnCostAnalysisProps> = ({ queryDet
             background: 'rgba(210, 153, 34, 0.2)',
             color: '#d29922',
             marginBottom: 6,
-          }}>Experimental</span>
+          }}>Beta</span>
           <br />
           <strong style={{ color: '#d29922' }}>Expensive to compute — results may not always be available.</strong>
           <br /><br />

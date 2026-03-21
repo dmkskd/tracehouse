@@ -107,6 +107,116 @@ WHERE event_time > {{time_range}}
 GROUP BY t
 ORDER BY t ASC`,
 
+  `-- @meta: title='Fetch vs Merge Ratio' group='Merges' interval='1 DAY' description='Ratio of replica fetches (DownloadPart) to local merges over time — high fetch% means replicas rely on others to merge (ReplicatedMergeTree only)'
+-- @chart: type=line group_by=hour value=merges,fetches style=2d
+SELECT
+    toStartOfHour(event_time) AS hour,
+    countIf(event_type = 'MergeParts') AS merges,
+    countIf(event_type = 'DownloadPart') AS fetches,
+    round(countIf(event_type = 'DownloadPart') * 100.0
+        / greatest(count(), 1), 1) AS fetch_pct
+FROM {{cluster_aware:system.part_log}}
+WHERE event_type IN ('MergeParts', 'DownloadPart')
+  AND event_time > {{time_range}}
+GROUP BY hour
+ORDER BY hour ASC`,
+
+  `-- @meta: title='Fetch vs Merge Duration' group='Merges' interval='1 DAY' description='Compare average and p95 duration of fetches vs local merges — fetches slower than merges may indicate network bottlenecks (ReplicatedMergeTree only)'
+-- @chart: type=bar group_by=event_type value=avg_ms style=2d
+SELECT
+    event_type,
+    count() AS ops,
+    round(avg(duration_ms)) AS avg_ms,
+    round(quantile(0.95)(duration_ms)) AS p95_ms,
+    formatReadableSize(avg(size_in_bytes)) AS avg_size
+FROM {{cluster_aware:system.part_log}}
+WHERE event_type IN ('MergeParts', 'DownloadPart')
+  AND event_time > {{time_range}}
+GROUP BY event_type`,
+
+  `-- @meta: title='Fetch Pool Utilization' group='Merges' interval='1 HOUR' description='Background fetch pool slots in use over time — saturation means replicas are bottlenecked on fetching parts (ReplicatedMergeTree only)'
+-- @chart: type=line group_by=t value=fetch_slots,fetch_pool_size style=2d
+SELECT
+    toStartOfInterval(event_time, INTERVAL 15 SECOND) AS t,
+    avg(CurrentMetric_BackgroundFetchesPoolTask) AS fetch_slots,
+    avg(CurrentMetric_BackgroundFetchesPoolSize) AS fetch_pool_size
+FROM {{cluster_aware:system.metric_log}}
+WHERE event_time > {{time_range}}
+GROUP BY t
+ORDER BY t ASC`,
+
+  `-- @meta: title='Replica Merge Imbalance' group='Merges' interval='1 DAY' description='Per-replica breakdown of local merges vs fetches — asymmetry indicates one node is doing most merge work (ReplicatedMergeTree only)'
+-- @chart: type=bar group_by=replica value=fetch_pct style=2d
+SELECT
+    hostName() AS replica,
+    countIf(event_type = 'MergeParts') AS local_merges,
+    countIf(event_type = 'DownloadPart') AS fetches,
+    round(countIf(event_type = 'DownloadPart') * 100.0
+        / greatest(count(), 1), 1) AS fetch_pct,
+    formatReadableSize(sumIf(size_in_bytes, event_type = 'MergeParts')) AS merged_bytes,
+    formatReadableSize(sumIf(size_in_bytes, event_type = 'DownloadPart')) AS fetched_bytes
+FROM {{cluster_aware:system.part_log}}
+WHERE event_type IN ('MergeParts', 'DownloadPart')
+  AND event_time > {{time_range}}
+GROUP BY replica
+ORDER BY fetch_pct DESC`,
+
+  `-- @meta: title='Fetch vs Merge by Table & Size' group='Merges' interval='1 DAY' description='Per-table breakdown of fetch vs local merge by part size — shows which tables and size ranges rely on fetching (ReplicatedMergeTree only)'
+-- @chart: type=bar group_by=size_bucket value=fetch_pct style=2d
+SELECT
+    database || '.' || table AS tbl,
+    multiIf(
+        size_in_bytes < 1048576, '< 1 MB',
+        size_in_bytes < 2097152, '1-2 MB',
+        size_in_bytes < 5242880, '2-5 MB',
+        size_in_bytes < 10485760, '5-10 MB',
+        size_in_bytes < 104857600, '10-100 MB',
+        size_in_bytes < 1073741824, '100 MB-1 GB',
+        '> 1 GB'
+    ) AS size_bucket,
+    countIf(event_type = 'MergeParts') AS local_merges,
+    countIf(event_type = 'DownloadPart') AS fetches,
+    round(countIf(event_type = 'DownloadPart') * 100.0
+        / greatest(count(), 1), 1) AS fetch_pct,
+    formatReadableSize(sumIf(size_in_bytes, event_type = 'MergeParts')) AS merged_bytes,
+    formatReadableSize(sumIf(size_in_bytes, event_type = 'DownloadPart')) AS fetched_bytes
+FROM {{cluster_aware:system.part_log}}
+WHERE event_type IN ('MergeParts', 'DownloadPart')
+  AND event_time > {{time_range}}
+GROUP BY tbl, size_bucket
+HAVING fetches > 0
+ORDER BY tbl, min(size_in_bytes)`,
+
+  `-- @meta: title='Replica Merge Imbalance by Table' group='Merges' interval='1 DAY' description='Per-replica, per-table merge vs fetch breakdown — reveals which replica is the primary merger for each table (ReplicatedMergeTree only)'
+-- @chart: type=bar group_by=replica value=local_merges,fetches style=2d
+SELECT
+    hostName() AS replica,
+    database || '.' || table AS tbl,
+    countIf(event_type = 'MergeParts') AS local_merges,
+    countIf(event_type = 'DownloadPart') AS fetches,
+    round(countIf(event_type = 'DownloadPart') * 100.0
+        / greatest(count(), 1), 1) AS fetch_pct
+FROM {{cluster_aware:system.part_log}}
+WHERE event_type IN ('MergeParts', 'DownloadPart')
+  AND database NOT LIKE 'system%'
+  AND event_time > {{time_range}}
+GROUP BY replica, database, table
+HAVING fetches > 0
+ORDER BY tbl, replica`,
+
+  `-- @meta: title='Replication Queue Backlog' group='Merges' description='Current replication queue breakdown — GET_PART=fetch, MERGE_PARTS=merge, MUTATE_PART=mutation. Retries and errors signal cluster health issues (ReplicatedMergeTree only)'
+SELECT
+    type,
+    count() AS queued,
+    countIf(is_currently_executing) AS executing,
+    countIf(num_tries > 1) AS retried,
+    max(num_tries) AS max_tries,
+    countIf(last_exception != '') AS with_errors
+FROM {{cluster_aware:system.replication_queue}}
+WHERE type IN ('GET_PART', 'MERGE_PARTS', 'MUTATE_PART')
+GROUP BY type
+ORDER BY queued DESC`,
+
 ];
 
 export default queries;

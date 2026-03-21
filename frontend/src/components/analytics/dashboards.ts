@@ -261,6 +261,13 @@ const BUILTIN_DASHBOARDS: Dashboard[] = [
       { queryName: 'Merges#Merge Duration by Table' },
       { queryName: 'Merges#Merge I/O Pressure' },
       { queryName: 'Merges#Merge Errors' },
+      { queryName: 'Merges#Fetch vs Merge Ratio' },
+      { queryName: 'Merges#Fetch vs Merge Duration' },
+      { queryName: 'Merges#Fetch Pool Utilization' },
+      { queryName: 'Merges#Replica Merge Imbalance' },
+      { queryName: 'Merges#Fetch vs Merge by Table & Size' },
+      { queryName: 'Merges#Replica Merge Imbalance by Table' },
+      { queryName: 'Merges#Replication Queue Backlog' },
     ],
   },
   {

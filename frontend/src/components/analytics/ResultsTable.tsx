@@ -33,19 +33,33 @@ export interface ResultsTableProps {
   compact?: boolean;
 }
 
+/** Detect whether a column holds numeric data by sampling first rows. */
+function isNumericColumn(rows: Record<string, unknown>[], col: string): boolean {
+  for (let i = 0; i < Math.min(rows.length, 5); i++) {
+    const v = rows[i][col];
+    if (v != null && v !== '') return typeof v === 'number';
+  }
+  return false;
+}
+
 export const ResultsTable: React.FC<ResultsTableProps> = ({
   columns, rows, sortColumn, sortDirection, onSort,
   linkOnColumn, ragRules, onLinkClick,
   drillOnColumn, onDrillClick, drillIntoQuery,
   compact = false,
 }) => {
-  const fontSize = compact ? 11 : 12;
-  const headerFontSize = compact ? 10 : 11;
-  const headerPadding = compact ? '5px 8px' : '8px 12px';
-  const cellPadding = compact ? '4px 8px' : '6px 12px';
+  const [hoveredRow, setHoveredRow] = React.useState<number | null>(null);
+  const fontSize = compact ? 11 : 13;
+  const headerFontSize = compact ? 9 : 10;
+  const headerPadding = compact ? '6px 10px' : '10px 14px';
+  const cellPadding = compact ? '6px 10px' : '8px 14px';
   const maxCellWidth = compact ? 200 : 400;
   const hasLinks = !!linkOnColumn && !!onLinkClick;
   const hasDrill = !!drillOnColumn && !!onDrillClick;
+  const numericCols = React.useMemo(
+    () => new Set(columns.filter(c => isNumericColumn(rows, c))),
+    [columns, rows],
+  );
 
   return (
     <table style={{ width: 'max-content', minWidth: '100%', borderCollapse: 'collapse', fontSize }}>
@@ -55,10 +69,11 @@ export const ResultsTable: React.FC<ResultsTableProps> = ({
             <th key={col} onClick={() => onSort(col)} style={{
               position: 'sticky', top: 0, zIndex: 1, cursor: 'pointer',
               background: compact ? 'var(--bg-tertiary, var(--bg-secondary))' : 'var(--bg-tertiary)',
-              padding: headerPadding, textAlign: 'left', fontWeight: 600, fontSize: headerFontSize,
-              color: sortColumn === col ? 'var(--text-primary)' : 'var(--text-secondary)',
-              borderBottom: '1px solid var(--border-primary)',
+              padding: headerPadding, textAlign: numericCols.has(col) ? 'right' : 'left', fontWeight: 600, fontSize: headerFontSize,
+              color: sortColumn === col ? 'var(--text-primary)' : 'var(--text-muted)',
+              borderBottom: '2px solid var(--border-primary)',
               whiteSpace: 'nowrap', userSelect: 'none',
+              letterSpacing: '0.06em', textTransform: 'uppercase',
             }}>
               {col}{sortColumn === col ? (sortDirection === 'asc' ? ' ↑' : ' ↓') : ''}
             </th>
@@ -67,13 +82,22 @@ export const ResultsTable: React.FC<ResultsTableProps> = ({
       </thead>
       <tbody>
         {rows.map((row, i) => (
-          <tr key={i}>
+          <tr key={i}
+            onMouseEnter={() => setHoveredRow(i)}
+            onMouseLeave={() => setHoveredRow(null)}
+            style={{
+              background: hoveredRow === i
+                ? 'var(--bg-card-hover, rgba(88,166,255,0.07))'
+                : i % 2 === 1 ? 'rgba(255,255,255,0.04)' : 'transparent',
+              transition: 'background 0.1s ease',
+            }}>
             {columns.map(col => {
               const isLink = hasLinks && col === linkOnColumn;
               const isDrill = hasDrill && col === drillOnColumn;
               const isClickable = isLink || isDrill;
               const cellValue = formatCell(row[col]);
               const ragColor = getRagColor(col, row[col], ragRules);
+              const numeric = numericCols.has(col);
               return (
                 <td key={col} style={{
                   padding: cellPadding, borderBottom: '1px solid var(--border-secondary)',
@@ -84,6 +108,8 @@ export const ResultsTable: React.FC<ResultsTableProps> = ({
                   whiteSpace: 'nowrap', maxWidth: maxCellWidth, overflow: 'hidden', textOverflow: 'ellipsis',
                   cursor: isClickable ? 'pointer' : undefined,
                   textDecoration: isClickable ? 'underline' : undefined,
+                  textAlign: numeric ? 'right' : 'left',
+                  fontVariantNumeric: numeric ? 'tabular-nums' : undefined,
                 }}
                 title={isDrill && drillIntoQuery ? `Drill into: ${drillIntoQuery}` : undefined}
                 onClick={isLink ? () => onLinkClick!(col, cellValue) : isDrill ? () => onDrillClick!(col, cellValue) : undefined}

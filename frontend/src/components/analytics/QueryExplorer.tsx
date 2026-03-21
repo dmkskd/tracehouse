@@ -777,7 +777,8 @@ export const QueryExplorer: React.FC<QueryExplorerProps> = ({ urlState, onUrlSta
                     <ChartRenderer chartType={chartConfig.type} data={chartData} groupedData={groupedChartData}
                       orientation={chartConfig.orientation} unit={chartConfig.unit} color={chartConfig.color}
                       onDrillDown={isDrillable ? handleDrillDown : undefined}
-                      drillIntoQuery={isDrillable ? currentQuery?.directives.drill?.into : undefined} />
+                      drillIntoQuery={isDrillable ? currentQuery?.directives.drill?.into : undefined}
+                      valueColumns={chartConfig.valueColumns} />
                     <button
                       onClick={toggleFullscreen}
                       title={isFullscreen ? 'Exit fullscreen (Esc)' : 'Fullscreen (f)'}

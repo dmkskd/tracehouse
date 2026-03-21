@@ -77,6 +77,7 @@ export const SpeedscopeViewer: React.FC<SpeedscopeViewerProps> = ({
   const widgetRef = useRef<HTMLElement | null>(null);
   const loadedFoldedRef = useRef<string | null>(null);
   const [isFullscreen, setIsFullscreen] = useState(false);
+  const unsubscribeRef = useRef<(() => void) | null>(null);
 
   // Ref callback: mark the widget as "started" immediately so its
   // connectedCallback won't auto-init with empty data. We handle init ourselves.
@@ -101,6 +102,33 @@ export const SpeedscopeViewer: React.FC<SpeedscopeViewerProps> = ({
         }
         (el as any).setInput(folded);
         loadedFoldedRef.current = folded;
+
+        // Subscribe to speedscope state changes to work around a bug in
+        // speedscope-widget: switching between Time Order and Left Heavy
+        // calls toggleLoadingPage() which sets loading=true, but nothing
+        // ever sets it back to false. We detect view mode changes and
+        // trigger a reload so loadProfile runs and resets loading properly.
+        if (unsubscribeRef.current) unsubscribeRef.current();
+        const api = (window as any).speedscopeAPI;
+        if (api?.subscribe && api?.reload && api?.getViewMode) {
+          let lastViewMode = api.getViewMode();
+          let lastReverse = api.getReverseFlamegraph?.() ?? false;
+          unsubscribeRef.current = api.subscribe(() => {
+            const currentViewMode = api.getViewMode();
+            const currentReverse = api.getReverseFlamegraph?.() ?? false;
+            if (currentViewMode !== lastViewMode || currentReverse !== lastReverse) {
+              lastViewMode = currentViewMode;
+              lastReverse = currentReverse;
+              // Delay so toggleLoadingPage() runs first, then our reload
+              // triggers loadProfile which sets loading=false at the end.
+              setTimeout(() => {
+                if (loadedFoldedRef.current) {
+                  api.reload(loadedFoldedRef.current);
+                }
+              }, 50);
+            }
+          });
+        }
       }
     };
 
@@ -111,6 +139,16 @@ export const SpeedscopeViewer: React.FC<SpeedscopeViewerProps> = ({
       return () => cancelAnimationFrame(raf);
     }
   }, [folded]);
+
+  // Clean up subscription on unmount
+  useEffect(() => {
+    return () => {
+      if (unsubscribeRef.current) {
+        unsubscribeRef.current();
+        unsubscribeRef.current = null;
+      }
+    };
+  }, []);
 
   // Escape key exits fullscreen
   useEffect(() => {
@@ -196,58 +234,64 @@ export const SpeedscopeViewer: React.FC<SpeedscopeViewerProps> = ({
     </div>
   );
 
+  // Determine which overlay to show (if any) on top of the widget
+  const overlay = isLoading ? (
+    <div style={{ position: 'absolute', inset: 0, zIndex: 1, display: 'flex', alignItems: 'center', justifyContent: 'center', background: 'var(--bg-primary)' }}>
+      <div style={{ textAlign: 'center' }}>
+        <div style={{
+          width: 32, height: 32,
+          borderWidth: 3, borderStyle: 'solid',
+          borderColor: 'var(--border-primary)',
+          borderTopColor: 'var(--accent-primary)',
+          borderRadius: '50%',
+          animation: 'spin 1s linear infinite',
+          margin: '0 auto 12px',
+        }} />
+        <span style={{ fontSize: 13, color: 'var(--text-muted)' }}>Loading {profileType} profile...</span>
+        <style>{`@keyframes spin { to { transform: rotate(360deg); } }`}</style>
+      </div>
+    </div>
+  ) : error ? (
+    <div style={{ position: 'absolute', inset: 0, zIndex: 1, background: 'var(--bg-primary)', padding: 24 }}>
+      <div style={{
+        padding: 20, borderRadius: 8,
+        background: 'rgba(248, 81, 73, 0.1)',
+        border: '1px solid rgba(248, 81, 73, 0.3)',
+      }}>
+        <div style={{ fontWeight: 600, color: '#f85149', marginBottom: 8 }}>Error loading flamegraph</div>
+        <div style={{ fontSize: 13, color: 'var(--text-tertiary)' }}>{error}</div>
+      </div>
+    </div>
+  ) : unavailableReason ? (
+    <div style={{ position: 'absolute', inset: 0, zIndex: 1, background: 'var(--bg-primary)', padding: 48, textAlign: 'center' }}>
+      <div style={{ fontSize: 15, color: 'var(--text-tertiary)', marginBottom: 12 }}>Flamegraph unavailable</div>
+      <div style={{ fontSize: 12, color: 'var(--text-muted)', maxWidth: 500, margin: '0 auto', lineHeight: 1.7 }}>
+        {unavailableReason}
+      </div>
+      <pre style={{
+        margin: '16px auto', padding: 16,
+        background: 'var(--bg-tertiary)', borderRadius: 8,
+        textAlign: 'left', fontSize: 11, color: '#58a6ff',
+        overflow: 'auto', maxWidth: 500,
+      }}>
+        {`SET allow_introspection_functions = 1`}
+      </pre>
+    </div>
+  ) : !hasData ? (
+    <div style={{ position: 'absolute', inset: 0, zIndex: 1, background: 'var(--bg-primary)' }}>
+      <EmptyState profileType={profileType} onTypeChange={handleTypeChange} />
+    </div>
+  ) : null;
+
+  // Always keep the widget mounted so speedscope's internal state (view mode,
+  // scroll position, etc.) survives loading/refresh cycles.
   const content = (
-    <div style={{ flex: 1, overflow: 'hidden', minHeight: isFullscreen ? 0 : 400 }}>
-      {isLoading ? (
-        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', height: '100%', minHeight: 300 }}>
-          <div style={{ textAlign: 'center' }}>
-            <div style={{
-              width: 32, height: 32,
-              borderWidth: 3, borderStyle: 'solid',
-              borderColor: 'var(--border-primary)',
-              borderTopColor: 'var(--accent-primary)',
-              borderRadius: '50%',
-              animation: 'spin 1s linear infinite',
-              margin: '0 auto 12px',
-            }} />
-            <span style={{ fontSize: 13, color: 'var(--text-muted)' }}>Loading {profileType} profile...</span>
-            <style>{`@keyframes spin { to { transform: rotate(360deg); } }`}</style>
-          </div>
-        </div>
-      ) : error ? (
-        <div style={{ padding: 24 }}>
-          <div style={{
-            padding: 20, borderRadius: 8,
-            background: 'rgba(248, 81, 73, 0.1)',
-            border: '1px solid rgba(248, 81, 73, 0.3)',
-          }}>
-            <div style={{ fontWeight: 600, color: '#f85149', marginBottom: 8 }}>Error loading flamegraph</div>
-            <div style={{ fontSize: 13, color: 'var(--text-tertiary)' }}>{error}</div>
-          </div>
-        </div>
-      ) : unavailableReason ? (
-        <div style={{ padding: 48, textAlign: 'center' }}>
-          <div style={{ fontSize: 15, color: 'var(--text-tertiary)', marginBottom: 12 }}>Flamegraph unavailable</div>
-          <div style={{ fontSize: 12, color: 'var(--text-muted)', maxWidth: 500, margin: '0 auto', lineHeight: 1.7 }}>
-            {unavailableReason}
-          </div>
-          <pre style={{
-            margin: '16px auto', padding: 16,
-            background: 'var(--bg-tertiary)', borderRadius: 8,
-            textAlign: 'left', fontSize: 11, color: '#58a6ff',
-            overflow: 'auto', maxWidth: 500,
-          }}>
-            {`SET allow_introspection_functions = 1`}
-          </pre>
-        </div>
-      ) : !hasData ? (
-        <EmptyState profileType={profileType} onTypeChange={handleTypeChange} />
-      ) : (
-        <speedscope-widget
-          ref={setWidgetRef}
-          style={{ display: 'block', width: '100%', height: '100%' }}
-        />
-      )}
+    <div style={{ flex: 1, overflow: 'hidden', minHeight: isFullscreen ? 0 : 400, position: 'relative' }}>
+      {overlay}
+      <speedscope-widget
+        ref={setWidgetRef}
+        style={{ display: 'block', width: '100%', height: '100%' }}
+      />
     </div>
   );
 

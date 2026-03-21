@@ -29,7 +29,7 @@ GROUP BY minute
 ORDER BY minute ASC`,
 
   `-- @meta: title='Insert Duration & Batch Count' group='Inserts' interval='2 DAY' description='Average insert duration vs batch count per minute'
--- @chart: type=area group_by=minute value=avg_duration style=2d color=#f59e0b unit=ms
+-- @chart: type=area group_by=minute value=avg_duration,count_batches style=2d
 -- Source: https://clickhouse.com/blog/monitoring-troubleshooting-insert-queries-clickhouse
 SELECT
     toStartOfMinute(event_time) AS minute,
@@ -59,12 +59,12 @@ GROUP BY hour
 ORDER BY hour ASC`,
 
   `-- @meta: title='Written Rows & Bytes' group='Inserts' interval='3 DAY' description='Total rows written and bytes on disk per minute from part_log'
--- @chart: type=area group_by=minute value=total_written_rows style=2d color=#8b5cf6
+-- @chart: type=area group_by=minute value=total_written_rows,total_bytes_on_disk style=2d
 -- Source: https://clickhouse.com/blog/monitoring-troubleshooting-insert-queries-clickhouse
 SELECT
     toStartOfMinute(event_time) AS minute,
     sum(rows) AS total_written_rows,
-    formatReadableSize(sum(size_in_bytes)) AS total_bytes_on_disk
+    sum(size_in_bytes) AS total_bytes_on_disk
 FROM {{cluster_aware:system.part_log}}
 WHERE event_type = 'NewPart'
   AND event_time > {{time_range}}

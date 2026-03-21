@@ -58,9 +58,9 @@ export const Analytics: React.FC = () => {
 
   const activeTab: AnalyticsTab = (
     urlState.tab === 'misc' ? 'misc' :
-    urlState.tab === 'dashboards' ? 'dashboards' :
+    urlState.tab === 'tables' ? 'tables' :
     urlState.tab === 'surfaces' ? 'surfaces' :
-    'tables'
+    'dashboards'
   );
   const setActiveTab = useCallback((tab: AnalyticsTab) => updateUrl({ tab, fromDashboard: undefined }, { push: true }), [updateUrl]);
 
@@ -386,7 +386,8 @@ export const Analytics: React.FC = () => {
           </div>
           {/* Tab bar */}
           <div style={{ display: 'flex', gap: 4, borderBottom: '1px solid var(--border-primary)', marginLeft: -4 }}>
-            <button onClick={() => setActiveTab('tables')} style={tabStyle(activeTab === 'tables')}>Tables Efficiency</button>
+            <button onClick={() => setActiveTab('dashboards')} style={tabStyle(activeTab === 'dashboards')}>Dashboards</button>
+            <button onClick={() => setActiveTab('misc')} style={tabStyle(activeTab === 'misc')}>Queries</button>
             {experimentalEnabled && (
               <button onClick={() => setActiveTab('surfaces')} style={{ ...tabStyle(activeTab === 'surfaces'), position: 'relative' }}>
                 Surfaces
@@ -399,8 +400,7 @@ export const Analytics: React.FC = () => {
                 }}>exp</span>
               </button>
             )}
-            <button onClick={() => setActiveTab('misc')} style={tabStyle(activeTab === 'misc')}>Queries</button>
-            <button onClick={() => setActiveTab('dashboards')} style={tabStyle(activeTab === 'dashboards')}>Dashboards</button>
+            <button onClick={() => setActiveTab('tables')} style={tabStyle(activeTab === 'tables')}>Tables Efficiency</button>
           </div>
         </div>
 
@@ -414,7 +414,7 @@ export const Analytics: React.FC = () => {
                   fontSize: 9, fontWeight: 700, textTransform: 'uppercase', letterSpacing: '1.5px',
                   padding: '2px 7px', borderRadius: 4,
                   background: 'rgba(210, 153, 34, 0.2)', color: '#d29922',
-                }}>Experimental</span>
+                }}>Beta</span>
               </span>
               <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
                 <span style={{ fontSize: 11, color: 'var(--text-muted)' }}>Lookback:</span>

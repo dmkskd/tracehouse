@@ -624,7 +624,7 @@ export const QueryScanEfficiency: React.FC<QueryScanEfficiencyProps> = ({ queryD
               fontSize: 9, fontWeight: 700, textTransform: 'uppercase', letterSpacing: '1.5px',
               padding: '2px 7px', borderRadius: 4,
               background: 'rgba(210, 153, 34, 0.2)', color: '#d29922',
-            }}>Experimental</span>
+            }}>Beta</span>
           </div>
           <div style={{ fontSize: 12, color: 'var(--text-secondary)', lineHeight: 1.4 }}>
             {a.verdict.detail}

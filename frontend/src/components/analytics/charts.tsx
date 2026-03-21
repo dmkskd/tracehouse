@@ -692,6 +692,67 @@ export const AreaChart2D: React.FC<{ data: ChartDataPoint[]; fullHeight?: boolea
 };
 
 // ═══════════════════════════════════════════════════════════════════════════
+// Dual-axis Area Chart — two value columns, left + right Y axes
+// ═══════════════════════════════════════════════════════════════════════════
+
+export const DualAxisAreaChart2D: React.FC<{ data: GroupedChartData[]; valueColumns: string[]; fullHeight?: boolean; onDrillDown?: (e: DrillDownEvent) => void; drillIntoQuery?: string } & CrosshairProps> = ({ data, valueColumns, fullHeight, onDrillDown, drillIntoQuery, hoveredTimestamp, onTimestampHover, correlationValues, currentPanelName, isHoveredPanel }) => {
+  if (data.length < 2) return null;
+  const { rows, groupNames, colorMap } = flattenGrouped(data);
+  const leftCol = groupNames[0];
+  const rightCol = groupNames[1];
+  const leftColor = colorMap[leftCol] || GROUP_COLORS[0];
+  const rightColor = colorMap[rightCol] || GROUP_COLORS[1];
+  const gradIdLeft = `dualGradL-${leftColor.replace('#', '')}`;
+  const gradIdRight = `dualGradR-${rightColor.replace('#', '')}`;
+  const drillable = !!onDrillDown;
+  return (
+    <ResponsiveContainer width="100%" height={fullHeight ? '100%' : 280} minHeight={fullHeight ? 180 : undefined}>
+      <RAreaChart data={rows} margin={{ top: 5, right: 60, left: 10, bottom: 5 }}
+        style={drillable ? { cursor: 'pointer' } : undefined}
+        onClick={drillable ? (e: { activeLabel?: string }) => { if (e?.activeLabel) onDrillDown!({ label: e.activeLabel, value: 0 }); } : undefined}
+        onMouseMove={onTimestampHover ? (e: { activeLabel?: string }) => { if (e?.activeLabel) onTimestampHover(e.activeLabel); } : undefined}
+        onMouseLeave={onTimestampHover ? () => onTimestampHover(null) : undefined}
+      >
+        <defs>
+          <linearGradient id={gradIdLeft} x1="0" y1="0" x2="0" y2="1">
+            <stop offset="0%" stopColor={leftColor} stopOpacity={0.45} />
+            <stop offset="100%" stopColor={leftColor} stopOpacity={0.06} />
+          </linearGradient>
+          <linearGradient id={gradIdRight} x1="0" y1="0" x2="0" y2="1">
+            <stop offset="0%" stopColor={rightColor} stopOpacity={0.45} />
+            <stop offset="100%" stopColor={rightColor} stopOpacity={0.06} />
+          </linearGradient>
+        </defs>
+        <CartesianGrid strokeDasharray="3 3" stroke={gridStroke} />
+        <XAxis dataKey="name" tick={axisTickStyle} tickLine={axisLineStyle} axisLine={axisLineStyle}
+          interval="preserveStartEnd" tickFormatter={formatXTick} />
+        <YAxis yAxisId="left" tick={axisTickStyle} tickLine={axisLineStyle} axisLine={axisLineStyle}
+          tickFormatter={compactFormatter()} width={50} />
+        <YAxis yAxisId="right" orientation="right" tick={axisTickStyle} tickLine={axisLineStyle} axisLine={axisLineStyle}
+          tickFormatter={compactFormatter()} width={55} />
+        <Tooltip content={<AnalyticsTooltip drillIntoQuery={drillIntoQuery} correlationValues={correlationValues} currentPanelName={currentPanelName} isHoveredPanel={isHoveredPanel} />} offset={20} wrapperStyle={{ zIndex: 1000, pointerEvents: 'none' }} />
+        {hoveredTimestamp && <ReferenceLine x={hoveredTimestamp} yAxisId="left" {...crosshairLineProps} />}
+        <Legend iconType="line" iconSize={14} formatter={(value: string) => (
+          <span style={{ fontSize: 11, color: 'var(--text-secondary)' }}>
+            {value === leftCol ? `${valueColumns[0]} (left)` : `${valueColumns[1]} (right)`}
+          </span>
+        )} />
+        <Area type="monotone" dataKey={leftCol} yAxisId="left" stroke={leftColor} strokeWidth={2}
+          fill={`url(#${gradIdLeft})`} dot={false}
+          activeDot={(props: Record<string, unknown>) => (
+            <PulsatingDot cx={props.cx as number} cy={props.cy as number} fill={leftColor} drillable={drillable} />
+          )} animationDuration={300} />
+        <Area type="monotone" dataKey={rightCol} yAxisId="right" stroke={rightColor} strokeWidth={2}
+          fill={`url(#${gradIdRight})`} dot={false}
+          activeDot={(props: Record<string, unknown>) => (
+            <PulsatingDot cx={props.cx as number} cy={props.cy as number} fill={rightColor} drillable={drillable} />
+          )} animationDuration={300} />
+      </RAreaChart>
+    </ResponsiveContainer>
+  );
+};
+
+// ═══════════════════════════════════════════════════════════════════════════
 // Grouped / Stacked 2D Charts — recharts-based
 // ═══════════════════════════════════════════════════════════════════════════
 
@@ -885,12 +946,18 @@ export interface ChartRendererProps extends CrosshairProps {
   color?: string;
   onDrillDown?: (e: DrillDownEvent) => void;
   drillIntoQuery?: string;
+  /** When set, enables dual Y-axis mode for area/line charts (first col = left, second col = right) */
+  valueColumns?: string[];
 }
 
 export const ChartRenderer: React.FC<ChartRendererProps> = ({
   chartType, data, groupedData, orientation, fullHeight, unit, color, onDrillDown, drillIntoQuery,
-  hoveredTimestamp, onTimestampHover, correlationValues, currentPanelName, isHoveredPanel,
+  hoveredTimestamp, onTimestampHover, correlationValues, currentPanelName, isHoveredPanel, valueColumns,
 }) => {
+  // Dual-axis mode: area/line with exactly 2 value columns
+  if ((chartType === 'area' || chartType === 'line') && valueColumns && valueColumns.length === 2 && groupedData.length > 0) {
+    return <DualAxisAreaChart2D data={groupedData} valueColumns={valueColumns} fullHeight={fullHeight} onDrillDown={onDrillDown} drillIntoQuery={drillIntoQuery} hoveredTimestamp={hoveredTimestamp} onTimestampHover={onTimestampHover} correlationValues={correlationValues} currentPanelName={currentPanelName} isHoveredPanel={isHoveredPanel} />;
+  }
   switch (chartType) {
     case 'line':
       return <LineChart2D data={data} fullHeight={fullHeight} onDrillDown={onDrillDown} unit={unit} color={color} drillIntoQuery={drillIntoQuery} hoveredTimestamp={hoveredTimestamp} onTimestampHover={onTimestampHover} correlationValues={correlationValues} currentPanelName={currentPanelName} isHoveredPanel={isHoveredPanel} />;
