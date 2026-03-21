@@ -8,7 +8,11 @@ import time
 import random
 from collections.abc import Callable
 from datetime import datetime, timedelta
+import re
+
 from clickhouse_driver import Client
+
+_SAFE_CLUSTER_RE = re.compile(r'^[a-zA-Z0-9_.\-]+$')
 
 # Callback signature for build_insert_sql functions used by run_batched_insert.
 # Args: (partition_key, batch_index, batch_size, current_batch, partition_rows, partition_offset)
@@ -164,21 +168,30 @@ def retry_on_drop_race(fn: Callable[[], None], max_retries: int = 5) -> None:
                 raise
 
 
-def create_database(client: Client, name: str, replicated: bool) -> None:
+def on_cluster_clause(cluster: str) -> str:
+    """Return ``ON CLUSTER 'name'`` when *cluster* is set, otherwise ``""``."""
+    if not cluster:
+        return ""
+    if not _SAFE_CLUSTER_RE.match(cluster):
+        raise ValueError(f"Unsafe cluster name: {cluster!r}")
+    return f"ON CLUSTER '{cluster}'"
+
+
+def create_database(client: Client, name: str, replicated: bool, cluster: str = "") -> None:
     """Create a database, using the Replicated engine when replicated=True.
 
-    Note: ON CLUSTER is not used here — the Replicated engine propagates
-    DDL automatically.  Using ON CLUSTER with a Replicated database raises
-    INCORRECT_QUERY (Code 80) on ClickHouse 26.x+.
+    When *cluster* is provided, uses ON CLUSTER to propagate the DDL to
+    every shard and replica so the database exists cluster-wide.
     """
+    on_cluster = on_cluster_clause(cluster)
     def _create():
         if replicated:
             client.execute(
-                f"CREATE DATABASE IF NOT EXISTS {name} "
+                f"CREATE DATABASE IF NOT EXISTS {name} {on_cluster} "
                 f"ENGINE = Replicated('/clickhouse/databases/{name}', '{{shard}}', '{{replica}}')"
             )
         else:
-            client.execute(f"CREATE DATABASE IF NOT EXISTS {name}")
+            client.execute(f"CREATE DATABASE IF NOT EXISTS {name} {on_cluster}")
     retry_on_drop_race(_create)
 
 

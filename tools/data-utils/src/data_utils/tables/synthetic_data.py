@@ -25,9 +25,9 @@ def drop_synthetic_data(client: Client) -> None:
     client.execute("DROP DATABASE IF EXISTS synthetic_data SYNC")
 
 
-def create_synthetic_data(client: Client, replicated: bool) -> None:
+def create_synthetic_data(client: Client, replicated: bool, cluster: str = "") -> None:
     print("Creating synthetic_data database...")
-    create_database(client, "synthetic_data", replicated)
+    create_database(client, "synthetic_data", replicated, cluster=cluster)
 
     engine = engine_clause(replicated)
     print(f"Creating synthetic_data.events table (engine: {engine.split('(')[0]})...")
@@ -164,14 +164,15 @@ class SyntheticData:
     name = "synthetic_data"
     flag = "synthetic_only"
 
-    def __init__(self, replicated: bool):
+    def __init__(self, replicated: bool, cluster: str = ""):
         self._replicated = replicated
+        self._cluster = cluster
 
     def drop(self, client: Client) -> None:
         drop_synthetic_data(client)
 
     def create(self, client: Client) -> None:
-        create_synthetic_data(client, self._replicated)
+        create_synthetic_data(client, self._replicated, cluster=self._cluster)
 
     def insert(
         self,

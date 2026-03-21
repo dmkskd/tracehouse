@@ -103,10 +103,11 @@ Tables are created with the best engine available for the target server.
 def _build_datasets(args: argparse.Namespace, caps: Capabilities) -> list[Dataset]:
     """Instantiate dataset plugins, filtered by CLI flags."""
     replicated = caps.has_keeper
+    cluster = caps.cluster_name if caps.has_cluster else ""
     all_datasets = [
-        SyntheticData(replicated=replicated),
-        NycTaxi(replicated=replicated, caps=caps),
-        UkHousePrices(replicated=replicated),
+        SyntheticData(replicated=replicated, cluster=cluster),
+        NycTaxi(replicated=replicated, caps=caps, cluster=cluster),
+        UkHousePrices(replicated=replicated, cluster=cluster),
         WebAnalytics(caps=caps),
     ]
     create_all = not any(getattr(args, ds.flag) for ds in all_datasets)

@@ -94,9 +94,9 @@ def drop_uk_house_prices(client: Client) -> None:
     client.execute("DROP DATABASE IF EXISTS uk_price_paid SYNC")
 
 
-def create_uk_house_prices(client: Client, replicated: bool) -> None:
+def create_uk_house_prices(client: Client, replicated: bool, cluster: str = "") -> None:
     print("Creating uk_price_paid database...")
-    create_database(client, "uk_price_paid", replicated)
+    create_database(client, "uk_price_paid", replicated, cluster=cluster)
 
     engine = engine_clause(replicated)
     print(f"Creating uk_price_paid.uk_price_paid table (engine: {engine.split('(')[0]})...")
@@ -181,14 +181,15 @@ class UkHousePrices:
     name = "uk_price_paid"
     flag = "uk_only"
 
-    def __init__(self, replicated: bool):
+    def __init__(self, replicated: bool, cluster: str = ""):
         self._replicated = replicated
+        self._cluster = cluster
 
     def drop(self, client: Client) -> None:
         drop_uk_house_prices(client)
 
     def create(self, client: Client) -> None:
-        create_uk_house_prices(client, self._replicated)
+        create_uk_house_prices(client, self._replicated, cluster=self._cluster)
 
     def insert(
         self,

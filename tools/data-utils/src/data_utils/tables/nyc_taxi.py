@@ -58,9 +58,10 @@ def drop_nyc_taxi(client: Client) -> None:
 
 def create_nyc_taxi(
     client: Client, replicated: bool, caps: Capabilities | None = None,
+    cluster: str = "",
 ) -> None:
     print("Creating nyc_taxi database...")
-    create_database(client, "nyc_taxi", replicated)
+    create_database(client, "nyc_taxi", replicated, cluster=cluster)
 
     engine = engine_clause(replicated)
 
@@ -188,15 +189,16 @@ class NycTaxi:
     name = "nyc_taxi"
     flag = "taxi_only"
 
-    def __init__(self, replicated: bool, caps: Capabilities | None = None):
+    def __init__(self, replicated: bool, caps: Capabilities | None = None, cluster: str = ""):
         self._replicated = replicated
         self._caps = caps
+        self._cluster = cluster
 
     def drop(self, client: Client) -> None:
         drop_nyc_taxi(client)
 
     def create(self, client: Client) -> None:
-        create_nyc_taxi(client, self._replicated, self._caps)
+        create_nyc_taxi(client, self._replicated, self._caps, cluster=self._cluster)
 
     def insert(
         self,

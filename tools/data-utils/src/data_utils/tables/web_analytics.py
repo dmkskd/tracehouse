@@ -8,8 +8,8 @@ from typing import TYPE_CHECKING
 
 from clickhouse_driver import Client
 from .helpers import (
-    retry_on_drop_race, generate_month_list,
-    check_existing_rows, run_batched_insert,
+    retry_on_drop_race, create_database,
+    generate_month_list, check_existing_rows, run_batched_insert,
 )
 from data_utils.capabilities import Capabilities
 from .protocol import QuerySet
@@ -77,15 +77,8 @@ def create_web_analytics(client: Client, caps: Capabilities | None = None) -> No
 
     if use_sharded:
         print(f"Creating web_analytics database (Replicated, cluster={cluster})...")
-        retry_on_drop_race(lambda: client.execute(
-            "CREATE DATABASE IF NOT EXISTS web_analytics "
-            "ENGINE = Replicated('/clickhouse/databases/web_analytics', '{shard}', '{replica}')"
-        ))
-    else:
-        print("Creating web_analytics database...")
-        retry_on_drop_race(lambda: client.execute("CREATE DATABASE IF NOT EXISTS web_analytics"))
+        create_database(client, "web_analytics", replicated=True, cluster=cluster)
 
-    if use_sharded:
         print("Creating web_analytics.pageviews_local (ReplicatedMergeTree, per-shard)...")
         retry_on_drop_race(lambda: client.execute(f"""
             CREATE TABLE IF NOT EXISTS web_analytics.pageviews_local
@@ -100,6 +93,9 @@ def create_web_analytics(client: Client, caps: Capabilities | None = None) -> No
             ENGINE = Distributed('{cluster}', web_analytics, pageviews_local, sipHash64(domain))
         """))
     else:
+        print("Creating web_analytics database...")
+        create_database(client, "web_analytics", replicated=False)
+
         print("Creating web_analytics.pageviews (MergeTree)...")
         retry_on_drop_race(lambda: client.execute(f"""
             CREATE TABLE IF NOT EXISTS web_analytics.pageviews
