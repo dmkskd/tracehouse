@@ -286,14 +286,14 @@ function buildWallGeoIdx(
 /* ── Stacked corridor (per-host breakdown) ──────────────────────────── */
 
 const HOST_COLORS = [
-  new THREE.Color(0xddaa33),  // gold
-  new THREE.Color(0x5577dd),  // blue
   new THREE.Color(0x33bbaa),  // teal
   new THREE.Color(0xbb55cc),  // purple
   new THREE.Color(0x55cc55),  // green
   new THREE.Color(0xdd5555),  // red
   new THREE.Color(0xff8844),  // orange
   new THREE.Color(0x88aadd),  // light blue
+  new THREE.Color(0xdd7788),  // rose
+  new THREE.Color(0x99dd55),  // lime
 ];
 
 /* ── Split view: per-host lanes ────────────────────────────────────── */
@@ -445,8 +445,8 @@ const CorridorMesh: React.FC<{
       const mem = mapMem(smoothMem[i], maxMem);
       return [x, 0, mem, x, cpu, mem];
     },
-    memColor, s => s.memory_mb / maxMem,
-  ), [samples, maxT, maxCpu, maxMem, smoothCpu, smoothMem, memColor]);
+    cpuColor, s => s.d_cpu_cores / maxCpu,
+  ), [samples, maxT, maxCpu, maxMem, smoothCpu, smoothMem, cpuColor]);
 
   // Back wall: (y=0, z=0) to (y=0, z=mem)
   const backGeo = useMemo(() => buildWallGeo(
@@ -456,8 +456,8 @@ const CorridorMesh: React.FC<{
       const mem = mapMem(smoothMem[i], maxMem);
       return [x, 0, 0, x, 0, mem];
     },
-    cpuColor, s => s.d_cpu_cores / maxCpu,
-  ), [samples, maxT, maxCpu, maxMem, smoothMem, cpuColor]);
+    memColor, s => s.memory_mb / maxMem,
+  ), [samples, maxT, maxCpu, maxMem, smoothMem, memColor]);
 
   // Front wall: (y=cpu, z=0) to (y=cpu, z=mem)
   const frontGeo = useMemo(() => buildWallGeo(
@@ -468,8 +468,8 @@ const CorridorMesh: React.FC<{
       const mem = mapMem(smoothMem[i], maxMem);
       return [x, cpu, 0, x, cpu, mem];
     },
-    cpuColor, s => s.d_cpu_cores / maxCpu,
-  ), [samples, maxT, maxCpu, maxMem, smoothCpu, smoothMem, cpuColor]);
+    memColor, s => s.memory_mb / maxMem,
+  ), [samples, maxT, maxCpu, maxMem, smoothCpu, smoothMem, memColor]);
 
   // Floor: (y=0, z=0) to (y=cpu, z=0)
   const floorGeo = useMemo(() => buildWallGeo(

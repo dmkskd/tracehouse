@@ -27,6 +27,7 @@ import { MergeDependencyDiagram } from './MergeDependencyDiagram';
 import type { MutationHistoryRecord, MergeHistoryRecord } from '../../stores/mergeStore';
 import { CopyTableButton } from '../common/CopyTableButton';
 import { BackLink } from '../common/BackLink';
+import { DocsLink } from '../common/DocsLink';
 import { MergeDetailModalFromRecord, ActiveMergeDetailModal } from './MergeDetailModal';
 import {
   buildPartToMergeMap,
@@ -1949,6 +1950,7 @@ export const MergeTrackerView: React.FC = () => {
             <h1 className="text-xl font-semibold" style={{ color: 'var(--text-primary)' }}>
               Merge Tracker
             </h1>
+            <DocsLink path="/features/merge-tracker" />
             <BackLink />
           </div>
         </div>

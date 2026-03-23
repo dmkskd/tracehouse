@@ -18,6 +18,7 @@ import { MergeDetailModal, MutationDetailModal } from '../components/merge/Merge
 import { TruncatedHost } from '../components/common/TruncatedHost';
 import { formatBytes, parseTimestamp } from '../utils/formatters';
 import { useUserPreferenceStore } from '../stores/userPreferenceStore';
+import { DocsLink } from '../components/common/DocsLink';
 import { TimelineChart } from '../components/timeline/TimelineChart';
 import { TimelineChart3D } from '../components/timeline/TimelineChart3D';
 import { TimelineChart3DSurface } from '../components/timeline/TimelineChart3DSurface';
@@ -520,6 +521,7 @@ export const TimeTravelPage: React.FC = () => {
         <div style={{ display:'flex', alignItems:'center', justifyContent:'space-between', marginBottom:12 }}>
           <div style={{ display:'flex', alignItems:'center', gap:12 }}>
             <h2 style={{ color:'var(--text-primary)', fontSize:18, fontWeight:600, margin:0 }}>Time Travel</h2>
+            <DocsLink path="/features/time-travel" />
             <span style={{ color:'var(--text-muted)', fontSize:12 }}>Hover to inspect · Click to pin · Drag to zoom</span>
           </div>
 

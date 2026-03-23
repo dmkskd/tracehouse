@@ -20,6 +20,7 @@ import { loadDashboards } from '../components/analytics/dashboards';
 import { useAnalyticsUrlState } from '../hooks/useUrlState';
 import { useNavigate } from '../hooks/useAppLocation';
 import { useUserPreferenceStore } from '../stores/userPreferenceStore';
+import { DocsLink } from '../components/common/DocsLink';
 import { QueryDetailModal } from '../components/query/QueryDetailModal';
 import type { TableOrderingKeyEfficiency, StressSurfaceData, PatternSurfaceRow, QuerySeries } from '@tracehouse/core';
 
@@ -315,6 +316,7 @@ export const Analytics: React.FC = () => {
           <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 8 }}>
             <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
               <h2 style={{ color: 'var(--text-primary)', fontSize: 18, fontWeight: 600, margin: 0 }}>Analytics</h2>
+              <DocsLink path="/features/analytics" />
               {fromObsMap && activeTab === 'misc' && (
                 <button
                   onClick={() => navigate('/overview', { state: { restoreObsMap: true } })}
@@ -595,6 +597,17 @@ export const Analytics: React.FC = () => {
                 Query Patterns
               </button>
             </div>
+          </div>
+
+          {/* Work-in-progress notice */}
+          <div style={{
+            margin: '8px 12px 0', padding: '8px 12px',
+            fontSize: 11, lineHeight: 1.5, color: 'var(--text-muted)',
+            background: 'rgba(210, 153, 34, 0.08)', border: '1px solid rgba(210, 153, 34, 0.2)',
+            borderRadius: 6,
+          }}>
+            <strong style={{ color: '#d29922' }}>Work in progress</strong> — We are evaluating which composition of resource metrics, combined on a surface,
+            best exposes critically stressed resources at both the system and table level. The resource and query surfaces shown here are still being refined.
           </div>
 
           <div style={{ flex: 1, overflow: 'hidden', padding: 12 }}>

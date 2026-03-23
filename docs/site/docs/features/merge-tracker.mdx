@@ -4,7 +4,7 @@ import FeatureVideo from '@site/src/components/FeatureVideo';
 
 <FeatureVideo src="merge-tracker-1920.mp4" />
 
-Real-time monitoring of ClickHouse merge operations with dependency diagrams and throughput analysis.
+Real-time monitoring of ClickHouse merge operations with dependency diagrams, ETA estimation, and throughput analysis.
 
 ## Active Merges
 
@@ -14,20 +14,84 @@ The active merge list shows all currently running merges with:
 - Rows and bytes processed
 - Memory usage
 - Table and partition info
+- Merge category badge (see [Merge Classification](#merge-classification) below)
+- Estimated time remaining (see [Merge ETA](#merge-eta) below)
+
+Stalled merges are highlighted in red when progress has not advanced for an extended period.
+
+## Merge Classification
+
+Every merge is classified into one of six categories:
+
+| Category | Description |
+|----------|-------------|
+| **Regular** | Background size-based merge triggered by the merge selector |
+| **TTL Delete** | Merge triggered by a TTL rule to remove expired rows |
+| **TTL Recompress** | Merge triggered to apply a new compression codec to aged data |
+| **TTL Move** | Part relocated to a different volume or disk (not a merge, but a move) |
+| **Mutation** | `ALTER TABLE UPDATE` or `DELETE` applied to parts. Includes patch parts (lightweight `UPDATE`, beta in CH 26.1+) |
+| **Lightweight Delete** | Regular merge that cleaned up rows previously masked by a `DELETE FROM` statement |
+
+For active merges, the category is determined from `system.merges` fields (`merge_type`, `is_mutation`, result part name prefix). For historical merges, it comes from `system.part_log` (`event_type`, `merge_reason`). A Regular merge where `rows_diff < 0` is automatically reclassified as Lightweight Delete since ClickHouse does not expose this in `merge_reason`.
+
+## Merge ETA
+
+Each active merge shows an estimated time to completion. The estimate blends two throughput signals:
+
+- **Historical throughput** from `system.part_log`, bucketed by merge size (0-10 MB, 10-100 MB, 100 MB-1 GB, 1-10 GB, 10+ GB). The system picks the median throughput from merges of the same algorithm and size bucket when at least 3 historical samples exist.
+- **Live throughput** from the merge's own bytes processed divided by elapsed time.
+
+Early in a merge (low progress), the estimate relies mostly on historical data. As the merge progresses, it shifts toward the live rate: `effective_rate = historical x (1 - progress) + live x progress`. This avoids wild estimates from early stalls while converging to actual performance.
+
+The ETA card also shows how many historical merges the estimate is based on and whether the size bucket was an exact match or a closest-bucket fallback.
+
+## Vertical Merge Timeline
+
+When a vertical merge is selected, the detail panel shows a Gantt-style timeline of column processing stages parsed from `system.text_log`.
+
+Vertical merges process data in two sequential phases:
+
+1. **Horizontal stage** - primary key columns are merge-sorted together. The log message `"Merged sorted, N blocks, M rows"` marks completion of this phase.
+2. **Vertical stage** - each remaining column is gathered one at a time, sequentially. The log message `"Gathered column X, N blocks, M rows"` marks each column's completion.
+
+The timeline shows each column as a bar, chained end-to-end. The bar length reflects wall-clock time between consecutive "Gathered" messages, which captures the full read-decompress-recompress-write cycle (not just the final gather). Each bar shows rows, bytes, and throughput for that column.
+
+This is useful for identifying which columns dominate merge time, for example a column with a poor compression codec or disproportionately large values.
+
+## Mutations
+
+The **Mutations** tab shows all active mutations from `system.mutations` with:
+- Table, mutation ID, and command (`ALTER TABLE UPDATE ...`, `DELETE ...`, etc.)
+- Parts completed vs. total
+- Elapsed time
+- Links to any active merges processing parts for this mutation
+
+The **Mutation History** tab lists completed and killed mutations with their final status and timestamps.
+
+### Mutation Dependencies
+
+Clicking a mutation opens its dependency analysis. For each part the mutation needs to rewrite, the analysis shows:
+
+- **Mutating (with merge)** - actively being processed by a visible merge, with progress
+- **Mutating** - in progress but no active merge visible yet (queued or planning)
+- **Merging** - already part of a regular merge that will satisfy the mutation when it completes
+- **Idle** - not yet started
+
+Co-dependent mutations on the same table (sharing source parts) are listed ranked by overlap, showing which mutations are blocking each other.
 
 ## Dependency Diagram
 
-The dependency diagram is especially useful for understanding mutation behavior. In ClickHouse, an `ALTER TABLE ... UPDATE` or `DELETE` mutation must rewrite every existing part. Until all parts have been mutated, the mutation is not complete - and new merges may need to wait.
+The dependency diagram is especially useful for understanding mutation behavior. In ClickHouse, an `ALTER TABLE ... UPDATE` or `DELETE` mutation must rewrite every existing part. Until all parts have been mutated, the mutation is not complete, and new merges may need to wait.
 
 The diagram visualizes these dependencies:
 - Which parts still need to be mutated and which are done
 - Merge operations that are blocked because their source parts are waiting for a mutation to finish
-- Cascading delays when multiple mutations are queued - each must complete in order before the next can begin
+- Cascading delays when multiple mutations are queued, each must complete in order before the next can begin
 - Regular merge chains where the output of one merge becomes input to another
 
 ## Merge History
 
 Historical merge data from `system.part_log` with:
 - Duration and throughput statistics
-- Merge type (regular, mutation, TTL)
+- Merge category (all six types above)
 - TTL moves to S3 or other remote storage, including the destination disk/volume

@@ -12,6 +12,7 @@ import { useCapabilityCheck } from '../components/shared/RequiresCapability';
 import { PermissionGate } from '../components/shared/PermissionGate';
 import { useOverviewStore, OverviewPoller } from '../stores/overviewStore';
 import { BackLink } from '../components/common/BackLink';
+import { DocsLink } from '../components/common/DocsLink';
 import { useLocation } from 'react-router-dom';
 import type { QuerySeries } from '@tracehouse/core';
 import { OverviewService } from '@tracehouse/core';
@@ -241,6 +242,7 @@ export const QueryMonitor: React.FC = () => {
           <div>
             <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
               <h2 style={{ color: 'var(--text-primary)', fontSize: 18, fontWeight: 600, margin: 0 }}>Query Monitor</h2>
+              <DocsLink path="/features/query-monitor" />
               <BackLink />
             </div>
           </div>

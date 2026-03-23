@@ -39,6 +39,7 @@ import { TruncatedHost } from '../components/common/TruncatedHost';
 import { ObservabilitySunburst, DetailSidebar, OBSERVABILITY_DATA, enrichWithAvailability, mergeAvailability, fetchColumnComments } from '../components/observability-map';
 import type { SunburstNodeData, QueryResult, ObservabilityData, ColumnCommentMap } from '../components/observability-map';
 import { useUserPreferenceStore } from '../stores/userPreferenceStore';
+import { DocsLink } from '../components/common/DocsLink';
 import useMonitoringCapabilitiesStore from '../stores/monitoringCapabilitiesStore';
 
 
@@ -497,6 +498,7 @@ export const Overview: React.FC = () => {
           <h1 className="text-xl font-semibold" style={{ color: 'var(--text-primary)' }}>
             Overview
           </h1>
+          <DocsLink path="/features/overview" />
           {liveData?.serverInfo && (
             <span className="text-sm" style={{ color: 'var(--text-muted)' }}>
               {isCluster

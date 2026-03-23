@@ -20,6 +20,7 @@ import { useGlobalLastUpdatedStore } from '../stores/refreshSettingsStore';
 import { useEngineInternalsStore, EngineInternalsPoller } from '../stores/engineInternalsStore';
 import { EngineInternalsService, HostTargetedAdapter } from '@tracehouse/core';
 import { TruncatedHost } from '../components/common/TruncatedHost';
+import { DocsLink } from '../components/common/DocsLink';
 import {
   MemoryXRay,
   CPUCoreMap,
@@ -165,9 +166,12 @@ export const EngineInternals: React.FC = () => {
       {/* Header */}
       <div>
         <div className="flex items-center justify-between">
-          <h1 className="text-xl font-semibold" style={{ color: 'var(--text-primary)' }}>
-            Engine Internals
-          </h1>
+          <div className="flex items-center gap-4">
+            <h1 className="text-xl font-semibold" style={{ color: 'var(--text-primary)' }}>
+              Engine Internals
+            </h1>
+            <DocsLink path="/features/engine-internals" />
+          </div>
         </div>
         {/* Host selector — only show if multiple hosts */}
         {clusterHosts.length > 1 && (

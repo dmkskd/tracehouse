@@ -6,18 +6,61 @@ import FeatureVideo from '@site/src/components/FeatureVideo';
 
 A ClickHouse cluster is constantly busy - merges, mutations, replication, background moves - even when no user queries are running. Most users only think about their own queries, but all this background activity competes for the same CPU, memory, and I/O. Time Travel lets you see everything that was happening at any point in time, so you can understand what else might have affected your workload's performance.
 
-## How It Works
+## Timeline Chart
 
-The time travel slider lets you move through historical cluster state. All views update to reflect the selected moment:
+The main view is a time-series chart showing server metrics with query, merge, and mutation activity overlaid as colored bands. The Y-axis metric can be switched between four modes:
 
-- **Running queries** - Which queries were executing and their resource usage
-- **Active merges** - Which merges were in progress, their source parts and progress
-- **Part state** - What the part tree looked like at that instant
-- **Resource attribution** - CPU, memory, and I/O attributed to the workload at that point
+- **CPU** - total CPU utilization (cgroup-aware on containers/Kubernetes)
+- **Memory** - RSS and tracked memory
+- **Network** - bytes sent and received
+- **Disk I/O** - read and write throughput
+
+Each query, merge, and mutation in the time window is drawn as a horizontal band whose height reflects its share of the selected metric. Colors distinguish queries (blue), merges (orange), and mutations (pink). Category toggles in the header let you hide any of the three to reduce clutter.
+
+## Interaction
+
+- **Hover** over the chart to see a tooltip with exact values at that second
+- **Click** to pin a timestamp. The side panel updates to show all activity at that moment.
+- **Drag** a region to zoom in. Zooming fetches per-second sampled data from `processes_history` / `merges_history` (if available) for higher resolution than the default minute-level aggregation.
+- Click a query or merge band on the chart, or a row in the side panel, to open the detail modal.
+
+## Navigator
+
+A 1-hour miniature timeline sits below the main chart, showing the full window at a glance. A draggable viewport indicator shows which portion you are viewing. Drag the viewport to scroll through time without changing zoom level.
+
+## Live Mode
+
+When live mode is enabled (the default), the chart follows the current time and auto-refreshes with the global polling interval. Clicking on the chart or dragging to zoom pauses live mode so you can inspect a specific moment. Toggle live mode back on to resume following.
+
+A custom end-time picker lets you jump to a specific point in history.
+
+## Window Size
+
+The window size control sets how many seconds of data the main chart shows (default: 150s). Larger windows give more context but with less detail per data point.
+
+## Activity Limit
+
+The activity limit controls how many queries/merges/mutations are shown on the chart. The default cap keeps the view readable; increase it if you need to see everything during a busy period.
+
+## Cluster Features
+
+On multi-node clusters, a host selector lets you view metrics for a specific node. **Split view** renders one chart per host stacked vertically, so you can compare activity across nodes side by side.
+
+## View Modes
+
+- **2D** (default) - standard SVG chart
+- **3D** (experimental) - 3D scatter plot of activity
+- **3D Surface** (experimental) - 3D surface rendering of the metric
+
+3D modes require the experimental features toggle in Settings.
+
+## Cgroup-Aware CPU
+
+On containerized deployments (Docker, Kubernetes), Time Travel uses cgroup CPU metrics (`CGroupUserTime` + `CGroupSystemTime`) instead of OS-level metrics. This gives accurate CPU utilization relative to the container's CPU limit rather than the host's total cores. The effective core count is detected automatically.
 
 ## Use Cases
 
-- **Post-incident analysis** - Replay what was happening during a performance degradation
-- **Merge investigation** - See which merges were running when insert latency spiked
-- **Query forensics** - Find the exact queries that caused resource contention
-- **Capacity planning** - Understand peak workload patterns over time
+- **Post-incident analysis** - replay what was happening during a performance degradation
+- **Merge investigation** - see which merges were running when insert latency spiked
+- **Query forensics** - find the exact queries that caused resource contention
+- **Capacity planning** - understand peak workload patterns over time

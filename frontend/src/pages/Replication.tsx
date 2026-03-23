@@ -15,6 +15,7 @@ import {
 import { PermissionGate } from '../components/shared/PermissionGate';
 import { extractErrorMessage } from '../utils/errorFormatters';
 import { useCapabilityCheck } from '../components/shared/RequiresCapability';
+import { DocsLink } from '../components/common/DocsLink';
 
 const TAB_REPLICATION = 'replication';
 
@@ -348,7 +349,10 @@ export const Replication: React.FC = () => {
   return (
     <div className="page-layout">
       {/* Header */}
-      <h1 className="text-xl font-semibold" style={{ color: 'var(--text-primary)' }}>Replication</h1>
+      <div className="flex items-center gap-4">
+        <h1 className="text-xl font-semibold" style={{ color: 'var(--text-primary)' }}>Replication</h1>
+        <DocsLink path="/features/replication" />
+      </div>
 
       {/* Summary Cards */}
       <div className="grid grid-cols-5 gap-4">

@@ -22,6 +22,7 @@ import type { HostMetrics } from '../components/cluster/ClusterTopology';
 import { PermissionGate } from '../components/shared/PermissionGate';
 import { extractErrorMessage } from '../utils/errorFormatters';
 import { useCapabilityCheck } from '../components/shared/RequiresCapability';
+import { DocsLink } from '../components/common/DocsLink';
 
 // ── Types ──
 
@@ -496,6 +497,7 @@ export const ClusterOverview: React.FC = () => {
       <div className="flex items-center justify-between">
         <div className="flex items-center gap-4">
           <h1 className="text-xl font-semibold" style={{ color: 'var(--text-primary)' }}>Cluster</h1>
+          <DocsLink path="/features/cluster" />
           <span className="text-sm" style={{ color: 'var(--text-muted)' }}>{clusterName}</span>
         </div>
       </div>

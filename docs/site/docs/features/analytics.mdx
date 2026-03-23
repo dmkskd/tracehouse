@@ -4,7 +4,23 @@ import FeatureVideo from '@site/src/components/FeatureVideo';
 
 <FeatureVideo src="analytics-1920.mp4" />
 
-A query editor and dashboard builder for creating reusable views of cluster metrics. Queries can be saved, shared, and pinned to dashboards.
+Table-level analysis, a query editor with dashboards, correlation tools, and experimental 3D stress surfaces.
+
+## Tables Efficiency
+
+The default tab shows how effectively each table's ordering key serves the actual query workload. For every table that appears in `system.query_log` SELECT queries, the view computes:
+
+- **Pruning %** - how much data the primary key skips before reading. Calculated as `1 - (SelectedParts/TotalParts x SelectedMarks/TotalMarks)`. A score of 95% means the engine only reads 5% of the data.
+- **Poor pruning queries** - count of queries where pruning was below 50%
+- **Parts scanned %** - average fraction of parts touched per query
+- **Avg duration** and **CPU time** - resource cost of queries against this table
+
+Controls:
+- **Lookback** selector (1, 7, or 30 days)
+- **Database filter** with a toggle to include/exclude system databases
+- Sort by any column to find the worst offenders
+
+Click a table row to see per-query-pattern breakdowns: which normalized query hashes hit this table, how often, and how efficiently each one prunes. This helps identify specific query shapes that bypass the ordering key.
 
 ## Query Editor
 
@@ -29,6 +45,45 @@ Presets are pre-built queries bundled with TraceHouse that cover common monitori
 ## Drill-Down Navigation
 
 Charts support click-to-drill: clicking a chart segment navigates to a related query with the clicked value passed as a filter. This enables interactive exploration from high-level overviews down to specific tables, queries, or time ranges.
+
+## Correlation
+
+When multiple metrics are overlaid on the same chart, the correlation panel compares their time series using three algorithms:
+
+- **Pearson** - linear (proportional) correlation. Sensitive to outliers.
+- **Spearman** - rank correlation. Detects monotonic relationships and is robust to outliers. High Spearman + low Pearson suggests a non-linear relationship.
+- **Cross-correlation** - time-shifted correlation. Finds lagged relationships where one metric leads or follows another. Reports the best lag offset.
+
+The system runs all three and compares them to produce an interpretation:
+
+| Pattern | Meaning |
+|---------|---------|
+| All three strong | Straightforward linear relationship |
+| Spearman strong, Pearson weak | Non-linear monotonic (e.g. exponential growth) |
+| Cross-corr strong, Pearson weak | Correlated with a time delay |
+| Pearson strong, Spearman weak | Outlier-driven (a few extreme points inflate the score) |
+
+Series with weak overall correlation are checked with a rolling window to find localized bursts where the metrics temporarily move together.
+
+Overlay lines are dimmed by correlation strength: strongly correlated series stay bright, weakly correlated ones fade out, so patterns are visible at a glance.
+
+## Surfaces
+
+:::caution Experimental
+Requires the experimental features toggle in Settings.
+:::
+
+The Surfaces tab renders 3D visualizations of table activity over time, built from per-minute aggregations of `system.query_log` and `system.part_log`.
+
+### Stress Surface
+
+Shows query/insert/merge intensity for a selected table as a 3D surface. The X-axis is time (per minute), the Y-axis is a resource dimension (duration, rows read, memory, CPU, I/O wait), and the Z-axis (height) is the aggregated value. This makes it easy to spot recurring stress patterns (e.g. a batch job that spikes CPU every hour) or correlate insert bursts with merge storms.
+
+Controls: time range picker (15 minutes to 30 days), database/table selector.
+
+### Pattern Surface
+
+Shows the top 12 most time-consuming query patterns for a table. Each pattern (by `normalized_query_hash`) gets its own lane on the Y-axis, with time on X and average duration on Z. Hovering shows a sample query for each pattern. This reveals which query shapes dominate a table's workload and how their performance varies over time.
 
 ## Query Language
 
