@@ -4,13 +4,15 @@
 
 import React, { useEffect, useCallback, useState, useRef, useMemo } from 'react';
 import { useConnectionStore } from '../../stores/connectionStore';
-import { 
-  useMergeStore, 
+import {
+  useMergeStore,
   mergeApi,
   formatBytes,
   formatBytesPerSec,
 } from '../../stores/mergeStore';
 import type { MergeInfo, MutationInfo, BackgroundPoolMetrics, MutationDependencyInfo } from '../../stores/mergeStore';
+import type { MergeThroughputEstimate } from '@tracehouse/core';
+import { formatDuration } from '../../utils/formatters';
 import { useDatabaseStore, databaseApi } from '../../stores/databaseStore';
 import { useClickHouseServices } from '../../providers/ClickHouseProvider';
 import { useRefreshConfig, clampToAllowed } from '@tracehouse/ui-shared';
@@ -35,7 +37,7 @@ import {
 import { PermissionGate } from '../shared/PermissionGate';
 import { extractErrorMessage } from '../../utils/errorFormatters';
 import { useCapabilityCheck } from '../shared/RequiresCapability';
-import { classifyActiveMerge, getMergeCategoryInfo, classifyMutationCommand, MUTATION_SUBTYPES } from '@tracehouse/core';
+import { classifyActiveMerge, getMergeCategoryInfo, classifyMutationCommand, MUTATION_SUBTYPES, computeMergeEta, pickThroughputEstimate } from '@tracehouse/core';
 
 // Stat Card
 const StatCard: React.FC<{
@@ -732,6 +734,28 @@ const MergeDetailPanel: React.FC<{
   onClose: () => void;
   onOpenFullDetails: (merge: MergeInfo) => void;
 }> = ({ merge, onClose, onOpenFullDetails }) => {
+  const services = useClickHouseServices();
+
+  // Fetch historical throughput for ETA estimation
+  const [throughputEstimate, setThroughputEstimate] = useState<MergeThroughputEstimate | null>(null);
+  useEffect(() => {
+    setThroughputEstimate(null);
+    if (!merge || !services) return;
+    let cancelled = false;
+    services.mergeTracker.getMergeThroughputEstimate(merge.database, merge.table).then(estimates => {
+      if (cancelled) return;
+      setThroughputEstimate(pickThroughputEstimate(estimates, merge.merge_algorithm, merge.total_size_bytes_compressed));
+    }).catch(err => {
+      console.error('[MergeDetailPanel] ETA fetch failed:', err);
+    });
+    return () => { cancelled = true; };
+  }, [merge?.database, merge?.table, merge?.merge_algorithm, services]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  const etaInfo = useMemo(() => {
+    if (!merge) return null;
+    return computeMergeEta(merge.total_size_bytes_compressed, merge.progress, merge.elapsed, throughputEstimate);
+  }, [merge, throughputEstimate]);
+
   if (!merge) {
     return (
       <div style={{ height: '100%', display: 'flex', alignItems: 'center', justifyContent: 'center', color: 'var(--text-muted)' }}>
@@ -781,7 +805,7 @@ const MergeDetailPanel: React.FC<{
         </div>
 
         <div style={{ marginBottom: 16, display: 'flex', alignItems: 'center', gap: 8 }}>
-          <span style={{ 
+          <span style={{
             padding: '2px 8px', fontSize: 10, borderRadius: 4,
             background: `${getTypeColor()}20`, color: getTypeColor(),
             border: `1px solid ${getTypeColor()}33`,
@@ -789,7 +813,7 @@ const MergeDetailPanel: React.FC<{
             {categoryInfo.label}
           </span>
           {merge.merge_algorithm && (
-            <span style={{ 
+            <span style={{
               padding: '2px 8px', fontSize: 10, borderRadius: 4,
               background: 'var(--bg-tertiary)', color: 'var(--text-muted)',
             }}>
@@ -802,7 +826,7 @@ const MergeDetailPanel: React.FC<{
           <div style={{ fontSize: 10, marginBottom: 8, color: 'var(--text-muted)' }}>Progress</div>
           <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
             <div style={{ flex: 1, height: 6, borderRadius: 3, background: 'var(--bg-tertiary)' }}>
-              <div style={{ 
+              <div style={{
                 width: `${percentage}%`, height: '100%', borderRadius: 3,
                 background: getTypeColor(), transition: 'width 0.3s ease',
               }} />
@@ -811,6 +835,15 @@ const MergeDetailPanel: React.FC<{
               {percentage}%
             </span>
           </div>
+          {etaInfo && (
+            <div
+              title={`Blended throughput: ${formatBytes(etaInfo.medianThroughput)}/s · based on ${etaInfo.basedOnCount} past merges`}
+              style={{ fontSize: 11, color: 'var(--text-muted)', marginTop: 8 }}
+            >
+              ETA <span style={{ color: getTypeColor(), fontWeight: 600, fontFamily: 'monospace' }}>~{formatDuration(etaInfo.remainingSec)}</span>
+              {' · '}based on {etaInfo.basedOnCount} {etaInfo.sizeMatched ? 'similarly sized ' : ''}merges
+            </div>
+          )}
         </div>
 
         <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12, marginBottom: 16 }}>
@@ -827,7 +860,7 @@ const MergeDetailPanel: React.FC<{
               { label: 'Throughput', value: throughput > 0 ? `${formatBytes(throughput)}/s` : '-' },
             ];
           })().map(({ label, value }) => (
-            <div 
+            <div
               key={label}
               style={{ borderRadius: 8, padding: 12, background: 'var(--bg-tertiary)' }}
             >
@@ -839,14 +872,14 @@ const MergeDetailPanel: React.FC<{
 
         {merge.source_part_names && merge.source_part_names.length > 0 && (
           <div>
-            <div style={{ fontSize: 10, marginBottom: 8, color: 'var(--text-muted)' }}>
+            <div style={{ fontSize: 10, marginBottom: 6, color: 'var(--text-muted)' }}>
               Source Parts ({merge.source_part_names.length})
             </div>
-            <div style={{ maxHeight: 120, overflow: 'auto', background: 'var(--bg-tertiary)', borderRadius: 6, padding: 8 }}>
+            <div style={{ maxHeight: 120, overflow: 'auto', background: 'var(--bg-tertiary)', borderRadius: 6, padding: 8, display: 'flex', flexWrap: 'wrap', gap: 4 }}>
               {merge.source_part_names.map((part, i) => (
-                <div key={i} style={{ fontSize: 10, fontFamily: 'monospace', color: 'var(--text-secondary)', padding: '2px 0' }}>
+                <code key={i} style={{ fontSize: 10, fontFamily: 'monospace', color: 'var(--text-secondary)', padding: '1px 4px', background: 'var(--bg-secondary)', borderRadius: 3 }}>
                   {part}
-                </div>
+                </code>
               ))}
             </div>
           </div>
@@ -1600,6 +1633,17 @@ export const MergeTrackerView: React.FC = () => {
   const [mergeDetailRecord, setMergeDetailRecord] = useState<MergeHistoryRecord | null>(null);
   const [activeMergeDetail, setActiveMergeDetail] = useState<MergeInfo | null>(null);
 
+  // Keep selectedMerge in sync with refreshed activeMerges data
+  const liveSelectedMerge = useMemo(() => {
+    if (!selectedMerge) return null;
+    return activeMerges.find(
+      m => m.database === selectedMerge.database &&
+        m.table === selectedMerge.table &&
+        m.result_part_name === selectedMerge.result_part_name &&
+        (m.hostname || '') === (selectedMerge.hostname || ''),
+    ) ?? null;
+  }, [activeMerges, selectedMerge]);
+
   // Client-side filter state for merge type (active merges) and merge reason (merge history)
   const [selectedMergeType, setSelectedMergeType] = useState<string | undefined>();
   const [selectedMergeReason, setSelectedMergeReason] = useState<string | undefined>();
@@ -2017,7 +2061,7 @@ export const MergeTrackerView: React.FC = () => {
             {activeTab === 'active' ? (
               <ActiveMergeList
                 merges={filteredActiveMerges}
-                selectedMerge={selectedMerge}
+                selectedMerge={liveSelectedMerge}
                 onSelectMerge={selectMerge}
                 isLoading={isLoadingMerges}
               />
@@ -2052,7 +2096,7 @@ export const MergeTrackerView: React.FC = () => {
         {/* Right Panel - Detail */}
         <div className="w-80 flex-shrink-0 card overflow-hidden">
           {activeTab === 'active' ? (
-            <MergeDetailPanel merge={selectedMerge} onClose={() => selectMerge(null)} onOpenFullDetails={setActiveMergeDetail} />
+            <MergeDetailPanel merge={liveSelectedMerge} onClose={() => selectMerge(null)} onOpenFullDetails={setActiveMergeDetail} />
           ) : activeTab === 'mutations' ? (
             <ActiveMutationDetailPanel 
               mutation={selectedActiveMutation} 

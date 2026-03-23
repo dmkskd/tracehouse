@@ -71,7 +71,9 @@ export async function startClickHouse(): Promise<TestClickHouseContext> {
     return { container: null, client, adapter, rawAdapter, keepData };
   }
 
-  const container = await new ClickHouseContainer(CH_IMAGE).start();
+  const container = await new ClickHouseContainer(CH_IMAGE)
+    .withStartupTimeout(120_000)
+    .start();
 
   const client = createClient({
     url: container.getConnectionUrl(),

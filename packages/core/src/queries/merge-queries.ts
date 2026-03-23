@@ -429,13 +429,22 @@ export const GET_TABLE_UUID = `
 `;
 
 /**
- * Get average merge throughput for a table, grouped by merge algorithm.
+ * Get average merge throughput for a table, grouped by merge algorithm and size bucket.
  * Used to estimate remaining time for active merges.
  * Only considers successful merges (duration > 0, size > 0).
+ *
+ * Size buckets: <10 MB, 10–100 MB, 100 MB–1 GB, 1–10 GB, ≥10 GB.
  */
 export const GET_MERGE_THROUGHPUT_ESTIMATE = `
   SELECT
     merge_algorithm,
+    multiIf(
+      size_in_bytes < 10485760, toUInt64(0),
+      size_in_bytes < 104857600, toUInt64(10485760),
+      size_in_bytes < 1073741824, toUInt64(104857600),
+      size_in_bytes < 10737418240, toUInt64(1073741824),
+      toUInt64(10737418240)
+    ) AS size_bucket_lower,
     count() AS merge_count,
     avg(size_in_bytes / (duration_ms / 1000)) AS avg_bytes_per_sec,
     median(size_in_bytes / (duration_ms / 1000)) AS median_bytes_per_sec,
@@ -447,7 +456,7 @@ export const GET_MERGE_THROUGHPUT_ESTIMATE = `
     AND event_type = 'MergeParts'
     AND duration_ms > 100
     AND size_in_bytes > 0
-  GROUP BY merge_algorithm
+  GROUP BY merge_algorithm, size_bucket_lower
 `;
 
 /**

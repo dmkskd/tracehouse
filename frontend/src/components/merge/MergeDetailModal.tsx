@@ -12,7 +12,7 @@ import React, { useState, useEffect, useMemo } from 'react';
 import type { MergeHistoryRecord, MergeInfo, MergeThroughputEstimate } from '@tracehouse/core';
 import type { MergeSeries, MutationSeries } from '@tracehouse/core';
 import type { VerticalMergeProgress } from '@tracehouse/core';
-import { classifyActiveMerge, parseVerticalMergeProgress, isMergedPart } from '@tracehouse/core';
+import { classifyActiveMerge, parseVerticalMergeProgress, isMergedPart, computeMergeEta, pickThroughputEstimate } from '@tracehouse/core';
 import { useNavigate } from '../../hooks/useAppLocation';
 import { ModalWrapper } from '../shared/ModalWrapper';
 import { formatBytes } from '../../stores/databaseStore';
@@ -24,6 +24,7 @@ import type { TraceLogFilter } from '../../stores/traceStore';
 import { useUserPreferenceStore } from '../../stores/userPreferenceStore';
 import { useCapabilityCheck } from '../shared/RequiresCapability';
 import { MergeXRay } from './MergeXRay';
+import { useProfileEventDescriptionsStore } from '../../stores/profileEventDescriptionsStore';
 
 // ---------------------------------------------------------------------------
 // Props
@@ -459,6 +460,7 @@ const ProfileTab: React.FC<{
   record: MergeHistoryRecord;
 }> = ({ profileEvents, record }) => {
   const [search, setSearch] = useState('');
+  const descriptions = useProfileEventDescriptionsStore((s) => s.descriptions);
 
   if (!profileEvents || Object.keys(profileEvents).length === 0) {
     return (
@@ -508,7 +510,7 @@ const ProfileTab: React.FC<{
           <tbody>
             {entries.map(([key, val]) => (
               <tr key={key} style={{ borderBottom: '1px solid var(--border-primary)' }}>
-                <td style={{ padding: '3px 8px', fontFamily: 'monospace', color: MERGE_PROFILE_EVENTS.has(key) ? '#f0883e' : 'var(--text-secondary)', fontWeight: MERGE_PROFILE_EVENTS.has(key) ? 600 : 400 }}>{key}</td>
+                <td style={{ padding: '3px 8px', fontFamily: 'monospace', color: MERGE_PROFILE_EVENTS.has(key) ? '#f0883e' : 'var(--text-secondary)', fontWeight: MERGE_PROFILE_EVENTS.has(key) ? 600 : 400, cursor: descriptions[key] ? 'help' : undefined }} title={descriptions[key] || undefined}>{key}</td>
                 <td style={{ padding: '3px 8px', textAlign: 'right', fontFamily: 'monospace', color: 'var(--text-primary)' }}>{fmtVal(key, val)}</td>
               </tr>
             ))}
@@ -674,29 +676,16 @@ const MergeDetailInner: React.FC<{
     let cancelled = false;
     services.mergeTracker.getMergeThroughputEstimate(record.database, record.table).then(estimates => {
       if (cancelled) return;
-      // Find matching algorithm, fall back to any available
-      const algo = activeMerge.merge_algorithm || 'Horizontal';
-      const match = estimates.find(e => e.merge_algorithm === algo) ?? (estimates.length > 0 ? estimates[0] : null);
-      setThroughputEstimate(match);
+      setThroughputEstimate(pickThroughputEstimate(estimates, activeMerge.merge_algorithm, activeMerge.total_size_bytes_compressed));
+    }).catch(err => {
+      console.error('[MergeDetailModal] ETA fetch failed:', err);
     });
     return () => { cancelled = true; };
   }, [isActive, services, record.database, record.table, activeMerge?.merge_algorithm]); // eslint-disable-line react-hooks/exhaustive-deps
 
-  // Compute ETA from throughput estimate + current progress
   const etaInfo = useMemo(() => {
-    if (!isActive || !activeMerge || !throughputEstimate || throughputEstimate.merge_count < 3) return null;
-    const totalBytes = activeMerge.total_size_bytes_compressed;
-    const progress = activeMerge.progress;
-    if (progress <= 0 || totalBytes <= 0) return null;
-    const remainingBytes = totalBytes * (1 - progress);
-    const throughput = throughputEstimate.median_bytes_per_sec;
-    if (throughput <= 0) return null;
-    const remainingSec = remainingBytes / throughput;
-    return {
-      remainingSec,
-      basedOnCount: throughputEstimate.merge_count,
-      medianThroughput: throughput,
-    };
+    if (!isActive || !activeMerge) return null;
+    return computeMergeEta(activeMerge.total_size_bytes_compressed, activeMerge.progress, activeMerge.elapsed, throughputEstimate);
   }, [isActive, activeMerge, throughputEstimate]);
 
   const navigate = useNavigate();
@@ -714,7 +703,7 @@ const MergeDetailInner: React.FC<{
   const tabs: { id: MergeDetailTab; label: string; disabled?: boolean; title?: string; experimental?: boolean }[] = [
     { id: 'details', label: 'Details' },
     { id: 'logs', label: 'Logs', disabled: isTTLMoveRecord, title: isTTLMoveRecord ? 'TTL moves do not produce dedicated log entries' : undefined },
-    { id: 'profile', label: 'Profile', disabled: !hasProfileEvents, title: !hasProfileEvents ? (isActive ? 'ProfileEvents are available after merge completes' : 'No ProfileEvents in part_log for this event') : undefined },
+    { id: 'profile', label: 'Profile Events', disabled: !hasProfileEvents, title: !hasProfileEvents ? (isActive ? 'ProfileEvents are available after merge completes' : 'No ProfileEvents in part_log for this event') : undefined },
   ];
   if (experimentalEnabled) {
     tabs.push({
@@ -759,10 +748,11 @@ const MergeDetailInner: React.FC<{
           <span style={{ fontSize: 11, fontWeight: 600, color: accent, fontFamily: 'monospace', whiteSpace: 'nowrap' }}>{(activeMerge.progress * 100).toFixed(1)}%</span>
           {etaInfo ? (
             <span
-              title={`Median throughput: ${formatBytes(etaInfo.medianThroughput)}/s`}
+              title={`Blended throughput: ${formatBytes(etaInfo.medianThroughput)}/s · based on ${etaInfo.basedOnCount} past merges`}
               style={{ fontSize: 10, color: 'var(--text-muted)', whiteSpace: 'nowrap' }}
             >
-              ~{formatDuration(etaInfo.remainingSec)} left · est. from {etaInfo.basedOnCount} merges
+              ETA <span style={{ fontWeight: 500, color: 'var(--text-secondary)' }}>~{formatDuration(etaInfo.remainingSec)}</span>
+              {' · '}based on {etaInfo.basedOnCount} {etaInfo.sizeMatched ? 'similarly sized ' : ''}merges
             </span>
           ) : (
             <span style={{ fontSize: 10, color: 'var(--text-muted)', whiteSpace: 'nowrap' }}>In progress</span>

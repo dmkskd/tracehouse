@@ -17,3 +17,7 @@ export { parseTTL, formatTTLDuration } from './ttl-parser.js';
 export { parsePartName, getLevelFromName, isMergedPart, isMutatedPart, stripMutationVersion, getPartLevelGroupKey, MUTATION_GROUP_KEY } from './part-name-parser.js';
 export { parseVerticalMergeProgress } from './vertical-merge-progress.js';
 export type { VerticalMergeProgress, VerticalMergeSegment } from './vertical-merge-progress.js';
+export { computeMergeEta, pickThroughputEstimate } from './merge-eta.js';
+export type { MergeEtaInfo } from './merge-eta.js';
+export { pearson, spearman, crossCorrelation, crossCorrelationDetail, rollingCorrelation, minMaxNormalize, normalizePanelData, correlateToFocused, correlationToOpacity, correlationStrength, computeInsightsAndLags, interpretCorrelation, CORRELATION_ALGORITHMS, CORRELATION_THRESHOLDS, ROLLING_WINDOW_TRIGGER, ROLLING_WINDOW_THRESHOLD } from './correlation.js';
+export type { CorrelationFn, CorrelationAlgorithm, CorrelationInsight, CorrelationStrength, CrossCorrelationResult, NormalizedSeries, CorrelationResult, CorrelatedWindow } from './correlation.js';

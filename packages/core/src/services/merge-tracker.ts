@@ -317,7 +317,7 @@ export class MergeTracker {
       }
 
   /**
-   * Get historical merge throughput estimates for a table, grouped by algorithm.
+   * Get historical merge throughput estimates for a table, grouped by algorithm and size bucket.
    * Used to estimate remaining time for active merges.
    */
   async getMergeThroughputEstimate(database: string, table: string): Promise<MergeThroughputEstimate[]> {
@@ -325,6 +325,7 @@ export class MergeTracker {
       const sql = buildQuery(GET_MERGE_THROUGHPUT_ESTIMATE, { database, table });
       const rows = await this.adapter.executeQuery<{
         merge_algorithm: string;
+        size_bucket_lower: string | number;
         merge_count: string | number;
         avg_bytes_per_sec: string | number;
         median_bytes_per_sec: string | number;
@@ -333,6 +334,7 @@ export class MergeTracker {
       }>(tagQuery(sql, sourceTag(TAB_MERGES, 'throughputEstimate')));
       return rows.map(r => ({
         merge_algorithm: String(r.merge_algorithm),
+        size_bucket_lower: Number(r.size_bucket_lower),
         merge_count: Number(r.merge_count),
         avg_bytes_per_sec: Number(r.avg_bytes_per_sec),
         median_bytes_per_sec: Number(r.median_bytes_per_sec),
@@ -340,8 +342,7 @@ export class MergeTracker {
         avg_size_bytes: Number(r.avg_size_bytes),
       }));
     } catch (error) {
-      console.error('[MergeTracker] getMergeThroughputEstimate error:', error);
-      return [];
+      throw new MergeTrackerError('Failed to fetch merge throughput estimates', error instanceof Error ? error : undefined);
     }
   }
 

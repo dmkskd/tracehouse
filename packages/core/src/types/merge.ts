@@ -178,6 +178,7 @@ export interface MergeTextLog {
 
 export interface MergeThroughputEstimate {
   merge_algorithm: string;
+  size_bucket_lower: number;
   merge_count: number;
   avg_bytes_per_sec: number;
   median_bytes_per_sec: number;

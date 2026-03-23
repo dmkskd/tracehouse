@@ -225,7 +225,8 @@ export const ActiveMergeList: React.FC<ActiveMergeListProps> = ({
             const isSelected = selectedMerge !== null &&
               selectedMerge.database === merge.database &&
               selectedMerge.table === merge.table &&
-              selectedMerge.result_part_name === merge.result_part_name;
+              selectedMerge.result_part_name === merge.result_part_name &&
+              (selectedMerge.hostname || '') === (merge.hostname || '');
             const catInfo = getCategory(merge);
             const typeLabel = catInfo.label;
             const typeColor = catInfo.color;

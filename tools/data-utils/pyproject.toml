@@ -28,9 +28,12 @@ environments = ["implementation_name == 'cpython'"]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]
+pythonpath = ["tests"]
+addopts = "-n auto --dist loadfile"
 
 [dependency-groups]
 test = [
     "pytest",
+    "pytest-xdist",
     "testcontainers[clickhouse]",
 ]

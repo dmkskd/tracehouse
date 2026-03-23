@@ -933,6 +933,587 @@ export const GroupedLineChart2D: React.FC<{ data: GroupedChartData[]; onDrillDow
 };
 
 // ═══════════════════════════════════════════════════════════════════════════
+// Overlay Chart — multiple normalized series on one chart with correlation coloring
+// ═══════════════════════════════════════════════════════════════════════════
+
+import {
+  normalizePanelData,
+  correlateToFocused,
+  correlationToOpacity,
+  correlationStrength,
+  rollingCorrelation,
+  computeInsightsAndLags,
+  CORRELATION_ALGORITHMS,
+  ROLLING_WINDOW_TRIGGER,
+  ROLLING_WINDOW_THRESHOLD,
+  type CorrelationFn,
+  type CorrelationInsight,
+} from '@tracehouse/core';
+
+export interface OverlayChartProps {
+  /** Panel time-series data collected from the dashboard */
+  panels: { name: string; color: string; unit?: string; dataByLabel: Map<string, number> }[];
+}
+
+/** All possible insight labels for filtering. */
+const INSIGHT_FILTERS = [
+  { label: 'strong linear', color: '#22c55e' },
+  { label: 'non-linear', color: '#eab308' },
+  { label: 'lagged', color: '#eab308' },
+  { label: 'outlier-driven', color: '#eab308' },
+] as const;
+
+/** Correlation strength buckets for filtering. */
+const STRENGTH_FILTERS = [
+  { id: 'strong', label: 'Strong (|r| >= 0.7)', test: (r: number) => Math.abs(r) >= 0.7, color: '#22c55e' },
+  { id: 'moderate', label: 'Moderate (0.4-0.7)', test: (r: number) => Math.abs(r) >= 0.4 && Math.abs(r) < 0.7, color: '#eab308' },
+  { id: 'weak', label: 'Weak (|r| < 0.4)', test: (r: number) => Math.abs(r) < 0.4, color: 'var(--text-muted)' },
+  { id: 'inverse', label: 'Inverse (r < -0.4)', test: (r: number) => r < -0.4, color: '#ef4444' },
+] as const;
+
+export const OverlayChart: React.FC<OverlayChartProps> = ({ panels }) => {
+  const [hoveredSeries, setHoveredSeries] = useState<string | null>(null);
+  const [lockedSeries, setLockedSeries] = useState<string | null>(null);
+  const [hiddenSeries, setHiddenSeries] = useState<Set<string>>(new Set());
+  const [algorithmId, setAlgorithmId] = useState('pearson');
+  const [contextMenu, setContextMenu] = useState<{ x: number; y: number } | null>(null);
+  // Lightweight chart hover — just dims other lines, no correlation computation
+  const [chartHoveredSeries, setChartHoveredSeries] = useState<string | null>(null);
+  const [showInfoPopover, setShowInfoPopover] = useState(false);
+
+  const chartContainerRef = React.useRef<HTMLDivElement>(null);
+
+  // Locked focus takes priority over legend hover (chart hover is separate)
+  const focusedSeries = lockedSeries ?? hoveredSeries;
+
+  const algorithm = CORRELATION_ALGORITHMS.find(a => a.id === algorithmId) ?? CORRELATION_ALGORITHMS[0];
+  const correlationFn: CorrelationFn = algorithm.fn;
+
+  const normalized = React.useMemo(() => normalizePanelData(panels), [panels]);
+
+  const correlationMap = React.useMemo(() => {
+    if (!focusedSeries) return null;
+    return correlateToFocused(normalized, focusedSeries, correlationFn);
+  }, [normalized, focusedSeries, correlationFn]);
+
+  // Compute all 3 algorithm scores for insight comparison + lag details
+  const { insightMap, lagMap } = React.useMemo(() => {
+    if (!focusedSeries) return { insightMap: new Map<string, CorrelationInsight | null>(), lagMap: new Map<string, number>() };
+    const { insights, lags } = computeInsightsAndLags(normalized, focusedSeries);
+    return { insightMap: insights, lagMap: lags };
+  }, [normalized, focusedSeries]);
+
+  const correlatedWindows = React.useMemo(() => {
+    if (!focusedSeries) return [];
+    const focused = normalized.find(s => s.name === focusedSeries);
+    if (!focused) return [];
+    const windows: { seriesName: string; startTs: string; endTs: string; r: number }[] = [];
+    const windowSize = Math.max(5, Math.floor(focused.timestamps.length / 10));
+    for (const s of normalized) {
+      if (s.name === focusedSeries) continue;
+      const r = correlationMap?.get(s.name) ?? 0;
+      if (Math.abs(r) < ROLLING_WINDOW_TRIGGER) {
+        const hits = rollingCorrelation(focused.normalized, s.normalized, windowSize, ROLLING_WINDOW_THRESHOLD, correlationFn);
+        for (const h of hits) {
+          windows.push({
+            seriesName: s.name,
+            startTs: focused.timestamps[h.startIdx],
+            endTs: focused.timestamps[Math.min(h.endIdx, focused.timestamps.length - 1)],
+            r: h.r,
+          });
+        }
+      }
+    }
+    return windows;
+  }, [normalized, focusedSeries, correlationMap]);
+
+  if (normalized.length === 0 || normalized[0].timestamps.length < 2) {
+    return <div style={{ padding: 24, color: 'var(--text-muted)', fontSize: 12 }}>No time-series data available for overlay. Enable Correlate mode and hover panels to collect data.</div>;
+  }
+
+  const timestamps = normalized[0].timestamps;
+  const visibleSeries = normalized.filter(s => !hiddenSeries.has(s.name));
+
+  const rechartsData = timestamps.map((t, i) => {
+    const row: Record<string, unknown> = { name: t };
+    for (const s of visibleSeries) {
+      const v = s.normalized[i];
+      if (!Number.isNaN(v)) row[s.name] = v;
+    }
+    return row;
+  });
+
+  const getOpacity = (name: string): number => {
+    // Chart hover: light dimming only
+    if (!focusedSeries && chartHoveredSeries) {
+      return name === chartHoveredSeries ? 1 : 0.5;
+    }
+    if (!focusedSeries) return 0.8;
+    if (name === focusedSeries) return 1;
+    return correlationToOpacity(correlationMap?.get(name) ?? 0);
+  };
+
+  const getStrokeWidth = (name: string): number => {
+    if (!focusedSeries && chartHoveredSeries) {
+      return name === chartHoveredSeries ? 3 : 1;
+    }
+    if (!focusedSeries) return 1.5;
+    return name === focusedSeries ? 3 : 1;
+  };
+
+  const formatRaw = (seriesName: string, normalizedVal: number): string => {
+    const s = normalized.find(ns => ns.name === seriesName);
+    if (!s) return normalizedVal.toFixed(2);
+    const validValues = s.raw.filter(v => !Number.isNaN(v));
+    const min = Math.min(...validValues);
+    const max = Math.max(...validValues);
+    const raw = min + normalizedVal * (max - min);
+    return compactFormatter(s.unit)(raw);
+  };
+
+  const STRENGTH_COLORS: Record<string, string> = {
+    strong: '#22c55e',
+    moderate: '#eab308',
+    weak: 'var(--text-muted)',
+  };
+  const rColor = (r: number) => STRENGTH_COLORS[correlationStrength(r)];
+
+  // Stable legend order: keep original panel order, let visual styling communicate correlation.
+  // Re-sorting on hover causes distracting flickering.
+  const legendSeries = normalized;
+
+  return (
+    <div style={{ display: 'flex', flexDirection: 'column', height: '100%' }}>
+      {/* Algorithm selector */}
+      <div style={{
+        display: 'flex', alignItems: 'center', gap: 8,
+        padding: '4px 10px', borderBottom: '1px solid var(--border-primary)',
+        flexShrink: 0,
+      }}>
+        <span style={{ fontSize: 11, color: 'var(--text-muted)' }}>Algorithm</span>
+        <select
+          value={algorithmId}
+          onChange={e => setAlgorithmId(e.target.value)}
+          style={{
+            fontSize: 11, padding: '2px 6px',
+            background: 'var(--bg-secondary)', color: 'var(--text-primary)',
+            border: '1px solid var(--border-primary)', borderRadius: 4,
+            cursor: 'pointer',
+          }}
+        >
+          {CORRELATION_ALGORITHMS.map(a => (
+            <option key={a.id} value={a.id}>{a.name}</option>
+          ))}
+        </select>
+        <span style={{ fontSize: 10, color: 'var(--text-muted)', fontStyle: 'italic' }}>
+          {algorithm.description}
+        </span>
+        <span
+          style={{ position: 'relative', marginLeft: 'auto', flexShrink: 0 }}
+          onMouseEnter={() => setShowInfoPopover(true)}
+          onMouseLeave={() => setShowInfoPopover(false)}
+        >
+          <span style={{ fontSize: 14, cursor: 'help', color: 'var(--text-secondary, #94a3b8)' }}>ⓘ</span>
+          {showInfoPopover && (
+            <div style={{
+              position: 'absolute', right: 0, top: '100%', marginTop: 4, zIndex: 9999,
+              background: 'var(--bg-primary, #1a1a2e)', border: '1px solid var(--border-primary, #333)',
+              borderRadius: 6, padding: '10px 14px', width: 340,
+              boxShadow: '0 8px 24px rgba(0,0,0,0.5)', fontSize: 11, lineHeight: 1.6,
+              color: 'var(--text-secondary, #cbd5e1)',
+            }}>
+              <div style={{ fontWeight: 600, fontSize: 12, color: 'var(--text-primary, #e2e8f0)', marginBottom: 6 }}>Correlation Guide</div>
+              <div style={{ marginBottom: 8 }}>
+                <span style={{ color: 'var(--text-primary, #e2e8f0)' }}>r value</span> — strength of relationship (−1 to +1). Closer to ±1 = stronger.
+              </div>
+              <div style={{ fontWeight: 600, fontSize: 11, color: 'var(--text-primary, #e2e8f0)', marginBottom: 4 }}>Algorithms</div>
+              <div style={{ marginBottom: 2 }}><span style={{ color: '#22c55e' }}>Pearson</span> — linear (proportional) relationships. Sensitive to outliers.</div>
+              <div style={{ marginBottom: 2 }}><span style={{ color: '#22c55e' }}>Spearman</span> — monotonic relationships via ranks. Robust to outliers.</div>
+              <div style={{ marginBottom: 8 }}><span style={{ color: '#22c55e' }}>Cross-corr</span> — shifts series in time to find best match. <span style={{ color: 'var(--text-muted)' }}>@+3</span> = A leads B by 3 intervals.</div>
+              <div style={{ fontWeight: 600, fontSize: 11, color: 'var(--text-primary, #e2e8f0)', marginBottom: 4 }}>Insight Badges</div>
+              <div style={{ marginBottom: 2 }}><span style={{ color: '#22c55e', background: 'rgba(34,197,94,0.15)', padding: '0 4px', borderRadius: 3 }}>strong linear</span> — all algorithms agree.</div>
+              <div style={{ marginBottom: 2 }}><span style={{ color: '#eab308', background: 'rgba(234,179,8,0.15)', padding: '0 4px', borderRadius: 3 }}>non-linear</span> — Spearman sees it, Pearson doesn't (e.g. exponential).</div>
+              <div style={{ marginBottom: 2 }}><span style={{ color: '#eab308', background: 'rgba(234,179,8,0.15)', padding: '0 4px', borderRadius: 3 }}>lagged</span> — Cross-corr sees it, Pearson doesn't (time-delayed).</div>
+              <div><span style={{ color: '#eab308', background: 'rgba(234,179,8,0.15)', padding: '0 4px', borderRadius: 3 }}>outlier-driven</span> — Pearson inflated by extreme values.</div>
+            </div>
+          )}
+        </span>
+      </div>
+      <div style={{ display: 'flex', flex: 1, minHeight: 0 }}>
+      {/* Chart area */}
+      <div ref={chartContainerRef} style={{ flex: 1, minHeight: 0 }}>
+        <ResponsiveContainer width="100%" height="100%">
+          <RLineChart
+            data={rechartsData}
+            margin={{ top: 10, right: 10, left: 10, bottom: 5 }}
+            onMouseMove={(state: Record<string, unknown>) => {
+              if (lockedSeries) return;
+              const s = state as { activeIndex?: number; activeCoordinate?: { y: number } };
+              if (s.activeIndex == null || !s.activeCoordinate) return;
+              const container = chartContainerRef.current;
+              if (!container) return;
+              const h = container.getBoundingClientRect().height;
+              // Map cursor Y to normalized 0→1 value (Y axis domain=[0,1], margins top=10 bottom=5)
+              const plotH = h - 15;
+              if (plotH <= 0) return;
+              const yVal = 1 - (s.activeCoordinate.y - 10) / plotH;
+              // Find closest series at this data index
+              const row = rechartsData[s.activeIndex];
+              if (!row) return;
+              let closest: string | null = null;
+              let minDist = Infinity;
+              for (const vs of visibleSeries) {
+                const val = row[vs.name];
+                if (val == null) continue;
+                const dist = Math.abs((val as number) - yVal);
+                if (dist < minDist) { minDist = dist; closest = vs.name; }
+              }
+              if (closest && closest !== chartHoveredSeries) setChartHoveredSeries(closest);
+            }}
+            onMouseLeave={() => setChartHoveredSeries(null)}
+          >
+            <CartesianGrid strokeDasharray="3 3" stroke={gridStroke} />
+            <XAxis dataKey="name" tick={axisTickStyle} tickLine={axisLineStyle} axisLine={axisLineStyle}
+              interval="preserveStartEnd" tickFormatter={formatXTick} />
+            <YAxis tick={false} tickLine={false} axisLine={false} domain={[0, 1]} width={5} />
+            <Tooltip
+              content={(props: Record<string, unknown>) => {
+                const { active, payload: rawPayload, label } = props as {
+                  active?: boolean;
+                  payload?: ReadonlyArray<{ value: number; dataKey: string; color: string }>;
+                  label?: string;
+                };
+                if (!active || !rawPayload?.length) return null;
+                const sorted = [...rawPayload].sort((a, b) => (b.value ?? 0) - (a.value ?? 0));
+                return (
+                  <div style={tooltipStyle}>
+                    {label && <div style={tooltipLabelStyle}>{label}</div>}
+                    {sorted.map((entry, i) => {
+                      const name = entry.dataKey;
+                      const isFocused = name === focusedSeries;
+                      const r = correlationMap?.get(name);
+                      return (
+                        <div key={i} style={{ display: 'flex', alignItems: 'center', gap: 6, marginTop: i > 0 ? 1 : 0, opacity: isFocused || !focusedSeries ? 1 : 0.6 }}>
+                          <span style={{ width: 8, height: 8, borderRadius: '50%', background: entry.color, flexShrink: 0 }} />
+                          <span style={{ fontSize: 11, color: 'var(--text-muted)', flex: 1, maxWidth: 140, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', fontWeight: isFocused ? 600 : 400 }}>
+                            {name.length > 20 ? name.slice(0, 19) + '…' : name}
+                          </span>
+                          <span style={{ fontSize: 12, fontWeight: 600, color: 'var(--text-primary)', fontFamily: "'Share Tech Mono', monospace" }}>
+                            {formatRaw(name, entry.value)}
+                          </span>
+                          {r !== undefined && r !== 1 && focusedSeries && (
+                            <span style={{ fontSize: 9, color: rColor(r), fontFamily: "'Share Tech Mono', monospace", minWidth: 32, textAlign: 'right' }}>
+                              r={r.toFixed(2)}
+                              {algorithmId === 'cross' && (() => {
+                                const lag = lagMap.get(name);
+                                return lag ? <span style={{ color: 'var(--text-muted)' }}> @{lag > 0 ? '+' : ''}{lag}</span> : null;
+                              })()}
+                            </span>
+                          )}
+                        </div>
+                      );
+                    })}
+                  </div>
+                );
+              }}
+              offset={20}
+              wrapperStyle={{ zIndex: 1000, pointerEvents: 'none' }}
+            />
+            {correlatedWindows.map((w, i) => (
+              <ReferenceLine key={`cw-${i}`} x={w.startTs} stroke={normalized.find(s => s.name === w.seriesName)?.color ?? '#fff'} strokeOpacity={0.2} strokeDasharray="2 2" />
+            ))}
+            {visibleSeries.map(s => (
+              <Line
+                key={s.name}
+                type="monotone"
+                dataKey={s.name}
+                stroke={s.color}
+                strokeWidth={getStrokeWidth(s.name)}
+                strokeOpacity={getOpacity(s.name)}
+                dot={false}
+                activeDot={s.name === focusedSeries ? { r: 4, fill: s.color } : false}
+                connectNulls
+                animationDuration={300}
+              />
+            ))}
+          </RLineChart>
+        </ResponsiveContainer>
+      </div>
+
+      {/* Legend sidebar — hover to focus, click to hide/show */}
+      <div style={{
+        width: 260,
+        flexShrink: 0,
+        borderLeft: '1px solid var(--border-primary)',
+        overflowY: 'auto',
+        padding: '6px 0',
+      }}>
+        <div style={{
+          borderBottom: '1px solid var(--border-primary)',
+          padding: '6px 10px',
+          display: 'flex', alignItems: 'center', gap: 6,
+          marginBottom: 4,
+        }}>
+          {lockedSeries ? (
+            <>
+              <span style={{ fontSize: 10, color: 'var(--text-muted)' }}>
+                Locked: <strong style={{ color: 'var(--text-primary)' }}>{lockedSeries}</strong>
+              </span>
+              <button
+                onClick={() => { setLockedSeries(null); setHiddenSeries(new Set()); }}
+                style={{
+                  fontSize: 9, padding: '1px 6px', marginLeft: 'auto',
+                  background: 'rgba(255,255,255,0.08)', color: 'var(--text-secondary)',
+                  border: '1px solid var(--border-primary)', borderRadius: 3,
+                  cursor: 'pointer',
+                }}
+              >
+                Unlock
+              </button>
+            </>
+          ) : (
+            <span style={{ fontSize: 9, color: 'var(--text-muted)', fontStyle: 'italic', lineHeight: '1.5' }}>
+              <strong style={{ fontStyle: 'normal', color: 'var(--text-secondary)' }}>Hover in legend to correlate</strong><br />
+              Right-click to lock &amp; filter
+            </span>
+          )}
+        </div>
+        {legendSeries.map(s => {
+          const isFocused = s.name === focusedSeries;
+          const isHidden = hiddenSeries.has(s.name);
+          const r = correlationMap?.get(s.name);
+          const insight = focusedSeries && !isHidden ? insightMap.get(s.name) : null;
+          return (
+            <div
+              key={s.name}
+              onMouseEnter={() => setHoveredSeries(s.name)}
+              onMouseLeave={() => setHoveredSeries(null)}
+              onClick={() => {
+                if (lockedSeries === s.name) {
+                  setLockedSeries(null);
+                } else if (lockedSeries) {
+                  // When locked, click toggles visibility
+                  setHiddenSeries(prev => {
+                    const next = new Set(prev);
+                    if (next.has(s.name)) next.delete(s.name);
+                    else if (next.size < normalized.length - 1) next.add(s.name);
+                    return next;
+                  });
+                } else {
+                  setHiddenSeries(prev => {
+                    const next = new Set(prev);
+                    if (next.has(s.name)) next.delete(s.name);
+                    else if (next.size < normalized.length - 1) next.add(s.name);
+                    return next;
+                  });
+                }
+              }}
+              onContextMenu={(e) => {
+                e.preventDefault();
+                setLockedSeries(s.name);
+                setContextMenu({ x: e.clientX, y: e.clientY });
+              }}
+              style={{
+                display: 'flex',
+                alignItems: 'center',
+                gap: 6,
+                padding: '3px 10px',
+                cursor: 'pointer',
+                opacity: isHidden ? 0.25 : (chartHoveredSeries && !focusedSeries && s.name !== chartHoveredSeries) ? 0.4 : 1,
+                background: lockedSeries === s.name ? 'rgba(255,255,255,0.08)' : isFocused ? 'rgba(255,255,255,0.04)' : (chartHoveredSeries === s.name && !focusedSeries) ? 'rgba(255,255,255,0.06)' : 'transparent',
+                textDecoration: isHidden ? 'line-through' : 'none',
+                transition: 'background 0.1s',
+              }}
+            >
+              <span style={{
+                width: 14, height: 3, borderRadius: 1, flexShrink: 0,
+                background: s.color,
+                opacity: isHidden ? 0.3 : getOpacity(s.name),
+              }} />
+              <span style={{
+                fontSize: 11, flex: 1,
+                overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap',
+                color: isFocused ? 'var(--text-primary)' : 'var(--text-secondary)',
+                fontWeight: isFocused ? 600 : 400,
+              }}>
+                {s.name}
+              </span>
+              {insight && (
+                <span
+                  title={insight.detail}
+                  style={{
+                    fontSize: 8, flexShrink: 0,
+                    padding: '1px 4px', borderRadius: 3,
+                    background: insight.level === 'interesting' ? 'rgba(234, 179, 8, 0.2)' : 'rgba(34, 197, 94, 0.15)',
+                    color: insight.level === 'interesting' ? '#eab308' : '#22c55e',
+                    whiteSpace: 'nowrap',
+                    border: `1px solid ${insight.level === 'interesting' ? 'rgba(234, 179, 8, 0.3)' : 'rgba(34, 197, 94, 0.2)'}`,
+                  }}
+                >
+                  {insight.label}
+                </span>
+              )}
+              {r !== undefined && r !== 1 && focusedSeries && !isHidden && (
+                <span style={{
+                  fontSize: 9, fontFamily: "'Share Tech Mono', monospace",
+                  color: rColor(r), flexShrink: 0,
+                }}>
+                  {r >= 0 ? '+' : ''}{r.toFixed(2)}
+                  {algorithmId === 'cross' && (() => {
+                    const lag = lagMap.get(s.name);
+                    return lag ? <span style={{ color: 'var(--text-muted)', marginLeft: 2 }}>@{lag > 0 ? '+' : ''}{lag}</span> : null;
+                  })()}
+                </span>
+              )}
+            </div>
+          );
+        })}
+      </div>
+
+      {/* Right-click context menu for filtering by insight/strength */}
+      {contextMenu && lockedSeries && (() => {
+        // Compute counts for each filter category
+        const insightCounts = new Map<string, string[]>();
+        const strengthCounts = new Map<string, string[]>();
+        for (const s of normalized) {
+          if (s.name === lockedSeries) continue;
+          const insight = insightMap.get(s.name);
+          if (insight) {
+            const list = insightCounts.get(insight.label) ?? [];
+            list.push(s.name);
+            insightCounts.set(insight.label, list);
+          }
+          const r = correlationMap?.get(s.name) ?? 0;
+          for (const sf of STRENGTH_FILTERS) {
+            if (sf.test(r)) {
+              const list = strengthCounts.get(sf.id) ?? [];
+              list.push(s.name);
+              strengthCounts.set(sf.id, list);
+            }
+          }
+        }
+
+        return (
+          <>
+            {/* Backdrop to close menu */}
+            <div
+              style={{ position: 'fixed', inset: 0, zIndex: 9998 }}
+              onClick={() => setContextMenu(null)}
+              onContextMenu={(e) => { e.preventDefault(); setContextMenu(null); }}
+            />
+            <div style={{
+              position: 'fixed',
+              left: Math.min(contextMenu.x, window.innerWidth - 230),
+              top: Math.min(contextMenu.y, window.innerHeight - 400),
+              zIndex: 9999,
+              background: 'var(--bg-primary, #1a1a2e)',
+              border: '1px solid var(--border-primary)',
+              borderRadius: 6,
+              padding: '6px 0',
+              minWidth: 200,
+              boxShadow: '0 8px 24px rgba(0,0,0,0.5)',
+            }}>
+              <div style={{ padding: '4px 12px 6px', fontSize: 10, color: 'var(--text-muted)', borderBottom: '1px solid var(--border-primary)' }}>
+                Filter relative to <strong style={{ color: 'var(--text-primary)' }}>{lockedSeries}</strong>
+              </div>
+
+              {/* Insight type filters */}
+              <div style={{ padding: '6px 12px 2px', fontSize: 9, color: 'var(--text-muted)', textTransform: 'uppercase', letterSpacing: 1 }}>
+                Relationship Type
+              </div>
+              {INSIGHT_FILTERS.map(f => {
+                const names = insightCounts.get(f.label) ?? [];
+                if (names.length === 0) return null;
+                return (
+                  <button
+                    key={f.label}
+                    onClick={() => {
+                      const toShow = new Set(names);
+                      toShow.add(lockedSeries!);
+                      setHiddenSeries(new Set(normalized.filter(s => !toShow.has(s.name)).map(s => s.name)));
+                      setContextMenu(null);
+                    }}
+                    style={{
+                      display: 'flex', alignItems: 'center', gap: 8,
+                      width: '100%', padding: '5px 12px',
+                      background: 'transparent', border: 'none', cursor: 'pointer',
+                      color: 'var(--text-secondary)', fontSize: 11, textAlign: 'left',
+                    }}
+                    onMouseEnter={e => (e.currentTarget.style.background = 'rgba(255,255,255,0.06)')}
+                    onMouseLeave={e => (e.currentTarget.style.background = 'transparent')}
+                  >
+                    <span style={{
+                      width: 8, height: 8, borderRadius: 2,
+                      background: f.color, opacity: 0.8, flexShrink: 0,
+                    }} />
+                    <span style={{ flex: 1 }}>{f.label}</span>
+                    <span style={{ fontSize: 9, color: 'var(--text-muted)' }}>{names.length}</span>
+                  </button>
+                );
+              })}
+
+              {/* Strength filters */}
+              <div style={{ padding: '8px 12px 2px', fontSize: 9, color: 'var(--text-muted)', textTransform: 'uppercase', letterSpacing: 1, borderTop: '1px solid var(--border-primary)', marginTop: 4 }}>
+                Correlation Strength
+              </div>
+              {STRENGTH_FILTERS.map(f => {
+                const names = strengthCounts.get(f.id) ?? [];
+                if (names.length === 0) return null;
+                return (
+                  <button
+                    key={f.id}
+                    onClick={() => {
+                      const toShow = new Set(names);
+                      toShow.add(lockedSeries!);
+                      setHiddenSeries(new Set(normalized.filter(s => !toShow.has(s.name)).map(s => s.name)));
+                      setContextMenu(null);
+                    }}
+                    style={{
+                      display: 'flex', alignItems: 'center', gap: 8,
+                      width: '100%', padding: '5px 12px',
+                      background: 'transparent', border: 'none', cursor: 'pointer',
+                      color: 'var(--text-secondary)', fontSize: 11, textAlign: 'left',
+                    }}
+                    onMouseEnter={e => (e.currentTarget.style.background = 'rgba(255,255,255,0.06)')}
+                    onMouseLeave={e => (e.currentTarget.style.background = 'transparent')}
+                  >
+                    <span style={{
+                      width: 8, height: 8, borderRadius: '50%',
+                      background: f.color, opacity: 0.8, flexShrink: 0,
+                    }} />
+                    <span style={{ flex: 1 }}>{f.label}</span>
+                    <span style={{ fontSize: 9, color: 'var(--text-muted)' }}>{names.length}</span>
+                  </button>
+                );
+              })}
+
+              {/* Show all / reset */}
+              <div style={{ borderTop: '1px solid var(--border-primary)', marginTop: 4, paddingTop: 4 }}>
+                <button
+                  onClick={() => { setHiddenSeries(new Set()); setContextMenu(null); }}
+                  style={{
+                    display: 'flex', alignItems: 'center', gap: 8,
+                    width: '100%', padding: '5px 12px',
+                    background: 'transparent', border: 'none', cursor: 'pointer',
+                    color: 'var(--text-secondary)', fontSize: 11, textAlign: 'left',
+                  }}
+                  onMouseEnter={e => (e.currentTarget.style.background = 'rgba(255,255,255,0.06)')}
+                  onMouseLeave={e => (e.currentTarget.style.background = 'transparent')}
+                >
+                  Show all
+                </button>
+              </div>
+            </div>
+          </>
+        );
+      })()}
+
+      </div>
+    </div>
+  );
+};
+
+// ═══════════════════════════════════════════════════════════════════════════
 // ChartRenderer — single component that dispatches to the right 2D chart
 // ═══════════════════════════════════════════════════════════════════════════
 

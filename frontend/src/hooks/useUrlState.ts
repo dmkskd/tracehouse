@@ -55,7 +55,7 @@ export interface AnalyticsUrlState {
 }
 
 const ANALYTICS_DEFAULTS: AnalyticsUrlState = {
-  tab: 'tables',
+  tab: 'dashboards',
   view: 'table',
   style: '2d',
   lookback: 7,

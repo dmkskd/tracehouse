@@ -6,14 +6,27 @@ testcontainers, matching the Altinity operator topology.
 
 from __future__ import annotations
 
+import tempfile
 import time
 from dataclasses import dataclass
-
 from clickhouse_driver import Client
 from testcontainers.core.container import DockerContainer
 from testcontainers.core.network import Network
 
 CH_IMAGE = "clickhouse/clickhouse-server:26.1-alpine"
+
+# Override default-password.xml to allow passwordless login.
+# Recent CH images auto-generate a random password; this disables that.
+USERS_CONFIG = """\
+<?xml version="1.0"?>
+<clickhouse>
+  <users>
+    <default>
+      <password></password>
+      <access_management>1</access_management>
+    </default>
+  </users>
+</clickhouse>"""
 
 KEEPER_CONFIG = """\
 <?xml version="1.0"?>
@@ -72,18 +85,38 @@ class ClusterContext:
     shard_count: int = 2
 
 
-def _write_config_and_start(image: str, network: Network, alias: str, config: str) -> DockerContainer:
-    """Start a ClickHouse container with the given XML config."""
+def _start_container(
+    image: str, network: Network, alias: str, config: str,
+    *,
+    config_filename: str = "cluster.xml",
+    exposed_ports: tuple[int, ...] = (8123, 9000),
+) -> DockerContainer:
+    """Start a ClickHouse container with XML config injected via a bind mount."""
+    # Write config to a temp file and bind-mount it into the container.
+    # This avoids fragile shell escaping with echo.
+    tmp = tempfile.NamedTemporaryFile(
+        mode="w", suffix=".xml", prefix=f"ch_{alias}_", delete=False,
+    )
+    tmp.write(config)
+    tmp.flush()
+    tmp.close()
+
+    config_path = f"/etc/clickhouse-server/config.d/{config_filename}"
+
+    # Users config: allow passwordless default user
+    users_tmp = tempfile.NamedTemporaryFile(
+        mode="w", suffix=".xml", prefix=f"ch_{alias}_users_", delete=False,
+    )
+    users_tmp.write(USERS_CONFIG)
+    users_tmp.flush()
+    users_tmp.close()
+
     c = DockerContainer(image)
     c.with_network(network)
     c.with_network_aliases(alias)
-    c.with_env("CLICKHOUSE_USER", "default")
-    c.with_env("CLICKHOUSE_PASSWORD", "")
-    c.with_exposed_ports(8123, 9000)
-    # Write config via a shell wrapper around the entrypoint
-    escaped = config.replace("'", "'\\''")
-    config_path = "/etc/clickhouse-server/config.d/cluster.xml"
-    c.with_command(f"bash -c 'echo '\"'\"'{escaped}'\"'\"' > {config_path} && /entrypoint.sh'")
+    c.with_exposed_ports(*exposed_ports)
+    c.with_volume_mapping(tmp.name, config_path, "ro")
+    c.with_volume_mapping(users_tmp.name, "/etc/clickhouse-server/users.d/default-password.xml", "ro")
     c.start()
     return c
 
@@ -93,24 +126,14 @@ def start_cluster() -> ClusterContext:
     network = Network()
     network.create()
 
-    keeper = _write_config_and_start(
-        CH_IMAGE, network, "keeper",
-        KEEPER_CONFIG.replace("cluster.xml", "keeper.xml"),
+    keeper = _start_container(
+        CH_IMAGE, network, "keeper", KEEPER_CONFIG,
+        config_filename="keeper.xml",
+        exposed_ports=(8123, 9181),
     )
-    # Override: keeper config goes to keeper.xml
-    keeper.stop()
-    keeper = DockerContainer(CH_IMAGE)
-    keeper.with_network(network)
-    keeper.with_network_aliases("keeper")
-    keeper.with_env("CLICKHOUSE_USER", "default")
-    keeper.with_env("CLICKHOUSE_PASSWORD", "")
-    keeper.with_exposed_ports(8123, 9181)
-    escaped = KEEPER_CONFIG.replace("'", "'\\''")
-    keeper.with_command(f"bash -c 'echo '\"'\"'{escaped}'\"'\"' > /etc/clickhouse-server/config.d/keeper.xml && /entrypoint.sh'")
-    keeper.start()
 
-    ch1 = _write_config_and_start(CH_IMAGE, network, "ch1", _ch_config("ch1", "01", "ch1"))
-    ch2 = _write_config_and_start(CH_IMAGE, network, "ch2", _ch_config("ch2", "02", "ch2"))
+    ch1 = _start_container(CH_IMAGE, network, "ch1", _ch_config("ch1", "01", "ch1"))
+    ch2 = _start_container(CH_IMAGE, network, "ch2", _ch_config("ch2", "02", "ch2"))
 
     client1 = Client(host=ch1.get_container_host_ip(), port=int(ch1.get_exposed_port(9000)))
     client2 = Client(host=ch2.get_container_host_ip(), port=int(ch2.get_exposed_port(9000)))
@@ -135,12 +158,14 @@ def stop_cluster(ctx: ClusterContext) -> None:
 
 def _wait_for_cluster(client: Client, expected_nodes: int, timeout: int) -> None:
     deadline = time.monotonic() + timeout
+    last_err: Exception | None = None
     while time.monotonic() < deadline:
         try:
             rows = client.execute("SELECT count() FROM system.clusters WHERE cluster = 'dev'")
             if rows and rows[0][0] >= expected_nodes:
                 return
-        except Exception:
-            pass
+        except Exception as exc:
+            last_err = exc
         time.sleep(2)
-    raise TimeoutError(f"Cluster did not reach {expected_nodes} nodes within {timeout}s")
+    detail = f" (last error: {last_err})" if last_err else ""
+    raise TimeoutError(f"Cluster did not reach {expected_nodes} nodes within {timeout}s{detail}")

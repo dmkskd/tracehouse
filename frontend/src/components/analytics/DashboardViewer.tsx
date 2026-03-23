@@ -18,7 +18,7 @@ import { TimeRangePicker } from './TimeRangePicker';
 import {
   formatCell,
   buildChartData, buildGroupedChartData, isGroupedChartType, sortRows,
-  ChartRenderer, isTimeSeriesChartType,
+  ChartRenderer, isTimeSeriesChartType, OverlayChart,
   type ChartDataPoint, type GroupedChartData, type DrillDownEvent, type CorrelationEntry,
 } from './charts';
 import { Chart3DCanvas } from './charts3d';
@@ -890,6 +890,9 @@ export const DashboardViewer: React.FC<{ initialDashboardId?: string }> = ({ ini
   }, [initialDashboardId, dashboards]);
   const [timeRangeOverride, setTimeRangeOverride] = useState<string | null>('1 HOUR');
 
+  // ─── Overlay mode ───
+  const [overlayVisible, setOverlayVisible] = useState(false);
+
   // ─── Cross-panel correlation ───
   const [correlationEnabled, setCorrelationEnabled] = useState(false);
   const [hoveredTimestamp, setHoveredTimestamp] = useState<string | null>(null);
@@ -899,10 +902,22 @@ export const DashboardViewer: React.FC<{ initialDashboardId?: string }> = ({ ini
   if (hoveredTimestamp) lastTimestampRef.current = hoveredTimestamp;
   const displayTimestamp = hoveredTimestamp ?? lastTimestampRef.current;
   const panelDataRef = useRef<Map<number, PanelTimeSeriesInfo>>(new Map());
+  const [panelDataVersion, setPanelDataVersion] = useState(0);
+  const panelDataTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const panelCallbacksRef = useRef<Map<number, (info: PanelTimeSeriesInfo | null) => void>>(new Map());
 
-  const handlePanelData = useCallback((panelIndex: number) => (info: PanelTimeSeriesInfo | null) => {
-    if (info) panelDataRef.current.set(panelIndex, info);
-    else panelDataRef.current.delete(panelIndex);
+  const handlePanelData = useCallback((panelIndex: number) => {
+    let cb = panelCallbacksRef.current.get(panelIndex);
+    if (!cb) {
+      cb = (info: PanelTimeSeriesInfo | null) => {
+        if (info) panelDataRef.current.set(panelIndex, info);
+        else panelDataRef.current.delete(panelIndex);
+        if (panelDataTimerRef.current) clearTimeout(panelDataTimerRef.current);
+        panelDataTimerRef.current = setTimeout(() => setPanelDataVersion(v => v + 1), 100);
+      };
+      panelCallbacksRef.current.set(panelIndex, cb);
+    }
+    return cb;
   }, []);
 
   // Collect correlation values sorted by panel order (matching dashboard layout)
@@ -1036,9 +1051,21 @@ export const DashboardViewer: React.FC<{ initialDashboardId?: string }> = ({ ini
             onClick={() => { setCorrelationEnabled(e => !e); setHoveredTimestamp(null); }}
             className={`tab${correlationEnabled ? ' active' : ''}`}
             style={{ border: '1px solid var(--border-primary)', padding: '6px 16px', fontSize: 12, cursor: 'pointer' }}
-            title="Cross-panel time correlation — hover one chart to see values across all panels"
+            title="Sync crosshair across all panels — hover one chart to see values across all"
           >
-            Correlate
+            Crosshair
+          </button>
+          <button
+            onClick={() => {
+              setOverlayVisible(v => !v);
+              // Auto-enable overlay to collect panel data
+              if (!correlationEnabled) setCorrelationEnabled(true);
+            }}
+            className={`tab${overlayVisible ? ' active' : ''}`}
+            style={{ border: '1px solid var(--border-primary)', padding: '6px 16px', fontSize: 12, cursor: 'pointer' }}
+            title="Correlate all time-series on one chart — hover a series to see correlation scores"
+          >
+            Correlate <span style={{ fontSize: 8, padding: '1px 4px', borderRadius: 3, background: 'rgba(234, 179, 8, 0.2)', color: '#eab308', border: '1px solid rgba(234, 179, 8, 0.3)', verticalAlign: 'super', marginLeft: 2 }}>beta</span>
           </button>
           <button onClick={() => handleExport(activeDashboard)} style={secondaryBtnStyle} title="Copy JSON to clipboard">Export</button>
           <button onClick={() => handleClone(activeDashboard)} style={secondaryBtnStyle}>Clone</button>
@@ -1051,6 +1078,19 @@ export const DashboardViewer: React.FC<{ initialDashboardId?: string }> = ({ ini
 
       {/* Grid of panels */}
       <div style={{ flex: 1, overflow: 'auto', padding: 24 }}>
+        {/* Overlay chart panel */}
+        {overlayVisible && (
+          <div style={{
+            height: 420,
+            marginBottom: 16,
+            borderBottom: '1px solid var(--border-primary)',
+            background: 'var(--bg-primary)',
+          }}>
+            <OverlayChart
+              panels={panelDataVersion >= 0 ? Array.from(panelDataRef.current.entries()).sort((a, b) => a[0] - b[0]).map(([, v]) => v) : []}
+            />
+          </div>
+        )}
         <div style={{
           display: 'grid',
           gridTemplateColumns: `repeat(${activeDashboard.columns}, 1fr)`,

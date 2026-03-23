@@ -43,6 +43,10 @@ interface XRaySceneProps {
   sampleCounts?: Map<number, number> | null;  // profiler sample counts per second
   sampleOffset?: number;  // offset between queryStartTime and first process sample
   onShowFlamegraphForT?: (t: number) => void;
+  // Stacked per-host breakdown mode
+  stackedView?: boolean;
+  hostSamples?: Map<string, ProcessSample[]>;
+  hosts?: string[];
 }
 
 /* ── Helpers ─────────────────────────────────────────────────────────── */
@@ -250,6 +254,172 @@ function buildWallGeo(
   geo.computeVertexNormals();
   return geo;
 }
+
+/* ── Index-based wall geometry builder ──────────────────────────────── */
+
+function buildWallGeoIdx(
+  n: number,
+  getEdge: (i: number) => [number, number, number, number, number, number],
+  baseColor: THREE.Color,
+  intensityFn: (i: number) => number,
+): THREE.BufferGeometry | null {
+  if (n < 2) return null;
+  const positions: number[] = [], colors: number[] = [], indices: number[] = [];
+  for (let i = 0; i < n; i++) {
+    const [x1, y1, z1, x2, y2, z2] = getEdge(i);
+    const c = baseColor.clone().multiplyScalar(0.3 + intensityFn(i) * 0.7);
+    positions.push(x1, y1, z1, x2, y2, z2);
+    colors.push(c.r, c.g, c.b, c.r, c.g, c.b);
+  }
+  for (let i = 0; i < n - 1; i++) {
+    const a = i * 2;
+    indices.push(a, a + 2, a + 1, a + 1, a + 2, a + 3);
+  }
+  const geo = new THREE.BufferGeometry();
+  geo.setAttribute('position', new THREE.Float32BufferAttribute(positions, 3));
+  geo.setAttribute('color', new THREE.Float32BufferAttribute(colors, 3));
+  geo.setIndex(indices);
+  geo.computeVertexNormals();
+  return geo;
+}
+
+/* ── Stacked corridor (per-host breakdown) ──────────────────────────── */
+
+const HOST_COLORS = [
+  new THREE.Color(0xddaa33),  // gold
+  new THREE.Color(0x5577dd),  // blue
+  new THREE.Color(0x33bbaa),  // teal
+  new THREE.Color(0xbb55cc),  // purple
+  new THREE.Color(0x55cc55),  // green
+  new THREE.Color(0xdd5555),  // red
+  new THREE.Color(0xff8844),  // orange
+  new THREE.Color(0x88aadd),  // light blue
+];
+
+/* ── Split view: per-host lanes ────────────────────────────────────── */
+
+const SplitCorridorMesh: React.FC<{
+  hostSamples: Map<string, ProcessSample[]>;
+  hosts: string[];
+  maxT: number;
+  maxCpu: number;
+  maxMem: number;
+}> = ({ hostSamples, hosts, maxT, maxCpu, maxMem }) => {
+  const N = hosts.length;
+  const laneGap = 0.3;
+  const usableY = MAX_Y - laneGap * (N - 1);
+  const laneW = usableY / N;
+
+  const lanes = useMemo(() => {
+    return hosts.map((host, hi) => {
+      const samples = hostSamples.get(host) || [];
+      const n = samples.length;
+      if (n < 2) return null;
+
+      const color = HOST_COLORS[hi % HOST_COLORS.length];
+      const laneY = hi * (laneW + laneGap);
+      const sCpu = smooth(samples.map(s => s.d_cpu_cores), 5);
+      const sMem = smooth(samples.map(s => s.memory_mb), 5);
+      const cpuInLane = (v: number) => maxCpu > 0 ? (v / maxCpu) * laneW : 0;
+
+      // Back wall: y=laneY, z=0..mem
+      const backGeo = buildWallGeoIdx(n, i => {
+        const x = mapT(samples[i].t, maxT);
+        return [x, laneY, 0, x, laneY, mapMem(sMem[i], maxMem)];
+      }, color, i => maxMem > 0 ? sMem[i] / maxMem : 0);
+
+      // Front wall: y=laneY+cpu, z=0..mem
+      const frontGeo = buildWallGeoIdx(n, i => {
+        const x = mapT(samples[i].t, maxT);
+        const y = laneY + cpuInLane(sCpu[i]);
+        return [x, y, 0, x, y, mapMem(sMem[i], maxMem)];
+      }, color, i => maxCpu > 0 ? sCpu[i] / maxCpu : 0);
+
+      // Floor: z=0, y=laneY..laneY+cpu
+      const floorGeo = buildWallGeoIdx(n, i => {
+        const x = mapT(samples[i].t, maxT);
+        return [x, laneY, 0, x, laneY + cpuInLane(sCpu[i]), 0];
+      }, color, () => 0.3);
+
+      // Ceiling: z=mem, y=laneY..laneY+cpu
+      const ceilingGeo = buildWallGeoIdx(n, i => {
+        const x = mapT(samples[i].t, maxT);
+        const mem = mapMem(sMem[i], maxMem);
+        return [x, laneY, mem, x, laneY + cpuInLane(sCpu[i]), mem];
+      }, color, i => maxMem > 0 ? sMem[i] / maxMem : 0);
+
+      // Edge lines
+      const frontTop: THREE.Vector3[] = [];
+      const backTop: THREE.Vector3[] = [];
+      const frontBot: THREE.Vector3[] = [];
+      for (let i = 0; i < n; i++) {
+        const x = mapT(samples[i].t, maxT);
+        const cpu = cpuInLane(sCpu[i]);
+        const mem = mapMem(sMem[i], maxMem);
+        frontTop.push(new THREE.Vector3(x, laneY + cpu, mem));
+        backTop.push(new THREE.Vector3(x, laneY, mem));
+        frontBot.push(new THREE.Vector3(x, laneY + cpu, 0));
+      }
+
+      const peakMem = Math.max(...samples.map(s => s.memory_mb), 0);
+      const peakCpu = Math.max(...samples.map(s => s.d_cpu_cores), 0);
+
+      return { host, color, backGeo, frontGeo, floorGeo, ceilingGeo,
+        frontTop, backTop, frontBot, laneY, peakMem, peakCpu };
+    });
+  }, [hosts, hostSamples, maxT, maxCpu, maxMem, laneW, laneGap]);
+
+  return (
+    <group>
+      {lanes.map((lane, i) => {
+        if (!lane) return null;
+        const hex = '#' + lane.color.getHexString();
+        return (
+          <group key={i}>
+            {lane.backGeo && <mesh geometry={lane.backGeo}>
+              <meshStandardMaterial vertexColors transparent opacity={0.55} side={THREE.DoubleSide} depthWrite={false} />
+            </mesh>}
+            {lane.frontGeo && <mesh geometry={lane.frontGeo}>
+              <meshStandardMaterial vertexColors transparent opacity={0.45} side={THREE.DoubleSide} depthWrite={false} />
+            </mesh>}
+            {lane.floorGeo && <mesh geometry={lane.floorGeo}>
+              <meshStandardMaterial vertexColors transparent opacity={0.3} side={THREE.DoubleSide} depthWrite={false} />
+            </mesh>}
+            {lane.ceilingGeo && <mesh geometry={lane.ceilingGeo}>
+              <meshStandardMaterial vertexColors transparent opacity={0.4} side={THREE.DoubleSide} depthWrite={false} />
+            </mesh>}
+            {lane.frontTop.length > 1 && <Line points={lane.frontTop} color={hex} lineWidth={2.5} />}
+            {lane.backTop.length > 1 && <Line points={lane.backTop} color={hex} lineWidth={2} />}
+            {lane.frontBot.length > 1 && <Line points={lane.frontBot} color={hex} lineWidth={1.5} />}
+            {/* Lane separator */}
+            <Line points={[
+              new THREE.Vector3(0, lane.laneY, 0),
+              new THREE.Vector3(RUNWAY_X, lane.laneY, 0),
+            ]} color="#1e2540" lineWidth={1} />
+          </group>
+        );
+      })}
+      {/* Host labels at the front of each lane */}
+      {lanes.map((lane, i) => {
+        if (!lane) return null;
+        const hex = '#' + lane.color.getHexString();
+        return (
+          <Html key={`lbl-${i}`} position={[RUNWAY_X + 0.5, lane.laneY + laneW / 2, 0]}
+            style={{ pointerEvents: 'none' }}>
+            <div style={{
+              fontFamily: 'monospace', fontSize: 10, fontWeight: 600,
+              color: hex, whiteSpace: 'nowrap', lineHeight: 1.4,
+              textShadow: '0 0 6px rgba(0,0,0,0.9)',
+            }}>
+              <div>{lane.host.length > 22 ? lane.host.slice(0, 10) + '…' + lane.host.slice(-10) : lane.host}</div>
+              <div style={{ fontSize: 9, opacity: 0.7 }}>{fmtMB(lane.peakMem)} · {lane.peakCpu.toFixed(1)}c</div>
+            </div>
+          </Html>
+        );
+      })}
+    </group>
+  );
+};
 
 /* ── Corridor ──────────────────────────────────────────────────────── */
 
@@ -666,7 +836,7 @@ const HoverTooltip: React.FC<{
 
 /* ── 3D Scene ──────────────────────────────────────────────────────── */
 
-const XRayScene: React.FC<XRaySceneProps> = ({ samples, highlightTime, highlightLabel, sampleCounts, sampleOffset = 0, onShowFlamegraphForT }) => {
+const XRayScene: React.FC<XRaySceneProps> = ({ samples, highlightTime, highlightLabel, sampleCounts, sampleOffset = 0, onShowFlamegraphForT, stackedView, hostSamples, hosts }) => {
   const maxT = useMemo(() => Math.max(...samples.map(s => s.t), 1), [samples]);
   const maxCpu = useMemo(() => Math.max(...samples.map(s => s.d_cpu_cores), 1), [samples]);
   const maxMem = useMemo(() => Math.max(...samples.map(s => s.memory_mb), 1), [samples]);
@@ -686,10 +856,20 @@ const XRayScene: React.FC<XRaySceneProps> = ({ samples, highlightTime, highlight
       <directionalLight position={[-8, 8, -5]} intensity={0.4} color="#aabbff" />
 
       <CageAndAxes maxT={maxT} maxCpu={maxCpu} maxMem={maxMem} />
-      <CorridorMesh samples={samples} maxT={maxT} maxCpu={maxCpu} maxMem={maxMem}
-        smoothCpu={smoothCpu} smoothMem={smoothMem} />
-      <InnerTraces samples={samples} maxT={maxT} maxCpu={maxCpu} maxMem={maxMem}
-        smoothCpu={smoothCpu} smoothMem={smoothMem} />
+      {stackedView && hostSamples && hosts && hosts.length > 1 ? (
+        <SplitCorridorMesh
+          hostSamples={hostSamples}
+          hosts={hosts}
+          maxT={maxT}
+          maxCpu={maxCpu}
+          maxMem={maxMem}
+        />
+      ) : (
+        <CorridorMesh samples={samples} maxT={maxT} maxCpu={maxCpu} maxMem={maxMem}
+          smoothCpu={smoothCpu} smoothMem={smoothMem} />
+      )}
+      {!stackedView && <InnerTraces samples={samples} maxT={maxT} maxCpu={maxCpu} maxMem={maxMem}
+        smoothCpu={smoothCpu} smoothMem={smoothMem} />}
       <TimeHighlight
         samples={samples}
         highlightTime={highlightTime}
@@ -1010,6 +1190,7 @@ export const QueryXRay3D: React.FC<QueryXRay3DProps> = ({
   const timeScopedFlamegraph = useTimeScopedFlamegraph();
   const [showFlamegraphPopup, setShowFlamegraphPopup] = useState(false);
   const [selectedHost, setSelectedHost] = useState<string | null>(null);
+  const [stackedView, setStackedView] = useState(false);
   const [scrubberMode, setScrubberMode] = useState<ScrubberMode>('time');
   const [scrubberIdx, setScrubberIdx] = useState(0);
 
@@ -1277,16 +1458,23 @@ export const QueryXRay3D: React.FC<QueryXRay3DProps> = ({
         }}>
           <HostTab
             label="All"
-            active={selectedHost === null}
-            onClick={() => { setSelectedHost(null); setScrubberIdx(0); }}
+            active={selectedHost === null && !stackedView}
+            onClick={() => { setSelectedHost(null); setStackedView(false); setScrubberIdx(0); }}
           />
+          <HostTab
+            label="Split"
+            title="Show each host in its own lane for direct comparison"
+            active={selectedHost === null && stackedView}
+            onClick={() => { setSelectedHost(null); setStackedView(true); setScrubberIdx(0); }}
+          />
+          <span style={{ color: '#333', margin: '0 2px' }}>│</span>
           {hosts.map(h => (
             <HostTab
               key={h}
               label={h.length > 18 ? h.slice(0, 8) + '...' + h.slice(-8) : h}
               title={h}
               active={selectedHost === h}
-              onClick={() => { setSelectedHost(h); setScrubberIdx(0); }}
+              onClick={() => { setSelectedHost(h); setStackedView(false); setScrubberIdx(0); }}
             />
           ))}
           <span style={{ color: '#555', marginLeft: 4 }}>{hosts.length} hosts</span>
@@ -1326,9 +1514,41 @@ export const QueryXRay3D: React.FC<QueryXRay3DProps> = ({
             sampleCounts={sampleCounts}
             sampleOffset={sampleOffset}
             onShowFlamegraphForT={handleShowFlamegraphForT}
+            stackedView={stackedView && selectedHost === null}
+            hostSamples={hostSamples}
+            hosts={hosts}
           />
         </Canvas>
-        {/* Axis legend overlay */}
+        {/* Host color legend — shown in stacked mode */}
+        {stackedView && selectedHost === null && multiHost && (
+          <div style={{
+            position: 'absolute', top: 8, right: 8, zIndex: 10,
+            background: 'rgba(10, 10, 30, 0.85)',
+            border: '1px solid rgba(100, 110, 250, 0.25)',
+            borderRadius: 6, padding: '6px 10px',
+            fontFamily: 'monospace', fontSize: 10,
+          }}>
+            {hosts.map((h, i) => {
+              const hSamples = hostSamples.get(h) || [];
+              const hPeakMem = Math.max(...hSamples.map(s => s.memory_mb), 0);
+              const hPeakCpu = Math.max(...hSamples.map(s => s.d_cpu_cores), 0);
+              return (
+                <div key={h} style={{ display: 'flex', alignItems: 'center', gap: 6, marginBottom: i < hosts.length - 1 ? 4 : 0 }}>
+                  <span style={{
+                    width: 10, height: 10, borderRadius: 2, flexShrink: 0,
+                    background: '#' + HOST_COLORS[i % HOST_COLORS.length].getHexString(),
+                  }} />
+                  <span style={{ color: '#aaa', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', maxWidth: 150 }}>
+                    {h.length > 20 ? h.slice(0, 10) + '…' + h.slice(-8) : h}
+                  </span>
+                  <span style={{ color: '#666', flexShrink: 0 }}>
+                    {fmtMB(hPeakMem)} · {hPeakCpu.toFixed(1)}c
+                  </span>
+                </div>
+              );
+            })}
+          </div>
+        )}
         {/* Flamegraph button — floats above the scrubber in the canvas area */}
         {currentTimeWindow && (
           <button
