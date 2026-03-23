@@ -80,13 +80,13 @@ export function parseVerticalMergeProgress(logs: MergeTextLog[]): VerticalMergeP
   const t0 = parseMicroseconds(logs[0].event_time_microseconds);
   if (isNaN(t0)) return null;
 
-  const segments: VerticalMergeSegment[] = [];
+  let segments: VerticalMergeSegment[] = [];
   let prevEndMs = 0;
 
   // Track columns we see "Reading" for, keyed by column name.
   // Value: { firstReadMs, rows } from the first Reading log for that column.
-  const readColumns = new Map<string, { firstReadMs: number; rows: number }>();
-  const gatheredColumns = new Set<string>();
+  let readColumns = new Map<string, { firstReadMs: number; rows: number }>();
+  let gatheredColumns = new Set<string>();
 
   for (const log of logs) {
     const ms = parseMicroseconds(log.event_time_microseconds) - t0;
@@ -94,6 +94,16 @@ export function parseVerticalMergeProgress(logs: MergeTextLog[]): VerticalMergeP
     // Horizontal stage end
     const sortedMatch = log.message.match(MERGED_SORTED_RE);
     if (sortedMatch) {
+      // If we already have a PK merge segment, this is a retry of the same
+      // merge (same query_id / result part). Reset and keep only the latest
+      // attempt — the earlier one was abandoned or failed.
+      if (segments.length > 0) {
+        segments = [];
+        prevEndMs = 0;
+        readColumns = new Map();
+        gatheredColumns = new Set();
+      }
+
       const duration_sec = parseFloat(sortedMatch[3]);
       segments.push({
         name: 'PK merge',

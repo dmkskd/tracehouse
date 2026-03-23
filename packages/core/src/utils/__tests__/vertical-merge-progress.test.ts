@@ -107,4 +107,56 @@ describe('parseVerticalMergeProgress', () => {
     // _block_offset should be roughly 16s (its gather time), not 315s
     expect(boSeg.duration_sec).toBeLessThan(30);
   });
+
+  it('keeps only the last attempt when a merge is retried (two PK merges)', () => {
+    // Simulates a failed merge (679) followed by a successful retry (676).
+    // Both share the same query_id because the result part name is identical.
+    const logs: MergeTextLog[] = [
+      // --- Attempt 1 (MergeMutate 679): PK merge, slow ---
+      mkLog('2026-03-23 20:30:00', '2026-03-23 20:30:00.263000',
+        'MergeTask::PrepareStage', 679,
+        'Selected MergeAlgorithm: Vertical'),
+      mkLog('2026-03-23 21:06:44', '2026-03-23 21:06:44.083000',
+        'MergingSortedTransform', 679,
+        'Merged sorted, 73118 blocks, 598500000 rows, 4788000000 bytes in 60.336 sec., 9919356.07 rows/sec., 75.68 MiB/sec.'),
+
+      // Attempt 1 started reading trip_id but never gathered it (abandoned)
+      mkLog('2026-03-23 21:06:44', '2026-03-23 21:06:44.091000',
+        'MergeTreeSequentialSource', 679,
+        'Reading 13200 marks from part 202602_161_376_3, total 108000000 rows starting from the beginning of the part, column trip_id'),
+
+      // --- Attempt 2 (MergeMutate 676): PK merge, fast ---
+      mkLog('2026-03-23 21:15:31', '2026-03-23 21:15:31.219000',
+        'MergeTask::PrepareStage', 676,
+        'Selected MergeAlgorithm: Vertical'),
+      mkLog('2026-03-23 21:15:43', '2026-03-23 21:15:43.034000',
+        'MergingSortedTransform', 676,
+        'Merged sorted, 73118 blocks, 598500000 rows, 4788000000 bytes in 7.923 sec., 75539979.08 rows/sec., 576.32 MiB/sec.'),
+
+      // Attempt 2 gathers trip_id successfully
+      mkLog('2026-03-23 21:16:02', '2026-03-23 21:16:02.592000',
+        'ColumnGathererStream', 676,
+        'Gathered column trip_id, 73458 blocks, 598500000 rows, 6963917808 bytes in 0.604 sec., 990894039.74 rows/sec., 10.74 GiB/sec.'),
+
+      // Attempt 2 gathers dropoff_datetime
+      mkLog('2026-03-23 21:16:16', '2026-03-23 21:16:16.421000',
+        'ColumnGathererStream', 676,
+        'Gathered column dropoff_datetime, 73458 blocks, 598500000 rows, 3484556024 bytes in 0.524 sec., 1142175572.52 rows/sec., 6.19 GiB/sec.'),
+    ];
+
+    const result = parseVerticalMergeProgress(logs);
+    expect(result).not.toBeNull();
+
+    const names = result!.segments.map(s => s.name);
+    // Should have exactly ONE PK merge (from attempt 2), not two
+    expect(names.filter(n => n === 'PK merge')).toHaveLength(1);
+
+    // Should have the gathered columns from attempt 2
+    expect(names).toContain('trip_id');
+    expect(names).toContain('dropoff_datetime');
+
+    // PK merge duration should be ~7.9s (attempt 2), not ~60s (attempt 1)
+    const pk = result!.segments.find(s => s.name === 'PK merge')!;
+    expect(pk.duration_sec).toBeCloseTo(7.923, 1);
+  });
 });
