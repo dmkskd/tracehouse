@@ -536,8 +536,8 @@ export const LineChart2D: React.FC<{ data: ChartDataPoint[]; fullHeight?: boolea
     <ResponsiveContainer width="100%" height={fullHeight ? '100%' : 280} minHeight={fullHeight ? 180 : undefined}>
       <RLineChart data={rechartsData} margin={{ top: 5, right: 20, left: 10, bottom: 5 }}
         style={drillable ? { cursor: 'pointer' } : undefined}
-        onClick={drillable ? (e: { activeLabel?: string }) => { if (e?.activeLabel) { const row = data.find(d => d.label === e.activeLabel); if (row) onDrillDown!({ label: row.label, value: row.value }); } } : undefined}
-        onMouseMove={onTimestampHover ? (e: { activeLabel?: string }) => { if (e?.activeLabel) onTimestampHover(e.activeLabel); } : undefined}
+        onClick={drillable ? (e: any) => { if (e?.activeLabel) { const row = data.find(d => d.label === e.activeLabel); if (row) onDrillDown!({ label: row.label, value: row.value }); } } : undefined}
+        onMouseMove={onTimestampHover ? (e: any) => { if (e?.activeLabel) onTimestampHover(e.activeLabel); } : undefined}
         onMouseLeave={onTimestampHover ? () => onTimestampHover(null) : undefined}
       >
         <CartesianGrid strokeDasharray="3 3" stroke={gridStroke} />
@@ -564,7 +564,7 @@ export const LineChart2D: React.FC<{ data: ChartDataPoint[]; fullHeight?: boolea
           stroke={c}
           strokeWidth={2}
           dot={false}
-          activeDot={(props: Record<string, unknown>) => (
+          activeDot={(props: any) => (
             <PulsatingDot cx={props.cx as number} cy={props.cy as number} fill={c} drillable={drillable} />
           )}
           animationDuration={300}
@@ -646,8 +646,8 @@ export const AreaChart2D: React.FC<{ data: ChartDataPoint[]; fullHeight?: boolea
     <ResponsiveContainer width="100%" height={fullHeight ? '100%' : 280} minHeight={fullHeight ? 180 : undefined}>
       <RAreaChart data={rechartsData} margin={{ top: 5, right: 20, left: 10, bottom: 5 }}
         style={drillable ? { cursor: 'pointer' } : undefined}
-        onClick={drillable ? (e: { activeLabel?: string }) => { if (e?.activeLabel) { const row = data.find(d => d.label === e.activeLabel); if (row) onDrillDown!({ label: row.label, value: row.value }); } } : undefined}
-        onMouseMove={onTimestampHover ? (e: { activeLabel?: string }) => { if (e?.activeLabel) onTimestampHover(e.activeLabel); } : undefined}
+        onClick={drillable ? (e: any) => { if (e?.activeLabel) { const row = data.find(d => d.label === e.activeLabel); if (row) onDrillDown!({ label: row.label, value: row.value }); } } : undefined}
+        onMouseMove={onTimestampHover ? (e: any) => { if (e?.activeLabel) onTimestampHover(e.activeLabel); } : undefined}
         onMouseLeave={onTimestampHover ? () => onTimestampHover(null) : undefined}
       >
         <defs>
@@ -681,7 +681,7 @@ export const AreaChart2D: React.FC<{ data: ChartDataPoint[]; fullHeight?: boolea
           strokeWidth={2}
           fill={`url(#${gradId})`}
           dot={false}
-          activeDot={(props: Record<string, unknown>) => (
+          activeDot={(props: any) => (
             <PulsatingDot cx={props.cx as number} cy={props.cy as number} fill={c} drillable={drillable} />
           )}
           animationDuration={300}
@@ -709,8 +709,8 @@ export const DualAxisAreaChart2D: React.FC<{ data: GroupedChartData[]; valueColu
     <ResponsiveContainer width="100%" height={fullHeight ? '100%' : 280} minHeight={fullHeight ? 180 : undefined}>
       <RAreaChart data={rows} margin={{ top: 5, right: 60, left: 10, bottom: 5 }}
         style={drillable ? { cursor: 'pointer' } : undefined}
-        onClick={drillable ? (e: { activeLabel?: string }) => { if (e?.activeLabel) onDrillDown!({ label: e.activeLabel, value: 0 }); } : undefined}
-        onMouseMove={onTimestampHover ? (e: { activeLabel?: string }) => { if (e?.activeLabel) onTimestampHover(e.activeLabel); } : undefined}
+        onClick={drillable ? (e: any) => { if (e?.activeLabel) onDrillDown!({ label: e.activeLabel, value: 0 }); } : undefined}
+        onMouseMove={onTimestampHover ? (e: any) => { if (e?.activeLabel) onTimestampHover(e.activeLabel); } : undefined}
         onMouseLeave={onTimestampHover ? () => onTimestampHover(null) : undefined}
       >
         <defs>
@@ -739,12 +739,12 @@ export const DualAxisAreaChart2D: React.FC<{ data: GroupedChartData[]; valueColu
         )} />
         <Area type="monotone" dataKey={leftCol} yAxisId="left" stroke={leftColor} strokeWidth={2}
           fill={`url(#${gradIdLeft})`} dot={false}
-          activeDot={(props: Record<string, unknown>) => (
+          activeDot={(props: any) => (
             <PulsatingDot cx={props.cx as number} cy={props.cy as number} fill={leftColor} drillable={drillable} />
           )} animationDuration={300} />
         <Area type="monotone" dataKey={rightCol} yAxisId="right" stroke={rightColor} strokeWidth={2}
           fill={`url(#${gradIdRight})`} dot={false}
-          activeDot={(props: Record<string, unknown>) => (
+          activeDot={(props: any) => (
             <PulsatingDot cx={props.cx as number} cy={props.cy as number} fill={rightColor} drillable={drillable} />
           )} animationDuration={300} />
       </RAreaChart>
@@ -890,8 +890,8 @@ export const GroupedLineChart2D: React.FC<{ data: GroupedChartData[]; onDrillDow
     <ResponsiveContainer width="100%" height={320}>
       <RLineChart data={rows} margin={{ top: 10, right: 20, left: 10, bottom: 5 }}
         style={onDrillDown ? { cursor: 'pointer' } : undefined}
-        onClick={onDrillDown ? (e: { activeLabel?: string }) => { if (e?.activeLabel) onDrillDown({ label: e.activeLabel, value: 0 }); } : undefined}
-        onMouseMove={onTimestampHover ? (e: { activeLabel?: string }) => { if (e?.activeLabel) onTimestampHover(e.activeLabel); } : undefined}
+        onClick={onDrillDown ? (e: any) => { if (e?.activeLabel) onDrillDown({ label: e.activeLabel, value: 0 }); } : undefined}
+        onMouseMove={onTimestampHover ? (e: any) => { if (e?.activeLabel) onTimestampHover(e.activeLabel); } : undefined}
         onMouseLeave={onTimestampHover ? () => onTimestampHover(null) : undefined}
       >
         <CartesianGrid strokeDasharray="3 3" stroke={gridStroke} />
@@ -921,7 +921,7 @@ export const GroupedLineChart2D: React.FC<{ data: GroupedChartData[]; onDrillDow
             strokeWidth={hoveredLine === name ? 3 : 2}
             strokeOpacity={hoveredLine && hoveredLine !== name ? 0.2 : 1}
             dot={false}
-            activeDot={(props: Record<string, unknown>) => (
+            activeDot={(props: any) => (
               <PulsatingDot cx={props.cx as number} cy={props.cy as number} fill={colorMap[name]} drillable={!!onDrillDown} />
             )}
             animationDuration={300}
