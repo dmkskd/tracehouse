@@ -29,7 +29,7 @@ export const useUserPreferenceStore = create<UserPreferenceState>()(
       toggleViewMode: () => set({ preferredViewMode: get().preferredViewMode === '3d' ? '2d' : '3d' }),
       killQueriesEnabled: false,
       setKillQueriesEnabled: (enabled) => set({ killQueriesEnabled: enabled }),
-      experimentalEnabled: false,
+      experimentalEnabled: true,
       setExperimentalEnabled: (enabled) => set({ experimentalEnabled: enabled }),
     }),
     { name: 'tracehouse-view-preference' }
