@@ -92,6 +92,9 @@ module.exports = (env) => {
           resource.request = resource.request.replace(/^node:/, '');
         }
       ),
+      // The jfrview wasm binary is inlined as base64 in the speedscope-widget bundle,
+      // but webpack still tries to resolve the original .wasm import path. Ignore it.
+      new webpack.IgnorePlugin({ resourceRegExp: /jfrview_bg\.wasm$/ }),
       new CopyWebpackPlugin({
         patterns: [
           { from: 'src/plugin.json', to: '.' },
