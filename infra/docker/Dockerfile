@@ -7,11 +7,12 @@ WORKDIR /app
 COPY package.json package-lock.json* ./
 COPY packages/core/package.json packages/core/
 COPY packages/ui-shared/package.json packages/ui-shared/
-COPY packages/proxy/package.json packages/proxy/
+COPY packages/proxy/ packages/proxy/
 COPY frontend/package.json frontend/
 
 # Install all workspace deps
 # Delete macOS lock file — npm/cli#4828 causes it to skip Linux optional deps (e.g. rollup native bindings)
+# Note: proxy source is copied above because its `prepare` script runs `tsc` during install
 RUN rm -f package-lock.json && npm install --workspaces --include-workspace-root
 
 # Copy source for workspace packages + frontend
