@@ -20,11 +20,13 @@ import {
   GET_MERGE_HISTORY_BY_PART_NAME,
   GET_TABLE_COLUMNS,
   GET_MERGE_THROUGHPUT_ESTIMATE,
+  GET_TABLE_ENGINES,
 } from '../queries/merge-queries.js';
 import { buildQuery, tagQuery, eventDateBound } from '../queries/builder.js';
 import { TAB_MERGES, sourceTag } from '../queries/source-tags.js';
 import { mapMergeInfo, mapMergeHistoryRecord, mapMutationInfo, mapMutationHistoryRecord, mapBackgroundPoolMetrics, mapMergeTextLog } from '../mappers/merge-mappers.js';
 import { stripMutationVersion } from '../utils/part-name-parser.js';
+import { markReplicaMerges, markReplicaMergeHistory, isDeduplicatingEngine } from '../utils/merge-classification.js';
 
 export class MergeTrackerError extends Error {
   constructor(message: string, public readonly cause?: Error) {
@@ -64,14 +66,51 @@ function injectThresholdFilters(sql: string, opts: MergeHistoryOptions): string 
 
 export class MergeTracker {
   private uuidCache = new Map<string, string>();
+  /** Cache: "db\0table" → engine name. Refreshed on each getMergeHistory call. */
+  private engineCache = new Map<string, string>();
 
   constructor(private adapter: IClickHouseAdapter) {}
+
+  /**
+   * Fetch table engines and update the cache.
+   * Lightweight query — one row per table, no part data.
+   */
+  private async refreshEngineCache(): Promise<void> {
+    try {
+      const rows = await this.adapter.executeQuery<{ database: string; table: string; engine: string }>(
+        tagQuery(GET_TABLE_ENGINES, sourceTag(TAB_MERGES, 'tableEngines'))
+      );
+      this.engineCache.clear();
+      for (const r of rows) {
+        this.engineCache.set(`${r.database}\0${r.table}`, String(r.engine));
+      }
+    } catch {
+      // Non-fatal — records will just lack engine info
+    }
+  }
+
+  /**
+   * Enrich merge history records with table engine info and fix
+   * LightweightDelete misclassification on dedup engines.
+   */
+  private enrichWithEngineInfo(records: MergeHistoryRecord[]): void {
+    for (const r of records) {
+      const engine = this.engineCache.get(`${r.database}\0${r.table}`);
+      if (engine) {
+        r.table_engine = engine;
+        // Fix false positive: dedup engines naturally lose rows during merges
+        if (r.merge_reason === 'LightweightDelete' && isDeduplicatingEngine(engine)) {
+          r.merge_reason = 'Regular';
+        }
+      }
+    }
+  }
 
   async getActiveMerges(database?: string, table?: string): Promise<MergeInfo[]> {
     try {
       const rows = await this.adapter.executeQuery(tagQuery(GET_ACTIVE_MERGES, sourceTag(TAB_MERGES, 'activeMerges')));
       let merges = rows.map(mapMergeInfo);
-      
+
       // Filter by database/table if specified
       if (database) {
         merges = merges.filter(m => m.database === database);
@@ -79,7 +118,10 @@ export class MergeTracker {
       if (table) {
         merges = merges.filter(m => m.table === table);
       }
-      
+
+      // Detect replica merges: same result_part_name from different hosts
+      markReplicaMerges(merges);
+
       return merges;
     } catch (error) {
       throw new MergeTrackerError('Failed to get active merges', error as Error);
@@ -98,8 +140,21 @@ export class MergeTracker {
         sql = buildQuery(GET_ALL_MERGE_HISTORY, { limit });
       }
       sql = injectThresholdFilters(sql, options);
-      const rows = await this.adapter.executeQuery(tagQuery(sql, sourceTag(TAB_MERGES, 'mergeHistory')));
-      return rows.map(mapMergeHistoryRecord);
+      // Fetch merge history and table engines in parallel
+      const [rows] = await Promise.all([
+        this.adapter.executeQuery(tagQuery(sql, sourceTag(TAB_MERGES, 'mergeHistory'))),
+        this.refreshEngineCache(),
+      ]);
+      let records = rows.map(mapMergeHistoryRecord);
+      // Enrich with engine info and fix dedup engine misclassification
+      this.enrichWithEngineInfo(records);
+      // Client-side table filter when database is not set (SQL only filters by table when database is also specified)
+      if (options.table && !options.database) {
+        records = records.filter(r => r.table === options.table);
+      }
+      // Detect replica merges: same part_name from different hosts
+      markReplicaMergeHistory(records);
+      return records;
     } catch (error) {
       throw new MergeTrackerError('Failed to get merge history', error as Error);
     }
@@ -128,7 +183,12 @@ export class MergeTracker {
       }
       // Note: do NOT apply injectThresholdFilters here — system.mutations lacks duration_ms/size_in_bytes columns
       const rows = await this.adapter.executeQuery(tagQuery(sql, sourceTag(TAB_MERGES, 'mutationHistory')));
-      return rows.map(mapMutationHistoryRecord);
+      let records = rows.map(mapMutationHistoryRecord);
+      // Client-side table filter when database is not set
+      if (options.table && !options.database) {
+        records = records.filter(r => r.table === options.table);
+      }
+      return records;
     } catch (error) {
       throw new MergeTrackerError('Failed to get mutation history', error as Error);
     }

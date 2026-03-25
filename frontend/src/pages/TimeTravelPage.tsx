@@ -71,6 +71,23 @@ if (typeof document !== 'undefined') {
   document.head.appendChild(style);
 }
 
+/** Format a Date (or ms timestamp) as a local datetime string matching <input type="datetime-local"> format. */
+function toLocalDatetimeStr(d: Date | number): string {
+  const date = typeof d === 'number' ? new Date(d) : d;
+  const pad = (n: number) => String(n).padStart(2, '0');
+  return `${date.getFullYear()}-${pad(date.getMonth() + 1)}-${pad(date.getDate())}T${pad(date.getHours())}:${pad(date.getMinutes())}`;
+}
+
+// Time range presets: each means "show last N hours in scrub bar, ending at now"
+const TIME_RANGES = [
+  { label: '1h', hoursAgo: 1 },
+  { label: '3h', hoursAgo: 3 },
+  { label: '6h', hoursAgo: 6 },
+  { label: '12h', hoursAgo: 12 },
+  { label: '1d', hoursAgo: 24 },
+  { label: 'Custom', hoursAgo: 1, custom: true },
+];
+
 type SortField = 'metric' | 'duration' | 'started';
 type SortDir = 'asc' | 'desc';
 
@@ -129,12 +146,18 @@ export const TimeTravelPage: React.FC = () => {
   const [selectedTimelineMerge, setSelectedTimelineMerge] = useState<MergeSeries | null>(null);
   const [selectedTimelineMutation, setSelectedTimelineMutation] = useState<MutationSeries | null>(null);
 
-  // Navigator state
-  const NAVIGATOR_HOURS = 1;
+  // Navigator state — range derived from selected time preset
+  const [selectedTimeRange, setSelectedTimeRange] = useState('1h');
   const [navigatorData, setNavigatorData] = useState<MemoryTimeline | null>(null);
   const [navigatorLoading, setNavigatorLoading] = useState(false);
   const lastNavigatorFetchTime = useRef<string | null>(null);
   const lastNavigatorMetric = useRef<MetricMode | null>(null);
+
+  // Navigator hours derived from selected time range preset
+  const navigatorHours = useMemo(() => {
+    const range = TIME_RANGES.find(r => r.label === selectedTimeRange);
+    return range?.hoursAgo ?? 1;
+  }, [selectedTimeRange]);
 
   // Dragging state: visual-only viewport position during drag (no main chart fetch)
   const [dragEndMs, setDragEndMs] = useState<number | null>(null);
@@ -312,11 +335,13 @@ export const TimeTravelPage: React.FC = () => {
   // Effective data: use zoom-enriched data when available, else base data
   const effectiveData = zoomData ?? data;
 
-  // Fetch extended navigator data (2 hours)
+  // Fetch navigator data spanning the selected time range (navigatorHours → now)
   const fetchNavigatorData = useCallback(async (force = false) => {
     if (!services) return;
-    const endDate = isLive ? new Date() : (customEndTime ? new Date(customEndTime) : new Date());
-    const endTimeKey = `${endDate.toISOString().slice(0, 13)}_${metricMode}`;
+    // Navigator always ends at "now" for presets; only Custom uses customEndTime
+    const isCustom = selectedTimeRange === 'Custom';
+    const endDate = isCustom && customEndTime ? new Date(customEndTime) : new Date();
+    const endTimeKey = `${endDate.toISOString().slice(0, 13)}_${metricMode}_${navigatorHours}`;
     if (!force && lastNavigatorFetchTime.current === endTimeKey) return;
     if (!force && navigatorData && lastNavigatorMetric.current === metricMode) {
       const navStart = new Date(navigatorData.window_start).getTime();
@@ -328,7 +353,7 @@ export const TimeTravelPage: React.FC = () => {
     }
     setNavigatorLoading(true);
     try {
-      const navigatorWindowSec = NAVIGATOR_HOURS * 60 * 60 / 2;
+      const navigatorWindowSec = navigatorHours * 60 * 60 / 2;
       const centerDate = new Date(endDate.getTime() - navigatorWindowSec * 1000);
       const result = await services.timelineService.getTimeline({
         timestamp: centerDate,
@@ -343,7 +368,7 @@ export const TimeTravelPage: React.FC = () => {
     } catch (e) {
       console.error('[TimeTravelPage] Navigator fetch error:', e);
     } finally { setNavigatorLoading(false); }
-  }, [services, isLive, customEndTime, NAVIGATOR_HOURS, navigatorData, windowSec, selectedHost, activityLimit, metricMode]);
+  }, [services, selectedTimeRange, customEndTime, navigatorHours, navigatorData, windowSec, selectedHost, activityLimit, metricMode]);
 
   // Debounced navigator fetch
   const navigatorFetchTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
@@ -380,7 +405,7 @@ export const TimeTravelPage: React.FC = () => {
     setDragEndMs(null);
     const now = Date.now();
     if (clampedEnd >= now - 30000) { setIsLive(true); setCustomEndTime(null); }
-    else { setIsLive(false); setCustomEndTime(new Date(clampedEnd).toISOString().slice(0, 16)); }
+    else { setIsLive(false); setCustomEndTime(toLocalDatetimeStr(clampedEnd)); }
   }, []);
 
   const viewportBounds = useMemo(() => {
@@ -455,17 +480,7 @@ export const TimeTravelPage: React.FC = () => {
     return sortItems(result);
   }, [data, inspectMs, zoomRange, metricMode, sortField, sortDir]);
 
-  // Time range presets (above early returns to keep hooks order stable)
-  const TIME_RANGES = [
-    { label: 'Now', isLive: true, endTime: null },
-    { label: '1h ago', isLive: false, hoursAgo: 1 },
-    { label: '3h ago', isLive: false, hoursAgo: 3 },
-    { label: '6h ago', isLive: false, hoursAgo: 6 },
-    { label: '12h ago', isLive: false, hoursAgo: 12 },
-    { label: '1d ago', isLive: false, hoursAgo: 24 },
-    { label: 'Custom', isLive: false, custom: true },
-  ];
-  const WINDOW_SIZES = [
+  const ALL_WINDOW_SIZES = [
     { label: '1m', sec: 30 },
     { label: '5m', sec: 150 },
     { label: '15m', sec: 450 },
@@ -474,7 +489,15 @@ export const TimeTravelPage: React.FC = () => {
     { label: '3h', sec: 5400 },
     { label: '6h', sec: 10800 },
   ];
-  const [selectedTimeRange, setSelectedTimeRange] = useState('Now');
+  // Filter zoom options: displayed span (sec*2) must be ≤ selected Last range
+  const maxZoomSec = navigatorHours * 3600;
+  const WINDOW_SIZES = ALL_WINDOW_SIZES.filter(w => w.sec * 2 <= maxZoomSec);
+  // If current windowSec exceeds the allowed max, clamp it down
+  useEffect(() => {
+    if (WINDOW_SIZES.length > 0 && !WINDOW_SIZES.some(w => w.sec === windowSec)) {
+      setWindowSec(WINDOW_SIZES[WINDOW_SIZES.length - 1].sec);
+    }
+  }, [navigatorHours]); // eslint-disable-line react-hooks/exhaustive-deps
   const [showCustomTime, setShowCustomTime] = useState(false);
 
   if (!services || !isConnected) {
@@ -502,15 +525,17 @@ export const TimeTravelPage: React.FC = () => {
   const handleTimeRangeChange = (rangeLabel: string) => {
     setSelectedTimeRange(rangeLabel);
     clearDragPosition();
+    // Invalidate navigator cache so the new range triggers a fresh fetch
+    lastNavigatorFetchTime.current = null;
+    setNavigatorData(null);
     const range = TIME_RANGES.find(r => r.label === rangeLabel);
     if (!range) return;
-    if (range.isLive) { setIsLive(true); setCustomEndTime(null); setShowCustomTime(false); }
-    else if (range.custom) {
+    if (range.custom) {
       setIsLive(false); setShowCustomTime(true);
-      if (!customEndTime) setCustomEndTime(new Date().toISOString().slice(0, 16));
-    } else if (range.hoursAgo) {
-      setIsLive(false); setShowCustomTime(false);
-      setCustomEndTime(new Date(Date.now() - range.hoursAgo * 60 * 60 * 1000).toISOString().slice(0, 16));
+      if (!customEndTime) setCustomEndTime(toLocalDatetimeStr(new Date()));
+    } else {
+      // All presets: live mode (right edge = now), scrub bar shows last N hours
+      setIsLive(true); setCustomEndTime(null); setShowCustomTime(false);
     }
   };
 
@@ -529,7 +554,7 @@ export const TimeTravelPage: React.FC = () => {
           <div style={{ display:'flex', alignItems:'center', gap:8 }}>
             {/* Time range selector */}
             <div style={{ display:'flex', alignItems:'center', gap:0, background:'var(--bg-tertiary)', borderRadius:6, border:'1px solid var(--border-primary)', overflow:'hidden' }}>
-              <span style={{ padding:'8px 10px', fontSize:11, color:'var(--text-muted)', borderRight:'1px solid var(--border-primary)', whiteSpace:'nowrap' }}>From</span>
+              <span style={{ padding:'8px 10px', fontSize:11, color:'var(--text-muted)', borderRight:'1px solid var(--border-primary)', whiteSpace:'nowrap' }}>Last</span>
               <select value={selectedTimeRange} onChange={(e) => handleTimeRangeChange(e.target.value)} title="Select time range starting point"
                 style={{ background:'transparent', color:'var(--text-primary)', border:'none', padding:'8px 12px', fontSize:13, outline:'none', cursor:'pointer', minWidth:90 }}>
                 {TIME_RANGES.map(r => <option key={r.label} value={r.label}>{r.label}</option>)}
@@ -542,7 +567,7 @@ export const TimeTravelPage: React.FC = () => {
 
             {/* Window size selector */}
             <div style={{ display:'flex', alignItems:'center', gap:0, background:'var(--bg-tertiary)', borderRadius:6, border:'1px solid var(--border-primary)', overflow:'hidden' }}>
-              <span style={{ padding:'8px 10px', fontSize:11, color:'var(--text-muted)', borderRight:'1px solid var(--border-primary)', whiteSpace:'nowrap' }}>Window</span>
+              <span style={{ padding:'8px 10px', fontSize:11, color:'var(--text-muted)', borderRight:'1px solid var(--border-primary)', whiteSpace:'nowrap' }}>Zoom</span>
               <select value={windowSec} onChange={(e) => setWindowSec(Number(e.target.value))} title="Select time window duration"
                 style={{ background:'transparent', color:'var(--text-primary)', border:'none', padding:'8px 12px', fontSize:13, outline:'none', cursor:'pointer', minWidth:60 }}>
                 {WINDOW_SIZES.map(w => <option key={w.sec} value={w.sec}>{w.label}</option>)}
@@ -854,7 +879,7 @@ export const TimeTravelPage: React.FC = () => {
           {navigatorRange && (
             <div style={{ marginTop: 12 }}>
               <div style={{ display:'flex', alignItems:'center', gap:8, marginBottom:6, fontSize:11, color:'var(--text-muted)' }}>
-                <span style={{ textTransform:'uppercase', letterSpacing:'0.5px' }}>{NAVIGATOR_HOURS}h Overview</span>
+                <span style={{ textTransform:'uppercase', letterSpacing:'0.5px' }}>{navigatorHours >= 24 ? '1d' : `${navigatorHours}h`} Overview</span>
                 <span style={{ color: METRIC_CONFIG[metricMode].color }}>{METRIC_CONFIG[metricMode].label}</span>
                 <span>· Drag window to navigate</span>
               </div>

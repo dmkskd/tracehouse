@@ -41,9 +41,10 @@ export function mapMergeHistoryRecord(row: RawRow): MergeHistoryRecord {
   // Row delta: negative means rows were removed (e.g. TTL delete merge).
   const rowsDiff = readRows > 0 ? outputRows - readRows : 0;
   // Classify merge reason, then refine: a Regular merge with row loss
-  // is likely a lightweight delete cleanup.
+  // is likely a lightweight delete cleanup (unless the engine naturally deduplicates).
+  const tableEngine = row.engine != null ? toStr(row.engine) : undefined;
   const baseCategory = classifyMergeHistory(toStr(row.event_type), toStr(row.merge_reason), toStr(row.part_name));
-  const category = refineCategoryWithRowDiff(baseCategory, rowsDiff);
+  const category = refineCategoryWithRowDiff(baseCategory, rowsDiff, tableEngine);
   
   return {
     event_time: normalizeTimestamp(row.event_time),
@@ -72,6 +73,7 @@ export function mapMergeHistoryRecord(row: RawRow): MergeHistoryRecord {
     profile_events: parseProfileEvents(row.ProfileEvents),
     error: row.error != null ? toInt(row.error) : undefined,
     exception: row.exception != null ? toStr(row.exception) : undefined,
+    table_engine: tableEngine,
   };
 }
 

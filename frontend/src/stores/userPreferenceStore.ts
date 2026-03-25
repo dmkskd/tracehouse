@@ -19,6 +19,9 @@ interface UserPreferenceState {
   /** Enable experimental features. Off by default. */
   experimentalEnabled: boolean;
   setExperimentalEnabled: (enabled: boolean) => void;
+  /** Hide replica merges (same merge on multiple replicas). Off by default — replica merges are shown. */
+  hideReplicaMerges: boolean;
+  setHideReplicaMerges: (enabled: boolean) => void;
 }
 
 export const useUserPreferenceStore = create<UserPreferenceState>()(
@@ -31,6 +34,8 @@ export const useUserPreferenceStore = create<UserPreferenceState>()(
       setKillQueriesEnabled: (enabled) => set({ killQueriesEnabled: enabled }),
       experimentalEnabled: true,
       setExperimentalEnabled: (enabled) => set({ experimentalEnabled: enabled }),
+      hideReplicaMerges: false,
+      setHideReplicaMerges: (enabled: boolean) => set({ hideReplicaMerges: enabled }),
     }),
     { name: 'tracehouse-view-preference' }
   )

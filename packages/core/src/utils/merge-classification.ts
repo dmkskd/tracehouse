@@ -13,6 +13,8 @@
  *   TTLMove        — part relocated to a different volume/disk (NOT a merge)
  *   Mutation       — ALTER TABLE UPDATE/DELETE applied to parts
  *   LightweightDelete — regular merge that cleaned up rows masked by DELETE FROM
+ *                       (only inferred on MergeTree; skipped for Replacing/Collapsing/
+ *                       Aggregating engines that naturally lose rows during merges)
  *
  * Patch-part detection (lightweight UPDATE, beta in CH 26.1):
  *   UPDATE table SET ... WHERE ... creates patch-<hash>-* parts. ClickHouse sets
@@ -36,7 +38,8 @@ export type MergeCategory =
   | 'TTLRecompress'
   | 'TTLMove'
   | 'Mutation'
-  | 'LightweightDelete';
+  | 'LightweightDelete'
+  | 'LightweightUpdate';
 
 export interface MergeCategoryInfo {
   label: string;
@@ -53,6 +56,7 @@ export const MERGE_CATEGORIES: Record<MergeCategory, MergeCategoryInfo> = {
   TTLMove:            { label: 'TTL Move',           color: '#58a6ff', icon: '📦', description: 'Part relocated to different volume/disk' },
   Mutation:           { label: 'Mutation',            color: '#f778ba', icon: '✏', description: 'ALTER TABLE UPDATE/DELETE' },
   LightweightDelete:  { label: 'Lightweight Delete', color: '#d4a72c', icon: '🧹', description: 'Regular merge that cleaned up rows from DELETE FROM' },
+  LightweightUpdate:  { label: 'Lightweight Update', color: '#3fb950', icon: '🩹', description: 'UPDATE SET — creates patch parts' },
 };
 
 /**
@@ -86,8 +90,8 @@ const MERGE_REASON_MAP: Record<string, MergeCategory> = {
  * Uses merge_type + is_mutation fields.
  */
 export function classifyActiveMerge(mergeType: string, isMutation: boolean, resultPartName?: string): MergeCategory {
+  if (resultPartName && isPatchPart(resultPartName)) return 'LightweightUpdate';
   if (isMutation) return 'Mutation';
-  if (resultPartName && isPatchPart(resultPartName)) return 'Mutation';
   return MERGE_TYPE_MAP[mergeType] ?? 'Regular';
 }
 
@@ -97,8 +101,8 @@ export function classifyActiveMerge(mergeType: string, isMutation: boolean, resu
  */
 export function classifyMergeHistory(eventType: string, mergeReason: string, partName?: string): MergeCategory {
   if (eventType === 'MovePart') return 'TTLMove';
+  if (partName && isPatchPart(partName)) return 'LightweightUpdate';
   if (eventType === 'MutatePart') return 'Mutation';
-  if (partName && isPatchPart(partName)) return 'Mutation';
   if (!mergeReason) return 'Regular';
   return MERGE_REASON_MAP[mergeReason] ?? 'Regular';
 }
@@ -111,20 +115,46 @@ export function getMergeCategoryInfo(category: MergeCategory): MergeCategoryInfo
 }
 
 /**
+ * Table engines that naturally remove rows during regular merges.
+ * These must NOT be classified as LightweightDelete when rows_diff < 0
+ * because row loss is expected behavior (dedup, collapsing, aggregation).
+ */
+const DEDUP_ENGINES = new Set([
+  'ReplacingMergeTree',
+  'CollapsingMergeTree',
+  'VersionedCollapsingMergeTree',
+  'AggregatingMergeTree',
+]);
+
+/** Check if a table engine naturally deduplicates/collapses rows during merges. */
+export function isDeduplicatingEngine(engine: string): boolean {
+  // Strip Replicated/Shared prefix: ReplicatedReplacingMergeTree → ReplacingMergeTree
+  const base = engine.replace(/^(Replicated|Shared)/, '');
+  return DEDUP_ENGINES.has(base);
+}
+
+/**
  * Refine a merge category using row-level data.
  *
- * A Regular merge that loses rows (rows_diff < 0) is almost certainly
- * cleaning up rows masked by a lightweight DELETE FROM statement.
- * ClickHouse doesn't distinguish this in merge_reason, so we infer it.
+ * A Regular merge that loses rows (rows_diff < 0) is likely cleaning up
+ * rows masked by a lightweight DELETE FROM statement. However, engines like
+ * ReplacingMergeTree and CollapsingMergeTree also lose rows during normal
+ * merges (dedup/collapse), so we skip the heuristic for those engines.
+ *
+ * @param tableEngine - optional engine name from system.tables; when provided,
+ *   deduplicating engines are excluded from the lightweight delete heuristic.
  */
-export function refineCategoryWithRowDiff(category: MergeCategory, rowsDiff: number): MergeCategory {
-  if (category === 'Regular' && rowsDiff < 0) return 'LightweightDelete';
+export function refineCategoryWithRowDiff(category: MergeCategory, rowsDiff: number, tableEngine?: string): MergeCategory {
+  if (category === 'Regular' && rowsDiff < 0) {
+    if (tableEngine && isDeduplicatingEngine(tableEngine)) return category;
+    return 'LightweightDelete';
+  }
   return category;
 }
 
 /** All known merge_reason values for filter dropdowns. */
 export const ALL_MERGE_CATEGORIES: MergeCategory[] = [
-  'Regular', 'TTLDelete', 'TTLRecompress', 'TTLMove', 'Mutation', 'LightweightDelete',
+  'Regular', 'TTLDelete', 'TTLRecompress', 'TTLMove', 'Mutation', 'LightweightDelete', 'LightweightUpdate',
 ];
 
 // ── Mutation subtype classification ──────────────────────────────────
@@ -183,4 +213,64 @@ export function classifyMutationCommand(command: string): MutationSubtype {
  */
 export function isPatchPart(partName: string): boolean {
   return partName.startsWith('patch-');
+}
+
+/**
+ * Mark replica merges in a list of active merges.
+ *
+ * On replicated tables each replica independently merges the same source parts
+ * into the same result part name. The cluster-wide system.merges query returns
+ * one entry per replica. This function groups merges by (database, table,
+ * result_part_name) and marks all but the most-progressed entry as replica merges.
+ */
+export function markReplicaMerges<T extends { database: string; table: string; result_part_name: string; progress: number; hostname?: string; is_replica_merge?: boolean }>(merges: T[]): T[] {
+  const groups = new Map<string, T[]>();
+  for (const m of merges) {
+    const key = `${m.database}\0${m.table}\0${m.result_part_name}`;
+    const group = groups.get(key);
+    if (group) group.push(m);
+    else groups.set(key, [m]);
+  }
+  for (const group of groups.values()) {
+    if (group.length <= 1) continue;
+    // Sort by progress descending — the most advanced one is the "primary"
+    group.sort((a, b) => b.progress - a.progress);
+    for (let i = 1; i < group.length; i++) {
+      group[i].is_replica_merge = true;
+    }
+  }
+  return merges;
+}
+
+/**
+ * Mark replica merges in merge history records.
+ *
+ * Groups by (database, table, part_name); if the same part was merged on
+ * multiple hosts, the earliest event is primary and the rest are replicas.
+ */
+export function markReplicaMergeHistory<T extends { database: string; table: string; part_name: string; event_type: string; event_time: string; hostname?: string; is_replica_merge?: boolean }>(records: T[]): T[] {
+  // DownloadPart events are always replica fetches
+  for (const r of records) {
+    if (r.event_type === 'DownloadPart') {
+      r.is_replica_merge = true;
+    }
+  }
+  // For non-fetch events, group by part_name and mark duplicates
+  const groups = new Map<string, T[]>();
+  for (const r of records) {
+    if (r.event_type === 'DownloadPart') continue; // already tagged
+    const key = `${r.database}\0${r.table}\0${r.part_name}`;
+    const group = groups.get(key);
+    if (group) group.push(r);
+    else groups.set(key, [r]);
+  }
+  for (const group of groups.values()) {
+    if (group.length <= 1) continue;
+    // Sort by event_time ascending — earliest is the "primary" merge
+    group.sort((a, b) => a.event_time.localeCompare(b.event_time));
+    for (let i = 1; i < group.length; i++) {
+      group[i].is_replica_merge = true;
+    }
+  }
+  return records;
 }

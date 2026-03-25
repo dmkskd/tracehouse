@@ -13,7 +13,7 @@
  */
 import React, { useMemo, useState, useRef, useCallback, useEffect } from 'react';
 import { Canvas, useThree } from '@react-three/fiber';
-import { useTheme } from '../../providers/ThemeProvider';
+import { useThemeDetection } from '../../hooks/useThemeDetection';
 import { OrbitControls, Text, Line, Html } from '@react-three/drei';
 import * as THREE from 'three';
 import type { MemoryTimeline, QuerySeries, MergeSeries, MutationSeries } from '@tracehouse/core';
@@ -38,6 +38,7 @@ const _edges = new THREE.EdgesGeometry(_box);
 interface BandInfo {
   type: 'query' | 'merge' | 'mutation';
   idx: number;           // index into data.queries / data.merges / data.mutations
+  id: string;            // stable identity for cross-server highlighting
   color: string;
   peakMemory: number;
   isRunning: boolean;
@@ -483,7 +484,7 @@ export const TimelineChart3D: React.FC<TimelineChart3DProps> = ({
   onHighlightItem,
 }) => {
   const [hoveredBand, setHoveredBand] = useState<number | null>(null);
-  const { theme } = useTheme();
+  const theme = useThemeDetection();
   const bg3d = theme === 'light' ? '#2a2e3e' : '#0a0a1a';
 
   // Build band info list (same order as 2D: queries, merges, mutations)
@@ -496,7 +497,7 @@ export const TimelineChart3D: React.FC<TimelineChart3DProps> = ({
     if (!hideQ) {
       data.queries.forEach((q, i) => {
         result.push({
-          type: 'query', idx: i,
+          type: 'query', idx: i, id: q.query_id,
           color: Q_COLORS[i % Q_COLORS.length],
           peakMemory: q.peak_memory,
           isRunning: q.is_running ?? false,
@@ -508,7 +509,7 @@ export const TimelineChart3D: React.FC<TimelineChart3DProps> = ({
     if (!hideM) {
       data.merges.forEach((m, i) => {
         result.push({
-          type: 'merge', idx: i,
+          type: 'merge', idx: i, id: `${m.table}:${m.part_name}:${m.hostname ?? ''}`,
           color: M_COLORS[i % M_COLORS.length],
           peakMemory: m.peak_memory,
           isRunning: m.is_running ?? false,
@@ -520,7 +521,7 @@ export const TimelineChart3D: React.FC<TimelineChart3DProps> = ({
     if (!hideMut) {
       (data.mutations ?? []).forEach((m, i) => {
         result.push({
-          type: 'mutation', idx: i,
+          type: 'mutation', idx: i, id: `${m.table}:${m.part_name}:${m.hostname ?? ''}`,
           color: MUT_COLORS[i % MUT_COLORS.length],
           peakMemory: m.peak_memory,
           isRunning: m.is_running ?? false,
@@ -644,7 +645,7 @@ export const TimelineChart3D: React.FC<TimelineChart3DProps> = ({
   // Sync hovered band to parent for table row highlighting
   useEffect(() => {
     if (!onHighlightItem) return;
-    onHighlightItem(hoveredBand !== null && bands[hoveredBand] ? { type: bands[hoveredBand].type, idx: bands[hoveredBand].idx } : null);
+    onHighlightItem(hoveredBand !== null && bands[hoveredBand] ? { type: bands[hoveredBand].type, idx: bands[hoveredBand].idx, id: bands[hoveredBand].id } : null);
   }, [hoveredBand]); // eslint-disable-line react-hooks/exhaustive-deps
 
   return (

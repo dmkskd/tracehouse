@@ -2144,6 +2144,7 @@ export const QueryDetailModal: React.FC<TimelineQueryModalProps> = ({
   const [isLoadingFlamegraph, setIsLoadingFlamegraph] = useState(false);
   const [flamegraphError, setFlamegraphError] = useState<string | null>(null);
   const [flamegraphType, setFlamegraphType] = useState<FlamegraphType>('CPU');
+  const [flamegraphFetched, setFlamegraphFetched] = useState(false);
 
   // Query detail state (for new tabs)
   const [queryDetail, setQueryDetail] = useState<QueryDetailType | null>(null);
@@ -2202,6 +2203,7 @@ export const QueryDetailModal: React.FC<TimelineQueryModalProps> = ({
     setFlamegraphUnavailable(undefined);
     setFlamegraphError(null);
     setFlamegraphType('CPU');
+    setFlamegraphFetched(false);
     setQueryDetail(null);
     setDetailError(null);
     setSimilarQueries([]);
@@ -2233,6 +2235,7 @@ export const QueryDetailModal: React.FC<TimelineQueryModalProps> = ({
     setFlamegraphUnavailable(undefined);
     setFlamegraphError(null);
     setFlamegraphType('CPU');
+    setFlamegraphFetched(false);
     setQueryDetail(null);
     setDetailError(null);
     // Keep similar queries — they share the same normalized hash
@@ -2309,6 +2312,7 @@ export const QueryDetailModal: React.FC<TimelineQueryModalProps> = ({
       setFlamegraphError(e instanceof Error ? e.message : 'Failed to fetch flamegraph data');
     } finally {
       setIsLoadingFlamegraph(false);
+      setFlamegraphFetched(true);
     }
   }, [services, activeQuery, flamegraphType]);
 
@@ -2399,10 +2403,12 @@ export const QueryDetailModal: React.FC<TimelineQueryModalProps> = ({
 
   // Fetch flamegraph when Flamegraph tab is selected
   useEffect(() => {
-    if (activeTab === 'flamegraph' && query && !flamegraphFolded && !isLoadingFlamegraph && !flamegraphError && !flamegraphUnavailable) {
+    if (activeTab === 'flamegraph' && query && !flamegraphFolded && !isLoadingFlamegraph && !flamegraphError && !flamegraphUnavailable && !flamegraphFetched) {
       fetchFlamegraph();
     }
-  }, [activeTab, activeQuery, flamegraphFolded, flamegraphUnavailable, isLoadingFlamegraph, flamegraphError, fetchFlamegraph]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- fetchFlamegraph depends on
+    // flamegraphType which would cause re-fires; flamegraphFetched guards against loops
+  }, [activeTab, activeQuery, flamegraphFetched]);
 
   // Fetch threads when Threads tab is selected
   useEffect(() => {

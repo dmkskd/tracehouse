@@ -8,7 +8,7 @@
  * When `state` is passed (e.g. for back-navigation), Link uses the
  * LocationContext.navigate so the state is preserved in-memory.
  */
-import React, { useContext } from 'react';
+import React, { useContext, useState, useCallback } from 'react';
 import { LocationContext } from '../hooks/useAppLocation';
 
 // Link → plain <a> that uses Grafana's page navigation
@@ -70,8 +70,18 @@ export function useParams<T extends Record<string, string | undefined> = Record<
   return {} as T;
 }
 
-export function useSearchParams(): [URLSearchParams, (p: URLSearchParams) => void] {
-  return [new URLSearchParams(), () => {}];
+export function useSearchParams(): [URLSearchParams, (p: URLSearchParams, opts?: { replace?: boolean }) => void] {
+  const [params, setParamsState] = useState(
+    () => new URLSearchParams(typeof window !== 'undefined' ? window.location.search : '')
+  );
+
+  const setParams = useCallback((p: URLSearchParams, _opts?: { replace?: boolean }) => {
+    const url = `${window.location.pathname}?${p.toString()}`;
+    window.history.pushState(null, '', url);
+    setParamsState(p);
+  }, []);
+
+  return [params, setParams];
 }
 
 // Router components → pass-through

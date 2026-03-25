@@ -107,6 +107,13 @@ tar czf "${ARCHIVE_NAME}.tar.gz" "$ARCHIVE_NAME"
 rm -rf "$ARCHIVE_DIR"
 echo "  → release/${ARCHIVE_NAME}.tar.gz"
 
+# ── Docker quickstart image ───────────────────────────────────────
+echo ""
+echo "=== Building Docker quickstart image ==="
+cd "$ROOT"
+docker compose -f infra/quickstart/docker-compose.yml build
+echo "  ✓ Docker quickstart image built"
+
 # ── Summary ─────────────────────────────────────────────────────
 echo ""
 echo "=== Release artifacts ==="

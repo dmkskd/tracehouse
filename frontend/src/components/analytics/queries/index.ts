@@ -12,6 +12,7 @@ import memory from './memory';
 import replication from './replication';
 import mutations from './mutations';
 import disks from './disks';
+import mergeAnalytics from './mergeAnalytics';
 
 export const RAW_QUERIES: string[] = [
   ...overview,
@@ -26,4 +27,5 @@ export const RAW_QUERIES: string[] = [
   ...replication,
   ...mutations,
   ...disks,
+  ...mergeAnalytics,
 ];

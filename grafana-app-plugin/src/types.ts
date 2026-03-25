@@ -36,6 +36,12 @@ export interface AppPluginSettings {
    * Must be one of the allowed rates. Default: 5.
    */
   defaultRefreshRate?: number;
+
+  /**
+   * Allow killing queries from the Active Queries view.
+   * Plugin-level (admin) setting. Default: false.
+   */
+  killQueriesEnabled?: boolean;
 }
 
 /** Resolved config after applying defaults */
@@ -44,6 +50,8 @@ export interface ResolvedPluginConfig {
   defaultRefreshRate: number;
   /** Convenience: the allowed options as label/seconds pairs */
   refreshRateOptions: RefreshRateOption[];
+  /** Whether kill query is allowed (admin-level) */
+  killQueriesEnabled: boolean;
 }
 
 /** Apply defaults to raw jsonData */
@@ -65,5 +73,6 @@ export function resolvePluginConfig(jsonData?: AppPluginSettings): ResolvedPlugi
     allowedRefreshRates: allowed,
     defaultRefreshRate: effectiveDefault,
     refreshRateOptions,
+    killQueriesEnabled: jsonData?.killQueriesEnabled ?? false,
   };
 }

@@ -18,7 +18,7 @@ import { TimeRangePicker } from './TimeRangePicker';
 import {
   formatCell,
   buildChartData, buildGroupedChartData, isGroupedChartType, sortRows,
-  ChartRenderer, isTimeSeriesChartType, OverlayChart,
+  ChartRenderer, isTimeSeriesChartType, OverlayChart, chartColorByIndex,
   type ChartDataPoint, type GroupedChartData, type DrillDownEvent, type CorrelationEntry,
 } from './charts';
 import { Chart3DCanvas } from './charts3d';
@@ -26,7 +26,7 @@ import { ResultsTable } from './ResultsTable';
 import {
   type Dashboard,
   type DashboardPanel,
-  type DashboardGroup,
+  type DashboardFilter,
   DASHBOARD_GROUPS,
   resolvePanel,
   loadDashboards,
@@ -66,7 +66,11 @@ const DashboardPanelCard: React.FC<{
   onTimeSeriesData?: (info: PanelTimeSeriesInfo | null) => void;
   correlationValues?: CorrelationEntry[];
   isHoveredPanel?: boolean;
-}> = ({ panel, timeRangeOverride, dashboardId, isFullscreen, onToggleFullscreen, isHidden, hoveredTimestamp, onTimestampHover, onTimeSeriesData, correlationValues, isHoveredPanel }) => {
+  /** Global filter params from the dashboard filter bar — merged into drill params */
+  filterParams?: Record<string, string>;
+  /** Index in the dashboard panel list — used to assign distinct overlay colors */
+  panelIndex?: number;
+}> = ({ panel, timeRangeOverride, dashboardId, isFullscreen, onToggleFullscreen, isHidden, hoveredTimestamp, onTimestampHover, onTimeSeriesData, correlationValues, isHoveredPanel, filterParams, panelIndex }) => {
   const services = useClickHouseServices();
   const [, setSearchParams] = useSearchParams();
   const originalPreset = resolvePanel(panel);
@@ -117,7 +121,7 @@ const DashboardPanelCard: React.FC<{
     setError(null);
     try {
       let sql = resolveTimeRange(p.sql, p.directives.meta?.interval, timeRangeOverride);
-      sql = resolveDrillParams(sql, overrideParams ?? drillParams);
+      sql = resolveDrillParams(sql, { ...filterParams, ...overrideParams, ...drillParams });
       const rows = await services.adapter.executeQuery<Record<string, unknown>>(sql);
       const columns = rows.length > 0 ? Object.keys(rows[0]) : [];
       setResult({ columns, rows });
@@ -126,7 +130,7 @@ const DashboardPanelCard: React.FC<{
     } finally {
       setLoading(false);
     }
-  }, [services, preset, timeRangeOverride, drillParams]);
+  }, [services, preset, timeRangeOverride, drillParams, filterParams]);
 
   useEffect(() => {
     if (services && preset) {
@@ -180,7 +184,7 @@ const DashboardPanelCard: React.FC<{
     } else {
       for (const d of chartData) dataByLabel.set(d.label, d.value);
     }
-    onTimeSeriesData({ name: preset.name, color: chartColor || '#6366f1', unit: chartUnit, dataByLabel });
+    onTimeSeriesData({ name: preset.name, color: chartColor || chartColorByIndex(panelIndex ?? 0), unit: chartUnit, dataByLabel });
   }, [onTimeSeriesData, isTimeSeries, isGroupedChart, hasChart, chartData, groupedChartData, preset, chartColor, chartUnit]);
 
   // Drill-down support
@@ -264,7 +268,7 @@ const DashboardPanelCard: React.FC<{
             {preset.name}
             {isDrilled && (
               <span style={{ fontSize: 9, color: 'var(--text-muted)', fontWeight: 400 }}>
-                ({Object.entries(drillParams).map(([k, v]) => `${k}=${v}`).join(', ')})
+                ({Object.entries(drillParams).map(([, v]) => v).join(' → ')})
               </span>
             )}
           </div>
@@ -407,6 +411,7 @@ const DashboardEditor: React.FC<EditorProps> = ({ initial, onSave, onCancel }) =
   const [columns, setColumns] = useState<1 | 2 | 3 | 4>(initial?.columns ?? 2);
   const [panels, setPanels] = useState<DashboardPanel[]>(initial?.panels ?? []);
   const [addQuery, setAddQuery] = useState('');
+  const [filters, setFilters] = useState<DashboardFilter[]>(initial?.filters ?? []);
 
   const availableQueries = getAllQueries()
     .filter(q => !panels.some(p => p.queryName === `${q.group}#${q.name}`))
@@ -509,9 +514,45 @@ const DashboardEditor: React.FC<EditorProps> = ({ initial, onSave, onCancel }) =
         </button>
       </div>
 
+      <label style={labelStyle}>Filters ({filters.length})</label>
+      <div style={{
+        marginBottom: 16, borderRadius: 8, border: '1px solid var(--border-primary)',
+        background: 'var(--bg-secondary)', overflow: 'hidden',
+      }}>
+        {filters.length === 0 && (
+          <div style={{ padding: '12px 14px', fontSize: 12, color: 'var(--text-muted)', fontStyle: 'italic' }}>
+            No filters — panels will show all data
+          </div>
+        )}
+        {filters.map((f, i) => (
+          <div key={i} style={{ padding: '8px 14px', borderBottom: i < filters.length - 1 ? '1px solid var(--border-secondary)' : 'none' }}>
+            <div style={{ display: 'flex', gap: 6, marginBottom: 4 }}>
+              <input value={f.param} placeholder="param (e.g. tbl)"
+                onChange={e => setFilters(prev => prev.map((ff, j) => j === i ? { ...ff, param: e.target.value } : ff))}
+                style={{ ...inputStyle, flex: 1, marginBottom: 0, fontSize: 11 }} />
+              <input value={f.label} placeholder="Label (e.g. Table)"
+                onChange={e => setFilters(prev => prev.map((ff, j) => j === i ? { ...ff, label: e.target.value } : ff))}
+                style={{ ...inputStyle, flex: 1, marginBottom: 0, fontSize: 11 }} />
+              <button onClick={() => setFilters(prev => prev.filter((_, j) => j !== i))}
+                style={{ ...iconBtnStyle, color: '#f85149' }} title="Remove filter">×</button>
+            </div>
+            <input value={f.query} placeholder="SQL query returning values (first column used)"
+              onChange={e => setFilters(prev => prev.map((ff, j) => j === i ? { ...ff, query: e.target.value } : ff))}
+              style={{ ...inputStyle, width: '100%', marginBottom: 0, fontSize: 11, fontFamily: "'Share Tech Mono',monospace" }} />
+          </div>
+        ))}
+      </div>
+      <button onClick={() => setFilters(prev => [...prev, { param: '', label: '', query: '' }])}
+        style={{ ...secondaryBtnStyle, fontSize: 11, marginBottom: 24 }}>
+        + Add Filter
+      </button>
+
       <div style={{ display: 'flex', gap: 8, justifyContent: 'flex-end', borderTop: '1px solid var(--border-secondary)', paddingTop: 16 }}>
         <button onClick={onCancel} style={secondaryBtnStyle}>Cancel</button>
-        <button onClick={() => onSave({ id: initial?.id ?? '', title: title.trim(), description: description.trim() || undefined, columns, panels })}
+        <button onClick={() => {
+          const cleanFilters = filters.filter(f => f.param.trim() && f.query.trim()).map(f => ({ param: f.param.trim(), label: f.label.trim() || f.param.trim(), query: f.query.trim() }));
+          onSave({ id: initial?.id ?? '', title: title.trim(), description: description.trim() || undefined, columns, panels, ...(cleanFilters.length > 0 && { filters: cleanFilters }) });
+        }}
           disabled={!canSave}
           style={{ ...primaryBtnStyle, opacity: canSave ? 1 : 0.4, cursor: canSave ? 'pointer' : 'not-allowed' }}>
           {initial ? 'Save Changes' : 'Create Dashboard'}
@@ -794,17 +835,46 @@ const DashboardListView: React.FC<{
 
   const hoveredDashboard = hoveredId ? dashboards.find(d => d.id === hoveredId) : null;
 
-  // Group dashboards by their group field
+  // Group dashboards by top-level group, flat within each group (no sub-category headers)
   const grouped = useMemo(() => {
-    const groups: { group: DashboardGroup; color: string; items: Dashboard[] }[] =
-      DASHBOARD_GROUPS.map(g => ({ group: g.name, color: g.color, items: [] }));
+    const groups = DASHBOARD_GROUPS.map(g => ({ group: g.name, color: g.color, items: [] as Dashboard[] }));
     for (const d of dashboards) {
       const g = groups.find(g => g.group === (d.group ?? 'Custom'));
-      if (g) g.items.push(d);
-      else groups[groups.length - 1].items.push(d); // fallback to Custom
+      (g ?? groups[groups.length - 1]).items.push(d);
     }
     return groups.filter(g => g.items.length > 0);
   }, [dashboards]);
+
+  const renderDashboardCard = (d: Dashboard, color: string) => (
+    <div
+      key={d.id}
+      onClick={() => onOpen(d.id)}
+      onMouseEnter={e => handleMouseEnter(d.id, e)}
+      onMouseMove={handleMouseMove}
+      onMouseLeave={handleMouseLeave}
+      style={{ ...panelStyle, cursor: 'pointer', padding: 16, transition: 'border-color 0.15s', position: 'relative' }}
+    >
+      {/* Category tag — top right */}
+      {d.category && (() => {
+        const CATEGORY_COLORS: Record<string, string> = {
+          General: '#6366f1', Queries: '#3b82f6', Storage: '#22c55e',
+          Merges: '#f59e0b', Resources: '#ec4899', Replication: '#8b5cf6',
+        };
+        const c = CATEGORY_COLORS[d.category] ?? '#94a3b8';
+        return (
+          <span style={{ position: 'absolute', top: 8, right: 8, fontSize: 9, fontWeight: 500, color: c, background: `${c}20`, padding: '2px 6px', borderRadius: 4 }}>
+            {d.category}
+          </span>
+        );
+      })()}
+      <div style={{ fontSize: 14, fontWeight: 600, color: 'var(--text-primary)', marginBottom: 4, paddingRight: d.category ? 70 : 0 }}>{d.title}</div>
+      {d.description && <div style={{ fontSize: 11, color: 'var(--text-muted)', marginBottom: 8, lineHeight: 1.4 }}>{d.description}</div>}
+      <div style={{ fontSize: 10, color: 'var(--text-tertiary)' }}>
+        {d.panels.length} panel{d.panels.length !== 1 ? 's' : ''} · {d.columns} col{d.columns !== 1 ? 's' : ''}
+        {d.builtin && <span style={{ marginLeft: 8, color }}>built-in</span>}
+      </div>
+    </div>
+  );
 
   return (
     <div ref={containerRef} style={{ padding: 24, overflow: 'auto', height: '100%', position: 'relative' }}>
@@ -824,23 +894,7 @@ const DashboardListView: React.FC<{
             <span style={{ fontSize: 10, color: 'var(--text-tertiary)' }}>({items.length})</span>
           </div>
           <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: 12 }}>
-            {items.map(d => (
-              <div
-                key={d.id}
-                onClick={() => onOpen(d.id)}
-                onMouseEnter={e => handleMouseEnter(d.id, e)}
-                onMouseMove={handleMouseMove}
-                onMouseLeave={handleMouseLeave}
-                style={{ ...panelStyle, cursor: 'pointer', padding: 16, transition: 'border-color 0.15s' }}
-              >
-                <div style={{ fontSize: 14, fontWeight: 600, color: 'var(--text-primary)', marginBottom: 4 }}>{d.title}</div>
-                {d.description && <div style={{ fontSize: 11, color: 'var(--text-muted)', marginBottom: 8, lineHeight: 1.4 }}>{d.description}</div>}
-                <div style={{ fontSize: 10, color: 'var(--text-tertiary)' }}>
-                  {d.panels.length} panel{d.panels.length !== 1 ? 's' : ''} · {d.columns} col{d.columns !== 1 ? 's' : ''}
-                  {d.builtin && <span style={{ marginLeft: 8, color }}>built-in</span>}
-                </div>
-              </div>
-            ))}
+            {items.map(d => renderDashboardCard(d, color))}
           </div>
         </div>
       ))}
@@ -863,7 +917,60 @@ const DashboardListView: React.FC<{
   );
 };
 
-// ─── Correlation summary strip ───
+// ─── Dashboard filter bar ───
+
+const DashboardFilterBar: React.FC<{
+  filters: DashboardFilter[];
+  filterValues: Record<string, string>;
+  onFilterChange: (param: string, value: string) => void;
+}> = ({ filters, filterValues, onFilterChange }) => {
+  const services = useClickHouseServices();
+  const [options, setOptions] = useState<Record<string, string[]>>({});
+
+  useEffect(() => {
+    if (!services) return;
+    let cancelled = false;
+    for (const f of filters) {
+      services.adapter.executeQuery<Record<string, unknown>>(f.query)
+        .then(rows => {
+          if (cancelled) return;
+          const col = rows.length > 0 ? Object.keys(rows[0])[0] : '';
+          const values = rows.map(r => String(r[col] ?? ''));
+          setOptions(prev => ({ ...prev, [f.param]: values }));
+        })
+        .catch(() => { /* ignore */ });
+    }
+    return () => { cancelled = true; };
+  }, [services, filters]);
+
+  return (
+    <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
+      {filters.map(f => (
+        <div key={f.param} style={{ display: 'flex', alignItems: 'center', gap: 4 }}>
+          <span style={{ fontSize: 11, color: 'var(--text-tertiary)' }}>{f.label}:</span>
+          <select
+            value={filterValues[f.param] ?? ''}
+            onChange={e => onFilterChange(f.param, e.target.value)}
+            style={{
+              fontSize: 11,
+              padding: '4px 6px',
+              background: 'var(--bg-card)',
+              color: 'var(--text-primary)',
+              border: '1px solid var(--border-primary)',
+              borderRadius: 4,
+              maxWidth: 250,
+            }}
+          >
+            <option value="">All</option>
+            {(options[f.param] ?? []).map(v => (
+              <option key={v} value={v}>{v}</option>
+            ))}
+          </select>
+        </div>
+      ))}
+    </div>
+  );
+};
 
 // ─── Main DashboardViewer ───
 
@@ -889,6 +996,22 @@ export const DashboardViewer: React.FC<{ initialDashboardId?: string }> = ({ ini
     }
   }, [initialDashboardId, dashboards]);
   const [timeRangeOverride, setTimeRangeOverride] = useState<string | null>('1 HOUR');
+
+  // ─── Global dashboard filters ───
+  const [filterValues, setFilterValues] = useState<Record<string, string>>({});
+  const handleFilterChange = useCallback((param: string, value: string) => {
+    setFilterValues(prev => {
+      if (!value) {
+        const next = { ...prev };
+        delete next[param];
+        return next;
+      }
+      return { ...prev, [param]: value };
+    });
+  }, []);
+  // Reset filters when switching dashboards
+  const activeDashboardIdForFilters = view.mode === 'view' ? view.dashboardId : null;
+  useEffect(() => { setFilterValues({}); }, [activeDashboardIdForFilters]);
 
   // ─── Overlay mode ───
   const [overlayVisible, setOverlayVisible] = useState(false);
@@ -1038,14 +1161,14 @@ export const DashboardViewer: React.FC<{ initialDashboardId?: string }> = ({ ini
     <div style={{ height: '100%', display: 'flex', flexDirection: 'column', overflow: 'hidden' }}>
       {/* Dashboard header */}
       <div style={{ flexShrink: 0, padding: '12px 24px', display: 'flex', alignItems: 'center', justifyContent: 'space-between', borderBottom: '1px solid var(--border-primary)', background: 'var(--bg-secondary)' }}>
-        <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
+        <div style={{ display: 'flex', alignItems: 'center', gap: 12, minWidth: 0, flex: 1 }}>
           <button onClick={() => setView({ mode: 'list' })} style={{ ...iconBtnStyle, fontSize: 16 }} title="Back to list">←</button>
-          <div>
+          <div style={{ minWidth: 0 }}>
             <div style={{ fontSize: 14, fontWeight: 600, color: 'var(--text-primary)' }}>{activeDashboard.title}</div>
-            {activeDashboard.description && <div style={{ fontSize: 11, color: 'var(--text-muted)' }}>{activeDashboard.description}</div>}
+            {activeDashboard.description && <div style={{ fontSize: 11, color: 'var(--text-muted)', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{activeDashboard.description}</div>}
           </div>
         </div>
-        <div style={{ display: 'flex', gap: 6, alignItems: 'center' }}>
+        <div style={{ display: 'flex', gap: 6, alignItems: 'center', flexShrink: 0 }}>
           <TimeRangePicker value={timeRangeOverride} onChange={setTimeRangeOverride} />
           <button
             onClick={() => { setCorrelationEnabled(e => !e); setHoveredTimestamp(null); }}
@@ -1075,6 +1198,13 @@ export const DashboardViewer: React.FC<{ initialDashboardId?: string }> = ({ ini
           )}
         </div>
       </div>
+
+      {/* Filter bar */}
+      {activeDashboard.filters && activeDashboard.filters.length > 0 && (
+        <div style={{ flexShrink: 0, padding: '8px 24px', borderBottom: '1px solid var(--border-primary)', background: 'var(--bg-primary)' }}>
+          <DashboardFilterBar filters={activeDashboard.filters} filterValues={filterValues} onFilterChange={handleFilterChange} />
+        </div>
+      )}
 
       {/* Grid of panels */}
       <div style={{ flex: 1, overflow: 'auto', padding: 24 }}>
@@ -1112,6 +1242,8 @@ export const DashboardViewer: React.FC<{ initialDashboardId?: string }> = ({ ini
               onTimeSeriesData={correlationEnabled ? handlePanelData(i) : undefined}
               correlationValues={correlationEnabled ? correlationValues : undefined}
               isHoveredPanel={correlationEnabled ? hoveredPanelIndex === i : undefined}
+              filterParams={Object.keys(filterValues).length > 0 ? filterValues : undefined}
+              panelIndex={i}
             />
           ))}
         </div>

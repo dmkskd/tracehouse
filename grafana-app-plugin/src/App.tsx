@@ -2,7 +2,7 @@ import React, { lazy, Suspense, useState, useCallback, useMemo, useEffect, useRe
 import { AppRootProps } from '@grafana/data';
 import { config } from '@grafana/runtime';
 import { ServiceProvider, useServices } from './ServiceProvider';
-import { PluginConfigProvider } from './PluginConfigContext';
+import { PluginConfigProvider, usePluginConfig } from './PluginConfigContext';
 import { DatasourceSelector } from './components/DatasourceSelector';
 import { LocationContext, AppLocation } from './hooks/useAppLocation';
 import { useUserPreferenceStore } from '@frontend/stores/userPreferenceStore';
@@ -30,11 +30,13 @@ function useGrafanaThemeBridge() {
 // Lazy load pages
 const Overview = lazy(() => import('@frontend/pages/Overview').then(m => ({ default: m.Overview })));
 
-/** Compact 2D/3D toggle with gear icon for Grafana header */
-const ViewModeToggle: React.FC = () => {
+/** Settings gear dropdown — view mode, refresh rate, experimental features */
+const SettingsDropdown: React.FC = () => {
   const [open, setOpen] = useState(false);
   const ref = useRef<HTMLDivElement>(null);
-  const { preferredViewMode, setPreferredViewMode } = useUserPreferenceStore();
+  const { preferredViewMode, setPreferredViewMode, experimentalEnabled, setExperimentalEnabled } = useUserPreferenceStore();
+  const refreshConfig = useRefreshConfig();
+  const { refreshRateSeconds, setRefreshRate } = useRefreshSettingsStore();
 
   useEffect(() => {
     if (!open) return;
@@ -45,11 +47,48 @@ const ViewModeToggle: React.FC = () => {
     return () => document.removeEventListener('mousedown', handler);
   }, [open]);
 
+  const sectionLabel = (text: string) => (
+    <div style={{
+      fontSize: 9, fontWeight: 600, color: 'var(--text-muted)',
+      textTransform: 'uppercase', letterSpacing: '1.5px', marginBottom: 6,
+    }}>
+      {text}
+    </div>
+  );
+
+  const segmentedControl = (options: { key: string; label: string }[], activeKey: string, onSelect: (key: string) => void) => (
+    <div style={{
+      display: 'flex', gap: 0,
+      background: 'var(--bg-primary)',
+      borderRadius: 6,
+      border: '1px solid var(--border-primary)',
+      padding: 2,
+    }}>
+      {options.map(opt => (
+        <button
+          key={opt.key}
+          onClick={() => onSelect(opt.key)}
+          style={{
+            flex: 1, padding: '4px 0', border: 'none', cursor: 'pointer',
+            borderRadius: 4, fontSize: 11, fontWeight: 600,
+            fontFamily: "'Share Tech Mono', monospace",
+            transition: 'all 0.15s ease',
+            ...(activeKey === opt.key
+              ? { background: 'var(--bg-card-hover)', color: 'var(--text-primary)', boxShadow: '0 1px 3px rgba(0,0,0,0.1)' }
+              : { background: 'transparent', color: 'var(--text-muted)' }),
+          }}
+        >
+          {opt.label}
+        </button>
+      ))}
+    </div>
+  );
+
   return (
     <div ref={ref} style={{ position: 'relative' }}>
       <button
         onClick={() => setOpen(!open)}
-        title="View Settings"
+        title="Settings"
         style={{
           background: open ? 'var(--bg-card-hover)' : 'var(--bg-card)',
           border: '1px solid var(--border-primary)',
@@ -78,42 +117,74 @@ const ViewModeToggle: React.FC = () => {
           borderRadius: 10,
           boxShadow: '0 8px 24px rgba(0,0,0,0.15)',
           backdropFilter: 'blur(12px)',
-          minWidth: 140,
+          minWidth: 200,
           zIndex: 1000,
           overflow: 'hidden',
           padding: '10px 12px',
+          display: 'flex',
+          flexDirection: 'column',
+          gap: 12,
         }}>
-          <div style={{
-            fontSize: 9, fontWeight: 600, color: 'var(--text-muted)',
-            textTransform: 'uppercase', letterSpacing: '1.5px', marginBottom: 6,
-          }}>
-            View
+          {/* View mode */}
+          <div>
+            {sectionLabel('View')}
+            {segmentedControl(
+              [{ key: '3d', label: '3D' }, { key: '2d', label: '2D' }],
+              preferredViewMode,
+              (k) => setPreferredViewMode(k as '3d' | '2d'),
+            )}
           </div>
-          <div style={{
-            display: 'flex', gap: 0,
-            background: 'var(--bg-primary)',
-            borderRadius: 6,
-            border: '1px solid var(--border-primary)',
-            padding: 2,
-          }}>
-            {(['3d', '2d'] as const).map(mode => (
-              <button
-                key={mode}
-                onClick={() => setPreferredViewMode(mode)}
-                style={{
-                  flex: 1, padding: '4px 0', border: 'none', cursor: 'pointer',
-                  borderRadius: 4, fontSize: 11, fontWeight: 600,
-                  fontFamily: "'Share Tech Mono', monospace",
-                  transition: 'all 0.15s ease',
-                  ...(preferredViewMode === mode
-                    ? { background: 'var(--bg-card-hover)', color: 'var(--text-primary)', boxShadow: '0 1px 3px rgba(0,0,0,0.1)' }
-                    : { background: 'transparent', color: 'var(--text-muted)' }),
-                }}
-              >
-                {mode.toUpperCase()}
-              </button>
-            ))}
+
+          {/* Refresh rate */}
+          <div>
+            {sectionLabel('Refresh Rate')}
+            <div style={{
+              display: 'flex', flexWrap: 'wrap', gap: 2,
+              background: 'var(--bg-primary)',
+              borderRadius: 6,
+              border: '1px solid var(--border-primary)',
+              padding: 2,
+            }}>
+              {refreshConfig.refreshRateOptions.map((opt: RefreshRateOption) => (
+                <button
+                  key={opt.seconds}
+                  onClick={() => setRefreshRate(opt.seconds)}
+                  style={{
+                    padding: '4px 8px', border: 'none', cursor: 'pointer',
+                    borderRadius: 4, fontSize: 11, fontWeight: 600,
+                    fontFamily: "'Share Tech Mono', monospace",
+                    transition: 'all 0.15s ease',
+                    ...(refreshRateSeconds === opt.seconds
+                      ? { background: 'var(--bg-card-hover)', color: 'var(--text-primary)', boxShadow: '0 1px 3px rgba(0,0,0,0.1)' }
+                      : { background: 'transparent', color: 'var(--text-muted)' }),
+                  }}
+                >
+                  {opt.label}
+                </button>
+              ))}
+            </div>
           </div>
+
+          {/* Experimental features (user-level) */}
+          <label style={{
+            display: 'flex', alignItems: 'center', gap: 8, cursor: 'pointer',
+            fontSize: 12, color: 'var(--text-secondary)',
+          }}>
+            <input
+              type="checkbox"
+              checked={experimentalEnabled}
+              onChange={(e) => setExperimentalEnabled(e.target.checked)}
+              style={{ accentColor: '#a855f7' }}
+            />
+            <span>Experimental Features</span>
+            <span style={{
+              fontSize: 9, fontWeight: 700, color: '#a855f7',
+              background: 'rgba(168,85,247,0.15)',
+              border: '1px solid rgba(168,85,247,0.3)',
+              borderRadius: 3, padding: '1px 4px',
+              textTransform: 'uppercase', letterSpacing: '0.5px',
+            }}>Beta</span>
+          </label>
         </div>
       )}
     </div>
@@ -186,68 +257,6 @@ function NoDatasourceMessage() {
   );
 }
 
-/** Compact refresh rate selector for Grafana header */
-const GrafanaRefreshSelector: React.FC = () => {
-  const refreshConfig = useRefreshConfig();
-  const { refreshRateSeconds, setRefreshRate } = useRefreshSettingsStore();
-  const [open, setOpen] = useState(false);
-  const ref = useRef<HTMLDivElement>(null);
-
-  useEffect(() => {
-    if (!open) return;
-    const handler = (e: MouseEvent) => {
-      if (ref.current && !ref.current.contains(e.target as Node)) setOpen(false);
-    };
-    document.addEventListener('mousedown', handler);
-    return () => document.removeEventListener('mousedown', handler);
-  }, [open]);
-
-  const currentLabel = refreshConfig.refreshRateOptions.find(
-    (o: RefreshRateOption) => o.seconds === refreshRateSeconds
-  )?.label || `${refreshRateSeconds}s`;
-
-  return (
-    <div ref={ref} style={{ position: 'relative' }}>
-      <button
-        onClick={() => setOpen(!open)}
-        style={{
-          background: 'rgba(255,255,255,0.06)',
-          border: '1px solid rgba(255,255,255,0.1)',
-          borderRadius: 4,
-          padding: '3px 8px',
-          fontSize: 11,
-          fontFamily: 'monospace',
-          color: 'var(--text-secondary, rgba(255,255,255,0.7))',
-          cursor: 'pointer',
-        }}
-      >
-        ⟳ {currentLabel}
-      </button>
-      {open && (
-        <div style={{
-          position: 'absolute', top: 'calc(100% + 4px)', right: 0,
-          background: 'var(--bg-secondary, #1e1e2e)', border: '1px solid var(--border-primary, rgba(255,255,255,0.1))',
-          borderRadius: 6, boxShadow: '0 4px 12px rgba(0,0,0,0.3)', zIndex: 1000, overflow: 'hidden', minWidth: 80,
-        }}>
-          {refreshConfig.refreshRateOptions.map((opt: RefreshRateOption) => (
-            <button
-              key={opt.seconds}
-              onClick={() => { setRefreshRate(opt.seconds); setOpen(false); }}
-              style={{
-                display: 'block', width: '100%', padding: '6px 12px', border: 'none', cursor: 'pointer',
-                fontSize: 11, fontFamily: 'monospace', textAlign: 'left',
-                background: refreshRateSeconds === opt.seconds ? 'rgba(168,85,247,0.15)' : 'transparent',
-                color: refreshRateSeconds === opt.seconds ? '#a855f7' : 'var(--text-secondary, rgba(255,255,255,0.7))',
-              }}
-            >
-              {opt.label}
-            </button>
-          ))}
-        </div>
-      )}
-    </div>
-  );
-};
 
 /** Global refresh indicator for Grafana header */
 const GrafanaRefreshIndicator: React.FC = () => {
@@ -295,6 +304,13 @@ interface AppContentProps {
 
 function AppContent({ path }: AppContentProps) {
   const { services, datasourceUid, setDatasourceUid } = useServices();
+  const pluginConfig = usePluginConfig();
+
+  // Sync plugin-level killQueriesEnabled into the user preference store
+  // so existing components (RunningQueryList) pick it up without changes
+  useEffect(() => {
+    useUserPreferenceStore.getState().setKillQueriesEnabled(pluginConfig.killQueriesEnabled);
+  }, [pluginConfig.killQueriesEnabled]);
 
   // Extract route from path: /a/tracehouse-app/overview -> overview
   const routeKey = path.split('/').pop() || 'overview';
@@ -376,38 +392,11 @@ function AppContent({ path }: AppContentProps) {
             onChange={(uid, name) => setDatasourceUid(uid, name)}
           />
           
-          {/* Connection status indicator */}
-          {services && (
-            <div style={{
-              display: 'flex',
-              alignItems: 'center',
-              gap: 6,
-              padding: '4px 10px',
-              background: 'rgba(34, 197, 94, 0.1)',
-              border: '1px solid rgba(34, 197, 94, 0.3)',
-              borderRadius: 4,
-              fontSize: 11,
-              fontFamily: 'monospace',
-            }}>
-              <span style={{
-                width: 6,
-                height: 6,
-                borderRadius: '50%',
-                background: '#22c55e',
-                boxShadow: '0 0 6px #22c55e',
-              }} />
-              <span style={{ color: '#22c55e' }}>Connected</span>
-            </div>
-          )}
-
-          {/* Refresh rate selector */}
-          <GrafanaRefreshSelector />
-
           {/* Global refresh indicator */}
           <GrafanaRefreshIndicator />
 
-          {/* View mode settings (2D/3D) */}
-          <ViewModeToggle />
+          {/* Settings (view mode, refresh rate, experimental) */}
+          <SettingsDropdown />
         </div>
       </div>
 

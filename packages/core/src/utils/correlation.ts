@@ -146,11 +146,18 @@ export function crossCorrelationDetail(a: number[], b: number[]): CrossCorrelati
   const n = Math.min(a.length, b.length);
   if (n < 3) return { r: 0, lag: 0 };
 
-  const maxLag = Math.min(Math.floor(n / 4), 20);
-  let bestR = 0;
+  // Start with lag=0 as baseline. Non-zero lags must beat it by a margin
+  // to avoid sign flips on periodic data where a half-cycle offset can
+  // produce a slightly higher |r| with the opposite sign.
+  const baseR = pearson(a.slice(0, n), b.slice(0, n));
+  let bestR = baseR;
   let bestLag = 0;
 
+  const maxLag = Math.min(Math.floor(n / 4), 20);
+  const LAG_IMPROVEMENT = 0.05;
+
   for (let lag = -maxLag; lag <= maxLag; lag++) {
+    if (lag === 0) continue;
     const start = Math.max(0, lag);
     const end = Math.min(n, n + lag);
     if (end - start < 3) continue;
@@ -159,7 +166,8 @@ export function crossCorrelationDetail(a: number[], b: number[]): CrossCorrelati
     const sliceB = b.slice(start - lag, end - lag);
     const r = pearson(sliceA, sliceB);
 
-    if (Math.abs(r) > Math.abs(bestR) || (Math.abs(r) === Math.abs(bestR) && Math.abs(lag) < Math.abs(bestLag))) {
+    if (Math.abs(r) > Math.abs(bestR) + LAG_IMPROVEMENT ||
+        (Math.abs(r) > Math.abs(bestR) && Math.abs(lag) < Math.abs(bestLag))) {
       bestR = r;
       bestLag = lag;
     }

@@ -15,7 +15,11 @@
 
 import { GenericContainer, Network, Wait, type StartedNetwork, type StartedTestContainer } from 'testcontainers';
 import { createClient, type ClickHouseClient } from '@clickhouse/client';
+import { execSync } from 'node:child_process';
+import { resolve } from 'node:path';
 import { ClusterTestAdapter } from './cluster-container.js';
+
+const SETUP_SCRIPT = resolve(__dirname, '../../../../../../infra/scripts/setup_sampling.sh');
 
 const CH_IMAGE = 'clickhouse/clickhouse-server:26.1-alpine';
 const CH_USER = 'default';
@@ -119,91 +123,29 @@ ${shardXml}
 </clickhouse>`;
 }
 
-// ── Sampling DDL ──
+// ── Sampling setup ──
 
-function samplingDDL(clusterName: string, intervalSec: number): string[] {
-  const onCluster = ` ON CLUSTER '${clusterName}'`;
-  return [
-    `CREATE DATABASE IF NOT EXISTS tracehouse${onCluster} ENGINE = Atomic`,
-
-    `CREATE TABLE IF NOT EXISTS tracehouse.processes_history${onCluster}
-(
-    hostname            LowCardinality(String) DEFAULT hostName(),
-    sample_time         DateTime64(3) DEFAULT now64(3),
-    is_initial_query    UInt8,
-    query_id            String,
-    initial_query_id    String,
-    query               String,
-    normalized_query_hash UInt64,
-    query_kind          LowCardinality(String),
-    current_database    LowCardinality(String),
-    user                String,
-    initial_user        String,
-    address             String,
-    initial_address     String,
-    interface           UInt8,
-    os_user             String,
-    client_hostname     String,
-    client_name         String,
-    elapsed             Float64,
-    is_cancelled        UInt8,
-    read_rows           UInt64,
-    read_bytes          UInt64,
-    written_rows        UInt64,
-    written_bytes       UInt64,
-    total_rows_approx   UInt64,
-    memory_usage        Int64,
-    peak_memory_usage   Int64,
-    thread_ids          Array(UInt64),
-    peak_threads_usage  UInt64,
-    ProfileEvents       Map(String, UInt64),
-    Settings            Map(String, String)
-)
-ENGINE = MergeTree
-ORDER BY (query_id, sample_time)
-SETTINGS index_granularity = 8192`,
-
-    // Write directly to processes_history (no buffer) for test simplicity
-    `CREATE MATERIALIZED VIEW IF NOT EXISTS tracehouse.processes_sampler${onCluster}
-REFRESH EVERY ${intervalSec} SECOND
-APPEND
-TO tracehouse.processes_history
-AS
-/* source:TraceHouse:Sampler:processes */
-SELECT
-    hostName()          AS hostname,
-    now64(3)            AS sample_time,
-    is_initial_query,
-    query_id,
-    initial_query_id,
-    query,
-    normalized_query_hash,
-    query_kind,
-    current_database,
-    user,
-    initial_user,
-    toString(address)   AS address,
-    toString(initial_address) AS initial_address,
-    interface,
-    os_user,
-    client_hostname,
-    client_name,
-    elapsed,
-    is_cancelled,
-    read_rows,
-    read_bytes,
-    written_rows,
-    written_bytes,
-    total_rows_approx,
-    memory_usage,
-    peak_memory_usage,
-    thread_ids,
-    peak_threads_usage,
-    ProfileEvents,
-    Settings
-FROM system.processes
-WHERE query NOT LIKE '%source:TraceHouse:%'`,
-  ];
+/**
+ * Run the production setup_sampling.sh script against a ClickHouse node.
+ * Creates the full tracehouse infrastructure (tables, buffers, refreshable MVs).
+ */
+function runSamplingSetup(
+  host: string,
+  nativePort: number,
+  opts: { user?: string; password?: string; clusterName?: string; intervalSec?: number } = {},
+): void {
+  const authArgs = [
+    opts.user ? `--user ${opts.user}` : '',
+    opts.password ? `--password ${opts.password}` : '',
+  ].filter(Boolean).join(' ');
+  const clusterArg = opts.clusterName ? `--cluster ${opts.clusterName}` : '';
+  const intervalArg = opts.intervalSec ? `--interval ${opts.intervalSec}` : '';
+  const cmd = `bash "${SETUP_SCRIPT}" --host ${host} --port ${nativePort} ${authArgs} ${clusterArg} ${intervalArg} --yes`;
+  execSync(cmd, {
+    encoding: 'utf-8',
+    timeout: 30_000,
+    env: { ...process.env, PATH: process.env.PATH },
+  });
 }
 
 // ── Lifecycle ──
@@ -294,11 +236,14 @@ export async function startSamplingCluster(
   // Wait for cluster to be ready
   await waitForCluster(clients[0], clusterName, nodeCount);
 
-  // Create sampling infrastructure via ON CLUSTER DDL
-  const ddl = samplingDDL(clusterName, samplingIntervalSec);
-  for (const stmt of ddl) {
-    await clients[0].command({ query: stmt });
-  }
+  // Create sampling infrastructure using the production setup script.
+  // Connects to the first node; ON CLUSTER DDL propagates to all nodes.
+  const firstContainer = containers[0];
+  runSamplingSetup(
+    firstContainer.getHost(),
+    firstContainer.getMappedPort(9000),
+    { user: CH_USER, password: CH_PASSWORD, clusterName, intervalSec: samplingIntervalSec },
+  );
 
   // Wait for the sampler MV to register on all nodes
   await waitForSamplers(clients);

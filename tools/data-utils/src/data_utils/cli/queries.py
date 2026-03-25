@@ -25,9 +25,9 @@ from datetime import datetime
 
 from clickhouse_driver import Client
 
-from data_utils.capabilities import probe, Capabilities
+from data_utils.capabilities import Capabilities, probe
 from data_utils.env import env_int, pre_parse_env_file, print_connection, add_connection_args, make_client
-from data_utils.tables import SyntheticData, NycTaxi, UkHousePrices, WebAnalytics
+from data_utils.tables import build_all_datasets
 from data_utils.users import (
     create_test_users, load_test_users_from_env, lock_test_users,
     make_user_client, pick_random_user, print_test_users, TestUser,
@@ -275,12 +275,14 @@ def _query_worker(
 
 # ── Table detection ────────────────────────────────────────────────
 
-def _detect_available_tables(client: Client) -> set[str]:
+def _detect_available_tables(client: Client, datasets: list) -> set[str]:
     """Query system.tables to find which test databases/tables exist."""
+    db_names = [ds.name for ds in datasets]
     try:
         rows = client.execute(
             "SELECT database || '.' || name FROM system.tables "
-            "WHERE database IN ('synthetic_data', 'nyc_taxi', 'uk_price_paid', 'web_analytics')"
+            "WHERE database IN %(dbs)s",
+            {"dbs": db_names},
         )
         return {r[0].lower() for r in rows}
     except Exception as e:
@@ -289,30 +291,23 @@ def _detect_available_tables(client: Client) -> set[str]:
 
 
 def _collect_queries(
-    caps: Capabilities,
+    datasets: list,
     available_tables: set[str],
+    caps: "Capabilities",
 ) -> dict[str, list]:
-    """Instantiate table plugins and collect their queries.
+    """Collect queries from dataset plugins.
 
     Only includes queries from tables that actually exist in the database.
     """
-    # Map table name prefix → plugin instance
-    plugins = {
-        'synthetic_data': SyntheticData(replicated=False),
-        'nyc_taxi': NycTaxi(replicated=False),
-        'uk_price_paid': UkHousePrices(replicated=False),
-        'web_analytics': WebAnalytics(caps=caps),
-    }
-
     slow: list[str] = []
     fast: list[str] = []
     pk_generators: list[Callable[[], str]] = []
     join_generators: list[Callable[[], str]] = []
     settings_generators: list[Callable[[], str]] = []
 
-    for db_prefix, plugin in plugins.items():
+    for plugin in datasets:
         # Check if any table from this database exists
-        if not any(t.startswith(db_prefix + '.') for t in available_tables):
+        if not any(t.startswith(plugin.name + '.') for t in available_tables):
             continue
         qs = plugin.queries
         slow.extend(qs.slow)
@@ -364,7 +359,8 @@ def main():
     caps = probe(admin_client)
     print(caps.summary())
 
-    available_tables = _detect_available_tables(admin_client)
+    datasets = build_all_datasets(caps=caps)
+    available_tables = _detect_available_tables(admin_client, datasets)
     print(f"\n  Available tables:      {', '.join(sorted(available_tables)) or '(none found)'}")
 
     # ── Create test users if requested (env var takes precedence) ──
@@ -381,7 +377,7 @@ def main():
     admin_client.disconnect()
 
     # ── Collect queries from table plugins ─────────────────────────
-    pools = _collect_queries(caps, available_tables)
+    pools = _collect_queries(datasets, available_tables, caps)
 
     print(f"\n  Slow queries:          {len(pools['slow'])}")
     print(f"  Fast queries:          {len(pools['fast'])}")

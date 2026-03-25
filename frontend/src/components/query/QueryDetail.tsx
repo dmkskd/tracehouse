@@ -416,7 +416,9 @@ const QueryLogsSection: React.FC<{ queryId: string; eventDate?: string; autoExpa
       fetchFlamegraph();
       if (hasQueryThreadLog) fetchThreads();
     }
-  }, [queryId, autoExpand, fetchLogs, fetchSpans, fetchFlamegraph, fetchThreads, hasQueryThreadLog]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- fetch callbacks depend on state
+    // this effect resets (flamegraphType), so including them would cause an infinite loop
+  }, [queryId, autoExpand, hasQueryThreadLog]);
 
   const fmtDur = (ms: number) => ms >= 1000 ? `${(ms / 1000).toFixed(2)}s` : ms >= 1 ? `${ms.toFixed(2)}ms` : `${(ms * 1000).toFixed(0)}µs`;
 

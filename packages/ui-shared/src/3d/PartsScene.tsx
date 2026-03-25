@@ -58,7 +58,10 @@ function buildPartPositionMap(
     partsByLevel.get(part.level)!.push(part);
   }
 
-  const maxLevel = Math.max(...partsByLevel.keys(), 0);
+  // Compact: map populated levels to sequential indices
+  const sortedLevels = [...partsByLevel.keys()].sort((a, b) => a - b);
+  const levelIndex = new Map(sortedLevels.map((lvl, i) => [lvl, i]));
+  const maxLaneIndex = Math.max(sortedLevels.length - 1, 0);
 
   const visualSizes = calculatePartSizes(
     parts.map(p => ({ name: p.name, bytes_on_disk: p.bytes_on_disk }))
@@ -70,9 +73,10 @@ function buildPartPositionMap(
     const sorted = [...levelParts].sort(
       (a, b) => b.bytes_on_disk - a.bytes_on_disk
     );
+    const lane = levelIndex.get(level)!;
     sorted.forEach((part, i) => {
       const vs = sizeMap.get(part.name) ?? 0.5;
-      const xPos = level * levelSpacing - (maxLevel * levelSpacing) / 2;
+      const xPos = lane * levelSpacing - (maxLaneIndex * levelSpacing) / 2;
       const zPos = i * partSpacing - (sorted.length - 1) * (partSpacing / 2);
       const yPos = vs / 2;
       map.set(part.name, [xPos, yPos, zPos]);

@@ -39,6 +39,7 @@ import { PermissionGate } from '../shared/PermissionGate';
 import { extractErrorMessage } from '../../utils/errorFormatters';
 import { useCapabilityCheck } from '../shared/RequiresCapability';
 import { classifyActiveMerge, getMergeCategoryInfo, classifyMutationCommand, MUTATION_SUBTYPES, computeMergeEta, pickThroughputEstimate } from '@tracehouse/core';
+import { useUserPreferenceStore } from '../../stores/userPreferenceStore';
 
 // Stat Card
 const StatCard: React.FC<{
@@ -805,7 +806,7 @@ const MergeDetailPanel: React.FC<{
           </code>
         </div>
 
-        <div style={{ marginBottom: 16, display: 'flex', alignItems: 'center', gap: 8 }}>
+        <div style={{ marginBottom: 16, display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
           <span style={{
             padding: '2px 8px', fontSize: 10, borderRadius: 4,
             background: `${getTypeColor()}20`, color: getTypeColor(),
@@ -819,6 +820,15 @@ const MergeDetailPanel: React.FC<{
               background: 'var(--bg-tertiary)', color: 'var(--text-muted)',
             }}>
               {merge.merge_algorithm}
+            </span>
+          )}
+          {merge.is_replica_merge && (
+            <span style={{
+              padding: '2px 8px', fontSize: 10, borderRadius: 4,
+              background: 'rgba(136,136,136,0.15)', color: '#888',
+              border: '1px solid rgba(136,136,136,0.25)',
+            }}>
+              Replica Merge
             </span>
           )}
         </div>
@@ -956,13 +966,18 @@ const MergeHistoryDetailPanel: React.FC<{
           <div style={{ fontSize: 10, marginBottom: 4, color: 'var(--text-muted)' }}>Part Name</div>
           <code style={{ fontSize: 11, padding: '4px 8px', borderRadius: 4, background: 'var(--bg-tertiary)', color: 'var(--text-secondary)', display: 'block', wordBreak: 'break-all' }}>{record.part_name}</code>
         </div>
-        {(record.merge_reason || record.merge_algorithm) && (
-          <div style={{ marginBottom: 16, display: 'flex', alignItems: 'center', gap: 8 }}>
+        {(record.merge_reason || record.merge_algorithm || record.is_replica_merge) && (
+          <div style={{ marginBottom: 16, display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
             {record.merge_reason && (
               <span style={{ padding: '2px 8px', fontSize: 10, borderRadius: 4, background: `${accentColor}26`, color: accentColor, border: `1px solid ${accentColor}4d` }}>{record.merge_reason}</span>
             )}
             {record.merge_algorithm && record.merge_algorithm !== 'Undecided' && (
               <span style={{ padding: '2px 8px', fontSize: 10, borderRadius: 4, background: 'var(--bg-tertiary)', color: 'var(--text-muted)' }}>{record.merge_algorithm}</span>
+            )}
+            {record.is_replica_merge && (
+              <span style={{ padding: '2px 8px', fontSize: 10, borderRadius: 4, background: 'rgba(136,136,136,0.15)', color: '#888', border: '1px solid rgba(136,136,136,0.25)' }}>
+                {record.event_type === 'DownloadPart' ? 'Replica Fetch' : 'Replica Merge'}
+              </span>
             )}
           </div>
         )}
@@ -1651,6 +1666,7 @@ export const MergeTrackerView: React.FC = () => {
   const [selectedHost, setSelectedHost] = useState<string | undefined>();
   const [selectedStatus, setSelectedStatus] = useState<string | undefined>();
   const [selectedPartName, setSelectedPartName] = useState<string | undefined>();
+  const { hideReplicaMerges, setHideReplicaMerges } = useUserPreferenceStore();
 
   const activeProfile = profiles.find(p => p.id === activeProfileId);
   const isConnected = activeProfile?.is_connected ?? false;
@@ -1823,9 +1839,10 @@ export const MergeTrackerView: React.FC = () => {
   const dbFilter = historyFilter.database;
   const tblFilter = historyFilter.table;
 
-  // Filtered active merges (client-side: database, table, merge type, host, part)
+  // Filtered active merges (client-side: database, table, merge type, host, part, replica)
   const filteredActiveMerges = useMemo(() => {
     let result = activeMerges;
+    if (hideReplicaMerges) result = result.filter(m => !m.is_replica_merge);
     if (historyFilter.excludeSystemDatabases) {
       result = result.filter(m => !['system', 'information_schema', 'INFORMATION_SCHEMA'].includes(m.database));
     }
@@ -1846,7 +1863,7 @@ export const MergeTrackerView: React.FC = () => {
       );
     }
     return result;
-  }, [activeMerges, historyFilter.excludeSystemDatabases, dbFilter, tblFilter, selectedMergeType, selectedHost, selectedPartName]);
+  }, [activeMerges, hideReplicaMerges, historyFilter.excludeSystemDatabases, dbFilter, tblFilter, selectedMergeType, selectedHost, selectedPartName]);
 
   // Filtered mutations (client-side: database, table)
   const filteredMutations = React.useMemo(() => {
@@ -1856,9 +1873,10 @@ export const MergeTrackerView: React.FC = () => {
     return result;
   }, [mutations, dbFilter, tblFilter]);
 
-  // Filtered merge history (client-side merge_reason, host, part on top of server-side db/table/limit)
+  // Filtered merge history (client-side merge_reason, host, part, replica on top of server-side db/table/limit)
   const filteredMergeHistory = React.useMemo(() => {
     let result = mergeHistory;
+    if (hideReplicaMerges) result = result.filter(r => !r.is_replica_merge);
     if (selectedMergeReason) result = result.filter(r => r.merge_reason === selectedMergeReason);
     if (selectedHost) result = result.filter(r => r.hostname === selectedHost);
     if (selectedStatus) {
@@ -1870,7 +1888,7 @@ export const MergeTrackerView: React.FC = () => {
       result = result.filter(r => r.part_name.toLowerCase().includes(q) || r.source_part_names?.some(p => p.toLowerCase().includes(q)));
     }
     return result;
-  }, [mergeHistory, selectedMergeReason, selectedHost, selectedStatus, selectedPartName]);
+  }, [mergeHistory, hideReplicaMerges, selectedMergeReason, selectedHost, selectedStatus, selectedPartName]);
 
   // Filtered mutation history (server-side handles db/table/limit, no extra client filter needed)
   const filteredMutationHistory = mutationHistory;
@@ -1905,6 +1923,12 @@ export const MergeTrackerView: React.FC = () => {
     mergeHistory.forEach(r => { statuses.add(r.error ? 'Error' : 'OK'); });
     return Array.from(statuses).sort();
   }, [mergeHistory]);
+
+  // Whether any replica merges exist (to decide whether to show toggle)
+  const hasReplicaMerges = useMemo(() =>
+    activeMerges.some(m => m.is_replica_merge) || mergeHistory.some(r => r.is_replica_merge),
+    [activeMerges, mergeHistory]
+  );
 
   // Result count for the filter bar
   const filterResultCount = activeTab === 'active' ? filteredActiveMerges.length
@@ -2052,6 +2076,8 @@ export const MergeTrackerView: React.FC = () => {
               onPartNameChange={setSelectedPartName}
               excludeSystemDatabases={historyFilter.excludeSystemDatabases}
               onExcludeSystemChange={(v) => handleFilterChange({ excludeSystemDatabases: v })}
+              hideReplicaMerges={(activeTab === 'active' || activeTab === 'history') && hasReplicaMerges ? hideReplicaMerges : undefined}
+              onHideReplicaMergesChange={(activeTab === 'active' || activeTab === 'history') && hasReplicaMerges ? setHideReplicaMerges : undefined}
               onRefresh={activeTab === 'history' ? () => fetchMergeHistory(true) : activeTab === 'mutationHistory' ? () => fetchMutationHistory(true) : undefined}
               isLoading={activeTab === 'history' ? isLoadingHistory : activeTab === 'mutationHistory' ? isLoadingMutationHistory : undefined}
               resultCount={filterResultCount}

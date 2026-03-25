@@ -9,6 +9,7 @@
 
 import { describe, it, expect, beforeAll, afterAll, beforeEach } from 'vitest';
 import { startClickHouse, stopClickHouse, type TestClickHouseContext } from './setup/clickhouse-container.js';
+import { runTracehouseSetup } from './setup/tracehouse-setup.js';
 import { buildProcessSamplesSQL, mapProcessSampleRow, type ProcessSample } from '../../queries/process-queries.js';
 
 const CONTAINER_TIMEOUT = 120_000;
@@ -43,50 +44,7 @@ describe('PROCESS_SAMPLES_SQL integration (delta calculations)', () => {
 
   beforeAll(async () => {
     ctx = await startClickHouse();
-
-    await ctx.client.command({
-      query: `CREATE DATABASE IF NOT EXISTS tracehouse ENGINE = Atomic`,
-    });
-
-    await ctx.client.command({
-      query: `
-        CREATE TABLE IF NOT EXISTS tracehouse.processes_history
-        (
-          hostname            LowCardinality(String) DEFAULT hostName(),
-          sample_time         DateTime64(3) DEFAULT now64(3),
-          is_initial_query    UInt8 DEFAULT 1,
-          query_id            String,
-          initial_query_id    String,
-          query               String DEFAULT '',
-          normalized_query_hash UInt64 DEFAULT 0,
-          query_kind          LowCardinality(String) DEFAULT '',
-          current_database    LowCardinality(String) DEFAULT '',
-          user                String DEFAULT '',
-          initial_user        String DEFAULT '',
-          address             String DEFAULT '',
-          initial_address     String DEFAULT '',
-          interface           UInt8 DEFAULT 0,
-          os_user             String DEFAULT '',
-          client_hostname     String DEFAULT '',
-          client_name         String DEFAULT '',
-          elapsed             Float64,
-          is_cancelled        UInt8 DEFAULT 0,
-          read_rows           UInt64,
-          read_bytes          UInt64,
-          written_rows        UInt64,
-          written_bytes       UInt64 DEFAULT 0,
-          total_rows_approx   UInt64 DEFAULT 0,
-          memory_usage        Int64,
-          peak_memory_usage   Int64,
-          thread_ids          Array(UInt64),
-          peak_threads_usage  UInt64 DEFAULT 0,
-          ProfileEvents       Map(String, UInt64),
-          Settings            Map(String, String)
-        )
-        ENGINE = MergeTree
-        ORDER BY (query_id, sample_time)
-      `,
-    });
+    await runTracehouseSetup(ctx, { target: 'processes', tablesOnly: true });
   }, CONTAINER_TIMEOUT);
 
   afterAll(async () => {

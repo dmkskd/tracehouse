@@ -166,6 +166,33 @@ describe('crossCorrelationDetail', () => {
     const result = crossCorrelationDetail(a, a);
     expect(Math.abs(result.lag)).toBeLessThanOrEqual(2);
   });
+
+  it('does not flip sign on periodic data when half-cycle offset is marginally better', () => {
+    // Two in-phase sinusoids (period=20) that visually move together.
+    // Edge noise slightly degrades the lag=0 Pearson (0.980), while the
+    // half-cycle offset (lag=10) slices off the noisy edges and scores
+    // marginally higher in magnitude (-0.986) — but with the WRONG sign.
+    // The old algorithm picked the highest |r| regardless, reporting a
+    // strong negative correlation for two lines that clearly move together.
+    const n = 40;
+    const period = 20;
+    const a: number[] = [];
+    const b: number[] = [];
+    for (let i = 0; i < n; i++) {
+      a.push(Math.sin(2 * Math.PI * i / period));
+      b.push(Math.sin(2 * Math.PI * i / period));
+    }
+    // Add noise at the edges — included at lag=0 but sliced off at |lag|>0
+    b[0] += 0.5;  b[1] -= 0.4;
+    b[n - 2] -= 0.5; b[n - 1] += 0.4;
+
+    // Same-time Pearson is strongly positive (~0.98)
+    expect(pearson(a, b)).toBeGreaterThan(0.95);
+
+    // Cross-correlation must preserve the positive sign
+    const result = crossCorrelationDetail(a, b);
+    expect(result.r).toBeGreaterThan(0);
+  });
 });
 
 // ═══════════════════════════════════════════════════════════════════════════

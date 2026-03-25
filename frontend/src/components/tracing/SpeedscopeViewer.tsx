@@ -10,6 +10,16 @@ import React, { useRef, useEffect, useCallback, useState } from 'react';
 // Side-effect import: registers <speedscope-widget> custom element
 import 'speedscope-widget';
 
+// Extend JSX to accept the custom element
+declare global {
+  // eslint-disable-next-line @typescript-eslint/no-namespace
+  namespace JSX {
+    interface IntrinsicElements {
+      'speedscope-widget': React.DetailedHTMLProps<React.HTMLAttributes<HTMLElement>, HTMLElement>;
+    }
+  }
+}
+
 export type FlamegraphType = 'CPU' | 'Real' | 'Memory';
 
 interface SpeedscopeViewerProps {
@@ -21,16 +31,6 @@ interface SpeedscopeViewerProps {
   onRefresh: (type: FlamegraphType) => void;
   profileType?: FlamegraphType;
   onTypeChange?: (type: FlamegraphType) => void;
-}
-
-// Extend JSX to accept the custom element
-declare global {
-  // eslint-disable-next-line @typescript-eslint/no-namespace
-  namespace JSX {
-    interface IntrinsicElements {
-      'speedscope-widget': React.DetailedHTMLProps<React.HTMLAttributes<HTMLElement>, HTMLElement>;
-    }
-  }
 }
 
 const ProfileTypeToggle: React.FC<{
@@ -85,6 +85,9 @@ export const SpeedscopeViewer: React.FC<SpeedscopeViewerProps> = ({
     widgetRef.current = el;
     if (el) {
       (el as any).started = true;
+    } else {
+      // Widget unmounted — reset so next mount does a full init
+      loadedFoldedRef.current = null;
     }
   }, []);
 
@@ -283,15 +286,17 @@ export const SpeedscopeViewer: React.FC<SpeedscopeViewerProps> = ({
     </div>
   ) : null;
 
-  // Always keep the widget mounted so speedscope's internal state (view mode,
-  // scroll position, etc.) survives loading/refresh cycles.
+  // Only mount the widget when we have data to avoid the connectedCallback
+  // race: it auto-inits with empty attribute data, showing "Invalid input".
   const content = (
     <div style={{ flex: 1, overflow: 'hidden', minHeight: isFullscreen ? 0 : 400, position: 'relative' }}>
       {overlay}
-      <speedscope-widget
-        ref={setWidgetRef}
-        style={{ display: 'block', width: '100%', height: '100%' }}
-      />
+      {hasData && (
+        <speedscope-widget
+          ref={setWidgetRef}
+          style={{ display: 'block', width: '100%', height: '100%' }}
+        />
+      )}
     </div>
   );
 

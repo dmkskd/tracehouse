@@ -66,6 +66,36 @@ WHERE type = 'QueryFinish'
 GROUP BY user
 ORDER BY query_count DESC`,
 
+  `-- @meta: title='Recent SELECTs' group='Selects' interval='1 HOUR' description='Most recent SELECT queries with duration — useful for picking query IDs to compare'
+-- @link: on=query_id into='Query Detail by ID'
+-- Source: https://clickhouse.com/blog/monitoring-troubleshooting-select-queries-clickhouse
+SELECT
+    query_id,
+    substring(query, 1, 120) AS query_preview,
+    query_duration_ms,
+    user,
+    event_time
+FROM {{cluster_aware:system.query_log}}
+WHERE type != 'QueryStart'
+  AND query_kind = 'Select'
+  AND event_time > {{time_range}}
+ORDER BY event_time DESC
+LIMIT 20`,
+
+  `-- @meta: title='Queries by Client' group='Selects' interval='1 DAY' description='SELECT query count per client application'
+-- @chart: type=pie group_by=client_name value=query_count style=3d
+-- Source: https://clickhouse.com/blog/monitoring-troubleshooting-select-queries-clickhouse
+SELECT
+    if(empty(client_name), 'unknown/http', client_name) AS client_name,
+    count() AS query_count,
+    avg(query_duration_ms) AS avg_duration_ms
+FROM {{cluster_aware:system.query_log}}
+WHERE type = 'QueryFinish'
+  AND query_kind = 'Select'
+  AND event_time > {{time_range}}
+GROUP BY client_name
+ORDER BY query_count DESC`,
+
   `-- @meta: title='Read Rows Distribution' group='Selects' interval='1 DAY' description='Distribution of rows read per SELECT query'
 -- @chart: type=pie group_by=bucket value=query_count style=3d
 -- Source: https://clickhouse.com/blog/monitoring-troubleshooting-select-queries-clickhouse

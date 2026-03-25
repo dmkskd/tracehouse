@@ -168,17 +168,17 @@ ORDER BY val DESC`,
   `-- @meta: title='Cache Sizes (current)' group='Memory' description='Current values of all cache and memory metrics from system.metrics and system.asynchronous_metrics'
 -- Source: https://kb.altinity.com/altinity-kb-setup-and-maintenance/altinity-kb-who-ate-my-memory/
 -- Source: https://clickhouse.com/docs/guides/developer/debugging-memory-issues
-SELECT source, metric, toInt64(value) AS bytes, formatReadableSize(value) AS size
+SELECT source, metric, bytes, formatReadableSize(bytes) AS size
 FROM (
-    SELECT 'metrics' AS source, metric, value
+    SELECT 'metrics' AS source, metric, toInt64(value) AS bytes
     FROM system.metrics
     WHERE (metric ILIKE '%Cach%' OR metric ILIKE '%Mem%') AND value != 0
       UNION ALL
-    SELECT 'async_metrics' AS source, metric, value
+    SELECT 'async_metrics' AS source, metric, toInt64(value) AS bytes
     FROM system.asynchronous_metrics
     WHERE (metric LIKE '%Cach%' OR metric LIKE '%Mem%') AND value > 0
 )
-ORDER BY value DESC`,
+ORDER BY bytes DESC`,
 
   `-- @meta: title='Primary Key Memory by Database' group='Memory' description='Primary key memory allocated per database — often a silent memory hog on wide tables'
 -- @chart: type=bar group_by=database value=pk_allocated_mb unit=MB style=2d
@@ -243,10 +243,11 @@ ORDER BY bytes_allocated DESC`,
 
   `-- @meta: title='Top Running Queries by Memory' group='Memory' description='Currently running queries sorted by peak memory — spot memory-hungry queries in real time'
 -- @rag: column=peak_memory_mb green<100 amber<500
+-- @link: on=query_id into='Query Detail by ID'
 -- Source: https://clickhouse.com/docs/guides/developer/debugging-memory-issues
 -- Source: https://kb.altinity.com/altinity-kb-setup-and-maintenance/altinity-kb-who-ate-my-memory/
 SELECT
-    initial_query_id,
+    initial_query_id AS query_id,
     user,
     round(elapsed, 1) AS elapsed_sec,
     formatReadableSize(memory_usage) AS current_memory,
@@ -282,6 +283,7 @@ LIMIT 30`,
 
   `-- @meta: title='Memory Query Executions' group='Memory' interval='1 DAY' description='Individual executions of a specific high-memory query shape'
 -- @rag: column=memory_mb green<100 amber<500
+-- @link: on=query_id into='Query Detail by ID'
 SELECT
     query_id,
     event_time,
@@ -306,15 +308,15 @@ SELECT
     t,
     queries,
     round(sum_of_peaks / 1048576, 1) AS sum_of_peaks_mb,
-    formatReadableSize(sum_of_peaks) AS sum_of_peaks,
+    formatReadableSize(sum_of_peaks) AS sum_of_peaks_fmt,
     formatReadableSize(biggest_peak) AS biggest_query_peak,
     biggest_query_id
 FROM (
     SELECT
         toStartOfInterval(event_time, INTERVAL 5 MINUTE) AS t,
         count() AS queries,
-        sum(peak_size) AS sum_of_peaks,
-        max(peak_size) AS biggest_peak,
+        toInt64(sum(peak_size)) AS sum_of_peaks,
+        toInt64(max(peak_size)) AS biggest_peak,
         argMax(query_id, peak_size) AS biggest_query_id
     FROM (
         SELECT
@@ -337,28 +339,27 @@ ORDER BY t ASC`,
 -- Source: https://kb.altinity.com/altinity-kb-setup-and-maintenance/altinity-kb-who-ate-my-memory/
 SELECT
     toStartOfInterval(event_time, INTERVAL 1 MINUTE) AS t,
-    round(avg(value) / 1048576, 1) AS memory_mb
-FROM {{cluster_aware:system.asynchronous_metric_log}}
-WHERE metric = 'MemoryTracking'
-  AND event_time > {{time_range}}
+    round(avg(CurrentMetric_MemoryTracking) / 1048576, 1) AS memory_mb
+FROM {{cluster_aware:system.metric_log}}
+WHERE event_time > {{time_range}}
 GROUP BY t
 ORDER BY t ASC`,
 
   `-- @meta: title='Cache Trend' group='Memory' interval='1 HOUR' description='Individual cache sizes over time — mark cache, uncompressed cache, page cache, etc.'
--- @chart: type=stacked_area group_by=t value=value_mb series=metric unit=MB style=2d
+-- @chart: type=grouped_line group_by=t value=value_mb series=metric unit=MB style=2d
 -- Source: https://kb.altinity.com/altinity-kb-setup-and-maintenance/altinity-kb-who-ate-my-memory/
-SELECT
-    toStartOfInterval(event_time, INTERVAL 1 MINUTE) AS t,
-    metric,
-    round(avg(value) / 1048576, 1) AS value_mb
-FROM {{cluster_aware:system.asynchronous_metric_log}}
-WHERE metric IN (
-    'MarkCacheBytes', 'UncompressedCacheBytes',
-    'MMapCacheCells', 'CompiledExpressionCacheBytes',
-    'DNSCacheEntries'
+SELECT t, metric, round(avg(val) / 1048576, 1) AS value_mb
+FROM (
+    SELECT toStartOfInterval(event_time, INTERVAL 1 MINUTE) AS t, 'MarkCache' AS metric, CurrentMetric_MarkCacheBytes AS val FROM {{cluster_aware:system.metric_log}} WHERE event_time > {{time_range}}
+    UNION ALL
+    SELECT toStartOfInterval(event_time, INTERVAL 1 MINUTE), 'UncompressedCache', CurrentMetric_UncompressedCacheBytes FROM {{cluster_aware:system.metric_log}} WHERE event_time > {{time_range}}
+    UNION ALL
+    SELECT toStartOfInterval(event_time, INTERVAL 1 MINUTE), 'MMapCache', CurrentMetric_MMapCacheCells FROM {{cluster_aware:system.metric_log}} WHERE event_time > {{time_range}}
+    UNION ALL
+    SELECT toStartOfInterval(event_time, INTERVAL 1 MINUTE), 'CompiledExprCache', CurrentMetric_CompiledExpressionCacheBytes FROM {{cluster_aware:system.metric_log}} WHERE event_time > {{time_range}}
 )
-  AND event_time > {{time_range}}
 GROUP BY t, metric
+HAVING value_mb > 0
 ORDER BY t ASC, metric`,
 
   `-- @meta: title='Memory by Query Kind (hourly)' group='Memory' interval='1 DAY' description='Hourly peak memory broken down by query type — SELECTs vs INSERTs vs merges'

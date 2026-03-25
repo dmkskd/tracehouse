@@ -99,7 +99,11 @@ export const QueryExplorer: React.FC<QueryExplorerProps> = ({ urlState, onUrlSta
   const { clusterName } = useClusterStore();
   const [customQueries, setCustomQueries] = useState<Query[]>(() => loadCustomQueries());
   const allQueries = useMemo(() => [...PRESET_QUERIES, ...customQueries], [customQueries]);
-  const allQueryEntries = useMemo(() => allQueries.map(q => ({ name: q.name, group: q.group })), [allQueries]);
+  const allQueryEntries = useMemo(() => allQueries.map(q => ({
+    name: q.name,
+    group: q.group,
+    isLinkTarget: q.sql.includes('{{drill_value:'),
+  })), [allQueries]);
 
   // Initialize from URL state if available
   const initialPreset = urlState?.preset !== undefined ? allQueries[urlState.preset] : undefined;

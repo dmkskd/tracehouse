@@ -297,6 +297,7 @@ describe('Main App Migration - Store Integration', () => {
       const mockHistory = createMockMergeHistoryRecord({ duration_ms: 1500 });
       const responses: Array<[RegExp, Record<string, unknown>[]]> = [
         [/system\.part_log/, [mockHistory as unknown as Record<string, unknown>]],
+        [/system\.tables/, []],
       ];
       const { adapter, calls } = createMockAdapter(responses);
       const service = new MergeTracker(adapter);
@@ -307,7 +308,7 @@ describe('Main App Migration - Store Integration', () => {
         limit: 50,
       });
 
-      expect(calls.length).toBe(1);
+      expect(calls.length).toBe(2);
       expect(calls[0]).toContain('system.part_log');
       expect(calls[0]).toContain('test_db');
       expect(calls[0]).toContain('test_table');

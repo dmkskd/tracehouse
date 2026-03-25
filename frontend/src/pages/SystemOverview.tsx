@@ -500,11 +500,11 @@ export const SystemOverview: React.FC = () => {
           <div className="card-body">
             {activeMerges.length > 0 ? (
               <div className="space-y-3">
-                {activeMerges.map((merge) => {
+                {activeMerges.map((merge, i) => {
                   const pct = Math.round(merge.progress * 100);
                   return (
-                    <div 
-                      key={`${merge.database}.${merge.table}:${merge.result_part_name}`}
+                    <div
+                      key={`${merge.database}.${merge.table}:${merge.result_part_name}:${i}`}
                       className="p-4 rounded-lg"
                       style={{ background: 'var(--bg-tertiary)' }}
                     >

@@ -101,6 +101,9 @@ module.exports = (env) => {
           { from: 'README.md', to: '.', noErrorOnMissing: true },
         ],
       }),
+      new webpack.DefinePlugin({
+        __BUILD_TIME__: JSON.stringify(new Date().toISOString()),
+      }),
       ...(isProduction ? [] : []),
     ],
     module: {

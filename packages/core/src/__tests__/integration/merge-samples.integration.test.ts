@@ -9,6 +9,7 @@
 
 import { describe, it, expect, beforeAll, afterAll, beforeEach } from 'vitest';
 import { startClickHouse, stopClickHouse, type TestClickHouseContext } from './setup/clickhouse-container.js';
+import { runTracehouseSetup } from './setup/tracehouse-setup.js';
 import { buildMergeSamplesSQL, mapMergeSampleRow, type MergeSample } from '../../queries/merge-sample-queries.js';
 
 const CONTAINER_TIMEOUT = 120_000;
@@ -65,42 +66,7 @@ describe('merge samples integration (delta calculations)', () => {
 
   beforeAll(async () => {
     ctx = await startClickHouse();
-
-    await ctx.client.command({
-      query: `CREATE DATABASE IF NOT EXISTS tracehouse ENGINE = Atomic`,
-    });
-
-    await ctx.client.command({
-      query: `
-        CREATE TABLE IF NOT EXISTS tracehouse.merges_history
-        (
-          hostname            LowCardinality(String) DEFAULT hostName(),
-          sample_time         DateTime64(3) DEFAULT now64(3),
-          database            LowCardinality(String),
-          table               LowCardinality(String),
-          result_part_name    String,
-          partition_id        LowCardinality(String),
-          elapsed             Float64,
-          progress            Float64,
-          num_parts           UInt64,
-          is_mutation         UInt8,
-          merge_type          LowCardinality(String),
-          merge_algorithm     LowCardinality(String),
-          total_size_bytes_compressed   UInt64,
-          total_size_bytes_uncompressed UInt64,
-          total_size_marks              UInt64,
-          rows_read                     UInt64,
-          bytes_read_uncompressed       UInt64,
-          rows_written                  UInt64,
-          bytes_written_uncompressed    UInt64,
-          columns_written               UInt64,
-          memory_usage        UInt64,
-          thread_id           UInt64
-        )
-        ENGINE = MergeTree
-        ORDER BY (database, table, result_part_name, sample_time)
-      `,
-    });
+    await runTracehouseSetup(ctx, { target: 'merges', tablesOnly: true });
   }, CONTAINER_TIMEOUT);
 
   afterAll(async () => {

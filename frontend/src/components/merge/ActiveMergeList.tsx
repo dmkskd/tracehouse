@@ -257,9 +257,9 @@ export const ActiveMergeList: React.FC<ActiveMergeListProps> = ({
                   {merge.num_parts} → {merge.result_part_name}
                 </td>
                 <td style={{ padding: '5px 8px' }}>
-                  <span style={{ 
-                    padding: '1px 6px', 
-                    fontSize: 9, 
+                  <span style={{
+                    padding: '1px 6px',
+                    fontSize: 9,
                     borderRadius: 3,
                     background: `${typeColor}20`,
                     color: typeColor,
@@ -267,6 +267,19 @@ export const ActiveMergeList: React.FC<ActiveMergeListProps> = ({
                   }}>
                     {typeLabel}
                   </span>
+                  {(merge as MergeInfo & { is_replica_merge?: boolean }).is_replica_merge && (
+                    <span style={{
+                      padding: '1px 6px',
+                      fontSize: 9,
+                      borderRadius: 3,
+                      marginLeft: 4,
+                      background: 'rgba(136,136,136,0.15)',
+                      color: '#888',
+                      border: '1px solid rgba(136,136,136,0.25)',
+                    }} title="Same merge running on another replica">
+                      Replica
+                    </span>
+                  )}
                 </td>
                 <td style={{ padding: '5px 8px', textAlign: 'right', fontFamily: 'monospace', color: 'var(--text-muted)' }}>
                   {formatBytes(merge.total_size_bytes_compressed)}

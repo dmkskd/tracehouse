@@ -60,7 +60,7 @@ export const TimelineChart: React.FC<{
   const [dragCurrent, setDragCurrent] = useState<number | null>(null);
   const [localSvgX, setLocalSvgX] = useState<number | null>(null);
   const [localSvgY, setLocalSvgY] = useState<number | null>(null);
-  const hoveredBandRef = useRef<{ type: 'query' | 'merge' | 'mutation'; idx: number } | null>(null);
+  const hoveredBandRef = useRef<{ type: 'query' | 'merge' | 'mutation'; idx: number; id: string } | null>(null);
   const cfg = METRIC_CONFIG[metricMode];
 
   // Pick the right server-level timeseries based on mode
@@ -396,7 +396,7 @@ export const TimelineChart: React.FC<{
     }
     // Detect which band the mouse Y is in by interpolating between bucket points
     // (matches the linear interpolation the SVG path rendering uses)
-    let hoveredBand: { type: 'query' | 'merge' | 'mutation'; idx: number } | null = null;
+    let hoveredBand: { type: 'query' | 'merge' | 'mutation'; idx: number; id: string } | null = null;
     if (localSvgY !== null && buckets.length >= 2) {
       const yVal = ((padTop + ch - localSvgY) / ch) * maxY;
       if (yVal >= 0) {
@@ -417,22 +417,28 @@ export const TimelineChart: React.FC<{
           let v0: number, v1: number;
           let bandType: 'query' | 'merge' | 'mutation';
           let bandIdx: number;
+          let bandId: string;
           if (idx < nq) {
             v0 = b0.qv[idx]; v1 = b1.qv[idx];
             bandType = 'query'; bandIdx = idx;
+            bandId = data.queries[idx]?.query_id ?? '';
           } else if (idx < nq + nm) {
             v0 = b0.mv[idx - nq]; v1 = b1.mv[idx - nq];
             bandType = 'merge'; bandIdx = idx - nq;
+            const m = data.merges[idx - nq];
+            bandId = m ? `${m.table}:${m.part_name}` : '';
           } else {
             v0 = b0.mutv[idx - nq - nm]; v1 = b1.mutv[idx - nq - nm];
             bandType = 'mutation'; bandIdx = idx - nq - nm;
+            const mu = (data.mutations ?? [])[idx - nq - nm];
+            bandId = mu ? `${mu.table}:${mu.part_name}` : '';
           }
           const interpVal = v0 + (v1 - v0) * frac;
           if (interpVal <= 0) continue;
           const prev = cumulative;
           cumulative += interpVal;
           if (yVal >= prev && yVal < cumulative) {
-            hoveredBand = { type: bandType, idx: bandIdx };
+            hoveredBand = { type: bandType, idx: bandIdx, id: bandId };
             break;
           }
         }
@@ -515,18 +521,22 @@ export const TimelineChart: React.FC<{
         {areas.map((a, i) => {
           // Determine if this area is the hovered one (from chart hover or table hover)
           let isHovered = false;
-          // Check table highlight first (takes priority)
+          // Resolve the identity of area i
+          let areaId = '';
+          if (i < nq) {
+            areaId = data.queries[i]?.query_id ?? '';
+          } else if (i < nq + nm) {
+            const m = data.merges[i - nq];
+            areaId = m ? `${m.table}:${m.part_name}:${m.hostname ?? ''}` : '';
+          } else {
+            const mu = (data.mutations ?? [])[i - nq - nm];
+            areaId = mu ? `${mu.table}:${mu.part_name}:${mu.hostname ?? ''}` : '';
+          }
+          // Check table highlight first (takes priority), match by id for cross-server correctness
           if (highlightedItem) {
-            const { type, idx } = highlightedItem;
-            if (type === 'query' && i === idx) isHovered = true;
-            else if (type === 'merge' && i === nq + idx) isHovered = true;
-            else if (type === 'mutation' && i === nq + nm + idx) isHovered = true;
+            isHovered = highlightedItem.id === areaId;
           } else if (snap?.hoveredBand) {
-            // Fall back to chart hover
-            const { type, idx } = snap.hoveredBand;
-            if (type === 'query' && i === idx) isHovered = true;
-            else if (type === 'merge' && i === nq + idx) isHovered = true;
-            else if (type === 'mutation' && i === nq + nm + idx) isHovered = true;
+            isHovered = snap.hoveredBand.id === areaId;
           }
           const hasAnyHighlight = highlightedItem !== null || snap?.hoveredBand !== null;
           const baseOpacity = isHovered ? 1 : (hasAnyHighlight ? 0.3 : 0.6);

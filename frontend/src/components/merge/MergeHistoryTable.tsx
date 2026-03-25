@@ -159,16 +159,27 @@ export const MergeHistoryTable: React.FC<MergeHistoryTableProps> = ({
                       const reason = record.merge_reason || 'Regular';
                       const info = getMergeCategoryInfo(reason as MergeCategory);
                       return (
-                        <span
-                          title={info.description}
-                          style={{
-                            padding: '1px 6px', fontSize: 9, borderRadius: 3,
-                            background: `${info.color}20`, color: info.color,
-                            border: `1px solid ${info.color}33`,
-                          }}
-                        >
-                          {info.label}
-                        </span>
+                        <>
+                          <span
+                            title={info.description}
+                            style={{
+                              padding: '1px 6px', fontSize: 9, borderRadius: 3,
+                              background: `${info.color}20`, color: info.color,
+                              border: `1px solid ${info.color}33`,
+                            }}
+                          >
+                            {info.label}
+                          </span>
+                          {(record as typeof record & { is_replica_merge?: boolean }).is_replica_merge && (
+                            <span style={{
+                              padding: '1px 6px', fontSize: 9, borderRadius: 3, marginLeft: 4,
+                              background: 'rgba(136,136,136,0.15)', color: '#888',
+                              border: '1px solid rgba(136,136,136,0.25)',
+                            }} title="Same merge executed on another replica">
+                              Replica
+                            </span>
+                          )}
+                        </>
                       );
                     })()}
                   </td>

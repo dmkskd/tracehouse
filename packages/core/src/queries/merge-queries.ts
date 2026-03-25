@@ -61,7 +61,7 @@ export const GET_MERGE_HISTORY = `
   FROM {{cluster_aware:system.part_log}}
   WHERE database = {database}
     AND table = {table}
-    AND event_type IN ('MergeParts', 'MutatePart', 'MovePart')
+    AND event_type IN ('MergeParts', 'MutatePart', 'MovePart', 'DownloadPart')
   ORDER BY event_time DESC
   LIMIT {limit}
 `;
@@ -93,7 +93,7 @@ export const GET_ALL_MERGE_HISTORY = `
     exception,
     hostName() AS hostname
   FROM {{cluster_aware:system.part_log}}
-  WHERE event_type IN ('MergeParts', 'MutatePart', 'MovePart')
+  WHERE event_type IN ('MergeParts', 'MutatePart', 'MovePart', 'DownloadPart')
   ORDER BY event_time DESC
   LIMIT {limit}
 `;
@@ -126,7 +126,7 @@ export const GET_DATABASE_MERGE_HISTORY = `
     hostName() AS hostname
   FROM {{cluster_aware:system.part_log}}
   WHERE database = {database}
-    AND event_type IN ('MergeParts', 'MutatePart', 'MovePart')
+    AND event_type IN ('MergeParts', 'MutatePart', 'MovePart', 'DownloadPart')
   ORDER BY event_time DESC
   LIMIT {limit}
 `;
@@ -492,8 +492,21 @@ export const GET_MERGE_HISTORY_BY_PART_NAME = `
   WHERE database = {database}
     AND table = {table}
     AND part_name = {part_name}
-    AND event_type IN ('MergeParts', 'MutatePart', 'MovePart')
+    AND event_type IN ('MergeParts', 'MutatePart', 'MovePart', 'DownloadPart')
   ORDER BY event_time DESC
   LIMIT 1
+`;
+
+/**
+ * Get table engines for all user tables.
+ * Used to enrich merge history with engine info (e.g. to distinguish
+ * lightweight delete cleanup from ReplacingMergeTree dedup).
+ * Deduped across replicas via GROUP BY.
+ */
+export const GET_TABLE_ENGINES = `
+  SELECT database, name AS table, any(engine) AS engine
+  FROM {{cluster_aware:system.tables}}
+  WHERE database NOT IN ('system', 'information_schema', 'INFORMATION_SCHEMA')
+  GROUP BY database, name
 `;
 

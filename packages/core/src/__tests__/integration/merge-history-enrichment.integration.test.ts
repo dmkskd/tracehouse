@@ -365,13 +365,13 @@ describe('merge history enrichment integration', () => {
       expect(classifyMergeHistory('MergeParts', 'SomeFutureReason')).toBe('Regular');
     });
 
-    it('patch-* part name detected as Mutation even with RegularMerge reason', () => {
-      expect(classifyMergeHistory('MergeParts', 'RegularMerge', 'patch-1e5b2ee-202602_779_807_2_1934')).toBe('Mutation');
-      expect(classifyMergeHistory('MergeParts', '', 'patch-abc-202602_1_5_1_42')).toBe('Mutation');
+    it('patch-* part name detected as LightweightUpdate even with RegularMerge reason', () => {
+      expect(classifyMergeHistory('MergeParts', 'RegularMerge', 'patch-1e5b2ee-202602_779_807_2_1934')).toBe('LightweightUpdate');
+      expect(classifyMergeHistory('MergeParts', '', 'patch-abc-202602_1_5_1_42')).toBe('LightweightUpdate');
     });
 
-    it('MutatePart takes precedence over patch detection', () => {
-      expect(classifyMergeHistory('MutatePart', 'NotAMerge', 'patch-abc-202602_1_1_0_5')).toBe('Mutation');
+    it('patch-* part name takes precedence over MutatePart', () => {
+      expect(classifyMergeHistory('MutatePart', 'NotAMerge', 'patch-abc-202602_1_1_0_5')).toBe('LightweightUpdate');
     });
 
     it('normal part name not affected by patch detection', () => {
@@ -389,6 +389,24 @@ describe('merge history enrichment integration', () => {
     it('Regular + rows_diff < 0 → LightweightDelete', () => {
       expect(refineCategoryWithRowDiff('Regular', -100)).toBe('LightweightDelete');
       expect(refineCategoryWithRowDiff('Regular', -1)).toBe('LightweightDelete');
+    });
+
+    it('Regular + rows_diff < 0 on plain MergeTree → LightweightDelete', () => {
+      expect(refineCategoryWithRowDiff('Regular', -100, 'MergeTree')).toBe('LightweightDelete');
+      expect(refineCategoryWithRowDiff('Regular', -100, 'ReplicatedMergeTree')).toBe('LightweightDelete');
+    });
+
+    it('Regular + rows_diff < 0 on ReplacingMergeTree stays Regular (natural dedup)', () => {
+      expect(refineCategoryWithRowDiff('Regular', -100, 'ReplacingMergeTree')).toBe('Regular');
+      expect(refineCategoryWithRowDiff('Regular', -100, 'ReplicatedReplacingMergeTree')).toBe('Regular');
+    });
+
+    it('Regular + rows_diff < 0 on CollapsingMergeTree stays Regular', () => {
+      expect(refineCategoryWithRowDiff('Regular', -100, 'CollapsingMergeTree')).toBe('Regular');
+    });
+
+    it('Regular + rows_diff < 0 on AggregatingMergeTree stays Regular', () => {
+      expect(refineCategoryWithRowDiff('Regular', -100, 'AggregatingMergeTree')).toBe('Regular');
     });
 
     it('Regular + rows_diff >= 0 stays Regular', () => {
@@ -425,12 +443,12 @@ describe('merge history enrichment integration', () => {
       expect(classifyActiveMerge('SomeFutureType', false)).toBe('Regular');
     });
 
-    it('patch-* result part detected as Mutation even when is_mutation=false', () => {
-      expect(classifyActiveMerge('Regular', false, 'patch-1e5b2ee238fbe84a863b-202602_739_744_1_1934')).toBe('Mutation');
+    it('patch-* result part detected as LightweightUpdate even when is_mutation=false', () => {
+      expect(classifyActiveMerge('Regular', false, 'patch-1e5b2ee238fbe84a863b-202602_739_744_1_1934')).toBe('LightweightUpdate');
     });
 
-    it('patch-* result part with is_mutation=true still Mutation', () => {
-      expect(classifyActiveMerge('Regular', true, 'patch-abc-202602_1_1_0_5')).toBe('Mutation');
+    it('patch-* result part with is_mutation=true still LightweightUpdate', () => {
+      expect(classifyActiveMerge('Regular', true, 'patch-abc-202602_1_1_0_5')).toBe('LightweightUpdate');
     });
 
     it('normal result part not affected by patch detection', () => {

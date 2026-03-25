@@ -26,6 +26,9 @@ interface MergeFilterBarProps {
   /** Toggle to exclude system/information_schema databases */
   excludeSystemDatabases?: boolean;
   onExcludeSystemChange?: (v: boolean) => void;
+  /** Toggle to hide replica merges (same merge on multiple replicas) */
+  hideReplicaMerges?: boolean;
+  onHideReplicaMergesChange?: (v: boolean) => void;
   /** For Active Merges: distinct merge_type values */
   mergeTypes?: string[];
   selectedMergeType?: string;
@@ -178,7 +181,7 @@ const dropdownItemStyle: React.CSSProperties = {
 
 const lblStyle: React.CSSProperties = {
   display: 'block', fontSize: 10, fontWeight: 500, color: 'var(--text-muted)',
-  marginBottom: 4, textTransform: 'uppercase', letterSpacing: '0.3px',
+  marginBottom: 2, textTransform: 'uppercase', letterSpacing: '0.3px',
 };
 
 const inputStyle: React.CSSProperties = {
@@ -392,17 +395,17 @@ export const MergeFilterBar: React.FC<MergeFilterBarProps> = (props) => {
   return (
     <div style={{
       background: 'var(--bg-secondary)', borderRadius: 8,
-      padding: '12px 16px', marginBottom: 10,
+      padding: '8px 12px', marginBottom: 8,
       border: '1px solid var(--border-primary)',
     }}>
-      <div style={{ display: 'flex', alignItems: 'flex-end', gap: 10, flexWrap: 'wrap' }}>
+      <div style={{ display: 'flex', alignItems: 'flex-end', gap: 8, flexWrap: 'wrap' }}>
         {/* Chip search input */}
         <div style={{ flex: 1, minWidth: 260, position: 'relative' }}>
           <label style={lblStyle}>Filters</label>
           <div
             style={{
               display: 'flex', flexWrap: 'wrap', alignItems: 'center', gap: 4,
-              padding: '4px 8px', minHeight: 32,
+              padding: '3px 8px', minHeight: 28,
               background: 'var(--bg-tertiary)', border: '1px solid var(--border-primary)',
               borderRadius: 6, cursor: 'text',
             }}
@@ -493,6 +496,23 @@ export const MergeFilterBar: React.FC<MergeFilterBarProps> = (props) => {
               style={{ margin: 0 }}
             />
             Hide system
+          </label>
+        )}
+
+        {/* Hide replica merges toggle */}
+        {props.onHideReplicaMergesChange && (
+          <label style={{
+            display: 'flex', alignItems: 'center', gap: 5,
+            fontSize: 11, color: 'var(--text-secondary)',
+            cursor: 'pointer', whiteSpace: 'nowrap', paddingBottom: 2,
+          }}>
+            <input
+              type="checkbox"
+              checked={props.hideReplicaMerges ?? false}
+              onChange={e => props.onHideReplicaMergesChange!(e.target.checked)}
+              style={{ margin: 0 }}
+            />
+            Hide replicas
           </label>
         )}
 

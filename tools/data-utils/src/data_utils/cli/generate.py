@@ -39,8 +39,7 @@ from data_utils.env import (
     add_connection_args, make_client, pre_parse_env_file, confirm_or_exit,
 )
 from data_utils.tables import (
-    Dataset, SyntheticData, NycTaxi, UkHousePrices, WebAnalytics, InsertConfig,
-    ProgressTracker,
+    Dataset, InsertConfig, ProgressTracker, build_all_datasets,
 )
 from data_utils.users import (
     create_test_users, load_test_users_from_env, lock_test_users,
@@ -83,8 +82,9 @@ Tables are created with the best engine available for the target server.
     parser.add_argument("--taxi-only", action="store_true", help="Only create nyc_taxi table")
     parser.add_argument("--uk-only", action="store_true", help="Only create uk_price_paid table")
     parser.add_argument("--web-only", action="store_true", help="Only create web_analytics table")
+    parser.add_argument("--replacing-only", action="store_true", help="Only create replacing_test table (ReplacingMergeTree)")
     parser.add_argument("--dataset", default=os.environ.get("CH_GEN_DATASET", ""),
-                        help="Dataset to generate: synthetic, taxi, uk, web, or blank for all (default: $CH_GEN_DATASET)")
+                        help="Dataset to generate: synthetic, taxi, uk, web, replacing, or blank for all (default: $CH_GEN_DATASET)")
     args = parser.parse_args()
 
     # Map --dataset to the *-only flags
@@ -93,6 +93,7 @@ Tables are created with the best engine available for the target server.
     elif _ds == "taxi":    args.taxi_only = True
     elif _ds == "uk":      args.uk_only = True
     elif _ds == "web":     args.web_only = True
+    elif _ds == "replacing": args.replacing_only = True
 
     return args, env_path
 
@@ -104,12 +105,7 @@ def _build_datasets(args: argparse.Namespace, caps: Capabilities) -> list[Datase
     """Instantiate dataset plugins, filtered by CLI flags."""
     replicated = caps.has_keeper
     cluster = caps.cluster_name if caps.has_cluster else ""
-    all_datasets = [
-        SyntheticData(replicated=replicated, cluster=cluster),
-        NycTaxi(replicated=replicated, caps=caps, cluster=cluster),
-        UkHousePrices(replicated=replicated, cluster=cluster),
-        WebAnalytics(caps=caps),
-    ]
+    all_datasets = build_all_datasets(replicated=replicated, cluster=cluster, caps=caps)
     create_all = not any(getattr(args, ds.flag) for ds in all_datasets)
     return [ds for ds in all_datasets if create_all or getattr(args, ds.flag)]
 
@@ -238,7 +234,7 @@ def _print_verify_query() -> None:
     print("         formatReadableSize(sum(bytes_on_disk)) as size,")
     print("         sum(rows) as rows, count() as parts")
     print("  FROM system.parts")
-    print("  WHERE active AND database IN ('synthetic_data', 'nyc_taxi', 'uk_price_paid', 'web_analytics')")
+    print("  WHERE active AND database IN ('synthetic_data', 'nyc_taxi', 'uk_price_paid', 'web_analytics', 'replacing_test')")
     print("  GROUP BY database, table, partition")
     print("  ORDER BY database, table, partition")
 

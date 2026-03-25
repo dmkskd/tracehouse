@@ -44,3 +44,7 @@ export {
   type SamplingClusterContext,
   type SamplingClusterOptions,
 } from './sampling-cluster-container.js';
+export {
+  runTracehouseSetup,
+  type TracehouseSetupOptions,
+} from './tracehouse-setup.js';

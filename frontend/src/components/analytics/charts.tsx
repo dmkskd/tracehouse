@@ -36,10 +36,38 @@ if (typeof window !== 'undefined') {
 // ─── Constants ───
 
 export const CHART_COLORS = [
-  '#6366f1','#8b5cf6','#a855f7','#d946ef','#ec4899',
-  '#f43f5e','#f97316','#eab308','#84cc16','#22c55e',
-  '#14b8a6','#06b6d4','#0ea5e9','#3b82f6',
+  '#6366f1','#22c55e','#f97316','#06b6d4','#ec4899',
+  '#eab308','#8b5cf6','#14b8a6','#f43f5e','#84cc16',
+  '#0ea5e9','#d946ef','#3b82f6','#a855f7',
 ];
+
+/** Pick a distinct color for a panel by index — used by overlay charts when queries don't specify a color. */
+export function chartColorByIndex(index: number): string {
+  return CHART_COLORS[index % CHART_COLORS.length];
+}
+
+/** Generate a smooth gradient palette for sequential bar charts. */
+function sequentialPalette(count: number): string[] {
+  // Curated stops: violet → indigo → blue → teal → emerald → amber → coral
+  // Hand-picked to stay vibrant without going neon
+  const stops = [
+    [270, 70, 60], // violet
+    [240, 70, 62], // indigo
+    [210, 75, 58], // blue
+    [175, 65, 50], // teal
+    [150, 60, 52], // emerald
+    [35, 80, 58],  // amber
+    [10, 75, 60],  // coral
+  ];
+  if (count <= 1) return [`hsl(${stops[0][0]}, ${stops[0][1]}%, ${stops[0][2]}%)`];
+  return Array.from({ length: count }, (_, i) => {
+    const t = i / (count - 1) * (stops.length - 1);
+    const idx = Math.min(Math.floor(t), stops.length - 2);
+    const frac = t - idx;
+    const [h, s, l] = stops[idx].map((v, j) => v + frac * (stops[idx + 1][j] - v));
+    return `hsl(${Math.round(h)}, ${Math.round(s)}%, ${Math.round(l)}%)`;
+  });
+}
 
 /** Distinct colors for grouped/stacked chart series (high contrast between adjacent groups) */
 export const GROUP_COLORS = [
@@ -109,12 +137,8 @@ export function extractNumeric(v: unknown): number {
   return 0;
 }
 
-export function formatCell(v: unknown): string {
-  if (v == null) return '—';
-  if (typeof v === 'number') return Number.isInteger(v) ? v.toLocaleString() : v.toLocaleString(undefined, { maximumFractionDigits: 2 });
-  if (Array.isArray(v)) return v.join(', ');
-  return String(v);
-}
+import { formatCell } from '@tracehouse/core';
+export { formatCell };
 
 /** Smart time formatter: 500 ms → "500 ms", 1400 ms → "1.4 s", 90000 ms → "1.5 min" */
 function formatTime(v: number, unit: string): string {
@@ -199,10 +223,11 @@ export function buildChartData(
   const valCol = valueCol || columns.find(c => c !== lblCol && rows.some(r => isNumericValue(r[c]))) || columns[1];
   if (!lblCol || !valCol) return [];
   const sliced = maxRows ? rows.slice(0, maxRows) : rows;
+  const palette = sequentialPalette(sliced.length);
   return sliced.map((r, i) => ({
     label: formatCell(r[lblCol]),
     value: extractNumeric(r[valCol]),
-    color: CHART_COLORS[i % CHART_COLORS.length],
+    color: palette[i],
     ...(descriptionCol && r[descriptionCol] != null ? { description: String(r[descriptionCol]) } : {}),
   }));
 }

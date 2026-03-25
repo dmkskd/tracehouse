@@ -6,7 +6,7 @@ import { formatBytes, formatMicroseconds } from '../../utils/formatters';
 
 export type MetricMode = 'memory' | 'cpu' | 'network' | 'disk';
 
-export type HighlightedItem = { type: 'query' | 'merge' | 'mutation'; idx: number } | null;
+export type HighlightedItem = { type: 'query' | 'merge' | 'mutation'; idx: number; id: string } | null;
 
 export const Q_COLORS = [
   '#58a6ff', '#3fb950', '#bc8cff', '#79c0ff', '#7ee787', '#d2a8ff', '#a5d6ff', '#56d364',

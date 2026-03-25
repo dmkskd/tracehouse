@@ -875,6 +875,13 @@ export const DatabaseExplorer: React.FC = () => {
     }
   }, [activeMerges, highlightedMergeId]);
 
+  // Filter out replica merges when the user toggles "Hide replica merges"
+  const { hideReplicaMerges } = useUserPreferenceStore();
+  const visibleMerges = useMemo(
+    () => hideReplicaMerges ? activeMerges.filter(m => !m.is_replica_merge) : activeMerges,
+    [activeMerges, hideReplicaMerges]
+  );
+
   const activeProfile = profiles.find(p => p.id === activeProfileId);
   const isConnected = activeProfile?.is_connected ?? false;
   
@@ -1001,25 +1008,25 @@ export const DatabaseExplorer: React.FC = () => {
   const hierarchyItems = useMemo((): HierarchyItem[] => {
     switch (currentLevel) {
       case 'databases':
-        return databasesToHierarchy(databases, activeMerges);
+        return databasesToHierarchy(databases, visibleMerges);
       case 'tables':
-        return tablesToHierarchy(tables, activeMerges.filter(m => m.database === selectedDatabase));
+        return tablesToHierarchy(tables, visibleMerges.filter(m => m.database === selectedDatabase));
       case 'partitions':
         // Pass active merges to show which partitions have merges
-        const tableMerges = activeMerges.filter(
+        const tableMerges = visibleMerges.filter(
           m => m.database === selectedDatabase && m.table === selectedTable
         );
         return partsToPartitions(tableParts, tableMerges);
       case 'parts':
         // Filter merges to only those for the current table
-        const relevantMerges = activeMerges.filter(
+        const relevantMerges = visibleMerges.filter(
           m => m.database === selectedDatabase && m.table === selectedTable
         );
         return selectedPartition ? partsToHierarchy(tableParts, selectedPartition, relevantMerges) : [];
       default:
         return [];
     }
-  }, [currentLevel, databases, tables, tableParts, selectedPartition, activeMerges, selectedDatabase, selectedTable]);
+  }, [currentLevel, databases, tables, tableParts, selectedPartition, visibleMerges, selectedDatabase, selectedTable]);
 
   // Handle item click (drill down)
   const handleItemClick = useCallback(async (item: HierarchyItem) => {
@@ -1312,8 +1319,8 @@ export const DatabaseExplorer: React.FC = () => {
         <Legend level={currentLevel} viewMode={viewMode} />
         
         {/* Merge Info Wall - Rolling display of active merges */}
-        <MergeInfoWall 
-          merges={activeMerges} 
+        <MergeInfoWall
+          merges={visibleMerges}
           currentDatabase={selectedDatabase}
           currentTable={selectedTable}
           currentPartition={selectedPartition}

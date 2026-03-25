@@ -38,15 +38,29 @@ export const DASHBOARD_GROUPS: { name: DashboardGroup; color: string }[] = [
   { name: 'Custom', color: '#79c0ff' },
 ];
 
+/** Declares a global filter that the dashboard supports. The `param` value is injected into `{{drill_value:param}}` templates. */
+export interface DashboardFilter {
+  /** The template parameter name (e.g. 'tbl') — maps to {{drill_value:tbl}} in queries */
+  param: string;
+  /** Display label for the filter dropdown */
+  label: string;
+  /** SQL query that returns the list of values for the dropdown. First column is used as the value. */
+  query: string;
+}
+
 export interface Dashboard {
   id: string;
   title: string;
   description?: string;
   group?: DashboardGroup;
+  /** Optional sub-category within the group (e.g. 'Merges', 'Storage') for visual grouping in the list view */
+  category?: string;
   columns: 1 | 2 | 3 | 4;
   panels: DashboardPanel[];
   /** true for shipped defaults (user can clone but not delete the originals) */
   builtin?: boolean;
+  /** Optional global filters shown as dropdowns in the dashboard header — values propagate to all panels */
+  filters?: DashboardFilter[];
 }
 
 // ─── Resolve panel → Query ───
@@ -168,6 +182,15 @@ export function importDashboardJson(json: string): Omit<Dashboard, 'builtin'> {
     panels: obj.panels.map((p: { queryName?: string }) => ({
       queryName: p.queryName ?? '',
     })),
+    ...(Array.isArray(obj.filters) && obj.filters.length > 0 && {
+      filters: obj.filters
+        .filter((f: Record<string, unknown>) => f.param && f.query)
+        .map((f: Record<string, unknown>) => ({
+          param: String(f.param),
+          label: String(f.label ?? f.param),
+          query: String(f.query),
+        })),
+    }),
   };
 }
 
@@ -179,6 +202,7 @@ const BUILTIN_DASHBOARDS: Dashboard[] = [
     title: 'Operations Overview',
     description: 'Full server health dashboard — mirrors the ClickHouse built-in "Overview" dashboard',
     group: 'ClickHouse',
+    category: 'General',
     columns: 2,
     panels: [
       { queryName: 'Advanced Dashboard#Queries/second' },
@@ -205,8 +229,9 @@ const BUILTIN_DASHBOARDS: Dashboard[] = [
   {
     id: 'insert-health',
     title: 'Insert Health',
-    description: 'Monitor ingestion pipeline: new parts, batch rates, durations',
+    description: 'Monitor ingestion pipeline: new parts, batch rates, durations — based on https://clickhouse.com/blog/monitoring-troubleshooting-insert-queries-clickhouse',
     group: 'ClickHouse',
+    category: 'Queries',
     columns: 2,
     panels: [
       { queryName: 'Inserts#New Parts Created' },
@@ -214,19 +239,26 @@ const BUILTIN_DASHBOARDS: Dashboard[] = [
       { queryName: 'Inserts#Insert Duration & Batch Count' },
       { queryName: 'Inserts#Insert Duration Quantiles (hourly)' },
       { queryName: 'Inserts#Written Rows & Bytes' },
+      { queryName: 'Inserts#MaxPartCountForPartition Trend' },
+      { queryName: 'Inserts#Top Inserts by Memory' },
+      { queryName: 'Inserts#Peak Memory by Part' },
+      { queryName: 'Inserts#Part Errors' },
       { queryName: 'Advanced Dashboard#Inserted Rows/second' },
     ],
   },
   {
     id: 'select-perf',
     title: 'SELECT Performance',
-    description: 'Query latency trends, per-user breakdown, read distribution',
+    description: 'Query latency trends, per-user breakdown, read distribution — based on https://clickhouse.com/blog/monitoring-troubleshooting-select-queries-clickhouse',
     group: 'ClickHouse',
+    category: 'Queries',
     columns: 2,
     panels: [
       { queryName: 'Selects#SELECT Duration Trend (hourly)' },
       { queryName: 'Selects#Queries by User' },
+      { queryName: 'Selects#Queries by Client' },
       { queryName: 'Selects#Read Rows Distribution' },
+      { queryName: 'Selects#Recent SELECTs' },
       { queryName: 'Advanced Dashboard#Selected Rows/second' },
       { queryName: 'Advanced Dashboard#Selected Bytes/second' },
     ],
@@ -236,6 +268,7 @@ const BUILTIN_DASHBOARDS: Dashboard[] = [
     title: 'Storage & Parts',
     description: 'Disk usage, part counts, and merge pressure indicators',
     group: 'ClickHouse',
+    category: 'Storage',
     columns: 2,
     panels: [
       { queryName: 'Overview#Biggest Tables' },
@@ -251,6 +284,7 @@ const BUILTIN_DASHBOARDS: Dashboard[] = [
     title: 'Merge Monitoring',
     description: 'Track merge health: active merges, throughput, pool utilization, errors, and historical trends',
     group: 'ClickHouse',
+    category: 'Merges',
     columns: 2,
     panels: [
       { queryName: 'Merges#Active Merges' },
@@ -268,6 +302,27 @@ const BUILTIN_DASHBOARDS: Dashboard[] = [
       { queryName: 'Merges#Fetch vs Merge by Table & Size' },
       { queryName: 'Merges#Replica Merge Imbalance by Table' },
       { queryName: 'Merges#Replication Queue Backlog' },
+    ],
+  },
+  {
+    id: 'merge-analytics',
+    title: 'Merge Analytics',
+    description: 'Deep merge analysis — throughput, duration scaling, part staleness, and estimated merge cost per table',
+    group: 'ClickHouse',
+    category: 'Merges',
+    columns: 2,
+    filters: [
+      {
+        param: 'tbl',
+        label: 'Table',
+        query: "SELECT concat(database, '.', name) AS tbl FROM system.tables WHERE database NOT IN ('system', 'INFORMATION_SCHEMA', 'information_schema') AND engine LIKE '%MergeTree%' ORDER BY tbl",
+      },
+    ],
+    panels: [
+      { queryName: 'Merge Analytics#Merge Throughput by Table' },
+      { queryName: 'Merge Analytics#Merge Duration by Table' },
+      { queryName: 'Merge Analytics#Estimated Merge Time (active parts)' },
+      { queryName: 'Merge Analytics#Part Wait Time by Table' },
     ],
   },
   {
@@ -308,6 +363,7 @@ const BUILTIN_DASHBOARDS: Dashboard[] = [
     title: 'Memory Monitoring',
     description: 'Deep memory breakdown and trend analysis — based on https://clickhouse.com/docs/guides/developer/debugging-memory-issues and https://kb.altinity.com/altinity-kb-setup-and-maintenance/altinity-kb-who-ate-my-memory/',
     group: 'ClickHouse',
+    category: 'Resources',
     columns: 2,
     panels: [
       { queryName: 'Memory#Memory Breakdown' },
@@ -329,6 +385,7 @@ const BUILTIN_DASHBOARDS: Dashboard[] = [
     title: 'Replication Health',
     description: 'Replica status, replication queue depth and errors, lag trends, and ZooKeeper health — based on https://clickhouse.com/docs/operations/system-tables/replicas and https://kb.altinity.com/altinity-kb-setup-and-maintenance/altinity-kb-replication-queue/',
     group: 'ClickHouse',
+    category: 'Replication',
     columns: 2,
     panels: [
       { queryName: 'Replication#Replica Status' },
@@ -346,6 +403,7 @@ const BUILTIN_DASHBOARDS: Dashboard[] = [
     title: 'Mutations',
     description: 'Track ALTER TABLE mutations — active, stuck/failed, and recently completed — based on https://clickhouse.com/docs/operations/system-tables/mutations',
     group: 'ClickHouse',
+    category: 'Merges',
     columns: 2,
     panels: [
       { queryName: 'Mutations#Active Mutations' },
@@ -357,6 +415,7 @@ const BUILTIN_DASHBOARDS: Dashboard[] = [
     id: 'disk-monitoring',
     title: 'Disk Usage',
     description: 'Disk free space and capacity across all cluster nodes — based on https://clickhouse.com/docs/operations/system-tables/disks',
+    category: 'Storage',
     group: 'ClickHouse',
     columns: 2,
     panels: [

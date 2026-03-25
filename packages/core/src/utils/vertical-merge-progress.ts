@@ -76,8 +76,9 @@ function parseMicroseconds(ts: string): number {
 export function parseVerticalMergeProgress(logs: MergeTextLog[]): VerticalMergeProgress | null {
   if (logs.length === 0) return null;
 
-  // Find the earliest timestamp as T0
-  const t0 = parseMicroseconds(logs[0].event_time_microseconds);
+  // T0 anchors all timestamps. Re-anchored on retry so the timeline
+  // starts from the successful attempt, not the abandoned one.
+  let t0 = parseMicroseconds(logs[0].event_time_microseconds);
   if (isNaN(t0)) return null;
 
   let segments: VerticalMergeSegment[] = [];
@@ -89,33 +90,38 @@ export function parseVerticalMergeProgress(logs: MergeTextLog[]): VerticalMergeP
   let gatheredColumns = new Set<string>();
 
   for (const log of logs) {
-    const ms = parseMicroseconds(log.event_time_microseconds) - t0;
+    const logTs = parseMicroseconds(log.event_time_microseconds);
+    const ms = logTs - t0;
 
     // Horizontal stage end
     const sortedMatch = log.message.match(MERGED_SORTED_RE);
     if (sortedMatch) {
+      const duration_sec = parseFloat(sortedMatch[3]);
+
       // If we already have a PK merge segment, this is a retry of the same
       // merge (same query_id / result part). Reset and keep only the latest
       // attempt — the earlier one was abandoned or failed.
+      // Re-anchor T0 so the timeline starts from this attempt.
       if (segments.length > 0) {
         segments = [];
         prevEndMs = 0;
         readColumns = new Map();
         gatheredColumns = new Set();
+        t0 = logTs - duration_sec * 1000;
       }
 
-      const duration_sec = parseFloat(sortedMatch[3]);
+      const anchoredMs = logTs - t0;
       segments.push({
         name: 'PK merge',
-        start_ms: Math.max(0, ms - duration_sec * 1000),
-        end_ms: ms,
+        start_ms: Math.max(0, anchoredMs - duration_sec * 1000),
+        end_ms: anchoredMs,
         duration_sec,
         rows: parseInt(sortedMatch[1], 10),
         bytes: parseInt(sortedMatch[2], 10),
         throughput_rows: parseFloat(sortedMatch[4]),
         kind: 'horizontal',
       });
-      prevEndMs = ms;
+      prevEndMs = anchoredMs;
       continue;
     }
 

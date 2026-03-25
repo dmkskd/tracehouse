@@ -54,8 +54,8 @@ export function DatasourceSelector({ value, onChange }: DatasourceSelectorProps)
             onChange(ds.uid, ds.name);
           }
         }}
-        placeholder="Select datasource..."
-        width={30}
+        placeholder="Select..."
+        width={20}
       />
     </div>
   );

@@ -19,6 +19,8 @@ export interface MergeInfo {
   thread_id: number;
   /** Server hostname where this merge is executing */
   hostname?: string;
+  /** True when another replica is merging the same result part (same merge executed independently) */
+  is_replica_merge?: boolean;
 }
 
 export interface MergeHistoryRecord {
@@ -57,6 +59,10 @@ export interface MergeHistoryRecord {
   error?: number;
   /** Exception message from part_log */
   exception?: string;
+  /** Table engine name from system.tables (e.g. ReplicatedReplacingMergeTree) */
+  table_engine?: string;
+  /** True when another replica already merged this part (same merge executed independently) */
+  is_replica_merge?: boolean;
 }
 
 /** Storage policy volume mapping from system.storage_policies */

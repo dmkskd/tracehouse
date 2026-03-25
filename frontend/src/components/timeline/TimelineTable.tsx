@@ -115,7 +115,7 @@ export const QueryTable: React.FC<{
         <tbody>
           {queries.map((q, i) => {
             const originalIdx = allQueries.indexOf(q);
-            const isHighlighted = highlightedItem?.type === 'query' && highlightedItem.idx === originalIdx;
+            const isHighlighted = highlightedItem?.type === 'query' && highlightedItem.id === q.query_id;
             return (
             <tr key={q.query_id}
               style={{
@@ -124,7 +124,7 @@ export const QueryTable: React.FC<{
               }}
               title={q.label}
               onClick={() => onSelect(q)}
-              onMouseEnter={() => originalIdx >= 0 && onHighlightItem({ type: 'query', idx: originalIdx })}
+              onMouseEnter={() => originalIdx >= 0 && onHighlightItem({ type: 'query', idx: originalIdx, id: q.query_id })}
               onMouseLeave={() => onHighlightItem(null)}>
               <td style={{ padding:'5px 4px 5px 12px', width:18 }}>
                 <div style={{ width:8, height:8, borderRadius:2, background: colors[originalIdx >= 0 ? originalIdx % colors.length : i % colors.length] }} />
@@ -222,7 +222,8 @@ export const MergeTable: React.FC<{
         <tbody>
           {items.map((m, i) => {
             const originalIdx = allItems.indexOf(m);
-            const isHighlighted = highlightedItem?.type === itemType && highlightedItem.idx === originalIdx;
+            const itemId = `${m.table}:${m.part_name}:${m.hostname ?? ''}`;
+            const isHighlighted = highlightedItem?.type === itemType && highlightedItem.id === itemId;
             return (
             <tr key={`${m.part_name}-${i}`}
               style={{
@@ -230,7 +231,7 @@ export const MergeTable: React.FC<{
                 cursor: 'pointer', transition: 'background 0.15s ease',
               }}
               onClick={() => onSelect(m)}
-              onMouseEnter={() => originalIdx >= 0 && onHighlightItem({ type: itemType, idx: originalIdx })}
+              onMouseEnter={() => originalIdx >= 0 && onHighlightItem({ type: itemType, idx: originalIdx, id: itemId })}
               onMouseLeave={() => onHighlightItem(null)}>
               <td style={{ padding:'5px 4px 5px 12px', width:18 }}>
                 <div style={{ width:8, height:8, borderRadius:2, background: colors[originalIdx >= 0 ? originalIdx % colors.length : i % colors.length] }} />

@@ -92,6 +92,14 @@ export const MergeLanes: React.FC<MergeLanesProps> = ({
     return map;
   }, [parts, visualSizes]);
 
+  // Map actual levels to compact indices so empty levels don't waste space
+  const levelIndex = useMemo(() => {
+    const sorted = [...partsByLevel.keys()].sort((a, b) => a - b);
+    return new Map(sorted.map((lvl, i) => [lvl, i]));
+  }, [partsByLevel]);
+
+  const maxLaneIndex = Math.max(levelIndex.size - 1, 0);
+
   // Calculate positions for each part
   const partsWithPositions = useMemo(() => {
     const result: Array<{
@@ -105,9 +113,10 @@ export const MergeLanes: React.FC<MergeLanesProps> = ({
       const sorted = [...levelParts].sort(
         (a, b) => b.bytes_on_disk - a.bytes_on_disk
       );
+      const lane = levelIndex.get(level)!;
       sorted.forEach((part, i) => {
         const visualSize = sizeMap.get(part.name)!;
-        const xPos = level * levelSpacing - (maxLevel * levelSpacing) / 2;
+        const xPos = lane * levelSpacing - (maxLaneIndex * levelSpacing) / 2;
         const zPos = i * partSpacing - (sorted.length - 1) * (partSpacing / 2);
         const yPos = visualSize.visualScale / 2;
 
@@ -122,16 +131,16 @@ export const MergeLanes: React.FC<MergeLanesProps> = ({
       });
     }
     return result;
-  }, [partsByLevel, sizeMap, maxLevel, levelSpacing, partSpacing]);
+  }, [partsByLevel, sizeMap, maxLevel, maxLaneIndex, levelIndex, levelSpacing, partSpacing]);
 
   // Level markers
   const levelMarkers = useMemo(
     () =>
       [...partsByLevel.keys()].map(level => ({
         level,
-        xPos: level * levelSpacing - (maxLevel * levelSpacing) / 2,
+        xPos: levelIndex.get(level)! * levelSpacing - (maxLaneIndex * levelSpacing) / 2,
       })),
-    [partsByLevel, maxLevel, levelSpacing]
+    [partsByLevel, maxLaneIndex, levelIndex, levelSpacing]
   );
 
   return (

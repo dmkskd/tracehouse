@@ -336,34 +336,7 @@ regenerate-data *args="":
 # Drop test tables (works with both Docker and K8s via localhost)
 [group('data')]
 drop-data confirm="":
-    #!/usr/bin/env bash
-    if [[ "{{confirm}}" != "-y" ]]; then
-        echo "This will drop:"
-        echo "  • synthetic_data"
-        echo "  • nyc_taxi"
-        echo "  • uk_price_paid"
-        echo "  • web_analytics"
-        read -p "Continue? [y/N] " -n 1 -r
-        echo
-        if [[ ! $REPLY =~ ^[Yy]$ ]]; then
-            echo "Aborted."
-            exit 1
-        fi
-    fi
-    echo "Dropping test tables..."
-    # Note: Replicated databases propagate DDL automatically — ON CLUSTER is
-    # forbidden and unnecessary.  Plain DROP statements work for both
-    # Replicated and non-Replicated databases.
-    for DB in synthetic_data nyc_taxi uk_price_paid web_analytics; do
-        TABLES=$(clickhouse client --host localhost --query "SELECT name FROM system.tables WHERE database = '${DB}'" 2>/dev/null || true)
-        for TBL in $TABLES; do
-            echo "  → ${DB}.${TBL}"
-            clickhouse client --host localhost --query "DROP TABLE IF EXISTS ${DB}.${TBL} SYNC SETTINGS max_table_size_to_drop=0"
-        done
-        echo "  → database: ${DB}"
-        clickhouse client --host localhost --query "DROP DATABASE IF EXISTS ${DB} SYNC"
-    done
-    echo "✓ All test databases dropped"
+    uv run --project tools/data-utils tracehouse-drop {{confirm}}
 
 # ─────────────────────────────────────────────────────────────────
 # TESTING & QUALITY

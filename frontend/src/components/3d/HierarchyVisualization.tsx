@@ -140,7 +140,7 @@ function parsePartName(name: string): { minBlock: number; maxBlock: number } | n
 
 // Special layout for parts - grouped by merge level, positioned by block range
 function calculatePartsLayout(items: HierarchyItem[]) {
-  if (items.length === 0) return { layout: [], maxLevel: 0 };
+  if (items.length === 0) return { layout: [], maxLevel: 0, levels: [] as number[] };
   
   // Parse block ranges for all items
   const itemsWithBlocks = items.map(item => {
@@ -168,40 +168,48 @@ function calculatePartsLayout(items: HierarchyItem[]) {
   
   const maxLevel = Math.max(...byLevel.keys(), 0);
   const laneWidth = 5; // Width of each lane
-  
+
+  // Compact: map populated levels to sequential lane indices so empty levels
+  // don't waste space (e.g. L1 + L210 → lane 0 + lane 1 instead of 209 gap)
+  // Always include L0 — it's the landing zone for new inserts
+  const sortedLevels = [0, ...([...byLevel.keys()].filter(l => l !== 0))].sort((a, b) => a - b);
+  const laneIndex = new Map(sortedLevels.map((lvl, i) => [lvl, i]));
+  const maxLaneIdx = Math.max(sortedLevels.length - 1, 0);
+
   const sizes = items.map(i => i.size);
   const maxSize = Math.max(...sizes, 1);
   const minSize = Math.min(...sizes, 1);
   const sizeRange = maxSize - minSize || 1;
-  
+
   const layout: { position: [number, number, number]; size: [number, number, number]; mergeLevel: number }[] = [];
-  
+
   // Create a map from item id to layout for consistent ordering
   const layoutMap = new Map<string, { position: [number, number, number]; size: [number, number, number]; mergeLevel: number }>();
-  
+
   // Minimum spacing between parts
   const minSpacing = 2.0;
-  
+
   byLevel.forEach((entries, lvl) => {
     // For each level, position parts sequentially with proper spacing
     // Parts are sorted by minBlock ascending
     // Higher block numbers (newer) should be at higher Z (closer to camera at +Z)
     const levelStartZ = -(entries.length - 1) * minSpacing / 2; // Center the level
-    
+    const lane = laneIndex.get(lvl)!;
+
     entries.forEach((entry, index) => {
       const { item } = entry;
-      
+
       const normalizedSize = (item.size - minSize) / sizeRange;
       const baseSize = 0.8 + normalizedSize * 0.6;
       const height = 0.6 + normalizedSize * 1.5;
-      
-      // X = lane (merge level)
-      const x = lvl * laneWidth - (maxLevel * laneWidth) / 2;
-      
+
+      // X = compact lane position (skip empty levels)
+      const x = lane * laneWidth - (maxLaneIdx * laneWidth) / 2;
+
       // Z = sequential position with minimum spacing
       // Higher index (higher block number = newer) gets higher Z (closer to camera)
       const z = levelStartZ + index * minSpacing;
-      
+
       layoutMap.set(item.id, {
         position: [x, height / 2 + 0.1, z] as [number, number, number],
         size: [baseSize, height, baseSize] as [number, number, number],
@@ -209,7 +217,7 @@ function calculatePartsLayout(items: HierarchyItem[]) {
       });
     });
   });
-  
+
   // Return layout in original item order
   items.forEach(item => {
     const entry = layoutMap.get(item.id);
@@ -221,15 +229,16 @@ function calculatePartsLayout(items: HierarchyItem[]) {
       const normalizedSize = (item.size - minSize) / sizeRange;
       const baseSize = 0.8 + normalizedSize * 0.6;
       const height = 0.6 + normalizedSize * 1.5;
+      const lane = laneIndex.get(lvl) ?? 0;
       layout.push({
-        position: [lvl * laneWidth - (maxLevel * laneWidth) / 2, height / 2 + 0.1, 0] as [number, number, number],
+        position: [lane * laneWidth - (maxLaneIdx * laneWidth) / 2, height / 2 + 0.1, 0] as [number, number, number],
         size: [baseSize, height, baseSize] as [number, number, number],
         mergeLevel: lvl,
       });
     }
   });
   
-  return { layout, maxLevel };
+  return { layout, maxLevel, levels: sortedLevels };
 }
 
 function calculateLayout(items: HierarchyItem[]) {
@@ -667,16 +676,22 @@ const Ground: React.FC<{ size: number; theme: 'dark' | 'light' }> = ({ size, the
 // Highway lanes for parts view - shows merge levels
 interface MergeLanesProps {
   maxLevel: number;
+  levels?: number[];
   laneLength: number;
   theme: 'dark' | 'light';
 }
 
-const MergeLanes: React.FC<MergeLanesProps> = ({ maxLevel, laneLength, theme }) => {
+const MergeLanes: React.FC<MergeLanesProps> = ({ maxLevel, levels, laneLength, theme }) => {
   const laneWidth = 5;
   const groundRef = useRef<THREE.Mesh>(null);
   const laneRefs = useRef<Map<number, { glow: THREE.Mesh | null; outer: THREE.Mesh | null }>>(new Map());
   const colors = THEME_COLORS[theme];
-  
+
+  // Use populated levels if provided, otherwise fall back to 0..maxLevel
+  const populatedLevels = levels ?? Array.from({ length: maxLevel + 1 }, (_, i) => i);
+  const numLanes = populatedLevels.length;
+  const maxLaneIdx = Math.max(numLanes - 1, 0);
+
   // Cleanup on unmount
   useEffect(() => {
     return () => {
@@ -687,48 +702,48 @@ const MergeLanes: React.FC<MergeLanesProps> = ({ maxLevel, laneLength, theme }) 
       });
     };
   }, []);
-  
+
   return (
     <group>
       {/* Ground with lanes */}
       <mesh ref={groundRef} rotation={[-Math.PI / 2, 0, 0]} position={[0, 0, 0]} receiveShadow>
-        <planeGeometry args={[(maxLevel + 2) * laneWidth, laneLength + 10]} />
+        <planeGeometry args={[(numLanes + 1) * laneWidth, laneLength + 10]} />
         <meshStandardMaterial color={colors.lanesGround} metalness={theme === 'dark' ? 0.9 : 0.4} roughness={theme === 'dark' ? 0.3 : 0.6} />
       </mesh>
-      
+
       {/* Lane dividers and labels */}
-      {Array.from({ length: maxLevel + 1 }, (_, lvl) => {
-        const x = lvl * laneWidth - (maxLevel * laneWidth) / 2;
+      {populatedLevels.map((lvl, laneIdx) => {
+        const x = laneIdx * laneWidth - (maxLaneIdx * laneWidth) / 2;
         const color = MERGE_LEVEL_COLORS[Math.min(lvl, MERGE_LEVEL_COLORS.length - 1)];
-        
+
         return (
           <group key={lvl} position={[x, 0, 0]}>
             {/* Lane glow line */}
-            <mesh 
+            <mesh
               ref={(el) => {
                 if (!laneRefs.current.has(lvl)) laneRefs.current.set(lvl, { glow: null, outer: null });
                 laneRefs.current.get(lvl)!.glow = el;
               }}
-              position={[0, 0.02, 0]} 
+              position={[0, 0.02, 0]}
               rotation={[-Math.PI / 2, 0, 0]}
             >
               <planeGeometry args={[0.15, laneLength + 6]} />
               <meshBasicMaterial color={color} transparent opacity={0.6} />
             </mesh>
-            
+
             {/* Lane outer glow */}
-            <mesh 
+            <mesh
               ref={(el) => {
                 if (!laneRefs.current.has(lvl)) laneRefs.current.set(lvl, { glow: null, outer: null });
                 laneRefs.current.get(lvl)!.outer = el;
               }}
-              position={[0, 0.01, 0]} 
+              position={[0, 0.01, 0]}
               rotation={[-Math.PI / 2, 0, 0]}
             >
               <planeGeometry args={[0.8, laneLength + 6]} />
               <meshBasicMaterial color={color} transparent opacity={0.1} />
             </mesh>
-            
+
             {/* Level label at the back */}
             <Html position={[0, 0.5, -(laneLength / 2 + 2)]} center style={{ pointerEvents: 'none' }}>
               <div style={{
@@ -754,22 +769,53 @@ const MergeLanes: React.FC<MergeLanesProps> = ({ maxLevel, laneLength, theme }) 
           </group>
         );
       })}
-      
-      {/* Arrow indicators showing merge direction */}
-      {Array.from({ length: maxLevel }, (_, i) => {
-        const x1 = i * laneWidth - (maxLevel * laneWidth) / 2;
-        const x2 = (i + 1) * laneWidth - (maxLevel * laneWidth) / 2;
+
+      {/* Arrow indicators and skip markers between lanes */}
+      {populatedLevels.slice(0, -1).map((lvl, laneIdx) => {
+        const nextLvl = populatedLevels[laneIdx + 1];
+        const skipped = nextLvl - lvl - 1;
+        const x1 = laneIdx * laneWidth - (maxLaneIdx * laneWidth) / 2;
+        const x2 = (laneIdx + 1) * laneWidth - (maxLaneIdx * laneWidth) / 2;
         const midX = (x1 + x2) / 2;
-        
+
         return (
-          <Html key={`arrow-${i}`} position={[midX, 0.3, -(laneLength / 2 + 1)]} center style={{ pointerEvents: 'none' }}>
-            <div style={{
-              color: 'rgba(255,255,255,0.3)',
-              fontSize: '20px',
-            }}>
-              →
-            </div>
-          </Html>
+          <group key={`between-${laneIdx}`}>
+            <Html position={[midX, 0.3, -(laneLength / 2 + 1)]} center style={{ pointerEvents: 'none' }}>
+              <div style={{
+                color: 'rgba(255,255,255,0.3)',
+                fontSize: '20px',
+              }}>
+                →
+              </div>
+            </Html>
+            {skipped > 0 && (
+              <>
+                {/* Dashed skip line on the ground */}
+                {Array.from({ length: Math.floor((laneLength + 6) / 1.2) }, (_, di) => {
+                  const dashZ = -(laneLength + 6) / 2 + di * 1.2 + 0.3;
+                  return (
+                    <mesh key={di} position={[midX, 0.02, dashZ]} rotation={[-Math.PI / 2, 0, 0]}>
+                      <planeGeometry args={[0.1, 0.5]} />
+                      <meshBasicMaterial color="#6366f1" transparent opacity={0.35} />
+                    </mesh>
+                  );
+                })}
+                {/* Skip label */}
+                <Html position={[midX, 0.5, -(laneLength / 2 + 2)]} center style={{ pointerEvents: 'none' }}>
+                  <div style={{
+                    color: 'rgba(139, 142, 255, 0.5)',
+                    fontSize: '11px',
+                    fontFamily: 'ui-monospace, monospace',
+                    letterSpacing: '1px',
+                    whiteSpace: 'nowrap',
+                    marginTop: '28px',
+                  }}>
+                    ⋯ {skipped} level{skipped > 1 ? 's' : ''} ⋯
+                  </div>
+                </Html>
+              </>
+            )}
+          </group>
         );
       })}
     </group>
@@ -1335,7 +1381,7 @@ export const HierarchyVisualization: React.FC<HierarchyVisualizationProps> = ({ 
   const isPartsLevel = level === 'parts';
   
   const partsLayoutData = useMemo(() => 
-    isPartsLevel ? calculatePartsLayout(limitedItems) : { layout: [], maxLevel: 0 },
+    isPartsLevel ? calculatePartsLayout(limitedItems) : { layout: [], maxLevel: 0, levels: [] as number[] },
     [limitedItems, isPartsLevel]
   );
   
@@ -1406,13 +1452,14 @@ export const HierarchyVisualization: React.FC<HierarchyVisualizationProps> = ({ 
     let calculatedLaneLength: number;
     
     if (isPartsLevel) {
-      const { layout, maxLevel } = partsLayoutData;
+      const { layout, levels } = partsLayoutData;
       if (layout.length === 0) {
         calculatedGridSize = 10;
         calculatedLaneLength = 20;
       } else {
+        const numLanes = levels.length || 1;
         const maxZ = Math.max(...layout.map(l => Math.abs(l.position[2]))) + 4;
-        calculatedGridSize = Math.max((maxLevel + 2) * 5, maxZ, 10);
+        calculatedGridSize = Math.max((numLanes + 1) * 5, maxZ, 10);
         calculatedLaneLength = Math.max(...layout.map(l => Math.abs(l.position[2]))) * 2 + 8;
       }
     } else {
@@ -1486,12 +1533,12 @@ export const HierarchyVisualization: React.FC<HierarchyVisualizationProps> = ({ 
 
   // Parts level - highway lanes layout
   if (isPartsLevel) {
-    const { layout, maxLevel } = partsLayoutData;
+    const { layout, maxLevel, levels } = partsLayoutData;
     // Use sticky laneLength from the memoized calculation above
-    
+
     return (
       <group>
-        <MergeLanes maxLevel={maxLevel} laneLength={laneLength} theme={theme} />
+        <MergeLanes maxLevel={maxLevel} levels={levels} laneLength={laneLength} theme={theme} />
         
         {/* Merge flow visualization - swim lanes connecting source parts to result */}
         <MergeFlowLines items={limitedItems} layout={layout} maxLevel={maxLevel} highlightedMergeId={highlightedMergeId} mergeColorMap={mergeColorMap} theme={theme} />

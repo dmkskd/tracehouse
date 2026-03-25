@@ -126,6 +126,8 @@ const TEMPLATE_VARS: Completion[] = [
 export interface QueryNameEntry {
   name: string;
   group: string;
+  /** True if this query accepts drill_value params (valid as @link/@drill into target). */
+  isLinkTarget?: boolean;
 }
 
 interface DirectiveCompletionRefs {
@@ -182,7 +184,11 @@ export function createDirectiveCompletionSource(refs: DirectiveCompletionRefs) {
       if (directive) {
         const paramDef = directive.params[paramName];
         if (paramDef === 'query') {
-          const queries = refs.queries.current;
+          // For @link/@drill into=, only show queries that accept drill_value params
+          const allQueries = refs.queries.current;
+          const queries = (directiveName === 'link' || directiveName === 'drill')
+            ? allQueries.filter(q => q.isLinkTarget)
+            : allQueries;
           if (queries.length > 0) {
             // If user already typed opening quote, replace from after it; otherwise include quotes
             const isQuoted = !!quotedValueMatch;

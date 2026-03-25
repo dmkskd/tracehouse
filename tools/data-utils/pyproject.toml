@@ -11,6 +11,7 @@ dependencies = [
 
 [project.scripts]
 tracehouse-generate = "data_utils.cli.generate:main"
+tracehouse-drop = "data_utils.cli.drop:main"
 tracehouse-queries = "data_utils.cli.queries:main"
 tracehouse-mutations = "data_utils.cli.mutations:main"
 tracehouse-merge-triggers = "data_utils.cli.merge_triggers:main"
