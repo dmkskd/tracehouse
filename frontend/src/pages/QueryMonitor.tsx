@@ -94,7 +94,7 @@ export const QueryMonitor: React.FC = () => {
       // Fetch coordinator IDs scoped to the returned query IDs
       const queryIds = h.map(q => q.query_id);
       const startDate = h.length > 0
-        ? h[h.length - 1].query_start_time.slice(0, 10)
+        ? String(h[h.length - 1].query_start_time).slice(0, 10)
         : new Date().toISOString().slice(0, 10);
       services.queryAnalyzer.getCoordinatorIds(queryIds, startDate!).then(setHistoryCoordinatorIds).catch(() => {});
     }

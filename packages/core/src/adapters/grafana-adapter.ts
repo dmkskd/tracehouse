@@ -10,7 +10,7 @@ interface DsQueryResponse {
   results: Record<string, {
     status?: number;
     frames?: Array<{
-      schema: { fields: Array<{ name: string }> };
+      schema: { fields: Array<{ name: string; type?: string }> };
       data: { values: unknown[][] };
     }>;
     error?: string;
@@ -78,10 +78,21 @@ export class GrafanaAdapter implements IClickHouseAdapter {
     const rowCount = values[0]?.length ?? 0;
     const rows: T[] = [];
 
+    // Grafana's ClickHouse datasource returns DateTime columns as epoch-ms numbers
+    // with schema type "time". Normalize these to ISO strings so downstream code
+    // can treat all adapter output uniformly.
+    const timeFieldIndices = new Set(
+      fields.map((f, i) => f.type === 'time' ? i : -1).filter(i => i >= 0)
+    );
+
     for (let i = 0; i < rowCount; i++) {
       const row: Record<string, unknown> = {};
       for (let j = 0; j < fields.length; j++) {
-        row[fields[j].name] = values[j]?.[i] ?? null;
+        let v = values[j]?.[i] ?? null;
+        if (timeFieldIndices.has(j) && typeof v === 'number') {
+          v = new Date(v).toISOString().replace('T', ' ').replace('Z', '');
+        }
+        row[fields[j].name] = v;
       }
       rows.push(row as T);
     }
