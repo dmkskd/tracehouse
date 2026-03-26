@@ -20,7 +20,7 @@ import { OrbitControls, Html } from '@react-three/drei';
 import * as THREE from 'three';
 import type { ResourceLanesData } from '@tracehouse/core';
 import { processLanesData, STRESS_COMPONENTS } from '@tracehouse/core';
-import type { ResourceChannel, ViewMode, StressScale, ProcessedLanes, LaneResourceBreakdown } from '@tracehouse/core';
+import type { ViewMode, StressScale, ProcessedLanes, LaneResourceBreakdown } from '@tracehouse/core';
 
 const CHANNEL_OPTIONS: { key: ViewMode; label: string }[] = [
   { key: 'stress', label: 'Stress' },
@@ -836,7 +836,6 @@ export const ResourceSurface: React.FC<ResourceSurfaceProps> = ({
   };
 
   const laneCount = processed.laneLabels.length;
-  const modeLabel = viewMode === 'stress' ? 'Stress' : (CHANNEL_OPTIONS.find(c => c.key === viewMode)?.label ?? '');
 
   return (
     <div style={{ width: '100%', height: '100%', position: 'relative', background: `linear-gradient(180deg, var(--bg-3d-from) 0%, var(--bg-3d-to) 100%)`, borderRadius: 8, overflow: 'hidden' }}>
