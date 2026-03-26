@@ -19,7 +19,7 @@ import { startClickHouse, stopClickHouse, type TestClickHouseContext } from './s
 import { ShadowAdapter } from './setup/shadow-adapter.js';
 import { createShadowDatabase, dropShadowDatabase, truncateShadowTables } from './setup/shadow-tables.js';
 import { AnalyticsService } from '../../services/analytics-service.js';
-import { buildSurfaceTimeFilter, resourceLanesSystem, resourceLanesSystemTotals, resourceLanesTable, stressSurfaceQueries, stressSurfaceInserts, stressSurfaceMerges, patternSurface } from '../../queries/surface-queries.js';
+import { buildSurfaceTimeFilter, resourceLanesSystem, resourceLanesSystemTotals, resourceLanesTable, stressSurfaceQueries, stressSurfaceInserts, stressSurfaceMerges, patternSurface, resourceLanesMerges, resourceLanesMergeTotals, resourceLanesTableMerges } from '../../queries/surface-queries.js';
 import { buildQuery } from '../../queries/builder.js';
 
 const CONTAINER_TIMEOUT = 120_000;
@@ -90,18 +90,31 @@ async function seedPartLog(
     database?: string;
     table?: string;
     duration_ms?: number;
+    read_rows?: number;
+    read_bytes?: number;
+    peak_memory_usage?: number;
+    profileEvents?: Record<string, number>;
   },
 ): Promise<void> {
+  const pe = row.profileEvents ?? {};
+  const peEntries = Object.entries(pe).map(([k, v]) => `'${k}', ${v}`).join(', ');
+  const peMap = peEntries ? `map(${peEntries})` : 'map()';
+
   await ctx.client.command({
     query: `
       INSERT INTO ${SHADOW_DB}.part_log (
-        event_time, event_type, database, \`table\`, duration_ms
+        event_time, event_type, database, \`table\`, duration_ms,
+        read_rows, read_bytes, peak_memory_usage, ProfileEvents
       ) VALUES (
         '${row.event_time}',
         '${row.event_type ?? 'MergeParts'}',
         '${row.database ?? 'default'}',
         '${row.table ?? 'events'}',
-        ${row.duration_ms ?? 50}
+        ${row.duration_ms ?? 50},
+        ${row.read_rows ?? 0},
+        ${row.read_bytes ?? 0},
+        ${row.peak_memory_usage ?? 0},
+        ${peMap}
       )
     `,
   });
@@ -239,9 +252,23 @@ describe('Surface queries integration', () => {
 
     // ── Seed part_log data (for stress surface merges) ───────────────
 
-    await seedPartLog(ctx, { event_time: T1, event_type: 'MergeParts', database: 'default', table: 'events', duration_ms: 150 });
+    await seedPartLog(ctx, {
+      event_time: T1, event_type: 'MergeParts', database: 'default', table: 'events',
+      duration_ms: 150, read_rows: 5000, read_bytes: 200000, peak_memory_usage: 1048576,
+      profileEvents: { RealTimeMicroseconds: 80000, IOWaitMicroseconds: 20000 },
+    });
     await seedPartLog(ctx, { event_time: T1, event_type: 'NewPart', database: 'default', table: 'events', duration_ms: 0 });
-    await seedPartLog(ctx, { event_time: T2, event_type: 'MergeParts', database: 'default', table: 'events', duration_ms: 200 });
+    await seedPartLog(ctx, {
+      event_time: T2, event_type: 'MergeParts', database: 'default', table: 'events',
+      duration_ms: 200, read_rows: 8000, read_bytes: 300000, peak_memory_usage: 2097152,
+      profileEvents: { RealTimeMicroseconds: 120000, IOWaitMicroseconds: 30000 },
+    });
+    // Merge for analytics.metrics table
+    await seedPartLog(ctx, {
+      event_time: T1, event_type: 'MergeParts', database: 'analytics', table: 'metrics',
+      duration_ms: 100, read_rows: 3000, read_bytes: 150000, peak_memory_usage: 524288,
+      profileEvents: { RealTimeMicroseconds: 50000, IOWaitMicroseconds: 10000 },
+    });
   }, CONTAINER_TIMEOUT);
 
   afterAll(async () => {
@@ -520,10 +547,95 @@ describe('Surface queries integration', () => {
     });
   });
 
+  // ── Merge resource lanes queries ────────────────────────────────
+
+  describe('resourceLanesMerges', () => {
+    it('returns per (minute, table) merge resource data', async () => {
+      const tf = buildSurfaceTimeFilter('event_time', { startTime: START, endTime: END });
+      const sql = buildQuery(resourceLanesMerges(tf.clause), tf.params);
+      const rows = await shadowAdapter.executeQuery<Record<string, unknown>>(sql);
+
+      const laneIds = [...new Set(rows.map(r => String(r.lane_id)))];
+      expect(laneIds).toContain('default.events');
+      expect(laneIds).toContain('analytics.metrics');
+
+      // default.events has 2 MergeParts events (T1 + T2)
+      const eventsRows = rows.filter(r => String(r.lane_id) === 'default.events');
+      expect(eventsRows.length).toBe(2); // one per minute bucket
+
+      // Verify resource columns
+      const t1Row = eventsRows.find(r => String(r.ts).includes('10:00'));
+      expect(t1Row).toBeDefined();
+      expect(Number(t1Row!.merge_count)).toBe(1);
+      expect(Number(t1Row!.total_cpu_us)).toBe(80000);
+      expect(Number(t1Row!.total_memory)).toBe(1048576);
+      expect(Number(t1Row!.total_read_bytes)).toBe(200000);
+    });
+
+    it('only includes MergeParts events (not NewPart)', async () => {
+      const tf = buildSurfaceTimeFilter('event_time', { startTime: START, endTime: END });
+      const sql = buildQuery(resourceLanesMerges(tf.clause), tf.params);
+      const rows = await shadowAdapter.executeQuery<Record<string, unknown>>(sql);
+
+      // T1 has 1 MergeParts + 1 NewPart for default.events — only MergeParts counted
+      const t1Events = rows.filter(r =>
+        String(r.lane_id) === 'default.events' && String(r.ts).includes('10:00'),
+      );
+      expect(t1Events.length).toBe(1);
+      expect(Number(t1Events[0].merge_count)).toBe(1);
+    });
+  });
+
+  describe('resourceLanesMergeTotals', () => {
+    it('returns system-wide merge totals per minute', async () => {
+      const tf = buildSurfaceTimeFilter('event_time', { startTime: START, endTime: END });
+      const sql = buildQuery(resourceLanesMergeTotals(tf.clause), tf.params);
+      const rows = await shadowAdapter.executeQuery<Record<string, unknown>>(sql);
+
+      expect(rows.length).toBeGreaterThan(0);
+
+      // T1 has 2 MergeParts (default.events + analytics.metrics)
+      const t1Row = rows.find(r => String(r.ts).includes('10:00'));
+      expect(t1Row).toBeDefined();
+      expect(Number(t1Row!.merge_count)).toBe(2);
+      expect(Number(t1Row!.total_cpu_us)).toBe(80000 + 50000); // events + metrics
+      expect(Number(t1Row!.total_memory)).toBe(1048576 + 524288);
+    });
+
+    it('does not include lane_id', async () => {
+      const tf = buildSurfaceTimeFilter('event_time', { startTime: START, endTime: END });
+      const sql = buildQuery(resourceLanesMergeTotals(tf.clause), tf.params);
+      const rows = await shadowAdapter.executeQuery<Record<string, unknown>>(sql);
+
+      expect(rows[0]).not.toHaveProperty('lane_id');
+    });
+  });
+
+  describe('resourceLanesTableMerges', () => {
+    it('returns per-minute merge data for a specific table', async () => {
+      const tf = buildSurfaceTimeFilter('event_time', { startTime: START, endTime: END });
+      const sql = buildQuery(resourceLanesTableMerges(tf.clause), {
+        database: 'default',
+        table_name: 'events',
+        ...tf.params,
+      });
+      const rows = await shadowAdapter.executeQuery<Record<string, unknown>>(sql);
+
+      // default.events has merges at T1 and T2
+      expect(rows.length).toBe(2);
+
+      const t2Row = rows.find(r => String(r.ts).includes('10:01'));
+      expect(t2Row).toBeDefined();
+      expect(Number(t2Row!.merge_count)).toBe(1);
+      expect(Number(t2Row!.total_cpu_us)).toBe(120000);
+      expect(Number(t2Row!.total_memory)).toBe(2097152);
+    });
+  });
+
   // ── AnalyticsService methods ──────────────────────────────────────
 
   describe('AnalyticsService.getSystemResourceLanes', () => {
-    it('returns correct shape with lanes and totals', async () => {
+    it('returns correct shape with lanes, totals, and merges', async () => {
       const result = await service.getSystemResourceLanes({
         startTime: START,
         endTime: END,
@@ -533,6 +645,10 @@ describe('Surface queries integration', () => {
       expect(result.level).toBe('system');
       expect(result.lanes.length).toBeGreaterThan(0);
       expect(result.totals.length).toBeGreaterThan(0);
+      expect(result.merges).toBeDefined();
+      expect(result.merges!.length).toBeGreaterThan(0);
+      expect(result.mergeTotals).toBeDefined();
+      expect(result.mergeTotals!.length).toBeGreaterThan(0);
 
       // Verify lane row shape
       const lane = result.lanes[0];
@@ -543,10 +659,30 @@ describe('Surface queries integration', () => {
       expect(lane).toHaveProperty('total_memory');
       expect(lane).toHaveProperty('total_selected_marks');
 
+      // Verify merge row shape
+      const merge = result.merges![0];
+      expect(merge).toHaveProperty('ts');
+      expect(merge).toHaveProperty('lane_id');
+      expect(merge).toHaveProperty('merge_count');
+      expect(merge).toHaveProperty('total_cpu_us');
+      expect(merge).toHaveProperty('total_memory');
+
       // Verify totals row shape
       const total = result.totals[0];
       expect(total).toHaveProperty('ts');
       expect(total).toHaveProperty('total_cpu_us');
+    });
+
+    it('merge lane_ids match table names for system level', async () => {
+      const result = await service.getSystemResourceLanes({
+        startTime: START,
+        endTime: END,
+        maxLanes: 10,
+      });
+
+      const mergeLaneIds = [...new Set(result.merges!.map(m => m.lane_id))];
+      expect(mergeLaneIds).toContain('default.events');
+      expect(mergeLaneIds).toContain('analytics.metrics');
     });
 
     it('filters system tables by default', async () => {
@@ -576,7 +712,7 @@ describe('Surface queries integration', () => {
   });
 
   describe('AnalyticsService.getTableResourceLanes', () => {
-    it('returns drill-down by query pattern', async () => {
+    it('returns drill-down with query patterns and merge data', async () => {
       const result = await service.getTableResourceLanes({
         database: 'default',
         table: 'events',
@@ -592,6 +728,12 @@ describe('Surface queries integration', () => {
 
       const laneIds = [...new Set(result.lanes.map(l => l.lane_id))];
       expect(laneIds.length).toBe(2); // hash 1001 + hash 2001
+
+      // Merge data should be present with __merges__ lane_id
+      expect(result.merges).toBeDefined();
+      expect(result.merges!.length).toBeGreaterThan(0);
+      const mergeLaneIds = [...new Set(result.merges!.map(m => m.lane_id))];
+      expect(mergeLaneIds).toContain('__merges__');
     });
   });
 

@@ -407,11 +407,20 @@ export const PatternSurface: React.FC<PatternSurfaceProps> = ({ data, isLoading,
       <div style={{
         position: 'absolute', top: 16, left: 20, zIndex: 10, pointerEvents: 'none',
       }}>
-        <div style={{ fontSize: 14, fontWeight: 700, color: 'var(--text-3d-title)', fontFamily: "'Inter', sans-serif" }}>
-          Query Pattern Surface
+        <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+          <div style={{ fontSize: 14, fontWeight: 700, color: 'var(--text-3d-title)', fontFamily: "'Inter', sans-serif" }}>
+            Query Pattern Surface
+          </div>
+          <span style={{
+            fontSize: 9, padding: '1px 6px', borderRadius: 3,
+            background: 'rgba(234,179,8,0.15)', color: '#eab308',
+            fontFamily: "'Share Tech Mono', monospace", fontWeight: 600,
+          }}>
+            experimental
+          </span>
         </div>
         <div style={{ fontSize: 11, color: 'var(--text-3d-sublabel)', marginTop: 2 }}>
-          Each row = a query pattern. Height = duration. Click a pattern to see details.
+          Each row = a query pattern. Height = avg duration (not a reliable resource metric — will be replaced with composite stress).
         </div>
       </div>
 

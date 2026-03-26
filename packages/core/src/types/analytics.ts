@@ -194,6 +194,7 @@ export interface ResourceLaneRow {
   total_cpu_us: number;
   total_io_wait_us: number;
   total_selected_marks: number;
+  [key: string]: string | number;
 }
 
 /** System-wide totals per time bucket (normalization baseline) */
@@ -207,6 +208,21 @@ export interface ResourceTotalsRow {
   total_cpu_us: number;
   total_io_wait_us: number;
   total_selected_marks: number;
+  [key: string]: string | number;
+}
+
+/** Per (time, lane) merge resource data from part_log */
+export interface ResourceLaneMergeRow {
+  ts: string;
+  /** Table name (system level) or synthetic 'merges' (table drill-down) */
+  lane_id: string;
+  merge_count: number;
+  total_duration_ms: number;
+  total_read_rows: number;
+  total_read_bytes: number;
+  total_memory: number;
+  total_cpu_us: number;
+  total_io_wait_us: number;
 }
 
 /** Full resource lanes dataset */
@@ -215,10 +231,14 @@ export interface ResourceLanesData {
   level: 'system' | 'table';
   /** When level='table', which table we drilled into */
   drillTable?: string;
-  /** Per-(time, lane) resource data */
+  /** Per-(time, lane) resource data from queries */
   lanes: ResourceLaneRow[];
-  /** System-wide totals per time bucket (for normalization) */
+  /** System-wide query totals per time bucket (for normalization) */
   totals: ResourceTotalsRow[];
+  /** Per-(time, lane) merge resource data from part_log */
+  merges?: ResourceLaneMergeRow[];
+  /** System-wide merge totals per time bucket */
+  mergeTotals?: ResourceLaneMergeRow[];
 }
 
 /** Options for resource lanes queries */

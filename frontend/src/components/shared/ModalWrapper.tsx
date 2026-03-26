@@ -53,8 +53,8 @@ export const ModalWrapper: React.FC<{
         style={{
           position: 'absolute',
           inset: 0,
-          background: 'rgba(0, 0, 0, 0.8)',
-          backdropFilter: 'blur(4px)',
+          background: 'rgba(0, 0, 0, 0.92)',
+          backdropFilter: 'blur(8px)',
         }}
         onClick={onClose}
       />

@@ -14,7 +14,7 @@
 export function buildSurfaceTimeFilter(
   column: string,
   opts: { hours?: number; startTime?: string; endTime?: string },
-): { clause: string; params: Record<string, unknown> } {
+): { clause: string; params: Record<string, string | number> } {
   if (opts.startTime && opts.endTime) {
     return {
       clause: `${column} BETWEEN {start_time} AND {end_time}`,
@@ -91,6 +91,73 @@ ORDER BY ts
 `;
 
 // ─── Resource lanes queries ─────────────────────────────────────────────
+
+/**
+ * System-level merge resource usage per (minute, table) from part_log.
+ * Same shape as query lanes so they can be merged into the composite stress.
+ * Only includes MergeParts events (not NewPart, MovePart, etc.).
+ */
+export const resourceLanesMerges = (timeClause: string) => `
+SELECT
+    toStartOfMinute(event_time) AS ts,
+    concat(database, '.', \`table\`) AS lane_id,
+    count() AS merge_count,
+    sum(duration_ms) AS total_duration_ms,
+    sum(read_rows) AS total_read_rows,
+    sum(read_bytes) AS total_read_bytes,
+    sum(peak_memory_usage) AS total_memory,
+    sum(ProfileEvents['RealTimeMicroseconds']) AS total_cpu_us,
+    sum(ProfileEvents['IOWaitMicroseconds']) AS total_io_wait_us
+FROM system.part_log
+WHERE event_type = 'MergeParts'
+  AND ${timeClause}
+GROUP BY ts, lane_id
+ORDER BY ts, lane_id
+`;
+
+/**
+ * System-wide merge totals per minute (all tables combined).
+ * Used alongside query totals for normalization.
+ */
+export const resourceLanesMergeTotals = (timeClause: string) => `
+SELECT
+    toStartOfMinute(event_time) AS ts,
+    count() AS merge_count,
+    sum(duration_ms) AS total_duration_ms,
+    sum(read_rows) AS total_read_rows,
+    sum(read_bytes) AS total_read_bytes,
+    sum(peak_memory_usage) AS total_memory,
+    sum(ProfileEvents['RealTimeMicroseconds']) AS total_cpu_us,
+    sum(ProfileEvents['IOWaitMicroseconds']) AS total_io_wait_us
+FROM system.part_log
+WHERE event_type = 'MergeParts'
+  AND ${timeClause}
+GROUP BY ts
+ORDER BY ts
+`;
+
+/**
+ * Table-level merge resource usage per minute for drill-down.
+ * Returns a single synthetic "Merges" lane for the specified table.
+ */
+export const resourceLanesTableMerges = (timeClause: string) => `
+SELECT
+    toStartOfMinute(event_time) AS ts,
+    count() AS merge_count,
+    sum(duration_ms) AS total_duration_ms,
+    sum(read_rows) AS total_read_rows,
+    sum(read_bytes) AS total_read_bytes,
+    sum(peak_memory_usage) AS total_memory,
+    sum(ProfileEvents['RealTimeMicroseconds']) AS total_cpu_us,
+    sum(ProfileEvents['IOWaitMicroseconds']) AS total_io_wait_us
+FROM system.part_log
+WHERE event_type = 'MergeParts'
+  AND ${timeClause}
+  AND database = {database}
+  AND \`table\` = {table_name}
+GROUP BY ts
+ORDER BY ts
+`;
 
 /**
  * System-level resource lanes: per-minute resource usage grouped by table.

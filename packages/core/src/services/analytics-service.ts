@@ -6,9 +6,9 @@
  */
 
 import type { IClickHouseAdapter } from '../adapters/types.js';
-import type { TableOrderingKeyEfficiency, OrderingKeyEfficiencyOptions, TableQueryPattern, ExplainIndexesResult, StressSurfaceData, StressSurfaceRow, StressSurfaceInsertRow, StressSurfaceMergeRow, PatternSurfaceRow, SurfaceQueryOptions, ResourceLanesData, ResourceLaneRow, ResourceTotalsRow, ResourceLanesOptions, ResourceLanesTableOptions } from '../types/analytics.js';
+import type { TableOrderingKeyEfficiency, OrderingKeyEfficiencyOptions, TableQueryPattern, ExplainIndexesResult, StressSurfaceData, StressSurfaceRow, StressSurfaceInsertRow, StressSurfaceMergeRow, PatternSurfaceRow, SurfaceQueryOptions, ResourceLanesData, ResourceLaneRow, ResourceLaneMergeRow, ResourceTotalsRow, ResourceLanesOptions, ResourceLanesTableOptions } from '../types/analytics.js';
 import { TABLE_ORDERING_KEY_EFFICIENCY, TABLE_QUERY_PATTERNS } from '../queries/analytics-queries.js';
-import { stressSurfaceQueries, stressSurfaceInserts, stressSurfaceMerges, patternSurface, buildSurfaceTimeFilter, resourceLanesSystem, resourceLanesSystemTotals, resourceLanesTable } from '../queries/surface-queries.js';
+import { stressSurfaceQueries, stressSurfaceInserts, stressSurfaceMerges, patternSurface, buildSurfaceTimeFilter, resourceLanesSystem, resourceLanesSystemTotals, resourceLanesTable, resourceLanesMerges, resourceLanesMergeTotals, resourceLanesTableMerges } from '../queries/surface-queries.js';
 import { buildQuery, tagQuery } from '../queries/builder.js';
 import { TAB_ANALYTICS, sourceTag } from '../queries/source-tags.js';
 import { parseExplainIndexesJson } from './explain-parser.js';
@@ -280,6 +280,21 @@ export class AnalyticsService {
     };
   }
 
+  /** Map raw rows to typed ResourceLaneMergeRow */
+  private mapMergeRow(r: Record<string, unknown>, laneId?: string): ResourceLaneMergeRow {
+    return {
+      ts: String(r.ts ?? ''),
+      lane_id: laneId ?? String(r.lane_id ?? ''),
+      merge_count: Number(r.merge_count ?? 0),
+      total_duration_ms: Number(r.total_duration_ms ?? 0),
+      total_read_rows: Number(r.total_read_rows ?? 0),
+      total_read_bytes: Number(r.total_read_bytes ?? 0),
+      total_memory: Number(r.total_memory ?? 0),
+      total_cpu_us: Number(r.total_cpu_us ?? 0),
+      total_io_wait_us: Number(r.total_io_wait_us ?? 0),
+    };
+  }
+
   /** Map raw rows to typed ResourceTotalsRow */
   private mapTotalsRow(r: Record<string, unknown>): ResourceTotalsRow {
     return {
@@ -306,19 +321,27 @@ export class AnalyticsService {
     const params = { max_lanes: maxLanes, ...tf.params };
 
     try {
-      const [laneRows, totalRows] = await Promise.all([
+      const [laneRows, totalRows, mergeRows, mergeTotalRows] = await Promise.all([
         this.adapter.executeQuery<Record<string, unknown>>(
           tagQuery(buildQuery(resourceLanesSystem(tf.clause, excludeSystem), params), sourceTag(TAB_ANALYTICS, 'resourceLanesSystem')),
         ),
         this.adapter.executeQuery<Record<string, unknown>>(
           tagQuery(buildQuery(resourceLanesSystemTotals(tf.clause), params), sourceTag(TAB_ANALYTICS, 'resourceLanesTotals')),
         ),
+        this.adapter.executeQuery<Record<string, unknown>>(
+          tagQuery(buildQuery(resourceLanesMerges(tf.clause), tf.params), sourceTag(TAB_ANALYTICS, 'resourceLanesMerges')),
+        ).catch(() => [] as Record<string, unknown>[]),
+        this.adapter.executeQuery<Record<string, unknown>>(
+          tagQuery(buildQuery(resourceLanesMergeTotals(tf.clause), tf.params), sourceTag(TAB_ANALYTICS, 'resourceLanesMergeTotals')),
+        ).catch(() => [] as Record<string, unknown>[]),
       ]);
 
       return {
-        level: 'system',
+        level: 'system' as const,
         lanes: laneRows.map(r => this.mapLaneRow(r)),
         totals: totalRows.map(r => this.mapTotalsRow(r)),
+        merges: mergeRows.map(r => this.mapMergeRow(r)),
+        mergeTotals: mergeTotalRows.map(r => this.mapMergeRow(r, '__system__')),
       };
     } catch (error) {
       const msg = error instanceof Error ? error.message : String(error);
@@ -339,20 +362,31 @@ export class AnalyticsService {
 
     try {
       // Reuse system totals for normalization (same baseline at both levels)
-      const [laneRows, totalRows] = await Promise.all([
+      const [laneRows, totalRows, mergeRows, mergeTotalRows] = await Promise.all([
         this.adapter.executeQuery<Record<string, unknown>>(
           tagQuery(buildQuery(resourceLanesTable(tf.clause), params), sourceTag(TAB_ANALYTICS, 'resourceLanesTable')),
         ),
         this.adapter.executeQuery<Record<string, unknown>>(
           tagQuery(buildQuery(resourceLanesSystemTotals(tf.clause), params), sourceTag(TAB_ANALYTICS, 'resourceLanesTotals')),
         ),
+        this.adapter.executeQuery<Record<string, unknown>>(
+          tagQuery(buildQuery(resourceLanesTableMerges(tf.clause), params), sourceTag(TAB_ANALYTICS, 'resourceLanesTableMerges')),
+        ).catch(() => [] as Record<string, unknown>[]),
+        this.adapter.executeQuery<Record<string, unknown>>(
+          tagQuery(buildQuery(resourceLanesMergeTotals(tf.clause), tf.params), sourceTag(TAB_ANALYTICS, 'resourceLanesMergeTotals')),
+        ).catch(() => [] as Record<string, unknown>[]),
       ]);
 
+      // Table merges get a synthetic "Merges" lane_id
+      const MERGE_LANE_ID = '__merges__';
+
       return {
-        level: 'table',
+        level: 'table' as const,
         drillTable: fullTable,
         lanes: laneRows.map(r => this.mapLaneRow(r)),
         totals: totalRows.map(r => this.mapTotalsRow(r)),
+        merges: mergeRows.map(r => this.mapMergeRow(r, MERGE_LANE_ID)),
+        mergeTotals: mergeTotalRows.map(r => this.mapMergeRow(r, '__system__')),
       };
     } catch (error) {
       const msg = error instanceof Error ? error.message : String(error);

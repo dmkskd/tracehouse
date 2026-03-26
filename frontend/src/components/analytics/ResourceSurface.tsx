@@ -15,32 +15,12 @@
  */
 
 import React, { useEffect, useMemo, useRef, useState, useCallback } from 'react';
-import { Canvas, useThree, useFrame } from '@react-three/fiber';
+import { Canvas, useThree } from '@react-three/fiber';
 import { OrbitControls, Html } from '@react-three/drei';
 import * as THREE from 'three';
-import type { ResourceLanesData, ResourceLaneRow, ResourceTotalsRow } from '@tracehouse/core';
-
-// ─── Resource channels ───
-
-export type ResourceChannel =
-  | 'total_cpu_us'
-  | 'total_memory'
-  | 'total_read_bytes'
-  | 'total_selected_marks'
-  | 'total_io_wait_us'
-  | 'total_duration_ms'
-  | 'query_count'
-  | 'total_read_rows';
-
-/** The 4 primary stress components */
-const STRESS_COMPONENTS = [
-  { key: 'total_cpu_us' as ResourceChannel, label: 'CPU', color: '#ef4444', weight: 0.35 },
-  { key: 'total_memory' as ResourceChannel, label: 'Mem', color: '#3b82f6', weight: 0.25 },
-  { key: 'total_read_bytes' as ResourceChannel, label: 'IO', color: '#22c55e', weight: 0.25 },
-  { key: 'total_selected_marks' as ResourceChannel, label: 'Marks', color: '#f59e0b', weight: 0.15 },
-] as const;
-
-type ViewMode = 'stress' | ResourceChannel;
+import type { ResourceLanesData } from '@tracehouse/core';
+import { processLanesData, STRESS_COMPONENTS } from '@tracehouse/core';
+import type { ResourceChannel, ViewMode, StressScale, ProcessedLanes, LaneResourceBreakdown } from '@tracehouse/core';
 
 const CHANNEL_OPTIONS: { key: ViewMode; label: string }[] = [
   { key: 'stress', label: 'Stress' },
@@ -53,6 +33,14 @@ const CHANNEL_OPTIONS: { key: ViewMode; label: string }[] = [
   { key: 'query_count', label: 'Queries' },
   { key: 'total_read_rows', label: 'Rows' },
 ];
+
+/** Presentation metadata for stress components — colors and labels for the UI */
+const STRESS_COMPONENT_DISPLAY = [
+  { label: 'CPU', color: '#ef4444' },
+  { label: 'Mem', color: '#3b82f6' },
+  { label: 'IO', color: '#22c55e' },
+  { label: 'Marks', color: '#f59e0b' },
+] as const;
 
 // ─── Colorscale (cool blues for low → hot reds/magentas for high share of system) ───
 
@@ -92,205 +80,8 @@ const SCENE_WIDTH = 10;
 const SCENE_DEPTH = 8;
 const MAX_HEIGHT = 3.5;
 
-// ─── Data processing ───
-
-/** Per-lane resource breakdown (shares of system for each component) */
-interface LaneResourceBreakdown {
-  cpu: number;
-  memory: number;
-  io: number;
-  marks: number;
-}
-
-interface ProcessedLanes {
-  Z: number[][];
-  Zraw: number[][];
-  laneLabels: string[];
-  laneIds: string[];
-  timeLabels: string[];
-  systemPeak: number;
-  laneAvgShare: number[];
-  /** Per-lane resource breakdown for stacked bars */
-  laneBreakdowns: LaneResourceBreakdown[];
-}
-
-/** Build per-channel system totals map: ts → value */
-function buildSystemTotals(totals: ResourceTotalsRow[], channel: ResourceChannel): Map<string, number> {
-  const m = new Map<string, number>();
-  for (const t of totals) {
-    m.set(t.ts, Number((t as Record<string, unknown>)[channel] ?? 0));
-  }
-  return m;
-}
-
-/** Compute a single normalized share: lane_value / system_total */
-function computeShare(laneVal: number, sysTotal: number): number {
-  return sysTotal > 0 ? Math.min(1, laneVal / sysTotal) : 0;
-}
-
-function processLanesData(
-  data: ResourceLanesData,
-  viewMode: ViewMode,
-): ProcessedLanes | null {
-  const { lanes, totals } = data;
-  if (lanes.length === 0 || totals.length === 0) return null;
-
-  const times = totals.map(r => r.ts).sort();
-  if (times.length < 2) return null;
-  const timeIdx = new Map(times.map((t, i) => [t, i]));
-  const nTime = times.length;
-
-  // Build system totals for each stress component
-  const sysTotalsByChannel = new Map<ResourceChannel, Map<string, number>>();
-  for (const comp of STRESS_COMPONENTS) {
-    sysTotalsByChannel.set(comp.key, buildSystemTotals(totals, comp.key));
-  }
-
-  // For single-channel mode, also build that channel's totals
-  const isStressMode = viewMode === 'stress';
-  let singleChannelTotals: Map<string, number> | null = null;
-  if (!isStressMode) {
-    singleChannelTotals = buildSystemTotals(totals, viewMode as ResourceChannel);
-  }
-
-  // Rank lanes by composite stress (always rank by stress, regardless of view mode)
-  const laneAgg = new Map<string, { stressTotal: number; label: string; channelTotals: Record<string, number> }>();
-  for (const r of lanes) {
-    const existing = laneAgg.get(r.lane_id);
-    const rec = r as Record<string, unknown>;
-    const cpuVal = Number(rec['total_cpu_us'] ?? 0);
-    const memVal = Number(rec['total_memory'] ?? 0);
-    const ioVal = Number(rec['total_read_bytes'] ?? 0);
-    const marksVal = Number(rec['total_selected_marks'] ?? 0);
-
-    if (existing) {
-      existing.stressTotal += cpuVal + memVal + ioVal + marksVal; // rough proxy for ranking
-      existing.channelTotals['total_cpu_us'] += cpuVal;
-      existing.channelTotals['total_memory'] += memVal;
-      existing.channelTotals['total_read_bytes'] += ioVal;
-      existing.channelTotals['total_selected_marks'] += marksVal;
-    } else {
-      laneAgg.set(r.lane_id, {
-        stressTotal: cpuVal + memVal + ioVal + marksVal,
-        label: r.lane_label,
-        channelTotals: {
-          'total_cpu_us': cpuVal,
-          'total_memory': memVal,
-          'total_read_bytes': ioVal,
-          'total_selected_marks': marksVal,
-        },
-      });
-    }
-  }
-
-  const rankedLanes = [...laneAgg.entries()].sort((a, b) => b[1].stressTotal - a[1].stressTotal);
-  if (rankedLanes.length === 0) return null;
-
-  const laneIds = rankedLanes.map(([id]) => id);
-  const laneLabels = rankedLanes.map(([, info]) => {
-    const label = info.label;
-    if (label.includes('.')) {
-      const parts = label.split('.');
-      return parts.length > 1 ? parts[parts.length - 1] : label;
-    }
-    return label.length > 40 ? label.slice(0, 40) + '…' : label;
-  });
-  const laneIdxMap = new Map(laneIds.map((id, i) => [id, i]));
-
-  const nLanes = laneIds.length;
-
-  // Build per-lane resource breakdown (average shares across time for each component)
-  // Used for stacked bars in the lane list
-  const laneBreakdowns: LaneResourceBreakdown[] = rankedLanes.map(([, info]) => {
-    const totals = info.channelTotals;
-    const sum = (totals['total_cpu_us'] || 0) + (totals['total_memory'] || 0) +
-      (totals['total_read_bytes'] || 0) + (totals['total_selected_marks'] || 0);
-    if (sum === 0) return { cpu: 0, memory: 0, io: 0, marks: 0 };
-    return {
-      cpu: (totals['total_cpu_us'] || 0) / sum,
-      memory: (totals['total_memory'] || 0) / sum,
-      io: (totals['total_read_bytes'] || 0) / sum,
-      marks: (totals['total_selected_marks'] || 0) / sum,
-    };
-  });
-
-  // Build grid
-  if (isStressMode) {
-    // For stress mode, build per-component grids, normalize each, then combine
-    const componentGrids = STRESS_COMPONENTS.map(comp => {
-      const sysTotals = sysTotalsByChannel.get(comp.key)!;
-      const grid: number[][] = Array.from({ length: nLanes }, () => new Array(nTime).fill(0));
-      for (const r of lanes) {
-        const li = laneIdxMap.get(r.lane_id);
-        const ti = timeIdx.get(r.ts);
-        if (li !== undefined && ti !== undefined) {
-          const raw = Number((r as Record<string, unknown>)[comp.key] ?? 0);
-          const sysTotal = sysTotals.get(times[ti]) ?? 1;
-          grid[li][ti] = computeShare(raw, sysTotal);
-        }
-      }
-      return { grid, weight: comp.weight };
-    });
-
-    // Combine into composite stress
-    const Z: number[][] = Array.from({ length: nLanes }, (_, li) =>
-      Array.from({ length: nTime }, (_, ti) => {
-        let stress = 0;
-        for (const { grid, weight } of componentGrids) {
-          stress += grid[li][ti] * weight;
-        }
-        return Math.min(1, stress);
-      }),
-    );
-
-    // Zraw = composite (same as Z for stress mode, raw doesn't apply)
-    const Zraw = Z;
-
-    const systemPeak = 1;
-    const laneAvgShare = Z.map(row => {
-      const nonZero = row.filter(v => v > 0);
-      return nonZero.length > 0 ? nonZero.reduce((a, b) => a + b, 0) / nonZero.length : 0;
-    });
-
-    const timeLabels = times.map(t => {
-      const match = t.match(/(\d{2}:\d{2})/);
-      return match ? match[1] : t.slice(11, 16);
-    });
-
-    return { Z, Zraw, laneLabels, laneIds, timeLabels, systemPeak, laneAvgShare, laneBreakdowns };
-  } else {
-    // Single channel mode (same as before)
-    const channel = viewMode as ResourceChannel;
-    const Zraw: number[][] = Array.from({ length: nLanes }, () => new Array(nTime).fill(0));
-    for (const r of lanes) {
-      const li = laneIdxMap.get(r.lane_id);
-      const ti = timeIdx.get(r.ts);
-      if (li !== undefined && ti !== undefined) {
-        Zraw[li][ti] = Number((r as Record<string, unknown>)[channel] ?? 0);
-      }
-    }
-
-    const Z: number[][] = Zraw.map(row =>
-      row.map((val, ti) => {
-        const sysTotal = singleChannelTotals!.get(times[ti]) ?? 1;
-        return computeShare(val, sysTotal);
-      }),
-    );
-
-    const systemPeak = Math.max(...[...(singleChannelTotals?.values() ?? [])], 1);
-    const laneAvgShare = Z.map(row => {
-      const nonZero = row.filter(v => v > 0);
-      return nonZero.length > 0 ? nonZero.reduce((a, b) => a + b, 0) / nonZero.length : 0;
-    });
-
-    const timeLabels = times.map(t => {
-      const match = t.match(/(\d{2}:\d{2})/);
-      return match ? match[1] : t.slice(11, 16);
-    });
-
-    return { Z, Zraw, laneLabels, laneIds, timeLabels, systemPeak, laneAvgShare, laneBreakdowns };
-  }
-}
+// Data processing (aggregation, normalization, ranking) lives in
+// packages/core/src/utils/resource-lanes-processor.ts — imported as processLanesData
 
 // ─── Three.js components ───
 
@@ -303,7 +94,7 @@ function LanesMesh({
 }: {
   processed: ProcessedLanes;
   onLaneClick: (laneId: string) => void;
-  meshRef: React.RefObject<THREE.Mesh | null>;
+  meshRef: React.Ref<THREE.Mesh>;
   highlightedLaneIdx: number | null;
   onLaneHover: (idx: number | null) => void;
 }) {
@@ -427,13 +218,18 @@ function LaneLabels({ processed, highlightedLaneIdx }: { processed: ProcessedLan
 
   return (
     <>
-      {/* Time labels along X */}
-      {timeIndices.map(i => {
-        const x = (i / (nTime - 1) - 0.5) * SCENE_WIDTH;
+      {/* Time labels along X — gradient from dim (oldest) to bright (newest) */}
+      {timeIndices.map((ti, idx) => {
+        const x = (ti / (nTime - 1) - 0.5) * SCENE_WIDTH;
+        const frac = timeIndices.length > 1 ? idx / (timeIndices.length - 1) : 1;
+        // Dim grey → bright white
+        const r = Math.round(100 + frac * 128);
+        const g = Math.round(116 + frac * 112);
+        const b = Math.round(139 + frac * 96);
         return (
-          <Html key={`t-${i}`} position={[x, -0.15, SCENE_DEPTH / 2 + 1.2]} center style={{ pointerEvents: 'none' }}>
-            <div style={{ fontSize: 9, color: '#94a3b8', fontFamily: "'Share Tech Mono', monospace", whiteSpace: 'nowrap' }}>
-              {timeLabels[i]}
+          <Html key={`t-${ti}`} position={[x, -0.15, SCENE_DEPTH / 2 + 1.2]} center style={{ pointerEvents: 'none' }}>
+            <div style={{ fontSize: 9, color: `rgb(${r},${g},${b})`, fontFamily: "'Share Tech Mono', monospace", whiteSpace: 'nowrap' }}>
+              {timeLabels[ti]}
             </div>
           </Html>
         );
@@ -485,9 +281,6 @@ function LaneLabels({ processed, highlightedLaneIdx }: { processed: ProcessedLan
         );
       })}
 
-      <Html position={[0, -0.4, SCENE_DEPTH / 2 + 2.0]} center style={{ pointerEvents: 'none' }}>
-        <div style={{ fontSize: 10, color: '#64748b', fontFamily: "'Share Tech Mono', monospace", fontWeight: 600 }}>Time</div>
-      </Html>
     </>
   );
 }
@@ -505,7 +298,7 @@ function SceneSetup() {
 
 function ResourceSurfaceScene({
   processed,
-  level,
+  level: _level,
   onLaneClick,
   highlightedLaneIdx,
   onLaneHover,
@@ -567,10 +360,10 @@ function ResourceLegend({ viewMode }: { viewMode: ViewMode }) {
       </div>
       {viewMode === 'stress' && (
         <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
-          {STRESS_COMPONENTS.map(c => (
+          {STRESS_COMPONENTS.map((c, i) => (
             <div key={c.key} style={{ display: 'flex', alignItems: 'center', gap: 3 }}>
-              <div style={{ width: 6, height: 6, borderRadius: 1, background: c.color }} />
-              <span style={{ fontSize: 9, color: '#64748b' }}>{c.label} {Math.round(c.weight * 100)}%</span>
+              <div style={{ width: 6, height: 6, borderRadius: 1, background: STRESS_COMPONENT_DISPLAY[i].color }} />
+              <span style={{ fontSize: 9, color: '#64748b' }}>{STRESS_COMPONENT_DISPLAY[i].label} {Math.round(c.weight * 100)}%</span>
             </div>
           ))}
         </div>
@@ -593,29 +386,112 @@ function ViewModeSelector({
       display: 'flex', gap: 2, padding: 3, borderRadius: 8,
       background: 'var(--bg-3d-overlay)', backdropFilter: 'blur(8px)',
       border: '1px solid var(--bg-3d-overlay-border)',
+      alignItems: 'center',
     }}>
-      {CHANNEL_OPTIONS.map(opt => (
+      <span style={{ fontSize: 8, color: '#475569', padding: '0 4px', fontFamily: "'Share Tech Mono', monospace" }}>Metric</span>
+      {CHANNEL_OPTIONS.map((opt, i) => (
+        <React.Fragment key={opt.key}>
+          {i === 1 && <span style={{ width: 1, height: 12, background: 'rgba(100,116,139,0.25)', flexShrink: 0 }} />}
+          <button
+            onClick={() => onChange(opt.key)}
+            style={{
+              padding: '3px 8px',
+              fontSize: 9,
+              fontWeight: active === opt.key ? 700 : 400,
+              border: 'none',
+              borderRadius: 5,
+              cursor: 'pointer',
+              fontFamily: "'Share Tech Mono', monospace",
+              background: active === opt.key
+                ? opt.key === 'stress' ? 'rgba(239, 68, 68, 0.15)' : 'rgba(88, 166, 255, 0.2)'
+                : 'transparent',
+              color: active === opt.key
+                ? opt.key === 'stress' ? '#f87171' : '#58a6ff'
+                : '#64748b',
+              transition: 'all 0.15s ease',
+            }}
+          >
+            {opt.label}
+          </button>
+        </React.Fragment>
+      ))}
+    </div>
+  );
+}
+
+const SCALE_OPTIONS: { key: StressScale; label: string; title: string }[] = [
+  { key: 'share', label: 'Share', title: 'How much of the system is each table using right now? 10 tables at 10% each = all flat at 10%, even if system is maxed out.' },
+  { key: 'load', label: 'Load', title: 'Uses the busiest minute as the ceiling. Quiet periods are flat, busy periods are tall. Example: if only 3 queries ran at 13:00 but 300 ran at 14:00, the surface at 13:00 is nearly flat. In Share mode both would look the same height.' },
+  { key: 'contrast', label: 'Contrast', title: 'Stretch so the busiest lane fills the full height. Example: if the top table uses 8% and the rest use 2%, Share shows them all near the bottom. Contrast stretches 8% to full height so you can see the difference.' },
+];
+
+function StressScaleToggle({
+  active,
+  onChange,
+}: {
+  active: StressScale;
+  onChange: (s: StressScale) => void;
+}) {
+  return (
+    <div style={{
+      display: 'flex', gap: 2, padding: 3, borderRadius: 8,
+      background: 'var(--bg-3d-overlay)', backdropFilter: 'blur(8px)',
+      border: '1px solid var(--bg-3d-overlay-border)',
+      alignItems: 'center',
+    }}>
+      <span style={{ fontSize: 8, color: '#475569', padding: '0 4px', fontFamily: "'Share Tech Mono', monospace" }}>Scale</span>
+      {SCALE_OPTIONS.map(opt => (
         <button
           key={opt.key}
           onClick={() => onChange(opt.key)}
+          title={opt.title}
           style={{
-            padding: '3px 8px',
+            padding: '3px 6px',
             fontSize: 9,
             fontWeight: active === opt.key ? 700 : 400,
             border: 'none',
             borderRadius: 5,
             cursor: 'pointer',
             fontFamily: "'Share Tech Mono', monospace",
-            background: active === opt.key
-              ? opt.key === 'stress' ? 'rgba(239, 68, 68, 0.15)' : 'rgba(88, 166, 255, 0.2)'
-              : 'transparent',
-            color: active === opt.key
-              ? opt.key === 'stress' ? '#f87171' : '#58a6ff'
-              : '#64748b',
+            background: active === opt.key ? 'rgba(88, 166, 255, 0.2)' : 'transparent',
+            color: active === opt.key ? '#58a6ff' : '#64748b',
             transition: 'all 0.15s ease',
           }}
         >
           {opt.label}
+        </button>
+      ))}
+    </div>
+  );
+}
+
+function LanesToggle({ active, onChange }: { active: number; onChange: (n: number) => void }) {
+  return (
+    <div style={{
+      display: 'flex', gap: 2, padding: 3, borderRadius: 8,
+      background: 'var(--bg-3d-overlay)', backdropFilter: 'blur(8px)',
+      border: '1px solid var(--bg-3d-overlay-border)',
+      alignItems: 'center',
+    }}>
+      <span style={{ fontSize: 8, color: '#475569', padding: '0 4px', fontFamily: "'Share Tech Mono', monospace" }}>Lanes</span>
+      {[5, 10, 15, 20].map(n => (
+        <button
+          key={n}
+          onClick={() => onChange(n)}
+          style={{
+            padding: '3px 6px',
+            fontSize: 9,
+            fontWeight: active === n ? 700 : 400,
+            border: 'none',
+            borderRadius: 5,
+            cursor: 'pointer',
+            fontFamily: "'Share Tech Mono', monospace",
+            background: active === n ? 'rgba(88, 166, 255, 0.2)' : 'transparent',
+            color: active === n ? '#58a6ff' : '#64748b',
+            transition: 'all 0.15s ease',
+          }}
+        >
+          {n}
         </button>
       ))}
     </div>
@@ -630,7 +506,7 @@ function AlgoInfo({ level, viewMode, laneCount }: { level: 'system' | 'table'; v
   const stressDesc = `Composite stress = weighted combination of CPU (35%), Memory (25%), IO (25%), Marks (15%). ` +
     `Each component is normalized to its share of system-wide total at that minute, then combined.`;
 
-  const description = level === 'system'
+  const lanesDesc = level === 'system'
     ? `Showing top ${laneCount} tables ranked by total resource usage. ` +
       `Tables are selected from SELECT queries in system.query_log (ARRAY JOIN tables). ` +
       (viewMode === 'stress' ? stressDesc : `Each cell height = table's share of total system ${viewMode} at that minute.`) + ` ` +
@@ -640,8 +516,13 @@ function AlgoInfo({ level, viewMode, laneCount }: { level: 'system' | 'table'; v
       (viewMode === 'stress' ? stressDesc : '') + ` ` +
       `Heights use the same system-wide baseline as the overview for comparable scale.`;
 
+  const scaleDesc = `Scale controls how tall the surface is:\n` +
+    `• Share — what % of system is each table using? With 10 tables at 10% each, all lanes are flat at 10% even if the system is maxed.\n` +
+    `• Load — is the system busy? Tall = heavy load, flat = idle. Best for spotting stress periods.\n` +
+    `• Contrast — stretches the busiest lane to fill full height. Best for comparing lanes when differences are small.`;
+
   return (
-    <div style={{ position: 'relative', display: 'inline-block' }}>
+    <div style={{ position: 'relative', display: 'inline-block', zIndex: 30 }}>
       <button
         onClick={() => setOpen(o => !o)}
         style={{
@@ -653,21 +534,23 @@ function AlgoInfo({ level, viewMode, laneCount }: { level: 'system' | 'table'; v
           display: 'flex', alignItems: 'center', justifyContent: 'center',
           fontFamily: "'Inter', sans-serif", fontWeight: 600,
         }}
-        title="How lanes are selected"
+        title="How this surface works"
       >
         i
       </button>
       {open && (
         <div style={{
-          position: 'absolute', top: 24, left: 0, zIndex: 20,
-          width: 320, padding: '10px 12px',
+          position: 'absolute', top: 24, left: 0, zIndex: 30,
+          width: 340, padding: '10px 12px',
           background: 'var(--bg-3d-overlay)', backdropFilter: 'blur(12px)',
           border: '1px solid var(--bg-3d-overlay-border)',
           borderRadius: 6, fontSize: 10, lineHeight: 1.5,
           color: '#94a3b8', fontFamily: "'Share Tech Mono', monospace",
-          pointerEvents: 'auto',
+          pointerEvents: 'auto', whiteSpace: 'pre-line',
         }}>
-          {description}
+          {lanesDesc}
+          {'\n\n'}
+          {scaleDesc}
         </div>
       )}
     </div>
@@ -678,10 +561,10 @@ function AlgoInfo({ level, viewMode, laneCount }: { level: 'system' | 'table'; v
 
 function StackedBar({ breakdown, width = 80 }: { breakdown: LaneResourceBreakdown; width?: number }) {
   const segments = [
-    { frac: breakdown.cpu, color: STRESS_COMPONENTS[0].color },
-    { frac: breakdown.memory, color: STRESS_COMPONENTS[1].color },
-    { frac: breakdown.io, color: STRESS_COMPONENTS[2].color },
-    { frac: breakdown.marks, color: STRESS_COMPONENTS[3].color },
+    { frac: breakdown.cpu, color: STRESS_COMPONENT_DISPLAY[0].color },
+    { frac: breakdown.memory, color: STRESS_COMPONENT_DISPLAY[1].color },
+    { frac: breakdown.io, color: STRESS_COMPONENT_DISPLAY[2].color },
+    { frac: breakdown.marks, color: STRESS_COMPONENT_DISPLAY[3].color },
   ];
 
   return (
@@ -707,11 +590,12 @@ function StackedBar({ breakdown, width = 80 }: { breakdown: LaneResourceBreakdow
 function LaneListPanel({
   processed,
   level,
-  viewMode,
+  viewMode: _viewMode,
   highlightedIdx,
   onHover,
   onLeave,
   onClick,
+  onOpenQuery,
 }: {
   processed: ProcessedLanes;
   level: 'system' | 'table';
@@ -720,103 +604,170 @@ function LaneListPanel({
   onHover: (idx: number) => void;
   onLeave: () => void;
   onClick: (laneId: string) => void;
+  onOpenQuery?: (hash: string) => void;
 }) {
   const { laneLabels, laneIds, laneAvgShare, laneBreakdowns } = processed;
+  const containerRef = useRef<HTMLDivElement>(null);
+  const itemRefs = useRef<(HTMLDivElement | null)[]>([]);
+  const hideTimeout = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const isOverTooltip = useRef(false);
+
+  const handleLaneEnter = useCallback((idx: number) => {
+    if (hideTimeout.current) { clearTimeout(hideTimeout.current); hideTimeout.current = null; }
+    onHover(idx);
+  }, [onHover]);
+
+  const handleLaneLeave = useCallback(() => {
+    hideTimeout.current = setTimeout(() => {
+      if (!isOverTooltip.current) onLeave();
+    }, 150);
+  }, [onLeave]);
+
+  const handleTooltipEnter = useCallback(() => {
+    isOverTooltip.current = true;
+    if (hideTimeout.current) { clearTimeout(hideTimeout.current); hideTimeout.current = null; }
+  }, []);
+
+  const handleTooltipLeave = useCallback(() => {
+    isOverTooltip.current = false;
+    hideTimeout.current = setTimeout(() => onLeave(), 150);
+  }, [onLeave]);
+
+  // Compute tooltip position relative to the outer container
+  const tooltipTop = useMemo(() => {
+    if (highlightedIdx === null || !containerRef.current) return 0;
+    const item = itemRefs.current[highlightedIdx];
+    if (!item || !containerRef.current) return 0;
+    return item.offsetTop - containerRef.current.scrollTop;
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [highlightedIdx]);
+
+  const highlightedLabel = highlightedIdx !== null ? laneLabels[highlightedIdx] : '';
+  const highlightedLaneId = highlightedIdx !== null ? laneIds[highlightedIdx] : '';
+  const highlightedBd = highlightedIdx !== null ? laneBreakdowns[highlightedIdx] : null;
+  const highlightedAvg = highlightedIdx !== null ? laneAvgShare[highlightedIdx] ?? 0 : 0;
+  // At table level, lanes are query patterns (not __merges__) — clickable to open details
+  const isQueryLane = level === 'table' && highlightedLaneId !== '__merges__';
 
   return (
-    <div style={{
-      position: 'absolute', top: 50, right: 16, zIndex: 10,
-      background: 'var(--bg-3d-overlay)', backdropFilter: 'blur(8px)',
-      border: '1px solid var(--bg-3d-overlay-border)',
-      borderRadius: 6, padding: '6px 0',
-      maxHeight: 'calc(100% - 100px)', overflowY: 'auto',
-      minWidth: 180,
-    }}>
-      {laneLabels.map((label, i) => {
-        const isHighlighted = highlightedIdx === i;
-        const avgShare = laneAvgShare[i] ?? 0;
-        const dotColor = heatColorCSS(avgShare);
-        const bd = laneBreakdowns[i];
-
-        return (
-          <div
-            key={laneIds[i]}
-            onMouseEnter={() => onHover(i)}
-            onMouseLeave={onLeave}
-            onClick={() => level === 'system' && onClick(laneIds[i])}
-            style={{
-              position: 'relative',
-              display: 'flex', flexDirection: 'column', gap: 2,
-              padding: '4px 10px',
-              cursor: level === 'system' ? 'pointer' : 'default',
-              background: isHighlighted ? 'rgba(88, 166, 255, 0.1)' : 'transparent',
-              transition: 'background 0.1s ease',
-            }}
-          >
-            <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
-              <div style={{
-                width: 6, height: 6, borderRadius: '50%', flexShrink: 0,
-                background: dotColor,
-                boxShadow: isHighlighted ? `0 0 6px ${dotColor}` : 'none',
-              }} />
-              <span
-                style={{
-                  fontSize: 10, whiteSpace: 'nowrap',
-                  overflow: 'hidden', textOverflow: 'ellipsis', maxWidth: 130,
-                  fontFamily: "'Share Tech Mono', monospace",
-                  color: isHighlighted ? '#e2e8f0' : '#94a3b8',
-                  fontWeight: isHighlighted ? 600 : 400,
-                  transition: 'color 0.1s ease',
-                }}
-                title={label}
-              >
-                {label}
-              </span>
-              <span style={{
-                fontSize: 8, color: '#475569', marginLeft: 'auto', flexShrink: 0,
-                fontFamily: "'Share Tech Mono', monospace",
-              }}>
-                {(avgShare * 100).toFixed(0)}%
-              </span>
+    <div style={{ position: 'absolute', top: 48, right: 16, zIndex: 10 }}>
+      {/* Tooltip — rendered outside the scrollable container */}
+      {highlightedIdx !== null && highlightedBd && (
+        <div
+          onMouseEnter={handleTooltipEnter}
+          onMouseLeave={handleTooltipLeave}
+          style={{
+          position: 'absolute', right: '100%', top: tooltipTop, marginRight: 8,
+          background: 'var(--bg-3d-overlay)', backdropFilter: 'blur(12px)',
+          border: '1px solid var(--bg-3d-overlay-border)',
+          borderRadius: 6, padding: '8px 10px',
+          fontSize: 9, lineHeight: 1.6, whiteSpace: 'nowrap',
+          fontFamily: "'Share Tech Mono', monospace",
+          color: '#94a3b8', zIndex: 20,
+          minWidth: 120,
+        }}>
+          <div style={{ fontWeight: 600, color: '#e2e8f0', marginBottom: 4, fontSize: 10 }}>{highlightedLabel}</div>
+          {isQueryLane && (
+            <div style={{ fontSize: 8, color: '#475569', marginBottom: 4, wordBreak: 'break-all', whiteSpace: 'normal', maxWidth: 200 }}>
+              hash: {highlightedLaneId}
             </div>
-            {/* Mini stacked bar */}
-            <div style={{ paddingLeft: 12 }}>
-              <StackedBar breakdown={bd} width={100} />
-            </div>
-            {/* Hover tooltip — resource breakdown */}
-            {isHighlighted && (
-              <div style={{
-                position: 'absolute', right: '100%', top: 0, marginRight: 8,
-                background: 'var(--bg-3d-overlay)', backdropFilter: 'blur(12px)',
-                border: '1px solid var(--bg-3d-overlay-border)',
-                borderRadius: 6, padding: '8px 10px',
-                fontSize: 9, lineHeight: 1.6, whiteSpace: 'nowrap',
-                fontFamily: "'Share Tech Mono', monospace",
-                color: '#94a3b8', zIndex: 20,
-                minWidth: 120,
-              }}>
-                <div style={{ fontWeight: 600, color: '#e2e8f0', marginBottom: 4, fontSize: 10 }}>{label}</div>
-                {STRESS_COMPONENTS.map(comp => {
-                  const pct = comp.key === 'total_cpu_us' ? bd.cpu
-                    : comp.key === 'total_memory' ? bd.memory
-                    : comp.key === 'total_read_bytes' ? bd.io
-                    : bd.marks;
-                  return (
-                    <div key={comp.key} style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
-                      <div style={{ width: 6, height: 6, borderRadius: 1, background: comp.color, flexShrink: 0 }} />
-                      <span>{comp.label}</span>
-                      <span style={{ marginLeft: 'auto', color: '#64748b' }}>{(pct * 100).toFixed(0)}%</span>
-                    </div>
-                  );
-                })}
-                <div style={{ marginTop: 4, borderTop: '1px solid rgba(100,116,139,0.2)', paddingTop: 4, color: '#64748b' }}>
-                  Avg stress: {(avgShare * 100).toFixed(1)}%
-                </div>
+          )}
+          {STRESS_COMPONENTS.map((comp, ci) => {
+            const pct = comp.key === 'total_cpu_us' ? highlightedBd.cpu
+              : comp.key === 'total_memory' ? highlightedBd.memory
+              : comp.key === 'total_read_bytes' ? highlightedBd.io
+              : highlightedBd.marks;
+            return (
+              <div key={comp.key} style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+                <div style={{ width: 6, height: 6, borderRadius: 1, background: STRESS_COMPONENT_DISPLAY[ci].color, flexShrink: 0 }} />
+                <span>{STRESS_COMPONENT_DISPLAY[ci].label}</span>
+                <span style={{ marginLeft: 'auto', color: '#64748b' }}>{(pct * 100).toFixed(0)}%</span>
               </div>
-            )}
+            );
+          })}
+          <div style={{ marginTop: 4, borderTop: '1px solid rgba(100,116,139,0.2)', paddingTop: 4, color: '#64748b' }}>
+            Avg stress: {(highlightedAvg * 100).toFixed(1)}%
           </div>
-        );
-      })}
+          {isQueryLane && onOpenQuery && (
+            <button
+              onClick={() => onOpenQuery(highlightedLaneId)}
+              style={{
+                marginTop: 6, padding: '3px 8px', fontSize: 9, width: '100%',
+                color: '#58a6ff', background: 'rgba(88,166,255,0.1)',
+                border: '1px solid rgba(88,166,255,0.25)', borderRadius: 4,
+                cursor: 'pointer', fontFamily: "'Share Tech Mono', monospace",
+              }}
+            >
+              View Details
+            </button>
+          )}
+        </div>
+      )}
+      {/* Scrollable lane list */}
+      <div
+        ref={containerRef}
+        style={{
+          background: 'var(--bg-3d-overlay)', backdropFilter: 'blur(8px)',
+          border: '1px solid var(--bg-3d-overlay-border)',
+          borderRadius: 6, padding: '6px 0',
+          maxHeight: 'calc(100vh - 200px)', overflowY: 'auto',
+          minWidth: 180,
+        }}
+      >
+        {laneLabels.map((label, i) => {
+          const isHighlighted = highlightedIdx === i;
+          const avgShare = laneAvgShare[i] ?? 0;
+          const dotColor = heatColorCSS(avgShare);
+          const bd = laneBreakdowns[i];
+
+          return (
+            <div
+              key={laneIds[i]}
+              ref={el => { itemRefs.current[i] = el; }}
+              onMouseEnter={() => handleLaneEnter(i)}
+              onMouseLeave={handleLaneLeave}
+              onClick={() => level === 'system' && onClick(laneIds[i])}
+              style={{
+                display: 'flex', flexDirection: 'column', gap: 2,
+                padding: '4px 10px',
+                cursor: level === 'system' ? 'pointer' : 'default',
+                background: isHighlighted ? 'rgba(88, 166, 255, 0.1)' : 'transparent',
+                transition: 'background 0.1s ease',
+              }}
+            >
+              <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+                <div style={{
+                  width: 6, height: 6, borderRadius: '50%', flexShrink: 0,
+                  background: dotColor,
+                  boxShadow: isHighlighted ? `0 0 6px ${dotColor}` : 'none',
+                }} />
+                <span
+                  style={{
+                    fontSize: 10, whiteSpace: 'nowrap',
+                    overflow: 'hidden', textOverflow: 'ellipsis', maxWidth: 130,
+                    fontFamily: "'Share Tech Mono', monospace",
+                    color: isHighlighted ? '#e2e8f0' : '#94a3b8',
+                    fontWeight: isHighlighted ? 600 : 400,
+                    transition: 'color 0.1s ease',
+                  }}
+                  title={label}
+                >
+                  {label}
+                </span>
+                <span style={{
+                  fontSize: 8, color: '#475569', marginLeft: 'auto', flexShrink: 0,
+                  fontFamily: "'Share Tech Mono', monospace",
+                }}>
+                  {(avgShare * 100).toFixed(0)}%
+                </span>
+              </div>
+              <div style={{ paddingLeft: 12 }}>
+                <StackedBar breakdown={bd} width={100} />
+              </div>
+            </div>
+          );
+        })}
+      </div>
     </div>
   );
 }
@@ -827,24 +778,31 @@ export interface ResourceSurfaceProps {
   data: ResourceLanesData | null;
   isLoading: boolean;
   error: string | null;
+  maxLanes: number;
+  onMaxLanesChange: (n: number) => void;
   onDrillDown: (tableFullName: string) => void;
   onDrillUp: () => void;
+  onOpenQuery?: (hash: string) => void;
 }
 
 export const ResourceSurface: React.FC<ResourceSurfaceProps> = ({
   data,
   isLoading,
   error,
+  maxLanes,
+  onMaxLanesChange,
   onDrillDown,
   onDrillUp,
+  onOpenQuery,
 }) => {
   const [viewMode, setViewMode] = useState<ViewMode>('stress');
+  const [stressScale, setStressScale] = useState<StressScale>('load');
   const [highlightedLaneIdx, setHighlightedLaneIdx] = useState<number | null>(null);
 
   const processed = useMemo(() => {
     if (!data) return null;
-    return processLanesData(data, viewMode);
-  }, [data, viewMode]);
+    return processLanesData(data, viewMode, stressScale);
+  }, [data, viewMode, stressScale]);
 
   if (error) {
     return (
@@ -882,46 +840,37 @@ export const ResourceSurface: React.FC<ResourceSurfaceProps> = ({
 
   return (
     <div style={{ width: '100%', height: '100%', position: 'relative', background: `linear-gradient(180deg, var(--bg-3d-from) 0%, var(--bg-3d-to) 100%)`, borderRadius: 8, overflow: 'hidden' }}>
-      {/* Header */}
+      {/* Header bar */}
       <div style={{
-        position: 'absolute', top: 12, left: 16, zIndex: 10,
-        display: 'flex', alignItems: 'flex-start', gap: 8,
+        position: 'absolute', top: 0, left: 0, right: 0, zIndex: 12,
+        padding: '8px 16px',
+        background: 'linear-gradient(to bottom, rgba(10,15,30,0.85) 0%, rgba(10,15,30,0.4) 80%, transparent 100%)',
+        display: 'flex', alignItems: 'center', gap: 8,
       }}>
-        <div style={{ pointerEvents: 'none' }}>
-          <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-            {level === 'table' && (
-              <button
-                onClick={onDrillUp}
-                style={{
-                  pointerEvents: 'auto',
-                  display: 'inline-flex', alignItems: 'center', gap: 4,
-                  padding: '3px 8px', fontSize: 10,
-                  color: '#58a6ff', background: 'rgba(88,166,255,0.1)',
-                  border: '1px solid rgba(88,166,255,0.25)', borderRadius: 4,
-                  cursor: 'pointer', fontFamily: "'Share Tech Mono', monospace",
-                }}
-              >
-                ← All Tables
-              </button>
-            )}
-            <div style={{ fontSize: 14, fontWeight: 700, color: 'var(--text-3d-title)', fontFamily: "'Inter', sans-serif" }}>
-              {level === 'system'
-                ? 'System Resource Usage'
-                : data.drillTable ?? 'Table Resource Usage'}
-            </div>
-            <AlgoInfo level={level} viewMode={viewMode} laneCount={laneCount} />
-          </div>
-          <div style={{ fontSize: 11, color: 'var(--text-3d-sublabel)', marginTop: 2 }}>
-            {level === 'system'
-              ? `Top ${laneCount} tables by ${modeLabel} · hover to inspect · click to drill down`
-              : `Top ${laneCount} query patterns by ${modeLabel}`}
-          </div>
+        {level === 'table' && (
+          <button
+            onClick={onDrillUp}
+            style={{
+              display: 'inline-flex', alignItems: 'center', gap: 4,
+              padding: '3px 8px', fontSize: 10,
+              color: '#58a6ff', background: 'rgba(88,166,255,0.1)',
+              border: '1px solid rgba(88,166,255,0.25)', borderRadius: 4,
+              cursor: 'pointer', fontFamily: "'Share Tech Mono', monospace",
+            }}
+          >
+            ← All Tables
+          </button>
+        )}
+        <div style={{ fontSize: 13, fontWeight: 700, color: 'var(--text-3d-title)', fontFamily: "'Inter', sans-serif", whiteSpace: 'nowrap' }}>
+          {level === 'system'
+            ? 'System Resource Usage'
+            : data.drillTable ?? 'Table Resource Usage'}
         </div>
-      </div>
-
-      {/* View mode selector — top right, above lane list */}
-      <div style={{ position: 'absolute', top: 12, right: 16, zIndex: 11 }}>
+        <AlgoInfo level={level} viewMode={viewMode} laneCount={laneCount} />
         <ViewModeSelector active={viewMode} onChange={setViewMode} />
+        <div style={{ flex: 1 }} />
+        <StressScaleToggle active={stressScale} onChange={setStressScale} />
+        <LanesToggle active={maxLanes} onChange={onMaxLanesChange} />
       </div>
 
       {/* Lane list panel — right side */}
@@ -933,6 +882,7 @@ export const ResourceSurface: React.FC<ResourceSurfaceProps> = ({
         onHover={setHighlightedLaneIdx}
         onLeave={() => setHighlightedLaneIdx(null)}
         onClick={handleLaneClick}
+        onOpenQuery={onOpenQuery}
       />
 
       <ResourceLegend viewMode={viewMode} />
