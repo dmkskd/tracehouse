@@ -21,10 +21,10 @@ export function buildSurfaceTimeFilter(
       params: { start_time: opts.startTime.replace('T', ' '), end_time: opts.endTime.replace('T', ' ') },
     };
   }
-  const hours = opts.hours ?? 24;
+  const minutes = Math.round((opts.hours ?? 24) * 60);
   return {
-    clause: `${column} > now() - INTERVAL {hours} HOUR`,
-    params: { hours },
+    clause: `${column} > now() - INTERVAL {minutes} MINUTE`,
+    params: { minutes },
   };
 }
 
@@ -88,6 +88,128 @@ WHERE ${timeClause}
   AND table = {table_name}
 GROUP BY ts
 ORDER BY ts
+`;
+
+// ─── Resource lanes queries ─────────────────────────────────────────────
+
+/**
+ * System-level resource lanes: per-minute resource usage grouped by table.
+ * Returns top N tables ranked by total resource usage across the time window.
+ * Each row = one (time bucket, table) pair with resource totals.
+ *
+ * The CTE first identifies the top tables, then the main query fetches
+ * per-minute breakdown only for those tables.
+ */
+export const resourceLanesSystem = (timeClause: string, excludeSystemTables = true) => `
+WITH top_tables AS (
+    SELECT
+        arrayJoin(arrayFilter(
+            t -> NOT startsWith(t, '_table_function.')${excludeSystemTables ? " AND NOT startsWith(t, 'system.') AND NOT startsWith(t, 'INFORMATION_SCHEMA.') AND NOT startsWith(t, 'information_schema.')" : ''},
+            tables
+        )) AS full_table,
+        sum(ProfileEvents['RealTimeMicroseconds']) AS total_cpu,
+        sum(memory_usage) AS total_mem,
+        sum(read_bytes) AS total_io,
+        count() AS qcount
+    FROM system.query_log
+    WHERE type = 'QueryFinish'
+      AND query_kind IN ('Select', 'Insert')
+      AND ${timeClause}
+      AND is_initial_query = 1
+    GROUP BY full_table
+    ORDER BY total_cpu DESC
+    LIMIT {max_lanes}
+)
+SELECT
+    toStartOfMinute(event_time) AS ts,
+    ft AS lane_id,
+    ft AS lane_label,
+    count() AS query_count,
+    sum(query_duration_ms) AS total_duration_ms,
+    sum(read_rows) AS total_read_rows,
+    sum(read_bytes) AS total_read_bytes,
+    sum(memory_usage) AS total_memory,
+    sum(ProfileEvents['RealTimeMicroseconds']) AS total_cpu_us,
+    sum(ProfileEvents['IOWaitMicroseconds']) AS total_io_wait_us,
+    sum(ProfileEvents['SelectedMarks']) AS total_selected_marks
+FROM system.query_log
+ARRAY JOIN tables AS ft
+INNER JOIN top_tables tt ON ft = tt.full_table
+WHERE type = 'QueryFinish'
+  AND query_kind IN ('Select', 'Insert')
+  AND ${timeClause}
+  AND is_initial_query = 1
+GROUP BY ts, lane_id, lane_label
+ORDER BY ts, lane_id
+`;
+
+/**
+ * System-level totals per minute (all tables combined).
+ * Used as the normalization baseline so table lanes show their share
+ * of system-wide resource usage, not self-referential peaks.
+ */
+export const resourceLanesSystemTotals = (timeClause: string) => `
+SELECT
+    toStartOfMinute(event_time) AS ts,
+    count() AS query_count,
+    sum(query_duration_ms) AS total_duration_ms,
+    sum(read_rows) AS total_read_rows,
+    sum(read_bytes) AS total_read_bytes,
+    sum(memory_usage) AS total_memory,
+    sum(ProfileEvents['RealTimeMicroseconds']) AS total_cpu_us,
+    sum(ProfileEvents['IOWaitMicroseconds']) AS total_io_wait_us,
+    sum(ProfileEvents['SelectedMarks']) AS total_selected_marks
+FROM system.query_log
+WHERE type = 'QueryFinish'
+  AND query_kind IN ('Select', 'Insert')
+  AND ${timeClause}
+  AND is_initial_query = 1
+GROUP BY ts
+ORDER BY ts
+`;
+
+/**
+ * Table-level resource lanes: per-minute resource usage grouped by query pattern.
+ * Drill-down from system view — shows which query patterns are driving
+ * a specific table's resource consumption.
+ * Top N patterns ranked by total CPU usage.
+ */
+export const resourceLanesTable = (timeClause: string) => `
+WITH top_patterns AS (
+    SELECT
+        normalized_query_hash,
+        sum(ProfileEvents['RealTimeMicroseconds']) AS total_cpu
+    FROM system.query_log
+    WHERE type = 'QueryFinish'
+      AND query_kind IN ('Select', 'Insert')
+      AND ${timeClause}
+      AND is_initial_query = 1
+      AND has(tables, concat({database}, '.', {table_name}))
+    GROUP BY normalized_query_hash
+    ORDER BY total_cpu DESC
+    LIMIT {max_lanes}
+)
+SELECT
+    toStartOfMinute(event_time) AS ts,
+    toString(q.normalized_query_hash) AS lane_id,
+    substring(any(q.query), 1, 80) AS lane_label,
+    count() AS query_count,
+    sum(q.query_duration_ms) AS total_duration_ms,
+    sum(q.read_rows) AS total_read_rows,
+    sum(q.read_bytes) AS total_read_bytes,
+    sum(q.memory_usage) AS total_memory,
+    sum(q.ProfileEvents['RealTimeMicroseconds']) AS total_cpu_us,
+    sum(q.ProfileEvents['IOWaitMicroseconds']) AS total_io_wait_us,
+    sum(q.ProfileEvents['SelectedMarks']) AS total_selected_marks
+FROM system.query_log q
+INNER JOIN top_patterns tp ON q.normalized_query_hash = tp.normalized_query_hash
+WHERE q.type = 'QueryFinish'
+  AND q.query_kind IN ('Select', 'Insert')
+  AND ${timeClause}
+  AND q.is_initial_query = 1
+  AND has(q.tables, concat({database}, '.', {table_name}))
+GROUP BY ts, q.normalized_query_hash
+ORDER BY ts, q.normalized_query_hash
 `;
 
 /**

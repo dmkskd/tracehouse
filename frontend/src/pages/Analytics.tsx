@@ -15,6 +15,7 @@ import { QueryExplorer } from '../components/analytics/QueryExplorer';
 import { DashboardViewer } from '../components/analytics/DashboardViewer';
 import { StressSurface } from '../components/analytics/StressSurface';
 import { PatternSurface } from '../components/analytics/PatternSurface';
+import { ResourceSurface } from '../components/analytics/ResourceSurface';
 import { TimeRangePicker } from '../components/analytics/TimeRangePicker';
 import { loadDashboards } from '../components/analytics/dashboards';
 import { useAnalyticsUrlState } from '../hooks/useUrlState';
@@ -22,10 +23,10 @@ import { useNavigate } from '../hooks/useAppLocation';
 import { useUserPreferenceStore } from '../stores/userPreferenceStore';
 import { DocsLink } from '../components/common/DocsLink';
 import { QueryDetailModal } from '../components/query/QueryDetailModal';
-import type { TableOrderingKeyEfficiency, StressSurfaceData, PatternSurfaceRow, QuerySeries } from '@tracehouse/core';
+import type { TableOrderingKeyEfficiency, StressSurfaceData, PatternSurfaceRow, QuerySeries, ResourceLanesData } from '@tracehouse/core';
 
 type AnalyticsTab = 'tables' | 'misc' | 'dashboards' | 'surfaces';
-type SurfaceSubTab = 'stress' | 'pattern';
+type SurfaceSubTab = 'resource' | 'pattern';
 
 const LOOKBACK_OPTIONS = [
   { label: '1 day', value: 1 },
@@ -79,7 +80,7 @@ export const Analytics: React.FC = () => {
   const [linkCopied, setLinkCopied] = useState(false);
 
   // ── Surfaces tab state ──
-  const [surfaceSubTab, setSurfaceSubTab] = useState<SurfaceSubTab>('stress');
+  const [surfaceSubTab, setSurfaceSubTab] = useState<SurfaceSubTab>('resource');
   const [surfaceDb, setSurfaceDb] = useState<string>('');
   const [surfaceTableName, setSurfaceTableName] = useState<string>('');
   const [surfaceTimeRange, setSurfaceTimeRange] = useState<string | null>('1 DAY');
@@ -88,6 +89,12 @@ export const Analytics: React.FC = () => {
   const [surfaceLoading, setSurfaceLoading] = useState(false);
   const [surfaceError, setSurfaceError] = useState<string | null>(null);
   const [modalQuery, setModalQuery] = useState<QuerySeries | null>(null);
+
+  // ── Resource lanes state ──
+  const [resourceData, setResourceData] = useState<ResourceLanesData | null>(null);
+  const [resourceLoading, setResourceLoading] = useState(false);
+  const [resourceError, setResourceError] = useState<string | null>(null);
+  const [resourceDrillTable, setResourceDrillTable] = useState<string | null>(null);
 
   // Reset to Tables tab if experimental is disabled while on Surfaces
   useEffect(() => {
@@ -166,6 +173,53 @@ export const Analytics: React.FC = () => {
     }
   }, [services, surfaceDb, surfaceTableName, surfaceTimeRange]);
 
+  /** Convert surfaceTimeRange to {hours} or {startTime, endTime} */
+  const parseTimeRange = useCallback((): { hours?: number; startTime?: string; endTime?: string } => {
+    if (!surfaceTimeRange) return { hours: 24 };
+    if (surfaceTimeRange.startsWith('CUSTOM:')) {
+      const [startTime, endTime] = surfaceTimeRange.slice(7).split(',');
+      return { startTime, endTime };
+    }
+    const INTERVAL_HOURS: Record<string, number> = {
+      '15 MINUTE': 0.25, '1 HOUR': 1, '6 HOUR': 6,
+      '1 DAY': 24, '2 DAY': 48, '7 DAY': 168, '30 DAY': 720,
+    };
+    return { hours: INTERVAL_HOURS[surfaceTimeRange] ?? 24 };
+  }, [surfaceTimeRange]);
+
+  const fetchResourceLanes = useCallback(async () => {
+    if (!services) return;
+    setResourceLoading(true);
+    setResourceError(null);
+    try {
+      const timeOpts = parseTimeRange();
+      let result: ResourceLanesData;
+      if (resourceDrillTable) {
+        // Drill-down: table level — split db.table
+        const dotIdx = resourceDrillTable.indexOf('.');
+        const db = dotIdx > 0 ? resourceDrillTable.slice(0, dotIdx) : 'default';
+        const tbl = dotIdx > 0 ? resourceDrillTable.slice(dotIdx + 1) : resourceDrillTable;
+        result = await services.analyticsService.getTableResourceLanes({
+          database: db,
+          table: tbl,
+          maxLanes: 10,
+          ...timeOpts,
+        });
+      } else {
+        // System level
+        result = await services.analyticsService.getSystemResourceLanes({
+          maxLanes: 10,
+          ...timeOpts,
+        });
+      }
+      setResourceData(result);
+    } catch (e) {
+      setResourceError(e instanceof Error ? e.message : 'Failed to load resource data');
+    } finally {
+      setResourceLoading(false);
+    }
+  }, [services, resourceDrillTable, parseTimeRange]);
+
   // Open QueryDetailModal for a pattern hash — fetch the most recent query for that hash
   const handleOpenPatternQuery = useCallback(async (hash: string) => {
     if (!services) return;
@@ -218,6 +272,11 @@ export const Analytics: React.FC = () => {
   useEffect(() => {
     if (surfaceDb && surfaceTableName && services) fetchSurfaceData();
   }, [fetchSurfaceData]);
+
+  // Auto-fetch resource lanes when time range or drill state changes
+  useEffect(() => {
+    if (services && activeTab === 'surfaces' && surfaceSubTab === 'resource') fetchResourceLanes();
+  }, [fetchResourceLanes, activeTab, surfaceSubTab]);
 
   // Auto-pick database/table for surfaces from the Tables Efficiency data
   useEffect(() => {
@@ -539,58 +598,58 @@ export const Analytics: React.FC = () => {
         <>
           <div style={{ flexShrink: 0, padding: '8px 24px 12px', background: 'var(--bg-secondary)', borderBottom: '1px solid var(--border-primary)' }}>
             <div style={{ display: 'flex', alignItems: 'center', gap: 12, flexWrap: 'wrap' }}>
-              {/* Database selector */}
-              <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
-                <span style={{ fontSize: 11, color: 'var(--text-muted)' }}>Database:</span>
-                <select
-                  value={surfaceDb}
-                  onChange={e => {
-                    setSurfaceDb(e.target.value);
-                    // Auto-pick first table in the new database
-                    const tables = data.filter(d => d.database === e.target.value).map(d => d.table_name).sort();
-                    setSurfaceTableName(tables[0] ?? '');
-                  }}
-                  style={{
-                    padding: '3px 8px', fontSize: 11, borderRadius: 4,
-                    border: '1px solid var(--border-primary)', background: 'var(--bg-card)',
-                    color: 'var(--text-primary)', fontFamily: "'Share Tech Mono', monospace",
-                  }}
-                >
-                  <option value="">--</option>
-                  {surfaceDatabases.map(db => (
-                    <option key={db} value={db}>{db}</option>
-                  ))}
-                </select>
-              </div>
-
-              {/* Table selector */}
-              <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
-                <span style={{ fontSize: 11, color: 'var(--text-muted)' }}>Table:</span>
-                <select
-                  value={surfaceTableName}
-                  onChange={e => setSurfaceTableName(e.target.value)}
-                  style={{
-                    padding: '3px 8px', fontSize: 11, borderRadius: 4,
-                    border: '1px solid var(--border-primary)', background: 'var(--bg-card)',
-                    color: 'var(--text-primary)', fontFamily: "'Share Tech Mono', monospace",
-                    maxWidth: 280,
-                  }}
-                >
-                  <option value="">--</option>
-                  {surfaceTables.map(tbl => (
-                    <option key={tbl} value={tbl}>{tbl}</option>
-                  ))}
-                </select>
-              </div>
-
-              {/* Time range picker */}
+              {/* Time range picker — always shown */}
               <TimeRangePicker value={surfaceTimeRange} onChange={setSurfaceTimeRange} />
 
+              {/* Database/Table selectors — only for Query Patterns sub-tab */}
+              {surfaceSubTab === 'pattern' && (
+                <>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+                    <span style={{ fontSize: 11, color: 'var(--text-muted)' }}>Database:</span>
+                    <select
+                      value={surfaceDb}
+                      onChange={e => {
+                        setSurfaceDb(e.target.value);
+                        const tables = data.filter(d => d.database === e.target.value).map(d => d.table_name).sort();
+                        setSurfaceTableName(tables[0] ?? '');
+                      }}
+                      style={{
+                        padding: '3px 8px', fontSize: 11, borderRadius: 4,
+                        border: '1px solid var(--border-primary)', background: 'var(--bg-card)',
+                        color: 'var(--text-primary)', fontFamily: "'Share Tech Mono', monospace",
+                      }}
+                    >
+                      <option value="">--</option>
+                      {surfaceDatabases.map(db => (
+                        <option key={db} value={db}>{db}</option>
+                      ))}
+                    </select>
+                  </div>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+                    <span style={{ fontSize: 11, color: 'var(--text-muted)' }}>Table:</span>
+                    <select
+                      value={surfaceTableName}
+                      onChange={e => setSurfaceTableName(e.target.value)}
+                      style={{
+                        padding: '3px 8px', fontSize: 11, borderRadius: 4,
+                        border: '1px solid var(--border-primary)', background: 'var(--bg-card)',
+                        color: 'var(--text-primary)', fontFamily: "'Share Tech Mono', monospace",
+                        maxWidth: 280,
+                      }}
+                    >
+                      <option value="">--</option>
+                      {surfaceTables.map(tbl => (
+                        <option key={tbl} value={tbl}>{tbl}</option>
+                      ))}
+                    </select>
+                  </div>
+                </>
+              )}
             </div>
 
             {/* Sub-tabs */}
             <div style={{ display: 'flex', gap: 4, marginTop: 8 }}>
-              <button onClick={() => setSurfaceSubTab('stress')} style={btnStyle(surfaceSubTab === 'stress')}>
+              <button onClick={() => setSurfaceSubTab('resource')} style={btnStyle(surfaceSubTab === 'resource')}>
                 Resource Usage
               </button>
               <button onClick={() => setSurfaceSubTab('pattern')} style={btnStyle(surfaceSubTab === 'pattern')}>
@@ -599,20 +658,19 @@ export const Analytics: React.FC = () => {
             </div>
           </div>
 
-          {/* Work-in-progress notice */}
-          <div style={{
-            margin: '8px 12px 0', padding: '8px 12px',
-            fontSize: 11, lineHeight: 1.5, color: 'var(--text-muted)',
-            background: 'rgba(210, 153, 34, 0.08)', border: '1px solid rgba(210, 153, 34, 0.2)',
-            borderRadius: 6,
-          }}>
-            <strong style={{ color: '#d29922' }}>Work in progress</strong> — We are evaluating which composition of resource metrics, combined on a surface,
-            best exposes critically stressed resources at both the system and table level. The resource and query surfaces shown here are still being refined.
-          </div>
-
           <div style={{ flex: 1, overflow: 'hidden', padding: 12 }}>
-            {surfaceSubTab === 'stress' && (
-              <StressSurface data={stressData} isLoading={surfaceLoading} error={surfaceError} />
+            {surfaceSubTab === 'resource' && (
+              <ResourceSurface
+                data={resourceData}
+                isLoading={resourceLoading}
+                error={resourceError}
+                onDrillDown={(tableFullName) => {
+                  setResourceDrillTable(tableFullName);
+                }}
+                onDrillUp={() => {
+                  setResourceDrillTable(null);
+                }}
+              />
             )}
             {surfaceSubTab === 'pattern' && (
               <PatternSurface data={patternData} isLoading={surfaceLoading} error={surfaceError} onOpenQuery={handleOpenPatternQuery} />

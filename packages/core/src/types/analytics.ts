@@ -177,6 +177,70 @@ export interface SurfaceQueryOptions {
   endTime?: string;
 }
 
+// ─── Resource lanes types ────────────────────────────────────────────────
+
+/** A single (time, lane) data point for the resource lanes surface */
+export interface ResourceLaneRow {
+  ts: string;
+  /** Unique identifier for this lane (table name at system level, query hash at table level) */
+  lane_id: string;
+  /** Display label for the lane */
+  lane_label: string;
+  query_count: number;
+  total_duration_ms: number;
+  total_read_rows: number;
+  total_read_bytes: number;
+  total_memory: number;
+  total_cpu_us: number;
+  total_io_wait_us: number;
+  total_selected_marks: number;
+}
+
+/** System-wide totals per time bucket (normalization baseline) */
+export interface ResourceTotalsRow {
+  ts: string;
+  query_count: number;
+  total_duration_ms: number;
+  total_read_rows: number;
+  total_read_bytes: number;
+  total_memory: number;
+  total_cpu_us: number;
+  total_io_wait_us: number;
+  total_selected_marks: number;
+}
+
+/** Full resource lanes dataset */
+export interface ResourceLanesData {
+  /** Which level: 'system' (lanes=tables) or 'table' (lanes=query patterns) */
+  level: 'system' | 'table';
+  /** When level='table', which table we drilled into */
+  drillTable?: string;
+  /** Per-(time, lane) resource data */
+  lanes: ResourceLaneRow[];
+  /** System-wide totals per time bucket (for normalization) */
+  totals: ResourceTotalsRow[];
+}
+
+/** Options for resource lanes queries */
+export interface ResourceLanesOptions {
+  /** Lookback window in hours (ignored when startTime/endTime are set) */
+  hours?: number;
+  /** Absolute start time (ISO string) */
+  startTime?: string;
+  /** Absolute end time (ISO string) */
+  endTime?: string;
+  /** Max number of lanes to show (default: 10) */
+  maxLanes?: number;
+  /** Exclude system/internal tables from lanes (default: true) */
+  excludeSystemTables?: boolean;
+}
+
+/** Options for table-level resource lanes drill-down */
+export interface ResourceLanesTableOptions extends ResourceLanesOptions {
+  database: string;
+  table: string;
+}
+
 /** Parsed result of EXPLAIN indexes = 1 for a query */
 export interface ExplainIndexesResult {
   /** All index entries found in the EXPLAIN output */

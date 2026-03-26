@@ -6,9 +6,9 @@
  */
 
 import type { IClickHouseAdapter } from '../adapters/types.js';
-import type { TableOrderingKeyEfficiency, OrderingKeyEfficiencyOptions, TableQueryPattern, ExplainIndexesResult, StressSurfaceData, StressSurfaceRow, StressSurfaceInsertRow, StressSurfaceMergeRow, PatternSurfaceRow, SurfaceQueryOptions } from '../types/analytics.js';
+import type { TableOrderingKeyEfficiency, OrderingKeyEfficiencyOptions, TableQueryPattern, ExplainIndexesResult, StressSurfaceData, StressSurfaceRow, StressSurfaceInsertRow, StressSurfaceMergeRow, PatternSurfaceRow, SurfaceQueryOptions, ResourceLanesData, ResourceLaneRow, ResourceTotalsRow, ResourceLanesOptions, ResourceLanesTableOptions } from '../types/analytics.js';
 import { TABLE_ORDERING_KEY_EFFICIENCY, TABLE_QUERY_PATTERNS } from '../queries/analytics-queries.js';
-import { stressSurfaceQueries, stressSurfaceInserts, stressSurfaceMerges, patternSurface, buildSurfaceTimeFilter } from '../queries/surface-queries.js';
+import { stressSurfaceQueries, stressSurfaceInserts, stressSurfaceMerges, patternSurface, buildSurfaceTimeFilter, resourceLanesSystem, resourceLanesSystemTotals, resourceLanesTable } from '../queries/surface-queries.js';
 import { buildQuery, tagQuery } from '../queries/builder.js';
 import { TAB_ANALYTICS, sourceTag } from '../queries/source-tags.js';
 import { parseExplainIndexesJson } from './explain-parser.js';
@@ -258,6 +258,105 @@ export class AnalyticsService {
     } catch (error) {
       const msg = error instanceof Error ? error.message : String(error);
       throw new AnalyticsServiceError(`Failed to get pattern surface data for ${database}.${table}: ${msg}`, error as Error);
+    }
+  }
+
+  // ─── Resource lanes ──────────────────────────────────────────────────
+
+  /** Map raw rows to typed ResourceLaneRow */
+  private mapLaneRow(r: Record<string, unknown>): ResourceLaneRow {
+    return {
+      ts: String(r.ts ?? ''),
+      lane_id: String(r.lane_id ?? ''),
+      lane_label: String(r.lane_label ?? ''),
+      query_count: Number(r.query_count ?? 0),
+      total_duration_ms: Number(r.total_duration_ms ?? 0),
+      total_read_rows: Number(r.total_read_rows ?? 0),
+      total_read_bytes: Number(r.total_read_bytes ?? 0),
+      total_memory: Number(r.total_memory ?? 0),
+      total_cpu_us: Number(r.total_cpu_us ?? 0),
+      total_io_wait_us: Number(r.total_io_wait_us ?? 0),
+      total_selected_marks: Number(r.total_selected_marks ?? 0),
+    };
+  }
+
+  /** Map raw rows to typed ResourceTotalsRow */
+  private mapTotalsRow(r: Record<string, unknown>): ResourceTotalsRow {
+    return {
+      ts: String(r.ts ?? ''),
+      query_count: Number(r.query_count ?? 0),
+      total_duration_ms: Number(r.total_duration_ms ?? 0),
+      total_read_rows: Number(r.total_read_rows ?? 0),
+      total_read_bytes: Number(r.total_read_bytes ?? 0),
+      total_memory: Number(r.total_memory ?? 0),
+      total_cpu_us: Number(r.total_cpu_us ?? 0),
+      total_io_wait_us: Number(r.total_io_wait_us ?? 0),
+      total_selected_marks: Number(r.total_selected_marks ?? 0),
+    };
+  }
+
+  /**
+   * System-level resource lanes: per-minute usage grouped by table.
+   * Returns lanes (top N tables) + system totals for normalization.
+   */
+  async getSystemResourceLanes(options: ResourceLanesOptions = {}): Promise<ResourceLanesData> {
+    const maxLanes = options.maxLanes ?? 10;
+    const excludeSystem = options.excludeSystemTables ?? true;
+    const tf = buildSurfaceTimeFilter('event_time', options);
+    const params = { max_lanes: maxLanes, ...tf.params };
+
+    try {
+      const [laneRows, totalRows] = await Promise.all([
+        this.adapter.executeQuery<Record<string, unknown>>(
+          tagQuery(buildQuery(resourceLanesSystem(tf.clause, excludeSystem), params), sourceTag(TAB_ANALYTICS, 'resourceLanesSystem')),
+        ),
+        this.adapter.executeQuery<Record<string, unknown>>(
+          tagQuery(buildQuery(resourceLanesSystemTotals(tf.clause), params), sourceTag(TAB_ANALYTICS, 'resourceLanesTotals')),
+        ),
+      ]);
+
+      return {
+        level: 'system',
+        lanes: laneRows.map(r => this.mapLaneRow(r)),
+        totals: totalRows.map(r => this.mapTotalsRow(r)),
+      };
+    } catch (error) {
+      const msg = error instanceof Error ? error.message : String(error);
+      throw new AnalyticsServiceError(`Failed to get system resource lanes: ${msg}`, error as Error);
+    }
+  }
+
+  /**
+   * Table-level resource lanes: per-minute usage grouped by query pattern.
+   * Drill-down from system view.
+   */
+  async getTableResourceLanes(options: ResourceLanesTableOptions): Promise<ResourceLanesData> {
+    const { database, table } = options;
+    const maxLanes = options.maxLanes ?? 10;
+    const tf = buildSurfaceTimeFilter('event_time', options);
+    const params = { database, table_name: table, max_lanes: maxLanes, ...tf.params };
+    const fullTable = `${database}.${table}`;
+
+    try {
+      // Reuse system totals for normalization (same baseline at both levels)
+      const [laneRows, totalRows] = await Promise.all([
+        this.adapter.executeQuery<Record<string, unknown>>(
+          tagQuery(buildQuery(resourceLanesTable(tf.clause), params), sourceTag(TAB_ANALYTICS, 'resourceLanesTable')),
+        ),
+        this.adapter.executeQuery<Record<string, unknown>>(
+          tagQuery(buildQuery(resourceLanesSystemTotals(tf.clause), params), sourceTag(TAB_ANALYTICS, 'resourceLanesTotals')),
+        ),
+      ]);
+
+      return {
+        level: 'table',
+        drillTable: fullTable,
+        lanes: laneRows.map(r => this.mapLaneRow(r)),
+        totals: totalRows.map(r => this.mapTotalsRow(r)),
+      };
+    } catch (error) {
+      const msg = error instanceof Error ? error.message : String(error);
+      throw new AnalyticsServiceError(`Failed to get table resource lanes for ${fullTable}: ${msg}`, error as Error);
     }
   }
 }

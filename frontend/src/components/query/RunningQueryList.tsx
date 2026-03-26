@@ -244,7 +244,7 @@ export const RunningQueryList: React.FC<RunningQueryListProps> = ({
                 <td style={{ ...tdStyle, whiteSpace: 'nowrap', fontFamily: 'monospace', fontSize: 11, color: 'var(--text-muted)' }} title={q.hostname || ''}>
                   {q.hostname || '—'}
                 </td>
-                <td style={tdStyle}>
+                <td style={tdStyle} title={q.query}>
                   <code style={{ fontSize: 11, color: 'var(--text-muted)', wordBreak: 'break-all' }}>{trunc}</code>
                 </td>
                 <td style={{ ...tdStyle, textAlign: 'right', fontFamily: 'monospace', fontWeight: 500, color: 'var(--text-primary)', whiteSpace: 'nowrap' }}>

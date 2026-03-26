@@ -8,6 +8,7 @@ import path from 'path'
 const reactPath = path.resolve(__dirname, '..', 'node_modules', 'react')
 const reactDomPath = path.resolve(__dirname, '..', 'node_modules', 'react-dom')
 
+
 // https://vite.dev/config/
 export default defineConfig({
   plugins: [react(), tailwindcss()],
