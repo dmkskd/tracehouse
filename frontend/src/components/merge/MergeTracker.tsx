@@ -40,6 +40,7 @@ import { extractErrorMessage } from '../../utils/errorFormatters';
 import { useCapabilityCheck } from '../shared/RequiresCapability';
 import { classifyActiveMerge, getMergeCategoryInfo, classifyMutationCommand, MUTATION_SUBTYPES, computeMergeEta, pickThroughputEstimate } from '@tracehouse/core';
 import { useUserPreferenceStore } from '../../stores/userPreferenceStore';
+import { MergeHealthSunburst } from './MergeHealthSunburst';
 
 // Stat Card
 const StatCard: React.FC<{
@@ -1666,7 +1667,10 @@ export const MergeTrackerView: React.FC = () => {
   const [selectedHost, setSelectedHost] = useState<string | undefined>();
   const [selectedStatus, setSelectedStatus] = useState<string | undefined>();
   const [selectedPartName, setSelectedPartName] = useState<string | undefined>();
-  const { hideReplicaMerges, setHideReplicaMerges } = useUserPreferenceStore();
+  const { hideReplicaMerges, setHideReplicaMerges, experimentalEnabled } = useUserPreferenceStore();
+  const [mergeViewMode, setMergeViewMode] = useState<'pools' | 'health'>('pools');
+  // Reset to pools when experimental is turned off
+  useEffect(() => { if (!experimentalEnabled && mergeViewMode !== 'pools') setMergeViewMode('pools'); }, [experimentalEnabled]);
 
   const activeProfile = profiles.find(p => p.id === activeProfileId);
   const isConnected = activeProfile?.is_connected ?? false;
@@ -2001,8 +2005,35 @@ export const MergeTrackerView: React.FC = () => {
         </div>
       )}
 
-      {/* Pool Metrics */}
-      <PoolMetricsPanel metrics={poolMetrics} isLoading={isLoadingPoolMetrics} />
+      {/* Pool Metrics / Health Sunburst toggle */}
+      {experimentalEnabled && (
+        <div className="tabs">
+          <button
+            className={`tab ${mergeViewMode === 'pools' ? 'active' : ''}`}
+            onClick={() => setMergeViewMode('pools')}
+          >
+            Background Pools
+          </button>
+          <button
+            className={`tab ${mergeViewMode === 'health' ? 'active' : ''}`}
+            onClick={() => setMergeViewMode('health')}
+          >
+            Health Map
+            <span className="ml-2 badge badge-purple" style={{ fontSize: 9 }}>exp</span>
+          </button>
+        </div>
+      )}
+      {mergeViewMode === 'pools' || !experimentalEnabled ? (
+        <PoolMetricsPanel metrics={poolMetrics} isLoading={isLoadingPoolMetrics} />
+      ) : (
+        <div className="card" style={{ height: 520 }}>
+          <MergeHealthSunburst
+            activeMerges={activeMerges}
+            mutations={mutations}
+            poolMetrics={poolMetrics}
+          />
+        </div>
+      )}
 
       {/* Error */}
       {error && (
@@ -2010,7 +2041,7 @@ export const MergeTrackerView: React.FC = () => {
       )}
 
       {/* Main Content */}
-      <div className="flex gap-4" style={{ minHeight: '400px' }}>
+      <div className="flex gap-4" style={{ minHeight: mergeViewMode === 'health' ? '300px' : '400px' }}>
         {/* Left Panel */}
         <div className="flex-1 flex flex-col min-w-0 card overflow-hidden">
           {/* Tabs */}
