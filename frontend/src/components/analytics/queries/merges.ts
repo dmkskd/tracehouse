@@ -19,7 +19,7 @@ FROM system.merges
 ORDER BY elapsed DESC`,
 
   `-- @meta: title='Merge Throughput (bytes/sec)' group='Merges' description='Estimated merge read throughput for each active merge'
--- @chart: type=bar group_by=merge value=bytes_per_sec
+-- @chart: type=bar group_by=merge value=bytes_per_sec style=2d
 SELECT
     concat(database, '.', table, ' #', toString(num_parts), 'p') AS merge,
     round(elapsed, 0) AS elapsed_sec,

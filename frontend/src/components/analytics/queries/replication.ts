@@ -92,7 +92,7 @@ GROUP BY t
 ORDER BY t ASC`,
 
   `-- @meta: title='ZooKeeper Operations' group='Replication' interval='1 HOUR' description='ZooKeeper request rate over time — transactions, watches, bytes sent/received'
--- @chart: type=stacked_area group_by=t value=value series=op style=2d
+-- @chart: type=area group_by=t value=value series=op style=2d
 -- Source: https://clickhouse.com/docs/operations/monitoring
 SELECT
     toStartOfInterval(event_time, INTERVAL 1 MINUTE) AS t,

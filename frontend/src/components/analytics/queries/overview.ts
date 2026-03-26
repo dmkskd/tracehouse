@@ -79,7 +79,7 @@ ORDER BY total_bytes DESC
 LIMIT 50`,
 
   `-- @meta: title='Part Sizes' group='Overview' description='Disk usage per part (drill from Table Sizes or view all)'
--- @chart: type=bar group_by=name value=bytes_on_disk
+-- @chart: type=bar group_by=name value=bytes_on_disk style=2d
 SELECT
     name,
     formatReadableSize(bytes_on_disk) AS size,

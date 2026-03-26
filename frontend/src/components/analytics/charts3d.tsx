@@ -938,7 +938,7 @@ export const Chart3DCanvas: React.FC<{
         {type === 'grouped_line' && groupedData && groupedData.length > 0 && <GroupedLine3DScene data={groupedData.slice(0, 60)} />}
         {type === 'grouped_bar' && groupedData && groupedData.length > 0 && <GroupedBar3DScene data={groupedData.slice(0, 20)} orientation={orientation} onDrillDown={onDrillDown} />}
         {type === 'stacked_bar' && groupedData && groupedData.length > 0 && <StackedBar3DScene data={groupedData.slice(0, 20)} orientation={orientation} onDrillDown={onDrillDown} />}
-        {(type === 'pie' || type === 'area') && <Pie3DScene data={data.slice(0, 15)} title={title} onDrillDown={onDrillDown} />}
+        {type === 'pie' && <Pie3DScene data={data.slice(0, 15)} title={title} onDrillDown={onDrillDown} />}
       </Canvas>
     </div>
   );
