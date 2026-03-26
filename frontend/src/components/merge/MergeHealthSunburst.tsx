@@ -17,7 +17,7 @@ import React, { useRef, useEffect, useState, useMemo } from 'react';
 import * as d3 from 'd3';
 import type { MergeInfo, MutationInfo, BackgroundPoolMetrics } from '../../stores/mergeStore';
 import { deriveHealth } from '@tracehouse/core';
-import type { Health, HealthNode, ThroughputMap } from '@tracehouse/core';
+import type { HealthNode, ThroughputMap } from '@tracehouse/core';
 import { useClickHouseServices } from '../../providers/ClickHouseProvider';
 
 type PartitionedNode = d3.HierarchyRectangularNode<HealthNode>;
@@ -99,8 +99,8 @@ export const MergeHealthSunburst: React.FC<MergeHealthSunburstProps> = ({
       const { activeMerges: am, mutations: mu, poolMetrics: pm, throughputEstimates: te } = dataRef.current;
       const tree = deriveHealth(am, mu, pm, te);
 
-      const width = container.clientWidth;
-      const height = container.clientHeight;
+      const width = container!.clientWidth;
+      const height = container!.clientHeight;
       if (width === 0 || height === 0) return;
 
       const { ringWidth: rw, padAngle, cornerRadius, centerRadius,
@@ -127,18 +127,18 @@ export const MergeHealthSunburst: React.FC<MergeHealthSunburstProps> = ({
       if (root.children) {
         const equalVal = 1;
         for (const cat of root.children) {
-          cat.value = equalVal;
+          (cat as { value: number }).value = equalVal;
           const catSum = cat.leaves().reduce((s, l) => s + (l.value || 1), 0);
           cat.eachAfter(n => {
             if (n === cat) return;
             if (!n.children || n.children.length === 0) {
-              n.value = (n.value || 1) / catSum * equalVal;
+              (n as { value: number }).value = (n.value || 1) / catSum * equalVal;
             } else {
-              n.value = n.children.reduce((s, c) => s + (c.value || 0), 0);
+              (n as { value: number }).value = n.children.reduce((s, c) => s + (c.value || 0), 0);
             }
           });
         }
-        root.value = root.children.reduce((s, c) => s + (c.value || 0), 0);
+        (root as { value: number }).value = root.children.reduce((s, c) => s + (c.value || 0), 0);
       }
 
       d3.partition<HealthNode>().size([2 * Math.PI, maxRings])(root);
@@ -335,7 +335,7 @@ export const MergeHealthSunburst: React.FC<MergeHealthSunburstProps> = ({
       function onMove(ev: MouseEvent) {
         if (hoverTimeout) { clearTimeout(hoverTimeout); hoverTimeout = null; }
 
-        const rect = svgNode.getBoundingClientRect();
+        const rect = svgNode!.getBoundingClientRect();
         // Invert the current pan to get sunburst-local coords
         const mx = ev.clientX - rect.left - cx - currentPanX;
         const my = ev.clientY - rect.top - cy - currentPanY;
@@ -370,12 +370,12 @@ export const MergeHealthSunburst: React.FC<MergeHealthSunburstProps> = ({
         }, CFG.retractDelay);
       }
 
-      svgNode.addEventListener('mousemove', onMove);
-      svgNode.addEventListener('mouseleave', onLeave);
+      svgNode!.addEventListener('mousemove', onMove);
+      svgNode!.addEventListener('mouseleave', onLeave);
 
       return () => {
-        svgNode.removeEventListener('mousemove', onMove);
-        svgNode.removeEventListener('mouseleave', onLeave);
+        svgNode!.removeEventListener('mousemove', onMove);
+        svgNode!.removeEventListener('mouseleave', onLeave);
         if (hoverTimeout) clearTimeout(hoverTimeout);
       };
     }
