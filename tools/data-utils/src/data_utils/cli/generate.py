@@ -40,6 +40,7 @@ from data_utils.env import (
 )
 from data_utils.tables import (
     Dataset, InsertConfig, ProgressTracker, build_all_datasets,
+    DATASET_ALIASES, list_datasets,
 )
 from data_utils.users import (
     create_test_users, load_test_users_from_env, lock_test_users,
@@ -85,15 +86,22 @@ Tables are created with the best engine available for the target server.
     parser.add_argument("--replacing-only", action="store_true", help="Only create replacing_test table (ReplacingMergeTree)")
     parser.add_argument("--dataset", default=os.environ.get("CH_GEN_DATASET", ""),
                         help="Dataset to generate: synthetic, taxi, uk, web, replacing, or blank for all (default: $CH_GEN_DATASET)")
+    parser.add_argument("--list-datasets", action="store_true", help="List available datasets and exit")
     args = parser.parse_args()
+
+    if args.list_datasets:
+        list_datasets()
+        return args, env_path
 
     # Map --dataset to the *-only flags
     _ds = args.dataset.strip().lower()
-    if _ds == "synthetic": args.synthetic_only = True
-    elif _ds == "taxi":    args.taxi_only = True
-    elif _ds == "uk":      args.uk_only = True
-    elif _ds == "web":     args.web_only = True
-    elif _ds == "replacing": args.replacing_only = True
+    if _ds:
+        target_flag = DATASET_ALIASES.get(_ds)
+        if target_flag:
+            setattr(args, target_flag, True)
+        else:
+            print(f"Unknown dataset '{args.dataset}'. Valid: {', '.join(DATASET_ALIASES)}")
+            sys.exit(1)
 
     return args, env_path
 
@@ -244,6 +252,8 @@ def _print_verify_query() -> None:
 
 def main() -> None:
     args, env_path = _parse_args()
+    if args.list_datasets:
+        return
     print_connection(args, env_path)
 
     # Connect and probe

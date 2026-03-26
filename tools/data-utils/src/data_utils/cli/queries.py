@@ -27,7 +27,7 @@ from clickhouse_driver import Client
 
 from data_utils.capabilities import Capabilities, probe
 from data_utils.env import env_int, pre_parse_env_file, print_connection, add_connection_args, make_client
-from data_utils.tables import build_all_datasets
+from data_utils.tables import build_all_datasets, DATASET_ALIASES, list_datasets
 from data_utils.users import (
     create_test_users, load_test_users_from_env, lock_test_users,
     make_user_client, pick_random_user, print_test_users, TestUser,
@@ -346,7 +346,14 @@ def main():
     parser.add_argument("--join-workers", type=int, default=env_int("CH_QUERY_JOIN_WORKERS", "2"), help="Number of JOIN query workers (default: $CH_QUERY_JOIN_WORKERS or 2)")
     parser.add_argument("--settings-interval", type=float, default=float(os.environ.get("CH_QUERY_SETTINGS_INTERVAL", "5.0")), help="Interval between settings-variation queries (default: $CH_QUERY_SETTINGS_INTERVAL or 5)")
     parser.add_argument("--settings-workers", type=int, default=env_int("CH_QUERY_SETTINGS_WORKERS", "1"), help="Number of settings-variation query workers (default: $CH_QUERY_SETTINGS_WORKERS or 1)")
+    parser.add_argument("--dataset", default=os.environ.get("CH_QUERY_DATASET", ""),
+                        help="Dataset to query: synthetic, taxi, uk, web, replacing, or blank for all (default: $CH_QUERY_DATASET)")
+    parser.add_argument("--list-datasets", action="store_true", help="List available datasets and exit")
     args = parser.parse_args()
+
+    if args.list_datasets:
+        list_datasets()
+        return
 
     conn_kwargs = dict(user=args.user, password=args.password, secure=args.secure)
 
@@ -360,6 +367,17 @@ def main():
     print(caps.summary())
 
     datasets = build_all_datasets(caps=caps)
+
+    # Filter datasets by --dataset / CH_QUERY_DATASET
+    _ds_filter = args.dataset.strip().lower()
+    if _ds_filter:
+        target_flag = DATASET_ALIASES.get(_ds_filter)
+        if target_flag:
+            datasets = [ds for ds in datasets if ds.flag == target_flag]
+        else:
+            print(f"Unknown dataset '{args.dataset}'. Valid: {', '.join(DATASET_ALIASES)}")
+            return
+
     available_tables = _detect_available_tables(admin_client, datasets)
     print(f"\n  Available tables:      {', '.join(sorted(available_tables)) or '(none found)'}")
 
@@ -378,6 +396,10 @@ def main():
 
     # ── Collect queries from table plugins ─────────────────────────
     pools = _collect_queries(datasets, available_tables, caps)
+
+    # When filtering to a specific dataset, skip S3 queries (they're unrelated)
+    if _ds_filter:
+        pools['s3'] = []
 
     print(f"\n  Slow queries:          {len(pools['slow'])}")
     print(f"  Fast queries:          {len(pools['fast'])}")

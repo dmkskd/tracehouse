@@ -43,10 +43,31 @@ def build_all_datasets(
     ]
 
 
+DATASET_ALIASES: dict[str, str] = {
+    'synthetic': 'synthetic_only',
+    'taxi': 'taxi_only',
+    'uk': 'uk_only',
+    'web': 'web_only',
+    'replacing': 'replacing_only',
+}
+
+
+def list_datasets() -> None:
+    """Print all registered datasets and exit."""
+    datasets = build_all_datasets()
+    alias_by_flag = {v: k for k, v in DATASET_ALIASES.items()}
+    print(f"{'ALIAS':<12} {'DATABASE':<20} {'FLAG'}")
+    print(f"{'─' * 12} {'─' * 20} {'─' * 16}")
+    for ds in datasets:
+        alias = alias_by_flag.get(ds.flag, '?')
+        print(f"{alias:<12} {ds.name:<20} --{ds.flag.replace('_', '-')}")
+
+
 __all__ = [
     "Dataset", "InsertConfig", "QuerySet",
     "SyntheticData", "NycTaxi", "UkHousePrices", "WebAnalytics",
     "ReplacingMerge",
     "ALL_DATASET_CLASSES", "build_all_datasets",
+    "DATASET_ALIASES", "list_datasets",
     "ProgressTracker",
 ]
