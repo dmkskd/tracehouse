@@ -324,7 +324,8 @@ const DashboardPanelCard: React.FC<{
                     orientation={chartDirective?.orientation}
                     groupedData={isGroupedChart ? groupedChartData : undefined}
                     isFullscreen={fullscreen}
-                    onDrillDown={isDrillable ? handleDrillDown : undefined} />
+                    onDrillDown={isDrillable ? handleDrillDown : undefined}
+                    unit={chartUnit} />
                 ) : (
                   <ChartRenderer chartType={chartType} data={chartData} groupedData={groupedChartData}
                     orientation={chartDirective?.orientation} fullHeight unit={chartUnit} color={chartColor}
@@ -665,7 +666,7 @@ const MiniPanelCard: React.FC<{ panel: DashboardPanel; timeRangeOverride: string
         {!loading && hasChart && (
           <>
             {chartStyle === '3d' ? (
-              <Chart3DCanvas data={chartData} type={chartType} orientation={chartDirective?.orientation} groupedData={isGroupedChart2 ? groupedChartData2 : undefined} />
+              <Chart3DCanvas data={chartData} type={chartType} orientation={chartDirective?.orientation} groupedData={isGroupedChart2 ? groupedChartData2 : undefined} unit={chartDirective?.unit} />
             ) : (
               <ChartRenderer chartType={chartType} data={chartData} groupedData={groupedChartData2}
                 orientation={chartDirective?.orientation} fullHeight color={miniChartColor}

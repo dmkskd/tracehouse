@@ -48,7 +48,7 @@ ORDER BY part_count DESC
 LIMIT 25`,
 
   `-- @meta: title='Database Sizes' group='Overview' description='Total disk usage per database'
--- @chart: type=pie group_by=database value=total_bytes style=3d
+-- @chart: type=pie group_by=database value=total_bytes style=3d unit=bytes
 -- @drill: on=database into='Table Sizes'
 SELECT
     database,
@@ -65,7 +65,7 @@ GROUP BY database
 ORDER BY total_bytes DESC`,
 
   `-- @meta: title='Table Sizes' group='Overview' description='Disk usage per table (drill from Database Sizes or view all)'
--- @chart: type=pie group_by=table value=total_bytes style=3d
+-- @chart: type=pie group_by=table value=total_bytes style=3d unit=bytes
 -- @drill: on=table into='Part Sizes'
 SELECT
     table,
@@ -79,7 +79,7 @@ ORDER BY total_bytes DESC
 LIMIT 50`,
 
   `-- @meta: title='Part Sizes' group='Overview' description='Disk usage per part (drill from Table Sizes or view all)'
--- @chart: type=bar group_by=name value=bytes_on_disk style=2d
+-- @chart: type=bar group_by=name value=bytes_on_disk style=2d unit=bytes
 SELECT
     name,
     formatReadableSize(bytes_on_disk) AS size,

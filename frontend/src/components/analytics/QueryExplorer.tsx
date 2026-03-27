@@ -805,6 +805,7 @@ export const QueryExplorer: React.FC<QueryExplorerProps> = ({ urlState, onUrlSta
                     isFullscreen={isFullscreen}
                     onToggleFullscreen={toggleFullscreen}
                     onDrillDown={isDrillable ? handleDrillDown : undefined}
+                    unit={chartConfig.unit}
                   />
                 )}
               </div>

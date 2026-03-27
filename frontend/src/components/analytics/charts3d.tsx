@@ -11,6 +11,13 @@ import * as THREE from 'three';
 import type { ChartType } from './metaLanguage';
 import type { ChartDataPoint, DrillDownEvent, GroupedChartData } from './charts';
 import { GROUP_COLORS } from './charts';
+import { formatBytes } from '../../utils/formatters';
+
+/** Format a numeric value respecting the chart's unit. For unit=bytes, use human-readable sizes. */
+function formatValue(v: number, unit?: string): string {
+  if (unit === 'bytes') return formatBytes(v);
+  return v.toLocaleString();
+}
 
 // ─── Theme helpers ───
 
@@ -489,10 +496,11 @@ function GroupedLine3DScene({ data }: { data: GroupedChartData[] }) {
   );
 }
 
-function PieSlice3D({ s, i, sliceHeight, radius, innerRadius, theme, t, onDrillDown }: {
+function PieSlice3D({ s, i, sliceHeight, radius, innerRadius, theme, t, onDrillDown, unit }: {
   s: { label: string; value: number; color: string; startAngle: number; angle: number; pct: number; midAngle: number };
   i: number; sliceHeight: number; radius: number; innerRadius: number; theme: 'dark' | 'light'; t: typeof LIGHT_3D;
   onDrillDown?: (e: DrillDownEvent) => void;
+  unit?: string;
 }) {
   const [hovered, setHovered] = useState(false);
   const meshRef = useRef<THREE.Mesh>(null);
@@ -569,7 +577,7 @@ function PieSlice3D({ s, i, sliceHeight, radius, innerRadius, theme, t, onDrillD
                 textShadow: hovered ? `0 0 8px ${s.color}, 0 0 16px ${s.color}` : 'none',
                 whiteSpace: 'nowrap',
               }}>
-                {s.value.toLocaleString()}
+                {formatValue(s.value, unit)}
               </div>
               {hovered && (
                 <div style={{ fontSize: 10, fontWeight: 500, color: 'rgba(255,255,255,0.85)', fontFamily: "'Share Tech Mono', monospace", whiteSpace: 'nowrap' }}>
@@ -584,7 +592,7 @@ function PieSlice3D({ s, i, sliceHeight, radius, innerRadius, theme, t, onDrillD
   );
 }
 
-function Pie3DScene({ data, onDrillDown }: { data: ChartDataPoint[]; title?: string; onDrillDown?: (e: DrillDownEvent) => void }) {
+function Pie3DScene({ data, onDrillDown, unit }: { data: ChartDataPoint[]; title?: string; onDrillDown?: (e: DrillDownEvent) => void; unit?: string }) {
   const theme = use3DTheme();
   const t = theme === 'light' ? LIGHT_3D : DARK_3D;
   const total = data.reduce((s, d) => s + d.value, 0);
@@ -611,12 +619,12 @@ function Pie3DScene({ data, onDrillDown }: { data: ChartDataPoint[]; title?: str
       <ambientLight intensity={t.ambient} />
       <directionalLight position={[5, 8, 5]} intensity={t.directional} />
       {slices.map((s, i) => (
-        <PieSlice3D key={i} s={s} i={i} sliceHeight={sliceHeight} radius={radius} innerRadius={innerRadius} theme={theme} t={t} onDrillDown={onDrillDown} />
+        <PieSlice3D key={i} s={s} i={i} sliceHeight={sliceHeight} radius={radius} innerRadius={innerRadius} theme={theme} t={t} onDrillDown={onDrillDown} unit={unit} />
       ))}
       <Html position={[0, sliceHeight / 2 + 0.1, 0]} center style={{ pointerEvents: 'none' }}>
         <div style={{ textAlign: 'center' }}>
           <div style={{ fontSize: 20, fontWeight: 700, color: t.labelColor, fontFamily: "'Share Tech Mono', monospace", lineHeight: 1.2 }}>
-            {total.toLocaleString()}
+            {formatValue(total, unit)}
           </div>
           <div style={{ fontSize: 10, color: '#64748b', fontFamily: "'Inter', -apple-system, sans-serif", textTransform: 'uppercase', letterSpacing: '1px' }}>
             total
@@ -805,7 +813,8 @@ export const Chart3DCanvas: React.FC<{
   isFullscreen?: boolean;
   onToggleFullscreen?: () => void;
   onDrillDown?: (e: DrillDownEvent) => void;
-}> = ({ data, groupedData, type, orientation, title, description, isFullscreen, onToggleFullscreen, onDrillDown }) => {
+  unit?: string;
+}> = ({ data, groupedData, type, orientation, title, description, isFullscreen, onToggleFullscreen, onDrillDown, unit }) => {
   const theme = use3DTheme();
   const bg = theme === 'light' ? LIGHT_3D.bg : DARK_3D.bg;
   const labelColor = theme === 'light' ? LIGHT_3D.labelColor : DARK_3D.labelColor;
@@ -860,7 +869,7 @@ export const Chart3DCanvas: React.FC<{
               <span style={{
                 color: '#64748b', fontFamily: "'Share Tech Mono', monospace",
                 fontSize: isFullscreen ? 12 : 10, marginLeft: 'auto', paddingLeft: 12,
-              }}>{d.value.toLocaleString()}</span>
+              }}>{formatValue(d.value, unit)}</span>
             </div>
           ))}
           {data.length > (isFullscreen ? 30 : 15) && (
@@ -938,7 +947,7 @@ export const Chart3DCanvas: React.FC<{
         {type === 'grouped_line' && groupedData && groupedData.length > 0 && <GroupedLine3DScene data={groupedData.slice(0, 60)} />}
         {type === 'grouped_bar' && groupedData && groupedData.length > 0 && <GroupedBar3DScene data={groupedData.slice(0, 20)} orientation={orientation} onDrillDown={onDrillDown} />}
         {type === 'stacked_bar' && groupedData && groupedData.length > 0 && <StackedBar3DScene data={groupedData.slice(0, 20)} orientation={orientation} onDrillDown={onDrillDown} />}
-        {type === 'pie' && <Pie3DScene data={data.slice(0, 15)} title={title} onDrillDown={onDrillDown} />}
+        {type === 'pie' && <Pie3DScene data={data.slice(0, 15)} title={title} onDrillDown={onDrillDown} unit={unit} />}
       </Canvas>
     </div>
   );

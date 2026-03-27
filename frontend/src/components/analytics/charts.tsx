@@ -26,6 +26,7 @@ import {
   ReferenceLine,
 } from 'recharts';
 import type { ChartType } from './metaLanguage';
+import { formatBytes } from '../../utils/formatters';
 
 // ─── Mouse tracker for portal tooltips ───
 let _tooltipMouseX = 0, _tooltipMouseY = 0;
@@ -161,6 +162,7 @@ const TIME_UNITS = new Set(['ms', 's']);
 /** Build a tick formatter that handles units smartly (auto-scales time units) */
 export function compactFormatter(unit?: string): (v: number) => string {
   if (!unit) return formatCompact;
+  if (unit === 'bytes') return formatBytes;
   if (TIME_UNITS.has(unit)) return (v: number) => formatTime(v, unit);
   return (v: number) => `${formatCompact(v)} ${unit}`;
 }
@@ -484,14 +486,15 @@ const PieTooltip: React.FC<{
   active?: boolean;
   payload?: Array<{ payload: { label: string; value: number; pct: number; description?: string }; color?: string }>;
   drillIntoQuery?: string;
-}> = ({ active, payload, drillIntoQuery }) => {
+  unit?: string;
+}> = ({ active, payload, drillIntoQuery, unit }) => {
   if (!active || !payload?.length) return null;
   const d = payload[0].payload;
   return (
     <div style={tooltipStyle}>
       <div style={tooltipLabelStyle}>{d.label}</div>
       <div style={tooltipValueStyle}>
-        {d.value.toLocaleString(undefined, { maximumFractionDigits: 2 })}
+        {unit === 'bytes' ? formatBytes(d.value) : d.value.toLocaleString(undefined, { maximumFractionDigits: 2 })}
         <span style={{ fontSize: 11, fontWeight: 400, color: 'var(--text-muted)', marginLeft: 6 }}>
           ({d.pct.toFixed(1)}%)
         </span>
@@ -599,7 +602,7 @@ export const LineChart2D: React.FC<{ data: ChartDataPoint[]; fullHeight?: boolea
   );
 };
 
-export const PieChart2D: React.FC<{ data: ChartDataPoint[]; fullHeight?: boolean; onDrillDown?: (e: DrillDownEvent) => void; drillIntoQuery?: string }> = ({ data, fullHeight, onDrillDown, drillIntoQuery }) => {
+export const PieChart2D: React.FC<{ data: ChartDataPoint[]; fullHeight?: boolean; onDrillDown?: (e: DrillDownEvent) => void; drillIntoQuery?: string; unit?: string }> = ({ data, fullHeight, onDrillDown, drillIntoQuery, unit }) => {
   if (!data.length) return null;
   const total = data.reduce((s, d) => s + d.value, 0);
   const pieData = data.map(d => ({
@@ -642,7 +645,7 @@ export const PieChart2D: React.FC<{ data: ChartDataPoint[]; fullHeight?: boolean
             <Cell key={i} fill={entry.color} stroke="var(--bg-primary, #030712)" strokeWidth={1} />
           ))}
         </Pie>
-        <Tooltip content={<PieTooltip drillIntoQuery={drillIntoQuery} />} />
+        <Tooltip content={<PieTooltip drillIntoQuery={drillIntoQuery} unit={unit} />} />
         <Legend
           layout="vertical"
           align="right"
@@ -1568,7 +1571,7 @@ export const ChartRenderer: React.FC<ChartRendererProps> = ({
     case 'line':
       return <LineChart2D data={data} fullHeight={fullHeight} onDrillDown={onDrillDown} unit={unit} color={color} drillIntoQuery={drillIntoQuery} hoveredTimestamp={hoveredTimestamp} onTimestampHover={onTimestampHover} correlationValues={correlationValues} currentPanelName={currentPanelName} isHoveredPanel={isHoveredPanel} />;
     case 'pie':
-      return <PieChart2D data={data} fullHeight={fullHeight} onDrillDown={onDrillDown} drillIntoQuery={drillIntoQuery} />;
+      return <PieChart2D data={data} fullHeight={fullHeight} onDrillDown={onDrillDown} drillIntoQuery={drillIntoQuery} unit={unit} />;
     case 'area':
       return <AreaChart2D data={data} fullHeight={fullHeight} onDrillDown={onDrillDown} unit={unit} color={color} drillIntoQuery={drillIntoQuery} hoveredTimestamp={hoveredTimestamp} onTimestampHover={onTimestampHover} correlationValues={correlationValues} currentPanelName={currentPanelName} isHoveredPanel={isHoveredPanel} />;
     case 'grouped_bar':
