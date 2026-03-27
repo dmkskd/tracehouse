@@ -6,5 +6,6 @@ frontend/dist
 logs
 infra
 tmp.ignore
-grafana-app-plugin
+grafana-app-plugin/node_modules
+grafana-app-plugin/dist
 *.md

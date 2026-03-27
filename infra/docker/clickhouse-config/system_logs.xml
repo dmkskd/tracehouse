@@ -1,0 +1,35 @@
+<clickhouse>
+    <!-- System log tables used by TraceHouse.
+         query_log, trace_log, metric_log, asynchronous_metric_log, part_log
+         are enabled by default; the tables below are not. -->
+
+    <query_views_log>
+        <database>system</database>
+        <table>query_views_log</table>
+        <flush_interval_milliseconds>7500</flush_interval_milliseconds>
+    </query_views_log>
+
+    <processors_profile_log>
+        <database>system</database>
+        <table>processors_profile_log</table>
+        <flush_interval_milliseconds>7500</flush_interval_milliseconds>
+    </processors_profile_log>
+
+    <zookeeper_log>
+        <database>system</database>
+        <table>zookeeper_log</table>
+        <flush_interval_milliseconds>7500</flush_interval_milliseconds>
+    </zookeeper_log>
+
+    <crash_log>
+        <database>system</database>
+        <table>crash_log</table>
+        <flush_interval_milliseconds>7500</flush_interval_milliseconds>
+    </crash_log>
+
+    <session_log>
+        <database>system</database>
+        <table>session_log</table>
+        <flush_interval_milliseconds>7500</flush_interval_milliseconds>
+    </session_log>
+</clickhouse>

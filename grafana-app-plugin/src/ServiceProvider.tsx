@@ -1,5 +1,5 @@
 import React, { createContext, useContext, useState, useEffect, useMemo, useCallback } from 'react';
-import { getBackendSrv } from '@grafana/runtime';
+import { getBackendSrv, getDataSourceSrv } from '@grafana/runtime';
 import { GrafanaAdapter } from '@tracehouse/core/adapters/grafana-adapter';
 import { ClusterAwareAdapter } from '@tracehouse/core/adapters/cluster-adapter';
 import { ClusterService } from '@tracehouse/core/services/cluster-service';
@@ -81,6 +81,15 @@ export function ServiceProvider({ children }: { children: React.ReactNode }) {
     const connectionStore = useConnectionStore.getState();
     connectionStore._setGrafanaDatasource(uid, name || 'ClickHouse');
   }, []);
+
+  // Auto-select datasource if none is stored and exactly one exists
+  useEffect(() => {
+    if (datasourceUid) return;
+    const list = getDataSourceSrv().getList({ type: 'grafana-clickhouse-datasource' });
+    if (list.length === 1) {
+      setDatasourceUid(list[0].uid, list[0].name);
+    }
+  }, []); // eslint-disable-line react-hooks/exhaustive-deps
 
   const services = useMemo(() => {
     if (!datasourceUid) {

@@ -186,7 +186,13 @@ export function ClickHouseProvider({ children }: ClickHouseProviderProps) {
     }
 
     let cancelled = false;
-    ClusterService.detect(value.adapter).then(info => {
+    const configuredCluster = import.meta.env.VITE_DEFAULT_CH_CLUSTER;
+
+    const detectPromise = configuredCluster
+      ? ClusterService.detect(value.adapter, configuredCluster)
+      : ClusterService.detect(value.adapter);
+
+    detectPromise.then(info => {
       if (!cancelled) {
         clusterStore.setCluster(info);
         // Set cluster name on the wrapper so all queries get rewritten automatically

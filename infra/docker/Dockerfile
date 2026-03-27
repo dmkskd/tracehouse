@@ -25,10 +25,22 @@ RUN npm run build --workspace=packages/ui-shared
 RUN npm run build --workspace=@tracehouse/proxy
 
 # Build frontend with bundled proxy flag.
-# DEFAULT_CH_HOST pre-fills the connection form (e.g. 'clickhouse' in docker-compose).
+# DEFAULT_CH_* args pre-fill the connection form and optionally auto-connect.
 ARG DEFAULT_CH_HOST=""
+ARG DEFAULT_CH_PORT=""
+ARG DEFAULT_CH_USER=""
+ARG DEFAULT_CH_PASSWORD=""
+ARG DEFAULT_CH_SECURE=""
+ARG DEFAULT_CH_CLUSTER=""
+ARG AUTO_CONNECT=""
 RUN cd frontend && VITE_BUNDLED_PROXY=true \
     VITE_DEFAULT_CH_HOST="${DEFAULT_CH_HOST}" \
+    VITE_DEFAULT_CH_PORT="${DEFAULT_CH_PORT}" \
+    VITE_DEFAULT_CH_USER="${DEFAULT_CH_USER}" \
+    VITE_DEFAULT_CH_PASSWORD="${DEFAULT_CH_PASSWORD}" \
+    VITE_DEFAULT_CH_SECURE="${DEFAULT_CH_SECURE}" \
+    VITE_DEFAULT_CH_CLUSTER="${DEFAULT_CH_CLUSTER}" \
+    VITE_AUTO_CONNECT="${AUTO_CONNECT}" \
     npm run build
 
 # ── Runtime stage ────────────────────────────────────────────────

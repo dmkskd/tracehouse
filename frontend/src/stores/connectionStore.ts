@@ -504,4 +504,34 @@ useConnectionStore.subscribe((state) => {
   }
 });
 
+// ---------------------------------------------------------------------------
+// Auto-connect: when VITE_AUTO_CONNECT=true and no profile exists yet,
+// create a profile from the VITE_DEFAULT_CH_* env vars and connect.
+// Used for demos where users shouldn't need to configure anything.
+// ---------------------------------------------------------------------------
+if (import.meta.env.VITE_AUTO_CONNECT === 'true') {
+  const doAutoConnect = () => {
+    const { profiles, createProfile, updateProfile, setActiveProfile } = useConnectionStore.getState();
+    const existing = profiles.find(p => p.name === 'Demo');
+    if (existing) {
+      // Update the Demo profile with current baked-in credentials (handles password rotation)
+      updateProfile(existing.id, 'Demo', defaultConnectionConfig)
+        .then(() => setActiveProfile(existing.id))
+        .catch(() => {});
+    } else {
+      createProfile('Demo', defaultConnectionConfig, false, true).catch(() => {});
+    }
+  };
+
+  // Handle both cases: hydration already done, or still pending
+  if (useConnectionStore.persist.hasHydrated()) {
+    doAutoConnect();
+  } else {
+    const unsub = useConnectionStore.persist.onFinishHydration(() => {
+      unsub();
+      doAutoConnect();
+    });
+  }
+}
+
 export default useConnectionStore;
