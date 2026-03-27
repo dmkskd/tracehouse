@@ -1,0 +1,45 @@
+<clickhouse>
+    <!-- Cluster topology: 2 shards x 2 replicas = 4 nodes -->
+    <remote_servers>
+        <tracehouse>
+            <shard>
+                <internal_replication>true</internal_replication>
+                <replica>
+                    <host>ch-s1r1</host>
+                    <port>9000</port>
+                    <user>default</user>
+                    <password from_env="TH_PASSWORD"/>
+                </replica>
+                <replica>
+                    <host>ch-s1r2</host>
+                    <port>9000</port>
+                    <user>default</user>
+                    <password from_env="TH_PASSWORD"/>
+                </replica>
+            </shard>
+            <shard>
+                <internal_replication>true</internal_replication>
+                <replica>
+                    <host>ch-s2r1</host>
+                    <port>9000</port>
+                    <user>default</user>
+                    <password from_env="TH_PASSWORD"/>
+                </replica>
+                <replica>
+                    <host>ch-s2r2</host>
+                    <port>9000</port>
+                    <user>default</user>
+                    <password from_env="TH_PASSWORD"/>
+                </replica>
+            </shard>
+        </tracehouse>
+    </remote_servers>
+
+    <!-- ClickHouse Keeper connection (single node, sufficient for demo) -->
+    <zookeeper>
+        <node>
+            <host>keeper</host>
+            <port>9181</port>
+        </node>
+    </zookeeper>
+</clickhouse>

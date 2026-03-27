@@ -1,0 +1,30 @@
+<clickhouse>
+    <!-- User-level settings for query profiling and flamegraph support -->
+    <!-- These MUST live in users.d/ (not config.d/) to take effect. -->
+    <!-- See: https://github.com/ClickHouse/ClickHouse/issues/9051 -->
+    
+    <profiles>
+        <default>
+            <!-- CPU profiling: sample every 10ms (10,000,000 ns) -->
+            <query_profiler_cpu_time_period_ns>10000000</query_profiler_cpu_time_period_ns>
+            
+            <!-- Real time profiling: sample every 10ms -->
+            <query_profiler_real_time_period_ns>10000000</query_profiler_real_time_period_ns>
+            
+            <!-- Memory profiling: sample on every 1MB allocation -->
+            <memory_profiler_step>1048576</memory_profiler_step>
+            
+            <!-- Enable introspection functions for stack trace symbolization -->
+            <allow_introspection_functions>1</allow_introspection_functions>
+
+            <!-- Log per-thread execution stats into query_thread_log -->
+            <log_query_threads>1</log_query_threads>
+
+            <!-- Log per-query ProfileEvents counters into query_log -->
+            <log_profile_events>1</log_profile_events>
+
+            <!-- Log per-query processor pipeline profile -->
+            <log_processors_profiles>1</log_processors_profiles>
+        </default>
+    </profiles>
+</clickhouse>

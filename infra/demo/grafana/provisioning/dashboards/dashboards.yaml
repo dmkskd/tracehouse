@@ -1,0 +1,13 @@
+apiVersion: 1
+
+providers:
+  - name: 'ClickHouse Dashboards'
+    orgId: 1
+    folder: 'ClickHouse'
+    folderUid: clickhouse
+    type: file
+    disableDeletion: false
+    updateIntervalSeconds: 30
+    allowUiUpdates: true
+    options:
+      path: /var/lib/grafana/dashboards

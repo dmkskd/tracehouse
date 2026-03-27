@@ -1,0 +1,14 @@
+<clickhouse>
+    <!-- User-level settings for OpenTelemetry tracing -->
+    <!-- These MUST live in users.d/ (not config.d/) to take effect. -->
+    <!-- See: https://github.com/ClickHouse/ClickHouse/issues/9051 -->
+    
+    <profiles>
+        <default>
+            <!-- Probability to start a new trace (1 = 100% of queries) -->
+            <opentelemetry_start_trace_probability>1</opentelemetry_start_trace_probability>
+            <!-- Trace processor operations (pipeline execution) -->
+            <opentelemetry_trace_processors>1</opentelemetry_trace_processors>
+        </default>
+    </profiles>
+</clickhouse>

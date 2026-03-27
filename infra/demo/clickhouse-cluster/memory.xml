@@ -1,0 +1,11 @@
+<clickhouse>
+    <!-- Memory limits per node for 16GB server (4 CH nodes) -->
+    <!-- Each node gets ~3GB max to leave room for Keeper, MinIO, Grafana, OS -->
+    <max_server_memory_usage_to_ram_ratio>0.8</max_server_memory_usage_to_ram_ratio>
+
+    <profiles>
+        <default>
+            <max_memory_usage>2000000000</max_memory_usage>
+        </default>
+    </profiles>
+</clickhouse>

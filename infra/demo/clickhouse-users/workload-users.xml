@@ -1,0 +1,52 @@
+<clickhouse>
+  <users>
+    <!-- Test users for the demo workload generator.
+         All share the default password and have full privileges for data generation.
+         Queries from these users show up with distinct names in query_log. -->
+    <th_alice>
+      <password from_env="TH_PASSWORD"/>
+      <profile>default</profile>
+      <networks><ip>::/0</ip></networks>
+      <quota>default</quota>
+      <grants>
+        <query>GRANT ALL ON *.*</query>
+      </grants>
+    </th_alice>
+    <th_bob>
+      <password from_env="TH_PASSWORD"/>
+      <profile>default</profile>
+      <networks><ip>::/0</ip></networks>
+      <quota>default</quota>
+      <grants>
+        <query>GRANT ALL ON *.*</query>
+      </grants>
+    </th_bob>
+    <th_carol>
+      <password from_env="TH_PASSWORD"/>
+      <profile>default</profile>
+      <networks><ip>::/0</ip></networks>
+      <quota>default</quota>
+      <grants>
+        <query>GRANT ALL ON *.*</query>
+      </grants>
+    </th_carol>
+    <th_dave>
+      <password from_env="TH_PASSWORD"/>
+      <profile>default</profile>
+      <networks><ip>::/0</ip></networks>
+      <quota>default</quota>
+      <grants>
+        <query>GRANT ALL ON *.*</query>
+      </grants>
+    </th_dave>
+    <th_eve>
+      <password from_env="TH_PASSWORD"/>
+      <profile>default</profile>
+      <networks><ip>::/0</ip></networks>
+      <quota>default</quota>
+      <grants>
+        <query>GRANT ALL ON *.*</query>
+      </grants>
+    </th_eve>
+  </users>
+</clickhouse>

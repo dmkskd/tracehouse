@@ -1,0 +1,81 @@
+<clickhouse>
+  <users>
+    <read_only>
+      <password from_env="CLICKHOUSE_READONLY_PASSWORD"/>
+      <profile>readonly_profile</profile>
+      <networks>
+        <ip>::/0</ip>
+      </networks>
+      <quota>default</quota>
+      <grants>
+        <!-- User databases -->
+        <query>GRANT SELECT ON default.*</query>
+        <query>GRANT SELECT ON tracehouse.*</query>
+        <!-- Test databases created by workload generator -->
+        <query>GRANT SELECT ON synthetic_data.*</query>
+        <query>GRANT SELECT ON nyc_taxi.*</query>
+        <query>GRANT SELECT ON uk_price_paid.*</query>
+        <query>GRANT SELECT ON web_analytics.*</query>
+        <query>GRANT SELECT ON replacing_test.*</query>
+        <!-- System tables the app needs -->
+        <query>GRANT SELECT ON system.asynchronous_metric_log</query>
+        <query>GRANT SELECT ON system.asynchronous_metrics</query>
+        <query>GRANT SELECT ON system.build_options</query>
+        <query>GRANT SELECT ON system.clusters</query>
+        <query>GRANT SELECT ON system.columns</query>
+        <query>GRANT SELECT ON system.databases</query>
+        <query>GRANT SELECT ON system.dictionaries</query>
+        <query>GRANT SELECT ON system.disks</query>
+        <query>GRANT SELECT ON system.events</query>
+        <query>GRANT SELECT ON system.merges</query>
+        <query>GRANT SELECT ON system.metric_log</query>
+        <query>GRANT SELECT ON system.metrics</query>
+        <query>GRANT SELECT ON system.mutations</query>
+        <query>GRANT SELECT ON system.one</query>
+        <query>GRANT SELECT ON system.opentelemetry_span_log</query>
+        <query>GRANT SELECT ON system.part_log</query>
+        <query>GRANT SELECT ON system.parts</query>
+        <query>GRANT SELECT ON system.parts_columns</query>
+        <query>GRANT SELECT ON system.processes</query>
+        <query>GRANT SELECT ON system.processors_profile_log</query>
+        <query>GRANT SELECT ON system.query_log</query>
+        <query>GRANT SELECT ON system.query_thread_log</query>
+        <query>GRANT SELECT ON system.replicas</query>
+        <query>GRANT SELECT ON system.replication_queue</query>
+        <query>GRANT SELECT ON system.server_settings</query>
+        <query>GRANT SELECT ON system.settings</query>
+        <query>GRANT SELECT ON system.storage_policies</query>
+        <query>GRANT SELECT ON system.tables</query>
+        <query>GRANT SELECT ON system.text_log</query>
+        <query>GRANT SELECT ON system.trace_log</query>
+        <query>GRANT SELECT ON system.view_refreshes</query>
+        <query>GRANT SELECT ON system.zookeeper</query>
+        <query>GRANT SELECT ON system.functions</query>
+        <query>GRANT SELECT ON system.zookeeper_connection</query>
+        <query>GRANT SELECT ON system.zookeeper_log</query>
+        <query>GRANT SELECT ON system.query_views_log</query>
+        <query>GRANT SELECT ON system.crash_log</query>
+        <query>GRANT SELECT ON system.session_log</query>
+        <!-- Schema browsing -->
+        <query>GRANT SHOW DATABASES ON *.*</query>
+        <query>GRANT SHOW TABLES ON *.*</query>
+        <query>GRANT SHOW COLUMNS ON *.*</query>
+        <!-- Introspection (flamegraphs) -->
+        <query>GRANT dictGet ON *.*</query>
+        <query>GRANT INTROSPECTION ON *.*</query>
+        <!-- Remote ZooKeeper/Keeper reads (clustered setup) -->
+        <query>GRANT REMOTE ON *.*</query>
+      </grants>
+    </read_only>
+  </users>
+
+  <profiles>
+    <readonly_profile>
+      <readonly>2</readonly>
+      <allow_introspection_functions>1</allow_introspection_functions>
+      <log_query_threads>1</log_query_threads>
+      <log_profile_events>1</log_profile_events>
+      <log_processors_profiles>1</log_processors_profiles>
+    </readonly_profile>
+  </profiles>
+</clickhouse>

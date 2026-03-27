@@ -1,0 +1,13 @@
+<clickhouse>
+  <users>
+    <default replace="replace">
+      <profile>default</profile>
+      <networks>
+        <ip>::/0</ip>
+      </networks>
+      <password from_env="TH_PASSWORD"/>
+      <quota>default</quota>
+      <access_management>1</access_management>
+    </default>
+  </users>
+</clickhouse>
