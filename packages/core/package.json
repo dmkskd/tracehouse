@@ -48,6 +48,10 @@
     "./types/lineage": {
       "import": "./dist/types/lineage.js",
       "types": "./dist/types/lineage.d.ts"
+    },
+    "./utils/uuid": {
+      "import": "./dist/utils/uuid.js",
+      "types": "./dist/utils/uuid.d.ts"
     }
   },
   "scripts": {
