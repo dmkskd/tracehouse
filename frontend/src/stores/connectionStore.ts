@@ -11,6 +11,7 @@ import { persist, createJSONStorage } from 'zustand/middleware';
 import { BrowserAdapter } from '@tracehouse/core/adapters/browser-adapter';
 import { ProxyAdapter } from '@tracehouse/core';
 import { useProxyStore } from './proxyStore';
+import { randomUUID } from '@tracehouse/core/utils/uuid';
 
 // LocalStorage key for persisting connection profiles
 const STORAGE_KEY = 'tracehouse-connections';
@@ -204,7 +205,7 @@ export const useConnectionStore = create<ConnectionState>()(
           // Create profile locally
           const now = new Date().toISOString();
           const profile: ConnectionProfile = {
-            id: crypto.randomUUID(),
+            id: randomUUID(),
             name,
             config: {
               host: config.host,

@@ -3,6 +3,7 @@ import type { IClickHouseAdapter } from './types.js';
 import { AdapterError, CLIENT_COMPRESSION } from './types.js';
 import type { ConnectionConfig } from '../types/connection.js';
 import { applyStickyRouting } from './sticky-routing.js';
+import { randomUUID } from '../utils/uuid.js';
 
 export class HttpAdapter implements IClickHouseAdapter {
   private client: ClickHouseClient;
@@ -10,7 +11,7 @@ export class HttpAdapter implements IClickHouseAdapter {
 
   constructor(config: ConnectionConfig) {
     const host = applyStickyRouting(config.host, config.useCloudStickyRouting);
-    this.sessionPrefix = `chm-${crypto.randomUUID().slice(0, 8)}`;
+    this.sessionPrefix = `chm-${randomUUID().slice(0, 8)}`;
     this.client = createClient({
       url: `${config.secure ? 'https' : 'http'}://${host}:${config.port}`,
       username: config.user,
@@ -27,7 +28,7 @@ export class HttpAdapter implements IClickHouseAdapter {
   private sessionIdFor(sql: string): string {
     const m = sql.match(/\/\*\s*source:CHM:([^*]+?)\s*\*\//);
     const tag = m ? m[1].replace(/:/g, '-') : 'untagged';
-    return `${this.sessionPrefix}-${tag}-${crypto.randomUUID().slice(0, 4)}`;
+    return `${this.sessionPrefix}-${tag}-${randomUUID().slice(0, 4)}`;
   }
 
   async executeQuery<T extends Record<string, unknown>>(

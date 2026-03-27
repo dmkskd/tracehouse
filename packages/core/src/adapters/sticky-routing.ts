@@ -11,15 +11,13 @@
 /** Matches ClickHouse Cloud service hostnames. */
 const CH_CLOUD_RE = /^[a-z0-9]+\.[a-z0-9-]+\.[a-z]+\.clickhouse\.cloud$/i;
 
+import { randomUUID } from '../utils/uuid.js';
+
 /**
  * Generate a stable per-session sticky tag.
- * Uses crypto.randomUUID where available, falls back to timestamp+random.
  */
 function generateStickyTag(): string {
-  if (typeof crypto !== 'undefined' && typeof crypto.randomUUID === 'function') {
-    return `chm-${crypto.randomUUID().slice(0, 8)}`;
-  }
-  return `chm-${Date.now().toString(36)}${Math.random().toString(36).slice(2, 6)}`;
+  return `chm-${randomUUID().slice(0, 8)}`;
 }
 
 /**

@@ -4,6 +4,7 @@ import { AdapterError, CLIENT_COMPRESSION } from './types.js';
 import type { AdapterErrorCategory } from './types.js';
 import type { ConnectionConfig } from '../types/connection.js';
 import { applyStickyRouting } from './sticky-routing.js';
+import { randomUUID } from '../utils/uuid.js';
 
 /**
  * Browser-compatible adapter that uses @clickhouse/client-web.
@@ -19,7 +20,7 @@ export class BrowserAdapter implements IClickHouseAdapter {
     // source tag to produce a unique-per-purpose session_id on each request.
     // This avoids the "session is locked" error from concurrent queries while
     // still giving the LB a consistent key per query type for routing affinity.
-    this.sessionPrefix = `chm-${crypto.randomUUID().slice(0, 8)}`;
+    this.sessionPrefix = `chm-${randomUUID().slice(0, 8)}`;
     this.client = createClient({
       url: `${config.secure ? 'https' : 'http'}://${host}:${config.port}`,
       username: config.user,
@@ -37,7 +38,7 @@ export class BrowserAdapter implements IClickHouseAdapter {
     const tag = m ? m[1].replace(/:/g, '-') : 'untagged';
     // Unique per call to avoid "session is locked" on concurrent queries,
     // but prefixed with the source tag so the LB sees a consistent routing key.
-    return `${this.sessionPrefix}-${tag}-${crypto.randomUUID().slice(0, 4)}`;
+    return `${this.sessionPrefix}-${tag}-${randomUUID().slice(0, 4)}`;
   }
 
   async executeQuery<T extends Record<string, unknown>>(sql: string): Promise<T[]> {
