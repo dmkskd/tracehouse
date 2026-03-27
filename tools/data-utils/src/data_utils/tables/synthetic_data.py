@@ -11,7 +11,7 @@ from .helpers import (
     generate_month_list, check_existing_rows, run_batched_insert,
     wait_for_table,
 )
-from .protocol import QuerySet
+from .protocol import InsertMode, QuerySet
 
 if TYPE_CHECKING:
     from .helpers import ProgressTracker
@@ -95,10 +95,11 @@ def create_synthetic_data(client: Client, replicated: bool, cluster: str = "") -
 
 
 def insert_synthetic_data(
-    client: Client, rows: int, partitions: int, batch_size: int, drop: bool = False,
+    client: Client, rows: int, partitions: int, batch_size: int,
+    mode: InsertMode = InsertMode.RESUME,
     tracker: ProgressTracker | None = None, throttle_min: float = 0.0, throttle_max: float = 0.0,
 ) -> None:
-    remaining = check_existing_rows(client, "synthetic_data.events", rows, drop)
+    remaining = check_existing_rows(client, "synthetic_data.events", rows, mode)
     if remaining is None:
         if tracker:
             tracker.register("synthetic_data", rows)
@@ -182,7 +183,7 @@ class SyntheticData:
     ) -> None:
         insert_synthetic_data(
             client, config.rows, config.partitions, config.batch_size,
-            config.drop, tracker=tracker,
+            mode=config.mode, tracker=tracker,
             throttle_min=config.throttle_min, throttle_max=config.throttle_max,
         )
 

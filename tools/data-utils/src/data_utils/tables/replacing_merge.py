@@ -17,7 +17,7 @@ from .helpers import (
     retry_on_drop_race, create_database,
     generate_month_list, check_existing_rows, run_batched_insert,
 )
-from .protocol import QuerySet
+from .protocol import InsertMode, QuerySet
 
 if TYPE_CHECKING:
     from .helpers import ProgressTracker
@@ -71,10 +71,11 @@ def create_replacing_merge(client: Client, replicated: bool, cluster: str = "") 
 
 
 def insert_replacing_merge(
-    client: Client, rows: int, partitions: int, batch_size: int, drop: bool = False,
+    client: Client, rows: int, partitions: int, batch_size: int,
+    mode: InsertMode = InsertMode.RESUME,
     tracker: ProgressTracker | None = None, throttle_min: float = 0.0, throttle_max: float = 0.0,
 ) -> None:
-    remaining = check_existing_rows(client, "replacing_test.product_prices", rows, drop)
+    remaining = check_existing_rows(client, "replacing_test.product_prices", rows, mode)
     if remaining is None:
         if tracker:
             tracker.register("replacing_test", rows)
@@ -151,7 +152,7 @@ class ReplacingMerge:
     ) -> None:
         insert_replacing_merge(
             client, config.rows, config.partitions, config.batch_size,
-            config.drop, tracker=tracker,
+            mode=config.mode, tracker=tracker,
             throttle_min=config.throttle_min, throttle_max=config.throttle_max,
         )
 

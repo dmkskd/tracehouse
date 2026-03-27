@@ -12,7 +12,7 @@ from .helpers import (
     generate_month_list, check_existing_rows, run_batched_insert,
 )
 from data_utils.capabilities import Capabilities
-from .protocol import QuerySet
+from .protocol import InsertMode, QuerySet
 
 if TYPE_CHECKING:
     from .helpers import ProgressTracker
@@ -110,13 +110,13 @@ def insert_web_analytics(
     rows: int,
     partitions: int,
     batch_size: int,
-    drop: bool = False,
+    mode: InsertMode = InsertMode.RESUME,
     caps: Capabilities | None = None,
     tracker: ProgressTracker | None = None,
     throttle_min: float = 0.0,
     throttle_max: float = 0.0,
 ) -> None:
-    remaining = check_existing_rows(client, "web_analytics.pageviews", rows, drop)
+    remaining = check_existing_rows(client, "web_analytics.pageviews", rows, mode)
     if remaining is None:
         if tracker:
             tracker.register("web_analytics", rows)
@@ -257,7 +257,7 @@ class WebAnalytics:
     ) -> None:
         insert_web_analytics(
             client, config.rows, config.partitions, config.batch_size,
-            config.drop, self._caps, tracker=tracker,
+            mode=config.mode, caps=self._caps, tracker=tracker,
             throttle_min=config.throttle_min, throttle_max=config.throttle_max,
         )
 

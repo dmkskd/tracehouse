@@ -11,6 +11,8 @@ from .helpers import (
     check_existing_rows, run_batched_insert,
 )
 
+from .protocol import InsertMode
+
 if TYPE_CHECKING:
     from .helpers import ProgressTracker
     from .protocol import InsertConfig, QuerySet, Dataset
@@ -126,10 +128,11 @@ def create_uk_house_prices(client: Client, replicated: bool, cluster: str = "") 
 
 
 def insert_uk_house_prices(
-    client: Client, rows: int, partitions: int, batch_size: int, drop: bool = False,
+    client: Client, rows: int, partitions: int, batch_size: int,
+    mode: InsertMode = InsertMode.RESUME,
     tracker: ProgressTracker | None = None, throttle_min: float = 0.0, throttle_max: float = 0.0,
 ) -> None:
-    remaining = check_existing_rows(client, "uk_price_paid.uk_price_paid", rows, drop)
+    remaining = check_existing_rows(client, "uk_price_paid.uk_price_paid", rows, mode)
     if remaining is None:
         if tracker:
             tracker.register("uk_price_paid", rows)
@@ -199,7 +202,7 @@ class UkHousePrices:
     ) -> None:
         insert_uk_house_prices(
             client, config.rows, config.partitions, config.batch_size,
-            config.drop, tracker=tracker,
+            mode=config.mode, tracker=tracker,
             throttle_min=config.throttle_min, throttle_max=config.throttle_max,
         )
 

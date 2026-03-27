@@ -11,7 +11,7 @@ from .helpers import (
     generate_month_list, check_existing_rows, run_batched_insert,
     wait_for_table,
 )
-from .protocol import QuerySet
+from .protocol import InsertMode, QuerySet
 from data_utils.capabilities import Capabilities
 
 if TYPE_CHECKING:
@@ -139,10 +139,11 @@ def create_nyc_taxi(
 
 
 def insert_nyc_taxi(
-    client: Client, rows: int, partitions: int, batch_size: int, drop: bool = False,
+    client: Client, rows: int, partitions: int, batch_size: int,
+    mode: InsertMode = InsertMode.RESUME,
     tracker: ProgressTracker | None = None, throttle_min: float = 0.0, throttle_max: float = 0.0,
 ) -> None:
-    remaining = check_existing_rows(client, "nyc_taxi.trips", rows, drop)
+    remaining = check_existing_rows(client, "nyc_taxi.trips", rows, mode)
     if remaining is None:
         if tracker:
             tracker.register("nyc_taxi", rows)
@@ -208,7 +209,7 @@ class NycTaxi:
     ) -> None:
         insert_nyc_taxi(
             client, config.rows, config.partitions, config.batch_size,
-            config.drop, tracker=tracker,
+            mode=config.mode, tracker=tracker,
             throttle_min=config.throttle_min, throttle_max=config.throttle_max,
         )
 

@@ -4,6 +4,7 @@ from __future__ import annotations
 
 from collections.abc import Callable
 from dataclasses import dataclass, field
+from enum import Enum
 from typing import TYPE_CHECKING, Protocol, runtime_checkable
 
 if TYPE_CHECKING:
@@ -16,6 +17,13 @@ if TYPE_CHECKING:
 QueryGenerator = Callable[[], str]
 
 
+class InsertMode(Enum):
+    """How the generator handles existing data."""
+    RESUME = "resume"    # skip if at target, insert remaining if partial
+    DROP = "drop"        # drop tables first, insert fresh
+    APPEND = "append"    # always insert target rows on top of existing
+
+
 @dataclass(frozen=True)
 class InsertConfig:
     """Shared insert parameters passed to every table plugin."""
@@ -23,7 +31,7 @@ class InsertConfig:
     rows: int
     partitions: int
     batch_size: int
-    drop: bool = False
+    mode: InsertMode = InsertMode.RESUME
     throttle_min: float = 0.0
     throttle_max: float = 0.0
 

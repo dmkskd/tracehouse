@@ -12,6 +12,8 @@ import re
 
 from clickhouse_driver import Client
 
+from data_utils.tables.protocol import InsertMode
+
 _SAFE_CLUSTER_RE = re.compile(r'^[a-zA-Z0-9_.\-]+$')
 
 # Callback signature for build_insert_sql functions used by run_batched_insert.
@@ -234,15 +236,17 @@ def generate_month_list(num_partitions: int) -> list[tuple[str, str]]:
     return months
 
 
-def check_existing_rows(client: Client, table: str, target_rows: int, drop: bool) -> int | None:
+def check_existing_rows(client: Client, table: str, target_rows: int, mode: InsertMode) -> int | None:
     """Check existing row count and return adjusted rows to insert, or None to skip.
 
     Returns:
         int — number of rows still needed
         None — table already at target, skip insert
     """
+    if mode is InsertMode.APPEND:
+        return target_rows
     count = client.execute(f"SELECT count() FROM {table}")[0][0]
-    if count > 0 and not drop:
+    if count > 0 and mode is not InsertMode.DROP:
         if count > target_rows:
             print(f"  Table has {count:,} rows which exceeds target {target_rows:,} — use --drop to reset")
             return None

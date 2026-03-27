@@ -8,7 +8,7 @@ from .uk_house_prices import UkHousePrices
 from .web_analytics import WebAnalytics
 from .replacing_merge import ReplacingMerge
 from .helpers import ProgressTracker
-from .protocol import Dataset, InsertConfig, QuerySet
+from .protocol import Dataset, InsertConfig, InsertMode, QuerySet
 
 if TYPE_CHECKING:
     from data_utils.capabilities import Capabilities
@@ -64,7 +64,7 @@ def list_datasets() -> None:
 
 
 __all__ = [
-    "Dataset", "InsertConfig", "QuerySet",
+    "Dataset", "InsertConfig", "InsertMode", "QuerySet",
     "SyntheticData", "NycTaxi", "UkHousePrices", "WebAnalytics",
     "ReplacingMerge",
     "ALL_DATASET_CLASSES", "build_all_datasets",

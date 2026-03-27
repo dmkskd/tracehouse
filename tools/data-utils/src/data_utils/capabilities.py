@@ -8,6 +8,7 @@ Used by the CLI tools to gracefully skip features that aren't supported
 from __future__ import annotations
 
 import logging
+import os
 from dataclasses import dataclass, field
 from clickhouse_driver import Client
 
@@ -77,17 +78,27 @@ def probe(client: Client) -> Capabilities:
         caps.has_s3_function = False
 
     log.info("probing cluster topology")
+    override = os.environ.get("CH_CLUSTER", "").strip()
     try:
-        rows = client.execute(
-            "SELECT cluster, count() AS replicas, uniq(shard_num) AS shards "
-            "FROM system.clusters "
-            "WHERE cluster NOT IN ('test_shard_localhost', 'test_cluster_one_shard_three_replicas_localhost', "
-            "  'test_cluster_two_shards_localhost', 'test_cluster_two_shards', "
-            "  'test_unavailable_shard', 'test_shard_localhost_secure') "
-            "GROUP BY cluster "
-            "ORDER BY replicas DESC "
-            "LIMIT 1"
-        )
+        if override:
+            rows = client.execute(
+                "SELECT cluster, count() AS replicas, uniq(shard_num) AS shards "
+                "FROM system.clusters "
+                "WHERE cluster = %(name)s "
+                "GROUP BY cluster",
+                {"name": override},
+            )
+        else:
+            rows = client.execute(
+                "SELECT cluster, count() AS replicas, uniq(shard_num) AS shards "
+                "FROM system.clusters "
+                "WHERE cluster NOT IN ('test_shard_localhost', 'test_cluster_one_shard_three_replicas_localhost', "
+                "  'test_cluster_two_shards_localhost', 'test_cluster_two_shards', "
+                "  'test_unavailable_shard', 'test_shard_localhost_secure') "
+                "GROUP BY cluster "
+                "ORDER BY replicas DESC "
+                "LIMIT 1"
+            )
         if rows and rows[0][1] > 1:
             caps.has_cluster = True
             caps.cluster_name = rows[0][0]

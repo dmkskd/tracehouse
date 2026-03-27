@@ -39,7 +39,7 @@ from data_utils.env import (
     add_connection_args, make_client, pre_parse_env_file, confirm_or_exit,
 )
 from data_utils.tables import (
-    Dataset, InsertConfig, ProgressTracker, build_all_datasets,
+    Dataset, InsertConfig, InsertMode, ProgressTracker, build_all_datasets,
     DATASET_ALIASES, list_datasets,
 )
 from data_utils.users import (
@@ -75,7 +75,9 @@ Tables are created with the best engine available for the target server.
     parser.add_argument("--rows", type=int, default=env_int("CH_GEN_ROWS", "10000000"), help="Total rows per table (default: $CH_GEN_ROWS or 10M)")
     parser.add_argument("--partitions", type=int, default=env_int("CH_GEN_PARTITIONS", "3"), help="Number of partitions/months (default: $CH_GEN_PARTITIONS or 3)")
     parser.add_argument("--batch-size", type=int, default=env_int("CH_GEN_BATCH_SIZE", "500000"), help="Rows per INSERT batch (default: $CH_GEN_BATCH_SIZE or 500K)")
-    parser.add_argument("--drop", action="store_true", default=os.environ.get("CH_GEN_DROP", "").lower() in ("1", "true", "yes"), help="Drop existing tables before creating (default: $CH_GEN_DROP or false)")
+    parser.add_argument("--mode", choices=["resume", "drop", "append"],
+                        default=os.environ.get("CH_GEN_MODE", "resume").lower(),
+                        help="Insert mode: resume (fill to target), drop (recreate), append (always insert) (default: $CH_GEN_MODE or resume)")
     parser.add_argument("--parallelism", type=int, default=env_int("CH_GEN_PARALLELISM", "0"), help="Max tables to generate concurrently (0 = all, default: $CH_GEN_PARALLELISM or 0)")
     parser.add_argument("--throttle-min", type=float, default=float(os.environ.get("CH_GEN_THROTTLE_MIN", "0")), help="Min delay in seconds between batches (default: $CH_GEN_THROTTLE_MIN or 0)")
     parser.add_argument("--throttle-max", type=float, default=float(os.environ.get("CH_GEN_THROTTLE_MAX", "0")), help="Max delay in seconds between batches (default: $CH_GEN_THROTTLE_MAX or 0)")
@@ -137,7 +139,7 @@ def _prepare_datasets(
     admin = make_client(args)
     for i, ds in enumerate(datasets):
         print(f"\n── Preparing {ds.name} ──")
-        if config.drop:
+        if config.mode is InsertMode.DROP:
             ds.drop(admin)
         ds.create(admin)
         if test_users:
@@ -228,8 +230,8 @@ def _print_config(config: InsertConfig, caps: Capabilities, parallelism: int, da
     if config.throttle_max > 0:
         print(f"  Throttle:              {config.throttle_min:.1f}s – {config.throttle_max:.1f}s between batches")
     print(f"  Datasets:              {', '.join(ds.name for ds in datasets)}")
-    if config.drop:
-        print(f"  Drop existing:         yes")
+    if config.mode is not InsertMode.RESUME:
+        print(f"  Mode:                  {config.mode.value}")
     print()
 
 
@@ -267,7 +269,7 @@ def main() -> None:
         rows=args.rows,
         partitions=args.partitions,
         batch_size=args.batch_size,
-        drop=args.drop,
+        mode=InsertMode(args.mode),
         throttle_min=args.throttle_min,
         throttle_max=args.throttle_max,
     )
