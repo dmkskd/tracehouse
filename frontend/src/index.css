@@ -26,7 +26,8 @@ body {
   -moz-osx-font-smoothing: grayscale;
 }
 
-/* Scrollbar styling */
+/* Scrollbar styling — standard properties are in themes.css via * selector.
+   Webkit overrides below for older browsers. */
 ::-webkit-scrollbar {
   width: 6px;
   height: 6px;
@@ -46,6 +47,10 @@ body {
 }
 
 /* Thin scrollbar for horizontal lists */
+.scrollbar-thin {
+  scrollbar-width: thin;
+}
+
 .scrollbar-thin::-webkit-scrollbar {
   width: 5px;
   height: 5px;
