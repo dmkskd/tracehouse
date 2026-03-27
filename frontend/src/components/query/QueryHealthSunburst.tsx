@@ -6,7 +6,7 @@
  * sunburst with polar-coordinate hit-testing and hover-to-reveal.
  */
 
-import React, { useRef, useEffect, useMemo } from 'react';
+import React, { useRef, useEffect } from 'react';
 import * as d3 from 'd3';
 import { deriveQueryHealth } from '@tracehouse/core';
 import type { HealthNode, QueryMetrics, QueryHistoryItem, QueryConcurrency } from '@tracehouse/core';

@@ -100,7 +100,7 @@ export const Analytics: React.FC = () => {
 
   // Reset to Tables tab if experimental is disabled while on Surfaces
   useEffect(() => {
-    if (!experimentalEnabled && activeTab === 'surfaces') setActiveTab('tables');
+    if (!experimentalEnabled && activeTab === 'surfaces') setActiveTab('dashboards');
   }, [experimentalEnabled]);
 
   const fromDashboardName = useMemo(() => {
