@@ -13,12 +13,11 @@
  * hit-testing to avoid SVG event-fighting between adjacent arcs.
  */
 
-import React, { useRef, useEffect, useState, useMemo } from 'react';
+import React, { useRef, useEffect } from 'react';
 import * as d3 from 'd3';
 import type { MergeInfo, MutationInfo, BackgroundPoolMetrics } from '../../stores/mergeStore';
 import { deriveHealth } from '@tracehouse/core';
 import type { HealthNode, ThroughputMap } from '@tracehouse/core';
-import { useClickHouseServices } from '../../providers/ClickHouseProvider';
 
 type PartitionedNode = d3.HierarchyRectangularNode<HealthNode>;
 
@@ -48,39 +47,24 @@ export interface MergeHealthSunburstProps {
   activeMerges: MergeInfo[];
   mutations: MutationInfo[];
   poolMetrics: BackgroundPoolMetrics | null;
+  throughputEstimates: ThroughputMap;
+  /** Called when a leaf node is clicked. `category` is the top-level health category (e.g. "Part Count", "Mutations"). Return 'not-found' to show a transient message. */
+  onLeafClick?: (name: string, category: string) => void | 'not-found';
 }
 
 export const MergeHealthSunburst: React.FC<MergeHealthSunburstProps> = ({
   activeMerges,
   mutations,
   poolMetrics,
+  throughputEstimates,
+  onLeafClick,
 }) => {
   const containerRef = useRef<HTMLDivElement>(null);
   const svgRef = useRef<SVGSVGElement>(null);
   const tooltipRef = useRef<HTMLDivElement>(null);
-  const services = useClickHouseServices();
-
-  // Fetch throughput estimates for all tables with active merges
-  const [throughputEstimates, setThroughputEstimates] = useState<ThroughputMap>(new Map());
-  const activeTables = useMemo(() => {
-    const tables = new Set<string>();
-    for (const m of activeMerges) tables.add(`${m.database}\t${m.table}`);
-    return tables;
-  }, [activeMerges]);
-
-  useEffect(() => {
-    if (!services || activeTables.size === 0) return;
-    let cancelled = false;
-    const map: ThroughputMap = new Map();
-    const fetches = [...activeTables].map(key => {
-      const [db, tbl] = key.split('\t');
-      return services.mergeTracker.getMergeThroughputEstimate(db, tbl)
-        .then(estimates => { if (!cancelled) map.set(`${db}.${tbl}`, estimates); })
-        .catch(() => {}); // silently skip — deriveHealth falls back to elapsed-based thresholds
-    });
-    Promise.all(fetches).then(() => { if (!cancelled) setThroughputEstimates(map); });
-    return () => { cancelled = true; };
-  }, [services, activeTables]);
+  const focusRef = useRef<{ name: string; depth: number; category: string } | null>(null);
+  const onLeafClickRef = useRef(onLeafClick);
+  onLeafClickRef.current = onLeafClick;
 
   const dataRef = useRef({ activeMerges, mutations, poolMetrics, throughputEstimates });
   dataRef.current = { activeMerges, mutations, poolMetrics, throughputEstimates };
@@ -238,7 +222,9 @@ export const MergeHealthSunburst: React.FC<MergeHealthSunburstProps> = ({
           `<span style="width:8px;height:8px;border-radius:50%;background:${c.base};flex-shrink:0"></span>` +
           `<span style="font-weight:600;color:var(--text-primary,#e0e0f0)">${d.data.name}</span></div>` +
           `<div style="color:var(--text-muted,#8888aa);font-size:11px">${d.data.metric}</div>` +
-          (d.children ? '<div style="color:var(--text-muted,#555570);font-size:10px;margin-top:4px">Hover to expand</div>' : ''),
+          (d.children ? '<div style="color:var(--text-muted,#555570);font-size:10px;margin-top:4px">Hover to expand</div>'
+            : d.depth >= 3 ? '<div style="color:var(--text-muted,#555570);font-size:10px;margin-top:4px">Click to open details</div>'
+            : ''),
         );
         moveTooltip(ev);
       }
@@ -351,8 +337,16 @@ export const MergeHealthSunburst: React.FC<MergeHealthSunburstProps> = ({
           if (hit.children) hit.children.forEach(c => revealed.add(c as unknown as PartitionedNode));
           setFocus(hit);
           showTooltip(ev, hit);
-          panIfNeeded(hit);
+          // Track focused leaf for click handling
+          const isLeaf = !hit.children || hit.children.length === 0;
+          const category = hit.ancestors().find(a => a.depth === 1)?.data.name || '';
+          focusRef.current = isLeaf ? { name: hit.data.name, depth: hit.depth, category } : null;
+          svgNode!.style.cursor = isLeaf && hit.depth >= 3 ? 'pointer' : '';
+          // Don't pan when hovering clickable leaf nodes — keeps the arc stable for clicking
+          if (!isLeaf || hit.depth < 3) panIfNeeded(hit);
         } else {
+          focusRef.current = null;
+          svgNode!.style.cursor = '';
           hideTooltip();
           hoverTimeout = setTimeout(() => {
             setFocus(null);
@@ -362,6 +356,8 @@ export const MergeHealthSunburst: React.FC<MergeHealthSunburstProps> = ({
       }
 
       function onLeave() {
+        focusRef.current = null;
+        svgNode!.style.cursor = '';
         hideTooltip();
         if (hoverTimeout) clearTimeout(hoverTimeout);
         hoverTimeout = setTimeout(() => {
@@ -405,6 +401,21 @@ export const MergeHealthSunburst: React.FC<MergeHealthSunburstProps> = ({
   return (
     <div
       ref={containerRef}
+      onClick={() => {
+        const f = focusRef.current;
+        if (f && f.depth >= 3 && onLeafClickRef.current) {
+          const result = onLeafClickRef.current(f.name, f.category);
+          if (result === 'not-found' && tooltipRef.current) {
+            const el = tooltipRef.current;
+            el.innerHTML =
+              '<div style="color:var(--text-muted,#8888aa);font-size:11px">' +
+              'Merge or mutation no longer active — it may have completed.' +
+              '</div>';
+            el.style.opacity = '1';
+            setTimeout(() => { el.style.opacity = '0'; }, 2500);
+          }
+        }
+      }}
       style={{
         width: '100%', height: '100%', minHeight: 300,
         position: 'relative', display: 'flex',

@@ -11,7 +11,7 @@ import {
   formatBytesPerSec,
 } from '../../stores/mergeStore';
 import type { MergeInfo, MutationInfo, BackgroundPoolMetrics, MutationDependencyInfo } from '../../stores/mergeStore';
-import type { MergeThroughputEstimate } from '@tracehouse/core';
+import type { MergeThroughputEstimate, ThroughputMap } from '@tracehouse/core';
 import { formatDuration } from '../../utils/formatters';
 import { useDatabaseStore, databaseApi } from '../../stores/databaseStore';
 import { useClickHouseServices } from '../../providers/ClickHouseProvider';
@@ -1774,6 +1774,31 @@ export const MergeTrackerView: React.FC = () => {
     }
   }, [services, isConnected, hasMerges, setPoolMetrics, setIsLoadingPoolMetrics]);
 
+  // Throughput estimates for the health sunburst — derived from active merge tables
+  const [throughputEstimates, setThroughputEstimates] = useState<ThroughputMap>(new Map());
+  const activeMergeTables = useMemo(() => {
+    const tables = new Set<string>();
+    for (const m of activeMerges) tables.add(`${m.database}\t${m.table}`);
+    return tables;
+  }, [activeMerges]);
+
+  useEffect(() => {
+    if (!services || activeMergeTables.size === 0) {
+      setThroughputEstimates(new Map());
+      return;
+    }
+    let cancelled = false;
+    const map: ThroughputMap = new Map();
+    const fetches = [...activeMergeTables].map(key => {
+      const [db, tbl] = key.split('\t');
+      return services.mergeTracker.getMergeThroughputEstimate(db, tbl)
+        .then(estimates => { if (!cancelled) map.set(`${db}.${tbl}`, estimates); })
+        .catch(() => {}); // silently skip — deriveHealth falls back to elapsed-based thresholds
+    });
+    Promise.all(fetches).then(() => { if (!cancelled) setThroughputEstimates(map); });
+    return () => { cancelled = true; };
+  }, [services, activeMergeTables]);
+
   const fetchTablesForDatabase = useCallback(async (database: string) => {
     if (!services || !isConnected) return;
     try {
@@ -2031,6 +2056,18 @@ export const MergeTrackerView: React.FC = () => {
             activeMerges={activeMerges}
             mutations={mutations}
             poolMetrics={poolMetrics}
+            throughputEstimates={throughputEstimates}
+            onLeafClick={(name, category) => {
+              if (category === 'Mutations') {
+                const mut = mutations.find(m => m.mutation_id === name);
+                if (mut) { setSelectedActiveMutation(mut); return; }
+                return 'not-found';
+              }
+              // Part Count, Throughput — name is result_part_name
+              const merge = activeMerges.find(m => m.result_part_name === name);
+              if (merge) { setActiveMergeDetail(merge); return; }
+              return 'not-found';
+            }}
           />
         </div>
       )}
