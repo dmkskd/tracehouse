@@ -45,7 +45,7 @@ SELECT
     sum(ProfileEvents['RealTimeMicroseconds']) AS total_cpu_us,
     sum(ProfileEvents['IOWaitMicroseconds']) AS total_io_wait_us,
     sum(ProfileEvents['SelectedMarks']) AS total_selected_marks
-FROM system.query_log
+FROM {{cluster_aware:system.query_log}}
 WHERE type = 'QueryFinish'
   AND query_kind = 'Select'
   AND ${timeClause}
@@ -64,7 +64,7 @@ SELECT
     count() AS insert_count,
     sum(written_rows) AS inserted_rows,
     sum(written_bytes) AS inserted_bytes
-FROM system.query_log
+FROM {{cluster_aware:system.query_log}}
 WHERE type = 'QueryFinish'
   AND query_kind = 'Insert'
   AND ${timeClause}
@@ -82,7 +82,7 @@ SELECT
     countIf(event_type = 'MergeParts') AS merges,
     countIf(event_type = 'NewPart') AS new_parts,
     sumIf(duration_ms, event_type = 'MergeParts') AS merge_ms
-FROM system.part_log
+FROM {{cluster_aware:system.part_log}}
 WHERE ${timeClause}
   AND database = {database}
   AND table = {table_name}
@@ -108,7 +108,7 @@ SELECT
     sum(peak_memory_usage) AS total_memory,
     sum(ProfileEvents['RealTimeMicroseconds']) AS total_cpu_us,
     sum(ProfileEvents['IOWaitMicroseconds']) AS total_io_wait_us
-FROM system.part_log
+FROM {{cluster_aware:system.part_log}}
 WHERE event_type = 'MergeParts'
   AND ${timeClause}
 GROUP BY ts, lane_id
@@ -129,7 +129,7 @@ SELECT
     sum(peak_memory_usage) AS total_memory,
     sum(ProfileEvents['RealTimeMicroseconds']) AS total_cpu_us,
     sum(ProfileEvents['IOWaitMicroseconds']) AS total_io_wait_us
-FROM system.part_log
+FROM {{cluster_aware:system.part_log}}
 WHERE event_type = 'MergeParts'
   AND ${timeClause}
 GROUP BY ts
@@ -150,7 +150,7 @@ SELECT
     sum(peak_memory_usage) AS total_memory,
     sum(ProfileEvents['RealTimeMicroseconds']) AS total_cpu_us,
     sum(ProfileEvents['IOWaitMicroseconds']) AS total_io_wait_us
-FROM system.part_log
+FROM {{cluster_aware:system.part_log}}
 WHERE event_type = 'MergeParts'
   AND ${timeClause}
   AND database = {database}
@@ -178,7 +178,7 @@ WITH top_tables AS (
         sum(memory_usage) AS total_mem,
         sum(read_bytes) AS total_io,
         count() AS qcount
-    FROM system.query_log
+    FROM {{cluster_aware:system.query_log}}
     WHERE type = 'QueryFinish'
       AND query_kind IN ('Select', 'Insert')
       AND ${timeClause}
@@ -199,7 +199,7 @@ SELECT
     sum(ProfileEvents['RealTimeMicroseconds']) AS total_cpu_us,
     sum(ProfileEvents['IOWaitMicroseconds']) AS total_io_wait_us,
     sum(ProfileEvents['SelectedMarks']) AS total_selected_marks
-FROM system.query_log
+FROM {{cluster_aware:system.query_log}}
 ARRAY JOIN tables AS ft
 INNER JOIN top_tables tt ON ft = tt.full_table
 WHERE type = 'QueryFinish'
@@ -226,7 +226,7 @@ SELECT
     sum(ProfileEvents['RealTimeMicroseconds']) AS total_cpu_us,
     sum(ProfileEvents['IOWaitMicroseconds']) AS total_io_wait_us,
     sum(ProfileEvents['SelectedMarks']) AS total_selected_marks
-FROM system.query_log
+FROM {{cluster_aware:system.query_log}}
 WHERE type = 'QueryFinish'
   AND query_kind IN ('Select', 'Insert')
   AND ${timeClause}
@@ -246,7 +246,7 @@ WITH top_patterns AS (
     SELECT
         normalized_query_hash,
         sum(ProfileEvents['RealTimeMicroseconds']) AS total_cpu
-    FROM system.query_log
+    FROM {{cluster_aware:system.query_log}}
     WHERE type = 'QueryFinish'
       AND query_kind IN ('Select', 'Insert')
       AND ${timeClause}
@@ -268,7 +268,7 @@ SELECT
     sum(q.ProfileEvents['RealTimeMicroseconds']) AS total_cpu_us,
     sum(q.ProfileEvents['IOWaitMicroseconds']) AS total_io_wait_us,
     sum(q.ProfileEvents['SelectedMarks']) AS total_selected_marks
-FROM system.query_log q
+FROM {{cluster_aware:system.query_log}} q
 INNER JOIN top_patterns tp ON q.normalized_query_hash = tp.normalized_query_hash
 WHERE q.type = 'QueryFinish'
   AND q.query_kind IN ('Select', 'Insert')
@@ -286,7 +286,7 @@ ORDER BY ts, q.normalized_query_hash
 export const patternSurface = (timeClause: string) => `
 WITH top_patterns AS (
     SELECT normalized_query_hash, sum(query_duration_ms) AS total_duration
-    FROM system.query_log
+    FROM {{cluster_aware:system.query_log}}
     WHERE type = 'QueryFinish'
       AND query_kind = 'Select'
       AND ${timeClause}
@@ -303,7 +303,7 @@ SELECT
     count() AS query_count,
     avg(memory_usage) AS avg_memory,
     any(query) AS sample_query
-FROM system.query_log q
+FROM {{cluster_aware:system.query_log}} q
 INNER JOIN top_patterns tp ON q.normalized_query_hash = tp.normalized_query_hash
 WHERE q.type = 'QueryFinish'
   AND q.query_kind = 'Select'

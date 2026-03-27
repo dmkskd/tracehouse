@@ -3,7 +3,7 @@
  * plus a "Queries" tab with a preset query explorer.
  */
 
-import React, { useEffect, useState, useCallback, useMemo } from 'react';
+import React, { useEffect, useState, useCallback, useMemo, useRef } from 'react';
 import { useConnectionStore } from '../stores/connectionStore';
 import { useGlobalLastUpdatedStore } from '../stores/refreshSettingsStore';
 import { useClickHouseServices } from '../providers/ClickHouseProvider';
@@ -87,12 +87,14 @@ export const Analytics: React.FC = () => {
   const [patternData, setPatternData] = useState<PatternSurfaceRow[] | null>(null);
   const [surfaceLoading, setSurfaceLoading] = useState(false);
   const [surfaceError, setSurfaceError] = useState<string | null>(null);
+  const surfaceFetchId = useRef(0);
   const [modalQuery, setModalQuery] = useState<QuerySeries | null>(null);
 
   // ── Resource lanes state ──
   const [resourceData, setResourceData] = useState<ResourceLanesData | null>(null);
   const [resourceLoading, setResourceLoading] = useState(false);
   const [resourceError, setResourceError] = useState<string | null>(null);
+  const resourceFetchId = useRef(0);
   const [resourceDrillTable, setResourceDrillTable] = useState<string | null>(null);
   const [resourceMaxLanes, setResourceMaxLanes] = useState(10);
 
@@ -143,6 +145,7 @@ export const Analytics: React.FC = () => {
   const fetchSurfaceData = useCallback(async () => {
     if (!services || !surfaceDb || !surfaceTableName || !surfaceTimeRange) return;
 
+    const fetchId = ++surfaceFetchId.current;
     setSurfaceLoading(true);
     setSurfaceError(null);
     try {
@@ -164,12 +167,14 @@ export const Analytics: React.FC = () => {
         services.analyticsService.getStressSurfaceData(opts),
         services.analyticsService.getPatternSurfaceData(opts),
       ]);
+      if (fetchId !== surfaceFetchId.current) return;
       setStressData(stress);
       setPatternData(pattern);
     } catch (e) {
+      if (fetchId !== surfaceFetchId.current) return;
       setSurfaceError(e instanceof Error ? e.message : 'Failed to load surface data');
     } finally {
-      setSurfaceLoading(false);
+      if (fetchId === surfaceFetchId.current) setSurfaceLoading(false);
     }
   }, [services, surfaceDb, surfaceTableName, surfaceTimeRange]);
 
@@ -189,6 +194,7 @@ export const Analytics: React.FC = () => {
 
   const fetchResourceLanes = useCallback(async () => {
     if (!services) return;
+    const fetchId = ++resourceFetchId.current;
     setResourceLoading(true);
     setResourceError(null);
     try {
@@ -212,11 +218,14 @@ export const Analytics: React.FC = () => {
           ...timeOpts,
         });
       }
+      // Discard stale response if a newer fetch was started
+      if (fetchId !== resourceFetchId.current) return;
       setResourceData(result);
     } catch (e) {
+      if (fetchId !== resourceFetchId.current) return;
       setResourceError(e instanceof Error ? e.message : 'Failed to load resource data');
     } finally {
-      setResourceLoading(false);
+      if (fetchId === resourceFetchId.current) setResourceLoading(false);
     }
   }, [services, resourceDrillTable, resourceMaxLanes, parseTimeRange]);
 

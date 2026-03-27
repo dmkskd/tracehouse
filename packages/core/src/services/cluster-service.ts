@@ -54,15 +54,12 @@ const CLUSTER_NAME_RE = /\{\{cluster_name\}\}/g;
 export class ClusterService {
   /**
    * Detect cluster topology by querying system.clusters.
-   * Returns the first cluster that has > 1 replica, or the 'default' cluster
-   * if it exists, or null if no cluster is found.
+   * If preferredCluster is provided, use that cluster if it exists.
+   * Otherwise, returns the first cluster that has > 1 replica, or the 'default'
+   * cluster if it exists, or null if no cluster is found.
    */
-  static async detect(adapter: IClickHouseAdapter): Promise<ClusterInfo> {
+  static async detect(adapter: IClickHouseAdapter, preferredCluster?: string): Promise<ClusterInfo> {
     try {
-      // Query all clusters. We don't filter out Replicated database virtual clusters
-      // here because the 'default' database may use ENGINE=Replicated, and the real
-      // infrastructure cluster is also named 'default'. Instead, we rely on the
-      // preference logic below (multi-replica clusters first) to pick the right one.
       const rows = await adapter.executeQuery<{
         cluster: string;
         replica_count: number;
@@ -79,7 +76,22 @@ export class ClusterService {
         return { clusterName: null, replicaCount: 1, shardCount: 1 };
       }
 
-      // Prefer a cluster with multiple replicas; if tied, prefer 'default'
+      // If a preferred cluster is configured, use it directly
+      if (preferredCluster) {
+        const match = rows.find(r => String(r.cluster) === preferredCluster);
+        if (match) {
+          const name = sanitizeClusterName(String(match.cluster));
+          if (name) {
+            return {
+              clusterName: name,
+              replicaCount: Number(match.replica_count),
+              shardCount: Number(match.shard_count),
+            };
+          }
+        }
+      }
+
+      // Auto-detect: prefer a cluster with multiple replicas; if tied, prefer 'default'
       const multiReplica = rows.filter(r => Number(r.replica_count) > 1);
       if (multiReplica.length > 0) {
         const preferred = multiReplica.find(r => String(r.cluster) === 'default') ?? multiReplica[0];
