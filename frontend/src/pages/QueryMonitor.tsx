@@ -16,6 +16,8 @@ import { DocsLink } from '../components/common/DocsLink';
 import { useLocation } from 'react-router-dom';
 import type { QuerySeries } from '@tracehouse/core';
 import { OverviewService } from '@tracehouse/core';
+import { useUserPreferenceStore } from '../stores/userPreferenceStore';
+import { QueryHealthSunburst } from '../components/query/QueryHealthSunburst';
 
 // Query type colors matching RunningQueryList
 const QUERY_TYPE_COLORS: Record<string, string> = {
@@ -54,7 +56,8 @@ export const QueryMonitor: React.FC = () => {
   const { runningQueries, queryHistory, selectedQuery, selectedQueryType: _selectedQueryType, historyFilter, historySort, wsStatus, error, isLoadingHistory, isKillingQuery, setRunningQueries, setQueryHistory, selectQuery, setHistoryFilter, setHistorySort, setIsLoadingHistory, setIsKillingQuery, setError, clearError, clearQueries } = useQueryStore();
   const location = useLocation();
   const locationState = location.state as { tab?: 'running' | 'history'; filter?: Record<string, unknown> } | null;
-  const [activeTab, setActiveTab] = useState<'running' | 'history'>(locationState?.tab || 'running');
+  const [activeTab, setActiveTab] = useState<'running' | 'history' | 'health'>(locationState?.tab || 'running');
+  const experimentalEnabled = useUserPreferenceStore(s => s.experimentalEnabled);
 
   // Apply filters from navigation state (e.g. from Overview slow queries widget)
   const appliedNavFilter = useRef(false);
@@ -229,9 +232,10 @@ export const QueryMonitor: React.FC = () => {
     );
   }
 
-  const tabs: { key: 'running' | 'history'; label: string; count: number }[] = [
+  const tabs: { key: 'running' | 'history' | 'health'; label: string; count?: number; badge?: string }[] = [
     { key: 'running', label: 'Running', count: runningFilteredCount ?? runningQueries.length },
     { key: 'history', label: 'History', count: queryHistory.length },
+    ...(experimentalEnabled ? [{ key: 'health' as const, label: 'Health Map', badge: 'exp' }] : []),
   ];
 
   return (
@@ -370,13 +374,20 @@ export const QueryMonitor: React.FC = () => {
                   transition: 'all 0.15s',
                 }}>
                 {tab.label}
-                <span style={{
-                  marginLeft: 6, fontSize: 10, padding: '1px 6px', borderRadius: 8,
-                  background: active ? 'rgba(88,166,255,0.15)' : 'var(--bg-tertiary)',
-                  color: active ? '#58a6ff' : 'var(--text-muted)',
-                }}>
-                  {tab.count}
-                </span>
+                {tab.count !== undefined && (
+                  <span style={{
+                    marginLeft: 6, fontSize: 10, padding: '1px 6px', borderRadius: 8,
+                    background: active ? 'rgba(88,166,255,0.15)' : 'var(--bg-tertiary)',
+                    color: active ? '#58a6ff' : 'var(--text-muted)',
+                  }}>
+                    {tab.count}
+                  </span>
+                )}
+                {tab.badge && (
+                  <span style={{ marginLeft: 6, fontSize: 9, padding: '1px 5px', borderRadius: 4, background: 'rgba(245,158,11,0.2)', color: '#f59e0b', fontWeight: 600 }}>
+                    {tab.badge}
+                  </span>
+                )}
               </button>
             );
           })}
@@ -402,6 +413,20 @@ export const QueryMonitor: React.FC = () => {
 
       {/* Content */}
       <div style={{ flex: 1, display: 'flex', flexDirection: 'column', minHeight: 0, overflow: 'hidden' }}>
+        {activeTab === 'health' ? (
+          <QueryHealthSunburst
+            runningQueries={runningQueries}
+            recentHistory={queryHistory}
+            concurrency={concurrency ?? null}
+            onQueryClick={(queryId) => {
+              const running = runningQueries.find(q => q.query_id === queryId);
+              if (running) { selectQuery(running, 'running'); return; }
+              const history = queryHistory.find(q => q.query_id === queryId);
+              if (history) { selectQuery(history, 'history'); return; }
+              return 'not-found';
+            }}
+          />
+        ) : (
         <div style={{
           flex: 1,
           overflow: 'auto', padding: '0 24px',
@@ -424,6 +449,7 @@ export const QueryMonitor: React.FC = () => {
             )}
           </div>
         </div>
+        )}
       </div>
 
       {/* Query Detail Modal */}
