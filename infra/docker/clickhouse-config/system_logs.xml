@@ -3,6 +3,15 @@
          query_log, trace_log, metric_log, asynchronous_metric_log, part_log
          are enabled by default; the tables below are not. -->
 
+    <!-- trace_log is the biggest offender (~42 GB unbounded on demo).
+         4h TTL keeps enough data for debugging without filling disk. -->
+    <trace_log>
+        <database>system</database>
+        <table>trace_log</table>
+        <flush_interval_milliseconds>7500</flush_interval_milliseconds>
+        <ttl>event_time + INTERVAL 1 DAY</ttl>
+    </trace_log>
+
     <query_views_log>
         <database>system</database>
         <table>query_views_log</table>
