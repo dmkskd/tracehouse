@@ -116,7 +116,7 @@ describe('parseDirectives', () => {
     /* ── source ── */
     {
       name: 'with source URL',
-      sql: `-- @meta: title='Q' group='Overview'\n-- Source: https://clickhouse.com/blog/example\nSELECT 1`,
+      sql: `-- @meta: title='Q' group='Overview'\n-- @source: https://clickhouse.com/blog/example\nSELECT 1`,
       expected: {
         source: 'https://clickhouse.com/blog/example',
       },
@@ -131,7 +131,7 @@ describe('parseDirectives', () => {
         `-- @drill: on=col1 into='Target Query'`,
         `-- @link: on=col4 into='Link Target'`,
         `-- @rag: column=col2 green<100 amber<500`,
-        `-- Source: https://example.com/docs`,
+        `-- @source: https://example.com/docs`,
         `SELECT 1`,
       ].join('\n'),
       expected: {
