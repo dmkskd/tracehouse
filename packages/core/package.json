@@ -52,6 +52,10 @@
     "./utils/uuid": {
       "import": "./dist/utils/uuid.js",
       "types": "./dist/utils/uuid.d.ts"
+    },
+    "./services/grafana-export": {
+      "import": "./dist/services/grafana-export.js",
+      "types": "./dist/services/grafana-export.d.ts"
     }
   },
   "scripts": {
