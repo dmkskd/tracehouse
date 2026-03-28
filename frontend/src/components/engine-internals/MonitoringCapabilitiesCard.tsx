@@ -286,6 +286,11 @@ export function MonitoringCapabilitiesCard({ className = '' }: MonitoringCapabil
                         </td>
                         <td style={{ padding: '3px 6px' }}>
                           <ExpandableCell text={cap.description} detail={cap.detail} dimmed={dimmed} />
+                          {cap.detail && (
+                            <div style={{ fontSize: 9, color: 'var(--text-muted)', fontFamily: 'monospace', marginTop: 1, opacity: dimmed ? 0.5 : undefined }}>
+                              {cap.detail}
+                            </div>
+                          )}
                         </td>
                         <td style={{ padding: '3px 6px' }}>
                           {cap.source ? (

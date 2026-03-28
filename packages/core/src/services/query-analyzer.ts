@@ -555,29 +555,32 @@ export class QueryAnalyzer {
     const whereClause = hashMode === 'exact'
       ? `sipHash64(query) = ${hash}`
       : `normalized_query_hash = ${hash}`;
-    // 30-day window is intentional — similar-query analysis looks at recent history
+    // 30-day window is intentional — similar-query analysis looks at recent history.
+    // GROUP BY query_id deduplicates rows when clusterAllReplicas returns
+    // identical data from multiple replicas within a shard.
     const sql = `
       SELECT * FROM (
         SELECT
           query_id,
-          query_start_time,
-          query_duration_ms,
-          read_rows,
-          read_bytes,
-          result_rows,
-          memory_usage,
-          toUInt64(ProfileEvents['UserTimeMicroseconds']) + toUInt64(ProfileEvents['SystemTimeMicroseconds']) AS cpu_time_us,
-          user,
-          hostName() AS client_hostname,
-          exception_code,
-          exception,
-          Settings,
-          query,
-          query_kind
+          any(query_start_time) AS query_start_time,
+          any(query_duration_ms) AS query_duration_ms,
+          any(read_rows) AS read_rows,
+          any(read_bytes) AS read_bytes,
+          any(result_rows) AS result_rows,
+          any(memory_usage) AS memory_usage,
+          any(toUInt64(ProfileEvents['UserTimeMicroseconds']) + toUInt64(ProfileEvents['SystemTimeMicroseconds'])) AS cpu_time_us,
+          any(user) AS user,
+          any(hostName()) AS client_hostname,
+          any(exception_code) AS exception_code,
+          any(exception) AS exception,
+          any(Settings) AS Settings,
+          any(query) AS query,
+          any(query_kind) AS query_kind
         FROM {{cluster_aware:system.query_log}}
         WHERE ${whereClause}
-          AND type IN ('QueryFinish', 'ExceptionWhileProcessing')
+          AND type IN ('QueryFinish', 'ExceptionWhileProcessing', 'ExceptionBeforeStart')
           AND event_date >= today() - 30
+        GROUP BY query_id
         ORDER BY query_start_time DESC
         LIMIT ${limit}
       )

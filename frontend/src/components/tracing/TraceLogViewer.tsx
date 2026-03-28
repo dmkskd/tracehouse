@@ -1155,11 +1155,22 @@ export const TraceLogViewer: React.FC<TraceLogViewerProps> = ({
               {filteredLogs.length} / {logs.length} logs · {threadCount} threads
             </span>
             <button
-              onClick={() => {
+              onClick={async () => {
                 const text = filteredLogs
                   .map(l => `${formatTime(l.event_time_microseconds || l.event_time)}\t${l.source}\t${l.thread_name}(${l.thread_id})\t${l.level}\t${l.message}`)
                   .join('\n');
-                navigator.clipboard.writeText(text);
+                try {
+                  await navigator.clipboard.writeText(text);
+                } catch {
+                  const textarea = document.createElement('textarea');
+                  textarea.value = text;
+                  textarea.style.position = 'fixed';
+                  textarea.style.opacity = '0';
+                  document.body.appendChild(textarea);
+                  textarea.select();
+                  document.execCommand('copy');
+                  document.body.removeChild(textarea);
+                }
                 setCopied(true);
                 setTimeout(() => setCopied(false), 1500);
               }}

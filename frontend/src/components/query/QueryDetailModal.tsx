@@ -534,7 +534,7 @@ const HistoryTab: React.FC<{
   const [showCpuOverlay, setShowCpuOverlay] = useState(false);
   const [showMemOverlay, setShowMemOverlay] = useState(false);
   const [showSettingsEvents, setShowSettingsEvents] = useState(true);
-  const [selectedForCompare, setSelectedForCompare] = useState<Set<number>>(new Set());
+  const [selectedForCompare, setSelectedForCompare] = useState<Set<string>>(new Set());
   const [compareMode, setCompareMode] = useState(false);
   const [settingsPopover, setSettingsPopover] = useState<{ idx: number; x: number; y: number } | null>(null);
 
@@ -597,6 +597,13 @@ const HistoryTab: React.FC<{
     });
     return sorted;
   }, [similarQueries, visibleQueries, zoomRange, sortKey, sortDir]);
+
+  // Map query_id → index in similarQueries (for hover sync with chart)
+  const queryIdToOrigIdx = React.useMemo(() => {
+    const map = new Map<string, number>();
+    similarQueries.forEach((q, i) => map.set(q.query_id, i));
+    return map;
+  }, [similarQueries]);
 
   // Compute settings change events — compare each query's Settings to the previous one
   const settingsEvents = React.useMemo(() => {
@@ -821,7 +828,7 @@ const HistoryTab: React.FC<{
   return (
     <div style={{ height: '100%', display: 'flex', flexDirection: 'column', position: 'relative' }}>
       {/* Banner: current query not visible */}
-      {currentQueryId != null && !currentQueryInData && similarQueries.length > 0 && (
+      {currentQueryId != null && !currentQueryInData && similarQueries.length >= limit && (
         <div style={{
           padding: '8px 16px',
           background: 'rgba(245, 158, 11, 0.1)',
@@ -1827,7 +1834,7 @@ const HistoryTab: React.FC<{
           </colgroup>
           <tbody>
             {sortedQueries.map((q, i) => {
-              const origIdx = zoomRange ? visibleToOriginalIdx[i] : i;
+              const origIdx = queryIdToOrigIdx.get(q.query_id) ?? i;
               const durationVal = Number(q.query_duration_ms);
               const cpuVal = Number(q.cpu_time_us) || 0;
               const memVal = Number(q.memory_usage);
@@ -1847,7 +1854,7 @@ const HistoryTab: React.FC<{
                   key={q.query_id}
                   style={{
                     fontSize: 11,
-                    background: hoveredPoint === origIdx ? 'var(--bg-hover)' : (selectedForCompare.has(origIdx) ? 'rgba(88, 166, 255, 0.08)' : isCurrentQuery ? 'rgba(245, 158, 11, 0.06)' : (i % 2 === 0 ? 'transparent' : 'var(--bg-card)')),
+                    background: hoveredPoint === origIdx ? 'var(--bg-hover)' : (selectedForCompare.has(q.query_id) ? 'rgba(88, 166, 255, 0.08)' : isCurrentQuery ? 'rgba(245, 158, 11, 0.06)' : (i % 2 === 0 ? 'transparent' : 'var(--bg-card)')),
                     transition: 'background 0.1s ease',
                     cursor: compareMode ? 'pointer' : 'default',
                     borderLeft: isCurrentQuery ? '2px solid #f59e0b' : '2px solid transparent',
@@ -1858,7 +1865,7 @@ const HistoryTab: React.FC<{
                     if (compareMode) {
                       setSelectedForCompare(prev => {
                         const next = new Set(prev);
-                        if (next.has(origIdx)) next.delete(origIdx); else next.add(origIdx);
+                        if (next.has(q.query_id)) next.delete(q.query_id); else next.add(q.query_id);
                         return next;
                       });
                     }
@@ -1879,8 +1886,8 @@ const HistoryTab: React.FC<{
                       }}
                     >
                       {compareMode && (
-                        <span style={{ width: 14, height: 14, borderRadius: 3, border: selectedForCompare.has(origIdx) ? '2px solid #58a6ff' : '1px solid var(--border-primary)', background: selectedForCompare.has(origIdx) ? '#58a6ff' : 'transparent', display: 'inline-flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0, fontSize: 9, color: '#fff' }}>
-                          {selectedForCompare.has(origIdx) ? '✓' : ''}
+                        <span style={{ width: 14, height: 14, borderRadius: 3, border: selectedForCompare.has(q.query_id) ? '2px solid #58a6ff' : '1px solid var(--border-primary)', background: selectedForCompare.has(q.query_id) ? '#58a6ff' : 'transparent', display: 'inline-flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0, fontSize: 9, color: '#fff' }}>
+                          {selectedForCompare.has(q.query_id) ? '✓' : ''}
                         </span>
                       )}
                       {q.query_id.substring(0, 8)}
@@ -2042,7 +2049,7 @@ const HistoryTab: React.FC<{
 
       {/* Comparison panel */}
       {compareMode && selectedForCompare.size >= 2 && (() => {
-        const selected = Array.from(selectedForCompare).sort((a, b) => a - b).map(i => similarQueries[i]);
+        const selected = similarQueries.filter(q => selectedForCompare.has(q.query_id));
         const comparableQueries: ComparableQuery[] = selected.map(q => ({
           query_id: q.query_id,
           query_start_time: q.query_start_time,

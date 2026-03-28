@@ -2092,8 +2092,8 @@ export const MergeTrackerView: React.FC = () => {
                 onClick={() => setActiveTab('active')}
               >
                 Active Merges
-                {activeMerges.length > 0 && (
-                  <span className="ml-2 badge badge-purple">{activeMerges.length}</span>
+                {filteredActiveMerges.length > 0 && (
+                  <span className="ml-2 badge badge-purple">{filteredActiveMerges.length}</span>
                 )}
               </button>
               <button 

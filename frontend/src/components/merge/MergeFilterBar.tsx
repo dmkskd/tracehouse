@@ -483,7 +483,7 @@ export const MergeFilterBar: React.FC<MergeFilterBarProps> = (props) => {
         )}
 
         {/* Exclude system databases toggle */}
-        {(tab === 'history' || tab === 'mutationHistory') && props.onExcludeSystemChange && (
+        {props.onExcludeSystemChange && (
           <label style={{
             display: 'flex', alignItems: 'center', gap: 5,
             fontSize: 11, color: 'var(--text-secondary)',
