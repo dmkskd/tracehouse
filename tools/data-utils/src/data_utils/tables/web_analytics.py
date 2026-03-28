@@ -228,7 +228,7 @@ def _rand_limit() -> int:
     return random.choice([10, 20, 30, 50, 100])
 
 def _rand_max_threads() -> int:
-    return random.choice([1, 2, 4, 8, 16, 32])
+    return random.choice([1, 2, 4, 8, 16])
 
 
 # ── Plugin class ───────────────────────────────────────────────────

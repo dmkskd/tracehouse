@@ -9,6 +9,15 @@ set -euo pipefail
 CYCLE_HOURS="${WORKLOAD_CYCLE_HOURS:-12}"
 CYCLE_SECONDS=$((CYCLE_HOURS * 3600))
 
+# Shard 1 replicas for query distribution (data only exists on shard 1)
+CH_HOSTS=(${CH_QUERY_HOSTS:-ch-s1r1 ch-s1r2})
+_host_idx=0
+pick_host() {
+  local host="${CH_HOSTS[$_host_idx]}"
+  _host_idx=$(( (_host_idx + 1) % ${#CH_HOSTS[@]} ))
+  echo "$host"
+}
+
 run() { cd /app && uv run "$@"; }
 
 log() { echo "[workload $(date '+%Y-%m-%d %H:%M:%S')] $*"; }
@@ -68,17 +77,22 @@ while true; do
   insert_loop &
   insert_pid=$!
 
-  run tracehouse-queries &
-  queries_pid=$!
+  # Spread queries across all nodes (one worker per node)
+  query_pids=()
+  for qhost in "${CH_HOSTS[@]}"; do
+    log "Starting query worker on $qhost"
+    CH_HOST=$qhost run tracehouse-queries &
+    query_pids+=($!)
+  done
 
-  run tracehouse-mutations &
+  CH_HOST=$(pick_host) run tracehouse-mutations &
   mutations_pid=$!
 
   # Wait for the cycle duration
   sleep "${CYCLE_SECONDS}" || true
 
   log "Cycle complete, stopping all..."
-  stop_pids "$insert_pid" "$queries_pid" "$mutations_pid"
+  stop_pids "$insert_pid" "${query_pids[@]}" "$mutations_pid"
 
   log "Wiping test data..."
   run tracehouse-drop || log "WARNING: drop exited with error"

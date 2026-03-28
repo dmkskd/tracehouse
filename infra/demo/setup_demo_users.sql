@@ -32,3 +32,14 @@ GRANT SHOW DATABASES, SHOW TABLES, SHOW COLUMNS ON *.* TO read_only;
 -- Grant access to system tables the app reads
 GRANT dictGet ON *.* TO read_only;
 GRANT SYSTEM RELOAD DICTIONARY ON *.* TO read_only;
+
+-- ============================================================
+-- Workload user thread constraints
+-- ============================================================
+-- Default 4 threads per query, allow override up to 16.
+-- Prevents workload queries from monopolizing all cores.
+ALTER USER IF EXISTS th_alice SETTINGS max_threads = 4 MIN 1 MAX 16, max_execution_time = 600;
+ALTER USER IF EXISTS th_bob SETTINGS max_threads = 4 MIN 1 MAX 16, max_execution_time = 600;
+ALTER USER IF EXISTS th_carol SETTINGS max_threads = 4 MIN 1 MAX 16, max_execution_time = 600;
+ALTER USER IF EXISTS th_dave SETTINGS max_threads = 4 MIN 1 MAX 16, max_execution_time = 600;
+ALTER USER IF EXISTS th_eve SETTINGS max_threads = 4 MIN 1 MAX 16, max_execution_time = 600;

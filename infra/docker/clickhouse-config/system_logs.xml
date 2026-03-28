@@ -9,7 +9,7 @@
         <database>system</database>
         <table>trace_log</table>
         <flush_interval_milliseconds>7500</flush_interval_milliseconds>
-        <ttl>event_time + INTERVAL 1 DAY</ttl>
+        <ttl>event_time + INTERVAL 4 HOUR</ttl>
     </trace_log>
 
     <query_views_log>

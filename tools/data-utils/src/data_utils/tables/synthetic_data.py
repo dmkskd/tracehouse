@@ -448,7 +448,7 @@ class SyntheticData:
     WHERE event_date >= today() - {_rand_days_ago()}
     GROUP BY country_code, device_type
     ORDER BY events DESC
-    SETTINGS max_threads = {random.choice([1, 2, 4, 8, 16, 32])}, use_query_cache = 0
+    SETTINGS max_threads = {random.choice([1, 2, 4, 8, 16])}, use_query_cache = 0
     """,
             ],
         )
