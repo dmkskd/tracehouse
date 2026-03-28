@@ -27,13 +27,17 @@ import { resolveQueryRef } from './metaLanguage';
 export interface DashboardPanel {
   /** Query reference — namespaced as 'Group#Query Name', or bare 'Query Name' for backward compat */
   queryName: string;
+  /** If set, this panel starts a new collapsible section with this title.
+   *  All subsequent panels until the next section belong to this section. */
+  section?: string;
 }
 
 /** Dashboard group for visual categorization in the list view. */
-export type DashboardGroup = 'ClickHouse' | 'TraceHouse' | 'Custom';
+export type DashboardGroup = 'ClickHouse' | 'Grafana Imports' | 'TraceHouse' | 'Custom';
 
 export const DASHBOARD_GROUPS: { name: DashboardGroup; color: string }[] = [
   { name: 'ClickHouse', color: '#facc15' },
+  { name: 'Grafana Imports', color: '#38bdf8' },
   { name: 'TraceHouse', color: '#7c3aed' },
   { name: 'Custom', color: '#79c0ff' },
 ];
@@ -52,6 +56,8 @@ export interface Dashboard {
   id: string;
   title: string;
   description?: string;
+  /** Attribution URL for dashboards derived from external sources */
+  source?: string;
   group?: DashboardGroup;
   /** Optional sub-category within the group (e.g. 'Merges', 'Storage') for visual grouping in the list view */
   category?: string;
@@ -178,9 +184,11 @@ export function importDashboardJson(json: string): Omit<Dashboard, 'builtin'> {
     id: obj.id || generateId(),
     title: obj.title,
     description: obj.description,
+    ...(obj.source && { source: String(obj.source) }),
     columns: [1, 2, 3, 4].includes(obj.columns) ? obj.columns : 2,
-    panels: obj.panels.map((p: { queryName?: string }) => ({
+    panels: obj.panels.map((p: { queryName?: string; section?: string }) => ({
       queryName: p.queryName ?? '',
+      ...(p.section && { section: String(p.section) }),
     })),
     ...(Array.isArray(obj.filters) && obj.filters.length > 0 && {
       filters: obj.filters
@@ -201,6 +209,7 @@ const BUILTIN_DASHBOARDS: Dashboard[] = [
     id: 'ops-overview',
     title: 'Operations Overview',
     description: 'Full server health dashboard — mirrors the ClickHouse built-in "Overview" dashboard',
+    source: 'https://github.com/ClickHouse/ClickHouse/blob/master/src/Storages/System/StorageSystemDashboards.cpp',
     group: 'ClickHouse',
     category: 'General',
     columns: 2,
@@ -229,7 +238,8 @@ const BUILTIN_DASHBOARDS: Dashboard[] = [
   {
     id: 'insert-health',
     title: 'Insert Health',
-    description: 'Monitor ingestion pipeline: new parts, batch rates, durations — based on https://clickhouse.com/blog/monitoring-troubleshooting-insert-queries-clickhouse',
+    description: 'Monitor ingestion pipeline: new parts, batch rates, durations',
+    source: 'https://clickhouse.com/blog/monitoring-troubleshooting-insert-queries-clickhouse',
     group: 'ClickHouse',
     category: 'Queries',
     columns: 2,
@@ -248,17 +258,18 @@ const BUILTIN_DASHBOARDS: Dashboard[] = [
   },
   {
     id: 'select-perf',
-    title: 'SELECT Performance',
-    description: 'Query latency trends, per-user breakdown, read distribution — based on https://clickhouse.com/blog/monitoring-troubleshooting-select-queries-clickhouse',
+    title: 'Select Health',
+    description: 'Query latency trends, per-user breakdown, read distribution',
+    source: 'https://clickhouse.com/blog/monitoring-troubleshooting-select-queries-clickhouse',
     group: 'ClickHouse',
     category: 'Queries',
     columns: 2,
     panels: [
-      { queryName: 'Selects#SELECT Duration Trend (hourly)' },
+      { queryName: 'Selects#Select Duration Trend (hourly)' },
       { queryName: 'Selects#Queries by User' },
       { queryName: 'Selects#Queries by Client' },
       { queryName: 'Selects#Read Rows Distribution' },
-      { queryName: 'Selects#Recent SELECTs' },
+      { queryName: 'Selects#Recent Selects' },
       { queryName: 'Advanced Dashboard#Selected Rows/second' },
       { queryName: 'Advanced Dashboard#Selected Bytes/second' },
     ],
@@ -361,7 +372,8 @@ const BUILTIN_DASHBOARDS: Dashboard[] = [
   {
     id: 'memory-monitoring',
     title: 'Memory Monitoring',
-    description: 'Deep memory breakdown and trend analysis — based on https://clickhouse.com/docs/guides/developer/debugging-memory-issues and https://kb.altinity.com/altinity-kb-setup-and-maintenance/altinity-kb-who-ate-my-memory/',
+    description: 'Deep memory breakdown and trend analysis',
+    source: 'https://clickhouse.com/docs/guides/developer/debugging-memory-issues',
     group: 'ClickHouse',
     category: 'Resources',
     columns: 2,
@@ -383,7 +395,8 @@ const BUILTIN_DASHBOARDS: Dashboard[] = [
   {
     id: 'replication-health',
     title: 'Replication Health',
-    description: 'Replica status, replication queue depth and errors, lag trends, and ZooKeeper health — based on https://clickhouse.com/docs/operations/system-tables/replicas and https://kb.altinity.com/altinity-kb-setup-and-maintenance/altinity-kb-replication-queue/',
+    description: 'Replica status, replication queue depth and errors, lag trends, and ZooKeeper health',
+    source: 'https://clickhouse.com/docs/operations/system-tables/replicas',
     group: 'ClickHouse',
     category: 'Replication',
     columns: 2,
@@ -401,7 +414,8 @@ const BUILTIN_DASHBOARDS: Dashboard[] = [
   {
     id: 'mutations-monitoring',
     title: 'Mutations',
-    description: 'Track ALTER TABLE mutations — active, stuck/failed, and recently completed — based on https://clickhouse.com/docs/operations/system-tables/mutations',
+    description: 'Track ALTER TABLE mutations — active, stuck/failed, and recently completed',
+    source: 'https://clickhouse.com/docs/operations/system-tables/mutations',
     group: 'ClickHouse',
     category: 'Merges',
     columns: 2,
@@ -414,12 +428,167 @@ const BUILTIN_DASHBOARDS: Dashboard[] = [
   {
     id: 'disk-monitoring',
     title: 'Disk Usage',
-    description: 'Disk free space and capacity across all cluster nodes — based on https://clickhouse.com/docs/operations/system-tables/disks',
+    description: 'Disk free space and capacity across all cluster nodes',
+    source: 'https://clickhouse.com/docs/operations/system-tables/disks',
     category: 'Storage',
     group: 'ClickHouse',
     columns: 2,
     panels: [
       { queryName: 'Disks#Disk Free Space' },
+    ],
+  },
+
+  // ─── Grafana Imports ──────────────────────────────────────────────
+  // Single dashboard with collapsible sections — derived from the official
+  // ClickHouse "Prom-Exporter Instance Dashboard v2" (clickhouse-mixin).
+  // Source: https://github.com/ClickHouse/clickhouse-mixin
+  // Grafana Marketplace: https://grafana.com/grafana/dashboards/23415
+
+  {
+    id: 'cloud-monitoring',
+    title: 'ClickHouse Cloud Exporter',
+    description: 'All panels from the official ClickHouse Prom-Exporter Grafana dashboard — reproduced natively without Prometheus',
+    source: 'https://github.com/ClickHouse/clickhouse-mixin',
+    group: 'Grafana Imports',
+    columns: 2,
+    panels: [
+      // ── Server Health & Resources ──
+      { queryName: 'Grafana Imports#CPU Usage %', section: 'Server Health & Resources' },
+      { queryName: 'Grafana Imports#Memory Usage %' },
+      { queryName: 'Grafana Imports#Memory Tracked (RSS)' },
+      { queryName: 'Grafana Imports#CPU Cores Used' },
+      { queryName: 'Grafana Imports#Max Parts Per Partition' },
+      { queryName: 'Grafana Imports#Failed Select %' },
+      { queryName: 'Grafana Imports#Failed Insert %' },
+      { queryName: 'Grafana Imports#Error Log Rate' },
+      { queryName: 'Grafana Imports#Memory Limit Exceeded' },
+      { queryName: 'Grafana Imports#Network I/O' },
+      { queryName: 'Grafana Imports#TCP Connections' },
+      { queryName: 'Grafana Imports#Database & Table Counts' },
+      { queryName: 'Grafana Imports#Total MergeTree Data' },
+
+      // ── Query Performance ──
+      { queryName: 'Grafana Imports#Total Queries/sec', section: 'Query Performance' },
+      { queryName: 'Grafana Imports#Query Latency (avg)' },
+      { queryName: 'Grafana Imports#Select vs Insert Rate' },
+      { queryName: 'Grafana Imports#Failed Queries/sec' },
+      { queryName: 'Grafana Imports#Select Latency (avg)' },
+      { queryName: 'Grafana Imports#Insert Latency (avg)' },
+      { queryName: 'Grafana Imports#Pending Async Inserts' },
+
+      // ── SELECT Read Path ──
+      { queryName: 'Grafana Imports#Selected Parts/sec', section: 'Select Read Path' },
+      { queryName: 'Grafana Imports#Selected Ranges/sec' },
+      { queryName: 'Grafana Imports#Selected Marks/sec' },
+      { queryName: 'Grafana Imports#Selected Rows/sec' },
+      { queryName: 'Grafana Imports#Selected Bytes/sec' },
+
+      // ── Write Path ──
+      { queryName: 'Grafana Imports#Inserted Rows & Bytes', section: 'Write Path' },
+      { queryName: 'Grafana Imports#MergeTree Writer Rows/sec' },
+      { queryName: 'Grafana Imports#MergeTree Writer Blocks/sec' },
+      { queryName: 'Grafana Imports#MergeTree Write Bytes (compressed vs uncompressed)' },
+      { queryName: 'Grafana Imports#Rejected Inserts (TOO_MANY_PARTS)' },
+      { queryName: 'Grafana Imports#Delayed Inserts' },
+      { queryName: 'Grafana Imports#Delayed Insert Latency (avg)' },
+
+      // ── Parts ──
+      { queryName: 'Grafana Imports#Parts by Type', section: 'Parts' },
+      { queryName: 'Grafana Imports#Parts Lifecycle' },
+
+      // ── Merges ──
+      { queryName: 'Grafana Imports#Merge Rate', section: 'Merges' },
+      { queryName: 'Grafana Imports#Active Mutations' },
+      { queryName: 'Grafana Imports#Merge & Mutation Memory' },
+      { queryName: 'Grafana Imports#Merge Duration (avg)' },
+      { queryName: 'Grafana Imports#Merged Rows & Bytes' },
+      { queryName: 'Grafana Imports#Disk Space Reserved for Merges' },
+
+      // ── Cache & I/O ──
+      { queryName: 'Grafana Imports#Filesystem Cache Size', section: 'Cache & I/O' },
+      { queryName: 'Grafana Imports#Filesystem Cache Hit Rate' },
+      { queryName: 'Grafana Imports#Page Cache Hit Rate' },
+      { queryName: 'Grafana Imports#Mark Cache Hit Rate' },
+      { queryName: 'Grafana Imports#Disk vs Filesystem Reads' },
+      { queryName: 'Grafana Imports#S3 Read Bytes/sec' },
+    ],
+  },
+
+  // Single dashboard with collapsible sections — derived from the
+  // Altinity ClickHouse Operator Grafana dashboard (ID 12163).
+  // Source: https://grafana.com/grafana/dashboards/12163
+
+  {
+    id: 'altinity-operator',
+    title: 'Altinity ClickHouse Operator',
+    description: 'All panels from the Altinity ClickHouse Operator Grafana dashboard — reproduced natively without Prometheus',
+    source: 'https://grafana.com/grafana/dashboards/12163',
+    group: 'Grafana Imports',
+    columns: 2,
+    panels: [
+      // ── Overview ──
+      { queryName: 'Grafana Imports#Uptime & Version', section: 'Overview' },
+      { queryName: 'Grafana Imports#Connections (current)' },
+      { queryName: 'Grafana Imports#Connections Trend' },
+      { queryName: 'Grafana Imports#Running Queries' },
+
+      // ── Errors ──
+      { queryName: 'Grafana Imports#Query Errors by Type', section: 'Errors' },
+      { queryName: 'Grafana Imports#ZooKeeper Hardware Exceptions' },
+      { queryName: 'Grafana Imports#DNS Errors' },
+
+      // ── Queries ──
+      { queryName: 'Grafana Imports#Query Rate by Type', section: 'Queries' },
+      { queryName: 'Grafana Imports#Read Rows/sec' },
+      { queryName: 'Grafana Imports#Read Bytes/sec' },
+
+      // ── Inserts ──
+      { queryName: 'Grafana Imports#Insert Rate', section: 'Inserts' },
+      { queryName: 'Grafana Imports#Inserted Rows/sec (Altinity)' },
+      { queryName: 'Grafana Imports#Inserted Bytes/sec (Altinity)' },
+      { queryName: 'Grafana Imports#Delayed & Rejected Inserts' },
+
+      // ── Replication & ZooKeeper ──
+      { queryName: 'Grafana Imports#Replica Lag (max)', section: 'Replication & ZooKeeper' },
+      { queryName: 'Grafana Imports#Replication Queue Size (Altinity)' },
+      { queryName: 'Grafana Imports#ZooKeeper Request Rate' },
+      { queryName: 'Grafana Imports#ZooKeeper Wait Time (avg)' },
+      { queryName: 'Grafana Imports#ZooKeeper Sessions' },
+
+      // ── Merges ──
+      { queryName: 'Grafana Imports#Merge Rate (Altinity)', section: 'Merges' },
+      { queryName: 'Grafana Imports#Merged Rows/sec (Altinity)' },
+      { queryName: 'Grafana Imports#Active Merges & Mutations (Altinity)' },
+
+      // ── Parts ──
+      { queryName: 'Grafana Imports#Active Parts (Altinity)', section: 'Parts' },
+      { queryName: 'Grafana Imports#Max Parts Per Partition (Altinity)' },
+      { queryName: 'Grafana Imports#Parts by Table (top 10)' },
+      { queryName: 'Grafana Imports#Detached Parts' },
+
+      // ── Memory ──
+      { queryName: 'Grafana Imports#Memory Tracking (Altinity)', section: 'Memory' },
+      { queryName: 'Grafana Imports#Memory by Subsystem' },
+
+      // ── Disk & Tables ──
+      { queryName: 'Grafana Imports#Total MergeTree Bytes', section: 'Disk & Tables' },
+      { queryName: 'Grafana Imports#Total MergeTree Rows' },
+      { queryName: 'Grafana Imports#Table Sizes (top 20)' },
+
+      // ── Background & Mutations ──
+      { queryName: 'Grafana Imports#Background Pool Utilization (Altinity)', section: 'Background & Mutations' },
+      { queryName: 'Grafana Imports#Active Mutations (Altinity)' },
+
+      // ── CPU ──
+      { queryName: 'Grafana Imports#CPU User Time', section: 'CPU' },
+      { queryName: 'Grafana Imports#CPU System Time' },
+      { queryName: 'Grafana Imports#CPU IO Wait' },
+      { queryName: 'Grafana Imports#CPU Breakdown' },
+
+      // ── Network & I/O ──
+      { queryName: 'Grafana Imports#Network Bytes (send/receive)', section: 'Network & I/O' },
+      { queryName: 'Grafana Imports#Disk Read/Write Bytes' },
+      { queryName: 'Grafana Imports#Disk Read/Write IOps' },
     ],
   },
 ];

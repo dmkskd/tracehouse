@@ -8,7 +8,7 @@
 
 const queries: string[] = [
   `-- @meta: title='Memory Breakdown' group='Memory' description='Comprehensive snapshot of all memory consumers — OS, caches, queries, merges, primary keys, dictionaries, and more'
--- Source: https://kb.altinity.com/altinity-kb-setup-and-maintenance/altinity-kb-who-ate-my-memory/
+-- @source: https://kb.altinity.com/altinity-kb-setup-and-maintenance/altinity-kb-who-ate-my-memory/
 SELECT category, name, formatReadableSize(val) AS readable_size
 FROM (
     SELECT 'OS' AS category, metric AS name, toInt64(value) AS val
@@ -54,7 +54,7 @@ WHERE val > 0
 ORDER BY category, val DESC`,
 
   `-- @meta: title='Memory Breakdown (WIP summary)' group='Memory' description='[TEST] Aggregated memory by category with descriptions — iterating on this before replacing the main query'
--- Source: https://kb.altinity.com/altinity-kb-setup-and-maintenance/altinity-kb-who-ate-my-memory/
+-- @source: https://kb.altinity.com/altinity-kb-setup-and-maintenance/altinity-kb-who-ate-my-memory/
 -- @drill: on=category into='Memory Breakdown Detail (WIP)'
 -- @chart: type=bar group_by=category description=description value=total_mb unit=MB style=2d
 SELECT category, description, round(total_bytes / 1048576, 1) AS total_mb, formatReadableSize(total_bytes) AS readable_size, items
@@ -166,8 +166,8 @@ WHERE category = {{drill_value:category | 'Caches'}}
 ORDER BY val DESC`,
 
   `-- @meta: title='Cache Sizes (current)' group='Memory' description='Current values of all cache and memory metrics from system.metrics and system.asynchronous_metrics'
--- Source: https://kb.altinity.com/altinity-kb-setup-and-maintenance/altinity-kb-who-ate-my-memory/
--- Source: https://clickhouse.com/docs/guides/developer/debugging-memory-issues
+-- @source: https://kb.altinity.com/altinity-kb-setup-and-maintenance/altinity-kb-who-ate-my-memory/
+-- @source: https://clickhouse.com/docs/guides/developer/debugging-memory-issues
 SELECT source, metric, bytes, formatReadableSize(bytes) AS size
 FROM (
     SELECT 'metrics' AS source, metric, toInt64(value) AS bytes
@@ -183,8 +183,8 @@ ORDER BY bytes DESC`,
   `-- @meta: title='Primary Key Memory by Database' group='Memory' description='Primary key memory allocated per database — often a silent memory hog on wide tables'
 -- @chart: type=bar group_by=database value=pk_allocated_mb unit=MB style=2d
 -- @drill: on=database into='Primary Key Memory by Table'
--- Source: https://clickhouse.com/docs/guides/developer/debugging-memory-issues
--- Source: https://kb.altinity.com/altinity-kb-setup-and-maintenance/altinity-kb-who-ate-my-memory/
+-- @source: https://clickhouse.com/docs/guides/developer/debugging-memory-issues
+-- @source: https://kb.altinity.com/altinity-kb-setup-and-maintenance/altinity-kb-who-ate-my-memory/
 SELECT
     database,
     count() AS tables,
@@ -197,7 +197,7 @@ GROUP BY database
 ORDER BY sum(primary_key_bytes_in_memory_allocated) DESC`,
 
   `-- @meta: title='Primary Key Memory by Table' group='Memory' description='Primary key memory per table within a database — find which tables dominate PK memory'
--- Source: https://clickhouse.com/docs/guides/developer/debugging-memory-issues
+-- @source: https://clickhouse.com/docs/guides/developer/debugging-memory-issues
 SELECT
     database,
     table,
@@ -212,8 +212,8 @@ GROUP BY database, table
 ORDER BY sum(primary_key_bytes_in_memory_allocated) DESC`,
 
   `-- @meta: title='Memory-Engine Tables' group='Memory' description='Tables using Memory, Set, Join, or Buffer engines — these live entirely in RAM'
--- Source: https://clickhouse.com/docs/guides/developer/debugging-memory-issues
--- Source: https://kb.altinity.com/altinity-kb-setup-and-maintenance/altinity-kb-who-ate-my-memory/
+-- @source: https://clickhouse.com/docs/guides/developer/debugging-memory-issues
+-- @source: https://kb.altinity.com/altinity-kb-setup-and-maintenance/altinity-kb-who-ate-my-memory/
 SELECT
     database,
     name AS table_name,
@@ -227,8 +227,8 @@ WHERE engine IN ('Memory', 'Set', 'Join', 'Buffer')
 ORDER BY total_bytes DESC`,
 
   `-- @meta: title='Dictionary Memory' group='Memory' description='Memory allocated by each loaded dictionary'
--- Source: https://clickhouse.com/docs/guides/developer/debugging-memory-issues
--- Source: https://kb.altinity.com/altinity-kb-setup-and-maintenance/altinity-kb-who-ate-my-memory/
+-- @source: https://clickhouse.com/docs/guides/developer/debugging-memory-issues
+-- @source: https://kb.altinity.com/altinity-kb-setup-and-maintenance/altinity-kb-who-ate-my-memory/
 SELECT
     database,
     name,
@@ -244,8 +244,8 @@ ORDER BY bytes_allocated DESC`,
   `-- @meta: title='Top Running Queries by Memory' group='Memory' description='Currently running queries sorted by peak memory — spot memory-hungry queries in real time'
 -- @rag: column=peak_memory_mb green<100 amber<500
 -- @link: on=query_id into='Query Detail by ID'
--- Source: https://clickhouse.com/docs/guides/developer/debugging-memory-issues
--- Source: https://kb.altinity.com/altinity-kb-setup-and-maintenance/altinity-kb-who-ate-my-memory/
+-- @source: https://clickhouse.com/docs/guides/developer/debugging-memory-issues
+-- @source: https://kb.altinity.com/altinity-kb-setup-and-maintenance/altinity-kb-who-ate-my-memory/
 SELECT
     initial_query_id AS query_id,
     user,
@@ -263,7 +263,7 @@ LIMIT 30`,
   `-- @meta: title='Historical Top Memory Queries' group='Memory' interval='1 DAY' description='Most memory-hungry completed queries from query_log — find past offenders'
 -- @rag: column=memory_mb green<100 amber<500
 -- @drill: on=query_hash into='Memory Query Executions'
--- Source: https://kb.altinity.com/altinity-kb-setup-and-maintenance/altinity-kb-who-ate-my-memory/
+-- @source: https://kb.altinity.com/altinity-kb-setup-and-maintenance/altinity-kb-who-ate-my-memory/
 SELECT
     lower(hex(normalized_query_hash)) AS query_hash,
     count() AS executions,
@@ -303,7 +303,7 @@ LIMIT 50`,
 
   `-- @meta: title='Memory Peak Analysis (5min)' group='Memory' interval='1 DAY' description='Memory peak events from trace_log in 5-minute windows — identifies the biggest query per window'
 -- @chart: type=bar group_by=t value=sum_of_peaks_mb unit=MB style=2d
--- Source: https://kb.altinity.com/altinity-kb-setup-and-maintenance/altinity-kb-who-ate-my-memory/
+-- @source: https://kb.altinity.com/altinity-kb-setup-and-maintenance/altinity-kb-who-ate-my-memory/
 SELECT
     t,
     queries,
@@ -335,8 +335,8 @@ ORDER BY t ASC`,
 
   `-- @meta: title='Memory Trend (MemoryTracking)' group='Memory' interval='1 HOUR' description='Total tracked memory over time — the headline memory metric'
 -- @chart: type=area group_by=t value=memory_mb unit=MB style=2d
--- Source: https://clickhouse.com/docs/guides/developer/debugging-memory-issues
--- Source: https://kb.altinity.com/altinity-kb-setup-and-maintenance/altinity-kb-who-ate-my-memory/
+-- @source: https://clickhouse.com/docs/guides/developer/debugging-memory-issues
+-- @source: https://kb.altinity.com/altinity-kb-setup-and-maintenance/altinity-kb-who-ate-my-memory/
 SELECT
     toStartOfInterval(event_time, INTERVAL 1 MINUTE) AS t,
     round(avg(CurrentMetric_MemoryTracking) / 1048576, 1) AS memory_mb
@@ -347,7 +347,7 @@ ORDER BY t ASC`,
 
   `-- @meta: title='Cache Trend' group='Memory' interval='1 HOUR' description='Individual cache sizes over time — mark cache, uncompressed cache, page cache, etc.'
 -- @chart: type=grouped_line group_by=t value=value_mb series=metric unit=MB style=2d
--- Source: https://kb.altinity.com/altinity-kb-setup-and-maintenance/altinity-kb-who-ate-my-memory/
+-- @source: https://kb.altinity.com/altinity-kb-setup-and-maintenance/altinity-kb-who-ate-my-memory/
 SELECT t, metric, round(avg(val) / 1048576, 1) AS value_mb
 FROM (
     SELECT toStartOfInterval(event_time, INTERVAL 1 MINUTE) AS t, 'MarkCache' AS metric, CurrentMetric_MarkCacheBytes AS val FROM {{cluster_aware:system.metric_log}} WHERE event_time > {{time_range}}
@@ -364,7 +364,7 @@ ORDER BY t ASC, metric`,
 
   `-- @meta: title='Memory by Query Kind (hourly)' group='Memory' interval='1 DAY' description='Hourly peak memory broken down by query type — SELECTs vs INSERTs vs merges'
 -- @chart: type=stacked_bar group_by=hour value=memory_mb series=query_kind unit=MB style=2d
--- Source: https://kb.altinity.com/altinity-kb-setup-and-maintenance/altinity-kb-who-ate-my-memory/
+-- @source: https://kb.altinity.com/altinity-kb-setup-and-maintenance/altinity-kb-who-ate-my-memory/
 SELECT
     toStartOfHour(event_time) AS hour,
     query_kind,
@@ -378,8 +378,8 @@ ORDER BY hour ASC, memory_mb DESC`,
 
   `-- @meta: title='Merge Memory' group='Memory' description='Memory consumed by currently active merge operations, grouped by database and table'
 -- @chart: type=bar group_by=table value=memory_mb unit=MB style=2d
--- Source: https://clickhouse.com/docs/guides/developer/debugging-memory-issues
--- Source: https://kb.altinity.com/altinity-kb-setup-and-maintenance/altinity-kb-who-ate-my-memory/
+-- @source: https://clickhouse.com/docs/guides/developer/debugging-memory-issues
+-- @source: https://kb.altinity.com/altinity-kb-setup-and-maintenance/altinity-kb-who-ate-my-memory/
 SELECT
     database,
     table,

@@ -121,7 +121,7 @@ const DashboardPanelCard: React.FC<{
     setError(null);
     try {
       let sql = resolveTimeRange(p.sql, p.directives.meta?.interval, timeRangeOverride);
-      sql = resolveDrillParams(sql, { ...filterParams, ...overrideParams, ...drillParams });
+      sql = resolveDrillParams(sql, { ...filterParams, ...(overrideParams ?? drillParams) });
       const rows = await services.adapter.executeQuery<Record<string, unknown>>(sql);
       const columns = rows.length > 0 ? Object.keys(rows[0]) : [];
       setResult({ columns, rows });
@@ -266,6 +266,12 @@ const DashboardPanelCard: React.FC<{
               </button>
             )}
             {preset.name}
+            {isDrillable && !isDrilled && (
+              <span title={`Click chart to drill into ${preset.directives.drill?.into}`}
+                style={{ fontSize: 8, padding: '1px 4px', borderRadius: 3, background: 'rgba(99,102,241,0.15)', color: 'var(--accent-primary, #6366f1)', border: '1px solid rgba(99,102,241,0.25)', fontWeight: 500, whiteSpace: 'nowrap' }}>
+                drill
+              </span>
+            )}
             {isDrilled && (
               <span style={{ fontSize: 9, color: 'var(--text-muted)', fontWeight: 400 }}>
                 ({Object.entries(drillParams).map(([, v]) => v).join(' → ')})
@@ -286,6 +292,13 @@ const DashboardPanelCard: React.FC<{
                 style={{ ...viewToggleStyle, background: view === 'table' ? 'var(--bg-card-hover, rgba(88,166,255,0.1))' : 'transparent', color: view === 'table' ? 'var(--text-primary)' : 'var(--text-muted)', borderLeft: '1px solid var(--border-primary)' }}
                 title="Table view">☰</button>
             </div>
+          )}
+          {preset.directives.source && (
+            <a href={preset.directives.source} target="_blank" rel="noopener noreferrer"
+              style={{ color: 'var(--text-muted)', fontSize: 10, padding: '2px 5px', opacity: 0.7, textDecoration: 'none' }}
+              title={`Source: ${preset.directives.source}`}>
+              src
+            </a>
           )}
           <button onClick={openInEditor}
             style={{ background: 'none', border: 'none', cursor: 'pointer', color: 'var(--text-muted)', fontSize: 11, padding: '2px 5px', opacity: 0.7 }}
@@ -380,6 +393,31 @@ const DashboardPanelCard: React.FC<{
       )}
     </div>
   );
+}
+
+/** Extract a short, human-readable label from a source URL. */
+function sourceLabel(url: string): string {
+  try {
+    const u = new URL(url);
+    const host = u.hostname.replace(/^www\./, '');
+    const path = u.pathname.replace(/^\//, '').replace(/\/$/, '');
+    if (host === 'github.com' && path) {
+      const parts = path.split('/');
+      // "owner/repo/blob/branch/deep/path/file.cpp" → "owner/repo · file.cpp"
+      if (parts.length > 4 && (parts[2] === 'blob' || parts[2] === 'tree')) {
+        return `${parts[0]}/${parts[1]} · ${parts[parts.length - 1]}`;
+      }
+      // "owner/repo" → "owner/repo"
+      return parts.slice(0, 2).join('/');
+    }
+    // "clickhouse.com/docs/guides/developer/debugging-memory-issues" → last meaningful segment
+    const segments = path.split('/').filter(Boolean);
+    const last = segments[segments.length - 1] ?? '';
+    const label = last.length > 25 ? last.slice(0, 22) + '…' : last;
+    return label ? `${host} · ${label}` : host;
+  } catch {
+    return url;
+  }
 }
 
 const viewToggleStyle: React.CSSProperties = {
@@ -486,17 +524,50 @@ const DashboardEditor: React.FC<EditorProps> = ({ initial, onSave, onCancel }) =
         {panels.map((p, i) => {
           const resolved = resolvePanel(p);
           return (
-            <div key={i} style={{
-              display: 'flex', alignItems: 'center', gap: 6, padding: '6px 14px',
-              borderBottom: i < panels.length - 1 ? '1px solid var(--border-secondary)' : 'none'
-            }}>
-              <span style={{ flex: 1, fontSize: 12, color: resolved ? 'var(--text-secondary)' : '#f85149' }}>
-                {resolved?.name ?? p.queryName}{!resolved && ' (not found)'}
-              </span>
-              <button onClick={() => handleMoveUp(i)} disabled={i === 0} style={iconBtnStyle} title="Move up">↑</button>
-              <button onClick={() => handleMoveDown(i)} disabled={i === panels.length - 1} style={iconBtnStyle} title="Move down">↓</button>
-              <button onClick={() => handleRemove(i)} style={{ ...iconBtnStyle, color: '#f85149' }} title="Remove">×</button>
-            </div>
+            <React.Fragment key={i}>
+              {/* Section badge — shown above the panel that starts a section */}
+              {p.section && (
+                <div style={{
+                  display: 'flex', alignItems: 'center', gap: 6, padding: '4px 14px',
+                  background: 'var(--bg-primary)', borderBottom: '1px solid var(--border-secondary)',
+                }}>
+                  <span style={{ fontSize: 10, fontWeight: 600, color: 'var(--text-muted)', letterSpacing: '0.04em', textTransform: 'uppercase' }}>
+                    ▼ {p.section}
+                  </span>
+                  <button
+                    onClick={() => {
+                      const name = prompt('Section name (empty to remove):', p.section);
+                      if (name === null) return;
+                      setPanels(prev => prev.map((pp, j) => j === i ? { ...pp, section: name || undefined } : pp));
+                    }}
+                    style={{ ...iconBtnStyle, fontSize: 9 }}
+                    title="Rename section"
+                  >edit</button>
+                </div>
+              )}
+              <div style={{
+                display: 'flex', alignItems: 'center', gap: 6, padding: '6px 14px',
+                borderBottom: i < panels.length - 1 ? '1px solid var(--border-secondary)' : 'none'
+              }}>
+                <span style={{ flex: 1, fontSize: 12, color: resolved ? 'var(--text-secondary)' : '#f85149' }}>
+                  {resolved?.name ?? p.queryName}{!resolved && ' (not found)'}
+                </span>
+                {!p.section && (
+                  <button
+                    onClick={() => {
+                      const name = prompt('Section name:');
+                      if (!name) return;
+                      setPanels(prev => prev.map((pp, j) => j === i ? { ...pp, section: name } : pp));
+                    }}
+                    style={{ ...iconBtnStyle, fontSize: 9 }}
+                    title="Start a new section here"
+                  >§</button>
+                )}
+                <button onClick={() => handleMoveUp(i)} disabled={i === 0} style={iconBtnStyle} title="Move up">↑</button>
+                <button onClick={() => handleMoveDown(i)} disabled={i === panels.length - 1} style={iconBtnStyle} title="Move down">↓</button>
+                <button onClick={() => handleRemove(i)} style={{ ...iconBtnStyle, color: '#f85149' }} title="Remove">×</button>
+              </div>
+            </React.Fragment>
           );
         })}
       </div>
@@ -873,6 +944,13 @@ const DashboardListView: React.FC<{
       <div style={{ fontSize: 10, color: 'var(--text-tertiary)' }}>
         {d.panels.length} panel{d.panels.length !== 1 ? 's' : ''} · {d.columns} col{d.columns !== 1 ? 's' : ''}
         {d.builtin && <span style={{ marginLeft: 8, color }}>built-in</span>}
+        {d.source && (
+          <a href={d.source} target="_blank" rel="noopener noreferrer"
+            onClick={e => e.stopPropagation()}
+            style={{ marginLeft: 8, color: 'var(--accent-primary, #6366f1)', textDecoration: 'none', whiteSpace: 'nowrap' }}>
+            {sourceLabel(d.source)}
+          </a>
+        )}
       </div>
     </div>
   );
@@ -1112,6 +1190,37 @@ export const DashboardViewer: React.FC<{ initialDashboardId?: string }> = ({ ini
     setView({ mode: 'edit', dashboard: next.find(x => x.id === added.id) });
   }, [dashboards]);
 
+  // ─── Section collapse state ───
+  const [collapsedSections, setCollapsedSections] = useState<Set<string>>(new Set());
+  const toggleSection = useCallback((name: string) => {
+    setCollapsedSections(prev => {
+      const next = new Set(prev);
+      if (next.has(name)) next.delete(name);
+      else next.add(name);
+      return next;
+    });
+  }, []);
+
+  /** Group panels into sections. Panels without a section field belong to the
+   *  section started by the most recent panel that has one. Leading panels
+   *  without any section go into a null group (rendered without a header). */
+  const panelSections = useMemo(() => {
+    if (!activeDashboard) return [];
+    const sections: { name: string | null; panels: { panel: DashboardPanel; globalIndex: number }[] }[] = [];
+    let current: typeof sections[0] = { name: null, panels: [] };
+    sections.push(current);
+    activeDashboard.panels.forEach((panel, i) => {
+      if (panel.section) {
+        current = { name: panel.section, panels: [] };
+        sections.push(current);
+      }
+      current.panels.push({ panel, globalIndex: i });
+    });
+    return sections.filter(s => s.panels.length > 0);
+  }, [activeDashboard]);
+
+  const hasSections = panelSections.some(s => s.name !== null);
+
   // ─── List view ───
   if (view.mode === 'list') {
     return (
@@ -1165,7 +1274,15 @@ export const DashboardViewer: React.FC<{ initialDashboardId?: string }> = ({ ini
         <div style={{ display: 'flex', alignItems: 'center', gap: 12, minWidth: 0, flex: 1 }}>
           <button onClick={() => setView({ mode: 'list' })} style={{ ...iconBtnStyle, fontSize: 16 }} title="Back to list">←</button>
           <div style={{ minWidth: 0 }}>
-            <div style={{ fontSize: 14, fontWeight: 600, color: 'var(--text-primary)' }}>{activeDashboard.title}</div>
+            <div style={{ fontSize: 14, fontWeight: 600, color: 'var(--text-primary)', display: 'flex', alignItems: 'center', gap: 8 }}>
+              {activeDashboard.title}
+              {activeDashboard.source && (
+                <a href={activeDashboard.source} target="_blank" rel="noopener noreferrer"
+                  style={{ fontSize: 10, fontWeight: 400, color: 'var(--accent-primary, #6366f1)', textDecoration: 'none', whiteSpace: 'nowrap' }}>
+                  {sourceLabel(activeDashboard.source)}
+                </a>
+              )}
+            </div>
             {activeDashboard.description && <div style={{ fontSize: 11, color: 'var(--text-muted)', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{activeDashboard.description}</div>}
           </div>
         </div>
@@ -1191,6 +1308,19 @@ export const DashboardViewer: React.FC<{ initialDashboardId?: string }> = ({ ini
           >
             Correlate <span style={{ fontSize: 8, padding: '1px 4px', borderRadius: 3, background: 'rgba(234, 179, 8, 0.2)', color: '#eab308', border: '1px solid rgba(234, 179, 8, 0.3)', verticalAlign: 'super', marginLeft: 2 }}>beta</span>
           </button>
+          {hasSections && (
+            <button
+              onClick={() => {
+                const allNames = panelSections.filter(s => s.name !== null).map(s => s.name!);
+                const allCollapsed = allNames.every(n => collapsedSections.has(n));
+                setCollapsedSections(allCollapsed ? new Set() : new Set(allNames));
+              }}
+              style={secondaryBtnStyle}
+              title={collapsedSections.size > 0 ? 'Expand all sections' : 'Collapse all sections'}
+            >
+              {collapsedSections.size > 0 ? 'Expand All' : 'Collapse All'}
+            </button>
+          )}
           <button onClick={() => handleExport(activeDashboard)} style={secondaryBtnStyle} title="Copy JSON to clipboard">Export</button>
           <button onClick={() => handleClone(activeDashboard)} style={secondaryBtnStyle}>Clone</button>
           <button onClick={() => setView({ mode: 'edit', dashboard: activeDashboard })} style={secondaryBtnStyle}>Edit</button>
@@ -1222,32 +1352,68 @@ export const DashboardViewer: React.FC<{ initialDashboardId?: string }> = ({ ini
             />
           </div>
         )}
-        <div style={{
-          display: 'grid',
-          gridTemplateColumns: `repeat(${activeDashboard.columns}, 1fr)`,
-          gridAutoRows: '420px',
-          gap: 16,
-          position: 'relative', zIndex: 0,
-        }}>
-          {activeDashboard.panels.map((panel, i) => (
-            <DashboardPanelCard
-              key={`${panel.queryName}-${i}`}
-              panel={panel}
-              timeRangeOverride={timeRangeOverride}
-              dashboardId={activeDashboard.id}
-              isFullscreen={fullscreenPanelIndex === i}
-              onToggleFullscreen={() => setFullscreenPanelIndex(prev => prev === i ? null : i)}
-              isHidden={fullscreenPanelIndex !== null && fullscreenPanelIndex !== i}
-              hoveredTimestamp={correlationEnabled ? hoveredTimestamp : undefined}
-              onTimestampHover={correlationEnabled ? (ts: string | null) => { setHoveredTimestamp(ts); if (ts !== null) setHoveredPanelIndex(i); } : undefined}
-              onTimeSeriesData={correlationEnabled ? handlePanelData(i) : undefined}
-              correlationValues={correlationEnabled ? correlationValues : undefined}
-              isHoveredPanel={correlationEnabled ? hoveredPanelIndex === i : undefined}
-              filterParams={Object.keys(filterValues).length > 0 ? filterValues : undefined}
-              panelIndex={i}
-            />
-          ))}
-        </div>
+        {panelSections.map((section, sIdx) => {
+          const isCollapsed = section.name !== null && collapsedSections.has(section.name);
+          return (
+            <React.Fragment key={section.name ?? `__ungrouped_${sIdx}`}>
+              {/* Section header — only for named sections */}
+              {section.name && (
+                <button
+                  onClick={() => toggleSection(section.name!)}
+                  style={{
+                    display: 'flex', alignItems: 'center', gap: 8, width: '100%',
+                    padding: '10px 4px', marginTop: sIdx > 0 ? 12 : 0, marginBottom: isCollapsed ? 0 : 8,
+                    background: 'none', border: 'none', borderBottom: '1px solid var(--border-primary)',
+                    cursor: 'pointer', textAlign: 'left',
+                  }}
+                >
+                  <span style={{
+                    fontSize: 12, color: 'var(--text-muted)',
+                    transform: isCollapsed ? 'rotate(-90deg)' : 'rotate(0deg)',
+                    transition: 'transform 0.15s ease',
+                    display: 'inline-block',
+                  }}>▼</span>
+                  <span style={{ fontSize: 13, fontWeight: 600, color: 'var(--text-secondary)', letterSpacing: '0.02em' }}>
+                    {section.name}
+                  </span>
+                  <span style={{ fontSize: 11, color: 'var(--text-muted)' }}>
+                    ({section.panels.length})
+                  </span>
+                </button>
+              )}
+              {/* Panel grid — hidden when collapsed */}
+              {!isCollapsed && (
+                <div style={{
+                  display: 'grid',
+                  gridTemplateColumns: `repeat(${activeDashboard.columns}, 1fr)`,
+                  gridAutoRows: '420px',
+                  gap: 16,
+                  position: 'relative', zIndex: 0,
+                  marginBottom: hasSections ? 8 : 0,
+                }}>
+                  {section.panels.map(({ panel, globalIndex: i }) => (
+                    <DashboardPanelCard
+                      key={`${panel.queryName}-${i}`}
+                      panel={panel}
+                      timeRangeOverride={timeRangeOverride}
+                      dashboardId={activeDashboard.id}
+                      isFullscreen={fullscreenPanelIndex === i}
+                      onToggleFullscreen={() => setFullscreenPanelIndex(prev => prev === i ? null : i)}
+                      isHidden={fullscreenPanelIndex !== null && fullscreenPanelIndex !== i}
+                      hoveredTimestamp={correlationEnabled ? hoveredTimestamp : undefined}
+                      onTimestampHover={correlationEnabled ? (ts: string | null) => { setHoveredTimestamp(ts); if (ts !== null) setHoveredPanelIndex(i); } : undefined}
+                      onTimeSeriesData={correlationEnabled ? handlePanelData(i) : undefined}
+                      correlationValues={correlationEnabled ? correlationValues : undefined}
+                      isHoveredPanel={correlationEnabled ? hoveredPanelIndex === i : undefined}
+                      filterParams={Object.keys(filterValues).length > 0 ? filterValues : undefined}
+                      panelIndex={i}
+                    />
+                  ))}
+                </div>
+              )}
+            </React.Fragment>
+          );
+        })}
       </div>
     </div>
   );

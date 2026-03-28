@@ -8,7 +8,7 @@
 const queries: string[] = [
   `-- @meta: title='Active Mutations' group='Mutations' description='Currently running mutations — command, parts remaining, and failure info'
 -- @rag: column=parts_to_do green<5 amber<50
--- Source: https://clickhouse.com/docs/operations/system-tables/mutations
+-- @source: https://clickhouse.com/docs/operations/system-tables/mutations
 SELECT
     database,
     table,
@@ -25,7 +25,7 @@ WHERE NOT is_done
 ORDER BY create_time ASC`,
 
   `-- @meta: title='Failed / Stuck Mutations' group='Mutations' description='Mutations with failures or that were killed — needs manual investigation'
--- Source: https://clickhouse.com/docs/operations/system-tables/mutations
+-- @source: https://clickhouse.com/docs/operations/system-tables/mutations
 SELECT
     database,
     table,
@@ -42,7 +42,7 @@ ORDER BY latest_fail_time DESC
 LIMIT 50`,
 
   `-- @meta: title='Recent Completed Mutations' group='Mutations' description='Recently finished mutations — useful to verify ALTERs landed'
--- Source: https://clickhouse.com/docs/operations/system-tables/mutations
+-- @source: https://clickhouse.com/docs/operations/system-tables/mutations
 SELECT
     database,
     table,

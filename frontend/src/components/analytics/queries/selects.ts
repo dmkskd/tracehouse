@@ -1,8 +1,8 @@
-/** SELECT monitoring queries — expensive queries, duration trends, user breakdown. */
+/** Select monitoring queries — expensive queries, duration trends, user breakdown. */
 
 const queries: string[] = [
-  `-- @meta: title='Most Expensive SELECTs' group='Selects' interval='1 DAY' description='Top 20 slowest SELECT queries in the last day'
--- Source: https://clickhouse.com/blog/monitoring-troubleshooting-select-queries-clickhouse
+  `-- @meta: title='Most Expensive Selects' group='Selects' interval='1 DAY' description='Top 20 slowest SELECT queries in the last day'
+-- @source: https://clickhouse.com/blog/monitoring-troubleshooting-select-queries-clickhouse
 SELECT
     type,
     query_start_time,
@@ -21,8 +21,8 @@ WHERE type != 'QueryStart'
 ORDER BY query_duration_ms DESC
 LIMIT 20`,
 
-  `-- @meta: title='Avg SELECT Duration by Table' group='Selects' interval='1 DAY' description='Average query duration and request count per table'
--- Source: https://clickhouse.com/blog/monitoring-troubleshooting-select-queries-clickhouse
+  `-- @meta: title='Avg Select Duration by Table' group='Selects' interval='1 DAY' description='Average query duration and request count per table'
+-- @source: https://clickhouse.com/blog/monitoring-troubleshooting-select-queries-clickhouse
 SELECT
     arrayJoin(tables) AS table,
     count() AS query_count,
@@ -36,9 +36,9 @@ GROUP BY table
 ORDER BY avg_duration_ms DESC
 LIMIT 20`,
 
-  `-- @meta: title='SELECT Duration Trend (hourly)' group='Selects' interval='2 DAY' description='Hourly average and p95 SELECT duration over the last 2 days'
+  `-- @meta: title='Select Duration Trend (hourly)' group='Selects' interval='2 DAY' description='Hourly average and p95 SELECT duration over the last 2 days'
 -- @chart: type=grouped_line group_by=hour value=avg_duration_ms,p95_duration_ms unit=ms style=2d
--- Source: https://clickhouse.com/blog/monitoring-troubleshooting-select-queries-clickhouse
+-- @source: https://clickhouse.com/blog/monitoring-troubleshooting-select-queries-clickhouse
 SELECT
     toStartOfHour(event_time) AS hour,
     count() AS query_count,
@@ -53,7 +53,7 @@ ORDER BY hour ASC`,
 
   `-- @meta: title='Queries by User' group='Selects' interval='1 DAY' description='Number of SELECT queries per user in the last day'
 -- @chart: type=pie group_by=user value=query_count style=3d
--- Source: https://clickhouse.com/blog/monitoring-troubleshooting-select-queries-clickhouse
+-- @source: https://clickhouse.com/blog/monitoring-troubleshooting-select-queries-clickhouse
 SELECT
     user,
     count() AS query_count,
@@ -66,9 +66,9 @@ WHERE type = 'QueryFinish'
 GROUP BY user
 ORDER BY query_count DESC`,
 
-  `-- @meta: title='Recent SELECTs' group='Selects' interval='1 HOUR' description='Most recent SELECT queries with duration — useful for picking query IDs to compare'
+  `-- @meta: title='Recent Selects' group='Selects' interval='1 HOUR' description='Most recent SELECT queries with duration — useful for picking query IDs to compare'
 -- @link: on=query_id into='Query Detail by ID'
--- Source: https://clickhouse.com/blog/monitoring-troubleshooting-select-queries-clickhouse
+-- @source: https://clickhouse.com/blog/monitoring-troubleshooting-select-queries-clickhouse
 SELECT
     query_id,
     substring(query, 1, 120) AS query_preview,
@@ -84,7 +84,7 @@ LIMIT 20`,
 
   `-- @meta: title='Queries by Client' group='Selects' interval='1 DAY' description='SELECT query count per client application'
 -- @chart: type=pie group_by=client_name value=query_count style=3d
--- Source: https://clickhouse.com/blog/monitoring-troubleshooting-select-queries-clickhouse
+-- @source: https://clickhouse.com/blog/monitoring-troubleshooting-select-queries-clickhouse
 SELECT
     if(empty(client_name), 'unknown/http', client_name) AS client_name,
     count() AS query_count,
@@ -98,7 +98,7 @@ ORDER BY query_count DESC`,
 
   `-- @meta: title='Read Rows Distribution' group='Selects' interval='1 DAY' description='Distribution of rows read per SELECT query'
 -- @chart: type=pie group_by=bucket value=query_count style=3d
--- Source: https://clickhouse.com/blog/monitoring-troubleshooting-select-queries-clickhouse
+-- @source: https://clickhouse.com/blog/monitoring-troubleshooting-select-queries-clickhouse
 SELECT
     multiIf(
       read_rows < 1000, '< 1K',

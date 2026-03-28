@@ -2,7 +2,7 @@
 
 const queries: string[] = [
   `-- @meta: title='Top Inserts by Memory' group='Resources' description='Most memory-intensive INSERT operations'
--- Source: https://clickhouse.com/blog/monitoring-troubleshooting-insert-queries-clickhouse
+-- @source: https://clickhouse.com/blog/monitoring-troubleshooting-insert-queries-clickhouse
 SELECT
     event_time,
     formatReadableSize(memory_usage) AS memory,
@@ -17,7 +17,7 @@ ORDER BY memory_usage DESC
 LIMIT 15`,
 
   `-- @meta: title='Failed Queries' group='Resources' interval='1 DAY' description='Queries that produced exceptions in the last day'
--- Source: https://clickhouse.com/blog/monitoring-troubleshooting-select-queries-clickhouse
+-- @source: https://clickhouse.com/blog/monitoring-troubleshooting-select-queries-clickhouse
 SELECT
     type,
     event_time,
@@ -33,7 +33,7 @@ ORDER BY event_time DESC
 LIMIT 30`,
 
   `-- @meta: title='TOO_MANY_SIMULTANEOUS_QUERIES' group='Resources' interval='7 DAY' description='Detect if the server is hitting the simultaneous query limit'
--- Source: https://clickhouse.com/blog/monitoring-troubleshooting-select-queries-clickhouse
+-- @source: https://clickhouse.com/blog/monitoring-troubleshooting-select-queries-clickhouse
 SELECT
     event_time,
     query_id,

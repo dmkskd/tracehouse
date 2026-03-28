@@ -13,6 +13,8 @@ import replication from './replication';
 import mutations from './mutations';
 import disks from './disks';
 import mergeAnalytics from './mergeAnalytics';
+import cloudMonitoring from './cloudMonitoring';
+import altinityOperator from './altinityOperator';
 
 export const RAW_QUERIES: string[] = [
   ...overview,
@@ -28,4 +30,6 @@ export const RAW_QUERIES: string[] = [
   ...mutations,
   ...disks,
   ...mergeAnalytics,
+  ...cloudMonitoring,
+  ...altinityOperator,
 ];

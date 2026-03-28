@@ -12,7 +12,7 @@ const queries: string[] = [
 -- @rag: column=is_readonly green=0
 -- @rag: column=is_session_expired green=0
 -- @rag: column=absolute_delay green<10 amber<300
--- Source: https://clickhouse.com/docs/operations/system-tables/replicas
+-- @source: https://clickhouse.com/docs/operations/system-tables/replicas
 SELECT
     database,
     table,
@@ -33,8 +33,8 @@ ORDER BY absolute_delay DESC`,
 
   `-- @meta: title='Replication Queue Summary' group='Replication' description='Aggregated replication queue by table and operation type — spot backlogs and stuck tasks'
 -- @rag: column=max_tries green<3 amber<10
--- Source: https://clickhouse.com/docs/operations/system-tables/replication_queue
--- Source: https://kb.altinity.com/altinity-kb-setup-and-maintenance/altinity-kb-replication-queue/
+-- @source: https://clickhouse.com/docs/operations/system-tables/replication_queue
+-- @source: https://kb.altinity.com/altinity-kb-setup-and-maintenance/altinity-kb-replication-queue/
 SELECT
     database,
     table,
@@ -50,8 +50,8 @@ GROUP BY database, table, type
 ORDER BY queue_entries DESC`,
 
   `-- @meta: title='Replication Queue Errors' group='Replication' description='Replication tasks with exceptions — stuck fetches, failed merges, etc.'
--- Source: https://clickhouse.com/docs/operations/system-tables/replication_queue
--- Source: https://kb.altinity.com/altinity-kb-setup-and-maintenance/altinity-kb-replication-queue/
+-- @source: https://clickhouse.com/docs/operations/system-tables/replication_queue
+-- @source: https://kb.altinity.com/altinity-kb-setup-and-maintenance/altinity-kb-replication-queue/
 SELECT
     database,
     table,
@@ -69,7 +69,7 @@ LIMIT 50`,
 
   `-- @meta: title='Replication Lag Trend' group='Replication' interval='1 HOUR' description='Maximum absolute_delay across all replicated tables over time — early warning for growing lag'
 -- @chart: type=area group_by=t value=max_delay style=2d color=#ef4444
--- Source: https://clickhouse.com/docs/operations/system-tables/replicas
+-- @source: https://clickhouse.com/docs/operations/system-tables/replicas
 SELECT
     toStartOfInterval(event_time, INTERVAL 1 MINUTE) AS t,
     max(value) AS max_delay
@@ -81,7 +81,7 @@ ORDER BY t ASC`,
 
   `-- @meta: title='Replication Queue Size Trend' group='Replication' interval='1 HOUR' description='Total replication queue depth over time — growing queues signal replication falling behind'
 -- @chart: type=area group_by=t value=queue_size style=2d color=#f59e0b
--- Source: https://clickhouse.com/docs/operations/system-tables/replicas
+-- @source: https://clickhouse.com/docs/operations/system-tables/replicas
 SELECT
     toStartOfInterval(event_time, INTERVAL 1 MINUTE) AS t,
     max(value) AS queue_size
@@ -93,7 +93,7 @@ ORDER BY t ASC`,
 
   `-- @meta: title='ZooKeeper Operations' group='Replication' interval='1 HOUR' description='ZooKeeper request rate over time — transactions, watches, bytes sent/received'
 -- @chart: type=area group_by=t value=value series=op style=2d
--- Source: https://clickhouse.com/docs/operations/monitoring
+-- @source: https://clickhouse.com/docs/operations/monitoring
 SELECT
     toStartOfInterval(event_time, INTERVAL 1 MINUTE) AS t,
     op,
@@ -105,7 +105,7 @@ FROM (
     WHERE event_time > {{time_range}}
       UNION ALL
     SELECT event_time, 'Watches' AS op,
-        ProfileEvent_ZooKeeperWatch AS val
+        ProfileEvent_ZooKeeperWatchResponse AS val
     FROM {{cluster_aware:system.metric_log}}
     WHERE event_time > {{time_range}}
       UNION ALL
@@ -124,7 +124,7 @@ ORDER BY t ASC, op`,
 
   `-- @meta: title='ZooKeeper Wait Time' group='Replication' interval='1 HOUR' description='Average ZooKeeper wait time per minute — high values indicate Keeper contention or network issues'
 -- @chart: type=area group_by=t value=avg_wait_ms style=2d color=#8b5cf6
--- Source: https://clickhouse.com/docs/operations/monitoring
+-- @source: https://clickhouse.com/docs/operations/monitoring
 SELECT
     toStartOfInterval(event_time, INTERVAL 1 MINUTE) AS t,
     avg(ProfileEvent_ZooKeeperWaitMicroseconds) / 1000 AS avg_wait_ms
@@ -135,7 +135,7 @@ ORDER BY t ASC`,
 
   `-- @meta: title='ZooKeeper Sessions & Exceptions' group='Replication' interval='1 HOUR' description='Active ZooKeeper sessions and hardware exception rate over time'
 -- @chart: type=grouped_line group_by=t value=sessions,hw_exceptions style=2d
--- Source: https://clickhouse.com/docs/operations/monitoring
+-- @source: https://clickhouse.com/docs/operations/monitoring
 SELECT
     toStartOfInterval(event_time, INTERVAL 1 MINUTE) AS t,
     avg(CurrentMetric_ZooKeeperSession) AS sessions,

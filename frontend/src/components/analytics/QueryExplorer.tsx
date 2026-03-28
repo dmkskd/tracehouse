@@ -41,6 +41,7 @@ import { TimeRangePicker } from './TimeRangePicker';
 import { SqlEditor } from './editor/SqlEditor';
 import { useClusterStore } from '../../stores/clusterStore';
 import { ClusterService, type ChFunction } from '@tracehouse/core';
+import { toGrafanaPanel, type GrafanaExportInput } from '@tracehouse/core/services/grafana-export';
 
 /* ═══════════════════════════════════════════════════════════════════════════
    SQL Syntax Highlighting — imported from utils/sqlHighlighter
@@ -89,12 +90,19 @@ import type { AnalyticsUrlState } from '../../hooks/useUrlState';
    Main Component
    ═══════════════════════════════════════════════════════════════════════════ */
 
+export interface GrafanaExportPayload {
+  panel: ReturnType<typeof toGrafanaPanel>;
+  title: string;
+}
+
 interface QueryExplorerProps {
   urlState?: AnalyticsUrlState;
   onUrlStateChange?: (partial: Partial<AnalyticsUrlState>) => void;
+  /** When provided, shows an "Export to Grafana" button that calls this with the panel JSON. */
+  onExportToGrafana?: (payload: GrafanaExportPayload) => void;
 }
 
-export const QueryExplorer: React.FC<QueryExplorerProps> = ({ urlState, onUrlStateChange }) => {
+export const QueryExplorer: React.FC<QueryExplorerProps> = ({ urlState, onUrlStateChange, onExportToGrafana }) => {
   const services = useClickHouseServices();
   const { clusterName } = useClusterStore();
   const [customQueries, setCustomQueries] = useState<Query[]>(() => loadCustomQueries());
@@ -119,6 +127,7 @@ export const QueryExplorer: React.FC<QueryExplorerProps> = ({ urlState, onUrlSta
   const [editorHeight, setEditorHeight] = useState(240);
   const [querySearch, setQuerySearch] = useState('');
   const [copied, setCopied] = useState(false);
+  const [grafanaCopied, setGrafanaCopied] = useState(false);
   const [sortConfig, setSortConfig] = useState<{ column: string; direction: 'asc' | 'desc' } | null>(null);
   const [chartConfig, setChartConfig] = useState<ChartConfig>({
     type: (urlState?.chart as ChartType) ?? 'bar',
@@ -500,6 +509,63 @@ export const QueryExplorer: React.FC<QueryExplorerProps> = ({ urlState, onUrlSta
     setTimeout(() => setCopied(false), 2000);
   }, [result]);
 
+  const isGrafana = typeof window !== 'undefined' && 'grafanaBootData' in window;
+
+  const exportToGrafana = useCallback(async () => {
+    const ragRules = parseRagRules(sql);
+    const title = activeQueryName ?? 'Tracehouse Query';
+    const input: GrafanaExportInput = {
+      sql: resolvedSql,
+      title,
+      chart: viewMode === 'chart' ? {
+        type: chartConfig.type,
+        groupByColumn: chartConfig.groupByColumn,
+        valueColumn: chartConfig.valueColumn,
+        valueColumns: chartConfig.valueColumns,
+        seriesColumn: chartConfig.seriesColumn,
+        orientation: chartConfig.orientation,
+        unit: chartConfig.unit,
+      } : undefined,
+      rag: ragRules.length > 0 ? ragRules : undefined,
+    };
+    const panel = toGrafanaPanel(input);
+
+    if (onExportToGrafana) {
+      onExportToGrafana({ panel, title });
+    } else {
+      // Inside Grafana: create a new dashboard via the API
+      try {
+        const resp = await fetch('/api/dashboards/db', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            dashboard: {
+              title: `Tracehouse: ${title}`,
+              tags: ['tracehouse', 'clickhouse'],
+              timezone: 'browser',
+              panels: [panel],
+              schemaVersion: 39,
+            },
+            overwrite: false,
+          }),
+        });
+        if (!resp.ok) {
+          const body = await resp.json().catch(() => ({}));
+          throw new Error(body.message || `HTTP ${resp.status}`);
+        }
+        const { url } = await resp.json();
+        // Open the new dashboard in a new tab
+        window.open(url, '_blank');
+      } catch (e) {
+        console.error('[Grafana export]', e);
+        // Fallback: copy panel JSON to clipboard
+        await navigator.clipboard.writeText(JSON.stringify(panel, null, 2));
+      }
+    }
+    setGrafanaCopied(true);
+    setTimeout(() => setGrafanaCopied(false), 2500);
+  }, [sql, resolvedSql, activeQueryName, viewMode, chartConfig, onExportToGrafana]);
+
   const toggleFullscreen = useCallback(() => {
     setIsFullscreen(prev => {
       const next = !prev;
@@ -662,6 +728,11 @@ export const QueryExplorer: React.FC<QueryExplorerProps> = ({ urlState, onUrlSta
                 <button onClick={copyResults} style={{ background: 'none', border: 'none', cursor: 'pointer', color: 'var(--text-muted)', fontSize: 14, padding: '2px 6px', borderRadius: 4 }} title="Copy as TSV">
                   {copied ? '✓' : '⧉'}
                 </button>
+                {(onExportToGrafana || isGrafana) && (
+                  <button onClick={exportToGrafana} style={{ background: 'none', border: 'none', cursor: 'pointer', color: grafanaCopied ? 'var(--accent-green)' : 'var(--text-muted)', fontSize: 10, fontWeight: 500, padding: '2px 8px', borderRadius: 4, transition: 'color 0.15s ease' }} title="Create as Grafana dashboard">
+                    {grafanaCopied ? '✓ Created in Grafana' : 'Grafana ⤴'}
+                  </button>
+                )}
               </div>
               <div className="tabs" style={{ padding: 2 }}>
                 {(['table', 'chart'] as const).map(m => (

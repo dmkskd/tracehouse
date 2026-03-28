@@ -78,7 +78,7 @@ export interface ChartDirective {
 
 /* ─── constants ─── */
 
-export type QueryGroup = 'Overview' | 'Inserts' | 'Selects' | 'Parts' | 'Merges' | 'Resources' | 'Advanced Dashboard' | 'Self-Monitoring' | 'Custom';
+export type QueryGroup = 'Overview' | 'Inserts' | 'Selects' | 'Parts' | 'Merges' | 'Resources' | 'Advanced Dashboard' | 'Self-Monitoring' | 'Grafana Imports' | 'Custom';
 
 export const QUERY_GROUPS: Record<QueryGroup, { color: string; builtin: boolean }> = {
   'Overview':           { color: '#58a6ff', builtin: true },
@@ -89,6 +89,7 @@ export const QUERY_GROUPS: Record<QueryGroup, { color: string; builtin: boolean 
   'Merges':             { color: '#e3b341', builtin: true },
   'Resources':          { color: '#f85149', builtin: true },
   'Self-Monitoring':    { color: '#f0c674', builtin: true },
+  'Grafana Imports':   { color: '#38bdf8', builtin: true },
   'Custom':             { color: '#79c0ff', builtin: false },
 };
 
@@ -245,7 +246,7 @@ export function parseDirectives(sql: string): ParsedDirectives | null {
     }
   }
 
-  const sourceMatch = sql.match(/--\s*Source:\s*(https?:\/\/\S+)/i);
+  const sourceMatch = sql.match(/--\s*@source:\s*(https?:\/\/\S+)/i);
   if (sourceMatch) result.source = sourceMatch[1];
 
   return result;
