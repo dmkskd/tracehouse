@@ -364,7 +364,7 @@ def run_batched_insert(
                 partition_key, batch, batch_size, current_batch,
                 rows_per_partition, partition_offset,
             )
-            log.info("[%s] batch %d/%d (%d rows) — sending to server...", short_name, batch + 1, batches, current_batch)
+            log.debug("[%s] batch %d/%d (%d rows) — sending to server...", short_name, batch + 1, batches, current_batch)
             t0 = time.monotonic()
             try:
                 client.execute(sql)
@@ -375,7 +375,7 @@ def run_batched_insert(
                 raise
             elapsed = time.monotonic() - t0
             total_done += current_batch
-            log.info("[%s] batch %d/%d done in %.1fs", short_name, batch + 1, batches, elapsed)
+            log.debug("[%s] batch %d/%d done in %.1fs", short_name, batch + 1, batches, elapsed)
 
             if tracker:
                 tracker.update(short_name, total_done, partition=partition_label)
