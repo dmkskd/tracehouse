@@ -9,8 +9,7 @@ import { GenericContainer, Network, Wait, type StartedNetwork, type StartedTestC
 import { createClient, type ClickHouseClient } from '@clickhouse/client';
 import type { IClickHouseAdapter } from '../../../adapters/types.js';
 import { AdapterError } from '../../../adapters/types.js';
-
-const CH_IMAGE = 'clickhouse/clickhouse-server:26.1-alpine';
+import { CH_IMAGE } from './constants.js';
 
 const CH_USER = 'default';
 const CH_PASSWORD = 'test';

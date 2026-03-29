@@ -16,8 +16,7 @@ import { createClient, type ClickHouseClient } from '@clickhouse/client';
 import type { IClickHouseAdapter } from '../../../adapters/types.js';
 import { AdapterError } from '../../../adapters/types.js';
 import { ClusterAwareAdapter } from '../../../adapters/cluster-adapter.js';
-
-const CH_IMAGE = 'clickhouse/clickhouse-server:26.1-alpine';
+import { CH_IMAGE } from './constants.js';
 
 /** Thin adapter wrapping @clickhouse/client for integration tests. */
 export class TestAdapter implements IClickHouseAdapter {

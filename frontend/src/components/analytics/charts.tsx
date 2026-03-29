@@ -359,6 +359,18 @@ const crosshairLineProps = {
   strokeWidth: 1,
 };
 
+/** Custom recharts cursor that draws both vertical and horizontal crosshair lines. */
+const CrosshairCursor: React.FC<any> = ({ points, width, height, top, left }) => {
+  if (!points || !points.length) return null;
+  const { x, y } = points[0];
+  return (
+    <g>
+      <line x1={x} y1={top} x2={x} y2={top + height} {...crosshairLineProps} />
+      <line x1={left} y1={y} x2={left + width} y2={y} {...crosshairLineProps} />
+    </g>
+  );
+};
+
 /** Helper: check if a chart type participates in cross-panel correlation. */
 export function isTimeSeriesChartType(type: ChartType): boolean {
   return type === 'line' || type === 'area' || type === 'grouped_line';
@@ -584,7 +596,7 @@ export const LineChart2D: React.FC<{ data: ChartDataPoint[]; fullHeight?: boolea
           tickFormatter={compactFormatter(unit)}
           width={50}
         />
-        <Tooltip content={<AnalyticsTooltip drillIntoQuery={drillIntoQuery} correlationValues={correlationValues} currentPanelName={currentPanelName} isHoveredPanel={isHoveredPanel} />} offset={20} wrapperStyle={{ zIndex: 1000, pointerEvents: 'none' }} />
+        <Tooltip content={<AnalyticsTooltip drillIntoQuery={drillIntoQuery} correlationValues={correlationValues} currentPanelName={currentPanelName} isHoveredPanel={isHoveredPanel} />} offset={20} wrapperStyle={{ zIndex: 1000, pointerEvents: 'none' }} cursor={<CrosshairCursor />} />
         {hoveredTimestamp && <ReferenceLine x={hoveredTimestamp} {...crosshairLineProps} />}
         <Line
           type="monotone"
@@ -700,7 +712,7 @@ export const AreaChart2D: React.FC<{ data: ChartDataPoint[]; fullHeight?: boolea
           tickFormatter={compactFormatter(unit)}
           width={50}
         />
-        <Tooltip content={<AnalyticsTooltip drillIntoQuery={drillIntoQuery} correlationValues={correlationValues} currentPanelName={currentPanelName} isHoveredPanel={isHoveredPanel} />} offset={20} wrapperStyle={{ zIndex: 1000, pointerEvents: 'none' }} />
+        <Tooltip content={<AnalyticsTooltip drillIntoQuery={drillIntoQuery} correlationValues={correlationValues} currentPanelName={currentPanelName} isHoveredPanel={isHoveredPanel} />} offset={20} wrapperStyle={{ zIndex: 1000, pointerEvents: 'none' }} cursor={<CrosshairCursor />} />
         {hoveredTimestamp && <ReferenceLine x={hoveredTimestamp} {...crosshairLineProps} />}
         <Area
           type="monotone"
@@ -758,7 +770,7 @@ export const DualAxisAreaChart2D: React.FC<{ data: GroupedChartData[]; valueColu
           tickFormatter={compactFormatter()} width={50} />
         <YAxis yAxisId="right" orientation="right" tick={axisTickStyle} tickLine={axisLineStyle} axisLine={axisLineStyle}
           tickFormatter={compactFormatter()} width={55} />
-        <Tooltip content={<AnalyticsTooltip drillIntoQuery={drillIntoQuery} correlationValues={correlationValues} currentPanelName={currentPanelName} isHoveredPanel={isHoveredPanel} />} offset={20} wrapperStyle={{ zIndex: 1000, pointerEvents: 'none' }} />
+        <Tooltip content={<AnalyticsTooltip drillIntoQuery={drillIntoQuery} correlationValues={correlationValues} currentPanelName={currentPanelName} isHoveredPanel={isHoveredPanel} />} offset={20} wrapperStyle={{ zIndex: 1000, pointerEvents: 'none' }} cursor={<CrosshairCursor />} />
         {hoveredTimestamp && <ReferenceLine x={hoveredTimestamp} yAxisId="left" {...crosshairLineProps} />}
         <Legend iconType="line" iconSize={14} formatter={(value: string) => (
           <span style={{ fontSize: 11, color: 'var(--text-secondary)' }}>
@@ -927,7 +939,7 @@ export const GroupedLineChart2D: React.FC<{ data: GroupedChartData[]; onDrillDow
           interval="preserveStartEnd"
           tickFormatter={formatXTick} />
         <YAxis tick={axisTickStyle} tickLine={axisLineStyle} axisLine={axisLineStyle} tickFormatter={compactFormatter(unit)} width={50} />
-        <Tooltip content={<AnalyticsTooltip drillIntoQuery={drillIntoQuery} correlationValues={correlationValues} currentPanelName={currentPanelName} isHoveredPanel={isHoveredPanel} />} offset={20} wrapperStyle={{ zIndex: 1000, pointerEvents: 'none' }} />
+        <Tooltip content={<AnalyticsTooltip drillIntoQuery={drillIntoQuery} correlationValues={correlationValues} currentPanelName={currentPanelName} isHoveredPanel={isHoveredPanel} />} offset={20} wrapperStyle={{ zIndex: 1000, pointerEvents: 'none' }} cursor={<CrosshairCursor />} />
         {hoveredTimestamp && <ReferenceLine x={hoveredTimestamp} {...crosshairLineProps} />}
         <Legend iconType="line" iconSize={14}
           onMouseEnter={(e) => setHoveredLine(String(e.dataKey))}

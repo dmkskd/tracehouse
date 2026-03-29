@@ -18,10 +18,9 @@ import { createClient, type ClickHouseClient } from '@clickhouse/client';
 import { execSync } from 'node:child_process';
 import { resolve } from 'node:path';
 import { ClusterTestAdapter } from './cluster-container.js';
+import { CH_IMAGE } from './constants.js';
 
 const SETUP_SCRIPT = resolve(__dirname, '../../../../../../infra/scripts/setup_sampling.sh');
-
-const CH_IMAGE = 'clickhouse/clickhouse-server:26.1-alpine';
 const CH_USER = 'default';
 const CH_PASSWORD = 'test';
 

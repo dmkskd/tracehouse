@@ -13,8 +13,7 @@
 import { GenericContainer, Network, Wait, type StartedNetwork, type StartedTestContainer } from 'testcontainers';
 import { createClient, type ClickHouseClient } from '@clickhouse/client';
 import { ClusterTestAdapter } from './cluster-container.js';
-
-const CH_IMAGE = 'clickhouse/clickhouse-server:26.1-alpine';
+import { CH_IMAGE } from './constants.js';
 
 const CH_USER = 'default';
 const CH_PASSWORD = 'test';
