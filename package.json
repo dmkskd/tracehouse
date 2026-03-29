@@ -9,6 +9,9 @@
   "scripts": {
     "test": "npm run test --workspaces --if-present",
     "test:report": "npm run test --workspaces --if-present -- --reporter=verbose",
+    "test:html": "npm run test --workspaces --if-present",
+    "test:tag": "npm run test --workspaces --if-present -- --tags-filter",
+    "test:list-tags": "npm run test --workspaces --if-present -- --list-tags",
     "security:scan": "semgrep --config auto packages/ frontend/src/"
   },
   "overrides": {

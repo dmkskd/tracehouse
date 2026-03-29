@@ -3,6 +3,7 @@ import react from '@vitejs/plugin-react'
 import tailwindcss from '@tailwindcss/vite'
 import path from 'path'
 import fs from 'fs'
+import { tracehouseBuildDefines } from './vite.buildDefines'
 
 const reactPath = path.resolve(__dirname, '..', 'node_modules', 'react')
 const reactDomPath = path.resolve(__dirname, '..', 'node_modules', 'react-dom')
@@ -38,6 +39,7 @@ function moduleSizePlugin(): Plugin {
  * everything into a self-contained HTML that works from file://.
  */
 export default defineConfig({
+  define: tracehouseBuildDefines(),
   plugins: [react(), tailwindcss(), moduleSizePlugin()],
   base: './',
   resolve: {

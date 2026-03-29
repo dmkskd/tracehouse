@@ -2,6 +2,7 @@ import { defineConfig } from 'vite'
 import react from '@vitejs/plugin-react'
 import tailwindcss from '@tailwindcss/vite'
 import path from 'path'
+import { tracehouseBuildDefines } from './vite.buildDefines'
 
 // Resolve the single hoisted React copy so all deps (including react-router-dom,
 // @react-three/*, etc.) share the exact same instance at runtime.
@@ -11,6 +12,7 @@ const reactDomPath = path.resolve(__dirname, '..', 'node_modules', 'react-dom')
 
 // https://vite.dev/config/
 export default defineConfig({
+  define: tracehouseBuildDefines(),
   plugins: [react(), tailwindcss()],
   server: {
     port: 5173,
