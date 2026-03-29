@@ -17,6 +17,7 @@ export function AppConfig({ plugin }: AppConfigProps) {
     () => new Set(resolved.allowedRefreshRates)
   );
   const [defaultRate, setDefaultRate] = useState<number>(resolved.defaultRefreshRate);
+  const [cluster, setCluster] = useState<string>(resolved.cluster ?? '');
   const [saving, setSaving] = useState(false);
   const [saved, setSaved] = useState(false);
 
@@ -54,6 +55,7 @@ export function AppConfig({ plugin }: AppConfigProps) {
           .filter(o => allowedRates.has(o.seconds))
           .map(o => o.seconds),
         defaultRefreshRate: defaultRate,
+        cluster: cluster.trim() || undefined,
       };
 
       await getBackendSrv().post(`/api/plugins/${plugin.meta.id}/settings`, {
@@ -90,6 +92,40 @@ export function AppConfig({ plugin }: AppConfigProps) {
         Configure global settings that apply to all users of this plugin.
         These can be overridden per-user where applicable.
       </p>
+
+      {/* Cluster Section */}
+      <div style={{
+        background: 'var(--bg-secondary, rgba(255,255,255,0.04))',
+        border: '1px solid var(--border-primary, rgba(255,255,255,0.1))',
+        borderRadius: 8,
+        padding: 24,
+        marginBottom: 24,
+      }}>
+        <h3 style={{ color: 'var(--text-primary, white)', marginBottom: 4, fontSize: 16 }}>
+          Cluster Name
+        </h3>
+        <p style={{ color: 'var(--text-secondary, rgba(255,255,255,0.5))', fontSize: 13, marginBottom: 12 }}>
+          The ClickHouse cluster name used for <code>clusterAllReplicas()</code> queries.
+          Leave empty to auto-detect from <code>system.clusters</code>.
+        </p>
+        <input
+          type="text"
+          value={cluster}
+          onChange={e => setCluster(e.target.value)}
+          placeholder="e.g. default, tracehouse"
+          style={{
+            background: 'var(--bg-tertiary, #1a1a2e)',
+            color: 'var(--text-primary, white)',
+            border: '1px solid var(--border-primary, rgba(255,255,255,0.15))',
+            borderRadius: 6,
+            padding: '8px 12px',
+            fontSize: 14,
+            fontFamily: 'system-ui, sans-serif',
+            width: '100%',
+            maxWidth: 320,
+          }}
+        />
+      </div>
 
       {/* Refresh Rates Section */}
       <div style={{

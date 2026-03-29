@@ -21,6 +21,7 @@ import {
 import { useConnectionStore } from './stores/connectionStore';
 import { useMonitoringCapabilitiesStore } from '@frontend/stores/monitoringCapabilitiesStore';
 import { useClusterStore } from '@frontend/stores/clusterStore';
+import { usePluginConfig } from './PluginConfigContext';
 
 // Re-export for convenience
 export { useClickHouseServices };
@@ -38,6 +39,31 @@ interface ServiceContextValue {
 const ServiceContext = createContext<ServiceContextValue | null>(null);
 
 const STORAGE_KEY = 'tracehouse-datasource';
+const CLUSTER_STORAGE_KEY = 'tracehouse-cluster';
+
+function loadClusterOverride(datasourceUid: string): string | null {
+  try {
+    const stored = localStorage.getItem(CLUSTER_STORAGE_KEY);
+    if (stored) {
+      const map = JSON.parse(stored);
+      return map[datasourceUid] ?? null;
+    }
+  } catch { /* ignore */ }
+  return null;
+}
+
+function saveClusterOverride(datasourceUid: string, clusterName: string | null): void {
+  try {
+    const stored = localStorage.getItem(CLUSTER_STORAGE_KEY);
+    const map = stored ? JSON.parse(stored) : {};
+    if (clusterName) {
+      map[datasourceUid] = clusterName;
+    } else {
+      delete map[datasourceUid];
+    }
+    localStorage.setItem(CLUSTER_STORAGE_KEY, JSON.stringify(map));
+  } catch { /* ignore */ }
+}
 
 export function ServiceProvider({ children }: { children: React.ReactNode }) {
   const [datasourceUid, setDatasourceUidState] = useState<string | null>(() => {
@@ -161,6 +187,7 @@ export function ServiceProvider({ children }: { children: React.ReactNode }) {
   }, [clickHouseServices]);
 
   // Detect cluster topology when services change (same as standalone frontend)
+  const { cluster: preferredCluster } = usePluginConfig();
   useEffect(() => {
     const clusterStore = useClusterStore.getState();
     if (!clickHouseServices) {
@@ -169,15 +196,29 @@ export function ServiceProvider({ children }: { children: React.ReactNode }) {
     }
 
     let cancelled = false;
-    ClusterService.detect(clickHouseServices.adapter).then(info => {
+    ClusterService.detect(clickHouseServices.adapter, preferredCluster).then(info => {
       if (!cancelled) {
-        clusterStore.setCluster(info);
-        // Set cluster name on the wrapper so all queries get rewritten
-        services?.clusterAdapter.setClusterName(info.clusterName);
-        if (info.clusterName) {
-          console.log(`[ClusterDetect] Cluster '${info.clusterName}' detected (${info.replicaCount} replicas)`);
+        // Check if user has a saved override for this datasource
+        const userOverride = datasourceUid ? loadClusterOverride(datasourceUid) : null;
+        const hasOverride = userOverride && info.availableClusters.some(c => c.name === userOverride);
+        if (hasOverride) {
+          const match = info.availableClusters.find(c => c.name === userOverride)!;
+          clusterStore.setCluster({
+            ...info,
+            clusterName: match.name,
+            replicaCount: match.replicaCount,
+            shardCount: match.shardCount,
+          });
+          services?.clusterAdapter.setClusterName(match.name);
+          console.log(`[ClusterDetect] Using saved cluster override '${match.name}'`);
         } else {
-          console.log('[ClusterDetect] No cluster detected — single-node mode');
+          clusterStore.setCluster(info);
+          services?.clusterAdapter.setClusterName(info.clusterName);
+          if (info.clusterName) {
+            console.log(`[ClusterDetect] Cluster '${info.clusterName}' detected (${info.replicaCount} replicas)`);
+          } else {
+            console.log('[ClusterDetect] No cluster detected — single-node mode');
+          }
         }
       }
     }).catch(() => {
@@ -187,7 +228,21 @@ export function ServiceProvider({ children }: { children: React.ReactNode }) {
     });
 
     return () => { cancelled = true; };
-  }, [clickHouseServices, services]);
+  }, [clickHouseServices, services, preferredCluster, datasourceUid]);
+
+  // Sync ClusterAwareAdapter when user switches cluster via dropdown
+  useEffect(() => {
+    if (!services) return;
+    return useClusterStore.subscribe((state, prev) => {
+      if (state.clusterName !== prev.clusterName) {
+        services.clusterAdapter.setClusterName(state.clusterName);
+        // Persist user's choice per datasource
+        if (datasourceUid) {
+          saveClusterOverride(datasourceUid, state.clusterName);
+        }
+      }
+    });
+  }, [services, datasourceUid]);
 
   const value: ServiceContextValue = {
     services: clickHouseServices,

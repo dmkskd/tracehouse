@@ -26,16 +26,16 @@ export const buildConfig = {
     user: typeof __TH_DEFAULT_CH_USER__ !== 'undefined' ? __TH_DEFAULT_CH_USER__ : 'default',
     password: typeof __TH_DEFAULT_CH_PASSWORD__ !== 'undefined' ? __TH_DEFAULT_CH_PASSWORD__ : '',
     database: typeof __TH_DEFAULT_CH_DATABASE__ !== 'undefined' ? __TH_DEFAULT_CH_DATABASE__ : 'default',
-    secure: __TH_DEFAULT_CH_SECURE__,
-    cluster: __TH_DEFAULT_CH_CLUSTER__,
+    secure: typeof __TH_DEFAULT_CH_SECURE__ !== 'undefined' ? __TH_DEFAULT_CH_SECURE__ : false,
+    cluster: typeof __TH_DEFAULT_CH_CLUSTER__ !== 'undefined' ? __TH_DEFAULT_CH_CLUSTER__ : undefined,
   },
 
   /** Automatically connect on startup using the default connection */
-  autoConnect: __TH_AUTO_CONNECT__,
+  autoConnect: typeof __TH_AUTO_CONNECT__ !== 'undefined' ? __TH_AUTO_CONNECT__ : false,
 
   /** Proxy is co-located with the frontend (bundled mode) */
-  bundledProxy: __TH_BUNDLED_PROXY__,
+  bundledProxy: typeof __TH_BUNDLED_PROXY__ !== 'undefined' ? __TH_BUNDLED_PROXY__ : false,
 
   /** Show dashboard hover-preview in the analytics dashboard list */
-  dashboardPreview: __TH_DASHBOARD_PREVIEW__,
+  dashboardPreview: typeof __TH_DASHBOARD_PREVIEW__ !== 'undefined' ? __TH_DASHBOARD_PREVIEW__ : false,
 } as const;

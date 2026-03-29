@@ -4,3 +4,5 @@ apps:
   - type: tracehouse-app
     org_id: 1
     disabled: false
+    jsonData:
+      cluster: tracehouse

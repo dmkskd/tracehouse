@@ -3,6 +3,8 @@ import { AppRootProps } from '@grafana/data';
 import { config } from '@grafana/runtime';
 import { ServiceProvider, useServices } from './ServiceProvider';
 import { PluginConfigProvider, usePluginConfig } from './PluginConfigContext';
+import type { AppPluginSettings } from './types';
+import { ClusterSelector } from './components/ClusterSelector';
 import { DatasourceSelector } from './components/DatasourceSelector';
 import { LocationContext, AppLocation } from './hooks/useAppLocation';
 import { useUserPreferenceStore } from '@frontend/stores/userPreferenceStore';
@@ -386,11 +388,12 @@ function AppContent({ path }: AppContentProps) {
           alignItems: 'center',
           gap: 12,
         }}>
-          {/* Inline datasource selector */}
+          {/* Inline datasource + cluster selectors */}
           <DatasourceSelector
             value={datasourceUid}
             onChange={(uid, name) => setDatasourceUid(uid, name)}
           />
+          <ClusterSelector />
           
           {/* Global refresh indicator */}
           <GrafanaRefreshIndicator />
@@ -424,7 +427,7 @@ function AppContent({ path }: AppContentProps) {
   );
 }
 
-export function App(props: AppRootProps) {
+export function App(props: AppRootProps<AppPluginSettings>) {
   // Bridge Grafana theme to frontend CSS variables
   useGrafanaThemeBridge();
 
@@ -452,7 +455,7 @@ export function App(props: AppRootProps) {
 
   return (
     <LocationContext.Provider value={locationContextValue}>
-      <PluginConfigProvider>
+      <PluginConfigProvider jsonData={props.meta.jsonData}>
         <ServiceProvider>
           <AppContent path={props.path} />
         </ServiceProvider>

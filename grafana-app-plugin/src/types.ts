@@ -42,6 +42,13 @@ export interface AppPluginSettings {
    * Plugin-level (admin) setting. Default: false.
    */
   killQueriesEnabled?: boolean;
+
+  /**
+   * Preferred ClickHouse cluster name for clusterAllReplicas() queries.
+   * If set, ClusterService.detect() will use this cluster instead of auto-detecting.
+   * Leave empty for auto-detection.
+   */
+  cluster?: string;
 }
 
 /** Resolved config after applying defaults */
@@ -52,6 +59,8 @@ export interface ResolvedPluginConfig {
   refreshRateOptions: RefreshRateOption[];
   /** Whether kill query is allowed (admin-level) */
   killQueriesEnabled: boolean;
+  /** Preferred cluster name, or undefined for auto-detection */
+  cluster: string | undefined;
 }
 
 /** Apply defaults to raw jsonData */
@@ -74,5 +83,6 @@ export function resolvePluginConfig(jsonData?: AppPluginSettings): ResolvedPlugi
     defaultRefreshRate: effectiveDefault,
     refreshRateOptions,
     killQueriesEnabled: jsonData?.killQueriesEnabled ?? false,
+    cluster: jsonData?.cluster || undefined,
   };
 }
