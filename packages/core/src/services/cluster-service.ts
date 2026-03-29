@@ -18,6 +18,12 @@ import type { IClickHouseAdapter } from '../adapters/types.js';
 import { tagQuery } from '../queries/builder.js';
 import { TAB_CLUSTER, sourceTag } from '../queries/source-tags.js';
 
+export interface AvailableCluster {
+  name: string;
+  replicaCount: number;
+  shardCount: number;
+}
+
 export interface ClusterInfo {
   /** Cluster name, or null if no cluster detected */
   clusterName: string | null;
@@ -25,6 +31,8 @@ export interface ClusterInfo {
   replicaCount: number;
   /** Number of shards in the cluster */
   shardCount: number;
+  /** All clusters available on this server */
+  availableClusters: AvailableCluster[];
 }
 
 /**
@@ -72,9 +80,28 @@ export class ClusterService {
         sourceTag(TAB_CLUSTER, 'clusterDetect')
       ));
 
-      if (rows.length === 0) {
-        return { clusterName: null, replicaCount: 1, shardCount: 1 };
+      // Build the list of all available clusters with valid names
+      const availableClusters: AvailableCluster[] = [];
+      for (const row of rows) {
+        const name = sanitizeClusterName(String(row.cluster));
+        if (name) {
+          availableClusters.push({
+            name,
+            replicaCount: Number(row.replica_count),
+            shardCount: Number(row.shard_count),
+          });
+        }
       }
+
+      const noCluster: ClusterInfo = { clusterName: null, replicaCount: 1, shardCount: 1, availableClusters };
+
+      if (rows.length === 0) {
+        return noCluster;
+      }
+
+      const makeResult = (name: string, replicas: number, shards: number): ClusterInfo => ({
+        clusterName: name, replicaCount: replicas, shardCount: shards, availableClusters,
+      });
 
       // If a preferred cluster is configured, use it directly
       if (preferredCluster) {
@@ -82,11 +109,7 @@ export class ClusterService {
         if (match) {
           const name = sanitizeClusterName(String(match.cluster));
           if (name) {
-            return {
-              clusterName: name,
-              replicaCount: Number(match.replica_count),
-              shardCount: Number(match.shard_count),
-            };
+            return makeResult(name, Number(match.replica_count), Number(match.shard_count));
           }
         }
       }
@@ -97,37 +120,23 @@ export class ClusterService {
         const preferred = multiReplica.find(r => String(r.cluster) === 'default') ?? multiReplica[0];
         const name = sanitizeClusterName(String(preferred.cluster));
         if (name) {
-          return {
-            clusterName: name,
-            replicaCount: Number(preferred.replica_count),
-            shardCount: Number(preferred.shard_count),
-          };
+          return makeResult(name, Number(preferred.replica_count), Number(preferred.shard_count));
         }
       }
 
       // Fall back to 'default' cluster if it exists (Docker Compose single-node)
       const defaultCluster = rows.find(r => String(r.cluster) === 'default');
       if (defaultCluster) {
-        return {
-          clusterName: 'default',
-          replicaCount: Number(defaultCluster.replica_count),
-          shardCount: Number(defaultCluster.shard_count),
-        };
+        return makeResult('default', Number(defaultCluster.replica_count), Number(defaultCluster.shard_count));
       }
 
       // Use whatever cluster exists — find the first with a valid name
-      for (const row of rows) {
-        const name = sanitizeClusterName(String(row.cluster));
-        if (name) {
-          return {
-            clusterName: name,
-            replicaCount: Number(row.replica_count),
-            shardCount: Number(row.shard_count),
-          };
-        }
+      if (availableClusters.length > 0) {
+        const first = availableClusters[0];
+        return makeResult(first.name, first.replicaCount, first.shardCount);
       }
 
-      return { clusterName: null, replicaCount: 1, shardCount: 1 };
+      return noCluster;
     } catch {
       // system.clusters not available or query failed — try fallback detection
       return this.detectFallback(adapter);
@@ -160,16 +169,19 @@ export class ClusterService {
         // There are replicated tables with multiple replicas — a cluster exists.
         // We don't know the cluster name, so use 'default' as a best guess.
         // The replica count from system.replicas reflects the actual topology.
+        const replicas = Number(replicaRows[0].total_replicas);
+        const fallbackCluster: AvailableCluster = { name: 'default', replicaCount: replicas, shardCount: 1 };
         return {
           clusterName: 'default',
-          replicaCount: Number(replicaRows[0].total_replicas),
+          replicaCount: replicas,
           shardCount: 1,
+          availableClusters: [fallbackCluster],
         };
       }
     } catch (err) {
       console.warn('[ClusterService] Cluster detection failed:', err);
     }
-    return { clusterName: null, replicaCount: 1, shardCount: 1 };
+    return { clusterName: null, replicaCount: 1, shardCount: 1, availableClusters: [] };
   }
 
   /**

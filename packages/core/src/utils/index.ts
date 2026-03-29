@@ -13,6 +13,7 @@ export {
   MERGE_CATEGORIES,
   ALL_MERGE_CATEGORIES,
   MUTATION_SUBTYPES,
+  isCategoryClientSideOnly,
 } from './merge-classification.js';
 export type { MergeCategory, MergeCategoryInfo, MutationSubtype, MutationSubtypeInfo } from './merge-classification.js';
 export { parseTimeValue } from './time.js';

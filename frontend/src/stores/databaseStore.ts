@@ -295,6 +295,19 @@ export const databaseApi = {
   ) {
     return service.getPartData(database, table, partName, limit);
   },
+
+  /**
+   * Fetch min/max values for columns in a specific part
+   */
+  async fetchPartColumnMinMax(
+    service: DatabaseExplorer,
+    database: string,
+    table: string,
+    partName: string,
+    columns: Array<{ column_name: string; type: string }>
+  ) {
+    return service.getPartColumnMinMax(database, table, partName, columns);
+  },
 };
 
 // Re-export shared formatters for backward compatibility

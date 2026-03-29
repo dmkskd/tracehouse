@@ -11,3 +11,4 @@ export * from './engine-internals.js';
 export * from './monitoring-capabilities.js';
 export * from './capability-registry.js';
 export * from './analytics.js';
+export * from './replication-topology.js';

@@ -21,7 +21,7 @@ export const RUNNING_QUERIES = `
     is_initial_query,
     initial_query_id,
     hostName() AS hostname
-  FROM system.processes
+  FROM {{cluster_aware:system.processes}}
   WHERE is_cancelled = 0
   ORDER BY elapsed DESC
 `;
@@ -197,7 +197,7 @@ export const COORDINATOR_IDS = `
  */
 export const RUNNING_COORDINATOR_IDS = `
   SELECT DISTINCT initial_query_id
-  FROM system.processes
+  FROM {{cluster_aware:system.processes}}
   WHERE is_initial_query = 0
     AND initial_query_id != ''
 `;

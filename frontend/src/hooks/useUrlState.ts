@@ -52,6 +52,7 @@ export interface AnalyticsUrlState {
   lookback?: number;     // lookback days
   fullscreen?: boolean;  // chart fullscreen mode
   fromDashboard?: string; // dashboard ID we navigated from
+  noAutoExecute?: boolean; // skip auto-execute on mount (e.g. expensive queries opened from detail modal)
 }
 
 const ANALYTICS_DEFAULTS: AnalyticsUrlState = {
@@ -90,6 +91,8 @@ function parseAnalyticsParams(params: URLSearchParams): AnalyticsUrlState {
   if (fullscreen === '1') state.fullscreen = true;
   const fromDashboard = params.get('fromDashboard');
   if (fromDashboard) state.fromDashboard = fromDashboard;
+  const noAutoExecute = params.get('noAutoExecute');
+  if (noAutoExecute === '1') state.noAutoExecute = true;
   return state;
 }
 
@@ -109,6 +112,7 @@ function buildAnalyticsParams(state: AnalyticsUrlState): Record<string, string> 
   if (state.lookback && state.lookback !== ANALYTICS_DEFAULTS.lookback) params.lookback = String(state.lookback);
   if (state.fullscreen) params.fullscreen = '1';
   if (state.fromDashboard) params.fromDashboard = state.fromDashboard;
+  if (state.noAutoExecute) params.noAutoExecute = '1';
   return params;
 }
 

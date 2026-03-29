@@ -8,6 +8,7 @@
 
 import { create } from 'zustand';
 import { persist, createJSONStorage } from 'zustand/middleware';
+import { buildConfig } from '../buildConfig';
 import { BrowserAdapter } from '@tracehouse/core/adapters/browser-adapter';
 import { ProxyAdapter } from '@tracehouse/core';
 import { useProxyStore } from './proxyStore';
@@ -147,15 +148,15 @@ interface ConnectionState {
 }
 
 // Default connection configuration.
-// Build-time env vars (VITE_DEFAULT_CH_*) override the defaults,
+// Build-time env vars override the defaults,
 // e.g. for Docker quickstart where ClickHouse is at 'clickhouse:8123'.
 export const defaultConnectionConfig: ConnectionConfig = {
-  host: import.meta.env.VITE_DEFAULT_CH_HOST ?? 'localhost',
-  port: parseInt(import.meta.env.VITE_DEFAULT_CH_PORT ?? '8123', 10),
-  user: import.meta.env.VITE_DEFAULT_CH_USER ?? 'default',
-  password: import.meta.env.VITE_DEFAULT_CH_PASSWORD ?? '',
-  database: import.meta.env.VITE_DEFAULT_CH_DATABASE ?? 'default',
-  secure: import.meta.env.VITE_DEFAULT_CH_SECURE === 'true',
+  host: buildConfig.defaultConnection.host,
+  port: buildConfig.defaultConnection.port,
+  user: buildConfig.defaultConnection.user,
+  password: buildConfig.defaultConnection.password,
+  database: buildConfig.defaultConnection.database,
+  secure: buildConfig.defaultConnection.secure,
   connect_timeout: 10,
   send_receive_timeout: 30,
 };
@@ -506,11 +507,11 @@ useConnectionStore.subscribe((state) => {
 });
 
 // ---------------------------------------------------------------------------
-// Auto-connect: when VITE_AUTO_CONNECT=true and no profile exists yet,
-// create a profile from the VITE_DEFAULT_CH_* env vars and connect.
+// Auto-connect: when buildConfig.autoConnect is true and no profile exists yet,
+// create a profile from the default connection config and connect.
 // Used for demos where users shouldn't need to configure anything.
 // ---------------------------------------------------------------------------
-if (import.meta.env.VITE_AUTO_CONNECT === 'true') {
+if (buildConfig.autoConnect) {
   const doAutoConnect = () => {
     const { profiles, createProfile, updateProfile, setActiveProfile } = useConnectionStore.getState();
     const existing = profiles.find(p => p.name === 'Demo');

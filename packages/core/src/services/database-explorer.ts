@@ -187,6 +187,57 @@ export class DatabaseExplorer {
     }
   }
 
+  /**
+   * Get min/max values for columns in a specific part.
+   * Returns a map of column_name → { min, max } (stringified values).
+   * Skips columns with complex types (Array, Map, Tuple, Nested, etc.).
+   */
+  async getPartColumnMinMax(
+    database: string,
+    table: string,
+    partName: string,
+    columns: Array<{ column_name: string; type: string }>,
+  ): Promise<Map<string, { min: string; max: string }>> {
+    // Filter to scalar types only — skip Array, Map, Tuple, Nested, AggregateFunction etc.
+    const scalarCols = columns.filter(c => {
+      const t = c.type;
+      return !/^(Array|Map|Tuple|Nested|AggregateFunction|SimpleAggregateFunction|Object)/i.test(t);
+    });
+
+    if (scalarCols.length === 0) return new Map();
+
+    const escapedPart = partName.replace(/'/g, "\\'");
+    // Build one SELECT with min/max for each column, cast to String
+    const selects = scalarCols.map(c => {
+      const col = `\`${c.column_name}\``;
+      return `toString(min(${col})) AS \`min_${c.column_name}\`, toString(max(${col})) AS \`max_${c.column_name}\``;
+    }).join(',\n    ');
+
+    const sql = tagQuery(
+      `SELECT ${selects} FROM \`${database}\`.\`${table}\` WHERE _part = '${escapedPart}'`,
+      sourceTag(TAB_DATABASES, 'partColumnMinMax'),
+    );
+
+    try {
+      const rows = await this.adapter.executeQuery(sql);
+      const result = new Map<string, { min: string; max: string }>();
+      if (rows.length > 0) {
+        const row = rows[0] as Record<string, unknown>;
+        for (const c of scalarCols) {
+          const minVal = String(row[`min_${c.column_name}`] ?? '');
+          const maxVal = String(row[`max_${c.column_name}`] ?? '');
+          if (minVal || maxVal) {
+            result.set(c.column_name, { min: minVal, max: maxVal });
+          }
+        }
+      }
+      return result;
+    } catch {
+      // Non-critical — return empty map if query fails (e.g. unsupported column types)
+      return new Map();
+    }
+  }
+
   async getFunctions(): Promise<ChFunction[]> {
     try {
       const rows = await this.adapter.executeQuery(tagQuery(

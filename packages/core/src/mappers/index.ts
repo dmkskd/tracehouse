@@ -5,3 +5,4 @@ export { mapMergeInfo, mapMergeHistoryRecord, mapMutationInfo, mapMutationHistor
 export { mapServerMetrics } from './metrics-mappers.js';
 export { mapQueryMetrics, mapQueryHistoryItem } from './query-mappers.js';
 export { mapMergeEvent, parseMergedFrom } from './lineage-mappers.js';
+export { mapReplicaInfo, mapReplicaPartStats, mapShardPartitionDist, mapQueueEntry } from './replication-mappers.js';

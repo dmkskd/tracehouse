@@ -6,7 +6,7 @@
  * This is needed when connecting to remote ClickHouse servers that
  * don't set CORS headers (most managed services).
  *
- * In "bundled" mode (VITE_BUNDLED_PROXY=true), the proxy is co-located
+ * In "bundled" mode (buildConfig.bundledProxy), the proxy is co-located
  * with the frontend (e.g. inside a Docker image) and always active.
  * The user never sees proxy configuration in the UI.
  */
@@ -18,8 +18,10 @@ const DEFAULT_PROXY_URL = 'http://localhost:8990/proxy';
 const BUNDLED_PROXY_URL = '/proxy';
 const STORAGE_KEY = 'tracehouse-proxy';
 
+import { buildConfig } from '../buildConfig';
+
 /** True when the frontend was built with a co-located proxy (Docker image) */
-const IS_BUNDLED = import.meta.env.VITE_BUNDLED_PROXY === 'true';
+const IS_BUNDLED = buildConfig.bundledProxy;
 
 interface ProxyState {
   /** Whether the proxy is co-located (build-time flag, read-only) */
