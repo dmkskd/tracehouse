@@ -77,15 +77,18 @@ export interface PartInspectorProps {
   breadcrumbPath?: string[];
   database?: string;
   table?: string;
+  /** Base z-index for the portal (default 99998). Backdrop = base+1, modal = base+2. */
+  zIndex?: number;
 }
 
-export const PartInspector: React.FC<PartInspectorProps> = ({ 
-  partDetail, 
-  isLoading, 
-  onClose, 
-  breadcrumbPath = [], 
-  database, 
-  table, 
+export const PartInspector: React.FC<PartInspectorProps> = ({
+  partDetail,
+  isLoading,
+  onClose,
+  breadcrumbPath = [],
+  database,
+  table,
+  zIndex: baseZIndex = 99998,
 }) => {
   const services = useClickHouseServices();
   const [activeTab, setActiveTab] = useState<'overview' | 'columns' | 'data' | 'lineage'>('overview');
@@ -96,6 +99,10 @@ export const PartInspector: React.FC<PartInspectorProps> = ({
   const [lineageData, setLineageData] = useState<PartLineageInfo | null>(null);
   const [isLoadingLineage, setIsLoadingLineage] = useState(false);
   const [lineageError, setLineageError] = useState<string | null>(null);
+
+  // Min/max column stats — fetched lazily on columns tab
+  const [columnMinMax, setColumnMinMax] = useState<Map<string, { min: string; max: string }> | null>(null);
+  const [isLoadingMinMax, setIsLoadingMinMax] = useState(false);
   
   // Fetch data when Data tab is selected
   useEffect(() => {
@@ -114,12 +121,25 @@ export const PartInspector: React.FC<PartInspectorProps> = ({
     }
   }, [activeTab, partDetail, database, table, services, partData, isLoadingData]);
   
+  // Fetch min/max on demand (scans actual part data)
+  const loadColumnMinMax = () => {
+    if (!partDetail?.columns || !database || !table || !services || isLoadingMinMax) return;
+    setIsLoadingMinMax(true);
+    databaseApi.fetchPartColumnMinMax(
+      services.databaseExplorer, database, table, partDetail.name,
+      partDetail.columns.map(c => ({ column_name: c.column_name, type: c.type })),
+    )
+      .then(data => { setColumnMinMax(data); setIsLoadingMinMax(false); })
+      .catch(() => { setIsLoadingMinMax(false); });
+  };
+
   // Reset data when part changes
   useEffect(() => {
     setPartData(null);
     setDataError(null);
     setLineageData(null);
     setLineageError(null);
+    setColumnMinMax(null);
   }, [partDetail?.name]);
   
   // Fetch lineage when Lineage tab is selected
@@ -191,7 +211,7 @@ export const PartInspector: React.FC<PartInspectorProps> = ({
   const portalStyle: React.CSSProperties = {
     position: 'fixed',
     inset: 0,
-    zIndex: 99998,
+    zIndex: baseZIndex,
     ...(currentTheme === 'light' ? LIGHT_THEME_VARS : {}),
   };
   
@@ -290,14 +310,14 @@ export const PartInspector: React.FC<PartInspectorProps> = ({
       {/* Backdrop */}
       <div 
         className="fixed inset-0"
-        style={{ zIndex: 99999, background: 'var(--backdrop-overlay)' }}
+        style={{ zIndex: baseZIndex + 1, background: 'var(--backdrop-overlay)' }}
         onClick={onClose}
       />
       
       {/* Modal */}
       <div 
         className="fixed inset-0 flex items-center justify-center pointer-events-none"
-        style={{ zIndex: 100000, padding: '16px' }}
+        style={{ zIndex: baseZIndex + 2, padding: '16px' }}
       >
         <div 
           className="rounded-2xl w-[980px] h-[75vh] flex flex-col overflow-hidden pointer-events-auto"
@@ -408,7 +428,7 @@ export const PartInspector: React.FC<PartInspectorProps> = ({
             ) : partDetail && activeTab === 'overview' ? (
               <OverviewTab partDetail={partDetail} chartData={finalChartData} />
             ) : partDetail && activeTab === 'columns' ? (
-              <ColumnsTab partDetail={partDetail} />
+              <ColumnsTab partDetail={partDetail} columnMinMax={columnMinMax} isLoadingMinMax={isLoadingMinMax} onLoadMinMax={loadColumnMinMax} />
             ) : partDetail && activeTab === 'data' ? (
               <DataTab 
                 partData={partData} 
@@ -596,7 +616,12 @@ export const OverviewTab: React.FC<{
 };
 
 
-export const ColumnsTab: React.FC<{ partDetail: PartDetailInfo }> = ({ partDetail }) => {
+export const ColumnsTab: React.FC<{
+  partDetail: PartDetailInfo;
+  columnMinMax?: Map<string, { min: string; max: string }> | null;
+  isLoadingMinMax?: boolean;
+  onLoadMinMax?: () => void;
+}> = ({ partDetail, columnMinMax, isLoadingMinMax, onLoadMinMax }) => {
   const theme = useThemeDetection();
   const isLight = theme === 'light';
 
@@ -636,10 +661,15 @@ export const ColumnsTab: React.FC<{ partDetail: PartDetailInfo }> = ({ partDetai
     return b.compressed_bytes - a.compressed_bytes;
   });
   
-  return (
-    <div style={{ padding: '40px' }}>
+  const showMinMax = !!(columnMinMax || isLoadingMinMax);
+    const gridCols = showMinMax
+      ? 'grid-cols-[minmax(100px,180px)_100px_55px_75px_75px_50px_45px_minmax(80px,1fr)_minmax(60px,120px)_minmax(60px,120px)]'
+      : 'grid-cols-[minmax(100px,180px)_100px_55px_75px_75px_50px_45px_minmax(80px,1fr)]';
+
+    return (<>
+    <div style={{ padding: '0 40px 40px' }}>
       <div className="rounded-t-lg" style={{ background: 'var(--bg-card)', border: '1px solid var(--border-secondary)', borderBottom: 'none' }}>
-        <div className="grid grid-cols-[minmax(100px,180px)_100px_55px_75px_75px_50px_45px_minmax(80px,1fr)] gap-2 px-4 py-3 text-xs uppercase tracking-wider" style={{ color: 'var(--text-muted)' }}>
+        <div className={`grid ${gridCols} gap-2 px-4 py-3 text-xs uppercase tracking-wider`} style={{ color: 'var(--text-muted)' }}>
           <div>Column</div>
           <div>Type</div>
           <div>Codec</div>
@@ -648,6 +678,8 @@ export const ColumnsTab: React.FC<{ partDetail: PartDetailInfo }> = ({ partDetai
           <div className="text-right">Ratio</div>
           <div>Keys</div>
           <div>Size</div>
+          {showMinMax && <div className="text-right">Min</div>}
+          {showMinMax && <div className="text-right">Max</div>}
         </div>
       </div>
     
@@ -659,9 +691,9 @@ export const ColumnsTab: React.FC<{ partDetail: PartDetailInfo }> = ({ partDetai
           const color = COLUMN_COLORS[i % COLUMN_COLORS.length];
         
           return (
-            <div 
-              key={i} 
-              className="grid grid-cols-[minmax(100px,180px)_100px_55px_75px_75px_50px_45px_minmax(80px,1fr)] gap-2 px-4 py-2.5 items-center transition-colors"
+            <div
+              key={i}
+              className={`grid ${gridCols} gap-2 px-4 py-2.5 items-center transition-colors`}
               style={{ 
                 background: i % 2 === 0 ? 'var(--bg-card)' : 'transparent',
               }}
@@ -723,11 +755,11 @@ export const ColumnsTab: React.FC<{ partDetail: PartDetailInfo }> = ({ partDetai
                   <span className="text-[10px]" style={{ color: 'var(--text-disabled)' }}>—</span>
                 )}
               </div>
-              
+
               <div className="relative h-5 rounded overflow-hidden" style={{ background: 'var(--bg-hover)' }}>
-                <div 
+                <div
                   className="absolute inset-y-0 left-0 rounded"
-                  style={{ 
+                  style={{
                     width: `${Math.max(pct, 2)}%`,
                     backgroundColor: color,
                     opacity: 0.6
@@ -737,6 +769,27 @@ export const ColumnsTab: React.FC<{ partDetail: PartDetailInfo }> = ({ partDetai
                   {pct.toFixed(1)}%
                 </span>
               </div>
+
+              {/* Min/Max values — only rendered when loaded or loading */}
+              {showMinMax && (() => {
+                const mm = columnMinMax?.get(col.column_name);
+                if (isLoadingMinMax) return (
+                  <>
+                    <div className="text-right"><span className="text-[10px] font-mono" style={{ color: 'var(--text-disabled)' }}>...</span></div>
+                    <div className="text-right"><span className="text-[10px] font-mono" style={{ color: 'var(--text-disabled)' }}>...</span></div>
+                  </>
+                );
+                return (
+                  <>
+                    <div className="text-right truncate" title={mm?.min}>
+                      <span className="text-[10px] font-mono" style={{ color: 'var(--text-secondary)' }}>{mm?.min ?? '—'}</span>
+                    </div>
+                    <div className="text-right truncate" title={mm?.max}>
+                      <span className="text-[10px] font-mono" style={{ color: 'var(--text-secondary)' }}>{mm?.max ?? '—'}</span>
+                    </div>
+                  </>
+                );
+              })()}
             </div>
           );
         })}
@@ -756,8 +809,31 @@ export const ColumnsTab: React.FC<{ partDetail: PartDetailInfo }> = ({ partDetai
           Primary
         </span>
       </div>
+      {!showMinMax && onLoadMinMax && (
+        <div style={{
+          marginTop: 16, display: 'flex', alignItems: 'center', gap: 10,
+          padding: '10px 14px', borderRadius: 8,
+          background: isLight ? 'rgba(245, 158, 11, 0.08)' : 'rgba(245, 158, 11, 0.06)',
+          border: `1px solid ${isLight ? 'rgba(245, 158, 11, 0.25)' : 'rgba(245, 158, 11, 0.15)'}`,
+        }}>
+          <button
+            onClick={onLoadMinMax}
+            style={{
+              background: 'var(--bg-card)', border: '1px solid var(--border-primary)',
+              borderRadius: 6, padding: '6px 12px', cursor: 'pointer',
+              color: 'var(--accent-primary, #6366f1)', fontSize: 11, fontWeight: 500,
+              whiteSpace: 'nowrap', flexShrink: 0,
+            }}
+          >
+            Load Min/Max
+          </button>
+          <span style={{ fontSize: 10, color: isLight ? '#92400e' : '#fbbf24' }}>
+            Reads actual part data to compute per-column min/max values. This requires a full scan of the part and may take time on large parts.
+          </span>
+        </div>
+      )}
     </div>
-  );
+  </>);
 };
 
 

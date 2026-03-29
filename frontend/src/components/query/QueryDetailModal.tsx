@@ -2851,8 +2851,64 @@ export const QueryDetailModal: React.FC<TimelineQueryModalProps> = ({
 
               {/* SQL */}
               <div style={{ marginBottom: 20 }}>
-                <div style={{ fontSize: 9, color: 'var(--text-muted)', textTransform: 'uppercase', letterSpacing: '1px', marginBottom: 6 }}>
-                  SQL
+                <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 6 }}>
+                  <div style={{ fontSize: 9, color: 'var(--text-muted)', textTransform: 'uppercase', letterSpacing: '1px' }}>
+                    SQL
+                  </div>
+                  <div style={{ display: 'flex', gap: 4 }}>
+                    <button
+                      onClick={() => {
+                        const sqlText = queryDetail?.query || queryDetail?.formatted_query || q.label || '';
+                        navigator.clipboard.writeText(sqlText);
+                      }}
+                      title="Copy SQL"
+                      style={{
+                        background: 'transparent',
+                        border: 'none',
+                        cursor: 'pointer',
+                        padding: 4,
+                        borderRadius: 4,
+                        color: 'var(--text-muted)',
+                        display: 'flex',
+                        alignItems: 'center',
+                      }}
+                      onMouseOver={(e) => e.currentTarget.style.color = 'var(--text-primary)'}
+                      onMouseOut={(e) => e.currentTarget.style.color = 'var(--text-muted)'}
+                    >
+                      <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                        <rect x="9" y="9" width="13" height="13" rx="2" ry="2"></rect>
+                        <path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"></path>
+                      </svg>
+                    </button>
+                    <button
+                      onClick={isSelectQuery ? () => {
+                        const sqlText = queryDetail?.query || queryDetail?.formatted_query || q.label || '';
+                        const encoded = btoa(unescape(encodeURIComponent(sqlText)));
+                        window.location.hash = `#/analytics?tab=misc&sql=b64:${encoded}&noAutoExecute=1&from=queries`;
+                      } : undefined}
+                      disabled={!isSelectQuery}
+                      title={isSelectQuery ? "Open in Query Explorer (without executing)" : "Only SELECT queries can be opened in Query Explorer (non-SELECT queries are not safe to re-execute)"}
+                      style={{
+                        background: 'transparent',
+                        border: 'none',
+                        cursor: isSelectQuery ? 'pointer' : 'not-allowed',
+                        padding: 4,
+                        borderRadius: 4,
+                        color: 'var(--text-muted)',
+                        opacity: isSelectQuery ? 1 : 0.4,
+                        display: 'flex',
+                        alignItems: 'center',
+                      }}
+                      onMouseOver={(e) => { if (isSelectQuery) e.currentTarget.style.color = 'var(--text-primary)'; }}
+                      onMouseOut={(e) => { if (isSelectQuery) e.currentTarget.style.color = 'var(--text-muted)'; }}
+                    >
+                      <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                        <path d="M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6"></path>
+                        <polyline points="15 3 21 3 21 9"></polyline>
+                        <line x1="10" y1="14" x2="21" y2="3"></line>
+                      </svg>
+                    </button>
+                  </div>
                 </div>
                 <div style={{
                   maxHeight: 200,
