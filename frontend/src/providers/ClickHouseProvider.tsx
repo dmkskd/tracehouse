@@ -37,6 +37,7 @@ import { useMonitoringCapabilitiesStore } from '../stores/monitoringCapabilities
 import { useClusterStore } from '../stores/clusterStore';
 import { useProfileEventDescriptionsStore } from '../stores/profileEventDescriptionsStore';
 import { useEnvironmentStore } from '../stores/environmentStore';
+import { buildConfig } from '../buildConfig';
 import { 
   ClickHouseContext, 
   type ClickHouseServices,
@@ -186,7 +187,7 @@ export function ClickHouseProvider({ children }: ClickHouseProviderProps) {
     }
 
     let cancelled = false;
-    const configuredCluster = import.meta.env.VITE_DEFAULT_CH_CLUSTER;
+    const configuredCluster = buildConfig.defaultConnection.cluster;
 
     const detectPromise = configuredCluster
       ? ClusterService.detect(value.adapter, configuredCluster)
@@ -207,12 +208,27 @@ export function ClickHouseProvider({ children }: ClickHouseProviderProps) {
       if (!cancelled) {
         // Mark detection as complete even on failure — otherwise the UI
         // stays stuck on "Detecting cluster topology..." forever.
-        clusterStore.setCluster({ clusterName: null, replicaCount: 1, shardCount: 1 });
+        clusterStore.setCluster({ clusterName: null, replicaCount: 1, shardCount: 1, availableClusters: [] });
       }
     });
 
     return () => { cancelled = true; };
   }, [value]);
+
+  // Sync cluster name changes (from UI switcher) to the adapter
+  useEffect(() => {
+    const unsub = useClusterStore.subscribe((state, prev) => {
+      if (state.clusterName !== prev.clusterName) {
+        clusterAdapterRef.current?.setClusterName(state.clusterName);
+        if (state.clusterName) {
+          console.log(`[ClusterSwitch] Switched to cluster '${state.clusterName}'`);
+        } else {
+          console.log('[ClusterSwitch] Switched to single-node mode');
+        }
+      }
+    });
+    return unsub;
+  }, []);
 
   // Detect runtime environment (container, k8s, cgroup limits) when connection changes
   useEffect(() => {

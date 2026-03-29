@@ -182,7 +182,7 @@ export function ServiceProvider({ children }: { children: React.ReactNode }) {
       }
     }).catch(() => {
       if (!cancelled) {
-        clusterStore.setCluster({ clusterName: null, replicaCount: 1, shardCount: 1 });
+        clusterStore.setCluster({ clusterName: null, replicaCount: 1, shardCount: 1, availableClusters: [] });
       }
     });
 

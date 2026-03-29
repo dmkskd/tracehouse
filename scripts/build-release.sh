@@ -69,7 +69,7 @@ echo "  → release/${PLUGIN_ARCHIVE}.zip"
 echo ""
 echo "=== Building frontend for binary embedding ==="
 cd "$ROOT/frontend"
-VITE_BUNDLED_PROXY=true npx vite build --config vite.singlefile.config.ts
+TH_BUNDLED_PROXY=true npx vite build --config vite.singlefile.config.ts
 
 echo ""
 echo "=== Building Rust binary ==="
