@@ -206,8 +206,7 @@ def run_query(client_holder: list, host: str, port: int, conn_kwargs: dict,
     extra_settings: dict | None = None if _restricted_settings_detected else {
         'opentelemetry_start_trace_probability': 0.01,
         'opentelemetry_trace_processors': 0,
-        'memory_profiler_sample_probability': 1,
-        'max_untracked_memory': 1,
+        'memory_profiler_sample_probability': 0,
         'log_query_threads': 1,
     }
 

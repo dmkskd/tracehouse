@@ -59,7 +59,7 @@ spec:
       default/allow_introspection_functions: "1"
       default/query_profiler_cpu_time_period_ns: "10000000"
       default/query_profiler_real_time_period_ns: "10000000"
-      default/memory_profiler_step: "1048576"
+      default/memory_profiler_step: "0"
       default/log_processors_profiles: "1"
       default/opentelemetry_start_trace_probability: "1"
       default/opentelemetry_trace_processors: "1"

@@ -69,7 +69,7 @@ services:
   # ─── ClickHouse nodes (2 shards × 2 replicas) ───────────────────────────
 
   ch-s1r1:
-    image: clickhouse:latest
+    image: clickhouse:26.2
     container_name: tracehouse-demo-ch-s1r1
     environment:
       TH_PASSWORD: ${CLICKHOUSE_DEFAULT_PASSWORD:?Run ./setup.sh first}
@@ -111,7 +111,7 @@ services:
     restart: unless-stopped
 
   ch-s1r2:
-    image: clickhouse:latest
+    image: clickhouse:26.2
     container_name: tracehouse-demo-ch-s1r2
     environment:
       TH_PASSWORD: ${CLICKHOUSE_DEFAULT_PASSWORD}
@@ -145,7 +145,7 @@ services:
     restart: unless-stopped
 
   ch-s2r1:
-    image: clickhouse:latest
+    image: clickhouse:26.2
     container_name: tracehouse-demo-ch-s2r1
     environment:
       TH_PASSWORD: ${CLICKHOUSE_DEFAULT_PASSWORD}
@@ -179,7 +179,7 @@ services:
     restart: unless-stopped
 
   ch-s2r2:
-    image: clickhouse:latest
+    image: clickhouse:26.2
     container_name: tracehouse-demo-ch-s2r2
     environment:
       TH_PASSWORD: ${CLICKHOUSE_DEFAULT_PASSWORD}

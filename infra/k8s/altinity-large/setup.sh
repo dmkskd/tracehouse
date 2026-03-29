@@ -119,7 +119,7 @@ ALTER USER default SETTINGS
     allow_introspection_functions = 1,
     query_profiler_cpu_time_period_ns = 10000000,
     query_profiler_real_time_period_ns = 10000000,
-    memory_profiler_step = 1048576,
+    memory_profiler_step = 0,
     log_processors_profiles = 1;
 EOF
 
