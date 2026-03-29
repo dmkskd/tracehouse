@@ -9,6 +9,7 @@ import React, { useState, useCallback, useEffect } from 'react';
 import { useConnectionStore, defaultConnectionConfig } from '../../stores/connectionStore';
 import type { ConnectionConfig, ConnectionConfigResponse, CredentialStorageMode } from '../../stores/connectionStore';
 import { useProxyStore } from '../../stores/proxyStore';
+import { useClusterStore } from '../../stores/clusterStore';
 
 interface ConnectionFormProps {
   onClose?: () => void;
@@ -53,7 +54,13 @@ export const ConnectionForm: React.FC<ConnectionFormProps> = ({ onClose, onSucce
       : defaultConnectionConfig
   );
   const [showAdvanced, setShowAdvanced] = useState(false);
+  const [isClusterDropdownOpen, setIsClusterDropdownOpen] = useState(false);
   const [connectAfterSave, setConnectAfterSave] = useState(!isEditing);
+
+  // Cluster state — only relevant when editing the active connection
+  const clusterName = useClusterStore((s) => s.clusterName);
+  const availableClusters = useClusterStore((s) => s.availableClusters);
+  const switchCluster = useClusterStore((s) => s.switchCluster);
 
   // Proxy state
   const proxyBundled = useProxyStore((s) => s.bundled);
@@ -403,6 +410,121 @@ export const ConnectionForm: React.FC<ConnectionFormProps> = ({ onClose, onSucce
               }}
             />
           </div>
+
+          {/* Cluster Override — shown when editing the active connection and clusters are detected */}
+          {isEditing && availableClusters.length > 1 && (
+            <div>
+              <label style={labelStyle}>Cluster</label>
+              <div style={{ position: 'relative' }}>
+                <button
+                  type="button"
+                  onClick={() => setIsClusterDropdownOpen(!isClusterDropdownOpen)}
+                  style={{
+                    ...inputStyle,
+                    cursor: 'pointer',
+                    display: 'flex',
+                    alignItems: 'center',
+                    justifyContent: 'space-between',
+                    textAlign: 'left',
+                    borderColor: isClusterDropdownOpen ? 'rgba(var(--accent-purple-rgb), 0.5)' : 'var(--border-input)',
+                    boxShadow: isClusterDropdownOpen ? '0 0 20px rgba(var(--accent-purple-rgb), 0.2)' : 'none',
+                  }}
+                >
+                  <span>{clusterName ?? 'Single-node'}</span>
+                  <span style={{ color: 'var(--text-muted)', display: 'flex', alignItems: 'center', gap: '8px' }}>
+                    {clusterName && (() => {
+                      const c = availableClusters.find(c => c.name === clusterName);
+                      if (!c) return null;
+                      return (
+                        <span style={{ fontSize: '12px' }}>
+                          {c.replicaCount > 1 ? `${c.replicaCount} replicas` : '1 node'}
+                          {c.shardCount > 1 ? ` · ${c.shardCount} shards` : ''}
+                        </span>
+                      );
+                    })()}
+                    <svg
+                      width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor"
+                      strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"
+                      style={{ transform: isClusterDropdownOpen ? 'rotate(180deg)' : 'none', transition: 'transform 0.2s ease' }}
+                    >
+                      <path d="M6 9l6 6 6-6" />
+                    </svg>
+                  </span>
+                </button>
+                {isClusterDropdownOpen && (
+                  <div style={{
+                    position: 'absolute',
+                    top: '100%',
+                    left: 0,
+                    right: 0,
+                    marginTop: '4px',
+                    background: 'var(--bg-modal, var(--bg-secondary, #1e1e2e))',
+                    border: '1px solid rgba(var(--accent-purple-rgb), 0.3)',
+                    borderRadius: '8px',
+                    overflow: 'hidden',
+                    zIndex: 10,
+                    maxHeight: '200px',
+                    overflowY: 'auto',
+                    boxShadow: '0 8px 24px rgba(0,0,0,0.6)',
+                  }}>
+                    {availableClusters.map((c) => {
+                      const isActive = clusterName === c.name;
+                      return (
+                        <div
+                          key={c.name}
+                          onClick={() => { switchCluster(c.name); setIsClusterDropdownOpen(false); }}
+                          style={{
+                            padding: '10px 16px',
+                            cursor: 'pointer',
+                            display: 'flex',
+                            alignItems: 'center',
+                            justifyContent: 'space-between',
+                            background: isActive ? 'rgba(88,166,255,0.1)' : 'transparent',
+                            borderBottom: '1px solid var(--border-input)',
+                            transition: 'background 0.15s ease',
+                          }}
+                          onMouseEnter={(e) => { if (!isActive) e.currentTarget.style.background = 'rgba(255,255,255,0.05)'; }}
+                          onMouseLeave={(e) => { e.currentTarget.style.background = isActive ? 'rgba(88,166,255,0.1)' : 'transparent'; }}
+                        >
+                          <span style={{ color: isActive ? '#58a6ff' : 'var(--text-primary)', fontSize: '14px', fontWeight: isActive ? 500 : 400 }}>
+                            {c.name}
+                          </span>
+                          <span style={{ color: 'var(--text-muted)', fontSize: '12px' }}>
+                            {c.replicaCount > 1 ? `${c.replicaCount} replicas` : '1 node'}
+                            {c.shardCount > 1 ? ` · ${c.shardCount}sh` : ''}
+                          </span>
+                        </div>
+                      );
+                    })}
+                    <div
+                      onClick={() => { switchCluster(null); setIsClusterDropdownOpen(false); }}
+                      style={{
+                        padding: '10px 16px',
+                        cursor: 'pointer',
+                        display: 'flex',
+                        alignItems: 'center',
+                        justifyContent: 'space-between',
+                        background: clusterName === null ? 'rgba(128,128,128,0.1)' : 'transparent',
+                        transition: 'background 0.15s ease',
+                      }}
+                      onMouseEnter={(e) => { if (clusterName !== null) e.currentTarget.style.background = 'rgba(255,255,255,0.05)'; }}
+                      onMouseLeave={(e) => { e.currentTarget.style.background = clusterName === null ? 'rgba(128,128,128,0.1)' : 'transparent'; }}
+                    >
+                      <span style={{ color: clusterName === null ? 'var(--text-primary)' : 'var(--text-muted)', fontSize: '14px', fontWeight: clusterName === null ? 500 : 400 }}>
+                        Single-node
+                      </span>
+                      <span style={{ color: 'var(--text-muted)', fontSize: '12px' }}>no fan-out</span>
+                    </div>
+                  </div>
+                )}
+              </div>
+              <p style={{ fontSize: '11px', color: 'var(--text-muted)', marginTop: '6px' }}>
+                {clusterName
+                  ? `Queries fan out across all replicas via clusterAllReplicas('${clusterName}', ...)`
+                  : 'Queries run on this node only — no cluster fan-out'}
+              </p>
+            </div>
+          )}
 
           {/* Secure Connection Toggle */}
           <label style={{ display: 'flex', alignItems: 'center', gap: '12px', cursor: 'pointer' }}>
