@@ -13,6 +13,7 @@ import { useCapabilityCheck } from '../components/shared/RequiresCapability';
 import type { MemoryTimeline, QuerySeries, MergeSeries, MutationSeries } from '@tracehouse/core';
 import { TIMELINE_ACTIVITY_LIMIT } from '@tracehouse/core';
 import { TimelineNavigator } from '../components/shared/TimelineNavigator';
+import { RangeSlider } from '../components/shared/RangeSlider';
 import { QueryDetailModal } from '../components/query/QueryDetailModal';
 import { MergeDetailModal, MutationDetailModal } from '../components/merge/MergeDetailModal';
 import { TruncatedHost } from '../components/common/TruncatedHost';
@@ -85,7 +86,17 @@ const TIME_RANGES = [
   { label: '6h', hoursAgo: 6 },
   { label: '12h', hoursAgo: 12 },
   { label: '1d', hoursAgo: 24 },
-  { label: 'Custom', hoursAgo: 1, custom: true },
+];
+
+// Quick-set range durations for the Custom popover
+const CUSTOM_RANGE_PRESETS = [
+  { label: '1h', ms: 3600000 },
+  { label: '3h', ms: 3 * 3600000 },
+  { label: '6h', ms: 6 * 3600000 },
+  { label: '12h', ms: 12 * 3600000 },
+  { label: '1d', ms: 86400000 },
+  { label: '2d', ms: 2 * 86400000 },
+  { label: '7d', ms: 7 * 86400000 },
 ];
 
 type SortField = 'metric' | 'duration' | 'started';
@@ -103,7 +114,9 @@ export const TimeTravelPage: React.FC = () => {
   const [windowSec, setWindowSec] = useState(150);
   const [isLive, setIsLive] = useState(true);
   const [autoRefresh, setAutoRefresh] = useState(false);
-  const [customEndTime, setCustomEndTime] = useState<string | null>(null);
+  const [customStartTime, setCustomStartTime] = useState<string | null>(null);  // Custom range start (navigator)
+  const [customEndTime, setCustomEndTime] = useState<string | null>(null);      // Custom range end (navigator)
+  const [viewportEndTime, setViewportEndTime] = useState<string | null>(null);  // Viewport position within custom range
   const [data, setData] = useState<MemoryTimeline | null>(null);
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -153,11 +166,15 @@ export const TimeTravelPage: React.FC = () => {
   const lastNavigatorFetchTime = useRef<string | null>(null);
   const lastNavigatorMetric = useRef<MetricMode | null>(null);
 
-  // Navigator hours derived from selected time range preset
+  // Navigator hours derived from selected time range preset, or custom range
   const navigatorHours = useMemo(() => {
+    if (selectedTimeRange === 'Custom' && customStartTime && customEndTime) {
+      const spanMs = new Date(customEndTime).getTime() - new Date(customStartTime).getTime();
+      return Math.max(1, spanMs / 3600000);
+    }
     const range = TIME_RANGES.find(r => r.label === selectedTimeRange);
     return range?.hoursAgo ?? 1;
-  }, [selectedTimeRange]);
+  }, [selectedTimeRange, customStartTime, customEndTime]);
 
   // Dragging state: visual-only viewport position during drag (no main chart fetch)
   const [dragEndMs, setDragEndMs] = useState<number | null>(null);
@@ -197,11 +214,16 @@ export const TimeTravelPage: React.FC = () => {
   if (!activeProfile && profiles.length > 0) activeProfile = profiles.find(p => p.is_connected);
   const isConnected = activeProfile?.is_connected ?? false;
 
+  // Effective viewport end: in Custom mode use viewportEndTime (falls back to customEndTime), else customEndTime (set by navigator drag in preset mode)
+  const effectiveViewportEnd = selectedTimeRange === 'Custom'
+    ? (viewportEndTime ?? customEndTime)
+    : customEndTime;
+
   const fetchData = useCallback(async () => {
     if (!services) return;
     setIsLoading(true); setError(null);
     try {
-      const endDate = isLive ? new Date() : (customEndTime ? new Date(customEndTime) : new Date());
+      const endDate = isLive ? new Date() : (effectiveViewportEnd ? new Date(effectiveViewportEnd) : new Date());
       const centerDate = new Date(endDate.getTime() - windowSec * 1000);
       const result = await services.timelineService.getTimeline({
         timestamp: centerDate,
@@ -229,7 +251,7 @@ export const TimeTravelPage: React.FC = () => {
       setError(msg);
     }
     finally { setIsLoading(false); }
-  }, [services, isLive, customEndTime, windowSec, includeRunning, selectedHost, activityLimit, metricMode]);
+  }, [services, isLive, effectiveViewportEnd, windowSec, includeRunning, selectedHost, activityLimit, metricMode]);
 
   // Fetch cluster hosts on connect (after cluster detection completes)
   useEffect(() => {
@@ -242,7 +264,7 @@ export const TimeTravelPage: React.FC = () => {
     if (!services || clusterHosts.length < 2 || !splitView) return;
     setSplitLoading(true);
     try {
-      const endDate = isLive ? new Date() : (customEndTime ? new Date(customEndTime) : new Date());
+      const endDate = isLive ? new Date() : (effectiveViewportEnd ? new Date(effectiveViewportEnd) : new Date());
       const centerDate = new Date(endDate.getTime() - windowSec * 1000);
       const results = await Promise.all(
         clusterHosts.map(async (host) => {
@@ -261,7 +283,7 @@ export const TimeTravelPage: React.FC = () => {
     } catch (e) {
       console.error('[TimeTravelPage] Split view fetch error:', e);
     } finally { setSplitLoading(false); }
-  }, [services, clusterHosts, splitView, isLive, customEndTime, windowSec, includeRunning, metricMode]);
+  }, [services, clusterHosts, splitView, isLive, effectiveViewportEnd, windowSec, includeRunning, metricMode]);
 
   const splitFetchTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   useEffect(() => {
@@ -270,7 +292,7 @@ export const TimeTravelPage: React.FC = () => {
       splitFetchTimeoutRef.current = setTimeout(() => fetchSplitData(), 250);
     }
     return () => { if (splitFetchTimeoutRef.current) clearTimeout(splitFetchTimeoutRef.current); };
-  }, [splitView, services, isConnected, windowSec, isLive, customEndTime, includeRunning, fetchSplitData]); // eslint-disable-line react-hooks/exhaustive-deps
+  }, [splitView, services, isConnected, windowSec, isLive, effectiveViewportEnd, includeRunning, fetchSplitData]); // eslint-disable-line react-hooks/exhaustive-deps
 
   // Auto-analyze when params change (debounced)
   const fetchDataTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
@@ -282,7 +304,7 @@ export const TimeTravelPage: React.FC = () => {
       fetchDataTimeoutRef.current = setTimeout(() => fetchData(), 200);
     }
     return () => { if (fetchDataTimeoutRef.current) clearTimeout(fetchDataTimeoutRef.current); };
-  }, [services, isConnected, windowSec, isLive, customEndTime, includeRunning, selectedHost, activityLimit, metricMode]); // eslint-disable-line react-hooks/exhaustive-deps
+  }, [services, isConnected, windowSec, isLive, effectiveViewportEnd, includeRunning, selectedHost, activityLimit, metricMode]); // eslint-disable-line react-hooks/exhaustive-deps
 
   // Manual refresh from header button
   useEffect(() => {
@@ -338,7 +360,7 @@ export const TimeTravelPage: React.FC = () => {
   // Fetch navigator data spanning the selected time range (navigatorHours → now)
   const fetchNavigatorData = useCallback(async (force = false) => {
     if (!services) return;
-    // Navigator always ends at "now" for presets; only Custom uses customEndTime
+    // Navigator always ends at "now" for presets; Custom uses customStartTime/customEndTime
     const isCustom = selectedTimeRange === 'Custom';
     const endDate = isCustom && customEndTime ? new Date(customEndTime) : new Date();
     const endTimeKey = `${endDate.toISOString().slice(0, 13)}_${metricMode}_${navigatorHours}`;
@@ -368,7 +390,7 @@ export const TimeTravelPage: React.FC = () => {
     } catch (e) {
       console.error('[TimeTravelPage] Navigator fetch error:', e);
     } finally { setNavigatorLoading(false); }
-  }, [services, selectedTimeRange, customEndTime, navigatorHours, navigatorData, windowSec, selectedHost, activityLimit, metricMode]);
+  }, [services, selectedTimeRange, customStartTime, customEndTime, navigatorHours, navigatorData, windowSec, selectedHost, activityLimit, metricMode]);
 
   // Debounced navigator fetch
   const navigatorFetchTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
@@ -378,7 +400,7 @@ export const TimeTravelPage: React.FC = () => {
       navigatorFetchTimeoutRef.current = setTimeout(() => fetchNavigatorData(), 300);
     }
     return () => { if (navigatorFetchTimeoutRef.current) clearTimeout(navigatorFetchTimeoutRef.current); };
-  }, [services, isConnected, customEndTime, isLive, fetchNavigatorData]);
+  }, [services, isConnected, customStartTime, customEndTime, isLive, fetchNavigatorData]);
 
   // Auto-refresh navigator in live mode
   const navigatorRefreshRef = useRef<ReturnType<typeof setInterval> | null>(null);
@@ -404,15 +426,22 @@ export const TimeTravelPage: React.FC = () => {
     dragEndMsRef.current = null;
     setDragEndMs(null);
     const now = Date.now();
-    if (clampedEnd >= now - 30000) { setIsLive(true); setCustomEndTime(null); }
-    else { setIsLive(false); setCustomEndTime(toLocalDatetimeStr(clampedEnd)); }
-  }, []);
+    if (selectedTimeRange === 'Custom') {
+      // In Custom mode: only move the viewport, don't change the range
+      setIsLive(false);
+      setViewportEndTime(toLocalDatetimeStr(clampedEnd));
+    } else if (clampedEnd >= now - 30000) {
+      setIsLive(true); setCustomEndTime(null); setCustomStartTime(null); setViewportEndTime(null);
+    } else {
+      setIsLive(false); setCustomEndTime(toLocalDatetimeStr(clampedEnd));
+    }
+  }, [selectedTimeRange]);
 
   const viewportBounds = useMemo(() => {
     // During drag, use the drag position; otherwise derive from committed time
-    const endMs = dragEndMs ?? (isLive ? Date.now() : (customEndTime ? new Date(customEndTime).getTime() : Date.now()));
+    const endMs = dragEndMs ?? (isLive ? Date.now() : (effectiveViewportEnd ? new Date(effectiveViewportEnd).getTime() : Date.now()));
     return { startMs: endMs - windowSec * 2 * 1000, endMs };
-  }, [dragEndMs, isLive, customEndTime, windowSec]);
+  }, [dragEndMs, isLive, effectiveViewportEnd, windowSec]);
 
   const navigatorMetricData = useMemo(() => {
     if (!navigatorData) return [];
@@ -498,7 +527,21 @@ export const TimeTravelPage: React.FC = () => {
       setWindowSec(WINDOW_SIZES[WINDOW_SIZES.length - 1].sec);
     }
   }, [navigatorHours]); // eslint-disable-line react-hooks/exhaustive-deps
-  const [showCustomTime, setShowCustomTime] = useState(false);
+  const [showCustomPopover, setShowCustomPopover] = useState(false);
+  const [sliderZoomMs, setSliderZoomMs] = useState(CUSTOM_RANGE_PRESETS[0].ms); // slider track width
+  const customPopoverRef = useRef<HTMLDivElement>(null);
+
+  // Close custom popover on click-outside or Escape
+  useEffect(() => {
+    if (!showCustomPopover) return;
+    const onKey = (e: KeyboardEvent) => { if (e.key === 'Escape') setShowCustomPopover(false); };
+    const onClick = (e: MouseEvent) => {
+      if (customPopoverRef.current && !customPopoverRef.current.contains(e.target as Node)) setShowCustomPopover(false);
+    };
+    document.addEventListener('keydown', onKey);
+    document.addEventListener('mousedown', onClick);
+    return () => { document.removeEventListener('keydown', onKey); document.removeEventListener('mousedown', onClick); };
+  }, [showCustomPopover]);
 
   if (!services || !isConnected) {
     return (
@@ -528,15 +571,40 @@ export const TimeTravelPage: React.FC = () => {
     // Invalidate navigator cache so the new range triggers a fresh fetch
     lastNavigatorFetchTime.current = null;
     setNavigatorData(null);
-    const range = TIME_RANGES.find(r => r.label === rangeLabel);
-    if (!range) return;
-    if (range.custom) {
-      setIsLive(false); setShowCustomTime(true);
-      if (!customEndTime) setCustomEndTime(toLocalDatetimeStr(new Date()));
+    // All presets: live mode (right edge = now), scrub bar shows last N hours
+    setIsLive(true); setCustomEndTime(null); setCustomStartTime(null); setViewportEndTime(null);
+    setShowCustomPopover(false);
+  };
+
+  const handleCustomToggle = () => {
+    if (showCustomPopover) {
+      setShowCustomPopover(false);
     } else {
-      // All presets: live mode (right edge = now), scrub bar shows last N hours
-      setIsLive(true); setCustomEndTime(null); setShowCustomTime(false);
+      setShowCustomPopover(true);
+      // Pre-fill from/to based on current preset or previous custom range
+      if (!customStartTime || !customEndTime) {
+        const presetRange = TIME_RANGES.find(r => r.label === selectedTimeRange);
+        const rangeMs = (presetRange?.hoursAgo ?? 1) * 3600000;
+        const now = new Date();
+        setCustomEndTime(toLocalDatetimeStr(now));
+        setCustomStartTime(toLocalDatetimeStr(new Date(now.getTime() - rangeMs)));
+        // Match slider zoom to current selection
+        const zoom = CUSTOM_RANGE_PRESETS.find(z => z.ms >= rangeMs) ?? CUSTOM_RANGE_PRESETS[CUSTOM_RANGE_PRESETS.length - 1];
+        setSliderZoomMs(zoom.ms);
+      }
     }
+  };
+
+  const handleCustomApply = () => {
+    if (!customStartTime || !customEndTime) return;
+    setSelectedTimeRange('Custom');
+    setIsLive(false);
+    // Position viewport at the end of the custom range
+    setViewportEndTime(customEndTime);
+    clearDragPosition();
+    lastNavigatorFetchTime.current = null;
+    setNavigatorData(null);
+    setShowCustomPopover(false);
   };
 
   return (
@@ -552,24 +620,111 @@ export const TimeTravelPage: React.FC = () => {
 
           {/* Right side: Time range picker */}
           <div style={{ display:'flex', alignItems:'center', gap:8 }}>
-            {/* Time range selector */}
-            <div style={{ display:'flex', alignItems:'center', gap:0, background:'var(--bg-tertiary)', borderRadius:6, border:'1px solid var(--border-primary)', overflow:'hidden' }}>
-              <span style={{ padding:'8px 10px', fontSize:11, color:'var(--text-muted)', borderRight:'1px solid var(--border-primary)', whiteSpace:'nowrap' }}>Last</span>
-              <select value={selectedTimeRange} onChange={(e) => handleTimeRangeChange(e.target.value)} title="Select time range starting point"
-                style={{ background:'transparent', color:'var(--text-primary)', border:'none', padding:'8px 12px', fontSize:13, outline:'none', cursor:'pointer', minWidth:90 }}>
-                {TIME_RANGES.map(r => <option key={r.label} value={r.label}>{r.label}</option>)}
-              </select>
-              {showCustomTime && (
-                <input type="datetime-local" value={customEndTime || ''} onChange={(e) => { clearDragPosition(); setCustomEndTime(e.target.value); }} step="1" title="Select custom end time"
-                  style={{ background:'transparent', color:'var(--text-primary)', border:'none', borderLeft:'1px solid var(--border-primary)', padding:'8px 12px', fontSize:13, outline:'none' }} />
+            {/* Time range tab buttons */}
+            <div style={{
+              display:'flex', gap:2, padding:3, borderRadius:8,
+              background:'var(--bg-tertiary)', border:'1px solid var(--border-primary)',
+              position:'relative',
+            }}>
+              <span style={{ padding:'5px 8px', fontSize:10, color:'var(--text-muted)', fontWeight:600, alignSelf:'center' }}>Last</span>
+              {TIME_RANGES.map(r => (
+                <button key={r.label} onClick={() => handleTimeRangeChange(r.label)}
+                  style={{
+                    padding:'5px 10px', fontSize:11, fontWeight:600, border:'none', borderRadius:5, cursor:'pointer',
+                    fontFamily:"'Share Tech Mono',monospace",
+                    background: selectedTimeRange === r.label ? 'var(--bg-primary)' : 'transparent',
+                    color: selectedTimeRange === r.label ? 'var(--text-primary)' : 'var(--text-muted)',
+                    boxShadow: selectedTimeRange === r.label ? '0 1px 3px rgba(0,0,0,0.1)' : 'none',
+                    transition:'all 0.15s ease',
+                  }}>
+                  {r.label}
+                </button>
+              ))}
+              <button onClick={handleCustomToggle}
+                style={{
+                  padding:'5px 10px', fontSize:11, fontWeight:600, border:'none', borderRadius:5, cursor:'pointer',
+                  fontFamily:"'Share Tech Mono',monospace",
+                  background: selectedTimeRange === 'Custom' || showCustomPopover ? 'var(--bg-primary)' : 'transparent',
+                  color: selectedTimeRange === 'Custom' || showCustomPopover ? 'var(--text-primary)' : 'var(--text-muted)',
+                  boxShadow: selectedTimeRange === 'Custom' || showCustomPopover ? '0 1px 3px rgba(0,0,0,0.1)' : 'none',
+                  transition:'all 0.15s ease',
+                }}>
+                Custom
+              </button>
+              {/* Active custom range label (inline inside tab bar) */}
+              {selectedTimeRange === 'Custom' && !showCustomPopover && customStartTime && customEndTime && (() => {
+                const fmt = (iso: string) => {
+                  const d = new Date(iso);
+                  const pad = (n: number) => String(n).padStart(2, '0');
+                  return `${pad(d.getMonth() + 1)}/${pad(d.getDate())} ${pad(d.getHours())}:${pad(d.getMinutes())}`;
+                };
+                return (
+                  <span style={{
+                    fontSize:9, color:'var(--text-muted)', fontFamily:"'Share Tech Mono',monospace",
+                    whiteSpace:'nowrap', padding:'0 4px', alignSelf:'center',
+                  }}>
+                    {fmt(customStartTime)} — {fmt(customEndTime)}
+                  </span>
+                );
+              })()}
+              {/* Custom range popover — drops below the tab bar */}
+              {showCustomPopover && (
+                <div ref={customPopoverRef} style={{
+                  position:'absolute', top:'calc(100% + 6px)', left:0, zIndex:100,
+                  background:'var(--bg-secondary)', border:'1px solid var(--border-primary)',
+                  borderRadius:8, padding:'10px 12px', boxShadow:'0 4px 16px rgba(0,0,0,0.25)',
+                  display:'flex', flexDirection:'column', gap:8, width:480,
+                }}>
+                  {/* From / To / Apply row */}
+                  <div style={{ display:'flex', alignItems:'center', gap:6 }}>
+                    <label style={{ fontSize:9, fontWeight:600, color:'var(--text-muted)' }}>From</label>
+                    <input type="datetime-local" value={customStartTime || ''} onChange={e => setCustomStartTime(e.target.value)}
+                      style={{ flex:1, padding:'4px 8px', fontSize:11, borderRadius:4, border:'1px solid var(--border-primary)', background:'var(--bg-card)', color:'var(--text-primary)', fontFamily:"'Share Tech Mono',monospace" }} />
+                    <label style={{ fontSize:9, fontWeight:600, color:'var(--text-muted)' }}>To</label>
+                    <input type="datetime-local" value={customEndTime || ''} onChange={e => setCustomEndTime(e.target.value)}
+                      style={{ flex:1, padding:'4px 8px', fontSize:11, borderRadius:4, border:'1px solid var(--border-primary)', background:'var(--bg-card)', color:'var(--text-primary)', fontFamily:"'Share Tech Mono',monospace" }} />
+                    <button onClick={handleCustomApply} disabled={!customStartTime || !customEndTime}
+                      style={{
+                        padding:'4px 12px', fontSize:10, fontWeight:600, borderRadius:5, border:'none',
+                        cursor: customStartTime && customEndTime ? 'pointer' : 'not-allowed',
+                        background: customStartTime && customEndTime ? 'rgba(99,102,241,0.85)' : 'transparent',
+                        color: customStartTime && customEndTime ? '#fff' : 'var(--text-muted)',
+                        transition:'all 0.15s ease', whiteSpace:'nowrap',
+                      }}>
+                      Apply
+                    </button>
+                  </div>
+                  {/* Slider zoom presets — controls track width, not selection */}
+                  <div style={{ display:'flex', gap:2, padding:2, borderRadius:6, background:'var(--bg-card)', alignSelf:'center' }}>
+                    {CUSTOM_RANGE_PRESETS.map(p => (
+                      <button key={p.label} onClick={() => setSliderZoomMs(p.ms)}
+                        style={{
+                          padding:'3px 10px', fontSize:10, fontWeight:600, border:'none', borderRadius:5, cursor:'pointer',
+                          fontFamily:"'Share Tech Mono',monospace",
+                          background: sliderZoomMs === p.ms ? 'var(--bg-primary)' : 'transparent',
+                          color: sliderZoomMs === p.ms ? 'var(--text-primary)' : 'var(--text-muted)',
+                          boxShadow: sliderZoomMs === p.ms ? '0 1px 3px rgba(0,0,0,0.1)' : 'none',
+                          transition:'all 0.15s ease',
+                        }}>
+                        {p.label}
+                      </button>
+                    ))}
+                  </div>
+                  {/* Scrubber slider — track spans sliderZoomMs ending at now, handles set From/To */}
+                  <RangeSlider
+                    rangeStartMs={Date.now() - sliderZoomMs} rangeEndMs={Date.now()}
+                    start={customStartTime || ''} end={customEndTime || ''}
+                    onStartChange={setCustomStartTime} onEndChange={setCustomEndTime}
+                  />
+                </div>
               )}
             </div>
 
             {/* Window size selector */}
             <div style={{ display:'flex', alignItems:'center', gap:0, background:'var(--bg-tertiary)', borderRadius:6, border:'1px solid var(--border-primary)', overflow:'hidden' }}>
-              <span style={{ padding:'8px 10px', fontSize:11, color:'var(--text-muted)', borderRight:'1px solid var(--border-primary)', whiteSpace:'nowrap' }}>Zoom</span>
+              <span style={{ padding:'5px 8px', fontSize:10, color:'var(--text-muted)', borderRight:'1px solid var(--border-primary)', whiteSpace:'nowrap', fontWeight:600 }}>Zoom</span>
               <select value={windowSec} onChange={(e) => setWindowSec(Number(e.target.value))} title="Select time window duration"
-                style={{ background:'transparent', color:'var(--text-primary)', border:'none', padding:'8px 12px', fontSize:13, outline:'none', cursor:'pointer', minWidth:60 }}>
+                style={{ background:'transparent', color:'var(--text-primary)', border:'none', padding:'5px 10px', fontSize:11, outline:'none', cursor:'pointer', minWidth:60 }}>
                 {WINDOW_SIZES.map(w => <option key={w.sec} value={w.sec}>{w.label}</option>)}
               </select>
             </div>
@@ -600,7 +755,7 @@ export const TimeTravelPage: React.FC = () => {
 
             {/* Go Live button */}
             {!isLive && (
-              <button onClick={() => { clearDragPosition(); setIsLive(true); setCustomEndTime(null); }} title="Jump to current time"
+              <button onClick={() => { clearDragPosition(); setIsLive(true); setCustomEndTime(null); setCustomStartTime(null); setViewportEndTime(null); setSelectedTimeRange('1h'); }} title="Jump to current time"
                 style={{ display:'flex', alignItems:'center', gap:6, background:'rgba(63,185,80,0.15)', color:'#3fb950', border:'1px solid rgba(63,185,80,0.4)', borderRadius:6, padding:'8px 12px', fontSize:11, cursor:'pointer', fontWeight:500 }}>
                 <span style={{ display:'inline-block', width:6, height:6, borderRadius:'50%', background:'#3fb950' }} />
                 Go Live
@@ -879,7 +1034,7 @@ export const TimeTravelPage: React.FC = () => {
           {navigatorRange && (
             <div style={{ marginTop: 12 }}>
               <div style={{ display:'flex', alignItems:'center', gap:8, marginBottom:6, fontSize:11, color:'var(--text-muted)' }}>
-                <span style={{ textTransform:'uppercase', letterSpacing:'0.5px' }}>{navigatorHours >= 24 ? '1d' : `${navigatorHours}h`} Overview</span>
+                <span style={{ textTransform:'uppercase', letterSpacing:'0.5px' }}>{navigatorHours >= 48 ? `${Math.round(navigatorHours / 24)}d` : navigatorHours >= 24 ? '1d' : `${Math.round(navigatorHours)}h`} Overview</span>
                 <span style={{ color: METRIC_CONFIG[metricMode].color }}>{METRIC_CONFIG[metricMode].label}</span>
                 <span>· Drag window to navigate</span>
               </div>
