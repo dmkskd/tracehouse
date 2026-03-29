@@ -1,8 +1,9 @@
 /**
  * Replication — dedicated tab for replication health, queue inspection, and per-table detail.
+ * Split layout: table list (left) + always-visible 3D topology (right).
  */
 
-import React, { useEffect, useState, useCallback, useMemo } from 'react';
+import React, { useEffect, useState, useMemo } from 'react';
 import { useClickHouseServices } from '../providers/ClickHouseProvider';
 import { useConnectionStore } from '../stores/connectionStore';
 import { useClusterStore } from '../stores/clusterStore';
@@ -16,6 +17,7 @@ import { PermissionGate } from '../components/shared/PermissionGate';
 import { extractErrorMessage } from '../utils/errorFormatters';
 import { useCapabilityCheck } from '../components/shared/RequiresCapability';
 import { DocsLink } from '../components/common/DocsLink';
+import { ReplicationTopology } from '../components/replication/ReplicationTopology';
 
 const TAB_REPLICATION = 'replication';
 
@@ -40,24 +42,6 @@ interface ReplicaRow {
   [key: string]: unknown;
 }
 
-interface QueueEntry {
-  database: string;
-  table: string;
-  replica_name: string;
-  type: string;
-  create_time: string;
-  source_replica: string;
-  new_part_name: string;
-  parts_to_merge: string;
-  is_currently_executing: number;
-  num_tries: number;
-  last_attempt_time: string;
-  last_exception: string;
-  num_postponed: number;
-  postpone_reason: string;
-  [key: string]: unknown;
-}
-
 // ── Shared styles ──
 
 const TH: React.CSSProperties = {
@@ -70,11 +54,6 @@ const TD: React.CSSProperties = { padding: '5px 8px', fontSize: 11 };
 const TD_MONO: React.CSSProperties = { ...TD, fontFamily: 'monospace', color: 'var(--text-primary)' };
 const TD_C: React.CSSProperties = { ...TD, textAlign: 'center' };
 const TD_R: React.CSSProperties = { ...TD, textAlign: 'right', fontFamily: 'monospace' };
-const TD_MUTED: React.CSSProperties = { ...TD, color: 'var(--text-muted)' };
-
-function rowBg(i: number): string | undefined {
-  return i % 2 === 1 ? 'var(--bg-row-alt)' : undefined;
-}
 
 function formatDelay(seconds: number): string {
   if (seconds === 0) return '0s';
@@ -95,25 +74,6 @@ const HealthBadge: React.FC<{ healthy: boolean; label: string }> = ({ healthy, l
   </span>
 );
 
-const TypeBadge: React.FC<{ type: string }> = ({ type }) => {
-  const colors: Record<string, { bg: string; fg: string }> = {
-    MERGE_PARTS: { bg: 'rgba(99,102,241,0.15)', fg: '#818cf8' },
-    GET_PART: { bg: 'rgba(34,197,94,0.15)', fg: '#22c55e' },
-    MUTATE_PART: { bg: 'rgba(245,158,11,0.15)', fg: '#f59e0b' },
-    ALTER_METADATA: { bg: 'rgba(168,85,247,0.15)', fg: '#a855f7' },
-    DROP_RANGE: { bg: 'rgba(239,68,68,0.15)', fg: '#ef4444' },
-  };
-  const c = colors[type] || { bg: 'rgba(148,163,184,0.15)', fg: '#94a3b8' };
-  return (
-    <span style={{
-      padding: '1px 5px', fontSize: 10, fontWeight: 500, borderRadius: 4,
-      backgroundColor: c.bg, color: c.fg,
-    }}>
-      {type}
-    </span>
-  );
-};
-
 // ── Stat Card ──
 
 const StatCard: React.FC<{ label: string; value: string | number; warn?: boolean }> = ({ label, value, warn }) => (
@@ -122,74 +82,6 @@ const StatCard: React.FC<{ label: string; value: string | number; warn?: boolean
     <div className="stat-label">{label}</div>
   </div>
 );
-
-// ── Queue Detail Panel ──
-
-const QueueDetailPanel: React.FC<{
-  entries: QueueEntry[];
-  loading: boolean;
-  tableName: string;
-}> = ({ entries, loading, tableName }) => {
-  if (loading) {
-    return (
-      <div style={{ padding: 12, fontSize: 11, color: 'var(--text-muted)', textAlign: 'center' }}>
-        Loading queue for {tableName}...
-      </div>
-    );
-  }
-  if (entries.length === 0) {
-    return (
-      <div style={{ padding: 12, fontSize: 11, color: 'var(--text-muted)', textAlign: 'center' }}>
-        Queue is empty for {tableName}
-      </div>
-    );
-  }
-  return (
-    <div style={{ overflowX: 'auto' }}>
-      <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 11 }}>
-        <thead>
-          <tr style={{ borderBottom: '1px solid var(--border-secondary)' }}>
-            <th style={TH}>Type</th>
-            <th style={TH}>Part</th>
-            <th style={TH}>Source</th>
-            <th style={TH_C}>Executing</th>
-            <th style={TH_R}>Tries</th>
-            <th style={TH_R}>Postponed</th>
-            <th style={TH}>Created</th>
-            <th style={TH}>Error</th>
-          </tr>
-        </thead>
-        <tbody>
-          {entries.map((e, i) => (
-            <tr key={i} style={{ borderBottom: '1px solid var(--border-secondary)', background: rowBg(i) }}>
-              <td style={TD}><TypeBadge type={e.type} /></td>
-              <td style={TD_MONO}>{e.new_part_name}</td>
-              <td style={TD_MUTED}>{e.source_replica || '—'}</td>
-              <td style={TD_C}>
-                {Number(e.is_currently_executing) ? (
-                  <span style={{ color: '#22c55e', fontSize: 10, fontWeight: 600 }}>●</span>
-                ) : (
-                  <span style={{ color: 'var(--text-muted)' }}>—</span>
-                )}
-              </td>
-              <td style={{ ...TD_R, color: Number(e.num_tries) > 3 ? '#f59e0b' : 'var(--text-muted)' }}>
-                {e.num_tries}
-              </td>
-              <td style={{ ...TD_R, color: Number(e.num_postponed) > 0 ? '#f59e0b' : 'var(--text-muted)' }}>
-                {e.num_postponed}
-              </td>
-              <td style={TD_MUTED}>{e.create_time}</td>
-              <td style={{ ...TD, color: e.last_exception ? '#ef4444' : 'var(--text-muted)', maxWidth: 200, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}
-                  title={e.last_exception || undefined}>
-                {e.last_exception || '—'}
-              </td>
-            </tr>
-          ))}
-        </tbody>
-      </table>
-    </div>
-  );
-};
 
 // ── Main Component ──
 
@@ -206,11 +98,13 @@ export const Replication: React.FC = () => {
   const [error, setError] = useState<string | null>(null);
   const { available: hasReplicas, probing: isCapProbing } = useCapabilityCheck(['system_replicas']);
 
-  // Queue drill-down state
-  const [expandedDb, setExpandedDb] = useState<string | null>(null);
-  const [queueEntries, setQueueEntries] = useState<QueueEntry[]>([]);
+  // Selected table for topology view
+  const [selectedTable, setSelectedTable] = useState<string | null>(null);
+
+  // Queue expansion: key is "db.table", value is fetched queue rows
+  const [expandedQueue, setExpandedQueue] = useState<string | null>(null);
+  const [queueRows, setQueueRows] = useState<Record<string, unknown>[]>([]);
   const [queueLoading, setQueueLoading] = useState(false);
-  const [expandedTable, setExpandedTable] = useState<string | null>(null);
 
   // Fetch replica data
   useEffect(() => {
@@ -242,36 +136,12 @@ export const Replication: React.FC = () => {
     return () => { cancelled = true; };
   }, [services, isConnected, detected, hasReplicas, isCapProbing]);
 
-  // Fetch queue for a database
-  const fetchQueue = useCallback(async (database: string) => {
-    if (!services || !isConnected) return;
-    setQueueLoading(true);
-    try {
-      const rows = await services.adapter.executeQuery<QueueEntry>(
-        tagQuery(
-          buildQuery(GET_REPLICATION_QUEUE, { database }),
-          sourceTag(TAB_REPLICATION, 'queue')
-        )
-      );
-      setQueueEntries(rows);
-    } catch {
-      setQueueEntries([]);
-    } finally {
-      setQueueLoading(false);
+  // Auto-select first table when data loads
+  useEffect(() => {
+    if (replicas.length > 0 && selectedTable === null) {
+      setSelectedTable(`${replicas[0].database}.${replicas[0].table}`);
     }
-  }, [services, isConnected]);
-
-  const handleToggleDb = useCallback((db: string) => {
-    if (expandedDb === db) {
-      setExpandedDb(null);
-      setQueueEntries([]);
-      setExpandedTable(null);
-    } else {
-      setExpandedDb(db);
-      setExpandedTable(null);
-      fetchQueue(db);
-    }
-  }, [expandedDb, fetchQueue]);
+  }, [replicas, selectedTable]);
 
   // Aggregate stats
   const stats = useMemo(() => {
@@ -283,22 +153,31 @@ export const Replication: React.FC = () => {
     return { total, healthy, totalQueue, maxDelay, readonly };
   }, [replicas]);
 
-  // Group by database
-  const byDatabase = useMemo(() => {
-    const map = new Map<string, ReplicaRow[]>();
-    for (const r of replicas) {
-      const db = String(r.database);
-      if (!map.has(db)) map.set(db, []);
-      map.get(db)!.push(r);
+  const toggleQueue = async (fullName: string, database: string) => {
+    if (expandedQueue === fullName) {
+      setExpandedQueue(null);
+      return;
     }
-    return map;
-  }, [replicas]);
+    if (!services) return;
+    setExpandedQueue(fullName);
+    setQueueLoading(true);
+    try {
+      const rows = await services.adapter.executeQuery<Record<string, unknown>>(
+        tagQuery(buildQuery(GET_REPLICATION_QUEUE, { database }), sourceTag(TAB_REPLICATION, 'queue'))
+      );
+      // Filter to this specific table
+      const tableName = fullName.split('.').slice(1).join('.');
+      setQueueRows(rows.filter(r => String(r.table) === tableName));
+    } catch {
+      setQueueRows([]);
+    } finally {
+      setQueueLoading(false);
+    }
+  };
 
-  // Queue entries for expanded table
-  const tableQueueEntries = useMemo(() => {
-    if (!expandedTable) return queueEntries;
-    return queueEntries.filter(e => `${e.database}.${e.table}` === expandedTable);
-  }, [queueEntries, expandedTable]);
+  // Parse selected table
+  const selectedDb = selectedTable ? selectedTable.split('.')[0] : null;
+  const selectedTbl = selectedTable ? selectedTable.split('.').slice(1).join('.') : null;
 
   // No connection
   if (!activeProfileId || !isConnected) {
@@ -363,15 +242,30 @@ export const Replication: React.FC = () => {
         <StatCard label="Read-Only" value={stats.readonly} warn={stats.readonly > 0} />
       </div>
 
-      {/* Per-table replication table */}
+      {/* Topology — always visible, full width */}
+      {selectedDb && selectedTbl ? (
+        <ReplicationTopology
+          database={selectedDb}
+          table={selectedTbl}
+        />
+      ) : (
+        <div className="card" style={{
+          height: 400, display: 'flex', alignItems: 'center', justifyContent: 'center',
+          color: 'var(--text-muted)', fontSize: 12,
+        }}>
+          Select a table below to view its replication topology
+        </div>
+      )}
+
+      {/* Table list — below topology */}
       <div className="card overflow-hidden">
-        <div style={{ padding: '12px 16px', borderBottom: '1px solid var(--border-secondary)' }}>
+        <div style={{ padding: '10px 14px', borderBottom: '1px solid var(--border-secondary)' }}>
           <h3 style={{ fontSize: 11, fontWeight: 500, color: 'var(--text-secondary)' }}>
-            Replica Status
-            <span style={{ marginLeft: 8, color: 'var(--text-muted)' }}>({replicas.length} tables)</span>
+            Replicated Tables
+            <span style={{ marginLeft: 8, color: 'var(--text-muted)' }}>({replicas.length})</span>
           </h3>
         </div>
-        <div style={{ overflowX: 'auto', maxHeight: 600, overflowY: 'auto' }}>
+        <div style={{ overflowX: 'auto', maxHeight: 400, overflowY: 'auto' }}>
           <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 11 }}>
             <thead className="sticky top-0 z-10" style={{ background: 'var(--bg-card)' }}>
               <tr style={{ borderBottom: '1px solid var(--border-secondary)' }}>
@@ -388,87 +282,115 @@ export const Replication: React.FC = () => {
               </tr>
             </thead>
             <tbody>
-              {Array.from(byDatabase.entries()).map(([db, tables]) =>
-                tables.map((r, i) => {
-                  const healthy = !Number(r.is_readonly) && Number(r.absolute_delay) < 300;
-                  const queueSize = Number(r.queue_size);
-                  const fullName = `${r.database}.${r.table}`;
-                  const isExpanded = expandedTable === fullName;
-                  return (
-                    <React.Fragment key={fullName}>
-                      <tr
-                        style={{
-                          borderBottom: '1px solid var(--border-secondary)',
-                          background: isExpanded ? 'var(--bg-hover)' : rowBg(i),
-                          cursor: queueSize > 0 ? 'pointer' : 'default',
-                        }}
-                        onClick={() => {
-                          if (queueSize > 0) {
-                            if (expandedDb !== db) {
-                              handleToggleDb(db);
-                            }
-                            setExpandedTable(isExpanded ? null : fullName);
-                          }
-                        }}
-                      >
-                        <td style={TD_MONO}>{r.database}</td>
-                        <td style={TD_MONO}>{r.table}</td>
-                        <td style={TD_C}>
-                          <HealthBadge healthy={healthy} label={healthy ? 'OK' : Number(r.is_readonly) ? 'RO' : 'LAG'} />
-                        </td>
-                        <td style={TD_C}>
-                          {Number(r.is_leader) ? (
-                            <span style={{ fontSize: 10, fontWeight: 600, color: '#3fb950', padding: '1px 5px', borderRadius: 4, backgroundColor: 'rgba(63,185,80,0.12)' }}>L</span>
-                          ) : (
-                            <span style={{ color: 'var(--text-muted)' }}>—</span>
-                          )}
-                        </td>
-                        <td style={{ ...TD_C, fontFamily: 'monospace' }}>
-                          {Number(r.active_replicas)}/{Number(r.total_replicas)}
-                        </td>
-                        <td style={{ ...TD_C, fontFamily: 'monospace' }}>
-                          {Number(r.shard_count)}
-                        </td>
-                        <td style={{
-                          ...TD_R,
-                          color: Number(r.absolute_delay) > 300 ? '#ef4444' : Number(r.absolute_delay) > 60 ? '#f59e0b' : 'var(--text-muted)',
-                        }}>
-                          {formatDelay(Number(r.absolute_delay))}
-                        </td>
-                        <td style={{
-                          ...TD_R,
-                          color: queueSize > 0 ? '#f59e0b' : 'var(--text-muted)',
-                          textDecoration: queueSize > 0 ? 'underline' : 'none',
-                        }}>
-                          {queueSize}
-                        </td>
-                        <td style={{ ...TD_R, color: Number(r.inserts_in_queue) > 0 ? 'var(--text-primary)' : 'var(--text-muted)' }}>
-                          {Number(r.inserts_in_queue)}
-                        </td>
-                        <td style={{ ...TD_R, color: Number(r.merges_in_queue) > 0 ? 'var(--text-primary)' : 'var(--text-muted)' }}>
-                          {Number(r.merges_in_queue)}
-                        </td>
-                      </tr>
-                      {isExpanded && (
-                        <tr>
-                          <td colSpan={10} style={{ padding: 0, background: 'var(--bg-secondary)' }}>
-                            <div style={{ padding: '8px 16px', borderBottom: '2px solid var(--border-primary)' }}>
-                              <div style={{ fontSize: 10, fontWeight: 500, color: 'var(--text-muted)', marginBottom: 6 }}>
-                                Queue entries for {fullName}
-                              </div>
-                              <QueueDetailPanel
-                                entries={tableQueueEntries}
-                                loading={queueLoading && expandedDb === db}
-                                tableName={fullName}
-                              />
-                            </div>
-                          </td>
-                        </tr>
+              {replicas.map((r, i) => {
+                const healthy = !Number(r.is_readonly) && Number(r.absolute_delay) < 300;
+                const queueSize = Number(r.queue_size);
+                const fullName = `${r.database}.${r.table}`;
+                const isSelected = selectedTable === fullName;
+                return (
+                  <React.Fragment key={fullName}>
+                  <tr
+                    style={{
+                      borderBottom: '1px solid var(--border-secondary)',
+                      background: isSelected ? 'var(--bg-hover)' : (i % 2 === 1 ? 'var(--bg-row-alt)' : undefined),
+                      cursor: 'pointer',
+                      borderLeft: isSelected ? '3px solid #60a5fa' : '3px solid transparent',
+                    }}
+                    onClick={() => setSelectedTable(fullName)}
+                  >
+                    <td style={TD_MONO}>{r.database}</td>
+                    <td style={TD_MONO}>{r.table}</td>
+                    <td style={TD_C}>
+                      <HealthBadge healthy={healthy} label={healthy ? 'OK' : Number(r.is_readonly) ? 'RO' : 'LAG'} />
+                    </td>
+                    <td style={TD_C}>
+                      {Number(r.is_leader) ? (
+                        <span style={{ fontSize: 10, fontWeight: 600, color: '#3fb950', padding: '1px 5px', borderRadius: 4, backgroundColor: 'rgba(63,185,80,0.12)' }}>L</span>
+                      ) : (
+                        <span style={{ color: 'var(--text-muted)' }}>—</span>
                       )}
-                    </React.Fragment>
-                  );
-                })
-              )}
+                    </td>
+                    <td style={{ ...TD_C, fontFamily: 'monospace' }}>
+                      {Number(r.active_replicas)}/{Number(r.total_replicas)}
+                    </td>
+                    <td style={{ ...TD_C, fontFamily: 'monospace' }}>
+                      {Number(r.shard_count)}
+                    </td>
+                    <td style={{
+                      ...TD_R,
+                      color: Number(r.absolute_delay) > 300 ? '#ef4444' : Number(r.absolute_delay) > 60 ? '#f59e0b' : 'var(--text-muted)',
+                    }}>
+                      {formatDelay(Number(r.absolute_delay))}
+                    </td>
+                    <td
+                      style={{
+                        ...TD_R,
+                        color: queueSize > 0 ? '#f59e0b' : 'var(--text-muted)',
+                        cursor: queueSize > 0 ? 'pointer' : undefined,
+                        textDecoration: queueSize > 0 ? 'underline' : undefined,
+                      }}
+                      onClick={queueSize > 0 ? (e) => { e.stopPropagation(); toggleQueue(fullName, r.database); } : undefined}
+                      title={queueSize > 0 ? 'Click to expand queue details' : undefined}
+                    >
+                      {queueSize}
+                    </td>
+                    <td style={{ ...TD_R, color: Number(r.inserts_in_queue) > 0 ? 'var(--text-primary)' : 'var(--text-muted)' }}>
+                      {Number(r.inserts_in_queue)}
+                    </td>
+                    <td style={{ ...TD_R, color: Number(r.merges_in_queue) > 0 ? 'var(--text-primary)' : 'var(--text-muted)' }}>
+                      {Number(r.merges_in_queue)}
+                    </td>
+                  </tr>
+                  {expandedQueue === fullName && (
+                    <tr>
+                      <td colSpan={10} style={{ padding: 0 }}>
+                        <div style={{ padding: '8px 12px', backgroundColor: 'var(--bg-secondary)', borderBottom: '1px solid var(--border-secondary)' }}>
+                          {queueLoading ? (
+                            <span style={{ fontSize: 10, color: 'var(--text-muted)' }}>Loading queue...</span>
+                          ) : queueRows.length === 0 ? (
+                            <span style={{ fontSize: 10, color: 'var(--text-muted)' }}>Queue is empty</span>
+                          ) : (
+                            <table style={{ width: '100%', borderCollapse: 'collapse' }}>
+                              <thead>
+                                <tr>
+                                  <th style={{ ...TH, fontSize: 9 }}>Replica</th>
+                                  <th style={{ ...TH, fontSize: 9 }}>Type</th>
+                                  <th style={{ ...TH, fontSize: 9 }}>Part</th>
+                                  <th style={{ ...TH_C, fontSize: 9 }}>Tries</th>
+                                  <th style={{ ...TH_C, fontSize: 9 }}>Running</th>
+                                  <th style={{ ...TH, fontSize: 9 }}>Exception</th>
+                                  <th style={{ ...TH, fontSize: 9 }}>Created</th>
+                                </tr>
+                              </thead>
+                              <tbody>
+                                {queueRows.map((q, qi) => {
+                                  const tries = Number(q.num_tries);
+                                  const hasErr = String(q.last_exception || '') !== '';
+                                  const stuck = tries > 5 && hasErr;
+                                  return (
+                                    <tr key={qi} style={{ borderBottom: '1px solid var(--border-secondary)' }}>
+                                      <td style={{ ...TD_MONO, fontSize: 10 }}>{String(q.replica_name)}</td>
+                                      <td style={{ ...TD_MONO, fontSize: 10, color: stuck ? '#ef4444' : '#f59e0b' }}>{String(q.type)}</td>
+                                      <td style={{ ...TD_MONO, fontSize: 10 }}>{String(q.new_part_name)}</td>
+                                      <td style={{ ...TD_C, fontSize: 10, fontFamily: 'monospace', color: stuck ? '#ef4444' : tries > 0 ? '#f59e0b' : 'var(--text-muted)' }}>{tries}</td>
+                                      <td style={{ ...TD_C, fontSize: 10 }}>{Number(q.is_currently_executing) ? '▶' : '—'}</td>
+                                      <td style={{ ...TD, fontSize: 9, color: '#ef4444', maxWidth: 300, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }} title={String(q.last_exception || '')}>
+                                        {hasErr ? String(q.last_exception).slice(0, 80) : '—'}
+                                      </td>
+                                      <td style={{ ...TD, fontSize: 10, color: 'var(--text-muted)', fontFamily: 'monospace' }}>{String(q.create_time)}</td>
+                                    </tr>
+                                  );
+                                })}
+                              </tbody>
+                            </table>
+                          )}
+                        </div>
+                      </td>
+                    </tr>
+                  )}
+                  </React.Fragment>
+                );
+              })}
             </tbody>
           </table>
         </div>
