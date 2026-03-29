@@ -32,6 +32,14 @@ build/
 .coverage
 htmlcov/
 
+# Playwright
+playwright-report/
+test-results/
+blob-report/
+packages/e2e/tests/.ch-state.json
+packages/e2e/test-results/
+packages/e2e/playwright-report/
+
 # Python
 __pycache__/
 *.pyc

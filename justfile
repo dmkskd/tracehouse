@@ -414,6 +414,21 @@ test-summary:
 test-report:
     cd packages/core && npx vite preview --outDir test-reports/html --open
 
+# Run Playwright e2e tests (starts ClickHouse + Vite dev server)
+[group('test')]
+e2e:
+    cd packages/e2e && npx playwright test
+
+# Run e2e tests with interactive UI
+[group('test')]
+e2e-ui:
+    cd packages/e2e && npx playwright test --ui
+
+# Run e2e tests with visible browser (slow=ms, default 500)
+[group('test')]
+e2e-headed slow="500":
+    cd packages/e2e && SLOWMO={{slow}} npx playwright test --headed --workers=1
+
 # Run Python data-utils tests (requires Docker)
 [group('test')]
 test-data-utils:

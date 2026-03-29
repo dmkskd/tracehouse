@@ -40,7 +40,12 @@ else
   cd "$ROOT/frontend" && npm test
   cd "$ROOT/packages/core" && npx vitest run
   cd "$ROOT/packages/core" && npx vitest run --config vitest.integration.config.ts
-  echo "  ✓ All tests passed"
+  echo "  ✓ Unit & integration tests passed"
+
+  echo ""
+  echo "=== Running e2e smoke tests ==="
+  cd "$ROOT/packages/e2e" && npx playwright test
+  echo "  ✓ E2E smoke tests passed"
 fi
 
 # ── Single-file HTML ────────────────────────────────────────────
