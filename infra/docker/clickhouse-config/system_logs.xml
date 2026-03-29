@@ -1,34 +1,78 @@
 <clickhouse>
     <!-- System log tables used by TraceHouse.
-         query_log, trace_log, metric_log, asynchronous_metric_log, part_log
-         are enabled by default; the tables below are not. -->
+         3-day TTL: query_log, part_log, metric_log, asynchronous_metric_log (core observability)
+         2-hour TTL: trace_log (high volume, only needed for short-term profiling)
+         1-day TTL: everything else (verbose/debugging)
+         merge_with_ttl_timeout=900 so cleanup runs every ~15 min. -->
 
-    <!-- trace_log is the biggest offender (~42 GB unbounded on demo).
-         4h TTL keeps enough data for debugging without filling disk. -->
-    <trace_log>
+    <!-- ── 3-day retention (core observability) ─────────────────────── -->
+
+    <query_log replace="replace">
+        <database>system</database>
+        <table>query_log</table>
+        <flush_interval_milliseconds>7500</flush_interval_milliseconds>
+        <engine>ENGINE = MergeTree PARTITION BY toYYYYMM(event_date) ORDER BY (event_date, event_time) TTL event_time + INTERVAL 3 DAY SETTINGS merge_with_ttl_timeout = 900</engine>
+    </query_log>
+
+    <part_log replace="replace">
+        <database>system</database>
+        <table>part_log</table>
+        <flush_interval_milliseconds>7500</flush_interval_milliseconds>
+        <engine>ENGINE = MergeTree PARTITION BY toYYYYMM(event_date) ORDER BY (event_date, event_time) TTL event_time + INTERVAL 3 DAY SETTINGS merge_with_ttl_timeout = 900</engine>
+    </part_log>
+
+    <metric_log replace="replace">
+        <database>system</database>
+        <table>metric_log</table>
+        <flush_interval_milliseconds>7500</flush_interval_milliseconds>
+        <engine>ENGINE = MergeTree PARTITION BY toYYYYMM(event_date) ORDER BY (event_date, event_time) TTL event_time + INTERVAL 3 DAY SETTINGS merge_with_ttl_timeout = 900</engine>
+    </metric_log>
+
+    <asynchronous_metric_log replace="replace">
+        <database>system</database>
+        <table>asynchronous_metric_log</table>
+        <flush_interval_milliseconds>7500</flush_interval_milliseconds>
+        <engine>ENGINE = MergeTree PARTITION BY toYYYYMM(event_date) ORDER BY (event_date, event_time) TTL event_time + INTERVAL 3 DAY SETTINGS merge_with_ttl_timeout = 900</engine>
+    </asynchronous_metric_log>
+
+    <!-- ── 1-day retention (verbose/debugging) ──────────────────────── -->
+
+    <trace_log replace="replace">
         <database>system</database>
         <table>trace_log</table>
         <flush_interval_milliseconds>7500</flush_interval_milliseconds>
-        <ttl>event_time + INTERVAL 4 HOUR</ttl>
+        <engine>ENGINE = MergeTree PARTITION BY toYYYYMM(event_date) ORDER BY (event_date, event_time) TTL event_time + INTERVAL 2 HOUR SETTINGS merge_with_ttl_timeout = 900</engine>
     </trace_log>
 
-    <query_views_log>
+    <query_thread_log replace="replace">
+        <database>system</database>
+        <table>query_thread_log</table>
+        <flush_interval_milliseconds>7500</flush_interval_milliseconds>
+        <engine>ENGINE = MergeTree PARTITION BY toYYYYMM(event_date) ORDER BY (event_date, event_time) TTL event_time + INTERVAL 1 DAY SETTINGS merge_with_ttl_timeout = 900</engine>
+    </query_thread_log>
+
+    <query_views_log replace="replace">
         <database>system</database>
         <table>query_views_log</table>
         <flush_interval_milliseconds>7500</flush_interval_milliseconds>
+        <engine>ENGINE = MergeTree PARTITION BY toYYYYMM(event_date) ORDER BY (event_date, event_time) TTL event_time + INTERVAL 1 DAY SETTINGS merge_with_ttl_timeout = 900</engine>
     </query_views_log>
 
-    <processors_profile_log>
+    <processors_profile_log replace="replace">
         <database>system</database>
         <table>processors_profile_log</table>
         <flush_interval_milliseconds>7500</flush_interval_milliseconds>
+        <engine>ENGINE = MergeTree PARTITION BY toYYYYMM(event_date) ORDER BY (event_date, event_time) TTL event_time + INTERVAL 1 DAY SETTINGS merge_with_ttl_timeout = 900</engine>
     </processors_profile_log>
 
-    <zookeeper_log>
+    <zookeeper_log replace="replace">
         <database>system</database>
         <table>zookeeper_log</table>
         <flush_interval_milliseconds>7500</flush_interval_milliseconds>
+        <engine>ENGINE = MergeTree PARTITION BY toYYYYMM(event_date) ORDER BY (event_date, event_time) TTL event_time + INTERVAL 1 DAY SETTINGS merge_with_ttl_timeout = 900</engine>
     </zookeeper_log>
+
+    <!-- ── No TTL (tiny, rarely written) ────────────────────────────── -->
 
     <crash_log>
         <database>system</database>

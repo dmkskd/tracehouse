@@ -1,16 +1,16 @@
 #!/bin/bash
 # Demo workload loop — generates data, then runs inserts + queries continuously.
 #
+# Data tables have 12h TTL so old rows expire automatically — no drop/recreate
+# cycle needed. The workload just keeps inserting and querying.
+#
 # All tool config comes from environment variables set in docker-compose.yml.
 # See CH_GEN_*, CH_QUERY_*, CH_MUTATION_* env vars.
 
 set -euo pipefail
 
-CYCLE_HOURS="${WORKLOAD_CYCLE_HOURS:-12}"
-CYCLE_SECONDS=$((CYCLE_HOURS * 3600))
-
-# Shard 1 replicas for query distribution (data only exists on shard 1)
-CH_HOSTS=(${CH_QUERY_HOSTS:-ch-s1r1 ch-s1r2})
+# All nodes for query distribution (tables are Distributed across shards)
+CH_HOSTS=(${CH_QUERY_HOSTS:-ch-s1r1 ch-s1r2 ch-s2r1 ch-s2r2})
 _host_idx=0
 pick_host() {
   local host="${CH_HOSTS[$_host_idx]}"
@@ -40,15 +40,6 @@ c.execute('SELECT 1')
   log "ClickHouse is ready"
 }
 
-stop_pids() {
-  for pid in "$@"; do
-    kill "$pid" 2>/dev/null || true
-  done
-  for pid in "$@"; do
-    wait "$pid" 2>/dev/null || true
-  done
-}
-
 # ── Insert loop — runs generate in append mode repeatedly ───────────────
 
 insert_loop() {
@@ -59,44 +50,35 @@ insert_loop() {
   done
 }
 
-# ── Main loop ──────────────────────────────────────────────────────────────
+# ── Main ────────────────────────────────────────────────────────────────
 
 wait_for_clickhouse
 
-while true; do
-  log "=== Starting cycle (${CYCLE_HOURS}h) ==="
-
-  # Phase 1: Generate initial data (blocking — tables must exist before queries start)
-  log "Generating initial data..."
+# Phase 1: Generate initial data (blocking — tables must exist before queries start)
+# No throttle for initial load — fill tables fast, TTL handles cleanup later
+log "Generating initial data (no throttle, full parallelism)..."
+CH_GEN_THROTTLE_MIN=0 CH_GEN_THROTTLE_MAX=0 CH_GEN_PARALLELISM=0 \
   run tracehouse-generate || log "WARNING: generate exited with error"
 
-  # Phase 2: Continuous activity — inserts + queries + sparse mutations
-  # Inserts create new parts → triggers natural background merges
-  log "Starting continuous workload..."
+# Phase 2: Continuous activity — inserts + queries + sparse mutations
+# Inserts create new parts → triggers natural background merges
+# Old data expires via TTL — no drop cycle needed
+log "Starting continuous workload..."
 
-  insert_loop &
-  insert_pid=$!
+insert_loop &
+insert_pid=$!
 
-  # Spread queries across all nodes (one worker per node)
-  query_pids=()
-  for qhost in "${CH_HOSTS[@]}"; do
-    log "Starting query worker on $qhost"
-    CH_HOST=$qhost run tracehouse-queries &
-    query_pids+=($!)
-  done
-
-  CH_HOST=$(pick_host) run tracehouse-mutations &
-  mutations_pid=$!
-
-  # Wait for the cycle duration
-  sleep "${CYCLE_SECONDS}" || true
-
-  log "Cycle complete, stopping all..."
-  stop_pids "$insert_pid" "${query_pids[@]}" "$mutations_pid"
-
-  log "Wiping test data..."
-  run tracehouse-drop || log "WARNING: drop exited with error"
-  log "Wipe complete"
-
-  log "=== Cycle finished, restarting ==="
+# Spread queries across all nodes (one worker per node)
+query_pids=()
+for qhost in "${CH_HOSTS[@]}"; do
+  log "Starting query worker on $qhost"
+  CH_HOST=$qhost run tracehouse-queries &
+  query_pids+=($!)
 done
+
+CH_HOST=$(pick_host) run tracehouse-mutations &
+mutations_pid=$!
+
+# Wait forever — TTL handles cleanup
+log "Workload running (TTL handles data expiry, no cycle needed)"
+wait

@@ -93,7 +93,6 @@ services:
       - ./clickhouse-cluster/s3_storage.xml:/etc/clickhouse-server/config.d/s3_storage.xml:ro
       # User config
       - ./clickhouse-users:/etc/clickhouse-server/users.d
-      # Init scripts (only on first node — replicated access storage propagates to others)
     networks:
       default:
         aliases:
@@ -258,7 +257,7 @@ services:
       # Pre-created test users (same password as default, defined in workload-users.xml)
       TRACEHOUSE_TEST_USERS: "{\"th_alice\":\"${CLICKHOUSE_DEFAULT_PASSWORD}\",\"th_bob\":\"${CLICKHOUSE_DEFAULT_PASSWORD}\",\"th_carol\":\"${CLICKHOUSE_DEFAULT_PASSWORD}\",\"th_dave\":\"${CLICKHOUSE_DEFAULT_PASSWORD}\",\"th_eve\":\"${CLICKHOUSE_DEFAULT_PASSWORD}\"}"
       # Generate config
-      CH_GEN_ROWS: "${WORKLOAD_ROWS:-5000000}"
+      CH_GEN_ROWS: "${WORKLOAD_ROWS:-500000}"
       CH_GEN_PARALLELISM: "${WORKLOAD_PARALLELISM:-2}"
       CH_GEN_BATCH_SIZE: "100000"
       CH_GEN_THROTTLE_MIN: "2.0"
@@ -279,8 +278,8 @@ services:
       # Mutation config (sparse — mutations are a corner case)
       CH_MUTATION_COUNT: "5"
       CH_MUTATION_INTERVAL: "300"
-      # Cycle config
-      WORKLOAD_CYCLE_HOURS: "${WORKLOAD_CYCLE_HOURS:-12}"
+      # Data tables have 12h TTL — no cycle/drop needed
+      CH_GEN_TTL_HOURS: "12"
     depends_on:
       sampling-init: { condition: service_completed_successfully }
     restart: unless-stopped

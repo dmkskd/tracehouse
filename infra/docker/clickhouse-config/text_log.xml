@@ -1,17 +1,20 @@
 <clickhouse>
     <!-- Enable system.text_log for per-query log tracing -->
-    <text_log>
+    <text_log replace="replace">
         <database>system</database>
         <table>text_log</table>
         <flush_interval_milliseconds>7500</flush_interval_milliseconds>
+        <engine>ENGINE = MergeTree PARTITION BY toYYYYMM(event_date) ORDER BY (event_date, event_time) TTL event_time + INTERVAL 1 DAY SETTINGS merge_with_ttl_timeout = 900</engine>
     </text_log>
 
     <!-- Enable system.opentelemetry_span_log for distributed tracing -->
-    <opentelemetry_span_log>
+    <opentelemetry_span_log replace="replace">
         <engine>
             engine MergeTree
             partition by toYYYYMM(finish_date)
             order by (finish_date, finish_time_us, trace_id)
+            TTL finish_date + INTERVAL 1 DAY
+            SETTINGS merge_with_ttl_timeout = 900
         </engine>
         <database>system</database>
         <table>opentelemetry_span_log</table>
