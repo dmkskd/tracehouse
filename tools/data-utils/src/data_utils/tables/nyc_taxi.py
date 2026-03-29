@@ -7,9 +7,9 @@ from typing import TYPE_CHECKING
 
 from clickhouse_driver import Client
 from .helpers import (
-    engine_clause, retry_on_drop_race, create_database,
+    retry_on_drop_race, create_database, drop_database,
     generate_month_list, check_existing_rows, run_batched_insert,
-    wait_for_table,
+    wait_for_table, ttl_clause, ttl_settings, is_sharded,
 )
 from .protocol import InsertMode, QuerySet
 from data_utils.capabilities import Capabilities
@@ -49,34 +49,40 @@ def _sql_array(items: list[str]) -> str:
     return "['" + "','".join(items) + "']"
 
 
-def drop_nyc_taxi(client: Client) -> None:
+def drop_nyc_taxi(client: Client, caps: Capabilities | None = None) -> None:
     print("Dropping nyc_taxi...")
+    sharded, cluster = is_sharded(caps)
+    cluster_name = cluster or (caps.cluster_name if caps and caps.has_cluster else "")
     client.execute("DROP TABLE IF EXISTS nyc_taxi.locations SYNC")
+    if sharded:
+        client.execute("DROP TABLE IF EXISTS nyc_taxi.locations_local SYNC")
     client.execute("DROP TABLE IF EXISTS nyc_taxi.trips SYNC")
-    client.execute("DROP DATABASE IF EXISTS nyc_taxi SYNC")
+    if sharded:
+        client.execute("DROP TABLE IF EXISTS nyc_taxi.trips_local SYNC")
+    drop_database(client, "nyc_taxi", cluster=cluster_name)
 
 
 def create_nyc_taxi(
-    client: Client, replicated: bool, caps: Capabilities | None = None,
-    cluster: str = "",
+    client: Client, caps: Capabilities | None = None, ttl_hours: int = 0,
 ) -> None:
-    print("Creating nyc_taxi database...")
-    create_database(client, "nyc_taxi", replicated, cluster=cluster)
+    sharded, cluster = is_sharded(caps)
+    replicated = caps.has_keeper if caps else False
+    cluster_name = cluster or (caps.cluster_name if caps and caps.has_cluster else "")
 
-    engine = engine_clause(replicated)
+    delete_ttl = ttl_clause(ttl_hours)
+    ttl_s = ttl_settings(ttl_hours)
 
     use_s3 = caps.has_s3_storage_policy if caps else False
     if use_s3:
-        ttl_clause = "TTL inserted_at + INTERVAL 5 MINUTE TO VOLUME 's3cached'"
+        s3_ttl = "TTL _inserted_at + INTERVAL 5 MINUTE TO VOLUME 's3cached'"
+        combined_ttl = f"{s3_ttl}, _inserted_at + INTERVAL {ttl_hours} HOUR DELETE" if ttl_hours > 0 else s3_ttl
         settings_clause = "SETTINGS old_parts_lifetime = 60, storage_policy = 's3tiered', merge_with_ttl_timeout = 60"
-        print(f"Creating nyc_taxi.trips table (engine: {engine.split('(')[0]}, storage: s3tiered)...")
     else:
-        ttl_clause = ""
-        settings_clause = "SETTINGS old_parts_lifetime = 60"
-        print(f"Creating nyc_taxi.trips table (engine: {engine.split('(')[0]}, storage: local — s3tiered not available)...")
+        combined_ttl = delete_ttl
+        extra = f", {ttl_s}" if ttl_s else ""
+        settings_clause = f"SETTINGS old_parts_lifetime = 60{extra}"
 
-    retry_on_drop_race(lambda: client.execute(f"""
-        CREATE TABLE IF NOT EXISTS nyc_taxi.trips
+    _TRIPS_SCHEMA = """
         (
             trip_id UInt64,
             pickup_datetime DateTime,
@@ -93,28 +99,88 @@ def create_nyc_taxi(
             vendor_name LowCardinality(String) CODEC(ZSTD(3)),
             trip_duration_seconds UInt32 CODEC(Delta, ZSTD),
             rate_code LowCardinality(String) CODEC(LZ4HC),
-            inserted_at DateTime DEFAULT now()
+            _inserted_at DateTime DEFAULT now()
         )
-        ENGINE = {engine}
+    """
+
+    _TRIPS_ORDER = f"""
         PARTITION BY toYYYYMM(pickup_date)
         ORDER BY (pickup_date, pickup_location_id, pickup_datetime)
-        {ttl_clause}
+        {combined_ttl}
         {settings_clause}
-    """))
+    """
+
+    if sharded:
+        print(f"Creating nyc_taxi database (Replicated, cluster={cluster})...")
+        create_database(client, "nyc_taxi", replicated=True, cluster=cluster)
+
+        s3_label = ", storage: s3tiered" if use_s3 else ""
+        print(f"Creating nyc_taxi.trips_local (ReplicatedMergeTree, per-shard{s3_label})...")
+        retry_on_drop_race(lambda: client.execute(f"""
+            CREATE TABLE IF NOT EXISTS nyc_taxi.trips_local
+            {_TRIPS_SCHEMA}
+            ENGINE = ReplicatedMergeTree()
+            {_TRIPS_ORDER}
+        """))
+        print("Creating nyc_taxi.trips (Distributed, sharded by pickup_location_id)...")
+        retry_on_drop_race(lambda: client.execute(f"""
+            CREATE TABLE IF NOT EXISTS nyc_taxi.trips
+            AS nyc_taxi.trips_local
+            ENGINE = Distributed('{cluster}', nyc_taxi, trips_local, sipHash64(pickup_location_id))
+        """))
+    else:
+        if replicated:
+            print(f"Creating nyc_taxi database (Replicated, cluster={cluster_name})...")
+            create_database(client, "nyc_taxi", replicated=True, cluster=cluster_name)
+            engine = "ReplicatedMergeTree()"
+        else:
+            print("Creating nyc_taxi database...")
+            create_database(client, "nyc_taxi", replicated=False)
+            engine = "MergeTree()"
+
+        s3_label = ", storage: s3tiered" if use_s3 else ""
+        print(f"Creating nyc_taxi.trips table (engine: {engine.split('(')[0]}{s3_label})...")
+        retry_on_drop_race(lambda: client.execute(f"""
+            CREATE TABLE IF NOT EXISTS nyc_taxi.trips
+            {_TRIPS_SCHEMA}
+            ENGINE = {engine}
+            {_TRIPS_ORDER}
+        """))
 
     # ── Dimension: locations (265 taxi zones) ──
-    print(f"Creating nyc_taxi.locations (engine: {engine.split('(')[0]})...")
-    retry_on_drop_race(lambda: client.execute(f"""
-        CREATE TABLE IF NOT EXISTS nyc_taxi.locations
+    # Small dimension table replicated to every shard so local JOINs work.
+    _LOC_SCHEMA = """
         (
             location_id UInt16,
             borough LowCardinality(String),
             zone String,
             service_zone LowCardinality(String)
         )
-        ENGINE = {engine}
-        ORDER BY location_id
-    """))
+    """
+    if sharded:
+        print("Creating nyc_taxi.locations_local (ReplicatedMergeTree, per-shard)...")
+        retry_on_drop_race(lambda: client.execute(f"""
+            CREATE TABLE IF NOT EXISTS nyc_taxi.locations_local
+            {_LOC_SCHEMA}
+            ENGINE = ReplicatedMergeTree()
+            ORDER BY location_id
+        """))
+        print("Creating nyc_taxi.locations (Distributed, all shards)...")
+        retry_on_drop_race(lambda: client.execute(f"""
+            CREATE TABLE IF NOT EXISTS nyc_taxi.locations
+            AS nyc_taxi.locations_local
+            ENGINE = Distributed('{cluster}', nyc_taxi, locations_local, rand())
+        """))
+    else:
+        dim_engine = "ReplicatedMergeTree()" if replicated else "MergeTree()"
+        print(f"Creating nyc_taxi.locations (engine: {dim_engine.split('(')[0]})...")
+        retry_on_drop_race(lambda: client.execute(f"""
+            CREATE TABLE IF NOT EXISTS nyc_taxi.locations
+            {_LOC_SCHEMA}
+            ENGINE = {dim_engine}
+            ORDER BY location_id
+        """))
+
     wait_for_table(client, "nyc_taxi.locations")
     existing = client.execute("SELECT count() FROM nyc_taxi.locations")[0][0]
     if existing > 0:
@@ -174,7 +240,7 @@ def insert_nyc_taxi(
                 arrayElement(['Yellow Cab', 'Green Cab', 'Uber', 'Lyft', 'Via'], (rand() % 5) + 1) as vendor_name,
                 toUInt32(dateDiff('second', pickup_datetime, dropoff_datetime)) as trip_duration_seconds,
                 arrayElement(['Standard', 'JFK', 'Newark', 'Nassau', 'Negotiated', 'Group'], (rand() % 6) + 1) as rate_code,
-                now() as inserted_at
+                now() as _inserted_at
             FROM numbers({current_batch})
         """
 
@@ -190,16 +256,15 @@ class NycTaxi:
     name = "nyc_taxi"
     flag = "taxi_only"
 
-    def __init__(self, replicated: bool, caps: Capabilities | None = None, cluster: str = ""):
-        self._replicated = replicated
+    def __init__(self, caps: Capabilities | None = None, ttl_hours: int = 0):
         self._caps = caps
-        self._cluster = cluster
+        self._ttl_hours = ttl_hours
 
     def drop(self, client: Client) -> None:
-        drop_nyc_taxi(client)
+        drop_nyc_taxi(client, caps=self._caps)
 
     def create(self, client: Client) -> None:
-        create_nyc_taxi(client, self._replicated, self._caps, cluster=self._cluster)
+        create_nyc_taxi(client, caps=self._caps, ttl_hours=self._ttl_hours)
 
     def insert(
         self,

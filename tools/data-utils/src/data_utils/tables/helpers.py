@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import logging
 import sys
 import threading
 import time
@@ -9,6 +10,8 @@ import random
 from collections.abc import Callable
 from datetime import datetime, timedelta
 import re
+
+log = logging.getLogger("tracehouse.insert")
 
 from clickhouse_driver import Client
 
@@ -133,6 +136,13 @@ class ProgressTracker:
             sys.stdout.flush()
 
 
+def is_sharded(caps) -> tuple[bool, str | None]:
+    """Return (True, cluster_name) when the target has multiple shards."""
+    if caps and caps.has_cluster and caps.has_keeper and caps.shard_count > 1:
+        return True, caps.cluster_name
+    return False, None
+
+
 def engine_clause(replicated: bool) -> str:
     """Return the ENGINE clause.
 
@@ -177,6 +187,36 @@ def on_cluster_clause(cluster: str) -> str:
     if not _SAFE_CLUSTER_RE.match(cluster):
         raise ValueError(f"Unsafe cluster name: {cluster!r}")
     return f"ON CLUSTER '{cluster}'"
+
+
+def ttl_clause(hours: int) -> str:
+    """Return ``TTL _inserted_at + INTERVAL N HOUR`` when hours > 0, otherwise ``""``.
+
+    Uses ``_inserted_at`` (a DEFAULT now() column) so the TTL counts from
+    real insertion time, not from the business-date column. This avoids
+    rows being born already expired when generating historical data.
+    """
+    if hours <= 0:
+        return ""
+    return f"TTL _inserted_at + INTERVAL {hours} HOUR"
+
+
+def ttl_settings(hours: int) -> str:
+    """Return ``merge_with_ttl_timeout = 900`` when TTL is active, otherwise ``""``."""
+    if hours <= 0:
+        return ""
+    return "merge_with_ttl_timeout = 900"
+
+
+def drop_database(client: Client, name: str, cluster: str = "") -> None:
+    """Drop a database, using ON CLUSTER when *cluster* is set.
+
+    For Replicated databases the DDL log propagates table drops
+    automatically, but ON CLUSTER on the DROP DATABASE itself is
+    still needed to remove the database entry on every node.
+    """
+    on_cluster = on_cluster_clause(cluster)
+    client.execute(f"DROP DATABASE IF EXISTS {name} {on_cluster} SYNC")
 
 
 def create_database(client: Client, name: str, replicated: bool, cluster: str = "") -> None:
@@ -244,8 +284,11 @@ def check_existing_rows(client: Client, table: str, target_rows: int, mode: Inse
         None — table already at target, skip insert
     """
     if mode is InsertMode.APPEND:
+        log.info("[%s] append mode — skipping row check", table)
         return target_rows
+    log.info("[%s] counting existing rows...", table)
     count = client.execute(f"SELECT count() FROM {table}")[0][0]
+    log.info("[%s] existing rows: %d", table, count)
     if count > 0 and mode is not InsertMode.DROP:
         if count > target_rows:
             print(f"  Table has {count:,} rows which exceeds target {target_rows:,} — use --drop to reset")
@@ -321,6 +364,8 @@ def run_batched_insert(
                 partition_key, batch, batch_size, current_batch,
                 rows_per_partition, partition_offset,
             )
+            log.info("[%s] batch %d/%d (%d rows) — sending to server...", short_name, batch + 1, batches, current_batch)
+            t0 = time.monotonic()
             try:
                 client.execute(sql)
             except Exception:
@@ -328,7 +373,9 @@ def run_batched_insert(
                     tracker.update(short_name, total_done, status="cancelled")
                     return
                 raise
+            elapsed = time.monotonic() - t0
             total_done += current_batch
+            log.info("[%s] batch %d/%d done in %.1fs", short_name, batch + 1, batches, elapsed)
 
             if tracker:
                 tracker.update(short_name, total_done, partition=partition_label)

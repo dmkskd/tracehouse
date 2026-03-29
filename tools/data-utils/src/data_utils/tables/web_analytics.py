@@ -8,8 +8,9 @@ from typing import TYPE_CHECKING
 
 from clickhouse_driver import Client
 from .helpers import (
-    retry_on_drop_race, create_database,
+    retry_on_drop_race, create_database, drop_database,
     generate_month_list, check_existing_rows, run_batched_insert,
+    ttl_clause, ttl_settings, is_sharded,
 )
 from data_utils.capabilities import Capabilities
 from .protocol import InsertMode, QuerySet
@@ -46,34 +47,38 @@ _SCHEMA = """
         browser LowCardinality(String),
         referrer String,
         duration_ms UInt32,
-        is_bounce UInt8
+        is_bounce UInt8,
+        _inserted_at DateTime DEFAULT now()
     )
 """
 
-_ORDER_AND_SETTINGS = """
+def _order_and_settings(ttl_hours: int = 0) -> str:
+    ttl = ttl_clause(ttl_hours)
+    ttl_s = ttl_settings(ttl_hours)
+    extra = f", {ttl_s}" if ttl_s else ""
+    return f"""
     PARTITION BY toYYYYMM(event_date)
     ORDER BY (domain, event_date, user_id)
-    SETTINGS old_parts_lifetime = 60
+    {ttl}
+    SETTINGS old_parts_lifetime = 60{extra}
 """
-
-
-def _is_sharded(caps: Capabilities | None) -> tuple[bool, str | None]:
-    if caps and caps.has_cluster and caps.has_keeper and caps.shard_count > 1:
-        return True, caps.cluster_name
-    return False, None
 
 
 def drop_web_analytics(client: Client, caps: Capabilities | None = None) -> None:
     print("Dropping web_analytics...")
-    use_sharded, cluster = _is_sharded(caps)
+    use_sharded, cluster = is_sharded(caps)
+    cluster_name = cluster or (caps.cluster_name if caps and caps.has_cluster else "")
     client.execute("DROP TABLE IF EXISTS web_analytics.pageviews SYNC")
     if use_sharded:
         client.execute("DROP TABLE IF EXISTS web_analytics.pageviews_local SYNC")
-    client.execute("DROP DATABASE IF EXISTS web_analytics SYNC")
+    drop_database(client, "web_analytics", cluster=cluster_name)
 
 
-def create_web_analytics(client: Client, caps: Capabilities | None = None) -> None:
-    use_sharded, cluster = _is_sharded(caps)
+def create_web_analytics(client: Client, caps: Capabilities | None = None, ttl_hours: int = 0) -> None:
+    use_sharded, cluster = is_sharded(caps)
+    replicated = caps.has_keeper if caps else False
+    cluster_name = cluster or (caps.cluster_name if caps and caps.has_cluster else "")
+    oas = _order_and_settings(ttl_hours)
 
     if use_sharded:
         print(f"Creating web_analytics database (Replicated, cluster={cluster})...")
@@ -84,7 +89,7 @@ def create_web_analytics(client: Client, caps: Capabilities | None = None) -> No
             CREATE TABLE IF NOT EXISTS web_analytics.pageviews_local
             {_SCHEMA}
             ENGINE = ReplicatedMergeTree()
-            {_ORDER_AND_SETTINGS}
+            {oas}
         """))
         print("Creating web_analytics.pageviews (Distributed, sharded by domain)...")
         retry_on_drop_race(lambda: client.execute(f"""
@@ -93,15 +98,21 @@ def create_web_analytics(client: Client, caps: Capabilities | None = None) -> No
             ENGINE = Distributed('{cluster}', web_analytics, pageviews_local, sipHash64(domain))
         """))
     else:
-        print("Creating web_analytics database...")
-        create_database(client, "web_analytics", replicated=False)
+        if replicated:
+            print(f"Creating web_analytics database (Replicated, cluster={cluster_name})...")
+            create_database(client, "web_analytics", replicated=True, cluster=cluster_name)
+            engine = "ReplicatedMergeTree()"
+        else:
+            print("Creating web_analytics database...")
+            create_database(client, "web_analytics", replicated=False)
+            engine = "MergeTree()"
 
-        print("Creating web_analytics.pageviews (MergeTree)...")
+        print(f"Creating web_analytics.pageviews ({engine.split('(')[0]})...")
         retry_on_drop_race(lambda: client.execute(f"""
             CREATE TABLE IF NOT EXISTS web_analytics.pageviews
             {_SCHEMA}
-            ENGINE = MergeTree()
-            {_ORDER_AND_SETTINGS}
+            ENGINE = {engine}
+            {oas}
         """))
 
 
@@ -127,7 +138,7 @@ def insert_web_analytics(
     domains_sql = "['" + "','".join(DOMAINS) + "']"
     paths_sql = "['" + "','".join(PATHS) + "']"
 
-    use_sharded, cluster = _is_sharded(caps)
+    use_sharded, cluster = is_sharded(caps)
 
     def build_sql(month_start: str, batch: int, bs: int, current_batch: int, month_rows: int, _offset: int) -> str:
         return f"""
@@ -147,7 +158,8 @@ def insert_web_analytics(
                 arrayElement(['Chrome','Firefox','Safari','Edge'], (rand() % 4) + 1) as browser,
                 arrayElement(['https://google.com','https://twitter.com','','https://reddit.com','https://hn.com'], (rand() % 5) + 1) as referrer,
                 rand() % 120000 as duration_ms,
-                if(rand() % 4 = 0, 1, 0) as is_bounce
+                if(rand() % 4 = 0, 1, 0) as is_bounce,
+                now() as _inserted_at
             FROM numbers({current_batch})
         """
 
@@ -240,14 +252,15 @@ class WebAnalytics:
     name = "web_analytics"
     flag = "web_only"
 
-    def __init__(self, caps: Capabilities | None = None):
+    def __init__(self, caps: Capabilities | None = None, ttl_hours: int = 0):
         self._caps = caps
+        self._ttl_hours = ttl_hours
 
     def drop(self, client: Client) -> None:
         drop_web_analytics(client, self._caps)
 
     def create(self, client: Client) -> None:
-        create_web_analytics(client, self._caps)
+        create_web_analytics(client, self._caps, ttl_hours=self._ttl_hours)
 
     def insert(
         self,

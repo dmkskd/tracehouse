@@ -12,7 +12,7 @@ import pytest
 from clickhouse_driver import Client
 
 from data_utils.tables import (
-    Dataset, InsertConfig, QuerySet,
+    Dataset, InsertConfig, InsertMode, QuerySet,
     SyntheticData, NycTaxi, UkHousePrices, WebAnalytics,
 )
 
@@ -20,12 +20,12 @@ from data_utils.tables import (
 # ── Protocol conformance ───────────────────────────────────────────
 
 
-# Instantiate with minimal config (replicated=False, no caps)
+# Instantiate with minimal config (no caps = plain MergeTree)
 ALL_DATASETS: list[Dataset] = [
-    SyntheticData(replicated=False),
-    NycTaxi(replicated=False),
-    UkHousePrices(replicated=False),
-    WebAnalytics(caps=None),
+    SyntheticData(),
+    NycTaxi(),
+    UkHousePrices(),
+    WebAnalytics(),
 ]
 
 
@@ -50,7 +50,7 @@ SMALL_CONFIG = InsertConfig(rows=1000, partitions=1, batch_size=500)
 class TestSyntheticData:
     @pytest.fixture(autouse=True)
     def setup(self, client: Client) -> Generator[None]:
-        self.dataset = SyntheticData(replicated=False)
+        self.dataset = SyntheticData()
         self.client = client
         yield
         client.execute("DROP TABLE IF EXISTS synthetic_data.user_tiers SYNC")
@@ -73,7 +73,7 @@ class TestSyntheticData:
 class TestNycTaxi:
     @pytest.fixture(autouse=True)
     def setup(self, client: Client) -> Generator[None]:
-        self.dataset = NycTaxi(replicated=False)
+        self.dataset = NycTaxi()
         self.client = client
         yield
         client.execute("DROP TABLE IF EXISTS nyc_taxi.locations SYNC")
@@ -90,7 +90,7 @@ class TestNycTaxi:
 class TestUkHousePrices:
     @pytest.fixture(autouse=True)
     def setup(self, client: Client) -> Generator[None]:
-        self.dataset = UkHousePrices(replicated=False)
+        self.dataset = UkHousePrices()
         self.client = client
         yield
         client.execute("DROP TABLE IF EXISTS uk_price_paid.uk_price_paid SYNC")
@@ -106,7 +106,7 @@ class TestUkHousePrices:
 class TestWebAnalytics:
     @pytest.fixture(autouse=True)
     def setup(self, client: Client) -> Generator[None]:
-        self.dataset = WebAnalytics(caps=None)
+        self.dataset = WebAnalytics()
         self.client = client
         yield
         client.execute("DROP TABLE IF EXISTS web_analytics.pageviews SYNC")
@@ -124,7 +124,7 @@ class TestWebAnalytics:
 
 def test_insert_config_defaults() -> None:
     cfg = InsertConfig(rows=100, partitions=1, batch_size=50)
-    assert cfg.drop is False
+    assert cfg.mode is InsertMode.RESUME
     assert cfg.throttle_min == 0.0
     assert cfg.throttle_max == 0.0
 

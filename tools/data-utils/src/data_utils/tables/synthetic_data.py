@@ -7,67 +7,140 @@ from typing import TYPE_CHECKING
 
 from clickhouse_driver import Client
 from .helpers import (
-    engine_clause, retry_on_drop_race, create_database,
+    retry_on_drop_race, create_database, drop_database,
     generate_month_list, check_existing_rows, run_batched_insert,
-    wait_for_table,
+    wait_for_table, ttl_clause, ttl_settings, is_sharded,
 )
+from data_utils.capabilities import Capabilities
 from .protocol import InsertMode, QuerySet
 
 if TYPE_CHECKING:
     from .helpers import ProgressTracker
     from .protocol import InsertConfig, Dataset
 
+_SCHEMA = """
+    (
+        event_id UUID DEFAULT generateUUIDv4(),
+        event_time DateTime DEFAULT now(),
+        event_date Date DEFAULT toDate(event_time),
+        user_id UInt64,
+        session_id String,
+        event_type LowCardinality(String),
+        page_url String,
+        country_code LowCardinality(String),
+        device_type LowCardinality(String),
+        browser LowCardinality(String),
+        duration_ms UInt32,
+        revenue Decimal64(2),
+        _inserted_at DateTime DEFAULT now()
+    )
+"""
 
-def drop_synthetic_data(client: Client) -> None:
+def _order_and_settings(ttl_hours: int = 0) -> str:
+    ttl = ttl_clause(ttl_hours)
+    ttl_s = ttl_settings(ttl_hours)
+    extra = f", {ttl_s}" if ttl_s else ""
+    return f"""
+    PARTITION BY toYYYYMM(event_date)
+    ORDER BY (event_date, user_id, event_time)
+    {ttl}
+    SETTINGS old_parts_lifetime = 60{extra},
+        enable_block_number_column = 1,
+        enable_block_offset_column = 1
+"""
+
+
+def drop_synthetic_data(client: Client, caps: Capabilities | None = None) -> None:
     print("Dropping synthetic_data...")
+    sharded, cluster = is_sharded(caps)
+    cluster_name = cluster or (caps.cluster_name if caps and caps.has_cluster else "")
     client.execute("DROP TABLE IF EXISTS synthetic_data.user_tiers SYNC")
+    if sharded:
+        client.execute("DROP TABLE IF EXISTS synthetic_data.user_tiers_local SYNC")
     client.execute("DROP TABLE IF EXISTS synthetic_data.events SYNC")
-    client.execute("DROP DATABASE IF EXISTS synthetic_data SYNC")
+    if sharded:
+        client.execute("DROP TABLE IF EXISTS synthetic_data.events_local SYNC")
+    drop_database(client, "synthetic_data", cluster=cluster_name)
 
 
-def create_synthetic_data(client: Client, replicated: bool, cluster: str = "") -> None:
-    print("Creating synthetic_data database...")
-    create_database(client, "synthetic_data", replicated, cluster=cluster)
+def create_synthetic_data(client: Client, caps: Capabilities | None = None, ttl_hours: int = 0) -> None:
+    sharded, cluster = is_sharded(caps)  # cluster is only set when multi-shard
+    oas = _order_and_settings(ttl_hours)
 
-    engine = engine_clause(replicated)
-    print(f"Creating synthetic_data.events table (engine: {engine.split('(')[0]})...")
-    retry_on_drop_race(lambda: client.execute(f"""
-        CREATE TABLE IF NOT EXISTS synthetic_data.events
-        (
-            event_id UUID DEFAULT generateUUIDv4(),
-            event_time DateTime DEFAULT now(),
-            event_date Date DEFAULT toDate(event_time),
-            user_id UInt64,
-            session_id String,
-            event_type LowCardinality(String),
-            page_url String,
-            country_code LowCardinality(String),
-            device_type LowCardinality(String),
-            browser LowCardinality(String),
-            duration_ms UInt32,
-            revenue Decimal64(2)
-        )
-        ENGINE = {engine}
-        PARTITION BY toYYYYMM(event_date)
-        ORDER BY (event_date, user_id, event_time)
-        SETTINGS old_parts_lifetime = 60,
-            enable_block_number_column = 1,
-            enable_block_offset_column = 1
-    """))
+    if sharded:
+        print(f"Creating synthetic_data database (Replicated, cluster={cluster})...")
+        create_database(client, "synthetic_data", replicated=True, cluster=cluster)
+
+        print("Creating synthetic_data.events_local (ReplicatedMergeTree, per-shard)...")
+        retry_on_drop_race(lambda: client.execute(f"""
+            CREATE TABLE IF NOT EXISTS synthetic_data.events_local
+            {_SCHEMA}
+            ENGINE = ReplicatedMergeTree()
+            {oas}
+        """))
+        print("Creating synthetic_data.events (Distributed, sharded by user_id)...")
+        retry_on_drop_race(lambda: client.execute(f"""
+            CREATE TABLE IF NOT EXISTS synthetic_data.events
+            AS synthetic_data.events_local
+            ENGINE = Distributed('{cluster}', synthetic_data, events_local, sipHash64(user_id))
+        """))
+    else:
+        replicated = caps.has_keeper if caps else False
+        cluster_name = caps.cluster_name if caps else ""
+        if replicated:
+            print(f"Creating synthetic_data database (Replicated, cluster={cluster_name})...")
+            create_database(client, "synthetic_data", replicated=True, cluster=cluster_name)
+            engine = "ReplicatedMergeTree()"
+        else:
+            print("Creating synthetic_data database...")
+            create_database(client, "synthetic_data", replicated=False)
+            engine = "MergeTree()"
+
+        print(f"Creating synthetic_data.events ({engine.split('(')[0]})...")
+        retry_on_drop_race(lambda: client.execute(f"""
+            CREATE TABLE IF NOT EXISTS synthetic_data.events
+            {_SCHEMA}
+            ENGINE = {engine}
+            {oas}
+        """))
 
     # ── Dimension: user_tiers (1000 user segments) ──
-    print(f"Creating synthetic_data.user_tiers (engine: {engine.split('(')[0]})...")
-    retry_on_drop_race(lambda: client.execute(f"""
-        CREATE TABLE IF NOT EXISTS synthetic_data.user_tiers
+    # Small dimension table replicated to every shard so local JOINs work.
+    # In sharded mode we create a _local + Distributed pair (same as fact tables)
+    # so the INSERT fans out to all shards automatically.
+    _DIM_SCHEMA = """
         (
             user_id UInt64,
             tier LowCardinality(String),
             signup_date Date,
             lifetime_value Decimal64(2)
         )
-        ENGINE = {engine}
-        ORDER BY user_id
-    """))
+    """
+    if sharded:
+        print("Creating synthetic_data.user_tiers_local (ReplicatedMergeTree, per-shard)...")
+        retry_on_drop_race(lambda: client.execute(f"""
+            CREATE TABLE IF NOT EXISTS synthetic_data.user_tiers_local
+            {_DIM_SCHEMA}
+            ENGINE = ReplicatedMergeTree()
+            ORDER BY user_id
+        """))
+        print("Creating synthetic_data.user_tiers (Distributed, all shards)...")
+        retry_on_drop_race(lambda: client.execute(f"""
+            CREATE TABLE IF NOT EXISTS synthetic_data.user_tiers
+            AS synthetic_data.user_tiers_local
+            ENGINE = Distributed('{cluster}', synthetic_data, user_tiers_local, rand())
+        """))
+    else:
+        replicated = caps.has_keeper if caps else False
+        dim_engine = "ReplicatedMergeTree()" if replicated else "MergeTree()"
+        print(f"Creating synthetic_data.user_tiers (engine: {dim_engine.split('(')[0]})...")
+        retry_on_drop_race(lambda: client.execute(f"""
+            CREATE TABLE IF NOT EXISTS synthetic_data.user_tiers
+            {_DIM_SCHEMA}
+            ENGINE = {dim_engine}
+            ORDER BY user_id
+        """))
+
     wait_for_table(client, "synthetic_data.user_tiers")
     existing = client.execute("SELECT count() FROM synthetic_data.user_tiers")[0][0]
     if existing > 0:
@@ -126,7 +199,8 @@ def insert_synthetic_data(
                 arrayElement(['desktop', 'mobile', 'tablet'], (rand() % 3) + 1) as device_type,
                 arrayElement(['Chrome', 'Firefox', 'Safari', 'Edge'], (rand() % 4) + 1) as browser,
                 rand() % 300000 as duration_ms,
-                if(rand() % 20 = 0, toDecimal64(rand() % 50000 / 100, 2), 0) as revenue
+                if(rand() % 20 = 0, toDecimal64(rand() % 50000 / 100, 2), 0) as revenue,
+                now() as _inserted_at
             FROM numbers({current_batch})
         """
 
@@ -165,15 +239,15 @@ class SyntheticData:
     name = "synthetic_data"
     flag = "synthetic_only"
 
-    def __init__(self, replicated: bool, cluster: str = ""):
-        self._replicated = replicated
-        self._cluster = cluster
+    def __init__(self, caps: Capabilities | None = None, ttl_hours: int = 0):
+        self._caps = caps
+        self._ttl_hours = ttl_hours
 
     def drop(self, client: Client) -> None:
-        drop_synthetic_data(client)
+        drop_synthetic_data(client, caps=self._caps)
 
     def create(self, client: Client) -> None:
-        create_synthetic_data(client, self._replicated, cluster=self._cluster)
+        create_synthetic_data(client, caps=self._caps, ttl_hours=self._ttl_hours)
 
     def insert(
         self,

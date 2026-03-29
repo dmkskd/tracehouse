@@ -11,6 +11,7 @@ from __future__ import annotations
 
 import argparse
 
+from data_utils.capabilities import probe
 from data_utils.env import (
     add_connection_args, make_client, pre_parse_env_file, print_connection,
     confirm_or_exit,
@@ -31,7 +32,10 @@ def main() -> None:
     print(f"\nConnecting to ClickHouse at {args.host}:{args.port}...")
     client = make_client(args)
 
-    datasets = build_all_datasets()
+    print("Probing server capabilities...")
+    caps = probe(client)
+
+    datasets = build_all_datasets(caps=caps)
     names = [ds.name for ds in datasets]
 
     # Check which databases actually exist
@@ -57,6 +61,11 @@ def main() -> None:
     print()
     for ds in datasets:
         if ds.name in existing:
+            # Kill active queries against this database so DROP doesn't hang
+            client.execute(
+                "KILL QUERY WHERE databases = %(dbs)s SYNC",
+                {"dbs": [ds.name]},
+            )
             ds.drop(client)
             print(f"  dropped {ds.name}")
 

@@ -14,9 +14,11 @@ from typing import TYPE_CHECKING
 
 from clickhouse_driver import Client
 from .helpers import (
-    retry_on_drop_race, create_database,
+    retry_on_drop_race, create_database, drop_database,
     generate_month_list, check_existing_rows, run_batched_insert,
+    ttl_clause, ttl_settings, is_sharded,
 )
+from data_utils.capabilities import Capabilities
 from .protocol import InsertMode, QuerySet
 
 if TYPE_CHECKING:
@@ -31,26 +33,26 @@ NUM_PRODUCTS = 3_000_000  # distinct product_id values
 # still showing replacement behaviour.
 
 
-def _engine(replicated: bool) -> str:
-    if replicated:
-        return "ReplicatedReplacingMergeTree(version)"
-    return "ReplacingMergeTree(version)"
-
-
-def drop_replacing_merge(client: Client) -> None:
+def drop_replacing_merge(client: Client, caps: Capabilities | None = None) -> None:
     print("Dropping replacing_test...")
+    sharded, cluster = is_sharded(caps)
+    cluster_name = cluster or (caps.cluster_name if caps and caps.has_cluster else "")
     client.execute("DROP TABLE IF EXISTS replacing_test.product_prices SYNC")
-    client.execute("DROP DATABASE IF EXISTS replacing_test SYNC")
+    if sharded:
+        client.execute("DROP TABLE IF EXISTS replacing_test.product_prices_local SYNC")
+    drop_database(client, "replacing_test", cluster=cluster_name)
 
 
-def create_replacing_merge(client: Client, replicated: bool, cluster: str = "") -> None:
-    print("Creating replacing_test database...")
-    create_database(client, "replacing_test", replicated, cluster=cluster)
+def create_replacing_merge(client: Client, caps: Capabilities | None = None, ttl_hours: int = 0) -> None:
+    sharded, cluster = is_sharded(caps)
+    replicated = caps.has_keeper if caps else False
+    cluster_name = cluster or (caps.cluster_name if caps and caps.has_cluster else "")
 
-    engine = _engine(replicated)
-    print(f"Creating replacing_test.product_prices (engine: {engine.split('(')[0]})...")
-    retry_on_drop_race(lambda: client.execute(f"""
-        CREATE TABLE IF NOT EXISTS replacing_test.product_prices
+    ttl = ttl_clause(ttl_hours)
+    ttl_s = ttl_settings(ttl_hours)
+    extra = f", {ttl_s}" if ttl_s else ""
+
+    _REPLACING_SCHEMA = """
         (
             product_id  UInt64,
             updated_at  DateTime DEFAULT now(),
@@ -59,15 +61,54 @@ def create_replacing_merge(client: Client, replicated: bool, cluster: str = "") 
             currency    LowCardinality(String),
             category    LowCardinality(String),
             supplier_id UInt32,
-            in_stock    UInt8
+            in_stock    UInt8,
+            _inserted_at DateTime DEFAULT now()
         )
-        ENGINE = {engine}
+    """
+
+    _REPLACING_ORDER = f"""
         PARTITION BY toYYYYMM(updated_at)
         ORDER BY (product_id, currency)
-        SETTINGS old_parts_lifetime = 60,
+        {ttl}
+        SETTINGS old_parts_lifetime = 60{extra},
             enable_block_number_column = 1,
             enable_block_offset_column = 1
-    """))
+    """
+
+    if sharded:
+        print(f"Creating replacing_test database (Replicated, cluster={cluster})...")
+        create_database(client, "replacing_test", replicated=True, cluster=cluster)
+
+        print("Creating replacing_test.product_prices_local (ReplicatedReplacingMergeTree, per-shard)...")
+        retry_on_drop_race(lambda: client.execute(f"""
+            CREATE TABLE IF NOT EXISTS replacing_test.product_prices_local
+            {_REPLACING_SCHEMA}
+            ENGINE = ReplicatedReplacingMergeTree(version)
+            {_REPLACING_ORDER}
+        """))
+        print("Creating replacing_test.product_prices (Distributed, sharded by product_id)...")
+        retry_on_drop_race(lambda: client.execute(f"""
+            CREATE TABLE IF NOT EXISTS replacing_test.product_prices
+            AS replacing_test.product_prices_local
+            ENGINE = Distributed('{cluster}', replacing_test, product_prices_local, sipHash64(product_id))
+        """))
+    else:
+        if replicated:
+            print(f"Creating replacing_test database (Replicated, cluster={cluster_name})...")
+            create_database(client, "replacing_test", replicated=True, cluster=cluster_name)
+            engine = "ReplicatedReplacingMergeTree(version)"
+        else:
+            print("Creating replacing_test database...")
+            create_database(client, "replacing_test", replicated=False)
+            engine = "ReplacingMergeTree(version)"
+
+        print(f"Creating replacing_test.product_prices (engine: {engine.split('(')[0]})...")
+        retry_on_drop_race(lambda: client.execute(f"""
+            CREATE TABLE IF NOT EXISTS replacing_test.product_prices
+            {_REPLACING_SCHEMA}
+            ENGINE = {engine}
+            {_REPLACING_ORDER}
+        """))
 
 
 def insert_replacing_merge(
@@ -104,7 +145,8 @@ def insert_replacing_merge(
                     (rand() % 8) + 1
                 ) AS category,
                 rand() % 1000 AS supplier_id,
-                rand() % 2 AS in_stock
+                rand() % 2 AS in_stock,
+                now() AS _inserted_at
             FROM numbers({current_batch})
         """
 
@@ -134,15 +176,15 @@ class ReplacingMerge:
     name = "replacing_test"
     flag = "replacing_only"
 
-    def __init__(self, replicated: bool, cluster: str = ""):
-        self._replicated = replicated
-        self._cluster = cluster
+    def __init__(self, caps: Capabilities | None = None, ttl_hours: int = 0):
+        self._caps = caps
+        self._ttl_hours = ttl_hours
 
     def drop(self, client: Client) -> None:
-        drop_replacing_merge(client)
+        drop_replacing_merge(client, caps=self._caps)
 
     def create(self, client: Client) -> None:
-        create_replacing_merge(client, self._replicated, cluster=self._cluster)
+        create_replacing_merge(client, caps=self._caps, ttl_hours=self._ttl_hours)
 
     def insert(
         self,

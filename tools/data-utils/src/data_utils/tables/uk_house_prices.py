@@ -7,10 +7,11 @@ from typing import TYPE_CHECKING
 
 from clickhouse_driver import Client
 from .helpers import (
-    engine_clause, retry_on_drop_race, create_database,
-    check_existing_rows, run_batched_insert,
+    retry_on_drop_race, create_database, drop_database,
+    check_existing_rows, run_batched_insert, ttl_clause, ttl_settings,
+    is_sharded,
 )
-
+from data_utils.capabilities import Capabilities
 from .protocol import InsertMode
 
 if TYPE_CHECKING:
@@ -90,20 +91,26 @@ def _rand_max_threads() -> int:
     return random.choice([1, 2, 4, 8, 16])
 
 
-def drop_uk_house_prices(client: Client) -> None:
+def drop_uk_house_prices(client: Client, caps: Capabilities | None = None) -> None:
     print("Dropping uk_price_paid...")
+    sharded, cluster = is_sharded(caps)
+    cluster_name = cluster or (caps.cluster_name if caps and caps.has_cluster else "")
     client.execute("DROP TABLE IF EXISTS uk_price_paid.uk_price_paid SYNC")
-    client.execute("DROP DATABASE IF EXISTS uk_price_paid SYNC")
+    if sharded:
+        client.execute("DROP TABLE IF EXISTS uk_price_paid.uk_price_paid_local SYNC")
+    drop_database(client, "uk_price_paid", cluster=cluster_name)
 
 
-def create_uk_house_prices(client: Client, replicated: bool, cluster: str = "") -> None:
-    print("Creating uk_price_paid database...")
-    create_database(client, "uk_price_paid", replicated, cluster=cluster)
+def create_uk_house_prices(client: Client, caps: Capabilities | None = None, ttl_hours: int = 0) -> None:
+    sharded, cluster = is_sharded(caps)
+    replicated = caps.has_keeper if caps else False
+    cluster_name = cluster or (caps.cluster_name if caps and caps.has_cluster else "")
 
-    engine = engine_clause(replicated)
-    print(f"Creating uk_price_paid.uk_price_paid table (engine: {engine.split('(')[0]})...")
-    retry_on_drop_race(lambda: client.execute(f"""
-        CREATE TABLE IF NOT EXISTS uk_price_paid.uk_price_paid
+    ttl = ttl_clause(ttl_hours)
+    ttl_s = ttl_settings(ttl_hours)
+    extra = f", {ttl_s}" if ttl_s else ""
+
+    _UK_SCHEMA = """
         (
             price UInt32,
             date Date,
@@ -118,13 +125,52 @@ def create_uk_house_prices(client: Client, replicated: bool, cluster: str = "") 
             locality LowCardinality(String),
             town LowCardinality(String),
             district LowCardinality(String),
-            county LowCardinality(String)
+            county LowCardinality(String),
+            _inserted_at DateTime DEFAULT now()
         )
-        ENGINE = {engine}
+    """
+
+    _UK_ORDER = f"""
         PARTITION BY toYear(date)
         ORDER BY (postcode1, postcode2, date)
-        SETTINGS old_parts_lifetime = 60
-    """))
+        {ttl}
+        SETTINGS old_parts_lifetime = 60{extra}
+    """
+
+    if sharded:
+        print(f"Creating uk_price_paid database (Replicated, cluster={cluster})...")
+        create_database(client, "uk_price_paid", replicated=True, cluster=cluster)
+
+        print("Creating uk_price_paid.uk_price_paid_local (ReplicatedMergeTree, per-shard)...")
+        retry_on_drop_race(lambda: client.execute(f"""
+            CREATE TABLE IF NOT EXISTS uk_price_paid.uk_price_paid_local
+            {_UK_SCHEMA}
+            ENGINE = ReplicatedMergeTree()
+            {_UK_ORDER}
+        """))
+        print("Creating uk_price_paid.uk_price_paid (Distributed, sharded by postcode1)...")
+        retry_on_drop_race(lambda: client.execute(f"""
+            CREATE TABLE IF NOT EXISTS uk_price_paid.uk_price_paid
+            AS uk_price_paid.uk_price_paid_local
+            ENGINE = Distributed('{cluster}', uk_price_paid, uk_price_paid_local, sipHash64(postcode1))
+        """))
+    else:
+        if replicated:
+            print(f"Creating uk_price_paid database (Replicated, cluster={cluster_name})...")
+            create_database(client, "uk_price_paid", replicated=True, cluster=cluster_name)
+            engine = "ReplicatedMergeTree()"
+        else:
+            print("Creating uk_price_paid database...")
+            create_database(client, "uk_price_paid", replicated=False)
+            engine = "MergeTree()"
+
+        print(f"Creating uk_price_paid.uk_price_paid table (engine: {engine.split('(')[0]})...")
+        retry_on_drop_race(lambda: client.execute(f"""
+            CREATE TABLE IF NOT EXISTS uk_price_paid.uk_price_paid
+            {_UK_SCHEMA}
+            ENGINE = {engine}
+            {_UK_ORDER}
+        """))
 
 
 def insert_uk_house_prices(
@@ -165,7 +211,8 @@ def insert_uk_house_prices(
                 '' as locality,
                 arrayElement({towns_sql}, (rand() % {len(TOWNS)}) + 1) as town,
                 arrayElement({towns_sql}, (rand() % {len(TOWNS)}) + 1) as district,
-                arrayElement({counties_sql}, (rand() % {len(COUNTIES)}) + 1) as county
+                arrayElement({counties_sql}, (rand() % {len(COUNTIES)}) + 1) as county,
+                now() as _inserted_at
             FROM numbers({current_batch})
         """
 
@@ -184,15 +231,15 @@ class UkHousePrices:
     name = "uk_price_paid"
     flag = "uk_only"
 
-    def __init__(self, replicated: bool, cluster: str = ""):
-        self._replicated = replicated
-        self._cluster = cluster
+    def __init__(self, caps: Capabilities | None = None, ttl_hours: int = 0):
+        self._caps = caps
+        self._ttl_hours = ttl_hours
 
     def drop(self, client: Client) -> None:
-        drop_uk_house_prices(client)
+        drop_uk_house_prices(client, caps=self._caps)
 
     def create(self, client: Client) -> None:
-        create_uk_house_prices(client, self._replicated, cluster=self._cluster)
+        create_uk_house_prices(client, caps=self._caps, ttl_hours=self._ttl_hours)
 
     def insert(
         self,
