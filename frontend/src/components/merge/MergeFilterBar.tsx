@@ -97,7 +97,7 @@ const FILTER_FIELDS: FilterFieldDef[] = [
     clear: p => p.onMergeTypeChange?.(undefined),
   },
   {
-    key: 'merge_reason', label: 'Category', placeholder: 'e.g. RegularMerge, TTLDelete',
+    key: 'merge_reason', label: 'Category', placeholder: 'e.g. Regular, TTLDelete, Mutation',
     tabs: ['history'],
     getSuggestions: p => p.mergeReasons || [],
     fromProps: p => p.selectedMergeReason,

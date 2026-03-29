@@ -36,6 +36,8 @@ export interface MergeHistoryFilter {
   minDurationMs?: number;
   minSizeBytes?: number;
   excludeSystemDatabases?: boolean;
+  /** Merge category pushed to server-side SQL (e.g. 'TTLDelete', 'Mutation'). */
+  category?: string;
   limit: number;
 }
 
@@ -270,6 +272,7 @@ export const mergeApi = {
       minDurationMs: filter.minDurationMs,
       minSizeBytes: filter.minSizeBytes,
       excludeSystemDatabases: filter.excludeSystemDatabases,
+      category: filter.category,
       limit: filter.limit || 100,
     });
   },

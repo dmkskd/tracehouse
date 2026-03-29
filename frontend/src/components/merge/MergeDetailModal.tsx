@@ -12,10 +12,11 @@ import React, { useState, useEffect, useMemo } from 'react';
 import type { MergeHistoryRecord, MergeInfo, MergeThroughputEstimate } from '@tracehouse/core';
 import type { MergeSeries, MutationSeries } from '@tracehouse/core';
 import type { VerticalMergeProgress } from '@tracehouse/core';
+import type { PartDetailInfo } from '@tracehouse/core';
 import { classifyActiveMerge, parseVerticalMergeProgress, isMergedPart, computeMergeEta, pickThroughputEstimate } from '@tracehouse/core';
 import { useNavigate } from '../../hooks/useAppLocation';
 import { ModalWrapper } from '../shared/ModalWrapper';
-import { formatBytes } from '../../stores/databaseStore';
+import { formatBytes, databaseApi } from '../../stores/databaseStore';
 import { formatDuration } from '../../utils/formatters';
 import { useClickHouseServices } from '../../providers/ClickHouseProvider';
 import { encodeSql } from '../../hooks/useUrlState';
@@ -25,6 +26,7 @@ import { useUserPreferenceStore } from '../../stores/userPreferenceStore';
 import { useCapabilityCheck } from '../shared/RequiresCapability';
 import { MergeXRay } from './MergeXRay';
 import { useProfileEventDescriptionsStore } from '../../stores/profileEventDescriptionsStore';
+import { PartInspector } from '../database/PartInspector';
 
 // ---------------------------------------------------------------------------
 // Props
@@ -313,7 +315,8 @@ const DetailsTab: React.FC<{
   columnsWritten?: number;
   allColumns?: string[];
   onSourcePartClick?: (partName: string) => void;
-}> = ({ record, volumeInfo, isActive, verticalProgress, columnsWritten, allColumns, onSourcePartClick }) => {
+  onInspectPart?: (partName: string) => void;
+}> = ({ record, volumeInfo, isActive, verticalProgress, columnsWritten, allColumns, onSourcePartClick, onInspectPart }) => {
   const isTTLMove = record.merge_reason === 'TTLMove';
   const isMutation = record.merge_reason === 'Mutation' || record.event_type === 'MutatePart';
   const reasonColor = isMutation ? '#a855f7' : '#f0883e';
@@ -332,7 +335,18 @@ const DetailsTab: React.FC<{
       </div>
       <div style={{ marginBottom: 16 }}>
         <div style={{ fontSize: 10, marginBottom: 4, color: 'var(--text-muted)' }}>Part Name</div>
-        <code style={{ fontSize: 11, padding: '4px 8px', borderRadius: 4, background: 'var(--bg-tertiary)', color: 'var(--text-secondary)', display: 'block', wordBreak: 'break-all' }}>{record.part_name}</code>
+        <code
+          onClick={onInspectPart ? () => onInspectPart(record.part_name) : undefined}
+          style={{
+            fontSize: 11, padding: '4px 8px', borderRadius: 4, background: 'var(--bg-tertiary)',
+            color: onInspectPart ? '#58a6ff' : 'var(--text-secondary)',
+            display: 'block', wordBreak: 'break-all',
+            ...(onInspectPart ? { cursor: 'pointer', textDecoration: 'underline', textDecorationColor: 'rgba(88,166,255,0.4)', textUnderlineOffset: '2px', transition: 'color 0.15s, background 0.15s' } : {}),
+          }}
+          onMouseEnter={onInspectPart ? (e) => { (e.currentTarget).style.background = 'var(--bg-hover)'; (e.currentTarget).style.textDecorationColor = '#58a6ff'; } : undefined}
+          onMouseLeave={onInspectPart ? (e) => { (e.currentTarget).style.background = 'var(--bg-tertiary)'; (e.currentTarget).style.textDecorationColor = 'rgba(88,166,255,0.4)'; } : undefined}
+          title={onInspectPart ? 'Open part inspector' : undefined}
+        >{record.part_name}</code>
       </div>
       {(record.merge_reason || record.merge_algorithm || record.part_name.startsWith('patch-')) && (
         <div style={{ marginBottom: 16, display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
@@ -409,18 +423,31 @@ const DetailsTab: React.FC<{
             {record.source_part_names.map((part, i) => {
               const canDrill = onSourcePartClick && isMergedPart(part);
               return (
-                <code
-                  key={i}
-                  onClick={canDrill ? () => onSourcePartClick(part) : undefined}
-                  style={{
-                    fontSize: 10, fontFamily: 'monospace', color: 'var(--text-secondary)',
-                    padding: '2px 6px', borderRadius: 4, background: 'var(--bg-tertiary)',
-                    ...(canDrill ? { cursor: 'pointer', transition: 'background 0.15s' } : {}),
-                  }}
-                  onMouseEnter={canDrill ? (e) => { (e.target as HTMLElement).style.background = 'var(--bg-hover)'; } : undefined}
-                  onMouseLeave={canDrill ? (e) => { (e.target as HTMLElement).style.background = 'var(--bg-tertiary)'; } : undefined}
-                  title={canDrill ? `View merge details for ${part}` : undefined}
-                >{part}</code>
+                <span key={i} style={{ display: 'inline-flex', alignItems: 'center', gap: 2, borderRadius: 4, background: 'var(--bg-tertiary)', transition: 'background 0.15s' }}>
+                  <code
+                    onClick={canDrill ? () => onSourcePartClick(part) : undefined}
+                    style={{
+                      fontSize: 10, fontFamily: 'monospace', color: 'var(--text-secondary)',
+                      padding: '2px 6px', borderRadius: 4,
+                      ...(canDrill ? { cursor: 'pointer' } : {}),
+                    }}
+                    onMouseEnter={canDrill ? (e) => { (e.target as HTMLElement).parentElement!.style.background = 'var(--bg-hover)'; } : undefined}
+                    onMouseLeave={canDrill ? (e) => { (e.target as HTMLElement).parentElement!.style.background = 'var(--bg-tertiary)'; } : undefined}
+                    title={canDrill ? `View merge details for ${part}` : undefined}
+                  >{part}</code>
+                  {onInspectPart && (
+                    <button
+                      onClick={(e) => { e.stopPropagation(); onInspectPart(part); }}
+                      title={`Inspect part ${part}`}
+                      style={{
+                        background: 'none', border: 'none', cursor: 'pointer', padding: '1px 4px 1px 0',
+                        fontSize: 10, color: 'var(--text-muted)', lineHeight: 1, opacity: 0.6,
+                      }}
+                      onMouseEnter={(e) => { (e.target as HTMLElement).style.opacity = '1'; }}
+                      onMouseLeave={(e) => { (e.target as HTMLElement).style.opacity = '0.6'; }}
+                    >⬡</button>
+                  )}
+                </span>
               );
             })}
           </div>
@@ -546,6 +573,39 @@ const MergeDetailInner: React.FC<{
   const title = currentDrill?.title ?? rootTitle;
   const isActive = currentDrill ? false : rootIsActive;
   const activeMerge = currentDrill ? undefined : rootActiveMerge;
+
+  // Part Inspector state — opens PartInspector overlay for a specific part
+  const [inspectPartName, setInspectPartName] = useState<string | null>(null);
+  const [inspectPartDetail, setInspectPartDetail] = useState<PartDetailInfo | null>(null);
+  const [isLoadingPartDetail, setIsLoadingPartDetail] = useState(false);
+  const [inspectPartError, setInspectPartError] = useState<string | null>(null);
+
+  // Capture database/table in stable refs to avoid effect re-firing on every poll update
+  const inspectDb = record.database;
+  const inspectTable = record.table;
+
+  useEffect(() => {
+    if (!inspectPartName || !services) {
+      setInspectPartDetail(null);
+      setInspectPartError(null);
+      return;
+    }
+    let cancelled = false;
+    setIsLoadingPartDetail(true);
+    setInspectPartError(null);
+    databaseApi.fetchPartDetail(services.databaseExplorer, inspectDb, inspectTable, inspectPartName)
+      .then(detail => {
+        if (cancelled) return;
+        if (detail) {
+          setInspectPartDetail(detail);
+        } else {
+          setInspectPartError(`Part "${inspectPartName}" not found — it may still be merging or was already merged into a newer part.`);
+        }
+      })
+      .catch(err => { if (!cancelled) setInspectPartError(err instanceof Error ? err.message : 'Failed to fetch part details'); })
+      .finally(() => { if (!cancelled) setIsLoadingPartDetail(false); });
+    return () => { cancelled = true; };
+  }, [inspectPartName, services, inspectDb, inspectTable]);
 
   const handleSourcePartClick = (partName: string) => {
     if (!services) return;
@@ -848,7 +908,7 @@ const MergeDetailInner: React.FC<{
         {isDrilling && (
           <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', height: 80, color: 'var(--text-muted)', fontSize: 11 }}>Loading source part…</div>
         )}
-        {activeTab === 'details' && <DetailsTab record={record} volumeInfo={volumeInfo} isActive={isActive} verticalProgress={verticalProgress} columnsWritten={activeMerge?.columns_written} allColumns={allColumns} onSourcePartClick={handleSourcePartClick} />}
+        {activeTab === 'details' && <DetailsTab record={record} volumeInfo={volumeInfo} isActive={isActive} verticalProgress={verticalProgress} columnsWritten={activeMerge?.columns_written} allColumns={allColumns} onSourcePartClick={handleSourcePartClick} onInspectPart={setInspectPartName} />}
         {activeTab === 'logs' && (
           <div style={{ height: '100%', margin: -20 }}>
             {record.exception && record.exception.length > 0 && (
@@ -879,6 +939,43 @@ const MergeDetailInner: React.FC<{
           />
         )}
       </div>
+
+      {/* Part Inspector overlay — opened from part name or source parts */}
+      {inspectPartName && (isLoadingPartDetail || inspectPartDetail) && !inspectPartError && (
+        <PartInspector
+          partDetail={inspectPartDetail}
+          isLoading={isLoadingPartDetail}
+          onClose={() => setInspectPartName(null)}
+          breadcrumbPath={[record.database, record.table, inspectPartName]}
+          database={record.database}
+          table={record.table}
+          zIndex={100010}
+        />
+      )}
+      {inspectPartError && (
+        <div style={{
+          position: 'fixed', inset: 0, zIndex: 99998,
+          display: 'flex', alignItems: 'center', justifyContent: 'center',
+          background: 'rgba(0,0,0,0.5)', backdropFilter: 'blur(2px)',
+        }} onClick={() => { setInspectPartName(null); setInspectPartError(null); }}>
+          <div style={{
+            background: 'var(--bg-secondary, #1a1a2e)', borderRadius: 12, padding: 24,
+            maxWidth: 400, textAlign: 'center', boxShadow: '0 25px 50px rgba(0,0,0,0.4)',
+            border: '1px solid var(--border-primary, rgba(255,255,255,0.1))',
+          }} onClick={e => e.stopPropagation()}>
+            <div style={{ fontSize: 13, fontWeight: 600, color: 'var(--text-primary, #e0e0e0)', marginBottom: 8 }}>Part Not Found</div>
+            <div style={{ fontSize: 11, color: 'var(--text-muted, #888)', lineHeight: 1.5 }}>{inspectPartError}</div>
+            <button
+              onClick={() => { setInspectPartName(null); setInspectPartError(null); }}
+              style={{
+                marginTop: 16, padding: '6px 16px', fontSize: 11, borderRadius: 6,
+                background: 'var(--bg-tertiary, #2a2a3e)', border: '1px solid var(--border-primary, rgba(255,255,255,0.1))',
+                color: 'var(--text-secondary, #ccc)', cursor: 'pointer',
+              }}
+            >Close</button>
+          </div>
+        </div>
+      )}
     </>
   );
 };

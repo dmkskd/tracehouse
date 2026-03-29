@@ -101,7 +101,7 @@ export const MergeHistoryTable: React.FC<MergeHistoryTableProps> = ({
               <tr style={{ borderBottom: '1px solid var(--border-primary)' }}>
                 <th style={{ padding: '6px 12px', textAlign: 'left', color: 'var(--text-muted)', fontWeight: 500, fontSize: 10, width: 18 }}>
                   <CopyTableButton
-                    headers={['Table', 'Host', 'Part', 'Reason', 'Status', 'Rows', 'Rows Diff', 'Size', 'Duration', 'Throughput', 'Time']}
+                    headers={['Table', 'Host', 'Part', 'Category', 'Status', 'Rows', 'Rows Diff', 'Size', 'Duration', 'Throughput', 'Time']}
                     rows={sortedHistory.map(r => [
                       `${r.database}.${r.table}`, r.hostname || '', r.part_name,
                       r.merge_reason || '-', r.error ? `Error ${r.error}` : 'OK', formatNumber(r.rows), (r.rows_diff ?? 0) !== 0 ? formatNumber(r.rows_diff) : '', formatBytes(r.size_in_bytes),
@@ -115,7 +115,7 @@ export const MergeHistoryTable: React.FC<MergeHistoryTableProps> = ({
                 <th style={{ padding: '6px 8px', textAlign: 'left', color: 'var(--text-muted)', fontWeight: 500, fontSize: 10 }}>Table</th>
                 <th style={{ padding: '6px 8px', textAlign: 'left', color: 'var(--text-muted)', fontWeight: 500, fontSize: 10 }}>Host</th>
                 <th style={{ padding: '6px 8px', textAlign: 'left', color: 'var(--text-muted)', fontWeight: 500, fontSize: 10 }}>Part</th>
-                <th style={{ padding: '6px 8px', textAlign: 'left', color: 'var(--text-muted)', fontWeight: 500, fontSize: 10 }}>Reason</th>
+                <th style={{ padding: '6px 8px', textAlign: 'left', color: 'var(--text-muted)', fontWeight: 500, fontSize: 10 }}>Category</th>
                 <th style={{ padding: '6px 8px', textAlign: 'left', color: 'var(--text-muted)', fontWeight: 500, fontSize: 10 }}>Status</th>
                 <SortableHeader field="rows" label="Rows" currentSort={sort} onSort={handleSort} align="right" />
                 <SortableHeader field="size_in_bytes" label="Size" currentSort={sort} onSort={handleSort} align="right" />

@@ -38,7 +38,8 @@ import {
 import { PermissionGate } from '../shared/PermissionGate';
 import { extractErrorMessage } from '../../utils/errorFormatters';
 import { useCapabilityCheck } from '../shared/RequiresCapability';
-import { classifyActiveMerge, getMergeCategoryInfo, classifyMutationCommand, MUTATION_SUBTYPES, computeMergeEta, pickThroughputEstimate } from '@tracehouse/core';
+import { classifyActiveMerge, getMergeCategoryInfo, classifyMutationCommand, MUTATION_SUBTYPES, computeMergeEta, pickThroughputEstimate, ALL_MERGE_CATEGORIES, isCategoryClientSideOnly } from '@tracehouse/core';
+import type { MergeCategory } from '@tracehouse/core';
 import { useUserPreferenceStore } from '../../stores/userPreferenceStore';
 import { MergeHealthSunburst } from './MergeHealthSunburst';
 
@@ -1663,7 +1664,8 @@ export const MergeTrackerView: React.FC = () => {
 
   // Client-side filter state for merge type (active merges) and merge reason (merge history)
   const [selectedMergeType, setSelectedMergeType] = useState<string | undefined>();
-  const [selectedMergeReason, setSelectedMergeReason] = useState<string | undefined>();
+  // selectedMergeReason is derived from historyFilter.category so changing it triggers a server-side re-fetch
+  const selectedMergeReason = historyFilter.category;
   const [selectedHost, setSelectedHost] = useState<string | undefined>();
   const [selectedStatus, setSelectedStatus] = useState<string | undefined>();
   const [selectedPartName, setSelectedPartName] = useState<string | undefined>();
@@ -1932,11 +1934,9 @@ export const MergeTrackerView: React.FC = () => {
   }, [activeMerges]);
 
   // Available merge reasons from merge history
-  const availableMergeReasons = React.useMemo(() => {
-    const reasons = new Set<string>();
-    mergeHistory.forEach(r => { if (r.merge_reason) reasons.add(r.merge_reason); });
-    return Array.from(reasons).sort();
-  }, [mergeHistory]);
+  // Use static list so the dropdown is always fully populated (server-side filtering
+  // would otherwise strip categories not in the current result set)
+  const availableMergeReasons = ALL_MERGE_CATEGORIES as unknown as string[];
 
   // Available hostnames from active merges + merge history
   const availableHosts = React.useMemo(() => {
@@ -2133,7 +2133,7 @@ export const MergeTrackerView: React.FC = () => {
               onMergeTypeChange={setSelectedMergeType}
               mergeReasons={availableMergeReasons}
               selectedMergeReason={selectedMergeReason}
-              onMergeReasonChange={setSelectedMergeReason}
+              onMergeReasonChange={(reason) => handleFilterChange({ category: reason })}
               availableHosts={availableHosts}
               selectedHost={selectedHost}
               onHostChange={setSelectedHost}
@@ -2177,14 +2177,21 @@ export const MergeTrackerView: React.FC = () => {
                 onSelectRecord={setSelectedMutationHistory}
               />
             ) : (
-              <MergeHistoryTable
-                history={filteredMergeHistory}
-                sort={historySort}
-                onSortChange={setHistorySort}
-                isLoading={isLoadingHistory}
-                selectedRecord={selectedMergeHistory}
-                onSelectRecord={setSelectedMergeHistory}
-              />
+              <>
+                {selectedMergeReason && isCategoryClientSideOnly(selectedMergeReason as MergeCategory) && (
+                  <div style={{ padding: '6px 12px', fontSize: 11, color: 'var(--text-warning, #d4a72c)', background: 'var(--bg-warning, rgba(212,167,44,0.08))', borderRadius: 4, margin: '0 0 6px' }}>
+                    This category is filtered client-side after the LIMIT — results may be incomplete. Increase the limit to see more rows.
+                  </div>
+                )}
+                <MergeHistoryTable
+                  history={filteredMergeHistory}
+                  sort={historySort}
+                  onSortChange={setHistorySort}
+                  isLoading={isLoadingHistory}
+                  selectedRecord={selectedMergeHistory}
+                  onSelectRecord={setSelectedMergeHistory}
+                />
+              </>
             )}
           </div>
         </div>

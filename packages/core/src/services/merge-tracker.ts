@@ -26,7 +26,8 @@ import { buildQuery, tagQuery, eventDateBound } from '../queries/builder.js';
 import { TAB_MERGES, sourceTag } from '../queries/source-tags.js';
 import { mapMergeInfo, mapMergeHistoryRecord, mapMutationInfo, mapMutationHistoryRecord, mapBackgroundPoolMetrics, mapMergeTextLog } from '../mappers/merge-mappers.js';
 import { stripMutationVersion } from '../utils/part-name-parser.js';
-import { markReplicaMerges, markReplicaMergeHistory, isDeduplicatingEngine } from '../utils/merge-classification.js';
+import { markReplicaMerges, markReplicaMergeHistory, isDeduplicatingEngine, categoryToPartLogCondition } from '../utils/merge-classification.js';
+import type { MergeCategory } from '../utils/merge-classification.js';
 
 export class MergeTrackerError extends Error {
   constructor(message: string, public readonly cause?: Error) {
@@ -41,6 +42,8 @@ export interface MergeHistoryOptions {
   minDurationMs?: number;
   minSizeBytes?: number;
   excludeSystemDatabases?: boolean;
+  /** Push merge category filter into SQL (e.g. 'TTLDelete', 'Mutation'). */
+  category?: string;
   limit?: number;
 }
 
@@ -58,6 +61,10 @@ function injectThresholdFilters(sql: string, opts: MergeHistoryOptions): string 
   }
   if (opts.excludeSystemDatabases) {
     clauses.push(`database NOT IN ('system', 'information_schema', 'INFORMATION_SCHEMA')`);
+  }
+  if (opts.category) {
+    const cond = categoryToPartLogCondition(opts.category as MergeCategory);
+    if (cond) clauses.push(`(${cond})`);
   }
   if (clauses.length === 0) return sql;
   const extra = clauses.map(c => `    AND ${c}`).join('\n');
