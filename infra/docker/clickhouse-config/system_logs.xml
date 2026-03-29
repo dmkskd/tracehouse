@@ -1,7 +1,7 @@
 <clickhouse>
     <!-- System log tables used by TraceHouse.
          3-day TTL: query_log, part_log, metric_log, asynchronous_metric_log (core observability)
-         2-hour TTL: trace_log (high volume, only needed for short-term profiling)
+         1-day TTL: trace_log (high volume, short-term profiling)
          1-day TTL: everything else (verbose/debugging)
          merge_with_ttl_timeout=900 so cleanup runs every ~15 min. -->
 
@@ -41,7 +41,7 @@
         <database>system</database>
         <table>trace_log</table>
         <flush_interval_milliseconds>7500</flush_interval_milliseconds>
-        <engine>ENGINE = MergeTree PARTITION BY toYYYYMM(event_date) ORDER BY (event_date, event_time) TTL event_time + INTERVAL 2 HOUR SETTINGS merge_with_ttl_timeout = 900</engine>
+        <engine>ENGINE = MergeTree PARTITION BY toYYYYMM(event_date) ORDER BY (event_date, event_time) TTL event_time + INTERVAL 1 DAY SETTINGS merge_with_ttl_timeout = 900</engine>
     </trace_log>
 
     <query_thread_log replace="replace">
