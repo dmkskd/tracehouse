@@ -44,33 +44,41 @@ const readOnlyTheme = EditorView.theme({
   '.cm-selectionBackground, &.cm-focused .cm-selectionBackground': {
     background: 'rgba(88,166,255,0.15) !important',
   },
-  '.cm-scroller': { overflow: 'visible' },
+  '.cm-scroller': { overflow: 'auto' },
   '&.cm-focused': { outline: 'none' },
 }, { dark: true });
 
 interface SqlHighlightProps {
   children: string;
+  /** Optional max height (px) — CodeMirror will scroll internally when exceeded. */
+  maxHeight?: number;
   style?: React.CSSProperties;
 }
 
-export const SqlHighlight: React.FC<SqlHighlightProps> = ({ children, style }) => {
+export const SqlHighlight: React.FC<SqlHighlightProps> = ({ children, maxHeight, style }) => {
   const containerRef = useRef<HTMLDivElement>(null);
   const viewRef = useRef<EditorView | null>(null);
 
   useEffect(() => {
     if (!containerRef.current) return;
 
-    const state = EditorState.create({
-      doc: children,
-      extensions: [
-        readOnlyTheme,
-        syntaxHighlighting(syntaxColors),
-        sql({ dialect: clickhouseDialect }),
-        EditorState.readOnly.of(true),
-        EditorView.editable.of(false),
-        EditorView.lineWrapping,
-      ],
-    });
+    const extensions = [
+      readOnlyTheme,
+      syntaxHighlighting(syntaxColors),
+      sql({ dialect: clickhouseDialect }),
+      EditorState.readOnly.of(true),
+      EditorView.editable.of(false),
+      EditorView.lineWrapping,
+    ];
+
+    // Apply maxHeight on the CM scroller so it manages scroll state internally
+    if (maxHeight) {
+      extensions.push(
+        EditorView.theme({ '.cm-scroller': { maxHeight: `${maxHeight}px` } }),
+      );
+    }
+
+    const state = EditorState.create({ doc: children, extensions });
     const view = new EditorView({ state, parent: containerRef.current });
     viewRef.current = view;
 
@@ -81,13 +89,14 @@ export const SqlHighlight: React.FC<SqlHighlightProps> = ({ children, style }) =
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
-  // Sync content changes
+  // Sync content changes and force CM to re-measure scroll geometry
   useEffect(() => {
     const view = viewRef.current;
     if (!view) return;
     const current = view.state.doc.toString();
     if (children !== current) {
       view.dispatch({ changes: { from: 0, to: current.length, insert: children } });
+      view.requestMeasure();
     }
   }, [children]);
 

@@ -2911,13 +2911,11 @@ export const QueryDetailModal: React.FC<TimelineQueryModalProps> = ({
                   </div>
                 </div>
                 <div style={{
-                  maxHeight: 200,
-                  overflow: 'auto',
                   borderRadius: 8,
                   background: 'var(--bg-code)',
                   border: '1px solid var(--border-primary)',
                 }}>
-                  <SqlHighlight style={{
+                  <SqlHighlight maxHeight={200} style={{
                     padding: 14,
                     fontSize: 12,
                     lineHeight: 1.5,
