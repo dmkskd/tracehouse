@@ -54,12 +54,12 @@ const LIGHT_THEME_VARS: React.CSSProperties = {
 // CONSTANTS (Exported for reuse)
 // ============================================================================
 
-// Vibrant color palette for donut chart
+// Palette: violet → indigo → blue → teal → slate
 export const COLUMN_COLORS = [
-  '#8b5cf6', '#6366f1', '#3b82f6', '#0ea5e9', '#06b6d4',
-  '#14b8a6', '#10b981', '#22c55e', '#84cc16', '#eab308',
-  '#f97316', '#ef4444', '#ec4899', '#d946ef', '#a855f7',
-  '#64748b', '#475569', '#334155', '#1e293b', '#0f172a',
+  '#8b5cf6', '#7c6be0', '#6d73c8', '#5e7db5', '#5085a5',
+  '#478b98', '#3f8e88', '#4a8a78', '#6366b8', '#5a5e9e',
+  '#4f5584', '#7e6dcc', '#6f65b2', '#5080a0', '#478890',
+  '#3d8680', '#507e9a', '#5c6eaa', '#4a6080', '#3c4e68',
 ];
 
 // ============================================================================
@@ -254,50 +254,33 @@ export const PartInspector: React.FC<PartInspectorProps> = ({
       )}
       {/* Breadcrumb */}
       {breadcrumbPath.length > 0 && (
-        <div 
+        <div
           className="fixed left-6 pointer-events-auto"
           style={{ zIndex: 100001, top: '72px' }}
         >
           <div style={{
-            fontFamily: "'Orbitron', 'Rajdhani', 'Share Tech Mono', monospace",
-            textTransform: 'uppercase',
-            letterSpacing: '3px',
+            fontFamily: 'monospace',
             display: 'flex',
             alignItems: 'baseline',
             whiteSpace: 'nowrap',
             background: 'var(--bg-tertiary)',
-            padding: '8px 16px',
-            borderRadius: '8px',
+            padding: '6px 14px',
+            borderRadius: '6px',
             border: '1px solid var(--border-primary)',
             backdropFilter: 'blur(8px)',
           }}>
             {breadcrumbPath.map((item, i) => {
               const isLast = i === breadcrumbPath.length - 1;
-              const glowColor = isLast ? '#fbcfe8' : '#c4b5fd';
-              const mainColor = isLast ? '#ec4899' : '#7c3aed';
               return (
                 <span key={i} style={{ display: 'inline-flex', alignItems: 'baseline' }}>
                   {i > 0 && (
-                    <span style={{
-                      color: 'var(--text-muted)',
-                      margin: '0 10px',
-                      fontSize: '18px',
-                    }}>
-                      ›
-                    </span>
+                    <span style={{ color: 'var(--text-muted)', margin: '0 8px', fontSize: '12px' }}>›</span>
                   )}
-                  <span 
-                    style={{
-                      color: isLast ? glowColor : 'var(--text-tertiary)',
-                      fontSize: isLast ? '24px' : '16px',
-                      fontWeight: isLast ? 900 : 500,
-                      textShadow: isLast 
-                        ? `0 0 30px ${glowColor}, 0 0 60px ${mainColor}, 0 0 90px ${mainColor}40`
-                        : 'none',
-                      padding: '4px 8px',
-                      borderRadius: '4px',
-                    }}
-                  >
+                  <span style={{
+                    color: isLast ? 'var(--text-primary)' : 'var(--text-tertiary)',
+                    fontSize: isLast ? '13px' : '11px',
+                    fontWeight: isLast ? 600 : 400,
+                  }}>
                     {item}
                   </span>
                 </span>
@@ -319,108 +302,51 @@ export const PartInspector: React.FC<PartInspectorProps> = ({
         className="fixed inset-0 flex items-center justify-center pointer-events-none"
         style={{ zIndex: baseZIndex + 2, padding: '16px' }}
       >
-        <div 
-          className="rounded-2xl w-[980px] h-[75vh] flex flex-col overflow-hidden pointer-events-auto"
+        <div
+          className="rounded-xl w-[980px] h-[75vh] flex flex-col overflow-hidden pointer-events-auto"
           style={{
-            background: 'var(--bg-modal)',
-            border: '1px solid var(--accent-primary)',
-            boxShadow: 'var(--shadow-modal)',
+            background: 'var(--bg-secondary)',
+            border: '1px solid var(--border-primary)',
+            boxShadow: '0 25px 50px rgba(0,0,0,0.5)',
             marginTop: '60px',
           }}
           onClick={(e) => e.stopPropagation()}
         >
           {/* Header */}
-          <div 
-            className="flex-shrink-0"
-            style={{
-              padding: '16px 32px 12px 32px',
-              borderBottom: '1px solid var(--border-accent)',
-              background: 'var(--bg-card)',
-            }}
-          >
-            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '12px' }}>
-              <h2 style={{ fontSize: '18px', fontWeight: 500, color: 'var(--text-primary)', letterSpacing: '0.5px', fontFamily: 'monospace' }}>
+          {/* Header */}
+          <div style={{ padding: '16px 20px 12px', display: 'flex', alignItems: 'center', justifyContent: 'space-between', borderBottom: '1px solid var(--border-primary)' }}>
+            <div>
+              <h2 style={{ fontSize: '15px', fontWeight: 600, color: 'var(--text-primary)', margin: 0 }}>
                 {partDetail?.name || 'Loading...'}
               </h2>
-              <button 
-                onClick={onClose}
+            </div>
+            <button onClick={onClose} style={{ color: 'var(--text-muted)', background: 'none', border: 'none', cursor: 'pointer', fontSize: 18, padding: '4px 8px' }}>✕</button>
+          </div>
+
+          {/* Tabs */}
+          <div style={{ display: 'flex', borderBottom: '1px solid var(--border-primary)', padding: '0 20px' }}>
+            {(['overview', 'lineage', 'columns', 'data'] as const).map((tab) => (
+              <button
+                key={tab}
+                onClick={() => setActiveTab(tab)}
                 style={{
-                  padding: '6px',
-                  borderRadius: '8px',
-                  background: 'transparent',
+                  padding: '10px 14px',
+                  fontSize: '12px',
+                  fontWeight: activeTab === tab ? 600 : 400,
+                  color: activeTab === tab ? 'var(--accent-primary)' : 'var(--text-secondary)',
+                  background: 'none',
                   border: 'none',
+                  borderBottom: activeTab === tab ? '2px solid var(--accent-primary)' : '2px solid transparent',
                   cursor: 'pointer',
-                  color: 'var(--text-muted)',
-                  transition: 'all 0.2s ease',
-                }}
-                onMouseEnter={(e) => {
-                  e.currentTarget.style.background = 'var(--bg-hover)';
-                  e.currentTarget.style.color = 'var(--text-primary)';
-                }}
-                onMouseLeave={(e) => {
-                  e.currentTarget.style.background = 'transparent';
-                  e.currentTarget.style.color = 'var(--text-muted)';
                 }}
               >
-                <svg style={{ width: '16px', height: '16px' }} fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
-                </svg>
+                {tab === 'overview' ? 'Overview' : tab === 'columns' ? 'Columns' : tab === 'data' ? 'Data' : 'Lineage'}
               </button>
-            </div>
-            
-            {/* Tabs */}
-            <div style={{ display: 'flex', gap: '2px' }}>
-              {(['overview', 'lineage', 'columns', 'data'] as const).map((tab) => (
-                <button
-                  key={tab}
-                  onClick={() => setActiveTab(tab)}
-                  style={{
-                    fontFamily: "'Orbitron', 'Rajdhani', monospace",
-                    padding: '8px 16px',
-                    fontSize: '10px',
-                    textTransform: 'uppercase',
-                    letterSpacing: '1.5px',
-                    borderRadius: '6px 6px 0 0',
-                    border: activeTab === tab ? '1px solid var(--border-accent)' : '1px solid transparent',
-                    borderBottom: 'none',
-                    background: activeTab === tab ? 'rgba(var(--accent-primary-rgb), 0.15)' : 'transparent',
-                    color: activeTab === tab ? 'var(--text-primary)' : 'var(--text-tertiary)',
-                    cursor: 'pointer',
-                    transition: 'all 0.2s ease',
-                    position: 'relative',
-                    marginBottom: '-1px',
-                  }}
-                  onMouseEnter={(e) => {
-                    if (activeTab !== tab) {
-                      e.currentTarget.style.color = 'var(--text-primary)';
-                      e.currentTarget.style.background = 'var(--bg-hover)';
-                    }
-                  }}
-                  onMouseLeave={(e) => {
-                    if (activeTab !== tab) {
-                      e.currentTarget.style.color = 'var(--text-tertiary)';
-                      e.currentTarget.style.background = 'transparent';
-                    }
-                  }}
-                >
-                  {tab === 'overview' ? 'Overview' : tab === 'columns' ? 'Columns' : tab === 'data' ? 'Data' : 'Lineage'}
-                  {activeTab === tab && (
-                    <span style={{
-                      position: 'absolute',
-                      bottom: '0',
-                      left: '0',
-                      right: '0',
-                      height: '2px',
-                      background: 'linear-gradient(90deg, transparent, var(--accent-secondary), transparent)',
-                    }} />
-                  )}
-                </button>
-              ))}
-            </div>
+            ))}
           </div>
           
           {/* Content */}
-          <div style={{ flex: 1, overflowY: 'auto', minHeight: 0, background: 'var(--bg-secondary)' }}>
+          <div style={{ flex: 1, overflow: 'auto', padding: 20 }}>
             {isLoading ? (
               <div className="h-full flex items-center justify-center">
                 <div className="animate-spin w-8 h-8 border-2 border-purple-500/30 border-t-purple-500 rounded-full" />
@@ -467,29 +393,21 @@ export const OverviewTab: React.FC<{
   const total = chartData.reduce((sum, d) => sum + d.value, 0);
 
   return (
-    <div style={{ padding: '32px 40px' }}>
+    <div>
       {/* Stats Row */}
       <div style={{ display: 'grid', gridTemplateColumns: 'repeat(5, 1fr)', gap: '12px', marginBottom: '28px' }}>
-        <div style={{ background: 'var(--bg-card)', border: '1px solid var(--border-secondary)', borderRadius: '6px', padding: '14px 16px' }}>
-          <div style={{ fontSize: '9px', color: 'var(--text-muted)', marginBottom: '8px', textTransform: 'uppercase', letterSpacing: '1px' }}>Rows</div>
-          <div style={{ fontSize: '16px', color: 'var(--text-primary)', fontFamily: 'monospace' }}>{partDetail.rows.toLocaleString()}</div>
-        </div>
-        <div style={{ background: 'rgba(6, 182, 212, 0.05)', border: '1px solid rgba(6, 182, 212, 0.15)', borderRadius: '6px', padding: '14px 16px' }}>
-          <div style={{ fontSize: '9px', color: 'rgba(6, 182, 212, 0.6)', marginBottom: '8px', textTransform: 'uppercase', letterSpacing: '1px' }}>Compressed</div>
-          <div style={{ fontSize: '16px', color: '#22d3ee', fontFamily: 'monospace' }}>{formatBytes(partDetail.data_compressed_bytes)}</div>
-        </div>
-        <div style={{ background: 'var(--bg-card)', border: '1px solid var(--border-secondary)', borderRadius: '6px', padding: '14px 16px' }}>
-          <div style={{ fontSize: '9px', color: 'var(--text-muted)', marginBottom: '8px', textTransform: 'uppercase', letterSpacing: '1px' }}>Uncompressed</div>
-          <div style={{ fontSize: '16px', color: 'var(--text-tertiary)', fontFamily: 'monospace' }}>{formatBytes(partDetail.data_uncompressed_bytes)}</div>
-        </div>
-        <div style={{ background: 'var(--bg-card)', border: '1px solid var(--border-secondary)', borderRadius: '6px', padding: '14px 16px' }}>
-          <div style={{ fontSize: '9px', color: 'var(--text-muted)', marginBottom: '8px', textTransform: 'uppercase', letterSpacing: '1px' }}>Ratio</div>
-          <div style={{ fontSize: '16px', fontFamily: 'monospace', color: partDetail.compression_ratio >= 5 ? '#34d399' : partDetail.compression_ratio >= 2 ? '#22d3ee' : '#fbbf24' }}>{partDetail.compression_ratio.toFixed(1)}x</div>
-        </div>
-        <div style={{ background: 'rgba(124, 58, 237, 0.05)', border: '1px solid rgba(124, 58, 237, 0.15)', borderRadius: '6px', padding: '14px 16px' }}>
-          <div style={{ fontSize: '9px', color: 'rgba(167, 139, 250, 0.6)', marginBottom: '8px', textTransform: 'uppercase', letterSpacing: '1px' }}>Format</div>
-          <div style={{ fontSize: '16px', color: '#a78bfa', fontFamily: 'monospace' }}>{partDetail.part_type || 'Wide'}</div>
-        </div>
+        {[
+          { label: 'Rows', value: partDetail.rows.toLocaleString() },
+          { label: 'Compressed', value: formatBytes(partDetail.data_compressed_bytes) },
+          { label: 'Uncompressed', value: formatBytes(partDetail.data_uncompressed_bytes) },
+          { label: 'Ratio', value: `${partDetail.compression_ratio.toFixed(1)}x` },
+          { label: 'Format', value: partDetail.part_type || 'Wide' },
+        ].map(({ label, value }) => (
+          <div key={label} style={{ borderRadius: 8, padding: 12, background: 'var(--bg-tertiary)' }}>
+            <div style={{ fontSize: 10, color: 'var(--text-muted)' }}>{label}</div>
+            <div style={{ fontWeight: 600, color: 'var(--text-primary)', fontFamily: 'monospace', fontSize: 13 }}>{value}</div>
+          </div>
+        ))}
       </div>
 
       {/* Two Column Layout */}
@@ -595,14 +513,14 @@ export const OverviewTab: React.FC<{
                   onMouseEnter={() => setHoveredCol(i)}
                   onMouseLeave={() => setHoveredCol(null)}
                 >
-                  <div style={{ width: 8, height: 8, borderRadius: 2, background: d.color, boxShadow: hoveredCol === i ? `0 0 6px ${d.color}` : 'none' }} />
+                  <div style={{ width: 8, height: 8, borderRadius: 2, background: d.color }} />
                   <span style={{ fontSize: '11px', fontFamily: 'monospace', color: hoveredCol === i ? 'var(--text-primary)' : 'var(--text-secondary)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
                     {d.name}
                   </span>
                   <span style={{ fontSize: '10px', fontFamily: 'monospace', color: 'var(--text-muted)', textAlign: 'right' }}>
                     {formatBytes(d.value)}
                   </span>
-                  <span style={{ fontSize: '10px', fontFamily: 'monospace', color: d.color, fontWeight: 600, width: '36px', textAlign: 'right' }}>
+                  <span style={{ fontSize: '10px', fontFamily: 'monospace', color: 'var(--text-muted)', width: '36px', textAlign: 'right' }}>
                     {pct.toFixed(0)}%
                   </span>
                 </div>
@@ -616,50 +534,59 @@ export const OverviewTab: React.FC<{
 };
 
 
+type SortField = 'default' | 'column_name' | 'type' | 'raw' | 'compressed' | 'ratio';
+type SortDir = 'asc' | 'desc';
+
 export const ColumnsTab: React.FC<{
   partDetail: PartDetailInfo;
   columnMinMax?: Map<string, { min: string; max: string }> | null;
   isLoadingMinMax?: boolean;
   onLoadMinMax?: () => void;
 }> = ({ partDetail, columnMinMax, isLoadingMinMax, onLoadMinMax }) => {
-  const theme = useThemeDetection();
-  const isLight = theme === 'light';
+  const [sortField, setSortField] = useState<SortField>('default');
+  const [sortDir, setSortDir] = useState<SortDir>('desc');
 
-  const getTypeColor = (type: string) => {
-    const t = type.toLowerCase();
-    if (isLight) {
-      if (t.includes('int') || t.includes('float') || t.includes('decimal')) return 'text-blue-700 bg-blue-100';
-      if (t.includes('string') || t.includes('fixedstring')) return 'text-green-700 bg-green-100';
-      if (t.includes('date') || t.includes('time')) return 'text-amber-700 bg-amber-100';
-      if (t.includes('uuid')) return 'text-purple-700 bg-purple-100';
-      if (t.includes('array') || t.includes('tuple') || t.includes('map')) return 'text-pink-700 bg-pink-100';
-      if (t.includes('nullable')) return 'text-cyan-700 bg-cyan-100';
-      if (t.includes('lowcardinality')) return 'text-emerald-700 bg-emerald-100';
+  const handleSort = (field: SortField) => {
+    if (field === sortField) {
+      setSortDir(d => d === 'desc' ? 'asc' : 'desc');
     } else {
-      if (t.includes('int') || t.includes('float') || t.includes('decimal')) return 'text-blue-400 bg-blue-500/10';
-      if (t.includes('string') || t.includes('fixedstring')) return 'text-green-400 bg-green-500/10';
-      if (t.includes('date') || t.includes('time')) return 'text-amber-400 bg-amber-500/10';
-      if (t.includes('uuid')) return 'text-purple-400 bg-purple-500/10';
-      if (t.includes('array') || t.includes('tuple') || t.includes('map')) return 'text-pink-400 bg-pink-500/10';
-      if (t.includes('nullable')) return 'text-cyan-400 bg-cyan-500/10';
-      if (t.includes('lowcardinality')) return 'text-emerald-400 bg-emerald-500/10';
+      setSortField(field);
+      setSortDir(field === 'column_name' || field === 'type' ? 'asc' : 'desc');
     }
-    return '';
   };
-  
-  // Default style for unknown types
-  const defaultTypeStyle = { color: 'var(--text-tertiary)', background: 'var(--bg-hover)' };
-  
+
+  const sortIndicator = (field: SortField) =>
+    sortField === field ? (sortDir === 'desc' ? ' ↓' : ' ↑') : '';
+
+  // Uniform muted style for all type badges
+  const typeStyle = { color: 'var(--text-secondary)', background: 'var(--bg-tertiary)' };
+
   const simplifyType = (type: string) => {
     return type.replace('LowCardinality(', 'LC(').replace('Nullable(', 'N(');
   };
-  
-  const sortedColumns = [...partDetail.columns].sort((a, b) => {
-    const aScore = (a.is_in_partition_key ? 1000 : 0) + (a.is_in_sorting_key ? 100 : 0) + (a.is_in_primary_key ? 10 : 0);
-    const bScore = (b.is_in_partition_key ? 1000 : 0) + (b.is_in_sorting_key ? 100 : 0) + (b.is_in_primary_key ? 10 : 0);
-    if (aScore !== bScore) return bScore - aScore;
-    return b.compressed_bytes - a.compressed_bytes;
-  });
+
+  const sortedColumns = useMemo(() => {
+    const cols = [...partDetail.columns];
+    if (sortField === 'default') {
+      return cols.sort((a, b) => {
+        const aScore = (a.is_in_partition_key ? 1000 : 0) + (a.is_in_sorting_key ? 100 : 0) + (a.is_in_primary_key ? 10 : 0);
+        const bScore = (b.is_in_partition_key ? 1000 : 0) + (b.is_in_sorting_key ? 100 : 0) + (b.is_in_primary_key ? 10 : 0);
+        if (aScore !== bScore) return bScore - aScore;
+        return b.compressed_bytes - a.compressed_bytes;
+      });
+    }
+    const dir = sortDir === 'asc' ? 1 : -1;
+    return cols.sort((a, b) => {
+      switch (sortField) {
+        case 'column_name': return dir * a.column_name.localeCompare(b.column_name);
+        case 'type': return dir * a.type.localeCompare(b.type);
+        case 'raw': return dir * (a.uncompressed_bytes - b.uncompressed_bytes);
+        case 'compressed': return dir * (a.compressed_bytes - b.compressed_bytes);
+        case 'ratio': return dir * (a.compression_ratio - b.compression_ratio);
+        default: return 0;
+      }
+    });
+  }, [partDetail.columns, sortField, sortDir]);
   
   const showMinMax = !!(columnMinMax || isLoadingMinMax);
     const gridCols = showMinMax
@@ -667,15 +594,15 @@ export const ColumnsTab: React.FC<{
       : 'grid-cols-[minmax(100px,180px)_100px_55px_75px_75px_50px_45px_minmax(80px,1fr)]';
 
     return (<>
-    <div style={{ padding: '0 40px 40px' }}>
+    <div>
       <div className="rounded-t-lg" style={{ background: 'var(--bg-card)', border: '1px solid var(--border-secondary)', borderBottom: 'none' }}>
-        <div className={`grid ${gridCols} gap-2 px-4 py-3 text-xs uppercase tracking-wider`} style={{ color: 'var(--text-muted)' }}>
-          <div>Column</div>
-          <div>Type</div>
+        <div className={`grid ${gridCols} gap-2 px-4 py-3 text-[10px] uppercase tracking-wider font-mono select-none`} style={{ color: 'var(--text-muted)', borderBottom: '1px solid var(--border-secondary)' }}>
+          <div style={{ cursor: 'pointer' }} onClick={() => handleSort('column_name')}>Column{sortIndicator('column_name')}</div>
+          <div style={{ cursor: 'pointer' }} onClick={() => handleSort('type')}>Type{sortIndicator('type')}</div>
           <div>Codec</div>
-          <div className="text-right">Raw</div>
-          <div className="text-right">Compressed</div>
-          <div className="text-right">Ratio</div>
+          <div className="text-right" style={{ cursor: 'pointer' }} onClick={() => handleSort('raw')}>Raw{sortIndicator('raw')}</div>
+          <div className="text-right" style={{ cursor: 'pointer' }} onClick={() => handleSort('compressed')}>Compressed{sortIndicator('compressed')}</div>
+          <div className="text-right" style={{ cursor: 'pointer' }} onClick={() => handleSort('ratio')}>Ratio{sortIndicator('ratio')}</div>
           <div>Keys</div>
           <div>Size</div>
           {showMinMax && <div className="text-right">Min</div>}
@@ -685,10 +612,9 @@ export const ColumnsTab: React.FC<{
     
       <div className="rounded-b-lg overflow-hidden" style={{ border: '1px solid var(--border-secondary)', borderTop: 'none' }}>
         {sortedColumns.map((col, i) => {
-          const pct = partDetail.data_compressed_bytes > 0 
-            ? (col.compressed_bytes / partDetail.data_compressed_bytes) * 100 
+          const pct = partDetail.data_compressed_bytes > 0
+            ? (col.compressed_bytes / partDetail.data_compressed_bytes) * 100
             : 0;
-          const color = COLUMN_COLORS[i % COLUMN_COLORS.length];
         
           return (
             <div
@@ -701,16 +627,15 @@ export const ColumnsTab: React.FC<{
               onMouseLeave={(e) => e.currentTarget.style.background = i % 2 === 0 ? 'var(--bg-card)' : 'transparent'}
             >
               <div className="flex items-center gap-2 min-w-0">
-                <div className="w-1.5 h-1.5 rounded-sm flex-shrink-0" style={{ backgroundColor: color }} />
                 <span className="font-mono text-xs truncate" style={{ color: 'var(--text-primary)' }} title={col.column_name}>
                   {col.column_name}
                 </span>
               </div>
               
               <div className="min-w-0">
-                <span 
-                  className={`text-[10px] font-mono px-1.5 py-0.5 rounded truncate block ${getTypeColor(col.type)}`}
-                  style={!getTypeColor(col.type) ? defaultTypeStyle : undefined}
+                <span
+                  className="text-[10px] font-mono px-1.5 py-0.5 rounded truncate block"
+                  style={typeStyle}
                   title={col.type}
                 >
                   {simplifyType(col.type)}
@@ -718,7 +643,7 @@ export const ColumnsTab: React.FC<{
               </div>
               
               <div>
-                <span className={`text-[10px] font-mono px-1.5 py-0.5 rounded ${isLight ? 'bg-purple-100 text-purple-700' : 'bg-purple-500/15 text-purple-300'}`}>
+                <span className="text-[10px] font-mono px-1.5 py-0.5 rounded" style={{ color: 'var(--text-muted)', background: 'var(--bg-tertiary)' }}>
                   {col.codec ? col.codec.replace('CODEC(', '').replace(')', '') : 'LZ4'}
                 </span>
               </div>
@@ -732,40 +657,36 @@ export const ColumnsTab: React.FC<{
               </div>
               
               <div className="text-right">
-                <span className={`text-[10px] font-mono font-bold ${
-                  col.compression_ratio > 5 ? (isLight ? 'text-green-700' : 'text-green-400') : 
-                  col.compression_ratio > 2 ? (isLight ? 'text-cyan-700' : 'text-cyan-400') : 
-                  col.compression_ratio > 1 ? (isLight ? 'text-amber-700' : 'text-amber-400') : (isLight ? 'text-red-700' : 'text-red-400')
-                }`}>
+                <span className="text-[10px] font-mono" style={{ color: 'var(--text-secondary)' }}>
                   {col.compression_ratio.toFixed(1)}x
                 </span>
               </div>
               
               <div className="flex items-center gap-0.5">
                 {col.is_in_partition_key && (
-                  <span className={`w-3.5 h-3.5 rounded flex items-center justify-center text-[8px] font-bold ${isLight ? 'bg-cyan-100 text-cyan-700' : 'bg-cyan-500/20 text-cyan-400'}`} title="Partition Key">P</span>
+                  <span className="w-3.5 h-3.5 rounded flex items-center justify-center text-[8px] font-bold" style={{ background: 'var(--bg-tertiary)', color: 'var(--text-secondary)' }} title="Partition Key">P</span>
                 )}
                 {col.is_in_sorting_key && (
-                  <span className={`w-3.5 h-3.5 rounded flex items-center justify-center text-[8px] font-bold ${isLight ? 'bg-green-100 text-green-700' : 'bg-green-500/20 text-green-400'}`} title="Sort Key">S</span>
+                  <span className="w-3.5 h-3.5 rounded flex items-center justify-center text-[8px] font-bold" style={{ background: 'var(--bg-tertiary)', color: 'var(--text-secondary)' }} title="Sort Key">S</span>
                 )}
                 {col.is_in_primary_key && (
-                  <span className={`w-3.5 h-3.5 rounded flex items-center justify-center text-[8px] font-bold ${isLight ? 'bg-amber-100 text-amber-700' : 'bg-amber-500/20 text-amber-400'}`} title="Primary Key">K</span>
+                  <span className="w-3.5 h-3.5 rounded flex items-center justify-center text-[8px] font-bold" style={{ background: 'var(--bg-tertiary)', color: 'var(--text-secondary)' }} title="Primary Key">K</span>
                 )}
                 {!col.is_in_partition_key && !col.is_in_sorting_key && !col.is_in_primary_key && (
                   <span className="text-[10px]" style={{ color: 'var(--text-disabled)' }}>—</span>
                 )}
               </div>
 
-              <div className="relative h-5 rounded overflow-hidden" style={{ background: 'var(--bg-hover)' }}>
+              <div className="relative h-5 rounded overflow-hidden" style={{ background: 'var(--bg-tertiary)' }}>
                 <div
                   className="absolute inset-y-0 left-0 rounded"
                   style={{
                     width: `${Math.max(pct, 2)}%`,
-                    backgroundColor: color,
-                    opacity: 0.6
+                    background: 'var(--accent-primary)',
+                    opacity: 0.15 + Math.min(pct / 100, 1) * 0.55,
                   }}
                 />
-                <span className="absolute inset-0 flex items-center justify-end pr-2 text-[10px] font-mono" style={{ color: 'var(--text-secondary)' }}>
+                <span className="absolute inset-0 flex items-center justify-end pr-2 text-[10px] font-mono" style={{ color: 'var(--text-muted)' }}>
                   {pct.toFixed(1)}%
                 </span>
               </div>
@@ -797,15 +718,15 @@ export const ColumnsTab: React.FC<{
       
       <div className="mt-4 flex items-center justify-end gap-6 text-xs" style={{ color: 'var(--text-muted)' }}>
         <span className="flex items-center gap-1.5">
-          <span className={`w-3.5 h-3.5 rounded flex items-center justify-center text-[8px] font-bold ${isLight ? 'bg-cyan-100 text-cyan-700' : 'bg-cyan-500/20 text-cyan-400'}`}>P</span>
+          <span className="w-3.5 h-3.5 rounded flex items-center justify-center text-[8px] font-bold" style={{ background: 'var(--bg-tertiary)', color: 'var(--text-secondary)' }}>P</span>
           Partition
         </span>
         <span className="flex items-center gap-1.5">
-          <span className={`w-3.5 h-3.5 rounded flex items-center justify-center text-[8px] font-bold ${isLight ? 'bg-green-100 text-green-700' : 'bg-green-500/20 text-green-400'}`}>S</span>
+          <span className="w-3.5 h-3.5 rounded flex items-center justify-center text-[8px] font-bold" style={{ background: 'var(--bg-tertiary)', color: 'var(--text-secondary)' }}>S</span>
           Sort Key
         </span>
         <span className="flex items-center gap-1.5">
-          <span className={`w-3.5 h-3.5 rounded flex items-center justify-center text-[8px] font-bold ${isLight ? 'bg-amber-100 text-amber-700' : 'bg-amber-500/20 text-amber-400'}`}>K</span>
+          <span className="w-3.5 h-3.5 rounded flex items-center justify-center text-[8px] font-bold" style={{ background: 'var(--bg-tertiary)', color: 'var(--text-secondary)' }}>K</span>
           Primary
         </span>
       </div>
@@ -813,22 +734,22 @@ export const ColumnsTab: React.FC<{
         <div style={{
           marginTop: 16, display: 'flex', alignItems: 'center', gap: 10,
           padding: '10px 14px', borderRadius: 8,
-          background: isLight ? 'rgba(245, 158, 11, 0.08)' : 'rgba(245, 158, 11, 0.06)',
-          border: `1px solid ${isLight ? 'rgba(245, 158, 11, 0.25)' : 'rgba(245, 158, 11, 0.15)'}`,
+          background: 'var(--bg-tertiary)',
+          border: '1px solid var(--border-primary)',
         }}>
           <button
             onClick={onLoadMinMax}
             style={{
-              background: 'var(--bg-card)', border: '1px solid var(--border-primary)',
+              background: 'var(--bg-secondary)', border: '1px solid var(--border-primary)',
               borderRadius: 6, padding: '6px 12px', cursor: 'pointer',
-              color: 'var(--accent-primary, #6366f1)', fontSize: 11, fontWeight: 500,
+              color: 'var(--text-secondary)', fontSize: 11, fontWeight: 500,
               whiteSpace: 'nowrap', flexShrink: 0,
             }}
           >
             Load Min/Max
           </button>
-          <span style={{ fontSize: 10, color: isLight ? '#92400e' : '#fbbf24' }}>
-            Reads actual part data to compute per-column min/max values. This requires a full scan of the part and may take time on large parts.
+          <span style={{ fontSize: 10, color: 'var(--text-muted)' }}>
+            Reads actual part data to compute per-column min/max values. May be slow on large parts.
           </span>
         </div>
       )}
@@ -842,7 +763,7 @@ export const DataTab: React.FC<{
   isLoading: boolean; 
   error: string | null;
 }> = ({ partData, isLoading, error }) => (
-  <div style={{ padding: '40px', height: '100%', display: 'flex', flexDirection: 'column', minHeight: 0 }}>
+  <div style={{ height: '100%', display: 'flex', flexDirection: 'column', minHeight: 0 }}>
     {isLoading ? (
       <div className="flex-1 flex items-center justify-center">
         <div className="animate-spin w-8 h-8 border-2 border-purple-500/30 border-t-purple-500 rounded-full" />
