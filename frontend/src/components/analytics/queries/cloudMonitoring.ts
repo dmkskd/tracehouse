@@ -49,7 +49,7 @@ ORDER BY t ASC`,
 
   `-- @meta: title='Failed Select %' group='Grafana Imports' interval='1 HOUR' description='Percentage of SELECT queries that failed — spikes indicate query errors or timeouts'
 -- @chart: type=area group_by=t value=fail_pct style=2d color=#ef4444 unit=%
--- @rag: column=fail_pct green<1 amber<5
+-- @cell: column=fail_pct type=rag green<1 amber<5
 -- @drill: on=t into='Grafana Imports#Failed Queries at Time'
 -- @source: https://github.com/ClickHouse/clickhouse-mixin
 SELECT
@@ -63,7 +63,7 @@ ORDER BY t ASC`,
 
   `-- @meta: title='Failed Insert %' group='Grafana Imports' interval='1 HOUR' description='Percentage of INSERT queries (sync + async) that failed'
 -- @chart: type=area group_by=t value=fail_pct style=2d color=#f97316 unit=%
--- @rag: column=fail_pct green<1 amber<5
+-- @cell: column=fail_pct type=rag green<1 amber<5
 -- @drill: on=t into='Grafana Imports#Failed Queries at Time'
 -- @source: https://github.com/ClickHouse/clickhouse-mixin
 SELECT
@@ -125,7 +125,7 @@ ORDER BY t ASC`,
 
   `-- @meta: title='Max Parts Per Partition' group='Grafana Imports' interval='1 HOUR' description='Maximum part count in any single partition — early warning for too-many-parts (300 = rejected inserts)'
 -- @chart: type=area group_by=t value=max_parts style=2d color=#ef4444
--- @rag: column=max_parts green<100 amber<250
+-- @cell: column=max_parts type=rag green<100 amber<250
 -- @source: https://github.com/ClickHouse/clickhouse-mixin
 SELECT
     toStartOfInterval(event_time, INTERVAL 1 MINUTE) AS t,
@@ -349,7 +349,7 @@ ORDER BY t ASC`,
 
   `-- @meta: title='Rejected Inserts (TOO_MANY_PARTS)' group='Grafana Imports' interval='1 HOUR' description='Inserts rejected because partition exceeded max part count — critical production issue'
 -- @chart: type=bar group_by=t value=rejected style=2d color=#ef4444
--- @rag: column=rejected green<1 amber<5
+-- @cell: column=rejected type=rag green<1 amber<5
 -- @drill: on=t into='Grafana Imports#Rejected Inserts at Time'
 -- @source: https://github.com/ClickHouse/clickhouse-mixin
 SELECT
@@ -513,7 +513,8 @@ ORDER BY t ASC`,
 
   `-- @meta: title='Filesystem Cache Hit Rate' group='Grafana Imports' interval='1 HOUR' description='Percentage of reads served from filesystem cache vs remote storage — low rates mean excessive S3/remote reads'
 -- @chart: type=line group_by=t value=hit_rate_pct style=2d color=#22c55e unit=%
--- @rag: column=hit_rate_pct green>80 amber>50
+-- @cell: column=hit_rate_pct type=gauge max=100 unit=%
+-- @cell: column=hit_rate_pct type=rag green>80 amber>50
 -- @source: https://github.com/ClickHouse/clickhouse-mixin
 SELECT
     toStartOfInterval(event_time, INTERVAL 1 MINUTE) AS t,
@@ -540,7 +541,8 @@ ORDER BY t ASC`,
 
   `-- @meta: title='Mark Cache Hit Rate' group='Grafana Imports' interval='1 HOUR' description='Mark cache hit rate — marks index granule boundaries; misses mean extra disk reads for every query'
 -- @chart: type=line group_by=t value=hit_rate_pct style=2d color=#84cc16 unit=%
--- @rag: column=hit_rate_pct green>90 amber>70
+-- @cell: column=hit_rate_pct type=gauge max=100 unit=%
+-- @cell: column=hit_rate_pct type=rag green>90 amber>70
 -- @source: https://github.com/ClickHouse/clickhouse-mixin
 SELECT
     toStartOfInterval(event_time, INTERVAL 1 MINUTE) AS t,

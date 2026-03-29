@@ -2,12 +2,15 @@
  * ResultsTable — shared sortable table for query results.
  *
  * Used by both DashboardViewer and QueryExplorer to render clickable,
- * sortable tables with RAG coloring and link-column support.
+ * sortable tables with cell decorations (RAG coloring, gauge bars, sparklines)
+ * and link-column support.
  */
 
 import React from 'react';
 import { formatCell } from './charts';
-import { getRagColor, type RagRule } from './metaLanguage';
+import { getRagColor, type CellStyleRule, type GaugeCellStyle, type SparklineCellStyle } from './metaLanguage';
+import { GaugeBar } from './GaugeBar';
+import { Sparkline } from './Sparkline';
 
 export interface ResultsTableProps {
   columns: string[];
@@ -19,8 +22,8 @@ export interface ResultsTableProps {
   onSort: (column: string) => void;
   /** Column that renders as a clickable link */
   linkOnColumn?: string;
-  /** RAG color rules for cells */
-  ragRules?: RagRule[];
+  /** Cell style rules (rag, gauge, sparkline) from @cell: directives */
+  cellStyles?: CellStyleRule[];
   /** Called when a link cell is clicked */
   onLinkClick?: (column: string, value: string) => void;
   /** Column whose cells are clickable for drill-down */
@@ -29,6 +32,10 @@ export interface ResultsTableProps {
   onDrillClick?: (column: string, value: string) => void;
   /** Target query name shown as tooltip on drillable cells */
   drillIntoQuery?: string;
+  /** Column whose cells open a part inspector */
+  partLinkOnColumn?: string;
+  /** Called when a part-link cell is clicked */
+  onPartLinkClick?: (column: string, value: string, row: Record<string, unknown>) => void;
   /** Visual density variant */
   compact?: boolean;
 }
@@ -44,11 +51,24 @@ function isNumericColumn(rows: Record<string, unknown>[], col: string): boolean 
 
 export const ResultsTable: React.FC<ResultsTableProps> = ({
   columns, rows, sortColumn, sortDirection, onSort,
-  linkOnColumn, ragRules, onLinkClick,
+  linkOnColumn, cellStyles, onLinkClick,
   drillOnColumn, onDrillClick, drillIntoQuery,
+  partLinkOnColumn, onPartLinkClick,
   compact = false,
 }) => {
   const [hoveredRow, setHoveredRow] = React.useState<number | null>(null);
+  const gaugeMap = React.useMemo(
+    () => new Map(
+      cellStyles?.filter((r): r is GaugeCellStyle => r.type === 'gauge').map(g => [g.column, g]),
+    ),
+    [cellStyles],
+  );
+  const sparklineMap = React.useMemo(
+    () => new Map(
+      cellStyles?.filter((r): r is SparklineCellStyle => r.type === 'sparkline').map(s => [s.column, s]),
+    ),
+    [cellStyles],
+  );
   const fontSize = compact ? 11 : 13;
   const headerFontSize = compact ? 9 : 10;
   const headerPadding = compact ? '6px 10px' : '10px 14px';
@@ -56,6 +76,7 @@ export const ResultsTable: React.FC<ResultsTableProps> = ({
   const maxCellWidth = compact ? 200 : 400;
   const hasLinks = !!linkOnColumn && !!onLinkClick;
   const hasDrill = !!drillOnColumn && !!onDrillClick;
+  const hasPartLink = !!partLinkOnColumn && !!onPartLinkClick;
   const numericCols = React.useMemo(
     () => new Set(columns.filter(c => isNumericColumn(rows, c))),
     [columns, rows],
@@ -94,10 +115,43 @@ export const ResultsTable: React.FC<ResultsTableProps> = ({
             {columns.map(col => {
               const isLink = hasLinks && col === linkOnColumn;
               const isDrill = hasDrill && col === drillOnColumn;
-              const isClickable = isLink || isDrill;
-              const cellValue = formatCell(row[col]);
-              const ragColor = getRagColor(col, row[col], ragRules);
+              const isPartLink = hasPartLink && col === partLinkOnColumn;
+              const isClickable = isLink || isDrill || isPartLink;
+              const cellValue = formatCell(row[col], col);
+              const ragColor = getRagColor(col, row[col], cellStyles);
               const numeric = numericCols.has(col);
+              const gauge = gaugeMap.get(col);
+              const sparkline = sparklineMap.get(col);
+
+              // Gauge bar rendering
+              if (gauge) {
+                const val = typeof row[col] === 'number' ? row[col] as number : Number(row[col]);
+                const maxVal = typeof gauge.max === 'number'
+                  ? gauge.max
+                  : (typeof row[gauge.max] === 'number' ? row[gauge.max] as number : Number(row[gauge.max]));
+                return (
+                  <td key={col} style={{ padding: cellPadding, borderBottom: '1px solid var(--border-secondary)', minWidth: 140 }}>
+                    <GaugeBar value={val} max={maxVal} ragColor={ragColor} unit={gauge.unit} />
+                  </td>
+                );
+              }
+
+              // Sparkline rendering
+              if (sparkline) {
+                const raw = row[col];
+                const data = Array.isArray(raw) ? raw.map(Number).filter(n => !isNaN(n)) : [];
+                return (
+                  <td key={col} style={{ padding: cellPadding, borderBottom: '1px solid var(--border-secondary)' }}>
+                    <Sparkline
+                      data={data}
+                      referenceValue={sparkline.ref}
+                      color={sparkline.color}
+                      fill={sparkline.fill}
+                    />
+                  </td>
+                );
+              }
+
               return (
                 <td key={col} style={{
                   padding: cellPadding, borderBottom: '1px solid var(--border-secondary)',
@@ -111,8 +165,8 @@ export const ResultsTable: React.FC<ResultsTableProps> = ({
                   textAlign: numeric ? 'right' : 'left',
                   fontVariantNumeric: numeric ? 'tabular-nums' : undefined,
                 }}
-                title={isDrill && drillIntoQuery ? `Drill into: ${drillIntoQuery}` : undefined}
-                onClick={isLink ? () => onLinkClick!(col, cellValue) : isDrill ? () => onDrillClick!(col, cellValue) : undefined}
+                title={isDrill && drillIntoQuery ? `Drill into: ${drillIntoQuery}` : isPartLink ? 'Open part details' : undefined}
+                onClick={isLink ? () => onLinkClick!(col, cellValue) : isDrill ? () => onDrillClick!(col, cellValue) : isPartLink ? () => onPartLinkClick!(col, cellValue, row) : undefined}
                 >{cellValue}</td>
               );
             })}

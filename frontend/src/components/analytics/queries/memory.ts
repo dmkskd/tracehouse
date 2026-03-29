@@ -242,7 +242,7 @@ FROM system.dictionaries
 ORDER BY bytes_allocated DESC`,
 
   `-- @meta: title='Top Running Queries by Memory' group='Memory' description='Currently running queries sorted by peak memory — spot memory-hungry queries in real time'
--- @rag: column=peak_memory_mb green<100 amber<500
+-- @cell: column=peak_memory_mb type=rag green<100 amber<500
 -- @link: on=query_id into='Query Detail by ID'
 -- @source: https://clickhouse.com/docs/guides/developer/debugging-memory-issues
 -- @source: https://kb.altinity.com/altinity-kb-setup-and-maintenance/altinity-kb-who-ate-my-memory/
@@ -261,7 +261,7 @@ ORDER BY peak_memory_usage DESC
 LIMIT 30`,
 
   `-- @meta: title='Historical Top Memory Queries' group='Memory' interval='1 DAY' description='Most memory-hungry completed queries from query_log — find past offenders'
--- @rag: column=memory_mb green<100 amber<500
+-- @cell: column=memory_mb type=rag green<100 amber<500
 -- @drill: on=query_hash into='Memory Query Executions'
 -- @source: https://kb.altinity.com/altinity-kb-setup-and-maintenance/altinity-kb-who-ate-my-memory/
 SELECT
@@ -282,7 +282,7 @@ ORDER BY max(memory_usage) DESC
 LIMIT 30`,
 
   `-- @meta: title='Memory Query Executions' group='Memory' interval='1 DAY' description='Individual executions of a specific high-memory query shape'
--- @rag: column=memory_mb green<100 amber<500
+-- @cell: column=memory_mb type=rag green<100 amber<500
 -- @link: on=query_id into='Query Detail by ID'
 SELECT
     query_id,
@@ -378,6 +378,7 @@ ORDER BY hour ASC, memory_mb DESC`,
 
   `-- @meta: title='Merge Memory' group='Memory' description='Memory consumed by currently active merge operations, grouped by database and table'
 -- @chart: type=bar group_by=table value=memory_mb unit=MB style=2d
+-- @cell: column=avg_progress_pct type=gauge max=100 unit=%
 -- @source: https://clickhouse.com/docs/guides/developer/debugging-memory-issues
 -- @source: https://kb.altinity.com/altinity-kb-setup-and-maintenance/altinity-kb-who-ate-my-memory/
 SELECT

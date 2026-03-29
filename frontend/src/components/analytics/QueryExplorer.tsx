@@ -24,9 +24,12 @@ const MAX_SIDEBAR_QUERIES = 12;
 import {
   QUERY_GROUPS, CHART_TYPE_LABELS,
   type QueryGroup, type ChartType, type ChartStyle,
-  parseRagRules, parseChartDirective, parseDirectives, resolveQueryRef,
+  parseCellStyles, parseRagRules, parseChartDirective, parseDirectives, resolveQueryRef,
 } from './metaLanguage';
 import { LinkQueryModal } from './LinkQueryModal';
+import { PartInspector } from '../database/PartInspector';
+import { databaseApi } from '../../stores/databaseStore';
+import type { PartDetailInfo } from '@tracehouse/core';
 import {
   isNumericValue, formatCell,
   buildChartData, buildGroupedChartData, isGroupedChartType, sortRows,
@@ -346,6 +349,49 @@ export const QueryExplorer: React.FC<QueryExplorerProps> = ({ urlState, onUrlSta
     setLinkModal({ targetQuery: target, params: { [column]: value } });
   }, [currentQuery]);
 
+  /* ── @part_link state ── */
+  const [partLinkTarget, setPartLinkTarget] = useState<{ partName: string; database: string; table: string } | null>(null);
+  const [partLinkDetail, setPartLinkDetail] = useState<PartDetailInfo | null>(null);
+  const [partLinkLoading, setPartLinkLoading] = useState(false);
+  const isPartLinkable = !!(currentQuery?.directives.partLink?.on) &&
+    (!result || result.columns.includes(currentQuery.directives.partLink.on));
+
+  const resolvePartLink = useCallback((partName: string, row?: Record<string, unknown>) => {
+    const pl = currentQuery?.directives.partLink;
+    if (!pl || !partName) return;
+    const currentDrillParams = drillStack.length > 0 ? drillStack[drillStack.length - 1].params : {};
+    const db = String(row?.[pl.database] ?? currentDrillParams[pl.database] ?? '');
+    const tbl = String(row?.[pl.table] ?? currentDrillParams[pl.table] ?? '');
+    if (db && tbl) {
+      setPartLinkTarget({ partName, database: db, table: tbl });
+    }
+  }, [currentQuery, drillStack]);
+
+  const handlePartLinkClick = useCallback((_column: string, value: string, row: Record<string, unknown>) => {
+    resolvePartLink(value, row);
+  }, [resolvePartLink]);
+
+  const handlePartLinkChartClick = useCallback((event: DrillDownEvent) => {
+    const pl = currentQuery?.directives.partLink;
+    if (!pl || !result) return;
+    const row = result.rows.find(r => String(r[pl.on]) === event.label);
+    resolvePartLink(event.label, row ?? undefined);
+  }, [currentQuery, result, resolvePartLink]);
+
+  useEffect(() => {
+    if (!partLinkTarget || !services) {
+      setPartLinkDetail(null);
+      return;
+    }
+    let cancelled = false;
+    setPartLinkLoading(true);
+    databaseApi.fetchPartDetail(services.databaseExplorer, partLinkTarget.database, partLinkTarget.table, partLinkTarget.partName)
+      .then(detail => { if (!cancelled) setPartLinkDetail(detail); })
+      .catch(() => {})
+      .finally(() => { if (!cancelled) setPartLinkLoading(false); });
+    return () => { cancelled = true; };
+  }, [partLinkTarget, services]);
+
   // Modal state for new/clone query
   const [queryModal, setQueryModal] = useState<{ mode: 'new' | 'clone'; defaultName: string; defaultDesc: string; defaultGroup: string; bodySql: string } | null>(null);
 
@@ -397,13 +443,18 @@ export const QueryExplorer: React.FC<QueryExplorerProps> = ({ urlState, onUrlSta
     if (activeQueryName === name) setActiveQueryName(null);
   }, [activeQueryName]);
 
-  // Auto-execute first query on mount
+  // Auto-execute first query on mount (unless noAutoExecute is set, e.g. when opened from query detail modal)
   useEffect(() => {
     if (!hasAutoExecuted.current && services) {
       hasAutoExecuted.current = true;
-      runQuery();
+      if (urlState?.noAutoExecute) {
+        // Clear the flag from the URL so it doesn't persist on subsequent navigations
+        onUrlStateChange?.({ noAutoExecute: undefined });
+      } else {
+        runQuery();
+      }
     }
-  }, [runQuery, services]);
+  }, [runQuery, services, urlState?.noAutoExecute]);
 
   // Re-run query when time range changes (after initial mount)
   const prevTimeRange = useRef(timeRangeOverride);
@@ -461,10 +512,10 @@ export const QueryExplorer: React.FC<QueryExplorerProps> = ({ urlState, onUrlSta
     document.addEventListener('mouseup', onUp);
   }, [editorHeight]);
 
-  /* ── RAG rules: parse directly from live SQL so editor changes take effect ── */
-  const activeRagRules = useMemo(() => {
-    const rules = parseRagRules(sql);
-    return rules.length > 0 ? rules : undefined;
+  /* ── Cell styles: parse directly from live SQL so editor changes take effect ── */
+  const activeCellStyles = useMemo(() => {
+    const styles = [...parseCellStyles(sql), ...parseRagRules(sql)];
+    return styles.length > 0 ? styles : undefined;
   }, [sql]);
 
   /* ── chart data ── */
@@ -503,7 +554,7 @@ export const QueryExplorer: React.FC<QueryExplorerProps> = ({ urlState, onUrlSta
 
   const copyResults = useCallback(async () => {
     if (!result) return;
-    const tsv = [result.columns.join('\t'), ...result.rows.map(r => result.columns.map(c => formatCell(r[c])).join('\t'))].join('\n');
+    const tsv = [result.columns.join('\t'), ...result.rows.map(r => result.columns.map(c => formatCell(r[c], c)).join('\t'))].join('\n');
     await navigator.clipboard.writeText(tsv);
     setCopied(true);
     setTimeout(() => setCopied(false), 2000);
@@ -789,11 +840,13 @@ export const QueryExplorer: React.FC<QueryExplorerProps> = ({ urlState, onUrlSta
                 sortDirection={sortConfig?.direction ?? 'asc'}
                 onSort={handleSort}
                 linkOnColumn={isLinkable ? currentQuery?.directives.link?.on : undefined}
-                ragRules={activeRagRules}
+                cellStyles={activeCellStyles}
                 onLinkClick={isLinkable ? handleLinkClick : undefined}
                 drillOnColumn={isDrillable ? currentQuery?.directives.drill?.on : undefined}
                 onDrillClick={isDrillable ? ((_col, value) => handleDrillDown({ label: value, value: 0 })) : undefined}
                 drillIntoQuery={isDrillable ? currentQuery?.directives.drill?.into : undefined}
+                partLinkOnColumn={isPartLinkable ? currentQuery?.directives.partLink?.on : undefined}
+                onPartLinkClick={isPartLinkable ? handlePartLinkClick : undefined}
               />
             </div>
           )}
@@ -851,8 +904,8 @@ export const QueryExplorer: React.FC<QueryExplorerProps> = ({ urlState, onUrlSta
                   <div style={{ position: 'relative', width: '100%', height: '100%' }}>
                     <ChartRenderer chartType={chartConfig.type} data={chartData} groupedData={groupedChartData}
                       orientation={chartConfig.orientation} unit={chartConfig.unit} color={chartConfig.color}
-                      onDrillDown={isDrillable ? handleDrillDown : undefined}
-                      drillIntoQuery={isDrillable ? currentQuery?.directives.drill?.into : undefined}
+                      onDrillDown={isDrillable ? handleDrillDown : isPartLinkable ? handlePartLinkChartClick : undefined}
+                      drillIntoQuery={isDrillable ? currentQuery?.directives.drill?.into : isPartLinkable ? 'Part Inspector' : undefined}
                       valueColumns={chartConfig.valueColumns} />
                     <button
                       onClick={toggleFullscreen}
@@ -875,7 +928,7 @@ export const QueryExplorer: React.FC<QueryExplorerProps> = ({ urlState, onUrlSta
                     description={chartConfig.description}
                     isFullscreen={isFullscreen}
                     onToggleFullscreen={toggleFullscreen}
-                    onDrillDown={isDrillable ? handleDrillDown : undefined}
+                    onDrillDown={isDrillable ? handleDrillDown : isPartLinkable ? handlePartLinkChartClick : undefined}
                     unit={chartConfig.unit}
                   />
                 )}
@@ -916,6 +969,17 @@ export const QueryExplorer: React.FC<QueryExplorerProps> = ({ urlState, onUrlSta
           params={linkModal.params}
           parentDrillParams={drillStack.length > 0 ? drillStack[drillStack.length - 1].params : undefined}
           onClose={() => setLinkModal(null)}
+        />
+      )}
+      {partLinkTarget && (
+        <PartInspector
+          partDetail={partLinkDetail}
+          isLoading={partLinkLoading}
+          onClose={() => { setPartLinkTarget(null); setPartLinkDetail(null); }}
+          breadcrumbPath={[partLinkTarget.database, partLinkTarget.table]}
+          database={partLinkTarget.database}
+          table={partLinkTarget.table}
+          zIndex={100000}
         />
       )}
     </div>

@@ -9,9 +9,9 @@
 
 const queries: string[] = [
   `-- @meta: title='Replica Status' group='Replication' description='Health overview of all replicated tables — readonly, session expired, leader status, active replicas, and delay'
--- @rag: column=is_readonly green=0
--- @rag: column=is_session_expired green=0
--- @rag: column=absolute_delay green<10 amber<300
+-- @cell: column=is_readonly type=rag green=0
+-- @cell: column=is_session_expired type=rag green=0
+-- @cell: column=absolute_delay type=rag green<10 amber<300
 -- @source: https://clickhouse.com/docs/operations/system-tables/replicas
 SELECT
     database,
@@ -32,7 +32,7 @@ FROM system.replicas
 ORDER BY absolute_delay DESC`,
 
   `-- @meta: title='Replication Queue Summary' group='Replication' description='Aggregated replication queue by table and operation type — spot backlogs and stuck tasks'
--- @rag: column=max_tries green<3 amber<10
+-- @cell: column=max_tries type=rag green<3 amber<10
 -- @source: https://clickhouse.com/docs/operations/system-tables/replication_queue
 -- @source: https://kb.altinity.com/altinity-kb-setup-and-maintenance/altinity-kb-replication-queue/
 SELECT

@@ -80,7 +80,10 @@ LIMIT 50`,
 
   `-- @meta: title='Part Sizes' group='Overview' description='Disk usage per part (drill from Table Sizes or view all)'
 -- @chart: type=bar group_by=name value=bytes_on_disk style=2d unit=bytes
+-- @part_link: on=name database=database table=table
 SELECT
+    database,
+    table,
     name,
     formatReadableSize(bytes_on_disk) AS size,
     bytes_on_disk
@@ -88,6 +91,23 @@ FROM {{cluster_aware:system.parts}}
 WHERE active AND {{drill:database | 1=1}} AND {{drill:table | 1=1}}
 ORDER BY bytes_on_disk DESC
 LIMIT 100`,
+  `-- @meta: title='Table Health' group='Overview' description='Per-table part count, disk usage gauge, and part-size distribution sparkline'
+-- @cell: column=disk_pct type=gauge max=100 unit=%
+-- @cell: column=disk_pct type=rag green<30 amber<60
+-- @cell: column=part_sizes type=sparkline color=#6366f1 fill=true
+SELECT
+    database,
+    table,
+    count() AS parts,
+    formatReadableSize(sum(bytes_on_disk)) AS disk_size,
+    sum(rows) AS total_rows,
+    round(sum(bytes_on_disk) * 100.0 / greatest((SELECT sum(bytes_on_disk) FROM system.parts WHERE active), 1), 1) AS disk_pct,
+    arrayMap(x -> toUInt32(x), groupArray(bytes_on_disk)) AS part_sizes
+FROM system.parts
+WHERE active AND database NOT IN ('system', 'INFORMATION_SCHEMA', 'information_schema')
+GROUP BY database, table
+ORDER BY sum(bytes_on_disk) DESC
+LIMIT 20`,
 ];
 
 export default queries;

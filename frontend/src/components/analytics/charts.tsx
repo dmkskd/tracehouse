@@ -187,7 +187,7 @@ export function buildMultiColumnGrouped(
   valueColumns: string[],
 ): GroupedChartData[] {
   return rows.map(row => ({
-    label: formatCell(row[groupByColumn]),
+    label: formatCell(row[groupByColumn], groupByColumn),
     groups: valueColumns.map((col, i) => ({
       name: col,
       value: extractNumeric(row[col]),
@@ -227,7 +227,7 @@ export function buildChartData(
   const sliced = maxRows ? rows.slice(0, maxRows) : rows;
   const palette = sequentialPalette(sliced.length);
   return sliced.map((r, i) => ({
-    label: formatCell(r[lblCol]),
+    label: formatCell(r[lblCol], lblCol),
     value: extractNumeric(r[valCol]),
     color: palette[i],
     ...(descriptionCol && r[descriptionCol] != null ? { description: String(r[descriptionCol]) } : {}),
@@ -255,13 +255,13 @@ export function buildGroupedChartData(
   if (!seriesColumn) return [];
   const grouped = new Map<string, Map<string, number>>();
   for (const row of rows) {
-    const label = formatCell(row[groupByColumn]);
-    const series = formatCell(row[seriesColumn]);
+    const label = formatCell(row[groupByColumn], groupByColumn);
+    const series = formatCell(row[seriesColumn], seriesColumn);
     const value = extractNumeric(row[valueColumn]);
     if (!grouped.has(label)) grouped.set(label, new Map());
     grouped.get(label)!.set(series, value);
   }
-  const allSeries = [...new Set(rows.map(r => formatCell(r[seriesColumn])))];
+  const allSeries = [...new Set(rows.map(r => formatCell(r[seriesColumn], seriesColumn)))];
   return Array.from(grouped.entries()).map(([label, groups]) => ({
     label,
     groups: allSeries.map((seriesName, i) => ({
@@ -439,7 +439,7 @@ export const AnalyticsTooltip: React.FC<{
         </div>
       )}
       {drillIntoQuery && (
-        <div style={drillHintStyle}>Click to drill into {drillIntoQuery}</div>
+        <div style={drillHintStyle}>{drillIntoQuery === 'Part Inspector' ? 'Click to inspect part' : `Click to drill into ${drillIntoQuery}`}</div>
       )}
       {orderedCorrelation && orderedCorrelation.length > 0 && (
         <div style={{ borderTop: '1px solid var(--border-secondary, rgba(148,163,184,0.2))', marginTop: 6, paddingTop: 5 }}>
@@ -505,7 +505,7 @@ const PieTooltip: React.FC<{
         </div>
       )}
       {drillIntoQuery && (
-        <div style={drillHintStyle}>Click to drill into {drillIntoQuery}</div>
+        <div style={drillHintStyle}>{drillIntoQuery === 'Part Inspector' ? 'Click to inspect part' : `Click to drill into ${drillIntoQuery}`}</div>
       )}
     </div>
   );

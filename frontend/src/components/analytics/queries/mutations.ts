@@ -7,7 +7,7 @@
 
 const queries: string[] = [
   `-- @meta: title='Active Mutations' group='Mutations' description='Currently running mutations — command, parts remaining, and failure info'
--- @rag: column=parts_to_do green<5 amber<50
+-- @cell: column=parts_to_do type=rag green<5 amber<50
 -- @source: https://clickhouse.com/docs/operations/system-tables/mutations
 SELECT
     database,

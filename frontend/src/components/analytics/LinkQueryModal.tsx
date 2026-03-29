@@ -262,11 +262,11 @@ export const LinkQueryModal: React.FC<LinkQueryModalProps> = ({
                       {columns.map(col => (
                         <td key={col} style={{
                           padding: '6px 12px', borderBottom: '1px solid var(--border-secondary)',
-                          color: getRagColor(col, row[col], targetQuery.directives.rag) ?? 'var(--text-secondary)',
-                          fontWeight: getRagColor(col, row[col], targetQuery.directives.rag) ? 600 : undefined,
+                          color: getRagColor(col, row[col], targetQuery.directives.cellStyles) ?? 'var(--text-secondary)',
+                          fontWeight: getRagColor(col, row[col], targetQuery.directives.cellStyles) ? 600 : undefined,
                           whiteSpace: 'nowrap', maxWidth: 400, overflow: 'hidden', textOverflow: 'ellipsis',
                         }}>
-                          {formatCell(row[col])}
+                          {formatCell(row[col], col)}
                         </td>
                       ))}
                     </tr>

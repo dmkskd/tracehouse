@@ -2,6 +2,7 @@
 
 const queries: string[] = [
   `-- @meta: title='Active Merges' group='Merges' description='Currently running merges with progress, elapsed time, size, and memory usage'
+-- @cell: column=progress_pct type=gauge max=100 unit=%
 SELECT
     database,
     table,
@@ -20,6 +21,7 @@ ORDER BY elapsed DESC`,
 
   `-- @meta: title='Merge Throughput (bytes/sec)' group='Merges' description='Estimated merge read throughput for each active merge'
 -- @chart: type=bar group_by=merge value=bytes_per_sec style=2d
+-- @cell: column=progress_pct type=gauge max=100 unit=%
 SELECT
     concat(database, '.', table, ' #', toString(num_parts), 'p') AS merge,
     round(elapsed, 0) AS elapsed_sec,
@@ -109,6 +111,7 @@ ORDER BY t ASC`,
 
   `-- @meta: title='Fetch vs Merge Ratio' group='Merges' interval='1 DAY' description='Ratio of replica fetches (DownloadPart) to local merges over time — high fetch% means replicas rely on others to merge (ReplicatedMergeTree only)'
 -- @chart: type=line group_by=hour value=merges,fetches style=2d
+-- @cell: column=fetch_pct type=gauge max=100 unit=%
 SELECT
     toStartOfHour(event_time) AS hour,
     countIf(event_type = 'MergeParts') AS merges,
@@ -147,6 +150,7 @@ ORDER BY t ASC`,
 
   `-- @meta: title='Replica Merge Imbalance' group='Merges' interval='1 DAY' description='Per-replica breakdown of local merges vs fetches — asymmetry indicates one node is doing most merge work (ReplicatedMergeTree only)'
 -- @chart: type=bar group_by=replica value=fetch_pct style=2d
+-- @cell: column=fetch_pct type=gauge max=100 unit=%
 SELECT
     hostName() AS replica,
     countIf(event_type = 'MergeParts') AS local_merges,
@@ -163,6 +167,7 @@ ORDER BY fetch_pct DESC`,
 
   `-- @meta: title='Fetch vs Merge by Table & Size' group='Merges' interval='1 DAY' description='Per-table breakdown of fetch vs local merge by part size — shows which tables and size ranges rely on fetching (ReplicatedMergeTree only)'
 -- @chart: type=bar group_by=size_bucket value=fetch_pct style=2d
+-- @cell: column=fetch_pct type=gauge max=100 unit=%
 SELECT
     database || '.' || table AS tbl,
     multiIf(
@@ -189,6 +194,7 @@ ORDER BY tbl, min(size_in_bytes)`,
 
   `-- @meta: title='Replica Merge Imbalance by Table' group='Merges' interval='1 DAY' description='Per-replica, per-table merge vs fetch breakdown — reveals which replica is the primary merger for each table (ReplicatedMergeTree only)'
 -- @chart: type=bar group_by=replica value=local_merges,fetches style=2d
+-- @cell: column=fetch_pct type=gauge max=100 unit=%
 SELECT
     hostName() AS replica,
     database || '.' || table AS tbl,

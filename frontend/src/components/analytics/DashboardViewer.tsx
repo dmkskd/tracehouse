@@ -6,6 +6,7 @@
  */
 
 import React, { useState, useEffect, useCallback, useMemo, useRef } from 'react';
+import { buildConfig } from '../../buildConfig';
 import { useSearchParams } from 'react-router-dom';
 import { useClickHouseServices } from '../../providers/ClickHouseProvider';
 import { type Query } from './types';
@@ -14,6 +15,9 @@ import { resolveTimeRange, resolveDrillParams } from './templateResolution';
 import { formatClickHouseError } from '../../utils/errorFormatters';
 import { type ChartType, parseChartDirective, resolveQueryRef } from './metaLanguage';
 import { LinkQueryModal } from './LinkQueryModal';
+import { PartInspector } from '../database/PartInspector';
+import { databaseApi } from '../../stores/databaseStore';
+import type { PartDetailInfo } from '@tracehouse/core';
 import { TimeRangePicker } from './TimeRangePicker';
 import {
   formatCell,
@@ -237,6 +241,52 @@ const DashboardPanelCard: React.FC<{
     setLinkModal({ targetQuery: target, params: { [column]: value } });
   }, [preset]);
 
+  // @part_link support — open PartInspector for a part name
+  const [partLinkTarget, setPartLinkTarget] = useState<{ partName: string; database: string; table: string } | null>(null);
+  const [partLinkDetail, setPartLinkDetail] = useState<PartDetailInfo | null>(null);
+  const [partLinkLoading, setPartLinkLoading] = useState(false);
+  const isPartLinkable = !!(preset?.directives.partLink?.on) &&
+    (!result || result.columns.includes(preset.directives.partLink.on));
+
+  const resolvePartLink = useCallback((partName: string, row?: Record<string, unknown>) => {
+    const pl = preset?.directives.partLink;
+    if (!pl || !partName) return;
+    // Resolve database/table from row columns first, then drill params
+    const db = String(row?.[pl.database] ?? drillParams[pl.database] ?? filterParams?.[pl.database] ?? '');
+    const tbl = String(row?.[pl.table] ?? drillParams[pl.table] ?? filterParams?.[pl.table] ?? '');
+    if (db && tbl) {
+      setPartLinkTarget({ partName, database: db, table: tbl });
+    }
+  }, [preset, drillParams, filterParams]);
+
+  const handlePartLinkClick = useCallback((_column: string, value: string, row: Record<string, unknown>) => {
+    resolvePartLink(value, row);
+  }, [resolvePartLink]);
+
+  /** Chart click handler for @part_link — looks up the row by matching the group_by column. */
+  const handlePartLinkChartClick = useCallback((event: DrillDownEvent) => {
+    const pl = preset?.directives.partLink;
+    if (!pl || !result) return;
+    // Find the row whose part-link column matches the clicked label
+    const row = result.rows.find(r => String(r[pl.on]) === event.label);
+    resolvePartLink(event.label, row ?? undefined);
+  }, [preset, result, resolvePartLink]);
+
+  // Fetch part detail when target changes
+  useEffect(() => {
+    if (!partLinkTarget || !services) {
+      setPartLinkDetail(null);
+      return;
+    }
+    let cancelled = false;
+    setPartLinkLoading(true);
+    databaseApi.fetchPartDetail(services.databaseExplorer, partLinkTarget.database, partLinkTarget.table, partLinkTarget.partName)
+      .then(detail => { if (!cancelled) setPartLinkDetail(detail); })
+      .catch(() => { /* PartInspector handles null detail gracefully */ })
+      .finally(() => { if (!cancelled) setPartLinkLoading(false); });
+    return () => { cancelled = true; };
+  }, [partLinkTarget, services]);
+
   if (!preset) {
     return (
       <div style={{ ...panelStyle, display: isHidden ? 'none' : 'flex' }}>
@@ -337,13 +387,13 @@ const DashboardPanelCard: React.FC<{
                     orientation={chartDirective?.orientation}
                     groupedData={isGroupedChart ? groupedChartData : undefined}
                     isFullscreen={fullscreen}
-                    onDrillDown={isDrillable ? handleDrillDown : undefined}
+                    onDrillDown={isDrillable ? handleDrillDown : isPartLinkable ? handlePartLinkChartClick : undefined}
                     unit={chartUnit} />
                 ) : (
                   <ChartRenderer chartType={chartType} data={chartData} groupedData={groupedChartData}
                     orientation={chartDirective?.orientation} fullHeight unit={chartUnit} color={chartColor}
-                    onDrillDown={isDrillable ? handleDrillDown : undefined}
-                    drillIntoQuery={isDrillable ? preset?.directives.drill?.into : undefined}
+                    onDrillDown={isDrillable ? handleDrillDown : isPartLinkable ? handlePartLinkChartClick : undefined}
+                    drillIntoQuery={isDrillable ? preset?.directives.drill?.into : isPartLinkable ? 'Part Inspector' : undefined}
                     valueColumns={chartDirective?.valueColumns}
                     hoveredTimestamp={hoveredTimestamp} onTimestampHover={onTimestampHover} correlationValues={correlationValues} currentPanelName={preset?.name} isHoveredPanel={isHoveredPanel} />
                 )}
@@ -366,11 +416,13 @@ const DashboardPanelCard: React.FC<{
                     sortDirection={sortDir}
                     onSort={handleSort}
                     linkOnColumn={isLinkable ? preset?.directives.link?.on : undefined}
-                    ragRules={preset?.directives.rag}
+                    cellStyles={preset?.directives.cellStyles}
                     onLinkClick={isLinkable ? handleLinkClick : undefined}
                     drillOnColumn={isDrillable ? preset?.directives.drill?.on : undefined}
                     onDrillClick={isDrillable ? ((_col: string, value: string) => handleDrillDown({ label: value, value: 0 })) : undefined}
                     drillIntoQuery={isDrillable ? preset?.directives.drill?.into : undefined}
+                    partLinkOnColumn={isPartLinkable ? preset?.directives.partLink?.on : undefined}
+                    onPartLinkClick={isPartLinkable ? handlePartLinkClick : undefined}
                     compact
                   />
                 </div>
@@ -389,6 +441,17 @@ const DashboardPanelCard: React.FC<{
           params={linkModal.params}
           parentDrillParams={drillParams}
           onClose={() => setLinkModal(null)}
+        />
+      )}
+      {partLinkTarget && (
+        <PartInspector
+          partDetail={partLinkDetail}
+          isLoading={partLinkLoading}
+          onClose={() => { setPartLinkTarget(null); setPartLinkDetail(null); }}
+          breadcrumbPath={[partLinkTarget.database, partLinkTarget.table]}
+          database={partLinkTarget.database}
+          table={partLinkTarget.table}
+          zIndex={100000}
         />
       )}
     </div>
@@ -751,7 +814,7 @@ const MiniPanelCard: React.FC<{ panel: DashboardPanel; timeRangeOverride: string
               <div key={i} style={{ display: 'flex', gap: 4, overflow: 'hidden' }}>
                 {result.columns.map(c => (
                   <span key={c} style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', flex: 1 }}>
-                    {formatCell(r[c])}
+                    {formatCell(r[c], c)}
                   </span>
                 ))}
               </div>
@@ -880,6 +943,7 @@ const DashboardListView: React.FC<{
   onImport: () => void;
   onNew: () => void;
 }> = ({ dashboards, onOpen, onImport, onNew }) => {
+  const previewEnabled = buildConfig.dashboardPreview;
   const [hoveredId, setHoveredId] = useState<string | null>(null);
   const [mousePos, setMousePos] = useState<{ x: number; y: number } | null>(null);
   const containerRef = useRef<HTMLDivElement>(null);
@@ -887,6 +951,7 @@ const DashboardListView: React.FC<{
 
   const handleMouseEnter = (id: string, e: React.MouseEvent<HTMLDivElement>) => {
     (e.currentTarget as HTMLDivElement).style.borderColor = 'var(--accent-primary)';
+    if (!previewEnabled) return;
     // start 1-second delay before showing preview
     if (hoverTimer.current) clearTimeout(hoverTimer.current);
     const x = e.clientX; const y = e.clientY;
@@ -896,6 +961,7 @@ const DashboardListView: React.FC<{
     }, 1000);
   };
   const handleMouseMove = (e: React.MouseEvent<HTMLDivElement>) => {
+    if (!previewEnabled) return;
     setMousePos({ x: e.clientX, y: e.clientY });
   };
   const handleMouseLeave = (e: React.MouseEvent<HTMLDivElement>) => {

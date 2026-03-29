@@ -7,7 +7,8 @@
 
 const queries: string[] = [
   `-- @meta: title='Disk Free Space' group='Disks' description='Free space, total capacity, and usage percentage per disk across all cluster nodes — early warning for running out of storage'
--- @rag: column=used_pct green<70 amber<85
+-- @cell: column=used_pct type=gauge max=100 unit=%
+-- @cell: column=used_pct type=rag green<70 amber<85
 -- @source: https://clickhouse.com/docs/operations/system-tables/disks
 SELECT
     hostName() AS host,

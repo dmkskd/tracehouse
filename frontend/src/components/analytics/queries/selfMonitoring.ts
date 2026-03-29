@@ -80,8 +80,8 @@ ORDER BY query_count DESC`,
 
   `-- @meta: title='App Query Cost Details' group='Self-Monitoring' interval='1 DAY' description='Full cost breakdown per unique query shape — duration, memory, rows, bytes, CPU'
 -- @link: on=query_hash into='App Query Executions'
--- @rag: column=avg_result_bytes green<10000 amber<100000
--- @rag: column=avg_memory_mb green<20 amber<50
+-- @cell: column=avg_result_bytes type=rag green<10000 amber<100000
+-- @cell: column=avg_memory_mb type=rag green<20 amber<50
 SELECT
     extractAllGroups(query, '${APP_RE_COMPONENT_SERVICE}')[1][1] AS component,
     extractAllGroups(query, '${APP_RE_COMPONENT_SERVICE}')[1][2] AS service,
@@ -117,8 +117,8 @@ HAVING component != '' AND service != '' AND {{drill:component | 1=1}} AND {{dri
 ORDER BY total_memory_mb DESC`,
 
   `-- @meta: title='App Query Executions' group='Self-Monitoring' interval='1 DAY' description='Recent executions for a specific query shape — click a row to open the full Query Detail view'
--- @rag: column=query_duration_ms green<50 amber<500
--- @rag: column=memory_mb green<20 amber<100
+-- @cell: column=query_duration_ms type=rag green<50 amber<500
+-- @cell: column=memory_mb type=rag green<20 amber<100
 SELECT
     query_id,
     type,
@@ -219,7 +219,7 @@ GROUP BY hour
 ORDER BY hour ASC`,
 
   `-- @meta: title='Sampling Status' group='Self-Monitoring' interval='1 HOUR' description='Health check for the system.processes & system.merges sampling pipeline — shows whether each sampler is running on schedule with no gaps or errors'
--- @rag: column=status green=ok amber=degraded
+-- @cell: column=status type=rag green=ok amber=degraded
 SELECT
     sampler,
     status,
@@ -311,8 +311,8 @@ GROUP BY t, sampler
 ORDER BY t ASC`,
 
   `-- @meta: title='Sampling Cost Summary' group='Self-Monitoring' interval='1 DAY' description='Aggregate cost of sampling system.processes & system.merges — duration, memory, rows read, CPU time'
--- @rag: column=avg_duration_ms green<5 amber<50
--- @rag: column=avg_memory_mb green<1 amber<10
+-- @cell: column=avg_duration_ms type=rag green<5 amber<50
+-- @cell: column=avg_memory_mb type=rag green<1 amber<10
 SELECT
     multiIf(
       query LIKE '%FROM system.processes%', 'processes',
@@ -336,7 +336,7 @@ GROUP BY sampler
 ORDER BY sampler`,
 
   `-- @meta: title='Sampling Gaps (processes)' group='Self-Monitoring' interval='6 HOUR' description='Gaps in system.processes sampling — periods where no process snapshots were collected, by hostname'
--- @rag: column=gap_seconds green<10 amber<30
+-- @cell: column=gap_seconds type=rag green<10 amber<30
 SELECT
     hostname,
     prev_time,
@@ -357,7 +357,7 @@ ORDER BY gap_seconds DESC
 LIMIT 50`,
 
   `-- @meta: title='Sampling Gaps (merges)' group='Self-Monitoring' interval='6 HOUR' description='Gaps in system.merges sampling — periods where no merge snapshots were collected, by hostname'
--- @rag: column=gap_seconds green<10 amber<30
+-- @cell: column=gap_seconds type=rag green<10 amber<30
 SELECT
     hostname,
     prev_time,
@@ -378,7 +378,7 @@ ORDER BY gap_seconds DESC
 LIMIT 50`,
 
   `-- @meta: title='Sampling Database Coverage' group='Self-Monitoring' interval='1 HOUR' description='Shows which cluster nodes have the tracehouse database — needed for system.processes & system.merges sampling to work on all nodes'
--- @rag: column=has_tracehouse green=1 amber=0
+-- @cell: column=has_tracehouse type=rag green=1 amber=0
 SELECT
     hostName() AS host,
     countIf(name = 'tracehouse') AS has_tracehouse

@@ -44,12 +44,24 @@ function formatDateISO(d: Date): string {
   return `${Y}-${M}-${D} ${h}:${m}:${s}`;
 }
 
-/** Format a value for display in tables and chart axes. */
-export function formatCell(v: unknown): string {
+/**
+ * Returns true if the column name suggests it holds a timestamp value.
+ * Only these columns get automatic epoch→date formatting.
+ */
+function isTimeColumn(col: string): boolean {
+  const lower = col.toLowerCase();
+  return /(time|date|timestamp|_at$|_ts$)/.test(lower);
+}
+
+/** Format a value for display in tables and chart axes.
+ *  Pass the column name so timestamp detection only fires for time-like columns. */
+export function formatCell(v: unknown, columnName?: string): string {
   if (v == null) return '—';
   if (typeof v === 'number') {
-    const d = timestampToDate(v);
-    if (d) return formatDateISO(d);
+    if (!columnName || isTimeColumn(columnName)) {
+      const d = timestampToDate(v);
+      if (d) return formatDateISO(d);
+    }
     return Number.isInteger(v)
       ? v.toLocaleString()
       : v.toLocaleString(undefined, { maximumFractionDigits: 2 });

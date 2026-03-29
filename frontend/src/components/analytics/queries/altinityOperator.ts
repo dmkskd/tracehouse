@@ -74,7 +74,7 @@ ORDER BY t ASC`,
 
   `-- @meta: title='ZooKeeper Hardware Exceptions' group='Grafana Imports' interval='1 HOUR' description='ZooKeeper hardware exceptions — network or connection failures to Keeper'
 -- @chart: type=bar group_by=t value=hw_exceptions style=2d color=#ef4444
--- @rag: column=hw_exceptions green<1 amber<5
+-- @cell: column=hw_exceptions type=rag green<1 amber<5
 -- @source: https://grafana.com/grafana/dashboards/12163
 SELECT
     toStartOfInterval(event_time, INTERVAL 1 MINUTE) AS t,
@@ -174,7 +174,7 @@ ORDER BY t ASC`,
 
   `-- @meta: title='Delayed & Rejected Inserts' group='Grafana Imports' interval='1 HOUR' description='Inserts throttled (delayed) or rejected (TOO_MANY_PARTS) — indicates part pressure'
 -- @chart: type=grouped_line group_by=t value=delayed,rejected style=2d
--- @rag: column=rejected green<1 amber<5
+-- @cell: column=rejected type=rag green<1 amber<5
 -- @drill: on=t into='Grafana Imports#Rejected Inserts at Time'
 -- @source: https://grafana.com/grafana/dashboards/12163
 SELECT
@@ -190,7 +190,7 @@ ORDER BY t ASC`,
 
   `-- @meta: title='Replica Lag (max)' group='Grafana Imports' interval='1 HOUR' description='Maximum absolute_delay across all replicated tables — growing lag signals replication falling behind'
 -- @chart: type=area group_by=t value=max_delay style=2d color=#ef4444
--- @rag: column=max_delay green<10 amber<300
+-- @cell: column=max_delay type=rag green<10 amber<300
 -- @source: https://grafana.com/grafana/dashboards/12163
 SELECT
     toStartOfInterval(event_time, INTERVAL 1 MINUTE) AS t,
@@ -300,7 +300,7 @@ ORDER BY t ASC`,
 
   `-- @meta: title='Max Parts Per Partition (Altinity)' group='Grafana Imports' interval='1 HOUR' description='Highest part count in any single partition — above 300 triggers insert delays, above 600 causes rejections'
 -- @chart: type=area group_by=t value=max_parts style=2d color=#ef4444
--- @rag: column=max_parts green<150 amber<300
+-- @cell: column=max_parts type=rag green<150 amber<300
 -- @source: https://grafana.com/grafana/dashboards/12163
 SELECT
     toStartOfInterval(event_time, INTERVAL 1 MINUTE) AS t,
@@ -326,7 +326,7 @@ ORDER BY part_count DESC
 LIMIT 10`,
 
   `-- @meta: title='Detached Parts' group='Grafana Imports' description='Detached parts — parts that failed to attach or were manually detached. Non-zero typically requires investigation.'
--- @rag: column=detached_count green<1 amber<5
+-- @cell: column=detached_count type=rag green<1 amber<5
 -- @source: https://grafana.com/grafana/dashboards/12163
 SELECT
     database,
@@ -425,7 +425,7 @@ GROUP BY t
 ORDER BY t ASC`,
 
   `-- @meta: title='Active Mutations (Altinity)' group='Grafana Imports' description='Currently running and queued mutations by table'
--- @rag: column=is_done green=1 amber=0
+-- @cell: column=is_done type=rag green=1 amber=0
 -- @source: https://grafana.com/grafana/dashboards/12163
 SELECT
     database,

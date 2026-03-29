@@ -35,11 +35,12 @@ Tells the explorer how to visualise the result set.
 |---------------|----------|-------------|
 | `type`        | Yes      | Chart type: `bar`, `line`, `pie`, `area`, `grouped_bar`, `stacked_bar`, `grouped_line` |
 | `group_by`    | Yes      | Column name to use for the X-axis / category grouping |
-| `value`       | Yes      | Column name to use for the Y-axis / numeric values |
+| `value`       | Yes      | Column name(s) for the Y-axis. Can be a single column or comma-separated list (e.g. `value=p50,p95,p99`) |
 | `series`      | No       | Column name used for series splitting (for `grouped_bar`, `stacked_bar`, `grouped_line`) |
 | `style`       | No       | `2d` (default SVG/recharts) or `3d` (Three.js) |
 | `unit`        | No       | Unit suffix for value axis ticks, e.g. `ms`, `s`, `MB`, `%`. Time units (`ms`, `s`) auto-scale (e.g. 1400 ms → 1.4 s) |
-| `orientation` | No       | `horizontal` (default for grouped/stacked bars) or `vertical`. Controls bar direction - horizontal puts labels on the left for readability |
+| `orientation` | No       | `horizontal` (default for grouped/stacked bars) or `vertical` (shorthand `v`). Controls bar direction — horizontal puts labels on the left for readability |
+| `color`       | No       | Override the default chart color with a hex value (e.g. `#f59e0b`) |
 
 ### `@drill` - Drill-down navigation
 
@@ -69,38 +70,71 @@ Makes a table column clickable. Clicking a cell value opens a **modal popup** th
 
 The target query receives the clicked value via the standard `{{drill:column | fallback}}` or `{{drill_value:column | fallback}}` placeholders.
 
-### `@rag` - Cell decoration (Red / Amber / Green)
+### `@cell` - Table cell decoration
 
-Applies conditional coloring to table cells based on numeric thresholds. Only affects table view — charts are not changed.
-
-**Ascending** (lower is better) — use `<`:
-
-```sql
--- @rag: column=avg_bytes_read green<2000 amber<40000
-```
-
-Values below `green` are green, below `amber` are amber, otherwise red.
-
-**Descending** (higher is better) — use `>`:
-
-```sql
--- @rag: column=uptime_days green>30 amber>7
-```
-
-Values above `green` are green, above `amber` are amber, otherwise red.
+Decorates table columns with visual styles. Each `@cell:` line targets one column with one decoration type. Multiple `@cell:` lines can target the same column (e.g. gauge + rag).
 
 | Parameter | Required | Description |
 |-----------|----------|-------------|
-| `column`  | Yes      | Column name to apply the decoration to |
-| `green<` or `green>` | Yes | Green threshold. `<` = lower is better, `>` = higher is better |
-| `amber<` or `amber>` | Yes | Amber threshold (same direction as green) |
+| `column`  | Yes      | Column name to decorate |
+| `type`    | Yes      | Decoration type: `rag`, `gauge`, or `sparkline` |
 
-Multiple `@rag` directives can be added to a single query to decorate different columns:
+#### `type=rag` — Red / Amber / Green coloring
+
+Applies conditional coloring to table cells. Only affects table view.
+
+**Numeric** (ascending — lower is better):
+```sql
+-- @cell: column=avg_bytes_read type=rag green<2000 amber<40000
+```
+
+**Numeric** (descending — higher is better):
+```sql
+-- @cell: column=uptime_days type=rag green>30 amber>7
+```
+
+**Text mode** — match exact string values:
+```sql
+-- @cell: column=status type=rag green=ok,healthy amber=degraded red=error,down
+```
+
+#### `type=gauge` — Inline horizontal bar
+
+Renders a column as a horizontal gauge bar in the table. Combine with `type=rag` on the same column for colored bars.
 
 ```sql
--- @rag: column=avg_bytes_read green<2000 amber<40000
--- @rag: column=avg_duration_ms green<5 amber<50
--- @rag: column=cache_hit_rate green>95 amber>80
+-- @cell: column=used_pct type=gauge max=100 unit=%
+-- @cell: column=used_pct type=rag green<70 amber<85
+-- @cell: column=disk_used type=gauge max=disk_total unit=TiB
+```
+
+| Parameter | Required | Description |
+|-----------|----------|-------------|
+| `max`     | Yes      | Bar's 100% value — a fixed number (e.g. `100`) or another column name (e.g. `disk_total`) |
+| `unit`    | No       | Unit suffix displayed beside the value |
+
+#### `type=sparkline` — Inline trend line
+
+Renders a column as a tiny SVG trend in the table. The column should contain an array of numeric values (e.g. from `groupArray()`).
+
+```sql
+-- @cell: column=disk_delta type=sparkline ref=0
+-- @cell: column=query_rate type=sparkline color=#f59e0b fill=true
+```
+
+| Parameter | Required | Description |
+|-----------|----------|-------------|
+| `ref`     | No       | Horizontal reference line value (e.g. `0` for delta charts) |
+| `color`   | No       | Hex color for the sparkline stroke |
+| `fill`    | No       | `true` to fill the area under the line |
+
+Multiple decorations on different columns:
+
+```sql
+-- @cell: column=memory_pct type=gauge max=100 unit=%
+-- @cell: column=memory_pct type=rag green<60 amber<85
+-- @cell: column=cpu_pct type=gauge max=100 unit=%
+-- @cell: column=disk_delta type=sparkline ref=0
 ```
 
 ## Template placeholders
@@ -137,13 +171,36 @@ WHERE lower(hex(normalized_query_hash)) = {{drill_value:query_hash | ''}}
 - When linked/drilled with `query_hash = '52794d32e666dd45'` &rarr; `WHERE lower(hex(normalized_query_hash)) = '52794d32e666dd45'`
 - When opened directly &rarr; `WHERE lower(hex(normalized_query_hash)) = ''`
 
+### `{{cluster_aware:db.table}}`
+
+On a single-node setup, resolves to the bare table reference `db.table`. On a cluster, wraps it with `clusterAllReplicas('cluster_name', db.table)` so that per-node tables like `system.query_log` are fanned out to all replicas. Queries using this should deduplicate with `GROUP BY` since replicas may return overlapping rows.
+
+```sql
+SELECT query, count()
+FROM {{cluster_aware:system.query_log}}
+WHERE event_time > {{time_range}}
+GROUP BY query
+```
+
+### `{{cluster_name}}`
+
+Resolves to the quoted cluster name on a cluster, or an empty string on single-node. Useful for conditional logic or display.
+
+## Source attribution
+
+A `-- Source:` comment (not a directive) adds an attribution link to the query card, typically pointing to ClickHouse docs or knowledge base articles.
+
+```sql
+-- Source: https://clickhouse.com/docs/operations/system-tables/parts
+```
+
 ## Full example
 
 ```sql
 -- @meta: title='Database Sizes' group='Overview' description='Total disk usage per database'
 -- @chart: type=pie group_by=database value=total_bytes style=3d
 -- @drill: on=database into='Table Sizes'
--- @rag: column=total_bytes green<1000000000 amber<10000000000
+-- @cell: column=total_bytes type=rag green<1000000000 amber<10000000000
 SELECT
     database,
     sum(bytes_on_disk) AS total_bytes

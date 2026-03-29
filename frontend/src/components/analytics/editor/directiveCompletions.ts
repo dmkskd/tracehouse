@@ -68,20 +68,39 @@ const DIRECTIVES: DirectiveDef[] = [
     },
   },
   {
-    label: '@rag',
-    detail: 'Red/amber/green threshold rule',
-    template: '-- @rag: column=$1 green<$2 amber<$3',
+    label: '@cell',
+    detail: 'Table cell decoration (rag, gauge, sparkline)',
+    template: '-- @cell: column=$1 type=$2',
     params: {
       column: 'column',
+      type: ['rag', 'gauge', 'sparkline'],
+      // rag params
       'green<': null, 'green>': null,
       'amber<': null, 'amber>': null,
+      green: null, amber: null, red: null,
+      // gauge params
+      max: null,
+      unit: ['ms', 'MB', 'GB', 'TiB', '%', 's', 'rows', 'bytes'],
+      // sparkline params
+      ref: null,
+      color: null,
+      fill: ['true', 'false'],
     },
     paramInfo: {
-      column: 'Column to evaluate — cells are color-coded based on their value',
-      'green<': 'Values below this threshold are green (good)',
-      'green>': 'Values above this threshold are green (good)',
-      'amber<': 'Values below this threshold are amber (warning) — above is red',
-      'amber>': 'Values above this threshold are amber (warning) — below is red',
+      column: 'Column to decorate',
+      type: 'Decoration type: rag (color thresholds), gauge (inline bar), sparkline (inline trend)',
+      'green<': 'RAG: values below this threshold are green (lower is better)',
+      'green>': 'RAG: values above this threshold are green (higher is better)',
+      'amber<': 'RAG: values below this threshold are amber — above is red',
+      'amber>': 'RAG: values above this threshold are amber — below is red',
+      green: 'RAG text mode: comma-separated values that are green',
+      amber: 'RAG text mode: comma-separated values that are amber',
+      red: 'RAG text mode: comma-separated values that are red',
+      max: 'Gauge: max value — a number (e.g. 100) or another column name (e.g. disk_total)',
+      unit: 'Gauge: unit suffix displayed beside the value',
+      ref: 'Sparkline: horizontal reference line value (e.g. 0 for delta charts)',
+      color: 'Sparkline: hex color for the line (e.g. #f59e0b)',
+      fill: 'Sparkline: fill area under the line (true/false)',
     },
   },
   {
@@ -108,6 +127,21 @@ const DIRECTIVES: DirectiveDef[] = [
     paramInfo: {
       on: 'Column that becomes clickable — opens target query in a modal popup',
       into: "Target query name (title) — receives the clicked value via {{drill:column}} template",
+    },
+  },
+  {
+    label: '@part_link',
+    detail: 'Click a part name to open PartInspector',
+    template: '-- @part_link: on=$1 database=$2 table=$3',
+    params: {
+      on: 'column',
+      database: 'column',
+      table: 'column',
+    },
+    paramInfo: {
+      on: 'Column containing the part name',
+      database: 'Column or drill-param name for the database',
+      table: 'Column or drill-param name for the table',
     },
   },
 ];

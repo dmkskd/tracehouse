@@ -1,11 +1,11 @@
 import { describe, test, expect } from 'vitest';
 import {
   parseDirectives,
-  parseRagRules,
+  parseCellStyles,
   getRagColor,
   parseChartDirective,
   resolveQueryRef,
-  type RagRule,
+  type CellStyleRule,
 } from '../metaLanguage';
 import {
   resolveTimeRange,
@@ -16,7 +16,7 @@ import {
  * 1. parseDirectives — table-driven
  * ═══════════════════════════════════════════════════════════════════════════ */
 
-describe('parseDirectives', () => {
+describe('parseDirectives', { tags: ['analytics'] }, () => {
   const cases: {
     name: string;
     sql: string;
@@ -28,7 +28,7 @@ describe('parseDirectives', () => {
       sql: `-- @meta: title='CPU Usage' group='Overview'\nSELECT 1`,
       expected: {
         meta: { title: 'CPU Usage', group: 'Overview', description: undefined, interval: undefined },
-        rag: [],
+        cellStyles: [],
       },
     },
     {
@@ -87,28 +87,28 @@ describe('parseDirectives', () => {
       },
     },
 
-    /* ── @rag ── */
+    /* ── @cell type=rag ── */
     {
-      name: 'with ascending rag rule',
-      sql: `-- @meta: title='Q' group='Overview'\n-- @rag: column=avg_memory_mb green<20 amber<50\nSELECT 1`,
+      name: 'with ascending rag cell',
+      sql: `-- @meta: title='Q' group='Overview'\n-- @cell: column=avg_memory_mb type=rag green<20 amber<50\nSELECT 1`,
       expected: {
-        rag: [{ column: 'avg_memory_mb', mode: 'numeric', direction: 'asc', greenThreshold: 20, amberThreshold: 50 }],
+        cellStyles: [{ column: 'avg_memory_mb', type: 'rag', mode: 'numeric', direction: 'asc', greenThreshold: 20, amberThreshold: 50 }],
       },
     },
     {
-      name: 'with descending rag rule',
-      sql: `-- @meta: title='Q' group='Overview'\n-- @rag: column=hit_rate green>90 amber>70\nSELECT 1`,
+      name: 'with descending rag cell',
+      sql: `-- @meta: title='Q' group='Overview'\n-- @cell: column=hit_rate type=rag green>90 amber>70\nSELECT 1`,
       expected: {
-        rag: [{ column: 'hit_rate', mode: 'numeric', direction: 'desc', greenThreshold: 90, amberThreshold: 70 }],
+        cellStyles: [{ column: 'hit_rate', type: 'rag', mode: 'numeric', direction: 'desc', greenThreshold: 90, amberThreshold: 70 }],
       },
     },
     {
-      name: 'with multiple rag rules',
-      sql: `-- @meta: title='Q' group='Overview'\n-- @rag: column=avg_result_bytes green<10000 amber<100000\n-- @rag: column=avg_memory_mb green<20 amber<50\nSELECT 1`,
+      name: 'with multiple cell rules',
+      sql: `-- @meta: title='Q' group='Overview'\n-- @cell: column=avg_result_bytes type=rag green<10000 amber<100000\n-- @cell: column=avg_memory_mb type=rag green<20 amber<50\nSELECT 1`,
       expected: {
-        rag: [
-          { column: 'avg_result_bytes', mode: 'numeric', direction: 'asc', greenThreshold: 10000, amberThreshold: 100000 },
-          { column: 'avg_memory_mb', mode: 'numeric', direction: 'asc', greenThreshold: 20, amberThreshold: 50 },
+        cellStyles: [
+          { column: 'avg_result_bytes', type: 'rag', mode: 'numeric', direction: 'asc', greenThreshold: 10000, amberThreshold: 100000 },
+          { column: 'avg_memory_mb', type: 'rag', mode: 'numeric', direction: 'asc', greenThreshold: 20, amberThreshold: 50 },
         ],
       },
     },
@@ -130,7 +130,7 @@ describe('parseDirectives', () => {
         `-- @chart: type=bar group_by=col1 value=col2 series=col3 style=2d`,
         `-- @drill: on=col1 into='Target Query'`,
         `-- @link: on=col4 into='Link Target'`,
-        `-- @rag: column=col2 green<100 amber<500`,
+        `-- @cell: column=col2 type=rag green<100 amber<500`,
         `-- @source: https://example.com/docs`,
         `SELECT 1`,
       ].join('\n'),
@@ -139,7 +139,7 @@ describe('parseDirectives', () => {
         chart: { type: 'bar', style: '2d', groupByColumn: 'col1', valueColumn: 'col2', seriesColumn: 'col3' },
         drill: { on: 'col1', into: 'Target Query' },
         link: { on: 'col4', into: 'Link Target' },
-        rag: [{ column: 'col2', mode: 'numeric', direction: 'asc', greenThreshold: 100, amberThreshold: 500 }],
+        cellStyles: [{ column: 'col2', type: 'rag', mode: 'numeric', direction: 'asc', greenThreshold: 100, amberThreshold: 500 }],
         source: 'https://example.com/docs',
       },
     },
@@ -179,7 +179,7 @@ describe('parseDirectives', () => {
  * 2. parseChartDirective — table-driven
  * ═══════════════════════════════════════════════════════════════════════════ */
 
-describe('parseChartDirective', () => {
+describe('parseChartDirective', { tags: ['analytics'] }, () => {
   const cases: {
     name: string;
     sql: string;
@@ -271,47 +271,107 @@ describe('parseChartDirective', () => {
 });
 
 /* ═══════════════════════════════════════════════════════════════════════════
- * 3. parseRagRules — table-driven
+ * 3. parseCellStyles — table-driven
  * ═══════════════════════════════════════════════════════════════════════════ */
 
-describe('parseRagRules', () => {
+describe('parseCellStyles', { tags: ['analytics'] }, () => {
   const cases: {
     name: string;
     sql: string;
-    expected: { column: string; mode: string; direction: 'asc' | 'desc'; greenThreshold: number; amberThreshold: number }[];
+    expected: CellStyleRule[];
   }[] = [
+    /* ── type=rag ── */
     {
-      name: 'ascending rule (lower is better)',
-      sql: `-- @rag: column=latency green<50 amber<200`,
-      expected: [{ column: 'latency', mode: 'numeric', direction: 'asc', greenThreshold: 50, amberThreshold: 200 }],
+      name: 'rag: ascending (lower is better)',
+      sql: `-- @cell: column=latency type=rag green<50 amber<200`,
+      expected: [{ column: 'latency', type: 'rag', mode: 'numeric', direction: 'asc', greenThreshold: 50, amberThreshold: 200 }],
     },
     {
-      name: 'descending rule (higher is better)',
-      sql: `-- @rag: column=cache_hit green>95 amber>80`,
-      expected: [{ column: 'cache_hit', mode: 'numeric', direction: 'desc', greenThreshold: 95, amberThreshold: 80 }],
+      name: 'rag: descending (higher is better)',
+      sql: `-- @cell: column=cache_hit type=rag green>95 amber>80`,
+      expected: [{ column: 'cache_hit', type: 'rag', mode: 'numeric', direction: 'desc', greenThreshold: 95, amberThreshold: 80 }],
     },
     {
-      name: 'multiple rules',
-      sql: `-- @rag: column=memory green<100 amber<500\n-- @rag: column=hit_rate green>90 amber>70`,
+      name: 'rag: text mode',
+      sql: `-- @cell: column=status type=rag green=ok,healthy amber=degraded red=error,down`,
+      expected: [{ column: 'status', type: 'rag', mode: 'text', greenValues: ['ok', 'healthy'], amberValues: ['degraded'], redValues: ['error', 'down'] }],
+    },
+    {
+      name: 'rag: decimal thresholds',
+      sql: `-- @cell: column=ratio type=rag green<0.5 amber<0.8`,
+      expected: [{ column: 'ratio', type: 'rag', mode: 'numeric', direction: 'asc', greenThreshold: 0.5, amberThreshold: 0.8 }],
+    },
+    /* ── type=gauge ── */
+    {
+      name: 'gauge: numeric max',
+      sql: `-- @cell: column=memory_pct type=gauge max=100`,
+      expected: [{ column: 'memory_pct', type: 'gauge', max: 100 }],
+    },
+    {
+      name: 'gauge: column-ref max',
+      sql: `-- @cell: column=disk_used type=gauge max=disk_total`,
+      expected: [{ column: 'disk_used', type: 'gauge', max: 'disk_total' }],
+    },
+    {
+      name: 'gauge: with unit',
+      sql: `-- @cell: column=disk_used type=gauge max=disk_total unit=TiB`,
+      expected: [{ column: 'disk_used', type: 'gauge', max: 'disk_total', unit: 'TiB' }],
+    },
+    {
+      name: 'gauge: missing max → skipped',
+      sql: `-- @cell: column=cpu_pct type=gauge`,
+      expected: [],
+    },
+    /* ── type=sparkline ── */
+    {
+      name: 'sparkline: minimal',
+      sql: `-- @cell: column=disk_delta type=sparkline`,
+      expected: [{ column: 'disk_delta', type: 'sparkline' }],
+    },
+    {
+      name: 'sparkline: with ref',
+      sql: `-- @cell: column=disk_delta type=sparkline ref=0`,
+      expected: [{ column: 'disk_delta', type: 'sparkline', ref: 0 }],
+    },
+    {
+      name: 'sparkline: all options',
+      sql: `-- @cell: column=delta type=sparkline ref=0 color=#3b82f6 fill=true`,
+      expected: [{ column: 'delta', type: 'sparkline', ref: 0, color: '#3b82f6', fill: true }],
+    },
+    /* ── mixed ── */
+    {
+      name: 'multiple types mixed',
+      sql: [
+        `-- @cell: column=used_pct type=gauge max=100 unit=%`,
+        `-- @cell: column=used_pct type=rag green<70 amber<85`,
+        `-- @cell: column=delta type=sparkline ref=0`,
+      ].join('\n'),
       expected: [
-        { column: 'memory', mode: 'numeric', direction: 'asc', greenThreshold: 100, amberThreshold: 500 },
-        { column: 'hit_rate', mode: 'numeric', direction: 'desc', greenThreshold: 90, amberThreshold: 70 },
+        { column: 'used_pct', type: 'gauge', max: 100, unit: '%' },
+        { column: 'used_pct', type: 'rag', mode: 'numeric', direction: 'asc', greenThreshold: 70, amberThreshold: 85 },
+        { column: 'delta', type: 'sparkline', ref: 0 },
       ],
     },
+    /* ── edge cases ── */
     {
-      name: 'decimal thresholds',
-      sql: `-- @rag: column=ratio green<0.5 amber<0.8`,
-      expected: [{ column: 'ratio', mode: 'numeric', direction: 'asc', greenThreshold: 0.5, amberThreshold: 0.8 }],
+      name: 'missing column → skipped',
+      sql: `-- @cell: type=gauge max=100`,
+      expected: [],
     },
     {
-      name: 'no @rag returns empty array',
+      name: 'unknown type → skipped',
+      sql: `-- @cell: column=x type=unknown`,
+      expected: [],
+    },
+    {
+      name: 'no cell directives → empty',
       sql: `SELECT 1`,
       expected: [],
     },
   ];
 
   test.each(cases)('$name', ({ sql, expected }) => {
-    expect(parseRagRules(sql)).toEqual(expected);
+    expect(parseCellStyles(sql)).toEqual(expected);
   });
 });
 
@@ -319,15 +379,19 @@ describe('parseRagRules', () => {
  * 4. getRagColor — table-driven
  * ═══════════════════════════════════════════════════════════════════════════ */
 
-describe('getRagColor', () => {
-  const ascRule: RagRule[] = [
-    { column: 'latency', mode: 'numeric', direction: 'asc', greenThreshold: 50, amberThreshold: 200 },
+describe('getRagColor', { tags: ['analytics'] }, () => {
+  const ascRule: CellStyleRule[] = [
+    { column: 'latency', type: 'rag', mode: 'numeric', direction: 'asc', greenThreshold: 50, amberThreshold: 200 },
   ];
-  const descRule: RagRule[] = [
-    { column: 'hit_rate', mode: 'numeric', direction: 'desc', greenThreshold: 90, amberThreshold: 70 },
+  const descRule: CellStyleRule[] = [
+    { column: 'hit_rate', type: 'rag', mode: 'numeric', direction: 'desc', greenThreshold: 90, amberThreshold: 70 },
+  ];
+  const mixedRules: CellStyleRule[] = [
+    { column: 'latency', type: 'rag', mode: 'numeric', direction: 'asc', greenThreshold: 50, amberThreshold: 200 },
+    { column: 'latency', type: 'gauge', max: 100 }, // should be ignored by getRagColor
   ];
 
-  const cases: { name: string; column: string; value: unknown; rules?: RagRule[]; expected: string | undefined }[] = [
+  const cases: { name: string; column: string; value: unknown; rules?: CellStyleRule[]; expected: string | undefined }[] = [
     // ascending: lower is better
     { name: 'asc: green (below threshold)',   column: 'latency', value: 30,  rules: ascRule, expected: '#22c55e' },
     { name: 'asc: amber (between)',           column: 'latency', value: 100, rules: ascRule, expected: '#f59e0b' },
@@ -345,6 +409,7 @@ describe('getRagColor', () => {
     { name: 'column not in rules → undefined', column: 'other',  value: 10,  rules: ascRule,   expected: undefined },
     { name: 'non-numeric → undefined',         column: 'latency', value: 'abc', rules: ascRule, expected: undefined },
     { name: 'string number coerced',           column: 'latency', value: '30',  rules: ascRule, expected: '#22c55e' },
+    { name: 'ignores non-rag rules for same column', column: 'latency', value: 30, rules: mixedRules, expected: '#22c55e' },
   ];
 
   test.each(cases)('$name', ({ column, value, rules, expected }) => {
@@ -356,7 +421,7 @@ describe('getRagColor', () => {
  * 5. resolveTimeRange — table-driven
  * ═══════════════════════════════════════════════════════════════════════════ */
 
-describe('resolveTimeRange', () => {
+describe('resolveTimeRange', { tags: ['analytics'] }, () => {
   const cases: {
     name: string;
     sql: string;
@@ -429,7 +494,7 @@ describe('resolveTimeRange', () => {
  * 6. resolveDrillParams — table-driven
  * ═══════════════════════════════════════════════════════════════════════════ */
 
-describe('resolveDrillParams', () => {
+describe('resolveDrillParams', { tags: ['analytics'] }, () => {
   const cases: {
     name: string;
     sql: string;
@@ -501,7 +566,7 @@ describe('resolveDrillParams', () => {
  * 7. resolveQueryRef — table-driven
  * ═══════════════════════════════════════════════════════════════════════════ */
 
-describe('resolveQueryRef', () => {
+describe('resolveQueryRef', { tags: ['analytics'] }, () => {
   const queries = [
     { name: 'Active Merges', group: 'Merges' },
     { name: 'Merge Errors', group: 'Merges' },

@@ -2,12 +2,12 @@
  * Meta language parser for query explorer directives.
  *
  * Parses structured comments embedded in SQL queries:
- *   -- @meta:  title, group, description, interval
- *   -- @chart: type, group_by, value, series, style, unit, orientation
- *   -- @rag:   column thresholds (red/amber/green)
- *   -- @drill: click-through navigation between queries
- *   -- @link:  modal popup navigation between queries
- *   -- Source: attribution URL
+ *   -- @meta:       title, group, description, interval
+ *   -- @chart:      type, group_by, value, series, style, unit, orientation
+ *   -- @cell: column-level table decorations (rag, gauge, sparkline)
+ *   -- @drill:      click-through navigation between queries
+ *   -- @link:       modal popup navigation between queries
+ *   -- Source:      attribution URL
  */
 
 /* ─── types ─── */
@@ -15,9 +15,16 @@
 export type ChartType = 'bar' | 'line' | 'pie' | 'area' | 'grouped_bar' | 'stacked_bar' | 'grouped_line';
 export type ChartStyle = '2d' | '3d';
 
-/** RAG (Red/Amber/Green) threshold rule for a column. */
-export interface RagRule {
+/** Cell style type — determines how a table column is decorated. */
+export type CellStyleType = 'rag' | 'gauge' | 'sparkline';
+
+/** Unified cell style rule parsed from @cell: directives. */
+export type CellStyleRule = RagCellStyle | GaugeCellStyle | SparklineCellStyle;
+
+/** RAG (Red/Amber/Green) cell style — conditional coloring based on thresholds or text values. */
+export interface RagCellStyle {
   column: string;
+  type: 'rag';
   mode: 'numeric' | 'text';
   /** Numeric mode */
   direction?: 'asc' | 'desc';
@@ -28,6 +35,32 @@ export interface RagRule {
   amberValues?: string[];
   redValues?: string[];
 }
+
+/** Gauge cell style — inline horizontal bar. */
+export interface GaugeCellStyle {
+  column: string;
+  type: 'gauge';
+  /** Fixed number or another column name for the bar's 100% value */
+  max: number | string;
+  unit?: string;
+}
+
+/** Sparkline cell style — tiny inline SVG trend. */
+export interface SparklineCellStyle {
+  column: string;
+  type: 'sparkline';
+  /** Optional horizontal reference line value (e.g. 0 for delta charts) */
+  ref?: number;
+  color?: string;
+  fill?: boolean;
+}
+
+/** @deprecated Use CellStyleRule with type='rag' instead. Alias for backward compat in consumer code. */
+export type RagRule = RagCellStyle;
+/** @deprecated Use CellStyleRule with type='gauge' instead. */
+export type GaugeRule = GaugeCellStyle;
+/** @deprecated Use CellStyleRule with type='sparkline' instead. */
+export type SparklineRule = SparklineCellStyle;
 
 /** Result of parsing all -- directives from a SQL string. */
 export interface ParsedDirectives {
@@ -53,7 +86,17 @@ export interface ParsedDirectives {
     on: string;
     into: string;
   };
-  rag: RagRule[];
+  /** @part_link: click a part name to open PartInspector. */
+  partLink?: {
+    /** Column containing the part name */
+    on: string;
+    /** Column or drill-param name for the database */
+    database: string;
+    /** Column or drill-param name for the table */
+    table: string;
+  };
+  /** All cell style rules (rag, gauge, sparkline) from @cell: directives. */
+  cellStyles: CellStyleRule[];
   source?: string;
 }
 
@@ -105,10 +148,10 @@ export const CHART_TYPE_LABELS: Record<string, string> = {
 
 /* ─── RAG evaluation ─── */
 
-/** Resolve RAG color for a numeric cell value. */
-export function getRagColor(column: string, value: unknown, rules?: RagRule[]): string | undefined {
+/** Resolve RAG color for a cell value. Accepts either CellStyleRule[] or legacy RagRule[]. */
+export function getRagColor(column: string, value: unknown, rules?: CellStyleRule[] | RagCellStyle[]): string | undefined {
   if (!rules) return undefined;
-  const rule = rules.find(r => r.column === column);
+  const rule = rules.find(r => r.column === column && (r as CellStyleRule).type === 'rag') as RagCellStyle | undefined;
   if (!rule) return undefined;
 
   if (rule.mode === 'text') {
@@ -133,48 +176,98 @@ export function getRagColor(column: string, value: unknown, rules?: RagRule[]): 
 
 /* ─── parsers ─── */
 
-/** Parse @rag directives from raw SQL.
- *  Numeric: `-- @rag: column=col green>100 amber>50`
- *  Text:    `-- @rag: column=status green=ok,healthy amber=degraded red=error,down`
- */
-export function parseRagRules(sql: string): RagRule[] {
-  const rules: RagRule[] = [];
+/** Parse a single @cell: line body into a CellStyleRule, or null if invalid. */
+function parseCellStyleLine(body: string): CellStyleRule | null {
+  const colMatch = body.match(/column=(\w+)/);
+  if (!colMatch) return null;
+  const column = colMatch[1];
+
+  const typeMatch = body.match(/type=(\w+)/);
+  const type = typeMatch ? typeMatch[1] : 'rag'; // default to rag for backward compat
+
+  switch (type) {
+    case 'rag': {
+      // Numeric: green>N amber>N or green<N amber<N
+      const greenNum = body.match(/green([<>])(\d+(?:\.\d+)?)/);
+      const amberNum = body.match(/amber([<>])(\d+(?:\.\d+)?)/);
+      if (greenNum && amberNum) {
+        return {
+          column, type: 'rag', mode: 'numeric',
+          direction: greenNum[1] === '>' ? 'desc' : 'asc',
+          greenThreshold: Number(greenNum[2]),
+          amberThreshold: Number(amberNum[2]),
+        };
+      }
+      // Text: green=ok,healthy amber=degraded red=error,down
+      const greenText = body.match(/green=([^\s]+)/);
+      const amberText = body.match(/amber=([^\s]+)/);
+      const redText = body.match(/red=([^\s]+)/);
+      if (greenText || amberText || redText) {
+        return {
+          column, type: 'rag', mode: 'text',
+          greenValues: greenText?.[1].toLowerCase().split(','),
+          amberValues: amberText?.[1].toLowerCase().split(','),
+          redValues: redText?.[1].toLowerCase().split(','),
+        };
+      }
+      return null;
+    }
+    case 'gauge': {
+      const maxMatch = body.match(/max=(\w+(?:\.\d+)?)/);
+      if (!maxMatch) return null;
+      const maxVal = /^\d+(\.\d+)?$/.test(maxMatch[1]) ? Number(maxMatch[1]) : maxMatch[1];
+      const unitMatch = body.match(/unit=(\S+)/);
+      const rule: GaugeCellStyle = { column, type: 'gauge', max: maxVal };
+      if (unitMatch) rule.unit = unitMatch[1];
+      return rule;
+    }
+    case 'sparkline': {
+      const rule: SparklineCellStyle = { column, type: 'sparkline' };
+      const refMatch = body.match(/ref=(-?\d+(?:\.\d+)?)/);
+      if (refMatch) rule.ref = Number(refMatch[1]);
+      const colorMatch = body.match(/color=(#[0-9a-fA-F]{3,8})/);
+      if (colorMatch) rule.color = colorMatch[1];
+      const fillMatch = body.match(/fill=(true|false)/i);
+      if (fillMatch) rule.fill = fillMatch[1].toLowerCase() === 'true';
+      return rule;
+    }
+    default:
+      return null;
+  }
+}
+
+/** Parse all @cell: directives from raw SQL. */
+export function parseCellStyles(sql: string): CellStyleRule[] {
+  const rules: CellStyleRule[] = [];
+  const regex = /--\s*@cell:\s*(.+)/gi;
+  let m;
+  while ((m = regex.exec(sql)) !== null) {
+    const rule = parseCellStyleLine(m[1]);
+    if (rule) rules.push(rule);
+  }
+  return rules;
+}
+
+/** @deprecated Parse legacy @rag: directives — use parseCellStyles instead. */
+export function parseRagRules(sql: string): RagCellStyle[] {
+  const rules: RagCellStyle[] = [];
   const ragRegex = /--\s*@rag:\s*(.+)/gi;
   let ragMatch;
   while ((ragMatch = ragRegex.exec(sql)) !== null) {
-    const r = ragMatch[1];
-    const colMatch = r.match(/column=(\w+)/);
-    if (!colMatch) continue;
-
-    // Try numeric format: green>N amber>N or green<N amber<N
-    const greenNum = r.match(/green([<>])(\d+(?:\.\d+)?)/);
-    const amberNum = r.match(/amber([<>])(\d+(?:\.\d+)?)/);
-    if (greenNum && amberNum) {
-      rules.push({
-        column: colMatch[1],
-        mode: 'numeric',
-        direction: greenNum[1] === '>' ? 'desc' : 'asc',
-        greenThreshold: Number(greenNum[2]),
-        amberThreshold: Number(amberNum[2]),
-      });
-      continue;
-    }
-
-    // Text format: green=val1,val2 amber=val3 red=val4,val5
-    const greenText = r.match(/green=([^\s]+)/);
-    const amberText = r.match(/amber=([^\s]+)/);
-    const redText = r.match(/red=([^\s]+)/);
-    if (greenText || amberText || redText) {
-      rules.push({
-        column: colMatch[1],
-        mode: 'text',
-        greenValues: greenText?.[1].toLowerCase().split(','),
-        amberValues: amberText?.[1].toLowerCase().split(','),
-        redValues: redText?.[1].toLowerCase().split(','),
-      });
-    }
+    const rule = parseCellStyleLine('type=rag ' + ragMatch[1]);
+    if (rule && rule.type === 'rag') rules.push(rule);
   }
   return rules;
+}
+
+/** @deprecated Use parseCellStyles instead. */
+export function parseGaugeRules(sql: string): GaugeCellStyle[] {
+  return parseCellStyles(sql).filter((r): r is GaugeCellStyle => r.type === 'gauge');
+}
+
+/** @deprecated Use parseCellStyles instead. */
+export function parseSparklineRules(sql: string): SparklineCellStyle[] {
+  return parseCellStyles(sql).filter((r): r is SparklineCellStyle => r.type === 'sparkline');
 }
 
 /** Parse all -- directives from a SQL string. Returns null if no @meta directive found. */
@@ -202,7 +295,7 @@ export function parseDirectives(sql: string): ParsedDirectives | null {
       description: descMatch?.[1]?.trim(),
       interval: intervalMatch?.[1]?.trim(),
     },
-    rag: parseRagRules(sql),
+    cellStyles: [...parseCellStyles(sql), ...parseRagRules(sql)],
   };
 
   const chartMatch = sql.match(/--\s*@chart:\s*(.+)/i);
@@ -243,6 +336,17 @@ export function parseDirectives(sql: string): ParsedDirectives | null {
     const intoMatch = lk.match(/into='([^']+)'/);
     if (onMatch && intoMatch) {
       result.link = { on: onMatch[1], into: intoMatch[1] };
+    }
+  }
+
+  const partLinkMatch = sql.match(/--\s*@part_link:\s*(.+)/i);
+  if (partLinkMatch) {
+    const pl = partLinkMatch[1];
+    const onMatch = pl.match(/on=(\w+)/);
+    const dbMatch = pl.match(/database=(\w+)/);
+    const tblMatch = pl.match(/table=(\w+)/);
+    if (onMatch && dbMatch && tblMatch) {
+      result.partLink = { on: onMatch[1], database: dbMatch[1], table: tblMatch[1] };
     }
   }
 

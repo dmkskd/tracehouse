@@ -116,7 +116,7 @@ GROUP BY event_date
 ORDER BY event_date DESC`,
 
   `-- @meta: title='Part Errors' group='Inserts' interval='7 DAY' description='Errors during part operations — merges, mutations, inserts'
--- @rag: error_count desc 0 1
+-- @cell: column=error_count type=rag green<1 amber<1
 -- @source: https://clickhouse.com/blog/monitoring-troubleshooting-insert-queries-clickhouse
 SELECT
     event_date,
