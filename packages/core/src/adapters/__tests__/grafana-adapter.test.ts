@@ -23,7 +23,7 @@ function createAdapter(postFn: (url: string, body: unknown) => Promise<unknown>)
   return new GrafanaAdapter(makeDsRef(), () => ({ post: postFn as never }));
 }
 
-describe('GrafanaAdapter', () => {
+describe('GrafanaAdapter', { tags: ['connectivity'] }, () => {
   it('can be constructed with a datasource ref and getBackendSrv', () => {
     const adapter = new GrafanaAdapter(makeDsRef(), () => ({ post: vi.fn() as never }));
     expect(adapter).toBeDefined();

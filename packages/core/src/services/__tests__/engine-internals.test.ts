@@ -2,7 +2,7 @@ import { describe, it, expect, vi } from 'vitest';
 import { EngineInternalsService } from '../engine-internals.js';
 import type { IClickHouseAdapter } from '../../adapters/types.js';
 
-describe('EngineInternalsService CoreTimeline parsing', () => {
+describe('EngineInternalsService CoreTimeline parsing', { tags: ['observability'] }, () => {
   it('parses different timestamp formats correctly', async () => {
     // We will simulate the adapter returning different formats for row.slot
     const mockAdapter: IClickHouseAdapter = {

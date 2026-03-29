@@ -61,7 +61,7 @@ function insertColumns(rows: MergeSampleRow[]): string {
          columns_written, memory_usage, thread_id)`;
 }
 
-describe('merge samples integration (delta calculations)', () => {
+describe('merge samples integration (delta calculations)', { tags: ['merge-engine'] }, () => {
   let ctx: TestClickHouseContext;
 
   beforeAll(async () => {

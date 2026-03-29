@@ -27,7 +27,7 @@ const KNOWN_FAILURES = new Set([
   'ZooKeeper Sessions & Exceptions', // requires ZK tables
 ]);
 
-describe('Preset analytics query smoke tests', () => {
+describe('Preset analytics query smoke tests', { tags: ['analytics'] }, () => {
   let ctx: TestClickHouseContext;
 
   beforeAll(async () => {

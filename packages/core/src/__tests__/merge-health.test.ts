@@ -91,7 +91,7 @@ function makeEstimate(overrides: Partial<MergeThroughputEstimate> = {}): MergeTh
 
 // ── isMergeStuck ──────────────────────────────────────────────────
 
-describe('isMergeStuck', () => {
+describe('isMergeStuck', { tags: ['merge-engine'] }, () => {
   it('returns false for short-running merges', () => {
     expect(isMergeStuck(makeMerge({ elapsed: 60, progress: 0.01 }))).toBe(false);
   });
@@ -121,7 +121,7 @@ describe('isMergeStuck', () => {
 
 // ── worstHealth ───────────────────────────────────────────────────
 
-describe('worstHealth', () => {
+describe('worstHealth', { tags: ['merge-engine'] }, () => {
   it('returns green when all green', () => {
     expect(worstHealth([{ health: 'green' }, { health: 'green' }])).toBe('green');
   });
@@ -141,7 +141,7 @@ describe('worstHealth', () => {
 
 // ── mergeThroughputHealth ─────────────────────────────────────────
 
-describe('mergeThroughputHealth', () => {
+describe('mergeThroughputHealth', { tags: ['merge-engine'] }, () => {
   it('returns green for healthy merge with good throughput', () => {
     const estimates: ThroughputMap = new Map([
       ['default.hits', [makeEstimate({ median_bytes_per_sec: 10_000_000 })]],
@@ -213,7 +213,7 @@ describe('mergeThroughputHealth', () => {
 
 // ── deriveHealth ──────────────────────────────────────────────────
 
-describe('deriveHealth', () => {
+describe('deriveHealth', { tags: ['merge-engine'] }, () => {
   it('returns a green tree when everything is healthy', () => {
     const tree = deriveHealth(
       [makeMerge()],

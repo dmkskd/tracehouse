@@ -38,7 +38,7 @@ function buildInsertValues(rows: SampleRow[]): string {
   }).join(',\n');
 }
 
-describe('PROCESS_SAMPLES_SQL integration (delta calculations)', () => {
+describe('PROCESS_SAMPLES_SQL integration (delta calculations)', { tags: ['observability'] }, () => {
   let ctx: TestClickHouseContext;
   const TEST_QID = 'test-query-001';
 

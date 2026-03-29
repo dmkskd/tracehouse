@@ -47,7 +47,7 @@ function findQuery(title: string): string {
   return q;
 }
 
-describe('Merge analytics wait-time queries', () => {
+describe('Merge analytics wait-time queries', { tags: ['analytics'] }, () => {
   let ctx: TestClickHouseContext;
 
   beforeAll(async () => {

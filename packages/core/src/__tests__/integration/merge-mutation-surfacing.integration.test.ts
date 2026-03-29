@@ -24,7 +24,7 @@ import { classifyMutationCommand, isPatchPart } from '../../utils/merge-classifi
 const CONTAINER_TIMEOUT = 120_000;
 const TEST_DB = 'mutation_surface_test';
 
-describe('mutation surfacing integration', () => {
+describe('mutation surfacing integration', { tags: ['merge-engine'] }, () => {
   let ctx: TestClickHouseContext;
   let tracker: MergeTracker;
 

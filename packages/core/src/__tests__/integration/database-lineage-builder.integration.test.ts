@@ -23,7 +23,7 @@ function collectAllNodes(node: LineageNode): LineageNode[] {
   return result;
 }
 
-describe('Lineage builder integration', () => {
+describe('Lineage builder integration', { tags: ['merge-engine'] }, () => {
   let ctx: TestClickHouseContext;
 
   beforeAll(async () => {

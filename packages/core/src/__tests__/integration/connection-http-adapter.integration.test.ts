@@ -12,7 +12,7 @@ import { AdapterError } from '../../adapters/types.js';
 
 const CONTAINER_TIMEOUT = 120_000;
 
-describe('HttpAdapter integration', () => {
+describe('HttpAdapter integration', { tags: ['connectivity'] }, () => {
   let ctx: TestClickHouseContext;
   beforeAll(async () => {
     ctx = await startClickHouse();

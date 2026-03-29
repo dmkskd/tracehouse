@@ -120,7 +120,7 @@ async function seedPartLog(
   });
 }
 
-describe('Surface queries integration', () => {
+describe('Surface queries integration', { tags: ['observability'] }, () => {
   let ctx: TestClickHouseContext;
   let shadowAdapter: ShadowAdapter;
   let service: AnalyticsService;

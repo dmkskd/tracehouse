@@ -88,7 +88,7 @@ function formatDuration(seconds: number): string {
   return `${minutes}m ${Math.round(seconds % 60)}s`;
 }
 
-describe('MergeVisualization Logic', () => {
+describe('MergeVisualization Logic', { tags: ['visualization'] }, () => {
   describe('progress colors', () => {
     test('maps 0/0.5/1 to start/mid/end colors', () => {
       expect(getProgressColor(0).getHex()).toBe(PROGRESS_COLORS.start.getHex());

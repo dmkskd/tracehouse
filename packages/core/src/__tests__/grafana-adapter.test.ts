@@ -34,7 +34,7 @@ function adapterWithResponse(response: unknown): GrafanaAdapter {
 
 // ── Tests ─────────────────────────────────────────────────────────
 
-describe('GrafanaAdapter', () => {
+describe('GrafanaAdapter', { tags: ['connectivity'] }, () => {
   describe('framesToRows — DateTime normalization', () => {
     it('converts epoch-ms time fields to ISO-like strings', async () => {
       // Grafana ClickHouse datasource returns DateTime columns as epoch-ms

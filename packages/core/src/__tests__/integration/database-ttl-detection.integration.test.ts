@@ -19,7 +19,7 @@ import { parseTTL } from '../../utils/ttl-parser.js';
 const CONTAINER_TIMEOUT = 120_000;
 const TEST_DB = 'test_ttl_detection';
 
-describe('TTL detection from system.tables', () => {
+describe('TTL detection from system.tables', { tags: ['storage'] }, () => {
   let ctx: TestClickHouseContext;
 
   beforeAll(async () => {

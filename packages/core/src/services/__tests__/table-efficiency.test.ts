@@ -5,7 +5,7 @@ import {
   diagnoseOrderingKeyUsage,
 } from '../ordering-key-diagnostics.js';
 
-describe('Table Efficiency', () => {
+describe('Table Efficiency', { tags: ['storage'] }, () => {
 
 // ─── parseSortingKey ────────────────────────────────────────────────────────
 

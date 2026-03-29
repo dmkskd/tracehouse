@@ -49,7 +49,7 @@ function createMockDataPoints(count: number, startTime: number = Date.now()): Ti
   }));
 }
 
-describe('TimeSeriesStore', () => {
+describe('TimeSeriesStore', { tags: ['observability'] }, () => {
   beforeEach(() => {
     // Reset store state before each test
     const store = useTimeSeriesStore.getState();

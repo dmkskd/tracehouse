@@ -20,7 +20,7 @@ const CONTAINER_TIMEOUT = 120_000;
 // Script is at infra/scripts/setup_sampling.sh
 const SCRIPT_PATH = resolve(__dirname, '../../../../../infra/scripts/setup_sampling.sh');
 
-describe('setup_sampling.sh script integration', () => {
+describe('setup_sampling.sh script integration', { tags: ['setup'] }, () => {
   let ctx: TestClickHouseContext;
   let httpPort: number;
   let nativePort: number;
@@ -357,7 +357,7 @@ describe('setup_sampling.sh script integration', () => {
 // Cluster detection function tests (pure bash, no ClickHouse needed)
 // ---------------------------------------------------------------------------
 
-describe('cluster detection functions', () => {
+describe('cluster detection functions', { tags: ['setup'] }, () => {
   /**
    * Source setup_sampling.sh in function-only mode and call a cluster
    * selection function with the given input.

@@ -19,7 +19,7 @@ import { TestAdapter } from './setup/clickhouse-container.js';
 
 const CONTAINER_TIMEOUT = 120_000;
 
-describe('Real system tables smoke tests', () => {
+describe('Real system tables smoke tests', { tags: ['observability'] }, () => {
   let ctx: TestClickHouseContext;
 
   beforeAll(async () => {

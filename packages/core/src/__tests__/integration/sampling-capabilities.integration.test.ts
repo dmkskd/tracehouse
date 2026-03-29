@@ -14,7 +14,7 @@ import { deriveMonitoringFlags } from '../../types/monitoring-capabilities.js';
 
 const CONTAINER_TIMEOUT = 120_000;
 
-describe('MonitoringCapabilitiesService integration', () => {
+describe('MonitoringCapabilitiesService integration', { tags: ['observability'] }, () => {
   let ctx: TestClickHouseContext;
 
   beforeAll(async () => {

@@ -2,6 +2,9 @@
 logs/
 *.log
 
+# Test reports
+**/test-reports/
+
 # Environment files
 .env
 .env.*

@@ -2,7 +2,7 @@ import { describe, it, expect } from 'vitest';
 import * as fc from 'fast-check';
 import { parsePartName, getLevelFromName, isMutatedPart, getPartLevelGroupKey, MUTATION_GROUP_KEY } from '../part-name-parser.js';
 
-describe('Part Name Parser', () => {
+describe('Part Name Parser', { tags: ['storage'] }, () => {
   describe('parsePartName', () => {
     describe('regular parts (partition_minBlock_maxBlock_level)', () => {
       it('parses simple partition', () => {

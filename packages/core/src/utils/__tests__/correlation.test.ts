@@ -11,7 +11,7 @@ import {
 // Pearson
 // ═══════════════════════════════════════════════════════════════════════════
 
-describe('pearson', () => {
+describe('pearson', { tags: ['observability'] }, () => {
   it('returns 1 for perfectly correlated arrays', () => {
     expect(pearson([1, 2, 3, 4, 5], [2, 4, 6, 8, 10])).toBeCloseTo(1, 5);
   });
@@ -49,7 +49,7 @@ describe('pearson', () => {
 // Spearman
 // ═══════════════════════════════════════════════════════════════════════════
 
-describe('spearman', () => {
+describe('spearman', { tags: ['observability'] }, () => {
   it('returns 1 for perfectly monotonic arrays', () => {
     expect(spearman([1, 2, 3, 4, 5], [2, 4, 6, 8, 10])).toBeCloseTo(1, 5);
   });
@@ -97,7 +97,7 @@ describe('spearman', () => {
 // Cross-Correlation
 // ═══════════════════════════════════════════════════════════════════════════
 
-describe('crossCorrelation', () => {
+describe('crossCorrelation', { tags: ['observability'] }, () => {
   it('returns ~1 for perfectly aligned correlated arrays', () => {
     expect(crossCorrelation([1, 2, 3, 4, 5, 6, 7, 8], [2, 4, 6, 8, 10, 12, 14, 16])).toBeCloseTo(1, 5);
   });
@@ -133,7 +133,7 @@ describe('crossCorrelation', () => {
   });
 });
 
-describe('crossCorrelationDetail', () => {
+describe('crossCorrelationDetail', { tags: ['observability'] }, () => {
   it('returns lag=0 for perfectly aligned series', () => {
     const a = [1, 2, 3, 4, 5, 6, 7, 8];
     const b = [2, 4, 6, 8, 10, 12, 14, 16];
@@ -199,7 +199,7 @@ describe('crossCorrelationDetail', () => {
 // Algorithm comparison — verifying the properties that interpretCorrelation relies on
 // ═══════════════════════════════════════════════════════════════════════════
 
-describe('algorithm properties (cross-algorithm)', () => {
+describe('algorithm properties (cross-algorithm)', { tags: ['observability'] }, () => {
   it('exponential data: spearman ≈ 1, pearson < 1', () => {
     // y = e^x is monotonic but not linear
     const x = [1, 2, 3, 4, 5, 6, 7, 8, 9, 10];
@@ -245,7 +245,7 @@ describe('algorithm properties (cross-algorithm)', () => {
 // interpretCorrelation — the core combination logic
 // ═══════════════════════════════════════════════════════════════════════════
 
-describe('interpretCorrelation', () => {
+describe('interpretCorrelation', { tags: ['observability'] }, () => {
   // ── Rule 1: Strong linear (all agree) ──
 
   describe('rule 1: strong linear', () => {
@@ -445,7 +445,7 @@ describe('interpretCorrelation', () => {
 // End-to-end: real data → all three scores → interpretation
 // ═══════════════════════════════════════════════════════════════════════════
 
-describe('end-to-end: data → scores → interpretation', () => {
+describe('end-to-end: data → scores → interpretation', { tags: ['observability'] }, () => {
   it('perfectly linear data → strong linear', () => {
     const a = [1, 2, 3, 4, 5, 6, 7, 8, 9, 10];
     const b = a.map(v => v * 3 + 7);
@@ -497,7 +497,7 @@ describe('end-to-end: data → scores → interpretation', () => {
 // minMaxNormalize
 // ═══════════════════════════════════════════════════════════════════════════
 
-describe('minMaxNormalize', () => {
+describe('minMaxNormalize', { tags: ['observability'] }, () => {
   it('normalizes to 0-1 range', () => {
     const result = minMaxNormalize([10, 20, 30, 40, 50]);
     expect(result).toEqual([0, 0.25, 0.5, 0.75, 1]);
@@ -532,7 +532,7 @@ describe('minMaxNormalize', () => {
 // rollingCorrelation
 // ═══════════════════════════════════════════════════════════════════════════
 
-describe('rollingCorrelation', () => {
+describe('rollingCorrelation', { tags: ['observability'] }, () => {
   it('finds correlated windows', () => {
     // First half correlated, second half not
     const a = [1, 2, 3, 4, 5, 1, 3, 2, 5, 4];
@@ -580,7 +580,7 @@ describe('rollingCorrelation', () => {
 // normalizePanelData
 // ═══════════════════════════════════════════════════════════════════════════
 
-describe('normalizePanelData', () => {
+describe('normalizePanelData', { tags: ['observability'] }, () => {
   it('aligns timestamps and normalizes', () => {
     const panels = [
       { name: 'CPU', color: '#ff0000', dataByLabel: new Map([['t1', 0], ['t2', 50], ['t3', 100]]) },
@@ -614,7 +614,7 @@ describe('normalizePanelData', () => {
 // correlateToFocused
 // ═══════════════════════════════════════════════════════════════════════════
 
-describe('correlateToFocused', () => {
+describe('correlateToFocused', { tags: ['observability'] }, () => {
   it('returns 1 for self-correlation', () => {
     const series = normalizePanelData([
       { name: 'A', color: '#f00', dataByLabel: new Map([['t1', 1], ['t2', 2], ['t3', 3]]) },
@@ -661,7 +661,7 @@ describe('correlateToFocused', () => {
 // correlationToOpacity
 // ═══════════════════════════════════════════════════════════════════════════
 
-describe('correlationToOpacity', () => {
+describe('correlationToOpacity', { tags: ['observability'] }, () => {
   it('returns max opacity for high correlation', () => {
     expect(correlationToOpacity(0.9)).toBe(0.7);
     expect(correlationToOpacity(-0.85)).toBe(0.7);
@@ -695,7 +695,7 @@ describe('correlationToOpacity', () => {
 // correlationStrength
 // ═══════════════════════════════════════════════════════════════════════════
 
-describe('correlationStrength', () => {
+describe('correlationStrength', { tags: ['observability'] }, () => {
   it('returns strong for |r| >= 0.8', () => {
     expect(correlationStrength(0.8)).toBe('strong');
     expect(correlationStrength(0.95)).toBe('strong');
@@ -728,7 +728,7 @@ describe('correlationStrength', () => {
 // computeInsightsAndLags — realistic scenario tests
 // ═══════════════════════════════════════════════════════════════════════════
 
-describe('computeInsightsAndLags', () => {
+describe('computeInsightsAndLags', { tags: ['observability'] }, () => {
   const mkSeries = (name: string, values: number[]) => {
     const timestamps = values.map((_, i) => `t${i}`);
     const min = Math.min(...values);

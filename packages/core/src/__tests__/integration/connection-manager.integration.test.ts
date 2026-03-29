@@ -14,7 +14,7 @@ import { createClient } from '@clickhouse/client';
 
 const CONTAINER_TIMEOUT = 120_000;
 
-describe('ConnectionManager.testConnection integration', () => {
+describe('ConnectionManager.testConnection integration', { tags: ['connectivity'] }, () => {
   let ctx: TestClickHouseContext;
 
   beforeAll(async () => {

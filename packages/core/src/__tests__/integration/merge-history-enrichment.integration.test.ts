@@ -77,7 +77,7 @@ import type { MergeCategory } from '../../utils/merge-classification.js';
 const CONTAINER_TIMEOUT = 120_000;
 const TEST_DB = 'merge_enrich_test';
 
-describe('merge history enrichment integration', () => {
+describe('merge history enrichment integration', { tags: ['merge-engine'] }, () => {
   let ctx: TestClickHouseContext;
   let tracker: MergeTracker;
 

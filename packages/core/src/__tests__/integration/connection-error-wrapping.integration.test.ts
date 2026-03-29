@@ -40,7 +40,7 @@ class CorruptingAdapter implements IClickHouseAdapter {
   }
 }
 
-describe('Service error wrapping integration', () => {
+describe('Service error wrapping integration', { tags: ['connectivity'] }, () => {
   let ctx: TestClickHouseContext;
   let corruptAdapter: CorruptingAdapter;
 

@@ -189,7 +189,7 @@ function createMockBackgroundPoolMetrics(overrides: Partial<BackgroundPoolMetric
 // Store Integration Tests
 // ---------------------------------------------------------------------------
 
-describe('Main App Migration - Store Integration', () => {
+describe('Main App Migration - Store Integration', { tags: ['connectivity'] }, () => {
   describe('databaseApi calls DatabaseExplorer service correctly', () => {
     it('fetchDatabases calls listDatabases and returns DatabaseInfo[]', async () => {
       const mockDb = createMockDatabaseInfo({ name: 'production', table_count: 10 });
@@ -419,7 +419,7 @@ describe('Main App Migration - Store Integration', () => {
  * Here we verify type compatibility and that the components can be imported.
  */
 
-describe('Main App Migration - Shared Component Type Compatibility', () => {
+describe('Main App Migration - Shared Component Type Compatibility', { tags: ['connectivity'] }, () => {
   describe('MergeCard type compatibility', () => {
     it('MergeCard accepts MergeInfo from core package', () => {
       const merge = createMockMergeInfo({

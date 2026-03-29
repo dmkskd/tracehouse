@@ -1,7 +1,7 @@
 import { describe, it, expect } from 'vitest';
 import { formatDuration, formatDurationMs, formatMicroseconds, formatElapsed } from '../formatters';
 
-describe('formatDuration (seconds input)', () => {
+describe('formatDuration (seconds input)', { tags: ['storage'] }, () => {
   it('formats sub-second as milliseconds', () => {
     expect(formatDuration(0)).toBe('0ms');
     expect(formatDuration(0.25)).toBe('250ms');
@@ -34,7 +34,7 @@ describe('formatDuration (seconds input)', () => {
   });
 });
 
-describe('formatDurationMs (milliseconds input)', () => {
+describe('formatDurationMs (milliseconds input)', { tags: ['storage'] }, () => {
   it('formats sub-second with precision, trimming trailing zeros', () => {
     expect(formatDurationMs(0)).toBe('0ms');
     expect(formatDurationMs(1)).toBe('1ms');
@@ -65,7 +65,7 @@ describe('formatDurationMs (milliseconds input)', () => {
   });
 });
 
-describe('formatMicroseconds (microseconds input)', () => {
+describe('formatMicroseconds (microseconds input)', { tags: ['storage'] }, () => {
   it('formats sub-millisecond as microseconds', () => {
     expect(formatMicroseconds(0)).toBe('0µs');
     expect(formatMicroseconds(500)).toBe('500µs');
@@ -95,7 +95,7 @@ describe('formatMicroseconds (microseconds input)', () => {
   });
 });
 
-describe('formatElapsed (seconds input, 1 decimal)', () => {
+describe('formatElapsed (seconds input, 1 decimal)', { tags: ['storage'] }, () => {
   it('formats seconds', () => {
     expect(formatElapsed(3.2)).toBe('3.2s');
     expect(formatElapsed(59.9)).toBe('59.9s');

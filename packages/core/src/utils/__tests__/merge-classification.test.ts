@@ -7,9 +7,10 @@ import {
   isDeduplicatingEngine,
   markReplicaMerges,
   markReplicaMergeHistory,
+  categoryToPartLogCondition,
 } from '../merge-classification.js';
 
-describe('merge-classification', () => {
+describe('merge-classification', { tags: ['merge-engine'] }, () => {
   // ── classifyActiveMerge ──────────────────────────────────────────
 
   describe('classifyActiveMerge', () => {
@@ -176,6 +177,47 @@ describe('merge-classification', () => {
     it('rejects regular parts', () => {
       expect(isPatchPart('202602_1_100_3')).toBe(false);
       expect(isPatchPart('all_1_5_0')).toBe(false);
+    });
+  });
+
+  // ── categoryToPartLogCondition ──────────────────────────────────
+
+  describe('categoryToPartLogCondition', () => {
+    it('returns SQL for Regular (event_type + merge_reason)', () => {
+      const cond = categoryToPartLogCondition('Regular')!;
+      expect(cond).toContain('MergeParts');
+      expect(cond).toContain('RegularMerge');
+    });
+
+    it('returns SQL for TTLDelete covering all CH variants', () => {
+      const cond = categoryToPartLogCondition('TTLDelete')!;
+      expect(cond).toContain('TTLDeleteMerge');
+      expect(cond).toContain('TTLDropMerge');
+      expect(cond).toContain('TTLMerge');
+    });
+
+    it('returns SQL for TTLRecompress', () => {
+      const cond = categoryToPartLogCondition('TTLRecompress')!;
+      expect(cond).toContain('TTLRecompressMerge');
+    });
+
+    it('returns SQL for TTLMove (event_type = MovePart)', () => {
+      const cond = categoryToPartLogCondition('TTLMove')!;
+      expect(cond).toContain('MovePart');
+    });
+
+    it('returns SQL for Mutation (event_type = MutatePart)', () => {
+      const cond = categoryToPartLogCondition('Mutation')!;
+      expect(cond).toContain('MutatePart');
+    });
+
+    it('returns undefined for LightweightDelete (needs client-side row diff)', () => {
+      expect(categoryToPartLogCondition('LightweightDelete')).toBeUndefined();
+    });
+
+    it('returns SQL for LightweightUpdate (patch- prefix)', () => {
+      const cond = categoryToPartLogCondition('LightweightUpdate')!;
+      expect(cond).toContain('patch-');
     });
   });
 

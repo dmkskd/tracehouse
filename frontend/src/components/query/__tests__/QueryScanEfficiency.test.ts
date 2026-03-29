@@ -38,7 +38,7 @@ function makeQuery(overrides: Partial<QueryDetail> & { ProfileEvents?: Record<st
   } as QueryDetail;
 }
 
-describe('buildScanEfficiency', () => {
+describe('buildScanEfficiency', { tags: ['query-analysis'] }, () => {
   describe('verdict calculation', () => {
     test('great partition pruning + no mark pruning → Excellent (the 1/75 parts case)', () => {
       const q = makeQuery({

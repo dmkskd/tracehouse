@@ -70,7 +70,7 @@ const makePart = (overrides: Partial<PartInfo> = {}): PartInfo => ({
   ...overrides,
 });
 
-describe('PartsVisualization Logic', () => {
+describe('PartsVisualization Logic', { tags: ['visualization'] }, () => {
   describe('color normalization', () => {
     test('normalized values are 0–1 for all schemes', () => {
       const parts = [

@@ -361,6 +361,59 @@ test-core:
 test-core-integration:
     cd packages/core && npx vitest run --config vitest.integration.config.ts
 
+# Run only tests matching a domain tag (e.g. just test-tag security)
+[group('test')]
+test-tag tag:
+    cd packages/core && npx vitest run --tags-filter="{{tag}}"
+    cd frontend && npx vitest run --tags-filter="{{tag}}"
+
+# List all available test tags
+[group('test')]
+test-list-tags:
+    cd packages/core && npx vitest --list-tags
+    cd frontend && npx vitest --list-tags
+
+# Print test results grouped by tag (run tests first)
+[group('test')]
+test-summary:
+    #!/usr/bin/env node
+    const fs = require('fs');
+    const paths = [
+      'packages/core/test-reports/results.json',
+      'frontend/test-reports/results.json',
+    ];
+    const byTag = {};
+    let total = 0, passed = 0, failed = 0;
+    for (const p of paths) {
+      if (!fs.existsSync(p)) continue;
+      const data = JSON.parse(fs.readFileSync(p, 'utf8'));
+      for (const suite of data.testResults || []) {
+        for (const t of suite.assertionResults || []) {
+          total++;
+          if (t.status === 'passed') passed++;
+          if (t.status === 'failed') failed++;
+          const tags = t.tags?.length ? t.tags : ['untagged'];
+          for (const tag of tags) {
+            byTag[tag] = byTag[tag] || { passed: 0, failed: 0, skipped: 0 };
+            byTag[tag][t.status === 'passed' ? 'passed' : t.status === 'failed' ? 'failed' : 'skipped']++;
+          }
+        }
+      }
+    }
+    console.log(`\n  Total: ${passed} passed, ${failed} failed, ${total} tests\n`);
+    console.log('  Tag                Passed  Failed  Total');
+    console.log('  ' + '─'.repeat(45));
+    for (const [tag, s] of Object.entries(byTag).sort((a, b) => b[1].passed - a[1].passed)) {
+      const t = s.passed + s.failed + s.skipped;
+      console.log(`  ${tag.padEnd(19)} ${String(s.passed).padStart(6)}  ${String(s.failed).padStart(6)}  ${String(t).padStart(5)}`);
+    }
+    console.log('');
+
+# Open HTML test report in browser (run tests first)
+[group('test')]
+test-report:
+    cd packages/core && npx vite preview --outDir test-reports/html --open
+
 # Run Python data-utils tests (requires Docker)
 [group('test')]
 test-data-utils:
@@ -471,7 +524,7 @@ dist-binary: dist-binary-frontend
 # Build only the frontend for binary embedding
 [group('dist')]
 dist-binary-frontend: build
-    cd frontend && VITE_BUNDLED_PROXY=true npx vite build --config vite.singlefile.config.ts
+    cd frontend && TH_BUNDLED_PROXY=true npx vite build --config vite.singlefile.config.ts
 
 # Run the standalone binary
 [group('dist')]

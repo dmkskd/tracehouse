@@ -14,7 +14,7 @@ import { TestAdapter } from './setup/clickhouse-container.js';
 
 const CONTAINER_TIMEOUT = 120_000;
 
-describe('TraceService.getFlamegraphFoldedForTimeRange', () => {
+describe('TraceService.getFlamegraphFoldedForTimeRange', { tags: ['observability'] }, () => {
   let ctx: TestClickHouseContext;
   let traceService: TraceService;
   let queryStartTime: string;

@@ -20,7 +20,7 @@ const SCRIPT_PATH = resolve(__dirname, '../../../../../infra/scripts/setup_sampl
 // The setup script takes ~10-20s per run (DDL + 3s live sample wait)
 const TEST_TIMEOUT = 120_000;
 
-describe('setup_sampling.sh on Altinity-like cluster (2s×2r)', () => {
+describe('setup_sampling.sh on Altinity-like cluster (2s×2r)', { tags: ['cluster'] }, () => {
   let ctx: AltinityClusterContext;
   let ch1Host: string;
   let ch1NativePort: number;

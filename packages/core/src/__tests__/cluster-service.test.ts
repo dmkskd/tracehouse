@@ -1,7 +1,7 @@
 import { describe, it, expect } from 'vitest';
 import { ClusterService } from '../services/cluster-service.js';
 
-describe('ClusterService.resolveTableRefs', () => {
+describe('ClusterService.resolveTableRefs', { tags: ['cluster'] }, () => {
   const cluster = 'default';
 
   // =====================================================================

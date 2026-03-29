@@ -11,7 +11,7 @@ import { QueryAnalyzer } from '../../services/query-analyzer.js';
 
 const CONTAINER_TIMEOUT = 120_000;
 
-describe('QueryAnalyzer integration', () => {
+describe('QueryAnalyzer integration', { tags: ['query-analysis'] }, () => {
   let ctx: TestClickHouseContext;
   let analyzer: QueryAnalyzer;
 

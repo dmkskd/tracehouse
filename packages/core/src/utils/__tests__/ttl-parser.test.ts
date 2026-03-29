@@ -1,7 +1,7 @@
 import { describe, it, expect } from 'vitest';
 import { parseTTL, formatTTLDuration } from '../ttl-parser.js';
 
-describe('parseTTL', () => {
+describe('parseTTL', { tags: ['storage'] }, () => {
   describe('toIntervalDay syntax', () => {
     it('parses TTL event_date + toIntervalDay(30)', () => {
       const ddl = `CREATE TABLE system.query_log (...) ENGINE = MergeTree ORDER BY event_date TTL event_date + toIntervalDay(30) DELETE SETTINGS ...`;
@@ -113,7 +113,7 @@ describe('parseTTL', () => {
   });
 });
 
-describe('formatTTLDuration', () => {
+describe('formatTTLDuration', { tags: ['storage'] }, () => {
   it('singular day', () => expect(formatTTLDuration(1, 'day')).toBe('1 day'));
   it('plural days', () => expect(formatTTLDuration(7, 'day')).toBe('7 days'));
   it('singular month', () => expect(formatTTLDuration(1, 'month')).toBe('1 month'));

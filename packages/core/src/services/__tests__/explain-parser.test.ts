@@ -7,7 +7,7 @@ import {
 
 // ─── parseRatio ─────────────────────────────────────────────────────────────
 
-describe('parseRatio', () => {
+describe('parseRatio', { tags: ['query-analysis'] }, () => {
   it('parses "1/1083"', () => {
     expect(parseRatio('1/1083')).toEqual({ selected: 1, total: 1083 });
   });
@@ -33,7 +33,7 @@ describe('parseRatio', () => {
 
 // ─── parseIndexEntry ────────────────────────────────────────────────────────
 
-describe('parseIndexEntry', () => {
+describe('parseIndexEntry', { tags: ['query-analysis'] }, () => {
   it('parses a PrimaryKey entry', () => {
     const entry = parseIndexEntry({
       Type: 'PrimaryKey',
@@ -93,7 +93,7 @@ describe('parseIndexEntry', () => {
 
 // ─── parseExplainIndexesJson ────────────────────────────────────────────────
 
-describe('parseExplainIndexesJson', () => {
+describe('parseExplainIndexesJson', { tags: ['query-analysis'] }, () => {
   it('returns error for empty input', () => {
     const result = parseExplainIndexesJson('');
     expect(result.success).toBe(false);
@@ -313,7 +313,7 @@ describe('parseExplainIndexesJson', () => {
 
 import { diagnoseOrderingKeyUsage } from '../ordering-key-diagnostics.js';
 
-describe('diagnoseOrderingKeyUsage with explainKeys from EXPLAIN', () => {
+describe('diagnoseOrderingKeyUsage with explainKeys from EXPLAIN', { tags: ['query-analysis'] }, () => {
   const sortingKey = 'event_date, user_id, event_time';
 
   it('uses EXPLAIN keys instead of WHERE heuristic when provided', () => {

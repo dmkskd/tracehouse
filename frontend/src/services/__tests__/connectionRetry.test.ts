@@ -13,7 +13,7 @@ import {
   type RetryConfig,
 } from '../connectionRetry';
 
-describe('ConnectionRetryService', () => {
+describe('ConnectionRetryService', { tags: ['connectivity'] }, () => {
   let service: ConnectionRetryService;
 
   beforeEach(() => {

@@ -22,7 +22,7 @@ const QUERY = `
   FROM numbers(3000)
 `;
 
-describe('HTTP response compression', () => {
+describe('HTTP response compression', { tags: ['storage'] }, () => {
   let ctx: TestClickHouseContext;
   let baseUrl: string;
   let authHeader: string;

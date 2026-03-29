@@ -60,7 +60,7 @@ beforeEach(() => {
   (globalThis as Record<string, unknown>).localStorage = createLocalStorageMock();
 });
 
-describe('ConnectionManager', () => {
+describe('ConnectionManager', { tags: ['connectivity'] }, () => {
   describe('listProfiles', () => {
     it('returns empty array when no profiles stored', () => {
       const mgr = new ConnectionManager(dummyFactory);

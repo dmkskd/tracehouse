@@ -18,7 +18,7 @@ function makeEstimate(overrides: Partial<MergeThroughputEstimate> = {}): MergeTh
   };
 }
 
-describe('getSizeBucketLower', () => {
+describe('getSizeBucketLower', { tags: ['merge-engine'] }, () => {
   it('maps sizes < 10 MB to bucket 0', () => {
     expect(getSizeBucketLower(0)).toBe(0);
     expect(getSizeBucketLower(1 * MB)).toBe(0);
@@ -47,7 +47,7 @@ describe('getSizeBucketLower', () => {
   });
 });
 
-describe('pickThroughputEstimate', () => {
+describe('pickThroughputEstimate', { tags: ['merge-engine'] }, () => {
   const smallHorizontal = makeEstimate({ merge_algorithm: 'Horizontal', size_bucket_lower: 0, median_bytes_per_sec: 20 * MB });
   const largeHorizontal = makeEstimate({ merge_algorithm: 'Horizontal', size_bucket_lower: 100 * MB, median_bytes_per_sec: 80 * MB });
   const smallVertical = makeEstimate({ merge_algorithm: 'Vertical', size_bucket_lower: 0, median_bytes_per_sec: 10 * MB });
@@ -122,7 +122,7 @@ describe('pickThroughputEstimate', () => {
   });
 });
 
-describe('computeMergeEta', () => {
+describe('computeMergeEta', { tags: ['merge-engine'] }, () => {
   it('returns null when estimate is null', () => {
     expect(computeMergeEta(100 * MB, 0.5, 10, null)).toBeNull();
   });

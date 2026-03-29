@@ -12,7 +12,7 @@ import { DatabaseExplorer } from '../../services/database-explorer.js';
 const CONTAINER_TIMEOUT = 120_000;
 const TEST_DB = 'explorer_test';
 
-describe('DatabaseExplorer integration', () => {
+describe('DatabaseExplorer integration', { tags: ['storage'] }, () => {
   let ctx: TestClickHouseContext;
   let explorer: DatabaseExplorer;
 

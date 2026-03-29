@@ -1,7 +1,7 @@
 import { describe, it, expect } from 'vitest';
 import { detectTimestamp, timestampToDate, formatCell } from '../format-cell.js';
 
-describe('detectTimestamp', () => {
+describe('detectTimestamp', { tags: ['storage'] }, () => {
   it('detects epoch seconds in valid range', () => {
     // 2026-03-25 ~= 1774450000
     expect(detectTimestamp(1_774_450_000)).toBe('seconds');
@@ -48,7 +48,7 @@ describe('detectTimestamp', () => {
   });
 });
 
-describe('timestampToDate', () => {
+describe('timestampToDate', { tags: ['storage'] }, () => {
   it('converts epoch seconds to Date', () => {
     const d = timestampToDate(1_774_450_000);
     expect(d).toBeInstanceOf(Date);
@@ -73,7 +73,7 @@ describe('timestampToDate', () => {
   });
 });
 
-describe('formatCell', () => {
+describe('formatCell', { tags: ['storage'] }, () => {
   it('formats null/undefined as dash', () => {
     expect(formatCell(null)).toBe('—');
     expect(formatCell(undefined)).toBe('—');
@@ -89,17 +89,28 @@ describe('formatCell', () => {
     expect(result).toMatch(/3\.14/);
   });
 
-  it('formats epoch seconds as ISO date string', () => {
-    const result = formatCell(1_774_450_000);
-    // Should be ISO-ish format: "YYYY-MM-DD HH:MM:SS"
+  it('formats epoch seconds as ISO date string when column is time-like', () => {
+    const result = formatCell(1_774_450_000, 'event_time');
     expect(result).toMatch(/^\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2}$/);
     expect(result).toContain('2026');
   });
 
-  it('formats epoch milliseconds as ISO date string', () => {
-    const result = formatCell(1_774_450_000_000);
+  it('formats epoch milliseconds as ISO date string when column is time-like', () => {
+    const result = formatCell(1_774_450_000_000, 'modification_time');
     expect(result).toMatch(/^\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2}$/);
     expect(result).toContain('2026');
+  });
+
+  it('does NOT auto-detect timestamps for non-time columns', () => {
+    // 569_905_361 falls in epoch seconds range but is a byte count
+    const result = formatCell(569_905_361, 'bytes_on_disk');
+    expect(result).not.toMatch(/^\d{4}-\d{2}-\d{2}/);
+    expect(result).toMatch(/569/);
+  });
+
+  it('still auto-detects timestamps when no column name given (backward compat)', () => {
+    const result = formatCell(1_774_450_000);
+    expect(result).toMatch(/^\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2}$/);
   });
 
   it('formats arrays as comma-separated', () => {

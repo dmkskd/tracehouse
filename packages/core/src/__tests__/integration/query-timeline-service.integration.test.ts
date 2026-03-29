@@ -20,7 +20,7 @@ import type { MergeCategory } from '../../utils/merge-classification.js';
 const CONTAINER_TIMEOUT = 120_000;
 const TEST_DB = 'timeline_test';
 
-describe('TimelineService integration', () => {
+describe('TimelineService integration', { tags: ['query-analysis'] }, () => {
   let ctx: TestClickHouseContext;
   let service: TimelineService;
 

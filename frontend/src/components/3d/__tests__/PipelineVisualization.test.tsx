@@ -9,7 +9,7 @@
 import { describe, it, expect } from 'vitest';
 import { parsePipelineOutput } from '../PipelineVisualization';
 
-describe('PipelineVisualization', () => {
+describe('PipelineVisualization', { tags: ['visualization'] }, () => {
   describe('parsePipelineOutput', () => {
     it('should parse empty output', () => {
       const result = parsePipelineOutput('');

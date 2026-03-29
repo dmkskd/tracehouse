@@ -1,7 +1,7 @@
 import { describe, it, expect } from 'vitest';
 import { parseTimeValue } from '../time.js';
 
-describe('parseTimeValue', () => {
+describe('parseTimeValue', { tags: ['storage'] }, () => {
     it('parses standard ClickHouse timestamp successfully', () => {
         // Standard format returned by HTTP ClickHouse adapter
         const result = parseTimeValue('2026-03-04 14:02:28.000000');

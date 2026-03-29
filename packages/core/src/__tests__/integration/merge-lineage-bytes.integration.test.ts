@@ -44,7 +44,7 @@ function sumLeafBytes(node: LineageNode): number {
 
 // ── tests ────────────────────────────────────────────────────────
 
-describe('Merge lineage byte accounting', () => {
+describe('Merge lineage byte accounting', { tags: ['merge-engine'] }, () => {
   let ctx: TestClickHouseContext;
   let explorer: DatabaseExplorer;
   let mergeTracker: MergeTracker;

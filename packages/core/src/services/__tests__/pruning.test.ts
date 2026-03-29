@@ -11,7 +11,7 @@ import { calculatePruning, formatPruningDetail, type PruningInput } from '../pru
 // This correctly weights parts more than marks: pruning 1 part eliminates
 // all its marks at once, while pruning 1 mark only eliminates 1 granule.
 
-describe('calculatePruning', () => {
+describe('calculatePruning', { tags: ['storage'] }, () => {
 
   // ── Excellent (≥90%) ─────────────────────────────────────────────────────
 
@@ -306,7 +306,7 @@ describe('calculatePruning', () => {
 
 // ─── formatPruningDetail ─────────────────────────────────────────────────────
 
-describe('formatPruningDetail', () => {
+describe('formatPruningDetail', { tags: ['storage'] }, () => {
   it('shows both stages when both have meaningful data', () => {
     const input: PruningInput = { selectedParts: 5, totalParts: 10, selectedMarks: 10, totalMarks: 20 };
     const result = calculatePruning(input);

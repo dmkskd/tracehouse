@@ -75,7 +75,7 @@ const PE_ZERO = {
 // Suite 1: Single-node with synthetic data
 // ─────────────────────────────────────────────────────────────────────────────
 
-describe('X-Ray: single-node synthetic data', () => {
+describe('X-Ray: single-node synthetic data', { tags: ['observability'] }, () => {
   let ctx: TestClickHouseContext;
   const INITIAL_QID = 'dist-query-001';
 
@@ -392,7 +392,7 @@ describe('X-Ray: single-node synthetic data', () => {
 // Suite 2: Cluster with organic sampling
 // ─────────────────────────────────────────────────────────────────────────────
 
-describe('X-Ray: cluster with organic sampling', () => {
+describe('X-Ray: cluster with organic sampling', { tags: ['observability'] }, () => {
   let ctx: SamplingClusterContext;
   let adapter: ClusterAwareAdapter;
 

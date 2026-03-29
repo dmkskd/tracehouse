@@ -107,7 +107,7 @@ async function runLocalQuery<T extends Record<string, unknown>>(
   return ctx.adapter1.executeQuery<T>(sql);
 }
 
-describe('Cluster query dedup', () => {
+describe('Cluster query dedup', { tags: ['cluster'] }, () => {
   let ctx: ClusterTestContext;
 
   beforeAll(async () => {

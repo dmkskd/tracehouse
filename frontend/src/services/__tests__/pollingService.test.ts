@@ -15,7 +15,7 @@ import {
   DEFAULT_INTERVAL_MS,
 } from '../pollingService';
 
-describe('PollingService', () => {
+describe('PollingService', { tags: ['connectivity'] }, () => {
   let service: PollingService;
 
   beforeEach(() => {

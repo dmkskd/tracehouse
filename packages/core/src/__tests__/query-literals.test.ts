@@ -1,7 +1,7 @@
 import { describe, it, expect } from 'vitest';
 import { extractLiterals, diffLiterals, formatLiteral, extractQueryParameters } from '../utils/query-literals.js';
 
-describe('extractLiterals', () => {
+describe('extractLiterals', { tags: ['query-analysis'] }, () => {
   it('extracts string literals', () => {
     const sql = "SELECT * FROM orders WHERE region = 'US' AND status = 'active'";
     const literals = extractLiterals(sql);
@@ -69,7 +69,7 @@ describe('extractLiterals', () => {
   });
 });
 
-describe('extractLiterals context', () => {
+describe('extractLiterals context', { tags: ['query-analysis'] }, () => {
   it('extracts column name context for WHERE clause', () => {
     const sql = "SELECT * FROM orders WHERE country_code = 'US'";
     const literals = extractLiterals(sql);
@@ -95,7 +95,7 @@ describe('extractLiterals context', () => {
   });
 });
 
-describe('diffLiterals', () => {
+describe('diffLiterals', { tags: ['query-analysis'] }, () => {
   it('finds no diffs for identical queries', () => {
     const sql = "SELECT * FROM orders WHERE region = 'US' LIMIT 100";
     expect(diffLiterals(sql, sql)).toEqual([]);
@@ -131,7 +131,7 @@ describe('diffLiterals', () => {
   });
 });
 
-describe('formatLiteral', () => {
+describe('formatLiteral', { tags: ['query-analysis'] }, () => {
   it('strips quotes from strings', () => {
     expect(formatLiteral("'hello'")).toBe('hello');
   });
@@ -149,7 +149,7 @@ describe('formatLiteral', () => {
   });
 });
 
-describe('extractQueryParameters', () => {
+describe('extractQueryParameters', { tags: ['query-analysis'] }, () => {
   it('returns literal values as strings', () => {
     const sql = "SELECT * FROM t WHERE id = 42 AND name = 'test'";
     expect(extractQueryParameters(sql)).toEqual(['42', "'test'"]);

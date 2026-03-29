@@ -16,7 +16,7 @@ import { OverviewService } from '../../services/overview-service.js';
 const CONTAINER_TIMEOUT = 120_000;
 const TEST_DB = 'merge_type_test';
 
-describe('merge_type surfacing integration', () => {
+describe('merge_type surfacing integration', { tags: ['merge-engine'] }, () => {
   let ctx: TestClickHouseContext;
   let tracker: MergeTracker;
   let overview: OverviewService;

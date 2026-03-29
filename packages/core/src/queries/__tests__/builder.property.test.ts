@@ -41,7 +41,7 @@ function findClosingQuote(escaped: string): number {
   return escaped.length;
 }
 
-describe('SQL escapeValue neutralizes injection characters', () => {
+describe('SQL escapeValue neutralizes injection characters', { tags: ['security'] }, () => {
   const NUM_RUNS = 100;
 
   it('every single quote in the output is preceded by a backslash', () => {
@@ -171,7 +171,7 @@ const templateAndParamsArb = keyArb
     }),
   );
 
-describe('buildQuery substitutes all placeholders with escaped values', () => {
+describe('buildQuery substitutes all placeholders with escaped values', { tags: ['security'] }, () => {
   const NUM_RUNS = 100;
 
   it('no remaining {key} placeholders exist in the output when all keys are provided', () => {

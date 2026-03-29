@@ -20,7 +20,7 @@ const validDate = fc.date({
 
 const NUM_RUNS = 100;
 
-describe('Timestamp normalization produces valid ISO 8601 strings', () => {
+describe('Timestamp normalization produces valid ISO 8601 strings', { tags: ['storage'] }, () => {
 
   it('normalizeTimestamp(date) === date.toISOString() for any valid Date', () => {
     fc.assert(

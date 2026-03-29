@@ -12,7 +12,7 @@ import { MergeTracker } from '../../services/merge-tracker.js';
 const CONTAINER_TIMEOUT = 120_000;
 const TEST_DB = 'merge_test';
 
-describe('MergeTracker integration', () => {
+describe('MergeTracker integration', { tags: ['merge-engine'] }, () => {
   let ctx: TestClickHouseContext;
   let tracker: MergeTracker;
 
@@ -121,6 +121,47 @@ describe('MergeTracker integration', () => {
     it('returns empty for non-existent database', async () => {
       const history = await tracker.getMergeHistory({ database: 'nonexistent_db_xyz', table: 'nope' });
       expect(history).toEqual([]);
+    });
+
+    it('pushes category filter into SQL — Mutation returns only mutations', async () => {
+      const history = await tracker.getMergeHistory({ database: TEST_DB, table: 'events', category: 'Mutation', limit: 50 });
+      for (const h of history) {
+        expect(h.merge_reason).toBe('Mutation');
+      }
+    });
+
+    it('pushes category filter into SQL — Regular excludes mutations', async () => {
+      const history = await tracker.getMergeHistory({ database: TEST_DB, table: 'events', category: 'Regular', limit: 50 });
+      for (const h of history) {
+        expect(h.merge_reason).toBe('Regular');
+      }
+    });
+
+    it('category filter respects limit (limit applies after filter)', async () => {
+      // Fetch all history to know the total for each category
+      const all = await tracker.getMergeHistory({ database: TEST_DB, table: 'events', limit: 1000 });
+      const mutationCount = all.filter(h => h.merge_reason === 'Mutation').length;
+      const regularCount = all.filter(h => h.merge_reason === 'Regular').length;
+
+      // With category filter, limit 1 should still return exactly 1 of that category
+      if (mutationCount > 0) {
+        const filtered = await tracker.getMergeHistory({ database: TEST_DB, table: 'events', category: 'Mutation', limit: 1 });
+        expect(filtered).toHaveLength(1);
+        expect(filtered[0].merge_reason).toBe('Mutation');
+      }
+      if (regularCount > 0) {
+        const filtered = await tracker.getMergeHistory({ database: TEST_DB, table: 'events', category: 'Regular', limit: 1 });
+        expect(filtered).toHaveLength(1);
+        expect(filtered[0].merge_reason).toBe('Regular');
+      }
+    });
+
+    it('client-side-only category (LightweightDelete) returns unfiltered results', async () => {
+      // LightweightDelete can't be pushed to SQL (needs row-diff analysis),
+      // so the query returns the full result set for client-side filtering
+      const all = await tracker.getMergeHistory({ database: TEST_DB, table: 'events', limit: 50 });
+      const withCategory = await tracker.getMergeHistory({ database: TEST_DB, table: 'events', category: 'LightweightDelete', limit: 50 });
+      expect(withCategory.length).toBe(all.length);
     });
   });
 

@@ -16,7 +16,7 @@ function mkLog(time: string, microTime: string, source: string, threadId: number
   };
 }
 
-describe('parseVerticalMergeProgress', () => {
+describe('parseVerticalMergeProgress', { tags: ['merge-engine'] }, () => {
   it('detects columns that are read but never gathered (_block_number)', () => {
     // Real log from a vertical merge of synthetic_data.events.
     // _block_number is read from all 8 parts but never has a "Gathered column" entry.

@@ -105,7 +105,7 @@ afterAll(async () => {
 // Health checks
 // ---------------------------------------------------------------------------
 
-describe('health checks', () => {
+describe('health checks', { tags: ['connectivity'] }, () => {
   it('GET /proxy/ping returns ok', async () => {
     const resp = await fetch(`${proxyBaseUrl}/proxy/ping`);
     expect(resp.ok).toBe(true);
@@ -125,7 +125,7 @@ describe('health checks', () => {
 // CORS headers
 // ---------------------------------------------------------------------------
 
-describe('CORS', () => {
+describe('CORS', { tags: ['connectivity'] }, () => {
   it('returns Access-Control-Allow-Origin on proxy responses', async () => {
     const resp = await fetch(`${proxyBaseUrl}/proxy/ping`);
     expect(resp.headers.get('access-control-allow-origin')).toBe('*');
@@ -136,7 +136,7 @@ describe('CORS', () => {
 // Query forwarding
 // ---------------------------------------------------------------------------
 
-describe('query forwarding', () => {
+describe('query forwarding', { tags: ['connectivity'] }, () => {
   it('forwards a simple query with FORMAT in SQL body', async () => {
     const { resp, text } = await proxyPost(
       '/proxy/query',
@@ -182,7 +182,7 @@ describe('query forwarding', () => {
 // Auth header translation
 // ---------------------------------------------------------------------------
 
-describe('auth headers', () => {
+describe('auth headers', { tags: ['connectivity'] }, () => {
   it('translates x-ch-user/password to ClickHouse auth headers', async () => {
     const { resp, text } = await proxyPost(
       '/proxy/query',
@@ -210,7 +210,7 @@ describe('auth headers', () => {
 // Security: proxy headers must NOT leak to ClickHouse
 // ---------------------------------------------------------------------------
 
-describe('security', () => {
+describe('security', { tags: ['connectivity'] }, () => {
   it('does not require x-ch-host for health endpoints', async () => {
     const resp = await fetch(`${proxyBaseUrl}/proxy/ping`);
     expect(resp.ok).toBe(true);
@@ -237,7 +237,7 @@ describe('security', () => {
 // headers arrive at the "ClickHouse" backend.
 // ---------------------------------------------------------------------------
 
-describe('security — header leaking', () => {
+describe('security — header leaking', { tags: ['connectivity'] }, () => {
   let echoServer: Server;
   let echoPort: number;
   let leakProxyServer: Server;
@@ -427,7 +427,7 @@ describe('security — header leaking', () => {
 // Error handling
 // ---------------------------------------------------------------------------
 
-describe('error handling', () => {
+describe('error handling', { tags: ['connectivity'] }, () => {
   it('returns error for invalid SQL', async () => {
     const { resp } = await proxyPost(
       '/proxy/query',
@@ -441,7 +441,7 @@ describe('error handling', () => {
 // Static file serving (Docker / bundled mode)
 // ---------------------------------------------------------------------------
 
-describe('static file serving (STATIC_DIR)', () => {
+describe('static file serving (STATIC_DIR)', { tags: ['connectivity'] }, () => {
   let staticServer: Server;
   let staticBaseUrl: string;
   let tmpDir: string;

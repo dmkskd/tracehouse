@@ -157,6 +157,33 @@ export const ALL_MERGE_CATEGORIES: MergeCategory[] = [
   'Regular', 'TTLDelete', 'TTLRecompress', 'TTLMove', 'Mutation', 'LightweightDelete', 'LightweightUpdate',
 ];
 
+/**
+ * Map a canonical MergeCategory back to SQL WHERE conditions for system.part_log.
+ * Returns a SQL fragment that can be AND-ed into a query.
+ * Categories that can only be determined client-side (LightweightDelete,
+ * LightweightUpdate) return undefined — these still need post-fetch filtering.
+ */
+export function categoryToPartLogCondition(category: MergeCategory): string | undefined {
+  switch (category) {
+    case 'Regular':
+      // RegularMerge or empty merge_reason (older CH), but NOT mutations or moves
+      return `event_type = 'MergeParts' AND (merge_reason = 'RegularMerge' OR merge_reason = '')`;
+    case 'TTLDelete':
+      return `merge_reason IN ('TTLDeleteMerge', 'TTLDropMerge', 'TTLMerge')`;
+    case 'TTLRecompress':
+      return `merge_reason = 'TTLRecompressMerge'`;
+    case 'TTLMove':
+      return `event_type = 'MovePart'`;
+    case 'Mutation':
+      return `event_type = 'MutatePart'`;
+    case 'LightweightUpdate':
+      return `part_name LIKE 'patch-%'`;
+    // LightweightDelete requires row-diff analysis that can't be done in SQL
+    default:
+      return undefined;
+  }
+}
+
 // ── Mutation subtype classification ──────────────────────────────────
 
 /**
@@ -205,6 +232,11 @@ export function classifyMutationCommand(command: string): MutationSubtype {
   }
   // Everything else is an UPDATE (ALTER TABLE UPDATE)
   return 'HeavyUpdate';
+}
+
+/** Returns true if this category can only be filtered client-side (after LIMIT). */
+export function isCategoryClientSideOnly(category: MergeCategory): boolean {
+  return categoryToPartLogCondition(category) === undefined;
 }
 
 /**

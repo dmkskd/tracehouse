@@ -29,7 +29,7 @@ import { MetricsCollector } from '../../services/metrics-collector.js';
 // Container startup can take 15-30s on first pull
 const CONTAINER_TIMEOUT = 120_000;
 
-describe('MetricsCollector integration (shadow tables)', () => {
+describe('MetricsCollector integration (shadow tables)', { tags: ['observability'] }, () => {
   let ctx: TestClickHouseContext;
   let collector: MetricsCollector;
 
