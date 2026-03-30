@@ -158,7 +158,7 @@ export const ACTIVE_QUERIES = `
     query_id,
     user,
     hostname() AS host,
-    substring(query, 1, 500) AS query_short, substring(query, 1, 500) AS query_short,
+    substring(query, 1, 500) AS query_short,
     memory_usage,
     query_duration_ms,
     query_kind,
