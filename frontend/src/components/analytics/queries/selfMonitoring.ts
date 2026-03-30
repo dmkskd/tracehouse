@@ -96,6 +96,7 @@ ORDER BY query_count DESC`,
 -- @link: on=query_hash into='App Query Executions'
 -- @cell: column=avg_result_bytes type=rag green<10000 amber<100000
 -- @cell: column=avg_memory_mb type=rag green<20 amber<50
+-- @cell: column=max_memory_mb type=rag green<50 amber<200
 SELECT
     extractAllGroups(query, '${APP_RE_COMPONENT_SERVICE}')[1][1] AS component,
     extractAllGroups(query, '${APP_RE_COMPONENT_SERVICE}')[1][2] AS service,
@@ -103,24 +104,38 @@ SELECT
     substring(query, 1, 120) AS query_preview,
     count() AS executions,
     -- duration
+    round(min(query_duration_ms), 1) AS min_duration_ms,
     round(avg(query_duration_ms), 1) AS avg_duration_ms,
+    round(max(query_duration_ms), 1) AS max_duration_ms,
     round(sum(query_duration_ms), 0) AS total_duration_ms,
     -- memory
+    round(min(memory_usage) / 1048576, 2) AS min_memory_mb,
     round(avg(memory_usage) / 1048576, 2) AS avg_memory_mb,
+    round(max(memory_usage) / 1048576, 2) AS max_memory_mb,
     round(sum(memory_usage) / 1048576, 1) AS total_memory_mb,
     -- rows read
+    min(read_rows) AS min_rows_read,
     round(avg(read_rows)) AS avg_rows_read,
+    max(read_rows) AS max_rows_read,
     sum(read_rows) AS total_rows_read,
     -- bytes read
+    min(read_bytes) AS min_bytes_read,
     round(avg(read_bytes)) AS avg_bytes_read,
+    max(read_bytes) AS max_bytes_read,
     sum(read_bytes) AS total_bytes_read,
     -- result sent to client
+    min(result_rows) AS min_result_rows,
     round(avg(result_rows)) AS avg_result_rows,
+    max(result_rows) AS max_result_rows,
     sum(result_rows) AS total_result_rows,
+    min(result_bytes) AS min_result_bytes,
     round(avg(result_bytes)) AS avg_result_bytes,
+    max(result_bytes) AS max_result_bytes,
     sum(result_bytes) AS total_result_bytes,
     -- cpu
+    round(min(ProfileEvents['OSCPUVirtualTimeMicroseconds']) / 1e6, 3) AS min_cpu_s,
     round(avg(ProfileEvents['OSCPUVirtualTimeMicroseconds']) / 1e6, 3) AS avg_cpu_s,
+    round(max(ProfileEvents['OSCPUVirtualTimeMicroseconds']) / 1e6, 3) AS max_cpu_s,
     round(sum(ProfileEvents['OSCPUVirtualTimeMicroseconds']) / 1e6, 2) AS total_cpu_s
 FROM {{cluster_aware:system.query_log}}
 WHERE type = 'QueryFinish'
