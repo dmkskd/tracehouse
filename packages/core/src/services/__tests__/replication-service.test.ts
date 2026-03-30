@@ -7,8 +7,10 @@ import {
   buildEngineInfo,
   filterQueueEntries,
   classifyReplicaHealth,
+  classifyDelaySeverity,
+  buildKeeperTableInfo,
 } from '../replication-service.js';
-import type { ReplicaInfo, ReplicaPartStats, TopologyQueueEntry } from '../../types/replication-topology.js';
+import type { ReplicaInfo, ReplicaPartStats, TopologyQueueEntry, ZkPathStats } from '../../types/replication-topology.js';
 
 // ─── extractShardId ──────────────────────────────────────────────────────────
 
@@ -370,5 +372,82 @@ describe('classifyReplicaHealth', () => {
     ];
     const result = classifyReplicaHealth(info, queue);
     expect(result.status).toBe('error');
+  });
+});
+
+// ─── buildKeeperTableInfo ────────────────────────────────────────────────────
+
+describe('buildKeeperTableInfo', () => {
+  const zkPath = '/clickhouse/tables/uuid/01';
+
+  function makeStats(suffix: string, childCount: number, totalDataBytes = 0): ZkPathStats {
+    return { path: `${zkPath}/${suffix}`, childCount, totalDataBytes };
+  }
+
+  it('extracts counts from ZK sub-path stats', () => {
+    const stats = [
+      makeStats('log', 42, 1024),
+      makeStats('mutations', 3, 256),
+      makeStats('blocks', 150, 4096),
+      makeStats('replicas', 4, 0),
+      makeStats('quorum', 0, 0),
+    ];
+    const result = buildKeeperTableInfo(zkPath, stats);
+    expect(result.zkPath).toBe(zkPath);
+    expect(result.logEntries).toBe(42);
+    expect(result.mutations).toBe(3);
+    expect(result.blocks).toBe(150);
+    expect(result.registeredReplicas).toBe(4);
+    expect(result.hasQuorum).toBe(false);
+  });
+
+  it('detects active quorum when quorum has children', () => {
+    const stats = [makeStats('quorum', 1, 10)];
+    const result = buildKeeperTableInfo(zkPath, stats);
+    expect(result.hasQuorum).toBe(true);
+  });
+
+  it('defaults to 0 for missing sub-paths', () => {
+    const result = buildKeeperTableInfo(zkPath, []);
+    expect(result.logEntries).toBe(0);
+    expect(result.mutations).toBe(0);
+    expect(result.blocks).toBe(0);
+    expect(result.registeredReplicas).toBe(0);
+    expect(result.hasQuorum).toBe(false);
+  });
+
+  it('handles partial stats (only some sub-paths present)', () => {
+    const stats = [makeStats('log', 10), makeStats('blocks', 50)];
+    const result = buildKeeperTableInfo(zkPath, stats);
+    expect(result.logEntries).toBe(10);
+    expect(result.mutations).toBe(0);
+    expect(result.blocks).toBe(50);
+    expect(result.registeredReplicas).toBe(0);
+  });
+});
+
+// ─── classifyDelaySeverity ───────────────────────────────────────────────────
+
+describe('classifyDelaySeverity', () => {
+  it('returns ok for zero delay', () => {
+    expect(classifyDelaySeverity(0)).toBe('ok');
+  });
+
+  it('returns ok for brief delay (normal replication)', () => {
+    expect(classifyDelaySeverity(1)).toBe('ok');
+    expect(classifyDelaySeverity(10)).toBe('ok');
+    expect(classifyDelaySeverity(30)).toBe('ok');
+  });
+
+  it('returns lagging for delay between 30s and 5min', () => {
+    expect(classifyDelaySeverity(31)).toBe('lagging');
+    expect(classifyDelaySeverity(60)).toBe('lagging');
+    expect(classifyDelaySeverity(300)).toBe('lagging');
+  });
+
+  it('returns critical for delay over 5 minutes', () => {
+    expect(classifyDelaySeverity(301)).toBe('critical');
+    expect(classifyDelaySeverity(600)).toBe('critical');
+    expect(classifyDelaySeverity(3600)).toBe('critical');
   });
 });

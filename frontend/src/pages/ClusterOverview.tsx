@@ -23,6 +23,7 @@ import { PermissionGate } from '../components/shared/PermissionGate';
 import { extractErrorMessage } from '../utils/errorFormatters';
 import { useCapabilityCheck } from '../components/shared/RequiresCapability';
 import { DocsLink } from '../components/common/DocsLink';
+import { Link } from 'react-router-dom';
 
 // ── Types ──
 
@@ -241,11 +242,18 @@ const DatabaseReplicationTable: React.FC<DatabaseReplicationTableProps> = ({ dat
       className="rounded-lg border overflow-hidden"
       style={{ background: 'var(--bg-card)', borderColor: 'var(--border-primary)' }}
     >
-      <div style={{ padding: '12px 16px', borderBottom: '1px solid var(--border-secondary)' }}>
+      <div style={{ padding: '12px 16px', borderBottom: '1px solid var(--border-secondary)', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
         <h3 style={{ fontSize: 11, fontWeight: 500, color: 'var(--text-secondary)' }}>
           Databases & Replication
           <span style={{ marginLeft: 8, color: 'var(--text-muted)' }}>({filtered.length})</span>
         </h3>
+        <Link
+          to="/replication"
+          state={{ from: { path: '/cluster', label: 'Cluster' } }}
+          style={{ fontSize: 10, color: 'var(--text-muted)', textDecoration: 'none', display: 'flex', alignItems: 'center', gap: 4 }}
+        >
+          Per-table replication <span style={{ fontSize: 9 }}>→</span>
+        </Link>
       </div>
       <div style={{ overflowX: 'auto', maxHeight: 520, overflowY: 'auto' }}>
         <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 11 }}>
@@ -542,11 +550,11 @@ export const ClusterOverview: React.FC = () => {
         />
       )}
 
+      {/* Node list — cluster infra first */}
+      {nodes.length > 0 && <NodeTable nodes={nodes} />}
+
       {/* Databases & Replication — unified table */}
       <DatabaseReplicationTable databases={databases} replicas={replicas} />
-
-      {/* Node list */}
-      {nodes.length > 0 && <NodeTable nodes={nodes} />}
     </div>
   );
 };

@@ -14,8 +14,18 @@ import type {
   TableEngineInfo,
   ReplicaHealth,
   ReplicaHealthStatus,
+  DelaySeverity,
+  KeeperTableInfo,
+  ZkPathStats,
+  KeeperConnection,
+  DistributionQueueEntry,
 } from '../types/replication-topology.js';
-import { GET_REPLICATION_QUEUE } from '../queries/cluster-queries.js';
+import {
+  GET_REPLICATION_QUEUE,
+  GET_ZK_TABLE_STATS,
+  GET_KEEPER_CONNECTIONS,
+  GET_DISTRIBUTION_QUEUE,
+} from '../queries/cluster-queries.js';
 import {
   GET_REPLICA_TOPOLOGY,
   GET_REPLICA_PARTS,
@@ -30,6 +40,9 @@ import {
   mapReplicaPartStats,
   mapShardPartitionDist,
   mapQueueEntry,
+  mapZkPathStats,
+  mapKeeperConnection,
+  mapDistributionQueueEntry,
 } from '../mappers/replication-mappers.js';
 import type { RawRow } from '../mappers/helpers.js';
 import { toStr } from '../mappers/helpers.js';
@@ -170,6 +183,37 @@ export function filterQueueEntries(
   return entries;
 }
 
+/** Build KeeperTableInfo from ZK path stats rows. */
+export function buildKeeperTableInfo(
+  zkPath: string,
+  statsRows: ZkPathStats[],
+): KeeperTableInfo {
+  const byPath = new Map(statsRows.map(r => [r.path, r]));
+  const get = (suffix: string) => byPath.get(`${zkPath}/${suffix}`);
+  return {
+    zkPath,
+    logEntries: get('log')?.childCount ?? 0,
+    mutations: get('mutations')?.childCount ?? 0,
+    blocks: get('blocks')?.childCount ?? 0,
+    registeredReplicas: get('replicas')?.childCount ?? 0,
+    hasQuorum: (get('quorum')?.childCount ?? 0) > 0,
+  };
+}
+
+/** Delay thresholds in seconds. */
+const DELAY_LAGGING_THRESHOLD = 30;
+const DELAY_CRITICAL_THRESHOLD = 300;
+
+/** Classify replication delay severity.
+ *  - ok: <= 30s (normal replication, brief lag during ingestion)
+ *  - lagging: 30s–5min (falling behind, worth monitoring)
+ *  - critical: > 5min (seriously behind, likely needs attention) */
+export function classifyDelaySeverity(delaySeconds: number): DelaySeverity {
+  if (delaySeconds > DELAY_CRITICAL_THRESHOLD) return 'critical';
+  if (delaySeconds > DELAY_LAGGING_THRESHOLD) return 'lagging';
+  return 'ok';
+}
+
 /** Stuck queue threshold — entries with more retries than this and an exception are stuck. */
 const STUCK_QUEUE_TRIES = 5;
 
@@ -235,6 +279,25 @@ export class ReplicationService {
       const { shards, logHead } = assembleShards(replicaRows, partsByHost);
       const totalBytes = shards.reduce((s, sh) => s + sh.totalBytes, 0);
 
+      // Fetch keeper + distribution queue data in parallel (best-effort — don't fail topology on ZK errors)
+      const zkPath = replicaRows.length > 0 ? replicaRows[0].zookeeper_path : '';
+      const distTable = engineInfo?.distributedTable ?? null;
+      const [zkStatsRaw, keeperConnRaw, distQueueRaw] = await Promise.all([
+        zkPath
+          ? this.adapter.executeQuery<RawRow>(tagQuery(buildQuery(GET_ZK_TABLE_STATS, { zk_path: zkPath }), sourceTag(TAB, 'zk-stats'))).catch(() => [] as RawRow[])
+          : Promise.resolve([] as RawRow[]),
+        this.adapter.executeQuery<RawRow>(tagQuery(GET_KEEPER_CONNECTIONS, sourceTag(TAB, 'keeper-conn'))).catch(() => [] as RawRow[]),
+        distTable
+          ? this.adapter.executeQuery<RawRow>(tagQuery(buildQuery(GET_DISTRIBUTION_QUEUE, { database, table: distTable }), sourceTag(TAB, 'dist-queue'))).catch(() => [] as RawRow[])
+          : Promise.resolve([] as RawRow[]),
+      ]);
+
+      const keeperInfo = zkPath && zkStatsRaw.length > 0
+        ? buildKeeperTableInfo(zkPath, zkStatsRaw.map(mapZkPathStats))
+        : null;
+      const keeperConnections = keeperConnRaw.map(mapKeeperConnection);
+      const distributionQueue = distQueueRaw.map(mapDistributionQueueEntry);
+
       return {
         database,
         table,
@@ -244,6 +307,9 @@ export class ReplicationService {
         partitionDist,
         queueEntries,
         engineInfo,
+        keeperInfo,
+        keeperConnections,
+        distributionQueue,
       };
     } catch (err) {
       throw new ReplicationServiceError(

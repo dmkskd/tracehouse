@@ -6,6 +6,10 @@ import type {
   ReplicaPartStats,
   ShardPartitionDist,
   TopologyQueueEntry,
+  ZkPathStats,
+  KeeperConnection,
+  DistributionQueueEntry,
+  ZkChildNode,
 } from '../types/replication-topology.js';
 import { type RawRow, toInt, toStr } from './helpers.js';
 
@@ -63,5 +67,49 @@ export function mapQueueEntry(row: RawRow, filterTable: string): TopologyQueueEn
     num_postponed: toInt(row.num_postponed),
     last_exception: toStr(row.last_exception),
     create_time: toStr(row.create_time),
+  };
+}
+
+export function mapZkPathStats(row: RawRow): ZkPathStats {
+  return {
+    path: toStr(row.path),
+    childCount: toInt(row.child_count),
+    totalDataBytes: toInt(row.total_data_bytes),
+  };
+}
+
+export function mapKeeperConnection(row: RawRow): KeeperConnection {
+  return {
+    host: toStr(row.host),
+    port: toInt(row.port),
+    index: toInt(row.index),
+    connectedTime: toStr(row.connected_time),
+    isExpired: toInt(row.is_expired),
+    keeperApiVersion: toInt(row.keeper_api_version),
+  };
+}
+
+export function mapZkChildNode(row: RawRow): ZkChildNode {
+  return {
+    name: toStr(row.name),
+    value: toStr(row.value),
+    numChildren: toInt(row.num_children),
+    dataLength: toInt(row.data_length),
+    ctime: toStr(row.ctime),
+    mtime: toStr(row.mtime),
+  };
+}
+
+export function mapDistributionQueueEntry(row: RawRow): DistributionQueueEntry {
+  return {
+    database: toStr(row.database),
+    table: toStr(row.table),
+    isBlocked: toInt(row.is_blocked),
+    errorCount: toInt(row.error_count),
+    dataFiles: toInt(row.data_files),
+    dataCompressedBytes: toInt(row.data_compressed_bytes),
+    brokenDataFiles: toInt(row.broken_data_files),
+    brokenDataCompressedBytes: toInt(row.broken_data_compressed_bytes),
+    lastException: toStr(row.last_exception),
   };
 }

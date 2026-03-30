@@ -48,7 +48,7 @@ export {
   type PruningSeverity,
 } from './pruning.js';
 export { ClusterService } from './cluster-service.js';
-export { ReplicationService, ReplicationServiceError, extractShardId, shardIdToNum, assembleShards, parseShardingKey, buildEngineInfo, filterQueueEntries, classifyReplicaHealth } from './replication-service.js';
+export { ReplicationService, ReplicationServiceError, extractShardId, shardIdToNum, assembleShards, parseShardingKey, buildEngineInfo, filterQueueEntries, classifyReplicaHealth, classifyDelaySeverity, buildKeeperTableInfo } from './replication-service.js';
 export type { ClusterInfo, AvailableCluster } from './cluster-service.js';
 export { EnvironmentDetector } from './environment-detector.js';
 export type { EnvironmentInfo } from './environment-detector.js';

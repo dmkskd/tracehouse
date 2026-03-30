@@ -401,14 +401,25 @@ const BUILTIN_DASHBOARDS: Dashboard[] = [
     category: 'Replication',
     columns: 2,
     panels: [
-      { queryName: 'Replication#Replica Status' },
+      // ── Replica Sync ──
+      { queryName: 'Replication#Replica Status', section: 'Replica Sync' },
       { queryName: 'Replication#Replication Queue Summary' },
-      { queryName: 'Replication#Replication Lag Trend' },
-      { queryName: 'Replication#Replication Queue Size Trend' },
       { queryName: 'Replication#Replication Queue Errors' },
-      { queryName: 'Replication#ZooKeeper Operations' },
+      // ── Replica Sync Trends ──
+      { queryName: 'Replication#Replication Lag Trend', section: 'Replica Sync Trends' },
+      { queryName: 'Replication#Replication Queue Size Trend' },
+      { queryName: 'Replication#Replication Error Trend' },
+      // ── Distribution ──
+      { queryName: 'Replication#Distribution Queue', section: 'Distribution' },
+      { queryName: 'Replication#Distribution Files & Bytes Pending' },
+      { queryName: 'Replication#Distribution Send Activity' },
+      { queryName: 'Replication#Distribution Insert Pressure' },
+      // ── ZooKeeper / Keeper ──
+      { queryName: 'Replication#ZooKeeper Operations', section: 'ZooKeeper / Keeper' },
       { queryName: 'Replication#ZooKeeper Wait Time' },
       { queryName: 'Replication#ZooKeeper Sessions & Exceptions' },
+      { queryName: 'Replication#Keeper Connection Status' },
+      { queryName: 'Replication#Keeper Metadata per Table' },
     ],
   },
   {

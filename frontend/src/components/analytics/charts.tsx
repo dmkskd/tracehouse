@@ -359,10 +359,14 @@ const crosshairLineProps = {
   strokeWidth: 1,
 };
 
+/** Tracks the mouse Y coordinate within the chart area (module-level: only one chart is hovered at a time). */
+let _crosshairMouseY: number | null = null;
+
 /** Custom recharts cursor that draws both vertical and horizontal crosshair lines. */
 const CrosshairCursor: React.FC<any> = ({ points, width, height, top, left }) => {
   if (!points || !points.length) return null;
-  const { x, y } = points[0];
+  const { x } = points[0];
+  const y = _crosshairMouseY ?? points[0].y;
   return (
     <g>
       <line x1={x} y1={top} x2={x} y2={top + height} {...crosshairLineProps} />
@@ -577,8 +581,8 @@ export const LineChart2D: React.FC<{ data: ChartDataPoint[]; fullHeight?: boolea
       <RLineChart data={rechartsData} margin={{ top: 5, right: 20, left: 10, bottom: 5 }}
         style={drillable ? { cursor: 'pointer' } : undefined}
         onClick={drillable ? (e: any) => { if (e?.activeLabel) { const row = data.find(d => d.label === e.activeLabel); if (row) onDrillDown!({ label: row.label, value: row.value }); } } : undefined}
-        onMouseMove={onTimestampHover ? (e: any) => { if (e?.activeLabel) onTimestampHover(e.activeLabel); } : undefined}
-        onMouseLeave={onTimestampHover ? () => onTimestampHover(null) : undefined}
+        onMouseMove={(e: any) => { _crosshairMouseY = e?.chartY ?? null; if (onTimestampHover && e?.activeLabel) onTimestampHover(e.activeLabel); }}
+        onMouseLeave={() => { _crosshairMouseY = null; if (onTimestampHover) onTimestampHover(null); }}
       >
         <CartesianGrid strokeDasharray="3 3" stroke={gridStroke} />
         <XAxis
@@ -687,8 +691,8 @@ export const AreaChart2D: React.FC<{ data: ChartDataPoint[]; fullHeight?: boolea
       <RAreaChart data={rechartsData} margin={{ top: 5, right: 20, left: 10, bottom: 5 }}
         style={drillable ? { cursor: 'pointer' } : undefined}
         onClick={drillable ? (e: any) => { if (e?.activeLabel) { const row = data.find(d => d.label === e.activeLabel); if (row) onDrillDown!({ label: row.label, value: row.value }); } } : undefined}
-        onMouseMove={onTimestampHover ? (e: any) => { if (e?.activeLabel) onTimestampHover(e.activeLabel); } : undefined}
-        onMouseLeave={onTimestampHover ? () => onTimestampHover(null) : undefined}
+        onMouseMove={(e: any) => { _crosshairMouseY = e?.chartY ?? null; if (onTimestampHover && e?.activeLabel) onTimestampHover(e.activeLabel); }}
+        onMouseLeave={() => { _crosshairMouseY = null; if (onTimestampHover) onTimestampHover(null); }}
       >
         <defs>
           <linearGradient id={gradId} x1="0" y1="0" x2="0" y2="1">
@@ -750,8 +754,8 @@ export const DualAxisAreaChart2D: React.FC<{ data: GroupedChartData[]; valueColu
       <RAreaChart data={rows} margin={{ top: 5, right: 60, left: 10, bottom: 5 }}
         style={drillable ? { cursor: 'pointer' } : undefined}
         onClick={drillable ? (e: any) => { if (e?.activeLabel) onDrillDown!({ label: e.activeLabel, value: 0 }); } : undefined}
-        onMouseMove={onTimestampHover ? (e: any) => { if (e?.activeLabel) onTimestampHover(e.activeLabel); } : undefined}
-        onMouseLeave={onTimestampHover ? () => onTimestampHover(null) : undefined}
+        onMouseMove={(e: any) => { _crosshairMouseY = e?.chartY ?? null; if (onTimestampHover && e?.activeLabel) onTimestampHover(e.activeLabel); }}
+        onMouseLeave={() => { _crosshairMouseY = null; if (onTimestampHover) onTimestampHover(null); }}
       >
         <defs>
           <linearGradient id={gradIdLeft} x1="0" y1="0" x2="0" y2="1">
@@ -899,17 +903,17 @@ export const StackedBarChart2D: React.FC<{ data: GroupedChartData[]; orientation
 
   return (
     <ResponsiveContainer width="100%" height={380}>
-      <RBarChart data={rows} margin={{ top: 10, right: 20, left: 10, bottom: 10 }}>
+      <RBarChart data={rows} margin={{ top: 10, right: 20, left: 10, bottom: 5 }}>
         <CartesianGrid strokeDasharray="3 3" stroke={gridStroke} vertical={false} />
         <XAxis dataKey="name" tick={axisTickStyle} tickLine={axisLineStyle} axisLine={axisLineStyle}
-          interval={0} angle={-45} textAnchor="end" height={100}
-          tickFormatter={(v: string) => v.length > 16 ? v.slice(0, 16) + '…' : v} />
+          interval="preserveStartEnd"
+          tickFormatter={formatXTick} />
         <YAxis tick={axisTickStyle} tickLine={axisLineStyle} axisLine={axisLineStyle} tickFormatter={compactFormatter(unit)} width={50} />
         <Tooltip content={<AnalyticsTooltip drillIntoQuery={drillIntoQuery} />} cursor={{ fill: 'rgba(99,102,241,0.06)' }} />
         <Legend iconType="circle" iconSize={8}
           formatter={(value: string) => <span style={{ fontSize: 11, color: 'var(--text-secondary)' }}>{value}</span>} />
         {groupNames.map(name => (
-          <Bar key={name} dataKey={name} fill={colorMap[name]} stackId="stack" radius={[3, 3, 0, 0]} maxBarSize={40} animationDuration={400}
+          <Bar key={name} dataKey={name} fill={colorMap[name]} stackId="stack" radius={[2, 2, 0, 0]} maxBarSize={16} animationDuration={400}
             stroke="var(--bg-primary, #030712)" strokeWidth={1}
             cursor={onDrillDown ? 'pointer' : undefined}
             // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -931,8 +935,8 @@ export const GroupedLineChart2D: React.FC<{ data: GroupedChartData[]; onDrillDow
       <RLineChart data={rows} margin={{ top: 10, right: 20, left: 10, bottom: 5 }}
         style={onDrillDown ? { cursor: 'pointer' } : undefined}
         onClick={onDrillDown ? (e: any) => { if (e?.activeLabel) onDrillDown({ label: e.activeLabel, value: 0 }); } : undefined}
-        onMouseMove={onTimestampHover ? (e: any) => { if (e?.activeLabel) onTimestampHover(e.activeLabel); } : undefined}
-        onMouseLeave={onTimestampHover ? () => onTimestampHover(null) : undefined}
+        onMouseMove={(e: any) => { _crosshairMouseY = e?.chartY ?? null; if (onTimestampHover && e?.activeLabel) onTimestampHover(e.activeLabel); }}
+        onMouseLeave={() => { _crosshairMouseY = null; if (onTimestampHover) onTimestampHover(null); }}
       >
         <CartesianGrid strokeDasharray="3 3" stroke={gridStroke} />
         <XAxis dataKey="name" tick={axisTickStyle} tickLine={axisLineStyle} axisLine={axisLineStyle}

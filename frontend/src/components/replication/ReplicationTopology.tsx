@@ -6,20 +6,24 @@
  * Below it, compact 2D panels show data distribution, keeper sync state, and recovery guides.
  */
 
-import React, { useEffect, useState, useMemo, useRef } from 'react';
+import React, { useEffect, useState, useMemo, useRef, useCallback } from 'react';
 import { Canvas, useFrame } from '@react-three/fiber';
 import { Html, OrbitControls } from '@react-three/drei';
 import * as THREE from 'three';
 import { useClickHouseServices } from '../../providers/ClickHouseProvider';
 import { useConnectionStore } from '../../stores/connectionStore';
 import { useClusterStore } from '../../stores/clusterStore';
-import { ReplicationService, classifyReplicaHealth } from '@tracehouse/core';
+import { ReplicationService, classifyReplicaHealth, classifyDelaySeverity, tagQuery, buildQuery, sourceTag, GET_ZK_CHILDREN, mapZkChildNode } from '@tracehouse/core';
 import type {
   ShardPartitionDist,
   TopologyShard,
   TopologyReplica,
   ReplicationTopologyData,
   TopologyQueueEntry,
+  KeeperTableInfo,
+  KeeperConnection,
+  DistributionQueueEntry,
+  ZkChildNode,
 } from '@tracehouse/core';
 import { ErrorBoundary3D } from '../3d/ErrorBoundary3D';
 import { useThemeDetection } from '../../hooks/useThemeDetection';
@@ -70,6 +74,72 @@ const HoverRow: React.FC<{ label: string; value: string; theme: 'dark' | 'light'
   </div>
 );
 
+// ── 3D: Replica Queue Block (hoverable, shows operation type) ──
+
+const ReplicaQueueBlock: React.FC<{
+  position: [number, number, number];
+  size: [number, number, number];
+  color: { main: string; edge: string; glow: string };
+  entry: TopologyQueueEntry;
+  isExec: boolean;
+  hasErr: boolean;
+  theme: 'dark' | 'light';
+}> = ({ position, size, color, entry, isExec, hasErr, theme }) => {
+  const [hovered, setHovered] = useState(false);
+  return (
+    <group>
+      <mesh
+        position={position}
+        onPointerOver={(e) => { e.stopPropagation(); setHovered(true); document.body.style.cursor = 'pointer'; }}
+        onPointerOut={(e) => { e.stopPropagation(); setHovered(false); document.body.style.cursor = 'auto'; }}
+      >
+        <boxGeometry args={size} />
+        <meshStandardMaterial
+          color={color.main}
+          emissive={color.main}
+          emissiveIntensity={hovered ? 0.8 : isExec ? 0.5 : 0.3}
+          transparent opacity={0.9}
+          metalness={0.2} roughness={0.3}
+        />
+      </mesh>
+      {hovered && (
+        <Html position={[position[0] + size[0] / 2 + 0.1, position[1], position[2]]} center style={{ pointerEvents: 'none', zIndex: 1000 }}>
+          <div style={{
+            background: theme === 'light' ? 'rgba(255,255,255,0.95)' : 'rgba(15,23,42,0.95)',
+            padding: '6px 10px', borderRadius: 4,
+            border: `1px solid ${color.edge}60`,
+            backdropFilter: 'blur(12px)', transform: 'scale(0.8)',
+            whiteSpace: 'nowrap', minWidth: 120,
+          }}>
+            <div style={{ fontSize: 10, fontWeight: 600, fontFamily: 'monospace', color: color.glow, marginBottom: 3 }}>
+              {entry.type}
+              <span style={{ fontSize: 8, marginLeft: 4, padding: '0 3px', borderRadius: 2,
+                backgroundColor: hasErr ? `${COLORS_3D.error.main}30` : isExec ? `${COLORS_3D.healthy.main}30` : `${COLORS_3D.lag.main}30`,
+                color: hasErr ? COLORS_3D.error.main : isExec ? COLORS_3D.healthy.main : COLORS_3D.lag.main,
+              }}>
+                {hasErr ? 'ERROR' : isExec ? 'RUNNING' : 'PENDING'}
+              </span>
+            </div>
+            <div style={{ fontSize: 9, fontFamily: 'monospace', color: theme === 'light' ? 'rgba(0,0,0,0.6)' : 'rgba(255,255,255,0.6)', overflow: 'hidden', textOverflow: 'ellipsis', maxWidth: 200 }}>
+              {entry.new_part_name}
+            </div>
+            {entry.num_tries > 1 && (
+              <div style={{ fontSize: 8, color: COLORS_3D.lag.main, marginTop: 2 }}>
+                {entry.num_tries} tries
+              </div>
+            )}
+            {entry.last_exception && (
+              <div style={{ fontSize: 8, color: COLORS_3D.error.main, marginTop: 2, maxWidth: 220, wordBreak: 'break-all' }}>
+                {entry.last_exception.slice(0, 120)}
+              </div>
+            )}
+          </div>
+        </Html>
+      )}
+    </group>
+  );
+};
+
 // ── 3D: Replica Node Box ──
 
 const ReplicaNodeBox: React.FC<{
@@ -109,6 +179,7 @@ const ReplicaNodeBox: React.FC<{
   useFrame((state) => {
     if (!meshRef.current) return;
     if (!hasData) return; // no bobbing for empty replicas
+    if (myQueue.length > 0) return; // no bobbing when work is pending — blocks are grounded
     const t = state.clock.elapsedTime;
     meshRef.current.position.y = position[1] + Math.sin(t * 0.6 + position[0] * 2) * 0.04;
   });
@@ -156,6 +227,28 @@ const ReplicaNodeBox: React.FC<{
         <boxGeometry args={[size[0] * 1.08, 0.06, size[2] * 1.08]} />
         <meshBasicMaterial color={color.main} transparent opacity={hasData ? 0.8 : 0.15} />
       </mesh>
+
+      {/* Replication queue blocks — stacked up from ground directly under replica */}
+      {myQueue.length > 0 && (
+        <group position={[0, 0, 0]}>
+          {myQueue.slice(0, 5).map((entry, i) => {
+            const isExec = Number(entry.is_currently_executing) === 1;
+            const hasErr = !!entry.last_exception;
+            const qColor = hasErr ? COLORS_3D.error : isExec ? COLORS_3D.healthy : COLORS_3D.lag;
+            const bSize: [number, number, number] = [size[0] * 0.55, 0.05, size[2] * 0.55];
+            // Stack upward from ground
+            const y = 0.07 + i * (bSize[1] + 0.02) + bSize[1] / 2;
+            return (
+              <ReplicaQueueBlock key={i} position={[0, y, 0]} size={bSize} color={qColor} entry={entry} isExec={isExec} hasErr={hasErr} theme={theme} />
+            );
+          })}
+          {myQueue.length > 5 && (
+            <Html position={[0, 0.07 + 5 * 0.07 + 0.08, 0]} center style={{ pointerEvents: 'none' }}>
+              <span style={{ fontSize: 7, color: 'rgba(255,255,255,0.5)', fontFamily: 'monospace' }}>+{myQueue.length - 5}</span>
+            </Html>
+          )}
+        </group>
+      )}
 
       {/* Always-visible info card above node */}
       <Html
@@ -349,8 +442,10 @@ const ShardEnclosure3D: React.FC<{
 const KeeperNode3D: React.FC<{
   position: [number, number, number];
   logHead: number;
+  keeperInfo: KeeperTableInfo | null;
+  keeperConnections: KeeperConnection[];
   theme: 'dark' | 'light';
-}> = ({ position, logHead, theme }) => {
+}> = ({ position, logHead, keeperInfo, keeperConnections, theme }) => {
   const meshRef = useRef<THREE.Mesh>(null);
   const [hovered, setHovered] = useState(false);
   const size: [number, number, number] = [0.6, 0.3, 0.3];
@@ -369,6 +464,8 @@ const KeeperNode3D: React.FC<{
     meshRef.current.position.y = position[1] + Math.sin(t * 0.5 + 1) * 0.03;
   });
 
+  const hasIssues = keeperConnections.some(c => c.isExpired === 1);
+
   return (
     <group position={[position[0], 0, position[2]]}>
       <mesh
@@ -378,20 +475,20 @@ const KeeperNode3D: React.FC<{
       >
         <boxGeometry args={size} />
         <meshPhysicalMaterial
-          color={color.main} metalness={0.1} roughness={0.05}
+          color={hasIssues ? COLORS_3D.error.main : color.main} metalness={0.1} roughness={0.05}
           transmission={0.5} thickness={1.5} transparent
           opacity={hovered ? 0.85 : 0.65}
-          emissive={color.main} emissiveIntensity={hovered ? 0.4 : 0.15}
+          emissive={hasIssues ? COLORS_3D.error.main : color.main} emissiveIntensity={hovered ? 0.4 : 0.15}
           clearcoat={1} clearcoatRoughness={0.1} ior={1.5}
         />
       </mesh>
       <lineSegments position={[0, position[1], 0]}>
         <primitive object={edgesGeometry} attach="geometry" />
-        <lineBasicMaterial color={color.edge} transparent opacity={hovered ? 1 : 0.7} />
+        <lineBasicMaterial color={hasIssues ? COLORS_3D.error.edge : color.edge} transparent opacity={hovered ? 1 : 0.7} />
       </lineSegments>
       <mesh position={[0, 0.04, 0]}>
         <boxGeometry args={[size[0] * 1.08, 0.06, size[2] * 1.08]} />
-        <meshBasicMaterial color={color.main} transparent opacity={0.8} />
+        <meshBasicMaterial color={hasIssues ? COLORS_3D.error.main : color.main} transparent opacity={0.8} />
       </mesh>
 
       {/* Always-visible keeper label */}
@@ -400,11 +497,14 @@ const KeeperNode3D: React.FC<{
         center style={{ pointerEvents: 'none', whiteSpace: 'nowrap' }}
       >
         <div style={{ textAlign: 'center', transform: 'scale(0.8)' }}>
-          <div style={{ fontSize: 9, fontFamily: 'ui-monospace, monospace', fontWeight: 600, color: color.glow, textShadow: `0 0 6px ${color.main}` }}>
+          <div style={{ fontSize: 9, fontFamily: 'ui-monospace, monospace', fontWeight: 600, color: hasIssues ? COLORS_3D.error.glow : color.glow, textShadow: `0 0 6px ${hasIssues ? COLORS_3D.error.main : color.main}` }}>
             Keeper
+            {hasIssues && <span style={{ fontSize: 7, padding: '0 3px', marginLeft: 3, borderRadius: 2, backgroundColor: `${COLORS_3D.error.main}30`, color: COLORS_3D.error.main }}>EXPIRED</span>}
           </div>
-          <div style={{ fontSize: 8, color: 'rgba(167,139,250,0.7)' }}>
-            log: {logHead.toLocaleString()}
+          <div style={{ display: 'flex', gap: 6, justifyContent: 'center', fontSize: 8, color: 'rgba(167,139,250,0.7)' }}>
+            <span>log: {logHead.toLocaleString()}</span>
+            {keeperInfo && keeperInfo.mutations > 0 && <span style={{ color: COLORS_3D.lag.main }}>{keeperInfo.mutations} mut</span>}
+            {keeperInfo && <span>{keeperInfo.blocks.toLocaleString()} blk</span>}
           </div>
         </div>
       </Html>
@@ -414,17 +514,228 @@ const KeeperNode3D: React.FC<{
           <div style={{
             background: theme === 'light' ? 'rgba(255,255,255,0.95)' : 'rgba(15,23,42,0.92)',
             padding: '10px 14px', borderRadius: 4,
-            border: `1px solid ${color.edge}50`, minWidth: 140,
+            border: `1px solid ${color.edge}50`, minWidth: 200,
             backdropFilter: 'blur(12px)', transform: 'scale(0.85)',
           }}>
-            <div style={{ fontSize: 12, fontWeight: 600, fontFamily: 'monospace', color: color.glow, marginBottom: 4 }}>
+            <div style={{ fontSize: 12, fontWeight: 600, fontFamily: 'monospace', color: color.glow, marginBottom: 6, paddingBottom: 6, borderBottom: `1px solid ${color.edge}30` }}>
               Keeper
             </div>
-            <HoverRow label="Log head" value={logHead.toLocaleString()} theme={theme} />
+            <div style={{ display: 'flex', flexDirection: 'column', gap: 3 }}>
+              <HoverRow label="Log head" value={logHead.toLocaleString()} theme={theme} />
+              {keeperInfo && (
+                <>
+                  <HoverRow label="Log entries" value={keeperInfo.logEntries.toLocaleString()} theme={theme} />
+                  <HoverRow label="Mutations" value={keeperInfo.mutations.toLocaleString()} theme={theme}
+                    color={keeperInfo.mutations > 0 ? COLORS_3D.lag.main : undefined} />
+                  <HoverRow label="Dedup blocks" value={keeperInfo.blocks.toLocaleString()} theme={theme} />
+                  <HoverRow label="Replicas (ZK)" value={keeperInfo.registeredReplicas.toLocaleString()} theme={theme} />
+                  {keeperInfo.hasQuorum && (
+                    <HoverRow label="Insert quorum" value="active" theme={theme} color={COL.blue} />
+                  )}
+                </>
+              )}
+            </div>
+            {keeperConnections.length > 0 && (
+              <div style={{ marginTop: 6, paddingTop: 6, borderTop: `1px solid ${color.edge}30` }}>
+                <div style={{ fontSize: 9, color: theme === 'light' ? 'rgba(0,0,0,0.45)' : 'rgba(255,255,255,0.45)', marginBottom: 3 }}>Connections</div>
+                {keeperConnections.map((c, i) => (
+                  <div key={i} style={{ fontSize: 9, display: 'flex', gap: 4, alignItems: 'center', marginBottom: 2 }}>
+                    <span style={{ width: 5, height: 5, borderRadius: '50%', backgroundColor: c.isExpired ? COLORS_3D.error.main : COLORS_3D.healthy.main, flexShrink: 0 }} />
+                    <span style={{ color: theme === 'light' ? 'rgba(0,0,0,0.7)' : 'rgba(255,255,255,0.7)', fontFamily: 'monospace' }}>
+                      {c.host}:{c.port}
+                    </span>
+                    {c.isExpired === 1 && <span style={{ color: COLORS_3D.error.main, fontWeight: 600 }}>EXPIRED</span>}
+                  </div>
+                ))}
+              </div>
+            )}
+            {keeperInfo && (
+              <div style={{ marginTop: 6, paddingTop: 6, borderTop: `1px solid ${color.edge}30` }}>
+                <div style={{ fontSize: 8, fontFamily: 'monospace', color: theme === 'light' ? 'rgba(0,0,0,0.35)' : 'rgba(255,255,255,0.35)', wordBreak: 'break-all' }}>
+                  {keeperInfo.zkPath}
+                </div>
+              </div>
+            )}
           </div>
         </Html>
       )}
     </group>
+  );
+};
+
+// ── 3D: Distribution Queue (between shards) ──
+
+const DistributionQueue3D: React.FC<{
+  position: [number, number, number];
+  entries: DistributionQueueEntry[];
+  shardCenters: [number, number, number][];
+  theme: 'dark' | 'light';
+}> = ({ position, entries, shardCenters, theme }) => {
+  const [hovered, setHovered] = useState(false);
+
+  // Aggregate across entries
+  const agg = useMemo(() => {
+    let files = 0, bytes = 0, errors = 0, broken = 0, blocked = false, exception = '';
+    for (const e of entries) {
+      files += e.dataFiles;
+      bytes += e.dataCompressedBytes;
+      errors += e.errorCount;
+      broken += e.brokenDataFiles;
+      if (e.isBlocked) blocked = true;
+      if (!exception && e.lastException) exception = e.lastException;
+    }
+    return { files, bytes, errors, broken, blocked, exception };
+  }, [entries]);
+
+  const hasActivity = agg.files > 0 || agg.errors > 0 || agg.broken > 0;
+  const hasErrors = agg.blocked || agg.broken > 0;
+  const color = hasErrors ? COLORS_3D.error : hasActivity ? COLORS_3D.lag : COLORS_3D.keeper;
+
+  // Single box — height scales with file count (log scale so it doesn't explode)
+  const baseW = 0.35;
+  const baseD = 0.35;
+  const minH = 0.12;
+  const maxH = 0.6;
+  const h = agg.files > 0 ? Math.min(minH + Math.log2(1 + agg.files) * 0.06, maxH) : minH;
+  const boxSize: [number, number, number] = [baseW, h, baseD];
+
+  const lineColor = theme === 'light' ? '#94a3b8' : '#475569';
+
+  if (!hasActivity && entries.length === 0) return null;
+
+  const edgesGeo = useMemo(() => {
+    const geo = new THREE.BoxGeometry(boxSize[0] * 1.002, boxSize[1] * 1.002, boxSize[2] * 1.002);
+    return new THREE.EdgesGeometry(geo, 1);
+  }, [boxSize]);
+
+  useEffect(() => () => { edgesGeo.dispose(); }, [edgesGeo]);
+
+  return (
+    <group position={[position[0], 0, position[2]]}>
+      {/* Single aggregate box */}
+      <mesh
+        position={[0, position[1] + h / 2, 0]}
+        onPointerOver={(e) => { e.stopPropagation(); setHovered(true); document.body.style.cursor = 'pointer'; }}
+        onPointerOut={(e) => { e.stopPropagation(); setHovered(false); document.body.style.cursor = 'auto'; }}
+      >
+        <boxGeometry args={boxSize} />
+        <meshPhysicalMaterial
+          color={color.main} metalness={0.1} roughness={0.05}
+          transmission={0.4} thickness={1.5} transparent
+          opacity={hovered ? 0.85 : 0.65}
+          emissive={color.main} emissiveIntensity={hovered ? 0.4 : 0.2}
+          clearcoat={1} clearcoatRoughness={0.1} ior={1.5}
+        />
+      </mesh>
+      <lineSegments position={[0, position[1] + h / 2, 0]}>
+        <primitive object={edgesGeo} attach="geometry" />
+        <lineBasicMaterial color={color.edge} transparent opacity={hovered ? 1 : 0.6} />
+      </lineSegments>
+
+      {/* Base pad */}
+      <mesh position={[0, 0.02, 0]}>
+        <boxGeometry args={[baseW * 1.15, 0.03, baseD * 1.15]} />
+        <meshBasicMaterial color={color.main} transparent opacity={0.3} />
+      </mesh>
+
+      {/* Label */}
+      <Html
+        position={[0, position[1] + h + 0.15, 0]}
+        center style={{ pointerEvents: 'none', whiteSpace: 'nowrap' }}
+      >
+        <div style={{ textAlign: 'center', transform: 'scale(0.8)' }}>
+          <div style={{ fontSize: 9, fontFamily: 'ui-monospace, monospace', fontWeight: 600, color: color.glow, textShadow: `0 0 6px ${color.main}` }}>
+            Dist Queue
+          </div>
+          <div style={{ fontSize: 8, color: `${color.glow}99` }}>
+            {agg.files > 0 ? `${agg.files} files` : agg.errors > 0 ? `${agg.errors} err` : 'empty'}
+            {agg.broken > 0 && <span style={{ color: COLORS_3D.error.main, marginLeft: 4 }}>{agg.broken} broken</span>}
+          </div>
+        </div>
+      </Html>
+
+      {/* Dashed lines to shards */}
+      {shardCenters.map((sp, i) => {
+        const geometry = new THREE.BufferGeometry().setFromPoints([
+          new THREE.Vector3(position[0], 0.08, position[2]),
+          new THREE.Vector3(sp[0], 0.08, sp[2]),
+        ]);
+        return (
+          <lineSegments key={`dist-line-${i}`} position={[-position[0], 0, -position[2]]}>
+            <primitive object={geometry} attach="geometry" />
+            <lineDashedMaterial color={hasActivity ? color.main : lineColor} transparent opacity={hasActivity ? 0.4 : 0.15} dashSize={0.1} gapSize={0.08} />
+          </lineSegments>
+        );
+      })}
+
+      {/* Hover card */}
+      {hovered && (
+        <Html position={[0, position[1] + 0.6, 0.3]} center style={{ pointerEvents: 'none', zIndex: 1000 }}>
+          <div style={{
+            background: theme === 'light' ? 'rgba(255,255,255,0.95)' : 'rgba(15,23,42,0.92)',
+            padding: '10px 14px', borderRadius: 4,
+            border: `1px solid ${color.edge}50`, minWidth: 180,
+            backdropFilter: 'blur(12px)', transform: 'scale(0.85)',
+          }}>
+            <div style={{ fontSize: 12, fontWeight: 600, fontFamily: 'monospace', color: color.glow, marginBottom: 6, paddingBottom: 6, borderBottom: `1px solid ${color.edge}30` }}>
+              Distribution Queue
+              {agg.blocked && <span style={{ fontSize: 9, padding: '0 4px', marginLeft: 6, borderRadius: 3, backgroundColor: `${COLORS_3D.error.main}30`, color: COLORS_3D.error.main }}>BLOCKED</span>}
+            </div>
+            <div style={{ display: 'flex', flexDirection: 'column', gap: 3 }}>
+              <HoverRow label="Pending files" value={String(agg.files)} theme={theme} color={agg.files > 0 ? COLORS_3D.lag.main : undefined} />
+              <HoverRow label="Compressed" value={formatBytes(agg.bytes)} theme={theme} />
+              <HoverRow label="Errors" value={String(agg.errors)} theme={theme} color={agg.errors > 0 ? COLORS_3D.error.main : undefined} />
+              <HoverRow label="Broken files" value={String(agg.broken)} theme={theme} color={agg.broken > 0 ? COLORS_3D.error.main : undefined} />
+            </div>
+            {agg.exception && (
+              <div style={{ marginTop: 6, paddingTop: 6, borderTop: `1px solid ${color.edge}30`, fontSize: 9, color: COLORS_3D.error.main, fontFamily: 'monospace', wordBreak: 'break-all', maxWidth: 250 }}>
+                {agg.exception.slice(0, 200)}
+              </div>
+            )}
+          </div>
+        </Html>
+      )}
+    </group>
+  );
+};
+
+// ── 3D: Table Name Label ──
+
+const TableNameLabel3D: React.FC<{
+  position: [number, number, number];
+  label: string;
+  width: number;
+  theme: 'dark' | 'light';
+}> = ({ position, label, width, theme }) => {
+  const labelTexture = useMemo(() => {
+    const canvas = document.createElement('canvas');
+    canvas.width = 2048; canvas.height = 256;
+    const ctx = canvas.getContext('2d')!;
+    ctx.clearRect(0, 0, canvas.width, canvas.height);
+    const textFill = theme === 'light' ? '#90b8e0' : '#80c0ff';
+    ctx.shadowColor = theme === 'dark' ? 'rgba(100,180,255,0.5)' : 'rgba(0,0,0,0)';
+    ctx.shadowBlur = 20;
+    ctx.font = 'bold 100px ui-monospace, "SF Mono", "Cascadia Code", monospace';
+    ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
+    ctx.fillStyle = textFill;
+    ctx.fillText(label, canvas.width / 2, canvas.height / 2);
+    ctx.shadowBlur = 0;
+    ctx.fillText(label, canvas.width / 2, canvas.height / 2);
+    const tex = new THREE.CanvasTexture(canvas);
+    tex.anisotropy = 16;
+    return tex;
+  }, [label, theme]);
+
+  useEffect(() => () => { labelTexture.dispose(); }, [labelTexture]);
+
+  const planeW = Math.max(width, 3);
+  const planeH = 0.4;
+
+  return (
+    <mesh rotation={[-Math.PI / 2, 0, 0]} position={position}>
+      <planeGeometry args={[planeW, planeH]} />
+      <meshBasicMaterial map={labelTexture} transparent opacity={1} depthWrite={false} />
+    </mesh>
   );
 };
 
@@ -529,7 +840,14 @@ function computeReplicaLayout(shards: TopologyShard[]) {
   const keeperZ = maxEncD / 2 + 1.5;
   const keeperPos: [number, number, number] = [0, 0.25, keeperZ];
 
-  return { shardLayouts, keeperPos, totalWidth, nodeSize };
+  // Distribution queue position — centered between shards
+  const distQueuePos: [number, number, number] = [0, 0.15, 0];
+
+  // Table name label between shards and keeper (positive Z, in front of shards)
+  const tableLabelZ = maxEncD / 2 + 0.7;
+  const tableLabelPos: [number, number, number] = [0, 0.012, tableLabelZ];
+
+  return { shardLayouts, keeperPos, distQueuePos, tableLabelPos, totalWidth, nodeSize };
 }
 
 const ReplicaScene: React.FC<{
@@ -566,7 +884,23 @@ const ReplicaScene: React.FC<{
         </React.Fragment>
       ))}
 
-      <KeeperNode3D position={layout.keeperPos} logHead={data.logHead} theme={theme} />
+      <KeeperNode3D position={layout.keeperPos} logHead={data.logHead} keeperInfo={data.keeperInfo} keeperConnections={data.keeperConnections} theme={theme} />
+
+      {data.distributionQueue.length > 0 && (
+        <DistributionQueue3D
+          position={layout.distQueuePos}
+          entries={data.distributionQueue}
+          shardCenters={layout.shardLayouts.map(s => s.center)}
+          theme={theme}
+        />
+      )}
+
+      <TableNameLabel3D
+        position={layout.tableLabelPos}
+        label={`${data.database}.${data.table}`}
+        width={layout.totalWidth}
+        theme={theme}
+      />
 
       <ConnectionLines3D
         shardCenters={layout.shardLayouts.map(s => s.center)}
@@ -659,24 +993,26 @@ const SyncStatus: React.FC<{ shards: TopologyShard[]; logHead: number }> = ({ sh
           <span style={{ fontFamily: 'monospace', fontWeight: 400, marginLeft: 8 }}>log head: {logHead.toLocaleString()}</span>
         )}
       </div>
-      <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6 }}>
+      <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 5 }}>
         {allReplicas.map(r => {
-          const isBehind = r.info.absolute_delay > 0;
+          const delay = r.info.absolute_delay;
           const behind = logHead - r.info.log_pointer;
-          const color = isBehind ? COL.amber : COL.green;
-          const bgColor = isBehind ? COL.amberBg : COL.greenBg;
+          const severity = classifyDelaySeverity(delay);
+          const color = severity === 'critical' ? COL.red : severity === 'lagging' ? COL.amber : COL.green;
+          const bgColor = severity === 'critical' ? COL.redBg : severity === 'lagging' ? COL.amberBg : COL.greenBg;
+          const shortName = r.info.hostname.replace(/^chi-[a-z]+-[a-z]+-/, '').replace(/-0$/, '');
+          const tooltip = r.info.hostname + (delay > 0 ? ` · ${formatDelay(delay)}${behind > 0 ? ` (log -${behind})` : ''}` : ' · in sync');
           return (
-            <span key={r.info.replica_name} style={{
+            <span key={r.info.replica_name} title={tooltip} style={{
               display: 'inline-flex', alignItems: 'center', gap: 5,
               padding: '3px 8px', borderRadius: 4, fontSize: 10,
               backgroundColor: bgColor, border: `1px solid ${color}30`,
+              cursor: 'help', overflow: 'hidden',
             }}>
               <span style={{ width: 6, height: 6, borderRadius: '50%', backgroundColor: color, flexShrink: 0 }} />
-              <span style={{ fontFamily: 'monospace', color: COL.primary }}>{r.info.hostname}</span>
-              {isBehind && (
-                <span style={{ color: COL.amber, fontFamily: 'monospace', fontSize: 9 }}>
-                  {formatDelay(r.info.absolute_delay)}{behind > 0 ? ` (log -${behind})` : ''}
-                </span>
+              <span style={{ fontFamily: 'monospace', color: COL.primary, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{shortName}</span>
+              {delay > 0 && (
+                <span style={{ color, fontFamily: 'monospace', fontSize: 9, flexShrink: 0 }}>{formatDelay(delay)}</span>
               )}
             </span>
           );
@@ -686,6 +1022,265 @@ const SyncStatus: React.FC<{ shards: TopologyShard[]; logHead: number }> = ({ sh
   );
 };
 
+
+// ── 2D: Replication Queue Panel ──
+
+const ReplicationQueuePanel: React.FC<{
+  queueEntries: TopologyQueueEntry[];
+}> = ({ queueEntries }) => {
+  if (queueEntries.length === 0) {
+    return (
+      <div>
+        <div style={{ fontSize: 10, fontWeight: 500, color: COL.muted, marginBottom: 6 }}>Replication Queue</div>
+        <div style={{ fontSize: 10, color: COL.muted }}>Empty — all replicas in sync</div>
+      </div>
+    );
+  }
+
+  // Group by type, count executing and errors
+  const byType = new Map<string, { total: number; executing: number; errors: number }>();
+  let totalErrors = 0;
+  for (const e of queueEntries) {
+    const existing = byType.get(e.type) || { total: 0, executing: 0, errors: 0 };
+    existing.total++;
+    if (Number(e.is_currently_executing) === 1) existing.executing++;
+    if (e.last_exception) { existing.errors++; totalErrors++; }
+    byType.set(e.type, existing);
+  }
+
+  const sorted = [...byType.entries()].sort((a, b) => b[1].total - a[1].total);
+
+  return (
+    <div>
+      <div style={{ display: 'flex', alignItems: 'center', gap: 6, fontSize: 10, fontWeight: 500, color: COL.muted, marginBottom: 6 }}>
+        Replication Queue
+        <span style={{ fontFamily: 'monospace', fontWeight: 600, color: totalErrors > 0 ? COL.red : COL.primary }}>
+          {queueEntries.length}
+        </span>
+        {totalErrors > 0 && (
+          <span style={{ fontSize: 8, padding: '0 4px', borderRadius: 2, backgroundColor: `${COL.red}20`, color: COL.red }}>
+            {totalErrors} err
+          </span>
+        )}
+      </div>
+      {sorted.map(([type, stats]) => (
+        <div key={type} style={{ display: 'flex', alignItems: 'center', gap: 6, fontSize: 10, padding: '2px 0' }}>
+          <span style={{ fontFamily: 'monospace', color: 'var(--text-primary)', minWidth: 100 }}>{type}</span>
+          <span style={{ fontFamily: 'monospace', color: COL.muted }}>{stats.total}</span>
+          {stats.executing > 0 && (
+            <span style={{ fontSize: 9, color: COL.green }}>{stats.executing} running</span>
+          )}
+          {stats.errors > 0 && (
+            <span style={{ fontSize: 9, color: COL.red }}>{stats.errors} err</span>
+          )}
+        </div>
+      ))}
+    </div>
+  );
+};
+
+// ── 2D: Keeper & Distribution Panel ──
+
+const KeeperPanel: React.FC<{
+  keeperInfo: KeeperTableInfo | null;
+  keeperConnections: KeeperConnection[];
+  distributionQueue: DistributionQueueEntry[];
+  onFetchZkChildren?: (subPath: string) => Promise<ZkChildNode[]>;
+}> = ({ keeperInfo, keeperConnections, distributionQueue, onFetchZkChildren }) => {
+  const [keeperExpanded, setKeeperExpanded] = useState(false);
+  const [expandedPath, setExpandedPath] = useState<string | null>(null);
+  const [zkChildren, setZkChildren] = useState<ZkChildNode[]>([]);
+  const [zkLoading, setZkLoading] = useState(false);
+
+  const toggleExpand = (subPath: string) => {
+    if (expandedPath === subPath) { setExpandedPath(null); return; }
+    if (!onFetchZkChildren) return;
+    setExpandedPath(subPath);
+    setZkLoading(true);
+    onFetchZkChildren(subPath).then(setZkChildren).catch(() => setZkChildren([])).finally(() => setZkLoading(false));
+  };
+
+  // Aggregate distribution queue per table and hide empty entries
+  const distQueueAgg = useMemo(() => {
+    const map = new Map<string, { key: string; totalFiles: number; totalBytes: number; totalBroken: number; totalErrors: number; blocked: boolean; lastException: string }>();
+    for (const e of distributionQueue) {
+      const key = `${e.database}.${e.table}`;
+      const existing = map.get(key);
+      if (existing) {
+        existing.totalFiles += e.dataFiles;
+        existing.totalBytes += e.dataCompressedBytes;
+        existing.totalBroken += e.brokenDataFiles;
+        existing.totalErrors += e.errorCount;
+        if (e.isBlocked === 1) existing.blocked = true;
+        if (e.lastException && !existing.lastException) existing.lastException = e.lastException;
+      } else {
+        map.set(key, {
+          key,
+          totalFiles: e.dataFiles,
+          totalBytes: e.dataCompressedBytes,
+          totalBroken: e.brokenDataFiles,
+          totalErrors: e.errorCount,
+          blocked: e.isBlocked === 1,
+          lastException: e.lastException,
+        });
+      }
+    }
+    return [...map.values()].filter(e => e.totalFiles > 0 || e.totalErrors > 0 || e.totalBroken > 0 || e.blocked);
+  }, [distributionQueue]);
+
+  const hasDistQueue = distQueueAgg.length > 0;
+  const hasKeeperData = keeperInfo || keeperConnections.length > 0;
+  if (!hasKeeperData && !hasDistQueue) return null;
+
+  const hasKeeperIssues = keeperConnections.some(c => c.isExpired === 1) || (keeperInfo?.mutations ?? 0) > 0;
+
+  return (
+    <div>
+      {/* Keeper State — stats always visible, connection/path expandable */}
+      {hasKeeperData && (
+        <div style={{ marginBottom: hasDistQueue ? 10 : 0 }}>
+          <div style={{ fontSize: 10, fontWeight: 500, color: COL.muted, marginBottom: 6 }}>
+            Keeper State
+          </div>
+
+          {/* Stats grid — always visible, clickable to browse ZK */}
+          {keeperInfo && (
+            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: '2px 12px', marginBottom: expandedPath ? 0 : 6, fontSize: 10 }}>
+              {([
+                { label: 'Log entries', value: keeperInfo.logEntries.toLocaleString(), color: keeperInfo.logEntries > 10000 ? COL.amber : undefined, expand: 'log' },
+                { label: 'Mutations', value: String(keeperInfo.mutations), color: keeperInfo.mutations > 0 ? COL.amber : undefined, expand: keeperInfo.mutations > 0 ? 'mutations' : undefined },
+                { label: 'Dedup blocks', value: keeperInfo.blocks.toLocaleString() },
+                { label: 'Replicas in ZK', value: String(keeperInfo.registeredReplicas), expand: 'replicas' },
+                ...(keeperInfo.hasQuorum ? [{ label: 'Insert quorum', value: 'active', color: COL.blue }] : []),
+              ] as { label: string; value: string; color?: string; expand?: string }[]).map(({ label, value, color, expand }) => (
+                <div key={label}
+                  onClick={expand && onFetchZkChildren ? () => toggleExpand(expand) : undefined}
+                  style={{
+                    display: 'flex', justifyContent: 'space-between', padding: '2px 4px', borderRadius: 3,
+                    cursor: expand && onFetchZkChildren ? 'pointer' : 'default',
+                    backgroundColor: expandedPath === expand ? 'rgba(167,139,250,0.1)' : undefined,
+                  }}>
+                  <span style={{ color: COL.muted }}>{label}</span>
+                  <span style={{ fontFamily: 'monospace', fontWeight: 600, color: color ?? 'var(--text-primary)' }}>{value}</span>
+                </div>
+              ))}
+            </div>
+          )}
+
+          {/* Expanded ZK children */}
+          {expandedPath && keeperInfo && (
+            <div style={{ marginBottom: 6, padding: '6px 4px', borderRadius: 4, backgroundColor: 'rgba(167,139,250,0.05)', border: `1px solid ${COL.purple}20` }}>
+              <div style={{ fontSize: 9, color: COL.muted, marginBottom: 4, display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                <span>{keeperInfo.zkPath}/{expandedPath}</span>
+                <span style={{ cursor: 'pointer', color: COL.muted, fontSize: 10, padding: '0 4px' }} onClick={() => setExpandedPath(null)}>x</span>
+              </div>
+              {zkLoading ? (
+                <div style={{ fontSize: 9, color: COL.muted }}>Loading...</div>
+              ) : zkChildren.length === 0 ? (
+                <div style={{ fontSize: 9, color: COL.muted }}>Empty</div>
+              ) : (
+                <div style={{ maxHeight: 160, overflowY: 'auto', fontSize: 9 }}>
+                  <table style={{ width: '100%', borderCollapse: 'separate', borderSpacing: 0 }}>
+                    <thead>
+                      <tr>
+                        <th style={{ textAlign: 'left', color: COL.muted, fontWeight: 500, padding: '1px 4px', position: 'sticky', top: 0, background: 'var(--bg-card)' }}>Name</th>
+                        <th style={{ textAlign: 'left', color: COL.muted, fontWeight: 500, padding: '1px 4px', position: 'sticky', top: 0, background: 'var(--bg-card)' }}>Value</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {zkChildren.slice(-50).map((child) => {
+                        const lines = child.value.split('\n').filter(Boolean);
+                        const summary = lines.slice(0, 3).join(' | ');
+                        return (
+                          <tr key={child.name} style={{ borderBottom: '1px solid var(--border-secondary)' }}>
+                            <td style={{ padding: '2px 4px', fontFamily: 'monospace', color: COL.purple, whiteSpace: 'nowrap' }}>{child.name}</td>
+                            <td title={child.value} style={{ padding: '2px 4px', fontFamily: 'monospace', color: 'var(--text-primary)', cursor: 'help', maxWidth: 300, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{summary}</td>
+                          </tr>
+                        );
+                      })}
+                    </tbody>
+                  </table>
+                  {zkChildren.length > 50 && (
+                    <div style={{ fontSize: 8, color: COL.muted, marginTop: 2 }}>Showing last 50 of {zkChildren.length}</div>
+                  )}
+                </div>
+              )}
+            </div>
+          )}
+
+          {/* Connection + ZK path — expandable detail */}
+          {(keeperConnections.length > 0 || keeperInfo) && (
+            <div
+              onClick={() => setKeeperExpanded(!keeperExpanded)}
+              style={{ display: 'flex', alignItems: 'center', gap: 4, fontSize: 9, cursor: 'pointer', userSelect: 'none', color: COL.muted, marginTop: 2 }}
+            >
+              <span style={{ fontSize: 7 }}>{keeperExpanded ? '▾' : '▸'}</span>
+              {keeperConnections.length > 0 && (
+                <span style={{ width: 5, height: 5, borderRadius: '50%', backgroundColor: hasKeeperIssues ? COL.red : COL.green, flexShrink: 0 }} />
+              )}
+              <span>Connection details</span>
+            </div>
+          )}
+          {keeperExpanded && (
+            <div style={{ marginTop: 4, padding: '4px 8px', borderRadius: 4, backgroundColor: 'rgba(167,139,250,0.04)', fontSize: 9 }}>
+              {keeperConnections.map((c, i) => {
+                const isExpired = c.isExpired === 1;
+                return (
+                  <div key={i} style={{ display: 'flex', alignItems: 'center', gap: 4, marginBottom: 2 }}>
+                    <span style={{ width: 5, height: 5, borderRadius: '50%', backgroundColor: isExpired ? COL.red : COL.green, flexShrink: 0 }} />
+                    <span style={{ fontFamily: 'monospace', color: 'var(--text-primary)' }}>{c.host}:{c.port}</span>
+                    {isExpired && <span style={{ color: COL.red, fontWeight: 600 }}>EXPIRED</span>}
+                  </div>
+                );
+              })}
+              {keeperInfo && (
+                <div style={{ fontSize: 8, fontFamily: 'monospace', color: `${COL.muted}90`, wordBreak: 'break-all', marginTop: 2 }}>
+                  {keeperInfo.zkPath}
+                </div>
+              )}
+            </div>
+          )}
+        </div>
+      )}
+
+      {/* Distribution Queue — primary content */}
+      {hasDistQueue && (
+        <div>
+          <div title="Files queued for async delivery to remote shards via the Distributed table" style={{ fontSize: 10, fontWeight: 500, color: COL.muted, marginBottom: 4, cursor: 'help' }}>
+            Distribution Queue
+          </div>
+          {distQueueAgg.map((entry) => {
+            const hasErrors = entry.totalErrors > 0 || entry.totalBroken > 0;
+            const statusColor = entry.blocked ? COL.red : hasErrors ? COL.amber : COL.green;
+            return (
+              <div key={entry.key} style={{
+                display: 'flex', alignItems: 'center', gap: 6, fontSize: 10, padding: '3px 0',
+              }}>
+                <span style={{ width: 5, height: 5, borderRadius: '50%', backgroundColor: statusColor, flexShrink: 0 }} />
+                <span style={{ fontFamily: 'monospace', color: 'var(--text-primary)' }}>{entry.key}</span>
+                <span style={{ fontFamily: 'monospace', color: COL.muted }}>
+                  {entry.totalFiles} file{entry.totalFiles !== 1 ? 's' : ''}
+                  {entry.totalBytes > 0 ? ` · ${formatBytes(entry.totalBytes)}` : ''}
+                </span>
+                {entry.blocked && <span style={{ fontSize: 8, padding: '0 4px', borderRadius: 2, backgroundColor: `${COL.red}30`, color: COL.red, fontWeight: 600 }}>BLOCKED</span>}
+                {entry.totalErrors > 0 && (
+                  <span
+                    className="tooltip-trigger tooltip-wrap"
+                    data-tooltip={entry.lastException?.slice(0, 120) || `${entry.totalErrors} send error(s)`}
+                    style={{ color: COL.amber, cursor: 'help', textDecoration: 'underline dotted', fontSize: 10 }}
+                  >
+                    {entry.totalErrors} err
+                  </span>
+                )}
+                {entry.totalBroken > 0 && <span style={{ color: COL.red }}>{entry.totalBroken} broken</span>}
+              </div>
+            );
+          })}
+        </div>
+      )}
+    </div>
+  );
+};
 
 // ── Main Component ──
 
@@ -715,15 +1310,21 @@ export const ReplicationTopology: React.FC<ReplicationTopologyProps> = ({ databa
 
     const svc = new ReplicationService(services.adapter);
     const target = `${database}.${table}`;
-    svc.getTopology(database, table).then(result => {
-      if (!cancelled) { setData(result); setDisplayedTable(target); }
-    }).catch(err => {
-      if (!cancelled) setError(err instanceof Error ? err.message : String(err));
-    }).finally(() => {
-      if (!cancelled) setLoading(false);
-    });
 
-    return () => { cancelled = true; };
+    const fetchTopology = () => {
+      svc.getTopology(database, table).then(result => {
+        if (!cancelled) { setData(result); setDisplayedTable(target); }
+      }).catch(err => {
+        if (!cancelled) setError(err instanceof Error ? err.message : String(err));
+      }).finally(() => {
+        if (!cancelled) setLoading(false);
+      });
+    };
+
+    fetchTopology();
+    const interval = setInterval(fetchTopology, 15_000);
+
+    return () => { cancelled = true; clearInterval(interval); };
   }, [services, isConnected, detected, database, table]);
 
   // Track which table we're currently displaying vs fetching
@@ -731,6 +1332,16 @@ export const ReplicationTopology: React.FC<ReplicationTopologyProps> = ({ databa
   const fetching = displayedTable !== `${database}.${table}`;
 
   const fullName = `${database}.${table}`;
+
+  // Callback to fetch ZK children for a sub-path (used by KeeperPanel)
+  const fetchZkChildren = useCallback(async (subPath: string): Promise<ZkChildNode[]> => {
+    if (!services || !data?.keeperInfo) return [];
+    const zkPath = `${data.keeperInfo.zkPath}/${subPath}`;
+    const raw = await services.adapter.executeQuery<Record<string, unknown>>(
+      tagQuery(buildQuery(GET_ZK_CHILDREN, { path: zkPath }), sourceTag('replication', 'zk-browse'))
+    );
+    return raw.map(mapZkChildNode);
+  }, [services, data?.keeperInfo]);
 
   // First load only — no data yet
   if (loading && !data) return <div className="card" style={{ height: '100%', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 11, color: COL.muted }}>Loading topology for {fullName}...</div>;
@@ -744,15 +1355,8 @@ export const ReplicationTopology: React.FC<ReplicationTopologyProps> = ({ databa
       {/* Title bar with engine context + topology badges */}
       <div style={{ padding: '10px 14px', borderBottom: `1px solid ${COL.border}`, flexShrink: 0 }}>
         <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
-          <span style={{ position: 'relative', fontSize: 12, fontWeight: 600, fontFamily: 'monospace', color: 'var(--text-primary)' }}>
+          <span style={{ fontSize: 12, fontWeight: 600, fontFamily: 'monospace', color: 'var(--text-primary)' }}>
             {fullName}
-            <span style={{
-              position: 'absolute', top: -6, right: -18,
-              fontSize: 7, fontWeight: 700, color: '#f0883e',
-              background: 'var(--bg-tertiary)', border: '1px solid rgba(240,136,62,0.3)',
-              borderRadius: 3, padding: '0 3px', lineHeight: '12px',
-              textTransform: 'uppercase', letterSpacing: '0.3px',
-            }}>exp</span>
           </span>
           {/* Topology badges — short labels, details on hover */}
           <span style={{
@@ -792,6 +1396,15 @@ export const ReplicationTopology: React.FC<ReplicationTopologyProps> = ({ databa
               NOT DISTRIBUTED
             </span>
           ) : null}
+          <span style={{ flex: 1 }} />
+          <span style={{
+            padding: '2px 10px', borderRadius: 4, fontSize: 10, fontWeight: 700,
+            color: '#f0883e', backgroundColor: 'rgba(240,136,62,0.1)',
+            border: '1px solid rgba(240,136,62,0.3)',
+            textTransform: 'uppercase', letterSpacing: '0.5px',
+          }}>
+            Experimental
+          </span>
         </div>
         <div style={{ display: 'flex', gap: 12, marginTop: 4, flexWrap: 'wrap', fontSize: 10 }}>
           {data.engineInfo && (
@@ -853,12 +1466,26 @@ export const ReplicationTopology: React.FC<ReplicationTopologyProps> = ({ databa
       </div>
 
       {/* 2D Detail Panels — compact, pinned to bottom */}
-      <div style={{ flexShrink: 0, borderTop: `1px solid ${COL.border}`, padding: '10px 14px', display: 'flex', gap: 14 }}>
-        <div style={{ flex: '1 1 0' }}>
+      <div style={{ flexShrink: 0, borderTop: `1px solid ${COL.border}`, display: 'flex' }}>
+        <div style={{ flex: '1 1 0', padding: '12px 16px' }}>
           <DataDistributionBar shards={data.shards} totalBytes={data.totalBytes} partitionDist={data.partitionDist} />
         </div>
-        <div style={{ flex: '1 1 0' }}>
+        <div style={{ width: 1, backgroundColor: COL.border, flexShrink: 0 }} />
+        <div style={{ flex: '1 1 0', padding: '12px 16px' }}>
           <SyncStatus shards={data.shards} logHead={data.logHead} />
+        </div>
+        <div style={{ width: 1, backgroundColor: COL.border, flexShrink: 0 }} />
+        <div style={{ flex: '1 1 0', padding: '12px 16px' }}>
+          <ReplicationQueuePanel queueEntries={data.queueEntries} />
+        </div>
+        <div style={{ width: 1, backgroundColor: COL.border, flexShrink: 0 }} />
+        <div style={{ flex: '1 1 0', padding: '12px 16px' }}>
+          <KeeperPanel
+            keeperInfo={data.keeperInfo}
+            keeperConnections={data.keeperConnections}
+            distributionQueue={data.distributionQueue}
+            onFetchZkChildren={fetchZkChildren}
+          />
         </div>
       </div>
 

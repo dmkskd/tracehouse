@@ -98,6 +98,68 @@ export interface ReplicaHealth {
   reasons: string[];
 }
 
+/** Severity level for replication delay. */
+export type DelaySeverity = 'ok' | 'lagging' | 'critical';
+
+/** A single ZooKeeper child node — used for browsing log, mutations, etc. */
+export interface ZkChildNode {
+  name: string;
+  value: string;
+  numChildren: number;
+  dataLength: number;
+  ctime: string;
+  mtime: string;
+}
+
+/** ZooKeeper sub-path stats for a replicated table. */
+export interface ZkPathStats {
+  /** Sub-path (e.g. '/clickhouse/tables/01/events/log') */
+  path: string;
+  /** Number of children (log entries, mutations, blocks, etc.) */
+  childCount: number;
+  /** Total data bytes stored in children */
+  totalDataBytes: number;
+}
+
+/** Parsed Keeper metadata for a replicated table's ZK structure. */
+export interface KeeperTableInfo {
+  /** The table's root ZK path */
+  zkPath: string;
+  /** Number of entries in /log */
+  logEntries: number;
+  /** Number of pending mutations in /mutations */
+  mutations: number;
+  /** Number of dedup blocks in /blocks */
+  blocks: number;
+  /** Number of registered replicas in /replicas */
+  registeredReplicas: number;
+  /** Whether quorum path has children (active insert quorum) */
+  hasQuorum: boolean;
+}
+
+/** Keeper/ZooKeeper connection info from system.zookeeper_connection. */
+export interface KeeperConnection {
+  host: string;
+  port: number;
+  index: number;
+  connectedTime: string;
+  isExpired: number;
+  keeperApiVersion: number;
+}
+
+/** Distribution queue entry — pending sends for a Distributed table. */
+export interface DistributionQueueEntry {
+  database: string;
+  table: string;
+  isBlocked: number;
+  errorCount: number;
+  dataFiles: number;
+  dataCompressedBytes: number;
+  brokenDataFiles: number;
+  brokenDataCompressedBytes: number;
+  lastException: string;
+}
+
 /** Full topology data for a single replicated table. */
 export interface ReplicationTopologyData {
   database: string;
@@ -113,4 +175,10 @@ export interface ReplicationTopologyData {
   queueEntries: TopologyQueueEntry[];
   /** Engine metadata for context display. */
   engineInfo: TableEngineInfo | null;
+  /** Keeper metadata for this table's ZK paths. */
+  keeperInfo: KeeperTableInfo | null;
+  /** Keeper connection info. */
+  keeperConnections: KeeperConnection[];
+  /** Distribution queue entries (for Distributed tables routing to this table). */
+  distributionQueue: DistributionQueueEntry[];
 }

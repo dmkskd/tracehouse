@@ -4,6 +4,7 @@
  */
 
 import React, { useEffect, useState, useMemo } from 'react';
+import { useNavigate } from 'react-router-dom';
 import { useClickHouseServices } from '../providers/ClickHouseProvider';
 import { useConnectionStore } from '../stores/connectionStore';
 import { useClusterStore } from '../stores/clusterStore';
@@ -12,12 +13,15 @@ import { tagQuery, sourceTag, buildQuery } from '@tracehouse/core';
 import {
   GET_REPLICATION_DETAIL,
   GET_REPLICATION_QUEUE,
+  GET_REPLICATION_QUEUE_ERRORS,
+  GET_DISTRIBUTION_QUEUE_ERRORS,
 } from '@tracehouse/core';
 import { PermissionGate } from '../components/shared/PermissionGate';
 import { extractErrorMessage } from '../utils/errorFormatters';
 import { useCapabilityCheck } from '../components/shared/RequiresCapability';
 import { DocsLink } from '../components/common/DocsLink';
 import { ReplicationTopology } from '../components/replication/ReplicationTopology';
+import { encodeSql } from '../hooks/useUrlState';
 
 const TAB_REPLICATION = 'replication';
 
@@ -47,6 +51,8 @@ interface ReplicaRow {
 const TH: React.CSSProperties = {
   padding: '6px 8px', textAlign: 'left', color: 'var(--text-muted)',
   fontWeight: 500, fontSize: 10, whiteSpace: 'nowrap',
+  position: 'sticky', top: 0, zIndex: 20,
+  background: 'var(--bg-card)',
 };
 const TH_C: React.CSSProperties = { ...TH, textAlign: 'center' };
 const TH_R: React.CSSProperties = { ...TH, textAlign: 'right' };
@@ -86,6 +92,7 @@ const StatCard: React.FC<{ label: string; value: string | number; warn?: boolean
 // ── Main Component ──
 
 export const Replication: React.FC = () => {
+  const navigate = useNavigate();
   const services = useClickHouseServices();
   const { activeProfileId, profiles, setConnectionFormOpen } = useConnectionStore();
   const { detected } = useClusterStore();
@@ -106,7 +113,11 @@ export const Replication: React.FC = () => {
   const [queueRows, setQueueRows] = useState<Record<string, unknown>[]>([]);
   const [queueLoading, setQueueLoading] = useState(false);
 
-  // Fetch replica data
+  // Error summaries per table (fetched once — replication queue + distribution queue)
+  interface ErrorInfo { count: number; maxTries: number; sample: string; source: 'replication' | 'distribution'; active: boolean }
+  const [tableErrors, setTableErrors] = useState<Map<string, ErrorInfo>>(new Map());
+
+  // Fetch replica data + error summaries
   useEffect(() => {
     if (!services || !isConnected || !detected) return;
     if (isCapProbing) return;
@@ -121,11 +132,71 @@ export const Replication: React.FC = () => {
 
     (async () => {
       try {
-        const rows = await services.adapter.executeQuery<ReplicaRow>(
-          tagQuery(GET_REPLICATION_DETAIL, sourceTag(TAB_REPLICATION, 'replicas'))
-        );
-        if (!cancelled) setReplicas(rows);
-        if (!cancelled) useGlobalLastUpdatedStore.getState().touch();
+        const [rows, replQueueErrs, distQueueErrs] = await Promise.all([
+          services.adapter.executeQuery<ReplicaRow>(
+            tagQuery(GET_REPLICATION_DETAIL, sourceTag(TAB_REPLICATION, 'replicas'))
+          ),
+          services.adapter.executeQuery<{ database: string; table: string; error_count: number; max_tries: number; sample_exception: string }>(
+            tagQuery(GET_REPLICATION_QUEUE_ERRORS, sourceTag(TAB_REPLICATION, 'queue-errors'))
+          ).catch(() => [] as { database: string; table: string; error_count: number; max_tries: number; sample_exception: string }[]),
+          services.adapter.executeQuery<{ database: string; table: string; error_count: number; data_files: number; broken_files: number; is_blocked: number; sample_exception: string }>(
+            tagQuery(GET_DISTRIBUTION_QUEUE_ERRORS, sourceTag(TAB_REPLICATION, 'dist-errors'))
+          ).catch((err) => { console.warn('[Replication] distribution queue errors query failed:', err); return [] as { database: string; table: string; error_count: number; data_files: number; broken_files: number; is_blocked: number; sample_exception: string }[]; }),
+        ]);
+        if (!cancelled) {
+          setReplicas(rows);
+
+          const errMap = new Map<string, ErrorInfo>();
+
+          // Replication queue errors — keyed directly by db.table
+          for (const e of replQueueErrs) {
+            errMap.set(`${e.database}.${e.table}`, {
+              count: Number(e.error_count),
+              maxTries: Number(e.max_tries),
+              sample: String(e.sample_exception || ''),
+              source: 'replication',
+              active: true, // replication queue entries are always active — removed once resolved
+            });
+          }
+
+          // Distribution queue errors — map distributed table to its local replicated table.
+          // Distributed table "events" typically sends to "events_local", so we match
+          // replicated tables whose name starts with the distributed table name.
+          const replicatedNames = rows.map(r => ({ db: r.database, table: r.table }));
+          for (const e of distQueueErrs) {
+            const distTable = String(e.table);
+            const db = String(e.database);
+            const errCount = Number(e.error_count);
+            const brokenCount = Number(e.broken_files);
+            const pendingFiles = Number(e.data_files);
+            const count = errCount + brokenCount;
+            if (count === 0) continue;
+            // Active = still has pending data OR is blocked; cleared = errors happened but queue drained
+            const active = pendingFiles > 0 || Number(e.is_blocked) === 1;
+            // Find the matching local table: "events" → "events_local", or exact match
+            const match = replicatedNames.find(r =>
+              r.db === db && (r.table === distTable || r.table === `${distTable}_local`)
+            );
+            const key = match ? `${match.db}.${match.table}` : `${db}.${distTable}`;
+            const existing = errMap.get(key);
+            if (existing) {
+              existing.count += count;
+              existing.active = existing.active || active;
+              if (!existing.sample && e.sample_exception) existing.sample = String(e.sample_exception);
+            } else {
+              errMap.set(key, {
+                count,
+                maxTries: 0,
+                sample: String(e.sample_exception || 'Distribution send errors — check server logs'),
+                source: 'distribution',
+                active,
+              });
+            }
+          }
+
+          setTableErrors(errMap);
+          useGlobalLastUpdatedStore.getState().touch();
+        }
       } catch (err) {
         if (!cancelled) setError(extractErrorMessage(err, 'Failed to fetch replication data'));
       } finally {
@@ -142,6 +213,16 @@ export const Replication: React.FC = () => {
       setSelectedTable(`${replicas[0].database}.${replicas[0].table}`);
     }
   }, [replicas, selectedTable]);
+
+  /** Build an Analytics URL for exploring errors for a given table. */
+  const buildAnalyticsLink = (database: string, table: string, source: 'replication' | 'distribution') => {
+    const distTable = table.replace(/_local$/, '');
+    const sql = source === 'distribution'
+      ? `SELECT hostname() AS node, database, table, is_blocked, error_count, data_files, broken_data_files, last_exception\nFROM clusterAllReplicas('{cluster}', system.distribution_queue)\nWHERE database = '${database}' AND table = '${distTable}'\nORDER BY error_count DESC`
+      : `SELECT hostname() AS node, database, table, type, create_time, num_tries, num_postponed, postpone_reason, last_exception, last_attempt_time\nFROM clusterAllReplicas('{cluster}', system.replication_queue)\nWHERE database = '${database}' AND table = '${table}' AND last_exception != ''\nORDER BY num_tries DESC\nLIMIT 100`;
+    const params = new URLSearchParams({ tab: 'misc', sql: encodeSql(sql), from: 'replication' });
+    return `/analytics?${params.toString()}`;
+  };
 
   // Aggregate stats
   const stats = useMemo(() => {
@@ -231,6 +312,17 @@ export const Replication: React.FC = () => {
       <div className="flex items-center gap-4">
         <h1 className="text-xl font-semibold" style={{ color: 'var(--text-primary)' }}>Replication</h1>
         <DocsLink path="/features/replication" />
+        <button
+          onClick={() => navigate('/analytics?tab=dashboards&fromDashboard=replication-health')}
+          style={{
+            fontSize: 10, fontWeight: 500, padding: '3px 8px', borderRadius: 4,
+            border: '1px solid var(--border-secondary)', background: 'transparent',
+            color: 'var(--text-secondary)', cursor: 'pointer',
+          }}
+          title="Open Replication Health analytics dashboard"
+        >
+          Analytics Dashboard →
+        </button>
       </div>
 
       {/* Summary Cards */}
@@ -266,8 +358,8 @@ export const Replication: React.FC = () => {
           </h3>
         </div>
         <div style={{ overflowX: 'auto', maxHeight: 400, overflowY: 'auto' }}>
-          <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 11 }}>
-            <thead className="sticky top-0 z-10" style={{ background: 'var(--bg-card)' }}>
+          <table style={{ width: '100%', borderCollapse: 'separate', borderSpacing: 0, fontSize: 11 }}>
+            <thead>
               <tr style={{ borderBottom: '1px solid var(--border-secondary)' }}>
                 <th style={TH}>Database</th>
                 <th style={TH}>Table</th>
@@ -277,6 +369,7 @@ export const Replication: React.FC = () => {
                 <th style={TH_C}>Shards</th>
                 <th style={TH_R}>Delay</th>
                 <th style={TH_R}>Queue</th>
+                <th style={TH_C}>Errors</th>
                 <th style={TH_R}>Inserts</th>
                 <th style={TH_R}>Merges</th>
               </tr>
@@ -334,6 +427,47 @@ export const Replication: React.FC = () => {
                     >
                       {queueSize}
                     </td>
+                    <td style={{ ...TD_C, whiteSpace: 'nowrap' }}>
+                      {(() => {
+                        const err = tableErrors.get(fullName);
+                        if (!err) return <span style={{ color: 'var(--text-muted)' }}>—</span>;
+                        const isDist = err.source === 'distribution';
+                        const cleared = !err.active;
+                        const statusLabel = cleared ? 'cleared' : (isDist ? 'dist' : 'err');
+                        const tip = cleared
+                          ? `${err.count} past error(s) — all resolved, queue drained`
+                          : (err.sample.slice(0, 120) || `${err.count} active ${isDist ? 'distribution send' : 'replication queue'} error(s)`);
+                        // Cleared errors use muted styling; active errors use amber (dist) or red (repl)
+                        const bgColor = cleared ? 'rgba(148,163,184,0.12)' : isDist ? 'rgba(245,158,11,0.15)' : 'rgba(239,68,68,0.15)';
+                        const fgColor = cleared ? 'var(--text-muted)' : isDist ? '#f59e0b' : '#ef4444';
+                        return (
+                          <span style={{ display: 'inline-flex', alignItems: 'center', gap: 4 }}>
+                            <span
+                              className="tooltip-trigger tooltip-wrap"
+                              data-tooltip={tip}
+                              style={{
+                                padding: '1px 5px', fontSize: 10, fontWeight: 500, borderRadius: 4,
+                                backgroundColor: bgColor,
+                                color: fgColor,
+                                cursor: 'pointer',
+                              }}
+                              onClick={(e) => { e.stopPropagation(); toggleQueue(fullName, r.database); }}
+                            >
+                              {err.count} {statusLabel}
+                            </span>
+                            <a
+                              className="tooltip-trigger"
+                              data-tooltip="Explore in Analytics"
+                              href={buildAnalyticsLink(r.database, r.table, isDist ? 'distribution' : 'replication')}
+                              onClick={(e) => { e.preventDefault(); e.stopPropagation(); navigate(buildAnalyticsLink(r.database, r.table, isDist ? 'distribution' : 'replication')); }}
+                              style={{ fontSize: 10, color: '#60a5fa', textDecoration: 'none', lineHeight: 1 }}
+                            >
+                              →
+                            </a>
+                          </span>
+                        );
+                      })()}
+                    </td>
                     <td style={{ ...TD_R, color: Number(r.inserts_in_queue) > 0 ? 'var(--text-primary)' : 'var(--text-muted)' }}>
                       {Number(r.inserts_in_queue)}
                     </td>
@@ -341,53 +475,114 @@ export const Replication: React.FC = () => {
                       {Number(r.merges_in_queue)}
                     </td>
                   </tr>
-                  {expandedQueue === fullName && (
+                  {expandedQueue === fullName && (() => {
+                    const errInfo = tableErrors.get(fullName);
+                    const hasDistErrors = errInfo?.source === 'distribution';
+
+                    return (
                     <tr>
-                      <td colSpan={10} style={{ padding: 0 }}>
+                      <td colSpan={11} style={{ padding: 0 }}>
                         <div style={{ padding: '8px 12px', backgroundColor: 'var(--bg-secondary)', borderBottom: '1px solid var(--border-secondary)' }}>
                           {queueLoading ? (
                             <span style={{ fontSize: 10, color: 'var(--text-muted)' }}>Loading queue...</span>
-                          ) : queueRows.length === 0 ? (
-                            <span style={{ fontSize: 10, color: 'var(--text-muted)' }}>Queue is empty</span>
                           ) : (
-                            <table style={{ width: '100%', borderCollapse: 'collapse' }}>
-                              <thead>
-                                <tr>
-                                  <th style={{ ...TH, fontSize: 9 }}>Replica</th>
-                                  <th style={{ ...TH, fontSize: 9 }}>Type</th>
-                                  <th style={{ ...TH, fontSize: 9 }}>Part</th>
-                                  <th style={{ ...TH_C, fontSize: 9 }}>Tries</th>
-                                  <th style={{ ...TH_C, fontSize: 9 }}>Running</th>
-                                  <th style={{ ...TH, fontSize: 9 }}>Exception</th>
-                                  <th style={{ ...TH, fontSize: 9 }}>Created</th>
-                                </tr>
-                              </thead>
-                              <tbody>
-                                {queueRows.map((q, qi) => {
-                                  const tries = Number(q.num_tries);
-                                  const hasErr = String(q.last_exception || '') !== '';
-                                  const stuck = tries > 5 && hasErr;
-                                  return (
-                                    <tr key={qi} style={{ borderBottom: '1px solid var(--border-secondary)' }}>
-                                      <td style={{ ...TD_MONO, fontSize: 10 }}>{String(q.replica_name)}</td>
-                                      <td style={{ ...TD_MONO, fontSize: 10, color: stuck ? '#ef4444' : '#f59e0b' }}>{String(q.type)}</td>
-                                      <td style={{ ...TD_MONO, fontSize: 10 }}>{String(q.new_part_name)}</td>
-                                      <td style={{ ...TD_C, fontSize: 10, fontFamily: 'monospace', color: stuck ? '#ef4444' : tries > 0 ? '#f59e0b' : 'var(--text-muted)' }}>{tries}</td>
-                                      <td style={{ ...TD_C, fontSize: 10 }}>{Number(q.is_currently_executing) ? '▶' : '—'}</td>
-                                      <td style={{ ...TD, fontSize: 9, color: '#ef4444', maxWidth: 300, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }} title={String(q.last_exception || '')}>
-                                        {hasErr ? String(q.last_exception).slice(0, 80) : '—'}
-                                      </td>
-                                      <td style={{ ...TD, fontSize: 10, color: 'var(--text-muted)', fontFamily: 'monospace' }}>{String(q.create_time)}</td>
-                                    </tr>
-                                  );
-                                })}
-                              </tbody>
-                            </table>
+                            <>
+                              {/* Distribution queue errors */}
+                              {hasDistErrors && (
+                                <div style={{ marginBottom: queueRows.length > 0 ? 8 : 0, padding: '6px 8px', borderRadius: 4, backgroundColor: 'rgba(245,158,11,0.08)', border: '1px solid rgba(245,158,11,0.2)' }}>
+                                  <div style={{ fontSize: 10, fontWeight: 500, color: '#f59e0b', marginBottom: 2 }}>
+                                    Distribution send errors ({errInfo!.count})
+                                  </div>
+                                  <div style={{ fontSize: 9, color: 'var(--text-secondary)' }}>
+                                    {errInfo!.sample || 'Distributed table send failures — typically transient network or disk space issues.'}
+                                  </div>
+                                  <a
+                                    href={buildAnalyticsLink(r.database, r.table, 'distribution')}
+                                    onClick={(e) => { e.preventDefault(); navigate(buildAnalyticsLink(r.database, r.table, 'distribution')); }}
+                                    style={{ fontSize: 9, color: '#60a5fa', textDecoration: 'none', marginTop: 4, display: 'inline-block' }}
+                                  >
+                                    Explore in Analytics →
+                                  </a>
+                                </div>
+                              )}
+
+                              {/* Replication queue entries */}
+                              {queueRows.length === 0 && !hasDistErrors ? (
+                                <span style={{ fontSize: 10, color: 'var(--text-muted)' }}>Queue is empty</span>
+                              ) : queueRows.length > 0 ? (
+                                <>
+                                  <table style={{ width: '100%', borderCollapse: 'collapse' }}>
+                                    <thead>
+                                      <tr>
+                                        <th style={{ ...TH, fontSize: 9 }}>Replica</th>
+                                        <th style={{ ...TH, fontSize: 9 }}>Type</th>
+                                        <th style={{ ...TH, fontSize: 9 }}>Part</th>
+                                        <th style={{ ...TH_C, fontSize: 9 }}>Tries</th>
+                                        <th style={{ ...TH_C, fontSize: 9 }}>Running</th>
+                                        <th style={{ ...TH, fontSize: 9 }}>Exception</th>
+                                        <th style={{ ...TH, fontSize: 9 }}>Created</th>
+                                      </tr>
+                                    </thead>
+                                    <tbody>
+                                      {queueRows.map((q, qi) => {
+                                        const tries = Number(q.num_tries);
+                                        const hasErr = String(q.last_exception || '') !== '';
+                                        const stuck = tries > 5 && hasErr;
+                                        return (
+                                          <tr key={qi} style={{ borderBottom: '1px solid var(--border-secondary)' }}>
+                                            <td style={{ ...TD_MONO, fontSize: 10 }}>{String(q.replica_name)}</td>
+                                            <td style={{ ...TD_MONO, fontSize: 10, color: stuck ? '#ef4444' : '#f59e0b' }}>{String(q.type)}</td>
+                                            <td style={{ ...TD_MONO, fontSize: 10 }}>{String(q.new_part_name)}</td>
+                                            <td style={{ ...TD_C, fontSize: 10, fontFamily: 'monospace', color: stuck ? '#ef4444' : tries > 0 ? '#f59e0b' : 'var(--text-muted)' }}>{tries}</td>
+                                            <td style={{ ...TD_C, fontSize: 10 }}>
+                                              {Number(q.is_currently_executing) ? (
+                                                <span style={{ display: 'inline-block', width: 8, height: 8, borderRadius: '50%', backgroundColor: '#22c55e', animation: 'pulse-dot 1.5s ease-in-out infinite' }} title="Currently executing" />
+                                              ) : (
+                                                <span style={{ color: 'var(--text-muted)' }}>—</span>
+                                              )}
+                                            </td>
+                                            <td style={{ ...TD, fontSize: 9, color: hasErr ? '#ef4444' : 'var(--text-muted)' }}>
+                                              {hasErr ? (
+                                                <div>
+                                                  <div style={{ maxWidth: 300, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                                                    {String(q.last_exception).split('\n')[0].slice(0, 120)}
+                                                  </div>
+                                                  <div style={{
+                                                    marginTop: 4, padding: '4px 6px', fontSize: 8, fontFamily: 'monospace',
+                                                    backgroundColor: 'rgba(239,68,68,0.08)', borderRadius: 3, color: '#ef4444',
+                                                    whiteSpace: 'pre-wrap', wordBreak: 'break-all', maxHeight: 120, overflowY: 'auto',
+                                                  }}>
+                                                    {String(q.last_exception)}
+                                                  </div>
+                                                </div>
+                                              ) : '—'}
+                                            </td>
+                                            <td style={{ ...TD, fontSize: 10, color: 'var(--text-muted)', fontFamily: 'monospace' }}>{String(q.create_time)}</td>
+                                          </tr>
+                                        );
+                                      })}
+                                    </tbody>
+                                  </table>
+                                  {queueRows.some(q => String(q.last_exception || '') !== '') && (
+                                    <div style={{ marginTop: 6, textAlign: 'right' }}>
+                                      <a
+                                        href={buildAnalyticsLink(r.database, r.table, 'replication')}
+                                        onClick={(e) => { e.preventDefault(); navigate(buildAnalyticsLink(r.database, r.table, 'replication')); }}
+                                        style={{ fontSize: 9, color: '#60a5fa', textDecoration: 'none' }}
+                                      >
+                                        Explore in Analytics →
+                                      </a>
+                                    </div>
+                                  )}
+                                </>
+                              ) : null}
+                            </>
                           )}
                         </div>
                       </td>
                     </tr>
-                  )}
+                    );
+                  })()}
                   </React.Fragment>
                 );
               })}

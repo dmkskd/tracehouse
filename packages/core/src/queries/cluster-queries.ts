@@ -199,6 +199,36 @@ GROUP BY hostname, partition_id
 ORDER BY hostname, partition_id
 `;
 
+/** Replication queue error summary per database.table.
+ *  Counts entries with non-empty last_exception so we can flag errors in the table list. */
+export const GET_REPLICATION_QUEUE_ERRORS = `
+SELECT
+    database,
+    table,
+    countIf(last_exception != '') AS error_count,
+    max(num_tries) AS max_tries,
+    any(last_exception) AS sample_exception
+FROM {{cluster_aware:system.replication_queue}}
+GROUP BY database, table
+HAVING error_count > 0
+`;
+
+/** Distribution queue error summary per database.table.
+ *  Counts send errors so we can flag them in the replicated tables list. */
+export const GET_DISTRIBUTION_QUEUE_ERRORS = `
+SELECT
+    database,
+    table,
+    sum(error_count) AS error_count,
+    sum(data_files) AS data_files,
+    sum(broken_data_files) AS broken_files,
+    max(is_blocked) AS is_blocked,
+    any(last_exception) AS sample_exception
+FROM {{cluster_aware:system.distribution_queue}}
+GROUP BY database, table
+HAVING error_count > 0 OR broken_files > 0
+`;
+
 /** Replication queue entries for a specific database.
  *  Shows what's actually pending in the replication queue. */
 export const GET_REPLICATION_QUEUE = `
@@ -220,4 +250,58 @@ SELECT
 FROM {{cluster_aware:system.replication_queue}}
 WHERE database = {database}
 ORDER BY create_time ASC
+`;
+
+/** Browse ZooKeeper children at a given path.
+ *  Used to inspect the table's ZK structure (log, mutations, blocks, replicas). */
+export const GET_ZK_CHILDREN = `
+SELECT
+    name,
+    value,
+    numChildren AS num_children,
+    dataLength AS data_length,
+    ctime,
+    mtime,
+    version,
+    ephemeralOwner AS ephemeral_owner
+FROM system.zookeeper
+WHERE path = {path}
+ORDER BY name
+`;
+
+/** Count children in specific ZK sub-paths for a replicated table.
+ *  Returns counts for log entries, mutations, blocks, and quorum status.
+ *  Each row is one sub-path probe. */
+export const GET_ZK_TABLE_STATS = `
+SELECT
+    path,
+    count() AS child_count,
+    sum(dataLength) AS total_data_bytes
+FROM system.zookeeper
+WHERE path IN (
+    concat({zk_path}, '/log'),
+    concat({zk_path}, '/mutations'),
+    concat({zk_path}, '/blocks'),
+    concat({zk_path}, '/quorum'),
+    concat({zk_path}, '/replicas')
+)
+GROUP BY path
+`;
+
+/** Distribution queue — pending sends for a specific Distributed table.
+ *  Shows what's queued to be sent to remote shards. */
+export const GET_DISTRIBUTION_QUEUE = `
+SELECT
+    database,
+    table,
+    is_blocked,
+    error_count,
+    data_files,
+    data_compressed_bytes,
+    broken_data_files,
+    broken_data_compressed_bytes,
+    last_exception
+FROM system.distribution_queue
+WHERE database = {database} AND table = {table}
+ORDER BY data_compressed_bytes DESC
 `;
