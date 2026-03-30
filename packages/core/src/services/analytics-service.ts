@@ -161,7 +161,10 @@ export class AnalyticsService {
         .replace(/;\s*$/, '')
         .replace(/\bFORMAT\s+\w+\s*$/i, '')
         .trim();
-      const explainSql = `EXPLAIN json = 1, indexes = 1 ${cleanQuery}`;
+      const explainSql = tagQuery(
+        `EXPLAIN json = 1, indexes = 1 ${cleanQuery}`,
+        sourceTag(TAB_ANALYTICS, 'explainIndexes'),
+      );
 
       // executeQuery returns JSONEachRow where each row has an "explain" field
       // containing one line of the pretty-printed JSON output.

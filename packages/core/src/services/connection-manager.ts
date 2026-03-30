@@ -1,6 +1,8 @@
 import type { ConnectionConfig, ConnectionProfile, ConnectionTestResult } from '../types/connection.js';
 import type { IClickHouseAdapter } from '../adapters/types.js';
 import { AdapterError } from '../adapters/types.js';
+import { tagQuery } from '../queries/builder.js';
+import { TAB_INTERNAL, sourceTag } from '../queries/source-tags.js';
 
 const STORAGE_KEY = 'tracehouse-connections';
 
@@ -66,7 +68,7 @@ export class ConnectionManager {
     const start = Date.now();
     try {
       const rows = await adapter.executeQuery<{ version: string; timezone: string; hostname: string }>(
-        'SELECT version() as version, timezone() as timezone, hostName() as hostname',
+        tagQuery('SELECT version() as version, timezone() as timezone, hostName() as hostname', sourceTag(TAB_INTERNAL, 'connectionTest')),
       );
       const latency = Date.now() - start;
       const row = rows[0];

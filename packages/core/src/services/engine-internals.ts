@@ -1163,7 +1163,7 @@ export class EngineInternalsService {
   private async estimateCoreCount(): Promise<number> {
     try {
       const rows = await this.adapter.executeQuery<{ value: number }>(
-        `SELECT value FROM system.asynchronous_metrics WHERE metric = 'NumberOfCPUCores' LIMIT 1`
+        tagQuery(`SELECT value FROM system.asynchronous_metrics WHERE metric = 'NumberOfCPUCores' LIMIT 1`, sourceTag(TAB_ENGINE, 'estimateCoreCount'))
       );
       if (rows.length > 0 && Number(rows[0].value) > 0) {
         return Math.min(Number(rows[0].value), 64);

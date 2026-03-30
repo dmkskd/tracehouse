@@ -80,7 +80,7 @@ export class TraceService {
    */
   async executeExplain(query: string, explainType: ExplainType, database?: string): Promise<ExplainResult> {
       try {
-        const explainQuery = `EXPLAIN ${explainType} ${query}`;
+        const explainQuery = tagQuery(`EXPLAIN ${explainType} ${query}`, sourceTag(TAB_QUERIES, 'explain'));
 
         // EXPLAIN doesn't support FORMAT clauses appended by executeQuery,
         // so prefer executeRawQuery which uses exec() and handles both
@@ -104,7 +104,7 @@ export class TraceService {
         let parsedTree: Record<string, unknown> | null = null;
         if (explainType === 'PLAN') {
           try {
-            const jsonQuery = `EXPLAIN ${explainType} json=1 ${query}`;
+            const jsonQuery = tagQuery(`EXPLAIN ${explainType} json=1 ${query}`, sourceTag(TAB_QUERIES, 'explainJson'));
             let jsonLines: string[];
             if (this.adapter.executeRawQuery) {
               jsonLines = await this.adapter.executeRawQuery(jsonQuery, database);

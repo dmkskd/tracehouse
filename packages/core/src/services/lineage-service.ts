@@ -1,6 +1,7 @@
 import type { IClickHouseAdapter } from '../adapters/types.js';
 import type { PartLineage, LineageNode, MergeEvent } from '../types/lineage.js';
-import { buildQuery } from '../queries/builder.js';
+import { buildQuery, tagQuery } from '../queries/builder.js';
+import { TAB_DATABASES, sourceTag } from '../queries/source-tags.js';
 import { GET_ACTIVE_PART_SIZES, GET_MERGE_EVENTS_BATCH, GET_L0_PART_SIZES } from '../queries/lineage-queries.js';
 import { normalizeTimestamp } from '../mappers/timestamp.js';
 import { toInt, toStr } from '../mappers/helpers.js';
@@ -42,7 +43,7 @@ export class LineageService {
     partName: string,
   ): Promise<PartLineage> {
     // Step 1: Fetch active part sizes
-    const sizesSql = buildQuery(GET_ACTIVE_PART_SIZES, { database, table });
+    const sizesSql = tagQuery(buildQuery(GET_ACTIVE_PART_SIZES, { database, table }), sourceTag(TAB_DATABASES, 'lineagePartSizes'));
     const sizeRows = await this.adapter.executeQuery<Record<string, unknown>>(sizesSql);
 
     const sizeMap = new Map<string, PartSize>();
@@ -67,8 +68,10 @@ export class LineageService {
       if (toFetch.length === 0) break;
 
       const inList = toFetch.map(p => `'${p}'`).join(',');
-      const mergeSql = buildQuery(GET_MERGE_EVENTS_BATCH, { database, table })
-        .replace('{partNames}', inList);
+      const mergeSql = tagQuery(
+        buildQuery(GET_MERGE_EVENTS_BATCH, { database, table }).replace('{partNames}', inList),
+        sourceTag(TAB_DATABASES, 'lineageMergeEvents'),
+      );
 
       const mergeRows = await this.adapter.executeQuery<Record<string, unknown>>(mergeSql);
 
@@ -120,8 +123,10 @@ export class LineageService {
       for (let i = 0; i < l0Parts.length; i += 500) {
         const chunk = l0Parts.slice(i, i + 500);
         const l0InList = chunk.map(p => `'${p}'`).join(',');
-        const l0Sql = buildQuery(GET_L0_PART_SIZES, { database, table })
-          .replace('{partNames}', l0InList);
+        const l0Sql = tagQuery(
+          buildQuery(GET_L0_PART_SIZES, { database, table }).replace('{partNames}', l0InList),
+          sourceTag(TAB_DATABASES, 'lineageL0Sizes'),
+        );
 
         const l0Rows = await this.adapter.executeQuery<Record<string, unknown>>(l0Sql);
         for (const r of l0Rows) {

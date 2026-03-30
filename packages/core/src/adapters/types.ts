@@ -4,6 +4,15 @@
  */
 export const CLIENT_COMPRESSION = { response: true } as const;
 
+/**
+ * Branded string type for SQL queries that have been tagged with a
+ * `source:TraceHouse:…` comment via {@link tagQuery}.
+ *
+ * `executeQuery` only accepts `TaggedQuery`, so passing a raw string
+ * is a compile-time error — every query reaching ClickHouse is traceable.
+ */
+export type TaggedQuery = string & { readonly __tagged: unique symbol };
+
 export type AdapterErrorCategory = 'network' | 'authentication' | 'query' | 'timeout' | 'unknown';
 
 export class AdapterError extends Error {
