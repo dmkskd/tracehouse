@@ -25,6 +25,7 @@ const KNOWN_FAILURES = new Set([
   'ZooKeeper Operations',            // ProfileEvent_ZooKeeperWatch removed in CH 26.1
   'ZooKeeper Wait Time',             // requires ZK tables
   'ZooKeeper Sessions & Exceptions', // requires ZK tables
+  'Keeper Connection Status',        // system.zookeeper_connection only exists with Keeper configured
 ]);
 
 describe('Preset analytics query smoke tests', { tags: ['analytics'] }, () => {

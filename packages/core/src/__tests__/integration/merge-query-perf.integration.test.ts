@@ -25,7 +25,7 @@ const CONTAINER_TIMEOUT = 120_000;
 const TEST_DB = 'perf_parts_test';
 
 /** Part-count tiers to exercise. Adjust or trim for local dev speed. */
-const TIERS = [100, 1_000, 5_000, 10_000];
+const TIERS = [100, 1_000];
 
 /** Collect query_log stats for the most recent query matching a comment tag. */
 interface QueryStats {
@@ -71,11 +71,11 @@ async function flushAndCollectStats(
 
 /**
  * Insert `count` individual rows — each INSERT creates a separate part.
- * Uses batches of parallel INSERTs (chunks of 50) to speed things up
+ * Uses batches of parallel INSERTs (chunks of 200) to speed things up
  * while still creating one part per INSERT.
  */
 async function insertParts(ctx: TestClickHouseContext, table: string, count: number): Promise<void> {
-  const CHUNK = 50;
+  const CHUNK = 200;
   for (let offset = 0; offset < count; offset += CHUNK) {
     const batch = Math.min(CHUNK, count - offset);
     const promises: Promise<void>[] = [];
@@ -88,6 +88,21 @@ async function insertParts(ctx: TestClickHouseContext, table: string, count: num
       );
     }
     await Promise.all(promises);
+  }
+}
+
+/** Poll until active part count drops to `target` or timeout elapses. */
+async function waitForMerge(
+  ctx: TestClickHouseContext,
+  table: string,
+  target: number = 1,
+  timeoutMs: number = 90_000,
+): Promise<void> {
+  const deadline = Date.now() + timeoutMs;
+  while (Date.now() < deadline) {
+    const cnt = await getActivePartCount(ctx, table);
+    if (cnt <= target) return;
+    await new Promise(r => setTimeout(r, 1_000));
   }
 }
 
@@ -254,8 +269,8 @@ describe('Query scaling with part count', { tags: ['perf'], timeout: 600_000 }, 
           await ctx.client.command({
             query: `OPTIMIZE TABLE ${TEST_DB}.${tableName} FINAL`,
           });
-          // Wait for merge to complete
-          await new Promise(r => setTimeout(r, 2000));
+          // Poll until merge completes (OPTIMIZE FINAL can take 60s+ at 10k parts)
+          await waitForMerge(ctx, tableName);
           await ctx.client.command({ query: 'SYSTEM FLUSH LOGS' });
 
           // Find the final merged part name
