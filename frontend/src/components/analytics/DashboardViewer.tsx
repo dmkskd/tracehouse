@@ -381,7 +381,7 @@ const DashboardPanelCard: React.FC<{
           <>
             {/* Chart view */}
             {view === 'chart' && hasChart && (
-              <div style={{ marginBottom: fullscreen ? 0 : 6, flex: 1, minHeight: fullscreen ? 0 : (chartStyle === '3d' ? 250 : 180), position: 'relative' }}>
+              <div style={{ marginBottom: fullscreen ? 0 : 6, flex: 1, minHeight: fullscreen ? 0 : (chartStyle === '3d' ? 250 : 180) }}>
                 {chartStyle === '3d' ? (
                   <Chart3DCanvas key={fullscreen ? 'fs' : 'normal'} data={chartData} type={chartType}
                     orientation={chartDirective?.orientation}

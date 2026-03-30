@@ -5,7 +5,7 @@
  * and built-in interactivity (tooltips, hover, animations).
  */
 
-import React, { useState } from 'react';
+import React, { useState, useMemo } from 'react';
 import { createPortal } from 'react-dom';
 import {
   BarChart as RBarChart,
@@ -24,6 +24,9 @@ import {
   Legend,
   ResponsiveContainer,
   ReferenceLine,
+  usePlotArea,
+  useXAxisDomain,
+  useYAxisDomain,
 } from 'recharts';
 import type { ChartType } from './metaLanguage';
 import { formatBytes } from '../../utils/formatters';
@@ -359,18 +362,87 @@ const crosshairLineProps = {
   strokeWidth: 1,
 };
 
-/** Tracks the mouse Y coordinate within the chart area (module-level: only one chart is hovered at a time). */
-let _crosshairMouseY: number | null = null;
-
-/** Custom recharts cursor that draws both vertical and horizontal crosshair lines. */
-const CrosshairCursor: React.FC<any> = ({ points, width, height, top, left }) => {
+/** Custom recharts cursor — vertical line only.
+ *  The horizontal crosshair is handled by SyncedCrosshair which uses the actual
+ *  data value + y-axis domain for correct positioning on all panels. */
+const CrosshairCursor: React.FC<any> = ({ points, height, top }) => {
   if (!points || !points.length) return null;
   const { x } = points[0];
-  const y = _crosshairMouseY ?? points[0].y;
+  return <line x1={x} y1={top} x2={x} y2={top + height} {...crosshairLineProps} />;
+};
+
+/**
+ * Cross-panel synced crosshair rendered inside the recharts SVG.
+ * Uses recharts v3 hooks (useXAxisDomain, useYAxisDomain, usePlotArea) to get
+ * exact pixel coordinates. Draws both a vertical line at the timestamp and a
+ * horizontal line at the data value's y-position.
+ *
+ * @param hoveredTimestamp - the timestamp label broadcast from the hovered panel
+ * @param dataByLabel - map from label → numeric value (used for the horizontal line)
+ */
+const SyncedCrosshair: React.FC<{ hoveredTimestamp: string; dataByLabel?: Map<string, number> }> = ({ hoveredTimestamp, dataByLabel }) => {
+  const xDomain = useXAxisDomain() as string[] | undefined;
+  const yDomain = useYAxisDomain() as [number, number] | undefined;
+  const plotArea = usePlotArea();
+  if (!xDomain || xDomain.length < 2 || !plotArea) return null;
+
+  // --- X position ---
+  let xFrac: number | null = null;
+  const exactIdx = xDomain.indexOf(hoveredTimestamp);
+  if (exactIdx >= 0) {
+    xFrac = exactIdx / (xDomain.length - 1);
+  } else {
+    const hTs = new Date(hoveredTimestamp).getTime();
+    const firstTs = new Date(xDomain[0]).getTime();
+    const lastTs = new Date(xDomain[xDomain.length - 1]).getTime();
+    if (!isNaN(hTs) && !isNaN(firstTs) && !isNaN(lastTs) && lastTs > firstTs) {
+      const f = (hTs - firstTs) / (lastTs - firstTs);
+      if (f >= 0 && f <= 1) xFrac = f;
+    }
+  }
+  if (xFrac == null) return null;
+  const xPx = plotArea.x + xFrac * plotArea.width;
+
+  // --- Y position (horizontal crosshair at data value) ---
+  let yPx: number | null = null;
+  if (dataByLabel && yDomain && yDomain[1] > yDomain[0]) {
+    // Find the value: exact match or interpolate between nearest neighbours
+    let val: number | undefined;
+    if (dataByLabel.has(hoveredTimestamp)) {
+      val = dataByLabel.get(hoveredTimestamp);
+    } else {
+      // Interpolate: find nearest labels by time
+      const hTs = new Date(hoveredTimestamp).getTime();
+      let before: { ts: number; v: number } | null = null;
+      let after: { ts: number; v: number } | null = null;
+      for (const [label, v] of dataByLabel) {
+        const t = new Date(label).getTime();
+        if (isNaN(t)) continue;
+        if (t <= hTs && (!before || t > before.ts)) before = { ts: t, v };
+        if (t >= hTs && (!after || t < after.ts)) after = { ts: t, v };
+      }
+      if (before && after && after.ts > before.ts) {
+        const f = (hTs - before.ts) / (after.ts - before.ts);
+        val = before.v + f * (after.v - before.v);
+      } else if (before) {
+        val = before.v;
+      } else if (after) {
+        val = after.v;
+      }
+    }
+    if (val != null) {
+      // Y axis goes top (max) → bottom (min) in pixel space
+      const yFrac = (val - yDomain[0]) / (yDomain[1] - yDomain[0]);
+      yPx = plotArea.y + plotArea.height - yFrac * plotArea.height;
+    }
+  }
+
   return (
     <g>
-      <line x1={x} y1={top} x2={x} y2={top + height} {...crosshairLineProps} />
-      <line x1={left} y1={y} x2={left + width} y2={y} {...crosshairLineProps} />
+      <line x1={xPx} y1={plotArea.y} x2={xPx} y2={plotArea.y + plotArea.height} {...crosshairLineProps} />
+      {yPx != null && (
+        <line x1={plotArea.x} y1={yPx} x2={plotArea.x + plotArea.width} y2={yPx} {...crosshairLineProps} />
+      )}
     </g>
   );
 };
@@ -571,7 +643,8 @@ export const BarChart2D: React.FC<{ data: ChartDataPoint[]; fullHeight?: boolean
   );
 };
 
-export const LineChart2D: React.FC<{ data: ChartDataPoint[]; fullHeight?: boolean; onDrillDown?: (e: DrillDownEvent) => void; unit?: string; drillIntoQuery?: string; color?: string } & CrosshairProps> = ({ data, fullHeight, onDrillDown, unit, drillIntoQuery, color, hoveredTimestamp, onTimestampHover, correlationValues, currentPanelName, isHoveredPanel }) => {
+export const LineChart2D: React.FC<{ data: ChartDataPoint[]; fullHeight?: boolean; onDrillDown?: (e: DrillDownEvent) => void; unit?: string; drillIntoQuery?: string; color?: string } & CrosshairProps> = ({ data, fullHeight, onDrillDown, unit, drillIntoQuery, color, hoveredTimestamp, onTimestampHover, correlationValues, currentPanelName, isHoveredPanel}) => {
+  const dataByLabel = useMemo(() => new Map(data.map(d => [d.label, d.value])), [data]);
   if (data.length < 2) return null;
   const c = color || '#6366f1';
   const drillable = !!onDrillDown;
@@ -579,10 +652,11 @@ export const LineChart2D: React.FC<{ data: ChartDataPoint[]; fullHeight?: boolea
   return (
     <ResponsiveContainer width="100%" height={fullHeight ? '100%' : 280} minHeight={fullHeight ? 180 : undefined}>
       <RLineChart data={rechartsData} margin={{ top: 5, right: 20, left: 10, bottom: 5 }}
+
         style={drillable ? { cursor: 'pointer' } : undefined}
         onClick={drillable ? (e: any) => { if (e?.activeLabel) { const row = data.find(d => d.label === e.activeLabel); if (row) onDrillDown!({ label: row.label, value: row.value }); } } : undefined}
-        onMouseMove={(e: any) => { _crosshairMouseY = e?.chartY ?? null; if (onTimestampHover && e?.activeLabel) onTimestampHover(e.activeLabel); }}
-        onMouseLeave={() => { _crosshairMouseY = null; if (onTimestampHover) onTimestampHover(null); }}
+        onMouseMove={(e: any) => { if (onTimestampHover && e?.activeLabel) onTimestampHover(e.activeLabel); }}
+        onMouseLeave={() => { if (onTimestampHover) onTimestampHover(null); }}
       >
         <CartesianGrid strokeDasharray="3 3" stroke={gridStroke} />
         <XAxis
@@ -601,7 +675,7 @@ export const LineChart2D: React.FC<{ data: ChartDataPoint[]; fullHeight?: boolea
           width={50}
         />
         <Tooltip content={<AnalyticsTooltip drillIntoQuery={drillIntoQuery} correlationValues={correlationValues} currentPanelName={currentPanelName} isHoveredPanel={isHoveredPanel} />} offset={20} wrapperStyle={{ zIndex: 1000, pointerEvents: 'none' }} cursor={<CrosshairCursor />} />
-        {hoveredTimestamp && <ReferenceLine x={hoveredTimestamp} {...crosshairLineProps} />}
+        {hoveredTimestamp && <SyncedCrosshair hoveredTimestamp={hoveredTimestamp} dataByLabel={dataByLabel} />}
         <Line
           type="monotone"
           dataKey="value"
@@ -680,7 +754,8 @@ export const PieChart2D: React.FC<{ data: ChartDataPoint[]; fullHeight?: boolean
   );
 };
 
-export const AreaChart2D: React.FC<{ data: ChartDataPoint[]; fullHeight?: boolean; onDrillDown?: (e: DrillDownEvent) => void; unit?: string; drillIntoQuery?: string; color?: string } & CrosshairProps> = ({ data, fullHeight, onDrillDown, unit, drillIntoQuery, color, hoveredTimestamp, onTimestampHover, correlationValues, currentPanelName, isHoveredPanel }) => {
+export const AreaChart2D: React.FC<{ data: ChartDataPoint[]; fullHeight?: boolean; onDrillDown?: (e: DrillDownEvent) => void; unit?: string; drillIntoQuery?: string; color?: string } & CrosshairProps> = ({ data, fullHeight, onDrillDown, unit, drillIntoQuery, color, hoveredTimestamp, onTimestampHover, correlationValues, currentPanelName, isHoveredPanel}) => {
+  const dataByLabel = useMemo(() => new Map(data.map(d => [d.label, d.value])), [data]);
   if (data.length < 2) return null;
   const c = color || '#6366f1';
   const gradId = `areaGrad-${c.replace('#', '')}`;
@@ -689,10 +764,11 @@ export const AreaChart2D: React.FC<{ data: ChartDataPoint[]; fullHeight?: boolea
   return (
     <ResponsiveContainer width="100%" height={fullHeight ? '100%' : 280} minHeight={fullHeight ? 180 : undefined}>
       <RAreaChart data={rechartsData} margin={{ top: 5, right: 20, left: 10, bottom: 5 }}
+
         style={drillable ? { cursor: 'pointer' } : undefined}
         onClick={drillable ? (e: any) => { if (e?.activeLabel) { const row = data.find(d => d.label === e.activeLabel); if (row) onDrillDown!({ label: row.label, value: row.value }); } } : undefined}
-        onMouseMove={(e: any) => { _crosshairMouseY = e?.chartY ?? null; if (onTimestampHover && e?.activeLabel) onTimestampHover(e.activeLabel); }}
-        onMouseLeave={() => { _crosshairMouseY = null; if (onTimestampHover) onTimestampHover(null); }}
+        onMouseMove={(e: any) => { if (onTimestampHover && e?.activeLabel) onTimestampHover(e.activeLabel); }}
+        onMouseLeave={() => { if (onTimestampHover) onTimestampHover(null); }}
       >
         <defs>
           <linearGradient id={gradId} x1="0" y1="0" x2="0" y2="1">
@@ -717,7 +793,7 @@ export const AreaChart2D: React.FC<{ data: ChartDataPoint[]; fullHeight?: boolea
           width={50}
         />
         <Tooltip content={<AnalyticsTooltip drillIntoQuery={drillIntoQuery} correlationValues={correlationValues} currentPanelName={currentPanelName} isHoveredPanel={isHoveredPanel} />} offset={20} wrapperStyle={{ zIndex: 1000, pointerEvents: 'none' }} cursor={<CrosshairCursor />} />
-        {hoveredTimestamp && <ReferenceLine x={hoveredTimestamp} {...crosshairLineProps} />}
+        {hoveredTimestamp && <SyncedCrosshair hoveredTimestamp={hoveredTimestamp} dataByLabel={dataByLabel} />}
         <Area
           type="monotone"
           dataKey="value"
@@ -739,7 +815,8 @@ export const AreaChart2D: React.FC<{ data: ChartDataPoint[]; fullHeight?: boolea
 // Dual-axis Area Chart — two value columns, left + right Y axes
 // ═══════════════════════════════════════════════════════════════════════════
 
-export const DualAxisAreaChart2D: React.FC<{ data: GroupedChartData[]; valueColumns: string[]; fullHeight?: boolean; onDrillDown?: (e: DrillDownEvent) => void; drillIntoQuery?: string } & CrosshairProps> = ({ data, valueColumns, fullHeight, onDrillDown, drillIntoQuery, hoveredTimestamp, onTimestampHover, correlationValues, currentPanelName, isHoveredPanel }) => {
+export const DualAxisAreaChart2D: React.FC<{ data: GroupedChartData[]; valueColumns: string[]; fullHeight?: boolean; onDrillDown?: (e: DrillDownEvent) => void; drillIntoQuery?: string } & CrosshairProps> = ({ data, valueColumns, fullHeight, onDrillDown, drillIntoQuery, hoveredTimestamp, onTimestampHover, correlationValues, currentPanelName, isHoveredPanel}) => {
+  // For dual-axis, skip horizontal crosshair (ambiguous which y-axis to use)
   if (data.length < 2) return null;
   const { rows, groupNames, colorMap } = flattenGrouped(data);
   const leftCol = groupNames[0];
@@ -752,10 +829,11 @@ export const DualAxisAreaChart2D: React.FC<{ data: GroupedChartData[]; valueColu
   return (
     <ResponsiveContainer width="100%" height={fullHeight ? '100%' : 280} minHeight={fullHeight ? 180 : undefined}>
       <RAreaChart data={rows} margin={{ top: 5, right: 60, left: 10, bottom: 5 }}
+
         style={drillable ? { cursor: 'pointer' } : undefined}
         onClick={drillable ? (e: any) => { if (e?.activeLabel) onDrillDown!({ label: e.activeLabel, value: 0 }); } : undefined}
-        onMouseMove={(e: any) => { _crosshairMouseY = e?.chartY ?? null; if (onTimestampHover && e?.activeLabel) onTimestampHover(e.activeLabel); }}
-        onMouseLeave={() => { _crosshairMouseY = null; if (onTimestampHover) onTimestampHover(null); }}
+        onMouseMove={(e: any) => { if (onTimestampHover && e?.activeLabel) onTimestampHover(e.activeLabel); }}
+        onMouseLeave={() => { if (onTimestampHover) onTimestampHover(null); }}
       >
         <defs>
           <linearGradient id={gradIdLeft} x1="0" y1="0" x2="0" y2="1">
@@ -775,7 +853,7 @@ export const DualAxisAreaChart2D: React.FC<{ data: GroupedChartData[]; valueColu
         <YAxis yAxisId="right" orientation="right" tick={axisTickStyle} tickLine={axisLineStyle} axisLine={axisLineStyle}
           tickFormatter={compactFormatter()} width={55} />
         <Tooltip content={<AnalyticsTooltip drillIntoQuery={drillIntoQuery} correlationValues={correlationValues} currentPanelName={currentPanelName} isHoveredPanel={isHoveredPanel} />} offset={20} wrapperStyle={{ zIndex: 1000, pointerEvents: 'none' }} cursor={<CrosshairCursor />} />
-        {hoveredTimestamp && <ReferenceLine x={hoveredTimestamp} yAxisId="left" {...crosshairLineProps} />}
+        {hoveredTimestamp && <SyncedCrosshair hoveredTimestamp={hoveredTimestamp} />}
         <Legend iconType="line" iconSize={14} formatter={(value: string) => (
           <span style={{ fontSize: 11, color: 'var(--text-secondary)' }}>
             {value === leftCol ? `${valueColumns[0]} (left)` : `${valueColumns[1]} (right)`}
@@ -925,7 +1003,7 @@ export const StackedBarChart2D: React.FC<{ data: GroupedChartData[]; orientation
   );
 };
 
-export const GroupedLineChart2D: React.FC<{ data: GroupedChartData[]; onDrillDown?: (e: DrillDownEvent) => void; unit?: string; drillIntoQuery?: string } & CrosshairProps> = ({ data, onDrillDown, unit, drillIntoQuery, hoveredTimestamp, onTimestampHover, correlationValues, currentPanelName, isHoveredPanel }) => {
+export const GroupedLineChart2D: React.FC<{ data: GroupedChartData[]; onDrillDown?: (e: DrillDownEvent) => void; unit?: string; drillIntoQuery?: string } & CrosshairProps> = ({ data, onDrillDown, unit, drillIntoQuery, hoveredTimestamp, onTimestampHover, correlationValues, currentPanelName, isHoveredPanel}) => {
   const [hoveredLine, setHoveredLine] = useState<string | null>(null);
   if (!data.length) return null;
   const { rows, groupNames, colorMap } = flattenGrouped(data);
@@ -933,10 +1011,11 @@ export const GroupedLineChart2D: React.FC<{ data: GroupedChartData[]; onDrillDow
   return (
     <ResponsiveContainer width="100%" height={320}>
       <RLineChart data={rows} margin={{ top: 10, right: 20, left: 10, bottom: 5 }}
+
         style={onDrillDown ? { cursor: 'pointer' } : undefined}
         onClick={onDrillDown ? (e: any) => { if (e?.activeLabel) onDrillDown({ label: e.activeLabel, value: 0 }); } : undefined}
-        onMouseMove={(e: any) => { _crosshairMouseY = e?.chartY ?? null; if (onTimestampHover && e?.activeLabel) onTimestampHover(e.activeLabel); }}
-        onMouseLeave={() => { _crosshairMouseY = null; if (onTimestampHover) onTimestampHover(null); }}
+        onMouseMove={(e: any) => { if (onTimestampHover && e?.activeLabel) onTimestampHover(e.activeLabel); }}
+        onMouseLeave={() => { if (onTimestampHover) onTimestampHover(null); }}
       >
         <CartesianGrid strokeDasharray="3 3" stroke={gridStroke} />
         <XAxis dataKey="name" tick={axisTickStyle} tickLine={axisLineStyle} axisLine={axisLineStyle}
@@ -944,7 +1023,7 @@ export const GroupedLineChart2D: React.FC<{ data: GroupedChartData[]; onDrillDow
           tickFormatter={formatXTick} />
         <YAxis tick={axisTickStyle} tickLine={axisLineStyle} axisLine={axisLineStyle} tickFormatter={compactFormatter(unit)} width={50} />
         <Tooltip content={<AnalyticsTooltip drillIntoQuery={drillIntoQuery} correlationValues={correlationValues} currentPanelName={currentPanelName} isHoveredPanel={isHoveredPanel} />} offset={20} wrapperStyle={{ zIndex: 1000, pointerEvents: 'none' }} cursor={<CrosshairCursor />} />
-        {hoveredTimestamp && <ReferenceLine x={hoveredTimestamp} {...crosshairLineProps} />}
+        {hoveredTimestamp && <SyncedCrosshair hoveredTimestamp={hoveredTimestamp} />}
         <Legend iconType="line" iconSize={14}
           onMouseEnter={(e) => setHoveredLine(String(e.dataKey))}
           onMouseLeave={() => setHoveredLine(null)}
