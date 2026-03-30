@@ -221,4 +221,68 @@ describe('DatabaseExplorer integration', { tags: ['storage'] }, () => {
       expect(data.total_rows_in_part).toBeGreaterThan(0);
     });
   });
+
+  describe('getPartColumnMinMax', () => {
+    const DATE_TABLE = `${TEST_DB}.date_minmax`;
+
+    beforeAll(async () => {
+      await ctx.client.command({
+        query: `
+          CREATE TABLE IF NOT EXISTS ${DATE_TABLE} (
+            id        UInt32,
+            d         Date,
+            dt        DateTime,
+            dt64      DateTime64(3),
+            n         UInt32
+          ) ENGINE = MergeTree()
+          ORDER BY id
+        `,
+      });
+      // Insert two rows with known, non-epoch dates
+      await ctx.client.command({
+        query: `
+          INSERT INTO ${DATE_TABLE} (id, d, dt, dt64, n) VALUES
+            (1, '2024-03-01', '2024-03-01 08:00:00', '2024-03-01 08:00:00.000', 10),
+            (2, '2024-06-30', '2024-06-30 20:00:00', '2024-06-30 20:00:00.500', 99)
+        `,
+      });
+    });
+
+    it('returns correctly formatted min/max for Date and DateTime columns', async () => {
+      const parts = await explorer.getTableParts(TEST_DB, 'date_minmax');
+      expect(parts.length).toBeGreaterThanOrEqual(1);
+      const partName = parts[0].name;
+
+      const columns = [
+        { column_name: 'd',    type: 'Date' },
+        { column_name: 'dt',   type: 'DateTime' },
+        { column_name: 'dt64', type: 'DateTime64(3)' },
+        { column_name: 'n',    type: 'UInt32' },
+      ];
+
+      const mm = await explorer.getPartColumnMinMax(TEST_DB, 'date_minmax', partName, columns);
+
+      // Date column — expect "YYYY-MM-DD", not "1970-01-01"
+      expect(mm.get('d')?.min).toBe('2024-03-01');
+      expect(mm.get('d')?.max).toBe('2024-06-30');
+
+      // DateTime column — expect "YYYY-MM-DD HH:MM:SS"
+      expect(mm.get('dt')?.min).toBe('2024-03-01 08:00:00');
+      expect(mm.get('dt')?.max).toBe('2024-06-30 20:00:00');
+
+      // DateTime64 — toString includes sub-second precision
+      expect(mm.get('dt64')?.min).toMatch(/^2024-03-01/);
+      expect(mm.get('dt64')?.max).toMatch(/^2024-06-30/);
+
+      // Numeric column still works
+      expect(mm.get('n')?.min).toBe('10');
+      expect(mm.get('n')?.max).toBe('99');
+    });
+
+    it('returns empty map for a non-existent part name', async () => {
+      const columns = [{ column_name: 'd', type: 'Date' }];
+      const mm = await explorer.getPartColumnMinMax(TEST_DB, 'date_minmax', 'nonexistent_part_0_0_0', columns);
+      expect(mm.size).toBe(0);
+    });
+  });
 });

@@ -207,14 +207,17 @@ export class DatabaseExplorer {
     if (scalarCols.length === 0) return new Map();
 
     const escapedPart = partName.replace(/'/g, "\\'");
-    // Build one SELECT with min/max for each column, cast to String
+    // Build one SELECT with min/max for each column, cast to String.
+    // Include count() so we can detect an empty result set — when _part matches
+    // no rows (e.g. the part was merged away), ClickHouse min() returns epoch
+    // sentinel values (1970-01-01) instead of NULL, which would show as bogus dates.
     const selects = scalarCols.map(c => {
       const col = `\`${c.column_name}\``;
       return `toString(min(${col})) AS \`min_${c.column_name}\`, toString(max(${col})) AS \`max_${c.column_name}\``;
     }).join(',\n    ');
 
     const sql = tagQuery(
-      `SELECT ${selects} FROM \`${database}\`.\`${table}\` WHERE _part = '${escapedPart}'`,
+      `SELECT count() AS _cnt, ${selects} FROM \`${database}\`.\`${table}\` WHERE _part = '${escapedPart}'`,
       sourceTag(TAB_DATABASES, 'partColumnMinMax'),
     );
 
@@ -223,6 +226,8 @@ export class DatabaseExplorer {
       const result = new Map<string, { min: string; max: string }>();
       if (rows.length > 0) {
         const row = rows[0] as Record<string, unknown>;
+        // If no rows matched the _part filter, skip — min() would have returned sentinel values
+        if (Number(row._cnt) === 0) return new Map();
         for (const c of scalarCols) {
           const minVal = String(row[`min_${c.column_name}`] ?? '');
           const maxVal = String(row[`max_${c.column_name}`] ?? '');
