@@ -10,11 +10,10 @@ import { useRefreshSettingsStore } from '../stores/refreshSettingsStore';
 import { useGlobalLastUpdatedStore } from '../stores/refreshSettingsStore';
 import { useCapabilityCheck } from '../components/shared/RequiresCapability';
 import { PermissionGate } from '../components/shared/PermissionGate';
-import { useOverviewStore, OverviewPoller } from '../stores/overviewStore';
 import { BackLink } from '../components/common/BackLink';
 import { DocsLink } from '../components/common/DocsLink';
 import { useLocation } from 'react-router-dom';
-import type { QuerySeries } from '@tracehouse/core';
+import type { QuerySeries, QueryConcurrency } from '@tracehouse/core';
 import { OverviewService } from '@tracehouse/core';
 import { useUserPreferenceStore } from '../stores/userPreferenceStore';
 import { QueryHealthSunburst } from '../components/query/QueryHealthSunburst';
@@ -74,12 +73,22 @@ export const QueryMonitor: React.FC = () => {
   const { available: hasQueryLog, probing: isProbing } = useCapabilityCheck(['query_log']);
   const { available: hasProcesses, probing: isProcessesProbing } = useCapabilityCheck(['system_processes']);
 
-  const [runningCoordinatorIds, setRunningCoordinatorIds] = useState<Set<string>>(new Set());
   const [historyCoordinatorIds, setHistoryCoordinatorIds] = useState<Set<string>>(new Set());
   const [runningFilteredCount, setRunningFilteredCount] = useState<number | null>(null);
+  const [concurrency, setConcurrency] = useState<QueryConcurrency | null>(null);
 
-  const { data: liveData } = useOverviewStore();
-  const concurrency = liveData?.queryConcurrency;
+  // Derive coordinator IDs from the already-fetched running queries
+  // (eliminates the separate RUNNING_COORDINATOR_IDS query)
+  const runningCoordinatorIds = useMemo(() => {
+    const ids = new Set<string>();
+    for (const q of runningQueries) {
+      if (!q.is_initial_query && q.initial_query_id) {
+        ids.add(q.initial_query_id);
+      }
+    }
+    return ids;
+  }, [runningQueries]);
+
   const slotPct = concurrency && concurrency.maxConcurrent > 0
     ? (concurrency.running / concurrency.maxConcurrent) * 100
     : 0;
@@ -186,31 +195,27 @@ export const QueryMonitor: React.FC = () => {
     return counts;
   }, [runningQueries]);
 
-  const livePollerRef = useRef<OverviewPoller | null>(null);
+  const statsIntervalRef = useRef<ReturnType<typeof setInterval> | null>(null);
 
   useEffect(() => {
     if (wsRef.current) { wsRef.current.disconnect(); wsRef.current = null; }
-    if (livePollerRef.current) { livePollerRef.current.stop(); livePollerRef.current = null; }
+    if (statsIntervalRef.current) { clearInterval(statsIntervalRef.current); statsIntervalRef.current = null; }
     if (!services || !isConnected) { clearQueries(); return; }
     const queryIntervalMs = refreshRateSeconds > 0 ? clampToAllowed(Math.max(2, refreshRateSeconds), refreshConfig) * 1000 : 2000;
-    const overviewIntervalMs = refreshRateSeconds > 0 ? clampToAllowed(refreshRateSeconds, refreshConfig) * 1000 : 5000;
+    const statsIntervalMs = refreshRateSeconds > 0 ? clampToAllowed(refreshRateSeconds, refreshConfig) * 1000 : 5000;
     wsRef.current = new QueryWebSocket(services.queryAnalyzer, queryIntervalMs);
     if (refreshRateSeconds > 0) wsRef.current.connect();
-    // Start overview poller for concurrency/QPS data
+    // Lightweight stats poller — single query for concurrency/QPS/rejected
     const overviewService = new OverviewService(services.adapter, {}, services.environmentDetector);
-    livePollerRef.current = new OverviewPoller(overviewService, overviewIntervalMs);
-    if (refreshRateSeconds > 0) livePollerRef.current.start();
-    // Poll running coordinator IDs alongside the WS
-    const pollCoordinators = () => {
-      services.queryAnalyzer.getRunningCoordinatorIds().then(setRunningCoordinatorIds).catch(() => {});
+    const pollStats = () => {
+      overviewService.getQueryMonitorStats().then(setConcurrency).catch(() => {});
     };
-    pollCoordinators();
-    const coordInterval = refreshRateSeconds > 0 ? setInterval(pollCoordinators, queryIntervalMs) : null;
+    pollStats();
+    if (refreshRateSeconds > 0) statsIntervalRef.current = setInterval(pollStats, statsIntervalMs);
     if (hasQueryLog) fetchHistory();
     return () => {
       if (wsRef.current) wsRef.current.disconnect();
-      if (livePollerRef.current) livePollerRef.current.stop();
-      if (coordInterval) clearInterval(coordInterval);
+      if (statsIntervalRef.current) clearInterval(statsIntervalRef.current);
     };
   }, [services, isConnected, refreshRateSeconds, refreshConfig, manualRefreshTick]);
 

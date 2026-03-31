@@ -36,9 +36,10 @@ import {
   GET_QPS_HISTORY,
   GET_MAX_CONCURRENT_QUERIES,
   GET_RECENT_IO_RATES,
+  GET_QUERY_MONITOR_STATS,
 } from '../queries/overview-queries.js';
 import { buildQuery, tagQuery } from '../queries/builder.js';
-import { TAB_OVERVIEW, sourceTag } from '../queries/source-tags.js';
+import { TAB_OVERVIEW, TAB_QUERIES, sourceTag } from '../queries/source-tags.js';
 
 export class OverviewServiceError extends Error {
   constructor(message: string, public readonly cause?: Error) {
@@ -252,6 +253,45 @@ export class OverviewService {
     } catch (error) {
       throw new OverviewServiceError('Failed to get overview data', error as Error);
     }
+  }
+
+  /**
+   * Lightweight query for the Query Monitor stat cards only.
+   * Returns QueryConcurrency in a single round-trip instead of the 16-query
+   * getOverviewData() call.
+   */
+  async getQueryMonitorStats(): Promise<QueryConcurrency> {
+    const rows = await this.adapter.executeQuery<{
+      src: string;
+      key: string;
+      val: string;
+    }>(tagQuery(GET_QUERY_MONITOR_STATS, sourceTag(TAB_QUERIES, 'monitorStats')));
+
+    let running = 0;
+    let queued = 0;
+    let maxConcurrent = 0;
+    let rejectedRecent = 0;
+    const qpsHistory: QpsPoint[] = [];
+
+    for (const row of rows) {
+      switch (row.src) {
+        case 'metric':
+          if (row.key === 'Query') running = Number(row.val) || 0;
+          if (row.key === 'QueryPreempted') queued = Number(row.val) || 0;
+          break;
+        case 'setting':
+          maxConcurrent = Number(row.val) || 0;
+          break;
+        case 'rejected':
+          rejectedRecent = Number(row.val) || 0;
+          break;
+        case 'qps':
+          qpsHistory.push({ time: row.key, qps: Number(row.val) || 0 });
+          break;
+      }
+    }
+
+    return { running, queued, maxConcurrent, rejectedRecent, qpsHistory };
   }
 
   // ===========================================================================

@@ -360,6 +360,53 @@ GROUP BY hostname
 `;
 
 // =============================================================================
+// QUERY MONITOR — single combined query for the stat cards
+// =============================================================================
+
+/**
+ * Combined stats for the Query Monitor header cards.
+ * Returns all data in a single round-trip via UNION ALL:
+ *   src='metric'   → running query count, queued count
+ *   src='setting'  → max_concurrent_queries
+ *   src='rejected' → rejected count (last 1h)
+ *   src='qps'      → QPS sparkline buckets (last 15m, 15s intervals)
+ */
+export const GET_QUERY_MONITOR_STATS = `
+SELECT 'metric' AS src, metric AS key, toString(value) AS val
+FROM system.metrics
+WHERE metric IN ('Query', 'QueryPreempted')
+
+UNION ALL
+
+SELECT 'setting', 'max_concurrent', value
+FROM system.server_settings
+WHERE name = 'max_concurrent_queries'
+
+UNION ALL
+
+SELECT 'rejected', 'count', toString(count())
+FROM {{cluster_aware:system.query_log}}
+WHERE type = 'ExceptionBeforeStart'
+  AND exception LIKE '%TOO_MANY_SIMULTANEOUS_QUERIES%'
+  AND event_date >= today() - 1
+  AND event_time > now() - INTERVAL 1 HOUR
+
+UNION ALL
+
+SELECT 'qps', toString(t), toString(qps)
+FROM (
+  SELECT
+    toStartOfInterval(event_time, INTERVAL 15 SECOND) AS t,
+    avg(ProfileEvent_Query) AS qps
+  FROM {{cluster_aware:system.metric_log}}
+  WHERE event_date >= today()
+    AND event_time > now() - INTERVAL 15 MINUTE
+  GROUP BY t
+  ORDER BY t ASC
+)
+`;
+
+// =============================================================================
 // DEEP-DIVE WIDGET QUERIES (for Overview landing page teasers)
 // =============================================================================
 
