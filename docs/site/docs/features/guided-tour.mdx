@@ -1,0 +1,60 @@
+import FeatureVideo from '@site/src/components/FeatureVideo';
+
+# Guided Tour
+
+:::note Work in Progress
+TraceHouse is under active development. The initial focus has been on delivering features. The current phase is about stabilizing and polishing the existing functionality.
+:::
+
+## Why TraceHouse
+
+The best way to use a system well is to understand how it works, and the fastest way to build that understanding is to visualize it. ClickHouse already exposes everything through its `system.*` tables (query logs, merge activity, resource usage, part metadata) but querying them by hand gets old fast, and joining across them is no fun either. TraceHouse puts an interactive layer on top of those tables so you can see what your cluster is doing and drill in when needed.
+
+## What It's Good At
+
+- **Understanding workload in real time**: see which queries, merges, and background tasks are consuming CPU, memory, and I/O right now
+- **Investigating specific queries or merges**: trace a slow query's resource footprint, or follow a merge from start to finish
+- **Exploring table structure and storage**: inspect parts, columns, compression ratios, and how data is physically organized
+- **Historical analysis**: look at past query patterns, merge throughput, and resource trends over time
+
+## What It's Not
+
+TraceHouse is an observability and exploration tool, not a replacement for:
+
+- **Alerting**: it won't page you at 3am (pair it with Grafana or your existing alerting stack for that)
+- **Cluster management**: it reads system tables, it doesn't manage configuration, users, or schema
+- **General-purpose dashboards**: it's purpose-built for ClickHouse internals, not arbitrary metrics
+
+## Features
+
+### Time Travel
+
+<FeatureVideo src="time-travel-1920.mp4" />
+
+Replay your cluster's state at any point in the past. Time Travel lets you scrub through historical snapshots of CPU, memory, merges, and queries, useful for post-incident investigation or understanding how workload patterns change over the course of a day.
+
+[Learn more →](./time-travel)
+
+### Query Monitor
+
+<FeatureVideo src="query-details-1920.mp4" />
+
+A live and historical view of every query running on your cluster. Filter by user, query kind, status, or resource usage. Click into any query to see its full resource profile, execution timeline, and the SQL it ran.
+
+[Learn more →](./query-monitor)
+
+### Merge Tracker
+
+<FeatureVideo src="merge-tracker-1920.mp4" />
+
+Watch merges as they happen and review past merge activity. See which tables are merging, how long merges take, how much I/O they produce, and whether the merge pipeline is keeping up with inserts.
+
+[Learn more →](./merge-tracker)
+
+### Analytics
+
+<FeatureVideo src="analytics-1920.mp4" />
+
+Aggregate query and merge data over time to spot trends. Which queries are getting slower? Which tables produce the most merge work? Analytics gives you the longer-term view that real-time monitoring can't.
+
+[Learn more →](./analytics)

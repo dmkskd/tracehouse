@@ -89,6 +89,20 @@ The diagram visualizes these dependencies:
 - Cascading delays when multiple mutations are queued, each must complete in order before the next can begin
 - Regular merge chains where the output of one merge becomes input to another
 
+## Health Map
+
+:::caution Experimental
+Requires the experimental features toggle in Settings. This is an early exploration — we are still figuring out which signals and hierarchy best surface actionable merge health at a glance.
+:::
+
+The Health Map is an alternative view of merge activity, toggled via the **Health Map** button in the top panel. It replaces the default list with an interactive sunburst that summarizes the overall health of the merge subsystem.
+
+The center ring shows a single green/yellow/red health state for merges overall. Outer rings break this down by category — part count health, mutation queue health, merge throughput health — and then further into individual tables, merges, and mutations at the leaf level.
+
+Hover over any arc to expand its children into the next ring and see a tooltip with the metric value. Click a leaf node to jump to the corresponding active merge or mutation in the detail panel.
+
+<FeatureVideo src="merge-health-1920.mp4" />
+
 ## Merge History
 
 Historical merge data from `system.part_log` with:

@@ -11,7 +11,7 @@ effective_ram = cgroup_mem > 0 && cgroup_mem < OSMemoryTotal ? cgroup_mem : OSMe
 memory_pct = (MemoryTracking / effective_ram) × 100
 ```
 
-> **Tests:** `metrics-collector.integration.test.ts` → "Memory tracking"
+> **Tests:** `overview-metrics-collector.integration.test.ts` → "Memory tracking"
 > Covers: raw memory_used/memory_total, percentage derivation (25% = 4 GiB / 16 GiB).
 
 ## Container / k8s memory awareness

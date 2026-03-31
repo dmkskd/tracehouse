@@ -44,9 +44,13 @@ Presets are pre-built queries bundled with TraceHouse that cover common monitori
 
 ## Drill-Down Navigation
 
+<FeatureVideo src="analytics-drilldown-1920.mp4" />
+
 Charts support click-to-drill: clicking a chart segment navigates to a related query with the clicked value passed as a filter. This enables interactive exploration from high-level overviews down to specific tables, queries, or time ranges.
 
 ## Correlation
+
+<FeatureVideo src="analytics-correlation-1920.mp4" />
 
 When multiple metrics are overlaid on the same chart, the correlation panel compares their time series using three algorithms:
 
@@ -69,21 +73,58 @@ Overlay lines are dimmed by correlation strength: strongly correlated series sta
 
 ## Surfaces
 
+<FeatureVideo src="analytics-surfaces-1920.mp4" />
+
 :::caution Experimental
-Requires the experimental features toggle in Settings. We are evaluating which composition of resource metrics, combined on a surface, best exposes critically stressed resources at both the system and table level. The resource and query surfaces shown here are still being refined.
+Requires the experimental features toggle in Settings. We are evaluating which composition of resource metrics, combined on a surface, best exposes critically stressed resources at both the system and table level. The surfaces shown here are still being refined.
 :::
 
-The Surfaces tab renders 3D visualizations of table activity over time, built from per-minute aggregations of `system.query_log` and `system.part_log`.
+The Surfaces tab renders 3D visualizations of table and system activity over time, built from per-minute aggregations of `system.query_log` and `system.part_log`. All data is smoothed with a Gaussian kernel to reduce noise while preserving trends.
 
 ### Stress Surface
 
-Shows query/insert/merge intensity for a selected table as a 3D surface. The X-axis is time (per minute), the Y-axis is a resource dimension (duration, rows read, memory, CPU, I/O wait), and the Z-axis (height) is the aggregated value. This makes it easy to spot recurring stress patterns (e.g. a batch job that spikes CPU every hour) or correlate insert bursts with merge storms.
+Shows multi-dimensional resource intensity for a selected table as a 3D surface. Time runs along the X-axis (per minute), nine resource channels are arrayed along the Z-axis, and the Y-axis (height) shows normalized stress intensity on a scale from Idle to Peak.
+
+The nine resource channels are:
+
+| Channel | Source metric |
+|---------|--------------|
+| Concurrent Load | query count |
+| Avg Latency | mean duration |
+| P95 Latency | 95th percentile duration |
+| Rows Scanned | total read rows |
+| Read I/O | total read bytes |
+| Memory | total memory usage |
+| CPU Time | total CPU microseconds |
+| I/O Wait | total I/O wait microseconds |
+| Marks Touched | total selected marks |
+
+Each channel is independently normalized to [0, 1], so the surface reveals the *shape* of stress across dimensions rather than absolute values. The color scale runs from deep blue (idle) through green and yellow to red and magenta (peak stress).
+
+Insert activity appears as blue markers below the surface, sized by inserted rows. Merge activity appears as orange markers at the far edge, sized by merge count. This makes it easy to spot recurring stress patterns (e.g. a batch job that spikes CPU every hour) or correlate insert bursts with merge storms.
 
 Controls: time range picker (15 minutes to 30 days), database/table selector.
 
 ### Pattern Surface
 
-Shows the top 12 most time-consuming query patterns for a table. Each pattern (by `normalized_query_hash`) gets its own lane on the Y-axis, with time on X and average duration on Z. Hovering shows a sample query for each pattern. This reveals which query shapes dominate a table's workload and how their performance varies over time.
+Shows the top 12 most time-consuming query patterns for a table. Each pattern (by `normalized_query_hash`) gets its own lane on the Z-axis, ranked by total duration. Time runs along the X-axis, and the Y-axis (height) shows average duration in milliseconds — this is the actual latency value, not a normalized score.
+
+The color scale uses a magma palette (dark purple to bright yellow) to indicate intensity. A collapsible side panel lists each pattern with its query count, average duration, average memory, and a sample query. Hovering over the surface highlights the corresponding pattern.
+
+This reveals which query shapes dominate a table's workload and how their performance varies over time.
+
+### Resource Surface
+
+A system-wide or per-table view of where resources are being consumed. It operates at two levels:
+
+- **System level** — Time × Tables. Each lane represents a table, ranked by resource consumption. Shows which tables are stressing the system most at any point in time.
+- **Table level** — Time × Query patterns. Drill into a table to see which query patterns drive its resource usage.
+
+By default the height represents a **composite stress** metric: a weighted combination of CPU, memory, I/O, and marks, each normalized as a percentage of system-wide usage. You can switch to a single metric instead:
+
+- CPU time, Memory, Read I/O, I/O wait, Marks touched, Duration, Query count, Rows read
+
+A side panel lists each lane with a mini stacked bar showing the resource breakdown. Hovering a lane in the panel highlights it on the surface, and vice versa. Click a table lane at the system level to drill into its per-pattern breakdown.
 
 ## Query Language
 

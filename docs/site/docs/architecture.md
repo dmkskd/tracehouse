@@ -2,7 +2,7 @@
 
 ## Client-Side Only - Static HTML, No Backend
 
-TraceHouse is a fully static, client-side application. There is no backend server, no API layer, no database of its own. The entire app is a set of HTML, CSS, and JavaScript files that run in your browser and query ClickHouse directly over its HTTP interface.
+TraceHouse is a fully static, client-side application. It doesn't need a backend server, an API layer, or a database of its own. The entire app is a set of HTML, CSS, and JavaScript files that run in your browser and query ClickHouse directly over its HTTP interface.
 
 This means:
 

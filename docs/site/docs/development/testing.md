@@ -261,6 +261,114 @@ Docker must be running — the tests spin up a ClickHouse container automaticall
 - **QuerySet validation**: each plugin's `queries` property returns well-formed SQL
 - **InsertConfig**: frozen dataclass behaviour and defaults
 
+## End-to-end tests (Playwright)
+
+Browser-based e2e tests live in `packages/e2e/` and use [Playwright](https://playwright.dev/). They start a real ClickHouse container and the Vite dev server, then drive the full app through Chromium and a mobile viewport to verify real data flows end-to-end.
+
+### What they cover
+
+| Test file | What it validates |
+|---|---|
+| `smoke.spec.ts` | App boot, nav items, route transitions, settings toggles, responsiveness, performance |
+| `connection.spec.ts` | "Add Connection" form flow and "Test Connection" button against real ClickHouse |
+| `connected-pages.spec.ts` | Overview metrics, Engine Internals, Explorer databases, Queries, Analytics — all with real data |
+
+The `connectedPage` fixture injects a ClickHouse connection via localStorage and **waits for actual data to arrive** (the refresh indicator must show "Just now" or "Xs ago", not "Connecting...") before handing the page to the test. This means tests that pass are genuinely connected and showing real ClickHouse data.
+
+### Running
+
+```bash
+# Run all e2e tests (headless)
+just e2e
+
+# Interactive Playwright UI — step through tests, inspect screenshots, replay traces
+just e2e-ui
+
+# Watch tests run in a visible browser (500ms between actions by default)
+just e2e-headed
+
+# Slower or faster headed runs
+just e2e-headed 1000     # 1 second between actions
+just e2e-headed 200      # faster but still visible
+```
+
+Or directly with npm:
+
+```bash
+cd packages/e2e
+npx playwright test              # headless
+npx playwright test --ui         # interactive UI
+npx playwright test --headed     # visible browser (no slowdown)
+SLOWMO=500 npx playwright test --headed  # visible + slow
+```
+
+### Using an external ClickHouse
+
+Set `CH_E2E_URL` to skip the Docker container and run against an existing instance:
+
+```bash
+CH_E2E_URL=http://localhost:8123 just e2e
+```
+
+### Infrastructure
+
+The e2e setup follows the same pattern as core integration tests:
+
+- **Global setup** (`tests/global-setup.ts`): starts a ClickHouse container with `docker run`, waits for health, runs the init SQL from `infra/demo/init/` to set up users and grants. Writes connection details to `.ch-state.json`.
+- **Global teardown** (`tests/global-teardown.ts`): stops the container.
+- **Fixtures** (`tests/fixtures.ts`): provides `chConfig` (connection details) and `connectedPage` (a Page with an active ClickHouse connection). Two connection methods:
+  - `connectViaLocalStorage` — injects the connection profile directly into localStorage (fast, used by most tests)
+  - `connectViaUI` — fills in the "Add Connection" form like a real user (used by connection form tests)
+
+### Browser projects
+
+| Project | Device | Notes |
+|---|---|---|
+| `chromium` | Desktop Chrome | Full test suite |
+| `mobile-chrome` | Pixel 7 | Connected page tests + boot/responsiveness. Connection form and settings tests are skipped (nav overflow on narrow viewports). |
+
+Firefox and WebKit are available but commented out in `playwright.config.ts`. Enable them after installing browsers with `npx playwright install firefox webkit`.
+
+### Artifacts
+
+- **Screenshots**: captured on failure (`test-results/`)
+- **Traces**: captured on first retry (`test-results/`)
+- **HTML report**: `npx playwright show-report` (after a test run)
+- **Video**: captured on first retry
+
+### Adding new e2e tests
+
+1. For tests that need a ClickHouse connection, use the `connectedPage` fixture:
+
+```typescript
+import { test, expect } from './fixtures';
+
+test('my feature works', async ({ connectedPage: page }) => {
+  await page.goto('/#/my-page');
+  // connectedPage already verified data is flowing
+  await expect(page.getByText('something from ClickHouse')).toBeVisible();
+});
+```
+
+2. For UI-only tests (no ClickHouse needed), use the standard `page` fixture:
+
+```typescript
+import { test, expect } from '@playwright/test';
+
+test('UI renders correctly', async ({ page }) => {
+  await page.goto('/#/overview');
+  await expect(page.locator('header nav')).toBeVisible();
+});
+```
+
+3. Skip tests on mobile when they rely on desktop-only UI:
+
+```typescript
+function skipOnMobile() {
+  if (test.info().project.name.includes('mobile')) test.skip();
+}
+```
+
 ## Quick reference
 
 ```bash
@@ -269,6 +377,9 @@ just test-core               # Unit tests only (packages/core)
 just test-frontend           # Frontend tests only
 just test-core-integration   # Integration tests only (requires Docker)
 just test-data-utils         # Data utils tests (requires Docker)
+just e2e                     # E2E browser tests (requires Docker)
+just e2e-ui                  # E2E with interactive Playwright UI
+just e2e-headed              # E2E with visible browser (slow motion)
 just test-tag security       # Run only tests tagged 'security'
 just test-list-tags          # List all available tags
 just test-report             # Open HTML report in browser

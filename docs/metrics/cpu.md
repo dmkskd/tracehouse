@@ -36,7 +36,7 @@ cpu_percentage = cpu_us_per_second / (effective_cores × 1,000,000) × 100
 
 Where `effective_cores` = `CGroupMaxCPU` when available and less than host cores, otherwise `NumberOfCPUCores`. In code: `cgroupCpu > 0 && cgroupCpu < hostCores ? cgroupCpu : hostCores`.
 
-> **Tests:** `metrics-collector.integration.test.ts` → "CPU usage calculation"
+> **Tests:** `overview-metrics-collector.integration.test.ts` → "CPU usage calculation"
 > Covers: 50% on 4 cores, clamping >100%, single core, CGroup preference over host cores, CGroup absent fallback, bogus CGroup ignored, zero cores default.
 
 ## Clamping

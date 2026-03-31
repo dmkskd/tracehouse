@@ -1,4 +1,5 @@
 import React, { useCallback, useRef, useEffect, useState } from 'react';
+import { createPortal } from 'react-dom';
 import type { ReactNode } from 'react';
 import Link from '@docusaurus/Link';
 import Layout from '@theme/Layout';
@@ -7,9 +8,75 @@ import useDocusaurusContext from '@docusaurus/useDocusaurusContext';
 import InteractiveFeatures from '../components/InteractiveFeatures';
 import FAQ from '../components/FAQ';
 
+function DemoButton({ demoUrl }: { demoUrl: string }): ReactNode {
+  const [open, setOpen] = useState(false);
+  const wrapperRef = useRef<HTMLDivElement>(null);
+  const dropdownRef = useRef<HTMLDivElement>(null);
+  const [pos, setPos] = useState<{ top: number; left: number; width: number } | null>(null);
+
+  useEffect(() => {
+    if (!open) return;
+    const handler = (e: MouseEvent) => {
+      const target = e.target as Node;
+      const inWrapper = wrapperRef.current?.contains(target);
+      const inDropdown = dropdownRef.current?.contains(target);
+      if (!inWrapper && !inDropdown) setOpen(false);
+    };
+    document.addEventListener('mousedown', handler);
+    return () => document.removeEventListener('mousedown', handler);
+  }, [open]);
+
+  const handleChevronClick = useCallback((e: React.MouseEvent) => {
+    e.preventDefault();
+    e.stopPropagation();
+    if (!open && wrapperRef.current) {
+      const r = wrapperRef.current.getBoundingClientRect();
+      setPos({ top: r.bottom + 6, left: r.left, width: r.width });
+    }
+    setOpen(o => !o);
+  }, [open]);
+
+  return (
+    <div ref={wrapperRef} className="demo-button-wrapper">
+      <Link className="button button--primary button--lg hero-demo-button" to={demoUrl}>
+        Live Demo
+        <span className="hero-demo-dot demo-status-dot" hidden aria-hidden="true" />
+        <span
+          className="demo-chevron"
+          role="button"
+          tabIndex={0}
+          onClick={handleChevronClick}
+          onKeyDown={(e) => { if (e.key === 'Enter') handleChevronClick(e as unknown as React.MouseEvent); }}
+          aria-label="More demo options"
+        >
+          <svg width="10" height="6" viewBox="0 0 10 6">
+            <path d="M1 1l4 4 4-4" stroke="currentColor" strokeWidth="1.5" fill="none" strokeLinecap="round" strokeLinejoin="round"/>
+          </svg>
+        </span>
+      </Link>
+      {open && pos && createPortal(
+        <div
+          ref={dropdownRef}
+          className="demo-dropdown"
+          style={{ position: 'fixed', top: pos.top, left: pos.left, width: pos.width }}
+        >
+          <Link className="demo-dropdown-option" to={demoUrl} onClick={() => setOpen(false)}>
+            TraceHouse
+          </Link>
+          <Link className="demo-dropdown-option" to={`${demoUrl}:3000`} onClick={() => setOpen(false)}>
+            Grafana Plugin
+          </Link>
+        </div>,
+        document.body,
+      )}
+    </div>
+  );
+}
+
 function HeroSection(): ReactNode {
   const { siteConfig } = useDocusaurusContext();
   const assetsBaseUrl = siteConfig.customFields?.assetsBaseUrl as string;
+  const demoUrl = siteConfig.customFields?.demoUrl as string;
   const videoRef = useRef<HTMLVideoElement>(null);
   const fadeTime = 2; // seconds for fade in/out
 
@@ -73,6 +140,9 @@ function HeroSection(): ReactNode {
           <Link className="button button--primary button--lg" to="/docs/getting-started">
             Get Started
           </Link>
+          {demoUrl && (
+            <DemoButton demoUrl={demoUrl} />
+          )}
           <Link className="button button--secondary button--lg" to="https://github.com/dmkskd/tracehouse">
             <svg width="20" height="20" viewBox="0 0 24 24" style={{marginRight: 8, verticalAlign: 'middle'}}><path d="M12 .297c-6.63 0-12 5.373-12 12 0 5.303 3.438 9.8 8.205 11.385.6.113.82-.258.82-.577 0-.285-.01-1.04-.015-2.04-3.338.724-4.042-1.61-4.042-1.61C4.422 18.07 3.633 17.7 3.633 17.7c-1.087-.744.084-.729.084-.729 1.205.084 1.838 1.236 1.838 1.236 1.07 1.835 2.809 1.305 3.495.998.108-.776.417-1.305.76-1.605-2.665-.3-5.466-1.332-5.466-5.93 0-1.31.465-2.38 1.235-3.22-.135-.303-.54-1.523.105-3.176 0 0 1.005-.322 3.3 1.23.96-.267 1.98-.399 3-.405 1.02.006 2.04.138 3 .405 2.28-1.552 3.285-1.23 3.285-1.23.645 1.653.24 2.873.12 3.176.765.84 1.23 1.91 1.23 3.22 0 4.61-2.805 5.625-5.475 5.92.42.36.81 1.096.81 2.22 0 1.606-.015 2.896-.015 3.286 0 .315.21.69.825.57C20.565 22.092 24 17.592 24 12.297c0-6.627-5.373-12-12-12" fill="currentColor"/></svg>
             GitHub

@@ -18,6 +18,7 @@ const sidebars: SidebarsConfig = {
       type: 'category',
       label: 'Features',
       items: [
+        'features/guided-tour',
         'features/overview',
         'features/engine-internals',
         'features/cluster',
@@ -33,7 +34,9 @@ const sidebars: SidebarsConfig = {
         'features/merge-tracker',
         'features/analytics',
         'features/analytics-query-language',
+        'features/replication',
         'features/system-map',
+        'features/monitoring',
         'features/grafana',
       ],
     },

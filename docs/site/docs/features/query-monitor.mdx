@@ -52,6 +52,18 @@ ALTER ROLE my_role SETTINGS allow_introspection_functions = 1;
 ```
 :::
 
+## Health Map
+
+:::caution Experimental
+Requires the experimental features toggle in Settings. This is an early exploration — we are still figuring out which signals and hierarchy best surface actionable query health at a glance.
+:::
+
+The **Health Map** tab shows an interactive sunburst that summarizes the overall health of query activity. The center ring shows a single green/yellow/red health state. Outer rings break this down by category — running query load, recent history patterns, concurrency slot usage — and then into individual queries at the leaf level.
+
+Hover over any arc to expand its children and see a tooltip with the metric value. Click a leaf node to jump to that query: if it is still running, the Running tab opens with the query selected; if it has finished, the History tab opens instead.
+
+<FeatureVideo src="query-health-1920.mp4" />
+
 ## Historical Analysis
 
 Query history from `system.query_log` with:

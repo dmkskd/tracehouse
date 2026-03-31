@@ -76,4 +76,4 @@ net_send_rate   = NetworkSendBytes / interval_seconds
 net_recv_rate   = NetworkReceiveBytes / interval_seconds
 ```
 
-> **Tests:** `metrics-collector.integration.test.ts` → "Disk I/O rates", "Network I/O rates"
+> **Tests:** `overview-metrics-collector.integration.test.ts` → "Disk I/O rates", "Network I/O rates"

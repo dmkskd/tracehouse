@@ -20,14 +20,17 @@ const config: Config = {
   onBrokenLinks: 'throw',
 
   customFields: {
-assetsBaseUrl: 'https://dmkskd.github.io/tracehouse-assets',
-
+    assetsBaseUrl: 'https://dmkskd.github.io/tracehouse-assets',
+    // Live demo instance — set to '' to hide the demo link/button entirely
+    demoUrl: 'http://178.104.103.140',
   },
 
   i18n: {
     defaultLocale: 'en',
     locales: ['en'],
   },
+
+  clientModules: ['./src/demoStatus.ts'],
 
   presets: [
     [
@@ -62,6 +65,11 @@ assetsBaseUrl: 'https://dmkskd.github.io/tracehouse-assets',
           sidebarId: 'docsSidebar',
           position: 'left',
           label: 'Docs',
+        },
+        {
+          type: 'html',
+          position: 'right',
+          value: '<a id="navbar-demo-link" class="navbar-demo-link navbar__item navbar__link" target="_blank" rel="noopener noreferrer">Live Demo<span id="navbar-demo-dot" class="demo-status-dot" hidden></span></a>',
         },
         {
           href: 'https://github.com/dmkskd/tracehouse',

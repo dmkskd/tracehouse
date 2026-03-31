@@ -1,0 +1,29 @@
+import FeatureVideo from '@site/src/components/FeatureVideo';
+
+# TraceHouse Monitoring
+
+<FeatureVideo src="analytics-tracehouse-monitoring-1920.mp4" />
+
+TraceHouse itself runs queries against your ClickHouse cluster, and those queries have a cost. The self-monitoring dashboard lets you see exactly how much CPU, memory, and network TraceHouse is consuming on your cluster so you can understand its footprint and make sure it stays within acceptable limits.
+
+## How It Works
+
+Every query TraceHouse sends to ClickHouse is tagged with a SQL comment like `/* source:TraceHouse:Overview:timeline */`. The first segment identifies the app, the second is the UI tab (Overview, TimeTravel, Merges, etc.), and the third is the specific service within that tab. These tags end up in `system.query_log`, so the self-monitoring dashboard can filter for TraceHouse's own queries and attribute cost per component.
+
+## What It Tracks
+
+- **Query duration by component**: which parts of the UI (Overview, Merge Tracker, Query Monitor, etc.) generate the most expensive queries
+- **Query volume by component**: how many queries each component fires
+- **Cost breakdown per query**: duration, memory, rows read, bytes read, CPU time for every unique query TraceHouse runs
+- **App % of server load**: how much of the cluster's total workload comes from TraceHouse
+- **Slowest and failed queries**: performance outliers and errors in TraceHouse's own queries
+- **Sampling health**: status of the `system.processes` and `system.merges` sampling pipeline
+
+## Typical Questions
+
+TraceHouse polls `system.*` tables at regular intervals. On a busy cluster, even lightweight queries add up. This dashboard helps answer:
+
+- Is TraceHouse using too much CPU or memory on my cluster?
+- Which feature is the most expensive to run?
+- Did a recent refresh rate change increase network traffic?
+- Are any of TraceHouse's own queries failing or timing out?

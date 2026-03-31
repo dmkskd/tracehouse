@@ -18,9 +18,19 @@ Grafana:      Browser ──▶ Grafana backend ──▶ ClickHouse data source
 
 The app itself is identical - same React UI, same `packages/core` query logic, same attribution models. Only the transport changes.
 
-## What You Get
+## Differences from Standalone
 
 - **No connection setup** - Users don't enter host, port, or credentials. They pick from the Grafana ClickHouse data sources already configured in their Grafana instance.
 - **Permissions handled by Grafana** - Access control, team permissions, and credential management are all delegated to Grafana. If a user has access to a data source, they can use it in TraceHouse.
 - **No CORS proxy needed** - Queries are routed through the Grafana backend, so there's no browser-to-ClickHouse CORS issue to solve.
 - **Single deployment** - The app is hosted inside Grafana. No separate static site, no extra infrastructure.
+
+## Cluster Selection
+
+When you open TraceHouse in Grafana, you pick which ClickHouse data source to use from a dropdown in the header. If your Grafana instance has multiple ClickHouse data sources configured, you can switch between them at any time.
+
+Once a data source is selected, TraceHouse queries `system.clusters` to detect the cluster topology: how many shards, how many replicas, which clusters are available. If multiple clusters are found, a second dropdown appears next to the data source picker so you can choose which cluster to query. The selection is saved per data source in localStorage, so it persists across sessions.
+
+Under the hood, when a cluster is active, all queries that need cross-node data use `clusterAllReplicas('cluster_name', db.table)` to fan out across replicas. On single-node setups this is skipped automatically.
+
+Grafana admins can also pre-configure a preferred cluster name in the plugin settings (Configuration > Plugins > TraceHouse). If set, it's used as the default instead of auto-detection.
