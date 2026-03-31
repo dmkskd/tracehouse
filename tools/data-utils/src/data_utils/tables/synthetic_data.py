@@ -9,7 +9,7 @@ from clickhouse_driver import Client
 from .helpers import (
     retry_on_drop_race, create_database, drop_database,
     generate_month_list, check_existing_rows, run_batched_insert,
-    wait_for_table, ttl_clause, ttl_settings, is_sharded,
+    wait_for_table, ttl_clause, ttl_settings, partition_clause, is_sharded,
 )
 from data_utils.capabilities import Capabilities
 from .protocol import InsertMode, QuerySet
@@ -36,12 +36,13 @@ _SCHEMA = """
     )
 """
 
-def _order_and_settings(ttl_hours: int = 0) -> str:
-    ttl = ttl_clause(ttl_hours)
-    ttl_s = ttl_settings(ttl_hours)
+def _order_and_settings(ttl_interval: str = "") -> str:
+    part = partition_clause(ttl_interval, "toYYYYMM(event_date)")
+    ttl = ttl_clause(ttl_interval)
+    ttl_s = ttl_settings(ttl_interval)
     extra = f", {ttl_s}" if ttl_s else ""
     return f"""
-    PARTITION BY toYYYYMM(event_date)
+    {part}
     ORDER BY (event_date, user_id, event_time)
     {ttl}
     SETTINGS old_parts_lifetime = 60{extra},
@@ -63,9 +64,9 @@ def drop_synthetic_data(client: Client, caps: Capabilities | None = None) -> Non
     drop_database(client, "synthetic_data", cluster=cluster_name)
 
 
-def create_synthetic_data(client: Client, caps: Capabilities | None = None, ttl_hours: int = 0) -> None:
+def create_synthetic_data(client: Client, caps: Capabilities | None = None, ttl_interval: str = "") -> None:
     sharded, cluster = is_sharded(caps)  # cluster is only set when multi-shard
-    oas = _order_and_settings(ttl_hours)
+    oas = _order_and_settings(ttl_interval)
 
     if sharded:
         print(f"Creating synthetic_data database (Replicated, cluster={cluster})...")
@@ -239,15 +240,15 @@ class SyntheticData:
     name = "synthetic_data"
     flag = "synthetic_only"
 
-    def __init__(self, caps: Capabilities | None = None, ttl_hours: int = 0):
+    def __init__(self, caps: Capabilities | None = None, ttl_interval: str = ""):
         self._caps = caps
-        self._ttl_hours = ttl_hours
+        self._ttl_interval = ttl_interval
 
     def drop(self, client: Client) -> None:
         drop_synthetic_data(client, caps=self._caps)
 
     def create(self, client: Client) -> None:
-        create_synthetic_data(client, caps=self._caps, ttl_hours=self._ttl_hours)
+        create_synthetic_data(client, caps=self._caps, ttl_interval=self._ttl_interval)
 
     def insert(
         self,

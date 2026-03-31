@@ -257,29 +257,31 @@ services:
       # Pre-created test users (same password as default, defined in workload-users.xml)
       TRACEHOUSE_TEST_USERS: "{\"th_alice\":\"${CLICKHOUSE_DEFAULT_PASSWORD}\",\"th_bob\":\"${CLICKHOUSE_DEFAULT_PASSWORD}\",\"th_carol\":\"${CLICKHOUSE_DEFAULT_PASSWORD}\",\"th_dave\":\"${CLICKHOUSE_DEFAULT_PASSWORD}\",\"th_eve\":\"${CLICKHOUSE_DEFAULT_PASSWORD}\"}"
       # Generate config
-      CH_GEN_ROWS: "${WORKLOAD_ROWS:-500000}"
-      CH_GEN_PARALLELISM: "${WORKLOAD_PARALLELISM:-2}"
+      CH_GEN_ROWS: "${WORKLOAD_ROWS:-2000000}"
+      CH_GEN_PARALLELISM: "${WORKLOAD_PARALLELISM:-5}"
       CH_GEN_BATCH_SIZE: "100000"
-      CH_GEN_THROTTLE_MIN: "2.0"
-      CH_GEN_THROTTLE_MAX: "4.0"
+      CH_GEN_THROTTLE_MIN: "1.5"
+      CH_GEN_THROTTLE_MAX: "3.0"
       CH_GEN_MODE: "resume"
       # Query config (throttled for 16GB server)
-      CH_QUERY_SLOW_INTERVAL: "15"
+      CH_QUERY_SLOW_INTERVAL: "300"
       CH_QUERY_SLOW_WORKERS: "1"
-      CH_QUERY_FAST_INTERVAL: "5"
+      CH_QUERY_FAST_INTERVAL: "30"
       CH_QUERY_FAST_WORKERS: "1"
       CH_QUERY_S3_WORKERS: "0"
       CH_QUERY_PK_INTERVAL: "4"
       CH_QUERY_PK_WORKERS: "1"
-      CH_QUERY_JOIN_INTERVAL: "10"
+      CH_QUERY_JOIN_INTERVAL: "180"
       CH_QUERY_JOIN_WORKERS: "1"
       CH_QUERY_SETTINGS_INTERVAL: "10"
       CH_QUERY_SETTINGS_WORKERS: "1"
       # Mutation config (sparse — mutations are a corner case)
       CH_MUTATION_COUNT: "5"
-      CH_MUTATION_INTERVAL: "300"
-      # Data tables have 12h TTL — no cycle/drop needed
-      CH_GEN_TTL_HOURS: "12"
+      CH_MUTATION_INTERVAL: "600"
+      # Data tables have 12h TTL — no cycle/drop needed.
+      # Accepts e.g. '12h', '2d', '30m'. Partitioned by hour so
+      # ttl_only_drop_parts can drop whole parts with zero I/O.
+      CH_GEN_TTL: "3h"
     depends_on:
       sampling-init: { condition: service_completed_successfully }
     restart: unless-stopped

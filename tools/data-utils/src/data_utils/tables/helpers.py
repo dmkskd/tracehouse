@@ -189,23 +189,87 @@ def on_cluster_clause(cluster: str) -> str:
     return f"ON CLUSTER '{cluster}'"
 
 
-def ttl_clause(hours: int) -> str:
-    """Return ``TTL _inserted_at + INTERVAL N HOUR`` when hours > 0, otherwise ``""``.
+_TTL_SUFFIXES: dict[str, str] = {
+    "hours": "HOUR", "hour": "HOUR", "hr": "HOUR", "h": "HOUR",
+    "days": "DAY", "day": "DAY", "d": "DAY",
+    "minutes": "MINUTE", "minute": "MINUTE", "min": "MINUTE", "m": "MINUTE",
+}
+
+
+def parse_ttl(value: str) -> str:
+    """Parse a human TTL string into a ClickHouse INTERVAL expression.
+
+    Accepts ``12h``, ``2d``, ``30m``, ``12`` (bare integer → hours for
+    backward compat), or ``0`` / empty to disable.
+
+    Returns e.g. ``"12 HOUR"``, ``"2 DAY"``, ``"30 MINUTE"``, or ``""``.
+    """
+    value = value.strip().lower() if value else ""
+    if not value or value == "0":
+        return ""
+    # Try suffixed form — longest suffix first to avoid 'h' matching before 'hour'
+    for suffix, unit in sorted(_TTL_SUFFIXES.items(), key=lambda x: -len(x[0])):
+        if value.endswith(suffix):
+            num = value[: -len(suffix)].strip()
+            if num.isdigit() and int(num) > 0:
+                return f"{int(num)} {unit}"
+            break
+    # Bare integer → hours (backward compat with CH_GEN_TTL_HOURS)
+    if value.isdigit():
+        n = int(value)
+        return f"{n} HOUR" if n > 0 else ""
+    raise ValueError(f"Invalid TTL format: {value!r} (use e.g. '12h', '2d', '30m')")
+
+
+def ttl_clause(interval: str) -> str:
+    """Return ``TTL _inserted_at + INTERVAL ...`` when *interval* is set.
+
+    *interval* should be a ClickHouse interval expression such as
+    ``"12 HOUR"`` or ``"30 MINUTE"`` (as returned by ``parse_ttl``).
 
     Uses ``_inserted_at`` (a DEFAULT now() column) so the TTL counts from
     real insertion time, not from the business-date column. This avoids
     rows being born already expired when generating historical data.
     """
-    if hours <= 0:
+    if not interval:
         return ""
-    return f"TTL _inserted_at + INTERVAL {hours} HOUR"
+    return f"TTL _inserted_at + INTERVAL {interval}"
 
 
-def ttl_settings(hours: int) -> str:
-    """Return ``merge_with_ttl_timeout = 900`` when TTL is active, otherwise ``""``."""
-    if hours <= 0:
+def ttl_settings(interval: str) -> str:
+    """Return TTL-related settings when TTL is active, otherwise ``""``.
+
+    ``ttl_only_drop_parts = 1`` tells ClickHouse to drop whole parts once
+    every row has expired, instead of rewriting parts to filter out expired
+    rows.  Combined with hourly partitioning (see ``partition_clause``),
+    this makes TTL cleanup a metadata-only operation with zero I/O.
+    """
+    if not interval:
         return ""
-    return "merge_with_ttl_timeout = 900"
+    return "merge_with_ttl_timeout = 3600, ttl_only_drop_parts = 1"
+
+
+def partition_clause(interval: str, default: str) -> str:
+    """Return the PARTITION BY clause.
+
+    When TTL is active, partitions by insertion time so that all rows in a
+    partition expire together — enabling ``ttl_only_drop_parts`` to drop
+    whole parts with zero I/O instead of rewriting them.
+
+    The granularity matches the TTL unit:
+      - MINUTE → ``toStartOfMinute`` (so a 1m TTL actually drops in ~1-2m)
+      - HOUR / DAY → ``toStartOfHour`` (12h TTL drops in ~12-13h)
+
+    When TTL is off, uses the provided *default* business-date expression
+    for optimal query partition-pruning.
+    """
+    if interval:
+        if "MINUTE" in interval:
+            return "PARTITION BY toStartOfMinute(_inserted_at)"
+        if "DAY" in interval:
+            return "PARTITION BY toStartOfDay(_inserted_at)"
+        return "PARTITION BY toStartOfHour(_inserted_at)"
+    return f"PARTITION BY {default}"
 
 
 def drop_database(client: Client, name: str, cluster: str = "") -> None:

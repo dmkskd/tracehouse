@@ -10,7 +10,7 @@ from clickhouse_driver import Client
 from .helpers import (
     retry_on_drop_race, create_database, drop_database,
     generate_month_list, check_existing_rows, run_batched_insert,
-    ttl_clause, ttl_settings, is_sharded,
+    ttl_clause, ttl_settings, partition_clause, is_sharded,
 )
 from data_utils.capabilities import Capabilities
 from .protocol import InsertMode, QuerySet
@@ -52,12 +52,13 @@ _SCHEMA = """
     )
 """
 
-def _order_and_settings(ttl_hours: int = 0) -> str:
-    ttl = ttl_clause(ttl_hours)
-    ttl_s = ttl_settings(ttl_hours)
+def _order_and_settings(ttl_interval: int = 0) -> str:
+    part = partition_clause(ttl_interval, "toYYYYMM(event_date)")
+    ttl = ttl_clause(ttl_interval)
+    ttl_s = ttl_settings(ttl_interval)
     extra = f", {ttl_s}" if ttl_s else ""
     return f"""
-    PARTITION BY toYYYYMM(event_date)
+    {part}
     ORDER BY (domain, event_date, user_id)
     {ttl}
     SETTINGS old_parts_lifetime = 60{extra}
@@ -74,11 +75,11 @@ def drop_web_analytics(client: Client, caps: Capabilities | None = None) -> None
     drop_database(client, "web_analytics", cluster=cluster_name)
 
 
-def create_web_analytics(client: Client, caps: Capabilities | None = None, ttl_hours: int = 0) -> None:
+def create_web_analytics(client: Client, caps: Capabilities | None = None, ttl_interval: int = 0) -> None:
     use_sharded, cluster = is_sharded(caps)
     replicated = caps.has_keeper if caps else False
     cluster_name = cluster or (caps.cluster_name if caps and caps.has_cluster else "")
-    oas = _order_and_settings(ttl_hours)
+    oas = _order_and_settings(ttl_interval)
 
     if use_sharded:
         print(f"Creating web_analytics database (Replicated, cluster={cluster})...")
@@ -252,15 +253,15 @@ class WebAnalytics:
     name = "web_analytics"
     flag = "web_only"
 
-    def __init__(self, caps: Capabilities | None = None, ttl_hours: int = 0):
+    def __init__(self, caps: Capabilities | None = None, ttl_interval: int = 0):
         self._caps = caps
-        self._ttl_hours = ttl_hours
+        self._ttl_interval = ttl_interval
 
     def drop(self, client: Client) -> None:
         drop_web_analytics(client, self._caps)
 
     def create(self, client: Client) -> None:
-        create_web_analytics(client, self._caps, ttl_hours=self._ttl_hours)
+        create_web_analytics(client, self._caps, ttl_interval=self._ttl_interval)
 
     def insert(
         self,

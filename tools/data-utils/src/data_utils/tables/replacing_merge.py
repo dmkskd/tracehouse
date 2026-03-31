@@ -16,7 +16,7 @@ from clickhouse_driver import Client
 from .helpers import (
     retry_on_drop_race, create_database, drop_database,
     generate_month_list, check_existing_rows, run_batched_insert,
-    ttl_clause, ttl_settings, is_sharded,
+    ttl_clause, ttl_settings, partition_clause, is_sharded,
 )
 from data_utils.capabilities import Capabilities
 from .protocol import InsertMode, QuerySet
@@ -43,13 +43,13 @@ def drop_replacing_merge(client: Client, caps: Capabilities | None = None) -> No
     drop_database(client, "replacing_test", cluster=cluster_name)
 
 
-def create_replacing_merge(client: Client, caps: Capabilities | None = None, ttl_hours: int = 0) -> None:
+def create_replacing_merge(client: Client, caps: Capabilities | None = None, ttl_interval: int = 0) -> None:
     sharded, cluster = is_sharded(caps)
     replicated = caps.has_keeper if caps else False
     cluster_name = cluster or (caps.cluster_name if caps and caps.has_cluster else "")
 
-    ttl = ttl_clause(ttl_hours)
-    ttl_s = ttl_settings(ttl_hours)
+    ttl = ttl_clause(ttl_interval)
+    ttl_s = ttl_settings(ttl_interval)
     extra = f", {ttl_s}" if ttl_s else ""
 
     _REPLACING_SCHEMA = """
@@ -66,8 +66,10 @@ def create_replacing_merge(client: Client, caps: Capabilities | None = None, ttl
         )
     """
 
+    part = partition_clause(ttl_interval, "toYYYYMM(updated_at)")
+
     _REPLACING_ORDER = f"""
-        PARTITION BY toYYYYMM(updated_at)
+        {part}
         ORDER BY (product_id, currency)
         {ttl}
         SETTINGS old_parts_lifetime = 60{extra},
@@ -176,15 +178,15 @@ class ReplacingMerge:
     name = "replacing_test"
     flag = "replacing_only"
 
-    def __init__(self, caps: Capabilities | None = None, ttl_hours: int = 0):
+    def __init__(self, caps: Capabilities | None = None, ttl_interval: int = 0):
         self._caps = caps
-        self._ttl_hours = ttl_hours
+        self._ttl_interval = ttl_interval
 
     def drop(self, client: Client) -> None:
         drop_replacing_merge(client, caps=self._caps)
 
     def create(self, client: Client) -> None:
-        create_replacing_merge(client, caps=self._caps, ttl_hours=self._ttl_hours)
+        create_replacing_merge(client, caps=self._caps, ttl_interval=self._ttl_interval)
 
     def insert(
         self,

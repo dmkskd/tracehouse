@@ -89,7 +89,8 @@ Tables are created with the best engine available for the target server.
     parser.add_argument("--replacing-only", action="store_true", help="Only create replacing_test table (ReplacingMergeTree)")
     parser.add_argument("--dataset", default=os.environ.get("CH_GEN_DATASET", ""),
                         help="Dataset to generate: synthetic, taxi, uk, web, replacing, or blank for all (default: $CH_GEN_DATASET)")
-    parser.add_argument("--ttl-hours", type=int, default=env_int("CH_GEN_TTL_HOURS", "0"), help="TTL in hours for data tables (0 = no TTL, default: $CH_GEN_TTL_HOURS or 0)")
+    parser.add_argument("--ttl", default=os.environ.get("CH_GEN_TTL", os.environ.get("CH_GEN_TTL_HOURS", "0")),
+                        help="TTL for data tables, e.g. '12h', '2d', '30m' (0 = no TTL, default: $CH_GEN_TTL or $CH_GEN_TTL_HOURS or 0)")
     parser.add_argument("--list-datasets", action="store_true", help="List available datasets and exit")
     args = parser.parse_args()
 
@@ -115,8 +116,9 @@ Tables are created with the best engine available for the target server.
 
 def _build_datasets(args: argparse.Namespace, caps: Capabilities) -> list[Dataset]:
     """Instantiate dataset plugins, filtered by CLI flags."""
-    ttl_hours = getattr(args, "ttl_hours", 0)
-    all_datasets = build_all_datasets(caps=caps, ttl_hours=ttl_hours)
+    from data_utils.tables.helpers import parse_ttl
+    ttl_interval = parse_ttl(getattr(args, "ttl", "0"))
+    all_datasets = build_all_datasets(caps=caps, ttl_interval=ttl_interval)
     create_all = not any(getattr(args, ds.flag) for ds in all_datasets)
     return [ds for ds in all_datasets if create_all or getattr(args, ds.flag)]
 

@@ -9,7 +9,7 @@ from clickhouse_driver import Client
 from .helpers import (
     retry_on_drop_race, create_database, drop_database,
     generate_month_list, check_existing_rows, run_batched_insert,
-    wait_for_table, ttl_clause, ttl_settings, is_sharded,
+    wait_for_table, ttl_clause, ttl_settings, partition_clause, is_sharded,
 )
 from .protocol import InsertMode, QuerySet
 from data_utils.capabilities import Capabilities
@@ -63,20 +63,20 @@ def drop_nyc_taxi(client: Client, caps: Capabilities | None = None) -> None:
 
 
 def create_nyc_taxi(
-    client: Client, caps: Capabilities | None = None, ttl_hours: int = 0,
+    client: Client, caps: Capabilities | None = None, ttl_interval: int = 0,
 ) -> None:
     sharded, cluster = is_sharded(caps)
     replicated = caps.has_keeper if caps else False
     cluster_name = cluster or (caps.cluster_name if caps and caps.has_cluster else "")
 
-    delete_ttl = ttl_clause(ttl_hours)
-    ttl_s = ttl_settings(ttl_hours)
+    delete_ttl = ttl_clause(ttl_interval)
+    ttl_s = ttl_settings(ttl_interval)
 
     use_s3 = caps.has_s3_storage_policy if caps else False
     if use_s3:
         s3_ttl = "TTL _inserted_at + INTERVAL 5 MINUTE TO VOLUME 's3cached'"
-        combined_ttl = f"{s3_ttl}, _inserted_at + INTERVAL {ttl_hours} HOUR DELETE" if ttl_hours > 0 else s3_ttl
-        settings_clause = "SETTINGS old_parts_lifetime = 60, storage_policy = 's3tiered', merge_with_ttl_timeout = 60"
+        combined_ttl = f"{s3_ttl}, _inserted_at + INTERVAL {ttl_interval} DELETE" if ttl_interval else s3_ttl
+        settings_clause = "SETTINGS old_parts_lifetime = 60, storage_policy = 's3tiered', merge_with_ttl_timeout = 60, ttl_only_drop_parts = 1"
     else:
         combined_ttl = delete_ttl
         extra = f", {ttl_s}" if ttl_s else ""
@@ -103,8 +103,10 @@ def create_nyc_taxi(
         )
     """
 
+    part = partition_clause(ttl_interval, "toYYYYMM(pickup_date)")
+
     _TRIPS_ORDER = f"""
-        PARTITION BY toYYYYMM(pickup_date)
+        {part}
         ORDER BY (pickup_date, pickup_location_id, pickup_datetime)
         {combined_ttl}
         {settings_clause}
@@ -256,15 +258,15 @@ class NycTaxi:
     name = "nyc_taxi"
     flag = "taxi_only"
 
-    def __init__(self, caps: Capabilities | None = None, ttl_hours: int = 0):
+    def __init__(self, caps: Capabilities | None = None, ttl_interval: int = 0):
         self._caps = caps
-        self._ttl_hours = ttl_hours
+        self._ttl_interval = ttl_interval
 
     def drop(self, client: Client) -> None:
         drop_nyc_taxi(client, caps=self._caps)
 
     def create(self, client: Client) -> None:
-        create_nyc_taxi(client, caps=self._caps, ttl_hours=self._ttl_hours)
+        create_nyc_taxi(client, caps=self._caps, ttl_interval=self._ttl_interval)
 
     def insert(
         self,

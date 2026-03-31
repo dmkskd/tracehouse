@@ -26,7 +26,7 @@ ALL_DATASET_CLASSES: list[type] = [
 
 def build_all_datasets(
     caps: Capabilities | None = None,
-    ttl_hours: int = 0,
+    ttl_interval: int = 0,
 ) -> list[Dataset]:
     """Instantiate every registered dataset with the right constructor args.
 
@@ -34,11 +34,11 @@ def build_all_datasets(
     Used by generate, drop, and queries CLIs.
     """
     return [
-        SyntheticData(caps=caps, ttl_hours=ttl_hours),
-        NycTaxi(caps=caps, ttl_hours=ttl_hours),
-        UkHousePrices(caps=caps, ttl_hours=ttl_hours),
-        WebAnalytics(caps=caps, ttl_hours=ttl_hours),
-        ReplacingMerge(caps=caps, ttl_hours=ttl_hours),
+        SyntheticData(caps=caps, ttl_interval=ttl_interval),
+        NycTaxi(caps=caps, ttl_interval=ttl_interval),
+        UkHousePrices(caps=caps, ttl_interval=ttl_interval),
+        WebAnalytics(caps=caps, ttl_interval=ttl_interval),
+        ReplacingMerge(caps=caps, ttl_interval=ttl_interval),
     ]
 
 

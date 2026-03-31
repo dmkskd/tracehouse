@@ -9,7 +9,7 @@ from clickhouse_driver import Client
 from .helpers import (
     retry_on_drop_race, create_database, drop_database,
     check_existing_rows, run_batched_insert, ttl_clause, ttl_settings,
-    is_sharded,
+    partition_clause, is_sharded,
 )
 from data_utils.capabilities import Capabilities
 from .protocol import InsertMode
@@ -101,13 +101,13 @@ def drop_uk_house_prices(client: Client, caps: Capabilities | None = None) -> No
     drop_database(client, "uk_price_paid", cluster=cluster_name)
 
 
-def create_uk_house_prices(client: Client, caps: Capabilities | None = None, ttl_hours: int = 0) -> None:
+def create_uk_house_prices(client: Client, caps: Capabilities | None = None, ttl_interval: int = 0) -> None:
     sharded, cluster = is_sharded(caps)
     replicated = caps.has_keeper if caps else False
     cluster_name = cluster or (caps.cluster_name if caps and caps.has_cluster else "")
 
-    ttl = ttl_clause(ttl_hours)
-    ttl_s = ttl_settings(ttl_hours)
+    ttl = ttl_clause(ttl_interval)
+    ttl_s = ttl_settings(ttl_interval)
     extra = f", {ttl_s}" if ttl_s else ""
 
     _UK_SCHEMA = """
@@ -130,8 +130,10 @@ def create_uk_house_prices(client: Client, caps: Capabilities | None = None, ttl
         )
     """
 
+    part = partition_clause(ttl_interval, "toYear(date)")
+
     _UK_ORDER = f"""
-        PARTITION BY toYear(date)
+        {part}
         ORDER BY (postcode1, postcode2, date)
         {ttl}
         SETTINGS old_parts_lifetime = 60{extra}
@@ -231,15 +233,15 @@ class UkHousePrices:
     name = "uk_price_paid"
     flag = "uk_only"
 
-    def __init__(self, caps: Capabilities | None = None, ttl_hours: int = 0):
+    def __init__(self, caps: Capabilities | None = None, ttl_interval: int = 0):
         self._caps = caps
-        self._ttl_hours = ttl_hours
+        self._ttl_interval = ttl_interval
 
     def drop(self, client: Client) -> None:
         drop_uk_house_prices(client, caps=self._caps)
 
     def create(self, client: Client) -> None:
-        create_uk_house_prices(client, caps=self._caps, ttl_hours=self._ttl_hours)
+        create_uk_house_prices(client, caps=self._caps, ttl_interval=self._ttl_interval)
 
     def insert(
         self,
