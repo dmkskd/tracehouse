@@ -32,15 +32,16 @@ export const GET_ACTIVE_MERGES = `
   ORDER BY elapsed DESC
 `;
 
-/** Get merge history for a specific database and table from system.part_log. */
-export const GET_MERGE_HISTORY = `
-  SELECT
+/** Lightweight columns for the merge history listing table.
+ * Heavy columns (ProfileEvents, path_on_disk, disk_name, merge_algorithm,
+ * query_id, exception, partition_id, peak_memory_usage) are fetched on-demand
+ * via GET_MERGE_HISTORY_BY_PART_NAME when the user opens the detail modal. */
+const MERGE_HISTORY_LITE_COLUMNS = `
     event_time,
     event_type,
     database,
     table,
     part_name,
-    partition_id,
     rows,
     size_in_bytes,
     duration_ms,
@@ -49,15 +50,12 @@ export const GET_MERGE_HISTORY = `
     bytes_uncompressed,
     read_bytes,
     read_rows,
-    peak_memory_usage,
-    merge_algorithm,
-    disk_name,
-    path_on_disk,
-    query_id,
-    ProfileEvents,
     error,
-    exception,
-    hostName() AS hostname
+    hostName() AS hostname`;
+
+/** Get merge history for a specific database and table from system.part_log. */
+export const GET_MERGE_HISTORY = `
+  SELECT ${MERGE_HISTORY_LITE_COLUMNS}
   FROM {{cluster_aware:system.part_log}}
   WHERE database = {database}
     AND table = {table}
@@ -68,30 +66,7 @@ export const GET_MERGE_HISTORY = `
 
 /** Get all merge history across all databases from system.part_log. */
 export const GET_ALL_MERGE_HISTORY = `
-  SELECT
-    event_time,
-    event_type,
-    database,
-    table,
-    part_name,
-    partition_id,
-    rows,
-    size_in_bytes,
-    duration_ms,
-    merge_reason,
-    merged_from,
-    bytes_uncompressed,
-    read_bytes,
-    read_rows,
-    peak_memory_usage,
-    merge_algorithm,
-    disk_name,
-    path_on_disk,
-    query_id,
-    ProfileEvents,
-    error,
-    exception,
-    hostName() AS hostname
+  SELECT ${MERGE_HISTORY_LITE_COLUMNS}
   FROM {{cluster_aware:system.part_log}}
   WHERE event_type IN ('MergeParts', 'MutatePart', 'MovePart', 'DownloadPart')
   ORDER BY event_time DESC
@@ -100,30 +75,7 @@ export const GET_ALL_MERGE_HISTORY = `
 
 /** Get merge history for a database (all tables) from system.part_log. */
 export const GET_DATABASE_MERGE_HISTORY = `
-  SELECT
-    event_time,
-    event_type,
-    database,
-    table,
-    part_name,
-    partition_id,
-    rows,
-    size_in_bytes,
-    duration_ms,
-    merge_reason,
-    merged_from,
-    bytes_uncompressed,
-    read_bytes,
-    read_rows,
-    peak_memory_usage,
-    merge_algorithm,
-    disk_name,
-    path_on_disk,
-    query_id,
-    ProfileEvents,
-    error,
-    exception,
-    hostName() AS hostname
+  SELECT ${MERGE_HISTORY_LITE_COLUMNS}
   FROM {{cluster_aware:system.part_log}}
   WHERE database = {database}
     AND event_type IN ('MergeParts', 'MutatePart', 'MovePart', 'DownloadPart')

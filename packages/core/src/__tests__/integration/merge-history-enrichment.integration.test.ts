@@ -109,7 +109,7 @@ describe('merge history enrichment integration', { tags: ['merge-engine'] }, () 
       expect(Array.isArray(rows)).toBe(true);
     });
 
-    it('merge history records include merge_algorithm field', async () => {
+    it('detail record includes merge_algorithm field', async () => {
       // Create table, insert data, trigger merge, flush logs
       await ctx.client.command({
         query: `
@@ -129,6 +129,7 @@ describe('merge history enrichment integration', { tags: ['merge-engine'] }, () 
       await new Promise(r => setTimeout(r, 2000));
       await ctx.client.command({ query: 'SYSTEM FLUSH LOGS' });
 
+      // Listing query returns lite records (no merge_algorithm)
       const history = await tracker.getMergeHistory({
         database: TEST_DB,
         table: 'algo_test',
@@ -137,17 +138,17 @@ describe('merge history enrichment integration', { tags: ['merge-engine'] }, () 
 
       expect(history.length).toBeGreaterThanOrEqual(1);
 
-      for (const h of history) {
-        expect(h).toHaveProperty('merge_algorithm');
-        // merge_algorithm is optional (undefined for MovePart events)
-        if (h.merge_algorithm) {
-          expect(typeof h.merge_algorithm).toBe('string');
-          expect(['Horizontal', 'Vertical', 'Undecided']).toContain(h.merge_algorithm);
-        }
+      // Detail query (getMergeHistoryByPartName) returns full record
+      const detail = await tracker.getMergeHistoryByPartName(TEST_DB, 'algo_test', history[0].part_name);
+      expect(detail).not.toBeNull();
+      expect(detail).toHaveProperty('merge_algorithm');
+      if (detail!.merge_algorithm) {
+        expect(typeof detail!.merge_algorithm).toBe('string');
+        expect(['Horizontal', 'Vertical', 'Undecided']).toContain(detail!.merge_algorithm);
       }
     });
 
-    it('MergeParts events have a non-empty merge_algorithm', async () => {
+    it('MergeParts detail records have a non-empty merge_algorithm', async () => {
       await ctx.client.command({ query: 'SYSTEM FLUSH LOGS' });
 
       const history = await tracker.getMergeHistory({
@@ -159,10 +160,10 @@ describe('merge history enrichment integration', { tags: ['merge-engine'] }, () 
       // Filter to actual merge events (not mutations or moves)
       const mergeEvents = history.filter(h => h.event_type === 'MergeParts');
       if (mergeEvents.length > 0) {
-        for (const h of mergeEvents) {
-          expect(h.merge_algorithm).toBeDefined();
-          expect(h.merge_algorithm!.length).toBeGreaterThan(0);
-        }
+        const detail = await tracker.getMergeHistoryByPartName(TEST_DB, 'algo_test', mergeEvents[0].part_name);
+        expect(detail).not.toBeNull();
+        expect(detail!.merge_algorithm).toBeDefined();
+        expect(detail!.merge_algorithm!.length).toBeGreaterThan(0);
       }
     });
   });
@@ -189,27 +190,26 @@ describe('merge history enrichment integration', { tags: ['merge-engine'] }, () 
 
   // ── disk_name and path_on_disk ────────────────────────────────────
 
-  describe('disk_name and path_on_disk in merge history', () => {
-    it('merge history records include disk_name', async () => {
+  describe('disk_name and path_on_disk in detail records', () => {
+    it('detail record includes disk_name', async () => {
       const history = await tracker.getMergeHistory({ database: TEST_DB, limit: 50 });
       expect(history.length).toBeGreaterThanOrEqual(1);
-      for (const h of history) {
-        expect(h).toHaveProperty('disk_name');
-        if (h.disk_name) {
-          expect(typeof h.disk_name).toBe('string');
-        }
+      const detail = await tracker.getMergeHistoryByPartName(TEST_DB, history[0].table, history[0].part_name);
+      expect(detail).not.toBeNull();
+      expect(detail).toHaveProperty('disk_name');
+      if (detail!.disk_name) {
+        expect(typeof detail!.disk_name).toBe('string');
       }
     });
 
-    it('merge history records include path_on_disk', async () => {
+    it('detail record includes path_on_disk', async () => {
       const history = await tracker.getMergeHistory({ database: TEST_DB, limit: 50 });
-      for (const h of history) {
-        expect(h).toHaveProperty('path_on_disk');
-        if (h.path_on_disk) {
-          expect(typeof h.path_on_disk).toBe('string');
-          // Path should look like a filesystem path
-          expect(h.path_on_disk).toMatch(/^\//);
-        }
+      expect(history.length).toBeGreaterThanOrEqual(1);
+      const detail = await tracker.getMergeHistoryByPartName(TEST_DB, history[0].table, history[0].part_name);
+      expect(detail).not.toBeNull();
+      if (detail!.path_on_disk) {
+        expect(typeof detail!.path_on_disk).toBe('string');
+        expect(detail!.path_on_disk).toMatch(/^\//);
       }
     });
 
@@ -219,11 +219,11 @@ describe('merge history enrichment integration', { tags: ['merge-engine'] }, () 
         table: 'algo_test',
         limit: 50,
       });
+      expect(history.length).toBeGreaterThanOrEqual(1);
 
-      const withDisk = history.filter(h => h.disk_name);
-      if (withDisk.length > 0) {
-        // Single-disk container should use "default"
-        expect(withDisk.some(h => h.disk_name === 'default')).toBe(true);
+      const detail = await tracker.getMergeHistoryByPartName(TEST_DB, 'algo_test', history[0].part_name);
+      if (detail?.disk_name) {
+        expect(detail.disk_name).toBe('default');
       }
     });
   });
@@ -254,19 +254,21 @@ describe('merge history enrichment integration', { tags: ['merge-engine'] }, () 
       expect(defaultVol!.disks).toContain('default');
     });
 
-    it('can resolve disk_name from merge history to a volume', async () => {
+    it('can resolve disk_name from detail record to a volume', async () => {
       const [volumes, history] = await Promise.all([
         tracker.getStoragePolicyVolumes(),
         tracker.getMergeHistory({ database: TEST_DB, limit: 50 }),
       ]);
 
-      const withDisk = history.filter(h => h.disk_name);
-      if (withDisk.length > 0) {
-        const diskName = withDisk[0].disk_name!;
-        const matchingVol = volumes.find(v => v.disks.includes(diskName));
-        expect(matchingVol).toBeDefined();
-        expect(matchingVol!.policyName.length).toBeGreaterThan(0);
-        expect(matchingVol!.volumeName.length).toBeGreaterThan(0);
+      if (history.length > 0) {
+        const detail = await tracker.getMergeHistoryByPartName(TEST_DB, history[0].table, history[0].part_name);
+        const diskName = detail?.disk_name;
+        if (diskName) {
+          const matchingVol = volumes.find(v => v.disks.includes(diskName));
+          expect(matchingVol).toBeDefined();
+          expect(matchingVol!.policyName.length).toBeGreaterThan(0);
+          expect(matchingVol!.volumeName.length).toBeGreaterThan(0);
+        }
       }
     });
   });
@@ -508,21 +510,15 @@ describe('merge history enrichment integration', { tags: ['merge-engine'] }, () 
       expect(history.length).toBeGreaterThanOrEqual(1);
     });
 
-    it('all query variants include merge_algorithm', async () => {
-      // Test all 3 query paths return merge_algorithm
-      const [byTable, byDb, all] = await Promise.all([
-        tracker.getMergeHistory({ database: TEST_DB, table: 'algo_test', limit: 5 }),
-        tracker.getMergeHistory({ database: TEST_DB, limit: 5 }),
-        tracker.getMergeHistory({ limit: 5 }),
-      ]);
+    it('detail query returns full fields (merge_algorithm, disk_name, path_on_disk)', async () => {
+      const history = await tracker.getMergeHistory({ database: TEST_DB, table: 'algo_test', limit: 5 });
+      expect(history.length).toBeGreaterThanOrEqual(1);
 
-      for (const history of [byTable, byDb, all]) {
-        for (const h of history) {
-          expect(h).toHaveProperty('merge_algorithm');
-          expect(h).toHaveProperty('disk_name');
-          expect(h).toHaveProperty('path_on_disk');
-        }
-      }
+      const detail = await tracker.getMergeHistoryByPartName(TEST_DB, 'algo_test', history[0].part_name);
+      expect(detail).not.toBeNull();
+      expect(detail).toHaveProperty('merge_algorithm');
+      expect(detail).toHaveProperty('disk_name');
+      expect(detail).toHaveProperty('path_on_disk');
     });
   });
 

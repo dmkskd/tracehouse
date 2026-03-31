@@ -38,6 +38,8 @@ export interface MergeHistoryFilter {
   excludeSystemDatabases?: boolean;
   /** Merge category pushed to server-side SQL (e.g. 'TTLDelete', 'Mutation'). */
   category?: string;
+  /** ClickHouse interval string (e.g. '1 DAY') or 'CUSTOM:start,end'. Default '1 DAY'. */
+  timeRange?: string | null;
   limit: number;
 }
 
@@ -137,6 +139,7 @@ export const useMergeStore = create<MergeState>((set) => ({
   // Default filter
   historyFilter: {
     excludeSystemDatabases: true,
+    timeRange: '1 HOUR',
     limit: 100,
   },
   
@@ -273,6 +276,7 @@ export const mergeApi = {
       minSizeBytes: filter.minSizeBytes,
       excludeSystemDatabases: filter.excludeSystemDatabases,
       category: filter.category,
+      timeRange: filter.timeRange,
       limit: filter.limit || 100,
     });
   },
@@ -297,6 +301,7 @@ export const mergeApi = {
       minDurationMs: filter.minDurationMs,
       minSizeBytes: filter.minSizeBytes,
       excludeSystemDatabases: filter.excludeSystemDatabases,
+      timeRange: filter.timeRange,
       limit: filter.limit || 100,
     });
   },

@@ -908,9 +908,23 @@ const MergeHistoryDetailPanel: React.FC<{
   record: MergeHistoryRecord | null;
   onClose: () => void;
   onOpenFullDetails: (record: MergeHistoryRecord) => void;
-}> = ({ record, onClose, onOpenFullDetails }) => {
+}> = ({ record: liteRecord, onClose, onOpenFullDetails }) => {
   const services = useClickHouseServices();
+  const [fullRecord, setFullRecord] = useState<MergeHistoryRecord | null>(null);
   const [volumeInfo, setVolumeInfo] = useState<{ volumeName: string; policyName: string } | null>(null);
+
+  // Fetch full record (with merge_algorithm, disk_name, query_id, etc.) on selection
+  useEffect(() => {
+    setFullRecord(null);
+    if (!liteRecord || !services) return;
+    let cancelled = false;
+    services.mergeTracker.getMergeHistoryByPartName(liteRecord.database, liteRecord.table, liteRecord.part_name)
+      .then(r => { if (!cancelled) setFullRecord(r ?? liteRecord); })
+      .catch(() => { if (!cancelled) setFullRecord(liteRecord); });
+    return () => { cancelled = true; };
+  }, [liteRecord?.database, liteRecord?.table, liteRecord?.part_name, services]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  const record = fullRecord ?? liteRecord;
 
   // Fetch storage policy volume info for TTLMove
   useEffect(() => {

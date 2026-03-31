@@ -44,6 +44,8 @@ export interface MergeHistoryOptions {
   excludeSystemDatabases?: boolean;
   /** Push merge category filter into SQL (e.g. 'TTLDelete', 'Mutation'). */
   category?: string;
+  /** ClickHouse interval string (e.g. '1 DAY') or 'CUSTOM:start,end' for absolute range. */
+  timeRange?: string | null;
   limit?: number;
 }
 
@@ -66,9 +68,54 @@ function injectThresholdFilters(sql: string, opts: MergeHistoryOptions): string 
     const cond = categoryToPartLogCondition(opts.category as MergeCategory);
     if (cond) clauses.push(`(${cond})`);
   }
+  if (opts.timeRange) {
+    const tr = opts.timeRange;
+    if (tr.startsWith('CUSTOM:')) {
+      const [rawStart, rawEnd] = tr.slice(7).split(',');
+      const normDT = (v: string) => { let s = v.replace('T', ' '); if (/^\d{4}-\d{2}-\d{2} \d{2}:\d{2}$/.test(s)) s += ':00'; return s; };
+      clauses.push(`event_time >= '${normDT(rawStart)}'`);
+      clauses.push(`event_time <= '${normDT(rawEnd)}'`);
+    } else {
+      clauses.push(`event_time >= now() - INTERVAL ${tr}`);
+    }
+  }
   if (clauses.length === 0) return sql;
   const extra = clauses.map(c => `    AND ${c}`).join('\n');
   return sql.replace(/(\s+ORDER BY)/, `\n${extra}$1`);
+}
+
+/**
+ * Inject time filter for mutation history queries.
+ * Mutation queries use create_time and have a subquery structure,
+ * so we inject into the inner FROM clause.
+ */
+function injectMutationTimeFilter(sql: string, opts: MergeHistoryOptions): string {
+  const tr = opts.timeRange;
+  if (!tr) return sql;
+  let clause: string;
+  if (tr.startsWith('CUSTOM:')) {
+    const [rawStart, rawEnd] = tr.slice(7).split(',');
+    const normDT = (v: string) => { let s = v.replace('T', ' '); if (/^\d{4}-\d{2}-\d{2} \d{2}:\d{2}$/.test(s)) s += ':00'; return s; };
+    clause = `create_time >= '${normDT(rawStart)}' AND create_time <= '${normDT(rawEnd)}'`;
+  } else {
+    clause = `create_time >= now() - INTERVAL ${tr}`;
+  }
+  // Inject WHERE into the inner subquery — after the FROM line, before the closing parenthesis.
+  // The inner subquery has pattern: FROM {{cluster_aware:system.mutations}}\n  )
+  // Add a WHERE clause if none exists, or AND if there's already a WHERE.
+  if (sql.includes('WHERE database =') || sql.includes('WHERE database=')) {
+    // Table/database-scoped variant already has WHERE — append AND
+    return sql.replace(/(FROM\s+\{\{cluster_aware:system\.mutations\}\})\s*\n(\s*WHERE\s)/,
+      `$1\n$2`).replace(
+      /(WHERE\s+database\s*=\s*\{database\})/,
+      `$1\n      AND ${clause}`
+    );
+  }
+  // Global variant — no WHERE in inner subquery
+  return sql.replace(
+    /(FROM\s+\{\{cluster_aware:system\.mutations\}\})\s*\n(\s*\))/,
+    `$1\n    WHERE ${clause}\n$2`
+  );
 }
 
 export class MergeTracker {
@@ -188,7 +235,9 @@ export class MergeTracker {
       } else {
         sql = buildQuery(GET_MUTATION_HISTORY, { limit });
       }
-      // Note: do NOT apply injectThresholdFilters here — system.mutations lacks duration_ms/size_in_bytes columns
+      // Note: do NOT apply injectThresholdFilters here — system.mutations lacks duration_ms/size_in_bytes columns.
+      // But we do apply time range filter on create_time.
+      sql = injectMutationTimeFilter(sql, options);
       const rows = await this.adapter.executeQuery(tagQuery(sql, sourceTag(TAB_MERGES, 'mutationHistory')));
       let records = rows.map(mapMutationHistoryRecord);
       // Client-side table filter when database is not set

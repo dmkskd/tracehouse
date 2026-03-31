@@ -113,15 +113,13 @@ export const LinkQueryModal: React.FC<LinkQueryModalProps> = ({
   }, [services, targetQuery, params, parentDrillParams]);
 
   const handleSort = useCallback((col: string) => {
-    setSortCol(prev => {
-      if (prev === col) {
-        setSortDir(d => d === 'asc' ? 'desc' : 'asc');
-        return col;
-      }
+    if (sortCol === col) {
+      setSortDir(d => d === 'asc' ? 'desc' : 'asc');
+    } else {
+      setSortCol(col);
       setSortDir('desc');
-      return col;
-    });
-  }, []);
+    }
+  }, [sortCol]);
 
   const columns = useMemo(() => rows.length > 0 ? Object.keys(rows[0]) : [], [rows]);
 

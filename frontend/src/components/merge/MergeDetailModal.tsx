@@ -985,10 +985,26 @@ const MergeDetailInner: React.FC<{
 // ---------------------------------------------------------------------------
 
 export const MergeDetailModalFromRecord: React.FC<MergeDetailModalFromRecordProps> = ({ record, onClose }) => {
+  const services = useClickHouseServices();
+  const [fullRecord, setFullRecord] = useState<MergeHistoryRecord | null>(null);
+
+  // Fetch the full record (with ProfileEvents, path_on_disk, etc.) on open.
+  // Falls back to the lite listing record if the fetch fails.
+  useEffect(() => {
+    setFullRecord(null);
+    if (!record || !services) return;
+    let cancelled = false;
+    services.mergeTracker.getMergeHistoryByPartName(record.database, record.table, record.part_name)
+      .then(r => { if (!cancelled) setFullRecord(r ?? record); })
+      .catch(() => { if (!cancelled) setFullRecord(record); });
+    return () => { cancelled = true; };
+  }, [record?.database, record?.table, record?.part_name, services]); // eslint-disable-line react-hooks/exhaustive-deps
+
   if (!record) return null;
+  const displayRecord = fullRecord ?? record;
   return (
     <ModalWrapper isOpen={true} onClose={onClose}>
-      <MergeDetailInner record={record} onClose={onClose} title="Merge Details" />
+      <MergeDetailInner record={displayRecord} onClose={onClose} title="Merge Details" />
     </ModalWrapper>
   );
 };

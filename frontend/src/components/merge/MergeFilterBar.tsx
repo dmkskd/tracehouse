@@ -10,8 +10,16 @@
 
 import React, { useState, useRef, useCallback, useMemo } from 'react';
 import type { MergeHistoryFilter } from '../../stores/mergeStore';
+import { TimeRangePicker } from '../analytics/TimeRangePicker';
 
 export type MergeTab = 'active' | 'mutations' | 'mutationHistory' | 'history';
+
+const MERGE_TIME_PRESETS = [
+  { label: '1h',  interval: '1 HOUR' },
+  { label: '1d',  interval: '1 DAY' },
+  { label: '3d',  interval: '3 DAY' },
+  { label: '7d',  interval: '7 DAY' },
+];
 
 /* ------------------------------------------------------------------ */
 /*  Public types                                                       */
@@ -471,6 +479,13 @@ export const MergeFilterBar: React.FC<MergeFilterBarProps> = (props) => {
             </div>
           )}
         </div>
+
+        {/* Time range picker */}
+        <TimeRangePicker
+          value={filter.timeRange ?? '1 HOUR'}
+          onChange={v => onFilterChange({ timeRange: v })}
+          presets={MERGE_TIME_PRESETS}
+        />
 
         {/* Limit (history tabs) */}
         {showLimit && (

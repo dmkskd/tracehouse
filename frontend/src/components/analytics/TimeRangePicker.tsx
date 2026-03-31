@@ -15,6 +15,8 @@ import { RangeSlider } from '../shared/RangeSlider';
 interface Props {
   value: string | null;
   onChange: (interval: string | null) => void;
+  /** Override the default preset list. Each entry needs a label and a ClickHouse interval string. */
+  presets?: { label: string; interval: string }[];
 }
 
 const SLIDER_ZOOMS = [
@@ -38,7 +40,8 @@ const INTERVAL_TO_MS: Record<string, number> = {
   '30 DAY':    30 * 86400000,
 };
 
-export const TimeRangePicker: React.FC<Props> = ({ value, onChange }) => {
+export const TimeRangePicker: React.FC<Props> = ({ value, onChange, presets }) => {
+  const effectivePresets = presets ?? TIME_RANGE_OPTIONS.map(o => ({ label: o.label, interval: o.interval! }));
   const [showCustom, setShowCustom] = useState(false);
   const [customStart, setCustomStart] = useState('');
   const [customEnd, setCustomEnd] = useState('');
@@ -115,9 +118,9 @@ export const TimeRangePicker: React.FC<Props> = ({ value, onChange }) => {
         display: 'flex', gap: 2, padding: 3, borderRadius: 8,
         background: 'var(--bg-secondary)', border: '1px solid var(--border-primary)',
       }}>
-        {TIME_RANGE_OPTIONS.map(opt => (
-          <button key={opt.label} onClick={() => handlePreset(opt.interval!)}
-            style={btnStyle(isPresetActive(opt.interval!))}
+        {effectivePresets.map(opt => (
+          <button key={opt.label} onClick={() => handlePreset(opt.interval)}
+            style={btnStyle(isPresetActive(opt.interval))}
             title={`Set time range to ${opt.interval}`}>
             {opt.label}
           </button>
