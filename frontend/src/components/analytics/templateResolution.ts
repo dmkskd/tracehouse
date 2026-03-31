@@ -75,6 +75,11 @@ export function resolveDrillParams(sql: string, drillParams: Record<string, stri
   return result;
 }
 
+/** True if the query SQL accepts drill parameters (either {{drill:…}} or {{drill_value:…}}). */
+export function isDrillTarget(sql: string): boolean {
+  return sql.includes('{{drill_value:') || sql.includes('{{drill:');
+}
+
 /** Human-readable description of a time range interval (for tooltips). */
 export function describeTimeRange(defaultInterval?: string, userInterval?: string | null): string {
   const interval = userInterval ?? defaultInterval;

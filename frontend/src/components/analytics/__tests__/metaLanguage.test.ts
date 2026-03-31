@@ -10,6 +10,7 @@ import {
 import {
   resolveTimeRange,
   resolveDrillParams,
+  isDrillTarget,
 } from '../templateResolution';
 
 /* ═══════════════════════════════════════════════════════════════════════════
@@ -563,7 +564,50 @@ describe('resolveDrillParams', { tags: ['analytics'] }, () => {
 });
 
 /* ═══════════════════════════════════════════════════════════════════════════
- * 7. resolveQueryRef — table-driven
+ * 7. isDrillTarget — table-driven
+ * ═══════════════════════════════════════════════════════════════════════════ */
+
+describe('isDrillTarget', { tags: ['analytics'] }, () => {
+  const cases: { name: string; sql: string; expected: boolean }[] = [
+    {
+      name: 'drill filter expression → true',
+      sql: `SELECT * FROM t WHERE {{drill:database | 1=1}}`,
+      expected: true,
+    },
+    {
+      name: 'drill_value quoted value → true',
+      sql: `SELECT * FROM t WHERE hash = {{drill_value:query_hash | ''}}`,
+      expected: true,
+    },
+    {
+      name: 'both drill and drill_value → true',
+      sql: `SELECT * FROM t WHERE {{drill:database | 1=1}} AND x = {{drill_value:table | ''}}`,
+      expected: true,
+    },
+    {
+      name: 'no drill templates → false',
+      sql: `SELECT * FROM system.parts WHERE active`,
+      expected: false,
+    },
+    {
+      name: 'only time_range template → false',
+      sql: `SELECT * FROM t WHERE event_time > {{time_range}}`,
+      expected: false,
+    },
+    {
+      name: 'cluster_aware template → false',
+      sql: `SELECT * FROM {{cluster_aware:system.parts}}`,
+      expected: false,
+    },
+  ];
+
+  test.each(cases)('$name', ({ sql, expected }) => {
+    expect(isDrillTarget(sql)).toBe(expected);
+  });
+});
+
+/* ═══════════════════════════════════════════════════════════════════════════
+ * 8. resolveQueryRef — table-driven
  * ═══════════════════════════════════════════════════════════════════════════ */
 
 describe('resolveQueryRef', { tags: ['analytics'] }, () => {

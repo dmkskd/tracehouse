@@ -18,7 +18,7 @@ import {
   addCustomQuery, deleteCustomQuery, loadCustomQueries, isQueryNameTaken,
   buildCustomQuerySql, getAllQueries as getAllQueriesFromPresets,
 } from './customQueries';
-import { resolveTimeRange, resolveDrillParams } from './templateResolution';
+import { resolveTimeRange, resolveDrillParams, isDrillTarget } from './templateResolution';
 
 const MAX_SIDEBAR_QUERIES = 12;
 import {
@@ -113,7 +113,7 @@ export const QueryExplorer: React.FC<QueryExplorerProps> = ({ urlState, onUrlSta
   const allQueryEntries = useMemo(() => allQueries.map(q => ({
     name: q.name,
     group: q.group,
-    isLinkTarget: q.sql.includes('{{drill_value:'),
+    isLinkTarget: isDrillTarget(q.sql),
   })), [allQueries]);
 
   // Initialize from URL state if available
