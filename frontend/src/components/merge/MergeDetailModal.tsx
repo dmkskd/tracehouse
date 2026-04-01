@@ -562,7 +562,9 @@ const MergeDetailInner: React.FC<{
   isActive?: boolean;
   /** Original MergeInfo for active merges — used for progress display */
   activeMerge?: MergeInfo;
-}> = ({ record: rootRecord, onClose, title: rootTitle = 'Merge Details', isActive: rootIsActive, activeMerge: rootActiveMerge }) => {
+  /** Error message when detail fetch failed — shown as a warning banner */
+  detailError?: string | null;
+}> = ({ record: rootRecord, onClose, title: rootTitle = 'Merge Details', isActive: rootIsActive, activeMerge: rootActiveMerge, detailError }) => {
   const services = useClickHouseServices();
 
   // Drill-down navigation stack for source parts
@@ -798,6 +800,11 @@ const MergeDetailInner: React.FC<{
         </div>
         <button onClick={onClose} style={{ color: 'var(--text-muted)', background: 'none', border: 'none', cursor: 'pointer', fontSize: 18, padding: '4px 8px' }}>✕</button>
       </div>
+      {detailError && (
+        <div style={{ margin: '8px 20px 0', padding: '8px 12px', borderRadius: 6, background: 'rgba(229,83,75,0.1)', border: '1px solid rgba(229,83,75,0.25)', color: '#e5534b', fontSize: 11 }}>
+          {detailError} — showing partial data
+        </div>
+      )}
       {isActive && activeMerge && (
         <div style={{ padding: '8px 20px', background: `${accent}14`, borderBottom: `1px solid ${accent}33`, display: 'flex', alignItems: 'center', gap: 12 }}>
           <div style={{ flex: 1 }}>
@@ -987,16 +994,28 @@ const MergeDetailInner: React.FC<{
 export const MergeDetailModalFromRecord: React.FC<MergeDetailModalFromRecordProps> = ({ record, onClose }) => {
   const services = useClickHouseServices();
   const [fullRecord, setFullRecord] = useState<MergeHistoryRecord | null>(null);
+  const [detailError, setDetailError] = useState<string | null>(null);
 
   // Fetch the full record (with ProfileEvents, path_on_disk, etc.) on open.
-  // Falls back to the lite listing record if the fetch fails.
   useEffect(() => {
     setFullRecord(null);
+    setDetailError(null);
     if (!record || !services) return;
     let cancelled = false;
     services.mergeTracker.getMergeHistoryByPartName(record.database, record.table, record.part_name)
-      .then(r => { if (!cancelled) setFullRecord(r ?? record); })
-      .catch(() => { if (!cancelled) setFullRecord(record); });
+      .then(r => {
+        if (cancelled) return;
+        if (!r) {
+          console.warn('[MergeDetailModal] No detail record found for', record.database, record.table, record.part_name);
+          setDetailError('Detail record not found in part_log');
+        }
+        setFullRecord(r);
+      })
+      .catch((err) => {
+        if (cancelled) return;
+        console.error('[MergeDetailModal] Failed to fetch detail record:', err);
+        setDetailError(err instanceof Error ? err.message : 'Failed to fetch detail record');
+      });
     return () => { cancelled = true; };
   }, [record?.database, record?.table, record?.part_name, services]); // eslint-disable-line react-hooks/exhaustive-deps
 
@@ -1004,7 +1023,7 @@ export const MergeDetailModalFromRecord: React.FC<MergeDetailModalFromRecordProp
   const displayRecord = fullRecord ?? record;
   return (
     <ModalWrapper isOpen={true} onClose={onClose}>
-      <MergeDetailInner record={displayRecord} onClose={onClose} title="Merge Details" />
+      <MergeDetailInner record={displayRecord} onClose={onClose} title="Merge Details" detailError={detailError} />
     </ModalWrapper>
   );
 };

@@ -47,49 +47,66 @@ GROUP BY database, table
 ORDER BY part_count DESC
 LIMIT 25`,
 
-  `-- @meta: title='Database Sizes' group='Overview' description='Total disk usage per database'
--- @chart: type=pie group_by=database value=total_bytes style=3d unit=bytes
+  `-- @meta: title='Database Sizes' group='Overview' description='Chart shows deduplicated data size. Table includes replicated size (total across all replicas) and replication factor.'
+-- @chart: type=pie group_by=database value=size_bytes style=3d unit=bytes
 -- @drill: on=database into='Table Sizes'
 SELECT
     database,
-    formatReadableSize(sum(part_disk)) AS size,
-    sum(part_disk) AS total_bytes,
-    count() AS tables
+    formatReadableSize(sum(logical_disk)) AS size,
+    sum(logical_disk) AS size_bytes,
+    formatReadableSize(sum(physical_disk)) AS replicated_size,
+    sum(physical_disk) AS replicated_bytes,
+    round(sum(physical_disk) / greatest(sum(logical_disk), 1), 2) AS replication_factor
 FROM (
-    SELECT database, table, name, any(bytes_on_disk) AS part_disk
+    SELECT database, table, name,
+        any(bytes_on_disk) AS logical_disk,
+        sum(bytes_on_disk) AS physical_disk
     FROM {{cluster_aware:system.parts}}
     WHERE active
     GROUP BY database, table, name
 )
 GROUP BY database
-ORDER BY total_bytes DESC`,
+ORDER BY size_bytes DESC`,
 
-  `-- @meta: title='Table Sizes' group='Overview' description='Disk usage per table (drill from Database Sizes or view all)'
--- @chart: type=pie group_by=table value=total_bytes style=3d unit=bytes
+  `-- @meta: title='Table Sizes' group='Overview' description='Chart shows deduplicated data size. Table includes replicated size (total across all replicas) and replication factor.'
+-- @chart: type=pie group_by=table value=size_bytes style=3d unit=bytes
 -- @drill: on=table into='Part Sizes'
 SELECT
     table,
-    formatReadableSize(sum(bytes_on_disk)) AS size,
-    sum(bytes_on_disk) AS total_bytes,
+    formatReadableSize(sum(logical_disk)) AS size,
+    sum(logical_disk) AS size_bytes,
+    formatReadableSize(sum(physical_disk)) AS replicated_size,
+    sum(physical_disk) AS replicated_bytes,
+    round(sum(physical_disk) / greatest(sum(logical_disk), 1), 2) AS replication_factor,
     count() AS parts
-FROM {{cluster_aware:system.parts}}
-WHERE active AND {{drill:database | 1=1}}
+FROM (
+    SELECT database, table, name,
+        any(bytes_on_disk) AS logical_disk,
+        sum(bytes_on_disk) AS physical_disk
+    FROM {{cluster_aware:system.parts}}
+    WHERE active AND {{drill:database | 1=1}}
+    GROUP BY database, table, name
+)
 GROUP BY table
-ORDER BY total_bytes DESC
+ORDER BY size_bytes DESC
 LIMIT 50`,
 
-  `-- @meta: title='Part Sizes' group='Overview' description='Disk usage per part (drill from Table Sizes or view all)'
--- @chart: type=bar group_by=name value=bytes_on_disk style=2d unit=bytes
+  `-- @meta: title='Part Sizes' group='Overview' description='Chart shows deduplicated part size. Table includes replicated size (total across all replicas) and replica count.'
+-- @chart: type=bar group_by=name value=size_bytes style=2d unit=bytes
 -- @part_link: on=name database=database table=table
 SELECT
     database,
     table,
     name,
-    formatReadableSize(bytes_on_disk) AS size,
-    bytes_on_disk
+    formatReadableSize(any(bytes_on_disk)) AS size,
+    any(bytes_on_disk) AS size_bytes,
+    formatReadableSize(sum(bytes_on_disk)) AS replicated_size,
+    sum(bytes_on_disk) AS replicated_bytes,
+    count() AS replicas
 FROM {{cluster_aware:system.parts}}
 WHERE active AND {{drill:database | 1=1}} AND {{drill:table | 1=1}}
-ORDER BY bytes_on_disk DESC
+GROUP BY database, table, name
+ORDER BY size_bytes DESC
 LIMIT 100`,
   `-- @meta: title='Table Health' group='Overview' description='Per-table part count, disk usage gauge, and part-size distribution sparkline'
 -- @cell: column=disk_pct type=gauge max=100 unit=%

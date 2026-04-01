@@ -303,6 +303,12 @@ export const ColumnCostAnalysis: React.FC<ColumnCostAnalysisProps> = ({ queryDet
   /* ---------------------------------------------------------------- */
   /*  Server-side: re-run query per column, read read_bytes from       */
   /*  system.query_log                                                  */
+  /*                                                                    */
+  /*  BUG: read_bytes is a query-level metric. For queries with GROUP   */
+  /*  BY / JOIN / aggregation, wrapping the original query as a sub-    */
+  /*  query forces a full execution regardless of which output column   */
+  /*  is selected — so all columns report the same read_bytes.          */
+  /*  Only accurate for simple SELECT … FROM table scans.               */
   /* ---------------------------------------------------------------- */
 
   const [serverProgress, setServerProgress] = useState<ServerProgress | null>(null);
@@ -560,7 +566,7 @@ export const ColumnCostAnalysis: React.FC<ColumnCostAnalysisProps> = ({ queryDet
       <div style={CARD}>
         <SectionHeader
           title="Processed Data (Server-side)"
-          subtitle="Re-runs the query once per output column and reads read_bytes from system.query_log. Shows how much data the server had to process for each column."
+          subtitle="Re-runs the query once per output column and reads read_bytes from system.query_log. Results may be inaccurate for queries with GROUP BY, JOIN, or aggregations (all columns may show equal cost)."
           isRunning={isRunningServer}
           hasResults={serverCosts !== null}
           error={serverError}

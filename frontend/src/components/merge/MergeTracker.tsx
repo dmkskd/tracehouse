@@ -911,16 +911,29 @@ const MergeHistoryDetailPanel: React.FC<{
 }> = ({ record: liteRecord, onClose, onOpenFullDetails }) => {
   const services = useClickHouseServices();
   const [fullRecord, setFullRecord] = useState<MergeHistoryRecord | null>(null);
+  const [detailError, setDetailError] = useState<string | null>(null);
   const [volumeInfo, setVolumeInfo] = useState<{ volumeName: string; policyName: string } | null>(null);
 
   // Fetch full record (with merge_algorithm, disk_name, query_id, etc.) on selection
   useEffect(() => {
     setFullRecord(null);
+    setDetailError(null);
     if (!liteRecord || !services) return;
     let cancelled = false;
     services.mergeTracker.getMergeHistoryByPartName(liteRecord.database, liteRecord.table, liteRecord.part_name)
-      .then(r => { if (!cancelled) setFullRecord(r ?? liteRecord); })
-      .catch(() => { if (!cancelled) setFullRecord(liteRecord); });
+      .then(r => {
+        if (cancelled) return;
+        if (!r) {
+          console.warn('[MergeHistoryDetailPanel] No detail record found for', liteRecord.database, liteRecord.table, liteRecord.part_name);
+          setDetailError('Detail record not found in part_log');
+        }
+        setFullRecord(r);
+      })
+      .catch((err) => {
+        if (cancelled) return;
+        console.error('[MergeHistoryDetailPanel] Failed to fetch detail record:', err);
+        setDetailError(err instanceof Error ? err.message : 'Failed to fetch detail record');
+      });
     return () => { cancelled = true; };
   }, [liteRecord?.database, liteRecord?.table, liteRecord?.part_name, services]); // eslint-disable-line react-hooks/exhaustive-deps
 
@@ -974,6 +987,11 @@ const MergeHistoryDetailPanel: React.FC<{
         </div>
       </div>
       <div style={{ flex: 1, overflow: 'auto', padding: 16 }}>
+        {detailError && (
+          <div style={{ marginBottom: 12, padding: '8px 12px', borderRadius: 6, background: 'rgba(229,83,75,0.1)', border: '1px solid rgba(229,83,75,0.25)', color: '#e5534b', fontSize: 11 }}>
+            {detailError} — showing partial data
+          </div>
+        )}
         <div style={{ marginBottom: 16 }}>
           <div style={{ fontSize: 10, marginBottom: 4, color: 'var(--text-muted)' }}>Table</div>
           <div style={{ fontWeight: 600, color: 'var(--text-primary)', fontFamily: 'monospace', fontSize: 13 }}>{record.database}.{record.table}</div>
