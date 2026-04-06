@@ -79,7 +79,7 @@ const FILTER_FIELDS: FilterFieldDef[] = [
     hasSuggestions: true, suggestionKey: 'hostname',
   },
   {
-    key: 'query_id', label: 'Query ID', placeholder: 'e.g. abc123…',
+    key: 'query_id', label: 'Query ID', placeholder: 'single or space/comma-separated',
     toFilter: v => ({ queryId: v || undefined }),
     fromFilter: f => f.queryId,
     clear: () => ({ queryId: undefined }),

@@ -331,8 +331,16 @@ export class QueryAnalyzer {
     }
 
     if (options.query_id) {
-      whereConditions.push("positionCaseInsensitive(query_id, {query_id}) > 0");
-      params.query_id = options.query_id;
+      const ids = options.query_id.split(/[\s,]+/).map(s => s.trim()).filter(Boolean);
+      if (ids.length > 1) {
+        // Multiple IDs: exact match via IN list
+        const inList = ids.map(id => `'${escapeValue(id)}'`).join(', ');
+        whereConditions.push(`query_id IN (${inList})`);
+      } else {
+        // Single value: substring match (existing behaviour)
+        whereConditions.push("positionCaseInsensitive(query_id, {query_id}) > 0");
+        params.query_id = options.query_id;
+      }
     }
 
     if (options.exclude_app_queries) {
