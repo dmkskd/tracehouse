@@ -182,6 +182,36 @@ export const ACTIVE_QUERIES = `
   ORDER BY {query_order_by} DESC
   LIMIT {activity_limit}
 `;
+/** Active queries filtered by normalized_query_hash — shows ALL executions of a query hash (no memory filter, no limit) */
+export const ACTIVE_QUERIES_BY_HASH = `
+  SELECT
+    query_id,
+    user,
+    hostname() AS host,
+    substring(query, 1, 500) AS query_short,
+    memory_usage,
+    query_duration_ms,
+    query_kind,
+    toString(query_start_time) AS qst,
+    toString(query_start_time + toIntervalMillisecond(query_duration_ms)) AS qet,
+    ProfileEvents['OSCPUVirtualTimeMicroseconds'] AS cpu_us,
+    ProfileEvents['NetworkSendBytes'] AS net_send,
+    ProfileEvents['NetworkReceiveBytes'] AS net_recv,
+    read_bytes AS disk_read,
+    written_bytes AS disk_write,
+    type AS status,
+    exception_code,
+    exception
+  FROM {{cluster_aware:system.query_log}}
+  WHERE type IN ('QueryFinish', 'ExceptionWhileProcessing')
+    AND event_date >= {start_date}
+    AND query_start_time <= {end_time}
+    AND (query_start_time + toIntervalMillisecond(query_duration_ms)) >= {start_time}
+    AND query NOT LIKE ${APP_SOURCE_LIKE}
+    AND normalized_query_hash = {normalized_query_hash}
+  ORDER BY query_start_time DESC
+`;
+
 /** Count of queries active during the window (before LIMIT/memory filter of detail query) */
 export const ACTIVE_QUERIES_COUNT = `
   SELECT count()

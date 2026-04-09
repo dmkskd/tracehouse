@@ -32,6 +32,7 @@ import {
   SERVER_CGROUP_CPU,
   SERVER_MAX_THREADS,
   ACTIVE_QUERIES,
+  ACTIVE_QUERIES_BY_HASH,
   ACTIVE_QUERIES_COUNT,
   ACTIVE_MERGES_COUNT,
   ACTIVE_MERGES_DETAIL,
@@ -81,7 +82,12 @@ export class TimelineService {
   constructor(private adapter: IClickHouseAdapter) {}
 
   async getTimeline(options: TimelineOptions): Promise<MemoryTimeline> {
-    const { timestamp, windowSeconds, includeRunning = true, hostname = null, activityLimit = 100, activeMetric = 'memory' } = options;
+    const { timestamp, windowSeconds, includeRunning = true, hostname = null, activityLimit = 100, activeMetric = 'memory', normalizedQueryHash } = options;
+
+    // Validate hash early (before any queries run) to reject injection attempts
+    if (normalizedQueryHash && !/^\d+$/.test(normalizedQueryHash)) {
+      throw new TimelineServiceError(`Invalid normalized_query_hash: expected numeric UInt64`);
+    }
 
     const start = new Date(timestamp.getTime() - windowSeconds * 1000);
     const end = new Date(timestamp.getTime() + windowSeconds * 1000);
@@ -249,6 +255,32 @@ export class TimelineService {
       ...queries,
       ...runningQueries.filter(q => !completedQueryIds.has(q.query_id)),
     ];
+
+    // Hash filter overlay: fetch hash-matched queries and merge them in
+    if (normalizedQueryHash) {
+      const hashParams = { ...params };
+      delete hashParams.activity_limit; // hash query has no LIMIT — bounded by time window
+      const patternQueries = await this.fetchQueries(
+        hashParams,
+        start, end,
+        (sql) => withHost(sql),
+        normalizedQueryHash,
+      );
+      // Mark hash-matched queries and merge any that aren't already in the top-N
+      const existingIds = new Set(allQueries.map(q => q.query_id));
+      for (const q of allQueries) {
+        if (patternQueries.some(pq => pq.query_id === q.query_id)) {
+          q.matched_hash = true;
+        }
+      }
+      for (const pq of patternQueries) {
+        if (!existingIds.has(pq.query_id)) {
+          pq.matched_hash = true;
+          allQueries.push(pq);
+        }
+      }
+    }
+
     allQueries.sort(sortByMetric);
 
     // Merge completed and running merges (dedupe by part_name)
@@ -739,9 +771,16 @@ export class TimelineService {
     return 0;
   }
 
-  private async fetchQueries(params: Record<string, string | number>, start: Date, end: Date, xform: (s: string) => string): Promise<QuerySeries[]> {
+  private async fetchQueries(params: Record<string, string | number>, start: Date, end: Date, xform: (s: string) => string, normalizedQueryHash?: string): Promise<QuerySeries[]> {
     try {
-      const sql = xform(buildQuery(ACTIVE_QUERIES, params));
+      let sql: string;
+      if (normalizedQueryHash) {
+        // Hash already validated in getTimeline() — safe to inject as raw UInt64
+        sql = xform(buildQuery(ACTIVE_QUERIES_BY_HASH, params))
+          .replaceAll('{normalized_query_hash}', normalizedQueryHash);
+      } else {
+        sql = xform(buildQuery(ACTIVE_QUERIES, params));
+      }
       const rows = await this.adapter.executeQuery(tagQuery(sql, sourceTag(TAB_TIME_TRAVEL, 'queries')));
       
       const queries: QuerySeries[] = [];
@@ -785,6 +824,9 @@ export class TimelineService {
       
       return queries;
     } catch (e) {
+      // For hash-filtered queries, propagate the error so the caller can report it
+      // instead of silently returning 0 matches
+      if (normalizedQueryHash) throw e;
       console.error('[TimelineService] query_log error:', e);
       return [];
     }

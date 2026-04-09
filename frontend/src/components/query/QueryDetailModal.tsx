@@ -8,6 +8,7 @@
  */
 
 import React, { useEffect, useCallback, useState } from 'react';
+import { useNavigate } from 'react-router-dom';
 import type { QuerySeries, TraceLog, OpenTelemetrySpan } from '@tracehouse/core';
 import type { QueryDetail as QueryDetailType, SimilarQuery, SubQueryInfo, QueryThreadBreakdown } from '@tracehouse/core';
 import type { FlamegraphType } from '@tracehouse/core';
@@ -39,6 +40,8 @@ export interface TimelineQueryModalProps {
   query: QuerySeries | null;
   /** Called when modal should close */
   onClose: () => void;
+  /** Optional callback to activate pattern mode in Time Travel (passed by TimeTravelPage) */
+  onViewInTimeTravel?: (normalizedQueryHash: string) => void;
 }
 
 type QueryModalTab = 'overview' | 'details' | 'analytics' | 'history' | 'logs' | 'spans' | 'flamegraph' | 'pipeline' | 'threads' | 'xray';
@@ -525,7 +528,8 @@ const HistoryTab: React.FC<{
   hashMode: 'normalized' | 'exact';
   onHashModeChange: (mode: 'normalized' | 'exact') => void;
   currentQueryId?: string;
-}> = ({ similarQueries, isLoading, error, onRefresh, cpuTimeline, memTimeline, limit, onLimitChange, onSelectQuery, hashMode, onHashModeChange, currentQueryId }) => {
+  onViewInTimeTravel?: () => void;
+}> = ({ similarQueries, isLoading, error, onRefresh, cpuTimeline, memTimeline, limit, onLimitChange, onSelectQuery, hashMode, onHashModeChange, currentQueryId, onViewInTimeTravel }) => {
   const [selectedMetrics, setSelectedMetrics] = useState<Set<ChartMetric>>(new Set(['duration']));
   const [hoveredPoint, setHoveredPoint] = useState<number | null>(null);
   const [hoveredEvent, setHoveredEvent] = useState<number | null>(null);
@@ -947,6 +951,18 @@ const HistoryTab: React.FC<{
               ))}
             </select>
           </div>
+          {onViewInTimeTravel && (
+            <div className="tabs" style={{ padding: 2 }}>
+              <button
+                className="tab"
+                onClick={onViewInTimeTravel}
+                title="See this query hash across the full system timeline"
+                style={{ border: 'none', padding: '4px 12px', fontSize: 11 }}
+              >
+                Time Travel
+              </button>
+            </div>
+          )}
         </div>
       </div>
 
@@ -1765,7 +1781,7 @@ const HistoryTab: React.FC<{
           <col style={{ width: '3%' }} />   {/* Status icon */}
           <col style={{ width: '9%' }} />   {/* Settings */}
           <col style={{ width: '13%' }} />  {/* Changes */}
-          {hasAnyLiteralDiffs && <col style={{ width: '14%' }} />}  {/* Params */}
+          {hasAnyLiteralDiffs ? <col style={{ width: '14%' }} /> : null}  {/* Params */}
         </colgroup>
         <thead>
           <tr>
@@ -1830,7 +1846,7 @@ const HistoryTab: React.FC<{
             <col style={{ width: '3%' }} />
             <col style={{ width: '9%' }} />
             <col style={{ width: '13%' }} />
-            {hasAnyLiteralDiffs && <col style={{ width: '14%' }} />}
+            {hasAnyLiteralDiffs ? <col style={{ width: '14%' }} /> : null}
           </colgroup>
           <tbody>
             {sortedQueries.map((q, i) => {
@@ -2122,6 +2138,7 @@ const HistoryTab: React.FC<{
 export const QueryDetailModal: React.FC<TimelineQueryModalProps> = ({
   query,
   onClose,
+  onViewInTimeTravel,
 }) => {
   const services = useClickHouseServices();
   const { available: hasTraceLog } = useCapabilityCheck(['trace_log']);
@@ -2132,6 +2149,7 @@ export const QueryDetailModal: React.FC<TimelineQueryModalProps> = ({
   const { available: hasProcessesHistory } = useCapabilityCheck(['tracehouse_processes_history']);
   const { experimentalEnabled } = useUserPreferenceStore();
 
+  const navigate = useNavigate();
   const [activeTab, setActiveTab] = useState<QueryModalTab>('overview');
   const [detailsSubTab, setDetailsSubTab] = useState<DetailsSubTab>('performance');
   const [analyticsSubTab, setAnalyticsSubTab] = useState<AnalyticsSubTab>('scan_efficiency');
@@ -2609,16 +2627,18 @@ export const QueryDetailModal: React.FC<TimelineQueryModalProps> = ({
           flexShrink: 0,
         }}>
           <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 12 }}>
-            <h2 style={{
-              fontSize: 18,
-              fontWeight: 500,
-              color: 'var(--text-primary)',
-              letterSpacing: '0.5px',
-              fontFamily: 'monospace',
-              margin: 0,
-            }}>
-              {queryDetail?.query_kind || 'Query'} Details
-            </h2>
+            <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
+              <h2 style={{
+                fontSize: 18,
+                fontWeight: 500,
+                color: 'var(--text-primary)',
+                letterSpacing: '0.5px',
+                fontFamily: 'monospace',
+                margin: 0,
+              }}>
+                {queryDetail?.query_kind || 'Query'} Details
+              </h2>
+            </div>
             <button
               onClick={onClose}
               style={{
@@ -3292,6 +3312,16 @@ export const QueryDetailModal: React.FC<TimelineQueryModalProps> = ({
                       points: [],
                     });
                   }}
+                  onViewInTimeTravel={queryDetail?.normalized_query_hash ? () => {
+                    const hash = queryDetail.normalized_query_hash;
+                    if (onViewInTimeTravel) {
+                      onClose();
+                      onViewInTimeTravel(String(hash));
+                    } else {
+                      onClose();
+                      navigate(`/timetravel?nqh=${hash}`);
+                    }
+                  } : undefined}
                 />
               );
             })()

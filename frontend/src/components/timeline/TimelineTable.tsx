@@ -57,6 +57,9 @@ type SortDir = 'asc' | 'desc';
 
 // ── Query table ────────────────────────────────────────────────────────────
 
+/** Highlight color for hash-matched queries */
+const HASH_MATCH_COLOR = '#58a6ff';
+
 export const QueryTable: React.FC<{
   queries: QuerySeries[];
   allQueries: QuerySeries[];
@@ -74,7 +77,9 @@ export const QueryTable: React.FC<{
   showHost?: boolean;
   isHiddenInChart?: boolean;
   onToggleChartVisibility?: () => void;
-}> = ({ queries, allQueries, totalCount, pinnedMs, metricMode, colors, accentColor, highlightedItem, onHighlightItem, onSelect, sortField, sortDir, onSort, showHost, isHiddenInChart, onToggleChartVisibility }) => {
+  /** When true, visually distinguish hash-matched queries */
+  queryHashActive?: boolean;
+}> = ({ queries, allQueries, totalCount, pinnedMs, metricMode, colors, accentColor, highlightedItem, onHighlightItem, onSelect, sortField, sortDir, onSort, showHost, isHiddenInChart, onToggleChartVisibility, queryHashActive }) => {
   const sortIndicator = (field: SortField) => sortField === field ? (sortDir === 'desc' ? '▼' : '▲') : '⇅';
   return (
     <div style={{ borderRadius:10, background:'var(--bg-secondary)', border:'1px solid var(--border-primary)', overflow:'hidden' }}>
@@ -116,18 +121,24 @@ export const QueryTable: React.FC<{
           {queries.map((q, i) => {
             const originalIdx = allQueries.indexOf(q);
             const isHighlighted = highlightedItem?.type === 'query' && highlightedItem.id === q.query_id;
+            const isDimmed = queryHashActive && !q.matched_hash;
             return (
             <tr key={q.query_id}
               style={{
                 background: isHighlighted ? 'rgba(88,166,255,0.35)' : (i % 2 === 0 ? 'transparent' : 'var(--bg-tertiary)'),
-                cursor: 'pointer', transition: 'background 0.15s ease',
+                cursor: 'pointer', transition: 'background 0.15s ease, opacity 0.15s ease',
+                opacity: isDimmed ? 0.3 : 1,
               }}
               title={q.label}
               onClick={() => onSelect(q)}
               onMouseEnter={() => originalIdx >= 0 && onHighlightItem({ type: 'query', idx: originalIdx, id: q.query_id })}
               onMouseLeave={() => onHighlightItem(null)}>
               <td style={{ padding:'5px 4px 5px 12px', width:18 }}>
-                <div style={{ width:8, height:8, borderRadius:2, background: colors[originalIdx >= 0 ? originalIdx % colors.length : i % colors.length] }} />
+                <div style={{
+                  width:8, height:8, borderRadius:2,
+                  background: queryHashActive && q.matched_hash ? HASH_MATCH_COLOR : colors[originalIdx >= 0 ? originalIdx % colors.length : i % colors.length],
+                  boxShadow: queryHashActive && q.matched_hash ? `0 0 4px ${HASH_MATCH_COLOR}` : undefined,
+                }} />
               </td>
               <td style={{ padding:'5px 8px', fontFamily:'monospace', color:'#58a6ff', overflow:'hidden', textOverflow:'ellipsis', whiteSpace:'nowrap' }} title={q.query_id}>{q.query_id.slice(0,8)}</td>
               <td style={{ padding:'5px 8px' }}><QueryKindBadge kind={q.query_kind} /></td>
@@ -181,7 +192,9 @@ export const MergeTable: React.FC<{
   showHost?: boolean;
   isHiddenInChart?: boolean;
   onToggleChartVisibility?: () => void;
-}> = ({ items, allItems, totalCount, pinnedMs, metricMode, colors, accentColor, highlightColor, label, itemType, highlightedItem, onHighlightItem, onSelect, sortField, sortDir, onSort, showHost, isHiddenInChart, onToggleChartVisibility }) => {
+  /** When true, dim all rows (merges/mutations are not hash-matched) */
+  queryHashActive?: boolean;
+}> = ({ items, allItems, totalCount, pinnedMs, metricMode, colors, accentColor, highlightColor, label, itemType, highlightedItem, onHighlightItem, onSelect, sortField, sortDir, onSort, showHost, isHiddenInChart, onToggleChartVisibility, queryHashActive }) => {
   const sortIndicator = (field: SortField) => sortField === field ? (sortDir === 'desc' ? '▼' : '▲') : '⇅';
   return (
     <div style={{ borderRadius:10, background:'var(--bg-secondary)', border:'1px solid var(--border-primary)', overflow:'hidden' }}>
@@ -228,7 +241,8 @@ export const MergeTable: React.FC<{
             <tr key={`${m.part_name}-${i}`}
               style={{
                 background: isHighlighted ? highlightColor : (i % 2 === 0 ? 'transparent' : 'var(--bg-tertiary)'),
-                cursor: 'pointer', transition: 'background 0.15s ease',
+                cursor: 'pointer', transition: 'background 0.15s ease, opacity 0.15s ease',
+                opacity: queryHashActive ? 0.3 : 1,
               }}
               onClick={() => onSelect(m)}
               onMouseEnter={() => originalIdx >= 0 && onHighlightItem({ type: itemType, idx: originalIdx, id: itemId })}

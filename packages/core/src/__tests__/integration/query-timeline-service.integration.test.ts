@@ -429,4 +429,145 @@ describe('TimelineService integration', { tags: ['query-analysis'] }, () => {
       }
     });
   });
+
+  // ── normalizedQueryHash pattern mode ──────────────────────────────
+
+  describe('normalizedQueryHash filters to a specific query pattern', () => {
+    let knownHash: string;
+    let knownQueryId: string;
+
+    beforeAll(async () => {
+      // Run a distinctive query multiple times to create a pattern
+      for (let i = 0; i < 3; i++) {
+        await ctx.client.query({
+          query: `SELECT count(), sum(value) FROM ${TEST_DB}.events WHERE id > ${i * 100}`,
+          format: 'JSONEachRow',
+        });
+      }
+      await ctx.client.command({ query: 'SYSTEM FLUSH LOGS' });
+
+      // Find the normalized_query_hash for our pattern
+      const rows = await ctx.rawAdapter.executeQuery<{
+        normalized_query_hash: string;
+        query_id: string;
+        cnt: string;
+      }>(`
+        SELECT
+          toString(normalized_query_hash) AS normalized_query_hash,
+          any(query_id) AS query_id,
+          count() AS cnt
+        FROM system.query_log
+        WHERE type = 'QueryFinish'
+          AND query LIKE '%sum(value)%FROM ${TEST_DB}.events%'
+          AND query NOT LIKE '%system.query_log%'
+        GROUP BY normalized_query_hash
+        ORDER BY cnt DESC
+        LIMIT 1
+      `);
+
+      expect(rows.length).toBe(1);
+      expect(Number(rows[0].cnt)).toBeGreaterThanOrEqual(3);
+      knownHash = rows[0].normalized_query_hash;
+      knownQueryId = rows[0].query_id;
+    });
+
+    it('marks hash-matched queries with matched_hash flag', async () => {
+      const result = await service.getTimeline({
+        timestamp: new Date(),
+        windowSeconds: 300,
+        normalizedQueryHash: knownHash,
+        includeRunning: false,
+      });
+
+      const matched = result.queries.filter(q => q.matched_hash);
+      expect(matched.length).toBeGreaterThanOrEqual(3);
+
+      // Every matched query should contain our distinctive pattern
+      for (const q of matched) {
+        expect(q.label).toContain('sum(value)');
+      }
+    });
+
+    it('includes both matched and unmatched queries (overlay mode)', async () => {
+      const result = await service.getTimeline({
+        timestamp: new Date(),
+        windowSeconds: 300,
+        normalizedQueryHash: knownHash,
+        includeRunning: false,
+      });
+
+      const matched = result.queries.filter(q => q.matched_hash);
+      const unmatched = result.queries.filter(q => !q.matched_hash);
+
+      // Should have both types
+      expect(matched.length).toBeGreaterThanOrEqual(3);
+      expect(unmatched.length).toBeGreaterThanOrEqual(1);
+    });
+
+    it('merges hash queries not already in top-N', async () => {
+      const withHash = await service.getTimeline({
+        timestamp: new Date(),
+        windowSeconds: 300,
+        normalizedQueryHash: knownHash,
+        includeRunning: false,
+      });
+
+      const without = await service.getTimeline({
+        timestamp: new Date(),
+        windowSeconds: 300,
+        includeRunning: false,
+      });
+
+      // With hash should have at least as many queries (it merges extras in)
+      expect(withHash.queries.length).toBeGreaterThanOrEqual(without.queries.length);
+    });
+
+    it('still returns server metrics and merges/mutations normally', async () => {
+      const withHash = await service.getTimeline({
+        timestamp: new Date(),
+        windowSeconds: 300,
+        normalizedQueryHash: knownHash,
+        includeRunning: false,
+      });
+
+      const without = await service.getTimeline({
+        timestamp: new Date(),
+        windowSeconds: 300,
+        includeRunning: false,
+      });
+
+      // Server metrics should still be populated
+      expect(withHash.server_total_ram).toBeGreaterThan(0);
+      expect(withHash.cpu_cores).toBeGreaterThan(0);
+
+      // Merge/mutation counts should be the same
+      expect(withHash.merge_count).toBe(without.merge_count);
+      expect(withHash.mutation_count).toBe(without.mutation_count);
+    });
+
+    it('rejects non-numeric hash values', async () => {
+      await expect(
+        service.getTimeline({
+          timestamp: new Date(),
+          windowSeconds: 300,
+          normalizedQueryHash: 'DROP TABLE foo',
+        }),
+      ).rejects.toThrow(/Invalid normalized_query_hash|expected numeric UInt64/);
+    });
+
+    it('nonexistent hash returns zero matched queries', async () => {
+      const result = await service.getTimeline({
+        timestamp: new Date(),
+        windowSeconds: 300,
+        normalizedQueryHash: '99999999999999999',
+        includeRunning: false,
+      });
+
+      // Normal queries are still present (overlay mode)
+      expect(result.queries.length).toBeGreaterThan(0);
+      // But none should be marked as matched
+      const matched = result.queries.filter(q => q.matched_hash);
+      expect(matched.length).toBe(0);
+    });
+  });
 });

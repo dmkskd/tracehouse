@@ -3,6 +3,7 @@
  * Toggle buttons switch Y-axis metric. Same time axis, hover, pin, zoom across all views.
  */
 import React, { useState, useCallback, useMemo, useRef, useEffect } from 'react';
+import { useSearchParams } from 'react-router-dom';
 import { useConnectionStore } from '../stores/connectionStore';
 import { useClickHouseServices } from '../providers/ClickHouseProvider';
 import { useClusterStore } from '../stores/clusterStore';
@@ -103,10 +104,33 @@ const CUSTOM_RANGE_PRESETS = [
 type SortField = 'metric' | 'duration' | 'started';
 type SortDir = 'asc' | 'desc';
 
+/** Read a param from the hash-based URL (/#/path?key=val) or standard search */
+function getHashParam(key: string): string | null {
+  const hash = window.location.hash;
+  const qIdx = hash.indexOf('?');
+  if (qIdx !== -1) {
+    const val = new URLSearchParams(hash.slice(qIdx + 1)).get(key);
+    if (val) return val;
+  }
+  return new URLSearchParams(window.location.search).get(key);
+}
+
 export const TimeTravelPage: React.FC = () => {
   const { activeProfileId, profiles } = useConnectionStore();
   const services = useClickHouseServices();
   const { detected: clusterDetected } = useClusterStore();
+  const [searchParams, setSearchParams] = useSearchParams();
+
+  // Query hash filter: highlight/filter timeline to a specific normalized_query_hash (from URL ?nqh=...)
+  const [queryHashFilter, setQueryHashFilter] = useState<string | null>(() => getHashParam('nqh'));
+  // When true, show only hash-matched queries (hide everything else including merges/mutations)
+  const [queryHashOnly, setQueryHashOnly] = useState(false);
+
+  // Sync queryHashFilter from URL search params (e.g. when navigating from another page)
+  useEffect(() => {
+    const nqh = searchParams.get('nqh');
+    if (nqh !== queryHashFilter) setQueryHashFilter(nqh);
+  }, [searchParams]); // eslint-disable-line react-hooks/exhaustive-deps
   const refreshConfig = useRefreshConfig();
   const { refreshRateSeconds } = useRefreshSettingsStore();
   const manualRefreshTick = useGlobalLastUpdatedStore(s => s.manualRefreshTick);
@@ -239,6 +263,7 @@ export const TimeTravelPage: React.FC = () => {
         hostname: selectedHost,
         activityLimit,
         activeMetric: metricMode,
+        normalizedQueryHash: queryHashFilter ?? undefined,
       });
       // In live mode, slide zoom/pin forward to follow the advancing time window
       const newEndMs = new Date(result.window_end).getTime();
@@ -258,7 +283,7 @@ export const TimeTravelPage: React.FC = () => {
       setError(msg);
     }
     finally { setIsLoading(false); }
-  }, [services, isLive, effectiveViewportEnd, windowSec, includeRunning, selectedHost, activityLimit, metricMode]);
+  }, [services, isLive, effectiveViewportEnd, windowSec, includeRunning, selectedHost, activityLimit, metricMode, queryHashFilter]);
 
   // Fetch cluster hosts on connect (after cluster detection completes)
   useEffect(() => {
@@ -311,7 +336,27 @@ export const TimeTravelPage: React.FC = () => {
       fetchDataTimeoutRef.current = setTimeout(() => fetchData(), 200);
     }
     return () => { if (fetchDataTimeoutRef.current) clearTimeout(fetchDataTimeoutRef.current); };
-  }, [services, isConnected, windowSec, isLive, effectiveViewportEnd, includeRunning, selectedHost, activityLimit, metricMode]); // eslint-disable-line react-hooks/exhaustive-deps
+  }, [services, isConnected, windowSec, isLive, effectiveViewportEnd, includeRunning, selectedHost, activityLimit, metricMode, queryHashFilter]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  // Clear hash filter: remove nqh from URL and re-fetch normally
+  const clearQueryHashFilter = useCallback(() => {
+    setQueryHashFilter(null);
+    setSearchParams(prev => {
+      const next = new URLSearchParams(prev);
+      next.delete('nqh');
+      return next;
+    }, { replace: true });
+  }, [setSearchParams]);
+
+  // Set hash filter mode: write nqh to URL and trigger filtered fetch
+  const activateQueryHashFilter = useCallback((hash: string) => {
+    setQueryHashFilter(hash);
+    setSearchParams(prev => {
+      const next = new URLSearchParams(prev);
+      next.set('nqh', hash);
+      return next;
+    }, { replace: true });
+  }, [setSearchParams]);
 
   // Manual refresh from header button
   useEffect(() => {
@@ -363,6 +408,17 @@ export const TimeTravelPage: React.FC = () => {
 
   // Effective data: use zoom-enriched data when available, else base data
   const effectiveData = zoomData ?? data;
+
+  // Chart data: in queryHashOnly mode, show only hash-matched queries and hide merges/mutations
+  const chartData = useMemo(() => {
+    if (!effectiveData || !queryHashOnly || !queryHashFilter) return effectiveData;
+    return {
+      ...effectiveData,
+      queries: effectiveData.queries.filter(q => q.matched_hash),
+      merges: [],
+      mutations: [],
+    };
+  }, [effectiveData, queryHashOnly, queryHashFilter]);
 
   // Fetch navigator data spanning the selected time range (navigatorHours → now)
   const fetchNavigatorData = useCallback(async (force = false) => {
@@ -491,11 +547,22 @@ export const TimeTravelPage: React.FC = () => {
     } else if (zoomRange) {
       result = data.queries.filter(q => { const s = parseTimestamp(q.start_time), e = parseTimestamp(q.end_time); return s <= zoomRange[1] && e >= zoomRange[0]; });
     } else { result = [...data.queries]; }
-    return sortItems(result);
-  }, [data, inspectMs, zoomRange, metricMode, sortField, sortDir]);
+    // In queryHashOnly mode, show only hash-matched queries
+    if (queryHashOnly && queryHashFilter) {
+      result = result.filter(q => q.matched_hash);
+    }
+    const sorted = sortItems(result);
+    // In hash filter mode, float matched queries to the top
+    if (queryHashFilter && !queryHashOnly) {
+      const matched = sorted.filter(q => q.matched_hash);
+      const rest = sorted.filter(q => !q.matched_hash);
+      return [...matched, ...rest];
+    }
+    return sorted;
+  }, [data, inspectMs, zoomRange, metricMode, sortField, sortDir, queryHashOnly, queryHashFilter]);
 
   const filteredMerges = useMemo(() => {
-    if (!data) return [];
+    if (!data || (queryHashOnly && queryHashFilter)) return [];
     let result: MergeSeries[];
     if (inspectMs !== null) {
       result = data.merges.filter(m => { const s = parseTimestamp(m.start_time), e = parseTimestamp(m.end_time); return inspectMs >= s && inspectMs <= e; });
@@ -503,10 +570,10 @@ export const TimeTravelPage: React.FC = () => {
       result = data.merges.filter(m => { const s = parseTimestamp(m.start_time), e = parseTimestamp(m.end_time); return s <= zoomRange[1] && e >= zoomRange[0]; });
     } else { result = [...data.merges]; }
     return sortItems(result);
-  }, [data, inspectMs, zoomRange, metricMode, sortField, sortDir]);
+  }, [data, inspectMs, zoomRange, metricMode, sortField, sortDir, queryHashOnly, queryHashFilter]);
 
   const filteredMutations = useMemo(() => {
-    if (!data) return [];
+    if (!data || (queryHashOnly && queryHashFilter)) return [];
     let result: MutationSeries[];
     if (inspectMs !== null) {
       result = (data.mutations ?? []).filter(m => { const s = parseTimestamp(m.start_time), e = parseTimestamp(m.end_time); return inspectMs >= s && inspectMs <= e; });
@@ -514,7 +581,7 @@ export const TimeTravelPage: React.FC = () => {
       result = (data.mutations ?? []).filter(m => { const s = parseTimestamp(m.start_time), e = parseTimestamp(m.end_time); return s <= zoomRange[1] && e >= zoomRange[0]; });
     } else { result = [...(data.mutations ?? [])]; }
     return sortItems(result);
-  }, [data, inspectMs, zoomRange, metricMode, sortField, sortDir]);
+  }, [data, inspectMs, zoomRange, metricMode, sortField, sortDir, queryHashOnly, queryHashFilter]);
 
   const ALL_WINDOW_SIZES = [
     { label: '1m', sec: 30 },
@@ -850,6 +917,58 @@ export const TimeTravelPage: React.FC = () => {
         </div>
       )}
 
+      {queryHashFilter && (
+        <div style={{
+          margin:'12px 16px 0', padding:'8px 14px', borderRadius:8, fontSize:12,
+          background:'rgba(88,166,255,0.08)', color:'#58a6ff', border:'1px solid rgba(88,166,255,0.2)',
+          display:'flex', alignItems:'center', justifyContent:'space-between',
+        }}>
+          <div style={{ display:'flex', alignItems:'center', gap:12 }}>
+            <span>
+              Tracking query hash <span style={{ fontFamily:'monospace', opacity:0.7 }}>{queryHashFilter?.slice(0, 12)}{(queryHashFilter?.length ?? 0) > 12 ? '…' : ''}</span>
+              {data && (() => {
+                const matchCount = data.queries.filter(q => q.matched_hash).length;
+                return <span style={{ marginLeft:4, opacity:0.8 }}>— {matchCount} {matchCount === 1 ? 'match' : 'matches'} in window</span>;
+              })()}
+            </span>
+            <div style={{
+              display:'flex', gap:2, padding:2, borderRadius:6,
+              background:'rgba(88,166,255,0.1)', border:'1px solid rgba(88,166,255,0.2)',
+            }}>
+              <button
+                onClick={() => setQueryHashOnly(false)}
+                style={{
+                  padding:'3px 10px', fontSize:11, fontWeight:600, borderRadius:4, border:'none', cursor:'pointer',
+                  background: !queryHashOnly ? 'rgba(88,166,255,0.25)' : 'transparent',
+                  color:'#58a6ff',
+                }}
+              >
+                All + highlighted
+              </button>
+              <button
+                onClick={() => setQueryHashOnly(true)}
+                style={{
+                  padding:'3px 10px', fontSize:11, fontWeight:600, borderRadius:4, border:'none', cursor:'pointer',
+                  background: queryHashOnly ? 'rgba(88,166,255,0.25)' : 'transparent',
+                  color:'#58a6ff',
+                }}
+              >
+                Matched only
+              </button>
+            </div>
+          </div>
+          <button
+            onClick={() => { clearQueryHashFilter(); setQueryHashOnly(false); }}
+            style={{
+              background:'rgba(88,166,255,0.15)', border:'1px solid rgba(88,166,255,0.3)', borderRadius:6,
+              color:'#58a6ff', padding:'4px 12px', fontSize:11, cursor:'pointer', fontWeight:600,
+            }}
+          >
+            Clear filter
+          </button>
+        </div>
+      )}
+
       {data && (
         <div style={{ flex:1, overflow:'auto', padding:'12px 16px 20px' }}>
           {/* Metric toggle tabs */}
@@ -957,6 +1076,7 @@ export const TimeTravelPage: React.FC = () => {
                       highlightedItem={highlightedItem}
                       onHighlightItem={setHighlightedItem}
                       hiddenCategories={hiddenCategories}
+                      queryHashActive={!!queryHashFilter}
                       onBandClick={(band) => {
                         if (band.type === 'query' && hostData.queries[band.idx]) setSelectedTimelineQuery(hostData.queries[band.idx]);
                         else if (band.type === 'merge' && hostData.merges[band.idx]) setSelectedTimelineMerge(hostData.merges[band.idx]);
@@ -1020,13 +1140,14 @@ export const TimeTravelPage: React.FC = () => {
                 Server CPU reads as 0 — ClickHouse on macOS does not expose CPU metrics. Run in Docker or Linux for CPU data.
               </div>
             )}
-            <TimelineChart data={effectiveData!} metricMode={metricMode} height={500}
+            <TimelineChart data={chartData!} metricMode={metricMode} height={500}
               hoverMs={hoverMs} pinnedMs={pinnedMs}
               onHover={setHoverMs} onPin={setPinnedMs}
               zoomRange={zoomRange} onZoom={setZoomRange}
               highlightedItem={highlightedItem}
               onHighlightItem={setHighlightedItem}
               hiddenCategories={hiddenCategories}
+              queryHashActive={!!queryHashFilter}
               onBandClick={(band) => {
                 if (band.type === 'query' && data.queries[band.idx]) setSelectedTimelineQuery(data.queries[band.idx]);
                 else if (band.type === 'merge' && data.merges[band.idx]) setSelectedTimelineMerge(data.merges[band.idx]);
@@ -1069,6 +1190,7 @@ export const TimeTravelPage: React.FC = () => {
               showHost={clusterHosts.length > 1}
               isHiddenInChart={hiddenCategories.has('query')}
               onToggleChartVisibility={() => toggleCategory('query')}
+              queryHashActive={!!queryHashFilter}
             />
             <MergeTable
               items={filteredMerges} allItems={data.merges}
@@ -1082,6 +1204,7 @@ export const TimeTravelPage: React.FC = () => {
               showHost={clusterHosts.length > 1}
               isHiddenInChart={hiddenCategories.has('merge')}
               onToggleChartVisibility={() => toggleCategory('merge')}
+              queryHashActive={!!queryHashFilter}
             />
             <MergeTable
               items={filteredMutations} allItems={data.mutations ?? []}
@@ -1095,6 +1218,7 @@ export const TimeTravelPage: React.FC = () => {
               showHost={clusterHosts.length > 1}
               isHiddenInChart={hiddenCategories.has('mutation')}
               onToggleChartVisibility={() => toggleCategory('mutation')}
+              queryHashActive={!!queryHashFilter}
             />
           </div>
 
@@ -1115,7 +1239,7 @@ export const TimeTravelPage: React.FC = () => {
       )}
 
       {/* Modals */}
-      <QueryDetailModal query={deepLinkedQuery} onClose={handleQueryClose} />
+      <QueryDetailModal query={deepLinkedQuery} onClose={handleQueryClose} onViewInTimeTravel={activateQueryHashFilter} />
       <MergeDetailModal merge={selectedTimelineMerge} onClose={() => setSelectedTimelineMerge(null)} />
       <MutationDetailModal mutation={selectedTimelineMutation} onClose={() => setSelectedTimelineMutation(null)} />
     </div>

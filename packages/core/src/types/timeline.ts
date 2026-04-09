@@ -43,6 +43,8 @@ export interface QuerySeries {
   query_kind?: string;  // SELECT, INSERT, ALTER, etc.
   exception?: string;  // Error message if query failed
   is_running?: boolean;  // True if query is currently in-flight
+  /** True when this query matches the normalizedQueryHash filter (pattern mode overlay) */
+  matched_hash?: boolean;
   points: TimeseriesPoint[];
   /** Per-second sampled metrics from processes_history (zoom mode only) */
   zoomSamples?: ZoomSample[];
@@ -123,6 +125,8 @@ export interface TimelineOptions {
   activityLimit?: number;
   /** Active metric tab. Controls which server metrics are fetched and which "top N" sort is used. Default: 'memory' */
   activeMetric?: 'memory' | 'cpu' | 'network' | 'disk';
+  /** When set, only fetch queries matching this normalized_query_hash (pattern mode). */
+  normalizedQueryHash?: string;
 }
 
 /**

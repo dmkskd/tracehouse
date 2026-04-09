@@ -41,6 +41,9 @@ function lookupSample(samples: { ms: number; v: number }[], t: number): number {
   return bestDist <= 2000 ? samples[bestIdx].v : 0;
 }
 
+/** Highlight color for hash-matched queries */
+const HASH_MATCH_COLOR = '#58a6ff';
+
 export const TimelineChart: React.FC<{
   data: MemoryTimeline; metricMode: MetricMode; height?: number;
   hoverMs: number | null; pinnedMs: number | null;
@@ -51,7 +54,9 @@ export const TimelineChart: React.FC<{
   onHighlightItem?: (item: HighlightedItem) => void;
   onBandClick?: (band: { type: 'query' | 'merge' | 'mutation'; idx: number }) => void;
   hiddenCategories?: Set<'query' | 'merge' | 'mutation'>;
-}> = ({ data, metricMode, height = 380, hoverMs, pinnedMs, onHover, onPin, zoomRange, onZoom, highlightedItem, onHighlightItem, onBandClick, hiddenCategories }) => {
+  /** When true, all queries are rendered with a uniform color (query hash filter) */
+  queryHashActive?: boolean;
+}> = ({ data, metricMode, height = 380, hoverMs, pinnedMs, onHover, onPin, zoomRange, onZoom, highlightedItem, onHighlightItem, onBandClick, hiddenCategories, queryHashActive }) => {
   const W = 1000, H = height;
   const padTop = 12, padRight = 90, padBottom = 30, padLeft = 52;
   const cw = W - padLeft - padRight, ch = H - padTop - padBottom;
@@ -246,7 +251,7 @@ export const TimelineChart: React.FC<{
   const areas = useMemo(() => {
     if (buckets.length < 2 || cumStacks.length === 0) return [];
     const total = nq + nm + nmut;
-    const res: { d: string; color: string; isRunning: boolean }[] = [];
+    const res: { d: string; color: string; isRunning: boolean; dimmed: boolean }[] = [];
     for (let idx = 0; idx < total; idx++) {
       const top = cumStacks[idx];
       const bot = idx > 0 ? cumStacks[idx - 1] : null;
@@ -254,20 +259,25 @@ export const TimelineChart: React.FC<{
       const botPts = buckets.map((b, bi) => `${xScale(b.t)},${yScale(bot ? bot[bi] : 0)}`).reverse().join(' L');
       let color: string;
       let isRunning = false;
+      let dimmed = false;
       if (idx < nq) {
-        color = Q_COLORS[idx % Q_COLORS.length];
+        const isMatch = data.queries[idx]?.matched_hash;
+        color = queryHashActive && isMatch ? HASH_MATCH_COLOR : Q_COLORS[idx % Q_COLORS.length];
         isRunning = data.queries[idx]?.is_running ?? false;
+        dimmed = queryHashActive && !isMatch;
       } else if (idx < nq + nm) {
         color = M_COLORS[(idx - nq) % M_COLORS.length];
         isRunning = data.merges[idx - nq]?.is_running ?? false;
+        dimmed = queryHashActive;
       } else {
         color = MUT_COLORS[(idx - nq - nm) % MUT_COLORS.length];
         isRunning = (data.mutations ?? [])[idx - nq - nm]?.is_running ?? false;
+        dimmed = queryHashActive;
       }
-      res.push({ d: `M${topPts} L${botPts} Z`, color, isRunning });
+      res.push({ d: `M${topPts} L${botPts} Z`, color, isRunning, dimmed });
     }
     return res;
-  }, [buckets, cumStacks, nq, nm, nmut, xScale, yScale, data.queries, data.merges, data.mutations]);
+  }, [buckets, cumStacks, nq, nm, nmut, xScale, yScale, data.queries, data.merges, data.mutations, queryHashActive]);
 
   const serverLine = serverPts.length >= 2 ? 'M' + serverPts.map(p => `${xScale(p.ms)},${yScale(p.v)}`).join(' L') : '';
   const line1Path = dualLine1.length >= 2 ? 'M' + dualLine1.map(p => `${xScale(p.ms)},${yScale(p.v)}`).join(' L') : '';
@@ -539,7 +549,7 @@ export const TimelineChart: React.FC<{
             isHovered = snap.hoveredBand.id === areaId;
           }
           const hasAnyHighlight = highlightedItem !== null || snap?.hoveredBand !== null;
-          const baseOpacity = isHovered ? 1 : (hasAnyHighlight ? 0.3 : 0.6);
+          const baseOpacity = isHovered ? 1 : a.dimmed ? 0.12 : (hasAnyHighlight ? 0.3 : 0.6);
           return (
             <path
               key={i}
@@ -601,7 +611,7 @@ export const TimelineChart: React.FC<{
               cy={localSvgY}
               r="5"
               fill={
-                snap.hoveredBand.type === 'query' ? Q_COLORS[snap.hoveredBand.idx % Q_COLORS.length] :
+                snap.hoveredBand.type === 'query' ? (queryHashActive && data.queries[snap.hoveredBand.idx]?.matched_hash ? HASH_MATCH_COLOR : Q_COLORS[snap.hoveredBand.idx % Q_COLORS.length]) :
                   snap.hoveredBand.type === 'merge' ? M_COLORS[snap.hoveredBand.idx % M_COLORS.length] :
                     MUT_COLORS[snap.hoveredBand.idx % MUT_COLORS.length]
               }
@@ -692,7 +702,7 @@ export const TimelineChart: React.FC<{
               : (data.mutations ?? [])[band.idx]
           : null;
         const accentColor = band
-          ? band.type === 'query' ? Q_COLORS[band.idx % Q_COLORS.length]
+          ? band.type === 'query' ? (queryHashActive && data.queries[band.idx]?.matched_hash ? HASH_MATCH_COLOR : Q_COLORS[band.idx % Q_COLORS.length])
             : band.type === 'merge' ? M_COLORS[band.idx % M_COLORS.length]
               : MUT_COLORS[band.idx % MUT_COLORS.length]
           : null;
