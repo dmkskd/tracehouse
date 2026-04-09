@@ -17,6 +17,8 @@ import type { QuerySeries, QueryConcurrency } from '@tracehouse/core';
 import { OverviewService } from '@tracehouse/core';
 import { useUserPreferenceStore } from '../stores/userPreferenceStore';
 import { QueryHealthSunburst } from '../components/query/QueryHealthSunburst';
+import { useUrlState } from '../hooks/useUrlState';
+import type { UrlSchema } from '../hooks/useUrlState';
 
 // Query type colors matching RunningQueryList
 const QUERY_TYPE_COLORS: Record<string, string> = {
@@ -50,21 +52,94 @@ const QueryTypeCard: React.FC<{
   </div>
 );
 
+// URL schema for shareable query monitor links
+const queryMonitorSchema = {
+  tab:       { type: 'string',  default: 'running' },
+  qd_id:     { type: 'string' },
+  user:      { type: 'string' },
+  queryId:   { type: 'string' },
+  queryText: { type: 'string' },
+  queryKind: { type: 'string' },
+  status:    { type: 'string' },
+  database:  { type: 'string' },
+  tableName: { type: 'string' },
+  hostname:  { type: 'string' },
+  minDurMs:  { type: 'number' },
+  minMemB:   { type: 'number' },
+  limit:     { type: 'number',  default: 100 },
+  sortField: { type: 'string',  default: 'query_start_time' },
+  sortDir:   { type: 'string',  default: 'desc' },
+} as const satisfies UrlSchema;
+
 export const QueryMonitor: React.FC = () => {
   const { activeProfileId, profiles, setConnectionFormOpen } = useConnectionStore();
   const { runningQueries, queryHistory, selectedQuery, selectedQueryType: _selectedQueryType, historyFilter, historySort, wsStatus, error, isLoadingHistory, isKillingQuery, setRunningQueries, setQueryHistory, selectQuery, setHistoryFilter, setHistorySort, setIsLoadingHistory, setIsKillingQuery, setError, clearError, clearQueries } = useQueryStore();
   const location = useLocation();
   const locationState = location.state as { tab?: 'running' | 'history'; filter?: Record<string, unknown> } | null;
-  const [activeTab, setActiveTab] = useState<'running' | 'history' | 'health'>(locationState?.tab || 'running');
   const experimentalEnabled = useUserPreferenceStore(s => s.experimentalEnabled);
 
-  // Apply filters from navigation state (e.g. from Overview slow queries widget)
-  const appliedNavFilter = useRef(false);
+  // URL-synced state for shareable links
+  const { state: urlState, update: updateUrl } = useUrlState(queryMonitorSchema);
+  const activeTab = (locationState?.tab || urlState.tab || 'running') as 'running' | 'history' | 'health';
+  const setActiveTab = useCallback((tab: 'running' | 'history' | 'health') => {
+    updateUrl({ tab }, { push: true });
+  }, [updateUrl]);
+
+  // Hydrate store from URL params on mount
+  const urlHydrated = useRef(false);
   useEffect(() => {
-    if (appliedNavFilter.current || !locationState?.filter) return;
-    appliedNavFilter.current = true;
-    setHistoryFilter(locationState.filter as any);
-  }, [locationState]);
+    if (urlHydrated.current) return;
+    urlHydrated.current = true;
+    // Navigation state (from Overview widgets) takes precedence over URL
+    const navFilter = locationState?.filter as Record<string, unknown> | undefined;
+    const patch: Record<string, unknown> = {};
+    if (navFilter) {
+      Object.assign(patch, navFilter);
+    } else {
+      if (urlState.user) patch.user = urlState.user;
+      if (urlState.queryId) patch.queryId = urlState.queryId;
+      if (urlState.queryText) patch.queryText = urlState.queryText;
+      if (urlState.queryKind) patch.queryKind = urlState.queryKind;
+      if (urlState.status) patch.status = urlState.status;
+      if (urlState.database) patch.database = urlState.database;
+      if (urlState.tableName) patch.table = urlState.tableName;
+      if (urlState.hostname) patch.hostname = urlState.hostname;
+      if (urlState.minDurMs) patch.minDurationMs = urlState.minDurMs;
+      if (urlState.minMemB) patch.minMemoryBytes = urlState.minMemB;
+      if (urlState.limit && urlState.limit !== 100) patch.limit = urlState.limit;
+    }
+    if (Object.keys(patch).length > 0) setHistoryFilter(patch as any);
+    if (urlState.sortField || urlState.sortDir) {
+      setHistorySort({
+        field: (urlState.sortField || 'query_start_time') as any,
+        direction: (urlState.sortDir || 'desc') as any,
+      });
+    }
+  }, []);
+
+  // Wrap filter/sort changes to sync back to URL
+  const handleFilterChange = useCallback((filter: Record<string, unknown>) => {
+    setHistoryFilter(filter as any);
+    const urlPatch: Record<string, unknown> = {};
+    if ('user' in filter) urlPatch.user = filter.user || undefined;
+    if ('queryId' in filter) urlPatch.queryId = filter.queryId || undefined;
+    if ('queryText' in filter) urlPatch.queryText = filter.queryText || undefined;
+    if ('queryKind' in filter) urlPatch.queryKind = filter.queryKind || undefined;
+    if ('status' in filter) urlPatch.status = filter.status || undefined;
+    if ('database' in filter) urlPatch.database = filter.database || undefined;
+    if ('table' in filter) urlPatch.tableName = filter.table || undefined;
+    if ('hostname' in filter) urlPatch.hostname = filter.hostname || undefined;
+    if ('minDurationMs' in filter) urlPatch.minDurMs = filter.minDurationMs || undefined;
+    if ('minMemoryBytes' in filter) urlPatch.minMemB = filter.minMemoryBytes || undefined;
+    if ('limit' in filter) urlPatch.limit = filter.limit;
+    if (Object.keys(urlPatch).length > 0) updateUrl(urlPatch as any);
+  }, [setHistoryFilter, updateUrl]);
+
+  const handleSortChange = useCallback((sort: { field: string; direction: string }) => {
+    setHistorySort(sort as any);
+    updateUrl({ sortField: sort.field, sortDir: sort.direction } as any);
+  }, [setHistorySort, updateUrl]);
+
   const wsRef = useRef<QueryWebSocket | null>(null);
   const services = useClickHouseServices();
   const refreshConfig = useRefreshConfig();
@@ -175,6 +250,60 @@ export const QueryMonitor: React.FC = () => {
   }, []);
 
   const convertedQuery = convertToQuerySeries(selectedQuery);
+
+  // Deep-link: sync selected query to/from URL (qd_id param) through the
+  // same updateUrl path as every other param — avoids race conditions from
+  // competing setSearchParams calls.
+  const [deepLinkedQuery, setDeepLinkedQuery] = useState<QuerySeries | null>(null);
+  const deepLinkFetched = useRef('');
+
+  // When user selects a query, write qd_id to URL
+  useEffect(() => {
+    if (!convertedQuery) return;
+    deepLinkFetched.current = convertedQuery.query_id;
+    setDeepLinkedQuery(null);
+    updateUrl({ qd_id: convertedQuery.query_id } as any);
+  }, [convertedQuery?.query_id, updateUrl]);
+
+  // On mount: if qd_id is in URL but no query selected, fetch the detail
+  useEffect(() => {
+    const qdId = urlState.qd_id;
+    if (!qdId || convertedQuery || !services) return;
+    if (deepLinkFetched.current === qdId) return;
+    deepLinkFetched.current = qdId;
+    services.queryAnalyzer.getQueryDetail(qdId).then((detail: any) => {
+      if (!detail) return;
+      const durationMs = Number(detail.query_duration_ms) || 0;
+      const startMs = new Date(detail.query_start_time).getTime();
+      setDeepLinkedQuery({
+        query_id: detail.query_id,
+        label: detail.query || '',
+        user: detail.user,
+        peak_memory: Number(detail.memory_usage) || 0,
+        duration_ms: durationMs,
+        cpu_us: (detail.ProfileEvents?.['UserTimeMicroseconds'] || 0) + (detail.ProfileEvents?.['SystemTimeMicroseconds'] || 0),
+        net_send: detail.ProfileEvents?.['NetworkSendBytes'] || 0,
+        net_recv: detail.ProfileEvents?.['NetworkReceiveBytes'] || 0,
+        disk_read: Number(detail.read_bytes) || 0,
+        disk_write: detail.ProfileEvents?.['OSWriteBytes'] || 0,
+        start_time: detail.query_start_time,
+        end_time: new Date(startMs + durationMs).toISOString(),
+        exception_code: detail.exception_code,
+        exception: detail.exception,
+        points: [],
+      });
+    }).catch((err: any) => {
+      console.error(`[QueryMonitor] Failed to fetch qd_id=${qdId}:`, err);
+    });
+  }, [urlState.qd_id, convertedQuery, services, updateUrl]);
+
+  const modalQuery = convertedQuery ?? deepLinkedQuery;
+  const handleQueryClose = useCallback(() => {
+    selectQuery(null, null);
+    setDeepLinkedQuery(null);
+    deepLinkFetched.current = '';
+    updateUrl({ qd_id: undefined } as any);
+  }, [selectQuery, updateUrl]);
 
   // Compute query type counts for running queries
   const queryTypeCounts = useMemo(() => {
@@ -443,7 +572,7 @@ export const QueryMonitor: React.FC = () => {
             ) : hasQueryLog || isProbing ? (
               <QueryHistoryTable history={queryHistory} selectedQueryId={selectedQuery?.query_id || null}
                 onSelectQuery={q => selectQuery(q, 'history')} filter={historyFilter} sort={historySort}
-                onFilterChange={setHistoryFilter} onSortChange={setHistorySort} isLoading={isLoadingHistory}
+                onFilterChange={handleFilterChange} onSortChange={handleSortChange} isLoading={isLoadingHistory}
                 queryAnalyzer={services?.queryAnalyzer} coordinatorIds={historyCoordinatorIds} />
             ) : (
               <PermissionGate
@@ -459,8 +588,8 @@ export const QueryMonitor: React.FC = () => {
 
       {/* Query Detail Modal */}
       <QueryDetailModal
-        query={convertedQuery}
-        onClose={() => selectQuery(null, null)}
+        query={modalQuery}
+        onClose={handleQueryClose}
       />
     </div>
   );

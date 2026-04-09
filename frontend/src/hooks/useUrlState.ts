@@ -16,6 +16,79 @@
 import { useCallback, useMemo } from 'react';
 import { useSearchParams } from 'react-router-dom';
 
+// ─── Generic schema-driven URL state ───
+
+export type UrlParamType = 'string' | 'number' | 'boolean';
+
+export interface UrlParamDef<T = unknown> {
+  type: UrlParamType;
+  default?: T;
+}
+
+export type UrlSchema = Record<string, UrlParamDef>;
+
+export type UrlStateFromSchema<S extends UrlSchema> = {
+  [K in keyof S]: S[K]['type'] extends 'number'
+    ? number | undefined
+    : S[K]['type'] extends 'boolean'
+      ? boolean | undefined
+      : string | undefined;
+};
+
+function parseParam(raw: string | null, def: UrlParamDef): unknown {
+  if (raw === null || raw === '') return def.default;
+  switch (def.type) {
+    case 'number': { const n = Number(raw); return Number.isFinite(n) ? n : def.default; }
+    case 'boolean': return raw === '1' || raw === 'true';
+    default: return raw;
+  }
+}
+
+function serializeParam(value: unknown, def: UrlParamDef): string | undefined {
+  if (value === undefined || value === null || value === '') return undefined;
+  if (value === def.default) return undefined;
+  if (def.type === 'boolean') return value ? '1' : '0';
+  return String(value);
+}
+
+/**
+ * Generic schema-driven URL state hook.
+ *
+ * Only touches keys defined in the schema — all other search params
+ * (e.g. qd_id from useQueryDeepLink) are preserved on update.
+ */
+export function useUrlState<S extends UrlSchema>(schema: S) {
+  const [searchParams, setSearchParams] = useSearchParams();
+
+  const state = useMemo(() => {
+    const result: Record<string, unknown> = {};
+    for (const [key, def] of Object.entries(schema)) {
+      result[key] = parseParam(searchParams.get(key), def);
+    }
+    return result as UrlStateFromSchema<S>;
+  }, [searchParams, schema]);
+
+  const update = useCallback(
+    (partial: Partial<UrlStateFromSchema<S>>, opts?: { push?: boolean }) => {
+      setSearchParams(prev => {
+        const next = new URLSearchParams(prev); // preserve unknown params
+        for (const [key, def] of Object.entries(schema)) {
+          const value = key in partial
+            ? (partial as Record<string, unknown>)[key]
+            : parseParam(prev.get(key), def);
+          const serialized = serializeParam(value, def);
+          if (serialized !== undefined) next.set(key, serialized);
+          else next.delete(key);
+        }
+        return next;
+      }, { replace: !opts?.push });
+    },
+    [setSearchParams, schema],
+  );
+
+  return { state, update };
+}
+
 // ─── SQL encoding (matches k8s-compass pattern) ───
 
 export function encodeSql(sql: string): string {
@@ -116,6 +189,9 @@ function buildAnalyticsParams(state: AnalyticsUrlState): Record<string, string> 
   return params;
 }
 
+/** All param keys managed by useAnalyticsUrlState */
+const ANALYTICS_KEYS = ['tab', 'preset', 'sql', 'view', 'chart', 'group_by', 'value', 'series', 'style', 'db', 'lookback', 'fullscreen', 'fromDashboard', 'noAutoExecute'] as const;
+
 // ─── Hook ───
 
 /**
@@ -137,7 +213,11 @@ export function useAnalyticsUrlState() {
         const current = parseAnalyticsParams(prev);
         const merged = { ...current, ...partial };
         const built = buildAnalyticsParams(merged);
-        return new URLSearchParams(built);
+        // Preserve unknown params (e.g. qd_id from useQueryDeepLink)
+        const next = new URLSearchParams(prev);
+        for (const key of ANALYTICS_KEYS) next.delete(key);
+        for (const [k, v] of Object.entries(built)) next.set(k, v);
+        return next;
       }, { replace: !opts?.push });
     },
     [setSearchParams],

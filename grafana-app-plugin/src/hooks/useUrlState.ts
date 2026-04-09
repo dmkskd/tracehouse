@@ -10,6 +10,116 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import { locationService } from '@grafana/runtime';
 
+// ─── Generic schema-driven URL state ───
+
+export type UrlParamType = 'string' | 'number' | 'boolean';
+
+export interface UrlParamDef<T = unknown> {
+  type: UrlParamType;
+  default?: T;
+}
+
+export type UrlSchema = Record<string, UrlParamDef>;
+
+export type UrlStateFromSchema<S extends UrlSchema> = {
+  [K in keyof S]: S[K]['type'] extends 'number'
+    ? number | undefined
+    : S[K]['type'] extends 'boolean'
+      ? boolean | undefined
+      : string | undefined;
+};
+
+function parseParam(raw: string | null, def: UrlParamDef): unknown {
+  if (raw === null || raw === '') return def.default;
+  switch (def.type) {
+    case 'number': { const n = Number(raw); return Number.isFinite(n) ? n : def.default; }
+    case 'boolean': return raw === '1' || raw === 'true';
+    default: return raw;
+  }
+}
+
+function serializeParam(value: unknown, def: UrlParamDef): string | null {
+  if (value === undefined || value === null || value === '') return null;
+  if (value === def.default) return null;
+  if (def.type === 'boolean') return value ? '1' : null;
+  return String(value);
+}
+
+function getSearch(): string {
+  try {
+    return locationService.getLocation().search;
+  } catch {
+    return window.location.search;
+  }
+}
+
+/**
+ * Generic schema-driven URL state hook (Grafana version).
+ *
+ * Only touches keys defined in the schema — all other search params
+ * are preserved on update via locationService.partial().
+ */
+export function useUrlState<S extends UrlSchema>(schema: S) {
+  const [search, setSearch] = useState(getSearch);
+
+  useEffect(() => {
+    try {
+      const unlisten = locationService.getHistory().listen((location: { search: string }) => {
+        setSearch(location.search);
+      });
+      return unlisten;
+    } catch {
+      const interval = setInterval(() => {
+        setSearch(prev => {
+          const current = window.location.search;
+          return current !== prev ? current : prev;
+        });
+      }, 300);
+      return () => clearInterval(interval);
+    }
+  }, []);
+
+  const state = useMemo(() => {
+    const params = new URLSearchParams(search);
+    const result: Record<string, unknown> = {};
+    for (const [key, def] of Object.entries(schema)) {
+      result[key] = parseParam(params.get(key), def);
+    }
+    return result as UrlStateFromSchema<S>;
+  }, [search, schema]);
+
+  const update = useCallback(
+    (partial: Partial<UrlStateFromSchema<S>>, opts?: { push?: boolean }) => {
+      const params = new URLSearchParams(getSearch());
+      const partialUpdate: Record<string, string | null> = {};
+      for (const [key, def] of Object.entries(schema)) {
+        const value = key in partial
+          ? (partial as Record<string, unknown>)[key]
+          : parseParam(params.get(key), def);
+        partialUpdate[key] = serializeParam(value, def);
+      }
+      try {
+        locationService.partial(partialUpdate, opts?.push ? false : true);
+      } catch {
+        const current = new URLSearchParams(getSearch());
+        for (const [k, v] of Object.entries(partialUpdate)) {
+          if (v !== null) current.set(k, v);
+          else current.delete(k);
+        }
+        const url = `${window.location.pathname}?${current.toString()}`;
+        if (opts?.push) window.history.pushState(null, '', url);
+        else window.history.replaceState(null, '', url);
+        setSearch(window.location.search);
+      }
+    },
+    [schema],
+  );
+
+  return { state, update };
+}
+
+// ─── Analytics URL state ───
+
 export interface AnalyticsUrlState {
   tab?: string;
   preset?: number;
@@ -109,15 +219,6 @@ function buildPartialUpdate(state: AnalyticsUrlState): Record<string, string | n
     update[key] = key in wanted ? wanted[key] : null;
   }
   return update;
-}
-
-function getSearch(): string {
-  try {
-    return locationService.getLocation().search;
-  } catch {
-    // Fallback if locationService isn't available in the sandbox
-    return window.location.search;
-  }
 }
 
 /**

@@ -17,7 +17,7 @@ import { type ChartType, parseChartDirective, resolveQueryRef } from './metaLang
 import { LinkQueryModal } from './LinkQueryModal';
 import { PartInspector } from '../database/PartInspector';
 import { databaseApi } from '../../stores/databaseStore';
-import type { PartDetailInfo } from '@tracehouse/core';
+import type { PartDetailInfo, QuerySeries } from '@tracehouse/core';
 import { TimeRangePicker } from './TimeRangePicker';
 import {
   formatCell,
@@ -74,7 +74,8 @@ const DashboardPanelCard: React.FC<{
   filterParams?: Record<string, string>;
   /** Index in the dashboard panel list — used to assign distinct overlay colors */
   panelIndex?: number;
-}> = ({ panel, timeRangeOverride, dashboardId, isFullscreen, onToggleFullscreen, isHidden, hoveredTimestamp, onTimestampHover, onTimeSeriesData, correlationValues, isHoveredPanel, filterParams, panelIndex }) => {
+  onOpenQueryDetail?: (query: QuerySeries) => void;
+}> = ({ panel, timeRangeOverride, dashboardId, isFullscreen, onToggleFullscreen, isHidden, hoveredTimestamp, onTimestampHover, onTimeSeriesData, correlationValues, isHoveredPanel, filterParams, panelIndex, onOpenQueryDetail }) => {
   const services = useClickHouseServices();
   const [, setSearchParams] = useSearchParams();
   const originalPreset = resolvePanel(panel);
@@ -441,6 +442,7 @@ const DashboardPanelCard: React.FC<{
           params={linkModal.params}
           parentDrillParams={drillParams}
           onClose={() => setLinkModal(null)}
+          onOpenQueryDetail={onOpenQueryDetail}
         />
       )}
       {partLinkTarget && (
@@ -1121,7 +1123,7 @@ const DashboardFilterBar: React.FC<{
 
 type ViewState = { mode: 'list' } | { mode: 'view'; dashboardId: string } | { mode: 'edit'; dashboard?: Dashboard } | { mode: 'import' };
 
-export const DashboardViewer: React.FC<{ initialDashboardId?: string }> = ({ initialDashboardId }) => {
+export const DashboardViewer: React.FC<{ initialDashboardId?: string; onOpenQueryDetail?: (query: QuerySeries) => void }> = ({ initialDashboardId, onOpenQueryDetail }) => {
   const [dashboards, setDashboards] = useState<Dashboard[]>(() => loadDashboards());
   const [fullscreenPanelIndex, setFullscreenPanelIndex] = useState<number | null>(null);
   const [view, setView] = useState<ViewState>(() => {
@@ -1473,6 +1475,7 @@ export const DashboardViewer: React.FC<{ initialDashboardId?: string }> = ({ ini
                       isHoveredPanel={correlationEnabled ? hoveredPanelIndex === i : undefined}
                       filterParams={Object.keys(filterValues).length > 0 ? filterValues : undefined}
                       panelIndex={i}
+                      onOpenQueryDetail={onOpenQueryDetail}
                     />
                   ))}
                 </div>

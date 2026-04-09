@@ -70,15 +70,23 @@ export function useParams<T extends Record<string, string | undefined> = Record<
   return {} as T;
 }
 
-export function useSearchParams(): [URLSearchParams, (p: URLSearchParams, opts?: { replace?: boolean }) => void] {
+export function useSearchParams(): [URLSearchParams, (updater: URLSearchParams | ((prev: URLSearchParams) => URLSearchParams), opts?: { replace?: boolean }) => void] {
   const [params, setParamsState] = useState(
     () => new URLSearchParams(typeof window !== 'undefined' ? window.location.search : '')
   );
 
-  const setParams = useCallback((p: URLSearchParams, _opts?: { replace?: boolean }) => {
-    const url = `${window.location.pathname}?${p.toString()}`;
-    window.history.pushState(null, '', url);
-    setParamsState(p);
+  const setParams = useCallback((updater: URLSearchParams | ((prev: URLSearchParams) => URLSearchParams), opts?: { replace?: boolean }) => {
+    const next = typeof updater === 'function'
+      ? updater(new URLSearchParams(window.location.search))
+      : updater;
+    const qs = next.toString();
+    const url = qs ? `${window.location.pathname}?${qs}` : window.location.pathname;
+    if (opts?.replace) {
+      window.history.replaceState(null, '', url);
+    } else {
+      window.history.pushState(null, '', url);
+    }
+    setParamsState(next);
   }, []);
 
   return [params, setParams];

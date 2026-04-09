@@ -8,7 +8,6 @@ import React, { useState, useMemo, useEffect, useCallback } from 'react';
 import type { TableOrderingKeyEfficiency, TableQueryPattern, ExplainIndexesResult, QuerySeries } from '@tracehouse/core';
 import { diagnoseOrderingKeyUsage, type OrderingKeyDiagnostic } from '@tracehouse/core';
 import { useClickHouseServices } from '../../providers/ClickHouseProvider';
-import { QueryDetailModal } from '../query/QueryDetailModal';
 import { CopyTableButton } from '../common/CopyTableButton';
 import { SqlHighlight } from '../common/SqlHighlight';
 import { formatBytes, formatDurationMs } from '../../utils/formatters';
@@ -17,6 +16,7 @@ interface Props {
   data: TableOrderingKeyEfficiency[];
   isLoading: boolean;
   lookbackDays: number;
+  onOpenQueryDetail?: (query: QuerySeries) => void;
 }
 
 type SortField = 'database' | 'table_name' | 'query_count' | 'avg_pruning_pct' | 'poor_pruning_queries' | 'avg_duration_ms' | 'avg_memory_bytes' | 'total_rows_read';
@@ -136,7 +136,7 @@ const DiagBadge: React.FC<{ diag: OrderingKeyDiagnostic }> = ({ diag }) => {
   );
 };
 
-export const OrderingKeyTable: React.FC<Props> = ({ data, isLoading, lookbackDays }) => {
+export const OrderingKeyTable: React.FC<Props> = ({ data, isLoading, lookbackDays, onOpenQueryDetail }) => {
   const [sortField, setSortField] = useState<SortField>('query_count');
   const [sortDir, setSortDir] = useState<SortDir>('desc');
   const [expandedRow, setExpandedRow] = useState<string | null>(null);
@@ -227,7 +227,7 @@ export const OrderingKeyTable: React.FC<Props> = ({ data, isLoading, lookbackDay
                 </tr>
                 {isExpanded && (
                   <tr><td colSpan={9} style={{ padding: 0 }}>
-                    <ExpandedDetail row={row} lookbackDays={lookbackDays} />
+                    <ExpandedDetail row={row} lookbackDays={lookbackDays} onOpenQueryDetail={onOpenQueryDetail} />
                   </td></tr>
                 )}
               </React.Fragment>
@@ -241,7 +241,7 @@ export const OrderingKeyTable: React.FC<Props> = ({ data, isLoading, lookbackDay
 
 
 /** Expanded detail: table metadata + query patterns drill-down */
-const ExpandedDetail: React.FC<{ row: TableOrderingKeyEfficiency; lookbackDays: number }> = ({ row, lookbackDays }) => {
+const ExpandedDetail: React.FC<{ row: TableOrderingKeyEfficiency; lookbackDays: number; onOpenQueryDetail?: (query: QuerySeries) => void }> = ({ row, lookbackDays, onOpenQueryDetail }) => {
   const services = useClickHouseServices();
   const [patterns, setPatterns] = useState<TableQueryPattern[]>([]);
   const [loading, setLoading] = useState(true);
@@ -303,7 +303,7 @@ const ExpandedDetail: React.FC<{ row: TableOrderingKeyEfficiency; lookbackDays: 
         <div style={{ padding: 16, color: 'var(--text-muted)', fontSize: 12 }}>No query patterns found.</div>
       ) : (
         <div style={{ marginTop: 8 }}>
-          <QueryPatternsTable patterns={patterns} sortingKey={row.sorting_key} />
+          <QueryPatternsTable patterns={patterns} sortingKey={row.sorting_key} onOpenQueryDetail={onOpenQueryDetail} />
         </div>
       )}
     </div>
@@ -312,13 +312,12 @@ const ExpandedDetail: React.FC<{ row: TableOrderingKeyEfficiency; lookbackDays: 
 
 
 /** Nested table showing query patterns with ordering key diagnostics */
-const QueryPatternsTable: React.FC<{ patterns: TableQueryPattern[]; sortingKey: string | null }> = ({ patterns, sortingKey }) => {
+const QueryPatternsTable: React.FC<{ patterns: TableQueryPattern[]; sortingKey: string | null; onOpenQueryDetail?: (query: QuerySeries) => void }> = ({ patterns, sortingKey, onOpenQueryDetail }) => {
   const services = useClickHouseServices();
   const [expandedHash, setExpandedHash] = useState<string | null>(null);
   const [explainResults, setExplainResults] = useState<Map<string, ExplainIndexesResult>>(new Map());
   const [sortField, setSortField] = useState<'execution_count' | 'avg_pruning_pct' | 'avg_duration_ms' | 'p95_duration_ms' | 'p99_duration_ms' | 'avg_memory_bytes' | 'avg_rows_read'>('execution_count');
   const [sortDir, setSortDir] = useState<'asc' | 'desc'>('desc');
-  const [detailQuery, setDetailQuery] = useState<QuerySeries | null>(null);
   const [loadingDetailHash, setLoadingDetailHash] = useState<string | null>(null);
 
   const handleViewLatestQuery = useCallback(async (queryHash: string, sampleQuery: string, e: React.MouseEvent) => {
@@ -337,7 +336,7 @@ const QueryPatternsTable: React.FC<{ patterns: TableQueryPattern[]; sortingKey: 
       const endDate = new Date(startDate.getTime() + (q.query_duration_ms || 0));
       const startIso = isNaN(startDate.getTime()) ? rawStart : startDate.toISOString();
       const endIso = isNaN(endDate.getTime()) ? rawStart : endDate.toISOString();
-      setDetailQuery({
+      const querySeries: QuerySeries = {
         query_id: q.query_id,
         label: q.query || sampleQuery || '',
         user: q.user || 'default',
@@ -354,13 +353,14 @@ const QueryPatternsTable: React.FC<{ patterns: TableQueryPattern[]; sortingKey: 
         exception_code: q.exception_code,
         exception: q.exception || undefined,
         points: [],
-      });
+      };
+      if (onOpenQueryDetail) onOpenQueryDetail(querySeries);
     } catch (err) {
       console.warn('[OrderingKeyTable] Failed to load query detail:', err);
     } finally {
       setLoadingDetailHash(null);
     }
-  }, [services]);
+  }, [services, onOpenQueryDetail]);
 
   // Run EXPLAIN indexes = 1 for each pattern on mount
   useEffect(() => {
@@ -640,7 +640,6 @@ const QueryPatternsTable: React.FC<{ patterns: TableQueryPattern[]; sortingKey: 
         })}
       </tbody>
     </table>
-    <QueryDetailModal query={detailQuery} onClose={() => setDetailQuery(null)} />
     </>
   );
 };

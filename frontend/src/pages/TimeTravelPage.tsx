@@ -16,6 +16,7 @@ import { TimelineNavigator } from '../components/shared/TimelineNavigator';
 import { RangeSlider } from '../components/shared/RangeSlider';
 import { QueryDetailModal } from '../components/query/QueryDetailModal';
 import { MergeDetailModal, MutationDetailModal } from '../components/merge/MergeDetailModal';
+import { useQueryDeepLink } from '../hooks/useQueryDeepLink';
 import { TruncatedHost } from '../components/common/TruncatedHost';
 import { formatBytes, parseTimestamp } from '../utils/formatters';
 import { useUserPreferenceStore } from '../stores/userPreferenceStore';
@@ -158,6 +159,12 @@ export const TimeTravelPage: React.FC = () => {
   const [selectedTimelineQuery, setSelectedTimelineQuery] = useState<QuerySeries | null>(null);
   const [selectedTimelineMerge, setSelectedTimelineMerge] = useState<MergeSeries | null>(null);
   const [selectedTimelineMutation, setSelectedTimelineMutation] = useState<MutationSeries | null>(null);
+
+  // Deep-link: sync query detail modal to URL (qd_id param)
+  const { query: deepLinkedQuery, onClose: handleQueryClose } = useQueryDeepLink(
+    selectedTimelineQuery,
+    () => setSelectedTimelineQuery(null),
+  );
 
   // Navigator state — range derived from selected time preset
   const [selectedTimeRange, setSelectedTimeRange] = useState('1h');
@@ -1108,7 +1115,7 @@ export const TimeTravelPage: React.FC = () => {
       )}
 
       {/* Modals */}
-      <QueryDetailModal query={selectedTimelineQuery} onClose={() => setSelectedTimelineQuery(null)} />
+      <QueryDetailModal query={deepLinkedQuery} onClose={handleQueryClose} />
       <MergeDetailModal merge={selectedTimelineMerge} onClose={() => setSelectedTimelineMerge(null)} />
       <MutationDetailModal mutation={selectedTimelineMutation} onClose={() => setSelectedTimelineMutation(null)} />
     </div>

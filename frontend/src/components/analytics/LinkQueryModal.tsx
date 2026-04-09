@@ -29,6 +29,8 @@ export interface LinkQueryModalProps {
   parentDrillParams?: Record<string, string>;
   /** Called when the modal should close */
   onClose: () => void;
+  /** Opens query detail at page level (for deep-linking). Falls back to inline modal. */
+  onOpenQueryDetail?: (query: QuerySeries) => void;
 }
 
 interface QueryRow {
@@ -74,6 +76,7 @@ export const LinkQueryModal: React.FC<LinkQueryModalProps> = ({
   params,
   parentDrillParams,
   onClose,
+  onOpenQueryDetail,
 }) => {
   const services = useClickHouseServices();
   const [rows, setRows] = useState<QueryRow[]>([]);
@@ -146,13 +149,22 @@ export const LinkQueryModal: React.FC<LinkQueryModalProps> = ({
     return () => window.removeEventListener('keydown', handler);
   }, [onClose, selectedQuery]);
 
-  // If the QueryDetailModal is open, render only that
-  if (selectedQuery) {
+  // When a query is selected, delegate to page-level deep-link if available
+  useEffect(() => {
+    if (selectedQuery && onOpenQueryDetail) {
+      onOpenQueryDetail(selectedQuery);
+      // If single-result, close the link modal too
+      if (rows.length <= 1) onClose();
+      else setSelectedQuery(null);
+    }
+  }, [selectedQuery, onOpenQueryDetail]);
+
+  // If the QueryDetailModal is open (no page-level handler), render inline
+  if (selectedQuery && !onOpenQueryDetail) {
     return createPortal(
       <QueryDetailModal
         query={selectedQuery}
         onClose={() => {
-          // If we auto-opened (single result), close everything
           if (rows.length <= 1) {
             onClose();
           } else {

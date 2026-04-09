@@ -29,7 +29,7 @@ import {
 import { LinkQueryModal } from './LinkQueryModal';
 import { PartInspector } from '../database/PartInspector';
 import { databaseApi } from '../../stores/databaseStore';
-import type { PartDetailInfo } from '@tracehouse/core';
+import type { PartDetailInfo, QuerySeries } from '@tracehouse/core';
 import {
   isNumericValue, formatCell,
   buildChartData, buildGroupedChartData, isGroupedChartType, sortRows,
@@ -103,9 +103,11 @@ interface QueryExplorerProps {
   onUrlStateChange?: (partial: Partial<AnalyticsUrlState>) => void;
   /** When provided, shows an "Export to Grafana" button that calls this with the panel JSON. */
   onExportToGrafana?: (payload: GrafanaExportPayload) => void;
+  /** Opens query detail at page level (for deep-linking) */
+  onOpenQueryDetail?: (query: QuerySeries) => void;
 }
 
-export const QueryExplorer: React.FC<QueryExplorerProps> = ({ urlState, onUrlStateChange, onExportToGrafana }) => {
+export const QueryExplorer: React.FC<QueryExplorerProps> = ({ urlState, onUrlStateChange, onExportToGrafana, onOpenQueryDetail }) => {
   const services = useClickHouseServices();
   const { clusterName } = useClusterStore();
   const [customQueries, setCustomQueries] = useState<Query[]>(() => loadCustomQueries());
@@ -969,6 +971,7 @@ export const QueryExplorer: React.FC<QueryExplorerProps> = ({ urlState, onUrlSta
           params={linkModal.params}
           parentDrillParams={drillStack.length > 0 ? drillStack[drillStack.length - 1].params : undefined}
           onClose={() => setLinkModal(null)}
+          onOpenQueryDetail={onOpenQueryDetail}
         />
       )}
       {partLinkTarget && (

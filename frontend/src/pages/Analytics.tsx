@@ -22,6 +22,7 @@ import { useNavigate } from '../hooks/useAppLocation';
 import { useUserPreferenceStore } from '../stores/userPreferenceStore';
 import { DocsLink } from '../components/common/DocsLink';
 import { QueryDetailModal } from '../components/query/QueryDetailModal';
+import { useQueryDeepLink } from '../hooks/useQueryDeepLink';
 import type { TableOrderingKeyEfficiency, PatternSurfaceRow, QuerySeries, ResourceLanesData } from '@tracehouse/core';
 
 type AnalyticsTab = 'tables' | 'misc' | 'dashboards' | 'surfaces';
@@ -90,6 +91,12 @@ export const Analytics: React.FC = () => {
   const [surfaceError, setSurfaceError] = useState<string | null>(null);
   const surfaceFetchId = useRef(0);
   const [modalQuery, setModalQuery] = useState<QuerySeries | null>(null);
+
+  // Deep-link: sync query detail modal to URL (qd_id param)
+  const { query: deepLinkedQuery, onClose: handleQueryClose } = useQueryDeepLink(
+    modalQuery,
+    () => setModalQuery(null),
+  );
 
   // ── Resource lanes state ──
   const [resourceData, setResourceData] = useState<ResourceLanesData | null>(null);
@@ -598,7 +605,7 @@ export const Analytics: React.FC = () => {
 
           <div style={{ flex: 1, overflow: 'auto', padding: '0 24px' }}>
             <div style={{ padding: '12px 0' }}>
-              <OrderingKeyTable data={filtered} isLoading={isLoading} lookbackDays={lookbackDays} />
+              <OrderingKeyTable data={filtered} isLoading={isLoading} lookbackDays={lookbackDays} onOpenQueryDetail={setModalQuery} />
               {selectedDb && filtered.length === 0 && !isLoading && (
                 <div style={{ padding: '24px 0', textAlign: 'center', color: 'var(--text-muted)', fontSize: 12 }}>
                   No SELECT queries found for <span style={{ fontFamily: "'Share Tech Mono', monospace" }}>{selectedDb}</span> in the last {lookbackDays} day{lookbackDays > 1 ? 's' : ''}.
@@ -616,7 +623,7 @@ export const Analytics: React.FC = () => {
       {/* ─── Misc tab content ─── */}
       {activeTab === 'misc' && (
         <div style={{ flex: 1, overflow: 'hidden' }}>
-          <QueryExplorer urlState={urlState} onUrlStateChange={updateUrl} />
+          <QueryExplorer urlState={urlState} onUrlStateChange={updateUrl} onOpenQueryDetail={setModalQuery} />
         </div>
       )}
 
@@ -710,12 +717,12 @@ export const Analytics: React.FC = () => {
       {/* ─── Dashboards tab content ─── */}
       {activeTab === 'dashboards' && (
         <div style={{ flex: 1, overflow: 'hidden' }}>
-          <DashboardViewer initialDashboardId={urlState.fromDashboard} />
+          <DashboardViewer initialDashboardId={urlState.fromDashboard} onOpenQueryDetail={setModalQuery} />
         </div>
       )}
 
       {/* Query Detail Modal — opened from pattern surface hover cards */}
-      <QueryDetailModal query={modalQuery} onClose={() => setModalQuery(null)} />
+      <QueryDetailModal query={deepLinkedQuery} onClose={handleQueryClose} />
     </div>
   );
 };

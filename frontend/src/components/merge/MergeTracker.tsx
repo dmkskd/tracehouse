@@ -42,6 +42,31 @@ import { classifyActiveMerge, getMergeCategoryInfo, classifyMutationCommand, MUT
 import type { MergeCategory } from '@tracehouse/core';
 import { useUserPreferenceStore } from '../../stores/userPreferenceStore';
 import { MergeHealthSunburst } from './MergeHealthSunburst';
+import { useUrlState } from '../../hooks/useUrlState';
+import type { UrlSchema } from '../../hooks/useUrlState';
+
+// URL schema for shareable merge tracker links
+const mergeUrlSchema = {
+  tab:       { type: 'string',  default: 'active' },
+  database:  { type: 'string' },
+  table:     { type: 'string' },
+  category:  { type: 'string' },
+  timeRange: { type: 'string',  default: '1 HOUR' },
+  minDurMs:  { type: 'number' },
+  minSizeB:  { type: 'number' },
+  limit:     { type: 'number',  default: 100 },
+  excludeSys: { type: 'boolean', default: true },
+  sortField: { type: 'string',  default: 'event_time' },
+  sortDir:   { type: 'string',  default: 'desc' },
+  host:      { type: 'string' },
+  status:    { type: 'string' },
+  mergeType: { type: 'string' },
+  part:      { type: 'string' },
+  // Merge detail deep-link: db, table, part_name to reopen modal
+  md_db:     { type: 'string' },
+  md_tbl:    { type: 'string' },
+  md_part:   { type: 'string' },
+} as const satisfies UrlSchema;
 
 // Stat Card
 const StatCard: React.FC<{
@@ -1672,16 +1697,55 @@ export const MergeTrackerView: React.FC = () => {
   } = useMergeStore();
   const { databases, setDatabases } = useDatabaseStore();
 
-  const [activeTab, setActiveTabRaw] = useState<MergeTab>('active');
+  // URL-synced state for shareable links
+  const { state: urlState, update: updateUrl } = useUrlState(mergeUrlSchema);
+  const activeTab = (urlState.tab || 'active') as MergeTab;
+
   const [availableTables, setAvailableTables] = useState<string[]>([]);
   const pollingRef = useRef<ReturnType<typeof setInterval> | null>(null);
-  
+
   // Selected items for detail panels
-  const [selectedMergeHistory, setSelectedMergeHistory] = useState<MergeHistoryRecord | null>(null);
+  const [selectedMergeHistoryRaw, setSelectedMergeHistoryRaw] = useState<MergeHistoryRecord | null>(null);
   const [selectedMutationHistory, setSelectedMutationHistory] = useState<MutationHistoryRecord | null>(null);
   const [selectedActiveMutation, setSelectedActiveMutation] = useState<MutationInfo | null>(null);
-  const [mergeDetailRecord, setMergeDetailRecord] = useState<MergeHistoryRecord | null>(null);
-  const [activeMergeDetail, setActiveMergeDetail] = useState<MergeInfo | null>(null);
+  const [mergeDetailRecord, setMergeDetailRecordRaw] = useState<MergeHistoryRecord | null>(null);
+  const [activeMergeDetail, setActiveMergeDetailRaw] = useState<MergeInfo | null>(null);
+
+  // Sync detail deep-link (md_db/md_tbl/md_part) to URL for all selection types
+  const syncDetailToUrl = useCallback((db?: string, tbl?: string, part?: string) => {
+    if (db && tbl && part) {
+      updateUrl({ md_db: db, md_tbl: tbl, md_part: part } as any);
+    } else {
+      updateUrl({ md_db: undefined, md_tbl: undefined, md_part: undefined } as any);
+    }
+  }, [updateUrl]);
+
+  const setSelectedMergeHistory = useCallback((record: MergeHistoryRecord | null) => {
+    setSelectedMergeHistoryRaw(record);
+    if (record) {
+      syncDetailToUrl(record.database, record.table, record.part_name);
+    } else {
+      syncDetailToUrl();
+    }
+  }, [syncDetailToUrl]);
+  const selectedMergeHistory = selectedMergeHistoryRaw;
+
+  const setMergeDetailRecord = useCallback((record: MergeHistoryRecord | null) => {
+    setMergeDetailRecordRaw(record);
+    if (record) {
+      syncDetailToUrl(record.database, record.table, record.part_name);
+    } else {
+      syncDetailToUrl();
+    }
+  }, [syncDetailToUrl]);
+  const setActiveMergeDetail = useCallback((merge: MergeInfo | null) => {
+    setActiveMergeDetailRaw(merge);
+    if (merge) {
+      syncDetailToUrl(merge.database, merge.table, merge.result_part_name);
+    } else {
+      syncDetailToUrl();
+    }
+  }, [syncDetailToUrl]);
 
   // Keep selectedMerge in sync with refreshed activeMerges data
   const liveSelectedMerge = useMemo(() => {
@@ -1694,13 +1758,16 @@ export const MergeTrackerView: React.FC = () => {
     ) ?? null;
   }, [activeMerges, selectedMerge]);
 
-  // Client-side filter state for merge type (active merges) and merge reason (merge history)
-  const [selectedMergeType, setSelectedMergeType] = useState<string | undefined>();
-  // selectedMergeReason is derived from historyFilter.category so changing it triggers a server-side re-fetch
+  // Client-side filters are URL-driven for shareable links
+  const selectedMergeType = urlState.mergeType;
+  const setSelectedMergeType = useCallback((v: string | undefined) => updateUrl({ mergeType: v }), [updateUrl]);
   const selectedMergeReason = historyFilter.category;
-  const [selectedHost, setSelectedHost] = useState<string | undefined>();
-  const [selectedStatus, setSelectedStatus] = useState<string | undefined>();
-  const [selectedPartName, setSelectedPartName] = useState<string | undefined>();
+  const selectedHost = urlState.host;
+  const setSelectedHost = useCallback((v: string | undefined) => updateUrl({ host: v }), [updateUrl]);
+  const selectedStatus = urlState.status;
+  const setSelectedStatus = useCallback((v: string | undefined) => updateUrl({ status: v }), [updateUrl]);
+  const selectedPartName = urlState.part;
+  const setSelectedPartName = useCallback((v: string | undefined) => updateUrl({ part: v }), [updateUrl]);
   const { hideReplicaMerges, setHideReplicaMerges, experimentalEnabled } = useUserPreferenceStore();
   const [mergeViewMode, setMergeViewMode] = useState<'pools' | 'health'>('pools');
   // Reset to pools when experimental is turned off
@@ -1784,12 +1851,48 @@ export const MergeTrackerView: React.FC = () => {
     }
   }, [services, isConnected, hasMerges, historyFilter, setMutationHistory, setIsLoadingMutationHistory]);
 
+  // Hydrate store from URL params on mount (URL is source of truth for shared links)
+  const urlHydrated = useRef(false);
+  useEffect(() => {
+    if (urlHydrated.current) return;
+    urlHydrated.current = true;
+    const patch: Partial<typeof historyFilter> = {};
+    if (urlState.database) patch.database = urlState.database;
+    if (urlState.table) patch.table = urlState.table;
+    if (urlState.category) patch.category = urlState.category;
+    if (urlState.timeRange && urlState.timeRange !== '1 HOUR') patch.timeRange = urlState.timeRange;
+    if (urlState.minDurMs) patch.minDurationMs = urlState.minDurMs;
+    if (urlState.minSizeB) patch.minSizeBytes = urlState.minSizeB;
+    if (urlState.limit && urlState.limit !== 100) patch.limit = urlState.limit;
+    if (urlState.excludeSys !== undefined && !urlState.excludeSys) patch.excludeSystemDatabases = false;
+    if (Object.keys(patch).length > 0) setHistoryFilter(patch);
+    if (urlState.sortField || urlState.sortDir) {
+      setHistorySort({
+        field: (urlState.sortField || 'event_time') as typeof historySort.field,
+        direction: (urlState.sortDir || 'desc') as typeof historySort.direction,
+      });
+    }
+  }, []);
+
+  // Rehydrate merge detail panel from URL (md_db/md_tbl/md_part)
+  const mdHydrated = useRef(false);
+  useEffect(() => {
+    if (mdHydrated.current || !services || !urlState.md_db || !urlState.md_tbl || !urlState.md_part) return;
+    mdHydrated.current = true;
+    services.mergeTracker.getMergeHistoryByPartName(urlState.md_db, urlState.md_tbl, urlState.md_part)
+      .then(record => {
+        if (record) setSelectedMergeHistoryRaw(record);
+        else console.warn(`[MergeTracker] No merge found for ${urlState.md_db}.${urlState.md_tbl}.${urlState.md_part}`);
+      })
+      .catch(err => console.error('[MergeTracker] Failed to fetch merge detail:', err));
+  }, [services, urlState.md_db, urlState.md_tbl, urlState.md_part]);
+
   // Refresh history data when switching to history/mutationHistory tabs
   const setActiveTab = useCallback((tab: MergeTab) => {
-    setActiveTabRaw(tab);
+    updateUrl({ tab }, { push: true });
     if (tab === 'history') fetchMergeHistory(false);
     if (tab === 'mutationHistory') fetchMutationHistory(false);
-  }, [fetchMergeHistory, fetchMutationHistory]);
+  }, [fetchMergeHistory, fetchMutationHistory, updateUrl]);
 
   const fetchPoolMetrics = useCallback(async (isInitialLoad = false) => {
     if (!services || !isConnected || !hasMerges) return;
@@ -1845,11 +1948,27 @@ export const MergeTrackerView: React.FC = () => {
 
   const handleFilterChange = useCallback((filter: Partial<typeof historyFilter>) => {
     setHistoryFilter(filter);
+    // Mirror server-side filter changes to URL
+    const urlPatch: Record<string, unknown> = {};
+    if ('database' in filter) urlPatch.database = filter.database || undefined;
+    if ('table' in filter) urlPatch.table = filter.table || undefined;
+    if ('category' in filter) urlPatch.category = filter.category || undefined;
+    if ('timeRange' in filter) urlPatch.timeRange = filter.timeRange || undefined;
+    if ('minDurationMs' in filter) urlPatch.minDurMs = filter.minDurationMs || undefined;
+    if ('minSizeBytes' in filter) urlPatch.minSizeB = filter.minSizeBytes || undefined;
+    if ('limit' in filter) urlPatch.limit = filter.limit;
+    if ('excludeSystemDatabases' in filter) urlPatch.excludeSys = filter.excludeSystemDatabases;
+    if (Object.keys(urlPatch).length > 0) updateUrl(urlPatch as any);
     if (filter.database !== undefined) {
       if (filter.database) fetchTablesForDatabase(filter.database);
       else setAvailableTables([]);
     }
-  }, [setHistoryFilter, fetchTablesForDatabase]);
+  }, [setHistoryFilter, fetchTablesForDatabase, updateUrl]);
+
+  const handleSortChange = useCallback((sort: typeof historySort) => {
+    setHistorySort(sort);
+    updateUrl({ sortField: sort.field, sortDir: sort.direction });
+  }, [setHistorySort, updateUrl]);
 
   useEffect(() => {
     if (!services || !isConnected) {
@@ -2218,7 +2337,7 @@ export const MergeTrackerView: React.FC = () => {
                 <MergeHistoryTable
                   history={filteredMergeHistory}
                   sort={historySort}
-                  onSortChange={setHistorySort}
+                  onSortChange={handleSortChange}
                   isLoading={isLoadingHistory}
                   selectedRecord={selectedMergeHistory}
                   onSelectRecord={setSelectedMergeHistory}
