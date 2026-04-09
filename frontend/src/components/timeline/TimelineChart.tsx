@@ -264,15 +264,15 @@ export const TimelineChart: React.FC<{
         const isMatch = data.queries[idx]?.matched_hash;
         color = queryHashActive && isMatch ? HASH_MATCH_COLOR : Q_COLORS[idx % Q_COLORS.length];
         isRunning = data.queries[idx]?.is_running ?? false;
-        dimmed = queryHashActive && !isMatch;
+        dimmed = !!queryHashActive && !isMatch;
       } else if (idx < nq + nm) {
         color = M_COLORS[(idx - nq) % M_COLORS.length];
         isRunning = data.merges[idx - nq]?.is_running ?? false;
-        dimmed = queryHashActive;
+        dimmed = !!queryHashActive;
       } else {
         color = MUT_COLORS[(idx - nq - nm) % MUT_COLORS.length];
         isRunning = (data.mutations ?? [])[idx - nq - nm]?.is_running ?? false;
-        dimmed = queryHashActive;
+        dimmed = !!queryHashActive;
       }
       res.push({ d: `M${topPts} L${botPts} Z`, color, isRunning, dimmed });
     }
