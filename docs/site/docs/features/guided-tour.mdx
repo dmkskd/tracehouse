@@ -8,7 +8,7 @@ TraceHouse is under active development. The initial focus has been on delivering
 
 ## Why TraceHouse
 
-The best way to use a system well is to understand how it works, and the fastest way to build that understanding is to visualize it. ClickHouse already exposes everything through its `system.*` tables (query logs, merge activity, resource usage, part metadata) but querying them by hand gets old fast, and joining across them is no fun either. TraceHouse puts an interactive layer on top of those tables so you can see what your cluster is doing and drill in when needed.
+ClickHouse exposes detailed internals through its `system.*` tables — query logs, merge activity, resource usage, part metadata. You can query these directly or build Grafana dashboards on top of them. TraceHouse adds a more interactive UI specialized for ClickHouse — letting you drill from a cluster overview down to a specific query's resource footprint, or from a table's storage layout to the merges that shaped it. It's also a place to experiment with new visualizations that aren't practical to build in a general-purpose dashboarding tool.
 
 ## What It's Good At
 
