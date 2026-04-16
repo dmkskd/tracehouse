@@ -303,4 +303,98 @@ describe('parseVerticalMergeProgress', { tags: ['merge-engine'] }, () => {
     expect(result!.total_ms).toBeGreaterThan(150_000);
     expect(result!.total_ms).toBeLessThan(200_000);
   });
+
+  it('derives per-column timing from Reading timestamps for TTL Delete vertical merges', () => {
+    // Real log from synthetic_data.events_local TTL Delete merge.
+    // TTLTransform wipes all rows before the gather stage, so ColumnGathererStream
+    // emits NO "Gathered column" lines. Per-column timing must be reconstructed
+    // from consecutive "Reading column X" timestamps.
+    const logs: MergeTextLog[] = [
+      mkLog('2026-04-16 10:25:55', '2026-04-16 10:25:55.561000',
+        'MergeTask::PrepareStage', 675,
+        'Merging 1 parts: from 1776322800_0_581_4 to 1776322800_0_581_4 into Wide with storage Full'),
+      mkLog('2026-04-16 10:25:55', '2026-04-16 10:25:55.565000',
+        'MergeTask::PrepareStage', 675,
+        'Selected MergeAlgorithm: Vertical'),
+      mkLog('2026-04-16 10:25:55', '2026-04-16 10:25:55.567000',
+        'MergeTreeSequentialSource', 675,
+        'Reading 3447 marks from part 1776322800_0_581_4, total 27705329 rows starting from the beginning of the part'),
+      mkLog('2026-04-16 10:25:58', '2026-04-16 10:25:58.388000',
+        'synthetic_data.events_local (014aa150) (TTLTransform)', 675,
+        'Removed all rows from part 1776322800_0_581_5 due to expired TTL'),
+      mkLog('2026-04-16 10:25:58', '2026-04-16 10:25:58.389000',
+        'MergeTreeSequentialSource', 667,
+        'Reading 3447 marks from part 1776322800_0_581_4, total 27705329 rows starting from the beginning of the part, column event_id'),
+      mkLog('2026-04-16 10:26:04', '2026-04-16 10:26:04.701000',
+        'MergeTreeSequentialSource', 667,
+        'Reading 3447 marks from part 1776322800_0_581_4, total 27705329 rows starting from the beginning of the part, column session_id'),
+      mkLog('2026-04-16 10:26:06', '2026-04-16 10:26:06.299000',
+        'MergeTreeSequentialSource', 667,
+        'Reading 3447 marks from part 1776322800_0_581_4, total 27705329 rows starting from the beginning of the part, column event_type'),
+      mkLog('2026-04-16 10:26:06', '2026-04-16 10:26:06.696000',
+        'MergeTreeSequentialSource', 667,
+        'Reading 3447 marks from part 1776322800_0_581_4, total 27705329 rows starting from the beginning of the part, column page_url'),
+      mkLog('2026-04-16 10:26:13', '2026-04-16 10:26:13.770000',
+        'MergeTreeSequentialSource', 667,
+        'Reading 3447 marks from part 1776322800_0_581_4, total 27705329 rows starting from the beginning of the part, column country_code'),
+      mkLog('2026-04-16 10:26:14', '2026-04-16 10:26:14.447000',
+        'MergeTreeSequentialSource', 667,
+        'Reading 3447 marks from part 1776322800_0_581_4, total 27705329 rows starting from the beginning of the part, column device_type'),
+      mkLog('2026-04-16 10:26:14', '2026-04-16 10:26:14.792000',
+        'MergeTreeSequentialSource', 667,
+        'Reading 3447 marks from part 1776322800_0_581_4, total 27705329 rows starting from the beginning of the part, column browser'),
+      mkLog('2026-04-16 10:26:15', '2026-04-16 10:26:15.297000',
+        'MergeTreeSequentialSource', 667,
+        'Reading 3447 marks from part 1776322800_0_581_4, total 27705329 rows starting from the beginning of the part, column duration_ms'),
+      mkLog('2026-04-16 10:26:16', '2026-04-16 10:26:16.088000',
+        'MergeTreeSequentialSource', 676,
+        'Reading 3447 marks from part 1776322800_0_581_4, total 27705329 rows starting from the beginning of the part, column revenue'),
+      mkLog('2026-04-16 10:26:16', '2026-04-16 10:26:16.170000',
+        'MergeTreeSequentialSource', 676,
+        'Reading 3447 marks from part 1776322800_0_581_4, total 27705329 rows starting from the beginning of the part, column _block_number'),
+      mkLog('2026-04-16 10:26:16', '2026-04-16 10:26:16.878000',
+        'MergeTreeSequentialSource', 674,
+        'Reading 3447 marks from part 1776322800_0_581_4, total 27705329 rows starting from the beginning of the part, column _block_offset'),
+      mkLog('2026-04-16 10:26:17', '2026-04-16 10:26:17.463000',
+        'MergeTask::MergeProjectionsStage', 671,
+        'Merge sorted 27705329 rows, containing 15 columns (4 merged, 11 gathered) in 21.90237403 sec., 1264946.39 rows/sec., 127.02 MiB/sec.'),
+      mkLog('2026-04-16 10:26:17', '2026-04-16 10:26:17.472000',
+        'synthetic_data.events_local (014aa150)', 671,
+        'Part 1776322800_0_581_5 committed to zookeeper'),
+    ];
+
+    const result = parseVerticalMergeProgress(logs);
+    expect(result).not.toBeNull();
+
+    const names = result!.segments.map(s => s.name);
+
+    // Pre-vertical phase labeled to surface the TTL filter
+    expect(names[0]).toBe('PK + TTL filter');
+    expect(result!.segments[0].kind).toBe('horizontal');
+
+    // All 11 columns appear, in read order
+    expect(names.slice(1)).toEqual([
+      'event_id', 'session_id', 'event_type', 'page_url', 'country_code',
+      'device_type', 'browser', 'duration_ms', 'revenue', '_block_number', '_block_offset',
+    ]);
+
+    // event_id (the longest-running column) should be ~6.3s, NOT zero
+    const eventId = result!.segments.find(s => s.name === 'event_id')!;
+    expect(eventId.duration_sec).toBeCloseTo(6.312, 1);
+
+    // session_id should be ~1.6s (10:26:06.299 - 10:26:04.701)
+    const sessionId = result!.segments.find(s => s.name === 'session_id')!;
+    expect(sessionId.duration_sec).toBeCloseTo(1.598, 1);
+
+    // The last column (_block_offset) ends at the final log timestamp
+    const blockOffset = result!.segments.find(s => s.name === '_block_offset')!;
+    expect(blockOffset.duration_sec).toBeGreaterThan(0.5);
+
+    // Pre-vertical "PK + TTL filter" should be ~2.83s (10:25:58.389 - 10:25:55.561)
+    expect(result!.segments[0].duration_sec).toBeCloseTo(2.828, 1);
+
+    // Total wall time covers from t0 to the last log line (~21.9s)
+    expect(result!.total_ms).toBeGreaterThan(20_000);
+    expect(result!.total_ms).toBeLessThan(23_000);
+  });
 });

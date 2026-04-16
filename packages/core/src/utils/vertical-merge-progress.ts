@@ -53,6 +53,11 @@ const GATHERED_COLUMN_RE = /Gathered column (\S+),\s*\d+ blocks,\s*(\d+) rows,\s
 // "Reading 13402 marks from part 202602_0_216_3, total 108500000 rows starting from the beginning of the part, column _block_number"
 const READING_COLUMN_RE = /Reading \d+ marks from part \S+, total (\d+) rows .*, column (\S+)$/;
 
+// "Removed all rows from part 1776322800_0_581_5 due to expired TTL"
+// When TTL Delete wipes the entire part, ColumnGathererStream emits no "Gathered column"
+// lines (nothing to gather), so we fall back to "Reading column X" timestamps for timing.
+const TTL_REMOVED_ALL_RE = /Removed all rows from part \S+ due to expired TTL/;
+
 /** Parse event_time_microseconds string to epoch-ms (float). */
 function parseMicroseconds(ts: string): number {
   // Format: "2025-03-12 12:16:55.892123" → parse to ms
@@ -217,19 +222,62 @@ export function parseVerticalMergeProgress(logs: MergeTextLog[]): VerticalMergeP
     }
   }
 
-  // Handle any columns that were read but never gathered (at the end of the log)
-  for (const [readCol, info] of readColumns) {
-    if (!gatheredColumns.has(readCol)) {
+  // No "Gathered column" matches at all (e.g., TTL Delete that wiped the part
+  // before the gather stage). Reconstruct per-column timing from the "Reading
+  // column X" timestamps — vertical merges process columns sequentially, so
+  // column N ends when column N+1 starts reading; the last column ends at the
+  // final log timestamp.
+  if (gatheredColumns.size === 0 && readColumns.size > 0) {
+    const ordered = [...readColumns.entries()].sort((a, b) => a[1].firstReadMs - b[1].firstReadMs);
+    const lastLogMs = parseMicroseconds(logs[logs.length - 1].event_time_microseconds) - t0;
+    const ttlRemovedAll = logs.some(l => TTL_REMOVED_ALL_RE.test(l.message));
+
+    // Pre-vertical phase (PK read + any TTL filter) from t0 to first column read.
+    if (segments.length === 0 && ordered[0][1].firstReadMs > 0) {
+      const preEndMs = ordered[0][1].firstReadMs;
       segments.push({
-        name: readCol,
-        start_ms: prevEndMs,
-        end_ms: prevEndMs, // unknown end — best we can do
-        duration_sec: 0,
+        name: ttlRemovedAll ? 'PK + TTL filter' : 'Horizontal stage',
+        start_ms: 0,
+        end_ms: preEndMs,
+        duration_sec: preEndMs / 1000,
+        rows: 0,
+        bytes: 0,
+        throughput_rows: 0,
+        kind: 'horizontal',
+      });
+    }
+
+    for (let i = 0; i < ordered.length; i++) {
+      const [colName, info] = ordered[i];
+      const startMs = info.firstReadMs;
+      const endMs = i < ordered.length - 1 ? ordered[i + 1][1].firstReadMs : lastLogMs;
+      segments.push({
+        name: colName,
+        start_ms: startMs,
+        end_ms: endMs,
+        duration_sec: Math.max(0, endMs - startMs) / 1000,
         rows: info.rows,
         bytes: 0,
         throughput_rows: 0,
         kind: 'gathered',
       });
+    }
+  } else {
+    // Some columns were gathered but a few weren't — surface them as zero-duration
+    // segments at the tail so the user at least sees they were read.
+    for (const [readCol, info] of readColumns) {
+      if (!gatheredColumns.has(readCol)) {
+        segments.push({
+          name: readCol,
+          start_ms: prevEndMs,
+          end_ms: prevEndMs,
+          duration_sec: 0,
+          rows: info.rows,
+          bytes: 0,
+          throughput_rows: 0,
+          kind: 'gathered',
+        });
+      }
     }
   }
 
