@@ -1,6 +1,8 @@
 import React, { createContext, useContext, useState, useEffect, useMemo, useCallback } from 'react';
-import { getBackendSrv, getDataSourceSrv } from '@grafana/runtime';
-import { GrafanaAdapter } from '@tracehouse/core/adapters/grafana-adapter';
+import { getDataSourceSrv } from '@grafana/runtime';
+import { dateTime } from '@grafana/data';
+import { lastValueFrom } from 'rxjs';
+import { GrafanaAdapter, type AdapterFrame, type AdapterQueryFn } from '@tracehouse/core/adapters/grafana-adapter';
 import { ClusterAwareAdapter } from '@tracehouse/core/adapters/cluster-adapter';
 import { ClusterService } from '@tracehouse/core/services/cluster-service';
 import { DatabaseExplorer } from '@tracehouse/core/services/database-explorer';
@@ -119,16 +121,40 @@ export function ServiceProvider({ children }: { children: React.ReactNode }) {
 
   const services = useMemo(() => {
     if (!datasourceUid) {
-      console.log('[ServiceProvider] No datasource UID set');
       return null;
     }
 
     try {
-      console.log('[ServiceProvider] Creating services for datasource:', datasourceUid);
-      const rawAdapter = new GrafanaAdapter(
-        { uid: datasourceUid, type: 'grafana-clickhouse-datasource' },
-        () => getBackendSrv()
-      );
+      const queryFn: AdapterQueryFn = async (sql, refId) => {
+        const ds = await getDataSourceSrv().get(datasourceUid);
+        const response = await lastValueFrom(
+          ds.query({
+            targets: [{
+              refId,
+              rawSql: sql,
+              format: 1,
+              datasource: { uid: datasourceUid, type: 'grafana-clickhouse-datasource' },
+            }],
+            range: { from: dateTime(), to: dateTime(), raw: { from: 'now', to: 'now' } },
+            // Unique per call: Grafana de-dupes queries sharing a requestId
+            // by aborting the in-flight one, which would cancel concurrent
+            // queries our services fire during a single render.
+            requestId: `tracehouse-${refId}-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`,
+            interval: '1s',
+            intervalMs: 1000,
+            scopedVars: {},
+            timezone: 'browser',
+            app: 'tracehouse',
+            startTime: Date.now(),
+          } as Parameters<typeof ds.query>[0])
+        );
+        if (response.error) {
+          const err = response.error as { message?: string };
+          throw new Error(typeof response.error === 'string' ? response.error : err.message ?? 'Query failed');
+        }
+        return (response.data ?? []) as AdapterFrame[];
+      };
+      const rawAdapter = new GrafanaAdapter(queryFn);
       const adapter = new ClusterAwareAdapter(rawAdapter);
       const envDetector = new EnvironmentDetector(adapter);
 
@@ -143,10 +169,9 @@ export function ServiceProvider({ children }: { children: React.ReactNode }) {
         analyticsService: new AnalyticsService(adapter),
         environmentDetector: envDetector,
       };
-      console.log('[ServiceProvider] Services created successfully');
       return { svcs, clusterAdapter: adapter };
     } catch (e) {
-      console.error('[ServiceProvider] Error creating services:', e);
+      console.error('[ServiceProvider] Failed to create services:', e);
       setError(e instanceof Error ? e.message : String(e));
       return null;
     }
@@ -210,18 +235,13 @@ export function ServiceProvider({ children }: { children: React.ReactNode }) {
             shardCount: match.shardCount,
           });
           services?.clusterAdapter.setClusterName(match.name);
-          console.log(`[ClusterDetect] Using saved cluster override '${match.name}'`);
         } else {
           clusterStore.setCluster(info);
           services?.clusterAdapter.setClusterName(info.clusterName);
-          if (info.clusterName) {
-            console.log(`[ClusterDetect] Cluster '${info.clusterName}' detected (${info.replicaCount} replicas)`);
-          } else {
-            console.log('[ClusterDetect] No cluster detected — single-node mode');
-          }
         }
       }
-    }).catch(() => {
+    }).catch((err) => {
+      console.error('[ClusterDetect] Cluster topology detection failed, falling back to single-node:', err);
       if (!cancelled) {
         clusterStore.setCluster({ clusterName: null, replicaCount: 1, shardCount: 1, availableClusters: [] });
       }

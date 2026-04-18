@@ -577,6 +577,43 @@ docs-serve: docs-install
     cd docs/site && npm run serve
 
 # ─────────────────────────────────────────────────────────────────
+# RELEASE
+# ─────────────────────────────────────────────────────────────────
+
+# Bump version in root/plugin package.json + plugin.json (e.g. `just bump 0.10.0` or `just bump 0.10.0-rc.1`)
+[group('release')]
+bump VERSION:
+    npm pkg set version={{VERSION}}
+    npm pkg set version={{VERSION}} --workspace=dmkskd-tracehouse-app
+    node -e "const f='grafana-app-plugin/src/plugin.json';const fs=require('fs');const j=JSON.parse(fs.readFileSync(f));j.info.version='{{VERSION}}';fs.writeFileSync(f,JSON.stringify(j,null,2)+'\n')"
+    @echo "Bumped to {{VERSION}}. Review, commit, then: git tag v{{VERSION}} && git push --tags"
+
+# Bump main to next minor -dev (run right after tagging — e.g. after v0.9.0 → 0.10.0-dev)
+[group('release')]
+bump-dev:
+    #!/usr/bin/env bash
+    set -euo pipefail
+    CURRENT=$(node -p "require('./package.json').version")
+    BASE=${CURRENT%%-*}
+    IFS=. read -r major minor _patch <<< "$BASE"
+    NEXT="$major.$((minor+1)).0-dev"
+    just bump "$NEXT"
+
+# Verify root/plugin package.json + plugin.json all agree (use in CI / pre-commit)
+[group('release')]
+version-check:
+    #!/usr/bin/env bash
+    set -euo pipefail
+    ROOT=$(node -p "require('./package.json').version")
+    PLUG_PKG=$(node -p "require('./grafana-app-plugin/package.json').version")
+    PLUG_JSON=$(node -p "require('./grafana-app-plugin/src/plugin.json').info.version")
+    if [[ "$ROOT" != "$PLUG_PKG" || "$ROOT" != "$PLUG_JSON" ]]; then
+      echo "Version mismatch: root=$ROOT plugin-pkg=$PLUG_PKG plugin.json=$PLUG_JSON" >&2
+      exit 1
+    fi
+    echo "All versions match: $ROOT"
+
+# ─────────────────────────────────────────────────────────────────
 # SETUP
 # ─────────────────────────────────────────────────────────────────
 

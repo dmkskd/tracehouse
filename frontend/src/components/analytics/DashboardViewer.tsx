@@ -1126,6 +1126,12 @@ type ViewState = { mode: 'list' } | { mode: 'view'; dashboardId: string } | { mo
 export const DashboardViewer: React.FC<{ initialDashboardId?: string; onOpenQueryDetail?: (query: QuerySeries) => void }> = ({ initialDashboardId, onOpenQueryDetail }) => {
   const [dashboards, setDashboards] = useState<Dashboard[]>(() => loadDashboards());
   const [fullscreenPanelIndex, setFullscreenPanelIndex] = useState<number | null>(null);
+  const [toast, setToast] = useState<string | null>(null);
+  useEffect(() => {
+    if (!toast) return;
+    const t = setTimeout(() => setToast(null), 2500);
+    return () => clearTimeout(t);
+  }, [toast]);
   const [view, setView] = useState<ViewState>(() => {
     if (initialDashboardId) {
       const dbs = loadDashboards();
@@ -1230,8 +1236,9 @@ export const DashboardViewer: React.FC<{ initialDashboardId?: string; onOpenQuer
 
   const handleExport = useCallback((d: Dashboard) => {
     const json = exportDashboardJson(d);
-    navigator.clipboard.writeText(json).catch(() => { });
-    alert('Dashboard JSON copied to clipboard');
+    navigator.clipboard.writeText(json)
+      .then(() => setToast('Dashboard JSON copied to clipboard'))
+      .catch((err) => setToast(`Copy failed: ${err?.message || 'clipboard unavailable'}`));
   }, []);
 
   const handleImport = useCallback((json: string) => {
@@ -1337,6 +1344,11 @@ export const DashboardViewer: React.FC<{ initialDashboardId?: string; onOpenQuer
 
   return (
     <div style={{ height: '100%', display: 'flex', flexDirection: 'column', overflow: 'hidden' }}>
+      {toast && (
+        <div style={{ position: 'fixed', top: 16, right: 16, zIndex: 1000, padding: '10px 16px', borderRadius: 6, background: 'var(--bg-secondary)', border: '1px solid var(--border-primary)', color: 'var(--text-primary)', fontSize: 13, boxShadow: '0 4px 12px rgba(0,0,0,0.2)' }}>
+          {toast}
+        </div>
+      )}
       {/* Dashboard header */}
       <div style={{ flexShrink: 0, padding: '12px 24px', display: 'flex', alignItems: 'center', justifyContent: 'space-between', borderBottom: '1px solid var(--border-primary)', background: 'var(--bg-secondary)' }}>
         <div style={{ display: 'flex', alignItems: 'center', gap: 12, minWidth: 0, flex: 1 }}>

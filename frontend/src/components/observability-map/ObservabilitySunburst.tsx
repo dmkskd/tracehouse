@@ -9,7 +9,7 @@ import React, { useRef, useEffect, useState, useMemo } from 'react';
 import * as d3 from 'd3';
 import { OBSERVABILITY_DATA, buildHierarchy } from './data';
 import type { SunburstNodeData, ObservabilityData } from './data';
-import './ObservabilitySunburst.css';
+void import('./ObservabilitySunburst.css');
 
 // ─── Types ───────────────────────────────────────────────────
 

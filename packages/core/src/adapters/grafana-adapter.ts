@@ -1,53 +1,33 @@
 import type { IClickHouseAdapter } from './types.js';
 import { AdapterError } from './types.js';
 
-interface DsRef {
-  uid: string;
+export interface AdapterField {
+  name: string;
   type?: string;
+  values: unknown[] | { length: number; get(index: number): unknown };
 }
 
-interface DsQueryResponse {
-  results: Record<string, {
-    status?: number;
-    frames?: Array<{
-      schema: { fields: Array<{ name: string; type?: string }> };
-      data: { values: unknown[][] };
-    }>;
-    error?: string;
-  }>;
+export interface AdapterFrame {
+  fields: AdapterField[];
+  length?: number;
 }
+
+export type AdapterQueryFn = (sql: string, refId: string) => Promise<AdapterFrame[]>;
 
 export class GrafanaAdapter implements IClickHouseAdapter {
-  constructor(
-    private ds: DsRef,
-    private getBackendSrv: () => { post<T>(url: string, body: unknown): Promise<T> },
-  ) {}
+  constructor(private readonly query: AdapterQueryFn) {}
 
   async executeQuery<T extends Record<string, unknown>>(sql: string): Promise<T[]> {
     const refId = 'q';
     try {
-      const response = await this.getBackendSrv().post<DsQueryResponse>('/api/ds/query', {
-        queries: [{
-          refId,
-          rawSql: sql,
-          datasource: { uid: this.ds.uid, type: this.ds.type },
-          format: 1,
-          maxDataPoints: 1000,
-          intervalMs: 1000,
-        }],
-        from: 'now',
-        to: 'now',
-      });
-      return this.framesToRows<T>(response, refId);
+      const frames = await this.query(sql, refId);
+      return this.framesToRows<T>(frames);
     } catch (error) {
       throw this.wrapError(error);
     }
   }
 
   async executeRawQuery(sql: string, _database?: string): Promise<string[]> {
-    // Route through the normal Grafana query path — the ClickHouse datasource
-    // plugin handles EXPLAIN and returns results as a data frame.
-    // We extract the first column's values as strings.
     try {
       const rows = await this.executeQuery<Record<string, unknown>>(sql);
       return rows.map(row => {
@@ -59,36 +39,37 @@ export class GrafanaAdapter implements IClickHouseAdapter {
     }
   }
 
-  private framesToRows<T extends Record<string, unknown>>(response: DsQueryResponse, refId: string): T[] {
-    const result = response.results?.[refId];
-    if (!result?.frames?.length) return [];
-    if (result.error) {
-      const errMsg = typeof result.error === 'string'
-        ? result.error
-        : JSON.stringify(result.error);
-      throw new Error(errMsg);
-    }
+  private framesToRows<T extends Record<string, unknown>>(frames: AdapterFrame[]): T[] {
+    if (!frames.length) return [];
 
-    const frame = result.frames[0];
-    const fields = frame.schema?.fields ?? [];
-    const values = frame.data?.values ?? [];
+    const frame = frames[0];
+    const fields = frame.fields ?? [];
+    if (!fields.length) return [];
 
-    if (!fields.length || !values.length) return [];
+    const firstValues = fields[0].values;
+    const defaultLen = Array.isArray(firstValues)
+      ? firstValues.length
+      : (firstValues as { length: number }).length ?? 0;
+    const rowCount = frame.length ?? defaultLen;
 
-    const rowCount = values[0]?.length ?? 0;
-    const rows: T[] = [];
-
-    // Grafana's ClickHouse datasource returns DateTime columns as epoch-ms numbers
-    // with schema type "time". Normalize these to ISO strings so downstream code
-    // can treat all adapter output uniformly.
     const timeFieldIndices = new Set(
       fields.map((f, i) => f.type === 'time' ? i : -1).filter(i => i >= 0)
     );
 
+    const getValue = (field: AdapterField, i: number): unknown => {
+      const values = field.values;
+      if (Array.isArray(values)) return values[i] ?? null;
+      return (values as { get(i: number): unknown }).get(i) ?? null;
+    };
+
+    const rows: T[] = [];
     for (let i = 0; i < rowCount; i++) {
       const row: Record<string, unknown> = {};
       for (let j = 0; j < fields.length; j++) {
-        let v = values[j]?.[i] ?? null;
+        let v = getValue(fields[j], i);
+        // Grafana's ClickHouse datasource returns DateTime columns as epoch-ms
+        // with schema type "time". Normalize these to ISO-like strings so
+        // downstream code can treat all adapter output uniformly.
         if (timeFieldIndices.has(j) && typeof v === 'number') {
           v = new Date(v).toISOString().replace('T', ' ').replace('Z', '');
         }
@@ -101,7 +82,6 @@ export class GrafanaAdapter implements IClickHouseAdapter {
   }
 
   private wrapError(error: unknown): AdapterError {
-    // Grafana backend errors can be plain objects like { data: { message: '...' }, status: 400 }
     let msg: string;
     if (error instanceof Error) {
       msg = error.message;

@@ -59,6 +59,6 @@ http://:8123 {
 # Grafana
 http://:3000 {
 	log
-	redir / /a/tracehouse-app/overview 302
+	redir / /a/dmkskd-tracehouse-app/overview 302
 	reverse_proxy grafana:3000
 }

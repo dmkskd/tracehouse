@@ -14,20 +14,8 @@
 import { useState, useEffect, useRef, useCallback } from 'react';
 import { useSearchParams } from 'react-router-dom';
 import { useClickHouseServices } from '../providers/ClickHouseProvider';
+import { getUrlParam } from '../utils/urlParams';
 import type { QuerySeries } from '@tracehouse/core';
-
-/** Read a param from the hash-based URL (/#/path?key=val) or standard search */
-function getUrlParam(key: string): string | null {
-  // HashRouter: params are in the hash fragment
-  const hash = window.location.hash;
-  const qIdx = hash.indexOf('?');
-  if (qIdx !== -1) {
-    const val = new URLSearchParams(hash.slice(qIdx + 1)).get(key);
-    if (val) return val;
-  }
-  // Grafana / standard: params are in window.location.search
-  return new URLSearchParams(window.location.search).get(key);
-}
 
 function detailToSeries(detail: any): QuerySeries {
   const durationMs = Number(detail.query_duration_ms) || 0;

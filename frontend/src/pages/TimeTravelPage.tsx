@@ -20,6 +20,7 @@ import { MergeDetailModal, MutationDetailModal } from '../components/merge/Merge
 import { useQueryDeepLink } from '../hooks/useQueryDeepLink';
 import { TruncatedHost } from '../components/common/TruncatedHost';
 import { formatBytes, parseTimestamp } from '../utils/formatters';
+import { getUrlParam } from '../utils/urlParams';
 import { useUserPreferenceStore } from '../stores/userPreferenceStore';
 import { DocsLink } from '../components/common/DocsLink';
 import { TimelineChart } from '../components/timeline/TimelineChart';
@@ -105,15 +106,6 @@ type SortField = 'metric' | 'duration' | 'started';
 type SortDir = 'asc' | 'desc';
 
 /** Read a param from the hash-based URL (/#/path?key=val) or standard search */
-function getHashParam(key: string): string | null {
-  const hash = window.location.hash;
-  const qIdx = hash.indexOf('?');
-  if (qIdx !== -1) {
-    const val = new URLSearchParams(hash.slice(qIdx + 1)).get(key);
-    if (val) return val;
-  }
-  return new URLSearchParams(window.location.search).get(key);
-}
 
 export const TimeTravelPage: React.FC = () => {
   const { activeProfileId, profiles } = useConnectionStore();
@@ -122,7 +114,7 @@ export const TimeTravelPage: React.FC = () => {
   const [searchParams, setSearchParams] = useSearchParams();
 
   // Query hash filter: highlight/filter timeline to a specific normalized_query_hash (from URL ?nqh=...)
-  const [queryHashFilter, setQueryHashFilter] = useState<string | null>(() => getHashParam('nqh'));
+  const [queryHashFilter, setQueryHashFilter] = useState<string | null>(() => getUrlParam('nqh'));
   // When true, show only hash-matched queries (hide everything else including merges/mutations)
   const [queryHashOnly, setQueryHashOnly] = useState(false);
 

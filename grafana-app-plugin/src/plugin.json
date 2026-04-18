@@ -1,36 +1,70 @@
 {
   "type": "app",
   "name": "TraceHouse",
-  "id": "tracehouse-app",
+  "id": "dmkskd-tracehouse-app",
   "info": {
     "description": "Comprehensive ClickHouse monitoring with 3D visualizations, merge tracking, query analysis, and time travel",
     "author": {
       "name": "TraceHouse",
-      "url": "https://github.com/tracehouse/tracehouse"
+      "url": "https://github.com/dmkskd/tracehouse"
     },
-    "keywords": ["clickhouse", "monitoring", "3d", "merges", "queries", "parts", "visualization"],
+    "keywords": [
+      "clickhouse",
+      "monitoring",
+      "3d",
+      "merges",
+      "queries",
+      "parts",
+      "visualization"
+    ],
     "logos": {
       "small": "img/logo.svg",
       "large": "img/logo.png"
     },
     "links": [
-      { "name": "GitHub", "url": "https://github.com/tracehouse/tracehouse" },
-      { "name": "Documentation", "url": "https://github.com/tracehouse/tracehouse/blob/main/README.md" },
-      { "name": "Issues", "url": "https://github.com/tracehouse/tracehouse/issues" }
+      {
+        "name": "GitHub",
+        "url": "https://github.com/dmkskd/tracehouse"
+      },
+      {
+        "name": "Documentation",
+        "url": "https://github.com/dmkskd/tracehouse/blob/main/README.md"
+      },
+      {
+        "name": "Issues",
+        "url": "https://github.com/dmkskd/tracehouse/issues"
+      }
     ],
     "screenshots": [
-      { "name": "Overview", "path": "img/screenshots/overview.png" },
-      { "name": "Merges", "path": "img/screenshots/merges.png" },
-      { "name": "Time Travel", "path": "img/screenshots/timetravel.png" }
+      {
+        "name": "Analytics",
+        "path": "img/screenshots/analytics.png"
+      },
+      {
+        "name": "Database Explorer",
+        "path": "img/screenshots/database-explorer.png"
+      },
+      {
+        "name": "Query History",
+        "path": "img/screenshots/history.png"
+      },
+      {
+        "name": "System Map",
+        "path": "img/screenshots/system-map.png"
+      },
+      {
+        "name": "Time Travel",
+        "path": "img/screenshots/time-travel.png"
+      }
     ],
-    "version": "1.0.39",
+    "version": "0.10.0-dev",
     "updated": "2026-02-17"
   },
   "includes": [
     {
       "type": "page",
       "name": "Overview",
-      "path": "/a/tracehouse-app/overview",
+      "path": "/a/dmkskd-tracehouse-app/overview",
       "role": "Viewer",
       "addToNav": true,
       "defaultNav": true
@@ -38,56 +72,56 @@
     {
       "type": "page",
       "name": "Engine Internals",
-      "path": "/a/tracehouse-app/engine-internals",
+      "path": "/a/dmkskd-tracehouse-app/engine-internals",
       "role": "Viewer",
       "addToNav": true
     },
     {
       "type": "page",
       "name": "Cluster",
-      "path": "/a/tracehouse-app/cluster",
+      "path": "/a/dmkskd-tracehouse-app/cluster",
       "role": "Viewer",
       "addToNav": true
     },
     {
       "type": "page",
       "name": "Explorer",
-      "path": "/a/tracehouse-app/databases",
+      "path": "/a/dmkskd-tracehouse-app/databases",
       "role": "Viewer",
       "addToNav": true
     },
     {
       "type": "page",
       "name": "Time Travel",
-      "path": "/a/tracehouse-app/timetravel",
+      "path": "/a/dmkskd-tracehouse-app/timetravel",
       "role": "Viewer",
       "addToNav": true
     },
     {
       "type": "page",
       "name": "Queries",
-      "path": "/a/tracehouse-app/queries",
+      "path": "/a/dmkskd-tracehouse-app/queries",
       "role": "Viewer",
       "addToNav": true
     },
     {
       "type": "page",
       "name": "Merges",
-      "path": "/a/tracehouse-app/merges",
+      "path": "/a/dmkskd-tracehouse-app/merges",
       "role": "Viewer",
       "addToNav": true
     },
     {
       "type": "page",
       "name": "Replication",
-      "path": "/a/tracehouse-app/replication",
+      "path": "/a/dmkskd-tracehouse-app/replication",
       "role": "Viewer",
       "addToNav": true
     },
     {
       "type": "page",
       "name": "Analytics",
-      "path": "/a/tracehouse-app/analytics",
+      "path": "/a/dmkskd-tracehouse-app/analytics",
       "role": "Viewer",
       "addToNav": true
     }

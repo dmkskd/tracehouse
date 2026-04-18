@@ -1,14 +1,33 @@
 # TraceHouse Grafana Plugin - Review Environment
 #
-# Usage:
-#   docker compose up
+# No local toolchain required — only Docker.
 #
-# This starts ClickHouse and Grafana with the TraceHouse plugin
-# pre-loaded and enabled. Open http://localhost:3000 to explore.
+# Usage:
+#   cd grafana-app-plugin/provisioning && docker compose up
+#
+# This builds the plugin from source inside Docker, then starts
+# ClickHouse and Grafana with the plugin loaded.
+#
+# Ports:
+#   Grafana:    http://localhost:3000 (anonymous admin, no login required)
+#   ClickHouse: http://localhost:8123 (HTTP interface, default/no password)
+#
+# Everything is pre-configured:
+#   - ClickHouse datasource pointing to the local ClickHouse instance
+#   - TraceHouse plugin enabled with the datasource auto-selected
+# Navigate to TraceHouse in the Grafana sidebar to start exploring.
+# No manual datasource selection or configuration needed.
 
 services:
+  builder:
+    build:
+      context: ../..
+      dockerfile: grafana-app-plugin/Dockerfile
+    volumes:
+      - plugin-dist:/output
+
   clickhouse:
-    image: clickhouse:latest
+    image: clickhouse/clickhouse-server:latest
     container_name: tracehouse-review-clickhouse
     ports:
       - "8123:8123"
@@ -29,12 +48,17 @@ services:
     volumes:
       - ./datasources.yaml:/etc/grafana/provisioning/datasources/clickhouse.yaml:ro
       - ./plugins.yaml:/etc/grafana/provisioning/plugins/tracehouse.yaml:ro
-      - ../dist:/var/lib/grafana/plugins/tracehouse-app:ro
+      - plugin-dist:/var/lib/grafana/plugins/dmkskd-tracehouse-app:ro
     environment:
       GF_AUTH_ANONYMOUS_ENABLED: "true"
       GF_AUTH_ANONYMOUS_ORG_ROLE: Admin
       GF_INSTALL_PLUGINS: grafana-clickhouse-datasource
-      GF_PLUGINS_ALLOW_LOADING_UNSIGNED_PLUGINS: tracehouse-app
+      GF_PLUGINS_ALLOW_LOADING_UNSIGNED_PLUGINS: dmkskd-tracehouse-app
     depends_on:
+      builder:
+        condition: service_completed_successfully
       clickhouse:
         condition: service_healthy
+
+volumes:
+  plugin-dist:

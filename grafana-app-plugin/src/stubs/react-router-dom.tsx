@@ -18,7 +18,7 @@ export const Link = React.forwardRef<
   React.AnchorHTMLAttributes<HTMLAnchorElement> & { to: string; replace?: boolean; state?: unknown }
 >(({ to, replace: _replace, state, children, onClick, ...rest }, ref) => {
   const ctx = useContext(LocationContext);
-  const href = to.startsWith('/') ? `/a/tracehouse-app${to}` : to;
+  const href = to.startsWith('/') ? `/a/dmkskd-tracehouse-app${to}` : to;
 
   if (state && ctx) {
     return (
@@ -47,7 +47,7 @@ export const NavLink = React.forwardRef<
   HTMLAnchorElement,
   React.AnchorHTMLAttributes<HTMLAnchorElement> & { to: string; end?: boolean }
 >(({ to, end: _end, children, ...rest }, ref) => {
-  const href = to.startsWith('/') ? `/a/tracehouse-app${to}` : to;
+  const href = to.startsWith('/') ? `/a/dmkskd-tracehouse-app${to}` : to;
   return <a ref={ref} href={href} {...rest}>{children}</a>;
 });
 NavLink.displayName = 'NavLink';
@@ -71,13 +71,12 @@ export function useParams<T extends Record<string, string | undefined> = Record<
 }
 
 export function useSearchParams(): [URLSearchParams, (updater: URLSearchParams | ((prev: URLSearchParams) => URLSearchParams), opts?: { replace?: boolean }) => void] {
-  const [params, setParamsState] = useState(
-    () => new URLSearchParams(typeof window !== 'undefined' ? window.location.search : '')
-  );
+  const readSearch = () => (typeof window !== 'undefined' ? window.location : { search: '' }).search;
+  const [params, setParamsState] = useState(() => new URLSearchParams(readSearch()));
 
   const setParams = useCallback((updater: URLSearchParams | ((prev: URLSearchParams) => URLSearchParams), opts?: { replace?: boolean }) => {
     const next = typeof updater === 'function'
-      ? updater(new URLSearchParams(window.location.search))
+      ? updater(new URLSearchParams(readSearch()))
       : updater;
     const qs = next.toString();
     const url = qs ? `${window.location.pathname}?${qs}` : window.location.pathname;

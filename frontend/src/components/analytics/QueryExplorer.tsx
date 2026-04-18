@@ -608,7 +608,7 @@ export const QueryExplorer: React.FC<QueryExplorerProps> = ({ urlState, onUrlSta
         }
         const { url } = await resp.json();
         // Open the new dashboard in a new tab
-        window.open(url, '_blank');
+        window.open(url, '_blank', 'noopener,noreferrer');
       } catch (e) {
         console.error('[Grafana export]', e);
         // Fallback: copy panel JSON to clipboard

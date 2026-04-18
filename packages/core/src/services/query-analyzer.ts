@@ -835,7 +835,7 @@ export class QueryAnalyzer {
       const msg = error instanceof Error ? error.message : String(error);
       // Return empty array for known non-fatal errors instead of throwing
       if (msg.includes('UNKNOWN_TABLE') || msg.includes("doesn't exist") || msg.includes('does not exist')) {
-        console.log('[QueryAnalyzer] query_thread_log table not available');
+        console.warn('[QueryAnalyzer] query_thread_log unavailable; returning empty thread breakdown');
         return [];
       }
       throw new QueryAnalysisError(`Failed to get query thread breakdown: ${msg}`, error as Error);

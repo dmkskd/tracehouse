@@ -178,7 +178,7 @@ just grafana-plugin-dev
 Copy the built plugin into your Grafana plugins directory:
 
 ```bash
-cp -r grafana-app-plugin/dist /var/lib/grafana/plugins/tracehouse-app
+cp -r grafana-app-plugin/dist /var/lib/grafana/plugins/dmkskd-tracehouse-app
 ```
 
 Then restart Grafana and enable the plugin from the Grafana UI under **Administration → Plugins**.

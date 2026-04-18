@@ -11,8 +11,8 @@ import { useUserPreferenceStore } from '@frontend/stores/userPreferenceStore';
 import { useRefreshSettingsStore, useGlobalLastUpdatedStore } from '@frontend/stores/refreshSettingsStore';
 import { useRefreshConfig, type RefreshRateOption } from '@tracehouse/ui-shared';
 
-// Import CSS with Tailwind
-import './styles.css';
+import styles from './styles.css';
+void styles;
 
 /**
  * Bridge Grafana's theme to the frontend's data-theme attribute.
@@ -314,7 +314,7 @@ function AppContent({ path }: AppContentProps) {
     useUserPreferenceStore.getState().setKillQueriesEnabled(pluginConfig.killQueriesEnabled);
   }, [pluginConfig.killQueriesEnabled]);
 
-  // Extract route from path: /a/tracehouse-app/overview -> overview
+  // Extract route from path: /a/dmkskd-tracehouse-app/overview -> overview
   const routeKey = path.split('/').pop() || 'overview';
   const PageComponent = ROUTES[routeKey] || Overview;
 
@@ -352,15 +352,15 @@ function AppContent({ path }: AppContentProps) {
             marginLeft: 8,
           }}>
             {[
-              { key: 'overview', label: 'Overview', path: '/a/tracehouse-app/overview' },
-              { key: 'engine-internals', label: 'Engine Internals', path: '/a/tracehouse-app/engine-internals' },
-              { key: 'cluster', label: 'Cluster', path: '/a/tracehouse-app/cluster' },
-              { key: 'databases', label: 'Explorer', path: '/a/tracehouse-app/databases' },
-              { key: 'timetravel', label: 'Time Travel', path: '/a/tracehouse-app/timetravel' },
-              { key: 'queries', label: 'Queries', path: '/a/tracehouse-app/queries' },
-              { key: 'merges', label: 'Merges', path: '/a/tracehouse-app/merges' },
-              { key: 'replication', label: 'Replication', path: '/a/tracehouse-app/replication' },
-              { key: 'analytics', label: 'Analytics', path: '/a/tracehouse-app/analytics' },
+              { key: 'overview', label: 'Overview', path: '/a/dmkskd-tracehouse-app/overview' },
+              { key: 'engine-internals', label: 'Engine Internals', path: '/a/dmkskd-tracehouse-app/engine-internals' },
+              { key: 'cluster', label: 'Cluster', path: '/a/dmkskd-tracehouse-app/cluster' },
+              { key: 'databases', label: 'Explorer', path: '/a/dmkskd-tracehouse-app/databases' },
+              { key: 'timetravel', label: 'Time Travel', path: '/a/dmkskd-tracehouse-app/timetravel' },
+              { key: 'queries', label: 'Queries', path: '/a/dmkskd-tracehouse-app/queries' },
+              { key: 'merges', label: 'Merges', path: '/a/dmkskd-tracehouse-app/merges' },
+              { key: 'replication', label: 'Replication', path: '/a/dmkskd-tracehouse-app/replication' },
+              { key: 'analytics', label: 'Analytics', path: '/a/dmkskd-tracehouse-app/analytics' },
             ].map((item, idx) => (
               <React.Fragment key={item.key}>
                 {idx > 0 && <span style={{ color: 'var(--text-muted)', fontSize: 12 }}>|</span>}

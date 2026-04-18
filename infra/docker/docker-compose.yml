@@ -127,7 +127,7 @@ services:
       # Dashboard JSON files
       - ./grafana/dashboards:/var/lib/grafana/dashboards
       # TraceHouse Grafana app plugin (built by `just grafana-plugin-build`)
-      - ../../grafana-app-plugin/dist:/var/lib/grafana/plugins/tracehouse-app
+      - ../../grafana-app-plugin/dist:/var/lib/grafana/plugins/dmkskd-tracehouse-app
     environment:
       # Disable login for development
       GF_AUTH_ANONYMOUS_ENABLED: "true"
@@ -137,7 +137,7 @@ services:
       # Install ClickHouse plugin
       GF_INSTALL_PLUGINS: grafana-clickhouse-datasource
       # Allow unsigned dev plugins
-      GF_PLUGINS_ALLOW_LOADING_UNSIGNED_PLUGINS: tracehouse-app
+      GF_PLUGINS_ALLOW_LOADING_UNSIGNED_PLUGINS: dmkskd-tracehouse-app
       GF_PLUGINS_ENABLE_FRONTEND_SANDBOX: "true"
     depends_on:
       clickhouse:

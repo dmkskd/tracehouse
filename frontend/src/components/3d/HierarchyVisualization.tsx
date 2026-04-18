@@ -282,83 +282,6 @@ interface GlassBoxProps {
   onPointerOut: () => void;
 }
 
-// Fading out glass box for parts that were merged away
-// NOTE: Animation disabled for now - parts just disappear instantly
-// To re-enable: uncomment the useFrame animation logic below
-interface FadingGlassBoxProps {
-  position: [number, number, number];
-  size: [number, number, number];
-  startTime: number;
-  colorIndex?: number;
-}
-
-// @ts-expect-error - Kept for future animation re-enablement
-// eslint-disable-next-line @typescript-eslint/no-unused-vars
-const _FadingGlassBox: React.FC<FadingGlassBoxProps> = (_props) => {
-  // Animation disabled - return null to make parts disappear instantly
-  return null;
-  
-  /* ANIMATION CODE - uncomment to re-enable shrink animation
-  const { position, size, startTime, colorIndex = 0 } = _props;
-  const meshRef = useRef<THREE.Mesh>(null);
-  const groupRef = useRef<THREE.Group>(null);
-  const [visible, setVisible] = useState(true);
-  
-  const mergeColor = MERGE_GROUP_COLORS[colorIndex % MERGE_GROUP_COLORS.length];
-  
-  useFrame(() => {
-    if (!groupRef.current) return;
-    
-    const elapsed = Date.now() - startTime;
-    const duration = 1200; // 1.2 second animation
-    const progress = Math.min(elapsed / duration, 1);
-    
-    // Ease out curve
-    const eased = 1 - Math.pow(1 - progress, 2);
-    
-    // Shrink to nothing
-    const scale = 1 - eased * 0.95;
-    groupRef.current.scale.setScalar(Math.max(scale, 0.02));
-    
-    // Glow brighter as it shrinks
-    if (meshRef.current && meshRef.current.material) {
-      const mat = meshRef.current.material as THREE.MeshPhysicalMaterial;
-      mat.emissiveIntensity = 0.5 + eased * 1.2;
-      mat.opacity = (1 - eased * 0.4) * 0.7;
-    }
-    
-    if (progress >= 1) {
-      setVisible(false);
-    }
-  });
-  
-  if (!visible) return null;
-  
-  return (
-    <group ref={groupRef} position={[position[0], 0, position[2]]}>
-      <mesh ref={meshRef} position={[0, position[1], 0]}>
-        <boxGeometry args={size} />
-        <meshPhysicalMaterial
-          color={mergeColor.line}
-          metalness={0.1}
-          roughness={0.05}
-          transmission={0.3}
-          thickness={1.5}
-          transparent
-          opacity={0.7}
-          emissive={mergeColor.line}
-          emissiveIntensity={0.5}
-        />
-        <Edges threshold={15} scale={1.001}>
-          <lineBasicMaterial color={mergeColor.particle} transparent opacity={0.8} />
-        </Edges>
-      </mesh>
-    </group>
-  );
-  */
-};
-
-
 const GlassBox: React.FC<GlassBoxProps> = ({ item, position, size, level, mergeLevel, isHovered, isDimmed, mergeColorIndex, theme, onClick, onPointerOver, onPointerOut }) => {
   const meshRef = useRef<THREE.Mesh>(null);
   const edgesRef = useRef<THREE.LineSegments>(null);
@@ -1269,85 +1192,7 @@ const MergeFlowLines: React.FC<MergeFlowLinesProps> = ({ items, layout, highligh
   );
 };
 
-// Cyberpunk style breadcrumb in 3D space - like on a wall
-interface SceneBreadcrumbProps {
-  level: HierarchyLevel;
-  path: string[];
-  onPathClick?: (index: number) => void;
-}
-
-// @ts-expect-error - Kept for future use
-// eslint-disable-next-line @typescript-eslint/no-unused-vars
-const SceneBreadcrumb: React.FC<SceneBreadcrumbProps> = ({ level, path, onPathClick: _onPathClick }) => {
-  const colors = LEVEL_COLORS[level];
-  
-  return (
-    <Html
-      position={[0, 5, -4]}
-      center
-      transform
-      scale={2}
-      occlude={false}
-      style={{ pointerEvents: 'auto' }}
-    >
-      <div style={{
-        fontFamily: "'Orbitron', 'Rajdhani', 'Share Tech Mono', monospace",
-        textTransform: 'uppercase',
-        letterSpacing: '3px',
-        display: 'flex',
-        alignItems: 'baseline',
-        whiteSpace: 'nowrap',
-      }}>
-        {path.map((item, i) => (
-          <span key={i} style={{ display: 'inline-flex', alignItems: 'baseline' }}>
-            {i > 0 && (
-              <span style={{
-                color: 'rgba(255,255,255,0.3)',
-                margin: '0 10px',
-                fontSize: '18px',
-              }}>
-                ›
-              </span>
-            )}
-            <span 
-              onClick={() => _onPathClick?.(i)}
-              style={{
-                color: i === path.length - 1 ? colors.glow : 'rgba(255,255,255,0.5)',
-                fontSize: i === path.length - 1 ? '28px' : '18px',
-                fontWeight: i === path.length - 1 ? 900 : 500,
-                textShadow: i === path.length - 1 
-                  ? `0 0 30px ${colors.glow}, 0 0 60px ${colors.main}, 0 0 90px ${colors.main}40`
-                  : '0 0 10px rgba(255,255,255,0.2)',
-                cursor: i < path.length - 1 ? 'pointer' : 'default',
-                transition: 'all 0.2s ease',
-                padding: '4px 8px',
-                borderRadius: '4px',
-              }}
-              onMouseEnter={(e) => {
-                if (i < path.length - 1) {
-                  e.currentTarget.style.color = colors.glow;
-                  e.currentTarget.style.textShadow = `0 0 20px ${colors.glow}, 0 0 40px ${colors.main}`;
-                  e.currentTarget.style.background = 'rgba(255,255,255,0.1)';
-                }
-              }}
-              onMouseLeave={(e) => {
-                if (i < path.length - 1) {
-                  e.currentTarget.style.color = 'rgba(255,255,255,0.5)';
-                  e.currentTarget.style.textShadow = '0 0 10px rgba(255,255,255,0.2)';
-                  e.currentTarget.style.background = 'transparent';
-                }
-              }}
-            >
-              {item}
-            </span>
-          </span>
-        ))}
-      </div>
-    </Html>
-  );
-};
-
-export const HierarchyVisualization: React.FC<HierarchyVisualizationProps> = ({ items, level, path = [], onItemClick, onItemHover, onPathClick: _onPathClick, highlightedMergeId, mergeColorMap: externalColorMap }) => {
+export const HierarchyVisualization: React.FC<HierarchyVisualizationProps> = ({ items, level, onItemClick, onItemHover, onPathClick: _onPathClick, highlightedMergeId, mergeColorMap: externalColorMap }) => {
   const [hoveredId, setHoveredId] = useState<string | null>(null);
   const { maxElements, performanceMode } = usePerformanceMode();
   const theme = useThemeDetection();
@@ -1517,11 +1362,6 @@ export const HierarchyVisualization: React.FC<HierarchyVisualizationProps> = ({ 
   // The parent component (DatabaseExplorer) manages the shared color assignments
   const mergeColorMap = externalColorMap || new Map<string, number>();
   
-  // Build display path (kept for future use with SceneBreadcrumb)
-  // @ts-expect-error - Kept for future use
-  // eslint-disable-next-line @typescript-eslint/no-unused-vars
-  const _displayPath = path.length > 0 ? path : [level.charAt(0).toUpperCase() + level.slice(1)];
-
   if (items.length === 0) {
     return (
       <group>

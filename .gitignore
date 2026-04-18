@@ -49,6 +49,7 @@ target/
 
 # Release artifacts
 release/
+*.zip
 
 # Temporary files
 *.tmp

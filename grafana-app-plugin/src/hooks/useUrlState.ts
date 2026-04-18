@@ -46,11 +46,7 @@ function serializeParam(value: unknown, def: UrlParamDef): string | null {
 }
 
 function getSearch(): string {
-  try {
-    return locationService.getLocation().search;
-  } catch {
-    return window.location.search;
-  }
+  return locationService.getLocation().search;
 }
 
 /**
@@ -63,20 +59,10 @@ export function useUrlState<S extends UrlSchema>(schema: S) {
   const [search, setSearch] = useState(getSearch);
 
   useEffect(() => {
-    try {
-      const unlisten = locationService.getHistory().listen((location: { search: string }) => {
-        setSearch(location.search);
-      });
-      return unlisten;
-    } catch {
-      const interval = setInterval(() => {
-        setSearch(prev => {
-          const current = window.location.search;
-          return current !== prev ? current : prev;
-        });
-      }, 300);
-      return () => clearInterval(interval);
-    }
+    const unlisten = locationService.getHistory().listen((location: { search: string }) => {
+      setSearch(location.search);
+    });
+    return unlisten;
   }, []);
 
   const state = useMemo(() => {
@@ -98,19 +84,7 @@ export function useUrlState<S extends UrlSchema>(schema: S) {
           : parseParam(params.get(key), def);
         partialUpdate[key] = serializeParam(value, def);
       }
-      try {
-        locationService.partial(partialUpdate, opts?.push ? false : true);
-      } catch {
-        const current = new URLSearchParams(getSearch());
-        for (const [k, v] of Object.entries(partialUpdate)) {
-          if (v !== null) current.set(k, v);
-          else current.delete(k);
-        }
-        const url = `${window.location.pathname}?${current.toString()}`;
-        if (opts?.push) window.history.pushState(null, '', url);
-        else window.history.replaceState(null, '', url);
-        setSearch(window.location.search);
-      }
+      locationService.partial(partialUpdate, opts?.push ? false : true);
     },
     [schema],
   );
@@ -224,27 +198,15 @@ function buildPartialUpdate(state: AnalyticsUrlState): Record<string, string | n
 /**
  * Syncs analytics state to Grafana's URL via locationService.
  * Reads state from query params on mount and subscribes to location changes.
- * Falls back to window.location if locationService is unavailable.
  */
 export function useAnalyticsUrlState() {
   const [search, setSearch] = useState(getSearch);
 
   useEffect(() => {
-    try {
-      const unlisten = locationService.getHistory().listen((location: { search: string }) => {
-        setSearch(location.search);
-      });
-      return unlisten;
-    } catch {
-      // locationService unavailable — poll window.location as fallback
-      const interval = setInterval(() => {
-        setSearch(prev => {
-          const current = window.location.search;
-          return current !== prev ? current : prev;
-        });
-      }, 300);
-      return () => clearInterval(interval);
-    }
+    const unlisten = locationService.getHistory().listen((location: { search: string }) => {
+      setSearch(location.search);
+    });
+    return unlisten;
   }, []);
 
   const state = useMemo(
@@ -256,20 +218,8 @@ export function useAnalyticsUrlState() {
     (partial: Partial<AnalyticsUrlState>, opts?: { push?: boolean }) => {
       const current = parseParams(getSearch());
       const merged = { ...current, ...partial };
-      try {
-        const partialUpdate = buildPartialUpdate(merged);
-        locationService.partial(partialUpdate, opts?.push ? false : true);
-      } catch {
-        // Fallback: use window.history directly
-        const qs = new URLSearchParams(buildParams(merged)).toString();
-        const url = qs ? `${window.location.pathname}?${qs}` : window.location.pathname;
-        if (opts?.push) {
-          window.history.pushState(null, '', url);
-        } else {
-          window.history.replaceState(null, '', url);
-        }
-        setSearch(window.location.search);
-      }
+      const partialUpdate = buildPartialUpdate(merged);
+      locationService.partial(partialUpdate, opts?.push ? false : true);
     },
     [],
   );
@@ -280,7 +230,8 @@ export function useAnalyticsUrlState() {
       const merged = { ...current, ...overrides };
       const params = buildParams(merged);
       const qs = new URLSearchParams(params).toString();
-      const base = window.location.href.split('?')[0];
+      const loc = window.location;
+      const base = `${loc.origin}${loc.pathname}`;
       const url = qs ? `${base}?${qs}` : base;
       try {
         await navigator.clipboard.writeText(url);

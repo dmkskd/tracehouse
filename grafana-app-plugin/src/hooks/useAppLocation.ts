@@ -47,11 +47,7 @@ export function useParams<T extends Record<string, string | undefined> = Record<
 }
 
 function getSearch(): string {
-  try {
-    return locationService.getLocation().search;
-  } catch {
-    return window.location.search;
-  }
+  return locationService.getLocation().search;
 }
 
 /**
@@ -63,20 +59,10 @@ export function useSearchParams(): [URLSearchParams, (params: URLSearchParams, o
   const [search, setSearch] = useState(getSearch);
 
   useEffect(() => {
-    try {
-      const unlisten = locationService.getHistory().listen((location: { search: string }) => {
-        setSearch(location.search);
-      });
-      return unlisten;
-    } catch {
-      const interval = setInterval(() => {
-        setSearch(prev => {
-          const current = window.location.search;
-          return current !== prev ? current : prev;
-        });
-      }, 300);
-      return () => clearInterval(interval);
-    }
+    const unlisten = locationService.getHistory().listen((location: { search: string }) => {
+      setSearch(location.search);
+    });
+    return unlisten;
   }, []);
 
   const params = useMemo(() => new URLSearchParams(search), [search]);
@@ -96,19 +82,8 @@ export function useSearchParams(): [URLSearchParams, (params: URLSearchParams, o
         query[key] = val;
       });
 
-      try {
-        const replace = opts?.replace !== false; // default to replace
-        locationService.partial(query, replace);
-      } catch {
-        const qs = newParams.toString();
-        const url = qs ? `${window.location.pathname}?${qs}` : window.location.pathname;
-        if (opts?.replace === false) {
-          window.history.pushState(null, '', url);
-        } else {
-          window.history.replaceState(null, '', url);
-        }
-        setSearch(window.location.search);
-      }
+      const replace = opts?.replace !== false; // default to replace
+      locationService.partial(query, replace);
     },
     [],
   );

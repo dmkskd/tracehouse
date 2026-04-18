@@ -1,99 +1,68 @@
 import { describe, it, expect, vi } from 'vitest';
-import { GrafanaAdapter } from '../grafana-adapter.js';
+import { GrafanaAdapter, type AdapterFrame, type AdapterQueryFn } from '../grafana-adapter.js';
 import { AdapterError } from '../types.js';
 
-function makeDsRef() {
-  return { uid: 'test-uid', type: 'grafana-clickhouse-datasource' };
-}
-
-function makeResponse(refId: string, fields: string[], values: unknown[][]) {
+function makeFrame(fields: Array<{ name: string; type?: string }>, columns: unknown[][]): AdapterFrame {
   return {
-    results: {
-      [refId]: {
-        frames: [{
-          schema: { fields: fields.map(name => ({ name })) },
-          data: { values },
-        }],
-      },
-    },
+    fields: fields.map((f, i) => ({ ...f, values: columns[i] ?? [] })),
   };
 }
 
-function createAdapter(postFn: (url: string, body: unknown) => Promise<unknown>) {
-  return new GrafanaAdapter(makeDsRef(), () => ({ post: postFn as never }));
+function createAdapter(queryFn: AdapterQueryFn) {
+  return new GrafanaAdapter(queryFn);
 }
 
 describe('GrafanaAdapter', { tags: ['connectivity'] }, () => {
-  it('can be constructed with a datasource ref and getBackendSrv', () => {
-    const adapter = new GrafanaAdapter(makeDsRef(), () => ({ post: vi.fn() as never }));
+  it('can be constructed with a query function', () => {
+    const adapter = createAdapter(vi.fn().mockResolvedValue([]));
     expect(adapter).toBeDefined();
   });
 
   it('implements executeQuery method', () => {
-    const adapter = new GrafanaAdapter(makeDsRef(), () => ({ post: vi.fn() as never }));
+    const adapter = createAdapter(vi.fn().mockResolvedValue([]));
     expect(typeof adapter.executeQuery).toBe('function');
   });
 
   describe('executeQuery', () => {
-    it('sends correct request shape to /api/ds/query', async () => {
-      const postFn = vi.fn().mockResolvedValue(makeResponse('q', [], []));
-      const adapter = createAdapter(postFn);
+    it('invokes the query function with sql and refId', async () => {
+      const queryFn = vi.fn<AdapterQueryFn>().mockResolvedValue([]);
+      const adapter = createAdapter(queryFn);
 
       await adapter.executeQuery('SELECT 1');
 
-      expect(postFn).toHaveBeenCalledWith('/api/ds/query', {
-        queries: [{
-          refId: 'q',
-          rawSql: 'SELECT 1',
-          datasource: { uid: 'test-uid', type: 'grafana-clickhouse-datasource' },
-          format: 1,
-          maxDataPoints: 1000,
-          intervalMs: 1000,
-        }],
-        from: 'now',
-        to: 'now',
-      });
+      expect(queryFn).toHaveBeenCalledWith('SELECT 1', 'q');
     });
 
     it('returns empty array for empty frames', async () => {
-      const postFn = vi.fn().mockResolvedValue(makeResponse('q', [], []));
-      const adapter = createAdapter(postFn);
+      const queryFn = vi.fn<AdapterQueryFn>().mockResolvedValue([]);
+      const adapter = createAdapter(queryFn);
 
       const result = await adapter.executeQuery('SELECT 1');
       expect(result).toEqual([]);
     });
 
-    it('returns empty array when no frames exist', async () => {
-      const postFn = vi.fn().mockResolvedValue({
-        results: { q: { frames: [] } },
-      });
-      const adapter = createAdapter(postFn);
-
-      const result = await adapter.executeQuery('SELECT 1');
-      expect(result).toEqual([]);
-    });
-
-    it('returns empty array when result is missing', async () => {
-      const postFn = vi.fn().mockResolvedValue({ results: {} });
-      const adapter = createAdapter(postFn);
+    it('returns empty array when frame has no fields', async () => {
+      const queryFn = vi.fn<AdapterQueryFn>().mockResolvedValue([{ fields: [] }]);
+      const adapter = createAdapter(queryFn);
 
       const result = await adapter.executeQuery('SELECT 1');
       expect(result).toEqual([]);
     });
 
     it('converts columnar frames to row objects', async () => {
-      const response = makeResponse('q',
-        ['name', 'rows', 'bytes_on_disk'],
+      const frame = makeFrame(
+        [{ name: 'name' }, { name: 'rows' }, { name: 'bytes_on_disk' }],
         [
           ['part1', 'part2'],
           [100, 200],
           [1024, 2048],
         ],
       );
-      const postFn = vi.fn().mockResolvedValue(response);
-      const adapter = createAdapter(postFn);
+      const adapter = createAdapter(vi.fn().mockResolvedValue([frame]));
 
-      const result = await adapter.executeQuery<{ name: string; rows: number; bytes_on_disk: number }>('SELECT name, rows, bytes_on_disk FROM system.parts');
+      const result = await adapter.executeQuery<{ name: string; rows: number; bytes_on_disk: number }>(
+        'SELECT name, rows, bytes_on_disk FROM system.parts',
+      );
 
       expect(result).toEqual([
         { name: 'part1', rows: 100, bytes_on_disk: 1024 },
@@ -102,21 +71,19 @@ describe('GrafanaAdapter', { tags: ['connectivity'] }, () => {
     });
 
     it('handles single-row response', async () => {
-      const response = makeResponse('q', ['version'], [['24.3.1']]);
-      const postFn = vi.fn().mockResolvedValue(response);
-      const adapter = createAdapter(postFn);
+      const frame = makeFrame([{ name: 'version' }], [['24.3.1']]);
+      const adapter = createAdapter(vi.fn().mockResolvedValue([frame]));
 
       const result = await adapter.executeQuery<{ version: string }>('SELECT version()');
       expect(result).toEqual([{ version: '24.3.1' }]);
     });
 
     it('handles null values in frame data', async () => {
-      const response = makeResponse('q',
-        ['name', 'value'],
+      const frame = makeFrame(
+        [{ name: 'name' }, { name: 'value' }],
         [['a', 'b'], [1, null]],
       );
-      const postFn = vi.fn().mockResolvedValue(response);
-      const adapter = createAdapter(postFn);
+      const adapter = createAdapter(vi.fn().mockResolvedValue([frame]));
 
       const result = await adapter.executeQuery('SELECT name, value');
       expect(result).toEqual([
@@ -125,19 +92,8 @@ describe('GrafanaAdapter', { tags: ['connectivity'] }, () => {
       ]);
     });
 
-    it('throws AdapterError when result contains an error string', async () => {
-      const postFn = vi.fn().mockResolvedValue({
-        results: {
-          q: {
-            frames: [{
-              schema: { fields: [{ name: 'x' }] },
-              data: { values: [[1]] },
-            }],
-            error: 'DB::Exception: Table not found',
-          },
-        },
-      });
-      const adapter = createAdapter(postFn);
+    it('wraps query errors as AdapterError', async () => {
+      const adapter = createAdapter(vi.fn().mockRejectedValue(new Error('DB::Exception: Table not found')));
 
       try {
         await adapter.executeQuery('SELECT * FROM bad_table');
@@ -153,7 +109,7 @@ describe('GrafanaAdapter', { tags: ['connectivity'] }, () => {
 
   describe('error categorization', () => {
     function categorize(message: string): string {
-      const adapter = createAdapter(() => { throw new Error('unused'); });
+      const adapter = createAdapter(vi.fn().mockResolvedValue([]));
       const wrapped = (adapter as unknown as Record<string, (e: Error) => AdapterError>)
         .wrapError(new Error(message));
       return wrapped.category;
@@ -208,7 +164,7 @@ describe('GrafanaAdapter', { tags: ['connectivity'] }, () => {
     });
 
     it('preserves original error as cause', () => {
-      const adapter = createAdapter(() => { throw new Error('unused'); });
+      const adapter = createAdapter(vi.fn().mockResolvedValue([]));
       const original = new Error('test');
       const wrapped = (adapter as unknown as Record<string, (e: Error) => AdapterError>)
         .wrapError(original);
@@ -216,7 +172,7 @@ describe('GrafanaAdapter', { tags: ['connectivity'] }, () => {
     });
 
     it('handles non-Error values', () => {
-      const adapter = createAdapter(() => { throw new Error('unused'); });
+      const adapter = createAdapter(vi.fn().mockResolvedValue([]));
       const wrapped = (adapter as unknown as Record<string, (e: unknown) => AdapterError>)
         .wrapError('string error');
       expect(wrapped.message).toBe('string error');
@@ -226,9 +182,8 @@ describe('GrafanaAdapter', { tags: ['connectivity'] }, () => {
   });
 
   describe('network error wrapping', () => {
-    it('wraps post() rejection as AdapterError', async () => {
-      const postFn = vi.fn().mockRejectedValue(new Error('Failed to fetch'));
-      const adapter = createAdapter(postFn);
+    it('wraps query function rejection as AdapterError', async () => {
+      const adapter = createAdapter(vi.fn().mockRejectedValue(new Error('Failed to fetch')));
 
       try {
         await adapter.executeQuery('SELECT 1');

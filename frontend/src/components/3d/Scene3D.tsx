@@ -182,9 +182,7 @@ const CameraAndControls: React.FC<{
     const newCamera = new THREE.PerspectiveCamera(50, size.width / size.height, 0.1, 1000);
     newCamera.position.set(...position);
     newCamera.updateProjectionMatrix();
-    
-    console.log('[Scene3D] Created camera with isPerspectiveCamera:', newCamera.isPerspectiveCamera);
-    
+
     // Set as the default camera
     set({ camera: newCamera });
   }, []); // Empty deps - only run once
@@ -251,8 +249,6 @@ const CanvasContent: React.FC<CanvasContentProps> = ({
   // Use theme-aware background color
   const backgroundColor = BACKGROUND_COLORS[theme];
   const backgroundColorHex = `#${backgroundColor.toString(16).padStart(6, '0')}`;
-  
-  console.log('[Scene3D] CanvasContent theme:', theme, 'backgroundColor:', backgroundColorHex);
 
   return (
     <>

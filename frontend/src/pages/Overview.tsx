@@ -83,8 +83,6 @@ export const Overview: React.FC = () => {
   // Restore map view when navigating back from Analytics obs-map link
   useEffect(() => {
     const restoreObsMap = (location.state as { restoreObsMap?: boolean } | null)?.restoreObsMap;
-    const savedTable = sessionStorage.getItem('obsmap:selectedTable');
-    console.log('[ObsMap restore]', { restoreObsMap, savedTable, viewMode, locationState: location.state });
     if (restoreObsMap) {
       setViewMode('map');
     }
