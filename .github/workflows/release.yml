@@ -89,6 +89,7 @@ jobs:
           mkdir -p release/dmkskd-tracehouse-app
           cp -r grafana-app-plugin/dist/* release/dmkskd-tracehouse-app/
           cd release && zip -r dmkskd-tracehouse-app.zip dmkskd-tracehouse-app
+          sha1sum dmkskd-tracehouse-app.zip > dmkskd-tracehouse-app.zip.sha1
 
       - name: Build source archive
         run: |
@@ -175,7 +176,9 @@ jobs:
       - uses: actions/upload-artifact@v4
         with:
           name: dmkskd-tracehouse-app
-          path: release/dmkskd-tracehouse-app.zip
+          path: |
+            release/dmkskd-tracehouse-app.zip
+            release/dmkskd-tracehouse-app.zip.sha1
 
       - uses: actions/upload-artifact@v4
         with:
@@ -260,5 +263,6 @@ jobs:
             artifacts/tracehouse-aarch64-unknown-linux-gnu/tracehouse-aarch64-unknown-linux-gnu.tar.gz \
             artifacts/tracehouse-aarch64-apple-darwin/tracehouse-aarch64-apple-darwin.tar.gz \
             artifacts/dmkskd-tracehouse-app/dmkskd-tracehouse-app.zip \
+            artifacts/dmkskd-tracehouse-app/dmkskd-tracehouse-app.zip.sha1 \
             artifacts/dmkskd-tracehouse-app-source/dmkskd-tracehouse-app-source.zip \
             --repo "${{ github.repository }}"
