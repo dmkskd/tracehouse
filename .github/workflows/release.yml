@@ -90,10 +90,97 @@ jobs:
           cp -r grafana-app-plugin/dist/* release/dmkskd-tracehouse-app/
           cd release && zip -r dmkskd-tracehouse-app.zip dmkskd-tracehouse-app
 
+      - name: Build source archive
+        run: |
+          PLUGIN_DIR="grafana-app-plugin"
+          DIST_DIR="$PLUGIN_DIR/dist"
+          STAGE_DIR=$(mktemp -d)
+          mkdir -p "$STAGE_DIR/tracehouse"
+
+          # Stage plugin source
+          rsync -a \
+            --exclude 'node_modules' --exclude '.DS_Store' \
+            --exclude '*.zip' --exclude '/dist' \
+            "$PLUGIN_DIR/" "$STAGE_DIR/tracehouse/"
+
+          # Stage monorepo packages and frontend inside src/ for validator
+          mkdir -p "$STAGE_DIR/tracehouse/src/packages" "$STAGE_DIR/tracehouse/src/frontend"
+          rsync -a \
+            --exclude 'node_modules' --exclude '.DS_Store' --exclude '/proxy' \
+            packages/ "$STAGE_DIR/tracehouse/src/packages/"
+          rsync -a \
+            --exclude 'node_modules' --exclude '.DS_Store' --exclude '/dist' \
+            frontend/ "$STAGE_DIR/tracehouse/src/frontend/"
+
+          # Prune unbundled source files
+          node -e '
+          const fs = require("fs"), path = require("path");
+          const distDir = process.argv[1], stageRoot = process.argv[2];
+          const refs = new Set();
+          for (const f of fs.readdirSync(distDir).filter(f => f.endsWith(".map"))) {
+            const m = JSON.parse(fs.readFileSync(path.join(distDir, f), "utf8"));
+            for (const s of (m.sources || [])) {
+              for (const prefix of ["frontend/src/", "packages/"]) {
+                const i = s.indexOf(prefix);
+                if (i !== -1) refs.add(s.substring(i).replace(/\?.*$/, ""));
+              }
+            }
+          }
+          function walk(dir, root, out) {
+            if (!fs.existsSync(dir)) return;
+            for (const e of fs.readdirSync(dir, { withFileTypes: true })) {
+              const fp = path.join(dir, e.name);
+              if (e.isDirectory()) walk(fp, root, out);
+              else out.push(path.relative(root, fp));
+            }
+          }
+          let pruned = 0;
+          for (const sub of ["src/frontend/src", "src/packages"]) {
+            const all = [];
+            walk(path.join(stageRoot, sub), path.join(stageRoot, "src"), all);
+            for (const rel of all) {
+              if (!/\.(ts|tsx|js|jsx|css|scss|less)$/.test(rel)) continue;
+              if (sub === "src/packages" && !/\/src\//.test(rel)) continue;
+              if (!refs.has(rel)) { fs.unlinkSync(path.join(stageRoot, "src", rel)); pruned++; }
+            }
+          }
+          console.log("Pruned " + pruned + " unbundled files");
+          ' "$DIST_DIR" "$STAGE_DIR/tracehouse"
+
+          # Fix cross-package re-exports (ui-shared files referenced as core)
+          node -e '
+          const fs = require("fs"), path = require("path");
+          const distDir = process.argv[1], srcDir = path.join(process.argv[2], "src");
+          for (const f of fs.readdirSync(distDir).filter(f => f.endsWith(".map"))) {
+            const m = JSON.parse(fs.readFileSync(path.join(distDir, f), "utf8"));
+            for (let i = 0; i < m.sources.length; i++) {
+              let s = m.sources[i].replace(/^webpack:\/\/\//, "").replace(/^webpack:\/\/[^\/]+\//, "");
+              if (s.startsWith("packages/core/src/")) {
+                const expected = path.join(srcDir, s);
+                if (!fs.existsSync(expected)) {
+                  const alt = s.replace("packages/core/src/", "packages/ui-shared/src/");
+                  if (fs.existsSync(alt)) {
+                    fs.mkdirSync(path.dirname(expected), { recursive: true });
+                    fs.copyFileSync(alt, expected);
+                  }
+                }
+              }
+            }
+          }
+          ' "$DIST_DIR" "$STAGE_DIR/tracehouse"
+
+          (cd "$STAGE_DIR" && zip -qr "$GITHUB_WORKSPACE/release/dmkskd-tracehouse-app-source.zip" tracehouse)
+          rm -rf "$STAGE_DIR"
+
       - uses: actions/upload-artifact@v4
         with:
           name: dmkskd-tracehouse-app
           path: release/dmkskd-tracehouse-app.zip
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: dmkskd-tracehouse-app-source
+          path: release/dmkskd-tracehouse-app-source.zip
 
   # ── Build Rust binaries for each platform ────────────────────
   binary:
@@ -173,4 +260,5 @@ jobs:
             artifacts/tracehouse-aarch64-unknown-linux-gnu/tracehouse-aarch64-unknown-linux-gnu.tar.gz \
             artifacts/tracehouse-aarch64-apple-darwin/tracehouse-aarch64-apple-darwin.tar.gz \
             artifacts/dmkskd-tracehouse-app/dmkskd-tracehouse-app.zip \
+            artifacts/dmkskd-tracehouse-app-source/dmkskd-tracehouse-app-source.zip \
             --repo "${{ github.repository }}"
