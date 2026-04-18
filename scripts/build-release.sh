@@ -62,7 +62,7 @@ echo "=== Building Grafana plugin ==="
 cd "$ROOT/grafana-app-plugin"
 npm install
 npm run build
-PLUGIN_ARCHIVE="tracehouse-grafana-plugin"
+PLUGIN_ARCHIVE="dmkskd-tracehouse-app"
 mkdir -p "$RELEASE_DIR/$PLUGIN_ARCHIVE"
 cp -r dist/* "$RELEASE_DIR/$PLUGIN_ARCHIVE/"
 cd "$RELEASE_DIR"

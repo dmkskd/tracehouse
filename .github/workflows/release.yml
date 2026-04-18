@@ -86,14 +86,14 @@ jobs:
 
       - name: Package plugin
         run: |
-          mkdir -p release/tracehouse-grafana-plugin
-          cp -r grafana-app-plugin/dist/* release/tracehouse-grafana-plugin/
-          cd release && zip -r tracehouse-grafana-plugin.zip tracehouse-grafana-plugin
+          mkdir -p release/dmkskd-tracehouse-app
+          cp -r grafana-app-plugin/dist/* release/dmkskd-tracehouse-app/
+          cd release && zip -r dmkskd-tracehouse-app.zip dmkskd-tracehouse-app
 
       - uses: actions/upload-artifact@v4
         with:
-          name: tracehouse-grafana-plugin
-          path: release/tracehouse-grafana-plugin.zip
+          name: dmkskd-tracehouse-app
+          path: release/dmkskd-tracehouse-app.zip
 
   # ── Build Rust binaries for each platform ────────────────────
   binary:
@@ -172,5 +172,5 @@ jobs:
             artifacts/tracehouse-x86_64-unknown-linux-gnu/tracehouse-x86_64-unknown-linux-gnu.tar.gz \
             artifacts/tracehouse-aarch64-unknown-linux-gnu/tracehouse-aarch64-unknown-linux-gnu.tar.gz \
             artifacts/tracehouse-aarch64-apple-darwin/tracehouse-aarch64-apple-darwin.tar.gz \
-            artifacts/tracehouse-grafana-plugin/tracehouse-grafana-plugin.zip \
+            artifacts/dmkskd-tracehouse-app/dmkskd-tracehouse-app.zip \
             --repo "${{ github.repository }}"
