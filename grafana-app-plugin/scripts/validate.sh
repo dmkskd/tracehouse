@@ -126,10 +126,6 @@ for (const f of fs.readdirSync(distDir).filter(f => f.endsWith(".map"))) {
 }
 ' "$PLUGIN_DIR/dist" "$STAGE_DIR/tracehouse" "$REPO_ROOT"
 
-# Strip CSS imports that the validator flags (both bare and named)
-echo "==> Stripping CSS imports from staged source"
-find "$STAGE_DIR/tracehouse" \( -name '*.tsx' -o -name '*.ts' \) -print0 | xargs -0 sed -i '' -e '/^import .*\.css/d' -e '/^void styles;/d' -e '/void import(.*\.css/d'
-
 (cd "$STAGE_DIR" && zip -qr "$SOURCE_ZIP" tracehouse)
 
 ANALYZER_ARGS=()

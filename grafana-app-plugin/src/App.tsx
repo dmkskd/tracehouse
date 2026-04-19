@@ -11,8 +11,8 @@ import { useUserPreferenceStore } from '@frontend/stores/userPreferenceStore';
 import { useRefreshSettingsStore, useGlobalLastUpdatedStore } from '@frontend/stores/refreshSettingsStore';
 import { useRefreshConfig, type RefreshRateOption } from '@tracehouse/ui-shared';
 
-import styles from './styles.css';
-void styles;
+// eslint-disable-next-line @typescript-eslint/no-require-imports
+require('./styles.css');
 
 /**
  * Bridge Grafana's theme to the frontend's data-theme attribute.

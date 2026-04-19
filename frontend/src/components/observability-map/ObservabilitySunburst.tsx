@@ -9,7 +9,8 @@ import React, { useRef, useEffect, useState, useMemo } from 'react';
 import * as d3 from 'd3';
 import { OBSERVABILITY_DATA, buildHierarchy } from './data';
 import type { SunburstNodeData, ObservabilityData } from './data';
-void import('./ObservabilitySunburst.css');
+// eslint-disable-next-line @typescript-eslint/no-require-imports
+require('./ObservabilitySunburst.css');
 
 // ─── Types ───────────────────────────────────────────────────
 
