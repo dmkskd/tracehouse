@@ -14,8 +14,10 @@ import TerserPlugin from 'terser-webpack-plugin';
 import webpack, { type Configuration } from 'webpack';
 import LiveReloadPlugin from 'webpack-livereload-plugin';
 import VirtualModulesPlugin from 'webpack-virtual-modules';
+import { mergeWithRules } from 'webpack-merge';
 
 import { BuildModeWebpackPlugin } from './BuildModeWebpackPlugin.ts';
+import { FixSourceMapsPlugin } from './FixSourceMapsPlugin.ts';
 import { DIST_DIR, SOURCE_DIR } from '../bundler/constants.ts';
 import { getCPConfigVersion, getEntries, getPackageJson, getPluginJson, hasReadme, isWSL } from '../bundler/utils.ts';
 import { externals } from '../bundler/externals.ts';
@@ -41,6 +43,8 @@ export type Env = {
   [key: string]: true | string | Env;
 };
 
+const repoRoot = path.resolve(process.cwd(), '..');
+
 const config = async (env: Env): Promise<Configuration> => {
   const baseConfig: Configuration = {
     cache: {
@@ -52,7 +56,7 @@ const config = async (env: Env): Promise<Configuration> => {
 
     context: path.join(process.cwd(), SOURCE_DIR),
 
-    devtool: env.production ? 'source-map' : 'eval-source-map',
+    devtool: false,
 
     entry: await getEntries(),
 
@@ -102,7 +106,18 @@ const config = async (env: Env): Promise<Configuration> => {
         },
         {
           test: /\.css$/,
-          use: ['style-loader', 'css-loader'],
+          use: [
+            'style-loader',
+            'css-loader',
+            {
+              loader: 'postcss-loader',
+              options: {
+                postcssOptions: {
+                  config: path.resolve(process.cwd(), 'postcss.config.cjs'),
+                },
+              },
+            },
+          ],
         },
         {
           test: /\.s[ac]ss$/,
@@ -153,7 +168,6 @@ const config = async (env: Env): Promise<Configuration> => {
       path: path.resolve(process.cwd(), DIST_DIR),
       publicPath: `public/plugins/${pluginJson.id}/`,
       uniqueName: pluginJson.id,
-      // crossOriginLoading: 'anonymous', // only needed with SubresourceIntegrityPlugin
     },
 
     plugins: [
@@ -188,6 +202,32 @@ const config = async (env: Env): Promise<Configuration> => {
           ],
         },
       ]),
+      new webpack.SourceMapDevToolPlugin({
+        filename: '[file].map',
+        noSources: false,
+        moduleFilenameTemplate: (info: { resourcePath: string; allLoaders?: string; namespace: string }) => {
+          let p = info.resourcePath;
+          if (p.startsWith('./')) p = p.substring('./'.length);
+          if (p.startsWith('grafana-app-plugin/src/')) p = p.substring('grafana-app-plugin/src/'.length);
+          if (p.startsWith('../../frontend/')) p = p.substring('../../'.length);
+          else if (p.startsWith('../../node_modules/')) p = p.substring('../../'.length);
+          else if (p.startsWith('../../src/')) p = 'packages/core/' + p.substring('../../'.length);
+          else if (p.startsWith('../../')) p = p.substring('../../'.length);
+          const loaders = info.allLoaders ? `?${info.allLoaders}` : '';
+          return `webpack://${info.namespace}/${p}${loaders}`;
+        },
+      }),
+      new webpack.NormalModuleReplacementPlugin(
+        /^node:/,
+        (resource) => {
+          resource.request = resource.request.replace(/^node:/, '');
+        }
+      ),
+      new webpack.IgnorePlugin({ resourceRegExp: /jfrview_bg\.wasm$/ }),
+      new webpack.DefinePlugin({
+        __BUILD_TIME__: JSON.stringify(new Date().toISOString()),
+      }),
+      new FixSourceMapsPlugin(repoRoot),
       ...(env.development ? [
         new LiveReloadPlugin(),
         new ForkTsCheckerWebpackPlugin({
@@ -206,7 +246,38 @@ const config = async (env: Env): Promise<Configuration> => {
     ],
 
     resolve: {
-      extensions: ['.js', '.jsx', '.ts', '.tsx'],
+      extensions: ['.ts', '.tsx', '.js', '.jsx', '.css'],
+      alias: {
+        '@tracehouse/core': path.resolve(repoRoot, 'packages/core/dist'),
+        '@tracehouse/ui-shared': path.resolve(repoRoot, 'packages/ui-shared/dist'),
+        '@frontend': path.resolve(repoRoot, 'frontend/src'),
+        [path.resolve(repoRoot, 'frontend/src/stores/connectionStore')]:
+          path.resolve(process.cwd(), 'src/stores/connectionStore'),
+        [path.resolve(repoRoot, 'frontend/src/providers/ClickHouseProvider')]:
+          path.resolve(process.cwd(), 'src/ServiceProvider'),
+        [path.resolve(repoRoot, 'frontend/src/hooks/useAppLocation')]:
+          path.resolve(process.cwd(), 'src/hooks/useAppLocation.ts'),
+        [path.resolve(repoRoot, 'frontend/src/hooks/useUrlState')]:
+          path.resolve(process.cwd(), 'src/hooks/useUrlState.ts'),
+        [path.resolve(repoRoot, 'frontend/src/utils/urlParams')]:
+          path.resolve(process.cwd(), 'src/utils/urlParams.ts'),
+        'react-router-dom': path.resolve(process.cwd(), 'src/stubs/react-router-dom.tsx'),
+      },
+      fallback: {
+        stream: false,
+        zlib: false,
+        crypto: false,
+        http: false,
+        https: false,
+        os: false,
+        buffer: false,
+        url: false,
+        util: false,
+        path: false,
+        fs: false,
+        net: false,
+        tls: false,
+      },
       modules: [path.resolve(process.cwd(), 'src'), 'node_modules'],
       unsafeCache: true,
     },
