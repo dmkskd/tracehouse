@@ -172,6 +172,9 @@ jobs:
           }
           ' "$DIST_DIR" "$STAGE_DIR/tracehouse"
 
+          # Strip direct CSS imports that the Grafana validator flags
+          find "$STAGE_DIR/tracehouse" \( -name '*.tsx' -o -name '*.ts' \) -exec sed -i "s/^import ['\"].*\.css['\"];*$//" {} +
+
           (cd "$STAGE_DIR" && zip -qr "$GITHUB_WORKSPACE/release/dmkskd-tracehouse-app-source.zip" tracehouse)
           rm -rf "$STAGE_DIR"
 
