@@ -9,6 +9,112 @@ import { SqlHighlight } from '../common/SqlHighlight';
 import type { SunburstNodeData, DiagnosticQuery, ObservabilityData, ColumnCommentMap } from './data';
 import { OBSERVABILITY_DATA } from './data';
 
+// ─── Inline styles (converted from ObservabilitySunburst.css) ─
+
+const sidebarBase: React.CSSProperties = {
+  width: 440,
+  background: 'rgba(10, 10, 26, 0.55)',
+  backdropFilter: 'blur(16px)',
+  WebkitBackdropFilter: 'blur(16px)',
+  borderLeft: '1px solid rgba(255, 255, 255, 0.08)',
+  boxShadow: '-6px 0 24px rgba(0, 0, 0, 0.25)',
+  overflowY: 'auto',
+  padding: 20,
+  flexShrink: 0,
+  height: '100%',
+  color: 'var(--text-primary)',
+  position: 'relative',
+  zIndex: 1,
+  transition: 'width 0.25s ease',
+};
+
+const sidebarStyle = (expanded: boolean | undefined): React.CSSProperties => ({
+  ...sidebarBase,
+  ...(expanded ? { width: 880 } : {}),
+});
+
+const DS = {
+  expandBtn: {
+    background: 'none',
+    border: '1px solid var(--border-secondary)',
+    borderRadius: 3,
+    color: 'var(--text-muted)',
+    fontSize: 10,
+    width: 20,
+    height: 20,
+    display: 'flex',
+    alignItems: 'center',
+    justifyContent: 'center',
+    cursor: 'pointer',
+    flexShrink: 0,
+  } as React.CSSProperties,
+  header: {
+    fontFamily: "'JetBrains Mono', monospace",
+    fontSize: 11,
+    color: 'var(--text-secondary)',
+    marginBottom: 14,
+    textTransform: 'uppercase',
+    letterSpacing: 2,
+    fontWeight: 600,
+  } as React.CSSProperties,
+  breadcrumb: {
+    fontFamily: "'JetBrains Mono', monospace",
+    fontSize: 11,
+    color: 'var(--text-muted)',
+    marginBottom: 14,
+    paddingBottom: 10,
+    borderBottom: '1px solid var(--border-secondary)',
+  } as React.CSSProperties,
+  tableName: {
+    fontFamily: "'JetBrains Mono', monospace",
+    fontSize: 16,
+    fontWeight: 600,
+    color: 'var(--text-primary)',
+    marginBottom: 5,
+  } as React.CSSProperties,
+  docsLink: {
+    fontSize: 14,
+    color: 'var(--text-muted)',
+    textDecoration: 'none',
+    opacity: 0.5,
+    flexShrink: 0,
+  } as React.CSSProperties,
+  desc: {
+    fontSize: 13,
+    color: 'var(--text-secondary)',
+    lineHeight: 1.5,
+    marginBottom: 8,
+  } as React.CSSProperties,
+  sectionTitle: {
+    fontFamily: "'JetBrains Mono', monospace",
+    fontSize: 9,
+    color: 'var(--text-muted)',
+    marginBottom: 8,
+    textTransform: 'uppercase',
+    letterSpacing: 1.5,
+    fontWeight: 600,
+  } as React.CSSProperties,
+  colsList: {
+    display: 'flex',
+    flexWrap: 'wrap',
+    gap: 4,
+  } as React.CSSProperties,
+  colTag: {
+    fontFamily: "'JetBrains Mono', monospace",
+    fontSize: 10.5,
+    background: 'rgba(255, 255, 255, 0.06)',
+    color: 'var(--text-secondary)',
+    padding: '3px 10px',
+    borderRadius: 4,
+    border: 'none',
+  } as React.CSSProperties,
+  colTagWithTitle: {
+    cursor: 'help',
+    textDecoration: 'underline dotted var(--border-secondary)',
+    textUnderlineOffset: '3px',
+  } as React.CSSProperties,
+};
+
 // ─── Types ───────────────────────────────────────────────────
 
 export interface QueryResult {
@@ -105,29 +211,29 @@ export const DetailSidebar: React.FC<DetailSidebarProps> = ({
     const cat = sourceData.children.find(c => c.name === selectedNode.name);
     if (cat) {
       return (
-        <div className={`obs-detail-sidebar${expanded ? ' obs-detail-expanded' : ''}`}>
+        <div style={sidebarStyle(expanded)}>
           <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 12 }}>
             {onToggleExpand && (
-              <button onClick={onToggleExpand} className="obs-detail-expand-btn" title={expanded ? 'Collapse panel' : 'Expand panel'}>
+              <button onClick={onToggleExpand} style={DS.expandBtn} title={expanded ? 'Collapse panel' : 'Expand panel'}>
                 {expanded ? '→' : '←'}
               </button>
             )}
-            <h2 className="obs-detail-header" style={{ marginBottom: 0 }}>Details</h2>
+            <h2 style={{ ...DS.header, marginBottom: 0 }}>Details</h2>
           </div>
-          <div className="obs-detail-breadcrumb">
+          <div style={DS.breadcrumb}>
             <span style={{ color: 'var(--text-secondary)' }}>{cat.name}</span>
           </div>
           <div style={{ marginBottom: 16 }}>
-            <div className="obs-detail-table-name">{cat.name}</div>
-            <div className="obs-detail-desc">
+            <div style={DS.tableName}>{cat.name}</div>
+            <div style={DS.desc}>
               {cat.children.length} system tables in this category. Click a segment to explore.
             </div>
           </div>
           <div>
-            <h3 className="obs-detail-section-title">Tables</h3>
-            <div className="obs-detail-cols-list">
+            <h3 style={DS.sectionTitle}>Tables</h3>
+            <div style={DS.colsList}>
               {cat.children.map(t => (
-                <span key={t.name} className="obs-detail-col-tag">{t.name}</span>
+                <span key={t.name} style={DS.colTag}>{t.name}</span>
               ))}
             </div>
           </div>
@@ -138,14 +244,14 @@ export const DetailSidebar: React.FC<DetailSidebarProps> = ({
 
   if (!tableInfo) {
     return (
-      <div className={`obs-detail-sidebar${expanded ? ' obs-detail-expanded' : ''}`}>
+      <div style={sidebarStyle(expanded)}>
         <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 12 }}>
           {onToggleExpand && (
-            <button onClick={onToggleExpand} className="obs-detail-expand-btn" title={expanded ? 'Collapse panel' : 'Expand panel'}>
+            <button onClick={onToggleExpand} style={DS.expandBtn} title={expanded ? 'Collapse panel' : 'Expand panel'}>
               {expanded ? '→' : '←'}
             </button>
           )}
-          <h2 className="obs-detail-header" style={{ marginBottom: 0 }}>Details</h2>
+          <h2 style={{ ...DS.header, marginBottom: 0 }}>Details</h2>
         </div>
         <p style={{ color: 'var(--text-muted)', fontSize: 13 }}>
           Hover or click a segment to see system table details, key columns, and example diagnostic queries.
@@ -157,18 +263,18 @@ export const DetailSidebar: React.FC<DetailSidebarProps> = ({
   const { category, table } = tableInfo;
 
   return (
-    <div className={`obs-detail-sidebar${expanded ? ' obs-detail-expanded' : ''}`}>
+    <div style={sidebarStyle(expanded)}>
       <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 12 }}>
         {onToggleExpand && (
-          <button onClick={onToggleExpand} className="obs-detail-expand-btn" title={expanded ? 'Collapse panel' : 'Expand panel'}>
+          <button onClick={onToggleExpand} style={DS.expandBtn} title={expanded ? 'Collapse panel' : 'Expand panel'}>
             {expanded ? '→' : '←'}
           </button>
         )}
-        <h2 className="obs-detail-header" style={{ marginBottom: 0 }}>Details</h2>
+        <h2 style={{ ...DS.header, marginBottom: 0 }}>Details</h2>
       </div>
 
       {/* Breadcrumb */}
-      <div className="obs-detail-breadcrumb">
+      <div style={DS.breadcrumb}>
         <span style={{ color: 'var(--text-secondary)' }}>{category}</span>
         <span style={{ color: 'var(--text-muted)' }}> → </span>
         {table.name}
@@ -177,19 +283,19 @@ export const DetailSidebar: React.FC<DetailSidebarProps> = ({
       {/* Table info */}
       <div style={{ marginBottom: 16 }}>
         <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
-          <div className="obs-detail-table-name" style={{ marginBottom: 0 }}>{table.name}</div>
+          <div style={{ ...DS.tableName, marginBottom: 0 }}>{table.name}</div>
           {getDocsUrl(table.name) && (
             <a
               href={getDocsUrl(table.name)!}
               target="_blank"
               rel="noopener noreferrer"
-              className="obs-detail-docs-link"
+              style={DS.docsLink}
             >
               ↗
             </a>
           )}
         </div>
-        <div className="obs-detail-desc">{table.desc}</div>
+        <div style={DS.desc}>{table.desc}</div>
         {/* Metadata badges */}
         <div style={{ display: 'flex', gap: 6, marginTop: 8, flexWrap: 'wrap', alignItems: 'center' }}>
           {table.available === false && (
@@ -212,7 +318,7 @@ export const DetailSidebar: React.FC<DetailSidebarProps> = ({
         <div style={{ marginBottom: 16 }}>
           {table.sortingKey && (
             <div style={{ marginBottom: table.primaryKey && table.primaryKey !== table.sortingKey ? 8 : 0 }}>
-              <h3 className="obs-detail-section-title">Sorting Key</h3>
+              <h3 style={DS.sectionTitle}>Sorting Key</h3>
               <code style={{ fontSize: 11, color: 'var(--text-secondary)', fontFamily: "'JetBrains Mono', monospace", wordBreak: 'break-all' }}>
                 {table.sortingKey}
               </code>
@@ -220,7 +326,7 @@ export const DetailSidebar: React.FC<DetailSidebarProps> = ({
           )}
           {table.primaryKey && table.primaryKey !== table.sortingKey && (
             <div>
-              <h3 className="obs-detail-section-title">Primary Key</h3>
+              <h3 style={DS.sectionTitle}>Primary Key</h3>
               <code style={{ fontSize: 11, color: 'var(--text-secondary)', fontFamily: "'JetBrains Mono', monospace", wordBreak: 'break-all' }}>
                 {table.primaryKey}
               </code>
@@ -232,16 +338,19 @@ export const DetailSidebar: React.FC<DetailSidebarProps> = ({
       {/* Key columns */}
       {table.cols.length > 0 && (
         <div style={{ marginBottom: 16 }}>
-          <h3 className="obs-detail-section-title">Key Columns</h3>
-          <div className="obs-detail-cols-list">
+          <h3 style={DS.sectionTitle}>Key Columns</h3>
+          <div style={DS.colsList}>
             {table.cols.map(c => {
               const comment = columnComments?.get(`${table.name}.${c}`);
               return (
                 <span
                   key={c}
-                  className="obs-detail-col-tag"
                   title={comment || undefined}
-                  style={selectedColumn === c ? { color: 'var(--text-primary)', fontWeight: 700 } : undefined}
+                  style={{
+                    ...DS.colTag,
+                    ...(comment ? DS.colTagWithTitle : {}),
+                    ...(selectedColumn === c ? { color: 'var(--text-primary)', fontWeight: 700 } : {}),
+                  }}
                 >
                   {c}
                 </span>
@@ -254,16 +363,16 @@ export const DetailSidebar: React.FC<DetailSidebarProps> = ({
       {/* Selected column highlight */}
       {selectedColumn && (
         <div style={{ marginBottom: 16 }}>
-          <h3 className="obs-detail-section-title">Selected</h3>
-          <div className="obs-detail-table-name" style={{ fontSize: 13, color: 'var(--text-primary)' }}>{selectedColumn}</div>
-          <div className="obs-detail-desc">{columnComments?.get(`${table.name}.${selectedColumn}`) || selectedNode?.meta?.desc || ''}</div>
+          <h3 style={DS.sectionTitle}>Selected</h3>
+          <div style={{ ...DS.tableName, fontSize: 13, color: 'var(--text-primary)' }}>{selectedColumn}</div>
+          <div style={DS.desc}>{columnComments?.get(`${table.name}.${selectedColumn}`) || selectedNode?.meta?.desc || ''}</div>
         </div>
       )}
 
       {/* Diagnostic queries */}
       {table.queries.length > 0 && (
         <div style={{ marginBottom: 16 }}>
-          <h3 className="obs-detail-section-title">Diagnostic Queries</h3>
+          <h3 style={DS.sectionTitle}>Diagnostic Queries</h3>
           {table.queries.map((q, i) => {
             const isResultForThis = queryResult && runQueryIndex === i;
             return (

@@ -478,6 +478,11 @@ grafana-plugin-dev: install grafana-plugin-install
 grafana-plugin-install:
     cd grafana-app-plugin && npm install
 
+# Run Grafana plugin validator (requires Docker). Pass analyzer name to run a single check.
+[group('grafana-app')]
+grafana-plugin-validate *analyzer="":
+    ./grafana-app-plugin/scripts/validate.sh {{analyzer}}
+
 # ─────────────────────────────────────────────────────────────────
 # SINGLE FILE BUILD
 # ─────────────────────────────────────────────────────────────────
@@ -616,6 +621,17 @@ version-check:
 # ─────────────────────────────────────────────────────────────────
 # SETUP
 # ─────────────────────────────────────────────────────────────────
+
+# Remove all generated files (node_modules, dist, build output, logs, test reports)
+[group('setup')]
+clean:
+    rm -rf node_modules frontend/node_modules grafana-app-plugin/node_modules
+    rm -rf frontend/dist packages/core/dist packages/ui-shared/dist packages/proxy/dist grafana-app-plugin/dist
+    rm -rf infra/binary/target
+    rm -rf release
+    rm -rf logs
+    rm -rf frontend/test-reports packages/core/test-reports
+    rm -rf packages/e2e/test-results packages/e2e/playwright-report
 
 # Install dependencies
 [group('setup')]

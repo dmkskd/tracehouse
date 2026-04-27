@@ -18,23 +18,15 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
-
       - uses: actions/setup-node@v4
         with:
           node-version: 22
+      - uses: extractions/setup-just@v2
 
-      - name: Install dependencies
-        run: |
-          rm -f package-lock.json
-          npm install
-          npm run build --workspace=packages/core
-          npm run build --workspace=packages/ui-shared
-
-      - name: Run frontend tests
-        run: cd frontend && npm test
-
-      - name: Run core tests
-        run: cd packages/core && npx vitest run
+      - run: rm -f package-lock.json
+      - run: just install
+      - run: just test-frontend
+      - run: just test-core
 
   # ── Build the single-file HTML (platform-independent) ────────
   html:
@@ -42,20 +34,14 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
-
       - uses: actions/setup-node@v4
         with:
           node-version: 22
+      - uses: extractions/setup-just@v2
 
-      - name: Install dependencies
-        run: |
-          rm -f package-lock.json
-          npm install
-          npm run build --workspace=packages/core
-          npm run build --workspace=packages/ui-shared
-
-      - name: Build single-file HTML
-        run: cd frontend && npm run build:single
+      - run: rm -f package-lock.json
+      - run: just install
+      - run: just build-single
 
       - uses: actions/upload-artifact@v4
         with:
@@ -70,21 +56,13 @@ jobs:
       - uses: actions/checkout@v4
         with:
           lfs: true
-
       - uses: actions/setup-node@v4
         with:
           node-version: 22
+      - uses: extractions/setup-just@v2
 
-      - name: Install dependencies
-        run: |
-          rm -f package-lock.json
-          npm install
-          npm run build --workspace=packages/core
-          npm run build --workspace=packages/ui-shared
-
-      - name: Build Grafana plugin
-        run: |
-          cd grafana-app-plugin && npm install && npm run build
+      - run: rm -f package-lock.json
+      - run: just grafana-plugin-build
 
       - name: Package plugin
         run: |
@@ -110,9 +88,13 @@ jobs:
           mkdir -p "$STAGE_DIR/tracehouse/src/packages" "$STAGE_DIR/tracehouse/src/frontend"
           rsync -a \
             --exclude 'node_modules' --exclude '.DS_Store' --exclude '/proxy' \
+            --exclude 'package.json' --exclude 'package-lock.json' \
             packages/ "$STAGE_DIR/tracehouse/src/packages/"
           rsync -a \
             --exclude 'node_modules' --exclude '.DS_Store' --exclude '/dist' \
+            --exclude 'package.json' --exclude 'package-lock.json' \
+            --exclude 'tsconfig*.json' --exclude 'vite.config*' --exclude 'vitest.config*' \
+            --exclude 'index.html' --exclude '.eslintrc*' \
             frontend/ "$STAGE_DIR/tracehouse/src/frontend/"
 
           # Prune unbundled source files
@@ -206,11 +188,10 @@ jobs:
     runs-on: ${{ matrix.os }}
     steps:
       - uses: actions/checkout@v4
-
       - uses: actions/setup-node@v4
         with:
           node-version: 22
-
+      - uses: extractions/setup-just@v2
       - uses: dtolnay/rust-toolchain@stable
         with:
           targets: ${{ matrix.target }}
@@ -223,14 +204,10 @@ jobs:
           echo '[target.aarch64-unknown-linux-gnu]' >> ~/.cargo/config.toml
           echo 'linker = "aarch64-linux-gnu-gcc"' >> ~/.cargo/config.toml
 
-      - name: Install dependencies & build frontend
-        run: |
-          rm -f package-lock.json
-          npm install
-          npm run build --workspace=packages/core
-          npm run build --workspace=packages/ui-shared
-          cd frontend && VITE_BUNDLED_PROXY=true npx vite build --config vite.singlefile.config.ts
-
+      - run: rm -f package-lock.json
+      - run: just install
+      - name: Build frontend for binary embedding
+        run: just dist-binary-frontend
       - name: Build binary
         run: cd infra/binary && cargo build --release --target ${{ matrix.target }}
 

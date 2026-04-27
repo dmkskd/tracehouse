@@ -558,7 +558,19 @@ export const Overview: React.FC = () => {
             placeholder="Search..."
             value={mapSearchQuery}
             onChange={e => setMapSearchQuery(e.target.value)}
-            className="obs-map-search-input"
+            style={{
+              width: 220,
+              flexShrink: 0,
+              padding: '8px 14px',
+              fontSize: 13,
+              fontFamily: "'DM Sans', system-ui, sans-serif",
+              background: 'var(--bg-secondary)',
+              border: '1px solid var(--border-secondary)',
+              borderRadius: 10,
+              color: 'var(--text-primary)',
+              outline: 'none',
+              boxShadow: 'var(--shadow-sm)',
+            }}
           />
         </div>
       )}

@@ -21,14 +21,15 @@ done
 
 ROOT="$(cd "$(dirname "$0")/.." && pwd)"
 RELEASE_DIR="$ROOT/release"
-rm -rf "$RELEASE_DIR"
+cd "$ROOT"
+
+echo "=== Cleaning previous build artifacts ==="
+just clean
 mkdir -p "$RELEASE_DIR"
 
+echo ""
 echo "=== Installing dependencies ==="
-cd "$ROOT"
-npm install
-npm run build --workspace=packages/core
-npm run build --workspace=packages/ui-shared
+just install
 
 # ── Tests ─────────────────────────────────────────────────────
 if [[ "$SKIP_TESTS" == "true" ]]; then
@@ -37,34 +38,32 @@ if [[ "$SKIP_TESTS" == "true" ]]; then
 else
   echo ""
   echo "=== Running tests ==="
-  cd "$ROOT/frontend" && npm test
-  cd "$ROOT/packages/core" && npx vitest run
-  cd "$ROOT/packages/core" && npx vitest run --config vitest.integration.config.ts
+  just test-frontend
+  just test-core
+  just test-core-integration
   echo "  ✓ Unit & integration tests passed"
 
   echo ""
   echo "=== Running e2e smoke tests ==="
-  cd "$ROOT/packages/e2e" && npx playwright test
+  just e2e
   echo "  ✓ E2E smoke tests passed"
 fi
 
 # ── Single-file HTML ────────────────────────────────────────────
 echo ""
 echo "=== Building single-file HTML ==="
-cd "$ROOT/frontend"
-npm run build:single
-cp dist/tracehouse.html "$RELEASE_DIR/tracehouse.html"
+just build-single
+cp frontend/dist/tracehouse.html "$RELEASE_DIR/tracehouse.html"
 echo "  → release/tracehouse.html"
 
 # ── Grafana plugin ────────────────────────────────────────────
 echo ""
 echo "=== Building Grafana plugin ==="
-cd "$ROOT/grafana-app-plugin"
-npm install
-npm run build
+just grafana-plugin-build
+just grafana-plugin-validate
 PLUGIN_ARCHIVE="dmkskd-tracehouse-app"
 mkdir -p "$RELEASE_DIR/$PLUGIN_ARCHIVE"
-cp -r dist/* "$RELEASE_DIR/$PLUGIN_ARCHIVE/"
+cp -r grafana-app-plugin/dist/* "$RELEASE_DIR/$PLUGIN_ARCHIVE/"
 cd "$RELEASE_DIR"
 zip -r "${PLUGIN_ARCHIVE}.zip" "$PLUGIN_ARCHIVE"
 rm -rf "$PLUGIN_ARCHIVE"
@@ -73,8 +72,8 @@ echo "  → release/${PLUGIN_ARCHIVE}.zip"
 # ── Standalone binary ───────────────────────────────────────────
 echo ""
 echo "=== Building frontend for binary embedding ==="
-cd "$ROOT/frontend"
-TH_BUNDLED_PROXY=true npx vite build --config vite.singlefile.config.ts
+cd "$ROOT"
+just dist-binary-frontend
 
 echo ""
 echo "=== Building Rust binary ==="

@@ -5,7 +5,7 @@
 #   docker build -f grafana-app-plugin/Dockerfile -t tracehouse-plugin-build .
 #   docker run --rm -v "$PWD/dist:/output" tracehouse-plugin-build
 
-FROM node:20-alpine AS builder
+FROM node:22-alpine AS builder
 
 WORKDIR /app
 
@@ -35,7 +35,7 @@ COPY frontend/src/ frontend/src/
 # Build in dependency order
 RUN npm run build --workspace=packages/core && \
     npm run build --workspace=packages/ui-shared && \
-    npm run build --workspace=grafana-app-plugin
+    NODE_OPTIONS="--import tsx" npm run build --workspace=grafana-app-plugin
 
 # Final stage: just the built plugin
 FROM alpine:3.20

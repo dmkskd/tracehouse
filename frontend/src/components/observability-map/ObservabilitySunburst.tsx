@@ -9,7 +9,97 @@ import React, { useRef, useEffect, useState, useMemo } from 'react';
 import * as d3 from 'd3';
 import { OBSERVABILITY_DATA, buildHierarchy } from './data';
 import type { SunburstNodeData, ObservabilityData } from './data';
-import './ObservabilitySunburst.css';
+
+// ─── Inline styles (converted from ObservabilitySunburst.css) ─
+
+const S = {
+  container: {
+    width: '100%',
+    height: '100%',
+    position: 'relative',
+    display: 'flex',
+    alignItems: 'center',
+    justifyContent: 'center',
+    overflow: 'visible',
+  } as React.CSSProperties,
+  tooltip: {
+    position: 'absolute',
+    display: 'flex',
+    flexDirection: 'column',
+    gap: 3,
+    padding: '10px 14px',
+    background: 'var(--bg-secondary)',
+    backdropFilter: 'blur(12px)',
+    border: '1px solid var(--border-secondary)',
+    borderRadius: 10,
+    pointerEvents: 'none',
+    zIndex: 100,
+    maxWidth: 300,
+    boxShadow: 'var(--shadow-lg)',
+  } as React.CSSProperties,
+  tooltipName: {
+    fontFamily: "'DM Sans', system-ui, sans-serif",
+    fontSize: 14,
+    fontWeight: 600,
+    color: 'var(--text-primary)',
+  } as React.CSSProperties,
+  tooltipType: {
+    fontFamily: "'JetBrains Mono', monospace",
+    fontSize: 10,
+    color: 'var(--text-muted)',
+    textTransform: 'uppercase',
+    letterSpacing: '0.05em',
+  } as React.CSSProperties,
+  tooltipDesc: {
+    fontFamily: "'DM Sans', system-ui, sans-serif",
+    fontSize: 12,
+    color: 'var(--text-secondary)',
+    marginTop: 2,
+    lineHeight: 1.4,
+  } as React.CSSProperties,
+  legend: {
+    position: 'absolute',
+    bottom: 56,
+    left: '50%',
+    transform: 'translateX(-50%)',
+    display: 'flex',
+    flexWrap: 'wrap',
+    gap: 14,
+    justifyContent: 'center',
+  } as React.CSSProperties,
+  legendItem: {
+    display: 'flex',
+    alignItems: 'center',
+    gap: 6,
+    fontSize: 11,
+    fontFamily: "'DM Sans', system-ui, sans-serif",
+    color: 'var(--text-secondary)',
+    cursor: 'pointer',
+  } as React.CSSProperties,
+  legendDot: {
+    width: 10,
+    height: 10,
+    borderRadius: 3,
+    flexShrink: 0,
+  } as React.CSSProperties,
+  instructions: {
+    position: 'absolute',
+    bottom: 16,
+    left: '50%',
+    transform: 'translateX(-50%)',
+    padding: '10px 20px',
+    background: 'var(--bg-secondary)',
+    backdropFilter: 'blur(10px)',
+    border: '1px solid var(--border-secondary)',
+    borderRadius: 20,
+    fontSize: 12,
+    fontFamily: "'DM Sans', system-ui, sans-serif",
+    color: 'var(--text-secondary)',
+    whiteSpace: 'nowrap',
+    pointerEvents: 'none',
+    boxShadow: 'var(--shadow-md)',
+  } as React.CSSProperties,
+};
 
 // ─── Types ───────────────────────────────────────────────────
 
@@ -583,35 +673,33 @@ export const ObservabilitySunburst: React.FC<ObservabilitySunburstProps> = ({
   return (
     <div
       ref={containerRef}
-      className="obs-sunburst-container"
-      style={{ cursor: isDragging ? 'grabbing' : 'grab' }}
+      style={{ ...S.container, cursor: isDragging ? 'grabbing' : 'grab' }}
     >
-      <svg ref={svgRef} />
+      <svg ref={svgRef} style={{ maxWidth: '100%', maxHeight: '100%' }} />
 
       {tooltip && (
         <div
-          className="obs-sunburst-tooltip"
-          style={{ left: tooltip.x + 12, top: tooltip.y - 12 }}
+          style={{ ...S.tooltip, left: tooltip.x + 12, top: tooltip.y - 12 }}
         >
-          <span className="obs-sunburst-tooltip-name">{tooltip.content.name}</span>
-          <span className="obs-sunburst-tooltip-type">{tooltip.content.type}</span>
+          <span style={S.tooltipName}>{tooltip.content.name}</span>
+          <span style={S.tooltipType}>{tooltip.content.type}</span>
           {tooltip.content.desc && (
-            <span className="obs-sunburst-tooltip-desc">{tooltip.content.desc}</span>
+            <span style={S.tooltipDesc}>{tooltip.content.desc}</span>
           )}
         </div>
       )}
 
       {/* Legend */}
-      <div className="obs-sunburst-legend">
+      <div style={S.legend}>
         {sourceData.children.map(cat => (
-          <div key={cat.name} className="obs-sunburst-legend-item">
-            <div className="obs-sunburst-legend-dot" style={{ background: cat.color }} />
+          <div key={cat.name} style={S.legendItem}>
+            <div style={{ ...S.legendDot, background: cat.color }} />
             {cat.name}
           </div>
         ))}
       </div>
 
-      <div className="obs-sunburst-instructions">
+      <div style={S.instructions}>
         {focusedNode
           ? 'ESC or click center to zoom out \u2022 Drag to spin \u2022 Scroll to zoom'
           : 'Click groups to zoom in \u2022 Drag to spin \u2022 Scroll to zoom \u2022 Click tables to explore'

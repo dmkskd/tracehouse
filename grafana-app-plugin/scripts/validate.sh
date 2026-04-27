@@ -49,11 +49,15 @@ rsync -a \
   --exclude 'node_modules' \
   --exclude '.DS_Store' \
   --exclude '/proxy' \
+  --exclude 'package.json' --exclude 'package-lock.json' \
   "$REPO_ROOT/packages/" "$STAGE_DIR/tracehouse/src/packages/"
 rsync -a \
   --exclude 'node_modules' \
   --exclude '.DS_Store' \
   --exclude '/dist' \
+  --exclude 'package.json' --exclude 'package-lock.json' \
+  --exclude 'tsconfig*.json' --exclude 'vite.config*' --exclude 'vitest.config*' \
+  --exclude 'index.html' --exclude '.eslintrc*' \
   "$REPO_ROOT/frontend/" "$STAGE_DIR/tracehouse/src/frontend/"
 
 # Prune frontend/src and packages/*/src to only files actually referenced by
