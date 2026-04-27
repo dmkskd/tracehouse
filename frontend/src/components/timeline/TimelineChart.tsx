@@ -436,12 +436,12 @@ export const TimelineChart: React.FC<{
             v0 = b0.mv[idx - nq]; v1 = b1.mv[idx - nq];
             bandType = 'merge'; bandIdx = idx - nq;
             const m = data.merges[idx - nq];
-            bandId = m ? `${m.table}:${m.part_name}` : '';
+            bandId = m ? `${m.table}:${m.part_name}:${m.hostname ?? ''}` : '';
           } else {
             v0 = b0.mutv[idx - nq - nm]; v1 = b1.mutv[idx - nq - nm];
             bandType = 'mutation'; bandIdx = idx - nq - nm;
             const mu = (data.mutations ?? [])[idx - nq - nm];
-            bandId = mu ? `${mu.table}:${mu.part_name}` : '';
+            bandId = mu ? `${mu.table}:${mu.part_name}:${mu.hostname ?? ''}` : '';
           }
           const interpVal = v0 + (v1 - v0) * frac;
           if (interpVal <= 0) continue;
