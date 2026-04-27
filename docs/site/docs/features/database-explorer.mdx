@@ -44,3 +44,9 @@ This makes it easy to see how ClickHouse decides what to merge and when, and to 
 - Parts not merging (too many small parts accumulating)
 - Unbalanced merge trees (some partitions merging faster than others)
 - Stuck mutations blocking normal merge progress
+
+## Example: Exploring a Full Merge
+
+When `OPTIMIZE TABLE ... FINAL` is invoked, ClickHouse forces a full compaction, merging all parts within each partition down to a single part. As you can see from the video, it is a very expensive operation that rewrites all data in the table.
+
+<FeatureVideo src="optimize-table-final-1920.mp4" />

@@ -71,3 +71,11 @@ Query history from `system.query_log` with:
 - Slow query identification
 - Resource consumption patterns over time
 - Query fingerprinting and grouping
+
+## Example: Tracing a Distributed Query
+
+ClickHouse can split a query across multiple nodes, whether reading from a `Distributed` table across shards, or using parallel replicas (`max_parallel_replicas`) to fan out within a single shard. In both cases, a coordinator dispatches sub-queries and merges their results.
+
+The **Distributed Query Topology** panel in Query Analytics visualizes this: the coordinator and each participating node shown as horizontal bars with elapsed time, bytes read, and rows processed. Coordinator overhead is called out separately so you can see how much time was spent on fan-out and merging beyond the work the nodes themselves did.
+
+<FeatureVideo src="distributed-query-trace-1920.mp4" />
