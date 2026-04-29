@@ -350,19 +350,25 @@ def check_existing_rows(client: Client, table: str, target_rows: int, mode: Inse
     if mode is InsertMode.APPEND:
         log.info("[%s] append mode — skipping row check", table)
         return target_rows
+    log.info("[%s] connecting...", table)
+    client.execute("SELECT 1")
     log.info("[%s] counting existing rows...", table)
+    t0 = time.monotonic()
     count = client.execute(f"SELECT count() FROM {table}")[0][0]
-    log.info("[%s] existing rows: %d", table, count)
+    elapsed = time.monotonic() - t0
+    log.info("[%s] existing rows: %d (%.1fs)", table, count, elapsed)
+    if count == 0:
+        log.info("[%s] empty, inserting %s rows...", table, f"{target_rows:,}")
     if count > 0 and mode is not InsertMode.DROP:
         if count > target_rows:
-            print(f"  Table has {count:,} rows which exceeds target {target_rows:,} — use --drop to reset")
+            log.info("[%s] has %s rows, exceeds target %s — use --drop to reset", table, f"{count:,}", f"{target_rows:,}")
             return None
         elif count >= target_rows * 0.9:
-            print(f"  Table already has {count:,} rows (target: {target_rows:,}), skipping insert (use --drop to reset)")
+            log.info("[%s] already has %s rows (target: %s), skipping", table, f"{count:,}", f"{target_rows:,}")
             return None
         else:
             remaining = target_rows - count
-            print(f"  Table has {count:,} rows, inserting {remaining:,} more to reach target...")
+            log.info("[%s] has %s rows, inserting %s more...", table, f"{count:,}", f"{remaining:,}")
             return remaining
     return target_rows
 

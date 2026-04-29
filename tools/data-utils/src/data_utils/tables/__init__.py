@@ -7,6 +7,7 @@ from .nyc_taxi import NycTaxi
 from .uk_house_prices import UkHousePrices
 from .web_analytics import WebAnalytics
 from .replacing_merge import ReplacingMerge
+from .iceberg_nyc_taxi import IcebergNycTaxi
 from .helpers import ProgressTracker
 from .protocol import Dataset, InsertConfig, InsertMode, QuerySet
 
@@ -21,6 +22,7 @@ ALL_DATASET_CLASSES: list[type] = [
     UkHousePrices,
     WebAnalytics,
     ReplacingMerge,
+    IcebergNycTaxi,
 ]
 
 
@@ -39,6 +41,7 @@ def build_all_datasets(
         UkHousePrices(caps=caps, ttl_interval=ttl_interval),
         WebAnalytics(caps=caps, ttl_interval=ttl_interval),
         ReplacingMerge(caps=caps, ttl_interval=ttl_interval),
+        IcebergNycTaxi(caps=caps, ttl_interval=ttl_interval),
     ]
 
 
@@ -48,6 +51,8 @@ DATASET_ALIASES: dict[str, str] = {
     'uk': 'uk_only',
     'web': 'web_only',
     'replacing': 'replacing_only',
+    'iceberg_taxi': 'iceberg_taxi_only',
+    'iceberg': 'iceberg_taxi_only',
 }
 
 
@@ -65,7 +70,7 @@ def list_datasets() -> None:
 __all__ = [
     "Dataset", "InsertConfig", "InsertMode", "QuerySet",
     "SyntheticData", "NycTaxi", "UkHousePrices", "WebAnalytics",
-    "ReplacingMerge",
+    "ReplacingMerge", "IcebergNycTaxi",
     "ALL_DATASET_CLASSES", "build_all_datasets",
     "DATASET_ALIASES", "list_datasets",
     "ProgressTracker",

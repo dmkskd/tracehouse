@@ -1,0 +1,20 @@
+{
+  "warehouse-name": "tracehouse",
+  "project-id": "00000000-0000-0000-0000-000000000000",
+  "storage-profile": {
+    "type": "s3",
+    "bucket": "iceberg-warehouse",
+    "key-prefix": "tracehouse",
+    "endpoint": "http://minio:9000",
+    "region": "us-east-1",
+    "path-style-access": true,
+    "flavor": "minio",
+    "sts-enabled": true
+  },
+  "storage-credential": {
+    "type": "s3",
+    "credential-type": "access-key",
+    "access-key-id": "clickhouse",
+    "secret-access-key": "clickhouse_secret"
+  }
+}

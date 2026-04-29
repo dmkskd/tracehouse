@@ -133,6 +133,36 @@ install_altinity_operator() {
     kubectl wait --for=condition=Available deployment/clickhouse-operator -n kube-system --timeout=180s
 }
 
+# Deploy MinIO (S3-compatible object storage) — shared across all operators
+deploy_minio() {
+    log_info "Deploying MinIO..."
+    kubectl apply -f "${SCRIPT_DIR}/minio.yaml"
+
+    log_info "Waiting for MinIO to be ready..."
+    kubectl wait --for=condition=Available deployment/minio -n clickhouse --timeout=120s || true
+
+    log_info "Waiting for MinIO bucket init..."
+    kubectl wait --for=condition=Complete job/minio-init -n clickhouse --timeout=60s || log_warn "MinIO init job not complete yet"
+}
+
+# Deploy Lakekeeper (Iceberg REST catalog) — shared across all operators
+deploy_lakekeeper() {
+    log_info "Deploying Lakekeeper (Iceberg REST catalog)..."
+    kubectl apply -f "${SCRIPT_DIR}/lakekeeper.yaml"
+
+    log_info "Waiting for Lakekeeper DB to be ready..."
+    kubectl wait --for=condition=Available deployment/lakekeeper-db -n clickhouse --timeout=120s || true
+
+    log_info "Waiting for Lakekeeper migration..."
+    kubectl wait --for=condition=Complete job/lakekeeper-migrate -n clickhouse --timeout=120s || log_warn "Lakekeeper migration not complete yet"
+
+    log_info "Waiting for Lakekeeper to be ready..."
+    kubectl wait --for=condition=Available deployment/lakekeeper -n clickhouse --timeout=120s || true
+
+    log_info "Waiting for Lakekeeper warehouse init..."
+    kubectl wait --for=condition=Complete job/lakekeeper-init -n clickhouse --timeout=60s || log_warn "Lakekeeper init not complete yet"
+}
+
 # Deploy ClickHouse cluster using ClickHouse Cloud operator
 deploy_clickhouse_cloud() {
     log_info "Deploying Keeper cluster (Cloud operator)..."
@@ -142,18 +172,6 @@ deploy_clickhouse_cloud() {
     sleep 15
     kubectl wait --for=condition=Ready pod -l app=dev-keeper-keeper -n clickhouse --timeout=300s || true
     
-    log_info "Deploying ClickHouse cluster (Cloud operator)..."
-
-    # Deploy MinIO for S3-compatible object storage
-    log_info "Deploying MinIO..."
-    kubectl apply -f "${SCRIPT_DIR}/minio.yaml"
-
-    log_info "Waiting for MinIO to be ready..."
-    kubectl wait --for=condition=Available deployment/minio -n clickhouse --timeout=120s || true
-
-    log_info "Waiting for MinIO bucket init..."
-    kubectl wait --for=condition=Complete job/minio-init -n clickhouse --timeout=60s || log_warn "MinIO init job not complete yet"
-
     log_info "Creating S3 storage ConfigMap..."
     kubectl apply -f "${SCRIPT_DIR}/s3-storage-config.yaml"
 
@@ -257,12 +275,16 @@ deploy_clickhouse_altinity() {
 deploy_clickhouse() {
     log_info "Creating namespace..."
     kubectl apply -f "${SCRIPT_DIR}/namespace.yaml"
-    
+
+    deploy_minio
+
     if [[ "$OPERATOR" == "altinity" ]]; then
         deploy_clickhouse_altinity
     else
         deploy_clickhouse_cloud
     fi
+
+    deploy_lakekeeper
 
     # Wait for ALL ClickHouse pods to be ready before running DDL.
     # The operator may report "Completed" before all nodes can accept connections,
@@ -392,6 +414,7 @@ print_info() {
     echo "  ClickHouse HTTP:   localhost:8123"
     echo "  Grafana:           localhost:3001"
     echo "  Prometheus:        localhost:9090"
+    echo "  Lakekeeper:        kubectl port-forward -n clickhouse svc/lakekeeper 8181:8181"
     echo "  MinIO Console:     kubectl port-forward -n clickhouse svc/minio 9002:9001"
     echo ""
     echo "Test connection:"

@@ -249,11 +249,11 @@ class TraceHouseTUI(App):
         self._log_lines.setdefault(tool_name, []).append(f"{ts}  {line}")
 
         all_log = self.query_one("#log-all", RichLog)
-        all_log.write(prefix + line)
+        all_log.write(prefix + rich_escape(line))
 
         try:
             tool_log = self.query_one(f"#log-{tool_name}", RichLog)
-            tool_log.write(f"[dim]{ts}[/dim] {line}")
+            tool_log.write(f"[dim]{ts}[/dim] {rich_escape(line)}")
         except Exception:
             pass
 

@@ -1,15 +1,21 @@
 # TraceHouse — Demo Environment (2 shards × 2 replicas)
 #
 # Deploys a 4-node ClickHouse cluster with ClickHouse Keeper,
-# MinIO (S3 storage), Grafana, and Caddy (reverse proxy).
+# MinIO (S3 storage), Lakekeeper (Iceberg REST catalog),
+# Grafana, and Caddy (reverse proxy).
 #
 # Prerequisites:
 #   1. Run ./setup.sh to generate .env with passwords
 #   2. (Optional) Set CH_DOMAIN / GRAFANA_DOMAIN for automatic TLS
 #
+# Profiles:
+#   (default)  — ClickHouse cluster + MinIO + Iceberg tables (no catalog)
+#   iceberg    — adds Lakekeeper REST catalog (Postgres + Lakekeeper)
+#
 # Usage:
-#   ./setup.sh            # generate passwords
-#   docker compose up -d  # start everything
+#   ./setup.sh                             # generate passwords
+#   docker compose up -d                   # start without catalog
+#   docker compose --profile iceberg up -d # start with Lakekeeper catalog
 #
 # Exposed ports:
 #   80   — Frontend (TraceHouse UI)
@@ -63,6 +69,7 @@ services:
       /bin/sh -c "
       mc alias set local http://minio:9000 clickhouse clickhouse_secret;
       mc mb --ignore-existing local/clickhouse;
+      mc mb --ignore-existing local/iceberg-warehouse;
       exit 0;
       "
 
@@ -282,9 +289,114 @@ services:
       # Accepts e.g. '12h', '2d', '30m'. Partitioned by hour so
       # ttl_only_drop_parts can drop whole parts with zero I/O.
       CH_GEN_TTL: "3h"
+      # Iceberg (IcebergS3 → MinIO)
+      CH_ICEBERG_S3_ENDPOINT: "http://minio:9000"
+      CH_ICEBERG_S3_KEY: "clickhouse"
+      CH_ICEBERG_S3_SECRET: "clickhouse_secret"
+      CH_ICEBERG_WAREHOUSE_BUCKET: "iceberg-warehouse"
+      CH_ICEBERG_CATALOG_URL: "http://lakekeeper:8181/catalog"
     depends_on:
       sampling-init: { condition: service_completed_successfully }
     restart: unless-stopped
+
+  # ─── Lakekeeper — Iceberg REST catalog ───────────────────────────────────
+
+  lakekeeper-db:
+    image: postgres:17
+    container_name: tracehouse-demo-lakekeeper-db
+    profiles: [iceberg]
+    environment:
+      POSTGRES_PASSWORD: lakekeeper
+      POSTGRES_USER: lakekeeper
+      POSTGRES_DB: lakekeeper
+    volumes:
+      - tracehouse-lakekeeper-db-data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U lakekeeper -d lakekeeper"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+      start_period: 10s
+    restart: unless-stopped
+
+  lakekeeper-migrate:
+    image: quay.io/lakekeeper/catalog:latest
+    container_name: tracehouse-demo-lakekeeper-migrate
+    profiles: [iceberg]
+    command: ["migrate"]
+    environment:
+      LAKEKEEPER__PG_ENCRYPTION_KEY: tracehouse-demo-key
+      LAKEKEEPER__PG_DATABASE_URL_READ: postgresql://lakekeeper:lakekeeper@lakekeeper-db:5432/lakekeeper
+      LAKEKEEPER__PG_DATABASE_URL_WRITE: postgresql://lakekeeper:lakekeeper@lakekeeper-db:5432/lakekeeper
+    depends_on:
+      lakekeeper-db: { condition: service_healthy }
+    restart: "no"
+
+  lakekeeper:
+    image: quay.io/lakekeeper/catalog:latest
+    container_name: tracehouse-demo-lakekeeper
+    profiles: [iceberg]
+    command: ["serve"]
+    environment:
+      LAKEKEEPER__PG_ENCRYPTION_KEY: tracehouse-demo-key
+      LAKEKEEPER__PG_DATABASE_URL_READ: postgresql://lakekeeper:lakekeeper@lakekeeper-db:5432/lakekeeper
+      LAKEKEEPER__PG_DATABASE_URL_WRITE: postgresql://lakekeeper:lakekeeper@lakekeeper-db:5432/lakekeeper
+      LAKEKEEPER__LISTEN_PORT: 8181
+      RUST_LOG: info
+    depends_on:
+      lakekeeper-migrate: { condition: service_completed_successfully }
+      minio-init: { condition: service_completed_successfully }
+    healthcheck:
+      test: ["CMD", "/home/nonroot/lakekeeper", "healthcheck"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+      start_period: 5s
+    restart: unless-stopped
+
+  lakekeeper-bootstrap:
+    image: curlimages/curl
+    container_name: tracehouse-demo-lakekeeper-bootstrap
+    profiles: [iceberg]
+    depends_on:
+      lakekeeper: { condition: service_healthy }
+    restart: "no"
+    command:
+      - -s
+      - -w
+      - "%{http_code}"
+      - -X
+      - POST
+      - http://lakekeeper:8181/management/v1/bootstrap
+      - -H
+      - "Content-Type: application/json"
+      - --data
+      - '{"accept-terms-of-use": true}'
+      - -o
+      - /dev/null
+
+  lakekeeper-init-warehouse:
+    image: curlimages/curl
+    container_name: tracehouse-demo-lakekeeper-init-warehouse
+    profiles: [iceberg]
+    depends_on:
+      lakekeeper-bootstrap: { condition: service_completed_successfully }
+    restart: "no"
+    command:
+      - -s
+      - -w
+      - "%{http_code}"
+      - -X
+      - POST
+      - http://lakekeeper:8181/management/v1/warehouse
+      - -H
+      - "Content-Type: application/json"
+      - --data
+      - "@/tmp/create-warehouse.json"
+      - -o
+      - /dev/null
+    volumes:
+      - ../docker/lakekeeper/create-warehouse.json:/tmp/create-warehouse.json:ro
 
   # ─── Frontend + CORS proxy ───────────────────────────────────────────────
 
@@ -387,6 +499,8 @@ volumes:
   # Caddy
   tracehouse-caddy-data:
   tracehouse-caddy-config:
+  # Lakekeeper
+  tracehouse-lakekeeper-db-data:
   # Grafana
   tracehouse-grafana-plugin:
   tracehouse-grafana-data:

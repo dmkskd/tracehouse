@@ -28,6 +28,13 @@ class Capabilities:
     shard_count: int = 0
     replica_count: int = 0
     has_keeper: bool = False                 # ZooKeeper/Keeper is available
+    # Iceberg
+    has_iceberg_insert: bool = False         # allow_insert_into_iceberg works
+    iceberg_s3_endpoint: str = ""            # S3 endpoint for IcebergS3 engine
+    iceberg_s3_key: str = ""
+    iceberg_s3_secret: str = ""
+    iceberg_warehouse_bucket: str = ""
+    iceberg_catalog_url: str = ""            # Lakekeeper REST catalog URL (optional)
     # Settings
     restricted_settings: list[str] = field(default_factory=list)  # settings that can't be changed
     # Databases that already exist
@@ -40,6 +47,7 @@ class Capabilities:
             f"  s3() table function:   {'✓' if self.has_s3_function else '✗ (S3 parquet queries will be skipped)'}",
             f"  Cluster:               {'✓ ' + self.cluster_name + f' ({self.shard_count}s/{self.replica_count}r)' if self.has_cluster else '✗ (web_analytics sharded table will be skipped)'}",
             f"  Keeper/ZooKeeper:      {'✓' if self.has_keeper else '✗ (Replicated engines unavailable)'}",
+            f"  Iceberg insert:        {'✓' if self.has_iceberg_insert else '✗ (iceberg_nyc_taxi will be skipped)'}",
         ]
         if self.restricted_settings:
             lines.append(f"  Restricted settings:   {', '.join(self.restricted_settings)}")
@@ -137,5 +145,23 @@ def probe(client: Client) -> Capabilities:
         caps.existing_databases = [r[0] for r in rows]
     except Exception:
         pass
+
+    caps.iceberg_s3_endpoint = os.environ.get("CH_ICEBERG_S3_ENDPOINT", "http://minio:9000")
+    caps.iceberg_s3_key = os.environ.get("CH_ICEBERG_S3_KEY", "clickhouse")
+    caps.iceberg_s3_secret = os.environ.get("CH_ICEBERG_S3_SECRET", "clickhouse_secret")
+    caps.iceberg_warehouse_bucket = os.environ.get("CH_ICEBERG_WAREHOUSE_BUCKET", "iceberg-warehouse")
+    caps.iceberg_catalog_url = os.environ.get("CH_ICEBERG_CATALOG_URL", "")
+
+    log.info("probing Iceberg insert support (setting + S3 reachability)")
+    try:
+        client.execute("SELECT 1 SETTINGS allow_insert_into_iceberg = 1")
+        client.execute(
+            f"SELECT count() FROM s3('{caps.iceberg_s3_endpoint}/{caps.iceberg_warehouse_bucket}/"
+            f"__probe__/*.csv', '{caps.iceberg_s3_key}', '{caps.iceberg_s3_secret}', 'CSV', 'x String')",
+            settings={"max_execution_time": 5},
+        )
+        caps.has_iceberg_insert = True
+    except Exception:
+        caps.has_iceberg_insert = False
 
     return caps

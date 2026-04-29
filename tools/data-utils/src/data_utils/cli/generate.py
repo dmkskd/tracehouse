@@ -73,7 +73,7 @@ Tables are created with the best engine available for the target server.
         """,
     )
     add_connection_args(parser)
-    parser.add_argument("--rows", type=int, default=env_int("CH_GEN_ROWS", "10000000"), help="Total rows per table (default: $CH_GEN_ROWS or 10M)")
+    parser.add_argument("--rows", type=int, default=env_int("CH_GEN_ROWS", "1000000000"), help="Total rows per table (default: $CH_GEN_ROWS or 1B)")
     parser.add_argument("--partitions", type=int, default=env_int("CH_GEN_PARTITIONS", "3"), help="Number of partitions/months (default: $CH_GEN_PARTITIONS or 3)")
     parser.add_argument("--batch-size", type=int, default=env_int("CH_GEN_BATCH_SIZE", "500000"), help="Rows per INSERT batch (default: $CH_GEN_BATCH_SIZE or 500K)")
     parser.add_argument("--mode", choices=["resume", "drop", "append"],
@@ -87,6 +87,7 @@ Tables are created with the best engine available for the target server.
     parser.add_argument("--uk-only", action="store_true", help="Only create uk_price_paid table")
     parser.add_argument("--web-only", action="store_true", help="Only create web_analytics table")
     parser.add_argument("--replacing-only", action="store_true", help="Only create replacing_test table (ReplacingMergeTree)")
+    parser.add_argument("--iceberg-taxi-only", action="store_true", help="Only create iceberg_nyc_taxi table (IcebergS3)")
     parser.add_argument("--dataset", default=os.environ.get("CH_GEN_DATASET", ""),
                         help="Dataset to generate: synthetic, taxi, uk, web, replacing, or blank for all (default: $CH_GEN_DATASET)")
     parser.add_argument("--ttl", default=os.environ.get("CH_GEN_TTL", os.environ.get("CH_GEN_TTL_HOURS", "0")),
@@ -247,7 +248,7 @@ def _print_verify_query() -> None:
     print("         formatReadableSize(sum(bytes_on_disk)) as size,")
     print("         sum(rows) as rows, count() as parts")
     print("  FROM system.parts")
-    print("  WHERE active AND database IN ('synthetic_data', 'nyc_taxi', 'uk_price_paid', 'web_analytics', 'replacing_test')")
+    print("  WHERE active AND database IN ('synthetic_data', 'nyc_taxi', 'uk_price_paid', 'web_analytics', 'replacing_test', 'iceberg_nyc_taxi')")
     print("  GROUP BY database, table, partition")
     print("  ORDER BY database, table, partition")
 

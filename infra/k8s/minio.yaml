@@ -114,3 +114,4 @@ spec:
             - |
               mc alias set local http://minio:9000 clickhouse clickhouse_secret
               mc mb --ignore-existing local/clickhouse
+              mc mb --ignore-existing local/iceberg-warehouse

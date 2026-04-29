@@ -26,7 +26,7 @@ spec:
           containers:
             - name: clickhouse-keeper
               imagePullPolicy: IfNotPresent
-              image: "clickhouse/clickhouse-keeper:26.1"
+              image: "clickhouse/clickhouse-keeper:26.3"
               resources:
                 requests:
                   cpu: "100m"

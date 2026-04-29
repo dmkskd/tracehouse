@@ -59,9 +59,39 @@ install_altinity_operator() {
     kubectl wait --for=condition=Available deployment/clickhouse-operator -n kube-system --timeout=180s
 }
 
+deploy_minio() {
+    log_info "Deploying MinIO..."
+    kubectl apply -f "${K8S_DIR}/minio.yaml"
+
+    log_info "Waiting for MinIO to be ready..."
+    kubectl wait --for=condition=Available deployment/minio -n clickhouse --timeout=120s || true
+
+    log_info "Waiting for MinIO bucket init..."
+    kubectl wait --for=condition=Complete job/minio-init -n clickhouse --timeout=60s || log_warn "MinIO init job not complete yet"
+}
+
+deploy_lakekeeper() {
+    log_info "Deploying Lakekeeper (Iceberg REST catalog)..."
+    kubectl apply -f "${K8S_DIR}/lakekeeper.yaml"
+
+    log_info "Waiting for Lakekeeper DB to be ready..."
+    kubectl wait --for=condition=Available deployment/lakekeeper-db -n clickhouse --timeout=120s || true
+
+    log_info "Waiting for Lakekeeper migration..."
+    kubectl wait --for=condition=Complete job/lakekeeper-migrate -n clickhouse --timeout=120s || log_warn "Lakekeeper migration not complete yet"
+
+    log_info "Waiting for Lakekeeper to be ready..."
+    kubectl wait --for=condition=Available deployment/lakekeeper -n clickhouse --timeout=120s || true
+
+    log_info "Waiting for Lakekeeper warehouse init..."
+    kubectl wait --for=condition=Complete job/lakekeeper-init -n clickhouse --timeout=60s || log_warn "Lakekeeper init not complete yet"
+}
+
 deploy_clickhouse() {
     log_info "Creating namespace..."
     kubectl apply -f "${K8S_DIR}/namespace.yaml"
+
+    deploy_minio
 
     # Keeper (3 replicas)
     log_info "Deploying Keeper (3 replicas)..."
@@ -98,6 +128,8 @@ deploy_clickhouse() {
     # Wait for ALL pods to be ready before running DDL
     log_info "Waiting for all 8 ClickHouse pods to be ready..."
     kubectl wait --for=condition=Ready pod -l "clickhouse.altinity.com/chi=dev-cluster" -n clickhouse --timeout=300s || true
+
+    deploy_lakekeeper
 
     # Setup users and sampling
     local CH_POD
@@ -167,6 +199,8 @@ print_info() {
     echo "  ClickHouse HTTP:   localhost:8123"
     echo "  Grafana:           localhost:3001"
     echo "  Prometheus:        localhost:9090"
+    echo "  Lakekeeper:        kubectl port-forward -n clickhouse svc/lakekeeper 8181:8181"
+    echo "  MinIO Console:     kubectl port-forward -n clickhouse svc/minio 9002:9001"
     echo ""
     echo "Test connection:"
     echo "  curl 'http://localhost:8123/?query=SELECT%201'"

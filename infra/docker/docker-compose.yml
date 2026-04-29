@@ -1,17 +1,17 @@
 # TraceHouse - Development Environment
 #
 # Profiles:
-#   (default)    — ClickHouse + MinIO only (fast, no npm builds needed)
+#   (default)    — ClickHouse + MinIO + Lakekeeper (Iceberg REST catalog)
 #   monitoring   — adds Prometheus + Grafana (requires Grafana plugin build)
 #   tracing      — adds Tempo (OpenTelemetry)
 #   full         — everything
 #
 # Via just (recommended):
-#   just docker-start                                  # ClickHouse only (fast)
+#   just docker-start                                  # ClickHouse + Iceberg (fast)
 #   just docker-start-full                             # everything (builds Grafana plugin first)
 #
 # Via docker compose directly:
-#   docker compose up                                  # ClickHouse only
+#   docker compose up                                  # ClickHouse + Iceberg
 #   docker compose --profile monitoring up             # + Prometheus & Grafana
 #   docker compose --profile tracing up                # + Tempo
 #   docker compose --profile full up                   # everything
@@ -49,6 +49,7 @@ services:
       /bin/sh -c "
       mc alias set local http://minio:9000 clickhouse clickhouse_secret;
       mc mb --ignore-existing local/clickhouse;
+      mc mb --ignore-existing local/iceberg-warehouse;
       exit 0;
       "
 
@@ -98,6 +99,107 @@ services:
       retries: 5
       start_period: 30s
     restart: unless-stopped
+
+  # --- Iceberg (Lakekeeper REST catalog) ---
+
+  lakekeeper-db:
+    image: postgres:17
+    container_name: tracehouse-lakekeeper-db
+    environment:
+      POSTGRES_PASSWORD: lakekeeper
+      POSTGRES_USER: lakekeeper
+      POSTGRES_DB: lakekeeper
+    volumes:
+      - tracehouse-lakekeeper-db-data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U lakekeeper -d lakekeeper"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+      start_period: 10s
+    restart: unless-stopped
+
+  lakekeeper-migrate:
+    image: quay.io/lakekeeper/catalog:latest
+    container_name: tracehouse-lakekeeper-migrate
+    command: ["migrate"]
+    environment:
+      LAKEKEEPER__PG_ENCRYPTION_KEY: tracehouse-dev-key
+      LAKEKEEPER__PG_DATABASE_URL_READ: postgresql://lakekeeper:lakekeeper@lakekeeper-db:5432/lakekeeper
+      LAKEKEEPER__PG_DATABASE_URL_WRITE: postgresql://lakekeeper:lakekeeper@lakekeeper-db:5432/lakekeeper
+    depends_on:
+      lakekeeper-db:
+        condition: service_healthy
+    restart: "no"
+
+  lakekeeper:
+    image: quay.io/lakekeeper/catalog:latest
+    container_name: tracehouse-lakekeeper
+    command: ["serve"]
+    ports:
+      - "8181:8181"
+    environment:
+      LAKEKEEPER__PG_ENCRYPTION_KEY: tracehouse-dev-key
+      LAKEKEEPER__PG_DATABASE_URL_READ: postgresql://lakekeeper:lakekeeper@lakekeeper-db:5432/lakekeeper
+      LAKEKEEPER__PG_DATABASE_URL_WRITE: postgresql://lakekeeper:lakekeeper@lakekeeper-db:5432/lakekeeper
+      LAKEKEEPER__LISTEN_PORT: 8181
+      RUST_LOG: info
+    depends_on:
+      lakekeeper-migrate:
+        condition: service_completed_successfully
+      minio-init:
+        condition: service_completed_successfully
+    healthcheck:
+      test: ["CMD", "/home/nonroot/lakekeeper", "healthcheck"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+      start_period: 5s
+    restart: unless-stopped
+
+  lakekeeper-bootstrap:
+    image: curlimages/curl
+    container_name: tracehouse-lakekeeper-bootstrap
+    depends_on:
+      lakekeeper:
+        condition: service_healthy
+    restart: "no"
+    command:
+      - -s
+      - -w
+      - "%{http_code}"
+      - -X
+      - POST
+      - http://lakekeeper:8181/management/v1/bootstrap
+      - -H
+      - "Content-Type: application/json"
+      - --data
+      - '{"accept-terms-of-use": true}'
+      - -o
+      - /dev/null
+
+  lakekeeper-init-warehouse:
+    image: curlimages/curl
+    container_name: tracehouse-lakekeeper-init-warehouse
+    depends_on:
+      lakekeeper-bootstrap:
+        condition: service_completed_successfully
+    restart: "no"
+    command:
+      - -s
+      - -w
+      - "%{http_code}"
+      - -X
+      - POST
+      - http://lakekeeper:8181/management/v1/warehouse
+      - -H
+      - "Content-Type: application/json"
+      - --data
+      - "@/tmp/create-warehouse.json"
+      - -o
+      - /dev/null
+    volumes:
+      - ./lakekeeper/create-warehouse.json:/tmp/create-warehouse.json:ro
 
   prometheus:
     image: prom/prometheus:v3.2.1
@@ -170,6 +272,8 @@ volumes:
   tracehouse-prometheus-data:
     driver: local
   tracehouse-grafana-data:
+    driver: local
+  tracehouse-lakekeeper-db-data:
     driver: local
   tracehouse-tempo-data:
     driver: local
