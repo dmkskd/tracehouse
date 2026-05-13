@@ -15,7 +15,7 @@ import type { MemoryTimeline, QuerySeries, MergeSeries, MutationSeries } from '@
 import { TIMELINE_ACTIVITY_LIMIT } from '@tracehouse/core';
 import { TimelineNavigator } from '../components/shared/TimelineNavigator';
 import { RangeSlider } from '../components/shared/RangeSlider';
-import { QueryDetailModal } from '../components/query/QueryDetailModal';
+import { QueryDetailModal } from '../components/query/modal/QueryDetailModal';
 import { MergeDetailModal, MutationDetailModal } from '../components/merge/MergeDetailModal';
 import { useQueryDeepLink } from '../hooks/useQueryDeepLink';
 import { TruncatedHost } from '../components/common/TruncatedHost';

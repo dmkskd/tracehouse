@@ -22,6 +22,7 @@ describe('tracehouseBuildDefines', () => {
   it('returns all expected keys', () => {
     const defines = tracehouseBuildDefines();
     expect(Object.keys(defines)).toEqual([
+      '__TH_VERSION__',
       '__TH_DEFAULT_CH_HOST__',
       '__TH_DEFAULT_CH_PORT__',
       '__TH_DEFAULT_CH_USER__',

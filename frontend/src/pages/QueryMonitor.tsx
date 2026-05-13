@@ -1,9 +1,9 @@
 import React, { useEffect, useRef, useCallback, useState, useMemo } from 'react';
 import { useConnectionStore } from '../stores/connectionStore';
 import { useQueryStore, QueryWebSocket, queryApi } from '../stores/queryStore';
-import { RunningQueryList } from '../components/query/RunningQueryList';
+import { QueryRunningTable } from '../components/query/QueryRunningTable';
 import { QueryHistoryTable } from '../components/query/QueryHistoryTable';
-import { QueryDetailModal } from '../components/query/QueryDetailModal';
+import { QueryDetailModal } from '../components/query/modal/QueryDetailModal';
 import { useClickHouseServices } from '../providers/ClickHouseProvider';
 import { useRefreshConfig, clampToAllowed } from '@tracehouse/ui-shared';
 import { useRefreshSettingsStore } from '../stores/refreshSettingsStore';
@@ -20,7 +20,7 @@ import { QueryHealthSunburst } from '../components/query/QueryHealthSunburst';
 import { useUrlState } from '../hooks/useUrlState';
 import type { UrlSchema } from '../hooks/useUrlState';
 
-// Query type colors matching RunningQueryList
+// Query type colors matching QueryRunningTable
 const QUERY_TYPE_COLORS: Record<string, string> = {
   Select: '#3b82f6',
   Insert: '#f59e0b',
@@ -567,7 +567,7 @@ export const QueryMonitor: React.FC = () => {
         }}>
           <div style={{ padding: '12px 0' }}>
             {activeTab === 'running' ? (
-              <RunningQueryList queries={runningQueries} selectedQueryId={selectedQuery?.query_id || null}
+              <QueryRunningTable queries={runningQueries} selectedQueryId={selectedQuery?.query_id || null}
                 onSelectQuery={q => selectQuery(q, 'running')} onKillQuery={handleKillQuery} isKillingQuery={isKillingQuery} coordinatorIds={runningCoordinatorIds} queryAnalyzer={services?.queryAnalyzer} onFilteredCountChange={setRunningFilteredCount} />
             ) : hasQueryLog || isProbing ? (
               <QueryHistoryTable history={queryHistory} selectedQueryId={selectedQuery?.query_id || null}

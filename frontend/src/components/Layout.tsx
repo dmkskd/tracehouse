@@ -10,6 +10,7 @@ import { useTheme } from '../providers/ThemeProvider';
 import { useUserPreferenceStore } from '../stores/userPreferenceStore';
 import { useRefreshConfig, type RefreshRateOption } from '@tracehouse/ui-shared';
 import { useRefreshSettingsStore, useGlobalLastUpdatedStore } from '../stores/refreshSettingsStore';
+import { buildConfig } from '../buildConfig';
 
 interface LayoutProps {
   children: React.ReactNode;
@@ -297,6 +298,13 @@ const SettingsPopover: React.FC = () => {
             >
               Clear Tracehouse Data
             </button>
+          </div>
+
+          <div style={{
+            padding: '4px 12px 8px', textAlign: 'center',
+            fontSize: 9, color: 'var(--text-tertiary)', opacity: 0.6,
+          }}>
+            v{buildConfig.version}
           </div>
         </div>
       )}

@@ -7,6 +7,7 @@
  */
 
 /* eslint-disable no-undef */
+declare const __TH_VERSION__: string;
 declare const __TH_DEFAULT_CH_HOST__: string | undefined;
 declare const __TH_DEFAULT_CH_PORT__: string | undefined;
 declare const __TH_DEFAULT_CH_USER__: string | undefined;
@@ -19,6 +20,8 @@ declare const __TH_BUNDLED_PROXY__: boolean;
 declare const __TH_DASHBOARD_PREVIEW__: boolean;
 
 export const buildConfig = {
+  version: typeof __TH_VERSION__ !== 'undefined' ? __TH_VERSION__ : 'dev',
+
   /** Default ClickHouse connection parameters */
   defaultConnection: {
     host: typeof __TH_DEFAULT_CH_HOST__ !== 'undefined' ? __TH_DEFAULT_CH_HOST__ : 'localhost',

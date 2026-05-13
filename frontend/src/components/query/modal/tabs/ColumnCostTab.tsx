@@ -1,5 +1,5 @@
 /**
- * ColumnCostAnalysis — Per-column cost breakdown for a query.
+ * ColumnCostTab — Per-column cost breakdown for a query.
  *
  * Two analyses:
  * 1. Client-side (returned data): Re-runs the query wrapped with byteSize() per column
@@ -12,8 +12,8 @@
 import React, { useState, useCallback, useMemo, useEffect } from 'react';
 import type { QueryDetail } from '@tracehouse/core';
 import { HostTargetedAdapter } from '@tracehouse/core';
-import { useClickHouseServices } from '../../providers/ClickHouseProvider';
-import { useClusterStore } from '../../stores/clusterStore';
+import { useClickHouseServices } from '../../../../providers/ClickHouseProvider';
+import { useClusterStore } from '../../../../stores/clusterStore';
 
 /* ------------------------------------------------------------------ */
 /*  Helpers                                                            */
@@ -172,12 +172,12 @@ const costColor = (pct: number): string =>
 /*  Main component                                                     */
 /* ------------------------------------------------------------------ */
 
-interface ColumnCostAnalysisProps {
+interface ColumnCostTabProps {
   queryDetail: QueryDetail | null;
   isLoading: boolean;
 }
 
-export const ColumnCostAnalysis: React.FC<ColumnCostAnalysisProps> = ({ queryDetail, isLoading }) => {
+export const ColumnCostTab: React.FC<ColumnCostTabProps> = ({ queryDetail, isLoading }) => {
   const services = useClickHouseServices();
   const { clusterName } = useClusterStore();
 
@@ -637,4 +637,4 @@ export const ColumnCostAnalysis: React.FC<ColumnCostAnalysisProps> = ({ queryDet
   );
 };
 
-export default ColumnCostAnalysis;
+export default ColumnCostTab;

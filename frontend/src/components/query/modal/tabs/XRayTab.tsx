@@ -1,5 +1,5 @@
 /**
- * QueryXRay3D — 3D resource corridor with log event scrubber.
+ * XRayTab — 3D resource corridor with log event scrubber.
  *
  * Renders a 3D "corridor" where:
  *   X = time (seconds)
@@ -16,10 +16,10 @@ import { Canvas, useThree } from '@react-three/fiber';
 import { OrbitControls, Text, Line, Html } from '@react-three/drei';
 import * as THREE from 'three';
 import type { TraceLog } from '@tracehouse/core';
-import { useProcessSamples } from './useProcessSamples';
-import type { ProcessSample } from './useProcessSamples';
-import { useTraceSampleCounts, hasTraceSamplesInRange, useTimeScopedFlamegraph } from './useHotFunctions';
-import { SpeedscopeViewer } from '../tracing/SpeedscopeViewer';
+import { useProcessSamples } from '../hooks/useProcessSamples';
+import type { ProcessSample } from '../hooks/useProcessSamples';
+import { useTraceSampleCounts, hasTraceSamplesInRange, useTimeScopedFlamegraph } from '../hooks/useHotFunctions';
+import { SpeedscopeViewer } from '../../../tracing/SpeedscopeViewer';
 
 /* ── Constants ──────────────────────────────────────────────────────── */
 
@@ -1174,13 +1174,13 @@ const HostTab: React.FC<{
 
 /* ── Main component ──────────────────────────────────────────────────── */
 
-export interface QueryXRay3DProps {
+export interface XRayTabProps {
   queryId: string;
   logs: TraceLog[];
   queryStartTime?: string;
 }
 
-export const QueryXRay3D: React.FC<QueryXRay3DProps> = ({
+export const XRayTab: React.FC<XRayTabProps> = ({
   queryId,
   logs,
   queryStartTime,

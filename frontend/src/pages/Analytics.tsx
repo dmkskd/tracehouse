@@ -21,7 +21,7 @@ import { useAnalyticsUrlState } from '../hooks/useUrlState';
 import { useNavigate } from '../hooks/useAppLocation';
 import { useUserPreferenceStore } from '../stores/userPreferenceStore';
 import { DocsLink } from '../components/common/DocsLink';
-import { QueryDetailModal } from '../components/query/QueryDetailModal';
+import { QueryDetailModal } from '../components/query/modal/QueryDetailModal';
 import { useQueryDeepLink } from '../hooks/useQueryDeepLink';
 import type { TableOrderingKeyEfficiency, PatternSurfaceRow, QuerySeries, ResourceLanesData } from '@tracehouse/core';
 

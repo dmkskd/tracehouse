@@ -1,5 +1,5 @@
 /**
- * RunningQueryList - Active/running queries table with progress bars and kill actions.
+ * QueryRunningTable - Active/running queries table with progress bars and kill actions.
  */
 import React, { useState, useMemo, useEffect } from 'react';
 import type { RunningQuery } from '../../stores/queryStore';
@@ -9,7 +9,7 @@ import type { QueryFilterState } from './QueryFilterBar';
 import { APP_SOURCE_PREFIX, type QueryAnalyzer } from '@tracehouse/core';
 import { useUserPreferenceStore } from '../../stores/userPreferenceStore';
 
-interface RunningQueryListProps {
+interface QueryRunningTableProps {
   queries: RunningQuery[];
   selectedQueryId: string | null;
   onSelectQuery: (query: RunningQuery) => void;
@@ -70,7 +70,7 @@ const QueryKindBadge: React.FC<{ kind: string }> = ({ kind }) => {
   );
 };
 
-export const RunningQueryList: React.FC<RunningQueryListProps> = ({
+export const QueryRunningTable: React.FC<QueryRunningTableProps> = ({
   queries, selectedQueryId, onSelectQuery, onKillQuery, isKillingQuery, coordinatorIds, queryAnalyzer, onFilteredCountChange,
 }) => {
   const killQueriesEnabled = useUserPreferenceStore((s) => s.killQueriesEnabled);
@@ -282,4 +282,4 @@ export const RunningQueryList: React.FC<RunningQueryListProps> = ({
   );
 };
 
-export default RunningQueryList;
+export default QueryRunningTable;

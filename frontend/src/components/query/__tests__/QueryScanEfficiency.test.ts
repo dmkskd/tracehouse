@@ -1,6 +1,6 @@
 import { describe, test, expect } from 'vitest';
 import type { QueryDetail } from '@tracehouse/core';
-import { buildScanEfficiency } from '../QueryScanEfficiency';
+import { buildScanEfficiency } from '../modal/tabs/ScanEfficiencyTab';
 
 /** Helper to build a minimal QueryDetail with profile events */
 function makeQuery(overrides: Partial<QueryDetail> & { ProfileEvents?: Record<string, number> }): QueryDetail {

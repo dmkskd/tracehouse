@@ -1,4 +1,4 @@
-export { RunningQueryList } from './RunningQueryList';
+export { QueryRunningTable } from './QueryRunningTable';
 export { QueryHistoryTable } from './QueryHistoryTable';
 export { QueryFilterBar } from './QueryFilterBar';
 export type { QueryFilterState } from './QueryFilterBar';
@@ -7,7 +7,7 @@ export { QueryComparisonPanel } from './QueryComparisonPanel';
 export type { ComparableQuery } from './QueryComparisonPanel';
 export {
   QueryDetailModal,
-} from './QueryDetailModal';
+} from './modal/QueryDetailModal';
 export type {
   TimelineQueryModalProps,
-} from './QueryDetailModal';
+} from './modal/QueryDetailModal';

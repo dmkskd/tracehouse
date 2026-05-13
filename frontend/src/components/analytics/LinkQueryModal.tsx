@@ -16,7 +16,7 @@ import { useClickHouseServices } from '../../providers/ClickHouseProvider';
 import { type Query } from './types';
 import { resolveTimeRange, resolveDrillParams } from './templateResolution';
 import { getRagColor } from './metaLanguage';
-import { QueryDetailModal } from '../query/QueryDetailModal';
+import { QueryDetailModal } from '../query/modal/QueryDetailModal';
 import { type QuerySeries, parseTimeValue } from '@tracehouse/core';
 import { formatCell, isNumericValue, extractNumeric } from './charts';
 

@@ -1,5 +1,5 @@
 /**
- * QueryScanEfficiency - Visual breakdown of a SELECT query's logical data flow.
+ * ScanEfficiencyTab - Visual breakdown of a SELECT query's logical data flow.
  *
  * Each stage (columns, partitions, parts, granules, rows) is shown as an
  * independent card with a block grid: filled blocks = selected, empty = pruned.
@@ -8,7 +8,7 @@
 
 import React, { useMemo, useEffect, useState, useCallback } from 'react';
 import { calculatePruning, formatPruningDetail, type QueryDetail } from '@tracehouse/core';
-import { useClickHouseServices } from '../../providers/ClickHouseProvider';
+import { useClickHouseServices } from '../../../../providers/ClickHouseProvider';
 
 /* ------------------------------------------------------------------ */
 /*  Helpers                                                            */
@@ -28,7 +28,7 @@ const fmtNum = (n: number): string => {
   return n.toLocaleString();
 };
 
-import { formatMicroseconds as fmtUs } from '../../utils/formatters';
+import { formatMicroseconds as fmtUs } from '../../../../utils/formatters';
 
 /** Color for the % that passes through: lower = greener (more was filtered) */
 const scanColor = (pct: number): string =>
@@ -532,12 +532,12 @@ const ProcessingStage: React.FC<{ aggregates: string[]; functions: string[] }> =
 /*  Main component                                                     */
 /* ------------------------------------------------------------------ */
 
-interface QueryScanEfficiencyProps {
+interface ScanEfficiencyTabProps {
   queryDetail: QueryDetail | null;
   isLoading: boolean;
 }
 
-export const QueryScanEfficiency: React.FC<QueryScanEfficiencyProps> = ({ queryDetail, isLoading }) => {
+export const ScanEfficiencyTab: React.FC<ScanEfficiencyTabProps> = ({ queryDetail, isLoading }) => {
   const services = useClickHouseServices();
   const [allTableColumns, setAllTableColumns] = useState<Record<string, string[]>>({});
 
@@ -548,7 +548,7 @@ export const QueryScanEfficiency: React.FC<QueryScanEfficiencyProps> = ({ queryD
       const result = await services.queryAnalyzer.getTableColumns(queryDetail.tables);
       setAllTableColumns(result);
     } catch (err) {
-      console.warn('[QueryScanEfficiency] Failed to fetch table columns:', err);
+      console.warn('[ScanEfficiencyTab] Failed to fetch table columns:', err);
     }
   }, [services, queryDetail?.tables]);
 
@@ -714,4 +714,4 @@ export const QueryScanEfficiency: React.FC<QueryScanEfficiencyProps> = ({ queryD
   );
 };
 
-export default QueryScanEfficiency;
+export default ScanEfficiencyTab;

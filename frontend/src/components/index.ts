@@ -70,7 +70,7 @@ export type {
 } from './metrics/TimeSeriesChart';
 
 // Query monitoring components
-export { RunningQueryList } from './query/RunningQueryList';
+export { QueryRunningTable } from './query/QueryRunningTable';
 export { QueryHistoryTable } from './query/QueryHistoryTable';
 export { QueryDetail } from './query/QueryDetail';
 
@@ -94,10 +94,10 @@ export { TimelineNavigator } from './shared/TimelineNavigator';
 // Query detail modal components
 export {
   QueryDetailModal,
-} from './query/QueryDetailModal';
+} from './query/modal/QueryDetailModal';
 export type {
   TimelineQueryModalProps,
-} from './query/QueryDetailModal';
+} from './query/modal/QueryDetailModal';
 
 // Part inspector modal component (with reusable tab components)
 export { 

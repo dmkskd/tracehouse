@@ -7,7 +7,7 @@
  */
 
 import { useState, useCallback, useMemo } from 'react';
-import { useClickHouseServices } from '../../providers/ClickHouseProvider';
+import { useClickHouseServices } from '../../../../providers/ClickHouseProvider';
 
 /** Background probe: which seconds have profiler samples? */
 export interface TraceSampleCountsResult {

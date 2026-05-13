@@ -10,7 +10,7 @@
  */
 
 import { useState, useCallback } from 'react';
-import { useClickHouseServices } from '../../providers/ClickHouseProvider';
+import { useClickHouseServices } from '../../../../providers/ClickHouseProvider';
 import {
   buildHostProcessSamplesSQL,
   mapHostProcessSampleRow,

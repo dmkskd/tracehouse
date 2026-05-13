@@ -5,8 +5,8 @@
 
 import React, { useMemo } from 'react';
 import type { SubQueryInfo } from '@tracehouse/core';
-import { formatDurationMs } from '../../utils/formatters';
-import { formatBytes } from '../../stores/databaseStore';
+import { formatDurationMs } from '../../../../utils/formatters';
+import { formatBytes } from '../../../../stores/databaseStore';
 
 export interface TopologyCoordinator {
   query_id: string;

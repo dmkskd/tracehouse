@@ -309,7 +309,7 @@ function AppContent({ path }: AppContentProps) {
   const pluginConfig = usePluginConfig();
 
   // Sync plugin-level killQueriesEnabled into the user preference store
-  // so existing components (RunningQueryList) pick it up without changes
+  // so existing components (QueryRunningTable) pick it up without changes
   useEffect(() => {
     useUserPreferenceStore.getState().setKillQueriesEnabled(pluginConfig.killQueriesEnabled);
   }, [pluginConfig.killQueriesEnabled]);
