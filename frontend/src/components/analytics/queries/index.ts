@@ -15,6 +15,7 @@ import disks from './disks';
 import mergeAnalytics from './mergeAnalytics';
 import cloudMonitoring from './cloudMonitoring';
 import altinityOperator from './altinityOperator';
+import altinityKb from './altinityKb';
 
 export const RAW_QUERIES: string[] = [
   ...overview,
@@ -32,4 +33,5 @@ export const RAW_QUERIES: string[] = [
   ...mergeAnalytics,
   ...cloudMonitoring,
   ...altinityOperator,
+  ...altinityKb,
 ];

@@ -54,12 +54,34 @@ export function isExternalInstance(): boolean {
 }
 
 /**
+ * Embedded clickhouse-keeper + distributed_ddl config. Mounting this makes a
+ * single-node container expose ZooKeeper-backed system tables (e.g.
+ * system.distributed_ddl_queue, system.zookeeper) that otherwise error with
+ * "There is no Zookeeper configuration in server config".
+ */
+const KEEPER_CONFIG_XML = `<clickhouse>
+    <keeper_server>
+        <tcp_port>9181</tcp_port>
+        <server_id>1</server_id>
+        <raft_configuration>
+            <server><id>1</id><hostname>localhost</hostname><port>9234</port></server>
+        </raft_configuration>
+    </keeper_server>
+    <zookeeper>
+        <node><host>localhost</host><port>9181</port></node>
+    </zookeeper>
+    <distributed_ddl>
+        <path>/clickhouse/task_queue/ddl</path>
+    </distributed_ddl>
+</clickhouse>`;
+
+/**
  * Start a ClickHouse container and return a ready-to-use context.
  *
  * If CH_TEST_URL is set, connects to that instance instead of starting
  * a container. Set CH_TEST_KEEP_DATA=1 to preserve test databases on teardown.
  */
-export async function startClickHouse(): Promise<TestClickHouseContext> {
+export async function startClickHouse(opts: { withKeeper?: boolean } = {}): Promise<TestClickHouseContext> {
   const externalUrl = process.env.CH_TEST_URL;
   const keepData = process.env.CH_TEST_KEEP_DATA === '1';
 
@@ -70,9 +92,13 @@ export async function startClickHouse(): Promise<TestClickHouseContext> {
     return { container: null, client, adapter, rawAdapter, keepData };
   }
 
-  const container = await new ClickHouseContainer(CH_IMAGE)
-    .withStartupTimeout(120_000)
-    .start();
+  let builder = new ClickHouseContainer(CH_IMAGE).withStartupTimeout(120_000);
+  if (opts.withKeeper) {
+    builder = builder.withCopyContentToContainer([
+      { content: KEEPER_CONFIG_XML, target: '/etc/clickhouse-server/config.d/keeper.xml' },
+    ]);
+  }
+  const container = await builder.start();
 
   const client = createClient({
     url: container.getConnectionUrl(),

@@ -33,11 +33,12 @@ export interface DashboardPanel {
 }
 
 /** Dashboard group for visual categorization in the list view. */
-export type DashboardGroup = 'ClickHouse' | 'Grafana Imports' | 'TraceHouse' | 'Custom';
+export type DashboardGroup = 'ClickHouse' | 'Grafana Imports' | 'Altinity KB' | 'TraceHouse' | 'Custom';
 
 export const DASHBOARD_GROUPS: { name: DashboardGroup; color: string }[] = [
   { name: 'ClickHouse', color: '#facc15' },
   { name: 'Grafana Imports', color: '#38bdf8' },
+  { name: 'Altinity KB', color: '#2dd4bf' },
   { name: 'TraceHouse', color: '#7c3aed' },
   { name: 'Custom', color: '#79c0ff' },
 ];
@@ -600,6 +601,88 @@ const BUILTIN_DASHBOARDS: Dashboard[] = [
       { queryName: 'Grafana Imports#Network Bytes (send/receive)', section: 'Network & I/O' },
       { queryName: 'Grafana Imports#Disk Read/Write Bytes' },
       { queryName: 'Grafana Imports#Disk Read/Write IOps' },
+    ],
+  },
+
+  // ─── Altinity KB ──────────────────────────────────────────────────
+  // Single dashboard with collapsible sections — diagnostic queries
+  // reproduced natively from the Altinity ClickHouse Knowledge Base.
+  // Read-only only: the KB's maintenance/command-generator recipes
+  // (ALTER/DROP/DETACH/FORGET/delete DDL) are intentionally excluded.
+  // Source: https://kb.altinity.com/
+
+  {
+    id: 'altinity-kb',
+    title: 'Altinity Knowledge Base',
+    description: 'Diagnostic queries from the Altinity ClickHouse KB - CPU, memory, parts, schema, replication and debugging - reproduced natively, read-only',
+    source: 'https://kb.altinity.com/',
+    group: 'Altinity KB',
+    columns: 2,
+    // One collapsible section per KB article — section titles match the article
+    // titles on kb.altinity.com so the page maps directly onto the dashboard.
+    panels: [
+      // ── https://kb.altinity.com/altinity-kb-setup-and-maintenance/who-ate-my-cpu/ ──
+      { queryName: 'Altinity KB#Merges', section: 'Who ate my CPU' },
+      { queryName: 'Altinity KB#Mutations' },
+      { queryName: 'Altinity KB#Current Processes' },
+      { queryName: 'Altinity KB#Processes retrospectively' },
+
+      // ── https://kb.altinity.com/altinity-kb-setup-and-maintenance/altinity-kb-who-ate-my-memory/ ──
+      { queryName: 'Altinity KB#Memory breakdown', section: 'Who ate my ClickHouse memory?' },
+      { queryName: 'Altinity KB#Top queries by peak memory' },
+      { queryName: 'Altinity KB#Top memory queries (history)' },
+      { queryName: 'Altinity KB#RAM peaks by hour (retrospection)' },
+
+      // ── https://kb.altinity.com/altinity-kb-setup-and-maintenance/altinity-kb-threads/ ──
+      { queryName: 'Altinity KB#Thread pool limits (settings)', section: 'Threads' },
+      { queryName: 'Altinity KB#Thread pool usage (current)' },
+      { queryName: 'Altinity KB#Threads used by running queries' },
+
+      // ── https://kb.altinity.com/altinity-kb-setup-and-maintenance/cgroups_k8s/ ──
+      { queryName: 'Altinity KB#max_threads detection', section: 'cgroups and k8s' },
+
+      // ── https://kb.altinity.com/altinity-kb-setup-and-maintenance/altinity-kb-monitoring/ ──
+      { queryName: 'Altinity KB#Minimum necessary set of checks', section: 'ClickHouse Monitoring' },
+      { queryName: 'Altinity KB#Error Events' },
+
+      // ── https://kb.altinity.com/altinity-kb-setup-and-maintenance/altinity-kb-memory-configuration-settings/ ──
+      { queryName: 'Altinity KB#RAM vs max_server_memory_usage', section: 'memory configuration settings' },
+
+      // ── https://kb.altinity.com/altinity-kb-useful-queries/query_log/ ──
+      { queryName: 'Altinity KB#Most resource-intensive queries', section: 'Handy queries for system.query_log' },
+
+      // ── https://kb.altinity.com/altinity-kb-useful-queries/altinity-kb-number-of-active-parts-in-a-partition/ ──
+      { queryName: 'Altinity KB#Active Parts per Partition', section: 'Number of active parts in a partition' },
+
+      // ── https://kb.altinity.com/altinity-kb-setup-and-maintenance/multidisk-jbod-balancing/ ──
+      { queryName: 'Altinity KB#Per-Disk Data Distribution', section: 'MultiDisk (JBOD) Balancing' },
+
+      // ── https://kb.altinity.com/altinity-kb-useful-queries/altinity-kb-database-size-table-column-size/ ──
+      { queryName: 'Altinity KB#Part Lifecycle (30m)', section: 'Database Size - Table - Column size' },
+
+      // ── https://kb.altinity.com/altinity-kb-useful-queries/detached-parts/ ──
+      { queryName: 'Altinity KB#Detached Parts by Reason', section: 'Can detached parts be dropped?' },
+      { queryName: 'Altinity KB#Detached Parts Trend' },
+
+      // ── https://kb.altinity.com/altinity-kb-schema-design/codecs/altinity-kb-how-to-test-different-compression-codecs/ ──
+      { queryName: 'Altinity KB#Compression Ratio by Table', section: 'How to test different compression codecs' },
+
+      // ── https://kb.altinity.com/altinity-kb-setup-and-maintenance/altinity-kb-check-replication-ddl-queue/ ──
+      { queryName: 'Altinity KB#Read-Only Replicas', section: 'ClickHouse Replication problems' },
+
+      // ── https://kb.altinity.com/altinity-kb-setup-and-maintenance/altinity-kb-replication-queue/ ──
+      { queryName: 'Altinity KB#Replication Queue by Type', section: 'Replication queue' },
+
+      // ── https://kb.altinity.com/altinity-kb-setup-and-maintenance/altinity-kb-ddlworker/ ──
+      { queryName: 'Altinity KB#Distributed DDL Queue', section: 'DDLWorker and DDL queue problems' },
+
+      // ── https://kb.altinity.com/altinity-kb-useful-queries/debug-hang/ ──
+      { queryName: 'Altinity KB#Aggregated Stack Traces', section: 'Debug hanging thing' },
+
+      // ── https://kb.altinity.com/altinity-kb-useful-queries/connection-issues-distributed-parts/ ──
+      { queryName: 'Altinity KB#Cluster connectivity probe', section: 'Notes on errors (replication & distributed connections)' },
+      { queryName: 'Altinity KB#Errors by Type' },
+      { queryName: 'Altinity KB#Cluster Connectivity' },
     ],
   },
 ];

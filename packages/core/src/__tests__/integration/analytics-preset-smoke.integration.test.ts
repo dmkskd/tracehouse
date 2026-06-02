@@ -32,7 +32,7 @@ describe('Preset analytics query smoke tests', { tags: ['analytics'] }, () => {
   let ctx: TestClickHouseContext;
 
   beforeAll(async () => {
-    ctx = await startClickHouse();
+    ctx = await startClickHouse({ withKeeper: true });
 
     // Minimal activity so system.part_log / system.query_log have entries.
     await ctx.client.command({ query: `CREATE DATABASE IF NOT EXISTS smoke_test` });
