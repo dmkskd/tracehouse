@@ -27,6 +27,7 @@ const queries: string[] = [
   `-- @meta: title='Merges' group='Altinity KB' description='Who ate my CPU - currently running merges, with completion estimate, progress, compressed size and memory usage.'
 -- @source: https://kb.altinity.com/altinity-kb-setup-and-maintenance/who-ate-my-cpu/
 SELECT
+    hostName() AS host,
     database,
     table,
     round((elapsed * (1 / progress)) - elapsed, 2) AS estimate_sec,
@@ -35,30 +36,32 @@ SELECT
     is_mutation,
     formatReadableSize(total_size_bytes_compressed) AS size,
     formatReadableSize(memory_usage) AS memory
-FROM system.merges
+FROM {{cluster_aware:system.merges}}
 ORDER BY elapsed DESC`,
 
   `-- @meta: title='Mutations' group='Altinity KB' description='Who ate my CPU - mutations still in progress, with parts remaining to do and any latest failure reason.'
 -- @source: https://kb.altinity.com/altinity-kb-setup-and-maintenance/who-ate-my-cpu/
 SELECT
+    hostName() AS host,
     database,
     table,
     substr(command, 1, 50) AS command,
     sum(parts_to_do) AS parts_to_do,
     anyIf(latest_fail_reason, latest_fail_reason != '') AS latest_fail_reason
-FROM system.mutations
+FROM {{cluster_aware:system.mutations}}
 WHERE NOT is_done
-GROUP BY database, table, command
+GROUP BY host, database, table, command
 ORDER BY parts_to_do DESC`,
 
   `-- @meta: title='Current Processes' group='Altinity KB' description='Who ate my CPU - initial queries currently running for more than 2 seconds.'
 -- @source: https://kb.altinity.com/altinity-kb-setup-and-maintenance/who-ate-my-cpu/
 SELECT
+    hostName() AS host,
     round(elapsed, 1) AS elapsed_sec,
     user,
     query_id,
     substring(query, 1, 150) AS query
-FROM system.processes
+FROM {{cluster_aware:system.processes}}
 WHERE is_initial_query AND elapsed > 2
 ORDER BY elapsed DESC`,
 
@@ -166,6 +169,7 @@ ORDER BY val DESC`,
 -- @cell: column=peak_mb type=rag green<100 amber<1000
 -- @source: https://kb.altinity.com/altinity-kb-setup-and-maintenance/altinity-kb-who-ate-my-memory/
 SELECT
+    hostName() AS host,
     initial_query_id,
     elapsed,
     formatReadableSize(memory_usage) AS memory,
@@ -173,7 +177,7 @@ SELECT
     round(peak_memory_usage / 1048576, 1) AS peak_mb,
     max(round(peak_memory_usage / 1048576, 1)) OVER () AS max_peak_mb,
     query
-FROM system.processes
+FROM {{cluster_aware:system.processes}}
 ORDER BY peak_memory_usage DESC
 LIMIT 10`,
 
@@ -258,13 +262,14 @@ ORDER BY category ASC, name ASC`,
   `-- @meta: title='Threads used by running queries' group='Altinity KB' description='Threads - thread count of each in-flight query (length of thread_ids). Find queries fanning out across many threads.'
 -- @source: https://kb.altinity.com/altinity-kb-setup-and-maintenance/altinity-kb-threads/
 SELECT
+    hostName() AS host,
     query_id,
     user,
     length(thread_ids) AS threads,
     round(elapsed, 1) AS elapsed_sec,
     formatReadableSize(memory_usage) AS memory,
     substring(query, 1, 100) AS query
-FROM system.processes
+FROM {{cluster_aware:system.processes}}
 WHERE is_initial_query
 ORDER BY threads DESC
 LIMIT 30`,
@@ -449,12 +454,13 @@ ORDER BY database ASC, table ASC, t ASC`,
   `-- @meta: title='Detached Parts by Reason' group='Altinity KB' description='Can detached parts be dropped? - detached parts per database, table and reason (broken, unexpected, manual detach, etc.).'
 -- @source: https://kb.altinity.com/altinity-kb-useful-queries/detached-parts/
 SELECT
+    hostName() AS host,
     database,
     table,
     reason,
     count() AS parts
-FROM system.detached_parts
-GROUP BY database, table, reason
+FROM {{cluster_aware:system.detached_parts}}
+GROUP BY host, database, table, reason
 ORDER BY parts DESC`,
 
   `-- @meta: title='Detached Parts Trend' group='Altinity KB' interval='1 DAY' description='Can detached parts be dropped? - detached part counts over time (total and user-detached). A rising line points to recurring corruption or failed attaches.'
@@ -515,6 +521,7 @@ LIMIT 50`,
   `-- @meta: title='Read-Only Replicas' group='Altinity KB' description='ClickHouse Replication problems - replicas stuck in read-only mode (the is_readonly predicate the KB recovery procedure targets). Usually a lost ZooKeeper session or metadata issue.'
 -- @source: https://kb.altinity.com/altinity-kb-setup-and-maintenance/altinity-kb-check-replication-ddl-queue/
 SELECT
+    hostName() AS host,
     database,
     table,
     replica_name,
@@ -522,7 +529,7 @@ SELECT
     absolute_delay,
     queue_size,
     zookeeper_path
-FROM system.replicas
+FROM {{cluster_aware:system.replicas}}
 WHERE is_readonly
 ORDER BY database, table`,
 
@@ -533,6 +540,7 @@ ORDER BY database, table`,
 -- @chart: type=stacked_bar group_by=table value=count_all series=type style=2d
 -- @source: https://kb.altinity.com/altinity-kb-setup-and-maintenance/altinity-kb-replication-queue/
 SELECT
+    hostName() AS host,
     database,
     table,
     type,
@@ -541,8 +549,8 @@ SELECT
     countIf(num_postponed > 0) AS postponed,
     countIf(last_exception != '') AS errors,
     max(num_tries) AS max_tries
-FROM system.replication_queue
-GROUP BY database, table, type
+FROM {{cluster_aware:system.replication_queue}}
+GROUP BY host, database, table, type
 ORDER BY count_all DESC
 LIMIT 50`,
 

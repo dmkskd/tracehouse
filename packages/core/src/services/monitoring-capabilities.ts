@@ -401,6 +401,86 @@ export class MonitoringCapabilitiesService {
         description: 'Currently executing queries. Enables real-time running query monitoring.',
         category: 'introspection',
       },
+      metrics: {
+        label: 'System Metrics',
+        description: 'Instantaneous metric gauges (running queries, memory, delayed inserts, pool tasks). Enables live health and resource readouts.',
+        category: 'metrics',
+      },
+      asynchronous_metrics: {
+        label: 'Async Metrics',
+        description: 'OS and server async gauges (RAM, CPU cores, cache sizes, uptime, max parts per partition). Enables resource and memory readouts.',
+        category: 'metrics',
+      },
+      events: {
+        label: 'System Events',
+        description: 'Cumulative event counters since startup (errors, rejected inserts, data-loss, ZooKeeper exceptions). Enables error-counter checks.',
+        category: 'metrics',
+      },
+      settings: {
+        label: 'Settings',
+        description: 'Session-level settings and their values. Enables settings inspection (e.g. max_threads, thread pools).',
+        category: 'introspection',
+      },
+      server_settings: {
+        label: 'Server Settings',
+        description: 'Server-level configuration values. Enables server config inspection (e.g. max_server_memory_usage).',
+        category: 'introspection',
+      },
+      parts_columns: {
+        label: 'Part Columns',
+        description: 'Per-column storage within data parts. Enables column-level size and compression analysis.',
+        category: 'introspection',
+      },
+      columns: {
+        label: 'Columns',
+        description: 'Column metadata including compression codecs. Enables codec and column inspection.',
+        category: 'introspection',
+      },
+      detached_parts: {
+        label: 'Detached Parts',
+        description: 'Detached parts and their detach reasons. Enables detached-part monitoring and cleanup diagnosis.',
+        category: 'introspection',
+      },
+      replication_queue: {
+        label: 'Replication Queue',
+        description: 'Pending replication tasks per replica with retry and error state. Enables replication-queue health analysis.',
+        category: 'introspection',
+      },
+      distributed_ddl_queue: {
+        label: 'Distributed DDL Queue',
+        description: 'ON CLUSTER DDL task queue, stored in Keeper. Enables distributed-DDL progress and failure inspection.',
+        category: 'introspection',
+      },
+      stack_trace: {
+        label: 'Stack Trace',
+        description: 'Live thread stack traces (requires introspection functions). Enables server hang and contention diagnosis.',
+        category: 'profiling',
+      },
+      errors: {
+        label: 'Server Errors',
+        description: 'Per-error counters with last message and time. Enables server error triage.',
+        category: 'introspection',
+      },
+      dictionaries: {
+        label: 'Dictionaries',
+        description: 'Loaded dictionaries with memory and load status. Enables dictionary memory and load-failure monitoring.',
+        category: 'introspection',
+      },
+      asynchronous_inserts: {
+        label: 'Async Inserts',
+        description: 'Pending asynchronous insert buffers. Enables async-insert memory and backlog accounting.',
+        category: 'introspection',
+      },
+      user_processes: {
+        label: 'User Processes',
+        description: 'Per-user memory and query resource usage. Enables per-user resource attribution.',
+        category: 'introspection',
+      },
+      query_cache: {
+        label: 'Query Cache',
+        description: 'Cached query results and their sizes. Enables query-cache memory accounting.',
+        category: 'introspection',
+      },
     };
 
     for (const tableName of PROBE_SYSTEM_TABLE_ACCESS_TABLES) {

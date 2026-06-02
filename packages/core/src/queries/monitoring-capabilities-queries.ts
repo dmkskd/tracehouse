@@ -139,6 +139,23 @@ export const PROBE_SYSTEM_TABLE_ACCESS_TABLES = [
   'parts',      // Database Explorer parts, Analytics
   'databases',  // Database Explorer
   'processes',  // Query Monitor running queries
+  // Metric / settings / operational tables consumed across analytics and dashboards.
+  'metrics',                // instantaneous metric gauges
+  'asynchronous_metrics',   // OS/server async gauges
+  'events',                 // cumulative event counters
+  'settings',               // session settings
+  'server_settings',        // server config values
+  'parts_columns',          // per-column part storage
+  'columns',                // column metadata + codecs
+  'detached_parts',         // detached parts + reasons
+  'replication_queue',      // pending replication tasks
+  'distributed_ddl_queue',  // ON CLUSTER DDL queue (needs Keeper)
+  'stack_trace',            // live thread stacks (needs introspection)
+  'errors',                 // per-error counters
+  'dictionaries',           // loaded dictionaries
+  'asynchronous_inserts',   // pending async insert buffers
+  'user_processes',         // per-user resource usage
+  'query_cache',            // cached query results
 ] as const;
 
 /**
