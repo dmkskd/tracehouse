@@ -598,7 +598,7 @@ SELECT count() AS responding_replicas
 FROM {{cluster_aware:system.one}}`,
 
   `-- @meta: title='Errors by Type' group='Altinity KB' interval='1 HOUR' description='Notes on errors (replication and distributed connections) - Check for Errors: recent error counters (last hour) with the last message seen for each, per host.'
--- @chart: type=bar group_by=name value=count style=2d
+-- @chart: type=stacked_bar group_by=name value=count series=host style=2d
 -- @source: https://kb.altinity.com/altinity-kb-useful-queries/connection-issues-distributed-parts/
 SELECT
     hostName() AS host,
