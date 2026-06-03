@@ -40,14 +40,18 @@ GRANT SELECT ON replacing_test.* TO read_only;
 -- ============================================================
 -- Grants — system tables the app needs
 -- ============================================================
+GRANT SELECT ON system.asynchronous_inserts TO read_only;
 GRANT SELECT ON system.asynchronous_metric_log TO read_only;
 GRANT SELECT ON system.asynchronous_metrics TO read_only;
 GRANT SELECT ON system.build_options TO read_only;
 GRANT SELECT ON system.clusters TO read_only;
 GRANT SELECT ON system.columns TO read_only;
 GRANT SELECT ON system.databases TO read_only;
+GRANT SELECT ON system.detached_parts TO read_only;
 GRANT SELECT ON system.dictionaries TO read_only;
 GRANT SELECT ON system.disks TO read_only;
+GRANT SELECT ON system.distributed_ddl_queue TO read_only;
+GRANT SELECT ON system.errors TO read_only;
 GRANT SELECT ON system.events TO read_only;
 GRANT SELECT ON system.merges TO read_only;
 GRANT SELECT ON system.metric_log TO read_only;
@@ -60,16 +64,19 @@ GRANT SELECT ON system.parts TO read_only;
 GRANT SELECT ON system.parts_columns TO read_only;
 GRANT SELECT ON system.processes TO read_only;
 GRANT SELECT ON system.processors_profile_log TO read_only;
+GRANT SELECT ON system.query_cache TO read_only;
 GRANT SELECT ON system.query_log TO read_only;
 GRANT SELECT ON system.query_thread_log TO read_only;
 GRANT SELECT ON system.replicas TO read_only;
 GRANT SELECT ON system.replication_queue TO read_only;
 GRANT SELECT ON system.server_settings TO read_only;
 GRANT SELECT ON system.settings TO read_only;
+GRANT SELECT ON system.stack_trace TO read_only;
 GRANT SELECT ON system.storage_policies TO read_only;
 GRANT SELECT ON system.tables TO read_only;
 GRANT SELECT ON system.text_log TO read_only;
 GRANT SELECT ON system.trace_log TO read_only;
+GRANT SELECT ON system.user_processes TO read_only;
 GRANT SELECT ON system.view_refreshes TO read_only;
 GRANT SELECT ON system.zookeeper TO read_only;
 GRANT SELECT ON system.functions TO read_only;
