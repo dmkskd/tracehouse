@@ -33,12 +33,12 @@ export interface DashboardPanel {
 }
 
 /** Dashboard group for visual categorization in the list view. */
-export type DashboardGroup = 'ClickHouse' | 'Grafana Imports' | 'Altinity KB' | 'TraceHouse' | 'Custom';
+export type DashboardGroup = 'ClickHouse' | 'Grafana Imports' | 'Knowledge Base' | 'TraceHouse' | 'Custom';
 
 export const DASHBOARD_GROUPS: { name: DashboardGroup; color: string }[] = [
   { name: 'ClickHouse', color: '#facc15' },
   { name: 'Grafana Imports', color: '#38bdf8' },
-  { name: 'Altinity KB', color: '#2dd4bf' },
+  { name: 'Knowledge Base', color: '#f97316' },
   { name: 'TraceHouse', color: '#7c3aed' },
   { name: 'Custom', color: '#79c0ff' },
 ];
@@ -604,6 +604,40 @@ const BUILTIN_DASHBOARDS: Dashboard[] = [
     ],
   },
 
+  // ─── ClickHouse KB ────────────────────────────────────────────────
+  // Single dashboard with collapsible sections — read-only diagnostics
+  // adapted from the official ClickHouse Knowledge Base.
+  // Source: https://clickhouse.com/docs/knowledgebase
+
+  {
+    id: 'clickhouse-kb',
+    title: 'ClickHouse Knowledge Base',
+    description: 'Read-only diagnostics adapted from the official ClickHouse Knowledge Base - part formats, memory pressure and JSON schema inventory',
+    source: 'https://clickhouse.com/docs/knowledgebase',
+    group: 'Knowledge Base',
+    category: 'ClickHouse.com',
+    columns: 2,
+    panels: [
+      // ── https://clickhouse.com/docs/knowledgebase/understanding-part-types-and-storage-formats ──
+      { queryName: 'Knowledge Base#Part Type Summary', section: 'Understanding part types and storage formats' },
+      { queryName: 'Knowledge Base#Part Type by Table' },
+      { queryName: 'Knowledge Base#Part Levels by Table' },
+      { queryName: 'Knowledge Base#Part Format Settings' },
+
+      // ── https://clickhouse.com/docs/knowledgebase/count-parts-by-type ──
+      { queryName: 'Knowledge Base#Part Counts by Type', section: 'Find counts and sizes of wide or compact parts' },
+      { queryName: 'Knowledge Base#Column Sizes by Part Type' },
+
+      // ── https://clickhouse.com/docs/knowledgebase/memory-limit-exceeded-for-query ──
+      { queryName: 'Knowledge Base#Top Queries by Memory', section: 'Memory limit exceeded for query' },
+      { queryName: 'Knowledge Base#Memory Spill & Join Settings' },
+
+      // ── https://clickhouse.com/docs/knowledgebase ──
+      { queryName: 'Knowledge Base#JSON Column Inventory', section: 'Runbook: JSON schema' },
+      { queryName: 'Knowledge Base#JSON Columns by Table' },
+    ],
+  },
+
   // ─── Altinity KB ──────────────────────────────────────────────────
   // Single dashboard with collapsible sections — diagnostic queries
   // reproduced natively from the Altinity ClickHouse Knowledge Base.
@@ -616,73 +650,97 @@ const BUILTIN_DASHBOARDS: Dashboard[] = [
     title: 'Altinity Knowledge Base',
     description: 'Diagnostic queries from the Altinity ClickHouse KB - CPU, memory, parts, schema, replication and debugging - reproduced natively, read-only',
     source: 'https://kb.altinity.com/',
-    group: 'Altinity KB',
+    group: 'Knowledge Base',
+    category: 'Altinity',
     columns: 2,
+    filters: [
+      {
+        param: 'tbl',
+        label: 'Table',
+        query: "SELECT concat(database, '.', name) AS tbl FROM system.tables WHERE database NOT IN ('system', 'INFORMATION_SCHEMA', 'information_schema') AND engine LIKE '%MergeTree%' ORDER BY tbl",
+      },
+    ],
     // One collapsible section per KB article — section titles match the article
     // titles on kb.altinity.com so the page maps directly onto the dashboard.
     panels: [
       // ── https://kb.altinity.com/altinity-kb-setup-and-maintenance/who-ate-my-cpu/ ──
-      { queryName: 'Altinity KB#Merges', section: 'Who ate my CPU' },
-      { queryName: 'Altinity KB#Mutations' },
-      { queryName: 'Altinity KB#Current Processes' },
-      { queryName: 'Altinity KB#Processes retrospectively' },
+      { queryName: 'Knowledge Base#Merges', section: 'Who ate my CPU' },
+      { queryName: 'Knowledge Base#Mutations' },
+      { queryName: 'Knowledge Base#Current Processes' },
+      { queryName: 'Knowledge Base#Processes retrospectively' },
 
       // ── https://kb.altinity.com/altinity-kb-setup-and-maintenance/altinity-kb-who-ate-my-memory/ ──
-      { queryName: 'Altinity KB#Memory breakdown', section: 'Who ate my ClickHouse memory?' },
-      { queryName: 'Altinity KB#Top queries by peak memory' },
-      { queryName: 'Altinity KB#Top memory queries (history)' },
-      { queryName: 'Altinity KB#RAM peaks by hour (retrospection)' },
+      { queryName: 'Knowledge Base#Memory breakdown', section: 'Who ate my ClickHouse memory?' },
+      { queryName: 'Knowledge Base#Top queries by peak memory' },
+      { queryName: 'Knowledge Base#Top memory queries (history)' },
+      { queryName: 'Knowledge Base#RAM peaks by hour (retrospection)' },
 
       // ── https://kb.altinity.com/altinity-kb-setup-and-maintenance/altinity-kb-threads/ ──
-      { queryName: 'Altinity KB#Thread pool limits (settings)', section: 'Threads' },
-      { queryName: 'Altinity KB#Thread pool usage (current)' },
-      { queryName: 'Altinity KB#Threads used by running queries' },
+      { queryName: 'Knowledge Base#Thread pool limits (settings)', section: 'Threads' },
+      { queryName: 'Knowledge Base#Thread pool usage (current)' },
+      { queryName: 'Knowledge Base#Threads used by running queries' },
 
       // ── https://kb.altinity.com/altinity-kb-setup-and-maintenance/cgroups_k8s/ ──
-      { queryName: 'Altinity KB#max_threads detection', section: 'cgroups and k8s' },
+      { queryName: 'Knowledge Base#max_threads detection', section: 'cgroups and k8s' },
 
       // ── https://kb.altinity.com/altinity-kb-setup-and-maintenance/altinity-kb-monitoring/ ──
-      { queryName: 'Altinity KB#Minimum necessary set of checks', section: 'ClickHouse Monitoring' },
-      { queryName: 'Altinity KB#Error Events' },
+      { queryName: 'Knowledge Base#Minimum necessary set of checks', section: 'ClickHouse Monitoring' },
+      { queryName: 'Knowledge Base#Error Events' },
 
       // ── https://kb.altinity.com/altinity-kb-setup-and-maintenance/altinity-kb-memory-configuration-settings/ ──
-      { queryName: 'Altinity KB#RAM vs max_server_memory_usage', section: 'memory configuration settings' },
+      { queryName: 'Knowledge Base#RAM vs max_server_memory_usage', section: 'memory configuration settings' },
 
       // ── https://kb.altinity.com/altinity-kb-useful-queries/query_log/ ──
-      { queryName: 'Altinity KB#Most resource-intensive queries', section: 'Handy queries for system.query_log' },
+      { queryName: 'Knowledge Base#Most resource-intensive queries', section: 'Handy queries for system.query_log' },
+      { queryName: 'Knowledge Base#Most Used Functions' },
+      { queryName: 'Knowledge Base#Most Selected Columns' },
+      { queryName: 'Knowledge Base#Columns Used in WHERE' },
+      { queryName: 'Knowledge Base#Unfinished or Failed Queries' },
+      { queryName: 'Knowledge Base#Worst Offender Query Ranks' },
 
       // ── https://kb.altinity.com/altinity-kb-useful-queries/altinity-kb-number-of-active-parts-in-a-partition/ ──
-      { queryName: 'Altinity KB#Active Parts per Partition', section: 'Number of active parts in a partition' },
+      { queryName: 'Knowledge Base#Active Parts per Partition', section: 'Number of active parts in a partition' },
 
       // ── https://kb.altinity.com/altinity-kb-setup-and-maintenance/multidisk-jbod-balancing/ ──
-      { queryName: 'Altinity KB#Per-Disk Data Distribution', section: 'MultiDisk (JBOD) Balancing' },
+      { queryName: 'Knowledge Base#Per-Disk Data Distribution', section: 'MultiDisk (JBOD) Balancing' },
 
       // ── https://kb.altinity.com/altinity-kb-useful-queries/altinity-kb-database-size-table-column-size/ ──
-      { queryName: 'Altinity KB#Part Lifecycle (30m)', section: 'Database Size - Table - Column size' },
+      { queryName: 'Knowledge Base#Part Lifecycle (30m)', section: 'Database Size - Table - Column size' },
+
+      // ── https://kb.altinity.com/altinity-kb-useful-queries/ingestion-rate-part_log/ ──
+      { queryName: 'Knowledge Base#Parts per Insert', section: 'Ingestion metrics from system.part_log' },
+      { queryName: 'Knowledge Base#Rows per Insert' },
+      { queryName: 'Knowledge Base#New Parts by Partition' },
+      { queryName: 'Knowledge Base#Too Fast Inserts' },
 
       // ── https://kb.altinity.com/altinity-kb-useful-queries/detached-parts/ ──
-      { queryName: 'Altinity KB#Detached Parts by Reason', section: 'Can detached parts be dropped?' },
-      { queryName: 'Altinity KB#Detached Parts Trend' },
+      { queryName: 'Knowledge Base#Detached Parts by Reason', section: 'Can detached parts be dropped?' },
+      { queryName: 'Knowledge Base#Detached Parts Trend' },
 
       // ── https://kb.altinity.com/altinity-kb-schema-design/codecs/altinity-kb-how-to-test-different-compression-codecs/ ──
-      { queryName: 'Altinity KB#Compression Ratio by Table', section: 'How to test different compression codecs' },
+      { queryName: 'Knowledge Base#Compression Ratio by Table', section: 'How to test different compression codecs' },
 
       // ── https://kb.altinity.com/altinity-kb-setup-and-maintenance/altinity-kb-check-replication-ddl-queue/ ──
-      { queryName: 'Altinity KB#Read-Only Replicas', section: 'ClickHouse Replication problems' },
+      { queryName: 'Knowledge Base#Read-Only Replicas', section: 'ClickHouse Replication problems' },
 
       // ── https://kb.altinity.com/altinity-kb-setup-and-maintenance/altinity-kb-replication-queue/ ──
-      { queryName: 'Altinity KB#Replication Queue by Type', section: 'Replication queue' },
+      { queryName: 'Knowledge Base#Replication Queue by Type', section: 'Replication queue' },
 
       // ── https://kb.altinity.com/altinity-kb-setup-and-maintenance/altinity-kb-ddlworker/ ──
-      { queryName: 'Altinity KB#Distributed DDL Queue', section: 'DDLWorker and DDL queue problems' },
+      { queryName: 'Knowledge Base#Distributed DDL Queue', section: 'DDLWorker and DDL queue problems' },
+
+      // ── https://kb.altinity.com/altinity-kb-setup-and-maintenance/altinity-kb-system-tables-eat-my-disk/ ──
+      { queryName: 'Knowledge Base#System Log Table Sizes', section: 'System tables ate my disk' },
+      { queryName: 'Knowledge Base#System Log TTL Coverage' },
+      { queryName: 'Knowledge Base#Renamed System Log Tables' },
 
       // ── https://kb.altinity.com/altinity-kb-useful-queries/debug-hang/ ──
-      { queryName: 'Altinity KB#Aggregated Stack Traces', section: 'Debug hanging thing' },
+      { queryName: 'Knowledge Base#Aggregated Stack Traces', section: 'Debug hanging thing' },
 
       // ── https://kb.altinity.com/altinity-kb-useful-queries/connection-issues-distributed-parts/ ──
-      { queryName: 'Altinity KB#Cluster connectivity probe', section: 'Notes on errors (replication & distributed connections)' },
-      { queryName: 'Altinity KB#Errors by Type' },
-      { queryName: 'Altinity KB#Cluster Connectivity' },
+      { queryName: 'Knowledge Base#Cluster connectivity probe', section: 'Notes on errors (replication & distributed connections)' },
+      { queryName: 'Knowledge Base#Errors by Type' },
+      { queryName: 'Knowledge Base#Cluster Connectivity' },
     ],
   },
 ];

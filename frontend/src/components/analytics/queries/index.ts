@@ -16,6 +16,7 @@ import mergeAnalytics from './mergeAnalytics';
 import cloudMonitoring from './cloudMonitoring';
 import altinityOperator from './altinityOperator';
 import altinityKb from './altinityKb';
+import clickHouseKb from './clickhouseKb';
 
 export const RAW_QUERIES: string[] = [
   ...overview,
@@ -34,4 +35,5 @@ export const RAW_QUERIES: string[] = [
   ...cloudMonitoring,
   ...altinityOperator,
   ...altinityKb,
+  ...clickHouseKb,
 ];

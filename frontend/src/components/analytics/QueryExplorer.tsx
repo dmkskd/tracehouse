@@ -1083,6 +1083,33 @@ const QueriesGrid: React.FC<{ search: string; onSearchChange: (s: string) => voi
   const searchLower = search.toLowerCase();
   const allQueries = useMemo(() => [...PRESET_QUERIES, ...customQueries], [customQueries]);
   const customNames = useMemo(() => new Set(customQueries.map(q => q.name)), [customQueries]);
+  const renderQueryCard = (p: Query, key: React.Key) => (
+    <button key={key} onClick={() => onSelect(p)}
+      style={{ display: 'flex', flexDirection: 'column', gap: 6, padding: '14px 16px', background: 'var(--bg-card)', border: '1px solid var(--border-secondary)', borderRadius: 6, textAlign: 'left', cursor: 'pointer', position: 'relative', transition: 'all .15s' }}>
+      {p.directives.chart?.type && (
+        <span style={{ position: 'absolute', top: 8, right: customNames.has(p.name) ? 28 : 8, display: 'flex', alignItems: 'center', gap: 4, fontSize: 9, fontWeight: 500, color: 'var(--text-muted)', background: 'rgba(99,102,241,0.15)', padding: '2px 6px', borderRadius: 4 }}>
+          {CHART_TYPE_LABELS[p.directives.chart.type] ?? p.directives.chart.type}
+          {p.directives.chart.style && <span style={{ fontSize: 8, fontWeight: 600, color: 'var(--accent-primary)', background: 'rgba(99,102,241,0.25)', padding: '1px 4px', borderRadius: 2 }}>{p.directives.chart.style.toUpperCase()}</span>}
+        </span>
+      )}
+      {customNames.has(p.name) && (
+        <span
+          onClick={(e) => { e.stopPropagation(); onDeleteCustom(p.name); }}
+          style={{ position: 'absolute', top: 6, right: 6, fontSize: 14, color: 'var(--text-muted)', cursor: 'pointer', padding: '0 4px', borderRadius: 4, lineHeight: 1 }}
+          title="Delete custom query">×</span>
+      )}
+      <span style={{ fontSize: 13, fontWeight: 500, color: 'var(--text-primary)', paddingRight: p.directives.chart?.type ? 60 : 0, display: 'flex', alignItems: 'center', gap: 6 }}>
+        {p.name}
+        {customNames.has(p.name) && <span style={{ fontSize: 8, fontWeight: 600, color: '#79c0ff', background: 'rgba(121,192,255,0.12)', padding: '1px 5px', borderRadius: 3, letterSpacing: '0.3px', flexShrink: 0 }}>CUSTOM</span>}
+      </span>
+      <span style={{ fontSize: 11, color: 'var(--text-muted)', lineHeight: 1.4 }}>{p.description}</span>
+      {p.directives.source && (
+        <span style={{ fontSize: 9, color: 'var(--text-muted)', opacity: 0.7, marginTop: 2 }} title={p.directives.source}>
+          Source: {p.directives.source.includes('github.com/ClickHouse') ? 'ClickHouse OSS (Apache 2.0)' : p.directives.source.includes('clickhouse.com/blog') ? 'ClickHouse Blog' : p.directives.source.replace(/^https?:\/\//, '').split('/').slice(0, 2).join('/')}
+        </span>
+      )}
+    </button>
+  );
   return (
     <div style={{ flex: 1, overflow: 'auto', padding: 24 }}>
       {/* Search */}
@@ -1111,33 +1138,7 @@ const QueriesGrid: React.FC<{ search: string; onSearchChange: (s: string) => voi
               {groupKey}
             </h3>
             <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(280px, 1fr))', gap: 12 }}>
-              {groupQueries.map((p, i) => (
-                <button key={i} onClick={() => onSelect(p)}
-                  style={{ display: 'flex', flexDirection: 'column', gap: 6, padding: '14px 16px', background: 'var(--bg-card)', border: '1px solid var(--border-secondary)', borderRadius: 6, textAlign: 'left', cursor: 'pointer', position: 'relative', transition: 'all .15s' }}>
-                  {p.directives.chart?.type && (
-                    <span style={{ position: 'absolute', top: 8, right: customNames.has(p.name) ? 28 : 8, display: 'flex', alignItems: 'center', gap: 4, fontSize: 9, fontWeight: 500, color: 'var(--text-muted)', background: 'rgba(99,102,241,0.15)', padding: '2px 6px', borderRadius: 4 }}>
-                      {CHART_TYPE_LABELS[p.directives.chart.type] ?? p.directives.chart.type}
-                      {p.directives.chart.style && <span style={{ fontSize: 8, fontWeight: 600, color: 'var(--accent-primary)', background: 'rgba(99,102,241,0.25)', padding: '1px 4px', borderRadius: 2 }}>{p.directives.chart.style.toUpperCase()}</span>}
-                    </span>
-                  )}
-                  {customNames.has(p.name) && (
-                    <span
-                      onClick={(e) => { e.stopPropagation(); onDeleteCustom(p.name); }}
-                      style={{ position: 'absolute', top: 6, right: 6, fontSize: 14, color: 'var(--text-muted)', cursor: 'pointer', padding: '0 4px', borderRadius: 4, lineHeight: 1 }}
-                      title="Delete custom query">×</span>
-                  )}
-                  <span style={{ fontSize: 13, fontWeight: 500, color: 'var(--text-primary)', paddingRight: p.directives.chart?.type ? 60 : 0, display: 'flex', alignItems: 'center', gap: 6 }}>
-                    {p.name}
-                    {customNames.has(p.name) && <span style={{ fontSize: 8, fontWeight: 600, color: '#79c0ff', background: 'rgba(121,192,255,0.12)', padding: '1px 5px', borderRadius: 3, letterSpacing: '0.3px', flexShrink: 0 }}>CUSTOM</span>}
-                  </span>
-                  <span style={{ fontSize: 11, color: 'var(--text-muted)', lineHeight: 1.4 }}>{p.description}</span>
-                  {p.directives.source && (
-                    <span style={{ fontSize: 9, color: 'var(--text-muted)', opacity: 0.7, marginTop: 2 }} title={p.directives.source}>
-                      Source: {p.directives.source.includes('github.com/ClickHouse') ? 'ClickHouse OSS (Apache 2.0)' : p.directives.source.includes('clickhouse.com/blog') ? 'ClickHouse Blog' : p.directives.source.replace(/^https?:\/\//, '').split('/').slice(0, 2).join('/')}
-                    </span>
-                  )}
-                </button>
-              ))}
+              {groupQueries.map((p, i) => renderQueryCard(p, i))}
             </div>
           </div>
         );
