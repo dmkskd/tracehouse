@@ -999,6 +999,7 @@ const DashboardListView: React.FC<{
         const CATEGORY_COLORS: Record<string, string> = {
           General: '#6366f1', Queries: '#3b82f6', Storage: '#22c55e',
           Merges: '#f59e0b', Resources: '#ec4899', Replication: '#8b5cf6',
+          Altinity: '#2dd4bf', 'ClickHouse.com': '#f97316',
         };
         const c = CATEGORY_COLORS[d.category] ?? '#94a3b8';
         return (

@@ -29,7 +29,7 @@ Export an array of SQL strings. Each query is a `--`-comment header of directive
 by the SQL:
 
 ```sql
--- @meta: title='CPU by Query Shape' group='Altinity KB' interval='1 DAY' description='…'
+-- @meta: title='CPU by Query Shape' group='Knowledge Base' interval='1 DAY' description='…'
 -- @chart: type=bar group_by=query_hash value=cpu_seconds unit=s style=2d
 -- @drill: on=query_hash into='CPU Query Executions'
 -- @source: https://kb.altinity.com/…
@@ -76,11 +76,12 @@ Use `section:` on the first panel of a group to start a collapsible section.
 {
   id: 'altinity-kb',
   title: 'Altinity Knowledge Base',
-  group: 'Altinity KB',          // add new groups to DashboardGroup + DASHBOARD_GROUPS
+  group: 'Knowledge Base',       // add new groups to DashboardGroup + DASHBOARD_GROUPS
+  category: 'Altinity',
   columns: 2,
   panels: [
-    { queryName: 'Altinity KB#CPU by Query Shape', section: 'Who Ate My CPU' },
-    { queryName: 'Altinity KB#Workload by User' },
+    { queryName: 'Knowledge Base#Merges', section: 'Who Ate My CPU' },
+    { queryName: 'Knowledge Base#Mutations' },
     // …
   ],
 }
