@@ -33,6 +33,7 @@ describe('tracehouseBuildDefines', () => {
       '__TH_AUTO_CONNECT__',
       '__TH_BUNDLED_PROXY__',
       '__TH_DASHBOARD_PREVIEW__',
+      '__TH_GRAFANA_PLUGIN__',
     ]);
   });
 
@@ -47,6 +48,7 @@ describe('tracehouseBuildDefines', () => {
     expect(defines['__TH_BUNDLED_PROXY__']).toBe('false');
     expect(defines['__TH_AUTO_CONNECT__']).toBe('false');
     expect(defines['__TH_DASHBOARD_PREVIEW__']).toBe('false');
+    expect(defines['__TH_GRAFANA_PLUGIN__']).toBe('false');
   });
 
   it('injects string values as JSON-quoted strings', () => {

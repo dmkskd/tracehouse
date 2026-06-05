@@ -7,7 +7,6 @@
 
 import React, { useState, useEffect, useCallback, useMemo, useRef } from 'react';
 import { buildConfig } from '../../buildConfig';
-import { useSearchParams } from 'react-router-dom';
 import { useClickHouseServices } from '../../providers/ClickHouseProvider';
 import { type Query } from './types';
 import { getAllQueries } from './customQueries';
@@ -75,9 +74,9 @@ const DashboardPanelCard: React.FC<{
   /** Index in the dashboard panel list — used to assign distinct overlay colors */
   panelIndex?: number;
   onOpenQueryDetail?: (query: QuerySeries) => void;
-}> = ({ panel, timeRangeOverride, dashboardId, isFullscreen, onToggleFullscreen, isHidden, hoveredTimestamp, onTimestampHover, onTimeSeriesData, correlationValues, isHoveredPanel, filterParams, panelIndex, onOpenQueryDetail }) => {
+  onOpenQuery?: (query: Query, dashboardId: string) => void;
+}> = ({ panel, timeRangeOverride, dashboardId, isFullscreen, onToggleFullscreen, isHidden, hoveredTimestamp, onTimestampHover, onTimeSeriesData, correlationValues, isHoveredPanel, filterParams, panelIndex, onOpenQueryDetail, onOpenQuery }) => {
   const services = useClickHouseServices();
-  const [, setSearchParams] = useSearchParams();
   const originalPreset = resolvePanel(panel);
   const [drillPreset, setDrillPreset] = useState<Query | null>(null);
   const [drillParams, setDrillParams] = useState<Record<string, string>>({});
@@ -112,12 +111,8 @@ const DashboardPanelCard: React.FC<{
 
   const openInEditor = useCallback(() => {
     if (!preset) return;
-    const all = getAllQueries();
-    const idx = all.findIndex(q => q.name === preset.name);
-    const params: Record<string, string> = { tab: 'misc', fromDashboard: dashboardId };
-    if (idx >= 0) params.preset = String(idx);
-    setSearchParams(new URLSearchParams(params), { replace: false });
-  }, [preset, setSearchParams, dashboardId]);
+    onOpenQuery?.(preset, dashboardId);
+  }, [preset, onOpenQuery, dashboardId]);
 
   const run = useCallback(async (overridePreset?: Query, overrideParams?: Record<string, string>) => {
     const p = overridePreset ?? preset;
@@ -1124,7 +1119,7 @@ const DashboardFilterBar: React.FC<{
 
 type ViewState = { mode: 'list' } | { mode: 'view'; dashboardId: string } | { mode: 'edit'; dashboard?: Dashboard } | { mode: 'import' };
 
-export const DashboardViewer: React.FC<{ initialDashboardId?: string; onOpenQueryDetail?: (query: QuerySeries) => void }> = ({ initialDashboardId, onOpenQueryDetail }) => {
+export const DashboardViewer: React.FC<{ initialDashboardId?: string; onOpenQueryDetail?: (query: QuerySeries) => void; onOpenQuery?: (query: Query, dashboardId: string) => void }> = ({ initialDashboardId, onOpenQueryDetail, onOpenQuery }) => {
   const [dashboards, setDashboards] = useState<Dashboard[]>(() => loadDashboards());
   const [fullscreenPanelIndex, setFullscreenPanelIndex] = useState<number | null>(null);
   const [toast, setToast] = useState<string | null>(null);
@@ -1489,6 +1484,7 @@ export const DashboardViewer: React.FC<{ initialDashboardId?: string; onOpenQuer
                       filterParams={Object.keys(filterValues).length > 0 ? filterValues : undefined}
                       panelIndex={i}
                       onOpenQueryDetail={onOpenQueryDetail}
+                      onOpenQuery={onOpenQuery}
                     />
                   ))}
                 </div>

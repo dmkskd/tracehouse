@@ -30,5 +30,6 @@ export function tracehouseBuildDefines(): Record<string, string> {
     '__TH_AUTO_CONNECT__': bool(e.TH_AUTO_CONNECT),
     '__TH_BUNDLED_PROXY__': bool(e.TH_BUNDLED_PROXY),
     '__TH_DASHBOARD_PREVIEW__': bool(e.TH_DASHBOARD_PREVIEW),
+    '__TH_GRAFANA_PLUGIN__': 'false',
   }
 }

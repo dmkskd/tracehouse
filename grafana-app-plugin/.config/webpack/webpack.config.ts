@@ -226,6 +226,7 @@ const config = async (env: Env): Promise<Configuration> => {
       new webpack.IgnorePlugin({ resourceRegExp: /jfrview_bg\.wasm$/ }),
       new webpack.DefinePlugin({
         __BUILD_TIME__: JSON.stringify(new Date().toISOString()),
+        __TH_GRAFANA_PLUGIN__: 'true',
       }),
       new FixSourceMapsPlugin(repoRoot),
       ...(env.development ? [

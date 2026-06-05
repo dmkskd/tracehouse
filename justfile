@@ -187,6 +187,21 @@ docker-start-full-bg: grafana-plugin-build
     @echo "Waiting for ClickHouse..."
     @sleep 3
 
+# Rebuild plugin, recreate Grafana, and remove Grafana's persisted dashboards/cache
+[group('docker')]
+docker-refresh-grafana-plugin: grafana-plugin-build
+    @docker compose -f infra/docker/docker-compose.yml --profile full stop grafana
+    @docker compose -f infra/docker/docker-compose.yml --profile full rm -f grafana
+    @docker volume rm tracehouse_tracehouse-grafana-data 2>/dev/null || true
+    @docker compose -f infra/docker/docker-compose.yml --profile full up -d grafana
+    @echo "Grafana plugin refreshed at http://localhost:3001"
+
+# Fast plugin iteration: rebuild mounted plugin dist and restart Grafana without reinstalling deps or clearing data
+[group('docker')]
+docker-refresh-grafana-plugin-fast: grafana-plugin-build-fast
+    @docker compose -f infra/docker/docker-compose.yml --profile full restart grafana
+    @echo "Grafana plugin fast-refreshed at http://localhost:3001"
+
 # Stop docker infrastructure (all profiles)
 [group('docker')]
 docker-stop:
@@ -465,12 +480,30 @@ security-scan:
 [group('grafana-app')]
 grafana-plugin-build: install grafana-plugin-install
     @echo "Building Grafana app plugin..."
+    npm run build --workspace=packages/core
+    npm run build --workspace=packages/ui-shared
     cd grafana-app-plugin && npm run build
     @echo "Grafana app plugin built → grafana-app-plugin/dist/"
+
+# Fast Grafana app plugin rebuild for local iteration; assumes npm deps are already installed
+[group('grafana-app')]
+grafana-plugin-build-fast:
+    @echo "Fast-building Grafana app plugin..."
+    npm run build --workspace=packages/core
+    npm run build --workspace=packages/ui-shared
+    cd grafana-app-plugin && npm run build
+    @echo "Grafana app plugin fast-built → grafana-app-plugin/dist/"
 
 # Dev build with watch mode
 [group('grafana-app')]
 grafana-plugin-dev: install grafana-plugin-install
+    cd grafana-app-plugin && npm run dev
+
+# Dev build with watch mode; assumes npm deps are already installed
+[group('grafana-app')]
+grafana-plugin-dev-fast:
+    npm run build --workspace=packages/core
+    npm run build --workspace=packages/ui-shared
     cd grafana-app-plugin && npm run dev
 
 # Install Grafana plugin dependencies

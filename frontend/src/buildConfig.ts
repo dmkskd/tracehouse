@@ -18,6 +18,7 @@ declare const __TH_DEFAULT_CH_CLUSTER__: string | undefined;
 declare const __TH_AUTO_CONNECT__: boolean;
 declare const __TH_BUNDLED_PROXY__: boolean;
 declare const __TH_DASHBOARD_PREVIEW__: boolean;
+declare const __TH_GRAFANA_PLUGIN__: boolean;
 
 export const buildConfig = {
   version: typeof __TH_VERSION__ !== 'undefined' ? __TH_VERSION__ : 'dev',
@@ -41,4 +42,7 @@ export const buildConfig = {
 
   /** Show dashboard hover-preview in the analytics dashboard list */
   dashboardPreview: typeof __TH_DASHBOARD_PREVIEW__ !== 'undefined' ? __TH_DASHBOARD_PREVIEW__ : false,
+
+  /** True when shared frontend code is bundled inside the Grafana app plugin */
+  grafanaPlugin: typeof __TH_GRAFANA_PLUGIN__ !== 'undefined' ? __TH_GRAFANA_PLUGIN__ : false,
 } as const;

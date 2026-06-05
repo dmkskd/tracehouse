@@ -121,6 +121,7 @@ module.exports = (env) => {
       }),
       new webpack.DefinePlugin({
         __BUILD_TIME__: JSON.stringify(new Date().toISOString()),
+        __TH_GRAFANA_PLUGIN__: 'true',
       }),
       ...(isProduction ? [] : []),
     ],

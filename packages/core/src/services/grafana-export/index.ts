@@ -14,11 +14,7 @@ export type {
   GrafanaSupportLevel,
   GrafanaThreshold,
   GrafanaTransformation,
-} from './grafana-export/index.js';
-export {
-  analyzeGrafanaExport,
-  buildGrafanaExportPlan,
-  renderGrafanaPanel,
-  toGrafanaDashboard,
-  toGrafanaPanel,
-} from './grafana-export/index.js';
+} from './types.js';
+export { analyzeGrafanaExport } from './analyze.js';
+export { buildGrafanaExportPlan } from './plan.js';
+export { renderGrafanaPanel, toGrafanaDashboard, toGrafanaPanel } from './render.js';

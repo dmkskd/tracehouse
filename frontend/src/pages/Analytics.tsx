@@ -17,12 +17,14 @@ import { PatternSurface } from '../components/analytics/PatternSurface';
 import { ResourceSurface } from '../components/analytics/ResourceSurface';
 import { TimeRangePicker } from '../components/analytics/TimeRangePicker';
 import { loadDashboards } from '../components/analytics/dashboards';
+import { getAllQueries } from '../components/analytics/customQueries';
 import { useAnalyticsUrlState } from '../hooks/useUrlState';
 import { useNavigate } from '../hooks/useAppLocation';
 import { useUserPreferenceStore } from '../stores/userPreferenceStore';
 import { DocsLink } from '../components/common/DocsLink';
 import { QueryDetailModal } from '../components/query/modal/QueryDetailModal';
 import { useQueryDeepLink } from '../hooks/useQueryDeepLink';
+import type { Query } from '../components/analytics/types';
 import type { TableOrderingKeyEfficiency, PatternSurfaceRow, QuerySeries, ResourceLanesData } from '@tracehouse/core';
 
 type AnalyticsTab = 'tables' | 'misc' | 'dashboards' | 'surfaces';
@@ -72,6 +74,18 @@ export const Analytics: React.FC = () => {
 
   const selectedDb = urlState.db ?? null;
   const setSelectedDb = useCallback((db: string | null) => updateUrl({ db: db ?? undefined }), [updateUrl]);
+
+  const handleOpenDashboardQuery = useCallback((query: Query, dashboardId: string) => {
+    const all = getAllQueries();
+    const idx = all.findIndex(q => q.name === query.name);
+    updateUrl({
+      tab: 'misc',
+      fromDashboard: dashboardId,
+      preset: idx >= 0 ? idx : undefined,
+      sql: idx >= 0 ? undefined : query.sql,
+      view: 'chart',
+    }, { push: true });
+  }, [updateUrl]);
 
   const [data, setData] = useState<TableOrderingKeyEfficiency[]>([]);
   const [allDatabases, setAllDatabases] = useState<string[]>([]);
@@ -717,7 +731,7 @@ export const Analytics: React.FC = () => {
       {/* ─── Dashboards tab content ─── */}
       {activeTab === 'dashboards' && (
         <div style={{ flex: 1, overflow: 'hidden' }}>
-          <DashboardViewer initialDashboardId={urlState.fromDashboard} onOpenQueryDetail={setModalQuery} />
+          <DashboardViewer initialDashboardId={urlState.fromDashboard} onOpenQueryDetail={setModalQuery} onOpenQuery={handleOpenDashboardQuery} />
         </div>
       )}
 
