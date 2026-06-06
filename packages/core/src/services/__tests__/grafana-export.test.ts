@@ -118,7 +118,7 @@ describe('grafana-export', () => {
     expect(panel.type).toBe('table');
     expect(panel.title).toBe('Metrics');
     expect(panel.datasource.uid).toBe('${DS_CLICKHOUSE}');
-    expect(panel.options).toMatchObject({ showHeader: true, cellHeight: 'sm' });
+    expect(panel.options).toMatchObject({ showHeader: true, cellHeight: 'md' });
     expect(panel.gridPos).toEqual({ h: 9, w: 18, x: 0, y: 0 });
   });
 
@@ -155,7 +155,9 @@ FROM table_health
           { id: 'unit', value: 'percent' },
           { id: 'min', value: 0 },
           { id: 'max', value: 100 },
-          { id: 'custom.cellOptions', value: { type: 'gauge', mode: 'basic' } },
+          { id: 'custom.align', value: 'right' },
+          { id: 'custom.width', value: 190 },
+          { id: 'custom.cellOptions', value: { type: 'gauge', mode: 'basic', valueDisplayMode: 'text' } },
           {
             id: 'thresholds',
             value: {
@@ -207,6 +209,52 @@ FROM table_health
     ]);
   });
 
+  it('resolves table gauge column-reference max values from result rows', () => {
+    const input: GrafanaExportInput = {
+      sql: 'SELECT executions, max_exec FROM query_shapes',
+      title: 'Processes retrospectively',
+      resultColumns: ['executions', 'max_exec'],
+      resultRows: [
+        { executions: 17608, max_exec: 17608 },
+        { executions: 1142, max_exec: 17608 },
+      ],
+      cellStyles: [
+        { column: 'executions', type: 'gauge', max: 'max_exec' },
+      ],
+    };
+    const panel = toGrafanaPanel(input);
+    const analysis = analyzeGrafanaExport(input);
+
+    expect(panel.fieldConfig.overrides).toEqual([
+      {
+        matcher: { id: 'byName', options: 'executions' },
+        properties: [
+          { id: 'displayName', value: 'Executions' },
+          { id: 'unit', value: 'short' },
+          { id: 'min', value: 0 },
+          { id: 'max', value: 17608 },
+          { id: 'custom.align', value: 'right' },
+          { id: 'custom.width', value: 190 },
+          { id: 'custom.cellOptions', value: { type: 'gauge', mode: 'basic', valueDisplayMode: 'text' } },
+        ],
+      },
+      {
+        matcher: { id: 'byName', options: 'max_exec' },
+        properties: [
+          { id: 'displayName', value: 'Max Exec' },
+          { id: 'custom.hidden', value: true },
+        ],
+      },
+    ]);
+    expect(analysis.capabilities).toContainEqual({
+      tracehouseFeature: '@cell column=executions type=gauge',
+      grafanaFeature: 'table gauge cell',
+      level: 'supported',
+      message: 'Gauge cells map to Grafana table gauge cells on "executions"; max=max_exec is resolved from the query result and exported as a static Grafana max.',
+      decision: 'map',
+    });
+  });
+
   it('maps RAG-only table cells to Grafana colored text thresholds', () => {
     const panel = toGrafanaPanel({
       sql: 'SELECT query_hash, cpu_per_sec FROM heavy_queries',
@@ -236,10 +284,32 @@ FROM table_health
             },
           },
           { id: 'color', value: { mode: 'thresholds' } },
+          { id: 'custom.align', value: 'right' },
+          { id: 'custom.width', value: 120 },
           { id: 'custom.cellOptions', value: { type: 'color-text' } },
         ],
       },
     ]);
+  });
+
+  it('makes long SQL text table columns wider and inspectable', () => {
+    const panel = toGrafanaPanel({
+      sql: 'SELECT query_hash, heaviest_query FROM heavy_queries',
+      title: 'Processes retrospectively',
+      resultColumns: ['query_hash', 'heaviest_query'],
+    });
+
+    expect(panel.fieldConfig.overrides).toContainEqual({
+      matcher: { id: 'byName', options: 'heaviest_query' },
+      properties: [
+        { id: 'displayName', value: 'Heaviest Query' },
+        { id: 'custom.width', value: 420 },
+        { id: 'custom.minWidth', value: 260 },
+        { id: 'custom.inspect', value: true },
+        { id: 'custom.cellOptions', value: { type: 'auto', wrapText: false } },
+      ],
+    });
+    expect(panel.fieldConfig.overrides.some(override => override.matcher.options === 'query_hash')).toBe(false);
   });
 
   it('reports TraceHouse query interactions as unsupported in Grafana export analysis', () => {
@@ -288,6 +358,43 @@ FROM table_health
       tooltip: { mode: 'multi', sort: 'desc' },
       legend: { displayMode: 'table', placement: 'bottom' },
     });
+  });
+
+  it('maps pie charts through rows-to-fields so each result row becomes a slice', () => {
+    const panel = toGrafanaPanel({
+      sql: 'SELECT database, size_bytes FROM database_sizes',
+      title: 'Database Sizes',
+      chart: {
+        type: 'pie',
+        groupByColumn: 'database',
+        valueColumn: 'size_bytes',
+        unit: 'bytes',
+      },
+    });
+
+    expect(panel.type).toBe('piechart');
+    expect(panel.targets[0].rawSql).toMatch(/^SELECT `database`, `size_bytes`\nFROM \(/);
+    expect(panel.options).toMatchObject({
+      reduceOptions: {
+        values: false,
+        calcs: ['lastNotNull'],
+        fields: '',
+      },
+      pieType: 'donut',
+      displayLabels: ['name', 'percent'],
+    });
+    expect(panel.transformations).toEqual([
+      {
+        id: 'rowsToFields',
+        options: {
+          mappings: [
+            { fieldName: 'database', handlerKey: 'field.name' },
+            { fieldName: 'size_bytes', handlerKey: 'field.value' },
+          ],
+        },
+      },
+    ]);
+    expect(panel.fieldConfig.defaults.unit).toBe('bytes');
   });
 
   it('maps Tracehouse time range placeholders to Grafana ClickHouse time macros', () => {

@@ -1,8 +1,12 @@
 import type { GrafanaCellStyle, GrafanaExportAnalysis, GrafanaExportCapability, GrafanaExportInput } from './types.js';
-import { mapPanelType, resolveResultColumn } from './utils.js';
+import { mapPanelType, resolveNumericColumnMax, resolveResultColumn } from './utils.js';
 
 function capability(capability: GrafanaExportCapability): GrafanaExportCapability {
   return capability;
+}
+
+function canResolveColumnMax(column: string, input: GrafanaExportInput): boolean {
+  return resolveNumericColumnMax(column, input) !== undefined;
 }
 
 function chartCapability(input: GrafanaExportInput, panelType: string): GrafanaExportCapability {
@@ -112,6 +116,15 @@ function cellCapability(style: GrafanaCellStyle, input: GrafanaExportInput): Gra
   switch (style.type) {
     case 'gauge':
       if (typeof style.max !== 'number') {
+        if (canResolveColumnMax(style.max, input)) {
+          return capability({
+            tracehouseFeature: feature,
+            grafanaFeature: 'table gauge cell',
+            level: 'supported',
+            message: `Gauge cells map to Grafana table gauge cells on "${matchedColumn}"; max=${style.max} is resolved from the query result and exported as a static Grafana max.`,
+            decision: 'map',
+          });
+        }
         return capability({
           tracehouseFeature: feature,
           grafanaFeature: 'table gauge cell',

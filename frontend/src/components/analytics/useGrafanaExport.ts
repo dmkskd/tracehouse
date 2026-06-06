@@ -239,6 +239,7 @@ export function useGrafanaExport({
       rag: ragRules.length > 0 ? ragRules : undefined,
       cellStyles: cellStyles && cellStyles.length > 0 ? cellStyles : undefined,
       resultColumns: result?.columns,
+      resultRows: result?.rows,
       interactions: interactions.length > 0 ? interactions : undefined,
       datasourceUid: isGrafana ? activeProfileId ?? undefined : undefined,
       dashboardUid,

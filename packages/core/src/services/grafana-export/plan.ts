@@ -1,6 +1,6 @@
 import type { GrafanaExportInput, GrafanaExportPlan } from './types.js';
 import { analyzeGrafanaExport } from './analyze.js';
-import { chartFieldDefaults, fieldOverrides, mapPanelOptions, tableTransformations } from './mappings.js';
+import { chartFieldDefaults, fieldOverrides, mapPanelOptions, panelTransformations } from './mappings.js';
 import { grafanaSql } from './query.js';
 import { cleanTracehouseSql, mapPanelType, panelGridHeight } from './utils.js';
 
@@ -21,6 +21,6 @@ export function buildGrafanaExportPlan(input: GrafanaExportInput): GrafanaExport
     fieldDefaults: chartFieldDefaults(input, panelType),
     fieldOverrides: fieldOverrides(input),
     options: mapPanelOptions(input),
-    transformations: tableTransformations(input, panelType),
+    transformations: panelTransformations(input, panelType),
   };
 }

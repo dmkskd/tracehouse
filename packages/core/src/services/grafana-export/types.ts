@@ -25,6 +25,8 @@ export interface GrafanaExportInput {
   cellStyles?: GrafanaCellStyle[];
   /** Actual result column names, when available, used to validate exact Grafana field matchers. */
   resultColumns?: string[];
+  /** Actual result rows, when available, used to resolve column-reference settings such as gauge max=max_column. */
+  resultRows?: Record<string, unknown>[];
   /** TraceHouse-only interactions that need support analysis before export. */
   interactions?: Array<{
     type: 'link' | 'drill' | 'part_link';

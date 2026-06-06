@@ -99,7 +99,7 @@ export function inferUnit(column: string | undefined, explicitUnit?: string): st
   if (c.includes('per_sec') || c.endsWith('_rate')) return 'short';
   if (c.endsWith('_seconds') || c.endsWith('_sec')) return 's';
   if (c.includes('percent') || c.endsWith('_pct') || c.endsWith('_ratio')) return 'percentunit';
-  if (c.includes('rows') || c.includes('count') || c.includes('parts') || c.includes('queries')) return 'short';
+  if (c.includes('rows') || c.includes('count') || c.includes('parts') || c.includes('queries') || c.includes('exec')) return 'short';
   return undefined;
 }
 
@@ -120,6 +120,21 @@ export function resolveResultColumn(column: string, resultColumns: string[] | un
   if (resultColumns.includes(column)) return column;
   const lower = column.toLowerCase();
   return resultColumns.find(resultColumn => resultColumn.toLowerCase() === lower);
+}
+
+export function numericValue(value: unknown): number | undefined {
+  const numeric = typeof value === 'number' ? value : Number(value);
+  return Number.isFinite(numeric) ? numeric : undefined;
+}
+
+export function resolveNumericColumnMax(column: string, input: GrafanaExportInput): number | undefined {
+  const maxColumn = resolveResultColumn(column, input.resultColumns);
+  if (!maxColumn || !input.resultRows?.length) return undefined;
+
+  const values = input.resultRows
+    .map(row => numericValue(row[maxColumn]))
+    .filter((value): value is number => value !== undefined);
+  return values.length ? Math.max(...values) : undefined;
 }
 
 export function quoteIdent(identifier: string): string {
