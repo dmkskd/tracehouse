@@ -1,4 +1,4 @@
-import React, { useMemo } from 'react';
+import React, { useMemo, useState } from 'react';
 import type { ChartType } from './metaLanguage';
 import type { GrafanaExportCapability } from '@tracehouse/core/services/grafana-export';
 
@@ -63,6 +63,64 @@ function capabilityColor(capability: GrafanaExportCapability): string {
   return '#f85149';
 }
 
+const GRAFANA_SUPPORT_REFERENCE: Array<{
+  label: string;
+  status: 'Mapped' | 'Partial' | 'Not exported';
+  detail: string;
+}> = [
+  {
+    label: 'Tables',
+    status: 'Mapped',
+    detail: 'Query results export as Grafana table panels. Table sizing, headers, and long SQL/query text columns get Grafana field settings.',
+  },
+  {
+    label: '@chart type=bar',
+    status: 'Mapped',
+    detail: 'Exports as a Grafana barchart. Grouped and stacked bars are pivoted when result series values are available.',
+  },
+  {
+    label: '@chart type=line / area / grouped_line',
+    status: 'Mapped',
+    detail: 'Exports as Grafana time series. Area charts use fill opacity; grouped lines use multiple numeric fields.',
+  },
+  {
+    label: '@chart type=pie',
+    status: 'Mapped',
+    detail: 'Exports as a Grafana donut pie chart with rows-to-fields transform so each result row becomes a slice.',
+  },
+  {
+    label: '@cell type=gauge',
+    status: 'Mapped',
+    detail: 'Exports as a Grafana table gauge. Static max values are mapped; max columns are resolved from current result rows and hidden when used only as helper columns.',
+  },
+  {
+    label: '@cell type=rag',
+    status: 'Mapped',
+    detail: 'Numeric RAG rules export as Grafana thresholds and colored text. Text-value RAG rules are only partially represented.',
+  },
+  {
+    label: '@cell type=sparkline',
+    status: 'Not exported',
+    detail: 'TraceHouse array-cell sparklines are hidden. Grafana native table sparklines require time-series-to-table shaped data, which is a different result shape.',
+  },
+  {
+    label: '@link / @drill / @part_link',
+    status: 'Not exported',
+    detail: 'TraceHouse navigation is reported in the preview but not converted to Grafana links yet. Native Grafana drill support needs dashboard variables and target SQL rewriting.',
+  },
+  {
+    label: '3D chart style',
+    status: 'Partial',
+    detail: 'Grafana panels use native 2D visualizations. The exported panel keeps the closest data/visual mapping, not TraceHouse 3D rendering.',
+  },
+];
+
+function supportColor(status: 'Mapped' | 'Partial' | 'Not exported'): string {
+  if (status === 'Mapped') return 'var(--accent-green)';
+  if (status === 'Partial') return '#d29922';
+  return '#f85149';
+}
+
 export const GrafanaExportDialog: React.FC<GrafanaExportDialogProps> = ({
   options,
   dashboards,
@@ -79,6 +137,7 @@ export const GrafanaExportDialog: React.FC<GrafanaExportDialogProps> = ({
   onClose,
   onExport,
 }) => {
+  const [showSupportReference, setShowSupportReference] = useState(false);
   const fieldStyle = useMemo<React.CSSProperties>(() => ({
     width: '100%',
     padding: '8px 10px',
@@ -94,7 +153,7 @@ export const GrafanaExportDialog: React.FC<GrafanaExportDialogProps> = ({
 
   return (
     <div style={{ position: 'fixed', inset: 0, zIndex: 100000, background: 'rgba(0,0,0,0.78)', display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 24 }}>
-      <div style={{ width: 520, maxWidth: '100%', background: 'var(--bg-secondary)', border: '1px solid var(--border-primary)', borderRadius: 8, boxShadow: '0 18px 70px rgba(0,0,0,0.65)', overflow: 'hidden' }}>
+      <div style={{ width: 640, maxWidth: '100%', maxHeight: 'calc(100vh - 48px)', background: 'var(--bg-secondary)', border: '1px solid var(--border-primary)', borderRadius: 8, boxShadow: '0 18px 70px rgba(0,0,0,0.65)', overflow: 'hidden', display: 'flex', flexDirection: 'column' }}>
         <div style={{ padding: '14px 16px', borderBottom: '1px solid var(--border-primary)', display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
           <div>
             <div style={{ fontSize: 14, fontWeight: 600, color: 'var(--text-primary)' }}>Export to Grafana</div>
@@ -104,7 +163,7 @@ export const GrafanaExportDialog: React.FC<GrafanaExportDialogProps> = ({
             style={{ background: 'transparent', border: 'none', color: 'var(--text-muted)', cursor: 'pointer', fontSize: 18, lineHeight: 1 }}>×</button>
         </div>
 
-        <div style={{ padding: 16, display: 'grid', gap: 12 }}>
+        <div style={{ padding: 16, display: 'grid', gap: 12, overflow: 'auto' }}>
           <label style={{ display: 'grid', gap: 6 }}>
             <span style={{ fontSize: 11, fontWeight: 600, color: 'var(--text-muted)', textTransform: 'uppercase' }}>Destination dashboard</span>
             <select
@@ -234,6 +293,33 @@ export const GrafanaExportDialog: React.FC<GrafanaExportDialogProps> = ({
               )}
             </div>
           )}
+
+          <div style={{ display: 'grid', gap: showSupportReference ? 10 : 0, padding: 12, border: '1px solid var(--border-primary)', borderRadius: 6, background: 'var(--bg-tertiary)' }}>
+            <button
+              type="button"
+              onClick={() => setShowSupportReference(v => !v)}
+              style={{ width: '100%', display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 10, background: 'transparent', border: 'none', color: 'var(--text-primary)', cursor: 'pointer', padding: 0, textAlign: 'left' }}
+            >
+              <span>
+                <span style={{ display: 'block', fontSize: 11, fontWeight: 700, color: 'var(--text-muted)', textTransform: 'uppercase', letterSpacing: '0.04em' }}>Grafana support reference</span>
+                <span style={{ display: 'block', marginTop: 3, fontSize: 11, color: 'var(--text-tertiary)', fontWeight: 400 }}>All TraceHouse features the exporter knows about.</span>
+              </span>
+              <span style={{ color: 'var(--text-muted)', fontSize: 14, lineHeight: 1, flexShrink: 0 }}>{showSupportReference ? '⌃' : '⌄'}</span>
+            </button>
+            {showSupportReference && (
+              <div style={{ display: 'grid', gap: 7, borderTop: '1px solid var(--border-primary)', paddingTop: 10 }}>
+                {GRAFANA_SUPPORT_REFERENCE.map(item => (
+                  <div key={item.label} style={{ display: 'grid', gridTemplateColumns: '118px minmax(0, 1fr)', gap: 10, alignItems: 'start' }}>
+                    <div style={{ display: 'grid', gap: 3, minWidth: 0 }}>
+                      <span style={{ fontSize: 10, fontWeight: 700, color: supportColor(item.status), textTransform: 'uppercase' }}>{item.status}</span>
+                      <span style={{ fontSize: 11, color: 'var(--text-secondary)', overflow: 'hidden', textOverflow: 'ellipsis' }} title={item.label}>{item.label}</span>
+                    </div>
+                    <div style={{ fontSize: 11, color: 'var(--text-muted)', lineHeight: 1.35 }}>{item.detail}</div>
+                  </div>
+                ))}
+              </div>
+            )}
+          </div>
 
           <div style={{ borderTop: '1px solid var(--border-primary)', paddingTop: 12 }}>
             <button
