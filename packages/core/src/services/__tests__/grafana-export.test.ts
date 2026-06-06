@@ -146,6 +146,8 @@ FROM table_health
     expect(panel.type).toBe('table');
     expect(plan.panelType).toBe('table');
     expect(panel.targets[0].rawSql).not.toContain('@cell');
+    expect(panel.targets[0].rawSql).toContain('data:image/svg+xml;utf8,');
+    expect(panel.targets[0].rawSql).toContain('part_sizes__grafana_sparkline');
     expect(panel.fieldConfig.defaults.thresholds).toBeUndefined();
     expect(panel.fieldConfig.overrides).toEqual([
       {
@@ -170,6 +172,15 @@ FROM table_health
             },
           },
           { id: 'color', value: { mode: 'thresholds' } },
+        ],
+      },
+      {
+        matcher: { id: 'byName', options: 'part_sizes__grafana_sparkline' },
+        properties: [
+          { id: 'displayName', value: 'Part Sizes' },
+          { id: 'custom.align', value: 'center' },
+          { id: 'custom.width', value: 120 },
+          { id: 'custom.cellOptions', value: { type: 'image', alt: 'Part Sizes', title: 'Part Sizes' } },
         ],
       },
     ]);
@@ -202,9 +213,9 @@ FROM table_health
       },
       {
         tracehouseFeature: '@cell column=part_sizes type=sparkline',
-        grafanaFeature: 'table sparkline cell',
-        level: 'unsupported',
-        decision: 'hide',
+        grafanaFeature: 'table image cell',
+        level: 'partial',
+        decision: 'map',
       },
     ]);
   });

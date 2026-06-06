@@ -100,8 +100,8 @@ const GRAFANA_SUPPORT_REFERENCE: Array<{
   },
   {
     label: '@cell type=sparkline',
-    status: 'Not exported',
-    detail: 'TraceHouse array-cell sparklines are hidden. Grafana native table sparklines require time-series-to-table shaped data, which is a different result shape.',
+    status: 'Partial',
+    detail: 'TraceHouse array-cell sparklines export as generated SVG Image cells. Grafana native table sparklines require time-series-to-table shaped data.',
   },
   {
     label: '@link / @drill / @part_link',

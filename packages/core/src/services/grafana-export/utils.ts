@@ -115,6 +115,10 @@ export function displayName(column: string): string {
     .replace(/\b\w/g, ch => ch.toUpperCase());
 }
 
+export function sparklineImageColumn(column: string): string {
+  return `${column}__grafana_sparkline`;
+}
+
 export function resolveResultColumn(column: string, resultColumns: string[] | undefined): string | undefined {
   if (!resultColumns?.length) return column;
   if (resultColumns.includes(column)) return column;

@@ -160,10 +160,10 @@ function cellCapability(style: GrafanaCellStyle, input: GrafanaExportInput): Gra
     case 'sparkline':
       return capability({
         tracehouseFeature: feature,
-        grafanaFeature: 'table sparkline cell',
-        level: 'unsupported',
-        message: 'Not exported. Grafana does support table sparklines, but only for time-series-to-table shaped data. This TraceHouse sparkline is an array-valued table cell, so the exporter hides the column by default instead of showing the raw array.',
-        decision: 'hide',
+        grafanaFeature: 'table image cell',
+        level: 'partial',
+        message: `Array-valued sparklines export as generated SVG image cells on "${matchedColumn}". Grafana native table sparklines are not used because they require time-series-to-table shaped data.`,
+        decision: 'map',
       });
   }
 }

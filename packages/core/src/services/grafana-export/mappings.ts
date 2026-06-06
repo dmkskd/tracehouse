@@ -16,6 +16,7 @@ import {
   mapThresholds,
   resolveNumericColumnMax,
   resolveResultColumn,
+  sparklineImageColumn,
   valueColumns,
 } from './utils.js';
 
@@ -245,6 +246,18 @@ export function tableFieldOverrides(input: GrafanaExportInput): GrafanaFieldOver
       { id: 'custom.minWidth', value: 260 },
       { id: 'custom.inspect', value: true },
       { id: 'custom.cellOptions', value: { type: 'auto', wrapText: false } },
+    ]);
+  }
+
+  for (const style of styles) {
+    if (style.type !== 'sparkline') continue;
+    const matchedColumn = resolveResultColumn(style.column, input.resultColumns);
+    if (!matchedColumn) continue;
+    mergeOverride(overrides, sparklineImageColumn(matchedColumn), [
+      { id: 'displayName', value: displayName(matchedColumn) },
+      { id: 'custom.align', value: 'center' },
+      { id: 'custom.width', value: 120 },
+      { id: 'custom.cellOptions', value: { type: 'image', alt: displayName(matchedColumn), title: displayName(matchedColumn) } },
     ]);
   }
 
