@@ -281,7 +281,15 @@ export const QueryExplorer: React.FC<QueryExplorerProps> = ({ urlState, onUrlSta
     // Parse directives from the live SQL so edits (e.g. adding @drill) work without saving
     const directives = parseDirectives(sql);
     if (!directives?.meta) return undefined;
-    return { name: directives.meta.title, group: directives.meta.group, directives, sql } as const;
+    const group = QUERY_GROUPS[directives.meta.group as QueryGroup] ? directives.meta.group as QueryGroup : 'Custom';
+    return {
+      name: directives.meta.title,
+      description: directives.meta.description ?? '',
+      group,
+      type: 'custom',
+      directives,
+      sql,
+    } satisfies Query;
   }, [allQueries, sql]);
   const isDrillable = !!(currentQuery?.directives.drill?.on && currentQuery?.directives.drill?.into) &&
     (!result || result.columns.includes(currentQuery.directives.drill.on));
@@ -526,7 +534,7 @@ export const QueryExplorer: React.FC<QueryExplorerProps> = ({ urlState, onUrlSta
     sql,
     clusterName,
     drillParams: currentDrillParams,
-    activeQueryName,
+    activeQueryName: activeQueryName ?? undefined,
     currentQuery,
     viewMode,
     chartConfig,

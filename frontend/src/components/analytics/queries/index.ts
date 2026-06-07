@@ -17,6 +17,7 @@ import cloudMonitoring from './cloudMonitoring';
 import altinityOperator from './altinityOperator';
 import altinityKb from './altinityKb';
 import clickHouseKb from './clickhouseKb';
+import json from './json';
 
 export const RAW_QUERIES: string[] = [
   ...overview,
@@ -36,4 +37,5 @@ export const RAW_QUERIES: string[] = [
   ...altinityOperator,
   ...altinityKb,
   ...clickHouseKb,
+  ...json,
 ];

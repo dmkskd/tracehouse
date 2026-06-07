@@ -48,6 +48,27 @@ _SCHEMA = """
         referrer String,
         duration_ms UInt32,
         is_bounce UInt8,
+        payload_raw String,
+        payload JSON(
+            max_dynamic_paths=64,
+            max_dynamic_types=8,
+            user.tier String,
+            page.category String,
+            metrics.lcp_ms UInt32,
+            metrics.cls Float64,
+            campaign.source String,
+            SKIP debug
+        ),
+        payload_strict JSON(
+            max_dynamic_paths=8,
+            max_dynamic_types=4,
+            user.tier String,
+            page.category String,
+            metrics.lcp_ms UInt32,
+            metrics.cls Float64,
+            campaign.source String,
+            SKIP debug
+        ),
         _inserted_at DateTime DEFAULT now()
     )
 """
@@ -145,6 +166,24 @@ def insert_web_analytics(
         return f"""
             INSERT INTO web_analytics.pageviews
             SELECT
+                event_time,
+                event_date,
+                domain,
+                path,
+                user_id,
+                session_id,
+                country_code,
+                device_type,
+                browser,
+                referrer,
+                duration_ms,
+                is_bounce,
+                payload_raw,
+                payload_map as payload,
+                payload_map as payload_strict,
+                now() as _inserted_at
+            FROM (
+            SELECT
                 toDateTime('{month_start}') + toIntervalSecond(
                     ({batch} * {bs} + number) * 86400 * 28 / {month_rows}
                     + rand() % 3600
@@ -160,8 +199,73 @@ def insert_web_analytics(
                 arrayElement(['https://google.com','https://twitter.com','','https://reddit.com','https://hn.com'], (rand() % 5) + 1) as referrer,
                 rand() % 120000 as duration_ms,
                 if(rand() % 4 = 0, 1, 0) as is_bounce,
-                now() as _inserted_at
-            FROM numbers({current_batch})
+                concat(
+                    '{{',
+                        '"user":{{',
+                            '"tier":"', user_tier, '",',
+                            '"cohort":"', user_cohort, '"',
+                        '}},',
+                        '"page":{{',
+                            '"category":"', page_category, '",',
+                            '"section":"', page_section, '"',
+                        '}},',
+                        '"metrics":{{',
+                            '"lcp_ms":', toString(lcp_ms), ',',
+                            '"cls":', toString(cls), ',',
+                            '"inp_ms":', toString(inp_ms),
+                        '}},',
+                        '"campaign":{{',
+                            '"source":"', campaign_source, '",',
+                            '"medium":"', campaign_medium, '"',
+                        '}},',
+                        '"experiments":{{',
+                            '"', experiment_key, '":"', experiment_variant, '"',
+                        '}},',
+                        '"feature_flags":{{',
+                            '"', feature_flag_key, '":', feature_flag_value,
+                        '}},',
+                        '"debug":{{',
+                            '"trace_id":"', trace_id, '",',
+                            '"', debug_key, '":"ignored_by_skip"',
+                        '}}',
+                    '}}'
+                ) as payload_raw,
+                map(
+                    'user.tier', user_tier,
+                    'user.cohort', user_cohort,
+                    'page.category', page_category,
+                    'page.section', page_section,
+                    'metrics.lcp_ms', toString(lcp_ms),
+                    'metrics.cls', toString(cls),
+                    'metrics.inp_ms', toString(inp_ms),
+                    'campaign.source', campaign_source,
+                    'campaign.medium', campaign_medium,
+                    concat('experiments.', experiment_key), experiment_variant,
+                    concat('feature_flags.', feature_flag_key), feature_flag_value,
+                    'debug.trace_id', trace_id,
+                    concat('debug.', debug_key), 'ignored_by_skip'
+                ) as payload_map
+            FROM (
+                SELECT
+                    number,
+                    arrayElement(['free','starter','pro','enterprise'], (rand() % 4) + 1) as user_tier,
+                    concat('cohort_', toString(rand() % 32)) as user_cohort,
+                    arrayElement(['docs','commerce','account','support','marketing'], (rand() % 5) + 1) as page_category,
+                    concat('section_', toString(rand() % 24)) as page_section,
+                    500 + rand() % 5000 as lcp_ms,
+                    round(randCanonical(), 4) as cls,
+                    20 + rand() % 900 as inp_ms,
+                    arrayElement(['direct','search','social','email','partner'], (rand() % 5) + 1) as campaign_source,
+                    arrayElement(['organic','paid','referral','newsletter'], (rand() % 4) + 1) as campaign_medium,
+                    concat('exp_', toString(rand() % 128)) as experiment_key,
+                    arrayElement(['control','variant_a','variant_b'], (rand() % 3) + 1) as experiment_variant,
+                    concat('flag_', toString(rand() % 96)) as feature_flag_key,
+                    if(rand() % 2 = 0, 'true', 'false') as feature_flag_value,
+                    lower(hex(rand64())) as trace_id,
+                    concat('volatile_key_', toString(rand())) as debug_key
+                FROM numbers({current_batch})
+            )
+            )
         """
 
     if tracker:
@@ -336,6 +440,8 @@ class WebAnalytics:
                 "SELECT min(event_date), max(event_date) FROM web_analytics.pageviews",
                 "SELECT domain, count() FROM web_analytics.pageviews WHERE event_date = today() GROUP BY domain",
                 "SELECT count() FROM web_analytics.pageviews WHERE domain = 'example.com' AND event_date = today()",
+                "SELECT payload.campaign.source, count() FROM web_analytics.pageviews GROUP BY payload.campaign.source",
+                "SELECT avg(payload.metrics.lcp_ms), avg(payload.metrics.cls) FROM web_analytics.pageviews",
             ],
             pk_generators=[
                 # Full key match — all 3 ORDER BY columns

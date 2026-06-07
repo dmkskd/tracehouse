@@ -33,7 +33,7 @@ interface QueryResultForExport {
 
 interface UseGrafanaExportArgs {
   sql: string;
-  clusterName: string;
+  clusterName: string | null;
   drillParams: Record<string, string>;
   activeQueryName?: string;
   currentQuery?: Query;

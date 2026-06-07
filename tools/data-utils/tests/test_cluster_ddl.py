@@ -178,7 +178,7 @@ class TestDatasetCreateOnCluster:
     @pytest.fixture(autouse=True)
     def cleanup(self, client1: Client, client2: Client) -> Generator[None]:
         yield
-        for db in ["synthetic_data", "nyc_taxi", "uk_price_paid", "replacing_test"]:
+        for db in ["synthetic_data", "nyc_taxi", "uk_price_paid", "web_analytics", "replacing_test"]:
             for c in [client1, client2]:
                 try:
                     c.execute(f"DROP DATABASE IF EXISTS {db} SYNC")
@@ -222,6 +222,18 @@ class TestDatasetCreateOnCluster:
         )}
         assert "uk_price_paid_local" in tables
         assert "uk_price_paid" in tables
+
+    def test_web_analytics(self, client1: Client, client2: Client, caps: Capabilities) -> None:
+        from data_utils.tables.web_analytics import create_web_analytics
+
+        create_web_analytics(client1, caps=caps)
+
+        _wait_for_table(client2, "web_analytics.pageviews")
+        tables = {r[0] for r in client2.execute(
+            "SELECT name FROM system.tables WHERE database = 'web_analytics'"
+        )}
+        assert "pageviews_local" in tables
+        assert "pageviews" in tables
 
     def test_replacing_merge(self, client1: Client, client2: Client, caps: Capabilities) -> None:
         from data_utils.tables.replacing_merge import create_replacing_merge

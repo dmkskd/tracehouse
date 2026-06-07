@@ -10,6 +10,8 @@ This page documents the SQL meta-comment language used by the Analytics / Query 
 
 The Query Explorer uses a lightweight **meta-comment language** embedded in SQL comments to drive chart rendering, drill-down navigation, and time-range filtering. Any ClickHouse SQL query can become a fully interactive preset by adding a few `-- @directive` lines at the top.
 
+These directives are also used by [Grafana panel export](grafana). When TraceHouse runs inside Grafana, Query Explorer can turn the current query and visualization into Grafana panel JSON.
+
 ## Directives
 
 ### `@meta` - Query metadata

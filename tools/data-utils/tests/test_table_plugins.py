@@ -118,6 +118,41 @@ class TestWebAnalytics:
         rows: int = self.client.execute("SELECT count() FROM web_analytics.pageviews")[0][0]
         assert rows == SMALL_CONFIG.rows
 
+    def test_payload_columns_compare_json_storage_profiles(self) -> None:
+        self.dataset.create(self.client)
+        self.dataset.insert(self.client, SMALL_CONFIG)
+
+        column_types: dict[str, str] = dict(self.client.execute(
+            """
+            SELECT name, type
+            FROM system.columns
+            WHERE database = 'web_analytics'
+              AND table = 'pageviews'
+              AND name IN ('payload_raw', 'payload', 'payload_strict')
+            """
+        ))
+        assert column_types["payload_raw"] == "String"
+        assert column_types["payload"].startswith("JSON(")
+        assert "max_dynamic_paths=64" in column_types["payload"]
+        assert column_types["payload_strict"].startswith("JSON(")
+        assert "max_dynamic_paths=8" in column_types["payload_strict"]
+
+        source_count: int = self.client.execute(
+            """
+            SELECT count()
+            FROM web_analytics.pageviews
+            WHERE payload.campaign.source IS NOT NULL
+              AND payload.campaign.source = payload_strict.campaign.source
+              AND position(payload_raw, '"campaign"') > 0
+            """
+        )[0][0]
+        assert source_count == SMALL_CONFIG.rows
+
+        lcp_type: str = self.client.execute(
+            "SELECT toTypeName(payload.metrics.lcp_ms) FROM web_analytics.pageviews LIMIT 1"
+        )[0][0]
+        assert lcp_type == "UInt32"
+
 
 # ── InsertConfig defaults ──────────────────────────────────────────
 
