@@ -97,7 +97,7 @@ export function useQueryDeepLink(
       }
       setDeepLinkedQuery(detailToSeries(detail));
     }).catch(err => {
-      console.error(`[useQueryDeepLink] Failed to fetch qd_id=${qdId}:`, err);
+      console.error('[useQueryDeepLink] Failed to fetch query detail:', { qdId, err });
     });
   }, [query, pendingQdId, services]);
 

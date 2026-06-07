@@ -19,7 +19,7 @@
     "three": "^0.182.0",
     "@types/three": "^0.182.0",
     "serialize-javascript": "7.0.4",
-    "dompurify": "3.3.2",
+    "dompurify": "3.4.8",
     "immutable": "5.1.5"
   },
   "dependencies": {

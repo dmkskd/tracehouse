@@ -293,7 +293,7 @@ export const QueryMonitor: React.FC = () => {
         points: [],
       });
     }).catch((err: any) => {
-      console.error(`[QueryMonitor] Failed to fetch qd_id=${qdId}:`, err);
+      console.error('[QueryMonitor] Failed to fetch query detail:', { qdId, err });
     });
   }, [urlState.qd_id, convertedQuery, services, updateUrl]);
 
