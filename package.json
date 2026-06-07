@@ -1,6 +1,6 @@
 {
   "name": "tracehouse",
-  "version": "0.12.0-dev",
+  "version": "0.12.0",
   "private": true,
   "workspaces": [
     "packages/*",
