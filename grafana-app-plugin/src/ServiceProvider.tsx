@@ -9,9 +9,12 @@ import { DatabaseExplorer } from '@tracehouse/core/services/database-explorer';
 import { MergeTracker } from '@tracehouse/core/services/merge-tracker';
 import { MetricsCollector } from '@tracehouse/core/services/metrics-collector';
 import { QueryAnalyzer } from '@tracehouse/core/services/query-analyzer';
+import { InteractiveQueryService } from '@tracehouse/core/services/interactive-query-service';
+import { ColumnCostService } from '@tracehouse/core/services/column-cost-service';
 import { TimelineService } from '@tracehouse/core/services/timeline-service';
 import { TraceService } from '@tracehouse/core/services/trace-service';
 import { AnalyticsService } from '@tracehouse/core/services/analytics-service';
+import { ObservabilityMapService } from '@tracehouse/core/services/observability-map-service';
 import { MonitoringCapabilitiesService } from '@tracehouse/core/services/monitoring-capabilities';
 import { EnvironmentDetector } from '@tracehouse/core/services/environment-detector';
 import type { IClickHouseAdapter } from '@tracehouse/core/adapters/types';
@@ -164,9 +167,12 @@ export function ServiceProvider({ children }: { children: React.ReactNode }) {
         mergeTracker: new MergeTracker(adapter),
         metricsCollector: new MetricsCollector(adapter),
         queryAnalyzer: new QueryAnalyzer(adapter, envDetector),
+        interactiveQueryService: new InteractiveQueryService(adapter),
+        columnCostService: new ColumnCostService(adapter),
         timelineService: new TimelineService(adapter),
         traceService: new TraceService(adapter),
         analyticsService: new AnalyticsService(adapter),
+        observabilityMapService: new ObservabilityMapService(adapter),
         environmentDetector: envDetector,
       };
       return { svcs, clusterAdapter: adapter };

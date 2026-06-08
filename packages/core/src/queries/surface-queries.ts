@@ -42,8 +42,8 @@ SELECT
     sum(read_rows) AS total_read_rows,
     sum(read_bytes) AS total_read_bytes,
     sum(memory_usage) AS total_memory,
-    sum(ProfileEvents['RealTimeMicroseconds']) AS total_cpu_us,
-    sum(ProfileEvents['IOWaitMicroseconds']) AS total_io_wait_us,
+    sum(ProfileEvents['OSCPUVirtualTimeMicroseconds']) AS total_cpu_us,
+    sum(ProfileEvents['OSIOWaitMicroseconds']) AS total_io_wait_us,
     sum(ProfileEvents['SelectedMarks']) AS total_selected_marks
 FROM {{cluster_aware:system.query_log}}
 WHERE type = 'QueryFinish'
@@ -106,8 +106,8 @@ SELECT
     sum(read_rows) AS total_read_rows,
     sum(read_bytes) AS total_read_bytes,
     sum(peak_memory_usage) AS total_memory,
-    sum(ProfileEvents['RealTimeMicroseconds']) AS total_cpu_us,
-    sum(ProfileEvents['IOWaitMicroseconds']) AS total_io_wait_us
+    sum(ProfileEvents['OSCPUVirtualTimeMicroseconds']) AS total_cpu_us,
+    sum(ProfileEvents['OSIOWaitMicroseconds']) AS total_io_wait_us
 FROM {{cluster_aware:system.part_log}}
 WHERE event_type = 'MergeParts'
   AND ${timeClause}
@@ -127,8 +127,8 @@ SELECT
     sum(read_rows) AS total_read_rows,
     sum(read_bytes) AS total_read_bytes,
     sum(peak_memory_usage) AS total_memory,
-    sum(ProfileEvents['RealTimeMicroseconds']) AS total_cpu_us,
-    sum(ProfileEvents['IOWaitMicroseconds']) AS total_io_wait_us
+    sum(ProfileEvents['OSCPUVirtualTimeMicroseconds']) AS total_cpu_us,
+    sum(ProfileEvents['OSIOWaitMicroseconds']) AS total_io_wait_us
 FROM {{cluster_aware:system.part_log}}
 WHERE event_type = 'MergeParts'
   AND ${timeClause}
@@ -148,8 +148,8 @@ SELECT
     sum(read_rows) AS total_read_rows,
     sum(read_bytes) AS total_read_bytes,
     sum(peak_memory_usage) AS total_memory,
-    sum(ProfileEvents['RealTimeMicroseconds']) AS total_cpu_us,
-    sum(ProfileEvents['IOWaitMicroseconds']) AS total_io_wait_us
+    sum(ProfileEvents['OSCPUVirtualTimeMicroseconds']) AS total_cpu_us,
+    sum(ProfileEvents['OSIOWaitMicroseconds']) AS total_io_wait_us
 FROM {{cluster_aware:system.part_log}}
 WHERE event_type = 'MergeParts'
   AND ${timeClause}
@@ -174,7 +174,7 @@ WITH top_tables AS (
             t -> NOT startsWith(t, '_table_function.')${excludeSystemTables ? " AND NOT startsWith(t, 'system.') AND NOT startsWith(t, 'INFORMATION_SCHEMA.') AND NOT startsWith(t, 'information_schema.')" : ''},
             tables
         )) AS full_table,
-        sum(ProfileEvents['RealTimeMicroseconds']) AS total_cpu,
+        sum(ProfileEvents['OSCPUVirtualTimeMicroseconds']) AS total_cpu,
         sum(memory_usage) AS total_mem,
         sum(read_bytes) AS total_io,
         count() AS qcount
@@ -196,8 +196,8 @@ SELECT
     sum(read_rows) AS total_read_rows,
     sum(read_bytes) AS total_read_bytes,
     sum(memory_usage) AS total_memory,
-    sum(ProfileEvents['RealTimeMicroseconds']) AS total_cpu_us,
-    sum(ProfileEvents['IOWaitMicroseconds']) AS total_io_wait_us,
+    sum(ProfileEvents['OSCPUVirtualTimeMicroseconds']) AS total_cpu_us,
+    sum(ProfileEvents['OSIOWaitMicroseconds']) AS total_io_wait_us,
     sum(ProfileEvents['SelectedMarks']) AS total_selected_marks
 FROM {{cluster_aware:system.query_log}}
 ARRAY JOIN tables AS ft
@@ -223,8 +223,8 @@ SELECT
     sum(read_rows) AS total_read_rows,
     sum(read_bytes) AS total_read_bytes,
     sum(memory_usage) AS total_memory,
-    sum(ProfileEvents['RealTimeMicroseconds']) AS total_cpu_us,
-    sum(ProfileEvents['IOWaitMicroseconds']) AS total_io_wait_us,
+    sum(ProfileEvents['OSCPUVirtualTimeMicroseconds']) AS total_cpu_us,
+    sum(ProfileEvents['OSIOWaitMicroseconds']) AS total_io_wait_us,
     sum(ProfileEvents['SelectedMarks']) AS total_selected_marks
 FROM {{cluster_aware:system.query_log}}
 WHERE type = 'QueryFinish'
@@ -245,7 +245,7 @@ export const resourceLanesTable = (timeClause: string) => `
 WITH top_patterns AS (
     SELECT
         normalized_query_hash,
-        sum(ProfileEvents['RealTimeMicroseconds']) AS total_cpu
+        sum(ProfileEvents['OSCPUVirtualTimeMicroseconds']) AS total_cpu
     FROM {{cluster_aware:system.query_log}}
     WHERE type = 'QueryFinish'
       AND query_kind IN ('Select', 'Insert')
@@ -265,8 +265,8 @@ SELECT
     sum(q.read_rows) AS total_read_rows,
     sum(q.read_bytes) AS total_read_bytes,
     sum(q.memory_usage) AS total_memory,
-    sum(q.ProfileEvents['RealTimeMicroseconds']) AS total_cpu_us,
-    sum(q.ProfileEvents['IOWaitMicroseconds']) AS total_io_wait_us,
+    sum(q.ProfileEvents['OSCPUVirtualTimeMicroseconds']) AS total_cpu_us,
+    sum(q.ProfileEvents['OSIOWaitMicroseconds']) AS total_io_wait_us,
     sum(q.ProfileEvents['SelectedMarks']) AS total_selected_marks
 FROM {{cluster_aware:system.query_log}} q
 INNER JOIN top_patterns tp ON q.normalized_query_hash = tp.normalized_query_hash

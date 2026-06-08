@@ -333,7 +333,7 @@ const BUILTIN_DASHBOARDS: Dashboard[] = [
       { queryName: 'Merges#Background Pool Utilization' },
       { queryName: 'Merges#Merge Events Over Time' },
       { queryName: 'Merges#Merge Duration by Table' },
-      { queryName: 'Merges#Merge I/O Pressure' },
+      { queryName: 'Merges#Merged Data Volume' },
       { queryName: 'Merges#Merge Errors' },
       { queryName: 'Merges#Fetch vs Merge Ratio' },
       { queryName: 'Merges#Fetch vs Merge Duration' },

@@ -138,6 +138,7 @@ WHERE database = 'mydb' AND table = 'mytable' AND event_type = 'MergeParts'
 | `merged_from` | Array of source part names (for merges) |
 | `size_in_bytes` | Size of resulting part |
 | `read_bytes` | Total bytes read (sum of source part sizes) |
+| `read_rows` | Historical rows read while producing the part. In merge history this is the input row count for the completed operation. |
 | `duration_ms` | How long the operation took |
 | `peak_memory_usage` | Memory used during merge |
 
@@ -148,6 +149,12 @@ Currently running merge operations (real-time, not historical).
 SELECT result_part_name, source_part_names, progress, elapsed, total_size_bytes_compressed
 FROM system.merges
 ```
+
+`system.merges.rows_read` is the cumulative number of input rows read so far by an in-flight operation. Do not confuse it with `system.part_log.read_rows`, which is the completed operation's historical input row count. The UI uses `system.merges` for active progress and `system.part_log` for completed merge history; values can differ until the operation finishes and is flushed to `part_log`.
+
+### Lightweight Updates and Patch Parts
+
+ClickHouse lightweight `UPDATE` can produce patch parts. These are visible through active mutation/merge state, but historical patch-part creation is not represented as a normal merge event in `system.part_log`. Merge history can therefore show classic mutations and lightweight-delete cleanup merges, but it cannot reconstruct a complete historical timeline of patch-part creation from `part_log` alone.
 
 ## Lineage Building Logic
 
@@ -226,6 +233,7 @@ space_savings = source_total_size - result_size_in_bytes
 1. **part_log TTL**: Old merge events get purged, so very old lineage may be incomplete
 2. **L0 parts merged away**: Original insert parts no longer exist in system.parts
 3. **Large parts**: Parts with 10k+ source parts are limited to 5000 nodes to prevent timeout
+4. **Patch parts**: Lightweight `UPDATE` patch parts are not fully observable in `system.part_log`, so historical lineage may omit them
 
 ## Example Lineage Tree
 

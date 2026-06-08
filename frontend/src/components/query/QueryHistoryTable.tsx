@@ -91,7 +91,7 @@ const StatusBadge: React.FC<{ type: string; exception?: string }> = ({ type, exc
 const EfficiencyBadge: React.FC<{ score?: number | null }> = ({ score }) => {
   if (score === undefined || score === null) return <span style={{ color: 'var(--text-muted)' }}>—</span>;
   // Higher pruning % = better (more marks skipped via index)
-  const color = score >= 80 ? '#3fb950' : score >= 50 ? '#d29922' : '#f85149';
+  const color = score >= 90 ? '#3fb950' : score >= 50 ? '#d29922' : '#f85149';
   return (
     <span style={{
       display: 'inline-block',

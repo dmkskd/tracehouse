@@ -2,6 +2,9 @@ export { DatabaseExplorer, DatabaseExplorerError } from './database-explorer.js'
 export { LineageService, LineageServiceError } from './lineage-service.js';
 export { QueryAnalyzer, QueryAnalysisError } from './query-analyzer.js';
 export type { QueryHistoryOptions, QueryDetail, SimilarQuery, SubQueryInfo, SettingDefault, QueryThreadBreakdown, ProfileEventComparison, MultiProfileEventRow } from './query-analyzer.js';
+export { InteractiveQueryService } from './interactive-query-service.js';
+export { ColumnCostService, ColumnCostServiceError } from './column-cost-service.js';
+export type { ColumnCost, ServerColumnCost, ServerProgress, ClientColumnCostResult, ServerColumnCostResult } from './column-cost-service.js';
 export { MetricsCollector, MetricsCollectionError } from './metrics-collector.js';
 export { MergeTracker, MergeTrackerError } from './merge-tracker.js';
 export type { MergeHistoryOptions } from './merge-tracker.js';
@@ -23,6 +26,8 @@ export {
   MonitoringCapabilitiesServiceError,
 } from './monitoring-capabilities.js';
 export { AnalyticsService, AnalyticsServiceError } from './analytics-service.js';
+export { ObservabilityMapService, ObservabilityMapServiceError } from './observability-map-service.js';
+export type { ObservabilityServerTableInfo, ObservabilityColumnCommentMap } from './observability-map-service.js';
 export { parseExplainIndexesJson, parseIndexEntry, parseRatio } from './explain-parser.js';
 export {
   diagnoseOrderingKeyUsage,

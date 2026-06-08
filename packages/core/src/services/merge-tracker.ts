@@ -208,6 +208,14 @@ export class MergeTracker {
       }
       // Detect replica merges: same part_name from different hosts
       markReplicaMergeHistory(records);
+      // Some categories are only known after mapping/enrichment (notably
+      // LightweightDelete via rows_diff and deduplicating-engine checks).
+      // For SQL-pushed categories this is a defensive consistency check:
+      // mapMergeHistoryRecord/refineCategoryWithRowDiff must expose the same
+      // category enum value used by categoryToPartLogCondition.
+      if (options.category) {
+        records = records.filter(r => r.merge_reason === options.category);
+      }
       return records;
     } catch (error) {
       throw new MergeTrackerError('Failed to get merge history', error as Error);

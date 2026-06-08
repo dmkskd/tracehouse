@@ -61,3 +61,14 @@ Components are organized by domain:
 | `components/analytics/` | Dashboards and custom queries |
 | `components/3d/` | Three.js 3D visualizations |
 | `components/connection/` | Connection management UI |
+
+### SQL Boundaries
+
+App-owned SQL belongs in `packages/core/src/queries/` and should be reached through
+core services. Frontend components should not embed operational SQL directly.
+
+The intentional exception is the Analytics dashboard query catalog in
+`frontend/src/components/analytics/queries/`. Those files define user-editable
+dashboard SQL that must live with the dashboard editor and live-preview flow. They
+are still executed through `InteractiveQueryService`, not directly through the
+adapter, so every dashboard/custom query is tagged before transport.

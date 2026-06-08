@@ -14,11 +14,14 @@ import type {
   IClickHouseAdapter,
   DatabaseExplorer,
   QueryAnalyzer,
+  InteractiveQueryService,
+  ColumnCostService,
   MetricsCollector,
   MergeTracker,
   TimelineService,
   TraceService,
   AnalyticsService,
+  ObservabilityMapService,
   EnvironmentDetector,
 } from '@tracehouse/core';
 
@@ -26,11 +29,14 @@ export interface ClickHouseServices {
   adapter: IClickHouseAdapter;
   databaseExplorer: DatabaseExplorer;
   queryAnalyzer: QueryAnalyzer;
+  interactiveQueryService: InteractiveQueryService;
+  columnCostService: ColumnCostService;
   metricsCollector: MetricsCollector;
   mergeTracker: MergeTracker;
   timelineService: TimelineService;
   traceService: TraceService;
   analyticsService: AnalyticsService;
+  observabilityMapService: ObservabilityMapService;
   environmentDetector: EnvironmentDetector;
 }
 

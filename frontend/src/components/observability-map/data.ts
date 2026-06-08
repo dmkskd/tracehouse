@@ -77,24 +77,6 @@ export interface ServerTableInfo {
   primary_key: string;
 }
 
-export async function enrichWithAvailability(
-  executeQuery: <T extends Record<string, unknown>>(sql: string) => Promise<T[]>,
-): Promise<Map<string, ServerTableInfo>> {
-  try {
-    const rows = await executeQuery<{ name: string; sorting_key: string; primary_key: string }>(
-      `SELECT name, sorting_key, primary_key FROM system.tables WHERE database = 'system'`
-    );
-    const map = new Map<string, ServerTableInfo>();
-    for (const r of rows) {
-      map.set(`system.${r.name}`, { name: `system.${r.name}`, sorting_key: r.sorting_key || '', primary_key: r.primary_key || '' });
-    }
-    return map;
-  } catch {
-    // If the probe fails, treat everything as available
-    return new Map<string, ServerTableInfo>();
-  }
-}
-
 /**
  * Merge a set of available table names into the static data,
  * producing a new ObservabilityData where each SystemTable
@@ -129,27 +111,6 @@ export function mergeAvailability(
  * Column comments keyed by "system.table_name.column_name".
  */
 export type ColumnCommentMap = Map<string, string>;
-
-/**
- * Fetch column comments from system.columns for all system tables.
- * Returns a map of "system.table.column" → comment string.
- */
-export async function fetchColumnComments(
-  executeQuery: <T extends Record<string, unknown>>(sql: string) => Promise<T[]>,
-): Promise<ColumnCommentMap> {
-  try {
-    const rows = await executeQuery<{ table: string; name: string; comment: string }>(
-      `SELECT table, name, comment FROM system.columns WHERE database = 'system' AND length(comment) > 0`
-    );
-    const map: ColumnCommentMap = new Map();
-    for (const r of rows) {
-      if (r.comment) map.set(`system.${r.table}.${r.name}`, r.comment);
-    }
-    return map;
-  } catch {
-    return new Map();
-  }
-}
 
 // ─── Convert domain model → D3 hierarchy ─────────────────────
 

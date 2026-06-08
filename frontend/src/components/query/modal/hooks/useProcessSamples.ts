@@ -14,6 +14,9 @@ import { useClickHouseServices } from '../../../../providers/ClickHouseProvider'
 import {
   buildHostProcessSamplesSQL,
   mapHostProcessSampleRow,
+  tagQuery,
+  sourceTag,
+  TAB_QUERIES,
   type ProcessSample,
   type HostProcessSample,
 } from '@tracehouse/core';
@@ -96,7 +99,9 @@ export function useProcessSamples(queryId: string | undefined): ProcessSamplesRe
     setError(null);
     try {
       const sql = buildHostProcessSamplesSQL(queryId);
-      const rows = await services.adapter.executeQuery<Record<string, unknown>>(sql);
+      const rows = await services.adapter.executeQuery<Record<string, unknown>>(
+        tagQuery(sql, sourceTag(TAB_QUERIES, 'processSamples')),
+      );
       const tagged = rows.map(mapHostProcessSampleRow);
 
       // Group by hostname

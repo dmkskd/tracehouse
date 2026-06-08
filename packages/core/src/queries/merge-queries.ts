@@ -32,10 +32,10 @@ export const GET_ACTIVE_MERGES = `
   ORDER BY elapsed DESC
 `;
 
-/** Lightweight columns for the merge history listing table.
- * Heavy columns (ProfileEvents, path_on_disk, disk_name, merge_algorithm,
- * query_id, exception, partition_id, peak_memory_usage) are fetched on-demand
- * via GET_MERGE_HISTORY_BY_PART_NAME when the user opens the detail modal. */
+/** Columns for the merge history listing table.
+ * This includes enough part_log fields to classify and summarize rows in the
+ * list. Additional detail-only fields such as ProfileEvents and path_on_disk
+ * are fetched on-demand via GET_MERGE_HISTORY_BY_PART_NAME. */
 const MERGE_HISTORY_LITE_COLUMNS = `
     event_time,
     event_type,
@@ -461,4 +461,3 @@ export const GET_TABLE_ENGINES = `
   WHERE database NOT IN ('system', 'information_schema', 'INFORMATION_SCHEMA')
   GROUP BY database, name
 `;
-

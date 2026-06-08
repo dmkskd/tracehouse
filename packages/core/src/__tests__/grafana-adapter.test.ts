@@ -1,5 +1,9 @@
 import { describe, it, expect } from 'vitest';
 import { GrafanaAdapter, type AdapterFrame } from '../adapters/grafana-adapter.js';
+import { tagQuery } from '../queries/builder.js';
+import { sourceTag, TAB_INTERNAL } from '../queries/source-tags.js';
+
+const q = (sql: string) => tagQuery(sql, sourceTag(TAB_INTERNAL, 'grafanaAdapterTest'));
 
 function frame(fields: Array<{ name: string; type?: string }>, columns: unknown[][]): AdapterFrame {
   return {
@@ -35,7 +39,7 @@ describe('GrafanaAdapter', { tags: ['connectivity'] }, () => {
         query_id: string;
         query_start_time: string;
         query_duration_ms: number;
-      }>('SELECT 1');
+      }>(q('SELECT 1'));
 
       expect(rows).toHaveLength(2);
 
@@ -57,7 +61,7 @@ describe('GrafanaAdapter', { tags: ['connectivity'] }, () => {
       );
 
       const adapter = adapterWithFrames([f]);
-      const rows = await adapter.executeQuery<{ query_start_time: string }>('SELECT 1');
+      const rows = await adapter.executeQuery<{ query_start_time: string }>(q('SELECT 1'));
 
       expect(rows[0].query_start_time).toBe('2024-03-26 12:00:00');
     });
@@ -66,7 +70,7 @@ describe('GrafanaAdapter', { tags: ['connectivity'] }, () => {
       const f = frame([{ name: 'count' }], [[42]]);
 
       const adapter = adapterWithFrames([f]);
-      const rows = await adapter.executeQuery<{ count: number }>('SELECT 1');
+      const rows = await adapter.executeQuery<{ count: number }>(q('SELECT 1'));
 
       expect(rows[0].count).toBe(42);
     });
@@ -75,7 +79,7 @@ describe('GrafanaAdapter', { tags: ['connectivity'] }, () => {
       const f = frame([{ name: 'ts', type: 'time' }], [[null]]);
 
       const adapter = adapterWithFrames([f]);
-      const rows = await adapter.executeQuery<{ ts: string | null }>('SELECT 1');
+      const rows = await adapter.executeQuery<{ ts: string | null }>(q('SELECT 1'));
 
       expect(rows[0].ts).toBeNull();
     });
@@ -84,7 +88,7 @@ describe('GrafanaAdapter', { tags: ['connectivity'] }, () => {
   describe('framesToRows — basic behavior', () => {
     it('returns empty array for empty frames', async () => {
       const adapter = adapterWithFrames([]);
-      const rows = await adapter.executeQuery('SELECT 1');
+      const rows = await adapter.executeQuery(q('SELECT 1'));
       expect(rows).toEqual([]);
     });
 
@@ -92,7 +96,7 @@ describe('GrafanaAdapter', { tags: ['connectivity'] }, () => {
       const adapter = new GrafanaAdapter(async () => {
         throw new Error('DB::Exception: Syntax error');
       });
-      await expect(adapter.executeQuery('BAD SQL')).rejects.toThrow('DB::Exception');
+      await expect(adapter.executeQuery(q('BAD SQL'))).rejects.toThrow('DB::Exception');
     });
   });
 });

@@ -125,13 +125,15 @@ describe('MergeTracker integration', { tags: ['merge-engine'] }, () => {
 
     it('pushes category filter into SQL — Mutation returns only mutations', async () => {
       const history = await tracker.getMergeHistory({ database: TEST_DB, table: 'events', category: 'Mutation', limit: 50 });
+      expect(history.length).toBeGreaterThan(0);
       for (const h of history) {
         expect(h.merge_reason).toBe('Mutation');
       }
     });
 
-    it('pushes category filter into SQL — Regular excludes mutations', async () => {
+    it('post-filter preserves SQL-pushed Regular category rows', async () => {
       const history = await tracker.getMergeHistory({ database: TEST_DB, table: 'events', category: 'Regular', limit: 50 });
+      expect(history.length).toBeGreaterThan(0);
       for (const h of history) {
         expect(h.merge_reason).toBe('Regular');
       }
@@ -156,12 +158,15 @@ describe('MergeTracker integration', { tags: ['merge-engine'] }, () => {
       }
     });
 
-    it('client-side-only category (LightweightDelete) returns unfiltered results', async () => {
+    it('client-side-only category (LightweightDelete) filters after classification', async () => {
       // LightweightDelete can't be pushed to SQL (needs row-diff analysis),
-      // so the query returns the full result set for client-side filtering
+      // so the service applies the category after mapping/enrichment.
       const all = await tracker.getMergeHistory({ database: TEST_DB, table: 'events', limit: 50 });
       const withCategory = await tracker.getMergeHistory({ database: TEST_DB, table: 'events', category: 'LightweightDelete', limit: 50 });
-      expect(withCategory.length).toBe(all.length);
+      expect(withCategory.length).toBeLessThanOrEqual(all.length);
+      for (const h of withCategory) {
+        expect(h.merge_reason).toBe('LightweightDelete');
+      }
     });
   });
 

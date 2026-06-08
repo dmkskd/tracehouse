@@ -763,13 +763,17 @@ export const TimelineChart: React.FC<{
                 <div style={{ display: 'grid', gridTemplateColumns: '30px 1fr 50px', gap: '2px 6px', alignItems: 'center' }}>
                   {METRIC_BAR_CONFIG.map(mc => {
                     const val = mc.getValue(hovItem);
+                    const durS = Math.max(hovItem.duration_ms / 1000, 0.001);
+                    const isRateMetric = mc.key === 'network' || mc.key === 'disk';
+                    const displayVal = isRateMetric && metricMode === mc.key ? val / durS : val;
                     const max = metricMaximums[mc.key];
                     const pct = Math.min((val / max) * 100, 100);
                     const isActive = metricMode === mc.key;
+                    const isEstimatedCpu = hovItem.is_running && mc.key === 'cpu' && (band.type === 'merge' || band.type === 'mutation');
                     return (
                       <React.Fragment key={mc.key}>
                         <span style={{ fontSize: 9, fontWeight: isActive ? 700 : 500, color: isActive ? mc.color : 'var(--text-muted)', textTransform: 'uppercase', letterSpacing: '0.5px' }}>
-                          {mc.label}{hovItem.is_running && mc.key === 'cpu' && band.type !== 'query' ? <span style={{ fontSize: 8, fontStyle: 'italic', fontWeight: 400, textTransform: 'none', opacity: 0.7 }}> est.</span> : ''}
+                          {mc.label}{isEstimatedCpu ? <span style={{ fontSize: 8, fontStyle: 'italic', fontWeight: 400, textTransform: 'none', opacity: 0.7 }}> est.</span> : ''}
                         </span>
                         <div style={{ height: 6, background: 'rgba(255,255,255,0.06)', borderRadius: 3, overflow: 'hidden', border: isActive ? `1px solid ${mc.color}33` : '1px solid transparent' }}>
                           <div style={{
@@ -779,7 +783,7 @@ export const TimelineChart: React.FC<{
                           }} />
                         </div>
                         <span style={{ fontSize: 10, color: isActive ? 'var(--text-primary)' : 'var(--text-secondary)', fontFamily: 'monospace', textAlign: 'right', fontWeight: isActive ? 600 : 400 }}>
-                          {hovItem.is_running && mc.key === 'cpu' && band.type !== 'query' ? `~${mc.fmt(val)}` : mc.fmt(val)}
+                          {isEstimatedCpu ? `~${mc.fmt(displayVal)}` : `${mc.fmt(displayVal)}${isActive && isRateMetric ? '/s' : ''}`}
                         </span>
                       </React.Fragment>
                     );
@@ -884,4 +888,3 @@ export const TimelineChart: React.FC<{
     </div>
   );
 };
-

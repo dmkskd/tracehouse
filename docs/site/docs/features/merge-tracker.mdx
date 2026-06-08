@@ -34,6 +34,10 @@ Every merge is classified into one of six categories:
 
 For active merges, the category is determined from `system.merges` fields (`merge_type`, `is_mutation`, result part name prefix). For historical merges, it comes from `system.part_log` (`event_type`, `merge_reason`). A Regular merge where `rows_diff < 0` is automatically reclassified as Lightweight Delete since ClickHouse does not expose this in `merge_reason`.
 
+Active merge row counts use `system.merges.rows_read`, which is cumulative progress while the operation is running. Historical merge rows use `system.part_log.read_rows`, which is the completed operation's final input-row count.
+
+Lightweight `UPDATE` patch parts are visible through active mutation/merge state, but patch-part creation is not represented as a normal historical merge event in `system.part_log`. The historical merge list can classify classic mutations and lightweight-delete cleanup merges, but it cannot reconstruct every patch-part creation event from `part_log` alone.
+
 ## Merge ETA
 
 Each active merge shows an estimated time to completion. The estimate blends two throughput signals:

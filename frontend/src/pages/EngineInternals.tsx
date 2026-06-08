@@ -18,7 +18,7 @@ import { useRefreshConfig, clampToAllowed } from '@tracehouse/ui-shared';
 import { useRefreshSettingsStore } from '../stores/refreshSettingsStore';
 import { useGlobalLastUpdatedStore } from '../stores/refreshSettingsStore';
 import { useEngineInternalsStore, EngineInternalsPoller } from '../stores/engineInternalsStore';
-import { EngineInternalsService, HostTargetedAdapter } from '@tracehouse/core';
+import { EngineInternalsService, HostTargetedAdapter, tagQuery, sourceTag, TAB_ENGINE } from '@tracehouse/core';
 import { TruncatedHost } from '../components/common/TruncatedHost';
 import { DocsLink } from '../components/common/DocsLink';
 import {
@@ -90,7 +90,10 @@ export const EngineInternals: React.FC = () => {
       if (hosts.length <= 1 && clusterName) {
         try {
           const rows = await services.adapter.executeQuery<{ host: string }>(
-            `SELECT DISTINCT host_name AS host FROM system.clusters WHERE cluster = '${clusterName}' ORDER BY host`
+            tagQuery(
+              `SELECT DISTINCT host_name AS host FROM system.clusters WHERE cluster = '${clusterName}' ORDER BY host`,
+              sourceTag(TAB_ENGINE, 'clusterHostsFallback'),
+            ),
           );
           const fallbackHosts = rows.map(r => String(r.host)).filter(Boolean);
           if (fallbackHosts.length > 1) hosts = fallbackHosts;

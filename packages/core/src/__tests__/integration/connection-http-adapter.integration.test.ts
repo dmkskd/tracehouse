@@ -9,8 +9,11 @@ import { describe, it, expect, beforeAll, afterAll } from 'vitest';
 import { startClickHouse, stopClickHouse, type TestClickHouseContext } from './setup/clickhouse-container.js';
 import { HttpAdapter } from '../../adapters/http-adapter.js';
 import { AdapterError } from '../../adapters/types.js';
+import { tagQuery } from '../../queries/builder.js';
+import { sourceTag, TAB_INTERNAL } from '../../queries/source-tags.js';
 
 const CONTAINER_TIMEOUT = 120_000;
+const q = (sql: string) => tagQuery(sql, sourceTag(TAB_INTERNAL, 'httpAdapterIntegration'));
 
 describe('HttpAdapter integration', { tags: ['connectivity'] }, () => {
   let ctx: TestClickHouseContext;
@@ -42,7 +45,7 @@ describe('HttpAdapter integration', { tags: ['connectivity'] }, () => {
   describe('successful queries', () => {
     it('executes a simple query', async () => {
       const adapter = new HttpAdapter(containerConfig());
-      const rows = await adapter.executeQuery<{ v: number }>('SELECT 1 AS v');
+      const rows = await adapter.executeQuery<{ v: number }>(q('SELECT 1 AS v'));
       expect(rows).toHaveLength(1);
       expect(Number(rows[0].v)).toBe(1);
       await adapter.close();
@@ -53,7 +56,7 @@ describe('HttpAdapter integration', { tags: ['connectivity'] }, () => {
     it('categorizes syntax errors as query errors', async () => {
       const adapter = new HttpAdapter(containerConfig());
       try {
-        await adapter.executeQuery('SELEC INVALID SYNTAX');
+        await adapter.executeQuery(q('SELEC INVALID SYNTAX'));
         expect.unreachable('should have thrown');
       } catch (error) {
         expect(error).toBeInstanceOf(AdapterError);
@@ -66,7 +69,7 @@ describe('HttpAdapter integration', { tags: ['connectivity'] }, () => {
     it('categorizes unknown table as query error', async () => {
       const adapter = new HttpAdapter(containerConfig());
       try {
-        await adapter.executeQuery('SELECT * FROM nonexistent_table_xyz');
+        await adapter.executeQuery(q('SELECT * FROM nonexistent_table_xyz'));
         expect.unreachable('should have thrown');
       } catch (error) {
         expect(error).toBeInstanceOf(AdapterError);
@@ -84,7 +87,7 @@ describe('HttpAdapter integration', { tags: ['connectivity'] }, () => {
       });
 
       try {
-        await adapter.executeQuery('SELECT 1');
+        await adapter.executeQuery(q('SELECT 1'));
         expect.unreachable('should have thrown');
       } catch (error) {
         expect(error).toBeInstanceOf(AdapterError);
@@ -97,7 +100,7 @@ describe('HttpAdapter integration', { tags: ['connectivity'] }, () => {
     it('preserves error message', async () => {
       const adapter = new HttpAdapter(containerConfig());
       try {
-        await adapter.executeQuery('SELECT * FROM nonexistent_db.nonexistent_table');
+        await adapter.executeQuery(q('SELECT * FROM nonexistent_db.nonexistent_table'));
         expect.unreachable('should have thrown');
       } catch (error) {
         expect(error).toBeInstanceOf(AdapterError);

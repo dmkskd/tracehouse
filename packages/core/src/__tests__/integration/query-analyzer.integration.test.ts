@@ -8,8 +8,11 @@
 import { describe, it, expect, beforeAll, afterAll } from 'vitest';
 import { startClickHouse, stopClickHouse, type TestClickHouseContext } from './setup/clickhouse-container.js';
 import { QueryAnalyzer } from '../../services/query-analyzer.js';
+import { tagQuery } from '../../queries/builder.js';
+import { sourceTag, TAB_INTERNAL } from '../../queries/source-tags.js';
 
 const CONTAINER_TIMEOUT = 120_000;
+const q = (sql: string) => tagQuery(sql, sourceTag(TAB_INTERNAL, 'queryAnalyzerIntegration'));
 
 describe('QueryAnalyzer integration', { tags: ['query-analysis'] }, () => {
   let ctx: TestClickHouseContext;
@@ -32,10 +35,10 @@ describe('QueryAnalyzer integration', { tags: ['query-analysis'] }, () => {
       query: `INSERT INTO qa_test.data SELECT number, rand() FROM numbers(10000)`,
     });
     // Run a SELECT to generate a QueryFinish entry
-    await ctx.adapter.executeQuery('SELECT count() FROM qa_test.data');
+    await ctx.adapter.executeQuery(q('SELECT count() FROM qa_test.data'));
     // Run a query that will fail to generate an ExceptionWhileProcessing entry
     try {
-      await ctx.adapter.executeQuery('SELECT nonexistent_column FROM qa_test.data');
+      await ctx.adapter.executeQuery(q('SELECT nonexistent_column FROM qa_test.data'));
     } catch { /* expected */ }
 
     await ctx.client.command({ query: 'SYSTEM FLUSH LOGS' });

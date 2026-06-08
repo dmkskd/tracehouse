@@ -139,10 +139,7 @@ export const Analytics: React.FC = () => {
   const fetchDatabases = useCallback(async () => {
     if (!services || !clusterDetected) return;
     try {
-      const rows = await services.adapter.executeQuery<{ db: string }>(
-        "SELECT DISTINCT database AS db FROM {{cluster_aware:system.tables}} WHERE engine LIKE '%MergeTree%' ORDER BY db"
-      );
-      setAllDatabases(rows.map(r => String(r.db)));
+      setAllDatabases(await services.analyticsService.getMergeTreeDatabases());
     } catch { /* ignore — we'll fall back to databases from query data */ }
   }, [services, clusterDetected]);
 
@@ -255,42 +252,8 @@ export const Analytics: React.FC = () => {
   const handleOpenPatternQuery = useCallback(async (hash: string) => {
     if (!services) return;
     try {
-      const rows = await services.adapter.executeQuery<Record<string, unknown>>(
-        `SELECT query_id, query, user, event_time, query_duration_ms, memory_usage,
-                ProfileEvents['RealTimeMicroseconds'] AS cpu_us,
-                ProfileEvents['NetworkSendBytes'] AS net_send,
-                ProfileEvents['NetworkReceiveBytes'] AS net_recv,
-                ProfileEvents['ReadBufferFromFileDescriptorReadBytes'] AS disk_read,
-                ProfileEvents['WriteBufferFromFileDescriptorWriteBytes'] AS disk_write,
-                type AS status
-         FROM system.query_log
-         WHERE type = 'QueryFinish'
-           AND normalized_query_hash = toUInt64('${hash.replace(/[^0-9]/g, '')}')
-         ORDER BY event_time DESC
-         LIMIT 1`
-      );
-      if (rows.length === 0) return;
-      const r = rows[0];
-      const durationMs = Number(r.query_duration_ms ?? 0);
-      const eventTime = String(r.event_time ?? '');
-      const startTime = eventTime ? new Date(eventTime + (eventTime.includes('Z') ? '' : 'Z')).toISOString() : new Date().toISOString();
-      const endTime = new Date(new Date(startTime).getTime() + durationMs).toISOString();
-      setModalQuery({
-        query_id: String(r.query_id ?? ''),
-        label: String(r.query ?? ''),
-        user: String(r.user ?? 'default'),
-        start_time: startTime,
-        end_time: endTime,
-        duration_ms: durationMs,
-        peak_memory: Number(r.memory_usage ?? 0),
-        cpu_us: Number(r.cpu_us ?? 0),
-        net_send: Number(r.net_send ?? 0),
-        net_recv: Number(r.net_recv ?? 0),
-        disk_read: Number(r.disk_read ?? 0),
-        disk_write: Number(r.disk_write ?? 0),
-        status: String(r.status ?? 'QueryFinish'),
-        points: [],
-      });
+      const query = await services.analyticsService.getLatestQueryForPattern(hash);
+      if (query) setModalQuery(query);
     } catch (e) {
       console.error('Failed to fetch query for pattern hash:', e);
     }

@@ -8,6 +8,7 @@
 import React, { useState, useEffect, useCallback, useMemo, useRef } from 'react';
 import { buildConfig } from '../../buildConfig';
 import { useClickHouseServices } from '../../providers/ClickHouseProvider';
+import { sourceTag, TAB_ANALYTICS } from '@tracehouse/core';
 import { type Query } from './types';
 import { getAllQueries } from './customQueries';
 import { resolveTimeRange, resolveDrillParams } from './templateResolution';
@@ -122,7 +123,10 @@ const DashboardPanelCard: React.FC<{
     try {
       let sql = resolveTimeRange(p.sql, p.directives.meta?.interval, timeRangeOverride);
       sql = resolveDrillParams(sql, { ...filterParams, ...(overrideParams ?? drillParams) });
-      const rows = await services.adapter.executeQuery<Record<string, unknown>>(sql);
+      const rows = await services.interactiveQueryService.run<Record<string, unknown>>(
+        sql,
+        sourceTag(TAB_ANALYTICS, 'dashboardPanel'),
+      );
       const columns = rows.length > 0 ? Object.keys(rows[0]) : [];
       setResult({ columns, rows });
     } catch (e) {
@@ -747,7 +751,10 @@ const MiniPanelCard: React.FC<{ panel: DashboardPanel; timeRangeOverride: string
     let cancelled = false;
     setLoading(true);
     const sql = resolveTimeRange(preset.sql, preset.directives.meta?.interval, timeRangeOverride);
-    services.adapter.executeQuery<Record<string, unknown>>(sql)
+    services.interactiveQueryService.run<Record<string, unknown>>(
+      sql,
+      sourceTag(TAB_ANALYTICS, 'dashboardMiniPanel'),
+    )
       .then(rows => {
         if (cancelled) return;
         const columns = rows.length > 0 ? Object.keys(rows[0]) : [];
@@ -1074,7 +1081,10 @@ const DashboardFilterBar: React.FC<{
     if (!services) return;
     let cancelled = false;
     for (const f of filters) {
-      services.adapter.executeQuery<Record<string, unknown>>(f.query)
+      services.interactiveQueryService.run<Record<string, unknown>>(
+        f.query,
+        sourceTag(TAB_ANALYTICS, 'dashboardFilter'),
+      )
         .then(rows => {
           if (cancelled) return;
           const col = rows.length > 0 ? Object.keys(rows[0])[0] : '';

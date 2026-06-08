@@ -9,10 +9,10 @@
 | `system.asynchronous_metrics` | Current async metric values (no history) | Fallback when log tables lack data |
 | `system.query_log` | Per-query stats after completion | `memory_usage` = peak, `ProfileEvents` = final counters |
 | `system.processes` | Running queries | `ProfileEvents` update live during execution |
-| `system.merges` | Active merge operations | `progress` is 0.0–1.0. `is_mutation` distinguishes merges from mutations |
+| `system.merges` | Active merge operations | `progress` is 0.0–1.0. `rows_read` is cumulative in-flight input rows. `is_mutation` distinguishes merges from mutations |
 | `system.mutations` | Active + completed mutations | `parts_to_do` = remaining work |
 | `system.parts` | All data parts | `bytes_on_disk` = compressed size |
-| `system.part_log` | Part operation history (create, merge, mutate, drop) | `size_in_bytes` = compressed. `read_bytes` = UNCOMPRESSED (don't use for size!) |
+| `system.part_log` | Part operation history (create, merge, mutate, drop) | `size_in_bytes` = compressed. `read_bytes` = UNCOMPRESSED. `read_rows` = completed-operation input rows |
 | `system.trace_log` | Profiler stack trace samples | Buffered in memory, flushed ~60s. May lag under load. |
 
 ## ProfileEvents
@@ -72,3 +72,5 @@
 7. **Thread pool metrics are misleading for attribution.** `MergeTreeBackgroundExecutorThreadsActive` handles merges, moves, fetches, TTL, cleanup. Check `system.merges` for actual merge activity.
 
 8. **trace_log flush lag.** Buffered in memory, flushed ~60s. Under heavy CPU load, flush intervals stretch to 30-60s+. Use 180s windows. Don't use `SYSTEM FLUSH LOGS` as a workaround.
+
+9. **Merge row counters have similar names.** `system.merges.rows_read` is live progress for an active operation; `system.part_log.read_rows` is the final historical input-row count once the operation is logged.

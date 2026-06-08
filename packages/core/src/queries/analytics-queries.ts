@@ -6,6 +6,14 @@
  * and system.parts for row/part counts.
  */
 
+/** List databases that contain MergeTree-family tables. */
+export const MERGETREE_DATABASES = `
+SELECT DISTINCT database AS db
+FROM {{cluster_aware:system.tables}}
+WHERE engine LIKE '%MergeTree%'
+ORDER BY db
+`;
+
 /**
  * Per-table ordering key efficiency analysis.
  *
@@ -150,4 +158,31 @@ WHERE type = 'QueryFinish'
 GROUP BY query_hash
 ORDER BY execution_count DESC
 LIMIT 50
+`;
+
+/**
+ * Fetch the newest finished query for a normalized query hash.
+ *
+ * Params: query_hash (UInt64)
+ */
+export const LATEST_QUERY_FOR_PATTERN = `
+SELECT
+    query_id,
+    query,
+    user,
+    event_time,
+    query_duration_ms,
+    memory_usage,
+    ProfileEvents['OSCPUVirtualTimeMicroseconds'] AS cpu_us,
+    ProfileEvents['NetworkSendBytes'] AS net_send,
+    ProfileEvents['NetworkReceiveBytes'] AS net_recv,
+    ProfileEvents['ReadBufferFromFileDescriptorReadBytes'] AS disk_read,
+    ProfileEvents['WriteBufferFromFileDescriptorWriteBytes'] AS disk_write,
+    type AS status
+FROM {{cluster_aware:system.query_log}}
+WHERE type = 'QueryFinish'
+    AND is_initial_query = 1
+    AND normalized_query_hash = {query_hash:UInt64}
+ORDER BY event_time DESC
+LIMIT 1
 `;

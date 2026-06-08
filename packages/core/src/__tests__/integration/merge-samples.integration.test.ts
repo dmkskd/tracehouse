@@ -11,8 +11,11 @@ import { describe, it, expect, beforeAll, afterAll, beforeEach } from 'vitest';
 import { startClickHouse, stopClickHouse, type TestClickHouseContext } from './setup/clickhouse-container.js';
 import { runTracehouseSetup } from './setup/tracehouse-setup.js';
 import { buildMergeSamplesSQL, mapMergeSampleRow, type MergeSample } from '../../queries/merge-sample-queries.js';
+import { tagQuery } from '../../queries/builder.js';
+import { sourceTag, TAB_INTERNAL } from '../../queries/source-tags.js';
 
 const CONTAINER_TIMEOUT = 120_000;
+const q = (sql: string) => tagQuery(sql, sourceTag(TAB_INTERNAL, 'mergeSamplesIntegration'));
 
 interface MergeSampleRow {
   hostname?: string;
@@ -94,7 +97,7 @@ describe('merge samples integration (delta calculations)', { tags: ['merge-engin
         VALUES ${values}`,
     });
 
-    const raw = await ctx.adapter.executeQuery<Record<string, unknown>>(buildMergeSamplesSQL(opts));
+    const raw = await ctx.adapter.executeQuery<Record<string, unknown>>(q(buildMergeSamplesSQL(opts)));
     return raw.map(mapMergeSampleRow);
   }
 
@@ -462,7 +465,7 @@ describe('merge samples integration (delta calculations)', { tags: ['merge-engin
           VALUES ${values}`,
       });
 
-      const results = (await ctx.adapter.executeQuery<Record<string, unknown>>(buildMergeSamplesSQL({ database: 'default', table: 'test_table' }))).map(mapMergeSampleRow);
+      const results = (await ctx.adapter.executeQuery<Record<string, unknown>>(q(buildMergeSamplesSQL({ database: 'default', table: 'test_table' })))).map(mapMergeSampleRow);
 
       expect(results).toHaveLength(6);
 
@@ -658,7 +661,7 @@ describe('merge samples integration (delta calculations)', { tags: ['merge-engin
       });
 
       const results = (await ctx.adapter.executeQuery<Record<string, unknown>>(
-        buildMergeSamplesSQL({ database: 'default', table: 'test_table' }),
+        q(buildMergeSamplesSQL({ database: 'default', table: 'test_table' })),
       )).map(mapMergeSampleRow);
 
       // Each merge should have 3 samples from one node only

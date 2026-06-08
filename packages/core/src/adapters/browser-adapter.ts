@@ -1,5 +1,5 @@
 import { createClient, type ClickHouseClient } from '@clickhouse/client-web';
-import type { IClickHouseAdapter } from './types.js';
+import type { IClickHouseAdapter, TaggedQuery } from './types.js';
 import { AdapterError, CLIENT_COMPRESSION } from './types.js';
 import type { AdapterErrorCategory } from './types.js';
 import type { ConnectionConfig } from '../types/connection.js';
@@ -32,16 +32,16 @@ export class BrowserAdapter implements IClickHouseAdapter {
     });
   }
 
-  /** Extract the source tag from a tagged query, e.g. "/* source:CHM:Overview:merges *​/" → "Overview-merges" */
+  /** Extract the source tag from a tagged query, e.g. "/* source:TraceHouse:Overview:merges *​/" → "Overview-merges" */
   private sessionIdFor(sql: string): string {
-    const m = sql.match(/\/\*\s*source:CHM:([^*]+?)\s*\*\//);
+    const m = sql.match(/\/\*\s*source:TraceHouse:([^*]+?)\s*\*\//);
     const tag = m ? m[1].replace(/:/g, '-') : 'untagged';
     // Unique per call to avoid "session is locked" on concurrent queries,
     // but prefixed with the source tag so the LB sees a consistent routing key.
     return `${this.sessionPrefix}-${tag}-${randomUUID().slice(0, 4)}`;
   }
 
-  async executeQuery<T extends Record<string, unknown>>(sql: string): Promise<T[]> {
+  async executeQuery<T extends Record<string, unknown>>(sql: TaggedQuery): Promise<T[]> {
     try {
       const result = await this.client.query({
         query: sql,

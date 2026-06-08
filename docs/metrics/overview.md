@@ -31,6 +31,8 @@ Per-query cores are computed individually then summed. If you sum CPU time and e
 
 **Progress:** `system.merges.progress × 100` (0-100%)
 
+**Rows:** active merge rows come from `system.merges.rows_read` and represent cumulative rows read so far. Historical merge rows come from `system.part_log.read_rows` and represent the completed operation's input rows.
+
 **Throughput (active):** from `system.merges`:
 ```
 read_rate  = bytes_read_uncompressed / elapsed
@@ -43,6 +45,8 @@ throughput = size_in_bytes / (duration_ms / 1000)
 ```
 
 Note: active merges use uncompressed bytes; completed merges use compressed `size_in_bytes` (on-disk). These are different measures.
+
+Lightweight `UPDATE` patch parts are not logged as normal historical merge events in `system.part_log`, so active mutation state may show work that the historical merge list cannot later reconstruct from `part_log` alone.
 
 ## Mutation Monitoring
 

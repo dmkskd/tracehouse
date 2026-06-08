@@ -1,5 +1,5 @@
 import { createClient, type ClickHouseClient } from '@clickhouse/client';
-import type { IClickHouseAdapter } from './types.js';
+import type { IClickHouseAdapter, TaggedQuery } from './types.js';
 import { AdapterError, CLIENT_COMPRESSION } from './types.js';
 import type { ConnectionConfig } from '../types/connection.js';
 import { applyStickyRouting } from './sticky-routing.js';
@@ -26,14 +26,12 @@ export class HttpAdapter implements IClickHouseAdapter {
   }
 
   private sessionIdFor(sql: string): string {
-    const m = sql.match(/\/\*\s*source:CHM:([^*]+?)\s*\*\//);
+    const m = sql.match(/\/\*\s*source:TraceHouse:([^*]+?)\s*\*\//);
     const tag = m ? m[1].replace(/:/g, '-') : 'untagged';
     return `${this.sessionPrefix}-${tag}-${randomUUID().slice(0, 4)}`;
   }
 
-  async executeQuery<T extends Record<string, unknown>>(
-    sql: string,
-  ): Promise<T[]> {
+  async executeQuery<T extends Record<string, unknown>>(sql: TaggedQuery): Promise<T[]> {
     try {
       const result = await this.client.query({
         query: sql,

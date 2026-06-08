@@ -36,7 +36,7 @@ import type { ClusterHistoricalMetricsPoint, RunningQueryInfo, ActiveMergeInfo }
 import type { ChartDataPoint, TrendMetricType, MetricStats } from '../stores/timeSeriesStore';
 import { formatBytes, formatDuration } from '../utils/formatters';
 import { TruncatedHost } from '../components/common/TruncatedHost';
-import { ObservabilitySunburst, DetailSidebar, OBSERVABILITY_DATA, enrichWithAvailability, mergeAvailability, fetchColumnComments } from '../components/observability-map';
+import { ObservabilitySunburst, DetailSidebar, OBSERVABILITY_DATA, mergeAvailability } from '../components/observability-map';
 import type { SunburstNodeData, QueryResult, ObservabilityData, ColumnCommentMap } from '../components/observability-map';
 import { useUserPreferenceStore } from '../stores/userPreferenceStore';
 import { DocsLink } from '../components/common/DocsLink';
@@ -158,16 +158,21 @@ export const Overview: React.FC = () => {
   useEffect(() => {
     if (!services) { setEnrichedMapData(null); setColumnComments(new Map()); return; }
     let cancelled = false;
-    const exec = services.adapter.executeQuery.bind(services.adapter);
-    enrichWithAvailability(exec)
+    services.observabilityMapService.getSystemTables()
       .then(serverTables => {
         if (!cancelled) {
           setEnrichedMapData(mergeAvailability(OBSERVABILITY_DATA, serverTables));
         }
+      })
+      .catch(() => {
+        if (!cancelled) setEnrichedMapData(mergeAvailability(OBSERVABILITY_DATA, new Map()));
       });
-    fetchColumnComments(exec)
+    services.observabilityMapService.getColumnComments()
       .then(comments => {
         if (!cancelled) setColumnComments(comments);
+      })
+      .catch(() => {
+        if (!cancelled) setColumnComments(new Map());
       });
     return () => { cancelled = true; };
   }, [services]);
@@ -183,7 +188,7 @@ export const Overview: React.FC = () => {
     setMapRunQueryIndex(queryIndex);
     const t0 = performance.now();
     try {
-      const rows = await services.adapter.executeQuery<Record<string, unknown>>(sql);
+      const rows = await services.observabilityMapService.runDiagnostic<Record<string, unknown>>(sql);
       const columns = rows.length > 0 ? Object.keys(rows[0]) : [];
       setMapQueryResult({ columns, rows, executionTime: performance.now() - t0 });
     } catch (err) {

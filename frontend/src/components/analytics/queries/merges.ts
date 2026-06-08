@@ -98,11 +98,12 @@ WHERE event_time > {{time_range}}
 GROUP BY t
 ORDER BY t ASC`,
 
-  `-- @meta: title='Merge I/O Pressure' group='Merges' interval='1 HOUR' description='Disk read/write bytes attributed to merges over time'
--- @chart: type=area group_by=t value=merge_read style=2d
+  `-- @meta: title='Merged Data Volume' group='Merges' interval='1 HOUR' description='Rows and uncompressed bytes merged over time from metric_log'
+-- @chart: type=area group_by=t value=merged_uncompressed_bytes style=2d
 SELECT
     toStartOfInterval(event_time, INTERVAL 1 MINUTE) AS t,
     sum(ProfileEvent_MergedRows) AS merged_rows,
+    sum(ProfileEvent_MergedUncompressedBytes) AS merged_uncompressed_bytes,
     formatReadableSize(sum(ProfileEvent_MergedUncompressedBytes)) AS merged_uncompressed
 FROM {{cluster_aware:system.metric_log}}
 WHERE event_time > {{time_range}}

@@ -10,6 +10,9 @@ import { useClickHouseServices } from '../../providers/ClickHouseProvider';
 import {
   buildMergeSamplesSQL,
   mapMergeSampleRow,
+  tagQuery,
+  sourceTag,
+  TAB_MERGES,
   type MergeSample,
 } from '@tracehouse/core';
 
@@ -44,7 +47,9 @@ export function useMergeSamples(opts: {
         resultPartName: opts.resultPartName,
         hostname: opts.hostname,
       });
-      const rows = await services.adapter.executeQuery<Record<string, unknown>>(sql);
+      const rows = await services.adapter.executeQuery<Record<string, unknown>>(
+        tagQuery(sql, sourceTag(TAB_MERGES, 'mergeSamples')),
+      );
       setSamples(rows.map(mapMergeSampleRow));
     } catch (e) {
       setError(e instanceof Error ? e.message : 'Failed to fetch merge samples');

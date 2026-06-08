@@ -13,6 +13,7 @@
 import React, { useEffect, useState, useMemo, useCallback } from 'react';
 import { createPortal } from 'react-dom';
 import { useClickHouseServices } from '../../providers/ClickHouseProvider';
+import { sourceTag, TAB_ANALYTICS } from '@tracehouse/core';
 import { type Query } from './types';
 import { resolveTimeRange, resolveDrillParams } from './templateResolution';
 import { getRagColor } from './metaLanguage';
@@ -98,7 +99,10 @@ export const LinkQueryModal: React.FC<LinkQueryModalProps> = ({
         let sql = resolveTimeRange(targetQuery.sql, targetQuery.directives.meta?.interval);
         const mergedParams = { ...(parentDrillParams ?? {}), ...params };
         sql = resolveDrillParams(sql, mergedParams);
-        const result = await services.adapter.executeQuery<QueryRow>(sql);
+        const result = await services.interactiveQueryService.run<QueryRow>(
+          sql,
+          sourceTag(TAB_ANALYTICS, 'linkQuery'),
+        );
         if (cancelled) return;
         setRows(result);
         // If exactly one row with a query_id, open detail immediately

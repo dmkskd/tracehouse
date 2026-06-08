@@ -4,24 +4,29 @@
 
 How effectively the query used primary key indexes to skip data.
 
-**Source:** `query_log.ProfileEvents` → `SelectedMarks`, `SelectedMarksTotal`
+**Source:** `query_log.ProfileEvents` → `SelectedParts`, `SelectedPartsTotal`, `SelectedMarks`, `SelectedMarksTotal`
 
 ```
-efficiency = ((SelectedMarksTotal - SelectedMarks) / SelectedMarksTotal) × 100
+parts_survival = SelectedParts / SelectedPartsTotal
+marks_survival = SelectedMarks / SelectedMarksTotal
+efficiency = (1 - parts_survival × marks_survival) × 100
 ```
 
 | Score | Rating |
 | --- | --- |
-| 90%+ | Excellent, only 10% of marks scanned |
-| 50–90% | Good, some pruning |
-| <50% | Poor, consider optimizing PK or adding skip indexes |
-| null | No marks data (e.g. `SELECT 1`, system queries, non-MergeTree) |
+| 90%+ | Excellent, most parts/marks pruned |
+| 70–90% | Good, reasonable pruning |
+| 50–70% | Fair, some pruning |
+| <50% | Poor, near full-scan territory |
+| null | No pruning data (e.g. `SELECT 1`, system queries, non-MergeTree) |
 
 Higher is better (more data skipped). Displayed as "Pruning" badge in the table and "Index Pruning" card in detail view.
 
-> **Tests:** `query-analyzer.integration.test.ts` → "getQueryHistory"
+> **Tests:** `pruning.test.ts`, `query-mappers.test.ts`
 
-**Why not `result_rows / read_rows`?** A `GROUP BY` over 10M rows returning 5 results is perfectly efficient. Row ratio would incorrectly flag it as poor. Marks pruning measures what matters: how well the PK avoided scanning irrelevant data.
+**Why not marks-only pruning?** `SelectedMarksTotal` only counts marks in the parts that survived partition pruning. If a query selects 1 out of 75 parts and reads all marks in that one part, marks-only pruning says 0%, but combined pruning correctly reports 98.7%.
+
+**Why not `result_rows / read_rows`?** A `GROUP BY` over 10M rows returning 5 results is perfectly efficient. Row ratio would incorrectly flag it as poor. Parts and marks pruning measure what matters: how well ClickHouse avoided scanning irrelevant data.
 
 ## Index Selectivity
 
@@ -32,7 +37,7 @@ Two levels of selectivity, both from `query_log.ProfileEvents`:
 
 Lower is better (more pruning). Color coding: ≤10% green, ≤50% yellow, >50% red. Only available for MergeTree tables.
 
-Marks are finer-grained than parts (default 8192 rows per mark). Index Pruning Effectiveness is the inverse of marks selectivity.
+Marks are finer-grained than parts (default 8192 rows per mark). Index Pruning Effectiveness combines parts selectivity and marks selectivity.
 
 ## Mark Cache Hit Rate
 

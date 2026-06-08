@@ -10,9 +10,12 @@ import { describe, it, expect, beforeAll, afterAll } from 'vitest';
 import { startClickHouse, stopClickHouse, type TestClickHouseContext } from './setup/clickhouse-container.js';
 import { LineageService } from '../../services/lineage-service.js';
 import type { LineageNode } from '../../types/lineage.js';
+import { tagQuery } from '../../queries/builder.js';
+import { sourceTag, TAB_INTERNAL } from '../../queries/source-tags.js';
 
 const CONTAINER_TIMEOUT = 120_000;
 const TEST_DB = 'lineage_test';
+const q = (sql: string) => tagQuery(sql, sourceTag(TAB_INTERNAL, 'lineageIntegration'));
 
 /** Collect all nodes in a lineage tree via DFS. */
 function collectAllNodes(node: LineageNode): LineageNode[] {
@@ -65,7 +68,7 @@ describe('Lineage builder integration', { tags: ['merge-engine'] }, () => {
   it('builds a lineage tree for the merged part', async () => {
     // Get the active part (should be a single merged part after OPTIMIZE FINAL)
     const parts = await ctx.adapter.executeQuery<{ name: string; level: number }>(
-      `SELECT name, level FROM system.parts WHERE database = '${TEST_DB}' AND table = 'events' AND active = 1`,
+      q(`SELECT name, level FROM system.parts WHERE database = '${TEST_DB}' AND table = 'events' AND active = 1`),
     );
     expect(parts.length).toBeGreaterThanOrEqual(1);
 
@@ -82,7 +85,7 @@ describe('Lineage builder integration', { tags: ['merge-engine'] }, () => {
 
   it('L0 nodes are always leaves', async () => {
     const parts = await ctx.adapter.executeQuery<{ name: string }>(
-      `SELECT name FROM system.parts WHERE database = '${TEST_DB}' AND table = 'events' AND active = 1 LIMIT 1`,
+      q(`SELECT name FROM system.parts WHERE database = '${TEST_DB}' AND table = 'events' AND active = 1 LIMIT 1`),
     );
     const lineage = await new LineageService(ctx.adapter).buildLineageTree(TEST_DB, 'events', parts[0].name);
 
@@ -95,7 +98,7 @@ describe('Lineage builder integration', { tags: ['merge-engine'] }, () => {
 
   it('statistics match tree structure', async () => {
     const parts = await ctx.adapter.executeQuery<{ name: string }>(
-      `SELECT name FROM system.parts WHERE database = '${TEST_DB}' AND table = 'events' AND active = 1 LIMIT 1`,
+      q(`SELECT name FROM system.parts WHERE database = '${TEST_DB}' AND table = 'events' AND active = 1 LIMIT 1`),
     );
     const lineage = await new LineageService(ctx.adapter).buildLineageTree(TEST_DB, 'events', parts[0].name);
 
@@ -109,7 +112,7 @@ describe('Lineage builder integration', { tags: ['merge-engine'] }, () => {
 
   it('tree is finite (no infinite cycles)', async () => {
     const parts = await ctx.adapter.executeQuery<{ name: string }>(
-      `SELECT name FROM system.parts WHERE database = '${TEST_DB}' AND table = 'events' AND active = 1 LIMIT 1`,
+      q(`SELECT name FROM system.parts WHERE database = '${TEST_DB}' AND table = 'events' AND active = 1 LIMIT 1`),
     );
     const lineage = await new LineageService(ctx.adapter).buildLineageTree(TEST_DB, 'events', parts[0].name);
 
@@ -121,7 +124,7 @@ describe('Lineage builder integration', { tags: ['merge-engine'] }, () => {
 
   it('merged part has children when level > 0', async () => {
     const parts = await ctx.adapter.executeQuery<{ name: string; level: number }>(
-      `SELECT name, level FROM system.parts WHERE database = '${TEST_DB}' AND table = 'events' AND active = 1`,
+      q(`SELECT name, level FROM system.parts WHERE database = '${TEST_DB}' AND table = 'events' AND active = 1`),
     );
 
     // Find a part with level > 0 (merged)
@@ -136,7 +139,7 @@ describe('Lineage builder integration', { tags: ['merge-engine'] }, () => {
 
   it('original_total_size is >= final_size for merged parts', async () => {
     const parts = await ctx.adapter.executeQuery<{ name: string; level: number }>(
-      `SELECT name, level FROM system.parts WHERE database = '${TEST_DB}' AND table = 'events' AND active = 1`,
+      q(`SELECT name, level FROM system.parts WHERE database = '${TEST_DB}' AND table = 'events' AND active = 1`),
     );
 
     const mergedPart = parts.find(p => p.level > 0);

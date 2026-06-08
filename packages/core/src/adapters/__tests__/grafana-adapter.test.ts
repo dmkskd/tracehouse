@@ -1,6 +1,10 @@
 import { describe, it, expect, vi } from 'vitest';
 import { GrafanaAdapter, type AdapterFrame, type AdapterQueryFn } from '../grafana-adapter.js';
 import { AdapterError } from '../types.js';
+import { tagQuery } from '../../queries/builder.js';
+import { sourceTag, TAB_INTERNAL } from '../../queries/source-tags.js';
+
+const q = (sql: string) => tagQuery(sql, sourceTag(TAB_INTERNAL, 'grafanaAdapterTest'));
 
 function makeFrame(fields: Array<{ name: string; type?: string }>, columns: unknown[][]): AdapterFrame {
   return {
@@ -28,16 +32,17 @@ describe('GrafanaAdapter', { tags: ['connectivity'] }, () => {
       const queryFn = vi.fn<AdapterQueryFn>().mockResolvedValue([]);
       const adapter = createAdapter(queryFn);
 
-      await adapter.executeQuery('SELECT 1');
+      await adapter.executeQuery(q('SELECT 1'));
 
-      expect(queryFn).toHaveBeenCalledWith('SELECT 1', 'q');
+      expect(queryFn).toHaveBeenCalledWith(expect.stringContaining('SELECT 1'), 'q');
+      expect(queryFn).toHaveBeenCalledWith(expect.stringContaining('source:TraceHouse:Internal:grafanaAdapterTest'), 'q');
     });
 
     it('returns empty array for empty frames', async () => {
       const queryFn = vi.fn<AdapterQueryFn>().mockResolvedValue([]);
       const adapter = createAdapter(queryFn);
 
-      const result = await adapter.executeQuery('SELECT 1');
+      const result = await adapter.executeQuery(q('SELECT 1'));
       expect(result).toEqual([]);
     });
 
@@ -45,7 +50,7 @@ describe('GrafanaAdapter', { tags: ['connectivity'] }, () => {
       const queryFn = vi.fn<AdapterQueryFn>().mockResolvedValue([{ fields: [] }]);
       const adapter = createAdapter(queryFn);
 
-      const result = await adapter.executeQuery('SELECT 1');
+      const result = await adapter.executeQuery(q('SELECT 1'));
       expect(result).toEqual([]);
     });
 
@@ -61,7 +66,7 @@ describe('GrafanaAdapter', { tags: ['connectivity'] }, () => {
       const adapter = createAdapter(vi.fn().mockResolvedValue([frame]));
 
       const result = await adapter.executeQuery<{ name: string; rows: number; bytes_on_disk: number }>(
-        'SELECT name, rows, bytes_on_disk FROM system.parts',
+        q('SELECT name, rows, bytes_on_disk FROM system.parts'),
       );
 
       expect(result).toEqual([
@@ -74,7 +79,7 @@ describe('GrafanaAdapter', { tags: ['connectivity'] }, () => {
       const frame = makeFrame([{ name: 'version' }], [['24.3.1']]);
       const adapter = createAdapter(vi.fn().mockResolvedValue([frame]));
 
-      const result = await adapter.executeQuery<{ version: string }>('SELECT version()');
+      const result = await adapter.executeQuery<{ version: string }>(q('SELECT version()'));
       expect(result).toEqual([{ version: '24.3.1' }]);
     });
 
@@ -85,7 +90,7 @@ describe('GrafanaAdapter', { tags: ['connectivity'] }, () => {
       );
       const adapter = createAdapter(vi.fn().mockResolvedValue([frame]));
 
-      const result = await adapter.executeQuery('SELECT name, value');
+      const result = await adapter.executeQuery(q('SELECT name, value'));
       expect(result).toEqual([
         { name: 'a', value: 1 },
         { name: 'b', value: null },
@@ -96,7 +101,7 @@ describe('GrafanaAdapter', { tags: ['connectivity'] }, () => {
       const adapter = createAdapter(vi.fn().mockRejectedValue(new Error('DB::Exception: Table not found')));
 
       try {
-        await adapter.executeQuery('SELECT * FROM bad_table');
+        await adapter.executeQuery(q('SELECT * FROM bad_table'));
         expect.fail('Should have thrown');
       } catch (error) {
         expect(error).toBeInstanceOf(AdapterError);
@@ -186,7 +191,7 @@ describe('GrafanaAdapter', { tags: ['connectivity'] }, () => {
       const adapter = createAdapter(vi.fn().mockRejectedValue(new Error('Failed to fetch')));
 
       try {
-        await adapter.executeQuery('SELECT 1');
+        await adapter.executeQuery(q('SELECT 1'));
         expect.fail('Should have thrown');
       } catch (error) {
         expect(error).toBeInstanceOf(AdapterError);

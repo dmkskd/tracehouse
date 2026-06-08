@@ -32,8 +32,11 @@ import {
 } from '../../queries/process-queries.js';
 import { ClusterAwareAdapter } from '../../adapters/cluster-adapter.js';
 import { ClusterTestAdapter } from './setup/cluster-container.js';
+import { tagQuery } from '../../queries/builder.js';
+import { sourceTag, TAB_INTERNAL } from '../../queries/source-tags.js';
 
 const CONTAINER_TIMEOUT = 120_000;
+const q = (sql: string) => tagQuery(sql, sourceTag(TAB_INTERNAL, 'processXrayIntegration'));
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Shared helpers
@@ -106,7 +109,7 @@ describe('X-Ray: single-node synthetic data', { tags: ['observability'] }, () =>
         VALUES ${values}`,
     });
 
-    const raw = await ctx.adapter.executeQuery<Record<string, unknown>>(buildHostProcessSamplesSQL(qid));
+    const raw = await ctx.adapter.executeQuery<Record<string, unknown>>(q(buildHostProcessSamplesSQL(qid)));
     return raw.map(mapHostProcessSampleRow);
   }
 
@@ -450,7 +453,7 @@ describe('X-Ray: cluster with organic sampling', { tags: ['observability'] }, ()
    */
   async function queryXRaySamples(queryId: string): Promise<HostProcessSample[]> {
     const sql = buildHostProcessSamplesSQL(queryId);
-    const rows = await adapter.executeQuery<Record<string, unknown>>(sql);
+    const rows = await adapter.executeQuery<Record<string, unknown>>(q(sql));
     return rows.map(mapHostProcessSampleRow);
   }
 

@@ -7,7 +7,8 @@
 
 import type { IClickHouseAdapter } from '../adapters/types.js';
 import type { TableOrderingKeyEfficiency, OrderingKeyEfficiencyOptions, TableQueryPattern, ExplainIndexesResult, StressSurfaceData, StressSurfaceRow, StressSurfaceInsertRow, StressSurfaceMergeRow, PatternSurfaceRow, SurfaceQueryOptions, ResourceLanesData, ResourceLaneRow, ResourceLaneMergeRow, ResourceTotalsRow, ResourceLanesOptions, ResourceLanesTableOptions } from '../types/analytics.js';
-import { TABLE_ORDERING_KEY_EFFICIENCY, TABLE_QUERY_PATTERNS } from '../queries/analytics-queries.js';
+import type { QuerySeries } from '../types/timeline.js';
+import { LATEST_QUERY_FOR_PATTERN, MERGETREE_DATABASES, TABLE_ORDERING_KEY_EFFICIENCY, TABLE_QUERY_PATTERNS } from '../queries/analytics-queries.js';
 import { stressSurfaceQueries, stressSurfaceInserts, stressSurfaceMerges, patternSurface, buildSurfaceTimeFilter, resourceLanesSystem, resourceLanesSystemTotals, resourceLanesTable, resourceLanesMerges, resourceLanesMergeTotals, resourceLanesTableMerges } from '../queries/surface-queries.js';
 import { buildQuery, tagQuery } from '../queries/builder.js';
 import { TAB_ANALYTICS, sourceTag } from '../queries/source-tags.js';
@@ -31,8 +32,28 @@ function parseUserBreakdown(raw: unknown): Record<string, number> {
   return result;
 }
 
+function parseClickHouseDateTime(raw: unknown): string {
+  const value = String(raw ?? '');
+  if (!value) return new Date().toISOString();
+  const normalized = value.includes('Z') || /[+-]\d{2}:?\d{2}$/.test(value) ? value : `${value}Z`;
+  const date = new Date(normalized);
+  return Number.isNaN(date.getTime()) ? new Date().toISOString() : date.toISOString();
+}
+
 export class AnalyticsService {
   constructor(private adapter: IClickHouseAdapter) {}
+
+  async getMergeTreeDatabases(): Promise<string[]> {
+    try {
+      const rows = await this.adapter.executeQuery<{ db: string }>(
+        tagQuery(MERGETREE_DATABASES, sourceTag(TAB_ANALYTICS, 'mergeTreeDatabases')),
+      );
+      return rows.map(row => String(row.db));
+    } catch (error) {
+      const msg = error instanceof Error ? error.message : String(error);
+      throw new AnalyticsServiceError(`Failed to get MergeTree databases: ${msg}`, error as Error);
+    }
+  }
 
   /**
    * Get per-table ordering key efficiency analysis.
@@ -138,6 +159,51 @@ export class AnalyticsService {
         `Failed to get query patterns for ${database}.${tableName}: ${msg}`,
         error as Error,
       );
+    }
+  }
+
+  /**
+   * Fetch the latest finished query matching a normalized_query_hash and map it
+   * into the QuerySeries shape consumed by QueryDetailModal.
+   */
+  async getLatestQueryForPattern(queryHash: string): Promise<QuerySeries | null> {
+    const numericHash = queryHash.replace(/[^0-9]/g, '');
+    if (!numericHash) return null;
+
+    const sql = buildQuery(LATEST_QUERY_FOR_PATTERN, {
+      query_hash: numericHash,
+    });
+
+    try {
+      const rows = await this.adapter.executeQuery<Record<string, unknown>>(
+        tagQuery(sql, sourceTag(TAB_ANALYTICS, 'latestPatternQuery')),
+      );
+      if (rows.length === 0) return null;
+
+      const row = rows[0];
+      const durationMs = Number(row.query_duration_ms ?? 0);
+      const startTime = parseClickHouseDateTime(row.event_time);
+      const endTime = new Date(new Date(startTime).getTime() + durationMs).toISOString();
+
+      return {
+        query_id: String(row.query_id ?? ''),
+        label: String(row.query ?? ''),
+        user: String(row.user ?? 'default'),
+        start_time: startTime,
+        end_time: endTime,
+        duration_ms: durationMs,
+        peak_memory: Number(row.memory_usage ?? 0),
+        cpu_us: Number(row.cpu_us ?? 0),
+        net_send: Number(row.net_send ?? 0),
+        net_recv: Number(row.net_recv ?? 0),
+        disk_read: Number(row.disk_read ?? 0),
+        disk_write: Number(row.disk_write ?? 0),
+        status: String(row.status ?? 'QueryFinish'),
+        points: [],
+      };
+    } catch (error) {
+      const msg = error instanceof Error ? error.message : String(error);
+      throw new AnalyticsServiceError(`Failed to get latest query for pattern ${queryHash}: ${msg}`, error as Error);
     }
   }
 

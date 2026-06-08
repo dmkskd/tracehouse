@@ -12,8 +12,10 @@ import { DatabaseExplorer, DatabaseExplorerError } from '../../services/database
 import { QueryAnalyzer, QueryAnalysisError } from '../../services/query-analyzer.js';
 import { MetricsCollector, MetricsCollectionError } from '../../services/metrics-collector.js';
 import { MergeTracker, MergeTrackerError } from '../../services/merge-tracker.js';
-import type { IClickHouseAdapter } from '../../adapters/types.js';
+import type { IClickHouseAdapter, TaggedQuery } from '../../adapters/types.js';
 import { AdapterError } from '../../adapters/types.js';
+import { tagQuery } from '../../queries/builder.js';
+import { sourceTag, TAB_INTERNAL } from '../../queries/source-tags.js';
 
 const CONTAINER_TIMEOUT = 120_000;
 
@@ -24,10 +26,12 @@ const CONTAINER_TIMEOUT = 120_000;
 class CorruptingAdapter implements IClickHouseAdapter {
   constructor(private inner: IClickHouseAdapter) {}
 
-  async executeQuery<T extends Record<string, unknown>>(sql: string): Promise<T[]> {
+  async executeQuery<T extends Record<string, unknown>>(sql: TaggedQuery): Promise<T[]> {
     // Prepend garbage to make any SQL invalid
     try {
-      return await this.inner.executeQuery<T>('INVALID_SYNTAX_XYZ ' + sql);
+      return await this.inner.executeQuery<T>(
+        tagQuery('INVALID_SYNTAX_XYZ ' + sql, sourceTag(TAB_INTERNAL, 'corruptingAdapter'))
+      );
     } catch (error) {
       // Re-throw as AdapterError (which is what real adapters do)
       const msg = error instanceof Error ? error.message : String(error);
@@ -35,7 +39,7 @@ class CorruptingAdapter implements IClickHouseAdapter {
     }
   }
 
-  async executeCommand(sql: string): Promise<void> {
+  async executeCommand(_sql: string): Promise<void> {
     // Not needed for these tests
   }
 }

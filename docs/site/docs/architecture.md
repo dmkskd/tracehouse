@@ -71,6 +71,21 @@ Instead of connecting to ClickHouse directly via `@clickhouse/client-web`, the a
 
 The app plugin shares the same `packages/core` library as the standalone frontend.
 
+## Query Ownership
+
+Most app-owned ClickHouse SQL lives in `packages/core/src/queries/` and is executed
+through services in `packages/core/src/services/`. Frontend components should call
+those services instead of constructing SQL directly, so the standalone app and the
+Grafana plugin share the same query logic.
+
+Analytics dashboards are the deliberate exception. Files under
+`frontend/src/components/analytics/queries/` are a frontend dashboard-query catalog:
+users can edit, preview, and run those SQL definitions live in the dashboard UI.
+Those definitions stay near the dashboard editor, but execution still crosses a
+narrow service boundary. Dashboard, preset, and custom SQL must run through
+`InteractiveQueryService`, which tags each query with `source:TraceHouse:Analytics:*`
+before it reaches the ClickHouse adapter.
+
 ## Data Collection
 
 :::caution Work In Progress

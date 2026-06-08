@@ -6,7 +6,7 @@
  * the cluster topology concern.
  */
 
-import type { IClickHouseAdapter } from './types.js';
+import type { IClickHouseAdapter, TaggedQuery } from './types.js';
 import { ClusterService } from '../services/cluster-service.js';
 
 export class ClusterAwareAdapter implements IClickHouseAdapter {
@@ -22,8 +22,8 @@ export class ClusterAwareAdapter implements IClickHouseAdapter {
     return this.clusterName;
   }
 
-  async executeQuery<T extends Record<string, unknown>>(sql: string): Promise<T[]> {
-    return this.inner.executeQuery<T>(ClusterService.resolveTableRefs(sql, this.clusterName));
+  async executeQuery<T extends Record<string, unknown>>(sql: TaggedQuery): Promise<T[]> {
+    return this.inner.executeQuery<T>(ClusterService.resolveTableRefs(sql, this.clusterName) as TaggedQuery);
   }
 
   async executeCommand(sql: string): Promise<void> {

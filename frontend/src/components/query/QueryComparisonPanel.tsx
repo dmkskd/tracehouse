@@ -10,7 +10,7 @@
 
 import React, { useState, useMemo } from 'react';
 import type { ProfileEventComparison, MultiProfileEventRow, TaggedProcessSample } from '@tracehouse/core';
-import { buildProcessSamplesSQL, mapTaggedProcessSampleRow, buildTimelineChartData } from '@tracehouse/core';
+import { buildProcessSamplesSQL, mapTaggedProcessSampleRow, buildTimelineChartData, tagQuery, sourceTag, TAB_QUERIES } from '@tracehouse/core';
 import { LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer } from 'recharts';
 import { useClickHouseServices } from '../../providers/ClickHouseProvider';
 import { useCapabilityCheck } from '../shared/RequiresCapability';
@@ -99,7 +99,9 @@ export const QueryComparisonPanel: React.FC<QueryComparisonPanelProps> = ({ quer
     try {
       const ids = queries.map(q => q.query_id);
       const sql = buildProcessSamplesSQL(ids);
-      const rows = await services.adapter.executeQuery<Record<string, unknown>>(sql);
+      const rows = await services.adapter.executeQuery<Record<string, unknown>>(
+        tagQuery(sql, sourceTag(TAB_QUERIES, 'comparisonTimeline')),
+      );
       setTimelineSamples(rows.map(mapTaggedProcessSampleRow));
     } catch (e) {
       setTimelineError(e instanceof Error ? e.message : String(e));

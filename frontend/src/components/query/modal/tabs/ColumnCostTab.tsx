@@ -10,8 +10,7 @@
  */
 
 import React, { useState, useCallback, useMemo, useEffect } from 'react';
-import type { QueryDetail } from '@tracehouse/core';
-import { HostTargetedAdapter } from '@tracehouse/core';
+import type { QueryDetail, ColumnCost, ServerColumnCost, ServerProgress } from '@tracehouse/core';
 import { useClickHouseServices } from '../../../../providers/ClickHouseProvider';
 import { useClusterStore } from '../../../../stores/clusterStore';
 
@@ -25,29 +24,6 @@ const fmtBytes = (b: number): string => {
   const i = Math.min(Math.floor(Math.log2(b) / 10), units.length - 1);
   return `${(b / Math.pow(1024, i)).toFixed(i === 0 ? 0 : 1)} ${units[i]}`;
 };
-
-interface ColumnCost {
-  column: string;
-  bytes: number;
-  pct: number;
-}
-
-interface ServerColumnCost {
-  column: string;
-  readBytes: number;
-  pct: number;
-}
-
-/** Progress tracker for per-column server analysis */
-interface ServerProgress {
-  total: number;
-  completed: number;
-  currentColumn: string;
-  /** Seconds remaining while waiting for query_log flush */
-  flushCountdown?: number;
-  /** The flush interval read from the server, in ms */
-  flushIntervalMs?: number;
-}
 
 /* ------------------------------------------------------------------ */
 /*  Styles                                                             */
@@ -181,15 +157,10 @@ export const ColumnCostTab: React.FC<ColumnCostTabProps> = ({ queryDetail, isLoa
   const services = useClickHouseServices();
   const { clusterName } = useClusterStore();
 
-  // When in a cluster, route client-side queries to the host that ran the original query
-  const queryAdapter = useMemo(() => {
-    if (!services) return null;
-    const targetHost = queryDetail?.hostname;
-    if (targetHost && clusterName) {
-      return new HostTargetedAdapter(services.adapter, clusterName, targetHost);
-    }
-    return services.adapter;
-  }, [services, clusterName, queryDetail?.hostname]);
+  const target = useMemo(() => ({
+    clusterName,
+    hostname: queryDetail?.hostname,
+  }), [clusterName, queryDetail?.hostname]);
 
   // Client-side analysis state
   const [clientCosts, setClientCosts] = useState<ColumnCost[] | null>(null);
@@ -216,89 +187,27 @@ export const ColumnCostTab: React.FC<ColumnCostTabProps> = ({ queryDetail, isLoa
   const isSelect = queryDetail?.query_kind?.toUpperCase() === 'SELECT';
 
   /* ---------------------------------------------------------------- */
-  /*  Shared: discover output column names of the original query        */
-  /* ---------------------------------------------------------------- */
-
-  const discoverOutputColumns = useCallback(async (): Promise<string[] | null> => {
-    if (!queryAdapter || !queryText) return null;
-    const stripped = queryText.replace(/;\s*$/, '');
-
-    // Strategy 1: DESCRIBE (subquery) — returns name/type pairs
-    try {
-      const describeSql = `DESCRIBE (${stripped})`;
-      const describeResult = await queryAdapter.executeQuery<{ name: string; type: string }>(describeSql);
-      if (describeResult.length > 0) return describeResult.map(r => r.name);
-    } catch { /* fall through */ }
-
-    // Strategy 2: Run with LIMIT 1 and read result keys
-    try {
-      const probeSql = `SELECT * FROM (${stripped}) LIMIT 1`;
-      const probeResult = await queryAdapter.executeQuery<Record<string, unknown>>(probeSql);
-      if (probeResult.length > 0) {
-        return Object.keys(probeResult[0]);
-      }
-    } catch { /* fall through */ }
-
-    return null;
-  }, [queryAdapter, queryText]);
-
-  /* ---------------------------------------------------------------- */
   /*  Client-side: re-run query with byteSize() per column             */
   /* ---------------------------------------------------------------- */
 
   const runClientAnalysis = useCallback(async () => {
-    if (!queryAdapter || !queryText || !isSelect) return;
+    if (!services || !queryText || !isSelect) return;
 
     setIsRunningClient(true);
     setClientError(null);
     const start = performance.now();
 
     try {
-      const outputColumns = await discoverOutputColumns();
-
-      if (!outputColumns || outputColumns.length === 0) {
-        setClientError('Could not determine output columns for this query.');
-        return;
-      }
-
-      // Build the analysis query
-      const byteSizeExprs = outputColumns.map(col => {
-        const escaped = col.replace(/`/g, '\\`');
-        return `sum(byteSize(\`${escaped}\`)) AS \`__bytes_${escaped}\``;
-      });
-
-      const analysisSql = `SELECT ${byteSizeExprs.join(', ')} FROM (${queryText.replace(/;\s*$/, '')})`;
-      const result = await queryAdapter.executeQuery<Record<string, number>>(analysisSql);
-
-      if (result.length > 0) {
-        const row = result[0];
-        let total = 0;
-        const costs: ColumnCost[] = [];
-
-        for (const col of outputColumns) {
-          const bytes = Number(row[`__bytes_${col}`] || 0);
-          total += bytes;
-          costs.push({ column: col, bytes, pct: 0 });
-        }
-
-        // Calculate percentages
-        for (const c of costs) {
-          c.pct = total > 0 ? (c.bytes / total) * 100 : 0;
-        }
-
-        // Sort by bytes descending
-        costs.sort((a, b) => b.bytes - a.bytes);
-
-        setClientCosts(costs);
-        setClientTotal(total);
-      }
+      const result = await services.columnCostService.runClientAnalysis(queryText, target);
+      setClientCosts(result.costs);
+      setClientTotal(result.total);
     } catch (err) {
       setClientError(err instanceof Error ? err.message : 'Analysis failed');
     } finally {
       setClientDurationMs(Math.round(performance.now() - start));
       setIsRunningClient(false);
     }
-  }, [queryAdapter, queryText, isSelect, discoverOutputColumns]);
+  }, [services, queryText, isSelect, target]);
 
   /* ---------------------------------------------------------------- */
   /*  Server-side: re-run query per column, read read_bytes from       */
@@ -314,7 +223,7 @@ export const ColumnCostTab: React.FC<ColumnCostTabProps> = ({ queryDetail, isLoa
   const [serverProgress, setServerProgress] = useState<ServerProgress | null>(null);
 
   const runServerAnalysis = useCallback(async () => {
-    if (!queryAdapter || !services || !queryText || !isSelect) return;
+    if (!services || !queryText || !isSelect) return;
 
     setIsRunningServer(true);
     setServerError(null);
@@ -322,143 +231,13 @@ export const ColumnCostTab: React.FC<ColumnCostTabProps> = ({ queryDetail, isLoa
     const start = performance.now();
 
     try {
-      const outputColumns = await discoverOutputColumns();
-
-      if (!outputColumns || outputColumns.length === 0) {
-        setServerError('Could not determine output columns for this query.');
-        return;
-      }
-
-      const strippedQuery = queryText.replace(/;\s*$/, '');
-      const runTag = `__ccost_${Date.now()}`;
-      const columnTags: { col: string; tag: string; failed: boolean }[] = [];
-
-      // Phase 1: Run all column queries, collecting tags for later lookup.
-      // Each query selects only one column from the original query as a subquery.
-      // The tag is embedded as a column alias so it's preserved in query_log.query.
-      for (let i = 0; i < outputColumns.length; i++) {
-        const col = outputColumns[i];
-        const escaped = col.replace(/`/g, '\\`');
-        setServerProgress({ total: outputColumns.length, completed: i, currentColumn: col });
-
-        const tag = `${runTag}_${i}`;
-        const analysisSql = `SELECT count() AS \`${tag}\` FROM (SELECT \`${escaped}\` FROM (${strippedQuery}))`;
-
-        let failed = false;
-        try {
-          await queryAdapter.executeQuery<Record<string, number>>(analysisSql);
-        } catch {
-          failed = true;
-        }
-        columnTags.push({ col, tag, failed });
-      }
-
-      // Phase 2: Wait for query_log to flush.
-      // Use the flush interval already fetched on mount (fall back to 7500ms).
-      const flushMs = flushIntervalMs ?? 7500;
-
-      const lastSuccessTag = [...columnTags].reverse().find(t => !t.failed)?.tag;
-      if (lastSuccessTag) {
-        // Countdown: wait the full flush interval before we start polling
-        const waitSec = Math.ceil(flushMs / 1000);
-        for (let remaining = waitSec; remaining > 0; remaining--) {
-          setServerProgress({
-            total: outputColumns.length,
-            completed: outputColumns.length,
-            currentColumn: `waiting for query_log flush (${remaining}s)`,
-            flushCountdown: remaining,
-            flushIntervalMs: flushMs,
-          });
-          await new Promise(r => setTimeout(r, 1000));
-        }
-
-        // Now poll until the tag appears (it should be there already in most cases)
-        setServerProgress({
-          total: outputColumns.length,
-          completed: outputColumns.length,
-          currentColumn: 'checking query_log...',
-          flushIntervalMs: flushMs,
-        });
-
-        const pollStart = Date.now();
-        const POLL_TIMEOUT_MS = 15_000;
-        const POLL_INTERVAL_MS = 1_000;
-        while (Date.now() - pollStart < POLL_TIMEOUT_MS) {
-          try {
-            const checkSql = `
-              SELECT count() AS c
-              FROM {{cluster_aware:system.query_log}}
-              WHERE query LIKE '%${lastSuccessTag}%'
-                AND query NOT LIKE '%system.query_log%'
-                AND type = 'QueryFinish'
-            `;
-            const checkResult = await services.adapter.executeQuery<{ c: number }>(checkSql);
-            if (checkResult.length > 0 && Number(checkResult[0].c) > 0) break;
-          } catch { /* ignore */ }
-          await new Promise(r => setTimeout(r, POLL_INTERVAL_MS));
-        }
-      }
-
-      // Phase 3: Batch-lookup all results from query_log in one query.
-      const costs: ServerColumnCost[] = [];
-      const successTags = columnTags.filter(t => !t.failed);
-
-      if (successTags.length > 0) {
-        const likeConditions = successTags
-          .map(t => `query LIKE '%${t.tag}%'`)
-          .join(' OR ');
-
-        const logSql = `
-          SELECT query, read_bytes
-          FROM {{cluster_aware:system.query_log}}
-          WHERE (${likeConditions})
-            AND query NOT LIKE '%system.query_log%'
-            AND type = 'QueryFinish'
-          ORDER BY event_time_microseconds DESC
-        `;
-
-        try {
-          const logResults = await services.adapter.executeQuery<{ query: string; read_bytes: number }>(logSql);
-
-          // Map tags back to columns
-          const tagToBytes = new Map<string, number>();
-          for (const row of logResults) {
-            for (const t of successTags) {
-              if (row.query.includes(t.tag) && !tagToBytes.has(t.tag)) {
-                tagToBytes.set(t.tag, Number(row.read_bytes));
-              }
-            }
-          }
-
-          for (const t of columnTags) {
-            costs.push({
-              column: t.col,
-              readBytes: t.failed ? 0 : (tagToBytes.get(t.tag) ?? 0),
-              pct: 0,
-            });
-          }
-        } catch {
-          // If batch lookup fails, record all as 0
-          for (const t of columnTags) {
-            costs.push({ column: t.col, readBytes: 0, pct: 0 });
-          }
-        }
-      } else {
-        for (const t of columnTags) {
-          costs.push({ column: t.col, readBytes: 0, pct: 0 });
-        }
-      }
-
-      // Calculate percentages and sort
-      let total = 0;
-      for (const c of costs) total += c.readBytes;
-      for (const c of costs) {
-        c.pct = total > 0 ? (c.readBytes / total) * 100 : 0;
-      }
-      costs.sort((a, b) => b.readBytes - a.readBytes);
-
-      setServerCosts(costs);
-      setServerTotal(total);
+      const result = await services.columnCostService.runServerAnalysis(queryText, {
+        ...target,
+        flushIntervalMs,
+        onProgress: setServerProgress,
+      });
+      setServerCosts(result.costs);
+      setServerTotal(result.total);
       setServerProgress(null);
     } catch (err) {
       setServerError(err instanceof Error ? err.message : 'Analysis failed');
@@ -466,7 +245,7 @@ export const ColumnCostTab: React.FC<ColumnCostTabProps> = ({ queryDetail, isLoa
       setServerDurationMs(Math.round(performance.now() - start));
       setIsRunningServer(false);
     }
-  }, [queryAdapter, services, queryText, isSelect, discoverOutputColumns, flushIntervalMs]);
+  }, [services, queryText, isSelect, target, flushIntervalMs]);
 
   /* ---------------------------------------------------------------- */
   /*  Render                                                           */

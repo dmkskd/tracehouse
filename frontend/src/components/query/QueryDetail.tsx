@@ -69,10 +69,10 @@ const EfficiencyDisplay: React.FC<{ readRows: number; resultRows: number; effici
   // Pruning effectiveness: % of marks skipped by the primary key index
   const hasPruning = efficiencyScore !== undefined && efficiencyScore !== null;
   const pruningColor = hasPruning
-    ? (efficiencyScore >= 80 ? '#3fb950' : efficiencyScore >= 50 ? '#d29922' : '#f85149')
+    ? (efficiencyScore >= 90 ? '#3fb950' : efficiencyScore >= 50 ? '#d29922' : '#f85149')
     : 'var(--text-muted)';
   const pruningLabel = hasPruning
-    ? (efficiencyScore >= 80 ? 'Excellent' : efficiencyScore >= 50 ? 'Good' : efficiencyScore >= 20 ? 'Fair' : 'Poor')
+    ? (efficiencyScore >= 90 ? 'Excellent' : efficiencyScore >= 70 ? 'Good' : efficiencyScore >= 50 ? 'Fair' : 'Poor')
     : 'N/A';
 
   const scanRatio = readRows > 0 ? (readRows / Math.max(resultRows, 1)).toFixed(2) : '0';

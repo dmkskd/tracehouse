@@ -10,7 +10,7 @@
  * is stateless.
  */
 
-import type { IClickHouseAdapter } from './types.js';
+import type { IClickHouseAdapter, TaggedQuery } from './types.js';
 import { AdapterError } from './types.js';
 import type { AdapterErrorCategory } from './types.js';
 import type { ConnectionConfig } from '../types/connection.js';
@@ -36,7 +36,7 @@ export class ProxyAdapter implements IClickHouseAdapter {
     };
   }
 
-  async executeQuery<T extends Record<string, unknown>>(sql: string): Promise<T[]> {
+  async executeQuery<T extends Record<string, unknown>>(sql: TaggedQuery): Promise<T[]> {
     try {
       const resp = await fetch(`${this.proxyUrl}/query?format=JSONEachRow`, {
         method: 'POST',

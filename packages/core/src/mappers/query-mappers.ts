@@ -1,6 +1,7 @@
 import type { QueryMetrics, QueryHistoryItem } from '../types/query.js';
 import { normalizeTimestamp } from './timestamp.js';
 import { type RawRow, toInt, toStr, toFloat, shortenHostname } from './helpers.js';
+import { calculatePruning } from '../services/pruning.js';
 
 export function mapQueryMetrics(row: RawRow): QueryMetrics {
   return {
@@ -25,13 +26,19 @@ export function mapQueryHistoryItem(row: RawRow): QueryHistoryItem {
   const resultRows = toInt(row.result_rows);
   const exception = row.exception != null ? toStr(row.exception) : null;
   
-  // Compute efficiency score as marks pruning effectiveness (percentage of marks skipped)
-  // Higher = better index usage. null when no marks data available (e.g. SELECT 1, system queries)
+  // Compute efficiency score as combined pruning effectiveness.
+  // Higher = better index usage. null when no pruning data is available (e.g. SELECT 1, system queries).
   const selectedMarks = row.selected_marks != null ? toInt(row.selected_marks) : undefined;
   const selectedMarksTotal = row.selected_marks_total != null ? toInt(row.selected_marks_total) : undefined;
-  const efficiencyScore: number | null = (selectedMarksTotal !== undefined && selectedMarksTotal > 0 && selectedMarks !== undefined)
-    ? ((selectedMarksTotal - selectedMarks) / selectedMarksTotal) * 100
-    : null;
+  const selectedParts = row.selected_parts != null ? toInt(row.selected_parts) : undefined;
+  const selectedPartsTotal = row.selected_parts_total != null ? toInt(row.selected_parts_total) : undefined;
+  const pruning = calculatePruning({
+    selectedParts: selectedParts ?? 0,
+    totalParts: selectedPartsTotal ?? 0,
+    selectedMarks: selectedMarks ?? 0,
+    totalMarks: selectedMarksTotal ?? 0,
+  });
+  const efficiencyScore: number | null = pruning.hasData ? pruning.combinedPrunedPct : null;
   
   // Compute type based on exception
   const type = exception ? 'error' : 'success';
@@ -60,8 +67,8 @@ export function mapQueryHistoryItem(row: RawRow): QueryHistoryItem {
     disk_read_bytes: toInt(row.disk_read_bytes),
     disk_write_bytes: toInt(row.disk_write_bytes),
     // Index/parts selectivity metrics
-    selected_parts: row.selected_parts != null ? toInt(row.selected_parts) : undefined,
-    selected_parts_total: row.selected_parts_total != null ? toInt(row.selected_parts_total) : undefined,
+    selected_parts: selectedParts,
+    selected_parts_total: selectedPartsTotal,
     selected_marks: row.selected_marks != null ? toInt(row.selected_marks) : undefined,
     selected_marks_total: row.selected_marks_total != null ? toInt(row.selected_marks_total) : undefined,
     selected_ranges: row.selected_ranges != null ? toInt(row.selected_ranges) : undefined,

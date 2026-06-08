@@ -1,3 +1,5 @@
+import type { TaggedQuery } from '../adapters/types.js';
+
 /**
  * Escape a string value for safe inclusion in SQL.
  * Prevents SQL injection by escaping single quotes and backslashes.
@@ -40,8 +42,8 @@ export function buildQuery(
  * tagQuery('SELECT 1', sourceTag(TAB_OVERVIEW, 'serverMetrics'))
  * // returns: 'SELECT 1 \/\* source:Overview:serverMetrics \*\/'
  */
-export function tagQuery(sql: string, source: string): string {
-  return `${sql.trimEnd()} /* source:${source} */`;
+export function tagQuery(sql: string, source: string): TaggedQuery {
+  return `${sql.trimEnd()} /* source:${source} */` as TaggedQuery;
 }
 
 /**

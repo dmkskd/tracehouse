@@ -11,8 +11,11 @@ import { describe, it, expect, beforeAll, afterAll, beforeEach } from 'vitest';
 import { startClickHouse, stopClickHouse, type TestClickHouseContext } from './setup/clickhouse-container.js';
 import { runTracehouseSetup } from './setup/tracehouse-setup.js';
 import { buildProcessSamplesSQL, mapProcessSampleRow, type ProcessSample } from '../../queries/process-queries.js';
+import { tagQuery } from '../../queries/builder.js';
+import { sourceTag, TAB_INTERNAL } from '../../queries/source-tags.js';
 
 const CONTAINER_TIMEOUT = 120_000;
+const q = (sql: string) => tagQuery(sql, sourceTag(TAB_INTERNAL, 'processHistoryIntegration'));
 
 interface SampleRow {
   sample_time: string;
@@ -70,7 +73,7 @@ describe('PROCESS_SAMPLES_SQL integration (delta calculations)', { tags: ['obser
         VALUES ${values}`,
     });
 
-    const raw = await ctx.adapter.executeQuery<Record<string, unknown>>(buildProcessSamplesSQL([qid]));
+    const raw = await ctx.adapter.executeQuery<Record<string, unknown>>(q(buildProcessSamplesSQL([qid])));
     return raw.map(mapProcessSampleRow);
   }
 
@@ -412,7 +415,7 @@ describe('PROCESS_SAMPLES_SQL integration (delta calculations)', { tags: ['obser
           VALUES ${values}`,
       });
 
-      const results = (await ctx.adapter.executeQuery<Record<string, unknown>>(buildProcessSamplesSQL(['query-A']))).map(mapProcessSampleRow);
+      const results = (await ctx.adapter.executeQuery<Record<string, unknown>>(q(buildProcessSamplesSQL(['query-A'])))).map(mapProcessSampleRow);
 
       expect(results).toHaveLength(3);
       expect(results[1].d_cpu_cores).toBeCloseTo(1, 5);
@@ -444,7 +447,7 @@ describe('PROCESS_SAMPLES_SQL integration (delta calculations)', { tags: ['obser
           VALUES ${values}`,
       });
 
-      const results = (await ctx.adapter.executeQuery<Record<string, unknown>>(buildProcessSamplesSQL(['parent-Q']))).map(mapProcessSampleRow);
+      const results = (await ctx.adapter.executeQuery<Record<string, unknown>>(q(buildProcessSamplesSQL(['parent-Q'])))).map(mapProcessSampleRow);
 
       expect(results).toHaveLength(2);
     });

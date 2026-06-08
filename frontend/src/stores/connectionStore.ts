@@ -11,6 +11,7 @@ import { persist, createJSONStorage } from 'zustand/middleware';
 import { buildConfig } from '../buildConfig';
 import { BrowserAdapter } from '@tracehouse/core/adapters/browser-adapter';
 import { ProxyAdapter } from '@tracehouse/core';
+import { tagQuery, sourceTag, TAB_INTERNAL } from '@tracehouse/core';
 import { useProxyStore } from './proxyStore';
 import { randomUUID } from '@tracehouse/core/utils/uuid';
 
@@ -307,7 +308,10 @@ export const useConnectionStore = create<ConnectionState>()(
           );
           const rows = await Promise.race([
             adapter.executeQuery<{ version: string; timezone: string; display_name: string }>(
-              `SELECT version() as version, timezone() as timezone, hostName() as display_name`
+              tagQuery(
+                `SELECT version() as version, timezone() as timezone, hostName() as display_name`,
+                sourceTag(TAB_INTERNAL, 'connectionStoreTest'),
+              ),
             ),
             timeout,
           ]);

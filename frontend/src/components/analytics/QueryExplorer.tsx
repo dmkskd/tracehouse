@@ -11,6 +11,7 @@
 
 import React, { useState, useCallback, useMemo, useRef, useEffect } from 'react';
 import { useClickHouseServices } from '../../providers/ClickHouseProvider';
+import { sourceTag, TAB_ANALYTICS } from '@tracehouse/core';
 import { PRESET_QUERIES } from './presetQueries';
 import { type Query } from './types';
 import { formatClickHouseError } from '../../utils/errorFormatters';
@@ -209,7 +210,10 @@ export const QueryExplorer: React.FC<QueryExplorerProps> = ({ urlState, onUrlSta
       // Resolve {{drill:col | fallback}} — uses drill params if provided, else current stack, else empty (standalone)
       const params = drillParams ?? (drillStack.length > 0 ? drillStack[drillStack.length - 1].params : {});
       resolvedSql = resolveDrillParams(resolvedSql, params);
-      const rows = await services.adapter.executeQuery<Record<string, unknown>>(resolvedSql);
+      const rows = await services.interactiveQueryService.run<Record<string, unknown>>(
+        resolvedSql,
+        sourceTag(TAB_ANALYTICS, activePreset ? 'queryExplorerPreset' : 'queryExplorerCustom'),
+      );
       const columns = rows.length > 0 ? Object.keys(rows[0]) : [];
       setResult({ columns, rows, rowCount: rows.length, executionTime: performance.now() - t0 });
 

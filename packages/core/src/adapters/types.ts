@@ -8,8 +8,9 @@ export const CLIENT_COMPRESSION = { response: true } as const;
  * Branded string type for SQL queries that have been tagged with a
  * `source:TraceHouse:…` comment via {@link tagQuery}.
  *
- * `executeQuery` only accepts `TaggedQuery`, so passing a raw string
- * is a compile-time error — every query reaching ClickHouse is traceable.
+ * Services pass `TaggedQuery` values so every query reaching ClickHouse has
+ * a traceable `source:TraceHouse:...` comment. Interactive/user-authored SQL
+ * should be tagged by a narrow service wrapper before execution.
  */
 export type TaggedQuery = string & { readonly __tagged: unique symbol };
 
@@ -33,7 +34,7 @@ export interface IClickHouseAdapter {
    * converts columnar response frames into row objects.
    */
   executeQuery<T extends Record<string, unknown>>(
-    sql: string,
+    sql: TaggedQuery,
     params?: Record<string, unknown>
   ): Promise<T[]>;
 

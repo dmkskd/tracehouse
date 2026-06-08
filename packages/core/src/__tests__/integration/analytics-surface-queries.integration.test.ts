@@ -142,7 +142,9 @@ describe('Surface queries integration', { tags: ['observability'] }, () => {
 
     // ── Seed query_log data ──────────────────────────────────────────
 
-    // Real user table: default.events — SELECT queries
+    // Real user table: default.events — SELECT queries.
+    // Seed RealTimeMicroseconds alongside OSCPUVirtualTimeMicroseconds so a
+    // regression back to wall-clock CPU is caught by the expected totals.
     for (const t of [T1, T2, T3]) {
       await seedQueryLog(ctx, {
         event_time: t,
@@ -157,7 +159,8 @@ describe('Surface queries integration', { tags: ['observability'] }, () => {
         query_duration_ms: 200,
         profileEvents: {
           RealTimeMicroseconds: 150000,
-          IOWaitMicroseconds: 30000,
+          OSCPUVirtualTimeMicroseconds: 90000,
+          OSIOWaitMicroseconds: 30000,
           SelectedMarks: 42,
         },
       });
@@ -180,7 +183,8 @@ describe('Surface queries integration', { tags: ['observability'] }, () => {
         query_duration_ms: 50,
         profileEvents: {
           RealTimeMicroseconds: 40000,
-          IOWaitMicroseconds: 10000,
+          OSCPUVirtualTimeMicroseconds: 25000,
+          OSIOWaitMicroseconds: 10000,
           SelectedMarks: 0,
         },
       });
@@ -200,7 +204,8 @@ describe('Surface queries integration', { tags: ['observability'] }, () => {
       query_duration_ms: 500,
       profileEvents: {
         RealTimeMicroseconds: 400000,
-        IOWaitMicroseconds: 50000,
+        OSCPUVirtualTimeMicroseconds: 70000,
+        OSIOWaitMicroseconds: 50000,
         SelectedMarks: 100,
       },
     });
@@ -255,19 +260,19 @@ describe('Surface queries integration', { tags: ['observability'] }, () => {
     await seedPartLog(ctx, {
       event_time: T1, event_type: 'MergeParts', database: 'default', table: 'events',
       duration_ms: 150, read_rows: 5000, read_bytes: 200000, peak_memory_usage: 1048576,
-      profileEvents: { RealTimeMicroseconds: 80000, IOWaitMicroseconds: 20000 },
+      profileEvents: { RealTimeMicroseconds: 80000, OSCPUVirtualTimeMicroseconds: 60000, OSIOWaitMicroseconds: 20000 },
     });
     await seedPartLog(ctx, { event_time: T1, event_type: 'NewPart', database: 'default', table: 'events', duration_ms: 0 });
     await seedPartLog(ctx, {
       event_time: T2, event_type: 'MergeParts', database: 'default', table: 'events',
       duration_ms: 200, read_rows: 8000, read_bytes: 300000, peak_memory_usage: 2097152,
-      profileEvents: { RealTimeMicroseconds: 120000, IOWaitMicroseconds: 30000 },
+      profileEvents: { RealTimeMicroseconds: 120000, OSCPUVirtualTimeMicroseconds: 90000, OSIOWaitMicroseconds: 30000 },
     });
     // Merge for analytics.metrics table
     await seedPartLog(ctx, {
       event_time: T1, event_type: 'MergeParts', database: 'analytics', table: 'metrics',
       duration_ms: 100, read_rows: 3000, read_bytes: 150000, peak_memory_usage: 524288,
-      profileEvents: { RealTimeMicroseconds: 50000, IOWaitMicroseconds: 10000 },
+      profileEvents: { RealTimeMicroseconds: 50000, OSCPUVirtualTimeMicroseconds: 30000, OSIOWaitMicroseconds: 10000 },
     });
   }, CONTAINER_TIMEOUT);
 
@@ -478,7 +483,7 @@ describe('Surface queries integration', { tags: ['observability'] }, () => {
       for (const row of rows) {
         expect(Number(row.query_count)).toBe(1);
         expect(Number(row.total_duration_ms)).toBe(200);
-        expect(Number(row.total_cpu_us)).toBe(150000);
+        expect(Number(row.total_cpu_us)).toBe(90000);
       }
     });
   });
@@ -567,7 +572,7 @@ describe('Surface queries integration', { tags: ['observability'] }, () => {
       const t1Row = eventsRows.find(r => String(r.ts).includes('10:00'));
       expect(t1Row).toBeDefined();
       expect(Number(t1Row!.merge_count)).toBe(1);
-      expect(Number(t1Row!.total_cpu_us)).toBe(80000);
+      expect(Number(t1Row!.total_cpu_us)).toBe(60000);
       expect(Number(t1Row!.total_memory)).toBe(1048576);
       expect(Number(t1Row!.total_read_bytes)).toBe(200000);
     });
@@ -598,7 +603,7 @@ describe('Surface queries integration', { tags: ['observability'] }, () => {
       const t1Row = rows.find(r => String(r.ts).includes('10:00'));
       expect(t1Row).toBeDefined();
       expect(Number(t1Row!.merge_count)).toBe(2);
-      expect(Number(t1Row!.total_cpu_us)).toBe(80000 + 50000); // events + metrics
+      expect(Number(t1Row!.total_cpu_us)).toBe(60000 + 30000); // events + metrics
       expect(Number(t1Row!.total_memory)).toBe(1048576 + 524288);
     });
 
@@ -627,7 +632,7 @@ describe('Surface queries integration', { tags: ['observability'] }, () => {
       const t2Row = rows.find(r => String(r.ts).includes('10:01'));
       expect(t2Row).toBeDefined();
       expect(Number(t2Row!.merge_count)).toBe(1);
-      expect(Number(t2Row!.total_cpu_us)).toBe(120000);
+      expect(Number(t2Row!.total_cpu_us)).toBe(90000);
       expect(Number(t2Row!.total_memory)).toBe(2097152);
     });
   });
@@ -754,7 +759,7 @@ describe('Surface queries integration', { tags: ['observability'] }, () => {
       // Verify query row shape
       const q = result.queries[0];
       expect(q.query_count).toBe(1);
-      expect(q.total_cpu_us).toBe(150000);
+      expect(q.total_cpu_us).toBe(90000);
 
       // Verify insert row shape
       const ins = result.inserts[0];
