@@ -165,12 +165,13 @@ SELECT 'MemoryTracking' AS \`group\`, 'total' AS name, toInt64(value) FROM syste
 ORDER BY val DESC`,
 
   `-- @meta: title='Top queries by peak memory' group='Knowledge Base' description='Who ate my ClickHouse memory? - currently running queries sorted by peak memory usage. peak_mb (numeric MB) carries an inline bar relative to the biggest and is coloured by size; the KB columns are kept alongside.'
+-- @link: on=query_id into='Query Detail by ID'
 -- @cell: column=peak_mb type=gauge max=max_peak_mb
 -- @cell: column=peak_mb type=rag green<100 amber<1000
 -- @source: https://kb.altinity.com/altinity-kb-setup-and-maintenance/altinity-kb-who-ate-my-memory/
 SELECT
     hostName() AS host,
-    initial_query_id,
+    initial_query_id AS query_id,
     elapsed,
     formatReadableSize(memory_usage) AS memory,
     formatReadableSize(peak_memory_usage) AS peak_memory,
@@ -182,11 +183,12 @@ ORDER BY peak_memory_usage DESC
 LIMIT 10`,
 
   `-- @meta: title='Top memory queries (history)' group='Knowledge Base' interval='1 DAY' description='Who ate my ClickHouse memory? - completed queries from query_log sorted by memory usage.'
+-- @link: on=query_id into='Query Detail by ID'
 -- @source: https://kb.altinity.com/altinity-kb-setup-and-maintenance/altinity-kb-who-ate-my-memory/
 SELECT
     type,
     event_time,
-    initial_query_id,
+    initial_query_id AS query_id,
     formatReadableSize(memory_usage) AS memory_usage,
     query
 FROM {{cluster_aware:system.query_log}}
