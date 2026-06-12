@@ -1,5 +1,18 @@
 import { describe, it, expect } from 'vitest';
-import { detectTimestamp, timestampToDate, formatCell } from '../format-cell.js';
+import { detectTimestamp, timestampToDate, formatCell, parseReadableBytes } from '../format-cell.js';
+
+describe('parseReadableBytes', { tags: ['storage'] }, () => {
+  it('parses ClickHouse readable byte strings', () => {
+    expect(parseReadableBytes('8.58 MiB')).toBeCloseTo(8.58 * 1024 * 1024);
+    expect(parseReadableBytes('1.5 GiB')).toBeCloseTo(1.5 * 1024 * 1024 * 1024);
+    expect(parseReadableBytes('1024 B')).toBe(1024);
+  });
+
+  it('returns undefined for non-byte strings', () => {
+    expect(parseReadableBytes('QueryFinish')).toBeUndefined();
+    expect(parseReadableBytes('123')).toBeUndefined();
+  });
+});
 
 describe('detectTimestamp', { tags: ['storage'] }, () => {
   it('detects epoch seconds in valid range', () => {

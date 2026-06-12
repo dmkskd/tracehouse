@@ -38,6 +38,7 @@ function use3DTheme(): 'dark' | 'light' {
 
 /** Lighten a hex color by mixing with white. amt 0-1 */
 function lightenHex(hex: string, amt: number): string {
+  if (!/^#([0-9a-fA-F]{6})$/.test(hex)) return hex;
   const h = hex.replace('#', '');
   const r = parseInt(h.substring(0, 2), 16);
   const g = parseInt(h.substring(2, 4), 16);

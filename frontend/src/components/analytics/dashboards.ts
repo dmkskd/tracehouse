@@ -33,10 +33,11 @@ export interface DashboardPanel {
 }
 
 /** Dashboard group for visual categorization in the list view. */
-export type DashboardGroup = 'ClickHouse' | 'Grafana Imports' | 'Knowledge Base' | 'TraceHouse' | 'Custom';
+export type DashboardGroup = 'ClickHouse' | 'Cloud Providers' | 'Grafana Imports' | 'Knowledge Base' | 'TraceHouse' | 'Custom';
 
 export const DASHBOARD_GROUPS: { name: DashboardGroup; color: string }[] = [
   { name: 'ClickHouse', color: '#facc15' },
+  { name: 'Cloud Providers', color: '#14b8a6' },
   { name: 'Grafana Imports', color: '#38bdf8' },
   { name: 'Knowledge Base', color: '#f97316' },
   { name: 'TraceHouse', color: '#7c3aed' },
@@ -380,6 +381,31 @@ const BUILTIN_DASHBOARDS: Dashboard[] = [
       { queryName: 'Self-Monitoring#App % of Server Load' },
       { queryName: 'Self-Monitoring#Slowest App Queries' },
       { queryName: 'Self-Monitoring#App Failed Queries' },
+    ],
+  },
+  {
+    id: 'clickhouse-cloud',
+    title: 'ClickHouse Cloud',
+    description: 'Attribute ClickHouse Cloud managed-user overhead and separate SQL Console activity from provider internals',
+    group: 'Cloud Providers',
+    category: 'ClickHouse Cloud',
+    columns: 2,
+    filters: [
+      {
+        param: 'user',
+        label: 'Cloud User',
+        query: "SELECT user FROM system.query_log WHERE event_time > now() - INTERVAL 7 DAY AND (endsWith(user, '-internal') OR user = 'sql-console' OR startsWith(user, 'sql-console:')) GROUP BY user ORDER BY user",
+      },
+    ],
+    panels: [
+      { queryName: 'Cloud Providers#Cloud Provider Query Duration by User', section: 'Provider Overhead' },
+      { queryName: 'Cloud Providers#Cloud Provider Query Volume by User' },
+      { queryName: 'Cloud Providers#Cloud Provider Query Timeline (5min)' },
+      { queryName: 'Cloud Providers#Cloud Internal vs Other Query Activity' },
+      { queryName: 'Cloud Providers#Cloud Provider Query Cost Details', section: 'Query Shapes' },
+      { queryName: 'Cloud Providers#Slowest Cloud Provider Queries' },
+      { queryName: 'Cloud Providers#Cloud Provider Failed Queries' },
+      { queryName: 'Cloud Providers#Cloud SQL Console Queries', section: 'Cloud SQL Console' },
     ],
   },
   {

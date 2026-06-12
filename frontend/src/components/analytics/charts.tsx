@@ -30,6 +30,7 @@ import {
 } from 'recharts';
 import type { ChartType } from './metaLanguage';
 import { formatBytes } from '../../utils/formatters';
+import { formatCell, parseReadableBytes } from '@tracehouse/core';
 
 // ─── Mouse tracker for portal tooltips ───
 let _tooltipMouseX = 0, _tooltipMouseY = 0;
@@ -132,16 +133,20 @@ export interface DrillDownEvent {
 export function isNumericValue(v: unknown): boolean {
   if (typeof v === 'number') return true;
   if (typeof v === 'string' && v.trim() !== '' && !isNaN(Number(v))) return true;
+  if (typeof v === 'string' && parseReadableBytes(v) !== undefined) return true;
   return false;
 }
 
 export function extractNumeric(v: unknown): number {
   if (typeof v === 'number') return v;
-  if (typeof v === 'string') return Number(v) || 0;
+  if (typeof v === 'string') {
+    const readableBytes = parseReadableBytes(v);
+    if (readableBytes !== undefined) return readableBytes;
+    return Number(v) || 0;
+  }
   return 0;
 }
 
-import { formatCell } from '@tracehouse/core';
 export { formatCell };
 
 /** Smart time formatter: 500 ms → "500 ms", 1400 ms → "1.4 s", 90000 ms → "1.5 min" */
@@ -910,8 +915,7 @@ export const GroupedBarChart2D: React.FC<{ data: GroupedChartData[]; orientation
         <RBarChart data={rows} layout="vertical" margin={{ top: 10, right: 30, left: 10, bottom: 10 }}>
           <CartesianGrid strokeDasharray="3 3" stroke={gridStroke} horizontal={false} />
           <XAxis type="number" tick={axisTickStyle} tickLine={axisLineStyle} axisLine={axisLineStyle} tickFormatter={compactFormatter(unit)} />
-          <YAxis type="category" dataKey="name" tick={axisTickStyle} tickLine={false} axisLine={axisLineStyle} width={110}
-            tickFormatter={(v: string) => v.length > 15 ? v.slice(0, 15) + '…' : v} />
+          <YAxis type="category" dataKey="name" tick={axisTickStyle} tickLine={false} axisLine={axisLineStyle} width={150} />
           <Tooltip content={<AnalyticsTooltip drillIntoQuery={drillIntoQuery} />} cursor={{ fill: 'rgba(99,102,241,0.06)' }} />
           <Legend iconType="circle" iconSize={8}
             formatter={(value: string) => <span style={{ fontSize: 11, color: 'var(--text-secondary)' }}>{value}</span>} />

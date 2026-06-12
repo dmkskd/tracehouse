@@ -14,6 +14,7 @@ import mutations from './mutations';
 import disks from './disks';
 import mergeAnalytics from './mergeAnalytics';
 import cloudMonitoring from './cloudMonitoring';
+import cloudProviders from './cloudProviders';
 import altinityOperator from './altinityOperator';
 import altinityKb from './altinityKb';
 import clickHouseKb from './clickhouseKb';
@@ -34,6 +35,7 @@ export const RAW_QUERIES: string[] = [
   ...disks,
   ...mergeAnalytics,
   ...cloudMonitoring,
+  ...cloudProviders,
   ...altinityOperator,
   ...altinityKb,
   ...clickHouseKb,

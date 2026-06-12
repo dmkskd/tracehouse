@@ -13,6 +13,31 @@ const EPOCH_MS_MAX = EPOCH_SEC_MAX * 1000;
 
 export type TimestampUnit = 'seconds' | 'milliseconds' | null;
 
+const READABLE_BYTE_UNITS: Record<string, number> = {
+  b: 1,
+  byte: 1,
+  bytes: 1,
+  kib: 1024,
+  mib: 1024 ** 2,
+  gib: 1024 ** 3,
+  tib: 1024 ** 4,
+  pib: 1024 ** 5,
+  kb: 1000,
+  mb: 1000 ** 2,
+  gb: 1000 ** 3,
+  tb: 1000 ** 4,
+  pb: 1000 ** 5,
+};
+
+/** Parse ClickHouse formatReadableSize-style strings such as "8.58 MiB". */
+export function parseReadableBytes(value: string): number | undefined {
+  const match = value.trim().match(/^([+-]?(?:\d+(?:\.\d+)?|\.\d+))\s*([KMGTPE]?i?B|bytes?)$/i);
+  if (!match) return undefined;
+  const amount = Number(match[1]);
+  const multiplier = READABLE_BYTE_UNITS[match[2].toLowerCase()];
+  return Number.isFinite(amount) && multiplier ? amount * multiplier : undefined;
+}
+
 /** Detect whether an integer looks like a Unix timestamp (seconds or ms). */
 export function detectTimestamp(v: number): TimestampUnit {
   if (!Number.isInteger(v)) return null;
