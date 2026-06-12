@@ -5,9 +5,9 @@ const CLOUD_INTERNAL_CONDITION = "endsWith(user, '-internal')";
 const CLOUD_ACTIVITY_SOURCE = "multiIf(endsWith(user, '-internal'), 'Cloud internal', user = 'sql-console' OR startsWith(user, 'sql-console:'), 'Cloud SQL Console', 'Other')";
 
 const queries: string[] = [
-  `-- @meta: title='Cloud Provider Query Duration by User' group='Cloud Providers' interval='1 DAY' description='Stacked percentile bands for ClickHouse Cloud internal and SQL Console users'
+  `-- @meta: title='ClickHouse Cloud Query Duration by User' group='Cloud Providers' interval='1 DAY' description='Stacked percentile bands for ClickHouse Cloud internal and SQL Console users'
 -- @chart: type=stacked_bar group_by=user value=value_ms series=metric unit=ms style=2d
--- @drill: on=user into='Cloud Provider Query Cost Details'
+-- @drill: on=user into='ClickHouse Cloud Query Cost Details'
 SELECT user, metric, value_ms
 FROM (
   SELECT
@@ -34,9 +34,9 @@ ARRAY JOIN
   [p50, p95_delta, p99_delta] AS value_ms
 ORDER BY user, metric`,
 
-  `-- @meta: title='Cloud Provider Query Volume by User' group='Cloud Providers' interval='1 DAY' description='Query count by managed internal user and SQL Console user'
+  `-- @meta: title='ClickHouse Cloud Finished Queries by User' group='Cloud Providers' interval='1 DAY' description='Finished query count by ClickHouse Cloud internal and SQL Console user'
 -- @chart: type=pie group_by=user value=query_count style=3d
--- @drill: on=user into='Cloud Provider Query Cost Details'
+-- @drill: on=user into='ClickHouse Cloud Query Cost Details'
 SELECT
     ${CLOUD_ACTIVITY_SOURCE} AS activity_source,
     user,
@@ -51,7 +51,7 @@ WHERE type = 'QueryFinish'
 GROUP BY activity_source, user
 ORDER BY query_count DESC`,
 
-  `-- @meta: title='Cloud Provider Query Timeline (5min)' group='Cloud Providers' interval='6 HOUR' description='Internal provider and SQL Console query rate over time'
+  `-- @meta: title='ClickHouse Cloud Query Timeline (5min)' group='Cloud Providers' interval='6 HOUR' description='ClickHouse Cloud internal and SQL Console query rate over time'
 -- @chart: type=grouped_line group_by=t value=provider_internal_queries,sql_console_queries,provider_internal_cpu_s,sql_console_cpu_s style=2d
 SELECT
     toStartOfFiveMinutes(event_time) AS t,
@@ -116,8 +116,8 @@ FROM (
 )
 ORDER BY metric_order, activity_source DESC`,
 
-  `-- @meta: title='Cloud Provider Query Cost Details' group='Cloud Providers' interval='1 DAY' description='Cost breakdown per provider-managed or SQL Console query shape'
--- @link: on=query_hash into='Cloud Provider Query Executions'
+  `-- @meta: title='ClickHouse Cloud Query Cost Details' group='Cloud Providers' interval='1 DAY' description='Cost breakdown per ClickHouse Cloud internal or SQL Console query shape'
+-- @link: on=query_hash into='ClickHouse Cloud Query Executions'
 -- @cell: column=avg_memory_mb type=rag green<20 amber<100
 -- @cell: column=max_memory_mb type=rag green<100 amber<500
 -- @cell: column=avg_duration_ms type=rag green<100 amber<1000
@@ -148,7 +148,7 @@ WHERE type = 'QueryFinish'
 GROUP BY activity_source, user, query_hash, query_preview
 ORDER BY total_cpu_s DESC, total_duration_ms DESC`,
 
-  `-- @meta: title='Cloud Provider Query Executions' group='Cloud Providers' interval='1 DAY' description='Recent executions for one provider-managed or SQL Console query shape'
+  `-- @meta: title='ClickHouse Cloud Query Executions' group='Cloud Providers' interval='1 DAY' description='Recent executions for one ClickHouse Cloud internal or SQL Console query shape'
 -- @cell: column=query_duration_ms type=rag green<100 amber<1000
 -- @cell: column=memory_mb type=rag green<20 amber<100
 SELECT
@@ -172,7 +172,7 @@ WHERE type = 'QueryFinish'
 ORDER BY event_time DESC
 LIMIT 50`,
 
-  `-- @meta: title='Slowest Cloud Provider Queries' group='Cloud Providers' interval='1 DAY' description='Slowest individual internal and SQL Console queries'
+  `-- @meta: title='Slowest ClickHouse Cloud Queries' group='Cloud Providers' interval='1 DAY' description='Slowest individual ClickHouse Cloud internal and SQL Console queries'
 -- @link: on=query_id into='Advanced Dashboard#Query Detail by ID'
 -- @cell: column=query_duration_ms type=rag green<100 amber<1000
 SELECT
@@ -194,7 +194,7 @@ WHERE type = 'QueryFinish'
 ORDER BY query_duration_ms DESC
 LIMIT 50`,
 
-  `-- @meta: title='Cloud Provider Failed Queries' group='Cloud Providers' interval='7 DAY' description='Internal and SQL Console queries that failed or threw while processing'
+  `-- @meta: title='Failed ClickHouse Cloud Queries' group='Cloud Providers' interval='7 DAY' description='ClickHouse Cloud internal and SQL Console queries that failed or threw while processing'
 -- @link: on=query_id into='Advanced Dashboard#Query Detail by ID'
 SELECT
     event_time,
