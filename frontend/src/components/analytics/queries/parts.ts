@@ -1,7 +1,7 @@
-/** Parts & partitions queries — part counts, hotspots, errors. */
+/** Parts & partitions queries - part counts, hotspots, errors. */
 
 const queries: string[] = [
-  `-- @meta: title='MaxPartCountForPartition' group='Parts' interval='1 DAY' description='Trend of the highest part count per partition — early warning for too many parts'
+  `-- @meta: title='MaxPartCountForPartition' group='Parts' interval='1 DAY' description='Trend of the highest part count per partition - early warning for too many parts'
 -- @chart: type=area group_by=minute value=avg_max_parts style=2d color=#ef4444
 -- @source: https://clickhouse.com/blog/monitoring-troubleshooting-insert-queries-clickhouse
 SELECT
@@ -13,7 +13,7 @@ WHERE event_time > {{time_range}}
 GROUP BY minute
 ORDER BY minute ASC`,
 
-  `-- @meta: title='Parts per Partition (hotspots)' group='Parts' description='Tables with more than 1 part per partition — potential merge pressure'
+  `-- @meta: title='Parts per Partition (hotspots)' group='Parts' description='Tables with more than 1 part per partition - potential merge pressure'
 -- @chart: type=bar group_by=table value=parts_per_partition style=2d
 SELECT
     concat(database, '.', table) AS table,
@@ -30,7 +30,7 @@ HAVING parts_per_partition > 1
 ORDER BY parts_per_partition DESC
 LIMIT 30`,
 
-  `-- @meta: title='Part Errors' group='Parts' interval='7 DAY' description='Errors recorded in part_log — useful for diagnosing ingestion issues'
+  `-- @meta: title='Part Errors' group='Parts' interval='7 DAY' description='Errors recorded in part_log - useful for diagnosing ingestion issues'
 SELECT
     event_date,
     table,

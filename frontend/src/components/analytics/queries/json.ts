@@ -1,4 +1,4 @@
-/** Native JSON monitoring queries — subcolumn/path pressure, insert cost, merge cost. */
+/** Native JSON monitoring queries - subcolumn/path pressure, insert cost, merge cost. */
 
 const queries: string[] = [
   `-- @meta: title='JSON Columns Inventory' group='JSON' description='Native JSON columns, configured path limits, and current storage footprint'

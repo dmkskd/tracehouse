@@ -1,5 +1,5 @@
 /**
- * Memory monitoring queries — deep visibility into ClickHouse memory consumers.
+ * Memory monitoring queries - deep visibility into ClickHouse memory consumers.
  *
  * Sources:
  * - ClickHouse docs: https://clickhouse.com/docs/guides/developer/debugging-memory-issues
@@ -7,7 +7,7 @@
  */
 
 const queries: string[] = [
-  `-- @meta: title='Memory Breakdown' group='Memory' description='Comprehensive snapshot of all memory consumers — OS, caches, queries, merges, primary keys, dictionaries, and more'
+  `-- @meta: title='Memory Breakdown' group='Memory' description='Comprehensive snapshot of all memory consumers - OS, caches, queries, merges, primary keys, dictionaries, and more'
 -- @source: https://kb.altinity.com/altinity-kb-setup-and-maintenance/altinity-kb-who-ate-my-memory/
 SELECT category, name, formatReadableSize(val) AS readable_size
 FROM (
@@ -53,7 +53,7 @@ FROM (
 WHERE val > 0
 ORDER BY category, val DESC`,
 
-  `-- @meta: title='Memory Breakdown (WIP summary)' group='Memory' description='[TEST] Aggregated memory by category with descriptions — iterating on this before replacing the main query'
+  `-- @meta: title='Memory Breakdown (WIP summary)' group='Memory' description='[TEST] Aggregated memory by category with descriptions - iterating on this before replacing the main query'
 -- @source: https://kb.altinity.com/altinity-kb-setup-and-maintenance/altinity-kb-who-ate-my-memory/
 -- @drill: on=category into='Memory Breakdown Detail (WIP)'
 -- @chart: type=bar group_by=category description=description value=total_mb unit=MB style=2d
@@ -64,19 +64,19 @@ FROM (
         SELECT 'OS' AS category, 'Total, available, free, cached, and swap memory reported by the OS' AS description, metric AS name, toInt64(value) AS val
         FROM system.asynchronous_metrics WHERE metric LIKE 'OSMemory%'
           UNION ALL
-        SELECT 'Caches' AS category, 'ClickHouse internal caches — mark, uncompressed, compiled expressions, DNS, page cache, query cache, etc.' AS description, metric AS name, toInt64(value) AS val
+        SELECT 'Caches' AS category, 'ClickHouse internal caches - mark, uncompressed, compiled expressions, DNS, page cache, query cache, etc.' AS description, metric AS name, toInt64(value) AS val
         FROM system.asynchronous_metrics WHERE metric LIKE '%CacheBytes'
           UNION ALL
-        SELECT 'Caches' AS category, 'ClickHouse internal caches — mark, uncompressed, compiled expressions, DNS, page cache, query cache, etc.' AS description, metric AS name, toInt64(value) AS val
+        SELECT 'Caches' AS category, 'ClickHouse internal caches - mark, uncompressed, compiled expressions, DNS, page cache, query cache, etc.' AS description, metric AS name, toInt64(value) AS val
         FROM system.metrics WHERE metric LIKE '%CacheBytes'
           UNION ALL
         SELECT 'MMaps' AS category, 'Memory-mapped files used by ClickHouse for reading data without copying into userspace' AS description, metric AS name, toInt64(value) AS val
         FROM system.metrics WHERE metric LIKE 'MMappedFileBytes'
           UNION ALL
-        SELECT 'Process' AS category, 'OS-level process memory — virtual, resident, shared, code segments (from /proc)' AS description, metric AS name, toInt64(value) AS val
+        SELECT 'Process' AS category, 'OS-level process memory - virtual, resident, shared, code segments (from /proc)' AS description, metric AS name, toInt64(value) AS val
         FROM system.asynchronous_metrics WHERE metric LIKE 'Memory%'
           UNION ALL
-        SELECT 'Tables (Memory engines)' AS category, 'Tables using Memory, Set, Join, or Buffer engines — data lives entirely in RAM' AS description, engine AS name, toInt64(sum(total_bytes)) AS val
+        SELECT 'Tables (Memory engines)' AS category, 'Tables using Memory, Set, Join, or Buffer engines - data lives entirely in RAM' AS description, engine AS name, toInt64(sum(total_bytes)) AS val
         FROM system.tables WHERE engine IN ('Join','Memory','Buffer','Set') GROUP BY engine
           UNION ALL
         SELECT 'Storage Buffers' AS category, 'Buffer() engine pending data not yet flushed to destination tables' AS description, metric AS name, toInt64(value) AS val
@@ -88,7 +88,7 @@ FROM (
         SELECT 'Dictionaries' AS category, 'Loaded external dictionaries kept in memory for fast lookups' AS description, type AS name, toInt64(sum(bytes_allocated)) AS val
         FROM system.dictionaries GROUP BY type
           UNION ALL
-        SELECT 'Primary Keys' AS category, 'Primary index loaded in RAM for each MergeTree part — grows with table count and key width' AS description, 'db:' || database AS name, toInt64(sum(primary_key_bytes_in_memory_allocated)) AS val
+        SELECT 'Primary Keys' AS category, 'Primary index loaded in RAM for each MergeTree part - grows with table count and key width' AS description, 'db:' || database AS name, toInt64(sum(primary_key_bytes_in_memory_allocated)) AS val
         FROM system.parts GROUP BY database
           UNION ALL
         SELECT 'Merges' AS category, 'Temporary memory used by background merge operations' AS description, 'db:' || database AS name, toInt64(sum(memory_usage)) AS val
@@ -97,7 +97,7 @@ FROM (
         SELECT 'In-Memory Parts' AS category, 'Small parts stored entirely in RAM (part_type = InMemory) before being merged to disk' AS description, 'db:' || database AS name, toInt64(sum(data_uncompressed_bytes)) AS val
         FROM system.parts WHERE part_type = 'InMemory' GROUP BY database
           UNION ALL
-        SELECT 'MemoryTracking' AS category, 'Total memory tracked by ClickHouse allocator — the main memory accounting metric' AS description, 'total' AS name, toInt64(value) AS val
+        SELECT 'MemoryTracking' AS category, 'Total memory tracked by ClickHouse allocator - the main memory accounting metric' AS description, 'total' AS name, toInt64(value) AS val
         FROM system.metrics WHERE metric = 'MemoryTracking'
     )
     WHERE val > 0
@@ -105,7 +105,7 @@ FROM (
 )
 ORDER BY total_bytes DESC`,
 
-  `-- @meta: title='Memory Breakdown Detail (WIP)' group='Memory' description='[TEST] Individual items within a category — drill target for the summary'
+  `-- @meta: title='Memory Breakdown Detail (WIP)' group='Memory' description='[TEST] Individual items within a category - drill target for the summary'
 -- @chart: type=bar group_by=name description=description value=size unit=bytes style=2d
 SELECT name, val AS size, formatReadableSize(val) AS readable_size, description
 FROM (
@@ -180,7 +180,7 @@ FROM (
 )
 ORDER BY bytes DESC`,
 
-  `-- @meta: title='Primary Key Memory by Database' group='Memory' description='Primary key memory allocated per database — often a silent memory hog on wide tables'
+  `-- @meta: title='Primary Key Memory by Database' group='Memory' description='Primary key memory allocated per database - often a silent memory hog on wide tables'
 -- @chart: type=bar group_by=database value=pk_allocated_mb unit=MB style=2d
 -- @drill: on=database into='Primary Key Memory by Table'
 -- @source: https://clickhouse.com/docs/guides/developer/debugging-memory-issues
@@ -196,7 +196,7 @@ FROM system.parts
 GROUP BY database
 ORDER BY sum(primary_key_bytes_in_memory_allocated) DESC`,
 
-  `-- @meta: title='Primary Key Memory by Table' group='Memory' description='Primary key memory per table within a database — find which tables dominate PK memory'
+  `-- @meta: title='Primary Key Memory by Table' group='Memory' description='Primary key memory per table within a database - find which tables dominate PK memory'
 -- @source: https://clickhouse.com/docs/guides/developer/debugging-memory-issues
 SELECT
     database,
@@ -211,7 +211,7 @@ WHERE database = {{drill_value:database | 'default'}}
 GROUP BY database, table
 ORDER BY sum(primary_key_bytes_in_memory_allocated) DESC`,
 
-  `-- @meta: title='Memory-Engine Tables' group='Memory' description='Tables using Memory, Set, Join, or Buffer engines — these live entirely in RAM'
+  `-- @meta: title='Memory-Engine Tables' group='Memory' description='Tables using Memory, Set, Join, or Buffer engines - these live entirely in RAM'
 -- @source: https://clickhouse.com/docs/guides/developer/debugging-memory-issues
 -- @source: https://kb.altinity.com/altinity-kb-setup-and-maintenance/altinity-kb-who-ate-my-memory/
 SELECT
@@ -241,7 +241,7 @@ SELECT
 FROM system.dictionaries
 ORDER BY bytes_allocated DESC`,
 
-  `-- @meta: title='Top Running Queries by Memory' group='Memory' description='Currently running queries sorted by peak memory — spot memory-hungry queries in real time'
+  `-- @meta: title='Top Running Queries by Memory' group='Memory' description='Currently running queries sorted by peak memory - spot memory-hungry queries in real time'
 -- @cell: column=peak_memory_mb type=rag green<100 amber<500
 -- @link: on=query_id into='Query Detail by ID'
 -- @source: https://clickhouse.com/docs/guides/developer/debugging-memory-issues
@@ -260,7 +260,7 @@ FROM system.processes
 ORDER BY peak_memory_usage DESC
 LIMIT 30`,
 
-  `-- @meta: title='Historical Top Memory Queries' group='Memory' interval='1 DAY' description='Most memory-hungry completed queries from query_log — find past offenders'
+  `-- @meta: title='Historical Top Memory Queries' group='Memory' interval='1 DAY' description='Most memory-hungry completed queries from query_log - find past offenders'
 -- @cell: column=memory_mb type=rag green<100 amber<500
 -- @drill: on=query_hash into='Memory Query Executions'
 -- @source: https://kb.altinity.com/altinity-kb-setup-and-maintenance/altinity-kb-who-ate-my-memory/
@@ -301,7 +301,7 @@ WHERE type = 'QueryFinish'
 ORDER BY memory_usage DESC
 LIMIT 50`,
 
-  `-- @meta: title='Memory Peak Analysis (5min)' group='Memory' interval='1 DAY' description='Memory peak events from trace_log in 5-minute windows — identifies the biggest query per window'
+  `-- @meta: title='Memory Peak Analysis (5min)' group='Memory' interval='1 DAY' description='Memory peak events from trace_log in 5-minute windows - identifies the biggest query per window'
 -- @chart: type=bar group_by=t value=sum_of_peaks_mb unit=MB style=2d
 -- @source: https://kb.altinity.com/altinity-kb-setup-and-maintenance/altinity-kb-who-ate-my-memory/
 SELECT
@@ -333,7 +333,7 @@ FROM (
 )
 ORDER BY t ASC`,
 
-  `-- @meta: title='Memory Trend (MemoryTracking)' group='Memory' interval='1 HOUR' description='Total tracked memory over time — the headline memory metric'
+  `-- @meta: title='Memory Trend (MemoryTracking)' group='Memory' interval='1 HOUR' description='Total tracked memory over time - the headline memory metric'
 -- @chart: type=area group_by=t value=memory_mb unit=MB style=2d
 -- @source: https://clickhouse.com/docs/guides/developer/debugging-memory-issues
 -- @source: https://kb.altinity.com/altinity-kb-setup-and-maintenance/altinity-kb-who-ate-my-memory/
@@ -345,7 +345,7 @@ WHERE event_time > {{time_range}}
 GROUP BY t
 ORDER BY t ASC`,
 
-  `-- @meta: title='Cache Trend' group='Memory' interval='1 HOUR' description='Individual cache sizes over time — mark cache, uncompressed cache, page cache, etc.'
+  `-- @meta: title='Cache Trend' group='Memory' interval='1 HOUR' description='Individual cache sizes over time - mark cache, uncompressed cache, page cache, etc.'
 -- @chart: type=grouped_line group_by=t value=value_mb series=metric unit=MB style=2d
 -- @source: https://kb.altinity.com/altinity-kb-setup-and-maintenance/altinity-kb-who-ate-my-memory/
 SELECT t, metric, round(avg(val) / 1048576, 1) AS value_mb
@@ -362,7 +362,7 @@ GROUP BY t, metric
 HAVING value_mb > 0
 ORDER BY t ASC, metric`,
 
-  `-- @meta: title='Memory by Query Kind (hourly)' group='Memory' interval='1 DAY' description='Hourly peak memory broken down by query type — SELECTs vs INSERTs vs merges'
+  `-- @meta: title='Memory by Query Kind (hourly)' group='Memory' interval='1 DAY' description='Hourly peak memory broken down by query type - SELECTs vs INSERTs vs merges'
 -- @chart: type=stacked_bar group_by=hour value=memory_mb series=query_kind unit=MB style=2d
 -- @source: https://kb.altinity.com/altinity-kb-setup-and-maintenance/altinity-kb-who-ate-my-memory/
 SELECT

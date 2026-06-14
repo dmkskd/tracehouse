@@ -1,5 +1,5 @@
 /**
- * Analytics page — table-level analysis starting with ordering key efficiency,
+ * Analytics page - table-level analysis starting with ordering key efficiency,
  * plus a "Queries" tab with a preset query explorer.
  */
 
@@ -58,7 +58,7 @@ export const Analytics: React.FC = () => {
   const fromMerges = fromPage === 'merges';
   const fromQueries = fromPage === 'queries';
 
-  // URL state — tab, lookback, db filter are persisted in the URL
+  // URL state - tab, lookback, db filter are persisted in the URL
   const { state: urlState, update: updateUrl, copyShareableUrl } = useAnalyticsUrlState();
 
   const activeTab: AnalyticsTab = (
@@ -140,7 +140,7 @@ export const Analytics: React.FC = () => {
     if (!services || !clusterDetected) return;
     try {
       setAllDatabases(await services.analyticsService.getMergeTreeDatabases());
-    } catch { /* ignore — we'll fall back to databases from query data */ }
+    } catch { /* ignore - we'll fall back to databases from query data */ }
   }, [services, clusterDetected]);
 
   const fetchData = useCallback(async () => {
@@ -220,7 +220,7 @@ export const Analytics: React.FC = () => {
       const timeOpts = parseTimeRange();
       let result: ResourceLanesData;
       if (resourceDrillTable) {
-        // Drill-down: table level — split db.table
+        // Drill-down: table level - split db.table
         const dotIdx = resourceDrillTable.indexOf('.');
         const db = dotIdx > 0 ? resourceDrillTable.slice(0, dotIdx) : 'default';
         const tbl = dotIdx > 0 ? resourceDrillTable.slice(dotIdx + 1) : resourceDrillTable;
@@ -248,7 +248,7 @@ export const Analytics: React.FC = () => {
     }
   }, [services, resourceDrillTable, resourceMaxLanes, parseTimeRange]);
 
-  // Open QueryDetailModal for a pattern hash — fetch the most recent query for that hash
+  // Open QueryDetailModal for a pattern hash - fetch the most recent query for that hash
   const handleOpenPatternQuery = useCallback(async (hash: string) => {
     if (!services) return;
     try {
@@ -544,7 +544,7 @@ export const Analytics: React.FC = () => {
               </div>
             )}
 
-            {/* Summary stats — computed from filtered data */}
+            {/* Summary stats - computed from filtered data */}
             {filtered.length > 0 && (
               <div style={{ display: 'flex', gap: 16, marginTop: 8 }}>
                 <SummaryCard label="Tables Analyzed" value={filtered.length} />
@@ -616,7 +616,7 @@ export const Analytics: React.FC = () => {
                 Resource Usage
               </button>
               <button onClick={() => setSurfaceSubTab('pattern')} style={btnStyle(surfaceSubTab === 'pattern')}
-                title="Experimental — duration-based ranking may not reflect actual resource impact"
+                title="Experimental - duration-based ranking may not reflect actual resource impact"
               >
                 Query Patterns <span style={{ fontSize: 9, opacity: 0.6 }}>experimental</span>
               </button>
@@ -698,7 +698,7 @@ export const Analytics: React.FC = () => {
         </div>
       )}
 
-      {/* Query Detail Modal — opened from pattern surface hover cards */}
+      {/* Query Detail Modal - opened from pattern surface hover cards */}
       <QueryDetailModal query={deepLinkedQuery} onClose={handleQueryClose} />
     </div>
   );

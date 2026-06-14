@@ -1,5 +1,5 @@
 /**
- * LinkQueryModal — bridges the @link directive to QueryDetailModal.
+ * LinkQueryModal - bridges the @link directive to QueryDetailModal.
  *
  * When a @link column is clicked, this component runs the target preset query
  * to fetch matching rows (which must include a `query_id` column), then opens
@@ -210,8 +210,8 @@ export const LinkQueryModal: React.FC<LinkQueryModalProps> = ({
             </div>
             <div style={{ fontSize: 11, color: 'var(--text-muted)', marginTop: 2 }}>
               {Object.entries(params).map(([k, v]) => `${k} = ${v}`).join(', ')}
-              {targetQuery.description && ` — ${targetQuery.description}`}
-              {!loading && ` · ${rows.length} executions — click a row to inspect`}
+              {targetQuery.description && ` - ${targetQuery.description}`}
+              {!loading && ` · ${rows.length} executions - click a row to inspect`}
             </div>
           </div>
           <button

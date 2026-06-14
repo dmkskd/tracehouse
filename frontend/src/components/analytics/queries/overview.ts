@@ -1,4 +1,4 @@
-/** Overview queries — table sizes, part counts, database sizes. */
+/** Overview queries - table sizes, part counts, database sizes. */
 
 const queries: string[] = [
   `-- @meta: title='Biggest Tables' group='Overview' description='Tables ranked by on-disk size with row counts and primary key memory'
@@ -30,7 +30,7 @@ GROUP BY database, table
 ORDER BY bytes_size DESC
 LIMIT 30`,
 
-  `-- @meta: title='Active Parts by Table' group='Overview' description='Number of active parts per table — high counts may indicate merge pressure'
+  `-- @meta: title='Active Parts by Table' group='Overview' description='Number of active parts per table - high counts may indicate merge pressure'
 -- @chart: type=bar group_by=table value=part_count style=2d
 SELECT
     concat(database, '.', table) AS table,

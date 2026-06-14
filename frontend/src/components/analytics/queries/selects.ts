@@ -1,4 +1,4 @@
-/** Select monitoring queries — expensive queries, duration trends, user breakdown. */
+/** Select monitoring queries - expensive queries, duration trends, user breakdown. */
 
 const queries: string[] = [
   `-- @meta: title='Most Expensive Selects' group='Selects' interval='1 DAY' description='Top 20 slowest SELECT queries in the last day'
@@ -66,7 +66,7 @@ WHERE type = 'QueryFinish'
 GROUP BY user
 ORDER BY query_count DESC`,
 
-  `-- @meta: title='Recent Selects' group='Selects' interval='1 HOUR' description='Most recent SELECT queries with duration — useful for picking query IDs to compare'
+  `-- @meta: title='Recent Selects' group='Selects' interval='1 HOUR' description='Most recent SELECT queries with duration - useful for picking query IDs to compare'
 -- @link: on=query_id into='Query Detail by ID'
 -- @source: https://clickhouse.com/blog/monitoring-troubleshooting-select-queries-clickhouse
 SELECT

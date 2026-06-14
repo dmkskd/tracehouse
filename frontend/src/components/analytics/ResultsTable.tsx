@@ -1,5 +1,5 @@
 /**
- * ResultsTable — shared sortable table for query results.
+ * ResultsTable - shared sortable table for query results.
  *
  * Used by both DashboardViewer and QueryExplorer to render clickable,
  * sortable tables with cell decorations (RAG coloring, gauge bars, sparklines)

@@ -1,5 +1,5 @@
 /**
- * OrderingKeyTable — shows per-table ordering key efficiency analysis.
+ * OrderingKeyTable - shows per-table ordering key efficiency analysis.
  * Expanding a row fetches the per-query-pattern breakdown (by normalized_query_hash)
  * with ordering key usage diagnostics explaining why pruning is good or poor.
  */
@@ -38,7 +38,7 @@ function pruningColor(pct: number | null): string {
 }
 
 function pruningLabel(pct: number | null): string {
-  if (pct == null) return '—';
+  if (pct == null) return '-';
   if (pct >= 90) return 'Excellent';
   if (pct >= 50) return 'Fair';
   return 'Poor';
@@ -67,7 +67,7 @@ const UserBreakdownBar: React.FC<{ breakdown: Record<string, number>; total: num
     Object.entries(breakdown).sort((a, b) => b[1] - a[1]),
   [breakdown]);
 
-  if (sorted.length === 0 || total === 0) return <span style={{ fontSize: 10, color: 'var(--text-muted)' }}>—</span>;
+  if (sorted.length === 0 || total === 0) return <span style={{ fontSize: 10, color: 'var(--text-muted)' }}>-</span>;
 
   return (
     <div style={{ position: 'relative', width: '100%', minWidth: 80 }}>
@@ -117,7 +117,7 @@ const PruningBadge: React.FC<{ pct: number | null }> = ({ pct }) => {
         background: `${color}18`, color,
         fontFamily: "'Share Tech Mono', monospace",
       }}>
-        {pct != null ? `${pct.toFixed(1)}%` : '—'}
+        {pct != null ? `${pct.toFixed(1)}%` : '-'}
       </div>
       <span style={{ fontSize: 10, color: 'var(--text-muted)' }}>{pruningLabel(pct)}</span>
     </div>
@@ -182,10 +182,10 @@ export const OrderingKeyTable: React.FC<Props> = ({ data, isLoading, lookbackDay
           headers={['Database', 'Table', 'Queries', 'Avg Pruning %', 'Poor Queries', 'Total Rows Read', 'Avg Duration', 'Avg Memory', 'ORDER BY']}
           rows={sorted.map(r => [
             r.database, r.table_name, formatNumber(r.query_count),
-            r.avg_pruning_pct != null ? `${r.avg_pruning_pct.toFixed(1)}%` : '—',
+            r.avg_pruning_pct != null ? `${r.avg_pruning_pct.toFixed(1)}%` : '-',
             r.poor_pruning_queries, formatNumber(r.total_rows_read),
             formatDurationMs(r.avg_duration_ms), formatBytes(r.avg_memory_bytes),
-            r.sorting_key || '—',
+            r.sorting_key || '-',
           ])}
         />
       </div>
@@ -223,7 +223,7 @@ export const OrderingKeyTable: React.FC<Props> = ({ data, isLoading, lookbackDay
                   <td style={{ ...cell, ...mono, textAlign: 'right' }}>{formatNumber(row.total_rows_read)}</td>
                   <td style={{ ...cell, ...mono, textAlign: 'right' }}>{formatDurationMs(row.avg_duration_ms)}</td>
                   <td style={{ ...cell, ...mono, textAlign: 'right' }}>{formatBytes(row.avg_memory_bytes)}</td>
-                  <td style={{ ...cell, fontSize: 11, color: 'var(--text-secondary)', maxWidth: 250, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{row.sorting_key || '—'}</td>
+                  <td style={{ ...cell, fontSize: 11, color: 'var(--text-secondary)', maxWidth: 250, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{row.sorting_key || '-'}</td>
                 </tr>
                 {isExpanded && (
                   <tr><td colSpan={9} style={{ padding: 0 }}>
@@ -500,13 +500,13 @@ const QueryPatternsTable: React.FC<{ patterns: TableQueryPattern[]; sortingKey: 
                 {(() => {
                   const r95 = p.p50_duration_ms > 0 ? p.p95_duration_ms / p.p50_duration_ms : 0;
                   const color95 = r95 > 3 ? '#d29922' : 'inherit';
-                  const tip95 = `p95: ${formatDurationMs(p.p95_duration_ms)} (${r95.toFixed(1)}× p50)${r95 > 3 ? ' — high tail variance' : ''}`;
+                  const tip95 = `p95: ${formatDurationMs(p.p95_duration_ms)} (${r95.toFixed(1)}× p50)${r95 > 3 ? ' - high tail variance' : ''}`;
                   return <td style={{ ...cell, ...mono, textAlign: 'right', color: color95 }} title={tip95}>{formatDurationMs(p.p95_duration_ms)}</td>;
                 })()}
                 {(() => {
                   const r99 = p.p50_duration_ms > 0 ? p.p99_duration_ms / p.p50_duration_ms : 0;
                   const color99 = r99 > 10 ? '#f85149' : r99 > 5 ? '#d29922' : 'inherit';
-                  const tip99 = `p99: ${formatDurationMs(p.p99_duration_ms)} (${r99.toFixed(1)}× p50)${r99 > 10 ? ' — extreme tail, check for resource contention' : r99 > 5 ? ' — heavy tail' : ''}`;
+                  const tip99 = `p99: ${formatDurationMs(p.p99_duration_ms)} (${r99.toFixed(1)}× p50)${r99 > 10 ? ' - extreme tail, check for resource contention' : r99 > 5 ? ' - heavy tail' : ''}`;
                   return <td style={{ ...cell, ...mono, textAlign: 'right', color: color99 }} title={tip99}>{formatDurationMs(p.p99_duration_ms)}</td>;
                 })()}
                 <td style={{ ...cell, ...mono, textAlign: 'right' }}>{formatBytes(p.avg_memory_bytes)}</td>
@@ -590,7 +590,7 @@ const QueryPatternsTable: React.FC<{ patterns: TableQueryPattern[]; sortingKey: 
                             </div>
                             {isNoFilter && (
                               <div style={{ fontSize: 10, color: 'var(--text-muted)', marginBottom: 6 }}>
-                                No index filtering — full scan across all granules.
+                                No index filtering - full scan across all granules.
                               </div>
                             )}
                             {explain.indexes.map((idx, i) => {

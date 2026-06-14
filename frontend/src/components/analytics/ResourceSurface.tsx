@@ -1,5 +1,5 @@
 /**
- * ResourceSurface — 3D lanes-based resource usage surface with drill-down.
+ * ResourceSurface - 3D lanes-based resource usage surface with drill-down.
  *
  * Level 1 (system): Time × Tables (lanes) × composite stress
  *   Shows which tables are actually stressing the system.
@@ -34,7 +34,7 @@ const CHANNEL_OPTIONS: { key: ViewMode; label: string }[] = [
   { key: 'total_read_rows', label: 'Rows' },
 ];
 
-/** Presentation metadata for stress components — colors and labels for the UI */
+/** Presentation metadata for stress components - colors and labels for the UI */
 const STRESS_COMPONENT_DISPLAY = [
   { label: 'CPU', color: '#ef4444' },
   { label: 'Mem', color: '#3b82f6' },
@@ -81,7 +81,7 @@ const SCENE_DEPTH = 8;
 const MAX_HEIGHT = 3.5;
 
 // Data processing (aggregation, normalization, ranking) lives in
-// packages/core/src/utils/resource-lanes-processor.ts — imported as processLanesData
+// packages/core/src/utils/resource-lanes-processor.ts - imported as processLanesData
 
 // ─── Three.js components ───
 
@@ -218,7 +218,7 @@ function LaneLabels({ processed, highlightedLaneIdx }: { processed: ProcessedLan
 
   return (
     <>
-      {/* Time labels along X — gradient from dim (oldest) to bright (newest) */}
+      {/* Time labels along X - gradient from dim (oldest) to bright (newest) */}
       {timeIndices.map((ti, idx) => {
         const x = (ti / (nTime - 1) - 0.5) * SCENE_WIDTH;
         const frac = timeIndices.length > 1 ? idx / (timeIndices.length - 1) : 1;
@@ -517,9 +517,9 @@ function AlgoInfo({ level, viewMode, laneCount }: { level: 'system' | 'table'; v
       `Heights use the same system-wide baseline as the overview for comparable scale.`;
 
   const scaleDesc = `Scale controls how tall the surface is:\n` +
-    `• Share — what % of system is each table using? With 10 tables at 10% each, all lanes are flat at 10% even if the system is maxed.\n` +
-    `• Load — is the system busy? Tall = heavy load, flat = idle. Best for spotting stress periods.\n` +
-    `• Contrast — stretches the busiest lane to fill full height. Best for comparing lanes when differences are small.`;
+    `• Share - what % of system is each table using? With 10 tables at 10% each, all lanes are flat at 10% even if the system is maxed.\n` +
+    `• Load - is the system busy? Tall = heavy load, flat = idle. Best for spotting stress periods.\n` +
+    `• Contrast - stretches the busiest lane to fill full height. Best for comparing lanes when differences are small.`;
 
   return (
     <div style={{ position: 'relative', display: 'inline-block', zIndex: 30 }}>
@@ -646,12 +646,12 @@ function LaneListPanel({
   const highlightedLaneId = highlightedIdx !== null ? laneIds[highlightedIdx] : '';
   const highlightedBd = highlightedIdx !== null ? laneBreakdowns[highlightedIdx] : null;
   const highlightedAvg = highlightedIdx !== null ? laneAvgShare[highlightedIdx] ?? 0 : 0;
-  // At table level, lanes are query patterns (not __merges__) — clickable to open details
+  // At table level, lanes are query patterns (not __merges__) - clickable to open details
   const isQueryLane = level === 'table' && highlightedLaneId !== '__merges__';
 
   return (
     <div style={{ position: 'absolute', top: 48, right: 16, zIndex: 10 }}>
-      {/* Tooltip — rendered outside the scrollable container */}
+      {/* Tooltip - rendered outside the scrollable container */}
       {highlightedIdx !== null && highlightedBd && (
         <div
           onMouseEnter={handleTooltipEnter}
@@ -872,7 +872,7 @@ export const ResourceSurface: React.FC<ResourceSurfaceProps> = ({
         <LanesToggle active={maxLanes} onChange={onMaxLanesChange} />
       </div>
 
-      {/* Lane list panel — right side */}
+      {/* Lane list panel - right side */}
       <LaneListPanel
         processed={processed}
         level={level}

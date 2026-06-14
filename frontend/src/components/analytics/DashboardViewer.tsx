@@ -1,5 +1,5 @@
 /**
- * DashboardViewer — renders a dashboard as a grid of panels, each executing
+ * DashboardViewer - renders a dashboard as a grid of panels, each executing
  * its referenced preset query and displaying a mini chart + data table.
  *
  * Also provides a dashboard list/selector, create/edit/delete/import/export UI.
@@ -40,7 +40,7 @@ import {
   importDashboardJson,
 } from './dashboards';
 
-// ─── Panel component — executes one preset query and shows result ───
+// ─── Panel component - executes one preset query and shows result ───
 
 interface PanelResult {
   columns: string[];
@@ -70,9 +70,9 @@ const DashboardPanelCard: React.FC<{
   onTimeSeriesData?: (info: PanelTimeSeriesInfo | null) => void;
   correlationValues?: CorrelationEntry[];
   isHoveredPanel?: boolean;
-  /** Global filter params from the dashboard filter bar — merged into drill params */
+  /** Global filter params from the dashboard filter bar - merged into drill params */
   filterParams?: Record<string, string>;
-  /** Index in the dashboard panel list — used to assign distinct overlay colors */
+  /** Index in the dashboard panel list - used to assign distinct overlay colors */
   panelIndex?: number;
   onOpenQueryDetail?: (query: QuerySeries) => void;
   onOpenQuery?: (query: Query, dashboardId: string) => void;
@@ -241,7 +241,7 @@ const DashboardPanelCard: React.FC<{
     setLinkModal({ targetQuery: target, params: { [column]: value } });
   }, [preset]);
 
-  // @part_link support — open PartInspector for a part name
+  // @part_link support - open PartInspector for a part name
   const [partLinkTarget, setPartLinkTarget] = useState<{ partName: string; database: string; table: string } | null>(null);
   const [partLinkDetail, setPartLinkDetail] = useState<PartDetailInfo | null>(null);
   const [partLinkLoading, setPartLinkLoading] = useState(false);
@@ -263,7 +263,7 @@ const DashboardPanelCard: React.FC<{
     resolvePartLink(value, row);
   }, [resolvePartLink]);
 
-  /** Chart click handler for @part_link — looks up the row by matching the group_by column. */
+  /** Chart click handler for @part_link - looks up the row by matching the group_by column. */
   const handlePartLinkChartClick = useCallback((event: DrillDownEvent) => {
     const pl = preset?.directives.partLink;
     if (!pl || !result) return;
@@ -589,7 +589,7 @@ const DashboardEditor: React.FC<EditorProps> = ({ initial, onSave, onCancel }) =
           const resolved = resolvePanel(p);
           return (
             <React.Fragment key={i}>
-              {/* Section badge — shown above the panel that starts a section */}
+              {/* Section badge - shown above the panel that starts a section */}
               {p.section && (
                 <div style={{
                   display: 'flex', alignItems: 'center', gap: 6, padding: '4px 14px',
@@ -641,7 +641,7 @@ const DashboardEditor: React.FC<EditorProps> = ({ initial, onSave, onCancel }) =
           style={{ ...inputStyle, flex: 1, marginBottom: 0 }}>
           <option value="">Add a preset query…</option>
           {availableQueries.map(q => (
-            <option key={q.name} value={`${q.group}#${q.name}`}>{q.group} — {q.name}</option>
+            <option key={q.name} value={`${q.group}#${q.name}`}>{q.group} - {q.name}</option>
           ))}
         </select>
         <button onClick={handleAdd} disabled={!addQuery}
@@ -657,7 +657,7 @@ const DashboardEditor: React.FC<EditorProps> = ({ initial, onSave, onCancel }) =
       }}>
         {filters.length === 0 && (
           <div style={{ padding: '12px 14px', fontSize: 12, color: 'var(--text-muted)', fontStyle: 'italic' }}>
-            No filters — panels will show all data
+            No filters - panels will show all data
           </div>
         )}
         {filters.map((f, i) => (
@@ -738,7 +738,7 @@ const ImportModal: React.FC<{ onImport: (json: string) => void; onClose: () => v
   );
 };
 
-// ─── Mini panel — lightweight version for previews (no drill-down, no toolbar) ───
+// ─── Mini panel - lightweight version for previews (no drill-down, no toolbar) ───
 
 const MiniPanelCard: React.FC<{ panel: DashboardPanel; timeRangeOverride: string | null }> = ({ panel, timeRangeOverride }) => {
   const services = useClickHouseServices();
@@ -996,7 +996,7 @@ const DashboardListView: React.FC<{
       onMouseLeave={handleMouseLeave}
       style={{ ...panelStyle, cursor: 'pointer', padding: 16, transition: 'border-color 0.15s', position: 'relative' }}
     >
-      {/* Category tag — top right */}
+      {/* Category tag - top right */}
       {d.category && (() => {
         const CATEGORY_COLORS: Record<string, string> = {
           General: '#6366f1', Queries: '#3b82f6', Storage: '#22c55e',
@@ -1055,7 +1055,7 @@ const DashboardListView: React.FC<{
         </div>
       )}
 
-      {/* Hover preview — uses fixed positioning, follows cursor */}
+      {/* Hover preview - uses fixed positioning, follows cursor */}
       {hoveredDashboard && mousePos && (
         <DashboardPreviewPopup
           dashboard={hoveredDashboard}
@@ -1378,7 +1378,7 @@ export const DashboardViewer: React.FC<{ initialDashboardId?: string; onOpenQuer
             onClick={() => { setCorrelationEnabled(e => !e); setHoveredTimestamp(null); }}
             className={`tab${correlationEnabled ? ' active' : ''}`}
             style={{ border: '1px solid var(--border-primary)', padding: '6px 16px', fontSize: 12, cursor: 'pointer' }}
-            title="Sync crosshair across all panels — hover one chart to see values across all"
+            title="Sync crosshair across all panels - hover one chart to see values across all"
           >
             Crosshair
           </button>
@@ -1390,7 +1390,7 @@ export const DashboardViewer: React.FC<{ initialDashboardId?: string; onOpenQuer
             }}
             className={`tab${overlayVisible ? ' active' : ''}`}
             style={{ border: '1px solid var(--border-primary)', padding: '6px 16px', fontSize: 12, cursor: 'pointer' }}
-            title="Correlate all time-series on one chart — hover a series to see correlation scores"
+            title="Correlate all time-series on one chart - hover a series to see correlation scores"
           >
             Correlate <span style={{ fontSize: 8, padding: '1px 4px', borderRadius: 3, background: 'rgba(234, 179, 8, 0.2)', color: '#eab308', border: '1px solid rgba(234, 179, 8, 0.3)', verticalAlign: 'super', marginLeft: 2 }}>beta</span>
           </button>
@@ -1442,7 +1442,7 @@ export const DashboardViewer: React.FC<{ initialDashboardId?: string; onOpenQuer
           const isCollapsed = section.name !== null && collapsedSections.has(section.name);
           return (
             <React.Fragment key={section.name ?? `__ungrouped_${sIdx}`}>
-              {/* Section header — only for named sections */}
+              {/* Section header - only for named sections */}
               {section.name && (
                 <button
                   onClick={() => toggleSection(section.name!)}
@@ -1467,7 +1467,7 @@ export const DashboardViewer: React.FC<{ initialDashboardId?: string; onOpenQuer
                   </span>
                 </button>
               )}
-              {/* Panel grid — hidden when collapsed */}
+              {/* Panel grid - hidden when collapsed */}
               {!isCollapsed && (
                 <div style={{
                   display: 'grid',

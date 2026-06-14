@@ -1,5 +1,5 @@
 /**
- * Altinity ClickHouse Operator dashboard queries — derived from the
+ * Altinity ClickHouse Operator dashboard queries - derived from the
  * community Grafana dashboard "ClickHouse Operator" (ID 12163).
  *
  * Original dashboard: https://grafana.com/grafana/dashboards/12163
@@ -9,7 +9,7 @@
  *   chi_clickhouse_metric_* → system.metrics / system.metric_log CurrentMetric_* columns
  *   chi_clickhouse_table_*  → system.parts / system.mutations
  *
- * All metrics are available natively in ClickHouse system tables —
+ * All metrics are available natively in ClickHouse system tables -
  * no Prometheus intermediary required.
  */
 
@@ -72,7 +72,7 @@ WHERE event_time > {{time_range}}
 GROUP BY t
 ORDER BY t ASC`,
 
-  `-- @meta: title='ZooKeeper Hardware Exceptions' group='Grafana Imports' interval='1 HOUR' description='ZooKeeper hardware exceptions — network or connection failures to Keeper'
+  `-- @meta: title='ZooKeeper Hardware Exceptions' group='Grafana Imports' interval='1 HOUR' description='ZooKeeper hardware exceptions - network or connection failures to Keeper'
 -- @chart: type=bar group_by=t value=hw_exceptions style=2d color=#ef4444
 -- @cell: column=hw_exceptions type=rag green<1 amber<5
 -- @source: https://grafana.com/grafana/dashboards/12163
@@ -84,7 +84,7 @@ WHERE event_time > {{time_range}}
 GROUP BY t
 ORDER BY t ASC`,
 
-  `-- @meta: title='DNS Errors' group='Grafana Imports' interval='1 HOUR' description='DNS resolution errors — can cause connectivity issues to replicas and ZooKeeper'
+  `-- @meta: title='DNS Errors' group='Grafana Imports' interval='1 HOUR' description='DNS resolution errors - can cause connectivity issues to replicas and ZooKeeper'
 -- @chart: type=bar group_by=t value=dns_errors style=2d color=#f97316
 -- @source: https://grafana.com/grafana/dashboards/12163
 SELECT
@@ -111,7 +111,7 @@ WHERE event_time > {{time_range}}
 GROUP BY t
 ORDER BY t ASC`,
 
-  `-- @meta: title='Read Rows/sec' group='Grafana Imports' interval='1 HOUR' description='Read rows per second — measures read amplification across all queries'
+  `-- @meta: title='Read Rows/sec' group='Grafana Imports' interval='1 HOUR' description='Read rows per second - measures read amplification across all queries'
 -- @chart: type=area group_by=t value=read_rows style=2d color=#a78bfa
 -- @drill: on=t into='Grafana Imports#Heavy Readers at Time'
 -- @source: https://grafana.com/grafana/dashboards/12163
@@ -172,7 +172,7 @@ WHERE event_time > {{time_range}}
 GROUP BY t
 ORDER BY t ASC`,
 
-  `-- @meta: title='Delayed & Rejected Inserts' group='Grafana Imports' interval='1 HOUR' description='Inserts throttled (delayed) or rejected (TOO_MANY_PARTS) — indicates part pressure'
+  `-- @meta: title='Delayed & Rejected Inserts' group='Grafana Imports' interval='1 HOUR' description='Inserts throttled (delayed) or rejected (TOO_MANY_PARTS) - indicates part pressure'
 -- @chart: type=grouped_line group_by=t value=delayed,rejected style=2d
 -- @cell: column=rejected type=rag green<1 amber<5
 -- @drill: on=t into='Grafana Imports#Rejected Inserts at Time'
@@ -188,7 +188,7 @@ ORDER BY t ASC`,
 
   // ─── Replication & ZooKeeper ─────────────────────────────────────────
 
-  `-- @meta: title='Replica Lag (max)' group='Grafana Imports' interval='1 HOUR' description='Maximum absolute_delay across all replicated tables — growing lag signals replication falling behind'
+  `-- @meta: title='Replica Lag (max)' group='Grafana Imports' interval='1 HOUR' description='Maximum absolute_delay across all replicated tables - growing lag signals replication falling behind'
 -- @chart: type=area group_by=t value=max_delay style=2d color=#ef4444
 -- @cell: column=max_delay type=rag green<10 amber<300
 -- @source: https://grafana.com/grafana/dashboards/12163
@@ -213,7 +213,7 @@ WHERE event_time > {{time_range}}
 GROUP BY t
 ORDER BY t ASC`,
 
-  `-- @meta: title='ZooKeeper Request Rate' group='Grafana Imports' interval='1 HOUR' description='ZooKeeper transaction and watch rate per minute — high rates may indicate schema pressure'
+  `-- @meta: title='ZooKeeper Request Rate' group='Grafana Imports' interval='1 HOUR' description='ZooKeeper transaction and watch rate per minute - high rates may indicate schema pressure'
 -- @chart: type=grouped_line group_by=t value=transactions,watches style=2d
 -- @source: https://grafana.com/grafana/dashboards/12163
 SELECT
@@ -225,7 +225,7 @@ WHERE event_time > {{time_range}}
 GROUP BY t
 ORDER BY t ASC`,
 
-  `-- @meta: title='ZooKeeper Wait Time (avg)' group='Grafana Imports' interval='1 HOUR' description='Average ZooKeeper wait time per minute — high values indicate Keeper contention'
+  `-- @meta: title='ZooKeeper Wait Time (avg)' group='Grafana Imports' interval='1 HOUR' description='Average ZooKeeper wait time per minute - high values indicate Keeper contention'
 -- @chart: type=area group_by=t value=avg_wait_ms style=2d color=#8b5cf6 unit=ms
 -- @source: https://grafana.com/grafana/dashboards/12163
 SELECT
@@ -236,7 +236,7 @@ WHERE event_time > {{time_range}}
 GROUP BY t
 ORDER BY t ASC`,
 
-  `-- @meta: title='ZooKeeper Sessions' group='Grafana Imports' interval='1 HOUR' description='Active ZooKeeper sessions — should be stable; drops indicate connectivity issues'
+  `-- @meta: title='ZooKeeper Sessions' group='Grafana Imports' interval='1 HOUR' description='Active ZooKeeper sessions - should be stable; drops indicate connectivity issues'
 -- @chart: type=line group_by=t value=sessions style=2d color=#06b6d4
 -- @source: https://grafana.com/grafana/dashboards/12163
 SELECT
@@ -286,7 +286,7 @@ ORDER BY t ASC`,
 
   // ─── Parts ───────────────────────────────────────────────────────────
 
-  `-- @meta: title='Active Parts (Altinity)' group='Grafana Imports' interval='1 HOUR' description='Total active MergeTree parts over time — correlates with query planning cost'
+  `-- @meta: title='Active Parts (Altinity)' group='Grafana Imports' interval='1 HOUR' description='Total active MergeTree parts over time - correlates with query planning cost'
 -- @chart: type=area group_by=t value=parts style=2d color=#f0883e
 -- @source: https://grafana.com/grafana/dashboards/12163
 SELECT
@@ -298,7 +298,7 @@ WHERE event_time > {{time_range}}
 GROUP BY t
 ORDER BY t ASC`,
 
-  `-- @meta: title='Max Parts Per Partition (Altinity)' group='Grafana Imports' interval='1 HOUR' description='Highest part count in any single partition — above 300 triggers insert delays, above 600 causes rejections'
+  `-- @meta: title='Max Parts Per Partition (Altinity)' group='Grafana Imports' interval='1 HOUR' description='Highest part count in any single partition - above 300 triggers insert delays, above 600 causes rejections'
 -- @chart: type=area group_by=t value=max_parts style=2d color=#ef4444
 -- @cell: column=max_parts type=rag green<150 amber<300
 -- @source: https://grafana.com/grafana/dashboards/12163
@@ -311,7 +311,7 @@ WHERE event_time > {{time_range}}
 GROUP BY t
 ORDER BY t ASC`,
 
-  `-- @meta: title='Parts by Table (top 10)' group='Grafana Imports' description='Active part counts per table — identifies tables contributing to merge pressure'
+  `-- @meta: title='Parts by Table (top 10)' group='Grafana Imports' description='Active part counts per table - identifies tables contributing to merge pressure'
 -- @chart: type=bar group_by=tbl value=part_count orientation=horizontal
 -- @source: https://grafana.com/grafana/dashboards/12163
 SELECT
@@ -325,7 +325,7 @@ GROUP BY database, table
 ORDER BY part_count DESC
 LIMIT 10`,
 
-  `-- @meta: title='Detached Parts' group='Grafana Imports' description='Detached parts — parts that failed to attach or were manually detached. Non-zero typically requires investigation.'
+  `-- @meta: title='Detached Parts' group='Grafana Imports' description='Detached parts - parts that failed to attach or were manually detached. Non-zero typically requires investigation.'
 -- @cell: column=detached_count type=rag green<1 amber<5
 -- @source: https://grafana.com/grafana/dashboards/12163
 SELECT
@@ -391,7 +391,7 @@ WHERE event_time > {{time_range}}
 GROUP BY t
 ORDER BY t ASC`,
 
-  `-- @meta: title='Table Sizes (top 20)' group='Grafana Imports' description='Largest tables by disk usage — compressed and uncompressed sizes, compression ratio'
+  `-- @meta: title='Table Sizes (top 20)' group='Grafana Imports' description='Largest tables by disk usage - compressed and uncompressed sizes, compression ratio'
 -- @chart: type=bar group_by=tbl value=compressed orientation=horizontal
 -- @source: https://grafana.com/grafana/dashboards/12163
 SELECT
@@ -409,7 +409,7 @@ LIMIT 20`,
 
   // ─── Background & Mutations ──────────────────────────────────────────
 
-  `-- @meta: title='Background Pool Utilization (Altinity)' group='Grafana Imports' interval='1 HOUR' description='Background pool thread utilization — merge, move, fetch, common, and schedule pools'
+  `-- @meta: title='Background Pool Utilization (Altinity)' group='Grafana Imports' interval='1 HOUR' description='Background pool thread utilization - merge, move, fetch, common, and schedule pools'
 -- @chart: type=grouped_line group_by=t value=merge_pool,move_pool,fetch_pool,common_pool,schedule_pool style=2d
 -- @source: https://grafana.com/grafana/dashboards/12163
 SELECT
@@ -442,7 +442,7 @@ ORDER BY create_time ASC`,
 
   // ─── CPU ─────────────────────────────────────────────────────────────
 
-  `-- @meta: title='CPU User Time' group='Grafana Imports' interval='1 HOUR' description='Normalized CPU user time — fraction of available CPU cores spent in user space'
+  `-- @meta: title='CPU User Time' group='Grafana Imports' interval='1 HOUR' description='Normalized CPU user time - fraction of available CPU cores spent in user space'
 -- @chart: type=area group_by=t value=user_cpu style=2d color=#3b82f6
 -- @source: https://grafana.com/grafana/dashboards/12163
 SELECT
@@ -454,7 +454,7 @@ WHERE event_time > {{time_range}}
 GROUP BY t
 ORDER BY t ASC`,
 
-  `-- @meta: title='CPU System Time' group='Grafana Imports' interval='1 HOUR' description='Normalized CPU system (kernel) time — high values may indicate I/O syscall overhead'
+  `-- @meta: title='CPU System Time' group='Grafana Imports' interval='1 HOUR' description='Normalized CPU system (kernel) time - high values may indicate I/O syscall overhead'
 -- @chart: type=area group_by=t value=system_cpu style=2d color=#ef4444
 -- @source: https://grafana.com/grafana/dashboards/12163
 SELECT
@@ -466,7 +466,7 @@ WHERE event_time > {{time_range}}
 GROUP BY t
 ORDER BY t ASC`,
 
-  `-- @meta: title='CPU IO Wait' group='Grafana Imports' interval='1 HOUR' description='Normalized IO wait time — fraction of CPU time waiting for disk I/O'
+  `-- @meta: title='CPU IO Wait' group='Grafana Imports' interval='1 HOUR' description='Normalized IO wait time - fraction of CPU time waiting for disk I/O'
 -- @chart: type=area group_by=t value=iowait style=2d color=#f59e0b
 -- @source: https://grafana.com/grafana/dashboards/12163
 SELECT
@@ -478,7 +478,7 @@ WHERE event_time > {{time_range}}
 GROUP BY t
 ORDER BY t ASC`,
 
-  `-- @meta: title='CPU Breakdown' group='Grafana Imports' interval='1 HOUR' description='Full CPU time breakdown: user, system, IO wait, idle — all normalized to available cores'
+  `-- @meta: title='CPU Breakdown' group='Grafana Imports' interval='1 HOUR' description='Full CPU time breakdown: user, system, IO wait, idle - all normalized to available cores'
 -- @chart: type=area group_by=t value=value series=op style=2d
 -- @source: https://grafana.com/grafana/dashboards/12163
 SELECT t, avg(val) AS value, op FROM (
@@ -511,7 +511,7 @@ ORDER BY t ASC, op`,
 
   // ─── Network & I/O ───────────────────────────────────────────────────
 
-  `-- @meta: title='Network Bytes (send/receive)' group='Grafana Imports' interval='1 HOUR' description='Network throughput — bytes sent and received per second'
+  `-- @meta: title='Network Bytes (send/receive)' group='Grafana Imports' interval='1 HOUR' description='Network throughput - bytes sent and received per second'
 -- @chart: type=grouped_line group_by=t value=sent,received style=2d
 -- @source: https://grafana.com/grafana/dashboards/12163
 SELECT
@@ -535,7 +535,7 @@ WHERE event_time > {{time_range}}
 GROUP BY t
 ORDER BY t ASC`,
 
-  `-- @meta: title='Disk Read/Write IOps' group='Grafana Imports' interval='1 HOUR' description='Disk I/O operations per second — read and write'
+  `-- @meta: title='Disk Read/Write IOps' group='Grafana Imports' interval='1 HOUR' description='Disk I/O operations per second - read and write'
 -- @chart: type=grouped_line group_by=t value=reads,writes style=2d
 -- @source: https://grafana.com/grafana/dashboards/12163
 SELECT

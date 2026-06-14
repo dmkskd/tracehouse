@@ -1,5 +1,5 @@
 /**
- * PatternSurface — 3D surface: Query pattern × Time × actual duration.
+ * PatternSurface - 3D surface: Query pattern × Time × actual duration.
  *
  * Port of the Python experiments.py "Pattern Surface" to Three.js.
  * Each row = a query pattern (by normalized_query_hash rank).
@@ -243,7 +243,7 @@ function PatternAxisLabels({ pattern }: { pattern: ProcessedPattern }) {
 
   return (
     <>
-      {/* Time labels along X — placed outside the surface at far Z edge */}
+      {/* Time labels along X - placed outside the surface at far Z edge */}
       {timeIndices.map(i => {
         const x = (i / (nTime - 1) - 0.5) * sceneWidth;
         return (
@@ -255,7 +255,7 @@ function PatternAxisLabels({ pattern }: { pattern: ProcessedPattern }) {
         );
       })}
 
-      {/* Pattern labels along Z — visual only, interaction via DOM overlay */}
+      {/* Pattern labels along Z - visual only, interaction via DOM overlay */}
       {patternLabels.map((label, i) => {
         const z = (i / (nPatterns - 1) - 0.5) * sceneDepth;
         return (
@@ -420,13 +420,13 @@ export const PatternSurface: React.FC<PatternSurfaceProps> = ({ data, isLoading,
           </span>
         </div>
         <div style={{ fontSize: 11, color: 'var(--text-3d-sublabel)', marginTop: 2 }}>
-          Each row = a query pattern. Height = avg duration (not a reliable resource metric — will be replaced with composite stress).
+          Each row = a query pattern. Height = avg duration (not a reliable resource metric - will be replaced with composite stress).
         </div>
       </div>
 
       {maxDur > 0 && <ColorScaleLegend maxDuration={maxDur} />}
 
-      {/* Pattern list panel — regular DOM, outside Canvas */}
+      {/* Pattern list panel - regular DOM, outside Canvas */}
       {processed && (
         <div style={{
           position: 'absolute', top: 16, right: 16, zIndex: 20,

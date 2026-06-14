@@ -1,5 +1,5 @@
 /**
- * StressSurface — 3D surface: Time × Resource dimension × normalized stress.
+ * StressSurface - 3D surface: Time × Resource dimension × normalized stress.
  *
  * Port of the Python table_stress.py prototype to Three.js.
  * The surface warps and heats up where load concentrates.
@@ -342,7 +342,7 @@ function AxisLabels({ surface }: { surface: ProcessedSurface }) {
 
   return (
     <>
-      {/* Time labels along X axis — placed at far Z edge, outside the surface */}
+      {/* Time labels along X axis - placed at far Z edge, outside the surface */}
       {timeIndices.map(i => {
         const x = (i / (nTime - 1) - 0.5) * sceneWidth;
         return (
@@ -354,7 +354,7 @@ function AxisLabels({ surface }: { surface: ProcessedSurface }) {
         );
       })}
 
-      {/* Channel labels along Z axis — placed at far X edge, outside the surface */}
+      {/* Channel labels along Z axis - placed at far X edge, outside the surface */}
       {channels.map((ch, i) => {
         const z = (i / (nCh - 1) - 0.5) * sceneDepth;
         return (

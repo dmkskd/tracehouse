@@ -1,5 +1,5 @@
 /**
- * Dashboard definitions — a dashboard is a titled grid of preset query references.
+ * Dashboard definitions - a dashboard is a titled grid of preset query references.
  *
  * Dashboards are stored as JSON in localStorage so users can create, edit,
  * and delete them. A set of built-in dashboards is seeded on first use.
@@ -25,7 +25,7 @@ import { resolveQueryRef } from './metaLanguage';
 // ─── Types ───
 
 export interface DashboardPanel {
-  /** Query reference — namespaced as 'Group#Query Name', or bare 'Query Name' for backward compat */
+  /** Query reference - namespaced as 'Group#Query Name', or bare 'Query Name' for backward compat */
   queryName: string;
   /** If set, this panel starts a new collapsible section with this title.
    *  All subsequent panels until the next section belong to this section. */
@@ -46,7 +46,7 @@ export const DASHBOARD_GROUPS: { name: DashboardGroup; color: string }[] = [
 
 /** Declares a global filter that the dashboard supports. The `param` value is injected into `{{drill_value:param}}` templates. */
 export interface DashboardFilter {
-  /** The template parameter name (e.g. 'tbl') — maps to {{drill_value:tbl}} in queries */
+  /** The template parameter name (e.g. 'tbl') - maps to {{drill_value:tbl}} in queries */
   param: string;
   /** Display label for the filter dropdown */
   label: string;
@@ -67,7 +67,7 @@ export interface Dashboard {
   panels: DashboardPanel[];
   /** true for shipped defaults (user can clone but not delete the originals) */
   builtin?: boolean;
-  /** Optional global filters shown as dropdowns in the dashboard header — values propagate to all panels */
+  /** Optional global filters shown as dropdowns in the dashboard header - values propagate to all panels */
   filters?: DashboardFilter[];
 }
 
@@ -81,7 +81,7 @@ export function resolvePanel(panel: DashboardPanel): Query | undefined {
 // ─── localStorage persistence ───
 
 const STORAGE_KEY = 'tracehouse-dashboards-user';
-/** Legacy key — migrated once then removed */
+/** Legacy key - migrated once then removed */
 const LEGACY_STORAGE_KEY = 'tracehouse-dashboards';
 
 function generateId(): string {
@@ -97,7 +97,7 @@ function getBuiltinIds(): Set<string> {
 
 /**
  * Load all dashboards: builtins from code + user-created from localStorage.
- * Builtins always reflect the latest code — no localStorage caching needed.
+ * Builtins always reflect the latest code - no localStorage caching needed.
  */
 export function loadDashboards(): Dashboard[] {
   const builtins = BUILTIN_DASHBOARDS.map(d => ({ ...d, builtin: true }));
@@ -116,7 +116,7 @@ function loadUserDashboards(): Dashboard[] {
       const parsed = JSON.parse(raw) as Dashboard[];
       if (Array.isArray(parsed)) return parsed;
     }
-  } catch { /* corrupt — ignore */ }
+  } catch { /* corrupt - ignore */ }
   return [];
 }
 
@@ -210,7 +210,7 @@ const BUILTIN_DASHBOARDS: Dashboard[] = [
   {
     id: 'ops-overview',
     title: 'Operations Overview',
-    description: 'Full server health dashboard — mirrors the ClickHouse built-in "Overview" dashboard',
+    description: 'Full server health dashboard - mirrors the ClickHouse built-in "Overview" dashboard',
     source: 'https://github.com/ClickHouse/ClickHouse/blob/master/src/Storages/System/StorageSystemDashboards.cpp',
     group: 'ClickHouse',
     category: 'General',
@@ -348,7 +348,7 @@ const BUILTIN_DASHBOARDS: Dashboard[] = [
   {
     id: 'merge-analytics',
     title: 'Merge Analytics',
-    description: 'Deep merge analysis — throughput, duration scaling, part staleness, and estimated merge cost per table',
+    description: 'Deep merge analysis - throughput, duration scaling, part staleness, and estimated merge cost per table',
     group: 'ClickHouse',
     category: 'Merges',
     columns: 2,
@@ -411,7 +411,7 @@ const BUILTIN_DASHBOARDS: Dashboard[] = [
   {
     id: 'sampler-health',
     title: 'Sampling Health',
-    description: 'Health of the system.processes & system.merges sampling pipeline — status, gaps, cost, and cluster coverage',
+    description: 'Health of the system.processes & system.merges sampling pipeline - status, gaps, cost, and cluster coverage',
     group: 'TraceHouse',
     columns: 2,
     panels: [
@@ -480,7 +480,7 @@ const BUILTIN_DASHBOARDS: Dashboard[] = [
   {
     id: 'mutations-monitoring',
     title: 'Mutations',
-    description: 'Track ALTER TABLE mutations — active, stuck/failed, and recently completed',
+    description: 'Track ALTER TABLE mutations - active, stuck/failed, and recently completed',
     source: 'https://clickhouse.com/docs/operations/system-tables/mutations',
     group: 'ClickHouse',
     category: 'Merges',
@@ -505,7 +505,7 @@ const BUILTIN_DASHBOARDS: Dashboard[] = [
   },
 
   // ─── Grafana Imports ──────────────────────────────────────────────
-  // Single dashboard with collapsible sections — derived from the official
+  // Single dashboard with collapsible sections - derived from the official
   // ClickHouse "Prom-Exporter Instance Dashboard v2" (clickhouse-mixin).
   // Source: https://github.com/ClickHouse/clickhouse-mixin
   // Grafana Marketplace: https://grafana.com/grafana/dashboards/23415
@@ -513,7 +513,7 @@ const BUILTIN_DASHBOARDS: Dashboard[] = [
   {
     id: 'cloud-monitoring',
     title: 'ClickHouse Cloud Exporter',
-    description: 'All panels from the official ClickHouse Prom-Exporter Grafana dashboard — reproduced natively without Prometheus',
+    description: 'All panels from the official ClickHouse Prom-Exporter Grafana dashboard - reproduced natively without Prometheus',
     source: 'https://github.com/ClickHouse/clickhouse-mixin',
     group: 'Grafana Imports',
     columns: 2,
@@ -521,12 +521,12 @@ const BUILTIN_DASHBOARDS: Dashboard[] = [
       // ── Server Health & Resources ──
       { queryName: 'Grafana Imports#CPU Usage %', section: 'Server Health & Resources' },
       { queryName: 'Grafana Imports#Memory Usage %' },
-      { queryName: 'Grafana Imports#Memory Tracked (RSS)' },
+      { queryName: 'Grafana Imports#Memory Tracked' },
       { queryName: 'Grafana Imports#CPU Cores Used' },
       { queryName: 'Grafana Imports#Max Parts Per Partition' },
       { queryName: 'Grafana Imports#Failed Select %' },
       { queryName: 'Grafana Imports#Failed Insert %' },
-      { queryName: 'Grafana Imports#Error Log Rate' },
+      { queryName: 'Grafana Imports#Error Log Events' },
       { queryName: 'Grafana Imports#Memory Limit Exceeded' },
       { queryName: 'Grafana Imports#Network I/O' },
       { queryName: 'Grafana Imports#TCP Connections' },
@@ -580,14 +580,14 @@ const BUILTIN_DASHBOARDS: Dashboard[] = [
     ],
   },
 
-  // Single dashboard with collapsible sections — derived from the
+  // Single dashboard with collapsible sections - derived from the
   // Altinity ClickHouse Operator Grafana dashboard (ID 12163).
   // Source: https://grafana.com/grafana/dashboards/12163
 
   {
     id: 'altinity-operator',
     title: 'Altinity ClickHouse Operator',
-    description: 'All panels from the Altinity ClickHouse Operator Grafana dashboard — reproduced natively without Prometheus',
+    description: 'All panels from the Altinity ClickHouse Operator Grafana dashboard - reproduced natively without Prometheus',
     source: 'https://grafana.com/grafana/dashboards/12163',
     group: 'Grafana Imports',
     columns: 2,
@@ -659,7 +659,7 @@ const BUILTIN_DASHBOARDS: Dashboard[] = [
   },
 
   // ─── ClickHouse KB ────────────────────────────────────────────────
-  // Single dashboard with collapsible sections — read-only diagnostics
+  // Single dashboard with collapsible sections - read-only diagnostics
   // adapted from the official ClickHouse Knowledge Base.
   // Source: https://clickhouse.com/docs/knowledgebase
 
@@ -693,7 +693,7 @@ const BUILTIN_DASHBOARDS: Dashboard[] = [
   },
 
   // ─── Altinity KB ──────────────────────────────────────────────────
-  // Single dashboard with collapsible sections — diagnostic queries
+  // Single dashboard with collapsible sections - diagnostic queries
   // reproduced natively from the Altinity ClickHouse Knowledge Base.
   // Read-only only: the KB's maintenance/command-generator recipes
   // (ALTER/DROP/DETACH/FORGET/delete DDL) are intentionally excluded.
@@ -714,7 +714,7 @@ const BUILTIN_DASHBOARDS: Dashboard[] = [
         query: "SELECT concat(database, '.', name) AS tbl FROM system.tables WHERE database NOT IN ('system', 'INFORMATION_SCHEMA', 'information_schema') AND engine LIKE '%MergeTree%' ORDER BY tbl",
       },
     ],
-    // One collapsible section per KB article — section titles match the article
+    // One collapsible section per KB article - section titles match the article
     // titles on kb.altinity.com so the page maps directly onto the dashboard.
     panels: [
       // ── https://kb.altinity.com/altinity-kb-setup-and-maintenance/who-ate-my-cpu/ ──

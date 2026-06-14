@@ -1,5 +1,5 @@
 /**
- * Preset query loading — maps RAW_QUERIES to typed Query objects.
+ * Preset query loading - maps RAW_QUERIES to typed Query objects.
  */
 
 import { parseQueryMetadata } from './metaLanguage';

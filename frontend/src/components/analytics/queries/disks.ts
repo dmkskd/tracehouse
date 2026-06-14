@@ -1,12 +1,12 @@
 /**
- * Disk & storage monitoring queries — free space, disk health.
+ * Disk & storage monitoring queries - free space, disk health.
  *
  * Sources:
  * - ClickHouse docs: https://clickhouse.com/docs/operations/system-tables/disks
  */
 
 const queries: string[] = [
-  `-- @meta: title='Disk Free Space' group='Disks' description='Free space, total capacity, and usage percentage per disk across all cluster nodes — early warning for running out of storage'
+  `-- @meta: title='Disk Free Space' group='Disks' description='Free space, total capacity, and usage percentage per disk across all cluster nodes - early warning for running out of storage'
 -- @cell: column=used_pct type=gauge max=100 unit=%
 -- @cell: column=used_pct type=rag green<70 amber<85
 -- @source: https://clickhouse.com/docs/operations/system-tables/disks

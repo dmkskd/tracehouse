@@ -1,7 +1,7 @@
-/** Insert monitoring queries — part creation, batch counts, duration, throughput. */
+/** Insert monitoring queries - part creation, batch counts, duration, throughput. */
 
 const queries: string[] = [
-  `-- @meta: title='New Parts Created' group='Inserts' interval='2 HOUR' description='Frequency of new part creation per minute — early warning for too-many-parts'
+  `-- @meta: title='New Parts Created' group='Inserts' interval='2 HOUR' description='Frequency of new part creation per minute - early warning for too-many-parts'
 -- @chart: type=area group_by=minute value=new_parts style=2d color=#10b981
 -- @source: https://clickhouse.com/blog/monitoring-troubleshooting-insert-queries-clickhouse
 SELECT
@@ -88,7 +88,7 @@ WHERE query_kind = 'Insert'
 ORDER BY memory_usage DESC
 LIMIT 20`,
 
-  `-- @meta: title='MaxPartCountForPartition Trend' group='Inserts' interval='1 DAY' description='Trend of the highest part count in any partition — rising values signal merge pressure'
+  `-- @meta: title='MaxPartCountForPartition Trend' group='Inserts' interval='1 DAY' description='Trend of the highest part count in any partition - rising values signal merge pressure'
 -- @chart: type=line group_by=minute value=avg_max_parts style=2d
 -- @source: https://clickhouse.com/blog/monitoring-troubleshooting-insert-queries-clickhouse
 SELECT
@@ -115,7 +115,7 @@ WHERE peak_memory_usage > 0
 GROUP BY event_date
 ORDER BY event_date DESC`,
 
-  `-- @meta: title='Part Errors' group='Inserts' interval='7 DAY' description='Errors during part operations — merges, mutations, inserts'
+  `-- @meta: title='Part Errors' group='Inserts' interval='7 DAY' description='Errors during part operations - merges, mutations, inserts'
 -- @cell: column=error_count type=rag green<1 amber<1
 -- @source: https://clickhouse.com/blog/monitoring-troubleshooting-insert-queries-clickhouse
 SELECT

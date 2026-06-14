@@ -1,5 +1,5 @@
 /**
- * Advanced Dashboard queries — adapted from system.dashboards (ClickHouse OSS).
+ * Advanced Dashboard queries - adapted from system.dashboards (ClickHouse OSS).
  *
  * Source: ClickHouse server source code, Apache 2.0 License
  * https://github.com/ClickHouse/ClickHouse/blob/master/src/Storages/System/StorageSystemDashboards.cpp
@@ -190,7 +190,7 @@ WHERE event_time > {{time_range}}
 GROUP BY t
 ORDER BY t ASC`,
 
-  `-- @meta: title='In-Memory Caches (bytes)' group='Advanced Dashboard' interval='1 HOUR' description='Size of in-memory caches (mark, uncompressed, index, etc.)'
+  `-- @meta: title='In-Memory Caches (bytes)' group='Advanced Dashboard' interval='1 HOUR' description='Combined size of MarkCacheBytes and UncompressedCacheBytes'
 -- @chart: type=area group_by=t value=cache_bytes style=2d color=#a855f7
 -- @source: https://github.com/ClickHouse/ClickHouse/blob/master/src/Storages/System/StorageSystemDashboards.cpp
 SELECT
@@ -250,7 +250,7 @@ WHERE event_time > {{time_range}}
 GROUP BY t
 ORDER BY t ASC`,
 
-  `-- @meta: title='Max Parts For Partition' group='Advanced Dashboard' interval='1 HOUR' description='Maximum part count in any single partition — early warning for too-many-parts'
+  `-- @meta: title='Max Parts For Partition' group='Advanced Dashboard' interval='1 HOUR' description='Maximum part count in any single partition - early warning for too-many-parts'
 -- @chart: type=area group_by=t value=max_parts style=2d color=#ef4444
 -- @source: https://github.com/ClickHouse/ClickHouse/blob/master/src/Storages/System/StorageSystemDashboards.cpp
 SELECT

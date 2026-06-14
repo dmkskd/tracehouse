@@ -10,7 +10,7 @@
 
 import { SQLDialect } from '@codemirror/lang-sql';
 
-// Note: keywords must be lowercase — the CodeMirror SQL tokenizer lowercases
+// Note: keywords must be lowercase - the CodeMirror SQL tokenizer lowercases
 // input words before looking them up in the keyword dictionary.
 
 const CLICKHOUSE_KEYWORDS = [

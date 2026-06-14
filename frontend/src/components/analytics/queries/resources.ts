@@ -1,4 +1,4 @@
-/** Resource monitoring queries — memory-heavy inserts, failed queries, limits. */
+/** Resource monitoring queries - memory-heavy inserts, failed queries, limits. */
 
 const queries: string[] = [
   `-- @meta: title='Top Inserts by Memory' group='Resources' description='Most memory-intensive INSERT operations'

@@ -418,7 +418,7 @@ function GroupedLine3DScene({ data }: { data: GroupedChartData[] }) {
           path.add(new THREE.LineCurve3(points[i], points[i + 1]));
         }
 
-        // Build filled "ribbon" shape — a semi-transparent curtain from line down to floor
+        // Build filled "ribbon" shape - a semi-transparent curtain from line down to floor
         const ribbonPositions: number[] = [];
         const ribbonIndices: number[] = [];
         for (let i = 0; i < points.length; i++) {
@@ -850,7 +850,7 @@ export const Chart3DCanvas: React.FC<{
         </div>
       )}
 
-      {/* Legend — top right (hidden for line/area and grouped/stacked charts which have their own legend) */}
+      {/* Legend - top right (hidden for line/area and grouped/stacked charts which have their own legend) */}
       {data.length > 0 && !(type === 'line' || type === 'area' || type === 'grouped_line' || type === 'grouped_bar' || type === 'stacked_bar') && (
         <div style={{
           position: 'absolute', top: isFullscreen ? 24 : 16, right: isFullscreen ? 28 : 20, zIndex: 10,
@@ -903,7 +903,7 @@ export const Chart3DCanvas: React.FC<{
         </div>
       )}
 
-      {/* Fullscreen toggle — bottom right */}
+      {/* Fullscreen toggle - bottom right */}
       {onToggleFullscreen && (
         <button
           onClick={onToggleFullscreen}
@@ -922,7 +922,7 @@ export const Chart3DCanvas: React.FC<{
         </button>
       )}
 
-      {/* Legend for grouped/stacked charts — show series names + colors */}
+      {/* Legend for grouped/stacked charts - show series names + colors */}
       {(type === 'grouped_line' || type === 'grouped_bar' || type === 'stacked_bar') && groupedData && groupedData.length > 0 && (
         <div style={{
           position: 'absolute', top: isFullscreen ? 24 : 16, right: isFullscreen ? 28 : 20, zIndex: 10,

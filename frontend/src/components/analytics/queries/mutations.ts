@@ -1,12 +1,12 @@
 /**
- * Mutation monitoring queries — active mutations, stuck/failed mutations, progress.
+ * Mutation monitoring queries - active mutations, stuck/failed mutations, progress.
  *
  * Sources:
  * - ClickHouse docs: https://clickhouse.com/docs/operations/system-tables/mutations
  */
 
 const queries: string[] = [
-  `-- @meta: title='Active Mutations' group='Mutations' description='Currently running mutations — command, parts remaining, and failure info'
+  `-- @meta: title='Active Mutations' group='Mutations' description='Currently running mutations - command, parts remaining, and failure info'
 -- @cell: column=parts_to_do type=rag green<5 amber<50
 -- @source: https://clickhouse.com/docs/operations/system-tables/mutations
 SELECT
@@ -24,7 +24,7 @@ FROM {{cluster_aware:system.mutations}}
 WHERE NOT is_done
 ORDER BY create_time ASC`,
 
-  `-- @meta: title='Failed / Stuck Mutations' group='Mutations' description='Mutations with failures or that were killed — needs manual investigation'
+  `-- @meta: title='Failed / Stuck Mutations' group='Mutations' description='Mutations with failures or that were killed - needs manual investigation'
 -- @source: https://clickhouse.com/docs/operations/system-tables/mutations
 SELECT
     database,
@@ -41,7 +41,7 @@ WHERE latest_fail_reason != ''
 ORDER BY latest_fail_time DESC
 LIMIT 50`,
 
-  `-- @meta: title='Recent Completed Mutations' group='Mutations' description='Recently finished mutations — useful to verify ALTERs landed'
+  `-- @meta: title='Recent Completed Mutations' group='Mutations' description='Recently finished mutations - useful to verify ALTERs landed'
 -- @source: https://clickhouse.com/docs/operations/system-tables/mutations
 SELECT
     database,

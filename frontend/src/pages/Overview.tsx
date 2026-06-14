@@ -107,14 +107,14 @@ export const Overview: React.FC = () => {
   const [arenaSplitView, setArenaSplitView] = useState(false);
   const preferredViewMode = useUserPreferenceStore(s => s.preferredViewMode);
 
-  // Cluster hostnames from server info (reliable — always returns all nodes)
+  // Cluster hostnames from server info (reliable - always returns all nodes)
   const arenaHosts = liveData?.serverInfo?.clusterHosts ?? [];
 
   const [timeRangeMinutes, setTimeRangeMinutes] = useState(15);
   const [isLoadingHistory, setIsLoadingHistory] = useState(false);
   const [historyError, setHistoryError] = useState<string | null>(null);
 
-  // Observability map state — restore selected table from session if navigating back
+  // Observability map state - restore selected table from session if navigating back
   const [mapSearchQuery, setMapSearchQuery] = useState('');
   const [mapClickedNode, setMapClickedNode] = useState<SunburstNodeData | null>(() => {
     const saved = sessionStorage.getItem('obsmap:selectedTable');
@@ -340,7 +340,7 @@ export const Overview: React.FC = () => {
       }));
     }
 
-    // "All" multi-host view — flatten per-host values into keyed columns
+    // "All" multi-host view - flatten per-host values into keyed columns
     const byTime = new Map<number, Map<string, ClusterHistoricalMetricsPoint>>();
     for (const p of clusterMetrics) {
       if (!byTime.has(p.timestamp)) byTime.set(p.timestamp, new Map());
@@ -480,7 +480,7 @@ export const Overview: React.FC = () => {
     );
   }
 
-  // Degradation summary — list key capabilities that are missing
+  // Degradation summary - list key capabilities that are missing
   const { flags: capFlags, probeStatus } = useMonitoringCapabilitiesStore();
   const degradedFeatures = useMemo(() => {
     if (probeStatus !== 'done') return [];
@@ -535,7 +535,7 @@ export const Overview: React.FC = () => {
         </div>
       </div>
 
-      {/* Degradation banner — shown when key capabilities are missing */}
+      {/* Degradation banner - shown when key capabilities are missing */}
       {degradedFeatures.length > 0 && viewMode === 'snapshot' && (
         <div style={{
           padding: '8px 14px',
@@ -580,14 +580,14 @@ export const Overview: React.FC = () => {
         </div>
       )}
 
-      {/* Live Activity Stream — the hero */}
+      {/* Live Activity Stream - the hero */}
       {viewMode === 'snapshot' && (
         <>
           {/* Compact stat strip */}
           <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr 1fr 1fr', gap: 12 }}>
             <SparklineStatCard
               label={isCluster ? `CPU (${arenaHosts.length} nodes)` : 'CPU'}
-              value={isCluster && ra ? `${clusterCpuPct.toFixed(1)}%` : metrics ? `${metrics.cpu_usage.toFixed(1)}%` : '—'}
+              value={isCluster && ra ? `${clusterCpuPct.toFixed(1)}%` : metrics ? `${metrics.cpu_usage.toFixed(1)}%` : '-'}
               color="#3B82F6"
               warn={isCluster ? clusterCpuPct > (thresholds.cpu_warning ?? 80) : warnings.cpu}
               subtitle={isCluster && ra ? `${clusterCores} total cores` : warnings.cpu ? `Above ${thresholds.cpu_warning}%` : undefined}
@@ -595,7 +595,7 @@ export const Overview: React.FC = () => {
             />
             <SparklineStatCard
               label={isCluster ? `Memory (${arenaHosts.length} nodes)` : 'Memory'}
-              value={isCluster && ra ? `${clusterMemPct.toFixed(1)}%` : metrics ? `${memoryPercentage.toFixed(1)}%` : '—'}
+              value={isCluster && ra ? `${clusterMemPct.toFixed(1)}%` : metrics ? `${memoryPercentage.toFixed(1)}%` : '-'}
               color="#8B5CF6"
               warn={isCluster ? clusterMemPct > (thresholds.memory_warning ?? 85) : warnings.memory}
               subtitle={isCluster && ra ? `${formatBytes(ra.memory.totalRSS)} / ${formatBytes(ra.memory.totalRAM)}` : metrics ? `${formatBytes(metrics.memory_used)} / ${formatBytes(metrics.memory_total)}` : undefined}
@@ -603,25 +603,25 @@ export const Overview: React.FC = () => {
             />
             <SparklineStatCard
               label={isCluster ? `Disk Read (cluster)` : 'Disk Read'}
-              value={isCluster && ra ? formatBytes(ra.io.readBytesPerSec) + '/s' : metrics ? formatBytes(metrics.disk_read_bytes) : '—'}
+              value={isCluster && ra ? formatBytes(ra.io.readBytesPerSec) + '/s' : metrics ? formatBytes(metrics.disk_read_bytes) : '-'}
               color="#10B981"
               sparklineData={sparkDiskR}
             />
             <SparklineStatCard
               label={isCluster ? `Disk Write (cluster)` : 'Disk Write'}
-              value={isCluster && ra ? formatBytes(ra.io.writeBytesPerSec) + '/s' : metrics ? formatBytes(metrics.disk_write_bytes) : '—'}
+              value={isCluster && ra ? formatBytes(ra.io.writeBytesPerSec) + '/s' : metrics ? formatBytes(metrics.disk_write_bytes) : '-'}
               color="#F59E0B"
               sparklineData={sparkDiskW}
             />
             <SparklineStatCard
               label="Uptime"
-              value={metrics?.uptime_seconds ? formatDuration(metrics.uptime_seconds) : '—'}
+              value={metrics?.uptime_seconds ? formatDuration(metrics.uptime_seconds) : '-'}
               color="#06b6d4"
               sparklineData={[]}
             />
           </div>
 
-          {/* Resource arena — driven by global 2D/3D preference */}
+          {/* Resource arena - driven by global 2D/3D preference */}
           {preferredViewMode === '3d' ? (
             <ResourceArena3D
               key={`3d-${activeProfileId}-${servicesGenRef.current}`}
@@ -691,33 +691,33 @@ export const Overview: React.FC = () => {
         <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr 1fr 1fr', gap: 12 }}>
           <SparklineStatCard
             label={isCluster ? `CPU (${arenaHosts.length} nodes)` : 'CPU'}
-            value={isCluster && ra ? `${clusterCpuPct.toFixed(1)}%` : metrics ? `${metrics.cpu_usage.toFixed(1)}%` : '—'}
+            value={isCluster && ra ? `${clusterCpuPct.toFixed(1)}%` : metrics ? `${metrics.cpu_usage.toFixed(1)}%` : '-'}
             color="#3B82F6"
             warn={isCluster ? clusterCpuPct > (thresholds.cpu_warning ?? 80) : warnings.cpu}
             sparklineData={sparkCpu}
           />
           <SparklineStatCard
             label={isCluster ? `Memory (${arenaHosts.length} nodes)` : 'Memory'}
-            value={isCluster && ra ? `${clusterMemPct.toFixed(1)}%` : metrics ? `${memoryPercentage.toFixed(1)}%` : '—'}
+            value={isCluster && ra ? `${clusterMemPct.toFixed(1)}%` : metrics ? `${memoryPercentage.toFixed(1)}%` : '-'}
             color="#8B5CF6"
             warn={isCluster ? clusterMemPct > (thresholds.memory_warning ?? 85) : warnings.memory}
             sparklineData={sparkMem}
           />
           <SparklineStatCard
             label={isCluster ? `Disk Read (cluster)` : 'Disk Read'}
-            value={isCluster && ra ? formatBytes(ra.io.readBytesPerSec) + '/s' : metrics ? formatBytes(metrics.disk_read_bytes) : '—'}
+            value={isCluster && ra ? formatBytes(ra.io.readBytesPerSec) + '/s' : metrics ? formatBytes(metrics.disk_read_bytes) : '-'}
             color="#10B981"
             sparklineData={sparkDiskR}
           />
           <SparklineStatCard
             label={isCluster ? `Disk Write (cluster)` : 'Disk Write'}
-            value={isCluster && ra ? formatBytes(ra.io.writeBytesPerSec) + '/s' : metrics ? formatBytes(metrics.disk_write_bytes) : '—'}
+            value={isCluster && ra ? formatBytes(ra.io.writeBytesPerSec) + '/s' : metrics ? formatBytes(metrics.disk_write_bytes) : '-'}
             color="#F59E0B"
             sparklineData={sparkDiskW}
           />
           <SparklineStatCard
             label="Uptime"
-            value={metrics?.uptime_seconds ? formatDuration(metrics.uptime_seconds) : '—'}
+            value={metrics?.uptime_seconds ? formatDuration(metrics.uptime_seconds) : '-'}
             color="#06b6d4"
             sparklineData={[]}
           />
@@ -754,7 +754,7 @@ export const Overview: React.FC = () => {
                 ↻
               </button>
             </div>
-            {/* Host selector — only show if multiple hosts */}
+            {/* Host selector - only show if multiple hosts */}
             <div className="flex items-center gap-3">
               {clusterHosts.length > 1 && (
                 <div className="tabs">

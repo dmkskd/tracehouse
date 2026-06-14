@@ -1,5 +1,5 @@
 /**
- * Sparkline — tiny inline SVG trend for table cells.
+ * Sparkline - tiny inline SVG trend for table cells.
  *
  * Pure SVG, no recharts dependency. Renders an array of y-values
  * as a compact line/area with an optional reference line.
@@ -29,7 +29,7 @@ export const Sparkline: React.FC<SparklineProps> = ({
   fill = false,
 }) => {
   if (!data || data.length < 2) {
-    return <span style={{ color: 'var(--text-muted)', fontSize: 10 }}>—</span>;
+    return <span style={{ color: 'var(--text-muted)', fontSize: 10 }}>-</span>;
   }
 
   const pad = 1;

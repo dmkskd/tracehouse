@@ -1,5 +1,5 @@
 /**
- * TimeRangePicker — compact segmented control for selecting a time range.
+ * TimeRangePicker - compact segmented control for selecting a time range.
  *
  * Preset intervals (15m, 1h, 6h, …) override the query's default.
  * "Custom" opens inline datetime inputs for an absolute range.
@@ -145,7 +145,7 @@ export const TimeRangePicker: React.FC<Props> = ({ value, onChange, presets }) =
             fontSize: 9, color: 'var(--text-muted)', fontFamily: "'Share Tech Mono',monospace",
             whiteSpace: 'nowrap',
           }}>
-            {fmt(parts[0])} — {fmt(parts[1])}
+            {fmt(parts[0])} - {fmt(parts[1])}
           </span>
         );
       })()}
@@ -158,7 +158,7 @@ export const TimeRangePicker: React.FC<Props> = ({ value, onChange, presets }) =
           borderRadius: 8, padding: '10px 12px', boxShadow: '0 4px 16px rgba(0,0,0,0.25)',
           display: 'flex', flexDirection: 'column', gap: 6, width: 420,
         }}>
-          {/* From / To / Apply — compact row */}
+          {/* From / To / Apply - compact row */}
           <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
             <label style={{ fontSize: 9, fontWeight: 600, color: 'var(--text-muted)' }}>From</label>
             <input type="datetime-local" value={customStart} onChange={e => setCustomStart(e.target.value)}
@@ -190,7 +190,7 @@ export const TimeRangePicker: React.FC<Props> = ({ value, onChange, presets }) =
               </button>
             ))}
           </div>
-          {/* Slider — full width */}
+          {/* Slider - full width */}
           <RangeSlider
             rangeStartMs={Date.now() - sliderZoomMs} rangeEndMs={Date.now()}
             start={customStart} end={customEnd}
@@ -212,4 +212,3 @@ function toLocalISOString(d: Date): string {
   const pad = (n: number) => String(n).padStart(2, '0');
   return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}T${pad(d.getHours())}:${pad(d.getMinutes())}`;
 }
-

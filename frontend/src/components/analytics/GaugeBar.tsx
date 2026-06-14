@@ -1,5 +1,5 @@
 /**
- * GaugeBar — inline horizontal gauge for table cells.
+ * GaugeBar - inline horizontal gauge for table cells.
  *
  * Renders a colored bar proportional to value/max with an optional label.
  * Integrates with @rag coloring when a ragColor is provided.

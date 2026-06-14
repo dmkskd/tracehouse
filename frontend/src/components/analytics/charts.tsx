@@ -46,7 +46,7 @@ export const CHART_COLORS = [
   '#0ea5e9','#d946ef','#3b82f6','#a855f7',
 ];
 
-/** Pick a distinct color for a panel by index — used by overlay charts when queries don't specify a color. */
+/** Pick a distinct color for a panel by index - used by overlay charts when queries don't specify a color. */
 export function chartColorByIndex(index: number): string {
   return CHART_COLORS[index % CHART_COLORS.length];
 }
@@ -187,7 +187,7 @@ function formatCompact(v: number): string {
 
 /**
  * Build GroupedChartData from multi-column results (no group column needed).
- * Each valueColumn becomes a separate series — like ClickHouse native dashboards.
+ * Each valueColumn becomes a separate series - like ClickHouse native dashboards.
  */
 export function buildMultiColumnGrouped(
   rows: Record<string, unknown>[],
@@ -339,7 +339,7 @@ const gridStroke = 'var(--border-secondary, rgba(148,163,184,0.15))';
 
 // ─── Cross-panel correlation ───
 
-/** A single entry in the correlation tooltip — one per participating panel. */
+/** A single entry in the correlation tooltip - one per participating panel. */
 export interface CorrelationEntry {
   name: string;
   color: string;
@@ -349,15 +349,15 @@ export interface CorrelationEntry {
 
 /** Props added to time-series charts when correlation mode is active. */
 export interface CrosshairProps {
-  /** Timestamp label broadcast by another panel — render a ReferenceLine here. */
+  /** Timestamp label broadcast by another panel - render a ReferenceLine here. */
   hoveredTimestamp?: string | null;
   /** Called when this chart's hover position changes (label string, or null on leave). */
   onTimestampHover?: (label: string | null) => void;
-  /** Values from all correlated panels at the hovered timestamp — shown in tooltip. */
+  /** Values from all correlated panels at the hovered timestamp - shown in tooltip. */
   correlationValues?: CorrelationEntry[];
-  /** Name of the panel rendering this chart — used to highlight "self" in the correlation tooltip. */
+  /** Name of the panel rendering this chart - used to highlight "self" in the correlation tooltip. */
   currentPanelName?: string;
-  /** Whether this panel is the one currently being hovered — used to hide stale tooltips on other panels. */
+  /** Whether this panel is the one currently being hovered - used to hide stale tooltips on other panels. */
   isHoveredPanel?: boolean;
 }
 
@@ -367,7 +367,7 @@ const crosshairLineProps = {
   strokeWidth: 1,
 };
 
-/** Custom recharts cursor — vertical line only.
+/** Custom recharts cursor - vertical line only.
  *  The horizontal crosshair is handled by SyncedCrosshair which uses the actual
  *  data value + y-axis domain for correct positioning on all panels. */
 const CrosshairCursor: React.FC<any> = ({ points, height, top }) => {
@@ -546,7 +546,7 @@ export const AnalyticsTooltip: React.FC<{
                   {cv.name.length > 18 ? cv.name.slice(0, 17) + '…' : cv.name}
                 </span>
                 <span style={{ fontSize: 12, fontWeight: 600, color: 'var(--text-primary, #e2e8f0)', fontFamily: "'Share Tech Mono', monospace" }}>
-                  {cv.value != null ? fmt(cv.value) : '—'}
+                  {cv.value != null ? fmt(cv.value) : '-'}
                 </span>
               </div>
             );
@@ -605,7 +605,7 @@ const PieTooltip: React.FC<{
 };
 
 // ═══════════════════════════════════════════════════════════════════════════
-// 2D Charts — all using recharts
+// 2D Charts - all using recharts
 // ═══════════════════════════════════════════════════════════════════════════
 
 export const BarChart2D: React.FC<{ data: ChartDataPoint[]; fullHeight?: boolean; onDrillDown?: (e: DrillDownEvent) => void; unit?: string; drillIntoQuery?: string }> = ({ data, fullHeight, onDrillDown, unit, drillIntoQuery }) => {
@@ -817,7 +817,7 @@ export const AreaChart2D: React.FC<{ data: ChartDataPoint[]; fullHeight?: boolea
 };
 
 // ═══════════════════════════════════════════════════════════════════════════
-// Dual-axis Area Chart — two value columns, left + right Y axes
+// Dual-axis Area Chart - two value columns, left + right Y axes
 // ═══════════════════════════════════════════════════════════════════════════
 
 export const DualAxisAreaChart2D: React.FC<{ data: GroupedChartData[]; valueColumns: string[]; fullHeight?: boolean; onDrillDown?: (e: DrillDownEvent) => void; drillIntoQuery?: string } & CrosshairProps> = ({ data, valueColumns, fullHeight, onDrillDown, drillIntoQuery, hoveredTimestamp, onTimestampHover, correlationValues, currentPanelName, isHoveredPanel}) => {
@@ -880,7 +880,7 @@ export const DualAxisAreaChart2D: React.FC<{ data: GroupedChartData[]; valueColu
 };
 
 // ═══════════════════════════════════════════════════════════════════════════
-// Grouped / Stacked 2D Charts — recharts-based
+// Grouped / Stacked 2D Charts - recharts-based
 // ═══════════════════════════════════════════════════════════════════════════
 
 /** Transform GroupedChartData[] into recharts-friendly flat rows with one key per group */
@@ -1060,7 +1060,7 @@ export const GroupedLineChart2D: React.FC<{ data: GroupedChartData[]; onDrillDow
 };
 
 // ═══════════════════════════════════════════════════════════════════════════
-// Overlay Chart — multiple normalized series on one chart with correlation coloring
+// Overlay Chart - multiple normalized series on one chart with correlation coloring
 // ═══════════════════════════════════════════════════════════════════════════
 
 import {
@@ -1104,7 +1104,7 @@ export const OverlayChart: React.FC<OverlayChartProps> = ({ panels }) => {
   const [hiddenSeries, setHiddenSeries] = useState<Set<string>>(new Set());
   const [algorithmId, setAlgorithmId] = useState('pearson');
   const [contextMenu, setContextMenu] = useState<{ x: number; y: number } | null>(null);
-  // Lightweight chart hover — just dims other lines, no correlation computation
+  // Lightweight chart hover - just dims other lines, no correlation computation
   const [chartHoveredSeries, setChartHoveredSeries] = useState<string | null>(null);
   const [showInfoPopover, setShowInfoPopover] = useState(false);
 
@@ -1251,17 +1251,17 @@ export const OverlayChart: React.FC<OverlayChartProps> = ({ panels }) => {
             }}>
               <div style={{ fontWeight: 600, fontSize: 12, color: 'var(--text-primary, #e2e8f0)', marginBottom: 6 }}>Correlation Guide</div>
               <div style={{ marginBottom: 8 }}>
-                <span style={{ color: 'var(--text-primary, #e2e8f0)' }}>r value</span> — strength of relationship (−1 to +1). Closer to ±1 = stronger.
+                <span style={{ color: 'var(--text-primary, #e2e8f0)' }}>r value</span> - strength of relationship (−1 to +1). Closer to ±1 = stronger.
               </div>
               <div style={{ fontWeight: 600, fontSize: 11, color: 'var(--text-primary, #e2e8f0)', marginBottom: 4 }}>Algorithms</div>
-              <div style={{ marginBottom: 2 }}><span style={{ color: '#22c55e' }}>Pearson</span> — linear (proportional) relationships. Sensitive to outliers.</div>
-              <div style={{ marginBottom: 2 }}><span style={{ color: '#22c55e' }}>Spearman</span> — monotonic relationships via ranks. Robust to outliers.</div>
-              <div style={{ marginBottom: 8 }}><span style={{ color: '#22c55e' }}>Cross-corr</span> — shifts series in time to find best match. <span style={{ color: 'var(--text-muted)' }}>@+3</span> = A leads B by 3 intervals.</div>
+              <div style={{ marginBottom: 2 }}><span style={{ color: '#22c55e' }}>Pearson</span> - linear (proportional) relationships. Sensitive to outliers.</div>
+              <div style={{ marginBottom: 2 }}><span style={{ color: '#22c55e' }}>Spearman</span> - monotonic relationships via ranks. Robust to outliers.</div>
+              <div style={{ marginBottom: 8 }}><span style={{ color: '#22c55e' }}>Cross-corr</span> - shifts series in time to find best match. <span style={{ color: 'var(--text-muted)' }}>@+3</span> = A leads B by 3 intervals.</div>
               <div style={{ fontWeight: 600, fontSize: 11, color: 'var(--text-primary, #e2e8f0)', marginBottom: 4 }}>Insight Badges</div>
-              <div style={{ marginBottom: 2 }}><span style={{ color: '#22c55e', background: 'rgba(34,197,94,0.15)', padding: '0 4px', borderRadius: 3 }}>strong linear</span> — all algorithms agree.</div>
-              <div style={{ marginBottom: 2 }}><span style={{ color: '#eab308', background: 'rgba(234,179,8,0.15)', padding: '0 4px', borderRadius: 3 }}>non-linear</span> — Spearman sees it, Pearson doesn't (e.g. exponential).</div>
-              <div style={{ marginBottom: 2 }}><span style={{ color: '#eab308', background: 'rgba(234,179,8,0.15)', padding: '0 4px', borderRadius: 3 }}>lagged</span> — Cross-corr sees it, Pearson doesn't (time-delayed).</div>
-              <div><span style={{ color: '#eab308', background: 'rgba(234,179,8,0.15)', padding: '0 4px', borderRadius: 3 }}>outlier-driven</span> — Pearson inflated by extreme values.</div>
+              <div style={{ marginBottom: 2 }}><span style={{ color: '#22c55e', background: 'rgba(34,197,94,0.15)', padding: '0 4px', borderRadius: 3 }}>strong linear</span> - all algorithms agree.</div>
+              <div style={{ marginBottom: 2 }}><span style={{ color: '#eab308', background: 'rgba(234,179,8,0.15)', padding: '0 4px', borderRadius: 3 }}>non-linear</span> - Spearman sees it, Pearson doesn't (e.g. exponential).</div>
+              <div style={{ marginBottom: 2 }}><span style={{ color: '#eab308', background: 'rgba(234,179,8,0.15)', padding: '0 4px', borderRadius: 3 }}>lagged</span> - Cross-corr sees it, Pearson doesn't (time-delayed).</div>
+              <div><span style={{ color: '#eab308', background: 'rgba(234,179,8,0.15)', padding: '0 4px', borderRadius: 3 }}>outlier-driven</span> - Pearson inflated by extreme values.</div>
             </div>
           )}
         </span>
@@ -1367,7 +1367,7 @@ export const OverlayChart: React.FC<OverlayChartProps> = ({ panels }) => {
         </ResponsiveContainer>
       </div>
 
-      {/* Legend sidebar — hover to focus, click to hide/show */}
+      {/* Legend sidebar - hover to focus, click to hide/show */}
       <div style={{
         width: 260,
         flexShrink: 0,
@@ -1641,7 +1641,7 @@ export const OverlayChart: React.FC<OverlayChartProps> = ({ panels }) => {
 };
 
 // ═══════════════════════════════════════════════════════════════════════════
-// ChartRenderer — single component that dispatches to the right 2D chart
+// ChartRenderer - single component that dispatches to the right 2D chart
 // ═══════════════════════════════════════════════════════════════════════════
 
 export interface ChartRendererProps extends CrosshairProps {

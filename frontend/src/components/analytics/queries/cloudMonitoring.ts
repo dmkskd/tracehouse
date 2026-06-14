@@ -1,5 +1,5 @@
 /**
- * Cloud Monitoring queries — derived from the official ClickHouse
+ * Cloud Monitoring queries - derived from the official ClickHouse
  * "Prom-Exporter Instance Dashboard v2" (clickhouse-mixin).
  *
  * Original dashboard: https://github.com/ClickHouse/clickhouse-mixin
@@ -10,7 +10,7 @@
  *   ClickHouseMetrics_*       → system.metric_log (CurrentMetric_* columns)
  *   ClickHouseProfileEvents_* → system.metric_log (ProfileEvent_* columns)
  *
- * All metrics are available natively in ClickHouse system tables —
+ * All metrics are available natively in ClickHouse system tables -
  * no Prometheus intermediary required. These queries reproduce the same
  * panels using direct SQL against the source tables.
  */
@@ -19,12 +19,15 @@ const queries: string[] = [
 
   // ─── Server Health ───────────────────────────────────────────────────
 
-  `-- @meta: title='CPU Usage %' group='Grafana Imports' interval='1 HOUR' description='Normalized CPU usage (user + system) as a percentage — prefers CGroup metrics (Cloud/k8s), falls back to OS metrics'
+  `-- @meta: title='CPU Usage %' group='Grafana Imports' interval='1 HOUR' description='Normalized CPU usage from user plus system CPU time as a percentage'
 -- @chart: type=area group_by=t value=cpu_pct style=2d color=#3b82f6 unit=%
 -- @source: https://github.com/ClickHouse/clickhouse-mixin
 SELECT
     toStartOfInterval(event_time, INTERVAL 1 MINUTE) AS t,
-    avg(value) * 100 AS cpu_pct
+    (
+      avgIf(value, metric = 'OSUserTimeNormalized')
+      + avgIf(value, metric = 'OSSystemTimeNormalized')
+    ) * 100 AS cpu_pct
 FROM {{cluster_aware:system.asynchronous_metric_log}}
 WHERE event_time > {{time_range}}
   AND metric IN ('OSUserTimeNormalized', 'OSSystemTimeNormalized')
@@ -47,7 +50,7 @@ WHERE m.event_time > {{time_range}}
 GROUP BY t
 ORDER BY t ASC`,
 
-  `-- @meta: title='Failed Select %' group='Grafana Imports' interval='1 HOUR' description='Percentage of SELECT queries that failed — spikes indicate query errors or timeouts'
+  `-- @meta: title='Failed Select %' group='Grafana Imports' interval='1 HOUR' description='Percentage of SELECT queries that failed - spikes indicate query errors or timeouts'
 -- @chart: type=area group_by=t value=fail_pct style=2d color=#ef4444 unit=%
 -- @cell: column=fail_pct type=rag green<1 amber<5
 -- @drill: on=t into='Grafana Imports#Failed Queries at Time'
@@ -76,7 +79,7 @@ WHERE event_time > {{time_range}}
 GROUP BY t
 ORDER BY t ASC`,
 
-  `-- @meta: title='Error Log Rate' group='Grafana Imports' interval='1 HOUR' description='Rate of errors written to the server log — correlate with failed queries and resource pressure'
+  `-- @meta: title='Error Log Events' group='Grafana Imports' interval='1 HOUR' description='Error log events per minute - correlate with failed queries and resource pressure'
 -- @chart: type=bar group_by=t value=errors style=2d color=#ef4444
 -- @drill: on=t into='Grafana Imports#Failed Queries at Time'
 -- @source: https://github.com/ClickHouse/clickhouse-mixin
@@ -111,7 +114,7 @@ WHERE event_time > {{time_range}}
 GROUP BY t
 ORDER BY t ASC`,
 
-  `-- @meta: title='Memory Limit Exceeded' group='Grafana Imports' interval='1 HOUR' description='Queries killed due to MEMORY_LIMIT_EXCEEDED — signals memory pressure'
+  `-- @meta: title='Memory Limit Exceeded' group='Grafana Imports' interval='1 HOUR' description='Queries killed due to MEMORY_LIMIT_EXCEEDED - signals memory pressure'
 -- @chart: type=bar group_by=t value=killed style=2d color=#ef4444
 -- @drill: on=t into='Grafana Imports#OOM Killed Queries at Time'
 -- @source: https://github.com/ClickHouse/clickhouse-mixin
@@ -123,7 +126,7 @@ WHERE event_time > {{time_range}}
 GROUP BY t
 ORDER BY t ASC`,
 
-  `-- @meta: title='Max Parts Per Partition' group='Grafana Imports' interval='1 HOUR' description='Maximum part count in any single partition — early warning for too-many-parts (300 = rejected inserts)'
+  `-- @meta: title='Max Parts Per Partition' group='Grafana Imports' interval='1 HOUR' description='Maximum part count in any single partition - early warning for too-many-parts; delay and reject thresholds depend on server settings'
 -- @chart: type=area group_by=t value=max_parts style=2d color=#ef4444
 -- @cell: column=max_parts type=rag green<100 amber<250
 -- @source: https://github.com/ClickHouse/clickhouse-mixin
@@ -136,7 +139,7 @@ WHERE event_time > {{time_range}}
 GROUP BY t
 ORDER BY t ASC`,
 
-  `-- @meta: title='Memory Tracked (RSS)' group='Grafana Imports' interval='1 HOUR' description='Absolute memory tracked by ClickHouse (MemoryTracking metric) in bytes'
+  `-- @meta: title='Memory Tracked' group='Grafana Imports' interval='1 HOUR' description='Memory tracked by ClickHouse MemoryTracking, in bytes; this is allocator-accounted memory, not RSS'
 -- @chart: type=area group_by=t value=memory_bytes style=2d color=#a855f7
 -- @source: https://github.com/ClickHouse/clickhouse-mixin
 SELECT
@@ -147,7 +150,7 @@ WHERE event_time > {{time_range}}
 GROUP BY t
 ORDER BY t ASC`,
 
-  `-- @meta: title='CPU Cores Used' group='Grafana Imports' interval='1 HOUR' description='CPU virtual time in cores — how many cores queries and merges are consuming'
+  `-- @meta: title='CPU Cores Used' group='Grafana Imports' interval='1 HOUR' description='CPU virtual time in cores - how many cores queries and merges are consuming'
 -- @chart: type=area group_by=t value=cpu_cores style=2d color=#3b82f6
 -- @source: https://github.com/ClickHouse/clickhouse-mixin
 SELECT
@@ -199,7 +202,7 @@ WHERE event_time > {{time_range}}
 GROUP BY t
 ORDER BY t ASC`,
 
-  `-- @meta: title='Failed Queries/sec' group='Grafana Imports' interval='1 HOUR' description='Total failed query rate — all query types combined'
+  `-- @meta: title='Failed Queries/sec' group='Grafana Imports' interval='1 HOUR' description='Total failed query rate - all query types combined'
 -- @chart: type=bar group_by=t value=failed style=2d color=#ef4444
 -- @drill: on=t into='Grafana Imports#Failed Queries at Time'
 -- @source: https://github.com/ClickHouse/clickhouse-mixin
@@ -250,7 +253,7 @@ ORDER BY t ASC`,
 
   // ─── Read Path (SELECT Internals) ────────────────────────────────────
 
-  `-- @meta: title='Selected Parts/sec' group='Grafana Imports' interval='1 HOUR' description='Rate of parts opened for reading by SELECT queries — high values may indicate missing partition pruning'
+  `-- @meta: title='Selected Parts/sec' group='Grafana Imports' interval='1 HOUR' description='Rate of parts opened for reading by SELECT queries - high values may indicate missing partition pruning'
 -- @chart: type=area group_by=t value=parts_sec style=2d color=#f0883e
 -- @drill: on=t into='Grafana Imports#Heavy Readers at Time'
 -- @source: https://github.com/ClickHouse/clickhouse-mixin
@@ -262,7 +265,7 @@ WHERE event_time > {{time_range}}
 GROUP BY t
 ORDER BY t ASC`,
 
-  `-- @meta: title='Selected Ranges/sec' group='Grafana Imports' interval='1 HOUR' description='Rate of mark ranges selected — correlates with index granularity efficiency'
+  `-- @meta: title='Selected Ranges/sec' group='Grafana Imports' interval='1 HOUR' description='Rate of mark ranges selected - correlates with index granularity efficiency'
 -- @chart: type=area group_by=t value=ranges_sec style=2d color=#e3b341
 -- @drill: on=t into='Grafana Imports#Heavy Readers at Time'
 -- @source: https://github.com/ClickHouse/clickhouse-mixin
@@ -274,7 +277,7 @@ WHERE event_time > {{time_range}}
 GROUP BY t
 ORDER BY t ASC`,
 
-  `-- @meta: title='Selected Marks/sec' group='Grafana Imports' interval='1 HOUR' description='Rate of marks (index granules) read — high ratios to rows indicate suboptimal ORDER BY key usage'
+  `-- @meta: title='Selected Marks/sec' group='Grafana Imports' interval='1 HOUR' description='Rate of marks (index granules) read - high ratios to rows indicate suboptimal ORDER BY key usage'
 -- @chart: type=area group_by=t value=marks_sec style=2d color=#84cc16
 -- @drill: on=t into='Grafana Imports#Heavy Readers at Time'
 -- @source: https://github.com/ClickHouse/clickhouse-mixin
@@ -324,7 +327,7 @@ WHERE event_time > {{time_range}}
 GROUP BY t
 ORDER BY t ASC`,
 
-  `-- @meta: title='MergeTree Writer Blocks/sec' group='Grafana Imports' interval='1 HOUR' description='Rate of blocks written — each block becomes a new part'
+  `-- @meta: title='MergeTree Writer Blocks/sec' group='Grafana Imports' interval='1 HOUR' description='Rate of blocks written - each block becomes a new part'
 -- @chart: type=area group_by=t value=blocks_sec style=2d color=#14b8a6
 -- @source: https://github.com/ClickHouse/clickhouse-mixin
 SELECT
@@ -335,7 +338,7 @@ WHERE event_time > {{time_range}}
 GROUP BY t
 ORDER BY t ASC`,
 
-  `-- @meta: title='MergeTree Write Bytes (compressed vs uncompressed)' group='Grafana Imports' interval='1 HOUR' description='Compressed and uncompressed bytes written — gap shows compression ratio effectiveness'
+  `-- @meta: title='MergeTree Write Bytes (compressed vs uncompressed)' group='Grafana Imports' interval='1 HOUR' description='Compressed and uncompressed bytes written - gap shows compression ratio effectiveness'
 -- @chart: type=grouped_line group_by=t value=uncompressed,compressed style=2d
 -- @source: https://github.com/ClickHouse/clickhouse-mixin
 SELECT
@@ -347,7 +350,7 @@ WHERE event_time > {{time_range}}
 GROUP BY t
 ORDER BY t ASC`,
 
-  `-- @meta: title='Rejected Inserts (TOO_MANY_PARTS)' group='Grafana Imports' interval='1 HOUR' description='Inserts rejected because partition exceeded max part count — critical production issue'
+  `-- @meta: title='Rejected Inserts (TOO_MANY_PARTS)' group='Grafana Imports' interval='1 HOUR' description='Inserts rejected because partition exceeded max part count - critical production issue'
 -- @chart: type=bar group_by=t value=rejected style=2d color=#ef4444
 -- @cell: column=rejected type=rag green<1 amber<5
 -- @drill: on=t into='Grafana Imports#Rejected Inserts at Time'
@@ -360,7 +363,7 @@ WHERE event_time > {{time_range}}
 GROUP BY t
 ORDER BY t ASC`,
 
-  `-- @meta: title='Delayed Inserts' group='Grafana Imports' interval='1 HOUR' description='Inserts throttled (delayed) due to approaching part limits — early warning before rejections'
+  `-- @meta: title='Delayed Inserts' group='Grafana Imports' interval='1 HOUR' description='Inserts throttled (delayed) due to approaching part limits - early warning before rejections'
 -- @chart: type=bar group_by=t value=delayed style=2d color=#f59e0b
 -- @drill: on=t into='Grafana Imports#Rejected Inserts at Time'
 -- @source: https://github.com/ClickHouse/clickhouse-mixin
@@ -399,7 +402,7 @@ ORDER BY t ASC`,
 
   // ─── Parts Lifecycle ─────────────────────────────────────────────────
 
-  `-- @meta: title='Parts by Type' group='Grafana Imports' interval='1 HOUR' description='Part counts by storage type — Wide (large), Compact (small), InMemory'
+  `-- @meta: title='Parts by Type' group='Grafana Imports' interval='1 HOUR' description='Active part count split by Compact and Wide storage format'
 -- @chart: type=grouped_line group_by=t value=active,compact,wide style=2d
 -- @source: https://github.com/ClickHouse/clickhouse-mixin
 SELECT
@@ -412,7 +415,7 @@ WHERE event_time > {{time_range}}
 GROUP BY t
 ORDER BY t ASC`,
 
-  `-- @meta: title='Parts Lifecycle' group='Grafana Imports' interval='1 HOUR' description='Part counts by lifecycle state — PreActive (being written), Outdated (pending cleanup), Deleting, Temporary'
+  `-- @meta: title='Parts Lifecycle' group='Grafana Imports' interval='1 HOUR' description='Part counts by lifecycle state - PreActive (being written), Outdated (pending cleanup), Deleting, Temporary'
 -- @chart: type=grouped_line group_by=t value=pre_active,outdated,deleting,temporary style=2d
 -- @source: https://github.com/ClickHouse/clickhouse-mixin
 SELECT
@@ -451,7 +454,7 @@ WHERE event_time > {{time_range}}
 GROUP BY t
 ORDER BY t ASC`,
 
-  `-- @meta: title='Merge & Mutation Memory' group='Grafana Imports' interval='1 HOUR' description='Memory consumed by background merges and mutations — competes with query memory'
+  `-- @meta: title='Merge & Mutation Memory' group='Grafana Imports' interval='1 HOUR' description='Memory consumed by background merges and mutations - competes with query memory'
 -- @chart: type=area group_by=t value=memory_bytes style=2d color=#8b5cf6
 -- @source: https://github.com/ClickHouse/clickhouse-mixin
 SELECT
@@ -511,7 +514,7 @@ WHERE event_time > {{time_range}}
 GROUP BY t
 ORDER BY t ASC`,
 
-  `-- @meta: title='Filesystem Cache Hit Rate' group='Grafana Imports' interval='1 HOUR' description='Percentage of reads served from filesystem cache vs remote storage — low rates mean excessive S3/remote reads'
+  `-- @meta: title='Filesystem Cache Hit Rate' group='Grafana Imports' interval='1 HOUR' description='Percentage of reads served from filesystem cache vs remote storage - low rates mean excessive S3/remote reads'
 -- @chart: type=line group_by=t value=hit_rate_pct style=2d color=#22c55e unit=%
 -- @cell: column=hit_rate_pct type=gauge max=100 unit=%
 -- @cell: column=hit_rate_pct type=rag green>80 amber>50
@@ -526,20 +529,22 @@ WHERE event_time > {{time_range}}
 GROUP BY t
 ORDER BY t ASC`,
 
-  `-- @meta: title='Page Cache Hit Rate' group='Grafana Imports' interval='1 HOUR' description='OS page cache effectiveness — ratio of filesystem reads to total reads (filesystem + S3)'
+  `-- @meta: title='Page Cache Hit Rate' group='Grafana Imports' interval='1 HOUR' description='Estimated OS page cache hit rate from filesystem read calls versus physical disk reads'
 -- @chart: type=line group_by=t value=hit_rate_pct style=2d color=#14b8a6 unit=%
 -- @source: https://github.com/ClickHouse/clickhouse-mixin
 SELECT
     toStartOfInterval(event_time, INTERVAL 1 MINUTE) AS t,
-    if(sum(ProfileEvent_OSReadChars) + sum(ProfileEvent_ReadBufferFromS3Bytes) > 0,
-       sum(ProfileEvent_OSReadChars)
-       / (sum(ProfileEvent_OSReadChars) + sum(ProfileEvent_ReadBufferFromS3Bytes)) * 100, 0) AS hit_rate_pct
+    if(sum(ProfileEvent_OSReadChars) > 0,
+       greatest(0, least(100,
+         (sum(ProfileEvent_OSReadChars) - sum(ProfileEvent_OSReadBytes))
+         / sum(ProfileEvent_OSReadChars) * 100
+       )), 0) AS hit_rate_pct
 FROM {{cluster_aware:system.metric_log}}
 WHERE event_time > {{time_range}}
 GROUP BY t
 ORDER BY t ASC`,
 
-  `-- @meta: title='Mark Cache Hit Rate' group='Grafana Imports' interval='1 HOUR' description='Mark cache hit rate — marks index granule boundaries; misses mean extra disk reads for every query'
+  `-- @meta: title='Mark Cache Hit Rate' group='Grafana Imports' interval='1 HOUR' description='Mark cache hit rate - marks index granule boundaries; misses mean extra disk reads for every query'
 -- @chart: type=line group_by=t value=hit_rate_pct style=2d color=#84cc16 unit=%
 -- @cell: column=hit_rate_pct type=gauge max=100 unit=%
 -- @cell: column=hit_rate_pct type=rag green>90 amber>70
@@ -565,7 +570,7 @@ WHERE event_time > {{time_range}}
 GROUP BY t
 ORDER BY t ASC`,
 
-  `-- @meta: title='Disk vs Filesystem Reads' group='Grafana Imports' interval='1 HOUR' description='Physical disk reads vs filesystem reads (includes page cache) — gap shows page cache effectiveness'
+  `-- @meta: title='Disk vs Filesystem Reads' group='Grafana Imports' interval='1 HOUR' description='Physical disk reads vs filesystem reads (includes page cache) - gap shows page cache effectiveness'
 -- @chart: type=grouped_line group_by=t value=disk_bytes,fs_bytes style=2d
 -- @source: https://github.com/ClickHouse/clickhouse-mixin
 SELECT
@@ -601,7 +606,7 @@ ORDER BY t ASC`,
   // These queries are not shown as panels but are navigated to when
   // a user clicks on a data point in one of the time-series panels above.
 
-  `-- @meta: title='Queries at Time' group='Grafana Imports' description='Queries running around a clicked timestamp — drill target for query rate/latency panels'
+  `-- @meta: title='Queries at Time' group='Grafana Imports' description='Queries running around a clicked timestamp - drill target for query rate/latency panels'
 -- @link: on=query_id into='Grafana Imports#Query Detail'
 SELECT
     query_id,
@@ -648,7 +653,7 @@ WHERE query_id = {{drill_value:query_id | ''}}
 ORDER BY event_time DESC
 LIMIT 1`,
 
-  `-- @meta: title='Failed Queries at Time' group='Grafana Imports' description='Failed queries around a clicked timestamp — drill target for error panels'
+  `-- @meta: title='Failed Queries at Time' group='Grafana Imports' description='Failed queries around a clicked timestamp - drill target for error panels'
 -- @link: on=query_id into='Grafana Imports#Query Detail'
 SELECT
     query_id,
@@ -705,7 +710,7 @@ WHERE event_time >= {{drill_value:t | now() - INTERVAL 1 MINUTE}} - INTERVAL 1 M
 ORDER BY memory_usage DESC
 LIMIT 100`,
 
-  `-- @meta: title='Top Parts Per Partition' group='Grafana Imports' description='Current active parts per partition (live snapshot) — shows which partitions carry the most parts right now'
+  `-- @meta: title='Top Parts Per Partition' group='Grafana Imports' description='Current active parts per partition (live snapshot) - shows which partitions carry the most parts right now'
 SELECT
     database,
     table,
@@ -739,7 +744,7 @@ WHERE event_time >= {{drill_value:t | now() - INTERVAL 1 MINUTE}} - INTERVAL 1 M
 ORDER BY query_start_time DESC
 LIMIT 200`,
 
-  `-- @meta: title='Part Activity at Time' group='Grafana Imports' description='Part creation, merge, and removal events around clicked timestamp — explains part count spikes'
+  `-- @meta: title='Part Activity at Time' group='Grafana Imports' description='Part creation, merge, and removal events around clicked timestamp - explains part count spikes'
 SELECT
     database,
     table,

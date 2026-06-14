@@ -1,8 +1,8 @@
-/** Self-monitoring queries — track the app's own query footprint on the server. */
+/** Self-monitoring queries - track the app's own query footprint on the server. */
 import { APP_SOURCE_LIKE, APP_RE_COMPONENT, APP_RE_COMPONENT_SERVICE } from '@tracehouse/core';
 
 const queries: string[] = [
-  `-- @meta: title='App Query Duration by Component' group='Self-Monitoring' interval='1 DAY' description='Stacked percentile bands per component — bar height = p99, segments show p50 / p95−p50 / p99−p95'
+  `-- @meta: title='App Query Duration by Component' group='Self-Monitoring' interval='1 DAY' description='Stacked percentile bands per component - bar height = p99, segments show p50 / p95−p50 / p99−p95'
 -- @chart: type=stacked_bar group_by=component value=value_ms series=metric unit=ms style=2d
 -- @drill: on=component into='App Query Duration by Service'
 SELECT component, metric, value_ms
@@ -31,7 +31,7 @@ ARRAY JOIN
   [p50, p95_delta, p99_delta] AS value_ms
 ORDER BY component, metric`,
 
-  `-- @meta: title='App Query Duration by Service' group='Self-Monitoring' interval='1 DAY' description='Drill from component to individual services — stacked percentile bands per service'
+  `-- @meta: title='App Query Duration by Service' group='Self-Monitoring' interval='1 DAY' description='Drill from component to individual services - stacked percentile bands per service'
 -- @chart: type=stacked_bar group_by=service value=value_ms series=metric unit=ms style=2d
 -- @drill: on=service into='App Query Cost Details'
 SELECT service, metric, value_ms
@@ -61,7 +61,7 @@ ARRAY JOIN
   [p50, p95_delta, p99_delta] AS value_ms
 ORDER BY service, metric`,
 
-  `-- @meta: title='App Query Volume by Component' group='Self-Monitoring' interval='1 DAY' description='Number of queries fired by each app component in the last 24h'
+  `-- @meta: title='App Query Volume by Component' group='Self-Monitoring' interval='1 DAY' description='Number of queries fired by each app component in the selected time range'
 -- @chart: type=pie group_by=component value=query_count style=3d
 -- @drill: on=component into='App Query Volume by Service'
 SELECT
@@ -76,7 +76,7 @@ GROUP BY component
 HAVING component != ''
 ORDER BY query_count DESC`,
 
-  `-- @meta: title='App Query Volume by Service' group='Self-Monitoring' interval='1 DAY' description='Drill from component to individual services — query count per service'
+  `-- @meta: title='App Query Volume by Service' group='Self-Monitoring' interval='1 DAY' description='Drill from component to individual services - query count per service'
 -- @chart: type=pie group_by=service value=query_count style=3d
 -- @drill: on=service into='App Query Cost Details'
 SELECT
@@ -92,7 +92,7 @@ GROUP BY component, service
 HAVING component != '' AND service != '' AND {{drill:component | 1=1}}
 ORDER BY query_count DESC`,
 
-  `-- @meta: title='App Query Cost Details' group='Self-Monitoring' interval='1 DAY' description='Full cost breakdown per unique query shape — duration, memory, rows, bytes, CPU'
+  `-- @meta: title='App Query Cost Details' group='Self-Monitoring' interval='1 DAY' description='Per-query-shape cost breakdown - duration, peak memory statistics, rows, bytes, and CPU'
 -- @link: on=query_hash into='App Query Executions'
 -- @cell: column=avg_result_bytes type=rag green<10000 amber<100000
 -- @cell: column=avg_memory_mb type=rag green<20 amber<50
@@ -145,7 +145,7 @@ GROUP BY component, service, query_hash, query_preview
 HAVING component != '' AND service != '' AND {{drill:component | 1=1}} AND {{drill:service | 1=1}}
 ORDER BY total_memory_mb DESC`,
 
-  `-- @meta: title='App Query Executions' group='Self-Monitoring' interval='1 DAY' description='Recent executions for a specific query shape — click a row to open the full Query Detail view'
+  `-- @meta: title='App Query Executions' group='Self-Monitoring' interval='1 DAY' description='Recent executions for a specific query shape - click a row to open the full Query Detail view'
 -- @cell: column=query_duration_ms type=rag green<50 amber<500
 -- @cell: column=memory_mb type=rag green<20 amber<100
 SELECT
@@ -169,7 +169,7 @@ WHERE type = 'QueryFinish'
 ORDER BY event_time DESC
 LIMIT 50`,
 
-  `-- @meta: title='App Query Timeline (5min buckets)' group='Self-Monitoring' interval='6 HOUR' description='App query rate and avg duration over time — spot polling spikes'
+  `-- @meta: title='App Query Timeline (5min buckets)' group='Self-Monitoring' interval='6 HOUR' description='App query rate and avg duration over time - spot polling spikes'
 -- @chart: type=grouped_line group_by=t value=query_count,avg_ms style=2d
 SELECT
     toStartOfFiveMinutes(event_time) AS t,
@@ -202,7 +202,7 @@ WHERE type = 'QueryFinish'
 ORDER BY query_duration_ms DESC
 LIMIT 20`,
 
-  `-- @meta: title='App Memory & Rows by Component' group='Self-Monitoring' interval='1 DAY' description='Total memory and rows read per component — find the heaviest hitters'
+  `-- @meta: title='App Memory & Rows by Component' group='Self-Monitoring' interval='1 DAY' description='Sum of per-query peak memory plus rows read per component - find the heaviest hitters'
 -- @chart: type=bar group_by=component value=total_memory_mb style=2d
 SELECT
     extractAllGroups(query, '${APP_RE_COMPONENT}')[1][1] AS component,
@@ -218,7 +218,7 @@ GROUP BY component
 HAVING component != ''
 ORDER BY total_memory_mb DESC`,
 
-  `-- @meta: title='App Failed Queries' group='Self-Monitoring' interval='7 DAY' description='App queries that threw exceptions — helps catch broken polling or bad SQL'
+  `-- @meta: title='App Failed Queries' group='Self-Monitoring' interval='7 DAY' description='App queries that threw exceptions - helps catch broken polling or bad SQL'
 -- @link: on=query_id into='Query Detail by ID'
 SELECT
     event_time,
@@ -236,7 +236,7 @@ WHERE type = 'ExceptionWhileProcessing'
 ORDER BY event_time DESC
 LIMIT 30`,
 
-  `-- @meta: title='App Query Duration Trend (hourly)' group='Self-Monitoring' interval='2 DAY' description='Hourly p50/p95/p99 of app query duration — detect regressions over time'
+  `-- @meta: title='App Query Duration Trend (hourly)' group='Self-Monitoring' interval='2 DAY' description='Hourly p50/p95/p99 of app query duration - detect regressions over time'
 -- @chart: type=grouped_line group_by=hour value=p50_ms,p95_ms,p99_ms unit=ms style=2d
 SELECT
     toStartOfHour(event_time) AS hour,
@@ -251,7 +251,7 @@ WHERE type = 'QueryFinish'
 GROUP BY hour
 ORDER BY hour ASC`,
 
-  `-- @meta: title='Sampling Status' group='Self-Monitoring' interval='1 HOUR' description='Health check for the system.processes & system.merges sampling pipeline — shows whether each sampler is running on schedule with no gaps or errors'
+  `-- @meta: title='Sampling Status' group='Self-Monitoring' interval='1 HOUR' description='Health check for the system.processes & system.merges sampling pipeline - shows whether each sampler is running on schedule with no gaps or errors'
 -- @cell: column=status type=rag green=ok amber=degraded
 SELECT
     sampler,
@@ -307,7 +307,7 @@ FROM (
 )
 ORDER BY sampler`,
 
-  `-- @meta: title='Sampling Refresh Status' group='Self-Monitoring' interval='1 HOUR' description='Detailed refresh state of processes_sampler & merges_sampler refreshable MVs — last success, next refresh, retry count, exceptions'
+  `-- @meta: title='Sampling Refresh Status' group='Self-Monitoring' interval='1 HOUR' description='Detailed refresh state of processes_sampler & merges_sampler refreshable MVs - last success, next refresh, retry count, exceptions'
 SELECT
     view AS sampler,
     status,
@@ -323,7 +323,7 @@ WHERE database = 'tracehouse'
   AND view LIKE '%_sampler'
 ORDER BY view`,
 
-  `-- @meta: title='Sampling Cost Trend (5min)' group='Self-Monitoring' interval='6 HOUR' description='Cost of sampling system.processes & system.merges over time — duration, memory, CPU per 5-min bucket'
+  `-- @meta: title='Sampling Cost Trend (5min)' group='Self-Monitoring' interval='6 HOUR' description='Cost of sampling system.processes & system.merges over time - duration, memory, CPU per 5-min bucket'
 -- @chart: type=grouped_line group_by=t value=avg_duration_ms,avg_memory_mb,avg_cpu_ms series=sampler style=2d
 SELECT
     toStartOfFiveMinutes(event_time) AS t,
@@ -343,7 +343,7 @@ WHERE type = 'QueryFinish'
 GROUP BY t, sampler
 ORDER BY t ASC`,
 
-  `-- @meta: title='Sampling Cost Summary' group='Self-Monitoring' interval='1 DAY' description='Aggregate cost of sampling system.processes & system.merges — duration, memory, rows read, CPU time'
+  `-- @meta: title='Sampling Cost Summary' group='Self-Monitoring' interval='1 DAY' description='Aggregate cost of sampling system.processes & system.merges - duration, memory, rows read, CPU time'
 -- @cell: column=avg_duration_ms type=rag green<5 amber<50
 -- @cell: column=avg_memory_mb type=rag green<1 amber<10
 SELECT
@@ -368,7 +368,7 @@ WHERE type = 'QueryFinish'
 GROUP BY sampler
 ORDER BY sampler`,
 
-  `-- @meta: title='Sampling Gaps (processes)' group='Self-Monitoring' interval='6 HOUR' description='Gaps in system.processes sampling — periods where no process snapshots were collected, by hostname'
+  `-- @meta: title='Sampling Gaps (processes)' group='Self-Monitoring' interval='6 HOUR' description='Gaps in system.processes sampling - periods where no process snapshots were collected, by hostname'
 -- @cell: column=gap_seconds type=rag green<10 amber<30
 SELECT
     hostname,
@@ -389,7 +389,7 @@ WHERE gap_seconds > 5
 ORDER BY gap_seconds DESC
 LIMIT 50`,
 
-  `-- @meta: title='Sampling Gaps (merges)' group='Self-Monitoring' interval='6 HOUR' description='Gaps in system.merges sampling — periods where no merge snapshots were collected, by hostname'
+  `-- @meta: title='Sampling Gaps (merges)' group='Self-Monitoring' interval='6 HOUR' description='Gaps in system.merges sampling - periods where no merge snapshots were collected, by hostname'
 -- @cell: column=gap_seconds type=rag green<10 amber<30
 SELECT
     hostname,
@@ -410,7 +410,7 @@ WHERE gap_seconds > 5
 ORDER BY gap_seconds DESC
 LIMIT 50`,
 
-  `-- @meta: title='Sampling Database Coverage' group='Self-Monitoring' interval='1 HOUR' description='Shows which cluster nodes have the tracehouse database — needed for system.processes & system.merges sampling to work on all nodes'
+  `-- @meta: title='Sampling Database Coverage' group='Self-Monitoring' interval='1 HOUR' description='Shows which cluster nodes have the tracehouse database - needed for system.processes & system.merges sampling to work on all nodes'
 -- @cell: column=has_tracehouse type=rag green=1 amber=0
 SELECT
     hostName() AS host,

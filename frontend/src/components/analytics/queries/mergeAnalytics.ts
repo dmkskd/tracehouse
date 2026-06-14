@@ -1,7 +1,7 @@
-/** Merge analytics queries — throughput, duration scaling, part wait time, estimated merge cost. */
+/** Merge analytics queries - throughput, duration scaling, part wait time, estimated merge cost. */
 
 const queries: string[] = [
-  `-- @meta: title='Merge Throughput by Table' group='Merge Analytics' interval='1 DAY' description='Average merge throughput (MB/s) per table — low values indicate I/O-bound or structurally expensive merges. Excludes mutation-triggered re-merges.'
+  `-- @meta: title='Merge Throughput by Table' group='Merge Analytics' interval='1 DAY' description='Average merge throughput (MB/s) per table - low values indicate I/O-bound or structurally expensive merges. Excludes mutation-triggered re-merges.'
 -- @chart: type=bar group_by=tbl value=avg_mb_per_sec unit=MB/s style=2d
 -- @drill: on=tbl into='Merge Throughput by Size Bucket'
 SELECT
@@ -22,7 +22,7 @@ GROUP BY database, table
 ORDER BY avg_mb_per_sec ASC
 LIMIT 30`,
 
-  `-- @meta: title='Merge Throughput by Size Bucket' group='Merge Analytics' interval='1 DAY' description='Average merge throughput (MB/s) by result part size bucket — shows whether larger merges are slower or faster per byte. Excludes mutation-triggered re-merges.'
+  `-- @meta: title='Merge Throughput by Size Bucket' group='Merge Analytics' interval='1 DAY' description='Average merge throughput (MB/s) by result part size bucket - shows whether larger merges are slower or faster per byte. Excludes mutation-triggered re-merges.'
 -- @chart: type=bar group_by=size_bucket value=avg_mb_per_sec unit=MB/s style=2d
 SELECT
     multiIf(
@@ -52,7 +52,7 @@ WHERE event_type = 'MergeParts'
 GROUP BY size_bucket
 ORDER BY _sort ASC`,
 
-  `-- @meta: title='Merge Duration by Table' group='Merge Analytics' interval='1 DAY' description='Average merge duration per table — identifies tables with the slowest merges. Excludes mutation-triggered re-merges.'
+  `-- @meta: title='Merge Duration by Table' group='Merge Analytics' interval='1 DAY' description='Average merge duration per table - identifies tables with the slowest merges. Excludes mutation-triggered re-merges.'
 -- @chart: type=bar group_by=tbl value=avg_duration_sec unit=sec style=2d
 -- @drill: on=tbl into='Merge Duration by Size Bucket'
 SELECT
@@ -72,7 +72,7 @@ GROUP BY database, table
 ORDER BY avg_duration_sec DESC
 LIMIT 30`,
 
-  `-- @meta: title='Merge Duration by Size Bucket' group='Merge Analytics' interval='1 DAY' description='How merge duration scales with result part size — shows whether large parts take disproportionately longer to merge. Excludes mutation-triggered re-merges.'
+  `-- @meta: title='Merge Duration by Size Bucket' group='Merge Analytics' interval='1 DAY' description='How merge duration scales with result part size - shows whether large parts take disproportionately longer to merge. Excludes mutation-triggered re-merges.'
 -- @chart: type=bar group_by=size_bucket value=avg_duration_sec unit=sec style=2d
 SELECT
     multiIf(
@@ -102,7 +102,7 @@ WHERE event_type = 'MergeParts'
 GROUP BY size_bucket
 ORDER BY _sort ASC`,
 
-  `-- @meta: title='Estimated Merge Time (active parts)' group='Merge Analytics' description='Predicted merge duration for each active part based on historical throughput — highlights parts where mutations would be stuck waiting longest'
+  `-- @meta: title='Estimated Merge Time (active parts)' group='Merge Analytics' description='Predicted merge duration for each active part based on historical throughput - highlights parts where mutations would be stuck waiting longest'
 -- @chart: type=bar group_by=tbl value=estimated_merge_sec unit=sec style=2d
 -- @drill: on=tbl into='Part Merge Estimates'
 WITH merge_throughput AS (
@@ -130,7 +130,7 @@ GROUP BY p.database, p.table
 ORDER BY estimated_merge_sec DESC
 LIMIT 30`,
 
-  `-- @meta: title='Part Merge Estimates' group='Merge Analytics' description='Per-part estimated merge duration for a specific table — drill from Estimated Merge Time to see individual parts'
+  `-- @meta: title='Part Merge Estimates' group='Merge Analytics' description='Per-part estimated merge duration for a specific table - drill from Estimated Merge Time to see individual parts'
 -- @chart: type=bar group_by=part_name value=estimated_merge_sec unit=sec style=2d
 WITH merge_throughput AS (
     SELECT
@@ -156,7 +156,7 @@ WHERE p.active = 1
 ORDER BY estimated_merge_sec DESC
 LIMIT 50`,
 
-  `-- @meta: title='Part Wait Time by Table' group='Merge Analytics' interval='7 DAY' description='How long parts sit idle before being picked up for a merge — for ReplacingMergeTree/CollapsingMergeTree this is how long stale/duplicate rows remain visible'
+  `-- @meta: title='Part Wait Time by Table' group='Merge Analytics' interval='7 DAY' description='How long parts sit idle before being picked up for a merge - for ReplacingMergeTree/CollapsingMergeTree this is how long stale/duplicate rows remain visible'
 -- @chart: type=bar group_by=tbl value=avg_wait_sec unit=sec style=2d
 -- @drill: on=tbl into='Part Wait Time by Size'
 WITH source_parts AS (
@@ -193,7 +193,7 @@ GROUP BY database, table
 ORDER BY avg_wait_sec DESC
 LIMIT 30`,
 
-  `-- @meta: title='Part Wait Time by Size' group='Merge Analytics' interval='7 DAY' description='How long parts wait before being picked up for a merge, broken down by size bucket — critical for ReplacingMergeTree and CollapsingMergeTree where stale/duplicate rows remain visible until the merge completes'
+  `-- @meta: title='Part Wait Time by Size' group='Merge Analytics' interval='7 DAY' description='How long parts wait before being picked up for a merge, broken down by size bucket - critical for ReplacingMergeTree and CollapsingMergeTree where stale/duplicate rows remain visible until the merge completes'
 -- @chart: type=bar group_by=size_bucket value=avg_wait_sec unit=sec style=2d
 -- @drill: on=size_bucket into='Part Wait Timeline'
 WITH source_parts AS (
@@ -243,7 +243,7 @@ FROM wait
 GROUP BY size_bucket
 ORDER BY _sort ASC`,
 
-  `-- @meta: title='Part Wait Timeline' group='Merge Analytics' interval='7 DAY' description='Per-merge wait time for a specific size bucket — each point is one source part consumed by a merge'
+  `-- @meta: title='Part Wait Timeline' group='Merge Analytics' interval='7 DAY' description='Per-merge wait time for a specific size bucket - each point is one source part consumed by a merge'
 -- @chart: type=line group_by=t value=wait_sec unit=sec style=2d
 WITH source_parts AS (
     SELECT

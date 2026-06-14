@@ -15,13 +15,13 @@
 export type ChartType = 'bar' | 'line' | 'pie' | 'area' | 'grouped_bar' | 'stacked_bar' | 'grouped_line';
 export type ChartStyle = '2d' | '3d';
 
-/** Cell style type — determines how a table column is decorated. */
+/** Cell style type - determines how a table column is decorated. */
 export type CellStyleType = 'rag' | 'gauge' | 'sparkline';
 
 /** Unified cell style rule parsed from @cell: directives. */
 export type CellStyleRule = RagCellStyle | GaugeCellStyle | SparklineCellStyle;
 
-/** RAG (Red/Amber/Green) cell style — conditional coloring based on thresholds or text values. */
+/** RAG (Red/Amber/Green) cell style - conditional coloring based on thresholds or text values. */
 export interface RagCellStyle {
   column: string;
   type: 'rag';
@@ -30,13 +30,13 @@ export interface RagCellStyle {
   direction?: 'asc' | 'desc';
   greenThreshold?: number;
   amberThreshold?: number;
-  /** Text mode — comma-separated values for each level */
+  /** Text mode - comma-separated values for each level */
   greenValues?: string[];
   amberValues?: string[];
   redValues?: string[];
 }
 
-/** Gauge cell style — inline horizontal bar. */
+/** Gauge cell style - inline horizontal bar. */
 export interface GaugeCellStyle {
   column: string;
   type: 'gauge';
@@ -45,7 +45,7 @@ export interface GaugeCellStyle {
   unit?: string;
 }
 
-/** Sparkline cell style — tiny inline SVG trend. */
+/** Sparkline cell style - tiny inline SVG trend. */
 export interface SparklineCellStyle {
   column: string;
   type: 'sparkline';
@@ -101,7 +101,7 @@ export interface ParsedDirectives {
 }
 
 /** Detailed chart directive result (superset of chart in ParsedDirectives).
- *  Supports multi-column values, orientation, unit — used for rendering config. */
+ *  Supports multi-column values, orientation, unit - used for rendering config. */
 export interface ChartDirective {
   type?: ChartType;
   groupByColumn?: string;
@@ -250,7 +250,7 @@ export function parseCellStyles(sql: string): CellStyleRule[] {
   return rules;
 }
 
-/** @deprecated Parse legacy @rag: directives — use parseCellStyles instead. */
+/** @deprecated Parse legacy @rag: directives - use parseCellStyles instead. */
 export function parseRagRules(sql: string): RagCellStyle[] {
   const rules: RagCellStyle[] = [];
   const ragRegex = /--\s*@rag:\s*(.+)/gi;
@@ -406,7 +406,7 @@ export function resolveQueryRef<T extends { name: string; group: string }>(
     const name = ref.slice(hashIdx + 1);
     return queries.find(q => q.group === group && q.name === name);
   }
-  // Bare name — prefer same group, then any
+  // Bare name - prefer same group, then any
   if (sourceGroup) {
     const sameGroup = queries.find(q => q.group === sourceGroup && q.name === ref);
     if (sameGroup) return sameGroup;

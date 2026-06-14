@@ -319,24 +319,24 @@ export const SystemOverview: React.FC = () => {
       <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
         <StatCard
           label="CPU Usage"
-          value={metrics ? `${metrics.cpu_usage.toFixed(1)}%` : '—'}
+          value={metrics ? `${metrics.cpu_usage.toFixed(1)}%` : '-'}
           color={warnings.cpu ? 'red' : 'blue'}
           subtitle={warnings.cpu ? `Above ${thresholds.cpu_warning}% threshold` : undefined}
         />
         <StatCard
           label="Memory"
-          value={metrics ? `${memoryPercentage.toFixed(1)}%` : '—'}
+          value={metrics ? `${memoryPercentage.toFixed(1)}%` : '-'}
           color={warnings.memory ? 'red' : 'purple'}
           subtitle={metrics ? `${formatBytes(metrics.memory_used)} / ${formatBytes(metrics.memory_total)}` : undefined}
         />
         <StatCard
           label="Disk Read"
-          value={metrics ? formatBytes(metrics.disk_read_bytes) : '—'}
+          value={metrics ? formatBytes(metrics.disk_read_bytes) : '-'}
           color="green"
         />
         <StatCard
           label="Disk Write"
-          value={metrics ? formatBytes(metrics.disk_write_bytes) : '—'}
+          value={metrics ? formatBytes(metrics.disk_write_bytes) : '-'}
           color="yellow"
         />
       </div>

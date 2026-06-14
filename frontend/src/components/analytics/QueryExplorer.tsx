@@ -1,5 +1,5 @@
 /**
- * QueryExplorer — run preset (or custom) monitoring queries with inline charts.
+ * QueryExplorer - run preset (or custom) monitoring queries with inline charts.
  * Mirrors the k8s-compass AnalyticsView pattern:
  *   - Metadata-driven presets (-- @meta / -- @chart in SQL)
  *   - "Show All" queries grid with categories
@@ -49,7 +49,7 @@ import { toGrafanaPanel } from '@tracehouse/core/services/grafana-export';
 import type { AnalyticsUrlState } from '../../hooks/useUrlState';
 
 /* ═══════════════════════════════════════════════════════════════════════════
-   SQL Syntax Highlighting — imported from utils/sqlHighlighter
+   SQL Syntax Highlighting - imported from utils/sqlHighlighter
    ═══════════════════════════════════════════════════════════════════════════ */
 
 /* Chart helpers, types, and 2D SVG charts are imported from ./charts */
@@ -207,7 +207,7 @@ export const QueryExplorer: React.FC<QueryExplorerProps> = ({ urlState, onUrlSta
       // Resolve {{time_range}} using the active preset's default interval
       const activePreset = allQueries.find(p => p.sql.trim() === q.trim());
       let resolvedSql = resolveTimeRange(q, activePreset?.directives.meta?.interval, timeRangeOverride);
-      // Resolve {{drill:col | fallback}} — uses drill params if provided, else current stack, else empty (standalone)
+      // Resolve {{drill:col | fallback}} - uses drill params if provided, else current stack, else empty (standalone)
       const params = drillParams ?? (drillStack.length > 0 ? drillStack[drillStack.length - 1].params : {});
       resolvedSql = resolveDrillParams(resolvedSql, params);
       const rows = await services.interactiveQueryService.run<Record<string, unknown>>(
@@ -430,7 +430,7 @@ export const QueryExplorer: React.FC<QueryExplorerProps> = ({ urlState, onUrlSta
     setQueryModal({ mode: 'new', defaultName: '', defaultDesc: '', defaultGroup: 'Custom', bodySql: NEW_QUERY_TEMPLATE_BODY });
   }, []);
 
-  /** Commit the modal — save and load the new query */
+  /** Commit the modal - save and load the new query */
   const handleModalSave = useCallback((name: string, description: string, group: string) => {
     if (!queryModal) return;
     const fullSql = buildCustomQuerySql(name, description, queryModal.bodySql, group);
@@ -770,7 +770,7 @@ export const QueryExplorer: React.FC<QueryExplorerProps> = ({ urlState, onUrlSta
             </div>
           )}
 
-          {/* Drill-down breadcrumbs — shared across table and chart views */}
+          {/* Drill-down breadcrumbs - shared across table and chart views */}
           {result && drillStack.length > 0 && (
             <div style={{ display: 'flex', alignItems: 'center', gap: 4, padding: '5px 16px',
               background: 'rgba(99,102,241,0.06)', borderBottom: '1px solid var(--border-primary)',
@@ -840,7 +840,7 @@ export const QueryExplorer: React.FC<QueryExplorerProps> = ({ urlState, onUrlSta
                 background: 'var(--bg-primary, #030712)',
               } : {}),
             }}>
-              {/* Chart controls — hidden in fullscreen */}
+              {/* Chart controls - hidden in fullscreen */}
               {!isFullscreen && (
               <div style={{ display: 'flex', gap: 16, padding: '6px 16px', background: 'var(--bg-secondary)', borderBottom: '1px solid var(--border-primary)', flexShrink: 0, flexWrap: 'wrap', alignItems: 'center' }}>
                 <ChartControl label="Type" value={chartConfig.type} options={[['bar','Bar'],['line','Line'],['pie','Pie'],['area','Area'],['grouped_bar','Grouped Bar'],['stacked_bar','Stacked Bar'],['grouped_line','Grouped Line']]} onChange={v => setChartConfig(p => ({ ...p, type: v as ChartType }))} />

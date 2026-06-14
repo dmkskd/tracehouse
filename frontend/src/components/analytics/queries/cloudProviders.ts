@@ -1,4 +1,4 @@
-/** Cloud provider queries — attribute managed ClickHouse Cloud activity from system.query_log. */
+/** Cloud provider queries - attribute managed ClickHouse Cloud activity from system.query_log. */
 
 const CLOUD_USER_CONDITION = "(endsWith(user, '-internal') OR user = 'sql-console' OR startsWith(user, 'sql-console:'))";
 const CLOUD_INTERNAL_CONDITION = "endsWith(user, '-internal')";

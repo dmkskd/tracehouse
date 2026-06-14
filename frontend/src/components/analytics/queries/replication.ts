@@ -1,5 +1,5 @@
 /**
- * Replication health queries — replica status, queue depth, lag, ZooKeeper health.
+ * Replication health queries - replica status, queue depth, lag, ZooKeeper health.
  *
  * Sources:
  * - ClickHouse docs: https://clickhouse.com/docs/operations/system-tables/replicas
@@ -8,7 +8,7 @@
  */
 
 const queries: string[] = [
-  `-- @meta: title='Replica Status' group='Replication' description='Health overview of all replicated tables — readonly, session expired, leader status, active replicas, and delay'
+  `-- @meta: title='Replica Status' group='Replication' description='Health overview of all replicated tables - readonly, session expired, leader status, active replicas, and delay'
 -- @cell: column=is_readonly type=rag green=0
 -- @cell: column=is_session_expired type=rag green=0
 -- @cell: column=absolute_delay type=rag green<10 amber<300
@@ -32,7 +32,7 @@ SELECT
 FROM {{cluster_aware:system.replicas}}
 ORDER BY absolute_delay DESC`,
 
-  `-- @meta: title='Replication Queue Summary' group='Replication' description='Aggregated replication queue by table and operation type — spot backlogs and stuck tasks'
+  `-- @meta: title='Replication Queue Summary' group='Replication' description='Aggregated replication queue by table and operation type - spot backlogs and stuck tasks'
 -- @cell: column=max_tries type=rag green<3 amber<10
 -- @source: https://clickhouse.com/docs/operations/system-tables/replication_queue
 -- @source: https://kb.altinity.com/altinity-kb-setup-and-maintenance/altinity-kb-replication-queue/
@@ -51,7 +51,7 @@ FROM {{cluster_aware:system.replication_queue}}
 GROUP BY node, database, table, type
 ORDER BY queue_entries DESC`,
 
-  `-- @meta: title='Replication Queue Errors' group='Replication' description='Replication tasks with exceptions — stuck fetches, failed merges, etc.'
+  `-- @meta: title='Replication Queue Errors' group='Replication' description='Replication tasks with exceptions - stuck fetches, failed merges, etc.'
 -- @source: https://clickhouse.com/docs/operations/system-tables/replication_queue
 -- @source: https://kb.altinity.com/altinity-kb-setup-and-maintenance/altinity-kb-replication-queue/
 SELECT
@@ -70,7 +70,7 @@ WHERE last_exception != ''
 ORDER BY num_tries DESC
 LIMIT 50`,
 
-  `-- @meta: title='Replication Lag Trend' group='Replication' interval='1 HOUR' description='Maximum absolute_delay across all replicated tables over time — early warning for growing lag'
+  `-- @meta: title='Replication Lag Trend' group='Replication' interval='1 HOUR' description='Maximum absolute_delay across all replicated tables over time - early warning for growing lag'
 -- @chart: type=area group_by=t value=max_delay style=2d color=#ef4444
 -- @source: https://clickhouse.com/docs/operations/system-tables/replicas
 SELECT
@@ -82,7 +82,7 @@ WHERE event_time > {{time_range}}
 GROUP BY t
 ORDER BY t ASC`,
 
-  `-- @meta: title='Replication Queue Size Trend' group='Replication' interval='1 HOUR' description='Total replication queue depth over time — growing queues signal replication falling behind'
+  `-- @meta: title='Replication Queue Size Trend' group='Replication' interval='1 HOUR' description='Total replication queue depth over time - growing queues signal replication falling behind'
 -- @chart: type=area group_by=t value=queue_size style=2d color=#f59e0b
 -- @source: https://clickhouse.com/docs/operations/system-tables/replicas
 SELECT
@@ -94,7 +94,7 @@ WHERE event_time > {{time_range}}
 GROUP BY t
 ORDER BY t ASC`,
 
-  `-- @meta: title='Replication Error Trend' group='Replication' interval='1 HOUR' description='Part operation failures over time by error type — merges, fetches, mutations that failed'
+  `-- @meta: title='Replication Error Trend' group='Replication' interval='1 HOUR' description='Part operation failures over time by error type - merges, fetches, mutations that failed'
 -- @chart: type=stacked_bar group_by=t value=count series=error_type orientation=v style=2d
 -- @source: https://clickhouse.com/docs/operations/system-tables/part_log
 SELECT
@@ -107,7 +107,7 @@ WHERE event_time > {{time_range}}
 GROUP BY t, error_type
 ORDER BY t ASC`,
 
-  `-- @meta: title='ZooKeeper Operations' group='Replication' interval='1 HOUR' description='ZooKeeper request rate over time — transactions, watches, bytes sent/received'
+  `-- @meta: title='ZooKeeper Operations' group='Replication' interval='1 HOUR' description='ZooKeeper request rate over time - transactions, watches, bytes sent/received'
 -- @chart: type=area group_by=t value=value series=op style=2d
 -- @source: https://clickhouse.com/docs/operations/monitoring
 SELECT
@@ -138,7 +138,7 @@ FROM (
 GROUP BY t, op
 ORDER BY t ASC, op`,
 
-  `-- @meta: title='ZooKeeper Wait Time' group='Replication' interval='1 HOUR' description='Average ZooKeeper wait time per minute — high values indicate Keeper contention or network issues'
+  `-- @meta: title='ZooKeeper Wait Time' group='Replication' interval='1 HOUR' description='Average ZooKeeper wait time per minute - high values indicate Keeper contention or network issues'
 -- @chart: type=area group_by=t value=avg_wait_ms style=2d color=#8b5cf6
 -- @source: https://clickhouse.com/docs/operations/monitoring
 SELECT
@@ -161,7 +161,7 @@ WHERE event_time > {{time_range}}
 GROUP BY t
 ORDER BY t ASC`,
 
-  `-- @meta: title='Keeper Connection Status' group='Replication' description='Current Keeper/ZooKeeper connections per node — host, port, session expiry, and API version'
+  `-- @meta: title='Keeper Connection Status' group='Replication' description='Current Keeper/ZooKeeper connections per node - host, port, session expiry, and API version'
 -- @cell: column=is_expired type=rag green=0
 -- @source: https://clickhouse.com/docs/operations/system-tables/zookeeper_connection
 SELECT
@@ -175,7 +175,7 @@ SELECT
 FROM {{cluster_aware:system.zookeeper_connection}}
 ORDER BY node, index`,
 
-  `-- @meta: title='Keeper Metadata per Table' group='Replication' description='ZooKeeper path stats for each replicated table — log entries, registered replicas, readonly and session status'
+  `-- @meta: title='Keeper Metadata per Table' group='Replication' description='ZooKeeper path stats for each replicated table - log entries, registered replicas, readonly and session status'
 -- @cell: column=is_readonly type=rag green=0
 -- @cell: column=is_session_expired type=rag green=0
 -- @source: https://clickhouse.com/docs/operations/system-tables/replicas
@@ -195,7 +195,7 @@ SELECT
 FROM {{cluster_aware:system.replicas}}
 ORDER BY log_lag DESC`,
 
-  `-- @meta: title='Distribution Queue' group='Replication' description='Pending async sends for Distributed tables — aggregated per node/table with shard count'
+  `-- @meta: title='Distribution Queue' group='Replication' description='Pending async sends for Distributed tables - aggregated per node/table with shard count'
 -- @cell: column=total_blocked type=rag green=0
 -- @cell: column=total_errors type=rag green=0
 -- @cell: column=total_broken_files type=rag green=0
@@ -215,7 +215,7 @@ FROM {{cluster_aware:system.distribution_queue}}
 GROUP BY node, database, table
 ORDER BY total_compressed_bytes DESC`,
 
-  `-- @meta: title='Distribution Files & Bytes Pending' group='Replication' interval='1 HOUR' description='Files and bytes waiting to be sent to remote shards over time — growing backlog means distribution is falling behind'
+  `-- @meta: title='Distribution Files & Bytes Pending' group='Replication' interval='1 HOUR' description='Files and bytes waiting to be sent to remote shards over time - growing backlog means distribution is falling behind'
 -- @chart: type=grouped_line group_by=t value=files_pending,bytes_pending_mb style=2d
 -- @source: https://clickhouse.com/docs/operations/system-tables/metric_log
 SELECT
@@ -227,7 +227,7 @@ WHERE event_time > {{time_range}}
 GROUP BY t
 ORDER BY t ASC`,
 
-  `-- @meta: title='Distribution Send Activity' group='Replication' interval='1 HOUR' description='Active distributed sends and connection failures over time — concurrent sends and errors'
+  `-- @meta: title='Distribution Send Activity' group='Replication' interval='1 HOUR' description='Active distributed sends and connection failures over time - concurrent sends and errors'
 -- @chart: type=grouped_line group_by=t value=active_sends,conn_fail,conn_fail_all style=2d
 -- @source: https://clickhouse.com/docs/operations/system-tables/metric_log
 SELECT
@@ -240,7 +240,7 @@ WHERE event_time > {{time_range}}
 GROUP BY t
 ORDER BY t ASC`,
 
-  `-- @meta: title='Distribution Insert Pressure' group='Replication' interval='1 HOUR' description='Throttled and rejected distributed INSERTs over time — high values mean the cluster cannot keep up'
+  `-- @meta: title='Distribution Insert Pressure' group='Replication' interval='1 HOUR' description='Throttled and rejected distributed INSERTs over time - high values mean the cluster cannot keep up'
 -- @chart: type=stacked_bar group_by=t value=count series=event orientation=v style=2d
 -- @source: https://clickhouse.com/docs/operations/system-tables/metric_log
 SELECT
