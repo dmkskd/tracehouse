@@ -441,7 +441,7 @@ export const QueryHoverPreview: React.FC<{
   if (!query) {
     return (
       <aside style={{ ...cardStyle, padding: 14, color: 'var(--text-muted)', fontSize: 12 }}>
-        <div style={cardTitleStyle}>Query Hover Preview</div>
+        <div style={cardTitleStyle}>Query Preview</div>
         Hover a history row to inspect query shape.
       </aside>
     );
@@ -464,7 +464,7 @@ export const QueryHoverPreview: React.FC<{
         borderBottom: '1px solid var(--border-primary)',
       }}>
         <div style={{ color: 'var(--text-muted)', fontSize: 10, fontWeight: 700, letterSpacing: '0.1em', textTransform: 'uppercase' }}>
-          Query Hover Preview
+          Query Preview
         </div>
         <div style={{ color: 'var(--text-muted)', fontFamily: mono, fontSize: 10 }}>
           {query.query_id.slice(0, 8)}

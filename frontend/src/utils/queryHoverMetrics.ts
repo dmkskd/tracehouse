@@ -78,11 +78,12 @@ export const resourcePressureLevel = (
   if (!isSuccessfulQuery(query)) return 'high';
   if (normalizeKind(query.query_kind) === 'INSERT') return 'moderate';
 
-  const values = [scores.time, scores.memory, scores.cpu, scores.io, scores.scan];
-  const max = Math.max(...values);
-  const elevated = values.filter(value => value >= 0.65).length;
-  if (elevated >= 2 || max >= 0.9) return 'high';
-  if (elevated === 1 || max >= 0.45) return 'moderate';
+  const resourceValues = [scores.time, scores.memory, scores.cpu, scores.io];
+  const resourceMax = Math.max(...resourceValues);
+  const elevatedResources = resourceValues.filter(value => value >= 0.65).length;
+
+  if (elevatedResources >= 2 || resourceMax >= 0.9 || (scores.scan >= 0.9 && elevatedResources >= 1)) return 'high';
+  if (elevatedResources === 1 || resourceMax >= 0.45 || scores.scan >= 0.75) return 'moderate';
   return 'low';
 };
 

@@ -79,6 +79,26 @@ describe('query hover metric calculations', () => {
     expect(scanDisplay(makeQuery({ efficiency_score: 84.321 }))).toBe('84.3% pruned');
   });
 
+  test('does not classify a full scan as high pressure by itself', () => {
+    expect(resourcePressureLevel(makeQuery({
+      query_duration_ms: 739,
+      cpu_time_us: 729_760,
+      memory_usage: 459.06 * 1024 * 1024,
+      read_bytes: 100.3 * 1024 * 1024,
+      efficiency_score: 0,
+    }))).toBe('moderate');
+  });
+
+  test('classifies full scan plus elevated resource use as high pressure', () => {
+    expect(resourcePressureLevel(makeQuery({
+      query_duration_ms: 15_000,
+      cpu_time_us: 15_000_000,
+      memory_usage: 1 * 1024 * 1024 * 1024,
+      read_bytes: 2 * 1024 * 1024 * 1024,
+      efficiency_score: 0,
+    }))).toBe('high');
+  });
+
   test('builds scan efficiency bars separately from display formatting', () => {
     const metrics = buildScanEfficiencyMetrics(makeQuery({
       read_bytes: 1_000,

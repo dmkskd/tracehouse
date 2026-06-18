@@ -287,7 +287,7 @@ export const QueryHistoryTable: React.FC<QueryHistoryTableProps> = ({
             transition: 'all 0.15s',
           }}
         >
-          {showHoverPreview ? 'Hide Hover Preview' : 'Show Hover Preview'}
+          {showHoverPreview ? 'Hide Query Preview' : 'Show Query Preview'}
         </button>
         {compareMode && (
           <span style={{ fontSize: 11, color: 'var(--text-muted)' }}>
