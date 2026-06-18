@@ -39,11 +39,11 @@ Query breakdown by user, query kind, and status. Identify slow queries, see norm
 
 Export TraceHouse analytics views as native Grafana panels for dashboards and ongoing monitoring.
 
-![Grafana Panel Export](https://raw.githubusercontent.com/dmkskd/tracehouse/main/grafana-app-plugin/src/img/screenshots/grafana-panel-export-1.png)
+<img src="https://raw.githubusercontent.com/dmkskd/tracehouse/main/grafana-app-plugin/src/img/screenshots/grafana-panel-export-1.png" alt="Grafana Panel Export" width="760" />
 
-![Grafana Panel Export Preview](https://raw.githubusercontent.com/dmkskd/tracehouse/main/grafana-app-plugin/src/img/screenshots/grafana-panel-export-2.png)
+<img src="https://raw.githubusercontent.com/dmkskd/tracehouse/main/grafana-app-plugin/src/img/screenshots/grafana-panel-export-2.png" alt="Grafana Panel Export Preview" width="420" />
 
-![Grafana Panel Export Dashboard](https://raw.githubusercontent.com/dmkskd/tracehouse/main/grafana-app-plugin/src/img/screenshots/grafana-panel-export-3.png)
+<img src="https://raw.githubusercontent.com/dmkskd/tracehouse/main/grafana-app-plugin/src/img/screenshots/grafana-panel-export-3.png" alt="Grafana Panel Export Dashboard" width="760" />
 
 [Learn more about Grafana panel export](https://dmkskd.github.io/tracehouse/docs/features/grafana#grafana-panel-export)
 
