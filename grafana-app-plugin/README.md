@@ -29,17 +29,29 @@ Query breakdown by user, query kind, and status. Identify slow queries, see norm
 
 ![Query History](https://raw.githubusercontent.com/dmkskd/tracehouse/main/grafana-app-plugin/src/img/screenshots/history.png)
 
-### System Map
-
-Visual overview of table sizes, part counts, and storage distribution across your cluster.
-
-![System Map](https://raw.githubusercontent.com/dmkskd/tracehouse/main/grafana-app-plugin/src/img/screenshots/system-map.png)
-
 ### 3D Analytics
 
 3D surface visualizations for query and merge patterns over time.
 
 ![Analytics](https://raw.githubusercontent.com/dmkskd/tracehouse/main/grafana-app-plugin/src/img/screenshots/analytics.png)
+
+### Grafana Panel Export
+
+Export TraceHouse analytics views as native Grafana panels for dashboards and ongoing monitoring.
+
+![Grafana Panel Export](https://raw.githubusercontent.com/dmkskd/tracehouse/main/grafana-app-plugin/src/img/screenshots/grafana-panel-export-1.png)
+
+![Grafana Panel Export Preview](https://raw.githubusercontent.com/dmkskd/tracehouse/main/grafana-app-plugin/src/img/screenshots/grafana-panel-export-2.png)
+
+![Grafana Panel Export Dashboard](https://raw.githubusercontent.com/dmkskd/tracehouse/main/grafana-app-plugin/src/img/screenshots/grafana-panel-export-3.png)
+
+[Learn more about Grafana panel export](https://dmkskd.github.io/tracehouse/docs/features/grafana#grafana-panel-export)
+
+### System Map
+
+Visual overview of table sizes, part counts, and storage distribution across your cluster.
+
+![System Map](https://raw.githubusercontent.com/dmkskd/tracehouse/main/grafana-app-plugin/src/img/screenshots/system-map.png)
 
 ### Overview Dashboard
 
