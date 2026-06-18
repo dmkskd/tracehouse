@@ -9,9 +9,9 @@ export interface QueryMetrics {
   read_bytes: number;
   total_rows_approx: number;
   progress: number;
-  /** 1 if this is the original query submitted by the client, 0 if it's a sub-query dispatched to a shard */
+  /** 1 if this is the original query submitted by the client, 0 if it's a child query executed on a node */
   is_initial_query?: number;
-  /** For sub-queries on shards, the query_id of the original (coordinator) query */
+  /** For child queries, the query_id of the original coordinator query */
   initial_query_id?: string;
   /** The ClickHouse server hostname that executed this query */
   hostname?: string;
@@ -53,9 +53,9 @@ export interface QueryHistoryItem {
   system_time_us?: number;
   // Query-level settings overrides
   Settings?: Record<string, string>;
-  /** 1 if this is the original query submitted by the client, 0 if it's a sub-query dispatched to a shard */
+  /** 1 if this is the original query submitted by the client, 0 if it's a child query executed on a node */
   is_initial_query?: number;
-  /** For sub-queries on shards, the query_id of the original (coordinator) query */
+  /** For child queries, the query_id of the original coordinator query */
   initial_query_id?: string;
   /** Network address of the initial query's client (for distributed sub-queries) */
   initial_address?: string;

@@ -272,7 +272,7 @@ export const OverviewTab: React.FC<OverviewTabProps> = ({
                     )}
                     <MetricItem label="Role" value={
                       <span style={{ color: queryDetail.is_initial_query === 1 ? 'var(--color-info, #58a6ff)' : 'var(--color-warning, #d29922)' }}>
-                        {queryDetail.is_initial_query === 1 ? 'Coordinator' : 'Shard sub-query'}
+                        {queryDetail.is_initial_query === 1 ? 'Coordinator' : 'Node sub-query'}
                       </span>
                     } />
                     {queryDetail.is_initial_query === 0 && queryDetail.initial_query_id && (

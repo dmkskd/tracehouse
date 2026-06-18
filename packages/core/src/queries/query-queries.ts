@@ -136,7 +136,7 @@ export function buildQueryHistorySQL(options: QueryHistorySQLOptions = {}): stri
 export const QUERY_HISTORY = buildQueryHistorySQL();
 
 /**
- * Get shard sub-queries for a distributed (coordinator) query.
+ * Get child queries for a distributed (coordinator) query.
  * Returns child queries that share the same initial_query_id but are not the initial query.
  *
  * Requires: initial_query_id param
@@ -177,7 +177,60 @@ export const SUB_QUERIES = `
 `;
 
 /**
- * Get the set of initial_query_id values that have shard sub-queries,
+ * Get child query rows for a batch of coordinator query IDs.
+ * Returns one row per child query execution, grouped by initial_query_id in the service layer.
+ *
+ * Requires: caller to replace {{initial_query_id_list}} with a parenthesised, quoted list.
+ * Requires: limit_per_initial_query param
+ */
+export const BATCH_SUB_QUERIES = `
+  SELECT
+    initial_query_id,
+    query_id,
+    any(hostname) AS hostname,
+    any(query_duration_ms) AS query_duration_ms,
+    any(memory_usage) AS memory_usage,
+    any(read_rows) AS read_rows,
+    any(read_bytes) AS read_bytes,
+    any(query_preview) AS query_preview,
+    any(exception_code) AS exception_code,
+    any(exception) AS exception,
+    any(query_start_time_microseconds) AS query_start_time_microseconds
+  FROM (
+    SELECT
+      *,
+      row_number() OVER (
+        PARTITION BY initial_query_id
+        ORDER BY query_start_time_microseconds ASC, query_duration_ms DESC
+      ) AS rn
+    FROM (
+      SELECT
+        initial_query_id,
+        query_id,
+        hostName() AS hostname,
+        query_duration_ms,
+        memory_usage,
+        read_rows,
+        read_bytes,
+        substring(query, 1, 120) AS query_preview,
+        exception_code,
+        exception,
+        query_start_time_microseconds
+      FROM {{cluster_aware:system.query_log}}
+      WHERE initial_query_id IN ({{initial_query_id_list}})
+        AND initial_query_id != ''
+        AND is_initial_query = 0
+        AND type IN ('QueryFinish', 'ExceptionWhileProcessing', 'ExceptionBeforeStart')
+        AND event_date >= {event_date_bound}
+    )
+  )
+  WHERE rn <= {limit_per_initial_query}
+  GROUP BY initial_query_id, query_id
+  ORDER BY initial_query_id ASC, query_start_time_microseconds ASC, query_duration_ms DESC
+`;
+
+/**
+ * Get the set of initial_query_id values that have child queries,
  * scoped to a specific set of candidate query IDs.
  *
  * The caller injects the IN list directly (via escapeValue) so this
@@ -195,7 +248,7 @@ export const COORDINATOR_IDS = `
 `;
 
 /**
- * Get the set of initial_query_id values from currently running shard sub-queries.
+ * Get the set of initial_query_id values from currently running child queries.
  * Used to tag coordinator queries in the running queries list.
  */
 export const RUNNING_COORDINATOR_IDS = `

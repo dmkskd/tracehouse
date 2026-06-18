@@ -1,5 +1,5 @@
 /**
- * DistributedQueryTopology — Gantt-style timeline showing coordinator + shard sub-queries.
+ * DistributedQueryTopology — Gantt-style timeline showing coordinator + node sub-queries.
  * Renders inline metrics on each bar and supports click-to-navigate between queries.
  */
 
@@ -29,7 +29,7 @@ interface DistributedQueryTopologyProps {
 }
 
 const COORD_COLOR = '#58a6ff';
-const SHARD_COLOR = '#d29922';
+const NODE_COLOR = '#d29922';
 const ERROR_COLOR = '#f85149';
 
 
@@ -55,21 +55,21 @@ export const DistributedQueryTopology: React.FC<DistributedQueryTopologyProps> =
     const coordDurationUs = coordinator.query_duration_ms * 1000;
     const totalDurationUs = Math.max(1, coordDurationUs);
 
-    const shards = subQueries.map(sq => {
-      const shardStartUs = parseUs(sq.query_start_time_microseconds);
-      const shardDurationUs = sq.query_duration_ms * 1000;
-      const offsetUs = Math.max(0, shardStartUs - coordStartUs);
+    const nodeQueries = subQueries.map(sq => {
+      const nodeStartUs = parseUs(sq.query_start_time_microseconds);
+      const nodeDurationUs = sq.query_duration_ms * 1000;
+      const offsetUs = Math.max(0, nodeStartUs - coordStartUs);
       return {
         ...sq,
         offsetUs,
-        durationUs: shardDurationUs,
+        durationUs: nodeDurationUs,
       };
     });
 
     // Sort by start offset, then longest first
-    shards.sort((a, b) => a.offsetUs - b.offsetUs || b.durationUs - a.durationUs);
+    nodeQueries.sort((a, b) => a.offsetUs - b.offsetUs || b.durationUs - a.durationUs);
 
-    return { coordDurationUs, totalDurationUs, shards };
+    return { coordDurationUs, totalDurationUs, nodeQueries };
   }, [coordinator, subQueries]);
 
   if (isLoading) {
@@ -86,8 +86,9 @@ export const DistributedQueryTopology: React.FC<DistributedQueryTopologyProps> =
   const LABEL_W = 120;
   const METRIC_W = 70;
 
-  const maxShardDuration = Math.max(...subQueries.map(s => s.query_duration_ms));
-  const overhead = coordinator.query_duration_ms - maxShardDuration;
+  const distinctNodeCount = new Set(subQueries.map(s => s.hostname || s.query_id)).size;
+  const maxNodeQueryDuration = Math.max(...subQueries.map(s => s.query_duration_ms));
+  const overhead = coordinator.query_duration_ms - maxNodeQueryDuration;
 
   return (
     <div>
@@ -97,7 +98,7 @@ export const DistributedQueryTopology: React.FC<DistributedQueryTopologyProps> =
         marginBottom: 8,
       }}>
         <div style={{ fontSize: 9, color: 'var(--text-muted)', textTransform: 'uppercase', letterSpacing: '1px' }}>
-          Distributed Query Topology ({subQueries.length} shard{subQueries.length !== 1 ? 's' : ''})
+          Distributed Query Topology ({subQueries.length} child {subQueries.length === 1 ? 'query' : 'queries'} · {distinctNodeCount} node{distinctNodeCount !== 1 ? 's' : ''})
         </div>
         {overhead > 0 && (
           <div style={{ fontSize: 10, color: 'var(--text-muted)' }}>
@@ -123,6 +124,7 @@ export const DistributedQueryTopology: React.FC<DistributedQueryTopologyProps> =
 
       {/* Coordinator bar */}
       <TopologyBar
+        queryId={coordinator.query_id}
         label="Coordinator"
         hostname={coordinator.hostname}
         leftPct={0}
@@ -142,17 +144,19 @@ export const DistributedQueryTopology: React.FC<DistributedQueryTopologyProps> =
       {/* Separator */}
       <div style={{ marginLeft: LABEL_W, marginRight: METRIC_W, height: 1, background: 'var(--border-primary)', margin: '4px 0', opacity: 0.5 }} />
 
-      {/* Shard bars */}
-      {timeline.shards.map((sq, i) => {
+      {/* Node sub-query bars */}
+      {timeline.nodeQueries.map((sq, i) => {
         const leftPct = (sq.offsetUs / timeline.totalDurationUs) * 100;
         const widthPct = Math.max(0.5, (sq.durationUs / timeline.totalDurationUs) * 100);
         return (
           <TopologyBar
             key={sq.query_id || i}
+            queryId={sq.query_id}
             label={sq.hostname}
+            hostname={sq.hostname}
             leftPct={leftPct}
             widthPct={widthPct}
-            color={sq.exception_code ? ERROR_COLOR : SHARD_COLOR}
+            color={sq.exception_code ? ERROR_COLOR : NODE_COLOR}
             durationMs={sq.query_duration_ms}
             memoryUsage={sq.memory_usage}
             readRows={sq.read_rows}
@@ -172,8 +176,8 @@ export const DistributedQueryTopology: React.FC<DistributedQueryTopologyProps> =
           Coordinator
         </div>
         <div style={{ display: 'flex', alignItems: 'center', gap: 4 }}>
-          <div style={{ width: 8, height: 8, borderRadius: 2, background: SHARD_COLOR }} />
-          Shard
+          <div style={{ width: 8, height: 8, borderRadius: 2, background: NODE_COLOR }} />
+          Node
         </div>
         {subQueries.some(sq => sq.exception_code) && (
           <div style={{ display: 'flex', alignItems: 'center', gap: 4 }}>
@@ -188,6 +192,7 @@ export const DistributedQueryTopology: React.FC<DistributedQueryTopologyProps> =
 
 /** Single bar in the topology Gantt */
 const TopologyBar: React.FC<{
+  queryId: string;
   label: string;
   hostname?: string;
   leftPct: number;
@@ -203,7 +208,7 @@ const TopologyBar: React.FC<{
   labelWidth: number;
   metricWidth: number;
 }> = ({
-  label, hostname, leftPct, widthPct, color, durationMs, memoryUsage, readRows,
+  queryId, label, hostname, leftPct, widthPct, color, durationMs, memoryUsage, readRows,
   hasError, isActive, isCoordinator, onClick, labelWidth, metricWidth,
 }) => {
   const fmtMs = formatDurationMs;
@@ -213,10 +218,18 @@ const TopologyBar: React.FC<{
     if (n < 1_000_000_000) return `${(n / 1_000_000).toFixed(1)}M`;
     return `${(n / 1_000_000_000).toFixed(1)}B`;
   };
+  const tooltip = [
+    `query_id: ${queryId}`,
+    `host: ${hostname || label}`,
+    `duration: ${fmtMs(durationMs)}`,
+    `memory: ${formatBytes(memoryUsage)}`,
+    `rows: ${fmtCompact(readRows)}`,
+  ].join('\n');
 
   return (
     <div
       onClick={onClick}
+      title={tooltip}
       style={{
         display: 'flex', alignItems: 'center', height: 24, marginBottom: 2,
         cursor: 'pointer',
@@ -230,14 +243,14 @@ const TopologyBar: React.FC<{
       <div style={{
         width: labelWidth, flexShrink: 0,
         fontSize: 10, fontFamily: 'var(--font-mono, monospace)',
-        color: isActive ? (isCoordinator ? COORD_COLOR : SHARD_COLOR) : 'var(--text-muted)',
+        color: isActive ? (isCoordinator ? COORD_COLOR : NODE_COLOR) : 'var(--text-muted)',
         overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap',
         paddingRight: 6,
         fontWeight: isActive || isCoordinator ? 600 : 400,
-      }} title={hostname || label}>
+      }}>
         {label}
         {isActive && !isCoordinator && (
-          <span style={{ fontSize: 8, color: SHARD_COLOR, marginLeft: 4 }}>◂</span>
+          <span style={{ fontSize: 8, color: NODE_COLOR, marginLeft: 4 }}>◂</span>
         )}
       </div>
 
@@ -247,7 +260,7 @@ const TopologyBar: React.FC<{
         background: 'var(--bg-tertiary)', borderRadius: 3, overflow: 'hidden',
       }}>
         <div
-          title={`${fmtMs(durationMs)} · ${formatBytes(memoryUsage)} · ${fmtCompact(readRows)} rows`}
+          title={tooltip}
           style={{
             position: 'absolute',
             left: `${leftPct}%`,

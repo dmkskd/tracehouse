@@ -224,15 +224,15 @@ export const QueryRunningTable: React.FC<QueryRunningTableProps> = ({
                 <td style={{ ...tdStyle, whiteSpace: 'nowrap' }}>
                   <QueryKindBadge kind={q.query_kind} />
                   {q.is_initial_query === 0 && (
-                    <span title={`Shard sub-query (parent: ${q.initial_query_id || 'unknown'})`} style={{
+                    <span title={`Node sub-query (parent: ${q.initial_query_id || 'unknown'})`} style={{
                       display: 'inline-block', marginLeft: 4, padding: '2px 5px', fontSize: 9,
                       fontWeight: 500, borderRadius: 4, background: 'rgba(210,169,34,0.15)', color: '#d29922',
                     }}>
-                      shard
+                      node
                     </span>
                   )}
                   {coordinatorIds?.has(q.query_id) && (
-                    <span title="Coordinator — dispatched sub-queries to shards" style={{
+                    <span title="Coordinator — dispatched node sub-queries" style={{
                       display: 'inline-block', marginLeft: 4, padding: '2px 5px', fontSize: 9,
                       fontWeight: 500, borderRadius: 4, background: 'rgba(139,92,246,0.15)', color: '#a78bfa',
                     }}>

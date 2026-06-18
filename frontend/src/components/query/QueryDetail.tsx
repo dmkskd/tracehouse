@@ -127,7 +127,7 @@ const RunningQueryMetrics: React.FC<{ query: RunningQuery; onKill?: () => void; 
               color: query.is_initial_query === 1 ? '#58a6ff' : '#d29922',
               fontSize: 11,
             }}>
-              {query.is_initial_query === 1 ? 'Coordinator' : 'Shard sub-query'}
+              {query.is_initial_query === 1 ? 'Coordinator' : 'Node sub-query'}
             </span>
           } />
           {query.is_initial_query === 0 && query.initial_query_id && (
@@ -227,7 +227,7 @@ const HistoryQueryMetrics: React.FC<{ query: QueryHistoryItem }> = ({ query }) =
                 color: query.is_initial_query === 1 ? '#58a6ff' : '#d29922',
                 fontSize: 11,
               }}>
-                {query.is_initial_query === 1 ? 'Coordinator' : 'Shard sub-query'}
+                {query.is_initial_query === 1 ? 'Coordinator' : 'Node sub-query'}
               </span>
             } />
           )}

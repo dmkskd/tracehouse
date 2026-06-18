@@ -1,6 +1,6 @@
 import type { IClickHouseAdapter } from '../adapters/types.js';
 import type { QueryMetrics, QueryHistoryItem } from '../types/query.js';
-import { RUNNING_QUERIES, QUERY_DETAIL, QUERY_THREAD_BREAKDOWN, PROFILE_EVENT_DESCRIPTIONS, SUB_QUERIES, COORDINATOR_IDS, RUNNING_COORDINATOR_IDS, QUERY_LOG_FLUSH_INTERVAL } from '../queries/query-queries.js';
+import { RUNNING_QUERIES, QUERY_DETAIL, QUERY_THREAD_BREAKDOWN, PROFILE_EVENT_DESCRIPTIONS, SUB_QUERIES, BATCH_SUB_QUERIES, COORDINATOR_IDS, RUNNING_COORDINATOR_IDS, QUERY_LOG_FLUSH_INTERVAL } from '../queries/query-queries.js';
 /**
  * ProfileEvent comparison row between two queries.
  * Inspired by https://clickhouse.com/docs/knowledgebase/comparing-metrics-between-queries
@@ -148,7 +148,7 @@ export interface SimilarQuery {
 }
 
 /**
- * Shard sub-query summary for distributed queries
+ * Node child-query summary for distributed queries
  */
 export interface SubQueryInfo {
   query_id: string;
@@ -162,6 +162,8 @@ export interface SubQueryInfo {
   exception: string;
   query_start_time_microseconds: string;
 }
+
+export type SubQueriesByInitialQueryId = Map<string, SubQueryInfo[]>;
 
 /**
  * Setting default value info from system.settings
@@ -517,7 +519,58 @@ export class QueryAnalyzer {
   }
 
   /**
-   * Get the set of initial_query_id values that have shard sub-queries,
+   * Get child query rows for multiple coordinator query IDs in one request.
+   * Used by lightweight hover previews so they render real child executions
+   * without issuing a ClickHouse query on every hover event.
+   */
+  async getSubQueriesForInitialQueries(
+    initialQueryIds: string[],
+    eventDate?: string,
+    limitPerInitialQuery = 50,
+  ): Promise<SubQueriesByInitialQueryId> {
+    const uniqueIds = [...new Set(initialQueryIds.filter(Boolean))];
+    if (uniqueIds.length === 0) return new Map();
+
+    const idList = uniqueIds.map(id => `'${escapeValue(id)}'`).join(',');
+    const boundedLimitPerInitialQuery = Math.min(Math.max(limitPerInitialQuery, 1), 200);
+    let sql = BATCH_SUB_QUERIES.replace('{{initial_query_id_list}}', idList);
+    sql = sql.replace('{event_date_bound}', eventDateBound(eventDate));
+    sql = buildQuery(sql, { limit_per_initial_query: boundedLimitPerInitialQuery });
+
+    try {
+      const rows = await this.adapter.executeQuery(tagQuery(sql, sourceTag(TAB_QUERIES, 'batchSubQueries')));
+      const byInitialQueryId: SubQueriesByInitialQueryId = new Map();
+
+      for (const r of rows as any[]) {
+        const initialQueryId = String(r.initial_query_id || '');
+        if (!initialQueryId) continue;
+
+        const child: SubQueryInfo = {
+          query_id: String(r.query_id),
+          hostname: String(r.hostname),
+          query_duration_ms: Number(r.query_duration_ms) || 0,
+          memory_usage: Number(r.memory_usage) || 0,
+          read_rows: Number(r.read_rows) || 0,
+          read_bytes: Number(r.read_bytes) || 0,
+          query_preview: String(r.query_preview || ''),
+          exception_code: Number(r.exception_code) || 0,
+          exception: String(r.exception || ''),
+          query_start_time_microseconds: String(r.query_start_time_microseconds || ''),
+        };
+
+        const existing = byInitialQueryId.get(initialQueryId);
+        if (existing) existing.push(child);
+        else byInitialQueryId.set(initialQueryId, [child]);
+      }
+
+      return byInitialQueryId;
+    } catch {
+      return new Map();
+    }
+  }
+
+  /**
+   * Get the set of initial_query_id values that have child queries,
    * scoped to the given candidate query IDs.
    * Single lightweight query — used to tag coordinator queries in the history table.
    */
@@ -535,7 +588,7 @@ export class QueryAnalyzer {
   }
 
   /**
-   * Get the set of initial_query_id values from currently running shard sub-queries.
+   * Get the set of initial_query_id values from currently running child queries.
    * Single lightweight query — used to tag coordinator queries in the running queries list.
    */
   async getRunningCoordinatorIds(): Promise<Set<string>> {

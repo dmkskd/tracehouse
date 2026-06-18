@@ -1,4 +1,5 @@
 import type { QueryHistoryItem } from '../stores/queryStore';
+import { formatBytes, formatDurationMs } from './formatters';
 
 export type ResourcePressureDimension = 'time' | 'memory' | 'cpu' | 'io' | 'scan';
 export type ResourcePressureLevel = 'low' | 'moderate' | 'high';
@@ -94,6 +95,19 @@ export const buildResourcePressureMetrics = (query: QueryHistoryItem): ResourceP
     ioBytes: Math.max(query.read_bytes, query.disk_read_bytes ?? 0, query.network_receive_bytes ?? 0),
     scanDisplay: scanDisplay(query),
   };
+};
+
+export const resourcePressureTooltip = (query: QueryHistoryItem): string => {
+  const metrics = buildResourcePressureMetrics(query);
+  return [
+    `Resource pressure: ${metrics.level}`,
+    'Shape dimensions: time, memory, CPU, I/O, scan',
+    `Time: ${formatDurationMs(query.query_duration_ms)}`,
+    `Memory: ${formatBytes(query.memory_usage)}`,
+    `CPU: ${formatDurationMs(metrics.cpuMs)}`,
+    `I/O: ${formatBytes(metrics.ioBytes)}`,
+    `Scan: ${metrics.scanDisplay}`,
+  ].join('\n');
 };
 
 export const buildScanEfficiencyMetrics = (query: QueryHistoryItem): ScanEfficiencyMetrics => {

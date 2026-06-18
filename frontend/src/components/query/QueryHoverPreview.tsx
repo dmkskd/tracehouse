@@ -1,4 +1,5 @@
 import React from 'react';
+import type { SubQueryInfo } from '@tracehouse/core';
 import type { QueryHistoryItem } from '../../stores/queryStore';
 import { formatBytes, formatNumber } from '../../stores/queryStore';
 import { formatDurationMs } from '../../utils/formatters';
@@ -80,9 +81,6 @@ const isSuccess = (q: QueryHistoryItem): boolean => !q.exception && q.type !== '
 
 const isDistributed = (q: QueryHistoryItem, coordinatorIds?: Set<string>): boolean =>
   q.is_initial_query === 0 || Boolean(coordinatorIds?.has(q.query_id));
-
-const isCoordinator = (q: QueryHistoryItem, coordinatorIds?: Set<string>): boolean =>
-  Boolean(coordinatorIds?.has(q.query_id));
 
 const isInternalTraceHouse = (q: QueryHistoryItem): boolean => {
   const databases = q.databases ?? [];
@@ -341,18 +339,64 @@ const ColumnsCard: React.FC<{ query: QueryHistoryItem }> = ({ query }) => {
   );
 };
 
-const DistributedCard: React.FC<{ query: QueryHistoryItem; coordinatorIds?: Set<string> }> = ({ query, coordinatorIds }) => {
-  if (!isDistributed(query, coordinatorIds)) return null;
-  const coordinator = isCoordinator(query, coordinatorIds);
+const DistributedCard: React.FC<{
+  query: QueryHistoryItem;
+  coordinatorIds?: Set<string>;
+  childQueries?: SubQueryInfo[];
+  isLoading?: boolean;
+}> = ({ query, coordinatorIds, childQueries, isLoading = false }) => {
+  const nodeQueries = childQueries ?? [];
+  const distinctNodeCount = new Set(nodeQueries.map(q => q.hostname || q.query_id)).size;
+  const hasParallelShape = nodeQueries.length > 0 || (isLoading && isDistributed(query, coordinatorIds));
+  if (!hasParallelShape) return null;
+
+  const maxDuration = Math.max(
+    1,
+    ...nodeQueries.map(nodeQuery => nodeQuery.query_duration_ms),
+  );
+
   return (
     <section style={cardStyle}>
       <div style={cardBodyStyle}>
-        <div style={cardTitleStyle}>Parallel Shape <span style={{ color: colors.violet }}>{coordinator ? 'coordinator' : 'worker'}</span></div>
-        <div style={{ display: 'grid', gap: 8 }}>
-          <TopologyRow label="Coordinator" active={coordinator || query.is_initial_query === 1} width={coordinator ? 92 : 42} color={colors.blue} value={coordinator ? 'fan-out' : 'parent'} />
-          <TopologyRow label={query.hostname || 'this host'} active={query.is_initial_query === 0} width={query.is_initial_query === 0 ? 82 : 28} color={colors.amber} value={query.is_initial_query === 0 ? 'worker' : 'local'} />
+        <div style={cardTitleStyle}>
+          Parallel Execution
+          <span style={{ color: colors.violet }}>
+            {isLoading
+              ? 'loading'
+              : nodeQueries.length > 0
+              ? `${nodeQueries.length} child ${nodeQueries.length === 1 ? 'query' : 'queries'} · ${distinctNodeCount} node${distinctNodeCount === 1 ? '' : 's'}`
+              : 'parallel'}
+          </span>
         </div>
-        {query.initial_query_id && (
+        <div style={{ display: 'grid', gap: 8 }}>
+          {isLoading ? (
+            <div style={{ color: 'var(--text-muted)', fontSize: 11, fontFamily: mono }}>
+              Loading child query timings…
+            </div>
+          ) : nodeQueries.slice(0, 4).map(nodeQuery => (
+            <TopologyRow
+              key={`${nodeQuery.query_id}:${nodeQuery.hostname}:${nodeQuery.query_start_time_microseconds}`}
+              label={nodeQuery.hostname || nodeQuery.query_id.slice(0, 8)}
+              active={nodeQuery.query_id === query.query_id}
+              width={Math.max(18, (nodeQuery.query_duration_ms / maxDuration) * 100)}
+              color={colors.amber}
+              value={formatDurationMs(nodeQuery.query_duration_ms)}
+              title={[
+                `query_id: ${nodeQuery.query_id}`,
+                `host: ${nodeQuery.hostname || 'unknown host'}`,
+                `duration: ${formatDurationMs(nodeQuery.query_duration_ms)}`,
+                `memory: ${formatBytes(nodeQuery.memory_usage)}`,
+                `rows: ${formatNumber(nodeQuery.read_rows)}`,
+              ].join('\n')}
+            />
+          ))}
+          {nodeQueries.length > 4 && (
+            <div style={{ color: 'var(--text-muted)', fontSize: 11, fontFamily: mono }}>
+              +{nodeQueries.length - 4} more child queries
+            </div>
+          )}
+        </div>
+        {query.is_initial_query === 0 && query.initial_query_id && (
           <div style={{ marginTop: 9, color: 'var(--text-muted)', fontSize: 11, fontFamily: mono, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
             parent {query.initial_query_id}
           </div>
@@ -362,8 +406,8 @@ const DistributedCard: React.FC<{ query: QueryHistoryItem; coordinatorIds?: Set<
   );
 };
 
-const TopologyRow: React.FC<{ label: string; active: boolean; width: number; color: string; value: string }> = ({ label, active, width, color, value }) => (
-  <div style={{ display: 'grid', gridTemplateColumns: '96px 1fr 58px', alignItems: 'center', gap: 8, color: active ? 'var(--text-primary)' : 'var(--text-muted)', fontSize: 11, fontFamily: mono, fontWeight: 700 }}>
+const TopologyRow: React.FC<{ label: string; active: boolean; width: number; color: string; value: string; title?: string }> = ({ label, active, width, color, value, title }) => (
+  <div title={title} style={{ display: 'grid', gridTemplateColumns: '96px 1fr 58px', alignItems: 'center', gap: 8, color: active ? 'var(--text-primary)' : 'var(--text-muted)', fontSize: 11, fontFamily: mono, fontWeight: 700 }}>
     <span style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{label}</span>
     <div style={{ height: 20, borderRadius: 5, background: 'var(--bg-tertiary)', overflow: 'hidden' }}>
       <div style={{ height: '100%', width: `${width}%`, background: color, opacity: active ? 0.85 : 0.25 }} />
@@ -391,7 +435,9 @@ const InsertPipelineCard: React.FC<{ query: QueryHistoryItem }> = ({ query }) =>
 export const QueryHoverPreview: React.FC<{
   query: QueryHistoryItem | null;
   coordinatorIds?: Set<string>;
-}> = ({ query, coordinatorIds }) => {
+  childQueries?: SubQueryInfo[];
+  isLoadingChildQueries?: boolean;
+}> = ({ query, coordinatorIds, childQueries, isLoadingChildQueries }) => {
   if (!query) {
     return (
       <aside style={{ ...cardStyle, padding: 14, color: 'var(--text-muted)', fontSize: 12 }}>
@@ -429,7 +475,7 @@ export const QueryHoverPreview: React.FC<{
         <ShapeLegendCard query={query} coordinatorIds={coordinatorIds} />
         <ScanEfficiencyCard query={query} />
         <ColumnsCard query={query} />
-        <DistributedCard query={query} coordinatorIds={coordinatorIds} />
+        <DistributedCard query={query} coordinatorIds={coordinatorIds} childQueries={childQueries} isLoading={isLoadingChildQueries} />
         <InsertPipelineCard query={query} />
       </div>
     </aside>

@@ -3,7 +3,7 @@
  * Supports multi-select comparison of queries (even across different query hashes)
  */
 
-import React, { useCallback, useState } from 'react';
+import React, { useCallback, useMemo, useState } from 'react';
 import type { 
   QueryHistoryItem, 
   QueryHistoryFilter, 
@@ -17,7 +17,9 @@ import { QueryComparisonPanel } from './QueryComparisonPanel';
 import type { ComparableQuery } from './QueryComparisonPanel';
 import { QueryFilterBar } from './QueryFilterBar';
 import { QueryFingerprintGlyph, QueryHoverPreview } from './QueryHoverPreview';
+import { resourcePressureTooltip } from '../../utils/queryHoverMetrics';
 import type { QueryAnalyzer } from '@tracehouse/core';
+import { useQueryHoverTopology } from './hooks/useQueryHoverTopology';
 
 interface QueryHistoryTableProps {
   history: QueryHistoryItem[];
@@ -33,7 +35,8 @@ interface QueryHistoryTableProps {
 }
 
 const thStyle: React.CSSProperties = {
-  padding: '8px 12px',
+  boxSizing: 'border-box',
+  padding: '8px 8px',
   textAlign: 'left',
   fontSize: 10,
   fontWeight: 500,
@@ -45,7 +48,8 @@ const thStyle: React.CSSProperties = {
 };
 
 const tdStyle: React.CSSProperties = {
-  padding: '8px 12px',
+  boxSizing: 'border-box',
+  padding: '8px 8px',
   fontSize: 12,
   color: 'var(--text-secondary)',
   borderBottom: '1px solid var(--border-primary)',
@@ -187,12 +191,12 @@ export const QueryHistoryTable: React.FC<QueryHistoryTableProps> = ({
     onSortChange({ field, direction: dir });
   }, [sort, onSortChange]);
 
-  const sortedHistory = sortQueryHistory(
+  const sortedHistory = useMemo(() => sortQueryHistory(
     filter.hostname
       ? history.filter(q => q.hostname?.toLowerCase().includes(filter.hostname!.toLowerCase()))
       : history,
     sort,
-  );
+  ), [history, filter.hostname, sort]);
 
   const toggleCompareSelection = useCallback((queryId: string) => {
     setSelectedForCompare(prev => {
@@ -213,6 +217,14 @@ export const QueryHistoryTable: React.FC<QueryHistoryTableProps> = ({
   const previewQuery = sortedHistory.find(q => q.query_id === hoveredQueryId)
     ?? sortedHistory.find(q => q.query_id === selectedQueryId)
     ?? null;
+  const hoverTopology = useQueryHoverTopology({
+    enabled: showHoverPreview,
+    queryAnalyzer,
+    history: sortedHistory,
+    coordinatorIds,
+    startTime: filter.startTime,
+  });
+  const previewChildQueries = hoverTopology.getChildQueriesForQuery(previewQuery);
 
   const SortTh: React.FC<{ field: SortField; label: string; align?: 'left' | 'right'; width?: number }> = ({ field, label, align = 'left', width }) => {
     const active = sort.field === field;
@@ -304,14 +316,19 @@ export const QueryHistoryTable: React.FC<QueryHistoryTableProps> = ({
               <thead>
                 <tr>
                   {compareMode && <th style={{ ...thStyle, width: 32, textAlign: 'center' }}></th>}
-                  <th style={{ ...thStyle, width: 48 }}>Shape</th>
+                  <th
+                    style={{ ...thStyle, width: 48 }}
+                    title="Resource pressure glyph: time, memory, CPU, I/O, and scan"
+                  >
+                    Shape
+                  </th>
                   <th style={{ ...thStyle, width: 90 }}>ID</th>
-                  <th style={{ ...thStyle, width: 140 }}>Type</th>
+                  <th style={{ ...thStyle, width: 120 }}>Type</th>
                   <th style={{ ...thStyle, width: 110 }}>Status</th>
                   <SortTh field="query_start_time" label="Time" width={140} />
                   <th style={{ ...thStyle, width: 90 }}>User</th>
                   <th style={{ ...thStyle, width: 125 }}>Server</th>
-                  <th style={{ ...thStyle, width: 360 }}>Query</th>
+                  <th style={{ ...thStyle, width: 320 }}>Query</th>
                   <SortTh field="query_duration_ms" label="Duration" align="right" width={95} />
                   <SortTh field="read_rows" label="Rows Read" align="right" width={105} />
                   <SortTh field="read_bytes" label="Bytes Read" align="right" width={105} />
@@ -359,7 +376,7 @@ export const QueryHistoryTable: React.FC<QueryHistoryTableProps> = ({
                           </span>
                         </td>
                       )}
-                      <td style={{ ...tdStyle, width: 48 }}>
+                      <td style={{ ...tdStyle, width: 48 }} title={resourcePressureTooltip(q)}>
                         <QueryFingerprintGlyph query={q} coordinatorIds={coordinatorIds} size={30} />
                       </td>
                       <td style={{ ...tdStyle, whiteSpace: 'nowrap', fontFamily: 'monospace', fontSize: 10, color: '#58a6ff' }} title={q.query_id}>
@@ -403,8 +420,19 @@ export const QueryHistoryTable: React.FC<QueryHistoryTableProps> = ({
                         {fmtTime(q.query_start_time)}
                       </td>
                       <td style={{ ...tdStyle, whiteSpace: 'nowrap' }}>{q.user}</td>
-                      <td style={{ ...tdStyle, whiteSpace: 'nowrap', fontFamily: 'monospace', fontSize: 11, color: 'var(--text-muted)' }} title={q.hostname || ''}>
-                        {q.hostname || '—'}
+                      <td style={{ ...tdStyle, overflow: 'hidden' }} title={q.hostname || ''}>
+                        <code style={{
+                          display: 'block',
+                          width: '100%',
+                          fontSize: 11,
+                          fontFamily: 'monospace',
+                          color: 'var(--text-muted)',
+                          overflow: 'hidden',
+                          textOverflow: 'ellipsis',
+                          whiteSpace: 'nowrap',
+                        }}>
+                          {q.hostname || '—'}
+                        </code>
                       </td>
                       <td style={{ ...tdStyle, overflow: 'hidden' }} title={q.query}>
                         <code style={{
@@ -457,7 +485,12 @@ export const QueryHistoryTable: React.FC<QueryHistoryTableProps> = ({
                 if (previewQuery) onSelectQuery(previewQuery);
               }}
             >
-              <QueryHoverPreview query={previewQuery} coordinatorIds={coordinatorIds} />
+              <QueryHoverPreview
+                query={previewQuery}
+                coordinatorIds={coordinatorIds}
+                childQueries={previewChildQueries}
+                isLoadingChildQueries={hoverTopology.isLoading}
+              />
             </div>
           )}
         </div>
