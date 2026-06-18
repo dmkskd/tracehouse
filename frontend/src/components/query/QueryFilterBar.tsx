@@ -379,11 +379,22 @@ export const QueryFilterBar: React.FC<QueryFilterBarProps> = ({
   }, [phase, selectField, commitValue]);
 
   /* --- time helpers --- */
+  const formatDateTimeLocal = (date: Date): string => {
+    const pad = (n: number) => String(n).padStart(2, '0');
+    return `${date.getFullYear()}-${pad(date.getMonth() + 1)}-${pad(date.getDate())}T${pad(date.getHours())}:${pad(date.getMinutes())}`;
+  };
+
+  const toDateTimeLocalValue = (value?: string): string | undefined => {
+    if (!value) return undefined;
+    const date = new Date(value);
+    return Number.isNaN(date.getTime()) ? value.slice(0, 16) : formatDateTimeLocal(date);
+  };
+
   const getDefaultStartTime = () => {
     const d = new Date(); d.setHours(d.getHours() - 1);
-    return d.toISOString().slice(0, 16);
+    return formatDateTimeLocal(d);
   };
-  const getDefaultEndTime = () => new Date().toISOString().slice(0, 16);
+  const getDefaultEndTime = () => formatDateTimeLocal(new Date());
 
   /* --- lookback warning --- */
   const startMs = filter.startTime
@@ -391,7 +402,7 @@ export const QueryFilterBar: React.FC<QueryFilterBarProps> = ({
     : new Date(getDefaultStartTime()).getTime();
   const endMs = filter.endTime
     ? new Date(filter.endTime).getTime()
-    : Date.now();
+    : new Date(getDefaultEndTime()).getTime();
   const lookbackHours = (endMs - startMs) / (60 * 60 * 1000);
   const fmtLookback = lookbackHours < 24
     ? `${Math.round(lookbackHours)}h`
@@ -411,7 +422,7 @@ export const QueryFilterBar: React.FC<QueryFilterBarProps> = ({
         <div style={{ width: 150 }}>
           <label style={lblStyle}>Start Time</label>
           <input type="datetime-local"
-            value={filter.startTime?.slice(0, 16) || getDefaultStartTime()}
+            value={toDateTimeLocalValue(filter.startTime) || getDefaultStartTime()}
             onChange={e => onFilterChange({ startTime: e.target.value ? new Date(e.target.value).toISOString() : undefined })}
             style={{ ...inputStyle, width: '100%' }} />
         </div>
@@ -419,7 +430,7 @@ export const QueryFilterBar: React.FC<QueryFilterBarProps> = ({
         <div style={{ width: 150 }}>
           <label style={lblStyle}>End Time</label>
           <input type="datetime-local"
-            value={filter.endTime?.slice(0, 16) || getDefaultEndTime()}
+            value={toDateTimeLocalValue(filter.endTime) || getDefaultEndTime()}
             onChange={e => onFilterChange({ endTime: e.target.value ? new Date(e.target.value).toISOString() : undefined })}
             style={{ ...inputStyle, width: '100%' }} />
         </div>

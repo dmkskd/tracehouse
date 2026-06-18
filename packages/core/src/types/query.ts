@@ -65,4 +65,6 @@ export interface QueryHistoryItem {
   databases?: string[];
   /** Tables touched by this query (from system.query_log.tables Array(String)) */
   tables?: string[];
+  /** Columns touched by this query (from system.query_log.columns Array(String)) */
+  columns?: string[];
 }

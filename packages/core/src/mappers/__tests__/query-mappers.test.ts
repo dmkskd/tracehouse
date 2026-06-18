@@ -45,4 +45,29 @@ describe('mapQueryHistoryItem', { tags: ['query-analysis'] }, () => {
 
     expect(item.efficiency_score).toBeNull();
   });
+
+  it('maps query_log object metadata arrays', () => {
+    const item = mapQueryHistoryItem({
+      query_id: 'q3',
+      query_type: 'QueryFinish',
+      query_kind: 'Select',
+      query_start_time: '2026-03-25 10:00:00',
+      query_duration_ms: 1,
+      read_rows: 10,
+      read_bytes: 100,
+      result_rows: 1,
+      result_bytes: 10,
+      memory_usage: 0,
+      query: 'SELECT name FROM system.tables',
+      user: 'default',
+      client_hostname: '',
+      databases: ['system'],
+      tables: ['system.tables'],
+      columns: ['name', 'database'],
+    });
+
+    expect(item.databases).toEqual(['system']);
+    expect(item.tables).toEqual(['system.tables']);
+    expect(item.columns).toEqual(['name', 'database']);
+  });
 });
