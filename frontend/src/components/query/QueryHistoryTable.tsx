@@ -16,6 +16,7 @@ import { formatDurationMs } from '../../utils/formatters';
 import { QueryComparisonPanel } from './QueryComparisonPanel';
 import type { ComparableQuery } from './QueryComparisonPanel';
 import { QueryFilterBar } from './QueryFilterBar';
+import { QueryFingerprintGlyph, QueryHoverPreview } from './QueryHoverPreview';
 import type { QueryAnalyzer } from '@tracehouse/core';
 
 interface QueryHistoryTableProps {
@@ -51,6 +52,25 @@ const tdStyle: React.CSSProperties = {
 };
 
 const fmtDuration = formatDurationMs;
+const HOVER_PREVIEW_STORAGE_KEY = 'tracehouse.queryHistory.showHoverPreview';
+
+const loadHoverPreviewPreference = (): boolean => {
+  if (typeof window === 'undefined') return false;
+  try {
+    return window.localStorage.getItem(HOVER_PREVIEW_STORAGE_KEY) === 'true';
+  } catch {
+    return false;
+  }
+};
+
+const saveHoverPreviewPreference = (value: boolean): void => {
+  if (typeof window === 'undefined') return;
+  try {
+    window.localStorage.setItem(HOVER_PREVIEW_STORAGE_KEY, String(value));
+  } catch {
+    // Ignore storage failures; the in-memory toggle still works for this page.
+  }
+};
 
 const fmtTime = (ts: string): string => {
   const d = new Date(ts);
@@ -69,14 +89,15 @@ const StatusBadge: React.FC<{ type: string; exception?: string }> = ({ type, exc
   return (
     <span 
       style={{
-        display: 'inline-block',
+        display: 'block',
+        boxSizing: 'border-box',
         padding: '2px 8px',
         fontSize: 10,
         fontWeight: 500,
         borderRadius: 10,
         background: isError ? 'rgba(248,81,73,0.15)' : 'rgba(63,185,80,0.15)',
         color: isError ? '#f85149' : '#3fb950',
-        maxWidth: 150,
+        maxWidth: '100%',
         overflow: 'hidden',
         textOverflow: 'ellipsis',
         whiteSpace: 'nowrap',
@@ -158,6 +179,8 @@ export const QueryHistoryTable: React.FC<QueryHistoryTableProps> = ({
 }) => {
   const [compareMode, setCompareMode] = useState(false);
   const [selectedForCompare, setSelectedForCompare] = useState<Set<string>>(new Set());
+  const [hoveredQueryId, setHoveredQueryId] = useState<string | null>(null);
+  const [showHoverPreview, setShowHoverPreview] = useState(loadHoverPreviewPreference);
 
   const handleSort = useCallback((field: SortField) => {
     const dir: SortDirection = sort.field === field && sort.direction === 'desc' ? 'asc' : 'desc';
@@ -187,11 +210,14 @@ export const QueryHistoryTable: React.FC<QueryHistoryTableProps> = ({
   const comparedQueries: ComparableQuery[] = compareMode && selectedForCompare.size >= 2
     ? sortedHistory.filter(q => selectedForCompare.has(q.query_id)).map(toComparable)
     : [];
+  const previewQuery = sortedHistory.find(q => q.query_id === hoveredQueryId)
+    ?? sortedHistory.find(q => q.query_id === selectedQueryId)
+    ?? null;
 
-  const SortTh: React.FC<{ field: SortField; label: string; align?: 'left' | 'right' }> = ({ field, label, align = 'left' }) => {
+  const SortTh: React.FC<{ field: SortField; label: string; align?: 'left' | 'right'; width?: number }> = ({ field, label, align = 'left', width }) => {
     const active = sort.field === field;
     return (
-      <th style={{ ...thStyle, textAlign: align, cursor: 'pointer' }} onClick={() => handleSort(field)}>
+      <th style={{ ...thStyle, width, textAlign: align, cursor: 'pointer' }} onClick={() => handleSort(field)}>
         {label}{' '}
         <span style={{ color: active ? '#58a6ff' : 'var(--text-muted)', fontSize: 9 }}>
           {active ? (sort.direction === 'asc' ? '▲' : '▼') : '⇅'}
@@ -231,6 +257,26 @@ export const QueryHistoryTable: React.FC<QueryHistoryTableProps> = ({
         >
           {compareMode ? 'Cancel Compare' : '⇄ Compare Queries'}
         </button>
+        <button
+          onClick={() => setShowHoverPreview(v => {
+            const next = !v;
+            saveHoverPreviewPreference(next);
+            return next;
+          })}
+          style={{
+            padding: '5px 12px',
+            fontSize: 11,
+            borderRadius: 5,
+            border: showHoverPreview ? '1px solid rgba(88, 166, 255, 0.35)' : '1px solid var(--border-primary)',
+            background: showHoverPreview ? 'rgba(88, 166, 255, 0.12)' : 'transparent',
+            color: showHoverPreview ? '#58a6ff' : 'var(--text-muted)',
+            cursor: 'pointer',
+            fontWeight: showHoverPreview ? 600 : 400,
+            transition: 'all 0.15s',
+          }}
+        >
+          {showHoverPreview ? 'Hide Hover Preview' : 'Show Hover Preview'}
+        </button>
         {compareMode && (
           <span style={{ fontSize: 11, color: 'var(--text-muted)' }}>
             {selectedForCompare.size === 0 
@@ -245,135 +291,175 @@ export const QueryHistoryTable: React.FC<QueryHistoryTableProps> = ({
           {isLoading ? 'Loading query history...' : 'No queries found matching the current filters'}
         </div>
       ) : (
-        <div style={{ overflowX: 'auto' }}>
-          <table style={{ width: '100%', borderCollapse: 'collapse' }}>
-            <thead>
-              <tr>
-                {compareMode && <th style={{ ...thStyle, width: 32, textAlign: 'center' }}></th>}
-                <th style={thStyle}>ID</th>
-                <th style={thStyle}>Type</th>
-                <th style={thStyle}>Status</th>
-                <SortTh field="query_start_time" label="Time" />
-                <th style={thStyle}>User</th>
-                <th style={thStyle}>Server</th>
-                <th style={thStyle}>Query</th>
-                <SortTh field="query_duration_ms" label="Duration" align="right" />
-                <SortTh field="read_rows" label="Rows Read" align="right" />
-                <SortTh field="read_bytes" label="Bytes Read" align="right" />
-                <SortTh field="result_rows" label="Result" align="right" />
-                <SortTh field="memory_usage" label="Memory" align="right" />
-                <SortTh field="efficiency_score" label="Pruning" align="right" />
-              </tr>
-            </thead>
-            <tbody>
-              {sortedHistory.map((q) => {
-                const sel = selectedQueryId === q.query_id;
-                const isChecked = selectedForCompare.has(q.query_id);
-                const trunc = q.query.length > 60 ? q.query.slice(0, 60) + '...' : q.query;
-                const shortId = q.query_id.slice(0, 8);
-                return (
-                  <tr key={q.query_id}
-                    style={{ 
-                      background: isChecked ? 'rgba(88, 166, 255, 0.08)' : sel ? 'rgba(88,166,255,0.1)' : 'transparent', 
-                      cursor: 'pointer', 
-                      transition: 'background 0.1s',
-                    }}
-                    onMouseEnter={(e) => { if (!sel && !isChecked) e.currentTarget.style.background = 'var(--bg-tertiary)'; }}
-                    onMouseLeave={(e) => { if (!sel && !isChecked) e.currentTarget.style.background = 'transparent'; }}
-                    onClick={() => {
-                      if (compareMode) toggleCompareSelection(q.query_id);
-                      else onSelectQuery(q);
-                    }}>
-                    {compareMode && (
-                      <td style={{ ...tdStyle, textAlign: 'center', width: 32 }}>
-                        <span style={{ 
-                          display: 'inline-flex', 
-                          alignItems: 'center', 
-                          justifyContent: 'center',
-                          width: 16, 
-                          height: 16, 
-                          borderRadius: 3, 
-                          border: isChecked ? '2px solid #58a6ff' : '1px solid var(--border-primary)', 
-                          background: isChecked ? '#58a6ff' : 'transparent', 
-                          fontSize: 10, 
-                          color: '#fff',
-                          cursor: 'pointer',
-                          flexShrink: 0,
-                        }}>
-                          {isChecked ? '✓' : ''}
-                        </span>
+        <div style={{
+          display: 'grid',
+          gridTemplateColumns: showHoverPreview ? 'minmax(0, 1fr) 340px' : '1fr',
+          gap: showHoverPreview ? 16 : 0,
+          alignItems: 'start',
+        }}
+        onMouseLeave={() => setHoveredQueryId(null)}
+        >
+          <div style={{ minWidth: 0, overflowX: 'auto' }}>
+            <table style={{ width: '100%', minWidth: 1500, borderCollapse: 'collapse', tableLayout: 'fixed' }}>
+              <thead>
+                <tr>
+                  {compareMode && <th style={{ ...thStyle, width: 32, textAlign: 'center' }}></th>}
+                  <th style={{ ...thStyle, width: 48 }}>Shape</th>
+                  <th style={{ ...thStyle, width: 90 }}>ID</th>
+                  <th style={{ ...thStyle, width: 140 }}>Type</th>
+                  <th style={{ ...thStyle, width: 110 }}>Status</th>
+                  <SortTh field="query_start_time" label="Time" width={140} />
+                  <th style={{ ...thStyle, width: 90 }}>User</th>
+                  <th style={{ ...thStyle, width: 125 }}>Server</th>
+                  <th style={{ ...thStyle, width: 360 }}>Query</th>
+                  <SortTh field="query_duration_ms" label="Duration" align="right" width={95} />
+                  <SortTh field="read_rows" label="Rows Read" align="right" width={105} />
+                  <SortTh field="read_bytes" label="Bytes Read" align="right" width={105} />
+                  <SortTh field="result_rows" label="Result" align="right" width={90} />
+                  <SortTh field="memory_usage" label="Memory" align="right" width={100} />
+                  <SortTh field="efficiency_score" label="Pruning" align="right" width={90} />
+                </tr>
+              </thead>
+              <tbody>
+                {sortedHistory.map((q) => {
+                  const sel = selectedQueryId === q.query_id;
+                  const isChecked = selectedForCompare.has(q.query_id);
+                  const isHovered = hoveredQueryId === q.query_id;
+                  const trunc = q.query.length > 60 ? q.query.slice(0, 60) + '...' : q.query;
+                  const shortId = q.query_id.slice(0, 8);
+                  return (
+                    <tr key={q.query_id}
+                      style={{ 
+                        background: isChecked ? 'rgba(88, 166, 255, 0.08)' : sel ? 'rgba(88,166,255,0.1)' : isHovered ? 'var(--bg-tertiary)' : 'transparent', 
+                        cursor: 'pointer', 
+                        transition: 'background 0.1s',
+                      }}
+                      onMouseEnter={() => setHoveredQueryId(q.query_id)}
+                      onClick={() => {
+                        if (compareMode) toggleCompareSelection(q.query_id);
+                        else onSelectQuery(q);
+                      }}>
+                      {compareMode && (
+                        <td style={{ ...tdStyle, textAlign: 'center', width: 32 }}>
+                          <span style={{ 
+                            display: 'inline-flex', 
+                            alignItems: 'center', 
+                            justifyContent: 'center',
+                            width: 16, 
+                            height: 16, 
+                            borderRadius: 3, 
+                            border: isChecked ? '2px solid #58a6ff' : '1px solid var(--border-primary)', 
+                            background: isChecked ? '#58a6ff' : 'transparent', 
+                            fontSize: 10, 
+                            color: '#fff',
+                            cursor: 'pointer',
+                            flexShrink: 0,
+                          }}>
+                            {isChecked ? '✓' : ''}
+                          </span>
+                        </td>
+                      )}
+                      <td style={{ ...tdStyle, width: 48 }}>
+                        <QueryFingerprintGlyph query={q} coordinatorIds={coordinatorIds} size={30} />
                       </td>
-                    )}
-                    <td style={{ ...tdStyle, whiteSpace: 'nowrap', fontFamily: 'monospace', fontSize: 10, color: '#58a6ff' }} title={q.query_id}>
-                      {shortId}
-                    </td>
-                    <td style={{ ...tdStyle, whiteSpace: 'nowrap' }}>
-                      <QueryKindBadge kind={q.query_kind} />
-                      {q.is_initial_query === 0 && (
-                        <span title={`Shard sub-query (parent: ${q.initial_query_id || 'unknown'})`} style={{
-                          display: 'inline-block',
-                          marginLeft: 4,
-                          padding: '2px 5px',
-                          fontSize: 9,
-                          fontWeight: 500,
-                          borderRadius: 4,
-                          background: 'rgba(210,169,34,0.15)',
-                          color: '#d29922',
+                      <td style={{ ...tdStyle, whiteSpace: 'nowrap', fontFamily: 'monospace', fontSize: 10, color: '#58a6ff' }} title={q.query_id}>
+                        {shortId}
+                      </td>
+                      <td style={{ ...tdStyle, whiteSpace: 'nowrap' }}>
+                        <QueryKindBadge kind={q.query_kind} />
+                        {q.is_initial_query === 0 && (
+                          <span title={`Remote worker query (parent: ${q.initial_query_id || 'unknown'})`} style={{
+                            display: 'inline-block',
+                            marginLeft: 4,
+                            padding: '2px 5px',
+                            fontSize: 9,
+                            fontWeight: 500,
+                            borderRadius: 4,
+                            background: 'rgba(210,169,34,0.15)',
+                            color: '#d29922',
+                          }}>
+                            worker
+                          </span>
+                        )}
+                        {coordinatorIds?.has(q.query_id) && (
+                          <span title="Coordinator — dispatched child queries to remote workers or replicas" style={{
+                            display: 'inline-block',
+                            marginLeft: 4,
+                            padding: '2px 5px',
+                            fontSize: 9,
+                            fontWeight: 500,
+                            borderRadius: 4,
+                            background: 'rgba(139,92,246,0.15)',
+                            color: '#a78bfa',
+                          }}>
+                            coordinator
+                          </span>
+                        )}
+                      </td>
+                      <td style={{ ...tdStyle, width: 110, whiteSpace: 'nowrap', overflow: 'hidden' }}>
+                        <StatusBadge type={q.type} exception={q.exception ?? undefined} />
+                      </td>
+                      <td style={{ ...tdStyle, whiteSpace: 'nowrap', fontSize: 11 }}>
+                        {fmtTime(q.query_start_time)}
+                      </td>
+                      <td style={{ ...tdStyle, whiteSpace: 'nowrap' }}>{q.user}</td>
+                      <td style={{ ...tdStyle, whiteSpace: 'nowrap', fontFamily: 'monospace', fontSize: 11, color: 'var(--text-muted)' }} title={q.hostname || ''}>
+                        {q.hostname || '—'}
+                      </td>
+                      <td style={{ ...tdStyle, overflow: 'hidden' }} title={q.query}>
+                        <code style={{
+                          display: 'block',
+                          width: '100%',
+                          fontSize: 11,
+                          fontFamily: 'monospace',
+                          color: 'var(--text-muted)',
+                          overflow: 'hidden',
+                          textOverflow: 'ellipsis',
+                          whiteSpace: 'nowrap',
                         }}>
-                          shard
-                        </span>
-                      )}
-                      {coordinatorIds?.has(q.query_id) && (
-                        <span title="Coordinator — dispatched sub-queries to shards" style={{
-                          display: 'inline-block',
-                          marginLeft: 4,
-                          padding: '2px 5px',
-                          fontSize: 9,
-                          fontWeight: 500,
-                          borderRadius: 4,
-                          background: 'rgba(139,92,246,0.15)',
-                          color: '#a78bfa',
-                        }}>
-                          coordinator
-                        </span>
-                      )}
-                    </td>
-                    <td style={{ ...tdStyle, whiteSpace: 'nowrap' }}>
-                      <StatusBadge type={q.type} exception={q.exception ?? undefined} />
-                    </td>
-                    <td style={{ ...tdStyle, whiteSpace: 'nowrap', fontSize: 11 }}>
-                      {fmtTime(q.query_start_time)}
-                    </td>
-                    <td style={{ ...tdStyle, whiteSpace: 'nowrap' }}>{q.user}</td>
-                    <td style={{ ...tdStyle, whiteSpace: 'nowrap', fontFamily: 'monospace', fontSize: 11, color: 'var(--text-muted)' }} title={q.hostname || ''}>
-                      {q.hostname || '—'}
-                    </td>
-                    <td style={tdStyle} title={q.query}>
-                      <code style={{ fontSize: 11, fontFamily: 'monospace', color: 'var(--text-muted)', wordBreak: 'break-all' }}>{trunc}</code>
-                    </td>
-                    <td style={{ ...tdStyle, textAlign: 'right', fontFamily: 'monospace', fontWeight: 500, color: 'var(--text-primary)', whiteSpace: 'nowrap' }}>
-                      {fmtDuration(q.query_duration_ms)}
-                    </td>
-                    <td style={{ ...tdStyle, textAlign: 'right', fontFamily: 'monospace', whiteSpace: 'nowrap' }}>
-                      {formatNumber(q.read_rows)}
-                    </td>
-                    <td style={{ ...tdStyle, textAlign: 'right', fontFamily: 'monospace', whiteSpace: 'nowrap' }}>
-                      {formatBytes(q.read_bytes)}
-                    </td>
-                    <td style={{ ...tdStyle, textAlign: 'right', fontFamily: 'monospace', whiteSpace: 'nowrap' }}>
-                      {formatNumber(q.result_rows)}
-                    </td>
-                    <td style={{ ...tdStyle, textAlign: 'right', fontFamily: 'monospace', whiteSpace: 'nowrap' }}>
-                      {formatBytes(q.memory_usage)}
-                    </td>
-                    <td style={{ ...tdStyle, textAlign: 'right', whiteSpace: 'nowrap' }}>
-                      <EfficiencyBadge score={q.efficiency_score} />
-                    </td>
-                  </tr>
-                );
-              })}
-            </tbody>
-          </table>
+                          {trunc}
+                        </code>
+                      </td>
+                      <td style={{ ...tdStyle, textAlign: 'right', fontFamily: 'monospace', fontWeight: 500, color: 'var(--text-primary)', whiteSpace: 'nowrap' }}>
+                        {fmtDuration(q.query_duration_ms)}
+                      </td>
+                      <td style={{ ...tdStyle, textAlign: 'right', fontFamily: 'monospace', whiteSpace: 'nowrap' }}>
+                        {formatNumber(q.read_rows)}
+                      </td>
+                      <td style={{ ...tdStyle, textAlign: 'right', fontFamily: 'monospace', whiteSpace: 'nowrap' }}>
+                        {formatBytes(q.read_bytes)}
+                      </td>
+                      <td style={{ ...tdStyle, textAlign: 'right', fontFamily: 'monospace', whiteSpace: 'nowrap' }}>
+                        {formatNumber(q.result_rows)}
+                      </td>
+                      <td style={{ ...tdStyle, textAlign: 'right', fontFamily: 'monospace', whiteSpace: 'nowrap' }}>
+                        {formatBytes(q.memory_usage)}
+                      </td>
+                      <td style={{ ...tdStyle, textAlign: 'right', whiteSpace: 'nowrap' }}>
+                        <EfficiencyBadge score={q.efficiency_score} />
+                      </td>
+                    </tr>
+                  );
+                })}
+              </tbody>
+            </table>
+          </div>
+          {showHoverPreview && (
+            <div
+              style={{
+                position: 'sticky',
+                top: 12,
+                zIndex: 2,
+                background: 'var(--bg-primary)',
+                cursor: previewQuery ? 'pointer' : 'default',
+              }}
+              onClick={() => {
+                if (previewQuery) onSelectQuery(previewQuery);
+              }}
+            >
+              <QueryHoverPreview query={previewQuery} coordinatorIds={coordinatorIds} />
+            </div>
+          )}
         </div>
       )}
 

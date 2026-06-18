@@ -85,5 +85,6 @@ export function mapQueryHistoryItem(row: RawRow): QueryHistoryItem {
     hostname: row.hostname != null ? shortenHostname(row.hostname) : undefined,
     databases: Array.isArray(row.databases) ? (row.databases as string[]).filter(Boolean) : undefined,
     tables: Array.isArray(row.tables) ? (row.tables as string[]).filter(Boolean) : undefined,
+    columns: Array.isArray(row.columns) ? (row.columns as string[]).filter(Boolean) : undefined,
   };
 }

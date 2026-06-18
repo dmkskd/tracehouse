@@ -102,6 +102,9 @@ export function buildQueryHistorySQL(options: QueryHistorySQLOptions = {}): stri
     exception,
     user,
     client_hostname,
+    query_kind,
+    databases,
+    tables,
     ProfileEvents['OSCPUVirtualTimeMicroseconds'] AS cpu_time_us,
     ProfileEvents['NetworkSendBytes'] AS network_send_bytes,
     ProfileEvents['NetworkReceiveBytes'] AS network_receive_bytes,
@@ -451,4 +454,3 @@ export const QUERY_THREAD_BREAKDOWN = `
 export const PROFILE_EVENT_DESCRIPTIONS = `
   SELECT event, description FROM system.events ORDER BY event
 `;
-
