@@ -52,6 +52,10 @@ jobs:
   grafana-plugin:
     needs: [test]
     runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      id-token: write       # mint the OIDC token for Sigstore signing
+      attestations: write   # write the build provenance attestation
     steps:
       - uses: actions/checkout@v4
         with:
@@ -70,6 +74,11 @@ jobs:
           cp -r grafana-app-plugin/dist/* release/dmkskd-tracehouse-app/
           cd release && zip -r dmkskd-tracehouse-app.zip dmkskd-tracehouse-app
           sha1sum dmkskd-tracehouse-app.zip > dmkskd-tracehouse-app.zip.sha1
+
+      - name: Attest plugin build provenance
+        uses: actions/attest-build-provenance@v2
+        with:
+          subject-path: release/dmkskd-tracehouse-app.zip
 
       - name: Build source archive
         run: |
