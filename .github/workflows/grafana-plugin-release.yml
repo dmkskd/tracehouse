@@ -19,6 +19,15 @@ jobs:
         with:
           lfs: true
 
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+
+      - name: Install Linux optional dependencies
+        run: |
+          rm -f package-lock.json
+          npm install --include=optional
+
       - uses: grafana/plugin-actions/build-plugin@build-plugin/v1.2.0
         with:
           node-version: "22"
