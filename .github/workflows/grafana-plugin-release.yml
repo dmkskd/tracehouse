@@ -28,6 +28,9 @@ jobs:
           rm -f package-lock.json
           npm install --include=optional
 
+      - name: Provide root changelog for Grafana action
+        run: cp grafana-app-plugin/CHANGELOG.md CHANGELOG.md
+
       - uses: grafana/plugin-actions/build-plugin@build-plugin/v1.2.0
         with:
           node-version: "22"
