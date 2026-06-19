@@ -50,7 +50,7 @@ jobs:
     needs: [test]
     runs-on: ubuntu-latest
     permissions:
-      contents: read
+      contents: write      # create/update the draft GitHub release
       id-token: write       # mint the OIDC token for Sigstore signing
       attestations: write   # write the build provenance attestation
     steps:
