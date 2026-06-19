@@ -69,16 +69,34 @@ jobs:
       - run: just grafana-plugin-build
 
       - name: Package plugin
+        id: package_plugin
         run: |
-          mkdir -p release/dmkskd-tracehouse-app
-          cp -r grafana-app-plugin/dist/* release/dmkskd-tracehouse-app/
-          cd release && zip -r dmkskd-tracehouse-app.zip dmkskd-tracehouse-app
-          sha1sum dmkskd-tracehouse-app.zip > dmkskd-tracehouse-app.zip.sha1
+          PLUGIN_ID=$(node -p "require('./grafana-app-plugin/dist/plugin.json').id")
+          PLUGIN_VERSION=$(node -p "require('./grafana-app-plugin/dist/plugin.json').info.version")
+          PLUGIN_ARCHIVE="${PLUGIN_ID}-${PLUGIN_VERSION}.zip"
+          PLUGIN_SHA1="${PLUGIN_ARCHIVE}.sha1"
+
+          mkdir -p "release/${PLUGIN_ID}"
+          cp -r grafana-app-plugin/dist/* "release/${PLUGIN_ID}/"
+          cd release
+          zip -qr "${PLUGIN_ARCHIVE}" "${PLUGIN_ID}"
+          sha1sum "${PLUGIN_ARCHIVE}" | cut -f1 -d' ' > "${PLUGIN_SHA1}"
+
+          echo "archive=release/${PLUGIN_ARCHIVE}" >> "$GITHUB_OUTPUT"
+          echo "archive_sha1=release/${PLUGIN_SHA1}" >> "$GITHUB_OUTPUT"
+          echo "archive_name=${PLUGIN_ARCHIVE}" >> "$GITHUB_OUTPUT"
+          echo "archive_sha1_name=${PLUGIN_SHA1}" >> "$GITHUB_OUTPUT"
 
       - name: Attest plugin build provenance
+        id: attest_plugin
         uses: actions/attest-build-provenance@v2
         with:
-          subject-path: release/dmkskd-tracehouse-app.zip
+          subject-path: ${{ steps.package_plugin.outputs.archive }}
+
+      - name: Verify plugin build provenance
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: gh attestation verify "${{ steps.package_plugin.outputs.archive }}" --repo "${{ github.repository }}"
 
       - name: Build source archive
         run: |
@@ -170,8 +188,20 @@ jobs:
         with:
           name: dmkskd-tracehouse-app
           path: |
-            release/dmkskd-tracehouse-app.zip
-            release/dmkskd-tracehouse-app.zip.sha1
+            ${{ steps.package_plugin.outputs.archive }}
+            ${{ steps.package_plugin.outputs.archive_sha1 }}
+
+      - name: Grafana submission summary
+        run: |
+          {
+            echo "### Grafana plugin submission"
+            echo ""
+            echo "Use these release assets for grafana.com submission. Do not submit a locally built ZIP."
+            echo ""
+            echo "- Plugin URL: https://github.com/${{ github.repository }}/releases/download/${{ github.ref_name }}/${{ steps.package_plugin.outputs.archive_name }}"
+            echo "- SHA1 URL: https://github.com/${{ github.repository }}/releases/download/${{ github.ref_name }}/${{ steps.package_plugin.outputs.archive_sha1_name }}"
+            echo "- Attestation: ${{ steps.attest_plugin.outputs['attestation-url'] }}"
+          } >> "$GITHUB_STEP_SUMMARY"
 
       - uses: actions/upload-artifact@v4
         with:
@@ -250,7 +280,7 @@ jobs:
             artifacts/tracehouse-x86_64-unknown-linux-gnu/tracehouse-x86_64-unknown-linux-gnu.tar.gz \
             artifacts/tracehouse-aarch64-unknown-linux-gnu/tracehouse-aarch64-unknown-linux-gnu.tar.gz \
             artifacts/tracehouse-aarch64-apple-darwin/tracehouse-aarch64-apple-darwin.tar.gz \
-            artifacts/dmkskd-tracehouse-app/dmkskd-tracehouse-app.zip \
-            artifacts/dmkskd-tracehouse-app/dmkskd-tracehouse-app.zip.sha1 \
+            artifacts/dmkskd-tracehouse-app/dmkskd-tracehouse-app-*.zip \
+            artifacts/dmkskd-tracehouse-app/dmkskd-tracehouse-app-*.zip.sha1 \
             artifacts/dmkskd-tracehouse-app-source/dmkskd-tracehouse-app-source.zip \
             --repo "${{ github.repository }}"
