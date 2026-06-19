@@ -1,6 +1,6 @@
 {
   "name": "tracehouse",
-  "version": "0.16.2",
+  "version": "0.16.3",
   "private": true,
   "workspaces": [
     "packages/*",
@@ -8,6 +8,8 @@
     "grafana-app-plugin"
   ],
   "scripts": {
+    "build": "npm run build --workspace grafana-app-plugin && rm -rf dist && cp -R grafana-app-plugin/dist dist",
+    "sign": "cd grafana-app-plugin && npx @grafana/sign-plugin@latest",
     "test": "npm run test --workspaces --if-present",
     "test:report": "npm run test --workspaces --if-present -- --reporter=verbose",
     "test:html": "npm run test --workspaces --if-present",
