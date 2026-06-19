@@ -1,13 +1,10 @@
 name: Release
 
 on:
-  release:
-    types: [published]
+  push:
+    tags:
+      - "v*"
   workflow_dispatch:
-    inputs:
-      tag:
-        description: "Tag to build (e.g. v0.1.0). Leave empty for a dry run."
-        required: false
 
 permissions:
   contents: write
@@ -60,153 +57,51 @@ jobs:
       - uses: actions/checkout@v4
         with:
           lfs: true
+
       - uses: actions/setup-node@v4
         with:
-          node-version: 22
-      - uses: extractions/setup-just@v2
+          node-version: "22"
 
-      - run: rm -f package-lock.json
-      - run: just grafana-plugin-build
-
-      - name: Package plugin
-        id: package_plugin
+      - name: Install Linux optional dependencies
         run: |
-          PLUGIN_ID=$(node -p "require('./grafana-app-plugin/dist/plugin.json').id")
-          PLUGIN_VERSION=$(node -p "require('./grafana-app-plugin/dist/plugin.json').info.version")
-          PLUGIN_ARCHIVE="${PLUGIN_ID}-${PLUGIN_VERSION}.zip"
-          PLUGIN_SHA1="${PLUGIN_ARCHIVE}.sha1"
+          rm -f package-lock.json
+          npm install --include=optional
 
-          mkdir -p "release/${PLUGIN_ID}"
-          cp -r grafana-app-plugin/dist/* "release/${PLUGIN_ID}/"
-          cd release
-          zip -qr "${PLUGIN_ARCHIVE}" "${PLUGIN_ID}"
-          sha1sum "${PLUGIN_ARCHIVE}" | cut -f1 -d' ' > "${PLUGIN_SHA1}"
+      - name: Provide root changelog for Grafana action
+        run: cp grafana-app-plugin/CHANGELOG.md CHANGELOG.md
 
-          echo "archive=release/${PLUGIN_ARCHIVE}" >> "$GITHUB_OUTPUT"
-          echo "archive_sha1=release/${PLUGIN_SHA1}" >> "$GITHUB_OUTPUT"
-          echo "archive_name=${PLUGIN_ARCHIVE}" >> "$GITHUB_OUTPUT"
-          echo "archive_sha1_name=${PLUGIN_SHA1}" >> "$GITHUB_OUTPUT"
-
-      - name: Attest plugin build provenance
-        id: attest_plugin
-        uses: actions/attest-build-provenance@v2
+      - id: build_plugin
+        uses: grafana/plugin-actions/build-plugin@build-plugin/v1.2.0
         with:
-          subject-path: ${{ steps.package_plugin.outputs.archive }}
+          node-version: "22"
+          policy_token: ${{ secrets.GRAFANA_ACCESS_POLICY_TOKEN }}
+          attestation: true
 
       - name: Verify plugin build provenance
         env:
           GH_TOKEN: ${{ github.token }}
-        run: gh attestation verify "${{ steps.package_plugin.outputs.archive }}" --repo "${{ github.repository }}"
-
-      - name: Build source archive
-        run: |
-          PLUGIN_DIR="grafana-app-plugin"
-          DIST_DIR="$PLUGIN_DIR/dist"
-          STAGE_DIR=$(mktemp -d)
-          mkdir -p "$STAGE_DIR/tracehouse"
-
-          # Stage plugin source
-          rsync -a \
-            --exclude 'node_modules' --exclude '.DS_Store' \
-            --exclude '*.zip' --exclude '/dist' \
-            "$PLUGIN_DIR/" "$STAGE_DIR/tracehouse/"
-
-          # Stage monorepo packages and frontend inside src/ for validator
-          mkdir -p "$STAGE_DIR/tracehouse/src/packages" "$STAGE_DIR/tracehouse/src/frontend"
-          rsync -a \
-            --exclude 'node_modules' --exclude '.DS_Store' --exclude '/proxy' \
-            --exclude 'package.json' --exclude 'package-lock.json' \
-            packages/ "$STAGE_DIR/tracehouse/src/packages/"
-          rsync -a \
-            --exclude 'node_modules' --exclude '.DS_Store' --exclude '/dist' \
-            --exclude 'package.json' --exclude 'package-lock.json' \
-            --exclude 'tsconfig*.json' --exclude 'vite.config*' --exclude 'vitest.config*' \
-            --exclude 'index.html' --exclude '.eslintrc*' \
-            frontend/ "$STAGE_DIR/tracehouse/src/frontend/"
-
-          # Prune unbundled source files
-          node -e '
-          const fs = require("fs"), path = require("path");
-          const distDir = process.argv[1], stageRoot = process.argv[2];
-          const refs = new Set();
-          for (const f of fs.readdirSync(distDir).filter(f => f.endsWith(".map"))) {
-            const m = JSON.parse(fs.readFileSync(path.join(distDir, f), "utf8"));
-            for (const s of (m.sources || [])) {
-              for (const prefix of ["frontend/src/", "packages/"]) {
-                const i = s.indexOf(prefix);
-                if (i !== -1) refs.add(s.substring(i).replace(/\?.*$/, ""));
-              }
-            }
-          }
-          function walk(dir, root, out) {
-            if (!fs.existsSync(dir)) return;
-            for (const e of fs.readdirSync(dir, { withFileTypes: true })) {
-              const fp = path.join(dir, e.name);
-              if (e.isDirectory()) walk(fp, root, out);
-              else out.push(path.relative(root, fp));
-            }
-          }
-          let pruned = 0;
-          for (const sub of ["src/frontend/src", "src/packages"]) {
-            const all = [];
-            walk(path.join(stageRoot, sub), path.join(stageRoot, "src"), all);
-            for (const rel of all) {
-              if (!/\.(ts|tsx|js|jsx|css|scss|less)$/.test(rel)) continue;
-              if (sub === "src/packages" && !/\/src\//.test(rel)) continue;
-              if (!refs.has(rel)) { fs.unlinkSync(path.join(stageRoot, "src", rel)); pruned++; }
-            }
-          }
-          console.log("Pruned " + pruned + " unbundled files");
-          ' "$DIST_DIR" "$STAGE_DIR/tracehouse"
-
-          # Fix cross-package re-exports (ui-shared files referenced as core)
-          node -e '
-          const fs = require("fs"), path = require("path");
-          const distDir = process.argv[1], srcDir = path.join(process.argv[2], "src");
-          for (const f of fs.readdirSync(distDir).filter(f => f.endsWith(".map"))) {
-            const m = JSON.parse(fs.readFileSync(path.join(distDir, f), "utf8"));
-            for (let i = 0; i < m.sources.length; i++) {
-              let s = m.sources[i].replace(/^webpack:\/\/\//, "").replace(/^webpack:\/\/[^\/]+\//, "");
-              if (s.startsWith("packages/core/src/")) {
-                const expected = path.join(srcDir, s);
-                if (!fs.existsSync(expected)) {
-                  const alt = s.replace("packages/core/src/", "packages/ui-shared/src/");
-                  if (fs.existsSync(alt)) {
-                    fs.mkdirSync(path.dirname(expected), { recursive: true });
-                    fs.copyFileSync(alt, expected);
-                  }
-                }
-              }
-            }
-          }
-          ' "$DIST_DIR" "$STAGE_DIR/tracehouse"
-
-          (cd "$STAGE_DIR" && zip -qr "$GITHUB_WORKSPACE/release/dmkskd-tracehouse-app-source.zip" tracehouse)
-          rm -rf "$STAGE_DIR"
+        run: gh attestation verify "${{ steps.build_plugin.outputs.archive }}" --repo "${{ github.repository }}"
 
       - uses: actions/upload-artifact@v4
         with:
           name: dmkskd-tracehouse-app
           path: |
-            ${{ steps.package_plugin.outputs.archive }}
-            ${{ steps.package_plugin.outputs.archive_sha1 }}
+            ${{ steps.build_plugin.outputs.archive }}
+            ${{ steps.build_plugin.outputs.archive-sha1sum }}
 
       - name: Grafana submission summary
         run: |
+          ARCHIVE="${{ steps.build_plugin.outputs.archive }}"
+          SHA1="${{ steps.build_plugin.outputs.archive-sha1sum }}"
           {
             echo "### Grafana plugin submission"
             echo ""
             echo "Use these release assets for grafana.com submission. Do not submit a locally built ZIP."
             echo ""
-            echo "- Plugin URL: https://github.com/${{ github.repository }}/releases/download/${{ github.ref_name }}/${{ steps.package_plugin.outputs.archive_name }}"
-            echo "- SHA1 URL: https://github.com/${{ github.repository }}/releases/download/${{ github.ref_name }}/${{ steps.package_plugin.outputs.archive_sha1_name }}"
-            echo "- Attestation: ${{ steps.attest_plugin.outputs['attestation-url'] }}"
+            echo "- Plugin URL: https://github.com/${{ github.repository }}/releases/download/${{ github.ref_name }}/$(basename "$ARCHIVE")"
+            echo "- SHA1 URL: https://github.com/${{ github.repository }}/releases/download/${{ github.ref_name }}/$(basename "$SHA1")"
+            echo "- Source code URL: https://github.com/${{ github.repository }}/tree/${{ github.ref_name }}"
           } >> "$GITHUB_STEP_SUMMARY"
-
-      - uses: actions/upload-artifact@v4
-        with:
-          name: dmkskd-tracehouse-app-source
-          path: release/dmkskd-tracehouse-app-source.zip
 
   # ── Build Rust binaries for each platform ────────────────────
   binary:
@@ -265,7 +160,7 @@ jobs:
   upload:
     needs: [html, binary, grafana-plugin]
     runs-on: ubuntu-latest
-    if: github.event_name == 'release'
+    if: startsWith(github.ref, 'refs/tags/')
     steps:
       - uses: actions/download-artifact@v4
         with:
@@ -275,12 +170,9 @@ jobs:
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
-          gh release upload "${{ github.event.release.tag_name }}" \
+          gh release upload "${{ github.ref_name }}" \
             artifacts/tracehouse-html/tracehouse.html \
             artifacts/tracehouse-x86_64-unknown-linux-gnu/tracehouse-x86_64-unknown-linux-gnu.tar.gz \
             artifacts/tracehouse-aarch64-unknown-linux-gnu/tracehouse-aarch64-unknown-linux-gnu.tar.gz \
             artifacts/tracehouse-aarch64-apple-darwin/tracehouse-aarch64-apple-darwin.tar.gz \
-            artifacts/dmkskd-tracehouse-app/dmkskd-tracehouse-app-*.zip \
-            artifacts/dmkskd-tracehouse-app/dmkskd-tracehouse-app-*.zip.sha1 \
-            artifacts/dmkskd-tracehouse-app-source/dmkskd-tracehouse-app-source.zip \
             --repo "${{ github.repository }}"
