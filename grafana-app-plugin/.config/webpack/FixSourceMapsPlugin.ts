@@ -20,15 +20,27 @@ export class FixSourceMapsPlugin {
         const m = JSON.parse(fs.readFileSync(mapPath, 'utf8'));
 
         for (let i = 0; i < m.sources.length; i++) {
-          if (m.sourcesContent[i] !== null) continue;
-
           let src = m.sources[i];
           src = src.replace(/^webpack:\/\/\//, '');
           src = src.replace(/^webpack:\/\/[^/]+\//, '');
 
-          let abs = path.resolve(this.repoRoot, src);
-          if (!fs.existsSync(abs) && src.startsWith('packages/core/src/')) {
-            abs = path.resolve(this.repoRoot, src.replace('packages/core/src/', 'packages/ui-shared/src/'));
+          const repoRelativeSrc = src.replace(/^\.\.\//, '');
+          const corePrefix = 'packages/core/src/';
+          if (repoRelativeSrc.startsWith(corePrefix)) {
+            const coreAbs = path.resolve(this.repoRoot, repoRelativeSrc);
+            const uiSharedRelativeSrc = repoRelativeSrc.replace(corePrefix, 'packages/ui-shared/src/');
+            const uiSharedAbs = path.resolve(this.repoRoot, uiSharedRelativeSrc);
+            if (!fs.existsSync(coreAbs) && fs.existsSync(uiSharedAbs)) {
+              m.sources[i] = m.sources[i].replace(corePrefix, 'packages/ui-shared/src/');
+              src = src.replace(corePrefix, 'packages/ui-shared/src/');
+            }
+          }
+
+          if (m.sourcesContent[i] !== null) continue;
+
+          let abs = path.resolve(this.repoRoot, src.replace(/^\.\.\//, ''));
+          if (!fs.existsSync(abs) && src.replace(/^\.\.\//, '').startsWith(corePrefix)) {
+            abs = path.resolve(this.repoRoot, src.replace(/^\.\.\//, '').replace(corePrefix, 'packages/ui-shared/src/'));
           }
           if (fs.existsSync(abs)) {
             m.sourcesContent[i] = fs.readFileSync(abs, 'utf8');
