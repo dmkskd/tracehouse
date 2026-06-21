@@ -146,10 +146,6 @@ function decisionSourceLabel(source: string): string {
   return source;
 }
 
-function sameHost(a: string, b: string): boolean {
-  return a.split('.')[0] === b.split('.')[0];
-}
-
 function hostIdentity(hostname: string): string {
   return hostname.split('.')[0] || hostname;
 }
@@ -210,63 +206,6 @@ export const DistributedTab: React.FC<DistributedTabProps> = ({
         <Panel title="Execution Shape">
           <div style={{ color: 'var(--text-secondary)', fontSize: 12, lineHeight: 1.6 }}>
             No distributed child executions were found for this query. This can still be a parallel local query, or a cloud/shared-storage scan, but there is no query-log evidence that it spanned multiple ClickHouse nodes.
-          </div>
-        </Panel>
-      )}
-
-      {distributedTopology && distributedTopology.shards.length > 0 && (
-        <Panel title="Shard Topology">
-          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(260px, 1fr))', gap: 12 }}>
-            {distributedTopology.shards.map(shard => {
-              const members = [
-                ...(shard.leader ? [shard.leader] : []),
-                ...shard.readers,
-                ...shard.children,
-              ];
-              const leaderHost = shard.leader?.hostname;
-              return (
-                <div key={shard.shardNum} style={{
-                  border: '1px solid var(--border-secondary)',
-                  borderRadius: 6,
-                  background: 'var(--bg-card)',
-                  padding: 12,
-                }}>
-                  <div style={{ fontSize: 10, letterSpacing: '1px', textTransform: 'uppercase', color: MUTED, marginBottom: 10 }}>
-                    Shard {shard.shardNum}
-                  </div>
-                  <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
-                    {members.map(member => {
-                      const isLocalReader = member.role === 'replica_reader' && leaderHost && sameHost(member.hostname, leaderHost) && member.queryId === shard.leader?.queryId;
-                      return (
-                        <button
-                          key={member.id}
-                          onClick={() => onNavigateToQuery(member.queryId)}
-                          style={{
-                            textAlign: 'left',
-                            background: member.queryId === activeQueryId ? 'var(--bg-hover)' : 'transparent',
-                            border: '1px solid var(--border-secondary)',
-                            borderRadius: 5,
-                            padding: '7px 9px',
-                            cursor: 'pointer',
-                            color: 'var(--text-secondary)',
-                          }}
-                        >
-                          <div style={{ display: 'flex', justifyContent: 'space-between', gap: 8 }}>
-                            <span style={{ fontFamily: 'var(--font-mono, monospace)', color: 'var(--text-primary)', fontSize: 11 }}>
-                              {shortHost(member.hostname)}
-                            </span>
-                            <span style={{ color: MUTED, fontSize: 10 }}>{formatDurationMs(member.queryDurationMs)}</span>
-                          </div>
-                          <div style={{ color: MUTED, fontSize: 10, marginTop: 2 }}>
-                            {isLocalReader ? 'Local reader on shard coordinator' : roleLabel(member)}
-                          </div>
-                        </button>
-                      );
-                    })}
-                  </div>
-                </div>
-              );
-            })}
           </div>
         </Panel>
       )}

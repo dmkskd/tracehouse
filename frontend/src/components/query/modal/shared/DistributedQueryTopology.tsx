@@ -7,7 +7,6 @@ import React, { useMemo } from 'react';
 import {
   inferDistributedTopology,
   type DistributedQueryExecutionInput,
-  type DistributedQueryKind,
   type DistributedTopology,
   type DistributedTopologyNode,
   type SubQueryInfo,
@@ -74,19 +73,6 @@ function shortHost(hostname: string): string {
   const demoMatch = short.match(/ch-s(\d+)r(\d+)/);
   if (demoMatch) return `s${demoMatch[1]}r${demoMatch[2]}`;
   return short;
-}
-
-function topologyKindLabel(kind: DistributedQueryKind): string {
-  switch (kind) {
-    case 'local': return 'Local';
-    case 'plain_distributed_select': return 'Distributed SELECT';
-    case 'parallel_replicas_select': return 'Parallel replicas';
-    case 'cluster_all_replicas': return 'All replicas fan-out';
-    case 'object_storage_swarm_select': return 'Object storage swarm';
-    case 'hybrid_storage_select': return 'Hybrid storage';
-    case 'distributed_insert': return 'Distributed INSERT';
-    default: return 'Distributed';
-  }
 }
 
 function fmtCompact(n: number): string {
@@ -308,7 +294,6 @@ export const DistributedQueryTopology: React.FC<DistributedQueryTopologyProps> =
   const distinctNodeCount = new Set(timeline.nodeQueries.map(row => row.hostname || row.queryId)).size;
   const maxNodeQueryDuration = Math.max(...timeline.nodeQueries.map(row => row.durationMs));
   const overhead = coordinator.query_duration_ms - maxNodeQueryDuration;
-  const shapeLabel = topologyKindLabel(topology.kind);
   const visibleRoles = new Set(timeline.nodeQueries.map(row => row.role).filter(Boolean));
 
   return (
@@ -319,7 +304,7 @@ export const DistributedQueryTopology: React.FC<DistributedQueryTopologyProps> =
         marginBottom: 8,
       }}>
         <div style={{ fontSize: 9, color: MUTED_COLOR, textTransform: 'uppercase', letterSpacing: '1px' }}>
-          Distributed Query Topology ({shapeLabel} · {renderedChildCount} child {renderedChildCount === 1 ? 'query' : 'queries'} · {distinctNodeCount} node{distinctNodeCount !== 1 ? 's' : ''})
+          Distributed Query ({renderedChildCount} remote {renderedChildCount === 1 ? 'query' : 'queries'} · {distinctNodeCount} node{distinctNodeCount !== 1 ? 's' : ''})
         </div>
         {overhead > 0 && (
           <div style={{ fontSize: 10, color: 'var(--text-muted)' }}>
