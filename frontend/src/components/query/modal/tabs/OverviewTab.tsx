@@ -1,5 +1,5 @@
 import React from 'react';
-import type { QuerySeries, QueryDetail as QueryDetailType, SubQueryInfo } from '@tracehouse/core';
+import type { DistributedTopology, QuerySeries, QueryDetail as QueryDetailType, SubQueryInfo } from '@tracehouse/core';
 import { formatBytes } from '../../../../stores/databaseStore';
 import { formatDurationMs, formatMicroseconds } from '../../../../utils/formatters';
 import { MetricItem } from '../../../shared/ModalWrapper';
@@ -14,6 +14,7 @@ interface OverviewTabProps {
   isSelectQuery: boolean;
   topologyCoordinator: TopologyCoordinator | null;
   subQueries: SubQueryInfo[];
+  distributedTopology: DistributedTopology | null;
   isLoadingSubQueries: boolean;
   onNavigateToQuery: (queryId: string) => void;
 }
@@ -24,7 +25,7 @@ const fmtTime = (ts: string) => new Date(ts).toLocaleString();
 
 export const OverviewTab: React.FC<OverviewTabProps> = ({
   q, activeQuery, queryDetail, isSelectQuery,
-  topologyCoordinator, subQueries, isLoadingSubQueries,
+  topologyCoordinator, subQueries, distributedTopology, isLoadingSubQueries,
   onNavigateToQuery,
 }) => {
   return (
@@ -306,6 +307,7 @@ export const OverviewTab: React.FC<OverviewTabProps> = ({
                   <DistributedQueryTopology
                     coordinator={topologyCoordinator}
                     subQueries={subQueries}
+                    inferredTopology={distributedTopology}
                     activeQueryId={activeQuery!.query_id}
                     onNavigate={onNavigateToQuery}
                   />

@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react';
-import type { QuerySeries, QueryDetail as QueryDetailType, SubQueryInfo } from '@tracehouse/core';
+import type { DistributedTopology, QuerySeries, QueryDetail as QueryDetailType, SubQueryInfo } from '@tracehouse/core';
 import { useClickHouseServices } from '../../../../providers/ClickHouseProvider';
 import type { TopologyCoordinator } from '../shared/DistributedQueryTopology';
 
@@ -8,11 +8,13 @@ export function useQueryTopology(activeQuery: QuerySeries | null, queryDetail: Q
   const [subQueries, setSubQueries] = useState<SubQueryInfo[]>([]);
   const [isLoading, setIsLoading] = useState(false);
   const [coordinator, setCoordinator] = useState<TopologyCoordinator | null>(null);
+  const [distributedTopology, setDistributedTopology] = useState<DistributedTopology | null>(null);
 
   useEffect(() => {
     setSubQueries([]);
     setIsLoading(false);
     setCoordinator(null);
+    setDistributedTopology(null);
   }, [activeQuery?.query_id]);
 
   useEffect(() => {
@@ -30,8 +32,14 @@ export function useQueryTopology(activeQuery: QuerySeries | null, queryDetail: Q
         read_rows: queryDetail.read_rows,
         exception: queryDetail.exception,
       });
-      services.queryAnalyzer.getSubQueries(activeQuery.query_id, activeQuery.start_time)
-        .then(setSubQueries)
+      Promise.all([
+        services.queryAnalyzer.getSubQueries(activeQuery.query_id, activeQuery.start_time),
+        services.queryAnalyzer.getDistributedTopology(activeQuery.query_id, activeQuery.start_time).catch(() => null),
+      ])
+        .then(([children, richTopology]) => {
+          setSubQueries(children);
+          setDistributedTopology(richTopology);
+        })
         .catch((err) => console.error('Failed to fetch sub-queries:', err))
         .finally(() => setIsLoading(false));
     } else if (queryDetail.is_initial_query === 0 && queryDetail.initial_query_id) {
@@ -40,8 +48,9 @@ export function useQueryTopology(activeQuery: QuerySeries | null, queryDetail: Q
       Promise.all([
         services.queryAnalyzer.getQueryDetail(queryDetail.initial_query_id),
         services.queryAnalyzer.getSubQueries(queryDetail.initial_query_id, activeQuery.start_time),
+        services.queryAnalyzer.getDistributedTopology(queryDetail.initial_query_id, activeQuery.start_time).catch(() => null),
       ])
-        .then(([coordDetail, siblings]) => {
+        .then(([coordDetail, siblings, richTopology]) => {
           if (coordDetail) {
             setCoordinator({
               query_id: coordDetail.query_id,
@@ -54,6 +63,7 @@ export function useQueryTopology(activeQuery: QuerySeries | null, queryDetail: Q
             });
           }
           setSubQueries(siblings);
+          setDistributedTopology(richTopology);
         })
         .catch((err) => console.error('Failed to fetch topology:', err))
         .finally(() => setIsLoading(false));
@@ -61,5 +71,5 @@ export function useQueryTopology(activeQuery: QuerySeries | null, queryDetail: Q
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [queryDetail, services]);
 
-  return { subQueries, isLoading, coordinator };
+  return { subQueries, isLoading, coordinator, distributedTopology };
 }

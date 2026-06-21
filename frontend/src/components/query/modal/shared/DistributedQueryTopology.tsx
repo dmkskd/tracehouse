@@ -4,7 +4,14 @@
  */
 
 import React, { useMemo } from 'react';
-import type { SubQueryInfo } from '@tracehouse/core';
+import {
+  inferDistributedTopology,
+  type DistributedQueryExecutionInput,
+  type DistributedQueryKind,
+  type DistributedTopology,
+  type DistributedTopologyNode,
+  type SubQueryInfo,
+} from '@tracehouse/core';
 import { formatDurationMs } from '../../../../utils/formatters';
 import { formatBytes } from '../../../../stores/databaseStore';
 
@@ -21,6 +28,7 @@ export interface TopologyCoordinator {
 interface DistributedQueryTopologyProps {
   coordinator: TopologyCoordinator;
   subQueries: SubQueryInfo[];
+  inferredTopology?: DistributedTopology | null;
   /** The query_id currently being viewed (to highlight "you are here") */
   activeQueryId: string;
   /** Navigate to a query by ID */
@@ -30,8 +38,22 @@ interface DistributedQueryTopologyProps {
 
 const COORD_COLOR = '#58a6ff';
 const NODE_COLOR = '#d29922';
+const SHARD_LEADER_COLOR = '#a371f7';
+const REPLICA_READER_COLOR = '#d29922';
+const OBJECT_WORKER_COLOR = '#3fb950';
+const INSERT_COLOR = '#db6d28';
 const ERROR_COLOR = '#f85149';
-
+const MUTED_COLOR = 'var(--text-muted)';
+const HOST_COLORS = [
+  '#2563eb',
+  '#ea580c',
+  '#16a34a',
+  '#dc2626',
+  '#7c3aed',
+  '#0891b2',
+  '#db2777',
+  '#4d7c0f',
+];
 
 /** Parse ClickHouse microsecond timestamp to epoch microseconds */
 function parseUs(ts: string): number {
@@ -43,34 +65,230 @@ function parseUs(ts: string): number {
   return baseMs * 1000 + parseInt(usFrac.padEnd(6, '0').substring(0, 6), 10);
 }
 
+function shortHost(hostname: string): string {
+  const short = hostname.split('.')[0] || hostname;
+  const tail = short.match(/-(\d+)-(\d+)-\d+$/);
+  if (short.startsWith('chi-') && tail) return `s${Number(tail[1]) + 1}r${Number(tail[2]) + 1}`;
+  const cloudServerMatch = short.match(/-server-([a-z0-9]+)-\d+$/);
+  if (cloudServerMatch) return cloudServerMatch[1];
+  const demoMatch = short.match(/ch-s(\d+)r(\d+)/);
+  if (demoMatch) return `s${demoMatch[1]}r${demoMatch[2]}`;
+  return short;
+}
+
+function topologyKindLabel(kind: DistributedQueryKind): string {
+  switch (kind) {
+    case 'local': return 'Local';
+    case 'plain_distributed_select': return 'Distributed SELECT';
+    case 'parallel_replicas_select': return 'Parallel replicas';
+    case 'cluster_all_replicas': return 'All replicas fan-out';
+    case 'object_storage_swarm_select': return 'Object storage swarm';
+    case 'hybrid_storage_select': return 'Hybrid storage';
+    case 'distributed_insert': return 'Distributed INSERT';
+    default: return 'Distributed';
+  }
+}
+
+function fmtCompact(n: number): string {
+  if (n < 1000) return n.toString();
+  if (n < 1_000_000) return `${(n / 1000).toFixed(1)}K`;
+  if (n < 1_000_000_000) return `${(n / 1_000_000).toFixed(1)}M`;
+  return `${(n / 1_000_000_000).toFixed(1)}B`;
+}
+
+function roleLabel(node?: DistributedTopologyNode): string {
+  if (!node) return 'Child';
+  switch (node.role) {
+    case 'coordinator': return 'Coordinator';
+    case 'shard_leader': return node.shardNum ? `Shard ${node.shardNum} coordinator` : 'Shard coordinator';
+    case 'replica_reader': return node.shardNum ? `Shard ${node.shardNum} reader` : 'Replica reader';
+    case 'remote_child': return node.shardNum ? `Shard ${node.shardNum} child` : 'Remote child';
+    case 'independent_child': return 'Independent child';
+    case 'object_storage_worker': return 'Object worker';
+    case 'hybrid_segment': return 'Hybrid segment';
+    case 'insert_client': return 'Insert client';
+    case 'insert_forwarder': return 'Insert forwarder';
+    case 'async_insert_flush': return 'Async flush';
+    default: return 'Child';
+  }
+}
+
+function roleColor(node: DistributedTopologyNode | undefined, hasError: boolean): string {
+  if (hasError) return ERROR_COLOR;
+  if (!node) return NODE_COLOR;
+  if (node.role === 'shard_leader') return SHARD_LEADER_COLOR;
+  if (node.role === 'replica_reader') return REPLICA_READER_COLOR;
+  if (node.role === 'object_storage_worker' || node.role === 'hybrid_segment') return OBJECT_WORKER_COLOR;
+  if (node.role === 'insert_forwarder' || node.role === 'async_insert_flush') return INSERT_COLOR;
+  return NODE_COLOR;
+}
+
+function hostIdentity(hostname: string): string {
+  return hostname.split('.')[0] || hostname;
+}
+
+function roleOrder(role?: DistributedTopologyNode['role']): number {
+  if (role === 'shard_leader') return 0;
+  if (role === 'replica_reader') return 1;
+  return 2;
+}
+
 export const DistributedQueryTopology: React.FC<DistributedQueryTopologyProps> = ({
   coordinator,
   subQueries,
+  inferredTopology,
   activeQueryId,
   onNavigate,
   isLoading,
 }) => {
+  const topology = useMemo(() => {
+    const executions: DistributedQueryExecutionInput[] = [
+      {
+        queryId: coordinator.query_id,
+        initialQueryId: coordinator.query_id,
+        isInitialQuery: true,
+        hostname: coordinator.hostname,
+        queryKind: 'Select',
+        queryStartTimeMicroseconds: coordinator.query_start_time_microseconds,
+        queryDurationMs: coordinator.query_duration_ms,
+        readRows: coordinator.read_rows,
+        memoryUsage: coordinator.memory_usage,
+      },
+      ...subQueries.map((sq): DistributedQueryExecutionInput => ({
+        queryId: sq.query_id,
+        initialQueryId: coordinator.query_id,
+        isInitialQuery: false,
+        hostname: sq.hostname,
+        queryKind: 'Select',
+        queryStartTimeMicroseconds: sq.query_start_time_microseconds,
+        queryDurationMs: sq.query_duration_ms,
+        readRows: sq.read_rows,
+        readBytes: sq.read_bytes,
+        memoryUsage: sq.memory_usage,
+        queryPreview: sq.query_preview,
+      })),
+    ];
+
+    if (inferredTopology) return inferredTopology;
+
+    return inferDistributedTopology({
+      rootQueryId: coordinator.query_id,
+      executions,
+      capabilities: {
+        profileEvents: false,
+        processorsProfileLog: false,
+        systemClusters: false,
+        textLog: false,
+      },
+    });
+  }, [coordinator, subQueries, inferredTopology]);
+
+  const nodeByQueryId = useMemo(() => {
+    const byQueryId = new Map<string, DistributedTopologyNode[]>();
+    for (const node of topology.nodes) {
+      const existing = byQueryId.get(node.queryId);
+      if (existing) existing.push(node);
+      else byQueryId.set(node.queryId, [node]);
+    }
+    return byQueryId;
+  }, [topology.nodes]);
+
+  const hostColorByIdentity = useMemo(() => {
+    const hosts = [...new Set(
+      topology.nodes
+        .filter(node => node.role !== 'coordinator' && node.role !== 'insert_client')
+        .map(node => hostIdentity(node.hostname)),
+    )].sort();
+    const colors = new Map<string, string>();
+    hosts.forEach((host, index) => colors.set(host, HOST_COLORS[index % HOST_COLORS.length]));
+    return colors;
+  }, [topology.nodes]);
+
+  const coordinatorReaderIds = useMemo(() => {
+    const leaderKeys = new Set(
+      topology.nodes
+        .filter(node => node.role === 'shard_leader')
+        .map(node => `${node.shardNum ?? 'unknown'}:${hostIdentity(node.hostname)}:${node.queryId}`),
+    );
+    return new Set(
+      topology.nodes
+        .filter(node => node.role === 'replica_reader')
+        .filter(node => leaderKeys.has(`${node.shardNum ?? 'unknown'}:${hostIdentity(node.hostname)}:${node.queryId}`))
+        .map(node => node.id),
+    );
+  }, [topology.nodes]);
+
   const timeline = useMemo(() => {
     const coordStartUs = parseUs(coordinator.query_start_time_microseconds);
     const coordDurationUs = coordinator.query_duration_ms * 1000;
     const totalDurationUs = Math.max(1, coordDurationUs);
+    const richChildNodes = inferredTopology
+      ? topology.nodes.filter(node => node.role !== 'coordinator' && node.role !== 'insert_client')
+      : [];
 
-    const nodeQueries = subQueries.map(sq => {
-      const nodeStartUs = parseUs(sq.query_start_time_microseconds);
-      const nodeDurationUs = sq.query_duration_ms * 1000;
-      const offsetUs = Math.max(0, nodeStartUs - coordStartUs);
-      return {
-        ...sq,
-        offsetUs,
-        durationUs: nodeDurationUs,
-      };
+    const nodeQueries = richChildNodes.length > 0
+      ? richChildNodes.map((node, i) => {
+        const matchingSubQuery = subQueries.find(sq => sq.query_id === node.queryId && shortHost(sq.hostname) === shortHost(node.hostname));
+        const nodeStartUs = parseUs(matchingSubQuery?.query_start_time_microseconds || '');
+        const durationUs = node.queryDurationMs * 1000;
+        return {
+          queryId: node.queryId,
+          hostname: node.hostname,
+          label: shortHost(node.hostname),
+          roleLabel: coordinatorReaderIds.has(node.id)
+            ? (node.shardNum ? `Shard ${node.shardNum} local reader` : 'Local reader')
+            : roleLabel(node),
+          role: node.role,
+          shardNum: node.shardNum,
+          replicaNum: node.replicaNum,
+          color: roleColor(node, false),
+          hostColor: hostColorByIdentity.get(hostIdentity(node.hostname)) ?? NODE_COLOR,
+          durationMs: node.queryDurationMs,
+          memoryUsage: matchingSubQuery?.memory_usage ?? 0,
+          readRows: node.readRows,
+          hasError: false,
+          offsetUs: Math.max(0, nodeStartUs > 0 ? nodeStartUs - coordStartUs : 0),
+          durationUs,
+          sortIndex: i,
+        };
+      })
+      : subQueries.map((sq, i) => {
+        const nodeStartUs = parseUs(sq.query_start_time_microseconds);
+        const nodeDurationUs = sq.query_duration_ms * 1000;
+        const node = nodeByQueryId.get(sq.query_id)?.find(candidate => shortHost(candidate.hostname) === shortHost(sq.hostname));
+        return {
+          queryId: sq.query_id,
+          hostname: sq.hostname,
+          label: shortHost(sq.hostname),
+          roleLabel: (nodeByQueryId.get(sq.query_id)?.length ?? 0) > 1 ? 'multi-role?' : roleLabel(node),
+          role: node?.role,
+          shardNum: node?.shardNum,
+          replicaNum: node?.replicaNum,
+          color: roleColor(node, !!sq.exception_code),
+          hostColor: hostColorByIdentity.get(hostIdentity(sq.hostname)) ?? NODE_COLOR,
+          durationMs: sq.query_duration_ms,
+          memoryUsage: sq.memory_usage,
+          readRows: sq.read_rows,
+          hasError: !!sq.exception_code,
+          offsetUs: Math.max(0, nodeStartUs - coordStartUs),
+          durationUs: nodeDurationUs,
+          sortIndex: i,
+        };
+      });
+
+    nodeQueries.sort((a, b) => {
+      if (topology.kind === 'parallel_replicas_select') {
+        return (a.shardNum ?? 9999) - (b.shardNum ?? 9999) ||
+          roleOrder(a.role) - roleOrder(b.role) ||
+          a.offsetUs - b.offsetUs ||
+          b.durationUs - a.durationUs ||
+          a.sortIndex - b.sortIndex;
+      }
+      return a.offsetUs - b.offsetUs || b.durationUs - a.durationUs || a.sortIndex - b.sortIndex;
     });
 
-    // Sort by start offset, then longest first
-    nodeQueries.sort((a, b) => a.offsetUs - b.offsetUs || b.durationUs - a.durationUs);
-
     return { coordDurationUs, totalDurationUs, nodeQueries };
-  }, [coordinator, subQueries]);
+  }, [coordinator, coordinatorReaderIds, hostColorByIdentity, inferredTopology, nodeByQueryId, subQueries, topology.kind, topology.nodes]);
 
   if (isLoading) {
     return (
@@ -83,12 +301,15 @@ export const DistributedQueryTopology: React.FC<DistributedQueryTopologyProps> =
   if (subQueries.length === 0) return null;
 
   const fmtMs = formatDurationMs;
-  const LABEL_W = 120;
+  const LABEL_W = 150;
   const METRIC_W = 70;
 
-  const distinctNodeCount = new Set(subQueries.map(s => s.hostname || s.query_id)).size;
-  const maxNodeQueryDuration = Math.max(...subQueries.map(s => s.query_duration_ms));
+  const renderedChildCount = timeline.nodeQueries.length;
+  const distinctNodeCount = new Set(timeline.nodeQueries.map(row => row.hostname || row.queryId)).size;
+  const maxNodeQueryDuration = Math.max(...timeline.nodeQueries.map(row => row.durationMs));
   const overhead = coordinator.query_duration_ms - maxNodeQueryDuration;
+  const shapeLabel = topologyKindLabel(topology.kind);
+  const visibleRoles = new Set(timeline.nodeQueries.map(row => row.role).filter(Boolean));
 
   return (
     <div>
@@ -97,8 +318,8 @@ export const DistributedQueryTopology: React.FC<DistributedQueryTopologyProps> =
         display: 'flex', justifyContent: 'space-between', alignItems: 'center',
         marginBottom: 8,
       }}>
-        <div style={{ fontSize: 9, color: 'var(--text-muted)', textTransform: 'uppercase', letterSpacing: '1px' }}>
-          Distributed Query Topology ({subQueries.length} child {subQueries.length === 1 ? 'query' : 'queries'} · {distinctNodeCount} node{distinctNodeCount !== 1 ? 's' : ''})
+        <div style={{ fontSize: 9, color: MUTED_COLOR, textTransform: 'uppercase', letterSpacing: '1px' }}>
+          Distributed Query Topology ({shapeLabel} · {renderedChildCount} child {renderedChildCount === 1 ? 'query' : 'queries'} · {distinctNodeCount} node{distinctNodeCount !== 1 ? 's' : ''})
         </div>
         {overhead > 0 && (
           <div style={{ fontSize: 10, color: 'var(--text-muted)' }}>
@@ -130,6 +351,7 @@ export const DistributedQueryTopology: React.FC<DistributedQueryTopologyProps> =
         leftPct={0}
         widthPct={100}
         color={COORD_COLOR}
+        hostColor={COORD_COLOR}
         durationMs={coordinator.query_duration_ms}
         memoryUsage={coordinator.memory_usage}
         readRows={coordinator.read_rows}
@@ -137,6 +359,7 @@ export const DistributedQueryTopology: React.FC<DistributedQueryTopologyProps> =
         isActive={activeQueryId === coordinator.query_id}
         onClick={() => onNavigate(coordinator.query_id)}
         isCoordinator
+        roleLabel="Coordinator"
         labelWidth={LABEL_W}
         metricWidth={METRIC_W}
       />
@@ -145,24 +368,27 @@ export const DistributedQueryTopology: React.FC<DistributedQueryTopologyProps> =
       <div style={{ marginLeft: LABEL_W, marginRight: METRIC_W, height: 1, background: 'var(--border-primary)', margin: '4px 0', opacity: 0.5 }} />
 
       {/* Node sub-query bars */}
-      {timeline.nodeQueries.map((sq, i) => {
-        const leftPct = (sq.offsetUs / timeline.totalDurationUs) * 100;
-        const widthPct = Math.max(0.5, (sq.durationUs / timeline.totalDurationUs) * 100);
+      {timeline.nodeQueries.map((row, i) => {
+        const leftPct = (row.offsetUs / timeline.totalDurationUs) * 100;
+        const widthPct = Math.max(0.5, (row.durationUs / timeline.totalDurationUs) * 100);
         return (
           <TopologyBar
-            key={sq.query_id || i}
-            queryId={sq.query_id}
-            label={sq.hostname}
-            hostname={sq.hostname}
+            key={`${row.queryId}:${row.hostname}:${i}`}
+            queryId={row.queryId}
+            label={row.label}
+            hostname={row.hostname}
+            roleLabel={row.roleLabel}
+            indentLevel={row.role === 'replica_reader' ? 1 : 0}
             leftPct={leftPct}
             widthPct={widthPct}
-            color={sq.exception_code ? ERROR_COLOR : NODE_COLOR}
-            durationMs={sq.query_duration_ms}
-            memoryUsage={sq.memory_usage}
-            readRows={sq.read_rows}
-            hasError={!!sq.exception_code}
-            isActive={activeQueryId === sq.query_id}
-            onClick={() => onNavigate(sq.query_id)}
+            color={row.color}
+            hostColor={row.hostColor}
+            durationMs={row.durationMs}
+            memoryUsage={row.memoryUsage}
+            readRows={row.readRows}
+            hasError={row.hasError}
+            isActive={activeQueryId === row.queryId}
+            onClick={() => onNavigate(row.queryId)}
             labelWidth={LABEL_W}
             metricWidth={METRIC_W}
           />
@@ -175,10 +401,36 @@ export const DistributedQueryTopology: React.FC<DistributedQueryTopologyProps> =
           <div style={{ width: 8, height: 8, borderRadius: 2, background: COORD_COLOR }} />
           Coordinator
         </div>
-        <div style={{ display: 'flex', alignItems: 'center', gap: 4 }}>
-          <div style={{ width: 8, height: 8, borderRadius: 2, background: NODE_COLOR }} />
-          Node
-        </div>
+        {visibleRoles.has('shard_leader') && (
+          <div style={{ display: 'flex', alignItems: 'center', gap: 4 }}>
+            <div style={{ width: 8, height: 8, borderRadius: 2, background: SHARD_LEADER_COLOR }} />
+            Shard coordinator
+          </div>
+        )}
+        {visibleRoles.has('replica_reader') && (
+          <div style={{ display: 'flex', alignItems: 'center', gap: 4 }}>
+            <div style={{ width: 8, height: 8, borderRadius: 2, background: REPLICA_READER_COLOR }} />
+            Reader
+          </div>
+        )}
+        {!visibleRoles.has('shard_leader') && !visibleRoles.has('replica_reader') && (
+          <div style={{ display: 'flex', alignItems: 'center', gap: 4 }}>
+            <div style={{ width: 8, height: 8, borderRadius: 2, background: NODE_COLOR }} />
+            Child execution
+          </div>
+        )}
+        {visibleRoles.has('object_storage_worker') || visibleRoles.has('hybrid_segment') ? (
+          <div style={{ display: 'flex', alignItems: 'center', gap: 4 }}>
+            <div style={{ width: 8, height: 8, borderRadius: 2, background: OBJECT_WORKER_COLOR }} />
+            Storage worker
+          </div>
+        ) : null}
+        {visibleRoles.has('insert_forwarder') || visibleRoles.has('async_insert_flush') ? (
+          <div style={{ display: 'flex', alignItems: 'center', gap: 4 }}>
+            <div style={{ width: 8, height: 8, borderRadius: 2, background: INSERT_COLOR }} />
+            Insert path
+          </div>
+        ) : null}
         {subQueries.some(sq => sq.exception_code) && (
           <div style={{ display: 'flex', alignItems: 'center', gap: 4 }}>
             <div style={{ width: 8, height: 8, borderRadius: 2, background: ERROR_COLOR }} />
@@ -198,28 +450,26 @@ const TopologyBar: React.FC<{
   leftPct: number;
   widthPct: number;
   color: string;
+  hostColor: string;
   durationMs: number;
   memoryUsage: number;
   readRows: number;
   hasError: boolean;
   isActive: boolean;
   isCoordinator?: boolean;
+  roleLabel: string;
+  indentLevel?: number;
   onClick: () => void;
   labelWidth: number;
   metricWidth: number;
 }> = ({
   queryId, label, hostname, leftPct, widthPct, color, durationMs, memoryUsage, readRows,
-  hasError, isActive, isCoordinator, onClick, labelWidth, metricWidth,
+  hasError, isActive, isCoordinator, roleLabel, indentLevel = 0, onClick, labelWidth, metricWidth, hostColor,
 }) => {
   const fmtMs = formatDurationMs;
-  const fmtCompact = (n: number) => {
-    if (n < 1000) return n.toString();
-    if (n < 1_000_000) return `${(n / 1000).toFixed(1)}K`;
-    if (n < 1_000_000_000) return `${(n / 1_000_000).toFixed(1)}M`;
-    return `${(n / 1_000_000_000).toFixed(1)}B`;
-  };
   const tooltip = [
     `query_id: ${queryId}`,
+    `role: ${roleLabel}`,
     `host: ${hostname || label}`,
     `duration: ${fmtMs(durationMs)}`,
     `memory: ${formatBytes(memoryUsage)}`,
@@ -231,27 +481,68 @@ const TopologyBar: React.FC<{
       onClick={onClick}
       title={tooltip}
       style={{
-        display: 'flex', alignItems: 'center', height: 24, marginBottom: 2,
+        display: 'flex', alignItems: 'center', minHeight: 30, marginBottom: 2,
         cursor: 'pointer',
         borderRadius: 3,
         transition: 'background 0.1s',
+        background: isActive ? 'var(--bg-hover)' : 'transparent',
       }}
-      onMouseEnter={e => { e.currentTarget.style.background = 'rgba(255,255,255,0.03)'; }}
-      onMouseLeave={e => { e.currentTarget.style.background = 'transparent'; }}
+      onMouseEnter={e => { e.currentTarget.style.background = 'var(--bg-hover)'; }}
+      onMouseLeave={e => { e.currentTarget.style.background = isActive ? 'var(--bg-hover)' : 'transparent'; }}
     >
       {/* Label */}
       <div style={{
         width: labelWidth, flexShrink: 0,
+        position: 'relative',
         fontSize: 10, fontFamily: 'var(--font-mono, monospace)',
-        color: isActive ? (isCoordinator ? COORD_COLOR : NODE_COLOR) : 'var(--text-muted)',
+        color: isActive ? (isCoordinator ? COORD_COLOR : hostColor) : 'var(--text-muted)',
         overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap',
         paddingRight: 6,
         fontWeight: isActive || isCoordinator ? 600 : 400,
+        paddingLeft: isCoordinator ? 0 : 8 + indentLevel * 14,
       }}>
-        {label}
-        {isActive && !isCoordinator && (
-          <span style={{ fontSize: 8, color: NODE_COLOR, marginLeft: 4 }}>◂</span>
+        {!isCoordinator && indentLevel > 0 && (
+          <>
+            <span style={{
+              position: 'absolute',
+              left: 1,
+              top: 0,
+              bottom: 0,
+              width: 1,
+              background: 'var(--border-primary)',
+            }} />
+            <span style={{
+              position: 'absolute',
+              left: 1,
+              top: 11,
+              width: indentLevel * 14 - 2,
+              height: 1,
+              background: 'var(--border-primary)',
+            }} />
+          </>
         )}
+        {!isCoordinator && (
+          <span style={{
+            position: 'absolute',
+            left: indentLevel * 14,
+            top: 3,
+            bottom: 3,
+            width: isActive ? 4 : 3,
+            borderRadius: 1,
+            background: hostColor,
+          }} />
+        )}
+        <span title={hostname || label} style={{ color: isCoordinator ? COORD_COLOR : hostColor }}>{label}</span>
+        <span style={{
+          display: 'block',
+          marginTop: 1,
+          fontSize: 8,
+          color: isCoordinator ? COORD_COLOR : MUTED_COLOR,
+          fontFamily: 'var(--font-mono, monospace)',
+          lineHeight: 1,
+        }}>
+          {roleLabel}
+        </span>
       </div>
 
       {/* Bar track */}
@@ -268,9 +559,11 @@ const TopologyBar: React.FC<{
             height: '100%',
             background: color,
             borderRadius: 2,
-            opacity: isActive ? 1 : 0.5,
+            opacity: isActive ? 1 : 0.38,
             border: 'none',
-            boxShadow: 'none',
+            boxShadow: isActive
+              ? `0 0 0 2px ${isCoordinator ? 'rgba(88, 166, 255, 0.18)' : 'rgba(88, 166, 255, 0.22)'}, 0 0 12px rgba(88, 166, 255, 0.18)`
+              : 'none',
             display: 'flex',
             alignItems: 'center',
             justifyContent: 'flex-start',

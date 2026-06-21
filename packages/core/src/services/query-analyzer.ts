@@ -1,6 +1,6 @@
 import type { IClickHouseAdapter } from '../adapters/types.js';
 import type { QueryMetrics, QueryHistoryItem } from '../types/query.js';
-import { RUNNING_QUERIES, QUERY_DETAIL, QUERY_THREAD_BREAKDOWN, PROFILE_EVENT_DESCRIPTIONS, SUB_QUERIES, BATCH_SUB_QUERIES, COORDINATOR_IDS, RUNNING_COORDINATOR_IDS, QUERY_LOG_FLUSH_INTERVAL } from '../queries/query-queries.js';
+import { RUNNING_QUERIES, QUERY_DETAIL, QUERY_THREAD_BREAKDOWN, PROFILE_EVENT_DESCRIPTIONS, SUB_QUERIES, BATCH_SUB_QUERIES, COORDINATOR_IDS, RUNNING_COORDINATOR_IDS, QUERY_LOG_FLUSH_INTERVAL, DISTRIBUTED_TOPOLOGY_EXECUTIONS, DISTRIBUTED_TOPOLOGY_CLUSTER_HOSTS, DISTRIBUTED_TOPOLOGY_PROCESSORS, DISTRIBUTED_TOPOLOGY_TEXT_LOGS } from '../queries/query-queries.js';
 /**
  * ProfileEvent comparison row between two queries.
  * Inspired by https://clickhouse.com/docs/knowledgebase/comparing-metrics-between-queries
@@ -28,6 +28,15 @@ import { buildQuery, tagQuery, eventDateBound, escapeValue } from '../queries/bu
 import { TAB_QUERIES, TAB_INTERNAL, APP_SOURCE_PREFIX, sourceTag } from '../queries/source-tags.js';
 import { mapQueryMetrics, mapQueryHistoryItem } from '../mappers/query-mappers.js';
 import { shortenHostname } from '../mappers/helpers.js';
+import {
+  inferDistributedTopology,
+  type ClusterHostInput,
+  type DistributedQueryExecutionInput,
+  type DistributedTextLogInput,
+  type DistributedTopology,
+  type ProcessorProfileInput,
+  type ProfileEventsMap,
+} from './distributed-query-topology.js';
 
 export class QueryAnalysisError extends Error {
   constructor(message: string, public readonly cause?: Error) {
@@ -157,6 +166,11 @@ export interface SubQueryInfo {
   memory_usage: number;
   read_rows: number;
   read_bytes: number;
+  selected_parts: number;
+  selected_parts_total: number;
+  selected_marks: number;
+  selected_marks_total: number;
+  selected_ranges: number;
   query_preview: string;
   exception_code: number;
   exception: string;
@@ -164,6 +178,29 @@ export interface SubQueryInfo {
 }
 
 export type SubQueriesByInitialQueryId = Map<string, SubQueryInfo[]>;
+
+function parseStringArray(raw: unknown): string[] {
+  if (Array.isArray(raw)) return raw.map(String);
+  if (typeof raw === 'string') {
+    try {
+      const parsed = JSON.parse(raw);
+      if (Array.isArray(parsed)) return parsed.map(String);
+    } catch {
+      return raw ? [raw] : [];
+    }
+  }
+  return [];
+}
+
+function parseProfileEvents(raw: unknown): ProfileEventsMap {
+  if (!raw || typeof raw !== 'object') return {};
+  const result: ProfileEventsMap = {};
+  for (const [key, value] of Object.entries(raw as Record<string, unknown>)) {
+    const parsed = Number(value ?? 0);
+    result[key] = Number.isFinite(parsed) ? parsed : String(value ?? '');
+  }
+  return result;
+}
 
 /**
  * Setting default value info from system.settings
@@ -508,6 +545,11 @@ export class QueryAnalyzer {
         memory_usage: Number(r.memory_usage) || 0,
         read_rows: Number(r.read_rows) || 0,
         read_bytes: Number(r.read_bytes) || 0,
+        selected_parts: Number(r.selected_parts) || 0,
+        selected_parts_total: Number(r.selected_parts_total) || 0,
+        selected_marks: Number(r.selected_marks) || 0,
+        selected_marks_total: Number(r.selected_marks_total) || 0,
+        selected_ranges: Number(r.selected_ranges) || 0,
         query_preview: String(r.query_preview || ''),
         exception_code: Number(r.exception_code) || 0,
         exception: String(r.exception || ''),
@@ -515,6 +557,121 @@ export class QueryAnalyzer {
       }));
     } catch (error) {
       throw new QueryAnalysisError('Failed to get sub-queries', error as Error);
+    }
+  }
+
+  /**
+   * Get inferred distributed topology for a query using richer, raw evidence.
+   *
+   * Optional sources degrade independently:
+   * - system.clusters supplies host -> shard/replica mapping.
+   * - processors_profile_log supplies structured execution phase hints.
+   * - system.text_log supplies last-resort human-readable execution phase breadcrumbs.
+   * - query_log/ProfileEvents remains the baseline.
+   */
+  async getDistributedTopology(initialQueryId: string, eventDate?: string): Promise<DistributedTopology> {
+    const boundedEventDate = eventDateBound(eventDate);
+    const executionsSql = buildQuery(
+      DISTRIBUTED_TOPOLOGY_EXECUTIONS.replace('{event_date_bound}', boundedEventDate),
+      { initial_query_id: initialQueryId },
+    );
+    const clusterHostsSql = DISTRIBUTED_TOPOLOGY_CLUSTER_HOSTS;
+    const processorsSql = buildQuery(
+      DISTRIBUTED_TOPOLOGY_PROCESSORS.replace('{event_date_bound}', boundedEventDate),
+      { initial_query_id: initialQueryId },
+    );
+
+    try {
+      const executionRows = await this.adapter.executeQuery<Record<string, unknown>>(
+        tagQuery(executionsSql, sourceTag(TAB_QUERIES, 'distributedTopologyExecutions')),
+      );
+
+      const [clusterHostRows, processorRows] = await Promise.all([
+        this.adapter.executeQuery<Record<string, unknown>>(
+          tagQuery(clusterHostsSql, sourceTag(TAB_QUERIES, 'distributedTopologyClusterHosts')),
+        ).catch(() => null),
+        this.adapter.executeQuery<Record<string, unknown>>(
+          tagQuery(processorsSql, sourceTag(TAB_QUERIES, 'distributedTopologyProcessors')),
+        ).catch(() => null),
+      ]);
+
+      const executions: DistributedQueryExecutionInput[] = executionRows.map((row) => ({
+        queryId: String(row.query_id ?? ''),
+        initialQueryId: String(row.initial_query_id ?? ''),
+        isInitialQuery: Number(row.is_initial_query ?? 0) === 1,
+        hostname: String(row.hostname ?? ''),
+        queryKind: String(row.query_kind ?? ''),
+        queryStartTimeMicroseconds: String(row.query_start_time_microseconds ?? ''),
+        queryDurationMs: Number(row.query_duration_ms ?? 0),
+        memoryUsage: Number(row.memory_usage ?? 0),
+        readRows: Number(row.read_rows ?? 0),
+        readBytes: Number(row.read_bytes ?? 0),
+        writtenRows: Number(row.written_rows ?? 0),
+        writtenBytes: Number(row.written_bytes ?? 0),
+        resultRows: Number(row.result_rows ?? 0),
+        resultBytes: Number(row.result_bytes ?? 0),
+        tables: parseStringArray(row.tables),
+        queryPreview: String(row.query_preview ?? ''),
+        profileEvents: parseProfileEvents(row.ProfileEvents),
+      }));
+
+      const clusterHosts: ClusterHostInput[] = (clusterHostRows ?? []).map((row) => ({
+        hostName: String(row.host_name ?? ''),
+        shardNum: Number(row.shard_num ?? 0),
+        replicaNum: Number(row.replica_num ?? 0),
+        cluster: String(row.cluster ?? ''),
+      })).filter(row => row.hostName && row.shardNum > 0 && row.replicaNum > 0);
+
+      const processorProfiles: ProcessorProfileInput[] = (processorRows ?? []).map((row) => ({
+        queryId: String(row.query_id ?? ''),
+        initialQueryId: String(row.initial_query_id ?? ''),
+        hostname: String(row.hostname ?? ''),
+        planStepName: String(row.plan_step_name ?? ''),
+        planStepDescription: String(row.plan_step_description ?? ''),
+        processorName: String(row.processor_name ?? ''),
+      })).filter(row => row.queryId && row.hostname);
+
+      const textLogQueryIds = [
+        initialQueryId,
+        ...executions.map(execution => execution.queryId),
+      ].filter(Boolean);
+      const uniqueTextLogQueryIds = [...new Set(textLogQueryIds)];
+      let textLogRows: Record<string, unknown>[] | null = null;
+      if (uniqueTextLogQueryIds.length > 0) {
+        const queryIdList = uniqueTextLogQueryIds.map(id => `'${escapeValue(id)}'`).join(',');
+        const textLogsSql = DISTRIBUTED_TOPOLOGY_TEXT_LOGS
+          .replace('{{query_id_list}}', queryIdList)
+          .replace('{event_date_bound}', boundedEventDate);
+        textLogRows = await this.adapter.executeQuery<Record<string, unknown>>(
+          tagQuery(textLogsSql, sourceTag(TAB_QUERIES, 'distributedTopologyTextLogs')),
+        ).catch(() => null);
+      }
+
+      const textLogs: DistributedTextLogInput[] = (textLogRows ?? []).map((row) => ({
+        queryId: String(row.query_id ?? ''),
+        eventTimeMicroseconds: String(row.event_time_microseconds ?? ''),
+        level: String(row.level ?? ''),
+        source: String(row.source ?? ''),
+        message: String(row.message ?? ''),
+        threadName: String(row.thread_name ?? ''),
+      })).filter(row => row.queryId && row.message);
+
+      return inferDistributedTopology({
+        rootQueryId: initialQueryId,
+        executions,
+        clusterHosts,
+        processorProfiles,
+        textLogs,
+        capabilities: {
+          queryLog: true,
+          profileEvents: true,
+          systemClusters: clusterHostRows !== null,
+          processorsProfileLog: processorRows !== null,
+          textLog: textLogRows !== null,
+        },
+      });
+    } catch (error) {
+      throw new QueryAnalysisError('Failed to get distributed topology', error as Error);
     }
   }
 
@@ -552,6 +709,11 @@ export class QueryAnalyzer {
           memory_usage: Number(r.memory_usage) || 0,
           read_rows: Number(r.read_rows) || 0,
           read_bytes: Number(r.read_bytes) || 0,
+          selected_parts: Number(r.selected_parts) || 0,
+          selected_parts_total: Number(r.selected_parts_total) || 0,
+          selected_marks: Number(r.selected_marks) || 0,
+          selected_marks_total: Number(r.selected_marks_total) || 0,
+          selected_ranges: Number(r.selected_ranges) || 0,
           query_preview: String(r.query_preview || ''),
           exception_code: Number(r.exception_code) || 0,
           exception: String(r.exception || ''),

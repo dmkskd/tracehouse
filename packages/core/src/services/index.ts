@@ -53,6 +53,37 @@ export {
   type PruningSeverity,
 } from './pruning.js';
 export { ClusterService } from './cluster-service.js';
+export {
+  BUILT_IN_TOPOLOGY_DETECTORS,
+  buildDistributedExecutionFlowSteps,
+  formatDistributedTopologyReport,
+  inferDistributedTopology,
+  parseDistributedTextLogPhases,
+  type ClusterHostInput,
+  type DistributedExecutionFlowEvent,
+  type DistributedExecutionFlowEventKind,
+  type DistributedExecutionFlowStep,
+  type DistributedExecutionPhase,
+  type DistributedExecutionPhaseKind,
+  type DistributedTopologyCapabilities,
+  type DistributedTextLogInput,
+  type DistributedQueryExecutionInput,
+  type DistributedQueryKind,
+  type DistributedTopology,
+  type DistributedTopologyInput,
+  type DistributedTopologyNode,
+  type DistributedShardCoverage,
+  type DistributedTopologyShard,
+  type ProcessorProfileInput,
+  type ProfileEventsMap,
+  type TopologyCapabilityId,
+  type TopologyConfidence,
+  type TopologyDecision,
+  type TopologyDecisionLevel,
+  type TopologyDetectorPlugin,
+  type TopologyEvidence,
+  type TopologyNodeRole,
+} from './distributed-query-topology.js';
 export { ReplicationService, ReplicationServiceError, extractShardId, shardIdToNum, assembleShards, parseShardingKey, buildEngineInfo, filterQueueEntries, classifyReplicaHealth, classifyDelaySeverity, buildKeeperTableInfo } from './replication-service.js';
 export type { ClusterInfo, AvailableCluster } from './cluster-service.js';
 export { EnvironmentDetector } from './environment-detector.js';

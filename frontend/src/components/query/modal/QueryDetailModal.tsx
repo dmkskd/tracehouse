@@ -21,6 +21,7 @@ import { useUserPreferenceStore } from '../../../stores/userPreferenceStore';
 import { SpansTab } from './tabs/SpansTab';
 import { HistoryTab } from './tabs/HistoryTab';
 import { OverviewTab } from './tabs/OverviewTab';
+import { DistributedTab } from './tabs/DistributedTab';
 import { DetailsTab, type DetailsSubTab } from './tabs/DetailsTab';
 import { AnalyticsTab, type AnalyticsSubTab } from './tabs/AnalyticsTab';
 import { useQueryLogs } from './hooks/useQueryLogs';
@@ -41,7 +42,7 @@ export interface TimelineQueryModalProps {
   onViewInTimeTravel?: (normalizedQueryHash: string) => void;
 }
 
-type QueryModalTab = 'overview' | 'details' | 'analytics' | 'history' | 'logs' | 'spans' | 'flamegraph' | 'pipeline' | 'threads' | 'xray';
+type QueryModalTab = 'overview' | 'distributed' | 'details' | 'analytics' | 'history' | 'logs' | 'spans' | 'flamegraph' | 'pipeline' | 'threads' | 'xray';
 
 export const QueryDetailModal: React.FC<TimelineQueryModalProps> = ({
   query,
@@ -126,18 +127,36 @@ export const QueryDetailModal: React.FC<TimelineQueryModalProps> = ({
     } catch { /* ignore navigation errors */ }
   }, [services]);
 
+  const queryDetail = detail.queryDetail;
+  const distributedChildNodes = topology.distributedTopology?.nodes.filter(node =>
+    node.role !== 'coordinator' && node.role !== 'insert_client'
+  ) ?? [];
+  const hasDistributedExecution = topology.subQueries.length > 0 || distributedChildNodes.length > 0;
+  const distributedUnavailable = Boolean(queryDetail) && !topology.isLoading && !hasDistributedExecution;
+
+  useEffect(() => {
+    if (activeTab === 'distributed' && distributedUnavailable) {
+      setActiveTab('overview');
+    }
+  }, [activeTab, distributedUnavailable]);
+
   if (!query) return null;
 
   // After the null guard, activeQuery is guaranteed non-null
   const q = activeQuery!;
 
-  const queryDetail = detail.queryDetail;
   const isSelectQuery = queryDetail?.query_kind?.toUpperCase() === 'SELECT';
 
   const tabs: { key: QueryModalTab; label: string; unavailable?: boolean; reason?: string; experimental?: boolean }[] = [
     { key: 'overview', label: 'Overview' },
     { key: 'details', label: 'Details' },
     { key: 'analytics', label: 'Analytics' },
+    {
+      key: 'distributed',
+      label: 'Distributed',
+      unavailable: distributedUnavailable,
+      reason: 'No distributed execution found',
+    },
     { key: 'logs', label: 'Logs', unavailable: !hasTextLog, reason: 'system.text_log' },
     { key: 'history', label: 'History', unavailable: !hasQueryLog, reason: 'system.query_log' },
   ];
@@ -206,7 +225,11 @@ export const QueryDetailModal: React.FC<TimelineQueryModalProps> = ({
               <button
                 key={tab.key}
                 onClick={() => !tab.unavailable && setActiveTab(tab.key)}
-                title={tab.unavailable ? `Requires ${tab.reason} (not available)` : undefined}
+                title={tab.unavailable
+                  ? tab.key === 'distributed'
+                    ? tab.reason
+                    : `Requires ${tab.reason} (not available)`
+                  : undefined}
                 style={{
                   fontFamily: 'monospace',
                   padding: '8px 16px',
@@ -266,7 +289,7 @@ export const QueryDetailModal: React.FC<TimelineQueryModalProps> = ({
         </div>
 
         {/* Content */}
-        <div style={{ flex: 1, overflow: activeTab === 'history' ? 'hidden' : 'auto', padding: ['logs', 'spans', 'details', 'pipeline', 'history', 'analytics', 'xray'].includes(activeTab) ? 0 : 24 }}>
+        <div style={{ flex: 1, overflow: activeTab === 'history' ? 'hidden' : 'auto', padding: ['logs', 'spans', 'details', 'distributed', 'pipeline', 'history', 'analytics', 'xray'].includes(activeTab) ? 0 : 24 }}>
           {activeTab === 'overview' && (
             <OverviewTab
               q={q}
@@ -275,7 +298,19 @@ export const QueryDetailModal: React.FC<TimelineQueryModalProps> = ({
               isSelectQuery={isSelectQuery}
               topologyCoordinator={topology.coordinator}
               subQueries={topology.subQueries}
+              distributedTopology={topology.distributedTopology}
               isLoadingSubQueries={topology.isLoading}
+              onNavigateToQuery={navigateToQuery}
+            />
+          )}
+
+          {activeTab === 'distributed' && (
+            <DistributedTab
+              topologyCoordinator={topology.coordinator}
+              subQueries={topology.subQueries}
+              distributedTopology={topology.distributedTopology}
+              activeQueryId={activeQuery!.query_id}
+              isLoading={topology.isLoading}
               onNavigateToQuery={navigateToQuery}
             />
           )}

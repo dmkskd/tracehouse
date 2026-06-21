@@ -149,6 +149,11 @@ export const SUB_QUERIES = `
     any(memory_usage) AS memory_usage,
     any(read_rows) AS read_rows,
     any(read_bytes) AS read_bytes,
+    any(selected_parts) AS selected_parts,
+    any(selected_parts_total) AS selected_parts_total,
+    any(selected_marks) AS selected_marks,
+    any(selected_marks_total) AS selected_marks_total,
+    any(selected_ranges) AS selected_ranges,
     any(query_preview) AS query_preview,
     any(exception_code) AS exception_code,
     any(exception) AS exception,
@@ -161,7 +166,12 @@ export const SUB_QUERIES = `
       memory_usage,
       read_rows,
       read_bytes,
-      substring(query, 1, 120) AS query_preview,
+      ProfileEvents['SelectedParts'] AS selected_parts,
+      ProfileEvents['SelectedPartsTotal'] AS selected_parts_total,
+      ProfileEvents['SelectedMarks'] AS selected_marks,
+      ProfileEvents['SelectedMarksTotal'] AS selected_marks_total,
+      ProfileEvents['SelectedRanges'] AS selected_ranges,
+      if(length(formatted_query) > 0, formatted_query, query) AS query_preview,
       exception_code,
       exception,
       query_start_time_microseconds
@@ -174,6 +184,97 @@ export const SUB_QUERIES = `
   GROUP BY query_id
   ORDER BY query_duration_ms DESC
   LIMIT 50
+`;
+
+/**
+ * Get raw query_log executions for distributed topology inference.
+ * Unlike SUB_QUERIES, this intentionally does not group by query_id because
+ * parallel-replica leader/reader roles can share a query id on the same host.
+ *
+ * Requires: initial_query_id param
+ */
+export const DISTRIBUTED_TOPOLOGY_EXECUTIONS = `
+  SELECT
+    query_id,
+    initial_query_id,
+    is_initial_query,
+    hostName() AS hostname,
+    query_kind,
+    toString(query_start_time_microseconds) AS query_start_time_microseconds,
+    query_duration_ms,
+    memory_usage,
+    read_rows,
+    read_bytes,
+    written_rows,
+    written_bytes,
+    result_rows,
+    result_bytes,
+    tables,
+    if(length(formatted_query) > 0, formatted_query, query) AS query_preview,
+    ProfileEvents
+  FROM {{cluster_aware:system.query_log}}
+  WHERE (initial_query_id = {initial_query_id} OR query_id = {initial_query_id})
+    AND type IN ('QueryFinish', 'ExceptionWhileProcessing', 'ExceptionBeforeStart')
+    AND event_date >= {event_date_bound}
+  ORDER BY query_start_time_microseconds ASC, is_initial_query DESC, query_duration_ms DESC
+  LIMIT 200
+`;
+
+/**
+ * Get static host -> shard/replica mapping for configured clusters.
+ */
+export const DISTRIBUTED_TOPOLOGY_CLUSTER_HOSTS = `
+  SELECT
+    host_name,
+    shard_num,
+    replica_num,
+    cluster
+  FROM {{cluster_aware:system.clusters}}
+  GROUP BY host_name, shard_num, replica_num, cluster
+  ORDER BY cluster, shard_num, replica_num, host_name
+  LIMIT 1000
+`;
+
+/**
+ * Get processor profile hints for distributed topology inference.
+ * Requires: initial_query_id param
+ */
+export const DISTRIBUTED_TOPOLOGY_PROCESSORS = `
+  SELECT
+    query_id,
+    initial_query_id,
+    hostName() AS hostname,
+    plan_step_name,
+    plan_step_description,
+    name AS processor_name
+  FROM {{cluster_aware:system.processors_profile_log}}
+  WHERE (initial_query_id = {initial_query_id} OR query_id = {initial_query_id})
+    AND event_date >= {event_date_bound}
+  ORDER BY event_time_microseconds ASC
+  LIMIT 1000
+`;
+
+/**
+ * Get text_log breadcrumbs for distributed execution phase enrichment.
+ * This is intentionally not the primary topology source. The service uses it
+ * after query_log/ProfileEvents/cluster/processors data to explain hand-offs
+ * and merge phases when ClickHouse emits clear coordinator log lines.
+ *
+ * Requires: caller to replace {{query_id_list}} with a parenthesised, quoted list.
+ */
+export const DISTRIBUTED_TOPOLOGY_TEXT_LOGS = `
+  SELECT
+    toString(event_time_microseconds) AS event_time_microseconds,
+    query_id,
+    level,
+    logger_name AS source,
+    message,
+    thread_name
+  FROM {{cluster_aware:system.text_log}}
+  WHERE query_id IN ({{query_id_list}})
+    AND event_date >= {event_date_bound}
+  ORDER BY event_time_microseconds ASC
+  LIMIT 1000
 `;
 
 /**
@@ -192,6 +293,11 @@ export const BATCH_SUB_QUERIES = `
     any(memory_usage) AS memory_usage,
     any(read_rows) AS read_rows,
     any(read_bytes) AS read_bytes,
+    any(selected_parts) AS selected_parts,
+    any(selected_parts_total) AS selected_parts_total,
+    any(selected_marks) AS selected_marks,
+    any(selected_marks_total) AS selected_marks_total,
+    any(selected_ranges) AS selected_ranges,
     any(query_preview) AS query_preview,
     any(exception_code) AS exception_code,
     any(exception) AS exception,
@@ -212,7 +318,12 @@ export const BATCH_SUB_QUERIES = `
         memory_usage,
         read_rows,
         read_bytes,
-        substring(query, 1, 120) AS query_preview,
+        ProfileEvents['SelectedParts'] AS selected_parts,
+        ProfileEvents['SelectedPartsTotal'] AS selected_parts_total,
+        ProfileEvents['SelectedMarks'] AS selected_marks,
+        ProfileEvents['SelectedMarksTotal'] AS selected_marks_total,
+        ProfileEvents['SelectedRanges'] AS selected_ranges,
+        if(length(formatted_query) > 0, formatted_query, query) AS query_preview,
         exception_code,
         exception,
         query_start_time_microseconds
