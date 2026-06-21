@@ -110,8 +110,11 @@ install_clickhouse_operator() {
     
     log_info "Installing ClickHouse Cloud Operator..."
     
-    # Install from official release
-    kubectl apply -f https://github.com/ClickHouse/clickhouse-operator/releases/latest/download/clickhouse-operator.yaml
+    # Install from official release.
+    # Server-side apply: the CRD's OpenAPI schema exceeds the 256KB cap on the
+    # client-side last-applied-configuration annotation, so client-side apply fails with
+    # "metadata.annotations: Too long: may not be more than 262144 bytes".
+    kubectl apply --server-side --force-conflicts -f https://github.com/ClickHouse/clickhouse-operator/releases/latest/download/clickhouse-operator.yaml
     
     log_info "Waiting for operator to be ready..."
     sleep 10

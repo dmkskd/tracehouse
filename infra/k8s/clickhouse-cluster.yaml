@@ -40,6 +40,26 @@ spec:
         add:
           - SYS_PTRACE
 
+  # The operator's version-detection Job defaults to a 256Mi memory limit, which
+  # OOMKills ClickHouse 26.x before it can report its version — leaving the cluster
+  # stuck at "Cannot probe replicas" with no server pods ever created. Give the probe
+  # enough headroom to boot. (Nodes have ~66Gi; the Job is short-lived.)
+  versionProbeTemplate:
+    spec:
+      template:
+        spec:
+          containers:
+            - name: version-probe
+              resources:
+                # request is what's actually reserved on the node for the ~2s the
+                # Job lives — keep it small. The limit is only a ceiling (it reserves
+                # nothing) and just needs headroom above CH's boot peak so the 256Mi
+                # default OOMKill doesn't recur.
+                requests:
+                  memory: "256Mi"
+                limits:
+                  memory: "1Gi"
+
   # Spread replicas across worker nodes
   podTemplate:
     securityContext:
