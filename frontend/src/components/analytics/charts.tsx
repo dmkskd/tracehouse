@@ -207,7 +207,6 @@ const RadarChart2D: React.FC<{
             pointerEvents: 'none',
             whiteSpace: 'nowrap',
           }}>
-            <div style={tooltipLabelStyle}>rows: {plot.rowCount}</div>
             {plot.labels.map((label, i) => (
               <div key={label} style={{ display: 'flex', gap: 10, alignItems: 'baseline', marginTop: i > 0 ? 2 : 0 }}>
                 <span style={{ ...tooltipLabelStyle, marginBottom: 0, minWidth: 58 }}>{label}</span>
