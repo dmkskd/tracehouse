@@ -54,6 +54,8 @@ describe('preset queries', { tags: ['analytics'] }, () => {
       },
     });
     expect(query?.sql).toContain('SELECT avg(cpu_pressure)');
+    expect(query?.sql).toContain("metric IN ('OSMemoryAvailable', 'OSMemoryTotal')");
+    expect(query?.sql).not.toContain('CurrentMetric_MemoryTracking');
     expect(query?.sql).toContain('event_time > {{time_range}}');
   });
 

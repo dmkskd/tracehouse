@@ -26,16 +26,19 @@ SELECT
         FROM
         (
             SELECT
-                toStartOfInterval(m.event_time, INTERVAL 1 MINUTE) AS t,
-                avg(m.CurrentMetric_MemoryTracking) / nullIf(avg(a.value), 0) AS memory_pressure
-            FROM {{cluster_aware:system.metric_log}} m
-            INNER JOIN {{cluster_aware:system.asynchronous_metric_log}} a
-              ON toStartOfInterval(a.event_time, INTERVAL 1 MINUTE) = toStartOfInterval(m.event_time, INTERVAL 1 MINUTE)
-             AND a.metric = 'OSMemoryTotal'
-            WHERE m.event_time > {{time_range}}
-              AND a.event_time > {{time_range}}
-              AND a.value > 0
+                toStartOfInterval(event_time, INTERVAL 1 MINUTE) AS t,
+                greatest(
+                    0,
+                    least(
+                        1,
+                        1 - avgIf(value, metric = 'OSMemoryAvailable') / nullIf(avgIf(value, metric = 'OSMemoryTotal'), 0)
+                    )
+                ) AS memory_pressure
+            FROM {{cluster_aware:system.asynchronous_metric_log}}
+            WHERE event_time > {{time_range}}
+              AND metric IN ('OSMemoryAvailable', 'OSMemoryTotal')
             GROUP BY t
+            HAVING avgIf(value, metric = 'OSMemoryTotal') > 0
         )
     ) AS memory_pressure,
     (
