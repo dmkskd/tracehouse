@@ -71,13 +71,14 @@ export function shortRadarLabel(label: string): string {
   return normalized.slice(0, 4).toUpperCase();
 }
 
-export function radarShapeLayout(values: number[], labels: string[]): RadarShapeLayout {
+export function radarShapeLayout(values: number[], labels: string[], variant: 'cell' | 'chart' = 'cell'): RadarShapeLayout {
   const cleanValues = values.length > 0 ? values.map(clamp01) : [0, 0, 0];
   const cleanLabels = labels.length === cleanValues.length ? labels : cleanValues.map((_, i) => `axis ${i + 1}`);
-  const center = { x: 40, y: 40 };
-  const radius = 18;
-  const inner = 5;
-  const labelRadius = 31;
+  const isChart = variant === 'chart';
+  const center = isChart ? { x: 50, y: 50 } : { x: 40, y: 40 };
+  const radius = isChart ? 34 : 18;
+  const inner = isChart ? 8 : 5;
+  const labelRadius = isChart ? 52 : 31;
 
   const pointsFor = (distance: number): RadarLayoutPoint[] => cleanValues.map((_, i) => {
     const angle = (-90 + i * 360 / cleanValues.length) * Math.PI / 180;
@@ -105,7 +106,7 @@ export function radarShapeLayout(values: number[], labels: string[]): RadarShape
   }).join(' ');
 
   return {
-    viewBox: '-8 -8 96 96',
+    viewBox: isChart ? '-26 -16 152 136' : '-8 -8 96 96',
     center,
     radius,
     spokes,

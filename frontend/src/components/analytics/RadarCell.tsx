@@ -9,9 +9,10 @@ export const RadarShape: React.FC<{
   title?: string;
   showValues?: boolean;
   rawValues?: string[];
-}> = ({ values, labels = [], color, size = 52, title, showValues = false, rawValues = [] }) => {
-  const layout = radarShapeLayout(values, labels);
-  const viewBox = showValues ? '-36 -14 152 112' : layout.viewBox;
+  variant?: 'cell' | 'chart';
+}> = ({ values, labels = [], color, size = 52, title, showValues = false, rawValues = [], variant = showValues ? 'chart' : 'cell' }) => {
+  const layout = radarShapeLayout(values, labels, variant);
+  const viewBox = layout.viewBox;
 
   return (
     <svg width={size} height={size} viewBox={viewBox} role="img" aria-label={title ?? 'Radar shape'} style={{ userSelect: 'none', overflow: 'visible', maxWidth: '100%', maxHeight: '100%' }}>

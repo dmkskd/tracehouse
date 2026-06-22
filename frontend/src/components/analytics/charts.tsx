@@ -146,7 +146,6 @@ const RadarChart2D: React.FC<{
   const hasTooManyRows = rows.length > 1;
   const plot = useMemo(() => buildRadarChartPlot(config, rows), [config, rows]);
   const [hoveredRadar, setHoveredRadar] = useState(false);
-  const radarSize = fullHeight ? 620 : 520;
 
   if (hasTooManyRows || !plot) {
     return (
@@ -170,27 +169,34 @@ const RadarChart2D: React.FC<{
       display: 'flex',
       alignItems: 'center',
       justifyContent: 'center',
-      padding: 2,
+      padding: fullHeight ? '8px 16px 18px' : 8,
+      boxSizing: 'border-box',
     }}>
       <div
         onMouseEnter={() => setHoveredRadar(true)}
         onMouseLeave={() => setHoveredRadar(false)}
         style={{
-        width: fullHeight ? '100%' : 'min(82vh, 82vw, 900px)',
-        height: fullHeight ? '100%' : undefined,
-        minWidth: fullHeight ? 0 : 520,
+        width: '100%',
+        height: fullHeight ? '100%' : 'min(82vh, 82vw, 760px)',
+        minWidth: 0,
         minHeight: fullHeight ? 0 : 520,
         maxWidth: '100%',
         maxHeight: '100%',
         position: 'relative',
         display: 'flex',
-        flexDirection: 'column',
         alignItems: 'center',
         justifyContent: 'center',
-        gap: 10,
-        padding: 12,
+        padding: 0,
       }}>
-        <RadarShape values={plot.values} labels={plot.labels} rawValues={plot.rawValues} color={plot.color} size={radarSize} showValues />
+        <RadarShape
+          values={plot.values}
+          labels={plot.labels}
+          rawValues={plot.rawValues}
+          color={plot.color}
+          size="100%"
+          showValues
+          variant="chart"
+        />
         {hoveredRadar && (
           <div style={{
             ...tooltipStyle,
