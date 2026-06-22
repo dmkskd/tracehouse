@@ -216,6 +216,7 @@ const BUILTIN_DASHBOARDS: Dashboard[] = [
     category: 'General',
     columns: 2,
     panels: [
+      { queryName: 'Resources#Server Pressure Radar' },
       { queryName: 'Advanced Dashboard#Queries/second' },
       { queryName: 'Advanced Dashboard#CPU Usage (cores)' },
       { queryName: 'Advanced Dashboard#Queries Running' },

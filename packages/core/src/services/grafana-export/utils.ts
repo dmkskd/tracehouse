@@ -26,6 +26,8 @@ export function mapPanelType(chartType: string | undefined): string {
       return 'barchart';
     case 'pie':
       return 'piechart';
+    case 'radar':
+      return 'table';
     default:
       return 'timeseries';
   }
@@ -117,6 +119,10 @@ export function displayName(column: string): string {
 
 export function sparklineImageColumn(column: string): string {
   return `${column}__grafana_sparkline`;
+}
+
+export function radarImageColumn(column: string): string {
+  return `${column}__grafana_radar`;
 }
 
 export function resolveResultColumn(column: string, resultColumns: string[] | undefined): string | undefined {

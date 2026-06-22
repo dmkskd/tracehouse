@@ -12,14 +12,14 @@
 
 /* ─── types ─── */
 
-export type ChartType = 'bar' | 'line' | 'pie' | 'area' | 'grouped_bar' | 'stacked_bar' | 'grouped_line';
+export type ChartType = 'bar' | 'line' | 'pie' | 'area' | 'grouped_bar' | 'stacked_bar' | 'grouped_line' | 'radar';
 export type ChartStyle = '2d' | '3d';
 
 /** Cell style type - determines how a table column is decorated. */
-export type CellStyleType = 'rag' | 'gauge' | 'sparkline';
+export type CellStyleType = 'rag' | 'gauge' | 'sparkline' | 'radar';
 
 /** Unified cell style rule parsed from @cell: directives. */
-export type CellStyleRule = RagCellStyle | GaugeCellStyle | SparklineCellStyle;
+export type CellStyleRule = RagCellStyle | GaugeCellStyle | SparklineCellStyle | RadarCellStyle;
 
 /** RAG (Red/Amber/Green) cell style - conditional coloring based on thresholds or text values. */
 export interface RagCellStyle {
@@ -55,6 +55,42 @@ export interface SparklineCellStyle {
   fill?: boolean;
 }
 
+export interface RadarAxisRange {
+  low: string;
+  high: string;
+}
+
+interface RadarOptions {
+  profile?: string;
+  axes?: Record<string, string>;
+  ranges?: Record<string, RadarAxisRange>;
+  transforms?: Record<string, string>;
+  values?: string;
+  labels?: string;
+  color?: string;
+  colorBy?: string;
+  colorScale?: string;
+  colors?: string;
+}
+
+/** Radar cell style. Uses either an existing SQL array column or a synthetic display-only radar column. */
+export interface RadarCellStyle {
+  type: 'radar';
+  /** Existing SQL result column containing normalized values. Mutually exclusive with radarColumn. */
+  column?: string;
+  /** Display-only column created by AQL from axes/ranges. Mutually exclusive with column. */
+  radarColumn?: string;
+  profile?: string;
+  axes?: Record<string, string>;
+  ranges?: Record<string, RadarAxisRange>;
+  transforms?: Record<string, string>;
+  labels?: string;
+  color?: string;
+  colorBy?: string;
+  colorScale?: string;
+  colors?: string;
+}
+
 /** @deprecated Use CellStyleRule with type='rag' instead. Alias for backward compat in consumer code. */
 export type RagRule = RagCellStyle;
 /** @deprecated Use CellStyleRule with type='gauge' instead. */
@@ -73,10 +109,19 @@ export interface ParsedDirectives {
   chart?: {
     type: ChartType;
     style?: ChartStyle;
+    labelColumn?: string;
     groupByColumn?: string;
     valueColumn?: string;
     seriesColumn?: string;
     descriptionColumn?: string;
+    profile?: string;
+    axes?: Record<string, string>;
+    ranges?: Record<string, RadarAxisRange>;
+    transforms?: Record<string, string>;
+    valuesColumn?: string;
+    labelsColumn?: string;
+    color?: string;
+    colorByColumn?: string;
   };
   drill?: {
     on: string;
@@ -104,6 +149,7 @@ export interface ParsedDirectives {
  *  Supports multi-column values, orientation, unit - used for rendering config. */
 export interface ChartDirective {
   type?: ChartType;
+  labelColumn?: string;
   groupByColumn?: string;
   valueColumn?: string;
   valueColumns?: string[];
@@ -117,6 +163,13 @@ export interface ChartDirective {
   unit?: string;
   /** Override the default chart color (hex, e.g. '#f59e0b'). Used for stroke and area fill. */
   color?: string;
+  profile?: string;
+  axes?: Record<string, string>;
+  ranges?: Record<string, RadarAxisRange>;
+  transforms?: Record<string, string>;
+  valuesColumn?: string;
+  labelsColumn?: string;
+  colorByColumn?: string;
 }
 
 /* ─── constants ─── */
@@ -146,6 +199,7 @@ export const CHART_TYPE_LABELS: Record<string, string> = {
   grouped_bar: 'Grouped Bar',
   stacked_bar: 'Stacked Bar',
   grouped_line: 'Grouped Line',
+  radar: 'Radar',
 };
 
 /* ─── RAG evaluation ─── */
@@ -180,15 +234,16 @@ export function getRagColor(column: string, value: unknown, rules?: CellStyleRul
 
 /** Parse a single @cell: line body into a CellStyleRule, or null if invalid. */
 function parseCellStyleLine(body: string): CellStyleRule | null {
-  const colMatch = body.match(/column=(\w+)/);
-  if (!colMatch) return null;
-  const column = colMatch[1];
-
   const typeMatch = body.match(/type=(\w+)/);
   const type = typeMatch ? typeMatch[1] : 'rag'; // default to rag for backward compat
 
+  const colMatch = body.match(/(?:^|\s)column=(\w+)/);
+  const column = colMatch?.[1];
+  if (type !== 'radar' && !column) return null;
+
   switch (type) {
     case 'rag': {
+      if (!column) return null;
       // Numeric: green>N amber>N or green<N amber<N
       const greenNum = body.match(/green([<>])(\d+(?:\.\d+)?)/);
       const amberNum = body.match(/amber([<>])(\d+(?:\.\d+)?)/);
@@ -215,6 +270,7 @@ function parseCellStyleLine(body: string): CellStyleRule | null {
       return null;
     }
     case 'gauge': {
+      if (!column) return null;
       const maxMatch = body.match(/max=(\w+(?:\.\d+)?)/);
       if (!maxMatch) return null;
       const maxVal = /^\d+(\.\d+)?$/.test(maxMatch[1]) ? Number(maxMatch[1]) : maxMatch[1];
@@ -224,6 +280,7 @@ function parseCellStyleLine(body: string): CellStyleRule | null {
       return rule;
     }
     case 'sparkline': {
+      if (!column) return null;
       const rule: SparklineCellStyle = { column, type: 'sparkline' };
       const refMatch = body.match(/ref=(-?\d+(?:\.\d+)?)/);
       if (refMatch) rule.ref = Number(refMatch[1]);
@@ -233,9 +290,96 @@ function parseCellStyleLine(body: string): CellStyleRule | null {
       if (fillMatch) rule.fill = fillMatch[1].toLowerCase() === 'true';
       return rule;
     }
+    case 'radar': {
+      const radarColumn = body.match(/(?:^|\s)radar_column=(\w+)/)?.[1];
+      if ((column && radarColumn) || (!column && !radarColumn)) return null;
+      const rule: RadarCellStyle = { type: 'radar' };
+      if (column) rule.column = column;
+      if (radarColumn) rule.radarColumn = radarColumn;
+      const radar = parseRadarOptions(body);
+      if (radar.profile) rule.profile = radar.profile;
+      if (radar.axes) rule.axes = radar.axes;
+      if (radar.ranges) rule.ranges = radar.ranges;
+      if (radar.transforms) rule.transforms = radar.transforms;
+      if (radar.labels) rule.labels = radar.labels;
+      if (radar.color) rule.color = radar.color;
+      if (radar.colorBy) rule.colorBy = radar.colorBy;
+      if (radar.colorScale) rule.colorScale = radar.colorScale;
+      if (radar.colors) rule.colors = radar.colors;
+      if (radarColumn && (!rule.axes || !rule.ranges)) return null;
+      return rule;
+    }
     default:
       return null;
   }
+}
+
+function parseKeyValueList(raw?: string): Record<string, string> | undefined {
+  if (!raw) return undefined;
+  const entries = raw.split(',').filter(Boolean);
+  if (!entries.length) return undefined;
+  const result: Record<string, string> = {};
+  for (const entry of entries) {
+    const idx = entry.indexOf(':');
+    if (idx <= 0 || idx === entry.length - 1) return undefined;
+    result[entry.slice(0, idx)] = entry.slice(idx + 1);
+  }
+  return result;
+}
+
+function parseRanges(raw?: string): Record<string, RadarAxisRange> | undefined {
+  if (!raw) return undefined;
+  const entries = raw.split(',').filter(Boolean);
+  if (!entries.length) return undefined;
+  const result: Record<string, RadarAxisRange> = {};
+  for (const entry of entries) {
+    const idx = entry.indexOf(':');
+    if (idx <= 0 || idx === entry.length - 1) return undefined;
+    const range = entry.slice(idx + 1);
+    const sep = range.indexOf('..');
+    if (sep <= 0 || sep >= range.length - 2) return undefined;
+    result[entry.slice(0, idx)] = {
+      low: range.slice(0, sep),
+      high: range.slice(sep + 2),
+    };
+  }
+  return result;
+}
+
+function parseRadarOptions(body: string): RadarOptions {
+  const options: RadarOptions = {};
+  const profile = body.match(/profile=([\w-]+)/i)?.[1];
+  if (profile) options.profile = profile;
+  const axes = parseKeyValueList(body.match(/axes=([^\s]+)/i)?.[1]);
+  if (axes) options.axes = axes;
+  const ranges = parseRanges(body.match(/ranges=([^\s]+)/i)?.[1]);
+  if (ranges) options.ranges = ranges;
+  const transforms = parseKeyValueList(body.match(/transforms=([^\s]+)/i)?.[1]);
+  if (transforms) options.transforms = transforms;
+  const values = body.match(/values=(\w+)/i)?.[1];
+  if (values) options.values = values;
+  const labels = body.match(/labels=(\w+)/i)?.[1];
+  if (labels) options.labels = labels;
+  const color = body.match(/color=(#[0-9a-fA-F]{3,8}|[\w-]+)/i)?.[1];
+  if (color) options.color = color;
+  const colorBy = body.match(/color_by=(\w+)/i)?.[1];
+  if (colorBy) options.colorBy = colorBy;
+  const colorScale = body.match(/color_scale=([\w-]+)/i)?.[1];
+  if (colorScale) options.colorScale = colorScale;
+  const colors = body.match(/colors=([^\s]+)/i)?.[1];
+  if (colors) options.colors = colors;
+  return options;
+}
+
+function applyRadarOptionsToChart(chart: NonNullable<ParsedDirectives['chart']> | Partial<ChartDirective>, options: RadarOptions): void {
+  if (options.profile) chart.profile = options.profile;
+  if (options.axes) chart.axes = options.axes;
+  if (options.ranges) chart.ranges = options.ranges;
+  if (options.transforms) chart.transforms = options.transforms;
+  if (options.values) chart.valuesColumn = options.values;
+  if (options.labels) chart.labelsColumn = options.labels;
+  if (options.color) chart.color = options.color;
+  if (options.colorBy) chart.colorByColumn = options.colorBy;
 }
 
 /** Parse all @cell: directives from raw SQL. */
@@ -302,9 +446,10 @@ export function parseDirectives(sql: string): ParsedDirectives | null {
 
   const chartMatch = sql.match(/--\s*@chart:\s*(.+)/i);
   if (chartMatch) {
-    const c = chartMatch[1];
+  const c = chartMatch[1];
     const t = c.match(/type=(\w+)/);
     const s = c.match(/style=(\w+)/);
+    const label = c.match(/label=(\w+)/);
     const l = c.match(/group_by=(\w+)/);
     const v = c.match(/value=([\w,]+)/);
     const g = c.match(/series=(\w+)/);
@@ -313,11 +458,13 @@ export function parseDirectives(sql: string): ParsedDirectives | null {
       result.chart = {
         type: t[1] as ChartType,
         style: s ? s[1] as ChartStyle : undefined,
+        labelColumn: label?.[1],
         groupByColumn: l?.[1],
         valueColumn: v?.[1],
         seriesColumn: g?.[1],
         descriptionColumn: dc?.[1],
       };
+      applyRadarOptionsToChart(result.chart, parseRadarOptions(c));
     }
   }
 
@@ -366,6 +513,7 @@ export function parseChartDirective(sql: string): Partial<ChartDirective> | null
   const d = cm[1];
   const cfg: Partial<ChartDirective> = {};
   const t = d.match(/type=(\w+)/i); if (t) cfg.type = t[1] as ChartType;
+  const label = d.match(/label=(\w+)/i); if (label) cfg.labelColumn = label[1];
   const l = d.match(/group_by=(\w+)/i); if (l) cfg.groupByColumn = l[1];
   const v = d.match(/value=([\w,]+)/i);
   if (v) {
@@ -379,7 +527,7 @@ export function parseChartDirective(sql: string): Partial<ChartDirective> | null
   const s = d.match(/style=(\w+)/i); if (s) cfg.visualization = s[1] as '2d' | '3d';
   const u = d.match(/unit=(\S+)/i); if (u) cfg.unit = u[1];
   const dc = d.match(/description=(\w+)/i); if (dc) cfg.descriptionColumn = dc[1];
-  const co = d.match(/color=(#[0-9a-fA-F]{3,8}|\w+)/i); if (co) cfg.color = co[1];
+  applyRadarOptionsToChart(cfg, parseRadarOptions(d));
   const mm = sql.match(/--\s*@meta:\s*(.+)/i);
   if (mm) {
     const ti = mm[1].match(/title='([^']+)'/); if (ti) cfg.title = ti[1];

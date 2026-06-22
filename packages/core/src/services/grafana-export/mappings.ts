@@ -21,7 +21,7 @@ export function mapPanelOptions(input: GrafanaExportInput): Record<string, unkno
     case 'piechart':
       return piechartPanelOptions(input);
     case 'table':
-      return tablePanelOptions();
+      return tablePanelOptions(input);
     default:
       return {};
   }

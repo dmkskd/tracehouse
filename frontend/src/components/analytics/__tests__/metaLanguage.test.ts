@@ -222,6 +222,18 @@ describe('parseChartDirective', { tags: ['analytics'] }, () => {
       expected: { unit: 'ms' },
     },
     {
+      name: 'radar chart config',
+      sql: `-- @chart: type=radar label=query_id profile=query_pressure axes=time:query_duration_ms,memory:memory_usage ranges=time:100..60000,memory:32Mi..8Gi color=profile_level\nSELECT 1`,
+      expected: {
+        type: 'radar',
+        labelColumn: 'query_id',
+        profile: 'query_pressure',
+        axes: { time: 'query_duration_ms', memory: 'memory_usage' },
+        ranges: { time: { low: '100', high: '60000' }, memory: { low: '32Mi', high: '8Gi' } },
+        color: 'profile_level',
+      },
+    },
+    {
       name: 'style 3d',
       sql: `-- @chart: type=line group_by=x value=y style=3d\nSELECT 1`,
       expected: { visualization: '3d' },
@@ -338,6 +350,34 @@ describe('parseCellStyles', { tags: ['analytics'] }, () => {
       name: 'sparkline: all options',
       sql: `-- @cell: column=delta type=sparkline ref=0 color=#3b82f6 fill=true`,
       expected: [{ column: 'delta', type: 'sparkline', ref: 0, color: '#3b82f6', fill: true }],
+    },
+    /* ── type=radar ── */
+    {
+      name: 'radar: synthetic column from raw axes',
+      sql: `-- @cell: type=radar radar_column=shape profile=query_pressure axes=time:query_duration_ms,memory:memory_usage ranges=time:100..60000,memory:32Mi..8Gi color=profile_level`,
+      expected: [{
+        type: 'radar',
+        radarColumn: 'shape',
+        profile: 'query_pressure',
+        axes: { time: 'query_duration_ms', memory: 'memory_usage' },
+        ranges: { time: { low: '100', high: '60000' }, memory: { low: '32Mi', high: '8Gi' } },
+        color: 'profile_level',
+      }],
+    },
+    {
+      name: 'radar: existing SQL values column',
+      sql: `-- @cell: column=pressure_values type=radar labels=pressure_labels color_by=pressure_score`,
+      expected: [{
+        type: 'radar',
+        column: 'pressure_values',
+        labels: 'pressure_labels',
+        colorBy: 'pressure_score',
+      }],
+    },
+    {
+      name: 'radar: missing axes for synthetic column → skipped',
+      sql: `-- @cell: type=radar radar_column=shape ranges=time:100..60000`,
+      expected: [],
     },
     /* ── mixed ── */
     {

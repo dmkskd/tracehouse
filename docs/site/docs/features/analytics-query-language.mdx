@@ -39,14 +39,42 @@ Tells the explorer how to visualise the result set.
 
 | Parameter     | Required | Description |
 |---------------|----------|-------------|
-| `type`        | Yes      | Chart type: `bar`, `line`, `pie`, `area`, `grouped_bar`, `stacked_bar`, `grouped_line` |
-| `group_by`    | Yes      | Column name to use for the X-axis / category grouping |
-| `value`       | Yes      | Column name(s) for the Y-axis. Can be a single column or comma-separated list (e.g. `value=p50,p95,p99`) |
+| `type`        | Yes      | Chart type: `bar`, `line`, `pie`, `area`, `grouped_bar`, `stacked_bar`, `grouped_line`, or `radar` |
+| `group_by`    | Yes for non-radar charts | Column name to use for the X-axis / category grouping |
+| `value`       | Yes for non-radar charts | Column name(s) for the Y-axis. Can be a single column or comma-separated list (e.g. `value=p50,p95,p99`) |
 | `series`      | No       | Column name used for series splitting (for `grouped_bar`, `stacked_bar`, `grouped_line`) |
 | `style`       | No       | `2d` (default SVG/recharts) or `3d` (Three.js) |
 | `unit`        | No       | Unit suffix for value axis ticks, e.g. `ms`, `s`, `MB`, `%`. Time units (`ms`, `s`) auto-scale (e.g. 1400 ms → 1.4 s) |
 | `orientation` | No       | `horizontal` (default for grouped/stacked bars) or `vertical` (shorthand `v`). Controls bar direction — horizontal puts labels on the left for readability |
 | `color`       | No       | Override the default chart color with a hex value (e.g. `#f59e0b`) |
+
+#### `type=radar` — Multi-axis pressure chart
+
+Radar charts render one normalized shape from several result columns. They are useful for summarizing competing resource signals such as CPU, memory, I/O, network, and query load.
+
+```sql
+-- @chart: type=radar axes=cpu:cpu_pressure,memory:memory_pressure,io:io_bytes,network:network_bytes,queries:active_queries ranges=cpu:0..1,memory:0..1,io:1Mi..10Gi,network:1Mi..10Gi,queries:1..1000 transforms=cpu:linear,memory:linear,io:log,network:log,queries:log color=profile_level
+```
+
+For full chart rendering, the query should return exactly one row. If a query returns multiple rows, aggregate in SQL first.
+
+| Parameter    | Required | Description |
+|--------------|----------|-------------|
+| `axes`       | Yes for raw-column radar charts | Comma-separated `axis:column` pairs. AQL reads the raw result columns and normalizes them into the radar shape |
+| `ranges`     | Yes with `axes` | Comma-separated `axis:low..high` ranges. Supports plain numbers and readable byte units such as `1Mi` and `10Gi` |
+| `transforms` | No       | Comma-separated `axis:linear` or `axis:log`. Axes default to the profile/default transform when omitted |
+| `label`      | No       | Result column used as the radar label |
+| `profile`    | No       | Named radar behavior preset, e.g. `query_pressure` |
+| `color`      | No       | Hex color or computed color source such as `profile_level` |
+| `values`     | Alternative to `axes` | Existing SQL result column containing normalized radar values |
+| `labels`     | No with `values` | Existing SQL result column containing axis labels for `values` |
+| `color_by`   | No       | Result column used as the numeric color score for SQL-created radar values |
+
+SQL-created radar values are also supported when the query already returns normalized arrays:
+
+```sql
+-- @chart: type=radar label=query_id values=pressure_values labels=pressure_labels color_by=pressure_score
+```
 
 ### `@drill` - Drill-down navigation
 
@@ -82,8 +110,8 @@ Decorates table columns with visual styles. Each `@cell:` line targets one colum
 
 | Parameter | Required | Description |
 |-----------|----------|-------------|
-| `column`  | Yes      | Column name to decorate |
-| `type`    | Yes      | Decoration type: `rag`, `gauge`, or `sparkline` |
+| `column`  | Yes, except synthetic radar cells | Column name to decorate |
+| `type`    | Yes      | Decoration type: `rag`, `gauge`, `sparkline`, or `radar` |
 
 #### `type=rag` — Red / Amber / Green coloring
 
@@ -134,6 +162,44 @@ Renders a column as a tiny SVG trend in the table. The column should contain an 
 | `color`   | No       | Hex color for the sparkline stroke |
 | `fill`    | No       | `true` to fill the area under the line |
 
+#### `type=radar` — Compact row shape
+
+Renders a compact radar badge in a table cell. This is intended for row scanning: for example, showing whether a query is time-heavy, memory-heavy, I/O-heavy, or expensive across several dimensions.
+
+There are two supported forms.
+
+**Synthetic radar column from raw SQL columns**:
+
+```sql
+-- @cell: type=radar radar_column=shape profile=query_pressure axes=time:query_duration_ms,memory:memory_usage,cpu:cpu_ms,io:io_bytes,scan:scan_pressure ranges=time:100..60000,memory:32Mi..8Gi,cpu:100..60000,io:1Mi..10Gi,scan:0..1 color=profile_level
+```
+
+`radar_column` creates a display-only table column. The SQL query does not need to return a `shape` column; it only needs to return the columns referenced by `axes`.
+
+**Existing SQL values column**:
+
+```sql
+-- @cell: column=pressure_values type=radar labels=pressure_labels color_by=pressure_score
+```
+
+Use this form when SQL already returns normalized radar arrays.
+
+| Parameter      | Required | Description |
+|----------------|----------|-------------|
+| `column`       | Yes for SQL-created values | Existing result column containing normalized radar values |
+| `radar_column` | Yes for synthetic cells | Display-only column name created by AQL. Mutually exclusive with `column` |
+| `axes`         | Yes with `radar_column` | Comma-separated `axis:column` pairs |
+| `ranges`       | Yes with `radar_column` | Comma-separated `axis:low..high` ranges |
+| `transforms`   | No       | Comma-separated `axis:linear` or `axis:log` overrides |
+| `profile`      | No       | Named radar behavior preset, e.g. `query_pressure` |
+| `labels`       | No       | SQL result column containing labels when using `column` |
+| `color`        | No       | Hex color or computed color source such as `profile_level` |
+| `color_by`     | No       | SQL result column used as a numeric color score |
+| `color_scale`  | No       | Named color scale for SQL-created radar values |
+| `colors`       | No       | Custom color stops, e.g. `0:#8b949e,0.4:#f59e0b,0.85:#ef4444` |
+
+For `type=radar`, use exactly one of `column` or `radar_column`. Synthetic radar cells require both `axes` and `ranges`.
+
 Multiple decorations on different columns:
 
 ```sql
@@ -141,7 +207,15 @@ Multiple decorations on different columns:
 -- @cell: column=memory_pct type=rag green<60 amber<85
 -- @cell: column=cpu_pct type=gauge max=100 unit=%
 -- @cell: column=disk_delta type=sparkline ref=0
+-- @cell: type=radar radar_column=shape axes=time:duration_ms,memory:memory_bytes ranges=time:100..60000,memory:32Mi..8Gi
 ```
+
+## Grafana export support
+
+Grafana panel export understands radar directives with partial support:
+
+- `@cell type=radar` exports as a compact generated SVG image column in Grafana tables.
+- `@chart type=radar` is reported as partial until TraceHouse has a dedicated Grafana radar panel export path.
 
 ## Template placeholders
 

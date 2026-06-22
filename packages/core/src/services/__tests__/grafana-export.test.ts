@@ -220,6 +220,92 @@ FROM table_health
     ]);
   });
 
+  it('exports radar cells as generated SVG image columns for Grafana tables', () => {
+    const input: GrafanaExportInput = {
+      sql: `
+-- @meta: title='Query Pressure' group='Selects'
+-- @cell: type=radar radar_column=shape profile=query_pressure axes=time:query_duration_ms,memory:memory_usage,scan:scan_pressure ranges=time:100..60000,memory:32Mi..8Gi,scan:0..1 color=profile_level
+SELECT query_id, query_duration_ms, memory_usage, scan_pressure
+FROM query_pressure
+`,
+      title: 'Query Pressure',
+      cellStyles: [
+        {
+          type: 'radar',
+          radarColumn: 'shape',
+          profile: 'query_pressure',
+          axes: { time: 'query_duration_ms', memory: 'memory_usage', scan: 'scan_pressure' },
+          ranges: {
+            time: { low: '100', high: '60000' },
+            memory: { low: '32Mi', high: '8Gi' },
+            scan: { low: '0', high: '1' },
+          },
+          color: 'profile_level',
+        },
+      ],
+      resultColumns: ['query_id', 'query_duration_ms', 'memory_usage', 'scan_pressure'],
+    };
+
+    const panel = toGrafanaPanel(input);
+    const analysis = analyzeGrafanaExport(input);
+
+    expect(panel.type).toBe('table');
+    expect(panel.options).toMatchObject({ showHeader: true, cellHeight: 'lg' });
+    expect(panel.targets[0].rawSql).toContain('data:image/svg+xml;utf8,');
+    expect(panel.targets[0].rawSql).toContain('width="48" height="48"');
+    expect(panel.targets[0].rawSql).not.toContain('<text');
+    expect(panel.targets[0].rawSql).toContain('shape__grafana_radar');
+    expect(panel.targets[0].rawSql).toContain('query_duration_ms');
+    expect(panel.fieldConfig.overrides).toContainEqual({
+      matcher: { id: 'byName', options: 'shape__grafana_radar' },
+      properties: [
+        { id: 'displayName', value: 'Shape' },
+        { id: 'custom.align', value: 'center' },
+        { id: 'custom.width', value: 96 },
+        { id: 'custom.cellOptions', value: { type: 'image', alt: 'Shape', title: 'Shape' } },
+      ],
+    });
+    expect(panel.transformations).toEqual([
+      {
+        id: 'organize',
+        options: {
+          excludeByName: {
+            query_duration_ms: true,
+            memory_usage: true,
+            scan_pressure: true,
+          },
+        },
+      },
+    ]);
+    expect(analysis.capabilities).toContainEqual(expect.objectContaining({
+      tracehouseFeature: '@cell radar_column=shape type=radar',
+      grafanaFeature: 'table image cell',
+      level: 'partial',
+      decision: 'map',
+    }));
+  });
+
+  it('reports full radar chart export as partial until a dedicated Grafana radar panel path exists', () => {
+    const analysis = analyzeGrafanaExport({
+      sql: 'SELECT query_id, pressure_values FROM query_pressure',
+      title: 'Query Pressure Radar',
+      chart: {
+        type: 'radar',
+        groupByColumn: 'query_id',
+        valueColumn: 'pressure_values',
+      },
+      resultColumns: ['query_id', 'pressure_values'],
+    });
+
+    expect(analysis.capabilities).toContainEqual({
+      tracehouseFeature: '@chart type=radar',
+      grafanaFeature: 'radar panel',
+      level: 'partial',
+      message: 'Full radar chart export is not implemented yet. First-cut Grafana support only maps radar table cells as compact generated SVG badges.',
+      decision: 'split_panel',
+    });
+  });
+
   it('resolves table gauge column-reference max values from result rows', () => {
     const input: GrafanaExportInput = {
       sql: 'SELECT executions, max_exec FROM query_shapes',

@@ -168,11 +168,14 @@ const DashboardPanelCard: React.FC<{
   const hasChartDirective = !!(chartDirective?.type || preset?.directives.chart?.type);
   const chartType: ChartType = chartDirective?.type || preset?.directives.chart?.type || 'bar';
   const chartStyle = chartDirective?.visualization || preset?.directives.chart?.style || '2d';
+  const effectiveChartStyle = chartType === 'radar' ? '2d' : chartStyle;
   const chartUnit = chartDirective?.unit;
   const chartColor = chartDirective?.color;
   const isGroupedChart = isGroupedChartType(chartType);
   const isTimeSeries = isTimeSeriesChartType(chartType);
-  const hasChart = hasChartDirective && (isGroupedChart ? groupedChartData.length > 0 : chartData.length > 0);
+  const hasChart = hasChartDirective && (chartType === 'radar'
+    ? !!result && result.rows.length > 0 && (!!chartDirective?.valuesColumn || !!chartDirective?.axes && Object.keys(chartDirective.axes).length > 0)
+    : isGroupedChart ? groupedChartData.length > 0 : chartData.length > 0);
 
   // Report time-series data upward for correlation
   useEffect(() => {
@@ -382,7 +385,7 @@ const DashboardPanelCard: React.FC<{
             {/* Chart view */}
             {view === 'chart' && hasChart && (
               <div style={{ marginBottom: fullscreen ? 0 : 6, flex: 1, minHeight: fullscreen ? 0 : (chartStyle === '3d' ? 250 : 180) }}>
-                {chartStyle === '3d' ? (
+                {effectiveChartStyle === '3d' ? (
                   <Chart3DCanvas key={fullscreen ? 'fs' : 'normal'} data={chartData} type={chartType}
                     orientation={chartDirective?.orientation}
                     groupedData={isGroupedChart ? groupedChartData : undefined}
@@ -391,6 +394,7 @@ const DashboardPanelCard: React.FC<{
                     unit={chartUnit} />
                 ) : (
                   <ChartRenderer chartType={chartType} data={chartData} groupedData={groupedChartData}
+                    rawRows={result.rows} radarConfig={chartDirective ?? undefined}
                     orientation={chartDirective?.orientation} fullHeight unit={chartUnit} color={chartColor}
                     onDrillDown={isDrillable ? handleDrillDown : isPartLinkable ? handlePartLinkChartClick : undefined}
                     drillIntoQuery={isDrillable ? preset?.directives.drill?.into : isPartLinkable ? 'Part Inspector' : undefined}
@@ -780,9 +784,12 @@ const MiniPanelCard: React.FC<{ panel: DashboardPanel; timeRangeOverride: string
 
   const chartType: ChartType = chartDirective?.type || preset?.directives.chart?.type || 'bar';
   const chartStyle = chartDirective?.visualization || preset?.directives.chart?.style || '2d';
+  const effectiveChartStyle = chartType === 'radar' ? '2d' : chartStyle;
   const miniChartColor = chartDirective?.color;
   const isGroupedChart2 = isGroupedChartType(chartType);
-  const hasChart = isGroupedChart2 ? groupedChartData2.length > 0 : chartData.length > 0;
+  const hasChart = chartType === 'radar'
+    ? !!result && result.rows.length > 0 && (!!chartDirective?.valuesColumn || !!chartDirective?.axes && Object.keys(chartDirective.axes).length > 0)
+    : isGroupedChart2 ? groupedChartData2.length > 0 : chartData.length > 0;
 
   if (!preset) return null;
 
@@ -803,10 +810,11 @@ const MiniPanelCard: React.FC<{ panel: DashboardPanel; timeRangeOverride: string
         {loading && <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', height: '100%', color: 'var(--text-muted)', fontSize: 10 }}>…</div>}
         {!loading && hasChart && (
           <>
-            {chartStyle === '3d' ? (
+            {effectiveChartStyle === '3d' ? (
               <Chart3DCanvas data={chartData} type={chartType} orientation={chartDirective?.orientation} groupedData={isGroupedChart2 ? groupedChartData2 : undefined} unit={chartDirective?.unit} />
             ) : (
               <ChartRenderer chartType={chartType} data={chartData} groupedData={groupedChartData2}
+                rawRows={result?.rows ?? []} radarConfig={chartDirective ?? undefined}
                 orientation={chartDirective?.orientation} fullHeight color={miniChartColor}
                 valueColumns={chartDirective?.valueColumns} />
             )}

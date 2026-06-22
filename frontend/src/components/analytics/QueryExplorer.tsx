@@ -222,6 +222,7 @@ export const QueryExplorer: React.FC<QueryExplorerProps> = ({ urlState, onUrlSta
         const lblCol = columns.find(c => c !== numCol);
         const newChart: ChartConfig = {
           type: directive.type ?? 'bar',
+          labelColumn: directive.labelColumn,
           groupByColumn: directive.groupByColumn ?? lblCol ?? columns[0],
           valueColumn: directive.valueColumn ?? numCol ?? columns[1] ?? columns[0],
           valueColumns: directive.valueColumns,
@@ -233,6 +234,13 @@ export const QueryExplorer: React.FC<QueryExplorerProps> = ({ urlState, onUrlSta
           unit: directive.unit,
           descriptionColumn: directive.descriptionColumn,
           color: directive.color,
+          profile: directive.profile,
+          axes: directive.axes,
+          ranges: directive.ranges,
+          transforms: directive.transforms,
+          valuesColumn: directive.valuesColumn,
+          labelsColumn: directive.labelsColumn,
+          colorByColumn: directive.colorByColumn,
         };
         setChartConfig(newChart);
         setViewMode('chart');
@@ -562,11 +570,15 @@ export const QueryExplorer: React.FC<QueryExplorerProps> = ({ urlState, onUrlSta
   }, [result, chartConfig.groupByColumn, chartConfig.valueColumn, chartConfig.valueColumns, chartConfig.seriesColumn]);
 
   const isGroupedChart = isGroupedChartType(chartConfig.type);
+  const chartVisualization = chartConfig.type === 'radar' ? '2d' : chartConfig.visualization;
 
   const canShowChart = useMemo(() => {
     if (!result || result.rows.length === 0) return false;
+    if (chartConfig.type === 'radar') {
+      return !!chartConfig.valuesColumn || !!chartConfig.axes && Object.keys(chartConfig.axes).length > 0;
+    }
     return result.columns.some(c => result.rows.some(r => isNumericValue(r[c])));
-  }, [result]);
+  }, [result, chartConfig]);
 
   /* ── sorted rows ── */
   const sortedRows = useMemo(() => {
@@ -843,27 +855,33 @@ export const QueryExplorer: React.FC<QueryExplorerProps> = ({ urlState, onUrlSta
               {/* Chart controls - hidden in fullscreen */}
               {!isFullscreen && (
               <div style={{ display: 'flex', gap: 16, padding: '6px 16px', background: 'var(--bg-secondary)', borderBottom: '1px solid var(--border-primary)', flexShrink: 0, flexWrap: 'wrap', alignItems: 'center' }}>
-                <ChartControl label="Type" value={chartConfig.type} options={[['bar','Bar'],['line','Line'],['pie','Pie'],['area','Area'],['grouped_bar','Grouped Bar'],['stacked_bar','Stacked Bar'],['grouped_line','Grouped Line']]} onChange={v => setChartConfig(p => ({ ...p, type: v as ChartType }))} />
-                <ChartControl label="Group By" value={chartConfig.groupByColumn} options={result.columns.map(c => [c, c])} onChange={v => setChartConfig(p => ({ ...p, groupByColumn: v }))} />
-                <ChartControl label="Value" value={chartConfig.valueColumn} options={result.columns.map(c => [c, c])} onChange={v => setChartConfig(p => ({ ...p, valueColumn: v }))} />
+                <ChartControl label="Type" value={chartConfig.type} options={[['bar','Bar'],['line','Line'],['pie','Pie'],['area','Area'],['grouped_bar','Grouped Bar'],['stacked_bar','Stacked Bar'],['grouped_line','Grouped Line'],['radar','Radar']]} onChange={v => setChartConfig(p => ({ ...p, type: v as ChartType, visualization: v === 'radar' ? '2d' : p.visualization }))} />
+                {chartConfig.type === 'radar' ? (
+                  <ChartControl label="Label" value={chartConfig.labelColumn ?? ''} options={[['','(auto)'],...result.columns.map(c => [c, c] as [string,string])]} onChange={v => setChartConfig(p => ({ ...p, labelColumn: v || undefined }))} />
+                ) : (
+                  <>
+                    <ChartControl label="Group By" value={chartConfig.groupByColumn} options={result.columns.map(c => [c, c])} onChange={v => setChartConfig(p => ({ ...p, groupByColumn: v }))} />
+                    <ChartControl label="Value" value={chartConfig.valueColumn} options={result.columns.map(c => [c, c])} onChange={v => setChartConfig(p => ({ ...p, valueColumn: v }))} />
+                  </>
+                )}
                 {/* Series column selector for grouped/stacked charts */}
                 {isGroupedChart && (
                   <ChartControl label="Series" value={chartConfig.seriesColumn ?? ''} options={[['','(none)'],...result.columns.map(c => [c, c] as [string,string])]} onChange={v => setChartConfig(p => ({ ...p, seriesColumn: v || undefined }))} />
                 )}
                 {/* 2D / 3D toggle */}
-                <div className="tabs" style={{ padding: 2, marginLeft: 'auto' }}>
+                {chartConfig.type !== 'radar' && <div className="tabs" style={{ padding: 2, marginLeft: 'auto' }}>
                   {(['2d', '3d'] as ChartStyle[]).map(s => (
                     <button key={s} className={`tab${chartConfig.visualization === s ? ' active' : ''}`} onClick={() => setChartConfig(p => ({ ...p, visualization: s }))}
                       style={{ border: 'none', padding: '4px 12px', fontSize: 11 }}>
                       {s.toUpperCase()}
                     </button>
                   ))}
-                </div>
+                </div>}
               </div>
               )}
 
               {/* Title/description for 2D */}
-              {chartConfig.visualization === '2d' && (chartConfig.title || chartConfig.description) && (
+              {chartVisualization === '2d' && (chartConfig.title || chartConfig.description) && (
                 <div style={{ padding: '12px 24px 0' }}>
                   {chartConfig.title && <div style={{ color: 'var(--text-secondary)', fontSize: 15, fontWeight: 600, marginBottom: 4 }}>{chartConfig.title}</div>}
                   {chartConfig.description && <div style={{ color: 'var(--text-muted)', fontSize: 11, lineHeight: 1.4 }}>{chartConfig.description}</div>}
@@ -871,10 +889,11 @@ export const QueryExplorer: React.FC<QueryExplorerProps> = ({ urlState, onUrlSta
               )}
 
               {/* Chart area */}
-              <div style={{ flex: 1, overflow: 'auto', padding: chartConfig.visualization === '3d' ? 0 : 24, minHeight: 0 }}>
-                {chartConfig.visualization === '2d' ? (
+              <div style={{ flex: 1, overflow: 'auto', padding: chartVisualization === '3d' ? 0 : 24, minHeight: 0 }}>
+                {chartVisualization === '2d' ? (
                   <div style={{ position: 'relative', width: '100%', height: '100%' }}>
                     <ChartRenderer chartType={chartConfig.type} data={chartData} groupedData={groupedChartData}
+                      rawRows={result.rows} radarConfig={chartConfig}
                       orientation={chartConfig.orientation} unit={chartConfig.unit} color={chartConfig.color}
                       onDrillDown={isDrillable ? handleDrillDown : isPartLinkable ? handlePartLinkChartClick : undefined}
                       drillIntoQuery={isDrillable ? currentQuery?.directives.drill?.into : isPartLinkable ? 'Part Inspector' : undefined}

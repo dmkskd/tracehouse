@@ -80,6 +80,14 @@ function chartCapability(input: GrafanaExportInput, panelType: string): GrafanaE
         message: 'Pie charts map to Grafana donut pie charts.',
         decision: 'map',
       });
+    case 'radar':
+      return capability({
+        tracehouseFeature: '@chart type=radar',
+        grafanaFeature: 'radar panel',
+        level: 'partial',
+        message: 'Full radar chart export is not implemented yet. First-cut Grafana support only maps radar table cells as compact generated SVG badges.',
+        decision: 'split_panel',
+      });
     default:
       return capability({
         tracehouseFeature: `@chart type=${chartType}`,
@@ -92,7 +100,11 @@ function chartCapability(input: GrafanaExportInput, panelType: string): GrafanaE
 }
 
 function cellCapability(style: GrafanaCellStyle, input: GrafanaExportInput): GrafanaExportCapability {
-  const feature = `@cell column=${style.column} type=${style.type}`;
+  const styleColumn = 'column' in style ? style.column : undefined;
+  const radarColumn = style.type === 'radar' ? style.radarColumn : undefined;
+  const feature = radarColumn
+    ? `@cell radar_column=${radarColumn} type=radar`
+    : `@cell column=${styleColumn} type=${style.type}`;
   if (input.chart) {
     return capability({
       tracehouseFeature: feature,
@@ -102,13 +114,32 @@ function cellCapability(style: GrafanaCellStyle, input: GrafanaExportInput): Gra
     });
   }
 
-  const matchedColumn = resolveResultColumn(style.column, input.resultColumns);
+  if (style.type === 'radar' && style.radarColumn) {
+    return capability({
+      tracehouseFeature: feature,
+      grafanaFeature: 'table image cell',
+      level: 'partial',
+      message: 'Radar cells export as compact generated SVG badges. Grafana table image cells have limited size and no row-specific hover tooltip; profile-level coloring is approximated by normalized max pressure in exported SQL.',
+      decision: 'map',
+    });
+  }
+
+  if (!styleColumn) {
+    return capability({
+      tracehouseFeature: feature,
+      level: 'unsupported',
+      message: 'Not exported. The cell style does not identify a result column.',
+      decision: 'drop',
+    });
+  }
+
+  const matchedColumn = resolveResultColumn(styleColumn, input.resultColumns);
   if (!matchedColumn) {
     return capability({
       tracehouseFeature: feature,
       grafanaFeature: 'field override',
       level: 'unsupported',
-      message: `Not exported. The result set does not contain a "${style.column}" column, so Grafana would not be able to match this field override.`,
+      message: `Not exported. The result set does not contain a "${styleColumn}" column, so Grafana would not be able to match this field override.`,
       decision: 'drop',
     });
   }
@@ -163,6 +194,14 @@ function cellCapability(style: GrafanaCellStyle, input: GrafanaExportInput): Gra
         grafanaFeature: 'table image cell',
         level: 'partial',
         message: `Array-valued sparklines export as generated SVG image cells on "${matchedColumn}". Grafana native table sparklines are not used because they require time-series-to-table shaped data.`,
+        decision: 'map',
+      });
+    case 'radar':
+      return capability({
+        tracehouseFeature: '@cell type=radar',
+        grafanaFeature: 'table image cell',
+        level: 'partial',
+        message: 'Radar cells export as compact generated SVG badges. Grafana table image cells have limited size and no row-specific hover tooltip; profile-level coloring is approximated by normalized max pressure in exported SQL.',
         decision: 'map',
       });
   }

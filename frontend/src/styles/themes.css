@@ -75,6 +75,7 @@
   --color-memory: #bc8cff;
   --color-disk: #bc8cff;
   --color-network: #d29922;
+  --chart-crosshair: rgba(255, 255, 255, 0.62);
   
   /* Shadows */
   --shadow-sm: 0 1px 2px rgba(0, 0, 0, 0.3);
@@ -168,6 +169,7 @@
   --color-memory: #7c3aed;
   --color-disk: #7c3aed;
   --color-network: #ca8a04;
+  --chart-crosshair: rgba(51, 65, 85, 0.72);
   
   /* Shadows */
   --shadow-sm: 0 1px 2px rgba(0, 0, 0, 0.05);

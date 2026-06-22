@@ -5,7 +5,8 @@ export interface GrafanaExportInput {
   title: string;
   /** Chart configuration — if absent, exports as a table panel */
   chart?: {
-    type: 'bar' | 'line' | 'pie' | 'area' | 'grouped_bar' | 'stacked_bar' | 'grouped_line';
+    type: 'bar' | 'line' | 'pie' | 'area' | 'grouped_bar' | 'stacked_bar' | 'grouped_line' | 'radar';
+    labelColumn?: string;
     groupByColumn: string;
     valueColumn: string;
     valueColumns?: string[];
@@ -16,6 +17,13 @@ export interface GrafanaExportInput {
     unit?: string;
     /** Fixed chart color from @chart color=#... */
     color?: string;
+    profile?: string;
+    axes?: Record<string, string>;
+    ranges?: Record<string, GrafanaRadarAxisRange>;
+    transforms?: Record<string, string>;
+    valuesColumn?: string;
+    labelsColumn?: string;
+    colorByColumn?: string;
     /** Maximum categorical rows to render in dense Grafana panels. */
     maxRows?: number;
   };
@@ -46,7 +54,7 @@ export interface GrafanaExportInput {
   };
 }
 
-export type GrafanaCellStyle = GrafanaGaugeCellStyle | GrafanaRagCellStyle | GrafanaSparklineCellStyle;
+export type GrafanaCellStyle = GrafanaGaugeCellStyle | GrafanaRagCellStyle | GrafanaSparklineCellStyle | GrafanaRadarCellStyle;
 
 export interface GrafanaGaugeCellStyle {
   column: string;
@@ -75,6 +83,26 @@ export interface GrafanaSparklineCellStyle {
   ref?: number;
   color?: string;
   fill?: boolean;
+}
+
+export interface GrafanaRadarAxisRange {
+  low: string;
+  high: string;
+}
+
+export interface GrafanaRadarCellStyle {
+  type: 'radar';
+  column?: string;
+  radarColumn?: string;
+  profile?: string;
+  axes?: Record<string, string>;
+  ranges?: Record<string, GrafanaRadarAxisRange>;
+  transforms?: Record<string, string>;
+  labels?: string;
+  color?: string;
+  colorBy?: string;
+  colorScale?: string;
+  colors?: string;
 }
 
 export interface GrafanaThreshold {

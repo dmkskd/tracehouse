@@ -31,6 +31,8 @@ import {
 import type { ChartType } from './metaLanguage';
 import { formatBytes } from '../../utils/formatters';
 import { formatCell, parseReadableBytes } from '@tracehouse/core';
+import { RadarShape } from './RadarCell';
+import { buildRadarChartPlot, type RadarChartConfig } from './radarModel';
 
 // ─── Mouse tracker for portal tooltips ───
 let _tooltipMouseX = 0, _tooltipMouseY = 0;
@@ -100,6 +102,7 @@ export interface ChartDataPoint {
 
 export interface ChartConfig {
   type: ChartType;
+  labelColumn?: string;
   groupByColumn: string;
   valueColumn: string;
   /** Multiple value columns for multi-series charts (e.g. value=col1,col2,col3). When set, each column becomes a separate series. */
@@ -115,6 +118,13 @@ export interface ChartConfig {
   descriptionColumn?: string;
   /** Override chart color (hex). Parsed from @chart color=... */
   color?: string;
+  profile?: string;
+  axes?: Record<string, string>;
+  ranges?: Record<string, { low: string; high: string }>;
+  transforms?: Record<string, string>;
+  valuesColumn?: string;
+  labelsColumn?: string;
+  colorByColumn?: string;
 }
 
 export interface GroupedChartData {
@@ -127,6 +137,84 @@ export interface DrillDownEvent {
   label: string;
   value: number;
 }
+
+const RadarChart2D: React.FC<{
+  rows: Record<string, unknown>[];
+  config: RadarChartConfig;
+  fullHeight?: boolean;
+}> = ({ rows, config, fullHeight }) => {
+  const hasTooManyRows = rows.length > 1;
+  const plot = useMemo(() => buildRadarChartPlot(config, rows), [config, rows]);
+  const [hoveredRadar, setHoveredRadar] = useState(false);
+  const radarSize = fullHeight ? 620 : 520;
+
+  if (hasTooManyRows || !plot) {
+    return (
+      <div style={{
+        height: fullHeight ? '100%' : 280,
+        display: 'flex',
+        alignItems: 'center',
+        justifyContent: 'center',
+        color: 'var(--text-muted)',
+        fontSize: 12,
+      }}>
+        {hasTooManyRows ? 'Radar chart returned multiple rows. Aggregate in SQL so @chart type=radar receives one row.' : 'Radar chart needs axes=... or values=...'}
+      </div>
+    );
+  }
+
+  return (
+    <div style={{
+      height: fullHeight ? '100%' : '100%',
+      minHeight: fullHeight ? 0 : 280,
+      display: 'flex',
+      alignItems: 'center',
+      justifyContent: 'center',
+      padding: 2,
+    }}>
+      <div
+        onMouseEnter={() => setHoveredRadar(true)}
+        onMouseLeave={() => setHoveredRadar(false)}
+        style={{
+        width: fullHeight ? '100%' : 'min(82vh, 82vw, 900px)',
+        height: fullHeight ? '100%' : undefined,
+        minWidth: fullHeight ? 0 : 520,
+        minHeight: fullHeight ? 0 : 520,
+        maxWidth: '100%',
+        maxHeight: '100%',
+        position: 'relative',
+        display: 'flex',
+        flexDirection: 'column',
+        alignItems: 'center',
+        justifyContent: 'center',
+        gap: 10,
+        padding: 12,
+      }}>
+        <RadarShape values={plot.values} labels={plot.labels} rawValues={plot.rawValues} color={plot.color} size={radarSize} showValues />
+        {hoveredRadar && (
+          <div style={{
+            ...tooltipStyle,
+            position: 'absolute',
+            right: 8,
+            bottom: 8,
+            zIndex: 5,
+            pointerEvents: 'none',
+            whiteSpace: 'nowrap',
+          }}>
+            <div style={tooltipLabelStyle}>rows: {plot.rowCount}</div>
+            {plot.labels.map((label, i) => (
+              <div key={label} style={{ display: 'flex', gap: 10, alignItems: 'baseline', marginTop: i > 0 ? 2 : 0 }}>
+                <span style={{ ...tooltipLabelStyle, marginBottom: 0, minWidth: 58 }}>{label}</span>
+                <span style={tooltipValueStyle}>{plot.values[i].toFixed(2)}</span>
+                <span style={{ ...tooltipLabelStyle, marginBottom: 0 }}>({plot.rawValues[i]})</span>
+              </div>
+            ))}
+          </div>
+        )}
+      </div>
+    </div>
+  );
+};
 
 // ─── Helpers ───
 
@@ -362,9 +450,10 @@ export interface CrosshairProps {
 }
 
 const crosshairLineProps = {
-  stroke: 'rgba(255,255,255,0.45)',
+  stroke: 'var(--chart-crosshair, rgba(51,65,85,0.7))',
   strokeDasharray: '4 3',
-  strokeWidth: 1,
+  strokeWidth: 1.5,
+  vectorEffect: 'non-scaling-stroke',
 };
 
 /** Custom recharts cursor - vertical line only.
@@ -1188,16 +1277,6 @@ export const OverlayChart: React.FC<OverlayChartProps> = ({ panels }) => {
     return name === focusedSeries ? 3 : 1;
   };
 
-  const formatRaw = (seriesName: string, normalizedVal: number): string => {
-    const s = normalized.find(ns => ns.name === seriesName);
-    if (!s) return normalizedVal.toFixed(2);
-    const validValues = s.raw.filter(v => !Number.isNaN(v));
-    const min = Math.min(...validValues);
-    const max = Math.max(...validValues);
-    const raw = min + normalizedVal * (max - min);
-    return compactFormatter(s.unit)(raw);
-  };
-
   const STRENGTH_COLORS: Record<string, string> = {
     strong: '#22c55e',
     moderate: '#eab308',
@@ -1303,49 +1382,6 @@ export const OverlayChart: React.FC<OverlayChartProps> = ({ panels }) => {
             <XAxis dataKey="name" tick={axisTickStyle} tickLine={axisLineStyle} axisLine={axisLineStyle}
               interval="preserveStartEnd" tickFormatter={formatXTick} />
             <YAxis tick={false} tickLine={false} axisLine={false} domain={[0, 1]} width={5} />
-            <Tooltip
-              content={(props: Record<string, unknown>) => {
-                const { active, payload: rawPayload, label } = props as {
-                  active?: boolean;
-                  payload?: ReadonlyArray<{ value: number; dataKey: string; color: string }>;
-                  label?: string;
-                };
-                if (!active || !rawPayload?.length) return null;
-                const sorted = [...rawPayload].sort((a, b) => (b.value ?? 0) - (a.value ?? 0));
-                return (
-                  <div style={tooltipStyle}>
-                    {label && <div style={tooltipLabelStyle}>{label}</div>}
-                    {sorted.map((entry, i) => {
-                      const name = entry.dataKey;
-                      const isFocused = name === focusedSeries;
-                      const r = correlationMap?.get(name);
-                      return (
-                        <div key={i} style={{ display: 'flex', alignItems: 'center', gap: 6, marginTop: i > 0 ? 1 : 0, opacity: isFocused || !focusedSeries ? 1 : 0.6 }}>
-                          <span style={{ width: 8, height: 8, borderRadius: '50%', background: entry.color, flexShrink: 0 }} />
-                          <span style={{ fontSize: 11, color: 'var(--text-muted)', flex: 1, maxWidth: 140, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', fontWeight: isFocused ? 600 : 400 }}>
-                            {name.length > 20 ? name.slice(0, 19) + '…' : name}
-                          </span>
-                          <span style={{ fontSize: 12, fontWeight: 600, color: 'var(--text-primary)', fontFamily: "'Share Tech Mono', monospace" }}>
-                            {formatRaw(name, entry.value)}
-                          </span>
-                          {r !== undefined && r !== 1 && focusedSeries && (
-                            <span style={{ fontSize: 9, color: rColor(r), fontFamily: "'Share Tech Mono', monospace", minWidth: 32, textAlign: 'right' }}>
-                              r={r.toFixed(2)}
-                              {algorithmId === 'cross' && (() => {
-                                const lag = lagMap.get(name);
-                                return lag ? <span style={{ color: 'var(--text-muted)' }}> @{lag > 0 ? '+' : ''}{lag}</span> : null;
-                              })()}
-                            </span>
-                          )}
-                        </div>
-                      );
-                    })}
-                  </div>
-                );
-              }}
-              offset={20}
-              wrapperStyle={{ zIndex: 1000, pointerEvents: 'none' }}
-            />
             {correlatedWindows.map((w, i) => (
               <ReferenceLine key={`cw-${i}`} x={w.startTs} stroke={normalized.find(s => s.name === w.seriesName)?.color ?? '#fff'} strokeOpacity={0.2} strokeDasharray="2 2" />
             ))}
@@ -1648,6 +1684,8 @@ export interface ChartRendererProps extends CrosshairProps {
   chartType: ChartType;
   data: ChartDataPoint[];
   groupedData: GroupedChartData[];
+  rawRows?: Record<string, unknown>[];
+  radarConfig?: RadarChartConfig;
   orientation?: 'horizontal' | 'vertical';
   fullHeight?: boolean;
   unit?: string;
@@ -1660,6 +1698,7 @@ export interface ChartRendererProps extends CrosshairProps {
 
 export const ChartRenderer: React.FC<ChartRendererProps> = ({
   chartType, data, groupedData, orientation, fullHeight, unit, color, onDrillDown, drillIntoQuery,
+  rawRows, radarConfig,
   hoveredTimestamp, onTimestampHover, correlationValues, currentPanelName, isHoveredPanel, valueColumns,
 }) => {
   // Dual-axis mode: area/line with exactly 2 value columns
@@ -1667,6 +1706,8 @@ export const ChartRenderer: React.FC<ChartRendererProps> = ({
     return <DualAxisAreaChart2D data={groupedData} valueColumns={valueColumns} fullHeight={fullHeight} onDrillDown={onDrillDown} drillIntoQuery={drillIntoQuery} hoveredTimestamp={hoveredTimestamp} onTimestampHover={onTimestampHover} correlationValues={correlationValues} currentPanelName={currentPanelName} isHoveredPanel={isHoveredPanel} />;
   }
   switch (chartType) {
+    case 'radar':
+      return <RadarChart2D rows={rawRows ?? []} config={radarConfig ?? {}} fullHeight={fullHeight} />;
     case 'line':
       return <LineChart2D data={data} fullHeight={fullHeight} onDrillDown={onDrillDown} unit={unit} color={color} drillIntoQuery={drillIntoQuery} hoveredTimestamp={hoveredTimestamp} onTimestampHover={onTimestampHover} correlationValues={correlationValues} currentPanelName={currentPanelName} isHoveredPanel={isHoveredPanel} />;
     case 'pie':

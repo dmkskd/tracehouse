@@ -11,13 +11,15 @@ import {
   mapThresholds,
   resolveNumericColumnMax,
   resolveResultColumn,
+  radarImageColumn,
   sparklineImageColumn,
 } from '../utils.js';
 
-export function tablePanelOptions(): Record<string, unknown> {
+export function tablePanelOptions(input?: GrafanaExportInput): Record<string, unknown> {
+  const hasRadar = (input?.cellStyles ?? []).some(style => style.type === 'radar');
   return {
     showHeader: true,
-    cellHeight: 'md',
+    cellHeight: hasRadar ? 'lg' : 'md',
     footer: { show: false },
   };
 }
@@ -74,9 +76,12 @@ export function tableFieldOverrides(input: GrafanaExportInput): GrafanaFieldOver
   const styles = input.cellStyles ?? [];
   const byColumn = new Map<string, GrafanaCellStyle[]>();
   for (const style of styles) {
-    const existing = byColumn.get(style.column) ?? [];
+    if (style.type === 'radar' && !style.column) continue;
+    const column = style.column;
+    if (!column) continue;
+    const existing = byColumn.get(column) ?? [];
     existing.push(style);
-    byColumn.set(style.column, existing);
+    byColumn.set(column, existing);
   }
 
   const overrides: GrafanaFieldOverride[] = [];
@@ -151,6 +156,18 @@ export function tableFieldOverrides(input: GrafanaExportInput): GrafanaFieldOver
     ]);
   }
 
+  for (const style of styles) {
+    if (style.type !== 'radar') continue;
+    const displayColumn = style.radarColumn ?? style.column;
+    if (!displayColumn) continue;
+    mergeOverride(overrides, radarImageColumn(displayColumn), [
+      { id: 'displayName', value: displayName(displayColumn) },
+      { id: 'custom.align', value: 'center' },
+      { id: 'custom.width', value: 96 },
+      { id: 'custom.cellOptions', value: { type: 'image', alt: displayName(displayColumn), title: displayName(displayColumn) } },
+    ]);
+  }
+
   return overrides;
 }
 
@@ -159,13 +176,20 @@ export function tableTransformations(input: GrafanaExportInput, panelType: strin
   const hiddenSparklineColumns = (input.cellStyles ?? [])
     .filter((style): style is Extract<GrafanaCellStyle, { type: 'sparkline' }> => style.type === 'sparkline')
     .map(style => resolveResultColumn(style.column, input.resultColumns) ?? style.column);
-  if (hiddenSparklineColumns.length === 0) return undefined;
+  const hiddenRadarColumns = (input.cellStyles ?? [])
+    .filter((style): style is Extract<GrafanaCellStyle, { type: 'radar' }> => style.type === 'radar')
+    .flatMap(style => {
+      if (style.column) return [resolveResultColumn(style.column, input.resultColumns) ?? style.column];
+      return Object.values(style.axes ?? {}).map(column => resolveResultColumn(column, input.resultColumns) ?? column);
+    });
+  const hiddenColumns = [...hiddenSparklineColumns, ...hiddenRadarColumns];
+  if (hiddenColumns.length === 0) return undefined;
 
   return [
     {
       id: 'organize',
       options: {
-        excludeByName: Object.fromEntries(hiddenSparklineColumns.map(column => [column, true])),
+        excludeByName: Object.fromEntries(hiddenColumns.map(column => [column, true])),
       },
     },
   ];

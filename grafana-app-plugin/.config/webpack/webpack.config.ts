@@ -213,18 +213,18 @@ const config = async (env: Env): Promise<Configuration> => {
         }) => {
           let p = info.resourcePath;
           if (p.startsWith('./')) p = p.substring('./'.length);
-          if (p.startsWith('grafana-app-plugin/src/')) p = `../${p}`;
-          else if (p.startsWith('../../frontend/')) p = `../${p.substring('../../'.length)}`;
+          if (p.startsWith('grafana-app-plugin/src/')) p = p.substring('grafana-app-plugin/src/'.length);
+          else if (p.startsWith('../../frontend/')) p = p.substring('../../'.length);
           else if (p.startsWith('../../node_modules/')) p = p.substring('../../'.length);
           else if (p.startsWith('../../src/')) {
             const packageName = info.absoluteResourcePath?.includes('/packages/ui-shared/dist/')
               ? 'ui-shared'
               : 'core';
-            p = `../packages/${packageName}/${p.substring('../../'.length)}`;
+            p = `packages/${packageName}/${p.substring('../../'.length)}`;
           }
-          else if (p.startsWith('../../')) p = `../${p.substring('../../'.length)}`;
+          else if (p.startsWith('../../')) p = p.substring('../../'.length);
           else if (p.startsWith('webpack/') || p.startsWith('external ')) p = p;
-          else p = `../grafana-app-plugin/src/${p}`;
+          else p = p;
           const loaders = info.allLoaders ? `?${info.allLoaders}` : '';
           return `webpack://${info.namespace}/${p}${loaders}`;
         },

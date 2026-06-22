@@ -8,9 +8,11 @@
 
 import React from 'react';
 import { formatCell } from './charts';
-import { getRagColor, type CellStyleRule, type GaugeCellStyle, type SparklineCellStyle } from './metaLanguage';
+import { getRagColor, type CellStyleRule, type GaugeCellStyle, type SparklineCellStyle, type RadarCellStyle } from './metaLanguage';
 import { GaugeBar } from './GaugeBar';
 import { Sparkline } from './Sparkline';
+import { RadarShape } from './RadarCell';
+import { buildRadar, radarDisplayColumn } from './radarModel';
 
 export interface ResultsTableProps {
   columns: string[];
@@ -69,6 +71,18 @@ export const ResultsTable: React.FC<ResultsTableProps> = ({
     ),
     [cellStyles],
   );
+  const radarMap = React.useMemo(
+    () => new Map(
+      cellStyles?.filter((r): r is RadarCellStyle => r.type === 'radar')
+        .map(r => [radarDisplayColumn(r), r] as const)
+        .filter((entry): entry is [string, RadarCellStyle] => Boolean(entry[0])),
+    ),
+    [cellStyles],
+  );
+  const displayColumns = React.useMemo(() => {
+    const syntheticRadarColumns = [...radarMap.keys()].filter(column => !columns.includes(column));
+    return [...syntheticRadarColumns, ...columns];
+  }, [columns, radarMap]);
   const fontSize = compact ? 11 : 13;
   const headerFontSize = compact ? 9 : 10;
   const headerPadding = compact ? '6px 10px' : '10px 14px';
@@ -78,17 +92,19 @@ export const ResultsTable: React.FC<ResultsTableProps> = ({
   const hasDrill = !!drillOnColumn && !!onDrillClick;
   const hasPartLink = !!partLinkOnColumn && !!onPartLinkClick;
   const numericCols = React.useMemo(
-    () => new Set(columns.filter(c => isNumericColumn(rows, c))),
-    [columns, rows],
+    () => new Set(displayColumns.filter(c => columns.includes(c) && isNumericColumn(rows, c))),
+    [columns, displayColumns, rows],
   );
 
   return (
     <table style={{ width: 'max-content', minWidth: '100%', borderCollapse: 'collapse', fontSize }}>
       <thead>
         <tr>
-          {columns.map(col => (
-            <th key={col} onClick={() => onSort(col)} style={{
-              position: 'sticky', top: 0, zIndex: 1, cursor: 'pointer',
+          {displayColumns.map(col => {
+            const sortable = columns.includes(col);
+            return (
+            <th key={col} onClick={sortable ? () => onSort(col) : undefined} style={{
+              position: 'sticky', top: 0, zIndex: 1, cursor: sortable ? 'pointer' : undefined,
               background: compact ? 'var(--bg-tertiary, var(--bg-secondary))' : 'var(--bg-tertiary)',
               padding: headerPadding, textAlign: numericCols.has(col) ? 'right' : 'left', fontWeight: 600, fontSize: headerFontSize,
               color: sortColumn === col ? 'var(--text-primary)' : 'var(--text-muted)',
@@ -96,9 +112,10 @@ export const ResultsTable: React.FC<ResultsTableProps> = ({
               whiteSpace: 'nowrap', userSelect: 'none',
               letterSpacing: '0.06em', textTransform: 'uppercase',
             }}>
-              {col}{sortColumn === col ? (sortDirection === 'asc' ? ' ↑' : ' ↓') : ''}
+              {col}{sortable && sortColumn === col ? (sortDirection === 'asc' ? ' ↑' : ' ↓') : ''}
             </th>
-          ))}
+            );
+          })}
         </tr>
       </thead>
       <tbody>
@@ -112,7 +129,7 @@ export const ResultsTable: React.FC<ResultsTableProps> = ({
                 : i % 2 === 1 ? 'rgba(255,255,255,0.04)' : 'transparent',
               transition: 'background 0.1s ease',
             }}>
-            {columns.map(col => {
+            {displayColumns.map(col => {
               const isLink = hasLinks && col === linkOnColumn;
               const isDrill = hasDrill && col === drillOnColumn;
               const isPartLink = hasPartLink && col === partLinkOnColumn;
@@ -122,6 +139,16 @@ export const ResultsTable: React.FC<ResultsTableProps> = ({
               const numeric = numericCols.has(col);
               const gauge = gaugeMap.get(col);
               const sparkline = sparklineMap.get(col);
+              const radar = radarMap.get(col);
+
+              if (radar) {
+                const radarData = buildRadar(radar, row);
+                return (
+                  <td key={col} style={{ padding: cellPadding, borderBottom: '1px solid var(--border-secondary)', textAlign: 'center', minWidth: compact ? 64 : 80 }}>
+                    <RadarShape values={radarData.values} labels={radarData.labels} color={radarData.color} size={compact ? 54 : 68} title={radarData.tooltip} />
+                  </td>
+                );
+              }
 
               // Gauge bar rendering
               if (gauge) {

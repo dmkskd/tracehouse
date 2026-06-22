@@ -2,22 +2,42 @@
 
 const queries: string[] = [
   `-- @meta: title='Most Expensive Selects' group='Selects' interval='1 DAY' description='Top 20 slowest SELECT queries in the last day'
+-- @cell: type=radar radar_column=shape profile=query_pressure axes=time:query_duration_ms,memory:memory_usage,cpu:cpu_ms,io:io_bytes,scan:scan_pressure ranges=time:100..60000,memory:32Mi..8Gi,cpu:100..60000,io:1Mi..10Gi,scan:0..1 color=profile_level
 -- @source: https://clickhouse.com/blog/monitoring-troubleshooting-select-queries-clickhouse
 SELECT
     type,
+    query_kind,
+    exception,
     query_start_time,
     query_duration_ms,
     query_id,
     substring(query, 1, 120) AS query_preview,
     read_rows,
+    read_bytes,
     formatReadableSize(read_bytes) AS read_size,
     result_rows,
+    memory_usage,
     formatReadableSize(memory_usage) AS memory,
+    ProfileEvents['OSCPUVirtualTimeMicroseconds'] / 1000 AS cpu_ms,
+    greatest(
+        read_bytes,
+        ProfileEvents['ReadBufferFromFileDescriptorReadBytes'],
+        ProfileEvents['NetworkReceiveBytes']
+    ) AS io_bytes,
+    if(
+        ProfileEvents['SelectedMarksTotal'] > 0,
+        ProfileEvents['SelectedMarks'] / ProfileEvents['SelectedMarksTotal'],
+        if(
+            ProfileEvents['SelectedPartsTotal'] > 0,
+            ProfileEvents['SelectedParts'] / ProfileEvents['SelectedPartsTotal'],
+            0
+        )
+    ) AS scan_pressure,
     user
 FROM {{cluster_aware:system.query_log}}
 WHERE type != 'QueryStart'
   AND query_kind = 'Select'
-  AND event_date >= toDate({{time_range}})
+  AND event_time > {{time_range}}
 ORDER BY query_duration_ms DESC
 LIMIT 20`,
 

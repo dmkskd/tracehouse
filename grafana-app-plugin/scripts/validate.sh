@@ -11,8 +11,9 @@ SOURCE_ZIP="/tmp/${PLUGIN_ID}-source.zip"
 ANALYZER="${1:-}"
 
 echo "==> Building plugin"
-cd "$PLUGIN_DIR"
+cd "$REPO_ROOT"
 npm run build
+cd "$PLUGIN_DIR"
 
 echo "==> Packaging $ZIP_OUT"
 rm -f "$ZIP_OUT"
@@ -48,6 +49,7 @@ mkdir -p "$STAGE_DIR/tracehouse/src/packages" "$STAGE_DIR/tracehouse/src/fronten
 rsync -a \
   --exclude 'node_modules' \
   --exclude '.DS_Store' \
+  --exclude '/e2e' \
   --exclude '/proxy' \
   --exclude 'package.json' --exclude 'package-lock.json' \
   "$REPO_ROOT/packages/" "$STAGE_DIR/tracehouse/src/packages/"
