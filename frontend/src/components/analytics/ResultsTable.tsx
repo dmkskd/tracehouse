@@ -115,6 +115,27 @@ export const ResultsTable: React.FC<ResultsTableProps> = ({
     setSelectedRow(null);
   }, [rows, columns]);
 
+  const selectedRowNumber = selectedRow == null ? 0 : selectedRow + 1;
+  const canGoPreviousRow = selectedRow != null && selectedRow > 0;
+  const canGoNextRow = selectedRow != null && selectedRow < rows.length - 1;
+
+  React.useEffect(() => {
+    if (selectedRow == null) return undefined;
+    const handleKeyDown = (event: KeyboardEvent) => {
+      if (event.target instanceof HTMLInputElement || event.target instanceof HTMLTextAreaElement || event.target instanceof HTMLSelectElement) return;
+      if (event.key === 'ArrowUp' || event.key === 'ArrowLeft') {
+        event.preventDefault();
+        setSelectedRow(rowIndex => rowIndex == null ? rowIndex : Math.max(0, rowIndex - 1));
+      }
+      if (event.key === 'ArrowDown' || event.key === 'ArrowRight') {
+        event.preventDefault();
+        setSelectedRow(rowIndex => rowIndex == null ? rowIndex : Math.min(rows.length - 1, rowIndex + 1));
+      }
+    };
+    window.addEventListener('keydown', handleKeyDown);
+    return () => window.removeEventListener('keydown', handleKeyDown);
+  }, [rows.length, selectedRow]);
+
   const renderDetailValue = React.useCallback((col: string, row: Record<string, unknown>) => {
     const ragColor = getRagColor(col, row[col], cellStyles);
     const gauge = gaugeMap.get(col);
@@ -324,17 +345,57 @@ export const ResultsTable: React.FC<ResultsTableProps> = ({
               <div>
                 <div style={{ fontSize: 15, fontWeight: 600, color: 'var(--text-primary)' }}>Row Details</div>
                 <div style={{ fontSize: 11, color: 'var(--text-muted)', marginTop: 3 }}>
-                  {displayColumns.length} column{displayColumns.length === 1 ? '' : 's'}
+                  Row {selectedRowNumber} of {rows.length} · {displayColumns.length} column{displayColumns.length === 1 ? '' : 's'}
                 </div>
               </div>
-              <button
-                type="button"
-                onClick={() => setSelectedRow(null)}
-                style={{ background: 'transparent', border: '1px solid var(--border-primary)', borderRadius: 4, color: 'var(--text-muted)', cursor: 'pointer', fontSize: 16, lineHeight: 1, padding: '6px 9px' }}
-                title="Close row details"
-              >
-                ×
-              </button>
+              <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+                <button
+                  type="button"
+                  onClick={() => setSelectedRow(rowIndex => rowIndex == null ? rowIndex : Math.max(0, rowIndex - 1))}
+                  disabled={!canGoPreviousRow}
+                  style={{
+                    background: 'transparent',
+                    border: '1px solid var(--border-primary)',
+                    borderRadius: 4,
+                    color: canGoPreviousRow ? 'var(--text-secondary)' : 'var(--text-muted)',
+                    cursor: canGoPreviousRow ? 'pointer' : 'not-allowed',
+                    fontSize: 12,
+                    lineHeight: 1,
+                    padding: '7px 9px',
+                    opacity: canGoPreviousRow ? 1 : 0.45,
+                  }}
+                  title="Previous row"
+                >
+                  ↑
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setSelectedRow(rowIndex => rowIndex == null ? rowIndex : Math.min(rows.length - 1, rowIndex + 1))}
+                  disabled={!canGoNextRow}
+                  style={{
+                    background: 'transparent',
+                    border: '1px solid var(--border-primary)',
+                    borderRadius: 4,
+                    color: canGoNextRow ? 'var(--text-secondary)' : 'var(--text-muted)',
+                    cursor: canGoNextRow ? 'pointer' : 'not-allowed',
+                    fontSize: 12,
+                    lineHeight: 1,
+                    padding: '7px 9px',
+                    opacity: canGoNextRow ? 1 : 0.45,
+                  }}
+                  title="Next row"
+                >
+                  ↓
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setSelectedRow(null)}
+                  style={{ background: 'transparent', border: '1px solid var(--border-primary)', borderRadius: 4, color: 'var(--text-muted)', cursor: 'pointer', fontSize: 16, lineHeight: 1, padding: '6px 9px' }}
+                  title="Close row details"
+                >
+                  ×
+                </button>
+              </div>
             </div>
             <div style={{ padding: 18, overflow: 'auto', minHeight: 0, maxHeight: 'calc(min(78vh, 760px) - 74px)' }}>
               <div style={{ display: 'grid', gridTemplateColumns: 'minmax(160px, 240px) minmax(360px, 1fr)', border: '1px solid var(--border-secondary)', borderBottom: 'none', borderRadius: 6, overflow: 'hidden' }}>
