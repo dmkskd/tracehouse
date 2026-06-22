@@ -831,6 +831,7 @@ export const QueryExplorer: React.FC<QueryExplorerProps> = ({ urlState, onUrlSta
                 drillIntoQuery={isDrillable ? currentQuery?.directives.drill?.into : undefined}
                 partLinkOnColumn={isPartLinkable ? currentQuery?.directives.partLink?.on : undefined}
                 onPartLinkClick={isPartLinkable ? handlePartLinkClick : undefined}
+                enableRowDetails
               />
             </div>
           )}

@@ -14,7 +14,20 @@ export const ModalWrapper: React.FC<{
   onClose: () => void;
   children: React.ReactNode;
   maxWidth?: number;
-}> = ({ isOpen, onClose, children, maxWidth = 1200 }) => {
+  height?: number | string;
+  maxHeight?: number | string;
+  backdropBackground?: string;
+  backdropBlur?: number;
+}> = ({
+  isOpen,
+  onClose,
+  children,
+  maxWidth = 1200,
+  height = '85vh',
+  maxHeight = 960,
+  backdropBackground = 'rgba(0, 0, 0, 0.92)',
+  backdropBlur = 8,
+}) => {
   const handleKeyDown = useCallback((e: KeyboardEvent) => {
     if (e.key === 'Escape') onClose();
   }, [onClose]);
@@ -53,8 +66,8 @@ export const ModalWrapper: React.FC<{
         style={{
           position: 'absolute',
           inset: 0,
-          background: 'rgba(0, 0, 0, 0.92)',
-          backdropFilter: 'blur(8px)',
+          background: backdropBackground,
+          backdropFilter: `blur(${backdropBlur}px)`,
         }}
         onClick={onClose}
       />
@@ -63,8 +76,8 @@ export const ModalWrapper: React.FC<{
           position: 'relative',
           width: '100%',
           maxWidth,
-          height: '85vh',
-          maxHeight: 960,
+          height,
+          maxHeight,
           background: modalBg,
           borderRadius: 16,
           border: `1px solid ${borderColor}`,

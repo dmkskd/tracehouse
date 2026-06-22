@@ -428,6 +428,7 @@ const DashboardPanelCard: React.FC<{
                     partLinkOnColumn={isPartLinkable ? preset?.directives.partLink?.on : undefined}
                     onPartLinkClick={isPartLinkable ? handlePartLinkClick : undefined}
                     compact
+                    enableRowDetails
                   />
                 </div>
               );
