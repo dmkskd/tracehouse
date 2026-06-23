@@ -144,23 +144,25 @@ export const QUERY_HISTORY = buildQueryHistorySQL();
 export const SUB_QUERIES = `
   SELECT
     query_id,
-    any(hostname) AS hostname,
-    any(query_duration_ms) AS query_duration_ms,
-    any(memory_usage) AS memory_usage,
-    any(read_rows) AS read_rows,
-    any(read_bytes) AS read_bytes,
-    any(selected_parts) AS selected_parts,
-    any(selected_parts_total) AS selected_parts_total,
-    any(selected_marks) AS selected_marks,
-    any(selected_marks_total) AS selected_marks_total,
-    any(selected_ranges) AS selected_ranges,
-    any(query_preview) AS query_preview,
-    any(exception_code) AS exception_code,
-    any(exception) AS exception,
-    any(query_start_time_microseconds) AS query_start_time_microseconds
+    normalized_query_hash,
+    hostname,
+    query_duration_ms,
+    memory_usage,
+    read_rows,
+    read_bytes,
+    selected_parts,
+    selected_parts_total,
+    selected_marks,
+    selected_marks_total,
+    selected_ranges,
+    query_preview,
+    exception_code,
+    exception,
+    query_start_time_microseconds
   FROM (
     SELECT
       query_id,
+      toString(normalized_query_hash) AS normalized_query_hash,
       hostName() AS hostname,
       query_duration_ms,
       memory_usage,
@@ -181,7 +183,6 @@ export const SUB_QUERIES = `
       AND type IN ('QueryFinish', 'ExceptionWhileProcessing', 'ExceptionBeforeStart')
       AND event_date >= {event_date_bound}
   )
-  GROUP BY query_id
   ORDER BY query_duration_ms DESC
   LIMIT 50
 `;
@@ -198,6 +199,7 @@ export const DISTRIBUTED_TOPOLOGY_EXECUTIONS = `
     query_id,
     initial_query_id,
     is_initial_query,
+    toString(normalized_query_hash) AS normalized_query_hash,
     hostName() AS hostname,
     query_kind,
     toString(query_start_time_microseconds) AS query_start_time_microseconds,
@@ -288,20 +290,21 @@ export const BATCH_SUB_QUERIES = `
   SELECT
     initial_query_id,
     query_id,
-    any(hostname) AS hostname,
-    any(query_duration_ms) AS query_duration_ms,
-    any(memory_usage) AS memory_usage,
-    any(read_rows) AS read_rows,
-    any(read_bytes) AS read_bytes,
-    any(selected_parts) AS selected_parts,
-    any(selected_parts_total) AS selected_parts_total,
-    any(selected_marks) AS selected_marks,
-    any(selected_marks_total) AS selected_marks_total,
-    any(selected_ranges) AS selected_ranges,
-    any(query_preview) AS query_preview,
-    any(exception_code) AS exception_code,
-    any(exception) AS exception,
-    any(query_start_time_microseconds) AS query_start_time_microseconds
+    normalized_query_hash,
+    hostname,
+    query_duration_ms,
+    memory_usage,
+    read_rows,
+    read_bytes,
+    selected_parts,
+    selected_parts_total,
+    selected_marks,
+    selected_marks_total,
+    selected_ranges,
+    query_preview,
+    exception_code,
+    exception,
+    query_start_time_microseconds
   FROM (
     SELECT
       *,
@@ -313,6 +316,7 @@ export const BATCH_SUB_QUERIES = `
       SELECT
         initial_query_id,
         query_id,
+        toString(normalized_query_hash) AS normalized_query_hash,
         hostName() AS hostname,
         query_duration_ms,
         memory_usage,
@@ -336,7 +340,6 @@ export const BATCH_SUB_QUERIES = `
     )
   )
   WHERE rn <= {limit_per_initial_query}
-  GROUP BY initial_query_id, query_id
   ORDER BY initial_query_id ASC, query_start_time_microseconds ASC, query_duration_ms DESC
 `;
 

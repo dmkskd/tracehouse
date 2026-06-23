@@ -161,6 +161,7 @@ export interface SimilarQuery {
  */
 export interface SubQueryInfo {
   query_id: string;
+  normalized_query_hash: string;
   hostname: string;
   query_duration_ms: number;
   memory_usage: number;
@@ -540,6 +541,7 @@ export class QueryAnalyzer {
       const rows = await this.adapter.executeQuery(tagQuery(sql, sourceTag(TAB_QUERIES, 'subQueries')));
       return rows.map((r: any) => ({
         query_id: String(r.query_id),
+        normalized_query_hash: String(r.normalized_query_hash || ''),
         hostname: String(r.hostname),
         query_duration_ms: Number(r.query_duration_ms) || 0,
         memory_usage: Number(r.memory_usage) || 0,
@@ -599,6 +601,7 @@ export class QueryAnalyzer {
         queryId: String(row.query_id ?? ''),
         initialQueryId: String(row.initial_query_id ?? ''),
         isInitialQuery: Number(row.is_initial_query ?? 0) === 1,
+        normalizedQueryHash: String(row.normalized_query_hash ?? ''),
         hostname: String(row.hostname ?? ''),
         queryKind: String(row.query_kind ?? ''),
         queryStartTimeMicroseconds: String(row.query_start_time_microseconds ?? ''),
@@ -694,41 +697,38 @@ export class QueryAnalyzer {
     sql = sql.replace('{event_date_bound}', eventDateBound(eventDate));
     sql = buildQuery(sql, { limit_per_initial_query: boundedLimitPerInitialQuery });
 
-    try {
-      const rows = await this.adapter.executeQuery(tagQuery(sql, sourceTag(TAB_QUERIES, 'batchSubQueries')));
-      const byInitialQueryId: SubQueriesByInitialQueryId = new Map();
+    const rows = await this.adapter.executeQuery(tagQuery(sql, sourceTag(TAB_QUERIES, 'batchSubQueries')));
+    const byInitialQueryId: SubQueriesByInitialQueryId = new Map();
 
-      for (const r of rows as any[]) {
-        const initialQueryId = String(r.initial_query_id || '');
-        if (!initialQueryId) continue;
+    for (const r of rows as any[]) {
+      const initialQueryId = String(r.initial_query_id || '');
+      if (!initialQueryId) continue;
 
-        const child: SubQueryInfo = {
-          query_id: String(r.query_id),
-          hostname: String(r.hostname),
-          query_duration_ms: Number(r.query_duration_ms) || 0,
-          memory_usage: Number(r.memory_usage) || 0,
-          read_rows: Number(r.read_rows) || 0,
-          read_bytes: Number(r.read_bytes) || 0,
-          selected_parts: Number(r.selected_parts) || 0,
-          selected_parts_total: Number(r.selected_parts_total) || 0,
-          selected_marks: Number(r.selected_marks) || 0,
-          selected_marks_total: Number(r.selected_marks_total) || 0,
-          selected_ranges: Number(r.selected_ranges) || 0,
-          query_preview: String(r.query_preview || ''),
-          exception_code: Number(r.exception_code) || 0,
-          exception: String(r.exception || ''),
-          query_start_time_microseconds: String(r.query_start_time_microseconds || ''),
-        };
+      const child: SubQueryInfo = {
+        query_id: String(r.query_id),
+        normalized_query_hash: String(r.normalized_query_hash || ''),
+        hostname: String(r.hostname),
+        query_duration_ms: Number(r.query_duration_ms) || 0,
+        memory_usage: Number(r.memory_usage) || 0,
+        read_rows: Number(r.read_rows) || 0,
+        read_bytes: Number(r.read_bytes) || 0,
+        selected_parts: Number(r.selected_parts) || 0,
+        selected_parts_total: Number(r.selected_parts_total) || 0,
+        selected_marks: Number(r.selected_marks) || 0,
+        selected_marks_total: Number(r.selected_marks_total) || 0,
+        selected_ranges: Number(r.selected_ranges) || 0,
+        query_preview: String(r.query_preview || ''),
+        exception_code: Number(r.exception_code) || 0,
+        exception: String(r.exception || ''),
+        query_start_time_microseconds: String(r.query_start_time_microseconds || ''),
+      };
 
-        const existing = byInitialQueryId.get(initialQueryId);
-        if (existing) existing.push(child);
-        else byInitialQueryId.set(initialQueryId, [child]);
-      }
-
-      return byInitialQueryId;
-    } catch {
-      return new Map();
+      const existing = byInitialQueryId.get(initialQueryId);
+      if (existing) existing.push(child);
+      else byInitialQueryId.set(initialQueryId, [child]);
     }
+
+    return byInitialQueryId;
   }
 
   /**

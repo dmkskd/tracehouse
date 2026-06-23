@@ -99,6 +99,16 @@ function roleLabel(node?: DistributedTopologyNode): string {
   }
 }
 
+function coordinatorRoleLabel(topology: DistributedTopology): string {
+  if (topology.localRead) {
+    const shard = topology.localRead.shardNum != null && topology.localRead.replicaNum != null
+      ? `s${topology.localRead.shardNum}r${topology.localRead.replicaNum}`
+      : 'local replica';
+    return `Coordinator + local read (${shard})`;
+  }
+  return topology.clusterAllReplicas ? 'Coordinator · all-replicas fan-out' : 'Coordinator';
+}
+
 function roleColor(node: DistributedTopologyNode | undefined, hasError: boolean): string {
   if (hasError) return ERROR_COLOR;
   if (!node) return NODE_COLOR;
@@ -292,6 +302,13 @@ export const DistributedQueryTopology: React.FC<DistributedQueryTopologyProps> =
 
   const renderedChildCount = timeline.nodeQueries.length;
   const distinctNodeCount = new Set(timeline.nodeQueries.map(row => row.hostname || row.queryId)).size;
+  const expectedParticipants = topology.clusterAllReplicas?.expectedParticipants;
+  const localParticipants = topology.clusterAllReplicas?.localParticipantsOnInitiator ?? 0;
+  const participantLabel = topology.clusterAllReplicas
+    ? expectedParticipants != null
+      ? ` · ${expectedParticipants} expected participant${expectedParticipants === 1 ? '' : 's'}${localParticipants > 0 ? ` (${localParticipants} local folded)` : ''}`
+      : ` · all replicas targeted${localParticipants > 0 ? ` (${localParticipants} local folded)` : ''}`
+    : '';
   const maxNodeQueryDuration = Math.max(...timeline.nodeQueries.map(row => row.durationMs));
   const overhead = coordinator.query_duration_ms - maxNodeQueryDuration;
   const visibleRoles = new Set(timeline.nodeQueries.map(row => row.role).filter(Boolean));
@@ -304,7 +321,7 @@ export const DistributedQueryTopology: React.FC<DistributedQueryTopologyProps> =
         marginBottom: 8,
       }}>
         <div style={{ fontSize: 9, color: MUTED_COLOR, textTransform: 'uppercase', letterSpacing: '1px' }}>
-          Distributed Query ({renderedChildCount} remote {renderedChildCount === 1 ? 'query' : 'queries'} · {distinctNodeCount} node{distinctNodeCount !== 1 ? 's' : ''})
+          Distributed Query ({renderedChildCount} remote {renderedChildCount === 1 ? 'query' : 'queries'} · {distinctNodeCount} remote node{distinctNodeCount !== 1 ? 's' : ''}{participantLabel})
         </div>
         {overhead > 0 && (
           <div style={{ fontSize: 10, color: 'var(--text-muted)' }}>
@@ -344,7 +361,7 @@ export const DistributedQueryTopology: React.FC<DistributedQueryTopologyProps> =
         isActive={activeQueryId === coordinator.query_id}
         onClick={() => onNavigate(coordinator.query_id)}
         isCoordinator
-        roleLabel="Coordinator"
+        roleLabel={coordinatorRoleLabel(topology)}
         labelWidth={LABEL_W}
         metricWidth={METRIC_W}
       />

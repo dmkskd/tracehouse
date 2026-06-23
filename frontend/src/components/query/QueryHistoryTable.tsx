@@ -490,6 +490,7 @@ export const QueryHistoryTable: React.FC<QueryHistoryTableProps> = ({
                 coordinatorIds={coordinatorIds}
                 childQueries={previewChildQueries}
                 isLoadingChildQueries={hoverTopology.isLoading}
+                childQueryError={hoverTopology.error}
               />
             </div>
           )}

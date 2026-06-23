@@ -344,10 +344,11 @@ const DistributedCard: React.FC<{
   coordinatorIds?: Set<string>;
   childQueries?: SubQueryInfo[];
   isLoading?: boolean;
-}> = ({ query, coordinatorIds, childQueries, isLoading = false }) => {
+  error?: Error | null;
+}> = ({ query, coordinatorIds, childQueries, isLoading = false, error = null }) => {
   const nodeQueries = childQueries ?? [];
   const distinctNodeCount = new Set(nodeQueries.map(q => q.hostname || q.query_id)).size;
-  const hasParallelShape = nodeQueries.length > 0 || (isLoading && isDistributed(query, coordinatorIds));
+  const hasParallelShape = nodeQueries.length > 0 || ((isLoading || error) && isDistributed(query, coordinatorIds));
   if (!hasParallelShape) return null;
 
   const maxDuration = Math.max(
@@ -372,6 +373,18 @@ const DistributedCard: React.FC<{
           {isLoading ? (
             <div style={{ color: 'var(--text-muted)', fontSize: 11, fontFamily: mono }}>
               Loading child query timings…
+            </div>
+          ) : error ? (
+            <div
+              title={error.message}
+              style={{
+                color: colors.red,
+                fontSize: 11,
+                fontFamily: mono,
+                lineHeight: 1.45,
+              }}
+            >
+              Child query data unavailable
             </div>
           ) : nodeQueries.slice(0, 4).map(nodeQuery => (
             <TopologyRow
@@ -437,7 +450,42 @@ export const QueryHoverPreview: React.FC<{
   coordinatorIds?: Set<string>;
   childQueries?: SubQueryInfo[];
   isLoadingChildQueries?: boolean;
-}> = ({ query, coordinatorIds, childQueries, isLoadingChildQueries }) => {
+  childQueryError?: Error | null;
+}> = ({ query, coordinatorIds, childQueries, isLoadingChildQueries, childQueryError }) => {
+  const previewRef = React.useRef<HTMLElement | null>(null);
+
+  React.useEffect(() => {
+    const element = previewRef.current;
+    if (!element) return;
+
+    const onWheel = (event: WheelEvent) => {
+      const rect = element.getBoundingClientRect();
+      const insidePreview =
+        event.clientX >= rect.left &&
+        event.clientX <= rect.right &&
+        event.clientY >= rect.top &&
+        event.clientY <= rect.bottom;
+      if (!insidePreview) return;
+
+      event.preventDefault();
+      event.stopPropagation();
+      event.stopImmediatePropagation();
+
+      const delta = event.deltaMode === WheelEvent.DOM_DELTA_LINE
+        ? event.deltaY * 16
+        : event.deltaMode === WheelEvent.DOM_DELTA_PAGE
+          ? event.deltaY * element.clientHeight
+          : event.deltaY;
+
+      if (element.scrollHeight > element.clientHeight) {
+        element.scrollTop += delta;
+      }
+    };
+
+    document.addEventListener('wheel', onWheel, { passive: false, capture: true });
+    return () => document.removeEventListener('wheel', onWheel, { capture: true });
+  }, [query?.query_id]);
+
   if (!query) {
     return (
       <aside style={{ ...cardStyle, padding: 14, color: 'var(--text-muted)', fontSize: 12 }}>
@@ -448,13 +496,18 @@ export const QueryHoverPreview: React.FC<{
   }
 
   return (
-    <aside style={{
+    <aside ref={previewRef} style={{
       border: '1px solid var(--border-primary)',
       borderRadius: 9,
       background: 'var(--bg-secondary)',
       boxShadow: '0 18px 50px rgba(0,0,0,0.12)',
-      overflow: 'hidden',
-    }}>
+      overflowY: 'auto',
+      overflowX: 'hidden',
+      maxHeight: 'calc(100vh - 36px)',
+      overscrollBehavior: 'contain',
+    }}
+      data-query-hover-preview="true"
+    >
       <div style={{
         display: 'flex',
         justifyContent: 'space-between',
@@ -475,7 +528,7 @@ export const QueryHoverPreview: React.FC<{
         <ShapeLegendCard query={query} coordinatorIds={coordinatorIds} />
         <ScanEfficiencyCard query={query} />
         <ColumnsCard query={query} />
-        <DistributedCard query={query} coordinatorIds={coordinatorIds} childQueries={childQueries} isLoading={isLoadingChildQueries} />
+        <DistributedCard query={query} coordinatorIds={coordinatorIds} childQueries={childQueries} isLoading={isLoadingChildQueries} error={childQueryError} />
         <InsertPipelineCard query={query} />
       </div>
     </aside>

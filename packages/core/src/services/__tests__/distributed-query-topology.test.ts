@@ -135,6 +135,72 @@ describe('inferDistributedTopology', { tags: ['query-analysis'] }, () => {
       expectedShardSends: 2,
       allExpectedShardSendsObserved: true,
     });
+    expect(topology.readDistribution.entries.map(entry => entry.queryId)).toEqual(['child-s1', 'child-s2']);
+    expect(topology.readDistribution.groups).toHaveLength(1);
+  });
+
+  it('groups read distribution by normalized query hash for UNION-style fan-out branches', () => {
+    const topology = inferDistributedTopology({
+      rootQueryId: 'union-root',
+      clusterHosts,
+      executions: [
+        row({
+          queryId: 'union-root',
+          initialQueryId: 'union-root',
+          isInitialQuery: true,
+          queryPreview: 'SELECT ... UNION ALL SELECT ...',
+        }),
+        row({
+          queryId: 'metric-s1',
+          initialQueryId: 'union-root',
+          isInitialQuery: false,
+          normalizedQueryHash: '111',
+          hostname: 'chi-dev-cluster-dev-0-0.clickhouse.svc.cluster.local',
+          queryPreview: 'SELECT avg(ProfileEvent_Query) FROM clusterAllReplicas(\'all\', system.metric_log)',
+          queryDurationMs: 12,
+          readRows: 100,
+          readBytes: 1000,
+        }),
+        row({
+          queryId: 'metric-s2',
+          initialQueryId: 'union-root',
+          isInitialQuery: false,
+          normalizedQueryHash: '111',
+          hostname: 'chi-dev-cluster-dev-1-0.clickhouse.svc.cluster.local',
+          queryPreview: 'SELECT avg(ProfileEvent_Query) FROM clusterAllReplicas(\'all\', system.metric_log)',
+          queryDurationMs: 10,
+          readRows: 120,
+          readBytes: 1200,
+        }),
+        row({
+          queryId: 'query-log-s1',
+          initialQueryId: 'union-root',
+          isInitialQuery: false,
+          normalizedQueryHash: '222',
+          hostname: 'chi-dev-cluster-dev-0-1.clickhouse.svc.cluster.local',
+          queryPreview: 'SELECT count() FROM clusterAllReplicas(\'all\', system.query_log)',
+          queryDurationMs: 8,
+          readRows: 20,
+          readBytes: 500,
+        }),
+        row({
+          queryId: 'query-log-s2',
+          initialQueryId: 'union-root',
+          isInitialQuery: false,
+          normalizedQueryHash: '222',
+          hostname: 'chi-dev-cluster-dev-1-1.clickhouse.svc.cluster.local',
+          queryPreview: 'SELECT count() FROM clusterAllReplicas(\'all\', system.query_log)',
+          queryDurationMs: 9,
+          readRows: 25,
+          readBytes: 550,
+        }),
+      ],
+    });
+
+    expect(topology.readDistribution.entries).toHaveLength(4);
+    expect(topology.readDistribution.groups).toHaveLength(2);
+    expect(topology.readDistribution.groups.map(group => group.label).sort()).toEqual(['system.metric_log', 'system.query_log']);
+    expect(topology.readDistribution.groups.map(group => group.entries.length)).toEqual([2, 2]);
   });
 
   it('maps query-log pod hostnames to system.clusters service hostnames', () => {
@@ -380,6 +446,198 @@ describe('inferDistributedTopology', { tags: ['query-analysis'] }, () => {
     expect(topology.shards).toHaveLength(2);
     expect(topology.shards.map((shard) => shard.children)).toHaveLength(2);
     expect(topology.shards.every((shard) => shard.leader == null && shard.readers.length === 0)).toBe(true);
+  });
+
+  it('marks clusterAllReplicas forced all-node fan-out with a folded local initiator participant', () => {
+    const topology = inferDistributedTopology({
+      rootQueryId: 'all-replicas-folded-local',
+      clusterHosts,
+      executions: [
+        row({
+          queryId: 'all-replicas-folded-local',
+          initialQueryId: 'all-replicas-folded-local',
+          isInitialQuery: true,
+          hostname: 'chi-dev-cluster-dev-0-0-0',
+          readRows: 5,
+          readBytes: 500,
+          queryPreview: "SELECT count() FROM clusterAllReplicas('tracehouse', system.processes)",
+        }),
+        row({
+          queryId: 'r-s1r2',
+          initialQueryId: 'all-replicas-folded-local',
+          isInitialQuery: false,
+          hostname: 'chi-dev-cluster-dev-0-1.clickhouse.svc.cluster.local',
+          readRows: 4,
+          readBytes: 400,
+        }),
+        row({
+          queryId: 'r-s2r1',
+          initialQueryId: 'all-replicas-folded-local',
+          isInitialQuery: false,
+          hostname: 'chi-dev-cluster-dev-1-0.clickhouse.svc.cluster.local',
+          readRows: 5,
+          readBytes: 500,
+        }),
+        row({
+          queryId: 'r-s2r2',
+          initialQueryId: 'all-replicas-folded-local',
+          isInitialQuery: false,
+          hostname: 'chi-dev-cluster-dev-1-1.clickhouse.svc.cluster.local',
+          readRows: 5,
+          readBytes: 500,
+        }),
+      ],
+    });
+
+    expect(topology.kind).toBe('cluster_all_replicas');
+    expect(topology.fanoutMode).toBe('all_replicas');
+    expect(topology.clusterAllReplicas).toMatchObject({
+      fanoutMode: 'all_replicas',
+      expectedParticipants: 4,
+      observedRemoteChildren: 3,
+      localParticipantsOnInitiator: 1,
+      allExpectedParticipantsAccounted: true,
+    });
+    expect(topology.localRead).toMatchObject({
+      kind: 'folded_into_coordinator',
+      shardNum: 1,
+      replicaNum: 1,
+      readRows: 5,
+      readBytes: 500,
+    });
+    expect(topology.executionFlow.map(event => event.kind)).toContain('local_read_started');
+    expect(topology.readDistribution.entries).toHaveLength(4);
+    expect(topology.readDistribution.entries.find(entry => entry.foldedIntoCoordinator)).toMatchObject({
+      role: 'local_reader',
+      shardNum: 1,
+      replicaNum: 1,
+    });
+  });
+
+  it('rolls read distribution up by shard and flags per-replica reading', () => {
+    const topology = inferDistributedTopology({
+      rootQueryId: 'parallel-distribution',
+      clusterHosts,
+      processorProfiles: [
+        proc({
+          queryId: 'reader-s1r1',
+          initialQueryId: 'parallel-distribution',
+          hostname: 'chi-dev-cluster-dev-0-0.clickhouse.svc.cluster.local',
+          planStepDescription: 'MergeTreeSelect(pool: ReadPoolParallelReplicas, algorithm: Thread)',
+        }),
+        proc({
+          queryId: 'reader-s1r2',
+          initialQueryId: 'parallel-distribution',
+          hostname: 'chi-dev-cluster-dev-0-1.clickhouse.svc.cluster.local',
+          planStepDescription: 'MergeTreeSelect(pool: ReadPoolParallelReplicas, algorithm: Thread)',
+        }),
+        proc({
+          queryId: 'reader-s2r1',
+          initialQueryId: 'parallel-distribution',
+          hostname: 'chi-dev-cluster-dev-1-0.clickhouse.svc.cluster.local',
+          planStepDescription: 'MergeTreeSelect(pool: ReadPoolParallelReplicas, algorithm: Thread)',
+        }),
+        proc({
+          queryId: 'reader-s2r2',
+          initialQueryId: 'parallel-distribution',
+          hostname: 'chi-dev-cluster-dev-1-1.clickhouse.svc.cluster.local',
+          planStepDescription: 'MergeTreeSelect(pool: ReadPoolParallelReplicas, algorithm: Thread)',
+        }),
+      ],
+      executions: [
+        row({
+          queryId: 'parallel-distribution',
+          initialQueryId: 'parallel-distribution',
+          isInitialQuery: true,
+          readRows: 60_000_000,
+          profileEvents: { DistributedConnectionTries: 2 },
+        }),
+        row({
+          queryId: 'leader-s1',
+          initialQueryId: 'parallel-distribution',
+          isInitialQuery: false,
+          hostname: 'chi-dev-cluster-dev-0-0.clickhouse.svc.cluster.local',
+          readRows: 30_500_000,
+          profileEvents: {
+            ParallelReplicasHandleRequestMicroseconds: 100,
+            ParallelReplicasReadAssignedMarks: 1200,
+            ParallelReplicasUsedCount: 2,
+          },
+        }),
+        row({
+          queryId: 'reader-s1r1',
+          initialQueryId: 'parallel-distribution',
+          isInitialQuery: false,
+          hostname: 'chi-dev-cluster-dev-0-0.clickhouse.svc.cluster.local',
+          readRows: 12_900_000,
+          readBytes: 13_470_000,
+          profileEvents: { ParallelReplicasReadMarks: 700 },
+        }),
+        row({
+          queryId: 'reader-s1r2',
+          initialQueryId: 'parallel-distribution',
+          isInitialQuery: false,
+          hostname: 'chi-dev-cluster-dev-0-1.clickhouse.svc.cluster.local',
+          readRows: 17_600_000,
+          readBytes: 13_440_000,
+          profileEvents: { ParallelReplicasReadMarks: 900 },
+        }),
+        row({
+          queryId: 'leader-s2',
+          initialQueryId: 'parallel-distribution',
+          isInitialQuery: false,
+          hostname: 'chi-dev-cluster-dev-1-0.clickhouse.svc.cluster.local',
+          readRows: 29_500_000,
+          profileEvents: {
+            ParallelReplicasHandleRequestMicroseconds: 100,
+            ParallelReplicasReadAssignedMarks: 1200,
+            ParallelReplicasUsedCount: 2,
+          },
+        }),
+        row({
+          queryId: 'reader-s2r1',
+          initialQueryId: 'parallel-distribution',
+          isInitialQuery: false,
+          hostname: 'chi-dev-cluster-dev-1-0.clickhouse.svc.cluster.local',
+          readRows: 11_400_000,
+          readBytes: 5_250_000,
+          profileEvents: { ParallelReplicasReadMarks: 600 },
+        }),
+        row({
+          queryId: 'reader-s2r2',
+          initialQueryId: 'parallel-distribution',
+          isInitialQuery: false,
+          hostname: 'chi-dev-cluster-dev-1-1.clickhouse.svc.cluster.local',
+          readRows: 18_000_000,
+          readBytes: 14_790_000,
+          profileEvents: { ParallelReplicasReadMarks: 800 },
+        }),
+      ],
+    });
+
+    expect(topology.kind).toBe('parallel_replicas_select');
+    expect(topology.fanoutMode).toBe('parallel_replicas');
+    expect(topology.readDistribution.hasPerReplicaReading).toBe(true);
+    expect(topology.readDistribution.entries.map(entry => entry.queryId)).not.toContain('leader-s1');
+    expect(topology.readDistribution.shards).toHaveLength(2);
+    expect(topology.readDistribution.shards.map(shard => ({
+      shardNum: shard.shardNum,
+      readRows: shard.readRows,
+      replicas: shard.replicas.length,
+      hasPerReplicaReading: shard.hasPerReplicaReading,
+    }))).toEqual([
+      { shardNum: 1, readRows: 30_500_000, replicas: 2, hasPerReplicaReading: true },
+      { shardNum: 2, readRows: 29_400_000, replicas: 2, hasPerReplicaReading: true },
+    ]);
+    const rowSkew = topology.readDistribution.skew.metrics.find(metric => metric.metric === 'read_rows');
+    expect(rowSkew).toMatchObject({
+      metric: 'read_rows',
+      max: 18_000_000,
+      maxShardNum: 2,
+      maxReplicaNum: 2,
+      severity: 'none',
+    });
+    expect(rowSkew?.maxShare).toBeCloseTo(18_000_000 / 59_900_000, 5);
   });
 
   it('models distributed INSERT cascades without relying on a shared initial_query_id', () => {

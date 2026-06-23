@@ -25,6 +25,13 @@ export type TopologyConfidence = 'high' | 'medium' | 'low';
 
 export type TopologyDecisionLevel = 'info' | 'warning' | 'degraded';
 
+export type DistributedFanoutMode =
+  | 'none'
+  | 'one_replica_per_shard'
+  | 'all_replicas'
+  | 'parallel_replicas'
+  | 'unknown';
+
 export type TopologyCapabilityId =
   | 'query_log'
   | 'profile_events'
@@ -46,6 +53,7 @@ export interface DistributedQueryExecutionInput {
   queryId: string;
   initialQueryId: string;
   isInitialQuery: boolean;
+  normalizedQueryHash?: string;
   hostname: string;
   queryKind?: string;
   queryStartTimeMicroseconds?: string;
@@ -116,6 +124,8 @@ export interface DistributedExecutionPhase {
 
 export type DistributedExecutionFlowEventKind =
   | 'coordinator_started'
+  | 'local_read_started'
+  | 'local_read_completed'
   | 'remote_started'
   | 'remote_setup'
   | 'remote_read_completed'
@@ -128,7 +138,7 @@ export interface DistributedExecutionFlowEvent {
   source: 'query_log' | 'text_log';
   offsetMs: number;
   actor: string;
-  actorType: 'coordinator' | 'remote';
+  actorType: 'coordinator' | 'local' | 'remote';
   title: string;
   detail: string;
   queryId?: string;
@@ -183,6 +193,7 @@ export interface TopologyDetectorPlugin {
 export interface DistributedTopologyNode {
   id: string;
   queryId: string;
+  normalizedQueryHash?: string;
   hostname: string;
   role: TopologyNodeRole;
   shardNum?: number;
@@ -194,6 +205,7 @@ export interface DistributedTopologyNode {
   readBytes: number;
   writtenRows: number;
   writtenBytes: number;
+  memoryUsage: number;
   queryPreview?: string;
   profileEvents: ProfileEventsMap;
   tables: string[];
@@ -213,14 +225,118 @@ export interface DistributedShardCoverage {
   allExpectedShardSendsObserved?: boolean;
 }
 
+export interface ClusterAllReplicasMarker {
+  fanoutMode: 'all_replicas';
+  cluster?: string;
+  expectedParticipants?: number;
+  observedRemoteChildren: number;
+  localParticipantsOnInitiator: number;
+  allExpectedParticipantsAccounted?: boolean;
+  evidence: TopologyEvidence[];
+}
+
+export interface FoldedLocalReadParticipant {
+  kind: 'folded_into_coordinator';
+  hostname: string;
+  shardNum?: number;
+  replicaNum?: number;
+  queryId: string;
+  readRows?: number;
+  readBytes?: number;
+  selectedParts?: number;
+  selectedMarks?: number;
+  confidence: TopologyConfidence;
+  evidence: TopologyEvidence[];
+}
+
+export interface DistributedReadDistributionEntry {
+  participantId: string;
+  queryId: string;
+  normalizedQueryHash?: string;
+  queryPreview?: string;
+  hostname: string;
+  role: TopologyNodeRole | 'local_reader';
+  shardNum?: number;
+  replicaNum?: number;
+  readRows: number;
+  readBytes: number;
+  durationMs: number;
+  memoryUsage: number;
+  selectedParts: number;
+  selectedMarks: number;
+  rowShare: number;
+  byteShare: number;
+  foldedIntoCoordinator: boolean;
+}
+
+export type DistributedSkewMetric =
+  | 'read_rows'
+  | 'read_bytes'
+  | 'duration_ms'
+  | 'memory_usage'
+  | 'selected_parts'
+  | 'selected_marks';
+
+export interface DistributedSkewMetricSummary {
+  metric: DistributedSkewMetric;
+  total: number;
+  min: number;
+  max: number;
+  average: number;
+  maxShare: number;
+  skewRatio: number;
+  maxParticipantId?: string;
+  maxHostname?: string;
+  maxShardNum?: number;
+  maxReplicaNum?: number;
+  severity: 'none' | 'low' | 'medium' | 'high';
+}
+
+export interface DistributedResourceSkew {
+  participantCount: number;
+  metrics: DistributedSkewMetricSummary[];
+}
+
+export interface DistributedReadDistributionGroup {
+  key: string;
+  label: string;
+  queryPreview?: string;
+  entries: DistributedReadDistributionEntry[];
+  skew: DistributedResourceSkew;
+}
+
+export interface DistributedReadDistributionShard {
+  shardNum: number;
+  readRows: number;
+  readBytes: number;
+  rowShare: number;
+  byteShare: number;
+  replicas: DistributedReadDistributionEntry[];
+  hasPerReplicaReading: boolean;
+}
+
+export interface DistributedReadDistribution {
+  totalReadRows: number;
+  totalReadBytes: number;
+  entries: DistributedReadDistributionEntry[];
+  groups: DistributedReadDistributionGroup[];
+  shards: DistributedReadDistributionShard[];
+  hasPerReplicaReading: boolean;
+  skew: DistributedResourceSkew;
+}
+
 export interface DistributedTopology {
   kind: DistributedQueryKind;
+  fanoutMode: DistributedFanoutMode;
   rootQueryId: string;
   capabilities: DistributedTopologyCapabilities;
   coordinator?: DistributedTopologyNode;
   nodes: DistributedTopologyNode[];
   shards: DistributedTopologyShard[];
   shardCoverage: DistributedShardCoverage;
+  clusterAllReplicas?: ClusterAllReplicasMarker;
+  localRead?: FoldedLocalReadParticipant;
+  readDistribution: DistributedReadDistribution;
   confidence: TopologyConfidence;
   evidence: TopologyEvidence[];
   decisions: TopologyDecision[];
@@ -446,6 +562,25 @@ function hasHybridSignal(execution: DistributedQueryExecutionInput): boolean {
   return /\bHybrid\b/i.test(values);
 }
 
+function clusterAllReplicasClusterName(query: string | undefined): string | undefined {
+  if (!query) return undefined;
+  const match = query.match(/\bclusterAllReplicas\s*\(\s*'([^']+)'/i);
+  return match?.[1];
+}
+
+function usesClusterAllReplicas(execution: DistributedQueryExecutionInput | undefined): boolean {
+  return Boolean(clusterAllReplicasClusterName(execution?.queryPreview) || /\bclusterAllReplicas\s*\(/i.test(execution?.queryPreview ?? ''));
+}
+
+function clusterHostParticipantKey(host: Pick<ClusterHostInput, 'hostName' | 'shardNum' | 'replicaNum'>): string {
+  return `${host.shardNum}:${host.replicaNum}`;
+}
+
+function executionParticipantKey(node: DistributedTopologyNode): string | undefined {
+  if (node.shardNum == null || node.replicaNum == null) return undefined;
+  return `${node.shardNum}:${node.replicaNum}`;
+}
+
 function makeNodeId(execution: DistributedQueryExecutionInput, index: number): string {
   return `${execution.queryId}:${hostKey(execution.hostname)}:${execution.queryStartTimeMicroseconds ?? index}`;
 }
@@ -639,6 +774,7 @@ function buildNode(
   return {
     id: makeNodeId(execution, index),
     queryId: execution.queryId,
+    normalizedQueryHash: execution.normalizedQueryHash,
     hostname: execution.hostname,
     role,
     shardNum: hostInfo?.shardNum,
@@ -650,6 +786,7 @@ function buildNode(
     readBytes: num(execution.readBytes),
     writtenRows: num(execution.writtenRows),
     writtenBytes: num(execution.writtenBytes),
+    memoryUsage: num(execution.memoryUsage),
     queryPreview: execution.queryPreview,
     profileEvents: execution.profileEvents ?? {},
     tables: execution.tables ?? [],
@@ -684,6 +821,320 @@ function buildShardCoverage(nodes: DistributedTopologyNode[], shards: Distribute
       expectedShardSends,
       allExpectedShardSendsObserved: shards.length >= expectedShardSends,
     } : {}),
+  };
+}
+
+function inferFanoutMode(kind: DistributedQueryKind, clusterAllReplicas?: ClusterAllReplicasMarker): DistributedFanoutMode {
+  if (clusterAllReplicas) return 'all_replicas';
+  if (kind === 'parallel_replicas_select') return 'parallel_replicas';
+  if (kind === 'plain_distributed_select') return 'one_replica_per_shard';
+  if (kind === 'local') return 'none';
+  return 'unknown';
+}
+
+function buildClusterAllReplicasMarker(
+  rootExecution: DistributedQueryExecutionInput | undefined,
+  coordinator: DistributedTopologyNode | undefined,
+  nodes: DistributedTopologyNode[],
+  clusterHosts: ClusterHostInput[] | undefined,
+  capabilities: DistributedTopologyCapabilities,
+): { marker?: ClusterAllReplicasMarker; localRead?: FoldedLocalReadParticipant } {
+  if (!rootExecution || !usesClusterAllReplicas(rootExecution)) return {};
+
+  const cluster = clusterAllReplicasClusterName(rootExecution.queryPreview);
+  const eligibleHosts = (clusterHosts ?? [])
+    .filter(host => host.hostName && host.shardNum > 0 && host.replicaNum > 0);
+  const namedClusterHosts = cluster
+    ? eligibleHosts.filter(host => host.cluster === cluster)
+    : eligibleHosts;
+  const targetHosts = namedClusterHosts.length > 0 ? namedClusterHosts : eligibleHosts;
+
+  const expectedParticipantKeys = new Set(targetHosts.map(clusterHostParticipantKey));
+  const remoteChildren = nodes.filter(node => node.role !== 'coordinator' && node.role !== 'insert_client');
+  const observedRemoteParticipantKeys = new Set(remoteChildren.map(executionParticipantKey).filter((value): value is string => Boolean(value)));
+  const coordinatorParticipantKey = coordinator ? executionParticipantKey(coordinator) : undefined;
+  const coordinatorIsExpectedParticipant = Boolean(coordinatorParticipantKey && expectedParticipantKeys.has(coordinatorParticipantKey));
+  const coordinatorAlsoHasRemoteChild = Boolean(coordinatorParticipantKey && observedRemoteParticipantKeys.has(coordinatorParticipantKey));
+  const localParticipantsOnInitiator = coordinatorIsExpectedParticipant && !coordinatorAlsoHasRemoteChild ? 1 : 0;
+  const expectedParticipants = expectedParticipantKeys.size > 0 ? expectedParticipantKeys.size : undefined;
+  const accountedParticipants = observedRemoteParticipantKeys.size + localParticipantsOnInitiator;
+  const allExpectedParticipantsAccounted = expectedParticipants != null
+    ? accountedParticipants >= expectedParticipants
+    : undefined;
+
+  const evidence: TopologyEvidence[] = [
+    {
+      source: 'query_log',
+      message: cluster
+        ? `root query uses clusterAllReplicas('${cluster}', ...)`
+        : 'root query uses clusterAllReplicas(...)',
+    },
+  ];
+
+  if (capabilities.systemClusters && expectedParticipants != null) {
+    evidence.push({
+      source: 'system_clusters',
+      message: `clusterAllReplicas target has ${expectedParticipants} configured participant(s)`,
+    });
+  }
+
+  const marker: ClusterAllReplicasMarker = {
+    fanoutMode: 'all_replicas',
+    cluster,
+    expectedParticipants,
+    observedRemoteChildren: remoteChildren.length,
+    localParticipantsOnInitiator,
+    allExpectedParticipantsAccounted,
+    evidence,
+  };
+
+  const selectedParts = num(coordinator?.profileEvents?.SelectedParts);
+  const selectedMarks = num(coordinator?.profileEvents?.SelectedMarks);
+  const localRead = coordinator && localParticipantsOnInitiator > 0 ? {
+    kind: 'folded_into_coordinator' as const,
+    hostname: coordinator.hostname,
+    shardNum: coordinator.shardNum,
+    replicaNum: coordinator.replicaNum,
+    queryId: coordinator.queryId,
+    readRows: coordinator.readRows,
+    readBytes: coordinator.readBytes,
+    ...(selectedParts > 0 ? { selectedParts } : {}),
+    ...(selectedMarks > 0 ? { selectedMarks } : {}),
+    confidence: capabilities.systemClusters ? 'high' as const : 'medium' as const,
+    evidence: [
+      ...evidence,
+      {
+        source: 'query_log' as const,
+        message: 'initiator host is an addressed cluster replica; local read is folded into the initial query row',
+      },
+    ],
+  } : undefined;
+
+  return { marker, localRead };
+}
+
+function buildReadDistribution(
+  nodes: DistributedTopologyNode[],
+  localRead?: FoldedLocalReadParticipant,
+): DistributedReadDistribution {
+  const entriesWithoutShares: Omit<DistributedReadDistributionEntry, 'rowShare' | 'byteShare'>[] = [];
+  const shardsWithReplicaReaders = new Set(
+    nodes
+      .filter(node => node.role === 'replica_reader' && node.shardNum != null)
+      .map(node => node.shardNum as number),
+  );
+
+  for (const node of nodes) {
+    if (node.role === 'coordinator' || node.role === 'insert_client') continue;
+    if (node.role === 'shard_leader' && node.shardNum != null && shardsWithReplicaReaders.has(node.shardNum)) continue;
+    if (
+      node.readRows <= 0 &&
+      node.readBytes <= 0 &&
+      node.queryDurationMs <= 0 &&
+      node.memoryUsage <= 0 &&
+      num(node.profileEvents.SelectedParts) <= 0 &&
+      num(node.profileEvents.SelectedMarks) <= 0
+    ) continue;
+    entriesWithoutShares.push({
+      participantId: node.id,
+      queryId: node.queryId,
+      normalizedQueryHash: node.normalizedQueryHash,
+      queryPreview: node.queryPreview,
+      hostname: node.hostname,
+      role: node.role,
+      shardNum: node.shardNum,
+      replicaNum: node.replicaNum,
+      readRows: node.readRows,
+      readBytes: node.readBytes,
+      durationMs: node.queryDurationMs,
+      memoryUsage: node.memoryUsage,
+      selectedParts: num(node.profileEvents.SelectedParts),
+      selectedMarks: num(node.profileEvents.SelectedMarks),
+      foldedIntoCoordinator: false,
+    });
+  }
+
+  if (localRead && ((localRead.readRows ?? 0) > 0 || (localRead.readBytes ?? 0) > 0)) {
+    entriesWithoutShares.push({
+      participantId: `local:${localRead.queryId}:${hostKey(localRead.hostname)}`,
+      queryId: localRead.queryId,
+      queryPreview: undefined,
+      hostname: localRead.hostname,
+      role: 'local_reader',
+      shardNum: localRead.shardNum,
+      replicaNum: localRead.replicaNum,
+      readRows: localRead.readRows ?? 0,
+      readBytes: localRead.readBytes ?? 0,
+      durationMs: 0,
+      memoryUsage: 0,
+      selectedParts: localRead.selectedParts ?? 0,
+      selectedMarks: localRead.selectedMarks ?? 0,
+      foldedIntoCoordinator: true,
+    });
+  }
+
+  const totalReadRows = entriesWithoutShares.reduce((sum, entry) => sum + entry.readRows, 0);
+  const totalReadBytes = entriesWithoutShares.reduce((sum, entry) => sum + entry.readBytes, 0);
+
+  const entries = entriesWithoutShares
+    .map((entry): DistributedReadDistributionEntry => ({
+      ...entry,
+      rowShare: totalReadRows > 0 ? entry.readRows / totalReadRows : 0,
+      byteShare: totalReadBytes > 0 ? entry.readBytes / totalReadBytes : 0,
+    }))
+    .sort((a, b) => b.readBytes - a.readBytes || b.readRows - a.readRows || a.hostname.localeCompare(b.hostname));
+
+  const entriesByShard = new Map<number, DistributedReadDistributionEntry[]>();
+  for (const entry of entries) {
+    if (entry.shardNum == null) continue;
+    const list = entriesByShard.get(entry.shardNum);
+    if (list) list.push(entry);
+    else entriesByShard.set(entry.shardNum, [entry]);
+  }
+
+  const shards = [...entriesByShard.entries()]
+    .map(([shardNum, replicas]): DistributedReadDistributionShard => {
+      const readRows = replicas.reduce((sum, entry) => sum + entry.readRows, 0);
+      const readBytes = replicas.reduce((sum, entry) => sum + entry.readBytes, 0);
+      const replicaReaderCount = replicas.filter(entry => entry.role === 'replica_reader' || entry.role === 'local_reader').length;
+      const uniqueReplicas = new Set(replicas.map(entry => entry.replicaNum).filter((value) => value != null));
+      return {
+        shardNum,
+        readRows,
+        readBytes,
+        rowShare: totalReadRows > 0 ? readRows / totalReadRows : 0,
+        byteShare: totalReadBytes > 0 ? readBytes / totalReadBytes : 0,
+        replicas,
+        hasPerReplicaReading: replicaReaderCount > 1 || uniqueReplicas.size > 1,
+      };
+    })
+    .sort((a, b) => a.shardNum - b.shardNum);
+
+  return {
+    totalReadRows,
+    totalReadBytes,
+    entries,
+    groups: buildReadDistributionGroups(entries),
+    shards,
+    hasPerReplicaReading: shards.some(shard => shard.hasPerReplicaReading),
+    skew: buildResourceSkew(entries),
+  };
+}
+
+function distributionGroupKey(entry: DistributedReadDistributionEntry): string {
+  return entry.normalizedQueryHash || 'unknown';
+}
+
+function compactSqlLabel(sql: string | undefined): string {
+  const normalized = (sql ?? '').replace(/\s+/g, ' ').trim();
+  const tableFunctionMatch = normalized.match(/\b(?:cluster|clusterAllReplicas)\s*\(\s*'[^']+'\s*,\s*`?([\w.-]+)`?\.`?([\w.-]+)`?/i)
+    ?? normalized.match(/\b(?:cluster|clusterAllReplicas)\s*\(\s*'[^']+'\s*,\s*`?([\w.-]+)`?/i);
+  if (tableFunctionMatch) {
+    return tableFunctionMatch[2] ? `${tableFunctionMatch[1]}.${tableFunctionMatch[2]}` : tableFunctionMatch[1];
+  }
+  const tableMatch = normalized.match(/\bFROM\s+`?([\w.-]+)`?\.`?([\w.-]+)`?/i)
+    ?? normalized.match(/\bFROM\s+`?([\w.-]+)`?/i);
+  if (tableMatch) {
+    return tableMatch[2] ? `${tableMatch[1]}.${tableMatch[2]}` : tableMatch[1];
+  }
+  const selectMatch = normalized.match(/\bSELECT\s+(.+?)(?:\s+FROM\b|\s+WHERE\b|\s+UNION\b|$)/i);
+  if (selectMatch) {
+    const projection = selectMatch[1].replace(/[`'"]/g, '').trim();
+    return projection.length > 34 ? `${projection.slice(0, 31)}...` : projection;
+  }
+  return normalized.length > 34 ? `${normalized.slice(0, 31)}...` : normalized || 'Ungrouped';
+}
+
+function buildReadDistributionGroups(entries: DistributedReadDistributionEntry[]): DistributedReadDistributionGroup[] {
+  const groups = new Map<string, DistributedReadDistributionEntry[]>();
+  for (const entry of entries) {
+    const key = distributionGroupKey(entry);
+    const group = groups.get(key);
+    if (group) group.push(entry);
+    else groups.set(key, [entry]);
+  }
+
+  return [...groups.entries()]
+    .sort((a, b) => b[1].length - a[1].length || a[0].localeCompare(b[0]))
+    .map(([key, groupEntries], index): DistributedReadDistributionGroup => {
+      const queryPreview = groupEntries.find(entry => entry.queryPreview)?.queryPreview;
+      const label = compactSqlLabel(queryPreview);
+      return {
+        key,
+        label: label !== 'Ungrouped' ? label : `Query shape ${index + 1}`,
+        queryPreview,
+        entries: groupEntries,
+        skew: buildResourceSkew(groupEntries),
+      };
+    });
+}
+
+function skewSeverity(maxShare: number, skewRatio: number, participantCount: number): DistributedSkewMetricSummary['severity'] {
+  if (participantCount <= 1 || maxShare <= 0) return 'none';
+  if (maxShare >= 0.75 || skewRatio >= 3) return 'high';
+  if (maxShare >= 0.55 || skewRatio >= 2) return 'medium';
+  if (maxShare >= 0.4 || skewRatio >= 1.5) return 'low';
+  return 'none';
+}
+
+export function distributedReadMetricValue(entry: DistributedReadDistributionEntry, metric: DistributedSkewMetric): number {
+  switch (metric) {
+    case 'read_rows': return entry.readRows;
+    case 'read_bytes': return entry.readBytes;
+    case 'duration_ms': return entry.durationMs;
+    case 'memory_usage': return entry.memoryUsage;
+    case 'selected_parts': return entry.selectedParts;
+    case 'selected_marks': return entry.selectedMarks;
+  }
+}
+
+function buildSkewMetricSummary(
+  entries: DistributedReadDistributionEntry[],
+  metric: DistributedSkewMetric,
+): DistributedSkewMetricSummary {
+  const values = entries.map(entry => ({ entry, value: distributedReadMetricValue(entry, metric) }));
+  const nonZeroValues = values.filter(item => item.value > 0);
+  const total = values.reduce((sum, item) => sum + item.value, 0);
+  const participantCount = values.length;
+  const average = participantCount > 0 ? total / participantCount : 0;
+  const min = nonZeroValues.length > 0 ? Math.min(...nonZeroValues.map(item => item.value)) : 0;
+  const maxItem = values.reduce<typeof values[number] | undefined>((best, item) => {
+    if (!best || item.value > best.value) return item;
+    return best;
+  }, undefined);
+  const max = maxItem?.value ?? 0;
+  const maxShare = total > 0 ? max / total : 0;
+  const skewRatio = average > 0 ? max / average : 0;
+
+  return {
+    metric,
+    total,
+    min,
+    max,
+    average,
+    maxShare,
+    skewRatio,
+    maxParticipantId: maxItem?.entry.participantId,
+    maxHostname: maxItem?.entry.hostname,
+    maxShardNum: maxItem?.entry.shardNum,
+    maxReplicaNum: maxItem?.entry.replicaNum,
+    severity: skewSeverity(maxShare, skewRatio, participantCount),
+  };
+}
+
+function buildResourceSkew(entries: DistributedReadDistributionEntry[]): DistributedResourceSkew {
+  const metrics: DistributedSkewMetric[] = [
+    'read_rows',
+    'read_bytes',
+    'duration_ms',
+    'memory_usage',
+    'selected_parts',
+    'selected_marks',
+  ];
+
+  return {
+    participantCount: entries.length,
+    metrics: metrics.map(metric => buildSkewMetricSummary(entries, metric)),
   };
 }
 
@@ -872,6 +1323,7 @@ function buildExecutionFlow(
   nodes: DistributedTopologyNode[],
   phases: DistributedExecutionPhase[],
   rootQueryId: string,
+  localRead?: FoldedLocalReadParticipant,
 ): DistributedExecutionFlowEvent[] {
   const rootNode =
     nodes.find(node => node.queryId === rootQueryId && (node.role === 'coordinator' || node.role === 'insert_client')) ??
@@ -891,6 +1343,37 @@ function buildExecutionFlow(
     queryId: rootNode.queryId,
     hostname: rootNode.hostname,
   }];
+
+  if (localRead) {
+    events.push({
+      kind: 'local_read_started',
+      source: 'query_log',
+      offsetMs: 0,
+      actor: 'Local reader',
+      actorType: 'local',
+      title: 'Local read folded into coordinator',
+      detail: localRead.shardNum != null && localRead.replicaNum != null
+        ? `Coordinator also reads local replica s${localRead.shardNum}r${localRead.replicaNum}; this work is included in the initial query row.`
+        : 'Coordinator also reads its local replica; this work is included in the initial query row.',
+      queryId: localRead.queryId,
+      hostname: localRead.hostname,
+      rows: localRead.readRows,
+    });
+
+    events.push({
+      kind: 'local_read_completed',
+      source: 'query_log',
+      offsetMs: rootNode.queryDurationMs,
+      actor: 'Local reader',
+      actorType: 'local',
+      title: 'Local read accounted in coordinator row',
+      detail: eventDetailMetrics(localRead.readRows ?? 0, localRead.readBytes ?? 0) || 'Local participant work is folded into coordinator metrics.',
+      queryId: localRead.queryId,
+      hostname: localRead.hostname,
+      rows: localRead.readRows,
+      durationMs: rootNode.queryDurationMs,
+    });
+  }
 
   for (const node of nodes) {
     if (node.id === rootNode.id || node.role === 'coordinator' || node.role === 'insert_client') continue;
@@ -999,6 +1482,9 @@ function nodeForExecutionFlowEvent(
   if (event.actorType === 'coordinator') {
     return nodes.find((node) => node.role === 'coordinator' || node.role === 'insert_client');
   }
+  if (event.actorType === 'local') {
+    return nodes.find((node) => node.role === 'coordinator' || node.role === 'insert_client');
+  }
 
   const remoteNodes = nodes.filter((node) => node.role !== 'coordinator' && node.role !== 'insert_client');
   return remoteNodes.find((node) =>
@@ -1035,6 +1521,7 @@ function depthForExecutionFlowNode(
   parentNode: DistributedTopologyNode | undefined,
 ): number {
   if (event.actorType === 'coordinator') return 0;
+  if (event.actorType === 'local') return 1;
   if (parentNode) return 2;
   return node?.role === 'replica_reader' ? 1 : 1;
 }
@@ -1132,7 +1619,19 @@ export function inferDistributedTopology(input: DistributedTopologyInput): Distr
   const shards = buildShards(nodes);
   const shardCoverage = buildShardCoverage(nodes, shards);
   const kind = inferKind(nodes);
-  const executionFlow = buildExecutionFlow(nodes, executionPhases, input.rootQueryId);
+  const rootExecution =
+    executions.find(execution => execution.queryId === input.rootQueryId && execution.isInitialQuery) ??
+    executions.find(execution => execution.isInitialQuery);
+  const { marker: clusterAllReplicas, localRead } = buildClusterAllReplicasMarker(
+    rootExecution,
+    coordinator,
+    nodes,
+    capabilities.systemClusters ? input.clusterHosts : undefined,
+    capabilities,
+  );
+  const fanoutMode = inferFanoutMode(kind, clusterAllReplicas);
+  const readDistribution = buildReadDistribution(nodes, localRead);
+  const executionFlow = buildExecutionFlow(nodes, executionPhases, input.rootQueryId, localRead);
   const evidence: TopologyEvidence[] = [];
 
   if ((input.clusterHosts?.length ?? 0) > 0) {
@@ -1146,6 +1645,28 @@ export function inferDistributedTopology(input: DistributedTopologyInput): Distr
   if (hasWritePath) {
     evidence.push({ source: 'query_log', message: 'write-side query kinds detected' });
     addDecision(decisions, 'info', 'write-path-detected', 'query_log', 'Insert or AsyncInsertFlush query kinds were detected.');
+  }
+  if (clusterAllReplicas) {
+    evidence.push(...clusterAllReplicas.evidence);
+    addDecision(
+      decisions,
+      'info',
+      'cluster-all-replicas-fanout',
+      'query_log',
+      clusterAllReplicas.expectedParticipants != null
+        ? `clusterAllReplicas forced all-replicas fan-out: ${clusterAllReplicas.observedRemoteChildren} remote child row(s), ${clusterAllReplicas.localParticipantsOnInitiator} local participant(s) on the initiator, ${clusterAllReplicas.expectedParticipants} expected participant(s).`
+        : `clusterAllReplicas forced all-replicas fan-out: ${clusterAllReplicas.observedRemoteChildren} remote child row(s), ${clusterAllReplicas.localParticipantsOnInitiator} local participant(s) on the initiator.`,
+    );
+  }
+  if (localRead) {
+    evidence.push({ source: 'query_log', message: 'local read participant is folded into the coordinator query row' });
+    addDecision(
+      decisions,
+      'info',
+      'coordinator-local-read-folded',
+      'query_log',
+      'The initiator is also an addressed replica; local participant work is included in the coordinator row.',
+    );
   }
   if (capabilities.textLog && executionPhases.length > 0) {
     evidence.push({ source: 'text_log', message: `${executionPhases.length} execution event(s) parsed` });
@@ -1169,12 +1690,16 @@ export function inferDistributedTopology(input: DistributedTopologyInput): Distr
 
   return {
     kind,
+    fanoutMode,
     rootQueryId: input.rootQueryId,
     capabilities,
     coordinator,
     nodes,
     shards,
     shardCoverage,
+    clusterAllReplicas,
+    localRead,
+    readDistribution,
     confidence: confidenceFor(nodes, capabilities.systemClusters ? input.clusterHosts : undefined, warnings),
     evidence,
     decisions,

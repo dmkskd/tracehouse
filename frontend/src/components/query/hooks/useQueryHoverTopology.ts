@@ -13,6 +13,7 @@ interface UseQueryHoverTopologyArgs {
 
 interface UseQueryHoverTopologyResult {
   isLoading: boolean;
+  error: Error | null;
   getChildQueriesForQuery: (query: QueryHistoryItem | null | undefined) => SubQueryInfo[] | undefined;
 }
 
@@ -30,6 +31,7 @@ export const useQueryHoverTopology = ({
 }: UseQueryHoverTopologyArgs): UseQueryHoverTopologyResult => {
   const [childQueriesByRoot, setChildQueriesByRoot] = useState<Map<string, SubQueryInfo[]>>(new Map());
   const [isLoading, setIsLoading] = useState(false);
+  const [error, setError] = useState<Error | null>(null);
   const requestSeq = useRef(0);
 
   const rootIdsKey = JSON.stringify(
@@ -44,18 +46,27 @@ export const useQueryHoverTopology = ({
     if (!enabled || !queryAnalyzer || rootIds.length === 0) {
       setChildQueriesByRoot(new Map());
       setIsLoading(false);
+      setError(null);
       return;
     }
 
     setIsLoading(true);
     setChildQueriesByRoot(new Map());
+    setError(null);
     queryAnalyzer.getSubQueriesForInitialQueries(rootIds, startTime)
       .then((result) => {
         if (seq !== requestSeq.current) return;
+        console.debug('[useQueryHoverTopology] child query rows loaded', {
+          rootIds,
+          counts: Object.fromEntries([...result.entries()].map(([rootId, rows]) => [rootId, rows.length])),
+        });
         setChildQueriesByRoot(result);
       })
-      .catch(() => {
+      .catch((err: unknown) => {
         if (seq !== requestSeq.current) return;
+        const error = err instanceof Error ? err : new Error(String(err));
+        console.error('[useQueryHoverTopology] Failed to fetch child query rows', error);
+        setError(error);
         setChildQueriesByRoot(new Map());
       })
       .finally(() => {
@@ -69,5 +80,5 @@ export const useQueryHoverTopology = ({
     return childQueriesByRoot.get(hoverTopologyRootId(query));
   }, [childQueriesByRoot]);
 
-  return { isLoading, getChildQueriesForQuery };
+  return { isLoading, error, getChildQueriesForQuery };
 };

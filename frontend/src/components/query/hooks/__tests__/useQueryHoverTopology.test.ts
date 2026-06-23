@@ -1,5 +1,5 @@
 import { act, renderHook, waitFor } from '@testing-library/react';
-import { describe, expect, it, vi } from 'vitest';
+import { afterEach, describe, expect, it, vi } from 'vitest';
 import type { QueryAnalyzer, SubQueryInfo } from '@tracehouse/core';
 import type { QueryHistoryItem } from '../../../../stores/queryStore';
 import { useQueryHoverTopology } from '../useQueryHoverTopology';
@@ -26,6 +26,7 @@ const makeQuery = (overrides: Partial<QueryHistoryItem>): QueryHistoryItem => ({
 
 const makeChild = (queryId: string, durationMs = 10): SubQueryInfo => ({
   query_id: queryId,
+  normalized_query_hash: '1',
   hostname: 'node-a',
   query_duration_ms: durationMs,
   memory_usage: 1024,
@@ -54,6 +55,10 @@ const deferred = <T>() => {
 };
 
 describe('useQueryHoverTopology', () => {
+  afterEach(() => {
+    vi.restoreAllMocks();
+  });
+
   it('does not fetch child queries while hover preview is disabled', () => {
     const getSubQueriesForInitialQueries = vi.fn();
     const analyzer = makeAnalyzer(getSubQueriesForInitialQueries);
@@ -131,5 +136,27 @@ describe('useQueryHoverTopology', () => {
 
     expect(result.current.getChildQueriesForQuery(parentA)).toBeUndefined();
     expect(result.current.getChildQueriesForQuery(parentB)?.[0]?.query_id).toBe('child-b');
+  });
+
+  it('surfaces child-query fetch errors instead of silently returning no topology', async () => {
+    const error = new Error('ClickHouse rejected hover topology SQL');
+    const consoleError = vi.spyOn(console, 'error').mockImplementation(() => undefined);
+    const getSubQueriesForInitialQueries = vi.fn().mockRejectedValue(error);
+    const analyzer = makeAnalyzer(getSubQueriesForInitialQueries);
+    const coordinator = makeQuery({ query_id: 'parent', is_initial_query: 1 });
+
+    const { result } = renderHook(() => useQueryHoverTopology({
+      enabled: true,
+      queryAnalyzer: analyzer,
+      history: [coordinator],
+      coordinatorIds: new Set(['parent']),
+      startTime: '2026-06-18',
+    }));
+
+    await waitFor(() => expect(result.current.isLoading).toBe(false));
+
+    expect(result.current.error).toBe(error);
+    expect(result.current.getChildQueriesForQuery(coordinator)).toBeUndefined();
+    expect(consoleError).toHaveBeenCalledWith('[useQueryHoverTopology] Failed to fetch child query rows', error);
   });
 });
