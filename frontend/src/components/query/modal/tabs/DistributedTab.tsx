@@ -19,6 +19,7 @@ import { formatBytes } from '../../../../stores/databaseStore';
 import { formatDurationMs } from '../../../../utils/formatters';
 import { SqlHighlight } from '../../../common/SqlHighlight';
 import { DistributedQueryTopology, type TopologyCoordinator } from '../shared/DistributedQueryTopology';
+import { distributedFlowEventTitle, distributedRemoteEventPrefix } from '../shared/distributedTopologyPresentation';
 
 interface DistributedTabProps {
   topologyCoordinator: TopologyCoordinator | null;
@@ -1026,57 +1027,11 @@ function eventHasWorkStats(event: DistributedExecutionFlowEvent): boolean {
 }
 
 function flowEventTitle(event: DistributedExecutionFlowEvent, node?: DistributedTopologyNode): string {
-  switch (event.kind) {
-    case 'coordinator_started': return 'Coordinator accepted query';
-    case 'async_insert_buffered': return 'Async insert linked to flush';
-    case 'local_read_started': return 'Local read started';
-    case 'local_read_completed': return 'Local read folded into coordinator';
-    case 'remote_started':
-      if (node?.role === 'insert_forwarder') return 'Remote table INSERT started';
-      if (node?.role === 'async_insert_flush') return 'Async insert flush started';
-      if (node?.role === 'shard_leader') return 'Shard coordinator started';
-      if (node?.role === 'nested_coordinator') return 'Nested coordinator started';
-      if (node?.role === 'replica_reader') return 'Reader query started';
-      return 'Remote query started';
-    case 'remote_read_completed':
-      if (node?.hostname) {
-        const host = hostIdentity(node.hostname);
-        if (node.role === 'insert_forwarder') return `Remote table INSERT completed on ${host}`;
-        if (node.role === 'async_insert_flush') return `Async insert flush completed on ${host}`;
-        if (node.role === 'shard_leader') return `Shard coordinator completed on ${host}`;
-        if (node.role === 'nested_coordinator') return `Nested coordinator completed on ${host}`;
-        if (node.role === 'replica_reader') return `Reader query completed on ${host}`;
-        return `Remote query completed on ${host}`;
-      }
-      if (node?.role === 'insert_forwarder') return 'Remote table INSERT completed';
-      if (node?.role === 'async_insert_flush') return 'Async insert flush completed';
-      if (node?.role === 'shard_leader') return 'Shard coordinator completed';
-      if (node?.role === 'nested_coordinator') return 'Nested coordinator completed';
-      if (node?.role === 'replica_reader') return 'Reader query completed';
-      return 'Remote query completed';
-    case 'coordinator_merge': return 'Coordinator merged remote results';
-    case 'coordinator_output': return 'Coordinator produced output';
-    case 'coordinator_read_completed': return 'Coordinator completed query';
-    default: return event.title;
-  }
-}
-
-function remoteStartedPrefix(node?: DistributedTopologyNode): string {
-  if (node?.role === 'insert_forwarder') return 'Remote table INSERT started on ';
-  if (node?.role === 'async_insert_flush') return 'Async insert flush started on ';
-  if (node?.role === 'shard_leader') return 'Shard coordinator started on ';
-  if (node?.role === 'nested_coordinator') return 'Nested coordinator started on ';
-  if (node?.role === 'replica_reader') return 'Reader query started on ';
-  return 'Remote query started on ';
-}
-
-function remoteCompletedPrefix(node?: DistributedTopologyNode): string {
-  if (node?.role === 'insert_forwarder') return 'Remote table INSERT completed on ';
-  if (node?.role === 'async_insert_flush') return 'Async insert flush completed on ';
-  if (node?.role === 'shard_leader') return 'Shard coordinator completed on ';
-  if (node?.role === 'nested_coordinator') return 'Nested coordinator completed on ';
-  if (node?.role === 'replica_reader') return 'Reader query completed on ';
-  return 'Remote query completed on ';
+  return distributedFlowEventTitle(
+    event.kind,
+    node?.role,
+    node?.hostname && event.kind === 'remote_read_completed' ? hostIdentity(node.hostname) : undefined,
+  ) || event.title;
 }
 
 function renderFlowEventTitle(
@@ -1099,7 +1054,7 @@ function renderFlowEventTitle(
 
   return (
     <>
-      {event.kind === 'remote_started' ? remoteStartedPrefix(node) : remoteCompletedPrefix(node)}
+      {distributedRemoteEventPrefix(event.kind, node?.role)}
       <span style={{ color: detail.color }}>{hostIdentity(hostname)}</span>
     </>
   );
