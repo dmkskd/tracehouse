@@ -1,4 +1,5 @@
 export { extractLiterals, diffLiterals, extractQueryParameters, formatLiteral } from './query-literals.js';
+export { randomUUID } from './uuid.js';
 export type { QueryLiteral, LiteralDiff } from './query-literals.js';
 export {
   classifyActiveMerge,

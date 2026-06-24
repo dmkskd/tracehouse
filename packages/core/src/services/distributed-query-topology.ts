@@ -11,6 +11,7 @@ export type DistributedQueryKind =
 export type TopologyNodeRole =
   | 'coordinator'
   | 'shard_leader'
+  | 'nested_coordinator'
   | 'replica_reader'
   | 'remote_child'
   | 'independent_child'
@@ -335,6 +336,11 @@ export interface DistributedReadDistributionGroup {
   key: string;
   label: string;
   queryPreview?: string;
+  shardCount: number;
+  shardCoordinatorCount: number;
+  nestedCoordinatorCount: number;
+  readerCount: number;
+  remoteChildCount: number;
   entries: DistributedReadDistributionEntry[];
   skew: DistributedResourceSkew;
 }
@@ -388,6 +394,48 @@ export interface DistributedExecutionFlowStep {
   groupId?: string;
   parentNodeId?: string;
   depth: number;
+}
+
+export function distributedQueryKindLabel(kind?: DistributedQueryKind): string {
+  switch (kind) {
+    case 'local': return 'Local';
+    case 'plain_distributed_select': return 'Distributed SELECT';
+    case 'parallel_replicas_select': return 'Parallel replicas';
+    case 'cluster_all_replicas': return 'All replicas fan-out';
+    case 'object_storage_swarm_select': return 'Object storage swarm';
+    case 'hybrid_storage_select': return 'Hybrid storage';
+    case 'distributed_insert': return 'Distributed INSERT';
+    case 'unknown_distributed': return 'Distributed';
+    default: return 'Unknown';
+  }
+}
+
+export function topologyNodeRoleLabel(role: TopologyNodeRole | 'local_reader'): string {
+  switch (role) {
+    case 'coordinator': return 'Coordinator';
+    case 'shard_leader': return 'Shard coordinator';
+    case 'nested_coordinator': return 'Nested coordinator';
+    case 'replica_reader': return 'Reader';
+    case 'remote_child': return 'Remote child';
+    case 'independent_child': return 'Independent child';
+    case 'object_storage_worker': return 'Object worker';
+    case 'hybrid_segment': return 'Hybrid segment';
+    case 'insert_client': return 'Insert client';
+    case 'insert_forwarder': return 'Remote table INSERT';
+    case 'async_insert_flush': return 'Async insert flush';
+    case 'local_reader': return 'Local reader';
+    default: return 'Unknown';
+  }
+}
+
+export function topologyNodeRoleText(role: TopologyNodeRole | 'local_reader'): string {
+  switch (role) {
+    case 'shard_leader': return 'shard coordinator';
+    case 'nested_coordinator': return 'nested coordinator';
+    case 'replica_reader': return 'reader';
+    case 'local_reader': return 'local reader';
+    default: return role.replace(/_/g, ' ');
+  }
 }
 
 const DEFAULT_CAPABILITIES: DistributedTopologyCapabilities = {
@@ -617,6 +665,10 @@ function usesClusterAllReplicas(execution: DistributedQueryExecutionInput | unde
   return Boolean(clusterAllReplicasClusterName(execution?.queryPreview) || /\bclusterAllReplicas\s*\(/i.test(execution?.queryPreview ?? ''));
 }
 
+function usesClusterTableFunction(query: string | undefined): boolean {
+  return /\bcluster(?:AllReplicas)?\s*\(/i.test(query ?? '');
+}
+
 function clusterHostParticipantKey(host: Pick<ClusterHostInput, 'hostName' | 'shardNum' | 'replicaNum'>): string {
   return `${host.shardNum}:${host.replicaNum}`;
 }
@@ -762,6 +814,14 @@ function classifyReadRole(
       message: 'ParallelReplicas reader counters or ReadPoolParallelReplicas processor present',
     });
     return { role: 'replica_reader', evidence };
+  }
+
+  if (usesClusterTableFunction(execution.queryPreview)) {
+    evidence.push({
+      source: 'query_log',
+      message: 'non-initial child query contains nested cluster()/clusterAllReplicas() fan-out',
+    });
+    return { role: 'nested_coordinator', evidence };
   }
 
   if (capabilities.processorsProfileLog && hasProcessorName(processors, 'Remote') && !hasProcessorPool(processors, 'ReadPool')) {
@@ -967,12 +1027,12 @@ function buildReadDistribution(
   const shardsWithReplicaReaders = new Set(
     nodes
       .filter(node => node.role === 'replica_reader' && node.shardNum != null)
-      .map(node => node.shardNum as number),
+      .map(node => `${node.normalizedQueryHash || 'unknown'}:${node.shardNum as number}`),
   );
 
   for (const node of nodes) {
     if (node.role === 'coordinator' || node.role === 'insert_client') continue;
-    if (node.role === 'shard_leader' && node.shardNum != null && shardsWithReplicaReaders.has(node.shardNum)) continue;
+    if (node.role === 'shard_leader' && node.shardNum != null && shardsWithReplicaReaders.has(`${node.normalizedQueryHash || 'unknown'}:${node.shardNum}`)) continue;
     if (
       node.readRows <= 0 &&
       node.readBytes <= 0 &&
@@ -1060,7 +1120,7 @@ function buildReadDistribution(
     totalReadRows,
     totalReadBytes,
     entries,
-    groups: buildReadDistributionGroups(entries),
+    groups: buildReadDistributionGroups(entries, nodes),
     shards,
     hasPerReplicaReading: shards.some(shard => shard.hasPerReplicaReading),
     skew: buildResourceSkew(entries),
@@ -1092,7 +1152,55 @@ function compactSqlLabel(sql: string | undefined): string {
   return normalized.length > 34 ? `${normalized.slice(0, 31)}...` : normalized || 'Ungrouped';
 }
 
-function buildReadDistributionGroups(entries: DistributedReadDistributionEntry[]): DistributedReadDistributionGroup[] {
+interface ReadDistributionGroupRoleStats {
+  shardCount: number;
+  shardCoordinatorCount: number;
+  nestedCoordinatorCount: number;
+  readerCount: number;
+  remoteChildCount: number;
+}
+
+function nodeDistributionGroupKey(node: DistributedTopologyNode): string {
+  return node.normalizedQueryHash || 'unknown';
+}
+
+function buildReadDistributionGroupRoleStats(nodes: DistributedTopologyNode[]): Map<string, ReadDistributionGroupRoleStats> {
+  const stats = new Map<string, {
+    shards: Set<number>;
+    shardCoordinatorCount: number;
+    nestedCoordinatorCount: number;
+    readerCount: number;
+    remoteChildCount: number;
+  }>();
+
+  for (const node of nodes) {
+    if (node.role === 'coordinator' || node.role === 'insert_client') continue;
+    const key = nodeDistributionGroupKey(node);
+    let item = stats.get(key);
+    if (!item) {
+      item = { shards: new Set(), shardCoordinatorCount: 0, nestedCoordinatorCount: 0, readerCount: 0, remoteChildCount: 0 };
+      stats.set(key, item);
+    }
+    if (node.shardNum != null) item.shards.add(node.shardNum);
+    if (node.role === 'shard_leader') item.shardCoordinatorCount += 1;
+    else if (node.role === 'nested_coordinator') item.nestedCoordinatorCount += 1;
+    else if (node.role === 'replica_reader') item.readerCount += 1;
+    else if (node.role === 'remote_child' || node.role === 'independent_child') item.remoteChildCount += 1;
+  }
+
+  return new Map([...stats.entries()].map(([key, item]) => [key, {
+    shardCount: item.shards.size,
+    shardCoordinatorCount: item.shardCoordinatorCount,
+    nestedCoordinatorCount: item.nestedCoordinatorCount,
+    readerCount: item.readerCount,
+    remoteChildCount: item.remoteChildCount,
+  }]));
+}
+
+function buildReadDistributionGroups(
+  entries: DistributedReadDistributionEntry[],
+  nodes: DistributedTopologyNode[],
+): DistributedReadDistributionGroup[] {
   const groups = new Map<string, DistributedReadDistributionEntry[]>();
   for (const entry of entries) {
     const key = distributionGroupKey(entry);
@@ -1101,16 +1209,24 @@ function buildReadDistributionGroups(entries: DistributedReadDistributionEntry[]
     else groups.set(key, [entry]);
   }
 
+  const roleStats = buildReadDistributionGroupRoleStats(nodes);
+
   return [...groups.entries()]
     .sort((a, b) => b[1].length - a[1].length || a[0].localeCompare(b[0]))
     .map(([key, groupEntries], index): DistributedReadDistributionGroup => {
       const queryPreview = groupEntries.find(entry => entry.queryPreview)?.queryPreview;
       const label = compactSqlLabel(queryPreview);
       const hasFoldedLocalReader = groupEntries.some(entry => entry.foldedIntoCoordinator);
+      const stats = roleStats.get(key);
       return {
         key,
         label: hasFoldedLocalReader ? 'Coordinator local read' : label !== 'Ungrouped' ? label : `Query shape ${index + 1}`,
         queryPreview,
+        shardCount: stats?.shardCount ?? new Set(groupEntries.map(entry => entry.shardNum).filter(value => value != null)).size,
+        shardCoordinatorCount: stats?.shardCoordinatorCount ?? groupEntries.filter(entry => entry.role === 'shard_leader').length,
+        nestedCoordinatorCount: stats?.nestedCoordinatorCount ?? groupEntries.filter(entry => entry.role === 'nested_coordinator').length,
+        readerCount: stats?.readerCount ?? groupEntries.filter(entry => entry.role === 'replica_reader' || entry.role === 'local_reader').length,
+        remoteChildCount: stats?.remoteChildCount ?? groupEntries.filter(entry => entry.role === 'remote_child' || entry.role === 'independent_child').length,
         entries: groupEntries,
         skew: buildResourceSkew(groupEntries),
       };

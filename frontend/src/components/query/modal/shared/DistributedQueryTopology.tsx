@@ -6,6 +6,7 @@
 import React, { useMemo } from 'react';
 import {
   inferDistributedTopology,
+  topologyNodeRoleLabel,
   type DistributedQueryExecutionInput,
   type DistributedTopology,
   type DistributedTopologyNode,
@@ -38,6 +39,7 @@ interface DistributedQueryTopologyProps {
 const COORD_COLOR = '#58a6ff';
 const NODE_COLOR = '#d29922';
 const SHARD_LEADER_COLOR = '#a371f7';
+const NESTED_COORDINATOR_COLOR = '#8b5cf6';
 const REPLICA_READER_COLOR = '#d29922';
 const OBJECT_WORKER_COLOR = '#3fb950';
 const INSERT_COLOR = '#db6d28';
@@ -82,19 +84,10 @@ function fmtCompact(n: number): string {
 
 function roleLabel(node?: DistributedTopologyNode): string {
   if (!node) return 'Child';
-  switch (node.role) {
-    case 'coordinator': return 'Coordinator';
-    case 'shard_leader': return node.shardNum ? `Shard ${node.shardNum} coordinator` : 'Shard coordinator';
-    case 'replica_reader': return node.shardNum ? `Shard ${node.shardNum} reader` : 'Replica reader';
-    case 'remote_child': return node.shardNum ? `Shard ${node.shardNum} child` : 'Remote child';
-    case 'independent_child': return 'Independent child';
-    case 'object_storage_worker': return 'Object worker';
-    case 'hybrid_segment': return 'Hybrid segment';
-    case 'insert_client': return 'Insert client';
-    case 'insert_forwarder': return 'Remote table INSERT';
-    case 'async_insert_flush': return 'Async insert flush';
-    default: return 'Child';
-  }
+  if (node.role === 'shard_leader' && node.shardNum) return `Shard ${node.shardNum} coordinator`;
+  if (node.role === 'replica_reader' && node.shardNum) return `Shard ${node.shardNum} reader`;
+  if (node.role === 'remote_child' && node.shardNum) return `Shard ${node.shardNum} child`;
+  return topologyNodeRoleLabel(node.role);
 }
 
 function coordinatorRoleLabel(topology: DistributedTopology): string {
@@ -111,6 +104,7 @@ function roleColor(node: DistributedTopologyNode | undefined, hasError: boolean)
   if (hasError) return ERROR_COLOR;
   if (!node) return NODE_COLOR;
   if (node.role === 'shard_leader') return SHARD_LEADER_COLOR;
+  if (node.role === 'nested_coordinator') return NESTED_COORDINATOR_COLOR;
   if (node.role === 'replica_reader') return REPLICA_READER_COLOR;
   if (node.role === 'object_storage_worker' || node.role === 'hybrid_segment') return OBJECT_WORKER_COLOR;
   if (node.role === 'insert_forwarder' || node.role === 'async_insert_flush') return INSERT_COLOR;
@@ -125,6 +119,7 @@ function roleOrder(role?: DistributedTopologyNode['role']): number {
   if (role === 'insert_forwarder') return 0;
   if (role === 'async_insert_flush') return 1;
   if (role === 'shard_leader') return 0;
+  if (role === 'nested_coordinator') return 0;
   if (role === 'replica_reader') return 1;
   return 2;
 }
@@ -491,13 +486,19 @@ export const DistributedQueryTopology: React.FC<DistributedQueryTopologyProps> =
             Shard coordinator
           </div>
         )}
+        {visibleRoles.has('nested_coordinator') && (
+          <div style={{ display: 'flex', alignItems: 'center', gap: 4 }}>
+            <div style={{ width: 8, height: 8, borderRadius: 2, background: NESTED_COORDINATOR_COLOR }} />
+            Nested coordinator
+          </div>
+        )}
         {visibleRoles.has('replica_reader') && (
           <div style={{ display: 'flex', alignItems: 'center', gap: 4 }}>
             <div style={{ width: 8, height: 8, borderRadius: 2, background: REPLICA_READER_COLOR }} />
             Reader
           </div>
         )}
-        {!visibleRoles.has('shard_leader') && !visibleRoles.has('replica_reader') && (
+        {!visibleRoles.has('shard_leader') && !visibleRoles.has('nested_coordinator') && !visibleRoles.has('replica_reader') && (
           <div style={{ display: 'flex', alignItems: 'center', gap: 4 }}>
             <div style={{ width: 8, height: 8, borderRadius: 2, background: NODE_COLOR }} />
             Child execution

@@ -56,10 +56,13 @@ export { ClusterService } from './cluster-service.js';
 export {
   BUILT_IN_TOPOLOGY_DETECTORS,
   buildDistributedExecutionFlowSteps,
+  distributedQueryKindLabel,
   distributedReadMetricValue,
   formatDistributedTopologyReport,
   inferDistributedTopology,
   parseDistributedTextLogPhases,
+  topologyNodeRoleLabel,
+  topologyNodeRoleText,
   type AsyncInsertLogInput,
   type ClusterHostInput,
   type DistributedAsyncInsertLink,

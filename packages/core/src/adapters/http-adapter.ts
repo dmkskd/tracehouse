@@ -1,11 +1,13 @@
 import { createClient, type ClickHouseClient } from '@clickhouse/client';
-import type { IClickHouseAdapter, TaggedQuery } from './types.js';
+import type { IClickHouseAdapter, QueryExecutionOptions, TaggedQuery } from './types.js';
 import { AdapterError, CLIENT_COMPRESSION } from './types.js';
 import type { ConnectionConfig } from '../types/connection.js';
 import { applyStickyRouting } from './sticky-routing.js';
 import { randomUUID } from '../utils/uuid.js';
 
 export class HttpAdapter implements IClickHouseAdapter {
+  readonly supportsExplicitQueryId = true;
+
   private client: ClickHouseClient;
   private sessionPrefix: string;
 
@@ -31,12 +33,13 @@ export class HttpAdapter implements IClickHouseAdapter {
     return `${this.sessionPrefix}-${tag}-${randomUUID().slice(0, 4)}`;
   }
 
-  async executeQuery<T extends Record<string, unknown>>(sql: TaggedQuery): Promise<T[]> {
+  async executeQuery<T extends Record<string, unknown>>(sql: TaggedQuery, options?: QueryExecutionOptions): Promise<T[]> {
     try {
       const result = await this.client.query({
         query: sql,
         format: 'JSONEachRow',
         session_id: this.sessionIdFor(sql),
+        ...(options?.queryId ? { query_id: options.queryId } : {}),
       });
       return await result.json<T>();
     } catch (error) {

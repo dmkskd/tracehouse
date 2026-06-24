@@ -11,7 +11,7 @@
 
 import React, { useState, useCallback, useMemo, useRef, useEffect } from 'react';
 import { useClickHouseServices } from '../../providers/ClickHouseProvider';
-import { sourceTag, TAB_ANALYTICS } from '@tracehouse/core';
+import { randomUUID, sourceTag, TAB_ANALYTICS } from '@tracehouse/core';
 import { PRESET_QUERIES } from './presetQueries';
 import { type Query } from './types';
 import { formatClickHouseError } from '../../utils/errorFormatters';
@@ -82,6 +82,10 @@ interface QueryResult {
   rows: Record<string, unknown>[];
   rowCount: number;
   executionTime: number;
+  queryId?: string;
+  query: string;
+  startedAt: string;
+  endedAt: string;
 }
 
 type ViewMode = 'table' | 'chart' | 'queries';
@@ -202,6 +206,7 @@ export const QueryExplorer: React.FC<QueryExplorerProps> = ({ urlState, onUrlSta
     setResult(null);
     setSortConfig(null);
     const t0 = performance.now();
+    const startedAt = new Date().toISOString();
     const directive = parseChartDirective(q);
     try {
       // Resolve {{time_range}} using the active preset's default interval
@@ -210,12 +215,24 @@ export const QueryExplorer: React.FC<QueryExplorerProps> = ({ urlState, onUrlSta
       // Resolve {{drill:col | fallback}} - uses drill params if provided, else current stack, else empty (standalone)
       const params = drillParams ?? (drillStack.length > 0 ? drillStack[drillStack.length - 1].params : {});
       resolvedSql = resolveDrillParams(resolvedSql, params);
+      const queryId = services.interactiveQueryService.supportsExplicitQueryId() ? randomUUID() : undefined;
       const rows = await services.interactiveQueryService.run<Record<string, unknown>>(
         resolvedSql,
         sourceTag(TAB_ANALYTICS, activePreset ? 'queryExplorerPreset' : 'queryExplorerCustom'),
+        queryId ? { queryId } : undefined,
       );
+      const executionTime = performance.now() - t0;
       const columns = rows.length > 0 ? Object.keys(rows[0]) : [];
-      setResult({ columns, rows, rowCount: rows.length, executionTime: performance.now() - t0 });
+      setResult({
+        columns,
+        rows,
+        rowCount: rows.length,
+        executionTime,
+        queryId,
+        query: resolvedSql,
+        startedAt,
+        endedAt: new Date().toISOString(),
+      });
 
       if (directive) {
         const numCol = columns.find(c => rows.some(r => isNumericValue(r[c])));
@@ -601,6 +618,28 @@ export const QueryExplorer: React.FC<QueryExplorerProps> = ({ urlState, onUrlSta
     setTimeout(() => setCopied(false), 2000);
   }, [result]);
 
+  const openResultQueryDetail = useCallback(() => {
+    if (!result?.queryId || !onOpenQueryDetail) return;
+    const kind = result.query.trim().match(/^([a-z]+)/i)?.[1]?.toUpperCase();
+    onOpenQueryDetail({
+      query_id: result.queryId,
+      label: result.query,
+      user: '',
+      peak_memory: 0,
+      duration_ms: result.executionTime,
+      cpu_us: 0,
+      net_send: 0,
+      net_recv: 0,
+      disk_read: 0,
+      disk_write: 0,
+      start_time: result.startedAt,
+      end_time: result.endedAt,
+      query_kind: kind,
+      status: 'QueryFinish',
+      points: [],
+    });
+  }, [onOpenQueryDetail, result]);
+
   const toggleFullscreen = useCallback(() => {
     setIsFullscreen(prev => {
       const next = !prev;
@@ -757,12 +796,95 @@ export const QueryExplorer: React.FC<QueryExplorerProps> = ({ urlState, onUrlSta
           {/* Results header */}
           {result && viewMode !== 'queries' && (
             <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '4px 16px', background: 'var(--bg-secondary)', borderBottom: '1px solid var(--border-primary)', flexShrink: 0 }}>
-              <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
+              <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
                 <span style={{ fontSize: 11, color: 'var(--text-muted)' }}>{result.rowCount} rows</span>
+                <span style={{ width: 3, height: 3, borderRadius: 999, background: 'var(--text-tertiary)', opacity: 0.7 }} />
                 <span style={{ fontSize: 11, color: 'var(--accent-green)', fontFamily: "'Share Tech Mono',monospace" }}>{result.executionTime.toFixed(1)}ms</span>
-                <button onClick={copyResults} style={{ background: 'none', border: 'none', cursor: 'pointer', color: 'var(--text-muted)', fontSize: 14, padding: '2px 6px', borderRadius: 4 }} title="Copy as TSV">
-                  {copied ? '✓' : '⧉'}
+                <span style={{ width: 1, height: 16, background: 'var(--border-primary)', margin: '0 2px' }} />
+                <button
+                  onClick={copyResults}
+                  style={{
+                    display: 'inline-flex',
+                    alignItems: 'center',
+                    justifyContent: 'center',
+                    width: 24,
+                    height: 22,
+                    background: 'transparent',
+                    border: '1px solid transparent',
+                    cursor: 'pointer',
+                    color: copied ? 'var(--accent-green)' : 'var(--text-muted)',
+                    fontSize: 14,
+                    padding: 0,
+                    borderRadius: 5,
+                  }}
+                  title="Copy results as TSV"
+                  onMouseOver={(e) => {
+                    if (!copied) e.currentTarget.style.color = 'var(--text-primary)';
+                  }}
+                  onMouseOut={(e) => {
+                    if (!copied) e.currentTarget.style.color = 'var(--text-muted)';
+                  }}
+                >
+                  {copied ? (
+                    '✓'
+                  ) : (
+                    <svg
+                      width="14"
+                      height="14"
+                      viewBox="0 0 24 24"
+                      fill="none"
+                      stroke="currentColor"
+                      strokeWidth="2"
+                      strokeLinecap="round"
+                      strokeLinejoin="round"
+                      aria-hidden="true"
+                    >
+                      <rect x="9" y="9" width="13" height="13" rx="2" ry="2" />
+                      <path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1" />
+                    </svg>
+                  )}
                 </button>
+                {result.queryId && onOpenQueryDetail && (
+                  <button
+                    onClick={openResultQueryDetail}
+                    style={{
+                      display: 'inline-flex',
+                      alignItems: 'center',
+                      justifyContent: 'center',
+                      width: 24,
+                      height: 22,
+                      background: 'transparent',
+                      border: '1px solid transparent',
+                      borderRadius: 5,
+                      cursor: 'pointer',
+                      color: 'var(--text-muted)',
+                      fontFamily: "'Share Tech Mono',monospace",
+                      fontSize: 16,
+                      padding: 0,
+                      lineHeight: 1,
+                    }}
+                    title={`Open Query Details for ${result.queryId}`}
+                    aria-label="Open Query Details"
+                    onMouseOver={(e) => e.currentTarget.style.color = 'var(--text-primary)'}
+                    onMouseOut={(e) => e.currentTarget.style.color = 'var(--text-muted)'}
+                  >
+                    <svg
+                      width="14"
+                      height="14"
+                      viewBox="0 0 24 24"
+                      fill="none"
+                      stroke="currentColor"
+                      strokeWidth="2"
+                      strokeLinecap="round"
+                      strokeLinejoin="round"
+                      aria-hidden="true"
+                    >
+                      <path d="M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6" />
+                      <path d="M15 3h6v6" />
+                      <path d="M10 14 21 3" />
+                    </svg>
+                  </button>
+                )}
                 {(onExportToGrafana || grafanaExport.isGrafana) && (
                   <button onClick={grafanaExport.openDialog} style={{ background: 'none', border: 'none', cursor: 'pointer', color: grafanaExport.status !== 'idle' ? 'var(--accent-green)' : 'var(--text-muted)', fontSize: 10, fontWeight: 500, padding: '2px 8px', borderRadius: 4, transition: 'color 0.15s ease' }} title="Create as Grafana dashboard">
                     {grafanaExport.status === 'created' ? '✓ Created in Grafana' : grafanaExport.status === 'copied' ? '✓ JSON copied' : 'Grafana ⤴'}

@@ -1,4 +1,4 @@
-import type { IClickHouseAdapter, TaggedQuery } from './types.js';
+import type { IClickHouseAdapter, QueryExecutionOptions, TaggedQuery } from './types.js';
 import { AdapterError } from './types.js';
 import { tagQuery } from '../queries/builder.js';
 import { sourceTag, TAB_INTERNAL } from '../queries/source-tags.js';
@@ -19,7 +19,7 @@ export type AdapterQueryFn = (sql: string, refId: string) => Promise<AdapterFram
 export class GrafanaAdapter implements IClickHouseAdapter {
   constructor(private readonly query: AdapterQueryFn) {}
 
-  async executeQuery<T extends Record<string, unknown>>(sql: TaggedQuery): Promise<T[]> {
+  async executeQuery<T extends Record<string, unknown>>(sql: TaggedQuery, _options?: QueryExecutionOptions): Promise<T[]> {
     const refId = 'q';
     try {
       const frames = await this.query(sql, refId);

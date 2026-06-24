@@ -16,6 +16,10 @@ export type TaggedQuery = string & { readonly __tagged: unique symbol };
 
 export type AdapterErrorCategory = 'network' | 'authentication' | 'query' | 'timeout' | 'unknown';
 
+export interface QueryExecutionOptions {
+  queryId?: string;
+}
+
 export class AdapterError extends Error {
   constructor(
     message: string,
@@ -28,6 +32,8 @@ export class AdapterError extends Error {
 }
 
 export interface IClickHouseAdapter {
+  readonly supportsExplicitQueryId?: boolean;
+
   /**
    * Execute a SQL query and return typed rows.
    * The adapter handles transport (HTTP or Grafana proxy) and
@@ -35,7 +41,7 @@ export interface IClickHouseAdapter {
    */
   executeQuery<T extends Record<string, unknown>>(
     sql: TaggedQuery,
-    params?: Record<string, unknown>
+    options?: QueryExecutionOptions
   ): Promise<T[]>;
 
   /**

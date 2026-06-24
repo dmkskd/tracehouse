@@ -203,6 +203,165 @@ describe('inferDistributedTopology', { tags: ['query-analysis'] }, () => {
     expect(topology.readDistribution.groups.map(group => group.entries.length)).toEqual([2, 2]);
   });
 
+  it('keeps per-shape shard coordinator metadata for multi-branch fan-out', () => {
+    const topology = inferDistributedTopology({
+      rootQueryId: 'union-with-leaders',
+      clusterHosts,
+      processorProfiles: [
+        proc({
+          queryId: 'shape-a-reader-s1',
+          hostname: 'chi-dev-cluster-dev-0-1.clickhouse.svc.cluster.local',
+          planStepDescription: 'MergeTreeSelect(pool: ReadPoolParallelReplicas, algorithm: Thread)',
+        }),
+        proc({
+          queryId: 'shape-a-reader-s2',
+          hostname: 'chi-dev-cluster-dev-1-1.clickhouse.svc.cluster.local',
+          planStepDescription: 'MergeTreeSelect(pool: ReadPoolParallelReplicas, algorithm: Thread)',
+        }),
+      ],
+      executions: [
+        row({
+          queryId: 'union-with-leaders',
+          initialQueryId: 'union-with-leaders',
+          isInitialQuery: true,
+          queryPreview: 'SELECT ... UNION ALL SELECT ...',
+        }),
+        row({
+          queryId: 'shape-a-leader-s1',
+          initialQueryId: 'union-with-leaders',
+          isInitialQuery: false,
+          normalizedQueryHash: 'shape-a',
+          hostname: 'chi-dev-cluster-dev-0-0.clickhouse.svc.cluster.local',
+          profileEvents: { ParallelReplicasHandleRequestMicroseconds: 100, ParallelReplicasUsedCount: 2 },
+          queryPreview: 'SELECT count() FROM clusterAllReplicas(\'all\', system.query_log)',
+        }),
+        row({
+          queryId: 'shape-a-reader-s1',
+          initialQueryId: 'union-with-leaders',
+          isInitialQuery: false,
+          normalizedQueryHash: 'shape-a',
+          hostname: 'chi-dev-cluster-dev-0-1.clickhouse.svc.cluster.local',
+          readRows: 100,
+          readBytes: 1000,
+          profileEvents: { ParallelReplicasReadMarks: 10 },
+          queryPreview: 'SELECT count() FROM clusterAllReplicas(\'all\', system.query_log)',
+        }),
+        row({
+          queryId: 'shape-a-leader-s2',
+          initialQueryId: 'union-with-leaders',
+          isInitialQuery: false,
+          normalizedQueryHash: 'shape-a',
+          hostname: 'chi-dev-cluster-dev-1-0.clickhouse.svc.cluster.local',
+          profileEvents: { ParallelReplicasHandleRequestMicroseconds: 100, ParallelReplicasUsedCount: 2 },
+          queryPreview: 'SELECT count() FROM clusterAllReplicas(\'all\', system.query_log)',
+        }),
+        row({
+          queryId: 'shape-a-reader-s2',
+          initialQueryId: 'union-with-leaders',
+          isInitialQuery: false,
+          normalizedQueryHash: 'shape-a',
+          hostname: 'chi-dev-cluster-dev-1-1.clickhouse.svc.cluster.local',
+          readRows: 120,
+          readBytes: 1200,
+          profileEvents: { ParallelReplicasReadMarks: 12 },
+          queryPreview: 'SELECT count() FROM clusterAllReplicas(\'all\', system.query_log)',
+        }),
+        row({
+          queryId: 'shape-b-s1',
+          initialQueryId: 'union-with-leaders',
+          isInitialQuery: false,
+          normalizedQueryHash: 'shape-b',
+          hostname: 'chi-dev-cluster-dev-0-0.clickhouse.svc.cluster.local',
+          readRows: 20,
+          readBytes: 200,
+          queryPreview: 'SELECT avg(ProfileEvent_Query) FROM clusterAllReplicas(\'all\', system.metric_log)',
+        }),
+      ],
+    });
+
+    const shapeA = topology.readDistribution.groups.find(group => group.key === 'shape-a');
+    const shapeB = topology.readDistribution.groups.find(group => group.key === 'shape-b');
+
+    expect(shapeA).toMatchObject({
+      shardCount: 2,
+      shardCoordinatorCount: 2,
+      readerCount: 2,
+      remoteChildCount: 0,
+    });
+    expect(shapeA?.entries.map(entry => entry.queryId).sort()).toEqual(['shape-a-reader-s1', 'shape-a-reader-s2']);
+    expect(shapeB).toMatchObject({
+      shardCount: 1,
+      shardCoordinatorCount: 0,
+      nestedCoordinatorCount: 1,
+      readerCount: 0,
+      remoteChildCount: 0,
+    });
+  });
+
+  it('classifies a non-initial child with nested clusterAllReplicas as a nested coordinator, not a shard coordinator', () => {
+    const topology = inferDistributedTopology({
+      rootQueryId: 'nested-all-replicas',
+      clusterHosts,
+      executions: [
+        row({
+          queryId: 'nested-all-replicas',
+          initialQueryId: 'nested-all-replicas',
+          isInitialQuery: true,
+          queryPreview: `
+            WITH top_patterns AS (
+              SELECT normalized_query_hash
+              FROM clusterAllReplicas('tracehouse', system.query_log)
+              GROUP BY normalized_query_hash
+            )
+            SELECT count()
+            FROM clusterAllReplicas('tracehouse', system.query_log) q
+            INNER JOIN top_patterns tp ON q.normalized_query_hash = tp.normalized_query_hash
+          `,
+        }),
+        row({
+          queryId: 'outer-child',
+          initialQueryId: 'nested-all-replicas',
+          isInitialQuery: false,
+          normalizedQueryHash: 'outer-shape',
+          hostname: 'chi-dev-cluster-dev-0-0.clickhouse.svc.cluster.local',
+          queryPreview: `
+            SELECT count()
+            FROM system.query_log AS q
+            INNER JOIN (
+              SELECT normalized_query_hash
+              FROM clusterAllReplicas('tracehouse', system.query_log)
+              GROUP BY normalized_query_hash
+            ) AS top_patterns
+            ON q.normalized_query_hash = top_patterns.normalized_query_hash
+          `,
+          readRows: 1000,
+          readBytes: 10_000,
+        }),
+        row({
+          queryId: 'inner-leaf',
+          initialQueryId: 'nested-all-replicas',
+          isInitialQuery: false,
+          normalizedQueryHash: 'inner-shape',
+          hostname: 'chi-dev-cluster-dev-0-1.clickhouse.svc.cluster.local',
+          queryPreview: 'SELECT normalized_query_hash FROM system.query_log GROUP BY normalized_query_hash',
+          readRows: 500,
+          readBytes: 5000,
+        }),
+      ],
+    });
+
+    const outer = topology.nodes.find((node) => node.queryId === 'outer-child');
+    const inner = topology.nodes.find((node) => node.queryId === 'inner-leaf');
+
+    expect(outer?.role).toBe('nested_coordinator');
+    expect(outer?.evidence).toContainEqual({
+      source: 'query_log',
+      message: 'non-initial child query contains nested cluster()/clusterAllReplicas() fan-out',
+    });
+    expect(inner?.role).toBe('remote_child');
+    expect(topology.nodes.filter((node) => node.role === 'shard_leader')).toHaveLength(0);
+  });
+
   it('maps query-log pod hostnames to system.clusters service hostnames', () => {
     const topology = inferDistributedTopology({
       rootQueryId: 'pod-hosts',

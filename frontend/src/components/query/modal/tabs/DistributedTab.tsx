@@ -2,14 +2,19 @@ import React from 'react';
 import type {
   DistributedExecutionFlowEvent,
   DistributedExecutionFlowStep,
-  DistributedQueryKind,
   DistributedReadDistributionEntry,
   DistributedSkewMetric,
   DistributedTopology,
   DistributedTopologyNode,
   SubQueryInfo,
 } from '@tracehouse/core';
-import { buildDistributedExecutionFlowSteps, distributedReadMetricValue } from '@tracehouse/core';
+import {
+  buildDistributedExecutionFlowSteps,
+  distributedQueryKindLabel,
+  distributedReadMetricValue,
+  topologyNodeRoleLabel,
+  topologyNodeRoleText,
+} from '@tracehouse/core';
 import { formatBytes } from '../../../../stores/databaseStore';
 import { formatDurationMs } from '../../../../utils/formatters';
 import { SqlHighlight } from '../../../common/SqlHighlight';
@@ -55,34 +60,8 @@ function shortHost(hostname: string): string {
   return short;
 }
 
-function kindLabel(kind?: DistributedQueryKind): string {
-  switch (kind) {
-    case 'local': return 'Local';
-    case 'plain_distributed_select': return 'Distributed SELECT';
-    case 'parallel_replicas_select': return 'Parallel replicas';
-    case 'cluster_all_replicas': return 'All replicas fan-out';
-    case 'object_storage_swarm_select': return 'Object storage swarm';
-    case 'hybrid_storage_select': return 'Hybrid storage';
-    case 'distributed_insert': return 'Distributed INSERT';
-    case 'unknown_distributed': return 'Distributed';
-    default: return 'Unknown';
-  }
-}
-
 function roleLabel(node: DistributedTopologyNode): string {
-  switch (node.role) {
-    case 'coordinator': return 'Coordinator';
-    case 'shard_leader': return 'Shard coordinator';
-    case 'replica_reader': return 'Reader';
-    case 'remote_child': return 'Remote child';
-    case 'independent_child': return 'Independent child';
-    case 'object_storage_worker': return 'Object worker';
-    case 'hybrid_segment': return 'Hybrid segment';
-    case 'insert_client': return 'Insert client';
-    case 'insert_forwarder': return 'Remote table INSERT';
-    case 'async_insert_flush': return 'Async insert flush';
-    default: return 'Unknown';
-  }
+  return topologyNodeRoleLabel(node.role);
 }
 
 function scanText(selected: number, total: number): string {
@@ -188,7 +167,7 @@ export const DistributedTab: React.FC<DistributedTabProps> = ({
   const childNodes = nodes.filter(node => node.role !== 'coordinator' && node.role !== 'insert_client');
   const childHosts = new Set(childNodes.map(node => node.hostname));
   const childRows = childNodes.length || subQueries.length;
-  const shape = distributedTopology ? kindLabel(distributedTopology.kind) : (subQueries.length > 0 ? 'Distributed' : 'Local or unknown');
+  const shape = distributedTopology ? distributedQueryKindLabel(distributedTopology.kind) : (subQueries.length > 0 ? 'Distributed' : 'Local or unknown');
   const expectedParticipants = distributedTopology?.clusterAllReplicas?.expectedParticipants;
   const localParticipants = distributedTopology?.clusterAllReplicas?.localParticipantsOnInitiator ?? 0;
   const dataSourceDecisions = distributedTopology?.decisions
@@ -369,10 +348,7 @@ function distributionSeverity(ratioToAverage: number): string {
 }
 
 function roleText(entry: DistributedReadDistributionEntry): string {
-  if (entry.foldedIntoCoordinator) return 'local reader';
-  if (entry.role === 'replica_reader') return 'reader';
-  if (entry.role === 'shard_leader') return 'shard coordinator';
-  return entry.role.replace(/_/g, ' ');
+  return topologyNodeRoleText(entry.foldedIntoCoordinator ? 'local_reader' : entry.role);
 }
 
 function metricColor(metric: DistributedSkewMetric): string {
@@ -387,6 +363,32 @@ function metricColor(metric: DistributedSkewMetric): string {
   }
 }
 
+function shardRollupsForEntries(entries: DistributedReadDistributionEntry[]) {
+  const totalRows = entries.reduce((sum, entry) => sum + entry.readRows, 0);
+  const totalBytes = entries.reduce((sum, entry) => sum + entry.readBytes, 0);
+  const byShard = new Map<number, DistributedReadDistributionEntry[]>();
+  for (const entry of entries) {
+    if (entry.shardNum == null) continue;
+    const shardEntries = byShard.get(entry.shardNum);
+    if (shardEntries) shardEntries.push(entry);
+    else byShard.set(entry.shardNum, [entry]);
+  }
+
+  return [...byShard.entries()]
+    .map(([shardNum, shardEntries]) => {
+      const readRows = shardEntries.reduce((sum, entry) => sum + entry.readRows, 0);
+      const readBytes = shardEntries.reduce((sum, entry) => sum + entry.readBytes, 0);
+      return {
+        shardNum,
+        readRows,
+        readBytes,
+        rowShare: totalRows > 0 ? readRows / totalRows : 0,
+        byteShare: totalBytes > 0 ? readBytes / totalBytes : 0,
+      };
+    })
+    .sort((a, b) => a.shardNum - b.shardNum);
+}
+
 const ResourceSkewPanel: React.FC<{ topology: DistributedTopology }> = ({ topology }) => {
   const shapeGroups = topology.readDistribution.groups;
   const [activeShapeKey, setActiveShapeKey] = React.useState<string>(() => shapeGroups[0]?.key ?? 'unknown');
@@ -397,9 +399,15 @@ const ResourceSkewPanel: React.FC<{ topology: DistributedTopology }> = ({ topolo
   const primaryMetric = metricOptions.includes('read_rows') ? 'read_rows' : metricOptions[0] ?? defaultDistributionMetric(topology);
   const entries = [...scopedEntries]
     .sort((a, b) => distributedReadMetricValue(b, primaryMetric) - distributedReadMetricValue(a, primaryMetric));
-  const shards = topology.readDistribution.shards.filter(shard => shard.readRows > 0 || shard.readBytes > 0);
+  const shards = shardRollupsForEntries(scopedEntries).filter(shard => shard.readRows > 0 || shard.readBytes > 0);
   const maxShardBytes = Math.max(1, ...shards.map(shard => shard.readBytes));
   const maxShardRows = Math.max(1, ...shards.map(shard => shard.readRows));
+  const shapeTopology = [
+    activeShape?.shardCoordinatorCount ? `${activeShape.shardCoordinatorCount} shard coordinator${activeShape.shardCoordinatorCount === 1 ? '' : 's'}` : '',
+    activeShape?.nestedCoordinatorCount ? `${activeShape.nestedCoordinatorCount} nested coordinator${activeShape.nestedCoordinatorCount === 1 ? '' : 's'}` : '',
+    activeShape?.readerCount ? `${activeShape.readerCount} reader${activeShape.readerCount === 1 ? '' : 's'}` : '',
+    activeShape?.remoteChildCount && !activeShape.shardCoordinatorCount && !activeShape.nestedCoordinatorCount ? `${activeShape.remoteChildCount} child quer${activeShape.remoteChildCount === 1 ? 'y' : 'ies'}` : '',
+  ].filter(Boolean).join(' · ');
 
   if (entries.length === 0 && shards.length === 0) return null;
 
@@ -419,11 +427,8 @@ const ResourceSkewPanel: React.FC<{ topology: DistributedTopology }> = ({ topolo
         }}>
           <SkewHeaderStat label="Participants" value={String(entries.length)} />
           <SkewHeaderStat label="Query Shape" value={activeShape?.label ?? 'Ungrouped'} />
+          <SkewHeaderStat label="Shape Topology" value={shapeTopology || 'Flat fan-out'} />
           <SkewHeaderStat label="Read Mode" value={topology.readDistribution.hasPerReplicaReading ? 'Per-replica' : 'Per-node'} />
-          <SkewHeaderStat
-            label="Fan-out"
-            value={topology.clusterAllReplicas ? 'All replicas' : topology.fanoutMode.replace(/_/g, ' ')}
-          />
         </div>
 
         <div style={{ padding: '10px 12px 8px' }}>
@@ -1030,6 +1035,7 @@ function flowEventTitle(event: DistributedExecutionFlowEvent, node?: Distributed
       if (node?.role === 'insert_forwarder') return 'Remote table INSERT started';
       if (node?.role === 'async_insert_flush') return 'Async insert flush started';
       if (node?.role === 'shard_leader') return 'Shard coordinator started';
+      if (node?.role === 'nested_coordinator') return 'Nested coordinator started';
       if (node?.role === 'replica_reader') return 'Reader query started';
       return 'Remote query started';
     case 'remote_read_completed':
@@ -1038,12 +1044,14 @@ function flowEventTitle(event: DistributedExecutionFlowEvent, node?: Distributed
         if (node.role === 'insert_forwarder') return `Remote table INSERT completed on ${host}`;
         if (node.role === 'async_insert_flush') return `Async insert flush completed on ${host}`;
         if (node.role === 'shard_leader') return `Shard coordinator completed on ${host}`;
+        if (node.role === 'nested_coordinator') return `Nested coordinator completed on ${host}`;
         if (node.role === 'replica_reader') return `Reader query completed on ${host}`;
         return `Remote query completed on ${host}`;
       }
       if (node?.role === 'insert_forwarder') return 'Remote table INSERT completed';
       if (node?.role === 'async_insert_flush') return 'Async insert flush completed';
       if (node?.role === 'shard_leader') return 'Shard coordinator completed';
+      if (node?.role === 'nested_coordinator') return 'Nested coordinator completed';
       if (node?.role === 'replica_reader') return 'Reader query completed';
       return 'Remote query completed';
     case 'coordinator_merge': return 'Coordinator merged remote results';
@@ -1057,6 +1065,7 @@ function remoteStartedPrefix(node?: DistributedTopologyNode): string {
   if (node?.role === 'insert_forwarder') return 'Remote table INSERT started on ';
   if (node?.role === 'async_insert_flush') return 'Async insert flush started on ';
   if (node?.role === 'shard_leader') return 'Shard coordinator started on ';
+  if (node?.role === 'nested_coordinator') return 'Nested coordinator started on ';
   if (node?.role === 'replica_reader') return 'Reader query started on ';
   return 'Remote query started on ';
 }
@@ -1065,6 +1074,7 @@ function remoteCompletedPrefix(node?: DistributedTopologyNode): string {
   if (node?.role === 'insert_forwarder') return 'Remote table INSERT completed on ';
   if (node?.role === 'async_insert_flush') return 'Async insert flush completed on ';
   if (node?.role === 'shard_leader') return 'Shard coordinator completed on ';
+  if (node?.role === 'nested_coordinator') return 'Nested coordinator completed on ';
   if (node?.role === 'replica_reader') return 'Reader query completed on ';
   return 'Remote query completed on ';
 }

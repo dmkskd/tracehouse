@@ -10,13 +10,15 @@
  * is stateless.
  */
 
-import type { IClickHouseAdapter, TaggedQuery } from './types.js';
+import type { IClickHouseAdapter, QueryExecutionOptions, TaggedQuery } from './types.js';
 import { AdapterError } from './types.js';
 import type { AdapterErrorCategory } from './types.js';
 import type { ConnectionConfig } from '../types/connection.js';
 import { applyStickyRouting } from './sticky-routing.js';
 
 export class ProxyAdapter implements IClickHouseAdapter {
+  readonly supportsExplicitQueryId = true;
+
   private proxyUrl: string;
   private headers: Record<string, string>;
 
@@ -36,11 +38,14 @@ export class ProxyAdapter implements IClickHouseAdapter {
     };
   }
 
-  async executeQuery<T extends Record<string, unknown>>(sql: TaggedQuery): Promise<T[]> {
+  async executeQuery<T extends Record<string, unknown>>(sql: TaggedQuery, options?: QueryExecutionOptions): Promise<T[]> {
     try {
+      const headers = options?.queryId
+        ? { ...this.headers, 'x-ch-query-id': options.queryId }
+        : this.headers;
       const resp = await fetch(`${this.proxyUrl}/query?format=JSONEachRow`, {
         method: 'POST',
-        headers: this.headers,
+        headers,
         body: sql,
       });
 

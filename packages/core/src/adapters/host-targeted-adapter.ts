@@ -12,7 +12,7 @@
  * WHERE/GROUP BY/ORDER BY structure.
  */
 
-import type { IClickHouseAdapter, TaggedQuery } from './types.js';
+import type { IClickHouseAdapter, QueryExecutionOptions, TaggedQuery } from './types.js';
 
 /** Match every `FROM system.<table>` reference. */
 const FROM_SYSTEM_RE = /\bFROM\s+(system\.\w+)/gi;
@@ -27,11 +27,15 @@ export class HostTargetedAdapter implements IClickHouseAdapter {
     private targetHost: string,
   ) {}
 
+  get supportsExplicitQueryId(): boolean {
+    return this.inner.supportsExplicitQueryId === true;
+  }
+
   async executeQuery<T extends Record<string, unknown>>(
     sql: TaggedQuery,
-    params?: Record<string, unknown>,
+    options?: QueryExecutionOptions,
   ): Promise<T[]> {
-    return this.inner.executeQuery<T>(this.rewrite(sql) as TaggedQuery, params);
+    return this.inner.executeQuery<T>(this.rewrite(sql) as TaggedQuery, options);
   }
 
   async executeCommand(sql: string): Promise<void> {

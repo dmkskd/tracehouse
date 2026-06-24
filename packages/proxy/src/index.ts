@@ -32,6 +32,7 @@ const CH_HEADERS = [
   'x-ch-password',
   'x-ch-database',
   'x-ch-secure',
+  'x-ch-query-id',
 ];
 
 export function createApp() {
@@ -87,6 +88,10 @@ export function createApp() {
           if (format) {
             url.searchParams.delete('format');
             url.searchParams.set('default_format', format);
+          }
+          const queryId = req.headers['x-ch-query-id'] as string | undefined;
+          if (queryId) {
+            url.searchParams.set('query_id', queryId);
           }
 
           proxyReq.path = url.pathname + url.search;
