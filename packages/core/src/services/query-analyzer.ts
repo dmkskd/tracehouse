@@ -1,6 +1,6 @@
 import type { IClickHouseAdapter } from '../adapters/types.js';
 import type { QueryMetrics, QueryHistoryItem } from '../types/query.js';
-import { RUNNING_QUERIES, QUERY_DETAIL, QUERY_THREAD_BREAKDOWN, PROFILE_EVENT_DESCRIPTIONS, SUB_QUERIES, BATCH_SUB_QUERIES, COORDINATOR_IDS, RUNNING_COORDINATOR_IDS, QUERY_LOG_FLUSH_INTERVAL, DISTRIBUTED_TOPOLOGY_EXECUTIONS, DISTRIBUTED_TOPOLOGY_CLUSTER_HOSTS, DISTRIBUTED_TOPOLOGY_PROCESSORS, DISTRIBUTED_TOPOLOGY_TEXT_LOGS } from '../queries/query-queries.js';
+import { RUNNING_QUERIES, QUERY_DETAIL, QUERY_THREAD_BREAKDOWN, PROFILE_EVENT_DESCRIPTIONS, SUB_QUERIES, BATCH_SUB_QUERIES, COORDINATOR_IDS, RUNNING_COORDINATOR_IDS, QUERY_LOG_FLUSH_INTERVAL, DISTRIBUTED_TOPOLOGY_EXECUTIONS, DISTRIBUTED_TOPOLOGY_EXECUTIONS_BY_QUERY_IDS, DISTRIBUTED_TOPOLOGY_CLUSTER_HOSTS, DISTRIBUTED_TOPOLOGY_PROCESSORS, DISTRIBUTED_TOPOLOGY_TEXT_LOGS, DISTRIBUTED_TOPOLOGY_ASYNC_INSERT_LOGS } from '../queries/query-queries.js';
 /**
  * ProfileEvent comparison row between two queries.
  * Inspired by https://clickhouse.com/docs/knowledgebase/comparing-metrics-between-queries
@@ -30,6 +30,7 @@ import { mapQueryMetrics, mapQueryHistoryItem } from '../mappers/query-mappers.j
 import { shortenHostname } from '../mappers/helpers.js';
 import {
   inferDistributedTopology,
+  type AsyncInsertLogInput,
   type ClusterHostInput,
   type DistributedQueryExecutionInput,
   type DistributedTextLogInput,
@@ -201,6 +202,48 @@ function parseProfileEvents(raw: unknown): ProfileEventsMap {
     result[key] = Number.isFinite(parsed) ? parsed : String(value ?? '');
   }
   return result;
+}
+
+function parseSettings(raw: unknown): Record<string, string | number | boolean | undefined> {
+  if (!raw) return {};
+  if (typeof raw === 'object' && !Array.isArray(raw)) {
+    return Object.fromEntries(Object.entries(raw as Record<string, unknown>).map(([key, value]) => [key, String(value ?? '')]));
+  }
+  if (typeof raw === 'string') {
+    try {
+      const parsed = JSON.parse(raw);
+      if (parsed && typeof parsed === 'object' && !Array.isArray(parsed)) {
+        return Object.fromEntries(Object.entries(parsed as Record<string, unknown>).map(([key, value]) => [key, String(value ?? '')]));
+      }
+    } catch {
+      return {};
+    }
+  }
+  return {};
+}
+
+function mapDistributedExecutionRow(row: Record<string, unknown>): DistributedQueryExecutionInput {
+  return {
+    queryId: String(row.query_id ?? ''),
+    initialQueryId: String(row.initial_query_id ?? ''),
+    isInitialQuery: Number(row.is_initial_query ?? 0) === 1,
+    normalizedQueryHash: String(row.normalized_query_hash ?? ''),
+    hostname: String(row.hostname ?? ''),
+    queryKind: String(row.query_kind ?? ''),
+    queryStartTimeMicroseconds: String(row.query_start_time_microseconds ?? ''),
+    queryDurationMs: Number(row.query_duration_ms ?? 0),
+    memoryUsage: Number(row.memory_usage ?? 0),
+    readRows: Number(row.read_rows ?? 0),
+    readBytes: Number(row.read_bytes ?? 0),
+    writtenRows: Number(row.written_rows ?? 0),
+    writtenBytes: Number(row.written_bytes ?? 0),
+    resultRows: Number(row.result_rows ?? 0),
+    resultBytes: Number(row.result_bytes ?? 0),
+    tables: parseStringArray(row.tables),
+    settings: parseSettings(row.Settings),
+    queryPreview: String(row.query_preview ?? ''),
+    profileEvents: parseProfileEvents(row.ProfileEvents),
+  };
 }
 
 /**
@@ -597,26 +640,53 @@ export class QueryAnalyzer {
         ).catch(() => null),
       ]);
 
-      const executions: DistributedQueryExecutionInput[] = executionRows.map((row) => ({
+      let executions: DistributedQueryExecutionInput[] = executionRows.map(mapDistributedExecutionRow);
+
+      const hasWriteExecutions = executions.some(execution => ['Insert', 'AsyncInsertFlush'].includes(execution.queryKind ?? ''));
+      const asyncSeedQueryIds = hasWriteExecutions
+        ? [...new Set([
+            initialQueryId,
+            ...executions.map(execution => execution.queryId),
+          ].filter(Boolean))]
+        : [];
+      let asyncInsertLogRows: Record<string, unknown>[] | null = null;
+      if (asyncSeedQueryIds.length > 0) {
+        const queryIdList = asyncSeedQueryIds.map(id => `'${escapeValue(id)}'`).join(',');
+        const asyncInsertLogsSql = DISTRIBUTED_TOPOLOGY_ASYNC_INSERT_LOGS
+          .replaceAll('{{query_id_list}}', queryIdList)
+          .replace('{event_date_bound}', boundedEventDate);
+        asyncInsertLogRows = await this.adapter.executeQuery<Record<string, unknown>>(
+          tagQuery(asyncInsertLogsSql, sourceTag(TAB_QUERIES, 'distributedTopologyAsyncInsertLogs')),
+        ).catch(() => null);
+      }
+
+      const asyncInsertLogs: AsyncInsertLogInput[] = (asyncInsertLogRows ?? []).map((row) => ({
         queryId: String(row.query_id ?? ''),
-        initialQueryId: String(row.initial_query_id ?? ''),
-        isInitialQuery: Number(row.is_initial_query ?? 0) === 1,
-        normalizedQueryHash: String(row.normalized_query_hash ?? ''),
+        flushQueryId: String(row.flush_query_id ?? ''),
         hostname: String(row.hostname ?? ''),
-        queryKind: String(row.query_kind ?? ''),
-        queryStartTimeMicroseconds: String(row.query_start_time_microseconds ?? ''),
-        queryDurationMs: Number(row.query_duration_ms ?? 0),
-        memoryUsage: Number(row.memory_usage ?? 0),
-        readRows: Number(row.read_rows ?? 0),
-        readBytes: Number(row.read_bytes ?? 0),
-        writtenRows: Number(row.written_rows ?? 0),
-        writtenBytes: Number(row.written_bytes ?? 0),
-        resultRows: Number(row.result_rows ?? 0),
-        resultBytes: Number(row.result_bytes ?? 0),
-        tables: parseStringArray(row.tables),
-        queryPreview: String(row.query_preview ?? ''),
-        profileEvents: parseProfileEvents(row.ProfileEvents),
-      }));
+        database: String(row.database ?? ''),
+        table: String(row.table ?? ''),
+        status: String(row.status ?? ''),
+        exception: String(row.exception ?? ''),
+        rows: Number(row.rows ?? 0),
+        bytes: Number(row.bytes ?? 0),
+        eventTimeMicroseconds: String(row.event_time_microseconds ?? ''),
+      })).filter(row => row.queryId && row.flushQueryId);
+
+      const knownExecutionIds = new Set(executions.map(execution => execution.queryId));
+      const missingFlushQueryIds = [...new Set(asyncInsertLogs
+        .map(row => row.flushQueryId)
+        .filter(id => id && !knownExecutionIds.has(id)))];
+      if (missingFlushQueryIds.length > 0) {
+        const queryIdList = missingFlushQueryIds.map(id => `'${escapeValue(id)}'`).join(',');
+        const linkedExecutionsSql = DISTRIBUTED_TOPOLOGY_EXECUTIONS_BY_QUERY_IDS
+          .replace('{{query_id_list}}', queryIdList)
+          .replace('{event_date_bound}', boundedEventDate);
+        const linkedExecutionRows = await this.adapter.executeQuery<Record<string, unknown>>(
+          tagQuery(linkedExecutionsSql, sourceTag(TAB_QUERIES, 'distributedTopologyLinkedExecutions')),
+        ).catch(() => []);
+        executions = [...executions, ...linkedExecutionRows.map(mapDistributedExecutionRow)];
+      }
 
       const clusterHosts: ClusterHostInput[] = (clusterHostRows ?? []).map((row) => ({
         hostName: String(row.host_name ?? ''),
@@ -665,12 +735,14 @@ export class QueryAnalyzer {
         clusterHosts,
         processorProfiles,
         textLogs,
+        asyncInsertLogs,
         capabilities: {
           queryLog: true,
           profileEvents: true,
           systemClusters: clusterHostRows !== null,
           processorsProfileLog: processorRows !== null,
           textLog: textLogRows !== null,
+          asynchronousInsertLog: asyncInsertLogRows !== null,
         },
       });
     } catch (error) {

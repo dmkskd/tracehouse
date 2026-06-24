@@ -43,16 +43,14 @@ const OBJECT_WORKER_COLOR = '#3fb950';
 const INSERT_COLOR = '#db6d28';
 const ERROR_COLOR = '#f85149';
 const MUTED_COLOR = 'var(--text-muted)';
-const HOST_COLORS = [
-  '#2563eb',
-  '#ea580c',
-  '#16a34a',
-  '#dc2626',
-  '#7c3aed',
-  '#0891b2',
-  '#db2777',
-  '#4d7c0f',
-];
+function stableHostColor(host: string, index = 0): string {
+  let hash = 0;
+  for (let i = 0; i < host.length; i += 1) {
+    hash = ((hash << 5) - hash + host.charCodeAt(i)) | 0;
+  }
+  const hue = Math.abs(hash + index * 47) % 360;
+  return `hsl(${hue} 72% 48%)`;
+}
 
 /** Parse ClickHouse microsecond timestamp to epoch microseconds */
 function parseUs(ts: string): number {
@@ -93,8 +91,8 @@ function roleLabel(node?: DistributedTopologyNode): string {
     case 'object_storage_worker': return 'Object worker';
     case 'hybrid_segment': return 'Hybrid segment';
     case 'insert_client': return 'Insert client';
-    case 'insert_forwarder': return 'Insert forwarder';
-    case 'async_insert_flush': return 'Async flush';
+    case 'insert_forwarder': return 'Remote table INSERT';
+    case 'async_insert_flush': return 'Async insert flush';
     default: return 'Child';
   }
 }
@@ -124,6 +122,8 @@ function hostIdentity(hostname: string): string {
 }
 
 function roleOrder(role?: DistributedTopologyNode['role']): number {
+  if (role === 'insert_forwarder') return 0;
+  if (role === 'async_insert_flush') return 1;
   if (role === 'shard_leader') return 0;
   if (role === 'replica_reader') return 1;
   return 2;
@@ -189,6 +189,18 @@ export const DistributedQueryTopology: React.FC<DistributedQueryTopologyProps> =
     return byQueryId;
   }, [topology.nodes]);
 
+  const asyncLinkByInsertQueryId = useMemo(() => {
+    const links = new Map<string, typeof topology.asyncInsertLinks[number]>();
+    for (const link of topology.asyncInsertLinks) links.set(link.queryId, link);
+    return links;
+  }, [topology.asyncInsertLinks]);
+
+  const asyncLinkByFlushQueryId = useMemo(() => {
+    const links = new Map<string, typeof topology.asyncInsertLinks[number]>();
+    for (const link of topology.asyncInsertLinks) links.set(link.flushQueryId, link);
+    return links;
+  }, [topology.asyncInsertLinks]);
+
   const hostColorByIdentity = useMemo(() => {
     const hosts = [...new Set(
       topology.nodes
@@ -196,7 +208,7 @@ export const DistributedQueryTopology: React.FC<DistributedQueryTopologyProps> =
         .map(node => hostIdentity(node.hostname)),
     )].sort();
     const colors = new Map<string, string>();
-    hosts.forEach((host, index) => colors.set(host, HOST_COLORS[index % HOST_COLORS.length]));
+    hosts.forEach((host, index) => colors.set(host, stableHostColor(host, index)));
     return colors;
   }, [topology.nodes]);
 
@@ -225,18 +237,26 @@ export const DistributedQueryTopology: React.FC<DistributedQueryTopologyProps> =
     const nodeQueries = richChildNodes.length > 0
       ? richChildNodes.map((node, i) => {
         const matchingSubQuery = subQueries.find(sq => sq.query_id === node.queryId && shortHost(sq.hostname) === shortHost(node.hostname));
-        const nodeStartUs = parseUs(matchingSubQuery?.query_start_time_microseconds || '');
+        const nodeStartUs = parseUs(matchingSubQuery?.query_start_time_microseconds || node.queryStartTimeMicroseconds || '');
         const durationUs = node.queryDurationMs * 1000;
+        const insertLink = node.role === 'insert_forwarder' ? asyncLinkByInsertQueryId.get(node.queryId) : undefined;
+        const flushLink = node.role === 'async_insert_flush' ? asyncLinkByFlushQueryId.get(node.queryId) : undefined;
+        const baseRoleLabel = coordinatorReaderIds.has(node.id)
+          ? (node.shardNum ? `Shard ${node.shardNum} local reader` : 'Local reader')
+          : roleLabel(node);
         return {
           queryId: node.queryId,
           hostname: node.hostname,
           label: shortHost(node.hostname),
-          roleLabel: coordinatorReaderIds.has(node.id)
-            ? (node.shardNum ? `Shard ${node.shardNum} local reader` : 'Local reader')
-            : roleLabel(node),
+          roleLabel: insertLink
+            ? `${baseRoleLabel} -> ${insertLink.flushQueryId.slice(0, 8)}`
+            : flushLink
+              ? `${baseRoleLabel} <- ${flushLink.queryId.slice(0, 8)}`
+              : baseRoleLabel,
           role: node.role,
           shardNum: node.shardNum,
           replicaNum: node.replicaNum,
+          linkedQueryId: insertLink?.flushQueryId ?? flushLink?.queryId,
           color: roleColor(node, false),
           hostColor: hostColorByIdentity.get(hostIdentity(node.hostname)) ?? NODE_COLOR,
           durationMs: node.queryDurationMs,
@@ -252,14 +272,22 @@ export const DistributedQueryTopology: React.FC<DistributedQueryTopologyProps> =
         const nodeStartUs = parseUs(sq.query_start_time_microseconds);
         const nodeDurationUs = sq.query_duration_ms * 1000;
         const node = nodeByQueryId.get(sq.query_id)?.find(candidate => shortHost(candidate.hostname) === shortHost(sq.hostname));
+        const insertLink = node?.role === 'insert_forwarder' ? asyncLinkByInsertQueryId.get(sq.query_id) : undefined;
+        const flushLink = node?.role === 'async_insert_flush' ? asyncLinkByFlushQueryId.get(sq.query_id) : undefined;
+        const baseRoleLabel = (nodeByQueryId.get(sq.query_id)?.length ?? 0) > 1 ? 'multi-role?' : roleLabel(node);
         return {
           queryId: sq.query_id,
           hostname: sq.hostname,
           label: shortHost(sq.hostname),
-          roleLabel: (nodeByQueryId.get(sq.query_id)?.length ?? 0) > 1 ? 'multi-role?' : roleLabel(node),
+          roleLabel: insertLink
+            ? `${baseRoleLabel} -> ${insertLink.flushQueryId.slice(0, 8)}`
+            : flushLink
+              ? `${baseRoleLabel} <- ${flushLink.queryId.slice(0, 8)}`
+              : baseRoleLabel,
           role: node?.role,
           shardNum: node?.shardNum,
           replicaNum: node?.replicaNum,
+          linkedQueryId: insertLink?.flushQueryId ?? flushLink?.queryId,
           color: roleColor(node, !!sq.exception_code),
           hostColor: hostColorByIdentity.get(hostIdentity(sq.hostname)) ?? NODE_COLOR,
           durationMs: sq.query_duration_ms,
@@ -280,11 +308,19 @@ export const DistributedQueryTopology: React.FC<DistributedQueryTopologyProps> =
           b.durationUs - a.durationUs ||
           a.sortIndex - b.sortIndex;
       }
+      if (topology.kind === 'distributed_insert') {
+        return (a.shardNum ?? 9999) - (b.shardNum ?? 9999) ||
+          (a.replicaNum ?? 9999) - (b.replicaNum ?? 9999) ||
+          roleOrder(a.role) - roleOrder(b.role) ||
+          a.offsetUs - b.offsetUs ||
+          b.durationUs - a.durationUs ||
+          a.sortIndex - b.sortIndex;
+      }
       return a.offsetUs - b.offsetUs || b.durationUs - a.durationUs || a.sortIndex - b.sortIndex;
     });
 
     return { coordDurationUs, totalDurationUs, nodeQueries };
-  }, [coordinator, coordinatorReaderIds, hostColorByIdentity, inferredTopology, nodeByQueryId, subQueries, topology.kind, topology.nodes]);
+  }, [asyncLinkByFlushQueryId, asyncLinkByInsertQueryId, coordinator, coordinatorReaderIds, hostColorByIdentity, inferredTopology, nodeByQueryId, subQueries, topology.kind, topology.nodes]);
 
   if (isLoading) {
     return (
@@ -312,6 +348,27 @@ export const DistributedQueryTopology: React.FC<DistributedQueryTopologyProps> =
   const maxNodeQueryDuration = Math.max(...timeline.nodeQueries.map(row => row.durationMs));
   const overhead = coordinator.query_duration_ms - maxNodeQueryDuration;
   const visibleRoles = new Set(timeline.nodeQueries.map(row => row.role).filter(Boolean));
+  const insertPairs = topology.kind === 'distributed_insert' && topology.asyncInsertLinks.length > 0
+    ? topology.asyncInsertLinks.map((link, index) => {
+      const insertNode = topology.nodes.find(node => node.queryId === link.queryId);
+      const flushNode = topology.nodes.find(node => node.queryId === link.flushQueryId);
+      const node = insertNode ?? flushNode;
+      return {
+        link,
+        insertNode,
+        flushNode,
+        shardNum: node?.shardNum,
+        replicaNum: node?.replicaNum,
+        hostname: node?.hostname ?? link.hostname ?? '',
+        color: node ? (hostColorByIdentity.get(hostIdentity(node.hostname)) ?? INSERT_COLOR) : INSERT_COLOR,
+        sortIndex: index,
+      };
+    }).sort((a, b) =>
+      (a.shardNum ?? 9999) - (b.shardNum ?? 9999) ||
+      (a.replicaNum ?? 9999) - (b.replicaNum ?? 9999) ||
+      a.sortIndex - b.sortIndex,
+    )
+    : [];
 
   return (
     <div>
@@ -345,6 +402,20 @@ export const DistributedQueryTopology: React.FC<DistributedQueryTopologyProps> =
       </div>
       <div style={{ marginLeft: LABEL_W, marginRight: METRIC_W, height: 1, background: 'var(--border-primary)', marginBottom: 6 }} />
 
+      {insertPairs.length > 0 && (
+        <div style={{
+          marginLeft: LABEL_W,
+          marginRight: METRIC_W,
+          marginBottom: 8,
+          color: MUTED_COLOR,
+          fontSize: 10,
+          lineHeight: 1.45,
+        }}>
+          Each lane pairs the remote table INSERT with the async insert flush recorded in <code style={{ fontFamily: 'var(--font-mono, monospace)' }}>system.asynchronous_insert_log</code>.
+          The coordinator span before the lanes is the top-level INSERT work before those remote insert/flush query-log rows appear.
+        </div>
+      )}
+
       {/* Coordinator bar */}
       <TopologyBar
         queryId={coordinator.query_id}
@@ -370,7 +441,18 @@ export const DistributedQueryTopology: React.FC<DistributedQueryTopologyProps> =
       <div style={{ marginLeft: LABEL_W, marginRight: METRIC_W, height: 1, background: 'var(--border-primary)', margin: '4px 0', opacity: 0.5 }} />
 
       {/* Node sub-query bars */}
-      {timeline.nodeQueries.map((row, i) => {
+      {insertPairs.length > 0 ? insertPairs.map((pair, i) => (
+        <InsertPairBar
+          key={`${pair.link.queryId}:${pair.link.flushQueryId}:${pair.hostname}:${i}`}
+          pair={pair}
+          coordinatorStartUs={parseUs(coordinator.query_start_time_microseconds)}
+          totalDurationUs={timeline.totalDurationUs}
+          labelWidth={LABEL_W}
+          metricWidth={METRIC_W}
+          activeQueryId={activeQueryId}
+          onNavigate={onNavigate}
+        />
+      )) : timeline.nodeQueries.map((row, i) => {
         const leftPct = (row.offsetUs / timeline.totalDurationUs) * 100;
         const widthPct = Math.max(0.5, (row.durationUs / timeline.totalDurationUs) * 100);
         return (
@@ -430,7 +512,7 @@ export const DistributedQueryTopology: React.FC<DistributedQueryTopologyProps> =
         {visibleRoles.has('insert_forwarder') || visibleRoles.has('async_insert_flush') ? (
           <div style={{ display: 'flex', alignItems: 'center', gap: 4 }}>
             <div style={{ width: 8, height: 8, borderRadius: 2, background: INSERT_COLOR }} />
-            Insert path
+            Distributed table INSERT
           </div>
         ) : null}
         {subQueries.some(sq => sq.exception_code) && (
@@ -439,6 +521,171 @@ export const DistributedQueryTopology: React.FC<DistributedQueryTopologyProps> =
             Error
           </div>
         )}
+      </div>
+    </div>
+  );
+};
+
+const InsertPairBar: React.FC<{
+  pair: {
+    link: NonNullable<DistributedTopology['asyncInsertLinks']>[number];
+    insertNode?: DistributedTopologyNode;
+    flushNode?: DistributedTopologyNode;
+    shardNum?: number;
+    replicaNum?: number;
+    hostname: string;
+    color: string;
+  };
+  coordinatorStartUs: number;
+  totalDurationUs: number;
+  labelWidth: number;
+  metricWidth: number;
+  activeQueryId: string;
+  onNavigate: (queryId: string) => void;
+}> = ({ pair, coordinatorStartUs, totalDurationUs, labelWidth, metricWidth, activeQueryId, onNavigate }) => {
+  const fmtMs = formatDurationMs;
+  const laneLabel = pair.shardNum != null && pair.replicaNum != null
+    ? `s${pair.shardNum}r${pair.replicaNum}`
+    : shortHost(pair.hostname);
+  const insertStartUs = parseUs(pair.insertNode?.queryStartTimeMicroseconds ?? '');
+  const flushStartUs = parseUs(pair.flushNode?.queryStartTimeMicroseconds ?? '');
+  const insertLeftPct = Math.max(0, ((insertStartUs - coordinatorStartUs) / totalDurationUs) * 100);
+  const flushLeftPct = Math.max(0, ((flushStartUs - coordinatorStartUs) / totalDurationUs) * 100);
+  const insertWidthPct = Math.max(0.5, ((pair.insertNode?.queryDurationMs ?? 0) * 1000 / totalDurationUs) * 100);
+  const flushWidthPct = Math.max(0.5, ((pair.flushNode?.queryDurationMs ?? 0) * 1000 / totalDurationUs) * 100);
+  const insertActive = activeQueryId === pair.link.queryId;
+  const flushActive = activeQueryId === pair.link.flushQueryId;
+  const tableName = [pair.link.database, pair.link.table].filter(Boolean).join('.') || pair.flushNode?.tables?.[0] || '';
+  const tooltip = [
+    `insert_query_id: ${pair.link.queryId}`,
+    `flush_query_id: ${pair.link.flushQueryId}`,
+    tableName ? `table: ${tableName}` : '',
+    `host: ${pair.hostname || '-'}`,
+    pair.link.rows ? `rows: ${pair.link.rows.toLocaleString()}` : '',
+    pair.link.bytes ? `bytes: ${formatBytes(pair.link.bytes)}` : '',
+    pair.link.status ? `status: ${pair.link.status}` : '',
+  ].filter(Boolean).join('\n');
+
+  return (
+    <div
+      title={tooltip}
+      style={{
+        display: 'flex',
+        alignItems: 'center',
+        minHeight: 42,
+        marginBottom: 3,
+        borderRadius: 3,
+        background: insertActive || flushActive ? 'var(--bg-hover)' : 'transparent',
+      }}
+    >
+      <div style={{
+        width: labelWidth,
+        flexShrink: 0,
+        position: 'relative',
+        paddingLeft: 8,
+        paddingRight: 6,
+        fontSize: 10,
+        fontFamily: 'var(--font-mono, monospace)',
+        color: pair.color,
+        overflow: 'hidden',
+        textOverflow: 'ellipsis',
+        whiteSpace: 'nowrap',
+      }}>
+        <span style={{
+          position: 'absolute',
+          left: 0,
+          top: 5,
+          bottom: 5,
+          width: 3,
+          borderRadius: 1,
+          background: pair.color,
+        }} />
+        <span>{laneLabel}</span>
+        <span style={{ display: 'block', marginTop: 2, color: MUTED_COLOR, fontSize: 8, lineHeight: 1 }}>
+          Remote table INSERT {'->'} async insert flush
+        </span>
+      </div>
+
+      <div style={{ flex: 1, position: 'relative', height: 32, background: 'var(--bg-tertiary)', borderRadius: 3, overflow: 'hidden' }}>
+        <button
+          type="button"
+          onClick={() => onNavigate(pair.link.queryId)}
+          title={pair.insertNode?.queryPreview || tooltip}
+          style={{
+            position: 'absolute',
+            left: `${insertLeftPct}%`,
+            top: 3,
+            width: `${Math.min(100 - insertLeftPct, insertWidthPct)}%`,
+            height: 12,
+            minWidth: 8,
+            border: insertActive ? '1px solid #58a6ff' : 'none',
+            borderRadius: 2,
+            background: INSERT_COLOR,
+            opacity: insertActive ? 1 : 0.62,
+            cursor: 'pointer',
+            padding: 0,
+            color: '#fff',
+            fontSize: 8,
+            fontFamily: 'var(--font-mono, monospace)',
+            textAlign: 'left',
+            paddingLeft: 4,
+            overflow: 'hidden',
+            whiteSpace: 'nowrap',
+          }}
+        >
+          insert
+        </button>
+        <button
+          type="button"
+          onClick={() => onNavigate(pair.link.flushQueryId)}
+          title={pair.flushNode?.queryPreview || tooltip}
+          style={{
+            position: 'absolute',
+            left: `${flushLeftPct}%`,
+            bottom: 3,
+            width: `${Math.min(100 - flushLeftPct, flushWidthPct)}%`,
+            height: 12,
+            minWidth: 8,
+            border: flushActive ? '1px solid #58a6ff' : 'none',
+            borderRadius: 2,
+            background: '#f59e0b',
+            opacity: flushActive ? 1 : 0.42,
+            cursor: 'pointer',
+            padding: 0,
+            color: '#1f2937',
+            fontSize: 8,
+            fontFamily: 'var(--font-mono, monospace)',
+            textAlign: 'left',
+            paddingLeft: 4,
+            overflow: 'hidden',
+            whiteSpace: 'nowrap',
+          }}
+        >
+          flush
+        </button>
+        <span style={{
+          position: 'absolute',
+          left: `${Math.min(99, Math.max(0, flushLeftPct))}%`,
+          top: 2,
+          bottom: 2,
+          width: 1,
+          background: 'rgba(245, 158, 11, 0.65)',
+          opacity: 0.7,
+        }} />
+      </div>
+
+      <div style={{
+        width: metricWidth,
+        flexShrink: 0,
+        textAlign: 'right',
+        fontSize: 9,
+        fontFamily: 'var(--font-mono, monospace)',
+        color: 'var(--text-muted)',
+        paddingLeft: 6,
+        lineHeight: 1.35,
+      }}>
+        <div>{pair.insertNode ? fmtMs(pair.insertNode.queryDurationMs) : '-'}</div>
+        <div>{pair.flushNode ? fmtMs(pair.flushNode.queryDurationMs) : '-'}</div>
       </div>
     </div>
   );

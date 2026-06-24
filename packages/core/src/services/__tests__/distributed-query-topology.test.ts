@@ -512,6 +512,11 @@ describe('inferDistributedTopology', { tags: ['query-analysis'] }, () => {
       shardNum: 1,
       replicaNum: 1,
     });
+    expect(topology.readDistribution.groups).toContainEqual(expect.objectContaining({
+      key: 'local_reader',
+      label: 'Coordinator local read',
+      entries: [expect.objectContaining({ foldedIntoCoordinator: true })],
+    }));
   });
 
   it('rolls read distribution up by shard and flags per-replica reading', () => {
@@ -676,6 +681,17 @@ describe('inferDistributedTopology', { tags: ['query-analysis'] }, () => {
           profileEvents: { AsyncInsertRows: 249_283, InsertedRows: 249_283, InsertedBytes: 9_722_198 },
         }),
       ],
+      asyncInsertLogs: [{
+        queryId: 'cf11be63-d75f-4d56-a224-98fe346c36db',
+        flushQueryId: '72ff1dee-1384-4d72-b574-52a0eb2b0bd8',
+        hostname: 'chi-dev-cluster-dev-0-0.clickhouse.svc.cluster.local',
+        database: 'replacing_test',
+        table: 'product_prices_local',
+        status: 'Ok',
+        rows: 249_283,
+        bytes: 9_722_198,
+        eventTimeMicroseconds: '2026-06-21 12:00:00.005000',
+      }],
     });
 
     expect(topology.kind).toBe('distributed_insert');
@@ -685,7 +701,19 @@ describe('inferDistributedTopology', { tags: ['query-analysis'] }, () => {
       'async_insert_flush',
     ]);
     expect(topology.evidence).toContainEqual({ source: 'query_log', message: 'write-side query kinds detected' });
+    expect(topology.asyncInsertLinks).toHaveLength(1);
+    expect(topology.asyncInsertLinks[0]).toMatchObject({
+      source: 'asynchronous_insert_log',
+      queryId: 'cf11be63-d75f-4d56-a224-98fe346c36db',
+      flushQueryId: '72ff1dee-1384-4d72-b574-52a0eb2b0bd8',
+      rows: 249_283,
+      bytes: 9_722_198,
+      confidence: 'high',
+    });
+    expect(topology.evidence).toContainEqual({ source: 'asynchronous_insert_log', message: '1 async insert flush link(s) detected' });
+    expect(topology.executionFlow.map(event => event.kind)).toContain('async_insert_buffered');
     expect(topology.detectorPlugins).toContain('query-log-write-cascade');
+    expect(topology.detectorPlugins).toContain('async-insert-log-linker');
   });
 
   it('models object-storage swarm execution separately from shard replicas', () => {

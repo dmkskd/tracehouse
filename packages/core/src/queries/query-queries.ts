@@ -213,9 +213,46 @@ export const DISTRIBUTED_TOPOLOGY_EXECUTIONS = `
     result_bytes,
     tables,
     if(length(formatted_query) > 0, formatted_query, query) AS query_preview,
+    Settings,
     ProfileEvents
   FROM {{cluster_aware:system.query_log}}
   WHERE (initial_query_id = {initial_query_id} OR query_id = {initial_query_id})
+    AND type IN ('QueryFinish', 'ExceptionWhileProcessing', 'ExceptionBeforeStart')
+    AND event_date >= {event_date_bound}
+  ORDER BY query_start_time_microseconds ASC, is_initial_query DESC, query_duration_ms DESC
+  LIMIT 200
+`;
+
+/**
+ * Get raw query_log executions by exact query ids. Used to pull write-side
+ * cascade rows such as AsyncInsertFlush, which may not share initial_query_id
+ * with the client-visible INSERT.
+ *
+ * Requires: caller to replace {{query_id_list}} with a parenthesised, quoted list.
+ */
+export const DISTRIBUTED_TOPOLOGY_EXECUTIONS_BY_QUERY_IDS = `
+  SELECT
+    query_id,
+    initial_query_id,
+    is_initial_query,
+    toString(normalized_query_hash) AS normalized_query_hash,
+    hostName() AS hostname,
+    query_kind,
+    toString(query_start_time_microseconds) AS query_start_time_microseconds,
+    query_duration_ms,
+    memory_usage,
+    read_rows,
+    read_bytes,
+    written_rows,
+    written_bytes,
+    result_rows,
+    result_bytes,
+    tables,
+    if(length(formatted_query) > 0, formatted_query, query) AS query_preview,
+    Settings,
+    ProfileEvents
+  FROM {{cluster_aware:system.query_log}}
+  WHERE query_id IN ({{query_id_list}})
     AND type IN ('QueryFinish', 'ExceptionWhileProcessing', 'ExceptionBeforeStart')
     AND event_date >= {event_date_bound}
   ORDER BY query_start_time_microseconds ASC, is_initial_query DESC, query_duration_ms DESC
@@ -274,6 +311,31 @@ export const DISTRIBUTED_TOPOLOGY_TEXT_LOGS = `
     thread_name
   FROM {{cluster_aware:system.text_log}}
   WHERE query_id IN ({{query_id_list}})
+    AND event_date >= {event_date_bound}
+  ORDER BY event_time_microseconds ASC
+  LIMIT 1000
+`;
+
+/**
+ * Get async insert log rows that link a client INSERT query id to the later
+ * AsyncInsertFlush query id.
+ *
+ * Requires: caller to replace {{query_id_list}} with a parenthesised, quoted list.
+ */
+export const DISTRIBUTED_TOPOLOGY_ASYNC_INSERT_LOGS = `
+  SELECT
+    toString(event_time_microseconds) AS event_time_microseconds,
+    hostname,
+    query_id,
+    flush_query_id,
+    database,
+    table,
+    status,
+    exception,
+    rows,
+    bytes
+  FROM {{cluster_aware:system.asynchronous_insert_log}}
+  WHERE (query_id IN ({{query_id_list}}) OR flush_query_id IN ({{query_id_list}}))
     AND event_date >= {event_date_bound}
   ORDER BY event_time_microseconds ASC
   LIMIT 1000

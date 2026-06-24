@@ -38,6 +38,7 @@ export type TopologyCapabilityId =
   | 'processors_profile_log'
   | 'system_clusters'
   | 'text_log'
+  | 'asynchronous_insert_log'
   | 'shared_merge_tree_metadata'
   | 'object_storage_cluster_metadata'
   | 'iceberg_metadata'
@@ -98,6 +99,19 @@ export interface DistributedTextLogInput {
   threadName?: string;
 }
 
+export interface AsyncInsertLogInput {
+  queryId: string;
+  flushQueryId: string;
+  hostname?: string;
+  database?: string;
+  table?: string;
+  status?: string;
+  exception?: string;
+  rows?: number;
+  bytes?: number;
+  eventTimeMicroseconds?: string;
+}
+
 export type DistributedExecutionPhaseKind =
   | 'remote_scalar_exchange'
   | 'merge_partial_aggregation'
@@ -124,6 +138,7 @@ export interface DistributedExecutionPhase {
 
 export type DistributedExecutionFlowEventKind =
   | 'coordinator_started'
+  | 'async_insert_buffered'
   | 'local_read_started'
   | 'local_read_completed'
   | 'remote_started'
@@ -135,7 +150,7 @@ export type DistributedExecutionFlowEventKind =
 
 export interface DistributedExecutionFlowEvent {
   kind: DistributedExecutionFlowEventKind;
-  source: 'query_log' | 'text_log';
+  source: 'query_log' | 'text_log' | 'asynchronous_insert_log';
   offsetMs: number;
   actor: string;
   actorType: 'coordinator' | 'local' | 'remote';
@@ -154,6 +169,7 @@ export interface DistributedTopologyCapabilities {
   processorsProfileLog: boolean;
   systemClusters: boolean;
   textLog: boolean;
+  asynchronousInsertLog: boolean;
   sharedMergeTreeMetadata: boolean;
   objectStorageClusterMetadata: boolean;
   icebergMetadata: boolean;
@@ -168,11 +184,12 @@ export interface DistributedTopologyInput {
   clusterHosts?: ClusterHostInput[];
   processorProfiles?: ProcessorProfileInput[];
   textLogs?: DistributedTextLogInput[];
+  asyncInsertLogs?: AsyncInsertLogInput[];
   capabilities?: Partial<DistributedTopologyCapabilities>;
 }
 
 export interface TopologyEvidence {
-  source: 'query_log' | 'profile_events' | 'processors_profile_log' | 'system_clusters' | 'text_log' | 'capability';
+  source: 'query_log' | 'profile_events' | 'processors_profile_log' | 'system_clusters' | 'text_log' | 'asynchronous_insert_log' | 'capability';
   message: string;
 }
 
@@ -207,8 +224,25 @@ export interface DistributedTopologyNode {
   writtenBytes: number;
   memoryUsage: number;
   queryPreview?: string;
+  settings: Record<string, string | number | boolean | undefined>;
   profileEvents: ProfileEventsMap;
   tables: string[];
+  evidence: TopologyEvidence[];
+}
+
+export interface DistributedAsyncInsertLink {
+  source: 'asynchronous_insert_log';
+  queryId: string;
+  flushQueryId: string;
+  hostname?: string;
+  database?: string;
+  table?: string;
+  status?: string;
+  exception?: string;
+  rows?: number;
+  bytes?: number;
+  eventTimeMicroseconds?: string;
+  confidence: TopologyConfidence;
   evidence: TopologyEvidence[];
 }
 
@@ -336,6 +370,7 @@ export interface DistributedTopology {
   shardCoverage: DistributedShardCoverage;
   clusterAllReplicas?: ClusterAllReplicasMarker;
   localRead?: FoldedLocalReadParticipant;
+  asyncInsertLinks: DistributedAsyncInsertLink[];
   readDistribution: DistributedReadDistribution;
   confidence: TopologyConfidence;
   evidence: TopologyEvidence[];
@@ -361,6 +396,7 @@ const DEFAULT_CAPABILITIES: DistributedTopologyCapabilities = {
   processorsProfileLog: false,
   systemClusters: false,
   textLog: false,
+  asynchronousInsertLog: false,
   sharedMergeTreeMetadata: false,
   objectStorageClusterMetadata: false,
   icebergMetadata: false,
@@ -404,6 +440,13 @@ export const BUILT_IN_TOPOLOGY_DETECTORS: TopologyDetectorPlugin[] = [
       capabilities.queryLog && input.executions.some((execution) => ['Insert', 'AsyncInsertFlush'].includes(execution.queryKind ?? '')),
   },
   {
+    id: 'async-insert-log-linker',
+    label: 'asynchronous_insert_log query to flush linker',
+    requiredCapabilities: ['asynchronous_insert_log'],
+    applies: (input, capabilities) =>
+      capabilities.asynchronousInsertLog && (input.asyncInsertLogs?.length ?? 0) > 0,
+  },
+  {
     id: 'object-storage-swarm',
     label: 'object-storage swarm execution detector',
     requiredCapabilities: ['object_storage_cluster_metadata'],
@@ -435,6 +478,7 @@ function resolveCapabilities(input: DistributedTopologyInput): DistributedTopolo
     processorsProfileLog: (input.processorProfiles?.length ?? 0) > 0,
     systemClusters: (input.clusterHosts?.length ?? 0) > 0,
     textLog: (input.textLogs?.length ?? 0) > 0,
+    asynchronousInsertLog: (input.asyncInsertLogs?.length ?? 0) > 0,
     ...supplied,
   };
 }
@@ -457,6 +501,7 @@ function detectorSource(detector: TopologyDetectorPlugin): TopologyEvidence['sou
   if (detector.requiredCapabilities.includes('system_clusters')) return 'system_clusters';
   if (detector.requiredCapabilities.includes('processors_profile_log')) return 'processors_profile_log';
   if (detector.requiredCapabilities.includes('profile_events')) return 'profile_events';
+  if (detector.requiredCapabilities.includes('asynchronous_insert_log')) return 'asynchronous_insert_log';
   return 'query_log';
 }
 
@@ -788,6 +833,7 @@ function buildNode(
     writtenBytes: num(execution.writtenBytes),
     memoryUsage: num(execution.memoryUsage),
     queryPreview: execution.queryPreview,
+    settings: execution.settings ?? {},
     profileEvents: execution.profileEvents ?? {},
     tables: execution.tables ?? [],
     evidence,
@@ -1022,6 +1068,7 @@ function buildReadDistribution(
 }
 
 function distributionGroupKey(entry: DistributedReadDistributionEntry): string {
+  if (entry.foldedIntoCoordinator) return 'local_reader';
   return entry.normalizedQueryHash || 'unknown';
 }
 
@@ -1059,9 +1106,10 @@ function buildReadDistributionGroups(entries: DistributedReadDistributionEntry[]
     .map(([key, groupEntries], index): DistributedReadDistributionGroup => {
       const queryPreview = groupEntries.find(entry => entry.queryPreview)?.queryPreview;
       const label = compactSqlLabel(queryPreview);
+      const hasFoldedLocalReader = groupEntries.some(entry => entry.foldedIntoCoordinator);
       return {
         key,
-        label: label !== 'Ungrouped' ? label : `Query shape ${index + 1}`,
+        label: hasFoldedLocalReader ? 'Coordinator local read' : label !== 'Ungrouped' ? label : `Query shape ${index + 1}`,
         queryPreview,
         entries: groupEntries,
         skew: buildResourceSkew(groupEntries),
@@ -1136,6 +1184,39 @@ function buildResourceSkew(entries: DistributedReadDistributionEntry[]): Distrib
     participantCount: entries.length,
     metrics: metrics.map(metric => buildSkewMetricSummary(entries, metric)),
   };
+}
+
+function buildAsyncInsertLinks(asyncInsertLogs: AsyncInsertLogInput[] = []): DistributedAsyncInsertLink[] {
+  const seen = new Set<string>();
+  return asyncInsertLogs
+    .filter(log => log.queryId && log.flushQueryId)
+    .map((log): DistributedAsyncInsertLink => {
+      const tableName = [log.database, log.table].filter(Boolean).join('.');
+      return {
+        source: 'asynchronous_insert_log',
+        queryId: log.queryId,
+        flushQueryId: log.flushQueryId,
+        hostname: log.hostname,
+        database: log.database,
+        table: log.table,
+        status: log.status,
+        exception: log.exception,
+        rows: log.rows ?? 0,
+        bytes: log.bytes ?? 0,
+        eventTimeMicroseconds: log.eventTimeMicroseconds,
+        confidence: 'high',
+        evidence: [{
+          source: 'asynchronous_insert_log',
+          message: `async insert ${log.queryId} flushed by ${log.flushQueryId}${tableName ? ` for ${tableName}` : ''}`,
+        }],
+      };
+    })
+    .filter((link) => {
+      const key = `${link.queryId}:${link.flushQueryId}:${hostKey(link.hostname ?? '')}`;
+      if (seen.has(key)) return false;
+      seen.add(key);
+      return true;
+    });
 }
 
 function inferKind(nodes: DistributedTopologyNode[]): DistributedQueryKind {
@@ -1324,6 +1405,7 @@ function buildExecutionFlow(
   phases: DistributedExecutionPhase[],
   rootQueryId: string,
   localRead?: FoldedLocalReadParticipant,
+  asyncInsertLinks: DistributedAsyncInsertLink[] = [],
 ): DistributedExecutionFlowEvent[] {
   const rootNode =
     nodes.find(node => node.queryId === rootQueryId && (node.role === 'coordinator' || node.role === 'insert_client')) ??
@@ -1343,6 +1425,30 @@ function buildExecutionFlow(
     queryId: rootNode.queryId,
     hostname: rootNode.hostname,
   }];
+
+  for (const link of asyncInsertLinks) {
+    if (link.queryId !== rootNode.queryId) continue;
+    const linkMs = parseTimestampMs(link.eventTimeMicroseconds);
+    const offsetMs = linkMs == null ? 0 : Math.max(0, linkMs - rootStartMs);
+    const tableName = [link.database, link.table].filter(Boolean).join('.');
+    events.push({
+      kind: 'async_insert_buffered',
+      source: 'asynchronous_insert_log',
+      offsetMs,
+      actor: 'Async insert',
+      actorType: 'remote',
+      title: 'Async insert buffered',
+      detail: [
+        tableName ? `Buffered for ${tableName}.` : 'Buffered for async insert flush.',
+        link.flushQueryId ? `Flush query ${link.flushQueryId}.` : '',
+        eventDetailMetrics(link.rows ?? 0, link.bytes ?? 0),
+      ].filter(Boolean).join(' '),
+      queryId: link.flushQueryId,
+      hostname: link.hostname,
+      rows: link.rows,
+      bytesText: link.bytes ? `${link.bytes.toLocaleString()} bytes` : undefined,
+    });
+  }
 
   if (localRead) {
     events.push({
@@ -1630,8 +1736,9 @@ export function inferDistributedTopology(input: DistributedTopologyInput): Distr
     capabilities,
   );
   const fanoutMode = inferFanoutMode(kind, clusterAllReplicas);
+  const asyncInsertLinks = buildAsyncInsertLinks(input.asyncInsertLogs);
   const readDistribution = buildReadDistribution(nodes, localRead);
-  const executionFlow = buildExecutionFlow(nodes, executionPhases, input.rootQueryId, localRead);
+  const executionFlow = buildExecutionFlow(nodes, executionPhases, input.rootQueryId, localRead, asyncInsertLinks);
   const evidence: TopologyEvidence[] = [];
 
   if ((input.clusterHosts?.length ?? 0) > 0) {
@@ -1645,6 +1752,13 @@ export function inferDistributedTopology(input: DistributedTopologyInput): Distr
   if (hasWritePath) {
     evidence.push({ source: 'query_log', message: 'write-side query kinds detected' });
     addDecision(decisions, 'info', 'write-path-detected', 'query_log', 'Insert or AsyncInsertFlush query kinds were detected.');
+    if (!capabilities.asynchronousInsertLog) {
+      addDecision(decisions, 'degraded', 'missing-async-insert-log', 'capability', 'system.asynchronous_insert_log was not available; async INSERT query/flush links may be incomplete.');
+    }
+  }
+  if (asyncInsertLinks.length > 0) {
+    evidence.push({ source: 'asynchronous_insert_log', message: `${asyncInsertLinks.length} async insert flush link(s) detected` });
+    addDecision(decisions, 'info', 'async-insert-links-detected', 'asynchronous_insert_log', `${asyncInsertLinks.length} async insert query/flush link(s) were loaded from system.asynchronous_insert_log.`);
   }
   if (clusterAllReplicas) {
     evidence.push(...clusterAllReplicas.evidence);
@@ -1699,6 +1813,7 @@ export function inferDistributedTopology(input: DistributedTopologyInput): Distr
     shardCoverage,
     clusterAllReplicas,
     localRead,
+    asyncInsertLinks,
     readDistribution,
     confidence: confidenceFor(nodes, capabilities.systemClusters ? input.clusterHosts : undefined, warnings),
     evidence,

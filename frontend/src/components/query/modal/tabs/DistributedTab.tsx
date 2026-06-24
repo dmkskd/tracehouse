@@ -27,16 +27,15 @@ interface DistributedTabProps {
 const MUTED = 'var(--text-muted)';
 const COORD_COLOR = '#58a6ff';
 const REMOTE_COLOR = '#d29922';
-const HOST_COLORS = [
-  '#2563eb',
-  '#ea580c',
-  '#16a34a',
-  '#dc2626',
-  '#7c3aed',
-  '#0891b2',
-  '#db2777',
-  '#4d7c0f',
-];
+
+function stableHostColor(host: string, index = 0): string {
+  let hash = 0;
+  for (let i = 0; i < host.length; i += 1) {
+    hash = ((hash << 5) - hash + host.charCodeAt(i)) | 0;
+  }
+  const hue = Math.abs(hash + index * 47) % 360;
+  return `hsl(${hue} 72% 48%)`;
+}
 
 function parseUs(ts: string): number {
   if (!ts) return 0;
@@ -80,8 +79,8 @@ function roleLabel(node: DistributedTopologyNode): string {
     case 'object_storage_worker': return 'Object worker';
     case 'hybrid_segment': return 'Hybrid segment';
     case 'insert_client': return 'Insert client';
-    case 'insert_forwarder': return 'Insert forwarder';
-    case 'async_insert_flush': return 'Async flush';
+    case 'insert_forwarder': return 'Remote table INSERT';
+    case 'async_insert_flush': return 'Async insert flush';
     default: return 'Unknown';
   }
 }
@@ -153,6 +152,7 @@ function decisionSourceLabel(source: string): string {
   if (source === 'system_clusters') return 'system.clusters';
   if (source === 'query_log') return 'query_log';
   if (source === 'text_log') return 'text_log';
+  if (source === 'asynchronous_insert_log') return 'async_insert_log';
   if (source === 'processors_profile_log') return 'processors_profile_log';
   if (source === 'profile_events') return 'ProfileEvents';
   return source;
@@ -172,7 +172,7 @@ function hostMatches(a: string | undefined, b: string | undefined): boolean {
 function hostColorMap(hostnames: string[]): Map<string, string> {
   const hosts = [...new Set(hostnames.filter(Boolean).map(hostIdentity))].sort();
   const colors = new Map<string, string>();
-  hosts.forEach((host, index) => colors.set(host, HOST_COLORS[index % HOST_COLORS.length]));
+  hosts.forEach((host, index) => colors.set(host, stableHostColor(host, index)));
   return colors;
 }
 
@@ -226,6 +226,14 @@ export const DistributedTab: React.FC<DistributedTabProps> = ({
             No distributed child executions were found for this query. This can still be a parallel local query, or a cloud/shared-storage scan, but there is no query-log evidence that it spanned multiple ClickHouse nodes.
           </div>
         </Panel>
+      )}
+
+      {distributedTopology && distributedTopology.asyncInsertLinks.length > 0 && (
+        <AsyncInsertLinksPanel
+          topology={distributedTopology}
+          activeQueryId={activeQueryId}
+          onNavigateToQuery={onNavigateToQuery}
+        />
       )}
 
       {topologyCoordinator && subQueries.length > 0 && (
@@ -432,8 +440,8 @@ const ResourceSkewPanel: React.FC<{ topology: DistributedTopology }> = ({ topolo
                   type="button"
                   onClick={() => setActiveShapeKey(group.key)}
                   title={[
-                    group.entries.find(entry => entry.queryPreview)?.queryPreview,
-                    group.key !== 'unknown' ? `normalized_query_hash ${group.key}` : '',
+                    group.key === 'local_reader' ? 'Local participant folded into the coordinator query_log row.' : group.entries.find(entry => entry.queryPreview)?.queryPreview,
+                    group.key !== 'unknown' && group.key !== 'local_reader' ? `normalized_query_hash ${group.key}` : '',
                   ].filter(Boolean).join('\n')}
                   style={{
                     border: `1px solid ${group.key === activeShape?.key ? '#58a6ff' : 'var(--border-secondary)'}`,
@@ -683,6 +691,149 @@ const SkewHeaderStat: React.FC<{ label: string; value: string }> = ({ label, val
   </div>
 );
 
+const AsyncInsertLinksPanel: React.FC<{
+  topology: DistributedTopology;
+  activeQueryId: string;
+  onNavigateToQuery: (queryId: string) => void;
+}> = ({ topology, activeQueryId, onNavigateToQuery }) => {
+  const nodeByQueryId = new Map(topology.nodes.map(node => [node.queryId, node]));
+  const coordinatorNode = topology.coordinator ?? topology.nodes.find(node => node.role === 'insert_client' || node.role === 'coordinator');
+  const settingNames = [
+    'async_insert',
+    'wait_for_async_insert',
+    'async_insert_busy_timeout_ms',
+    'async_insert_max_data_size',
+    'async_insert_max_query_number',
+  ];
+
+  return (
+    <Panel title="Async Insert Links">
+      <div style={{
+        display: 'grid',
+        gridTemplateColumns: 'minmax(180px, 0.9fr) 34px minmax(180px, 0.9fr) minmax(180px, 1.1fr) 90px',
+        gap: 10,
+        alignItems: 'center',
+        fontSize: 11,
+      }}>
+        <div style={{ color: MUTED, textTransform: 'uppercase', letterSpacing: '0.8px', fontSize: 9 }}>INSERT query</div>
+        <div />
+        <div style={{ color: MUTED, textTransform: 'uppercase', letterSpacing: '0.8px', fontSize: 9 }}>Async insert flush</div>
+        <div style={{ color: MUTED, textTransform: 'uppercase', letterSpacing: '0.8px', fontSize: 9 }}>Target / volume</div>
+        <div style={{ color: MUTED, textTransform: 'uppercase', letterSpacing: '0.8px', fontSize: 9, textAlign: 'right' }}>Status</div>
+
+        {topology.asyncInsertLinks.map(link => {
+          const insertNode = nodeByQueryId.get(link.queryId);
+          const flushNode = nodeByQueryId.get(link.flushQueryId);
+          const tableName = [link.database, link.table].filter(Boolean).join('.') || flushNode?.tables?.[0] || '-';
+          const rowText = link.rows != null && link.rows > 0 ? `${link.rows.toLocaleString()} rows` : '';
+          const byteText = link.bytes != null && link.bytes > 0 ? formatBytes(link.bytes) : '';
+          const status = link.status || (link.exception ? 'Error' : 'Linked');
+          const statusColor = link.exception ? '#ef4444' : status === 'Ok' ? '#2ea043' : REMOTE_COLOR;
+          const settings = settingNames
+            .map(name => {
+              const value = insertNode?.settings?.[name] ?? flushNode?.settings?.[name] ?? coordinatorNode?.settings?.[name];
+              return value != null && String(value) !== '' ? `${name}=${String(value)}` : '';
+            })
+            .filter(Boolean);
+
+          return (
+            <React.Fragment key={`${link.queryId}:${link.flushQueryId}:${link.hostname ?? ''}`}>
+              <button
+                type="button"
+                onClick={() => onNavigateToQuery(link.queryId)}
+                title={insertNode?.queryPreview || link.queryId}
+                style={{
+                  minWidth: 0,
+                  border: `1px solid ${link.queryId === activeQueryId ? '#58a6ff' : 'var(--border-secondary)'}`,
+                  background: link.queryId === activeQueryId ? 'rgba(88, 166, 255, 0.10)' : 'var(--bg-secondary)',
+                  borderRadius: 6,
+                  padding: '8px 10px',
+                  textAlign: 'left',
+                  cursor: 'pointer',
+                  color: 'var(--text-primary)',
+                  fontFamily: 'var(--font-mono, monospace)',
+                }}
+              >
+                <div style={{ color: '#58a6ff', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                  {link.queryId.slice(0, 12)}
+                </div>
+                <div style={{ color: MUTED, marginTop: 3, fontSize: 9 }}>
+                  {insertNode ? roleLabel(insertNode) : 'Insert'}
+                </div>
+              </button>
+
+              <div style={{
+                color: REMOTE_COLOR,
+                fontFamily: 'var(--font-mono, monospace)',
+                textAlign: 'center',
+                fontSize: 18,
+              }}>→</div>
+
+              <button
+                type="button"
+                onClick={() => onNavigateToQuery(link.flushQueryId)}
+                title={flushNode?.queryPreview || link.flushQueryId}
+                style={{
+                  minWidth: 0,
+                  border: `1px solid ${link.flushQueryId === activeQueryId ? '#58a6ff' : 'var(--border-secondary)'}`,
+                  background: link.flushQueryId === activeQueryId ? 'rgba(88, 166, 255, 0.10)' : 'var(--bg-secondary)',
+                  borderRadius: 6,
+                  padding: '8px 10px',
+                  textAlign: 'left',
+                  cursor: 'pointer',
+                  color: 'var(--text-primary)',
+                  fontFamily: 'var(--font-mono, monospace)',
+                }}
+              >
+                <div style={{ color: REMOTE_COLOR, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                  {link.flushQueryId.slice(0, 12)}
+                </div>
+                <div style={{ color: MUTED, marginTop: 3, fontSize: 9 }}>
+                  {flushNode ? roleLabel(flushNode) : 'Async insert flush'}
+                </div>
+              </button>
+
+              <div style={{
+                minWidth: 0,
+                color: 'var(--text-secondary)',
+                fontFamily: 'var(--font-mono, monospace)',
+                overflow: 'hidden',
+                textOverflow: 'ellipsis',
+                whiteSpace: 'nowrap',
+              }} title={[tableName, rowText, byteText].filter(Boolean).join(' · ')}>
+                <span style={{ color: 'var(--text-primary)' }}>{tableName}</span>
+                {(rowText || byteText) && (
+                  <span style={{ color: MUTED }}> · {[rowText, byteText].filter(Boolean).join(' · ')}</span>
+                )}
+                <span style={{ display: 'block', color: MUTED, fontSize: 9, marginTop: 3 }}>
+                  {settings.length > 0 ? settings.join(' · ') : 'async settings not logged'}
+                </span>
+              </div>
+
+              <div style={{
+                justifySelf: 'end',
+                color: statusColor,
+                border: `1px solid color-mix(in srgb, ${statusColor} 35%, transparent)`,
+                background: `color-mix(in srgb, ${statusColor} 12%, transparent)`,
+                borderRadius: 6,
+                padding: '5px 8px',
+                fontFamily: 'var(--font-mono, monospace)',
+                fontSize: 10,
+                maxWidth: 90,
+                overflow: 'hidden',
+                textOverflow: 'ellipsis',
+                whiteSpace: 'nowrap',
+              }} title={link.exception || status}>
+                {status}
+              </div>
+            </React.Fragment>
+          );
+        })}
+      </div>
+    </Panel>
+  );
+};
+
 interface FlowStepDetail {
   id: string;
   actor: string;
@@ -872,19 +1023,26 @@ function eventHasWorkStats(event: DistributedExecutionFlowEvent): boolean {
 function flowEventTitle(event: DistributedExecutionFlowEvent, node?: DistributedTopologyNode): string {
   switch (event.kind) {
     case 'coordinator_started': return 'Coordinator accepted query';
+    case 'async_insert_buffered': return 'Async insert linked to flush';
     case 'local_read_started': return 'Local read started';
     case 'local_read_completed': return 'Local read folded into coordinator';
     case 'remote_started':
+      if (node?.role === 'insert_forwarder') return 'Remote table INSERT started';
+      if (node?.role === 'async_insert_flush') return 'Async insert flush started';
       if (node?.role === 'shard_leader') return 'Shard coordinator started';
       if (node?.role === 'replica_reader') return 'Reader query started';
       return 'Remote query started';
     case 'remote_read_completed':
       if (node?.hostname) {
         const host = hostIdentity(node.hostname);
+        if (node.role === 'insert_forwarder') return `Remote table INSERT completed on ${host}`;
+        if (node.role === 'async_insert_flush') return `Async insert flush completed on ${host}`;
         if (node.role === 'shard_leader') return `Shard coordinator completed on ${host}`;
         if (node.role === 'replica_reader') return `Reader query completed on ${host}`;
         return `Remote query completed on ${host}`;
       }
+      if (node?.role === 'insert_forwarder') return 'Remote table INSERT completed';
+      if (node?.role === 'async_insert_flush') return 'Async insert flush completed';
       if (node?.role === 'shard_leader') return 'Shard coordinator completed';
       if (node?.role === 'replica_reader') return 'Reader query completed';
       return 'Remote query completed';
@@ -895,29 +1053,44 @@ function flowEventTitle(event: DistributedExecutionFlowEvent, node?: Distributed
   }
 }
 
+function remoteStartedPrefix(node?: DistributedTopologyNode): string {
+  if (node?.role === 'insert_forwarder') return 'Remote table INSERT started on ';
+  if (node?.role === 'async_insert_flush') return 'Async insert flush started on ';
+  if (node?.role === 'shard_leader') return 'Shard coordinator started on ';
+  if (node?.role === 'replica_reader') return 'Reader query started on ';
+  return 'Remote query started on ';
+}
+
+function remoteCompletedPrefix(node?: DistributedTopologyNode): string {
+  if (node?.role === 'insert_forwarder') return 'Remote table INSERT completed on ';
+  if (node?.role === 'async_insert_flush') return 'Async insert flush completed on ';
+  if (node?.role === 'shard_leader') return 'Shard coordinator completed on ';
+  if (node?.role === 'replica_reader') return 'Reader query completed on ';
+  return 'Remote query completed on ';
+}
+
 function renderFlowEventTitle(
   event: DistributedExecutionFlowEvent,
   detail: FlowStepDetail,
   node?: DistributedTopologyNode,
 ): React.ReactNode {
-  if (event.kind !== 'remote_read_completed') {
+  const hostname = node?.hostname ?? detail.hostname;
+  if (event.kind === 'coordinator_started' && hostname) {
+    return (
+      <>
+        Coordinator accepted query on <span style={{ color: detail.color }}>{hostIdentity(hostname)}</span>
+      </>
+    );
+  }
+  if (event.kind !== 'remote_started' && event.kind !== 'remote_read_completed') {
     return flowEventTitle(event, node);
   }
-
-  const hostname = node?.hostname ?? detail.hostname;
   if (!hostname) return flowEventTitle(event, node);
-
-  const host = hostIdentity(hostname);
-  const prefix = node?.role === 'shard_leader'
-    ? 'Shard coordinator completed on '
-    : node?.role === 'replica_reader'
-      ? 'Reader query completed on '
-      : 'Remote query completed on ';
 
   return (
     <>
-      {prefix}
-      <span style={{ color: detail.color }}>{host}</span>
+      {event.kind === 'remote_started' ? remoteStartedPrefix(node) : remoteCompletedPrefix(node)}
+      <span style={{ color: detail.color }}>{hostIdentity(hostname)}</span>
     </>
   );
 }
@@ -929,10 +1102,25 @@ function flowEventDetail(event: DistributedExecutionFlowEvent, detail: FlowStepD
   if (event.kind === 'local_read_completed') {
     return 'Folded into the coordinator row.';
   }
+  if (event.kind === 'async_insert_buffered') {
+    return event.detail || 'Client insert was linked to a later async insert flush.';
+  }
   if (event.kind === 'remote_started') {
+    if (detail.role === 'Remote table INSERT') {
+      return detail.hostname ? `Remote table INSERT on ${hostIdentity(detail.hostname)}.` : 'Remote table INSERT began.';
+    }
+    if (detail.role === 'Async insert flush') {
+      return detail.hostname ? `Async insert flush on ${hostIdentity(detail.hostname)}.` : 'Async insert flush began.';
+    }
     return detail.hostname ? `Sent to ${hostIdentity(detail.hostname)}.` : 'Remote execution began.';
   }
   if (event.kind === 'remote_read_completed') {
+    if (detail.role === 'Remote table INSERT') {
+      return detail.hostname ? `Remote table INSERT completed on ${hostIdentity(detail.hostname)}.` : 'Remote table INSERT completed.';
+    }
+    if (detail.role === 'Async insert flush') {
+      return detail.hostname ? `Async insert flush completed on ${hostIdentity(detail.hostname)}.` : 'Async insert flush completed.';
+    }
     return detail.hostname ? `Completed on ${hostIdentity(detail.hostname)}.` : 'Remote child completed.';
   }
   return event.detail || flowEventTitle(event);
@@ -946,7 +1134,9 @@ function compactEventMeta(event: DistributedExecutionFlowEvent): string {
 }
 
 function shouldShowEventDetail(event: DistributedExecutionFlowEvent): boolean {
-  return event.kind !== 'remote_read_completed';
+  return event.kind !== 'remote_read_completed'
+    && event.kind !== 'remote_started'
+    && event.kind !== 'coordinator_started';
 }
 
 const ExecutionFlowSteps: React.FC<{
@@ -1015,6 +1205,7 @@ const FlowStepRow: React.FC<{
   const depthIndent = Math.min(2, Math.max(0, step.depth)) * 18;
   const showStats = eventHasWorkStats(event);
   const showDetail = shouldShowEventDetail(event);
+  const rowMinHeight = step.showPreview ? 150 : showDetail ? 64 : 48;
   const metricParts = [
     showStats && detail.durationMs > 0 ? formatDurationMs(detail.durationMs) : '',
     showStats && detail.rows > 0 ? `${detail.rows.toLocaleString()} rows` : '',
@@ -1031,7 +1222,7 @@ const FlowStepRow: React.FC<{
       background: isActive ? 'var(--bg-hover)' : 'transparent',
     }}>
       <div style={{
-        paddingTop: 14,
+        paddingTop: 11,
         color: MUTED,
         fontFamily: 'var(--font-mono, monospace)',
         fontSize: 10,
@@ -1043,7 +1234,7 @@ const FlowStepRow: React.FC<{
         position: 'relative',
         display: 'flex',
         justifyContent: 'center',
-        minHeight: step.showPreview ? 164 : 74,
+        minHeight: rowMinHeight,
       }}>
         {!isFirst && (
           <span style={{
@@ -1065,7 +1256,7 @@ const FlowStepRow: React.FC<{
         )}
         <span style={{
           position: 'absolute',
-          top: 14,
+          top: 11,
           width: 10,
           height: 10,
           borderRadius: '50%',
@@ -1074,7 +1265,7 @@ const FlowStepRow: React.FC<{
         }} />
       </div>
 
-      <div style={{ padding: '10px 0 12px', minWidth: 0 }}>
+      <div style={{ padding: step.showPreview ? '8px 0 10px' : '8px 0', minWidth: 0 }}>
         <button
           onClick={() => detail.queryId && onNavigateToQuery(detail.queryId)}
           disabled={!detail.queryId}
@@ -1103,7 +1294,7 @@ const FlowStepRow: React.FC<{
               <span style={{
                 position: 'absolute',
                 left: depthIndent - 15,
-                top: 15,
+                top: 14,
                 width: 12,
                 height: 1,
                 background: 'var(--border-secondary)',
@@ -1111,7 +1302,7 @@ const FlowStepRow: React.FC<{
             )}
             <span style={{
               width: 3,
-              minHeight: 34,
+              minHeight: showDetail ? 34 : 28,
               borderRadius: 2,
               background: markerColor,
               flexShrink: 0,
@@ -1140,23 +1331,17 @@ const FlowStepRow: React.FC<{
 
           <span style={{ minWidth: 0 }}>
             <span style={{
-              display: 'flex',
-              justifyContent: 'space-between',
-              gap: 12,
-              alignItems: 'baseline',
+              display: 'block',
               marginBottom: 7,
             }}>
               <span style={{
                 color: 'var(--text-primary)',
                 fontFamily: 'var(--font-mono, monospace)',
                 fontSize: 12,
+                overflow: 'hidden',
+                textOverflow: 'ellipsis',
+                whiteSpace: 'nowrap',
               }}>{renderFlowEventTitle(event, detail, step.node)}</span>
-              <span style={{
-                color: MUTED,
-                fontFamily: 'var(--font-mono, monospace)',
-                fontSize: 9,
-                flexShrink: 0,
-              }}>{compactEventMeta(event)}</span>
             </span>
             {showDetail && (
               <span style={{
@@ -1171,49 +1356,51 @@ const FlowStepRow: React.FC<{
 
           <span style={{
             minWidth: 0,
-            paddingTop: 5,
+            paddingTop: 2,
           }}>
             <span style={{
-              display: 'flex',
-              justifyContent: 'space-between',
+              display: 'grid',
+              gridTemplateColumns: 'auto minmax(72px, 1fr) auto',
+              alignItems: 'center',
+              gap: 8,
               color: MUTED,
               fontFamily: 'var(--font-mono, monospace)',
               fontSize: 8,
-              marginBottom: 5,
             }}>
-              <span>{formatDurationMs(event.offsetMs)}</span>
-              <span>{formatDurationMs(totalMs)}</span>
-            </span>
-            <span style={{
-              position: 'relative',
-              display: 'block',
-              height: 10,
-              borderRadius: 5,
-              background: 'var(--bg-tertiary)',
-              overflow: 'hidden',
-            }}>
-              {showStats && detail.durationMs > 0 && (
+              <span style={{ whiteSpace: 'nowrap' }}>{compactEventMeta(event)} · {formatDurationMs(event.offsetMs)}</span>
+              <span style={{
+                position: 'relative',
+                display: 'block',
+                height: 9,
+                borderRadius: 5,
+                background: 'color-mix(in srgb, var(--bg-tertiary) 72%, var(--bg-card))',
+                border: '1px solid var(--border-secondary)',
+                overflow: 'hidden',
+              }}>
+                {showStats && detail.durationMs > 0 && (
+                  <span style={{
+                    position: 'absolute',
+                    left: `${leftPct}%`,
+                    width: `${widthPct}%`,
+                    top: 2,
+                    height: 3,
+                    borderRadius: 2,
+                    background: markerColor,
+                    opacity: 0.24,
+                  }} />
+                )}
                 <span style={{
                   position: 'absolute',
-                  left: `${leftPct}%`,
-                  width: `${widthPct}%`,
-                  top: 3,
-                  height: 4,
+                  left: `${eventPct}%`,
+                  top: 1,
+                  width: 3,
+                  height: 7,
                   borderRadius: 2,
+                  transform: 'translateX(-50%)',
                   background: markerColor,
-                  opacity: 0.24,
                 }} />
-              )}
-              <span style={{
-                position: 'absolute',
-                left: `${eventPct}%`,
-                top: 1,
-                width: 3,
-                height: 8,
-                borderRadius: 2,
-                transform: 'translateX(-50%)',
-                background: markerColor,
-              }} />
+              </span>
+              <span style={{ whiteSpace: 'nowrap', textAlign: 'right' }}>{formatDurationMs(totalMs)}</span>
             </span>
           </span>
         </button>
