@@ -50,57 +50,81 @@ jobs:
     needs: [test]
     runs-on: ubuntu-latest
     permissions:
-      contents: write      # create/update the draft GitHub release
-      id-token: write       # mint the OIDC token for Sigstore signing
+      contents: read
+      id-token: write       # mint the OIDC token for provenance attestation
       attestations: write   # write the build provenance attestation
     steps:
       - uses: actions/checkout@v4
         with:
           lfs: true
-
       - uses: actions/setup-node@v4
         with:
-          node-version: "22"
+          node-version: 22
+      - uses: extractions/setup-just@v2
 
-      - name: Install Linux optional dependencies
+      - run: rm -f package-lock.json
+      - run: just install
+      - run: just grafana-plugin-build
+
+      - name: Sign Grafana plugin
+        working-directory: grafana-app-plugin
+        env:
+          GRAFANA_ACCESS_POLICY_TOKEN: ${{ secrets.GRAFANA_ACCESS_POLICY_TOKEN }}
         run: |
-          rm -f package-lock.json
-          npm install --include=optional
+          if [ -z "${GRAFANA_ACCESS_POLICY_TOKEN:-}" ]; then
+            echo "GRAFANA_ACCESS_POLICY_TOKEN is not set; leaving plugin unsigned."
+            exit 0
+          fi
+          npx @grafana/sign-plugin@latest
 
-      - name: Provide root changelog for Grafana action
-        run: cp grafana-app-plugin/CHANGELOG.md CHANGELOG.md
+      - name: Package plugin
+        id: package_plugin
+        run: |
+          PLUGIN_ID=$(node -p "require('./grafana-app-plugin/dist/plugin.json').id")
+          PLUGIN_VERSION=$(node -p "require('./grafana-app-plugin/dist/plugin.json').info.version")
+          PLUGIN_ARCHIVE="${PLUGIN_ID}-${PLUGIN_VERSION}.zip"
+          PLUGIN_SHA1="${PLUGIN_ARCHIVE}.sha1"
 
-      - id: build_plugin
-        uses: grafana/plugin-actions/build-plugin@build-plugin/v1.2.0
+          mkdir -p "release/${PLUGIN_ID}"
+          cp -r grafana-app-plugin/dist/* "release/${PLUGIN_ID}/"
+          cd release
+          zip -qr "${PLUGIN_ARCHIVE}" "${PLUGIN_ID}"
+          sha1sum "${PLUGIN_ARCHIVE}" | cut -f1 -d' ' > "${PLUGIN_SHA1}"
+
+          echo "archive=release/${PLUGIN_ARCHIVE}" >> "$GITHUB_OUTPUT"
+          echo "archive_sha1=release/${PLUGIN_SHA1}" >> "$GITHUB_OUTPUT"
+          echo "archive_name=${PLUGIN_ARCHIVE}" >> "$GITHUB_OUTPUT"
+          echo "archive_sha1_name=${PLUGIN_SHA1}" >> "$GITHUB_OUTPUT"
+
+      - name: Attest plugin build provenance
+        id: attest_plugin
+        uses: actions/attest-build-provenance@v3
         with:
-          node-version: "22"
-          policy_token: ${{ secrets.GRAFANA_ACCESS_POLICY_TOKEN }}
-          attestation: true
+          subject-path: ${{ steps.package_plugin.outputs.archive }}
 
       - name: Verify plugin build provenance
         env:
           GH_TOKEN: ${{ github.token }}
-        run: gh attestation verify "${{ steps.build_plugin.outputs.archive }}" --repo "${{ github.repository }}"
+        run: gh attestation verify "${{ steps.package_plugin.outputs.archive }}" --repo "${{ github.repository }}"
 
       - uses: actions/upload-artifact@v4
         with:
           name: dmkskd-tracehouse-app
           path: |
-            ${{ steps.build_plugin.outputs.archive }}
-            ${{ steps.build_plugin.outputs.archive-sha1sum }}
+            ${{ steps.package_plugin.outputs.archive }}
+            ${{ steps.package_plugin.outputs.archive_sha1 }}
 
       - name: Grafana submission summary
         run: |
-          ARCHIVE="${{ steps.build_plugin.outputs.archive }}"
-          SHA1="${{ steps.build_plugin.outputs.archive-sha1sum }}"
           {
             echo "### Grafana plugin submission"
             echo ""
             echo "Use these release assets for grafana.com submission. Do not submit a locally built ZIP."
             echo ""
-            echo "- Plugin URL: https://github.com/${{ github.repository }}/releases/download/${{ github.ref_name }}/$(basename "$ARCHIVE")"
-            echo "- SHA1 URL: https://github.com/${{ github.repository }}/releases/download/${{ github.ref_name }}/$(basename "$SHA1")"
+            echo "- Plugin URL: https://github.com/${{ github.repository }}/releases/download/${{ github.ref_name }}/${{ steps.package_plugin.outputs.archive_name }}"
+            echo "- SHA1 URL: https://github.com/${{ github.repository }}/releases/download/${{ github.ref_name }}/${{ steps.package_plugin.outputs.archive_sha1_name }}"
             echo "- Source code URL: https://github.com/${{ github.repository }}/tree/${{ github.ref_name }}"
+            echo "- Attestation: ${{ steps.attest_plugin.outputs.attestation-url }}"
           } >> "$GITHUB_STEP_SUMMARY"
 
   # ── Build Rust binaries for each platform ────────────────────
@@ -161,10 +185,26 @@ jobs:
     needs: [html, binary, grafana-plugin]
     runs-on: ubuntu-latest
     if: startsWith(github.ref, 'refs/tags/')
+    permissions:
+      contents: write
     steps:
       - uses: actions/download-artifact@v4
         with:
           path: artifacts
+
+      - name: Create draft release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          if gh release view "${{ github.ref_name }}" --repo "${{ github.repository }}" >/dev/null 2>&1; then
+            echo "Release ${{ github.ref_name }} already exists."
+          else
+            gh release create "${{ github.ref_name }}" \
+              --repo "${{ github.repository }}" \
+              --title "${{ github.ref_name }}" \
+              --generate-notes \
+              --draft
+          fi
 
       - name: Upload release assets
         env:
@@ -175,4 +215,6 @@ jobs:
             artifacts/tracehouse-x86_64-unknown-linux-gnu/tracehouse-x86_64-unknown-linux-gnu.tar.gz \
             artifacts/tracehouse-aarch64-unknown-linux-gnu/tracehouse-aarch64-unknown-linux-gnu.tar.gz \
             artifacts/tracehouse-aarch64-apple-darwin/tracehouse-aarch64-apple-darwin.tar.gz \
+            artifacts/dmkskd-tracehouse-app/dmkskd-tracehouse-app-*.zip \
+            artifacts/dmkskd-tracehouse-app/dmkskd-tracehouse-app-*.zip.sha1 \
             --repo "${{ github.repository }}"
