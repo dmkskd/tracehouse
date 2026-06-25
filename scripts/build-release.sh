@@ -69,6 +69,9 @@ zip -r "${PLUGIN_ARCHIVE}.zip" "$PLUGIN_ARCHIVE"
 rm -rf "$PLUGIN_ARCHIVE"
 echo "  → release/${PLUGIN_ARCHIVE}.zip"
 
+bash "$ROOT/grafana-app-plugin/scripts/package-source.sh" "$RELEASE_DIR/${PLUGIN_ARCHIVE}-source.zip"
+echo "  → release/${PLUGIN_ARCHIVE}-source.zip"
+
 # ── Standalone binary ───────────────────────────────────────────
 echo ""
 echo "=== Building frontend for binary embedding ==="

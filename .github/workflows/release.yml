@@ -107,12 +107,24 @@ jobs:
           GH_TOKEN: ${{ github.token }}
         run: gh attestation verify "${{ steps.package_plugin.outputs.archive }}" --repo "${{ github.repository }}"
 
+      - name: Package plugin source
+        id: package_plugin_source
+        run: |
+          bash grafana-app-plugin/scripts/package-source.sh release/dmkskd-tracehouse-app-source.zip
+          echo "source_archive=release/dmkskd-tracehouse-app-source.zip" >> "$GITHUB_OUTPUT"
+          echo "source_archive_name=dmkskd-tracehouse-app-source.zip" >> "$GITHUB_OUTPUT"
+
       - uses: actions/upload-artifact@v4
         with:
           name: dmkskd-tracehouse-app
           path: |
             ${{ steps.package_plugin.outputs.archive }}
             ${{ steps.package_plugin.outputs.archive_sha1 }}
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: dmkskd-tracehouse-app-source
+          path: ${{ steps.package_plugin_source.outputs.source_archive }}
 
       - name: Grafana submission summary
         run: |
@@ -123,7 +135,7 @@ jobs:
             echo ""
             echo "- Plugin URL: https://github.com/${{ github.repository }}/releases/download/${{ github.ref_name }}/${{ steps.package_plugin.outputs.archive_name }}"
             echo "- SHA1 URL: https://github.com/${{ github.repository }}/releases/download/${{ github.ref_name }}/${{ steps.package_plugin.outputs.archive_sha1_name }}"
-            echo "- Source code URL: https://github.com/${{ github.repository }}/tree/${{ github.ref_name }}"
+            echo "- Source ZIP URL: https://github.com/${{ github.repository }}/releases/download/${{ github.ref_name }}/${{ steps.package_plugin_source.outputs.source_archive_name }}"
             echo "- Attestation: ${{ steps.attest_plugin.outputs.attestation-url }}"
           } >> "$GITHUB_STEP_SUMMARY"
 
@@ -217,4 +229,5 @@ jobs:
             artifacts/tracehouse-aarch64-apple-darwin/tracehouse-aarch64-apple-darwin.tar.gz \
             artifacts/dmkskd-tracehouse-app/dmkskd-tracehouse-app-*.zip \
             artifacts/dmkskd-tracehouse-app/dmkskd-tracehouse-app-*.zip.sha1 \
+            artifacts/dmkskd-tracehouse-app-source/dmkskd-tracehouse-app-source.zip \
             --repo "${{ github.repository }}"
