@@ -330,10 +330,14 @@ export const DISTRIBUTED_TOPOLOGY_ASYNC_INSERT_LOGS = `
     flush_query_id,
     database,
     table,
+    format,
+    data_kind,
     status,
     exception,
     rows,
-    bytes
+    bytes,
+    toString(flush_time_microseconds) AS flush_time_microseconds,
+    timeout_milliseconds
   FROM {{cluster_aware:system.asynchronous_insert_log}}
   WHERE (query_id IN ({{query_id_list}}) OR flush_query_id IN ({{query_id_list}}))
     AND event_date >= {event_date_bound}

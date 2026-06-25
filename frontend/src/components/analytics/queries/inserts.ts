@@ -14,16 +14,16 @@ WHERE event_type = 'NewPart'
 GROUP BY minute
 ORDER BY minute ASC`,
 
-  `-- @meta: title='Sync Insert Batches' group='Inserts' interval='3 DAY' description='Number of synchronous INSERT bulk requests per minute'
+  `-- @meta: title='Sync Insert Batches' group='Inserts' interval='3 DAY' description='Number of synchronous INSERT bulk requests per minute - excludes async_insert client calls'
 -- @chart: type=area group_by=minute value=nb_bulk_inserts style=2d color=#3b82f6
 -- @source: https://clickhouse.com/blog/monitoring-troubleshooting-insert-queries-clickhouse
 SELECT
     toStartOfMinute(event_time) AS minute,
     count(*) AS nb_bulk_inserts
 FROM {{cluster_aware:system.query_log}}
-WHERE query ILIKE '%insert%'
-  AND query_kind = 'Insert'
+WHERE query_kind = 'Insert'
   AND type = 'QueryFinish'
+  AND Settings['async_insert'] != '1'
   AND event_time > {{time_range}}
 GROUP BY minute
 ORDER BY minute ASC`,
@@ -37,7 +37,7 @@ SELECT
     avg(query_duration_ms) AS avg_duration
 FROM {{cluster_aware:system.query_log}}
 WHERE query_kind = 'Insert'
-  AND type != 'QueryStart'
+  AND type = 'QueryFinish'
   AND event_time > {{time_range}}
 GROUP BY minute
 ORDER BY minute ASC`,
@@ -53,7 +53,7 @@ SELECT
     quantile(0.99)(query_duration_ms) AS p99
 FROM {{cluster_aware:system.query_log}}
 WHERE query_kind = 'Insert'
-  AND type != 'QueryStart'
+  AND type = 'QueryFinish'
   AND event_time > {{time_range}}
 GROUP BY hour
 ORDER BY hour ASC`,
@@ -129,6 +129,40 @@ WHERE error > 0
   AND event_date >= toDate({{time_range}})
 GROUP BY event_date, event_type, table, error_code
 ORDER BY event_date DESC, error_count DESC`,
+
+  `-- @meta: title='Async Insert Log' group='Inserts' interval='1 DAY' description='Recent async insert flush events from system.asynchronous_insert_log - status, bytes flushed, buffer wait time'
+-- @source: https://clickhouse.com/blog/monitoring-troubleshooting-insert-queries-clickhouse
+SELECT
+    event_time,
+    database,
+    table,
+    formatReadableSize(bytes) AS bytes_flushed,
+    rows,
+    status,
+    data_kind,
+    dateDiff('millisecond', event_time, flush_time) AS buffer_ms,
+    query_id
+FROM {{cluster_aware:system.asynchronous_insert_log}}
+WHERE event_time > {{time_range}}
+ORDER BY event_time DESC
+LIMIT 200`,
+
+  `-- @meta: title='Parts per Partition' group='Inserts' interval='1 DAY' description='Active part count per partition - partitions with many parts are the direct cause of too-many-parts merge pressure'
+-- @cell: column=part_count type=rag green<10 amber<50
+-- @source: https://clickhouse.com/blog/monitoring-troubleshooting-insert-queries-clickhouse
+SELECT
+    database,
+    table,
+    partition_id,
+    count() AS part_count,
+    sum(rows) AS total_rows,
+    formatReadableSize(sum(bytes_on_disk)) AS total_bytes
+FROM {{cluster_aware:system.parts}}
+WHERE active = 1
+  AND database NOT IN ('system', 'INFORMATION_SCHEMA', 'information_schema')
+GROUP BY database, table, partition_id
+ORDER BY part_count DESC
+LIMIT 50`,
 ];
 
 export default queries;

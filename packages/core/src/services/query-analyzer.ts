@@ -666,19 +666,23 @@ export class QueryAnalyzer {
         hostname: String(row.hostname ?? ''),
         database: String(row.database ?? ''),
         table: String(row.table ?? ''),
+        format: String(row.format ?? ''),
+        dataKind: String(row.data_kind ?? ''),
         status: String(row.status ?? ''),
         exception: String(row.exception ?? ''),
         rows: Number(row.rows ?? 0),
         bytes: Number(row.bytes ?? 0),
         eventTimeMicroseconds: String(row.event_time_microseconds ?? ''),
+        flushTimeMicroseconds: String(row.flush_time_microseconds ?? ''),
+        timeoutMilliseconds: Number(row.timeout_milliseconds ?? 0),
       })).filter(row => row.queryId && row.flushQueryId);
 
       const knownExecutionIds = new Set(executions.map(execution => execution.queryId));
-      const missingFlushQueryIds = [...new Set(asyncInsertLogs
-        .map(row => row.flushQueryId)
+      const missingLinkedQueryIds = [...new Set(asyncInsertLogs
+        .flatMap(row => [row.queryId, row.flushQueryId])
         .filter(id => id && !knownExecutionIds.has(id)))];
-      if (missingFlushQueryIds.length > 0) {
-        const queryIdList = missingFlushQueryIds.map(id => `'${escapeValue(id)}'`).join(',');
+      if (missingLinkedQueryIds.length > 0) {
+        const queryIdList = missingLinkedQueryIds.map(id => `'${escapeValue(id)}'`).join(',');
         const linkedExecutionsSql = DISTRIBUTED_TOPOLOGY_EXECUTIONS_BY_QUERY_IDS
           .replace('{{query_id_list}}', queryIdList)
           .replace('{event_date_bound}', boundedEventDate);

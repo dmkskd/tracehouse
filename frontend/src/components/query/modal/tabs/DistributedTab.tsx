@@ -19,7 +19,13 @@ import { formatBytes } from '../../../../stores/databaseStore';
 import { formatDurationMs } from '../../../../utils/formatters';
 import { SqlHighlight } from '../../../common/SqlHighlight';
 import { DistributedQueryTopology, type TopologyCoordinator } from '../shared/DistributedQueryTopology';
-import { distributedFlowEventTitle, distributedRemoteEventPrefix } from '../shared/distributedTopologyPresentation';
+import {
+  distributedFlowEventTitle,
+  distributedRemoteEventPrefix,
+  isWritePathRole,
+  topologyNodeWorkBytes,
+  topologyNodeWorkRows,
+} from '../shared/distributedTopologyPresentation';
 
 interface DistributedTabProps {
   topologyCoordinator: TopologyCoordinator | null;
@@ -69,6 +75,13 @@ function scanText(selected: number, total: number): string {
   if (selected <= 0 && total <= 0) return '-';
   if (total <= 0) return selected.toLocaleString();
   return `${selected.toLocaleString()} / ${total.toLocaleString()}`;
+}
+
+function formatAsyncWait(eventTimeMicroseconds?: string, flushTimeMicroseconds?: string): string {
+  const eventUs = parseUs(eventTimeMicroseconds ?? '');
+  const flushUs = parseUs(flushTimeMicroseconds ?? '');
+  if (!eventUs || !flushUs || flushUs < eventUs) return '';
+  return formatDurationMs((flushUs - eventUs) / 1000);
 }
 
 function nodeScan(node: DistributedTopologyNode): { parts: string; marks: string; ranges: string } {
@@ -208,14 +221,6 @@ export const DistributedTab: React.FC<DistributedTabProps> = ({
         </Panel>
       )}
 
-      {distributedTopology && distributedTopology.asyncInsertLinks.length > 0 && (
-        <AsyncInsertLinksPanel
-          topology={distributedTopology}
-          activeQueryId={activeQueryId}
-          onNavigateToQuery={onNavigateToQuery}
-        />
-      )}
-
       {topologyCoordinator && subQueries.length > 0 && (
         <Panel title="Timeline">
           <DistributedQueryTopology
@@ -226,6 +231,14 @@ export const DistributedTab: React.FC<DistributedTabProps> = ({
             onNavigate={onNavigateToQuery}
           />
         </Panel>
+      )}
+
+      {distributedTopology && distributedTopology.asyncInsertLinks.length > 0 && (
+        <AsyncInsertLinksPanel
+          topology={distributedTopology}
+          activeQueryId={activeQueryId}
+          onNavigateToQuery={onNavigateToQuery}
+        />
       )}
 
       {distributedTopology && distributedTopology.readDistribution.entries.length > 0 && (
@@ -391,6 +404,7 @@ function shardRollupsForEntries(entries: DistributedReadDistributionEntry[]) {
 }
 
 const ResourceSkewPanel: React.FC<{ topology: DistributedTopology }> = ({ topology }) => {
+  const isInsert = topology.kind === 'distributed_insert';
   const shapeGroups = topology.readDistribution.groups;
   const [activeShapeKey, setActiveShapeKey] = React.useState<string>(() => shapeGroups[0]?.key ?? 'unknown');
   const activeShape = shapeGroups.find(group => group.key === activeShapeKey) ?? shapeGroups[0];
@@ -413,7 +427,7 @@ const ResourceSkewPanel: React.FC<{ topology: DistributedTopology }> = ({ topolo
   if (entries.length === 0 && shards.length === 0) return null;
 
   return (
-    <Panel title="Read Distribution">
+    <Panel title={isInsert ? 'Insert Distribution' : 'Read Distribution'}>
       <div style={{
         border: '1px solid var(--border-secondary)',
         borderRadius: 6,
@@ -429,7 +443,10 @@ const ResourceSkewPanel: React.FC<{ topology: DistributedTopology }> = ({ topolo
           <SkewHeaderStat label="Participants" value={String(entries.length)} />
           <SkewHeaderStat label="Query Shape" value={activeShape?.label ?? 'Ungrouped'} />
           <SkewHeaderStat label="Shape Topology" value={shapeTopology || 'Flat fan-out'} />
-          <SkewHeaderStat label="Read Mode" value={topology.readDistribution.hasPerReplicaReading ? 'Per-replica' : 'Per-node'} />
+          <SkewHeaderStat
+            label={isInsert ? 'Write Mode' : 'Read Mode'}
+            value={topology.readDistribution.hasPerReplicaReading ? 'Per-replica' : 'Per-node'}
+          />
         </div>
 
         <div style={{ padding: '10px 12px 8px' }}>
@@ -625,7 +642,7 @@ const ResourceSkewPanel: React.FC<{ topology: DistributedTopology }> = ({ topolo
               letterSpacing: '0.8px',
               marginBottom: 7,
             }}>
-              <span>Shard Balance</span>
+            <span>{isInsert ? 'Shard Write Balance' : 'Shard Balance'}</span>
               <span style={{ display: 'flex', gap: 12 }}>
                 <span style={{ color: '#58a6ff' }}>Rows</span>
                 <span style={{ color: '#d29922' }}>Bytes</span>
@@ -682,8 +699,11 @@ const ResourceSkewPanel: React.FC<{ topology: DistributedTopology }> = ({ topolo
   );
 };
 
-const SkewHeaderStat: React.FC<{ label: string; value: string }> = ({ label, value }) => (
-  <div style={{ padding: '9px 12px', minWidth: 0, borderRight: '1px solid var(--border-secondary)' }}>
+const SkewHeaderStat: React.FC<{ label: string; value: string; title?: string }> = ({ label, value, title }) => (
+  <div
+    title={title}
+    style={{ padding: '9px 12px', minWidth: 0, borderRight: '1px solid var(--border-secondary)' }}
+  >
     <div style={{ fontSize: 8, color: MUTED, textTransform: 'uppercase', letterSpacing: '0.8px', marginBottom: 4 }}>{label}</div>
     <div style={{
       color: 'var(--text-primary)',
@@ -697,6 +717,19 @@ const SkewHeaderStat: React.FC<{ label: string; value: string }> = ({ label, val
   </div>
 );
 
+const HintFragment: React.FC<{ children: React.ReactNode; title: string }> = ({ children, title }) => (
+  <span
+    title={title}
+    style={{
+      textDecoration: 'underline dotted',
+      textUnderlineOffset: 3,
+      cursor: 'help',
+    }}
+  >
+    {children}
+  </span>
+);
+
 const AsyncInsertLinksPanel: React.FC<{
   topology: DistributedTopology;
   activeQueryId: string;
@@ -704,6 +737,21 @@ const AsyncInsertLinksPanel: React.FC<{
 }> = ({ topology, activeQueryId, onNavigateToQuery }) => {
   const nodeByQueryId = new Map(topology.nodes.map(node => [node.queryId, node]));
   const coordinatorNode = topology.coordinator ?? topology.nodes.find(node => node.role === 'insert_client' || node.role === 'coordinator');
+  const totalRows = topology.asyncInsertLinks.reduce((sum, link) => sum + (link.rows ?? 0), 0);
+  const totalBytes = topology.asyncInsertLinks.reduce((sum, link) => sum + (link.bytes ?? 0), 0);
+  const flushDurations = topology.asyncInsertLinks
+    .map(link => nodeByQueryId.get(link.flushQueryId)?.queryDurationMs ?? 0)
+    .filter(duration => duration > 0);
+  const insertWaits = topology.asyncInsertLinks
+    .map(link => {
+      const eventUs = parseUs(link.eventTimeMicroseconds ?? '');
+      const flushUs = parseUs(link.flushTimeMicroseconds ?? '');
+      return eventUs > 0 && flushUs >= eventUs ? (flushUs - eventUs) / 1000 : 0;
+    })
+    .filter(wait => wait > 0);
+  const maxFlushDuration = Math.max(0, ...flushDurations);
+  const maxFlushWait = Math.max(0, ...insertWaits);
+  const errorCount = topology.asyncInsertLinks.filter(link => link.exception || (link.status && link.status !== 'Ok')).length;
   const settingNames = [
     'async_insert',
     'wait_for_async_insert',
@@ -713,7 +761,46 @@ const AsyncInsertLinksPanel: React.FC<{
   ];
 
   return (
-    <Panel title="Async Insert Links">
+    <Panel title="Async Insert Path">
+      <div style={{
+        display: 'grid',
+        gridTemplateColumns: 'repeat(4, minmax(0, 1fr))',
+        border: '1px solid var(--border-secondary)',
+        borderRadius: 6,
+        overflow: 'hidden',
+        marginBottom: 12,
+        background: 'var(--bg-card)',
+      }}>
+        <SkewHeaderStat
+          label="Buffered Inserts"
+          value={String(topology.asyncInsertLinks.length)}
+          title="Number of remote table INSERT query_log rows linked to async insert flushes."
+        />
+        <SkewHeaderStat
+          label="Buffered Volume"
+          value={[totalRows > 0 ? `${totalRows.toLocaleString()} rows` : '', totalBytes > 0 ? formatBytes(totalBytes) : ''].filter(Boolean).join(' · ') || '-'}
+          title="Total rows and bytes recorded in system.asynchronous_insert_log for the linked buffered inserts."
+        />
+        <SkewHeaderStat
+          label="Slowest Flush"
+          value={maxFlushDuration > 0 ? formatDurationMs(maxFlushDuration) : '-'}
+          title="Longest AsyncInsertFlush query duration from system.query_log."
+        />
+        <SkewHeaderStat
+          label="Max Buffer Delay"
+          value={maxFlushWait > 0 ? formatDurationMs(maxFlushWait) : '-'}
+          title="Largest delay between the async insert log event time and its flush time."
+        />
+      </div>
+      <div style={{
+        color: MUTED,
+        fontSize: 10,
+        lineHeight: 1.45,
+        marginBottom: 10,
+      }}>
+        Remote table INSERT rows are linked to AsyncInsertFlush rows through <code style={{ fontFamily: 'var(--font-mono, monospace)' }}>system.asynchronous_insert_log</code>.
+        Use this to see how much each target node buffered before the flush and whether one node waited or flushed materially longer than the others.
+      </div>
       <div style={{
         display: 'grid',
         gridTemplateColumns: 'minmax(180px, 0.9fr) 34px minmax(180px, 0.9fr) minmax(180px, 1.1fr) 90px',
@@ -721,10 +808,10 @@ const AsyncInsertLinksPanel: React.FC<{
         alignItems: 'center',
         fontSize: 11,
       }}>
-        <div style={{ color: MUTED, textTransform: 'uppercase', letterSpacing: '0.8px', fontSize: 9 }}>INSERT query</div>
+        <div style={{ color: MUTED, textTransform: 'uppercase', letterSpacing: '0.8px', fontSize: 9 }}>Remote INSERT</div>
         <div />
-        <div style={{ color: MUTED, textTransform: 'uppercase', letterSpacing: '0.8px', fontSize: 9 }}>Async insert flush</div>
-        <div style={{ color: MUTED, textTransform: 'uppercase', letterSpacing: '0.8px', fontSize: 9 }}>Target / volume</div>
+        <div style={{ color: MUTED, textTransform: 'uppercase', letterSpacing: '0.8px', fontSize: 9 }}>Flush query</div>
+        <div style={{ color: MUTED, textTransform: 'uppercase', letterSpacing: '0.8px', fontSize: 9 }}>Buffered batch</div>
         <div style={{ color: MUTED, textTransform: 'uppercase', letterSpacing: '0.8px', fontSize: 9, textAlign: 'right' }}>Status</div>
 
         {topology.asyncInsertLinks.map(link => {
@@ -733,6 +820,12 @@ const AsyncInsertLinksPanel: React.FC<{
           const tableName = [link.database, link.table].filter(Boolean).join('.') || flushNode?.tables?.[0] || '-';
           const rowText = link.rows != null && link.rows > 0 ? `${link.rows.toLocaleString()} rows` : '';
           const byteText = link.bytes != null && link.bytes > 0 ? formatBytes(link.bytes) : '';
+          const waitText = formatAsyncWait(link.eventTimeMicroseconds, link.flushTimeMicroseconds);
+          const timeoutText = link.timeoutMilliseconds != null && link.timeoutMilliseconds > 0
+            ? `timeout ${formatDurationMs(link.timeoutMilliseconds)}`
+            : '';
+          const formatText = link.format ? `input ${link.format}` : '';
+          const dataKindText = link.dataKind ? `buffer ${String(link.dataKind).toLowerCase()}` : '';
           const status = link.status || (link.exception ? 'Error' : 'Linked');
           const statusColor = link.exception ? '#ef4444' : status === 'Ok' ? '#2ea043' : REMOTE_COLOR;
           const settings = settingNames
@@ -741,6 +834,31 @@ const AsyncInsertLinksPanel: React.FC<{
               return value != null && String(value) !== '' ? `${name}=${String(value)}` : '';
             })
             .filter(Boolean);
+          const settingText = settings.length > 0 ? settings.join(' · ') : 'async settings unavailable';
+          const detailFragments = [
+            waitText ? {
+              text: `buffer delay ${waitText}`,
+              title: 'Time between system.asynchronous_insert_log.event_time_microseconds and flush_time_microseconds for this buffered insert.',
+            } : null,
+            timeoutText ? {
+              text: timeoutText,
+              title: 'timeout_milliseconds recorded in system.asynchronous_insert_log for this async insert entry.',
+            } : null,
+            formatText ? {
+              text: formatText,
+              title: 'Input format recorded by system.asynchronous_insert_log, for example Values or Native.',
+            } : null,
+            dataKindText ? {
+              text: dataKindText,
+              title: 'How ClickHouse stored the buffered insert entry before flushing it. Preprocessed means the data was already prepared before the flush.',
+            } : null,
+            {
+              text: settingText,
+              title: settings.length > 0
+                ? 'Async insert settings captured from query_log Settings for the linked insert, flush, or coordinator query.'
+                : 'The relevant async insert settings were not present in query_log Settings for the linked rows. This can happen when settings are defaults or were not logged.',
+            },
+          ].filter((fragment): fragment is { text: string; title: string } => Boolean(fragment));
 
           return (
             <React.Fragment key={`${link.queryId}:${link.flushQueryId}:${link.hostname ?? ''}`}>
@@ -812,7 +930,12 @@ const AsyncInsertLinksPanel: React.FC<{
                   <span style={{ color: MUTED }}> · {[rowText, byteText].filter(Boolean).join(' · ')}</span>
                 )}
                 <span style={{ display: 'block', color: MUTED, fontSize: 9, marginTop: 3 }}>
-                  {settings.length > 0 ? settings.join(' · ') : 'async settings not logged'}
+                  {detailFragments.map((fragment, index) => (
+                    <React.Fragment key={`${fragment.text}:${index}`}>
+                      {index > 0 && ' · '}
+                      <HintFragment title={fragment.title}>{fragment.text}</HintFragment>
+                    </React.Fragment>
+                  ))}
                 </span>
               </div>
 
@@ -830,7 +953,7 @@ const AsyncInsertLinksPanel: React.FC<{
                 textOverflow: 'ellipsis',
                 whiteSpace: 'nowrap',
               }} title={link.exception || status}>
-                {status}
+                {errorCount > 0 && !link.exception && status === 'Ok' ? 'Ok' : status}
               </div>
             </React.Fragment>
           );
@@ -926,19 +1049,20 @@ function buildStepDetails(
     const startUs = parseUs(subQuery?.query_start_time_microseconds || node?.queryStartTimeMicroseconds || '');
     const startMs = Math.max(0, startUs > 0 && rootStartUs > 0 ? (startUs - rootStartUs) / 1000 : 0);
     const durationMs = node?.queryDurationMs ?? subQuery?.query_duration_ms ?? 0;
-    const scan = node ? nodeScan(node) : subQuery ? subQueryScan(subQuery) : undefined;
+    const role = node ? roleLabel(node) : 'Remote child';
+    const scan = node && !isWritePathRole(node.role) ? nodeScan(node) : subQuery ? subQueryScan(subQuery) : undefined;
     details.push({
       id: node?.id ?? `${queryId}:${hostname}:${index}`,
       actor: shortHost(hostname),
       actorType: 'remote',
       queryId,
       hostname,
-      role: node ? roleLabel(node) : 'Remote child',
+      role,
       startMs,
       durationMs,
       color: hostColors.get(hostIdentity(hostname)) ?? REMOTE_COLOR,
-      rows: node?.readRows ?? subQuery?.read_rows ?? 0,
-      bytes: node?.readBytes ?? subQuery?.read_bytes ?? 0,
+      rows: topologyNodeWorkRows(node, subQuery),
+      bytes: topologyNodeWorkBytes(node, subQuery),
       scan,
       preview: node?.queryPreview ?? subQuery?.query_preview ?? '',
     });
@@ -1068,7 +1192,7 @@ function flowEventDetail(event: DistributedExecutionFlowEvent, detail: FlowStepD
     return 'Folded into the coordinator row.';
   }
   if (event.kind === 'async_insert_buffered') {
-    return event.detail || 'Client insert was linked to a later async insert flush.';
+    return event.detail || 'Remote INSERT was buffered and linked to a later AsyncInsertFlush row.';
   }
   if (event.kind === 'remote_started') {
     if (detail.role === 'Remote table INSERT') {
@@ -1088,7 +1212,14 @@ function flowEventDetail(event: DistributedExecutionFlowEvent, detail: FlowStepD
     }
     return detail.hostname ? `Completed on ${hostIdentity(detail.hostname)}.` : 'Remote child completed.';
   }
+  if (event.kind === 'coordinator_read_completed' && event.rows != null) {
+    return `Processed ${event.rows.toLocaleString()} rows.`;
+  }
   return event.detail || flowEventTitle(event);
+}
+
+function shouldShowScanStats(detail: FlowStepDetail): boolean {
+  return detail.role !== 'Remote table INSERT' && detail.role !== 'Async insert flush';
 }
 
 function compactEventMeta(event: DistributedExecutionFlowEvent): string {
@@ -1370,7 +1501,7 @@ const FlowStepRow: React.FC<{
           </span>
         </button>
 
-        {showStats && (metricParts.length > 0 || detail.scan) && (
+        {showStats && (metricParts.length > 0 || (detail.scan && shouldShowScanStats(detail))) && (
           <div style={{
             display: 'flex',
             flexWrap: 'wrap',
@@ -1382,9 +1513,9 @@ const FlowStepRow: React.FC<{
             fontSize: 10,
           }}>
             {metricParts.length > 0 && <span>{metricParts.join(' · ')}</span>}
-            {detail.scan && <span>parts {detail.scan.parts}</span>}
-            {detail.scan && <span>marks {detail.scan.marks}</span>}
-            {detail.scan && <span>ranges {detail.scan.ranges}</span>}
+            {detail.scan && shouldShowScanStats(detail) && <span>parts {detail.scan.parts}</span>}
+            {detail.scan && shouldShowScanStats(detail) && <span>marks {detail.scan.marks}</span>}
+            {detail.scan && shouldShowScanStats(detail) && <span>ranges {detail.scan.ranges}</span>}
           </div>
         )}
 

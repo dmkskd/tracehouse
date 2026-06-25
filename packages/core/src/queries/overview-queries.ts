@@ -77,8 +77,8 @@ ORDER BY t ASC
  * Instant metrics from system.metrics
  */
 export const GET_INSTANT_METRICS = `
-SELECT metric, value
-FROM system.metrics
+SELECT metric, sum(value) AS value
+FROM {{cluster_aware:system.metrics}}
 WHERE metric IN (
     'Query',
     'Merge',
@@ -92,6 +92,7 @@ WHERE metric IN (
     'HTTPConnection',
     'QueryPreempted'
 )
+GROUP BY metric
 `;
 
 /**
@@ -99,10 +100,9 @@ WHERE metric IN (
  * Falls back to system.settings if server_settings is unavailable.
  */
 export const GET_MAX_CONCURRENT_QUERIES = `
-SELECT toUInt64(value) AS max_concurrent
-FROM system.server_settings
+SELECT sum(toUInt64OrZero(value)) AS max_concurrent
+FROM {{cluster_aware:system.server_settings}}
 WHERE name = 'max_concurrent_queries'
-LIMIT 1
 `;
 
 /**
@@ -372,14 +372,15 @@ GROUP BY hostname
  *   src='qps'      → QPS sparkline buckets (last 15m, 15s intervals)
  */
 export const GET_QUERY_MONITOR_STATS = `
-SELECT 'metric' AS src, metric AS key, toString(value) AS val
-FROM system.metrics
+SELECT 'metric' AS src, metric AS key, toString(sum(value)) AS val
+FROM {{cluster_aware:system.metrics}}
 WHERE metric IN ('Query', 'QueryPreempted')
+GROUP BY metric
 
 UNION ALL
 
-SELECT 'setting', 'max_concurrent', value
-FROM system.server_settings
+SELECT 'setting', 'max_concurrent', toString(sum(toUInt64OrZero(value)))
+FROM {{cluster_aware:system.server_settings}}
 WHERE name = 'max_concurrent_queries'
 
 UNION ALL

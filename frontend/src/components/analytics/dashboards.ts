@@ -257,6 +257,8 @@ const BUILTIN_DASHBOARDS: Dashboard[] = [
       { queryName: 'Inserts#Peak Memory by Part' },
       { queryName: 'Inserts#Part Errors' },
       { queryName: 'Advanced Dashboard#Inserted Rows/second' },
+      { queryName: 'Inserts#Async Insert Log' },
+      { queryName: 'Inserts#Parts per Partition' },
     ],
   },
   {

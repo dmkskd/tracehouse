@@ -566,6 +566,17 @@ const InsertPairBar: React.FC<{
     pair.link.bytes ? `bytes: ${formatBytes(pair.link.bytes)}` : '',
     pair.link.status ? `status: ${pair.link.status}` : '',
   ].filter(Boolean).join('\n');
+  const linkButtonStyle: React.CSSProperties = {
+    border: 'none',
+    background: 'transparent',
+    padding: 0,
+    color: MUTED_COLOR,
+    fontSize: 8,
+    lineHeight: 1,
+    fontFamily: 'var(--font-mono, monospace)',
+    cursor: 'pointer',
+    textAlign: 'left',
+  };
 
   return (
     <div
@@ -602,8 +613,24 @@ const InsertPairBar: React.FC<{
           background: pair.color,
         }} />
         <span>{laneLabel}</span>
-        <span style={{ display: 'block', marginTop: 2, color: MUTED_COLOR, fontSize: 8, lineHeight: 1 }}>
-          Remote table INSERT {'->'} async insert flush
+        <span style={{ display: 'flex', alignItems: 'center', gap: 4, marginTop: 2, color: MUTED_COLOR, fontSize: 8, lineHeight: 1 }}>
+          <button
+            type="button"
+            onClick={() => onNavigate(pair.link.queryId)}
+            title={`Open remote table INSERT ${pair.link.queryId}`}
+            style={linkButtonStyle}
+          >
+            insert
+          </button>
+          <span>{'->'}</span>
+          <button
+            type="button"
+            onClick={() => onNavigate(pair.link.flushQueryId)}
+            title={`Open async insert flush ${pair.link.flushQueryId}`}
+            style={linkButtonStyle}
+          >
+            flush
+          </button>
         </span>
       </div>
 
@@ -672,6 +699,7 @@ const InsertPairBar: React.FC<{
           width: 1,
           background: 'rgba(245, 158, 11, 0.65)',
           opacity: 0.7,
+          pointerEvents: 'none',
         }} />
       </div>
 
@@ -685,8 +713,22 @@ const InsertPairBar: React.FC<{
         paddingLeft: 6,
         lineHeight: 1.35,
       }}>
-        <div>{pair.insertNode ? fmtMs(pair.insertNode.queryDurationMs) : '-'}</div>
-        <div>{pair.flushNode ? fmtMs(pair.flushNode.queryDurationMs) : '-'}</div>
+        <button
+          type="button"
+          onClick={() => onNavigate(pair.link.queryId)}
+          title={`Open remote table INSERT ${pair.link.queryId}`}
+          style={{ ...linkButtonStyle, display: 'block', width: '100%', textAlign: 'right', color: insertActive ? '#58a6ff' : 'var(--text-muted)', fontSize: 9, lineHeight: 1.35 }}
+        >
+          {pair.insertNode ? fmtMs(pair.insertNode.queryDurationMs) : '-'}
+        </button>
+        <button
+          type="button"
+          onClick={() => onNavigate(pair.link.flushQueryId)}
+          title={`Open async insert flush ${pair.link.flushQueryId}`}
+          style={{ ...linkButtonStyle, display: 'block', width: '100%', textAlign: 'right', color: flushActive ? '#58a6ff' : 'var(--text-muted)', fontSize: 9, lineHeight: 1.35 }}
+        >
+          {pair.flushNode ? fmtMs(pair.flushNode.queryDurationMs) : '-'}
+        </button>
       </div>
     </div>
   );

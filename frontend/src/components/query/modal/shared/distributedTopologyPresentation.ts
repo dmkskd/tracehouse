@@ -1,5 +1,7 @@
 import type {
   DistributedExecutionFlowEventKind,
+  DistributedTopologyNode,
+  SubQueryInfo,
   TopologyNodeRole,
 } from '@tracehouse/core';
 
@@ -13,7 +15,7 @@ const REMOTE_EXECUTION_NOUN: Partial<Record<TopologyNodeRole, string>> = {
 
 const EVENT_TITLE: Partial<Record<DistributedExecutionFlowEventKind, string>> = {
   coordinator_started: 'Coordinator accepted query',
-  async_insert_buffered: 'Async insert linked to flush',
+  async_insert_buffered: 'Remote INSERT buffered for async flush',
   local_read_started: 'Local read started',
   local_read_completed: 'Local read folded into coordinator',
   coordinator_merge: 'Coordinator merged remote results',
@@ -23,6 +25,20 @@ const EVENT_TITLE: Partial<Record<DistributedExecutionFlowEventKind, string>> = 
 
 function remoteExecutionNoun(role?: TopologyNodeRole): string {
   return role ? REMOTE_EXECUTION_NOUN[role] ?? 'Remote query' : 'Remote query';
+}
+
+export function isWritePathRole(role?: TopologyNodeRole): boolean {
+  return role === 'insert_forwarder' || role === 'async_insert_flush';
+}
+
+export function topologyNodeWorkRows(node?: DistributedTopologyNode, subQuery?: SubQueryInfo): number {
+  if (!node) return subQuery?.read_rows ?? 0;
+  return isWritePathRole(node.role) ? Math.max(node.writtenRows, node.readRows) : node.readRows;
+}
+
+export function topologyNodeWorkBytes(node?: DistributedTopologyNode, subQuery?: SubQueryInfo): number {
+  if (!node) return subQuery?.read_bytes ?? 0;
+  return isWritePathRole(node.role) ? Math.max(node.writtenBytes, node.readBytes) : node.readBytes;
 }
 
 export function distributedFlowEventTitle(

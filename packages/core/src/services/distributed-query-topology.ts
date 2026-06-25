@@ -106,11 +106,15 @@ export interface AsyncInsertLogInput {
   hostname?: string;
   database?: string;
   table?: string;
+  format?: string;
+  dataKind?: string;
   status?: string;
   exception?: string;
   rows?: number;
   bytes?: number;
   eventTimeMicroseconds?: string;
+  flushTimeMicroseconds?: string;
+  timeoutMilliseconds?: number;
 }
 
 export type DistributedExecutionPhaseKind =
@@ -238,11 +242,15 @@ export interface DistributedAsyncInsertLink {
   hostname?: string;
   database?: string;
   table?: string;
+  format?: string;
+  dataKind?: string;
   status?: string;
   exception?: string;
   rows?: number;
   bytes?: number;
   eventTimeMicroseconds?: string;
+  flushTimeMicroseconds?: string;
+  timeoutMilliseconds?: number;
   confidence: TopologyConfidence;
   evidence: TopologyEvidence[];
 }
@@ -433,6 +441,10 @@ export function topologyNodeRoleText(role: TopologyNodeRole | 'local_reader'): s
     case 'shard_leader': return 'shard coordinator';
     case 'nested_coordinator': return 'nested coordinator';
     case 'replica_reader': return 'reader';
+    case 'insert_forwarder': return 'remote table INSERT';
+    case 'async_insert_flush': return 'async insert flush';
+    case 'object_storage_worker': return 'object worker';
+    case 'hybrid_segment': return 'hybrid segment';
     case 'local_reader': return 'local reader';
     default: return role.replace(/_/g, ' ');
   }
@@ -1315,11 +1327,15 @@ function buildAsyncInsertLinks(asyncInsertLogs: AsyncInsertLogInput[] = []): Dis
         hostname: log.hostname,
         database: log.database,
         table: log.table,
+        format: log.format,
+        dataKind: log.dataKind,
         status: log.status,
         exception: log.exception,
         rows: log.rows ?? 0,
         bytes: log.bytes ?? 0,
         eventTimeMicroseconds: log.eventTimeMicroseconds,
+        flushTimeMicroseconds: log.flushTimeMicroseconds,
+        timeoutMilliseconds: log.timeoutMilliseconds,
         confidence: 'high',
         evidence: [{
           source: 'asynchronous_insert_log',
@@ -1556,7 +1572,7 @@ function buildExecutionFlow(
       title: 'Async insert buffered',
       detail: [
         tableName ? `Buffered for ${tableName}.` : 'Buffered for async insert flush.',
-        link.flushQueryId ? `Flush query ${link.flushQueryId}.` : '',
+        link.flushQueryId ? 'Flush query recorded in query_log.' : '',
         eventDetailMetrics(link.rows ?? 0, link.bytes ?? 0),
       ].filter(Boolean).join(' '),
       queryId: link.flushQueryId,

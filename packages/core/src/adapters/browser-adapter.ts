@@ -15,6 +15,7 @@ export class BrowserAdapter implements IClickHouseAdapter {
 
   private client: ClickHouseClient;
   private sessionPrefix: string;
+  private static recentNetworkErrors = new Map<string, number>();
 
   constructor(config: ConnectionConfig) {
     const host = applyStickyRouting(config.host, config.useCloudStickyRouting);
@@ -186,12 +187,26 @@ export class BrowserAdapter implements IClickHouseAdapter {
       category = 'unknown';
     }
 
-    // Log at debug level for query errors (often expected from feature probes),
-    // error level for connection/auth/timeout issues.
-    const log = category === 'query' ? console.debug : console.error;
-    log('[BrowserAdapter] Query error:', msg);
-    if (sql) {
-      log('[BrowserAdapter] SQL:', sql.substring(0, 500) + (sql.length > 500 ? '...' : ''));
+    // Log SQL for ClickHouse-side query errors. Browser/network failures are
+    // transport-level and can fire on every poll/probe, so keep them compact.
+    if (category === 'query') {
+      console.debug('[BrowserAdapter] Query error:', msg);
+      if (sql) {
+        console.debug('[BrowserAdapter] SQL:', sql.substring(0, 500) + (sql.length > 500 ? '...' : ''));
+      }
+    } else if (category === 'network') {
+      const now = Date.now();
+      const key = msg;
+      const last = BrowserAdapter.recentNetworkErrors.get(key) ?? 0;
+      BrowserAdapter.recentNetworkErrors.set(key, now);
+      if (now - last > 30_000) {
+        console.warn('[BrowserAdapter] Network error:', msg);
+        console.warn('[BrowserAdapter] Direct browser connections require ClickHouse HTTP CORS to allow this app origin, or use the proxy adapter.');
+      } else {
+        console.debug('[BrowserAdapter] Network error:', msg);
+      }
+    } else {
+      console.error('[BrowserAdapter] Query error:', msg);
     }
 
     return new AdapterError(msg, category, cause);

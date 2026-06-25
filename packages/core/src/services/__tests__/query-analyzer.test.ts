@@ -172,4 +172,83 @@ describe('QueryAnalyzer distributed topology async insert links', () => {
     expect(adapter.queries.some(sql => sql.includes('system.asynchronous_insert_log'))).toBe(true);
     expect(adapter.queries.some(sql => sql.includes("query_id IN ('flush-1')"))).toBe(true);
   });
+
+  it('loads source Insert query_log rows when the active query is AsyncInsertFlush', async () => {
+    const adapter = new MockAdapter();
+    adapter.responseQueue = [
+      [
+        {
+          query_id: 'flush-1',
+          initial_query_id: 'flush-1',
+          is_initial_query: 1,
+          normalized_query_hash: '222',
+          hostname: 'node-a',
+          query_kind: 'AsyncInsertFlush',
+          query_start_time_microseconds: '2026-06-18 12:00:00.002000',
+          query_duration_ms: 3,
+          memory_usage: 1200,
+          written_rows: 10,
+          written_bytes: 100,
+          tables: ['db.local_table'],
+          query_preview: 'AsyncInsertFlush db.local_table',
+          ProfileEvents: { AsyncInsertRows: 10 },
+        },
+      ],
+      [],
+      [],
+      [
+        {
+          event_time_microseconds: '2026-06-18 12:00:00.001000',
+          flush_time_microseconds: '2026-06-18 12:00:00.002000',
+          timeout_milliseconds: 200,
+          hostname: 'node-a',
+          query_id: 'insert-root',
+          flush_query_id: 'flush-1',
+          database: 'db',
+          table: 'local_table',
+          format: 'Native',
+          data_kind: 'Preprocessed',
+          status: 'Ok',
+          exception: '',
+          rows: 10,
+          bytes: 100,
+        },
+      ],
+      [
+        {
+          query_id: 'insert-root',
+          initial_query_id: 'insert-root',
+          is_initial_query: 1,
+          normalized_query_hash: '111',
+          hostname: 'node-a',
+          query_kind: 'Insert',
+          query_start_time_microseconds: '2026-06-18 12:00:00.000000',
+          query_duration_ms: 2,
+          memory_usage: 1000,
+          written_rows: 10,
+          written_bytes: 100,
+          tables: ['db.dist_table'],
+          query_preview: 'INSERT INTO db.dist_table VALUES',
+          ProfileEvents: { InsertedRows: 10 },
+        },
+      ],
+      [],
+    ];
+    const analyzer = new QueryAnalyzer(adapter);
+
+    const topology = await analyzer.getDistributedTopology('flush-1', '2026-06-18');
+
+    expect(topology.nodes.map(node => [node.queryId, node.role])).toEqual([
+      ['insert-root', 'insert_client'],
+      ['flush-1', 'async_insert_flush'],
+    ]);
+    expect(topology.asyncInsertLinks[0]).toMatchObject({
+      queryId: 'insert-root',
+      flushQueryId: 'flush-1',
+      format: 'Native',
+      dataKind: 'Preprocessed',
+      timeoutMilliseconds: 200,
+    });
+    expect(adapter.queries.some(sql => sql.includes("query_id IN ('insert-root')"))).toBe(true);
+  });
 });
