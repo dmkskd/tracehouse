@@ -20,6 +20,8 @@ jobs:
           node-version: 22
       - uses: extractions/setup-just@v2
 
+      # Regenerate the lockfile on the runner because npm records some native
+      # optional dependencies differently per platform.
       - run: rm -f package-lock.json
       - run: just install
       - run: just test-frontend
@@ -36,6 +38,8 @@ jobs:
           node-version: 22
       - uses: extractions/setup-just@v2
 
+      # Regenerate the lockfile on the runner because npm records some native
+      # optional dependencies differently per platform.
       - run: rm -f package-lock.json
       - run: just install
       - run: just build-single
@@ -62,6 +66,8 @@ jobs:
           node-version: 22
       - uses: extractions/setup-just@v2
 
+      # Regenerate the lockfile on the runner because npm records some native
+      # optional dependencies differently per platform.
       - run: rm -f package-lock.json
       - run: just install
       - run: just grafana-plugin-build
@@ -174,6 +180,8 @@ jobs:
           echo '[target.aarch64-unknown-linux-gnu]' >> ~/.cargo/config.toml
           echo 'linker = "aarch64-linux-gnu-gcc"' >> ~/.cargo/config.toml
 
+      # Regenerate the lockfile on the runner because npm records some native
+      # optional dependencies differently per platform.
       - run: rm -f package-lock.json
       - run: just install
       - name: Build frontend for binary embedding

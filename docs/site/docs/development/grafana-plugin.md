@@ -18,6 +18,55 @@ This builds the plugin first (`just grafana-plugin-build`), then starts ClickHou
 
 The Grafana service mounts the built plugin from `grafana-app-plugin/dist/` and auto-installs the ClickHouse datasource plugin. Anonymous auth is enabled for local development.
 
+### Testing against different Grafana versions
+
+`just docker-start-full` accepts an optional Grafana image tag:
+
+```bash
+just docker-start-full 11.6.3
+just docker-start-full 13.0.3
+just docker-start-full latest
+```
+
+The default is `13.0.3`. The background and refresh recipes accept the same argument:
+
+```bash
+just docker-start-full-bg 11.6.3
+just docker-refresh-grafana-plugin 11.6.3
+just docker-refresh-grafana-plugin-fast 11.6.3
+```
+
+When switching across major versions or downgrading Grafana, clear the persisted Grafana data volume to avoid database migration conflicts:
+
+```bash
+just docker-stop
+docker volume rm tracehouse_tracehouse-grafana-data
+just docker-start-full 11.6.3
+```
+
+### Running the exact release plugin locally
+
+`just docker-start-full` mounts your local `grafana-app-plugin/dist/` directory. To reproduce what users are testing from a GitHub release, run Grafana with the packaged release ZIP instead:
+
+```bash
+just docker-start-full-release v0.16.12
+```
+
+This downloads the versioned plugin ZIP, such as `dmkskd-tracehouse-app-0.16.12.zip`, from the release, extracts it under `/private/tmp`, and mounts that extracted plugin directory into Grafana. It does not rebuild the plugin locally.
+
+You can also run a ZIP you already have:
+
+```bash
+just docker-start-full-plugin-zip /path/to/dmkskd-tracehouse-app-0.16.12.zip
+```
+
+Both commands accept the optional Grafana version argument:
+
+```bash
+just docker-start-full-release v0.16.12 13.0.3
+just docker-start-full-plugin-zip /path/to/dmkskd-tracehouse-app-0.16.12.zip dev-preview-react19
+```
+
 ### Development with watch mode
 
 For iterating on the plugin:

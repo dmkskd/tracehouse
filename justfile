@@ -177,29 +177,76 @@ docker-start-bg:
 
 # Start everything: ClickHouse + MinIO + Prometheus + Grafana + Tempo (builds Grafana plugin first)
 [group('docker')]
-docker-start-full: grafana-plugin-build
-    docker compose -f infra/docker/docker-compose.yml --profile full up
+docker-start-full grafana_version="13.0.3": grafana-plugin-build
+    GRAFANA_VERSION="{{grafana_version}}" docker compose -f infra/docker/docker-compose.yml --profile full up
 
 # Start everything in background (builds Grafana plugin first)
 [group('docker')]
-docker-start-full-bg: grafana-plugin-build
-    @docker compose -f infra/docker/docker-compose.yml --profile full up -d
+docker-start-full-bg grafana_version="13.0.3": grafana-plugin-build
+    @GRAFANA_VERSION="{{grafana_version}}" docker compose -f infra/docker/docker-compose.yml --profile full up -d
     @echo "Waiting for ClickHouse..."
     @sleep 3
 
+# Start everything with an already-packaged Grafana plugin ZIP instead of local dist
+[group('docker')]
+docker-start-full-plugin-zip plugin_zip grafana_version="13.0.3":
+    #!/usr/bin/env bash
+    set -euo pipefail
+    PLUGIN_ZIP="{{plugin_zip}}"
+    if [[ ! -f "$PLUGIN_ZIP" ]]; then
+      echo "Plugin ZIP not found: $PLUGIN_ZIP" >&2
+      exit 1
+    fi
+    PLUGIN_ZIP="$(cd "$(dirname "$PLUGIN_ZIP")" && pwd)/$(basename "$PLUGIN_ZIP")"
+    STAGE="/private/tmp/tracehouse-grafana-plugin-release"
+    rm -rf "$STAGE"
+    mkdir -p "$STAGE"
+    unzip -q "$PLUGIN_ZIP" -d "$STAGE"
+    if [[ -d "$STAGE/dmkskd-tracehouse-app" ]]; then
+      PLUGIN_DIR="$STAGE/dmkskd-tracehouse-app"
+    elif [[ -f "$STAGE/plugin.json" ]]; then
+      PLUGIN_DIR="$STAGE"
+    else
+      echo "Plugin ZIP must contain dmkskd-tracehouse-app/ or plugin.json at its root: $PLUGIN_ZIP" >&2
+      exit 1
+    fi
+    echo "Using packaged Grafana plugin: $PLUGIN_ZIP"
+    echo "Extracted plugin mount: $PLUGIN_DIR"
+    GRAFANA_VERSION="{{grafana_version}}" GRAFANA_PLUGIN_DIR="$PLUGIN_DIR" docker compose -f infra/docker/docker-compose.yml --profile full stop grafana >/dev/null 2>&1 || true
+    GRAFANA_VERSION="{{grafana_version}}" GRAFANA_PLUGIN_DIR="$PLUGIN_DIR" docker compose -f infra/docker/docker-compose.yml --profile full rm -f grafana >/dev/null 2>&1 || true
+    GRAFANA_VERSION="{{grafana_version}}" GRAFANA_PLUGIN_DIR="$PLUGIN_DIR" docker compose -f infra/docker/docker-compose.yml --profile full up
+
+# Download the Grafana plugin ZIP from a GitHub release and run that exact packaged artifact
+[group('docker')]
+docker-start-full-release tag grafana_version="13.0.3":
+    #!/usr/bin/env bash
+    set -euo pipefail
+    DOWNLOAD_DIR="/private/tmp/tracehouse-grafana-plugin-release-download"
+    rm -rf "$DOWNLOAD_DIR"
+    mkdir -p "$DOWNLOAD_DIR"
+    gh release download "{{tag}}" --pattern "dmkskd-tracehouse-app-[0-9]*.zip" --dir "$DOWNLOAD_DIR" --clobber
+    ZIP_COUNT="$(find "$DOWNLOAD_DIR" -maxdepth 1 -name "dmkskd-tracehouse-app-[0-9]*.zip" -type f | wc -l | tr -d ' ')"
+    if [[ "$ZIP_COUNT" != "1" ]]; then
+      echo "Expected one plugin ZIP in release {{tag}}, found $ZIP_COUNT" >&2
+      find "$DOWNLOAD_DIR" -maxdepth 1 -name "dmkskd-tracehouse-app-*.zip" -type f | sort >&2
+      exit 1
+    fi
+    PLUGIN_ZIP="$(find "$DOWNLOAD_DIR" -maxdepth 1 -name "dmkskd-tracehouse-app-[0-9]*.zip" -type f | sort | sed -n '1p')"
+    just docker-start-full-plugin-zip "$PLUGIN_ZIP" "{{grafana_version}}"
+
 # Rebuild plugin, recreate Grafana, and remove Grafana's persisted dashboards/cache
 [group('docker')]
-docker-refresh-grafana-plugin: grafana-plugin-build
-    @docker compose -f infra/docker/docker-compose.yml --profile full stop grafana
-    @docker compose -f infra/docker/docker-compose.yml --profile full rm -f grafana
+docker-refresh-grafana-plugin grafana_version="13.0.3": grafana-plugin-build
+    @GRAFANA_VERSION="{{grafana_version}}" docker compose -f infra/docker/docker-compose.yml --profile full stop grafana
+    @GRAFANA_VERSION="{{grafana_version}}" docker compose -f infra/docker/docker-compose.yml --profile full rm -f grafana
     @docker volume rm tracehouse_tracehouse-grafana-data 2>/dev/null || true
-    @docker compose -f infra/docker/docker-compose.yml --profile full up -d grafana
+    @GRAFANA_VERSION="{{grafana_version}}" docker compose -f infra/docker/docker-compose.yml --profile full up -d grafana
     @echo "Grafana plugin refreshed at http://localhost:3001"
 
 # Fast plugin iteration: rebuild mounted plugin dist and restart Grafana without reinstalling deps or clearing data
 [group('docker')]
-docker-refresh-grafana-plugin-fast: grafana-plugin-build-fast
-    @docker compose -f infra/docker/docker-compose.yml --profile full restart grafana
+docker-refresh-grafana-plugin-fast grafana_version="13.0.3": grafana-plugin-build-fast
+    @GRAFANA_VERSION="{{grafana_version}}" docker compose -f infra/docker/docker-compose.yml --profile full restart grafana
     @echo "Grafana plugin fast-refreshed at http://localhost:3001"
 
 # Stop docker infrastructure (all profiles)

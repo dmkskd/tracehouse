@@ -9,9 +9,12 @@
 # Via just (recommended):
 #   just docker-start                                  # ClickHouse + Iceberg (fast)
 #   just docker-start-full                             # everything (builds Grafana plugin first)
+#   just docker-start-full 11.6.3                      # everything with a specific Grafana version
+#   just docker-start-full-release v0.16.12            # everything with the plugin ZIP from a GitHub release
 #
 # Via docker compose directly:
 #   docker compose up                                  # ClickHouse + Iceberg
+#   GRAFANA_VERSION=11.6.3 docker compose --profile full up
 #   docker compose --profile monitoring up             # + Prometheus & Grafana
 #   docker compose --profile tracing up                # + Tempo
 #   docker compose --profile full up                   # everything
@@ -216,7 +219,7 @@ services:
     restart: unless-stopped
 
   grafana:
-    image: grafana/grafana:12.3.2
+    image: grafana/grafana:${GRAFANA_VERSION:-13.0.3}
     container_name: tracehouse-grafana
     profiles: [monitoring, full]
     ports:
@@ -231,7 +234,7 @@ services:
       # Dashboard JSON files
       - ./grafana/dashboards:/var/lib/grafana/dashboards
       # TraceHouse Grafana app plugin (built by `just grafana-plugin-build`)
-      - ../../grafana-app-plugin/dist:/var/lib/grafana/plugins/dmkskd-tracehouse-app
+      - ${GRAFANA_PLUGIN_DIR:-../../grafana-app-plugin/dist}:/var/lib/grafana/plugins/dmkskd-tracehouse-app
     environment:
       GF_DEFAULT_APP_MODE: development
       # Disable login for development
