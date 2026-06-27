@@ -304,11 +304,11 @@ export function MonitoringCapabilitiesCard({ className = '' }: MonitoringCapabil
                             <span style={{ fontSize: 10, color: 'var(--text-muted)', opacity: dimmed ? 0.5 : undefined }}>—</span>
                           )}
                         </td>
-                        <td style={{ padding: '3px 6px', fontSize: 10, fontFamily: 'monospace', opacity: dimmed ? 0.5 : undefined }}>
+                        <td style={{ padding: '3px 6px', fontSize: 10, fontFamily: 'monospace', opacity: dimmed ? 0.5 : undefined, maxWidth: 90 }}>
                           {cap.ttl === undefined ? '' : cap.ttl === null ? (
                             <span title="No TTL configured — data retained indefinitely" style={{ color: '#f59e0b' }}>&#x221e;</span>
                           ) : (
-                            <span style={{ color: 'var(--text-secondary)' }}>{cap.ttl}</span>
+                            <span title={cap.ttl} style={{ color: 'var(--text-secondary)', display: 'block', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{cap.ttl}</span>
                           )}
                         </td>
                       </tr>

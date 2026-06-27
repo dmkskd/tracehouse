@@ -110,6 +110,24 @@ describe('parseTTL', { tags: ['storage'] }, () => {
       const ddl = `CREATE TABLE system.metric_log (\`hostname\` LowCardinality(String), \`event_date\` Date, \`event_time\` DateTime, ...) ENGINE = MergeTree PARTITION BY toYYYYMM(event_date) ORDER BY (event_date, event_time) SETTINGS index_granularity = 8192`;
       expect(parseTTL(ddl)).toBeNull();
     });
+
+    it('ignores TTL text inside metric_log ProfileEvent names and comments', () => {
+      const ddl = `CREATE TABLE system.metric_log (
+        \`hostname\` LowCardinality(String),
+        \`event_date\` Date,
+        \`ProfileEvent_KeeperTTLRemoveRequestsDropped\` UInt64 COMMENT 'Number of TTL remove requests dropped because the queue was full',
+        \`ProfileEvent_KeeperWatchTriggered\` UInt64 COMMENT 'Number of watch triggers'
+      ) ENGINE = MergeTree PARTITION BY toYYYYMM(event_date) ORDER BY (event_date, event_time) SETTINGS index_granularity = 8192`;
+      expect(parseTTL(ddl)).toBeNull();
+    });
+
+    it('parses a real TTL when quoted identifiers appear before it', () => {
+      const ddl = `CREATE TABLE t (
+        \`KeeperTTLRemoveRequestsDropped\` UInt64 COMMENT 'Number of TTL remove requests dropped',
+        \`event_date\` Date
+      ) ENGINE = MergeTree ORDER BY \`event_date\` TTL \`event_date\` + INTERVAL 7 DAY DELETE SETTINGS index_granularity = 8192`;
+      expect(parseTTL(ddl)).toBe('7 days');
+    });
   });
 });
 
