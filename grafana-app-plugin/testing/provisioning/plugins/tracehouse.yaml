@@ -1,0 +1,6 @@
+apiVersion: 1
+
+apps:
+  - type: dmkskd-tracehouse-app
+    org_id: 1
+    disabled: false

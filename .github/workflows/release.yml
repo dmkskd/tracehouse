@@ -86,21 +86,10 @@ jobs:
       - name: Package plugin
         id: package_plugin
         run: |
-          PLUGIN_ID=$(node -p "require('./grafana-app-plugin/dist/plugin.json').id")
-          PLUGIN_VERSION=$(node -p "require('./grafana-app-plugin/dist/plugin.json').info.version")
-          PLUGIN_ARCHIVE="${PLUGIN_ID}-${PLUGIN_VERSION}.zip"
-          PLUGIN_SHA1="${PLUGIN_ARCHIVE}.sha1"
-
-          mkdir -p "release/${PLUGIN_ID}"
-          cp -r grafana-app-plugin/dist/* "release/${PLUGIN_ID}/"
-          cd release
-          zip -qr "${PLUGIN_ARCHIVE}" "${PLUGIN_ID}"
-          sha1sum "${PLUGIN_ARCHIVE}" | cut -f1 -d' ' > "${PLUGIN_SHA1}"
-
-          echo "archive=release/${PLUGIN_ARCHIVE}" >> "$GITHUB_OUTPUT"
-          echo "archive_sha1=release/${PLUGIN_SHA1}" >> "$GITHUB_OUTPUT"
-          echo "archive_name=${PLUGIN_ARCHIVE}" >> "$GITHUB_OUTPUT"
-          echo "archive_sha1_name=${PLUGIN_SHA1}" >> "$GITHUB_OUTPUT"
+          bash grafana-app-plugin/scripts/package-plugin.sh release | while IFS= read -r line; do
+            echo "$line"
+            echo "$line" >> "$GITHUB_OUTPUT"
+          done
 
       - name: Attest plugin build provenance
         id: attest_plugin

@@ -541,6 +541,13 @@ grafana-plugin-build-fast:
     cd grafana-app-plugin && npm run build
     @echo "Grafana app plugin fast-built → grafana-app-plugin/dist/"
 
+# Build and package the Grafana plugin using the same ZIP layout as the GitHub release workflow
+[group('grafana-app')]
+grafana-plugin-package-local: grafana-plugin-build
+    #!/usr/bin/env bash
+    set -euo pipefail
+    bash grafana-app-plugin/scripts/package-plugin.sh release
+
 # Dev build with watch mode
 [group('grafana-app')]
 grafana-plugin-dev: install grafana-plugin-install
@@ -562,6 +569,133 @@ grafana-plugin-install:
 [group('grafana-app')]
 grafana-plugin-validate *analyzer="":
     ./grafana-app-plugin/scripts/validate.sh {{analyzer}}
+
+# Show examples for the minimal Grafana plugin test stack
+[group('grafana-app')]
+grafana-plugin-test-help:
+    @echo "Release ZIP test:"
+    @echo "  just grafana-plugin-test-release v0.16.13"
+    @echo "  just grafana-plugin-test-release v0.16.13 13.0.3"
+    @echo "  just grafana-plugin-test-release v0.16.13 13.0.3 3005"
+    @echo ""
+    @echo "Local dist test:"
+    @echo "  just grafana-plugin-test-local"
+    @echo "  just grafana-plugin-test-local 13.0.3"
+    @echo "  just grafana-plugin-test-local 13.0.3 3005"
+    @echo ""
+    @echo "Local packaged ZIP test:"
+    @echo "  just grafana-plugin-test-local-zip"
+    @echo "  just grafana-plugin-test-local-zip 13.0.3"
+    @echo "  just grafana-plugin-test-local-zip 13.0.3 3005"
+    @echo "  just grafana-plugin-package-local && just grafana-plugin-test-local-zip-fast 13.0.3 3003"
+    @echo ""
+    @echo "Open:"
+    @echo "  http://localhost:3003/a/dmkskd-tracehouse-app"
+    @echo ""
+    @echo "Stop:"
+    @echo "  just grafana-plugin-test-stop"
+
+# Test a GitHub release plugin ZIP in minimal Grafana + ClickHouse; tag is required
+[group('grafana-app')]
+grafana-plugin-test-release tag grafana_version="13.0.3" port="3003":
+    #!/usr/bin/env bash
+    set -euo pipefail
+    TAG="{{tag}}"
+    VERSION="${TAG#v}"
+    PROJECT="tracehouse-grafana-plugin-test-{{port}}"
+    PLUGIN_URL="https://github.com/dmkskd/tracehouse/releases/download/${TAG}/dmkskd-tracehouse-app-${VERSION}.zip"
+    PLUGIN_DIST="/private/tmp/${PROJECT}/plugin-dist"
+    rm -rf "$PLUGIN_DIST"
+    mkdir -p "$PLUGIN_DIST"
+    docker compose -p "$PROJECT" -f grafana-app-plugin/testing/docker-compose.yml down --remove-orphans >/dev/null 2>&1 || true
+    echo "Grafana: {{grafana_version}}"
+    echo "Plugin:  ${PLUGIN_URL}"
+    echo "URL:     http://localhost:{{port}}/a/dmkskd-tracehouse-app"
+    GRAFANA_VERSION="{{grafana_version}}" \
+    GRAFANA_TEST_PORT="{{port}}" \
+    CLICKHOUSE_TEST_HTTP_PORT="$(({{port}} + 5121))" \
+    GRAFANA_PLUGIN_TEST_DIST="$PLUGIN_DIST" \
+    GRAFANA_INSTALL_PLUGINS="${PLUGIN_URL};dmkskd-tracehouse-app,grafana-clickhouse-datasource" \
+      docker compose -p "$PROJECT" -f grafana-app-plugin/testing/docker-compose.yml up --pull always
+
+# Test the locally built plugin dist in minimal Grafana + ClickHouse
+[group('grafana-app')]
+grafana-plugin-test-local grafana_version="13.0.3" port="3003": grafana-plugin-build
+    #!/usr/bin/env bash
+    set -euo pipefail
+    PROJECT="tracehouse-grafana-plugin-test-{{port}}"
+    PLUGIN_DIST="/private/tmp/${PROJECT}/plugin-dist"
+    docker compose -p "$PROJECT" -f grafana-app-plugin/testing/docker-compose.yml down --remove-orphans >/dev/null 2>&1 || true
+    rm -rf "$PLUGIN_DIST"
+    mkdir -p "$PLUGIN_DIST/dmkskd-tracehouse-app"
+    cp -R grafana-app-plugin/dist/. "$PLUGIN_DIST/dmkskd-tracehouse-app/"
+    echo "Grafana: {{grafana_version}}"
+    echo "Plugin:  local grafana-app-plugin/dist"
+    echo "URL:     http://localhost:{{port}}/a/dmkskd-tracehouse-app"
+    GRAFANA_VERSION="{{grafana_version}}" \
+    GRAFANA_TEST_PORT="{{port}}" \
+    CLICKHOUSE_TEST_HTTP_PORT="$(({{port}} + 5121))" \
+    GRAFANA_PLUGIN_TEST_DIST="$PLUGIN_DIST" \
+      docker compose -p "$PROJECT" -f grafana-app-plugin/testing/docker-compose.yml up --pull always
+
+# Test the locally packaged plugin ZIP in minimal Grafana + ClickHouse
+[group('grafana-app')]
+grafana-plugin-test-local-zip grafana_version="13.0.3" port="3003": grafana-plugin-package-local
+    just grafana-plugin-test-local-zip-fast "{{grafana_version}}" "{{port}}"
+
+# Test the existing locally packaged plugin ZIP without rebuilding it
+[group('grafana-app')]
+grafana-plugin-test-local-zip-fast grafana_version="13.0.3" port="3003":
+    #!/usr/bin/env bash
+    set -euo pipefail
+    PROJECT="tracehouse-grafana-plugin-test-{{port}}"
+    PLUGIN_ID="$(node -p "require('./grafana-app-plugin/dist/plugin.json').id")"
+    PLUGIN_VERSION="$(node -p "require('./grafana-app-plugin/dist/plugin.json').info.version")"
+    PLUGIN_ZIP="release/${PLUGIN_ID}-${PLUGIN_VERSION}.zip"
+    STAGE="/private/tmp/${PROJECT}/zip-stage"
+    PLUGIN_DIST="/private/tmp/${PROJECT}/plugin-dist"
+
+    if [[ ! -f "$PLUGIN_ZIP" ]]; then
+      echo "Packaged plugin ZIP not found: $PLUGIN_ZIP" >&2
+      echo "Run: just grafana-plugin-package-local" >&2
+      exit 1
+    fi
+
+    rm -rf "$STAGE"
+    mkdir -p "$STAGE"
+    unzip -q "$PLUGIN_ZIP" -d "$STAGE"
+
+    docker compose -p "$PROJECT" -f grafana-app-plugin/testing/docker-compose.yml down --remove-orphans >/dev/null 2>&1 || true
+    rm -rf "$PLUGIN_DIST"
+    mkdir -p "$PLUGIN_DIST"
+    cp -R "$STAGE/${PLUGIN_ID}" "$PLUGIN_DIST/"
+
+    echo "Grafana: {{grafana_version}}"
+    echo "Plugin:  local packaged ZIP ${PLUGIN_ZIP}"
+    echo "URL:     http://localhost:{{port}}/a/dmkskd-tracehouse-app"
+    GRAFANA_VERSION="{{grafana_version}}" \
+    GRAFANA_TEST_PORT="{{port}}" \
+    CLICKHOUSE_TEST_HTTP_PORT="$(({{port}} + 5121))" \
+    GRAFANA_PLUGIN_TEST_DIST="$PLUGIN_DIST" \
+      docker compose -p "$PROJECT" -f grafana-app-plugin/testing/docker-compose.yml up --pull always
+
+# Stop the minimal Grafana plugin test stack
+[group('grafana-app')]
+grafana-plugin-test-stop port="":
+    #!/usr/bin/env bash
+    set -euo pipefail
+    if [[ -n "{{port}}" ]]; then
+      docker compose -p "tracehouse-grafana-plugin-test-{{port}}" -f grafana-app-plugin/testing/docker-compose.yml down
+      exit 0
+    fi
+
+    docker compose -p tracehouse-grafana-plugin-test -f grafana-app-plugin/testing/docker-compose.yml down >/dev/null 2>&1 || true
+    docker compose ls --format json \
+      | grep -o 'tracehouse-grafana-plugin-test-[0-9]*' \
+      | sort -u \
+      | while IFS= read -r project; do
+          docker compose -p "$project" -f grafana-app-plugin/testing/docker-compose.yml down
+        done
 
 # ─────────────────────────────────────────────────────────────────
 # SINGLE FILE BUILD

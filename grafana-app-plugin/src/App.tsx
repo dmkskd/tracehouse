@@ -10,9 +10,14 @@ import { LocationContext, AppLocation } from './hooks/useAppLocation';
 import { useUserPreferenceStore } from '@frontend/stores/userPreferenceStore';
 import { useRefreshSettingsStore, useGlobalLastUpdatedStore } from '@frontend/stores/refreshSettingsStore';
 import { useRefreshConfig, type RefreshRateOption } from '@tracehouse/ui-shared';
+import pluginJson from './plugin.json';
 
 // eslint-disable-next-line @typescript-eslint/no-require-imports
 require('./styles.css');
+
+const pluginVersion = (pluginJson as { info?: { version?: string } }).info?.version ?? 'dev';
+const reactRuntimeVersion = React.version ?? 'unknown';
+const grafanaRuntimeVersion = (config as unknown as { buildInfo?: { version?: string } }).buildInfo?.version;
 
 /**
  * Bridge Grafana's theme to the frontend's data-theme attribute.
@@ -187,6 +192,20 @@ const SettingsDropdown: React.FC = () => {
               textTransform: 'uppercase', letterSpacing: '0.5px',
             }}>Beta</span>
           </label>
+
+          <div style={{
+            borderTop: '1px solid var(--border-primary)',
+            paddingTop: 8,
+            textAlign: 'center',
+            fontSize: 10,
+            lineHeight: 1.5,
+            color: 'var(--text-tertiary)',
+            fontFamily: "'Share Tech Mono', monospace",
+          }}>
+            <div>TraceHouse v{pluginVersion}</div>
+            <div>React runtime {reactRuntimeVersion}</div>
+            {grafanaRuntimeVersion && <div>Grafana {grafanaRuntimeVersion}</div>}
+          </div>
         </div>
       )}
     </div>

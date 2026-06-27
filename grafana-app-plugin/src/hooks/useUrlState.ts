@@ -123,7 +123,7 @@ export function decodeSql(encoded: string): string {
 }
 
 const ANALYTICS_DEFAULTS: AnalyticsUrlState = {
-  tab: 'tables',
+  tab: 'dashboards',
   view: 'table',
   style: '2d',
   lookback: 7,

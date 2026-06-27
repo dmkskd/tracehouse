@@ -57,7 +57,7 @@
         "path": "img/screenshots/time-travel.png"
       }
     ],
-    "version": "0.16.13",
+    "version": "0.16.14",
     "updated": "2026-02-17"
   },
   "includes": [
@@ -127,7 +127,7 @@
     }
   ],
   "dependencies": {
-    "grafanaDependency": ">=10.0.0",
+    "grafanaDependency": ">=11.0.0",
     "plugins": []
   }
 }
