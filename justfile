@@ -563,7 +563,7 @@ grafana-plugin-dev-fast:
 # Install Grafana plugin dependencies
 [group('grafana-app')]
 grafana-plugin-install:
-    cd grafana-app-plugin && npm install
+    npm run deps:install
 
 # Run Grafana plugin validator (requires Docker). Pass analyzer name to run a single check.
 [group('grafana-app')]
@@ -883,6 +883,6 @@ clean:
 # Install dependencies
 [group('setup')]
 install:
-    npm install
+    npm run deps:install
     npm run build --workspace=packages/core
     npm run build --workspace=packages/ui-shared

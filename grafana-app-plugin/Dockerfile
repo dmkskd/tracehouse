@@ -11,7 +11,6 @@ WORKDIR /app
 
 # Copy root workspace config
 COPY package.json package-lock.json ./
-COPY .npmrc ./
 
 # Copy the packages the plugin depends on
 COPY packages/core/package.json packages/core/
@@ -25,7 +24,7 @@ COPY frontend/package.json frontend/
 
 # Install all workspace dependencies
 # Delete macOS lock file — npm/cli#4828 causes it to skip Linux optional deps (e.g. lightningcss native bindings)
-RUN rm -f package-lock.json && npm install --workspaces --include-workspace-root
+RUN rm -f package-lock.json && npm run deps:install:workspaces
 
 # Copy source files
 COPY packages/core/ packages/core/

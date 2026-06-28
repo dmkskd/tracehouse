@@ -8,6 +8,8 @@
     "grafana-app-plugin"
   ],
   "scripts": {
+    "deps:install": "npm install --legacy-peer-deps",
+    "deps:install:workspaces": "npm install --legacy-peer-deps --workspaces --include-workspace-root",
     "build": "npm run build --workspace packages/core && npm run build --workspace packages/ui-shared && npm run build --workspace grafana-app-plugin && rm -rf dist && cp -R grafana-app-plugin/dist dist",
     "sign": "cd grafana-app-plugin && npx @grafana/sign-plugin@latest",
     "test": "npm run test --workspaces --if-present",
