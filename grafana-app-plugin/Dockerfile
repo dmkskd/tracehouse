@@ -11,6 +11,7 @@ WORKDIR /app
 
 # Copy root workspace config
 COPY package.json package-lock.json ./
+COPY .npmrc ./
 
 # Copy the packages the plugin depends on
 COPY packages/core/package.json packages/core/
