@@ -177,19 +177,19 @@ docker-start-bg:
 
 # Start everything: ClickHouse + MinIO + Prometheus + Grafana + Tempo (builds Grafana plugin first)
 [group('docker')]
-docker-start-full grafana_version="13.0.3": grafana-plugin-build
+docker-start-full grafana_version="13.1.0": grafana-plugin-build
     GRAFANA_VERSION="{{grafana_version}}" docker compose -f infra/docker/docker-compose.yml --profile full up
 
 # Start everything in background (builds Grafana plugin first)
 [group('docker')]
-docker-start-full-bg grafana_version="13.0.3": grafana-plugin-build
+docker-start-full-bg grafana_version="13.1.0": grafana-plugin-build
     @GRAFANA_VERSION="{{grafana_version}}" docker compose -f infra/docker/docker-compose.yml --profile full up -d
     @echo "Waiting for ClickHouse..."
     @sleep 3
 
 # Start everything with an already-packaged Grafana plugin ZIP instead of local dist
 [group('docker')]
-docker-start-full-plugin-zip plugin_zip grafana_version="13.0.3":
+docker-start-full-plugin-zip plugin_zip grafana_version="13.1.0":
     #!/usr/bin/env bash
     set -euo pipefail
     PLUGIN_ZIP="{{plugin_zip}}"
@@ -218,7 +218,7 @@ docker-start-full-plugin-zip plugin_zip grafana_version="13.0.3":
 
 # Download the Grafana plugin ZIP from a GitHub release and run that exact packaged artifact
 [group('docker')]
-docker-start-full-release tag grafana_version="13.0.3":
+docker-start-full-release tag grafana_version="13.1.0":
     #!/usr/bin/env bash
     set -euo pipefail
     DOWNLOAD_DIR="/private/tmp/tracehouse-grafana-plugin-release-download"
@@ -236,7 +236,7 @@ docker-start-full-release tag grafana_version="13.0.3":
 
 # Rebuild plugin, recreate Grafana, and remove Grafana's persisted dashboards/cache
 [group('docker')]
-docker-refresh-grafana-plugin grafana_version="13.0.3": grafana-plugin-build
+docker-refresh-grafana-plugin grafana_version="13.1.0": grafana-plugin-build
     @GRAFANA_VERSION="{{grafana_version}}" docker compose -f infra/docker/docker-compose.yml --profile full stop grafana
     @GRAFANA_VERSION="{{grafana_version}}" docker compose -f infra/docker/docker-compose.yml --profile full rm -f grafana
     @docker volume rm tracehouse_tracehouse-grafana-data 2>/dev/null || true
@@ -245,7 +245,7 @@ docker-refresh-grafana-plugin grafana_version="13.0.3": grafana-plugin-build
 
 # Fast plugin iteration: rebuild mounted plugin dist and restart Grafana without reinstalling deps or clearing data
 [group('docker')]
-docker-refresh-grafana-plugin-fast grafana_version="13.0.3": grafana-plugin-build-fast
+docker-refresh-grafana-plugin-fast grafana_version="13.1.0": grafana-plugin-build-fast
     @GRAFANA_VERSION="{{grafana_version}}" docker compose -f infra/docker/docker-compose.yml --profile full restart grafana
     @echo "Grafana plugin fast-refreshed at http://localhost:3001"
 
@@ -575,19 +575,20 @@ grafana-plugin-validate *analyzer="":
 grafana-plugin-test-help:
     @echo "Release ZIP test:"
     @echo "  just grafana-plugin-test-release v0.16.13"
-    @echo "  just grafana-plugin-test-release v0.16.13 13.0.3"
-    @echo "  just grafana-plugin-test-release v0.16.13 13.0.3 3005"
+    @echo "  just grafana-plugin-test-release v0.16.13 13.1.0"
+    @echo "  just grafana-plugin-test-release v0.16.13 13.1.0 3005"
     @echo ""
     @echo "Local dist test:"
     @echo "  just grafana-plugin-test-local"
-    @echo "  just grafana-plugin-test-local 13.0.3"
-    @echo "  just grafana-plugin-test-local 13.0.3 3005"
+    @echo "  just grafana-plugin-test-local 13.1.0"
+    @echo "  just grafana-plugin-test-local 13.1.0 3005"
     @echo ""
     @echo "Local packaged ZIP test:"
     @echo "  just grafana-plugin-test-local-zip"
-    @echo "  just grafana-plugin-test-local-zip 13.0.3"
-    @echo "  just grafana-plugin-test-local-zip 13.0.3 3005"
-    @echo "  just grafana-plugin-package-local && just grafana-plugin-test-local-zip-fast 13.0.3 3003"
+    @echo "  just grafana-plugin-test-local-zip 13.1.0"
+    @echo "  just grafana-plugin-test-local-zip 13.1.0 3005"
+    @echo "  just grafana-plugin-package-local && just grafana-plugin-test-local-zip-fast 13.1.0 3003"
+    @echo "  just grafana-plugin-test-react19"
     @echo ""
     @echo "Open:"
     @echo "  http://localhost:3003/a/dmkskd-tracehouse-app"
@@ -597,7 +598,7 @@ grafana-plugin-test-help:
 
 # Test a GitHub release plugin ZIP in minimal Grafana + ClickHouse; tag is required
 [group('grafana-app')]
-grafana-plugin-test-release tag grafana_version="13.0.3" port="3003":
+grafana-plugin-test-release tag grafana_version="13.1.0" port="3003":
     #!/usr/bin/env bash
     set -euo pipefail
     TAG="{{tag}}"
@@ -620,7 +621,7 @@ grafana-plugin-test-release tag grafana_version="13.0.3" port="3003":
 
 # Test the locally built plugin dist in minimal Grafana + ClickHouse
 [group('grafana-app')]
-grafana-plugin-test-local grafana_version="13.0.3" port="3003": grafana-plugin-build
+grafana-plugin-test-local grafana_version="13.1.0" port="3003": grafana-plugin-build
     #!/usr/bin/env bash
     set -euo pipefail
     PROJECT="tracehouse-grafana-plugin-test-{{port}}"
@@ -640,12 +641,12 @@ grafana-plugin-test-local grafana_version="13.0.3" port="3003": grafana-plugin-b
 
 # Test the locally packaged plugin ZIP in minimal Grafana + ClickHouse
 [group('grafana-app')]
-grafana-plugin-test-local-zip grafana_version="13.0.3" port="3003": grafana-plugin-package-local
+grafana-plugin-test-local-zip grafana_version="13.1.0" port="3003": grafana-plugin-package-local
     just grafana-plugin-test-local-zip-fast "{{grafana_version}}" "{{port}}"
 
 # Test the existing locally packaged plugin ZIP without rebuilding it
 [group('grafana-app')]
-grafana-plugin-test-local-zip-fast grafana_version="13.0.3" port="3003":
+grafana-plugin-test-local-zip-fast grafana_version="13.1.0" port="3003":
     #!/usr/bin/env bash
     set -euo pipefail
     PROJECT="tracehouse-grafana-plugin-test-{{port}}"
@@ -674,6 +675,38 @@ grafana-plugin-test-local-zip-fast grafana_version="13.0.3" port="3003":
     echo "Plugin:  local packaged ZIP ${PLUGIN_ZIP}"
     echo "URL:     http://localhost:{{port}}/a/dmkskd-tracehouse-app"
     GRAFANA_VERSION="{{grafana_version}}" \
+    GRAFANA_TEST_PORT="{{port}}" \
+    CLICKHOUSE_TEST_HTTP_PORT="$(({{port}} + 5121))" \
+    GRAFANA_PLUGIN_TEST_DIST="$PLUGIN_DIST" \
+      docker compose -p "$PROJECT" -f grafana-app-plugin/testing/docker-compose.yml up --pull always
+
+# Test the locally packaged plugin ZIP in Grafana's React 19 preview image
+[group('grafana-app')]
+grafana-plugin-test-react19 port="3003": grafana-plugin-package-local
+    #!/usr/bin/env bash
+    set -euo pipefail
+    PROJECT="tracehouse-grafana-plugin-test-{{port}}"
+    PLUGIN_ID="$(node -p "require('./grafana-app-plugin/dist/plugin.json').id")"
+    PLUGIN_VERSION="$(node -p "require('./grafana-app-plugin/dist/plugin.json').info.version")"
+    PLUGIN_ZIP="release/${PLUGIN_ID}-${PLUGIN_VERSION}.zip"
+    STAGE="/private/tmp/${PROJECT}/zip-stage"
+    PLUGIN_DIST="/private/tmp/${PROJECT}/plugin-dist"
+
+    rm -rf "$STAGE"
+    mkdir -p "$STAGE"
+    unzip -q "$PLUGIN_ZIP" -d "$STAGE"
+
+    docker compose -p "$PROJECT" -f grafana-app-plugin/testing/docker-compose.yml down --remove-orphans >/dev/null 2>&1 || true
+    rm -rf "$PLUGIN_DIST"
+    mkdir -p "$PLUGIN_DIST"
+    cp -R "$STAGE/${PLUGIN_ID}" "$PLUGIN_DIST/"
+
+    echo "Grafana: React 19 preview"
+    echo "Image:   grafana/grafana:dev-preview-react19"
+    echo "Plugin:  local packaged ZIP ${PLUGIN_ZIP}"
+    echo "URL:     http://localhost:{{port}}/a/dmkskd-tracehouse-app"
+    GRAFANA_IMAGE="grafana/grafana" \
+    GRAFANA_VERSION="dev-preview-react19" \
     GRAFANA_TEST_PORT="{{port}}" \
     CLICKHOUSE_TEST_HTTP_PORT="$(({{port}} + 5121))" \
     GRAFANA_PLUGIN_TEST_DIST="$PLUGIN_DIST" \

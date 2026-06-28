@@ -1,6 +1,6 @@
 {
   "name": "dmkskd-tracehouse-app",
-  "version": "0.16.14",
+  "version": "0.16.15",
   "description": "Full TraceHouse application as a Grafana App Plugin",
   "type": "module",
   "scripts": {
@@ -48,8 +48,10 @@
     "@grafana/data": "11.6.15",
     "@grafana/runtime": "11.6.15",
     "@grafana/ui": "11.6.15",
-    "@react-three/drei": "^9.120.0",
-    "@react-three/fiber": "^8.17.0",
+    "@react-three/drei": "^9.122.0",
+    "@react-three/drei-react19": "npm:@react-three/drei@^10.7.7",
+    "@react-three/fiber": "^8.18.0",
+    "@react-three/fiber-react19": "npm:@react-three/fiber@^9.6.1",
     "@tracehouse/core": "file:../packages/core",
     "@tracehouse/ui-shared": "file:../packages/ui-shared",
     "react": "^18.3.1",

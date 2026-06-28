@@ -7,11 +7,36 @@
  */
 import React, { useRef, useEffect, useCallback, useState } from 'react';
 
-// Side-effect import: registers <speedscope-widget> custom element
-import 'speedscope-widget';
+const SPEEDSCOPE_WIDGET_TAG = 'speedscope-widget';
+
+const ensureSpeedscopeWidget = async (): Promise<void> => {
+  if (typeof window === 'undefined' || !window.customElements) {
+    return;
+  }
+
+  if (window.customElements.get(SPEEDSCOPE_WIDGET_TAG)) {
+    return;
+  }
+
+  if (!window.__tracehouseSpeedscopeWidgetPromise) {
+    window.__tracehouseSpeedscopeWidgetPromise = import('speedscope-widget')
+      .catch((error) => {
+        if (window.customElements.get(SPEEDSCOPE_WIDGET_TAG)) {
+          return;
+        }
+        throw error;
+      });
+  }
+
+  await window.__tracehouseSpeedscopeWidgetPromise;
+};
 
 // Extend JSX to accept the custom element
 declare global {
+  interface Window {
+    __tracehouseSpeedscopeWidgetPromise?: Promise<unknown>;
+  }
+
   // eslint-disable-next-line @typescript-eslint/no-namespace
   namespace JSX {
     interface IntrinsicElements {
@@ -74,10 +99,40 @@ export const SpeedscopeViewer: React.FC<SpeedscopeViewerProps> = ({
   profileType = 'CPU',
   onTypeChange,
 }) => {
+  const hasData = folded.length > 0;
   const widgetRef = useRef<HTMLElement | null>(null);
   const loadedFoldedRef = useRef<string | null>(null);
   const [isFullscreen, setIsFullscreen] = useState(false);
+  const [isWidgetReady, setIsWidgetReady] = useState(() =>
+    typeof window !== 'undefined' && Boolean(window.customElements?.get(SPEEDSCOPE_WIDGET_TAG))
+  );
+  const [widgetError, setWidgetError] = useState<string | null>(null);
   const unsubscribeRef = useRef<(() => void) | null>(null);
+
+  useEffect(() => {
+    if (!hasData || isWidgetReady) {
+      return;
+    }
+
+    let cancelled = false;
+    setWidgetError(null);
+
+    ensureSpeedscopeWidget()
+      .then(() => {
+        if (!cancelled) {
+          setIsWidgetReady(true);
+        }
+      })
+      .catch((error) => {
+        if (!cancelled) {
+          setWidgetError(error instanceof Error ? error.message : 'Failed to load flamegraph renderer');
+        }
+      });
+
+    return () => {
+      cancelled = true;
+    };
+  }, [hasData, isWidgetReady]);
 
   // Ref callback: mark the widget as "started" immediately so its
   // connectedCallback won't auto-init with empty data. We handle init ourselves.
@@ -180,8 +235,6 @@ export const SpeedscopeViewer: React.FC<SpeedscopeViewerProps> = ({
     onTypeChange?.(type);
   }, [onTypeChange]);
 
-  const hasData = folded.length > 0;
-
   const header = (
     <div style={{
       padding: '12px 16px',
@@ -238,7 +291,18 @@ export const SpeedscopeViewer: React.FC<SpeedscopeViewerProps> = ({
   );
 
   // Determine which overlay to show (if any) on top of the widget
-  const overlay = isLoading ? (
+  const overlay = widgetError ? (
+    <div style={{ position: 'absolute', inset: 0, zIndex: 1, background: 'var(--bg-primary)', padding: 24 }}>
+      <div style={{
+        padding: 20, borderRadius: 8,
+        background: 'rgba(248, 81, 73, 0.1)',
+        border: '1px solid rgba(248, 81, 73, 0.3)',
+      }}>
+        <div style={{ fontWeight: 600, color: '#f85149', marginBottom: 8 }}>Error loading flamegraph renderer</div>
+        <div style={{ fontSize: 13, color: 'var(--text-tertiary)' }}>{widgetError}</div>
+      </div>
+    </div>
+  ) : isLoading || (hasData && !isWidgetReady) ? (
     <div style={{ position: 'absolute', inset: 0, zIndex: 1, display: 'flex', alignItems: 'center', justifyContent: 'center', background: 'var(--bg-primary)' }}>
       <div style={{ textAlign: 'center' }}>
         <div style={{
@@ -250,7 +314,7 @@ export const SpeedscopeViewer: React.FC<SpeedscopeViewerProps> = ({
           animation: 'spin 1s linear infinite',
           margin: '0 auto 12px',
         }} />
-        <span style={{ fontSize: 13, color: 'var(--text-muted)' }}>Loading {profileType} profile...</span>
+        <span style={{ fontSize: 13, color: 'var(--text-muted)' }}>{isLoading ? `Loading ${profileType} profile...` : 'Loading flamegraph renderer...'}</span>
         <style>{`@keyframes spin { to { transform: rotate(360deg); } }`}</style>
       </div>
     </div>
@@ -291,7 +355,7 @@ export const SpeedscopeViewer: React.FC<SpeedscopeViewerProps> = ({
   const content = (
     <div style={{ flex: 1, overflow: 'hidden', minHeight: isFullscreen ? 0 : 400, position: 'relative' }}>
       {overlay}
-      {hasData && (
+      {hasData && isWidgetReady && (
         <speedscope-widget
           ref={setWidgetRef}
           style={{ display: 'block', width: '100%', height: '100%' }}

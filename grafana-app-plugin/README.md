@@ -1,7 +1,7 @@
 # TraceHouse for Grafana
 
 [![License](https://img.shields.io/badge/License-Apache%202.0-blue.svg)](https://opensource.org/licenses/Apache-2.0)
-[![Grafana](https://img.shields.io/badge/Grafana->=11.0.0-orange)](https://grafana.com)
+[![Grafana](https://img.shields.io/badge/Grafana-11.0.0%2B-orange)](https://grafana.com)
 
 Monitor ClickHouse merges, queries, parts, replication, and storage from Grafana.
 

@@ -39,6 +39,8 @@ module.exports = (env) => {
     externals: [
       'react',
       'react-dom',
+      'react/jsx-runtime',
+      'react/jsx-dev-runtime',
       // Note: react-router-dom is NOT external - we shim it via alias (see resolve.alias)
       '@grafana/data',
       '@grafana/runtime',
@@ -58,6 +60,8 @@ module.exports = (env) => {
         '@tracehouse/ui-shared': path.resolve(__dirname, '../../../packages/ui-shared/dist'),
         // Alias frontend src for direct page imports
         '@frontend': path.resolve(__dirname, '../../../frontend/src'),
+        '@react-three/fiber': path.resolve(__dirname, '../../../node_modules/@react-three/fiber'),
+        '@react-three/drei': path.resolve(__dirname, '../../../node_modules/@react-three/drei'),
         // Redirect frontend store/provider imports to our Grafana-compatible shims
         // When frontend pages import '../stores/connectionStore', resolve to our shim
         [path.resolve(__dirname, '../../../frontend/src/stores/connectionStore')]:

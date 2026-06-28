@@ -28,7 +28,7 @@ const cpVersion = getCPConfigVersion();
 const pluginVersion = getPackageJson().version;
 const logoPaths = Array.from(new Set([pluginJson.info?.logos?.large, pluginJson.info?.logos?.small])).filter(Boolean);
 const screenshotPaths = pluginJson.info?.screenshots?.map((s: { path: string }) => s.path) || [];
-const virtualPublicPath = new VirtualModulesPlugin({
+const createVirtualPublicPathPlugin = () => new VirtualModulesPlugin({
   'node_modules/grafana-public-path.js': `
 import amdMetaModule from 'amd-module';
 
@@ -45,7 +45,7 @@ export type Env = {
 
 const repoRoot = path.resolve(process.cwd(), '..');
 
-const config = async (env: Env): Promise<Configuration> => {
+const config = async (env: Env): Promise<Configuration[]> => {
   const baseConfig: Configuration = {
     cache: {
       type: 'filesystem',
@@ -158,7 +158,7 @@ const config = async (env: Env): Promise<Configuration> => {
 
     output: {
       clean: {
-        keep: new RegExp(`(.*?_(amd64|arm(64)?)(.exe)?|go_plugin_build_manifest)`),
+        keep: new RegExp(`((resourceArena3D|components3d|analytics3d|timeline3d|clusterTopology|replicationTopology|xrayVisualization)-react(18|19)\\.js|.*?_(amd64|arm(64)?)(.exe)?|go_plugin_build_manifest)`),
       },
       filename: '[name].js',
       chunkFilename: env.production ? '[name].[contenthash].js' : '[name].js',
@@ -172,7 +172,7 @@ const config = async (env: Env): Promise<Configuration> => {
 
     plugins: [
       new BuildModeWebpackPlugin(),
-      virtualPublicPath,
+      createVirtualPublicPathPlugin(),
       new webpack.BannerPlugin({
         banner: `/* [create-plugin] version: ${cpVersion} */
           /* [create-plugin] plugin: ${pluginJson.id}@${pluginVersion} */`,
@@ -264,6 +264,40 @@ const config = async (env: Env): Promise<Configuration> => {
         '@tracehouse/core': path.resolve(repoRoot, 'packages/core/dist'),
         '@tracehouse/ui-shared': path.resolve(repoRoot, 'packages/ui-shared/dist'),
         '@frontend': path.resolve(repoRoot, 'frontend/src'),
+        '@react-three/fiber': path.resolve(repoRoot, 'node_modules/@react-three/fiber'),
+        '@react-three/drei': path.resolve(repoRoot, 'node_modules/@react-three/drei'),
+        [path.resolve(repoRoot, 'frontend/src/components/overview/ResourceArena3D')]:
+          path.resolve(process.cwd(), 'src/runtime-compat/ResourceArena3D.tsx'),
+        [path.resolve(repoRoot, 'frontend/src/components/3d/Scene3D')]:
+          path.resolve(process.cwd(), 'src/runtime-compat/Components3D.tsx'),
+        [path.resolve(repoRoot, 'frontend/src/components/3d/PartsVisualization')]:
+          path.resolve(process.cwd(), 'src/runtime-compat/Components3D.tsx'),
+        [path.resolve(repoRoot, 'frontend/src/components/3d/PipelineVisualization')]:
+          path.resolve(process.cwd(), 'src/runtime-compat/Components3D.tsx'),
+        [path.resolve(repoRoot, 'frontend/src/components/3d/MergeVisualization')]:
+          path.resolve(process.cwd(), 'src/runtime-compat/Components3D.tsx'),
+        [path.resolve(repoRoot, 'frontend/src/components/3d/HierarchyVisualization')]:
+          path.resolve(process.cwd(), 'src/runtime-compat/Components3D.tsx'),
+        [path.resolve(repoRoot, 'frontend/src/components/analytics/ResourceSurface')]:
+          path.resolve(process.cwd(), 'src/runtime-compat/Analytics3D.tsx'),
+        [path.resolve(repoRoot, 'frontend/src/components/analytics/PatternSurface')]:
+          path.resolve(process.cwd(), 'src/runtime-compat/Analytics3D.tsx'),
+        [path.resolve(repoRoot, 'frontend/src/components/analytics/StressSurface')]:
+          path.resolve(process.cwd(), 'src/runtime-compat/Analytics3D.tsx'),
+        [path.resolve(repoRoot, 'frontend/src/components/analytics/charts3d')]:
+          path.resolve(process.cwd(), 'src/runtime-compat/Analytics3D.tsx'),
+        [path.resolve(repoRoot, 'frontend/src/components/timeline/TimelineChart3D')]:
+          path.resolve(process.cwd(), 'src/runtime-compat/Timeline3D.tsx'),
+        [path.resolve(repoRoot, 'frontend/src/components/timeline/TimelineChart3DSurface')]:
+          path.resolve(process.cwd(), 'src/runtime-compat/Timeline3D.tsx'),
+        [path.resolve(repoRoot, 'frontend/src/components/cluster/ClusterTopology')]:
+          path.resolve(process.cwd(), 'src/runtime-compat/ClusterTopology.tsx'),
+        [path.resolve(repoRoot, 'frontend/src/components/replication/ReplicationTopology')]:
+          path.resolve(process.cwd(), 'src/runtime-compat/ReplicationTopology.tsx'),
+        [path.resolve(repoRoot, 'frontend/src/components/query/modal/tabs/XRayTab')]:
+          path.resolve(process.cwd(), 'src/runtime-compat/XRayTab.tsx'),
+        [path.resolve(repoRoot, 'frontend/src/components/query/modal/tabs/XRayVisualization')]:
+          path.resolve(process.cwd(), 'src/runtime-compat/XRayVisualization.tsx'),
         [path.resolve(repoRoot, 'frontend/src/stores/connectionStore')]:
           path.resolve(process.cwd(), 'src/stores/connectionStore'),
         [path.resolve(repoRoot, 'frontend/src/providers/ClickHouseProvider')]:
@@ -303,7 +337,108 @@ const config = async (env: Env): Promise<Configuration> => {
     };
   }
 
-  return baseConfig;
+  const createRuntime3DConfig = (
+    runtime: 'react18' | 'react19',
+    name: string,
+    entryFile: string
+  ): Configuration => ({
+    name: `${name}-${runtime}`,
+    cache: {
+      type: 'filesystem',
+      name: `${name}-${runtime}`,
+      buildDependencies: {
+        config: [path.resolve(process.cwd(), '.config', 'webpack', 'webpack.config.ts')],
+      },
+    },
+    context: process.cwd(),
+    devtool: false,
+    entry: {
+      [`${name}-${runtime}`]: path.resolve(process.cwd(), entryFile),
+    },
+    externals: runtime === 'react19' ? [...(externals as unknown[]), 'react-dom/client', 'react-dom/server'] : externals,
+    experiments: {
+      asyncWebAssembly: true,
+    },
+    mode: env.production ? 'production' : 'development',
+    module: baseConfig.module,
+    optimization: {
+      minimize: Boolean(env.production),
+      minimizer: baseConfig.optimization?.minimizer,
+    },
+    output: {
+      filename: '[name].js',
+      chunkFilename: env.production ? '[name].[contenthash].js' : '[name].js',
+      library: {
+        type: 'amd',
+      },
+      path: path.resolve(process.cwd(), DIST_DIR),
+      publicPath: `public/plugins/${pluginJson.id}/`,
+      uniqueName: `${pluginJson.id}-${name}-${runtime}`,
+    },
+    plugins: [
+      createVirtualPublicPathPlugin(),
+      new webpack.NormalModuleReplacementPlugin(
+        /^node:/,
+        (resource) => {
+          resource.request = resource.request.replace(/^node:/, '');
+        }
+      ),
+      new webpack.IgnorePlugin({ resourceRegExp: /jfrview_bg\.wasm$/ }),
+      new webpack.DefinePlugin({
+        __BUILD_TIME__: JSON.stringify(new Date().toISOString()),
+        __TH_GRAFANA_PLUGIN__: 'true',
+      }),
+      new FixSourceMapsPlugin(repoRoot),
+    ],
+    resolve: {
+      extensions: ['.ts', '.tsx', '.js', '.jsx', '.css'],
+      alias: {
+        '@tracehouse/core': path.resolve(repoRoot, 'packages/core/dist'),
+        '@tracehouse/ui-shared': path.resolve(repoRoot, 'packages/ui-shared/dist'),
+        '@frontend': path.resolve(repoRoot, 'frontend/src'),
+        '@react-three/fiber': path.resolve(
+          runtime === 'react19' ? repoRoot : process.cwd(),
+          runtime === 'react19' ? 'node_modules/@react-three/fiber-react19' : '../node_modules/@react-three/fiber'
+        ),
+        '@react-three/drei': path.resolve(
+          runtime === 'react19' ? repoRoot : process.cwd(),
+          runtime === 'react19' ? 'node_modules/@react-three/drei-react19' : '../node_modules/@react-three/drei'
+        ),
+        [path.resolve(repoRoot, 'frontend/src/stores/connectionStore')]:
+          path.resolve(process.cwd(), 'src/stores/connectionStore'),
+        [path.resolve(repoRoot, 'frontend/src/providers/ClickHouseProvider')]:
+          path.resolve(process.cwd(), 'src/ServiceProvider'),
+        [path.resolve(repoRoot, 'frontend/src/hooks/useAppLocation')]:
+          path.resolve(process.cwd(), 'src/hooks/useAppLocation.ts'),
+        [path.resolve(repoRoot, 'frontend/src/hooks/useUrlState')]:
+          path.resolve(process.cwd(), 'src/hooks/useUrlState.ts'),
+        [path.resolve(repoRoot, 'frontend/src/utils/urlParams')]:
+          path.resolve(process.cwd(), 'src/utils/urlParams.ts'),
+        'react-router-dom': path.resolve(process.cwd(), 'src/stubs/react-router-dom.tsx'),
+      },
+      fallback: baseConfig.resolve?.fallback,
+      modules: [path.resolve(process.cwd(), 'src'), 'node_modules'],
+      unsafeCache: true,
+    },
+  });
+
+  return [
+    baseConfig,
+    createRuntime3DConfig('react18', 'resourceArena3D', 'src/runtime-compat/resourceArena3DEntry.ts'),
+    createRuntime3DConfig('react19', 'resourceArena3D', 'src/runtime-compat/resourceArena3DEntry.ts'),
+    createRuntime3DConfig('react18', 'components3d', 'src/runtime-compat/components3dEntry.ts'),
+    createRuntime3DConfig('react19', 'components3d', 'src/runtime-compat/components3dEntry.ts'),
+    createRuntime3DConfig('react18', 'analytics3d', 'src/runtime-compat/analytics3dEntry.ts'),
+    createRuntime3DConfig('react19', 'analytics3d', 'src/runtime-compat/analytics3dEntry.ts'),
+    createRuntime3DConfig('react18', 'timeline3d', 'src/runtime-compat/timeline3dEntry.ts'),
+    createRuntime3DConfig('react19', 'timeline3d', 'src/runtime-compat/timeline3dEntry.ts'),
+    createRuntime3DConfig('react18', 'clusterTopology', 'src/runtime-compat/clusterTopologyEntry.ts'),
+    createRuntime3DConfig('react19', 'clusterTopology', 'src/runtime-compat/clusterTopologyEntry.ts'),
+    createRuntime3DConfig('react18', 'replicationTopology', 'src/runtime-compat/replicationTopologyEntry.ts'),
+    createRuntime3DConfig('react19', 'replicationTopology', 'src/runtime-compat/replicationTopologyEntry.ts'),
+    createRuntime3DConfig('react18', 'xrayVisualization', 'src/runtime-compat/xrayVisualizationEntry.ts'),
+    createRuntime3DConfig('react19', 'xrayVisualization', 'src/runtime-compat/xrayVisualizationEntry.ts'),
+  ];
 };
 
 export default config;

@@ -11,6 +11,7 @@ import { Canvas, useFrame } from '@react-three/fiber';
 import { Html, OrbitControls } from '@react-three/drei';
 import * as THREE from 'three';
 import { useClickHouseServices } from '../../providers/ClickHouseProvider';
+import type { ClickHouseServices } from '../../providers/ClickHouseProvider';
 import { useConnectionStore } from '../../stores/connectionStore';
 import { useClusterStore } from '../../stores/clusterStore';
 import { ReplicationService, classifyReplicaHealth, classifyDelaySeverity, tagQuery, buildQuery, sourceTag, GET_ZK_CHILDREN, mapZkChildNode } from '@tracehouse/core';
@@ -1289,12 +1290,19 @@ export interface ReplicationTopologyProps {
   table: string;
 }
 
-export const ReplicationTopology: React.FC<ReplicationTopologyProps> = ({ database, table }) => {
-  const services = useClickHouseServices();
-  const { activeProfileId, profiles } = useConnectionStore();
-  const { detected } = useClusterStore();
-  const activeProfile = profiles.find(p => p.id === activeProfileId);
-  const isConnected = activeProfile?.is_connected ?? false;
+export interface ReplicationTopologyRuntimeProps extends ReplicationTopologyProps {
+  services: ClickHouseServices | null;
+  isConnected: boolean;
+  detected: unknown;
+}
+
+export const ReplicationTopologyRuntime: React.FC<ReplicationTopologyRuntimeProps> = ({
+  database,
+  table,
+  services,
+  isConnected,
+  detected,
+}) => {
   const theme = useThemeDetection();
 
   const [data, setData] = useState<ReplicationTopologyData | null>(null);
@@ -1490,6 +1498,24 @@ export const ReplicationTopology: React.FC<ReplicationTopologyProps> = ({ databa
       </div>
 
     </div>
+  );
+};
+
+export const ReplicationTopology: React.FC<ReplicationTopologyProps> = ({ database, table }) => {
+  const services = useClickHouseServices();
+  const { activeProfileId, profiles } = useConnectionStore();
+  const { detected } = useClusterStore();
+  const activeProfile = profiles.find(p => p.id === activeProfileId);
+  const isConnected = activeProfile?.is_connected ?? false;
+
+  return (
+    <ReplicationTopologyRuntime
+      database={database}
+      table={table}
+      services={services}
+      isConnected={isConnected}
+      detected={detected}
+    />
   );
 };
 

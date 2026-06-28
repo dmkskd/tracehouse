@@ -1,6 +1,6 @@
 services:
   grafana:
-    image: grafana/grafana:${GRAFANA_VERSION:-13.0.3}
+    image: ${GRAFANA_IMAGE:-grafana/grafana}:${GRAFANA_VERSION:-13.1.0}
     pull_policy: always
     ports:
       - "${GRAFANA_TEST_PORT:-3003}:3000"
