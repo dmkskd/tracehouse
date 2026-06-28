@@ -1,6 +1,8 @@
 import React, { Suspense, lazy, useMemo } from 'react';
 import pluginJson from '../plugin.json';
 
+declare const __webpack_public_path__: string;
+
 type Runtime = 'react19' | 'react18';
 
 type RuntimeModule<P> = {
@@ -16,6 +18,13 @@ const pluginId = (pluginJson as { id?: string }).id ?? 'dmkskd-tracehouse-app';
 function getReactRuntime(): Runtime {
   const major = Number.parseInt((React.version ?? '18').split('.')[0] ?? '18', 10);
   return major >= 19 ? 'react19' : 'react18';
+}
+
+function getPluginAssetUrl(fileName: string): string {
+  const publicPath = typeof __webpack_public_path__ === 'string' && __webpack_public_path__
+    ? __webpack_public_path__
+    : `public/plugins/${pluginId}/`;
+  return `${publicPath.endsWith('/') ? publicPath : `${publicPath}/`}${fileName}`;
 }
 
 function getSystemLoader<P>(): SystemLoader<P> {
@@ -41,7 +50,7 @@ export function createRuntimeComponent<P extends object>(
     }
 
     const component = lazy(async () => {
-      const url = `/public/plugins/${pluginId}/${chunkName}-${runtime}.js`;
+      const url = getPluginAssetUrl(`${chunkName}-${runtime}.js`);
       const mod = await getSystemLoader<P>().import(url);
       const RuntimeComponent = mod[exportName] ?? mod.default;
       if (!RuntimeComponent) {
