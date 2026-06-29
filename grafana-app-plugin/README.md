@@ -1,7 +1,7 @@
 # TraceHouse for Grafana
 
 [![License](https://img.shields.io/badge/License-Apache%202.0-blue.svg)](https://opensource.org/licenses/Apache-2.0)
-[![Grafana](https://img.shields.io/badge/Grafana-11.0.0%2B-orange)](https://grafana.com)
+[![Grafana](https://img.shields.io/badge/Grafana-compatible%20versions-orange)](https://grafana.com)
 
 Monitor ClickHouse merges, queries, parts, replication, and storage from Grafana.
 
@@ -75,7 +75,7 @@ Replication queue depth, log lag, and inter-replica sync status.
 
 ## Requirements
 
-- Grafana >= 11.0.0
+- Grafana >= 11.6.11 <12, >=12.0.10 <12.1, >=12.1.7 <12.2, or >=12.2.5
 - ClickHouse 21.8+ with `system.*` tables accessible
 - [Grafana ClickHouse datasource](https://grafana.com/grafana/plugins/grafana-clickhouse-datasource/) plugin installed and configured
 
