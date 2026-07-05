@@ -20,6 +20,7 @@ interface SparklineStatCardProps {
   color: string;          // hex color for the sparkline + accent
   sparklineData: number[]; // raw values (most recent last)
   warn?: boolean;
+  variant?: 'sparkline' | 'heat' | 'tank' | 'pulse';
   /** Optional thin breakdown bar (e.g. queries vs merges vs other) */
   breakdown?: BreakdownSegment[];
   /** When true, segment values are raw percentages of the full bar (e.g. CPU %) */
@@ -55,12 +56,18 @@ export const SparklineStatCard: React.FC<SparklineStatCardProps> = ({
   color,
   sparklineData,
   warn,
+  variant = 'sparkline',
   breakdown,
   breakdownRawPct,
 }) => {
   const linePath = useMemo(() => buildPath(sparklineData, false), [sparklineData]);
+  const areaPath = useMemo(() => buildPath(sparklineData, true), [sparklineData]);
+  const heatValues = useMemo(() => sparklineData.slice(-28), [sparklineData]);
+  const latest = sparklineData.at(-1) ?? 0;
+  const peak = sparklineData.length > 0 ? Math.max(...sparklineData) : 0;
 
   const accentColor = warn ? '#ef4444' : color;
+  const heatMax = heatValues.length > 0 ? Math.max(...heatValues) : 0;
 
   return (
     <div
@@ -68,59 +75,132 @@ export const SparklineStatCard: React.FC<SparklineStatCardProps> = ({
         background: 'var(--bg-card)',
         border: '1px solid var(--border-primary)',
         borderRadius: 10,
-        padding: '14px 16px 10px',
+        padding: '13px 16px 12px',
         position: 'relative',
         overflow: 'hidden',
-        borderLeft: 'none',
+        minHeight: 96,
       }}
     >
-      {/* Sparkline background */}
-      {sparklineData.length >= 2 && (
-        <svg
-          viewBox={`0 0 ${W} ${H}`}
-          preserveAspectRatio="none"
-          style={{
-            position: 'absolute',
-            bottom: 0,
-            right: 0,
-            width: '60%',
-            height: '60%',
-            opacity: 0.5,
-            pointerEvents: 'none',
-          }}
-        >
-          <path d={linePath} fill="none" stroke={accentColor} strokeWidth={1.2} strokeLinejoin="round" strokeLinecap="round" opacity={0.5} />
-        </svg>
-      )}
-
-      {/* Value */}
       <div style={{ position: 'relative', zIndex: 1 }}>
         <div
           style={{
-            fontSize: 26,
-            fontWeight: 700,
-            fontFamily: 'monospace',
-            color: 'var(--text-primary)',
-            lineHeight: 1.1,
-          }}
-        >
-          {value}
-        </div>
-        <div
-          style={{
-            fontSize: 11,
-            fontWeight: 500,
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'space-between',
+            gap: 10,
+            fontSize: 12,
+            fontWeight: 650,
             color: 'var(--text-muted)',
-            marginTop: 4,
           }}
         >
-          {label}
+          <span>{label}</span>
+          {variant === 'pulse' && (
+            <span style={{ width: 9, height: 9, borderRadius: '50%', background: accentColor, boxShadow: `0 0 0 4px ${accentColor}1f` }} />
+          )}
+          {variant === 'tank' && peak > 0 && (
+            <span style={{ fontFamily: 'monospace', color: 'var(--text-muted)' }}>peak {peak.toFixed(1)}%</span>
+          )}
         </div>
+
+        <div style={{ display: 'flex', alignItems: 'baseline', gap: 8, marginTop: 8 }}>
+          <div
+            style={{
+              fontSize: 27,
+              fontWeight: 750,
+              fontFamily: 'monospace',
+              color: 'var(--text-primary)',
+              lineHeight: 1.05,
+              letterSpacing: 0,
+              whiteSpace: 'nowrap',
+            }}
+          >
+            {value}
+          </div>
+        </div>
+
         {subtitle && (
-          <div style={{ fontSize: 10, color: 'var(--text-muted)', marginTop: 2 }}>
+          <div style={{ fontSize: 10, color: 'var(--text-muted)', marginTop: 4, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
             {subtitle}
           </div>
         )}
+
+        {variant === 'heat' && heatValues.length >= 2 && (
+          <div style={{ display: 'flex', gap: 3, height: 22, alignItems: 'end', marginTop: 9 }}>
+            {heatValues.map((v, index) => {
+              const intensity = heatMax > 0 ? Math.max(0.12, Math.min(1, v / heatMax)) : 0.12;
+              const h = 5 + intensity * 15;
+              const hot = v >= 80;
+              return (
+                <span
+                  key={`${index}-${v}`}
+                  title={`${v.toFixed(1)}`}
+                  style={{
+                    flex: 1,
+                    minWidth: 3,
+                    height: h,
+                    borderRadius: 2,
+                    background: hot ? '#f59e0b' : accentColor,
+                    opacity: 0.28 + intensity * 0.62,
+                  }}
+                />
+              );
+            })}
+          </div>
+        )}
+
+        {variant === 'tank' && (
+          <div style={{ marginTop: 10 }}>
+            <div style={{ height: 26, borderRadius: 5, overflow: 'hidden', border: '1px solid var(--border-secondary)', background: 'var(--bg-primary)', position: 'relative' }}>
+              <div
+                style={{
+                  position: 'absolute',
+                  left: 0,
+                  right: 0,
+                  bottom: 0,
+                  height: `${Math.max(2, Math.min(100, latest))}%`,
+                  background: `linear-gradient(180deg, ${accentColor}66, ${accentColor}cc)`,
+                }}
+              />
+              {peak > 0 && (
+                <div
+                  style={{
+                    position: 'absolute',
+                    left: 0,
+                    right: 0,
+                    bottom: `${Math.min(100, peak)}%`,
+                    borderTop: `1px dashed ${warn ? '#ef4444' : '#fb923c'}`,
+                    opacity: 0.8,
+                  }}
+                />
+              )}
+            </div>
+          </div>
+        )}
+
+        {variant === 'sparkline' && sparklineData.length >= 2 && (
+          <svg viewBox={`0 0 ${W} ${H}`} preserveAspectRatio="none" style={{ width: '100%', height: 30, marginTop: 7, display: 'block' }}>
+            <path d={areaPath} fill={accentColor} opacity={0.14} />
+            <path d={linePath} fill="none" stroke={accentColor} strokeWidth={1.5} strokeLinejoin="round" strokeLinecap="round" />
+          </svg>
+        )}
+
+        {variant === 'pulse' && (
+          <div style={{ height: 30, marginTop: 7, display: 'flex', alignItems: 'center', gap: 5 }}>
+            {Array.from({ length: 16 }, (_, index) => (
+              <span
+                key={index}
+                style={{
+                  flex: 1,
+                  height: index % 5 === 0 ? 18 : index % 3 === 0 ? 12 : 8,
+                  borderRadius: 999,
+                  background: accentColor,
+                  opacity: 0.1 + (index % 5) * 0.07,
+                }}
+              />
+            ))}
+          </div>
+        )}
+
         {/* Inline breakdown bar */}
         {breakdown && breakdown.length > 0 && (() => {
           const visible = breakdown.filter(s => s.value >= 0.5);

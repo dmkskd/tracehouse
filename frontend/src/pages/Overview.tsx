@@ -27,14 +27,13 @@ import { useOverviewStore, OverviewPoller, type AttributionSnapshot } from '../s
 import { TimeSeriesChart } from '../components/metrics/TimeSeriesChart';
 import { OverviewService } from '@tracehouse/core';
 import {
-  ResourceAttributionBar,
-  SparklineStatCard,
+  OverviewVitalsStrip,
+  OverviewDestinationCards,
   ResourceArena3D,
   ResourceArenaSwimlane,
 } from '../components/overview';
 import type { ClusterHistoricalMetricsPoint, RunningQueryInfo, ActiveMergeInfo } from '@tracehouse/core';
 import type { ChartDataPoint, TrendMetricType, MetricStats } from '../stores/timeSeriesStore';
-import { formatBytes, formatDuration } from '../utils/formatters';
 import { TruncatedHost } from '../components/common/TruncatedHost';
 import { ObservabilitySunburst, DetailSidebar, OBSERVABILITY_DATA, mergeAvailability } from '../components/observability-map';
 import type { SunburstNodeData, QueryResult, ObservabilityData, ColumnCommentMap } from '../components/observability-map';
@@ -76,7 +75,7 @@ export const Overview: React.FC = () => {
   const setConnectionFormOpen = useConnectionStore(s => s.setConnectionFormOpen);
   const refreshConfig = useRefreshConfig();
   const { refreshRateSeconds } = useRefreshSettingsStore();
-  const { metrics, metricsHistory, clearMetrics, thresholds, warnings } = useMetricsStore();
+  const { metrics, metricsHistory, clearMetrics } = useMetricsStore();
   const manualRefreshTick = useGlobalLastUpdatedStore(s => s.manualRefreshTick);
   const { viewMode, selectedMetrics, setViewMode, toggleMetric } = useTimeSeriesStore();
 
@@ -92,8 +91,7 @@ export const Overview: React.FC = () => {
   const {
     data: liveData,
     attributionHistory,
-    selectedResource,
-    setSelectedResource,
+    pollingStatus,
     toggleExpandedQuery,
     clearData: clearLiveData,
   } = useOverviewStore();
@@ -437,7 +435,6 @@ export const Overview: React.FC = () => {
   const isCluster = arenaHosts.length > 1;
   const ra = liveData?.resourceAttribution;
   const clusterCpuPct = ra?.cpu.totalPct ?? 0;
-  const clusterCores = ra?.cpu.cores ?? 0;
   const clusterMemPct = ra && ra.memory.totalRAM > 0
     ? (ra.memory.totalRSS / ra.memory.totalRAM) * 100 : 0;
 
@@ -456,13 +453,39 @@ export const Overview: React.FC = () => {
   const sparkDiskR = useMemo(() =>
     isCluster
       ? attributionHistory.map((s: AttributionSnapshot) => s.ioReadBps)
-      : metricsHistory.map(h => h.metrics.disk_read_bytes),
+      : metricsHistory.map((entry, index) => {
+        if (index === 0) return 0;
+        const prev = metricsHistory[index - 1];
+        const seconds = (entry.timestamp.getTime() - prev.timestamp.getTime()) / 1000;
+        if (seconds <= 0) return 0;
+        const delta = entry.metrics.disk_read_bytes - prev.metrics.disk_read_bytes;
+        return delta > 0 ? delta / seconds : 0;
+      }),
     [isCluster, attributionHistory, metricsHistory]);
   const sparkDiskW = useMemo(() =>
     isCluster
       ? attributionHistory.map((s: AttributionSnapshot) => s.ioWriteBps)
-      : metricsHistory.map(h => h.metrics.disk_write_bytes),
+      : metricsHistory.map((entry, index) => {
+        if (index === 0) return 0;
+        const prev = metricsHistory[index - 1];
+        const seconds = (entry.timestamp.getTime() - prev.timestamp.getTime()) / 1000;
+        if (seconds <= 0) return 0;
+        const delta = entry.metrics.disk_write_bytes - prev.metrics.disk_write_bytes;
+        return delta > 0 ? delta / seconds : 0;
+      }),
     [isCluster, attributionHistory, metricsHistory]);
+
+  // Degradation summary - list key capabilities that are missing
+  const { flags: capFlags, probeStatus } = useMonitoringCapabilitiesStore();
+  const degradedFeatures = useMemo(() => {
+    if (probeStatus !== 'done') return [];
+    const items: string[] = [];
+    if (!capFlags.hasQueryLog) items.push('Query history');
+    if (!capFlags.hasMetricLog) items.push('Metric trends');
+    if (!capFlags.hasSystemMerges) items.push('Merge tracking');
+    if (!capFlags.hasSystemProcesses) items.push('Running queries');
+    return items;
+  }, [probeStatus, capFlags]);
 
   // No connection state
   if (!activeProfileId || !isConnected) {
@@ -479,18 +502,6 @@ export const Overview: React.FC = () => {
       </div>
     );
   }
-
-  // Degradation summary - list key capabilities that are missing
-  const { flags: capFlags, probeStatus } = useMonitoringCapabilitiesStore();
-  const degradedFeatures = useMemo(() => {
-    if (probeStatus !== 'done') return [];
-    const items: string[] = [];
-    if (!capFlags.hasQueryLog) items.push('Query history');
-    if (!capFlags.hasMetricLog) items.push('Metric trends');
-    if (!capFlags.hasSystemMerges) items.push('Merge tracking');
-    if (!capFlags.hasSystemProcesses) items.push('Running queries');
-    return items;
-  }, [probeStatus, capFlags]);
 
   // Build breakdown segments from resource attribution (for inline bars in stat cards)
   return (
@@ -584,42 +595,15 @@ export const Overview: React.FC = () => {
       {viewMode === 'snapshot' && (
         <>
           {/* Compact stat strip */}
-          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr 1fr 1fr', gap: 12 }}>
-            <SparklineStatCard
-              label={isCluster ? `CPU (${arenaHosts.length} nodes)` : 'CPU'}
-              value={isCluster && ra ? `${clusterCpuPct.toFixed(1)}%` : metrics ? `${metrics.cpu_usage.toFixed(1)}%` : '-'}
-              color="#3B82F6"
-              warn={isCluster ? clusterCpuPct > (thresholds.cpu_warning ?? 80) : warnings.cpu}
-              subtitle={isCluster && ra ? `${clusterCores} total cores` : warnings.cpu ? `Above ${thresholds.cpu_warning}%` : undefined}
-              sparklineData={sparkCpu}
-            />
-            <SparklineStatCard
-              label={isCluster ? `Memory (${arenaHosts.length} nodes)` : 'Memory'}
-              value={isCluster && ra ? `${clusterMemPct.toFixed(1)}%` : metrics ? `${memoryPercentage.toFixed(1)}%` : '-'}
-              color="#8B5CF6"
-              warn={isCluster ? clusterMemPct > (thresholds.memory_warning ?? 85) : warnings.memory}
-              subtitle={isCluster && ra ? `${formatBytes(ra.memory.totalRSS)} / ${formatBytes(ra.memory.totalRAM)}` : metrics ? `${formatBytes(metrics.memory_used)} / ${formatBytes(metrics.memory_total)}` : undefined}
-              sparklineData={sparkMem}
-            />
-            <SparklineStatCard
-              label={isCluster ? `Disk Read (cluster)` : 'Disk Read'}
-              value={isCluster && ra ? formatBytes(ra.io.readBytesPerSec) + '/s' : metrics ? formatBytes(metrics.disk_read_bytes) : '-'}
-              color="#10B981"
-              sparklineData={sparkDiskR}
-            />
-            <SparklineStatCard
-              label={isCluster ? `Disk Write (cluster)` : 'Disk Write'}
-              value={isCluster && ra ? formatBytes(ra.io.writeBytesPerSec) + '/s' : metrics ? formatBytes(metrics.disk_write_bytes) : '-'}
-              color="#F59E0B"
-              sparklineData={sparkDiskW}
-            />
-            <SparklineStatCard
-              label="Uptime"
-              value={metrics?.uptime_seconds ? formatDuration(metrics.uptime_seconds) : '-'}
-              color="#06b6d4"
-              sparklineData={[]}
-            />
-          </div>
+          <OverviewVitalsStrip
+            data={liveData}
+            metrics={metrics}
+            cpuHistory={sparkCpu}
+            memoryHistory={sparkMem}
+            diskReadHistory={sparkDiskR}
+            diskWriteHistory={sparkDiskW}
+            isLoading={pollingStatus === 'polling'}
+          />
 
           {/* Resource arena - driven by global 2D/3D preference */}
           {preferredViewMode === '3d' ? (
@@ -648,80 +632,27 @@ export const Overview: React.FC = () => {
             />
           )}
 
-          {/* Resource Attribution Bars */}
-          {liveData?.resourceAttribution && (
-            <div className="grid grid-cols-3 gap-4">
-              <div className="card">
-                <div className="card-body">
-                  <ResourceAttributionBar
-                    attribution={liveData.resourceAttribution}
-                    selectedResource={selectedResource}
-                    onResourceChange={setSelectedResource}
-                    showOnly="cpu"
-                  />
-                </div>
-              </div>
-              <div className="card">
-                <div className="card-body">
-                  <ResourceAttributionBar
-                    attribution={liveData.resourceAttribution}
-                    selectedResource={selectedResource}
-                    onResourceChange={setSelectedResource}
-                    showOnly="memory"
-                  />
-                </div>
-              </div>
-              <div className="card">
-                <div className="card-body">
-                  <ResourceAttributionBar
-                    attribution={liveData.resourceAttribution}
-                    selectedResource={selectedResource}
-                    onResourceChange={setSelectedResource}
-                    showOnly="io"
-                  />
-                </div>
-              </div>
-            </div>
-          )}
+          <OverviewDestinationCards
+            data={liveData}
+            cpuUsage={isCluster ? clusterCpuPct : (metrics?.cpu_usage ?? 0)}
+            memoryPct={isCluster ? clusterMemPct : memoryPercentage}
+            cpuHistory={sparkCpu}
+            isLoading={pollingStatus === 'polling'}
+          />
         </>
       )}
 
       {/* Stats for Trend/Metrics view (compact, no sparklines) */}
       {viewMode === 'trend' && (
-        <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr 1fr 1fr', gap: 12 }}>
-          <SparklineStatCard
-            label={isCluster ? `CPU (${arenaHosts.length} nodes)` : 'CPU'}
-            value={isCluster && ra ? `${clusterCpuPct.toFixed(1)}%` : metrics ? `${metrics.cpu_usage.toFixed(1)}%` : '-'}
-            color="#3B82F6"
-            warn={isCluster ? clusterCpuPct > (thresholds.cpu_warning ?? 80) : warnings.cpu}
-            sparklineData={sparkCpu}
-          />
-          <SparklineStatCard
-            label={isCluster ? `Memory (${arenaHosts.length} nodes)` : 'Memory'}
-            value={isCluster && ra ? `${clusterMemPct.toFixed(1)}%` : metrics ? `${memoryPercentage.toFixed(1)}%` : '-'}
-            color="#8B5CF6"
-            warn={isCluster ? clusterMemPct > (thresholds.memory_warning ?? 85) : warnings.memory}
-            sparklineData={sparkMem}
-          />
-          <SparklineStatCard
-            label={isCluster ? `Disk Read (cluster)` : 'Disk Read'}
-            value={isCluster && ra ? formatBytes(ra.io.readBytesPerSec) + '/s' : metrics ? formatBytes(metrics.disk_read_bytes) : '-'}
-            color="#10B981"
-            sparklineData={sparkDiskR}
-          />
-          <SparklineStatCard
-            label={isCluster ? `Disk Write (cluster)` : 'Disk Write'}
-            value={isCluster && ra ? formatBytes(ra.io.writeBytesPerSec) + '/s' : metrics ? formatBytes(metrics.disk_write_bytes) : '-'}
-            color="#F59E0B"
-            sparklineData={sparkDiskW}
-          />
-          <SparklineStatCard
-            label="Uptime"
-            value={metrics?.uptime_seconds ? formatDuration(metrics.uptime_seconds) : '-'}
-            color="#06b6d4"
-            sparklineData={[]}
-          />
-        </div>
+        <OverviewVitalsStrip
+          data={liveData}
+          metrics={metrics}
+          cpuHistory={sparkCpu}
+          memoryHistory={sparkMem}
+          diskReadHistory={sparkDiskR}
+          diskWriteHistory={sparkDiskW}
+          isLoading={pollingStatus === 'polling'}
+        />
       )}
 
       {/* Trend Chart */}

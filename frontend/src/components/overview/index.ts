@@ -19,6 +19,8 @@ export {
   SlowQueriesWidget,
 } from './DeepDiveWidgets';
 export { SparklineStatCard } from './SparklineStatCard';
+export { OverviewVitalsStrip } from './OverviewVitalsStrip';
+export { OverviewDestinationCards } from './OverviewDestinationCards';
 export { MiniTimeline } from './MiniTimeline';
 export { LiveActivityStream } from './LiveActivityStream';
 export { ResourceArena3D } from './ResourceArena3D';
