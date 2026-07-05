@@ -8,7 +8,7 @@
 
 import React, { useCallback, useEffect, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
-import type { QuerySeries } from '@tracehouse/core';
+import { summarizeObjectStorageProfile, type QuerySeries } from '@tracehouse/core';
 import { ThreadBreakdownSection } from '../QueryDetail';
 import { TraceLogViewer } from '../../tracing/TraceLogViewer';
 import { SpeedscopeViewer } from '../../tracing/SpeedscopeViewer';
@@ -24,6 +24,7 @@ import { OverviewTab } from './tabs/OverviewTab';
 import { DistributedTab } from './tabs/DistributedTab';
 import { DetailsTab, type DetailsSubTab } from './tabs/DetailsTab';
 import { AnalyticsTab, type AnalyticsSubTab } from './tabs/AnalyticsTab';
+import { ObjectStorageTab } from './tabs/ObjectStorageTab';
 import { useQueryLogs } from './hooks/useQueryLogs';
 import { useQuerySpans } from './hooks/useQuerySpans';
 import { useQueryFlamegraph } from './hooks/useQueryFlamegraph';
@@ -42,7 +43,7 @@ export interface TimelineQueryModalProps {
   onViewInTimeTravel?: (normalizedQueryHash: string) => void;
 }
 
-type QueryModalTab = 'overview' | 'distributed' | 'details' | 'analytics' | 'history' | 'logs' | 'spans' | 'flamegraph' | 'pipeline' | 'threads' | 'xray';
+type QueryModalTab = 'overview' | 'distributed' | 'details' | 'analytics' | 'object-storage' | 'history' | 'logs' | 'spans' | 'flamegraph' | 'pipeline' | 'threads' | 'xray';
 
 export const QueryDetailModal: React.FC<TimelineQueryModalProps> = ({
   query,
@@ -128,6 +129,7 @@ export const QueryDetailModal: React.FC<TimelineQueryModalProps> = ({
   }, [services]);
 
   const queryDetail = detail.queryDetail;
+  const objectStorageSummary = summarizeObjectStorageProfile(queryDetail?.ProfileEvents);
   const distributedChildNodes = topology.distributedTopology?.nodes.filter(node =>
     node.role !== 'coordinator' && node.role !== 'insert_client'
   ) ?? [];
@@ -151,6 +153,7 @@ export const QueryDetailModal: React.FC<TimelineQueryModalProps> = ({
     { key: 'overview', label: 'Overview' },
     { key: 'details', label: 'Details' },
     { key: 'analytics', label: 'Analytics' },
+    ...(objectStorageSummary.hasObjectStorageIO ? [{ key: 'object-storage' as const, label: 'Object Storage' }] : []),
     {
       key: 'distributed',
       label: 'Distributed',
@@ -289,7 +292,7 @@ export const QueryDetailModal: React.FC<TimelineQueryModalProps> = ({
         </div>
 
         {/* Content */}
-        <div style={{ flex: 1, overflow: activeTab === 'history' ? 'hidden' : 'auto', padding: ['logs', 'spans', 'details', 'distributed', 'pipeline', 'history', 'analytics', 'xray'].includes(activeTab) ? 0 : 24 }}>
+        <div style={{ flex: 1, overflow: activeTab === 'history' ? 'hidden' : 'auto', padding: ['logs', 'spans', 'details', 'distributed', 'pipeline', 'history', 'analytics', 'object-storage', 'xray'].includes(activeTab) ? 0 : 24 }}>
           {activeTab === 'overview' && (
             <OverviewTab
               q={q}
@@ -373,6 +376,10 @@ export const QueryDetailModal: React.FC<TimelineQueryModalProps> = ({
               queryDetail={queryDetail}
               isLoadingDetail={detail.isLoading}
             />
+          )}
+
+          {activeTab === 'object-storage' && (
+            <ObjectStorageTab summary={objectStorageSummary} />
           )}
 
           {activeTab === 'history' && (

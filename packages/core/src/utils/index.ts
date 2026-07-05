@@ -27,6 +27,8 @@ export type { MergeEtaInfo } from './merge-eta.js';
 export { deriveHealth, mergeThroughputHealth, worstHealth, isMergeStuck } from './merge-health.js';
 export type { Health, HealthNode, ThroughputMap } from './merge-health.js';
 export { deriveQueryHealth, isQueryStuck } from './query-health.js';
+export { DEFAULT_OBJECT_STORAGE_PRICING_PROFILE, summarizeObjectStorageProfile } from './object-storage-profile.js';
+export type { ObjectStorageCostEstimate, ObjectStorageEvent, ObjectStoragePricingProfile, ObjectStorageProfileSummary } from './object-storage-profile.js';
 export { detectTimestamp, timestampToDate, formatCell, parseReadableBytes } from './format-cell.js';
 export type { TimestampUnit } from './format-cell.js';
 export { pearson, spearman, crossCorrelation, crossCorrelationDetail, rollingCorrelation, minMaxNormalize, normalizePanelData, correlateToFocused, correlationToOpacity, correlationStrength, computeInsightsAndLags, interpretCorrelation, CORRELATION_ALGORITHMS, CORRELATION_THRESHOLDS, ROLLING_WINDOW_TRIGGER, ROLLING_WINDOW_THRESHOLD } from './correlation.js';
