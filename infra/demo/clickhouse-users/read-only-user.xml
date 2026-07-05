@@ -19,6 +19,7 @@
         <query>GRANT SELECT ON replacing_test.*</query>
         <!-- System tables the app needs -->
         <query>GRANT SELECT ON system.asynchronous_inserts</query>
+        <query>GRANT SELECT ON system.asynchronous_insert_log</query>
         <query>GRANT SELECT ON system.asynchronous_metric_log</query>
         <query>GRANT SELECT ON system.asynchronous_metrics</query>
         <query>GRANT SELECT ON system.build_options</query>

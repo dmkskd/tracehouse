@@ -41,6 +41,7 @@ GRANT SELECT ON replacing_test.* TO read_only;
 -- Grants — system tables the app needs
 -- ============================================================
 GRANT SELECT ON system.asynchronous_inserts TO read_only;
+GRANT SELECT ON system.asynchronous_insert_log TO read_only;
 GRANT SELECT ON system.asynchronous_metric_log TO read_only;
 GRANT SELECT ON system.asynchronous_metrics TO read_only;
 GRANT SELECT ON system.build_options TO read_only;
