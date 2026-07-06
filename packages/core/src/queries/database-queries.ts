@@ -15,13 +15,13 @@
  */
 export const LIST_DATABASES = `
   SELECT
-    name,
+    database_name AS name,
     ifNull(nullIf(anyIf(engine, engine != ''), ''), 'unknown') AS engine,
     max(table_count) AS table_count,
     max(total_bytes) AS total_bytes
   FROM (
     SELECT
-      name,
+      name AS database_name,
       engine,
       toUInt64(0) AS table_count,
       toUInt64(0) AS total_bytes
@@ -30,19 +30,19 @@ export const LIST_DATABASES = `
     UNION ALL
 
     SELECT
-      database AS name,
+      database AS database_name,
       '' AS engine,
-      countDistinct(name) AS table_count,
+      countDistinct(table_name) AS table_count,
       COALESCE(sum(table_bytes), 0) AS total_bytes
     FROM (
-      SELECT database, name, max(total_bytes) AS table_bytes
+      SELECT database, name AS table_name, max(total_bytes) AS table_bytes
       FROM {{cluster_aware:system.tables}}
-      GROUP BY database, name
+      GROUP BY database, table_name
     )
     GROUP BY database
   )
-  GROUP BY name
-  ORDER BY name
+  GROUP BY database_name
+  ORDER BY database_name
 `;
 
 /** List all tables in a database. Natural key: (database, name). */
