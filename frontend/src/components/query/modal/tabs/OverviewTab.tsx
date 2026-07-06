@@ -76,12 +76,6 @@ function percentLabel(value: number): string {
   return `${value.toFixed(1)}%`;
 }
 
-function cpuRatioHint(cpuUs: number, durationMs: number): string {
-  if (durationMs <= 0) return `CPU time: ${fmtUs(cpuUs)}. Wall time is unavailable.`;
-  const cpuMs = cpuUs / 1000;
-  return `CPU work relative to wall time: ${fmtUs(cpuUs)} CPU / ${fmtMs(durationMs)} wall = ${percentLabel((cpuMs / durationMs) * 100)}. Values over 100% can happen with parallel CPU work; the bar caps at 100%.`;
-}
-
 export const OverviewTab: React.FC<OverviewTabProps> = ({
   q,
   queryDetail,
@@ -167,12 +161,12 @@ export const OverviewTab: React.FC<OverviewTabProps> = ({
           ioBytes={readBytes + diskBytes + netBytes}
           onOpen={() => onOpenTab('details')}
         />
-        <RuntimePreview
-          durationMs={q.duration_ms}
-          cpuUs={q.cpu_us}
-          memoryBytes={q.peak_memory}
+        <HistoryPreview
           history={history}
-          onOpen={() => onOpenTab('details')}
+          durationMs={q.duration_ms}
+          similarQueries={similarQueries}
+          isLoading={isLoadingSimilarQueries}
+          onOpen={() => onOpenTab('history')}
         />
         <ParallelExecutionPreview
           subQueries={subQueries}
@@ -555,24 +549,28 @@ const SummaryFact: React.FC<{ label: string; value: string }> = ({ label, value 
   </div>
 );
 
-const RuntimePreview: React.FC<{
-  durationMs: number;
-  cpuUs: number;
-  memoryBytes: number;
+const HistoryPreview: React.FC<{
   history: { count: number; p50: number; p95: number; rank: number } | null;
+  durationMs: number;
+  similarQueries: SimilarQuery[];
+  isLoading: boolean;
   onOpen: () => void;
-}> = ({ durationMs, cpuUs, memoryBytes, history, onOpen }) => (
-  <PreviewCard title="Runtime" action="Details" onOpen={onOpen}>
-    <div style={{ fontFamily: 'monospace', fontSize: 18, color: 'var(--text-primary)', lineHeight: 1.15, marginBottom: 8 }}>
-      {fmtMs(durationMs)}
+}> = ({ history, durationMs, similarQueries, isLoading, onOpen }) => (
+  <PreviewCard title="History" action="History" onOpen={onOpen}>
+    <div style={{ fontFamily: 'monospace', fontSize: 18, color: 'var(--text-primary)', lineHeight: 1.15, marginBottom: 6 }}>
+      {history ? `p${history.rank}` : (isLoading ? 'loading' : 'no data')}
     </div>
-    <div style={{ fontFamily: 'monospace', fontSize: 11, color: 'var(--text-secondary)', marginBottom: 20 }}>
-      {history ? `p${history.rank} / p50 ${fmtMs(history.p50)}` : 'current execution'}
+    <div style={{ fontFamily: 'monospace', fontSize: 11, color: 'var(--text-secondary)', marginBottom: 18 }}>
+      {history ? `current ${fmtMs(durationMs)} / p50 ${fmtMs(history.p50)}` : 'similar executions'}
     </div>
-    <div style={{ display: 'grid', gridTemplateColumns: 'repeat(2, minmax(0, 1fr))', gap: 16, marginTop: 28 }}>
-      <RuntimeNumber label="CPU" value={fmtUs(cpuUs)} />
-      <RuntimeNumber label="Memory" value={formatBytes(memoryBytes)} />
+    <div style={{ minHeight: 32 }}>
+      <MiniSparkline values={similarQueries.map(item => Number(item.query_duration_ms)).filter(Number.isFinite)} color="#58a6ff" />
     </div>
+    {history && (
+      <div style={{ marginTop: 8, fontFamily: 'monospace', fontSize: 10, color: 'var(--text-muted)' }}>
+        p95 {fmtMs(history.p95)} / {history.count} runs
+      </div>
+    )}
   </PreviewCard>
 );
 
@@ -585,12 +583,12 @@ const ResourcePressurePreview: React.FC<{
   onOpen: () => void;
 }> = ({ scores, durationMs, cpuUs, memoryBytes, ioBytes, onOpen }) => (
   <PreviewCard title="Resource Pressure" action="Details" onOpen={onOpen}>
-    <div style={{ display: 'grid', gridTemplateColumns: '128px minmax(0, 1fr)', gap: 28, alignItems: 'center' }}>
-        <PressureGlyphPanel scores={scores} />
+    <div style={{ display: 'grid', gridTemplateColumns: '144px minmax(0, 1fr)', gap: 20, alignItems: 'center' }}>
+      <PressureGlyphPanel scores={scores} />
       <div>
         <MetricBar label="Time" value={fmtMs(durationMs)} ratio={scores.time} color="#58a6ff" />
         <MetricBar label="Memory" value={formatBytes(memoryBytes)} ratio={scores.memory} color="#a371f7" />
-        <MetricBar label="CPU" value={fmtUs(cpuUs)} ratio={scores.cpu} color="#d29922" title={cpuRatioHint(cpuUs, durationMs)} />
+        <MetricBar label="CPU" value={fmtUs(cpuUs)} ratio={scores.cpu} color="#d29922" />
         <MetricBar label="I/O" value={formatBytes(ioBytes)} ratio={scores.io} color="#3fb950" />
         <MetricBar label="Scan" value={scores.scan > 0 ? percentLabel(scores.scan * 100) : 'n/a'} ratio={scores.scan} color="#8b949e" />
       </div>
@@ -599,13 +597,13 @@ const ResourcePressurePreview: React.FC<{
 );
 
 const PressureGlyphPanel: React.FC<{ scores: { time: number; memory: number; cpu: number; io: number; scan: number } }> = ({ scores }) => (
-  <div style={{ position: 'relative', display: 'grid', placeItems: 'center', height: 112, width: 128, minWidth: 0 }}>
-    <PressureGlyph scores={scores} size={82} />
+  <div style={{ position: 'relative', display: 'grid', placeItems: 'center', height: 128, width: 144, minWidth: 0 }}>
+    <PressureGlyph scores={scores} size={94} />
     <AxisLabel label="Time" style={{ top: 0, left: '50%', transform: 'translateX(-50%)' }} />
-    <AxisLabel label="Mem" style={{ top: 32, right: 0 }} />
-    <AxisLabel label="CPU" style={{ bottom: 2, right: 16 }} />
-    <AxisLabel label="I/O" style={{ bottom: 2, left: 20 }} />
-    <AxisLabel label="Scan" style={{ top: 30, left: 0 }} />
+    <AxisLabel label="Mem" style={{ top: 38, right: 0 }} />
+    <AxisLabel label="CPU" style={{ bottom: 4, right: 18 }} />
+    <AxisLabel label="I/O" style={{ bottom: 4, left: 22 }} />
+    <AxisLabel label="Scan" style={{ top: 38, left: 0 }} />
   </div>
 );
 
@@ -700,15 +698,6 @@ const MetricBar: React.FC<{ label: string; value: string; ratio: number; color: 
       <div style={{ width: `${Math.max(0, Math.min(100, ratio * 100))}%`, height: '100%', borderRadius: 999, background: color }} />
     </div>
     <div style={{ fontFamily: 'monospace', fontSize: 10, color: 'var(--text-secondary)', textAlign: 'right', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', paddingRight: 4 }}>
-      {value}
-    </div>
-  </div>
-);
-
-const RuntimeNumber: React.FC<{ label: string; value: string }> = ({ label, value }) => (
-  <div style={{ minWidth: 0 }}>
-    <div style={{ ...LABEL, color: 'var(--text-muted)', fontSize: 9, marginBottom: 6 }}>{label}</div>
-    <div style={{ fontFamily: 'monospace', fontSize: 13, color: 'var(--text-secondary)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
       {value}
     </div>
   </div>
