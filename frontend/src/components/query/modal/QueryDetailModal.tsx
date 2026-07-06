@@ -21,6 +21,7 @@ import { useUserPreferenceStore } from '../../../stores/userPreferenceStore';
 import { SpansTab } from './tabs/SpansTab';
 import { HistoryTab } from './tabs/HistoryTab';
 import { OverviewTab } from './tabs/OverviewTab';
+import { SqlTab } from './tabs/SqlTab';
 import { DistributedTab } from './tabs/DistributedTab';
 import { DetailsTab, type DetailsSubTab } from './tabs/DetailsTab';
 import { AnalyticsTab, type AnalyticsSubTab } from './tabs/AnalyticsTab';
@@ -43,7 +44,7 @@ export interface TimelineQueryModalProps {
   onViewInTimeTravel?: (normalizedQueryHash: string) => void;
 }
 
-type QueryModalTab = 'overview' | 'distributed' | 'details' | 'analytics' | 'object-storage' | 'history' | 'logs' | 'spans' | 'flamegraph' | 'pipeline' | 'threads' | 'xray';
+type QueryModalTab = 'overview' | 'sql' | 'distributed' | 'details' | 'analytics' | 'object-storage' | 'history' | 'logs' | 'spans' | 'flamegraph' | 'pipeline' | 'threads' | 'xray';
 
 export const QueryDetailModal: React.FC<TimelineQueryModalProps> = ({
   query,
@@ -75,7 +76,7 @@ export const QueryDetailModal: React.FC<TimelineQueryModalProps> = ({
   const spansHook = useQuerySpans(activeQuery, activeTab === 'spans');
   const flame = useQueryFlamegraph(activeQuery, activeTab === 'flamegraph');
   const threadsHook = useQueryThreads(activeQuery, activeTab === 'threads');
-  const similar = useSimilarQueries(query, activeQuery, detail.queryDetail, activeTab === 'history');
+  const similar = useSimilarQueries(query, activeQuery, detail.queryDetail, activeTab === 'history' || activeTab === 'overview');
   const timelines = useQueryTimelines(query, similar.similarQueries);
   const topology = useQueryTopology(activeQuery, detail.queryDetail);
 
@@ -151,6 +152,7 @@ export const QueryDetailModal: React.FC<TimelineQueryModalProps> = ({
 
   const tabs: { key: QueryModalTab; label: string; unavailable?: boolean; reason?: string; experimental?: boolean }[] = [
     { key: 'overview', label: 'Overview' },
+    { key: 'sql', label: 'SQL' },
     { key: 'details', label: 'Details' },
     { key: 'analytics', label: 'Analytics' },
     ...(objectStorageSummary.hasObjectStorageIO ? [{ key: 'object-storage' as const, label: 'Object Storage' }] : []),
@@ -292,17 +294,32 @@ export const QueryDetailModal: React.FC<TimelineQueryModalProps> = ({
         </div>
 
         {/* Content */}
-        <div style={{ flex: 1, overflow: activeTab === 'history' ? 'hidden' : 'auto', padding: ['logs', 'spans', 'details', 'distributed', 'pipeline', 'history', 'analytics', 'object-storage', 'xray'].includes(activeTab) ? 0 : 24 }}>
+        <div style={{ flex: 1, overflow: activeTab === 'history' ? 'hidden' : 'auto', padding: ['logs', 'spans', 'details', 'distributed', 'pipeline', 'history', 'analytics', 'object-storage', 'xray', 'sql'].includes(activeTab) ? 0 : 24 }}>
           {activeTab === 'overview' && (
             <OverviewTab
               q={q}
-              activeQuery={activeQuery!}
               queryDetail={queryDetail}
               isSelectQuery={isSelectQuery}
-              topologyCoordinator={topology.coordinator}
               subQueries={topology.subQueries}
               distributedTopology={topology.distributedTopology}
               isLoadingSubQueries={topology.isLoading}
+              similarQueries={similar.similarQueries}
+              isLoadingSimilarQueries={similar.isLoading}
+              objectStorageSummary={objectStorageSummary}
+              showLogsCard={hasTextLog}
+              showHistoryCard={hasQueryLog}
+              showXRayCard={experimentalEnabled && hasProcessesHistory}
+              showThreadsCard={hasQueryThreadLog}
+              showFlamegraphCard={hasTraceLog}
+              onOpenTab={setActiveTab}
+            />
+          )}
+
+          {activeTab === 'sql' && (
+            <SqlTab
+              q={q}
+              queryDetail={queryDetail}
+              isSelectQuery={isSelectQuery}
               onNavigateToQuery={navigateToQuery}
             />
           )}

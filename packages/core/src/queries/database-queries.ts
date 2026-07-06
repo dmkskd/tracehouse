@@ -6,21 +6,43 @@
  * identical data from multiple replicas within a shard.
  */
 
-/** List all databases with table counts. Natural key: (database name). */
+/**
+ * List databases with cluster-wide table counts.
+ *
+ * Keep system.databases local: clusterAllReplicas(system.databases) creates a
+ * second metadata fan-out but adds little value for the explorer. The table
+ * aggregate remains cluster-aware so counts and bytes include remote replicas.
+ */
 export const LIST_DATABASES = `
   SELECT
-    d.name,
-    any(d.engine) AS engine,
-    countDistinct(t.name) AS table_count,
-    COALESCE(sum(t.table_bytes), 0) AS total_bytes
-  FROM {{cluster_aware:system.databases}} AS d
-  LEFT JOIN (
-    SELECT database, name, max(total_bytes) AS table_bytes
-    FROM {{cluster_aware:system.tables}}
-    GROUP BY database, name
-  ) AS t ON d.name = t.database
-  GROUP BY d.name
-  ORDER BY d.name
+    name,
+    ifNull(nullIf(anyIf(engine, engine != ''), ''), 'unknown') AS engine,
+    max(table_count) AS table_count,
+    max(total_bytes) AS total_bytes
+  FROM (
+    SELECT
+      name,
+      engine,
+      toUInt64(0) AS table_count,
+      toUInt64(0) AS total_bytes
+    FROM system.databases
+
+    UNION ALL
+
+    SELECT
+      database AS name,
+      '' AS engine,
+      countDistinct(name) AS table_count,
+      COALESCE(sum(table_bytes), 0) AS total_bytes
+    FROM (
+      SELECT database, name, max(total_bytes) AS table_bytes
+      FROM {{cluster_aware:system.tables}}
+      GROUP BY database, name
+    )
+    GROUP BY database
+  )
+  GROUP BY name
+  ORDER BY name
 `;
 
 /** List all tables in a database. Natural key: (database, name). */
