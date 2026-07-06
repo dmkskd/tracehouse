@@ -2,6 +2,8 @@ import React, { useMemo } from 'react';
 import type { DistributedTopology, ObjectStorageProfileSummary, QueryDetail as QueryDetailType, QuerySeries, SimilarQuery, SubQueryInfo } from '@tracehouse/core';
 import { formatBytes } from '../../../../stores/databaseStore';
 import { formatDurationMs, formatMicroseconds, formatNumberCompact } from '../../../../utils/formatters';
+import { querySqlLineCount, querySqlText } from '../../../../utils/querySqlText';
+import { SqlHighlight } from '../../../common/SqlHighlight';
 import { percentile } from '../shared/chartConstants';
 
 type OverviewTargetTab = 'sql' | 'details' | 'analytics' | 'object-storage' | 'distributed' | 'logs' | 'history' | 'pipeline' | 'xray' | 'threads' | 'flamegraph';
@@ -22,6 +24,7 @@ interface OverviewTabProps {
   showThreadsCard: boolean;
   showFlamegraphCard: boolean;
   onOpenTab: (tab: OverviewTargetTab) => void;
+  onNavigateToQuery: (queryId: string) => void;
 }
 
 const LABEL: React.CSSProperties = {
@@ -66,13 +69,6 @@ function ratioLabel(numerator: number, denominator: number): string {
   return `${ratio.toFixed(2)}:1`;
 }
 
-function percentLabel(value: number): string {
-  if (!Number.isFinite(value)) return '-';
-  if (value < 0.01 && value > 0) return '<0.01%';
-  if (value < 10) return `${value.toFixed(2)}%`;
-  return `${value.toFixed(1)}%`;
-}
-
 export const OverviewTab: React.FC<OverviewTabProps> = ({
   q,
   queryDetail,
@@ -89,6 +85,7 @@ export const OverviewTab: React.FC<OverviewTabProps> = ({
   showThreadsCard,
   showFlamegraphCard,
   onOpenTab,
+  onNavigateToQuery,
 }) => {
   const status = statusInfo(q);
   const readRows = Number(queryDetail?.read_rows ?? 0);
@@ -108,6 +105,9 @@ export const OverviewTab: React.FC<OverviewTabProps> = ({
   const hasDistributedExecution = childCount > 0;
   const queryKind = queryDetail?.query_kind || q.query_kind || 'Query';
   const db = queryDetail?.current_database || 'default';
+  const overviewSql = querySqlText(q, queryDetail, 'formatted', '');
+  const parentQueryId = queryDetail?.is_initial_query === 0 ? queryDetail.initial_query_id : '';
+  const queryRole = queryDetail ? (queryDetail.is_initial_query === 0 ? 'worker' : 'coordinator') : undefined;
 
   const history = useMemo(() => {
     const durations = similarQueries
@@ -126,42 +126,35 @@ export const OverviewTab: React.FC<OverviewTabProps> = ({
   }, [q.duration_ms, queryDetail?.query_duration_ms, similarQueries]);
 
   const executionTab: OverviewTargetTab = hasDistributedExecution ? 'distributed' : (isSelectQuery ? 'pipeline' : 'details');
-  const pressureScores = {
-    time: history?.p95 ? Math.min(1, q.duration_ms / Math.max(history.p95, 1)) : Math.min(1, q.duration_ms / 60_000),
-    memory: Math.min(1, q.peak_memory / Math.max(q.peak_memory, 512 * 1024 * 1024)),
-    cpu: q.duration_ms > 0 ? Math.min(1, (q.cpu_us / 1000) / q.duration_ms) : 0,
-    io: Math.min(1, (readBytes + diskBytes + netBytes) / Math.max(readBytes + diskBytes + netBytes, 1024 * 1024 * 1024)),
-    scan: readRows > 0 ? Math.min(1, readRows / Math.max(readRows, resultRows || 1)) : 0,
-  };
 
   return (
     <div style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
-      <div style={{ display: 'grid', gridTemplateColumns: '1.18fr 1fr 1fr 1fr', gap: 14 }}>
+      <div style={{ display: 'grid', gridTemplateColumns: '1.12fr 0.9fr 0.9fr 1fr', gap: 14 }}>
         <QuerySummaryPreview
           q={q}
           status={status}
           queryKind={queryKind}
-          db={db}
           host={host}
-          tables={tables}
-          readRows={readRows}
-          readBytes={readBytes}
+          queryRole={queryRole}
+          parentQueryId={parentQueryId}
           onOpen={() => onOpenTab('sql')}
+          onNavigateToQuery={onNavigateToQuery}
         />
-        <ResourcePressurePreview
-          scores={pressureScores}
+        <RuntimePreview
           durationMs={q.duration_ms}
           cpuUs={q.cpu_us}
           memoryBytes={q.peak_memory}
-          ioBytes={readBytes + diskBytes + netBytes}
+          history={history}
           onOpen={() => onOpenTab('details')}
         />
-        <ScanEfficiencyPreview
+        <DataVolumePreview
           readRows={readRows}
           resultRows={resultRows}
           readBytes={readBytes}
           resultBytes={resultBytes}
-          onOpen={() => onOpenTab('analytics')}
+          netBytes={netBytes}
+          diskBytes={diskBytes}
+          onOpen={() => onOpenTab('details')}
         />
         <ParallelExecutionPreview
           subQueries={subQueries}
@@ -171,6 +164,13 @@ export const OverviewTab: React.FC<OverviewTabProps> = ({
           onOpen={() => onOpenTab(executionTab)}
         />
       </div>
+
+      {overviewSql && (
+        <SqlOverviewStrip
+          sql={overviewSql}
+          onOpen={() => onOpenTab('sql')}
+        />
+      )}
 
       {q.exception && (
         <div style={{
@@ -337,6 +337,67 @@ export const OverviewTab: React.FC<OverviewTabProps> = ({
   );
 };
 
+const SqlOverviewStrip: React.FC<{
+  sql: string;
+  onOpen: () => void;
+}> = ({ sql, onOpen }) => {
+  const lineCount = querySqlLineCount(sql);
+  return (
+    <div
+      style={{
+        ...PANEL,
+        border: '1px solid var(--border-primary)',
+        padding: '12px 14px',
+        boxShadow: 'var(--shadow-sm)',
+      }}
+    >
+      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'baseline', gap: 12, marginBottom: 8 }}>
+        <div style={{ ...LABEL, color: 'var(--text-tertiary)', fontWeight: 700, fontSize: 11 }}>
+          SQL preview
+        </div>
+        <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
+          <span style={{ fontFamily: 'monospace', fontSize: 11, color: 'var(--text-muted)', whiteSpace: 'nowrap' }}>
+            {lineCount} {lineCount === 1 ? 'line' : 'lines'}
+          </span>
+          <button
+            type="button"
+            onClick={onOpen}
+            style={{
+              border: 'none',
+              background: 'transparent',
+              color: '#58a6ff',
+              cursor: 'pointer',
+              padding: 0,
+              fontFamily: 'monospace',
+              fontSize: 11,
+            }}
+          >
+            SQL {'->'}
+          </button>
+        </div>
+      </div>
+      <SqlHighlight
+        maxHeight={132}
+        style={{
+          width: '100%',
+          height: 132,
+          padding: '10px 12px',
+          borderRadius: 6,
+          border: '1px solid var(--border-secondary)',
+          background: 'var(--bg-tertiary)',
+          color: 'var(--text-secondary)',
+          fontSize: 12,
+          lineHeight: 1.55,
+          boxSizing: 'border-box',
+          overflow: 'auto',
+        }}
+      >
+        {sql}
+      </SqlHighlight>
+    </div>
+  );
+};
+
 const PreviewCard: React.FC<{
   title: string;
   action: string;
@@ -345,8 +406,16 @@ const PreviewCard: React.FC<{
 }> = ({ title, action, onOpen, children }) => {
   const accent = previewAccent(title);
   return (
-  <button
+  <div
+    role="button"
+    tabIndex={0}
     onClick={onOpen}
+    onKeyDown={event => {
+      if (event.currentTarget === event.target && (event.key === 'Enter' || event.key === ' ')) {
+        event.preventDefault();
+        onOpen();
+      }
+    }}
     style={{
       textAlign: 'left',
       padding: 0,
@@ -360,6 +429,7 @@ const PreviewCard: React.FC<{
       flexDirection: 'column',
       boxShadow: 'var(--shadow-sm)',
       transition: 'border-color 0.15s ease, transform 0.15s ease, background 0.15s ease',
+      outline: 'none',
     }}
     onMouseEnter={event => {
       event.currentTarget.style.borderColor = accent;
@@ -379,15 +449,15 @@ const PreviewCard: React.FC<{
     <div style={{ padding: '0 14px 14px', flex: 1 }}>
       {children}
     </div>
-  </button>
+  </div>
   );
 };
 
 function previewAccent(title: string): string {
   switch (title) {
-    case 'Resource Pressure':
+    case 'Runtime':
       return '#d29922';
-    case 'Scan Efficiency':
+    case 'Data Volume':
       return '#3fb950';
     case 'Parallel Execution':
       return '#d29922';
@@ -400,83 +470,113 @@ const QuerySummaryPreview: React.FC<{
   q: QuerySeries;
   status: ReturnType<typeof statusInfo>;
   queryKind: string;
-  db: string;
   host: string;
-  tables: string[];
-  readRows: number;
-  readBytes: number;
+  queryRole?: string;
+  parentQueryId?: string;
   onOpen: () => void;
-}> = ({ q, status, queryKind, db, host, tables, readRows, readBytes, onOpen }) => (
+  onNavigateToQuery: (queryId: string) => void;
+}> = ({ q, status, queryKind, host, queryRole, parentQueryId, onOpen, onNavigateToQuery }) => (
   <PreviewCard title="Query Summary" action="SQL" onOpen={onOpen}>
-    <div style={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', gap: 10, minWidth: 0 }}>
-      <div style={{ minWidth: 0, flex: 1 }}>
-        <div style={{ display: 'flex', alignItems: 'center', gap: 7, flexWrap: 'wrap', marginBottom: 6 }}>
-          <span style={{ fontFamily: 'monospace', fontSize: 14, color: '#58a6ff', fontWeight: 700 }}>{shortId(q.query_id)}</span>
-          <Badge color="#a371f7">parallel</Badge>
-          <Badge color={status.color}>{status.label.toLowerCase()}</Badge>
-        </div>
-        <div style={{ fontFamily: 'monospace', fontSize: 12, color: 'var(--text-secondary)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
-          {db} on {host}
-        </div>
+    <div style={{ display: 'flex', flexDirection: 'column', gap: 9, minWidth: 0 }}>
+      <div style={{ display: 'flex', alignItems: 'center', gap: 8, minWidth: 0, flexWrap: 'wrap' }}>
+        <span style={{ fontFamily: 'monospace', fontSize: 15, color: '#58a6ff', fontWeight: 700 }}>{shortId(q.query_id)}</span>
+        <Badge color={status.color}>{status.label.toLowerCase()}</Badge>
       </div>
-      <Badge color="#d29922">{queryKind.toUpperCase()}</Badge>
-    </div>
-    <div style={{ marginTop: 12, paddingTop: 10, borderTop: '1px solid var(--border-primary)' }}>
-      <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: 7 }}>
-        <div style={LABEL}>Resources</div>
-        <div style={{ fontFamily: 'monospace', fontSize: 11, color: 'var(--text-muted)' }}>{tables.length}</div>
+
+      <div style={{ display: 'flex', alignItems: 'center', gap: 7, flexWrap: 'wrap' }}>
+        <Badge color="#58a6ff">{queryKind.toLowerCase()}</Badge>
+        {queryRole && <Badge color={queryRole === 'worker' ? '#d29922' : '#a371f7'}>{queryRole}</Badge>}
       </div>
-      <ChipPreview values={tables.length > 0 ? tables : [db]} empty="no resources" color="#3fb950" />
-    </div>
-    <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, minmax(0, 1fr))', margin: '12px -14px -14px', borderTop: '1px solid var(--border-primary)' }}>
-      <MiniMetric value={fmtMs(q.duration_ms)} label="Duration" />
-      <MiniMetric value={formatNumberCompact(readRows)} label="Rows" />
-      <MiniMetric value={formatBytes(readBytes)} label="Bytes" />
+
+      <div style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
+        <SummaryFact label="user" value={q.user || '-'} />
+        <SummaryFact label="host" value={host} />
+      </div>
+
+      {parentQueryId && (
+        <button
+          type="button"
+          onClick={(event) => {
+            event.stopPropagation();
+            onNavigateToQuery(parentQueryId);
+          }}
+          style={{
+            width: 'fit-content',
+            padding: 0,
+            border: 'none',
+            background: 'transparent',
+            color: '#58a6ff',
+            cursor: 'pointer',
+            fontFamily: 'monospace',
+            fontSize: 11,
+          }}
+        >
+          parent {shortId(parentQueryId)} {'->'}
+        </button>
+      )}
     </div>
   </PreviewCard>
 );
 
-const ResourcePressurePreview: React.FC<{
-  scores: { time: number; memory: number; cpu: number; io: number; scan: number };
+const SummaryFact: React.FC<{ label: string; value: string }> = ({ label, value }) => (
+  <div style={{ display: 'grid', gridTemplateColumns: '34px minmax(0, 1fr)', gap: 8, alignItems: 'baseline', minWidth: 0 }}>
+    <span style={{ fontFamily: 'monospace', fontSize: 10, color: 'var(--text-muted)' }}>{label}</span>
+    <span
+      title={value}
+      style={{
+        fontFamily: 'monospace',
+        fontSize: 12,
+        color: 'var(--text-secondary)',
+        overflow: 'hidden',
+        textOverflow: 'ellipsis',
+        whiteSpace: 'nowrap',
+      }}
+    >
+      {value}
+    </span>
+  </div>
+);
+
+const RuntimePreview: React.FC<{
   durationMs: number;
   cpuUs: number;
   memoryBytes: number;
-  ioBytes: number;
+  history: { count: number; p50: number; p95: number; rank: number } | null;
   onOpen: () => void;
-}> = ({ scores, durationMs, cpuUs, memoryBytes, ioBytes, onOpen }) => (
-  <PreviewCard title="Resource Pressure" action="Details" onOpen={onOpen}>
-    <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
-      <PressureGlyphPanel scores={scores} />
-      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(2, minmax(0, 1fr))', gap: '8px 10px' }}>
-        <PressureMeter label="Time" value={scores.time} display={fmtMs(durationMs)} color="#58a6ff" />
-        <PressureMeter label="Memory" value={scores.memory} display={formatBytes(memoryBytes)} color="#a371f7" />
-        <PressureMeter label="CPU" value={scores.cpu} display={fmtUs(cpuUs)} color="#d29922" />
-        <PressureMeter label="I/O" value={scores.io} display={formatBytes(ioBytes)} color="#3fb950" />
-        <PressureMeter label="Scan" value={scores.scan} display={scores.scan > 0 ? percentLabel(scores.scan * 100) : 'n/a'} color="#8b949e" />
-      </div>
+}> = ({ durationMs, cpuUs, memoryBytes, history, onOpen }) => (
+  <PreviewCard title="Runtime" action="Details" onOpen={onOpen}>
+    <div style={{ fontFamily: 'monospace', fontSize: 22, color: 'var(--text-primary)', lineHeight: 1.1, marginBottom: 4 }}>
+      {fmtMs(durationMs)}
     </div>
+    <div style={{ fontFamily: 'monospace', fontSize: 11, color: 'var(--text-secondary)', marginBottom: 12 }}>
+      {history ? `p${history.rank} / p50 ${fmtMs(history.p50)}` : 'current execution'}
+    </div>
+    <MetricBar label="CPU" value={fmtUs(cpuUs)} ratio={durationMs > 0 ? (cpuUs / 1000) / durationMs : 0} color="#d29922" />
+    <MetricBar label="Memory" value={formatBytes(memoryBytes)} ratio={memoryBytes > 0 ? 1 : 0} color="#a371f7" />
   </PreviewCard>
 );
 
-const ScanEfficiencyPreview: React.FC<{
+const DataVolumePreview: React.FC<{
   readRows: number;
   resultRows: number;
   readBytes: number;
   resultBytes: number;
+  netBytes: number;
+  diskBytes: number;
   onOpen: () => void;
-}> = ({ readRows, resultRows, readBytes, resultBytes, onOpen }) => {
-  const keptPct = readRows > 0 ? (resultRows / readRows) * 100 : 0;
+}> = ({ readRows, resultRows, readBytes, resultBytes, netBytes, diskBytes, onOpen }) => {
+  const maxBytes = Math.max(readBytes, resultBytes, netBytes, diskBytes, 1);
   return (
-    <PreviewCard title="Scan Efficiency" action="Analytics" onOpen={onOpen}>
-      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'baseline', marginBottom: 12 }}>
-        <div style={{ fontFamily: 'monospace', fontSize: 11, color: 'var(--text-muted)' }}>read</div>
-        <div style={{ ...LABEL, color: 'var(--text-tertiary)' }}>{readRows > 0 ? `${percentLabel(keptPct)} kept` : 'no rows'}</div>
+    <PreviewCard title="Data Volume" action="Details" onOpen={onOpen}>
+      <div style={{ fontFamily: 'monospace', fontSize: 22, color: 'var(--text-primary)', lineHeight: 1.1, marginBottom: 4 }}>
+        {formatBytes(readBytes)}
       </div>
-      <FatBar value={1} label={`${formatNumberCompact(readRows)} rows / ${formatBytes(readBytes)}`} color="#3fb950" />
-      <FatBar value={readRows > 0 ? resultRows / readRows : 0} label={`${formatNumberCompact(resultRows)} / ${formatBytes(resultBytes)}`} color="#a371f7" />
-      <div style={{ fontFamily: 'monospace', fontSize: 11, color: 'var(--text-muted)', marginTop: 10 }}>
-        scan ratio {ratioLabel(readRows, resultRows)}
+      <div style={{ fontFamily: 'monospace', fontSize: 11, color: 'var(--text-secondary)', marginBottom: 12 }}>
+        {formatNumberCompact(readRows)} read / {formatNumberCompact(resultRows)} result
       </div>
+      <MetricBar label="Result" value={formatBytes(resultBytes)} ratio={resultBytes / maxBytes} color="#a371f7" />
+      <MetricBar label="Network" value={formatBytes(netBytes)} ratio={netBytes / maxBytes} color="#58a6ff" />
+      <MetricBar label="Disk" value={formatBytes(diskBytes)} ratio={diskBytes / maxBytes} color="#f0883e" />
     </PreviewCard>
   );
 };
@@ -520,78 +620,14 @@ const Badge: React.FC<{ color: string; children: React.ReactNode }> = ({ color, 
   </span>
 );
 
-const MiniMetric: React.FC<{ value: string; label: string }> = ({ value, label }) => (
-  <div style={{ padding: '10px 12px', borderRight: '1px solid var(--border-primary)', minWidth: 0 }}>
-    <div style={{ fontFamily: 'monospace', fontSize: 14, color: 'var(--text-primary)', fontWeight: 700, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{value}</div>
-    <div style={{ ...LABEL, marginTop: 4 }}>{label}</div>
-  </div>
-);
-
-const PressureGlyphPanel: React.FC<{ scores: { time: number; memory: number; cpu: number; io: number; scan: number } }> = ({ scores }) => (
-  <div style={{ position: 'relative', display: 'grid', placeItems: 'center', height: 116, width: '100%' }}>
-    <PressureGlyph scores={scores} size={90} />
-    <AxisLabel label="Time" style={{ top: 0, left: '50%', transform: 'translateX(-50%)' }} />
-    <AxisLabel label="Memory" style={{ top: 33, right: 10 }} />
-    <AxisLabel label="CPU" style={{ bottom: 4, right: 42 }} />
-    <AxisLabel label="I/O" style={{ bottom: 4, left: 48 }} />
-    <AxisLabel label="Scan" style={{ top: 33, left: 10 }} />
-  </div>
-);
-
-const AxisLabel: React.FC<{ label: string; style: React.CSSProperties }> = ({ label, style }) => (
-  <div style={{
-    position: 'absolute',
-    color: 'var(--text-muted)',
-    fontSize: 9,
-    fontWeight: 700,
-    letterSpacing: '0.06em',
-    textTransform: 'uppercase',
-    ...style,
-  }}>
-    {label}
-  </div>
-);
-
-const PressureGlyph: React.FC<{ scores: { time: number; memory: number; cpu: number; io: number; scan: number }; size?: number }> = ({ scores, size = 96 }) => {
-  const values = [scores.time, scores.memory, scores.cpu, scores.io, scores.scan];
-  const center = 48;
-  const radius = 35;
-  const points = values.map((score, i) => {
-    const angle = (-90 + i * 72) * Math.PI / 180;
-    const r = 8 + Math.max(0, Math.min(1, score)) * radius;
-    return `${center + Math.cos(angle) * r},${center + Math.sin(angle) * r}`;
-  }).join(' ');
-  return (
-    <svg width={size} height={size} viewBox="0 0 96 96" aria-hidden="true" style={{ flexShrink: 0 }}>
-      <circle cx={center} cy={center} r={radius} fill="transparent" stroke="var(--border-primary)" strokeWidth="2" />
-      {[0, 1, 2, 3, 4].map((i) => {
-        const angle = (-90 + i * 72) * Math.PI / 180;
-        return <line key={i} x1={center} y1={center} x2={center + Math.cos(angle) * radius} y2={center + Math.sin(angle) * radius} stroke="var(--border-primary)" />;
-      })}
-      <polygon points={points} fill="rgba(210,153,34,0.2)" stroke="#d29922" strokeWidth="3" />
-    </svg>
-  );
-};
-
-const PressureMeter: React.FC<{ label: string; value: number; display: string; color: string }> = ({ label, value, display, color }) => (
-  <div>
-    <div style={{ display: 'flex', justifyContent: 'space-between', gap: 8, marginBottom: 2 }}>
-      <span style={{ fontFamily: 'monospace', fontSize: 10, color: 'var(--text-muted)' }}>{label}</span>
-      <span style={{ fontFamily: 'monospace', fontSize: 10, color: 'var(--text-secondary)', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{display}</span>
+const MetricBar: React.FC<{ label: string; value: string; ratio: number; color: string }> = ({ label, value, ratio, color }) => (
+  <div style={{ display: 'grid', gridTemplateColumns: '56px minmax(0, 1fr) 72px', gap: 8, alignItems: 'center', marginBottom: 7 }}>
+    <div style={{ fontFamily: 'monospace', fontSize: 10, color: 'var(--text-muted)' }}>{label}</div>
+    <div style={{ height: 8, borderRadius: 999, overflow: 'hidden', background: 'var(--bg-tertiary)' }}>
+      <div style={{ width: `${Math.max(0, Math.min(100, ratio * 100))}%`, height: '100%', borderRadius: 999, background: color }} />
     </div>
-    <div style={{ height: 5, borderRadius: 3, background: 'var(--bg-tertiary)', overflow: 'hidden' }}>
-      <div style={{ width: `${Math.max(2, Math.min(100, value * 100))}%`, height: '100%', background: color, borderRadius: 3 }} />
-    </div>
-  </div>
-);
-
-const FatBar: React.FC<{ value: number; label: string; color: string }> = ({ value, label, color }) => (
-  <div style={{ display: 'grid', gridTemplateColumns: '78px 1fr', gap: 10, alignItems: 'center', marginBottom: 10 }}>
-    <div style={{ fontFamily: 'monospace', fontSize: 11, color: 'var(--text-secondary)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
-      {label}
-    </div>
-    <div style={{ height: 26, borderRadius: 6, background: `${color}20`, overflow: 'hidden' }}>
-      <div style={{ width: `${Math.max(1, Math.min(100, value * 100))}%`, height: '100%', borderRadius: 6, background: color }} />
+    <div style={{ fontFamily: 'monospace', fontSize: 10, color: 'var(--text-secondary)', textAlign: 'right', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+      {value}
     </div>
   </div>
 );

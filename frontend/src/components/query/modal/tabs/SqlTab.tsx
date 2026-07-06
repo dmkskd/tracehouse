@@ -2,6 +2,7 @@ import React, { useMemo, useState } from 'react';
 import type { QueryDetail as QueryDetailType, QuerySeries } from '@tracehouse/core';
 import { formatBytes } from '../../../../stores/databaseStore';
 import { formatDurationMs, formatMicroseconds } from '../../../../utils/formatters';
+import { querySqlText, type SqlDisplayMode } from '../../../../utils/querySqlText';
 import { SqlHighlight } from '../../../common/SqlHighlight';
 
 interface SqlTabProps {
@@ -23,13 +24,6 @@ const LABEL: React.CSSProperties = {
   textTransform: 'uppercase',
   letterSpacing: '1px',
 };
-
-function sqlText(q: QuerySeries, queryDetail: QueryDetailType | null, mode: 'formatted' | 'raw'): string {
-  if (mode === 'formatted') {
-    return queryDetail?.formatted_query || queryDetail?.query || q.label || '-- no query text available';
-  }
-  return queryDetail?.query || queryDetail?.formatted_query || q.label || '-- no query text available';
-}
 
 function shortHash(value: string | undefined): string {
   return value ? String(value).slice(0, 12) : '-';
@@ -85,8 +79,8 @@ const ToolbarIconButton: React.FC<{
 );
 
 const SqlModeToggle: React.FC<{
-  mode: 'formatted' | 'raw';
-  onChange: (mode: 'formatted' | 'raw') => void;
+  mode: SqlDisplayMode;
+  onChange: (mode: SqlDisplayMode) => void;
 }> = ({ mode, onChange }) => (
   <div
     role="group"
@@ -292,9 +286,9 @@ const Section: React.FC<{ title: string; children: React.ReactNode }> = ({ title
 );
 
 export const SqlTab: React.FC<SqlTabProps> = ({ q, queryDetail, isSelectQuery, onNavigateToQuery }) => {
-  const [mode, setMode] = useState<'formatted' | 'raw'>('formatted');
+  const [mode, setMode] = useState<SqlDisplayMode>('formatted');
   const [copied, setCopied] = useState(false);
-  const sql = sqlText(q, queryDetail, mode);
+  const sql = querySqlText(q, queryDetail, mode);
   const settingsCount = Object.keys(queryDetail?.Settings ?? {}).length;
   const profileEventsCount = Object.keys(queryDetail?.ProfileEvents ?? {}).length;
   const role = queryDetail?.is_initial_query === 0 ? 'Node sub-query' : 'Coordinator';

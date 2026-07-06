@@ -312,6 +312,7 @@ export const QueryDetailModal: React.FC<TimelineQueryModalProps> = ({
               showThreadsCard={hasQueryThreadLog}
               showFlamegraphCard={hasTraceLog}
               onOpenTab={setActiveTab}
+              onNavigateToQuery={navigateToQuery}
             />
           )}
 
