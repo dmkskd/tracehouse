@@ -69,6 +69,19 @@ function ratioLabel(numerator: number, denominator: number): string {
   return `${ratio.toFixed(2)}:1`;
 }
 
+function percentLabel(value: number): string {
+  if (!Number.isFinite(value)) return '-';
+  if (value < 0.01 && value > 0) return '<0.01%';
+  if (value < 10) return `${value.toFixed(2)}%`;
+  return `${value.toFixed(1)}%`;
+}
+
+function cpuRatioHint(cpuUs: number, durationMs: number): string {
+  if (durationMs <= 0) return `CPU time: ${fmtUs(cpuUs)}. Wall time is unavailable.`;
+  const cpuMs = cpuUs / 1000;
+  return `CPU work relative to wall time: ${fmtUs(cpuUs)} CPU / ${fmtMs(durationMs)} wall = ${percentLabel((cpuMs / durationMs) * 100)}. Values over 100% can happen with parallel CPU work; the bar caps at 100%.`;
+}
+
 export const OverviewTab: React.FC<OverviewTabProps> = ({
   q,
   queryDetail,
@@ -91,7 +104,6 @@ export const OverviewTab: React.FC<OverviewTabProps> = ({
   const readRows = Number(queryDetail?.read_rows ?? 0);
   const readBytes = Number(queryDetail?.read_bytes ?? q.disk_read ?? 0);
   const resultRows = Number(queryDetail?.result_rows ?? 0);
-  const resultBytes = Number(queryDetail?.result_bytes ?? 0);
   const netBytes = Number(q.net_recv ?? 0) + Number(q.net_send ?? 0);
   const diskBytes = Number(q.disk_read ?? 0) + Number(q.disk_write ?? 0);
   const tables = queryDetail?.tables ?? [];
@@ -126,10 +138,17 @@ export const OverviewTab: React.FC<OverviewTabProps> = ({
   }, [q.duration_ms, queryDetail?.query_duration_ms, similarQueries]);
 
   const executionTab: OverviewTargetTab = hasDistributedExecution ? 'distributed' : (isSelectQuery ? 'pipeline' : 'details');
+  const pressureScores = {
+    time: history?.p95 ? Math.min(1, q.duration_ms / Math.max(history.p95, 1)) : Math.min(1, q.duration_ms / 60_000),
+    memory: Math.min(1, q.peak_memory / Math.max(q.peak_memory, 512 * 1024 * 1024)),
+    cpu: q.duration_ms > 0 ? Math.min(1, (q.cpu_us / 1000) / q.duration_ms) : 0,
+    io: Math.min(1, (readBytes + diskBytes + netBytes) / Math.max(readBytes + diskBytes + netBytes, 1024 * 1024 * 1024)),
+    scan: readRows > 0 ? Math.min(1, readRows / Math.max(readRows, resultRows || 1)) : 0,
+  };
 
   return (
     <div style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
-      <div style={{ display: 'grid', gridTemplateColumns: '1.12fr 0.9fr 0.9fr 1fr', gap: 14 }}>
+      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, minmax(0, 1fr))', gap: 14 }}>
         <QuerySummaryPreview
           q={q}
           status={status}
@@ -140,20 +159,19 @@ export const OverviewTab: React.FC<OverviewTabProps> = ({
           onOpen={() => onOpenTab('sql')}
           onNavigateToQuery={onNavigateToQuery}
         />
+        <ResourcePressurePreview
+          scores={pressureScores}
+          durationMs={q.duration_ms}
+          cpuUs={q.cpu_us}
+          memoryBytes={q.peak_memory}
+          ioBytes={readBytes + diskBytes + netBytes}
+          onOpen={() => onOpenTab('details')}
+        />
         <RuntimePreview
           durationMs={q.duration_ms}
           cpuUs={q.cpu_us}
           memoryBytes={q.peak_memory}
           history={history}
-          onOpen={() => onOpenTab('details')}
-        />
-        <DataVolumePreview
-          readRows={readRows}
-          resultRows={resultRows}
-          readBytes={readBytes}
-          resultBytes={resultBytes}
-          netBytes={netBytes}
-          diskBytes={diskBytes}
           onOpen={() => onOpenTab('details')}
         />
         <ParallelExecutionPreview
@@ -455,10 +473,10 @@ const PreviewCard: React.FC<{
 
 function previewAccent(title: string): string {
   switch (title) {
+    case 'Resource Pressure':
+      return '#d29922';
     case 'Runtime':
       return '#d29922';
-    case 'Data Volume':
-      return '#3fb950';
     case 'Parallel Execution':
       return '#d29922';
     default:
@@ -545,39 +563,84 @@ const RuntimePreview: React.FC<{
   onOpen: () => void;
 }> = ({ durationMs, cpuUs, memoryBytes, history, onOpen }) => (
   <PreviewCard title="Runtime" action="Details" onOpen={onOpen}>
-    <div style={{ fontFamily: 'monospace', fontSize: 22, color: 'var(--text-primary)', lineHeight: 1.1, marginBottom: 4 }}>
+    <div style={{ fontFamily: 'monospace', fontSize: 18, color: 'var(--text-primary)', lineHeight: 1.15, marginBottom: 8 }}>
       {fmtMs(durationMs)}
     </div>
-    <div style={{ fontFamily: 'monospace', fontSize: 11, color: 'var(--text-secondary)', marginBottom: 12 }}>
+    <div style={{ fontFamily: 'monospace', fontSize: 11, color: 'var(--text-secondary)', marginBottom: 20 }}>
       {history ? `p${history.rank} / p50 ${fmtMs(history.p50)}` : 'current execution'}
     </div>
-    <MetricBar label="CPU" value={fmtUs(cpuUs)} ratio={durationMs > 0 ? (cpuUs / 1000) / durationMs : 0} color="#d29922" />
-    <MetricBar label="Memory" value={formatBytes(memoryBytes)} ratio={memoryBytes > 0 ? 1 : 0} color="#a371f7" />
+    <div style={{ display: 'grid', gridTemplateColumns: 'repeat(2, minmax(0, 1fr))', gap: 16, marginTop: 28 }}>
+      <RuntimeNumber label="CPU" value={fmtUs(cpuUs)} />
+      <RuntimeNumber label="Memory" value={formatBytes(memoryBytes)} />
+    </div>
   </PreviewCard>
 );
 
-const DataVolumePreview: React.FC<{
-  readRows: number;
-  resultRows: number;
-  readBytes: number;
-  resultBytes: number;
-  netBytes: number;
-  diskBytes: number;
+const ResourcePressurePreview: React.FC<{
+  scores: { time: number; memory: number; cpu: number; io: number; scan: number };
+  durationMs: number;
+  cpuUs: number;
+  memoryBytes: number;
+  ioBytes: number;
   onOpen: () => void;
-}> = ({ readRows, resultRows, readBytes, resultBytes, netBytes, diskBytes, onOpen }) => {
-  const maxBytes = Math.max(readBytes, resultBytes, netBytes, diskBytes, 1);
+}> = ({ scores, durationMs, cpuUs, memoryBytes, ioBytes, onOpen }) => (
+  <PreviewCard title="Resource Pressure" action="Details" onOpen={onOpen}>
+    <div style={{ display: 'grid', gridTemplateColumns: '128px minmax(0, 1fr)', gap: 28, alignItems: 'center' }}>
+        <PressureGlyphPanel scores={scores} />
+      <div>
+        <MetricBar label="Time" value={fmtMs(durationMs)} ratio={scores.time} color="#58a6ff" />
+        <MetricBar label="Memory" value={formatBytes(memoryBytes)} ratio={scores.memory} color="#a371f7" />
+        <MetricBar label="CPU" value={fmtUs(cpuUs)} ratio={scores.cpu} color="#d29922" title={cpuRatioHint(cpuUs, durationMs)} />
+        <MetricBar label="I/O" value={formatBytes(ioBytes)} ratio={scores.io} color="#3fb950" />
+        <MetricBar label="Scan" value={scores.scan > 0 ? percentLabel(scores.scan * 100) : 'n/a'} ratio={scores.scan} color="#8b949e" />
+      </div>
+    </div>
+  </PreviewCard>
+);
+
+const PressureGlyphPanel: React.FC<{ scores: { time: number; memory: number; cpu: number; io: number; scan: number } }> = ({ scores }) => (
+  <div style={{ position: 'relative', display: 'grid', placeItems: 'center', height: 112, width: 128, minWidth: 0 }}>
+    <PressureGlyph scores={scores} size={82} />
+    <AxisLabel label="Time" style={{ top: 0, left: '50%', transform: 'translateX(-50%)' }} />
+    <AxisLabel label="Mem" style={{ top: 32, right: 0 }} />
+    <AxisLabel label="CPU" style={{ bottom: 2, right: 16 }} />
+    <AxisLabel label="I/O" style={{ bottom: 2, left: 20 }} />
+    <AxisLabel label="Scan" style={{ top: 30, left: 0 }} />
+  </div>
+);
+
+const AxisLabel: React.FC<{ label: string; style: React.CSSProperties }> = ({ label, style }) => (
+  <div style={{
+    position: 'absolute',
+    color: 'var(--text-muted)',
+    fontSize: 8,
+    fontWeight: 700,
+    letterSpacing: '0.05em',
+    textTransform: 'uppercase',
+    ...style,
+  }}>
+    {label}
+  </div>
+);
+
+const PressureGlyph: React.FC<{ scores: { time: number; memory: number; cpu: number; io: number; scan: number }; size?: number }> = ({ scores, size = 76 }) => {
+  const values = [scores.time, scores.memory, scores.cpu, scores.io, scores.scan];
+  const center = 48;
+  const radius = 35;
+  const points = values.map((score, i) => {
+    const angle = (-90 + i * 72) * Math.PI / 180;
+    const r = 8 + Math.max(0, Math.min(1, score)) * radius;
+    return `${center + Math.cos(angle) * r},${center + Math.sin(angle) * r}`;
+  }).join(' ');
   return (
-    <PreviewCard title="Data Volume" action="Details" onOpen={onOpen}>
-      <div style={{ fontFamily: 'monospace', fontSize: 22, color: 'var(--text-primary)', lineHeight: 1.1, marginBottom: 4 }}>
-        {formatBytes(readBytes)}
-      </div>
-      <div style={{ fontFamily: 'monospace', fontSize: 11, color: 'var(--text-secondary)', marginBottom: 12 }}>
-        {formatNumberCompact(readRows)} read / {formatNumberCompact(resultRows)} result
-      </div>
-      <MetricBar label="Result" value={formatBytes(resultBytes)} ratio={resultBytes / maxBytes} color="#a371f7" />
-      <MetricBar label="Network" value={formatBytes(netBytes)} ratio={netBytes / maxBytes} color="#58a6ff" />
-      <MetricBar label="Disk" value={formatBytes(diskBytes)} ratio={diskBytes / maxBytes} color="#f0883e" />
-    </PreviewCard>
+    <svg width={size} height={size} viewBox="0 0 96 96" aria-hidden="true" style={{ flexShrink: 0 }}>
+      <circle cx={center} cy={center} r={radius} fill="transparent" stroke="var(--border-primary)" strokeWidth="2" />
+      {[0, 1, 2, 3, 4].map((i) => {
+        const angle = (-90 + i * 72) * Math.PI / 180;
+        return <line key={i} x1={center} y1={center} x2={center + Math.cos(angle) * radius} y2={center + Math.sin(angle) * radius} stroke="var(--border-primary)" />;
+      })}
+      <polygon points={points} fill="rgba(210,153,34,0.2)" stroke="#d29922" strokeWidth="3" />
+    </svg>
   );
 };
 
@@ -620,13 +683,32 @@ const Badge: React.FC<{ color: string; children: React.ReactNode }> = ({ color, 
   </span>
 );
 
-const MetricBar: React.FC<{ label: string; value: string; ratio: number; color: string }> = ({ label, value, ratio, color }) => (
-  <div style={{ display: 'grid', gridTemplateColumns: '56px minmax(0, 1fr) 72px', gap: 8, alignItems: 'center', marginBottom: 7 }}>
+const MetricBar: React.FC<{ label: string; value: string; ratio: number; color: string; title?: string; labelWidth?: number }> = ({ label, value, ratio, color, title, labelWidth = 42 }) => (
+  <div
+    title={title}
+    style={{
+      display: 'grid',
+      gridTemplateColumns: `${labelWidth}px minmax(0, 1fr) 72px`,
+      columnGap: 6,
+      alignItems: 'center',
+      marginBottom: 7,
+      cursor: title ? 'help' : undefined,
+    }}
+  >
     <div style={{ fontFamily: 'monospace', fontSize: 10, color: 'var(--text-muted)' }}>{label}</div>
     <div style={{ height: 8, borderRadius: 999, overflow: 'hidden', background: 'var(--bg-tertiary)' }}>
       <div style={{ width: `${Math.max(0, Math.min(100, ratio * 100))}%`, height: '100%', borderRadius: 999, background: color }} />
     </div>
-    <div style={{ fontFamily: 'monospace', fontSize: 10, color: 'var(--text-secondary)', textAlign: 'right', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+    <div style={{ fontFamily: 'monospace', fontSize: 10, color: 'var(--text-secondary)', textAlign: 'right', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', paddingRight: 4 }}>
+      {value}
+    </div>
+  </div>
+);
+
+const RuntimeNumber: React.FC<{ label: string; value: string }> = ({ label, value }) => (
+  <div style={{ minWidth: 0 }}>
+    <div style={{ ...LABEL, color: 'var(--text-muted)', fontSize: 9, marginBottom: 6 }}>{label}</div>
+    <div style={{ fontFamily: 'monospace', fontSize: 13, color: 'var(--text-secondary)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
       {value}
     </div>
   </div>
