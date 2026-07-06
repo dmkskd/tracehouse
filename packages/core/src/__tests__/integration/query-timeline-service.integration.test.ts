@@ -20,6 +20,11 @@ import type { MergeCategory } from '../../utils/merge-classification.js';
 const CONTAINER_TIMEOUT = 120_000;
 const TEST_DB = 'timeline_test';
 
+async function runAndDrainQuery(ctx: TestClickHouseContext, query: string): Promise<void> {
+  const result = await ctx.client.query({ query, format: 'JSONEachRow' });
+  await result.json();
+}
+
 describe('TimelineService integration', { tags: ['query-analysis'] }, () => {
   let ctx: TestClickHouseContext;
   let service: TimelineService;
@@ -68,10 +73,7 @@ describe('TimelineService integration', { tags: ['query-analysis'] }, () => {
     }
 
     // Run a SELECT to ensure we have a query_log entry with query_kind
-    await ctx.client.query({
-      query: `SELECT count() FROM ${TEST_DB}.events`,
-      format: 'JSONEachRow',
-    });
+    await runAndDrainQuery(ctx, `SELECT count() FROM ${TEST_DB}.events`);
 
     await ctx.client.command({ query: 'SYSTEM FLUSH LOGS' });
   }, CONTAINER_TIMEOUT);
@@ -439,10 +441,7 @@ describe('TimelineService integration', { tags: ['query-analysis'] }, () => {
     beforeAll(async () => {
       // Run a distinctive query multiple times to create a pattern
       for (let i = 0; i < 3; i++) {
-        await ctx.client.query({
-          query: `SELECT count(), sum(value) FROM ${TEST_DB}.events WHERE id > ${i * 100}`,
-          format: 'JSONEachRow',
-        });
+        await runAndDrainQuery(ctx, `SELECT count(), sum(value) FROM ${TEST_DB}.events WHERE id > ${i * 100}`);
       }
       await ctx.client.command({ query: 'SYSTEM FLUSH LOGS' });
 
