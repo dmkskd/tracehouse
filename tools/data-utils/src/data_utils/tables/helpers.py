@@ -71,7 +71,7 @@ class ProgressTracker:
     def skip(self, name: str, reason: str = "skipped") -> None:
         with self._lock:
             if name in self._tables:
-                self._tables[name]["status"] = reason
+                self._tables[name]["status"] = reason if reason == "skipped" else f"skipped: {reason}"
 
     def start(self) -> None:
         if self._started:
@@ -118,7 +118,7 @@ class ProgressTracker:
                     filled = int(done * 20 / total) if total else 0
                     bar = "\u2588" * filled + "\u2591" * (20 - filled)
                     line = f"  \u2717 {name:<20s} [{bar}] cancelled at {done:,} rows"
-                elif status in ("skipped", "exceeds target"):
+                elif status == "exceeds target" or status.startswith("skipped"):
                     bar = "\u2500" * 20
                     line = f"  \u2298 {name:<20s} [{bar}] {status}"
                 elif total > 0:
@@ -381,6 +381,7 @@ def run_batched_insert(
     batch_size: int,
     build_insert_sql: BuildInsertSQL,
     tracker: ProgressTracker | None = None,
+    tracker_name: str | None = None,
     throttle_min: float = 0.0,
     throttle_max: float = 0.0,
 ) -> None:
@@ -391,20 +392,23 @@ def run_batched_insert(
             that returns the INSERT SQL string.
         partitions: list of (partition_key, partition_label) tuples.
         tracker: optional ProgressTracker for parallel progress display.
+        tracker_name: optional progress row name when the table database is
+            different from the dataset name.
         throttle_min: minimum delay in seconds between batches (0 = no throttle).
         throttle_max: maximum delay in seconds between batches (0 = no throttle).
     """
     rows_per_partition = rows // len(partitions)
     # Extract short table name (e.g. "synthetic_data" from "synthetic_data.events")
-    short_name = table.split(".")[0] if "." in table else table
+    short_name = tracker_name or (table.split(".")[0] if "." in table else table)
 
     if tracker:
         # Only register if not already registered (parallel mode pre-registers)
         with tracker._lock:
-            if short_name not in tracker._tables:
-                tracker.register(short_name, rows)
-            else:
+            registered = short_name in tracker._tables
+            if registered:
                 tracker._tables[short_name]["rows_total"] = rows
+        if not registered:
+            tracker.register(short_name, rows)
     else:
         print(f"\nInserting {rows:,} total rows into {table}")
         print(f"  Partitions: {len(partitions)}")

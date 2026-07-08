@@ -34,7 +34,8 @@ class Capabilities:
     iceberg_s3_key: str = ""
     iceberg_s3_secret: str = ""
     iceberg_warehouse_bucket: str = ""
-    iceberg_catalog_url: str = ""            # Lakekeeper REST catalog URL (optional)
+    iceberg_catalog_url: str = ""            # Catalog URL used by ClickHouse DataLakeCatalog
+    iceberg_catalog_client_url: str = ""     # Catalog URL used by host-side Python REST calls
     # Settings
     restricted_settings: list[str] = field(default_factory=list)  # settings that can't be changed
     # Databases that already exist
@@ -151,6 +152,7 @@ def probe(client: Client) -> Capabilities:
     caps.iceberg_s3_secret = os.environ.get("CH_ICEBERG_S3_SECRET", "clickhouse_secret")
     caps.iceberg_warehouse_bucket = os.environ.get("CH_ICEBERG_WAREHOUSE_BUCKET", "iceberg-warehouse")
     caps.iceberg_catalog_url = os.environ.get("CH_ICEBERG_CATALOG_URL", "")
+    caps.iceberg_catalog_client_url = os.environ.get("CH_ICEBERG_CATALOG_CLIENT_URL", caps.iceberg_catalog_url)
 
     log.info("probing Iceberg insert support (setting + S3 reachability)")
     try:

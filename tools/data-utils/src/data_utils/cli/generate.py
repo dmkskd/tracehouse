@@ -88,8 +88,9 @@ Tables are created with the best engine available for the target server.
     parser.add_argument("--web-only", action="store_true", help="Only create web_analytics table")
     parser.add_argument("--replacing-only", action="store_true", help="Only create replacing_test table (ReplacingMergeTree)")
     parser.add_argument("--iceberg-taxi-only", action="store_true", help="Only create iceberg_nyc_taxi table (IcebergS3)")
+    parser.add_argument("--lakekeeper-taxi-only", action="store_true", help="Only create lakekeeper_nyc_taxi table (Lakekeeper/DataLakeCatalog)")
     parser.add_argument("--dataset", default=os.environ.get("CH_GEN_DATASET", ""),
-                        help="Dataset to generate: synthetic, taxi, uk, web, replacing, or blank for all (default: $CH_GEN_DATASET)")
+                        help="Dataset to generate: synthetic, taxi, uk, web, replacing, iceberg, lakekeeper, or blank for all (default: $CH_GEN_DATASET)")
     parser.add_argument("--ttl", default=os.environ.get("CH_GEN_TTL", os.environ.get("CH_GEN_TTL_HOURS", "0")),
                         help="TTL for data tables, e.g. '12h', '2d', '30m' (0 = no TTL, default: $CH_GEN_TTL or $CH_GEN_TTL_HOURS or 0)")
     parser.add_argument("--list-datasets", action="store_true", help="List available datasets and exit")
@@ -248,7 +249,7 @@ def _print_verify_query() -> None:
     print("         formatReadableSize(sum(bytes_on_disk)) as size,")
     print("         sum(rows) as rows, count() as parts")
     print("  FROM system.parts")
-    print("  WHERE active AND database IN ('synthetic_data', 'nyc_taxi', 'uk_price_paid', 'web_analytics', 'replacing_test', 'iceberg_nyc_taxi')")
+    print("  WHERE active AND database IN ('synthetic_data', 'nyc_taxi', 'uk_price_paid', 'web_analytics', 'replacing_test', 'iceberg_nyc_taxi', 'lakekeeper_iceberg')")
     print("  GROUP BY database, table, partition")
     print("  ORDER BY database, table, partition")
 

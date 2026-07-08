@@ -11,8 +11,8 @@ from __future__ import annotations
 import json
 import logging
 import random
-import urllib.request
 import urllib.error
+import urllib.request
 from typing import TYPE_CHECKING
 
 from clickhouse_driver import Client
@@ -104,7 +104,6 @@ def create_iceberg_nyc_taxi(client: Client, caps: Capabilities | None = None) ->
 
     _BOROUGHS = ["Manhattan", "Brooklyn", "Queens", "Bronx", "Staten Island", "EWR"]
     _SERVICE_ZONES = ["Yellow Zone", "Boro Zone", "Airports", "EWR"]
-
     wait_for_table(client, "iceberg_nyc_taxi.locations")
     existing = client.execute("SELECT count() FROM iceberg_nyc_taxi.locations")[0][0]
     if existing > 0:
@@ -132,7 +131,7 @@ def _try_register_catalog(caps: Capabilities) -> None:
     if not caps.iceberg_catalog_url:
         return
 
-    catalog_url = caps.iceberg_catalog_url.rstrip("/")
+    catalog_url = caps.iceberg_catalog_client_url.rstrip()
     try:
         config_url = f"{catalog_url}/v1/config?warehouse=tracehouse"
         req = urllib.request.Request(config_url)
