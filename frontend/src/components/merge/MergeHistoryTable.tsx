@@ -21,6 +21,7 @@ interface MergeHistoryTableProps {
   isLoading: boolean;
   selectedRecord?: MergeHistoryRecord | null;
   onSelectRecord?: (record: MergeHistoryRecord) => void;
+  onPreviewRecord?: (record: MergeHistoryRecord) => void;
 }
 
 // Color palette for merge history indicators
@@ -76,6 +77,7 @@ export const MergeHistoryTable: React.FC<MergeHistoryTableProps> = ({
   isLoading,
   selectedRecord,
   onSelectRecord,
+  onPreviewRecord,
 }) => {
   const handleSort = useCallback((field: MergeHistorySortField) => {
     const newDirection: SortDirection = sort.field === field && sort.direction === 'desc' ? 'asc' : 'desc';
@@ -134,10 +136,11 @@ export const MergeHistoryTable: React.FC<MergeHistoryTableProps> = ({
                 <tr 
                   key={`${record.event_time}-${record.part_name}-${idx}`}
                   className={`merge-history-row${isSelected ? ' selected' : ''}`}
+                  onMouseEnter={() => onPreviewRecord?.(record)}
                   onClick={() => onSelectRecord?.(record)}
                   style={{
                     borderBottom: '1px solid var(--border-primary)',
-                    background: idx % 2 === 0 ? 'transparent' : 'var(--bg-tertiary)',
+                    background: 'transparent',
                     cursor: onSelectRecord ? 'pointer' : 'default',
                     transition: 'background 0.15s ease',
                   }}

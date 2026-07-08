@@ -70,6 +70,7 @@ interface ActiveMergeListProps {
   merges: MergeInfo[];
   selectedMerge: MergeInfo | null;
   onSelectMerge: (merge: MergeInfo) => void;
+  onPreviewMerge?: (merge: MergeInfo) => void;
   isLoading: boolean;
 }
 
@@ -156,6 +157,7 @@ export const ActiveMergeList: React.FC<ActiveMergeListProps> = ({
   merges,
   selectedMerge,
   onSelectMerge,
+  onPreviewMerge,
   isLoading,
 }) => {
   const [sort, setSort] = useState<ActiveMergeSort>({ field: 'elapsed', direction: 'desc' });
@@ -236,10 +238,11 @@ export const ActiveMergeList: React.FC<ActiveMergeListProps> = ({
               <tr 
                 key={mergeKey}
                 className="active-merge-row"
+                onMouseEnter={() => onPreviewMerge?.(merge)}
                 onClick={() => onSelectMerge(merge)}
                 style={{ 
                   borderBottom: '1px solid var(--border-primary)',
-                  background: isSelected ? 'rgba(240,136,62,0.2)' : (i % 2 === 0 ? 'transparent' : 'var(--bg-tertiary)'),
+                  background: isSelected ? 'rgba(240,136,62,0.2)' : 'transparent',
                   cursor: 'pointer',
                   transition: 'background 0.15s ease',
                 }}

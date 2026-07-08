@@ -12,7 +12,7 @@ import React, { useState, useRef, useCallback, useMemo } from 'react';
 import type { MergeHistoryFilter } from '../../stores/mergeStore';
 import { TimeRangePicker } from '../analytics/TimeRangePicker';
 
-export type MergeTab = 'active' | 'mutations' | 'mutationHistory' | 'history';
+export type MergeTab = 'active' | 'mutations' | 'mutationHistory' | 'history' | 'health';
 
 const MERGE_TIME_PRESETS = [
   { label: '1h',  interval: '1 HOUR' },

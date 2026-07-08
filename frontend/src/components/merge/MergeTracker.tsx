@@ -10,7 +10,7 @@ import {
   formatBytes,
   formatBytesPerSec,
 } from '../../stores/mergeStore';
-import type { MergeInfo, MutationInfo, BackgroundPoolMetrics, MutationDependencyInfo } from '../../stores/mergeStore';
+import type { MergeInfo, MutationInfo, MutationDependencyInfo } from '../../stores/mergeStore';
 import type { MergeThroughputEstimate, ThroughputMap } from '@tracehouse/core';
 import { formatDuration } from '../../utils/formatters';
 import { useDatabaseStore, databaseApi } from '../../stores/databaseStore';
@@ -85,237 +85,77 @@ const StatCard: React.FC<{
   </div>
 );
 
-// Pool Utilization Bar
-const PoolUtilizationBar: React.FC<{
-  label: string;
-  active: number;
+const PoolBreakdownStatCard: React.FC<{
+  metrics: {
+    merge_pool_active: number;
+    merge_pool_size: number;
+    move_pool_active: number;
+    move_pool_size: number;
+    fetch_pool_active: number;
+    fetch_pool_size: number;
+    schedule_pool_active: number;
+    schedule_pool_size: number;
+    common_pool_active: number;
+    common_pool_size: number;
+    distributed_pool_active: number;
+    distributed_pool_size: number;
+  } | null;
+  totalActive: number;
   total: number;
-  color?: string;
-  tooltip?: string;
-}> = ({ label, active, total, color = 'var(--accent-primary)', tooltip }) => {
-  const percentage = total > 0 ? (active / total) * 100 : 0;
+  isLoading?: boolean;
+}> = ({ metrics, totalActive, total, isLoading }) => {
+  const rows = [
+    { label: 'Merge', active: metrics?.merge_pool_active ?? 0, total: metrics?.merge_pool_size ?? 0, color: '#8b5cf6' },
+    { label: 'Move', active: metrics?.move_pool_active ?? 0, total: metrics?.move_pool_size ?? 0, color: '#3b82f6' },
+    { label: 'Fetch', active: metrics?.fetch_pool_active ?? 0, total: metrics?.fetch_pool_size ?? 0, color: '#10b981' },
+    { label: 'Schedule', active: metrics?.schedule_pool_active ?? 0, total: metrics?.schedule_pool_size ?? 0, color: '#f59e0b' },
+    { label: 'Common', active: metrics?.common_pool_active ?? 0, total: metrics?.common_pool_size ?? 0, color: '#8b5cf6' },
+    { label: 'Distributed', active: metrics?.distributed_pool_active ?? 0, total: metrics?.distributed_pool_size ?? 0, color: '#ec4899' },
+  ].filter(row => row.total > 0 || isLoading);
+
   return (
-    <div style={{ display: 'flex', alignItems: 'center', gap: 12 }} title={tooltip}>
-      <div 
-        style={{ 
-          width: 80, 
-          fontSize: 10, 
-          fontWeight: 500,
-          overflow: 'hidden', 
-          textOverflow: 'ellipsis', 
-          whiteSpace: 'nowrap',
-          cursor: 'help',
-          color: 'var(--text-muted)',
-        }}
-      >
-        {label}
+    <div className="stat-card lg:col-span-2" style={{ padding: '10px 14px' }}>
+      <div style={{ display: 'flex', alignItems: 'baseline', justifyContent: 'space-between', gap: 12 }}>
+        <div className="stat-label" style={{ marginTop: 0 }}>Background Pools</div>
+        <div style={{ fontSize: 16, lineHeight: 1.1, fontWeight: 600, fontFamily: 'monospace', color: 'var(--text-primary)', whiteSpace: 'nowrap' }}>
+          {isLoading ? '--' : `${totalActive} / ${total}`}
+        </div>
       </div>
-      <div 
-        style={{ 
-          flex: 1, 
-          height: 4, 
-          borderRadius: 2, 
-          position: 'relative', 
-          overflow: 'hidden',
-          background: 'var(--bg-tertiary)',
-        }}
-      >
-        {/* Progress fill */}
-        <div
-          style={{ 
-            position: 'absolute',
-            top: 0,
-            left: 0,
-            height: '100%',
-            borderRadius: 2,
-            transition: 'width 0.3s ease',
-            width: `${percentage}%`,
-            background: color,
-          }}
-        />
-      </div>
-      <div style={{ width: 36, textAlign: 'right', fontSize: 10, fontFamily: 'monospace', color }}>
-        {active}/{total}
+      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(2, minmax(0, 1fr))', columnGap: 14, rowGap: 4, marginTop: 7 }}>
+        {rows.map(row => {
+          const pct = row.total > 0 ? Math.min((row.active / row.total) * 100, 100) : 0;
+          return (
+            <div key={row.label} style={{ display: 'grid', gridTemplateColumns: '54px 1fr 36px', alignItems: 'center', gap: 6, minWidth: 0 }}>
+              <div style={{ fontSize: 10, lineHeight: 1.1, color: 'var(--text-muted)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                {row.label}
+              </div>
+              <div style={{ height: 3, borderRadius: 2, overflow: 'hidden', background: 'var(--bg-tertiary)' }}>
+                <div style={{ height: '100%', width: isLoading ? '0%' : `${pct}%`, borderRadius: 2, background: row.color }} />
+              </div>
+              <div style={{ fontSize: 10, lineHeight: 1.1, fontFamily: 'monospace', textAlign: 'right', color: row.color }}>
+                {isLoading ? '--' : `${row.active}/${row.total}`}
+              </div>
+            </div>
+          );
+        })}
       </div>
     </div>
   );
 };
 
-// Mini stat for pool metrics
-const MiniStat: React.FC<{
+const CompactStatCard: React.FC<{
   label: string;
   value: number | string;
   color?: string;
-}> = ({ label, value, color = 'var(--text-primary)' }) => (
-  <div 
-    style={{ 
-      padding: 8, 
-      borderRadius: 4, 
-      textAlign: 'center',
-      background: 'var(--bg-tertiary)',
-    }}
-  >
-    <div style={{ fontSize: 14, fontFamily: 'monospace', fontWeight: 600, color }}>{value}</div>
-    <div style={{ fontSize: 10, color: 'var(--text-muted)', marginTop: 2 }}>{label}</div>
+  isLoading?: boolean;
+}> = ({ label, value, color, isLoading }) => (
+  <div className="stat-card">
+    <div className="stat-value" style={color ? { color } : undefined}>
+      {isLoading ? '--' : value}
+    </div>
+    <div className="stat-label">{label}</div>
   </div>
 );
-
-// Pool Metrics Panel
-const PoolMetricsPanel: React.FC<{
-  metrics: BackgroundPoolMetrics | null;
-  isLoading: boolean;
-}> = ({ metrics, isLoading }) => {
-  if (isLoading) {
-    return (
-      <div className="card" style={{ padding: 16 }}>
-        <div style={{ fontSize: 12, fontWeight: 600, marginBottom: 16, color: 'var(--text-primary)' }}>
-          Background Pools
-        </div>
-        <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
-          <div style={{ height: 32, borderRadius: 4, background: 'var(--bg-tertiary)' }} />
-          <div style={{ height: 32, borderRadius: 4, background: 'var(--bg-tertiary)' }} />
-          <div style={{ height: 32, borderRadius: 4, background: 'var(--bg-tertiary)' }} />
-        </div>
-      </div>
-    );
-  }
-
-  if (!metrics) {
-    return (
-      <div className="card" style={{ padding: 16 }}>
-        <div style={{ fontSize: 12, fontWeight: 600, marginBottom: 12, color: 'var(--text-primary)' }}>
-          Background Pools
-        </div>
-        <div style={{ fontSize: 10, color: 'var(--text-muted)' }}>No data</div>
-      </div>
-    );
-  }
-
-  // Build pool list - only show pools with size > 0
-  const pools = [
-    { 
-      label: 'Merge/Mutation', 
-      active: metrics.merge_pool_active, 
-      total: metrics.merge_pool_size, 
-      color: 'var(--accent-primary)',
-      tooltip: 'Background threads for merging parts and executing mutations (ALTER UPDATE/DELETE)'
-    },
-    { 
-      label: 'Move', 
-      active: metrics.move_pool_active, 
-      total: metrics.move_pool_size, 
-      color: '#3b82f6',
-      tooltip: 'Threads for moving parts between disks (e.g., from hot to cold storage)'
-    },
-    { 
-      label: 'Fetch', 
-      active: metrics.fetch_pool_active, 
-      total: metrics.fetch_pool_size, 
-      color: '#10b981',
-      tooltip: 'Threads for fetching parts from replicas (ReplicatedMergeTree replication)'
-    },
-    { 
-      label: 'Schedule', 
-      active: metrics.schedule_pool_active, 
-      total: metrics.schedule_pool_size, 
-      color: '#f59e0b',
-      tooltip: 'Threads for scheduling background tasks like cleanup and optimization'
-    },
-    { 
-      label: 'Common', 
-      active: metrics.common_pool_active, 
-      total: metrics.common_pool_size, 
-      color: '#8b5cf6',
-      tooltip: 'General-purpose background threads for miscellaneous tasks'
-    },
-    { 
-      label: 'Distributed', 
-      active: metrics.distributed_pool_active, 
-      total: metrics.distributed_pool_size, 
-      color: '#ec4899',
-      tooltip: 'Threads for distributed table operations (sending data to shards)'
-    },
-  ].filter(p => p.total > 0);
-
-  const totalActive = pools.reduce((sum, p) => sum + p.active, 0);
-  const totalCapacity = pools.reduce((sum, p) => sum + p.total, 0);
-  const overallUtilization = totalCapacity > 0 ? (totalActive / totalCapacity) * 100 : 0;
-
-  return (
-    <div className="card" style={{ padding: 20 }}>
-      {/* Header with overall utilization */}
-      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 20 }}>
-        <div style={{ fontSize: 12, fontWeight: 600, color: 'var(--text-primary)' }}>
-          Background Pools
-        </div>
-        <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-          <div 
-            style={{ 
-              width: 6, 
-              height: 6, 
-              borderRadius: '50%',
-              background: overallUtilization > 80 ? 'var(--accent-red)' : 
-                         overallUtilization > 50 ? '#f59e0b' : '#10b981',
-            }}
-          />
-          <span style={{ fontSize: 10, fontFamily: 'monospace', color: 'var(--text-muted)' }}>
-            {overallUtilization.toFixed(0)}% utilized
-          </span>
-        </div>
-      </div>
-
-      {/* Quick stats row */}
-      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: 12, marginBottom: 20 }}>
-        <MiniStat label="Merges" value={metrics.active_merges} color="var(--accent-primary)" />
-        <MiniStat label="Mutations" value={metrics.active_mutations} color="#a855f7" />
-        <MiniStat 
-          label="Active Parts" 
-          value={metrics.active_parts > 1000 ? `${(metrics.active_parts / 1000).toFixed(1)}K` : metrics.active_parts} 
-        />
-        <MiniStat 
-          label="Pending Cleanup" 
-          value={metrics.outdated_parts} 
-          color={metrics.outdated_parts > 100 ? '#f59e0b' : 'var(--text-primary)'} 
-        />
-      </div>
-
-      {/* Pool utilization bars */}
-      <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
-        {pools.map(pool => (
-          <PoolUtilizationBar
-            key={pool.label}
-            label={pool.label}
-            active={pool.active}
-            total={pool.total}
-            color={pool.color}
-            tooltip={pool.tooltip}
-          />
-        ))}
-      </div>
-
-      {/* Footer legend */}
-      <div style={{ marginTop: 16, paddingTop: 16, display: 'flex', alignItems: 'center', justifyContent: 'space-between', fontSize: 10, borderTop: '1px solid var(--border-primary)' }}>
-        <span style={{ color: 'var(--text-muted)', fontFamily: 'monospace' }}>
-          {totalActive} / {totalCapacity} threads active
-        </span>
-        <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
-          <span style={{ display: 'flex', alignItems: 'center', gap: 4 }}>
-            <span style={{ width: 6, height: 6, borderRadius: '50%', background: '#10b981' }} />
-            <span style={{ color: 'var(--text-muted)' }}>{'<50%'}</span>
-          </span>
-          <span style={{ display: 'flex', alignItems: 'center', gap: 4 }}>
-            <span style={{ width: 6, height: 6, borderRadius: '50%', background: '#f59e0b' }} />
-            <span style={{ color: 'var(--text-muted)' }}>50-80%</span>
-          </span>
-          <span style={{ display: 'flex', alignItems: 'center', gap: 4 }}>
-            <span style={{ width: 6, height: 6, borderRadius: '50%', background: 'var(--accent-red)' }} />
-            <span style={{ color: 'var(--text-muted)' }}>{'>80%'}</span>
-          </span>
-        </div>
-      </div>
-    </div>
-  );
-};
 
 // Mutations Panel - Shows running and queued mutations in table format
 // Color palette for mutation indicators (matching Time Travel style)
@@ -327,7 +167,8 @@ const MutationsPanel: React.FC<{
   isLoading: boolean;
   selectedMutation: MutationInfo | null;
   onSelectMutation: (mutation: MutationInfo) => void;
-}> = ({ mutations, activeMerges, isLoading, selectedMutation, onSelectMutation }) => {
+  onPreviewMutation?: (mutation: MutationInfo) => void;
+}> = ({ mutations, activeMerges, isLoading, selectedMutation, onSelectMutation, onPreviewMutation }) => {
   const [diagramMutation, setDiagramMutation] = useState<MutationInfo | null>(null);
   const [diagramMerge, setDiagramMerge] = useState<{ merge: MergeInfo; mutations: MutationInfo[] } | null>(null);
 
@@ -533,10 +374,11 @@ const MutationsPanel: React.FC<{
               <tr 
                 key={`${mutation.mutation_id}-${idx}`}
                 className="mutation-row"
+                onMouseEnter={() => onPreviewMutation?.(mutation)}
                 onClick={() => onSelectMutation(mutation)}
                 style={{ 
                   borderBottom: '1px solid var(--border-primary)',
-                  background: isSelected ? 'rgba(168,85,247,0.2)' : (idx % 2 === 0 ? 'transparent' : 'var(--bg-tertiary)'),
+                  background: isSelected ? 'rgba(168,85,247,0.2)' : 'transparent',
                   cursor: 'pointer',
                   transition: 'background 0.15s ease',
                 }}
@@ -642,7 +484,8 @@ const MutationHistoryPanel: React.FC<{
   isLoading: boolean;
   selectedRecord: MutationHistoryRecord | null;
   onSelectRecord: (record: MutationHistoryRecord) => void;
-}> = ({ history, isLoading, selectedRecord, onSelectRecord }) => {
+  onPreviewRecord?: (record: MutationHistoryRecord) => void;
+}> = ({ history, isLoading, selectedRecord, onSelectRecord, onPreviewRecord }) => {
   if (history.length === 0 && isLoading) {
     return (
       <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', height: 80, color: 'var(--text-muted)' }}>
@@ -712,10 +555,11 @@ const MutationHistoryPanel: React.FC<{
               <tr 
                 key={`${record.mutation_id}-${idx}`}
                 className="mutation-history-row"
+                onMouseEnter={() => onPreviewRecord?.(record)}
                 onClick={() => onSelectRecord(record)}
                 style={{ 
                   borderBottom: '1px solid var(--border-primary)',
-                  background: isSelected ? 'rgba(247,120,186,0.2)' : (idx % 2 === 0 ? 'transparent' : 'var(--bg-tertiary)'),
+                  background: isSelected ? 'rgba(247,120,186,0.2)' : 'transparent',
                   cursor: 'pointer',
                   transition: 'background 0.15s ease',
                 }}
@@ -1708,6 +1552,9 @@ export const MergeTrackerView: React.FC = () => {
   const [selectedMergeHistoryRaw, setSelectedMergeHistoryRaw] = useState<MergeHistoryRecord | null>(null);
   const [selectedMutationHistory, setSelectedMutationHistory] = useState<MutationHistoryRecord | null>(null);
   const [selectedActiveMutation, setSelectedActiveMutation] = useState<MutationInfo | null>(null);
+  const [previewMergeHistory, setPreviewMergeHistory] = useState<MergeHistoryRecord | null>(null);
+  const [previewMutationHistory, setPreviewMutationHistory] = useState<MutationHistoryRecord | null>(null);
+  const [previewActiveMutation, setPreviewActiveMutation] = useState<MutationInfo | null>(null);
   const [mergeDetailRecord, setMergeDetailRecordRaw] = useState<MergeHistoryRecord | null>(null);
   const [activeMergeDetail, setActiveMergeDetailRaw] = useState<MergeInfo | null>(null);
 
@@ -1729,6 +1576,9 @@ export const MergeTrackerView: React.FC = () => {
     }
   }, [syncDetailToUrl]);
   const selectedMergeHistory = selectedMergeHistoryRaw;
+  const previewedMergeHistory = previewMergeHistory ?? selectedMergeHistory;
+  const previewedMutationHistory = previewMutationHistory ?? selectedMutationHistory;
+  const previewedActiveMutation = previewActiveMutation ?? selectedActiveMutation;
 
   const setMergeDetailRecord = useCallback((record: MergeHistoryRecord | null) => {
     setMergeDetailRecordRaw(record);
@@ -1769,9 +1619,11 @@ export const MergeTrackerView: React.FC = () => {
   const selectedPartName = urlState.part;
   const setSelectedPartName = useCallback((v: string | undefined) => updateUrl({ part: v }), [updateUrl]);
   const { hideReplicaMerges, setHideReplicaMerges, experimentalEnabled } = useUserPreferenceStore();
-  const [mergeViewMode, setMergeViewMode] = useState<'pools' | 'health'>('pools');
-  // Reset to pools when experimental is turned off
-  useEffect(() => { if (!experimentalEnabled && mergeViewMode !== 'pools') setMergeViewMode('pools'); }, [experimentalEnabled]);
+  useEffect(() => {
+    if (!experimentalEnabled && activeTab === 'health') {
+      updateUrl({ tab: 'active' });
+    }
+  }, [activeTab, experimentalEnabled, updateUrl]);
 
   const activeProfile = profiles.find(p => p.id === activeProfileId);
   const isConnected = activeProfile?.is_connected ?? false;
@@ -1889,6 +1741,9 @@ export const MergeTrackerView: React.FC = () => {
 
   // Refresh history data when switching to history/mutationHistory tabs
   const setActiveTab = useCallback((tab: MergeTab) => {
+    setPreviewMergeHistory(null);
+    setPreviewMutationHistory(null);
+    setPreviewActiveMutation(null);
     updateUrl({ tab }, { push: true });
     if (tab === 'history') fetchMergeHistory(false);
     if (tab === 'mutationHistory') fetchMutationHistory(false);
@@ -2115,6 +1970,22 @@ export const MergeTrackerView: React.FC = () => {
     : activeTab === 'mutations' ? filteredMutations.length
     : activeTab === 'mutationHistory' ? filteredMutationHistory.length
     : filteredMergeHistory.length;
+  const isHealthTab = activeTab === 'health';
+  const poolTotals = useMemo(() => {
+    if (!poolMetrics) return { active: 0, total: 0 };
+    const pools = [
+      [poolMetrics.merge_pool_active, poolMetrics.merge_pool_size],
+      [poolMetrics.move_pool_active, poolMetrics.move_pool_size],
+      [poolMetrics.fetch_pool_active, poolMetrics.fetch_pool_size],
+      [poolMetrics.schedule_pool_active, poolMetrics.schedule_pool_size],
+      [poolMetrics.common_pool_active, poolMetrics.common_pool_size],
+      [poolMetrics.distributed_pool_active, poolMetrics.distributed_pool_size],
+    ];
+    return pools.reduce(
+      (acc, [active, total]) => ({ active: acc.active + active, total: acc.total + total }),
+      { active: 0, total: 0 },
+    );
+  }, [poolMetrics]);
 
   if (!activeProfileId || !isConnected) {
     return (
@@ -2147,81 +2018,66 @@ export const MergeTrackerView: React.FC = () => {
 
   return (
     <div className="page-layout">
-      {/* Header */}
-      <div className="flex items-center justify-between">
-        <div>
-          <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
-            <h1 className="text-xl font-semibold" style={{ color: 'var(--text-primary)' }}>
-              Merge Tracker
-            </h1>
-            <DocsLink path="/features/merge-tracker" />
-            <BackLink />
+      <div
+        style={{
+          margin: 'calc(var(--page-padding) * -1) calc(var(--page-padding) * -1) 0',
+          padding: '16px var(--page-padding) var(--section-gap)',
+          background: 'var(--bg-secondary)',
+          borderBottom: '1px solid var(--border-primary)',
+        }}
+      >
+        {/* Header */}
+        <div className="flex items-center justify-between" style={{ marginBottom: 16 }}>
+          <div>
+            <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+              <h1 className="text-xl font-semibold" style={{ color: 'var(--text-primary)' }}>
+                Merge Tracker
+              </h1>
+              <DocsLink path="/features/merge-tracker" />
+              <BackLink />
+            </div>
           </div>
         </div>
+
+        {/* Stats */}
+        {statistics && (
+          <div className="grid grid-cols-2 lg:grid-cols-4 xl:grid-cols-6 gap-4">
+            <PoolBreakdownStatCard
+              metrics={poolMetrics}
+              totalActive={poolTotals.active}
+              total={poolTotals.total}
+              isLoading={isLoadingPoolMetrics}
+            />
+            <StatCard label="Active Merges" value={statistics.activeMergeCount} />
+            <StatCard label="Stuck Merges" value={activeMerges.filter(isMergeStuck).length} color={activeMerges.some(isMergeStuck) ? '#f85149' : undefined} />
+            <StatCard label="Tables" value={statistics.tablesWithMerges.length} />
+            <StatCard label="Pending Mutations" value={pendingMutations} />
+            <StatCard
+              label="Merge Throughput"
+              value={formatBytesPerSec(
+                activeMerges.reduce((sum, m) => {
+                  const bytesProcessed = m.total_size_bytes_compressed * m.progress;
+                  return sum + (m.elapsed > 0 ? bytesProcessed / m.elapsed : 0);
+                }, 0)
+              )}
+            />
+            <StatCard label="Total Size" value={formatBytes(statistics.totalBytesBeingMerged)} />
+            <StatCard label="Avg Progress" value={`${(statistics.averageProgress * 100).toFixed(1)}%`} />
+            <CompactStatCard
+              label="Active Parts"
+              value={poolMetrics?.active_parts && poolMetrics.active_parts > 1000 ? `${(poolMetrics.active_parts / 1000).toFixed(1)}K` : poolMetrics?.active_parts ?? 0}
+              isLoading={isLoadingPoolMetrics}
+            />
+            <CompactStatCard
+              label="Pending Cleanup"
+              value={poolMetrics?.outdated_parts ?? 0}
+              color={(poolMetrics?.outdated_parts ?? 0) > 100 ? '#f59e0b' : undefined}
+              isLoading={isLoadingPoolMetrics}
+            />
+          </div>
+        )}
+
       </div>
-
-      {/* Stats */}
-      {statistics && (
-        <div className="grid grid-cols-2 lg:grid-cols-7 gap-4">
-          <StatCard label="Active Merges" value={statistics.activeMergeCount} />
-          <StatCard label="Stuck Merges" value={activeMerges.filter(isMergeStuck).length} color={activeMerges.some(isMergeStuck) ? '#f85149' : undefined} />
-          <StatCard label="Tables" value={statistics.tablesWithMerges.length} />
-          <StatCard label="Pending Mutations" value={pendingMutations} />
-          <StatCard
-            label="Merge Throughput"
-            value={formatBytesPerSec(
-              activeMerges.reduce((sum, m) => {
-                const bytesProcessed = m.total_size_bytes_compressed * m.progress;
-                return sum + (m.elapsed > 0 ? bytesProcessed / m.elapsed : 0);
-              }, 0)
-            )}
-          />
-          <StatCard label="Total Size" value={formatBytes(statistics.totalBytesBeingMerged)} />
-          <StatCard label="Avg Progress" value={`${(statistics.averageProgress * 100).toFixed(1)}%`} />
-        </div>
-      )}
-
-      {/* Pool Metrics / Health Sunburst toggle */}
-      {experimentalEnabled && (
-        <div className="tabs">
-          <button
-            className={`tab ${mergeViewMode === 'pools' ? 'active' : ''}`}
-            onClick={() => setMergeViewMode('pools')}
-          >
-            Background Pools
-          </button>
-          <button
-            className={`tab ${mergeViewMode === 'health' ? 'active' : ''}`}
-            onClick={() => setMergeViewMode('health')}
-          >
-            Health Map
-            <span className="ml-2 badge badge-purple" style={{ fontSize: 9 }}>exp</span>
-          </button>
-        </div>
-      )}
-      {mergeViewMode === 'pools' || !experimentalEnabled ? (
-        <PoolMetricsPanel metrics={poolMetrics} isLoading={isLoadingPoolMetrics} />
-      ) : (
-        <div className="card" style={{ height: 520 }}>
-          <MergeHealthSunburst
-            activeMerges={activeMerges}
-            mutations={mutations}
-            poolMetrics={poolMetrics}
-            throughputEstimates={throughputEstimates}
-            onLeafClick={(name, category) => {
-              if (category === 'Mutations') {
-                const mut = mutations.find(m => m.mutation_id === name);
-                if (mut) { setSelectedActiveMutation(mut); return; }
-                return 'not-found';
-              }
-              // Part Count, Throughput — name is result_part_name
-              const merge = activeMerges.find(m => m.result_part_name === name);
-              if (merge) { setActiveMergeDetail(merge); return; }
-              return 'not-found';
-            }}
-          />
-        </div>
-      )}
 
       {/* Error */}
       {error && (
@@ -2229,103 +2085,137 @@ export const MergeTrackerView: React.FC = () => {
       )}
 
       {/* Main Content */}
-      <div className="flex gap-4" style={{ minHeight: mergeViewMode === 'health' ? '300px' : '400px' }}>
+      <div
+        style={{
+          background: 'var(--bg-primary)',
+          margin: '0 calc(var(--page-padding) * -1) calc(var(--page-padding) * -1)',
+          padding: '12px var(--page-padding) var(--page-padding)',
+        }}
+      >
+      <div className="flex gap-4" style={{ minHeight: isHealthTab ? '520px' : '400px' }}>
         {/* Left Panel */}
-        <div className="flex-1 flex flex-col min-w-0 card overflow-hidden">
-          {/* Tabs */}
-          <div 
-            className="flex items-center justify-between px-4 pt-3"
-            style={{ borderBottom: '1px solid var(--border-primary)' }}
-          >
-            <div className="tabs">
-              <button 
-                className={`tab ${activeTab === 'active' ? 'active' : ''}`}
+        <div className="flex-1 flex flex-col min-w-0 overflow-hidden">
+          <div style={{ borderBottom: '1px solid var(--border-primary)' }}>
+            <div className="page-tabs" style={{ paddingLeft: 8 }}>
+              <button
+                className={`page-tab ${activeTab === 'active' ? 'active' : ''}`}
                 onClick={() => setActiveTab('active')}
               >
                 Active Merges
                 {filteredActiveMerges.length > 0 && (
-                  <span className="ml-2 badge badge-purple">{filteredActiveMerges.length}</span>
+                  <span className="page-tab-count">{filteredActiveMerges.length}</span>
                 )}
               </button>
-              <button 
-                className={`tab ${activeTab === 'history' ? 'active' : ''}`}
+              <button
+                className={`page-tab ${activeTab === 'history' ? 'active' : ''}`}
                 onClick={() => setActiveTab('history')}
               >
                 Merge History
               </button>
-              <button 
-                className={`tab ${activeTab === 'mutations' ? 'active' : ''}`}
+              <button
+                className={`page-tab ${activeTab === 'mutations' ? 'active' : ''}`}
                 onClick={() => setActiveTab('mutations')}
               >
                 Active Mutations
                 {pendingMutations > 0 && (
-                  <span className="ml-2 badge badge-purple">{pendingMutations}</span>
+                  <span className="page-tab-count">{pendingMutations}</span>
                 )}
               </button>
-              <button 
-                className={`tab ${activeTab === 'mutationHistory' ? 'active' : ''}`}
+              <button
+                className={`page-tab ${activeTab === 'mutationHistory' ? 'active' : ''}`}
                 onClick={() => setActiveTab('mutationHistory')}
               >
                 Mutation History
               </button>
+              {experimentalEnabled && (
+                <button
+                  className={`page-tab ${activeTab === 'health' ? 'active' : ''}`}
+                  onClick={() => setActiveTab('health')}
+                >
+                  Health Map
+                  <span className="page-tab-exp">exp</span>
+                </button>
+              )}
             </div>
           </div>
 
           {/* Filter Bar */}
-          <div className="px-4 pt-3">
-            <MergeFilterBar
-              tab={activeTab}
-              filter={historyFilter}
-              onFilterChange={handleFilterChange}
-              availableDatabases={databases.map(d => d.name)}
-              availableTables={availableTables}
-              mergeTypes={availableMergeTypes}
-              selectedMergeType={selectedMergeType}
-              onMergeTypeChange={setSelectedMergeType}
-              mergeReasons={availableMergeReasons}
-              selectedMergeReason={selectedMergeReason}
-              onMergeReasonChange={(reason) => handleFilterChange({ category: reason })}
-              availableHosts={availableHosts}
-              selectedHost={selectedHost}
-              onHostChange={setSelectedHost}
-              availableStatuses={availableStatuses}
-              selectedStatus={selectedStatus}
-              onStatusChange={setSelectedStatus}
-              selectedPartName={selectedPartName}
-              onPartNameChange={setSelectedPartName}
-              excludeSystemDatabases={historyFilter.excludeSystemDatabases}
-              onExcludeSystemChange={(v) => handleFilterChange({ excludeSystemDatabases: v })}
-              hideReplicaMerges={(activeTab === 'active' || activeTab === 'history') && hasReplicaMerges ? hideReplicaMerges : undefined}
-              onHideReplicaMergesChange={(activeTab === 'active' || activeTab === 'history') && hasReplicaMerges ? setHideReplicaMerges : undefined}
-              onRefresh={activeTab === 'history' ? () => fetchMergeHistory(true) : activeTab === 'mutationHistory' ? () => fetchMutationHistory(true) : undefined}
-              isLoading={activeTab === 'history' ? isLoadingHistory : activeTab === 'mutationHistory' ? isLoadingMutationHistory : undefined}
-              resultCount={filterResultCount}
-            />
-          </div>
+          {!isHealthTab && (
+            <div style={{ paddingTop: 12 }}>
+              <MergeFilterBar
+                tab={activeTab}
+                filter={historyFilter}
+                onFilterChange={handleFilterChange}
+                availableDatabases={databases.map(d => d.name)}
+                availableTables={availableTables}
+                mergeTypes={availableMergeTypes}
+                selectedMergeType={selectedMergeType}
+                onMergeTypeChange={setSelectedMergeType}
+                mergeReasons={availableMergeReasons}
+                selectedMergeReason={selectedMergeReason}
+                onMergeReasonChange={(reason) => handleFilterChange({ category: reason })}
+                availableHosts={availableHosts}
+                selectedHost={selectedHost}
+                onHostChange={setSelectedHost}
+                availableStatuses={availableStatuses}
+                selectedStatus={selectedStatus}
+                onStatusChange={setSelectedStatus}
+                selectedPartName={selectedPartName}
+                onPartNameChange={setSelectedPartName}
+                excludeSystemDatabases={historyFilter.excludeSystemDatabases}
+                onExcludeSystemChange={(v) => handleFilterChange({ excludeSystemDatabases: v })}
+                hideReplicaMerges={(activeTab === 'active' || activeTab === 'history') && hasReplicaMerges ? hideReplicaMerges : undefined}
+                onHideReplicaMergesChange={(activeTab === 'active' || activeTab === 'history') && hasReplicaMerges ? setHideReplicaMerges : undefined}
+                onRefresh={activeTab === 'history' ? () => fetchMergeHistory(true) : activeTab === 'mutationHistory' ? () => fetchMutationHistory(true) : undefined}
+                isLoading={activeTab === 'history' ? isLoadingHistory : activeTab === 'mutationHistory' ? isLoadingMutationHistory : undefined}
+                resultCount={filterResultCount}
+              />
+            </div>
+          )}
 
           {/* Content */}
-          <div className="flex-1 overflow-auto p-4">
+          <div className="flex-1 overflow-auto" style={{ paddingTop: 12 }}>
             {activeTab === 'active' ? (
               <ActiveMergeList
                 merges={filteredActiveMerges}
                 selectedMerge={liveSelectedMerge}
                 onSelectMerge={selectMerge}
+                onPreviewMerge={selectMerge}
                 isLoading={isLoadingMerges}
+              />
+            ) : activeTab === 'health' ? (
+              <MergeHealthSunburst
+                activeMerges={activeMerges}
+                mutations={mutations}
+                poolMetrics={poolMetrics}
+                throughputEstimates={throughputEstimates}
+                onLeafClick={(name, category) => {
+                  if (category === 'Mutations') {
+                    const mut = mutations.find(m => m.mutation_id === name);
+                    if (mut) { setSelectedActiveMutation(mut); return; }
+                    return 'not-found';
+                  }
+                  const merge = activeMerges.find(m => m.result_part_name === name);
+                  if (merge) { setActiveMergeDetail(merge); return; }
+                  return 'not-found';
+                }}
               />
             ) : activeTab === 'mutations' ? (
               <MutationsPanel 
                 mutations={filteredMutations}
                 activeMerges={activeMerges}
                 isLoading={isLoadingMutations}
-                selectedMutation={selectedActiveMutation}
+                selectedMutation={previewedActiveMutation}
                 onSelectMutation={setSelectedActiveMutation}
+                onPreviewMutation={setPreviewActiveMutation}
               />
             ) : activeTab === 'mutationHistory' ? (
               <MutationHistoryPanel 
                 history={filteredMutationHistory} 
                 isLoading={isLoadingMutationHistory}
-                selectedRecord={selectedMutationHistory}
+                selectedRecord={previewedMutationHistory}
                 onSelectRecord={setSelectedMutationHistory}
+                onPreviewRecord={setPreviewMutationHistory}
               />
             ) : (
               <>
@@ -2339,8 +2229,9 @@ export const MergeTrackerView: React.FC = () => {
                   sort={historySort}
                   onSortChange={handleSortChange}
                   isLoading={isLoadingHistory}
-                  selectedRecord={selectedMergeHistory}
+                  selectedRecord={previewedMergeHistory}
                   onSelectRecord={setSelectedMergeHistory}
+                  onPreviewRecord={setPreviewMergeHistory}
                 />
               </>
             )}
@@ -2348,29 +2239,41 @@ export const MergeTrackerView: React.FC = () => {
         </div>
 
         {/* Right Panel - Detail */}
-        <div className="w-80 flex-shrink-0 card overflow-hidden">
-          {activeTab === 'active' ? (
-            <MergeDetailPanel merge={liveSelectedMerge} onClose={() => selectMerge(null)} onOpenFullDetails={setActiveMergeDetail} />
-          ) : activeTab === 'mutations' ? (
-            <ActiveMutationDetailPanel 
-              mutation={selectedActiveMutation} 
-              activeMerges={activeMerges}
-              allMutations={mutations}
-              onClose={() => setSelectedActiveMutation(null)} 
-            />
-          ) : activeTab === 'mutationHistory' ? (
-            <MutationHistoryDetailPanel 
-              record={selectedMutationHistory} 
-              onClose={() => setSelectedMutationHistory(null)} 
-            />
-          ) : (
-            <MergeHistoryDetailPanel 
-              record={selectedMergeHistory} 
-              onClose={() => setSelectedMergeHistory(null)}
-              onOpenFullDetails={setMergeDetailRecord}
-            />
-          )}
-        </div>
+        {!isHealthTab && (
+          <div className="w-80 flex-shrink-0 card overflow-hidden">
+            {activeTab === 'active' ? (
+              <MergeDetailPanel merge={liveSelectedMerge} onClose={() => selectMerge(null)} onOpenFullDetails={setActiveMergeDetail} />
+            ) : activeTab === 'mutations' ? (
+              <ActiveMutationDetailPanel
+                mutation={previewedActiveMutation}
+                activeMerges={activeMerges}
+                allMutations={mutations}
+                onClose={() => {
+                  setSelectedActiveMutation(null);
+                  setPreviewActiveMutation(null);
+                }}
+              />
+            ) : activeTab === 'mutationHistory' ? (
+              <MutationHistoryDetailPanel
+                record={previewedMutationHistory}
+                onClose={() => {
+                  setSelectedMutationHistory(null);
+                  setPreviewMutationHistory(null);
+                }}
+              />
+            ) : (
+              <MergeHistoryDetailPanel
+                record={previewedMergeHistory}
+                onClose={() => {
+                  setSelectedMergeHistory(null);
+                  setPreviewMergeHistory(null);
+                }}
+                onOpenFullDetails={setMergeDetailRecord}
+              />
+            )}
+          </div>
+        )}
+      </div>
       </div>
 
       {/* Full merge detail modal */}

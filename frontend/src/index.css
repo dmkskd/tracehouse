@@ -334,6 +334,69 @@ span:has(> .split-3d-tooltip):hover > .split-3d-tooltip {
   box-shadow: 0 1px 3px rgba(0, 0, 0, 0.1);
 }
 
+.page-tabs {
+  display: flex;
+  align-items: center;
+  gap: 0;
+}
+
+.page-tab {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 8px 16px;
+  font-size: 12px;
+  font-weight: 500;
+  color: var(--text-muted);
+  background: transparent;
+  border: 0;
+  border-bottom: 2px solid transparent;
+  cursor: pointer;
+  transition: color 0.15s ease, border-color 0.15s ease;
+}
+
+.page-tab:hover {
+  color: var(--text-primary);
+}
+
+.page-tab.active {
+  color: var(--text-primary);
+  font-weight: 600;
+  border-bottom-color: var(--accent-primary);
+}
+
+.page-tab-count {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 18px;
+  height: 16px;
+  padding: 0 6px;
+  border-radius: 999px;
+  font-size: 10px;
+  line-height: 1;
+  color: var(--text-muted);
+  background: var(--bg-tertiary);
+}
+
+.page-tab.active .page-tab-count {
+  color: var(--accent-primary);
+  background: rgba(88, 166, 255, 0.15);
+}
+
+.page-tab-exp {
+  display: inline-flex;
+  align-items: center;
+  height: 16px;
+  padding: 0 5px;
+  border-radius: 4px;
+  font-size: 9px;
+  font-weight: 600;
+  line-height: 1;
+  color: #f59e0b;
+  background: rgba(245, 158, 11, 0.2);
+}
+
 /* Section headers */
 .section-header {
   font-size: 11px;

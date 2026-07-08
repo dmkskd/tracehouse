@@ -495,30 +495,20 @@ export const QueryMonitor: React.FC = () => {
         </div>
 
         {/* Tabs */}
-        <div style={{ display: 'flex', gap: 0 }}>
+        <div className="page-tabs">
           {tabs.map(tab => {
             const active = activeTab === tab.key;
             return (
               <button key={tab.key} onClick={() => setActiveTab(tab.key)}
-                style={{
-                  padding: '8px 16px', fontSize: 12, fontWeight: active ? 600 : 400,
-                  color: active ? 'var(--text-primary)' : 'var(--text-muted)',
-                  background: 'transparent', border: 'none', cursor: 'pointer',
-                  borderBottom: active ? '2px solid #58a6ff' : '2px solid transparent',
-                  transition: 'all 0.15s',
-                }}>
+                className={`page-tab ${active ? 'active' : ''}`}>
                 {tab.label}
                 {tab.count !== undefined && (
-                  <span style={{
-                    marginLeft: 6, fontSize: 10, padding: '1px 6px', borderRadius: 8,
-                    background: active ? 'rgba(88,166,255,0.15)' : 'var(--bg-tertiary)',
-                    color: active ? '#58a6ff' : 'var(--text-muted)',
-                  }}>
+                  <span className="page-tab-count">
                     {tab.count}
                   </span>
                 )}
                 {tab.badge && (
-                  <span style={{ marginLeft: 6, fontSize: 9, padding: '1px 5px', borderRadius: 4, background: 'rgba(245,158,11,0.2)', color: '#f59e0b', fontWeight: 600 }}>
+                  <span className="page-tab-exp">
                     {tab.badge}
                   </span>
                 )}
