@@ -135,6 +135,13 @@ function fmtThroughput(value: number | null): string {
   return `${formatBytes(value)}/s`;
 }
 
+function fmtKpiDurationUs(value: number | null): string {
+  if (value == null) return '—';
+  if (value < 1000) return `${Number(value.toFixed(1))}µs`;
+  if (value < 1_000_000) return `${Number((value / 1000).toFixed(1))}ms`;
+  return formatMicroseconds(value);
+}
+
 function eventValue(name: string, value: number): string {
   if (name.includes('Bytes') || name.includes('Weight')) return formatBytes(value);
   if (name.includes('Microseconds')) return formatMicroseconds(value);
@@ -211,14 +218,14 @@ function buildEfficiency(summary: ObjectStorageProfileSummary, descriptions: Pro
     },
     {
       label: 'Avg S3 GET open time',
-      value: summary.avgS3GetOpenMicroseconds == null ? '—' : formatMicroseconds(summary.avgS3GetOpenMicroseconds),
+      value: fmtKpiDurationUs(summary.avgS3GetOpenMicroseconds),
       formula: 'ReadBufferFromS3InitMicroseconds / S3GetObject',
       status: 'neutral',
       hint: profileEventDetail(descriptions, 'ReadBufferFromS3InitMicroseconds') ?? 'ReadBufferFromS3 initialization time.',
     },
     {
       label: 'Avg S3 GET/HEAD request time',
-      value: summary.avgS3ReadRequestMicroseconds == null ? '—' : formatMicroseconds(summary.avgS3ReadRequestMicroseconds),
+      value: fmtKpiDurationUs(summary.avgS3ReadRequestMicroseconds),
       formula: 'S3ReadMicroseconds / S3ReadRequestsCount',
       status: 'neutral',
       hint: profileEventDetail(descriptions, 'S3ReadMicroseconds') ?? 'S3 GET/HEAD request time.',
@@ -241,7 +248,7 @@ function buildEfficiency(summary: ObjectStorageProfileSummary, descriptions: Pro
     },
     {
       label: 'Avg S3 write request time',
-      value: summary.avgS3WriteRequestMicroseconds == null ? '—' : formatMicroseconds(summary.avgS3WriteRequestMicroseconds),
+      value: fmtKpiDurationUs(summary.avgS3WriteRequestMicroseconds),
       formula: 'S3WriteMicroseconds / S3WriteRequestsCount',
       status: 'neutral',
       hint: profileEventDetail(descriptions, 'S3WriteMicroseconds') ?? 'S3 write request time.',
@@ -268,15 +275,21 @@ function buildReadTimeView(summary: ObjectStorageProfileSummary, descriptions: P
   const scaleMicroseconds = Math.max(total, summary.s3ReadMicroseconds, summary.initMicroseconds, summary.approxBodyStreamingMicroseconds);
   return {
     title: 'Read Time',
-    subtitle: 'Read-buffer and HTTP-layer timers are separate ClickHouse ProfileEvents; they are not additive.',
-    total: { label: 'ReadBufferFromS3Microseconds', value: formatMicroseconds(total) },
+    subtitle: 'Read-buffer elapsed time and summed HTTP request time are separate ClickHouse ProfileEvents.',
+    total: { label: 'Read buffer elapsed', value: formatMicroseconds(total) },
     totalColor: '#dbeafe',
     scaleMicroseconds,
     segments: [
-      segment('ReadBufferFromS3InitMicroseconds', summary.initMicroseconds, scaleMicroseconds, '#2f81f7', profileEventDetail(descriptions, 'ReadBufferFromS3InitMicroseconds')),
-      segment('S3ReadMicroseconds', summary.s3ReadMicroseconds, scaleMicroseconds, '#79b8ff', profileEventDetail(descriptions, 'S3ReadMicroseconds')),
+      segment('S3 open/init time', summary.initMicroseconds, scaleMicroseconds, '#2f81f7', profileEventDetail(descriptions, 'ReadBufferFromS3InitMicroseconds')),
       segment(
-        'Approx. body streaming time',
+        'S3 request time, summed',
+        summary.s3ReadMicroseconds,
+        scaleMicroseconds,
+        '#79b8ff',
+        profileEventDetail(descriptions, 'S3ReadMicroseconds') ?? 'Summed GET/HEAD request time; can exceed read-buffer elapsed time when requests overlap or multiple requests are accumulated.',
+      ),
+      segment(
+        'Body streaming estimate',
         summary.approxBodyStreamingMicroseconds,
         scaleMicroseconds,
         '#dbeafe',
