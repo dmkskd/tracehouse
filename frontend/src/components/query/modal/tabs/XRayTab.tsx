@@ -18,6 +18,7 @@ import type { ProcessSample } from '../hooks/useProcessSamples';
 import { useTraceSampleCounts, hasTraceSamplesInRange, useTimeScopedFlamegraph } from '../hooks/useHotFunctions';
 import { SpeedscopeViewer } from '../../../tracing/SpeedscopeViewer';
 import { XRayVisualization } from './XRayVisualization';
+import { Query2DCharts } from './Query2DCharts';
 
 interface LogEvent {
   t: number;           // seconds from query start
@@ -327,6 +328,7 @@ export const XRayTab: React.FC<XRayTabProps> = ({
   const [showFlamegraphPopup, setShowFlamegraphPopup] = useState(false);
   const [selectedHost, setSelectedHost] = useState<string | null>(null);
   const [stackedView, setStackedView] = useState(false);
+  const [viewMode, setViewMode] = useState<'3d' | '2d'>('3d');
   const [scrubberMode, setScrubberMode] = useState<ScrubberMode>('time');
   const [scrubberIdx, setScrubberIdx] = useState(0);
 
@@ -635,22 +637,54 @@ export const XRayTab: React.FC<XRayTabProps> = ({
         <span>{totalRows.toLocaleString()} rows</span>
         <span>{samples.length} samples</span>
         {logEvents.length > 0 && <span>{logEvents.length} log events</span>}
+
+        {/* 3D / 2D view toggle */}
+        <span style={{ flex: 1 }} />
+        <div style={{ display: 'flex', gap: 4, flexShrink: 0 }}>
+          {(['3d', '2d'] as const).map(m => (
+            <span
+              key={m}
+              onClick={() => setViewMode(m)}
+              title={m === '3d' ? '3D resource corridor' : '2D stacked charts (exact values)'}
+              style={{
+                padding: '2px 9px',
+                borderRadius: 10,
+                fontSize: 10,
+                fontWeight: 600,
+                letterSpacing: '0.4px',
+                cursor: 'pointer',
+                userSelect: 'none',
+                textTransform: 'uppercase',
+                border: `1px solid ${viewMode === m ? '#636EFA66' : '#2a2a3a'}`,
+                background: viewMode === m ? '#636EFA1a' : 'rgba(255,255,255,0.02)',
+                color: viewMode === m ? '#636EFA' : '#555',
+                transition: 'all 0.15s ease',
+              }}
+            >
+              {m}
+            </span>
+          ))}
+        </div>
       </div>
 
-      <XRayVisualization
-        samples={samples}
-        highlightTime={highlightTime}
-        highlightLabel={highlightLabel}
-        sampleCounts={sampleCounts}
-        sampleOffset={sampleOffset}
-        onShowFlamegraphForT={handleShowFlamegraphForT}
-        stackedView={stackedView}
-        selectedHost={selectedHost}
-        hostSamples={hostSamples}
-        hosts={hosts}
-        currentTimeWindow={currentTimeWindow}
-        onShowFlamegraph={handleShowFlamegraph}
-      />
+      {viewMode === '3d' ? (
+        <XRayVisualization
+          samples={samples}
+          highlightTime={highlightTime}
+          highlightLabel={highlightLabel}
+          sampleCounts={sampleCounts}
+          sampleOffset={sampleOffset}
+          onShowFlamegraphForT={handleShowFlamegraphForT}
+          stackedView={stackedView}
+          selectedHost={selectedHost}
+          hostSamples={hostSamples}
+          hosts={hosts}
+          currentTimeWindow={currentTimeWindow}
+          onShowFlamegraph={handleShowFlamegraph}
+        />
+      ) : (
+        <Query2DCharts samples={samples} highlightTime={highlightTime} />
+      )}
 
       {/* Scrubber */}
       <Scrubber
