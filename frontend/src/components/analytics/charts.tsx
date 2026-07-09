@@ -28,7 +28,7 @@ import {
   useXAxisDomain,
   useYAxisDomain,
 } from 'recharts';
-import type { ChartType } from './metaLanguage';
+import type { ChartType, ChartRender } from './metaLanguage';
 import { formatBytes } from '../../utils/formatters';
 import { formatCell, parseReadableBytes } from '@tracehouse/core';
 import { RadarShape } from './RadarCell';
@@ -118,6 +118,8 @@ export interface ChartConfig {
   descriptionColumn?: string;
   /** Override chart color (hex). Parsed from @chart color=... */
   color?: string;
+  /** Rendering variant within the chart type (e.g. 'overlay'). Parsed from @chart render=... */
+  render?: ChartRender;
   profile?: string;
   axes?: Record<string, string>;
   ranges?: Record<string, { low: string; high: string }>;
@@ -1101,17 +1103,20 @@ export const StackedBarChart2D: React.FC<{ data: GroupedChartData[]; orientation
   );
 };
 
-export const GroupedLineChart2D: React.FC<{ data: GroupedChartData[]; onDrillDown?: (e: DrillDownEvent) => void; unit?: string; drillIntoQuery?: string } & CrosshairProps> = ({ data, onDrillDown, unit, drillIntoQuery, hoveredTimestamp, onTimestampHover, correlationValues, currentPanelName, isHoveredPanel}) => {
+export const GroupedLineChart2D: React.FC<{ data: GroupedChartData[]; onDrillDown?: (e: DrillDownEvent) => void; unit?: string; drillIntoQuery?: string; renderMode?: ChartRender } & CrosshairProps> = ({ data, onDrillDown, unit, drillIntoQuery, renderMode, hoveredTimestamp, onTimestampHover, correlationValues, currentPanelName, isHoveredPanel}) => {
   const [hoveredLine, setHoveredLine] = useState<string | null>(null);
   if (!data.length) return null;
   const { rows, groupNames, colorMap } = flattenGrouped(data);
+  // Opt-in "spaghetti" rendering for high-cardinality series (render=overlay):
+  // no legend, thin translucent lines, hover to spotlight, click to isolate.
+  const spaghetti = renderMode === 'overlay';
 
-  return (
+  const chart = (
     <ResponsiveContainer width="100%" height={320}>
       <RLineChart data={rows} margin={{ top: 10, right: 20, left: 10, bottom: 5 }}
-
-        style={onDrillDown ? { cursor: 'pointer' } : undefined}
-        onClick={onDrillDown ? (e: any) => { if (e?.activeLabel) onDrillDown({ label: e.activeLabel, value: 0 }); } : undefined}
+        style={onDrillDown && !spaghetti ? { cursor: 'pointer' } : undefined}
+        // In spaghetti mode drilling happens per-line (below), not on the chart background.
+        onClick={onDrillDown && !spaghetti ? (e: any) => { if (e?.activeLabel) onDrillDown({ label: e.activeLabel, value: 0 }); } : undefined}
         onMouseMove={(e: any) => { if (onTimestampHover && e?.activeLabel) onTimestampHover(e.activeLabel); }}
         onMouseLeave={() => { if (onTimestampHover) onTimestampHover(null); }}
       >
@@ -1120,37 +1125,70 @@ export const GroupedLineChart2D: React.FC<{ data: GroupedChartData[]; onDrillDow
           interval="preserveStartEnd"
           tickFormatter={formatXTick} />
         <YAxis tick={axisTickStyle} tickLine={axisLineStyle} axisLine={axisLineStyle} tickFormatter={compactFormatter(unit)} width={50} />
-        <Tooltip content={<AnalyticsTooltip drillIntoQuery={drillIntoQuery} correlationValues={correlationValues} currentPanelName={currentPanelName} isHoveredPanel={isHoveredPanel} />} offset={20} wrapperStyle={{ zIndex: 1000, pointerEvents: 'none' }} cursor={<CrosshairCursor />} />
-        {hoveredTimestamp && <SyncedCrosshair hoveredTimestamp={hoveredTimestamp} />}
-        <Legend iconType="line" iconSize={14}
-          onMouseEnter={(e) => setHoveredLine(String(e.dataKey))}
-          onMouseLeave={() => setHoveredLine(null)}
-          formatter={(value: string) => (
-            <span style={{
-              fontSize: 11,
-              color: 'var(--text-secondary)',
-              opacity: hoveredLine && hoveredLine !== value ? 0.3 : 1,
-              transition: 'opacity 0.15s',
-            }}>{value.length > 14 ? value.slice(0, 14) + '…' : value}</span>
-          )} />
-        {groupNames.map(name => (
-          <Line
-            key={name}
-            type="monotone"
-            dataKey={name}
-            stroke={colorMap[name]}
-            strokeWidth={hoveredLine === name ? 3 : 2}
-            strokeOpacity={hoveredLine && hoveredLine !== name ? 0.2 : 1}
-            dot={false}
-            activeDot={(props: any) => (
-              <PulsatingDot cx={props.cx as number} cy={props.cy as number} fill={colorMap[name]} drillable={!!onDrillDown} />
-            )}
-            animationDuration={300}
+        {spaghetti ? (
+          // Only surface the hovered line's value — a 100-series shared tooltip is unreadable.
+          <Tooltip
+            offset={20}
+            wrapperStyle={{ zIndex: 1000, pointerEvents: 'none' }}
+            cursor={{ stroke: gridStroke }}
+            content={({ active, payload, label }: any) => {
+              if (!active || !hoveredLine) return null;
+              const p = payload?.find((x: any) => x.dataKey === hoveredLine);
+              if (!p) return null;
+              return (
+                <div style={{ background: 'var(--bg-primary)', border: '1px solid var(--border-primary)', borderRadius: 6, padding: '6px 8px', fontSize: 11, fontFamily: 'monospace' }}>
+                  <div style={{ color: 'var(--text-muted)' }}>{label}</div>
+                  <div style={{ color: colorMap[hoveredLine] }}>{hoveredLine.length > 14 ? hoveredLine.slice(0, 14) + '…' : hoveredLine}: {compactFormatter(unit)(Number(p.value))}</div>
+                </div>
+              );
+            }}
           />
-        ))}
+        ) : (
+          <Tooltip content={<AnalyticsTooltip drillIntoQuery={drillIntoQuery} correlationValues={correlationValues} currentPanelName={currentPanelName} isHoveredPanel={isHoveredPanel} />} offset={20} wrapperStyle={{ zIndex: 1000, pointerEvents: 'none' }} cursor={<CrosshairCursor />} />
+        )}
+        {hoveredTimestamp && <SyncedCrosshair hoveredTimestamp={hoveredTimestamp} />}
+        {!spaghetti && (
+          <Legend iconType="line" iconSize={14}
+            onMouseEnter={(e) => setHoveredLine(String(e.dataKey))}
+            onMouseLeave={() => setHoveredLine(null)}
+            formatter={(value: string) => (
+              <span style={{
+                fontSize: 11,
+                color: 'var(--text-secondary)',
+                opacity: hoveredLine && hoveredLine !== value ? 0.3 : 1,
+                transition: 'opacity 0.15s',
+              }}>{value.length > 14 ? value.slice(0, 14) + '…' : value}</span>
+            )} />
+        )}
+        {groupNames.map(name => {
+          const isHov = hoveredLine === name;
+          const dimmed = hoveredLine != null && !isHov;
+          return (
+            <Line
+              key={name}
+              type="monotone"
+              dataKey={name}
+              stroke={colorMap[name]}
+              strokeWidth={spaghetti ? (isHov ? 2.5 : 1) : (isHov ? 3 : 2)}
+              strokeOpacity={spaghetti ? (isHov ? 1 : (dimmed ? 0.07 : 0.5)) : (dimmed ? 0.2 : 1)}
+              dot={false}
+              activeDot={spaghetti ? false : (props: any) => (
+                <PulsatingDot cx={props.cx as number} cy={props.cy as number} fill={colorMap[name]} drillable={!!onDrillDown} />
+              )}
+              onMouseEnter={spaghetti ? () => setHoveredLine(name) : undefined}
+              onMouseLeave={spaghetti ? () => setHoveredLine(null) : undefined}
+              onClick={spaghetti && onDrillDown ? () => onDrillDown({ label: name, value: 0 }) : undefined}
+              style={spaghetti ? { cursor: onDrillDown ? 'pointer' : 'default' } : undefined}
+              isAnimationActive={!spaghetti}
+              animationDuration={300}
+            />
+          );
+        })}
       </RLineChart>
     </ResponsiveContainer>
   );
+
+  return chart;
 };
 
 // ═══════════════════════════════════════════════════════════════════════════
@@ -1699,12 +1737,14 @@ export interface ChartRendererProps extends CrosshairProps {
   drillIntoQuery?: string;
   /** When set, enables dual Y-axis mode for area/line charts (first col = left, second col = right) */
   valueColumns?: string[];
+  /** Rendering variant (e.g. 'overlay' for grouped_line spaghetti mode). */
+  renderMode?: ChartRender;
 }
 
 export const ChartRenderer: React.FC<ChartRendererProps> = ({
   chartType, data, groupedData, orientation, fullHeight, unit, color, onDrillDown, drillIntoQuery,
   rawRows, radarConfig,
-  hoveredTimestamp, onTimestampHover, correlationValues, currentPanelName, isHoveredPanel, valueColumns,
+  hoveredTimestamp, onTimestampHover, correlationValues, currentPanelName, isHoveredPanel, valueColumns, renderMode,
 }) => {
   // Dual-axis mode: area/line with exactly 2 value columns
   if ((chartType === 'area' || chartType === 'line') && valueColumns && valueColumns.length === 2 && groupedData.length > 0) {
@@ -1724,7 +1764,7 @@ export const ChartRenderer: React.FC<ChartRendererProps> = ({
     case 'stacked_bar':
       return <StackedBarChart2D data={groupedData} orientation={orientation} onDrillDown={onDrillDown} unit={unit} drillIntoQuery={drillIntoQuery} />;
     case 'grouped_line':
-      return <GroupedLineChart2D data={groupedData} onDrillDown={onDrillDown} unit={unit} drillIntoQuery={drillIntoQuery} hoveredTimestamp={hoveredTimestamp} onTimestampHover={onTimestampHover} correlationValues={correlationValues} currentPanelName={currentPanelName} isHoveredPanel={isHoveredPanel} />;
+      return <GroupedLineChart2D data={groupedData} onDrillDown={onDrillDown} unit={unit} drillIntoQuery={drillIntoQuery} renderMode={renderMode} hoveredTimestamp={hoveredTimestamp} onTimestampHover={onTimestampHover} correlationValues={correlationValues} currentPanelName={currentPanelName} isHoveredPanel={isHoveredPanel} />;
     default:
       return <BarChart2D data={data} fullHeight={fullHeight} onDrillDown={onDrillDown} unit={unit} drillIntoQuery={drillIntoQuery} />;
   }

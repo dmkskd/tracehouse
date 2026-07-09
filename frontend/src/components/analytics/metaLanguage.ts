@@ -14,6 +14,9 @@
 
 export type ChartType = 'bar' | 'line' | 'pie' | 'area' | 'grouped_bar' | 'stacked_bar' | 'grouped_line' | 'radar';
 export type ChartStyle = '2d' | '3d';
+/** Rendering variant within a chart type (currently overlay/spaghetti for grouped_line;
+ *  reserved for future siblings like band / small_multiples). */
+export type ChartRender = 'overlay';
 
 /** Cell style type - determines how a table column is decorated. */
 export type CellStyleType = 'rag' | 'gauge' | 'sparkline' | 'radar';
@@ -122,6 +125,7 @@ export interface ParsedDirectives {
     labelsColumn?: string;
     color?: string;
     colorByColumn?: string;
+    render?: ChartRender;
   };
   drill?: {
     on: string;
@@ -139,6 +143,11 @@ export interface ParsedDirectives {
     database: string;
     /** Column or drill-param name for the table */
     table: string;
+  };
+  /** @query_link: click a query_id to open the Query Detail modal on the X-Ray tab. */
+  queryLink?: {
+    /** Column containing the query_id */
+    on: string;
   };
   /** All cell style rules (rag, gauge, sparkline) from @cell: directives. */
   cellStyles: CellStyleRule[];
@@ -163,6 +172,9 @@ export interface ChartDirective {
   unit?: string;
   /** Override the default chart color (hex, e.g. '#f59e0b'). Used for stroke and area fill. */
   color?: string;
+  /** Rendering variant within the chart type. `overlay` = many-series spaghetti
+   *  (no legend, faint lines, hover to spotlight, click to isolate); grouped_line only. */
+  render?: ChartRender;
   profile?: string;
   axes?: Record<string, string>;
   ranges?: Record<string, RadarAxisRange>;
@@ -454,6 +466,7 @@ export function parseDirectives(sql: string): ParsedDirectives | null {
     const v = c.match(/value=([\w,]+)/);
     const g = c.match(/series=(\w+)/);
     const dc = c.match(/description=(\w+)/i);
+    const rd = c.match(/render=(\w+)/i);
     if (t) {
       result.chart = {
         type: t[1] as ChartType,
@@ -463,6 +476,7 @@ export function parseDirectives(sql: string): ParsedDirectives | null {
         valueColumn: v?.[1],
         seriesColumn: g?.[1],
         descriptionColumn: dc?.[1],
+        render: rd ? rd[1] as ChartRender : undefined,
       };
       applyRadarOptionsToChart(result.chart, parseRadarOptions(c));
     }
@@ -499,6 +513,12 @@ export function parseDirectives(sql: string): ParsedDirectives | null {
     }
   }
 
+  const queryLinkMatch = sql.match(/--\s*@query_link:\s*(.+)/i);
+  if (queryLinkMatch) {
+    const onMatch = queryLinkMatch[1].match(/on=(\w+)/);
+    if (onMatch) result.queryLink = { on: onMatch[1] };
+  }
+
   const sourceMatch = sql.match(/--\s*@source:\s*(https?:\/\/\S+)/i);
   if (sourceMatch) result.source = sourceMatch[1];
 
@@ -525,6 +545,7 @@ export function parseChartDirective(sql: string): Partial<ChartDirective> | null
   const o = d.match(/orientation=(\w+)/i);
   if (o) cfg.orientation = o[1].toLowerCase() === 'vertical' || o[1].toLowerCase() === 'v' ? 'vertical' : 'horizontal';
   const s = d.match(/style=(\w+)/i); if (s) cfg.visualization = s[1] as '2d' | '3d';
+  const rd = d.match(/render=(\w+)/i); if (rd) cfg.render = rd[1] as ChartRender;
   const u = d.match(/unit=(\S+)/i); if (u) cfg.unit = u[1];
   const dc = d.match(/description=(\w+)/i); if (dc) cfg.descriptionColumn = dc[1];
   applyRadarOptionsToChart(cfg, parseRadarOptions(d));

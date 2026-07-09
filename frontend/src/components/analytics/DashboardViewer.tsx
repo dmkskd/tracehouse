@@ -18,6 +18,7 @@ import { LinkQueryModal } from './LinkQueryModal';
 import { PartInspector } from '../database/PartInspector';
 import { databaseApi } from '../../stores/databaseStore';
 import type { PartDetailInfo, QuerySeries } from '@tracehouse/core';
+import type { QueryModalTab } from '../query/modal/QueryDetailModal';
 import { TimeRangePicker } from './TimeRangePicker';
 import {
   formatCell,
@@ -74,7 +75,7 @@ const DashboardPanelCard: React.FC<{
   filterParams?: Record<string, string>;
   /** Index in the dashboard panel list - used to assign distinct overlay colors */
   panelIndex?: number;
-  onOpenQueryDetail?: (query: QuerySeries) => void;
+  onOpenQueryDetail?: (query: QuerySeries, opts?: { tab?: QueryModalTab }) => void;
   onOpenQuery?: (query: Query, dashboardId: string) => void;
 }> = ({ panel, timeRangeOverride, dashboardId, isFullscreen, onToggleFullscreen, isHidden, hoveredTimestamp, onTimestampHover, onTimeSeriesData, correlationValues, isHoveredPanel, filterParams, panelIndex, onOpenQueryDetail, onOpenQuery }) => {
   const services = useClickHouseServices();
@@ -290,6 +291,20 @@ const DashboardPanelCard: React.FC<{
     return () => { cancelled = true; };
   }, [partLinkTarget, services]);
 
+  // @query_link support - open the Query Detail modal (X-Ray tab) for a clicked query_id
+  const isQueryLinkable = !!(preset?.directives.queryLink?.on) &&
+    (!result || result.columns.includes(preset.directives.queryLink.on));
+
+  const handleQueryLinkChartClick = useCallback((event: DrillDownEvent) => {
+    const ql = preset?.directives.queryLink;
+    if (!ql || !services || !onOpenQueryDetail) return;
+    const queryId = event.label;
+    if (!queryId) return;
+    services.analyticsService.getQueryById(queryId)
+      .then(q => { if (q) onOpenQueryDetail(q, { tab: 'xray' }); })
+      .catch(() => { /* query not found / query_log unavailable */ });
+  }, [preset, services, onOpenQueryDetail]);
+
   if (!preset) {
     return (
       <div style={{ ...panelStyle, display: isHidden ? 'none' : 'flex' }}>
@@ -390,15 +405,15 @@ const DashboardPanelCard: React.FC<{
                     orientation={chartDirective?.orientation}
                     groupedData={isGroupedChart ? groupedChartData : undefined}
                     isFullscreen={fullscreen}
-                    onDrillDown={isDrillable ? handleDrillDown : isPartLinkable ? handlePartLinkChartClick : undefined}
+                    onDrillDown={isDrillable ? handleDrillDown : isPartLinkable ? handlePartLinkChartClick : isQueryLinkable ? handleQueryLinkChartClick : undefined}
                     unit={chartUnit} />
                 ) : (
                   <ChartRenderer chartType={chartType} data={chartData} groupedData={groupedChartData}
                     rawRows={result.rows} radarConfig={chartDirective ?? undefined}
                     orientation={chartDirective?.orientation} fullHeight unit={chartUnit} color={chartColor}
-                    onDrillDown={isDrillable ? handleDrillDown : isPartLinkable ? handlePartLinkChartClick : undefined}
-                    drillIntoQuery={isDrillable ? preset?.directives.drill?.into : isPartLinkable ? 'Part Inspector' : undefined}
-                    valueColumns={chartDirective?.valueColumns}
+                    onDrillDown={isDrillable ? handleDrillDown : isPartLinkable ? handlePartLinkChartClick : isQueryLinkable ? handleQueryLinkChartClick : undefined}
+                    drillIntoQuery={isDrillable ? preset?.directives.drill?.into : isPartLinkable ? 'Part Inspector' : isQueryLinkable ? 'Query X-Ray' : undefined}
+                    valueColumns={chartDirective?.valueColumns} renderMode={chartDirective?.render}
                     hoveredTimestamp={hoveredTimestamp} onTimestampHover={onTimestampHover} correlationValues={correlationValues} currentPanelName={preset?.name} isHoveredPanel={isHoveredPanel} />
                 )}
               </div>
@@ -1086,12 +1101,16 @@ const DashboardFilterBar: React.FC<{
   const services = useClickHouseServices();
   const [options, setOptions] = useState<Record<string, string[]>>({});
 
+  // Filter option queries are resolved against the current filter values, so a
+  // filter can depend on another (e.g. a Table filter using {{drill_value:db}}
+  // to list only the selected database's tables). Re-runs when values change.
   useEffect(() => {
     if (!services) return;
     let cancelled = false;
     for (const f of filters) {
+      const resolvedQuery = resolveDrillParams(f.query, filterValues);
       services.interactiveQueryService.run<Record<string, unknown>>(
-        f.query,
+        resolvedQuery,
         sourceTag(TAB_ANALYTICS, 'dashboardFilter'),
       )
         .then(rows => {
@@ -1099,11 +1118,17 @@ const DashboardFilterBar: React.FC<{
           const col = rows.length > 0 ? Object.keys(rows[0])[0] : '';
           const values = rows.map(r => String(r[col] ?? ''));
           setOptions(prev => ({ ...prev, [f.param]: values }));
+          // Cascade cleanup: if the current selection is no longer a valid option
+          // (e.g. the table's database changed), clear it.
+          const current = filterValues[f.param];
+          if (current && values.length > 0 && !values.includes(current)) {
+            onFilterChange(f.param, '');
+          }
         })
         .catch(() => { /* ignore */ });
     }
     return () => { cancelled = true; };
-  }, [services, filters]);
+  }, [services, filters, filterValues, onFilterChange]);
 
   return (
     <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
@@ -1138,7 +1163,7 @@ const DashboardFilterBar: React.FC<{
 
 type ViewState = { mode: 'list' } | { mode: 'view'; dashboardId: string } | { mode: 'edit'; dashboard?: Dashboard } | { mode: 'import' };
 
-export const DashboardViewer: React.FC<{ initialDashboardId?: string; onOpenQueryDetail?: (query: QuerySeries) => void; onOpenQuery?: (query: Query, dashboardId: string) => void }> = ({ initialDashboardId, onOpenQueryDetail, onOpenQuery }) => {
+export const DashboardViewer: React.FC<{ initialDashboardId?: string; onOpenQueryDetail?: (query: QuerySeries, opts?: { tab?: QueryModalTab }) => void; onOpenQuery?: (query: Query, dashboardId: string) => void }> = ({ initialDashboardId, onOpenQueryDetail, onOpenQuery }) => {
   const [dashboards, setDashboards] = useState<Dashboard[]>(() => loadDashboards());
   const [fullscreenPanelIndex, setFullscreenPanelIndex] = useState<number | null>(null);
   const [toast, setToast] = useState<string | null>(null);

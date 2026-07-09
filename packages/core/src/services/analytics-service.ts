@@ -8,7 +8,7 @@
 import type { IClickHouseAdapter } from '../adapters/types.js';
 import type { TableOrderingKeyEfficiency, OrderingKeyEfficiencyOptions, TableQueryPattern, ExplainIndexesResult, StressSurfaceData, StressSurfaceRow, StressSurfaceInsertRow, StressSurfaceMergeRow, PatternSurfaceRow, SurfaceQueryOptions, ResourceLanesData, ResourceLaneRow, ResourceLaneMergeRow, ResourceTotalsRow, ResourceLanesOptions, ResourceLanesTableOptions } from '../types/analytics.js';
 import type { QuerySeries } from '../types/timeline.js';
-import { LATEST_QUERY_FOR_PATTERN, MERGETREE_DATABASES, TABLE_ORDERING_KEY_EFFICIENCY, TABLE_QUERY_PATTERNS } from '../queries/analytics-queries.js';
+import { LATEST_QUERY_FOR_PATTERN, QUERY_BY_ID, MERGETREE_DATABASES, TABLE_ORDERING_KEY_EFFICIENCY, TABLE_QUERY_PATTERNS } from '../queries/analytics-queries.js';
 import { stressSurfaceQueries, stressSurfaceInserts, stressSurfaceMerges, patternSurface, buildSurfaceTimeFilter, resourceLanesSystem, resourceLanesSystemTotals, resourceLanesTable, resourceLanesMerges, resourceLanesMergeTotals, resourceLanesTableMerges } from '../queries/surface-queries.js';
 import { buildQuery, tagQuery } from '../queries/builder.js';
 import { TAB_ANALYTICS, sourceTag } from '../queries/source-tags.js';
@@ -38,6 +38,29 @@ function parseClickHouseDateTime(raw: unknown): string {
   const normalized = value.includes('Z') || /[+-]\d{2}:?\d{2}$/.test(value) ? value : `${value}Z`;
   const date = new Date(normalized);
   return Number.isNaN(date.getTime()) ? new Date().toISOString() : date.toISOString();
+}
+
+/** Map a query_log row (from LATEST_QUERY_FOR_PATTERN / QUERY_BY_ID) into QuerySeries. */
+function mapQueryLogRowToQuerySeries(row: Record<string, unknown>): QuerySeries {
+  const durationMs = Number(row.query_duration_ms ?? 0);
+  const startTime = parseClickHouseDateTime(row.event_time);
+  const endTime = new Date(new Date(startTime).getTime() + durationMs).toISOString();
+  return {
+    query_id: String(row.query_id ?? ''),
+    label: String(row.query ?? ''),
+    user: String(row.user ?? 'default'),
+    start_time: startTime,
+    end_time: endTime,
+    duration_ms: durationMs,
+    peak_memory: Number(row.memory_usage ?? 0),
+    cpu_us: Number(row.cpu_us ?? 0),
+    net_send: Number(row.net_send ?? 0),
+    net_recv: Number(row.net_recv ?? 0),
+    disk_read: Number(row.disk_read ?? 0),
+    disk_write: Number(row.disk_write ?? 0),
+    status: String(row.status ?? 'QueryFinish'),
+    points: [],
+  };
 }
 
 export class AnalyticsService {
@@ -179,31 +202,29 @@ export class AnalyticsService {
         tagQuery(sql, sourceTag(TAB_ANALYTICS, 'latestPatternQuery')),
       );
       if (rows.length === 0) return null;
-
-      const row = rows[0];
-      const durationMs = Number(row.query_duration_ms ?? 0);
-      const startTime = parseClickHouseDateTime(row.event_time);
-      const endTime = new Date(new Date(startTime).getTime() + durationMs).toISOString();
-
-      return {
-        query_id: String(row.query_id ?? ''),
-        label: String(row.query ?? ''),
-        user: String(row.user ?? 'default'),
-        start_time: startTime,
-        end_time: endTime,
-        duration_ms: durationMs,
-        peak_memory: Number(row.memory_usage ?? 0),
-        cpu_us: Number(row.cpu_us ?? 0),
-        net_send: Number(row.net_send ?? 0),
-        net_recv: Number(row.net_recv ?? 0),
-        disk_read: Number(row.disk_read ?? 0),
-        disk_write: Number(row.disk_write ?? 0),
-        status: String(row.status ?? 'QueryFinish'),
-        points: [],
-      };
+      return mapQueryLogRowToQuerySeries(rows[0]);
     } catch (error) {
       const msg = error instanceof Error ? error.message : String(error);
       throw new AnalyticsServiceError(`Failed to get latest query for pattern ${queryHash}: ${msg}`, error as Error);
+    }
+  }
+
+  /**
+   * Fetch a single finished query by its query_id, mapped into the QuerySeries
+   * shape consumed by QueryDetailModal. Returns null if not found.
+   */
+  async getQueryById(queryId: string): Promise<QuerySeries | null> {
+    if (!queryId) return null;
+    const sql = buildQuery(QUERY_BY_ID, { query_id: queryId });
+    try {
+      const rows = await this.adapter.executeQuery<Record<string, unknown>>(
+        tagQuery(sql, sourceTag(TAB_ANALYTICS, 'queryById')),
+      );
+      if (rows.length === 0) return null;
+      return mapQueryLogRowToQuerySeries(rows[0]);
+    } catch (error) {
+      const msg = error instanceof Error ? error.message : String(error);
+      throw new AnalyticsServiceError(`Failed to get query ${queryId}: ${msg}`, error as Error);
     }
   }
 

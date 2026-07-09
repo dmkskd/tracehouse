@@ -251,6 +251,7 @@ export const QueryExplorer: React.FC<QueryExplorerProps> = ({ urlState, onUrlSta
           unit: directive.unit,
           descriptionColumn: directive.descriptionColumn,
           color: directive.color,
+          render: directive.render,
           profile: directive.profile,
           axes: directive.axes,
           ranges: directive.ranges,
@@ -1020,7 +1021,7 @@ export const QueryExplorer: React.FC<QueryExplorerProps> = ({ urlState, onUrlSta
                       orientation={chartConfig.orientation} unit={chartConfig.unit} color={chartConfig.color}
                       onDrillDown={isDrillable ? handleDrillDown : isPartLinkable ? handlePartLinkChartClick : undefined}
                       drillIntoQuery={isDrillable ? currentQuery?.directives.drill?.into : isPartLinkable ? 'Part Inspector' : undefined}
-                      valueColumns={chartConfig.valueColumns} />
+                      valueColumns={chartConfig.valueColumns} renderMode={chartConfig.render} />
                     <button
                       onClick={toggleFullscreen}
                       title={isFullscreen ? 'Exit fullscreen (Esc)' : 'Fullscreen (f)'}

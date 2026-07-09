@@ -45,7 +45,7 @@ GROUP BY query_hash ORDER BY cpu_seconds DESC LIMIT 20
 | Directive | Purpose |
 | --- | --- |
 | `@meta:` | `title='…' group='…'` (required), optional `description='…'`, `interval='…'` (default for `{{time_range}}`) |
-| `@chart:` | `type=bar\|line\|area\|pie\|grouped_bar\|stacked_bar\|grouped_line` + `group_by=COL value=COL[,COL] series=COL unit=X color=#hex`. Omit to render a table. |
+| `@chart:` | `type=bar\|line\|area\|pie\|grouped_bar\|stacked_bar\|grouped_line` + `group_by=COL value=COL[,COL] series=COL unit=X color=#hex render=overlay`. `render=overlay` draws a many-series `grouped_line` as a spaghetti overlay. Omit to render a table. |
 | `@cell:` | table-cell decoration: `type=rag green<N amber<N` (or `green=a,b amber=c red=d`), `type=gauge max=N\|col`, `type=sparkline` |
 | `@drill:` | `on=COL into='Other Query Title'` - click a value to open another query in-place |
 | `@link:` | `on=COL into='Other Query Title'` - same, but opens in a modal |

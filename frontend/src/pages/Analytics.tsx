@@ -22,7 +22,7 @@ import { useAnalyticsUrlState } from '../hooks/useUrlState';
 import { useNavigate } from '../hooks/useAppLocation';
 import { useUserPreferenceStore } from '../stores/userPreferenceStore';
 import { DocsLink } from '../components/common/DocsLink';
-import { QueryDetailModal } from '../components/query/modal/QueryDetailModal';
+import { QueryDetailModal, type QueryModalTab } from '../components/query/modal/QueryDetailModal';
 import { useQueryDeepLink } from '../hooks/useQueryDeepLink';
 import type { Query } from '../components/analytics/types';
 import type { TableOrderingKeyEfficiency, PatternSurfaceRow, QuerySeries, ResourceLanesData } from '@tracehouse/core';
@@ -105,6 +105,7 @@ export const Analytics: React.FC = () => {
   const [surfaceError, setSurfaceError] = useState<string | null>(null);
   const surfaceFetchId = useRef(0);
   const [modalQuery, setModalQuery] = useState<QuerySeries | null>(null);
+  const [modalTab, setModalTab] = useState<QueryModalTab>('overview');
 
   // Deep-link: sync query detail modal to URL (qd_id param)
   const { query: deepLinkedQuery, onClose: handleQueryClose } = useQueryDeepLink(
@@ -694,12 +695,12 @@ export const Analytics: React.FC = () => {
       {/* ─── Dashboards tab content ─── */}
       {activeTab === 'dashboards' && (
         <div style={{ flex: 1, overflow: 'hidden' }}>
-          <DashboardViewer initialDashboardId={urlState.fromDashboard} onOpenQueryDetail={setModalQuery} onOpenQuery={handleOpenDashboardQuery} />
+          <DashboardViewer initialDashboardId={urlState.fromDashboard} onOpenQueryDetail={(q, opts) => { setModalQuery(q); setModalTab(opts?.tab ?? 'overview'); }} onOpenQuery={handleOpenDashboardQuery} />
         </div>
       )}
 
       {/* Query Detail Modal - opened from pattern surface hover cards */}
-      <QueryDetailModal query={deepLinkedQuery} onClose={handleQueryClose} />
+      <QueryDetailModal query={deepLinkedQuery} initialTab={modalTab} onClose={() => { handleQueryClose(); setModalTab('overview'); }} />
     </div>
   );
 };

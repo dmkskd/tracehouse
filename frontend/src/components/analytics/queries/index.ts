@@ -19,6 +19,7 @@ import altinityOperator from './altinityOperator';
 import altinityKb from './altinityKb';
 import clickHouseKb from './clickhouseKb';
 import json from './json';
+import xray from './xray';
 
 export const RAW_QUERIES: string[] = [
   ...overview,
@@ -40,4 +41,5 @@ export const RAW_QUERIES: string[] = [
   ...altinityKb,
   ...clickHouseKb,
   ...json,
+  ...xray,
 ];

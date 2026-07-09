@@ -413,9 +413,10 @@ const BUILTIN_DASHBOARDS: Dashboard[] = [
   },
   {
     id: 'sampler-health',
-    title: 'Sampling Health',
-    description: 'Health of the system.processes & system.merges sampling pipeline - status, gaps, cost, and cluster coverage',
+    title: 'X-Ray Sampling Health',
+    description: 'Health of the system.processes & system.merges sampling pipeline behind X-Ray - status, gaps, cost, and cluster coverage',
     group: 'TraceHouse',
+    category: 'X-Ray',
     columns: 2,
     panels: [
       { queryName: 'Self-Monitoring#Sampling Status' },
@@ -425,6 +426,32 @@ const BUILTIN_DASHBOARDS: Dashboard[] = [
       { queryName: 'Self-Monitoring#Sampling Gaps (processes)' },
       { queryName: 'Self-Monitoring#Sampling Gaps (merges)' },
       { queryName: 'Self-Monitoring#Sampling Database Coverage' },
+    ],
+  },
+  {
+    id: 'xray',
+    title: 'Queries X-Ray',
+    description: 'Per-second resource shapes of the top 50 queries, overlaid - click a line to open its X-Ray',
+    group: 'TraceHouse',
+    category: 'X-Ray',
+    columns: 1,
+    filters: [
+      {
+        param: 'db',
+        label: 'Database',
+        query: "SELECT name FROM system.databases WHERE name NOT IN ('system', 'INFORMATION_SCHEMA', 'information_schema') ORDER BY name",
+      },
+      {
+        param: 'tbl',
+        label: 'Table',
+        query: "SELECT concat(database, '.', name) AS tbl FROM system.tables WHERE ({{drill_value:db | ''}} = '' OR database = {{drill_value:db | ''}}) AND database NOT IN ('system', 'INFORMATION_SCHEMA', 'information_schema') AND engine LIKE '%MergeTree%' ORDER BY tbl",
+      },
+    ],
+    panels: [
+      { queryName: 'X-Ray#Query CPU Cores' },
+      { queryName: 'X-Ray#Query Memory' },
+      { queryName: 'X-Ray#Query read_bytes' },
+      { queryName: 'X-Ray#Query I/O Wait' },
     ],
   },
   {

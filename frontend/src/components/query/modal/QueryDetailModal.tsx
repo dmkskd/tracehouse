@@ -35,6 +35,8 @@ import { useSimilarQueries } from './hooks/useSimilarQueries';
 import { useQueryTimelines } from './hooks/useQueryTimelines';
 import { useQueryTopology } from './hooks/useQueryTopology';
 
+export type QueryModalTab = 'overview' | 'sql' | 'distributed' | 'details' | 'analytics' | 'object-storage' | 'history' | 'logs' | 'spans' | 'flamegraph' | 'pipeline' | 'threads' | 'xray';
+
 export interface TimelineQueryModalProps {
   /** The query from timeline data (null to hide modal) */
   query: QuerySeries | null;
@@ -42,14 +44,15 @@ export interface TimelineQueryModalProps {
   onClose: () => void;
   /** Optional callback to activate pattern mode in Time Travel (passed by TimeTravelPage) */
   onViewInTimeTravel?: (normalizedQueryHash: string) => void;
+  /** Tab to open on (defaults to 'overview'). */
+  initialTab?: QueryModalTab;
 }
-
-type QueryModalTab = 'overview' | 'sql' | 'distributed' | 'details' | 'analytics' | 'object-storage' | 'history' | 'logs' | 'spans' | 'flamegraph' | 'pipeline' | 'threads' | 'xray';
 
 export const QueryDetailModal: React.FC<TimelineQueryModalProps> = ({
   query,
   onClose,
   onViewInTimeTravel,
+  initialTab,
 }) => {
   const services = useClickHouseServices();
   const { available: hasTraceLog } = useCapabilityCheck(['trace_log']);
@@ -61,7 +64,7 @@ export const QueryDetailModal: React.FC<TimelineQueryModalProps> = ({
   const { experimentalEnabled } = useUserPreferenceStore();
 
   const navigate = useNavigate();
-  const [activeTab, setActiveTab] = useState<QueryModalTab>('overview');
+  const [activeTab, setActiveTab] = useState<QueryModalTab>(initialTab ?? 'overview');
   const [detailsSubTab, setDetailsSubTab] = useState<DetailsSubTab>('performance');
   const [analyticsSubTab, setAnalyticsSubTab] = useState<AnalyticsSubTab>('scan_efficiency');
 
@@ -80,13 +83,14 @@ export const QueryDetailModal: React.FC<TimelineQueryModalProps> = ({
   const timelines = useQueryTimelines(query, similar.similarQueries);
   const topology = useQueryTopology(activeQuery, detail.queryDetail);
 
-  // Reset orchestration state when the root query changes (modal opens with new query)
+  // Reset orchestration state when the root query changes (modal opens with new query).
+  // Open on the caller-requested tab (initialTab), defaulting to overview.
   useEffect(() => {
     setQueryOverride(null);
-    setActiveTab('overview');
+    setActiveTab(initialTab ?? 'overview');
     setDetailsSubTab('performance');
     setAnalyticsSubTab('scan_efficiency');
-  }, [query?.query_id]);
+  }, [query?.query_id, initialTab]);
 
   // Reset tab state when navigating via history (queryOverride changes)
   useEffect(() => {

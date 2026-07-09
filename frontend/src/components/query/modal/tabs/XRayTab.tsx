@@ -46,9 +46,9 @@ const pillStyle = (active: boolean, color: string): React.CSSProperties => ({
   fontWeight: 600,
   letterSpacing: '0.4px',
   cursor: 'pointer',
-  border: `1px solid ${active ? color + '66' : '#2a2a3a'}`,
-  background: active ? `${color}1a` : 'rgba(255,255,255,0.02)',
-  color: active ? color : '#555',
+  border: `1px solid ${active ? color + '66' : 'var(--border-primary)'}`,
+  background: active ? `${color}1a` : 'transparent',
+  color: active ? color : 'var(--text-muted)',
   transition: 'all 0.2s ease',
   userSelect: 'none',
   whiteSpace: 'nowrap',
@@ -56,9 +56,9 @@ const pillStyle = (active: boolean, color: string): React.CSSProperties => ({
 });
 
 const navBtnStyle: React.CSSProperties = {
-  background: 'rgba(255,255,255,0.03)',
-  border: '1px solid #2a2a3a',
-  color: '#777',
+  background: 'var(--bg-tertiary)',
+  border: '1px solid var(--border-primary)',
+  color: 'var(--text-secondary)',
   borderRadius: 6,
   padding: '4px 10px',
   cursor: 'pointer',
@@ -195,13 +195,13 @@ const Scrubber: React.FC<{
   const accentGlow = accentColor + '66';
 
   // Build track background with filled portion
-  const trackBg = `linear-gradient(90deg, ${accentColor}44 0%, ${accentColor}88 ${progressPct}%, rgba(255,255,255,0.08) ${progressPct}%)`;
+  const trackBg = `linear-gradient(90deg, ${accentColor}44 0%, ${accentColor}88 ${progressPct}%, var(--border-primary) ${progressPct}%)`;
 
   return (
     <div style={{
       padding: '8px 14px 10px',
-      background: 'linear-gradient(180deg, rgba(15,15,30,0.97) 0%, rgba(8,8,18,0.99) 100%)',
-      borderTop: '1px solid rgba(100,110,250,0.12)',
+      background: 'var(--bg-secondary)',
+      borderTop: '1px solid var(--border-primary)',
       fontFamily: 'monospace',
       fontSize: 11,
       overflow: 'hidden',

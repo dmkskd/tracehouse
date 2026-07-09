@@ -186,3 +186,26 @@ WHERE type = 'QueryFinish'
 ORDER BY event_time DESC
 LIMIT 1
 `;
+
+/** Fetch a single finished query by its query_id, mapped into QuerySeries. */
+export const QUERY_BY_ID = `
+SELECT
+    query_id,
+    query,
+    user,
+    event_time,
+    query_duration_ms,
+    memory_usage,
+    ProfileEvents['OSCPUVirtualTimeMicroseconds'] AS cpu_us,
+    ProfileEvents['NetworkSendBytes'] AS net_send,
+    ProfileEvents['NetworkReceiveBytes'] AS net_recv,
+    ProfileEvents['ReadBufferFromFileDescriptorReadBytes'] AS disk_read,
+    ProfileEvents['WriteBufferFromFileDescriptorWriteBytes'] AS disk_write,
+    type AS status
+FROM {{cluster_aware:system.query_log}}
+WHERE type = 'QueryFinish'
+    AND is_initial_query = 1
+    AND query_id = {query_id:String}
+ORDER BY event_time DESC
+LIMIT 1
+`;

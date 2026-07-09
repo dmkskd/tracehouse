@@ -89,7 +89,7 @@ const axisTick = { fontSize: 9, fill: AXIS_COLOR };
 const xAxisProps = {
   dataKey: 't',
   type: 'number' as const,
-  domain: [(d: number) => Math.max(0, d - 1), (d: number) => d + 1] as [unknown, unknown],
+  domain: [(d: number) => Math.max(0, d - 1), (d: number) => d + 1] as [(v: number) => number, (v: number) => number],
   tickFormatter: fmtTime,
   tick: axisTick,
   stroke: GRID_STROKE,

@@ -69,6 +69,13 @@ describe('parseDirectives', { tags: ['analytics'] }, () => {
         chart: { type: 'area', style: '2d', groupByColumn: 't', valueColumn: 'qps', seriesColumn: undefined },
       },
     },
+    {
+      name: 'chart: grouped_line + render overlay',
+      sql: `-- @meta: title='X-Ray CPU' group='X-Ray'\n-- @chart: type=grouped_line group_by=t value=cpu_cores series=query_id style=2d render=overlay\nSELECT 1`,
+      expected: {
+        chart: { type: 'grouped_line', style: '2d', groupByColumn: 't', valueColumn: 'cpu_cores', seriesColumn: 'query_id', render: 'overlay' },
+      },
+    },
 
     /* ── @drill ── */
     {
@@ -76,6 +83,15 @@ describe('parseDirectives', { tags: ['analytics'] }, () => {
       sql: `-- @meta: title='Table Sizes' group='Overview'\n-- @drill: on=database into='Table Sizes'\nSELECT 1`,
       expected: {
         drill: { on: 'database', into: 'Table Sizes' },
+      },
+    },
+
+    /* ── @query_link ── */
+    {
+      name: 'with query_link directive',
+      sql: `-- @meta: title='X-Ray CPU' group='X-Ray'\n-- @query_link: on=query_id\nSELECT 1`,
+      expected: {
+        queryLink: { on: 'query_id' },
       },
     },
 
@@ -262,6 +278,11 @@ describe('parseChartDirective', { tags: ['analytics'] }, () => {
       name: 'no color → color undefined',
       sql: `-- @chart: type=bar group_by=x value=y\nSELECT 1`,
       expected: { type: 'bar' },
+    },
+    {
+      name: 'render overlay parsed',
+      sql: `-- @chart: type=grouped_line group_by=t value=cpu_cores series=query_id render=overlay\nSELECT 1`,
+      expected: { type: 'grouped_line', seriesColumn: 'query_id', render: 'overlay' },
     },
     {
       name: 'no @chart returns null',
