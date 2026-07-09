@@ -50,7 +50,13 @@ export interface DashboardFilter {
   param: string;
   /** Display label for the filter dropdown */
   label: string;
-  /** SQL query that returns the list of values for the dropdown. First column is used as the value. */
+  /**
+   * SQL query that returns the list of values for the dropdown. First column is used as the value.
+   * The query is resolved against the current filter values, so a filter can depend on another
+   * by referencing `{{drill_value:otherParam | ''}}` (e.g. a Table filter that lists only the
+   * selected Database's tables). When a dependency changes, the dropdown refreshes and a
+   * now-invalid selection is cleared automatically.
+   */
   query: string;
 }
 

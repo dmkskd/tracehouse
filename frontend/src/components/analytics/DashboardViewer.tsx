@@ -1100,15 +1100,24 @@ const DashboardFilterBar: React.FC<{
 }> = ({ filters, filterValues, onFilterChange }) => {
   const services = useClickHouseServices();
   const [options, setOptions] = useState<Record<string, string[]>>({});
+  // Last resolved query text fetched per param, so we only re-run a filter when
+  // its resolved query actually changed (i.e. a filter it depends on changed).
+  const lastQueryRef = useRef<Record<string, string>>({});
+
+  // Reset the fetch cache when the dashboard's filter set changes.
+  useEffect(() => { lastQueryRef.current = {}; }, [filters]);
 
   // Filter option queries are resolved against the current filter values, so a
   // filter can depend on another (e.g. a Table filter using {{drill_value:db}}
-  // to list only the selected database's tables). Re-runs when values change.
+  // to list only the selected database's tables). Independent filters resolve to
+  // the same text every time and are fetched once.
   useEffect(() => {
     if (!services) return;
     let cancelled = false;
     for (const f of filters) {
       const resolvedQuery = resolveDrillParams(f.query, filterValues);
+      if (lastQueryRef.current[f.param] === resolvedQuery) continue; // query unchanged → skip
+      lastQueryRef.current[f.param] = resolvedQuery;
       services.interactiveQueryService.run<Record<string, unknown>>(
         resolvedQuery,
         sourceTag(TAB_ANALYTICS, 'dashboardFilter'),
