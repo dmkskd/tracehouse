@@ -50,14 +50,16 @@ export interface DashboardFilter {
   param: string;
   /** Display label for the filter dropdown */
   label: string;
-  /**
-   * SQL query that returns the list of values for the dropdown. First column is used as the value.
-   * The query is resolved against the current filter values, so a filter can depend on another
-   * by referencing `{{drill_value:otherParam | ''}}` (e.g. a Table filter that lists only the
-   * selected Database's tables). When a dependency changes, the dropdown refreshes and a
-   * now-invalid selection is cleared automatically.
-   */
+  /** SQL query that returns the list of values for the dropdown. First column is used as the value. */
   query: string;
+  /**
+   * Optional parent filter param. When set, this dropdown only shows options scoped to the
+   * parent's current value — an option is kept if it equals the parent value or starts with
+   * `parentValue + '.'` (e.g. a Table filter with dependsOn: 'db' whose options are
+   * 'database.table' shows only the selected database's tables). Pure client-side filtering of
+   * the already-fetched options; a now-invalid selection is cleared automatically.
+   */
+  dependsOn?: string;
 }
 
 export interface Dashboard {
@@ -450,7 +452,8 @@ const BUILTIN_DASHBOARDS: Dashboard[] = [
       {
         param: 'tbl',
         label: 'Table',
-        query: "SELECT concat(database, '.', name) AS tbl FROM system.tables WHERE ({{drill_value:db | ''}} = '' OR database = {{drill_value:db | ''}}) AND database NOT IN ('system', 'INFORMATION_SCHEMA', 'information_schema') AND engine LIKE '%MergeTree%' ORDER BY tbl",
+        dependsOn: 'db',
+        query: "SELECT concat(database, '.', name) AS tbl FROM system.tables WHERE database NOT IN ('system', 'INFORMATION_SCHEMA', 'information_schema') AND engine LIKE '%MergeTree%' ORDER BY tbl",
       },
     ],
     panels: [

@@ -1100,26 +1100,14 @@ const DashboardFilterBar: React.FC<{
 }> = ({ filters, filterValues, onFilterChange }) => {
   const services = useClickHouseServices();
   const [options, setOptions] = useState<Record<string, string[]>>({});
-  // Last resolved query text fetched per param, so we only re-run a filter when
-  // its resolved query actually changed (i.e. a filter it depends on changed).
-  const lastQueryRef = useRef<Record<string, string>>({});
 
-  // Reset the fetch cache when the dashboard's filter set changes.
-  useEffect(() => { lastQueryRef.current = {}; }, [filters]);
-
-  // Filter option queries are resolved against the current filter values, so a
-  // filter can depend on another (e.g. a Table filter using {{drill_value:db}}
-  // to list only the selected database's tables). Independent filters resolve to
-  // the same text every time and are fetched once.
+  // Fetch each filter's option list once (independent, static queries).
   useEffect(() => {
     if (!services) return;
     let cancelled = false;
     for (const f of filters) {
-      const resolvedQuery = resolveDrillParams(f.query, filterValues);
-      if (lastQueryRef.current[f.param] === resolvedQuery) continue; // query unchanged → skip
-      lastQueryRef.current[f.param] = resolvedQuery;
       services.interactiveQueryService.run<Record<string, unknown>>(
-        resolvedQuery,
+        f.query,
         sourceTag(TAB_ANALYTICS, 'dashboardFilter'),
       )
         .then(rows => {
@@ -1127,17 +1115,34 @@ const DashboardFilterBar: React.FC<{
           const col = rows.length > 0 ? Object.keys(rows[0])[0] : '';
           const values = rows.map(r => String(r[col] ?? ''));
           setOptions(prev => ({ ...prev, [f.param]: values }));
-          // Cascade cleanup: if the current selection is no longer a valid option
-          // (e.g. the table's database changed), clear it.
-          const current = filterValues[f.param];
-          if (current && values.length > 0 && !values.includes(current)) {
-            onFilterChange(f.param, '');
-          }
         })
         .catch(() => { /* ignore */ });
     }
     return () => { cancelled = true; };
-  }, [services, filters, filterValues, onFilterChange]);
+  }, [services, filters]);
+
+  // Client-side cascade: a filter with `dependsOn` set shows only the options
+  // scoped to the parent filter's current value. For the db→table case the
+  // option values are 'database.table', so we keep those under 'database.'.
+  // This needs no extra queries and can't destabilise the fetch above.
+  const visibleOptions = useCallback((f: DashboardFilter): string[] => {
+    const all = options[f.param] ?? [];
+    const parent = f.dependsOn;
+    if (!parent) return all;
+    const parentValue = filterValues[parent];
+    if (!parentValue) return all;
+    return all.filter(v => v === parentValue || v.startsWith(parentValue + '.'));
+  }, [options, filterValues]);
+
+  // If a dependent filter's selection falls outside its parent's scope (e.g. the
+  // database changed), clear it. Only touches filter values, never the fetch.
+  useEffect(() => {
+    for (const f of filters) {
+      if (!f.dependsOn) continue;
+      const current = filterValues[f.param];
+      if (current && !visibleOptions(f).includes(current)) onFilterChange(f.param, '');
+    }
+  }, [filters, filterValues, visibleOptions, onFilterChange]);
 
   return (
     <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
@@ -1158,7 +1163,7 @@ const DashboardFilterBar: React.FC<{
             }}
           >
             <option value="">All</option>
-            {(options[f.param] ?? []).map(v => (
+            {visibleOptions(f).map(v => (
               <option key={v} value={v}>{v}</option>
             ))}
           </select>
