@@ -19,7 +19,7 @@
     ],
     "logos": {
       "small": "img/logo.svg",
-      "large": "img/logo.png"
+      "large": "img/logo.svg"
     },
     "links": [
       {
@@ -57,7 +57,7 @@
         "path": "img/screenshots/time-travel.png"
       }
     ],
-    "version": "0.17.5",
+    "version": "0.17.6",
     "updated": "2026-02-17"
   },
   "includes": [
