@@ -216,6 +216,7 @@ const DatabaseExplorer = lazy(() => import('@frontend/pages/DatabaseExplorer').t
 const MergeTracker = lazy(() => import('@frontend/pages/MergeTracker').then(m => ({ default: m.MergeTracker })));
 const QueryMonitor = lazy(() => import('@frontend/pages/QueryMonitor').then(m => ({ default: m.QueryMonitor })));
 const TimeTravelPage = lazy(() => import('@frontend/pages/TimeTravelPage').then(m => ({ default: m.TimeTravelPage })));
+const Events = lazy(() => import('@frontend/pages/Events').then(m => ({ default: m.Events })));
 const Analytics = lazy(() => import('@frontend/pages/Analytics').then(m => ({ default: m.Analytics })));
 const ClusterOverview = lazy(() => import('@frontend/pages/ClusterOverview').then(m => ({ default: m.ClusterOverview })));
 const Replication = lazy(() => import('@frontend/pages/Replication').then(m => ({ default: m.Replication })));
@@ -227,6 +228,7 @@ const ROUTES: Record<string, React.LazyExoticComponent<React.ComponentType>> = {
   'cluster': ClusterOverview,
   'databases': DatabaseExplorer,
   'timetravel': TimeTravelPage,
+  'events': Events,
   'queries': QueryMonitor,
   'merges': MergeTracker,
   'replication': Replication,
@@ -376,6 +378,7 @@ function AppContent({ path }: AppContentProps) {
               { key: 'cluster', label: 'Cluster', path: '/a/dmkskd-tracehouse-app/cluster' },
               { key: 'databases', label: 'Explorer', path: '/a/dmkskd-tracehouse-app/databases' },
               { key: 'timetravel', label: 'Time Travel', path: '/a/dmkskd-tracehouse-app/timetravel' },
+              { key: 'events', label: 'Events', path: '/a/dmkskd-tracehouse-app/events' },
               { key: 'queries', label: 'Queries', path: '/a/dmkskd-tracehouse-app/queries' },
               { key: 'merges', label: 'Merges', path: '/a/dmkskd-tracehouse-app/merges' },
               { key: 'replication', label: 'Replication', path: '/a/dmkskd-tracehouse-app/replication' },

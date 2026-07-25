@@ -24,6 +24,7 @@ const sidebars: SidebarsConfig = {
         'features/cluster',
         'features/database-explorer',
         'features/time-travel',
+        'features/events',
         'features/query-monitor',
         {
           type: 'doc',

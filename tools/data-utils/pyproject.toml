@@ -15,6 +15,7 @@ tracehouse-drop = "data_utils.cli.drop:main"
 tracehouse-queries = "data_utils.cli.queries:main"
 tracehouse-mutations = "data_utils.cli.mutations:main"
 tracehouse-merge-triggers = "data_utils.cli.merge_triggers:main"
+tracehouse-events = "data_utils.cli.events:main"
 tracehouse-data-tools-tui = "data_utils.cli.tui:main"
 
 [build-system]

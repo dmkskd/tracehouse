@@ -38,6 +38,8 @@ class Capabilities:
     iceberg_catalog_client_url: str = ""     # Catalog URL used by host-side Python REST calls
     # Settings
     restricted_settings: list[str] = field(default_factory=list)  # settings that can't be changed
+    # Persisted system logs exposed by this server
+    system_log_tables: set[str] = field(default_factory=set)
     # Databases that already exist
     existing_databases: list[str] = field(default_factory=list)
 
@@ -53,6 +55,35 @@ class Capabilities:
         if self.restricted_settings:
             lines.append(f"  Restricted settings:   {', '.join(self.restricted_settings)}")
         return "\n".join(lines)
+
+
+EVENT_SYSTEM_LOG_TABLES = (
+    "query_log",
+    "asynchronous_metric_log",
+    "crash_log",
+    "part_log",
+    "background_schedule_pool_log",
+    "error_log",
+)
+
+
+def probe_system_log_tables(client: Client) -> set[str]:
+    """Return event-related system log tables visible to the current user.
+
+    This is deliberately a lightweight, reusable probe. Some commands only
+    need to know whether their generated activity can be observed and should
+    not pay for the full storage/cluster capability probe.
+    """
+    try:
+        rows = client.execute(
+            "SELECT name "
+            "FROM system.tables "
+            "WHERE database = 'system' AND name IN %(names)s",
+            {"names": EVENT_SYSTEM_LOG_TABLES},
+        )
+        return {str(row[0]) for row in rows}
+    except Exception:
+        return set()
 
 
 def probe(client: Client) -> Capabilities:
@@ -137,6 +168,9 @@ def probe(client: Client) -> Capabilities:
         except Exception as e:
             if 'Code: 452' in str(e) or 'should not be changed' in str(e):
                 caps.restricted_settings.append(setting_name)
+
+    log.info("probing event system log tables")
+    caps.system_log_tables = probe_system_log_tables(client)
 
     log.info("probing existing databases")
     try:

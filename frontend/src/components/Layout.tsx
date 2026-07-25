@@ -22,6 +22,7 @@ const navItems = [
   { path: '/cluster', label: 'Cluster' },
   { path: '/databases', label: 'Explorer' },
   { path: '/timetravel', label: 'Time Travel' },
+  { path: '/events', label: 'Events' },
   { path: '/queries', label: 'Queries' },
   { path: '/merges', label: 'Merges' },
   { path: '/replication', label: 'Replication' },

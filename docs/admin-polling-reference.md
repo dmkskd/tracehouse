@@ -72,9 +72,14 @@ Query history is fetched on-demand (not polled).
 
 | Default Rate | What It Polls | System Tables Hit | Load |
 |---|---|---|---|
-| User-selected (default: Off) | Timeline data, memory snapshots, query aggregations | `system.query_log`, `system.parts`, `system.asynchronous_metrics` | **Varies** — heavier aggregation queries over time ranges |
+| User-selected (default: Off) | Timeline metrics, query/merge/mutation history, and capability-available operational events | `system.metric_log`, `system.asynchronous_metric_log`, `system.query_log`, `system.part_log`; optionally `system.crash_log`, `system.background_schedule_pool_log`, `system.error_log` | **Varies** — heavier time-bounded queries over persisted system logs |
 
 User-selectable options: **Off, 5 s, 10 s, 30 s, 1 m**
+
+Event sources are capability-gated. `system.crash_log` is not queried when it
+does not exist or is inaccessible. See
+[metrics/time-travel-events.md](metrics/time-travel-events.md) for event-source,
+retention, filtering, and coverage semantics.
 
 ---
 

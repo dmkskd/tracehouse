@@ -50,6 +50,7 @@ TOOL_DEFS = {
     "queries":        "data_utils.cli.queries",
     "mutations":      "data_utils.cli.mutations",
     "merge-triggers": "data_utils.cli.merge_triggers",
+    "events":         "data_utils.cli.events",
 }
 
 # Colors assigned to each tool for log prefixes
@@ -58,6 +59,7 @@ TOOL_COLORS = {
     "queries":        "#4d96ff",
     "mutations":      "#ff6b6b",
     "merge-triggers": "#ffd93d",
+    "events":         "#c77dff",
 }
 
 
@@ -148,6 +150,7 @@ class TraceHouseTUI(App):
         ("2", "toggle_tool('queries')", "Toggle queries"),
         ("3", "toggle_tool('mutations')", "Toggle mutations"),
         ("4", "toggle_tool('merge-triggers')", "Toggle merge-triggers"),
+        ("5", "toggle_tool('events')", "Toggle events"),
         ("c", "copy_log", "Copy Log"),
         ("x", "clear_log", "Clear Log"),
         ("ctrl+s", "save_env", "Save .env"),
@@ -186,7 +189,7 @@ class TraceHouseTUI(App):
         user = self.child_env.get("CH_USER", "default")
         user_info = f"{len(self.users)} test users" if self.users else user
         yield Static(
-            f" Generate realistic ClickHouse workloads: queries, mutations, merges, and bulk loads.  "
+            f" Generate realistic ClickHouse workloads: queries, mutations, merges, events, and bulk loads.  "
             f"[dim]{env_label}  {host}:{port}  {user_info}[/]",
             id="header-bar",
         )

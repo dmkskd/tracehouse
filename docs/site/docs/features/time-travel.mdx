@@ -2,6 +2,17 @@ import FeatureVideo from '@site/src/components/FeatureVideo';
 
 # Time Travel
 
+## Operational events
+
+The event rail below the detailed chart shows query resource failures, DDL,
+server lifecycle events, and background/storage failures alongside the
+continuous metrics. Filters can include or exclude severities, categories, or
+individual event types.
+
+Select an event to pin its timestamp and see which queries, merges, and
+mutations were running then. Use **View details** to open the top-level
+**Events** page, including its source evidence and nearby events.
+
 <FeatureVideo src="time-travel-1920.mp4" />
 
 A ClickHouse cluster is constantly busy - merges, mutations, replication, background moves - even when no user queries are running. Most users only think about their own queries, but all this background activity competes for the same CPU, memory, and I/O. Time Travel lets you see everything that was happening at any point in time, so you can understand what else might have affected your workload's performance.

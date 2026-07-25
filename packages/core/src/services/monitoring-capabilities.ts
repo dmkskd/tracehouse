@@ -20,6 +20,7 @@ import {
   PROBE_CPU_PROFILER_SAMPLES,
   PROBE_TRACEHOUSE_SAMPLING_TABLES,
   PROBE_SYSTEM_TABLE_ACCESS_TABLES,
+  PROBE_METRIC_LOG_REPLICATION_COLUMNS,
 } from '../queries/monitoring-capabilities-queries.js';
 import { tagQuery } from '../queries/builder.js';
 import { TAB_INTERNAL, sourceTag } from '../queries/source-tags.js';
@@ -99,6 +100,18 @@ const LOG_TABLE_META: Record<string, { label: string; description: string; categ
     category: 'logging',
     source: 'system.crash_log',
   },
+  error_log: {
+    label: 'Error Log',
+    description: 'Persisted error counter deltas by error type. Enables filtered operational error bursts.',
+    category: 'logging',
+    source: 'system.error_log',
+  },
+  background_schedule_pool_log: {
+    label: 'Background Schedule Pool Log',
+    description: 'History of periodic background task executions, durations, and failures.',
+    category: 'logging',
+    source: 'system.background_schedule_pool_log',
+  },
   processors_profile_log: {
     label: 'Processors Profile Log',
     description: 'Per-processor pipeline profiling. Enables detailed query pipeline analysis.',
@@ -169,7 +182,7 @@ export class MonitoringCapabilitiesService {
    * per-probe so partial results are still returned.
    */
   async probe(): Promise<MonitoringCapabilities> {
-    const [version, logTables, settings, hasZk, hasIntrospection, isCloud, cpuProfilerSampleCount, tracehouseTables, systemTableAccess] = await Promise.all([
+    const [version, logTables, settings, hasZk, hasIntrospection, isCloud, cpuProfilerSampleCount, tracehouseTables, systemTableAccess, metricLogReplicationColumns] = await Promise.all([
       this.probeVersion(),
       this.probeLogTables(),
       this.probeSettings(),
@@ -179,6 +192,7 @@ export class MonitoringCapabilitiesService {
       this.probeCPUProfilerSamples(),
       this.probeTracehouseSamplingTables(),
       this.probeSystemTableAccess(),
+      this.probeMetricLogReplicationColumns(),
     ]);
 
     const capabilities: MonitoringCapability[] = [];
@@ -202,6 +216,47 @@ export class MonitoringCapabilitiesService {
         source: meta.source,
       });
     }
+
+    const hasMetricLog = logTables.has('metric_log');
+    const hasReadonlyReplicaMetric = metricLogReplicationColumns.has(
+      'CurrentMetric_ReadonlyReplica',
+    );
+    const replicationCounterColumns = [
+      'ProfileEvent_ReplicatedDataLoss',
+      'ProfileEvent_ReplicatedPartFailedFetches',
+      'ProfileEvent_ReplicatedPartChecksFailed',
+    ];
+    const hasReplicationCounters = replicationCounterColumns.every(column =>
+      metricLogReplicationColumns.has(column),
+    );
+    capabilities.push({
+      id: 'metric_log_replication_state',
+      label: 'Historical Replica State',
+      description: 'Readonly replica gauge history used to reconstruct degraded-state episodes.',
+      available: hasMetricLog && hasReadonlyReplicaMetric,
+      category: 'metrics',
+      detail: !hasMetricLog
+        ? 'metric_log not available'
+        : hasReadonlyReplicaMetric
+          ? 'CurrentMetric_ReadonlyReplica available'
+          : 'CurrentMetric_ReadonlyReplica column not available',
+      source: 'system.metric_log.CurrentMetric_ReadonlyReplica',
+    });
+    capabilities.push({
+      id: 'metric_log_replication_failures',
+      label: 'Historical Replication Failures',
+      description: 'Persisted replication data-loss, failed-fetch, and failed-check counter deltas.',
+      available: hasMetricLog && hasReplicationCounters,
+      category: 'metrics',
+      detail: !hasMetricLog
+        ? 'metric_log not available'
+        : hasReplicationCounters
+          ? 'Replication ProfileEvent columns available'
+          : `Missing: ${replicationCounterColumns
+            .filter(column => !metricLogReplicationColumns.has(column))
+            .join(', ')}`,
+      source: 'system.metric_log.ProfileEvent_Replicated*',
+    });
 
     // Add profile events capability (derived from settings)
     // This requires both query_log AND the log_profile_events setting enabled.
@@ -537,6 +592,25 @@ export class MonitoringCapabilitiesService {
     } catch {
       return 'unknown';
     }
+  }
+
+  private async probeMetricLogReplicationColumns(): Promise<Set<string>> {
+    const result = new Set<string>();
+    try {
+      const rows = await this.adapter.executeQuery<{ name: string }>(
+        tagQuery(
+          PROBE_METRIC_LOG_REPLICATION_COLUMNS,
+          sourceTag(TAB_INTERNAL, 'metricLogReplicationColumns'),
+        ),
+      );
+      for (const row of rows) result.add(String(row.name));
+    } catch (error) {
+      console.error(
+        '[MonitoringCapabilitiesService] probeMetricLogReplicationColumns error:',
+        error,
+      );
+    }
+    return result;
   }
 
   private async probeLogTables(): Promise<Map<string, { engine: string; totalRows: number; totalBytes: number; ttl: string | null }>> {

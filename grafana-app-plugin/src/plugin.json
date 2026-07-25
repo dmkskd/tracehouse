@@ -99,6 +99,13 @@
     },
     {
       "type": "page",
+      "name": "Events",
+      "path": "/a/dmkskd-tracehouse-app/events",
+      "role": "Viewer",
+      "addToNav": true
+    },
+    {
+      "type": "page",
       "name": "Queries",
       "path": "/a/dmkskd-tracehouse-app/queries",
       "role": "Viewer",

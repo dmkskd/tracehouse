@@ -8,6 +8,7 @@ import { TimeTravelPage } from './pages/TimeTravelPage';
 import { EngineInternals } from './pages/EngineInternals';
 import { ClusterOverview } from './pages/ClusterOverview';
 import { Analytics } from './pages/Analytics';
+import { Events } from './pages/Events';
 import { Replication } from './pages/Replication';
 import { ClickHouseProvider } from './providers/ClickHouseProvider';
 import { ThemeProvider } from './providers/ThemeProvider';
@@ -29,6 +30,7 @@ function App() {
                 <Route path="/databases" element={<DatabaseExplorer />} />
                 <Route path="/merges" element={<MergeTracker />} />
                 <Route path="/timetravel" element={<TimeTravelPage />} />
+                <Route path="/events" element={<Events />} />
                 <Route path="/live-view" element={<Navigate to="/overview" replace />} />
                 <Route path="/engine-internals" element={<EngineInternals />} />
                 <Route path="/cluster" element={<ClusterOverview />} />

@@ -4,7 +4,7 @@ TraceHouse ships as a Grafana **app plugin** (`dmkskd-tracehouse-app`). It reuse
 
 The key difference from the standalone app is how ClickHouse connectivity works. The standalone app connects directly (via the built-in proxy or user-provided credentials), while the Grafana plugin routes all queries through Grafana's ClickHouse datasource plugin. ClickHouse connectivity is managed entirely by Grafana's datasource configuration, not by TraceHouse itself.
 
-All pages are available as Grafana navigation entries: Overview, Engine Internals, Cluster, Explorer, Time Travel, Queries, Merges, Replication, and Analytics.
+All pages are available as Grafana navigation entries: Overview, Engine Internals, Cluster, Explorer, Time Travel, Events, Queries, Merges, Replication, and Analytics.
 
 ## Running with Docker
 

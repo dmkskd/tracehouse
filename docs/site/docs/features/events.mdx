@@ -1,0 +1,37 @@
+# Events
+
+Events is a historical incident-investigation view for operational occurrences
+that change how nearby ClickHouse workload should be interpreted.
+
+The distribution groups evidence into broad lanes:
+
+- server lifecycle;
+- query execution;
+- replication;
+- Keeper/coordination;
+- storage;
+- schema and configuration changes;
+- maintenance.
+
+Points represent discrete occurrences such as a query OOM, DDL, crash, or
+replication data-loss counter increase. Spans represent sampled state episodes,
+such as one or more replicas being read-only until recovery was observed.
+
+Drag across the distribution to narrow the investigation range. Search or
+filter by severity, category, and event type, then select an event to inspect
+its source evidence. Query-backed events can open the standard **Query Details**
+modal. **Open in Time Travel** opens Time Travel centred and pinned at that
+occurrence so the surrounding queries, merges, and mutations can be correlated.
+
+Event sources are capability-gated independently. The source indicator reports
+partial coverage when a system log, metric column, permission, or retained time
+range is unavailable.
+
+Replication history currently includes host-level read-only episodes and
+persisted data-loss/failed-fetch/failed-check deltas from `system.metric_log`.
+Live `system.replicas` and `system.replication_queue` are current snapshots, not
+history, so per-table historical episodes require future sampling and
+persistence.
+
+For the full source, retention, precision, and classification contract, see
+[Time Travel Events](https://github.com/TraceHouse/tracehouse/blob/main/docs/metrics/time-travel-events.md).

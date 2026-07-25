@@ -112,7 +112,7 @@ export function decodeSql(encoded: string): string {
 // ─── Analytics URL state ───
 
 export interface AnalyticsUrlState {
-  tab?: string;          // 'tables' | 'misc'
+  tab?: string;          // 'tables' | 'misc' | 'dashboards' | 'surfaces' | 'events'
   preset?: number;       // index into PRESET_QUERIES
   sql?: string;          // custom SQL (decoded)
   view?: string;         // 'table' | 'chart' | 'queries'
@@ -126,6 +126,9 @@ export interface AnalyticsUrlState {
   fullscreen?: boolean;  // chart fullscreen mode
   fromDashboard?: string; // dashboard ID we navigated from
   noAutoExecute?: boolean; // skip auto-execute on mount (e.g. expensive queries opened from detail modal)
+  eventId?: string;      // selected operational event
+  eventTime?: string;    // selected event occurrence time
+  eventRange?: number;   // event investigation range in hours
 }
 
 const ANALYTICS_DEFAULTS: AnalyticsUrlState = {
@@ -166,6 +169,15 @@ function parseAnalyticsParams(params: URLSearchParams): AnalyticsUrlState {
   if (fromDashboard) state.fromDashboard = fromDashboard;
   const noAutoExecute = params.get('noAutoExecute');
   if (noAutoExecute === '1') state.noAutoExecute = true;
+  const eventId = params.get('event_id');
+  if (eventId) state.eventId = eventId;
+  const eventTime = params.get('event_time');
+  if (eventTime) state.eventTime = eventTime;
+  const eventRange = params.get('event_range');
+  if (eventRange !== null) {
+    const parsed = parseFloat(eventRange);
+    if (Number.isFinite(parsed) && parsed > 0) state.eventRange = parsed;
+  }
   return state;
 }
 
@@ -186,11 +198,14 @@ function buildAnalyticsParams(state: AnalyticsUrlState): Record<string, string> 
   if (state.fullscreen) params.fullscreen = '1';
   if (state.fromDashboard) params.fromDashboard = state.fromDashboard;
   if (state.noAutoExecute) params.noAutoExecute = '1';
+  if (state.eventId) params.event_id = state.eventId;
+  if (state.eventTime) params.event_time = state.eventTime;
+  if (state.eventRange) params.event_range = String(state.eventRange);
   return params;
 }
 
 /** All param keys managed by useAnalyticsUrlState */
-const ANALYTICS_KEYS = ['tab', 'preset', 'sql', 'view', 'chart', 'group_by', 'value', 'series', 'style', 'db', 'lookback', 'fullscreen', 'fromDashboard', 'noAutoExecute'] as const;
+const ANALYTICS_KEYS = ['tab', 'preset', 'sql', 'view', 'chart', 'group_by', 'value', 'series', 'style', 'db', 'lookback', 'fullscreen', 'fromDashboard', 'noAutoExecute', 'event_id', 'event_time', 'event_range'] as const;
 
 // ─── Hook ───
 
@@ -250,4 +265,19 @@ export function useAnalyticsUrlState() {
   );
 
   return { state, update, getShareableUrl, copyShareableUrl };
+}
+
+// ─── Events URL state ───
+
+const EVENTS_URL_SCHEMA = {
+  event_id: { type: 'string' },
+  event_time: { type: 'string' },
+  range_center: { type: 'string' },
+  event_range: { type: 'number', default: 24 },
+  from: { type: 'string' },
+} as const satisfies UrlSchema;
+
+/** Shareable selection and investigation-window state for the Events page. */
+export function useEventsUrlState() {
+  return useUrlState(EVENTS_URL_SCHEMA);
 }

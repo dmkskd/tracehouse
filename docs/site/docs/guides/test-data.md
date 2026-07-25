@@ -13,13 +13,13 @@ TraceHouse ships with scripts to generate realistic test datasets for developmen
 
 ## Data Tools TUI
 
-The TUI dashboard lets you start, stop, and monitor all data tools (generate, queries, mutations, merge-triggers) from a single terminal:
+The TUI dashboard lets you start, stop, and monitor all data tools (generate, queries, mutations, merge-triggers, events) from a single terminal:
 
 ```bash
 just data-tools-tui
 ```
 
-Keyboard shortcuts: `a` start all, `s` stop all, `1`–`4` toggle individual tools, `c` copy log, `x` clear log, `q` quit.
+Keyboard shortcuts: `a` start all, `s` stop all, `1`–`5` toggle individual tools, `c` copy log, `x` clear log, `q` quit. Tool `5` is the event generator described below; starting all tools intentionally generates its query failures and DDL.
 
 The TUI forwards your `.env` / `CH_ENV_FILE` settings to all child processes and shows live progress for bulk data generation. It also includes a `.env` viewer/editor tab (`Ctrl+S` to save).
 
@@ -97,6 +97,47 @@ CH_MUTATION_SYNC=sync just run-mutations
 :::tip
 Lightweight `DELETE FROM` is synchronous by default in ClickHouse. The `--sync` flag overrides this with `mutations_sync=0` so all mutation types behave consistently.
 :::
+
+### Time Travel Events
+
+Generate events that can be inspected in Time Travel and the top-level
+**Events** page:
+
+```bash
+# One DDL cycle, one query-scoped OOM, and one query timeout
+just run-events --once
+
+# Continuous patterns: DDL every 5m, timeout every 10m, OOM every 15m
+just run-events
+
+# A recurring scheduled-job pattern every 15 minutes
+just run-events --types oom --oom-interval 900
+
+# Only disposable schema changes
+just run-events --types ddl --ddl-interval 60
+```
+
+The event workload first checks that `system.query_log` is visible to the connected user. Every generated query contains a `tracehouse-demo-event` comment, and `--once` runs `SYSTEM FLUSH LOGS` when permitted so the results appear promptly.
+
+| Generated event | Safety boundary | Time Travel kind |
+| --- | --- | --- |
+| Disposable DDL cycle | Uses `tracehouse_event_demo`; removes its tables after each cycle | `ddl` |
+| Query OOM | Sets a 1 MB **query** memory limit; it is not a process/server OOM | `query_oom` |
+| Query timeout | Sets a 50 ms limit on one CPU query | `query_timeout` |
+
+The default database and cadences can be configured with `CH_EVENT_DATABASE`, `CH_EVENT_TYPES`, `CH_EVENT_DDL_INTERVAL`, `CH_EVENT_OOM_INTERVAL`, and `CH_EVENT_TIMEOUT_INTERVAL`.
+
+Restarts require an action outside ClickHouse, so they are deliberately not part of the continuous workload. For a disposable local Docker environment:
+
+```bash
+docker restart tracehouse-dev
+```
+
+Allow asynchronous metrics to sample before and after the restart. Time Travel then infers the restart from the `Uptime` reset in `system.asynchronous_metric_log`.
+
+Crashes, full disks, corrupt parts, and background-network failures are not automated. They can damage data or destabilize a shared server, and should only be exercised in an isolated fault-injection environment.
+
+For the event definitions, sources, retention caveats, and filtering contract, see [Time Travel Events](https://github.com/TraceHouse/tracehouse/blob/main/docs/metrics/time-travel-events.md).
 
 ## Multi-User Simulation
 

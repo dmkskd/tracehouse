@@ -69,7 +69,8 @@ tools/data-utils/
 │   │   ├── generate.py                # tracehouse-generate entry point
 │   │   ├── queries.py                 # tracehouse-queries entry point
 │   │   ├── mutations.py               # tracehouse-mutations entry point
-│   │   └── merge_triggers.py          # tracehouse-merge-triggers entry point
+│   │   ├── merge_triggers.py          # tracehouse-merge-triggers entry point
+│   │   └── events.py                  # tracehouse-events entry point
 │   └── tables/
 │       ├── protocol.py                # Dataset Protocol + QuerySet
 │       ├── synthetic_data.py          # synthetic_data.events
@@ -111,6 +112,6 @@ Run `just` to see all available commands, organized by group:
 | `docker` | `docker-start`, `docker-start-full`, `docker-stop` |
 | `k8s` | `k8s-start`, `k8s-stop`, `k8s-status` |
 | `local` | `local-start`, `local-stop` |
-| `data` | `data-tools-tui`, `generate-data`, `run-queries`, `run-mutations`, `drop-data` |
+| `data` | `data-tools-tui`, `generate-data`, `run-queries`, `run-mutations`, `run-events`, `drop-data` |
 | `test` | `test`, `test-frontend`, `test-core`, `test-core-integration`, `test-data-utils` |
 | `build` | `build`, `dist-frontend`, `dist-docker-build` |

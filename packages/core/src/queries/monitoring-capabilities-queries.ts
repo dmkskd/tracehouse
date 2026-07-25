@@ -29,6 +29,8 @@ WHERE database = 'system'
     'metric_log',
     'asynchronous_metric_log',
     'crash_log',
+    'error_log',
+    'background_schedule_pool_log',
     'processors_profile_log',
     'backup_log',
     's3queue_log',
@@ -41,6 +43,25 @@ WHERE database = 'system'
     'asynchronous_insert_log'
   )
 GROUP BY name
+ORDER BY name
+`;
+
+/**
+ * Feature-level metric_log columns used to reconstruct replication history.
+ * metric_log itself may exist on older versions without every flattened
+ * CurrentMetric/ProfileEvent column, so table-level capability is insufficient.
+ */
+export const PROBE_METRIC_LOG_REPLICATION_COLUMNS = `
+SELECT name
+FROM system.columns
+WHERE database = 'system'
+  AND table = 'metric_log'
+  AND name IN (
+    'CurrentMetric_ReadonlyReplica',
+    'ProfileEvent_ReplicatedDataLoss',
+    'ProfileEvent_ReplicatedPartFailedFetches',
+    'ProfileEvent_ReplicatedPartChecksFailed'
+  )
 ORDER BY name
 `;
 

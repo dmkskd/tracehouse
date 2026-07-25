@@ -140,7 +140,7 @@ export function MonitoringCapabilitiesCard({ className = '' }: MonitoringCapabil
       // Primary: match nav bar order, secondary: status within tab
       const TAB_ORDER: Record<string, number> = {
         'Overview': 0, 'Engine Internals': 1, 'Cluster': 2, 'Explorer': 3,
-        'Time Travel': 4, 'Queries': 5, 'Merges': 6, 'Replication': 7, 'Analytics': 8,
+        'Time Travel': 4, 'Events': 5, 'Queries': 6, 'Merges': 7, 'Replication': 8, 'Analytics': 9,
       };
       const tabA = TAB_ORDER[a.tab ?? ''] ?? 99;
       const tabB = TAB_ORDER[b.tab ?? ''] ?? 99;

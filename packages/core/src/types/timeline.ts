@@ -89,6 +89,126 @@ export interface MutationSeries {
   zoomSamples?: ZoomSample[];
 }
 
+/**
+ * Stable event dimensions used by Time Travel filters.
+ *
+ * Keep these independent from presentation labels: the UI can change wording,
+ * colours, or grouping without having to infer semantics from event text.
+ */
+export type TimelineEventSeverity = 'critical' | 'error' | 'warning' | 'info';
+
+export type TimelineEventCategory =
+  | 'lifecycle'
+  | 'queries'
+  | 'replication'
+  | 'storage'
+  | 'coordination'
+  | 'changes'
+  | 'maintenance';
+
+export type TimelineEventKind =
+  | 'server_restart'
+  | 'server_crash'
+  | 'query_oom'
+  | 'query_rejected'
+  | 'query_timeout'
+  | 'query_resource_limit'
+  | 'query_failure'
+  | 'replica_readonly'
+  | 'replica_unavailable'
+  | 'replication_data_loss'
+  | 'replication_task_failure'
+  | 'part_failure'
+  | 'background_task_failure'
+  | 'error_burst'
+  | 'ddl'
+  | 'keeper_connection'
+  | 'backup'
+  | 'async_insert_failure'
+  | 'server_log';
+
+export type TimelineEventPrecision = 'exact' | 'sampled' | 'inferred';
+
+/**
+ * An individual operational event. Events remain unaggregated so periodic
+ * behaviour (for example, one query OOM every 15 minutes) is not lost.
+ * Visualizations may cluster overlapping markers without changing this data.
+ */
+export interface TimelineEvent {
+  /** Deterministic identifier, stable across timeline refreshes. */
+  id: string;
+  /** Best estimate of when the event itself happened (ISO timestamp). */
+  occurred_at: string;
+  /**
+   * End of a state episode, when known. Point events omit this field; an
+   * ongoing episode also omits it until a recovery transition is observed.
+   */
+  ended_at?: string;
+  /** When ClickHouse recorded/observed it, when different from occurred_at. */
+  observed_at?: string;
+  hostname?: string;
+  kind: TimelineEventKind;
+  category: TimelineEventCategory;
+  severity: TimelineEventSeverity;
+  precision: TimelineEventPrecision;
+  title: string;
+  detail?: string;
+  /** ClickHouse table that produced the event. */
+  source: string;
+  /** Capability ID required to read the source. */
+  capability: string;
+
+  // Query correlation fields. normalized_query_hash is a string because it is
+  // a ClickHouse UInt64 and may exceed JavaScript's safe integer range.
+  query_id?: string;
+  initial_query_id?: string;
+  normalized_query_hash?: string;
+  user?: string;
+  query_kind?: string;
+  query?: string;
+  databases?: string[];
+  tables?: string[];
+  database?: string;
+  table?: string;
+  part_name?: string;
+  partition_id?: string;
+  operation?: string;
+  task_name?: string;
+  disk_name?: string;
+  exception_code?: number;
+  exception_name?: string;
+  /** Number of occurrences represented by a sampled/aggregated event. */
+  count?: number;
+  /** Whether ClickHouse recorded the error as originating from a remote server. */
+  remote?: boolean;
+  duration_ms?: number;
+  memory_usage?: number;
+
+  // Crash/lifecycle correlation fields.
+  signal?: number;
+  version?: string;
+}
+
+export type TimelineEventSourceStatus =
+  | 'loaded'
+  | 'unavailable'
+  | 'failed'
+  | 'not_requested';
+
+/**
+ * Reports whether each event source was actually read. This prevents an empty
+ * events array from ambiguously meaning either "nothing happened" or
+ * "ClickHouse could not provide the source".
+ */
+export interface TimelineEventSourceCoverage {
+  source: string;
+  capability: string;
+  status: TimelineEventSourceStatus;
+  event_count: number;
+  truncated?: boolean;
+  detail?: string;
+}
+
 export interface MemoryTimeline {
   window_start: string;
   window_end: string;
@@ -112,6 +232,10 @@ export interface MemoryTimeline {
   merge_count: number;
   merge_peak_total: number;
   mutation_count: number;
+  /** Operational events occurring inside this timeline window. */
+  events: TimelineEvent[];
+  /** Per-source availability and collection result for `events`. */
+  event_coverage: TimelineEventSourceCoverage[];
 }
 
 export interface TimelineOptions {
@@ -127,6 +251,14 @@ export interface TimelineOptions {
   activeMetric?: 'memory' | 'cpu' | 'network' | 'disk';
   /** When set, only fetch queries matching this normalized_query_hash (pattern mode). */
   normalizedQueryHash?: string;
+  /**
+   * Capability IDs confirmed available by MonitoringCapabilitiesService.
+   * When omitted, event collection is not requested. Passing an empty array is
+   * distinct: collection was requested, but no event sources are available.
+   */
+  eventCapabilities?: readonly string[];
+  /** Maximum rows read from each event source. Default: 1000. */
+  eventLimit?: number;
 }
 
 /**
@@ -172,4 +304,3 @@ export interface CpuSpikeAnalysis {
   /** Overall peak CPU % in the window */
   overall_peak_pct: number;
 }
-

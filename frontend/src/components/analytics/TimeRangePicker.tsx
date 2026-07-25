@@ -17,6 +17,8 @@ interface Props {
   onChange: (interval: string | null) => void;
   /** Override the default preset list. Each entry needs a label and a ClickHouse interval string. */
   presets?: { label: string; interval: string }[];
+  /** Align the custom popover with the picker edge nearest the available space. */
+  popoverAlign?: 'left' | 'right';
 }
 
 const SLIDER_ZOOMS = [
@@ -40,7 +42,12 @@ const INTERVAL_TO_MS: Record<string, number> = {
   '30 DAY':    30 * 86400000,
 };
 
-export const TimeRangePicker: React.FC<Props> = ({ value, onChange, presets }) => {
+export const TimeRangePicker: React.FC<Props> = ({
+  value,
+  onChange,
+  presets,
+  popoverAlign = 'right',
+}) => {
   const effectivePresets = presets ?? TIME_RANGE_OPTIONS.map(o => ({ label: o.label, interval: o.interval! }));
   const [showCustom, setShowCustom] = useState(false);
   const [customStart, setCustomStart] = useState('');
@@ -153,22 +160,42 @@ export const TimeRangePicker: React.FC<Props> = ({ value, onChange, presets }) =
       {/* Custom range popover */}
       {showCustom && (
         <div ref={popoverRef} style={{
-          position: 'absolute', top: 'calc(100% + 6px)', right: 0, zIndex: 100,
+          position: 'absolute',
+          top: 'calc(100% + 6px)',
+          ...(popoverAlign === 'left' ? { left: 0 } : { right: 0 }),
+          zIndex: 100,
           background: 'var(--bg-secondary)', border: '1px solid var(--border-primary)',
           borderRadius: 8, padding: '10px 12px', boxShadow: '0 4px 16px rgba(0,0,0,0.25)',
-          display: 'flex', flexDirection: 'column', gap: 6, width: 420,
+          display: 'flex', flexDirection: 'column', gap: 10,
+          width: 600, maxWidth: 'calc(100vw - 32px)',
         }}>
-          {/* From / To / Apply - compact row */}
-          <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
-            <label style={{ fontSize: 9, fontWeight: 600, color: 'var(--text-muted)' }}>From</label>
-            <input type="datetime-local" value={customStart} onChange={e => setCustomStart(e.target.value)}
-              style={inputStyle} />
-            <label style={{ fontSize: 9, fontWeight: 600, color: 'var(--text-muted)' }}>To</label>
-            <input type="datetime-local" value={customEnd} onChange={e => setCustomEnd(e.target.value)}
-              style={inputStyle} />
+          <div style={{
+            display: 'grid',
+            gridTemplateColumns: 'minmax(0, 1fr) minmax(0, 1fr) auto',
+            alignItems: 'end',
+            gap: 10,
+          }}>
+            <label style={dateFieldStyle}>
+              <span>From</span>
+              <input
+                type="datetime-local"
+                value={customStart}
+                onChange={e => setCustomStart(e.target.value)}
+                style={inputStyle}
+              />
+            </label>
+            <label style={dateFieldStyle}>
+              <span>To</span>
+              <input
+                type="datetime-local"
+                value={customEnd}
+                onChange={e => setCustomEnd(e.target.value)}
+                style={inputStyle}
+              />
+            </label>
             <button onClick={handleCustomApply} disabled={!customStart || !customEnd}
               style={{
-                padding: '4px 12px', fontSize: 10, fontWeight: 600, borderRadius: 5, border: 'none',
+                height: 29, padding: '4px 14px', fontSize: 10, fontWeight: 600, borderRadius: 5, border: 'none',
                 cursor: customStart && customEnd ? 'pointer' : 'not-allowed',
                 background: customStart && customEnd ? 'var(--bg-primary)' : 'transparent',
                 color: customStart && customEnd ? 'var(--text-primary)' : 'var(--text-muted)',
@@ -203,9 +230,20 @@ export const TimeRangePicker: React.FC<Props> = ({ value, onChange, presets }) =
 };
 
 const inputStyle: React.CSSProperties = {
-  flex: 1, padding: '4px 8px', fontSize: 11, borderRadius: 4,
+  width: '100%', minWidth: 0, boxSizing: 'border-box',
+  padding: '5px 8px', fontSize: 11, borderRadius: 4,
   border: '1px solid var(--border-primary)', background: 'var(--bg-card)',
   color: 'var(--text-primary)', fontFamily: "'Share Tech Mono',monospace",
+};
+
+const dateFieldStyle: React.CSSProperties = {
+  minWidth: 0,
+  display: 'flex',
+  flexDirection: 'column',
+  gap: 4,
+  fontSize: 9,
+  fontWeight: 600,
+  color: 'var(--text-muted)',
 };
 
 function toLocalISOString(d: Date): string {

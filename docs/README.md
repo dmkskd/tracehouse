@@ -5,6 +5,7 @@
 | Document | What it covers |
 |----------|---------------|
 | [metrics/](metrics/) | Every metric formula used in the app — CPU, memory, disk I/O, query efficiency, merge throughput, resource attribution. Split by topic. |
+| [metrics/time-travel-events.md](metrics/time-travel-events.md) | Time Travel operational events — inclusion policy, ClickHouse sources, capability coverage, filtering dimensions, and planned sources |
 | [ordering-key-algorithm.md](ordering-key-algorithm.md) | How the Analytics tab diagnoses ORDER BY key efficiency — data sources, pruning algorithms, diagnostic categories, EXPLAIN integration |
 | [parts-and-lineage.md](parts-and-lineage.md) | Parts 3D visualization rendering, merge lineage tree building, space savings calculation, batch query strategy |
 | [admin-polling-reference.md](admin-polling-reference.md) | Every polling interval in the app — what each page queries, which system tables are hit, load impact, scaling considerations |

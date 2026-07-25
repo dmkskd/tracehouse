@@ -57,7 +57,6 @@ export const Analytics: React.FC = () => {
   const fromObsMap = fromPage === 'obsmap';
   const fromMerges = fromPage === 'merges';
   const fromQueries = fromPage === 'queries';
-
   // URL state - tab, lookback, db filter are persisted in the URL
   const { state: urlState, update: updateUrl, copyShareableUrl } = useAnalyticsUrlState();
 
@@ -68,6 +67,27 @@ export const Analytics: React.FC = () => {
     'dashboards'
   );
   const setActiveTab = useCallback((tab: AnalyticsTab) => updateUrl({ tab, fromDashboard: undefined }, { push: true }), [updateUrl]);
+
+  // Preserve links created before Events became a top-level page.
+  useEffect(() => {
+    if (urlState.tab !== 'events') return;
+    const params = new URLSearchParams();
+    if (urlState.eventId) params.set('event_id', urlState.eventId);
+    if (urlState.eventTime) {
+      params.set('event_time', urlState.eventTime);
+      params.set('range_center', urlState.eventTime);
+    }
+    if (urlState.eventRange) params.set('event_range', String(urlState.eventRange));
+    if (fromPage) params.set('from', fromPage);
+    navigate(`/events${params.size > 0 ? `?${params.toString()}` : ''}`, { replace: true });
+  }, [
+    fromPage,
+    navigate,
+    urlState.eventId,
+    urlState.eventRange,
+    urlState.eventTime,
+    urlState.tab,
+  ]);
 
   const lookbackDays = urlState.lookback ?? 7;
   const setLookbackDays = useCallback((days: number) => updateUrl({ lookback: days }), [updateUrl]);
@@ -260,8 +280,22 @@ export const Analytics: React.FC = () => {
     }
   }, [services]);
 
-  useEffect(() => { if (hasQueryLog || isCapProbing) fetchDatabases(); }, [fetchDatabases, hasQueryLog, isCapProbing]);
-  useEffect(() => { if (hasQueryLog || isCapProbing) fetchData(); }, [fetchData, hasQueryLog, isCapProbing]);
+  useEffect(() => {
+    if (
+      (activeTab === 'tables' || activeTab === 'surfaces')
+      && (hasQueryLog || isCapProbing)
+    ) {
+      fetchDatabases();
+    }
+  }, [activeTab, fetchDatabases, hasQueryLog, isCapProbing]);
+  useEffect(() => {
+    if (
+      (activeTab === 'tables' || activeTab === 'surfaces')
+      && (hasQueryLog || isCapProbing)
+    ) {
+      fetchData();
+    }
+  }, [activeTab, fetchData, hasQueryLog, isCapProbing]);
 
   // Auto-fetch surface data when parameters change
   useEffect(() => {

@@ -3,7 +3,7 @@
  * Toggle buttons switch Y-axis metric. Same time axis, hover, pin, zoom across all views.
  */
 import React, { useState, useCallback, useMemo, useRef, useEffect } from 'react';
-import { useSearchParams } from 'react-router-dom';
+import { useNavigate, useSearchParams } from 'react-router-dom';
 import { useConnectionStore } from '../stores/connectionStore';
 import { useClickHouseServices } from '../providers/ClickHouseProvider';
 import { useClusterStore } from '../stores/clusterStore';
@@ -11,7 +11,13 @@ import { useRefreshConfig, clampToAllowed } from '@tracehouse/ui-shared';
 import { useRefreshSettingsStore } from '../stores/refreshSettingsStore';
 import { useGlobalLastUpdatedStore } from '../stores/refreshSettingsStore';
 import { useCapabilityCheck } from '../components/shared/RequiresCapability';
-import type { MemoryTimeline, QuerySeries, MergeSeries, MutationSeries } from '@tracehouse/core';
+import type {
+  MemoryTimeline,
+  QuerySeries,
+  MergeSeries,
+  MutationSeries,
+  TimelineEvent,
+} from '@tracehouse/core';
 import { TIMELINE_ACTIVITY_LIMIT } from '@tracehouse/core';
 import { TimelineNavigator } from '../components/shared/TimelineNavigator';
 import { RangeSlider } from '../components/shared/RangeSlider';
@@ -22,11 +28,19 @@ import { TruncatedHost } from '../components/common/TruncatedHost';
 import { formatBytes, parseTimestamp } from '../utils/formatters';
 import { getUrlParam } from '../utils/urlParams';
 import { useUserPreferenceStore } from '../stores/userPreferenceStore';
+import { useMonitoringCapabilitiesStore } from '../stores/monitoringCapabilitiesStore';
 import { DocsLink } from '../components/common/DocsLink';
 import { TimelineChart } from '../components/timeline/TimelineChart';
 import { TimelineChart3D } from '../components/timeline/TimelineChart3D';
 import { TimelineChart3DSurface } from '../components/timeline/TimelineChart3DSurface';
 import { QueryTable, MergeTable } from '../components/timeline/TimelineTable';
+import { TimelineEventRail } from '../components/timeline/TimelineEventRail';
+import {
+  emptyTimelineEventFilter,
+  buildEventsUrl,
+  filterTimelineEvents,
+  type TimelineEventFilter,
+} from '../components/timeline/timeline-event-model';
 import {
   type MetricMode, type HighlightedItem,
   Q_COLORS, M_COLORS, MUT_COLORS, METRIC_CONFIG, getMetricValue,
@@ -112,6 +126,10 @@ export const TimeTravelPage: React.FC = () => {
   const services = useClickHouseServices();
   const { detected: clusterDetected } = useClusterStore();
   const [searchParams, setSearchParams] = useSearchParams();
+  const navigate = useNavigate();
+  const eventTimeParam = searchParams.get('event_time');
+  const initialEventMs = eventTimeParam ? Date.parse(eventTimeParam) : Number.NaN;
+  const hasInitialEvent = Number.isFinite(initialEventMs);
 
   // Query hash filter: highlight/filter timeline to a specific normalized_query_hash (from URL ?nqh=...)
   const [queryHashFilter, setQueryHashFilter] = useState<string | null>(() => getUrlParam('nqh'));
@@ -127,18 +145,36 @@ export const TimeTravelPage: React.FC = () => {
   const { refreshRateSeconds } = useRefreshSettingsStore();
   const manualRefreshTick = useGlobalLastUpdatedStore(s => s.manualRefreshTick);
   const { available: hasMetricLog, missing: missingCaps, probing: isCapProbing } = useCapabilityCheck(['metric_log', 'query_log']);
+  const monitoringCapabilities = useMonitoringCapabilitiesStore(s => s.capabilities);
+  const eventCapabilities = useMemo(
+    () => monitoringCapabilities?.capabilities
+      .filter(capability => capability.available)
+      .map(capability => capability.id),
+    [monitoringCapabilities],
+  );
   const { experimentalEnabled } = useUserPreferenceStore();
   const [windowSec, setWindowSec] = useState(150);
-  const [isLive, setIsLive] = useState(true);
+  const [isLive, setIsLive] = useState(!hasInitialEvent);
   const [autoRefresh, setAutoRefresh] = useState(false);
   const [customStartTime, setCustomStartTime] = useState<string | null>(null);  // Custom range start (navigator)
-  const [customEndTime, setCustomEndTime] = useState<string | null>(null);      // Custom range end (navigator)
+  const [customEndTime, setCustomEndTime] = useState<string | null>(
+    hasInitialEvent ? toLocalDatetimeStr(initialEventMs + 150_000) : null,
+  );      // Custom range end (navigator)
   const [viewportEndTime, setViewportEndTime] = useState<string | null>(null);  // Viewport position within custom range
   const [data, setData] = useState<MemoryTimeline | null>(null);
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [hoverMs, setHoverMs] = useState<number | null>(null);
-  const [pinnedMs, setPinnedMs] = useState<number | null>(null);
+  const [pinnedMs, setPinnedMs] = useState<number | null>(
+    hasInitialEvent ? initialEventMs : null,
+  );
+  const [selectedEventId, setSelectedEventId] = useState<string | null>(
+    searchParams.get('event_id'),
+  );
+  const [eventFilter, setEventFilter] = useState<TimelineEventFilter>(
+    emptyTimelineEventFilter,
+  );
+  const pendingEventPinRef = useRef<number | null>(null);
   const [zoomRange, setZoomRange] = useState<[number, number] | null>(null);
   const [metricMode, setMetricMode] = useState<MetricMode>('cpu');
   const [highlightedItem, setHighlightedItem] = useState<HighlightedItem>(null);
@@ -256,6 +292,7 @@ export const TimeTravelPage: React.FC = () => {
         activityLimit,
         activeMetric: metricMode,
         normalizedQueryHash: queryHashFilter ?? undefined,
+        eventCapabilities,
       });
       // In live mode, slide zoom/pin forward to follow the advancing time window
       const newEndMs = new Date(result.window_end).getTime();
@@ -263,11 +300,22 @@ export const TimeTravelPage: React.FC = () => {
         const delta = newEndMs - prevDataEndRef.current;
         if (delta > 0) {
           setZoomRange(prev => prev ? [prev[0] + delta, prev[1] + delta] : null);
-          setPinnedMs(prev => prev != null ? prev + delta : null);
+          if (!selectedEventId) {
+            setPinnedMs(prev => prev != null ? prev + delta : null);
+          }
         }
       }
       prevDataEndRef.current = newEndMs;
       setData(result);
+      const pendingEventPin = pendingEventPinRef.current;
+      if (
+        pendingEventPin != null
+        && pendingEventPin >= new Date(result.window_start).getTime()
+        && pendingEventPin <= newEndMs
+      ) {
+        setPinnedMs(pendingEventPin);
+        pendingEventPinRef.current = null;
+      }
       useGlobalLastUpdatedStore.getState().touch();
     } catch (e) {
       const msg = e instanceof Error ? e.message : 'Failed to fetch timeline';
@@ -275,7 +323,7 @@ export const TimeTravelPage: React.FC = () => {
       setError(msg);
     }
     finally { setIsLoading(false); }
-  }, [services, isLive, effectiveViewportEnd, windowSec, includeRunning, selectedHost, activityLimit, metricMode, queryHashFilter]);
+  }, [services, isLive, effectiveViewportEnd, windowSec, includeRunning, selectedHost, activityLimit, metricMode, queryHashFilter, eventCapabilities, selectedEventId]);
 
   // Fetch cluster hosts on connect (after cluster detection completes)
   useEffect(() => {
@@ -323,12 +371,15 @@ export const TimeTravelPage: React.FC = () => {
   useEffect(() => {
     if (services && isConnected && !isLoading) {
       // Clear zoom/pin when user changes time parameters
-      setZoomRange(null); setPinnedMs(null); prevDataEndRef.current = null;
+      setZoomRange(null);
+      setPinnedMs(null);
+      if (pendingEventPinRef.current == null) setSelectedEventId(null);
+      prevDataEndRef.current = null;
       if (fetchDataTimeoutRef.current) clearTimeout(fetchDataTimeoutRef.current);
       fetchDataTimeoutRef.current = setTimeout(() => fetchData(), 200);
     }
     return () => { if (fetchDataTimeoutRef.current) clearTimeout(fetchDataTimeoutRef.current); };
-  }, [services, isConnected, windowSec, isLive, effectiveViewportEnd, includeRunning, selectedHost, activityLimit, metricMode, queryHashFilter]); // eslint-disable-line react-hooks/exhaustive-deps
+  }, [services, isConnected, windowSec, isLive, effectiveViewportEnd, includeRunning, selectedHost, activityLimit, metricMode, queryHashFilter, eventCapabilities]); // eslint-disable-line react-hooks/exhaustive-deps
 
   // Clear hash filter: remove nqh from URL and re-fetch normally
   const clearQueryHashFilter = useCallback(() => {
@@ -438,6 +489,7 @@ export const TimeTravelPage: React.FC = () => {
         hostname: selectedHost,
         activityLimit,
         activeMetric: metricMode,
+        eventCapabilities,
       });
       setNavigatorData(result);
       lastNavigatorFetchTime.current = endTimeKey;
@@ -445,7 +497,7 @@ export const TimeTravelPage: React.FC = () => {
     } catch (e) {
       console.error('[TimeTravelPage] Navigator fetch error:', e);
     } finally { setNavigatorLoading(false); }
-  }, [services, selectedTimeRange, customStartTime, customEndTime, navigatorHours, navigatorData, windowSec, selectedHost, activityLimit, metricMode]);
+  }, [services, selectedTimeRange, customStartTime, customEndTime, navigatorHours, navigatorData, windowSec, selectedHost, activityLimit, metricMode, eventCapabilities]);
 
   // Debounced navigator fetch
   const navigatorFetchTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
@@ -498,6 +550,54 @@ export const TimeTravelPage: React.FC = () => {
     return { startMs: endMs - windowSec * 2 * 1000, endMs };
   }, [dragEndMs, isLive, effectiveViewportEnd, windowSec]);
 
+  const handleChartPin = useCallback((ms: number) => {
+    pendingEventPinRef.current = null;
+    setSelectedEventId(null);
+    setPinnedMs(ms);
+  }, []);
+
+  const handleEventSelect = useCallback((event: TimelineEvent) => {
+    const eventMs = new Date(event.occurred_at).getTime();
+    if (!Number.isFinite(eventMs)) return;
+    pendingEventPinRef.current = null;
+    setSelectedEventId(event.id);
+    setPinnedMs(eventMs);
+    setHoverMs(eventMs);
+  }, []);
+
+  const handleClearEventSelection = useCallback(() => {
+    pendingEventPinRef.current = null;
+    setSelectedEventId(null);
+    setPinnedMs(null);
+    setHoverMs(null);
+  }, []);
+
+  const handleViewEventDetails = useCallback((event: TimelineEvent) => {
+    navigate(buildEventsUrl(event));
+  }, [navigate]);
+
+  const handleNavigatorEventSelect = useCallback((event: TimelineEvent) => {
+    const eventMs = new Date(event.occurred_at).getTime();
+    if (!Number.isFinite(eventMs)) return;
+    setSelectedEventId(event.id);
+    setHoverMs(eventMs);
+
+    if (eventMs >= viewportBounds.startMs && eventMs <= viewportBounds.endMs) {
+      pendingEventPinRef.current = null;
+      setPinnedMs(eventMs);
+      return;
+    }
+
+    pendingEventPinRef.current = eventMs;
+    const viewportSpanMs = windowSec * 2 * 1000;
+    const requestedEnd = eventMs + viewportSpanMs / 2;
+    const minEnd = navigatorRange
+      ? navigatorRange.startMs + viewportSpanMs
+      : requestedEnd;
+    const maxEnd = navigatorRange?.endMs ?? Date.now();
+    handleNavigatorDragEnd(Math.max(minEnd, Math.min(maxEnd, requestedEnd)));
+  }, [viewportBounds, windowSec, navigatorRange, handleNavigatorDragEnd]);
+
   const navigatorMetricData = useMemo(() => {
     if (!navigatorData) return [];
     if (metricMode === 'memory') return navigatorData.server_memory;
@@ -517,6 +617,23 @@ export const TimeTravelPage: React.FC = () => {
     }
     return [];
   }, [navigatorData, metricMode]);
+
+  const eventFilterUniverse = useMemo(() => {
+    const unique = new Map<string, TimelineEvent>();
+    for (const event of data?.events ?? []) unique.set(event.id, event);
+    for (const event of navigatorData?.events ?? []) unique.set(event.id, event);
+    return [...unique.values()];
+  }, [data?.events, navigatorData?.events]);
+
+  const filteredWindowEvents = useMemo(
+    () => filterTimelineEvents(data?.events ?? [], eventFilter),
+    [data?.events, eventFilter],
+  );
+
+  const filteredNavigatorEvents = useMemo(
+    () => filterTimelineEvents(navigatorData?.events ?? [], eventFilter),
+    [navigatorData?.events, eventFilter],
+  );
 
   const inspectMs = pinnedMs;
 
@@ -1063,7 +1180,7 @@ export const TimeTravelPage: React.FC = () => {
                     </button>
                     <TimelineChart data={hostData} metricMode={metricMode} height={chartHeight}
                       hoverMs={hoverMs} pinnedMs={pinnedMs}
-                      onHover={setHoverMs} onPin={setPinnedMs}
+                      onHover={setHoverMs} onPin={handleChartPin}
                       zoomRange={zoomRange} onZoom={setZoomRange}
                       highlightedItem={highlightedItem}
                       onHighlightItem={setHighlightedItem}
@@ -1105,7 +1222,7 @@ export const TimeTravelPage: React.FC = () => {
             {(pinnedMs !== null || zoomRange !== null) && (
               <div style={{ position:'absolute', top:8, right:8, zIndex:10, display:'flex', alignItems:'center', gap:6 }}>
                 {pinnedMs !== null && (
-                  <button onClick={() => setPinnedMs(null)} style={{ padding:'3px 8px', borderRadius:6, fontSize:11, background:'rgba(63,185,80,0.12)', border:'1px solid rgba(63,185,80,0.25)', color:'#3fb950', cursor:'pointer', backdropFilter:'blur(8px)' }}>
+                  <button onClick={() => { setPinnedMs(null); setSelectedEventId(null); }} style={{ padding:'3px 8px', borderRadius:6, fontSize:11, background:'rgba(63,185,80,0.12)', border:'1px solid rgba(63,185,80,0.25)', color:'#3fb950', cursor:'pointer', backdropFilter:'blur(8px)' }}>
                     ✕ Pinned at {new Date(pinnedMs).toLocaleTimeString()}
                   </button>
                 )}
@@ -1134,7 +1251,7 @@ export const TimeTravelPage: React.FC = () => {
             )}
             <TimelineChart data={chartData!} metricMode={metricMode} height={500}
               hoverMs={hoverMs} pinnedMs={pinnedMs}
-              onHover={setHoverMs} onPin={setPinnedMs}
+              onHover={setHoverMs} onPin={handleChartPin}
               zoomRange={zoomRange} onZoom={setZoomRange}
               highlightedItem={highlightedItem}
               onHighlightItem={setHighlightedItem}
@@ -1149,6 +1266,21 @@ export const TimeTravelPage: React.FC = () => {
             )}
           </div>
           )}
+
+          <TimelineEventRail
+            events={filteredWindowEvents}
+            windowEventCount={data.events?.length ?? 0}
+            filterUniverse={eventFilterUniverse}
+            coverage={data.event_coverage ?? []}
+            filter={eventFilter}
+            onFilterChange={setEventFilter}
+            rangeStartMs={zoomRange?.[0] ?? new Date(data.window_start).getTime()}
+            rangeEndMs={zoomRange?.[1] ?? new Date(data.window_end).getTime()}
+            selectedEventId={selectedEventId}
+            onSelectEvent={handleEventSelect}
+            onClearEventSelection={handleClearEventSelection}
+            onViewEventDetails={handleViewEventDetails}
+          />
 
           {/* Timeline Navigator */}
           {navigatorRange && (
@@ -1165,6 +1297,9 @@ export const TimeTravelPage: React.FC = () => {
                 onViewportChange={handleNavigatorViewportChange} height={70}
                 isLoading={navigatorLoading} totalRam={data.server_total_ram} cpuCores={data.cpu_cores}
                 onDragEnd={handleNavigatorDragEnd}
+                events={filteredNavigatorEvents}
+                selectedEventId={selectedEventId}
+                onEventSelect={handleNavigatorEventSelect}
               />
             </div>
           )}

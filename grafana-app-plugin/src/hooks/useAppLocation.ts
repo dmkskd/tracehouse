@@ -23,6 +23,14 @@ export interface LocationContextValue {
 // Create our own context - this is set up in App.tsx
 export const LocationContext = createContext<LocationContextValue | null>(null);
 
+const PLUGIN_BASE_PATH = '/a/dmkskd-tracehouse-app';
+
+/** Map standalone frontend routes onto Grafana's app-plugin route namespace. */
+export function toPluginPath(path: string): string {
+  if (!path.startsWith('/') || path.startsWith(PLUGIN_BASE_PATH)) return path;
+  return `${PLUGIN_BASE_PATH}${path}`;
+}
+
 export function useAppLocation(): AppLocation {
   const ctx = useContext(LocationContext);
   if (!ctx) {
@@ -35,9 +43,15 @@ export function useAppLocation(): AppLocation {
 export function useNavigate() {
   const ctx = useContext(LocationContext);
   return (to: string | number, options?: { state?: unknown; replace?: boolean }) => {
-    if (ctx && typeof to === 'string') {
-      ctx.navigate(to, options);
+    if (typeof to === 'number') {
+      locationService.getHistory().go(to);
+      return;
     }
+
+    ctx?.navigate(to, options);
+    const target = toPluginPath(to);
+    if (options?.replace) locationService.replace(target);
+    else locationService.push(target);
   };
 }
 

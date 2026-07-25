@@ -378,6 +378,12 @@ generate-data-heavy:
 run-queries *args="":
     uv run --project tools/data-utils tracehouse-queries {{args}}
 
+# Generate safe operational events for the Time Travel event timeline
+# Defaults: DDL every 5m, timeout every 10m, query OOM every 15m
+[group('data')]
+run-events *args="":
+    uv run --project tools/data-utils tracehouse-events {{args}}
+
 # Run mutations (UPDATE/DELETE) to test mutation monitoring
 # When args are omitted, the script reads defaults from .env (CH_MUTATION_*)
 [group('data')]

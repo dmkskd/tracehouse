@@ -1,5 +1,9 @@
 # Time Travel
 
+See [time-travel-events.md](time-travel-events.md) for the operational event
+taxonomy, ClickHouse sources, capability handling, timestamp semantics, and
+planned event-source backlog.
+
 ## Hybrid data model
 
 Time Travel combines historical log data with live in-flight data. When the visible window includes "now" (within 30s), both sources are fetched in parallel and deduplicated.

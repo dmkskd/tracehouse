@@ -6,7 +6,11 @@
  * Mirrors the metric mode from the main chart (Memory, CPU, Network, Disk).
  */
 import React, { useState, useCallback, useMemo, useRef, useEffect } from 'react';
-import type { TimeseriesPoint } from '@tracehouse/core';
+import type { TimelineEvent, TimeseriesPoint } from '@tracehouse/core';
+import {
+  EVENT_SEVERITY_COLORS,
+  clusterTimelineEvents,
+} from '../timeline/timeline-event-model';
 
 export type MetricMode = 'memory' | 'cpu' | 'network' | 'disk';
 
@@ -42,6 +46,11 @@ interface TimelineNavigatorProps {
   cpuCores?: number;
   /** Callback when drag ends — commit the final viewport position */
   onDragEnd?: (endMs: number) => void;
+  /** Filtered operational events for the overview range. */
+  events?: TimelineEvent[];
+  selectedEventId?: string | null;
+  /** Select and navigate to an event marker. */
+  onEventSelect?: (event: TimelineEvent) => void;
 }
 
 const fmtTime = (ms: number): string => new Date(ms).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
@@ -59,8 +68,12 @@ export const TimelineNavigator: React.FC<TimelineNavigatorProps> = ({
   totalRam = 0,
   cpuCores = 0,
   onDragEnd,
+  events = [],
+  selectedEventId,
+  onEventSelect,
 }) => {
   const containerRef = useRef<HTMLDivElement>(null);
+  const [containerWidth, setContainerWidth] = useState(1000);
   const [isDragging, setIsDragging] = useState(false);
   const dragStateRef = useRef<{
     lastX: number;
@@ -71,8 +84,16 @@ export const TimelineNavigator: React.FC<TimelineNavigatorProps> = ({
   } | null>(null);
 
   const [hoverInfo, setHoverInfo] = useState<{ x: number; y: number; value: string } | null>(null);
-  const viewportEndMsRef = useRef(viewportEndMs);
-  viewportEndMsRef.current = viewportEndMs;
+
+  useEffect(() => {
+    const element = containerRef.current;
+    if (!element) return;
+    const update = () => setContainerWidth(element.clientWidth || 1000);
+    update();
+    const observer = new ResizeObserver(update);
+    observer.observe(element);
+    return () => observer.disconnect();
+  }, []);
 
   const cfg = METRIC_CONFIG[metricMode];
   const rangeMs = rangeEndMs - rangeStartMs || 1;
@@ -133,14 +154,14 @@ export const TimelineNavigator: React.FC<TimelineNavigatorProps> = ({
     // Lock rangeMs and container width at drag start for stable pixel→ms conversion
     dragStateRef.current = {
       lastX: x,
-      currentEndMs: viewportEndMsRef.current,
+      currentEndMs: viewportEndMs,
       viewportWidth: viewportWidthMs,
       frozenRangeMs: rangeMs,
       frozenContainerWidth: rect.width,
     };
     setIsDragging(true);
     e.preventDefault();
-  }, [viewportWidthMs, rangeMs]);
+  }, [viewportEndMs, viewportWidthMs, rangeMs]);
 
   const handleMouseMove = useCallback((e: MouseEvent) => {
     const dragState = dragStateRef.current;
@@ -215,6 +236,10 @@ export const TimelineNavigator: React.FC<TimelineNavigatorProps> = ({
   }, [rangeStartMs, rangeMs, msToPercent]);
 
   const chartHeight = height - 20;
+  const eventClusters = useMemo(
+    () => clusterTimelineEvents(events, rangeStartMs, rangeEndMs, containerWidth, 9),
+    [events, rangeStartMs, rangeEndMs, containerWidth],
+  );
 
   // Handle mouse hover to show percentage tooltip
   const handleMouseMoveHover = useCallback((e: React.MouseEvent) => {
@@ -368,6 +393,58 @@ export const TimelineNavigator: React.FC<TimelineNavigatorProps> = ({
         pointerEvents: 'none',
       }} />
 
+      {/* Operational event ticks — clustered only when markers would overlap. */}
+      {eventClusters.map(cluster => {
+        const left = Math.max(0, Math.min(100, msToPercent(cluster.occurredAtMs)));
+        const selected = cluster.events.some(event => event.id === selectedEventId);
+        return (
+          <button
+            key={cluster.id}
+            title={cluster.events.length === 1
+              ? `${cluster.primaryEvent.title}\n${new Date(cluster.primaryEvent.occurred_at).toLocaleString()}`
+              : `${cluster.events.length} events near ${new Date(cluster.occurredAtMs).toLocaleString()}`}
+            aria-label={cluster.events.length === 1
+              ? cluster.primaryEvent.title
+              : `${cluster.events.length} operational events`}
+            onMouseDown={event => event.stopPropagation()}
+            onClick={event => {
+              event.stopPropagation();
+              onEventSelect?.(cluster.primaryEvent);
+            }}
+            style={{
+              position: 'absolute',
+              top: 4,
+              left: `${left}%`,
+              zIndex: 8,
+              width: 2,
+              height: chartHeight - 8,
+              padding: 0,
+              transform: 'translateX(-50%)',
+              border: 'none',
+              borderRadius: 1,
+              background: EVENT_SEVERITY_COLORS[cluster.severity],
+              opacity: selected ? 1 : 0.55,
+              boxShadow: selected
+                ? `0 0 0 1px ${EVENT_SEVERITY_COLORS[cluster.severity]}88`
+                : 'none',
+              cursor: onEventSelect ? 'pointer' : 'default',
+            }}
+          >
+            <span style={{
+              position: 'absolute',
+              top: -1,
+              left: '50%',
+              width: cluster.events.length > 1 ? 8 : 6,
+              height: cluster.events.length > 1 ? 8 : 6,
+              transform: 'translate(-50%, -50%)',
+              borderRadius: '50%',
+              background: EVENT_SEVERITY_COLORS[cluster.severity],
+              border: '1px solid var(--bg-secondary)',
+            }} />
+          </button>
+        );
+      })}
+
       {/* Time labels */}
       <div style={{
         position: 'absolute',
@@ -420,7 +497,10 @@ export const TimelineNavigator: React.FC<TimelineNavigatorProps> = ({
         <div style={{
           position: 'absolute',
           top: Math.max(2, hoverInfo.y - 24),
-          left: Math.min(Math.max(hoverInfo.x, 20), containerRef.current?.clientWidth ? containerRef.current.clientWidth - 30 : hoverInfo.x),
+          left: Math.min(
+            Math.max(hoverInfo.x, 20),
+            containerWidth > 0 ? containerWidth - 30 : hoverInfo.x,
+          ),
           transform: 'translateX(-50%)',
           fontSize: 10,
           color: cfg.lightColor,

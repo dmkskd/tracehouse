@@ -184,7 +184,7 @@ export const RangeSlider: React.FC<RangeSliderProps> = ({
   const trackY = (totalH - TRACK_HEIGHT) / 2;
 
   return (
-    <div style={{ padding: '2px 0 4px' }}>
+    <div style={{ padding: '2px 10px 4px' }}>
       <div ref={trackRef} onClick={onTrackClick} style={{
         position: 'relative', height: totalH, cursor: 'pointer',
         userSelect: 'none',
@@ -222,7 +222,13 @@ export const RangeSlider: React.FC<RangeSliderProps> = ({
       <div style={{ position: 'relative', height: 12, marginTop: 1 }}>
         {ticks.map(t => (
           <span key={t.frac} style={{
-            position: 'absolute', left: `${t.frac * 100}%`, transform: 'translateX(-50%)',
+            position: 'absolute',
+            left: `${t.frac * 100}%`,
+            transform: t.frac < 0.04
+              ? 'translateX(0)'
+              : t.frac > 0.96
+                ? 'translateX(-100%)'
+                : 'translateX(-50%)',
             fontSize: 8, color: 'var(--text-muted)', fontFamily: "'Share Tech Mono',monospace",
             whiteSpace: 'nowrap',
           }}>

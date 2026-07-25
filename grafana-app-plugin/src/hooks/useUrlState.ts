@@ -92,6 +92,21 @@ export function useUrlState<S extends UrlSchema>(schema: S) {
   return { state, update };
 }
 
+// ─── Events URL state ───
+
+const EVENTS_URL_SCHEMA = {
+  event_id: { type: 'string' },
+  event_time: { type: 'string' },
+  range_center: { type: 'string' },
+  event_range: { type: 'number', default: 24 },
+  from: { type: 'string' },
+} as const satisfies UrlSchema;
+
+/** Shareable selection and time-window state for the Events page. */
+export function useEventsUrlState() {
+  return useUrlState(EVENTS_URL_SCHEMA);
+}
+
 // ─── Analytics URL state ───
 
 export interface AnalyticsUrlState {
