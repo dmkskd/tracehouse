@@ -25,7 +25,7 @@ spec:
   containerTemplate:
     image:
       repository: clickhouse/clickhouse-server
-      tag: "26.3"
+      tag: "26.7.1"
     resources:
       requests:
         memory: "8Gi"

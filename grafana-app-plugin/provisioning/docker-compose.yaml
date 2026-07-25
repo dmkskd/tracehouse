@@ -3,7 +3,8 @@
 # No local toolchain required — only Docker.
 #
 # Usage:
-#   cd grafana-app-plugin/provisioning && docker compose up
+#   cd grafana-app-plugin/provisioning
+#   docker compose up
 #
 # This builds the plugin from source inside Docker, then starts
 # ClickHouse and Grafana with the plugin loaded.
@@ -27,7 +28,7 @@ services:
       - plugin-dist:/output
 
   clickhouse:
-    image: clickhouse/clickhouse-server:latest
+    image: "${CLICKHOUSE_IMAGE:-clickhouse/clickhouse-server:latest}"
     container_name: tracehouse-review-clickhouse
     ports:
       - "8123:8123"

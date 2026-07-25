@@ -61,8 +61,9 @@ RUN cmake -S /build -B /build/output \
 
 RUN ninja -C /build/output clickhouse
 
-# --- Stage 2: Package into official image ---
-FROM clickhouse/clickhouse-server:latest
+# --- Stage 2: Package into the configured official image ---
+ARG CLICKHOUSE_IMAGE=clickhouse/clickhouse-server:latest
+FROM ${CLICKHOUSE_IMAGE}
 
 COPY --from=builder /build/output/programs/clickhouse /usr/bin/clickhouse
 RUN chmod +x /usr/bin/clickhouse

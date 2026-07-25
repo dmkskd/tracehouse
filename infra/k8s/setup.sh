@@ -8,6 +8,14 @@ SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 REPO_ROOT="$(cd "${SCRIPT_DIR}/../.." && pwd)"
 CLUSTER_NAME="tracehouse-dev"
 
+apply_clickhouse_operator_manifest() {
+    bash "${SCRIPT_DIR}/apply-clickhouse-image-override.sh" "$1" "$2" "$3" | kubectl apply -f -
+}
+
+apply_altinity_manifest() {
+    bash "${SCRIPT_DIR}/altinity/apply-image-override.sh" "$1" "$2" "$3" | kubectl apply -f -
+}
+
 # Default operator: clickhouse (ClickHouse Cloud operator)
 # Override with: ./setup.sh --operator altinity
 OPERATOR="clickhouse"
@@ -169,7 +177,10 @@ deploy_lakekeeper() {
 # Deploy ClickHouse cluster using ClickHouse Cloud operator
 deploy_clickhouse_cloud() {
     log_info "Deploying Keeper cluster (Cloud operator)..."
-    kubectl apply -f "${SCRIPT_DIR}/keeper-cluster.yaml"
+    apply_clickhouse_operator_manifest \
+        "${SCRIPT_DIR}/keeper-cluster.yaml" \
+        "clickhouse/clickhouse-keeper" \
+        "${CLICKHOUSE_KEEPER_IMAGE:-}"
     
     log_info "Waiting for Keeper to be ready..."
     sleep 15
@@ -211,7 +222,10 @@ EOF
     log_info "Waiting for TLS certificate to be ready..."
     kubectl wait --for=condition=Ready certificate/clickhouse-tls -n clickhouse --timeout=60s || log_warn "Certificate not ready yet"
 
-    kubectl apply -f "${SCRIPT_DIR}/clickhouse-cluster.yaml"
+    apply_clickhouse_operator_manifest \
+        "${SCRIPT_DIR}/clickhouse-cluster.yaml" \
+        "clickhouse/clickhouse-server" \
+        "${CLICKHOUSE_IMAGE:-}"
     
     log_info "Waiting for ClickHouse to be ready..."
     sleep 15
@@ -242,7 +256,10 @@ EOF
 # Deploy ClickHouse cluster using Altinity operator
 deploy_clickhouse_altinity() {
     log_info "Deploying Keeper (Altinity ClickHouseKeeperInstallation)..."
-    kubectl apply -f "${SCRIPT_DIR}/altinity/keeper.yaml"
+    apply_altinity_manifest \
+        "${SCRIPT_DIR}/altinity/keeper.yaml" \
+        "clickhouse/clickhouse-keeper" \
+        "${CLICKHOUSE_KEEPER_IMAGE:-}"
 
     log_info "Waiting for Keeper CRD to be Completed..."
     sleep 15
@@ -258,7 +275,10 @@ deploy_clickhouse_altinity() {
     done
 
     log_info "Deploying ClickHouse cluster (Altinity operator)..."
-    kubectl apply -f "${SCRIPT_DIR}/altinity/clickhouse-installation.yaml"
+    apply_altinity_manifest \
+        "${SCRIPT_DIR}/altinity/clickhouse-installation.yaml" \
+        "clickhouse/clickhouse-server" \
+        "${CLICKHOUSE_IMAGE:-}"
 
     log_info "Waiting for ClickHouse to be ready..."
     sleep 20

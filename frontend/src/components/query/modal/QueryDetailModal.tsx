@@ -158,7 +158,7 @@ export const QueryDetailModal: React.FC<TimelineQueryModalProps> = ({
     { key: 'overview', label: 'Overview' },
     { key: 'sql', label: 'SQL' },
     { key: 'details', label: 'Details' },
-    { key: 'analytics', label: 'Analytics' },
+    { key: 'analytics', label: 'Analysis' },
     ...(objectStorageSummary.hasObjectStorageIO ? [{ key: 'object-storage' as const, label: 'Object Storage' }] : []),
     {
       key: 'distributed',
@@ -298,7 +298,12 @@ export const QueryDetailModal: React.FC<TimelineQueryModalProps> = ({
         </div>
 
         {/* Content */}
-        <div style={{ flex: 1, overflow: activeTab === 'history' ? 'hidden' : 'auto', padding: ['logs', 'spans', 'details', 'distributed', 'pipeline', 'history', 'analytics', 'object-storage', 'xray', 'sql'].includes(activeTab) ? 0 : 24 }}>
+        <div style={{
+          flex: 1,
+          minHeight: 0,
+          overflow: ['history', 'analytics'].includes(activeTab) ? 'hidden' : 'auto',
+          padding: ['logs', 'spans', 'details', 'distributed', 'pipeline', 'history', 'analytics', 'object-storage', 'xray', 'sql'].includes(activeTab) ? 0 : 24,
+        }}>
           {activeTab === 'overview' && (
             <OverviewTab
               q={q}

@@ -23,6 +23,12 @@ cd infra/quickstart && docker compose up
 
 This starts the app and a local ClickHouse instance. Open [http://localhost:8990](http://localhost:8990) - the connection form is pre-filled, just click Connect.
 
+Override the image for a single run when testing another ClickHouse release:
+
+```bash
+CLICKHOUSE_IMAGE=clickhouse/clickhouse-server:23.8.16.40-alpine docker compose up
+```
+
 <FeatureVideo src="quick-start-1920.mp4" />
 
 If you already have a ClickHouse instance you want to monitor instead, see [Connecting to ClickHouse](./guides/connecting).

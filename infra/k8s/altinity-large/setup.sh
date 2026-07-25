@@ -6,8 +6,11 @@ set -e
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 K8S_DIR="$(cd "${SCRIPT_DIR}/.." && pwd)"
-REPO_ROOT="$(cd "${SCRIPT_DIR}/../../.." && pwd)"
 CLUSTER_NAME="tracehouse-dev"
+
+apply_altinity_manifest() {
+    bash "${K8S_DIR}/altinity/apply-image-override.sh" "$1" "$2" "$3" | kubectl apply -f -
+}
 
 # Colors
 RED='\033[0;31m'
@@ -95,7 +98,10 @@ deploy_clickhouse() {
 
     # Keeper (3 replicas)
     log_info "Deploying Keeper (3 replicas)..."
-    kubectl apply -f "${SCRIPT_DIR}/keeper.yaml"
+    apply_altinity_manifest \
+        "${SCRIPT_DIR}/keeper.yaml" \
+        "clickhouse/clickhouse-keeper" \
+        "${CLICKHOUSE_KEEPER_IMAGE:-}"
 
     log_info "Waiting for Keeper to be ready..."
     sleep 15
@@ -111,7 +117,10 @@ deploy_clickhouse() {
 
     # ClickHouse cluster (4s × 2r)
     log_info "Deploying ClickHouse cluster (4 shards × 2 replicas)..."
-    kubectl apply -f "${SCRIPT_DIR}/clickhouse-installation.yaml"
+    apply_altinity_manifest \
+        "${SCRIPT_DIR}/clickhouse-installation.yaml" \
+        "clickhouse/clickhouse-server" \
+        "${CLICKHOUSE_IMAGE:-}"
 
     log_info "Waiting for ClickHouse to be ready..."
     sleep 20

@@ -101,6 +101,13 @@ export const CAPABILITY_REGISTRY: CapabilityRegistryEntry[] = [
     ],
   },
   {
+    capabilityId: 'explain_analyze',
+    consumers: [
+      { screen: 'Query Explorer', tab: 'Analytics', route: '/analytics', enables: 'Execution-aware query plans with measured runtime, I/O, memory, and parallelism', importance: 'optional' },
+      { screen: 'Query Detail', tab: 'Analysis', route: '/queries', enables: 'Replay a historical SELECT and inspect its measured runtime plan', importance: 'optional' },
+    ],
+  },
+  {
     capabilityId: 'introspection_functions',
     consumers: [
       { screen: 'CPU Sampling', tab: 'Engine Internals', route: '/engine-internals', enables: 'Stack trace symbolization (demangle, addressToSymbol)', importance: 'required' },

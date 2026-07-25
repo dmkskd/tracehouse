@@ -148,7 +148,20 @@ packages/core/src/__tests__/integration/setup/
 └── index.ts                  # Re-exports everything
 ```
 
-The `startClickHouse()` function pulls the `clickhouse/clickhouse-server:26.1-alpine` image, starts a container, and returns a context with a ready-to-use `ClusterAwareAdapter` and raw `@clickhouse/client` instance.
+The `startClickHouse()` function uses the server image pinned in
+`infra/clickhouse.env`, starts a container, and returns a context
+with a ready-to-use `ClusterAwareAdapter` and raw `@clickhouse/client` instance.
+All ClickHouse-backed suites can be run together with:
+
+```bash
+just test-clickhouse
+```
+
+To check an older release without changing repository files:
+
+```bash
+CLICKHOUSE_IMAGE=clickhouse/clickhouse-server:23.8.16.40-alpine just test-clickhouse
+```
 
 ### Cluster container (2-node)
 

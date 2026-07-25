@@ -12,12 +12,8 @@
 #   just docker-start-full 11.6.3                      # everything with a specific Grafana version
 #   just docker-start-full-release v0.16.12            # everything with the plugin ZIP from a GitHub release
 #
-# Via docker compose directly:
-#   docker compose up                                  # ClickHouse + Iceberg
-#   GRAFANA_VERSION=11.6.3 docker compose --profile full up
-#   docker compose --profile monitoring up             # + Prometheus & Grafana
-#   docker compose --profile tracing up                # + Tempo
-#   docker compose --profile full up                   # everything
+# Via docker compose directly (from the repository root, defaults to latest):
+#   docker compose -f infra/docker/docker-compose.yml up
 
 services:
   # MinIO — S3-compatible object storage for ClickHouse tiered storage
@@ -57,7 +53,7 @@ services:
       "
 
   clickhouse:
-    image: clickhouse:latest
+    image: "${CLICKHOUSE_IMAGE:-clickhouse/clickhouse-server:latest}"
     container_name: tracehouse-dev
     ports:
       # Native protocol port (used by clickhouse-driver)

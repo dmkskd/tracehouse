@@ -3,6 +3,10 @@ export { LineageService, LineageServiceError } from './lineage-service.js';
 export { QueryAnalyzer, QueryAnalysisError } from './query-analyzer.js';
 export type { QueryHistoryOptions, QueryDetail, SimilarQuery, SubQueryInfo, SettingDefault, QueryThreadBreakdown, ProfileEventComparison, MultiProfileEventRow } from './query-analyzer.js';
 export { InteractiveQueryService } from './interactive-query-service.js';
+export {
+  QueryExecutionAnalysisService,
+  QueryExecutionAnalysisError,
+} from './query-execution-analysis.js';
 export { ColumnCostService, ColumnCostServiceError } from './column-cost-service.js';
 export type { ColumnCost, ServerColumnCost, ServerProgress, ClientColumnCostResult, ServerColumnCostResult } from './column-cost-service.js';
 export { MetricsCollector, MetricsCollectionError } from './metrics-collector.js';

@@ -66,7 +66,7 @@ export class BrowserAdapter implements IClickHouseAdapter {
     await this.client.command({ query: sql, session_id: this.sessionIdFor(sql) });
   }
 
-  async executeRawQuery(sql: string, database?: string): Promise<string[]> {
+  async executeRawQuery(sql: string, database?: string, options?: QueryExecutionOptions): Promise<string[]> {
     try {
       // EXPLAIN and similar statements don't support FORMAT clauses.
       // client.query() always appends FORMAT, so we use exec() which
@@ -75,6 +75,7 @@ export class BrowserAdapter implements IClickHouseAdapter {
         query: sql,
         session_id: this.sessionIdFor(sql),
         ...(database ? { clickhouse_settings: { database } } : {}),
+        ...(options?.queryId ? { query_id: options.queryId } : {}),
       });
       const reader = stream.getReader();
       const decoder = new TextDecoder();

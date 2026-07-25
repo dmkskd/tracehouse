@@ -42,18 +42,34 @@ Simplest way to get started. Runs ClickHouse, Prometheus, and Grafana.
 
 ```bash
 # Start everything
-docker compose -f infra/docker/docker-compose.yml up
+just docker-start
 
 # Or background + app services
 just dev
 
 # Stop
-docker compose -f infra/docker/docker-compose.yml down
+just docker-stop
 ```
+
+The canonical server and Keeper images live in `infra/clickhouse.env`.
+Repository-managed `just` commands load that file automatically. Commands run
+directly with Docker Compose use `latest` unless an image is supplied.
+
+Override either full image for one command without editing tracked files:
+
+```bash
+CLICKHOUSE_IMAGE=clickhouse/clickhouse-server:23.8.16.40-alpine just test-clickhouse
+CLICKHOUSE_IMAGE=altinity/clickhouse-server:26.3.16.10001.altinitystable just test-clickhouse
+CLICKHOUSE_KEEPER_IMAGE=clickhouse/clickhouse-keeper:26.6.4 just k8s-start
+```
+
+`just clickhouse-images` prints the two effective references. Overrides are
+process-local; these commands do not rewrite the defaults or Kubernetes
+manifests.
 
 ### What's included
 
-- ClickHouse 26.1 with Prometheus metrics endpoint enabled
+- The ClickHouse version pinned in `infra/clickhouse.env`, with Prometheus metrics enabled
 - Prometheus scraping ClickHouse every 15s
 - Grafana with ClickHouse and Prometheus datasources auto-provisioned
 - Persistent volumes for data, logs, and Grafana state
@@ -62,6 +78,7 @@ docker compose -f infra/docker/docker-compose.yml down
 
 | Path | Description |
 |------|-------------|
+| `clickhouse.env` | Canonical ClickHouse server and Keeper images |
 | `docker/docker-compose.yml` | Service definitions |
 | `docker/clickhouse-config/prometheus.xml` | Enables ClickHouse `/metrics` endpoint on port 9363 |
 | `docker/prometheus/prometheus.yml` | Prometheus scrape config |

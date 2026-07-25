@@ -21,6 +21,18 @@ Directives are parsed by [`metaLanguage.ts`](./metaLanguage.ts); template placeh
 (`{{time_range}}`, `{{cluster_aware:…}}`, `{{drill_value:…}}`) are resolved by
 [`templateResolution.ts`](./templateResolution.ts).
 
+## Execution analysis
+
+On ClickHouse 26.7+, Query Explorer exposes a separate **Analyze** action backed by
+`QueryExecutionAnalysisService`. It runs the resolved SQL through `EXPLAIN ANALYZE`, so it
+requires explicit confirmation and is never part of preset auto-execution. The result stays
+as raw plan text so new server-side metrics remain visible without a frontend parser update.
+The optional processor detail reports min/median/max/sum timing per plan stage.
+
+Unlike ordinary `EXPLAIN`, this executes the wrapped `SELECT`, discards its result rows, and
+consumes the same CPU, memory, I/O, quotas, and limits as normal execution. ClickHouse does
+not currently support streaming reads or queries executed in distributed mode here.
+
 ## Recipe - add a dashboard
 
 ### 1. Write the queries - `queries/<group>.ts`

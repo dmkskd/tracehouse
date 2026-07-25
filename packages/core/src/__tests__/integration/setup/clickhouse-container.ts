@@ -13,18 +13,24 @@
 
 import { ClickHouseContainer, type StartedClickHouseContainer } from '@testcontainers/clickhouse';
 import { createClient, type ClickHouseClient } from '@clickhouse/client';
-import type { IClickHouseAdapter } from '../../../adapters/types.js';
+import type { IClickHouseAdapter, QueryExecutionOptions } from '../../../adapters/types.js';
 import { AdapterError } from '../../../adapters/types.js';
 import { ClusterAwareAdapter } from '../../../adapters/cluster-adapter.js';
 import { CH_IMAGE } from './constants.js';
 
 /** Thin adapter wrapping @clickhouse/client for integration tests. */
 export class TestAdapter implements IClickHouseAdapter {
+  readonly supportsExplicitQueryId = true;
+
   constructor(private client: ClickHouseClient) {}
 
-  async executeQuery<T extends Record<string, unknown>>(sql: string): Promise<T[]> {
+  async executeQuery<T extends Record<string, unknown>>(sql: string, options?: QueryExecutionOptions): Promise<T[]> {
     try {
-      const result = await this.client.query({ query: sql, format: 'JSONEachRow' });
+      const result = await this.client.query({
+        query: sql,
+        format: 'JSONEachRow',
+        ...(options?.queryId ? { query_id: options.queryId } : {}),
+      });
       return await result.json<T>();
     } catch (error) {
       const msg = error instanceof Error ? error.message : String(error);
@@ -34,6 +40,26 @@ export class TestAdapter implements IClickHouseAdapter {
 
   async executeCommand(sql: string): Promise<void> {
     await this.client.command({ query: sql });
+  }
+
+  async executeRawQuery(
+    sql: string,
+    database?: string,
+    options?: QueryExecutionOptions,
+  ): Promise<string[]> {
+    const { stream } = await this.client.exec({
+      query: sql,
+      ...(database ? { clickhouse_settings: { database } } : {}),
+      ...(options?.queryId ? { query_id: options.queryId } : {}),
+    });
+    const chunks: Buffer[] = [];
+    for await (const chunk of stream) {
+      chunks.push(Buffer.isBuffer(chunk) ? chunk : Buffer.from(chunk));
+    }
+    return Buffer.concat(chunks)
+      .toString('utf8')
+      .split('\n')
+      .filter(line => line !== '');
   }
 }
 

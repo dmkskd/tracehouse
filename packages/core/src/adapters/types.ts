@@ -56,5 +56,9 @@ export interface IClickHouseAdapter {
    * Optional — adapters that don't support it can omit this.
    * @param database - Optional database context to run the query in.
    */
-  executeRawQuery?(sql: string, database?: string): Promise<string[]>;
+  executeRawQuery?(
+    sql: string,
+    database?: string,
+    options?: QueryExecutionOptions,
+  ): Promise<string[]>;
 }

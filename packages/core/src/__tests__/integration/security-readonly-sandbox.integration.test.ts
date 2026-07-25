@@ -23,8 +23,8 @@ import { createClient, type ClickHouseClient } from '@clickhouse/client';
 import { readFileSync, readdirSync } from 'node:fs';
 import { resolve, dirname } from 'node:path';
 import { fileURLToPath } from 'node:url';
+import { CH_IMAGE } from './setup/constants.js';
 
-const CH_IMAGE = 'clickhouse/clickhouse-server:26.1-alpine';
 const CONTAINER_TIMEOUT = 120_000;
 const RO_PASSWORD = 'testpass';
 

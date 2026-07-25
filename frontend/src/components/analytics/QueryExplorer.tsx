@@ -11,7 +11,14 @@
 
 import React, { useState, useCallback, useMemo, useRef, useEffect } from 'react';
 import { useClickHouseServices } from '../../providers/ClickHouseProvider';
-import { randomUUID, sourceTag, TAB_ANALYTICS } from '@tracehouse/core';
+import {
+  EXPLAIN_ANALYZE_MIN_CLICKHOUSE_VERSION_LABEL,
+  isSelectStatement,
+  randomUUID,
+  sourceTag,
+  TAB_ANALYTICS,
+} from '@tracehouse/core';
+import { useQueryExecutionAnalysis } from '../../hooks/useQueryExecutionAnalysis';
 import { PRESET_QUERIES } from './presetQueries';
 import { type Query } from './types';
 import { formatClickHouseError } from '../../utils/errorFormatters';
@@ -28,6 +35,7 @@ import {
 import { LinkQueryModal } from './LinkQueryModal';
 import { PartInspector } from '../database/PartInspector';
 import { databaseApi } from '../../stores/databaseStore';
+import { useMonitoringCapabilitiesStore } from '../../stores/monitoringCapabilitiesStore';
 import type { PartDetailInfo, QuerySeries } from '@tracehouse/core';
 import {
   isNumericValue, formatCell,
@@ -47,6 +55,11 @@ import { useClusterStore } from '../../stores/clusterStore';
 import { ClusterService, type ChFunction } from '@tracehouse/core';
 import { toGrafanaPanel } from '@tracehouse/core/services/grafana-export';
 import type { AnalyticsUrlState } from '../../hooks/useUrlState';
+import {
+  ExecutionAnalysisDialog,
+  ExecutionAnalysisPanel,
+  ProcessorTimingOption,
+} from '../query/ExecutionAnalysis';
 
 /* ═══════════════════════════════════════════════════════════════════════════
    SQL Syntax Highlighting - imported from utils/sqlHighlighter
@@ -88,7 +101,7 @@ interface QueryResult {
   endedAt: string;
 }
 
-type ViewMode = 'table' | 'chart' | 'queries';
+type ViewMode = 'table' | 'chart' | 'queries' | 'analysis';
 
 interface DrillStackEntry {
   queryName: string;
@@ -116,6 +129,9 @@ interface QueryExplorerProps {
 export const QueryExplorer: React.FC<QueryExplorerProps> = ({ urlState, onUrlStateChange, onExportToGrafana, onOpenQueryDetail }) => {
   const services = useClickHouseServices();
   const { clusterName } = useClusterStore();
+  const hasExplainAnalyze = useMonitoringCapabilitiesStore(state => state.flags.hasExplainAnalyze);
+  const capabilityProbeStatus = useMonitoringCapabilitiesStore(state => state.probeStatus);
+  const capabilityServerVersion = useMonitoringCapabilitiesStore(state => state.capabilities?.serverVersion);
   const [customQueries, setCustomQueries] = useState<Query[]>(() => loadCustomQueries());
   const allQueries = useMemo(() => [...PRESET_QUERIES, ...customQueries], [customQueries]);
   const allQueryEntries = useMemo(() => allQueries.map(q => ({
@@ -133,6 +149,16 @@ export const QueryExplorer: React.FC<QueryExplorerProps> = ({ urlState, onUrlSta
   const [result, setResult] = useState<QueryResult | null>(null);
   const [isRunning, setIsRunning] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [showAnalysisDialog, setShowAnalysisDialog] = useState(false);
+  const [includeProcessorTimings, setIncludeProcessorTimings] = useState(false);
+  const {
+    analyze: analyzeExecution,
+    reset: resetExecutionAnalysis,
+    result: analysisResult,
+    requestDurationMs: analysisRequestDuration,
+    isAnalyzing,
+    error: analysisError,
+  } = useQueryExecutionAnalysis();
   const [viewMode, setViewMode] = useState<ViewMode>(initialView);
   const [sidebarCollapsed, setSidebarCollapsed] = useState(false);
   const [editorHeight, setEditorHeight] = useState(240);
@@ -178,6 +204,10 @@ export const QueryExplorer: React.FC<QueryExplorerProps> = ({ urlState, onUrlSta
     resolved = ClusterService.resolveTableRefs(resolved, clusterName);
     return resolved;
   }, [sql, allQueries, timeRangeOverride, currentDrillParams, clusterName]);
+  const isExplainAnalyzeEligible = useMemo(
+    () => isSelectStatement(resolvedSql),
+    [resolvedSql],
+  );
 
   /** Sync current explorer state to URL */
   const syncUrl = useCallback((sqlText: string, view: ViewMode, chart: ChartConfig, fs?: boolean) => {
@@ -186,7 +216,7 @@ export const QueryExplorer: React.FC<QueryExplorerProps> = ({ urlState, onUrlSta
     onUrlStateChange({
       preset: presetIdx >= 0 ? presetIdx : undefined,
       sql: presetIdx < 0 ? sqlText : undefined,
-      view: view !== 'table' ? view : undefined,
+      view: view === 'chart' || view === 'queries' ? view : undefined,
       chart: view === 'chart' ? chart.type : undefined,
       group_by: view === 'chart' ? chart.groupByColumn : undefined,
       value: view === 'chart' ? chart.valueColumn : undefined,
@@ -204,6 +234,7 @@ export const QueryExplorer: React.FC<QueryExplorerProps> = ({ urlState, onUrlSta
     setIsRunning(true);
     setError(null);
     setResult(null);
+    resetExecutionAnalysis();
     setSortConfig(null);
     const t0 = performance.now();
     const startedAt = new Date().toISOString();
@@ -280,7 +311,38 @@ export const QueryExplorer: React.FC<QueryExplorerProps> = ({ urlState, onUrlSta
     } finally {
       setIsRunning(false);
     }
-  }, [services, sql, chartConfig, syncUrl, timeRangeOverride, allQueries, drillStack]);
+  }, [
+    services,
+    sql,
+    chartConfig,
+    syncUrl,
+    timeRangeOverride,
+    allQueries,
+    drillStack,
+    resetExecutionAnalysis,
+  ]);
+
+  const runExecutionAnalysis = useCallback(async () => {
+    if (!resolvedSql.trim() || !hasExplainAnalyze || !isExplainAnalyzeEligible) return;
+
+    setShowAnalysisDialog(false);
+    setError(null);
+    setResult(null);
+    setSortConfig(null);
+    setViewMode('analysis');
+
+    await analyzeExecution({
+      query: resolvedSql,
+      source: sourceTag(TAB_ANALYTICS, 'queryExecutionAnalysis'),
+      processors: includeProcessorTimings,
+    });
+  }, [
+    analyzeExecution,
+    hasExplainAnalyze,
+    includeProcessorTimings,
+    isExplainAnalyzeEligible,
+    resolvedSql,
+  ]);
 
   const selectPreset = useCallback((p: Query) => {
     setSql(p.sql);
@@ -288,13 +350,14 @@ export const QueryExplorer: React.FC<QueryExplorerProps> = ({ urlState, onUrlSta
     setRootQueryName(p.name);
     setDrillStack([]);
     setResult(null);
+    resetExecutionAnalysis();
     setError(null);
     setSortConfig(null);
     setViewMode('table');
     setChartConfig({ type: 'bar', groupByColumn: '', valueColumn: '', seriesColumn: undefined, orientation: undefined, visualization: '2d' });
     // auto-run
     setTimeout(() => runQuery(p.sql), 0);
-  }, [runQuery]);
+  }, [resetExecutionAnalysis, runQuery]);
 
   // Track which query is currently loaded
   const [activeQueryName, setActiveQueryName] = useState<string | null>(
@@ -560,13 +623,18 @@ export const QueryExplorer: React.FC<QueryExplorerProps> = ({ urlState, onUrlSta
     return styles.length > 0 ? styles : undefined;
   }, [sql]);
 
+  // Execution analysis is a transient result surface, not a Grafana-export
+  // visualization. Keep the export boundary on its existing view-mode domain.
+  const grafanaViewMode: 'table' | 'chart' | 'queries' =
+    viewMode === 'analysis' ? 'table' : viewMode;
+
   const grafanaExport = useGrafanaExport({
     sql,
     clusterName,
     drillParams: currentDrillParams,
     activeQueryName: activeQueryName ?? undefined,
     currentQuery,
-    viewMode,
+    viewMode: grafanaViewMode,
     chartConfig,
     result,
     cellStyles: activeCellStyles,
@@ -597,6 +665,17 @@ export const QueryExplorer: React.FC<QueryExplorerProps> = ({ urlState, onUrlSta
     }
     return result.columns.some(c => result.rows.some(r => isNumericValue(r[c])));
   }, [result, chartConfig]);
+
+  const executionAnalysisTitle = !isExplainAnalyzeEligible
+    ? 'EXPLAIN ANALYZE is only available for SELECT queries'
+    : capabilityProbeStatus === 'probing'
+      ? 'Detecting EXPLAIN ANALYZE support…'
+      : hasExplainAnalyze
+        ? 'Execute the resolved SELECT and inspect measured runtime metrics'
+        : capabilityProbeStatus === 'done'
+          ? `EXPLAIN ANALYZE requires ClickHouse ${EXPLAIN_ANALYZE_MIN_CLICKHOUSE_VERSION_LABEL}+ (connected: ${capabilityServerVersion ?? 'unknown'})`
+          : 'EXPLAIN ANALYZE capability is unavailable';
+  const displayError = analysisError ?? error;
 
   /* ── sorted rows ── */
   const sortedRows = useMemo(() => {
@@ -748,8 +827,33 @@ export const QueryExplorer: React.FC<QueryExplorerProps> = ({ urlState, onUrlSta
                 title="Create a new custom query from a template">
                 + New
               </button>
-              <button className="btn btn-primary" onClick={() => runQuery()} disabled={isRunning || !services}
-                style={{ padding: '4px 12px', fontSize: 12, cursor: isRunning ? 'not-allowed' : 'pointer', opacity: isRunning ? 0.6 : 1 }}>
+              {hasExplainAnalyze && isExplainAnalyzeEligible && (
+                <ProcessorTimingOption
+                  checked={includeProcessorTimings}
+                  onChange={setIncludeProcessorTimings}
+                  compact
+                />
+              )}
+              <button
+                onClick={() => setShowAnalysisDialog(true)}
+                disabled={isRunning || isAnalyzing || !services || !hasExplainAnalyze || !isExplainAnalyzeEligible}
+                title={executionAnalysisTitle}
+                style={{
+                  padding: '4px 12px',
+                  fontSize: 12,
+                  cursor: isRunning || isAnalyzing || !hasExplainAnalyze || !isExplainAnalyzeEligible ? 'not-allowed' : 'pointer',
+                  opacity: hasExplainAnalyze && isExplainAnalyzeEligible && !isRunning && !isAnalyzing ? 1 : 0.45,
+                  background: 'rgba(var(--color-warning-rgb), 0.08)',
+                  border: '1px solid rgba(var(--color-warning-rgb), 0.35)',
+                  borderRadius: 4,
+                  color: 'var(--color-warning)',
+                  fontWeight: 500,
+                }}
+              >
+                ◉ Analyze
+              </button>
+              <button className="btn btn-primary" onClick={() => runQuery()} disabled={isRunning || isAnalyzing || !services}
+                style={{ padding: '4px 12px', fontSize: 12, cursor: isRunning || isAnalyzing ? 'not-allowed' : 'pointer', opacity: isRunning || isAnalyzing ? 0.6 : 1 }}>
                 {isRunning ? 'Running…' : '▶ Run Query'}
               </button>
             </div>
@@ -775,8 +879,8 @@ export const QueryExplorer: React.FC<QueryExplorerProps> = ({ urlState, onUrlSta
 
         {/* Results */}
         <div style={{ flex: 1, position: 'relative', minHeight: 0, display: 'flex', flexDirection: 'column', overflow: 'hidden' }}>
-          {error && (() => {
-            const fmt = formatClickHouseError(error);
+          {displayError && (() => {
+            const fmt = formatClickHouseError(displayError);
             return (
               <div style={{
                 padding: '10px 16px', fontSize: 12, flexShrink: 0,
@@ -785,7 +889,7 @@ export const QueryExplorer: React.FC<QueryExplorerProps> = ({ urlState, onUrlSta
                   ? { background: 'rgba(210,153,34,0.08)', color: '#d29922', borderBottomColor: 'rgba(210,153,34,0.2)' }
                   : { background: 'rgba(248,81,73,0.08)', color: '#f85149', borderBottomColor: 'rgba(248,81,73,0.2)' }),
               }}
-              title={error}>
+              title={displayError}>
                 {fmt.message}
               </div>
             );
@@ -793,6 +897,13 @@ export const QueryExplorer: React.FC<QueryExplorerProps> = ({ urlState, onUrlSta
 
           {/* Queries Grid View */}
           {viewMode === 'queries' && <QueriesGrid search={querySearch} onSearchChange={setQuerySearch} onSelect={p => { selectPreset(p); setQuerySearch(''); }} customQueries={customQueries} onDeleteCustom={handleDeleteCustomQuery} />}
+
+          {analysisResult && viewMode === 'analysis' && (
+            <ExecutionAnalysisPanel
+              result={analysisResult}
+              requestDurationMs={analysisRequestDuration}
+            />
+          )}
 
           {/* Results header */}
           {result && viewMode !== 'queries' && (
@@ -1052,7 +1163,7 @@ export const QueryExplorer: React.FC<QueryExplorerProps> = ({ urlState, onUrlSta
           )}
 
           {/* Placeholder */}
-          {!result && !error && !isRunning && viewMode !== 'queries' && (
+          {!result && !analysisResult && !displayError && !isRunning && !isAnalyzing && viewMode !== 'queries' && (
             <div style={{ flex: 1, display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', gap: 8, color: 'var(--text-muted)' }}>
               <span style={{ fontSize: 13 }}>Select a preset query or write your own SQL</span>
               <span style={{ fontSize: 11 }}>Press <code style={{ background: 'rgba(255,255,255,0.05)', padding: '2px 6px', borderRadius: 4 }}>⌘ Enter</code> to run</span>
@@ -1062,6 +1173,12 @@ export const QueryExplorer: React.FC<QueryExplorerProps> = ({ urlState, onUrlSta
           {isRunning && (
             <div style={{ flex: 1, display: 'flex', alignItems: 'center', justifyContent: 'center', color: 'var(--text-muted)', fontSize: 13 }}>
               Running query…
+            </div>
+          )}
+          {isAnalyzing && (
+            <div style={{ flex: 1, display: 'flex', flexDirection: 'column', gap: 7, alignItems: 'center', justifyContent: 'center', color: 'var(--text-muted)', fontSize: 13 }}>
+              <span>Executing query and collecting runtime plan…</span>
+              <span style={{ color: '#d29922', fontSize: 10 }}>The query is running on ClickHouse</span>
             </div>
           )}
         </div>
@@ -1088,7 +1205,7 @@ export const QueryExplorer: React.FC<QueryExplorerProps> = ({ urlState, onUrlSta
           panelSummary={grafanaExport.panelSummary}
           jsonPreview={grafanaExport.jsonPreview}
           showJsonPreview={grafanaExport.showJsonPreview}
-          viewMode={viewMode}
+          viewMode={grafanaViewMode}
           chartType={chartConfig.type}
           onOptionsChange={grafanaExport.setOptions}
           onJsonPreviewToggle={grafanaExport.setShowJsonPreview}
@@ -1114,6 +1231,12 @@ export const QueryExplorer: React.FC<QueryExplorerProps> = ({ urlState, onUrlSta
           database={partLinkTarget.database}
           table={partLinkTarget.table}
           zIndex={100000}
+        />
+      )}
+      {showAnalysisDialog && (
+        <ExecutionAnalysisDialog
+          onConfirm={runExecutionAnalysis}
+          onCancel={() => setShowAnalysisDialog(false)}
         />
       )}
     </div>

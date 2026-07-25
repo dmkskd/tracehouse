@@ -29,7 +29,7 @@ export class GrafanaAdapter implements IClickHouseAdapter {
     }
   }
 
-  async executeRawQuery(sql: string, _database?: string): Promise<string[]> {
+  async executeRawQuery(sql: string, _database?: string, _options?: QueryExecutionOptions): Promise<string[]> {
     try {
       const rows = await this.executeQuery<Record<string, unknown>>(
         tagQuery(sql, sourceTag(TAB_INTERNAL, 'grafanaRawQuery')),

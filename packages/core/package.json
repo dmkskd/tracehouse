@@ -33,6 +33,10 @@
       "import": "./dist/services/database-explorer.js",
       "types": "./dist/services/database-explorer.d.ts"
     },
+    "./services/query-execution-analysis": {
+      "import": "./dist/services/query-execution-analysis.js",
+      "types": "./dist/services/query-execution-analysis.d.ts"
+    },
     "./services/merge-tracker": {
       "import": "./dist/services/merge-tracker.js",
       "types": "./dist/services/merge-tracker.d.ts"

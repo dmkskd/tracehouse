@@ -16,13 +16,13 @@ import pytest
 from clickhouse_driver import Client
 from testcontainers.clickhouse import ClickHouseContainer
 
-CH_IMAGE = "clickhouse/clickhouse-server:26.1-alpine"
+from clickhouse_image import CLICKHOUSE_IMAGE
 
 
 @pytest.fixture(scope="session")
 def clickhouse() -> Generator[ClickHouseContainer]:
     """Start a ClickHouse container once for the whole test session."""
-    with ClickHouseContainer(CH_IMAGE) as ch:
+    with ClickHouseContainer(CLICKHOUSE_IMAGE) as ch:
         yield ch
 
 

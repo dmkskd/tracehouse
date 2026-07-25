@@ -7,6 +7,9 @@
  * tables, settings, or server-side configuration.
  */
 
+import { isClickHouseVersionAtLeast } from '../utils/clickhouse-version.js';
+import { EXPLAIN_ANALYZE_MIN_CLICKHOUSE_VERSION } from './execution-analysis.js';
+
 /** Individual capability with its detection result */
 export interface MonitoringCapability {
   /** Machine-readable key */
@@ -62,6 +65,8 @@ export interface MonitoringFlags {
   hasCPUProfilerActive: boolean;
   /** ClickStack (HyperDX) embedded UI available at /clickstack/ (CH 26.2+) */
   hasClickStack: boolean;
+  /** Runtime query-plan analysis via EXPLAIN ANALYZE (CH 26.7+) */
+  hasExplainAnalyze: boolean;
   /** Connected to ClickHouse Cloud (some OS-level metrics unavailable) */
   isCloudService: boolean;
   /** tracehouse.processes_history exists (live process sampling via refreshable MV) */
@@ -84,20 +89,9 @@ export interface MonitoringFlags {
   hasSystemProcesses: boolean;
 }
 
-/**
- * Parse a ClickHouse version string (e.g. "26.2.1.123") into [major, minor].
- * Returns [0, 0] if parsing fails.
- */
-function parseVersionMajorMinor(version: string): [number, number] {
-  const match = version.match(/^(\d+)\.(\d+)/);
-  if (!match) return [0, 0];
-  return [parseInt(match[1], 10), parseInt(match[2], 10)];
-}
-
 /** Derive flags from capabilities array */
 export function deriveMonitoringFlags(capabilities: MonitoringCapability[], serverVersion?: string): MonitoringFlags {
   const has = (id: string) => capabilities.find(c => c.id === id)?.available ?? false;
-  const [major, minor] = parseVersionMajorMinor(serverVersion ?? '');
   return {
     hasTextLog: has('text_log'),
     hasQueryLog: has('query_log'),
@@ -116,7 +110,12 @@ export function deriveMonitoringFlags(capabilities: MonitoringCapability[], serv
     hasBlobStorageLog: has('blob_storage_log'),
     hasIntrospectionFunctions: has('introspection_functions'),
     hasCPUProfilerActive: has('cpu_profiler_active'),
-    hasClickStack: has('clickstack') || (major > 26 || (major === 26 && minor >= 2)),
+    hasClickStack: has('clickstack') || isClickHouseVersionAtLeast(serverVersion ?? '', 26, 2),
+    hasExplainAnalyze: has('explain_analyze') || isClickHouseVersionAtLeast(
+      serverVersion ?? '',
+      EXPLAIN_ANALYZE_MIN_CLICKHOUSE_VERSION.major,
+      EXPLAIN_ANALYZE_MIN_CLICKHOUSE_VERSION.minor,
+    ),
     isCloudService: has('cloud_service'),
     hasProcessesHistory: has('tracehouse_processes_history'),
     hasMergesHistory: has('tracehouse_merges_history'),

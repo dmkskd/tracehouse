@@ -6,6 +6,7 @@ export * from './lineage.js';
 export * from './connection.js';
 export * from './timeline.js';
 export * from './trace.js';
+export * from './execution-analysis.js';
 export * from './overview.js';
 export * from './engine-internals.js';
 export * from './monitoring-capabilities.js';

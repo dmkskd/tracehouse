@@ -21,7 +21,7 @@ services:
         condition: service_healthy
 
   clickhouse:
-    image: clickhouse/clickhouse-server:latest
+    image: "${CLICKHOUSE_IMAGE:-clickhouse/clickhouse-server:latest}"
     pull_policy: always
     ports:
       - "${CLICKHOUSE_TEST_HTTP_PORT:-8124}:8123"

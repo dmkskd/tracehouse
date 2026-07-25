@@ -13,7 +13,8 @@ import { execSync, execFileSync } from 'node:child_process';
 import fs from 'node:fs';
 import path from 'node:path';
 
-const CH_IMAGE = 'clickhouse/clickhouse-server:26.3-alpine';
+const CH_IMAGE =
+  process.env.CLICKHOUSE_IMAGE ?? 'clickhouse/clickhouse-server:latest';
 const CONTAINER_NAME = 'tracehouse-e2e-clickhouse';
 const STATE_FILE = path.join(import.meta.dirname, '.ch-state.json');
 

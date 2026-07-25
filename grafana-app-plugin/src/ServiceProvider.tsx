@@ -10,6 +10,7 @@ import { MergeTracker } from '@tracehouse/core/services/merge-tracker';
 import { MetricsCollector } from '@tracehouse/core/services/metrics-collector';
 import { QueryAnalyzer } from '@tracehouse/core/services/query-analyzer';
 import { InteractiveQueryService } from '@tracehouse/core/services/interactive-query-service';
+import { QueryExecutionAnalysisService } from '@tracehouse/core/services/query-execution-analysis';
 import { ColumnCostService } from '@tracehouse/core/services/column-cost-service';
 import { TimelineService } from '@tracehouse/core/services/timeline-service';
 import { TraceService } from '@tracehouse/core/services/trace-service';
@@ -168,6 +169,7 @@ export function ServiceProvider({ children }: { children: React.ReactNode }) {
         metricsCollector: new MetricsCollector(adapter),
         queryAnalyzer: new QueryAnalyzer(adapter, envDetector),
         interactiveQueryService: new InteractiveQueryService(adapter),
+        queryExecutionAnalysisService: new QueryExecutionAnalysisService(adapter),
         columnCostService: new ColumnCostService(adapter),
         timelineService: new TimelineService(adapter),
         traceService: new TraceService(adapter),

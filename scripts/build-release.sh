@@ -118,7 +118,7 @@ echo "  → release/${ARCHIVE_NAME}.tar.gz"
 echo ""
 echo "=== Building Docker quickstart image ==="
 cd "$ROOT"
-docker compose -f infra/quickstart/docker-compose.yml build
+docker compose --env-file infra/clickhouse.env -f infra/quickstart/docker-compose.yml build
 echo "  ✓ Docker quickstart image built"
 
 # ── Summary ─────────────────────────────────────────────────────

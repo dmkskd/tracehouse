@@ -85,11 +85,14 @@ export class ProxyAdapter implements IClickHouseAdapter {
     }
   }
 
-  async executeRawQuery(sql: string, database?: string): Promise<string[]> {
+  async executeRawQuery(sql: string, database?: string, options?: QueryExecutionOptions): Promise<string[]> {
     try {
-      const headers = database
+      let headers = database
         ? { ...this.headers, 'x-ch-database': database }
         : this.headers;
+      if (options?.queryId) {
+        headers = { ...headers, 'x-ch-query-id': options.queryId };
+      }
       const resp = await fetch(`${this.proxyUrl}/query`, {
         method: 'POST',
         headers,

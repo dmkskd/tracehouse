@@ -15,6 +15,7 @@ import type {
   DatabaseExplorer,
   QueryAnalyzer,
   InteractiveQueryService,
+  QueryExecutionAnalysisService,
   ColumnCostService,
   MetricsCollector,
   MergeTracker,
@@ -30,6 +31,7 @@ export interface ClickHouseServices {
   databaseExplorer: DatabaseExplorer;
   queryAnalyzer: QueryAnalyzer;
   interactiveQueryService: InteractiveQueryService;
+  queryExecutionAnalysisService: QueryExecutionAnalysisService;
   columnCostService: ColumnCostService;
   metricsCollector: MetricsCollector;
   mergeTracker: MergeTracker;

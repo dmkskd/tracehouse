@@ -51,12 +51,13 @@ export class HttpAdapter implements IClickHouseAdapter {
     await this.client.close();
   }
 
-  async executeRawQuery(sql: string, database?: string): Promise<string[]> {
+  async executeRawQuery(sql: string, database?: string, options?: QueryExecutionOptions): Promise<string[]> {
     try {
       const { stream } = await this.client.exec({
         query: sql,
         session_id: this.sessionIdFor(sql),
         ...(database ? { clickhouse_settings: { database } } : {}),
+        ...(options?.queryId ? { query_id: options.queryId } : {}),
       });
       const chunks: Buffer[] = [];
       for await (const chunk of stream) {

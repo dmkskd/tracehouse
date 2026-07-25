@@ -13,7 +13,7 @@ from clickhouse_driver import Client
 from testcontainers.core.container import DockerContainer
 from testcontainers.core.network import Network
 
-CH_IMAGE = "clickhouse/clickhouse-server:26.1-alpine"
+from clickhouse_image import CLICKHOUSE_IMAGE
 
 # Override default-password.xml to allow passwordless login.
 # Recent CH images auto-generate a random password; this disables that.
@@ -127,13 +127,13 @@ def start_cluster() -> ClusterContext:
     network.create()
 
     keeper = _start_container(
-        CH_IMAGE, network, "keeper", KEEPER_CONFIG,
+        CLICKHOUSE_IMAGE, network, "keeper", KEEPER_CONFIG,
         config_filename="keeper.xml",
         exposed_ports=(8123, 9181),
     )
 
-    ch1 = _start_container(CH_IMAGE, network, "ch1", _ch_config("ch1", "01", "ch1"))
-    ch2 = _start_container(CH_IMAGE, network, "ch2", _ch_config("ch2", "02", "ch2"))
+    ch1 = _start_container(CLICKHOUSE_IMAGE, network, "ch1", _ch_config("ch1", "01", "ch1"))
+    ch2 = _start_container(CLICKHOUSE_IMAGE, network, "ch2", _ch_config("ch2", "02", "ch2"))
 
     client1 = Client(host=ch1.get_container_host_ip(), port=int(ch1.get_exposed_port(9000)))
     client2 = Client(host=ch2.get_container_host_ip(), port=int(ch2.get_exposed_port(9000)))

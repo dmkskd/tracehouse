@@ -1,5 +1,9 @@
 # TraceHouse - Development Commands
 
+# Repository-managed commands use the canonical ClickHouse images from here.
+# Explicit environment variables take precedence over values in the file.
+set dotenv-path := "infra/clickhouse.env"
+
 # Default: show available commands
 default:
     @just --list --unsorted
@@ -422,6 +426,22 @@ test-core:
 [group('test')]
 test-core-integration:
     cd packages/core && npx vitest run --config vitest.integration.config.ts
+
+# Run proxy integration tests (requires Docker)
+[group('test')]
+test-proxy-integration:
+    cd packages/proxy && npx vitest run --config vitest.integration.config.ts
+
+# Run all ClickHouse-backed integration suites with the shared image.
+# Override without changing files:
+#   CLICKHOUSE_IMAGE=clickhouse/clickhouse-server:23.8.16.40-alpine just test-clickhouse
+[group('test')]
+test-clickhouse: test-core-integration test-proxy-integration test-data-utils
+
+# Show the effective server and Keeper images loaded by just.
+[group('test')]
+clickhouse-images:
+    @printf 'CLICKHOUSE_IMAGE=%s\nCLICKHOUSE_KEEPER_IMAGE=%s\n' "$CLICKHOUSE_IMAGE" "$CLICKHOUSE_KEEPER_IMAGE"
 
 # Run only tests matching a domain tag (e.g. just test-tag security)
 [group('test')]

@@ -18,7 +18,8 @@ import type { Server } from 'http';
 import type { AddressInfo } from 'net';
 import { createApp } from '../index.js';
 
-const CH_IMAGE = 'clickhouse/clickhouse-server:26.1-alpine';
+const CH_IMAGE =
+  process.env.CLICKHOUSE_IMAGE ?? 'clickhouse/clickhouse-server:latest';
 const CONTAINER_TIMEOUT = 120_000;
 
 // Filled in beforeAll (alongside chHost/chPort)

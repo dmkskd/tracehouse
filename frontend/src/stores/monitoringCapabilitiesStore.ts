@@ -57,6 +57,7 @@ const EMPTY_FLAGS: MonitoringFlags = {
   hasIntrospectionFunctions: false,
   hasCPUProfilerActive: false,
   hasClickStack: false,
+  hasExplainAnalyze: false,
   isCloudService: false,
   hasProcessesHistory: false,
   hasMergesHistory: false,

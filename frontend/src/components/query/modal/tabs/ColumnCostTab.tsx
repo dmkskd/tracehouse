@@ -13,6 +13,7 @@ import React, { useState, useCallback, useMemo, useEffect } from 'react';
 import type { QueryDetail, ColumnCost, ServerColumnCost, ServerProgress } from '@tracehouse/core';
 import { useClickHouseServices } from '../../../../providers/ClickHouseProvider';
 import { useClusterStore } from '../../../../stores/clusterStore';
+import { AnalysisRunButton } from '../../ExecutionAnalysis';
 
 /* ------------------------------------------------------------------ */
 /*  Helpers                                                            */
@@ -48,25 +49,6 @@ const WARNING_BOX: React.CSSProperties = {
   fontSize: 12,
   color: 'var(--text-secondary)',
   lineHeight: 1.5,
-};
-
-const RUN_BTN: React.CSSProperties = {
-  fontFamily: 'monospace',
-  fontSize: 11,
-  padding: '8px 18px',
-  borderRadius: 6,
-  border: '1px solid rgba(88, 166, 255, 0.3)',
-  background: 'rgba(88, 166, 255, 0.1)',
-  color: '#58a6ff',
-  cursor: 'pointer',
-  letterSpacing: '0.5px',
-  transition: 'all 0.15s ease',
-};
-
-const RUN_BTN_DISABLED: React.CSSProperties = {
-  ...RUN_BTN,
-  opacity: 0.5,
-  cursor: 'not-allowed',
 };
 
 const BAR_CONTAINER: React.CSSProperties = {
@@ -125,15 +107,12 @@ const SectionHeader: React.FC<{
       <div style={{ fontSize: 11, color: 'var(--text-muted)', lineHeight: 1.4 }}>{subtitle}</div>
       {error && <div style={{ fontSize: 11, color: '#f85149', marginTop: 6 }}>{error}</div>}
     </div>
-    <button
+    <AnalysisRunButton
       onClick={onRun}
-      disabled={isRunning}
-      style={isRunning ? RUN_BTN_DISABLED : RUN_BTN}
-      onMouseEnter={(e) => { if (!isRunning) { e.currentTarget.style.background = 'rgba(88, 166, 255, 0.2)'; } }}
-      onMouseLeave={(e) => { if (!isRunning) { e.currentTarget.style.background = 'rgba(88, 166, 255, 0.1)'; } }}
-    >
-      {isRunning ? 'Running...' : hasResults ? 'Re-run' : 'Run Analysis'}
-    </button>
+      isRunning={isRunning}
+      label={hasResults ? 'Re-run' : 'Run analysis'}
+      runningLabel="Running…"
+    />
   </div>
 );
 

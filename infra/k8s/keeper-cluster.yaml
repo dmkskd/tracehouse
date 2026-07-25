@@ -19,6 +19,9 @@ spec:
   
   # Resource limits for development
   containerTemplate:
+    image:
+      repository: clickhouse/clickhouse-keeper
+      tag: "26.7.1"
     resources:
       requests:
         cpu: "100m"

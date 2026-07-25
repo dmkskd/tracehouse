@@ -24,6 +24,11 @@ import {
 import { tagQuery } from '../queries/builder.js';
 import { TAB_INTERNAL, sourceTag } from '../queries/source-tags.js';
 import { parseTTL } from '../utils/ttl-parser.js';
+import { isClickHouseVersionAtLeast } from '../utils/clickhouse-version.js';
+import {
+  EXPLAIN_ANALYZE_MIN_CLICKHOUSE_VERSION,
+  EXPLAIN_ANALYZE_MIN_CLICKHOUSE_VERSION_LABEL,
+} from '../types/execution-analysis.js';
 
 export class MonitoringCapabilitiesServiceError extends Error {
   constructor(message: string, public readonly cause?: Error) {
@@ -307,8 +312,7 @@ export class MonitoringCapabilitiesService {
     });
 
     // ClickStack (HyperDX) embedded log viewer — available in CH 26.2+
-    const [major, minor] = this.parseVersion(version);
-    const hasClickStack = major > 26 || (major === 26 && minor >= 2);
+    const hasClickStack = isClickHouseVersionAtLeast(version, 26, 2);
     capabilities.push({
       id: 'clickstack',
       label: 'ClickStack',
@@ -319,6 +323,25 @@ export class MonitoringCapabilitiesService {
         ? `Available (v${version})`
         : `Requires ClickHouse 26.2+ (current: v${version})`,
       source: 'server version ≥ 26.2',
+    });
+
+    // EXPLAIN ANALYZE — available in CH 26.7+. This is version-derived rather
+    // than functionally probed because even a probe executes its wrapped query.
+    const hasExplainAnalyze = isClickHouseVersionAtLeast(
+      version,
+      EXPLAIN_ANALYZE_MIN_CLICKHOUSE_VERSION.major,
+      EXPLAIN_ANALYZE_MIN_CLICKHOUSE_VERSION.minor,
+    );
+    capabilities.push({
+      id: 'explain_analyze',
+      label: 'EXPLAIN ANALYZE',
+      description: 'Executes a SELECT and annotates its query plan with measured runtime, I/O, memory, timing, and parallelism.',
+      available: hasExplainAnalyze,
+      category: 'profiling',
+      detail: hasExplainAnalyze
+        ? `Available (v${version})`
+        : `Requires ClickHouse ${EXPLAIN_ANALYZE_MIN_CLICKHOUSE_VERSION_LABEL}+ (current: v${version})`,
+      source: `server version ≥ ${EXPLAIN_ANALYZE_MIN_CLICKHOUSE_VERSION_LABEL}`,
     });
 
     // ClickHouse Cloud detection — affects feature availability
@@ -671,12 +694,6 @@ export class MonitoringCapabilitiesService {
       }
     }
     return accessible;
-  }
-
-  private parseVersion(version: string): [number, number] {
-    const match = version.match(/^(\d+)\.(\d+)/);
-    if (!match) return [0, 0];
-    return [parseInt(match[1], 10), parseInt(match[2], 10)];
   }
 
   /**

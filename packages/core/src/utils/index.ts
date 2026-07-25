@@ -18,6 +18,9 @@ export {
 } from './merge-classification.js';
 export type { MergeCategory, MergeCategoryInfo, MutationSubtype, MutationSubtypeInfo } from './merge-classification.js';
 export { parseTimeValue } from './time.js';
+export { parseClickHouseVersion, isClickHouseVersionAtLeast } from './clickhouse-version.js';
+export type { ClickHouseVersion } from './clickhouse-version.js';
+export { leadingSqlKeyword, isSelectStatement } from './sql-statement.js';
 export { parseTTL, formatTTLDuration } from './ttl-parser.js';
 export { parsePartName, getLevelFromName, isMergedPart, isMutatedPart, stripMutationVersion, getPartLevelGroupKey, MUTATION_GROUP_KEY } from './part-name-parser.js';
 export { parseVerticalMergeProgress } from './vertical-merge-progress.js';

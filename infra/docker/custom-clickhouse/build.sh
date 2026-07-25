@@ -3,11 +3,15 @@ set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 IMAGE_NAME="${1:-custom-clickhouse:latest}"
+CLICKHOUSE_BUILD_ARGS=()
+if [[ -n "${CLICKHOUSE_IMAGE:-}" ]]; then
+  CLICKHOUSE_BUILD_ARGS+=(--build-arg "CLICKHOUSE_IMAGE=$CLICKHOUSE_IMAGE")
+fi
 
 # Mode 1: Pre-compiled binary exists — just swap it into the official image
 if [ -f "$SCRIPT_DIR/clickhouse" ]; then
   echo "Found local binary — building image with pre-compiled clickhouse..."
-  docker build -t "$IMAGE_NAME" "$SCRIPT_DIR"
+  docker build "${CLICKHOUSE_BUILD_ARGS[@]}" -t "$IMAGE_NAME" "$SCRIPT_DIR"
   echo "Done: $IMAGE_NAME"
   exit 0
 fi
@@ -32,6 +36,7 @@ fi
 echo "Building ClickHouse from source at $CH_SOURCE (this will take a while)..."
 docker build \
   -f "$SCRIPT_DIR/Dockerfile.build" \
+  "${CLICKHOUSE_BUILD_ARGS[@]}" \
   -t "$IMAGE_NAME" \
   "$CH_SOURCE"
 

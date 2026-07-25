@@ -16,6 +16,12 @@ docker compose up
 
 Open [http://localhost:8990](http://localhost:8990) - the connection form is pre-filled, just click Connect.
 
+To try another ClickHouse release without editing files:
+
+```bash
+CLICKHOUSE_IMAGE=clickhouse/clickhouse-server:23.8.16.40-alpine docker compose up
+```
+
 ## Development Setup
 
 For working on the code. Requires Node.js 18+, [just](https://github.com/casey/just), and optionally Docker.
