@@ -1,4 +1,4 @@
-import React, { useCallback, useEffect, useMemo, useState } from 'react';
+import React, { useCallback, useMemo, useState } from 'react';
 import {
   EXPLAIN_ANALYZE_MIN_CLICKHOUSE_VERSION_LABEL,
   sourceTag,
@@ -6,6 +6,7 @@ import {
   type QueryDetail,
 } from '@tracehouse/core';
 import { useMonitoringCapabilitiesStore } from '../../../../stores/monitoringCapabilitiesStore';
+import { useConnectionStore } from '../../../../stores/connectionStore';
 import { useQueryExecutionAnalysis } from '../../../../hooks/useQueryExecutionAnalysis';
 import {
   AnalysisRunButton,
@@ -17,6 +18,8 @@ import {
 } from '../../ExecutionAnalysis';
 import {
   EXPLAIN_ANALYZE_DOCS_URL,
+  executionAnalysisSessionKey,
+  executionAnalysisSql,
   getPreviousExecutionMetrics,
 } from '../../executionAnalysisModel';
 
@@ -51,9 +54,17 @@ export const RuntimeAnalysisTab: React.FC<RuntimeAnalysisTabProps> = ({
     state => state.capabilities?.capabilities.find(capability => capability.id === 'explain_analyze'),
   );
   const probeError = useMonitoringCapabilitiesStore(state => state.probeError);
+  const activeProfileId = useConnectionStore(state => state.activeProfileId);
+  const activeConnectionTimeout = useConnectionStore(
+    state => state.profiles.find(profile => profile.id === state.activeProfileId)
+      ?.config.send_receive_timeout,
+  );
+  const setConnectionFormOpen = useConnectionStore(state => state.setConnectionFormOpen);
 
   const [showConfirmation, setShowConfirmation] = useState(false);
   const [includeProcessorTimings, setIncludeProcessorTimings] = useState(false);
+  const sql = executionAnalysisSql(queryDetail);
+  const analysisSessionKey = executionAnalysisSessionKey(queryDetail);
   const {
     analyze,
     reset: resetAnalysis,
@@ -61,20 +72,13 @@ export const RuntimeAnalysisTab: React.FC<RuntimeAnalysisTabProps> = ({
     requestDurationMs,
     isAnalyzing,
     error,
+    errorCategory,
     isConnected,
-  } = useQueryExecutionAnalysis();
-
-  const sql = queryDetail?.query || queryDetail?.formatted_query || '';
+  } = useQueryExecutionAnalysis(analysisSessionKey);
   const isSelect = queryDetail?.query_kind?.toUpperCase() === 'SELECT';
   const capabilityUnavailable =
     !hasExplainAnalyze && (probeStatus === 'done' || probeStatus === 'error');
   const previousExecution = getPreviousExecutionMetrics(queryDetail);
-
-  useEffect(() => {
-    setShowConfirmation(false);
-    setIncludeProcessorTimings(false);
-    resetAnalysis();
-  }, [queryDetail?.query_id, resetAnalysis]);
 
   const unavailableReason = useMemo(() => {
     if (isLoading) return 'Loading the historical query…';
@@ -305,7 +309,45 @@ export const RuntimeAnalysisTab: React.FC<RuntimeAnalysisTabProps> = ({
                 lineHeight: 1.5,
               }}
             >
-              {error}
+              <div>{error}</div>
+              {errorCategory === 'timeout' && (
+                <div style={{
+                  display: 'flex',
+                  alignItems: 'center',
+                  justifyContent: 'space-between',
+                  gap: 16,
+                  marginTop: 9,
+                  paddingTop: 9,
+                  borderTop: '1px solid rgba(var(--color-error-rgb), 0.2)',
+                  color: 'var(--text-secondary)',
+                }}>
+                  <span>
+                    EXPLAIN ANALYZE waits for the query to finish.
+                    {activeConnectionTimeout !== undefined
+                      ? ` The current Send/Recv Timeout is ${activeConnectionTimeout}s.`
+                      : ''}
+                    {' '}Set it above the expected query runtime under Advanced Settings.
+                  </span>
+                  {activeProfileId && (
+                    <button
+                      type="button"
+                      onClick={() => setConnectionFormOpen(true, activeProfileId)}
+                      style={{
+                        flexShrink: 0,
+                        padding: '5px 9px',
+                        border: '1px solid var(--border-secondary)',
+                        borderRadius: 5,
+                        background: 'var(--bg-card)',
+                        color: 'var(--text-primary)',
+                        fontSize: 10,
+                        cursor: 'pointer',
+                      }}
+                    >
+                      Edit connection
+                    </button>
+                  )}
+                </div>
+              )}
             </div>
           )}
 

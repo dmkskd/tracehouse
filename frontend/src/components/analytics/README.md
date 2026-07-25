@@ -25,9 +25,11 @@ Directives are parsed by [`metaLanguage.ts`](./metaLanguage.ts); template placeh
 
 On ClickHouse 26.7+, Query Explorer exposes a separate **Analyze** action backed by
 `QueryExecutionAnalysisService`. It runs the resolved SQL through `EXPLAIN ANALYZE`, so it
-requires explicit confirmation and is never part of preset auto-execution. The result stays
-as raw plan text so new server-side metrics remain visible without a frontend parser update.
-The optional processor detail reports min/median/max/sum timing per plan stage.
+requires explicit confirmation and is never part of preset auto-execution. Results open on
+a best-effort visual projection of the runtime summary and operator flow. The server-owned
+text remains unchanged in the final **Raw plan** tab, so new metrics remain available even
+when the visual parser does not recognize them yet. The optional processor detail reports
+min/median/max/sum timing per plan stage.
 
 Unlike ordinary `EXPLAIN`, this executes the wrapped `SELECT`, discards its result rows, and
 consumes the same CPU, memory, I/O, quotas, and limits as normal execution. ClickHouse does

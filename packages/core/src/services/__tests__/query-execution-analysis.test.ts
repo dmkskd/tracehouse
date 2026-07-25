@@ -1,6 +1,11 @@
 import { describe, expect, it, vi } from 'vitest';
-import type { IClickHouseAdapter } from '../../adapters/types.js';
-import { QueryExecutionAnalysisService } from '../query-execution-analysis.js';
+import {
+  AdapterError,
+  type IClickHouseAdapter,
+} from '../../adapters/types.js';
+import {
+  QueryExecutionAnalysisService,
+} from '../query-execution-analysis.js';
 
 function adapter(lines: string[] = ['Query summary:', '  Time: 1.00 ms']): IClickHouseAdapter {
   return {
@@ -96,5 +101,21 @@ describe('QueryExecutionAnalysisService', { tags: ['query-analysis'] }, () => {
     await expect(service.analyze('SELECT 1', 'TraceHouse:Queries:test')).rejects.toThrow(
       'not supported by this connection adapter',
     );
+  });
+
+  it('preserves the adapter error category for UI handling', async () => {
+    const mock = adapter();
+    vi.mocked(mock.executeRawQuery!).mockRejectedValue(
+      new AdapterError('Timeout error.', 'timeout'),
+    );
+    const service = new QueryExecutionAnalysisService(mock);
+
+    await expect(
+      service.analyze('SELECT 1', 'TraceHouse:Queries:test'),
+    ).rejects.toMatchObject({
+      name: 'QueryExecutionAnalysisError',
+      category: 'timeout',
+      message: 'Failed to analyze query execution: Timeout error.',
+    });
   });
 });

@@ -42,6 +42,7 @@ import { useClusterStore } from '../stores/clusterStore';
 import { useProfileEventDescriptionsStore } from '../stores/profileEventDescriptionsStore';
 import { useEnvironmentStore } from '../stores/environmentStore';
 import { buildConfig } from '../buildConfig';
+import { connectionServiceIdentity } from './clickHouseProviderModel';
 import { 
   ClickHouseContext, 
   type ClickHouseServices,
@@ -126,9 +127,11 @@ export function ClickHouseProvider({ children }: ClickHouseProviderProps) {
   // Stable key to detect config changes — include activeProfileId so that
   // switching between profiles with identical host/port/user still triggers
   // a full service rebuild (different passwords, different logical connection).
-  const configKey = activeConfig
-    ? `${activeProfileId}:${activeConfig.host}:${activeConfig.port}:${activeConfig.user}:${activeConfig.password}:${activeConfig.database}:${activeConfig.secure}:${proxyUrl ?? 'direct'}`
-    : null;
+  const configKey = connectionServiceIdentity(
+    activeProfileId,
+    activeConfig,
+    proxyUrl,
+  );
 
   // Track the previous close function so we can clean up
   const closeRef = useRef<(() => Promise<void>) | null>(null);

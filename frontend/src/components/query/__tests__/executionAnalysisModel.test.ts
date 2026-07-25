@@ -1,6 +1,10 @@
 import { describe, expect, it } from 'vitest';
 import type { QueryDetail } from '@tracehouse/core';
-import { getPreviousExecutionMetrics } from '../executionAnalysisModel';
+import {
+  executionAnalysisSessionKey,
+  executionAnalysisSql,
+  getPreviousExecutionMetrics,
+} from '../executionAnalysisModel';
 
 describe('execution analysis model', () => {
   it('derives elapsed, aggregate CPU, and peak memory from query-log detail', () => {
@@ -32,5 +36,20 @@ describe('execution analysis model', () => {
 
   it('returns no summary without query detail', () => {
     expect(getPreviousExecutionMetrics(null)).toBeUndefined();
+  });
+
+  it('uses the exact replay SQL and a collision-safe session identity', () => {
+    const detail = {
+      query_id: 'query:id',
+      query: 'SELECT concat(\':\', value) FROM events',
+      formatted_query: 'SELECT 0',
+    } as QueryDetail;
+
+    expect(executionAnalysisSql(detail)).toBe(detail.query);
+    expect(executionAnalysisSessionKey(detail)).toBe(JSON.stringify([
+      detail.query_id,
+      detail.query,
+    ]));
+    expect(executionAnalysisSessionKey(null)).toBeUndefined();
   });
 });

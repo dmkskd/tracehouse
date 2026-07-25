@@ -2,6 +2,7 @@ import React, { useState } from 'react';
 import type { QueryExecutionAnalysisResult } from '@tracehouse/core';
 import { formatBytes, formatDurationMs, formatMicroseconds } from '../../utils/formatters';
 import type { PreviousExecutionMetrics } from './executionAnalysisModel';
+import { ExecutionAnalysisVisual } from './ExecutionAnalysisVisual';
 
 interface AnalysisRunButtonProps {
   label: string;
@@ -278,7 +279,7 @@ interface ExecutionAnalysisPanelProps {
   onClose?: () => void;
 }
 
-/** Reusable raw-plan viewer that preserves ClickHouse's evolving output. */
+/** Visual-first runtime plan with the authoritative ClickHouse text as its final tab. */
 export const ExecutionAnalysisPanel: React.FC<ExecutionAnalysisPanelProps> = ({
   result,
   requestDurationMs,
@@ -286,6 +287,7 @@ export const ExecutionAnalysisPanel: React.FC<ExecutionAnalysisPanelProps> = ({
   onClose,
 }) => {
   const [copied, setCopied] = useState(false);
+  const [activeView, setActiveView] = useState<'visual' | 'raw'>('visual');
 
   const copy = async () => {
     await navigator.clipboard.writeText(result.output);
@@ -364,24 +366,81 @@ export const ExecutionAnalysisPanel: React.FC<ExecutionAnalysisPanelProps> = ({
           )}
         </div>
       </div>
-      <pre style={{
-        flex: 1,
-        width: '100%',
-        minHeight: 0,
-        minWidth: 0,
-        boxSizing: 'border-box',
-        margin: 0,
-        padding: '16px 20px 28px',
-        overflow: 'auto',
-        background: 'var(--bg-code, #0d1117)',
-        color: 'var(--text-secondary)',
-        fontFamily: "'Share Tech Mono','Fira Code',monospace",
-        fontSize: 11,
-        lineHeight: 1.65,
-        whiteSpace: 'pre',
-      }}>
-        {result.output}
-      </pre>
+      <div
+        role="tablist"
+        aria-label="Execution analysis views"
+        style={{
+          display: 'flex',
+          gap: 22,
+          padding: '0 18px',
+          flexShrink: 0,
+          borderBottom: '1px solid var(--border-primary)',
+          background: 'var(--bg-secondary)',
+        }}
+      >
+        {([
+          { key: 'visual' as const, label: 'Visual plan' },
+          { key: 'raw' as const, label: 'Raw plan' },
+        ]).map(view => {
+          const active = activeView === view.key;
+          return (
+            <button
+              key={view.key}
+              type="button"
+              role="tab"
+              aria-selected={active}
+              onClick={() => setActiveView(view.key)}
+              style={{
+                padding: '9px 2px 8px',
+                border: 0,
+                borderBottom: active ? '2px solid var(--color-info)' : '2px solid transparent',
+                background: 'transparent',
+                color: active ? 'var(--text-primary)' : 'var(--text-muted)',
+                fontSize: 10,
+                fontWeight: active ? 650 : 500,
+                cursor: 'pointer',
+              }}
+            >
+              {view.label}
+            </button>
+          );
+        })}
+      </div>
+      <div
+        role="tabpanel"
+        aria-label={activeView === 'visual' ? 'Visual plan' : 'Raw plan'}
+        style={{
+          flex: 1,
+          width: '100%',
+          minHeight: 0,
+          minWidth: 0,
+          overflow: 'auto',
+          background: activeView === 'raw'
+            ? 'var(--bg-code, #0d1117)'
+            : 'var(--bg-primary)',
+        }}
+      >
+        {activeView === 'visual' ? (
+          <ExecutionAnalysisVisual output={result.output} />
+        ) : (
+          <pre style={{
+            width: '100%',
+            minHeight: '100%',
+            minWidth: 0,
+            boxSizing: 'border-box',
+            margin: 0,
+            padding: '16px 20px 28px',
+            overflow: 'auto',
+            color: 'var(--text-secondary)',
+            fontFamily: "'Share Tech Mono','Fira Code',monospace",
+            fontSize: 11,
+            lineHeight: 1.65,
+            whiteSpace: 'pre',
+          }}>
+            {result.output}
+          </pre>
+        )}
+      </div>
     </div>
   );
 };

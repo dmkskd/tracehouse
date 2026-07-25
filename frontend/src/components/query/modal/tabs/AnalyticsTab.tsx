@@ -3,6 +3,7 @@ import type { QueryDetail as QueryDetailType } from '@tracehouse/core';
 import { ScanEfficiencyTab } from './ScanEfficiencyTab';
 import { ColumnCostTab } from './ColumnCostTab';
 import { RuntimeAnalysisTab } from './RuntimeAnalysisTab';
+import { executionAnalysisSessionKey } from '../../executionAnalysisModel';
 
 export type AnalyticsSubTab = 'scan_efficiency' | 'runtime_analysis' | 'column_cost';
 
@@ -72,7 +73,11 @@ export const AnalyticsTab: React.FC<AnalyticsTabProps> = ({
           <ScanEfficiencyTab queryDetail={queryDetail} isLoading={isLoadingDetail} />
         )}
         {activeSubTab === 'runtime_analysis' && isSelectQuery && (
-          <RuntimeAnalysisTab queryDetail={queryDetail} isLoading={isLoadingDetail} />
+          <RuntimeAnalysisTab
+            key={executionAnalysisSessionKey(queryDetail) ?? 'loading'}
+            queryDetail={queryDetail}
+            isLoading={isLoadingDetail}
+          />
         )}
         {activeSubTab === 'column_cost' && (
           <ColumnCostTab queryDetail={queryDetail} isLoading={isLoadingDetail} />

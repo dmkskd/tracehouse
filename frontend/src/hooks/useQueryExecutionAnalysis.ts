@@ -1,10 +1,23 @@
-import { useCallback, useRef, useState } from 'react';
 import {
+  useCallback,
+  useMemo,
+  useSyncExternalStore,
+} from 'react';
+import {
+  QueryExecutionAnalysisError,
   randomUUID,
   type QueryExecutionAnalysisOptions,
   type QueryExecutionAnalysisResult,
 } from '@tracehouse/core';
 import { useClickHouseServices } from '../providers/ClickHouseProvider';
+import {
+  failQueryExecutionAnalysis,
+  getQueryExecutionAnalysisSnapshot,
+  resetQueryExecutionAnalysis,
+  runQueryExecutionAnalysis,
+  subscribeQueryExecutionAnalysis,
+  type QueryExecutionAnalysisFailure,
+} from '../stores/queryExecutionAnalysisStore';
 
 export interface QueryExecutionAnalysisRequest
   extends Omit<QueryExecutionAnalysisOptions, 'queryId'> {
@@ -12,85 +25,87 @@ export interface QueryExecutionAnalysisRequest
   source: string;
 }
 
+function executionAnalysisFailure(error: unknown): QueryExecutionAnalysisFailure {
+  if (error instanceof QueryExecutionAnalysisError) {
+    return {
+      message: error.message,
+      category: error.category,
+    };
+  }
+  return {
+    message: error instanceof Error ? error.message : String(error),
+    category: 'unknown',
+  };
+}
+
 /**
  * Shared frontend orchestration for EXPLAIN ANALYZE.
  *
- * The core service owns SQL validation and execution. This hook owns React
- * request state, request timing, and adapter-specific query ID correlation.
+ * The core service owns SQL validation and execution. The external session
+ * store owns request state, in-flight deduplication, timing, and bounded
+ * retention across React unmounts.
  */
-export function useQueryExecutionAnalysis() {
+export function useQueryExecutionAnalysis(sessionKey?: string) {
   const services = useClickHouseServices();
-  const [result, setResult] = useState<QueryExecutionAnalysisResult | null>(null);
-  const [requestDurationMs, setRequestDurationMs] = useState(0);
-  const [isAnalyzing, setIsAnalyzing] = useState(false);
-  const [error, setError] = useState<string | null>(null);
-  const requestGeneration = useRef(0);
+  const localScope = useMemo(() => ({ services }), [services]);
+  const scope = sessionKey && services ? services : localScope;
+  const key = sessionKey ?? 'component';
+
+  const subscribe = useCallback(
+    (listener: () => void) =>
+      subscribeQueryExecutionAnalysis(scope, key, listener),
+    [key, scope],
+  );
+  const getSnapshot = useCallback(
+    () => getQueryExecutionAnalysisSnapshot(scope, key),
+    [key, scope],
+  );
+  const snapshot = useSyncExternalStore(subscribe, getSnapshot, getSnapshot);
 
   const reset = useCallback(() => {
-    requestGeneration.current += 1;
-    setResult(null);
-    setRequestDurationMs(0);
-    setIsAnalyzing(false);
-    setError(null);
-  }, []);
+    resetQueryExecutionAnalysis(scope, key);
+  }, [key, scope]);
 
   const analyze = useCallback(async (
     request: QueryExecutionAnalysisRequest,
   ): Promise<QueryExecutionAnalysisResult | null> => {
     if (!services) {
-      requestGeneration.current += 1;
-      setResult(null);
-      setRequestDurationMs(0);
-      setIsAnalyzing(false);
-      setError('No active ClickHouse connection.');
+      failQueryExecutionAnalysis(scope, key, {
+        message: 'No active ClickHouse connection.',
+        category: 'connection',
+      });
       return null;
     }
 
-    const generation = requestGeneration.current + 1;
-    requestGeneration.current = generation;
-    setIsAnalyzing(true);
-    setResult(null);
-    setError(null);
-
-    const started = performance.now();
-    const queryId = services.queryExecutionAnalysisService.supportsExplicitQueryId()
-      ? randomUUID()
-      : undefined;
-
-    try {
-      const analysis = await services.queryExecutionAnalysisService.analyze(
-        request.query,
-        request.source,
-        {
-          database: request.database,
-          processors: request.processors,
-          queryId,
-        },
-      );
-      if (requestGeneration.current === generation) {
-        setResult(analysis);
-      }
-      return analysis;
-    } catch (analysisError) {
-      if (requestGeneration.current === generation) {
-        setError(analysisError instanceof Error ? analysisError.message : String(analysisError));
-      }
-      return null;
-    } finally {
-      if (requestGeneration.current === generation) {
-        setRequestDurationMs(performance.now() - started);
-        setIsAnalyzing(false);
-      }
-    }
-  }, [services]);
+    return runQueryExecutionAnalysis(
+      scope,
+      key,
+      () => {
+        const queryId = services.queryExecutionAnalysisService.supportsExplicitQueryId()
+          ? randomUUID()
+          : undefined;
+        return services.queryExecutionAnalysisService.analyze(
+          request.query,
+          request.source,
+          {
+            database: request.database,
+            processors: request.processors,
+            queryId,
+          },
+        );
+      },
+      executionAnalysisFailure,
+    );
+  }, [key, scope, services]);
 
   return {
     analyze,
     reset,
-    result,
-    requestDurationMs,
-    isAnalyzing,
-    error,
+    result: snapshot.result,
+    requestDurationMs: snapshot.requestDurationMs,
+    isAnalyzing: snapshot.status === 'running',
+    error: snapshot.failure?.message ?? null,
+    errorCategory: snapshot.failure?.category,
     isConnected: Boolean(services),
   };
 }

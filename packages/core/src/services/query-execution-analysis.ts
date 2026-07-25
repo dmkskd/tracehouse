@@ -5,7 +5,11 @@
  * EXPLAIN ANALYZE runs the wrapped SELECT and is therefore deliberately kept
  * separate from TraceService's non-executing plan inspection methods.
  */
-import type { IClickHouseAdapter } from '../adapters/types.js';
+import {
+  AdapterError,
+  type AdapterErrorCategory,
+  type IClickHouseAdapter,
+} from '../adapters/types.js';
 import type {
   QueryExecutionAnalysisOptions,
   QueryExecutionAnalysisResult,
@@ -13,8 +17,17 @@ import type {
 import { tagQuery } from '../queries/builder.js';
 import { isSelectStatement } from '../utils/sql-statement.js';
 
+export type QueryExecutionAnalysisErrorCategory =
+  | AdapterErrorCategory
+  | 'validation'
+  | 'unsupported';
+
 export class QueryExecutionAnalysisError extends Error {
-  constructor(message: string, public readonly cause?: Error) {
+  constructor(
+    message: string,
+    public readonly category: QueryExecutionAnalysisErrorCategory,
+    public readonly cause?: Error,
+  ) {
     super(message);
     this.name = 'QueryExecutionAnalysisError';
   }
@@ -38,16 +51,23 @@ export class QueryExecutionAnalysisService {
   ): Promise<QueryExecutionAnalysisResult> {
     const normalizedQuery = query.trim().replace(/;+\s*$/, '');
     if (!normalizedQuery) {
-      throw new QueryExecutionAnalysisError('A query is required for execution analysis.');
+      throw new QueryExecutionAnalysisError(
+        'A query is required for execution analysis.',
+        'validation',
+      );
     }
     if (!isSelectStatement(normalizedQuery)) {
       throw new QueryExecutionAnalysisError(
         'EXPLAIN ANALYZE is only available for SELECT queries.',
+        'validation',
       );
     }
 
     if (!this.adapter.executeRawQuery) {
-      throw new QueryExecutionAnalysisError('Execution analysis is not supported by this connection adapter.');
+      throw new QueryExecutionAnalysisError(
+        'Execution analysis is not supported by this connection adapter.',
+        'unsupported',
+      );
     }
 
     const processors = options.processors === true;
@@ -75,6 +95,7 @@ export class QueryExecutionAnalysisService {
       const message = error instanceof Error ? error.message : String(error);
       throw new QueryExecutionAnalysisError(
         `Failed to analyze query execution: ${message}`,
+        error instanceof AdapterError ? error.category : 'unknown',
         error instanceof Error ? error : undefined,
       );
     }

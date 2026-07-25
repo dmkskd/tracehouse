@@ -6,6 +6,7 @@ export { InteractiveQueryService } from './interactive-query-service.js';
 export {
   QueryExecutionAnalysisService,
   QueryExecutionAnalysisError,
+  type QueryExecutionAnalysisErrorCategory,
 } from './query-execution-analysis.js';
 export { ColumnCostService, ColumnCostServiceError } from './column-cost-service.js';
 export type { ColumnCost, ServerColumnCost, ServerProgress, ClientColumnCostResult, ServerColumnCostResult } from './column-cost-service.js';

@@ -1,7 +1,10 @@
 import React, { useState } from 'react';
 import { cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/react';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import type { QueryDetail } from '@tracehouse/core';
+import {
+  QueryExecutionAnalysisError,
+  type QueryDetail,
+} from '@tracehouse/core';
 import {
   ClickHouseContext,
   type ClickHouseServices,
@@ -11,6 +14,21 @@ import {
   AnalyticsTab,
   type AnalyticsSubTab,
 } from '../AnalyticsTab';
+
+const connectionStoreState = vi.hoisted(() => ({
+  profiles: [] as Array<{
+    id: string;
+    config: { send_receive_timeout: number };
+  }>,
+  activeProfileId: null as string | null,
+  setConnectionFormOpen: vi.fn(),
+}));
+
+vi.mock('../../../../../stores/connectionStore', () => ({
+  useConnectionStore: (
+    selector: (state: typeof connectionStoreState) => unknown,
+  ) => selector(connectionStoreState),
+}));
 
 const QUERY_DETAIL = {
   query_id: 'historical-query-id',
@@ -91,6 +109,9 @@ describe('RuntimeAnalysisTab', () => {
 
   afterEach(() => {
     cleanup();
+    connectionStoreState.profiles = [];
+    connectionStoreState.activeProfileId = null;
+    connectionStoreState.setConnectionFormOpen.mockReset();
     useMonitoringCapabilitiesStore.setState(
       useMonitoringCapabilitiesStore.getInitialState(),
       true,
@@ -101,7 +122,18 @@ describe('RuntimeAnalysisTab', () => {
     const analyze = vi.fn().mockResolvedValue({
       kind: 'explain_analyze',
       query: QUERY_DETAIL.query,
-      output: 'Query summary:\n  Peak memory: 1.00 KiB\nReadFromMergeTree',
+      output: [
+        'Query summary:',
+        '  Time:        1.00 ms (planning 0.40 ms · execution 0.60 ms)',
+        '  Read:        10 rows, 80 B (10 thousand rows/s., 80 KB/s.)',
+        '  Peak memory: 1.00 KiB',
+        '',
+        'Output: count()',
+        '',
+        'ReadFromMergeTree (events)',
+        '│  I/O: rows 0 → 10 · 0 B → 80 B',
+        '│    time 400.00 us (66.7%) · parallelism 1.00/1',
+      ].join('\n'),
       processors: false,
       queryId: 'analysis-query-id',
     });
@@ -156,6 +188,15 @@ describe('RuntimeAnalysisTab', () => {
         queryId: expect.any(String),
       },
     );
+    expect(await screen.findByText('ReadFromMergeTree')).toBeInTheDocument();
+
+    fireEvent.click(screen.getByRole('button', { name: 'Scan Efficiency' }));
+    expect(screen.queryByText('ReadFromMergeTree')).not.toBeInTheDocument();
+    fireEvent.click(screen.getByRole('button', { name: 'Explain Analyze' }));
+    expect(await screen.findByText('ReadFromMergeTree')).toBeInTheDocument();
+    expect(analyze).toHaveBeenCalledOnce();
+
+    fireEvent.click(screen.getByRole('tab', { name: 'Raw plan' }));
     expect(await screen.findByText(/Query summary:/)).toHaveTextContent('Peak memory: 1.00 KiB');
     expect(screen.getByRole('button', { name: 'Run again' })).toBeInTheDocument();
   });
@@ -179,6 +220,75 @@ describe('RuntimeAnalysisTab', () => {
     expect(capabilityAlert).toHaveTextContent('ClickHouse 23.8.16.40');
     expect(capabilityAlert).toHaveTextContent('Requires ClickHouse 26.7+ (current: v23.8.16.40)');
     expect(screen.queryByRole('button', { name: /run execution analysis/i })).not.toBeInTheDocument();
+  });
+
+  it('points connection timeouts to the existing Send/Recv Timeout setting', async () => {
+    connectionStoreState.profiles = [{
+        id: 'connection-1',
+        config: {
+          send_receive_timeout: 30,
+        },
+      }];
+    connectionStoreState.activeProfileId = 'connection-1';
+    const services = {
+      queryExecutionAnalysisService: {
+        supportsExplicitQueryId: () => true,
+        analyze: vi.fn().mockRejectedValue(
+          new QueryExecutionAnalysisError(
+            'Failed to analyze query execution: Timeout error.',
+            'timeout',
+          ),
+        ),
+      },
+    } as unknown as ClickHouseServices;
+
+    render(<Harness services={services} />);
+    fireEvent.click(screen.getByRole('button', { name: 'Explain Analyze' }));
+    fireEvent.click(screen.getByRole('button', { name: /run execution analysis/i }));
+    fireEvent.click(within(screen.getByRole('dialog')).getByRole('button', { name: 'Confirm' }));
+
+    const alert = await screen.findByRole('alert');
+    expect(alert).toHaveTextContent('Timeout error.');
+    expect(alert).toHaveTextContent('current Send/Recv Timeout is 30s');
+    expect(alert).toHaveTextContent('Advanced Settings');
+
+    fireEvent.click(within(alert).getByRole('button', { name: 'Edit connection' }));
+    expect(connectionStoreState.setConnectionFormOpen).toHaveBeenCalledWith(
+      true,
+      'connection-1',
+    );
+  });
+
+  it('does not present query failures as connection timeouts', async () => {
+    connectionStoreState.profiles = [{
+      id: 'connection-1',
+      config: {
+        send_receive_timeout: 30,
+      },
+    }];
+    connectionStoreState.activeProfileId = 'connection-1';
+    const services = {
+      queryExecutionAnalysisService: {
+        supportsExplicitQueryId: () => true,
+        analyze: vi.fn().mockRejectedValue(
+          new QueryExecutionAnalysisError(
+            'Failed to analyze query execution: [Code 160] The maximum sleep time is 3000000 microseconds.',
+            'query',
+          ),
+        ),
+      },
+    } as unknown as ClickHouseServices;
+
+    render(<Harness services={services} />);
+    fireEvent.click(screen.getByRole('button', { name: 'Explain Analyze' }));
+    fireEvent.click(screen.getByRole('button', { name: /run execution analysis/i }));
+    fireEvent.click(within(screen.getByRole('dialog')).getByRole('button', { name: 'Confirm' }));
+
+    const alert = await screen.findByRole('alert');
+    expect(alert).toHaveTextContent('maximum sleep time');
+    expect(alert).not.toHaveTextContent('Send/Recv Timeout');
+    expect(alert).not.toHaveTextContent('Advanced Settings');
+    expect(within(alert).queryByRole('button', { name: 'Edit connection' })).not.toBeInTheDocument();
   });
 
   it('does not offer Runtime Analysis for non-SELECT history entries', () => {

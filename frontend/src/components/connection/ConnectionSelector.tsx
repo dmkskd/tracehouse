@@ -330,7 +330,9 @@ export const ConnectionSelector: React.FC = () => {
       {/* Connection Form Modal */}
       {isConnectionFormOpen && createPortal(
         <div className="fixed inset-0 flex items-center justify-center"
-          style={{ zIndex: 9999, background: 'var(--backdrop-overlay)', backdropFilter: 'var(--backdrop-blur)', padding: '40px' }}
+          // This editor can be opened from actions inside QueryDetailModal
+          // (z-index 100000), so it must sit above that modal.
+          style={{ zIndex: 100010, background: 'var(--backdrop-overlay)', backdropFilter: 'var(--backdrop-blur)', padding: '40px' }}
           onClick={() => setConnectionFormOpen(false)}>
           <ConnectionForm onClose={() => setConnectionFormOpen(false)} onSuccess={() => fetchProfiles()} />
         </div>,
