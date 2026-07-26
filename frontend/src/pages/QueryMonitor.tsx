@@ -524,7 +524,7 @@ export const QueryMonitor: React.FC = () => {
               isLoading={isLoadingHistory}
             />
 
-            <div style={{ marginTop: 14, border: '1px solid var(--border-primary)', borderRadius: 8, overflow: 'hidden' }}>
+            <div style={{ marginTop: 14, border: '1px solid var(--border-primary)', borderRadius: 8 }}>
               <QueryActivityTable
                 activity={activityRecords}
                 selectedQueryId={selectedQuery?.query_id || null}

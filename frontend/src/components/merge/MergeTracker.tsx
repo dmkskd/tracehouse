@@ -2274,7 +2274,7 @@ export const MergeTrackerView: React.FC = () => {
           padding: '0 24px 24px',
         }}
       >
-      <div className="flex flex-col min-w-0 overflow-hidden" style={{ minHeight: isHealthTab ? '520px' : '400px' }}>
+      <div className="flex flex-col min-w-0" style={{ minHeight: isHealthTab ? '520px' : '400px' }}>
           {/* Filter Bar */}
           {!isHealthTab && (
             <div style={{ paddingTop: 12 }}>
@@ -2421,7 +2421,10 @@ export const MergeTrackerView: React.FC = () => {
 
         {/* Right Panel - Detail */}
         {!isHealthTab && showActivityPreview && (
-          <div className="w-80 flex-shrink-0 card overflow-hidden">
+          <div
+            className="w-80 flex-shrink-0 card overflow-hidden"
+            style={{ position: 'sticky', top: 12, zIndex: 2 }}
+          >
             {activeTab === 'merges' ? (
               liveSelectedMerge ? (
                 <MergeDetailPanel merge={liveSelectedMerge} onClose={() => selectMerge(null)} onOpenFullDetails={setActiveMergeDetail} />

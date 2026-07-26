@@ -488,7 +488,7 @@ export const QueryActivityTable: React.FC<QueryActivityTableProps> = ({
                       </td>
                       <td style={{ ...tdStyle, whiteSpace: 'nowrap' }}>{q.user}</td>
                       <td style={{ ...tdStyle, overflow: 'hidden' }} title={q.hostname || ''}>
-                        <code style={{
+                        <span style={{
                           display: 'block',
                           width: '100%',
                           fontSize: 11,
@@ -499,10 +499,10 @@ export const QueryActivityTable: React.FC<QueryActivityTableProps> = ({
                           whiteSpace: 'nowrap',
                         }}>
                           {q.hostname || '—'}
-                        </code>
+                        </span>
                       </td>
                       <td style={{ ...tdStyle, overflow: 'hidden' }} title={q.query}>
-                        <code style={{
+                        <span style={{
                           display: 'block',
                           width: '100%',
                           fontSize: 11,
@@ -513,7 +513,7 @@ export const QueryActivityTable: React.FC<QueryActivityTableProps> = ({
                           whiteSpace: 'nowrap',
                         }}>
                           {trunc}
-                        </code>
+                        </span>
                       </td>
                       <td style={{ ...tdStyle, textAlign: 'right', fontFamily: 'monospace', fontWeight: 500, color: 'var(--text-primary)', whiteSpace: 'nowrap' }}>
                         {fmtDuration(q.query_duration_ms)}
