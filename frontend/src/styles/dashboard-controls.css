@@ -1,0 +1,69 @@
+/*
+ * Dashboard controls shared by the standalone frontend and Grafana plugin.
+ * Keep these styles independent of either application entry point.
+ */
+.dashboard-header-action {
+  border: 1px solid var(--border-primary);
+  background: var(--bg-primary);
+  box-shadow: 0 1px 2px rgba(0, 0, 0, 0.06);
+}
+
+.dashboard-header-action:hover:not(:disabled) {
+  background: var(--bg-card-hover);
+  border-color: var(--border-accent);
+  transform: translateY(-1px);
+}
+
+.dashboard-header-action:active:not(:disabled) {
+  transform: translateY(0);
+  box-shadow: none;
+}
+
+.dashboard-header-action:focus-visible {
+  outline: 2px solid var(--accent-primary);
+  outline-offset: 1px;
+}
+
+.dashboard-header-action.active {
+  border-color: var(--border-accent);
+}
+
+.dashboard-header-action[aria-pressed='true'] {
+  background: var(--accent-primary);
+  border-color: var(--accent-primary);
+  color: #fff;
+  box-shadow: 0 1px 4px rgba(99, 102, 241, 0.3);
+}
+
+.dashboard-header-action[aria-pressed='true']::before {
+  content: '✓';
+  font-size: 9px;
+  font-weight: 800;
+  line-height: 1;
+}
+
+.tracehouse-dashboard-filter-input {
+  width: 100%;
+  min-width: 0;
+  max-width: none;
+  height: 38px;
+  box-sizing: border-box;
+  padding: 0 42px 0 13px;
+  border: 1px solid var(--border-primary);
+  border-radius: 8px;
+  outline: none;
+  background: var(--bg-input);
+  color: var(--text-primary);
+  font: inherit;
+  font-size: 12px;
+  transition: border-color 0.15s ease, box-shadow 0.15s ease;
+}
+
+.tracehouse-dashboard-filter-input::placeholder {
+  color: var(--text-muted);
+}
+
+.tracehouse-dashboard-filter-input:focus {
+  border-color: var(--accent-primary);
+  box-shadow: 0 0 0 3px rgba(99, 102, 241, 0.16);
+}

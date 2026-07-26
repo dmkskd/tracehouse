@@ -58,7 +58,12 @@ export const TimeRangePicker: React.FC<Props> = ({
   // Close on click-outside or Escape
   useEffect(() => {
     if (!showCustom) return;
-    const onKey = (e: KeyboardEvent) => { if (e.key === 'Escape') setShowCustom(false); };
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key !== 'Escape') return;
+      e.preventDefault();
+      e.stopPropagation();
+      setShowCustom(false);
+    };
     const onClick = (e: MouseEvent) => {
       if (popoverRef.current && !popoverRef.current.contains(e.target as Node)) setShowCustom(false);
     };
@@ -159,7 +164,7 @@ export const TimeRangePicker: React.FC<Props> = ({
 
       {/* Custom range popover */}
       {showCustom && (
-        <div ref={popoverRef} style={{
+        <div ref={popoverRef} role="dialog" aria-label="Custom time range" style={{
           position: 'absolute',
           top: 'calc(100% + 6px)',
           ...(popoverAlign === 'left' ? { left: 0 } : { right: 0 }),

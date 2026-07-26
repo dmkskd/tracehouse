@@ -1,5 +1,6 @@
 @import "tailwindcss";
 @import "./styles/page-tabs.css";
+@import "./styles/dashboard-controls.css";
 
 /* CSS variables are defined in themes.css based on data-theme attribute */
 /* This file only contains component styles that use those variables */

@@ -147,7 +147,11 @@ export const LinkQueryModal: React.FC<LinkQueryModalProps> = ({
   // Close on Escape (only when detail modal is not open)
   useEffect(() => {
     const handler = (e: KeyboardEvent) => {
-      if (e.key === 'Escape' && !selectedQuery) onClose();
+      if (e.key === 'Escape' && !selectedQuery) {
+        e.preventDefault();
+        e.stopImmediatePropagation();
+        onClose();
+      }
     };
     window.addEventListener('keydown', handler);
     return () => window.removeEventListener('keydown', handler);
@@ -182,6 +186,9 @@ export const LinkQueryModal: React.FC<LinkQueryModalProps> = ({
 
   return createPortal(
     <div
+      role="dialog"
+      aria-modal="true"
+      aria-label={targetQuery.name}
       style={{
         position: 'fixed', inset: 0, zIndex: 10000,
         display: 'flex', alignItems: 'center', justifyContent: 'center',

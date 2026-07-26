@@ -18,6 +18,7 @@ export const ModalWrapper: React.FC<{
   maxHeight?: number | string;
   backdropBackground?: string;
   backdropBlur?: number;
+  ariaLabel?: string;
 }> = ({
   isOpen,
   onClose,
@@ -27,9 +28,14 @@ export const ModalWrapper: React.FC<{
   maxHeight = 960,
   backdropBackground = 'rgba(0, 0, 0, 0.92)',
   backdropBlur = 8,
+  ariaLabel,
 }) => {
   const handleKeyDown = useCallback((e: KeyboardEvent) => {
-    if (e.key === 'Escape') onClose();
+    if (e.key === 'Escape') {
+      e.preventDefault();
+      e.stopPropagation();
+      onClose();
+    }
   }, [onClose]);
 
   useEffect(() => {
@@ -52,6 +58,9 @@ export const ModalWrapper: React.FC<{
 
   return (
     <div
+      role="dialog"
+      aria-modal="true"
+      aria-label={ariaLabel}
       style={{
         position: 'fixed',
         inset: 0,

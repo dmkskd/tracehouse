@@ -41,3 +41,52 @@ export function adjacentSectionPanelIndex(
 export function panelOwnsShortcut(expanded: boolean, hovered: boolean, hidden: boolean): boolean {
   return expanded || (hovered && !hidden);
 }
+
+/** Elements that should consume Escape before dashboard-level navigation. */
+export const DASHBOARD_ESCAPE_LAYER_SELECTOR = [
+  '[role="dialog"]',
+  '[aria-modal="true"]',
+  '[role="menu"]',
+  '[role="listbox"]',
+  '[data-dashboard-escape-layer]',
+].join(',');
+
+/** Use Escape for dashboard-list navigation only when no more local UI layer owns it. */
+export function dashboardOwnsEscape(
+  event: Pick<KeyboardEvent, 'key' | 'defaultPrevented' | 'isComposing' | 'target'>,
+  expandedPanel: boolean,
+  escapeLayerOpen: boolean,
+): boolean {
+  if (event.key !== 'Escape' || event.defaultPrevented || event.isComposing) return false;
+  if (expandedPanel || escapeLayerOpen) return false;
+
+  const target = event.target;
+  return !(
+    target instanceof HTMLInputElement ||
+    target instanceof HTMLTextAreaElement ||
+    target instanceof HTMLSelectElement ||
+    (target instanceof HTMLElement && (
+      target.isContentEditable ||
+      target.closest(DASHBOARD_ESCAPE_LAYER_SELECTOR) !== null
+    ))
+  );
+}
+
+/** Let Focus Stage own navigation keys only when no foreground control is active. */
+export function dashboardOwnsFocusNavigation(
+  event: Pick<KeyboardEvent, 'defaultPrevented' | 'isComposing' | 'target'>,
+  escapeLayerOpen: boolean,
+): boolean {
+  if (event.defaultPrevented || event.isComposing || escapeLayerOpen) return false;
+
+  const target = event.target;
+  return !(
+    target instanceof HTMLInputElement ||
+    target instanceof HTMLTextAreaElement ||
+    target instanceof HTMLSelectElement ||
+    (target instanceof HTMLElement && (
+      target.isContentEditable ||
+      target.closest(DASHBOARD_ESCAPE_LAYER_SELECTOR) !== null
+    ))
+  );
+}

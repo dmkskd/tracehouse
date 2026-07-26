@@ -125,10 +125,12 @@ export const ResultsTable: React.FC<ResultsTableProps> = ({
       if (event.target instanceof HTMLInputElement || event.target instanceof HTMLTextAreaElement || event.target instanceof HTMLSelectElement) return;
       if (event.key === 'ArrowUp' || event.key === 'ArrowLeft') {
         event.preventDefault();
+        event.stopImmediatePropagation();
         setSelectedRow(rowIndex => rowIndex == null ? rowIndex : Math.max(0, rowIndex - 1));
       }
       if (event.key === 'ArrowDown' || event.key === 'ArrowRight') {
         event.preventDefault();
+        event.stopImmediatePropagation();
         setSelectedRow(rowIndex => rowIndex == null ? rowIndex : Math.min(rows.length - 1, rowIndex + 1));
       }
     };
@@ -326,6 +328,7 @@ export const ResultsTable: React.FC<ResultsTableProps> = ({
         <ModalWrapper
           isOpen
           onClose={() => setSelectedRow(null)}
+          ariaLabel="Row details"
           maxWidth={920}
           height="auto"
           maxHeight="min(78vh, 760px)"

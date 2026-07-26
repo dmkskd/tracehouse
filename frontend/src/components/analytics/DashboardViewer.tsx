@@ -38,11 +38,15 @@ import {
   loadDashboards,
   upsertDashboard,
   deleteDashboard,
+  dashboardMatchesSearch,
   exportDashboardJson,
   importDashboardJson,
 } from './dashboards';
 import {
   adjacentSectionPanelIndex,
+  dashboardOwnsEscape,
+  dashboardOwnsFocusNavigation,
+  DASHBOARD_ESCAPE_LAYER_SELECTOR,
   groupDashboardPanels,
   panelOwnsShortcut,
   type DashboardPanelSection,
@@ -1362,6 +1366,26 @@ const inputStyle: React.CSSProperties = { width: '100%', padding: '8px 12px', fo
 const iconBtnStyle: React.CSSProperties = { background: 'none', border: 'none', cursor: 'pointer', color: 'var(--text-muted)', fontSize: 14, padding: '2px 4px', transition: 'color 0.15s ease' };
 const primaryBtnStyle: React.CSSProperties = { padding: '7px 18px', fontSize: 12, borderRadius: 7, border: '1px solid var(--border-primary)', background: 'var(--bg-primary)', color: 'var(--text-primary)', fontWeight: 600, cursor: 'pointer', transition: 'all 0.15s ease', boxShadow: '0 1px 3px rgba(0,0,0,0.08)' };
 const secondaryBtnStyle: React.CSSProperties = { padding: '7px 18px', fontSize: 12, borderRadius: 7, border: '1px solid var(--border-primary)', background: 'var(--bg-secondary)', color: 'var(--text-secondary)', cursor: 'pointer', transition: 'all 0.15s ease' };
+const dashboardHeaderGroupStyle: React.CSSProperties = {
+  display: 'flex',
+  alignItems: 'center',
+  gap: 4,
+  padding: 4,
+  borderRadius: 8,
+  border: '1px solid var(--border-primary)',
+  background: 'var(--bg-tertiary)',
+};
+const dashboardHeaderButtonStyle: React.CSSProperties = {
+  display: 'inline-flex',
+  alignItems: 'center',
+  justifyContent: 'center',
+  gap: 5,
+  minHeight: 28,
+  padding: '4px 12px',
+  fontSize: 11,
+  fontWeight: 600,
+  whiteSpace: 'nowrap',
+};
 
 // ─── Import/Export modal ───
 
@@ -1611,6 +1635,7 @@ const DashboardListView: React.FC<{
   onNew: () => void;
 }> = ({ dashboards, onOpen, onImport, onNew }) => {
   const previewEnabled = buildConfig.dashboardPreview;
+  const [search, setSearch] = useState('');
   const [hoveredId, setHoveredId] = useState<string | null>(null);
   const [mousePos, setMousePos] = useState<{ x: number; y: number } | null>(null);
   const containerRef = useRef<HTMLDivElement>(null);
@@ -1638,17 +1663,21 @@ const DashboardListView: React.FC<{
     (e.currentTarget as HTMLDivElement).style.borderColor = 'var(--border-primary)';
   };
 
-  const hoveredDashboard = hoveredId ? dashboards.find(d => d.id === hoveredId) : null;
+  const filteredDashboards = useMemo(
+    () => dashboards.filter(dashboard => dashboardMatchesSearch(dashboard, search)),
+    [dashboards, search],
+  );
+  const hoveredDashboard = hoveredId ? filteredDashboards.find(d => d.id === hoveredId) : null;
 
   // Group dashboards by top-level group, flat within each group (no sub-category headers)
   const grouped = useMemo(() => {
     const groups = DASHBOARD_GROUPS.map(g => ({ group: g.name, color: g.color, items: [] as Dashboard[] }));
-    for (const d of dashboards) {
+    for (const d of filteredDashboards) {
       const g = groups.find(g => g.group === (d.group ?? 'Custom'));
       (g ?? groups[groups.length - 1]).items.push(d);
     }
     return groups.filter(g => g.items.length > 0);
-  }, [dashboards]);
+  }, [filteredDashboards]);
 
   const renderDashboardCard = (d: Dashboard, color: string) => (
     <div
@@ -1699,6 +1728,51 @@ const DashboardListView: React.FC<{
         </div>
       </div>
 
+      <div role="search" style={{ display: 'flex', alignItems: 'center', gap: 12, width: '100%', minWidth: 0, marginBottom: 22 }}>
+        <div style={{ position: 'relative', flex: '1 1 auto', width: '100%', minWidth: 0 }}>
+          <input
+            type="text"
+            value={search}
+            onChange={event => {
+              setSearch(event.target.value);
+              setHoveredId(null);
+              setMousePos(null);
+            }}
+            onKeyDown={event => {
+              if (event.key === 'Escape' && search) {
+                event.preventDefault();
+                setSearch('');
+              }
+            }}
+            className="tracehouse-dashboard-filter-input"
+            style={{ width: '100%', minWidth: 0, maxWidth: 'none' }}
+            aria-label="Filter dashboards"
+            placeholder="Filter dashboards by name, category, source, or panel…"
+          />
+          {search && (
+            <button
+              onClick={() => setSearch('')}
+              aria-label="Clear dashboard filter"
+              title="Clear filter"
+              style={{
+                position: 'absolute', top: '50%', right: 9, transform: 'translateY(-50%)',
+                width: 24, height: 24, display: 'grid', placeItems: 'center',
+                padding: 0, border: 'none', borderRadius: 5,
+                background: 'transparent', color: 'var(--text-muted)',
+                cursor: 'pointer', fontSize: 16, lineHeight: 1,
+              }}
+            >
+              ×
+            </button>
+          )}
+        </div>
+        <span style={{ minWidth: 96, color: 'var(--text-tertiary)', fontSize: 11, textAlign: 'right', whiteSpace: 'nowrap' }}>
+          {search
+            ? `${filteredDashboards.length} of ${dashboards.length}`
+            : `${dashboards.length} dashboard${dashboards.length === 1 ? '' : 's'}`}
+        </span>
+      </div>
+
       {grouped.map(({ group, color, items }) => (
         <div key={group} style={{ marginBottom: 24 }}>
           <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 10 }}>
@@ -1715,6 +1789,15 @@ const DashboardListView: React.FC<{
       {dashboards.length === 0 && (
         <div style={{ textAlign: 'center', padding: '40px 0', color: 'var(--text-muted)', fontSize: 13 }}>
           No dashboards yet. Create one or import a JSON definition.
+        </div>
+      )}
+
+      {dashboards.length > 0 && filteredDashboards.length === 0 && (
+        <div style={{ textAlign: 'center', padding: '56px 0', color: 'var(--text-muted)', fontSize: 13 }}>
+          <div style={{ marginBottom: 12 }}>No dashboards match “{search.trim()}”.</div>
+          <button onClick={() => setSearch('')} className="tab dashboard-header-action" style={dashboardHeaderButtonStyle}>
+            Clear filter
+          </button>
         </div>
       )}
 
@@ -2036,6 +2119,7 @@ export const DashboardViewer: React.FC<{ initialDashboardId?: string; onOpenQuer
     if (focusedPanelIndex === null && fullscreenPanelIndex === null) return;
     const handleExpandedEscape = (event: KeyboardEvent) => {
       if (event.key !== 'Escape') return;
+      if (document.querySelector(DASHBOARD_ESCAPE_LAYER_SELECTOR)) return;
       const target = event.target;
       if (
         target instanceof HTMLInputElement ||
@@ -2055,13 +2139,8 @@ export const DashboardViewer: React.FC<{ initialDashboardId?: string; onOpenQuer
   useEffect(() => {
     if (focusedPanelIndex === null) return;
     const handleFocusNavigation = (event: KeyboardEvent) => {
-      const target = event.target;
-      if (
-        target instanceof HTMLInputElement ||
-        target instanceof HTMLTextAreaElement ||
-        target instanceof HTMLSelectElement ||
-        (target instanceof HTMLElement && target.isContentEditable)
-      ) return;
+      const escapeLayerOpen = document.querySelector(DASHBOARD_ESCAPE_LAYER_SELECTOR) !== null;
+      if (!dashboardOwnsFocusNavigation(event, escapeLayerOpen)) return;
       if (event.key === 'ArrowDown') {
         event.preventDefault();
         moveFocusedPanel(1);
@@ -2079,6 +2158,29 @@ export const DashboardViewer: React.FC<{ initialDashboardId?: string; onOpenQuer
     window.addEventListener('keydown', handleFocusNavigation);
     return () => window.removeEventListener('keydown', handleFocusNavigation);
   }, [focusedPanelIndex, moveFocusedPanel, moveFocusedSection]);
+
+  // Escape follows the same layered convention as Grafana: close panel/menu/modal
+  // states first, then return from the dashboard detail to its parent list.
+  useEffect(() => {
+    if (view.mode !== 'view') return;
+    const handleDashboardEscape = (event: KeyboardEvent) => {
+      const escapeLayerOpen = document.querySelector(DASHBOARD_ESCAPE_LAYER_SELECTOR) !== null;
+      if (!dashboardOwnsEscape(
+        event,
+        focusedPanelIndex !== null || fullscreenPanelIndex !== null,
+        escapeLayerOpen,
+      )) return;
+
+      event.preventDefault();
+      event.stopPropagation();
+      setView(current => current.mode === 'view' ? { mode: 'list' } : current);
+    };
+    // Capture phase is required inside Grafana, whose shell consumes Escape
+    // before a window bubble listener can observe it. Semantic foreground
+    // layers are detected above and retain priority.
+    window.addEventListener('keydown', handleDashboardEscape, true);
+    return () => window.removeEventListener('keydown', handleDashboardEscape, true);
+  }, [focusedPanelIndex, fullscreenPanelIndex, view.mode]);
 
   // ─── List view ───
   if (view.mode === 'list') {
@@ -2136,7 +2238,14 @@ export const DashboardViewer: React.FC<{ initialDashboardId?: string; onOpenQuer
       {/* Dashboard header */}
       <div style={{ flexShrink: 0, padding: '12px 24px', display: 'flex', alignItems: 'center', justifyContent: 'space-between', borderBottom: '1px solid var(--border-primary)', background: 'var(--bg-secondary)' }}>
         <div style={{ display: 'flex', alignItems: 'center', gap: 12, minWidth: 0, flex: 1 }}>
-          <button onClick={() => setView({ mode: 'list' })} style={{ ...iconBtnStyle, fontSize: 16 }} title="Back to list">←</button>
+          <button
+            onClick={() => setView({ mode: 'list' })}
+            style={{ ...iconBtnStyle, fontSize: 16 }}
+            aria-label="Back to dashboard list"
+            title="Back to dashboard list (Esc)"
+          >
+            ←
+          </button>
           <div style={{ minWidth: 0 }}>
             <div style={{ fontSize: 14, fontWeight: 600, color: 'var(--text-primary)', display: 'flex', alignItems: 'center', gap: 8 }}>
               {activeDashboard.title}
@@ -2150,47 +2259,82 @@ export const DashboardViewer: React.FC<{ initialDashboardId?: string; onOpenQuer
             {activeDashboard.description && <div style={{ fontSize: 11, color: 'var(--text-muted)', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{activeDashboard.description}</div>}
           </div>
         </div>
-        <div style={{ display: 'flex', gap: 6, alignItems: 'center', flexShrink: 0 }}>
+        <div style={{ display: 'flex', gap: 10, alignItems: 'center', flexShrink: 0 }}>
           <TimeRangePicker value={timeRangeOverride} onChange={setTimeRangeOverride} />
-          <button
-            onClick={() => { setCorrelationEnabled(e => !e); setHoveredTimestamp(null); }}
-            className={`tab${correlationEnabled ? ' active' : ''}`}
-            style={{ border: '1px solid var(--border-primary)', padding: '6px 16px', fontSize: 12, cursor: 'pointer' }}
-            title="Sync crosshair across all panels - hover one chart to see values across all"
-          >
-            Crosshair
-          </button>
-          <button
-            onClick={() => {
-              setOverlayVisible(v => !v);
-              // Auto-enable overlay to collect panel data
-              if (!correlationEnabled) setCorrelationEnabled(true);
-            }}
-            className={`tab${overlayVisible ? ' active' : ''}`}
-            style={{ border: '1px solid var(--border-primary)', padding: '6px 16px', fontSize: 12, cursor: 'pointer' }}
-            title="Correlate all time-series on one chart - hover a series to see correlation scores"
-          >
-            Correlate <span style={{ fontSize: 8, padding: '1px 4px', borderRadius: 3, background: 'rgba(234, 179, 8, 0.2)', color: '#eab308', border: '1px solid rgba(234, 179, 8, 0.3)', verticalAlign: 'super', marginLeft: 2 }}>beta</span>
-          </button>
-          {hasSections && (
+
+          <div role="group" aria-label="Dashboard viewing modes" style={dashboardHeaderGroupStyle}>
             <button
               onClick={() => {
-                const allNames = panelSections.filter(s => s.name !== null).map(s => s.name!);
-                const allCollapsed = allNames.every(n => collapsedSections.has(n));
-                setCollapsedSections(allCollapsed ? new Set() : new Set(allNames));
+                setFullscreenPanelIndex(null);
+                setFocusedPanelIndex(activeDashboard.panels.length > 0 ? 0 : null);
               }}
-              style={secondaryBtnStyle}
-              title={collapsedSections.size > 0 ? 'Expand all sections' : 'Collapse all sections'}
+              className="tab dashboard-header-action"
+              style={{
+                ...dashboardHeaderButtonStyle,
+                opacity: activeDashboard.panels.length > 0 ? 1 : 0.45,
+                cursor: activeDashboard.panels.length > 0 ? 'pointer' : 'not-allowed',
+              }}
+              disabled={activeDashboard.panels.length === 0}
+              title="Enter focus mode"
             >
-              {collapsedSections.size > 0 ? 'Expand All' : 'Collapse All'}
+              Focus
             </button>
-          )}
-          <button onClick={() => handleExport(activeDashboard)} style={secondaryBtnStyle} title="Copy JSON to clipboard">Export</button>
-          <button onClick={() => handleClone(activeDashboard)} style={secondaryBtnStyle}>Clone</button>
-          <button onClick={() => setView({ mode: 'edit', dashboard: activeDashboard })} style={secondaryBtnStyle}>Edit</button>
-          {!activeDashboard.builtin && (
-            <button onClick={() => handleDelete(activeDashboard.id)} style={{ ...secondaryBtnStyle, color: '#f85149', borderColor: 'rgba(248,81,73,0.3)' }}>Delete</button>
-          )}
+            <button
+              onClick={() => { setCorrelationEnabled(e => !e); setHoveredTimestamp(null); }}
+              className={`tab dashboard-header-action${correlationEnabled ? ' active' : ''}`}
+              style={dashboardHeaderButtonStyle}
+              aria-pressed={correlationEnabled}
+              title="Sync the crosshair and values across all panels"
+            >
+              Crosshair
+            </button>
+            <button
+              onClick={() => {
+                setOverlayVisible(v => !v);
+                // Auto-enable cross-panel data collection for the overlay.
+                if (!correlationEnabled) setCorrelationEnabled(true);
+              }}
+              className={`tab dashboard-header-action${overlayVisible ? ' active' : ''}`}
+              style={dashboardHeaderButtonStyle}
+              aria-pressed={overlayVisible}
+              title="Overlay all time-series to compare and correlate them"
+            >
+              Correlate
+              <span style={{ fontSize: 8, padding: '1px 4px', borderRadius: 3, background: 'rgba(234, 179, 8, 0.2)', color: '#eab308', border: '1px solid rgba(234, 179, 8, 0.3)', lineHeight: 1.3 }}>
+                beta
+              </span>
+            </button>
+            {hasSections && (
+              <button
+                onClick={() => {
+                  const allNames = panelSections.filter(s => s.name !== null).map(s => s.name!);
+                  const allCollapsed = allNames.every(n => collapsedSections.has(n));
+                  setCollapsedSections(allCollapsed ? new Set() : new Set(allNames));
+                }}
+                className="tab dashboard-header-action"
+                style={dashboardHeaderButtonStyle}
+                title={collapsedSections.size > 0 ? 'Expand all dashboard sections' : 'Collapse all dashboard sections'}
+              >
+                {collapsedSections.size > 0 ? 'Expand All' : 'Collapse All'}
+              </button>
+            )}
+          </div>
+
+          <div role="group" aria-label="Dashboard operations" style={dashboardHeaderGroupStyle}>
+            <button onClick={() => setView({ mode: 'edit', dashboard: activeDashboard })} className="tab dashboard-header-action" style={dashboardHeaderButtonStyle} title="Edit dashboard">Edit</button>
+            <button onClick={() => handleClone(activeDashboard)} className="tab dashboard-header-action" style={dashboardHeaderButtonStyle} title="Clone dashboard">Clone</button>
+            <button onClick={() => handleExport(activeDashboard)} className="tab dashboard-header-action" style={dashboardHeaderButtonStyle} title="Copy dashboard JSON to clipboard">Export</button>
+            {!activeDashboard.builtin && (
+              <button
+                onClick={() => handleDelete(activeDashboard.id)}
+                className="tab dashboard-header-action"
+                style={{ ...dashboardHeaderButtonStyle, color: '#f85149' }}
+                title="Delete dashboard"
+              >
+                Delete
+              </button>
+            )}
+          </div>
         </div>
       </div>
 

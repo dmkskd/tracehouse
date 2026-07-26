@@ -1,6 +1,7 @@
 @import "tailwindcss";
 @import "../../frontend/src/styles/themes.css";
 @import "../../frontend/src/styles/page-tabs.css";
+@import "../../frontend/src/styles/dashboard-controls.css";
 @config "../tailwind.config.js";
 
 /* Use tailwind.config.js for content scanning */

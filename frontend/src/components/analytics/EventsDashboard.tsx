@@ -634,18 +634,10 @@ export const EventsDashboard: React.FC<EventsDashboardProps> = ({
               )}
             </span>
             <span style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-              {selectedEvent?.query_id && onOpenQueryDetails && (
-                <button
-                  onClick={() => onOpenQueryDetails(selectedEvent)}
-                  style={secondaryButtonStyle}
-                >
-                  Query Details
-                </button>
-              )}
               {selectedEvent && onInvestigateEvent && (
                 <button
                   onClick={() => onInvestigateEvent(selectedEvent)}
-                  style={secondaryButtonStyle}
+                  style={eventNavigationButtonStyle}
                 >
                   Open in Time Travel ↗
                 </button>
@@ -690,7 +682,22 @@ export const EventsDashboard: React.FC<EventsDashboardProps> = ({
                 marginBottom: 14,
               }}>
                 {eventDetailSections(selectedEvent).map(section => (
-                  <EventDetailSectionView key={section.id} section={section} />
+                  <EventDetailSectionView
+                    key={section.id}
+                    section={section}
+                    action={section.id === 'identifiers'
+                      && selectedEvent.query_id
+                      && onOpenQueryDetails
+                      ? (
+                        <button
+                          onClick={() => onOpenQueryDetails(selectedEvent)}
+                          style={eventNavigationButtonStyle}
+                        >
+                          View Query Details ↗
+                        </button>
+                      )
+                      : undefined}
+                  />
                 ))}
               </div>
 
@@ -1048,6 +1055,19 @@ const secondaryButtonStyle: React.CSSProperties = {
   cursor: 'pointer',
 };
 
+const eventNavigationButtonStyle: React.CSSProperties = {
+  ...secondaryButtonStyle,
+  padding: '4px 10px',
+  fontSize: 9,
+  fontWeight: 600,
+  lineHeight: 1.3,
+  color: '#58a6ff',
+  background: 'rgba(88,166,255,0.1)',
+  border: '1px solid rgba(88,166,255,0.45)',
+  textTransform: 'none',
+  letterSpacing: 'normal',
+};
+
 const panelTabStyle: React.CSSProperties = {
   padding: '3px 7px',
   borderRadius: 4,
@@ -1145,11 +1165,16 @@ const EventSeverity: React.FC<{
 
 const EventDetailSectionView: React.FC<{
   section: EventDetailSection;
-}> = ({ section }) => (
+  action?: React.ReactNode;
+}> = ({ section, action }) => (
   <section style={{
     minWidth: 0,
   }}>
     <div style={{
+      display: 'flex',
+      alignItems: 'center',
+      justifyContent: 'flex-start',
+      gap: 10,
       paddingBottom: 5,
       marginBottom: 3,
       borderBottom: '1px solid var(--border-primary)',
@@ -1159,7 +1184,8 @@ const EventDetailSectionView: React.FC<{
       textTransform: 'uppercase',
       letterSpacing: '0.55px',
     }}>
-      {section.label}
+      <span>{section.label}</span>
+      {action}
     </div>
     <dl style={{
       display: 'grid',

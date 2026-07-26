@@ -163,6 +163,8 @@ export const PartInspector: React.FC<PartInspectorProps> = ({
   useEffect(() => {
     const handleKeyDown = (e: KeyboardEvent) => {
       if (e.key === 'Escape') {
+        e.preventDefault();
+        e.stopImmediatePropagation();
         onClose();
       }
     };
@@ -216,7 +218,10 @@ export const PartInspector: React.FC<PartInspectorProps> = ({
   };
   
   return createPortal(
-    <div 
+    <div
+      role="dialog"
+      aria-modal="true"
+      aria-label="Part inspector"
       data-theme={currentTheme} 
       className={currentTheme === 'light' ? 'theme-light' : 'theme-dark'}
       style={portalStyle}

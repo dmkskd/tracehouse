@@ -1,6 +1,12 @@
 import { describe, expect, test } from 'vitest';
 import type { DashboardPanel } from '../dashboards';
-import { adjacentSectionPanelIndex, groupDashboardPanels, panelOwnsShortcut } from '../dashboardFocusStage';
+import {
+  adjacentSectionPanelIndex,
+  dashboardOwnsEscape,
+  dashboardOwnsFocusNavigation,
+  groupDashboardPanels,
+  panelOwnsShortcut,
+} from '../dashboardFocusStage';
 
 function panel(queryName: string, section?: string): DashboardPanel {
   return { queryName, ...(section ? { section } : {}) };
@@ -49,5 +55,37 @@ describe('dashboard focus stage', { tags: ['analytics'] }, () => {
     expect(panelOwnsShortcut(false, true, true)).toBe(false);
     expect(panelOwnsShortcut(false, true, false)).toBe(true);
     expect(panelOwnsShortcut(true, false, false)).toBe(true);
+  });
+
+  test('uses Escape for list navigation only after local UI layers', () => {
+    const plainEscape = new KeyboardEvent('keydown', { key: 'Escape' });
+    expect(dashboardOwnsEscape(plainEscape, false, false)).toBe(true);
+    expect(dashboardOwnsEscape(plainEscape, true, false)).toBe(false);
+    expect(dashboardOwnsEscape(plainEscape, false, true)).toBe(false);
+
+    const input = document.createElement('input');
+    const inputEscape = new KeyboardEvent('keydown', { key: 'Escape' });
+    input.dispatchEvent(inputEscape);
+    expect(dashboardOwnsEscape({ ...inputEscape, target: input }, false, false)).toBe(false);
+
+    const handledEscape = new KeyboardEvent('keydown', { key: 'Escape', cancelable: true });
+    handledEscape.preventDefault();
+    expect(dashboardOwnsEscape(handledEscape, false, false)).toBe(false);
+    expect(dashboardOwnsEscape(new KeyboardEvent('keydown', { key: 'Enter' }), false, false)).toBe(false);
+  });
+
+  test('yields focus navigation to a foreground dialog', () => {
+    const arrowDown = new KeyboardEvent('keydown', { key: 'ArrowDown' });
+    expect(dashboardOwnsFocusNavigation(arrowDown, false)).toBe(true);
+    expect(dashboardOwnsFocusNavigation(arrowDown, true)).toBe(false);
+
+    const dialog = document.createElement('div');
+    dialog.setAttribute('role', 'dialog');
+    const dialogButton = document.createElement('button');
+    dialog.appendChild(dialogButton);
+    expect(dashboardOwnsFocusNavigation(
+      { defaultPrevented: false, isComposing: false, target: dialogButton },
+      false,
+    )).toBe(false);
   });
 });

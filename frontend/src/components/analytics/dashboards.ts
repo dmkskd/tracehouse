@@ -79,6 +79,28 @@ export interface Dashboard {
   filters?: DashboardFilter[];
 }
 
+/** Match every search term across dashboard metadata and its panel definitions. */
+export function dashboardMatchesSearch(dashboard: Dashboard, search: string): boolean {
+  const terms = search.trim().toLocaleLowerCase().split(/\s+/).filter(Boolean);
+  if (terms.length === 0) return true;
+
+  const haystack = [
+    dashboard.title,
+    dashboard.description,
+    dashboard.group,
+    dashboard.category,
+    dashboard.source,
+    dashboard.builtin ? 'built-in builtin' : 'custom',
+    ...dashboard.panels.flatMap(panel => [panel.queryName, panel.section]),
+    ...(dashboard.filters ?? []).flatMap(filter => [filter.label, filter.param]),
+  ]
+    .filter((value): value is string => Boolean(value))
+    .join(' ')
+    .toLocaleLowerCase();
+
+  return terms.every(term => haystack.includes(term));
+}
+
 // ─── Resolve panel → Query ───
 
 export function resolvePanel(panel: DashboardPanel): Query | undefined {
@@ -555,6 +577,7 @@ const BUILTIN_DASHBOARDS: Dashboard[] = [
     description: 'All panels from the official ClickHouse Prom-Exporter Grafana dashboard - reproduced natively without Prometheus',
     source: 'https://github.com/ClickHouse/clickhouse-mixin',
     group: 'Grafana Imports',
+    category: 'ClickHouse Cloud',
     columns: 2,
     panels: [
       // ── Server Health & Resources ──
@@ -629,6 +652,7 @@ const BUILTIN_DASHBOARDS: Dashboard[] = [
     description: 'All panels from the Altinity ClickHouse Operator Grafana dashboard - reproduced natively without Prometheus',
     source: 'https://grafana.com/grafana/dashboards/12163',
     group: 'Grafana Imports',
+    category: 'Altinity',
     columns: 2,
     panels: [
       // ── Overview ──
