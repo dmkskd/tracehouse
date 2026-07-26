@@ -5,12 +5,13 @@ import {
 } from '../timeline/timeline-event-model';
 
 export const EVENT_DISTRIBUTION_LAYOUT = {
-  labelWidth: 124,
-  rightPadding: 14,
-  topPadding: 10,
+  labelWidth: 132,
+  rightPadding: 16,
+  topPadding: 38,
   activeLaneHeight: 30,
   quietLaneHeight: 19,
-  axisHeight: 25,
+  focusedLaneHeight: 68,
+  axisHeight: 8,
 } as const;
 
 export const EVENT_CATEGORY_COLORS: Record<TimelineEventCategory, string> = {
@@ -33,8 +34,6 @@ export const EVENT_CATEGORY_SYMBOLS: Record<TimelineEventCategory, string> = {
   maintenance: '⚙',
 };
 
-export type EventMarkerShape = 'circle' | 'diamond' | 'square' | 'triangle';
-
 export interface EventDistributionLane {
   category: TimelineEventCategory;
   eventCount: number;
@@ -54,23 +53,20 @@ export interface EventHoverCardModel {
   actionLabel: string;
 }
 
-export function eventMarkerShape(event: TimelineEvent): EventMarkerShape {
-  if (event.kind === 'server_restart') return 'diamond';
-  if (event.kind === 'server_crash' || event.kind === 'query_timeout') {
-    return 'triangle';
-  }
-  if (event.kind === 'query_oom' || event.kind === 'query_rejected') {
-    return 'square';
-  }
-  return 'circle';
-}
-
 export function formatEventDistributionTick(ms: number, spanMs: number): string {
   const date = new Date(ms);
   if (spanMs > 36 * 60 * 60 * 1000) {
     return date.toLocaleString([], {
       month: 'short',
       day: '2-digit',
+      hour: '2-digit',
+      minute: '2-digit',
+    });
+  }
+  if (spanMs >= 12 * 60 * 60 * 1000) {
+    return date.toLocaleString([], {
+      day: '2-digit',
+      month: 'short',
       hour: '2-digit',
       minute: '2-digit',
     });
@@ -102,17 +98,24 @@ export function groupEventsByCategory(
 
 export function buildEventDistributionLanes(
   byCategory: ReadonlyMap<TimelineEventCategory, readonly TimelineEvent[]>,
+  focusedCategory?: TimelineEventCategory,
 ): EventDistributionLane[] {
   const {
     activeLaneHeight,
     quietLaneHeight,
+    focusedLaneHeight,
     topPadding,
   } = EVENT_DISTRIBUTION_LAYOUT;
-  const laneHeights = TIMELINE_EVENT_CATEGORIES.map(category =>
-    (byCategory.get(category)?.length ?? 0) > 0
-      ? activeLaneHeight
-      : quietLaneHeight);
-  return TIMELINE_EVENT_CATEGORIES.map((category, index) => {
+  const categories = focusedCategory
+    ? [focusedCategory]
+    : TIMELINE_EVENT_CATEGORIES;
+  const laneHeights = categories.map(category =>
+    focusedCategory
+      ? focusedLaneHeight
+      : (byCategory.get(category)?.length ?? 0) > 0
+        ? activeLaneHeight
+        : quietLaneHeight);
+  return categories.map((category, index) => {
     const eventCount = byCategory.get(category)?.length ?? 0;
     const laneHeight = laneHeights[index];
     const yTop = topPadding + laneHeights

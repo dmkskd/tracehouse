@@ -448,12 +448,17 @@ export const EventsDashboard: React.FC<EventsDashboardProps> = ({
         </button>
       </div>
 
-      <div style={{ flexShrink: 0, padding: '10px 20px 0' }}>
+      <div style={{ flexShrink: 0, padding: '10px 20px' }}>
         <EventDistribution
           events={filteredEvents}
           rangeStartMs={timeRange.startMs}
           rangeEndMs={timeRange.endMs}
           selectedEventId={selectedEvent?.id}
+          focusedCategory={category === 'all' ? undefined : category}
+          onCategoryFocus={nextCategory => {
+            setCategory(nextCategory ?? 'all');
+            setClusterSelection(null);
+          }}
           onSelectEvent={event => {
             setClusterSelection(buildEventMarkerSelection([event], timeRange.endMs));
             onSelectEvent(event);

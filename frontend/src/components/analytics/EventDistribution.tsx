@@ -1,5 +1,5 @@
 import React, { useEffect, useMemo, useRef, useState } from 'react';
-import type { TimelineEvent } from '@tracehouse/core';
+import type { TimelineEvent, TimelineEventCategory } from '@tracehouse/core';
 import {
   clusterTimelineEvents,
   EVENT_CATEGORY_LABELS,
@@ -12,7 +12,6 @@ import {
   EVENT_CATEGORY_COLORS,
   EVENT_CATEGORY_SYMBOLS,
   EVENT_DISTRIBUTION_LAYOUT,
-  eventMarkerShape,
   formatEventDistributionTick,
   groupEventsByCategory,
   isTimelineStateEpisode,
@@ -23,7 +22,9 @@ interface EventDistributionProps {
   rangeStartMs: number;
   rangeEndMs: number;
   selectedEventId?: string;
+  focusedCategory?: TimelineEventCategory;
   onSelectEvent: (event: TimelineEvent) => void;
+  onCategoryFocus?: (category?: TimelineEventCategory) => void;
   onSelectCluster?: (
     events: TimelineEvent[],
     primaryEvent: TimelineEvent,
@@ -52,7 +53,9 @@ export const EventDistribution: React.FC<EventDistributionProps> = ({
   rangeStartMs,
   rangeEndMs,
   selectedEventId,
+  focusedCategory,
   onSelectEvent,
+  onCategoryFocus,
   onSelectCluster,
   onRangeSelect,
 }) => {
@@ -88,16 +91,18 @@ export const EventDistribution: React.FC<EventDistributionProps> = ({
   }, [events]);
 
   const lanes = useMemo(
-    () => buildEventDistributionLanes(byCategory),
-    [byCategory],
+    () => buildEventDistributionLanes(byCategory, focusedCategory),
+    [byCategory, focusedCategory],
   );
   const laneAreaHeight = lanes.reduce((sum, lane) => sum + lane.laneHeight, 0);
   const height = TOP_PADDING + laneAreaHeight + AXIS_HEIGHT;
+  const rulerY = TOP_PADDING - 10;
+  const tickCount = width >= 1400 ? 7 : width >= 900 ? 5 : 3;
 
   const ticks = useMemo(
-    () => Array.from({ length: 5 }, (_, index) =>
-      rangeStartMs + (spanMs * index) / 4),
-    [rangeStartMs, spanMs],
+    () => Array.from({ length: tickCount }, (_, index) =>
+      rangeStartMs + (spanMs * index) / (tickCount - 1)),
+    [rangeStartMs, spanMs, tickCount],
   );
 
   const pointerX = (event: React.PointerEvent<SVGSVGElement>) =>
@@ -129,7 +134,8 @@ export const EventDistribution: React.FC<EventDistributionProps> = ({
         border: '1px solid var(--border-primary)',
         borderRadius: 8,
         background: 'var(--bg-secondary)',
-        overflow: 'hidden',
+        overflow: 'visible',
+        zIndex: hoveredMarker ? 30 : undefined,
       }}
     >
       <div style={{
@@ -142,7 +148,65 @@ export const EventDistribution: React.FC<EventDistributionProps> = ({
         textTransform: 'uppercase',
         letterSpacing: '0.6px',
       }}>
-        <span>Events over time</span>
+        <span style={{ display: 'inline-flex', alignItems: 'center', gap: 10 }}>
+          <span style={{
+            display: 'inline-flex',
+            alignItems: 'center',
+            gap: 7,
+            color: 'var(--text-secondary)',
+            fontWeight: 700,
+          }}>
+            <span style={{
+              width: 14,
+              height: 1,
+              background: 'var(--text-muted)',
+              position: 'relative',
+            }}>
+              <span style={{
+                position: 'absolute',
+                right: 0,
+                top: -2,
+                width: 5,
+                height: 5,
+                borderRadius: '50%',
+                background: '#58a6ff',
+              }} />
+            </span>
+            Event timeline
+          </span>
+          {onCategoryFocus && (
+            focusedCategory ? (
+              <button
+                type="button"
+                onClick={() => onCategoryFocus()}
+                title="Show all categories"
+                style={{
+                  padding: '2px 7px',
+                  border: '1px solid rgba(88,166,255,0.3)',
+                  borderRadius: 9,
+                  background: 'rgba(88,166,255,0.08)',
+                  color: '#58a6ff',
+                  font: 'inherit',
+                  cursor: 'pointer',
+                  textTransform: 'none',
+                  letterSpacing: 0,
+                }}
+              >
+                Focused: {EVENT_CATEGORY_LABELS[focusedCategory]} ×
+              </button>
+            ) : (
+              <span style={{
+                color: 'var(--text-muted)',
+                fontSize: 8,
+                fontWeight: 500,
+                textTransform: 'none',
+                letterSpacing: 0,
+              }}>
+                Click a category to focus
+              </span>
+            )
+          )}
+        </span>
         <span style={{
           display: 'flex',
           alignItems: 'center',
@@ -150,9 +214,9 @@ export const EventDistribution: React.FC<EventDistributionProps> = ({
           textTransform: 'none',
           letterSpacing: 0,
         }}>
-          <span>● point</span>
-          <span>━ state episode</span>
-          <span>Click an event · drag to narrow</span>
+          <span>● event</span>
+          <span>▬ state</span>
+          <span>Drag across time to zoom</span>
         </span>
       </div>
       <svg
@@ -188,6 +252,67 @@ export const EventDistribution: React.FC<EventDistributionProps> = ({
           setDragCurrentX(null);
         }}
       >
+        <rect
+          x={LABEL_WIDTH}
+          y={rulerY}
+          width={plotWidth}
+          height={laneAreaHeight + 10}
+          fill="var(--bg-primary)"
+          opacity={0.34}
+        />
+        {ticks.slice(0, -1).map((tick, index) => {
+          const x = xForMs(tick);
+          const nextX = xForMs(ticks[index + 1]);
+          return index % 2 === 0 ? (
+            <rect
+              key={`band-${tick}`}
+              x={x}
+              y={rulerY}
+              width={nextX - x}
+              height={laneAreaHeight + 10}
+              fill="#58a6ff"
+              opacity={0.022}
+            />
+          ) : null;
+        })}
+
+        <text
+          x={13}
+          y={rulerY - 20}
+          fill="var(--text-muted)"
+          fontSize={8}
+          fontWeight={700}
+          letterSpacing="0.7px"
+        >
+          CATEGORY
+        </text>
+        <text
+          x={LABEL_WIDTH + 8}
+          y={rulerY - 20}
+          fill="var(--text-muted)"
+          fontSize={8}
+          fontWeight={700}
+          letterSpacing="0.7px"
+        >
+          TIME →
+        </text>
+        <line
+          x1={LABEL_WIDTH}
+          x2={width - RIGHT_PADDING}
+          y1={rulerY}
+          y2={rulerY}
+          stroke="var(--text-muted)"
+          opacity={0.55}
+        />
+        <line
+          x1={LABEL_WIDTH}
+          x2={LABEL_WIDTH}
+          y1={rulerY - 5}
+          y2={height}
+          stroke="var(--border-primary)"
+          opacity={0.9}
+        />
+
         {ticks.map((tick, index) => {
           const x = xForMs(tick);
           return (
@@ -195,21 +320,42 @@ export const EventDistribution: React.FC<EventDistributionProps> = ({
               <line
                 x1={x}
                 x2={x}
-                y1={TOP_PADDING}
-                y2={height - AXIS_HEIGHT + 2}
+                y1={rulerY - 4}
+                y2={height}
                 stroke="var(--border-primary)"
-                strokeDasharray={index === 0 || index === 4 ? undefined : '2 4'}
-                opacity={0.7}
+                strokeDasharray={index === 0 || index === tickCount - 1 ? undefined : '2 4'}
+                opacity={index === 0 || index === tickCount - 1 ? 0.9 : 0.72}
+              />
+              <line
+                x1={x}
+                x2={x}
+                y1={rulerY - 5}
+                y2={rulerY + 5}
+                stroke="var(--text-muted)"
+                opacity={0.75}
               />
               <text
                 x={x}
-                y={height - 7}
-                textAnchor={index === 0 ? 'start' : index === 4 ? 'end' : 'middle'}
-                fill="var(--text-muted)"
-                fontSize={9}
+                y={rulerY - 9}
+                dx={index === 0 ? 6 : index === tickCount - 1 ? -6 : 0}
+                textAnchor={index === 0 ? 'start' : index === tickCount - 1 ? 'end' : 'middle'}
+                fill="var(--text-secondary)"
+                fontSize={8.5}
+                fontWeight={600}
               >
                 {formatEventDistributionTick(tick, spanMs)}
               </text>
+              {index < ticks.length - 1 && (
+                <line
+                  x1={(x + xForMs(ticks[index + 1])) / 2}
+                  x2={(x + xForMs(ticks[index + 1])) / 2}
+                  y1={rulerY}
+                  y2={height}
+                  stroke="var(--border-primary)"
+                  strokeDasharray="1 5"
+                  opacity={0.38}
+                />
+              )}
             </g>
           );
         })}
@@ -224,6 +370,7 @@ export const EventDistribution: React.FC<EventDistributionProps> = ({
           const categoryEvents = byCategory.get(category) ?? [];
           const categoryColor = EVENT_CATEGORY_COLORS[category];
           const active = eventCount > 0;
+          const categoryFocused = focusedCategory === category;
           const intervalEvents = categoryEvents.filter(isTimelineStateEpisode);
           const pointEvents = categoryEvents.filter(event => !intervalEvents.includes(event));
           const clusters = clusterTimelineEvents(
@@ -231,17 +378,25 @@ export const EventDistribution: React.FC<EventDistributionProps> = ({
             rangeStartMs,
             rangeEndMs,
             plotWidth,
-            12,
+            categoryFocused ? 8 : 12,
           );
           return (
             <g key={category}>
               <rect
                 x={0}
                 y={yTop}
-                width={width}
+                width={LABEL_WIDTH}
                 height={laneHeight}
                 fill={active ? categoryColor : 'var(--text-muted)'}
-                opacity={active ? 0.055 : categoryIndex % 2 === 0 ? 0.018 : 0.008}
+                opacity={
+                  categoryFocused
+                    ? 0.12
+                    : active
+                      ? 0.06
+                      : categoryIndex % 2 === 0
+                        ? 0.025
+                        : 0.012
+                }
               />
               <rect
                 x={0}
@@ -253,12 +408,21 @@ export const EventDistribution: React.FC<EventDistributionProps> = ({
                 opacity={active ? 0.9 : 0.2}
               />
               <line
+                x1={0}
+                x2={width - RIGHT_PADDING}
+                y1={yTop + laneHeight}
+                y2={yTop + laneHeight}
+                stroke="var(--border-primary)"
+                opacity={0.42}
+              />
+              <line
                 x1={LABEL_WIDTH}
                 x2={width - RIGHT_PADDING}
                 y1={y}
                 y2={y}
-                stroke={active ? categoryColor : 'var(--border-primary)'}
-                opacity={active ? 0.3 : 0.65}
+                stroke="var(--text-muted)"
+                strokeDasharray={active ? '2 5' : '1 6'}
+                opacity={active ? 0.32 : 0.16}
               />
               <text
                 x={13}
@@ -300,6 +464,38 @@ export const EventDistribution: React.FC<EventDistributionProps> = ({
                     {eventCount > 999 ? '999+' : eventCount}
                   </text>
                 </g>
+              )}
+              {onCategoryFocus && (active || categoryFocused) && (
+                <rect
+                  x={0}
+                  y={yTop}
+                  width={LABEL_WIDTH}
+                  height={laneHeight}
+                  fill="transparent"
+                  role="button"
+                  tabIndex={0}
+                  aria-label={
+                    categoryFocused
+                      ? `Show all event categories`
+                      : `Focus ${EVENT_CATEGORY_LABELS[category]} events`
+                  }
+                  style={{ cursor: 'pointer', outline: 'none' }}
+                  onPointerDown={event => event.stopPropagation()}
+                  onClick={() => onCategoryFocus(
+                    categoryFocused ? undefined : category,
+                  )}
+                  onKeyDown={event => {
+                    if (event.key !== 'Enter' && event.key !== ' ') return;
+                    event.preventDefault();
+                    onCategoryFocus(categoryFocused ? undefined : category);
+                  }}
+                >
+                  <title>
+                    {categoryFocused
+                      ? 'Show all categories'
+                      : `Focus ${EVENT_CATEGORY_LABELS[category]}`}
+                  </title>
+                </rect>
               )}
 
               {intervalEvents.map(event => {
@@ -347,7 +543,6 @@ export const EventDistribution: React.FC<EventDistributionProps> = ({
                 const selected = cluster.events.some(event => event.id === selectedEventId);
                 const hovered = hoveredMarker?.id === cluster.id;
                 const radius = cluster.events.length > 1 ? 7 : 4.5;
-                const shape = eventMarkerShape(cluster.primaryEvent);
                 const markerLabel = timelineEventClusterLabel(cluster);
                 return (
                   <g
@@ -377,50 +572,18 @@ export const EventDistribution: React.FC<EventDistributionProps> = ({
                     <line
                       x1={0}
                       x2={0}
-                      y1={radius}
-                      y2={laneHeight / 2 - 3}
+                      y1={-laneHeight / 2 + 4}
+                      y2={-radius}
                       stroke={EVENT_SEVERITY_COLORS[cluster.severity]}
                       strokeWidth={1}
-                      opacity={0.35}
+                      opacity={0.42}
                     />
-                    {cluster.events.length > 1 || shape === 'circle' ? (
-                      <circle
-                        r={radius}
-                        fill={EVENT_SEVERITY_COLORS[cluster.severity]}
-                        stroke={selected || hovered ? 'var(--text-primary)' : 'var(--bg-secondary)'}
-                        strokeWidth={selected || hovered ? 2 : 1}
-                      />
-                    ) : shape === 'diamond' ? (
-                      <rect
-                        x={-4}
-                        y={-4}
-                        width={8}
-                        height={8}
-                        rx={1}
-                        transform="rotate(45)"
-                        fill={EVENT_SEVERITY_COLORS[cluster.severity]}
-                        stroke={selected || hovered ? 'var(--text-primary)' : 'var(--bg-secondary)'}
-                        strokeWidth={selected || hovered ? 2 : 1}
-                      />
-                    ) : shape === 'square' ? (
-                      <rect
-                        x={-4.5}
-                        y={-4.5}
-                        width={9}
-                        height={9}
-                        rx={2}
-                        fill={EVENT_SEVERITY_COLORS[cluster.severity]}
-                        stroke={selected || hovered ? 'var(--text-primary)' : 'var(--bg-secondary)'}
-                        strokeWidth={selected || hovered ? 2 : 1}
-                      />
-                    ) : (
-                      <path
-                        d="M 0 -5 L 5 4 L -5 4 Z"
-                        fill={EVENT_SEVERITY_COLORS[cluster.severity]}
-                        stroke={selected || hovered ? 'var(--text-primary)' : 'var(--bg-secondary)'}
-                        strokeWidth={selected || hovered ? 2 : 1}
-                      />
-                    )}
+                    <circle
+                      r={radius}
+                      fill={EVENT_SEVERITY_COLORS[cluster.severity]}
+                      stroke={selected || hovered ? 'var(--text-primary)' : 'var(--bg-secondary)'}
+                      strokeWidth={selected || hovered ? 2 : 1}
+                    />
                     {cluster.events.length > 1 && (
                       <text
                         y={2.7}
@@ -442,9 +605,9 @@ export const EventDistribution: React.FC<EventDistributionProps> = ({
         {dragStartX != null && dragCurrentX != null && (
           <rect
             x={Math.min(dragStartX, dragCurrentX)}
-            y={TOP_PADDING}
+            y={rulerY}
             width={Math.abs(dragCurrentX - dragStartX)}
-            height={laneAreaHeight}
+            height={laneAreaHeight + 10}
             fill="rgba(88,166,255,0.13)"
             stroke="#58a6ff"
             strokeWidth={1}
@@ -491,7 +654,6 @@ const EventHoverCard: React.FC<{
       color: 'var(--text-primary)',
       boxShadow: '0 8px 24px rgba(0,0,0,0.22)',
     }}>
-      <div style={{ height: 3, background: severityColor }} />
       <div style={{ padding: '9px 11px 8px' }}>
         <div style={{
           display: 'flex',

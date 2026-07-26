@@ -3,7 +3,7 @@ import type { TimelineEvent } from '@tracehouse/core';
 import {
   buildEventDistributionLanes,
   buildEventHoverCardModel,
-  eventMarkerShape,
+  formatEventDistributionTick,
   groupEventsByCategory,
 } from '../event-distribution-model';
 
@@ -42,23 +42,42 @@ describe('event distribution model', () => {
       'changes',
       'maintenance',
     ]);
-    expect(lanes[0]).toMatchObject({ eventCount: 1, laneHeight: 30, yTop: 10 });
-    expect(lanes[1]).toMatchObject({ eventCount: 0, laneHeight: 19, yTop: 40 });
+    expect(lanes[0]).toMatchObject({ eventCount: 1, laneHeight: 30, yTop: 38 });
+    expect(lanes[1]).toMatchObject({ eventCount: 0, laneHeight: 19, yTop: 68 });
   });
 
-  it('assigns meaningful singleton marker shapes', () => {
-    expect(eventMarkerShape(event({
-      id: 'restart',
-      occurred_at: '2026-07-25T18:00:00Z',
-      kind: 'server_restart',
+  it('includes the date when a range can cross a day boundary', () => {
+    const label = formatEventDistributionTick(
+      Date.parse('2026-07-26T06:23:00Z'),
+      24 * 60 * 60 * 1000,
+    );
+
+    expect(label).toContain('26');
+    expect(label.toLowerCase()).toContain('jul');
+  });
+
+  it('expands a focused category into a single inspection lane', () => {
+    const events = [
+      event({
+        id: 'restart',
+        occurred_at: '2026-07-25T18:00:00Z',
+        kind: 'server_restart',
+        category: 'lifecycle',
+      }),
+    ];
+
+    const lanes = buildEventDistributionLanes(
+      groupEventsByCategory(events),
+      'lifecycle',
+    );
+
+    expect(lanes).toEqual([{
       category: 'lifecycle',
-    }))).toBe('diamond');
-    expect(eventMarkerShape(event({
-      id: 'oom',
-      occurred_at: '2026-07-25T18:00:00Z',
-      kind: 'query_oom',
-      category: 'queries',
-    }))).toBe('square');
+      eventCount: 1,
+      laneHeight: 68,
+      yTop: 38,
+      y: 72,
+    }]);
   });
 
   it('summarizes a cluster without discarding its event types or hosts', () => {
