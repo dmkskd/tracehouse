@@ -95,6 +95,7 @@ interface FocusStageContext {
 interface FocusStageItem {
   globalIndex: number;
   title: string;
+  description?: string;
   sectionName: string;
   sectionPanelCount: number;
   startsSection: boolean;
@@ -170,9 +171,9 @@ const FocusAccordionRows: React.FC<{
           <button
             role="listitem"
             onClick={() => onSelectPanel(item.globalIndex)}
-            title={`Expand ${item.title}`}
+            title={`Expand ${item.title}${item.description ? ` — ${item.description}` : ''}`}
             style={{
-              width: '100%', height: 54, display: 'grid',
+              width: '100%', height: 58, display: 'grid',
               gridTemplateColumns: '28px 8px minmax(0, 1fr) minmax(110px, 190px) 20px',
               gap: 10, alignItems: 'center',
               marginTop: 8, padding: '0 14px', color: 'var(--text-secondary)', background: 'var(--bg-secondary)',
@@ -190,11 +191,24 @@ const FocusAccordionRows: React.FC<{
               width: 6, height: 6, borderRadius: '50%',
               background: chartColorByIndex(item.globalIndex), opacity: 0.65,
             }} />
-            <span style={{
-              minWidth: 0, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap',
-              fontSize: 11.5, fontWeight: 650,
-            }}>
-              {item.title}
+            <span style={{ minWidth: 0, display: 'flex', alignItems: 'baseline', gap: 10, overflow: 'hidden' }}>
+              <span style={{
+                minWidth: 0, maxWidth: item.description ? '46%' : '100%',
+                flexShrink: item.description ? 0 : 1,
+                overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap',
+                fontSize: 12, fontWeight: 650,
+              }}>
+                {item.title}
+              </span>
+              {item.description && (
+                <span style={{
+                  minWidth: 0, flex: 1, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap',
+                  color: 'var(--text-secondary)', opacity: 0.74,
+                  fontSize: 11, fontWeight: 450,
+                }}>
+                  {item.description}
+                </span>
+              )}
             </span>
             <span style={{
               minWidth: 0, display: 'flex', alignItems: 'center', justifyContent: 'flex-end', gap: 12,
@@ -1984,6 +1998,7 @@ export const DashboardViewer: React.FC<{ initialDashboardId?: string; onOpenQuer
       return {
         globalIndex,
         title: preset?.name ?? panel.queryName.split('#').pop() ?? panel.queryName,
+        description: preset?.description,
         sectionName: section.name ?? 'General',
         sectionPanelCount: section.panels.length,
         startsSection: panelIndex === 0,
