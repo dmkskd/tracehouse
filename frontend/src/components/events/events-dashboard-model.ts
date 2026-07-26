@@ -205,6 +205,7 @@ export function supportedEventGroups(): SupportedEventGroup[] {
     { category: 'lifecycle', label: 'Lifecycle' },
     { category: 'queries', label: 'Queries' },
     { category: 'replication', label: 'Replication' },
+    { category: 'coordination', label: 'Coordination' },
     { category: 'storage', label: 'Storage' },
     { category: 'changes', label: 'Changes' },
     { category: 'maintenance', label: 'Maintenance' },
@@ -290,6 +291,9 @@ export function eventDetailSections(event: OperationalEvent): EventDetailSection
   const replicaState = event.kind === 'replica_readonly' || event.kind === 'replica_unavailable'
     ? event.ended_at ? 'Recovered' : 'Ongoing at range end'
     : undefined;
+  const keeperEndpoint = event.keeper_host
+    ? `${event.keeper_host}${event.keeper_port != null ? `:${event.keeper_port}` : ''}`
+    : undefined;
 
   const sections: EventDetailSection[] = [
     {
@@ -315,6 +319,21 @@ export function eventDetailSections(event: OperationalEvent): EventDetailSection
         detailRow('Disk', event.disk_name, true),
         detailRow('Query kind', event.query_kind),
         detailRow('Operation', event.operation ?? event.task_name),
+        detailRow('Status', event.status ?? event.connection_state),
+        detailRow('Started at', event.started_at
+          ? formatEventDateTime(event.started_at)
+          : undefined),
+        detailRow('Storage', event.storage_name, true),
+        detailRow('Format', event.format),
+        detailRow('Rows', event.rows),
+        detailRow('Data', event.bytes != null ? formatBytes(event.bytes) : undefined),
+        detailRow('Files', event.num_files),
+        detailRow('Total size', event.total_size != null
+          ? formatBytes(event.total_size)
+          : undefined),
+        detailRow('Keeper cluster', event.keeper_name, true),
+        detailRow('Keeper node', keeperEndpoint, true),
+        detailRow('Reason', event.reason),
         detailRow('Duration', event.duration_ms != null
           ? `${event.duration_ms.toLocaleString()} ms`
           : undefined),
@@ -349,11 +368,14 @@ export function eventDetailSections(event: OperationalEvent): EventDetailSection
     },
     {
       id: 'identifiers',
-      label: 'Query identifiers',
+      label: 'Identifiers',
       rows: compactRows([
         detailRow('Query ID', event.query_id, true),
+        detailRow('Flush query ID', event.flush_query_id, true),
         detailRow('Initial query ID', event.initial_query_id, true),
         detailRow('Normalized hash', event.normalized_query_hash, true),
+        detailRow('Operation ID', event.operation_id, true),
+        detailRow('Keeper client ID', event.keeper_client_id, true),
       ]),
     },
   ];

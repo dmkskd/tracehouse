@@ -212,7 +212,39 @@ describe('events dashboard model', () => {
       'details',
       'identifiers',
     ]);
-    expect(sections.at(-1)?.label).toBe('Query identifiers');
+    expect(sections.at(-1)?.label).toBe('Identifiers');
+  });
+
+  it('shows backup, async-insert, and Keeper-specific event fields', () => {
+    const sections = eventDetailSections(event({
+      id: 'backup',
+      occurred_at: '2026-07-25T18:00:00Z',
+      kind: 'backup',
+      category: 'maintenance',
+      status: 'BACKUP_CREATED',
+      operation_id: 'backup-1',
+      storage_name: "Disk('backups', 'daily.zip')",
+      started_at: '2026-07-25T17:59:00Z',
+      num_files: 12,
+      total_size: 4096,
+      flush_query_id: 'flush-1',
+      keeper_name: 'default',
+      keeper_host: 'keeper-1',
+      keeper_port: 9181,
+      keeper_client_id: '9223372036854775000',
+    }));
+    const rows = Object.fromEntries(
+      sections.flatMap(section => section.rows).map(row => [row.label, row.value]),
+    );
+
+    expect(rows.Status).toBe('BACKUP_CREATED');
+    expect(rows.Storage).toBe("Disk('backups', 'daily.zip')");
+    expect(rows.Files).toBe('12');
+    expect(rows['Total size']).toBe('4 KB');
+    expect(rows['Keeper node']).toBe('keeper-1:9181');
+    expect(rows['Operation ID']).toBe('backup-1');
+    expect(rows['Flush query ID']).toBe('flush-1');
+    expect(rows['Keeper client ID']).toBe('9223372036854775000');
   });
 
   it('does not expose TraceHouse internal event IDs', () => {
@@ -230,10 +262,15 @@ describe('events dashboard model', () => {
   });
 
   it('catalogs only event kinds currently emitted by the service', () => {
-    expect(SUPPORTED_EVENT_TYPES).toHaveLength(13);
+    expect(SUPPORTED_EVENT_TYPES).toHaveLength(16);
     expect(SUPPORTED_EVENT_TYPES.map(item => item.kind)).toContain('server_restart');
     expect(SUPPORTED_EVENT_TYPES.map(item => item.kind)).toContain('replica_readonly');
-    expect(SUPPORTED_EVENT_TYPES.map(item => item.kind)).not.toContain('backup');
+    expect(SUPPORTED_EVENT_TYPES.map(item => item.kind)).toContain('backup');
+    expect(SUPPORTED_EVENT_TYPES.map(item => item.kind)).toContain('async_insert_failure');
+    expect(SUPPORTED_EVENT_TYPES.map(item => item.kind)).toContain('keeper_connection');
+    expect(SUPPORTED_EVENT_TYPES.find(item => item.kind === 'backup')?.severity)
+      .toBe('error');
+    expect(supportedEventGroups().map(group => group.category)).toContain('coordination');
     expect(supportedEventGroups().flatMap(group => group.events)).toHaveLength(
       SUPPORTED_EVENT_TYPES.length,
     );

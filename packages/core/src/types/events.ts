@@ -170,15 +170,15 @@ export const EVENT_KIND_DEFINITIONS = {
     description: 'A ClickHouse Keeper or ZooKeeper connection state change.',
     detailLabel: 'Keeper details',
     categories: ['coordination'],
-    severities: ['warning', 'error'],
+    severities: ['info', 'error'],
   },
   backup: {
     label: 'Backup / restore',
     shortLabel: 'Backup',
-    description: 'A backup or restore operation state change.',
+    description: 'A backup or restore operation completed, failed, or was cancelled.',
     detailLabel: 'Recorded details',
     categories: ['maintenance'],
-    severities: ['info', 'warning', 'error'],
+    severities: ['error', 'warning', 'info'],
   },
   async_insert_failure: {
     label: 'Async insert failure',
@@ -219,6 +219,30 @@ export const EVENT_SOURCE_DEFINITIONS = [
       'query_resource_limit',
       'ddl',
     ],
+  },
+  {
+    id: 'async_insert_failures',
+    source: 'system.asynchronous_insert_log',
+    coverageLabel: undefined,
+    capability: 'asynchronous_insert_log',
+    description: 'Asynchronous insert parsing and flush failures.',
+    kinds: ['async_insert_failure'],
+  },
+  {
+    id: 'backups',
+    source: 'system.backup_log',
+    coverageLabel: undefined,
+    capability: 'backup_log',
+    description: 'Terminal backup and restore outcomes.',
+    kinds: ['backup'],
+  },
+  {
+    id: 'keeper_connections',
+    source: 'system.zookeeper_connection_log',
+    coverageLabel: undefined,
+    capability: 'zookeeper_connection_log',
+    description: 'Keeper and ZooKeeper connection and disconnection state changes.',
+    kinds: ['keeper_connection'],
   },
   {
     id: 'server_restarts',
@@ -339,6 +363,22 @@ export interface OperationalEvent {
   memory_usage?: number;
   signal?: number;
   version?: string;
+  status?: string;
+  operation_id?: string;
+  storage_name?: string;
+  rows?: number;
+  bytes?: number;
+  flush_query_id?: string;
+  format?: string;
+  started_at?: string;
+  num_files?: number;
+  total_size?: number;
+  connection_state?: string;
+  keeper_name?: string;
+  keeper_host?: string;
+  keeper_port?: number;
+  keeper_client_id?: string;
+  reason?: string;
 }
 
 export type EventSourceStatus =

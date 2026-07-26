@@ -2,7 +2,10 @@ import type { IClickHouseAdapter } from '../adapters/types.js';
 import { buildQuery, tagQuery } from '../queries/builder.js';
 import { TAB_EVENTS, TAB_TIME_TRAVEL, sourceTag } from '../queries/source-tags.js';
 import {
+  ASYNC_INSERT_FAILURE_EVENTS,
+  BACKUP_EVENTS,
   BACKGROUND_TASK_FAILURE_EVENTS,
+  KEEPER_CONNECTION_EVENTS,
   OPERATIONAL_ERROR_EVENTS,
   PART_FAILURE_EVENTS,
   QUERY_EVENTS,
@@ -221,6 +224,11 @@ export class EventsService {
       BoundEventSourceDefinition['fetch']
     > = {
       query_log: sourceParams => this.fetchQueryEvents(sourceParams, sourceTab),
+      async_insert_failures: sourceParams =>
+        this.fetchAsyncInsertFailureEvents(sourceParams, sourceTab),
+      backups: sourceParams => this.fetchBackupEvents(sourceParams, sourceTab),
+      keeper_connections: sourceParams =>
+        this.fetchKeeperConnectionEvents(sourceParams, sourceTab),
       server_restarts: sourceParams => this.fetchRestartEvents(sourceParams, sourceTab),
       server_crashes: sourceParams => this.fetchCrashEvents(sourceParams, sourceTab),
       part_failures: sourceParams => this.fetchPartFailureEvents(sourceParams, sourceTab),
@@ -333,6 +341,168 @@ export class EventsService {
         exception_name: isDdl ? undefined : QUERY_EXCEPTION_NAMES[code],
         duration_ms: Number(row.query_duration_ms ?? 0),
         memory_usage: Number(row.memory_usage ?? 0),
+      } satisfies OperationalEvent;
+    });
+  }
+
+  private async fetchAsyncInsertFailureEvents(
+    params: Record<string, string | number>,
+    sourceTab: typeof TAB_EVENTS | typeof TAB_TIME_TRAVEL,
+  ): Promise<OperationalEvent[]> {
+    const sql = buildQuery(ASYNC_INSERT_FAILURE_EVENTS, params);
+    const rows = await this.adapter.executeQuery(
+      tagQuery(sql, sourceTag(sourceTab, 'eventsAsyncInsertFailures')),
+    );
+    return rows.map(raw => {
+      const row = raw as Record<string, unknown>;
+      const occurredAt = parseChTime(row.occurred_at);
+      const hostname = String(row.host ?? '');
+      const queryId = String(row.query_id ?? '');
+      const flushQueryId = String(row.flush_query_id ?? '');
+      const database = String(row.database ?? '');
+      const table = String(row.table ?? '');
+      const status = String(row.status ?? '');
+      return {
+        id: stableEventId([
+          'asynchronous_insert_log',
+          hostname,
+          occurredAt,
+          queryId,
+          flushQueryId,
+          status,
+        ]),
+        occurred_at: occurredAt,
+        hostname: hostname || undefined,
+        kind: 'async_insert_failure',
+        ...eventDefaults('async_insert_failure'),
+        precision: 'exact',
+        title: status
+          ? `Async insert failed · ${status}`
+          : 'Async insert failed',
+        detail: failureDetail(row),
+        ...eventSourceFields('async_insert_failures'),
+        query_id: queryId || undefined,
+        flush_query_id: flushQueryId || undefined,
+        database: database || undefined,
+        table: table || undefined,
+        status: status || undefined,
+        format: String(row.format ?? '') || undefined,
+        rows: Number(row.rows ?? 0),
+        bytes: Number(row.bytes ?? 0),
+      } satisfies OperationalEvent;
+    });
+  }
+
+  private async fetchBackupEvents(
+    params: Record<string, string | number>,
+    sourceTab: typeof TAB_EVENTS | typeof TAB_TIME_TRAVEL,
+  ): Promise<OperationalEvent[]> {
+    const sql = buildQuery(BACKUP_EVENTS, params);
+    const rows = await this.adapter.executeQuery(
+      tagQuery(sql, sourceTag(sourceTab, 'eventsBackups')),
+    );
+    return rows.map(raw => {
+      const row = raw as Record<string, unknown>;
+      const occurredAt = parseChTime(row.occurred_at);
+      const hostname = String(row.host ?? '');
+      const operationId = String(row.operation_id ?? '');
+      const queryId = String(row.query_id ?? '');
+      const status = String(row.status ?? '');
+      const storageName = String(row.storage_name ?? '');
+      const startedAt = parseChTime(row.start_time);
+      const isRestore = status.startsWith('RESTOR');
+      const isFailed = status.endsWith('_FAILED');
+      const isCancelled = status.endsWith('_CANCELLED');
+      const severity: EventSeverity = isFailed
+        ? 'error'
+        : isCancelled ? 'warning' : 'info';
+      const action = isRestore ? 'Restore' : 'Backup';
+      const outcome = isFailed
+        ? 'failed'
+        : isCancelled ? 'cancelled' : 'completed';
+      const startMs = new Date(startedAt).getTime();
+      const endMs = new Date(occurredAt).getTime();
+      const durationMs = Number.isNaN(startMs) || Number.isNaN(endMs)
+        ? undefined
+        : Math.max(0, endMs - startMs);
+      const error = String(row.error ?? '').trim();
+      return {
+        id: stableEventId([
+          'backup_log',
+          hostname,
+          occurredAt,
+          operationId,
+          status,
+        ]),
+        occurred_at: occurredAt,
+        hostname: hostname || undefined,
+        kind: 'backup',
+        category: 'maintenance',
+        severity,
+        precision: 'exact',
+        title: `${action} ${outcome}`,
+        detail: error || storageName || undefined,
+        ...eventSourceFields('backups'),
+        query_id: queryId || undefined,
+        operation: action,
+        operation_id: operationId || undefined,
+        storage_name: storageName || undefined,
+        status: status || undefined,
+        started_at: startedAt || undefined,
+        duration_ms: durationMs,
+        num_files: Number(row.num_files ?? 0),
+        total_size: Number(row.total_size ?? 0),
+      } satisfies OperationalEvent;
+    });
+  }
+
+  private async fetchKeeperConnectionEvents(
+    params: Record<string, string | number>,
+    sourceTab: typeof TAB_EVENTS | typeof TAB_TIME_TRAVEL,
+  ): Promise<OperationalEvent[]> {
+    const sql = buildQuery(KEEPER_CONNECTION_EVENTS, params);
+    const rows = await this.adapter.executeQuery(
+      tagQuery(sql, sourceTag(sourceTab, 'eventsKeeperConnections')),
+    );
+    return rows.map(raw => {
+      const row = raw as Record<string, unknown>;
+      const occurredAt = parseChTime(row.occurred_at);
+      const hostname = String(row.host ?? '');
+      const state = String(row.connection_state ?? '');
+      const keeperName = String(row.keeper_name ?? '');
+      const keeperHost = String(row.keeper_host ?? '');
+      const keeperPort = Number(row.keeper_port ?? 0);
+      const keeperClientId = String(row.keeper_client_id ?? '');
+      const reason = String(row.reason ?? '').trim();
+      const connected = state === 'Connected';
+      return {
+        id: stableEventId([
+          'zookeeper_connection_log',
+          hostname,
+          occurredAt,
+          keeperName,
+          keeperHost,
+          keeperPort,
+          keeperClientId,
+          state,
+        ]),
+        occurred_at: occurredAt,
+        hostname: hostname || undefined,
+        kind: 'keeper_connection',
+        category: 'coordination',
+        severity: connected ? 'info' : 'error',
+        precision: 'exact',
+        title: `Keeper ${connected ? 'connected' : 'disconnected'}${
+          keeperName ? ` · ${keeperName}` : ''
+        }`,
+        detail: reason || undefined,
+        ...eventSourceFields('keeper_connections'),
+        connection_state: state || undefined,
+        keeper_name: keeperName || undefined,
+        keeper_host: keeperHost || undefined,
+        keeper_port: keeperPort || undefined,
+        keeper_client_id: keeperClientId || undefined,
+        reason: reason || undefined,
       } satisfies OperationalEvent;
     });
   }

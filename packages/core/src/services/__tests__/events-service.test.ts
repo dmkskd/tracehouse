@@ -58,6 +58,18 @@ describe('EventsService', () => {
         event_count: 0,
       }),
       expect.objectContaining({
+        source: 'system.asynchronous_insert_log',
+        status: 'unavailable',
+      }),
+      expect.objectContaining({
+        source: 'system.backup_log',
+        status: 'unavailable',
+      }),
+      expect.objectContaining({
+        source: 'system.zookeeper_connection_log',
+        status: 'unavailable',
+      }),
+      expect.objectContaining({
         source: 'system.asynchronous_metric_log',
         status: 'unavailable',
       }),
@@ -243,6 +255,181 @@ describe('EventsService', () => {
       ['query_timeout', 'warning'],
       ['query_rejected', 'warning'],
       ['query_resource_limit', 'error'],
+    ]);
+  });
+
+  it('maps asynchronous insert parsing and flush failures', async () => {
+    const mock = adapter(async sql => {
+      expect(sql).toContain('system.asynchronous_insert_log');
+      expect(sql).toContain("status IN ('ParsingError', 'FlushError')");
+      return [{
+        host: 'ch-1',
+        occurred_at: '2026-07-25 12:14:00.125000',
+        query_id: 'async-insert-1',
+        flush_query_id: 'async-flush-1',
+        database: 'analytics',
+        table: 'events',
+        format: 'JSONEachRow',
+        status: 'FlushError',
+        rows: 125,
+        bytes: 8192,
+        exception: 'Not enough space',
+      }];
+    });
+    const service = new EventsService(mock);
+
+    const result = await service.getEvents({
+      ...OPTIONS,
+      availableCapabilities: ['asynchronous_insert_log'],
+    });
+
+    expect(result.events).toEqual([
+      expect.objectContaining({
+        occurred_at: '2026-07-25T12:14:00.125Z',
+        kind: 'async_insert_failure',
+        category: 'queries',
+        severity: 'error',
+        precision: 'exact',
+        title: 'Async insert failed · FlushError',
+        detail: 'Not enough space',
+        query_id: 'async-insert-1',
+        flush_query_id: 'async-flush-1',
+        database: 'analytics',
+        table: 'events',
+        format: 'JSONEachRow',
+        status: 'FlushError',
+        rows: 125,
+        bytes: 8192,
+      }),
+    ]);
+  });
+
+  it('maps terminal backup and restore outcomes with severity', async () => {
+    const mock = adapter(async sql => {
+      expect(sql).toContain('system.backup_log');
+      expect(sql).toContain("'BACKUP_FAILED'");
+      expect(sql).not.toContain("'CREATING_BACKUP',");
+      return [
+        {
+          host: 'ch-1',
+          occurred_at: '2026-07-25 12:15:03.500000',
+          operation_id: 'backup-1',
+          query_id: 'query-backup-1',
+          storage_name: "Disk('backups', 'daily.zip')",
+          status: 'BACKUP_FAILED',
+          error: 'Cannot write file',
+          start_time: '2026-07-25 12:15:00.000000',
+          end_time: '2026-07-25 12:15:03.500000',
+          num_files: 12,
+          total_size: 4096,
+        },
+        {
+          host: 'ch-1',
+          occurred_at: '2026-07-25 12:20:10.000000',
+          operation_id: 'restore-1',
+          query_id: 'query-restore-1',
+          storage_name: "Disk('backups', 'daily.zip')",
+          status: 'RESTORED',
+          error: '',
+          start_time: '2026-07-25 12:20:00.000000',
+          end_time: '2026-07-25 12:20:10.000000',
+          num_files: 12,
+          total_size: 4096,
+        },
+      ];
+    });
+    const service = new EventsService(mock);
+
+    const result = await service.getEvents({
+      ...OPTIONS,
+      availableCapabilities: ['backup_log'],
+    });
+
+    expect(result.events).toEqual([
+      expect.objectContaining({
+        kind: 'backup',
+        category: 'maintenance',
+        severity: 'error',
+        title: 'Backup failed',
+        detail: 'Cannot write file',
+        operation: 'Backup',
+        operation_id: 'backup-1',
+        status: 'BACKUP_FAILED',
+        started_at: '2026-07-25T12:15:00.000Z',
+        duration_ms: 3500,
+        num_files: 12,
+        total_size: 4096,
+      }),
+      expect.objectContaining({
+        kind: 'backup',
+        severity: 'info',
+        title: 'Restore completed',
+        operation: 'Restore',
+        operation_id: 'restore-1',
+        status: 'RESTORED',
+        duration_ms: 10_000,
+      }),
+    ]);
+  });
+
+  it('maps Keeper disconnects and connections as exact state changes', async () => {
+    const mock = adapter(async sql => {
+      expect(sql).toContain('system.zookeeper_connection_log');
+      expect(sql).toContain('event_time_microseconds');
+      return [
+        {
+          host: 'ch-1',
+          occurred_at: '2026-07-25 12:25:00.250000',
+          connection_state: 'Disconnected',
+          keeper_name: 'default',
+          keeper_host: 'keeper-1',
+          keeper_port: 9181,
+          keeper_client_id: '9223372036854775000',
+          reason: 'Session expired',
+        },
+        {
+          host: 'ch-1',
+          occurred_at: '2026-07-25 12:25:02.500000',
+          connection_state: 'Connected',
+          keeper_name: 'default',
+          keeper_host: 'keeper-2',
+          keeper_port: 9181,
+          keeper_client_id: '9223372036854775001',
+          reason: '',
+        },
+      ];
+    });
+    const service = new EventsService(mock);
+
+    const result = await service.getEvents({
+      ...OPTIONS,
+      availableCapabilities: ['zookeeper_connection_log'],
+    });
+
+    expect(result.events).toEqual([
+      expect.objectContaining({
+        occurred_at: '2026-07-25T12:25:00.250Z',
+        kind: 'keeper_connection',
+        category: 'coordination',
+        severity: 'error',
+        precision: 'exact',
+        title: 'Keeper disconnected · default',
+        detail: 'Session expired',
+        connection_state: 'Disconnected',
+        keeper_name: 'default',
+        keeper_host: 'keeper-1',
+        keeper_port: 9181,
+        keeper_client_id: '9223372036854775000',
+      }),
+      expect.objectContaining({
+        occurred_at: '2026-07-25T12:25:02.500Z',
+        kind: 'keeper_connection',
+        category: 'coordination',
+        severity: 'info',
+        title: 'Keeper connected · default',
+        connection_state: 'Connected',
+        keeper_host: 'keeper-2',
+      }),
     ]);
   });
 

@@ -204,6 +204,22 @@ TraceHouse's own tagged queries are excluded with the shared
 > limit, and the ClickHouse process may continue normally. Conversely, an OS
 > OOM-killer `SIGKILL` may leave no query failure or crash-log record at all.
 
+### Async insert failures
+
+| Property | Value |
+| --- | --- |
+| Source | `system.asynchronous_insert_log` |
+| Capability | `asynchronous_insert_log` |
+| Event category | `queries` |
+| Event kind | `async_insert_failure` |
+| Timing | Exact async-insert completion time |
+| Default severity | error |
+
+Only terminal `ParsingError` and `FlushError` rows are emitted. Successful
+asynchronous inserts remain ordinary query activity. Events retain the initial
+query ID, flush query ID, database, table, input format, status, row count,
+byte count, and exception.
+
 ### Server restarts
 
 | Property | Value |
@@ -356,6 +372,24 @@ The table is optional and capability-gated. See the official
 [`system.background_schedule_pool_log`
 documentation](https://clickhouse.com/docs/reference/system-tables/background_schedule_pool_log).
 
+### Backup and restore outcomes
+
+| Property | Value |
+| --- | --- |
+| Source | `system.backup_log` |
+| Capability | `backup_log` |
+| Event category | `maintenance` |
+| Event kind | `backup` |
+| Timing | Exact terminal state-change time |
+| Default severity | info for success, warning for cancellation, error for failure |
+
+Only terminal outcomes are emitted: `BACKUP_CREATED`, `BACKUP_FAILED`,
+`RESTORED`, `RESTORE_FAILED`, `BACKUP_CANCELLED`, and `RESTORE_CANCELLED`.
+The initial creating/restoring rows are omitted so an operation is not presented
+as completed before its outcome is known. Events retain the operation and query
+IDs, storage name, status, start time, duration, file count, total size, and
+error text.
+
 ### Operational error bursts
 
 | Property | Value |
@@ -397,6 +431,27 @@ Newer ClickHouse versions expose `last_error_time`, `last_error_message`, and
 columns are version-dependent. A later column capability can enrich the event
 and improve its timestamp without making the entire source unavailable on older
 servers.
+
+### Keeper connection state changes
+
+| Property | Value |
+| --- | --- |
+| Source | `system.zookeeper_connection_log` |
+| Capability | `zookeeper_connection_log` |
+| Event category | `coordination` |
+| Event kind | `keeper_connection` |
+| Timing | Exact connection-log time |
+| Default severity | error for disconnect, info for connect |
+
+Each persisted `Disconnected` or `Connected` row is an individual state-change
+event. Events retain the Keeper cluster and node, port, session/client ID, and
+recorded reason. A `Connected` row is labelled as a connection rather than
+unconditionally claiming recovery because the log can also contain the initial
+connection after server startup.
+
+This detector complements, rather than replaces, the allowlisted Keeper error
+bursts from `system.error_log`: the connection log records topology/session
+state changes, while error counters can preserve other Keeper failures.
 
 ### Replication state episodes
 
@@ -495,6 +550,9 @@ Event history cannot exceed the retention of its source table. Retention and
 availability differ by deployment:
 
 - `query_log` determines query-failure history;
+- `asynchronous_insert_log` determines asynchronous-insert failure history;
+- `backup_log` determines backup and restore outcome history;
+- `zookeeper_connection_log` determines Keeper connection-change history;
 - `asynchronous_metric_log` determines restart-detection history;
 - `crash_log` determines exact crash history.
 - `part_log`, `background_schedule_pool_log`, `error_log`, and `metric_log`
@@ -530,9 +588,6 @@ it is enabled.
 
 | Priority | Event | Candidate source | Notes |
 | --- | --- | --- | --- |
-| Later | Backup/restore lifecycle | `system.backup_log` | Capability already exists; retain operation ID and status |
-| Later | Async insert failures | `system.asynchronous_insert_log` | Capability already exists; correlate query and flush IDs |
-| Later | Keeper connectivity | `system.zookeeper_connection_log`, selected `text_log` records | Version/deployment dependent; connection logs have known shutdown gaps |
 | Later | Fatal/critical server messages | `system.text_log` | Strict levels and deduplication; never ingest all errors by default |
 | Later | Per-table replica state and queue-stall episodes | TraceHouse sampler over `system.replicas` / `system.replication_queue` | Current virtual tables are not historical; persist transitions with table identity |
 | Later | Keeper connection episodes | persisted connection metrics/logs | Separate coordination failures from their downstream replica impact |

@@ -37,6 +37,7 @@ WHERE database = 'system'
     'blob_storage_log',
     'session_log',
     'zookeeper_log',
+    'zookeeper_connection_log',
     'transactions_info_log',
     'filesystem_cache_log',
     'filesystem_read_prefetches_log',

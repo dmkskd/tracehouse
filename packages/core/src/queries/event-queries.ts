@@ -50,6 +50,88 @@ LIMIT {event_limit} BY if(type = 'QueryFinish', 'ddl', 'query_resource')
 `;
 
 /**
+ * Failed asynchronous inserts. The log records terminal parsing and flush
+ * outcomes, so these are exact query-correlatable point events.
+ */
+export const ASYNC_INSERT_FAILURE_EVENTS = `
+SELECT
+  hostname() AS host,
+  toString(event_time_microseconds) AS occurred_at,
+  query_id,
+  flush_query_id,
+  database,
+  table,
+  format,
+  status,
+  rows,
+  bytes,
+  substring(exception, 1, 2000) AS exception
+FROM {{cluster_aware:system.asynchronous_insert_log}}
+WHERE event_date >= toDate({start_time}) - 1
+  AND event_time_microseconds BETWEEN {start_time} AND {end_time}
+  AND status IN ('ParsingError', 'FlushError')
+  AND ({hostname} = '' OR hostname() = {hostname})
+ORDER BY event_time_microseconds DESC
+LIMIT {event_limit}
+`;
+
+/**
+ * Terminal backup and restore outcomes. In-progress states are omitted so a
+ * long-running operation does not appear to have completed inside the range.
+ */
+export const BACKUP_EVENTS = `
+SELECT
+  hostname() AS host,
+  toString(event_time_microseconds) AS occurred_at,
+  id AS operation_id,
+  query_id,
+  name AS storage_name,
+  status,
+  substring(error, 1, 2000) AS error,
+  toString(start_time) AS start_time,
+  toString(end_time) AS end_time,
+  num_files,
+  total_size
+FROM {{cluster_aware:system.backup_log}}
+WHERE event_date >= toDate({start_time}) - 1
+  AND event_time_microseconds BETWEEN {start_time} AND {end_time}
+  AND status IN (
+    'BACKUP_CREATED',
+    'BACKUP_FAILED',
+    'RESTORED',
+    'RESTORE_FAILED',
+    'BACKUP_CANCELLED',
+    'RESTORE_CANCELLED'
+  )
+  AND ({hostname} = '' OR hostname() = {hostname})
+ORDER BY event_time_microseconds DESC
+LIMIT {event_limit}
+`;
+
+/**
+ * Exact Keeper/ZooKeeper connection state changes. Unlike the live
+ * zookeeper_connection table, this system log preserves disconnects and later
+ * connections for historical event ranges.
+ */
+export const KEEPER_CONNECTION_EVENTS = `
+SELECT
+  hostname() AS host,
+  toString(event_time_microseconds) AS occurred_at,
+  type AS connection_state,
+  name AS keeper_name,
+  host AS keeper_host,
+  port AS keeper_port,
+  toString(client_id) AS keeper_client_id,
+  reason
+FROM {{cluster_aware:system.zookeeper_connection_log}}
+WHERE event_date >= toDate({start_time}) - 1
+  AND event_time_microseconds BETWEEN {start_time} AND {end_time}
+  AND ({hostname} = '' OR hostname() = {hostname})
+ORDER BY event_time_microseconds DESC
+LIMIT {event_limit}
+`;
+
+/**
  * Detect restarts using the Uptime asynchronous metric.
  *
  * There are two cases:

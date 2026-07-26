@@ -148,6 +148,12 @@ const LOG_TABLE_META: Record<string, { label: string; description: string; categ
     category: 'introspection',
     source: 'system.zookeeper_log',
   },
+  zookeeper_connection_log: {
+    label: 'ZooKeeper Connection Log',
+    description: 'History of ClickHouse Keeper/ZooKeeper connection state changes.',
+    category: 'introspection',
+    source: 'system.zookeeper_connection_log',
+  },
   transactions_info_log: {
     label: 'Transactions Log',
     description: 'Transaction lifecycle events.',
