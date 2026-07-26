@@ -1,4 +1,4 @@
-import React from 'react';
+import React, { act } from 'react';
 import { fireEvent, render, screen } from '@testing-library/react';
 import { beforeAll, describe, expect, it, vi } from 'vitest';
 import type { MemoryTimeline, OperationalEvent } from '@tracehouse/core';
@@ -9,6 +9,7 @@ import { emptyTimelineEventFilter } from '../timeline-event-model';
 
 const RANGE_START = Date.parse('2026-07-25T12:00:00.000Z');
 const RANGE_END = Date.parse('2026-07-25T12:01:00.000Z');
+const resizeObserverCallbacks: ResizeObserverCallback[] = [];
 
 function event(
   id: string,
@@ -30,6 +31,9 @@ function event(
 
 beforeAll(() => {
   class ResizeObserverMock {
+    constructor(callback: ResizeObserverCallback) {
+      resizeObserverCallbacks.push(callback);
+    }
     observe() {}
     unobserve() {}
     disconnect() {}
@@ -154,6 +158,7 @@ describe('TimelineEventOverlay', () => {
 
 describe('TimelineChart event annotations', () => {
   it('shows an event inside the requested window before the first metric sample', () => {
+    resizeObserverCallbacks.length = 0;
     const restart = event(
       'restart',
       '2026-07-25T12:00:05.000Z',
@@ -185,7 +190,7 @@ describe('TimelineChart event annotations', () => {
       mutation_count: 0,
     };
 
-    render(
+    const view = render(
       <TimelineChart
         data={data}
         metricMode="cpu"
@@ -202,5 +207,21 @@ describe('TimelineChart event annotations', () => {
     );
 
     expect(screen.getByRole('button', { name: 'Server restart' })).toBeInTheDocument();
+
+    const chartContainer = view.container.firstElementChild as HTMLDivElement;
+    Object.defineProperty(chartContainer, 'clientWidth', {
+      configurable: true,
+      value: 2000,
+    });
+    act(() => {
+      resizeObserverCallbacks.forEach(callback =>
+        callback([], {} as ResizeObserver));
+    });
+
+    const svg = view.container.querySelector('svg');
+    const firstGridLine = svg?.querySelector('g line');
+    expect(svg).toHaveAttribute('viewBox', '0 0 2000 380');
+    expect(firstGridLine).toHaveAttribute('x1', '52');
+    expect(firstGridLine).toHaveAttribute('x2', '1910');
   });
 });

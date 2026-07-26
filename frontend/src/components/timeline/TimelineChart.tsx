@@ -68,7 +68,9 @@ export const TimelineChart: React.FC<{
   hiddenCategories, queryHashActive, eventAnnotations = [], selectedEventId,
   onEventSelect, onClearEventSelection, onViewEventDetails,
 }) => {
-  const W = 1000, H = height;
+  const containerRef = useRef<HTMLDivElement>(null);
+  const [chartWidth, setChartWidth] = useState(1000);
+  const W = chartWidth, H = height;
   const padTop = 12, padRight = 90, padBottom = 30, padLeft = 52;
   const cw = W - padLeft - padRight, ch = H - padTop - padBottom;
   const svgRef = useRef<SVGSVGElement>(null);
@@ -78,6 +80,21 @@ export const TimelineChart: React.FC<{
   const [localSvgY, setLocalSvgY] = useState<number | null>(null);
   const hoveredBandRef = useRef<{ type: 'query' | 'merge' | 'mutation'; idx: number; id: string } | null>(null);
   const cfg = METRIC_CONFIG[metricMode];
+
+  // Keep axis gutters in CSS pixels. A fixed 1000-unit viewBox made the
+  // left/right padding grow with wide containers (for example, 90 became
+  // roughly 180px on a 2K display), leaving the plot visibly under-filled.
+  useEffect(() => {
+    const element = containerRef.current;
+    if (!element) return;
+    const updateWidth = () => {
+      setChartWidth(Math.max(320, element.clientWidth || 1000));
+    };
+    updateWidth();
+    const observer = new ResizeObserver(updateWidth);
+    observer.observe(element);
+    return () => observer.disconnect();
+  }, []);
 
   // Pick the right server-level timeseries based on mode
   const rawServerPts = useMemo(() => {
@@ -513,7 +530,7 @@ export const TimelineChart: React.FC<{
   }
 
   return (
-    <div style={{ position: 'relative' }}>
+    <div ref={containerRef} style={{ position: 'relative', width: '100%' }}>
       <svg ref={svgRef} width="100%" height={H} viewBox={`0 0 ${W} ${H}`} preserveAspectRatio="none"
         style={{ cursor: snap?.hoveredBand ? 'pointer' : 'crosshair', userSelect: 'none' }}
         onMouseDown={handleMouseDown} onMouseMove={handleMouseMove}
