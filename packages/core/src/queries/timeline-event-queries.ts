@@ -40,6 +40,10 @@ WHERE event_date >= toDate({start_time}) - 1
     )
   )
   AND query NOT LIKE ${APP_SOURCE_LIKE}
+  -- Replicated databases replay DDL through an internal queue. Repeated
+  -- CREATE ... IF NOT EXISTS checks appear as successful ddl_entry queries
+  -- on every replica even when they make no schema change.
+  AND query NOT LIKE '/* ddl_entry=query-%'
   AND ({hostname} = '' OR hostname() = {hostname})
 ORDER BY occurred_at DESC
 LIMIT {event_limit} BY if(type = 'QueryFinish', 'ddl', 'query_resource')

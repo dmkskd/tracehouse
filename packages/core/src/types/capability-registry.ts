@@ -42,6 +42,7 @@ export const CAPABILITY_REGISTRY: CapabilityRegistryEntry[] = [
       { screen: 'Query Monitor', tab: 'Queries', route: '/query-monitor', enables: 'Query history, timing charts, and query analysis', importance: 'required' },
       { screen: 'Analytics', tab: 'Analytics', route: '/analytics', enables: 'Query explorer and preset analytics queries', importance: 'required' },
       { screen: 'Time Travel', tab: 'Time Travel', route: '/time-travel', enables: 'Query overlay and query failure events on timeline', importance: 'required' },
+      { screen: 'Events', tab: 'Events', route: '/events', enables: 'Queries running at an event and exact query correlation', importance: 'optional' },
       { screen: 'Query Detail Modal', tab: 'Queries', enables: 'Query comparison and history lookup', importance: 'optional' },
       { screen: 'Overview', tab: 'Overview', route: '/overview', enables: 'Slow queries widget, rejected queries count', importance: 'optional' },
     ],
@@ -51,6 +52,7 @@ export const CAPABILITY_REGISTRY: CapabilityRegistryEntry[] = [
     consumers: [
       { screen: 'Query Tracer', tab: 'Queries', route: '/query-tracer', enables: 'Server log viewer for traced queries', importance: 'optional' },
       { screen: 'Query Detail Modal', tab: 'Queries', enables: 'Log tab in query detail', importance: 'optional' },
+      { screen: 'Events', tab: 'Events', route: '/events', enables: 'Query-correlated and warning-or-higher server logs around an event', importance: 'optional' },
     ],
   },
   {
@@ -79,6 +81,7 @@ export const CAPABILITY_REGISTRY: CapabilityRegistryEntry[] = [
     consumers: [
       { screen: 'Time Travel', tab: 'Time Travel', route: '/time-travel', enables: 'Memory and metric timeline visualization', importance: 'required' },
       { screen: 'Overview', tab: 'Overview', route: '/overview', enables: 'Historical metrics trend charts, QPS history', importance: 'optional' },
+      { screen: 'Events', tab: 'Events', route: '/events', enables: 'Historical host metrics immediately before and around an event', importance: 'optional' },
     ],
   },
   {

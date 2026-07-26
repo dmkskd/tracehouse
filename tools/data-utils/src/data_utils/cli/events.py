@@ -5,7 +5,7 @@ It never crashes, restarts, fills, or corrupts a ClickHouse server.
 
 Usage:
     tracehouse-events --once
-    tracehouse-events --types ddl,oom,timeout,rejected,coordination,network
+    tracehouse-events --types ddl,oom,timeout,rejected,resource,coordination,network
 """
 
 from __future__ import annotations
@@ -30,7 +30,15 @@ from data_utils.env import (
 )
 
 
-EVENT_TYPES = ("ddl", "oom", "timeout", "rejected", "coordination", "network")
+EVENT_TYPES = (
+    "ddl",
+    "oom",
+    "timeout",
+    "rejected",
+    "resource",
+    "coordination",
+    "network",
+)
 EVENT_TAG = "tracehouse-demo-event"
 DEFAULT_DATABASE = "tracehouse_event_demo"
 _IDENTIFIER_RE = re.compile(r"^[A-Za-z_][A-Za-z0-9_]*$")
@@ -53,6 +61,20 @@ FROM numbers_mt(1000000000000)
 SETTINGS
     max_execution_time = 0.05,
     timeout_overflow_mode = 'throw'
+"""
+
+RESOURCE_LIMIT_QUERY = f"""
+/* {EVENT_TAG} kind:query_resource_limit */
+SELECT number
+FROM numbers(1000000)
+ORDER BY sipHash64(number)
+SETTINGS
+    max_bytes_before_external_sort = 100000,
+    max_bytes_ratio_before_external_sort = 0,
+    min_free_disk_space_for_temporary_data = 1000000000000000,
+    max_memory_usage = 100000000,
+    max_execution_time = 5
+FORMAT Null
 """
 
 NETWORK_QUERY = f"""
@@ -149,6 +171,17 @@ def generate_timeout(client: Client, database: str) -> bool:
     return execute_expected_failure(client, TIMEOUT_QUERY, 159, "query timeout")
 
 
+def generate_resource_limit(client: Client, database: str) -> bool:
+    """Generate query-scoped NOT_ENOUGH_SPACE without consuming the disk."""
+    del database
+    return execute_expected_failure(
+        client,
+        RESOURCE_LIMIT_QUERY,
+        243,
+        "query resource limit",
+    )
+
+
 def _quiet_execute(client: Client, query: str) -> None:
     """Run setup/cleanup SQL without adding it to the generated event set."""
     client.execute(query, settings={"log_queries": 0})
@@ -201,6 +234,19 @@ def generate_coordination(client: Client, database: str) -> bool:
     """Generate NO_ZOOKEEPER when Keeper is unavailable, cleaning up on success."""
     db = quote_identifier(database)
     table = f"{db}.`tracehouse_event_no_keeper`"
+    try:
+        client.execute(
+            "SELECT 1 FROM system.zookeeper WHERE path = '/' LIMIT 1",
+            settings={"log_queries": 0},
+        )
+        print(
+            f"[{datetime.now():%H:%M:%S}] could not generate coordination "
+            "error: Keeper is available"
+        )
+        return False
+    except Exception:
+        pass
+
     try:
         _quiet_execute(client, f"CREATE DATABASE IF NOT EXISTS {db}")
         _quiet_execute(client, f"DROP TABLE IF EXISTS {table} SYNC")
@@ -283,6 +329,7 @@ GENERATORS: dict[str, Callable[[Client, str], bool]] = {
     "oom": generate_oom,
     "timeout": generate_timeout,
     "rejected": generate_rejected,
+    "resource": generate_resource_limit,
     "coordination": generate_coordination,
     "network": generate_network,
 }
@@ -292,6 +339,7 @@ EVENT_TYPE_SOURCE = {
     "oom": "query_log",
     "timeout": "query_log",
     "rejected": "query_log",
+    "resource": "query_log",
     "coordination": "error_log",
     "network": "error_log",
 }
@@ -361,7 +409,7 @@ def _parse_args() -> tuple[argparse.Namespace, str | None]:
         default=parse_event_types(
             os.environ.get(
                 "CH_EVENT_TYPES",
-                "ddl,oom,timeout,rejected,coordination,network",
+                "ddl,oom,timeout,rejected,resource,coordination,network",
             )
         ),
         help=f"Comma-separated event types: {', '.join(EVENT_TYPES)} ($CH_EVENT_TYPES)",
@@ -401,6 +449,12 @@ def _parse_args() -> tuple[argparse.Namespace, str | None]:
         type=float,
         default=float(os.environ.get("CH_EVENT_REJECTED_INTERVAL", "1200")),
         help="Seconds between query rejections ($CH_EVENT_REJECTED_INTERVAL)",
+    )
+    parser.add_argument(
+        "--resource-interval",
+        type=float,
+        default=float(os.environ.get("CH_EVENT_RESOURCE_INTERVAL", "1800")),
+        help="Seconds between query resource limits ($CH_EVENT_RESOURCE_INTERVAL)",
     )
     parser.add_argument(
         "--coordination-interval",
@@ -481,6 +535,7 @@ def main() -> None:
             "oom": args.oom_interval,
             "timeout": args.timeout_interval,
             "rejected": args.rejected_interval,
+            "resource": args.resource_interval,
             "coordination": args.coordination_interval,
             "network": args.network_interval,
         }

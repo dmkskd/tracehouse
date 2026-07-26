@@ -32,6 +32,12 @@ Ordinary CPU or memory threshold crossings are not events by default. Those
 conditions are already visible in the continuous graph, and inventing markers
 for them would duplicate the chart while adding threshold noise.
 
+The Events page is a detector catalog, not a raw view of every row in its
+source tables. A source reported as loaded means its detector query completed;
+it does not mean that every `system.query_log`, `system.error_log`, or other
+system-log record is emitted as an event. The UI publishes the implemented
+event-type catalog and the source availability for the current connection.
+
 ## Generating events for development
 
 The data-utils event workload covers every event class that can be generated
@@ -40,16 +46,18 @@ safely without service or storage fault injection:
 ```bash
 just run-events --once
 just run-events
-just run-events --types rejected,coordination,network --once
+just run-events --types rejected,resource,coordination,network --once
 ```
 
 It capability-checks `system.query_log`, labels generated SQL with
 `tracehouse-demo-event`, and supports independent DDL, query-OOM, timeout,
-query-rejection, coordination-error, and network-error cadences. DDL and the
-parts-limit rejection are confined to a disposable database and clean up their
-tables. The OOM is query-scoped through `max_memory_usage`; it does not exhaust
-server or process memory. Operational probes require `system.error_log`;
-query/DDL patterns require `system.query_log`.
+query-rejection, query-resource-limit, coordination-error, and network-error
+cadences. DDL and the parts-limit rejection are confined to a disposable
+database and clean up their tables. OOM and disk-space failures are
+query-scoped: the former uses
+`max_memory_usage`, while the latter requires impossible temporary-disk
+headroom rather than consuming free space. Operational probes require
+`system.error_log`; query/DDL patterns require `system.query_log`.
 
 Server restarts must be initiated outside ClickHouse. Crashes, full disks,
 corrupt parts, replica state/data-loss events, and background-task failures are
@@ -88,6 +96,50 @@ UI can therefore support combinations such as:
 - one host or all hosts;
 - all executions of one `normalized_query_hash`;
 - storage and coordination failures while hiding routine query failures.
+
+## Event context
+
+Selecting an event exposes two distinct views:
+
+- **Details** contains the event record, source metadata, identifiers, and any
+  source-specific fields.
+- **Context** reads historical data around the event from other ClickHouse
+  system logs.
+
+The context window is independent of the Events page time range. Changing it
+from ±1 minute to ±5 or ±15 minutes does not move or narrow the event
+swimlanes.
+
+Context sources are capability-checked and queried independently:
+
+| Context panel | Source | Correlation |
+| --- | --- | --- |
+| Workload at event | `system.query_log` | Terminal query rows whose start/end interval contains the event timestamp; exact `query_id` and `initial_query_id` matches are ranked first |
+| Host metrics | `system.metric_log` | Five-second memory and CPU samples on the event host before and after the event; the chart uses independent left/right axes |
+| Server logs | `system.text_log` | Exact event-query messages plus warning-or-higher messages on the same host and inside the context window |
+| Nearby events | Already loaded Events result | Other events within the selected context window, ranked by same query, host, table, category, then time distance |
+
+The host-metric snapshot uses ASOF semantics in the service layer: for each
+host, it selects the latest persisted `system.metric_log` sample at or before
+the event timestamp. The surrounding samples are retained for before/after
+trends. A sample is not presented as an exact measurement at the event time;
+its age is shown in the UI.
+
+`system.query_log` is historical and only contains completed or failed query
+records. “Workload at event” reconstructs overlap from
+`query_start_time_microseconds` and `query_duration_ms`; it does not read the
+current `system.processes` table. Very recent work may not appear until system
+logs flush.
+
+Context query implementation lives in:
+
+- `packages/core/src/queries/event-context-queries.ts`
+- `packages/core/src/services/event-context-service.ts`
+- `packages/core/src/types/event-context.ts`
+
+A missing or denied context source degrades only its own panel. For example,
+an installation without `system.text_log` can still show workload and metric
+context.
 
 ## Implemented sources
 
@@ -227,6 +279,10 @@ allowlist is:
 ```text
 Create, Alter, Drop, Rename, Truncate, Optimize, Undrop
 ```
+
+Replicated database worker replays prefixed with
+`/* ddl_entry=query-... */` are excluded. The originating user DDL remains
+visible, while the same operation is not counted again on every replica.
 
 The event retains query ID, initial query ID, normalized query hash, user, query
 text, affected database/table arrays, duration, memory, and host. As with query

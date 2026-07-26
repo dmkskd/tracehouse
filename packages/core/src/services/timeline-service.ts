@@ -46,6 +46,7 @@ import {
   CLUSTER_CPU_TIMESERIES,
 } from '../queries/timeline-queries.js';
 import { TimelineEventsService } from './timeline-events-service.js';
+import { EventContextService } from './event-context-service.js';
 
 export class TimelineServiceError extends Error {
   constructor(message: string, public readonly cause?: Error) {
@@ -80,14 +81,21 @@ export class TimelineService {
   private _cachedRam: { ram: number; hostCount: number } | null = null;
   private _cachedCpuCores: number | null = null;
   private readonly eventsService: TimelineEventsService;
+  private readonly eventContextService: EventContextService;
 
   constructor(private adapter: IClickHouseAdapter) {
     this.eventsService = new TimelineEventsService(adapter);
+    this.eventContextService = new EventContextService(adapter);
   }
 
   /** Read the capability-aware operational event stream without timeline metrics. */
   async getEvents(options: Parameters<TimelineEventsService['getEvents']>[0]) {
     return this.eventsService.getEvents(options, TAB_EVENTS);
+  }
+
+  /** Load capability-aware historical evidence surrounding one event. */
+  async getEventContext(options: Parameters<EventContextService['getContext']>[0]) {
+    return this.eventContextService.getContext(options);
   }
 
   async getTimeline(options: TimelineOptions): Promise<MemoryTimeline> {

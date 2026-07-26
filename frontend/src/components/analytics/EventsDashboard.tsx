@@ -22,22 +22,27 @@ import {
 import { EventDistribution } from './EventDistribution';
 import { TimeRangePicker } from './TimeRangePicker';
 import { DocsLink } from '../common/DocsLink';
+import { EventContextView } from './EventContextView';
 import {
   buildEventMarkerSelection,
   countEventSeverities,
-  EVENT_SOURCE_EXPLANATIONS,
+  SUPPORTED_EVENT_TYPES,
   eventDetailLabel,
   eventDetailSections,
   eventKindLabel,
+  eventSourceExplanation,
   formatEventClusterRange,
   formatEventDateTime,
   observedEventKinds,
   selectTimelineEvent,
   sortAndFilterEvents,
   sortTimelineEvents,
+  supportedEventAvailability,
+  supportedEventGroups,
   toClickHouseEventTime,
   type EventMarkerSelection,
   type EventDetailSection,
+  type SupportedEventAvailability,
 } from './events-dashboard-model';
 
 interface EventsDashboardProps {
@@ -91,13 +96,14 @@ export const EventsDashboard: React.FC<EventsDashboardProps> = ({
   const [category, setCategory] = useState<'all' | TimelineEventCategory>('all');
   const [kind, setKind] = useState<'all' | TimelineEventKind>('all');
   const [autoRefresh, setAutoRefresh] = useState(false);
-  const [showSourceHelp, setShowSourceHelp] = useState(false);
-  const sourceHelpRef = useRef<HTMLDivElement>(null);
+  const [eventHelpView, setEventHelpView] = useState<'events' | 'sources' | null>(null);
+  const eventHelpRef = useRef<HTMLDivElement>(null);
   const fetchInFlightRef = useRef(false);
   const [liveRangeEndMs, setLiveRangeEndMs] = useState(() => Date.now());
   const [clusterSelection, setClusterSelection] = useState<EventMarkerSelection | null>(
     null,
   );
+  const [selectedPanel, setSelectedPanel] = useState<'details' | 'context'>('details');
 
   const parsedRangeCenterMs = rangeCenterTime ? Date.parse(rangeCenterTime) : Number.NaN;
   const hasAnchoredRange = Number.isFinite(parsedRangeCenterMs);
@@ -198,17 +204,17 @@ export const EventsDashboard: React.FC<EventsDashboardProps> = ({
     : 0;
 
   useEffect(() => {
-    if (!showSourceHelp) return;
+    if (!eventHelpView) return;
     const onMouseDown = (event: MouseEvent) => {
       if (
-        sourceHelpRef.current
-        && !sourceHelpRef.current.contains(event.target as Node)
+        eventHelpRef.current
+        && !eventHelpRef.current.contains(event.target as Node)
       ) {
-        setShowSourceHelp(false);
+        setEventHelpView(null);
       }
     };
     const onKeyDown = (event: KeyboardEvent) => {
-      if (event.key === 'Escape') setShowSourceHelp(false);
+      if (event.key === 'Escape') setEventHelpView(null);
     };
     document.addEventListener('mousedown', onMouseDown);
     document.addEventListener('keydown', onKeyDown);
@@ -216,7 +222,7 @@ export const EventsDashboard: React.FC<EventsDashboardProps> = ({
       document.removeEventListener('mousedown', onMouseDown);
       document.removeEventListener('keydown', onKeyDown);
     };
-  }, [showSourceHelp]);
+  }, [eventHelpView]);
 
   const sortedEvents = useMemo(
     () => sortTimelineEvents(events),
@@ -294,7 +300,7 @@ export const EventsDashboard: React.FC<EventsDashboardProps> = ({
           popoverAlign="left"
         />
         <div
-          ref={sourceHelpRef}
+          ref={eventHelpRef}
           style={{
             position: 'relative',
             marginLeft: 'auto',
@@ -303,6 +309,25 @@ export const EventsDashboard: React.FC<EventsDashboardProps> = ({
             gap: 5,
           }}
         >
+          <button
+            onClick={() => setEventHelpView(value => (
+              value === 'events' ? null : 'events'
+            ))}
+            aria-expanded={eventHelpView === 'events'}
+            title="TraceHouse shows only the event types in this catalog"
+            style={{
+              ...secondaryButtonStyle,
+              color: eventHelpView === 'events' ? '#58a6ff' : 'var(--text-secondary)',
+              borderColor: eventHelpView === 'events'
+                ? 'rgba(88,166,255,0.45)'
+                : 'var(--border-primary)',
+              background: eventHelpView === 'events'
+                ? 'rgba(88,166,255,0.08)'
+                : 'var(--bg-card)',
+            }}
+          >
+            Coverage · {SUPPORTED_EVENT_TYPES.length} supported event types
+          </button>
           <span style={{
             color: coverageProblems.length > 0 ? '#d29922' : 'var(--text-muted)',
             fontSize: 10,
@@ -310,32 +335,12 @@ export const EventsDashboard: React.FC<EventsDashboardProps> = ({
             {loadedSources}/{coverage.length} sources
             {coverageProblems.length > 0 ? ' · partial' : ''}
           </span>
-          <button
-            onClick={() => setShowSourceHelp(value => !value)}
-            aria-label="About event sources"
-            aria-expanded={showSourceHelp}
-            title="About event sources"
-            style={{
-              width: 17,
-              height: 17,
-              display: 'inline-flex',
-              alignItems: 'center',
-              justifyContent: 'center',
-              padding: 0,
-              borderRadius: '50%',
-              border: '1px solid var(--border-primary)',
-              background: showSourceHelp ? 'var(--bg-hover)' : 'transparent',
-              color: showSourceHelp ? 'var(--text-primary)' : 'var(--text-muted)',
-              fontSize: 10,
-              fontWeight: 700,
-              fontFamily: 'serif',
-              cursor: 'pointer',
-            }}
-          >
-            i
-          </button>
-          {showSourceHelp && (
-            <EventSourcesHelp coverage={coverage} />
+          {eventHelpView && (
+            <EventCoverageHelp
+              coverage={coverage}
+              view={eventHelpView}
+              onViewChange={setEventHelpView}
+            />
           )}
         </div>
         <button
@@ -580,7 +585,31 @@ export const EventsDashboard: React.FC<EventsDashboardProps> = ({
 
         <div style={panelStyle}>
           <div style={panelHeaderStyle}>
-            <strong>Selected event</strong>
+            <span style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+              <strong>Selected event</strong>
+              {selectedEvent && (
+                <span style={{ display: 'inline-flex', gap: 2 }}>
+                  {(['details', 'context'] as const).map(panel => (
+                    <button
+                      key={panel}
+                      onClick={() => setSelectedPanel(panel)}
+                      style={{
+                        ...panelTabStyle,
+                        color: selectedPanel === panel ? '#58a6ff' : 'var(--text-muted)',
+                        borderColor: selectedPanel === panel
+                          ? 'rgba(88,166,255,0.4)'
+                          : 'transparent',
+                        background: selectedPanel === panel
+                          ? 'rgba(88,166,255,0.08)'
+                          : 'transparent',
+                      }}
+                    >
+                      {panel === 'details' ? 'Details' : 'Context'}
+                    </button>
+                  ))}
+                </span>
+              )}
+            </span>
             <span style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
               {selectedEvent?.query_id && onOpenQueryDetails && (
                 <button
@@ -602,6 +631,12 @@ export const EventsDashboard: React.FC<EventsDashboardProps> = ({
           </div>
           {!selectedEvent ? (
             <div style={emptyStyle}>Select an event to inspect its context and source details.</div>
+          ) : selectedPanel === 'context' ? (
+            <EventContextView
+              event={selectedEvent}
+              events={events}
+              availableCapabilities={availableCapabilities ?? []}
+            />
           ) : (
             <div style={{ overflow: 'auto', padding: 14 }}>
               <div style={{
@@ -660,16 +695,18 @@ const SOURCE_STATUS_COLORS: Record<TimelineEventSourceCoverage['status'], string
   not_requested: '#8b949e',
 };
 
-const EventSourcesHelp: React.FC<{
+const EventCoverageHelp: React.FC<{
   coverage: readonly TimelineEventSourceCoverage[];
-}> = ({ coverage }) => (
+  view: 'events' | 'sources';
+  onViewChange: (view: 'events' | 'sources') => void;
+}> = ({ coverage, view, onViewChange }) => (
   <div style={{
     position: 'absolute',
     top: 'calc(100% + 7px)',
     right: 0,
     zIndex: 100,
-    width: 440,
-    maxHeight: 'min(560px, calc(100vh - 120px))',
+    width: 560,
+    maxHeight: 'min(650px, calc(100vh - 120px))',
     overflow: 'auto',
     padding: 12,
     borderRadius: 8,
@@ -684,9 +721,38 @@ const EventSourcesHelp: React.FC<{
       gap: 8,
       marginBottom: 5,
     }}>
-      <strong style={{ color: 'var(--text-primary)', fontSize: 12 }}>
-        Event sources
-      </strong>
+      <span style={{ display: 'inline-flex', alignItems: 'center', gap: 3 }}>
+        <button
+          onClick={() => onViewChange('events')}
+          style={{
+            ...helpTabStyle,
+            color: view === 'events' ? '#58a6ff' : 'var(--text-muted)',
+            borderColor: view === 'events'
+              ? 'rgba(88,166,255,0.4)'
+              : 'transparent',
+            background: view === 'events'
+              ? 'rgba(88,166,255,0.08)'
+              : 'transparent',
+          }}
+        >
+          Supported events
+        </button>
+        <button
+          onClick={() => onViewChange('sources')}
+          style={{
+            ...helpTabStyle,
+            color: view === 'sources' ? '#58a6ff' : 'var(--text-muted)',
+            borderColor: view === 'sources'
+              ? 'rgba(88,166,255,0.4)'
+              : 'transparent',
+            background: view === 'sources'
+              ? 'rgba(88,166,255,0.08)'
+              : 'transparent',
+          }}
+        >
+          Source status
+        </button>
+      </span>
       <span style={{ display: 'inline-flex', alignItems: 'center', gap: 5 }}>
         <span style={{ color: 'var(--text-muted)', fontSize: 9 }}>
           Full reference
@@ -694,19 +760,140 @@ const EventSourcesHelp: React.FC<{
         <DocsLink path="/features/events" />
       </span>
     </div>
-    <p style={{
-      margin: '0 0 10px',
-      color: 'var(--text-muted)',
+    {view === 'events'
+      ? <SupportedEventsCatalog coverage={coverage} />
+      : <EventSourcesCatalog coverage={coverage} />}
+  </div>
+);
+
+const SupportedEventsCatalog: React.FC<{
+  coverage: readonly TimelineEventSourceCoverage[];
+}> = ({ coverage }) => (
+  <>
+    <div style={{
+      margin: '8px 0 11px',
+      color: 'var(--text-secondary)',
       fontSize: 9,
-      lineHeight: 1.45,
+      lineHeight: 1.5,
     }}>
-      Events are reconstructed from persisted ClickHouse system logs and metrics.
-      Each source is capability-checked and loaded independently, so a missing
-      source does not hide events from the others.
-    </p>
+      TraceHouse shows only the event types listed here. Loaded system tables
+      are filtered by these detectors; other records in those tables are not
+      emitted as Events.
+    </div>
+    <div style={{
+      display: 'grid',
+      gridTemplateColumns: 'repeat(2, minmax(0, 1fr))',
+      gap: '12px 18px',
+    }}>
+      {supportedEventGroups().map(group => (
+        <section key={group.category} style={{ minWidth: 0 }}>
+          <div style={{
+            marginBottom: 4,
+            paddingBottom: 4,
+            borderBottom: '1px solid var(--border-primary)',
+            color: 'var(--text-muted)',
+            fontSize: 8,
+            fontWeight: 700,
+            letterSpacing: '0.45px',
+            textTransform: 'uppercase',
+          }}>
+            {group.label} · {group.events.length}
+          </div>
+          <div style={{ display: 'flex', flexDirection: 'column' }}>
+            {group.events.map(eventType => {
+              const availability = supportedEventAvailability(eventType, coverage);
+              const availabilityColor = SUPPORTED_AVAILABILITY_COLORS[availability];
+              return (
+                <div
+                  key={eventType.kind}
+                  style={{
+                    display: 'grid',
+                    gridTemplateColumns: 'minmax(0, 1fr) auto',
+                    gap: 8,
+                    alignItems: 'start',
+                    padding: '6px 1px',
+                    borderBottom: '1px solid var(--border-primary)',
+                  }}
+                >
+                  <span style={{ minWidth: 0 }}>
+                    <strong style={{
+                      display: 'block',
+                      color: 'var(--text-primary)',
+                      fontSize: 9.5,
+                    }}>
+                      {eventType.label}
+                    </strong>
+                    <span style={{
+                      display: 'block',
+                      marginTop: 2,
+                      color: 'var(--text-muted)',
+                      fontSize: 8,
+                      lineHeight: 1.35,
+                    }}>
+                      {eventType.description}
+                    </span>
+                    <span style={{
+                      display: 'block',
+                      marginTop: 3,
+                      color: 'var(--text-muted)',
+                      fontSize: 7.5,
+                      fontFamily: "'Share Tech Mono', monospace",
+                      overflowWrap: 'anywhere',
+                    }}>
+                      {eventType.sources.join(' · ')}
+                    </span>
+                  </span>
+                  <span style={{
+                    display: 'flex',
+                    flexDirection: 'column',
+                    alignItems: 'flex-end',
+                    gap: 3,
+                    paddingTop: 1,
+                    whiteSpace: 'nowrap',
+                  }}>
+                    <span style={{
+                      color: EVENT_SEVERITY_COLORS[eventType.severity],
+                      fontSize: 7,
+                      fontWeight: 700,
+                      textTransform: 'uppercase',
+                    }}>
+                      {eventType.severity}
+                    </span>
+                    <span style={{
+                      color: availabilityColor,
+                      fontSize: 7,
+                      fontWeight: 700,
+                      textTransform: 'uppercase',
+                    }}>
+                      {availability === 'partial' ? 'partial coverage' : availability}
+                    </span>
+                  </span>
+                </div>
+              );
+            })}
+          </div>
+        </section>
+      ))}
+    </div>
+  </>
+);
+
+const EventSourcesCatalog: React.FC<{
+  coverage: readonly TimelineEventSourceCoverage[];
+}> = ({ coverage }) => (
+  <>
+    <div style={{
+      margin: '8px 0 11px',
+      color: 'var(--text-secondary)',
+      fontSize: 9,
+      lineHeight: 1.5,
+    }}>
+      A loaded source means its detector query completed. It does not mean that
+      every row or error in the underlying system table is shown as an event.
+    </div>
     <div style={{ display: 'flex', flexDirection: 'column', gap: 5 }}>
       {coverage.map(item => {
-        const explanation = EVENT_SOURCE_EXPLANATIONS[item.capability];
+        const explanation = eventSourceExplanation(item.capability);
         const statusLabel = item.truncated ? 'truncated' : item.status.replace('_', ' ');
         const statusColor = item.truncated
           ? '#d29922'
@@ -784,12 +971,29 @@ const EventSourcesHelp: React.FC<{
       fontSize: 8.5,
       lineHeight: 1.45,
     }}>
-      “Loaded” means the source query completed—even when it returned zero events.
-      “Unavailable” means this ClickHouse deployment does not expose the required
-      table or columns.
+      “Unavailable” means this ClickHouse deployment does not expose the
+      required table or columns. Sources are queried independently.
     </div>
-  </div>
+  </>
 );
+
+const SUPPORTED_AVAILABILITY_COLORS: Record<SupportedEventAvailability, string> = {
+  available: '#3fb950',
+  partial: '#d29922',
+  unavailable: '#8b949e',
+  failed: '#f85149',
+};
+
+const helpTabStyle: React.CSSProperties = {
+  padding: '4px 8px',
+  borderRadius: 5,
+  border: '1px solid transparent',
+  background: 'transparent',
+  color: 'var(--text-muted)',
+  fontSize: 9,
+  fontWeight: 700,
+  cursor: 'pointer',
+};
 
 const secondaryButtonStyle: React.CSSProperties = {
   padding: '4px 9px',
@@ -798,6 +1002,15 @@ const secondaryButtonStyle: React.CSSProperties = {
   background: 'var(--bg-card)',
   color: 'var(--text-muted)',
   fontSize: 10,
+  cursor: 'pointer',
+};
+
+const panelTabStyle: React.CSSProperties = {
+  padding: '3px 7px',
+  borderRadius: 4,
+  border: '1px solid transparent',
+  color: 'var(--text-muted)',
+  fontSize: 9,
   cursor: 'pointer',
 };
 

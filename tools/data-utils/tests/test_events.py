@@ -10,6 +10,7 @@ from data_utils.cli.events import (
     EVENT_TAG,
     NETWORK_QUERY,
     OOM_QUERY,
+    RESOURCE_LIMIT_QUERY,
     TIMEOUT_QUERY,
     ddl_statements,
     exception_code,
@@ -45,9 +46,21 @@ class EventClient:
 
     def execute(self, query: str, settings: dict[str, int] | None = None):
         self.queries.append((query, settings))
+        if "system.zookeeper" in query:
+            raise FakeClickHouseError(60)
         if self.failure_marker in query:
             raise FakeClickHouseError(self.code)
         return []
+
+
+class KeeperClient:
+    def __init__(self) -> None:
+        self.queries: list[str] = []
+
+    def execute(self, query: str, settings: dict[str, int] | None = None):
+        del settings
+        self.queries.append(query)
+        return [(1,)]
 
 
 def test_parse_event_types_deduplicates_and_preserves_order() -> None:
@@ -75,12 +88,16 @@ def test_failure_queries_are_tagged_and_bounded() -> None:
     assert EVENT_TAG in NETWORK_QUERY
     assert "127.0.0.1:1" in NETWORK_QUERY
     assert "connect_timeout = 1" in NETWORK_QUERY
+    assert EVENT_TAG in RESOURCE_LIMIT_QUERY
+    assert "min_free_disk_space_for_temporary_data = 1000000000000000" in RESOURCE_LIMIT_QUERY
+    assert "max_execution_time = 5" in RESOURCE_LIMIT_QUERY
 
 
 def test_expected_failure_accepts_only_expected_code() -> None:
     assert execute_expected_failure(FailingClient(241), OOM_QUERY, 241, "OOM")
     assert not execute_expected_failure(FailingClient(159), OOM_QUERY, 241, "OOM")
     assert execute_expected_failure(FailingClient(519), NETWORK_QUERY, (279, 519), "network")
+    assert execute_expected_failure(FailingClient(243), RESOURCE_LIMIT_QUERY, 243, "resource")
 
 
 def test_query_rejection_is_bounded_and_restores_merges() -> None:
@@ -116,6 +133,14 @@ def test_coordination_failure_is_tagged_and_cleanup_is_quiet() -> None:
     assert any("ReplicatedMergeTree" in query for query in queries)
     assert queries[-1].startswith("DROP TABLE IF EXISTS")
     assert client.queries[-1][1] == {"log_queries": 0}
+
+
+def test_coordination_failure_is_skipped_when_keeper_is_available() -> None:
+    client = KeeperClient()
+
+    assert not generate_coordination(client, "tracehouse_event_demo")
+    assert len(client.queries) == 1
+    assert "system.zookeeper" in client.queries[0]
 
 
 def test_exception_code_falls_back_to_message() -> None:

@@ -79,6 +79,15 @@ Tables are created with the best engine available for the target server.
     parser.add_argument("--mode", choices=["resume", "drop", "append"],
                         default=os.environ.get("CH_GEN_MODE", "resume").lower(),
                         help="Insert mode: resume (fill to target), drop (recreate), append (always insert) (default: $CH_GEN_MODE or resume)")
+    parser.add_argument(
+        "--skip-create",
+        action="store_true",
+        default=os.environ.get("CH_GEN_SKIP_CREATE", "").lower() in ("1", "true", "yes"),
+        help=(
+            "Skip database/table creation and load existing tables only "
+            "(default: $CH_GEN_SKIP_CREATE or false)"
+        ),
+    )
     parser.add_argument("--parallelism", type=int, default=env_int("CH_GEN_PARALLELISM", "0"), help="Max tables to generate concurrently (0 = all, default: $CH_GEN_PARALLELISM or 0)")
     parser.add_argument("--throttle-min", type=float, default=float(os.environ.get("CH_GEN_THROTTLE_MIN", "0")), help="Min delay in seconds between batches (default: $CH_GEN_THROTTLE_MIN or 0)")
     parser.add_argument("--throttle-max", type=float, default=float(os.environ.get("CH_GEN_THROTTLE_MAX", "0")), help="Max delay in seconds between batches (default: $CH_GEN_THROTTLE_MAX or 0)")
@@ -95,6 +104,9 @@ Tables are created with the best engine available for the target server.
                         help="TTL for data tables, e.g. '12h', '2d', '30m' (0 = no TTL, default: $CH_GEN_TTL or $CH_GEN_TTL_HOURS or 0)")
     parser.add_argument("--list-datasets", action="store_true", help="List available datasets and exit")
     args = parser.parse_args()
+
+    if args.skip_create and args.mode == "drop":
+        parser.error("--skip-create cannot be combined with --mode drop")
 
     if args.list_datasets:
         list_datasets()
@@ -133,6 +145,7 @@ def _prepare_datasets(
     config: InsertConfig,
     args: argparse.Namespace,
     test_users: list[TestUser] | None = None,
+    skip_create: bool = False,
 ) -> dict[str, Client]:
     """Drop (if requested), create each dataset's database and tables, return per-dataset clients.
 
@@ -144,9 +157,12 @@ def _prepare_datasets(
     admin = make_client(args)
     for i, ds in enumerate(datasets):
         print(f"\n── Preparing {ds.name} ──")
-        if config.mode is InsertMode.DROP:
-            ds.drop(admin)
-        ds.create(admin)
+        if skip_create:
+            print("   (schema creation skipped; using existing tables)")
+        else:
+            if config.mode is InsertMode.DROP:
+                ds.drop(admin)
+            ds.create(admin)
         if test_users:
             user = get_user_for_index(test_users, i)
             clients[ds.name] = make_user_client(args, user)
@@ -219,7 +235,13 @@ def _run_parallel(
 # ── Printing helpers ────────────────────────────────────────────────
 
 
-def _print_config(config: InsertConfig, caps: Capabilities, parallelism: int, datasets: list[Dataset]) -> None:
+def _print_config(
+    config: InsertConfig,
+    caps: Capabilities,
+    parallelism: int,
+    datasets: list[Dataset],
+    skip_create: bool = False,
+) -> None:
     engine = 'ReplicatedMergeTree' if caps.has_keeper else 'MergeTree'
     batches = (config.rows // config.partitions + config.batch_size - 1) // config.batch_size
     par_label = 'all datasets' if parallelism == 0 else f'{parallelism} concurrent'
@@ -235,6 +257,7 @@ def _print_config(config: InsertConfig, caps: Capabilities, parallelism: int, da
     if config.throttle_max > 0:
         print(f"  Throttle:              {config.throttle_min:.1f}s – {config.throttle_max:.1f}s between batches")
     print(f"  Datasets:              {', '.join(ds.name for ds in datasets)}")
+    print(f"  Schema preparation:    {'skipped' if skip_create else 'enabled'}")
     if config.mode is not InsertMode.RESUME:
         print(f"  Mode:                  {config.mode.value}")
     print()
@@ -286,7 +309,7 @@ def main() -> None:
     )
 
     datasets = _build_datasets(args, caps)
-    _print_config(config, caps, args.parallelism, datasets)
+    _print_config(config, caps, args.parallelism, datasets, args.skip_create)
 
     # Create test users if requested (env var takes precedence)
     test_users: list[TestUser] | None = load_test_users_from_env()
@@ -304,7 +327,13 @@ def main() -> None:
 
     try:
         # Phase 1: Create databases and tables
-        clients = _prepare_datasets(datasets, config, args, test_users)
+        clients = _prepare_datasets(
+            datasets,
+            config,
+            args,
+            test_users,
+            skip_create=args.skip_create,
+        )
 
         # Phase 2: Insert data
         max_workers = len(datasets) if args.parallelism == 0 else min(args.parallelism, len(datasets))

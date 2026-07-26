@@ -3,6 +3,7 @@ import type {
   TimelineEventCategory,
   TimelineEventKind,
   TimelineEventSeverity,
+  TimelineEventSourceCoverage,
 } from '@tracehouse/core';
 import {
   EVENT_CATEGORY_LABELS,
@@ -35,6 +36,40 @@ export interface EventSourceExplanation {
   description: string;
 }
 
+export type EventSourceCapability =
+  | 'query_log'
+  | 'asynchronous_metric_log'
+  | 'crash_log'
+  | 'part_log'
+  | 'background_schedule_pool_log'
+  | 'error_log'
+  | 'metric_log_replication_state'
+  | 'metric_log_replication_failures';
+
+export type SupportedEventCategory = TimelineEventCategory | 'multiple';
+
+export interface SupportedEventType {
+  kind: TimelineEventKind;
+  label: string;
+  category: SupportedEventCategory;
+  severity: TimelineEventSeverity;
+  description: string;
+  sources: readonly string[];
+  capabilities: readonly EventSourceCapability[];
+}
+
+export type SupportedEventAvailability =
+  | 'available'
+  | 'partial'
+  | 'unavailable'
+  | 'failed';
+
+export interface SupportedEventGroup {
+  category: SupportedEventCategory;
+  label: string;
+  events: SupportedEventType[];
+}
+
 export interface EventDetailRow {
   label: string;
   value: string;
@@ -47,7 +82,9 @@ export interface EventDetailSection {
   rows: EventDetailRow[];
 }
 
-export const EVENT_SOURCE_EXPLANATIONS: Record<string, EventSourceExplanation> = {
+export const EVENT_SOURCE_EXPLANATIONS: Readonly<
+  Record<EventSourceCapability, EventSourceExplanation>
+> = {
   query_log: {
     label: 'system.query_log',
     description: 'Query OOMs, timeouts, resource/admission failures, and successful DDL.',
@@ -81,6 +118,179 @@ export const EVENT_SOURCE_EXPLANATIONS: Record<string, EventSourceExplanation> =
     description: 'Persisted data-loss, failed-fetch, and failed-part-check counters.',
   },
 };
+
+export function eventSourceExplanation(
+  capability: string,
+): EventSourceExplanation | undefined {
+  return EVENT_SOURCE_EXPLANATIONS[
+    capability as EventSourceCapability
+  ];
+}
+
+/**
+ * Event kinds currently emitted by TimelineEventsService.
+ * Keep future taxonomy values out of this catalog until a source implements
+ * them, so "supported" remains an accurate product claim.
+ */
+export const SUPPORTED_EVENT_TYPES: readonly SupportedEventType[] = [
+  {
+    kind: 'server_restart',
+    label: 'Server restart',
+    category: 'lifecycle',
+    severity: 'warning',
+    description: 'Process startup inferred from a persisted Uptime reset.',
+    sources: ['system.asynchronous_metric_log'],
+    capabilities: ['asynchronous_metric_log'],
+  },
+  {
+    kind: 'server_crash',
+    label: 'Server crash',
+    category: 'lifecycle',
+    severity: 'critical',
+    description: 'Fatal ClickHouse crash with signal, version, and query ID when recorded.',
+    sources: ['system.crash_log'],
+    capabilities: ['crash_log'],
+  },
+  {
+    kind: 'query_oom',
+    label: 'Query OOM',
+    category: 'queries',
+    severity: 'error',
+    description: 'Query-scoped memory limit or allocation failure.',
+    sources: ['system.query_log'],
+    capabilities: ['query_log'],
+  },
+  {
+    kind: 'query_timeout',
+    label: 'Query timeout',
+    category: 'queries',
+    severity: 'warning',
+    description: 'Query terminated with TIMEOUT_EXCEEDED.',
+    sources: ['system.query_log'],
+    capabilities: ['query_log'],
+  },
+  {
+    kind: 'query_rejected',
+    label: 'Query rejected',
+    category: 'queries',
+    severity: 'warning',
+    description: 'Admission, quota, simultaneous-query, parts, or mutation limit rejection.',
+    sources: ['system.query_log'],
+    capabilities: ['query_log'],
+  },
+  {
+    kind: 'query_resource_limit',
+    label: 'Query resource failure',
+    category: 'queries',
+    severity: 'error',
+    description: 'Query failed because a required resource was unavailable.',
+    sources: ['system.query_log'],
+    capabilities: ['query_log'],
+  },
+  {
+    kind: 'ddl',
+    label: 'DDL change',
+    category: 'changes',
+    severity: 'info',
+    description: 'Successful CREATE, ALTER, DROP, RENAME, TRUNCATE, OPTIMIZE, or UNDROP.',
+    sources: ['system.query_log'],
+    capabilities: ['query_log'],
+  },
+  {
+    kind: 'replica_readonly',
+    label: 'Replica read-only episode',
+    category: 'replication',
+    severity: 'error',
+    description: 'One or more replicated tables entered a persisted read-only state.',
+    sources: ['system.metric_log'],
+    capabilities: ['metric_log_replication_state'],
+  },
+  {
+    kind: 'replication_data_loss',
+    label: 'Replication data loss',
+    category: 'replication',
+    severity: 'critical',
+    description: 'A persisted ReplicatedDataLoss counter increase.',
+    sources: ['system.metric_log'],
+    capabilities: ['metric_log_replication_failures'],
+  },
+  {
+    kind: 'replication_task_failure',
+    label: 'Replication task failure',
+    category: 'replication',
+    severity: 'error',
+    description: 'Failed replicated fetch, part check, or scheduled replication task.',
+    sources: [
+      'system.part_log',
+      'system.background_schedule_pool_log',
+      'system.metric_log',
+    ],
+    capabilities: [
+      'part_log',
+      'background_schedule_pool_log',
+      'metric_log_replication_failures',
+    ],
+  },
+  {
+    kind: 'part_failure',
+    label: 'Part operation failure',
+    category: 'storage',
+    severity: 'error',
+    description: 'A data-part operation completed with a non-zero error.',
+    sources: ['system.part_log'],
+    capabilities: ['part_log'],
+  },
+  {
+    kind: 'background_task_failure',
+    label: 'Background task failure',
+    category: 'maintenance',
+    severity: 'error',
+    description: 'A scheduled ClickHouse background task failed.',
+    sources: ['system.background_schedule_pool_log'],
+    capabilities: ['background_schedule_pool_log'],
+  },
+  {
+    kind: 'error_burst',
+    label: 'Operational error burst',
+    category: 'multiple',
+    severity: 'error',
+    description: 'Persisted replication, Keeper, storage, or maintenance error count.',
+    sources: ['system.error_log'],
+    capabilities: ['error_log'],
+  },
+] as const;
+
+export function supportedEventAvailability(
+  eventType: SupportedEventType,
+  coverage: readonly TimelineEventSourceCoverage[],
+): SupportedEventAvailability {
+  const relevant = coverage.filter(item => (
+    eventType.capabilities.includes(item.capability)
+  ));
+  if (relevant.some(item => item.status === 'loaded')) {
+    return relevant.every(item => item.status === 'loaded') ? 'available' : 'partial';
+  }
+  if (relevant.some(item => item.status === 'failed')) return 'failed';
+  return 'unavailable';
+}
+
+export function supportedEventGroups(): SupportedEventGroup[] {
+  const categories: Array<{ category: SupportedEventCategory; label: string }> = [
+    { category: 'lifecycle', label: 'Lifecycle' },
+    { category: 'queries', label: 'Queries' },
+    { category: 'replication', label: 'Replication' },
+    { category: 'storage', label: 'Storage' },
+    { category: 'changes', label: 'Changes' },
+    { category: 'maintenance', label: 'Maintenance' },
+    { category: 'multiple', label: 'Cross-category' },
+  ];
+  return categories
+    .map(group => ({
+      ...group,
+      events: SUPPORTED_EVENT_TYPES.filter(event => event.category === group.category),
+    }))
+    .filter(group => group.events.length > 0);
+}
 
 export function toClickHouseEventTime(date: Date): string {
   return date.toISOString().slice(0, 19).replace('T', ' ');

@@ -1,10 +1,13 @@
 import { describe, expect, it } from 'vitest';
-import type { TimelineEvent } from '@tracehouse/core';
+import type { TimelineEvent, TimelineEventSourceCoverage } from '@tracehouse/core';
 import {
+  SUPPORTED_EVENT_TYPES,
   buildEventMarkerSelection,
   eventDetailLabel,
   eventDetailSections,
   sortAndFilterEvents,
+  supportedEventAvailability,
+  supportedEventGroups,
   toClickHouseEventTime,
 } from '../events-dashboard-model';
 
@@ -138,5 +141,54 @@ describe('events dashboard model', () => {
       section.rows.some(row => row.value === 'internal-event-id'),
     )).toBe(false);
     expect(sections.some(section => section.id === 'identifiers')).toBe(false);
+  });
+
+  it('catalogs only event kinds currently emitted by the service', () => {
+    expect(SUPPORTED_EVENT_TYPES).toHaveLength(13);
+    expect(SUPPORTED_EVENT_TYPES.map(item => item.kind)).toContain('server_restart');
+    expect(SUPPORTED_EVENT_TYPES.map(item => item.kind)).toContain('replica_readonly');
+    expect(SUPPORTED_EVENT_TYPES.map(item => item.kind)).not.toContain('backup');
+    expect(supportedEventGroups().flatMap(group => group.events)).toHaveLength(
+      SUPPORTED_EVENT_TYPES.length,
+    );
+  });
+
+  it('reports supported-event availability from source coverage', () => {
+    const coverage: TimelineEventSourceCoverage[] = [
+      {
+        source: 'system.query_log',
+        capability: 'query_log',
+        status: 'loaded',
+        event_count: 2,
+      },
+      {
+        source: 'system.part_log',
+        capability: 'part_log',
+        status: 'loaded',
+        event_count: 0,
+      },
+      {
+        source: 'system.background_schedule_pool_log',
+        capability: 'background_schedule_pool_log',
+        status: 'unavailable',
+        event_count: 0,
+      },
+      {
+        source: 'system.metric_log',
+        capability: 'metric_log_replication_failures',
+        status: 'unavailable',
+        event_count: 0,
+      },
+    ];
+    const queryOom = SUPPORTED_EVENT_TYPES.find(item => item.kind === 'query_oom');
+    const replicationFailure = SUPPORTED_EVENT_TYPES.find(
+      item => item.kind === 'replication_task_failure',
+    );
+
+    expect(queryOom && supportedEventAvailability(queryOom, coverage)).toBe('available');
+    expect(
+      replicationFailure
+      && supportedEventAvailability(replicationFailure, coverage),
+    ).toBe('partial');
   });
 });

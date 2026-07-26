@@ -169,6 +169,7 @@ describe('TimelineEventsService', () => {
     const mock = adapter(async sql => {
       expect(sql).toContain("type = 'QueryFinish'");
       expect(sql).toContain("'Create', 'Alter', 'Drop'");
+      expect(sql).toContain("query NOT LIKE '/* ddl_entry=query-%'");
       return [{
         host: 'ch-1',
         occurred_at: '2026-07-25 12:20:03.250000',

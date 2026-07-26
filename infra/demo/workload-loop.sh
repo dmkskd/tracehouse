@@ -45,7 +45,10 @@ c.execute('SELECT 1')
 insert_loop() {
   while true; do
     log "Inserting batch (append mode)..."
-    run tracehouse-generate --mode append || log "WARNING: generate exited with error"
+    # Initial startup already prepared every schema. Avoid replaying
+    # CREATE ... IF NOT EXISTS through each Replicated database on every
+    # append cycle; those no-op DDL entries otherwise flood Events.
+    run tracehouse-generate --mode append --skip-create || log "WARNING: generate exited with error"
     sleep 10
   done
 }
