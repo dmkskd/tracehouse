@@ -139,6 +139,7 @@ export const QueryMonitor: React.FC = () => {
   const refreshConfig = useRefreshConfig();
   const { refreshRateSeconds } = useRefreshSettingsStore();
   const manualRefreshTick = useGlobalLastUpdatedStore(s => s.manualRefreshTick);
+  const triggerManualRefresh = useGlobalLastUpdatedStore(s => s.triggerManualRefresh);
   const { available: hasQueryLog, probing: isProbing } = useCapabilityCheck(['query_log']);
   const { available: hasProcesses, probing: isProcessesProbing } = useCapabilityCheck(['system_processes']);
 
@@ -519,6 +520,8 @@ export const QueryMonitor: React.FC = () => {
               filter={historyFilter}
               onFilterChange={handleFilterChange}
               queryAnalyzer={services?.queryAnalyzer}
+              onRefresh={triggerManualRefresh}
+              isLoading={isLoadingHistory}
             />
 
             <div style={{ marginTop: 14, border: '1px solid var(--border-primary)', borderRadius: 8, overflow: 'hidden' }}>

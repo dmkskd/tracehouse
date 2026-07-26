@@ -2065,10 +2065,6 @@ export const MergeTrackerView: React.FC = () => {
     [mergeActivity],
   );
 
-  // Result count for the filter bar
-  const filterResultCount = activeTab === 'merges'
-    ? mergeActivityRecords.length
-    : filteredMutations.length + filteredMutationHistory.length;
   const isHealthTab = activeTab === 'health';
   const poolTotals = useMemo(() => {
     if (!poolMetrics) return { active: 0, total: 0 };
@@ -2126,20 +2122,26 @@ export const MergeTrackerView: React.FC = () => {
   }
 
   return (
-    <div className="page-layout">
+    <div style={{
+      height: '100%',
+      display: 'flex',
+      flexDirection: 'column',
+      overflow: 'hidden',
+      background: 'var(--bg-primary)',
+    }}>
       <div
         style={{
-          margin: 'calc(var(--page-padding) * -1) calc(var(--page-padding) * -1) 0',
-          padding: '16px var(--page-padding) var(--section-gap)',
+          flexShrink: 0,
+          padding: '16px 24px 0',
           background: 'var(--bg-secondary)',
           borderBottom: '1px solid var(--border-primary)',
         }}
       >
         {/* Header */}
-        <div className="flex items-center justify-between" style={{ marginBottom: 16 }}>
+        <div className="flex items-center justify-between" style={{ marginBottom: 12 }}>
           <div>
             <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
-              <h1 className="text-xl font-semibold" style={{ color: 'var(--text-primary)' }}>
+              <h1 style={{ margin: 0, color: 'var(--text-primary)', fontSize: 18, fontWeight: 600 }}>
                 Merge Tracker
               </h1>
               <DocsLink path="/features/merge-tracker" />
@@ -2156,6 +2158,7 @@ export const MergeTrackerView: React.FC = () => {
               flexWrap: 'nowrap',
               gap: '8px 12px',
               overflowX: 'auto',
+              marginBottom: 12,
             }}
           >
             <PoolUsageSummary
@@ -2223,54 +2226,55 @@ export const MergeTrackerView: React.FC = () => {
           </MetricStrip>
         )}
 
+        <div className="page-tabs">
+          <button
+            className={`page-tab ${activeTab === 'merges' ? 'active' : ''}`}
+            onClick={() => setActiveTab('merges')}
+          >
+            Merges
+            {mergeActivityRecords.length > 0 && (
+              <span className="page-tab-count">{mergeActivityRecords.length}</span>
+            )}
+          </button>
+          <button
+            className={`page-tab ${activeTab === 'mutations' ? 'active' : ''}`}
+            onClick={() => setActiveTab('mutations')}
+          >
+            Mutations
+            {pendingMutations > 0 && (
+              <span className="page-tab-count">{pendingMutations}</span>
+            )}
+          </button>
+          {experimentalEnabled && (
+            <button
+              className={`page-tab ${activeTab === 'health' ? 'active' : ''}`}
+              onClick={() => setActiveTab('health')}
+            >
+              Health Map
+              <span className="page-tab-exp">exp</span>
+            </button>
+          )}
+        </div>
       </div>
 
       {/* Error */}
       {error && (
-        <PermissionGate error={error} title="Merge Tracker" variant="banner" onDismiss={clearError} />
+        <div style={{ margin: '12px 24px 0' }}>
+          <PermissionGate error={error} title="Merge Tracker" variant="banner" onDismiss={clearError} />
+        </div>
       )}
 
       {/* Main Content */}
       <div
         style={{
+          flex: 1,
+          minHeight: 0,
+          overflow: 'auto',
           background: 'var(--bg-primary)',
-          margin: '0 calc(var(--page-padding) * -1) calc(var(--page-padding) * -1)',
-          padding: '12px var(--page-padding) var(--page-padding)',
+          padding: '0 24px 24px',
         }}
       >
       <div className="flex flex-col min-w-0 overflow-hidden" style={{ minHeight: isHealthTab ? '520px' : '400px' }}>
-          <div style={{ borderBottom: '1px solid var(--border-primary)' }}>
-            <div className="page-tabs" style={{ paddingLeft: 8 }}>
-              <button
-                className={`page-tab ${activeTab === 'merges' ? 'active' : ''}`}
-                onClick={() => setActiveTab('merges')}
-              >
-                Merges
-                {mergeActivityRecords.length > 0 && (
-                  <span className="page-tab-count">{mergeActivityRecords.length}</span>
-                )}
-              </button>
-              <button
-                className={`page-tab ${activeTab === 'mutations' ? 'active' : ''}`}
-                onClick={() => setActiveTab('mutations')}
-              >
-                Mutations
-                {pendingMutations > 0 && (
-                  <span className="page-tab-count">{pendingMutations}</span>
-                )}
-              </button>
-              {experimentalEnabled && (
-                <button
-                  className={`page-tab ${activeTab === 'health' ? 'active' : ''}`}
-                  onClick={() => setActiveTab('health')}
-                >
-                  Health Map
-                  <span className="page-tab-exp">exp</span>
-                </button>
-              )}
-            </div>
-          </div>
-
           {/* Filter Bar */}
           {!isHealthTab && (
             <div style={{ paddingTop: 12 }}>
@@ -2301,13 +2305,12 @@ export const MergeTrackerView: React.FC = () => {
                 isLoading={activeTab === 'merges'
                   ? isLoadingMerges || isLoadingHistory
                   : isLoadingMutations || isLoadingMutationHistory}
-                resultCount={filterResultCount}
               />
             </div>
           )}
 
           {!isHealthTab && (
-            <div style={{ paddingTop: 8 }}>
+            <div style={{ display: 'flex', justifyContent: 'flex-end', paddingTop: 8 }}>
               <PreviewToggleButton
                 label={activeTab === 'mutations' ? 'Mutation Preview' : 'Merge Preview'}
                 visible={showActivityPreview}

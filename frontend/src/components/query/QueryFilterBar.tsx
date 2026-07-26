@@ -11,12 +11,27 @@
 
 import React, { useState, useEffect, useRef, useCallback, useMemo } from 'react';
 import type { QueryAnalyzer } from '@tracehouse/core';
+import {
+  TrackerFilterBarShell,
+  TrackerLimitInput,
+  TrackerRefreshButton,
+} from '../common/TrackerFilterBarShell';
+import {
+  trackerFilterLabelStyle,
+  trackerScopeOptionStyle,
+} from '../common/trackerFilterStyles';
+import { TimeRangePicker } from '../analytics/TimeRangePicker';
+import {
+  TRACKER_TIME_PRESETS,
+  trackerTimeRangeHours,
+} from '../../utils/trackerTimeRange';
 
 /* ------------------------------------------------------------------ */
 /*  Public types                                                       */
 /* ------------------------------------------------------------------ */
 
 export interface QueryFilterState {
+  timeRange?: string;
   queryId?: string;
   user?: string;
   hostname?: string;
@@ -37,6 +52,8 @@ interface QueryFilterBarProps {
   filter: QueryFilterState;
   onFilterChange: (patch: Partial<QueryFilterState>) => void;
   queryAnalyzer?: QueryAnalyzer;
+  onRefresh?: () => void;
+  isLoading?: boolean;
 }
 
 /* ------------------------------------------------------------------ */
@@ -135,17 +152,6 @@ const FILTER_FIELDS: FilterFieldDef[] = [
 /*  Styles                                                             */
 /* ------------------------------------------------------------------ */
 
-const inputStyle: React.CSSProperties = {
-  padding: '6px 10px', fontSize: 12, fontFamily: 'inherit',
-  background: 'var(--bg-tertiary)', color: 'var(--text-primary)',
-  border: '1px solid var(--border-primary)', borderRadius: 6, outline: 'none',
-};
-
-const lblStyle: React.CSSProperties = {
-  display: 'block', fontSize: 10, fontWeight: 500, color: 'var(--text-muted)',
-  marginBottom: 4, textTransform: 'uppercase', letterSpacing: '0.3px',
-};
-
 const chipStyle: React.CSSProperties = {
   display: 'inline-flex', alignItems: 'center', gap: 4,
   padding: '3px 8px', fontSize: 11, borderRadius: 12,
@@ -177,7 +183,7 @@ const dropdownItemStyle: React.CSSProperties = {
 type Phase = 'idle' | 'picking_field' | 'entering_value';
 
 export const QueryFilterBar: React.FC<QueryFilterBarProps> = ({
-  filter, onFilterChange, queryAnalyzer,
+  filter, onFilterChange, queryAnalyzer, onRefresh, isLoading,
 }) => {
   /* --- local state for the chip search input --- */
   const [phase, setPhase] = useState<Phase>('idle');
@@ -198,19 +204,6 @@ export const QueryFilterBar: React.FC<QueryFilterBarProps> = ({
       }).catch(() => {});
     });
   }, [queryAnalyzer]);
-
-  /* --- limit local state --- */
-  const [localLimit, setLocalLimit] = useState(String(filter.limit || 100));
-  const limitTimerRef = useRef<ReturnType<typeof setTimeout>>();
-  useEffect(() => {
-    clearTimeout(limitTimerRef.current);
-    limitTimerRef.current = setTimeout(() => {
-      const v = parseInt(localLimit, 10);
-      onFilterChange({ limit: v > 0 ? v : 100 });
-    }, 500);
-  }, [localLimit]);
-  // sync from props
-  useEffect(() => { setLocalLimit(String(filter.limit || 100)); }, [filter.limit]);
 
   /* --- active chips derived from filter state --- */
   const activeChips = useMemo(() => {
@@ -378,32 +371,12 @@ export const QueryFilterBar: React.FC<QueryFilterBarProps> = ({
     }
   }, [phase, selectField, commitValue]);
 
-  /* --- time helpers --- */
-  const formatDateTimeLocal = (date: Date): string => {
-    const pad = (n: number) => String(n).padStart(2, '0');
-    return `${date.getFullYear()}-${pad(date.getMonth() + 1)}-${pad(date.getDate())}T${pad(date.getHours())}:${pad(date.getMinutes())}`;
-  };
-
-  const toDateTimeLocalValue = (value?: string): string | undefined => {
-    if (!value) return undefined;
-    const date = new Date(value);
-    return Number.isNaN(date.getTime()) ? value.slice(0, 16) : formatDateTimeLocal(date);
-  };
-
-  const getDefaultStartTime = () => {
-    const d = new Date(); d.setHours(d.getHours() - 1);
-    return formatDateTimeLocal(d);
-  };
-  const getDefaultEndTime = () => formatDateTimeLocal(new Date());
-
   /* --- lookback warning --- */
-  const startMs = filter.startTime
-    ? new Date(filter.startTime).getTime()
-    : new Date(getDefaultStartTime()).getTime();
-  const endMs = filter.endTime
-    ? new Date(filter.endTime).getTime()
-    : new Date(getDefaultEndTime()).getTime();
-  const lookbackHours = (endMs - startMs) / (60 * 60 * 1000);
+  const lookbackHours = trackerTimeRangeHours(
+    filter.timeRange,
+    filter.startTime,
+    filter.endTime,
+  );
   const fmtLookback = lookbackHours < 24
     ? `${Math.round(lookbackHours)}h`
     : lookbackHours < 168
@@ -412,32 +385,39 @@ export const QueryFilterBar: React.FC<QueryFilterBarProps> = ({
 
   /* --- render --- */
   return (
-    <div style={{
-      background: 'var(--bg-secondary)', borderRadius: 8,
-      padding: '12px 16px', marginBottom: 12,
-      border: '1px solid var(--border-primary)',
-    }}>
-      <div style={{ display: 'flex', alignItems: 'flex-end', gap: 10, flexWrap: 'wrap' }}>
-        {/* Start Time */}
-        <div style={{ width: 150 }}>
-          <label style={lblStyle}>Start Time</label>
-          <input type="datetime-local"
-            value={toDateTimeLocalValue(filter.startTime) || getDefaultStartTime()}
-            onChange={e => onFilterChange({ startTime: e.target.value ? new Date(e.target.value).toISOString() : undefined })}
-            style={{ ...inputStyle, width: '100%' }} />
+    <TrackerFilterBarShell
+      footer={lookbackHours > 1 ? (
+        <div style={{
+          marginTop: 8,
+          padding: '5px 10px',
+          fontSize: 10,
+          color: lookbackHours > 24 ? '#d29922' : 'var(--text-muted)',
+          background: lookbackHours > 24 ? 'rgba(210, 153, 34, 0.06)' : 'transparent',
+          borderRadius: 4,
+          letterSpacing: '0.3px',
+        }}>
+          Lookback window: {fmtLookback} — wider windows scan more data from system.query_log{lookbackHours > 24 ? ' and consume more server resources' : ''}
         </div>
-        {/* End Time */}
-        <div style={{ width: 150 }}>
-          <label style={lblStyle}>End Time</label>
-          <input type="datetime-local"
-            value={toDateTimeLocalValue(filter.endTime) || getDefaultEndTime()}
-            onChange={e => onFilterChange({ endTime: e.target.value ? new Date(e.target.value).toISOString() : undefined })}
-            style={{ ...inputStyle, width: '100%' }} />
+      ) : undefined}
+    >
+        {/* Time range */}
+        <div>
+          <label style={trackerFilterLabelStyle}>Time Range</label>
+          <TimeRangePicker
+            value={filter.timeRange ?? '1 HOUR'}
+            onChange={value => onFilterChange({
+              timeRange: value ?? '1 HOUR',
+              startTime: undefined,
+              endTime: undefined,
+            })}
+            presets={[...TRACKER_TIME_PRESETS]}
+            popoverAlign="left"
+          />
         </div>
 
         {/* Chip search input */}
         <div style={{ flex: 1, minWidth: 260, position: 'relative' }}>
-          <label style={lblStyle}>Filters</label>
+          <label style={trackerFilterLabelStyle}>Filters</label>
           <div
             style={{
               display: 'flex', flexWrap: 'wrap', alignItems: 'center', gap: 4,
@@ -508,39 +488,29 @@ export const QueryFilterBar: React.FC<QueryFilterBarProps> = ({
           )}
         </div>
 
-        {/* Limit */}
-        <div style={{ width: 70 }}>
-          <label style={lblStyle}>Limit</label>
-          <input type="number" value={localLimit} min="1" max="10000" step="50"
-            onChange={e => setLocalLimit(e.target.value)}
-            style={{ ...inputStyle, width: '100%' }} />
-        </div>
+        <TrackerLimitInput
+          value={filter.limit}
+          onChange={limit => onFilterChange({ limit })}
+        />
 
-        {/* Exclude internal + count */}
-        <div style={{ display: 'flex', alignItems: 'center', gap: 12, paddingBottom: 2 }}>
-          <label style={{ display: 'flex', alignItems: 'center', gap: 5, fontSize: 11, color: 'var(--text-muted)', cursor: 'pointer', userSelect: 'none', lineHeight: 1.3 }}>
-            <input type="checkbox"
-              checked={filter.excludeAppQueries ?? false}
-              onChange={e => onFilterChange({ excludeAppQueries: e.target.checked })}
-              style={{ margin: 0 }} />
-            <span>Hide tracehouse<br />queries</span>
-          </label>
-        </div>
-      </div>
-      {lookbackHours > 1 && (
-        <div style={{
-          marginTop: 8,
-          padding: '5px 10px',
-          fontSize: 10,
-          color: lookbackHours > 24 ? '#d29922' : 'var(--text-muted)',
-          background: lookbackHours > 24 ? 'rgba(210, 153, 34, 0.06)' : 'transparent',
-          borderRadius: 4,
-          letterSpacing: '0.3px',
+        <label style={{
+          ...trackerScopeOptionStyle,
+          width: 92,
+          whiteSpace: 'normal',
         }}>
-          Lookback window: {fmtLookback} — wider windows scan more data from system.query_log{lookbackHours > 24 ? ' and consume more server resources' : ''}
+          <input type="checkbox"
+            checked={filter.excludeAppQueries ?? false}
+            onChange={e => onFilterChange({ excludeAppQueries: e.target.checked })}
+            style={{ margin: 0 }} />
+          <span>Hide TraceHouse<br />queries</span>
+        </label>
+
+      {onRefresh && (
+        <div style={{ marginLeft: 'auto' }}>
+          <TrackerRefreshButton onRefresh={onRefresh} isLoading={isLoading} />
         </div>
       )}
-    </div>
+    </TrackerFilterBarShell>
   );
 };
 

@@ -28,6 +28,7 @@ import {
   QUERY_ACTIVITY_PREVIEW_STORAGE_KEY,
   savePreviewPreference,
 } from '../../utils/previewPreference';
+import { resolveTrackerTimeRange } from '../../utils/trackerTimeRange';
 
 interface QueryActivityTableProps {
   activity: QueryActivityRecord[];
@@ -238,6 +239,10 @@ export const QueryActivityTable: React.FC<QueryActivityTableProps> = ({
     () => sortQueryActivityRecords(activity, sort),
     [activity, sort],
   );
+  const resolvedHistoryRange = useMemo(
+    () => resolveTrackerTimeRange(filter.timeRange, filter.startTime, filter.endTime),
+    [filter.endTime, filter.startTime, filter.timeRange],
+  );
 
   const toggleCompareSelection = useCallback((queryId: string) => {
     setComparisonOpen(false);
@@ -265,7 +270,7 @@ export const QueryActivityTable: React.FC<QueryActivityTableProps> = ({
     queryAnalyzer,
     history: sortedActivity.filter(query => query.activitySource === 'history'),
     coordinatorIds,
-    startTime: filter.startTime,
+    startTime: resolvedHistoryRange.startTime,
   });
   const previewChildQueries = hoverTopology.getChildQueriesForQuery(previewQuery);
 
@@ -327,15 +332,6 @@ export const QueryActivityTable: React.FC<QueryActivityTableProps> = ({
             Compare {selectedForCompare.size >= 2 ? `${selectedForCompare.size} queries` : 'selected'}
           </button>
         )}
-        <PreviewToggleButton
-          label="Query Preview"
-          visible={showHoverPreview}
-          onToggle={() => setShowHoverPreview(v => {
-            const next = !v;
-            savePreviewPreference(QUERY_ACTIVITY_PREVIEW_STORAGE_KEY, next);
-            return next;
-          })}
-        />
         {compareMode && (
           <span style={{ fontSize: 11, color: 'var(--text-muted)' }}>
             {selectedForCompare.size === 0 
@@ -343,6 +339,17 @@ export const QueryActivityTable: React.FC<QueryActivityTableProps> = ({
               : `${selectedForCompare.size} selected`}
           </span>
         )}
+        <div style={{ marginLeft: 'auto' }}>
+          <PreviewToggleButton
+            label="Query Preview"
+            visible={showHoverPreview}
+            onToggle={() => setShowHoverPreview(v => {
+              const next = !v;
+              savePreviewPreference(QUERY_ACTIVITY_PREVIEW_STORAGE_KEY, next);
+              return next;
+            })}
+          />
+        </div>
       </div>
 
       {comparisonOpen && comparedQueries.length >= 2 ? (

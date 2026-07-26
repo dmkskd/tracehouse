@@ -39,7 +39,7 @@ export const Events: React.FC = () => {
     update({ range_center: legacyRangeCenter });
   }, [legacyRangeCenter, update]);
 
-  const rangeHours = state.event_range ?? 24;
+  const rangeHours = state.event_range ?? 1;
   const rangeCenterMs = effectiveRangeCenter
     ? Date.parse(effectiveRangeCenter)
     : Number.NaN;
@@ -48,7 +48,7 @@ export const Events: React.FC = () => {
     ? `CUSTOM:${toLocalEventDateTime(rangeCenterMs - rangeMs / 2)},${toLocalEventDateTime(
       rangeCenterMs + rangeMs / 2,
     )}`
-    : EVENT_HOURS_INTERVAL.get(rangeHours) ?? '1 DAY';
+    : EVENT_HOURS_INTERVAL.get(rangeHours) ?? '1 HOUR';
 
   const handleRangeSelect = useCallback((startMs: number, endMs: number) => {
     const center = new Date(startMs + (endMs - startMs) / 2).toISOString();
@@ -112,7 +112,7 @@ export const Events: React.FC = () => {
             }
             update({
               range_center: undefined,
-              event_range: value ? (EVENT_INTERVAL_HOURS[value] ?? 24) : 24,
+              event_range: value ? (EVENT_INTERVAL_HOURS[value] ?? 1) : 1,
               event_id: undefined,
               event_time: undefined,
             }, { push: true });

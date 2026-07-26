@@ -13,6 +13,7 @@ import type {
 } from '@tracehouse/core';
 import { useGlobalLastUpdatedStore } from './refreshSettingsStore';
 import { DEFAULT_INTERVAL_MS } from '../services/pollingService';
+import { resolveTrackerTimeRange } from '../utils/trackerTimeRange';
 
 // Re-export core types for consumers that import from this store.
 // RunningQuery is an alias for QueryMetrics (core name) to preserve
@@ -25,6 +26,7 @@ export const DEFAULT_HISTORY_WINDOW_MS = 1 * 60 * 60 * 1000;
 
 // Filter options for query history
 export interface QueryHistoryFilter {
+  timeRange?: string;
   startTime?: string;
   endTime?: string;
   user?: string;
@@ -115,6 +117,7 @@ export const useQueryStore = create<QueryState>((set) => ({
   
   // Default filter: last 1 hour, limit 100
   historyFilter: {
+    timeRange: '1 HOUR',
     limit: 100,
   },
   
@@ -279,13 +282,12 @@ export const queryApi = {
     service: QueryAnalyzer,
     filter: QueryHistoryFilter
   ): Promise<QueryHistoryItem[]> {
-    // Build date/time range from filter or use sensible defaults
-    const now = new Date();
-    const startDate = filter.startTime
-      ? filter.startTime.split('T')[0] ?? now.toISOString().split('T')[0]
-      : new Date(now.getTime() - DEFAULT_HISTORY_WINDOW_MS).toISOString().split('T')[0];
-    const startTime = filter.startTime ?? new Date(now.getTime() - DEFAULT_HISTORY_WINDOW_MS).toISOString();
-    const endTime = filter.endTime ?? now.toISOString();
+    const { startTime, endTime } = resolveTrackerTimeRange(
+      filter.timeRange,
+      filter.startTime,
+      filter.endTime,
+    );
+    const startDate = startTime.split('T')[0]!;
 
     return service.getQueryHistory({
       start_date: startDate!,

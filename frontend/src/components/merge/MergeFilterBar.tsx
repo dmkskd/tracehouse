@@ -11,15 +11,18 @@
 import React, { useState, useRef, useCallback, useMemo } from 'react';
 import type { MergeHistoryFilter } from '../../stores/mergeStore';
 import { TimeRangePicker } from '../analytics/TimeRangePicker';
+import {
+  TrackerFilterBarShell,
+  TrackerLimitInput,
+  TrackerRefreshButton,
+} from '../common/TrackerFilterBarShell';
+import {
+  trackerFilterLabelStyle,
+  trackerScopeOptionStyle,
+} from '../common/trackerFilterStyles';
+import { TRACKER_TIME_PRESETS } from '../../utils/trackerTimeRange';
 
 export type MergeTab = 'merges' | 'mutations' | 'health';
-
-const MERGE_TIME_PRESETS = [
-  { label: '1h',  interval: '1 HOUR' },
-  { label: '1d',  interval: '1 DAY' },
-  { label: '3d',  interval: '3 DAY' },
-  { label: '7d',  interval: '7 DAY' },
-];
 
 /* ------------------------------------------------------------------ */
 /*  Public types                                                       */
@@ -54,7 +57,6 @@ interface MergeFilterBarProps {
   onPartNameChange?: (v: string | undefined) => void;
   onRefresh?: () => void;
   isLoading?: boolean;
-  resultCount?: number;
 }
 
 /* ------------------------------------------------------------------ */
@@ -175,17 +177,6 @@ const dropdownItemStyle: React.CSSProperties = {
   color: 'var(--text-secondary)',
 };
 
-const lblStyle: React.CSSProperties = {
-  display: 'block', fontSize: 10, fontWeight: 500, color: 'var(--text-muted)',
-  marginBottom: 2, textTransform: 'uppercase', letterSpacing: '0.3px',
-};
-
-const inputStyle: React.CSSProperties = {
-  padding: '6px 10px', fontSize: 12, fontFamily: 'inherit',
-  background: 'var(--bg-tertiary)', color: 'var(--text-primary)',
-  border: '1px solid var(--border-primary)', borderRadius: 6, outline: 'none',
-};
-
 /* ------------------------------------------------------------------ */
 /*  Component                                                          */
 /* ------------------------------------------------------------------ */
@@ -194,7 +185,7 @@ type Phase = 'idle' | 'picking_field' | 'entering_value';
 
 export const MergeFilterBar: React.FC<MergeFilterBarProps> = (props) => {
   const {
-    tab, filter, onFilterChange, onRefresh, isLoading, resultCount,
+    tab, filter, onFilterChange, onRefresh, isLoading,
   } = props;
 
   const showLimit = tab === 'merges' || tab === 'mutations';
@@ -212,18 +203,6 @@ export const MergeFilterBar: React.FC<MergeFilterBarProps> = (props) => {
   const [highlightIdx, setHighlightIdx] = useState(-1);
   const [showDropdown, setShowDropdown] = useState(false);
   const inputRef = useRef<HTMLInputElement>(null);
-
-  /* --- limit local state with debounce --- */
-  const [localLimit, setLocalLimit] = useState(String(filter.limit || 100));
-  const limitTimerRef = useRef<ReturnType<typeof setTimeout>>();
-  React.useEffect(() => {
-    clearTimeout(limitTimerRef.current);
-    limitTimerRef.current = setTimeout(() => {
-      const v = parseInt(localLimit, 10);
-      onFilterChange({ limit: v > 0 ? v : 100 });
-    }, 500);
-  }, [localLimit]); // eslint-disable-line react-hooks/exhaustive-deps
-  React.useEffect(() => { setLocalLimit(String(filter.limit || 100)); }, [filter.limit]);
 
   /* --- active chips derived from props --- */
   const activeChips = useMemo(() => {
@@ -389,19 +368,25 @@ export const MergeFilterBar: React.FC<MergeFilterBarProps> = (props) => {
 
   /* --- render --- */
   return (
-    <div style={{
-      background: 'var(--bg-secondary)', borderRadius: 8,
-      padding: '8px 12px', marginBottom: 8,
-      border: '1px solid var(--border-primary)',
-    }}>
-      <div style={{ display: 'flex', alignItems: 'flex-end', gap: 8, flexWrap: 'wrap' }}>
+    <TrackerFilterBarShell>
+        {/* Time range */}
+        <div>
+          <label style={trackerFilterLabelStyle}>Time Range</label>
+          <TimeRangePicker
+            value={filter.timeRange ?? '1 HOUR'}
+            onChange={v => onFilterChange({ timeRange: v })}
+            presets={[...TRACKER_TIME_PRESETS]}
+            popoverAlign="left"
+          />
+        </div>
+
         {/* Chip search input */}
         <div style={{ flex: 1, minWidth: 260, position: 'relative' }}>
-          <label style={lblStyle}>Filters</label>
+          <label style={trackerFilterLabelStyle}>Filters</label>
           <div
             style={{
               display: 'flex', flexWrap: 'wrap', alignItems: 'center', gap: 4,
-              padding: '3px 8px', minHeight: 28,
+              padding: '4px 8px', minHeight: 32,
               background: 'var(--bg-tertiary)', border: '1px solid var(--border-primary)',
               borderRadius: 6, cursor: 'text',
             }}
@@ -468,30 +453,17 @@ export const MergeFilterBar: React.FC<MergeFilterBarProps> = (props) => {
           )}
         </div>
 
-        {/* Time range picker */}
-        <TimeRangePicker
-          value={filter.timeRange ?? '1 HOUR'}
-          onChange={v => onFilterChange({ timeRange: v })}
-          presets={MERGE_TIME_PRESETS}
-        />
-
-        {/* Limit (history tabs) */}
+        {/* Limit */}
         {showLimit && (
-          <div style={{ width: 70 }}>
-            <label style={lblStyle}>Limit</label>
-            <input type="number" value={localLimit} min="1" max="10000" step="50"
-              onChange={e => setLocalLimit(e.target.value)}
-              style={{ ...inputStyle, width: '100%' }} />
-          </div>
+          <TrackerLimitInput
+            value={filter.limit}
+            onChange={limit => onFilterChange({ limit })}
+          />
         )}
 
         {/* Exclude system databases toggle */}
         {props.onExcludeSystemChange && (
-          <label style={{
-            display: 'flex', alignItems: 'center', gap: 5,
-            fontSize: 11, color: 'var(--text-secondary)',
-            cursor: 'pointer', whiteSpace: 'nowrap', paddingBottom: 2,
-          }}>
+          <label style={trackerScopeOptionStyle}>
             <input
               type="checkbox"
               checked={props.excludeSystemDatabases ?? false}
@@ -504,11 +476,7 @@ export const MergeFilterBar: React.FC<MergeFilterBarProps> = (props) => {
 
         {/* Hide replica merges toggle */}
         {props.onHideReplicaMergesChange && (
-          <label style={{
-            display: 'flex', alignItems: 'center', gap: 5,
-            fontSize: 11, color: 'var(--text-secondary)',
-            cursor: 'pointer', whiteSpace: 'nowrap', paddingBottom: 2,
-          }}>
+          <label style={trackerScopeOptionStyle}>
             <input
               type="checkbox"
               checked={props.hideReplicaMerges ?? false}
@@ -519,27 +487,13 @@ export const MergeFilterBar: React.FC<MergeFilterBarProps> = (props) => {
           </label>
         )}
 
-        {/* Count + Refresh */}
-        <div style={{ display: 'flex', alignItems: 'flex-end', gap: 8, flexShrink: 0, marginLeft: 'auto' }}>
-          {resultCount !== undefined && (
-            <span style={{ fontSize: 11, color: 'var(--text-muted)', whiteSpace: 'nowrap', paddingBottom: 6 }}>
-              {isLoading ? 'Loading…' : `${resultCount}`}
-            </span>
-          )}
+        {/* Refresh */}
+        <div style={{ marginLeft: 'auto' }}>
           {onRefresh && (
-            <button onClick={onRefresh} disabled={isLoading} style={{
-              padding: '6px 12px', fontSize: 11, fontWeight: 500, borderRadius: 6,
-              background: 'var(--bg-tertiary)',
-              color: isLoading ? 'var(--text-muted)' : 'var(--text-secondary)',
-              border: '1px solid var(--border-primary)',
-              cursor: isLoading ? 'not-allowed' : 'pointer', whiteSpace: 'nowrap',
-            }}>
-              {isLoading ? 'Loading…' : 'Refresh'}
-            </button>
+            <TrackerRefreshButton onRefresh={onRefresh} isLoading={isLoading} />
           )}
         </div>
-      </div>
-    </div>
+    </TrackerFilterBarShell>
   );
 };
 
