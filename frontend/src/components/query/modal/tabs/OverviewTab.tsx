@@ -141,8 +141,8 @@ export const OverviewTab: React.FC<OverviewTabProps> = ({
   };
 
   return (
-    <div style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
-      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, minmax(0, 1fr))', gap: 14 }}>
+    <div style={{ display: 'flex', flexDirection: 'column', gap: 28 }}>
+      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, minmax(0, 1fr))', gap: 16 }}>
         <QuerySummaryPreview
           q={q}
           status={status}
@@ -205,10 +205,11 @@ export const OverviewTab: React.FC<OverviewTabProps> = ({
         </div>
       )}
 
-      <div style={{ ...LABEL, color: 'var(--text-tertiary)', fontWeight: 700, marginTop: 4 }}>Explore</div>
+      <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
+        <div style={{ ...LABEL, color: 'var(--text-tertiary)', fontWeight: 700 }}>Explore</div>
 
-      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(220px, 1fr))', gap: 12 }}>
-        <ExploreDestinationCard
+        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(220px, 1fr))', gap: 16 }}>
+          <ExploreDestinationCard
           title="SQL"
           accent="#58a6ff"
           icon={<Icon><path d="M4 7h16" /><path d="M4 12h10" /><path d="M4 17h16" /></Icon>}
@@ -220,7 +221,7 @@ export const OverviewTab: React.FC<OverviewTabProps> = ({
         </ExploreDestinationCard>
 
         <ExploreDestinationCard
-          title="Details"
+          title="Execution Internals"
           accent="#a371f7"
           icon={<Icon><circle cx="12" cy="12" r="9" /><path d="M12 7v5l3 2" /></Icon>}
           primary={fmtMs(q.duration_ms)}
@@ -234,7 +235,7 @@ export const OverviewTab: React.FC<OverviewTabProps> = ({
           title="Analysis"
           accent="#3fb950"
           icon={<Icon><path d="M4 19V9" /><path d="M10 19V5" /><path d="M16 19v-8" /><path d="M3 19h18" /></Icon>}
-          primary={`${formatNumberCompact(readRows)} -> ${formatNumberCompact(resultRows)}`}
+          primary={`${formatNumberCompact(readRows)} → ${formatNumberCompact(resultRows)}`}
           secondary={`scan ratio ${ratioLabel(readRows, resultRows)}`}
           onAction={() => onOpenTab('analytics')}
         >
@@ -272,8 +273,8 @@ export const OverviewTab: React.FC<OverviewTabProps> = ({
             title="Logs"
             accent="#58a6ff"
             icon={<Icon><path d="M4 6h16" /><path d="M4 12h12" /><path d="M4 18h8" /></Icon>}
-            primary={q.exception ? 'Exception' : 'Log context'}
-            secondary={status.code ? `code ${status.code} / text_log` : 'text_log entries'}
+            primary="Server logs"
+            secondary={status.code ? `code ${status.code} · system.text_log entries` : 'system.text_log entries for this query'}
             onAction={() => onOpenTab('logs')}
           >
             <ChipPreview values={['system.text_log']} empty="system.text_log" color="#58a6ff" />
@@ -289,7 +290,7 @@ export const OverviewTab: React.FC<OverviewTabProps> = ({
             secondary={history ? `p50 ${fmtMs(history.p50)} / p95 ${fmtMs(history.p95)}` : 'similar executions'}
             onAction={() => onOpenTab('history')}
           >
-            <MiniSparkline values={similarQueries.map(item => Number(item.query_duration_ms)).filter(Number.isFinite)} color="#58a6ff" />
+            <MiniSparkline values={similarQueries.map(item => Number(item.query_duration_ms)).filter(Number.isFinite)} color="#58a6ff" height={16} />
           </ExploreDestinationCard>
         )}
 
@@ -332,18 +333,19 @@ export const OverviewTab: React.FC<OverviewTabProps> = ({
           </ExploreDestinationCard>
         )}
 
-        {showFlamegraphCard && (
-          <ExploreDestinationCard
-            title="Flamegraph"
-            accent="#f0883e"
-            icon={<Icon><path d="M12 3c3 3 5 5.5 5 9a5 5 0 0 1-10 0c0-2 1-3.5 2.4-5.2" /><path d="M12 13c1.3 1.2 2 2.2 2 3.4a2 2 0 0 1-4 0c0-1 .5-1.9 1.2-2.8" /></Icon>}
-            primary="CPU profile"
-            secondary="stack samples / hotspots"
-            onAction={() => onOpenTab('flamegraph')}
-          >
-            <ChipPreview values={['system.trace_log']} empty="system.trace_log" color="#f0883e" />
-          </ExploreDestinationCard>
-        )}
+          {showFlamegraphCard && (
+            <ExploreDestinationCard
+              title="Flamegraph"
+              accent="#f0883e"
+              icon={<Icon><path d="M12 3c3 3 5 5.5 5 9a5 5 0 0 1-10 0c0-2 1-3.5 2.4-5.2" /><path d="M12 13c1.3 1.2 2 2.2 2 3.4a2 2 0 0 1-4 0c0-1 .5-1.9 1.2-2.8" /></Icon>}
+              primary="CPU profile"
+              secondary="stack samples / hotspots"
+              onAction={() => onOpenTab('flamegraph')}
+            >
+              <ChipPreview values={['system.trace_log']} empty="system.trace_log" color="#f0883e" />
+            </ExploreDestinationCard>
+          )}
+        </div>
       </div>
     </div>
   );
@@ -359,11 +361,11 @@ const SqlOverviewStrip: React.FC<{
       style={{
         ...PANEL,
         border: '1px solid var(--border-primary)',
-        padding: '12px 14px',
+        padding: '10px 12px',
         boxShadow: 'var(--shadow-sm)',
       }}
     >
-      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'baseline', gap: 12, marginBottom: 8 }}>
+      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'baseline', gap: 12, marginBottom: 6 }}>
         <div style={{ ...LABEL, color: 'var(--text-tertiary)', fontWeight: 700, fontSize: 11 }}>
           SQL preview
         </div>
@@ -384,22 +386,22 @@ const SqlOverviewStrip: React.FC<{
               fontSize: 11,
             }}
           >
-            SQL {'->'}
+            Open SQL
           </button>
         </div>
       </div>
       <SqlHighlight
-        maxHeight={132}
+        maxHeight={144}
         style={{
           width: '100%',
-          height: 132,
-          padding: '10px 12px',
+          height: 144,
+          padding: '8px 10px',
           borderRadius: 6,
           border: '1px solid var(--border-secondary)',
           background: 'var(--bg-tertiary)',
           color: 'var(--text-secondary)',
-          fontSize: 12,
-          lineHeight: 1.55,
+          fontSize: 11,
+          lineHeight: 1.45,
           boxSizing: 'border-box',
           overflow: 'auto',
         }}
@@ -456,7 +458,9 @@ const PreviewCard: React.FC<{
   >
     <div style={{ padding: '12px 14px', display: 'flex', justifyContent: 'space-between', alignItems: 'baseline', gap: 10 }}>
       <div style={{ ...LABEL, color: 'var(--text-tertiary)', fontWeight: 700, fontSize: 11 }}>{title}</div>
-      <div style={{ fontFamily: 'monospace', fontSize: 10, color: '#58a6ff', whiteSpace: 'nowrap' }}>{action} {'->'}</div>
+      <div style={{ fontFamily: 'monospace', fontSize: 10, color: '#58a6ff', whiteSpace: 'nowrap' }}>
+        View {action.toLowerCase()}
+      </div>
     </div>
     <div style={{ padding: '0 14px 14px', flex: 1 }}>
       {children}
@@ -523,7 +527,7 @@ const QuerySummaryPreview: React.FC<{
             fontSize: 11,
           }}
         >
-          parent {shortId(parentQueryId)} {'->'}
+          parent {shortId(parentQueryId)}
         </button>
       )}
     </div>
@@ -582,7 +586,7 @@ const ResourcePressurePreview: React.FC<{
   ioBytes: number;
   onOpen: () => void;
 }> = ({ scores, durationMs, cpuUs, memoryBytes, ioBytes, onOpen }) => (
-  <PreviewCard title="Resource Pressure" action="Details" onOpen={onOpen}>
+  <PreviewCard title="Resource Pressure" action="Internals" onOpen={onOpen}>
     <div style={{ display: 'grid', gridTemplateColumns: '144px minmax(0, 1fr)', gap: 20, alignItems: 'center' }}>
       <PressureGlyphPanel scores={scores} />
       <div>
@@ -705,7 +709,7 @@ const MetricBar: React.FC<{ label: string; value: string; ratio: number; color: 
 
 function Icon({ children }: { children: React.ReactNode }) {
   return (
-    <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
       {children}
     </svg>
   );
@@ -726,15 +730,15 @@ const ExploreDestinationCard: React.FC<{
     style={{
       ...PANEL,
       border: '1px solid var(--border-primary)',
-      minHeight: 126,
-      padding: '13px 14px',
+      minHeight: 90,
+      padding: '7px 10px',
       color: 'inherit',
       font: 'inherit',
       textAlign: 'left',
       cursor: 'pointer',
       display: 'flex',
       flexDirection: 'column',
-      gap: 8,
+      gap: 4,
       minWidth: 0,
       boxShadow: 'var(--shadow-sm)',
       transition: 'border-color 0.15s ease, transform 0.15s ease, background 0.15s ease',
@@ -750,34 +754,23 @@ const ExploreDestinationCard: React.FC<{
       event.currentTarget.style.transform = 'none';
     }}
   >
-    <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 10, color: 'var(--text-secondary)' }}>
+    <div style={{ display: 'flex', alignItems: 'center', gap: 10, color: 'var(--text-secondary)' }}>
       <span style={{ display: 'flex', alignItems: 'center', gap: 9, minWidth: 0 }}>
         <span style={{ color: accent, display: 'flex', alignItems: 'center', flexShrink: 0 }}>{icon}</span>
-        <span style={{ fontSize: 14, fontWeight: 700, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{title}</span>
-      </span>
-      <span
-        style={{
-          color: '#58a6ff',
-          fontSize: 15,
-          fontWeight: 700,
-          whiteSpace: 'nowrap',
-          flexShrink: 0,
-        }}
-      >
-        {'->'}
+        <span style={{ fontSize: 12, fontWeight: 700, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{title}</span>
       </span>
     </div>
 
     <div>
-      <div style={{ color: 'var(--text-primary)', fontSize: 23, lineHeight: 1.08, fontWeight: 750, letterSpacing: 0, fontVariantNumeric: 'tabular-nums' }}>
+      <div style={{ color: 'var(--text-primary)', fontSize: 19, lineHeight: 1.08, fontWeight: 750, letterSpacing: 0, fontVariantNumeric: 'tabular-nums' }}>
         {primary}
       </div>
-      <div style={{ marginTop: 4, color: 'var(--text-secondary)', fontSize: 12, lineHeight: 1.25, minHeight: 15, maxHeight: 32, overflow: 'hidden' }}>
+      <div style={{ marginTop: 2, color: 'var(--text-secondary)', fontSize: 10, lineHeight: 1.25, minHeight: 12, maxHeight: 13, overflow: 'hidden', whiteSpace: 'nowrap', textOverflow: 'ellipsis' }}>
         {secondary}
       </div>
     </div>
 
-    <div style={{ flex: 1, minHeight: 24, display: 'flex', flexDirection: 'column', justifyContent: 'center' }}>
+    <div style={{ flex: 1, minHeight: 14, maxHeight: 16, overflow: 'hidden', display: 'flex', flexDirection: 'column', justifyContent: 'center' }}>
       {children}
     </div>
   </button>
@@ -786,33 +779,34 @@ const ExploreDestinationCard: React.FC<{
 const ChipPreview: React.FC<{ values: string[]; empty: string; color: string }> = ({ values, empty, color }) => {
   const shown = values.slice(0, 5);
   if (shown.length === 0) {
-    return <div style={{ fontFamily: 'monospace', fontSize: 12, color: 'var(--text-muted)' }}>{empty}</div>;
+    return <div style={{ fontFamily: 'monospace', fontSize: 10, color: 'var(--text-muted)' }}>{empty}</div>;
   }
   return (
-    <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6, marginTop: 4 }}>
+    <div style={{ display: 'flex', flexWrap: 'nowrap', gap: 4, overflow: 'hidden', minWidth: 0 }}>
       {shown.map(value => (
         <span
           key={value}
           title={value}
           style={{
-            maxWidth: 125,
+            maxWidth: 90,
+            minWidth: 0,
             overflow: 'hidden',
             textOverflow: 'ellipsis',
             whiteSpace: 'nowrap',
-            padding: '3px 6px',
+            padding: '2px 5px',
             borderRadius: 5,
             border: `1px solid ${color}55`,
             background: `${color}14`,
             color,
             fontFamily: 'monospace',
-            fontSize: 10,
+            fontSize: 9,
           }}
         >
           {value}
         </span>
       ))}
       {values.length > shown.length && (
-        <span style={{ fontFamily: 'monospace', fontSize: 11, color: 'var(--text-muted)', padding: '4px 0' }}>
+        <span style={{ flexShrink: 0, fontFamily: 'monospace', fontSize: 9, color: 'var(--text-muted)', padding: '2px 0' }}>
           +{values.length - shown.length}
         </span>
       )}
@@ -823,11 +817,11 @@ const ChipPreview: React.FC<{ values: string[]; empty: string; color: string }> 
 function ReadResultBars({ readRows, resultRows }: { readRows: number; resultRows: number }) {
   const resultPct = readRows > 0 ? (resultRows / readRows) * 100 : 0;
   return (
-    <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
-      <div style={{ height: 9, borderRadius: 999, overflow: 'hidden', background: 'rgba(63, 185, 80, 0.14)' }}>
+    <div style={{ display: 'flex', flexDirection: 'column', gap: 3 }}>
+      <div style={{ height: 5, borderRadius: 999, overflow: 'hidden', background: 'rgba(63, 185, 80, 0.14)' }}>
         <div style={{ width: readRows > 0 ? '100%' : 0, height: '100%', borderRadius: 999, background: '#3fb950' }} />
       </div>
-      <div style={{ height: 9, borderRadius: 999, overflow: 'hidden', background: 'rgba(163, 113, 247, 0.14)' }}>
+      <div style={{ height: 5, borderRadius: 999, overflow: 'hidden', background: 'rgba(163, 113, 247, 0.14)' }}>
         <div style={{
           width: resultRows > 0 ? `${Math.max(2, Math.min(100, resultPct))}%` : 0,
           height: '100%',
@@ -876,11 +870,11 @@ function ObjectStorageBars({ summary }: { summary: ObjectStorageProfileSummary }
     ...(summary.bytesWritten > 0 ? [{ label: 'write', value: summary.bytesWritten, color: '#f0883e' }] : []),
   ];
   return (
-    <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
+    <div style={{ display: 'flex', flexDirection: 'column', gap: 3 }}>
       {rows.map(row => (
-        <div key={row.label} style={{ display: 'grid', gridTemplateColumns: '46px 1fr', gap: 8, alignItems: 'center' }}>
-          <div style={{ fontFamily: 'monospace', fontSize: 10, color: 'var(--text-muted)' }}>{row.label}</div>
-          <div style={{ height: 9, borderRadius: 999, overflow: 'hidden', background: `${row.color}16` }}>
+        <div key={row.label} style={{ display: 'grid', gridTemplateColumns: '34px 1fr', gap: 5, alignItems: 'center' }}>
+          <div style={{ fontFamily: 'monospace', fontSize: 9, color: 'var(--text-muted)' }}>{row.label}</div>
+          <div style={{ height: 5, borderRadius: 999, overflow: 'hidden', background: `${row.color}16` }}>
             <div
               style={{
                 width: row.value > 0 ? `${Math.max(2, Math.min(100, (row.value / maxBytes) * 100))}%` : 0,
@@ -893,7 +887,7 @@ function ObjectStorageBars({ summary }: { summary: ObjectStorageProfileSummary }
         </div>
       ))}
       {rows.length === 1 && (
-        <div style={{ fontFamily: 'monospace', fontSize: 10, color: 'var(--text-muted)' }}>
+        <div style={{ fontFamily: 'monospace', fontSize: 9, color: 'var(--text-muted)', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
           {summary.patterns.slice(0, 2).join(' / ') || 'remote storage'}
         </div>
       )}
@@ -904,7 +898,7 @@ function ObjectStorageBars({ summary }: { summary: ObjectStorageProfileSummary }
 function ProgressBar({ value, color }: { value: number; color: string }) {
   const pct = Math.max(0, Math.min(100, value));
   return (
-    <div style={{ height: 9, borderRadius: 999, overflow: 'hidden', background: 'var(--bg-tertiary)' }}>
+    <div style={{ height: 6, borderRadius: 999, overflow: 'hidden', background: 'var(--bg-tertiary)' }}>
       <div style={{ width: `${pct}%`, height: '100%', borderRadius: 999, background: color, transition: 'width 0.2s ease' }} />
     </div>
   );
@@ -913,17 +907,17 @@ function ProgressBar({ value, color }: { value: number; color: string }) {
 function DotRow({ count, active, color }: { count: number; active: number; color: string }) {
   const visible = Math.max(1, Math.min(count, 8));
   return (
-    <div style={{ display: 'flex', gap: 6, alignItems: 'center', height: 22 }}>
+    <div style={{ display: 'flex', gap: 4, alignItems: 'center', height: 14 }}>
       {Array.from({ length: visible }, (_, index) => (
         <span
           key={index}
           style={{
-            width: 11,
-            height: 11,
+            width: 7,
+            height: 7,
             borderRadius: '50%',
             background: index < active ? color : 'transparent',
             border: `1px solid ${index < active ? color : 'var(--border-primary)'}`,
-            boxShadow: index < active ? `0 0 0 3px ${color}18` : 'none',
+            boxShadow: index < active ? `0 0 0 2px ${color}18` : 'none',
           }}
         />
       ))}
@@ -931,10 +925,10 @@ function DotRow({ count, active, color }: { count: number; active: number; color
   );
 }
 
-function MiniSparkline({ values, color }: { values: number[]; color: string }) {
+function MiniSparkline({ values, color, height = 24 }: { values: number[]; color: string; height?: number }) {
   const points = values.slice(-18);
   if (points.length < 2) {
-    return <div style={{ height: 24 }} />;
+    return <div style={{ height }} />;
   }
 
   const min = Math.min(...points);
@@ -949,7 +943,7 @@ function MiniSparkline({ values, color }: { values: number[]; color: string }) {
     .join(' ');
 
   return (
-    <svg viewBox="0 0 100 32" preserveAspectRatio="none" style={{ width: '100%', height: 24, display: 'block' }}>
+    <svg viewBox="0 0 100 32" preserveAspectRatio="none" style={{ width: '100%', height, display: 'block' }}>
       <path d={d} fill="none" stroke={color} strokeWidth="2.4" strokeLinecap="round" strokeLinejoin="round" vectorEffect="non-scaling-stroke" />
     </svg>
   );

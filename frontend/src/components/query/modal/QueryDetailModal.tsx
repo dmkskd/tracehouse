@@ -157,7 +157,7 @@ export const QueryDetailModal: React.FC<TimelineQueryModalProps> = ({
   const tabs: { key: QueryModalTab; label: string; unavailable?: boolean; reason?: string; experimental?: boolean }[] = [
     { key: 'overview', label: 'Overview' },
     { key: 'sql', label: 'SQL' },
-    { key: 'details', label: 'Details' },
+    { key: 'details', label: 'Internals' },
     { key: 'analytics', label: 'Analysis' },
     ...(objectStorageSummary.hasObjectStorageIO ? [{ key: 'object-storage' as const, label: 'Object Storage' }] : []),
     {
