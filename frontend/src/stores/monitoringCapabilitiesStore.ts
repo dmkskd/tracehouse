@@ -8,11 +8,15 @@
 
 import { create } from 'zustand';
 import type {
+  IClickHouseAdapter,
   MonitoringCapabilities,
   MonitoringCapability,
   MonitoringFlags,
 } from '@tracehouse/core';
-import { deriveMonitoringFlags } from '@tracehouse/core';
+import {
+  deriveMonitoringFlags,
+  MonitoringCapabilitiesService,
+} from '@tracehouse/core';
 
 export type ProbeStatus = 'idle' | 'probing' | 'done' | 'error';
 
@@ -30,6 +34,7 @@ interface MonitoringCapabilitiesState {
   setCapabilities: (caps: MonitoringCapabilities) => void;
   setProbeStatus: (status: ProbeStatus) => void;
   setProbeError: (error: string | null) => void;
+  refresh: (adapter: IClickHouseAdapter) => Promise<MonitoringCapabilities>;
   reset: () => void;
 
   // Selectors
@@ -94,6 +99,21 @@ export const useMonitoringCapabilitiesStore = create<MonitoringCapabilitiesState
       probeError: error,
       probeStatus: error ? 'error' : get().probeStatus,
     });
+  },
+
+  refresh: async (adapter: IClickHouseAdapter) => {
+    set({ probeStatus: 'probing', probeError: null });
+    try {
+      const capabilities = await new MonitoringCapabilitiesService(adapter).probe();
+      get().setCapabilities(capabilities);
+      return capabilities;
+    } catch (cause) {
+      const message = cause instanceof Error
+        ? cause.message
+        : 'Failed to probe monitoring capabilities';
+      get().setProbeError(message);
+      throw cause;
+    }
   },
 
   reset: () => {

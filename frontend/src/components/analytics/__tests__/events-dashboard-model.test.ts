@@ -5,8 +5,10 @@ import {
   buildEventMarkerSelection,
   eventDetailLabel,
   eventDetailSections,
+  eventSourceStatusDetail,
   sortAndFilterEvents,
   supportedEventAvailability,
+  supportedEventCoverage,
   supportedEventGroups,
   toClickHouseEventTime,
 } from '../events-dashboard-model';
@@ -190,5 +192,32 @@ describe('events dashboard model', () => {
       replicationFailure
       && supportedEventAvailability(replicationFailure, coverage),
     ).toBe('partial');
+    expect(
+      replicationFailure
+      && supportedEventCoverage(replicationFailure, coverage),
+    ).toMatchObject({
+      availability: 'partial',
+      availableSources: 1,
+      totalSources: 3,
+      label: '1/3 sources available',
+      warning: 'Events may be missing',
+    });
+  });
+
+  it('uses the capability probe reason for an unavailable event source', () => {
+    expect(eventSourceStatusDetail({
+      source: 'system.crash_log',
+      capability: 'crash_log',
+      status: 'unavailable',
+      event_count: 0,
+      detail: 'Capability not available',
+    }, [{
+      id: 'crash_log',
+      label: 'Crash Log',
+      description: 'Crash records',
+      available: false,
+      category: 'logging',
+      detail: 'Table not found',
+    }])).toBe('Table not found');
   });
 });

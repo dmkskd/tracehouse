@@ -1,4 +1,5 @@
 import type {
+  MonitoringCapability,
   TimelineEvent,
   TimelineEventCategory,
   TimelineEventKind,
@@ -64,6 +65,14 @@ export type SupportedEventAvailability =
   | 'unavailable'
   | 'failed';
 
+export interface SupportedEventCoverage {
+  availability: SupportedEventAvailability;
+  availableSources: number;
+  totalSources: number;
+  label: string;
+  warning?: string;
+}
+
 export interface SupportedEventGroup {
   category: SupportedEventCategory;
   label: string;
@@ -125,6 +134,15 @@ export function eventSourceExplanation(
   return EVENT_SOURCE_EXPLANATIONS[
     capability as EventSourceCapability
   ];
+}
+
+export function eventSourceStatusDetail(
+  source: TimelineEventSourceCoverage,
+  capabilities: readonly MonitoringCapability[],
+): string | undefined {
+  if (source.status !== 'unavailable') return source.detail;
+  return capabilities.find(capability => capability.id === source.capability)?.detail
+    ?? source.detail;
 }
 
 /**
@@ -264,14 +282,45 @@ export function supportedEventAvailability(
   eventType: SupportedEventType,
   coverage: readonly TimelineEventSourceCoverage[],
 ): SupportedEventAvailability {
-  const relevant = coverage.filter(item => (
-    eventType.capabilities.some(capability => capability === item.capability)
+  return supportedEventCoverage(eventType, coverage).availability;
+}
+
+export function supportedEventCoverage(
+  eventType: SupportedEventType,
+  coverage: readonly TimelineEventSourceCoverage[],
+): SupportedEventCoverage {
+  const statuses = eventType.capabilities.map(capability => (
+    coverage.find(item => item.capability === capability)?.status
+    ?? 'unavailable'
   ));
-  if (relevant.some(item => item.status === 'loaded')) {
-    return relevant.every(item => item.status === 'loaded') ? 'available' : 'partial';
+  const availableSources = statuses.filter(status => status === 'loaded').length;
+  const failedSources = statuses.filter(status => status === 'failed').length;
+  const totalSources = statuses.length;
+
+  let availability: SupportedEventAvailability;
+  if (availableSources === totalSources) availability = 'available';
+  else if (availableSources > 0) availability = 'partial';
+  else if (failedSources > 0) availability = 'failed';
+  else availability = 'unavailable';
+
+  let label: string;
+  if (availability === 'partial' || (availability === 'available' && totalSources > 1)) {
+    label = `${availableSources}/${totalSources} sources available`;
+  } else if (availability === 'failed') {
+    label = totalSources > 1
+      ? `${failedSources}/${totalSources} source queries failed`
+      : 'source query failed';
+  } else {
+    label = availability;
   }
-  if (relevant.some(item => item.status === 'failed')) return 'failed';
-  return 'unavailable';
+
+  return {
+    availability,
+    availableSources,
+    totalSources,
+    label,
+    warning: availability === 'partial' ? 'Events may be missing' : undefined,
+  };
 }
 
 export function supportedEventGroups(): SupportedEventGroup[] {

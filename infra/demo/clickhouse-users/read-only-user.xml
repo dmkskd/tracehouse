@@ -22,6 +22,9 @@
         <query>GRANT SELECT ON system.asynchronous_insert_log</query>
         <query>GRANT SELECT ON system.asynchronous_metric_log</query>
         <query>GRANT SELECT ON system.asynchronous_metrics</query>
+        <query>GRANT SELECT ON system.background_schedule_pool_log</query>
+        <query>GRANT SELECT ON system.backup_log</query>
+        <query>GRANT SELECT ON system.blob_storage_log</query>
         <query>GRANT SELECT ON system.build_options</query>
         <query>GRANT SELECT ON system.clusters</query>
         <query>GRANT SELECT ON system.columns</query>
@@ -30,8 +33,11 @@
         <query>GRANT SELECT ON system.dictionaries</query>
         <query>GRANT SELECT ON system.disks</query>
         <query>GRANT SELECT ON system.distributed_ddl_queue</query>
+        <query>GRANT SELECT ON system.error_log</query>
         <query>GRANT SELECT ON system.errors</query>
         <query>GRANT SELECT ON system.events</query>
+        <query>GRANT SELECT ON system.filesystem_cache_log</query>
+        <query>GRANT SELECT ON system.filesystem_read_prefetches_log</query>
         <query>GRANT SELECT ON system.merges</query>
         <query>GRANT SELECT ON system.metric_log</query>
         <query>GRANT SELECT ON system.metrics</query>
@@ -48,6 +54,7 @@
         <query>GRANT SELECT ON system.query_thread_log</query>
         <query>GRANT SELECT ON system.replicas</query>
         <query>GRANT SELECT ON system.replication_queue</query>
+        <query>GRANT SELECT ON system.s3queue_log</query>
         <query>GRANT SELECT ON system.server_settings</query>
         <query>GRANT SELECT ON system.settings</query>
         <query>GRANT SELECT ON system.stack_trace</query>
@@ -55,6 +62,7 @@
         <query>GRANT SELECT ON system.tables</query>
         <query>GRANT SELECT ON system.text_log</query>
         <query>GRANT SELECT ON system.trace_log</query>
+        <query>GRANT SELECT ON system.transactions_info_log</query>
         <query>GRANT SELECT ON system.user_processes</query>
         <query>GRANT SELECT ON system.view_refreshes</query>
         <query>GRANT SELECT ON system.zookeeper</query>

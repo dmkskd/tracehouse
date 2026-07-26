@@ -8,6 +8,7 @@ const mocks = vi.hoisted(() => {
   return {
     getEvents,
     services: {
+      adapter: { executeQuery: vi.fn() },
       timelineService: {
         getEvents,
       },
@@ -15,6 +16,8 @@ const mocks = vi.hoisted(() => {
     monitoringCapabilities: {
       capabilities: [{ id: 'query_log', available: true }],
     },
+    capabilityProbeStatus: 'done',
+    refreshCapabilities: vi.fn(),
     refreshRateSeconds: 5,
     manualRefreshTick: 0,
     touch: vi.fn(),
@@ -32,8 +35,14 @@ vi.mock('../../../stores/monitoringCapabilitiesStore', () => ({
       capabilities: {
         capabilities: Array<{ id: string; available: boolean }>;
       };
+      probeStatus: string;
+      refresh: typeof mocks.refreshCapabilities;
     }) => unknown,
-  ) => selector({ capabilities: mocks.monitoringCapabilities }),
+  ) => selector({
+    capabilities: mocks.monitoringCapabilities,
+    probeStatus: mocks.capabilityProbeStatus,
+    refresh: mocks.refreshCapabilities,
+  }),
 }));
 
 vi.mock('../../../stores/refreshSettingsStore', () => ({
@@ -84,6 +93,10 @@ describe('EventsDashboard refresh behavior', () => {
     mocks.refreshRateSeconds = 5;
     mocks.manualRefreshTick = 0;
     mocks.getEvents.mockReset().mockResolvedValue({ events: [], coverage: [] });
+    mocks.capabilityProbeStatus = 'done';
+    mocks.refreshCapabilities.mockReset().mockResolvedValue(
+      mocks.monitoringCapabilities,
+    );
     mocks.touch.mockReset();
     mocks.setStatus.mockReset();
   });
@@ -135,5 +148,15 @@ describe('EventsDashboard refresh behavior', () => {
     });
 
     expect(mocks.getEvents).toHaveBeenCalledTimes(2);
+  });
+
+  it('re-probes event source capabilities on manual page refresh', async () => {
+    await act(async () => {
+      render(dashboard());
+    });
+
+    fireEvent.click(screen.getByRole('button', { name: '↻ Refresh' }));
+
+    expect(mocks.refreshCapabilities).toHaveBeenCalledWith(mocks.services.adapter);
   });
 });

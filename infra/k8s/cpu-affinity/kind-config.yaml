@@ -1,0 +1,51 @@
+# Kind cluster with static CPU Manager for CPU affinity experiments
+# Each worker gets cpu-manager-policy=static so Guaranteed QoS pods
+# receive exclusive CPU cores (no sharing with other pods).
+#
+# 2 workers — each ClickHouse replica lands on a separate node.
+# The control-plane runs system workloads and Keeper.
+
+kind: Cluster
+apiVersion: kind.x-k8s.io/v1alpha4
+name: tracehouse-cpu
+nodes:
+  - role: control-plane
+    extraPortMappings:
+      # ClickHouse native protocol
+      - containerPort: 30900
+        hostPort: 9000
+        protocol: TCP
+      # ClickHouse HTTP interface
+      - containerPort: 30123
+        hostPort: 8123
+        protocol: TCP
+      # Prometheus
+      - containerPort: 30090
+        hostPort: 9090
+        protocol: TCP
+
+  - role: worker
+    labels:
+      clickhouse-node: "1"
+    kubeadmConfigPatches:
+      - |
+        kind: JoinConfiguration
+        nodeRegistration:
+          kubeletExtraArgs:
+            cpu-manager-policy: "static"
+            system-reserved: "cpu=500m,memory=512Mi"
+            kube-reserved: "cpu=500m,memory=512Mi"
+            topology-manager-policy: "single-numa-node"
+
+  - role: worker
+    labels:
+      clickhouse-node: "2"
+    kubeadmConfigPatches:
+      - |
+        kind: JoinConfiguration
+        nodeRegistration:
+          kubeletExtraArgs:
+            cpu-manager-policy: "static"
+            system-reserved: "cpu=500m,memory=512Mi"
+            kube-reserved: "cpu=500m,memory=512Mi"
+            topology-manager-policy: "single-numa-node"

@@ -1,5 +1,6 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import type {
+  MonitoringCapability,
   TimelineEvent,
   TimelineEventCategory,
   TimelineEventKind,
@@ -31,13 +32,14 @@ import {
   eventDetailSections,
   eventKindLabel,
   eventSourceExplanation,
+  eventSourceStatusDetail,
   formatEventClusterRange,
   formatEventDateTime,
   observedEventKinds,
   selectTimelineEvent,
   sortAndFilterEvents,
   sortTimelineEvents,
-  supportedEventAvailability,
+  supportedEventCoverage,
   supportedEventGroups,
   toClickHouseEventTime,
   type EventMarkerSelection,
@@ -81,6 +83,10 @@ export const EventsDashboard: React.FC<EventsDashboardProps> = ({
   const touchGlobalRefresh = useGlobalLastUpdatedStore(state => state.touch);
   const setGlobalRefreshStatus = useGlobalLastUpdatedStore(state => state.setStatus);
   const monitoringCapabilities = useMonitoringCapabilitiesStore(state => state.capabilities);
+  const capabilityProbeStatus = useMonitoringCapabilitiesStore(state => state.probeStatus);
+  const refreshMonitoringCapabilities = useMonitoringCapabilitiesStore(
+    state => state.refresh,
+  );
   const availableCapabilities = useMemo(
     () => monitoringCapabilities?.capabilities
       .filter(capability => capability.available)
@@ -202,6 +208,23 @@ export const EventsDashboard: React.FC<EventsDashboardProps> = ({
         clampToAllowed(refreshRateSeconds, refreshConfig),
       )
     : 0;
+  const refreshing = loading || capabilityProbeStatus === 'probing';
+
+  const refreshEventsAndSources = useCallback(async () => {
+    if (!services || refreshing) return;
+    try {
+      // Updating the capability store changes availableCapabilities and
+      // triggers fetchEvents with the fresh source set.
+      await refreshMonitoringCapabilities(services.adapter);
+    } catch {
+      setGlobalRefreshStatus('error');
+    }
+  }, [
+    refreshMonitoringCapabilities,
+    refreshing,
+    services,
+    setGlobalRefreshStatus,
+  ]);
 
   useEffect(() => {
     if (!eventHelpView) return;
@@ -332,12 +355,12 @@ export const EventsDashboard: React.FC<EventsDashboardProps> = ({
             color: coverageProblems.length > 0 ? '#d29922' : 'var(--text-muted)',
             fontSize: 10,
           }}>
-            {loadedSources}/{coverage.length} sources
-            {coverageProblems.length > 0 ? ' · partial' : ''}
+            {loadedSources}/{coverage.length} sources available
           </span>
           {eventHelpView && (
             <EventCoverageHelp
               coverage={coverage}
+              capabilities={monitoringCapabilities?.capabilities ?? []}
               view={eventHelpView}
               onViewChange={setEventHelpView}
             />
@@ -380,11 +403,11 @@ export const EventsDashboard: React.FC<EventsDashboardProps> = ({
           Auto{autoRefresh ? ` · ${effectiveAutoRefreshSeconds}s` : ''}
         </button>
         <button
-          onClick={fetchEvents}
-          disabled={loading}
+          onClick={() => { void refreshEventsAndSources(); }}
+          disabled={refreshing}
           style={secondaryButtonStyle}
         >
-          {loading ? 'Loading…' : '↻ Refresh'}
+          {refreshing ? 'Loading…' : '↻ Refresh'}
         </button>
       </div>
 
@@ -697,9 +720,10 @@ const SOURCE_STATUS_COLORS: Record<TimelineEventSourceCoverage['status'], string
 
 const EventCoverageHelp: React.FC<{
   coverage: readonly TimelineEventSourceCoverage[];
+  capabilities: readonly MonitoringCapability[];
   view: 'events' | 'sources';
   onViewChange: (view: 'events' | 'sources') => void;
-}> = ({ coverage, view, onViewChange }) => (
+}> = ({ coverage, capabilities, view, onViewChange }) => (
   <div style={{
     position: 'absolute',
     top: 'calc(100% + 7px)',
@@ -762,7 +786,12 @@ const EventCoverageHelp: React.FC<{
     </div>
     {view === 'events'
       ? <SupportedEventsCatalog coverage={coverage} />
-      : <EventSourcesCatalog coverage={coverage} />}
+      : (
+        <EventSourcesCatalog
+          coverage={coverage}
+          capabilities={capabilities}
+        />
+      )}
   </div>
 );
 
@@ -801,7 +830,8 @@ const SupportedEventsCatalog: React.FC<{
           </div>
           <div style={{ display: 'flex', flexDirection: 'column' }}>
             {group.events.map(eventType => {
-              const availability = supportedEventAvailability(eventType, coverage);
+              const sourceCoverage = supportedEventCoverage(eventType, coverage);
+              const { availability } = sourceCoverage;
               const availabilityColor = SUPPORTED_AVAILABILITY_COLORS[availability];
               return (
                 <div
@@ -865,8 +895,18 @@ const SupportedEventsCatalog: React.FC<{
                       fontWeight: 700,
                       textTransform: 'uppercase',
                     }}>
-                      {availability === 'partial' ? 'partial coverage' : availability}
+                      {sourceCoverage.label}
                     </span>
+                    {sourceCoverage.warning && (
+                      <span style={{
+                        color: availabilityColor,
+                        fontSize: 7,
+                        fontWeight: 700,
+                        textTransform: 'uppercase',
+                      }}>
+                        {sourceCoverage.warning}
+                      </span>
+                    )}
                   </span>
                 </div>
               );
@@ -880,7 +920,8 @@ const SupportedEventsCatalog: React.FC<{
 
 const EventSourcesCatalog: React.FC<{
   coverage: readonly TimelineEventSourceCoverage[];
-}> = ({ coverage }) => (
+  capabilities: readonly MonitoringCapability[];
+}> = ({ coverage, capabilities }) => (
   <>
     <div style={{
       margin: '8px 0 11px',
@@ -894,6 +935,7 @@ const EventSourcesCatalog: React.FC<{
     <div style={{ display: 'flex', flexDirection: 'column', gap: 5 }}>
       {coverage.map(item => {
         const explanation = eventSourceExplanation(item.capability);
+        const statusDetail = eventSourceStatusDetail(item, capabilities);
         const statusLabel = item.truncated ? 'truncated' : item.status.replace('_', ' ');
         const statusColor = item.truncated
           ? '#d29922'
@@ -937,7 +979,7 @@ const EventSourcesCatalog: React.FC<{
               }}>
                 {explanation?.description ?? item.source}
               </span>
-              {item.detail && item.status !== 'unavailable' && (
+              {statusDetail && (
                 <span style={{
                   display: 'block',
                   marginTop: 3,
@@ -945,7 +987,7 @@ const EventSourcesCatalog: React.FC<{
                   fontSize: 8,
                   overflowWrap: 'anywhere',
                 }}>
-                  {item.detail}
+                  {statusDetail}
                 </span>
               )}
             </span>
@@ -971,8 +1013,9 @@ const EventSourcesCatalog: React.FC<{
       fontSize: 8.5,
       lineHeight: 1.45,
     }}>
-      “Unavailable” means this ClickHouse deployment does not expose the
-      required table or columns. Sources are queried independently.
+      “Unavailable” means the capability probe could not use the required
+      table or columns. The source entry above shows the reported reason.
+      Sources are queried independently.
     </div>
   </>
 );
