@@ -62,11 +62,11 @@ export class BrowserAdapter implements IClickHouseAdapter {
     await this.client.close();
   }
 
-  async executeCommand(sql: string): Promise<void> {
+  async executeCommand(sql: TaggedQuery): Promise<void> {
     await this.client.command({ query: sql, session_id: this.sessionIdFor(sql) });
   }
 
-  async executeRawQuery(sql: string, database?: string, options?: QueryExecutionOptions): Promise<string[]> {
+  async executeRawQuery(sql: TaggedQuery, database?: string, options?: QueryExecutionOptions): Promise<string[]> {
     try {
       // EXPLAIN and similar statements don't support FORMAT clauses.
       // client.query() always appends FORMAT, so we use exec() which

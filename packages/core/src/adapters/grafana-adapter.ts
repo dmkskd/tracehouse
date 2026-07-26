@@ -1,7 +1,5 @@
 import type { IClickHouseAdapter, QueryExecutionOptions, TaggedQuery } from './types.js';
 import { AdapterError } from './types.js';
-import { tagQuery } from '../queries/builder.js';
-import { sourceTag, TAB_INTERNAL } from '../queries/source-tags.js';
 
 export interface AdapterField {
   name: string;
@@ -29,11 +27,9 @@ export class GrafanaAdapter implements IClickHouseAdapter {
     }
   }
 
-  async executeRawQuery(sql: string, _database?: string, _options?: QueryExecutionOptions): Promise<string[]> {
+  async executeRawQuery(sql: TaggedQuery, _database?: string, _options?: QueryExecutionOptions): Promise<string[]> {
     try {
-      const rows = await this.executeQuery<Record<string, unknown>>(
-        tagQuery(sql, sourceTag(TAB_INTERNAL, 'grafanaRawQuery')),
-      );
+      const rows = await this.executeQuery<Record<string, unknown>>(sql);
       return rows.map(row => {
         const value = row.explain || row.EXPLAIN || Object.values(row)[0];
         return value !== undefined && value !== null ? String(value) : '';

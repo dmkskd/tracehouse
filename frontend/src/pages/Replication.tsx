@@ -9,7 +9,7 @@ import { useClickHouseServices } from '../providers/ClickHouseProvider';
 import { useConnectionStore } from '../stores/connectionStore';
 import { useClusterStore } from '../stores/clusterStore';
 import { useGlobalLastUpdatedStore } from '../stores/refreshSettingsStore';
-import { tagQuery, sourceTag, buildQuery } from '@tracehouse/core';
+import { tagQuery, sourceTag, buildQuery, TAB_REPLICATION } from '@tracehouse/core';
 import {
   GET_REPLICATION_DETAIL,
   GET_REPLICATION_QUEUE,
@@ -22,8 +22,6 @@ import { useCapabilityCheck } from '../components/shared/RequiresCapability';
 import { DocsLink } from '../components/common/DocsLink';
 import { ReplicationTopology } from '../components/replication/ReplicationTopology';
 import { encodeSql } from '../hooks/useUrlState';
-
-const TAB_REPLICATION = 'replication';
 
 // ── Types ──
 
@@ -137,10 +135,10 @@ export const Replication: React.FC = () => {
             tagQuery(GET_REPLICATION_DETAIL, sourceTag(TAB_REPLICATION, 'replicas'))
           ),
           services.adapter.executeQuery<{ database: string; table: string; error_count: number; max_tries: number; sample_exception: string }>(
-            tagQuery(GET_REPLICATION_QUEUE_ERRORS, sourceTag(TAB_REPLICATION, 'queue-errors'))
+            tagQuery(GET_REPLICATION_QUEUE_ERRORS, sourceTag(TAB_REPLICATION, 'queueErrors'))
           ).catch(() => [] as { database: string; table: string; error_count: number; max_tries: number; sample_exception: string }[]),
           services.adapter.executeQuery<{ database: string; table: string; error_count: number; data_files: number; broken_files: number; is_blocked: number; sample_exception: string }>(
-            tagQuery(GET_DISTRIBUTION_QUEUE_ERRORS, sourceTag(TAB_REPLICATION, 'dist-errors'))
+            tagQuery(GET_DISTRIBUTION_QUEUE_ERRORS, sourceTag(TAB_REPLICATION, 'distributionErrors'))
           ).catch((err) => { console.warn('[Replication] distribution queue errors query failed:', err); return [] as { database: string; table: string; error_count: number; data_files: number; broken_files: number; is_blocked: number; sample_exception: string }[]; }),
         ]);
         if (!cancelled) {

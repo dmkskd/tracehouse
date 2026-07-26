@@ -11,9 +11,7 @@
 
 import type { IClickHouseAdapter } from '../adapters/types.js';
 import { tagQuery } from '../queries/builder.js';
-import { sourceTag } from '../queries/source-tags.js';
-
-const TAG = 'env';
+import { sourceTag, TAB_INTERNAL } from '../queries/source-tags.js';
 
 /** Immutable snapshot of the detected environment. */
 export interface EnvironmentInfo {
@@ -160,7 +158,7 @@ export class EnvironmentDetector {
       const rows = await this.adapter.executeQuery<{ metric: string; value: number }>(
         tagQuery(
           `SELECT metric, value FROM system.asynchronous_metrics WHERE metric IN ('NumberOfCPUCores', 'NumberOfPhysicalCores', 'OSMemoryTotal')`,
-          sourceTag(TAG, 'asyncMetrics')
+          sourceTag(TAB_INTERNAL, 'asyncMetrics')
         )
       );
       return new Map(rows.map(r => [String(r.metric), Number(r.value)]));
@@ -172,7 +170,7 @@ export class EnvironmentDetector {
   private async fetchHostname(): Promise<string> {
     try {
       const rows = await this.adapter.executeQuery<{ h: string }>(
-        tagQuery(`SELECT hostName() AS h`, sourceTag(TAG, 'hostname'))
+        tagQuery(`SELECT hostName() AS h`, sourceTag(TAB_INTERNAL, 'hostname'))
       );
       return rows.length > 0 ? String(rows[0].h) : '';
     } catch {
@@ -185,7 +183,7 @@ export class EnvironmentDetector {
       const rows = await this.adapter.executeQuery<{ value: number }>(
         tagQuery(
           `SELECT value FROM system.asynchronous_metrics WHERE metric = 'CGroupMaxCPU' LIMIT 1`,
-          sourceTag(TAG, 'cgroupCpu')
+          sourceTag(TAB_INTERNAL, 'cgroupCpu')
         )
       );
       return rows.length > 0 ? Number(rows[0].value) : 0;
@@ -199,7 +197,7 @@ export class EnvironmentDetector {
       const rows = await this.adapter.executeQuery<{ value: string }>(
         tagQuery(
           `SELECT value FROM system.settings WHERE name = 'max_threads' LIMIT 1`,
-          sourceTag(TAG, 'maxThreads')
+          sourceTag(TAB_INTERNAL, 'maxThreads')
         )
       );
       return rows.length > 0 ? parseInt(String(rows[0].value), 10) : 0;
@@ -214,7 +212,7 @@ export class EnvironmentDetector {
       const rows = await this.adapter.executeQuery<{ value: number }>(
         tagQuery(
           `SELECT value FROM system.asynchronous_metrics WHERE metric IN ('CGroupMemoryTotal', 'CGroupMemoryLimit') LIMIT 1`,
-          sourceTag(TAG, 'cgroupMem')
+          sourceTag(TAB_INTERNAL, 'cgroupMem')
         )
       );
       if (rows.length > 0) {

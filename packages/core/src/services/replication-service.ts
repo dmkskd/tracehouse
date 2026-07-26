@@ -34,7 +34,7 @@ import {
   GET_DISTRIBUTED_FOR_TABLE,
 } from '../queries/replication-queries.js';
 import { buildQuery, tagQuery } from '../queries/builder.js';
-import { sourceTag } from '../queries/source-tags.js';
+import { sourceTag, TAB_REPLICATION } from '../queries/source-tags.js';
 import {
   mapReplicaInfo,
   mapReplicaPartStats,
@@ -46,8 +46,6 @@ import {
 } from '../mappers/replication-mappers.js';
 import type { RawRow } from '../mappers/helpers.js';
 import { toStr } from '../mappers/helpers.js';
-
-const TAB = 'replication';
 
 export class ReplicationServiceError extends Error {
   constructor(message: string, public readonly cause?: Error) {
@@ -261,12 +259,12 @@ export class ReplicationService {
     try {
       const params = { database, table };
       const [replicaRaw, partRaw, distRaw, queueRaw, engineRaw, distTableRaw] = await Promise.all([
-        this.adapter.executeQuery<RawRow>(tagQuery(buildQuery(GET_REPLICA_TOPOLOGY, params), sourceTag(TAB, 'topology'))),
-        this.adapter.executeQuery<RawRow>(tagQuery(buildQuery(GET_REPLICA_PARTS, params), sourceTag(TAB, 'parts'))),
-        this.adapter.executeQuery<RawRow>(tagQuery(buildQuery(GET_SHARD_DISTRIBUTION, params), sourceTag(TAB, 'dist'))),
-        this.adapter.executeQuery<RawRow>(tagQuery(buildQuery(GET_REPLICATION_QUEUE, { database }), sourceTag(TAB, 'queue'))),
-        this.adapter.executeQuery<RawRow>(tagQuery(buildQuery(GET_TABLE_ENGINE_INFO, params), sourceTag(TAB, 'engine'))),
-        this.adapter.executeQuery<RawRow>(tagQuery(buildQuery(GET_DISTRIBUTED_FOR_TABLE, params), sourceTag(TAB, 'dist-table'))),
+        this.adapter.executeQuery<RawRow>(tagQuery(buildQuery(GET_REPLICA_TOPOLOGY, params), sourceTag(TAB_REPLICATION, 'topology'))),
+        this.adapter.executeQuery<RawRow>(tagQuery(buildQuery(GET_REPLICA_PARTS, params), sourceTag(TAB_REPLICATION, 'parts'))),
+        this.adapter.executeQuery<RawRow>(tagQuery(buildQuery(GET_SHARD_DISTRIBUTION, params), sourceTag(TAB_REPLICATION, 'dist'))),
+        this.adapter.executeQuery<RawRow>(tagQuery(buildQuery(GET_REPLICATION_QUEUE, { database }), sourceTag(TAB_REPLICATION, 'queue'))),
+        this.adapter.executeQuery<RawRow>(tagQuery(buildQuery(GET_TABLE_ENGINE_INFO, params), sourceTag(TAB_REPLICATION, 'engine'))),
+        this.adapter.executeQuery<RawRow>(tagQuery(buildQuery(GET_DISTRIBUTED_FOR_TABLE, params), sourceTag(TAB_REPLICATION, 'distTable'))),
       ]);
 
       const replicaRows = replicaRaw.map(mapReplicaInfo);
@@ -284,11 +282,11 @@ export class ReplicationService {
       const distTable = engineInfo?.distributedTable ?? null;
       const [zkStatsRaw, keeperConnRaw, distQueueRaw] = await Promise.all([
         zkPath
-          ? this.adapter.executeQuery<RawRow>(tagQuery(buildQuery(GET_ZK_TABLE_STATS, { zk_path: zkPath }), sourceTag(TAB, 'zk-stats'))).catch(() => [] as RawRow[])
+          ? this.adapter.executeQuery<RawRow>(tagQuery(buildQuery(GET_ZK_TABLE_STATS, { zk_path: zkPath }), sourceTag(TAB_REPLICATION, 'zkStats'))).catch(() => [] as RawRow[])
           : Promise.resolve([] as RawRow[]),
-        this.adapter.executeQuery<RawRow>(tagQuery(GET_KEEPER_CONNECTIONS, sourceTag(TAB, 'keeper-conn'))).catch(() => [] as RawRow[]),
+        this.adapter.executeQuery<RawRow>(tagQuery(GET_KEEPER_CONNECTIONS, sourceTag(TAB_REPLICATION, 'keeperConnections'))).catch(() => [] as RawRow[]),
         distTable
-          ? this.adapter.executeQuery<RawRow>(tagQuery(buildQuery(GET_DISTRIBUTION_QUEUE, { database, table: distTable }), sourceTag(TAB, 'dist-queue'))).catch(() => [] as RawRow[])
+          ? this.adapter.executeQuery<RawRow>(tagQuery(buildQuery(GET_DISTRIBUTION_QUEUE, { database, table: distTable }), sourceTag(TAB_REPLICATION, 'distributionQueue'))).catch(() => [] as RawRow[])
           : Promise.resolve([] as RawRow[]),
       ]);
 

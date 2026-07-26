@@ -20,6 +20,8 @@ export const TAB_TIME_TRAVEL     = 'TimeTravel';
 export const TAB_QUERIES         = 'Queries';
 export const TAB_MERGES          = 'Merges';
 export const TAB_ANALYTICS       = 'Analytics';
+export const TAB_EVENTS          = 'Events';
+export const TAB_REPLICATION     = 'Replication';
 export const TAB_INTERNAL        = 'Internal';   // capability checks, not user-facing
 
 // ── SQL filter fragments (use these instead of hardcoding the app name) ─

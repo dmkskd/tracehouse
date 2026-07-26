@@ -30,16 +30,16 @@ export class ClusterAwareAdapter implements IClickHouseAdapter {
     return this.inner.executeQuery<T>(ClusterService.resolveTableRefs(sql, this.clusterName) as TaggedQuery, options);
   }
 
-  async executeCommand(sql: string): Promise<void> {
+  async executeCommand(sql: TaggedQuery): Promise<void> {
     return this.inner.executeCommand?.(sql);
   }
 
-  async executeRawQuery(sql: string, database?: string, options?: QueryExecutionOptions): Promise<string[]> {
+  async executeRawQuery(sql: TaggedQuery, database?: string, options?: QueryExecutionOptions): Promise<string[]> {
     if (!this.inner.executeRawQuery) {
       throw new Error('executeRawQuery not supported by inner adapter');
     }
     return this.inner.executeRawQuery(
-      ClusterService.resolveTableRefs(sql, this.clusterName),
+      ClusterService.resolveTableRefs(sql, this.clusterName) as TaggedQuery,
       database,
       options,
     );

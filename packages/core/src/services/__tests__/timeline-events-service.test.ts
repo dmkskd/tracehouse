@@ -1,5 +1,6 @@
 import { describe, expect, it, vi } from 'vitest';
 import type { IClickHouseAdapter, TaggedQuery } from '../../adapters/types.js';
+import { TAB_EVENTS } from '../../queries/source-tags.js';
 import { TimelineEventsService } from '../timeline-events-service.js';
 
 function adapter(
@@ -86,6 +87,21 @@ describe('TimelineEventsService', () => {
         status: 'unavailable',
       }),
     ]);
+  });
+
+  it('tags standalone event reads with the Events component', async () => {
+    const mock = adapter(async sql => {
+      expect(sql).toContain('/* source:TraceHouse:Events:eventsQueryLog */');
+      return [];
+    });
+    const service = new TimelineEventsService(mock);
+
+    await service.getEvents({
+      ...OPTIONS,
+      availableCapabilities: ['query_log'],
+    }, TAB_EVENTS);
+
+    expect(mock.executeQuery).toHaveBeenCalledTimes(1);
   });
 
   it('keeps recurring query OOM occurrences and their normalized hash', async () => {
@@ -255,6 +271,11 @@ describe('TimelineEventsService', () => {
         kind: 'server_restart',
         category: 'lifecycle',
         precision: 'inferred',
+        detail: expect.stringContaining('Uptime moved backwards'),
+        metric_name: 'Uptime',
+        metric_value: 42,
+        previous_metric_value: 900,
+        metric_unit: 's',
       }),
     ]);
   });

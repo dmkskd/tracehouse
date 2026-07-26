@@ -21,7 +21,8 @@ import {
   buildEventMarkerSelection,
   countEventSeverities,
   EVENT_SOURCE_EXPLANATIONS,
-  eventDetailRows,
+  eventDetailLabel,
+  eventDetailSections,
   eventKindLabel,
   formatEventClusterRange,
   formatEventDateTime,
@@ -31,6 +32,7 @@ import {
   sortTimelineEvents,
   toClickHouseEventTime,
   type EventMarkerSelection,
+  type EventDetailSection,
 } from './events-dashboard-model';
 
 interface EventsDashboardProps {
@@ -190,7 +192,6 @@ export const EventsDashboard: React.FC<EventsDashboardProps> = ({
     selectedEventTime,
     sortedEvents,
   ]);
-
   const severityCounts = useMemo(() => countEventSeverities(events), [events]);
   const coverageProblems = coverage.filter(item => item.status === 'failed' || item.truncated);
   const loadedSources = coverage.filter(item => item.status === 'loaded').length;
@@ -476,7 +477,7 @@ export const EventsDashboard: React.FC<EventsDashboardProps> = ({
 
         <div style={panelStyle}>
           <div style={panelHeaderStyle}>
-            <strong>Event details</strong>
+            <strong>Selected event</strong>
             <span style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
               {selectedEvent?.query_id && onOpenQueryDetails && (
                 <button
@@ -494,62 +495,49 @@ export const EventsDashboard: React.FC<EventsDashboardProps> = ({
                   Open in Time Travel ↗
                 </button>
               )}
-              {selectedEvent && (
-                <span style={{
-                  color: EVENT_SEVERITY_COLORS[selectedEvent.severity],
-                  textTransform: 'uppercase',
-                  fontWeight: 700,
-                }}>
-                  {selectedEvent.severity}
-                </span>
-              )}
             </span>
           </div>
           {!selectedEvent ? (
-            <div style={emptyStyle}>Select an event to inspect its evidence.</div>
+            <div style={emptyStyle}>Select an event to inspect its context and source details.</div>
           ) : (
             <div style={{ overflow: 'auto', padding: 14 }}>
-              <h3 style={{ margin: '0 0 4px', color: 'var(--text-primary)', fontSize: 16 }}>
-                {selectedEvent.title}
-              </h3>
+              <div style={{
+                display: 'flex',
+                alignItems: 'center',
+                flexWrap: 'wrap',
+                gap: 9,
+                marginBottom: 4,
+              }}>
+                <h3 style={{ margin: 0, color: 'var(--text-primary)', fontSize: 16 }}>
+                  {selectedEvent.title}
+                </h3>
+                <EventSeverity severity={selectedEvent.severity} />
+              </div>
               <div style={{ color: 'var(--text-muted)', fontSize: 10, marginBottom: 14 }}>
+                {selectedEvent.precision === 'inferred' ? 'Estimated at ' : ''}
                 {formatEventDateTime(selectedEvent.occurred_at)}
                 {selectedEvent.observed_at
+                  && selectedEvent.observed_at !== selectedEvent.occurred_at
                   ? ` · observed ${formatEventDateTime(selectedEvent.observed_at)}`
                   : ''}
               </div>
 
               <div style={{
-                display: 'grid',
-                gridTemplateColumns: 'repeat(2, minmax(0, 1fr))',
-                gap: '7px 16px',
+                display: 'flex',
+                flexDirection: 'column',
+                gap: 18,
                 marginBottom: 14,
               }}>
-                {eventDetailRows(selectedEvent).map(([label, value]) => (
-                  <div key={label} style={{ minWidth: 0 }}>
-                    <div style={{
-                      color: 'var(--text-muted)',
-                      fontSize: 8,
-                      fontWeight: 700,
-                      textTransform: 'uppercase',
-                      letterSpacing: '0.5px',
-                    }}>
-                      {label}
-                    </div>
-                    <div style={{
-                      color: 'var(--text-secondary)',
-                      fontSize: 10,
-                      overflowWrap: 'anywhere',
-                      marginTop: 2,
-                    }}>
-                      {value}
-                    </div>
-                  </div>
+                {eventDetailSections(selectedEvent).map(section => (
+                  <EventDetailSectionView key={section.id} section={section} />
                 ))}
               </div>
 
               {selectedEvent.detail && (
-                <DetailBlock label="Evidence" value={selectedEvent.detail} />
+                <DetailBlock
+                  label={eventDetailLabel(selectedEvent)}
+                  value={selectedEvent.detail}
+                />
               )}
               {selectedEvent.query && (
                 <DetailBlock label="Query" value={selectedEvent.query} code />
@@ -765,6 +753,93 @@ const EventStat: React.FC<{ label: string; value: number; color: string }> = ({
     <div style={{ color, fontSize: 19, fontWeight: 700 }}>{value}</div>
     <div style={{ color: 'var(--text-muted)', fontSize: 9 }}>{label}</div>
   </div>
+);
+
+const EventSeverity: React.FC<{
+  severity: TimelineEventSeverity;
+}> = ({ severity }) => {
+  const color = EVENT_SEVERITY_COLORS[severity];
+  return (
+    <span
+      aria-label={`Event severity: ${severity}`}
+      style={{
+        display: 'inline-flex',
+        alignItems: 'center',
+        gap: 5,
+        color,
+        fontSize: 9,
+        fontWeight: 700,
+        letterSpacing: '0.45px',
+        textTransform: 'uppercase',
+      }}
+    >
+      <span style={{
+        width: 5,
+        height: 5,
+        borderRadius: '50%',
+        background: color,
+      }} />
+      {severity}
+    </span>
+  );
+};
+
+const EventDetailSectionView: React.FC<{
+  section: EventDetailSection;
+}> = ({ section }) => (
+  <section style={{
+    minWidth: 0,
+  }}>
+    <div style={{
+      paddingBottom: 5,
+      marginBottom: 3,
+      borderBottom: '1px solid var(--border-primary)',
+      color: 'var(--text-muted)',
+      fontSize: 9,
+      fontWeight: 700,
+      textTransform: 'uppercase',
+      letterSpacing: '0.55px',
+    }}>
+      {section.label}
+    </div>
+    <dl style={{
+      display: 'grid',
+      gridTemplateColumns: 'repeat(auto-fit, minmax(220px, 1fr))',
+      columnGap: 24,
+      rowGap: 10,
+      margin: 0,
+      paddingTop: 4,
+    }}>
+      {section.rows.map(row => (
+        <div
+          key={row.label}
+          style={{
+            minWidth: 0,
+          }}
+        >
+          <dt style={{
+            margin: 0,
+            color: 'var(--text-muted)',
+            fontSize: 9,
+            lineHeight: 1.3,
+          }}>
+            {row.label}
+          </dt>
+          <dd style={{
+            minWidth: 0,
+            margin: '3px 0 0',
+            color: 'var(--text-secondary)',
+            fontSize: 11,
+            lineHeight: 1.4,
+            fontFamily: row.monospace ? "'Share Tech Mono', monospace" : 'inherit',
+            overflowWrap: 'anywhere',
+          }}>
+            {row.value}
+          </dd>
+        </div>
+      ))}
+    </dl>
+  </section>
 );
 
 const DetailBlock: React.FC<{ label: string; value: string; code?: boolean }> = ({

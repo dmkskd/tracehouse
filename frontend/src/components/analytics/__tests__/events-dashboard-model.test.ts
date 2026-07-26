@@ -2,6 +2,8 @@ import { describe, expect, it } from 'vitest';
 import type { TimelineEvent } from '@tracehouse/core';
 import {
   buildEventMarkerSelection,
+  eventDetailLabel,
+  eventDetailSections,
   sortAndFilterEvents,
   toClickHouseEventTime,
 } from '../events-dashboard-model';
@@ -74,5 +76,67 @@ describe('events dashboard model', () => {
     expect([...selection.eventIds]).toEqual(['first', 'second']);
     expect(selection.startMs).toBe(Date.parse(events[0].occurred_at));
     expect(selection.endMs).toBe(Date.parse(events[1].occurred_at));
+  });
+
+  it('presents inferred restart detector facts without generic evidence copy', () => {
+    const restart = event({
+      id: 'restart',
+      occurred_at: '2026-07-25T18:00:00Z',
+      observed_at: '2026-07-25T18:00:00.334Z',
+      kind: 'server_restart',
+      category: 'lifecycle',
+      severity: 'warning',
+      precision: 'inferred',
+      hostname: 'ch-1',
+      metric_name: 'Uptime',
+      metric_value: 0.334,
+      previous_metric_value: 2119.123,
+      metric_unit: 's',
+    });
+    const detection = eventDetailSections(restart)
+      .find(section => section.id === 'detection');
+    const rows = Object.fromEntries(
+      detection?.rows.map(row => [row.label, row.value]) ?? [],
+    );
+
+    expect(eventDetailLabel(restart)).toBe('Detection method');
+    expect(rows.Metric).toBe('Uptime');
+    expect(rows['Previous sample']).toBe('2,119.123 s');
+    expect(rows['Detected sample']).toBe('0.334 s');
+  });
+
+  it('groups identifiers after operational event fields', () => {
+    const sections = eventDetailSections(event({
+      id: 'ddl',
+      occurred_at: '2026-07-25T18:00:00Z',
+      kind: 'ddl',
+      category: 'changes',
+      query_id: 'query-1',
+      query_kind: 'Create',
+      hostname: 'ch-1',
+      database: 'tracehouse',
+      tables: ['tracehouse.events'],
+    }));
+
+    expect(sections.map(section => section.id)).toEqual([
+      'metadata',
+      'details',
+      'identifiers',
+    ]);
+    expect(sections.at(-1)?.label).toBe('Query identifiers');
+  });
+
+  it('does not expose TraceHouse internal event IDs', () => {
+    const sections = eventDetailSections(event({
+      id: 'internal-event-id',
+      occurred_at: '2026-07-25T18:00:00Z',
+      kind: 'server_restart',
+      category: 'lifecycle',
+    }));
+
+    expect(sections.some(section =>
+      section.rows.some(row => row.value === 'internal-event-id'),
+    )).toBe(false);
+    expect(sections.some(section => section.id === 'identifiers')).toBe(false);
   });
 });

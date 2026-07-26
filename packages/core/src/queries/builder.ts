@@ -40,7 +40,7 @@ export function buildQuery(
  *
  * @example
  * tagQuery('SELECT 1', sourceTag(TAB_OVERVIEW, 'serverMetrics'))
- * // returns: 'SELECT 1 \/\* source:Overview:serverMetrics \*\/'
+ * // returns: 'SELECT 1 \/\* source:TraceHouse:Overview:serverMetrics \*\/'
  */
 export function tagQuery(sql: string, source: string): TaggedQuery {
   return `${sql.trimEnd()} /* source:${source} */` as TaggedQuery;

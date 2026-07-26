@@ -14,7 +14,7 @@ import { useClickHouseServices } from '../../providers/ClickHouseProvider';
 import type { ClickHouseServices } from '../../providers/ClickHouseProvider';
 import { useConnectionStore } from '../../stores/connectionStore';
 import { useClusterStore } from '../../stores/clusterStore';
-import { ReplicationService, classifyReplicaHealth, classifyDelaySeverity, tagQuery, buildQuery, sourceTag, GET_ZK_CHILDREN, mapZkChildNode } from '@tracehouse/core';
+import { ReplicationService, classifyReplicaHealth, classifyDelaySeverity, tagQuery, buildQuery, sourceTag, TAB_REPLICATION, GET_ZK_CHILDREN, mapZkChildNode } from '@tracehouse/core';
 import type {
   ShardPartitionDist,
   TopologyShard,
@@ -1346,7 +1346,7 @@ export const ReplicationTopologyRuntime: React.FC<ReplicationTopologyRuntimeProp
     if (!services || !data?.keeperInfo) return [];
     const zkPath = `${data.keeperInfo.zkPath}/${subPath}`;
     const raw = await services.adapter.executeQuery<Record<string, unknown>>(
-      tagQuery(buildQuery(GET_ZK_CHILDREN, { path: zkPath }), sourceTag('replication', 'zk-browse'))
+      tagQuery(buildQuery(GET_ZK_CHILDREN, { path: zkPath }), sourceTag(TAB_REPLICATION, 'zkBrowse'))
     );
     return raw.map(mapZkChildNode);
   }, [services, data?.keeperInfo]);

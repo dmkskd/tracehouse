@@ -1,6 +1,6 @@
 import type { IClickHouseAdapter } from '../adapters/types.js';
 import { buildQuery, tagQuery } from '../queries/builder.js';
-import { TAB_TIME_TRAVEL, sourceTag } from '../queries/source-tags.js';
+import { TAB_EVENTS, TAB_TIME_TRAVEL, sourceTag } from '../queries/source-tags.js';
 import {
   TIMELINE_BACKGROUND_TASK_FAILURE_EVENTS,
   TIMELINE_OPERATIONAL_ERROR_EVENTS,
@@ -157,7 +157,10 @@ export class TimelineEventsService {
     };
   }
 
-  async getEvents(options: TimelineEventsOptions): Promise<TimelineEventsResult> {
+  async getEvents(
+    options: TimelineEventsOptions,
+    sourceTab: typeof TAB_EVENTS | typeof TAB_TIME_TRAVEL = TAB_TIME_TRAVEL,
+  ): Promise<TimelineEventsResult> {
     const limit = Math.max(1, Math.min(options.limit ?? 1000, 10_000));
     const params: Record<string, string | number> = {
       start_time: toClickHouseDateTime(options.startTime),
@@ -170,42 +173,42 @@ export class TimelineEventsService {
       {
         source: 'system.query_log',
         capability: 'query_log',
-        fetch: sourceParams => this.fetchQueryEvents(sourceParams),
+        fetch: sourceParams => this.fetchQueryEvents(sourceParams, sourceTab),
       },
       {
         source: 'system.asynchronous_metric_log',
         capability: 'asynchronous_metric_log',
-        fetch: sourceParams => this.fetchRestartEvents(sourceParams),
+        fetch: sourceParams => this.fetchRestartEvents(sourceParams, sourceTab),
       },
       {
         source: 'system.crash_log',
         capability: 'crash_log',
-        fetch: sourceParams => this.fetchCrashEvents(sourceParams),
+        fetch: sourceParams => this.fetchCrashEvents(sourceParams, sourceTab),
       },
       {
         source: 'system.part_log',
         capability: 'part_log',
-        fetch: sourceParams => this.fetchPartFailureEvents(sourceParams),
+        fetch: sourceParams => this.fetchPartFailureEvents(sourceParams, sourceTab),
       },
       {
         source: 'system.background_schedule_pool_log',
         capability: 'background_schedule_pool_log',
-        fetch: sourceParams => this.fetchBackgroundTaskFailureEvents(sourceParams),
+        fetch: sourceParams => this.fetchBackgroundTaskFailureEvents(sourceParams, sourceTab),
       },
       {
         source: 'system.error_log',
         capability: 'error_log',
-        fetch: sourceParams => this.fetchOperationalErrorEvents(sourceParams),
+        fetch: sourceParams => this.fetchOperationalErrorEvents(sourceParams, sourceTab),
       },
       {
         source: 'system.metric_log (replica state)',
         capability: 'metric_log_replication_state',
-        fetch: sourceParams => this.fetchReplicaReadonlyEpisodes(sourceParams),
+        fetch: sourceParams => this.fetchReplicaReadonlyEpisodes(sourceParams, sourceTab),
       },
       {
         source: 'system.metric_log (replication failures)',
         capability: 'metric_log_replication_failures',
-        fetch: sourceParams => this.fetchReplicationFailureEvents(sourceParams),
+        fetch: sourceParams => this.fetchReplicationFailureEvents(sourceParams, sourceTab),
       },
     ];
 
@@ -256,10 +259,11 @@ export class TimelineEventsService {
 
   private async fetchQueryEvents(
     params: Record<string, string | number>,
+    sourceTab: typeof TAB_EVENTS | typeof TAB_TIME_TRAVEL,
   ): Promise<TimelineEvent[]> {
     const sql = buildQuery(TIMELINE_QUERY_EVENTS, params);
     const rows = await this.adapter.executeQuery(
-      tagQuery(sql, sourceTag(TAB_TIME_TRAVEL, 'eventsQueryLog')),
+      tagQuery(sql, sourceTag(sourceTab, 'eventsQueryLog')),
     );
     return rows.map(raw => {
       const row = raw as Record<string, unknown>;
@@ -310,16 +314,20 @@ export class TimelineEventsService {
 
   private async fetchRestartEvents(
     params: Record<string, string | number>,
+    sourceTab: typeof TAB_EVENTS | typeof TAB_TIME_TRAVEL,
   ): Promise<TimelineEvent[]> {
     const sql = buildQuery(TIMELINE_SERVER_RESTART_EVENTS, params);
     const rows = await this.adapter.executeQuery(
-      tagQuery(sql, sourceTag(TAB_TIME_TRAVEL, 'eventsRestarts')),
+      tagQuery(sql, sourceTag(sourceTab, 'eventsRestarts')),
     );
     return rows.map(raw => {
       const row = raw as Record<string, unknown>;
       const occurredAt = parseChTime(row.occurred_at);
       const observedAt = parseChTime(row.observed_at);
       const hostname = String(row.host ?? '');
+      const uptime = Number(row.uptime ?? 0);
+      const previousUptime = Number(row.previous_uptime ?? uptime);
+      const detectedFromReset = previousUptime > uptime + 5;
       return {
         id: stableEventId(['asynchronous_metric_log', hostname, occurredAt, 'restart']),
         occurred_at: occurredAt,
@@ -330,19 +338,28 @@ export class TimelineEventsService {
         severity: 'warning',
         precision: 'inferred',
         title: 'Server restarted',
-        detail: 'Inferred from the ClickHouse Uptime metric resetting',
+        detail: detectedFromReset
+          ? 'Uptime moved backwards between consecutive persisted samples. '
+            + 'Restart time is inferred as the observed sample time minus reported Uptime.'
+          : 'This is the first persisted Uptime sample for the host. '
+            + 'Restart time is inferred as the observed sample time minus reported Uptime.',
         source: 'system.asynchronous_metric_log',
         capability: 'asynchronous_metric_log',
+        metric_name: 'Uptime',
+        metric_value: uptime,
+        previous_metric_value: previousUptime,
+        metric_unit: 's',
       } satisfies TimelineEvent;
     });
   }
 
   private async fetchCrashEvents(
     params: Record<string, string | number>,
+    sourceTab: typeof TAB_EVENTS | typeof TAB_TIME_TRAVEL,
   ): Promise<TimelineEvent[]> {
     const sql = buildQuery(TIMELINE_SERVER_CRASH_EVENTS, params);
     const rows = await this.adapter.executeQuery(
-      tagQuery(sql, sourceTag(TAB_TIME_TRAVEL, 'eventsCrashes')),
+      tagQuery(sql, sourceTag(sourceTab, 'eventsCrashes')),
     );
     return rows.map(raw => {
       const row = raw as Record<string, unknown>;
@@ -370,10 +387,11 @@ export class TimelineEventsService {
 
   private async fetchPartFailureEvents(
     params: Record<string, string | number>,
+    sourceTab: typeof TAB_EVENTS | typeof TAB_TIME_TRAVEL,
   ): Promise<TimelineEvent[]> {
     const sql = buildQuery(TIMELINE_PART_FAILURE_EVENTS, params);
     const rows = await this.adapter.executeQuery(
-      tagQuery(sql, sourceTag(TAB_TIME_TRAVEL, 'eventsPartFailures')),
+      tagQuery(sql, sourceTag(sourceTab, 'eventsPartFailures')),
     );
     return rows.map(raw => {
       const row = raw as Record<string, unknown>;
@@ -424,10 +442,11 @@ export class TimelineEventsService {
 
   private async fetchBackgroundTaskFailureEvents(
     params: Record<string, string | number>,
+    sourceTab: typeof TAB_EVENTS | typeof TAB_TIME_TRAVEL,
   ): Promise<TimelineEvent[]> {
     const sql = buildQuery(TIMELINE_BACKGROUND_TASK_FAILURE_EVENTS, params);
     const rows = await this.adapter.executeQuery(
-      tagQuery(sql, sourceTag(TAB_TIME_TRAVEL, 'eventsBackgroundFailures')),
+      tagQuery(sql, sourceTag(sourceTab, 'eventsBackgroundFailures')),
     );
     return rows.map(raw => {
       const row = raw as Record<string, unknown>;
@@ -474,10 +493,11 @@ export class TimelineEventsService {
 
   private async fetchOperationalErrorEvents(
     params: Record<string, string | number>,
+    sourceTab: typeof TAB_EVENTS | typeof TAB_TIME_TRAVEL,
   ): Promise<TimelineEvent[]> {
     const sql = buildQuery(TIMELINE_OPERATIONAL_ERROR_EVENTS, params);
     const rows = await this.adapter.executeQuery(
-      tagQuery(sql, sourceTag(TAB_TIME_TRAVEL, 'eventsOperationalErrors')),
+      tagQuery(sql, sourceTag(sourceTab, 'eventsOperationalErrors')),
     );
     return rows.map(raw => {
       const row = raw as Record<string, unknown>;
@@ -519,10 +539,11 @@ export class TimelineEventsService {
 
   private async fetchReplicaReadonlyEpisodes(
     params: Record<string, string | number>,
+    sourceTab: typeof TAB_EVENTS | typeof TAB_TIME_TRAVEL,
   ): Promise<TimelineEvent[]> {
     const sql = buildQuery(TIMELINE_REPLICA_READONLY_EPISODES, params);
     const rows = await this.adapter.executeQuery(
-      tagQuery(sql, sourceTag(TAB_TIME_TRAVEL, 'eventsReplicaReadonly')),
+      tagQuery(sql, sourceTag(sourceTab, 'eventsReplicaReadonly')),
     );
     return rows.map(raw => {
       const row = raw as Record<string, unknown>;
@@ -555,10 +576,11 @@ export class TimelineEventsService {
 
   private async fetchReplicationFailureEvents(
     params: Record<string, string | number>,
+    sourceTab: typeof TAB_EVENTS | typeof TAB_TIME_TRAVEL,
   ): Promise<TimelineEvent[]> {
     const sql = buildQuery(TIMELINE_REPLICATION_FAILURE_EVENTS, params);
     const rows = await this.adapter.executeQuery(
-      tagQuery(sql, sourceTag(TAB_TIME_TRAVEL, 'eventsReplicationFailures')),
+      tagQuery(sql, sourceTag(sourceTab, 'eventsReplicationFailures')),
     );
     return rows.map(raw => {
       const row = raw as Record<string, unknown>;

@@ -15,7 +15,7 @@ import type {
 } from '../types/timeline.js';
 import { buildQuery, tagQuery } from '../queries/builder.js';
 import { classifyMergeHistory, classifyActiveMerge } from '../utils/merge-classification.js';
-import { TAB_TIME_TRAVEL, sourceTag } from '../queries/source-tags.js';
+import { TAB_EVENTS, TAB_TIME_TRAVEL, sourceTag } from '../queries/source-tags.js';
 import {
   buildZoomProcessSamplesSQL,
   buildZoomMergeSamplesSQL,
@@ -87,7 +87,7 @@ export class TimelineService {
 
   /** Read the capability-aware operational event stream without timeline metrics. */
   async getEvents(options: Parameters<TimelineEventsService['getEvents']>[0]) {
-    return this.eventsService.getEvents(options);
+    return this.eventsService.getEvents(options, TAB_EVENTS);
   }
 
   async getTimeline(options: TimelineOptions): Promise<MemoryTimeline> {

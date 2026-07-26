@@ -8,6 +8,7 @@ import {
   EVENT_CATEGORY_LABELS,
   EVENT_KIND_LABELS,
 } from '../timeline/timeline-event-model';
+import { formatBytes } from '../../utils/formatters';
 
 export interface EventMarkerSelection {
   eventIds: ReadonlySet<string>;
@@ -34,6 +35,18 @@ export interface EventSourceExplanation {
   description: string;
 }
 
+export interface EventDetailRow {
+  label: string;
+  value: string;
+  monospace?: boolean;
+}
+
+export interface EventDetailSection {
+  id: string;
+  label: string;
+  rows: EventDetailRow[];
+}
+
 export const EVENT_SOURCE_EXPLANATIONS: Record<string, EventSourceExplanation> = {
   query_log: {
     label: 'system.query_log',
@@ -41,7 +54,7 @@ export const EVENT_SOURCE_EXPLANATIONS: Record<string, EventSourceExplanation> =
   },
   asynchronous_metric_log: {
     label: 'system.asynchronous_metric_log',
-    description: 'Server restarts inferred from persisted Uptime resets.',
+    description: 'Server restarts inferred when persisted Uptime moves backwards; startup time is estimated as sample time minus Uptime.',
   },
   crash_log: {
     label: 'system.crash_log',
@@ -110,40 +123,129 @@ export function eventKindLabel(event: TimelineEvent): string {
   return EVENT_KIND_LABELS[event.kind] ?? event.kind.replaceAll('_', ' ');
 }
 
-export function eventDetailRows(event: TimelineEvent): Array<[string, string]> {
-  const rows: Array<[string, string]> = [
-    ['Severity', event.severity],
-    ['Event ID', event.id],
-    ['Ended', event.ended_at ? formatEventDateTime(event.ended_at) : '—'],
-    ['State', event.kind === 'replica_readonly' || event.kind === 'replica_unavailable'
-      ? event.ended_at ? 'recovered' : 'ongoing at range end'
-      : '—'],
-    ['Category', EVENT_CATEGORY_LABELS[event.category]],
-    ['Event type', eventKindLabel(event)],
-    ['Precision', event.precision],
-    ['Host', event.hostname ?? '—'],
-    ['Source', event.source],
-    ['Occurrences', event.count != null ? String(event.count) : '1'],
-    ['Query ID', event.query_id ?? '—'],
-    ['Initial query ID', event.initial_query_id ?? '—'],
-    ['Normalized hash', event.normalized_query_hash ?? '—'],
-    ['User', event.user ?? '—'],
-    ['Query kind', event.query_kind ?? '—'],
-    ['Database', event.database ?? event.databases?.join(', ') ?? '—'],
-    ['Table', event.table ?? event.tables?.join(', ') ?? '—'],
-    ['Part', event.part_name ?? '—'],
-    ['Operation', event.operation ?? event.task_name ?? '—'],
-    ['Disk', event.disk_name ?? '—'],
-    ['Exception', event.exception_name
-      ? `${event.exception_name}${event.exception_code != null ? ` (${event.exception_code})` : ''}`
-      : event.exception_code != null ? String(event.exception_code) : '—'],
-    ['Duration', event.duration_ms != null ? `${event.duration_ms.toLocaleString()} ms` : '—'],
-    ['Memory', event.memory_usage != null ? `${event.memory_usage.toLocaleString()} bytes` : '—'],
-    ['Server version', event.version ?? '—'],
-    ['Signal', event.signal != null ? String(event.signal) : '—'],
-    ['Remote error', event.remote != null ? (event.remote ? 'yes' : 'no') : '—'],
+export function eventDetailLabel(event: TimelineEvent): string {
+  switch (event.kind) {
+    case 'server_restart':
+    case 'replica_readonly':
+    case 'replica_unavailable':
+      return 'Detection method';
+    case 'server_crash':
+      return 'Crash details';
+    case 'query_oom':
+    case 'query_timeout':
+    case 'query_rejected':
+    case 'query_resource_limit':
+    case 'query_failure':
+    case 'part_failure':
+      return 'ClickHouse error';
+    case 'ddl':
+      return 'Statement details';
+    case 'replication_data_loss':
+    case 'replication_task_failure':
+      return 'Replication details';
+    case 'keeper_connection':
+      return 'Keeper details';
+    default:
+      return event.precision === 'inferred' ? 'Detection method' : 'Recorded details';
+  }
+}
+
+function formatMetricValue(value: number, unit?: string): string {
+  const formatted = value.toLocaleString(undefined, {
+    maximumFractionDigits: 3,
+  });
+  return unit ? `${formatted} ${unit}` : formatted;
+}
+
+function detailRow(
+  label: string,
+  value: string | number | undefined,
+  monospace = false,
+): EventDetailRow | null {
+  if (value === undefined || value === '') return null;
+  return { label, value: String(value), monospace };
+}
+
+function compactRows(rows: Array<EventDetailRow | null>): EventDetailRow[] {
+  return rows.filter((row): row is EventDetailRow => row !== null);
+}
+
+export function eventDetailSections(event: TimelineEvent): EventDetailSection[] {
+  const exception = event.exception_name
+    ? `${event.exception_name}${event.exception_code != null ? ` (${event.exception_code})` : ''}`
+    : event.exception_code != null ? String(event.exception_code) : undefined;
+  const replicaState = event.kind === 'replica_readonly' || event.kind === 'replica_unavailable'
+    ? event.ended_at ? 'Recovered' : 'Ongoing at range end'
+    : undefined;
+
+  const sections: EventDetailSection[] = [
+    {
+      id: 'metadata',
+      label: 'Event metadata',
+      rows: compactRows([
+        detailRow('Type', eventKindLabel(event)),
+        detailRow('Category', EVENT_CATEGORY_LABELS[event.category]),
+        detailRow('Source', event.source, true),
+        detailRow('Precision', event.precision),
+        detailRow('Occurrences', event.count != null ? event.count : 1),
+      ]),
+    },
+    {
+      id: 'details',
+      label: 'Event details',
+      rows: compactRows([
+        detailRow('Host', event.hostname, true),
+        detailRow('User', event.user),
+        detailRow('Database', event.database ?? event.databases?.join(', '), true),
+        detailRow('Table', event.table ?? event.tables?.join(', '), true),
+        detailRow('Part', event.part_name, true),
+        detailRow('Disk', event.disk_name, true),
+        detailRow('Query kind', event.query_kind),
+        detailRow('Operation', event.operation ?? event.task_name),
+        detailRow('Duration', event.duration_ms != null
+          ? `${event.duration_ms.toLocaleString()} ms`
+          : undefined),
+        detailRow('Memory', event.memory_usage != null
+          ? formatBytes(event.memory_usage)
+          : undefined),
+        detailRow('Exception', exception, true),
+        detailRow('Remote error', event.remote != null
+          ? event.remote ? 'Yes' : 'No'
+          : undefined),
+        detailRow('Signal', event.signal),
+        detailRow('Server version', event.version, true),
+        detailRow('State', replicaState),
+        detailRow('Ended at', event.ended_at ? formatEventDateTime(event.ended_at) : undefined),
+      ]),
+    },
+    {
+      id: 'detection',
+      label: 'Detection',
+      rows: compactRows([
+        detailRow('Observed at', event.observed_at
+          ? formatEventDateTime(event.observed_at)
+          : undefined),
+        detailRow('Metric', event.metric_name, true),
+        detailRow('Previous sample', event.previous_metric_value != null
+          ? formatMetricValue(event.previous_metric_value, event.metric_unit)
+          : undefined),
+        detailRow('Detected sample', event.metric_value != null
+          ? formatMetricValue(event.metric_value, event.metric_unit)
+          : undefined),
+      ]),
+    },
+    {
+      id: 'identifiers',
+      label: 'Query identifiers',
+      rows: compactRows([
+        detailRow('Query ID', event.query_id, true),
+        detailRow('Initial query ID', event.initial_query_id, true),
+        detailRow('Normalized hash', event.normalized_query_hash, true),
+      ]),
+    },
   ];
-  return rows.filter(([, value]) => value !== '—');
+
+  return sections.filter(section => section.rows.length > 0);
 }
 
 export function sortAndFilterEvents(

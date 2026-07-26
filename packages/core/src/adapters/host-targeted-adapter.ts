@@ -38,15 +38,15 @@ export class HostTargetedAdapter implements IClickHouseAdapter {
     return this.inner.executeQuery<T>(this.rewrite(sql) as TaggedQuery, options);
   }
 
-  async executeCommand(sql: string): Promise<void> {
+  async executeCommand(sql: TaggedQuery): Promise<void> {
     return this.inner.executeCommand?.(sql);
   }
 
-  async executeRawQuery(sql: string, database?: string, options?: QueryExecutionOptions): Promise<string[]> {
+  async executeRawQuery(sql: TaggedQuery, database?: string, options?: QueryExecutionOptions): Promise<string[]> {
     if (!this.inner.executeRawQuery) {
       throw new Error('executeRawQuery not supported by inner adapter');
     }
-    return this.inner.executeRawQuery(this.rewrite(sql), database, options);
+    return this.inner.executeRawQuery(this.rewrite(sql) as TaggedQuery, database, options);
   }
 
   private rewrite(sql: string): string {

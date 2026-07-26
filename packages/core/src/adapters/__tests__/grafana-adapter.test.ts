@@ -2,7 +2,7 @@ import { describe, it, expect, vi } from 'vitest';
 import { GrafanaAdapter, type AdapterFrame, type AdapterQueryFn } from '../grafana-adapter.js';
 import { AdapterError } from '../types.js';
 import { tagQuery } from '../../queries/builder.js';
-import { sourceTag, TAB_INTERNAL } from '../../queries/source-tags.js';
+import { sourceTag, TAB_ANALYTICS, TAB_INTERNAL } from '../../queries/source-tags.js';
 
 const q = (sql: string) => tagQuery(sql, sourceTag(TAB_INTERNAL, 'grafanaAdapterTest'));
 
@@ -109,6 +109,29 @@ describe('GrafanaAdapter', { tags: ['connectivity'] }, () => {
         expect(ae.message).toContain('DB::Exception');
         expect(ae.category).toBe('query');
       }
+    });
+  });
+
+  describe('executeRawQuery', () => {
+    it('preserves the caller source tag without adding a generic adapter tag', async () => {
+      const queryFn = vi.fn<AdapterQueryFn>().mockResolvedValue([
+        makeFrame([{ name: 'explain' }], [['Query summary:']]),
+      ]);
+      const adapter = createAdapter(queryFn);
+
+      const result = await adapter.executeRawQuery(
+        tagQuery('EXPLAIN ANALYZE SELECT 1', sourceTag(TAB_ANALYTICS, 'queryExecutionAnalysis')),
+      );
+
+      expect(result).toEqual(['Query summary:']);
+      expect(queryFn).toHaveBeenCalledWith(
+        expect.stringContaining('source:TraceHouse:Analytics:queryExecutionAnalysis'),
+        'q',
+      );
+      expect(queryFn).not.toHaveBeenCalledWith(
+        expect.stringContaining('grafanaRawQuery'),
+        'q',
+      );
     });
   });
 

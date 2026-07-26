@@ -51,7 +51,7 @@ export class HttpAdapter implements IClickHouseAdapter {
     await this.client.close();
   }
 
-  async executeRawQuery(sql: string, database?: string, options?: QueryExecutionOptions): Promise<string[]> {
+  async executeRawQuery(sql: TaggedQuery, database?: string, options?: QueryExecutionOptions): Promise<string[]> {
     try {
       const { stream } = await this.client.exec({
         query: sql,

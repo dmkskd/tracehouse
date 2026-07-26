@@ -48,7 +48,7 @@ export interface IClickHouseAdapter {
    * Execute a command (DDL, SYSTEM statements) that returns no result set.
    * Optional — adapters that don't support it can omit this.
    */
-  executeCommand?(sql: string): Promise<void>;
+  executeCommand?(sql: TaggedQuery): Promise<void>;
 
   /**
    * Execute a query that returns raw text lines (e.g. EXPLAIN).
@@ -57,7 +57,7 @@ export interface IClickHouseAdapter {
    * @param database - Optional database context to run the query in.
    */
   executeRawQuery?(
-    sql: string,
+    sql: TaggedQuery,
     database?: string,
     options?: QueryExecutionOptions,
   ): Promise<string[]>;

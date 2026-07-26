@@ -179,6 +179,11 @@ export interface TimelineEvent {
   exception_name?: string;
   /** Number of occurrences represented by a sampled/aggregated event. */
   count?: number;
+  /** Metric detector metadata, when an event is inferred from persisted metrics. */
+  metric_name?: string;
+  metric_value?: number;
+  previous_metric_value?: number;
+  metric_unit?: string;
   /** Whether ClickHouse recorded the error as originating from a remote server. */
   remote?: boolean;
   duration_ms?: number;
