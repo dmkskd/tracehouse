@@ -5,7 +5,7 @@ It never crashes, restarts, fills, or corrupts a ClickHouse server.
 
 Usage:
     tracehouse-events --once
-    tracehouse-events --types ddl,oom,timeout
+    tracehouse-events --types ddl,oom,timeout,rejected,coordination,network
 """
 
 from __future__ import annotations
@@ -15,7 +15,7 @@ import os
 import re
 import threading
 import time
-from collections.abc import Callable
+from collections.abc import Callable, Collection
 from datetime import datetime
 
 from clickhouse_driver import Client
@@ -30,7 +30,7 @@ from data_utils.env import (
 )
 
 
-EVENT_TYPES = ("ddl", "oom", "timeout")
+EVENT_TYPES = ("ddl", "oom", "timeout", "rejected", "coordination", "network")
 EVENT_TAG = "tracehouse-demo-event"
 DEFAULT_DATABASE = "tracehouse_event_demo"
 _IDENTIFIER_RE = re.compile(r"^[A-Za-z_][A-Za-z0-9_]*$")
@@ -53,6 +53,16 @@ FROM numbers_mt(1000000000000)
 SETTINGS
     max_execution_time = 0.05,
     timeout_overflow_mode = 'throw'
+"""
+
+NETWORK_QUERY = f"""
+/* {EVENT_TAG} kind:operational_network_error */
+SELECT *
+FROM remote('127.0.0.1:1', system, one)
+SETTINGS
+    connect_timeout = 1,
+    connect_timeout_with_failover_ms = 100,
+    connections_with_failover_max_tries = 1
 """
 
 
@@ -91,25 +101,31 @@ def exception_code(error: Exception) -> int | None:
 def execute_expected_failure(
     client: Client,
     query: str,
-    expected_code: int,
+    expected_code: int | Collection[int],
     label: str,
 ) -> bool:
-    """Execute a query that should fail with a specific ClickHouse code."""
+    """Execute a query that should fail with one of the expected ClickHouse codes."""
+    expected_codes = (
+        {expected_code}
+        if isinstance(expected_code, int)
+        else set(expected_code)
+    )
     started = time.monotonic()
     try:
         client.execute(query)
     except Exception as error:
         elapsed = time.monotonic() - started
         actual_code = exception_code(error)
-        if actual_code == expected_code:
+        if actual_code in expected_codes:
             print(
                 f"[{datetime.now():%H:%M:%S}] generated {label} "
                 f"(code {actual_code}, {elapsed:.2f}s)"
             )
             return True
+        expected_label = "/".join(str(code) for code in sorted(expected_codes))
         print(
             f"[{datetime.now():%H:%M:%S}] could not generate {label}: "
-            f"expected code {expected_code}, got {actual_code or 'unknown'}: "
+            f"expected code {expected_label}, got {actual_code or 'unknown'}: "
             f"{str(error).splitlines()[0][:180]}"
         )
         return False
@@ -133,6 +149,93 @@ def generate_timeout(client: Client, database: str) -> bool:
     return execute_expected_failure(client, TIMEOUT_QUERY, 159, "query timeout")
 
 
+def _quiet_execute(client: Client, query: str) -> None:
+    """Run setup/cleanup SQL without adding it to the generated event set."""
+    client.execute(query, settings={"log_queries": 0})
+
+
+def _best_effort_quiet_execute(client: Client, query: str) -> None:
+    try:
+        _quiet_execute(client, query)
+    except Exception:
+        pass
+
+
+def generate_rejected(client: Client, database: str) -> bool:
+    """Generate a bounded TOO_MANY_PARTS query rejection."""
+    db = quote_identifier(database)
+    table = f"{db}.`tracehouse_event_rejected`"
+    merges_stopped = False
+    try:
+        _quiet_execute(client, f"CREATE DATABASE IF NOT EXISTS {db}")
+        _quiet_execute(client, f"DROP TABLE IF EXISTS {table} SYNC")
+        _quiet_execute(
+            client,
+            (
+                f"CREATE TABLE {table} (value UInt64) "
+                "ENGINE = MergeTree ORDER BY value "
+                "SETTINGS parts_to_delay_insert = 1, parts_to_throw_insert = 1"
+            ),
+        )
+        _quiet_execute(client, f"SYSTEM STOP MERGES {table}")
+        merges_stopped = True
+        _quiet_execute(client, f"INSERT INTO {table} VALUES (1)")
+        query = (
+            f"/* {EVENT_TAG} kind:query_rejected */ "
+            f"INSERT INTO {table} VALUES (2)"
+        )
+        return execute_expected_failure(client, query, 252, "query rejection")
+    except Exception as error:
+        print(
+            f"[{datetime.now():%H:%M:%S}] could not prepare query rejection: "
+            f"{str(error).splitlines()[0][:180]}"
+        )
+        return False
+    finally:
+        if merges_stopped:
+            _best_effort_quiet_execute(client, f"SYSTEM START MERGES {table}")
+        _best_effort_quiet_execute(client, f"DROP TABLE IF EXISTS {table} SYNC")
+
+
+def generate_coordination(client: Client, database: str) -> bool:
+    """Generate NO_ZOOKEEPER when Keeper is unavailable, cleaning up on success."""
+    db = quote_identifier(database)
+    table = f"{db}.`tracehouse_event_no_keeper`"
+    try:
+        _quiet_execute(client, f"CREATE DATABASE IF NOT EXISTS {db}")
+        _quiet_execute(client, f"DROP TABLE IF EXISTS {table} SYNC")
+        query = (
+            f"/* {EVENT_TAG} kind:operational_coordination_error */ "
+            f"CREATE TABLE {table} (value UInt64) "
+            "ENGINE = ReplicatedMergeTree("
+            f"'/tracehouse/events/{database}/no-keeper', 'event-generator') "
+            "ORDER BY value"
+        )
+        return execute_expected_failure(client, query, 225, "coordination error")
+    except Exception as error:
+        print(
+            f"[{datetime.now():%H:%M:%S}] could not prepare coordination error: "
+            f"{str(error).splitlines()[0][:180]}"
+        )
+        return False
+    finally:
+        # If Keeper is configured, CREATE can succeed instead of producing
+        # NO_ZOOKEEPER. Remove the isolated table and its replica metadata.
+        _best_effort_quiet_execute(client, f"DROP TABLE IF EXISTS {table} SYNC")
+
+
+def generate_network(client: Client, database: str) -> bool:
+    """Generate an ALL_CONNECTION_TRIES_FAILED operational error locally."""
+    del database
+    # Some versions wrap code 279 in NO_REMOTE_SHARD_AVAILABLE (519).
+    return execute_expected_failure(
+        client,
+        NETWORK_QUERY,
+        (279, 519),
+        "operational network error",
+    )
+
+
 def ddl_statements(database: str) -> list[str]:
     """Build one self-cleaning DDL cycle in a dedicated database."""
     db = quote_identifier(database)
@@ -150,6 +253,7 @@ def ddl_statements(database: str) -> list[str]:
         f"ALTER TABLE {table_a} ADD COLUMN source LowCardinality(String) DEFAULT 'demo'",
         f"ALTER TABLE {table_a} RENAME COLUMN payload TO message",
         f"RENAME TABLE {table_a} TO {table_b}",
+        f"OPTIMIZE TABLE {table_b} FINAL",
         f"TRUNCATE TABLE {table_b}",
         f"DROP TABLE {table_b} SYNC",
     ]
@@ -163,7 +267,7 @@ def generate_ddl(client: Client, database: str) -> bool:
             client.execute(tagged)
         print(
             f"[{datetime.now():%H:%M:%S}] generated DDL cycle "
-            f"(database {database}, 9 statements)"
+            f"(database {database}, {len(ddl_statements(database))} statements)"
         )
         return True
     except Exception as error:
@@ -178,6 +282,18 @@ GENERATORS: dict[str, Callable[[Client, str], bool]] = {
     "ddl": generate_ddl,
     "oom": generate_oom,
     "timeout": generate_timeout,
+    "rejected": generate_rejected,
+    "coordination": generate_coordination,
+    "network": generate_network,
+}
+
+EVENT_TYPE_SOURCE = {
+    "ddl": "query_log",
+    "oom": "query_log",
+    "timeout": "query_log",
+    "rejected": "query_log",
+    "coordination": "error_log",
+    "network": "error_log",
 }
 
 
@@ -233,8 +349,8 @@ def _parse_args() -> tuple[argparse.Namespace, str | None]:
     env_path = pre_parse_env_file()
     parser = argparse.ArgumentParser(
         description=(
-            "Generate safe Time Travel events: disposable DDL, query-scoped "
-            "OOMs, and query timeouts"
+            "Generate safe Time Travel events across query, change, "
+            "coordination, and maintenance categories"
         ),
         formatter_class=argparse.ArgumentDefaultsHelpFormatter,
     )
@@ -242,13 +358,18 @@ def _parse_args() -> tuple[argparse.Namespace, str | None]:
     parser.add_argument(
         "--types",
         type=parse_event_types,
-        default=parse_event_types(os.environ.get("CH_EVENT_TYPES", "ddl,oom,timeout")),
-        help="Comma-separated event types: ddl, oom, timeout ($CH_EVENT_TYPES)",
+        default=parse_event_types(
+            os.environ.get(
+                "CH_EVENT_TYPES",
+                "ddl,oom,timeout,rejected,coordination,network",
+            )
+        ),
+        help=f"Comma-separated event types: {', '.join(EVENT_TYPES)} ($CH_EVENT_TYPES)",
     )
     parser.add_argument(
         "--database",
         default=os.environ.get("CH_EVENT_DATABASE", DEFAULT_DATABASE),
-        help="Disposable database used by DDL events ($CH_EVENT_DATABASE)",
+        help="Disposable database used by table-backed events ($CH_EVENT_DATABASE)",
     )
     parser.add_argument("--once", action="store_true", help="Generate each selected type once and exit")
     parser.add_argument(
@@ -275,6 +396,24 @@ def _parse_args() -> tuple[argparse.Namespace, str | None]:
         default=float(os.environ.get("CH_EVENT_TIMEOUT_INTERVAL", "600")),
         help="Seconds between query timeouts ($CH_EVENT_TIMEOUT_INTERVAL)",
     )
+    parser.add_argument(
+        "--rejected-interval",
+        type=float,
+        default=float(os.environ.get("CH_EVENT_REJECTED_INTERVAL", "1200")),
+        help="Seconds between query rejections ($CH_EVENT_REJECTED_INTERVAL)",
+    )
+    parser.add_argument(
+        "--coordination-interval",
+        type=float,
+        default=float(os.environ.get("CH_EVENT_COORDINATION_INTERVAL", "1800")),
+        help="Seconds between coordination probes ($CH_EVENT_COORDINATION_INTERVAL)",
+    )
+    parser.add_argument(
+        "--network-interval",
+        type=float,
+        default=float(os.environ.get("CH_EVENT_NETWORK_INTERVAL", "1200")),
+        help="Seconds between network failure probes ($CH_EVENT_NETWORK_INTERVAL)",
+    )
     args = parser.parse_args()
 
     try:
@@ -297,7 +436,7 @@ def main() -> None:
     print("\nThis workload intentionally records failed queries and disposable DDL.")
     print("It does not restart, crash, fill, or corrupt the ClickHouse server.")
     print(f"  Types:    {', '.join(args.types)}")
-    print(f"  Database: {args.database} (DDL only)")
+    print(f"  Database: {args.database} (disposable event tables)")
     if not args.once:
         print(
             "  Cadence:  "
@@ -315,22 +454,41 @@ def main() -> None:
             "\nEvent source capabilities: "
             + (", ".join(sorted(available_logs)) if available_logs else "none visible")
         )
-        if "query_log" not in available_logs:
+        runnable_types = tuple(
+            event_type
+            for event_type in args.types
+            if EVENT_TYPE_SOURCE[event_type] in available_logs
+        )
+        skipped_types = tuple(
+            event_type for event_type in args.types if event_type not in runnable_types
+        )
+        if skipped_types:
+            print(
+                "Skipping event types whose source log is unavailable: "
+                + ", ".join(
+                    f"{event_type} ({EVENT_TYPE_SOURCE[event_type]})"
+                    for event_type in skipped_types
+                )
+            )
+        if not runnable_types:
             raise SystemExit(
-                "Cannot generate observable events: system.query_log is not "
-                "available to this ClickHouse user."
+                "Cannot generate observable events: none of the selected "
+                "types has a visible source system log."
             )
 
         intervals = {
             "ddl": args.ddl_interval,
             "oom": args.oom_interval,
             "timeout": args.timeout_interval,
+            "rejected": args.rejected_interval,
+            "coordination": args.coordination_interval,
+            "network": args.network_interval,
         }
         print("\nGenerating events. Press Ctrl+C to stop.\n")
         try:
             generated = run_schedule(
                 client,
-                args.types,
+                runnable_types,
                 args.database,
                 intervals,
                 args.once,

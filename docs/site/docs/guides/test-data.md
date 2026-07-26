@@ -104,10 +104,10 @@ Generate events that can be inspected in Time Travel and the top-level
 **Events** page:
 
 ```bash
-# One DDL cycle, one query-scoped OOM, and one query timeout
+# Cover every safely generated event class
 just run-events --once
 
-# Continuous patterns: DDL every 5m, timeout every 10m, OOM every 15m
+# Continuous patterns, each on an independent low-frequency cadence
 just run-events
 
 # A recurring scheduled-job pattern every 15 minutes
@@ -117,15 +117,31 @@ just run-events --types oom --oom-interval 900
 just run-events --types ddl --ddl-interval 60
 ```
 
-The event workload first checks that `system.query_log` is visible to the connected user. Every generated query contains a `tracehouse-demo-event` comment, and `--once` runs `SYSTEM FLUSH LOGS` when permitted so the results appear promptly.
+The event workload first checks that the source log for each selected type is
+visible to the connected user. Every intended event query contains a
+`tracehouse-demo-event` comment, while setup and cleanup queries disable query
+logging. `--once` runs `SYSTEM FLUSH LOGS` when permitted so the results appear
+promptly.
 
 | Generated event | Safety boundary | Time Travel kind |
 | --- | --- | --- |
-| Disposable DDL cycle | Uses `tracehouse_event_demo`; removes its tables after each cycle | `ddl` |
+| Disposable DDL cycle | Uses `tracehouse_event_demo`; includes create, alter, rename, optimize, truncate, and drop operations; removes its tables after each cycle | `ddl` |
 | Query OOM | Sets a 1 MB **query** memory limit; it is not a process/server OOM | `query_oom` |
 | Query timeout | Sets a 50 ms limit on one CPU query | `query_timeout` |
+| Query rejection | Uses one tiny disposable MergeTree table with a table-local parts limit | `query_rejected` |
+| Missing Keeper | Attempts one isolated replicated table when Keeper is unavailable, then cleans it up | `error_burst` / coordination |
+| Failed local connection | Connects only to unused localhost port 1 with a short timeout | `error_burst` / maintenance |
 
-The default database and cadences can be configured with `CH_EVENT_DATABASE`, `CH_EVENT_TYPES`, `CH_EVENT_DDL_INTERVAL`, `CH_EVENT_OOM_INTERVAL`, and `CH_EVENT_TIMEOUT_INTERVAL`.
+The default database and cadences can be configured with `CH_EVENT_DATABASE`,
+`CH_EVENT_TYPES`, `CH_EVENT_DDL_INTERVAL`, `CH_EVENT_OOM_INTERVAL`,
+`CH_EVENT_TIMEOUT_INTERVAL`, `CH_EVENT_REJECTED_INTERVAL`,
+`CH_EVENT_COORDINATION_INTERVAL`, and `CH_EVENT_NETWORK_INTERVAL`.
+
+The workload only runs a type when the system log consumed by Events is
+available: `system.query_log` for query/DDL events and `system.error_log` for
+the operational probes. A Keeper-enabled server cannot safely manufacture
+`NO_ZOOKEEPER`; in that environment the coordination probe is cleaned up and
+reported as not generated.
 
 Restarts require an action outside ClickHouse, so they are deliberately not part of the continuous workload. For a disposable local Docker environment:
 
@@ -135,7 +151,10 @@ docker restart tracehouse-dev
 
 Allow asynchronous metrics to sample before and after the restart. Time Travel then infers the restart from the `Uptime` reset in `system.asynchronous_metric_log`.
 
-Crashes, full disks, corrupt parts, and background-network failures are not automated. They can damage data or destabilize a shared server, and should only be exercised in an isolated fault-injection environment.
+Crashes, full disks, corrupt parts, replica data loss/read-only episodes, and
+background-task failures are not automated. They require service or storage
+fault injection and can damage data or destabilize a shared server, so they
+should only be exercised in an isolated environment.
 
 For the event definitions, sources, retention caveats, and filtering contract, see [Time Travel Events](https://github.com/TraceHouse/tracehouse/blob/main/docs/metrics/time-travel-events.md).
 

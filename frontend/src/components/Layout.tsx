@@ -11,6 +11,7 @@ import { useUserPreferenceStore } from '../stores/userPreferenceStore';
 import { useRefreshConfig, type RefreshRateOption } from '@tracehouse/ui-shared';
 import { useRefreshSettingsStore, useGlobalLastUpdatedStore } from '../stores/refreshSettingsStore';
 import { buildConfig } from '../buildConfig';
+import { globalRefreshLabel } from './layout-refresh-model';
 
 interface LayoutProps {
   children: React.ReactNode;
@@ -325,14 +326,11 @@ const GlobalRefreshIndicator: React.FC = () => {
     return () => clearInterval(id);
   }, []);
 
-  const label = (() => {
-    if (refreshRateSeconds === 0) return 'Paused';
-    if (!lastUpdated) return 'Connecting...';
-    const secsAgo = Math.round((Date.now() - lastUpdated.getTime()) / 1000);
-    if (secsAgo < 2) return 'Just now';
-    if (secsAgo < 60) return `${secsAgo}s ago`;
-    return `${Math.floor(secsAgo / 60)}m ago`;
-  })();
+  const label = globalRefreshLabel(
+    refreshRateSeconds,
+    lastUpdated,
+    status,
+  );
 
   const dotColor = status === 'polling' ? '#3fb950' : status === 'error' ? '#f85149' : 'var(--text-muted)';
   const shouldPulse = status === 'polling' && refreshRateSeconds > 0;

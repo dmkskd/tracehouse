@@ -6,8 +6,13 @@ import type {
   TimelineEventSeverity,
   TimelineEventSourceCoverage,
 } from '@tracehouse/core';
+import { clampToAllowed, useRefreshConfig } from '@tracehouse/ui-shared';
 import { useClickHouseServices } from '../../providers/ClickHouseProvider';
 import { useMonitoringCapabilitiesStore } from '../../stores/monitoringCapabilitiesStore';
+import {
+  useGlobalLastUpdatedStore,
+  useRefreshSettingsStore,
+} from '../../stores/refreshSettingsStore';
 import {
   EVENT_CATEGORY_LABELS,
   EVENT_KIND_LABELS,
@@ -49,6 +54,8 @@ interface EventsDashboardProps {
   onBackToTimeTravel?: () => void;
 }
 
+const EVENTS_MIN_AUTO_REFRESH_SECONDS = 10;
+
 export const EventsDashboard: React.FC<EventsDashboardProps> = ({
   selectedEventId,
   selectedEventTime,
@@ -63,6 +70,11 @@ export const EventsDashboard: React.FC<EventsDashboardProps> = ({
   onBackToTimeTravel,
 }) => {
   const services = useClickHouseServices();
+  const refreshConfig = useRefreshConfig();
+  const refreshRateSeconds = useRefreshSettingsStore(state => state.refreshRateSeconds);
+  const manualRefreshTick = useGlobalLastUpdatedStore(state => state.manualRefreshTick);
+  const touchGlobalRefresh = useGlobalLastUpdatedStore(state => state.touch);
+  const setGlobalRefreshStatus = useGlobalLastUpdatedStore(state => state.setStatus);
   const monitoringCapabilities = useMonitoringCapabilitiesStore(state => state.capabilities);
   const availableCapabilities = useMemo(
     () => monitoringCapabilities?.capabilities
@@ -78,57 +90,112 @@ export const EventsDashboard: React.FC<EventsDashboardProps> = ({
   const [severity, setSeverity] = useState<'all' | TimelineEventSeverity>('all');
   const [category, setCategory] = useState<'all' | TimelineEventCategory>('all');
   const [kind, setKind] = useState<'all' | TimelineEventKind>('all');
+  const [autoRefresh, setAutoRefresh] = useState(false);
   const [showSourceHelp, setShowSourceHelp] = useState(false);
   const sourceHelpRef = useRef<HTMLDivElement>(null);
+  const fetchInFlightRef = useRef(false);
+  const [liveRangeEndMs, setLiveRangeEndMs] = useState(() => Date.now());
   const [clusterSelection, setClusterSelection] = useState<EventMarkerSelection | null>(
     null,
   );
 
+  const parsedRangeCenterMs = rangeCenterTime ? Date.parse(rangeCenterTime) : Number.NaN;
+  const hasAnchoredRange = Number.isFinite(parsedRangeCenterMs);
   const anchorMs = useMemo(() => {
-    const parsed = rangeCenterTime ? Date.parse(rangeCenterTime) : Number.NaN;
-    return Number.isFinite(parsed) ? parsed : Date.now();
-  }, [rangeCenterTime]);
+    return hasAnchoredRange ? parsedRangeCenterMs : 0;
+  }, [hasAnchoredRange, parsedRangeCenterMs]);
 
   const timeRange = useMemo(() => {
     const rangeMs = rangeHours * 60 * 60 * 1000;
-    const hasAnchor = Boolean(
-      rangeCenterTime && Number.isFinite(Date.parse(rangeCenterTime)),
-    );
-    const endMs = hasAnchor ? anchorMs + rangeMs / 2 : Date.now();
+    const endMs = hasAnchoredRange ? anchorMs + rangeMs / 2 : liveRangeEndMs;
     return {
-      startMs: hasAnchor ? anchorMs - rangeMs / 2 : endMs - rangeMs,
+      startMs: hasAnchoredRange ? anchorMs - rangeMs / 2 : endMs - rangeMs,
       endMs,
-      hasAnchor,
+      hasAnchor: hasAnchoredRange,
     };
-  }, [anchorMs, rangeCenterTime, rangeHours]);
+  }, [anchorMs, hasAnchoredRange, liveRangeEndMs, rangeHours]);
 
   const fetchEvents = useCallback(async () => {
-    if (!services || availableCapabilities === undefined) return;
+    if (
+      !services
+      || availableCapabilities === undefined
+      || fetchInFlightRef.current
+    ) return;
+    fetchInFlightRef.current = true;
     setLoading(true);
     setError(null);
+    const rangeMs = rangeHours * 60 * 60 * 1000;
+    const requestEndMs = hasAnchoredRange
+      ? anchorMs + rangeMs / 2
+      : Date.now();
+    const requestStartMs = hasAnchoredRange
+      ? anchorMs - rangeMs / 2
+      : requestEndMs - rangeMs;
     try {
       const result = await services.timelineService.getEvents({
-        startTime: toClickHouseEventTime(new Date(timeRange.startMs)),
-        endTime: toClickHouseEventTime(new Date(timeRange.endMs)),
+        startTime: toClickHouseEventTime(new Date(requestStartMs)),
+        endTime: toClickHouseEventTime(new Date(requestEndMs)),
         availableCapabilities,
         limit: 5000,
       });
       setEvents(result.events);
       setCoverage(result.coverage);
+      if (!hasAnchoredRange) setLiveRangeEndMs(requestEndMs);
+      touchGlobalRefresh();
     } catch (cause) {
       setError(cause instanceof Error ? cause.message : 'Failed to load events');
+      setGlobalRefreshStatus('error');
     } finally {
+      fetchInFlightRef.current = false;
       setLoading(false);
     }
   }, [
     services,
     availableCapabilities,
-    timeRange,
+    anchorMs,
+    hasAnchoredRange,
+    rangeHours,
+    setGlobalRefreshStatus,
+    touchGlobalRefresh,
   ]);
 
   useEffect(() => {
-    fetchEvents();
-  }, [fetchEvents]);
+    void fetchEvents();
+  }, [fetchEvents, manualRefreshTick]);
+
+  useEffect(() => {
+    if (
+      !autoRefresh
+      || refreshRateSeconds <= 0
+      || hasAnchoredRange
+      || !services
+      || availableCapabilities === undefined
+    ) return;
+    const intervalSeconds = Math.max(
+      EVENTS_MIN_AUTO_REFRESH_SECONDS,
+      clampToAllowed(refreshRateSeconds, refreshConfig),
+    );
+    if (intervalSeconds <= 0) return;
+    const intervalId = window.setInterval(() => {
+      void fetchEvents();
+    }, intervalSeconds * 1000);
+    return () => window.clearInterval(intervalId);
+  }, [
+    autoRefresh,
+    availableCapabilities,
+    fetchEvents,
+    hasAnchoredRange,
+    refreshConfig,
+    refreshRateSeconds,
+    services,
+  ]);
+
+  const effectiveAutoRefreshSeconds = refreshRateSeconds > 0
+    ? Math.max(
+        EVENTS_MIN_AUTO_REFRESH_SECONDS,
+        clampToAllowed(refreshRateSeconds, refreshConfig),
+      )
+    : 0;
 
   useEffect(() => {
     if (!showSourceHelp) return;
@@ -271,6 +338,42 @@ export const EventsDashboard: React.FC<EventsDashboardProps> = ({
             <EventSourcesHelp coverage={coverage} />
           )}
         </div>
+        <button
+          onClick={() => setAutoRefresh(value => !value)}
+          disabled={hasAnchoredRange || refreshRateSeconds <= 0}
+          title={
+            hasAnchoredRange
+              ? 'Auto-refresh is available for live ranges only'
+              : refreshRateSeconds <= 0
+                ? 'Enable a global refresh rate in Settings first'
+                : autoRefresh
+                  ? `Auto-refresh every ${effectiveAutoRefreshSeconds}s — click to pause`
+                  : `Enable auto-refresh (minimum ${EVENTS_MIN_AUTO_REFRESH_SECONDS}s for Events)`
+          }
+          style={{
+            ...secondaryButtonStyle,
+            display: 'inline-flex',
+            alignItems: 'center',
+            gap: 5,
+            background: autoRefresh ? 'rgba(63,185,80,0.1)' : secondaryButtonStyle.background,
+            border: autoRefresh
+              ? '1px solid rgba(63,185,80,0.3)'
+              : secondaryButtonStyle.border,
+            color: autoRefresh ? '#3fb950' : secondaryButtonStyle.color,
+            cursor: hasAnchoredRange || refreshRateSeconds <= 0 ? 'not-allowed' : 'pointer',
+            opacity: hasAnchoredRange || refreshRateSeconds <= 0 ? 0.5 : 1,
+          }}
+        >
+          {autoRefresh && (
+            <span style={{
+              width: 6,
+              height: 6,
+              borderRadius: '50%',
+              background: '#3fb950',
+            }} />
+          )}
+          Auto{autoRefresh ? ` · ${effectiveAutoRefreshSeconds}s` : ''}
+        </button>
         <button
           onClick={fetchEvents}
           disabled={loading}
