@@ -451,9 +451,13 @@ function AppContent({ path }: AppContentProps) {
   // Extract route from path: /a/dmkskd-tracehouse-app/overview -> overview
   const routeKey = path.split('/').pop() || 'overview';
   const PageComponent = ROUTES[routeKey] || Overview;
+  const pageOwnsScroll = routeKey === 'queries' || routeKey === 'merges';
 
   return (
-    <div className="grafana-app-container" style={{ display: 'flex', flexDirection: 'column', height: '100%' }}>
+    <div
+      className="grafana-app-container"
+      style={{ display: 'flex', flexDirection: 'column', height: '100%', minHeight: 0 }}
+    >
       {/* Header with datasource selector - always visible */}
       <div style={{
         display: 'flex',
@@ -563,7 +567,13 @@ function AppContent({ path }: AppContentProps) {
       </div>
 
       {/* Main content */}
-      <div style={{ flex: 1, overflow: 'auto' }}>
+      <div
+        style={{
+          flex: 1,
+          minHeight: 0,
+          overflow: pageOwnsScroll ? 'hidden' : 'auto',
+        }}
+      >
         {!services ? (
           <NoDatasourceMessage />
         ) : (
