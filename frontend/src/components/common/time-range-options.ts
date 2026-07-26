@@ -11,3 +11,9 @@ export const TIME_RANGE_OPTIONS: {
   { label: '7d', interval: '7 DAY' },
   { label: '30d', interval: '30 DAY' },
 ];
+
+/** Keep Events presets bounded; longer investigations remain available through Custom. */
+export const EVENT_TIME_RANGE_OPTIONS = TIME_RANGE_OPTIONS.slice(0, 4).map(option => ({
+  label: option.label,
+  interval: option.interval!,
+}));

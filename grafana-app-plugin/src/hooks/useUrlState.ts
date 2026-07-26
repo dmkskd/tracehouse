@@ -98,7 +98,7 @@ const EVENTS_URL_SCHEMA = {
   event_id: { type: 'string' },
   event_time: { type: 'string' },
   range_center: { type: 'string' },
-  event_range: { type: 'number', default: 24 },
+  event_range: { type: 'number', default: 1 },
   from: { type: 'string' },
 } as const satisfies UrlSchema;
 

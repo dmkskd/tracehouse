@@ -22,6 +22,7 @@ import {
 } from './event-model';
 import { EventDistribution } from './EventDistribution';
 import { TimeRangePicker } from '../common/TimeRangePicker';
+import { EVENT_TIME_RANGE_OPTIONS } from '../common/time-range-options';
 import { DocsLink } from '../common/DocsLink';
 import {
   MetricStrip,
@@ -357,6 +358,7 @@ export const EventsDashboard: React.FC<EventsDashboardProps> = ({
         <TimeRangePicker
           value={timeRangeValue}
           onChange={onTimeRangeChange}
+          presets={EVENT_TIME_RANGE_OPTIONS}
           popoverAlign="left"
         />
         <div

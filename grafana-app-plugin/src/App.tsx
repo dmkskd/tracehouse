@@ -456,7 +456,17 @@ function AppContent({ path }: AppContentProps) {
   return (
     <div
       className="grafana-app-container"
-      style={{ display: 'flex', flexDirection: 'column', height: '100%', minHeight: 0 }}
+      style={{
+        display: 'flex',
+        flexDirection: 'column',
+        // Grafana's app page parent is content-sized rather than height-constrained.
+        // Give nested tracker scrollers a definite viewport so sticky preview rails
+        // bind to the element that actually scrolls.
+        height: 'calc(100dvh - 64px)',
+        maxHeight: 'calc(100dvh - 64px)',
+        minHeight: 0,
+        overflow: 'hidden',
+      }}
     >
       {/* Header with datasource selector - always visible */}
       <div style={{
