@@ -1,6 +1,6 @@
 /**
- * QueryHistoryTable - Query history with filtering and sorting
- * Supports multi-select comparison of queries (even across different query hashes)
+ * QueryActivityTable - one chronological surface for live and completed queries.
+ * Supports multi-select comparison of completed queries.
  */
 
 import React, { useCallback, useMemo, useState } from 'react';
@@ -11,7 +11,7 @@ import type {
   SortField,
   SortDirection,
 } from '../../stores/queryStore';
-import { formatBytes, formatNumber, sortQueryHistory } from '../../stores/queryStore';
+import { formatBytes, formatNumber } from '../../stores/queryStore';
 import { formatDurationMs } from '../../utils/formatters';
 import { QueryComparisonPanel } from './QueryComparisonPanel';
 import type { ComparableQuery } from './QueryComparisonPanel';
@@ -20,11 +20,22 @@ import { QueryFingerprintGlyph, QueryHoverPreview } from './QueryHoverPreview';
 import { resourcePressureTooltip } from '../../utils/queryHoverMetrics';
 import type { QueryAnalyzer } from '@tracehouse/core';
 import { useQueryHoverTopology } from './hooks/useQueryHoverTopology';
+import { sortQueryActivityRecords, type QueryActivityRecord } from './query-activity-model';
+import { useUserPreferenceStore } from '../../stores/userPreferenceStore';
+import { PreviewToggleButton } from '../common/PreviewToggleButton';
+import {
+  loadPreviewPreference,
+  QUERY_ACTIVITY_PREVIEW_STORAGE_KEY,
+  savePreviewPreference,
+} from '../../utils/previewPreference';
 
-interface QueryHistoryTableProps {
-  history: QueryHistoryItem[];
+interface QueryActivityTableProps {
+  activity: QueryActivityRecord[];
   selectedQueryId: string | null;
-  onSelectQuery: (query: QueryHistoryItem) => void;
+  onSelectHistoryQuery: (query: QueryHistoryItem) => void;
+  onSelectRunningQuery: (query: QueryActivityRecord['liveQuery']) => void;
+  onKillQuery: (queryId: string) => void;
+  isKillingQuery: boolean;
   filter: QueryHistoryFilter;
   sort: QueryHistorySort;
   onFilterChange: (filter: Partial<QueryHistoryFilter>) => void;
@@ -32,6 +43,7 @@ interface QueryHistoryTableProps {
   isLoading: boolean;
   queryAnalyzer?: QueryAnalyzer;
   coordinatorIds?: Set<string>;
+  showFilterBar?: boolean;
 }
 
 const thStyle: React.CSSProperties = {
@@ -55,26 +67,35 @@ const tdStyle: React.CSSProperties = {
   borderBottom: '1px solid var(--border-primary)',
 };
 
+interface SortThProps {
+  field: SortField;
+  label: string;
+  sort: QueryHistorySort;
+  onSort: (field: SortField) => void;
+  align?: 'left' | 'right';
+  width?: number;
+}
+
+const SortTh: React.FC<SortThProps> = ({
+  field,
+  label,
+  sort,
+  onSort,
+  align = 'left',
+  width,
+}) => {
+  const active = sort.field === field;
+  return (
+    <th style={{ ...thStyle, width, textAlign: align, cursor: 'pointer' }} onClick={() => onSort(field)}>
+      {label}{' '}
+      <span style={{ color: active ? '#58a6ff' : 'var(--text-muted)', fontSize: 9 }}>
+        {active ? (sort.direction === 'asc' ? '▲' : '▼') : '⇅'}
+      </span>
+    </th>
+  );
+};
+
 const fmtDuration = formatDurationMs;
-const HOVER_PREVIEW_STORAGE_KEY = 'tracehouse.queryHistory.showHoverPreview';
-
-const loadHoverPreviewPreference = (): boolean => {
-  if (typeof window === 'undefined') return false;
-  try {
-    return window.localStorage.getItem(HOVER_PREVIEW_STORAGE_KEY) === 'true';
-  } catch {
-    return false;
-  }
-};
-
-const saveHoverPreviewPreference = (value: boolean): void => {
-  if (typeof window === 'undefined') return;
-  try {
-    window.localStorage.setItem(HOVER_PREVIEW_STORAGE_KEY, String(value));
-  } catch {
-    // Ignore storage failures; the in-memory toggle still works for this page.
-  }
-};
 
 const fmtTime = (ts: string): string => {
   const d = new Date(ts);
@@ -85,11 +106,13 @@ const fmtTime = (ts: string): string => {
 };
 
 const StatusBadge: React.FC<{ type: string; exception?: string }> = ({ type, exception }) => {
+  const isRunning = type === 'running';
   const isError = type === 'ExceptionWhileProcessing' || !!exception;
   // Truncate exception message for display
   const displayText = isError && exception 
     ? (exception.length > 25 ? exception.slice(0, 25) + '...' : exception)
-    : (isError ? 'Error' : 'Success');
+    : (isRunning ? 'Running' : isError ? 'Error' : 'Success');
+  const color = isRunning ? '#58a6ff' : isError ? '#f85149' : '#3fb950';
   return (
     <span 
       style={{
@@ -99,15 +122,29 @@ const StatusBadge: React.FC<{ type: string; exception?: string }> = ({ type, exc
         fontSize: 10,
         fontWeight: 500,
         borderRadius: 10,
-        background: isError ? 'rgba(248,81,73,0.15)' : 'rgba(63,185,80,0.15)',
-        color: isError ? '#f85149' : '#3fb950',
+        background: isRunning ? 'rgba(88,166,255,0.15)' : isError ? 'rgba(248,81,73,0.15)' : 'rgba(63,185,80,0.15)',
+        color,
         maxWidth: '100%',
         overflow: 'hidden',
         textOverflow: 'ellipsis',
         whiteSpace: 'nowrap',
       }}
-      title={exception || (isError ? 'Error' : 'Success')}
+      title={exception || displayText}
     >
+      {isRunning && (
+        <span
+          aria-hidden="true"
+          style={{
+            display: 'inline-block',
+            width: 6,
+            height: 6,
+            marginRight: 5,
+            borderRadius: '50%',
+            background: 'currentColor',
+            animation: 'activity-running-pulse 2.4s ease-in-out infinite',
+          }}
+        />
+      )}
       {displayText}
     </span>
   );
@@ -178,27 +215,32 @@ const toComparable = (q: QueryHistoryItem): ComparableQuery => ({
   hostname: q.hostname,
 });
 
-export const QueryHistoryTable: React.FC<QueryHistoryTableProps> = ({
-  history, selectedQueryId, onSelectQuery, filter, sort, onFilterChange, onSortChange, isLoading, queryAnalyzer, coordinatorIds,
+export const QueryActivityTable: React.FC<QueryActivityTableProps> = ({
+  activity, selectedQueryId, onSelectHistoryQuery, onSelectRunningQuery, onKillQuery, isKillingQuery,
+  filter, sort, onFilterChange, onSortChange, isLoading, queryAnalyzer, coordinatorIds,
+  showFilterBar = true,
 }) => {
+  const killQueriesEnabled = useUserPreferenceStore(state => state.killQueriesEnabled);
   const [compareMode, setCompareMode] = useState(false);
   const [selectedForCompare, setSelectedForCompare] = useState<Set<string>>(new Set());
+  const [comparisonOpen, setComparisonOpen] = useState(false);
   const [hoveredQueryId, setHoveredQueryId] = useState<string | null>(null);
-  const [showHoverPreview, setShowHoverPreview] = useState(loadHoverPreviewPreference);
+  const [showHoverPreview, setShowHoverPreview] = useState(
+    () => loadPreviewPreference(QUERY_ACTIVITY_PREVIEW_STORAGE_KEY),
+  );
 
   const handleSort = useCallback((field: SortField) => {
     const dir: SortDirection = sort.field === field && sort.direction === 'desc' ? 'asc' : 'desc';
     onSortChange({ field, direction: dir });
   }, [sort, onSortChange]);
 
-  const sortedHistory = useMemo(() => sortQueryHistory(
-    filter.hostname
-      ? history.filter(q => q.hostname?.toLowerCase().includes(filter.hostname!.toLowerCase()))
-      : history,
-    sort,
-  ), [history, filter.hostname, sort]);
+  const sortedActivity = useMemo(
+    () => sortQueryActivityRecords(activity, sort),
+    [activity, sort],
+  );
 
   const toggleCompareSelection = useCallback((queryId: string) => {
+    setComparisonOpen(false);
     setSelectedForCompare(prev => {
       const next = new Set(prev);
       if (next.has(queryId)) next.delete(queryId); else next.add(queryId);
@@ -208,39 +250,30 @@ export const QueryHistoryTable: React.FC<QueryHistoryTableProps> = ({
 
   const cancelCompare = useCallback(() => {
     setCompareMode(false);
+    setComparisonOpen(false);
     setSelectedForCompare(new Set());
   }, []);
 
   const comparedQueries: ComparableQuery[] = compareMode && selectedForCompare.size >= 2
-    ? sortedHistory.filter(q => selectedForCompare.has(q.query_id)).map(toComparable)
+    ? sortedActivity.filter(q => q.activitySource === 'history' && selectedForCompare.has(q.query_id)).map(toComparable)
     : [];
-  const previewQuery = sortedHistory.find(q => q.query_id === hoveredQueryId)
-    ?? sortedHistory.find(q => q.query_id === selectedQueryId)
+  const previewQuery = sortedActivity.find(q => q.query_id === hoveredQueryId)
+    ?? sortedActivity.find(q => q.query_id === selectedQueryId)
     ?? null;
   const hoverTopology = useQueryHoverTopology({
     enabled: showHoverPreview,
     queryAnalyzer,
-    history: sortedHistory,
+    history: sortedActivity.filter(query => query.activitySource === 'history'),
     coordinatorIds,
     startTime: filter.startTime,
   });
   const previewChildQueries = hoverTopology.getChildQueriesForQuery(previewQuery);
 
-  const SortTh: React.FC<{ field: SortField; label: string; align?: 'left' | 'right'; width?: number }> = ({ field, label, align = 'left', width }) => {
-    const active = sort.field === field;
-    return (
-      <th style={{ ...thStyle, width, textAlign: align, cursor: 'pointer' }} onClick={() => handleSort(field)}>
-        {label}{' '}
-        <span style={{ color: active ? '#58a6ff' : 'var(--text-muted)', fontSize: 9 }}>
-          {active ? (sort.direction === 'asc' ? '▲' : '▼') : '⇅'}
-        </span>
-      </th>
-    );
-  };
-
   return (
     <div>
-      <QueryFilterBar filter={filter} onFilterChange={onFilterChange} queryAnalyzer={queryAnalyzer} />
+      {showFilterBar && (
+        <QueryFilterBar filter={filter} onFilterChange={onFilterChange} queryAnalyzer={queryAnalyzer} />
+      )}
 
       {/* Compare mode bar */}
       <div style={{ 
@@ -269,26 +302,40 @@ export const QueryHistoryTable: React.FC<QueryHistoryTableProps> = ({
         >
           {compareMode ? 'Cancel Compare' : '⇄ Compare Queries'}
         </button>
-        <button
-          onClick={() => setShowHoverPreview(v => {
+        {compareMode && (
+          <button
+            type="button"
+            disabled={selectedForCompare.size < 2}
+            onClick={() => setComparisonOpen(true)}
+            style={{
+              padding: '5px 14px',
+              fontSize: 11,
+              borderRadius: 5,
+              border: selectedForCompare.size >= 2
+                ? '1px solid rgba(88, 166, 255, 0.65)'
+                : '1px solid var(--border-primary)',
+              background: selectedForCompare.size >= 2
+                ? 'rgba(88, 166, 255, 0.18)'
+                : 'transparent',
+              color: selectedForCompare.size >= 2 ? '#58a6ff' : 'var(--text-muted)',
+              cursor: selectedForCompare.size >= 2 ? 'pointer' : 'not-allowed',
+              fontWeight: 600,
+              opacity: selectedForCompare.size >= 2 ? 1 : 0.55,
+              transition: 'all 0.15s',
+            }}
+          >
+            Compare {selectedForCompare.size >= 2 ? `${selectedForCompare.size} queries` : 'selected'}
+          </button>
+        )}
+        <PreviewToggleButton
+          label="Query Preview"
+          visible={showHoverPreview}
+          onToggle={() => setShowHoverPreview(v => {
             const next = !v;
-            saveHoverPreviewPreference(next);
+            savePreviewPreference(QUERY_ACTIVITY_PREVIEW_STORAGE_KEY, next);
             return next;
           })}
-          style={{
-            padding: '5px 12px',
-            fontSize: 11,
-            borderRadius: 5,
-            border: showHoverPreview ? '1px solid rgba(88, 166, 255, 0.35)' : '1px solid var(--border-primary)',
-            background: showHoverPreview ? 'rgba(88, 166, 255, 0.12)' : 'transparent',
-            color: showHoverPreview ? '#58a6ff' : 'var(--text-muted)',
-            cursor: 'pointer',
-            fontWeight: showHoverPreview ? 600 : 400,
-            transition: 'all 0.15s',
-          }}
-        >
-          {showHoverPreview ? 'Hide Query Preview' : 'Show Query Preview'}
-        </button>
+        />
         {compareMode && (
           <span style={{ fontSize: 11, color: 'var(--text-muted)' }}>
             {selectedForCompare.size === 0 
@@ -298,9 +345,14 @@ export const QueryHistoryTable: React.FC<QueryHistoryTableProps> = ({
         )}
       </div>
 
-      {sortedHistory.length === 0 ? (
+      {comparisonOpen && comparedQueries.length >= 2 ? (
+        <QueryComparisonPanel
+          queries={comparedQueries}
+          onClose={() => setComparisonOpen(false)}
+        />
+      ) : sortedActivity.length === 0 ? (
         <div style={{ textAlign: 'center', padding: '40px 0', color: 'var(--text-muted)', fontSize: 13 }}>
-          {isLoading ? 'Loading query history...' : 'No queries found matching the current filters'}
+          {isLoading ? 'Loading query activity...' : 'No queries found matching the current filters'}
         </div>
       ) : (
         <div style={{
@@ -325,27 +377,29 @@ export const QueryHistoryTable: React.FC<QueryHistoryTableProps> = ({
                   <th style={{ ...thStyle, width: 90 }}>ID</th>
                   <th style={{ ...thStyle, width: 120 }}>Type</th>
                   <th style={{ ...thStyle, width: 110 }}>Status</th>
-                  <SortTh field="query_start_time" label="Time" width={140} />
+                  <SortTh field="query_start_time" label="Started" width={140} sort={sort} onSort={handleSort} />
                   <th style={{ ...thStyle, width: 90 }}>User</th>
                   <th style={{ ...thStyle, width: 125 }}>Server</th>
                   <th style={{ ...thStyle, width: 320 }}>Query</th>
-                  <SortTh field="query_duration_ms" label="Duration" align="right" width={95} />
-                  <SortTh field="read_rows" label="Rows Read" align="right" width={105} />
-                  <SortTh field="read_bytes" label="Bytes Read" align="right" width={105} />
-                  <SortTh field="result_rows" label="Result" align="right" width={90} />
-                  <SortTh field="memory_usage" label="Memory" align="right" width={100} />
-                  <SortTh field="efficiency_score" label="Pruning" align="right" width={90} />
+                  <SortTh field="query_duration_ms" label="Duration" align="right" width={95} sort={sort} onSort={handleSort} />
+                  <SortTh field="read_rows" label="Rows Read" align="right" width={105} sort={sort} onSort={handleSort} />
+                  <SortTh field="read_bytes" label="Bytes Read" align="right" width={105} sort={sort} onSort={handleSort} />
+                  <SortTh field="result_rows" label="Result" align="right" width={90} sort={sort} onSort={handleSort} />
+                  <SortTh field="memory_usage" label="Memory" align="right" width={100} sort={sort} onSort={handleSort} />
+                  <SortTh field="efficiency_score" label="Pruning" align="right" width={90} sort={sort} onSort={handleSort} />
+                  {killQueriesEnabled && <th style={{ ...thStyle, width: 70 }} aria-label="Actions"></th>}
                 </tr>
               </thead>
               <tbody>
-                {sortedHistory.map((q) => {
+                {sortedActivity.map((q) => {
+                  const isLive = q.activitySource !== 'history';
                   const sel = selectedQueryId === q.query_id;
                   const isChecked = selectedForCompare.has(q.query_id);
                   const isHovered = hoveredQueryId === q.query_id;
                   const trunc = q.query.length > 60 ? q.query.slice(0, 60) + '...' : q.query;
                   const shortId = q.query_id.slice(0, 8);
                   return (
-                    <tr key={q.query_id}
+                    <tr key={q.activityKey}
                       style={{ 
                         background: isChecked ? 'rgba(88, 166, 255, 0.08)' : sel ? 'rgba(88,166,255,0.1)' : isHovered ? 'var(--bg-tertiary)' : 'transparent', 
                         cursor: 'pointer', 
@@ -353,8 +407,13 @@ export const QueryHistoryTable: React.FC<QueryHistoryTableProps> = ({
                       }}
                       onMouseEnter={() => setHoveredQueryId(q.query_id)}
                       onClick={() => {
-                        if (compareMode) toggleCompareSelection(q.query_id);
-                        else onSelectQuery(q);
+                        if (compareMode) {
+                          if (!isLive) toggleCompareSelection(q.query_id);
+                        } else if (q.liveQuery) {
+                          onSelectRunningQuery(q.liveQuery);
+                        } else {
+                          onSelectHistoryQuery(q);
+                        }
                       }}>
                       {compareMode && (
                         <td style={{ ...tdStyle, textAlign: 'center', width: 32 }}>
@@ -365,11 +424,12 @@ export const QueryHistoryTable: React.FC<QueryHistoryTableProps> = ({
                             width: 16, 
                             height: 16, 
                             borderRadius: 3, 
-                            border: isChecked ? '2px solid #58a6ff' : '1px solid var(--border-primary)', 
+                            border: isChecked ? '2px solid #58a6ff' : '1px solid var(--border-primary)',
                             background: isChecked ? '#58a6ff' : 'transparent', 
                             fontSize: 10, 
                             color: '#fff',
-                            cursor: 'pointer',
+                            cursor: isLive ? 'not-allowed' : 'pointer',
+                            opacity: isLive ? 0.3 : 1,
                             flexShrink: 0,
                           }}>
                             {isChecked ? '✓' : ''}
@@ -464,8 +524,32 @@ export const QueryHistoryTable: React.FC<QueryHistoryTableProps> = ({
                         {formatBytes(q.memory_usage)}
                       </td>
                       <td style={{ ...tdStyle, textAlign: 'right', whiteSpace: 'nowrap' }}>
-                        <EfficiencyBadge score={q.efficiency_score} />
+                        <EfficiencyBadge score={isLive ? null : q.efficiency_score} />
                       </td>
+                      {killQueriesEnabled && (
+                      <td style={{ ...tdStyle, textAlign: 'center', whiteSpace: 'nowrap' }}>
+                        {isLive && (
+                          <button
+                            onClick={(event) => {
+                              event.stopPropagation();
+                              onKillQuery(q.query_id);
+                            }}
+                            disabled={isKillingQuery}
+                            style={{
+                              padding: '3px 9px',
+                              fontSize: 10,
+                              borderRadius: 4,
+                              border: '1px solid rgba(248,81,73,0.3)',
+                              background: 'rgba(248,81,73,0.1)',
+                              color: '#f85149',
+                              cursor: isKillingQuery ? 'not-allowed' : 'pointer',
+                            }}
+                          >
+                            Kill
+                          </button>
+                        )}
+                      </td>
+                      )}
                     </tr>
                   );
                 })}
@@ -482,7 +566,8 @@ export const QueryHistoryTable: React.FC<QueryHistoryTableProps> = ({
                 cursor: previewQuery ? 'pointer' : 'default',
               }}
               onClick={() => {
-                if (previewQuery) onSelectQuery(previewQuery);
+                if (previewQuery?.liveQuery) onSelectRunningQuery(previewQuery.liveQuery);
+                else if (previewQuery) onSelectHistoryQuery(previewQuery);
               }}
             >
               <QueryHoverPreview
@@ -497,15 +582,8 @@ export const QueryHistoryTable: React.FC<QueryHistoryTableProps> = ({
         </div>
       )}
 
-      {/* Comparison panel - shown when 2+ queries selected */}
-      {comparedQueries.length >= 2 && (
-        <QueryComparisonPanel
-          queries={comparedQueries}
-          onClose={cancelCompare}
-        />
-      )}
     </div>
   );
 };
 
-export default QueryHistoryTable;
+export default QueryActivityTable;

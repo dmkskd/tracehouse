@@ -1,8 +1,13 @@
 import React, { useEffect, useRef, useCallback, useState, useMemo } from 'react';
 import { useConnectionStore } from '../stores/connectionStore';
 import { useQueryStore, QueryWebSocket, queryApi } from '../stores/queryStore';
-import { QueryRunningTable } from '../components/query/QueryRunningTable';
-import { QueryHistoryTable } from '../components/query/QueryHistoryTable';
+import { QueryActivityTable } from '../components/query/QueryActivityTable';
+import { QueryFilterBar } from '../components/query/QueryFilterBar';
+import {
+  buildQueryActivityRecords,
+  queryActivityKey,
+  querySelectionToSeries,
+} from '../components/query/query-activity-model';
 import { QueryDetailModal } from '../components/query/modal/QueryDetailModal';
 import { useClickHouseServices } from '../providers/ClickHouseProvider';
 import { useRefreshConfig, clampToAllowed } from '@tracehouse/ui-shared';
@@ -25,7 +30,7 @@ import { QueryHealthSunburst } from '../components/query/QueryHealthSunburst';
 import { useUrlState } from '../hooks/useUrlState';
 import type { UrlSchema } from '../hooks/useUrlState';
 
-// Query type colors matching QueryRunningTable
+// Query type colors shared by the activity table and summary strip
 const QUERY_TYPE_COLORS: Record<string, string> = {
   Select: '#3b82f6',
   Insert: '#f59e0b',
@@ -42,7 +47,7 @@ const ALL_QUERY_TYPES = ['Select', 'Insert', 'Alter', 'Create', 'Drop', 'System'
 
 // URL schema for shareable query monitor links
 const queryMonitorSchema = {
-  tab:       { type: 'string',  default: 'running' },
+  tab:       { type: 'string',  default: 'activity' },
   qd_id:     { type: 'string' },
   user:      { type: 'string' },
   queryId:   { type: 'string' },
@@ -61,15 +66,16 @@ const queryMonitorSchema = {
 
 export const QueryMonitor: React.FC = () => {
   const { activeProfileId, profiles, setConnectionFormOpen } = useConnectionStore();
-  const { runningQueries, queryHistory, selectedQuery, selectedQueryType: _selectedQueryType, historyFilter, historySort, wsStatus, error, isLoadingHistory, isKillingQuery, setRunningQueries, setQueryHistory, selectQuery, setHistoryFilter, setHistorySort, setIsLoadingHistory, setIsKillingQuery, setError, clearError, clearQueries } = useQueryStore();
+  const { runningQueries, queryHistory, selectedQuery, selectedQueryType, historyFilter, historySort, wsStatus, error, isLoadingHistory, isKillingQuery, setRunningQueries, setQueryHistory, selectQuery, setHistoryFilter, setHistorySort, setIsLoadingHistory, setIsKillingQuery, setError, clearError, clearQueries } = useQueryStore();
   const location = useLocation();
-  const locationState = location.state as { tab?: 'running' | 'history'; filter?: Record<string, unknown> } | null;
+  const locationState = location.state as { tab?: 'activity' | 'running' | 'history'; filter?: Record<string, unknown> } | null;
   const experimentalEnabled = useUserPreferenceStore(s => s.experimentalEnabled);
 
   // URL-synced state for shareable links
   const { state: urlState, update: updateUrl } = useUrlState(queryMonitorSchema);
-  const activeTab = (locationState?.tab || urlState.tab || 'running') as 'running' | 'history' | 'health';
-  const setActiveTab = useCallback((tab: 'running' | 'history' | 'health') => {
+  const requestedTab = locationState?.tab || urlState.tab || 'activity';
+  const activeTab: 'activity' | 'health' = requestedTab === 'health' ? 'health' : 'activity';
+  const setActiveTab = useCallback((tab: 'activity' | 'health') => {
     updateUrl({ tab }, { push: true });
   }, [updateUrl]);
 
@@ -137,8 +143,22 @@ export const QueryMonitor: React.FC = () => {
   const { available: hasProcesses, probing: isProcessesProbing } = useCapabilityCheck(['system_processes']);
 
   const [historyCoordinatorIds, setHistoryCoordinatorIds] = useState<Set<string>>(new Set());
-  const [runningFilteredCount, setRunningFilteredCount] = useState<number | null>(null);
   const [concurrency, setConcurrency] = useState<QueryConcurrency | null>(null);
+  const activityRecords = useMemo(
+    () => buildQueryActivityRecords(
+      { live: runningQueries, recent: queryHistory },
+      historyFilter,
+    ),
+    [runningQueries, queryHistory, historyFilter],
+  );
+
+  // Preserve the selected row as a live process becomes a terminal log record.
+  useEffect(() => {
+    if (!selectedQuery || selectedQueryType !== 'running') return;
+    const selectedKey = queryActivityKey(selectedQuery);
+    const completed = queryHistory.find(query => queryActivityKey(query) === selectedKey);
+    if (completed) selectQuery(completed, 'history');
+  }, [queryHistory, selectQuery, selectedQuery, selectedQueryType]);
 
   // Derive coordinator IDs from the already-fetched running queries
   // (eliminates the separate RUNNING_COORDINATOR_IDS query)
@@ -151,6 +171,10 @@ export const QueryMonitor: React.FC = () => {
     }
     return ids;
   }, [runningQueries]);
+  const activityCoordinatorIds = useMemo(
+    () => new Set([...runningCoordinatorIds, ...historyCoordinatorIds]),
+    [runningCoordinatorIds, historyCoordinatorIds],
+  );
 
   const slotPct = concurrency && concurrency.maxConcurrent > 0
     ? (concurrency.running / concurrency.maxConcurrent) * 100
@@ -159,9 +183,11 @@ export const QueryMonitor: React.FC = () => {
   let activeProfile = profiles.find(p => p.id === activeProfileId);
   if (!activeProfile && profiles.length > 0) activeProfile = profiles.find(p => p.is_connected);
   const isConnected = activeProfile?.is_connected ?? false;
+  const historyFetchInFlightRef = useRef(false);
 
   const fetchHistory = useCallback(async () => {
-    if (!services || !isConnected) return;
+    if (!services || !isConnected || historyFetchInFlightRef.current) return;
+    historyFetchInFlightRef.current = true;
     setIsLoadingHistory(true); clearError();
     try {
       const h = await queryApi.fetchQueryHistory(services.queryAnalyzer, historyFilter);
@@ -174,7 +200,10 @@ export const QueryMonitor: React.FC = () => {
       services.queryAnalyzer.getCoordinatorIds(queryIds, startDate!).then(setHistoryCoordinatorIds).catch(() => {});
     }
     catch (e) { setError(e instanceof Error ? e.message : 'Failed'); }
-    finally { setIsLoadingHistory(false); }
+    finally {
+      historyFetchInFlightRef.current = false;
+      setIsLoadingHistory(false);
+    }
   }, [services, isConnected, historyFilter]);
 
   const handleKillQuery = useCallback(async (qid: string) => {
@@ -185,59 +214,10 @@ export const QueryMonitor: React.FC = () => {
     finally { setIsKillingQuery(false); }
   }, [services, runningQueries]);
 
-  // Convert query store format to QuerySeries format for TimelineQueryModal
-  const convertToQuerySeries = useCallback((query: any): QuerySeries | null => {
-    if (!query) return null;
-    
-    // Handle QueryHistoryItem (from history tab) - has query_start_time, query_duration_ms, memory_usage
-    // Handle RunningQuery (from running tab) - has elapsed_seconds, memory_usage
-    const isHistoryItem = 'query_start_time' in query;
-    const isRunningQuery = 'elapsed_seconds' in query;
-    
-    let startTime: string;
-    let endTime: string;
-    let durationMs: number;
-    
-    if (isHistoryItem) {
-      startTime = query.query_start_time;
-      durationMs = query.query_duration_ms || 0;
-      // Calculate end time from start + duration
-      const startDate = new Date(startTime);
-      endTime = new Date(startDate.getTime() + durationMs).toISOString();
-    } else if (isRunningQuery) {
-      // Running query - use current time as reference
-      const now = new Date();
-      durationMs = Math.round((query.elapsed_seconds || 0) * 1000);
-      endTime = now.toISOString();
-      startTime = new Date(now.getTime() - durationMs).toISOString();
-    } else {
-      startTime = query.start_time || new Date().toISOString();
-      endTime = query.end_time || new Date().toISOString();
-      durationMs = query.duration_ms || 0;
-    }
-    
-    return {
-      query_id: query.query_id,
-      user: query.user || 'default',
-      label: query.query || '',
-      start_time: startTime,
-      end_time: endTime,
-      duration_ms: durationMs,
-      peak_memory: query.memory_usage || query.peak_memory || 0,
-      cpu_us: query.cpu_time_us || query.cpu_us || 0,
-      net_send: query.network_send_bytes || query.net_send || 0,
-      net_recv: query.network_receive_bytes || query.net_recv || 0,
-      disk_read: query.disk_read_bytes || query.disk_read || query.read_bytes || 0,
-      disk_write: query.disk_write_bytes || query.disk_write || 0,
-      status: query.type || query.status,
-      exception_code: query.exception_code,
-      exception: query.exception,
-      is_running: isRunningQuery,
-      points: [],
-    };
-  }, []);
-
-  const convertedQuery = convertToQuerySeries(selectedQuery);
+  const convertedQuery = useMemo(
+    () => querySelectionToSeries(selectedQuery, selectedQueryType),
+    [selectedQuery, selectedQueryType],
+  );
 
   // Deep-link: sync selected query to/from URL (qd_id param) through the
   // same updateUrl path as every other param — avoids race conditions from
@@ -251,7 +231,7 @@ export const QueryMonitor: React.FC = () => {
     deepLinkFetched.current = convertedQuery.query_id;
     setDeepLinkedQuery(null);
     updateUrl({ qd_id: convertedQuery.query_id } as any);
-  }, [convertedQuery?.query_id, updateUrl]);
+  }, [convertedQuery, updateUrl]);
 
   // On mount: if qd_id is in URL but no query selected, fetch the detail
   useEffect(() => {
@@ -313,15 +293,23 @@ export const QueryMonitor: React.FC = () => {
   }, [runningQueries]);
 
   const statsIntervalRef = useRef<ReturnType<typeof setInterval> | null>(null);
+  const historyIntervalRef = useRef<ReturnType<typeof setInterval> | null>(null);
 
   useEffect(() => {
     if (wsRef.current) { wsRef.current.disconnect(); wsRef.current = null; }
     if (statsIntervalRef.current) { clearInterval(statsIntervalRef.current); statsIntervalRef.current = null; }
+    if (historyIntervalRef.current) { clearInterval(historyIntervalRef.current); historyIntervalRef.current = null; }
     if (!services || !isConnected) { clearQueries(); return; }
-    const queryIntervalMs = refreshRateSeconds > 0 ? clampToAllowed(Math.max(2, refreshRateSeconds), refreshConfig) * 1000 : 2000;
+    const queryIntervalMs = refreshRateSeconds > 0 ? clampToAllowed(Math.max(2, refreshRateSeconds), refreshConfig) * 1000 : 0;
     const statsIntervalMs = refreshRateSeconds > 0 ? clampToAllowed(refreshRateSeconds, refreshConfig) * 1000 : 5000;
-    wsRef.current = new QueryWebSocket(services.queryAnalyzer, queryIntervalMs);
-    if (refreshRateSeconds > 0) wsRef.current.connect();
+    wsRef.current = new QueryWebSocket(
+      services.queryAnalyzer,
+      queryIntervalMs,
+      historyFilter.limit ?? 100,
+    );
+    // Always fetch once. A zero interval means paused/manual refresh, not
+    // "never load live queries"; manualRefreshTick recreates this poller.
+    wsRef.current.connect();
     // Lightweight stats poller — single query for concurrency/QPS/rejected
     const overviewService = new OverviewService(services.adapter, {}, services.environmentDetector);
     const pollStats = () => {
@@ -329,22 +317,28 @@ export const QueryMonitor: React.FC = () => {
     };
     pollStats();
     if (refreshRateSeconds > 0) statsIntervalRef.current = setInterval(pollStats, statsIntervalMs);
-    if (hasQueryLog) fetchHistory();
+    if (hasQueryLog) {
+      fetchHistory();
+      if (refreshRateSeconds > 0) {
+        historyIntervalRef.current = setInterval(fetchHistory, Math.max(5_000, queryIntervalMs));
+      }
+    }
     return () => {
       if (wsRef.current) wsRef.current.disconnect();
       if (statsIntervalRef.current) clearInterval(statsIntervalRef.current);
+      if (historyIntervalRef.current) clearInterval(historyIntervalRef.current);
     };
-  }, [services, isConnected, refreshRateSeconds, refreshConfig, manualRefreshTick]);
+  }, [services, isConnected, refreshRateSeconds, refreshConfig, manualRefreshTick, hasQueryLog, fetchHistory, historyFilter.limit, clearQueries]);
 
   // Fetch history when filter changes or when hasQueryLog becomes available
   useEffect(() => {
     if (services && isConnected && hasQueryLog) fetchHistory();
-  }, [historyFilter, fetchHistory, hasQueryLog]);
+  }, [historyFilter, fetchHistory, hasQueryLog, services, isConnected]);
 
   if (!activeProfile?.id || !isConnected) {
     return (
       <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', height: '100%', gap: 16, background: 'var(--bg-primary)' }}>
-        <div style={{ color: 'var(--text-primary)', fontSize: 18, fontWeight: 600 }}>Query Monitor</div>
+        <div style={{ color: 'var(--text-primary)', fontSize: 18, fontWeight: 600 }}>Query Tracker</div>
         <div style={{ color: 'var(--text-muted)', fontSize: 13 }}>Connect to a ClickHouse server to monitor queries.</div>
         <button onClick={() => setConnectionFormOpen(true)}
           style={{ marginTop: 8, padding: '8px 20px', borderRadius: 6, border: 'none', background: 'var(--accent-primary, #58a6ff)', color: '#fff', fontSize: 13, fontWeight: 600, cursor: 'pointer' }}>
@@ -354,9 +348,8 @@ export const QueryMonitor: React.FC = () => {
     );
   }
 
-  const tabs: { key: 'running' | 'history' | 'health'; label: string; count?: number; badge?: string }[] = [
-    { key: 'running', label: 'Running', count: runningFilteredCount ?? runningQueries.length },
-    { key: 'history', label: 'History', count: queryHistory.length },
+  const tabs: { key: 'activity' | 'health'; label: string; count?: number; badge?: string }[] = [
+    { key: 'activity', label: 'Queries', count: activityRecords.length },
     ...(experimentalEnabled ? [{ key: 'health' as const, label: 'Health Map', badge: 'exp' }] : []),
   ];
 
@@ -367,7 +360,7 @@ export const QueryMonitor: React.FC = () => {
         <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 12 }}>
           <div>
             <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
-              <h2 style={{ color: 'var(--text-primary)', fontSize: 18, fontWeight: 600, margin: 0 }}>Query Monitor</h2>
+              <h2 style={{ color: 'var(--text-primary)', fontSize: 18, fontWeight: 600, margin: 0 }}>Query Tracker</h2>
               <DocsLink path="/features/query-monitor" />
               <BackLink />
             </div>
@@ -486,12 +479,12 @@ export const QueryMonitor: React.FC = () => {
 
       {error && (
         <div style={{ margin: '12px 24px 0' }}>
-          <PermissionGate error={error} title="Query Monitor" variant="banner" onDismiss={clearError} />
+          <PermissionGate error={error} title="Query Tracker" variant="banner" onDismiss={clearError} />
         </div>
       )}
 
       {/* Degradation banner for running queries */}
-      {activeTab === 'running' && !isProcessesProbing && !hasProcesses && (
+      {activeTab === 'activity' && !isProcessesProbing && !hasProcesses && (
         <div style={{ margin: '12px 24px 0' }}>
           <PermissionGate
             error="Insufficient privileges to access system.processes. Ask your administrator to grant SELECT on this table."
@@ -522,19 +515,37 @@ export const QueryMonitor: React.FC = () => {
           overflow: 'auto', padding: '0 24px',
         }}>
           <div style={{ padding: '12px 0' }}>
-            {activeTab === 'running' ? (
-              <QueryRunningTable queries={runningQueries} selectedQueryId={selectedQuery?.query_id || null}
-                onSelectQuery={q => selectQuery(q, 'running')} onKillQuery={handleKillQuery} isKillingQuery={isKillingQuery} coordinatorIds={runningCoordinatorIds} queryAnalyzer={services?.queryAnalyzer} onFilteredCountChange={setRunningFilteredCount} />
-            ) : hasQueryLog || isProbing ? (
-              <QueryHistoryTable history={queryHistory} selectedQueryId={selectedQuery?.query_id || null}
-                onSelectQuery={q => selectQuery(q, 'history')} filter={historyFilter} sort={historySort}
-                onFilterChange={handleFilterChange} onSortChange={handleSortChange} isLoading={isLoadingHistory}
-                queryAnalyzer={services?.queryAnalyzer} coordinatorIds={historyCoordinatorIds} />
-            ) : (
+            <QueryFilterBar
+              filter={historyFilter}
+              onFilterChange={handleFilterChange}
+              queryAnalyzer={services?.queryAnalyzer}
+            />
+
+            <div style={{ marginTop: 14, border: '1px solid var(--border-primary)', borderRadius: 8, overflow: 'hidden' }}>
+              <QueryActivityTable
+                activity={activityRecords}
+                selectedQueryId={selectedQuery?.query_id || null}
+                onSelectRunningQuery={q => {
+                  if (q) selectQuery(q, 'running');
+                }}
+                onSelectHistoryQuery={q => selectQuery(q, 'history')}
+                onKillQuery={handleKillQuery}
+                isKillingQuery={isKillingQuery}
+                filter={historyFilter}
+                sort={historySort}
+                onFilterChange={handleFilterChange}
+                onSortChange={handleSortChange}
+                isLoading={isLoadingHistory}
+                queryAnalyzer={services?.queryAnalyzer}
+                coordinatorIds={activityCoordinatorIds}
+                showFilterBar={false}
+              />
+            </div>
+            {!hasQueryLog && !isProbing && (
               <PermissionGate
-                error="system.query_log is not available on this server. Query History requires query logging to be enabled."
-                title="Query History"
-                variant="page"
+                error="system.query_log is not available on this server. Live queries remain available, but completed activity requires query logging."
+                title="Completed query activity unavailable"
+                variant="banner"
               />
             )}
           </div>

@@ -1,5 +1,4 @@
-export { QueryRunningTable } from './QueryRunningTable';
-export { QueryHistoryTable } from './QueryHistoryTable';
+export { QueryActivityTable } from './QueryActivityTable';
 export { QueryFilterBar } from './QueryFilterBar';
 export type { QueryFilterState } from './QueryFilterBar';
 export { QueryDetail } from './QueryDetail';

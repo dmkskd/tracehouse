@@ -39,7 +39,7 @@ export const CAPABILITY_REGISTRY: CapabilityRegistryEntry[] = [
   {
     capabilityId: 'query_log',
     consumers: [
-      { screen: 'Query Monitor', tab: 'Queries', route: '/query-monitor', enables: 'Query history, timing charts, and query analysis', importance: 'required' },
+      { screen: 'Query Tracker', tab: 'Queries', route: '/query-monitor', enables: 'Query history, timing charts, and query analysis', importance: 'required' },
       { screen: 'Analytics', tab: 'Analytics', route: '/analytics', enables: 'Query explorer and preset analytics queries', importance: 'required' },
       { screen: 'Time Travel', tab: 'Time Travel', route: '/time-travel', enables: 'Query overlay and query failure events on timeline', importance: 'required' },
       { screen: 'Events', tab: 'Events', route: '/events', enables: 'Queries running at an event and exact query correlation', importance: 'optional' },
@@ -141,7 +141,7 @@ export const CAPABILITY_REGISTRY: CapabilityRegistryEntry[] = [
   {
     capabilityId: 'query_log_profile_events',
     consumers: [
-      { screen: 'Query Monitor', tab: 'Queries', route: '/query-monitor', enables: 'Resource attribution columns (CPU time, read bytes, cache hits)', importance: 'optional' },
+      { screen: 'Query Tracker', tab: 'Queries', route: '/query-monitor', enables: 'Resource attribution columns (CPU time, read bytes, cache hits)', importance: 'optional' },
       { screen: 'Query Detail Modal', tab: 'Queries', enables: 'ProfileEvents breakdown in query overview', importance: 'optional' },
     ],
   },
@@ -216,7 +216,7 @@ export const CAPABILITY_REGISTRY: CapabilityRegistryEntry[] = [
   {
     capabilityId: 'system_processes',
     consumers: [
-      { screen: 'Query Monitor', tab: 'Queries', route: '/query-monitor', enables: 'Running query list and real-time query monitoring', importance: 'required' },
+      { screen: 'Query Tracker', tab: 'Queries', route: '/query-monitor', enables: 'Running query list and real-time query monitoring', importance: 'required' },
       { screen: 'Overview', tab: 'Overview', route: '/overview', enables: 'Live running queries in resource arena', importance: 'optional' },
     ],
   },

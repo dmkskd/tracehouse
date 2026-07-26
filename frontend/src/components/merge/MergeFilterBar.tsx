@@ -12,7 +12,7 @@ import React, { useState, useRef, useCallback, useMemo } from 'react';
 import type { MergeHistoryFilter } from '../../stores/mergeStore';
 import { TimeRangePicker } from '../analytics/TimeRangePicker';
 
-export type MergeTab = 'active' | 'mutations' | 'mutationHistory' | 'history' | 'health';
+export type MergeTab = 'merges' | 'mutations' | 'health';
 
 const MERGE_TIME_PRESETS = [
   { label: '1h',  interval: '1 HOUR' },
@@ -37,10 +37,6 @@ interface MergeFilterBarProps {
   /** Toggle to hide replica merges (same merge on multiple replicas) */
   hideReplicaMerges?: boolean;
   onHideReplicaMergesChange?: (v: boolean) => void;
-  /** For Active Merges: distinct merge_type values */
-  mergeTypes?: string[];
-  selectedMergeType?: string;
-  onMergeTypeChange?: (v: string | undefined) => void;
   /** For Merge History: distinct merge_reason values */
   mergeReasons?: string[];
   selectedMergeReason?: string;
@@ -97,16 +93,8 @@ const FILTER_FIELDS: FilterFieldDef[] = [
     clear: p => p.onFilterChange({ table: undefined }),
   },
   {
-    key: 'merge_type', label: 'Merge Type', placeholder: 'e.g. Normal, Mutation',
-    tabs: ['active'],
-    getSuggestions: p => p.mergeTypes || [],
-    fromProps: p => p.selectedMergeType,
-    apply: (v, p) => p.onMergeTypeChange?.(v || undefined),
-    clear: p => p.onMergeTypeChange?.(undefined),
-  },
-  {
     key: 'merge_reason', label: 'Category', placeholder: 'e.g. Regular, TTLDelete, Mutation',
-    tabs: ['history'],
+    tabs: ['merges'],
     getSuggestions: p => p.mergeReasons || [],
     fromProps: p => p.selectedMergeReason,
     apply: (v, p) => p.onMergeReasonChange?.(v || undefined),
@@ -114,7 +102,7 @@ const FILTER_FIELDS: FilterFieldDef[] = [
   },
   {
     key: 'status', label: 'Status', placeholder: 'OK or Error',
-    tabs: ['history'],
+    tabs: ['merges'],
     getSuggestions: p => p.availableStatuses || [],
     fromProps: p => p.selectedStatus,
     apply: (v, p) => p.onStatusChange?.(v || undefined),
@@ -122,7 +110,7 @@ const FILTER_FIELDS: FilterFieldDef[] = [
   },
   {
     key: 'host', label: 'Host', placeholder: 'e.g. chi-clickhouse-0-0',
-    tabs: ['active', 'history'],
+    tabs: ['merges'],
     getSuggestions: p => p.availableHosts || [],
     fromProps: p => p.selectedHost,
     apply: (v, p) => p.onHostChange?.(v || undefined),
@@ -137,7 +125,7 @@ const FILTER_FIELDS: FilterFieldDef[] = [
   },
   {
     key: 'min_duration', label: 'Min Duration (s)', placeholder: 'e.g. 5',
-    tabs: ['history'],
+    tabs: ['merges'],
     getSuggestions: () => ['1', '5', '10', '30', '60'],
     fromProps: p => p.filter.minDurationMs != null ? String(p.filter.minDurationMs / 1000) : undefined,
     apply: (v, p) => {
@@ -148,7 +136,7 @@ const FILTER_FIELDS: FilterFieldDef[] = [
   },
   {
     key: 'min_size', label: 'Min Size (MB)', placeholder: 'e.g. 100',
-    tabs: ['history'],
+    tabs: ['merges'],
     getSuggestions: () => ['10', '100', '500', '1000'],
     fromProps: p => p.filter.minSizeBytes != null ? String(Math.round(p.filter.minSizeBytes / (1024 * 1024))) : undefined,
     apply: (v, p) => {
@@ -209,7 +197,7 @@ export const MergeFilterBar: React.FC<MergeFilterBarProps> = (props) => {
     tab, filter, onFilterChange, onRefresh, isLoading, resultCount,
   } = props;
 
-  const showLimit = tab === 'history' || tab === 'mutationHistory';
+  const showLimit = tab === 'merges' || tab === 'mutations';
 
   /* --- fields visible for current tab --- */
   const visibleFields = useMemo(

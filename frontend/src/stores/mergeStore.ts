@@ -258,8 +258,8 @@ export const mergeApi = {
   /**
    * Fetch active merges
    */
-  async fetchActiveMerges(service: MergeTracker): Promise<MergeInfo[]> {
-    return service.getActiveMerges();
+  async fetchActiveMerges(service: MergeTracker, limit?: number): Promise<MergeInfo[]> {
+    return service.getActiveMerges(undefined, undefined, limit);
   },
 
   /**

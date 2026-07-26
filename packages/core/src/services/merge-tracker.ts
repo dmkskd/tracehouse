@@ -160,9 +160,15 @@ export class MergeTracker {
     }
   }
 
-  async getActiveMerges(database?: string, table?: string): Promise<MergeInfo[]> {
+  async getActiveMerges(database?: string, table?: string, limit?: number): Promise<MergeInfo[]> {
     try {
-      const rows = await this.adapter.executeQuery(tagQuery(GET_ACTIVE_MERGES, sourceTag(TAB_MERGES, 'activeMerges')));
+      const normalizedLimit = limit == null
+        ? null
+        : Math.max(1, Math.floor(limit));
+      const sql = normalizedLimit == null
+        ? GET_ACTIVE_MERGES
+        : `${GET_ACTIVE_MERGES}\n  LIMIT ${normalizedLimit}`;
+      const rows = await this.adapter.executeQuery(tagQuery(sql, sourceTag(TAB_MERGES, 'activeMerges')));
       let merges = rows.map(mapMergeInfo);
 
       // Filter by database/table if specified

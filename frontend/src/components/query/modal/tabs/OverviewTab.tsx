@@ -762,7 +762,7 @@ const ExploreDestinationCard: React.FC<{
     </div>
 
     <div>
-      <div style={{ color: 'var(--text-primary)', fontSize: 19, lineHeight: 1.08, fontWeight: 750, letterSpacing: 0, fontVariantNumeric: 'tabular-nums' }}>
+      <div style={{ color: 'var(--text-primary)', fontSize: 16, lineHeight: 1.15, fontWeight: 700, letterSpacing: 0, fontVariantNumeric: 'tabular-nums' }}>
         {primary}
       </div>
       <div style={{ marginTop: 2, color: 'var(--text-secondary)', fontSize: 10, lineHeight: 1.25, minHeight: 12, maxHeight: 13, overflow: 'hidden', whiteSpace: 'nowrap', textOverflow: 'ellipsis' }}>

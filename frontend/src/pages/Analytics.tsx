@@ -436,7 +436,7 @@ export const Analytics: React.FC = () => {
                   onMouseLeave={(e) => { e.currentTarget.style.color = 'var(--text-muted)'; e.currentTarget.style.borderColor = 'var(--border-secondary)'; }}
                 >
                   <span>←</span>
-                  <span>Back to Query Monitor</span>
+                  <span>Back to Query Tracker</span>
                 </button>
               )}
               {fromMerges && activeTab === 'misc' && (

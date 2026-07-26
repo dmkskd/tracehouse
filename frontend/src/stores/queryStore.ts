@@ -191,11 +191,17 @@ export class QueryWebSocket {
   private intervalId: ReturnType<typeof setInterval> | null = null;
   private queryAnalyzer: QueryAnalyzer;
   private pollingIntervalMs: number;
+  private resultLimit?: number;
   private isRunning = false;
 
-  constructor(queryAnalyzer: QueryAnalyzer, pollingIntervalMs: number = DEFAULT_INTERVAL_MS) {
+  constructor(
+    queryAnalyzer: QueryAnalyzer,
+    pollingIntervalMs: number = DEFAULT_INTERVAL_MS,
+    resultLimit?: number,
+  ) {
     this.queryAnalyzer = queryAnalyzer;
     this.pollingIntervalMs = pollingIntervalMs;
+    this.resultLimit = resultLimit;
   }
 
   /**
@@ -211,7 +217,9 @@ export class QueryWebSocket {
 
     // Fetch immediately, then start interval
     this.fetchQueries();
-    this.intervalId = setInterval(() => this.fetchQueries(), this.pollingIntervalMs);
+    if (this.pollingIntervalMs > 0) {
+      this.intervalId = setInterval(() => this.fetchQueries(), this.pollingIntervalMs);
+    }
   }
 
   /**
@@ -241,7 +249,7 @@ export class QueryWebSocket {
   private async fetchQueries(): Promise<void> {
     const store = useQueryStore.getState();
     try {
-      const queries = await this.queryAnalyzer.getRunningQueries();
+      const queries = await this.queryAnalyzer.getRunningQueries(this.resultLimit);
       store.setRunningQueries(queries);
     } catch (error) {
       const errorMessage = error instanceof Error ? error.message : 'Failed to fetch queries';
@@ -260,8 +268,8 @@ export const queryApi = {
   /**
    * Fetch running queries
    */
-  async fetchRunningQueries(service: QueryAnalyzer): Promise<RunningQuery[]> {
-    return service.getRunningQueries();
+  async fetchRunningQueries(service: QueryAnalyzer, limit?: number): Promise<RunningQuery[]> {
+    return service.getRunningQueries(limit);
   },
 
   /**

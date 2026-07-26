@@ -18,10 +18,20 @@ import { useClickHouseServices } from '../../providers/ClickHouseProvider';
 import { useRefreshConfig, clampToAllowed } from '@tracehouse/ui-shared';
 import { useRefreshSettingsStore } from '../../stores/refreshSettingsStore';
 import { useGlobalLastUpdatedStore } from '../../stores/refreshSettingsStore';
-import { ActiveMergeList, isMergeStuck } from './ActiveMergeList';
-import { MergeHistoryTable } from './MergeHistoryTable';
+import { MergeActivityTable } from './MergeActivityTable';
 import { MergeFilterBar } from './MergeFilterBar';
 import type { MergeTab } from './MergeFilterBar';
+import {
+  createMergeActivityState,
+  buildMergeActivityRecords,
+  filterMergeActivity,
+  hasReplicaMergeActivity,
+  isMergeStuck,
+  limitMergeActivityRecords,
+  mergeActivityHosts,
+  mergeActivityStatuses,
+  reconcileMergeActivity,
+} from './merge-activity-model';
 import { MutationDependencyDiagram } from '../tracing/MutationDependencyDiagram';
 import { MergeDependencyDiagram } from './MergeDependencyDiagram';
 import type { MutationHistoryRecord, MergeHistoryRecord } from '../../stores/mergeStore';
@@ -42,6 +52,12 @@ import {
 } from '../../helpers/mutationDependencyHelpers';
 import { PermissionGate } from '../shared/PermissionGate';
 import { extractErrorMessage } from '../../utils/errorFormatters';
+import { PreviewToggleButton } from '../common/PreviewToggleButton';
+import {
+  loadPreviewPreference,
+  MERGE_ACTIVITY_PREVIEW_STORAGE_KEY,
+  savePreviewPreference,
+} from '../../utils/previewPreference';
 import { useCapabilityCheck } from '../shared/RequiresCapability';
 import { classifyActiveMerge, getMergeCategoryInfo, classifyMutationCommand, MUTATION_SUBTYPES, computeMergeEta, pickThroughputEstimate, ALL_MERGE_CATEGORIES, isCategoryClientSideOnly } from '@tracehouse/core';
 import type { MergeCategory } from '@tracehouse/core';
@@ -52,7 +68,7 @@ import type { UrlSchema } from '../../hooks/useUrlState';
 
 // URL schema for shareable merge tracker links
 const mergeUrlSchema = {
-  tab:       { type: 'string',  default: 'active' },
+  tab:       { type: 'string',  default: 'merges' },
   database:  { type: 'string' },
   table:     { type: 'string' },
   category:  { type: 'string' },
@@ -1571,10 +1587,28 @@ export const MergeTrackerView: React.FC = () => {
 
   // URL-synced state for shareable links
   const { state: urlState, update: updateUrl } = useUrlState(mergeUrlSchema);
-  const activeTab = (urlState.tab || 'active') as MergeTab;
+  const requestedTab = urlState.tab || 'merges';
+  const activeTab: MergeTab = requestedTab === 'health'
+    ? 'health'
+    : requestedTab === 'mutations' || requestedTab === 'mutationHistory'
+      ? 'mutations'
+      : 'merges';
 
   const [availableTables, setAvailableTables] = useState<string[]>([]);
   const pollingRef = useRef<ReturnType<typeof setInterval> | null>(null);
+  const [showActivityPreview, setShowActivityPreview] = useState(
+    () => loadPreviewPreference(MERGE_ACTIVITY_PREVIEW_STORAGE_KEY),
+  );
+  const activityStateRef = useRef(createMergeActivityState());
+  const mergeActivity = useMemo(
+    () => reconcileMergeActivity(activityStateRef.current, activeMerges, mergeHistory),
+    [activeMerges, mergeHistory],
+  );
+  const activityMerges = useMemo(() => mergeActivity.live.map(item => item.merge), [mergeActivity.live]);
+
+  useEffect(() => {
+    activityStateRef.current = createMergeActivityState();
+  }, [activeProfileId]);
 
   // Selected items for detail panels
   const [selectedMergeHistoryRaw, setSelectedMergeHistoryRaw] = useState<MergeHistoryRecord | null>(null);
@@ -1608,6 +1642,26 @@ export const MergeTrackerView: React.FC = () => {
   const previewedMutationHistory = previewMutationHistory ?? selectedMutationHistory;
   const previewedActiveMutation = previewActiveMutation ?? selectedActiveMutation;
 
+  useEffect(() => {
+    if (!selectedActiveMutation) return;
+    const stillRunning = mutations.some(mutation =>
+      mutation.database === selectedActiveMutation.database &&
+      mutation.table === selectedActiveMutation.table &&
+      mutation.mutation_id === selectedActiveMutation.mutation_id
+    );
+    if (stillRunning) return;
+    const completed = mutationHistory.find(record =>
+      record.database === selectedActiveMutation.database &&
+      record.table === selectedActiveMutation.table &&
+      record.mutation_id === selectedActiveMutation.mutation_id
+    );
+    if (!completed) return;
+    setSelectedMutationHistory(completed);
+    setPreviewMutationHistory(completed);
+    setSelectedActiveMutation(null);
+    setPreviewActiveMutation(null);
+  }, [mutationHistory, mutations, selectedActiveMutation]);
+
   const setMergeDetailRecord = useCallback((record: MergeHistoryRecord | null) => {
     setMergeDetailRecordRaw(record);
     if (record) {
@@ -1626,12 +1680,15 @@ export const MergeTrackerView: React.FC = () => {
   }, [syncDetailToUrl]);
 
   const openMergeHistoryDetails = useCallback((record: MergeHistoryRecord) => {
+    selectMerge(null);
     setSelectedMergeHistoryRaw(record);
     setPreviewMergeHistory(record);
     setMergeDetailRecord(record);
-  }, [setMergeDetailRecord]);
+  }, [selectMerge, setMergeDetailRecord]);
 
   const openActiveMergeDetails = useCallback((merge: MergeInfo) => {
+    setSelectedMergeHistoryRaw(null);
+    setPreviewMergeHistory(null);
     selectMerge(merge);
     setActiveMergeDetail(merge);
   }, [selectMerge, setActiveMergeDetail]);
@@ -1639,17 +1696,31 @@ export const MergeTrackerView: React.FC = () => {
   // Keep selectedMerge in sync with refreshed activeMerges data
   const liveSelectedMerge = useMemo(() => {
     if (!selectedMerge) return null;
-    return activeMerges.find(
+    return activityMerges.find(
       m => m.database === selectedMerge.database &&
         m.table === selectedMerge.table &&
         m.result_part_name === selectedMerge.result_part_name &&
         (m.hostname || '') === (selectedMerge.hostname || ''),
     ) ?? null;
-  }, [activeMerges, selectedMerge]);
+  }, [activityMerges, selectedMerge]);
+
+  // Keep the same detail selection open when a live merge becomes a part_log row.
+  useEffect(() => {
+    if (!selectedMerge || liveSelectedMerge) return;
+    const completed = mergeHistory.find(record =>
+      record.database === selectedMerge.database &&
+      record.table === selectedMerge.table &&
+      record.part_name === selectedMerge.result_part_name &&
+      (record.hostname || '') === (selectedMerge.hostname || '')
+    );
+    if (!completed) return;
+    setSelectedMergeHistoryRaw(completed);
+    setPreviewMergeHistory(completed);
+    selectMerge(null);
+  }, [liveSelectedMerge, mergeHistory, selectMerge, selectedMerge]);
 
   // Client-side filters are URL-driven for shareable links
   const selectedMergeType = urlState.mergeType;
-  const setSelectedMergeType = useCallback((v: string | undefined) => updateUrl({ mergeType: v }), [updateUrl]);
   const selectedMergeReason = historyFilter.category;
   const selectedHost = urlState.host;
   const setSelectedHost = useCallback((v: string | undefined) => updateUrl({ host: v }), [updateUrl]);
@@ -1660,7 +1731,7 @@ export const MergeTrackerView: React.FC = () => {
   const { hideReplicaMerges, setHideReplicaMerges, experimentalEnabled } = useUserPreferenceStore();
   useEffect(() => {
     if (!experimentalEnabled && activeTab === 'health') {
-      updateUrl({ tab: 'active' });
+      updateUrl({ tab: 'merges' });
     }
   }, [activeTab, experimentalEnabled, updateUrl]);
 
@@ -1679,7 +1750,10 @@ export const MergeTrackerView: React.FC = () => {
       clearError();
     }
     try {
-      const merges = await mergeApi.fetchActiveMerges(services.mergeTracker);
+      const merges = await mergeApi.fetchActiveMerges(
+        services.mergeTracker,
+        historyFilter.limit,
+      );
       setActiveMerges(merges);
     } catch (err) {
       setError(extractErrorMessage(err, 'Failed to fetch merges'));
@@ -1688,7 +1762,7 @@ export const MergeTrackerView: React.FC = () => {
         setIsLoadingMerges(false);
       }
     }
-  }, [services, isConnected, hasMerges, setActiveMerges, setIsLoadingMerges, setError, clearError]);
+  }, [services, isConnected, hasMerges, historyFilter.limit, setActiveMerges, setIsLoadingMerges, setError, clearError]);
 
   const fetchMergeHistory = useCallback(async (isInitialLoad = false) => {
     if (!services || !isConnected || !hasMerges) return;
@@ -1784,8 +1858,8 @@ export const MergeTrackerView: React.FC = () => {
     setPreviewMutationHistory(null);
     setPreviewActiveMutation(null);
     updateUrl({ tab }, { push: true });
-    if (tab === 'history') fetchMergeHistory(false);
-    if (tab === 'mutationHistory') fetchMutationHistory(false);
+    if (tab === 'merges') fetchMergeHistory(false);
+    if (tab === 'mutations') fetchMutationHistory(false);
   }, [fetchMergeHistory, fetchMutationHistory, updateUrl]);
 
   const fetchPoolMetrics = useCallback(async (isInitialLoad = false) => {
@@ -1889,7 +1963,9 @@ export const MergeTrackerView: React.FC = () => {
       const intervalMs = clampToAllowed(refreshRateSeconds, refreshConfig) * 1000;
       pollingRef.current = setInterval(() => {
         fetchActiveMerges(false);
+        fetchMergeHistory(false);
         fetchMutations(false);
+        fetchMutationHistory(false);
         fetchPoolMetrics(false);
       }, intervalMs);
     }
@@ -1915,31 +1991,45 @@ export const MergeTrackerView: React.FC = () => {
   const dbFilter = historyFilter.database;
   const tblFilter = historyFilter.table;
 
-  // Filtered active merges (client-side: database, table, merge type, host, part, replica)
-  const filteredActiveMerges = useMemo(() => {
-    let result = activeMerges;
-    if (hideReplicaMerges) result = result.filter(m => !m.is_replica_merge);
-    if (historyFilter.excludeSystemDatabases) {
-      result = result.filter(m => !['system', 'information_schema', 'INFORMATION_SCHEMA'].includes(m.database));
-    }
-    if (dbFilter) result = result.filter(m => m.database === dbFilter);
-    if (tblFilter) result = result.filter(m => m.table === tblFilter);
-    if (selectedMergeType) {
-      if (selectedMergeType === 'Mutation') {
-        result = result.filter(m => m.is_mutation);
-      } else {
-        result = result.filter(m => !m.is_mutation && m.merge_type === selectedMergeType);
-      }
-    }
-    if (selectedHost) result = result.filter(m => m.hostname === selectedHost);
-    if (selectedPartName) {
-      const q = selectedPartName.toLowerCase();
-      result = result.filter(m =>
-        m.result_part_name.toLowerCase().includes(q) || m.source_part_names?.some(p => p.toLowerCase().includes(q))
-      );
-    }
-    return result;
-  }, [activeMerges, hideReplicaMerges, historyFilter.excludeSystemDatabases, dbFilter, tblFilter, selectedMergeType, selectedHost, selectedPartName]);
+  const filteredMergeActivity = useMemo(
+    () => filterMergeActivity(mergeActivity, {
+      hideReplicaMerges,
+      excludeSystemDatabases: historyFilter.excludeSystemDatabases,
+      database: dbFilter,
+      table: tblFilter,
+      liveCategory: selectedMergeType,
+      category: selectedMergeReason,
+      minDurationMs: historyFilter.minDurationMs,
+      minSizeBytes: historyFilter.minSizeBytes,
+      status: selectedStatus,
+      hostname: selectedHost,
+      partName: selectedPartName,
+    }),
+    [
+      mergeActivity,
+      hideReplicaMerges,
+      historyFilter.excludeSystemDatabases,
+      historyFilter.minDurationMs,
+      historyFilter.minSizeBytes,
+      dbFilter,
+      tblFilter,
+      selectedMergeType,
+      selectedMergeReason,
+      selectedStatus,
+      selectedHost,
+      selectedPartName,
+    ],
+  );
+  const mergeActivityRecords = useMemo(
+    () => limitMergeActivityRecords(
+      buildMergeActivityRecords(
+        filteredMergeActivity.live,
+        filteredMergeActivity.recent,
+      ),
+      historyFilter.limit,
+    ),
+    [filteredMergeActivity, historyFilter.limit],
+  );
 
   // Filtered mutations (client-side: database, table)
   const filteredMutations = React.useMemo(() => {
@@ -1949,34 +2039,8 @@ export const MergeTrackerView: React.FC = () => {
     return result;
   }, [mutations, dbFilter, tblFilter]);
 
-  // Filtered merge history (client-side merge_reason, host, part, replica on top of server-side db/table/limit)
-  const filteredMergeHistory = React.useMemo(() => {
-    let result = mergeHistory;
-    if (hideReplicaMerges) result = result.filter(r => !r.is_replica_merge);
-    if (selectedMergeReason) result = result.filter(r => r.merge_reason === selectedMergeReason);
-    if (selectedHost) result = result.filter(r => r.hostname === selectedHost);
-    if (selectedStatus) {
-      if (selectedStatus === 'OK') result = result.filter(r => !r.error);
-      else if (selectedStatus === 'Error') result = result.filter(r => !!r.error);
-    }
-    if (selectedPartName) {
-      const q = selectedPartName.toLowerCase();
-      result = result.filter(r => r.part_name.toLowerCase().includes(q) || r.source_part_names?.some(p => p.toLowerCase().includes(q)));
-    }
-    return result;
-  }, [mergeHistory, hideReplicaMerges, selectedMergeReason, selectedHost, selectedStatus, selectedPartName]);
-
   // Filtered mutation history (server-side handles db/table/limit, no extra client filter needed)
   const filteredMutationHistory = mutationHistory;
-
-  // Available merge types from active merges
-  const availableMergeTypes = React.useMemo(() => {
-    const types = new Set<string>();
-    activeMerges.forEach(m => {
-      types.add(classifyActiveMerge(m.merge_type, m.is_mutation, m.result_part_name));
-    });
-    return Array.from(types).sort();
-  }, [activeMerges]);
 
   // Available merge reasons from merge history
   // Use static list so the dropdown is always fully populated (server-side filtering
@@ -1984,31 +2048,27 @@ export const MergeTrackerView: React.FC = () => {
   const availableMergeReasons = ALL_MERGE_CATEGORIES as unknown as string[];
 
   // Available hostnames from active merges + merge history
-  const availableHosts = React.useMemo(() => {
-    const hosts = new Set<string>();
-    activeMerges.forEach(m => { if (m.hostname) hosts.add(m.hostname); });
-    mergeHistory.forEach(r => { if (r.hostname) hosts.add(r.hostname); });
-    return Array.from(hosts).sort();
-  }, [activeMerges, mergeHistory]);
+  const availableHosts = React.useMemo(
+    () => mergeActivityHosts(mergeActivity),
+    [mergeActivity],
+  );
 
-  // Available statuses from merge history
-  const availableStatuses = React.useMemo(() => {
-    const statuses = new Set<string>();
-    mergeHistory.forEach(r => { statuses.add(r.error ? 'Error' : 'OK'); });
-    return Array.from(statuses).sort();
-  }, [mergeHistory]);
+  // Running is a lifecycle state in the same table as terminal outcomes.
+  const availableStatuses = React.useMemo(
+    () => mergeActivityStatuses(mergeHistory),
+    [mergeHistory],
+  );
 
   // Whether any replica merges exist (to decide whether to show toggle)
-  const hasReplicaMerges = useMemo(() =>
-    activeMerges.some(m => m.is_replica_merge) || mergeHistory.some(r => r.is_replica_merge),
-    [activeMerges, mergeHistory]
+  const hasReplicaMerges = useMemo(
+    () => hasReplicaMergeActivity(mergeActivity),
+    [mergeActivity],
   );
 
   // Result count for the filter bar
-  const filterResultCount = activeTab === 'active' ? filteredActiveMerges.length
-    : activeTab === 'mutations' ? filteredMutations.length
-    : activeTab === 'mutationHistory' ? filteredMutationHistory.length
-    : filteredMergeHistory.length;
+  const filterResultCount = activeTab === 'merges'
+    ? mergeActivityRecords.length
+    : filteredMutations.length + filteredMutationHistory.length;
   const isHealthTab = activeTab === 'health';
   const poolTotals = useMemo(() => {
     if (!poolMetrics) return { active: 0, total: 0 };
@@ -2178,40 +2238,26 @@ export const MergeTrackerView: React.FC = () => {
           padding: '12px var(--page-padding) var(--page-padding)',
         }}
       >
-      <div className="flex gap-4" style={{ minHeight: isHealthTab ? '520px' : '400px' }}>
-        {/* Left Panel */}
-        <div className="flex-1 flex flex-col min-w-0 overflow-hidden">
+      <div className="flex flex-col min-w-0 overflow-hidden" style={{ minHeight: isHealthTab ? '520px' : '400px' }}>
           <div style={{ borderBottom: '1px solid var(--border-primary)' }}>
             <div className="page-tabs" style={{ paddingLeft: 8 }}>
               <button
-                className={`page-tab ${activeTab === 'active' ? 'active' : ''}`}
-                onClick={() => setActiveTab('active')}
+                className={`page-tab ${activeTab === 'merges' ? 'active' : ''}`}
+                onClick={() => setActiveTab('merges')}
               >
-                Active Merges
-                {filteredActiveMerges.length > 0 && (
-                  <span className="page-tab-count">{filteredActiveMerges.length}</span>
+                Merges
+                {mergeActivityRecords.length > 0 && (
+                  <span className="page-tab-count">{mergeActivityRecords.length}</span>
                 )}
-              </button>
-              <button
-                className={`page-tab ${activeTab === 'history' ? 'active' : ''}`}
-                onClick={() => setActiveTab('history')}
-              >
-                Merge History
               </button>
               <button
                 className={`page-tab ${activeTab === 'mutations' ? 'active' : ''}`}
                 onClick={() => setActiveTab('mutations')}
               >
-                Active Mutations
+                Mutations
                 {pendingMutations > 0 && (
                   <span className="page-tab-count">{pendingMutations}</span>
                 )}
-              </button>
-              <button
-                className={`page-tab ${activeTab === 'mutationHistory' ? 'active' : ''}`}
-                onClick={() => setActiveTab('mutationHistory')}
-              >
-                Mutation History
               </button>
               {experimentalEnabled && (
                 <button
@@ -2234,9 +2280,6 @@ export const MergeTrackerView: React.FC = () => {
                 onFilterChange={handleFilterChange}
                 availableDatabases={databases.map(d => d.name)}
                 availableTables={availableTables}
-                mergeTypes={availableMergeTypes}
-                selectedMergeType={selectedMergeType}
-                onMergeTypeChange={setSelectedMergeType}
                 mergeReasons={availableMergeReasons}
                 selectedMergeReason={selectedMergeReason}
                 onMergeReasonChange={(reason) => handleFilterChange({ category: reason })}
@@ -2250,26 +2293,37 @@ export const MergeTrackerView: React.FC = () => {
                 onPartNameChange={setSelectedPartName}
                 excludeSystemDatabases={historyFilter.excludeSystemDatabases}
                 onExcludeSystemChange={(v) => handleFilterChange({ excludeSystemDatabases: v })}
-                hideReplicaMerges={(activeTab === 'active' || activeTab === 'history') && hasReplicaMerges ? hideReplicaMerges : undefined}
-                onHideReplicaMergesChange={(activeTab === 'active' || activeTab === 'history') && hasReplicaMerges ? setHideReplicaMerges : undefined}
-                onRefresh={activeTab === 'history' ? () => fetchMergeHistory(true) : activeTab === 'mutationHistory' ? () => fetchMutationHistory(true) : undefined}
-                isLoading={activeTab === 'history' ? isLoadingHistory : activeTab === 'mutationHistory' ? isLoadingMutationHistory : undefined}
+                hideReplicaMerges={activeTab === 'merges' && hasReplicaMerges ? hideReplicaMerges : undefined}
+                onHideReplicaMergesChange={activeTab === 'merges' && hasReplicaMerges ? setHideReplicaMerges : undefined}
+                onRefresh={activeTab === 'merges'
+                  ? () => { fetchActiveMerges(false); fetchMergeHistory(true); }
+                  : () => { fetchMutations(false); fetchMutationHistory(true); }}
+                isLoading={activeTab === 'merges'
+                  ? isLoadingMerges || isLoadingHistory
+                  : isLoadingMutations || isLoadingMutationHistory}
                 resultCount={filterResultCount}
               />
             </div>
           )}
 
-          {/* Content */}
-          <div className="flex-1 overflow-auto" style={{ paddingTop: 12 }}>
-            {activeTab === 'active' ? (
-              <ActiveMergeList
-                merges={filteredActiveMerges}
-                selectedMerge={liveSelectedMerge}
-                onSelectMerge={openActiveMergeDetails}
-                onPreviewMerge={selectMerge}
-                isLoading={isLoadingMerges}
+          {!isHealthTab && (
+            <div style={{ paddingTop: 8 }}>
+              <PreviewToggleButton
+                label={activeTab === 'mutations' ? 'Mutation Preview' : 'Merge Preview'}
+                visible={showActivityPreview}
+                onToggle={() => setShowActivityPreview(visible => {
+                  const next = !visible;
+                  savePreviewPreference(MERGE_ACTIVITY_PREVIEW_STORAGE_KEY, next);
+                  return next;
+                })}
               />
-            ) : activeTab === 'health' ? (
+            </div>
+          )}
+
+          {/* Content and optional preview share a row so their top edges align. */}
+          <div className="flex gap-4" style={{ paddingTop: 12, alignItems: 'flex-start' }}>
+          <div className="flex-1 overflow-auto min-w-0">
+            {activeTab === 'health' ? (
               <MergeHealthSunburst
                 activeMerges={activeMerges}
                 mutations={mutations}
@@ -2286,50 +2340,99 @@ export const MergeTrackerView: React.FC = () => {
                   return 'not-found';
                 }}
               />
-            ) : activeTab === 'mutations' ? (
-              <MutationsPanel 
-                mutations={filteredMutations}
-                activeMerges={activeMerges}
-                isLoading={isLoadingMutations}
-                selectedMutation={previewedActiveMutation}
-                onSelectMutation={setSelectedActiveMutation}
-                onPreviewMutation={setPreviewActiveMutation}
-              />
-            ) : activeTab === 'mutationHistory' ? (
-              <MutationHistoryPanel 
-                history={filteredMutationHistory} 
-                isLoading={isLoadingMutationHistory}
-                selectedRecord={previewedMutationHistory}
-                onSelectRecord={setSelectedMutationHistory}
-                onPreviewRecord={setPreviewMutationHistory}
-              />
-            ) : (
+            ) : activeTab === 'merges' ? (
               <>
                 {selectedMergeReason && isCategoryClientSideOnly(selectedMergeReason as MergeCategory) && (
                   <div style={{ padding: '6px 12px', fontSize: 11, color: 'var(--text-warning, #d4a72c)', background: 'var(--bg-warning, rgba(212,167,44,0.08))', borderRadius: 4, margin: '0 0 6px' }}>
                     This category is filtered client-side after the LIMIT — results may be incomplete. Increase the limit to see more rows.
                   </div>
                 )}
-                <MergeHistoryTable
-                  history={filteredMergeHistory}
-                  sort={historySort}
-                  onSortChange={handleSortChange}
-                  isLoading={isLoadingHistory}
-                  selectedRecord={previewedMergeHistory}
-                  onSelectRecord={openMergeHistoryDetails}
-                  onPreviewRecord={setPreviewMergeHistory}
-                />
+                <div style={{ border: '1px solid var(--border-primary)', borderRadius: 8, overflow: 'hidden' }}>
+                  <MergeActivityTable
+                    activity={mergeActivityRecords}
+                    sort={historySort}
+                    onSortChange={handleSortChange}
+                    isLoading={isLoadingMerges || isLoadingHistory}
+                    selectedLiveMerge={liveSelectedMerge}
+                    selectedHistoryRecord={previewedMergeHistory}
+                    onSelectLive={openActiveMergeDetails}
+                    onPreviewLive={(merge) => {
+                      setSelectedMergeHistoryRaw(null);
+                      setPreviewMergeHistory(null);
+                      selectMerge(merge);
+                    }}
+                    onSelectHistory={openMergeHistoryDetails}
+                    onPreviewHistory={(record) => {
+                      selectMerge(null);
+                      setPreviewMergeHistory(record);
+                    }}
+                  />
+                </div>
+              </>
+            ) : (
+              <>
+                <div style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '2px 2px 6px' }}>
+                  <span style={{ fontSize: 12, fontWeight: 600, color: 'var(--text-primary)' }}>Running</span>
+                  <span style={{ fontSize: 10, color: 'var(--text-muted)' }}>{filteredMutations.length}</span>
+                </div>
+                <div style={{ border: '1px solid var(--border-primary)', borderRadius: 8, overflow: 'hidden' }}>
+                  <MutationsPanel
+                    mutations={filteredMutations}
+                    activeMerges={activeMerges}
+                    isLoading={isLoadingMutations}
+                    selectedMutation={previewedActiveMutation}
+                    onSelectMutation={(mutation) => {
+                      setSelectedMutationHistory(null);
+                      setPreviewMutationHistory(null);
+                      setSelectedActiveMutation(mutation);
+                    }}
+                    onPreviewMutation={(mutation) => {
+                      setPreviewMutationHistory(null);
+                      setPreviewActiveMutation(mutation);
+                    }}
+                  />
+                </div>
+                <div style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '18px 2px 6px' }}>
+                  <span style={{ fontSize: 12, fontWeight: 600, color: 'var(--text-primary)' }}>Recent</span>
+                  <span style={{ fontSize: 10, color: 'var(--text-muted)' }}>{filteredMutationHistory.length}</span>
+                </div>
+                <div style={{ border: '1px solid var(--border-primary)', borderRadius: 8, overflow: 'hidden' }}>
+                  <MutationHistoryPanel
+                    history={filteredMutationHistory}
+                    isLoading={isLoadingMutationHistory}
+                    selectedRecord={previewedMutationHistory}
+                    onSelectRecord={(record) => {
+                      setSelectedActiveMutation(null);
+                      setPreviewActiveMutation(null);
+                      setSelectedMutationHistory(record);
+                    }}
+                    onPreviewRecord={(record) => {
+                      setPreviewActiveMutation(null);
+                      setPreviewMutationHistory(record);
+                    }}
+                  />
+                </div>
               </>
             )}
           </div>
-        </div>
 
         {/* Right Panel - Detail */}
-        {!isHealthTab && (
+        {!isHealthTab && showActivityPreview && (
           <div className="w-80 flex-shrink-0 card overflow-hidden">
-            {activeTab === 'active' ? (
-              <MergeDetailPanel merge={liveSelectedMerge} onClose={() => selectMerge(null)} onOpenFullDetails={setActiveMergeDetail} />
-            ) : activeTab === 'mutations' ? (
+            {activeTab === 'merges' ? (
+              liveSelectedMerge ? (
+                <MergeDetailPanel merge={liveSelectedMerge} onClose={() => selectMerge(null)} onOpenFullDetails={setActiveMergeDetail} />
+              ) : (
+                <MergeHistoryDetailPanel
+                  record={previewedMergeHistory}
+                  onClose={() => {
+                    setSelectedMergeHistory(null);
+                    setPreviewMergeHistory(null);
+                  }}
+                  onOpenFullDetails={setMergeDetailRecord}
+                />
+              )
+            ) : previewedActiveMutation ? (
               <ActiveMutationDetailPanel
                 mutation={previewedActiveMutation}
                 activeMerges={activeMerges}
@@ -2339,7 +2442,7 @@ export const MergeTrackerView: React.FC = () => {
                   setPreviewActiveMutation(null);
                 }}
               />
-            ) : activeTab === 'mutationHistory' ? (
+            ) : (
               <MutationHistoryDetailPanel
                 record={previewedMutationHistory}
                 onClose={() => {
@@ -2347,18 +2450,10 @@ export const MergeTrackerView: React.FC = () => {
                   setPreviewMutationHistory(null);
                 }}
               />
-            ) : (
-              <MergeHistoryDetailPanel
-                record={previewedMergeHistory}
-                onClose={() => {
-                  setSelectedMergeHistory(null);
-                  setPreviewMergeHistory(null);
-                }}
-                onOpenFullDetails={setMergeDetailRecord}
-              />
             )}
           </div>
         )}
+        </div>
       </div>
       </div>
 

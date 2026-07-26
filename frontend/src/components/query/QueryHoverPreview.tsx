@@ -490,7 +490,7 @@ export const QueryHoverPreview: React.FC<{
     return (
       <aside style={{ ...cardStyle, padding: 14, color: 'var(--text-muted)', fontSize: 12 }}>
         <div style={cardTitleStyle}>Query Preview</div>
-        Hover a history row to inspect query shape.
+        Hover a query row to inspect its shape.
       </aside>
     );
   }

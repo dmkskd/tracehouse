@@ -70,8 +70,7 @@ export type {
 } from './metrics/TimeSeriesChart';
 
 // Query monitoring components
-export { QueryRunningTable } from './query/QueryRunningTable';
-export { QueryHistoryTable } from './query/QueryHistoryTable';
+export { QueryActivityTable } from './query/QueryActivityTable';
 export { QueryDetail } from './query/QueryDetail';
 
 // Database explorer components
@@ -81,8 +80,7 @@ export { PartsTable } from './database/PartsTable';
 
 // Merge tracking components
 export { MergeTrackerView } from './merge/MergeTracker';
-export { ActiveMergeList } from './merge/ActiveMergeList';
-export { MergeHistoryTable } from './merge/MergeHistoryTable';
+export { MergeActivityTable } from './merge/MergeActivityTable';
 
 // Query tracing components
 export { TraceLogViewer } from './tracing/TraceLogViewer';
@@ -113,4 +111,3 @@ export type { PartInspectorProps } from './database/PartInspector';
 // Monitoring capability check components
 export { RequiresCapability, useCapabilityCheck } from './shared/RequiresCapability';
 export type { RequiresCapabilityProps } from './shared/RequiresCapability';
-

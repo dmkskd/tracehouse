@@ -332,9 +332,15 @@ export class QueryAnalyzer {
   ) {
     this.envDetector = envDetector ?? null;
   }
-  async getRunningQueries(): Promise<QueryMetrics[]> {
+  async getRunningQueries(limit?: number): Promise<QueryMetrics[]> {
     try {
-      const rows = await this.adapter.executeQuery(tagQuery(RUNNING_QUERIES, sourceTag(TAB_QUERIES, 'runningQueries')));
+      const normalizedLimit = limit == null
+        ? null
+        : Math.max(1, Math.floor(limit));
+      const sql = normalizedLimit == null
+        ? RUNNING_QUERIES
+        : `${RUNNING_QUERIES}\n  LIMIT ${normalizedLimit}`;
+      const rows = await this.adapter.executeQuery(tagQuery(sql, sourceTag(TAB_QUERIES, 'runningQueries')));
       // RUNNING_QUERIES returns `elapsed` but QueryMetrics expects `elapsed_seconds`
       return rows.map(r => mapQueryMetrics({ ...r, elapsed_seconds: (r as Record<string, unknown>).elapsed }));
     } catch (error) {

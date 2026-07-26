@@ -110,12 +110,12 @@ const FILTER_FIELDS: FilterFieldDef[] = [
     hasSuggestions: true, suggestionKey: 'query_kind',
   },
   {
-    key: 'status', label: 'Status', placeholder: 'success or error',
+    key: 'status', label: 'Status', placeholder: 'running, success, or error',
     toFilter: v => ({ status: v || undefined }),
     fromFilter: f => f.status,
     clear: () => ({ status: undefined }),
     hasStaticSuggestions: true,
-    staticSuggestions: ['success', 'error'],
+    staticSuggestions: ['running', 'success', 'error'],
   },
   {
     key: 'database', label: 'Database', placeholder: 'e.g. default',

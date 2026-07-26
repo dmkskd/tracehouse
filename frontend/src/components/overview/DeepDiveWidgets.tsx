@@ -379,7 +379,7 @@ export function RecentHotspotsWidget({ spikes }: { spikes: CpuSpikesInfo }) {
 export function SlowQueriesWidget({ summary }: { summary: SlowQueriesSummary }) {
   return (
     <WidgetCard title="Slow Queries" linkTo="/queries" linkLabel="Queries" linkState={{
-      tab: 'history',
+      tab: 'activity',
       filter: {
         minDurationMs: 10000,
         startTime: new Date(Date.now() - 60 * 60 * 1000).toISOString(),

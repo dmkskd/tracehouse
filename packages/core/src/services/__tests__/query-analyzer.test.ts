@@ -17,6 +17,20 @@ class MockAdapter implements IClickHouseAdapter {
   }
 }
 
+describe('QueryAnalyzer running queries', () => {
+  it('applies a sanitized server-side result limit', async () => {
+    const adapter = new MockAdapter();
+    const analyzer = new QueryAnalyzer(adapter);
+
+    await analyzer.getRunningQueries(100.9);
+
+    expect(adapter.queries).toHaveLength(1);
+    expect(adapter.queries[0]).toContain('FROM {{cluster_aware:system.processes}}');
+    expect(adapter.queries[0]).toContain('ORDER BY elapsed DESC');
+    expect(adapter.queries[0]).toContain('LIMIT 100');
+  });
+});
+
 describe('QueryAnalyzer child query batching', () => {
   it('returns an empty map without querying ClickHouse when no ids are provided', async () => {
     const adapter = new MockAdapter();

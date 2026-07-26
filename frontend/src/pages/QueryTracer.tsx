@@ -938,7 +938,7 @@ export const QueryTracer: React.FC = () => {
           </div>
           <div className="text-sm text-gray-500 dark:text-gray-400 max-w-md mx-auto">
             Enter a query ID above to view its trace logs and execution plan,
-            or select a query from the Query Monitor page.
+            or select a query from the Query Tracker page.
           </div>
         </div>
       )}
