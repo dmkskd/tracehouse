@@ -180,14 +180,15 @@ export function clusterTimelineEvents(
   return groups.map(group => {
     const sortedBySeverity = [...group].sort((a, b) =>
       SEVERITY_RANK[b.event.severity] - SEVERITY_RANK[a.event.severity]
-      || a.ms - b.ms,
+      || a.ms - b.ms
+      || a.event.id.localeCompare(b.event.id),
     );
     const middle = group[Math.floor((group.length - 1) / 2)];
     const primaryEvent = sortedBySeverity[0].event;
     return {
       id: group.map(item => item.event.id).join('|'),
       occurredAtMs: middle.ms,
-      events: group.map(item => item.event),
+      events: sortedBySeverity.map(item => item.event),
       primaryEvent,
       severity: primaryEvent.severity,
     };
@@ -198,6 +199,28 @@ export function timelineEventFilterCount(filter: TimelineEventFilter): number {
   return filter.hiddenSeverities.size
     + filter.hiddenCategories.size
     + filter.hiddenKinds.size;
+}
+
+export function buildTimelineNavigatorRequestScope({
+  activeMetric,
+  navigatorHours,
+  hostname,
+  activityLimit,
+  eventCapabilities,
+}: {
+  activeMetric: string;
+  navigatorHours: number;
+  hostname?: string | null;
+  activityLimit: number;
+  eventCapabilities?: readonly string[];
+}): string {
+  return [
+    activeMetric,
+    navigatorHours,
+    hostname ?? 'all-hosts',
+    activityLimit,
+    [...(eventCapabilities ?? [])].sort().join(','),
+  ].join('_');
 }
 
 export function buildEventsUrl(

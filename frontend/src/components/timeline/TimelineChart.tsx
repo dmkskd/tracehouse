@@ -5,9 +5,10 @@
  * Extracted from TimeTravelPage for clarity.
  */
 import React, { useState, useCallback, useMemo, useRef, useEffect } from 'react';
-import type { MemoryTimeline, ZoomSample } from '@tracehouse/core';
+import type { MemoryTimeline, TimelineEvent, ZoomSample } from '@tracehouse/core';
 import { getMergeCategoryInfo, type MergeCategory } from '@tracehouse/core';
 import { formatBytes, parseTimestamp } from '../../utils/formatters';
+import { TimelineEventOverlay } from './TimelineEventOverlay';
 import {
   type MetricMode, type HighlightedItem,
   Q_COLORS, M_COLORS, MUT_COLORS, METRIC_CONFIG, METRIC_BAR_CONFIG,
@@ -56,7 +57,17 @@ export const TimelineChart: React.FC<{
   hiddenCategories?: Set<'query' | 'merge' | 'mutation'>;
   /** When true, all queries are rendered with a uniform color (query hash filter) */
   queryHashActive?: boolean;
-}> = ({ data, metricMode, height = 380, hoverMs, pinnedMs, onHover, onPin, zoomRange, onZoom, highlightedItem, onHighlightItem, onBandClick, hiddenCategories, queryHashActive }) => {
+  eventAnnotations?: TimelineEvent[];
+  selectedEventId?: string | null;
+  onEventSelect?: (event: TimelineEvent) => void;
+  onClearEventSelection?: () => void;
+  onViewEventDetails?: (event: TimelineEvent) => void;
+}> = ({
+  data, metricMode, height = 380, hoverMs, pinnedMs, onHover, onPin,
+  zoomRange, onZoom, highlightedItem, onHighlightItem, onBandClick,
+  hiddenCategories, queryHashActive, eventAnnotations = [], selectedEventId,
+  onEventSelect, onClearEventSelection, onViewEventDetails,
+}) => {
   const W = 1000, H = height;
   const padTop = 12, padRight = 90, padBottom = 30, padLeft = 52;
   const cw = W - padLeft - padRight, ch = H - padTop - padBottom;
@@ -487,7 +498,13 @@ export const TimelineChart: React.FC<{
     return { x: Math.max(x1, padLeft), width: Math.min(x2, W - padRight) - Math.max(x1, padLeft) };
   }, [dragStart, dragCurrent, xScale, padLeft, W, padRight]);
 
-  if (serverPts.length < 2 && nq === 0 && nm === 0) {
+  if (
+    serverPts.length < 2
+    && nq === 0
+    && nm === 0
+    && nmut === 0
+    && eventAnnotations.length === 0
+  ) {
     return <div className="flex items-center justify-center text-sm" style={{ height, color: 'var(--text-muted)' }}>No data for {cfg.label}</div>;
   }
 
@@ -636,6 +653,27 @@ export const TimelineChart: React.FC<{
           </g>
         )}
       </svg>
+      {eventAnnotations.length > 0 && onEventSelect && (
+        <div style={{
+          position: 'absolute',
+          left: `${(padLeft / W) * 100}%`,
+          right: `${(padRight / W) * 100}%`,
+          top: `${(padTop / H) * 100}%`,
+          bottom: `${(padBottom / H) * 100}%`,
+          pointerEvents: 'none',
+          zIndex: 7,
+        }}>
+          <TimelineEventOverlay
+            events={eventAnnotations}
+            rangeStartMs={tMin}
+            rangeEndMs={tMax}
+            selectedEventId={selectedEventId}
+            onSelectEvent={onEventSelect}
+            onClearEventSelection={onClearEventSelection}
+            onViewEventDetails={onViewEventDetails}
+          />
+        </div>
+      )}
       {/* Y-axis labels as HTML overlays (not stretched) */}
       {yTicks.map((v, i) => {
         let label: string;

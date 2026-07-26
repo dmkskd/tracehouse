@@ -7,6 +7,7 @@ import type {
 } from '@tracehouse/core';
 import {
   clusterTimelineEvents,
+  buildTimelineNavigatorRequestScope,
   buildEventsUrl,
   buildTimeTravelEventUrl,
   emptyTimelineEventFilter,
@@ -70,7 +71,7 @@ describe('timeline event display clustering', () => {
     const clusters = clusterTimelineEvents(events, start, end, 600, 14);
 
     expect(clusters).toHaveLength(2);
-    expect(clusters[0].events.map(item => item.id)).toEqual(['first', 'nearby']);
+    expect(clusters[0].events.map(item => item.id)).toEqual(['nearby', 'first']);
     expect(clusters[0].primaryEvent.id).toBe('nearby');
     expect(clusters[0].severity).toBe('critical');
     expect(clusters[1].events.map(item => item.id)).toEqual(['later']);
@@ -135,5 +136,28 @@ describe('timeline event display clustering', () => {
     expect(timeTravelUrl.startsWith('/timetravel?')).toBe(true);
     expect(timeTravelParams.get('event_id')).toBe(sourceEvent.id);
     expect(timeTravelParams.get('event_time')).toBe(sourceEvent.occurred_at);
+  });
+
+  it('invalidates navigator data when event capabilities become available', () => {
+    const base = {
+      activeMetric: 'cpu',
+      navigatorHours: 1,
+      hostname: null,
+      activityLimit: 100,
+    };
+    const beforeDetection = buildTimelineNavigatorRequestScope({
+      ...base,
+      eventCapabilities: [],
+    });
+    const afterDetection = buildTimelineNavigatorRequestScope({
+      ...base,
+      eventCapabilities: ['query_log', 'text_log'],
+    });
+
+    expect(afterDetection).not.toBe(beforeDetection);
+    expect(buildTimelineNavigatorRequestScope({
+      ...base,
+      eventCapabilities: ['text_log', 'query_log'],
+    })).toBe(afterDetection);
   });
 });

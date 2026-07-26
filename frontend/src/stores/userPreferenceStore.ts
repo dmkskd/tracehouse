@@ -22,6 +22,9 @@ interface UserPreferenceState {
   /** Hide replica merges (same merge on multiple replicas). Off by default — replica merges are shown. */
   hideReplicaMerges: boolean;
   setHideReplicaMerges: (enabled: boolean) => void;
+  /** Show event annotations on the Time Travel 2D chart and navigator. */
+  timeTravelEventsVisible: boolean;
+  setTimeTravelEventsVisible: (visible: boolean) => void;
 }
 
 export const useUserPreferenceStore = create<UserPreferenceState>()(
@@ -36,6 +39,8 @@ export const useUserPreferenceStore = create<UserPreferenceState>()(
       setExperimentalEnabled: (enabled) => set({ experimentalEnabled: enabled }),
       hideReplicaMerges: false,
       setHideReplicaMerges: (enabled: boolean) => set({ hideReplicaMerges: enabled }),
+      timeTravelEventsVisible: true,
+      setTimeTravelEventsVisible: (visible: boolean) => set({ timeTravelEventsVisible: visible }),
     }),
     { name: 'tracehouse-view-preference' }
   )

@@ -34,9 +34,10 @@ import { TimelineChart } from '../components/timeline/TimelineChart';
 import { TimelineChart3D } from '../components/timeline/TimelineChart3D';
 import { TimelineChart3DSurface } from '../components/timeline/TimelineChart3DSurface';
 import { QueryTable, MergeTable } from '../components/timeline/TimelineTable';
-import { TimelineEventRail } from '../components/timeline/TimelineEventRail';
+import { TimelineEventControls } from '../components/timeline/TimelineEventControls';
 import {
   emptyTimelineEventFilter,
+  buildTimelineNavigatorRequestScope,
   buildEventsUrl,
   filterTimelineEvents,
   type TimelineEventFilter,
@@ -152,7 +153,11 @@ export const TimeTravelPage: React.FC = () => {
       .map(capability => capability.id),
     [monitoringCapabilities],
   );
-  const { experimentalEnabled } = useUserPreferenceStore();
+  const {
+    experimentalEnabled,
+    timeTravelEventsVisible,
+    setTimeTravelEventsVisible,
+  } = useUserPreferenceStore();
   const [windowSec, setWindowSec] = useState(150);
   const [isLive, setIsLive] = useState(!hasInitialEvent);
   const [autoRefresh, setAutoRefresh] = useState(false);
@@ -223,7 +228,7 @@ export const TimeTravelPage: React.FC = () => {
   const [navigatorData, setNavigatorData] = useState<MemoryTimeline | null>(null);
   const [navigatorLoading, setNavigatorLoading] = useState(false);
   const lastNavigatorFetchTime = useRef<string | null>(null);
-  const lastNavigatorMetric = useRef<MetricMode | null>(null);
+  const lastNavigatorRequestScope = useRef<string | null>(null);
 
   // Navigator hours derived from selected time range preset, or custom range
   const navigatorHours = useMemo(() => {
@@ -347,6 +352,7 @@ export const TimeTravelPage: React.FC = () => {
             hostname: host,
             activityLimit,
             activeMetric: metricMode,
+            eventCapabilities,
           });
           return [host, result] as const;
         })
@@ -355,7 +361,7 @@ export const TimeTravelPage: React.FC = () => {
     } catch (e) {
       console.error('[TimeTravelPage] Split view fetch error:', e);
     } finally { setSplitLoading(false); }
-  }, [services, clusterHosts, splitView, isLive, effectiveViewportEnd, windowSec, includeRunning, metricMode]);
+  }, [services, clusterHosts, splitView, isLive, effectiveViewportEnd, windowSec, includeRunning, metricMode, activityLimit, eventCapabilities]);
 
   const splitFetchTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   useEffect(() => {
@@ -469,9 +475,20 @@ export const TimeTravelPage: React.FC = () => {
     // Navigator always ends at "now" for presets; Custom uses customStartTime/customEndTime
     const isCustom = selectedTimeRange === 'Custom';
     const endDate = isCustom && customEndTime ? new Date(customEndTime) : new Date();
-    const endTimeKey = `${endDate.toISOString().slice(0, 13)}_${metricMode}_${navigatorHours}`;
+    const requestScope = buildTimelineNavigatorRequestScope({
+      activeMetric: metricMode,
+      navigatorHours,
+      hostname: selectedHost,
+      activityLimit,
+      eventCapabilities,
+    });
+    const endTimeKey = `${endDate.toISOString().slice(0, 13)}_${requestScope}`;
     if (!force && lastNavigatorFetchTime.current === endTimeKey) return;
-    if (!force && navigatorData && lastNavigatorMetric.current === metricMode) {
+    if (
+      !force
+      && navigatorData
+      && lastNavigatorRequestScope.current === requestScope
+    ) {
       const navStart = new Date(navigatorData.window_start).getTime();
       const navEnd = new Date(navigatorData.window_end).getTime();
       const viewportEnd = endDate.getTime();
@@ -493,7 +510,7 @@ export const TimeTravelPage: React.FC = () => {
       });
       setNavigatorData(result);
       lastNavigatorFetchTime.current = endTimeKey;
-      lastNavigatorMetric.current = metricMode;
+      lastNavigatorRequestScope.current = requestScope;
     } catch (e) {
       console.error('[TimeTravelPage] Navigator fetch error:', e);
     } finally { setNavigatorLoading(false); }
@@ -571,6 +588,11 @@ export const TimeTravelPage: React.FC = () => {
     setPinnedMs(null);
     setHoverMs(null);
   }, []);
+
+  const handleEventVisibilityChange = useCallback((visible: boolean) => {
+    setTimeTravelEventsVisible(visible);
+    if (!visible) handleClearEventSelection();
+  }, [handleClearEventSelection, setTimeTravelEventsVisible]);
 
   const handleViewEventDetails = useCallback((event: TimelineEvent) => {
     navigate(buildEventsUrl(event));
@@ -1080,9 +1102,17 @@ export const TimeTravelPage: React.FC = () => {
 
       {data && (
         <div style={{ flex:1, overflow:'auto', padding:'12px 16px 20px' }}>
-          {/* Metric toggle tabs */}
-          <div style={{ display:'flex', gap:4, marginBottom:16, background:'var(--bg-tertiary)', borderRadius:8, padding:3, width:'fit-content', alignItems:'center' }}>
-            {(Object.keys(METRIC_CONFIG) as MetricMode[]).map(mode => {
+          {/* Metric/view controls and 2D event controls */}
+          <div style={{
+            display: 'flex',
+            alignItems: 'flex-start',
+            justifyContent: 'space-between',
+            flexWrap: 'wrap',
+            gap: 8,
+            marginBottom: 16,
+          }}>
+            <div style={{ display:'flex', gap:4, background:'var(--bg-tertiary)', borderRadius:8, padding:3, width:'fit-content', alignItems:'center' }}>
+              {(Object.keys(METRIC_CONFIG) as MetricMode[]).map(mode => {
               const c = METRIC_CONFIG[mode];
               const active = metricMode === mode;
               return (
@@ -1097,8 +1127,8 @@ export const TimeTravelPage: React.FC = () => {
                   {c.label}
                 </button>
               );
-            })}
-            {metricMode === 'cpu' && (
+              })}
+              {metricMode === 'cpu' && (
               <span
                 title="CPU % is clamped to 100%. Under heavy load, ClickHouse's metric_log collection can be delayed — when load drops, accumulated CPU time gets attributed to a short interval, producing raw values above 100%. This is amplified on VMs (GCP, AWS, Docker) due to hypervisor scheduling jitter. The Spike Analysis feature preserves unclamped values for diagnostics."
                 style={{
@@ -1111,8 +1141,8 @@ export const TimeTravelPage: React.FC = () => {
                 role="img"
                 aria-label="CPU metric information: values are clamped to 100% to account for metric collection delays under heavy load"
               >?</span>
-            )}
-            {experimentalEnabled && (
+              )}
+              {experimentalEnabled && (
               <>
                 <div style={{ width: 1, height: 20, background: 'var(--border-primary)', margin: '0 4px' }} />
                 {([['2d', '2D'], ['3d', '3D'], ['3d-surface', '3D Surface']] as const).map(([mode, label]) => (
@@ -1142,6 +1172,19 @@ export const TimeTravelPage: React.FC = () => {
                   </button>
                 ))}
               </>
+              )}
+            </div>
+            {viewMode === '2d' && (
+              <TimelineEventControls
+                visible={timeTravelEventsVisible}
+                shownCount={filteredWindowEvents.length}
+                totalCount={data.events?.length ?? 0}
+                filterUniverse={eventFilterUniverse}
+                coverage={data.event_coverage ?? []}
+                filter={eventFilter}
+                onVisibilityChange={handleEventVisibilityChange}
+                onFilterChange={setEventFilter}
+              />
             )}
           </div>
 
@@ -1186,6 +1229,13 @@ export const TimeTravelPage: React.FC = () => {
                       onHighlightItem={setHighlightedItem}
                       hiddenCategories={hiddenCategories}
                       queryHashActive={!!queryHashFilter}
+                      eventAnnotations={timeTravelEventsVisible
+                        ? filterTimelineEvents(hostData.events ?? [], eventFilter)
+                        : []}
+                      selectedEventId={selectedEventId}
+                      onEventSelect={handleEventSelect}
+                      onClearEventSelection={handleClearEventSelection}
+                      onViewEventDetails={handleViewEventDetails}
                       onBandClick={(band) => {
                         if (band.type === 'query' && hostData.queries[band.idx]) setSelectedTimelineQuery(hostData.queries[band.idx]);
                         else if (band.type === 'merge' && hostData.merges[band.idx]) setSelectedTimelineMerge(hostData.merges[band.idx]);
@@ -1257,6 +1307,11 @@ export const TimeTravelPage: React.FC = () => {
               onHighlightItem={setHighlightedItem}
               hiddenCategories={hiddenCategories}
               queryHashActive={!!queryHashFilter}
+              eventAnnotations={timeTravelEventsVisible ? filteredWindowEvents : []}
+              selectedEventId={selectedEventId}
+              onEventSelect={handleEventSelect}
+              onClearEventSelection={handleClearEventSelection}
+              onViewEventDetails={handleViewEventDetails}
               onBandClick={(band) => {
                 if (band.type === 'query' && data.queries[band.idx]) setSelectedTimelineQuery(data.queries[band.idx]);
                 else if (band.type === 'merge' && data.merges[band.idx]) setSelectedTimelineMerge(data.merges[band.idx]);
@@ -1266,21 +1321,6 @@ export const TimeTravelPage: React.FC = () => {
             )}
           </div>
           )}
-
-          <TimelineEventRail
-            events={filteredWindowEvents}
-            windowEventCount={data.events?.length ?? 0}
-            filterUniverse={eventFilterUniverse}
-            coverage={data.event_coverage ?? []}
-            filter={eventFilter}
-            onFilterChange={setEventFilter}
-            rangeStartMs={zoomRange?.[0] ?? new Date(data.window_start).getTime()}
-            rangeEndMs={zoomRange?.[1] ?? new Date(data.window_end).getTime()}
-            selectedEventId={selectedEventId}
-            onSelectEvent={handleEventSelect}
-            onClearEventSelection={handleClearEventSelection}
-            onViewEventDetails={handleViewEventDetails}
-          />
 
           {/* Timeline Navigator */}
           {navigatorRange && (
@@ -1297,7 +1337,7 @@ export const TimeTravelPage: React.FC = () => {
                 onViewportChange={handleNavigatorViewportChange} height={70}
                 isLoading={navigatorLoading} totalRam={data.server_total_ram} cpuCores={data.cpu_cores}
                 onDragEnd={handleNavigatorDragEnd}
-                events={filteredNavigatorEvents}
+                events={timeTravelEventsVisible ? filteredNavigatorEvents : []}
                 selectedEventId={selectedEventId}
                 onEventSelect={handleNavigatorEventSelect}
               />
