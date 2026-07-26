@@ -1625,6 +1625,17 @@ export const MergeTrackerView: React.FC = () => {
     }
   }, [syncDetailToUrl]);
 
+  const openMergeHistoryDetails = useCallback((record: MergeHistoryRecord) => {
+    setSelectedMergeHistoryRaw(record);
+    setPreviewMergeHistory(record);
+    setMergeDetailRecord(record);
+  }, [setMergeDetailRecord]);
+
+  const openActiveMergeDetails = useCallback((merge: MergeInfo) => {
+    selectMerge(merge);
+    setActiveMergeDetail(merge);
+  }, [selectMerge, setActiveMergeDetail]);
+
   // Keep selectedMerge in sync with refreshed activeMerges data
   const liveSelectedMerge = useMemo(() => {
     if (!selectedMerge) return null;
@@ -2254,7 +2265,7 @@ export const MergeTrackerView: React.FC = () => {
               <ActiveMergeList
                 merges={filteredActiveMerges}
                 selectedMerge={liveSelectedMerge}
-                onSelectMerge={selectMerge}
+                onSelectMerge={openActiveMergeDetails}
                 onPreviewMerge={selectMerge}
                 isLoading={isLoadingMerges}
               />
@@ -2305,7 +2316,7 @@ export const MergeTrackerView: React.FC = () => {
                   onSortChange={handleSortChange}
                   isLoading={isLoadingHistory}
                   selectedRecord={previewedMergeHistory}
-                  onSelectRecord={setSelectedMergeHistory}
+                  onSelectRecord={openMergeHistoryDetails}
                   onPreviewRecord={setPreviewMergeHistory}
                 />
               </>
