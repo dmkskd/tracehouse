@@ -1,17 +1,17 @@
 import type {
   EventContextMetricPoint,
-  TimelineEvent,
+  OperationalEvent,
 } from '@tracehouse/core';
 
 export interface NearbyEvent {
-  event: TimelineEvent;
+  event: OperationalEvent;
   distanceMs: number;
   relation: string;
 }
 
 export function selectNearbyEvents(
-  selected: TimelineEvent,
-  events: readonly TimelineEvent[],
+  selected: OperationalEvent,
+  events: readonly OperationalEvent[],
   windowSeconds: number,
   limit = 12,
 ): NearbyEvent[] {
@@ -37,8 +37,8 @@ export function selectNearbyEvents(
 }
 
 export function eventContextRelation(
-  selected: TimelineEvent,
-  candidate: TimelineEvent,
+  selected: OperationalEvent,
+  candidate: OperationalEvent,
 ): string {
   if (
     selected.query_id

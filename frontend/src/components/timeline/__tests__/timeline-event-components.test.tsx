@@ -1,7 +1,7 @@
 import React from 'react';
 import { fireEvent, render, screen } from '@testing-library/react';
 import { beforeAll, describe, expect, it, vi } from 'vitest';
-import type { TimelineEvent } from '@tracehouse/core';
+import type { OperationalEvent } from '@tracehouse/core';
 import { TimelineEventControls } from '../TimelineEventControls';
 import { TimelineEventOverlay } from '../TimelineEventOverlay';
 import { emptyTimelineEventFilter } from '../timeline-event-model';
@@ -13,7 +13,7 @@ function event(
   id: string,
   occurredAt: string,
   title = id,
-): TimelineEvent {
+): OperationalEvent {
   return {
     id,
     occurred_at: occurredAt,

@@ -1,11 +1,11 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import type {
   MonitoringCapability,
-  TimelineEvent,
-  TimelineEventCategory,
-  TimelineEventKind,
-  TimelineEventSeverity,
-  TimelineEventSourceCoverage,
+  OperationalEvent,
+  EventCategory,
+  EventKind,
+  EventSeverity,
+  EventSourceCoverage,
 } from '@tracehouse/core';
 import { clampToAllowed, useRefreshConfig } from '@tracehouse/ui-shared';
 import { useClickHouseServices } from '../../providers/ClickHouseProvider';
@@ -18,10 +18,10 @@ import {
   EVENT_CATEGORY_LABELS,
   EVENT_KIND_LABELS,
   EVENT_SEVERITY_COLORS,
-  TIMELINE_EVENT_CATEGORIES,
-} from '../timeline/timeline-event-model';
+  EVENT_CATEGORIES,
+} from './event-model';
 import { EventDistribution } from './EventDistribution';
-import { TimeRangePicker } from './TimeRangePicker';
+import { TimeRangePicker } from '../common/TimeRangePicker';
 import { DocsLink } from '../common/DocsLink';
 import {
   MetricStrip,
@@ -41,9 +41,9 @@ import {
   formatEventClusterRange,
   formatEventDateTime,
   observedEventKinds,
-  selectTimelineEvent,
+  selectEvent,
   sortAndFilterEvents,
-  sortTimelineEvents,
+  sortEventsDescending,
   supportedEventCoverage,
   supportedEventGroups,
   toClickHouseEventTime,
@@ -60,9 +60,9 @@ interface EventsDashboardProps {
   timeRangeValue: string;
   onTimeRangeChange: (value: string | null) => void;
   onRangeSelect?: (startMs: number, endMs: number) => void;
-  onSelectEvent: (event: TimelineEvent) => void;
-  onOpenQueryDetails?: (event: TimelineEvent) => void;
-  onInvestigateEvent?: (event: TimelineEvent) => void;
+  onSelectEvent: (event: OperationalEvent) => void;
+  onOpenQueryDetails?: (event: OperationalEvent) => void;
+  onInvestigateEvent?: (event: OperationalEvent) => void;
   onBackToTimeTravel?: () => void;
 }
 
@@ -98,14 +98,14 @@ export const EventsDashboard: React.FC<EventsDashboardProps> = ({
       .map(capability => capability.id),
     [monitoringCapabilities],
   );
-  const [events, setEvents] = useState<TimelineEvent[]>([]);
-  const [coverage, setCoverage] = useState<TimelineEventSourceCoverage[]>([]);
+  const [events, setEvents] = useState<OperationalEvent[]>([]);
+  const [coverage, setCoverage] = useState<EventSourceCoverage[]>([]);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [search, setSearch] = useState('');
-  const [severity, setSeverity] = useState<'all' | TimelineEventSeverity>('all');
-  const [category, setCategory] = useState<'all' | TimelineEventCategory>('all');
-  const [kind, setKind] = useState<'all' | TimelineEventKind>('all');
+  const [severity, setSeverity] = useState<'all' | EventSeverity>('all');
+  const [category, setCategory] = useState<'all' | EventCategory>('all');
+  const [kind, setKind] = useState<'all' | EventKind>('all');
   const [autoRefresh, setAutoRefresh] = useState(false);
   const [eventHelpView, setEventHelpView] = useState<'events' | 'sources' | null>(null);
   const eventHelpRef = useRef<HTMLDivElement>(null);
@@ -149,7 +149,7 @@ export const EventsDashboard: React.FC<EventsDashboardProps> = ({
       ? anchorMs - rangeMs / 2
       : requestEndMs - rangeMs;
     try {
-      const result = await services.timelineService.getEvents({
+      const result = await services.eventsService.getEvents({
         startTime: toClickHouseEventTime(new Date(requestStartMs)),
         endTime: toClickHouseEventTime(new Date(requestEndMs)),
         availableCapabilities,
@@ -253,7 +253,7 @@ export const EventsDashboard: React.FC<EventsDashboardProps> = ({
   }, [eventHelpView]);
 
   const sortedEvents = useMemo(
-    () => sortTimelineEvents(events),
+    () => sortEventsDescending(events),
     [events],
   );
   const filteredEvents = useMemo(
@@ -280,7 +280,7 @@ export const EventsDashboard: React.FC<EventsDashboardProps> = ({
   }, [clusterSelection, filteredEvents]);
 
   const selectedEvent = useMemo(() => {
-    return selectTimelineEvent(
+    return selectEvent(
       displayedEvents,
       filteredEvents.length > 0 ? filteredEvents : sortedEvents,
       selectedEventId,
@@ -502,7 +502,7 @@ export const EventsDashboard: React.FC<EventsDashboardProps> = ({
           style={inputStyle}
         >
           <option value="all">All categories</option>
-          {TIMELINE_EVENT_CATEGORIES.map(value => (
+          {EVENT_CATEGORIES.map(value => (
             <option key={value} value={value}>{EVENT_CATEGORY_LABELS[value]}</option>
           ))}
         </select>
@@ -746,7 +746,7 @@ export const EventsDashboard: React.FC<EventsDashboardProps> = ({
   );
 };
 
-const SOURCE_STATUS_COLORS: Record<TimelineEventSourceCoverage['status'], string> = {
+const SOURCE_STATUS_COLORS: Record<EventSourceCoverage['status'], string> = {
   loaded: '#3fb950',
   failed: '#f85149',
   unavailable: '#8b949e',
@@ -754,7 +754,7 @@ const SOURCE_STATUS_COLORS: Record<TimelineEventSourceCoverage['status'], string
 };
 
 const EventCoverageHelp: React.FC<{
-  coverage: readonly TimelineEventSourceCoverage[];
+  coverage: readonly EventSourceCoverage[];
   capabilities: readonly MonitoringCapability[];
   view: 'events' | 'sources';
   onViewChange: (view: 'events' | 'sources') => void;
@@ -831,7 +831,7 @@ const EventCoverageHelp: React.FC<{
 );
 
 const SupportedEventsCatalog: React.FC<{
-  coverage: readonly TimelineEventSourceCoverage[];
+  coverage: readonly EventSourceCoverage[];
 }> = ({ coverage }) => (
   <>
     <div style={{
@@ -954,7 +954,7 @@ const SupportedEventsCatalog: React.FC<{
 );
 
 const EventSourcesCatalog: React.FC<{
-  coverage: readonly TimelineEventSourceCoverage[];
+  coverage: readonly EventSourceCoverage[];
   capabilities: readonly MonitoringCapability[];
 }> = ({ coverage, capabilities }) => (
   <>
@@ -1147,7 +1147,7 @@ const emptyStyle: React.CSSProperties = {
 };
 
 const EventSeverity: React.FC<{
-  severity: TimelineEventSeverity;
+  severity: EventSeverity;
 }> = ({ severity }) => {
   const color = EVENT_SEVERITY_COLORS[severity];
   return (

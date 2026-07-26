@@ -14,6 +14,6 @@ export * from './process-queries.js';
 export * from './merge-sample-queries.js';
 export * from './observability-map-queries.js';
 export * from './zoom-queries.js';
-export * from './timeline-event-queries.js';
+export * from './event-queries.js';
 export * from './event-context-queries.js';
 export { TIMELINE_ACTIVITY_LIMIT } from './timeline-queries.js';

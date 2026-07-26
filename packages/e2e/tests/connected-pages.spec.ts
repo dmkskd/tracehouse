@@ -40,9 +40,9 @@ test.describe('Connected pages', () => {
     await page.goto('/#/queries');
     // The query monitor should not show the "No Connection" placeholder
     await expect(page.getByRole('heading', { name: 'No Connection' })).not.toBeVisible({ timeout: 10_000 });
-    // Should show the query monitoring UI — either running queries or "No queries" message
+    // The page heading is a stable readiness signal across desktop and mobile navigation.
     await expect(
-      page.getByText(/running|queries|QUERIES/i).first()
+      page.getByRole('heading', { name: 'Query Tracker' })
     ).toBeVisible({ timeout: 15_000 });
   });
 

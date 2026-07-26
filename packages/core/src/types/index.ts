@@ -5,6 +5,7 @@ export * from './query.js';
 export * from './lineage.js';
 export * from './connection.js';
 export * from './timeline.js';
+export * from './events.js';
 export * from './event-context.js';
 export * from './trace.js';
 export * from './execution-analysis.js';

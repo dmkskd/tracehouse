@@ -1,15 +1,20 @@
 import type {
+  EventSourceCapability,
   MonitoringCapability,
-  TimelineEvent,
-  TimelineEventCategory,
-  TimelineEventKind,
-  TimelineEventSeverity,
-  TimelineEventSourceCoverage,
+  OperationalEvent,
+  EventCategory,
+  EventKind,
+  EventSeverity,
+  EventSourceCoverage,
+} from '@tracehouse/core';
+import {
+  EVENT_KIND_DEFINITIONS,
+  EVENT_SOURCE_DEFINITIONS,
 } from '@tracehouse/core';
 import {
   EVENT_CATEGORY_LABELS,
   EVENT_KIND_LABELS,
-} from '../timeline/timeline-event-model';
+} from './event-model';
 import { formatBytes } from '../../utils/formatters';
 
 export interface EventMarkerSelection {
@@ -20,9 +25,9 @@ export interface EventMarkerSelection {
 
 export interface EventDashboardFilters {
   search: string;
-  severity: 'all' | TimelineEventSeverity;
-  category: 'all' | TimelineEventCategory;
-  kind: 'all' | TimelineEventKind;
+  severity: 'all' | EventSeverity;
+  category: 'all' | EventCategory;
+  kind: 'all' | EventKind;
 }
 
 export interface EventSeverityCounts {
@@ -37,23 +42,13 @@ export interface EventSourceExplanation {
   description: string;
 }
 
-export type EventSourceCapability =
-  | 'query_log'
-  | 'asynchronous_metric_log'
-  | 'crash_log'
-  | 'part_log'
-  | 'background_schedule_pool_log'
-  | 'error_log'
-  | 'metric_log_replication_state'
-  | 'metric_log_replication_failures';
-
-export type SupportedEventCategory = TimelineEventCategory | 'multiple';
+export type SupportedEventCategory = EventCategory | 'multiple';
 
 export interface SupportedEventType {
-  kind: TimelineEventKind;
+  kind: EventKind;
   label: string;
   category: SupportedEventCategory;
-  severity: TimelineEventSeverity;
+  severity: EventSeverity;
   description: string;
   sources: readonly string[];
   capabilities: readonly EventSourceCapability[];
@@ -91,42 +86,17 @@ export interface EventDetailSection {
   rows: EventDetailRow[];
 }
 
-export const EVENT_SOURCE_EXPLANATIONS: Readonly<
-  Record<EventSourceCapability, EventSourceExplanation>
-> = {
-  query_log: {
-    label: 'system.query_log',
-    description: 'Query OOMs, timeouts, resource/admission failures, and successful DDL.',
-  },
-  asynchronous_metric_log: {
-    label: 'system.asynchronous_metric_log',
-    description: 'Server restarts inferred when persisted Uptime moves backwards; startup time is estimated as sample time minus Uptime.',
-  },
-  crash_log: {
-    label: 'system.crash_log',
-    description: 'Fatal ClickHouse process crashes, signals, versions, and related query IDs.',
-  },
-  part_log: {
-    label: 'system.part_log',
-    description: 'Failed data-part operations and their table, part, disk, and error context.',
-  },
-  background_schedule_pool_log: {
-    label: 'system.background_schedule_pool_log',
-    description: 'Failures from scheduled ClickHouse background work.',
-  },
-  error_log: {
-    label: 'system.error_log',
-    description: 'Operational error bursts classified into replication, Keeper, storage, or maintenance.',
-  },
-  metric_log_replication_state: {
-    label: 'system.metric_log · replica state',
-    description: 'Host-level episodes where one or more replicated tables were read-only.',
-  },
-  metric_log_replication_failures: {
-    label: 'system.metric_log · replication failures',
-    description: 'Persisted data-loss, failed-fetch, and failed-part-check counters.',
-  },
-};
+export const EVENT_SOURCE_EXPLANATIONS = Object.fromEntries(
+  EVENT_SOURCE_DEFINITIONS.map(source => [
+    source.capability,
+    {
+      label: (source.coverageLabel ?? source.source)
+        .replace(' (', ' · ')
+        .replace(/\)$/, ''),
+      description: source.description,
+    },
+  ]),
+) as Readonly<Record<EventSourceCapability, EventSourceExplanation>>;
 
 export function eventSourceExplanation(
   capability: string,
@@ -137,7 +107,7 @@ export function eventSourceExplanation(
 }
 
 export function eventSourceStatusDetail(
-  source: TimelineEventSourceCoverage,
+  source: EventSourceCoverage,
   capabilities: readonly MonitoringCapability[],
 ): string | undefined {
   if (source.status !== 'unavailable') return source.detail;
@@ -146,148 +116,48 @@ export function eventSourceStatusDetail(
 }
 
 /**
- * Event kinds currently emitted by TimelineEventsService.
+ * Event kinds currently emitted by EventsService.
  * Keep future taxonomy values out of this catalog until a source implements
  * them, so "supported" remains an accurate product claim.
  */
-export const SUPPORTED_EVENT_TYPES: readonly SupportedEventType[] = [
-  {
-    kind: 'server_restart',
-    label: 'Server restart',
-    category: 'lifecycle',
-    severity: 'warning',
-    description: 'Process startup inferred from a persisted Uptime reset.',
-    sources: ['system.asynchronous_metric_log'],
-    capabilities: ['asynchronous_metric_log'],
-  },
-  {
-    kind: 'server_crash',
-    label: 'Server crash',
-    category: 'lifecycle',
-    severity: 'critical',
-    description: 'Fatal ClickHouse crash with signal, version, and query ID when recorded.',
-    sources: ['system.crash_log'],
-    capabilities: ['crash_log'],
-  },
-  {
-    kind: 'query_oom',
-    label: 'Query OOM',
-    category: 'queries',
-    severity: 'error',
-    description: 'Query-scoped memory limit or allocation failure.',
-    sources: ['system.query_log'],
-    capabilities: ['query_log'],
-  },
-  {
-    kind: 'query_timeout',
-    label: 'Query timeout',
-    category: 'queries',
-    severity: 'warning',
-    description: 'Query terminated with TIMEOUT_EXCEEDED.',
-    sources: ['system.query_log'],
-    capabilities: ['query_log'],
-  },
-  {
-    kind: 'query_rejected',
-    label: 'Query rejected',
-    category: 'queries',
-    severity: 'warning',
-    description: 'Admission, quota, simultaneous-query, parts, or mutation limit rejection.',
-    sources: ['system.query_log'],
-    capabilities: ['query_log'],
-  },
-  {
-    kind: 'query_resource_limit',
-    label: 'Query resource failure',
-    category: 'queries',
-    severity: 'error',
-    description: 'Query failed because a required resource was unavailable.',
-    sources: ['system.query_log'],
-    capabilities: ['query_log'],
-  },
-  {
-    kind: 'ddl',
-    label: 'DDL change',
-    category: 'changes',
-    severity: 'info',
-    description: 'Successful CREATE, ALTER, DROP, RENAME, TRUNCATE, OPTIMIZE, or UNDROP.',
-    sources: ['system.query_log'],
-    capabilities: ['query_log'],
-  },
-  {
-    kind: 'replica_readonly',
-    label: 'Replica read-only episode',
-    category: 'replication',
-    severity: 'error',
-    description: 'One or more replicated tables entered a persisted read-only state.',
-    sources: ['system.metric_log'],
-    capabilities: ['metric_log_replication_state'],
-  },
-  {
-    kind: 'replication_data_loss',
-    label: 'Replication data loss',
-    category: 'replication',
-    severity: 'critical',
-    description: 'A persisted ReplicatedDataLoss counter increase.',
-    sources: ['system.metric_log'],
-    capabilities: ['metric_log_replication_failures'],
-  },
-  {
-    kind: 'replication_task_failure',
-    label: 'Replication task failure',
-    category: 'replication',
-    severity: 'error',
-    description: 'Failed replicated fetch, part check, or scheduled replication task.',
-    sources: [
-      'system.part_log',
-      'system.background_schedule_pool_log',
-      'system.metric_log',
-    ],
-    capabilities: [
-      'part_log',
-      'background_schedule_pool_log',
-      'metric_log_replication_failures',
-    ],
-  },
-  {
-    kind: 'part_failure',
-    label: 'Part operation failure',
-    category: 'storage',
-    severity: 'error',
-    description: 'A data-part operation completed with a non-zero error.',
-    sources: ['system.part_log'],
-    capabilities: ['part_log'],
-  },
-  {
-    kind: 'background_task_failure',
-    label: 'Background task failure',
-    category: 'maintenance',
-    severity: 'error',
-    description: 'A scheduled ClickHouse background task failed.',
-    sources: ['system.background_schedule_pool_log'],
-    capabilities: ['background_schedule_pool_log'],
-  },
-  {
-    kind: 'error_burst',
-    label: 'Operational error burst',
-    category: 'multiple',
-    severity: 'error',
-    description: 'Persisted replication, Keeper, storage, or maintenance error count.',
-    sources: ['system.error_log'],
-    capabilities: ['error_log'],
-  },
-] as const;
+const supportedEventKinds = new Set<EventKind>(
+  EVENT_SOURCE_DEFINITIONS.flatMap(source => [...source.kinds]),
+);
+
+export const SUPPORTED_EVENT_TYPES: readonly SupportedEventType[] = (
+  Object.keys(EVENT_KIND_DEFINITIONS) as EventKind[]
+)
+  .filter(kind => supportedEventKinds.has(kind))
+  .map(kind => {
+    const definition = EVENT_KIND_DEFINITIONS[kind];
+    const sources = EVENT_SOURCE_DEFINITIONS.filter(source =>
+      source.kinds.includes(kind as never),
+    );
+    return {
+      kind,
+      label: definition.label,
+      category: definition.categories.length === 1
+        ? definition.categories[0]
+        : 'multiple',
+      severity: definition.severities[0],
+      description: definition.description,
+      sources: [...new Set(sources.map(source =>
+        source.source.replace(/ \(.*\)$/, ''),
+      ))],
+      capabilities: [...new Set(sources.map(source => source.capability))],
+    };
+  });
 
 export function supportedEventAvailability(
   eventType: SupportedEventType,
-  coverage: readonly TimelineEventSourceCoverage[],
+  coverage: readonly EventSourceCoverage[],
 ): SupportedEventAvailability {
   return supportedEventCoverage(eventType, coverage).availability;
 }
 
 export function supportedEventCoverage(
   eventType: SupportedEventType,
-  coverage: readonly TimelineEventSourceCoverage[],
+  coverage: readonly EventSourceCoverage[],
 ): SupportedEventCoverage {
   const statuses = eventType.capabilities.map(capability => (
     coverage.find(item => item.capability === capability)?.status
@@ -378,35 +248,12 @@ export function formatEventClusterRange(startMs: number, endMs: number): string 
   }`;
 }
 
-export function eventKindLabel(event: TimelineEvent): string {
+export function eventKindLabel(event: OperationalEvent): string {
   return EVENT_KIND_LABELS[event.kind] ?? event.kind.replaceAll('_', ' ');
 }
 
-export function eventDetailLabel(event: TimelineEvent): string {
-  switch (event.kind) {
-    case 'server_restart':
-    case 'replica_readonly':
-    case 'replica_unavailable':
-      return 'Detection method';
-    case 'server_crash':
-      return 'Crash details';
-    case 'query_oom':
-    case 'query_timeout':
-    case 'query_rejected':
-    case 'query_resource_limit':
-    case 'query_failure':
-    case 'part_failure':
-      return 'ClickHouse error';
-    case 'ddl':
-      return 'Statement details';
-    case 'replication_data_loss':
-    case 'replication_task_failure':
-      return 'Replication details';
-    case 'keeper_connection':
-      return 'Keeper details';
-    default:
-      return event.precision === 'inferred' ? 'Detection method' : 'Recorded details';
-  }
+export function eventDetailLabel(event: OperationalEvent): string {
+  return EVENT_KIND_DEFINITIONS[event.kind].detailLabel;
 }
 
 function formatMetricValue(value: number, unit?: string): string {
@@ -429,7 +276,7 @@ function compactRows(rows: Array<EventDetailRow | null>): EventDetailRow[] {
   return rows.filter((row): row is EventDetailRow => row !== null);
 }
 
-export function eventDetailSections(event: TimelineEvent): EventDetailSection[] {
+export function eventDetailSections(event: OperationalEvent): EventDetailSection[] {
   const exception = event.exception_name
     ? `${event.exception_name}${event.exception_code != null ? ` (${event.exception_code})` : ''}`
     : event.exception_code != null ? String(event.exception_code) : undefined;
@@ -508,11 +355,11 @@ export function eventDetailSections(event: TimelineEvent): EventDetailSection[] 
 }
 
 export function sortAndFilterEvents(
-  events: readonly TimelineEvent[],
+  events: readonly OperationalEvent[],
   filters: EventDashboardFilters,
-): TimelineEvent[] {
+): OperationalEvent[] {
   const needle = filters.search.trim().toLowerCase();
-  return sortTimelineEvents(events)
+  return sortEventsDescending(events)
     .filter(event => {
       if (filters.severity !== 'all' && event.severity !== filters.severity) return false;
       if (filters.category !== 'all' && event.category !== filters.category) return false;
@@ -535,23 +382,23 @@ export function sortAndFilterEvents(
     });
 }
 
-export function sortTimelineEvents(events: readonly TimelineEvent[]): TimelineEvent[] {
+export function sortEventsDescending(events: readonly OperationalEvent[]): OperationalEvent[] {
   return [...events].sort(
     (a, b) => Date.parse(b.occurred_at) - Date.parse(a.occurred_at),
   );
 }
 
-export function observedEventKinds(events: readonly TimelineEvent[]): TimelineEventKind[] {
+export function observedEventKinds(events: readonly OperationalEvent[]): EventKind[] {
   return [...new Set(events.map(event => event.kind))]
     .sort((a, b) => (EVENT_KIND_LABELS[a] ?? a).localeCompare(EVENT_KIND_LABELS[b] ?? b));
 }
 
-export function selectTimelineEvent(
-  displayedEvents: readonly TimelineEvent[],
-  fallbackEvents: readonly TimelineEvent[],
+export function selectEvent(
+  displayedEvents: readonly OperationalEvent[],
+  fallbackEvents: readonly OperationalEvent[],
   selectedEventId?: string,
   selectedEventTime?: string,
-): TimelineEvent | undefined {
+): OperationalEvent | undefined {
   const exact = displayedEvents.find(event => event.id === selectedEventId);
   if (exact) return exact;
   if (selectedEventTime && displayedEvents.length > 0) {
@@ -565,7 +412,7 @@ export function selectTimelineEvent(
 }
 
 export function countEventSeverities(
-  events: readonly TimelineEvent[],
+  events: readonly OperationalEvent[],
 ): EventSeverityCounts {
   return {
     critical: events.filter(event => event.severity === 'critical').length,
@@ -576,7 +423,7 @@ export function countEventSeverities(
 }
 
 export function buildEventMarkerSelection(
-  events: readonly TimelineEvent[],
+  events: readonly OperationalEvent[],
   fallbackMs: number,
 ): EventMarkerSelection {
   const eventTimes = events

@@ -9,7 +9,7 @@ const mocks = vi.hoisted(() => {
     getEvents,
     services: {
       adapter: { executeQuery: vi.fn() },
-      timelineService: {
+      eventsService: {
         getEvents,
       },
     },
@@ -66,7 +66,7 @@ vi.mock('../EventDistribution', () => ({
   EventDistribution: () => <div data-testid="event-distribution" />,
 }));
 
-vi.mock('../TimeRangePicker', () => ({
+vi.mock('../../common/TimeRangePicker', () => ({
   TimeRangePicker: () => <div data-testid="time-range-picker" />,
 }));
 

@@ -12,11 +12,12 @@ import { useRefreshSettingsStore } from '../stores/refreshSettingsStore';
 import { useGlobalLastUpdatedStore } from '../stores/refreshSettingsStore';
 import { useCapabilityCheck } from '../components/shared/RequiresCapability';
 import type {
+  EventsResult,
   MemoryTimeline,
   QuerySeries,
   MergeSeries,
   MutationSeries,
-  TimelineEvent,
+  OperationalEvent,
 } from '@tracehouse/core';
 import { TIMELINE_ACTIVITY_LIMIT } from '@tracehouse/core';
 import { TimelineNavigator } from '../components/shared/TimelineNavigator';
@@ -172,6 +173,10 @@ export const TimeTravelPage: React.FC = () => {
   );      // Custom range end (navigator)
   const [viewportEndTime, setViewportEndTime] = useState<string | null>(null);  // Viewport position within custom range
   const [data, setData] = useState<MemoryTimeline | null>(null);
+  const [eventData, setEventData] = useState<EventsResult>({
+    events: [],
+    coverage: [],
+  });
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [hoverMs, setHoverMs] = useState<number | null>(null);
@@ -231,6 +236,10 @@ export const TimeTravelPage: React.FC = () => {
   // Navigator state — range derived from selected time preset
   const [selectedTimeRange, setSelectedTimeRange] = useState('1h');
   const [navigatorData, setNavigatorData] = useState<MemoryTimeline | null>(null);
+  const [navigatorEventData, setNavigatorEventData] = useState<EventsResult>({
+    events: [],
+    coverage: [],
+  });
   const [navigatorLoading, setNavigatorLoading] = useState(false);
   const lastNavigatorFetchTime = useRef<string | null>(null);
   const lastNavigatorRequestScope = useRef<string | null>(null);
@@ -294,16 +303,28 @@ export const TimeTravelPage: React.FC = () => {
     try {
       const endDate = isLive ? new Date() : (effectiveViewportEnd ? new Date(effectiveViewportEnd) : new Date());
       const centerDate = new Date(endDate.getTime() - windowSec * 1000);
-      const result = await services.timelineService.getTimeline({
-        timestamp: centerDate,
-        windowSeconds: windowSec,
-        includeRunning,
-        hostname: selectedHost,
-        activityLimit,
-        activeMetric: metricMode,
-        normalizedQueryHash: queryHashFilter ?? undefined,
-        eventCapabilities,
-      });
+      const startDate = new Date(centerDate.getTime() - windowSec * 1000);
+      const endDateForEvents = new Date(centerDate.getTime() + windowSec * 1000);
+      const [result, eventsResult] = await Promise.all([
+        services.timelineService.getTimeline({
+          timestamp: centerDate,
+          windowSeconds: windowSec,
+          includeRunning,
+          hostname: selectedHost,
+          activityLimit,
+          activeMetric: metricMode,
+          normalizedQueryHash: queryHashFilter ?? undefined,
+        }),
+        eventCapabilities
+          ? services.eventsService.getEvents({
+              startTime: startDate.toISOString(),
+              endTime: endDateForEvents.toISOString(),
+              hostname: selectedHost,
+              availableCapabilities: eventCapabilities,
+              origin: 'timeTravel',
+            })
+          : Promise.resolve({ events: [], coverage: [] }),
+      ]);
       // In live mode, slide zoom/pin forward to follow the advancing time window
       const newEndMs = new Date(result.window_end).getTime();
       if (isLive && prevDataEndRef.current != null) {
@@ -317,6 +338,7 @@ export const TimeTravelPage: React.FC = () => {
       }
       prevDataEndRef.current = newEndMs;
       setData(result);
+      setEventData(eventsResult);
       const pendingEventPin = pendingEventPinRef.current;
       if (
         pendingEventPin != null
@@ -357,7 +379,6 @@ export const TimeTravelPage: React.FC = () => {
             hostname: host,
             activityLimit,
             activeMetric: metricMode,
-            eventCapabilities,
           });
           return [host, result] as const;
         })
@@ -366,7 +387,7 @@ export const TimeTravelPage: React.FC = () => {
     } catch (e) {
       console.error('[TimeTravelPage] Split view fetch error:', e);
     } finally { setSplitLoading(false); }
-  }, [services, clusterHosts, splitView, isLive, effectiveViewportEnd, windowSec, includeRunning, metricMode, activityLimit, eventCapabilities]);
+  }, [services, clusterHosts, splitView, isLive, effectiveViewportEnd, windowSec, includeRunning, metricMode, activityLimit]);
 
   const splitFetchTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   useEffect(() => {
@@ -505,15 +526,32 @@ export const TimeTravelPage: React.FC = () => {
     try {
       const navigatorWindowSec = navigatorHours * 60 * 60 / 2;
       const centerDate = new Date(endDate.getTime() - navigatorWindowSec * 1000);
-      const result = await services.timelineService.getTimeline({
-        timestamp: centerDate,
-        windowSeconds: navigatorWindowSec,
-        hostname: selectedHost,
-        activityLimit,
-        activeMetric: metricMode,
-        eventCapabilities,
-      });
+      const navigatorStart = new Date(
+        centerDate.getTime() - navigatorWindowSec * 1000,
+      );
+      const navigatorEnd = new Date(
+        centerDate.getTime() + navigatorWindowSec * 1000,
+      );
+      const [result, eventsResult] = await Promise.all([
+        services.timelineService.getTimeline({
+          timestamp: centerDate,
+          windowSeconds: navigatorWindowSec,
+          hostname: selectedHost,
+          activityLimit,
+          activeMetric: metricMode,
+        }),
+        eventCapabilities
+          ? services.eventsService.getEvents({
+              startTime: navigatorStart.toISOString(),
+              endTime: navigatorEnd.toISOString(),
+              hostname: selectedHost,
+              availableCapabilities: eventCapabilities,
+              origin: 'timeTravel',
+            })
+          : Promise.resolve({ events: [], coverage: [] }),
+      ]);
       setNavigatorData(result);
+      setNavigatorEventData(eventsResult);
       lastNavigatorFetchTime.current = endTimeKey;
       lastNavigatorRequestScope.current = requestScope;
     } catch (e) {
@@ -578,7 +616,7 @@ export const TimeTravelPage: React.FC = () => {
     setPinnedMs(ms);
   }, []);
 
-  const handleEventSelect = useCallback((event: TimelineEvent) => {
+  const handleEventSelect = useCallback((event: OperationalEvent) => {
     const eventMs = new Date(event.occurred_at).getTime();
     if (!Number.isFinite(eventMs)) return;
     pendingEventPinRef.current = null;
@@ -599,11 +637,11 @@ export const TimeTravelPage: React.FC = () => {
     if (!visible) handleClearEventSelection();
   }, [handleClearEventSelection, setTimeTravelEventsVisible]);
 
-  const handleViewEventDetails = useCallback((event: TimelineEvent) => {
+  const handleViewEventDetails = useCallback((event: OperationalEvent) => {
     navigate(buildEventsUrl(event));
   }, [navigate]);
 
-  const handleNavigatorEventSelect = useCallback((event: TimelineEvent) => {
+  const handleNavigatorEventSelect = useCallback((event: OperationalEvent) => {
     const eventMs = new Date(event.occurred_at).getTime();
     if (!Number.isFinite(eventMs)) return;
     setSelectedEventId(event.id);
@@ -646,20 +684,20 @@ export const TimeTravelPage: React.FC = () => {
   }, [navigatorData, metricMode]);
 
   const eventFilterUniverse = useMemo(() => {
-    const unique = new Map<string, TimelineEvent>();
-    for (const event of data?.events ?? []) unique.set(event.id, event);
-    for (const event of navigatorData?.events ?? []) unique.set(event.id, event);
+    const unique = new Map<string, OperationalEvent>();
+    for (const event of eventData.events) unique.set(event.id, event);
+    for (const event of navigatorEventData.events) unique.set(event.id, event);
     return [...unique.values()];
-  }, [data?.events, navigatorData?.events]);
+  }, [eventData.events, navigatorEventData.events]);
 
   const filteredWindowEvents = useMemo(
-    () => filterTimelineEvents(data?.events ?? [], eventFilter),
-    [data?.events, eventFilter],
+    () => filterTimelineEvents(eventData.events, eventFilter),
+    [eventData.events, eventFilter],
   );
 
   const filteredNavigatorEvents = useMemo(
-    () => filterTimelineEvents(navigatorData?.events ?? [], eventFilter),
-    [navigatorData?.events, eventFilter],
+    () => filterTimelineEvents(navigatorEventData.events, eventFilter),
+    [navigatorEventData.events, eventFilter],
   );
 
   const inspectMs = pinnedMs;
@@ -1218,9 +1256,9 @@ export const TimeTravelPage: React.FC = () => {
               <TimelineEventControls
                 visible={timeTravelEventsVisible}
                 shownCount={filteredWindowEvents.length}
-                totalCount={data.events?.length ?? 0}
+                totalCount={eventData.events.length}
                 filterUniverse={eventFilterUniverse}
-                coverage={data.event_coverage ?? []}
+                coverage={eventData.coverage}
                 filter={eventFilter}
                 onVisibilityChange={handleEventVisibilityChange}
                 onFilterChange={setEventFilter}
@@ -1270,7 +1308,10 @@ export const TimeTravelPage: React.FC = () => {
                       hiddenCategories={hiddenCategories}
                       queryHashActive={!!queryHashFilter}
                       eventAnnotations={timeTravelEventsVisible
-                        ? filterTimelineEvents(hostData.events ?? [], eventFilter)
+                        ? filterTimelineEvents(
+                            eventData.events.filter(event => event.hostname === host),
+                            eventFilter,
+                          )
                         : []}
                       selectedEventId={selectedEventId}
                       onEventSelect={handleEventSelect}

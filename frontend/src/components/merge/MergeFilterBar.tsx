@@ -10,7 +10,7 @@
 
 import React, { useState, useRef, useCallback, useMemo } from 'react';
 import type { MergeHistoryFilter } from '../../stores/mergeStore';
-import { TimeRangePicker } from '../analytics/TimeRangePicker';
+import { TimeRangePicker } from '../common/TimeRangePicker';
 import {
   TrackerFilterBarShell,
   TrackerLimitInput,

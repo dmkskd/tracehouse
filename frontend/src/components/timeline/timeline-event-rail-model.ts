@@ -1,18 +1,18 @@
 import type {
-  TimelineEvent,
-  TimelineEventCategory,
-  TimelineEventKind,
-  TimelineEventSeverity,
+  OperationalEvent,
+  EventCategory,
+  EventKind,
+  EventSeverity,
 } from '@tracehouse/core';
 import {
   EVENT_KIND_LABELS,
-  TIMELINE_EVENT_CATEGORIES,
-  TIMELINE_EVENT_SEVERITIES,
+  EVENT_CATEGORIES,
+  EVENT_SEVERITY_VALUES,
   type TimelineEventCluster,
   type TimelineEventFilter,
 } from './timeline-event-model';
 
-export function timelineEventKindLabel(kind: TimelineEventKind): string {
+export function timelineEventKindLabel(kind: EventKind): string {
   return EVENT_KIND_LABELS[kind] ?? kind.replaceAll('_', ' ');
 }
 
@@ -39,26 +39,26 @@ export function formatTimelineEventTime(value: string): string {
 }
 
 export function observedTimelineEventCategories(
-  events: readonly TimelineEvent[],
-): TimelineEventCategory[] {
-  return TIMELINE_EVENT_CATEGORIES.filter(category =>
+  events: readonly OperationalEvent[],
+): EventCategory[] {
+  return EVENT_CATEGORIES.filter(category =>
     events.some(event => event.category === category),
   );
 }
 
 export function observedTimelineEventKinds(
-  events: readonly TimelineEvent[],
-): TimelineEventKind[] {
+  events: readonly OperationalEvent[],
+): EventKind[] {
   return [...new Set(events.map(event => event.kind))]
     .sort((a, b) => timelineEventKindLabel(a).localeCompare(timelineEventKindLabel(b)));
 }
 
 export function buildSeverityPresetFilter(
-  visible: ReadonlySet<TimelineEventSeverity>,
+  visible: ReadonlySet<EventSeverity>,
 ): TimelineEventFilter {
   return {
     hiddenSeverities: new Set(
-      TIMELINE_EVENT_SEVERITIES.filter(severity => !visible.has(severity)),
+      EVENT_SEVERITY_VALUES.filter(severity => !visible.has(severity)),
     ),
     hiddenCategories: new Set(),
     hiddenKinds: new Set(),

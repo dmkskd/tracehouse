@@ -47,7 +47,7 @@ import { Chart3DCanvas } from './charts3d';
 import { ResultsTable } from './ResultsTable';
 import { highlightSQL } from '../../utils/sqlHighlighter';
 import DOMPurify from 'dompurify';
-import { TimeRangePicker } from './TimeRangePicker';
+import { TimeRangePicker } from '../common/TimeRangePicker';
 import { SqlEditor } from './editor/SqlEditor';
 import { GrafanaExportDialog } from './GrafanaExportDialog';
 import { useGrafanaExport } from './useGrafanaExport';

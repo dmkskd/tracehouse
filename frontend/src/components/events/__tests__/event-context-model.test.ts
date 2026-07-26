@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import type { EventContextMetricPoint, TimelineEvent } from '@tracehouse/core';
+import type { EventContextMetricPoint, OperationalEvent } from '@tracehouse/core';
 import {
   buildMetricChartGeometry,
   closestMetricPointIndex,
@@ -8,7 +8,7 @@ import {
   sparklinePoints,
 } from '../event-context-model';
 
-function event(overrides: Partial<TimelineEvent>): TimelineEvent {
+function event(overrides: Partial<OperationalEvent>): OperationalEvent {
   return {
     id: 'selected',
     occurred_at: '2026-07-26T10:00:00.000Z',

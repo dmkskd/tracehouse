@@ -1,5 +1,5 @@
 import React, { useEffect, useMemo, useRef, useState } from 'react';
-import type { TimelineEvent } from '@tracehouse/core';
+import type { OperationalEvent } from '@tracehouse/core';
 import {
   EVENT_SEVERITY_COLORS,
   clusterTimelineEvents,
@@ -12,13 +12,13 @@ import {
 } from './timeline-event-rail-model';
 
 interface TimelineEventOverlayProps {
-  events: TimelineEvent[];
+  events: OperationalEvent[];
   rangeStartMs: number;
   rangeEndMs: number;
   selectedEventId?: string | null;
-  onSelectEvent: (event: TimelineEvent) => void;
+  onSelectEvent: (event: OperationalEvent) => void;
   onClearEventSelection?: () => void;
-  onViewEventDetails?: (event: TimelineEvent) => void;
+  onViewEventDetails?: (event: OperationalEvent) => void;
 }
 
 export const TimelineEventOverlay: React.FC<TimelineEventOverlayProps> = ({

@@ -20,7 +20,7 @@ import { PartInspector } from '../database/PartInspector';
 import { databaseApi } from '../../stores/databaseStore';
 import type { PartDetailInfo, QuerySeries } from '@tracehouse/core';
 import type { QueryModalTab } from '../query/modal/QueryDetailModal';
-import { TimeRangePicker } from './TimeRangePicker';
+import { TimeRangePicker } from '../common/TimeRangePicker';
 import {
   formatCell,
   buildChartData, buildGroupedChartData, isGroupedChartType, sortRows,

@@ -6,7 +6,7 @@
  * Mirrors the metric mode from the main chart (Memory, CPU, Network, Disk).
  */
 import React, { useState, useCallback, useMemo, useRef, useEffect } from 'react';
-import type { TimelineEvent, TimeseriesPoint } from '@tracehouse/core';
+import type { OperationalEvent, TimeseriesPoint } from '@tracehouse/core';
 import {
   EVENT_SEVERITY_COLORS,
   clusterTimelineEvents,
@@ -47,10 +47,10 @@ interface TimelineNavigatorProps {
   /** Callback when drag ends — commit the final viewport position */
   onDragEnd?: (endMs: number) => void;
   /** Filtered operational events for the overview range. */
-  events?: TimelineEvent[];
+  events?: OperationalEvent[];
   selectedEventId?: string | null;
   /** Select and navigate to an event marker. */
-  onEventSelect?: (event: TimelineEvent) => void;
+  onEventSelect?: (event: OperationalEvent) => void;
 }
 
 const fmtTime = (ms: number): string => new Date(ms).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });

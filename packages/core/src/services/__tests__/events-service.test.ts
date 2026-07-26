@@ -1,7 +1,6 @@
 import { describe, expect, it, vi } from 'vitest';
 import type { IClickHouseAdapter, TaggedQuery } from '../../adapters/types.js';
-import { TAB_EVENTS } from '../../queries/source-tags.js';
-import { TimelineEventsService } from '../timeline-events-service.js';
+import { EventsService } from '../events-service.js';
 
 function adapter(
   execute: (sql: string) => Promise<Record<string, unknown>[]>,
@@ -18,7 +17,7 @@ const OPTIONS = {
   availableCapabilities: [] as string[],
 };
 
-describe('TimelineEventsService', () => {
+describe('EventsService', () => {
   it('normalizes millisecond range bounds for DateTime-backed event sources', async () => {
     const mock = adapter(async sql => {
       expect(sql).toContain("'2026-07-25 12:00:00'");
@@ -27,7 +26,7 @@ describe('TimelineEventsService', () => {
       expect(sql).not.toContain('13:00:00.875');
       return [];
     });
-    const service = new TimelineEventsService(mock);
+    const service = new EventsService(mock);
 
     await service.getEvents({
       startTime: '2026-07-25T12:00:00.125Z',
@@ -43,7 +42,7 @@ describe('TimelineEventsService', () => {
       expect(sql).toContain('system.query_log');
       return [];
     });
-    const service = new TimelineEventsService(mock);
+    const service = new EventsService(mock);
 
     const result = await service.getEvents({
       ...OPTIONS,
@@ -94,12 +93,13 @@ describe('TimelineEventsService', () => {
       expect(sql).toContain('/* source:TraceHouse:Events:eventsQueryLog */');
       return [];
     });
-    const service = new TimelineEventsService(mock);
+    const service = new EventsService(mock);
 
     await service.getEvents({
       ...OPTIONS,
       availableCapabilities: ['query_log'],
-    }, TAB_EVENTS);
+      origin: 'events',
+    });
 
     expect(mock.executeQuery).toHaveBeenCalledTimes(1);
   });
@@ -141,7 +141,7 @@ describe('TimelineEventsService', () => {
         },
       ];
     });
-    const service = new TimelineEventsService(mock);
+    const service = new EventsService(mock);
 
     const result = await service.getEvents({
       ...OPTIONS,
@@ -188,7 +188,7 @@ describe('TimelineEventsService', () => {
         memory_usage: 42_000,
       }];
     });
-    const service = new TimelineEventsService(mock);
+    const service = new EventsService(mock);
 
     const result = await service.getEvents({
       ...OPTIONS,
@@ -232,7 +232,7 @@ describe('TimelineEventsService', () => {
         exception_code: 243,
       },
     ]);
-    const service = new TimelineEventsService(mock);
+    const service = new EventsService(mock);
 
     const result = await service.getEvents({
       ...OPTIONS,
@@ -258,7 +258,7 @@ describe('TimelineEventsService', () => {
         previous_uptime: 900,
       }];
     });
-    const service = new TimelineEventsService(mock);
+    const service = new EventsService(mock);
 
     const result = await service.getEvents({
       ...OPTIONS,
@@ -300,7 +300,7 @@ describe('TimelineEventsService', () => {
         exception: 'Not enough space',
       }];
     });
-    const service = new TimelineEventsService(mock);
+    const service = new EventsService(mock);
 
     const result = await service.getEvents({
       ...OPTIONS,
@@ -342,7 +342,7 @@ describe('TimelineEventsService', () => {
         exception: 'Connection refused',
       }];
     });
-    const service = new TimelineEventsService(mock);
+    const service = new EventsService(mock);
 
     const result = await service.getEvents({
       ...OPTIONS,
@@ -399,7 +399,7 @@ describe('TimelineEventsService', () => {
         },
       ];
     });
-    const service = new TimelineEventsService(mock);
+    const service = new EventsService(mock);
 
     const result = await service.getEvents({
       ...OPTIONS,
@@ -449,7 +449,7 @@ describe('TimelineEventsService', () => {
         max_readonly_tables: 3,
       }];
     });
-    const service = new TimelineEventsService(mock);
+    const service = new EventsService(mock);
 
     const result = await service.getEvents({
       ...OPTIONS,
@@ -489,7 +489,7 @@ describe('TimelineEventsService', () => {
         },
       ];
     });
-    const service = new TimelineEventsService(mock);
+    const service = new EventsService(mock);
 
     const result = await service.getEvents({
       ...OPTIONS,
@@ -518,7 +518,7 @@ describe('TimelineEventsService', () => {
         observed_at: '2026-07-25 12:20:42',
       }];
     });
-    const service = new TimelineEventsService(mock);
+    const service = new EventsService(mock);
 
     const result = await service.getEvents({
       ...OPTIONS,
@@ -541,7 +541,7 @@ describe('TimelineEventsService', () => {
       query_id: 'timeout',
       exception_code: 159,
     }]);
-    const service = new TimelineEventsService(mock);
+    const service = new EventsService(mock);
 
     const result = await service.getEvents({
       ...OPTIONS,

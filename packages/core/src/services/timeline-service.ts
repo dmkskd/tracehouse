@@ -15,7 +15,7 @@ import type {
 } from '../types/timeline.js';
 import { buildQuery, tagQuery } from '../queries/builder.js';
 import { classifyMergeHistory, classifyActiveMerge } from '../utils/merge-classification.js';
-import { TAB_EVENTS, TAB_TIME_TRAVEL, sourceTag } from '../queries/source-tags.js';
+import { TAB_TIME_TRAVEL, sourceTag } from '../queries/source-tags.js';
 import {
   buildZoomProcessSamplesSQL,
   buildZoomMergeSamplesSQL,
@@ -45,8 +45,6 @@ import {
   CPU_SPIKE_TIMESERIES,
   CLUSTER_CPU_TIMESERIES,
 } from '../queries/timeline-queries.js';
-import { TimelineEventsService } from './timeline-events-service.js';
-import { EventContextService } from './event-context-service.js';
 
 export class TimelineServiceError extends Error {
   constructor(message: string, public readonly cause?: Error) {
@@ -80,23 +78,7 @@ function parseChTime(s: string): Date {
 export class TimelineService {
   private _cachedRam: { ram: number; hostCount: number } | null = null;
   private _cachedCpuCores: number | null = null;
-  private readonly eventsService: TimelineEventsService;
-  private readonly eventContextService: EventContextService;
-
-  constructor(private adapter: IClickHouseAdapter) {
-    this.eventsService = new TimelineEventsService(adapter);
-    this.eventContextService = new EventContextService(adapter);
-  }
-
-  /** Read the capability-aware operational event stream without timeline metrics. */
-  async getEvents(options: Parameters<TimelineEventsService['getEvents']>[0]) {
-    return this.eventsService.getEvents(options, TAB_EVENTS);
-  }
-
-  /** Load capability-aware historical evidence surrounding one event. */
-  async getEventContext(options: Parameters<EventContextService['getContext']>[0]) {
-    return this.eventContextService.getContext(options);
-  }
+  constructor(private adapter: IClickHouseAdapter) {}
 
   async getTimeline(options: TimelineOptions): Promise<MemoryTimeline> {
     const {
@@ -107,8 +89,6 @@ export class TimelineService {
       activityLimit = 100,
       activeMetric = 'memory',
       normalizedQueryHash,
-      eventCapabilities,
-      eventLimit,
     } = options;
 
     // Validate hash early (before any queries run) to reject injection attempts
@@ -257,7 +237,6 @@ export class TimelineService {
       mutations,
       runningQueries,
       runningMergesAndMutations,
-      eventResult,
     ] = await Promise.all([
       activeMetric === 'memory' ? this.fetchServerMemory(params, withHost) : Promise.resolve([]),
       activeMetric === 'cpu' ? this.fetchServerCpu(params, withHost) : Promise.resolve([]),
@@ -275,15 +254,6 @@ export class TimelineService {
       this.fetchMutations(params, start, end, (sql) => applyOrder(withHost(sql))),
       includesNow ? this.fetchRunningQueries(start, end, activityLimit, queryOrderBy, withHost) : Promise.resolve([]),
       includesNow ? this.fetchRunningMergesAndMutations(start, end, activityLimit, withHost) : Promise.resolve({ merges: [], mutations: [] }),
-      eventCapabilities
-        ? this.eventsService.getEvents({
-            startTime: toClickHouseDateTime(start),
-            endTime: toClickHouseDateTime(end),
-            hostname,
-            availableCapabilities: eventCapabilities,
-            limit: eventLimit,
-          })
-        : Promise.resolve(TimelineEventsService.notRequested()),
     ]);
 
     // Merge completed and running queries (dedupe by query_id)
@@ -379,8 +349,6 @@ export class TimelineService {
       merge_count: totalMergeCount,
       merge_peak_total: totalMergePeak,
       mutation_count: totalMutationCount,
-      events: eventResult.events,
-      event_coverage: eventResult.coverage,
     };
   }
 

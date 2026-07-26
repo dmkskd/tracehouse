@@ -1,8 +1,8 @@
-import type { TimelineEvent, TimelineEventCategory } from '@tracehouse/core';
+import type { OperationalEvent, EventCategory } from '@tracehouse/core';
 import {
   EVENT_CATEGORY_LABELS,
-  TIMELINE_EVENT_CATEGORIES,
-} from '../timeline/timeline-event-model';
+  EVENT_CATEGORIES,
+} from './event-model';
 
 export const EVENT_DISTRIBUTION_LAYOUT = {
   labelWidth: 132,
@@ -14,7 +14,7 @@ export const EVENT_DISTRIBUTION_LAYOUT = {
   axisHeight: 8,
 } as const;
 
-export const EVENT_CATEGORY_COLORS: Record<TimelineEventCategory, string> = {
+export const EVENT_CATEGORY_COLORS: Record<EventCategory, string> = {
   lifecycle: '#d29922',
   queries: '#f0883e',
   replication: '#a371f7',
@@ -24,7 +24,7 @@ export const EVENT_CATEGORY_COLORS: Record<TimelineEventCategory, string> = {
   maintenance: '#8b949e',
 };
 
-export const EVENT_CATEGORY_SYMBOLS: Record<TimelineEventCategory, string> = {
+export const EVENT_CATEGORY_SYMBOLS: Record<EventCategory, string> = {
   lifecycle: '↻',
   queries: '⌁',
   replication: '⇄',
@@ -35,7 +35,7 @@ export const EVENT_CATEGORY_SYMBOLS: Record<TimelineEventCategory, string> = {
 };
 
 export interface EventDistributionLane {
-  category: TimelineEventCategory;
+  category: EventCategory;
   eventCount: number;
   laneHeight: number;
   yTop: number;
@@ -87,18 +87,18 @@ export function formatEventHoverTime(value: string): string {
 }
 
 export function groupEventsByCategory(
-  events: readonly TimelineEvent[],
-): Map<TimelineEventCategory, TimelineEvent[]> {
-  const grouped = new Map<TimelineEventCategory, TimelineEvent[]>(
-    TIMELINE_EVENT_CATEGORIES.map(category => [category, []]),
+  events: readonly OperationalEvent[],
+): Map<EventCategory, OperationalEvent[]> {
+  const grouped = new Map<EventCategory, OperationalEvent[]>(
+    EVENT_CATEGORIES.map(category => [category, []]),
   );
   for (const event of events) grouped.get(event.category)?.push(event);
   return grouped;
 }
 
 export function buildEventDistributionLanes(
-  byCategory: ReadonlyMap<TimelineEventCategory, readonly TimelineEvent[]>,
-  focusedCategory?: TimelineEventCategory,
+  byCategory: ReadonlyMap<EventCategory, readonly OperationalEvent[]>,
+  focusedCategory?: EventCategory,
 ): EventDistributionLane[] {
   const {
     activeLaneHeight,
@@ -108,7 +108,7 @@ export function buildEventDistributionLanes(
   } = EVENT_DISTRIBUTION_LAYOUT;
   const categories = focusedCategory
     ? [focusedCategory]
-    : TIMELINE_EVENT_CATEGORIES;
+    : EVENT_CATEGORIES;
   const laneHeights = categories.map(category =>
     focusedCategory
       ? focusedLaneHeight
@@ -131,7 +131,7 @@ export function buildEventDistributionLanes(
   });
 }
 
-export function isTimelineStateEpisode(event: TimelineEvent): boolean {
+export function isStateEpisode(event: OperationalEvent): boolean {
   const end = Date.parse(event.ended_at ?? '');
   return event.kind === 'replica_readonly'
     || event.kind === 'replica_unavailable'
@@ -139,8 +139,8 @@ export function isTimelineStateEpisode(event: TimelineEvent): boolean {
 }
 
 export function buildEventHoverCardModel(
-  events: readonly TimelineEvent[],
-  primaryEvent: TimelineEvent,
+  events: readonly OperationalEvent[],
+  primaryEvent: OperationalEvent,
   clusterLabel: string,
 ): EventHoverCardModel {
   const eventTimes = events

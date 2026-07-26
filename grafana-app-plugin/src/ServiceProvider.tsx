@@ -12,7 +12,11 @@ import { QueryAnalyzer } from '@tracehouse/core/services/query-analyzer';
 import { InteractiveQueryService } from '@tracehouse/core/services/interactive-query-service';
 import { QueryExecutionAnalysisService } from '@tracehouse/core/services/query-execution-analysis';
 import { ColumnCostService } from '@tracehouse/core/services/column-cost-service';
-import { TimelineService } from '@tracehouse/core/services/timeline-service';
+import {
+  TimelineService,
+  EventsService,
+  EventContextService,
+} from '@tracehouse/core';
 import { TraceService } from '@tracehouse/core/services/trace-service';
 import { AnalyticsService } from '@tracehouse/core/services/analytics-service';
 import { ObservabilityMapService } from '@tracehouse/core/services/observability-map-service';
@@ -172,6 +176,8 @@ export function ServiceProvider({ children }: { children: React.ReactNode }) {
         queryExecutionAnalysisService: new QueryExecutionAnalysisService(adapter),
         columnCostService: new ColumnCostService(adapter),
         timelineService: new TimelineService(adapter),
+        eventsService: new EventsService(adapter),
+        eventContextService: new EventContextService(adapter),
         traceService: new TraceService(adapter),
         analyticsService: new AnalyticsService(adapter),
         observabilityMapService: new ObservabilityMapService(adapter),

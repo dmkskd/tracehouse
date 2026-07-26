@@ -1,9 +1,9 @@
 import { describe, expect, it } from 'vitest';
 import type {
-  TimelineEvent,
-  TimelineEventCategory,
-  TimelineEventKind,
-  TimelineEventSeverity,
+  OperationalEvent,
+  EventCategory,
+  EventKind,
+  EventSeverity,
 } from '@tracehouse/core';
 import {
   clusterTimelineEvents,
@@ -18,10 +18,10 @@ import {
 function event(
   id: string,
   occurredAt: string,
-  severity: TimelineEventSeverity = 'info',
-  category: TimelineEventCategory = 'changes',
-  kind: TimelineEventKind = 'ddl',
-): TimelineEvent {
+  severity: EventSeverity = 'info',
+  category: EventCategory = 'changes',
+  kind: EventKind = 'ddl',
+): OperationalEvent {
   return {
     id,
     occurred_at: occurredAt,

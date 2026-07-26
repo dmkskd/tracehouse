@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import type { TimelineEvent } from '@tracehouse/core';
+import type { OperationalEvent } from '@tracehouse/core';
 import {
   buildEventDistributionLanes,
   buildEventHoverCardModel,
@@ -8,8 +8,8 @@ import {
 } from '../event-distribution-model';
 
 function event(
-  overrides: Partial<TimelineEvent> & Pick<TimelineEvent, 'id' | 'occurred_at' | 'kind' | 'category'>,
-): TimelineEvent {
+  overrides: Partial<OperationalEvent> & Pick<OperationalEvent, 'id' | 'occurred_at' | 'kind' | 'category'>,
+): OperationalEvent {
   return {
     severity: 'warning',
     precision: 'exact',

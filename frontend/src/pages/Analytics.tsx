@@ -15,7 +15,7 @@ import { QueryExplorer } from '../components/analytics/QueryExplorer';
 import { DashboardViewer } from '../components/analytics/DashboardViewer';
 import { PatternSurface } from '../components/analytics/PatternSurface';
 import { ResourceSurface } from '../components/analytics/ResourceSurface';
-import { TimeRangePicker } from '../components/analytics/TimeRangePicker';
+import { TimeRangePicker } from '../components/common/TimeRangePicker';
 import { loadDashboards } from '../components/analytics/dashboards';
 import { getAllQueries } from '../components/analytics/customQueries';
 import { useAnalyticsUrlState } from '../hooks/useUrlState';

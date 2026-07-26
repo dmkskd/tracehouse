@@ -8,7 +8,7 @@ import { APP_SOURCE_LIKE } from './source-tags.js';
  * Keep occurrences individual so normalized_query_hash can reveal periodic
  * scheduled jobs in the visualization.
  */
-export const TIMELINE_QUERY_EVENTS = `
+export const QUERY_EVENTS = `
 SELECT
   hostname() AS host,
   toString(query_start_time_microseconds + toIntervalMillisecond(query_duration_ms)) AS occurred_at,
@@ -59,7 +59,7 @@ LIMIT {event_limit} BY if(type = 'QueryFinish', 'ddl', 'query_resource')
  * A look-behind is required to compare the first sample in the requested
  * range. occurred_at is inferred as observed sample time minus Uptime.
  */
-export const TIMELINE_SERVER_RESTART_EVENTS = `
+export const SERVER_RESTART_EVENTS = `
 WITH samples AS (
   SELECT
     host,
@@ -109,7 +109,7 @@ LIMIT {event_limit}
  * this query must only run when the capability probe reports it available.
  * Use only columns that have remained stable across supported CH versions.
  */
-export const TIMELINE_SERVER_CRASH_EVENTS = `
+export const SERVER_CRASH_EVENTS = `
 SELECT
   hostname() AS host,
   toString(event_time) AS occurred_at,
@@ -128,7 +128,7 @@ LIMIT {event_limit}
  * Failed data-part operations. part_log event_time_microseconds represents the
  * operation record time; only error-bearing rows are emitted.
  */
-export const TIMELINE_PART_FAILURE_EVENTS = `
+export const PART_FAILURE_EVENTS = `
 SELECT
   hostname() AS host,
   toString(event_time_microseconds) AS occurred_at,
@@ -155,7 +155,7 @@ LIMIT {event_limit}
  * Failed periodic background work, including distributed sends, Buffer
  * flushes, message-broker operations, and table-specific maintenance tasks.
  */
-export const TIMELINE_BACKGROUND_TASK_FAILURE_EVENTS = `
+export const BACKGROUND_TASK_FAILURE_EVENTS = `
 SELECT
   hostname() AS host,
   toString(event_time_microseconds) AS occurred_at,
@@ -183,7 +183,7 @@ LIMIT {event_limit}
  * event_time is the log flush/sample time, not necessarily the exact time of
  * every occurrence represented by value.
  */
-export const TIMELINE_OPERATIONAL_ERROR_EVENTS = `
+export const OPERATIONAL_ERROR_EVENTS = `
 SELECT
   hostname() AS host,
   toString(event_time) AS occurred_at,
@@ -226,7 +226,7 @@ LIMIT {event_limit}
  * A short look-behind lets an episode crossing the left edge remain visible.
  * The episode end is the first sampled zero after its final positive sample.
  */
-export const TIMELINE_REPLICA_READONLY_EPISODES = `
+export const REPLICA_READONLY_EPISODES = `
 WITH samples AS (
   SELECT
     hostname() AS host,
@@ -289,7 +289,7 @@ LIMIT {event_limit}
  * persisted at the log sampling cadence and preserve failures that have
  * already disappeared from the live replication queue.
  */
-export const TIMELINE_REPLICATION_FAILURE_EVENTS = `
+export const REPLICATION_FAILURE_EVENTS = `
 SELECT
   host,
   toString(event_time) AS occurred_at,

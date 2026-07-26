@@ -41,8 +41,8 @@ export const CAPABILITY_REGISTRY: CapabilityRegistryEntry[] = [
     consumers: [
       { screen: 'Query Tracker', tab: 'Queries', route: '/query-monitor', enables: 'Query history, timing charts, and query analysis', importance: 'required' },
       { screen: 'Analytics', tab: 'Analytics', route: '/analytics', enables: 'Query explorer and preset analytics queries', importance: 'required' },
-      { screen: 'Time Travel', tab: 'Time Travel', route: '/time-travel', enables: 'Query overlay and query failure events on timeline', importance: 'required' },
-      { screen: 'Events', tab: 'Events', route: '/events', enables: 'Queries running at an event and exact query correlation', importance: 'optional' },
+      { screen: 'Time Travel', tab: 'Time Travel', route: '/timetravel', enables: 'Query overlay and query failure events on timeline', importance: 'required' },
+      { screen: 'Events', tab: 'Events', route: '/events', enables: 'Query failures, DDL events, workload context, and exact query correlation', importance: 'optional' },
       { screen: 'Query Detail Modal', tab: 'Queries', enables: 'Query comparison and history lookup', importance: 'optional' },
       { screen: 'Overview', tab: 'Overview', route: '/overview', enables: 'Slow queries widget, rejected queries count', importance: 'optional' },
     ],
@@ -79,7 +79,7 @@ export const CAPABILITY_REGISTRY: CapabilityRegistryEntry[] = [
   {
     capabilityId: 'metric_log',
     consumers: [
-      { screen: 'Time Travel', tab: 'Time Travel', route: '/time-travel', enables: 'Memory and metric timeline visualization', importance: 'required' },
+      { screen: 'Time Travel', tab: 'Time Travel', route: '/timetravel', enables: 'Memory and metric timeline visualization', importance: 'required' },
       { screen: 'Overview', tab: 'Overview', route: '/overview', enables: 'Historical metrics trend charts, QPS history', importance: 'optional' },
       { screen: 'Events', tab: 'Events', route: '/events', enables: 'Historical host metrics immediately before and around an event', importance: 'optional' },
     ],
@@ -102,7 +102,8 @@ export const CAPABILITY_REGISTRY: CapabilityRegistryEntry[] = [
     capabilityId: 'asynchronous_metric_log',
     consumers: [
       { screen: 'Metrics Dashboard', tab: 'Overview', route: '/metrics', enables: 'Async metric time-series (CPU, memory, jemalloc)', importance: 'optional' },
-      { screen: 'Time Travel', tab: 'Time Travel', route: '/time-travel', enables: 'Inferred server restart events from Uptime resets', importance: 'optional' },
+      { screen: 'Events', tab: 'Events', route: '/events', enables: 'Inferred server restart events from Uptime resets', importance: 'optional' },
+      { screen: 'Time Travel', tab: 'Time Travel', route: '/timetravel', enables: 'Inferred server restart annotations', importance: 'optional' },
     ],
   },
   {
@@ -110,6 +111,8 @@ export const CAPABILITY_REGISTRY: CapabilityRegistryEntry[] = [
     consumers: [
       { screen: 'Merge Tracker', tab: 'Merges', route: '/merge-tracker', enables: 'Merge history and part lifecycle events', importance: 'optional' },
       { screen: 'Database Explorer', tab: 'Explorer', route: '/database', enables: 'Part lineage and merge history in table detail', importance: 'optional' },
+      { screen: 'Events', tab: 'Events', route: '/events', enables: 'Part and replication task failure events', importance: 'optional' },
+      { screen: 'Time Travel', tab: 'Time Travel', route: '/timetravel', enables: 'Part and replication task failure annotations', importance: 'optional' },
     ],
   },
   {
@@ -155,19 +158,22 @@ export const CAPABILITY_REGISTRY: CapabilityRegistryEntry[] = [
     capabilityId: 'crash_log',
     consumers: [
       { screen: 'Engine Internals', tab: 'Engine Internals', route: '/engine-internals', enables: 'Server crash/fatal error history', importance: 'optional' },
-      { screen: 'Time Travel', tab: 'Time Travel', route: '/time-travel', enables: 'Exact server crash events on timeline', importance: 'optional' },
+      { screen: 'Events', tab: 'Events', route: '/events', enables: 'Exact server crash events', importance: 'optional' },
+      { screen: 'Time Travel', tab: 'Time Travel', route: '/timetravel', enables: 'Exact server crash annotations', importance: 'optional' },
     ],
   },
   {
     capabilityId: 'error_log',
     consumers: [
-      { screen: 'Time Travel', tab: 'Time Travel', route: '/time-travel', enables: 'Filtered operational error bursts on timeline', importance: 'optional' },
+      { screen: 'Events', tab: 'Events', route: '/events', enables: 'Filtered operational error bursts', importance: 'optional' },
+      { screen: 'Time Travel', tab: 'Time Travel', route: '/timetravel', enables: 'Filtered operational error annotations', importance: 'optional' },
     ],
   },
   {
     capabilityId: 'background_schedule_pool_log',
     consumers: [
-      { screen: 'Time Travel', tab: 'Time Travel', route: '/time-travel', enables: 'Background task failure events on timeline', importance: 'optional' },
+      { screen: 'Events', tab: 'Events', route: '/events', enables: 'Background task failure events', importance: 'optional' },
+      { screen: 'Time Travel', tab: 'Time Travel', route: '/timetravel', enables: 'Background task failure annotations', importance: 'optional' },
     ],
   },
   {

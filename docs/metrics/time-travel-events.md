@@ -143,11 +143,14 @@ context.
 
 ## Implemented sources
 
-The first implementation lives in:
+The event domain implementation lives in:
 
-- `packages/core/src/queries/timeline-event-queries.ts`
-- `packages/core/src/services/timeline-events-service.ts`
-- `packages/core/src/types/timeline.ts`
+- `packages/core/src/queries/event-queries.ts`
+- `packages/core/src/services/events-service.ts`
+- `packages/core/src/types/events.ts`
+
+Time Travel composes this event stream with its independent metrics/activity
+model; events are not embedded in `MemoryTimeline`.
 
 Each source is queried independently. One missing or inaccessible table does not
 prevent other event sources from loading.
@@ -457,7 +460,7 @@ not optimistically query absent tables.
 after probing, permissions can differ across replicas, and schemas may vary by
 version. It is not a substitute for the capability check.
 
-Every response includes `event_coverage`:
+Every `EventsService` response includes `coverage`:
 
 | Status | Meaning |
 | --- | --- |
@@ -585,7 +588,7 @@ not require changing collection.
 
 ## Events investigation page
 
-The top-level **Events** page uses the same `TimelineEventsService` and
+The top-level **Events** page uses the same `EventsService` and
 capability set as Time Travel; it does not maintain a separate event definition
 or run the continuous metric queries.
 

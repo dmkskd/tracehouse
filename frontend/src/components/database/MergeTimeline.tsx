@@ -24,7 +24,7 @@ export const LINEAGE_LEVEL_COLORS = [
 export const getLevelColor = (level: number) =>
   LINEAGE_LEVEL_COLORS[Math.min(level, LINEAGE_LEVEL_COLORS.length - 1)];
 
-export interface TimelineEvent {
+export interface MergeTimelineEvent {
   level: number;
   partName: string;
   startTime: Date;
@@ -39,8 +39,8 @@ export interface TimelineEvent {
 /**
  * Collect timeline events from a lineage tree.
  */
-export function collectTimelineEvents(lineage: PartLineageInfo): TimelineEvent[] {
-  const events: TimelineEvent[] = [];
+export function collectTimelineEvents(lineage: PartLineageInfo): MergeTimelineEvent[] {
+  const events: MergeTimelineEvent[] = [];
 
   const walk = (node: LineageNode) => {
     if (node.merge_event && node.event_time) {
@@ -78,7 +78,7 @@ function formatTime(date: Date): string {
 
 export const MergeTimeline: React.FC<{ lineage: PartLineageInfo }> = ({ lineage }) => {
   const [hoveredEvent, setHoveredEvent] = useState<{
-    event: TimelineEvent;
+    event: MergeTimelineEvent;
     x: number;
     y: number;
   } | null>(null);
@@ -86,7 +86,7 @@ export const MergeTimeline: React.FC<{ lineage: PartLineageInfo }> = ({ lineage 
   const timelineEvents = useMemo(() => collectTimelineEvents(lineage), [lineage]);
   
   const eventsByLevel = useMemo(() => {
-    const grouped = new Map<number, TimelineEvent[]>();
+    const grouped = new Map<number, MergeTimelineEvent[]>();
     timelineEvents.forEach(event => {
       if (!grouped.has(event.level)) {
         grouped.set(event.level, []);

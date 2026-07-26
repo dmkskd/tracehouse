@@ -16,8 +16,11 @@ export type { MergeHistoryOptions } from './merge-tracker.js';
 export { ConnectionManager, ConnectionManagerError } from './connection-manager.js';
 export type { AdapterFactory } from './connection-manager.js';
 export { TimelineService, TimelineServiceError } from './timeline-service.js';
-export { TimelineEventsService } from './timeline-events-service.js';
-export type { TimelineEventsOptions, TimelineEventsResult } from './timeline-events-service.js';
+export { EventsService } from './events-service.js';
+export type {
+  EventsOptions,
+  EventsResult,
+} from './events-service.js';
 export { EventContextService } from './event-context-service.js';
 export { TraceService, TraceServiceError } from './trace-service.js';
 export type { FlamegraphType } from './trace-service.js';

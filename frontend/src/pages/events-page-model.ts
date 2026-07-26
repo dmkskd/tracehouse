@@ -1,4 +1,4 @@
-import type { QuerySeries, TimelineEvent } from '@tracehouse/core';
+import type { QuerySeries, OperationalEvent } from '@tracehouse/core';
 
 export const EVENT_INTERVAL_HOURS: Record<string, number> = {
   '15 MINUTE': 0.25,
@@ -35,7 +35,7 @@ export function toLocalEventDateTime(ms: number): string {
     + `T${pad(date.getHours())}:${pad(date.getMinutes())}`;
 }
 
-export function eventToQuerySeries(event: TimelineEvent): QuerySeries {
+export function eventToQuerySeries(event: OperationalEvent): QuerySeries {
   const endMs = Date.parse(event.occurred_at);
   const durationMs = event.duration_ms ?? 0;
   const safeEndMs = Number.isFinite(endMs) ? endMs : Date.now();

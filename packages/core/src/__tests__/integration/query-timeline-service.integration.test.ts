@@ -104,6 +104,8 @@ describe('TimelineService integration', { tags: ['query-analysis'] }, () => {
       expect(result).toHaveProperty('query_count');
       expect(result).toHaveProperty('merge_count');
       expect(result).toHaveProperty('mutation_count');
+      expect(result).not.toHaveProperty('events');
+      expect(result).not.toHaveProperty('event_coverage');
       expect(Array.isArray(result.queries)).toBe(true);
       expect(Array.isArray(result.merges)).toBe(true);
       expect(Array.isArray(result.mutations)).toBe(true);

@@ -20,7 +20,7 @@ import {
   trackerFilterLabelStyle,
   trackerScopeOptionStyle,
 } from '../common/trackerFilterStyles';
-import { TimeRangePicker } from '../analytics/TimeRangePicker';
+import { TimeRangePicker } from '../common/TimeRangePicker';
 import {
   TRACKER_TIME_PRESETS,
   trackerTimeRangeHours,

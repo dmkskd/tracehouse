@@ -53,14 +53,22 @@ test.describe('App boot', () => {
   test('has priority navigation and grouped overflow items', async ({ page }) => {
     await page.goto('/');
     const nav = page.locator('nav');
-    for (const { label } of PRIMARY_ROUTES) {
-      await expect(page.locator('nav').getByText(label, { exact: true })).toBeVisible();
-    }
     const overflowTrigger = nav.locator('button[aria-haspopup="menu"]');
     await expect(overflowTrigger).toBeVisible();
-    await overflowTrigger.click();
-    for (const { label } of OVERFLOW_ROUTES) {
-      await expect(nav.getByRole('menuitem', { name: label })).toBeVisible();
+
+    if (test.info().project.name.includes('mobile')) {
+      await overflowTrigger.click();
+      for (const { label } of ROUTES) {
+        await expect(nav.getByRole('menuitem', { name: label })).toBeVisible();
+      }
+    } else {
+      for (const { label } of PRIMARY_ROUTES) {
+        await expect(nav.getByRole('link', { name: label, exact: true })).toBeVisible();
+      }
+      await overflowTrigger.click();
+      for (const { label } of OVERFLOW_ROUTES) {
+        await expect(nav.getByRole('menuitem', { name: label })).toBeVisible();
+      }
     }
   });
 });
@@ -79,7 +87,7 @@ test.describe('Navigation', () => {
       }
       const link = overflowRoute
         ? nav.getByRole('menuitem', { name: route.label })
-        : nav.getByText(route.label, { exact: true });
+        : nav.getByRole('link', { name: route.label, exact: true });
       await link.scrollIntoViewIfNeeded();
       const start = Date.now();
       await link.click();

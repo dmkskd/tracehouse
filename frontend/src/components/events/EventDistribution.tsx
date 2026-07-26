@@ -1,11 +1,11 @@
 import React, { useEffect, useMemo, useRef, useState } from 'react';
-import type { TimelineEvent, TimelineEventCategory } from '@tracehouse/core';
+import type { OperationalEvent, EventCategory } from '@tracehouse/core';
 import {
-  clusterTimelineEvents,
+  clusterEvents,
   EVENT_CATEGORY_LABELS,
   EVENT_SEVERITY_COLORS,
-  timelineEventClusterLabel,
-} from '../timeline/timeline-event-model';
+  eventClusterLabel,
+} from './event-model';
 import {
   buildEventDistributionLanes,
   buildEventHoverCardModel,
@@ -14,20 +14,20 @@ import {
   EVENT_DISTRIBUTION_LAYOUT,
   formatEventDistributionTick,
   groupEventsByCategory,
-  isTimelineStateEpisode,
+  isStateEpisode,
 } from './event-distribution-model';
 
 interface EventDistributionProps {
-  events: readonly TimelineEvent[];
+  events: readonly OperationalEvent[];
   rangeStartMs: number;
   rangeEndMs: number;
   selectedEventId?: string;
-  focusedCategory?: TimelineEventCategory;
-  onSelectEvent: (event: TimelineEvent) => void;
-  onCategoryFocus?: (category?: TimelineEventCategory) => void;
+  focusedCategory?: EventCategory;
+  onSelectEvent: (event: OperationalEvent) => void;
+  onCategoryFocus?: (category?: EventCategory) => void;
   onSelectCluster?: (
-    events: TimelineEvent[],
-    primaryEvent: TimelineEvent,
+    events: OperationalEvent[],
+    primaryEvent: OperationalEvent,
   ) => void;
   onRangeSelect?: (startMs: number, endMs: number) => void;
 }
@@ -36,8 +36,8 @@ interface HoveredMarker {
   id: string;
   x: number;
   y: number;
-  events: TimelineEvent[];
-  primaryEvent: TimelineEvent;
+  events: OperationalEvent[];
+  primaryEvent: OperationalEvent;
   label: string;
 }
 
@@ -110,8 +110,8 @@ export const EventDistribution: React.FC<EventDistributionProps> = ({
   const showMarkerHover = (
     event: React.PointerEvent<SVGElement>,
     id: string,
-    markerEvents: TimelineEvent[],
-    primaryEvent: TimelineEvent,
+    markerEvents: OperationalEvent[],
+    primaryEvent: OperationalEvent,
     label: string,
   ) => {
     const bounds = containerRef.current?.getBoundingClientRect();
@@ -371,9 +371,9 @@ export const EventDistribution: React.FC<EventDistributionProps> = ({
           const categoryColor = EVENT_CATEGORY_COLORS[category];
           const active = eventCount > 0;
           const categoryFocused = focusedCategory === category;
-          const intervalEvents = categoryEvents.filter(isTimelineStateEpisode);
+          const intervalEvents = categoryEvents.filter(isStateEpisode);
           const pointEvents = categoryEvents.filter(event => !intervalEvents.includes(event));
-          const clusters = clusterTimelineEvents(
+          const clusters = clusterEvents(
             pointEvents,
             rangeStartMs,
             rangeEndMs,
@@ -543,7 +543,7 @@ export const EventDistribution: React.FC<EventDistributionProps> = ({
                 const selected = cluster.events.some(event => event.id === selectedEventId);
                 const hovered = hoveredMarker?.id === cluster.id;
                 const radius = cluster.events.length > 1 ? 7 : 4.5;
-                const markerLabel = timelineEventClusterLabel(cluster);
+                const markerLabel = eventClusterLabel(cluster);
                 return (
                   <g
                     key={cluster.id}

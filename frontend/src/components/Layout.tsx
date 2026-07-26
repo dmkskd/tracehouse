@@ -28,6 +28,9 @@ const OverflowNavigation: React.FC = () => {
   const ref = useRef<HTMLDivElement>(null);
   const location = useLocation();
   const activeItem = TRACEHOUSE_OVERFLOW_ITEMS.find(item => location.pathname.startsWith(item.path));
+  const activePrimaryItem = TRACEHOUSE_PRIMARY_NAVIGATION.find(
+    item => location.pathname.startsWith(item.path),
+  );
 
   useEffect(() => {
     if (!open) return;
@@ -72,7 +75,13 @@ const OverflowNavigation: React.FC = () => {
             ? '1px solid var(--accent-secondary)'
             : '1px solid transparent',
         }}>
-          {activeItem?.label ?? 'More'} <span aria-hidden="true">⌄</span>
+          <span className="tracehouse-desktop-menu-label">
+            {activeItem?.label ?? 'More'}
+          </span>
+          <span className="tracehouse-mobile-menu-label">
+            {activePrimaryItem?.label ?? activeItem?.label ?? 'Menu'}
+          </span>
+          {' '}<span aria-hidden="true">⌄</span>
         </span>
       </button>
 
@@ -92,6 +101,44 @@ const OverflowNavigation: React.FC = () => {
             boxShadow: '0 12px 32px rgba(0,0,0,0.24)',
           }}
         >
+          <div
+            className="tracehouse-mobile-menu-items"
+            style={{
+              paddingBottom: 8,
+              marginBottom: 6,
+              borderBottom: '1px solid var(--border-primary)',
+            }}
+          >
+            <div style={{
+              padding: '3px 8px 5px',
+              color: 'var(--text-muted)',
+              fontSize: 9,
+              fontWeight: 600,
+              letterSpacing: '0.08em',
+              textTransform: 'uppercase',
+            }}>
+              Navigate
+            </div>
+            {TRACEHOUSE_PRIMARY_NAVIGATION.map(item => (
+              <NavLink
+                key={item.path}
+                to={item.path}
+                role="menuitem"
+                onClick={() => setOpen(false)}
+                style={({ isActive }) => ({
+                  display: 'block',
+                  padding: '7px 8px',
+                  borderRadius: 5,
+                  color: isActive ? 'var(--text-primary)' : 'var(--text-secondary)',
+                  background: isActive ? 'var(--bg-card-hover)' : 'transparent',
+                  fontSize: 12,
+                  textDecoration: 'none',
+                })}
+              >
+                {item.label}
+              </NavLink>
+            ))}
+          </div>
           {TRACEHOUSE_OVERFLOW_NAVIGATION.map((group, groupIndex) => (
             <div
               key={group.label}
@@ -490,9 +537,41 @@ export const Layout: React.FC<LayoutProps> = ({ children }) => {
         transition: 'background 0.2s ease, color 0.2s ease',
       }}
     >
+      <style>{`
+        .tracehouse-mobile-menu-label,
+        .tracehouse-mobile-menu-items {
+          display: none;
+        }
+
+        @media (max-width: 900px) {
+          .tracehouse-app-header {
+            padding-left: 12px !important;
+            padding-right: 12px !important;
+          }
+
+          .tracehouse-primary-nav-link,
+          .tracehouse-desktop-menu-label,
+          .tracehouse-mobile-secondary-action {
+            display: none !important;
+          }
+
+          .tracehouse-mobile-menu-label,
+          .tracehouse-mobile-menu-items {
+            display: inline;
+          }
+
+          .tracehouse-mobile-menu-items {
+            display: block;
+          }
+
+          .tracehouse-header-actions {
+            gap: 8px !important;
+          }
+        }
+      `}</style>
       {/* Top Navigation Bar */}
       <header 
-        className="h-12 flex items-center justify-between pr-4 flex-shrink-0"
+        className="tracehouse-app-header h-12 flex items-center justify-between pr-4 flex-shrink-0"
         style={{ 
           paddingLeft: 48,
           background: theme === 'dark' ? 'rgba(10, 10, 26, 0.95)' : 'var(--bg-secondary)',
@@ -511,8 +590,8 @@ export const Layout: React.FC<LayoutProps> = ({ children }) => {
                 key={item.path}
                 to={item.path}
                 style={{ fontFamily: "'Orbitron', 'Rajdhani', monospace" }}
-                className={(_navData) =>
-                  `py-1.5 text-[11px] font-medium transition-all uppercase tracking-widest`
+                className={() =>
+                  `tracehouse-primary-nav-link py-1.5 text-[11px] font-medium transition-all uppercase tracking-widest`
                 }
               >
                 {({ isActive }) => (
@@ -533,12 +612,15 @@ export const Layout: React.FC<LayoutProps> = ({ children }) => {
         </div>
         
         {/* Right: Connection + Refresh Status + Settings */}
-        <div className="flex items-center gap-4 flex-shrink-0">
+        <div className="tracehouse-header-actions flex items-center gap-4 flex-shrink-0">
           <ConnectionSelector />
-          <div className="w-px h-5" style={{ background: 'var(--border-primary)' }} />
-          <GlobalRefreshIndicator />
-          <div className="w-px h-5" style={{ background: 'var(--border-primary)' }} />
+          <div className="tracehouse-mobile-secondary-action w-px h-5" style={{ background: 'var(--border-primary)' }} />
+          <div>
+            <GlobalRefreshIndicator />
+          </div>
+          <div className="tracehouse-mobile-secondary-action w-px h-5" style={{ background: 'var(--border-primary)' }} />
           <a
+            className="tracehouse-mobile-secondary-action"
             href="https://github.com/dmkskd/tracehouse"
             target="_blank"
             rel="noopener noreferrer"

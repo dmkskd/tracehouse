@@ -9,7 +9,7 @@
  */
 
 import React, { useState, useRef, useEffect } from 'react';
-import { TIME_RANGE_OPTIONS } from './templateResolution';
+import { TIME_RANGE_OPTIONS } from './time-range-options';
 import { RangeSlider } from '../shared/RangeSlider';
 
 interface Props {

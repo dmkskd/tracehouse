@@ -5,7 +5,7 @@
  * Extracted from TimeTravelPage for clarity.
  */
 import React, { useState, useCallback, useMemo, useRef, useEffect } from 'react';
-import type { MemoryTimeline, TimelineEvent, ZoomSample } from '@tracehouse/core';
+import type { MemoryTimeline, OperationalEvent, ZoomSample } from '@tracehouse/core';
 import { getMergeCategoryInfo, type MergeCategory } from '@tracehouse/core';
 import { formatBytes, parseTimestamp } from '../../utils/formatters';
 import { TimelineEventOverlay } from './TimelineEventOverlay';
@@ -57,11 +57,11 @@ export const TimelineChart: React.FC<{
   hiddenCategories?: Set<'query' | 'merge' | 'mutation'>;
   /** When true, all queries are rendered with a uniform color (query hash filter) */
   queryHashActive?: boolean;
-  eventAnnotations?: TimelineEvent[];
+  eventAnnotations?: OperationalEvent[];
   selectedEventId?: string | null;
-  onEventSelect?: (event: TimelineEvent) => void;
+  onEventSelect?: (event: OperationalEvent) => void;
   onClearEventSelection?: () => void;
-  onViewEventDetails?: (event: TimelineEvent) => void;
+  onViewEventDetails?: (event: OperationalEvent) => void;
 }> = ({
   data, metricMode, height = 380, hoverMs, pinnedMs, onHover, onPin,
   zoomRange, onZoom, highlightedItem, onHighlightItem, onBandClick,

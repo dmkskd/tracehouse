@@ -1,12 +1,12 @@
 import React, { useCallback, useEffect, useRef, useState } from 'react';
 import type { QuerySeries } from '@tracehouse/core';
-import { EventsDashboard } from '../components/analytics/EventsDashboard';
+import { EventsDashboard } from '../components/events/EventsDashboard';
 import { DocsLink } from '../components/common/DocsLink';
 import { QueryDetailModal } from '../components/query/modal/QueryDetailModal';
 import { useNavigate } from '../hooks/useAppLocation';
 import { useQueryDeepLink } from '../hooks/useQueryDeepLink';
 import { useEventsUrlState } from '../hooks/useUrlState';
-import { buildTimeTravelEventUrl } from '../components/timeline/timeline-event-model';
+import { buildTimeTravelEventUrl } from '../components/events/event-model';
 import {
   EVENT_HOURS_INTERVAL,
   EVENT_INTERVAL_HOURS,

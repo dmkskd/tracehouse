@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import type { TimelineEvent, TimelineEventSourceCoverage } from '@tracehouse/core';
+import type { OperationalEvent, EventSourceCoverage } from '@tracehouse/core';
 import {
   SUPPORTED_EVENT_TYPES,
   buildEventMarkerSelection,
@@ -14,8 +14,8 @@ import {
 } from '../events-dashboard-model';
 
 function event(
-  overrides: Partial<TimelineEvent> & Pick<TimelineEvent, 'id' | 'occurred_at' | 'kind' | 'category'>,
-): TimelineEvent {
+  overrides: Partial<OperationalEvent> & Pick<OperationalEvent, 'id' | 'occurred_at' | 'kind' | 'category'>,
+): OperationalEvent {
   return {
     severity: 'info',
     precision: 'exact',
@@ -156,7 +156,7 @@ describe('events dashboard model', () => {
   });
 
   it('reports supported-event availability from source coverage', () => {
-    const coverage: TimelineEventSourceCoverage[] = [
+    const coverage: EventSourceCoverage[] = [
       {
         source: 'system.query_log',
         capability: 'query_log',

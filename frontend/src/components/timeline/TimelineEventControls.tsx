@@ -1,13 +1,13 @@
 import React, { useEffect, useMemo, useRef, useState } from 'react';
 import type {
-  TimelineEvent,
-  TimelineEventSeverity,
-  TimelineEventSourceCoverage,
+  OperationalEvent,
+  EventSeverity,
+  EventSourceCoverage,
 } from '@tracehouse/core';
 import {
   EVENT_CATEGORY_LABELS,
   EVENT_SEVERITY_COLORS,
-  TIMELINE_EVENT_SEVERITIES,
+  EVENT_SEVERITY_VALUES,
   timelineEventFilterCount,
   type TimelineEventFilter,
 } from './timeline-event-model';
@@ -23,8 +23,8 @@ interface TimelineEventControlsProps {
   visible: boolean;
   shownCount: number;
   totalCount: number;
-  filterUniverse: TimelineEvent[];
-  coverage: TimelineEventSourceCoverage[];
+  filterUniverse: OperationalEvent[];
+  coverage: EventSourceCoverage[];
   filter: TimelineEventFilter;
   onVisibilityChange: (visible: boolean) => void;
   onFilterChange: (filter: TimelineEventFilter) => void;
@@ -79,7 +79,7 @@ export const TimelineEventControls: React.FC<TimelineEventControlsProps> = ({
     return `${item.source}: ${item.status}${suffix}`;
   }).join('\n');
 
-  const applySeverityPreset = (severities: ReadonlySet<TimelineEventSeverity>) => {
+  const applySeverityPreset = (severities: ReadonlySet<EventSeverity>) => {
     onFilterChange(buildSeverityPresetFilter(severities));
   };
 
@@ -145,7 +145,7 @@ export const TimelineEventControls: React.FC<TimelineEventControlsProps> = ({
 
       <button
         type="button"
-        onClick={() => applySeverityPreset(new Set(TIMELINE_EVENT_SEVERITIES))}
+        onClick={() => applySeverityPreset(new Set(EVENT_SEVERITY_VALUES))}
         style={controlButtonStyle(hiddenCount === 0)}
       >
         All
@@ -219,7 +219,7 @@ export const TimelineEventControls: React.FC<TimelineEventControlsProps> = ({
             boxShadow: '0 8px 28px rgba(0,0,0,0.35)',
           }}>
             <FilterSection title="Severity">
-              {TIMELINE_EVENT_SEVERITIES.map(severity => (
+              {EVENT_SEVERITY_VALUES.map(severity => (
                 <FilterCheckbox
                   key={severity}
                   checked={!filter.hiddenSeverities.has(severity)}

@@ -4,11 +4,11 @@ import type {
   EventContextResult,
   EventContextSource,
   EventContextSourceStatus,
-  TimelineEvent,
+  OperationalEvent,
 } from '@tracehouse/core';
 import { useClickHouseServices } from '../../providers/ClickHouseProvider';
 import { formatBytes } from '../../utils/formatters';
-import { EVENT_SEVERITY_COLORS } from '../timeline/timeline-event-model';
+import { EVENT_SEVERITY_COLORS } from './event-model';
 import {
   buildMetricChartGeometry,
   closestMetricPointIndex,
@@ -19,8 +19,8 @@ import {
 import { eventKindLabel, formatEventDateTime } from './events-dashboard-model';
 
 interface EventContextViewProps {
-  event: TimelineEvent;
-  events: readonly TimelineEvent[];
+  event: OperationalEvent;
+  events: readonly OperationalEvent[];
   availableCapabilities: readonly string[];
 }
 
@@ -58,7 +58,7 @@ export const EventContextView: React.FC<EventContextViewProps> = ({
   useEffect(() => {
     if (!services) return;
     let cancelled = false;
-    void services.timelineService.getEventContext({
+    void services.eventContextService.getContext({
       eventTime: event.occurred_at,
       hostname: event.hostname,
       queryId: event.query_id,

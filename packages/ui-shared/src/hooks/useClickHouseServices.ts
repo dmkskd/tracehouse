@@ -20,6 +20,8 @@ import type {
   MetricsCollector,
   MergeTracker,
   TimelineService,
+  EventsService,
+  EventContextService,
   TraceService,
   AnalyticsService,
   ObservabilityMapService,
@@ -36,6 +38,8 @@ export interface ClickHouseServices {
   metricsCollector: MetricsCollector;
   mergeTracker: MergeTracker;
   timelineService: TimelineService;
+  eventsService: EventsService;
+  eventContextService: EventContextService;
   traceService: TraceService;
   analyticsService: AnalyticsService;
   observabilityMapService: ObservabilityMapService;
