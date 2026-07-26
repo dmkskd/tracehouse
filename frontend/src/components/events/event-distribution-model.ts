@@ -14,6 +14,13 @@ export const EVENT_DISTRIBUTION_LAYOUT = {
   axisHeight: 8,
 } as const;
 
+export const EVENT_CLUSTER_MARKER_SIZE = {
+  singletonRadius: 4.5,
+  minimumClusterRadius: 7,
+  maximumRadius: 12,
+  countAtMaximum: 32,
+} as const;
+
 export const EVENT_CATEGORY_COLORS: Record<EventCategory, string> = {
   lifecycle: '#d29922',
   queries: '#f0883e',
@@ -51,6 +58,26 @@ export interface EventHoverCardModel {
   distinctTitles: string[];
   detail?: string;
   actionLabel: string;
+}
+
+/**
+ * Encode count by circle area rather than radius. This keeps small clusters
+ * legible while compressing large bursts into a bounded visual range.
+ */
+export function eventClusterMarkerRadius(eventCount: number): number {
+  const {
+    singletonRadius,
+    minimumClusterRadius,
+    maximumRadius,
+    countAtMaximum,
+  } = EVENT_CLUSTER_MARKER_SIZE;
+  if (eventCount <= 1) return singletonRadius;
+
+  const boundedCount = Math.min(Math.max(eventCount, 2), countAtMaximum);
+  const progress = (boundedCount - 2) / (countAtMaximum - 2);
+  const minimumArea = minimumClusterRadius ** 2;
+  const maximumArea = maximumRadius ** 2;
+  return Math.sqrt(minimumArea + progress * (maximumArea - minimumArea));
 }
 
 export function formatEventDistributionTick(ms: number, spanMs: number): string {

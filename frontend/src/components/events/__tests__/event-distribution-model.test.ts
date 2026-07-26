@@ -3,6 +3,7 @@ import type { OperationalEvent } from '@tracehouse/core';
 import {
   buildEventDistributionLanes,
   buildEventHoverCardModel,
+  eventClusterMarkerRadius,
   formatEventDistributionTick,
   groupEventsByCategory,
 } from '../event-distribution-model';
@@ -21,6 +22,19 @@ function event(
 }
 
 describe('event distribution model', () => {
+  it('sizes cluster markers by area and caps large bursts', () => {
+    const singleton = eventClusterMarkerRadius(1);
+    const smallCluster = eventClusterMarkerRadius(2);
+    const mediumCluster = eventClusterMarkerRadius(12);
+    const cappedCluster = eventClusterMarkerRadius(32);
+
+    expect(singleton).toBe(4.5);
+    expect(smallCluster).toBe(7);
+    expect(mediumCluster).toBeGreaterThan(smallCluster);
+    expect(cappedCluster).toBe(12);
+    expect(eventClusterMarkerRadius(1_000)).toBe(cappedCluster);
+  });
+
   it('makes active lanes taller while preserving category order', () => {
     const events = [
       event({

@@ -18,6 +18,7 @@ import {
   EVENT_CATEGORY_LABELS,
   EVENT_KIND_LABELS,
   EVENT_SEVERITY_COLORS,
+  EVENT_SEVERITY_MARKER_SHAPES,
   EVENT_CATEGORIES,
 } from './event-model';
 import { EventDistribution } from './EventDistribution';
@@ -329,26 +330,30 @@ export const EventsDashboard: React.FC<EventsDashboardProps> = ({
         <MetricStripItem
           label="critical"
           value={severityCounts.critical}
-          color={severityCounts.critical > 0 ? '#f85149' : undefined}
-          indicatorColor="#f85149"
+          color={severityCounts.critical > 0 ? EVENT_SEVERITY_COLORS.critical : undefined}
+          indicatorColor={EVENT_SEVERITY_COLORS.critical}
+          indicatorShape={EVENT_SEVERITY_MARKER_SHAPES.critical}
         />
         <MetricStripItem
           label="errors"
           value={severityCounts.error}
-          color={severityCounts.error > 0 ? '#f0883e' : undefined}
-          indicatorColor="#f0883e"
+          color={severityCounts.error > 0 ? EVENT_SEVERITY_COLORS.error : undefined}
+          indicatorColor={EVENT_SEVERITY_COLORS.error}
+          indicatorShape={EVENT_SEVERITY_MARKER_SHAPES.error}
         />
         <MetricStripItem
           label="warnings"
           value={severityCounts.warning}
-          color={severityCounts.warning > 0 ? '#d29922' : undefined}
-          indicatorColor="#d29922"
+          color={severityCounts.warning > 0 ? EVENT_SEVERITY_COLORS.warning : undefined}
+          indicatorColor={EVENT_SEVERITY_COLORS.warning}
+          indicatorShape={EVENT_SEVERITY_MARKER_SHAPES.warning}
         />
         <MetricStripItem
           label="information"
           value={severityCounts.info}
-          color={severityCounts.info > 0 ? '#58a6ff' : undefined}
-          indicatorColor="#58a6ff"
+          color={severityCounts.info > 0 ? EVENT_SEVERITY_COLORS.info : undefined}
+          indicatorColor={EVENT_SEVERITY_COLORS.info}
+          indicatorShape={EVENT_SEVERITY_MARKER_SHAPES.info}
         />
       </MetricStrip>
 

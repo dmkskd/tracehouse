@@ -18,9 +18,21 @@ export const EVENT_CATEGORIES = Object.keys(
 
 export const EVENT_SEVERITY_COLORS: Record<EventSeverity, string> = {
   critical: '#f85149',
-  error: '#f0883e',
-  warning: '#d29922',
+  error: '#ff7a3d',
+  warning: '#f2cc60',
   info: '#58a6ff',
+};
+
+export type EventSeverityMarkerShape = 'diamond' | 'circle' | 'triangle' | 'square';
+
+export const EVENT_SEVERITY_MARKER_SHAPES: Record<
+  EventSeverity,
+  EventSeverityMarkerShape
+> = {
+  critical: 'diamond',
+  error: 'circle',
+  warning: 'triangle',
+  info: 'square',
 };
 
 export const EVENT_CATEGORY_LABELS = Object.fromEntries(

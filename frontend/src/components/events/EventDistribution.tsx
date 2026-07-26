@@ -12,6 +12,7 @@ import {
   EVENT_CATEGORY_COLORS,
   EVENT_CATEGORY_SYMBOLS,
   EVENT_DISTRIBUTION_LAYOUT,
+  eventClusterMarkerRadius,
   formatEventDistributionTick,
   groupEventsByCategory,
   isStateEpisode,
@@ -542,7 +543,7 @@ export const EventDistribution: React.FC<EventDistributionProps> = ({
                 const x = xForMs(cluster.occurredAtMs);
                 const selected = cluster.events.some(event => event.id === selectedEventId);
                 const hovered = hoveredMarker?.id === cluster.id;
-                const radius = cluster.events.length > 1 ? 7 : 4.5;
+                const radius = eventClusterMarkerRadius(cluster.events.length);
                 const markerLabel = eventClusterLabel(cluster);
                 return (
                   <g
@@ -569,14 +570,9 @@ export const EventDistribution: React.FC<EventDistributionProps> = ({
                       }
                     }}
                   >
-                    <line
-                      x1={0}
-                      x2={0}
-                      y1={-laneHeight / 2 + 4}
-                      y2={-radius}
-                      stroke={EVENT_SEVERITY_COLORS[cluster.severity]}
-                      strokeWidth={1}
-                      opacity={0.42}
+                    <circle
+                      r={Math.max(10, radius + 2)}
+                      fill="transparent"
                     />
                     <circle
                       r={radius}
@@ -589,7 +585,7 @@ export const EventDistribution: React.FC<EventDistributionProps> = ({
                         y={2.7}
                         textAnchor="middle"
                         fill="#fff"
-                        fontSize={7}
+                        fontSize={radius >= 10 ? 8 : 7}
                         fontWeight={700}
                       >
                         {cluster.events.length > 99 ? '99+' : cluster.events.length}

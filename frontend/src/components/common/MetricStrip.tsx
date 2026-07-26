@@ -11,6 +11,7 @@ interface MetricStripItemProps {
   value: React.ReactNode;
   color?: string;
   indicatorColor?: string;
+  indicatorShape?: 'square' | 'circle' | 'diamond' | 'triangle';
   title?: string;
   barPercentage?: number;
 }
@@ -50,6 +51,7 @@ export const MetricStripItem: React.FC<MetricStripItemProps> = ({
   value,
   color,
   indicatorColor,
+  indicatorShape = 'square',
   title,
   barPercentage,
 }) => {
@@ -72,13 +74,7 @@ export const MetricStripItem: React.FC<MetricStripItemProps> = ({
       {indicatorColor && (
         <span
           aria-hidden="true"
-          style={{
-            width: 7,
-            height: 7,
-            flexShrink: 0,
-            borderRadius: 2,
-            background: indicatorColor,
-          }}
+          style={metricIndicatorStyle(indicatorColor, indicatorShape)}
         />
       )}
       <span
@@ -127,6 +123,39 @@ export const MetricStripItem: React.FC<MetricStripItemProps> = ({
     </span>
   );
 };
+
+function metricIndicatorStyle(
+  color: string,
+  shape: NonNullable<MetricStripItemProps['indicatorShape']>,
+): React.CSSProperties {
+  const base: React.CSSProperties = {
+    width: 8,
+    height: 8,
+    flexShrink: 0,
+    background: color,
+  };
+
+  if (shape === 'circle') return { ...base, borderRadius: '50%' };
+  if (shape === 'diamond') {
+    return {
+      ...base,
+      borderRadius: 1,
+      transform: 'rotate(45deg) scale(0.78)',
+    };
+  }
+  if (shape === 'triangle') {
+    return {
+      width: 0,
+      height: 0,
+      flexShrink: 0,
+      background: 'transparent',
+      borderLeft: '5px solid transparent',
+      borderRight: '5px solid transparent',
+      borderBottom: `9px solid ${color}`,
+    };
+  }
+  return { ...base, borderRadius: 2 };
+}
 
 export const MetricStripDivider: React.FC = () => (
   <span
