@@ -4,11 +4,17 @@
  */
 
 import React, { useState, useRef, useEffect } from 'react';
-import { NavLink } from 'react-router-dom';
+import { NavLink, useLocation } from 'react-router-dom';
 import { ConnectionSelector } from './connection/ConnectionSelector';
 import { useTheme } from '../providers/ThemeProvider';
 import { useUserPreferenceStore } from '../stores/userPreferenceStore';
-import { useRefreshConfig, type RefreshRateOption } from '@tracehouse/ui-shared';
+import {
+  TRACEHOUSE_OVERFLOW_ITEMS,
+  TRACEHOUSE_OVERFLOW_NAVIGATION,
+  TRACEHOUSE_PRIMARY_NAVIGATION,
+  useRefreshConfig,
+  type RefreshRateOption,
+} from '@tracehouse/ui-shared';
 import { useRefreshSettingsStore, useGlobalLastUpdatedStore } from '../stores/refreshSettingsStore';
 import { buildConfig } from '../buildConfig';
 import { globalRefreshLabel } from './layout-refresh-model';
@@ -17,18 +23,120 @@ interface LayoutProps {
   children: React.ReactNode;
 }
 
-const navItems = [
-  { path: '/overview', label: 'Overview' },
-  { path: '/engine-internals', label: 'Engine Internals' },
-  { path: '/cluster', label: 'Cluster' },
-  { path: '/databases', label: 'Explorer' },
-  { path: '/timetravel', label: 'Time Travel' },
-  { path: '/events', label: 'Events' },
-  { path: '/queries', label: 'Queries' },
-  { path: '/merges', label: 'Merges' },
-  { path: '/replication', label: 'Replication' },
-  { path: '/analytics', label: 'Analytics' },
-];
+const OverflowNavigation: React.FC = () => {
+  const [open, setOpen] = useState(false);
+  const ref = useRef<HTMLDivElement>(null);
+  const location = useLocation();
+  const activeItem = TRACEHOUSE_OVERFLOW_ITEMS.find(item => location.pathname.startsWith(item.path));
+
+  useEffect(() => {
+    if (!open) return;
+    const closeOnOutsideClick = (event: MouseEvent) => {
+      if (ref.current && !ref.current.contains(event.target as Node)) setOpen(false);
+    };
+    const closeOnEscape = (event: KeyboardEvent) => {
+      if (event.key === 'Escape') setOpen(false);
+    };
+    document.addEventListener('mousedown', closeOnOutsideClick);
+    document.addEventListener('keydown', closeOnEscape);
+    return () => {
+      document.removeEventListener('mousedown', closeOnOutsideClick);
+      document.removeEventListener('keydown', closeOnEscape);
+    };
+  }, [open]);
+
+  return (
+    <div ref={ref} style={{ position: 'relative' }}>
+      <button
+        type="button"
+        aria-haspopup="menu"
+        aria-expanded={open}
+        onClick={() => setOpen(value => !value)}
+        style={{
+          padding: '6px 0',
+          border: 'none',
+          background: 'transparent',
+          color: activeItem ? 'var(--text-primary)' : 'var(--text-muted)',
+          fontFamily: "'Orbitron', 'Rajdhani', monospace",
+          fontSize: 11,
+          fontWeight: 500,
+          letterSpacing: '0.1em',
+          textTransform: 'uppercase',
+          cursor: 'pointer',
+          whiteSpace: 'nowrap',
+        }}
+      >
+        <span style={{
+          paddingBottom: 4,
+          borderBottom: activeItem
+            ? '1px solid var(--accent-secondary)'
+            : '1px solid transparent',
+        }}>
+          {activeItem?.label ?? 'More'} <span aria-hidden="true">⌄</span>
+        </span>
+      </button>
+
+      {open && (
+        <div
+          role="menu"
+          style={{
+            position: 'absolute',
+            top: 'calc(100% + 8px)',
+            left: 0,
+            zIndex: 2100,
+            width: 210,
+            padding: 8,
+            border: '1px solid var(--border-primary)',
+            borderRadius: 8,
+            background: 'var(--bg-secondary)',
+            boxShadow: '0 12px 32px rgba(0,0,0,0.24)',
+          }}
+        >
+          {TRACEHOUSE_OVERFLOW_NAVIGATION.map((group, groupIndex) => (
+            <div
+              key={group.label}
+              style={{
+                paddingTop: groupIndex === 0 ? 0 : 8,
+                marginTop: groupIndex === 0 ? 0 : 6,
+                borderTop: groupIndex === 0 ? 'none' : '1px solid var(--border-primary)',
+              }}
+            >
+              <div style={{
+                padding: '3px 8px 5px',
+                color: 'var(--text-muted)',
+                fontSize: 9,
+                fontWeight: 600,
+                letterSpacing: '0.08em',
+                textTransform: 'uppercase',
+              }}>
+                {group.label}
+              </div>
+              {group.items.map(item => (
+                <NavLink
+                  key={item.path}
+                  to={item.path}
+                  role="menuitem"
+                  onClick={() => setOpen(false)}
+                  style={({ isActive }) => ({
+                    display: 'block',
+                    padding: '7px 8px',
+                    borderRadius: 5,
+                    color: isActive ? 'var(--text-primary)' : 'var(--text-secondary)',
+                    background: isActive ? 'var(--bg-card-hover)' : 'transparent',
+                    fontSize: 12,
+                    textDecoration: 'none',
+                  })}
+                >
+                  {item.label}
+                </NavLink>
+              ))}
+            </div>
+          ))}
+        </div>
+      )}
+    </div>
+  );
+};
 
 /** Settings popover with theme + view mode + refresh rate */
 const SettingsPopover: React.FC = () => {
@@ -396,9 +504,9 @@ export const Layout: React.FC<LayoutProps> = ({ children }) => {
         }}
       >
         {/* Left: Nav */}
-        <div className="flex items-center gap-8">
-          <nav className="flex items-center gap-6">
-            {navItems.map((item) => (
+        <div className="flex items-center min-w-0">
+          <nav className="flex items-center gap-4" style={{ whiteSpace: 'nowrap' }}>
+            {TRACEHOUSE_PRIMARY_NAVIGATION.map((item) => (
               <NavLink
                 key={item.path}
                 to={item.path}
@@ -420,11 +528,12 @@ export const Layout: React.FC<LayoutProps> = ({ children }) => {
                 )}
               </NavLink>
             ))}
+            <OverflowNavigation />
           </nav>
         </div>
         
         {/* Right: Connection + Refresh Status + Settings */}
-        <div className="flex items-center gap-4">
+        <div className="flex items-center gap-4 flex-shrink-0">
           <ConnectionSelector />
           <div className="w-px h-5" style={{ background: 'var(--border-primary)' }} />
           <GlobalRefreshIndicator />

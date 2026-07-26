@@ -1,6 +1,7 @@
 import React, { useMemo } from 'react';
 import { Link } from 'react-router-dom';
 import type { OverviewData, ResourceAttribution } from '@tracehouse/core';
+import { TRACEHOUSE_NAVIGATION } from '@tracehouse/ui-shared';
 import { loadDashboards } from '../analytics/dashboards';
 import { useClusterStore } from '../../stores/clusterStore';
 import { OVERVIEW_COLORS, RESOURCE_COLORS } from '../../styles/overviewColors';
@@ -29,6 +30,10 @@ const cardGridStyle: React.CSSProperties = {
   gridTemplateColumns: 'repeat(auto-fit, minmax(240px, 1fr))',
   gap: 12,
 };
+
+const destinationOrder: ReadonlyMap<string, number> = new Map(
+  TRACEHOUSE_NAVIGATION.map((item, index) => [item.path, index]),
+);
 
 function Icon({ children }: { children: React.ReactNode }) {
   return (
@@ -139,6 +144,7 @@ function DestinationCard({ title, href, icon, accent, primary, secondary, childr
         gap: 8,
         boxShadow: 'var(--shadow-sm)',
         transition: 'border-color 0.15s ease, transform 0.15s ease, background 0.15s ease',
+        order: destinationOrder.get(href) ?? 99,
       }}
       onMouseEnter={event => {
         event.currentTarget.style.borderColor = accent;
@@ -220,6 +226,8 @@ export function OverviewDestinationCards({ data, cpuUsage, memoryPct, cpuHistory
   const estimatedQueriesInWindow = Math.round(qpsHistory.reduce((sum, value) => sum + value * 15, 0));
   const peakQps = Math.max(0, ...qpsHistory);
   const dashboardTitles = dashboards.slice(0, 3).map(dashboard => dashboard.title).join(' · ');
+  const activeSignalCount = data?.alerts.length ?? 0;
+  const criticalSignalCount = data?.alerts.filter(alert => alert.severity === 'crit').length ?? 0;
   const waitingForLiveData = isLoading && !data;
   const primaryOrLoading = (value: string) => waitingForLiveData ? 'Loading...' : value;
   const secondaryOrLoading = (value: string) => waitingForLiveData ? 'fetching overview data' : value;
@@ -380,6 +388,25 @@ export function OverviewDestinationCards({ data, cpuUsage, memoryPct, cpuHistory
               </span>
             ))}
           </div>
+        </DestinationCard>
+
+        <DestinationCard
+          title="Events"
+          href="/events"
+          accent={criticalSignalCount > 0 ? OVERVIEW_COLORS.crit : OVERVIEW_COLORS.warn}
+          icon={<Icon><path d="M12 3v10" /><path d="M12 17v.01" /><path d="M5 21h14" /><path d="M6.5 17L12 5l5.5 12" /></Icon>}
+          primary={primaryOrLoading(`${formatNumber(activeSignalCount)} active signal${activeSignalCount === 1 ? '' : 's'}`)}
+          secondary={secondaryOrLoading(`${criticalSignalCount} critical · operational changes and failures`)}
+        >
+          {waitingForLiveData ? (
+            <LoadingPreview />
+          ) : (
+            <DotRow
+              count={Math.max(1, activeSignalCount)}
+              active={activeSignalCount}
+              color={criticalSignalCount > 0 ? OVERVIEW_COLORS.crit : OVERVIEW_COLORS.warn}
+            />
+          )}
         </DestinationCard>
       </div>
     </section>

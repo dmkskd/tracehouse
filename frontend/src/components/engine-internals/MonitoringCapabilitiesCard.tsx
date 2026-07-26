@@ -6,6 +6,7 @@
 import { useState, useMemo, useRef } from 'react';
 import { useMonitoringCapabilitiesStore } from '../../stores/monitoringCapabilitiesStore';
 import type { MonitoringCapability } from '@tracehouse/core';
+import { TRACEHOUSE_NAVIGATION } from '@tracehouse/ui-shared';
 import {
   getConsumersForCapability,
   getScreenSummaries,
@@ -138,10 +139,9 @@ export function MonitoringCapabilitiesCard({ className = '' }: MonitoringCapabil
       return { ...s, requiredMissing, optionalMissing, status };
     }).sort((a, b) => {
       // Primary: match nav bar order, secondary: status within tab
-      const TAB_ORDER: Record<string, number> = {
-        'Overview': 0, 'Engine Internals': 1, 'Cluster': 2, 'Explorer': 3,
-        'Time Travel': 4, 'Events': 5, 'Queries': 6, 'Merges': 7, 'Replication': 8, 'Analytics': 9,
-      };
+      const TAB_ORDER = Object.fromEntries(
+        TRACEHOUSE_NAVIGATION.map((item, index) => [item.label, index]),
+      ) as Record<string, number>;
       const tabA = TAB_ORDER[a.tab ?? ''] ?? 99;
       const tabB = TAB_ORDER[b.tab ?? ''] ?? 99;
       if (tabA !== tabB) return tabA - tabB;

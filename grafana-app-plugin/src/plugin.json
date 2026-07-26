@@ -71,36 +71,8 @@
     },
     {
       "type": "page",
-      "name": "Engine Internals",
-      "path": "/a/dmkskd-tracehouse-app/engine-internals",
-      "role": "Viewer",
-      "addToNav": true
-    },
-    {
-      "type": "page",
-      "name": "Cluster",
-      "path": "/a/dmkskd-tracehouse-app/cluster",
-      "role": "Viewer",
-      "addToNav": true
-    },
-    {
-      "type": "page",
-      "name": "Explorer",
-      "path": "/a/dmkskd-tracehouse-app/databases",
-      "role": "Viewer",
-      "addToNav": true
-    },
-    {
-      "type": "page",
       "name": "Time Travel",
       "path": "/a/dmkskd-tracehouse-app/timetravel",
-      "role": "Viewer",
-      "addToNav": true
-    },
-    {
-      "type": "page",
-      "name": "Events",
-      "path": "/a/dmkskd-tracehouse-app/events",
       "role": "Viewer",
       "addToNav": true
     },
@@ -120,17 +92,45 @@
     },
     {
       "type": "page",
-      "name": "Replication",
-      "path": "/a/dmkskd-tracehouse-app/replication",
+      "name": "Analytics",
+      "path": "/a/dmkskd-tracehouse-app/analytics",
       "role": "Viewer",
       "addToNav": true
     },
     {
       "type": "page",
-      "name": "Analytics",
-      "path": "/a/dmkskd-tracehouse-app/analytics",
+      "name": "Events",
+      "path": "/a/dmkskd-tracehouse-app/events",
       "role": "Viewer",
       "addToNav": true
+    },
+    {
+      "type": "page",
+      "name": "Explorer",
+      "path": "/a/dmkskd-tracehouse-app/databases",
+      "role": "Viewer",
+      "addToNav": true
+    },
+    {
+      "type": "page",
+      "name": "Cluster",
+      "path": "/a/dmkskd-tracehouse-app/cluster",
+      "role": "Viewer",
+      "addToNav": false
+    },
+    {
+      "type": "page",
+      "name": "Replication",
+      "path": "/a/dmkskd-tracehouse-app/replication",
+      "role": "Viewer",
+      "addToNav": false
+    },
+    {
+      "type": "page",
+      "name": "Engine Internals",
+      "path": "/a/dmkskd-tracehouse-app/engine-internals",
+      "role": "Viewer",
+      "addToNav": false
     }
   ],
   "dependencies": {

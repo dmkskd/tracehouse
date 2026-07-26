@@ -5,18 +5,23 @@ import { test, expect, type Page } from '@playwright/test';
 // ---------------------------------------------------------------------------
 
 /** All navigable routes with their expected heading / visible text. */
-const ROUTES = [
+const PRIMARY_ROUTES = [
   { path: '#/overview', label: 'Overview' },
-  { path: '#/engine-internals', label: 'Engine Internals' },
-  { path: '#/cluster', label: 'Cluster' },
-  { path: '#/databases', label: 'Explorer' },
   { path: '#/timetravel', label: 'Time Travel' },
-  { path: '#/events', label: 'Events' },
   { path: '#/queries', label: 'Queries' },
   { path: '#/merges', label: 'Merges' },
-  { path: '#/replication', label: 'Replication' },
   { path: '#/analytics', label: 'Analytics' },
+  { path: '#/events', label: 'Events' },
+  { path: '#/databases', label: 'Explorer' },
 ] as const;
+
+const OVERFLOW_ROUTES = [
+  { path: '#/cluster', label: 'Cluster' },
+  { path: '#/replication', label: 'Replication' },
+  { path: '#/engine-internals', label: 'Engine Internals' },
+] as const;
+
+const ROUTES = [...PRIMARY_ROUTES, ...OVERFLOW_ROUTES] as const;
 
 /** Skip test when running on a mobile project (nav items overlap the header). */
 function skipOnMobile() {
@@ -45,10 +50,17 @@ test.describe('App boot', () => {
     await expect(page.locator('header nav')).toBeVisible();
   });
 
-  test('has all nav items', async ({ page }) => {
+  test('has priority navigation and grouped overflow items', async ({ page }) => {
     await page.goto('/');
-    for (const { label } of ROUTES) {
+    const nav = page.locator('nav');
+    for (const { label } of PRIMARY_ROUTES) {
       await expect(page.locator('nav').getByText(label, { exact: true })).toBeVisible();
+    }
+    const overflowTrigger = nav.locator('button[aria-haspopup="menu"]');
+    await expect(overflowTrigger).toBeVisible();
+    await overflowTrigger.click();
+    for (const { label } of OVERFLOW_ROUTES) {
+      await expect(nav.getByRole('menuitem', { name: label })).toBeVisible();
     }
   });
 });
@@ -60,7 +72,14 @@ test.describe('Navigation', () => {
     await expect(page).toHaveURL(/.*#\/overview/);
 
     for (const route of ROUTES) {
-      const link = page.locator('nav').getByText(route.label, { exact: true });
+      const nav = page.locator('nav');
+      const overflowRoute = OVERFLOW_ROUTES.some(item => item.path === route.path);
+      if (overflowRoute) {
+        await nav.locator('button[aria-haspopup="menu"]').click();
+      }
+      const link = overflowRoute
+        ? nav.getByRole('menuitem', { name: route.label })
+        : nav.getByText(route.label, { exact: true });
       await link.scrollIntoViewIfNeeded();
       const start = Date.now();
       await link.click();

@@ -9,7 +9,13 @@ import { DatasourceSelector } from './components/DatasourceSelector';
 import { LocationContext, AppLocation } from './hooks/useAppLocation';
 import { useUserPreferenceStore } from '@frontend/stores/userPreferenceStore';
 import { useRefreshSettingsStore, useGlobalLastUpdatedStore } from '@frontend/stores/refreshSettingsStore';
-import { useRefreshConfig, type RefreshRateOption } from '@tracehouse/ui-shared';
+import {
+  TRACEHOUSE_OVERFLOW_ITEMS,
+  TRACEHOUSE_OVERFLOW_NAVIGATION,
+  TRACEHOUSE_PRIMARY_NAVIGATION,
+  useRefreshConfig,
+  type RefreshRateOption,
+} from '@tracehouse/ui-shared';
 import pluginJson from './plugin.json';
 
 // eslint-disable-next-line @typescript-eslint/no-require-imports
@@ -321,6 +327,113 @@ const GrafanaRefreshIndicator: React.FC = () => {
   );
 };
 
+const GrafanaOverflowNavigation: React.FC<{ routeKey: string }> = ({ routeKey }) => {
+  const [open, setOpen] = useState(false);
+  const ref = useRef<HTMLDivElement>(null);
+  const activeItem = TRACEHOUSE_OVERFLOW_ITEMS.find(item => item.key === routeKey);
+
+  useEffect(() => {
+    if (!open) return;
+    const closeOnOutsideClick = (event: MouseEvent) => {
+      if (ref.current && !ref.current.contains(event.target as Node)) setOpen(false);
+    };
+    const closeOnEscape = (event: KeyboardEvent) => {
+      if (event.key === 'Escape') setOpen(false);
+    };
+    document.addEventListener('mousedown', closeOnOutsideClick);
+    document.addEventListener('keydown', closeOnEscape);
+    return () => {
+      document.removeEventListener('mousedown', closeOnOutsideClick);
+      document.removeEventListener('keydown', closeOnEscape);
+    };
+  }, [open]);
+
+  return (
+    <div ref={ref} style={{ position: 'relative', flexShrink: 0 }}>
+      <button
+        type="button"
+        aria-haspopup="menu"
+        aria-expanded={open}
+        onClick={() => setOpen(value => !value)}
+        style={{
+          padding: '4px 8px',
+          border: 'none',
+          borderRadius: 4,
+          background: activeItem ? 'rgba(168,85,247,0.1)' : 'transparent',
+          color: activeItem ? '#a855f7' : 'var(--text-secondary)',
+          fontSize: 12,
+          cursor: 'pointer',
+          whiteSpace: 'nowrap',
+        }}
+      >
+        {activeItem?.label ?? 'More'} <span aria-hidden="true">⌄</span>
+      </button>
+
+      {open && (
+        <div
+          role="menu"
+          style={{
+            position: 'absolute',
+            top: 'calc(100% + 8px)',
+            left: 0,
+            zIndex: 2100,
+            width: 210,
+            padding: 8,
+            border: '1px solid var(--border-primary)',
+            borderRadius: 8,
+            background: 'var(--bg-secondary)',
+            boxShadow: '0 12px 32px rgba(0,0,0,0.28)',
+          }}
+        >
+          {TRACEHOUSE_OVERFLOW_NAVIGATION.map((group, groupIndex) => (
+            <div
+              key={group.label}
+              style={{
+                paddingTop: groupIndex === 0 ? 0 : 8,
+                marginTop: groupIndex === 0 ? 0 : 6,
+                borderTop: groupIndex === 0 ? 'none' : '1px solid var(--border-primary)',
+              }}
+            >
+              <div style={{
+                padding: '3px 8px 5px',
+                color: 'var(--text-muted)',
+                fontSize: 9,
+                fontWeight: 600,
+                letterSpacing: '0.08em',
+                textTransform: 'uppercase',
+              }}>
+                {group.label}
+              </div>
+              {group.items.map(item => {
+                const active = routeKey === item.key;
+                return (
+                  <a
+                    key={item.key}
+                    href={`/a/dmkskd-tracehouse-app${item.path}`}
+                    role="menuitem"
+                    onClick={() => setOpen(false)}
+                    style={{
+                      display: 'block',
+                      padding: '7px 8px',
+                      borderRadius: 5,
+                      color: active ? '#a855f7' : 'var(--text-secondary)',
+                      background: active ? 'rgba(168,85,247,0.1)' : 'transparent',
+                      fontSize: 12,
+                      textDecoration: 'none',
+                    }}
+                  >
+                    {item.label}
+                  </a>
+                );
+              })}
+            </div>
+          ))}
+        </div>
+      )}
+    </div>
+  );
+};
+
 interface AppContentProps {
   path: string;
 }
@@ -355,6 +468,7 @@ function AppContent({ path }: AppContentProps) {
           display: 'flex',
           alignItems: 'center',
           gap: 12,
+          minWidth: 0,
         }}>
           <span style={{ 
             fontSize: 14, 
@@ -365,43 +479,33 @@ function AppContent({ path }: AppContentProps) {
             TraceHouse
           </span>
           
-          {/* Navigation breadcrumb - matching main app order */}
+          {/* Priority navigation shared with the standalone app */}
           <div style={{
             display: 'flex',
             alignItems: 'center',
-            gap: 4,
+            gap: 2,
             marginLeft: 8,
+            minWidth: 0,
+            whiteSpace: 'nowrap',
           }}>
-            {[
-              { key: 'overview', label: 'Overview', path: '/a/dmkskd-tracehouse-app/overview' },
-              { key: 'engine-internals', label: 'Engine Internals', path: '/a/dmkskd-tracehouse-app/engine-internals' },
-              { key: 'cluster', label: 'Cluster', path: '/a/dmkskd-tracehouse-app/cluster' },
-              { key: 'databases', label: 'Explorer', path: '/a/dmkskd-tracehouse-app/databases' },
-              { key: 'timetravel', label: 'Time Travel', path: '/a/dmkskd-tracehouse-app/timetravel' },
-              { key: 'events', label: 'Events', path: '/a/dmkskd-tracehouse-app/events' },
-              { key: 'queries', label: 'Queries', path: '/a/dmkskd-tracehouse-app/queries' },
-              { key: 'merges', label: 'Merges', path: '/a/dmkskd-tracehouse-app/merges' },
-              { key: 'replication', label: 'Replication', path: '/a/dmkskd-tracehouse-app/replication' },
-              { key: 'analytics', label: 'Analytics', path: '/a/dmkskd-tracehouse-app/analytics' },
-            ].map((item, idx) => (
-              <React.Fragment key={item.key}>
-                {idx > 0 && <span style={{ color: 'var(--text-muted)', fontSize: 12 }}>|</span>}
-                <a
-                  href={item.path}
-                  style={{
-                    color: routeKey === item.key ? '#a855f7' : 'var(--text-secondary)',
-                    fontSize: 12,
-                    textDecoration: 'none',
-                    padding: '4px 8px',
-                    borderRadius: 4,
-                    background: routeKey === item.key ? 'rgba(168, 85, 247, 0.1)' : 'transparent',
-                    fontFamily: 'system-ui, sans-serif',
-                  }}
-                >
-                  {item.label}
-                </a>
-              </React.Fragment>
+            {TRACEHOUSE_PRIMARY_NAVIGATION.map(item => (
+              <a
+                key={item.key}
+                href={`/a/dmkskd-tracehouse-app${item.path}`}
+                style={{
+                  color: routeKey === item.key ? '#a855f7' : 'var(--text-secondary)',
+                  fontSize: 12,
+                  textDecoration: 'none',
+                  padding: '4px 8px',
+                  borderRadius: 4,
+                  background: routeKey === item.key ? 'rgba(168, 85, 247, 0.1)' : 'transparent',
+                  fontFamily: 'system-ui, sans-serif',
+                }}
+              >
+                {item.label}
+              </a>
             ))}
+            <GrafanaOverflowNavigation routeKey={routeKey} />
           </div>
         </div>
         
@@ -409,6 +513,7 @@ function AppContent({ path }: AppContentProps) {
           display: 'flex',
           alignItems: 'center',
           gap: 12,
+          flexShrink: 0,
         }}>
           {/* Inline datasource + cluster selectors */}
           <DatasourceSelector

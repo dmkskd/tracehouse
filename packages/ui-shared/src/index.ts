@@ -1,5 +1,14 @@
 // @tracehouse/ui-shared barrel export
 
+export {
+  TRACEHOUSE_NAVIGATION,
+  TRACEHOUSE_OVERFLOW_ITEMS,
+  TRACEHOUSE_OVERFLOW_NAVIGATION,
+  TRACEHOUSE_PRIMARY_NAVIGATION,
+  type TracehouseNavigationGroup,
+  type TracehouseNavigationItem,
+} from './navigation.js';
+
 // 3D visualization components
 export {
   // Size calculations

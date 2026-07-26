@@ -3,7 +3,7 @@
  * Toggle buttons switch Y-axis metric. Same time axis, hover, pin, zoom across all views.
  */
 import React, { useState, useCallback, useMemo, useRef, useEffect } from 'react';
-import { useNavigate, useSearchParams } from 'react-router-dom';
+import { useNavigate, useSearchParams } from '../hooks/useAppLocation';
 import { useConnectionStore } from '../stores/connectionStore';
 import { useClickHouseServices } from '../providers/ClickHouseProvider';
 import { useClusterStore } from '../stores/clusterStore';
