@@ -265,7 +265,7 @@ export function supportedEventAvailability(
   coverage: readonly TimelineEventSourceCoverage[],
 ): SupportedEventAvailability {
   const relevant = coverage.filter(item => (
-    eventType.capabilities.includes(item.capability)
+    eventType.capabilities.some(capability => capability === item.capability)
   ));
   if (relevant.some(item => item.status === 'loaded')) {
     return relevant.every(item => item.status === 'loaded') ? 'available' : 'partial';
