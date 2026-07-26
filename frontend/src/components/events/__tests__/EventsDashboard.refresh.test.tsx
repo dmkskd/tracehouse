@@ -159,4 +159,66 @@ describe('EventsDashboard refresh behavior', () => {
 
     expect(mocks.refreshCapabilities).toHaveBeenCalledWith(mocks.services.adapter);
   });
+
+  it('collapses similar bursts and keeps the individual events expandable', async () => {
+    mocks.getEvents.mockResolvedValueOnce({
+      events: [
+        {
+          id: 'ddl-3',
+          occurred_at: '2026-07-26T11:59:59.300Z',
+          kind: 'ddl',
+          category: 'changes',
+          severity: 'info',
+          precision: 'exact',
+          title: 'DDL · Create',
+          hostname: 'ch-1',
+          source: 'system.query_log',
+          capability: 'query_log',
+        },
+        {
+          id: 'ddl-2',
+          occurred_at: '2026-07-26T11:59:59.200Z',
+          kind: 'ddl',
+          category: 'changes',
+          severity: 'info',
+          precision: 'exact',
+          title: 'DDL · Create',
+          hostname: 'ch-1',
+          source: 'system.query_log',
+          capability: 'query_log',
+        },
+        {
+          id: 'ddl-1',
+          occurred_at: '2026-07-26T11:59:59.100Z',
+          kind: 'ddl',
+          category: 'changes',
+          severity: 'info',
+          precision: 'exact',
+          title: 'DDL · Create',
+          hostname: 'ch-1',
+          source: 'system.query_log',
+          capability: 'query_log',
+        },
+      ],
+      coverage: [],
+    });
+
+    await act(async () => {
+      render(dashboard());
+    });
+
+    const cluster = screen.getByRole('button', {
+      name: 'Expand 3 similar events: DDL · Create',
+    });
+    expect(cluster).toHaveAttribute('aria-expanded', 'false');
+
+    fireEvent.click(cluster);
+
+    expect(screen.getByRole('button', {
+      name: 'Collapse 3 similar events: DDL · Create',
+    })).toHaveAttribute('aria-expanded', 'true');
+    expect(screen.getAllByRole('button', {
+      name: /^DDL · Create/,
+    })).toHaveLength(3);
+  });
 });

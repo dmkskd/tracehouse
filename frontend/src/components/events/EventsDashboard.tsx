@@ -32,6 +32,7 @@ import {
 import { EventContextView } from './EventContextView';
 import {
   buildEventMarkerSelection,
+  clusterSimilarEvents,
   countEventSeverities,
   SUPPORTED_EVENT_TYPES,
   eventDetailLabel,
@@ -49,6 +50,7 @@ import {
   supportedEventGroups,
   toClickHouseEventTime,
   type EventMarkerSelection,
+  type EventListCluster,
   type EventDetailSection,
   type SupportedEventAvailability,
 } from './events-dashboard-model';
@@ -114,6 +116,10 @@ export const EventsDashboard: React.FC<EventsDashboardProps> = ({
   const [liveRangeEndMs, setLiveRangeEndMs] = useState(() => Date.now());
   const [clusterSelection, setClusterSelection] = useState<EventMarkerSelection | null>(
     null,
+  );
+  const [groupSimilarEvents, setGroupSimilarEvents] = useState(true);
+  const [expandedEventClusters, setExpandedEventClusters] = useState<ReadonlySet<string>>(
+    () => new Set(),
   );
   const [selectedPanel, setSelectedPanel] = useState<'details' | 'context'>('details');
 
@@ -294,6 +300,14 @@ export const EventsDashboard: React.FC<EventsDashboardProps> = ({
     selectedEventTime,
     sortedEvents,
   ]);
+  const eventListClusters = useMemo(
+    () => clusterSimilarEvents(displayedEvents),
+    [displayedEvents],
+  );
+  const clusteredEventCount = useMemo(
+    () => eventListClusters.filter(cluster => cluster.events.length > 1).length,
+    [eventListClusters],
+  );
   const severityCounts = useMemo(() => countEventSeverities(events), [events]);
   const coverageProblems = coverage.filter(item => item.status === 'failed' || item.truncated);
   const loadedSources = coverage.filter(item => item.status === 'loaded').length;
@@ -546,14 +560,22 @@ export const EventsDashboard: React.FC<EventsDashboardProps> = ({
       }}>
         <div style={panelStyle}>
           <div style={panelHeaderStyle}>
-            <strong>
-              {displayedEvents.length}
-              {clusterSelection
-                ? ` ${displayedEvents.length === 1 ? 'event' : 'events'} under this marker`
-                : ` ${displayedEvents.length === 1 ? 'event' : 'events'}`}
-            </strong>
-            {clusterSelection ? (
-              <span style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+            <span style={{ display: 'flex', alignItems: 'baseline', gap: 6 }}>
+              <strong>
+                {displayedEvents.length}
+                {clusterSelection
+                  ? ` ${displayedEvents.length === 1 ? 'event' : 'events'} under this marker`
+                  : ` ${displayedEvents.length === 1 ? 'event' : 'events'}`}
+              </strong>
+              {groupSimilarEvents && clusteredEventCount > 0 && (
+                <span style={{ color: 'var(--text-muted)' }}>
+                  · {clusteredEventCount} {clusteredEventCount === 1 ? 'cluster' : 'clusters'}
+                </span>
+              )}
+            </span>
+            <span style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+              {clusterSelection ? (
+                <>
                 <span style={{ color: 'var(--text-muted)' }}>
                   {clusterSelection.eventIds.size === 1
                     ? formatEventDateTime(new Date(clusterSelection.startMs).toISOString())
@@ -565,72 +587,76 @@ export const EventsDashboard: React.FC<EventsDashboardProps> = ({
                 >
                   Clear event filter
                 </button>
-              </span>
-            ) : (
-              <span style={{ color: 'var(--text-muted)' }}>newest first</span>
-            )}
+                </>
+              ) : (
+                <span style={{ color: 'var(--text-muted)' }}>newest first</span>
+              )}
+              <button
+                type="button"
+                aria-pressed={groupSimilarEvents}
+                onClick={() => setGroupSimilarEvents(value => !value)}
+                title="Group adjacent events with the same type, title, host, source, and severity within 5 seconds"
+                style={{
+                  ...secondaryButtonStyle,
+                  color: groupSimilarEvents ? '#58a6ff' : 'var(--text-muted)',
+                  borderColor: groupSimilarEvents
+                    ? 'rgba(88,166,255,0.4)'
+                    : 'var(--border-primary)',
+                  background: groupSimilarEvents
+                    ? 'rgba(88,166,255,0.08)'
+                    : 'var(--bg-card)',
+                }}
+              >
+                Group similar
+              </button>
+            </span>
           </div>
           <div style={{ minHeight: 0, flex: 1, overflow: 'auto', padding: 6 }}>
             {!loading && displayedEvents.length === 0 && (
               <div style={emptyStyle}>No events match this range and filter.</div>
             )}
-            {displayedEvents.map(event => {
-              const selected = event.id === selectedEvent?.id;
+            {(groupSimilarEvents
+              ? eventListClusters
+              : displayedEvents.map(event => ({
+                  id: event.id,
+                  events: [event],
+                  startMs: Date.parse(event.occurred_at),
+                  endMs: Date.parse(event.occurred_at),
+                }))
+            ).map(cluster => {
+              if (cluster.events.length === 1) {
+                const event = cluster.events[0];
+                return (
+                  <EventListRow
+                    key={event.id}
+                    event={event}
+                    selected={event.id === selectedEvent?.id}
+                    onSelect={onSelectEvent}
+                  />
+                );
+              }
+
+              const expanded = expandedEventClusters.has(cluster.id);
+              const containsSelectedEvent = cluster.events.some(
+                event => event.id === selectedEvent?.id,
+              );
               return (
-                <button
-                  key={event.id}
-                  onClick={() => onSelectEvent(event)}
-                  style={{
-                    width: '100%',
-                    display: 'grid',
-                    gridTemplateColumns: '8px minmax(0, 1fr) auto',
-                    gap: 8,
-                    alignItems: 'start',
-                    padding: '8px 9px',
-                    border: selected
-                      ? '1px solid rgba(88,166,255,0.4)'
-                      : '1px solid transparent',
-                    borderRadius: 6,
-                    background: selected ? 'rgba(88,166,255,0.08)' : 'transparent',
-                    color: 'var(--text-primary)',
-                    textAlign: 'left',
-                    cursor: 'pointer',
+                <EventListClusterRows
+                  key={cluster.id}
+                  cluster={cluster}
+                  expanded={expanded}
+                  containsSelectedEvent={containsSelectedEvent}
+                  selectedEventId={selectedEvent?.id}
+                  onToggle={() => {
+                    setExpandedEventClusters(current => {
+                      const next = new Set(current);
+                      if (next.has(cluster.id)) next.delete(cluster.id);
+                      else next.add(cluster.id);
+                      return next;
+                    });
                   }}
-                >
-                  <span style={{
-                    width: 7,
-                    height: 7,
-                    marginTop: 4,
-                    borderRadius: '50%',
-                    background: EVENT_SEVERITY_COLORS[event.severity],
-                  }} />
-                  <span style={{ minWidth: 0 }}>
-                    <strong style={{
-                      display: 'block',
-                      overflow: 'hidden',
-                      textOverflow: 'ellipsis',
-                      whiteSpace: 'nowrap',
-                      fontSize: 11,
-                    }}>
-                      {event.title}
-                    </strong>
-                    <span style={{
-                      display: 'block',
-                      overflow: 'hidden',
-                      textOverflow: 'ellipsis',
-                      whiteSpace: 'nowrap',
-                      color: 'var(--text-muted)',
-                      fontSize: 9,
-                      marginTop: 2,
-                    }}>
-                      {eventKindLabel(event)} · {event.hostname ?? 'cluster'}
-                      {event.query_id ? ` · ${event.query_id}` : ''}
-                    </span>
-                  </span>
-                  <span style={{ color: 'var(--text-muted)', fontSize: 9, whiteSpace: 'nowrap' }}>
-                    {formatEventDateTime(event.occurred_at)}
-                  </span>
-                </button>
+                  onSelect={onSelectEvent}
+                />
               );
             })}
           </div>
@@ -747,6 +773,198 @@ export const EventsDashboard: React.FC<EventsDashboardProps> = ({
     </div>
   );
 };
+
+const EventListRow: React.FC<{
+  event: OperationalEvent;
+  selected: boolean;
+  nested?: boolean;
+  onSelect: (event: OperationalEvent) => void;
+}> = ({ event, selected, nested = false, onSelect }) => (
+  <button
+    type="button"
+    onClick={() => onSelect(event)}
+    style={{
+      width: nested ? 'calc(100% - 18px)' : '100%',
+      marginLeft: nested ? 18 : 0,
+      display: 'grid',
+      gridTemplateColumns: '8px minmax(0, 1fr) auto',
+      gap: 8,
+      alignItems: 'start',
+      padding: '8px 9px',
+      border: selected
+        ? '1px solid rgba(88,166,255,0.4)'
+        : '1px solid transparent',
+      borderRadius: 6,
+      background: selected ? 'rgba(88,166,255,0.08)' : 'transparent',
+      color: 'var(--text-primary)',
+      textAlign: 'left',
+      cursor: 'pointer',
+    }}
+  >
+    <span style={{
+      width: 7,
+      height: 7,
+      marginTop: 4,
+      borderRadius: '50%',
+      background: EVENT_SEVERITY_COLORS[event.severity],
+    }} />
+    <span style={{ minWidth: 0 }}>
+      <strong style={{
+        display: 'block',
+        overflow: 'hidden',
+        textOverflow: 'ellipsis',
+        whiteSpace: 'nowrap',
+        fontSize: 11,
+      }}>
+        {event.title}
+      </strong>
+      <span style={{
+        display: 'block',
+        overflow: 'hidden',
+        textOverflow: 'ellipsis',
+        whiteSpace: 'nowrap',
+        color: 'var(--text-muted)',
+        fontSize: 9,
+        marginTop: 2,
+      }}>
+        {eventKindLabel(event)} · {event.hostname ?? 'cluster'}
+        {event.query_id ? ` · ${event.query_id}` : ''}
+      </span>
+    </span>
+    <span style={{ color: 'var(--text-muted)', fontSize: 9, whiteSpace: 'nowrap' }}>
+      {formatEventDateTime(event.occurred_at)}
+    </span>
+  </button>
+);
+
+const EventListClusterRows: React.FC<{
+  cluster: EventListCluster;
+  expanded: boolean;
+  containsSelectedEvent: boolean;
+  selectedEventId?: string;
+  onToggle: () => void;
+  onSelect: (event: OperationalEvent) => void;
+}> = ({
+  cluster,
+  expanded,
+  containsSelectedEvent,
+  selectedEventId,
+  onToggle,
+  onSelect,
+}) => {
+  const primary = cluster.events[0];
+  const spanMs = Math.max(0, cluster.endMs - cluster.startMs);
+
+  return (
+    <div>
+      <button
+        type="button"
+        aria-expanded={expanded}
+        aria-label={`${expanded ? 'Collapse' : 'Expand'} ${cluster.events.length} similar events: ${primary.title}`}
+        onClick={onToggle}
+        style={{
+          width: '100%',
+          display: 'grid',
+          gridTemplateColumns: '10px 8px minmax(0, 1fr) auto auto',
+          gap: 8,
+          alignItems: 'start',
+          padding: '8px 9px',
+          border: containsSelectedEvent
+            ? '1px solid rgba(88,166,255,0.4)'
+            : '1px solid transparent',
+          borderRadius: 6,
+          background: containsSelectedEvent
+            ? 'rgba(88,166,255,0.08)'
+            : 'rgba(255,255,255,0.018)',
+          color: 'var(--text-primary)',
+          textAlign: 'left',
+          cursor: 'pointer',
+        }}
+      >
+        <span style={{
+          color: 'var(--text-muted)',
+          fontSize: 9,
+          marginTop: 1,
+          transform: expanded ? 'rotate(90deg)' : undefined,
+          transition: 'transform 100ms ease',
+        }}>
+          ▶
+        </span>
+        <span style={{
+          width: 7,
+          height: 7,
+          marginTop: 4,
+          borderRadius: '50%',
+          background: EVENT_SEVERITY_COLORS[primary.severity],
+        }} />
+        <span style={{ minWidth: 0 }}>
+          <strong style={{
+            display: 'block',
+            overflow: 'hidden',
+            textOverflow: 'ellipsis',
+            whiteSpace: 'nowrap',
+            fontSize: 11,
+          }}>
+            {primary.title}
+          </strong>
+          <span style={{
+            display: 'block',
+            overflow: 'hidden',
+            textOverflow: 'ellipsis',
+            whiteSpace: 'nowrap',
+            color: 'var(--text-muted)',
+            fontSize: 9,
+            marginTop: 2,
+          }}>
+            {eventKindLabel(primary)} · {primary.hostname ?? 'cluster'} · {
+              cluster.events.length
+            } events in {formatEventSpan(spanMs)}
+          </span>
+        </span>
+        <span style={{
+          padding: '1px 6px',
+          borderRadius: 999,
+          background: 'rgba(88,166,255,0.14)',
+          color: '#58a6ff',
+          fontSize: 9,
+          fontWeight: 700,
+          whiteSpace: 'nowrap',
+        }}>
+          ×{cluster.events.length}
+        </span>
+        <span style={{ color: 'var(--text-muted)', fontSize: 9, whiteSpace: 'nowrap' }}>
+          {formatEventDateTime(primary.occurred_at)}
+        </span>
+      </button>
+      {expanded && (
+        <div style={{
+          margin: '1px 0 3px 5px',
+          borderLeft: '1px solid var(--border-primary)',
+        }}>
+          {cluster.events.map(event => (
+            <EventListRow
+              key={event.id}
+              event={event}
+              selected={event.id === selectedEventId}
+              nested
+              onSelect={onSelect}
+            />
+          ))}
+        </div>
+      )}
+    </div>
+  );
+};
+
+function formatEventSpan(spanMs: number): string {
+  if (spanMs < 1_000) return `${Math.max(1, Math.round(spanMs))} ms`;
+  if (spanMs < 60_000) {
+    return `${(spanMs / 1_000).toLocaleString(undefined, {
+      maximumFractionDigits: 1,
+    })} s`;
+  }
+  return `${Math.round(spanMs / 60_000)} min`;
+}
 
 const SOURCE_STATUS_COLORS: Record<EventSourceCoverage['status'], string> = {
   loaded: '#3fb950',

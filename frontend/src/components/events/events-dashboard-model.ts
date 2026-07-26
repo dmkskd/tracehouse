@@ -23,6 +23,13 @@ export interface EventMarkerSelection {
   endMs: number;
 }
 
+export interface EventListCluster {
+  id: string;
+  events: OperationalEvent[];
+  startMs: number;
+  endMs: number;
+}
+
 export interface EventDashboardFilters {
   search: string;
   severity: 'all' | EventSeverity;
@@ -386,6 +393,58 @@ export function sortEventsDescending(events: readonly OperationalEvent[]): Opera
   return [...events].sort(
     (a, b) => Date.parse(b.occurred_at) - Date.parse(a.occurred_at),
   );
+}
+
+export const EVENT_LIST_CLUSTER_WINDOW_MS = 5_000;
+
+function eventListClusterSignature(event: OperationalEvent): string {
+  return [
+    event.kind,
+    event.category,
+    event.severity,
+    event.title.trim().toLowerCase(),
+    event.hostname ?? '',
+    event.source,
+  ].join('\u0000');
+}
+
+/**
+ * Collapses visually repetitive bursts without changing the underlying event
+ * model. A cluster is intentionally bounded by its first event so a steady
+ * stream cannot chain into one unmanageably large row.
+ */
+export function clusterSimilarEvents(
+  events: readonly OperationalEvent[],
+  windowMs = EVENT_LIST_CLUSTER_WINDOW_MS,
+): EventListCluster[] {
+  const clusters: EventListCluster[] = [];
+
+  for (const event of sortEventsDescending(events)) {
+    const eventMs = Date.parse(event.occurred_at);
+    const previous = clusters.at(-1);
+    const primary = previous?.events[0];
+    const canJoin = previous
+      && primary
+      && Number.isFinite(eventMs)
+      && eventListClusterSignature(primary) === eventListClusterSignature(event)
+      && previous.endMs - eventMs <= windowMs;
+
+    if (canJoin) {
+      previous.events.push(event);
+      previous.startMs = eventMs;
+      previous.id = `${previous.events[0].id}:${event.id}`;
+      continue;
+    }
+
+    clusters.push({
+      id: event.id,
+      events: [event],
+      startMs: Number.isFinite(eventMs) ? eventMs : 0,
+      endMs: Number.isFinite(eventMs) ? eventMs : 0,
+    });
+  }
+
+  return clusters;
 }
 
 export function observedEventKinds(events: readonly OperationalEvent[]): EventKind[] {

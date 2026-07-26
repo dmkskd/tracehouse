@@ -3,6 +3,7 @@ import type { OperationalEvent, EventSourceCoverage } from '@tracehouse/core';
 import {
   SUPPORTED_EVENT_TYPES,
   buildEventMarkerSelection,
+  clusterSimilarEvents,
   eventDetailLabel,
   eventDetailSections,
   eventSourceStatusDetail,
@@ -81,6 +82,89 @@ describe('events dashboard model', () => {
     expect([...selection.eventIds]).toEqual(['first', 'second']);
     expect(selection.startMs).toBe(Date.parse(events[0].occurred_at));
     expect(selection.endMs).toBe(Date.parse(events[1].occurred_at));
+  });
+
+  it('clusters adjacent similar events inside a bounded time window', () => {
+    const events = [
+      event({
+        id: 'ddl-3',
+        occurred_at: '2026-07-25T18:00:04.500Z',
+        kind: 'ddl',
+        category: 'changes',
+        title: 'DDL · Create',
+        hostname: 'ch-1',
+      }),
+      event({
+        id: 'ddl-2',
+        occurred_at: '2026-07-25T18:00:03.000Z',
+        kind: 'ddl',
+        category: 'changes',
+        title: 'DDL · Create',
+        hostname: 'ch-1',
+      }),
+      event({
+        id: 'ddl-1',
+        occurred_at: '2026-07-25T18:00:00.000Z',
+        kind: 'ddl',
+        category: 'changes',
+        title: 'DDL · Create',
+        hostname: 'ch-1',
+      }),
+      event({
+        id: 'ddl-too-old',
+        occurred_at: '2026-07-25T17:59:58.000Z',
+        kind: 'ddl',
+        category: 'changes',
+        title: 'DDL · Create',
+        hostname: 'ch-1',
+      }),
+      event({
+        id: 'ddl-other-host',
+        occurred_at: '2026-07-25T17:59:57.900Z',
+        kind: 'ddl',
+        category: 'changes',
+        title: 'DDL · Create',
+        hostname: 'ch-2',
+      }),
+    ];
+
+    const clusters = clusterSimilarEvents(events);
+
+    expect(clusters.map(cluster => cluster.events.map(item => item.id))).toEqual([
+      ['ddl-3', 'ddl-2', 'ddl-1'],
+      ['ddl-too-old'],
+      ['ddl-other-host'],
+    ]);
+    expect(clusters[0].endMs - clusters[0].startMs).toBe(4_500);
+  });
+
+  it('does not group different event titles or severities', () => {
+    const events = [
+      event({
+        id: 'create',
+        occurred_at: '2026-07-25T18:00:00.200Z',
+        kind: 'ddl',
+        category: 'changes',
+        title: 'DDL · Create',
+      }),
+      event({
+        id: 'drop',
+        occurred_at: '2026-07-25T18:00:00.100Z',
+        kind: 'ddl',
+        category: 'changes',
+        title: 'DDL · Drop',
+      }),
+      event({
+        id: 'warning-create',
+        occurred_at: '2026-07-25T18:00:00.000Z',
+        kind: 'ddl',
+        category: 'changes',
+        title: 'DDL · Create',
+        severity: 'warning',
+      }),
+    ];
+
+    expect(clusterSimilarEvents(events)).toHaveLength(3);
   });
 
   it('presents inferred restart detector facts without generic evidence copy', () => {
