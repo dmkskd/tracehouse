@@ -12,6 +12,11 @@ import { useCapabilityCheck } from '../components/shared/RequiresCapability';
 import { PermissionGate } from '../components/shared/PermissionGate';
 import { BackLink } from '../components/common/BackLink';
 import { DocsLink } from '../components/common/DocsLink';
+import {
+  MetricStrip,
+  MetricStripDivider,
+  MetricStripItem,
+} from '../components/common/MetricStrip';
 import { useLocation } from 'react-router-dom';
 import type { QuerySeries, QueryConcurrency } from '@tracehouse/core';
 import { OverviewService } from '@tracehouse/core';
@@ -34,23 +39,6 @@ const QUERY_TYPE_COLORS: Record<string, string> = {
 
 // All query types to always show
 const ALL_QUERY_TYPES = ['Select', 'Insert', 'Alter', 'Create', 'Drop', 'System', 'Optimize', 'Other'];
-
-// Query Type Card - matches StatCard style from MergeTracker
-const QueryTypeCard: React.FC<{
-  type: string;
-  count: number;
-  color: string;
-}> = ({ type, count, color }) => (
-  <div className="stat-card" style={{ flex: 1, minWidth: 100 }}>
-    <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
-      <div style={{ width: 10, height: 10, borderRadius: 3, background: color, flexShrink: 0 }} />
-      <div>
-        <div className="stat-value">{count}</div>
-        <div className="stat-label">{type}</div>
-      </div>
-    </div>
-  </div>
-);
 
 // URL schema for shareable query monitor links
 const queryMonitorSchema = {
@@ -397,102 +385,80 @@ export const QueryMonitor: React.FC = () => {
           </div>
         </div>
         
-        {/* Query Concurrency + QPS — 4 equal cards */}
-        <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr 1fr', gap: 12, marginBottom: 12 }}>
-          {/* 1. QPS Sparkline */}
-          <div className="stat-card" style={{ padding: '8px 12px' }}>
-            {(() => {
-              const points = concurrency?.qpsHistory ?? [];
-              if (points.length < 2) return (
-                <div>
-                  <div className="stat-label" style={{ margin: 0 }}>Queries / sec</div>
-                  <div className="stat-value">—</div>
-                </div>
-              );
-              const values = points.map(p => p.qps);
-              const maxVal = Math.max(...values, 1);
-              const w = 300;
-              const h = 36;
-              const pad = 1;
-              const stepX = (w - pad * 2) / (values.length - 1);
-              const pathD = values
-                .map((v, i) => {
-                  const x = pad + i * stepX;
-                  const y = h - pad - ((v / maxVal) * (h - pad * 2));
-                  return `${i === 0 ? 'M' : 'L'}${x.toFixed(1)},${y.toFixed(1)}`;
-                })
-                .join(' ');
-              const areaD = `${pathD} L${(pad + (values.length - 1) * stepX).toFixed(1)},${h} L${pad},${h} Z`;
-              const latest = values[values.length - 1];
-              return (
-                <div>
-                  <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 4 }}>
-                    <div className="stat-label" style={{ margin: 0 }}>Queries / sec (15m)</div>
-                    <span style={{ fontSize: 12, fontWeight: 600, fontFamily: 'var(--font-mono, monospace)', color: 'var(--text-primary)' }}>
-                      {latest.toFixed(1)} q/s
-                    </span>
-                  </div>
-                  <svg width="100%" height={h} viewBox={`0 0 ${w} ${h}`} preserveAspectRatio="none" style={{ display: 'block' }}>
-                    <path d={areaD} fill="rgba(59,130,246,0.1)" />
-                    <path d={pathD} fill="none" stroke="#3b82f6" strokeWidth="1.5" strokeLinejoin="round" />
-                  </svg>
-                </div>
-              );
-            })()}
-          </div>
-          {/* 2. Concurrency Slots */}
-          <div className="stat-card">
-            <div>
-              <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 4 }}>
-                <div className="stat-label" style={{ margin: 0 }}>Concurrency Slots</div>
-                <span style={{ fontSize: 12, fontWeight: 600, fontFamily: 'var(--font-mono, monospace)', color: slotPct > 80 ? '#ef4444' : 'var(--text-primary)' }}>
-                  {concurrency ? `${concurrency.running} / ${concurrency.maxConcurrent}` : '— / —'}
-                </span>
-              </div>
-              <div style={{ width: '100%', height: 6, borderRadius: 3, background: 'var(--bg-tertiary)' }}>
-                <div style={{
-                  width: `${Math.min(slotPct, 100)}%`,
-                  height: '100%',
-                  borderRadius: 3,
-                  background: slotPct > 80 ? '#ef4444' : '#3b82f6',
-                  transition: 'width 0.3s ease',
-                }} />
-              </div>
-            </div>
-          </div>
-          {/* 3. Queued */}
-          <div className="stat-card">
-            <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
-              <div style={{ width: 10, height: 10, borderRadius: 3, background: concurrency && concurrency.queued > 0 ? '#ef4444' : '#3fb950', flexShrink: 0 }} />
-              <div>
-                <div className="stat-value">{concurrency ? concurrency.queued : '—'}</div>
-                <div className="stat-label">Queued</div>
-              </div>
-            </div>
-          </div>
-          {/* 4. Rejected */}
-          <div className="stat-card">
-            <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
-              <div style={{ width: 10, height: 10, borderRadius: 3, background: concurrency && concurrency.rejectedRecent > 0 ? '#ef4444' : '#3fb950', flexShrink: 0 }} />
-              <div>
-                <div className="stat-value">{concurrency ? concurrency.rejectedRecent : '—'}</div>
-                <div className="stat-label">Rejected (1h)</div>
-              </div>
-            </div>
-          </div>
-        </div>
+        {/* Compact query vitals */}
+        <MetricStrip
+          ariaLabel="Query monitor summary"
+          style={{ marginBottom: 12 }}
+        >
+          {(() => {
+            const points = concurrency?.qpsHistory ?? [];
+            if (points.length < 2) {
+              return <MetricStripItem label="q/s · 15m" value="—" />;
+            }
+            const values = points.map(point => point.qps);
+            const maxValue = Math.max(...values, 1);
+            const width = 150;
+            const height = 26;
+            const padding = 1;
+            const stepX = (width - padding * 2) / (values.length - 1);
+            const path = values
+              .map((value, index) => {
+                const x = padding + index * stepX;
+                const y = height - padding - ((value / maxValue) * (height - padding * 2));
+                return `${index === 0 ? 'M' : 'L'}${x.toFixed(1)},${y.toFixed(1)}`;
+              })
+              .join(' ');
+            const area = `${path} L${(padding + (values.length - 1) * stepX).toFixed(1)},${height} L${padding},${height} Z`;
+            const latest = values[values.length - 1];
 
-        {/* Query Type Summary Cards - always show all types */}
-        <div style={{ display: 'flex', gap: 12, marginBottom: 16 }}>
+            return (
+              <span style={{ display: 'inline-flex', alignItems: 'center', gap: 10, whiteSpace: 'nowrap' }}>
+                <svg
+                  width={width}
+                  height={height}
+                  viewBox={`0 0 ${width} ${height}`}
+                  style={{ display: 'block', flexShrink: 0 }}
+                  aria-hidden="true"
+                >
+                  <path d={area} fill="rgba(59,130,246,0.12)" />
+                  <path d={path} fill="none" stroke="#3b82f6" strokeWidth="1.5" strokeLinejoin="round" />
+                </svg>
+                <span style={{ color: 'var(--text-primary)', fontFamily: 'var(--font-mono, monospace)', fontSize: 13, fontWeight: 600 }}>
+                  {latest.toFixed(1)}
+                  <span style={{ color: 'var(--text-muted)', fontWeight: 400 }}> q/s · 15m</span>
+                </span>
+              </span>
+            );
+          })()}
+          <MetricStripDivider />
+          <MetricStripItem
+            label="slots"
+            value={concurrency ? `${concurrency.running} / ${concurrency.maxConcurrent}` : '— / —'}
+            color={slotPct > 80 ? '#ef4444' : undefined}
+            barPercentage={slotPct}
+          />
+          <MetricStripItem
+            label="queued"
+            value={concurrency ? concurrency.queued : '—'}
+            color={concurrency && concurrency.queued > 0 ? '#ef4444' : undefined}
+            indicatorColor={concurrency && concurrency.queued > 0 ? '#ef4444' : '#3fb950'}
+          />
+          <MetricStripItem
+            label="rejected (1h)"
+            value={concurrency ? concurrency.rejectedRecent : '—'}
+            color={concurrency && concurrency.rejectedRecent > 0 ? '#ef4444' : undefined}
+            indicatorColor={concurrency && concurrency.rejectedRecent > 0 ? '#ef4444' : '#3fb950'}
+          />
+          <MetricStripDivider />
           {ALL_QUERY_TYPES.map(type => (
-            <QueryTypeCard
+            <MetricStripItem
               key={type}
-              type={type}
-              count={queryTypeCounts[type] || 0}
-              color={QUERY_TYPE_COLORS[type]}
+              label={type}
+              value={queryTypeCounts[type] || 0}
+              indicatorColor={QUERY_TYPE_COLORS[type]}
             />
           ))}
-        </div>
+        </MetricStrip>
 
         {/* Tabs */}
         <div className="page-tabs">

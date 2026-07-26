@@ -30,6 +30,11 @@ import { getUrlParam } from '../utils/urlParams';
 import { useUserPreferenceStore } from '../stores/userPreferenceStore';
 import { useMonitoringCapabilitiesStore } from '../stores/monitoringCapabilitiesStore';
 import { DocsLink } from '../components/common/DocsLink';
+import {
+  MetricStrip,
+  MetricStripDivider,
+  MetricStripItem,
+} from '../components/common/MetricStrip';
 import { TimelineChart } from '../components/timeline/TimelineChart';
 import { TimelineChart3D } from '../components/timeline/TimelineChart3D';
 import { TimelineChart3DSurface } from '../components/timeline/TimelineChart3DSurface';
@@ -1024,20 +1029,55 @@ export const TimeTravelPage: React.FC = () => {
             </div>
           )}
           {data && (
-            <div style={{ display:'flex', gap:8 }}>
-              {[
-                { label: 'Points', value: data.server_memory.length, color: '#58a6ff' },
-                { label: 'Queries', value: `${filteredQueries.length}/${data.query_count ?? data.queries.length}`, color: '#79c0ff' },
-                { label: 'Merges', value: `${filteredMerges.length}/${data.merge_count}`, color: '#f0883e' },
-                ...((data.mutation_count ?? 0) > 0 ? [{ label: 'Mutations', value: `${filteredMutations.length}/${data.mutation_count}`, color: '#f778ba' }] : []),
-                ...(data.server_total_ram > 0 ? [{ label: 'RAM', value: (data.host_count || 1) > 1 ? `${formatBytes(data.server_total_ram)}/host (${data.host_count || 1} hosts)` : formatBytes(data.server_total_ram), color: '#f85149' }] : []),
-                ...(data.cpu_cores > 0 ? [{ label: 'CPUs', value: (data.host_count || 1) > 1 ? `${data.cpu_cores}/host (${data.host_count || 1} hosts)` : `${data.cpu_cores}`, color: '#3fb950' }] : []),
-              ].map((s, i) => (
-                <span key={i} style={{ fontSize:11, padding:'2px 8px', borderRadius:10, background:`${s.color}15`, color:s.color, border:`1px solid ${s.color}33` }}>
-                  {s.label}: {s.value}
-                </span>
-              ))}
-            </div>
+            <MetricStrip
+              ariaLabel="Time Travel summary"
+              style={{ flex: 1, minWidth: 0 }}
+            >
+              <MetricStripItem
+                label="points"
+                value={data.server_memory.length}
+                indicatorColor="#58a6ff"
+              />
+              <MetricStripDivider />
+              <MetricStripItem
+                label="queries"
+                value={`${filteredQueries.length}/${data.query_count ?? data.queries.length}`}
+                indicatorColor="#79c0ff"
+              />
+              <MetricStripItem
+                label="merges"
+                value={`${filteredMerges.length}/${data.merge_count}`}
+                indicatorColor="#f0883e"
+              />
+              {(data.mutation_count ?? 0) > 0 && (
+                <MetricStripItem
+                  label="mutations"
+                  value={`${filteredMutations.length}/${data.mutation_count}`}
+                  indicatorColor="#f778ba"
+                />
+              )}
+              {(data.server_total_ram > 0 || data.cpu_cores > 0) && (
+                <MetricStripDivider />
+              )}
+              {data.server_total_ram > 0 && (
+                <MetricStripItem
+                  label="RAM"
+                  value={(data.host_count || 1) > 1
+                    ? `${formatBytes(data.server_total_ram)}/host (${data.host_count || 1} hosts)`
+                    : formatBytes(data.server_total_ram)}
+                  indicatorColor="#f85149"
+                />
+              )}
+              {data.cpu_cores > 0 && (
+                <MetricStripItem
+                  label="CPUs"
+                  value={(data.host_count || 1) > 1
+                    ? `${data.cpu_cores}/host (${data.host_count || 1} hosts)`
+                    : data.cpu_cores}
+                  indicatorColor="#3fb950"
+                />
+              )}
+            </MetricStrip>
           )}
         </div>
       </div>

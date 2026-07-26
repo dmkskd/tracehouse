@@ -23,6 +23,11 @@ import {
 import { EventDistribution } from './EventDistribution';
 import { TimeRangePicker } from './TimeRangePicker';
 import { DocsLink } from '../common/DocsLink';
+import {
+  MetricStrip,
+  MetricStripDivider,
+  MetricStripItem,
+} from '../common/MetricStrip';
 import { EventContextView } from './EventContextView';
 import {
   buildEventMarkerSelection,
@@ -300,6 +305,38 @@ export const EventsDashboard: React.FC<EventsDashboardProps> = ({
       overflow: 'hidden',
       background: 'var(--bg-primary)',
     }}>
+      <MetricStrip
+        ariaLabel="Event severity summary"
+        style={{ flexShrink: 0, margin: '12px 20px' }}
+      >
+        <MetricStripItem label="all events" value={events.length} color="#58a6ff" />
+        <MetricStripDivider />
+        <MetricStripItem
+          label="critical"
+          value={severityCounts.critical}
+          color={severityCounts.critical > 0 ? '#f85149' : undefined}
+          indicatorColor="#f85149"
+        />
+        <MetricStripItem
+          label="errors"
+          value={severityCounts.error}
+          color={severityCounts.error > 0 ? '#f0883e' : undefined}
+          indicatorColor="#f0883e"
+        />
+        <MetricStripItem
+          label="warnings"
+          value={severityCounts.warning}
+          color={severityCounts.warning > 0 ? '#d29922' : undefined}
+          indicatorColor="#d29922"
+        />
+        <MetricStripItem
+          label="information"
+          value={severityCounts.info}
+          color={severityCounts.info > 0 ? '#58a6ff' : undefined}
+          indicatorColor="#58a6ff"
+        />
+      </MetricStrip>
+
       <div style={{
         flexShrink: 0,
         display: 'flex',
@@ -409,20 +446,6 @@ export const EventsDashboard: React.FC<EventsDashboardProps> = ({
         >
           {refreshing ? 'Loading…' : '↻ Refresh'}
         </button>
-      </div>
-
-      <div style={{
-        flexShrink: 0,
-        display: 'grid',
-        gridTemplateColumns: 'repeat(5, minmax(110px, 1fr))',
-        gap: 8,
-        padding: '12px 20px 0',
-      }}>
-        <EventStat label="All events" value={events.length} color="#58a6ff" />
-        <EventStat label="Critical" value={severityCounts.critical} color="#f85149" />
-        <EventStat label="Errors" value={severityCounts.error} color="#f0883e" />
-        <EventStat label="Warnings" value={severityCounts.warning} color="#d29922" />
-        <EventStat label="Information" value={severityCounts.info} color="#58a6ff" />
       </div>
 
       <div style={{ flexShrink: 0, padding: '10px 20px 0' }}>
@@ -1117,22 +1140,6 @@ const emptyStyle: React.CSSProperties = {
   color: 'var(--text-muted)',
   fontSize: 11,
 };
-
-const EventStat: React.FC<{ label: string; value: number; color: string }> = ({
-  label,
-  value,
-  color,
-}) => (
-  <div style={{
-    padding: '9px 11px',
-    borderRadius: 7,
-    border: '1px solid var(--border-primary)',
-    background: 'var(--bg-secondary)',
-  }}>
-    <div style={{ color, fontSize: 19, fontWeight: 700 }}>{value}</div>
-    <div style={{ color: 'var(--text-muted)', fontSize: 9 }}>{label}</div>
-  </div>
-);
 
 const EventSeverity: React.FC<{
   severity: TimelineEventSeverity;

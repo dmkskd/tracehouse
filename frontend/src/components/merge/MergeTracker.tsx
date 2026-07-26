@@ -28,6 +28,11 @@ import type { MutationHistoryRecord, MergeHistoryRecord } from '../../stores/mer
 import { CopyTableButton } from '../common/CopyTableButton';
 import { BackLink } from '../common/BackLink';
 import { DocsLink } from '../common/DocsLink';
+import {
+  MetricStrip,
+  MetricStripDivider,
+  MetricStripItem,
+} from '../common/MetricStrip';
 import { MergeDetailModalFromRecord, ActiveMergeDetailModal } from './MergeDetailModal';
 import {
   buildPartToMergeMap,
@@ -68,92 +73,115 @@ const mergeUrlSchema = {
   md_part:   { type: 'string' },
 } as const satisfies UrlSchema;
 
-// Stat Card
-const StatCard: React.FC<{
+interface PoolUsage {
   label: string;
-  value: string | number;
-  icon?: string;
-  color?: string;
-}> = ({ label, value, color }) => (
-  <div className="stat-card">
-    <div className="flex items-start justify-between">
-      <div>
-        <div className="stat-value" style={color ? { color } : undefined}>{value}</div>
-        <div className="stat-label">{label}</div>
-      </div>
-    </div>
-  </div>
-);
+  shortLabel: string;
+  active: number;
+  total: number;
+  color: string;
+}
 
-const PoolBreakdownStatCard: React.FC<{
-  metrics: {
-    merge_pool_active: number;
-    merge_pool_size: number;
-    move_pool_active: number;
-    move_pool_size: number;
-    fetch_pool_active: number;
-    fetch_pool_size: number;
-    schedule_pool_active: number;
-    schedule_pool_size: number;
-    common_pool_active: number;
-    common_pool_size: number;
-    distributed_pool_active: number;
-    distributed_pool_size: number;
-  } | null;
+const PoolUsageSummary: React.FC<{
+  pools: PoolUsage[];
   totalActive: number;
   total: number;
-  isLoading?: boolean;
-}> = ({ metrics, totalActive, total, isLoading }) => {
-  const rows = [
-    { label: 'Merge', active: metrics?.merge_pool_active ?? 0, total: metrics?.merge_pool_size ?? 0, color: '#8b5cf6' },
-    { label: 'Move', active: metrics?.move_pool_active ?? 0, total: metrics?.move_pool_size ?? 0, color: '#3b82f6' },
-    { label: 'Fetch', active: metrics?.fetch_pool_active ?? 0, total: metrics?.fetch_pool_size ?? 0, color: '#10b981' },
-    { label: 'Schedule', active: metrics?.schedule_pool_active ?? 0, total: metrics?.schedule_pool_size ?? 0, color: '#f59e0b' },
-    { label: 'Common', active: metrics?.common_pool_active ?? 0, total: metrics?.common_pool_size ?? 0, color: '#8b5cf6' },
-    { label: 'Distributed', active: metrics?.distributed_pool_active ?? 0, total: metrics?.distributed_pool_size ?? 0, color: '#ec4899' },
-  ].filter(row => row.total > 0 || isLoading);
+  isLoading: boolean;
+}> = ({ pools, totalActive, total, isLoading }) => (
+  <div
+    aria-label={isLoading
+      ? 'Background pool usage loading'
+      : `Background pools: ${pools.map(pool => `${pool.label} ${pool.active} of ${pool.total}`).join(', ')}`}
+    style={{
+      display: 'inline-flex',
+      alignItems: 'center',
+      flexWrap: 'nowrap',
+      gap: 10,
+      flexShrink: 0,
+    }}
+  >
+    <span style={{ display: 'inline-flex', alignItems: 'baseline', gap: 6, whiteSpace: 'nowrap' }}>
+      <span style={{
+        color: 'var(--text-primary)',
+        fontFamily: 'var(--font-mono, monospace)',
+        fontSize: 13,
+        fontWeight: 600,
+      }}>
+        {isLoading ? '— / —' : `${totalActive} / ${total}`}
+      </span>
+      <span style={{
+        color: 'var(--text-muted)',
+        fontSize: 10,
+        letterSpacing: '0.04em',
+        textTransform: 'uppercase',
+      }}>
+        pools
+      </span>
+    </span>
 
-  return (
-    <div className="stat-card lg:col-span-2" style={{ padding: '10px 14px' }}>
-      <div style={{ display: 'flex', alignItems: 'baseline', justifyContent: 'space-between', gap: 12 }}>
-        <div className="stat-label" style={{ marginTop: 0 }}>Background Pools</div>
-        <div style={{ fontSize: 16, lineHeight: 1.1, fontWeight: 600, fontFamily: 'monospace', color: 'var(--text-primary)', whiteSpace: 'nowrap' }}>
-          {isLoading ? '--' : `${totalActive} / ${total}`}
-        </div>
-      </div>
-      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(2, minmax(0, 1fr))', columnGap: 14, rowGap: 4, marginTop: 7 }}>
-        {rows.map(row => {
-          const pct = row.total > 0 ? Math.min((row.active / row.total) * 100, 100) : 0;
-          return (
-            <div key={row.label} style={{ display: 'grid', gridTemplateColumns: '54px 1fr 36px', alignItems: 'center', gap: 6, minWidth: 0 }}>
-              <div style={{ fontSize: 10, lineHeight: 1.1, color: 'var(--text-muted)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
-                {row.label}
-              </div>
-              <div style={{ height: 3, borderRadius: 2, overflow: 'hidden', background: 'var(--bg-tertiary)' }}>
-                <div style={{ height: '100%', width: isLoading ? '0%' : `${pct}%`, borderRadius: 2, background: row.color }} />
-              </div>
-              <div style={{ fontSize: 10, lineHeight: 1.1, fontFamily: 'monospace', textAlign: 'right', color: row.color }}>
-                {isLoading ? '--' : `${row.active}/${row.total}`}
-              </div>
-            </div>
-          );
-        })}
-      </div>
-    </div>
-  );
-};
+    <span style={{ display: 'inline-flex', alignItems: 'center', flexWrap: 'nowrap', gap: 6 }}>
+      {(isLoading ? [] : pools).map(pool => {
+        const utilization = pool.total > 0 ? (pool.active / pool.total) * 100 : 0;
+        const pressureColor = utilization >= 90
+          ? '#ef4444'
+          : utilization >= 70
+            ? '#f59e0b'
+            : pool.color;
 
-const CompactStatCard: React.FC<{
-  label: string;
-  value: number | string;
-  color?: string;
-  isLoading?: boolean;
-}> = ({ label, value, color, isLoading }) => (
-  <div className="stat-card">
-    <div className="stat-value" style={color ? { color } : undefined}>
-      {isLoading ? '--' : value}
-    </div>
-    <div className="stat-label">{label}</div>
+        return (
+          <span
+            key={pool.label}
+            title={`${pool.label}: ${pool.active} / ${pool.total} threads (${utilization.toFixed(1)}%)`}
+            style={{ display: 'inline-flex', flexDirection: 'column', gap: 3, width: 36 }}
+          >
+            <span style={{
+              display: 'flex',
+              alignItems: 'baseline',
+              justifyContent: 'center',
+              whiteSpace: 'nowrap',
+            }}>
+              <span style={{
+                color: 'var(--text-muted)',
+                fontSize: 8,
+                fontWeight: 600,
+                letterSpacing: '0.03em',
+                textTransform: 'uppercase',
+                marginRight: 3,
+              }}>
+                {pool.shortLabel}
+              </span>
+              <span style={{
+                color: pressureColor,
+                fontFamily: 'var(--font-mono, monospace)',
+                fontSize: 8,
+                fontWeight: 600,
+              }}>
+                {pool.active}/{pool.total}
+              </span>
+            </span>
+            <span style={{
+              height: 3,
+              overflow: 'hidden',
+              borderRadius: 2,
+              background: 'var(--bg-tertiary)',
+            }}>
+              <span style={{
+                display: 'block',
+                width: `${Math.min(utilization, 100)}%`,
+                minWidth: pool.active > 0 ? 1 : 0,
+                height: '100%',
+                borderRadius: 2,
+                background: pressureColor,
+              }} />
+            </span>
+          </span>
+        );
+      })}
+      {isLoading && (
+        <span style={{ color: 'var(--text-muted)', fontSize: 10 }}>
+          Loading pool breakdown…
+        </span>
+      )}
+    </span>
   </div>
 );
 
@@ -1986,6 +2014,16 @@ export const MergeTrackerView: React.FC = () => {
       { active: 0, total: 0 },
     );
   }, [poolMetrics]);
+  const poolUsages: PoolUsage[] = poolMetrics
+    ? [
+        { label: 'Merge', shortLabel: 'M', active: poolMetrics.merge_pool_active, total: poolMetrics.merge_pool_size, color: '#8b5cf6' },
+        { label: 'Move', shortLabel: 'MV', active: poolMetrics.move_pool_active, total: poolMetrics.move_pool_size, color: '#3b82f6' },
+        { label: 'Fetch', shortLabel: 'F', active: poolMetrics.fetch_pool_active, total: poolMetrics.fetch_pool_size, color: '#10b981' },
+        { label: 'Schedule', shortLabel: 'S', active: poolMetrics.schedule_pool_active, total: poolMetrics.schedule_pool_size, color: '#f59e0b' },
+        { label: 'Common', shortLabel: 'C', active: poolMetrics.common_pool_active, total: poolMetrics.common_pool_size, color: '#8b5cf6' },
+        { label: 'Distributed', shortLabel: 'D', active: poolMetrics.distributed_pool_active, total: poolMetrics.distributed_pool_size, color: '#ec4899' },
+      ]
+    : [];
 
   if (!activeProfileId || !isConnected) {
     return (
@@ -2039,42 +2077,79 @@ export const MergeTrackerView: React.FC = () => {
           </div>
         </div>
 
-        {/* Stats */}
+        {/* Compact merge vitals */}
         {statistics && (
-          <div className="grid grid-cols-2 lg:grid-cols-4 xl:grid-cols-6 gap-4">
-            <PoolBreakdownStatCard
-              metrics={poolMetrics}
+          <MetricStrip
+            ariaLabel="Merge tracker summary"
+            style={{
+              flexWrap: 'nowrap',
+              gap: '8px 12px',
+              overflowX: 'auto',
+            }}
+          >
+            <PoolUsageSummary
+              pools={poolUsages}
               totalActive={poolTotals.active}
               total={poolTotals.total}
               isLoading={isLoadingPoolMetrics}
             />
-            <StatCard label="Active Merges" value={statistics.activeMergeCount} />
-            <StatCard label="Stuck Merges" value={activeMerges.filter(isMergeStuck).length} color={activeMerges.some(isMergeStuck) ? '#f85149' : undefined} />
-            <StatCard label="Tables" value={statistics.tablesWithMerges.length} />
-            <StatCard label="Pending Mutations" value={pendingMutations} />
-            <StatCard
-              label="Merge Throughput"
+            <MetricStripDivider />
+            <MetricStripItem
+              label="active"
+              value={statistics.activeMergeCount}
+              indicatorColor={statistics.activeMergeCount > 0 ? '#3b82f6' : '#3fb950'}
+            />
+            <MetricStripItem
+              label="stuck"
+              value={activeMerges.filter(isMergeStuck).length}
+              color={activeMerges.some(isMergeStuck) ? '#f85149' : undefined}
+              indicatorColor={activeMerges.some(isMergeStuck) ? '#f85149' : '#3fb950'}
+            />
+            <MetricStripItem
+              label="tables"
+              value={statistics.tablesWithMerges.length}
+            />
+            <MetricStripItem
+              label="pending mutations"
+              value={pendingMutations}
+              color={pendingMutations > 0 ? '#d29922' : undefined}
+              indicatorColor={pendingMutations > 0 ? '#d29922' : '#3fb950'}
+            />
+            <MetricStripDivider />
+            <MetricStripItem
+              label="throughput"
               value={formatBytesPerSec(
-                activeMerges.reduce((sum, m) => {
-                  const bytesProcessed = m.total_size_bytes_compressed * m.progress;
-                  return sum + (m.elapsed > 0 ? bytesProcessed / m.elapsed : 0);
+                activeMerges.reduce((sum, merge) => {
+                  const bytesProcessed = merge.total_size_bytes_compressed * merge.progress;
+                  return sum + (merge.elapsed > 0 ? bytesProcessed / merge.elapsed : 0);
                 }, 0)
               )}
             />
-            <StatCard label="Total Size" value={formatBytes(statistics.totalBytesBeingMerged)} />
-            <StatCard label="Avg Progress" value={`${(statistics.averageProgress * 100).toFixed(1)}%`} />
-            <CompactStatCard
-              label="Active Parts"
-              value={poolMetrics?.active_parts && poolMetrics.active_parts > 1000 ? `${(poolMetrics.active_parts / 1000).toFixed(1)}K` : poolMetrics?.active_parts ?? 0}
-              isLoading={isLoadingPoolMetrics}
+            <MetricStripItem
+              label="total size"
+              value={formatBytes(statistics.totalBytesBeingMerged)}
             />
-            <CompactStatCard
-              label="Pending Cleanup"
-              value={poolMetrics?.outdated_parts ?? 0}
+            <MetricStripItem
+              label="avg progress"
+              value={`${(statistics.averageProgress * 100).toFixed(1)}%`}
+            />
+            <MetricStripItem
+              label="active parts"
+              value={
+                isLoadingPoolMetrics
+                  ? '—'
+                  : poolMetrics?.active_parts && poolMetrics.active_parts > 1000
+                    ? `${(poolMetrics.active_parts / 1000).toFixed(1)}K`
+                    : poolMetrics?.active_parts ?? 0
+              }
+            />
+            <MetricStripItem
+              label="pending cleanup"
+              value={isLoadingPoolMetrics ? '—' : poolMetrics?.outdated_parts ?? 0}
               color={(poolMetrics?.outdated_parts ?? 0) > 100 ? '#f59e0b' : undefined}
-              isLoading={isLoadingPoolMetrics}
+              indicatorColor={(poolMetrics?.outdated_parts ?? 0) > 100 ? '#f59e0b' : undefined}
             />
-          </div>
+          </MetricStrip>
         )}
 
       </div>
