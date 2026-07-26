@@ -14,6 +14,20 @@ export const EVENT_HOURS_INTERVAL = new Map(
   Object.entries(EVENT_INTERVAL_HOURS).map(([interval, hours]) => [hours, interval]),
 );
 
+/**
+ * Older Time Travel links used the selected event time as the Events range
+ * anchor. Return a one-time migration value so later event selections cannot
+ * move the investigation window.
+ */
+export function legacyEventsRangeCenter(
+  from: string | undefined,
+  rangeCenter: string | undefined,
+  eventTime: string | undefined,
+): string | undefined {
+  if (from !== 'timetravel' || rangeCenter || !eventTime) return undefined;
+  return eventTime;
+}
+
 export function toLocalEventDateTime(ms: number): string {
   const date = new Date(ms);
   const pad = (value: number) => String(value).padStart(2, '0');

@@ -804,56 +804,38 @@ export const QueryExplorer: React.FC<QueryExplorerProps> = ({ urlState, onUrlSta
               >
                 {showResolved ? '{{ }}' : '{ → }'}
               </button>
-            </div>
-            <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-              <TimeRangePicker value={timeRangeOverride} onChange={setTimeRangeOverride} />
-              <span style={{ fontSize: 10, color: 'var(--text-muted)', fontFamily: "'Share Tech Mono',monospace", padding: '2px 6px', background: 'rgba(255,255,255,0.05)', borderRadius: 4 }}>⌘ Enter</span>
+              <span style={{ width: 1, height: 18, background: 'var(--border-primary)', margin: '0 3px' }} />
               {activeIsBuiltin && (
                 <button onClick={handleCloneQuery}
-                  style={{ padding: '4px 12px', fontSize: 12, cursor: 'pointer', background: 'var(--bg-card)', border: '1px solid var(--border-primary)', borderRadius: 4, color: 'var(--text-secondary)', fontWeight: 500 }}
+                  style={{ padding: '4px 10px', fontSize: 11, cursor: 'pointer', background: 'var(--bg-card)', border: '1px solid var(--border-primary)', borderRadius: 4, color: 'var(--text-secondary)', fontWeight: 500 }}
                   title="Clone this builtin query as a custom query">
                   Clone
                 </button>
               )}
               {activeIsCustom && (
                 <button onClick={handleSaveCustomQuery}
-                  style={{ padding: '4px 12px', fontSize: 12, cursor: 'pointer', background: 'var(--bg-card)', border: '1px solid var(--border-primary)', borderRadius: 4, color: 'var(--text-secondary)', fontWeight: 500 }}
+                  style={{ padding: '4px 10px', fontSize: 11, cursor: 'pointer', background: 'var(--bg-card)', border: '1px solid var(--border-primary)', borderRadius: 4, color: 'var(--text-secondary)', fontWeight: 500 }}
                   title="Save changes to this custom query">
                   Save
                 </button>
               )}
               <button onClick={handleNewCustomQuery}
-                style={{ padding: '4px 12px', fontSize: 12, cursor: 'pointer', background: 'var(--bg-card)', border: '1px solid var(--border-primary)', borderRadius: 4, color: 'var(--text-secondary)', fontWeight: 500 }}
+                style={{ padding: '4px 10px', fontSize: 11, cursor: 'pointer', background: 'var(--bg-card)', border: '1px solid var(--border-primary)', borderRadius: 4, color: 'var(--text-secondary)', fontWeight: 500 }}
                 title="Create a new custom query from a template">
                 + New
               </button>
-              {hasExplainAnalyze && isExplainAnalyzeEligible && (
-                <ProcessorTimingOption
-                  checked={includeProcessorTimings}
-                  onChange={setIncludeProcessorTimings}
-                  compact
-                />
-              )}
-              <button
-                onClick={() => setShowAnalysisDialog(true)}
-                disabled={isRunning || isAnalyzing || !services || !hasExplainAnalyze || !isExplainAnalyzeEligible}
-                title={executionAnalysisTitle}
-                style={{
-                  padding: '4px 12px',
-                  fontSize: 12,
-                  cursor: isRunning || isAnalyzing || !hasExplainAnalyze || !isExplainAnalyzeEligible ? 'not-allowed' : 'pointer',
-                  opacity: hasExplainAnalyze && isExplainAnalyzeEligible && !isRunning && !isAnalyzing ? 1 : 0.45,
-                  background: 'rgba(var(--color-warning-rgb), 0.08)',
-                  border: '1px solid rgba(var(--color-warning-rgb), 0.35)',
-                  borderRadius: 4,
-                  color: 'var(--color-warning)',
-                  fontWeight: 500,
-                }}
-              >
-                ◉ Analyze
-              </button>
+            </div>
+            <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+              <TimeRangePicker value={timeRangeOverride} onChange={setTimeRangeOverride} />
+              <span style={{ fontSize: 10, color: 'var(--text-muted)', fontFamily: "'Share Tech Mono',monospace", padding: '2px 6px', background: 'rgba(255,255,255,0.05)', borderRadius: 4 }}>⌘ Enter</span>
+              <span style={{ width: 1, height: 22, background: 'var(--border-primary)', marginLeft: 2 }} />
               <button className="btn btn-primary" onClick={() => runQuery()} disabled={isRunning || isAnalyzing || !services}
-                style={{ padding: '4px 12px', fontSize: 12, cursor: isRunning || isAnalyzing ? 'not-allowed' : 'pointer', opacity: isRunning || isAnalyzing ? 0.6 : 1 }}>
+                style={{
+                  padding: '4px 14px', fontSize: 12,
+                  cursor: isRunning || isAnalyzing ? 'not-allowed' : 'pointer',
+                  opacity: isRunning || isAnalyzing ? 0.6 : 1,
+                  fontWeight: 600,
+                }}>
                 {isRunning ? 'Running…' : '▶ Run Query'}
               </button>
             </div>
@@ -997,6 +979,27 @@ export const QueryExplorer: React.FC<QueryExplorerProps> = ({ urlState, onUrlSta
                     </svg>
                   </button>
                 )}
+                <button
+                  onClick={() => setShowAnalysisDialog(true)}
+                  disabled={isRunning || isAnalyzing || !services || !hasExplainAnalyze || !isExplainAnalyzeEligible}
+                  title={executionAnalysisTitle}
+                  style={{
+                    minHeight: 23, display: 'inline-flex', alignItems: 'center', gap: 5,
+                    marginLeft: 3, padding: '2px 9px',
+                    cursor: isRunning || isAnalyzing || !hasExplainAnalyze || !isExplainAnalyzeEligible ? 'not-allowed' : 'pointer',
+                    opacity: hasExplainAnalyze && isExplainAnalyzeEligible && !isRunning && !isAnalyzing ? 1 : 0.45,
+                    background: 'rgba(var(--color-warning-rgb), 0.07)',
+                    border: '1px solid rgba(var(--color-warning-rgb), 0.30)',
+                    borderRadius: 999,
+                    color: 'var(--color-warning)',
+                    fontFamily: "'Share Tech Mono',monospace",
+                    fontSize: 9, fontWeight: 650, letterSpacing: '0.025em',
+                    whiteSpace: 'nowrap',
+                  }}
+                >
+                  <span aria-hidden="true">◉</span>
+                  <span>{isAnalyzing ? 'ANALYZING…' : 'EXPLAIN ANALYZE'}</span>
+                </button>
                 {(onExportToGrafana || grafanaExport.isGrafana) && (
                   <button onClick={grafanaExport.openDialog} style={{ background: 'none', border: 'none', cursor: 'pointer', color: grafanaExport.status !== 'idle' ? 'var(--accent-green)' : 'var(--text-muted)', fontSize: 10, fontWeight: 500, padding: '2px 8px', borderRadius: 4, transition: 'color 0.15s ease' }} title="Create as Grafana dashboard">
                     {grafanaExport.status === 'created' ? '✓ Created in Grafana' : grafanaExport.status === 'copied' ? '✓ JSON copied' : 'Grafana ⤴'}
@@ -1237,7 +1240,15 @@ export const QueryExplorer: React.FC<QueryExplorerProps> = ({ urlState, onUrlSta
         <ExecutionAnalysisDialog
           onConfirm={runExecutionAnalysis}
           onCancel={() => setShowAnalysisDialog(false)}
-        />
+          title="Run EXPLAIN ANALYZE?"
+          message="ClickHouse will execute this SELECT to collect measured runtime metrics."
+          confirmLabel="Run EXPLAIN ANALYZE"
+        >
+          <ProcessorTimingOption
+            checked={includeProcessorTimings}
+            onChange={setIncludeProcessorTimings}
+          />
+        </ExecutionAnalysisDialog>
       )}
     </div>
   );

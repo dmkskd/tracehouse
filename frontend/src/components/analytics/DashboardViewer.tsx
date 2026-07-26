@@ -6,6 +6,7 @@
  */
 
 import React, { useState, useEffect, useCallback, useMemo, useRef } from 'react';
+import { createPortal } from 'react-dom';
 import { buildConfig } from '../../buildConfig';
 import { useClickHouseServices } from '../../providers/ClickHouseProvider';
 import { sourceTag, TAB_ANALYTICS } from '@tracehouse/core';
@@ -23,7 +24,7 @@ import { TimeRangePicker } from './TimeRangePicker';
 import {
   formatCell,
   buildChartData, buildGroupedChartData, isGroupedChartType, sortRows,
-  ChartRenderer, isTimeSeriesChartType, OverlayChart, chartColorByIndex,
+  ChartRenderer, isTimeSeriesChartType, OverlayChart, chartColorByIndex, compactFormatter,
   type ChartDataPoint, type GroupedChartData, type DrillDownEvent, type CorrelationEntry,
 } from './charts';
 import { Chart3DCanvas } from './charts3d';
@@ -40,6 +41,12 @@ import {
   exportDashboardJson,
   importDashboardJson,
 } from './dashboards';
+import {
+  adjacentSectionPanelIndex,
+  groupDashboardPanels,
+  panelOwnsShortcut,
+  type DashboardPanelSection,
+} from './dashboardFocusStage';
 
 // ─── Panel component - executes one preset query and shows result ───
 
@@ -50,6 +57,18 @@ interface PanelResult {
 
 type PanelView = 'chart' | 'table';
 
+const FOCUS_STAGE_RAIL_WIDTH = 312;
+const FOCUS_STAGE_READING_WIDTH = 1120;
+const FOCUS_STAGE_CHART_HEIGHT = 'clamp(300px, 38vh, 430px)';
+const FOCUS_STAGE_Z_INDEX = 800;
+const FOCUS_STAGE_RAIL_Z_INDEX = FOCUS_STAGE_Z_INDEX + 1;
+
+function resolveFocusStageTop(): number {
+  if (typeof document === 'undefined' || !buildConfig.grafanaPlugin) return 48;
+  const appHeader = document.querySelector<HTMLElement>('.grafana-app-container > div:first-child');
+  return appHeader ? Math.max(48, Math.round(appHeader.getBoundingClientRect().bottom)) : 48;
+}
+
 /** Data reported by a panel for cross-panel correlation. */
 export interface PanelTimeSeriesInfo {
   name: string;
@@ -59,10 +78,368 @@ export interface PanelTimeSeriesInfo {
   dataByLabel: Map<string, number>;
 }
 
+interface FocusStageContext {
+  viewportTop: number;
+  sectionName: string;
+  sectionPosition: number;
+  sectionPanelCount: number;
+  panelPosition: number;
+  panelCount: number;
+  items: FocusStageItem[];
+  onSelectPanel: (index: number) => void;
+  onPreviousPanel: () => void;
+  onNextPanel: () => void;
+  onNextSection: () => void;
+}
+
+interface FocusStageItem {
+  globalIndex: number;
+  title: string;
+  sectionName: string;
+  sectionPanelCount: number;
+  startsSection: boolean;
+  latestValue?: number;
+  unit?: string;
+  sparklineValues?: number[];
+  sparklineColor?: string;
+}
+
+const FocusStageHeader: React.FC<{
+  context: FocusStageContext;
+  onExit: () => void;
+}> = ({ context, onExit }) => (
+  <div style={{
+    position: 'sticky', top: 0, zIndex: 4,
+    minHeight: 56, flexShrink: 0, display: 'flex', alignItems: 'center', gap: 12,
+    padding: '0 18px', background: 'var(--bg-secondary)', borderBottom: '1px solid var(--border-primary)',
+    boxShadow: '0 3px 12px rgba(0,0,0,0.04)',
+  }}>
+    <button
+      onClick={context.onNextSection}
+      title="Jump to the next dashboard section (])"
+      style={{
+        display: 'inline-flex', alignItems: 'center', gap: 7, height: 30, padding: '0 10px',
+        color: 'var(--accent-primary, #6366f1)', background: 'rgba(99,102,241,0.10)',
+        border: '1px solid rgba(99,102,241,0.24)', borderRadius: 6, cursor: 'pointer',
+        fontSize: 11, fontWeight: 600, whiteSpace: 'nowrap',
+      }}
+    >
+      <span>{context.sectionName}</span>
+      <span style={{ opacity: 0.68, fontFamily: 'monospace', fontSize: 9 }}>
+        {context.sectionPosition}/{context.sectionPanelCount}
+      </span>
+      <span>›</span>
+    </button>
+    <span style={{
+      color: 'var(--text-muted)', fontFamily: 'monospace', fontSize: 10,
+      fontWeight: 600, letterSpacing: '0.05em', textTransform: 'uppercase',
+    }}>
+      Panel {context.panelPosition} of {context.panelCount}
+    </span>
+    <div style={{ marginLeft: 'auto', display: 'flex', alignItems: 'center', gap: 6 }}>
+      <button onClick={context.onPreviousPanel} style={focusStageNavButtonStyle} title="Previous panel (↑)">← Previous</button>
+      <button onClick={context.onNextPanel} style={focusStageNavButtonStyle} title="Next panel (↓)">Next →</button>
+      <button onClick={onExit} style={focusStageNavButtonStyle} title="Return to dashboard grid (Esc)">Grid ⌗</button>
+    </div>
+  </div>
+);
+
+const FocusAccordionRows: React.FC<{
+  items: FocusStageItem[];
+  onSelectPanel: (index: number) => void;
+}> = ({ items, onSelectPanel }) => {
+  if (items.length === 0) return null;
+  return (
+    <div role="list" aria-label="Collapsed dashboard panels" style={{
+      width: 'calc(100% - 36px)', maxWidth: FOCUS_STAGE_READING_WIDTH,
+      margin: '0 auto', flexShrink: 0,
+    }}>
+      {items.map(item => (
+        <React.Fragment key={item.globalIndex}>
+          {item.startsSection && (
+            <div style={{
+              height: 38, display: 'flex', alignItems: 'center', gap: 9,
+              padding: '7px 3px 0', color: 'var(--text-muted)',
+              borderBottom: '1px solid var(--border-primary)',
+              fontSize: 11, fontWeight: 700,
+            }}>
+              <span>{item.sectionName}</span>
+              <span style={{ opacity: 0.62, fontWeight: 500 }}>{item.sectionPanelCount} panels</span>
+            </div>
+          )}
+          <button
+            role="listitem"
+            onClick={() => onSelectPanel(item.globalIndex)}
+            title={`Expand ${item.title}`}
+            style={{
+              width: '100%', height: 54, display: 'grid',
+              gridTemplateColumns: '28px 8px minmax(0, 1fr) minmax(110px, 190px) 20px',
+              gap: 10, alignItems: 'center',
+              marginTop: 8, padding: '0 14px', color: 'var(--text-secondary)', background: 'var(--bg-secondary)',
+              border: '1px solid var(--border-primary)', borderRadius: 8,
+              cursor: 'pointer', textAlign: 'left', fontFamily: 'inherit',
+              transition: 'background 0.15s ease, border-color 0.15s ease, transform 0.15s ease',
+            }}
+            onMouseEnter={event => { event.currentTarget.style.background = 'var(--bg-card-hover, rgba(88,166,255,0.06))'; }}
+            onMouseLeave={event => { event.currentTarget.style.background = 'var(--bg-secondary)'; }}
+          >
+            <span style={{ color: 'var(--text-muted)', fontFamily: 'monospace', fontSize: 9, textAlign: 'center' }}>
+              {String(item.globalIndex + 1).padStart(2, '0')}
+            </span>
+            <span style={{
+              width: 6, height: 6, borderRadius: '50%',
+              background: chartColorByIndex(item.globalIndex), opacity: 0.65,
+            }} />
+            <span style={{
+              minWidth: 0, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap',
+              fontSize: 11.5, fontWeight: 650,
+            }}>
+              {item.title}
+            </span>
+            <span style={{
+              minWidth: 0, display: 'flex', alignItems: 'center', justifyContent: 'flex-end', gap: 12,
+            }}>
+              {item.latestValue !== undefined && (
+                <span style={{
+                  color: 'var(--text-muted)', textAlign: 'right',
+                  fontFamily: 'monospace', fontSize: 10, fontWeight: 600, whiteSpace: 'nowrap',
+                }}>
+                  {compactFormatter(item.unit)(item.latestValue)}
+                </span>
+              )}
+              {item.sparklineValues && item.sparklineValues.length > 1 && (
+                <FocusSparkline values={item.sparklineValues} color={item.sparklineColor ?? chartColorByIndex(item.globalIndex)} />
+              )}
+            </span>
+            <span aria-hidden="true" style={{ color: 'var(--text-muted)', fontSize: 15, textAlign: 'right' }}>›</span>
+          </button>
+        </React.Fragment>
+      ))}
+    </div>
+  );
+};
+
+const FocusSparkline: React.FC<{ values: number[]; color: string }> = ({ values, color }) => {
+  const canvasRef = useRef<HTMLCanvasElement>(null);
+
+  useEffect(() => {
+    const canvas = canvasRef.current;
+    if (!canvas || values.length < 2) return;
+    const width = 74;
+    const height = 28;
+    const ratio = window.devicePixelRatio || 1;
+    canvas.width = width * ratio;
+    canvas.height = height * ratio;
+    const context = canvas.getContext('2d');
+    if (!context) return;
+    context.scale(ratio, ratio);
+    context.clearRect(0, 0, width, height);
+    const min = Math.min(...values);
+    const max = Math.max(...values);
+    const range = max - min || 1;
+    const padding = 2;
+    context.beginPath();
+    values.forEach((value, index) => {
+      const x = padding + (index / (values.length - 1)) * (width - padding * 2);
+      const y = height - padding - ((value - min) / range) * (height - padding * 2);
+      if (index === 0) context.moveTo(x, y);
+      else context.lineTo(x, y);
+    });
+    context.strokeStyle = color;
+    context.lineWidth = 1.6;
+    context.lineJoin = 'round';
+    context.lineCap = 'round';
+    context.stroke();
+  }, [color, values]);
+
+  return <canvas ref={canvasRef} width={74} height={28} aria-hidden="true" style={{ width: 74, height: 28, flexShrink: 0 }} />;
+};
+
+const FocusSectionLabel: React.FC<{ name: string; count: number }> = ({ name, count }) => (
+  <div style={{
+    width: 'calc(100% - 36px)', maxWidth: FOCUS_STAGE_READING_WIDTH, height: 38,
+    margin: '0 auto', display: 'flex', alignItems: 'center', gap: 9,
+    padding: '7px 3px 0', boxSizing: 'border-box',
+    color: 'var(--text-muted)', borderBottom: '1px solid var(--border-primary)',
+    fontSize: 11, fontWeight: 700,
+  }}>
+    <span>{name}</span>
+    <span style={{ opacity: 0.62, fontWeight: 500 }}>{count} panels</span>
+  </div>
+);
+
+const PanelActionsMenu: React.FC<{
+  sourceUrl?: string;
+  loading: boolean;
+  onOpenEditor: () => void;
+  onRefresh: () => void;
+}> = ({ sourceUrl, loading, onOpenEditor, onRefresh }) => {
+  const [open, setOpen] = useState(false);
+  const [position, setPosition] = useState({ top: 0, left: 0 });
+  const buttonRef = useRef<HTMLButtonElement>(null);
+  const menuRef = useRef<HTMLDivElement>(null);
+  const sourceHost = useMemo(() => {
+    if (!sourceUrl) return '';
+    try {
+      return new URL(sourceUrl).hostname.replace(/^www\./, '');
+    } catch {
+      return 'external URL';
+    }
+  }, [sourceUrl]);
+
+  const close = useCallback(() => setOpen(false), []);
+  const toggle = useCallback(() => {
+    if (open) {
+      close();
+      return;
+    }
+    const rect = buttonRef.current?.getBoundingClientRect();
+    if (rect) {
+      const menuWidth = 250;
+      setPosition({
+        top: rect.bottom + 6,
+        left: Math.max(8, Math.min(rect.right - menuWidth, window.innerWidth - menuWidth - 8)),
+      });
+    }
+    setOpen(true);
+  }, [close, open]);
+
+  useEffect(() => {
+    if (!open) return;
+    const firstItem = menuRef.current?.querySelector<HTMLElement>('[role="menuitem"]');
+    firstItem?.focus();
+    const handlePointerDown = (event: MouseEvent) => {
+      const target = event.target as Node;
+      if (!menuRef.current?.contains(target) && !buttonRef.current?.contains(target)) close();
+    };
+    const handleKeyDown = (event: KeyboardEvent) => {
+      if (event.key === 'Escape') {
+        event.preventDefault();
+        event.stopImmediatePropagation();
+        close();
+        buttonRef.current?.focus();
+        return;
+      }
+      if (!['ArrowDown', 'ArrowUp', 'Home', 'End'].includes(event.key)) return;
+      const items = Array.from(menuRef.current?.querySelectorAll<HTMLElement>('[role="menuitem"]:not([disabled])') ?? []);
+      if (items.length === 0) return;
+      event.preventDefault();
+      const currentIndex = items.indexOf(document.activeElement as HTMLElement);
+      const nextIndex = event.key === 'Home'
+        ? 0
+        : event.key === 'End'
+          ? items.length - 1
+          : event.key === 'ArrowDown'
+            ? (currentIndex + 1 + items.length) % items.length
+            : (currentIndex - 1 + items.length) % items.length;
+      items[nextIndex]?.focus();
+    };
+    window.addEventListener('mousedown', handlePointerDown);
+    window.addEventListener('keydown', handleKeyDown, true);
+    window.addEventListener('resize', close);
+    window.addEventListener('scroll', close, true);
+    return () => {
+      window.removeEventListener('mousedown', handlePointerDown);
+      window.removeEventListener('keydown', handleKeyDown, true);
+      window.removeEventListener('resize', close);
+      window.removeEventListener('scroll', close, true);
+    };
+  }, [close, open]);
+
+  return (
+    <>
+      <button
+        ref={buttonRef}
+        onClick={toggle}
+        aria-haspopup="menu"
+        aria-expanded={open}
+        aria-label="More panel actions"
+        title="More panel actions"
+        style={{
+          background: open ? 'var(--bg-card-hover, rgba(88,166,255,0.1))' : 'none',
+          border: 'none', borderRadius: 4, cursor: 'pointer', color: 'var(--text-muted)',
+          fontSize: 15, lineHeight: 1, padding: '1px 6px 4px', opacity: open ? 1 : 0.75,
+        }}
+      >
+        ⋯
+      </button>
+      {open && createPortal(
+        <div
+          ref={menuRef}
+          role="menu"
+          aria-label="Panel actions"
+          style={{
+            position: 'fixed', top: position.top, left: position.left, zIndex: 100000,
+            width: 250, padding: 5, background: 'var(--bg-secondary)',
+            border: '1px solid var(--border-primary)', borderRadius: 8,
+            boxShadow: '0 10px 30px rgba(0,0,0,0.18)',
+          }}
+        >
+          <button
+            role="menuitem"
+            onClick={() => { close(); onOpenEditor(); }}
+            style={panelMenuItemStyle}
+            {...panelMenuInteractionProps}
+          >
+            <span style={panelMenuIconStyle}>↗</span>
+            <span>Open in query editor</span>
+          </button>
+          {sourceUrl && (
+            <a
+              role="menuitem"
+              href={sourceUrl}
+              target="_blank"
+              rel="noopener noreferrer"
+              onClick={close}
+              title={`Open ${sourceUrl} in a new tab`}
+              style={{ ...panelMenuItemStyle, textDecoration: 'none' }}
+              {...panelMenuInteractionProps}
+            >
+              <span style={{
+                ...panelMenuIconStyle,
+                fontFamily: 'Arial, sans-serif',
+                fontSize: 11,
+                transform: 'scale(0.68)',
+              }}>🔗︎</span>
+              <span style={{ minWidth: 0, display: 'flex', flexDirection: 'column', gap: 2 }}>
+                <span>Open source link</span>
+                <span style={{
+                  color: 'var(--text-muted)', fontSize: 9,
+                  overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap',
+                }}>
+                  {sourceHost} · new tab
+                </span>
+              </span>
+            </a>
+          )}
+          <div style={{ height: 1, margin: '4px 6px', background: 'var(--border-secondary)' }} />
+          <button
+            role="menuitem"
+            disabled={loading}
+            onClick={() => { close(); onRefresh(); }}
+            style={{
+              ...panelMenuItemStyle,
+              cursor: loading ? 'not-allowed' : 'pointer',
+              opacity: loading ? 0.45 : 1,
+            }}
+            {...panelMenuInteractionProps}
+          >
+            <span style={panelMenuIconStyle}>↻</span>
+            <span>{loading ? 'Refreshing…' : 'Refresh panel'}</span>
+          </button>
+        </div>,
+        document.body,
+      )}
+    </>
+  );
+};
+
 const DashboardPanelCard: React.FC<{
   panel: DashboardPanel;
   timeRangeOverride: string | null;
   dashboardId: string;
+  isFocused: boolean;
+  onToggleFocus: () => void;
   isFullscreen: boolean;
   onToggleFullscreen: () => void;
   isHidden: boolean;
@@ -77,7 +454,8 @@ const DashboardPanelCard: React.FC<{
   panelIndex?: number;
   onOpenQueryDetail?: (query: QuerySeries, opts?: { tab?: QueryModalTab }) => void;
   onOpenQuery?: (query: Query, dashboardId: string) => void;
-}> = ({ panel, timeRangeOverride, dashboardId, isFullscreen, onToggleFullscreen, isHidden, hoveredTimestamp, onTimestampHover, onTimeSeriesData, correlationValues, isHoveredPanel, filterParams, panelIndex, onOpenQueryDetail, onOpenQuery }) => {
+  focusStage?: FocusStageContext;
+}> = ({ panel, timeRangeOverride, dashboardId, isFocused, onToggleFocus, isFullscreen, onToggleFullscreen, isHidden, hoveredTimestamp, onTimestampHover, onTimeSeriesData, correlationValues, isHoveredPanel, filterParams, panelIndex, onOpenQueryDetail, onOpenQuery, focusStage }) => {
   const services = useClickHouseServices();
   const originalPreset = resolvePanel(panel);
   const [drillPreset, setDrillPreset] = useState<Query | null>(null);
@@ -90,26 +468,52 @@ const DashboardPanelCard: React.FC<{
   const [sortCol, setSortCol] = useState<string | null>(null);
   const [sortDir, setSortDir] = useState<'asc' | 'desc'>('desc');
   const [hovered, setHovered] = useState(false);
-  const fullscreen = isFullscreen;
+  const expanded = isFocused || isFullscreen;
+  const focusedPanelRef = useRef<HTMLDivElement>(null);
+  const focusedItemPosition = isFocused && focusStage
+    ? focusStage.items.findIndex(item => item.globalIndex === panelIndex)
+    : -1;
+  const focusedItem = focusedItemPosition >= 0 ? focusStage?.items[focusedItemPosition] : undefined;
+  const focusItemsBefore = focusedItemPosition >= 0 ? focusStage?.items.slice(0, focusedItemPosition) ?? [] : [];
+  const focusItemsAfter = focusedItemPosition >= 0 ? focusStage?.items.slice(focusedItemPosition + 1) ?? [] : [];
 
-  // Escape exits fullscreen, 'f' toggles fullscreen when hovered
+  useEffect(() => {
+    if (!isFocused) return;
+    const frame = window.requestAnimationFrame(() => {
+      focusedPanelRef.current?.scrollIntoView({ block: 'start', behavior: 'smooth' });
+    });
+    return () => window.cancelAnimationFrame(frame);
+  }, [isFocused, panelIndex]);
+
+  // F toggles fullscreen and Shift+F toggles Focus Stage. Escape is handled
+  // once at dashboard level in capture phase so embedded shells cannot consume it.
   useEffect(() => {
     const handler = (e: KeyboardEvent) => {
-      if (e.target instanceof HTMLInputElement || e.target instanceof HTMLTextAreaElement) return;
-      if (e.key === 'Escape' && fullscreen) onToggleFullscreen();
-      if (e.key === 'f' && hovered && !fullscreen) onToggleFullscreen();
+      const target = e.target;
+      if (
+        target instanceof HTMLInputElement ||
+        target instanceof HTMLTextAreaElement ||
+        target instanceof HTMLSelectElement ||
+        (target instanceof HTMLElement && (target.isContentEditable || target.closest('[role="menu"]')))
+      ) return;
+      if (e.ctrlKey || e.metaKey || e.altKey) return;
+      if (e.key.toLowerCase() === 'f' && panelOwnsShortcut(expanded, hovered, isHidden)) {
+        e.preventDefault();
+        if (e.shiftKey) onToggleFocus();
+        else onToggleFullscreen();
+      }
     };
     window.addEventListener('keydown', handler);
     return () => window.removeEventListener('keydown', handler);
-  }, [fullscreen, hovered, onToggleFullscreen]);
+  }, [expanded, hovered, isFocused, isFullscreen, isHidden, onToggleFocus, onToggleFullscreen]);
 
-  // Hide body scrollbar when fullscreen
+  // Both expanded modes own the viewport and lock page scrolling.
   useEffect(() => {
-    if (fullscreen) {
+    if (expanded) {
       document.body.style.overflow = 'hidden';
       return () => { document.body.style.overflow = ''; };
     }
-  }, [fullscreen]);
+  }, [expanded]);
 
   const openInEditor = useCallback(() => {
     if (!preset) return;
@@ -306,26 +710,67 @@ const DashboardPanelCard: React.FC<{
   }, [preset, services, onOpenQueryDetail]);
 
   if (!preset) {
+    const expandedTop = isFocused ? focusStage?.viewportTop ?? 48 : 48;
     return (
-      <div style={{ ...panelStyle, display: isHidden ? 'none' : 'flex' }}>
-        <div style={{ padding: 16, color: 'var(--text-muted)', fontSize: 12 }}>
+      <div style={expanded ? {
+        position: 'fixed', top: expandedTop, left: 0, right: isFocused ? FOCUS_STAGE_RAIL_WIDTH : 0, bottom: 0,
+        zIndex: isFocused ? FOCUS_STAGE_Z_INDEX : 1999,
+        background: 'var(--bg-primary)', display: 'flex', flexDirection: 'column',
+        overflowX: 'hidden', overflowY: isFocused ? 'auto' : 'hidden',
+      } : { ...panelStyle, display: isHidden ? 'none' : 'flex' }}>
+        {isFocused && focusStage && <FocusStageHeader context={focusStage} onExit={onToggleFocus} />}
+        {isFocused && focusStage && <FocusAccordionRows items={focusItemsBefore} onSelectPanel={focusStage.onSelectPanel} />}
+        {isFocused && focusedItem?.startsSection && (
+          <FocusSectionLabel name={focusedItem.sectionName} count={focusedItem.sectionPanelCount} />
+        )}
+        <div ref={focusedPanelRef} style={{
+          padding: 16, color: 'var(--text-muted)', fontSize: 12,
+          width: isFocused ? 'calc(100% - 36px)' : undefined,
+          maxWidth: isFocused ? FOCUS_STAGE_READING_WIDTH : undefined,
+          margin: isFocused ? '8px auto' : undefined, boxSizing: 'border-box',
+          scrollMarginTop: 64, border: isFocused ? '1px solid var(--border-primary)' : undefined,
+          borderRadius: isFocused ? 8 : undefined, background: isFocused ? 'var(--bg-secondary)' : undefined,
+        }}>
           Unknown query: <code>{panel.queryName}</code>
         </div>
+        {isFocused && focusStage && <FocusAccordionRows items={focusItemsAfter} onSelectPanel={focusStage.onSelectPanel} />}
       </div>
     );
   }
 
+  const expandedTop = isFocused ? focusStage?.viewportTop ?? 48 : 48;
   return (
     <div
       onMouseEnter={() => setHovered(true)}
       onMouseLeave={() => setHovered(false)}
-      style={fullscreen ? {
-        position: 'fixed', top: 48, left: 0, right: 0, bottom: 0, zIndex: 1999, background: 'var(--bg-primary)',
-        display: 'flex', flexDirection: 'column', overflow: 'hidden',
+      style={expanded ? {
+        position: 'fixed', top: expandedTop, left: 0, right: isFocused ? FOCUS_STAGE_RAIL_WIDTH : 0, bottom: 0,
+        zIndex: isFocused ? FOCUS_STAGE_Z_INDEX : 1999, background: 'var(--bg-primary)',
+        display: 'flex', flexDirection: 'column', overflowX: 'hidden', overflowY: isFocused ? 'auto' : 'hidden',
       } : { ...panelStyle, display: isHidden ? 'none' : 'flex' }}>
-      <div style={{ padding: fullscreen ? '16px 20px 8px' : '10px 14px 6px', display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start' }}>
+      {isFocused && focusStage && <FocusStageHeader context={focusStage} onExit={onToggleFocus} />}
+      {isFocused && focusStage && <FocusAccordionRows items={focusItemsBefore} onSelectPanel={focusStage.onSelectPanel} />}
+      {isFocused && focusedItem?.startsSection && (
+        <FocusSectionLabel name={focusedItem.sectionName} count={focusedItem.sectionPanelCount} />
+      )}
+      <div
+        ref={focusedPanelRef}
+        style={{
+          padding: expanded ? '16px 20px 8px' : '10px 14px 6px',
+          display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start',
+          width: isFocused ? 'calc(100% - 36px)' : undefined,
+          maxWidth: isFocused ? FOCUS_STAGE_READING_WIDTH : undefined,
+          margin: isFocused ? '8px auto 0' : undefined, boxSizing: 'border-box',
+          scrollMarginTop: 64,
+          border: isFocused ? '1px solid rgba(99,102,241,0.34)' : undefined,
+          borderBottom: isFocused ? '1px solid var(--border-secondary)' : undefined,
+          borderRadius: isFocused ? '8px 8px 0 0' : undefined,
+          background: isFocused ? 'var(--bg-secondary)' : undefined,
+          boxShadow: isFocused ? '0 7px 24px rgba(42,49,68,0.07)' : undefined,
+        }}
+      >
         <div style={{ flex: 1, minWidth: 0 }}>
-          <div style={{ fontSize: fullscreen ? 18 : 12, fontWeight: 600, color: 'var(--text-primary)', lineHeight: 1.3, display: 'flex', alignItems: 'center', gap: 6 }}>
+          <div style={{ fontSize: expanded ? 18 : 12, fontWeight: 600, color: 'var(--text-primary)', lineHeight: 1.3, display: 'flex', alignItems: 'center', gap: 6 }}>
             {isDrilled && (
               <button onClick={handleDrillReset}
                 style={{ background: 'none', border: 'none', cursor: 'pointer', color: 'var(--accent-primary, #6366f1)', fontSize: 11, padding: 0 }}
@@ -347,7 +792,7 @@ const DashboardPanelCard: React.FC<{
             )}
           </div>
           {preset.description && (
-            <div style={{ fontSize: fullscreen ? 13 : 10, color: 'var(--text-muted)', marginTop: 2, lineHeight: 1.3 }}>{preset.description}</div>
+            <div style={{ fontSize: expanded ? 13 : 10, color: 'var(--text-muted)', marginTop: 2, lineHeight: 1.3 }}>{preset.description}</div>
           )}
         </div>
         <div style={{ display: 'flex', alignItems: 'center', gap: 2, flexShrink: 0 }}>
@@ -361,31 +806,46 @@ const DashboardPanelCard: React.FC<{
                 title="Table view">☰</button>
             </div>
           )}
-          {preset.directives.source && (
-            <a href={preset.directives.source} target="_blank" rel="noopener noreferrer"
-              style={{ color: 'var(--text-muted)', fontSize: 10, padding: '2px 5px', opacity: 0.7, textDecoration: 'none' }}
-              title={`Source: ${preset.directives.source}`}>
-              src
-            </a>
-          )}
-          <button onClick={openInEditor}
-            style={{ background: 'none', border: 'none', cursor: 'pointer', color: 'var(--text-muted)', fontSize: 11, padding: '2px 5px', opacity: 0.7 }}
-            title="Open in query editor">
-            ↗
+          <button
+            onClick={onToggleFocus}
+            aria-label={isFocused ? 'Exit focus mode' : 'Focus panel'}
+            style={{
+              width: 25, height: 23, display: 'grid', placeItems: 'center', padding: 0,
+              color: isFocused ? 'var(--accent-primary, #6366f1)' : 'var(--text-muted)',
+              background: isFocused ? 'rgba(99,102,241,0.10)' : 'transparent',
+              border: isFocused ? '1px solid rgba(99,102,241,0.24)' : '1px solid transparent',
+              borderRadius: 4, cursor: 'pointer', fontSize: 13, lineHeight: 1,
+            }}
+            title={isFocused ? 'Exit focus mode (Shift+F or Esc)' : 'Focus panel (Shift+F) — keep the dashboard map visible'}
+          >
+            ◎
           </button>
           <button onClick={onToggleFullscreen}
-            style={{ background: 'none', border: 'none', cursor: 'pointer', color: 'var(--text-muted)', fontSize: 12, padding: '2px 5px', opacity: 0.7 }}
-            title={fullscreen ? 'Exit fullscreen (Esc)' : 'Fullscreen (f)'}>
-            {fullscreen ? '⊗' : '⊞'}
+            style={{ background: 'none', border: 'none', cursor: 'pointer', color: 'var(--text-muted)', fontSize: 15, padding: '1px 5px 3px', opacity: 0.78, lineHeight: 1 }}
+            title={isFullscreen ? 'Exit fullscreen (Esc)' : 'Fullscreen (F)'}>
+            {isFullscreen ? '⤓' : '⤢'}
           </button>
-          <button onClick={() => run()} disabled={loading}
-            style={{ background: 'none', border: 'none', cursor: loading ? 'not-allowed' : 'pointer', color: 'var(--text-muted)', fontSize: 12, padding: '2px 6px', opacity: loading ? 0.4 : 0.7 }}
-            title="Refresh">
-            ↻
-          </button>
+          <PanelActionsMenu
+            sourceUrl={preset.directives.source}
+            loading={loading}
+            onOpenEditor={openInEditor}
+            onRefresh={() => { void run(); }}
+          />
         </div>
       </div>
-      <div style={{ padding: fullscreen ? '0 8px 8px' : '0 14px 10px', flex: 1, minHeight: 0, overflowX: 'hidden', overflowY: 'visible', display: 'flex', flexDirection: 'column' }}>
+      <div style={{
+        padding: expanded ? '0 8px 8px' : '0 14px 10px',
+        flex: isFocused ? '0 0 auto' : 1, minHeight: 0,
+        overflowX: 'hidden', overflowY: 'visible', display: 'flex', flexDirection: 'column',
+        width: isFocused ? 'calc(100% - 36px)' : undefined,
+        maxWidth: isFocused ? FOCUS_STAGE_READING_WIDTH : undefined,
+        margin: isFocused ? '0 auto 8px' : undefined, boxSizing: 'border-box',
+        border: isFocused ? '1px solid rgba(99,102,241,0.34)' : undefined,
+        borderTop: isFocused ? 'none' : undefined,
+        borderRadius: isFocused ? '0 0 8px 8px' : undefined,
+        background: isFocused ? 'var(--bg-secondary)' : undefined,
+        boxShadow: isFocused ? '0 7px 24px rgba(42,49,68,0.07)' : undefined,
+      }}>
         {loading && <div style={{ color: 'var(--text-muted)', fontSize: 11, padding: '20px 0', textAlign: 'center' }}>Loading…</div>}
         {error && (() => {
           const fmt = formatClickHouseError(error);
@@ -399,12 +859,17 @@ const DashboardPanelCard: React.FC<{
           <>
             {/* Chart view */}
             {view === 'chart' && hasChart && (
-              <div style={{ marginBottom: fullscreen ? 0 : 6, flex: 1, minHeight: fullscreen ? 0 : (chartStyle === '3d' ? 250 : 180) }}>
+              <div style={{
+                marginBottom: expanded ? 0 : 6,
+                flex: isFocused ? '0 0 auto' : 1,
+                height: isFocused ? FOCUS_STAGE_CHART_HEIGHT : undefined,
+                minHeight: isFocused ? 280 : expanded ? 0 : (chartStyle === '3d' ? 250 : 180),
+              }}>
                 {effectiveChartStyle === '3d' ? (
-                  <Chart3DCanvas key={fullscreen ? 'fs' : 'normal'} data={chartData} type={chartType}
+                  <Chart3DCanvas key={isFullscreen ? 'fullscreen' : isFocused ? 'focus' : 'normal'} data={chartData} type={chartType}
                     orientation={chartDirective?.orientation}
                     groupedData={isGroupedChart ? groupedChartData : undefined}
-                    isFullscreen={fullscreen}
+                    isFullscreen={isFullscreen}
                     onDrillDown={isDrillable ? handleDrillDown : isPartLinkable ? handlePartLinkChartClick : isQueryLinkable ? handleQueryLinkChartClick : undefined}
                     unit={chartUnit} />
                 ) : (
@@ -427,7 +892,11 @@ const DashboardPanelCard: React.FC<{
               };
               const sortedRows = sortCol ? sortRows(result.rows, sortCol, sortDir) : result.rows;
               return (
-                <div style={{ flex: 1, overflow: 'auto', borderRadius: 4, border: '1px solid var(--border-secondary)' }}>
+                <div style={{
+                  flex: 1, overflow: 'auto', borderRadius: 4, border: '1px solid var(--border-secondary)',
+                  height: isFocused ? 'min(62vh, 620px)' : undefined,
+                  minHeight: isFocused ? 280 : undefined,
+                }}>
                   <ResultsTable
                     columns={result.columns}
                     rows={sortedRows}
@@ -455,6 +924,7 @@ const DashboardPanelCard: React.FC<{
           </>
         )}
       </div>
+      {isFocused && focusStage && <FocusAccordionRows items={focusItemsAfter} onSelectPanel={focusStage.onSelectPanel} />}
       {linkModal && (
         <LinkQueryModal
           targetQuery={linkModal.targetQuery}
@@ -478,6 +948,128 @@ const DashboardPanelCard: React.FC<{
     </div>
   );
 }
+
+const FocusStageRail: React.FC<{
+  viewportTop: number;
+  dashboardTitle: string;
+  sections: DashboardPanelSection[];
+  focusedPanelIndex: number;
+  onSelectPanel: (index: number) => void;
+}> = ({ viewportTop, dashboardTitle, sections, focusedPanelIndex, onSelectPanel }) => {
+  const activeItemRef = useRef<HTMLButtonElement>(null);
+
+  useEffect(() => {
+    activeItemRef.current?.scrollIntoView({ block: 'nearest' });
+  }, [focusedPanelIndex]);
+
+  return (
+    <aside
+      aria-label="Dashboard panel navigator"
+      style={{
+        position: 'fixed', top: viewportTop, right: 0, bottom: 0, zIndex: FOCUS_STAGE_RAIL_Z_INDEX,
+        width: FOCUS_STAGE_RAIL_WIDTH, display: 'flex', flexDirection: 'column',
+        background: 'var(--bg-secondary)', borderLeft: '1px solid var(--border-primary)',
+        boxShadow: '-8px 0 24px rgba(0,0,0,0.08)',
+      }}
+    >
+      <div style={{
+        flexShrink: 0, padding: '14px 14px 11px',
+        borderBottom: '1px solid var(--border-primary)', background: 'var(--bg-secondary)',
+      }}>
+        <div style={{
+          color: 'var(--text-muted)', fontSize: 9, fontWeight: 700,
+          letterSpacing: '0.08em', textTransform: 'uppercase',
+        }}>
+          Dashboard map · {sections.reduce((count, section) => count + section.panels.length, 0)} panels
+        </div>
+        <div style={{
+          marginTop: 5, color: 'var(--text-primary)', fontSize: 12, fontWeight: 600,
+          whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis',
+        }}>
+          {dashboardTitle}
+        </div>
+      </div>
+      <div style={{ flex: 1, minHeight: 0, overflowY: 'auto', padding: 8 }}>
+        {sections.map((section, sectionIndex) => {
+          const isActiveSection = section.panels.some(entry => entry.globalIndex === focusedPanelIndex);
+          const sectionLabel = section.name ?? 'General';
+          return (
+            <section
+              key={`${sectionLabel}-${sectionIndex}`}
+              style={{
+                marginBottom: 7, padding: '0 4px 4px', borderRadius: 8,
+                border: isActiveSection ? '1px solid rgba(99,102,241,0.24)' : '1px solid transparent',
+                background: isActiveSection ? 'rgba(99,102,241,0.06)' : 'transparent',
+              }}
+            >
+              <button
+                onClick={() => onSelectPanel(section.panels[0]?.globalIndex ?? focusedPanelIndex)}
+                style={{
+                  position: 'sticky', top: 0, zIndex: 1, width: '100%', minHeight: 28,
+                  display: 'flex', alignItems: 'center', justifyContent: 'space-between',
+                  padding: '5px 5px 4px', color: isActiveSection ? 'var(--accent-primary, #6366f1)' : 'var(--text-muted)',
+                  background: isActiveSection ? 'var(--bg-secondary)' : 'var(--bg-secondary)',
+                  border: 'none', cursor: 'pointer', textAlign: 'left',
+                  fontSize: 9, fontWeight: 700, letterSpacing: '0.06em', textTransform: 'uppercase',
+                }}
+                title={`Focus the first panel in ${sectionLabel}`}
+              >
+                <span>{sectionLabel}</span>
+                <span style={{ opacity: 0.65, fontFamily: 'monospace', letterSpacing: 0 }}>{section.panels.length}</span>
+              </button>
+              {section.panels.map(({ panel, globalIndex }) => {
+                const active = globalIndex === focusedPanelIndex;
+                const preset = resolvePanel(panel);
+                const title = preset?.name ?? panel.queryName.split('#').pop() ?? panel.queryName;
+                return (
+                  <button
+                    key={`${panel.queryName}-${globalIndex}`}
+                    ref={active ? activeItemRef : undefined}
+                    aria-current={active ? 'true' : undefined}
+                    onClick={() => onSelectPanel(globalIndex)}
+                    style={{
+                      width: '100%', minHeight: 38, display: 'grid',
+                      gridTemplateColumns: '22px 8px minmax(0, 1fr)', gap: 7, alignItems: 'center',
+                      padding: '5px 7px', color: active ? 'var(--text-primary)' : 'var(--text-secondary)',
+                      background: active ? 'var(--bg-primary)' : 'transparent',
+                      border: active ? '1px solid var(--border-primary)' : '1px solid transparent',
+                      borderRadius: 6, cursor: 'pointer', textAlign: 'left',
+                      boxShadow: active ? '0 2px 7px rgba(0,0,0,0.06)' : 'none',
+                    }}
+                    title={title}
+                  >
+                    <span style={{
+                      color: 'var(--text-muted)', fontFamily: 'monospace',
+                      fontSize: 9, textAlign: 'right',
+                    }}>
+                      {String(globalIndex + 1).padStart(2, '0')}
+                    </span>
+                    <span style={{
+                      width: 6, height: 6, borderRadius: '50%',
+                      background: chartColorByIndex(globalIndex), opacity: active ? 1 : 0.55,
+                    }} />
+                    <span style={{
+                      minWidth: 0, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap',
+                      fontSize: 10.5, fontWeight: active ? 600 : 500,
+                    }}>
+                      {title}
+                    </span>
+                  </button>
+                );
+              })}
+            </section>
+          );
+        })}
+      </div>
+      <div style={{
+        flexShrink: 0, padding: '8px 12px', color: 'var(--text-muted)',
+        borderTop: '1px solid var(--border-primary)', fontSize: 9,
+      }}>
+        ↑ ↓ panels · [ ] sections · Shift+F focus · F fullscreen · Esc grid
+      </div>
+    </aside>
+  );
+};
 
 /** Extract a short, human-readable label from a source URL. */
 function sourceLabel(url: string): string {
@@ -508,6 +1100,39 @@ const viewToggleStyle: React.CSSProperties = {
   background: 'none', border: 'none', cursor: 'pointer',
   fontSize: 11, padding: '2px 6px', lineHeight: 1,
 };;
+
+const panelMenuItemStyle: React.CSSProperties = {
+  width: '100%', minHeight: 34, display: 'flex', alignItems: 'center', gap: 10,
+  padding: '7px 9px', color: 'var(--text-secondary)', background: 'transparent',
+  border: 'none', borderRadius: 5, cursor: 'pointer', textAlign: 'left',
+  fontSize: 11, fontFamily: 'inherit',
+};
+
+const panelMenuIconStyle: React.CSSProperties = {
+  width: 24, flexShrink: 0, color: 'var(--text-muted)',
+  fontFamily: 'monospace', fontSize: 10, textAlign: 'center',
+};
+
+const panelMenuInteractionProps = {
+  onMouseEnter: (event: React.MouseEvent<HTMLElement>) => {
+    event.currentTarget.style.background = 'var(--bg-card-hover, rgba(88,166,255,0.1))';
+  },
+  onMouseLeave: (event: React.MouseEvent<HTMLElement>) => {
+    event.currentTarget.style.background = 'transparent';
+  },
+  onFocus: (event: React.FocusEvent<HTMLElement>) => {
+    event.currentTarget.style.background = 'var(--bg-card-hover, rgba(88,166,255,0.1))';
+  },
+  onBlur: (event: React.FocusEvent<HTMLElement>) => {
+    event.currentTarget.style.background = 'transparent';
+  },
+};
+
+const focusStageNavButtonStyle: React.CSSProperties = {
+  height: 30, padding: '0 10px', color: 'var(--text-secondary)',
+  background: 'var(--bg-secondary)', border: '1px solid var(--border-primary)',
+  borderRadius: 6, cursor: 'pointer', fontSize: 10.5, fontWeight: 500,
+};
 
 const panelStyle: React.CSSProperties = {
   background: 'var(--bg-card, var(--bg-secondary))',
@@ -1179,8 +1804,20 @@ type ViewState = { mode: 'list' } | { mode: 'view'; dashboardId: string } | { mo
 
 export const DashboardViewer: React.FC<{ initialDashboardId?: string; onOpenQueryDetail?: (query: QuerySeries, opts?: { tab?: QueryModalTab }) => void; onOpenQuery?: (query: Query, dashboardId: string) => void }> = ({ initialDashboardId, onOpenQueryDetail, onOpenQuery }) => {
   const [dashboards, setDashboards] = useState<Dashboard[]>(() => loadDashboards());
+  const [focusedPanelIndex, setFocusedPanelIndex] = useState<number | null>(null);
   const [fullscreenPanelIndex, setFullscreenPanelIndex] = useState<number | null>(null);
+  const [focusStageTop, setFocusStageTop] = useState(resolveFocusStageTop);
   const [toast, setToast] = useState<string | null>(null);
+  useEffect(() => {
+    if (focusedPanelIndex === null) return;
+    const updateTop = () => setFocusStageTop(resolveFocusStageTop());
+    const frame = window.requestAnimationFrame(updateTop);
+    window.addEventListener('resize', updateTop);
+    return () => {
+      window.cancelAnimationFrame(frame);
+      window.removeEventListener('resize', updateTop);
+    };
+  }, [focusedPanelIndex]);
   useEffect(() => {
     if (!toast) return;
     const t = setTimeout(() => setToast(null), 2500);
@@ -1267,6 +1904,8 @@ export const DashboardViewer: React.FC<{ initialDashboardId?: string; onOpenQuer
   useEffect(() => {
     panelDataRef.current.clear();
     setHoveredTimestamp(null);
+    setFocusedPanelIndex(null);
+    setFullscreenPanelIndex(null);
     lastTimestampRef.current = null;
   }, [activeDashboardId]);
 
@@ -1334,21 +1973,97 @@ export const DashboardViewer: React.FC<{ initialDashboardId?: string; onOpenQuer
    *  section started by the most recent panel that has one. Leading panels
    *  without any section go into a null group (rendered without a header). */
   const panelSections = useMemo(() => {
-    if (!activeDashboard) return [];
-    const sections: { name: string | null; panels: { panel: DashboardPanel; globalIndex: number }[] }[] = [];
-    let current: typeof sections[0] = { name: null, panels: [] };
-    sections.push(current);
-    activeDashboard.panels.forEach((panel, i) => {
-      if (panel.section) {
-        current = { name: panel.section, panels: [] };
-        sections.push(current);
-      }
-      current.panels.push({ panel, globalIndex: i });
-    });
-    return sections.filter(s => s.panels.length > 0);
+    return groupDashboardPanels(activeDashboard?.panels ?? []);
   }, [activeDashboard]);
 
+  const focusStageItems = useMemo<FocusStageItem[]>(() => (
+    panelSections.flatMap(section => section.panels.map(({ panel, globalIndex }, panelIndex) => {
+      const preset = resolvePanel(panel);
+      const timeSeries = panelDataRef.current.get(globalIndex);
+      const values = timeSeries ? Array.from(timeSeries.dataByLabel.values()) : undefined;
+      return {
+        globalIndex,
+        title: preset?.name ?? panel.queryName.split('#').pop() ?? panel.queryName,
+        sectionName: section.name ?? 'General',
+        sectionPanelCount: section.panels.length,
+        startsSection: panelIndex === 0,
+        latestValue: values?.at(-1),
+        unit: timeSeries?.unit,
+        sparklineValues: values?.slice(-40),
+        sparklineColor: timeSeries?.color,
+      };
+    }))
+  ), [panelSections, panelDataVersion]);
+
   const hasSections = panelSections.some(s => s.name !== null);
+  const expandedPanelIndex = focusedPanelIndex ?? fullscreenPanelIndex;
+  const focusedSection = focusedPanelIndex === null
+    ? undefined
+    : panelSections.find(section => section.panels.some(entry => entry.globalIndex === focusedPanelIndex));
+  const focusedSectionPanelIndex = focusedSection && focusedPanelIndex !== null
+    ? focusedSection.panels.findIndex(entry => entry.globalIndex === focusedPanelIndex)
+    : -1;
+
+  const moveFocusedPanel = useCallback((direction: -1 | 1) => {
+    setFocusedPanelIndex(current => {
+      const panelCount = activeDashboard?.panels.length ?? 0;
+      if (current === null || panelCount === 0) return current;
+      return (current + direction + panelCount) % panelCount;
+    });
+  }, [activeDashboard]);
+
+  const moveFocusedSection = useCallback((direction: -1 | 1) => {
+    setFocusedPanelIndex(current =>
+      current === null ? current : adjacentSectionPanelIndex(panelSections, current, direction));
+  }, [panelSections]);
+
+  useEffect(() => {
+    if (focusedPanelIndex === null && fullscreenPanelIndex === null) return;
+    const handleExpandedEscape = (event: KeyboardEvent) => {
+      if (event.key !== 'Escape') return;
+      const target = event.target;
+      if (
+        target instanceof HTMLInputElement ||
+        target instanceof HTMLTextAreaElement ||
+        target instanceof HTMLSelectElement ||
+        (target instanceof HTMLElement && (target.isContentEditable || target.closest('[role="menu"]')))
+      ) return;
+      event.preventDefault();
+      event.stopImmediatePropagation();
+      setFocusedPanelIndex(null);
+      setFullscreenPanelIndex(null);
+    };
+    window.addEventListener('keydown', handleExpandedEscape, true);
+    return () => window.removeEventListener('keydown', handleExpandedEscape, true);
+  }, [focusedPanelIndex, fullscreenPanelIndex]);
+
+  useEffect(() => {
+    if (focusedPanelIndex === null) return;
+    const handleFocusNavigation = (event: KeyboardEvent) => {
+      const target = event.target;
+      if (
+        target instanceof HTMLInputElement ||
+        target instanceof HTMLTextAreaElement ||
+        target instanceof HTMLSelectElement ||
+        (target instanceof HTMLElement && target.isContentEditable)
+      ) return;
+      if (event.key === 'ArrowDown') {
+        event.preventDefault();
+        moveFocusedPanel(1);
+      } else if (event.key === 'ArrowUp') {
+        event.preventDefault();
+        moveFocusedPanel(-1);
+      } else if (event.key === ']') {
+        event.preventDefault();
+        moveFocusedSection(1);
+      } else if (event.key === '[') {
+        event.preventDefault();
+        moveFocusedSection(-1);
+      }
+    };
+    window.addEventListener('keydown', handleFocusNavigation);
+    return () => window.removeEventListener('keydown', handleFocusNavigation);
+  }, [focusedPanelIndex, moveFocusedPanel, moveFocusedSection]);
 
   // ─── List view ───
   if (view.mode === 'list') {
@@ -1488,10 +2203,12 @@ export const DashboardViewer: React.FC<{ initialDashboardId?: string; onOpenQuer
         )}
         {panelSections.map((section, sIdx) => {
           const isCollapsed = section.name !== null && collapsedSections.has(section.name);
+          const isExpandedSection = expandedPanelIndex !== null &&
+            section.panels.some(entry => entry.globalIndex === expandedPanelIndex);
           return (
             <React.Fragment key={section.name ?? `__ungrouped_${sIdx}`}>
               {/* Section header - only for named sections */}
-              {section.name && (
+              {section.name && expandedPanelIndex === null && (
                 <button
                   onClick={() => toggleSection(section.name!)}
                   style={{
@@ -1516,7 +2233,7 @@ export const DashboardViewer: React.FC<{ initialDashboardId?: string; onOpenQuer
                 </button>
               )}
               {/* Panel grid - hidden when collapsed */}
-              {!isCollapsed && (
+              {(!isCollapsed || isExpandedSection) && (
                 <div style={{
                   display: 'grid',
                   gridTemplateColumns: `repeat(${activeDashboard.columns}, 1fr)`,
@@ -1531,18 +2248,39 @@ export const DashboardViewer: React.FC<{ initialDashboardId?: string; onOpenQuer
                       panel={panel}
                       timeRangeOverride={timeRangeOverride}
                       dashboardId={activeDashboard.id}
+                      isFocused={focusedPanelIndex === i}
+                      onToggleFocus={() => {
+                        setFullscreenPanelIndex(null);
+                        setFocusedPanelIndex(prev => prev === i ? null : i);
+                      }}
                       isFullscreen={fullscreenPanelIndex === i}
-                      onToggleFullscreen={() => setFullscreenPanelIndex(prev => prev === i ? null : i)}
-                      isHidden={fullscreenPanelIndex !== null && fullscreenPanelIndex !== i}
+                      onToggleFullscreen={() => {
+                        setFocusedPanelIndex(null);
+                        setFullscreenPanelIndex(prev => prev === i ? null : i);
+                      }}
+                      isHidden={expandedPanelIndex !== null && expandedPanelIndex !== i}
                       hoveredTimestamp={correlationEnabled ? hoveredTimestamp : undefined}
                       onTimestampHover={correlationEnabled ? (ts: string | null) => { setHoveredTimestamp(ts); if (ts !== null) setHoveredPanelIndex(i); } : undefined}
-                      onTimeSeriesData={correlationEnabled ? handlePanelData(i) : undefined}
+                      onTimeSeriesData={correlationEnabled || focusedPanelIndex !== null ? handlePanelData(i) : undefined}
                       correlationValues={correlationEnabled ? correlationValues : undefined}
                       isHoveredPanel={correlationEnabled ? hoveredPanelIndex === i : undefined}
                       filterParams={Object.keys(filterValues).length > 0 ? filterValues : undefined}
                       panelIndex={i}
                       onOpenQueryDetail={onOpenQueryDetail}
                       onOpenQuery={onOpenQuery}
+                      focusStage={focusedPanelIndex === i && focusedSection ? {
+                        viewportTop: focusStageTop,
+                        sectionName: focusedSection.name ?? 'General',
+                        sectionPosition: focusedSectionPanelIndex + 1,
+                        sectionPanelCount: focusedSection.panels.length,
+                        panelPosition: i + 1,
+                        panelCount: activeDashboard.panels.length,
+                        items: focusStageItems,
+                        onSelectPanel: setFocusedPanelIndex,
+                        onPreviousPanel: () => moveFocusedPanel(-1),
+                        onNextPanel: () => moveFocusedPanel(1),
+                        onNextSection: () => moveFocusedSection(1),
+                      } : undefined}
                     />
                   ))}
                 </div>
@@ -1551,6 +2289,15 @@ export const DashboardViewer: React.FC<{ initialDashboardId?: string; onOpenQuer
           );
         })}
       </div>
+      {focusedPanelIndex !== null && (
+        <FocusStageRail
+          viewportTop={focusStageTop}
+          dashboardTitle={activeDashboard.title}
+          sections={panelSections}
+          focusedPanelIndex={focusedPanelIndex}
+          onSelectPanel={setFocusedPanelIndex}
+        />
+      )}
     </div>
   );
 };

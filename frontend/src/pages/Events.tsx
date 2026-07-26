@@ -1,4 +1,4 @@
-import React, { useCallback, useState } from 'react';
+import React, { useCallback, useEffect, useRef, useState } from 'react';
 import type { QuerySeries } from '@tracehouse/core';
 import { EventsDashboard } from '../components/analytics/EventsDashboard';
 import { DocsLink } from '../components/common/DocsLink';
@@ -11,6 +11,7 @@ import {
   EVENT_HOURS_INTERVAL,
   EVENT_INTERVAL_HOURS,
   eventToQuerySeries,
+  legacyEventsRangeCenter,
   toLocalEventDateTime,
 } from './events-page-model';
 
@@ -23,9 +24,24 @@ export const Events: React.FC = () => {
     () => setSelectedQuery(null),
   );
   const fromTimeTravel = state.from === 'timetravel';
+  const [legacyRangeCenter] = useState(() => legacyEventsRangeCenter(
+    state.from,
+    state.range_center,
+    state.event_time,
+  ));
+  const migratedLegacyRangeRef = useRef(false);
+  const effectiveRangeCenter = state.range_center
+    ?? (!migratedLegacyRangeRef.current ? legacyRangeCenter : undefined);
+
+  useEffect(() => {
+    if (!legacyRangeCenter || migratedLegacyRangeRef.current) return;
+    migratedLegacyRangeRef.current = true;
+    update({ range_center: legacyRangeCenter });
+  }, [legacyRangeCenter, update]);
+
   const rangeHours = state.event_range ?? 24;
-  const rangeCenterMs = state.range_center
-    ? Date.parse(state.range_center)
+  const rangeCenterMs = effectiveRangeCenter
+    ? Date.parse(effectiveRangeCenter)
     : Number.NaN;
   const rangeMs = rangeHours * 3_600_000;
   const timeRangeValue = Number.isFinite(rangeCenterMs)
@@ -81,10 +97,7 @@ export const Events: React.FC = () => {
         <EventsDashboard
           selectedEventId={state.event_id}
           selectedEventTime={state.event_time}
-          rangeCenterTime={
-            state.range_center
-            ?? (fromTimeTravel ? state.event_time : undefined)
-          }
+          rangeCenterTime={effectiveRangeCenter}
           rangeHours={rangeHours}
           timeRangeValue={timeRangeValue}
           onTimeRangeChange={value => {

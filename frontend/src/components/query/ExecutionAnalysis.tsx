@@ -51,6 +51,7 @@ interface ExecutionAnalysisDialogProps {
   title?: string;
   message?: string;
   confirmLabel?: string;
+  children?: React.ReactNode;
 }
 
 function formatPreviousMetric(
@@ -168,8 +169,8 @@ export const ResolvedQueryPreview: React.FC<ResolvedQueryPreviewProps> = ({
 );
 
 /**
- * Minimal safety boundary for EXPLAIN ANALYZE. Configuration and feature
- * documentation belong on the invoking page; this dialog only obtains consent.
+ * Safety boundary for EXPLAIN ANALYZE. Callers may include compact,
+ * analysis-specific options before the user confirms execution.
  */
 export const ExecutionAnalysisDialog: React.FC<ExecutionAnalysisDialogProps> = ({
   onConfirm,
@@ -177,6 +178,7 @@ export const ExecutionAnalysisDialog: React.FC<ExecutionAnalysisDialogProps> = (
   title = 'Confirm query execution?',
   message = 'ClickHouse will execute this SELECT.',
   confirmLabel = 'Confirm',
+  children,
 }) => (
   <div
     role="presentation"
@@ -214,6 +216,15 @@ export const ExecutionAnalysisDialog: React.FC<ExecutionAnalysisDialogProps> = (
         <div style={{ marginTop: 8, color: 'var(--color-warning)', fontSize: 12, lineHeight: 1.55 }}>
           {message}
         </div>
+        {children && (
+          <div style={{
+            marginTop: 16, padding: '12px 13px',
+            border: '1px solid var(--border-primary)', borderRadius: 7,
+            background: 'var(--bg-primary)',
+          }}>
+            {children}
+          </div>
+        )}
       </div>
 
       <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 8, padding: '12px 20px', borderTop: '1px solid var(--border-primary)' }}>
