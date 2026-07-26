@@ -1,9 +1,10 @@
 import React from 'react';
 import { fireEvent, render, screen } from '@testing-library/react';
 import { beforeAll, describe, expect, it, vi } from 'vitest';
-import type { OperationalEvent } from '@tracehouse/core';
+import type { MemoryTimeline, OperationalEvent } from '@tracehouse/core';
 import { TimelineEventControls } from '../TimelineEventControls';
 import { TimelineEventOverlay } from '../TimelineEventOverlay';
+import { TimelineChart } from '../TimelineChart';
 import { emptyTimelineEventFilter } from '../timeline-event-model';
 
 const RANGE_START = Date.parse('2026-07-25T12:00:00.000Z');
@@ -148,5 +149,58 @@ describe('TimelineEventOverlay', () => {
     fireEvent.click(screen.getByRole('button', { name: '2 events' }));
     fireEvent.click(screen.getByRole('button', { name: /Second DDL/ }));
     expect(onSelectEvent).toHaveBeenCalledWith(events[1]);
+  });
+});
+
+describe('TimelineChart event annotations', () => {
+  it('shows an event inside the requested window before the first metric sample', () => {
+    const restart = event(
+      'restart',
+      '2026-07-25T12:00:05.000Z',
+      'Server restart',
+    );
+    const data: MemoryTimeline = {
+      window_start: '2026-07-25T12:00:00.000Z',
+      window_end: '2026-07-25T12:01:00.000Z',
+      target: '2026-07-25T12:00:30.000Z',
+      // Simulate the metric_log gap caused by a restart.
+      server_memory: [],
+      server_cpu: [
+        { t: '2026-07-25 12:00:10', v: 500_000 },
+        { t: '2026-07-25 12:00:55', v: 500_000 },
+      ],
+      server_network_send: [],
+      server_network_recv: [],
+      server_disk_read: [],
+      server_disk_write: [],
+      server_total_ram: 0,
+      cpu_cores: 1,
+      host_count: 1,
+      queries: [],
+      merges: [],
+      mutations: [],
+      query_count: 0,
+      merge_count: 0,
+      merge_peak_total: 0,
+      mutation_count: 0,
+    };
+
+    render(
+      <TimelineChart
+        data={data}
+        metricMode="cpu"
+        hoverMs={null}
+        pinnedMs={null}
+        onHover={vi.fn()}
+        onPin={vi.fn()}
+        zoomRange={null}
+        onZoom={vi.fn()}
+        highlightedItem={null}
+        eventAnnotations={[restart]}
+        onEventSelect={vi.fn()}
+      />,
+    );
+
+    expect(screen.getByRole('button', { name: 'Server restart' })).toBeInTheDocument();
   });
 });

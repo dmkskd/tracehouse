@@ -182,8 +182,12 @@ export const TimelineChart: React.FC<{
   const dualLabels = metricMode === 'network' ? ['Send', 'Recv'] : ['Read', 'Write'];
   const dualColors = metricMode === 'network' ? ['#3fb950', '#58a6ff'] : ['#bc8cff', '#f0883e'];
 
-  const fullTMin = serverPts.length > 0 ? serverPts[0].ms : new Date(data.window_start).getTime();
-  const fullTMax = serverPts.length > 0 ? serverPts[serverPts.length - 1].ms : new Date(data.window_end).getTime();
+  // Keep the chart domain aligned with the requested viewport, even when
+  // metric_log has gaps. This is especially important around server restarts:
+  // the restart event can precede the first surviving metric sample while
+  // still being inside data.window_start/window_end.
+  const fullTMin = parseTimestamp(data.window_start);
+  const fullTMax = parseTimestamp(data.window_end);
   const tMin = zoomRange ? zoomRange[0] : fullTMin;
   const tMax = zoomRange ? zoomRange[1] : fullTMax;
   const tRange = tMax - tMin || 1;
