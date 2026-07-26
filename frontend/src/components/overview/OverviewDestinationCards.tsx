@@ -28,7 +28,7 @@ interface CardProps {
 const cardGridStyle: React.CSSProperties = {
   display: 'grid',
   gridTemplateColumns: 'repeat(auto-fit, minmax(240px, 1fr))',
-  gap: 12,
+  gap: 16,
 };
 
 const destinationOrder: ReadonlyMap<string, number> = new Map(
@@ -46,7 +46,7 @@ function Icon({ children }: { children: React.ReactNode }) {
 function MiniSparkline({ values, color }: { values: number[]; color: string }) {
   const points = values.slice(-18);
   if (points.length < 2) {
-    return <div style={{ height: 20 }} />;
+    return <div style={{ height: 18 }} />;
   }
 
   const min = Math.min(...points);
@@ -61,7 +61,7 @@ function MiniSparkline({ values, color }: { values: number[]; color: string }) {
     .join(' ');
 
   return (
-    <svg viewBox="0 0 100 32" preserveAspectRatio="none" style={{ width: '100%', height: 24, display: 'block' }}>
+    <svg viewBox="0 0 100 32" preserveAspectRatio="none" style={{ width: '100%', height: 20, display: 'block' }}>
       <path d={d} fill="none" stroke={color} strokeWidth="2.4" strokeLinecap="round" strokeLinejoin="round" vectorEffect="non-scaling-stroke" />
     </svg>
   );
@@ -70,7 +70,7 @@ function MiniSparkline({ values, color }: { values: number[]; color: string }) {
 function SegmentedBar({ segments }: { segments: Array<{ value: number; color: string; label: string }> }) {
   const total = segments.reduce((sum, segment) => sum + Math.max(0, segment.value), 0);
   return (
-    <div style={{ height: 9, borderRadius: 999, overflow: 'hidden', display: 'flex', background: 'var(--bg-tertiary)' }}>
+    <div style={{ height: 7, borderRadius: 999, overflow: 'hidden', display: 'flex', background: 'var(--bg-tertiary)' }}>
       {segments
         .filter(segment => segment.value > 0.5)
         .map(segment => (
@@ -90,7 +90,7 @@ function SegmentedBar({ segments }: { segments: Array<{ value: number; color: st
 function ProgressBar({ value, color }: { value: number; color: string }) {
   const pct = Math.max(0, Math.min(100, value));
   return (
-    <div style={{ height: 9, borderRadius: 999, overflow: 'hidden', background: 'var(--bg-tertiary)' }}>
+    <div style={{ height: 7, borderRadius: 999, overflow: 'hidden', background: 'var(--bg-tertiary)' }}>
       <div style={{ width: `${pct}%`, height: '100%', borderRadius: 999, background: color, transition: 'width 0.2s ease' }} />
     </div>
   );
@@ -98,9 +98,9 @@ function ProgressBar({ value, color }: { value: number; color: string }) {
 
 function LoadingPreview() {
   return (
-    <div style={{ display: 'flex', flexDirection: 'column', gap: 7 }}>
-      <div style={{ height: 9, width: '100%', borderRadius: 999, background: 'var(--bg-tertiary)' }} />
-      <div style={{ height: 9, width: '62%', borderRadius: 999, background: 'var(--bg-tertiary)', opacity: 0.75 }} />
+    <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
+      <div style={{ height: 7, width: '100%', borderRadius: 999, background: 'var(--bg-tertiary)' }} />
+      <div style={{ height: 7, width: '62%', borderRadius: 999, background: 'var(--bg-tertiary)', opacity: 0.75 }} />
     </div>
   );
 }
@@ -108,13 +108,13 @@ function LoadingPreview() {
 function DotRow({ count, active, color }: { count: number; active: number; color: string }) {
   const visible = Math.max(1, Math.min(count, 8));
   return (
-    <div style={{ display: 'flex', gap: 6, alignItems: 'center', height: 22 }}>
+    <div style={{ display: 'flex', gap: 5, alignItems: 'center', height: 18 }}>
       {Array.from({ length: visible }, (_, index) => (
         <span
           key={index}
           style={{
-            width: 11,
-            height: 11,
+            width: 9,
+            height: 9,
             borderRadius: '50%',
             background: index < active ? color : 'transparent',
             border: `1px solid ${index < active ? color : 'var(--border-primary)'}`,
@@ -132,8 +132,8 @@ function DestinationCard({ title, href, icon, accent, primary, secondary, childr
       to={href}
       state={{ from: { path: '/overview', label: 'Overview' } }}
       style={{
-        minHeight: 126,
-        padding: '13px 14px',
+        minHeight: 110,
+        padding: '10px 12px',
         borderRadius: 8,
         border: '1px solid var(--border-primary)',
         background: 'var(--bg-card)',
@@ -141,7 +141,7 @@ function DestinationCard({ title, href, icon, accent, primary, secondary, childr
         textDecoration: 'none',
         display: 'flex',
         flexDirection: 'column',
-        gap: 8,
+        gap: 6,
         boxShadow: 'var(--shadow-sm)',
         transition: 'border-color 0.15s ease, transform 0.15s ease, background 0.15s ease',
         order: destinationOrder.get(href) ?? 99,
@@ -160,21 +160,21 @@ function DestinationCard({ title, href, icon, accent, primary, secondary, childr
       <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 10, color: 'var(--text-secondary)' }}>
         <span style={{ display: 'flex', alignItems: 'center', gap: 9, minWidth: 0 }}>
           <span style={{ color: accent, display: 'flex', alignItems: 'center', flexShrink: 0 }}>{icon}</span>
-          <span style={{ fontSize: 14, fontWeight: 700, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{title}</span>
+          <span style={{ fontSize: 13, fontWeight: 700, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{title}</span>
         </span>
         <span style={{ color: 'var(--accent-blue)', fontSize: 15, fontWeight: 700, flexShrink: 0 }}>→</span>
       </div>
 
       <div>
-        <div style={{ color: 'var(--text-primary)', fontSize: 27, lineHeight: 1.05, fontWeight: 750, letterSpacing: 0 }}>
+        <div style={{ color: 'var(--text-primary)', fontSize: 24, lineHeight: 1.05, fontWeight: 750, letterSpacing: 0 }}>
           {primary}
         </div>
-        <div style={{ marginTop: 4, color: 'var(--text-secondary)', fontSize: 12, lineHeight: 1.25, minHeight: 15, maxHeight: 32, overflow: 'hidden' }}>
+        <div style={{ marginTop: 3, color: 'var(--text-secondary)', fontSize: 11, lineHeight: 1.25, minHeight: 14, maxHeight: 28, overflow: 'hidden' }}>
           {secondary}
         </div>
       </div>
 
-      <div style={{ flex: 1, minHeight: 24, display: 'flex', flexDirection: 'column', justifyContent: 'center' }}>
+      <div style={{ flex: 1, minHeight: 20, display: 'flex', flexDirection: 'column', justifyContent: 'center' }}>
         {children}
       </div>
     </Link>

@@ -361,7 +361,7 @@ export function OverviewVitalsStrip({
   ];
 
   return (
-    <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, minmax(0, 1fr))', gap: 12 }}>
+    <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, minmax(0, 1fr))', gap: 16 }}>
       <VitalsCard style={{ padding: '12px 14px', display: 'flex', flexDirection: 'column' }}>
         <Header
           label="Resource Radar"

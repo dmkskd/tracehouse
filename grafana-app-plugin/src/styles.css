@@ -70,6 +70,15 @@
 }
 
 /* Custom utility classes */
+.page-layout {
+  min-height: 100%;
+  padding: var(--page-padding);
+  display: flex;
+  flex-direction: column;
+  gap: var(--section-gap);
+  background: var(--bg-primary);
+}
+
 .card {
   background: var(--bg-card);
   border: 1px solid var(--border-primary);
