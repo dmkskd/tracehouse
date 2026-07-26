@@ -460,7 +460,7 @@ services:
   # ─── Grafana ─────────────────────────────────────────────────────────────
 
   grafana:
-    image: grafana/grafana:12.3.2
+    image: grafana/grafana:13.1
     container_name: tracehouse-demo-grafana
     # No exposed ports — Caddy proxies 3000 → grafana:3000
     volumes:
