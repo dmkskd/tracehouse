@@ -76,6 +76,18 @@ import {
 
 const MAX_SIDEBAR_QUERIES = 12;
 
+const RESULT_ACTION_BUTTON_STYLE: React.CSSProperties = {
+  minHeight: 23,
+  gap: 5,
+  marginLeft: 3,
+  padding: '2px 9px',
+  borderRadius: 4,
+  color: 'var(--text-secondary)',
+  fontSize: 10,
+  fontWeight: 500,
+  whiteSpace: 'nowrap',
+};
+
 const NEW_QUERY_TEMPLATE_BODY = `SELECT
     database,
     table,
@@ -980,29 +992,30 @@ export const QueryExplorer: React.FC<QueryExplorerProps> = ({ urlState, onUrlSta
                   </button>
                 )}
                 <button
+                  className="btn"
                   onClick={() => setShowAnalysisDialog(true)}
                   disabled={isRunning || isAnalyzing || !services || !hasExplainAnalyze || !isExplainAnalyzeEligible}
                   title={executionAnalysisTitle}
                   style={{
-                    minHeight: 23, display: 'inline-flex', alignItems: 'center', gap: 5,
-                    marginLeft: 3, padding: '2px 9px',
+                    ...RESULT_ACTION_BUTTON_STYLE,
                     cursor: isRunning || isAnalyzing || !hasExplainAnalyze || !isExplainAnalyzeEligible ? 'not-allowed' : 'pointer',
                     opacity: hasExplainAnalyze && isExplainAnalyzeEligible && !isRunning && !isAnalyzing ? 1 : 0.45,
-                    background: 'rgba(var(--color-warning-rgb), 0.07)',
-                    border: '1px solid rgba(var(--color-warning-rgb), 0.30)',
-                    borderRadius: 999,
-                    color: 'var(--color-warning)',
-                    fontFamily: "'Share Tech Mono',monospace",
-                    fontSize: 9, fontWeight: 650, letterSpacing: '0.025em',
-                    whiteSpace: 'nowrap',
                   }}
                 >
-                  <span aria-hidden="true">◉</span>
-                  <span>{isAnalyzing ? 'ANALYZING…' : 'EXPLAIN ANALYZE'}</span>
+                  {isAnalyzing ? 'Analyzing…' : 'Explain analyze'}
                 </button>
                 {(onExportToGrafana || grafanaExport.isGrafana) && (
-                  <button onClick={grafanaExport.openDialog} style={{ background: 'none', border: 'none', cursor: 'pointer', color: grafanaExport.status !== 'idle' ? 'var(--accent-green)' : 'var(--text-muted)', fontSize: 10, fontWeight: 500, padding: '2px 8px', borderRadius: 4, transition: 'color 0.15s ease' }} title="Create as Grafana dashboard">
-                    {grafanaExport.status === 'created' ? '✓ Created in Grafana' : grafanaExport.status === 'copied' ? '✓ JSON copied' : 'Grafana ⤴'}
+                  <button
+                    className="btn"
+                    onClick={grafanaExport.openDialog}
+                    aria-label="Export this TraceHouse result as a Grafana dashboard panel"
+                    style={{
+                      ...RESULT_ACTION_BUTTON_STYLE,
+                      color: grafanaExport.status !== 'idle' ? 'var(--accent-green)' : RESULT_ACTION_BUTTON_STYLE.color,
+                    }}
+                    title="Export this TraceHouse result as a Grafana dashboard panel"
+                  >
+                    {grafanaExport.status === 'created' ? '✓ Created in Grafana' : grafanaExport.status === 'copied' ? '✓ JSON copied' : 'As Grafana panel'}
                   </button>
                 )}
               </div>
