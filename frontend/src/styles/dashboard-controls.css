@@ -67,3 +67,37 @@
   border-color: var(--accent-primary);
   box-shadow: 0 0 0 3px rgba(99, 102, 241, 0.16);
 }
+
+/*
+ * Grafana applies host-level form control styles to native selects. Pin the
+ * compact chart control geometry so those rules cannot collapse its height.
+ */
+.tracehouse-chart-control {
+  min-width: 0;
+}
+
+.tracehouse-chart-control-select {
+  appearance: auto !important;
+  -webkit-appearance: menulist !important;
+  width: auto !important;
+  min-width: 100px !important;
+  height: 24px !important;
+  min-height: 24px !important;
+  margin: 0 !important;
+  padding: 2px 24px 2px 7px !important;
+  box-sizing: border-box !important;
+  border: 1px solid var(--border-primary) !important;
+  border-radius: 4px !important;
+  background-color: var(--bg-code, #0d1117) !important;
+  color: var(--text-secondary) !important;
+  font-family: 'Share Tech Mono', monospace !important;
+  font-size: 11px !important;
+  font-weight: 400 !important;
+  line-height: 18px !important;
+  vertical-align: middle !important;
+}
+
+.tracehouse-chart-control-select:focus-visible {
+  outline: 2px solid var(--accent-primary);
+  outline-offset: 1px;
+}

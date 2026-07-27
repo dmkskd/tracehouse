@@ -7,10 +7,8 @@ import type {
 import {
   EVENT_CATEGORY_LABELS,
   EVENT_SEVERITY_COLORS,
-  EVENT_SEVERITY_MARKER_SHAPES,
   EVENT_SEVERITY_VALUES,
   timelineEventFilterCount,
-  type EventSeverityMarkerShape,
   type TimelineEventFilter,
 } from './timeline-event-model';
 import {
@@ -227,7 +225,6 @@ export const TimelineEventControls: React.FC<TimelineEventControlsProps> = ({
                   checked={!filter.hiddenSeverities.has(severity)}
                   label={severity}
                   color={EVENT_SEVERITY_COLORS[severity]}
-                  markerShape={EVENT_SEVERITY_MARKER_SHAPES[severity]}
                   onChange={() => onFilterChange({
                     ...filter,
                     hiddenSeverities: toggleSetValue(filter.hiddenSeverities, severity),
@@ -345,9 +342,8 @@ const FilterCheckbox: React.FC<{
   checked: boolean;
   label: string;
   color?: string;
-  markerShape?: EventSeverityMarkerShape;
   onChange: () => void;
-}> = ({ checked, label, color, markerShape = 'circle', onChange }) => (
+}> = ({ checked, label, color, onChange }) => (
   <label style={{
     display: 'flex',
     alignItems: 'center',
@@ -364,40 +360,17 @@ const FilterCheckbox: React.FC<{
       onChange={onChange}
       style={{ margin: 0, accentColor: color ?? '#58a6ff' }}
     />
-    {color && <span aria-hidden="true" style={filterMarkerStyle(color, markerShape)} />}
+    {color && <span aria-hidden="true" style={filterMarkerStyle(color)} />}
     <span>{label}</span>
   </label>
 );
 
-function filterMarkerStyle(
-  color: string,
-  shape: EventSeverityMarkerShape,
-): React.CSSProperties {
-  const base: React.CSSProperties = {
+function filterMarkerStyle(color: string): React.CSSProperties {
+  return {
     width: 7,
     height: 7,
     flexShrink: 0,
     background: color,
+    borderRadius: '50%',
   };
-
-  if (shape === 'circle') return { ...base, borderRadius: '50%' };
-  if (shape === 'diamond') {
-    return {
-      ...base,
-      borderRadius: 1,
-      transform: 'rotate(45deg) scale(0.78)',
-    };
-  }
-  if (shape === 'triangle') {
-    return {
-      width: 0,
-      height: 0,
-      flexShrink: 0,
-      background: 'transparent',
-      borderLeft: '4px solid transparent',
-      borderRight: '4px solid transparent',
-      borderBottom: `8px solid ${color}`,
-    };
-  }
-  return { ...base, borderRadius: 1 };
 }

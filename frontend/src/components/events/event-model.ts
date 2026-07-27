@@ -23,18 +23,6 @@ export const EVENT_SEVERITY_COLORS: Record<EventSeverity, string> = {
   info: '#58a6ff',
 };
 
-export type EventSeverityMarkerShape = 'diamond' | 'circle' | 'triangle' | 'square';
-
-export const EVENT_SEVERITY_MARKER_SHAPES: Record<
-  EventSeverity,
-  EventSeverityMarkerShape
-> = {
-  critical: 'diamond',
-  error: 'circle',
-  warning: 'triangle',
-  info: 'square',
-};
-
 export const EVENT_CATEGORY_LABELS = Object.fromEntries(
   Object.entries(EVENT_CATEGORY_DEFINITIONS).map(([category, definition]) => [
     category,

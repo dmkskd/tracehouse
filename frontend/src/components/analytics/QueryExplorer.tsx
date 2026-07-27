@@ -1271,14 +1271,19 @@ export const QueryExplorer: React.FC<QueryExplorerProps> = ({ urlState, onUrlSta
    Sub-components
    ═══════════════════════════════════════════════════════════════════════════ */
 
-const ChartControl: React.FC<{ label: string; value: string; options: [string, string][]; onChange: (v: string) => void }> = ({ label, value, options, onChange }) => (
-  <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
-    <label style={{ fontSize: 10, fontWeight: 500, color: 'var(--text-muted)', textTransform: 'uppercase', letterSpacing: '0.03em' }}>{label}</label>
-    <select value={value} onChange={e => onChange(e.target.value)}
-      style={{ fontFamily: "'Share Tech Mono',monospace", fontSize: 11, color: 'var(--text-secondary)', background: 'var(--bg-code, #0d1117)', border: '1px solid var(--border-primary)', borderRadius: 4, padding: '3px 6px', minWidth: 100 }}>
+export const ChartControl: React.FC<{ label: string; value: string; options: [string, string][]; onChange: (v: string) => void }> = ({ label, value, options, onChange }) => (
+  <label className="tracehouse-chart-control" style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+    <span style={{ fontSize: 10, fontWeight: 500, color: 'var(--text-muted)', textTransform: 'uppercase', letterSpacing: '0.03em' }}>{label}</span>
+    <select
+      aria-label={label}
+      className="tracehouse-chart-control-select"
+      value={value}
+      onChange={e => onChange(e.target.value)}
+      style={{ height: 24, minHeight: 24, lineHeight: '18px', boxSizing: 'border-box', flexShrink: 0, fontFamily: "'Share Tech Mono',monospace", fontSize: 11, color: 'var(--text-secondary)', background: 'var(--bg-code, #0d1117)', border: '1px solid var(--border-primary)', borderRadius: 4, padding: '2px 24px 2px 7px', minWidth: 100 }}
+    >
       {options.map(([v, l]) => <option key={v} value={v}>{l}</option>)}
     </select>
-  </div>
+  </label>
 );
 
 /** Modal for naming a new or cloned query */
