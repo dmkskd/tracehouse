@@ -186,7 +186,7 @@ export interface ChartDirective {
 
 /* ─── constants ─── */
 
-export type QueryGroup = 'Overview' | 'Inserts' | 'Selects' | 'Parts' | 'Merges' | 'Resources' | 'Advanced Dashboard' | 'Self-Monitoring' | 'Cloud Providers' | 'Grafana Imports' | 'Knowledge Base' | 'Custom';
+export type QueryGroup = 'Overview' | 'Inserts' | 'Selects' | 'Parts' | 'Merges' | 'Resources' | 'Events' | 'Advanced Dashboard' | 'Self-Monitoring' | 'Cloud Providers' | 'Grafana Imports' | 'Knowledge Base' | 'Custom';
 
 export const QUERY_GROUPS: Record<QueryGroup, { color: string; builtin: boolean }> = {
   'Overview':           { color: '#58a6ff', builtin: true },
@@ -196,6 +196,7 @@ export const QUERY_GROUPS: Record<QueryGroup, { color: string; builtin: boolean 
   'Parts':              { color: '#f0883e', builtin: true },
   'Merges':             { color: '#e3b341', builtin: true },
   'Resources':          { color: '#f85149', builtin: true },
+  'Events':             { color: '#fb7185', builtin: true },
   'Self-Monitoring':    { color: '#f0c674', builtin: true },
   'Cloud Providers':    { color: '#14b8a6', builtin: true },
   'Grafana Imports':   { color: '#38bdf8', builtin: true },

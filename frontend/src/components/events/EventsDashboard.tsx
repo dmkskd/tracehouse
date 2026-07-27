@@ -65,6 +65,7 @@ interface EventsDashboardProps {
   onRangeSelect?: (startMs: number, endMs: number) => void;
   onSelectEvent: (event: OperationalEvent) => void;
   onOpenQueryDetails?: (event: OperationalEvent) => void;
+  onOpenAnalyticsDashboard?: () => void;
   onInvestigateEvent?: (event: OperationalEvent) => void;
   onBackToTimeTravel?: () => void;
 }
@@ -81,6 +82,7 @@ export const EventsDashboard: React.FC<EventsDashboardProps> = ({
   onRangeSelect,
   onSelectEvent,
   onOpenQueryDetails,
+  onOpenAnalyticsDashboard,
   onInvestigateEvent,
   onBackToTimeTravel,
 }) => {
@@ -408,6 +410,15 @@ export const EventsDashboard: React.FC<EventsDashboardProps> = ({
           >
             Coverage · {SUPPORTED_EVENT_TYPES.length} supported event types
           </button>
+          {onOpenAnalyticsDashboard && (
+            <button
+              onClick={onOpenAnalyticsDashboard}
+              style={secondaryButtonStyle}
+              title="Open the editable dashboard of event detector queries"
+            >
+              Explore queries →
+            </button>
+          )}
           <span style={{
             color: coverageProblems.length > 0 ? '#d29922' : 'var(--text-muted)',
             fontSize: 10,

@@ -125,6 +125,9 @@ export const Events: React.FC = () => {
           onOpenQueryDetails={event => {
             if (event.query_id) setSelectedQuery(eventToQuerySeries(event));
           }}
+          onOpenAnalyticsDashboard={() => navigate(
+            '/analytics?tab=dashboards&fromDashboard=operational-events-explorer',
+          )}
           onInvestigateEvent={event => navigate(buildTimeTravelEventUrl(event))}
           onBackToTimeTravel={fromTimeTravel ? () => navigate(-1) : undefined}
         />

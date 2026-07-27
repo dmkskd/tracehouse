@@ -51,6 +51,7 @@ import {
   panelOwnsShortcut,
   type DashboardPanelSection,
 } from './dashboardFocusStage';
+import { useMonitoringCapabilitiesStore } from '../../stores/monitoringCapabilitiesStore';
 
 // ─── Panel component - executes one preset query and shows result ───
 
@@ -475,6 +476,14 @@ const DashboardPanelCard: React.FC<{
   focusStage?: FocusStageContext;
 }> = ({ panel, timeRangeOverride, dashboardId, isFocused, onToggleFocus, isFullscreen, onToggleFullscreen, isHidden, hoveredTimestamp, onTimestampHover, onTimeSeriesData, correlationValues, isHoveredPanel, filterParams, panelIndex, onOpenQueryDetail, onOpenQuery, focusStage }) => {
   const services = useClickHouseServices();
+  const requiredCapability = useMonitoringCapabilitiesStore(state => (
+    panel.requiredCapability
+      ? state.capabilities?.capabilities.find(
+          capability => capability.id === panel.requiredCapability,
+        )
+      : undefined
+  ));
+  const capabilityUnavailable = requiredCapability?.available === false;
   const originalPreset = resolvePanel(panel);
   const [drillPreset, setDrillPreset] = useState<Query | null>(null);
   const [drillParams, setDrillParams] = useState<Record<string, string>>({});
@@ -540,7 +549,7 @@ const DashboardPanelCard: React.FC<{
 
   const run = useCallback(async (overridePreset?: Query, overrideParams?: Record<string, string>) => {
     const p = overridePreset ?? preset;
-    if (!services || !p) return;
+    if (!services || !p || capabilityUnavailable) return;
     setLoading(true);
     setError(null);
     try {
@@ -557,22 +566,27 @@ const DashboardPanelCard: React.FC<{
     } finally {
       setLoading(false);
     }
-  }, [services, preset, timeRangeOverride, drillParams, filterParams]);
+  }, [services, preset, timeRangeOverride, drillParams, filterParams, capabilityUnavailable]);
 
   useEffect(() => {
-    if (services && preset) {
+    if (services && preset && !capabilityUnavailable) {
       run();
     }
-  }, [run, services, preset]);
+  }, [run, services, preset, capabilityUnavailable]);
 
   // Re-run when time range changes (explicit trigger for prop changes)
   const prevTimeRange = React.useRef(timeRangeOverride);
   useEffect(() => {
-    if (prevTimeRange.current !== timeRangeOverride && services && preset) {
+    if (
+      prevTimeRange.current !== timeRangeOverride
+      && services
+      && preset
+      && !capabilityUnavailable
+    ) {
       prevTimeRange.current = timeRangeOverride;
       run();
     }
-  }, [timeRangeOverride, run, services, preset]);
+  }, [timeRangeOverride, run, services, preset, capabilityUnavailable]);
 
   // Build chart data from result
   const chartDirective = useMemo(() => preset ? parseChartDirective(preset.sql) : null, [preset]);
@@ -864,8 +878,19 @@ const DashboardPanelCard: React.FC<{
         background: isFocused ? 'var(--bg-secondary)' : undefined,
         boxShadow: isFocused ? '0 7px 24px rgba(42,49,68,0.07)' : undefined,
       }}>
-        {loading && <div style={{ color: 'var(--text-muted)', fontSize: 11, padding: '20px 0', textAlign: 'center' }}>Loading…</div>}
-        {error && (() => {
+        {capabilityUnavailable && (
+          <div style={{
+            color: 'var(--text-muted)',
+            fontSize: 11,
+            padding: '20px 0',
+            textAlign: 'center',
+          }}>
+            Source unavailable · {requiredCapability?.label ?? panel.requiredCapability}
+            {requiredCapability?.detail ? ` · ${requiredCapability.detail}` : ''}
+          </div>
+        )}
+        {!capabilityUnavailable && loading && <div style={{ color: 'var(--text-muted)', fontSize: 11, padding: '20px 0', textAlign: 'center' }}>Loading…</div>}
+        {!capabilityUnavailable && error && (() => {
           const fmt = formatClickHouseError(error);
           return (
             <div style={{ color: fmt.isPermissionError ? '#d29922' : '#f85149', fontSize: 11, padding: '8px 0', cursor: 'help' }} title={error}>
@@ -873,7 +898,7 @@ const DashboardPanelCard: React.FC<{
             </div>
           );
         })()}
-        {!loading && !error && result && (
+        {!capabilityUnavailable && !loading && !error && result && (
           <>
             {/* Chart view */}
             {view === 'chart' && hasChart && (
@@ -1425,12 +1450,20 @@ const ImportModal: React.FC<{ onImport: (json: string) => void; onClose: () => v
 
 const MiniPanelCard: React.FC<{ panel: DashboardPanel; timeRangeOverride: string | null }> = ({ panel, timeRangeOverride }) => {
   const services = useClickHouseServices();
+  const requiredCapability = useMonitoringCapabilitiesStore(state => (
+    panel.requiredCapability
+      ? state.capabilities?.capabilities.find(
+          capability => capability.id === panel.requiredCapability,
+        )
+      : undefined
+  ));
+  const capabilityUnavailable = requiredCapability?.available === false;
   const preset = resolvePanel(panel);
   const [result, setResult] = useState<PanelResult | null>(null);
   const [loading, setLoading] = useState(false);
 
   useEffect(() => {
-    if (!services || !preset) return;
+    if (!services || !preset || capabilityUnavailable) return;
     let cancelled = false;
     setLoading(true);
     const sql = resolveTimeRange(preset.sql, preset.directives.meta?.interval, timeRangeOverride);
@@ -1446,7 +1479,7 @@ const MiniPanelCard: React.FC<{ panel: DashboardPanel; timeRangeOverride: string
       .catch(() => { if (!cancelled) setResult(null); })
       .finally(() => { if (!cancelled) setLoading(false); });
     return () => { cancelled = true; };
-  }, [services, preset, timeRangeOverride]);
+  }, [services, preset, timeRangeOverride, capabilityUnavailable]);
 
   const chartDirective = useMemo(() => preset ? parseChartDirective(preset.sql) : null, [preset]);
   const chartData = useMemo((): ChartDataPoint[] => {
@@ -1486,8 +1519,21 @@ const MiniPanelCard: React.FC<{ panel: DashboardPanel; timeRangeOverride: string
         {preset.name}
       </div>
       <div style={{ flex: 1, minHeight: 0, padding: '0 4px 4px', overflow: 'hidden' }}>
-        {loading && <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', height: '100%', color: 'var(--text-muted)', fontSize: 10 }}>…</div>}
-        {!loading && hasChart && (
+        {capabilityUnavailable && (
+          <div style={{
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'center',
+            height: '100%',
+            color: 'var(--text-muted)',
+            fontSize: 9,
+            textAlign: 'center',
+          }}>
+            Source unavailable
+          </div>
+        )}
+        {!capabilityUnavailable && loading && <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', height: '100%', color: 'var(--text-muted)', fontSize: 10 }}>…</div>}
+        {!capabilityUnavailable && !loading && hasChart && (
           <>
             {effectiveChartStyle === '3d' ? (
               <Chart3DCanvas data={chartData} type={chartType} orientation={chartDirective?.orientation} groupedData={isGroupedChart2 ? groupedChartData2 : undefined} unit={chartDirective?.unit} />
@@ -1499,7 +1545,7 @@ const MiniPanelCard: React.FC<{ panel: DashboardPanel; timeRangeOverride: string
             )}
           </>
         )}
-        {!loading && !hasChart && result && (
+        {!capabilityUnavailable && !loading && !hasChart && result && (
           <div style={{ fontSize: 9, color: 'var(--text-muted)', padding: '4px 0', lineHeight: 1.6 }}>
             {result.rows.slice(0, 5).map((r, i) => (
               <div key={i} style={{ display: 'flex', gap: 4, overflow: 'hidden' }}>

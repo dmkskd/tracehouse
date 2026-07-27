@@ -27,6 +27,8 @@ import { resolveQueryRef } from './metaLanguage';
 export interface DashboardPanel {
   /** Query reference - namespaced as 'Group#Query Name', or bare 'Query Name' for backward compat */
   queryName: string;
+  /** Optional monitoring capability required to execute this panel. */
+  requiredCapability?: string;
   /** If set, this panel starts a new collapsible section with this title.
    *  All subsequent panels until the next section belong to this section. */
   section?: string;
@@ -92,6 +94,7 @@ export function dashboardMatchesSearch(dashboard: Dashboard, search: string): bo
     dashboard.source,
     dashboard.builtin ? 'built-in builtin' : 'custom',
     ...dashboard.panels.flatMap(panel => [panel.queryName, panel.section]),
+    ...dashboard.panels.map(panel => panel.requiredCapability),
     ...(dashboard.filters ?? []).flatMap(filter => [filter.label, filter.param]),
   ]
     .filter((value): value is string => Boolean(value))
@@ -218,9 +221,12 @@ export function importDashboardJson(json: string): Omit<Dashboard, 'builtin'> {
     description: obj.description,
     ...(obj.source && { source: String(obj.source) }),
     columns: [1, 2, 3, 4].includes(obj.columns) ? obj.columns : 2,
-    panels: obj.panels.map((p: { queryName?: string; section?: string }) => ({
+    panels: obj.panels.map((p: { queryName?: string; section?: string; requiredCapability?: string }) => ({
       queryName: p.queryName ?? '',
       ...(p.section && { section: String(p.section) }),
+      ...(p.requiredCapability && {
+        requiredCapability: String(p.requiredCapability),
+      }),
     })),
     ...(Array.isArray(obj.filters) && obj.filters.length > 0 && {
       filters: obj.filters
@@ -414,6 +420,34 @@ const BUILTIN_DASHBOARDS: Dashboard[] = [
       { queryName: 'Self-Monitoring#App % of Server Load' },
       { queryName: 'Self-Monitoring#Slowest App Queries' },
       { queryName: 'Self-Monitoring#App Failed Queries' },
+    ],
+  },
+  {
+    id: 'operational-events-explorer',
+    title: 'Operational Events Explorer',
+    description: 'Event detector queries and related system activity',
+    source: 'https://clickhouse.com/docs/operations/system-tables',
+    group: 'TraceHouse',
+    category: 'Events',
+    columns: 2,
+    panels: [
+      { queryName: 'Events#Event Source Availability', section: 'Coverage' },
+      { queryName: 'Events#Query Resource Failures', section: 'Queries & Changes', requiredCapability: 'query_log' },
+      { queryName: 'Events#DDL Changes', requiredCapability: 'query_log' },
+      { queryName: 'Events#Async Insert Failures', requiredCapability: 'asynchronous_insert_log' },
+      { queryName: 'Events#Server Restarts', section: 'Lifecycle', requiredCapability: 'asynchronous_metric_log' },
+      { queryName: 'Events#Server Crashes', requiredCapability: 'crash_log' },
+      { queryName: 'Events#Part Operation Failures', section: 'Storage & Background Work', requiredCapability: 'part_log' },
+      { queryName: 'Events#Background Task Failures', requiredCapability: 'background_schedule_pool_log' },
+      { queryName: 'Events#Backup & Restore Outcomes', requiredCapability: 'backup_log' },
+      { queryName: 'Events#Keeper Connection Changes', section: 'Coordination & Replication', requiredCapability: 'zookeeper_connection_log' },
+      { queryName: 'Events#Operational Error Bursts', requiredCapability: 'error_log' },
+      { queryName: 'Events#Read-only Replica Samples', requiredCapability: 'metric_log_replication_state' },
+      { queryName: 'Events#Replication Failure Counters', requiredCapability: 'metric_log_replication_failures' },
+      { queryName: 'Events#All Query Exceptions by Type', section: 'Additional System Activity', requiredCapability: 'query_log' },
+      { queryName: 'Events#All Error Counters by Type', requiredCapability: 'error_log' },
+      { queryName: 'Events#Warning+ Server Log Activity', requiredCapability: 'text_log' },
+      { queryName: 'Events#Current Replica Problems', requiredCapability: 'system_replicas' },
     ],
   },
   {

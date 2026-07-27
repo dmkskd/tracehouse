@@ -72,4 +72,32 @@ describe('preset queries', { tags: ['analytics'] }, () => {
 
     expect(dashboard?.panels.map(panel => panel.queryName)).toContain('Resources#Server Pressure Radar');
   });
+
+  test('Operational Events Explorer exposes detector queries and related activity', () => {
+    Object.defineProperty(globalThis, 'localStorage', {
+      value: {
+        getItem: () => null,
+        setItem: () => undefined,
+        removeItem: () => undefined,
+      },
+      configurable: true,
+    });
+    const dashboard = loadDashboards().find(d => d.id === 'operational-events-explorer');
+    const panelNames = dashboard?.panels.map(panel => panel.queryName) ?? [];
+
+    expect(dashboard).toMatchObject({
+      group: 'TraceHouse',
+      category: 'Events',
+      columns: 2,
+    });
+    expect(panelNames).toContain('Events#Event Source Availability');
+    expect(panelNames).toContain('Events#Query Resource Failures');
+    expect(panelNames).toContain('Events#Server Crashes');
+    expect(panelNames).toContain('Events#Replication Failure Counters');
+    expect(panelNames).toContain('Events#Warning+ Server Log Activity');
+    expect(panelNames.every(name => PRESET_QUERIES.some(query => `${query.group}#${query.name}` === name))).toBe(true);
+    expect(
+      dashboard?.panels.find(panel => panel.queryName === 'Events#Server Crashes'),
+    ).toMatchObject({ requiredCapability: 'crash_log' });
+  });
 });
