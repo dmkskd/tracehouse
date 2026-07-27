@@ -100,4 +100,18 @@ describe('preset queries', { tags: ['analytics'] }, () => {
       dashboard?.panels.find(panel => panel.queryName === 'Events#Server Crashes'),
     ).toMatchObject({ requiredCapability: 'crash_log' });
   });
+
+  test('Event Source Availability reports cluster-wide host coverage', () => {
+    const query = PRESET_QUERIES.find(
+      item => item.group === 'Events' && item.name === 'Event Source Availability',
+    );
+
+    expect(query?.sql).toContain('{{cluster_aware:system.one}}');
+    expect(query?.sql).toContain('{{cluster_aware:system.tables}}');
+    expect(query?.sql).toContain('groupUniqArray(hostname())');
+    expect(query?.sql).toContain('available_nodes');
+    expect(query?.sql).toContain('cluster_nodes');
+    expect(query?.sql).toContain('missing_on');
+    expect(query?.sql).toContain("'partial'");
+  });
 });

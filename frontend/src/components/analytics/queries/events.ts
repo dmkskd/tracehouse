@@ -8,32 +8,49 @@
  */
 
 const queries: string[] = [
-  `-- @meta: title='Event Source Availability' group='Events' description='Optional ClickHouse system logs used by the Events page. An unavailable source explains an empty or failed panel below.'
--- @cell: column=status type=rag green=available amber=unavailable
+  `-- @meta: title='Event Source Availability' group='Events' description='Cluster-wide coverage of the optional ClickHouse system logs used by Events. Partial coverage identifies hosts where a source is missing.'
+-- @cell: column=status type=rag green=available amber=partial red=unavailable
 WITH (
-    SELECT groupArray(name)
-    FROM system.tables
-    WHERE database = 'system'
-) AS available_tables
+    SELECT groupUniqArray(hostname())
+    FROM {{cluster_aware:system.one}}
+) AS cluster_hosts
 SELECT
-    source,
-    event_types,
-    if(has(available_tables, source_table), 'available', 'unavailable') AS status
+    expected.source,
+    expected.event_types,
+    length(available.available_hosts) AS available_nodes,
+    length(cluster_hosts) AS cluster_nodes,
+    arrayStringConcat(
+        arrayFilter(host -> NOT has(available.available_hosts, host), cluster_hosts),
+        ', '
+    ) AS missing_on,
+    multiIf(
+        available_nodes = cluster_nodes, 'available',
+        available_nodes = 0, 'unavailable',
+        'partial'
+    ) AS status
 FROM values(
-    'source String, source_table String, event_types String',
-    ('system.query_log', 'query_log', 'query OOM, timeout, rejection, resource failure, DDL'),
-    ('system.asynchronous_insert_log', 'asynchronous_insert_log', 'asynchronous insert failure'),
-    ('system.backup_log', 'backup_log', 'backup and restore outcome'),
-    ('system.zookeeper_connection_log', 'zookeeper_connection_log', 'Keeper connection state'),
-    ('system.asynchronous_metric_log', 'asynchronous_metric_log', 'server restart'),
-    ('system.crash_log', 'crash_log', 'server crash'),
-    ('system.part_log', 'part_log', 'part and replicated fetch failure'),
-    ('system.background_schedule_pool_log', 'background_schedule_pool_log', 'background task failure'),
-    ('system.error_log', 'error_log', 'operational error burst'),
-    ('system.metric_log', 'metric_log', 'read-only replica and replication counters'),
-    ('system.text_log', 'text_log', 'warning-or-higher server-log activity')
-)
-ORDER BY status DESC, source`,
+        'source String, source_table String, event_types String',
+        ('system.query_log', 'query_log', 'query OOM, timeout, rejection, resource failure, DDL'),
+        ('system.asynchronous_insert_log', 'asynchronous_insert_log', 'asynchronous insert failure'),
+        ('system.backup_log', 'backup_log', 'backup and restore outcome'),
+        ('system.zookeeper_connection_log', 'zookeeper_connection_log', 'Keeper connection state'),
+        ('system.asynchronous_metric_log', 'asynchronous_metric_log', 'server restart'),
+        ('system.crash_log', 'crash_log', 'server crash'),
+        ('system.part_log', 'part_log', 'part and replicated fetch failure'),
+        ('system.background_schedule_pool_log', 'background_schedule_pool_log', 'background task failure'),
+        ('system.error_log', 'error_log', 'operational error burst'),
+        ('system.metric_log', 'metric_log', 'read-only replica and replication counters'),
+        ('system.text_log', 'text_log', 'warning-or-higher server-log activity')
+    ) AS expected
+LEFT JOIN (
+    SELECT
+        name AS source_table,
+        groupUniqArray(hostname()) AS available_hosts
+    FROM {{cluster_aware:system.tables}}
+    WHERE database = 'system'
+    GROUP BY name
+) AS available USING (source_table)
+ORDER BY status DESC, expected.source`,
 
   `-- @meta: title='Query Resource Failures' group='Events' interval='1 HOUR' description='The query OOM, timeout, admission, quota, space, parts, and mutation-limit failures currently promoted to Events.'
 -- @query_link: on=query_id

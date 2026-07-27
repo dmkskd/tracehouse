@@ -416,10 +416,19 @@ describe('Cluster query dedup', { tags: ['cluster'] }, () => {
   // ─── monitoring-capabilities-queries.ts ───
 
   describe('PROBE_SYSTEM_LOG_TABLES dedup', () => {
-    it('returns each log table exactly once', async () => {
-      const rows = await runClusterQuery<{ name: string }>(ctx, PROBE_SYSTEM_LOG_TABLES);
+    it('returns each log table once with cluster host coverage', async () => {
+      const rows = await runClusterQuery<{
+        name: string;
+        available_hosts: string;
+        expected_hosts: string;
+      }>(ctx, PROBE_SYSTEM_LOG_TABLES);
       const names = rows.map(r => r.name);
       expect(new Set(names).size).toBe(names.length);
+      expect(rows.length).toBeGreaterThan(0);
+      expect(rows.every(row => Number(row.expected_hosts) === 2)).toBe(true);
+      expect(rows.every(
+        row => Number(row.available_hosts) <= Number(row.expected_hosts),
+      )).toBe(true);
     });
   });
 

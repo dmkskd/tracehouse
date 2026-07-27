@@ -180,6 +180,15 @@ const LOG_TABLE_META: Record<string, { label: string; description: string; categ
   },
 };
 
+interface LogTableProbe {
+  engine: string;
+  totalRows: number;
+  totalBytes: number;
+  ttl: string | null;
+  availableHosts: number;
+  expectedHosts: number;
+}
+
 export class MonitoringCapabilitiesService {
   constructor(private adapter: IClickHouseAdapter) {}
 
@@ -206,10 +215,13 @@ export class MonitoringCapabilitiesService {
     // Add log table capabilities
     for (const [tableId, meta] of Object.entries(LOG_TABLE_META)) {
       const tableInfo = logTables.get(tableId);
-      const available = !!tableInfo;
-      const detail = tableInfo
-        ? `${tableInfo.engine} · ${formatRowCount(tableInfo.totalRows)} rows`
-        : 'Table not found';
+      const available = !!tableInfo
+        && tableInfo.availableHosts >= tableInfo.expectedHosts;
+      const detail = !tableInfo
+        ? 'Table not found'
+        : available
+          ? `${tableInfo.engine} · ${formatRowCount(tableInfo.totalRows)} rows · ${tableInfo.availableHosts}/${tableInfo.expectedHosts} hosts`
+          : `Partial cluster coverage · ${tableInfo.availableHosts}/${tableInfo.expectedHosts} hosts`;
 
       capabilities.push({
         id: tableId,
@@ -619,8 +631,8 @@ export class MonitoringCapabilitiesService {
     return result;
   }
 
-  private async probeLogTables(): Promise<Map<string, { engine: string; totalRows: number; totalBytes: number; ttl: string | null }>> {
-    const result = new Map<string, { engine: string; totalRows: number; totalBytes: number; ttl: string | null }>();
+  private async probeLogTables(): Promise<Map<string, LogTableProbe>> {
+    const result = new Map<string, LogTableProbe>();
     try {
       const rows = await this.adapter.executeQuery<{
         name: string;
@@ -628,14 +640,19 @@ export class MonitoringCapabilitiesService {
         total_rows: number;
         total_bytes: number;
         create_table_query: string;
+        available_hosts: number;
+        expected_hosts: number;
       }>(tagQuery(PROBE_SYSTEM_LOG_TABLES, sourceTag(TAB_INTERNAL, 'logTables')));
 
       for (const row of rows) {
+        const expectedHosts = Number(row.expected_hosts) || 1;
         result.set(String(row.name), {
           engine: String(row.engine),
           totalRows: Number(row.total_rows) || 0,
           totalBytes: Number(row.total_bytes) || 0,
           ttl: parseTTL(String(row.create_table_query || '')),
+          availableHosts: Number(row.available_hosts) || 1,
+          expectedHosts,
         });
       }
     } catch (error) {

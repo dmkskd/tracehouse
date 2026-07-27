@@ -7,15 +7,24 @@
 
 /**
  * Probe which system log tables exist and have data.
- * Natural key: (name). Dedup across replicas.
+ *
+ * A cluster-wide query can only read a log table when it exists on every
+ * targeted host. Keep both host counts so a partial rollout is not reported as
+ * available merely because one replica returned the table from system.tables.
  */
 export const PROBE_SYSTEM_LOG_TABLES = `
+WITH (
+  SELECT uniqExact(hostname())
+  FROM {{cluster_aware:system.one}}
+) AS expected_hosts
 SELECT
     name,
     any(engine) AS engine,
     any(total_rows) AS total_rows,
     any(total_bytes) AS total_bytes,
-    any(create_table_query) AS create_table_query
+    any(create_table_query) AS create_table_query,
+    uniqExact(hostname()) AS available_hosts,
+    expected_hosts
 FROM {{cluster_aware:system.tables}}
 WHERE database = 'system'
   AND name IN (

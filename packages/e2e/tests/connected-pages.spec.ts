@@ -11,7 +11,7 @@ test.describe('Connected pages', () => {
     // Now check that the Overview page shows actual metric values, not dashes.
 
     // Verify actual metric values loaded — the header bar shows "CPU X.X%" when data arrives
-    await expect(page.getByText(/CPU \d+(\.\d+)?%/)).toBeVisible({ timeout: 10_000 });
+    await expect(page.getByText(/^CPU \d+(?:\.\d+)?%$/)).toBeVisible({ timeout: 10_000 });
 
     // The header should show the connection name (may be hidden on mobile)
     const isMobile = test.info().project.name.includes('mobile');
