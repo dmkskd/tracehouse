@@ -305,10 +305,11 @@ describe('Surface queries integration', { tags: ['observability'] }, () => {
         startTime: '2026-03-25T09:00',
         endTime: '2026-03-25T11:00',
       });
-      expect(result.clause).toContain('BETWEEN');
-      // T should be replaced with space
-      expect(result.params.start_time).toBe('2026-03-25 09:00');
-      expect(result.params.end_time).toBe('2026-03-25 11:00');
+      const sql = buildQuery(result.clause, result.params);
+
+      expect(sql).toBe(
+        "event_time BETWEEN toDateTime('2026-03-25 09:00:00', 'UTC') AND toDateTime('2026-03-25 11:00:00', 'UTC')",
+      );
     });
 
     it('uses the specified column name', () => {

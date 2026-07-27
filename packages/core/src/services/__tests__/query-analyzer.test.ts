@@ -31,6 +31,27 @@ describe('QueryAnalyzer running queries', () => {
   });
 });
 
+describe('QueryAnalyzer UTC history bounds', () => {
+  it('keeps offset conversion explicit in generated ClickHouse SQL', async () => {
+    const adapter = new MockAdapter();
+    const analyzer = new QueryAnalyzer(adapter);
+
+    await analyzer.getQueryHistory({
+      start_date: '2026-07-26',
+      start_time: '2026-07-27T14:13:00+01:00',
+      end_time: '2026-07-27T16:05:00+02:00',
+    });
+
+    expect(adapter.queries[0]).toContain(
+      "event_time >= toDateTime('2026-07-27 13:13:00', 'UTC')",
+    );
+    expect(adapter.queries[0]).toContain(
+      "event_time <= toDateTime('2026-07-27 14:05:00', 'UTC')",
+    );
+    expect(adapter.queries[0]).toContain("event_date >= '2026-07-26'");
+  });
+});
+
 describe('QueryAnalyzer child query batching', () => {
   it('returns an empty map without querying ClickHouse when no ids are provided', async () => {
     const adapter = new MockAdapter();

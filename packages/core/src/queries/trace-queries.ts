@@ -192,7 +192,7 @@ export const QUERY_FLAMEGRAPH_MEMORY_LEGACY = `
  */
 export const QUERY_TRACE_SAMPLE_COUNTS = `
   SELECT
-    toUInt32(dateDiff('second', toDateTime64({query_start_time}, 6), event_time_microseconds)) AS t_second,
+    toUInt32(dateDiff('second', {query_start_time}, event_time_microseconds)) AS t_second,
     count() AS samples
   FROM {{cluster_aware:system.trace_log}}
   WHERE query_id = {query_id} AND trace_type = 'CPU'
@@ -252,4 +252,3 @@ export const QUERY_PROCESSORS_PROFILE = `
   GROUP BY name
   ORDER BY elapsed_us DESC
 `;
-

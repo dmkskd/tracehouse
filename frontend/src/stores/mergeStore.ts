@@ -17,6 +17,7 @@ import type {
   MergeTextLog,
 } from '@tracehouse/core';
 import { useGlobalLastUpdatedStore } from './refreshSettingsStore';
+import { canonicalizeCustomTimeRange } from '../utils/customTimeRange';
 
 // Re-export core types for consumers that import from this store
 export type {
@@ -269,6 +270,9 @@ export const mergeApi = {
     service: MergeTracker,
     filter: MergeHistoryFilter
   ): Promise<MergeHistoryRecord[]> {
+    const timeRange = filter.timeRange?.startsWith('CUSTOM:')
+      ? canonicalizeCustomTimeRange(filter.timeRange) ?? filter.timeRange
+      : filter.timeRange;
     return service.getMergeHistory({
       database: filter.database,
       table: filter.table,
@@ -276,7 +280,7 @@ export const mergeApi = {
       minSizeBytes: filter.minSizeBytes,
       excludeSystemDatabases: filter.excludeSystemDatabases,
       category: filter.category,
-      timeRange: filter.timeRange,
+      timeRange,
       limit: filter.limit || 100,
     });
   },
@@ -295,13 +299,16 @@ export const mergeApi = {
     service: MergeTracker,
     filter: MergeHistoryFilter
   ): Promise<MutationHistoryRecord[]> {
+    const timeRange = filter.timeRange?.startsWith('CUSTOM:')
+      ? canonicalizeCustomTimeRange(filter.timeRange) ?? filter.timeRange
+      : filter.timeRange;
     return service.getMutationHistory({
       database: filter.database,
       table: filter.table,
       minDurationMs: filter.minDurationMs,
       minSizeBytes: filter.minSizeBytes,
       excludeSystemDatabases: filter.excludeSystemDatabases,
-      timeRange: filter.timeRange,
+      timeRange,
       limit: filter.limit || 100,
     });
   },

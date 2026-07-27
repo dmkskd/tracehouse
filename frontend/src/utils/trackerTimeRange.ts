@@ -1,3 +1,5 @@
+import { resolveCustomTimeRange } from './customTimeRange';
+
 export const TRACKER_TIME_PRESETS = [
   { label: '15m', interval: '15 MINUTE' },
   { label: '1h', interval: '1 HOUR' },
@@ -27,14 +29,8 @@ export function resolveTrackerTimeRange(
   explicitEndTime?: string,
   now = new Date(),
 ): ResolvedTrackerTimeRange {
-  if (timeRange?.startsWith('CUSTOM:')) {
-    const [customStart, customEnd] = timeRange.slice('CUSTOM:'.length).split(',');
-    const start = customStart ? new Date(customStart) : new Date(Number.NaN);
-    const end = customEnd ? new Date(customEnd) : new Date(Number.NaN);
-    if (Number.isFinite(start.getTime()) && Number.isFinite(end.getTime())) {
-      return { startTime: start.toISOString(), endTime: end.toISOString() };
-    }
-  }
+  const customRange = resolveCustomTimeRange(timeRange);
+  if (customRange) return customRange;
 
   if (timeRange && INTERVAL_MS[timeRange]) {
     return {

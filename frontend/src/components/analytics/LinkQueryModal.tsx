@@ -28,6 +28,8 @@ export interface LinkQueryModalProps {
   params: Record<string, string>;
   /** Parent query's existing drill params to carry forward */
   parentDrillParams?: Record<string, string>;
+  /** Parent Analytics time-range override, including canonical custom ranges. */
+  timeRangeOverride?: string | null;
   /** Called when the modal should close */
   onClose: () => void;
   /** Opens query detail at page level (for deep-linking). Falls back to inline modal. */
@@ -76,6 +78,7 @@ export const LinkQueryModal: React.FC<LinkQueryModalProps> = ({
   targetQuery,
   params,
   parentDrillParams,
+  timeRangeOverride,
   onClose,
   onOpenQueryDetail,
 }) => {
@@ -96,7 +99,11 @@ export const LinkQueryModal: React.FC<LinkQueryModalProps> = ({
       setLoading(true);
       setError(null);
       try {
-        let sql = resolveTimeRange(targetQuery.sql, targetQuery.directives.meta?.interval);
+        let sql = resolveTimeRange(
+          targetQuery.sql,
+          targetQuery.directives.meta?.interval,
+          timeRangeOverride,
+        );
         const mergedParams = { ...(parentDrillParams ?? {}), ...params };
         sql = resolveDrillParams(sql, mergedParams);
         const result = await services.interactiveQueryService.run<QueryRow>(
@@ -117,7 +124,7 @@ export const LinkQueryModal: React.FC<LinkQueryModalProps> = ({
     };
     run();
     return () => { cancelled = true; };
-  }, [services, targetQuery, params, parentDrillParams]);
+  }, [services, targetQuery, params, parentDrillParams, timeRangeOverride]);
 
   const handleSort = useCallback((col: string) => {
     if (sortCol === col) {

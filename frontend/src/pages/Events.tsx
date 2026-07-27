@@ -12,7 +12,6 @@ import {
   EVENT_INTERVAL_HOURS,
   eventToQuerySeries,
   legacyEventsRangeCenter,
-  toLocalEventDateTime,
 } from './events-page-model';
 
 export const Events: React.FC = () => {
@@ -45,9 +44,9 @@ export const Events: React.FC = () => {
     : Number.NaN;
   const rangeMs = rangeHours * 3_600_000;
   const timeRangeValue = Number.isFinite(rangeCenterMs)
-    ? `CUSTOM:${toLocalEventDateTime(rangeCenterMs - rangeMs / 2)},${toLocalEventDateTime(
+    ? `CUSTOM:${new Date(rangeCenterMs - rangeMs / 2).toISOString()},${new Date(
       rangeCenterMs + rangeMs / 2,
-    )}`
+    ).toISOString()}`
     : EVENT_HOURS_INTERVAL.get(rangeHours) ?? '1 HOUR';
 
   const handleRangeSelect = useCallback((startMs: number, endMs: number) => {

@@ -13,7 +13,8 @@ import type {
   CpuSpikeAnalysis,
   ZoomSample,
 } from '../types/timeline.js';
-import { buildQuery, tagQuery } from '../queries/builder.js';
+import { buildQuery, tagQuery, utcDateTime } from '../queries/builder.js';
+import type { QueryParameter } from '../queries/builder.js';
 import { classifyMergeHistory, classifyActiveMerge } from '../utils/merge-classification.js';
 import { TAB_TIME_TRAVEL, sourceTag } from '../queries/source-tags.js';
 import {
@@ -128,9 +129,9 @@ export class TimelineService {
       }
     };
 
-    const params: Record<string, string | number> = {
-      start_time: toClickHouseDateTime(start),
-      end_time: toClickHouseDateTime(end),
+    const params: Record<string, QueryParameter> = {
+      start_time: utcDateTime(start),
+      end_time: utcDateTime(end),
       start_date: startDate,
       activity_limit: activityLimit,
     };
@@ -372,9 +373,9 @@ export class TimelineService {
   ): Promise<MemoryTimeline> {
     const start = new Date(startMs);
     const end = new Date(endMs);
-    const params: Record<string, string | number> = {
-      start_time: toClickHouseDateTime(start),
-      end_time: toClickHouseDateTime(end),
+    const params: Record<string, QueryParameter> = {
+      start_time: utcDateTime(start),
+      end_time: utcDateTime(end),
     };
 
     // Fetch process samples and merge samples in parallel
@@ -414,7 +415,7 @@ export class TimelineService {
   }
 
   private async fetchZoomProcessSamples(
-    params: Record<string, string | number>,
+    params: Record<string, QueryParameter>,
     hostname?: string,
   ): Promise<Array<{ query_id: string; ts_ms: number; memory_usage: number; pe_cpu: number; pe_net_send: number; pe_net_recv: number; read_bytes: number; written_bytes: number }>> {
     try {
@@ -440,7 +441,7 @@ export class TimelineService {
   }
 
   private async fetchZoomMergeSamples(
-    params: Record<string, string | number>,
+    params: Record<string, QueryParameter>,
     hostname?: string,
   ): Promise<Array<{ part_name: string; is_mutation: boolean; ts_ms: number; memory_usage: number; bytes_read: number; bytes_written: number }>> {
     try {
@@ -549,7 +550,7 @@ export class TimelineService {
     return result;
   }
 
-  private async fetchServerMemory(params: Record<string, string | number>, xform: (s: string) => string): Promise<TimeseriesPoint[]> {
+  private async fetchServerMemory(params: Record<string, QueryParameter>, xform: (s: string) => string): Promise<TimeseriesPoint[]> {
     try {
       const sql = xform(buildQuery(SERVER_MEMORY_TIMESERIES, params));
       const rows = await this.adapter.executeQuery(tagQuery(sql, sourceTag(TAB_TIME_TRAVEL, 'serverMemory')));
@@ -563,7 +564,7 @@ export class TimelineService {
     }
   }
 
-  private async fetchServerCpu(params: Record<string, string | number>, xform: (s: string) => string): Promise<TimeseriesPoint[]> {
+  private async fetchServerCpu(params: Record<string, QueryParameter>, xform: (s: string) => string): Promise<TimeseriesPoint[]> {
     try {
       const sql = xform(buildQuery(SERVER_CPU_TIMESERIES, params));
       const rows = await this.adapter.executeQuery(tagQuery(sql, sourceTag(TAB_TIME_TRAVEL, 'serverCpu')));
@@ -589,7 +590,7 @@ export class TimelineService {
   }
 
   /** Fetch per-host CPU timeseries for cluster tooltip breakdown */
-  private async fetchPerHostCpu(params: Record<string, string | number>): Promise<Record<string, TimeseriesPoint[]>> {
+  private async fetchPerHostCpu(params: Record<string, QueryParameter>): Promise<Record<string, TimeseriesPoint[]>> {
     try {
       const sql = buildQuery(CLUSTER_CPU_TIMESERIES, params);
       const rows = await this.adapter.executeQuery(tagQuery(sql, sourceTag(TAB_TIME_TRAVEL, 'perHostCpu')));
@@ -612,7 +613,7 @@ export class TimelineService {
   }
 
 
-  private async fetchNetworkData(params: Record<string, string | number>, xform: (s: string) => string): Promise<{ send: TimeseriesPoint[]; recv: TimeseriesPoint[] }> {
+  private async fetchNetworkData(params: Record<string, QueryParameter>, xform: (s: string) => string): Promise<{ send: TimeseriesPoint[]; recv: TimeseriesPoint[] }> {
     try {
       const sql = xform(buildQuery(SERVER_NETWORK_TIMESERIES, params));
       const rows = await this.adapter.executeQuery(tagQuery(sql, sourceTag(TAB_TIME_TRAVEL, 'networkData')));
@@ -631,7 +632,7 @@ export class TimelineService {
     }
   }
 
-  private async fetchDiskData(params: Record<string, string | number>, xform: (s: string) => string): Promise<{ read: TimeseriesPoint[]; write: TimeseriesPoint[] }> {
+  private async fetchDiskData(params: Record<string, QueryParameter>, xform: (s: string) => string): Promise<{ read: TimeseriesPoint[]; write: TimeseriesPoint[] }> {
     try {
       const sql = xform(buildQuery(SERVER_DISK_IO_TIMESERIES, params));
       const rows = await this.adapter.executeQuery(tagQuery(sql, sourceTag(TAB_TIME_TRAVEL, 'diskData')));
@@ -650,7 +651,7 @@ export class TimelineService {
     }
   }
 
-  private async fetchTotalRam(params: Record<string, string | number>, xform: (s: string) => string): Promise<{ ram: number; hostCount: number }> {
+  private async fetchTotalRam(params: Record<string, QueryParameter>, xform: (s: string) => string): Promise<{ ram: number; hostCount: number }> {
       try {
         const sql = xform(buildQuery(SERVER_TOTAL_RAM, params));
         const rows = await this.adapter.executeQuery(tagQuery(sql, sourceTag(TAB_TIME_TRAVEL, 'totalRam')));
@@ -695,7 +696,7 @@ export class TimelineService {
     return 0;
   }
 
-  private async fetchCpuCores(params: Record<string, string | number>, xform: (s: string) => string): Promise<number> {
+  private async fetchCpuCores(params: Record<string, QueryParameter>, xform: (s: string) => string): Promise<number> {
       // 1. Try asynchronous_metric_log first (returns per-host rows, cluster-aware)
       try {
         const sql = xform(buildQuery(SERVER_CPU_CORES, params));
@@ -778,7 +779,7 @@ export class TimelineService {
     return 0;
   }
 
-  private async fetchQueries(params: Record<string, string | number>, start: Date, end: Date, xform: (s: string) => string, normalizedQueryHash?: string): Promise<QuerySeries[]> {
+  private async fetchQueries(params: Record<string, QueryParameter>, start: Date, end: Date, xform: (s: string) => string, normalizedQueryHash?: string): Promise<QuerySeries[]> {
     try {
       let sql: string;
       if (normalizedQueryHash) {
@@ -839,7 +840,7 @@ export class TimelineService {
     }
   }
 
-  private async fetchMergeStats(params: Record<string, string | number>, xform: (s: string) => string): Promise<{ count: number; peakTotal: number }> {
+  private async fetchMergeStats(params: Record<string, QueryParameter>, xform: (s: string) => string): Promise<{ count: number; peakTotal: number }> {
     try {
       const sql = xform(buildQuery(ACTIVE_MERGES_COUNT, params));
       const rows = await this.adapter.executeQuery(tagQuery(sql, sourceTag(TAB_TIME_TRAVEL, 'mergeStats')));
@@ -856,7 +857,7 @@ export class TimelineService {
     }
     return { count: 0, peakTotal: 0 };
   }
-  private async fetchQueryCount(params: Record<string, string | number>, xform: (s: string) => string): Promise<number> {
+  private async fetchQueryCount(params: Record<string, QueryParameter>, xform: (s: string) => string): Promise<number> {
     try {
       const sql = xform(buildQuery(ACTIVE_QUERIES_COUNT, params));
       const rows = await this.adapter.executeQuery(tagQuery(sql, sourceTag(TAB_TIME_TRAVEL, 'queryCount')));
@@ -870,7 +871,7 @@ export class TimelineService {
     return 0;
   }
 
-  private async fetchMerges(params: Record<string, string | number>, start: Date, end: Date, xform: (s: string) => string): Promise<MergeSeries[]> {
+  private async fetchMerges(params: Record<string, QueryParameter>, start: Date, end: Date, xform: (s: string) => string): Promise<MergeSeries[]> {
     const merges: MergeSeries[] = [];
     
     try {
@@ -942,7 +943,7 @@ export class TimelineService {
     return merges;
   }
 
-  private async fetchMutationCount(params: Record<string, string | number>, xform: (s: string) => string): Promise<number> {
+  private async fetchMutationCount(params: Record<string, QueryParameter>, xform: (s: string) => string): Promise<number> {
     try {
       const sql = xform(buildQuery(ACTIVE_MUTATIONS_COUNT, params));
       const rows = await this.adapter.executeQuery(tagQuery(sql, sourceTag(TAB_TIME_TRAVEL, 'mutationCount')));
@@ -955,7 +956,7 @@ export class TimelineService {
     return 0;
   }
 
-  private async fetchMutations(params: Record<string, string | number>, start: Date, end: Date, xform: (s: string) => string): Promise<MutationSeries[]> {
+  private async fetchMutations(params: Record<string, QueryParameter>, start: Date, end: Date, xform: (s: string) => string): Promise<MutationSeries[]> {
     const mutations: MutationSeries[] = [];
     
     try {
@@ -1159,8 +1160,8 @@ export class TimelineService {
       sustainedThresholdSec: number = 120
     ): Promise<CpuSpikeAnalysis> {
       const params = {
-        start_time: toClickHouseDateTime(fromTime),
-        end_time: toClickHouseDateTime(toTime),
+        start_time: utcDateTime(fromTime),
+        end_time: utcDateTime(toTime),
       };
 
       const identity = (s: string) => s;
@@ -1266,7 +1267,7 @@ export class TimelineService {
     }
 
     private async fetchSpikeTimeseries(
-      params: Record<string, string | number>
+      params: Record<string, QueryParameter>
     ): Promise<Array<{ t: string; cpu_us: number; interval_ms: number }>> {
       try {
         const sql = buildQuery(CPU_SPIKE_TIMESERIES, params);

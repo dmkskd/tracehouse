@@ -38,6 +38,15 @@ describe('tracker time ranges', () => {
     )).toBe(28.5);
   });
 
+  it('preserves a canonical UTC custom range exactly', () => {
+    expect(resolveTrackerTimeRange(
+      'CUSTOM:2026-07-25T10:00:00.000Z,2026-07-26T14:30:00.000Z',
+    )).toEqual({
+      startTime: '2026-07-25T10:00:00.000Z',
+      endTime: '2026-07-26T14:30:00.000Z',
+    });
+  });
+
   it('retains legacy explicit dates when no relative range is present', () => {
     expect(resolveTrackerTimeRange(
       undefined,

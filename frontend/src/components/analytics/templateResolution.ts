@@ -4,7 +4,21 @@
  * Handles {{time_range}}, {{drill:col | fallback}}, {{drill_value:col | fallback}}.
  */
 
+import { resolveCustomTimeRange } from '../../utils/customTimeRange';
+
 export { TIME_RANGE_OPTIONS } from '../common/time-range-options';
+
+export class InvalidCustomTimeRangeError extends Error {
+  constructor(value: string) {
+    super(`Invalid custom time range: ${value}`);
+    this.name = 'InvalidCustomTimeRangeError';
+  }
+}
+
+function utcDateTimeLiteral(iso: string): string {
+  const value = iso.slice(0, 19).replace('T', ' ');
+  return `toDateTime('${value}', 'UTC')`;
+}
 
 /**
  * Replace {{time_range}} placeholders with a ClickHouse time expression.
@@ -14,24 +28,20 @@ export function resolveTimeRange(sql: string, defaultInterval?: string, userInte
   const interval = userInterval ?? defaultInterval;
   if (!interval) return sql;
   if (interval.startsWith('CUSTOM:')) {
-    const [rawStart, rawEnd] = interval.slice(7).split(',');
-    const normaliseDT = (v: string) => {
-      let s = v.replace('T', ' ');
-      if (/^\d{4}-\d{2}-\d{2} \d{2}:\d{2}$/.test(s)) s += ':00';
-      return s;
-    };
-    const start = normaliseDT(rawStart);
-    const end = normaliseDT(rawEnd);
+    const range = resolveCustomTimeRange(interval);
+    if (!range) throw new InvalidCustomTimeRangeError(interval);
+    const startDateTime = utcDateTimeLiteral(range.startTime);
+    const endDateTime = utcDateTimeLiteral(range.endTime);
     let resolved = sql;
     resolved = resolved.replace(
       /event_date\s*>=\s*toDate\(\{\{time_range\}\}\)/g,
-      `event_date >= toDate('${start}') AND event_date <= toDate('${end}')`
+      `event_date >= toDate(${startDateTime}, 'UTC') AND event_date <= toDate(${endDateTime}, 'UTC')`
     );
     resolved = resolved.replace(
       /event_time\s*>\s*\{\{time_range\}\}/g,
-      `event_time > toDateTime('${start}') AND event_time < toDateTime('${end}')`
+      `event_time > ${startDateTime} AND event_time < ${endDateTime}`
     );
-    resolved = resolved.replaceAll('{{time_range}}', `toDateTime('${start}')`);
+    resolved = resolved.replaceAll('{{time_range}}', startDateTime);
     return resolved;
   }
   return sql.replaceAll('{{time_range}}', `now() - INTERVAL ${interval}`);
@@ -76,8 +86,9 @@ export function describeTimeRange(defaultInterval?: string, userInterval?: strin
   const interval = userInterval ?? defaultInterval;
   if (!interval) return '(no time filter)';
   if (interval.startsWith('CUSTOM:')) {
-    const [start, end] = interval.slice(7).split(',');
-    return `${start} → ${end || 'now'}`;
+    const range = resolveCustomTimeRange(interval);
+    if (!range) return '(invalid custom time range)';
+    return `${range.startTime} → ${range.endTime} (UTC)`;
   }
   return `now() - INTERVAL ${interval}`;
 }

@@ -26,6 +26,7 @@ import { QueryDetailModal, type QueryModalTab } from '../components/query/modal/
 import { useQueryDeepLink } from '../hooks/useQueryDeepLink';
 import type { Query } from '../components/analytics/types';
 import type { TableOrderingKeyEfficiency, PatternSurfaceRow, QuerySeries, ResourceLanesData } from '@tracehouse/core';
+import { resolveCustomTimeRange } from '../utils/customTimeRange';
 
 type AnalyticsTab = 'tables' | 'misc' | 'dashboards' | 'surfaces';
 type SurfaceSubTab = 'resource' | 'pattern';
@@ -192,8 +193,9 @@ export const Analytics: React.FC = () => {
       // Convert TimeRangePicker value to SurfaceQueryOptions
       let timeOpts: { hours?: number; startTime?: string; endTime?: string };
       if (surfaceTimeRange.startsWith('CUSTOM:')) {
-        const [startTime, endTime] = surfaceTimeRange.slice(7).split(',');
-        timeOpts = { startTime, endTime };
+        const range = resolveCustomTimeRange(surfaceTimeRange);
+        if (!range) throw new Error('Invalid custom time range');
+        timeOpts = range;
       } else {
         // Map ClickHouse interval string to hours
         const INTERVAL_HOURS: Record<string, number> = {
@@ -222,8 +224,7 @@ export const Analytics: React.FC = () => {
   const parseTimeRange = useCallback((): { hours?: number; startTime?: string; endTime?: string } => {
     if (!surfaceTimeRange) return { hours: 24 };
     if (surfaceTimeRange.startsWith('CUSTOM:')) {
-      const [startTime, endTime] = surfaceTimeRange.slice(7).split(',');
-      return { startTime, endTime };
+      return resolveCustomTimeRange(surfaceTimeRange) ?? { hours: 24 };
     }
     const INTERVAL_HOURS: Record<string, number> = {
       '15 MINUTE': 0.25, '1 HOUR': 1, '6 HOUR': 6,

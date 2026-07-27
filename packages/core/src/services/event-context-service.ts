@@ -4,7 +4,8 @@ import {
   EVENT_CONTEXT_SERVER_LOGS,
   EVENT_CONTEXT_WORKLOAD,
 } from '../queries/event-context-queries.js';
-import { buildQuery, tagQuery } from '../queries/builder.js';
+import { buildQuery, tagQuery, utcDateTime64 } from '../queries/builder.js';
+import type { QueryParameter } from '../queries/builder.js';
 import { TAB_EVENTS, sourceTag } from '../queries/source-tags.js';
 import type {
   EventContextLogEntry,
@@ -24,10 +25,6 @@ function parseChTime(value: unknown): string {
     : `${normalized}Z`;
   const parsed = new Date(withTimezone);
   return Number.isNaN(parsed.getTime()) ? raw : parsed.toISOString();
-}
-
-function toClickHouseDateTime64(value: Date): string {
-  return value.toISOString().replace('T', ' ').replace('Z', '');
 }
 
 function numberValue(value: unknown): number {
@@ -79,10 +76,10 @@ export class EventContextService {
     const windowStart = new Date(eventDate.getTime() - windowSeconds * 1000);
     const windowEnd = new Date(eventDate.getTime() + windowSeconds * 1000);
     const available = new Set(options.availableCapabilities);
-    const params: Record<string, string | number> = {
-      event_time: toClickHouseDateTime64(eventDate),
-      window_start: toClickHouseDateTime64(windowStart),
-      window_end: toClickHouseDateTime64(windowEnd),
+    const params: Record<string, QueryParameter> = {
+      event_time: utcDateTime64(eventDate),
+      window_start: utcDateTime64(windowStart),
+      window_end: utcDateTime64(windowEnd),
       hostname: options.hostname ?? '',
       query_id: options.queryId ?? '',
       initial_query_id: options.initialQueryId ?? options.queryId ?? '',

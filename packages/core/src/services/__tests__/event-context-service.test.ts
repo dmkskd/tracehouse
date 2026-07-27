@@ -55,6 +55,9 @@ describe('EventContextService', () => {
     expect(adapter.queries).toHaveLength(1);
     expect(adapter.queries[0]).toContain('system.query_log');
     expect(adapter.queries[0]).toContain('source:TraceHouse:Events:contextWorkload');
+    expect(adapter.queries[0]).toContain(
+      "toDateTime64('2026-07-26 10:00:00.000', 3, 'UTC')",
+    );
     expect(result.workload.status).toBe('loaded');
     expect(result.workload.data[0]).toMatchObject({
       query_id: 'query-a',

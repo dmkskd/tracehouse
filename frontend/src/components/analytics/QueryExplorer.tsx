@@ -211,10 +211,15 @@ export const QueryExplorer: React.FC<QueryExplorerProps> = ({ urlState, onUrlSta
   /* ── resolved SQL (template variables replaced) ── */
   const resolvedSql = useMemo(() => {
     const activePreset = allQueries.find(p => p.sql.trim() === sql.trim());
-    let resolved = resolveTimeRange(sql, activePreset?.directives.meta?.interval, timeRangeOverride);
-    resolved = resolveDrillParams(resolved, currentDrillParams);
-    resolved = ClusterService.resolveTableRefs(resolved, clusterName);
-    return resolved;
+    try {
+      let resolved = resolveTimeRange(sql, activePreset?.directives.meta?.interval, timeRangeOverride);
+      resolved = resolveDrillParams(resolved, currentDrillParams);
+      resolved = ClusterService.resolveTableRefs(resolved, clusterName);
+      return resolved;
+    } catch (error) {
+      const message = error instanceof Error ? error.message : String(error);
+      return `-- ${message}\n${sql}`;
+    }
   }, [sql, allQueries, timeRangeOverride, currentDrillParams, clusterName]);
   const isExplainAnalyzeEligible = useMemo(
     () => isSelectStatement(resolvedSql),
@@ -1234,6 +1239,7 @@ export const QueryExplorer: React.FC<QueryExplorerProps> = ({ urlState, onUrlSta
           targetQuery={linkModal.targetQuery}
           params={linkModal.params}
           parentDrillParams={drillStack.length > 0 ? drillStack[drillStack.length - 1].params : undefined}
+          timeRangeOverride={timeRangeOverride}
           onClose={() => setLinkModal(null)}
           onOpenQueryDetail={onOpenQueryDetail}
         />

@@ -28,13 +28,6 @@ export function legacyEventsRangeCenter(
   return eventTime;
 }
 
-export function toLocalEventDateTime(ms: number): string {
-  const date = new Date(ms);
-  const pad = (value: number) => String(value).padStart(2, '0');
-  return `${date.getFullYear()}-${pad(date.getMonth() + 1)}-${pad(date.getDate())}`
-    + `T${pad(date.getHours())}:${pad(date.getMinutes())}`;
-}
-
 export function eventToQuerySeries(event: OperationalEvent): QuerySeries {
   const endMs = Date.parse(event.occurred_at);
   const durationMs = event.duration_ms ?? 0;

@@ -24,7 +24,14 @@ export interface MultiProfileEventRow {
   /** Values per query, indexed by position (same order as input queryIds) */
   values: number[];
 }
-import { buildQuery, tagQuery, eventDateBound, escapeValue } from '../queries/builder.js';
+import {
+  buildQuery,
+  tagQuery,
+  eventDateBound,
+  escapeValue,
+  utcDateTime,
+} from '../queries/builder.js';
+import type { QueryParameter } from '../queries/builder.js';
 import { TAB_QUERIES, TAB_INTERNAL, APP_SOURCE_PREFIX, sourceTag } from '../queries/source-tags.js';
 import { mapQueryMetrics, mapQueryHistoryItem } from '../mappers/query-mappers.js';
 import { shortenHostname } from '../mappers/helpers.js';
@@ -307,22 +314,6 @@ export interface QueryHistoryOptions {
   table?: string;
 }
 
-/**
- * Convert ISO 8601 datetime string to ClickHouse DateTime format.
- * Input: '2026-02-11T16:01:59.113Z' or '2026-02-11T16:01:59Z'
- * Output: '2026-02-11 16:01:59'
- */
-function toClickHouseDateTime(isoString: string): string {
-  const date = new Date(isoString);
-  const year = date.getUTCFullYear();
-  const month = String(date.getUTCMonth() + 1).padStart(2, '0');
-  const day = String(date.getUTCDate()).padStart(2, '0');
-  const hours = String(date.getUTCHours()).padStart(2, '0');
-  const minutes = String(date.getUTCMinutes()).padStart(2, '0');
-  const seconds = String(date.getUTCSeconds()).padStart(2, '0');
-  return `${year}-${month}-${day} ${hours}:${minutes}:${seconds}`;
-}
-
 export class QueryAnalyzer {
   private envDetector: import('./environment-detector.js').EnvironmentDetector | null;
 
@@ -380,14 +371,10 @@ export class QueryAnalyzer {
   async getQueryHistory(options: QueryHistoryOptions): Promise<QueryHistoryItem[]> {
     const limit = options.limit ?? 100;
     
-    // Convert ISO datetime strings to ClickHouse format
-    const startTime = toClickHouseDateTime(options.start_time);
-    const endTime = toClickHouseDateTime(options.end_time);
-    
-    const params: Record<string, string | number> = {
+    const params: Record<string, QueryParameter> = {
       start_date: options.start_date,
-      start_time: startTime,
-      end_time: endTime,
+      start_time: utcDateTime(options.start_time),
+      end_time: utcDateTime(options.end_time),
       limit,
     };
 
@@ -950,8 +937,8 @@ export class QueryAnalyzer {
    * Used to overlay server load on query history charts.
    */
   async getServerCpuForRange(startTime: string, endTime: string): Promise<{ t: string; cpu_pct: number }[]> {
-    const start = toClickHouseDateTime(startTime);
-    const end = toClickHouseDateTime(endTime);
+    const start = utcDateTime(startTime);
+    const end = utcDateTime(endTime);
 
     // Use EnvironmentDetector for cgroup-aware core count, with fallback
     let cpuCores = 1;
@@ -1016,8 +1003,8 @@ export class QueryAnalyzer {
    * Returns ~100 aggregated buckets with avg memory percentage (0-100).
    */
   async getServerMemoryForRange(startTime: string, endTime: string): Promise<{ t: string; mem_pct: number }[]> {
-    const start = toClickHouseDateTime(startTime);
-    const end = toClickHouseDateTime(endTime);
+    const start = utcDateTime(startTime);
+    const end = utcDateTime(endTime);
 
     // Get total RAM — use min across hosts for conservative percentage
     // In containers, OSMemoryTotal reports host RAM — check cgroup limit

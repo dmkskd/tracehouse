@@ -11,6 +11,12 @@
 import React, { useState, useRef, useEffect } from 'react';
 import { TIME_RANGE_OPTIONS } from './time-range-options';
 import { RangeSlider } from '../shared/RangeSlider';
+import {
+  createCustomTimeRange,
+  customTimeRangeToLocalInputs,
+  resolveCustomTimeRange,
+  toLocalDateTimeInput,
+} from '../../utils/customTimeRange';
 
 interface Props {
   value: string | null;
@@ -86,15 +92,15 @@ export const TimeRangePicker: React.FC<Props> = ({
     } else {
       setShowCustom(true);
       if (isCustomActive) {
-        // Restore previously applied custom range
-        const parts = value!.replace('CUSTOM:', '').split(',');
-        setCustomStart(parts[0]);
-        setCustomEnd(parts[1]);
+        // Restore canonical or legacy values in the browser's local timezone.
+        const local = customTimeRangeToLocalInputs(value);
+        setCustomStart(local?.start ?? '');
+        setCustomEnd(local?.end ?? '');
       } else {
         const presetMs = value ? (INTERVAL_TO_MS[value] ?? 86400000) : 86400000;
         const now = new Date();
-        setCustomEnd(toLocalISOString(now));
-        setCustomStart(toLocalISOString(new Date(now.getTime() - presetMs)));
+        setCustomEnd(toLocalDateTimeInput(now));
+        setCustomStart(toLocalDateTimeInput(new Date(now.getTime() - presetMs)));
         // Match slider zoom to preset (pick same or next-larger zoom)
         const zoom = SLIDER_ZOOMS.find(z => z.ms >= presetMs) ?? SLIDER_ZOOMS[SLIDER_ZOOMS.length - 1];
         setSliderZoomMs(zoom.ms);
@@ -103,8 +109,9 @@ export const TimeRangePicker: React.FC<Props> = ({
   };
 
   const handleCustomApply = () => {
-    if (customStart && customEnd) {
-      onChange(`CUSTOM:${customStart},${customEnd}`);
+    const canonical = createCustomTimeRange(customStart, customEnd);
+    if (canonical) {
+      onChange(canonical);
       setShowCustom(false);
     }
   };
@@ -146,20 +153,20 @@ export const TimeRangePicker: React.FC<Props> = ({
 
       {/* Active custom range label */}
       {isCustomActive && !showCustom && (() => {
-        const parts = value!.replace('CUSTOM:', '').split(',');
+        const range = resolveCustomTimeRange(value);
         const fmt = (iso: string) => {
           const d = new Date(iso);
           const pad = (n: number) => String(n).padStart(2, '0');
           return `${pad(d.getMonth() + 1)}/${pad(d.getDate())} ${pad(d.getHours())}:${pad(d.getMinutes())}`;
         };
-        return (
+        return range ? (
           <span style={{
             fontSize: 9, color: 'var(--text-muted)', fontFamily: "'Share Tech Mono',monospace",
             whiteSpace: 'nowrap',
           }}>
-            {fmt(parts[0])} - {fmt(parts[1])}
+            {fmt(range.startTime)} - {fmt(range.endTime)}
           </span>
-        );
+        ) : null;
       })()}
 
       {/* Custom range popover */}
@@ -250,8 +257,3 @@ const dateFieldStyle: React.CSSProperties = {
   fontWeight: 600,
   color: 'var(--text-muted)',
 };
-
-function toLocalISOString(d: Date): string {
-  const pad = (n: number) => String(n).padStart(2, '0');
-  return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}T${pad(d.getHours())}:${pad(d.getMinutes())}`;
-}

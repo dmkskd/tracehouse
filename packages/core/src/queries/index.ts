@@ -1,4 +1,18 @@
-export { escapeValue, buildQuery, tagQuery } from './builder.js';
+export {
+  escapeValue,
+  formatUtcDateTime,
+  utcDateTime,
+  utcDateTimeLiteral,
+  utcDateTime64,
+  utcDateTime64Literal,
+  buildQuery,
+  tagQuery,
+} from './builder.js';
+export type {
+  QueryParameter,
+  UtcDateTimeParameter,
+  UtcDateTime64Parameter,
+} from './builder.js';
 export * from './source-tags.js';
 export * from './database-queries.js';
 export * from './query-queries.js';

@@ -524,31 +524,43 @@ describe('resolveTimeRange', { tags: ['analytics'] }, () => {
     {
       name: 'custom range: event_time pattern',
       sql: `WHERE event_time > {{time_range}}`,
-      userInterval: 'CUSTOM:2025-01-01T10:00,2025-01-01T12:00',
-      expected: `WHERE event_time > toDateTime('2025-01-01 10:00:00') AND event_time < toDateTime('2025-01-01 12:00:00')`,
+      userInterval: 'CUSTOM:2025-01-01T10:00:00.000Z,2025-01-01T12:00:00.000Z',
+      expected: `WHERE event_time > toDateTime('2025-01-01 10:00:00', 'UTC') AND event_time < toDateTime('2025-01-01 12:00:00', 'UTC')`,
     },
     {
       name: 'custom range: event_date toDate pattern',
       sql: `WHERE event_date >= toDate({{time_range}})`,
-      userInterval: 'CUSTOM:2025-01-01T10:00,2025-01-01T12:00',
-      expected: `WHERE event_date >= toDate('2025-01-01 10:00:00') AND event_date <= toDate('2025-01-01 12:00:00')`,
+      userInterval: 'CUSTOM:2025-01-01T10:00:00.000Z,2025-01-01T12:00:00.000Z',
+      expected: `WHERE event_date >= toDate(toDateTime('2025-01-01 10:00:00', 'UTC'), 'UTC') AND event_date <= toDate(toDateTime('2025-01-01 12:00:00', 'UTC'), 'UTC')`,
     },
     {
       name: 'custom range: fallback for remaining placeholders',
       sql: `WHERE x = {{time_range}}`,
-      userInterval: 'CUSTOM:2025-06-01T08:00,2025-06-01T18:00',
-      expected: `WHERE x = toDateTime('2025-06-01 08:00:00')`,
+      userInterval: 'CUSTOM:2025-06-01T08:00:00.000Z,2025-06-01T18:00:00.000Z',
+      expected: `WHERE x = toDateTime('2025-06-01 08:00:00', 'UTC')`,
     },
     {
-      name: 'custom range: normalises datetime without seconds',
+      name: 'custom range: converts explicit offsets to UTC',
       sql: `WHERE event_time > {{time_range}}`,
-      userInterval: 'CUSTOM:2025-03-15T09:30,2025-03-15T17:45',
-      expected: `WHERE event_time > toDateTime('2025-03-15 09:30:00') AND event_time < toDateTime('2025-03-15 17:45:00')`,
+      userInterval: 'CUSTOM:2025-03-15T09:30:00+01:00,2025-03-15T17:45:00+01:00',
+      expected: `WHERE event_time > toDateTime('2025-03-15 08:30:00', 'UTC') AND event_time < toDateTime('2025-03-15 16:45:00', 'UTC')`,
     },
   ];
 
   test.each(cases)('$name', ({ sql, defaultInterval, userInterval, expected }) => {
     expect(resolveTimeRange(sql, defaultInterval, userInterval)).toBe(expected);
+  });
+
+  it.each([
+    'CUSTOM:not-a-date,also-not-a-date',
+    'CUSTOM:2025-01-01T10:00:00.000Z,',
+    'CUSTOM:2025-01-01T12:00:00.000Z,2025-01-01T10:00:00.000Z',
+  ])('rejects invalid custom range %s with a descriptive error', userInterval => {
+    expect(() => resolveTimeRange(
+      'WHERE event_time > {{time_range}}',
+      '1 HOUR',
+      userInterval,
+    )).toThrow('Invalid custom time range');
   });
 });
 

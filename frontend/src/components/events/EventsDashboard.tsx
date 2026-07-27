@@ -48,7 +48,7 @@ import {
   sortEventsDescending,
   supportedEventCoverage,
   supportedEventGroups,
-  toClickHouseEventTime,
+  toUtcEventInstant,
   type EventMarkerSelection,
   type EventListCluster,
   type EventDetailSection,
@@ -159,8 +159,8 @@ export const EventsDashboard: React.FC<EventsDashboardProps> = ({
       : requestEndMs - rangeMs;
     try {
       const result = await services.eventsService.getEvents({
-        startTime: toClickHouseEventTime(new Date(requestStartMs)),
-        endTime: toClickHouseEventTime(new Date(requestEndMs)),
+        startTime: toUtcEventInstant(new Date(requestStartMs)),
+        endTime: toUtcEventInstant(new Date(requestEndMs)),
         availableCapabilities,
         limit: 5000,
       });

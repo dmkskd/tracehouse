@@ -19,7 +19,9 @@ const OPTIONS = {
 
 describe('EventsService', () => {
   it('normalizes millisecond range bounds for DateTime-backed event sources', async () => {
+    let emittedSql = '';
     const mock = adapter(async sql => {
+      emittedSql = sql;
       expect(sql).toContain("'2026-07-25 12:00:00'");
       expect(sql).toContain("'2026-07-25 13:00:00'");
       expect(sql).not.toContain('12:00:00.125');
@@ -35,6 +37,31 @@ describe('EventsService', () => {
     });
 
     expect(mock.executeQuery).toHaveBeenCalledTimes(1);
+    expect(emittedSql).toContain(
+      "toDateTime('2026-07-25 12:00:00', 'UTC')",
+    );
+    expect(emittedSql).toContain(
+      "toDateTime('2026-07-25 13:00:00', 'UTC')",
+    );
+  });
+
+  it('converts explicit offsets to UTC before querying every event source', async () => {
+    let emittedSql = '';
+    const mock = adapter(async sql => {
+      emittedSql = sql;
+      return [];
+    });
+    const service = new EventsService(mock);
+
+    await service.getEvents({
+      startTime: '2026-07-25T14:00:00+01:00',
+      endTime: '2026-07-25T16:00:00+02:00',
+      availableCapabilities: ['query_log'],
+    });
+
+    expect(emittedSql).toContain(
+      "BETWEEN toDateTime('2026-07-25 13:00:00', 'UTC') AND toDateTime('2026-07-25 14:00:00', 'UTC')",
+    );
   });
 
   it('queries only capability-confirmed sources and reports unavailable coverage', async () => {

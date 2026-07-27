@@ -125,7 +125,13 @@ describe('SQL escapeValue neutralizes injection characters', { tags: ['security'
   });
 });
 
-import { buildQuery } from '../builder.js';
+import {
+  buildQuery,
+  formatUtcDateTime,
+  utcDateTime,
+  utcDateTime64,
+  utcDateTimeLiteral,
+} from '../builder.js';
 
 /**
  * For any SQL template containing named placeholders {key} and a corresponding
@@ -245,5 +251,48 @@ describe('buildQuery substitutes all placeholders with escaped values', { tags: 
       ),
       { numRuns: NUM_RUNS },
     );
+  });
+});
+
+describe('UTC datetime query parameters', { tags: ['security'] }, () => {
+  it('renders a readable ClickHouse expression with an explicit UTC timezone', () => {
+    const result = buildQuery(
+      'SELECT * FROM events WHERE event_time BETWEEN {start_time} AND {end_time:DateTime}',
+      {
+        start_time: utcDateTime('2026-07-27T17:57:00.125Z'),
+        end_time: utcDateTime('2026-07-27T20:21:00+02:00'),
+      },
+    );
+
+    expect(result).toBe(
+      "SELECT * FROM events WHERE event_time BETWEEN toDateTime('2026-07-27 17:57:00', 'UTC') AND toDateTime('2026-07-27 18:21:00', 'UTC')",
+    );
+  });
+
+  it('treats legacy offset-less core values as UTC, never as the process timezone', () => {
+    expect(formatUtcDateTime('2026-01-15 10:30:00')).toBe('2026-01-15 10:30:00');
+    expect(formatUtcDateTime('2026-07-15T10:30:00')).toBe('2026-07-15 10:30:00');
+  });
+
+  it('formats summer and winter instants without applying a server offset', () => {
+    expect(utcDateTimeLiteral('2026-07-27T14:13:00Z')).toBe(
+      "toDateTime('2026-07-27 14:13:00', 'UTC')",
+    );
+    expect(utcDateTimeLiteral('2026-01-27T14:13:00Z')).toBe(
+      "toDateTime('2026-01-27 14:13:00', 'UTC')",
+    );
+  });
+
+  it('preserves milliseconds for DateTime64 columns with explicit UTC', () => {
+    expect(buildQuery('SELECT {event_time}', {
+      event_time: utcDateTime64('2026-07-27T14:13:00.125+01:00'),
+    })).toBe(
+      "SELECT toDateTime64('2026-07-27 13:13:00.125', 3, 'UTC')",
+    );
+  });
+
+  it('rejects invalid and injection-shaped datetime values', () => {
+    expect(() => utcDateTime("2026-07-27 14:13:00'); DROP TABLE system.one; --"))
+      .toThrow('Invalid datetime');
   });
 });

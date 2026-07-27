@@ -22,7 +22,12 @@ import {
   GET_MERGE_THROUGHPUT_ESTIMATE,
   GET_TABLE_ENGINES,
 } from '../queries/merge-queries.js';
-import { buildQuery, tagQuery, eventDateBound } from '../queries/builder.js';
+import {
+  buildQuery,
+  tagQuery,
+  eventDateBound,
+  utcDateTimeLiteral,
+} from '../queries/builder.js';
 import { TAB_MERGES, sourceTag } from '../queries/source-tags.js';
 import { mapMergeInfo, mapMergeHistoryRecord, mapMutationInfo, mapMutationHistoryRecord, mapBackgroundPoolMetrics, mapMergeTextLog } from '../mappers/merge-mappers.js';
 import { stripMutationVersion } from '../utils/part-name-parser.js';
@@ -44,9 +49,36 @@ export interface MergeHistoryOptions {
   excludeSystemDatabases?: boolean;
   /** Push merge category filter into SQL (e.g. 'TTLDelete', 'Mutation'). */
   category?: string;
-  /** ClickHouse interval string (e.g. '1 DAY') or 'CUSTOM:start,end' for absolute range. */
+  /**
+   * ClickHouse interval string (e.g. '1 DAY') or a canonical absolute range.
+   * CUSTOM bounds must be ISO instants with `Z` or an explicit UTC offset.
+   */
   timeRange?: string | null;
   limit?: number;
+}
+
+function parseCanonicalCustomRange(timeRange: string): [string, string] {
+  const values = timeRange.slice('CUSTOM:'.length).split(',');
+  const [start, end] = values;
+  const hasExplicitOffset = (value: string | undefined) =>
+    !!value && /(?:[zZ]|[+-]\d{2}:?\d{2})$/.test(value);
+  const startMs = start ? Date.parse(start) : Number.NaN;
+  const endMs = end ? Date.parse(end) : Number.NaN;
+
+  if (
+    values.length !== 2
+    || !hasExplicitOffset(start)
+    || !hasExplicitOffset(end)
+    || !Number.isFinite(startMs)
+    || !Number.isFinite(endMs)
+    || endMs <= startMs
+  ) {
+    throw new MergeTrackerError(
+      'Invalid custom time range: MergeTracker requires CUSTOM:start,end with explicit Z or UTC offsets',
+    );
+  }
+
+  return [start, end];
 }
 
 /**
@@ -71,10 +103,9 @@ function injectThresholdFilters(sql: string, opts: MergeHistoryOptions): string 
   if (opts.timeRange) {
     const tr = opts.timeRange;
     if (tr.startsWith('CUSTOM:')) {
-      const [rawStart, rawEnd] = tr.slice(7).split(',');
-      const normDT = (v: string) => { let s = v.replace('T', ' '); if (/^\d{4}-\d{2}-\d{2} \d{2}:\d{2}$/.test(s)) s += ':00'; return s; };
-      clauses.push(`event_time >= '${normDT(rawStart)}'`);
-      clauses.push(`event_time <= '${normDT(rawEnd)}'`);
+      const [rawStart, rawEnd] = parseCanonicalCustomRange(tr);
+      clauses.push(`event_time >= ${utcDateTimeLiteral(rawStart)}`);
+      clauses.push(`event_time <= ${utcDateTimeLiteral(rawEnd)}`);
     } else {
       clauses.push(`event_time >= now() - INTERVAL ${tr}`);
     }
@@ -94,9 +125,8 @@ function injectMutationTimeFilter(sql: string, opts: MergeHistoryOptions): strin
   if (!tr) return sql;
   let clause: string;
   if (tr.startsWith('CUSTOM:')) {
-    const [rawStart, rawEnd] = tr.slice(7).split(',');
-    const normDT = (v: string) => { let s = v.replace('T', ' '); if (/^\d{4}-\d{2}-\d{2} \d{2}:\d{2}$/.test(s)) s += ':00'; return s; };
-    clause = `create_time >= '${normDT(rawStart)}' AND create_time <= '${normDT(rawEnd)}'`;
+    const [rawStart, rawEnd] = parseCanonicalCustomRange(tr);
+    clause = `create_time >= ${utcDateTimeLiteral(rawStart)} AND create_time <= ${utcDateTimeLiteral(rawEnd)}`;
   } else {
     clause = `create_time >= now() - INTERVAL ${tr}`;
   }
@@ -224,6 +254,7 @@ export class MergeTracker {
       }
       return records;
     } catch (error) {
+      if (error instanceof MergeTrackerError) throw error;
       throw new MergeTrackerError('Failed to get merge history', error as Error);
     }
   }
@@ -260,6 +291,7 @@ export class MergeTracker {
       }
       return records;
     } catch (error) {
+      if (error instanceof MergeTrackerError) throw error;
       throw new MergeTrackerError('Failed to get mutation history', error as Error);
     }
   }

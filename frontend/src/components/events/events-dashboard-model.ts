@@ -219,8 +219,9 @@ export function supportedEventGroups(): SupportedEventGroup[] {
     .filter(group => group.events.length > 0);
 }
 
-export function toClickHouseEventTime(date: Date): string {
-  return date.toISOString().slice(0, 19).replace('T', ' ');
+export function toUtcEventInstant(date: Date): string {
+  // Keep the absolute instant explicit until the core query builder renders it.
+  return date.toISOString();
 }
 
 export function formatEventDateTime(value: string): string {

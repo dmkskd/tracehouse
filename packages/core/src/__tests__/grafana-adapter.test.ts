@@ -1,6 +1,6 @@
 import { describe, it, expect } from 'vitest';
 import { GrafanaAdapter, type AdapterFrame } from '../adapters/grafana-adapter.js';
-import { tagQuery } from '../queries/builder.js';
+import { buildQuery, tagQuery, utcDateTime } from '../queries/builder.js';
 import { sourceTag, TAB_INTERNAL } from '../queries/source-tags.js';
 
 const q = (sql: string) => tagQuery(sql, sourceTag(TAB_INTERNAL, 'grafanaAdapterTest'));
@@ -17,6 +17,28 @@ function adapterWithFrames(frames: AdapterFrame[]): GrafanaAdapter {
 
 describe('GrafanaAdapter', { tags: ['connectivity'] }, () => {
   describe('framesToRows — DateTime normalization', () => {
+    it('keeps explicit UTC query bounds separate from Grafana time-field normalization', async () => {
+      let submittedSql = '';
+      const epochMs = Date.parse('2026-07-27T13:13:00.000Z');
+      const adapter = new GrafanaAdapter(async sql => {
+        submittedSql = sql;
+        return [frame([{ name: 'event_time', type: 'time' }], [[epochMs]])];
+      });
+      const sql = buildQuery(
+        'SELECT event_time FROM system.query_log WHERE event_time >= {start_time}',
+        { start_time: utcDateTime('2026-07-27T14:13:00+01:00') },
+      );
+
+      const rows = await adapter.executeQuery<{ event_time: string }>(q(sql));
+
+      expect(submittedSql).toContain(
+        "event_time >= toDateTime('2026-07-27 13:13:00', 'UTC')",
+      );
+      // Grafana still supplies epoch-ms fields and the adapter retains its
+      // established UTC-like ClickHouse output shape for downstream mappers.
+      expect(rows[0].event_time).toBe('2026-07-27 13:13:00.000');
+    });
+
     it('converts epoch-ms time fields to ISO-like strings', async () => {
       // Grafana ClickHouse datasource returns DateTime columns as epoch-ms
       // with schema type "time". This is a hardcoded sample of what Grafana returns

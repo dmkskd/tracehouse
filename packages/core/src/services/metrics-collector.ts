@@ -21,7 +21,8 @@ import {
   CLUSTER_CPU_CORES,
   CLUSTER_CGROUP_CPU,
 } from '../queries/timeline-queries.js';
-import { buildQuery, tagQuery } from '../queries/builder.js';
+import { buildQuery, tagQuery, utcDateTime } from '../queries/builder.js';
+import type { QueryParameter } from '../queries/builder.js';
 import { TAB_OVERVIEW, sourceTag } from '../queries/source-tags.js';
 
 export class MetricsCollectionError extends Error {
@@ -134,8 +135,8 @@ export class MetricsCollector {
   ): Promise<{ hosts: string[]; data: ClusterHistoricalMetricsPoint[] }> {
     try {
       const params = {
-        start_time: this.toClickHouseDateTime(fromTime),
-        end_time: this.toClickHouseDateTime(toTime),
+        start_time: utcDateTime(fromTime),
+        end_time: utcDateTime(toTime),
       };
 
       const [cpuRows, memoryRows, diskRows, networkRows, ramRows, cgroupMemRows, coreRows, cgroupCpuRows] = await Promise.all([
@@ -223,23 +224,13 @@ export class MetricsCollector {
     }
   }
 
-  private toClickHouseDateTime(date: Date): string {
-    const year = date.getUTCFullYear();
-    const month = String(date.getUTCMonth() + 1).padStart(2, '0');
-    const day = String(date.getUTCDate()).padStart(2, '0');
-    const hours = String(date.getUTCHours()).padStart(2, '0');
-    const minutes = String(date.getUTCMinutes()).padStart(2, '0');
-    const seconds = String(date.getUTCSeconds()).padStart(2, '0');
-    return `${year}-${month}-${day} ${hours}:${minutes}:${seconds}`;
-  }
-
   private parseTimestamp(s: string): number {
     const normalized = s.trim().replace(' ', 'T');
     const withTz = normalized.includes('Z') || normalized.includes('+') ? normalized : normalized + 'Z';
     return new Date(withTz).getTime();
   }
 
-  private async fetchTimeseries(query: string, params: Record<string, string>): Promise<Array<{ t: string; v: number; interval_ms?: number }>> {
+  private async fetchTimeseries(query: string, params: Record<string, QueryParameter>): Promise<Array<{ t: string; v: number; interval_ms?: number }>> {
     try {
       const sql = buildQuery(query, params);
       const rows = await this.adapter.executeQuery(tagQuery(sql, sourceTag(TAB_OVERVIEW, 'timeseries')));
@@ -258,7 +249,7 @@ export class MetricsCollector {
 
   private async fetchDualTimeseries(
     query: string, 
-    params: Record<string, string>,
+    params: Record<string, QueryParameter>,
     key1: string,
     key2: string
   ): Promise<Array<{ t: string; v1: number; v2: number }>> {
@@ -279,7 +270,7 @@ export class MetricsCollector {
     }
   }
 
-  private async fetchHostTimeseries(query: string, params: Record<string, string>): Promise<Array<{ t: string; host: string; v: number; interval_ms?: number }>> {
+  private async fetchHostTimeseries(query: string, params: Record<string, QueryParameter>): Promise<Array<{ t: string; host: string; v: number; interval_ms?: number }>> {
     try {
       const sql = buildQuery(query, params);
       const rows = await this.adapter.executeQuery(tagQuery(sql, sourceTag(TAB_OVERVIEW, 'timeseries')));
@@ -300,7 +291,7 @@ export class MetricsCollector {
 
   private async fetchHostDualTimeseries(
     query: string,
-    params: Record<string, string>,
+    params: Record<string, QueryParameter>,
     key1: string,
     key2: string
   ): Promise<Array<{ t: string; host: string; v1: number; v2: number }>> {
@@ -322,7 +313,7 @@ export class MetricsCollector {
     }
   }
 
-  private async fetchHostScalar(query: string, params: Record<string, string>): Promise<Map<string, number>> {
+  private async fetchHostScalar(query: string, params: Record<string, QueryParameter>): Promise<Map<string, number>> {
     try {
       const sql = buildQuery(query, params);
       const rows = await this.adapter.executeQuery(tagQuery(sql, sourceTag(TAB_OVERVIEW, 'timeseries')));
@@ -338,7 +329,7 @@ export class MetricsCollector {
     }
   }
 
-  private async fetchTotalRam(params: Record<string, string>): Promise<number> {
+  private async fetchTotalRam(params: Record<string, QueryParameter>): Promise<number> {
     try {
       const sql = buildQuery(SERVER_TOTAL_RAM, params);
       const rows = await this.adapter.executeQuery(tagQuery(sql, sourceTag(TAB_OVERVIEW, 'totalRam')));
@@ -351,7 +342,7 @@ export class MetricsCollector {
     return 0;
   }
 
-  private async fetchCpuCores(params: Record<string, string>): Promise<number> {
+  private async fetchCpuCores(params: Record<string, QueryParameter>): Promise<number> {
     // 1. Try cgroup-aware detection first (Kubernetes / containerized environments)
     const cgroupCores = await this.fetchCgroupCpuLimit();
     if (cgroupCores > 0) return cgroupCores;

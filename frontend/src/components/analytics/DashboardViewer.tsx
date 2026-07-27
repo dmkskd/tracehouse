@@ -973,6 +973,7 @@ const DashboardPanelCard: React.FC<{
           targetQuery={linkModal.targetQuery}
           params={linkModal.params}
           parentDrillParams={drillParams}
+          timeRangeOverride={timeRangeOverride}
           onClose={() => setLinkModal(null)}
           onOpenQueryDetail={onOpenQueryDetail}
         />
@@ -1466,7 +1467,14 @@ const MiniPanelCard: React.FC<{ panel: DashboardPanel; timeRangeOverride: string
     if (!services || !preset || capabilityUnavailable) return;
     let cancelled = false;
     setLoading(true);
-    const sql = resolveTimeRange(preset.sql, preset.directives.meta?.interval, timeRangeOverride);
+    let sql: string;
+    try {
+      sql = resolveTimeRange(preset.sql, preset.directives.meta?.interval, timeRangeOverride);
+    } catch {
+      setResult(null);
+      setLoading(false);
+      return;
+    }
     services.interactiveQueryService.run<Record<string, unknown>>(
       sql,
       sourceTag(TAB_ANALYTICS, 'dashboardMiniPanel'),

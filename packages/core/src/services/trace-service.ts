@@ -3,7 +3,12 @@
  */
 import type { IClickHouseAdapter } from '../adapters/types.js';
 import type { TraceLog, ExplainType, ExplainResult, OpenTelemetrySpan, FlamegraphSample, ProcessorProfile } from '../types/trace.js';
-import { buildQuery, tagQuery, eventDateBound } from '../queries/builder.js';
+import {
+  buildQuery,
+  tagQuery,
+  eventDateBound,
+  utcDateTime64,
+} from '../queries/builder.js';
 import { TAB_QUERIES, sourceTag } from '../queries/source-tags.js';
 import { QUERY_TRACE_LOGS, QUERY_FLAMEGRAPH_CPU, QUERY_FLAMEGRAPH_REAL, QUERY_FLAMEGRAPH_MEMORY, QUERY_FLAMEGRAPH_DATA, QUERY_FLAMEGRAPH_REAL_LEGACY, QUERY_FLAMEGRAPH_MEMORY_LEGACY, QUERY_FLAMEGRAPH_CPU_TIME_SCOPED, QUERY_FLAMEGRAPH_CPU_TIME_SCOPED_LEGACY, QUERY_TRACE_SAMPLE_COUNTS, QUERY_PROCESSORS_PROFILE } from '../queries/trace-queries.js';
 
@@ -335,10 +340,9 @@ export class TraceService {
    */
   async getTraceSampleCounts(queryId: string, queryStartTime: string, eventDate?: string): Promise<Map<number, number>> {
     const dateBound = eventDateBound(eventDate);
-    const chStart = queryStartTime.replace('T', ' ').replace(/\.\d+Z?$/, '').replace('Z', '');
     const sql = buildQuery(
       QUERY_TRACE_SAMPLE_COUNTS.replace('{event_date_bound}', dateBound),
-      { query_id: queryId, query_start_time: chStart },
+      { query_id: queryId, query_start_time: utcDateTime64(queryStartTime, 6) },
     );
     const rows = await this.adapter.executeQuery(
       tagQuery(sql, sourceTag(TAB_QUERIES, 'traceSampleCounts')),
@@ -366,10 +370,11 @@ export class TraceService {
   ): Promise<{ folded: string; unavailableReason?: string }> {
     try {
       const dateBound = eventDateBound(eventDate);
-      // Convert ISO to ClickHouse-friendly format: '2026-03-20 13:52:17'
-      const chFrom = fromTime.replace('T', ' ').replace(/\.\d+Z?$/, '').replace('Z', '');
-      const chTo = toTime.replace('T', ' ').replace(/\.\d+Z?$/, '').replace('Z', '');
-      const params = { query_id: queryId, from_time: chFrom, to_time: chTo };
+      const params = {
+        query_id: queryId,
+        from_time: utcDateTime64(fromTime),
+        to_time: utcDateTime64(toTime),
+      };
 
       let rows: Record<string, unknown>[];
       let usedLegacy = false;

@@ -112,7 +112,7 @@ describe('EventsDashboard refresh behavior', () => {
     });
 
     expect(mocks.getEvents).toHaveBeenCalledTimes(1);
-    expect(mocks.getEvents.mock.calls[0][0].endTime).toBe('2026-07-26 12:00:00');
+    expect(mocks.getEvents.mock.calls[0][0].endTime).toBe('2026-07-26T12:00:00.000Z');
     expect(mocks.touch).toHaveBeenCalledTimes(1);
 
     fireEvent.click(screen.getByRole('button', { name: 'Auto' }));
@@ -126,7 +126,7 @@ describe('EventsDashboard refresh behavior', () => {
       await vi.advanceTimersByTimeAsync(5000);
     });
     expect(mocks.getEvents).toHaveBeenCalledTimes(2);
-    expect(mocks.getEvents.mock.calls[1][0].endTime).toBe('2026-07-26 12:00:10');
+    expect(mocks.getEvents.mock.calls[1][0].endTime).toBe('2026-07-26T12:00:10.000Z');
     expect(mocks.touch).toHaveBeenCalledTimes(2);
   });
 

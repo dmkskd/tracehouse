@@ -287,7 +287,11 @@ export const queryApi = {
       filter.startTime,
       filter.endTime,
     );
-    const startDate = startTime.split('T')[0]!;
+    // event_date follows the server/storage timezone. A one-day buffer keeps
+    // partition pruning safe even when that timezone differs from UTC.
+    const startDate = new Date(Date.parse(startTime) - 24 * 60 * 60 * 1000)
+      .toISOString()
+      .split('T')[0]!;
 
     return service.getQueryHistory({
       start_date: startDate!,

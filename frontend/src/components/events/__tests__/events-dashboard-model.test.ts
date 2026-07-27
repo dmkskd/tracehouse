@@ -11,7 +11,7 @@ import {
   supportedEventAvailability,
   supportedEventCoverage,
   supportedEventGroups,
-  toClickHouseEventTime,
+  toUtcEventInstant,
 } from '../events-dashboard-model';
 
 function event(
@@ -28,9 +28,9 @@ function event(
 }
 
 describe('events dashboard model', () => {
-  it('normalizes service bounds to whole-second ClickHouse time', () => {
-    expect(toClickHouseEventTime(new Date('2026-07-25T19:39:29.049Z')))
-      .toBe('2026-07-25 19:39:29');
+  it('keeps service bounds as explicit UTC instants', () => {
+    expect(toUtcEventInstant(new Date('2026-07-25T19:39:29.049Z')))
+      .toBe('2026-07-25T19:39:29.049Z');
   });
 
   it('sorts and filters events outside the React component', () => {

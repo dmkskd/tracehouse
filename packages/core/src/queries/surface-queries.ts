@@ -10,15 +10,21 @@
  * The caller passes the appropriate time filter clause via buildSurfaceTimeFilter().
  */
 
+import { utcDateTime } from './builder.js';
+import type { QueryParameter } from './builder.js';
+
 /** Build the event_time filter clause for surface queries. */
 export function buildSurfaceTimeFilter(
   column: string,
   opts: { hours?: number; startTime?: string; endTime?: string },
-): { clause: string; params: Record<string, string | number> } {
+): { clause: string; params: Record<string, QueryParameter> } {
   if (opts.startTime && opts.endTime) {
     return {
       clause: `${column} BETWEEN {start_time} AND {end_time}`,
-      params: { start_time: opts.startTime.replace('T', ' '), end_time: opts.endTime.replace('T', ' ') },
+      params: {
+        start_time: utcDateTime(opts.startTime),
+        end_time: utcDateTime(opts.endTime),
+      },
     };
   }
   const minutes = Math.round((opts.hours ?? 24) * 60);

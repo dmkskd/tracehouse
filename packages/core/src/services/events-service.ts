@@ -1,5 +1,6 @@
 import type { IClickHouseAdapter } from '../adapters/types.js';
-import { buildQuery, tagQuery } from '../queries/builder.js';
+import { buildQuery, tagQuery, utcDateTime } from '../queries/builder.js';
+import type { QueryParameter } from '../queries/builder.js';
 import { TAB_EVENTS, TAB_TIME_TRAVEL, sourceTag } from '../queries/source-tags.js';
 import {
   ASYNC_INSERT_FAILURE_EVENTS,
@@ -41,7 +42,7 @@ export interface EventsResult {
 }
 
 interface BoundEventSourceDefinition extends EventSourceDefinition {
-  fetch: (params: Record<string, string | number>) => Promise<OperationalEvent[]>;
+  fetch: (params: Record<string, QueryParameter>) => Promise<OperationalEvent[]>;
 }
 
 type EventSourceId = typeof EVENT_SOURCE_DEFINITIONS[number]['id'];
@@ -120,26 +121,6 @@ function parseChTime(value: unknown): string {
   return Number.isNaN(parsed.getTime()) ? raw : parsed.toISOString();
 }
 
-/**
- * Event sources mix DateTime and DateTime64 columns. Keep the shared query
- * bounds at whole-second precision so a DateTime column does not reject a
- * custom range containing milliseconds (ClickHouse error 53).
- */
-function toClickHouseDateTime(value: string): string {
-  const clickHouseDateTime = value.match(
-    /^(\d{4}-\d{2}-\d{2})[ T](\d{2}:\d{2}:\d{2})/,
-  );
-  if (clickHouseDateTime && !/[zZ]|[+-]\d{2}:?\d{2}$/.test(value)) {
-    return `${clickHouseDateTime[1]} ${clickHouseDateTime[2]}`;
-  }
-
-  const parsed = new Date(value);
-  if (Number.isNaN(parsed.getTime())) {
-    return value.replace('T', ' ').replace(/\.\d+/, '').replace(/Z$/, '');
-  }
-  return parsed.toISOString().slice(0, 19).replace('T', ' ');
-}
-
 function stableEventId(parts: Array<string | number | undefined>): string {
   return parts.map(part => String(part ?? '')).join(':');
 }
@@ -212,9 +193,9 @@ export class EventsService {
   ): Promise<EventsResult> {
     const sourceTab = options.origin === 'timeTravel' ? TAB_TIME_TRAVEL : TAB_EVENTS;
     const limit = Math.max(1, Math.min(options.limit ?? 1000, 10_000));
-    const params: Record<string, string | number> = {
-      start_time: toClickHouseDateTime(options.startTime),
-      end_time: toClickHouseDateTime(options.endTime),
+    const params: Record<string, QueryParameter> = {
+      start_time: utcDateTime(options.startTime),
+      end_time: utcDateTime(options.endTime),
       hostname: options.hostname ?? '',
       event_limit: limit,
     };
@@ -291,7 +272,7 @@ export class EventsService {
   }
 
   private async fetchQueryEvents(
-    params: Record<string, string | number>,
+    params: Record<string, QueryParameter>,
     sourceTab: typeof TAB_EVENTS | typeof TAB_TIME_TRAVEL,
   ): Promise<OperationalEvent[]> {
     const sql = buildQuery(QUERY_EVENTS, params);
@@ -346,7 +327,7 @@ export class EventsService {
   }
 
   private async fetchAsyncInsertFailureEvents(
-    params: Record<string, string | number>,
+    params: Record<string, QueryParameter>,
     sourceTab: typeof TAB_EVENTS | typeof TAB_TIME_TRAVEL,
   ): Promise<OperationalEvent[]> {
     const sql = buildQuery(ASYNC_INSERT_FAILURE_EVENTS, params);
@@ -394,7 +375,7 @@ export class EventsService {
   }
 
   private async fetchBackupEvents(
-    params: Record<string, string | number>,
+    params: Record<string, QueryParameter>,
     sourceTab: typeof TAB_EVENTS | typeof TAB_TIME_TRAVEL,
   ): Promise<OperationalEvent[]> {
     const sql = buildQuery(BACKUP_EVENTS, params);
@@ -457,7 +438,7 @@ export class EventsService {
   }
 
   private async fetchKeeperConnectionEvents(
-    params: Record<string, string | number>,
+    params: Record<string, QueryParameter>,
     sourceTab: typeof TAB_EVENTS | typeof TAB_TIME_TRAVEL,
   ): Promise<OperationalEvent[]> {
     const sql = buildQuery(KEEPER_CONNECTION_EVENTS, params);
@@ -508,7 +489,7 @@ export class EventsService {
   }
 
   private async fetchRestartEvents(
-    params: Record<string, string | number>,
+    params: Record<string, QueryParameter>,
     sourceTab: typeof TAB_EVENTS | typeof TAB_TIME_TRAVEL,
   ): Promise<OperationalEvent[]> {
     const sql = buildQuery(SERVER_RESTART_EVENTS, params);
@@ -547,7 +528,7 @@ export class EventsService {
   }
 
   private async fetchCrashEvents(
-    params: Record<string, string | number>,
+    params: Record<string, QueryParameter>,
     sourceTab: typeof TAB_EVENTS | typeof TAB_TIME_TRAVEL,
   ): Promise<OperationalEvent[]> {
     const sql = buildQuery(SERVER_CRASH_EVENTS, params);
@@ -577,7 +558,7 @@ export class EventsService {
   }
 
   private async fetchPartFailureEvents(
-    params: Record<string, string | number>,
+    params: Record<string, QueryParameter>,
     sourceTab: typeof TAB_EVENTS | typeof TAB_TIME_TRAVEL,
   ): Promise<OperationalEvent[]> {
     const sql = buildQuery(PART_FAILURE_EVENTS, params);
@@ -633,7 +614,7 @@ export class EventsService {
   }
 
   private async fetchBackgroundTaskFailureEvents(
-    params: Record<string, string | number>,
+    params: Record<string, QueryParameter>,
     sourceTab: typeof TAB_EVENTS | typeof TAB_TIME_TRAVEL,
   ): Promise<OperationalEvent[]> {
     const sql = buildQuery(BACKGROUND_TASK_FAILURE_EVENTS, params);
@@ -685,7 +666,7 @@ export class EventsService {
   }
 
   private async fetchOperationalErrorEvents(
-    params: Record<string, string | number>,
+    params: Record<string, QueryParameter>,
     sourceTab: typeof TAB_EVENTS | typeof TAB_TIME_TRAVEL,
   ): Promise<OperationalEvent[]> {
     const sql = buildQuery(OPERATIONAL_ERROR_EVENTS, params);
@@ -730,7 +711,7 @@ export class EventsService {
   }
 
   private async fetchReplicaReadonlyEpisodes(
-    params: Record<string, string | number>,
+    params: Record<string, QueryParameter>,
     sourceTab: typeof TAB_EVENTS | typeof TAB_TIME_TRAVEL,
   ): Promise<OperationalEvent[]> {
     const sql = buildQuery(REPLICA_READONLY_EPISODES, params);
@@ -765,7 +746,7 @@ export class EventsService {
   }
 
   private async fetchReplicationFailureEvents(
-    params: Record<string, string | number>,
+    params: Record<string, QueryParameter>,
     sourceTab: typeof TAB_EVENTS | typeof TAB_TIME_TRAVEL,
   ): Promise<OperationalEvent[]> {
     const sql = buildQuery(REPLICATION_FAILURE_EVENTS, params);
