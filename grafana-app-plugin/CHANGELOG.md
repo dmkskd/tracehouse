@@ -5,6 +5,21 @@ All notable changes to the TraceHouse Grafana plugin will be documented in this 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.18.0] - 2026-07-27
+
+### New features
+- **Events:** New view for investigating errors, failures, restarts, and related ClickHouse activity.
+- **Time Travel:** Added event correlation to the Timeline.
+- **Query Analysis:** Added [`EXPLAIN ANALYZE`](https://clickhouse.com/docs/reference/statements/explain#explain-analyze).
+- **Analytics / Dashboards:** Added Focus mode for exploring large dashboards one panel at a time.
+
+### Improvements
+- Reorganized the top navigation and grouped additional functionality under **More**.
+- **Queries / Merges:** Unified running and historical activity in a consistent view.
+
+### Bug fixes
+- Fixed a CSS issue affecting the Running and History tabs on the Queries and Merges pages.
+
 ## [0.10.0] - 2026-02-17
 
 ### Features
