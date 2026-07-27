@@ -5,6 +5,11 @@ All notable changes to the TraceHouse Grafana plugin will be documented in this 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.18.1] - 2026-07-27
+
+### Bug fixes
+- Fixed time-range handling across Events, Analytics, Queries, Merges, and Time Travel by normalizing custom ranges and generated ClickHouse timestamps to explicit UTC, preventing time shifts when the browser and ClickHouse server use different time zones.
+
 ## [0.18.0] - 2026-07-27
 
 ### New features
