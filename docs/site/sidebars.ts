@@ -45,6 +45,7 @@ const sidebars: SidebarsConfig = {
       type: 'category',
       label: 'Development',
       items: [
+        'development/getting-started',
         'development/project-structure',
         'development/building',
         'development/grafana-plugin',

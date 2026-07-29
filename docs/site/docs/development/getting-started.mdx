@@ -1,0 +1,128 @@
+import FeatureVideo from '@site/src/components/FeatureVideo';
+
+# Development Setup
+
+This guide is for contributors working with the TraceHouse source code. For installing and using a released build, see [Getting Started](../getting-started).
+
+## Source-Based Docker Demo
+
+The fastest way to run the current source with a local ClickHouse requires Git and Docker:
+
+```bash
+git clone https://github.com/dmkskd/tracehouse.git
+cd tracehouse/infra/quickstart
+docker compose up
+```
+
+This builds the app and starts a local ClickHouse instance. Open [http://localhost:8990](http://localhost:8990); the connection form is pre-filled, so you can select **Connect**.
+
+Override the ClickHouse image for a single run when testing another release:
+
+```bash
+CLICKHOUSE_IMAGE=clickhouse/clickhouse-server:23.8.16.40-alpine docker compose up
+```
+
+Stop the demo with `Ctrl+C`, followed by:
+
+```bash
+docker compose down
+```
+
+The ClickHouse data is kept in a Docker volume between runs.
+
+<FeatureVideo src="quick-start-1920.mp4" />
+
+## Contributor Environment
+
+### Prerequisites
+
+- **Node.js 20+ and npm** - Node.js 22 is used for release builds
+- **just** command runner ([installation](https://github.com/casey/just#installation))
+- **Docker** - optional for frontend-only work; required for the Docker stack and integration tests
+- **Python 3.10+ and uv** - required for test-data and workload scripts
+- **Kind and kubectl** - required only for Kubernetes development
+
+:::tip Bootstrap Script
+`./scripts/setup.sh --check` reports missing tools without changing your system.
+
+`./scripts/setup.sh` can install missing dependencies and then offers to install the npm workspace dependencies. On macOS it uses Homebrew and may install Homebrew if it is not present.
+:::
+
+### 1. Clone and Install
+
+```bash
+git clone https://github.com/dmkskd/tracehouse.git
+cd tracehouse
+./scripts/setup.sh --check
+./scripts/setup.sh
+```
+
+If you skip the npm installation prompt, run:
+
+```bash
+just install
+```
+
+### 2. Start the App
+
+```bash
+just frontend-start
+```
+
+This starts the Vite development server at [http://localhost:5173](http://localhost:5173) with hot reload and starts the local ClickHouse proxy on port `8990`.
+
+If you already have a ClickHouse instance, enter its host and credentials in the connection form. Otherwise, start one of the local environments below.
+
+### 3. Start a Local ClickHouse
+
+| | Local Binary | Docker Compose | Kubernetes (Kind) |
+|---|---|---|---|
+| **Command** | `just local-start` | `just docker-start` | `just k8s-start` |
+| **Startup time** | ~5 seconds | ~15 seconds | 3–5 minutes |
+| **Dependencies** | ClickHouse binary; setup can install it | Docker | Docker, Kind, and kubectl |
+| **ClickHouse topology** | Single node | Single node | 2 shards × 2 replicas |
+| **Additional services** | None | MinIO | Prometheus and Grafana |
+| **Best for** | Quick iteration | Day-to-day development | Cluster feature testing |
+
+For the usual development environment:
+
+```bash
+just docker-start
+```
+
+:::tip Full Development Stack
+`just start` starts the frontend and the full Docker Compose profile, including ClickHouse, MinIO, Prometheus, Grafana, Tempo, and the locally built Grafana plugin.
+:::
+
+### 4. Generate Test Data
+
+```bash
+just generate-data          # All test datasets
+just generate-data-quick    # Smaller dataset, faster
+```
+
+### 5. Generate Query Activity
+
+```bash
+just run-queries
+```
+
+Press `Ctrl+C` to stop the workload. See [Generating Activity](../guides/test-data#generating-activity) for available options.
+
+## Useful Commands
+
+```bash
+just              # List all available commands
+just status       # Show the status of local services
+just stop         # Stop the frontend and Docker Compose stack
+just restart      # Restart the frontend and Docker Compose stack
+just test         # Run the full test suite (requires Docker)
+```
+
+## Next Steps
+
+- [Project Structure](./project-structure) - repository layout and package boundaries
+- [Building](./building) - build outputs and distribution formats
+- [Testing](./testing) - unit, integration, and end-to-end tests
+- [Grafana Plugin Development](./grafana-plugin) - build and test the app inside Grafana
+- [Loading Test Data](../guides/test-data) - datasets, workloads, and connection configuration

@@ -46,11 +46,11 @@ The site is deployed to GitHub Pages via the `deploy-docs` GitHub Actions workfl
 ```
 docs/site/
 ├── docs/                  # Markdown content
-│   ├── getting-started.md
+│   ├── getting-started.mdx
 │   ├── architecture.md
 │   ├── guides/            # How-to guides
 │   ├── features/          # Feature documentation
-│   ├── development/       # Development guides (this section)
+│   ├── development/       # Development setup and contributor guides
 │   └── reference/         # Reference material
 ├── src/
 │   ├── pages/index.tsx    # Landing page

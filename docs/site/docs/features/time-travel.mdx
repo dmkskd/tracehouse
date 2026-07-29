@@ -2,17 +2,6 @@ import FeatureVideo from '@site/src/components/FeatureVideo';
 
 # Time Travel
 
-## Operational events
-
-The event rail below the detailed chart shows query resource failures, DDL,
-server lifecycle events, and background/storage failures alongside the
-continuous metrics. Filters can include or exclude severities, categories, or
-individual event types.
-
-Select an event to pin its timestamp and see which queries, merges, and
-mutations were running then. Use **View details** to open the top-level
-**Events** page, including its source evidence and nearby events.
-
 <FeatureVideo src="time-travel-1920.mp4" />
 
 A ClickHouse cluster is constantly busy - merges, mutations, replication, background moves - even when no user queries are running. Most users only think about their own queries, but all this background activity competes for the same CPU, memory, and I/O. Time Travel lets you see everything that was happening at any point in time, so you can understand what else might have affected your workload's performance.
@@ -28,10 +17,34 @@ The main view is a time-series chart showing server metrics with query, merge, a
 
 Each query, merge, and mutation in the time window is drawn as a horizontal band whose height reflects its share of the selected metric. Colors distinguish queries (blue), merges (orange), and mutations (pink). Category toggles in the header let you hide any of the three to reduce clutter.
 
+## Events
+
+In the 2D view, event markers show changes, failures, and server activity at the
+time they happened. These include:
+
+- Server restarts and crashes
+- Queries that ran out of memory, timed out, or were rejected
+- Table and configuration changes
+- Replication and Keeper problems
+- Storage and background task failures
+- Maintenance activity
+
+Only supported event types are shown. Not every ClickHouse log entry becomes a
+marker.
+
+Use the **Events** control to show or hide the markers and filter them by
+severity, category, or event type. Events also appear in the navigator, making
+it easier to find an event outside the detailed chart window.
+
+Select a marker to keep the chart at that time and see which queries, merges,
+and mutations were active. Use **View details** to open the [Events](./events)
+page and see more information.
+
 ## Interaction
 
 - **Hover** over the chart to see a tooltip with exact values at that second
 - **Click** to pin a timestamp. The side panel updates to show all activity at that moment.
+- **Select an event** to keep the chart at that time and open a summary.
 - **Drag** a region to zoom in. Zooming fetches per-second sampled data from `processes_history` / `merges_history` (if available) for higher resolution than the default minute-level aggregation.
 - Click a query or merge band on the chart, or a row in the side panel, to open the detail modal.
 

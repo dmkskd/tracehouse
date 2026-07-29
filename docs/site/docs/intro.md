@@ -2,43 +2,21 @@
 
 TraceHouse is a real-time monitoring and visualization tool for ClickHouse databases. It shows what's happening inside your ClickHouse cluster through resource attribution, visual exploration, and system table analysis.
 
-## What It Does
-
-Instead of just showing "CPU is at 200%", it breaks that down: 120% from queries, 60% from merges, 15% from a stuck mutation on table Y. Same for memory, disk I/O, etc.
-
-It watches three things in a running ClickHouse system:
-
-### Server Resources
-
-CPU cores, memory, disks, network. The physical limits and how they're being used.
-
-### Queries
-
-Clients submitting SELECTs, INSERTs, DDL. Each query consumes resources and competes for shared capacity.
-
-### Background Work
-
-ClickHouse's asynchronous operations:
-
-- **Merges** - combining smaller parts into larger ones
-- **Mutations** - ALTER UPDATE/DELETE rewriting parts
-- **Replication** - fetching parts, replaying the replication log
-- **Materialized Views** - triggered on insert, transforming and routing data
-- **TTL Processing** - moving, re-compressing, or deleting expired data
-
 ## Key Features
 
 | Feature | Description |
 |---------|-------------|
-| Cluster Overview | Real-time CPU, memory, disk I/O with resource attribution |
-| Database Explorer | Browse databases, tables, parts, columns, and merge lineage |
-| Merge Tracker | Live merge monitoring with dependency diagrams and timelines |
-| Query Monitor | Running queries with per-query resource breakdown |
-| Engine Internals | Thread pools, memory allocators, CPU sampling, PK index analysis |
-| Analytics | Custom dashboards, preset queries, and ordering key diagnostics |
+| Overview | See live CPU, memory, disk I/O, and network usage attributed to queries, merges, mutations, and other work |
+| Time Travel | Correlate historical resource usage with the queries, merges, mutations, and events active at any point in time |
+| Analytics | Analyze ordering-key efficiency, run diagnostic SQL, build dashboards, and compare trends and correlations |
+| Events | Investigate query failures, DDL, server, replication, Keeper, and storage events with their source evidence |
+| Queries | Monitor live and historical queries, then inspect resource usage, scan efficiency, and distributed execution |
+| Merges and Mutations | Track active and historical work with progress, ETA, throughput, classification, and dependencies |
+| Database Explorer | Browse databases, tables, parts, columns, merge history, lineage, and storage efficiency |
+| Cluster and Replication | Visualize cluster topology, node health, replica state, queue depth, and replication lag |
+| Engine Internals | Inspect thread pools, memory allocation, CPU sampling, primary-key indexes, and dictionaries |
 
 ## Next Steps
 
-- [Getting Started](./getting-started) - run the app in under a minute
-- [Deployment](./guides/deployment) - build and ship for production
-- [Architecture](./architecture) - understand the project structure
+- [Getting Started](./getting-started) - choose how to install and run TraceHouse
+- [Explore Features](./features/guided-tour) - see what TraceHouse can show you

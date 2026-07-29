@@ -1,37 +1,84 @@
 # Events
 
-Events is a historical incident-investigation view for operational occurrences
-that change how nearby ClickHouse workload should be interpreted.
+Events shows changes, failures, and server activity recorded by ClickHouse. It
+helps explain what happened before or during a problem without requiring a
+manual search across several system tables.
 
-The distribution groups evidence into broad lanes:
+## What Is an Event?
 
-- server lifecycle;
-- query execution;
-- replication;
-- Keeper/coordination;
-- storage;
-- schema and configuration changes;
-- maintenance.
+An event records a change or problem at a specific time. Examples include a
+server restart, a query running out of memory, a table change, or a replication
+failure.
 
-Points represent discrete occurrences such as a query OOM, DDL, crash, or
-replication data-loss counter increase. Spans represent sampled state episodes,
-such as one or more replicas being read-only until recovery was observed.
+Events are shown alongside the CPU, memory, network, and disk charts in
+[Time Travel](./time-travel). Normal changes in those charts are not treated as
+events, and this page does not replace an alerting system.
 
-Drag across the distribution to narrow the investigation range. Search or
-filter by severity, category, and event type, then select an event to inspect
-its source evidence. Query-backed events can open the standard **Query Details**
-modal. **Open in Time Travel** opens Time Travel centred and pinned at that
-occurrence so the surrounding queries, merges, and mutations can be correlated.
+The list focuses on supported events that can help explain a problem. It does
+not include every ClickHouse log entry and is not exhaustive.
 
-Event sources are capability-gated independently. The source indicator reports
-partial coverage when a system log, metric column, permission, or retained time
-range is unavailable.
+## Event Categories
 
-Replication history currently includes host-level read-only episodes and
-persisted data-loss/failed-fetch/failed-check deltas from `system.metric_log`.
-Live `system.replicas` and `system.replication_queue` are current snapshots, not
-history, so per-table historical episodes require future sampling and
-persistence.
+Events are grouped into broad categories:
 
-For the full source, retention, precision, and classification contract, see
+- Server lifecycle
+- Query execution
+- Replication
+- Keeper and coordination
+- Storage
+- Schema and configuration changes
+- Maintenance
+
+Some events happen at one moment, such as a failed query, table change, or
+server crash. Others last for a period, such as a replica remaining read-only
+until it recovers.
+
+## Finding an Event
+
+The chart groups similar events together over the selected time range.
+Available actions include:
+
+- Drag across the chart to focus on a shorter time range
+- Search by message, host, table, or query ID
+- Filter by severity, category, and event type
+- Expand a group to see each event
+- Select an event to see its details and what was happening nearby
+
+## Event Details
+
+The details panel shows when the event happened, how serious it was, where the
+information came from, and any useful query, host, or table details. Query
+events can also open the standard **Query Details** view.
+
+The page also shows what was happening around the event:
+
+- Queries that were active at the event time
+- Host CPU and memory before and after the event
+- Related log messages
+- Other nearby events
+
+If one source is unavailable, the page still shows information from the sources
+it can read.
+
+## Open in Time Travel
+
+Select **Open in Time Travel** to open the chart at the event time. The event can
+then be compared with the CPU, memory, network, and disk charts, as well as the
+queries, merges, and mutations that were active.
+
+From Time Travel, select an event marker and use **View details** to open it on
+the Events page.
+
+## Data Availability
+
+TraceHouse reads events from ClickHouse system logs and saved metrics. Available
+events depend on which system tables are accessible and how long their data is
+kept.
+
+The source indicator shows when some information is missing.
+
+Some ClickHouse tables only show the current state. Because of this, TraceHouse
+may not be able to show every past replication problem.
+
+For the complete list of supported events and their ClickHouse sources, see
 [Time Travel Events](https://github.com/TraceHouse/tracehouse/blob/main/docs/metrics/time-travel-events.md).

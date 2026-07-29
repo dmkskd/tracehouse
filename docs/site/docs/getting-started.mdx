@@ -1,132 +1,96 @@
-import FeatureVideo from '@site/src/components/FeatureVideo';
-
 # Getting Started
 
 :::caution Early Stage
-This project is under heavy development. Breaking changes are expected. Saved dashboards and queries are stored in browser localStorage and may be lost after updates.
+TraceHouse is under heavy development and breaking changes are expected. Saved connections, dashboards, and queries are stored in your browser and may be affected by updates.
 :::
 
-:::note Platform
-This project has only been tested on macOS (Apple Silicon / ARM). Other platforms should work but are not officially supported.
-:::
+## Choose How to Run TraceHouse
 
-## Quickstart
+TraceHouse is available as a Grafana app plugin, a standalone application, or a single HTML file, so you can choose the option that best fits your environment and deployment requirements.
 
-The fastest way to try the app. Requires Docker.
-
-```bash
-# Clone the repo
-git clone https://github.com/dmkskd/tracehouse.git && cd tracehouse
-# Start the app and a local ClickHouse instance
-cd infra/quickstart && docker compose up
-```
-
-This starts the app and a local ClickHouse instance. Open [http://localhost:8990](http://localhost:8990) - the connection form is pre-filled, just click Connect.
-
-Override the image for a single run when testing another ClickHouse release:
-
-```bash
-CLICKHOUSE_IMAGE=clickhouse/clickhouse-server:23.8.16.40-alpine docker compose up
-```
-
-<FeatureVideo src="quick-start-1920.mp4" />
-
-If you already have a ClickHouse instance you want to monitor instead, see [Connecting to ClickHouse](./guides/connecting).
-
-### Try Online
-
-You can also [try TraceHouse online](https://dmkskd.github.io/tracehouse-assets/tracehouse.html) without installing anything. It is a single-file HTML that runs entirely in your browser with any [CORS-enabled](./guides/connecting#cors-proxy) ClickHouse instance.
-
-The online version will ask for your ClickHouse credentials. If you prefer not to enter them on a third-party page, download the HTML file from the [releases page](https://github.com/dmkskd/tracehouse/releases/latest) and open it locally.
-
-:::note Resource Usage
-The app polls ClickHouse system tables at regular intervals. You can review the cost via the built-in Self-Monitoring dashboard (Analytics > Self-Monitoring). See [Deployment - Resource Usage](./guides/deployment) for details.
-:::
-
----
-
-## Development Setup
-
-For working on the code and running the full tooling. Requires Node.js, `just`, and optionally Docker for a local ClickHouse.
-
-### Prerequisites
-
-- **Node.js** 18+ and npm
-- **just** command runner ([installation](https://github.com/casey/just#installation))
-- **Docker** (optional, for local ClickHouse)
-- **uv** Python package manager (for data loading scripts)
-
-:::tip Quick Bootstrap
-`./scripts/setup.sh` checks and installs `just`, `uv`, `node`, and `npm`.
-Use `./scripts/setup.sh --check` for a dry-run.
-:::
-
-### 1. Clone and Install
-
-```bash
-git clone https://github.com/dmkskd/tracehouse.git
-cd tracehouse
-./scripts/setup.sh
-```
-
-### 2. Start the App
-
-```bash
-just frontend-start
-```
-
-Opens the Vite dev server on [http://localhost:5173](http://localhost:5173) with hot reload, and the CORS proxy on `localhost:8990`.
-
-If you already have a ClickHouse instance, enter its host and credentials in the connection form. Otherwise, continue below.
-
-### 3. Start a Local ClickHouse (optional)
-
-| | Local Binary | Docker Compose | Kubernetes (Kind) |
+| | Grafana App Plugin | Standalone App | Single HTML File |
 |---|---|---|---|
-| **Command** | `just local-start` | `just docker-start` | `just k8s-start` |
-| **Startup time** | ~5 seconds | ~15 seconds | 3-5 minutes |
-| **Dependencies**| None | Docker | Docker + Kind |
-| **ClickHouse topology** | Single node | Single node | 2 shards x 2 replicas |
-| **Includes Prometheus + Grafana** | No | Yes | Yes |
-| **Best for** | Quick iteration | Day-to-day development | Testing cluster features |
+| **Best for** | Teams already using Grafana | Local use or a dedicated deployment | Trying or sharing TraceHouse |
+| **Additional requirements** | Grafana and a ClickHouse data source | A supported Linux or Apple Silicon macOS host | A CORS-enabled ClickHouse HTTP endpoint |
+| **ClickHouse CORS required** | No | No - [proxy included](./guides/connecting#cors-proxy) | Yes |
+| **Install from** | Grafana plugin catalog | GitHub release | Online or GitHub release |
+
+All options require a modern web browser. If you are unsure whether your ClickHouse endpoint supports browser connections, see [Connecting to ClickHouse](./guides/connecting#cors-proxy) for an explanation of CORS and the available proxy options.
+
+If you already use Grafana, the Grafana app plugin is the easiest option. Otherwise, use the standalone app unless your ClickHouse HTTP endpoint already allows browser requests.
+
+## Option 1: Install the Grafana App Plugin
+
+The Grafana app uses your existing Grafana ClickHouse data source. Grafana handles credentials, connectivity, and CORS.
+
+1. Install and configure the [Grafana ClickHouse data source plugin](https://grafana.com/grafana/plugins/grafana-clickhouse-datasource/) if you do not already have a ClickHouse data source.
+2. Install [TraceHouse from the Grafana plugin catalog](https://grafana.com/grafana/plugins/dmkskd-tracehouse-app/).
+3. In Grafana, open **Administration → Plugins and data → Plugins**, select **TraceHouse**, and enable it.
+4. Open TraceHouse from the Grafana sidebar and select your ClickHouse data source.
+
+The catalog page lists the currently supported Grafana versions.
+
+## Option 2: Run the Standalone App
+
+The standalone app packages the TraceHouse frontend and its [ClickHouse proxy](./guides/connecting#cors-proxy) into one executable. The proxy forwards browser requests to ClickHouse server-side, so the ClickHouse endpoint does not need to allow direct browser connections.
+
+Download the archive for your platform from the [latest GitHub release](https://github.com/dmkskd/tracehouse/releases/latest):
+
+| Platform | Download |
+|---|---|
+| Linux x86_64 | [tracehouse-x86_64-unknown-linux-gnu.tar.gz](https://github.com/dmkskd/tracehouse/releases/latest/download/tracehouse-x86_64-unknown-linux-gnu.tar.gz) |
+| Linux ARM64 | [tracehouse-aarch64-unknown-linux-gnu.tar.gz](https://github.com/dmkskd/tracehouse/releases/latest/download/tracehouse-aarch64-unknown-linux-gnu.tar.gz) |
+| macOS Apple Silicon | [tracehouse-aarch64-apple-darwin.tar.gz](https://github.com/dmkskd/tracehouse/releases/latest/download/tracehouse-aarch64-apple-darwin.tar.gz) |
+
+Or download it from the command line with `curl`. Set `PLATFORM` for your system:
 
 ```bash
-# Recommended for development
-just docker-start
+# Linux x86_64
+PLATFORM=x86_64-unknown-linux-gnu
+
+# Linux ARM64
+# PLATFORM=aarch64-unknown-linux-gnu
+
+# macOS Apple Silicon
+# PLATFORM=aarch64-apple-darwin
+
+curl -fLO "https://github.com/dmkskd/tracehouse/releases/latest/download/tracehouse-${PLATFORM}.tar.gz"
+tar -xzf "tracehouse-${PLATFORM}.tar.gz"
+./tracehouse-${PLATFORM}/tracehouse
 ```
 
-:::tip
-`just start` starts both Docker Compose infrastructure and the frontend in one go.
+Open [http://localhost:8990](http://localhost:8990), add your ClickHouse connection, and connect.
+
+:::warning Before Sharing a Deployment
+The standalone app does not provide user authentication or TLS. It is safe to bind locally for personal use. Before exposing it to a network, restrict access or put it behind an authenticated HTTPS reverse proxy, and always connect with a read-only ClickHouse account.
 :::
 
-### 4. Generate Test Data
+See [Deployment](./guides/deployment) for port options and production considerations.
 
-```bash
-just generate-data          # All test datasets
-just generate-data-quick    # Small dataset, faster
-```
+## Option 3: Use the Single HTML File
 
-### 5. Generate Query Activity
+The single-file build runs entirely in your browser:
 
-```bash
-just run-queries        # Ctrl+C to stop
-```
+- [Try TraceHouse online](https://dmkskd.github.io/tracehouse-assets/tracehouse.html)
+- [Download `tracehouse.html`](https://github.com/dmkskd/tracehouse/releases/latest/download/tracehouse.html) and open it locally
 
-See [Generating Activity](./guides/test-data#generating-activity) for options.
+:::caution CORS Required
+The HTML build connects directly from your browser to ClickHouse. Your ClickHouse HTTP endpoint must return suitable CORS headers. If it does not, use the standalone app or Grafana plugin instead.
 
-### Useful Commands
+ClickHouse Cloud supports browser connections. Many self-managed, Kubernetes, and hosted ClickHouse environments do not enable CORS by default.
+:::
 
-```bash
-just              # List all available commands
-just status       # Show status of all services
-just stop         # Stop everything
-just restart      # Restart all services
-just test         # Run all tests
-```
+For details, see [Connecting to ClickHouse](./guides/connecting#cors-proxy).
+
+## Connect with a Read-Only Account
+
+TraceHouse reads ClickHouse system tables to power its dashboards. Use a dedicated read-only account and grant only the access you need.
+
+See [Required Permissions](./guides/connecting#required-permissions) for the recommended grants and optional settings used by features such as flamegraphs.
 
 ## Next Steps
 
-- [Connecting to ClickHouse](./guides/connecting) - connect to existing clusters
-- [Architecture](./architecture) - architecture and deployment options
-- [Deployment](./guides/deployment) - build and ship for production
-- [Loading Test Data](./guides/test-data) - test datasets and data generation
+- [Connecting to ClickHouse](./guides/connecting) - connectivity, permissions, and environment-specific notes
+- [Deployment](./guides/deployment) - explore deployment options and build TraceHouse from source
+- [Architecture](./architecture) - understand the available connection and deployment modes
+- [Development Setup](./development/getting-started) - clone the source, run the development server, and generate test data

@@ -29,10 +29,10 @@ For working on the code. Requires Node.js 18+, [just](https://github.com/casey/j
 ```bash
 ./scripts/setup.sh        # Bootstrap dependencies
 just frontend-start       # http://localhost:5173 (hot reload)
-just docker-start         # Start local ClickHouse + Prometheus + Grafana
+just docker-start         # Start local ClickHouse + MinIO
 ```
 
-See the [Getting Started guide](docs/site/docs/getting-started.md) for full setup options including Kubernetes.
+See the [Development Setup guide](docs/site/docs/development/getting-started.mdx) for full setup options including Kubernetes.
 
 ## Project Structure
 

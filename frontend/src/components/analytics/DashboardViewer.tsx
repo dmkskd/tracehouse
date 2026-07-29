@@ -95,6 +95,8 @@ interface FocusStageContext {
   onPreviousPanel: () => void;
   onNextPanel: () => void;
   onNextSection: () => void;
+  allPanelsExpanded: boolean;
+  onToggleAllPanels: () => void;
 }
 
 interface FocusStageItem {
@@ -145,6 +147,19 @@ const FocusStageHeader: React.FC<{
     <div style={{ marginLeft: 'auto', display: 'flex', alignItems: 'center', gap: 6 }}>
       <button onClick={context.onPreviousPanel} style={focusStageNavButtonStyle} title="Previous panel (↑)">← Previous</button>
       <button onClick={context.onNextPanel} style={focusStageNavButtonStyle} title="Next panel (↓)">Next →</button>
+      <button
+        onClick={context.onToggleAllPanels}
+        aria-pressed={context.allPanelsExpanded}
+        style={{
+          ...focusStageNavButtonStyle,
+          color: context.allPanelsExpanded ? 'var(--accent-primary, #6366f1)' : 'var(--text-secondary)',
+          background: context.allPanelsExpanded ? 'rgba(99,102,241,0.10)' : 'var(--bg-secondary)',
+          borderColor: context.allPanelsExpanded ? 'rgba(99,102,241,0.28)' : 'var(--border-primary)',
+        }}
+        title={context.allPanelsExpanded ? 'Return to one-panel focus view' : 'Expand every dashboard panel'}
+      >
+        {context.allPanelsExpanded ? 'Collapse all' : 'Expand all'}
+      </button>
       <button onClick={onExit} style={focusStageNavButtonStyle} title="Return to dashboard grid (Esc)">Grid ⌗</button>
     </div>
   </div>
@@ -176,7 +191,7 @@ const FocusAccordionRows: React.FC<{
           <button
             role="listitem"
             onClick={() => onSelectPanel(item.globalIndex)}
-            title={`Expand ${item.title}${item.description ? ` — ${item.description}` : ''}`}
+            aria-label={`Expand ${item.title}`}
             style={{
               width: '100%', height: 58, display: 'grid',
               gridTemplateColumns: '28px 8px minmax(0, 1fr) minmax(110px, 190px) 20px',
@@ -186,8 +201,6 @@ const FocusAccordionRows: React.FC<{
               cursor: 'pointer', textAlign: 'left', fontFamily: 'inherit',
               transition: 'background 0.15s ease, border-color 0.15s ease, transform 0.15s ease',
             }}
-            onMouseEnter={event => { event.currentTarget.style.background = 'var(--bg-card-hover, rgba(88,166,255,0.06))'; }}
-            onMouseLeave={event => { event.currentTarget.style.background = 'var(--bg-secondary)'; }}
           >
             <span style={{ color: 'var(--text-muted)', fontFamily: 'monospace', fontSize: 9, textAlign: 'center' }}>
               {String(item.globalIndex + 1).padStart(2, '0')}
@@ -474,7 +487,8 @@ const DashboardPanelCard: React.FC<{
   onOpenQueryDetail?: (query: QuerySeries, opts?: { tab?: QueryModalTab }) => void;
   onOpenQuery?: (query: Query, dashboardId: string) => void;
   focusStage?: FocusStageContext;
-}> = ({ panel, timeRangeOverride, dashboardId, isFocused, onToggleFocus, isFullscreen, onToggleFullscreen, isHidden, hoveredTimestamp, onTimestampHover, onTimeSeriesData, correlationValues, isHoveredPanel, filterParams, panelIndex, onOpenQueryDetail, onOpenQuery, focusStage }) => {
+  isFocusStageActive?: boolean;
+}> = ({ panel, timeRangeOverride, dashboardId, isFocused, onToggleFocus, isFullscreen, onToggleFullscreen, isHidden, hoveredTimestamp, onTimestampHover, onTimeSeriesData, correlationValues, isHoveredPanel, filterParams, panelIndex, onOpenQueryDetail, onOpenQuery, focusStage, isFocusStageActive = false }) => {
   const services = useClickHouseServices();
   const requiredCapability = useMonitoringCapabilitiesStore(state => (
     panel.requiredCapability
@@ -744,12 +758,17 @@ const DashboardPanelCard: React.FC<{
   if (!preset) {
     const expandedTop = isFocused ? focusStage?.viewportTop ?? 48 : 48;
     return (
-      <div style={expanded ? {
+      <div data-dashboard-panel-index={panelIndex} style={expanded ? {
         position: 'fixed', top: expandedTop, left: 0, right: isFocused ? FOCUS_STAGE_RAIL_WIDTH : 0, bottom: 0,
         zIndex: isFocused ? FOCUS_STAGE_Z_INDEX : 1999,
         background: 'var(--bg-primary)', display: 'flex', flexDirection: 'column',
         overflowX: 'hidden', overflowY: isFocused ? 'auto' : 'hidden',
-      } : { ...panelStyle, display: isHidden ? 'none' : 'flex' }}>
+      } : {
+        ...panelStyle,
+        display: isHidden ? 'none' : 'flex',
+        borderColor: isFocusStageActive ? 'rgba(99,102,241,0.62)' : panelStyle.borderColor,
+        boxShadow: isFocusStageActive ? '0 0 0 2px rgba(99,102,241,0.10)' : undefined,
+      }}>
         {isFocused && focusStage && <FocusStageHeader context={focusStage} onExit={onToggleFocus} />}
         {isFocused && focusStage && <FocusAccordionRows items={focusItemsBefore} onSelectPanel={focusStage.onSelectPanel} />}
         {isFocused && focusedItem?.startsSection && (
@@ -773,13 +792,19 @@ const DashboardPanelCard: React.FC<{
   const expandedTop = isFocused ? focusStage?.viewportTop ?? 48 : 48;
   return (
     <div
+      data-dashboard-panel-index={panelIndex}
       onMouseEnter={() => setHovered(true)}
       onMouseLeave={() => setHovered(false)}
       style={expanded ? {
         position: 'fixed', top: expandedTop, left: 0, right: isFocused ? FOCUS_STAGE_RAIL_WIDTH : 0, bottom: 0,
         zIndex: isFocused ? FOCUS_STAGE_Z_INDEX : 1999, background: 'var(--bg-primary)',
         display: 'flex', flexDirection: 'column', overflowX: 'hidden', overflowY: isFocused ? 'auto' : 'hidden',
-      } : { ...panelStyle, display: isHidden ? 'none' : 'flex' }}>
+      } : {
+        ...panelStyle,
+        display: isHidden ? 'none' : 'flex',
+        borderColor: isFocusStageActive ? 'rgba(99,102,241,0.62)' : panelStyle.borderColor,
+        boxShadow: isFocusStageActive ? '0 0 0 2px rgba(99,102,241,0.10)' : undefined,
+      }}>
       {isFocused && focusStage && <FocusStageHeader context={focusStage} onExit={onToggleFocus} />}
       {isFocused && focusStage && <FocusAccordionRows items={focusItemsBefore} onSelectPanel={focusStage.onSelectPanel} />}
       {isFocused && focusedItem?.startsSection && (
@@ -1956,9 +1981,20 @@ type ViewState = { mode: 'list' } | { mode: 'view'; dashboardId: string } | { mo
 export const DashboardViewer: React.FC<{ initialDashboardId?: string; onOpenQueryDetail?: (query: QuerySeries, opts?: { tab?: QueryModalTab }) => void; onOpenQuery?: (query: Query, dashboardId: string) => void }> = ({ initialDashboardId, onOpenQueryDetail, onOpenQuery }) => {
   const [dashboards, setDashboards] = useState<Dashboard[]>(() => loadDashboards());
   const [focusedPanelIndex, setFocusedPanelIndex] = useState<number | null>(null);
+  const [allFocusPanelsExpanded, setAllFocusPanelsExpanded] = useState(false);
   const [fullscreenPanelIndex, setFullscreenPanelIndex] = useState<number | null>(null);
   const [focusStageTop, setFocusStageTop] = useState(resolveFocusStageTop);
   const [toast, setToast] = useState<string | null>(null);
+
+  const selectFocusedPanel = useCallback((panelIndex: number) => {
+    setFocusedPanelIndex(panelIndex);
+  }, []);
+
+  const exitFocusStage = useCallback(() => {
+    setFocusedPanelIndex(null);
+    setAllFocusPanelsExpanded(false);
+  }, []);
+
   useEffect(() => {
     if (focusedPanelIndex === null) return;
     const updateTop = () => setFocusStageTop(resolveFocusStageTop());
@@ -2055,10 +2091,10 @@ export const DashboardViewer: React.FC<{ initialDashboardId?: string; onOpenQuer
   useEffect(() => {
     panelDataRef.current.clear();
     setHoveredTimestamp(null);
-    setFocusedPanelIndex(null);
+    exitFocusStage();
     setFullscreenPanelIndex(null);
     lastTimestampRef.current = null;
-  }, [activeDashboardId]);
+  }, [activeDashboardId, exitFocusStage]);
 
   const activeDashboard = view.mode === 'view'
     ? dashboards.find(d => d.id === view.dashboardId)
@@ -2148,7 +2184,9 @@ export const DashboardViewer: React.FC<{ initialDashboardId?: string; onOpenQuer
   ), [panelSections, panelDataVersion]);
 
   const hasSections = panelSections.some(s => s.name !== null);
-  const expandedPanelIndex = focusedPanelIndex ?? fullscreenPanelIndex;
+  const expandedPanelIndex = allFocusPanelsExpanded
+    ? fullscreenPanelIndex
+    : focusedPanelIndex ?? fullscreenPanelIndex;
   const focusedSection = focusedPanelIndex === null
     ? undefined
     : panelSections.find(section => section.panels.some(entry => entry.globalIndex === focusedPanelIndex));
@@ -2165,9 +2203,25 @@ export const DashboardViewer: React.FC<{ initialDashboardId?: string; onOpenQuer
   }, [activeDashboard]);
 
   const moveFocusedSection = useCallback((direction: -1 | 1) => {
-    setFocusedPanelIndex(current =>
-      current === null ? current : adjacentSectionPanelIndex(panelSections, current, direction));
+    setFocusedPanelIndex(current => {
+      if (current === null) return current;
+      return adjacentSectionPanelIndex(panelSections, current, direction);
+    });
   }, [panelSections]);
+
+  const toggleAllFocusPanels = useCallback(() => {
+    setAllFocusPanelsExpanded(expanded => !expanded);
+  }, []);
+
+  useEffect(() => {
+    if (!allFocusPanelsExpanded || focusedPanelIndex === null) return;
+    const frame = window.requestAnimationFrame(() => {
+      document
+        .querySelector<HTMLElement>(`[data-dashboard-panel-index="${focusedPanelIndex}"]`)
+        ?.scrollIntoView({ block: 'start', behavior: 'smooth' });
+    });
+    return () => window.cancelAnimationFrame(frame);
+  }, [allFocusPanelsExpanded, focusedPanelIndex]);
 
   useEffect(() => {
     if (focusedPanelIndex === null && fullscreenPanelIndex === null) return;
@@ -2183,12 +2237,12 @@ export const DashboardViewer: React.FC<{ initialDashboardId?: string; onOpenQuer
       ) return;
       event.preventDefault();
       event.stopImmediatePropagation();
-      setFocusedPanelIndex(null);
+      exitFocusStage();
       setFullscreenPanelIndex(null);
     };
     window.addEventListener('keydown', handleExpandedEscape, true);
     return () => window.removeEventListener('keydown', handleExpandedEscape, true);
-  }, [focusedPanelIndex, fullscreenPanelIndex]);
+  }, [exitFocusStage, focusedPanelIndex, fullscreenPanelIndex]);
 
   useEffect(() => {
     if (focusedPanelIndex === null) return;
@@ -2235,6 +2289,26 @@ export const DashboardViewer: React.FC<{ initialDashboardId?: string; onOpenQuer
     window.addEventListener('keydown', handleDashboardEscape, true);
     return () => window.removeEventListener('keydown', handleDashboardEscape, true);
   }, [focusedPanelIndex, fullscreenPanelIndex, view.mode]);
+
+  const focusStageContext: FocusStageContext | undefined = (
+    focusedPanelIndex !== null &&
+    focusedSection &&
+    activeDashboard
+  ) ? {
+      viewportTop: focusStageTop,
+      sectionName: focusedSection.name ?? 'General',
+      sectionPosition: focusedSectionPanelIndex + 1,
+      sectionPanelCount: focusedSection.panels.length,
+      panelPosition: focusedPanelIndex + 1,
+      panelCount: activeDashboard.panels.length,
+      items: focusStageItems,
+      onSelectPanel: selectFocusedPanel,
+      onPreviousPanel: () => moveFocusedPanel(-1),
+      onNextPanel: () => moveFocusedPanel(1),
+      onNextSection: () => moveFocusedSection(1),
+      allPanelsExpanded: allFocusPanelsExpanded,
+      onToggleAllPanels: toggleAllFocusPanels,
+    } : undefined;
 
   // ─── List view ───
   if (view.mode === 'list') {
@@ -2320,7 +2394,8 @@ export const DashboardViewer: React.FC<{ initialDashboardId?: string; onOpenQuer
             <button
               onClick={() => {
                 setFullscreenPanelIndex(null);
-                setFocusedPanelIndex(activeDashboard.panels.length > 0 ? 0 : null);
+                if (activeDashboard.panels.length > 0) selectFocusedPanel(0);
+                else exitFocusStage();
               }}
               className="tab dashboard-header-action"
               style={{
@@ -2400,7 +2475,17 @@ export const DashboardViewer: React.FC<{ initialDashboardId?: string; onOpenQuer
       )}
 
       {/* Grid of panels */}
-      <div style={{ flex: 1, overflow: 'auto', padding: 24 }}>
+      <div style={allFocusPanelsExpanded ? {
+        position: 'fixed', top: focusStageTop, left: 0, right: FOCUS_STAGE_RAIL_WIDTH, bottom: 0,
+        zIndex: FOCUS_STAGE_Z_INDEX, display: 'flex', flexDirection: 'column',
+        overflow: 'hidden', background: 'var(--bg-primary)',
+      } : { flex: 1, overflow: 'auto', padding: 24 }}>
+        {allFocusPanelsExpanded && focusStageContext && (
+          <FocusStageHeader context={focusStageContext} onExit={exitFocusStage} />
+        )}
+        <div style={allFocusPanelsExpanded ? {
+          flex: 1, minHeight: 0, overflow: 'auto', padding: '18px 24px 28px',
+        } : { display: 'contents' }}>
         {/* Overlay chart panel */}
         {overlayVisible && (
           <div style={{
@@ -2415,7 +2500,9 @@ export const DashboardViewer: React.FC<{ initialDashboardId?: string; onOpenQuer
           </div>
         )}
         {panelSections.map((section, sIdx) => {
-          const isCollapsed = section.name !== null && collapsedSections.has(section.name);
+          const isCollapsed = !allFocusPanelsExpanded &&
+            section.name !== null &&
+            collapsedSections.has(section.name);
           const isExpandedSection = expandedPanelIndex !== null &&
             section.panels.some(entry => entry.globalIndex === expandedPanelIndex);
           return (
@@ -2425,9 +2512,12 @@ export const DashboardViewer: React.FC<{ initialDashboardId?: string; onOpenQuer
                 <button
                   onClick={() => toggleSection(section.name!)}
                   style={{
-                    display: 'flex', alignItems: 'center', gap: 8, width: '100%',
-                    padding: '10px 4px', marginTop: sIdx > 0 ? 12 : 0, marginBottom: isCollapsed ? 0 : 8,
-                    background: 'none', border: 'none', borderBottom: '1px solid var(--border-primary)',
+                  display: 'flex', alignItems: 'center', gap: 8, width: '100%',
+                  padding: '10px 4px', marginTop: sIdx > 0 ? 12 : 0, marginBottom: isCollapsed ? 0 : 8,
+                  maxWidth: allFocusPanelsExpanded ? FOCUS_STAGE_READING_WIDTH : undefined,
+                  marginLeft: allFocusPanelsExpanded ? 'auto' : undefined,
+                  marginRight: allFocusPanelsExpanded ? 'auto' : undefined,
+                  background: 'none', border: 'none', borderBottom: '1px solid var(--border-primary)',
                     cursor: 'pointer', textAlign: 'left',
                   }}
                 >
@@ -2449,10 +2539,13 @@ export const DashboardViewer: React.FC<{ initialDashboardId?: string; onOpenQuer
               {(!isCollapsed || isExpandedSection) && (
                 <div style={{
                   display: 'grid',
-                  gridTemplateColumns: `repeat(${activeDashboard.columns}, 1fr)`,
+                  gridTemplateColumns: allFocusPanelsExpanded ? 'minmax(0, 1fr)' : `repeat(${activeDashboard.columns}, 1fr)`,
                   gridAutoRows: '420px',
                   gap: 16,
                   position: 'relative', zIndex: 0,
+                  width: allFocusPanelsExpanded ? 'calc(100% - 36px)' : undefined,
+                  maxWidth: allFocusPanelsExpanded ? FOCUS_STAGE_READING_WIDTH : undefined,
+                  margin: allFocusPanelsExpanded ? '0 auto 8px' : undefined,
                   marginBottom: hasSections ? 8 : 0,
                 }}>
                   {section.panels.map(({ panel, globalIndex: i }) => (
@@ -2461,14 +2554,22 @@ export const DashboardViewer: React.FC<{ initialDashboardId?: string; onOpenQuer
                       panel={panel}
                       timeRangeOverride={timeRangeOverride}
                       dashboardId={activeDashboard.id}
-                      isFocused={focusedPanelIndex === i}
+                      isFocused={!allFocusPanelsExpanded && focusedPanelIndex === i}
+                      isFocusStageActive={allFocusPanelsExpanded && focusedPanelIndex === i}
                       onToggleFocus={() => {
                         setFullscreenPanelIndex(null);
-                        setFocusedPanelIndex(prev => prev === i ? null : i);
+                        if (allFocusPanelsExpanded) {
+                          selectFocusedPanel(i);
+                          setAllFocusPanelsExpanded(false);
+                        } else if (focusedPanelIndex === i) {
+                          exitFocusStage();
+                        } else {
+                          selectFocusedPanel(i);
+                        }
                       }}
                       isFullscreen={fullscreenPanelIndex === i}
                       onToggleFullscreen={() => {
-                        setFocusedPanelIndex(null);
+                        exitFocusStage();
                         setFullscreenPanelIndex(prev => prev === i ? null : i);
                       }}
                       isHidden={expandedPanelIndex !== null && expandedPanelIndex !== i}
@@ -2481,19 +2582,7 @@ export const DashboardViewer: React.FC<{ initialDashboardId?: string; onOpenQuer
                       panelIndex={i}
                       onOpenQueryDetail={onOpenQueryDetail}
                       onOpenQuery={onOpenQuery}
-                      focusStage={focusedPanelIndex === i && focusedSection ? {
-                        viewportTop: focusStageTop,
-                        sectionName: focusedSection.name ?? 'General',
-                        sectionPosition: focusedSectionPanelIndex + 1,
-                        sectionPanelCount: focusedSection.panels.length,
-                        panelPosition: i + 1,
-                        panelCount: activeDashboard.panels.length,
-                        items: focusStageItems,
-                        onSelectPanel: setFocusedPanelIndex,
-                        onPreviousPanel: () => moveFocusedPanel(-1),
-                        onNextPanel: () => moveFocusedPanel(1),
-                        onNextSection: () => moveFocusedSection(1),
-                      } : undefined}
+                      focusStage={!allFocusPanelsExpanded && focusedPanelIndex === i ? focusStageContext : undefined}
                     />
                   ))}
                 </div>
@@ -2501,6 +2590,7 @@ export const DashboardViewer: React.FC<{ initialDashboardId?: string; onOpenQuer
             </React.Fragment>
           );
         })}
+        </div>
       </div>
       {focusedPanelIndex !== null && (
         <FocusStageRail
@@ -2508,7 +2598,7 @@ export const DashboardViewer: React.FC<{ initialDashboardId?: string; onOpenQuer
           dashboardTitle={activeDashboard.title}
           sections={panelSections}
           focusedPanelIndex={focusedPanelIndex}
-          onSelectPanel={setFocusedPanelIndex}
+          onSelectPanel={selectFocusedPanel}
         />
       )}
     </div>
