@@ -16,10 +16,10 @@ import { APP_SOURCE_LIKE } from './source-tags.js';
  * Returns cumulative counters per sample — the service computes deltas.
  * Filtered to exclude TraceHouse's own queries via source tag.
  *
- * @param hostname - Optional hostname filter (sanitized in service layer).
+ * @param hostname - Optional one-or-more-host filter.
  */
-export function buildZoomProcessSamplesSQL(hostname?: string): string {
-  const hostFilter = hostname ? `AND hostName() = '${hostname.replace(/[^a-zA-Z0-9._\-]/g, '')}'` : '';
+export function buildZoomProcessSamplesSQL(hostname?: string | readonly string[]): string {
+  const hostFilter = buildZoomHostFilter(hostname);
   return `
 SELECT
     initial_query_id AS query_id,
@@ -44,8 +44,8 @@ ORDER BY initial_query_id, sample_time
  *
  * merges_history has memory and I/O but no CPU ProfileEvents.
  */
-export function buildZoomMergeSamplesSQL(hostname?: string): string {
-  const hostFilter = hostname ? `AND hostName() = '${hostname.replace(/[^a-zA-Z0-9._\-]/g, '')}'` : '';
+export function buildZoomMergeSamplesSQL(hostname?: string | readonly string[]): string {
+  const hostFilter = buildZoomHostFilter(hostname);
   return `
 SELECT
     result_part_name AS part_name,
@@ -60,4 +60,13 @@ WHERE sample_time >= {start_time}
   ${hostFilter}
 ORDER BY result_part_name, sample_time
 `;
+}
+
+function buildZoomHostFilter(hostname?: string | readonly string[]): string {
+  const hosts = (Array.isArray(hostname) ? hostname : hostname ? [hostname] : [])
+    .map(host => host.replace(/[^a-zA-Z0-9._\-]/g, ''))
+    .filter((host, index, values) => host.length > 0 && values.indexOf(host) === index);
+  if (hosts.length === 0) return '';
+  if (hosts.length === 1) return `AND hostName() = '${hosts[0]}'`;
+  return `AND hostName() IN (${hosts.map(host => `'${host}'`).join(', ')})`;
 }

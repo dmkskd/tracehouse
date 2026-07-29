@@ -29,7 +29,7 @@ import {
 export interface EventsOptions {
   startTime: string;
   endTime: string;
-  hostname?: string | null;
+  hostname?: string | readonly string[] | null;
   availableCapabilities: readonly string[];
   limit?: number;
   /** Consumer identity used only for query-source attribution. */
@@ -191,12 +191,46 @@ export class EventsService {
   async getEvents(
     options: EventsOptions,
   ): Promise<EventsResult> {
+    const hostnames = (Array.isArray(options.hostname)
+      ? options.hostname
+      : options.hostname
+        ? [options.hostname]
+        : [])
+      .filter((host, index, hosts) => host.length > 0 && hosts.indexOf(host) === index);
+    if (hostnames.length > 1) {
+      const limit = Math.max(1, Math.min(options.limit ?? 1000, 10_000));
+      const results = await Promise.all(
+        hostnames.map(host => this.getEvents({ ...options, hostname: host })),
+      );
+      const uniqueEvents = new Map<string, OperationalEvent>();
+      for (const result of results) {
+        for (const event of result.events) uniqueEvents.set(event.id, event);
+      }
+      const coverage = results[0].coverage.map((first, index) => {
+        const entries = results.map(result => result.coverage[index]);
+        const failed = entries.find(entry => entry.status === 'failed');
+        const loaded = entries.some(entry => entry.status === 'loaded');
+        return {
+          ...first,
+          status: failed ? 'failed' : loaded ? 'loaded' : first.status,
+          event_count: entries.reduce((sum, entry) => sum + entry.event_count, 0),
+          truncated: entries.some(entry => entry.truncated),
+          detail: failed?.detail ?? first.detail,
+        };
+      });
+      return {
+        events: [...uniqueEvents.values()]
+          .sort((a, b) => new Date(a.occurred_at).getTime() - new Date(b.occurred_at).getTime())
+          .slice(-limit),
+        coverage,
+      };
+    }
     const sourceTab = options.origin === 'timeTravel' ? TAB_TIME_TRAVEL : TAB_EVENTS;
     const limit = Math.max(1, Math.min(options.limit ?? 1000, 10_000));
     const params: Record<string, QueryParameter> = {
       start_time: utcDateTime(options.startTime),
       end_time: utcDateTime(options.endTime),
-      hostname: options.hostname ?? '',
+      hostname: hostnames[0] ?? '',
       event_limit: limit,
     };
     const available = new Set(options.availableCapabilities);

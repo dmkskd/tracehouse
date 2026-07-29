@@ -37,14 +37,14 @@ export function buildTimelineNavigatorRequestScope({
 }: {
   activeMetric: string;
   navigatorHours: number;
-  hostname?: string | null;
+  hostname?: string | readonly string[] | null;
   activityLimit: number;
   eventCapabilities?: readonly string[];
 }): string {
   return [
     activeMetric,
     navigatorHours,
-    hostname ?? 'all-hosts',
+    Array.isArray(hostname) ? [...hostname].sort().join(',') : hostname ?? 'all-hosts',
     activityLimit,
     [...(eventCapabilities ?? [])].sort().join(','),
   ].join('_');

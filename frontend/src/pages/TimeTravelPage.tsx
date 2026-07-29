@@ -52,6 +52,11 @@ import {
   type MetricMode, type HighlightedItem,
   Q_COLORS, M_COLORS, MUT_COLORS, METRIC_CONFIG, getMetricValue,
 } from '../components/timeline/timeline-constants';
+import {
+  timeTravelHostnameFilter,
+  timeTravelRowHosts,
+  updateTimeTravelHostSelection,
+} from '../components/timeline/time-travel-host-selection';
 
 // CSS animation for pulse effect + experimental badge tooltip
 const pulseKeyframes = `
@@ -215,12 +220,32 @@ export const TimeTravelPage: React.FC = () => {
 
   // Cluster host selector
   const [clusterHosts, setClusterHosts] = useState<string[]>([]);
-  const [selectedHost, setSelectedHost] = useState<string | null>(null);
+  const [selectedHosts, setSelectedHosts] = useState<string[]>([]);
+  const hostnameFilter = useMemo(
+    () => timeTravelHostnameFilter(selectedHosts),
+    [selectedHosts],
+  );
 
-  // Split view: show one chart per host stacked vertically
-  const [splitView, setSplitView] = useState(false);
+  // Per-server view: show one chart per selected host stacked vertically.
+  const [perServerView, setPerServerView] = useState(false);
   const [perHostData, setPerHostData] = useState<Map<string, MemoryTimeline>>(new Map());
   const [splitLoading, setSplitLoading] = useState(false);
+  const rowHosts = useMemo(
+    () => timeTravelRowHosts(clusterHosts, selectedHosts, perServerView),
+    [clusterHosts, selectedHosts, perServerView],
+  );
+  const handleHostClick = useCallback((
+    event: React.MouseEvent<HTMLButtonElement>,
+    host: string,
+  ) => {
+    const additive = event.shiftKey || event.ctrlKey || event.metaKey;
+    const nextSelection = updateTimeTravelHostSelection(selectedHosts, host, additive);
+    setSelectedHosts(nextSelection);
+    if (additive && nextSelection.length > 1) {
+      setPerServerView(true);
+      setViewMode('2d');
+    }
+  }, [selectedHosts]);
 
   // Modal state
   const [selectedTimelineQuery, setSelectedTimelineQuery] = useState<QuerySeries | null>(null);
@@ -310,7 +335,7 @@ export const TimeTravelPage: React.FC = () => {
           timestamp: centerDate,
           windowSeconds: windowSec,
           includeRunning,
-          hostname: selectedHost,
+          hostname: hostnameFilter,
           activityLimit,
           activeMetric: metricMode,
           normalizedQueryHash: queryHashFilter ?? undefined,
@@ -319,7 +344,7 @@ export const TimeTravelPage: React.FC = () => {
           ? services.eventsService.getEvents({
               startTime: startDate.toISOString(),
               endTime: endDateForEvents.toISOString(),
-              hostname: selectedHost,
+              hostname: hostnameFilter,
               availableCapabilities: eventCapabilities,
               origin: 'timeTravel',
             })
@@ -355,23 +380,26 @@ export const TimeTravelPage: React.FC = () => {
       setError(msg);
     }
     finally { setIsLoading(false); }
-  }, [services, isLive, effectiveViewportEnd, windowSec, includeRunning, selectedHost, activityLimit, metricMode, queryHashFilter, eventCapabilities, selectedEventId]);
+  }, [services, isLive, effectiveViewportEnd, windowSec, includeRunning, hostnameFilter, activityLimit, metricMode, queryHashFilter, eventCapabilities, selectedEventId]);
 
   // Fetch cluster hosts on connect (after cluster detection completes)
   useEffect(() => {
     if (!services || !isConnected || !clusterDetected) { setClusterHosts([]); return; }
-    services.metricsCollector.getClusterHosts().then(hosts => setClusterHosts(hosts));
+    services.metricsCollector.getClusterHosts().then(hosts => {
+      setClusterHosts(hosts);
+      setSelectedHosts(current => current.filter(host => hosts.includes(host)));
+    });
   }, [services, isConnected, clusterDetected]);
 
-  // Fetch per-host data when split view is active
+  // Fetch per-host data when the display is set to Per server.
   const fetchSplitData = useCallback(async () => {
-    if (!services || clusterHosts.length < 2 || !splitView) return;
+    if (!services || rowHosts.length === 0) return;
     setSplitLoading(true);
     try {
       const endDate = isLive ? new Date() : (effectiveViewportEnd ? new Date(effectiveViewportEnd) : new Date());
       const centerDate = new Date(endDate.getTime() - windowSec * 1000);
       const results = await Promise.all(
-        clusterHosts.map(async (host) => {
+        rowHosts.map(async (host) => {
           const result = await services.timelineService.getTimeline({
             timestamp: centerDate,
             windowSeconds: windowSec,
@@ -385,18 +413,18 @@ export const TimeTravelPage: React.FC = () => {
       );
       setPerHostData(new Map(results));
     } catch (e) {
-      console.error('[TimeTravelPage] Split view fetch error:', e);
+      console.error('[TimeTravelPage] Per-server view fetch error:', e);
     } finally { setSplitLoading(false); }
-  }, [services, clusterHosts, splitView, isLive, effectiveViewportEnd, windowSec, includeRunning, metricMode, activityLimit]);
+  }, [services, rowHosts, isLive, effectiveViewportEnd, windowSec, includeRunning, metricMode, activityLimit]);
 
   const splitFetchTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   useEffect(() => {
-    if (splitView && services && isConnected && clusterHosts.length > 1) {
+    if (rowHosts.length > 0 && services && isConnected) {
       if (splitFetchTimeoutRef.current) clearTimeout(splitFetchTimeoutRef.current);
       splitFetchTimeoutRef.current = setTimeout(() => fetchSplitData(), 250);
     }
     return () => { if (splitFetchTimeoutRef.current) clearTimeout(splitFetchTimeoutRef.current); };
-  }, [splitView, services, isConnected, windowSec, isLive, effectiveViewportEnd, includeRunning, fetchSplitData]); // eslint-disable-line react-hooks/exhaustive-deps
+  }, [rowHosts, services, isConnected, windowSec, isLive, effectiveViewportEnd, includeRunning, fetchSplitData]);
 
   // Auto-analyze when params change (debounced)
   const fetchDataTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
@@ -411,7 +439,7 @@ export const TimeTravelPage: React.FC = () => {
       fetchDataTimeoutRef.current = setTimeout(() => fetchData(), 200);
     }
     return () => { if (fetchDataTimeoutRef.current) clearTimeout(fetchDataTimeoutRef.current); };
-  }, [services, isConnected, windowSec, isLive, effectiveViewportEnd, includeRunning, selectedHost, activityLimit, metricMode, queryHashFilter, eventCapabilities]); // eslint-disable-line react-hooks/exhaustive-deps
+  }, [services, isConnected, windowSec, isLive, effectiveViewportEnd, includeRunning, hostnameFilter, activityLimit, metricMode, queryHashFilter, eventCapabilities]); // eslint-disable-line react-hooks/exhaustive-deps
 
   // Clear hash filter: remove nqh from URL and re-fetch normally
   const clearQueryHashFilter = useCallback(() => {
@@ -437,7 +465,7 @@ export const TimeTravelPage: React.FC = () => {
   useEffect(() => {
     if (manualRefreshTick > 0 && services && isConnected) {
       fetchData();
-      if (splitView) fetchSplitData();
+      if (rowHosts.length > 0) fetchSplitData();
     }
   }, [manualRefreshTick]); // eslint-disable-line react-hooks/exhaustive-deps
 
@@ -446,10 +474,10 @@ export const TimeTravelPage: React.FC = () => {
     if (autoRefreshRef.current) { clearInterval(autoRefreshRef.current); autoRefreshRef.current = null; }
     if (autoRefresh && refreshRateSeconds > 0 && isLive && services && isConnected) {
       const intervalMs = clampToAllowed(refreshRateSeconds, refreshConfig) * 1000;
-      autoRefreshRef.current = setInterval(() => { fetchData(); if (splitView) fetchSplitData(); }, intervalMs);
+      autoRefreshRef.current = setInterval(() => { fetchData(); if (rowHosts.length > 0) fetchSplitData(); }, intervalMs);
     }
     return () => { if (autoRefreshRef.current) { clearInterval(autoRefreshRef.current); autoRefreshRef.current = null; } };
-  }, [autoRefresh, refreshRateSeconds, refreshConfig, isLive, services, isConnected, fetchData, splitView, fetchSplitData]);
+  }, [autoRefresh, refreshRateSeconds, refreshConfig, isLive, services, isConnected, fetchData, rowHosts, fetchSplitData]);
 
   // Zoom mode: fetch per-second sampled data when zoomed into a narrow window (< 10 min)
   const ZOOM_MAX_SPAN_MS = 10 * 60 * 1000; // 10 minutes
@@ -464,7 +492,7 @@ export const TimeTravelPage: React.FC = () => {
       setZoomLoading(true);
       try {
         const enriched = await services.timelineService.getZoomData(
-          data, zoomRange[0], zoomRange[1], selectedHost,
+          data, zoomRange[0], zoomRange[1], hostnameFilter,
         );
         setZoomData(enriched);
       } catch (e) {
@@ -476,7 +504,7 @@ export const TimeTravelPage: React.FC = () => {
     }, 300);
 
     return () => { if (zoomFetchRef.current) clearTimeout(zoomFetchRef.current); };
-  }, [zoomRange, data, services, selectedHost]); // eslint-disable-line react-hooks/exhaustive-deps
+  }, [zoomRange, data, services, hostnameFilter]); // eslint-disable-line react-hooks/exhaustive-deps
 
   // Clear zoom data when base data changes
   useEffect(() => { setZoomData(null); }, [data]);
@@ -504,7 +532,7 @@ export const TimeTravelPage: React.FC = () => {
     const requestScope = buildTimelineNavigatorRequestScope({
       activeMetric: metricMode,
       navigatorHours,
-      hostname: selectedHost,
+      hostname: hostnameFilter,
       activityLimit,
       eventCapabilities,
     });
@@ -536,7 +564,7 @@ export const TimeTravelPage: React.FC = () => {
         services.timelineService.getTimeline({
           timestamp: centerDate,
           windowSeconds: navigatorWindowSec,
-          hostname: selectedHost,
+          hostname: hostnameFilter,
           activityLimit,
           activeMetric: metricMode,
         }),
@@ -544,7 +572,7 @@ export const TimeTravelPage: React.FC = () => {
           ? services.eventsService.getEvents({
               startTime: navigatorStart.toISOString(),
               endTime: navigatorEnd.toISOString(),
-              hostname: selectedHost,
+              hostname: hostnameFilter,
               availableCapabilities: eventCapabilities,
               origin: 'timeTravel',
             })
@@ -557,7 +585,7 @@ export const TimeTravelPage: React.FC = () => {
     } catch (e) {
       console.error('[TimeTravelPage] Navigator fetch error:', e);
     } finally { setNavigatorLoading(false); }
-  }, [services, selectedTimeRange, customStartTime, customEndTime, navigatorHours, navigatorData, windowSec, selectedHost, activityLimit, metricMode, eventCapabilities]);
+  }, [services, selectedTimeRange, customStartTime, customEndTime, navigatorHours, navigatorData, windowSec, hostnameFilter, activityLimit, metricMode, eventCapabilities]);
 
   // Debounced navigator fetch
   const navigatorFetchTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
@@ -682,6 +710,16 @@ export const TimeTravelPage: React.FC = () => {
     }
     return [];
   }, [navigatorData, metricMode]);
+
+  const activeMetricSampleCount = useMemo(() => {
+    if (!data) return 0;
+    if (metricMode === 'memory') return data.server_memory.length;
+    if (metricMode === 'cpu') return data.server_cpu.length;
+    if (metricMode === 'network') {
+      return Math.max(data.server_network_send.length, data.server_network_recv.length);
+    }
+    return Math.max(data.server_disk_read.length, data.server_disk_write.length);
+  }, [data, metricMode]);
 
   const eventFilterUniverse = useMemo(() => {
     const unique = new Map<string, OperationalEvent>();
@@ -1034,46 +1072,78 @@ export const TimeTravelPage: React.FC = () => {
         {/* Second row: Host selector, stats */}
         <div style={{ display:'flex', alignItems:'center', gap:12, flexWrap:'wrap' }}>
           {clusterHosts.length > 1 && (
-            <div className="tabs">
-              <button className={`tab ${selectedHost === null && !splitView ? 'active' : ''}`} onClick={() => { setSelectedHost(null); setSplitView(false); }}>All</button>
-              <span style={{ position: 'relative', display: 'inline-flex' }}>
-                <button className={`tab ${splitView ? 'active' : ''}`}
-                  onClick={() => { if (viewMode === '2d') { setSelectedHost(null); setSplitView(!splitView); } }}
-                  title={viewMode === '2d' ? 'Split view: one chart per server, stacked vertically' : undefined}
-                  style={{ display:'flex', alignItems:'center', gap:4, ...(viewMode !== '2d' ? { opacity: 0.35, cursor: 'not-allowed' } : {}) }}>
-                  <svg width="10" height="10" viewBox="0 0 10 10" style={{ opacity: 0.7 }}>
-                    <rect x="0" y="0" width="10" height="4" rx="1" fill="currentColor" />
-                    <rect x="0" y="6" width="10" height="4" rx="1" fill="currentColor" />
-                  </svg> Split
+            <div className="tabs" style={{ alignItems:'center' }}>
+              <span role="group" aria-label="Timeline display" style={{ display:'inline-flex', gap:4 }}>
+                <button
+                  className={`tab ${!perServerView ? 'active' : ''}`}
+                  aria-pressed={!perServerView}
+                  onClick={() => setPerServerView(false)}
+                  title="Average resource usage across selected servers in one chart"
+                  style={{ padding:'6px 10px' }}
+                >
+                  Overall
                 </button>
-                {viewMode !== '2d' && (
-                  <span className="split-3d-tooltip" style={{
-                    position: 'absolute', bottom: '100%', left: '50%', transform: 'translateX(-50%)',
-                    marginBottom: 6, padding: '6px 10px', borderRadius: 6, fontSize: 11, lineHeight: '1.4',
-                    whiteSpace: 'nowrap', pointerEvents: 'none', opacity: 0, transition: 'opacity 0.15s ease',
-                    background: 'var(--bg-tertiary)', color: 'var(--text-secondary)',
-                    border: '1px solid var(--border-secondary)', boxShadow: '0 4px 12px rgba(0,0,0,0.3)',
-                    zIndex: 50,
-                  }}>
-                    Split is not available in experimental 3D modes
-                  </span>
-                )}
+                <span style={{ position:'relative', display:'inline-flex' }}>
+                  <button
+                    className={`tab ${perServerView ? 'active' : ''}`}
+                    aria-pressed={perServerView}
+                    onClick={() => { if (viewMode === '2d') setPerServerView(true); }}
+                    title={viewMode === '2d' ? 'Show one chart row for each selected server' : undefined}
+                    style={{ display:'flex', alignItems:'center', padding:'6px 10px', ...(viewMode !== '2d' ? { opacity:0.35, cursor:'not-allowed' } : {}) }}
+                  >
+                    Per server
+                  </button>
+                  {viewMode !== '2d' && (
+                    <span className="split-3d-tooltip" style={{
+                      position:'absolute', bottom:'100%', left:'50%', transform:'translateX(-50%)',
+                      marginBottom:6, padding:'6px 10px', borderRadius:6, fontSize:11, lineHeight:'1.4',
+                      whiteSpace:'nowrap', pointerEvents:'none', opacity:0, transition:'opacity 0.15s ease',
+                      background:'var(--bg-tertiary)', color:'var(--text-secondary)',
+                      border:'1px solid var(--border-secondary)', boxShadow:'0 4px 12px rgba(0,0,0,0.3)',
+                      zIndex:50,
+                    }}>
+                      Per-server view is not available in experimental 3D modes
+                    </span>
+                  )}
+                </span>
               </span>
-              {clusterHosts.map(host => (
-                <button key={host} className={`tab ${selectedHost === host ? 'active' : ''}`} onClick={() => { setSelectedHost(host); setSplitView(false); }}>
-                  <TruncatedHost name={host} />
+              <span
+                aria-hidden="true"
+                style={{ width:1, height:20, margin:'0 4px', background:'var(--border-primary)', flexShrink:0 }}
+              />
+              <span role="group" aria-label="Servers" style={{ display:'inline-flex', gap:4 }}>
+                <button
+                  className={`tab ${selectedHosts.length === 0 ? 'active' : ''}`}
+                  aria-pressed={selectedHosts.length === 0}
+                  onClick={() => setSelectedHosts([])}
+                  title="Select all servers"
+                  style={{ padding:'6px 10px' }}
+                >
+                  All
                 </button>
-              ))}
+                {clusterHosts.map(host => (
+                  <button
+                    key={host}
+                    className={`tab ${selectedHosts.includes(host) ? 'active' : ''}`}
+                    aria-pressed={selectedHosts.includes(host)}
+                    onClick={event => handleHostClick(event, host)}
+                    title={`Select ${host}. Shift, Ctrl, or Command-click to select multiple servers.`}
+                    style={{ padding:'6px 10px' }}
+                  >
+                    <TruncatedHost name={host} />
+                    </button>
+                  ))}
+              </span>
             </div>
           )}
           {data && (
             <MetricStrip
               ariaLabel="Time Travel summary"
-              style={{ flex: 1, minWidth: 0 }}
+              style={{ flex:1, minWidth:0, gap:'8px 12px' }}
             >
               <MetricStripItem
-                label="points"
-                value={data.server_memory.length}
+                label="samples"
+                value={activeMetricSampleCount}
                 indicatorColor="#58a6ff"
               />
               <MetricStripDivider />
@@ -1097,21 +1167,23 @@ export const TimeTravelPage: React.FC = () => {
               {(data.server_total_ram > 0 || data.cpu_cores > 0) && (
                 <MetricStripDivider />
               )}
+              {(data.server_total_ram > 0 || data.cpu_cores > 0) && (
+                <MetricStripItem
+                  label={(data.host_count || 1) === 1 ? 'host' : 'hosts'}
+                  value={data.host_count || 1}
+                />
+              )}
               {data.server_total_ram > 0 && (
                 <MetricStripItem
                   label="RAM"
-                  value={(data.host_count || 1) > 1
-                    ? `${formatBytes(data.server_total_ram)}/host (${data.host_count || 1} hosts)`
-                    : formatBytes(data.server_total_ram)}
+                  value={formatBytes(data.total_ram ?? data.server_total_ram)}
                   indicatorColor="#f85149"
                 />
               )}
               {data.cpu_cores > 0 && (
                 <MetricStripItem
                   label="CPUs"
-                  value={(data.host_count || 1) > 1
-                    ? `${data.cpu_cores}/host (${data.host_count || 1} hosts)`
-                    : data.cpu_cores}
+                  value={data.total_cpu_cores ?? data.cpu_cores}
                   indicatorColor="#3fb950"
                 />
               )}
@@ -1224,7 +1296,7 @@ export const TimeTravelPage: React.FC = () => {
               <>
                 <div style={{ width: 1, height: 20, background: 'var(--border-primary)', margin: '0 4px' }} />
                 {([['2d', '2D'], ['3d', '3D'], ['3d-surface', '3D Surface']] as const).map(([mode, label]) => (
-                  <button key={mode} onClick={() => { setViewMode(mode); if (mode !== '2d') setSplitView(false); }}
+                  <button key={mode} onClick={() => { setViewMode(mode); if (mode !== '2d') setPerServerView(false); }}
                     style={{
                       position: 'relative',
                       background: viewMode === mode ? 'var(--bg-hover)' : 'transparent',
@@ -1267,16 +1339,16 @@ export const TimeTravelPage: React.FC = () => {
           </div>
 
           {/* Chart */}
-          {splitView && clusterHosts.length > 1 ? (
-            /* Split view: one chart per host */
+          {rowHosts.length > 0 ? (
+            /* Per-server view: one chart per selected host */
             <div style={{ display:'flex', flexDirection:'column', gap:2 }}>
-              {splitLoading && perHostData.size === 0 && (
+              {splitLoading && rowHosts.every(host => !perHostData.has(host)) && (
                 <div style={{ padding:20, textAlign:'center', color:'var(--text-muted)', fontSize:13 }}>Loading per-host data…</div>
               )}
-              {clusterHosts.map((host) => {
+              {rowHosts.map((host) => {
                 const hostData = perHostData.get(host);
                 if (!hostData) return null;
-                const chartHeight = Math.max(140, Math.floor(460 / clusterHosts.length));
+                const chartHeight = Math.max(140, Math.floor(460 / rowHosts.length));
                 return (
                   <div key={host} style={{
                     borderRadius:8, background:'var(--bg-secondary)', border:'1px solid var(--border-primary)',
@@ -1286,7 +1358,7 @@ export const TimeTravelPage: React.FC = () => {
                   onMouseLeave={(e) => { (e.currentTarget as HTMLElement).style.zIndex = '0'; }}
                   >
                     <button
-                      onClick={() => { setSelectedHost(host); setSplitView(false); }}
+                      onClick={() => { setSelectedHosts([host]); setPerServerView(false); }}
                       title={`Switch to ${host}`}
                       style={{
                         position:'absolute', top:6, left:10, zIndex:10, fontSize:10, fontWeight:600,

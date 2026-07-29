@@ -160,4 +160,20 @@ describe('timeline event display clustering', () => {
       eventCapabilities: ['text_log', 'query_log'],
     })).toBe(afterDetection);
   });
+
+  it('uses a stable navigator request scope for a multi-host selection', () => {
+    const base = {
+      activeMetric: 'cpu',
+      navigatorHours: 1,
+      activityLimit: 100,
+      eventCapabilities: ['query_log'],
+    };
+    expect(buildTimelineNavigatorRequestScope({
+      ...base,
+      hostname: ['host-b', 'host-a'],
+    })).toBe(buildTimelineNavigatorRequestScope({
+      ...base,
+      hostname: ['host-a', 'host-b'],
+    }));
+  });
 });

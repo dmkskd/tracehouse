@@ -14,6 +14,24 @@ class RecordingAdapter implements IClickHouseAdapter {
   }
 }
 
+class HeterogeneousCapacityAdapter implements IClickHouseAdapter {
+  async executeQuery<T extends Record<string, unknown>>(sql: TaggedQuery): Promise<T[]> {
+    if (sql.includes('TimeTravel:totalRam')) {
+      return [
+        { host: 'host-a', value: 12 * 1024 ** 3 },
+        { host: 'host-b', value: 32 * 1024 ** 3 },
+      ] as unknown as T[];
+    }
+    if (sql.includes('TimeTravel:cpuCores')) {
+      return [
+        { host: 'host-a', value: 3 },
+        { host: 'host-b', value: 8 },
+      ] as unknown as T[];
+    }
+    return [];
+  }
+}
+
 describe('UTC boundaries across timeline consumers', () => {
   it('renders Analytics Surface custom bounds explicitly in UTC', () => {
     const filter = buildSurfaceTimeFilter('event_time', {
@@ -44,6 +62,38 @@ describe('UTC boundaries across timeline consumers', () => {
       expect(sql).toContain("toDateTime('2026-07-27 13:59:00', 'UTC')");
       expect(sql).toContain("toDateTime('2026-07-27 14:01:00', 'UTC')");
     }
+  });
+
+  it('filters Time Travel queries to every selected host', async () => {
+    const adapter = new RecordingAdapter();
+    const service = new TimelineService(adapter);
+
+    await service.getTimeline({
+      timestamp: new Date('2026-07-27T14:00:00.000Z'),
+      windowSeconds: 60,
+      includeRunning: false,
+      hostname: ['host-a', 'host-b'],
+    });
+
+    expect(adapter.queries.some(sql =>
+      sql.includes("hostname() IN ('host-a', 'host-b')"),
+    )).toBe(true);
+  });
+
+  it('reports selected-host capacity totals without changing per-host chart references', async () => {
+    const service = new TimelineService(new HeterogeneousCapacityAdapter());
+
+    const result = await service.getTimeline({
+      timestamp: new Date('2026-07-27T14:00:00.000Z'),
+      windowSeconds: 60,
+      includeRunning: false,
+    });
+
+    expect(result.host_count).toBe(2);
+    expect(result.server_total_ram).toBe(12 * 1024 ** 3);
+    expect(result.total_ram).toBe(44 * 1024 ** 3);
+    expect(result.cpu_cores).toBe(3);
+    expect(result.total_cpu_cores).toBe(11);
   });
 
   it('renders historical Metrics bounds explicitly in UTC', async () => {

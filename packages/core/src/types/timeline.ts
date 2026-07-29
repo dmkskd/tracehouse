@@ -99,8 +99,14 @@ export interface MemoryTimeline {
   server_network_recv: TimeseriesPoint[];
   server_disk_read: TimeseriesPoint[];
   server_disk_write: TimeseriesPoint[];
+  /** Per-host reference RAM retained for chart scaling. */
   server_total_ram: number;
+  /** Per-host reference CPU cores retained for chart scaling. */
   cpu_cores: number;
+  /** Sum of RAM capacity across the selected hosts. */
+  total_ram?: number;
+  /** Sum of CPU cores across the selected hosts. */
+  total_cpu_cores?: number;
   /** Number of ClickHouse hosts contributing to this data (1 for single-host, N for cluster "All" mode) */
   host_count: number;
   /** Per-host CPU timeseries for cluster tooltip breakdown (only populated in "All" mode with multiple hosts) */
@@ -119,8 +125,8 @@ export interface TimelineOptions {
   windowSeconds: number;
   /** Include in-flight queries/merges/mutations from system.processes and system.merges. Default: true */
   includeRunning?: boolean;
-  /** Filter to a specific host (by hostname()). When null/undefined, shows all hosts (cluster-wide). */
-  hostname?: string | null;
+  /** Filter to one or more hosts (by hostname()). When null/undefined/empty, shows all hosts cluster-wide. */
+  hostname?: string | readonly string[] | null;
   /** Max rows per activity type (queries, merges, mutations). Default: 100 */
   activityLimit?: number;
   /** Active metric tab. Controls which server metrics are fetched and which "top N" sort is used. Default: 'memory' */

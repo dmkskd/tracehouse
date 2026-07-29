@@ -769,4 +769,32 @@ describe('EventsService', () => {
       truncated: true,
     });
   });
+
+  it('collects and combines events from every selected host', async () => {
+    const mock = adapter(async sql => {
+      const hostname = sql.includes("'host-a'") ? 'host-a' : 'host-b';
+      return [{
+        host: hostname,
+        occurred_at: hostname === 'host-a'
+          ? '2026-07-25 12:10:00'
+          : '2026-07-25 12:20:00',
+        query_id: `timeout-${hostname}`,
+        exception_code: 159,
+      }];
+    });
+    const service = new EventsService(mock);
+
+    const result = await service.getEvents({
+      ...OPTIONS,
+      hostname: ['host-a', 'host-b'],
+      availableCapabilities: ['query_log'],
+    });
+
+    expect(mock.executeQuery).toHaveBeenCalledTimes(2);
+    expect(result.events.map(event => event.hostname)).toEqual(['host-a', 'host-b']);
+    expect(result.coverage[0]).toMatchObject({
+      status: 'loaded',
+      event_count: 2,
+    });
+  });
 });
