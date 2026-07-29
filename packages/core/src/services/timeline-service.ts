@@ -27,11 +27,8 @@ import {
   SERVER_NETWORK_TIMESERIES,
   SERVER_DISK_IO_TIMESERIES,
   SERVER_TOTAL_RAM,
-  SERVER_CPU_CORES,
-  SERVER_CPU_CORES_FALLBACK,
-  SERVER_CPU_CORES_FALLBACK2,
-  SERVER_CGROUP_CPU,
-  SERVER_MAX_THREADS,
+  SERVER_CPU_CAPACITY_HISTORY,
+  SERVER_CPU_CAPACITY_CURRENT,
   ACTIVE_QUERIES,
   ACTIVE_QUERIES_BY_HASH,
   ACTIVE_QUERIES_COUNT,
@@ -77,8 +74,12 @@ function parseChTime(s: string): Date {
 }
 
 export class TimelineService {
-  private _cachedRam = new Map<string, { ram: number; totalRam: number; hostCount: number }>();
-  private _cachedCpuCapacity = new Map<string, { perHost: number; total: number }>();
+  private _cachedRam = new Map<string, {
+    ram: number;
+    totalRam: number;
+    hostCount: number;
+    hosts: string[];
+  }>();
   constructor(private adapter: IClickHouseAdapter) {}
 
   async getTimeline(options: TimelineOptions): Promise<MemoryTimeline> {
@@ -222,7 +223,8 @@ export class TimelineService {
     // Check if the time window includes "now" (within 30 seconds of current time)
     // Only fetch in-flight data if includeRunning is enabled
     const now = new Date();
-    const includesNow = includeRunning && end.getTime() >= now.getTime() - 30000;
+    const capacityWindowIncludesNow = end.getTime() >= now.getTime() - 30000;
+    const includesNow = includeRunning && capacityWindowIncludesNow;
 
     // Fetch all data in parallel where possible
     const [
@@ -231,7 +233,7 @@ export class TimelineService {
       networkData,
       diskData,
       ramResult,
-      cpuCapacity,
+      historicalCpuCapacity,
       perHostCpu,
       queries,
       queryCount,
@@ -249,9 +251,7 @@ export class TimelineService {
       this._cachedRam.has(hostCacheKey)
         ? Promise.resolve(this._cachedRam.get(hostCacheKey)!)
         : this.fetchTotalRam(params, withHost),
-      this._cachedCpuCapacity.has(hostCacheKey)
-        ? Promise.resolve(this._cachedCpuCapacity.get(hostCacheKey)!)
-        : this.fetchCpuCapacity(params, withHost),
+      this.fetchHistoricalCpuCapacity(params, withHost),
       // Per-host CPU breakdown for cluster tooltip (only in "All" mode)
       hostnames.length === 0 && activeMetric === 'cpu' ? this.fetchPerHostCpu(params) : Promise.resolve({}),
       this.fetchQueries(params, start, end, (sql) => applyOrder(withHost(sql))),
@@ -321,14 +321,122 @@ export class TimelineService {
       runningMergesAndMutations.merges.reduce((sum, m) => sum + m.peak_memory, 0);
     const totalMutationCount = mutationCount + runningMergesAndMutations.mutations.length;
 
-    // Cache static values after first fetch
-    this._cachedRam.set(hostCacheKey, ramResult);
-    this._cachedCpuCapacity.set(hostCacheKey, cpuCapacity);
+    // RAM metadata may have been cached before cluster detection completed,
+    // when an unfiltered request could only see the local host. Validate the
+    // cached host set against every host observed by the current cluster-aware
+    // queries and refresh it when it is incomplete.
+    const observedHosts = Array.from(new Set([
+      ...ramResult.hosts,
+      ...Object.keys(historicalCpuCapacity.byHost),
+      ...Object.keys(perHostCpu),
+    ]));
+    let expectedRamHosts = hostnames.length > 0 ? hostnames : observedHosts;
+    const cachedRamHosts = new Set(ramResult.hosts);
+    const ramMetadataIncomplete = expectedRamHosts.some(host => !cachedRamHosts.has(host));
+    let ramRefreshCoveredHosts = new Set<string>();
+    let resolvedRamResult = ramMetadataIncomplete
+      ? await this.fetchTotalRam(params, withHost)
+      : ramResult;
+    if (ramMetadataIncomplete) {
+      ramRefreshCoveredHosts = new Set(expectedRamHosts);
+    }
+    if (hostnames.length === 0) {
+      expectedRamHosts = Array.from(new Set([
+        ...expectedRamHosts,
+        ...resolvedRamResult.hosts,
+      ]));
+    }
+    // Fallback filling must not mutate a result that may later be cached or
+    // shared by another caller.
+    let cpuCapacity = {
+      byHost: { ...historicalCpuCapacity.byHost },
+      sourceByHost: { ...historicalCpuCapacity.sourceByHost },
+    };
+    let discoveredCpuHosts = Object.keys(cpuCapacity.byHost);
+    let expectedCpuHosts = hostnames.length > 0
+      ? hostnames
+      : Array.from(new Set([
+          ...resolvedRamResult.hosts,
+          ...discoveredCpuHosts,
+          ...Object.keys(perHostCpu),
+        ]));
+    let missingCpuCapacityHosts = expectedCpuHosts.filter(
+      host => !(Number.isFinite(cpuCapacity.byHost[host]) && cpuCapacity.byHost[host] > 0),
+    );
+    if (expectedCpuHosts.length === 0 || missingCpuCapacityHosts.length > 0) {
+      const currentCpuCapacity = await this.fetchCurrentCpuCapacity(withHost);
+      const hostsToFill = hostnames.length === 0
+        ? Array.from(new Set([
+            ...missingCpuCapacityHosts,
+            ...Object.keys(currentCpuCapacity.byHost),
+          ]))
+        : missingCpuCapacityHosts;
+      for (const host of hostsToFill) {
+        const historicalCapacity = cpuCapacity.byHost[host];
+        if (Number.isFinite(historicalCapacity) && historicalCapacity > 0) continue;
+        const currentCapacity = currentCpuCapacity.byHost[host];
+        if (Number.isFinite(currentCapacity) && currentCapacity > 0) {
+          cpuCapacity.byHost[host] = currentCapacity;
+          cpuCapacity.sourceByHost[host] = 'current';
+        }
+      }
+      discoveredCpuHosts = Object.keys(cpuCapacity.byHost);
+      if (hostnames.length === 0) {
+        expectedCpuHosts = Array.from(new Set([
+          ...expectedCpuHosts,
+          ...discoveredCpuHosts,
+        ]));
+      }
+      missingCpuCapacityHosts = expectedCpuHosts.filter(
+        host => !(Number.isFinite(cpuCapacity.byHost[host]) && cpuCapacity.byHost[host] > 0),
+      );
+    }
+    const cpuCapacityComplete = expectedCpuHosts.length > 0
+      && missingCpuCapacityHosts.length === 0;
+    const selectedCpuCapacities = cpuCapacityComplete
+      ? expectedCpuHosts.map(host => cpuCapacity.byHost[host])
+      : [];
+    const cpuCores = selectedCpuCapacities.length > 0
+      ? Math.min(...selectedCpuCapacities)
+      : 0;
+    const selectedTotalCpuCores = selectedCpuCapacities.reduce(
+      (sum, value) => sum + value,
+      0,
+    );
+    const cpuCapacityApproximate = !capacityWindowIncludesNow
+      && expectedCpuHosts.some(host => cpuCapacity.sourceByHost[host] === 'current');
 
-    const totalRam = ramResult.ram;
-    const selectedTotalRam = ramResult.totalRam;
-    const hostCount = ramResult.hostCount;
-    const cpuCores = cpuCapacity.perHost;
+    // Current CPU fallback can discover hosts that were absent from both the
+    // cached RAM metadata and historical capacity. Reconcile RAM against the
+    // final CPU host set before exposing a memory denominator.
+    expectedRamHosts = Array.from(new Set([
+      ...expectedRamHosts,
+      ...expectedCpuHosts,
+    ]));
+    let resolvedRamHosts = new Set(resolvedRamResult.hosts);
+    const newlyMissingRamHosts = expectedRamHosts.filter(
+      host => !resolvedRamHosts.has(host) && !ramRefreshCoveredHosts.has(host),
+    );
+    if (newlyMissingRamHosts.length > 0) {
+      resolvedRamResult = await this.fetchTotalRam(params, withHost);
+      resolvedRamHosts = new Set(resolvedRamResult.hosts);
+    }
+    const missingRamCapacityHosts = expectedRamHosts.filter(
+      host => !resolvedRamHosts.has(host),
+    );
+    const ramCapacityComplete = expectedRamHosts.length > 0
+      && missingRamCapacityHosts.length === 0;
+    this._cachedRam.set(hostCacheKey, resolvedRamResult);
+
+    const totalRam = ramCapacityComplete ? resolvedRamResult.ram : 0;
+    const selectedTotalRam = ramCapacityComplete
+      ? resolvedRamResult.totalRam
+      : undefined;
+    const hostCount = Math.max(
+      expectedCpuHosts.length,
+      resolvedRamResult.hostCount,
+      1,
+    );
 
     return {
       window_start: start.toISOString(),
@@ -337,11 +445,12 @@ export class TimelineService {
       server_memory: serverMemory,
       // Clamp CPU values: under heavy load, metric_log collection can be delayed,
       // causing accumulated CPU µs to exceed the reported wall-clock interval.
-      // Max µs/s = cpuCores × 1,000,000. See docs/metrics/cpu.md for details.
-      server_cpu: cpuCores > 0
+      // Max µs/s = total selected CPU cores × 1,000,000.
+      // See docs/metrics/cpu.md for details.
+      server_cpu: selectedTotalCpuCores > 0
         ? serverCpu.map(p => ({
             t: p.t,
-            v: Math.min(p.v, cpuCores * 1_000_000),
+            v: Math.min(p.v, selectedTotalCpuCores * 1_000_000),
           }))
         : serverCpu,
       server_network_send: networkData.send,
@@ -351,9 +460,19 @@ export class TimelineService {
       server_total_ram: totalRam,
       cpu_cores: cpuCores,
       total_ram: selectedTotalRam,
-      total_cpu_cores: cpuCapacity.total,
+      ram_capacity_complete: ramCapacityComplete,
+      ram_capacity_missing_hosts: missingRamCapacityHosts.length > 0
+        ? missingRamCapacityHosts
+        : undefined,
+      total_cpu_cores: cpuCapacityComplete ? selectedTotalCpuCores : undefined,
+      cpu_capacity_complete: cpuCapacityComplete,
+      cpu_capacity_missing_hosts: missingCpuCapacityHosts.length > 0
+        ? missingCpuCapacityHosts
+        : undefined,
+      cpu_capacity_approximate: cpuCapacityApproximate,
       host_count: hostCount,
       per_host_cpu: Object.keys(perHostCpu).length > 1 ? perHostCpu : undefined,
+      per_host_cpu_cores: Object.keys(perHostCpu).length > 1 ? cpuCapacity.byHost : undefined,
       queries: allQueries,
       merges: allMerges,
       mutations: allMutations,
@@ -662,14 +781,29 @@ export class TimelineService {
     }
   }
 
-  private async fetchTotalRam(params: Record<string, QueryParameter>, xform: (s: string) => string): Promise<{ ram: number; totalRam: number; hostCount: number }> {
+  private async fetchTotalRam(
+    params: Record<string, QueryParameter>,
+    xform: (s: string) => string,
+  ): Promise<{ ram: number; totalRam: number; hostCount: number; hosts: string[] }> {
       try {
         const sql = xform(buildQuery(SERVER_TOTAL_RAM, params));
         const rows = await this.adapter.executeQuery(tagQuery(sql, sourceTag(TAB_TIME_TRAVEL, 'totalRam')));
-        if (rows.length === 0) return { ram: 0, totalRam: 0, hostCount: 1 };
-        // Query returns per-host rows. For option 4 (per-host attribution),
-        // return per-host RAM (use min across hosts) and the host count.
-        const values = rows.map(r => Number((r as Record<string, unknown>).value || 0)).filter(v => v > 0);
+        if (rows.length === 0) {
+          return { ram: 0, totalRam: 0, hostCount: 1, hosts: [] };
+        }
+        // Query returns one capacity row per host. Keep the smallest per-host
+        // value for backward compatibility and sum all rows for Overall.
+        const capacities = rows
+          .map((row) => {
+            const record = row as Record<string, unknown>;
+            return {
+              host: String(record.host || ''),
+              value: Number(record.value || 0),
+            };
+          })
+          .filter(({ host, value }) => host.length > 0 && value > 0);
+        const hosts = capacities.map(({ host }) => host);
+        const values = capacities.map(({ value }) => value);
         const hostCount = values.length || 1;
         const perHostRam = values.length > 0 ? Math.min(...values) : 0;
         const totalRam = values.reduce((sum, value) => sum + value, 0);
@@ -677,14 +811,14 @@ export class TimelineService {
         // In containers, OSMemoryTotal reports host RAM — use cgroup limit if available
         const cgroupMem = await this.fetchCgroupMemoryLimit();
         if (cgroupMem > 0 && cgroupMem < perHostRam) {
-          return { ram: cgroupMem, totalRam: cgroupMem * hostCount, hostCount };
+          return { ram: cgroupMem, totalRam: cgroupMem * hostCount, hostCount, hosts };
         }
 
-        return { ram: perHostRam, totalRam, hostCount };
+        return { ram: perHostRam, totalRam, hostCount, hosts };
       } catch (e) {
         console.error('[TimelineService] total_ram error:', e);
       }
-      return { ram: 0, totalRam: 0, hostCount: 1 };
+      return { ram: 0, totalRam: 0, hostCount: 1, hosts: [] };
     }
 
   /**
@@ -710,92 +844,84 @@ export class TimelineService {
     return 0;
   }
 
-  private async fetchCpuCapacity(params: Record<string, QueryParameter>, xform: (s: string) => string): Promise<{ perHost: number; total: number }> {
-      // 1. Try asynchronous_metric_log first (returns per-host rows, cluster-aware)
-      try {
-        const sql = xform(buildQuery(SERVER_CPU_CORES, params));
-        const rows = await this.adapter.executeQuery(tagQuery(sql, sourceTag(TAB_TIME_TRAVEL, 'cpuCores')));
-        if (rows.length > 0) {
-          const values = rows.map(r => Number((r as Record<string, unknown>).value || 0)).filter(v => v > 0);
-          if (values.length > 0) {
-            // In containers, NumberOfCPUCores reports host cores — cap at cgroup limit.
-            const cgroupCores = await this.fetchCgroupCpuLimit();
-            const cappedValues = cgroupCores > 0
-              ? values.map(value => Math.min(value, cgroupCores))
-              : values;
-            return {
-              perHost: Math.min(...cappedValues),
-              total: cappedValues.reduce((sum, value) => sum + value, 0),
-            };
-          }
-        }
-      } catch (e) {
-        console.error('[TimelineService] cpu_cores from log error:', e);
+  private resolveCpuCapacityRows(
+    rows: Record<string, unknown>[],
+  ): Record<string, number> {
+    const result: Record<string, number> = {};
+    const positiveFinite = (value: unknown): number | null => {
+      const parsed = Number(value || 0);
+      return Number.isFinite(parsed) && parsed > 0 ? parsed : null;
+    };
+
+    for (const row of rows) {
+      const host = String(row.host || '');
+      if (!host) continue;
+
+      const cgroupMaxCpu = positiveFinite(row.cgroup_max_cpu);
+      const reportedCores = positiveFinite(row.reported_cores);
+      const osCpuCount = positiveFinite(row.os_cpu_count);
+      const hostCores = reportedCores ?? osCpuCount;
+      const effectiveCapacity = cgroupMaxCpu !== null
+        ? hostCores !== null
+          ? Math.min(cgroupMaxCpu, hostCores)
+          : cgroupMaxCpu
+        : hostCores;
+
+      if (effectiveCapacity !== null) {
+        // Preserve fractional cgroup quotas such as 2.5 CPUs.
+        result[host] = effectiveCapacity;
       }
-
-      // 2. Fallback: cgroup-aware detection (single-node containerized environments)
-      const cgroupCores = await this.fetchCgroupCpuLimit();
-      if (cgroupCores > 0) return { perHost: cgroupCores, total: cgroupCores };
-
-      // 3. Fallback to asynchronous_metrics (local node only)
-      try {
-        const rows = await this.adapter.executeQuery(tagQuery(SERVER_CPU_CORES_FALLBACK, sourceTag(TAB_TIME_TRAVEL, 'cpuCores')));
-        if (rows.length > 0) {
-          const val = Number((rows[0] as Record<string, unknown>).value || 0);
-          if (val > 0) return { perHost: val, total: val };
-        }
-      } catch (e) {
-        console.error('[TimelineService] cpu_cores from metrics error:', e);
-      }
-
-      // 4. Fallback to counting OSUserTimeCPU metrics
-      try {
-        const rows = await this.adapter.executeQuery(tagQuery(SERVER_CPU_CORES_FALLBACK2, sourceTag(TAB_TIME_TRAVEL, 'cpuCores')));
-        if (rows.length > 0) {
-          const value = Number(Object.values(rows[0] as Record<string, unknown>)[0] || 0);
-          return { perHost: value, total: value };
-        }
-      } catch (e) {
-        console.error('[TimelineService] cpu_cores from OSUserTimeCPU count error:', e);
-      }
-
-      return { perHost: 0, total: 0 };
     }
+    return result;
+  }
 
-  /**
-   * Detect cgroup CPU limit for containerized environments (Kubernetes).
-   * Returns 0 if no cgroup limit is detected.
-   */
-  private async fetchCgroupCpuLimit(): Promise<number> {
-    // Try CGroupMaxCPU async metric (ClickHouse >= 23.8)
+  private async fetchHistoricalCpuCapacity(
+    params: Record<string, QueryParameter>,
+    xform: (s: string) => string,
+  ): Promise<{
+    byHost: Record<string, number>;
+    sourceByHost: Record<string, 'historical' | 'current'>;
+  }> {
     try {
+      const sql = xform(buildQuery(SERVER_CPU_CAPACITY_HISTORY, params));
       const rows = await this.adapter.executeQuery(
-        tagQuery(SERVER_CGROUP_CPU, sourceTag(TAB_TIME_TRAVEL, 'cgroupCpu'))
+        tagQuery(sql, sourceTag(TAB_TIME_TRAVEL, 'cpuCapacityHistorical')),
       );
-      if (rows.length > 0) {
-        const val = Number((rows[0] as Record<string, unknown>).value || 0);
-        if (val > 0) return Math.round(val);
-      }
-    } catch (err) {
-      console.warn('[TimelineService] fetchCpuCores cgroup metric not available:', err);
+      const byHost = this.resolveCpuCapacityRows(rows);
+      return {
+        byHost,
+        sourceByHost: Object.fromEntries(
+          Object.keys(byHost).map(host => [host, 'historical' as const]),
+        ),
+      };
+    } catch (error) {
+      console.error('[TimelineService] historical CPU capacity error:', error);
+      return { byHost: {}, sourceByHost: {} };
     }
+  }
 
-    // Fallback: max_threads from system.settings
+  private async fetchCurrentCpuCapacity(
+    xform: (s: string) => string,
+  ): Promise<{
+    byHost: Record<string, number>;
+    sourceByHost: Record<string, 'historical' | 'current'>;
+  }> {
     try {
+      const sql = xform(SERVER_CPU_CAPACITY_CURRENT);
       const rows = await this.adapter.executeQuery(
-        tagQuery(SERVER_MAX_THREADS, sourceTag(TAB_TIME_TRAVEL, 'maxThreads'))
+        tagQuery(sql, sourceTag(TAB_TIME_TRAVEL, 'cpuCapacityCurrent')),
       );
-      if (rows.length > 0) {
-        const val = parseInt(String((rows[0] as Record<string, unknown>).value || '0'), 10);
-        // max_threads defaults to the detected CPU count; only use it if it seems
-        // like a cgroup limit (i.e., it's a reasonable number, not 0 or absurdly high)
-        if (val > 0 && val <= 256) return val;
-      }
-    } catch (err) {
-      console.warn('[TimelineService] fetchCpuCores system.settings not accessible:', err);
+      const byHost = this.resolveCpuCapacityRows(rows);
+      return {
+        byHost,
+        sourceByHost: Object.fromEntries(
+          Object.keys(byHost).map(host => [host, 'current' as const]),
+        ),
+      };
+    } catch (error) {
+      console.error('[TimelineService] current CPU capacity fallback error:', error);
+      return { byHost: {}, sourceByHost: {} };
     }
-
-    return 0;
   }
 
   private async fetchQueries(params: Record<string, QueryParameter>, start: Date, end: Date, xform: (s: string) => string, normalizedQueryHash?: string): Promise<QuerySeries[]> {
@@ -1186,13 +1312,20 @@ export class TimelineService {
       const identity = (s: string) => s;
 
       // Fetch CPU timeseries and core count in parallel
-      const [rawRows, cpuCapacity] = await Promise.all([
+      const [rawRows, historicalCpuCapacity] = await Promise.all([
         this.fetchSpikeTimeseries(params),
-        this.fetchCpuCapacity(params, identity),
+        this.fetchHistoricalCpuCapacity(params, identity),
       ]);
 
-      const cpuCores = cpuCapacity.perHost;
-      const cores = cpuCores > 0 ? cpuCores : 1;
+      let capacityValues = Object.values(historicalCpuCapacity.byHost);
+      if (capacityValues.length === 0) {
+        const currentCpuCapacity = await this.fetchCurrentCpuCapacity(identity);
+        capacityValues = Object.values(currentCpuCapacity.byHost);
+      }
+      const totalCpuCores = capacityValues.length > 0
+        ? capacityValues.reduce((sum, value) => sum + value, 0)
+        : 0;
+      const cores = totalCpuCores > 0 ? totalCpuCores : 1;
       // 100% = cores × 1_000_000 µs/s
       const threshold100Pct = cores * 1_000_000;
 

@@ -19,7 +19,11 @@ import type {
   MutationSeries,
   OperationalEvent,
 } from '@tracehouse/core';
-import { TIMELINE_ACTIVITY_LIMIT } from '@tracehouse/core';
+import {
+  getTimelineCpuCapacity,
+  getTimelineRamCapacity,
+  TIMELINE_ACTIVITY_LIMIT,
+} from '@tracehouse/core';
 import { TimelineNavigator } from '../components/shared/TimelineNavigator';
 import { RangeSlider } from '../components/shared/RangeSlider';
 import { QueryDetailModal } from '../components/query/modal/QueryDetailModal';
@@ -53,6 +57,7 @@ import {
   Q_COLORS, M_COLORS, MUT_COLORS, METRIC_CONFIG, getMetricValue,
 } from '../components/timeline/timeline-constants';
 import {
+  createTimeTravelRequestGate,
   timeTravelHostnameFilter,
   timeTravelRowHosts,
   updateTimeTravelHostSelection,
@@ -178,6 +183,7 @@ export const TimeTravelPage: React.FC = () => {
   );      // Custom range end (navigator)
   const [viewportEndTime, setViewportEndTime] = useState<string | null>(null);  // Viewport position within custom range
   const [data, setData] = useState<MemoryTimeline | null>(null);
+  const fetchDataRequestGateRef = useRef(createTimeTravelRequestGate());
   const [eventData, setEventData] = useState<EventsResult>({
     events: [],
     coverage: [],
@@ -324,6 +330,7 @@ export const TimeTravelPage: React.FC = () => {
 
   const fetchData = useCallback(async () => {
     if (!services) return;
+    const requestId = fetchDataRequestGateRef.current.begin();
     setIsLoading(true); setError(null);
     try {
       const endDate = isLive ? new Date() : (effectiveViewportEnd ? new Date(effectiveViewportEnd) : new Date());
@@ -350,6 +357,9 @@ export const TimeTravelPage: React.FC = () => {
             })
           : Promise.resolve({ events: [], coverage: [] }),
       ]);
+      // A host/time/metric change may have started a newer request while this
+      // one was in flight. Never let the older selection overwrite it.
+      if (!fetchDataRequestGateRef.current.isLatest(requestId)) return;
       // In live mode, slide zoom/pin forward to follow the advancing time window
       const newEndMs = new Date(result.window_end).getTime();
       if (isLive && prevDataEndRef.current != null) {
@@ -375,11 +385,14 @@ export const TimeTravelPage: React.FC = () => {
       }
       useGlobalLastUpdatedStore.getState().touch();
     } catch (e) {
+      if (!fetchDataRequestGateRef.current.isLatest(requestId)) return;
       const msg = e instanceof Error ? e.message : 'Failed to fetch timeline';
       console.error('[TimeTravelPage] Error:', msg, e);
       setError(msg);
     }
-    finally { setIsLoading(false); }
+    finally {
+      if (fetchDataRequestGateRef.current.isLatest(requestId)) setIsLoading(false);
+    }
   }, [services, isLive, effectiveViewportEnd, windowSec, includeRunning, hostnameFilter, activityLimit, metricMode, queryHashFilter, eventCapabilities, selectedEventId]);
 
   // Fetch cluster hosts on connect (after cluster detection completes)
@@ -429,7 +442,10 @@ export const TimeTravelPage: React.FC = () => {
   // Auto-analyze when params change (debounced)
   const fetchDataTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   useEffect(() => {
-    if (services && isConnected && !isLoading) {
+    // Invalidate an in-flight response immediately when its request scope
+    // changes, including while the previous request is still loading.
+    fetchDataRequestGateRef.current.invalidate();
+    if (services && isConnected) {
       // Clear zoom/pin when user changes time parameters
       setZoomRange(null);
       setPinnedMs(null);
@@ -439,7 +455,7 @@ export const TimeTravelPage: React.FC = () => {
       fetchDataTimeoutRef.current = setTimeout(() => fetchData(), 200);
     }
     return () => { if (fetchDataTimeoutRef.current) clearTimeout(fetchDataTimeoutRef.current); };
-  }, [services, isConnected, windowSec, isLive, effectiveViewportEnd, includeRunning, hostnameFilter, activityLimit, metricMode, queryHashFilter, eventCapabilities]); // eslint-disable-line react-hooks/exhaustive-deps
+  }, [services, isConnected, clusterDetected, windowSec, isLive, effectiveViewportEnd, includeRunning, hostnameFilter, activityLimit, metricMode, queryHashFilter, eventCapabilities]); // eslint-disable-line react-hooks/exhaustive-deps
 
   // Clear hash filter: remove nqh from URL and re-fetch normally
   const clearQueryHashFilter = useCallback(() => {
@@ -720,6 +736,8 @@ export const TimeTravelPage: React.FC = () => {
     }
     return Math.max(data.server_disk_read.length, data.server_disk_write.length);
   }, [data, metricMode]);
+  const timelineRamCapacity = data ? getTimelineRamCapacity(data) : 0;
+  const timelineCpuCapacity = data ? getTimelineCpuCapacity(data) : 0;
 
   const eventFilterUniverse = useMemo(() => {
     const unique = new Map<string, OperationalEvent>();
@@ -1164,26 +1182,26 @@ export const TimeTravelPage: React.FC = () => {
                   indicatorColor="#f778ba"
                 />
               )}
-              {(data.server_total_ram > 0 || data.cpu_cores > 0) && (
+              {(timelineRamCapacity > 0 || timelineCpuCapacity > 0) && (
                 <MetricStripDivider />
               )}
-              {(data.server_total_ram > 0 || data.cpu_cores > 0) && (
+              {(timelineRamCapacity > 0 || timelineCpuCapacity > 0) && (
                 <MetricStripItem
                   label={(data.host_count || 1) === 1 ? 'host' : 'hosts'}
                   value={data.host_count || 1}
                 />
               )}
-              {data.server_total_ram > 0 && (
+              {timelineRamCapacity > 0 && (
                 <MetricStripItem
                   label="RAM"
-                  value={formatBytes(data.total_ram ?? data.server_total_ram)}
+                  value={formatBytes(timelineRamCapacity)}
                   indicatorColor="#f85149"
                 />
               )}
-              {data.cpu_cores > 0 && (
+              {timelineCpuCapacity > 0 && (
                 <MetricStripItem
                   label="CPUs"
-                  value={data.total_cpu_cores ?? data.cpu_cores}
+                  value={timelineCpuCapacity}
                   indicatorColor="#3fb950"
                 />
               )}
@@ -1348,6 +1366,8 @@ export const TimeTravelPage: React.FC = () => {
               {rowHosts.map((host) => {
                 const hostData = perHostData.get(host);
                 if (!hostData) return null;
+                const hostCpuCapacity = getTimelineCpuCapacity(hostData);
+                const hostRamCapacity = getTimelineRamCapacity(hostData);
                 const chartHeight = Math.max(140, Math.floor(460 / rowHosts.length));
                 return (
                   <div key={host} style={{
@@ -1368,8 +1388,8 @@ export const TimeTravelPage: React.FC = () => {
                       }}
                     >
                       <TruncatedHost name={host} />
-                      {hostData.cpu_cores > 0 && <span style={{ color:'var(--text-muted)', marginLeft:6 }}>{hostData.cpu_cores} cores</span>}
-                      {hostData.server_total_ram > 0 && <span style={{ color:'var(--text-muted)', marginLeft:6 }}>{formatBytes(hostData.server_total_ram)} RAM</span>}
+                      {hostCpuCapacity > 0 && <span style={{ color:'var(--text-muted)', marginLeft:6 }}>{hostCpuCapacity} cores</span>}
+                      {hostRamCapacity > 0 && <span style={{ color:'var(--text-muted)', marginLeft:6 }}>{formatBytes(hostRamCapacity)} RAM</span>}
                     </button>
                     <TimelineChart data={hostData} metricMode={metricMode} height={chartHeight}
                       hoverMs={hoverMs} pinnedMs={pinnedMs}
@@ -1399,7 +1419,7 @@ export const TimeTravelPage: React.FC = () => {
               })}
             </div>
           ) : (
-          /* Single chart (All averaged or single host) */
+          /* Single chart (Overall selected-host total or one server) */
           <div style={{
             borderRadius:10, padding:0, background:'var(--bg-secondary)', border:'1px solid var(--border-primary)',
             boxShadow:'0 1px 3px rgba(0,0,0,0.2)', overflow:'hidden', position:'relative',
@@ -1488,7 +1508,9 @@ export const TimeTravelPage: React.FC = () => {
                 rangeStartMs={navigatorRange.startMs} rangeEndMs={navigatorRange.endMs}
                 viewportStartMs={viewportBounds.startMs} viewportEndMs={viewportBounds.endMs}
                 onViewportChange={handleNavigatorViewportChange} height={70}
-                isLoading={navigatorLoading} totalRam={data.server_total_ram} cpuCores={data.cpu_cores}
+                isLoading={navigatorLoading}
+                totalRam={timelineRamCapacity}
+                cpuCores={timelineCpuCapacity}
                 onDragEnd={handleNavigatorDragEnd}
                 events={timeTravelEventsVisible ? filteredNavigatorEvents : []}
                 selectedEventId={selectedEventId}

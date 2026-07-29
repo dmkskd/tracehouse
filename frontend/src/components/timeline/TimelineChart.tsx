@@ -6,7 +6,12 @@
  */
 import React, { useState, useCallback, useMemo, useRef, useEffect } from 'react';
 import type { MemoryTimeline, OperationalEvent, ZoomSample } from '@tracehouse/core';
-import { getMergeCategoryInfo, type MergeCategory } from '@tracehouse/core';
+import {
+  getMergeCategoryInfo,
+  getTimelineCpuCapacity,
+  getTimelineRamCapacity,
+  type MergeCategory,
+} from '@tracehouse/core';
 import { formatBytes, parseTimestamp } from '../../utils/formatters';
 import { TimelineEventOverlay } from './TimelineEventOverlay';
 import {
@@ -80,6 +85,8 @@ export const TimelineChart: React.FC<{
   const [localSvgY, setLocalSvgY] = useState<number | null>(null);
   const hoveredBandRef = useRef<{ type: 'query' | 'merge' | 'mutation'; idx: number; id: string } | null>(null);
   const cfg = METRIC_CONFIG[metricMode];
+  const totalRam = getTimelineRamCapacity(data);
+  const totalCpuCores = getTimelineCpuCapacity(data);
 
   // Keep axis gutters in CSS pixels. A fixed 1000-unit viewBox made the
   // left/right padding grow with wide containers (for example, 90 became
@@ -132,7 +139,8 @@ export const TimelineChart: React.FC<{
   }, [data.per_host_cpu, metricMode]);
 
   // Host count for cluster context (used in tooltips, not for band scaling).
-  // Bands show real values — the avg server line + per-host tooltip bars explain the full picture.
+  // Bands show real values; the total server line and per-host tooltip bars
+  // explain the full picture.
   const hc = data.host_count || 1;
 
   // Map ZoomSample[] to metric-specific {ms,v}[] for the current metricMode
@@ -317,10 +325,10 @@ export const TimelineChart: React.FC<{
 
   const yTicks = [0, 0.25, 0.5, 0.75, 1].map(f => f * maxY);
   const xTicks = Array.from({ length: 6 }, (_, i) => tMin + (tRange * i) / 5);
-  const ramY = metricMode === 'memory' && data.server_total_ram > 0 && data.server_total_ram <= maxY ? yScale(data.server_total_ram) : null;
-  // CPU 100% line: cpu_cores * 1_000_000 µs/s = full utilization
-  const cpuFullUs = data.cpu_cores * 1_000_000;
-  const cpuY = metricMode === 'cpu' && data.cpu_cores > 0 ? yScale(cpuFullUs) : null;
+  const ramY = metricMode === 'memory' && totalRam > 0 && totalRam <= maxY ? yScale(totalRam) : null;
+  // CPU 100% line: totalCpuCores * 1_000_000 µs/s = full utilization.
+  const cpuFullUs = totalCpuCores * 1_000_000;
+  const cpuY = metricMode === 'cpu' && totalCpuCores > 0 ? yScale(cpuFullUs) : null;
 
   const toSvgXY = useCallback((e: React.MouseEvent): { x: number; y: number } | null => {
     const svg = svgRef.current; if (!svg) return null;
@@ -698,10 +706,10 @@ export const TimelineChart: React.FC<{
       {/* Y-axis labels as HTML overlays (not stretched) */}
       {yTicks.map((v, i) => {
         let label: string;
-        if (metricMode === 'cpu' && data.cpu_cores > 0) {
-          label = `${((v / (data.cpu_cores * 1_000_000)) * 100).toFixed(0)}%`;
-        } else if (metricMode === 'memory' && data.server_total_ram > 0) {
-          const pct = ((v / data.server_total_ram) * 100).toFixed(0);
+        if (metricMode === 'cpu' && totalCpuCores > 0) {
+          label = `${((v / (totalCpuCores * 1_000_000)) * 100).toFixed(0)}%`;
+        } else if (metricMode === 'memory' && totalRam > 0) {
+          const pct = ((v / totalRam) * 100).toFixed(0);
           label = `${cfg.fmtVal(v)} (${pct}%)`;
         } else {
           label = cfg.fmtVal(v);
@@ -726,7 +734,7 @@ export const TimelineChart: React.FC<{
           position: 'absolute', left: `${((W - padRight + 6) / W) * 100}%`,
           top: `${(cpuY / H) * 100}%`, transform: 'translateY(-50%)',
           fontSize: 9, color: '#f85149', opacity: 0.7, pointerEvents: 'none', whiteSpace: 'nowrap',
-        }}>100% ({data.cpu_cores} cores)</div>
+        }}>100% ({totalCpuCores} cores)</div>
       )}
       {/* X-axis labels as HTML overlays */}
       {xTicks.map((ms, i) => (
@@ -869,12 +877,16 @@ export const TimelineChart: React.FC<{
                 ) : (
                   <>
                     <div style={{ color: 'var(--text-secondary)' }}>
-                      {snap.hostCpuValues ? 'Cluster avg' : 'Server'}: {cfg.fmtVal(snap.srv)}{metricMode === 'cpu' ? '/s' : ''}{metricMode === 'cpu' && data.cpu_cores > 0 ? ` (${((snap.srv / (data.cpu_cores * 1_000_000)) * 100).toFixed(1)}%)` : ''}
+                      {hc > 1 ? 'Total' : 'Server'}: {cfg.fmtVal(snap.srv)}{metricMode === 'cpu' ? '/s' : ''}{metricMode === 'cpu' && totalCpuCores > 0 ? ` (${((snap.srv / (totalCpuCores * 1_000_000)) * 100).toFixed(1)}%)` : ''}
                     </div>
-                    {snap.hostCpuValues && data.cpu_cores > 0 && (
+                    {snap.hostCpuValues && (
                       <div style={{ marginTop: 6, marginBottom: 2, padding: '6px 0' }}>
                         {snap.hostCpuValues.map(({ host, v }) => {
-                          const pct = Math.min((v / (data.cpu_cores * 1_000_000)) * 100, 100);
+                          const hostCpuCores = data.per_host_cpu_cores?.[host]
+                            ?? (hc === 1 ? data.cpu_cores : 0);
+                          const pct = hostCpuCores > 0
+                            ? Math.min((v / (hostCpuCores * 1_000_000)) * 100, 100)
+                            : 0;
                           const barGlow = pct > 80 ? '0 0 6px rgba(248,81,73,0.4)' : pct > 50 ? '0 0 6px rgba(240,136,62,0.3)' : 'none';
                           const shortHost = host.length > 20 ? host.replace(/^[^-]*-/, '').slice(-16) : host;
                           return (

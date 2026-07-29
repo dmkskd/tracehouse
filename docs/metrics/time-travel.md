@@ -47,33 +47,51 @@ Division uses `max(duration_ms / 1000, 0.001)` to avoid divide-by-zero.
 
 **Server line vs. bands.** The server line shows real per-second OS-level measurements. Bands use flat-band approximations and (for in-flight merges) estimated CPU, so they won't always match the server line — especially during bursty workloads or when many merges overlap.
 
-## Cluster "All" mode aggregation
+## Overall aggregation
 
-In cluster view, the server metric line and stacked activity bands need to tell a consistent story.
+For CPU and memory, Overall shows total usage across the selected hosts against
+their total capacity:
 
-**Chosen approach:** avg server line + real (undivided) bands + per-host tooltip.
+- CPU line: sum of per-host CPU usage
+- CPU capacity: sum of the selected hosts' effective cores
+- Memory line: sum of per-host memory usage
+- Memory capacity: sum of the selected hosts' RAM
+- Activity bands: real values, not divided by host count
 
-- Server line: `avg()` across hosts, representing average cluster health
-- Bands: real values, not divided by host count. A merge using 900ms/s of CPU shows at 900ms/s
-- Y-axis: single-host capacity (100% = one host's cores)
-- Bands can exceed the server line. This is intentional: it signals work concentrated on specific hosts
+Therefore, 100% means all selected capacity is in use. This is equivalent to
+`sum(usage) / sum(capacity)` and remains correct when hosts have different CPU
+or memory capacities. Network and disk retain their existing average-across-host
+aggregation.
 
-The per-host CPU tooltip (mini bar chart, color-coded green/orange/red) shows which hosts are hot on hover.
+Per-host `OSMemoryTotal` values support heterogeneous host RAM. The legacy
+container-memory fallback still applies one locally observed cgroup memory
+limit to every selected host; heterogeneous per-container RAM limits require a
+future per-host cgroup-capacity query and are not claimed as exact here.
+
+The per-host CPU tooltip (mini bar chart, color-coded green/orange/red) still
+shows which hosts are hot. Each bar uses that host's own CPU capacity.
 
 **Implementation details:**
-- Per-host CPU: `CLUSTER_CPU_TIMESERIES` fetched in "All" mode, returned as `per_host_cpu` map
-- CPU cores: per-host via `asynchronous_metric_log`, min across hosts, capped at cgroup limit
-- Tooltip: "Cluster avg" with per-host bars; single-host mode shows "Server:" instead
-- CPU clamping uses per-host cores: `Math.min(v, cpuCores × 1,000,000)`
 
-**Split view** renders one chart per host, stacked vertically, each with its own Y-axis. This avoids the aggregation problem entirely.
-
-### Why this approach
-
-Three alternatives were considered and rejected:
-
-1. **Avg line + avg bands** — merge using 900ms/s appears as 225ms/s (÷4 hosts). Misleading.
-2. **Sum both, scale to cluster capacity** — Y-axis goes to 400% on 4 nodes. Unintuitive.
-3. **Avg line + stacked bands (undivided)** with band division — bands too small, split view showed 50-90% while "All" looked idle.
-
-The current approach is the least misleading compression of N-dimensional data into one chart. Split view remains the gold standard for per-host analysis.
+- Per-host CPU: `CLUSTER_CPU_TIMESERIES` fetched for the all-host tooltip and
+  returned as `per_host_cpu`
+- Per-host CPU capacity: returned as `per_host_cpu_cores`
+- Capacity source priority and completeness behavior are documented in
+  [cpu.md](cpu.md#time-travel-capacity-resolution)
+- CPU clamping uses total selected capacity:
+  `Math.min(v, totalCpuCores × 1,000,000)`
+- If any selected host lacks capacity, CPU percentage labels, the capacity
+  summary, clamping, and the 100% reference line are omitted rather than using
+  a partial denominator
+- RAM metadata follows the same completeness rule: if any selected host still
+  lacks RAM capacity after cache validation and refetch, raw memory usage
+  remains visible but the RAM summary, percentages, and capacity line are
+  omitted
+- Cached host metadata is revalidated when cluster-aware CPU data observes a
+  different host set, preventing pre-detection one-host metadata from defining
+  an All-host capacity
+- Host-selection requests are latest-wins: changing the selection starts a new
+  request, and an older response cannot overwrite the newer selection
+- CPU spike analysis uses the same total/total model as the chart:
+  summed selected-host CPU usage divided by summed effective cores
+- Per server renders one chart per selected host, each with its own capacity

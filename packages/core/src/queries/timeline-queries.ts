@@ -24,11 +24,11 @@ const DEFAULT_INTERVAL_MS = 1000;
  */
 export const RUNNING_MERGE_CPU_CORES = 0.5;
 
-/** Server memory timeseries from metric_log */
+/** Total server memory usage across the selected hosts from metric_log */
 export const SERVER_MEMORY_TIMESERIES = `
   SELECT
     toString(event_time) AS t,
-    avg(CurrentMetric_MemoryTracking) AS v
+    sum(CurrentMetric_MemoryTracking) AS v
   FROM {{cluster_aware:system.metric_log}}
   WHERE event_time >= {start_time}
     AND event_time <= {end_time}
@@ -41,12 +41,13 @@ export const SERVER_MEMORY_TIMESERIES = `
  *  instead of metric_log's ProfileEvent_OSCPUVirtualTimeMicroseconds (query threads only).
  *  In k8s/containers, prefers CGroupUserTime+CGroupSystemTime (container-scoped).
  *  Falls back to OSUserTime+OSSystemTime on bare metal.
- *  Output is in microseconds (×1e6) with interval_ms=1000 for pipeline compatibility.
+ *  Output is the total selected-host usage in microseconds (×1e6), with
+ *  interval_ms=1000 for pipeline compatibility.
  */
 export const SERVER_CPU_TIMESERIES = `
   SELECT
     t,
-    avg(v) AS v,
+    sum(v) AS v,
     toUInt32(${DEFAULT_INTERVAL_MS}) AS interval_ms
   FROM (
     SELECT
@@ -114,6 +115,44 @@ export const SERVER_CPU_CORES = `
   WHERE metric = 'NumberOfCPUCores'
     AND event_time >= {start_time}
     AND event_time <= {end_time}
+  GROUP BY host
+`;
+
+/**
+ * Historical per-host CPU-capacity candidates.
+ *
+ * CGroupMaxCPU is the effective container/pod quota. NumberOfCPUCores and
+ * the OSUserTimeCPU* metric count describe host/VM capacity and are fallbacks
+ * for deployments without a cgroup quota or without NumberOfCPUCores.
+ */
+export const SERVER_CPU_CAPACITY_HISTORY = `
+  SELECT
+    hostname() AS host,
+    argMaxIf(value, event_time, metric = 'CGroupMaxCPU') AS cgroup_max_cpu,
+    argMaxIf(value, event_time, metric = 'NumberOfCPUCores') AS reported_cores,
+    uniqExactIf(metric, metric LIKE 'OSUserTimeCPU%') AS os_cpu_count
+  FROM {{cluster_aware:system.asynchronous_metric_log}}
+  WHERE event_time >= {start_time}
+    AND event_time <= {end_time}
+    AND (
+      metric IN ('CGroupMaxCPU', 'NumberOfCPUCores')
+      OR metric LIKE 'OSUserTimeCPU%'
+    )
+  GROUP BY host
+`;
+
+/** Current per-host fallback for gaps or missing asynchronous_metric_log data. */
+export const SERVER_CPU_CAPACITY_CURRENT = `
+  SELECT
+    hostname() AS host,
+    maxIf(value, metric = 'CGroupMaxCPU') AS cgroup_max_cpu,
+    maxIf(value, metric = 'NumberOfCPUCores') AS reported_cores,
+    uniqExactIf(metric, metric LIKE 'OSUserTimeCPU%') AS os_cpu_count
+  FROM {{cluster_aware:system.asynchronous_metrics}}
+  WHERE (
+    metric IN ('CGroupMaxCPU', 'NumberOfCPUCores')
+    OR metric LIKE 'OSUserTimeCPU%'
+  )
   GROUP BY host
 `;
 
@@ -385,12 +424,13 @@ export const RUNNING_MERGES_TIMELINE = `
  * CPU spike analysis: fetch per-second CPU data with percentage calculation.
  * Uses asynchronous_metric_log for OS-level CPU (captures all process threads).
  * The spike grouping logic is done in TypeScript for flexibility.
- * On clusters, averages across hosts per timestamp.
+ * On clusters, sums usage across hosts per timestamp so the numerator matches
+ * the total selected capacity used by spike analysis.
  */
 export const CPU_SPIKE_TIMESERIES = `
   SELECT
     t,
-    avg(cpu_us) AS cpu_us,
+    sum(cpu_us) AS cpu_us,
     toUInt32(${DEFAULT_INTERVAL_MS}) AS interval_ms
   FROM (
     SELECT

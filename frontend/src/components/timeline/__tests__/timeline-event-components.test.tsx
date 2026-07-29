@@ -157,6 +157,145 @@ describe('TimelineEventOverlay', () => {
 });
 
 describe('TimelineChart event annotations', () => {
+  it('uses total selected CPU capacity for the Overall percentage scale', () => {
+    const data: MemoryTimeline = {
+      window_start: '2026-07-25T12:00:00.000Z',
+      window_end: '2026-07-25T12:01:00.000Z',
+      target: '2026-07-25T12:00:30.000Z',
+      server_memory: [],
+      server_cpu: [
+        { t: '2026-07-25 12:00:10', v: 10_000_000 },
+        { t: '2026-07-25 12:00:55', v: 10_000_000 },
+      ],
+      server_network_send: [],
+      server_network_recv: [],
+      server_disk_read: [],
+      server_disk_write: [],
+      server_total_ram: 12 * 1024 ** 3,
+      cpu_cores: 3,
+      total_ram: 44 * 1024 ** 3,
+      total_cpu_cores: 11,
+      host_count: 2,
+      queries: [],
+      merges: [],
+      mutations: [],
+      query_count: 0,
+      merge_count: 0,
+      merge_peak_total: 0,
+      mutation_count: 0,
+    };
+
+    render(
+      <TimelineChart
+        data={data}
+        metricMode="cpu"
+        hoverMs={null}
+        pinnedMs={null}
+        onHover={vi.fn()}
+        onPin={vi.fn()}
+        zoomRange={null}
+        onZoom={vi.fn()}
+        highlightedItem={null}
+      />,
+    );
+
+    expect(screen.getByText('100% (11 cores)')).toBeInTheDocument();
+    expect(screen.queryByText('100% (3 cores)')).not.toBeInTheDocument();
+  });
+
+  it('omits the CPU percentage scale when selected-host capacity is incomplete', () => {
+    const data: MemoryTimeline = {
+      window_start: '2026-07-25T12:00:00.000Z',
+      window_end: '2026-07-25T12:01:00.000Z',
+      target: '2026-07-25T12:00:30.000Z',
+      server_memory: [],
+      server_cpu: [
+        { t: '2026-07-25 12:00:10', v: 7_000_000 },
+        { t: '2026-07-25 12:00:55', v: 7_000_000 },
+      ],
+      server_network_send: [],
+      server_network_recv: [],
+      server_disk_read: [],
+      server_disk_write: [],
+      server_total_ram: 12 * 1024 ** 3,
+      cpu_cores: 3,
+      total_ram: 24 * 1024 ** 3,
+      cpu_capacity_complete: false,
+      cpu_capacity_missing_hosts: ['host-b'],
+      host_count: 2,
+      queries: [],
+      merges: [],
+      mutations: [],
+      query_count: 0,
+      merge_count: 0,
+      merge_peak_total: 0,
+      mutation_count: 0,
+    };
+
+    render(
+      <TimelineChart
+        data={data}
+        metricMode="cpu"
+        hoverMs={null}
+        pinnedMs={null}
+        onHover={vi.fn()}
+        onPin={vi.fn()}
+        zoomRange={null}
+        onZoom={vi.fn()}
+        highlightedItem={null}
+      />,
+    );
+
+    expect(screen.queryByText(/100% \(/)).not.toBeInTheDocument();
+  });
+
+  it('omits the RAM capacity scale when selected-host capacity is incomplete', () => {
+    const data: MemoryTimeline = {
+      window_start: '2026-07-25T12:00:00.000Z',
+      window_end: '2026-07-25T12:01:00.000Z',
+      target: '2026-07-25T12:00:30.000Z',
+      server_memory: [
+        { t: '2026-07-25 12:00:10', v: 10 * 1024 ** 3 },
+        { t: '2026-07-25 12:00:55', v: 10 * 1024 ** 3 },
+      ],
+      server_cpu: [],
+      server_network_send: [],
+      server_network_recv: [],
+      server_disk_read: [],
+      server_disk_write: [],
+      server_total_ram: 12 * 1024 ** 3,
+      total_ram: 12 * 1024 ** 3,
+      ram_capacity_complete: false,
+      ram_capacity_missing_hosts: ['host-b'],
+      cpu_cores: 0,
+      host_count: 2,
+      queries: [],
+      merges: [],
+      mutations: [],
+      query_count: 0,
+      merge_count: 0,
+      merge_peak_total: 0,
+      mutation_count: 0,
+    };
+
+    render(
+      <TimelineChart
+        data={data}
+        metricMode="memory"
+        hoverMs={null}
+        pinnedMs={null}
+        onHover={vi.fn()}
+        onPin={vi.fn()}
+        zoomRange={null}
+        onZoom={vi.fn()}
+        highlightedItem={null}
+      />,
+    );
+
+    expect(screen.queryByText('RAM')).not.toBeInTheDocument();
+    expect(screen.queryByText(/\(\d+%\)/)).not.toBeInTheDocument();
+  });
+
   it('shows an event inside the requested window before the first metric sample', () => {
     resizeObserverCallbacks.length = 0;
     const restart = event(

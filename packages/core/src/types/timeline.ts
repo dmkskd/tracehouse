@@ -99,18 +99,30 @@ export interface MemoryTimeline {
   server_network_recv: TimeseriesPoint[];
   server_disk_read: TimeseriesPoint[];
   server_disk_write: TimeseriesPoint[];
-  /** Per-host reference RAM retained for chart scaling. */
+  /** Smallest selected-host RAM capacity, retained for compatibility. */
   server_total_ram: number;
-  /** Per-host reference CPU cores retained for chart scaling. */
+  /** Smallest selected-host CPU capacity, retained for compatibility. */
   cpu_cores: number;
   /** Sum of RAM capacity across the selected hosts. */
   total_ram?: number;
+  /** True only when every selected host has a validated RAM capacity. */
+  ram_capacity_complete?: boolean;
+  /** Selected hosts without a RAM-capacity value. */
+  ram_capacity_missing_hosts?: string[];
   /** Sum of CPU cores across the selected hosts. */
   total_cpu_cores?: number;
+  /** True only when every selected host has a validated CPU capacity. */
+  cpu_capacity_complete?: boolean;
+  /** Selected hosts without a historical or current CPU-capacity value. */
+  cpu_capacity_missing_hosts?: string[];
+  /** True when at least one host used current capacity for a historical window. */
+  cpu_capacity_approximate?: boolean;
   /** Number of ClickHouse hosts contributing to this data (1 for single-host, N for cluster "All" mode) */
   host_count: number;
   /** Per-host CPU timeseries for cluster tooltip breakdown (only populated in "All" mode with multiple hosts) */
   per_host_cpu?: Record<string, TimeseriesPoint[]>;
+  /** CPU capacity for each host represented in per_host_cpu. */
+  per_host_cpu_cores?: Record<string, number>;
   queries: QuerySeries[];
   merges: MergeSeries[];
   mutations: MutationSeries[];
@@ -118,6 +130,28 @@ export interface MemoryTimeline {
   merge_count: number;
   merge_peak_total: number;
   mutation_count: number;
+}
+
+type TimelineCapacity = Pick<
+  MemoryTimeline,
+  | 'server_total_ram'
+  | 'total_ram'
+  | 'ram_capacity_complete'
+  | 'cpu_cores'
+  | 'total_cpu_cores'
+  | 'cpu_capacity_complete'
+>;
+
+/** Effective selected-host RAM capacity, or 0 when the host set is incomplete. */
+export function getTimelineRamCapacity(data: TimelineCapacity): number {
+  if (data.ram_capacity_complete === false) return 0;
+  return data.total_ram ?? data.server_total_ram;
+}
+
+/** Effective selected-host CPU capacity, or 0 when the host set is incomplete. */
+export function getTimelineCpuCapacity(data: TimelineCapacity): number {
+  if (data.cpu_capacity_complete === false) return 0;
+  return data.total_cpu_cores ?? data.cpu_cores;
 }
 
 export interface TimelineOptions {
@@ -162,7 +196,7 @@ export interface CpuSpikeAnalysis {
   /** Time window analyzed */
   window_start: string;
   window_end: string;
-  /** Number of CPU cores on the server */
+  /** Total effective CPU cores represented by the analysis */
   cpu_cores: number;
   /** Total data points in the window */
   total_data_points: number;

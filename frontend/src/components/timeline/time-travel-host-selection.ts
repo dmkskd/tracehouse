@@ -25,3 +25,22 @@ export function timeTravelRowHosts(
   if (selectedHosts.length === 0) return [...clusterHosts];
   return clusterHosts.filter(host => selectedHosts.includes(host));
 }
+
+export interface TimeTravelRequestGate {
+  begin(): number;
+  invalidate(): void;
+  isLatest(requestId: number): boolean;
+}
+
+/**
+ * Keeps asynchronous timeline responses aligned with the current host scope.
+ * Starting or invalidating a request makes every older request stale.
+ */
+export function createTimeTravelRequestGate(): TimeTravelRequestGate {
+  let latestRequestId = 0;
+  return {
+    begin: () => ++latestRequestId,
+    invalidate: () => { latestRequestId += 1; },
+    isLatest: requestId => requestId === latestRequestId,
+  };
+}

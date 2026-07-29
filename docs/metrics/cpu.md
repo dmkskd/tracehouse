@@ -54,6 +54,71 @@ Detection priority:
 
 The Engine Internals CPU Core Map aggregates N host-level per-core metrics into M effective cgroup slots proportionally, and shows a `cgroup: N/M` badge.
 
+### Time Travel capacity resolution
+
+Time Travel resolves CPU capacity independently for every selected host. It
+does not multiply one host's capacity by the host count and does not use
+`max_threads`, because that setting is user-configurable and is not a reliable
+hardware or cgroup capacity measurement.
+
+The first query reads the selected historical window from
+`system.asynchronous_metric_log` and returns three candidates per host:
+
+1. `CGroupMaxCPU`
+2. `NumberOfCPUCores`
+3. The distinct count of `OSUserTimeCPU*` metrics
+
+The effective capacity for one host is:
+
+```text
+host_cores = NumberOfCPUCores, otherwise count(OSUserTimeCPU*)
+capacity   = min(CGroupMaxCPU, host_cores) when both exist
+             CGroupMaxCPU                  when only it exists
+             host_cores                    otherwise
+```
+
+Fractional cgroup limits are preserved. For example, a `CGroupMaxCPU` value of
+`2.5` contributes 2.5 cores to total selected capacity.
+
+If a selected host cannot be resolved historically, one cluster-aware fallback
+query reads the same candidates from current `system.asynchronous_metrics`.
+Historical values take precedence. A current fallback used for an older window
+sets `cpu_capacity_approximate` in the service response because capacity may
+have changed since that window. The current Time Travel UI does not yet surface
+that diagnostic flag.
+
+The All-host scope validates cached RAM/host metadata against hosts observed by
+the current CPU-capacity and per-host CPU queries. This matters during startup:
+an initial local-node request can finish before cluster detection. If later
+cluster-aware data contains additional hosts, the one-host metadata is discarded
+and fetched again before totals are calculated.
+
+The Overall percentage is emitted only when every selected host has a positive,
+finite capacity:
+
+```text
+Overall CPU % =
+    sum(per-host raw CPU usage)
+    /
+    sum(per-host effective CPU capacity)
+```
+
+CPU spike analysis uses the same numerator and denominator. It no longer
+averages absolute host usage and divides by the smallest host's capacity.
+
+If even one selected host remains unresolved, Time Travel keeps the raw usage
+series but omits the percentage denominator, CPU capacity summary, clamp, and
+100% reference line. A partial capacity total must never be presented as the
+whole selection.
+
+`CGroupMaxCPU`, raw CGroup/OS time, normalized time, and the per-CPU OS metrics
+are defined in the
+[ClickHouse asynchronous metrics reference](https://clickhouse.com/docs/operations/system-tables/asynchronous_metrics).
+
+The chart currently uses the latest capacity found within the selected window
+as a fixed reference. A window spanning an autoscaling capacity change does not
+yet have a time-varying denominator and should be treated as an approximation.
+
 ## Overview Trends vs Snapshot vs Attribution
 
 The app uses three different CPU calculations depending on context:
