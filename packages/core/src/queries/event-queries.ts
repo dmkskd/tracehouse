@@ -8,7 +8,7 @@ import { APP_SOURCE_LIKE } from './source-tags.js';
  * Keep occurrences individual so normalized_query_hash can reveal periodic
  * scheduled jobs in the visualization.
  */
-export const QUERY_EVENTS = `
+const QUERY_EVENTS_BASE = `
 SELECT
   hostname() AS host,
   toString(query_start_time_microseconds + toIntervalMillisecond(query_duration_ms)) AS occurred_at,
@@ -46,7 +46,16 @@ WHERE event_date >= toDate({start_time}) - 1
   AND query NOT LIKE '/* ddl_entry=query-%'
   AND ({hostname} = '' OR hostname() = {hostname})
 ORDER BY occurred_at DESC
+`;
+
+export const QUERY_EVENTS = `
+${QUERY_EVENTS_BASE}
 LIMIT {event_limit} BY if(type = 'QueryFinish', 'ddl', 'query_resource')
+`;
+
+export const QUERY_EVENTS_GLOBAL_LIMIT = `
+${QUERY_EVENTS_BASE}
+LIMIT {event_limit}
 `;
 
 /**

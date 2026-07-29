@@ -162,7 +162,7 @@ export const EventsDashboard: React.FC<EventsDashboardProps> = ({
         startTime: toUtcEventInstant(new Date(requestStartMs)),
         endTime: toUtcEventInstant(new Date(requestEndMs)),
         availableCapabilities,
-        limit: 5000,
+        limit: 100,
       });
       setEvents(result.events);
       setCoverage(result.coverage);
@@ -312,6 +312,7 @@ export const EventsDashboard: React.FC<EventsDashboardProps> = ({
   );
   const severityCounts = useMemo(() => countEventSeverities(events), [events]);
   const coverageProblems = coverage.filter(item => item.status === 'failed' || item.truncated);
+  const truncatedSourceCount = coverage.filter(item => item.truncated).length;
   const loadedSources = coverage.filter(item => item.status === 'loaded').length;
 
   return (
@@ -395,15 +396,15 @@ export const EventsDashboard: React.FC<EventsDashboardProps> = ({
             onClick={() => setEventHelpView(value => (
               value === 'events' ? null : 'events'
             ))}
-            aria-expanded={eventHelpView === 'events'}
+            aria-expanded={eventHelpView !== null}
             title="TraceHouse shows only the event types in this catalog"
             style={{
               ...secondaryButtonStyle,
-              color: eventHelpView === 'events' ? '#58a6ff' : 'var(--text-secondary)',
-              borderColor: eventHelpView === 'events'
+              color: eventHelpView !== null ? '#58a6ff' : 'var(--text-secondary)',
+              borderColor: eventHelpView !== null
                 ? 'rgba(88,166,255,0.45)'
                 : 'var(--border-primary)',
-              background: eventHelpView === 'events'
+              background: eventHelpView !== null
                 ? 'rgba(88,166,255,0.08)'
                 : 'var(--bg-card)',
             }}
@@ -425,6 +426,26 @@ export const EventsDashboard: React.FC<EventsDashboardProps> = ({
           }}>
             {loadedSources}/{coverage.length} sources available
           </span>
+          {truncatedSourceCount > 0 && (
+            <button
+              type="button"
+              aria-label={`${truncatedSourceCount} ${truncatedSourceCount === 1 ? 'source' : 'sources'} truncated. View source status.`}
+              onClick={() => setEventHelpView('sources')}
+              style={{
+                padding: 0,
+                border: 0,
+                background: 'transparent',
+                color: '#d29922',
+                fontSize: 10,
+                fontFamily: 'inherit',
+                cursor: 'pointer',
+                textDecoration: 'underline',
+                textUnderlineOffset: 2,
+              }}
+            >
+              · {truncatedSourceCount} truncated
+            </button>
+          )}
           {eventHelpView && (
             <EventCoverageHelp
               coverage={coverage}

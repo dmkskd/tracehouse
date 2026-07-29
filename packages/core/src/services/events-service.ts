@@ -10,6 +10,7 @@ import {
   OPERATIONAL_ERROR_EVENTS,
   PART_FAILURE_EVENTS,
   QUERY_EVENTS,
+  QUERY_EVENTS_GLOBAL_LIMIT,
   REPLICA_READONLY_EPISODES,
   REPLICATION_FAILURE_EVENTS,
   SERVER_CRASH_EVENTS,
@@ -238,7 +239,11 @@ export class EventsService {
       typeof EVENT_SOURCE_DEFINITIONS[number]['id'],
       BoundEventSourceDefinition['fetch']
     > = {
-      query_log: sourceParams => this.fetchQueryEvents(sourceParams, sourceTab),
+      query_log: sourceParams => this.fetchQueryEvents(
+        sourceParams,
+        sourceTab,
+        available.has('distributed_limit_by'),
+      ),
       async_insert_failures: sourceParams =>
         this.fetchAsyncInsertFailureEvents(sourceParams, sourceTab),
       backups: sourceParams => this.fetchBackupEvents(sourceParams, sourceTab),
@@ -308,8 +313,12 @@ export class EventsService {
   private async fetchQueryEvents(
     params: Record<string, QueryParameter>,
     sourceTab: typeof TAB_EVENTS | typeof TAB_TIME_TRAVEL,
+    supportsDistributedLimitBy: boolean,
   ): Promise<OperationalEvent[]> {
-    const sql = buildQuery(QUERY_EVENTS, params);
+    const template = supportsDistributedLimitBy
+      ? QUERY_EVENTS
+      : QUERY_EVENTS_GLOBAL_LIMIT;
+    const sql = buildQuery(template, params);
     const rows = await this.adapter.executeQuery(
       tagQuery(sql, sourceTag(sourceTab, 'eventsQueryLog')),
     );
