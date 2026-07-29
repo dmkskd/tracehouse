@@ -113,6 +113,7 @@ describe('EventsDashboard refresh behavior', () => {
 
     expect(mocks.getEvents).toHaveBeenCalledTimes(1);
     expect(mocks.getEvents.mock.calls[0][0].endTime).toBe('2026-07-26T12:00:00.000Z');
+    expect(mocks.getEvents.mock.calls[0][0].limit).toBe(100);
     expect(mocks.touch).toHaveBeenCalledTimes(1);
 
     fireEvent.click(screen.getByRole('button', { name: 'Auto' }));
@@ -158,6 +159,32 @@ describe('EventsDashboard refresh behavior', () => {
     fireEvent.click(screen.getByRole('button', { name: '↻ Refresh' }));
 
     expect(mocks.refreshCapabilities).toHaveBeenCalledWith(mocks.services.adapter);
+  });
+
+  it('opens source status directly from the truncation indicator', async () => {
+    mocks.getEvents.mockResolvedValueOnce({
+      events: [],
+      coverage: [{
+        source: 'system.query_log',
+        capability: 'query_log',
+        status: 'loaded',
+        event_count: 100,
+        truncated: true,
+      }],
+    });
+
+    await act(async () => {
+      render(dashboard());
+    });
+
+    fireEvent.click(screen.getByRole('button', {
+      name: '1 source truncated. View source status.',
+    }));
+
+    expect(screen.getByRole('button', { name: 'Source status' })).toHaveStyle({
+      color: '#58a6ff',
+    });
+    expect(screen.getByText('truncated · 100')).toBeInTheDocument();
   });
 
   it('collapses similar bursts and keeps the individual events expandable', async () => {
