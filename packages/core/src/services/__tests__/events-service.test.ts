@@ -130,6 +130,8 @@ describe('EventsService', () => {
   it('tags standalone event reads with the Events component', async () => {
     const mock = adapter(async sql => {
       expect(sql).toContain('/* source:TraceHouse:Events:eventsQueryLog */');
+      expect(sql).toContain('LIMIT 1000');
+      expect(sql).not.toContain('LIMIT 1000 BY');
       return [];
     });
     const service = new EventsService(mock);
@@ -138,6 +140,23 @@ describe('EventsService', () => {
       ...OPTIONS,
       availableCapabilities: ['query_log'],
       origin: 'events',
+    });
+
+    expect(mock.executeQuery).toHaveBeenCalledTimes(1);
+  });
+
+  it('uses per-category LIMIT BY when the distributed probe succeeded', async () => {
+    const mock = adapter(async sql => {
+      expect(sql).toContain(
+        "LIMIT 1000 BY if(type = 'QueryFinish', 'ddl', 'query_resource')",
+      );
+      return [];
+    });
+    const service = new EventsService(mock);
+
+    await service.getEvents({
+      ...OPTIONS,
+      availableCapabilities: ['query_log', 'distributed_limit_by'],
     });
 
     expect(mock.executeQuery).toHaveBeenCalledTimes(1);
@@ -745,6 +764,37 @@ describe('EventsService', () => {
       status: 'failed',
       event_count: 0,
       detail: 'Not enough privileges',
+    });
+  });
+
+  it('keeps other events when the query-log event calculation fails', async () => {
+    const mock = adapter(async sql => {
+      if (sql.includes('system.query_log')) {
+        throw new Error('Query-log calculation failed');
+      }
+      return [{
+        host: 'ch-1',
+        occurred_at: '2026-07-25 12:20:00',
+        observed_at: '2026-07-25 12:20:42',
+      }];
+    });
+    const service = new EventsService(mock);
+
+    const result = await service.getEvents({
+      ...OPTIONS,
+      availableCapabilities: ['query_log', 'asynchronous_metric_log'],
+    });
+
+    expect(result.events).toHaveLength(1);
+    expect(result.events[0]?.kind).toBe('server_restart');
+    expect(result.coverage.find(item => item.capability === 'query_log')).toMatchObject({
+      status: 'failed',
+      event_count: 0,
+      detail: 'Query-log calculation failed',
+    });
+    expect(result.coverage.find(item => item.capability === 'asynchronous_metric_log')).toMatchObject({
+      status: 'loaded',
+      event_count: 1,
     });
   });
 
