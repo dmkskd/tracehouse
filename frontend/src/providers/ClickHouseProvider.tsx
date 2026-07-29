@@ -27,7 +27,6 @@ import {
   EventsService,
   EventContextService,
   TraceService,
-  MonitoringCapabilitiesService,
   AnalyticsService,
   ObservabilityMapService,
   ClusterService,
@@ -168,39 +167,18 @@ export function ClickHouseProvider({ children }: ClickHouseProviderProps) {
     };
   }, []);
 
-  // Probe monitoring capabilities when connection changes
+  // Detect cluster topology before probing capabilities. Behavioral probes
+  // must use the same local/distributed query path as feature queries.
   useEffect(() => {
+    const clusterStore = useClusterStore.getState();
     const capStore = useMonitoringCapabilitiesStore.getState();
     if (!value) {
+      clusterStore.reset();
       capStore.reset();
       return;
     }
 
     capStore.setProbeStatus('probing');
-    const svc = new MonitoringCapabilitiesService(value.adapter);
-    let cancelled = false;
-
-    svc.probe().then(caps => {
-      if (!cancelled) {
-        capStore.setCapabilities(caps);
-      }
-    }).catch(err => {
-      if (!cancelled) {
-        capStore.setProbeError(err instanceof Error ? err.message : 'Failed to probe monitoring capabilities');
-      }
-    });
-
-    return () => { cancelled = true; };
-  }, [value]);
-
-  // Detect cluster topology when connection changes
-  useEffect(() => {
-    const clusterStore = useClusterStore.getState();
-    if (!value) {
-      clusterStore.reset();
-      return;
-    }
-
     let cancelled = false;
     const configuredCluster = buildConfig.defaultConnection.cluster;
 
@@ -210,9 +188,15 @@ export function ClickHouseProvider({ children }: ClickHouseProviderProps) {
 
     detectPromise.then(info => {
       if (!cancelled) {
-        clusterStore.setCluster(info);
         // Set cluster name on the wrapper so all queries get rewritten automatically
         clusterAdapterRef.current?.setClusterName(info.clusterName);
+        const clusterChanged = clusterStore.clusterName !== info.clusterName;
+        clusterStore.setCluster(info);
+        // Cluster changes trigger a probe through the subscription below.
+        // Probe explicitly when a new connection resolves to the same name.
+        if (!clusterChanged) {
+          void capStore.refresh(value.adapter).catch(() => {});
+        }
         if (info.clusterName) {
           console.log(`[ClusterDetect] Cluster '${info.clusterName}' detected (${info.replicaCount} replicas) — queries will use clusterAllReplicas()`);
         } else {
@@ -223,18 +207,29 @@ export function ClickHouseProvider({ children }: ClickHouseProviderProps) {
       if (!cancelled) {
         // Mark detection as complete even on failure — otherwise the UI
         // stays stuck on "Detecting cluster topology..." forever.
+        clusterAdapterRef.current?.setClusterName(null);
+        const clusterChanged = clusterStore.clusterName !== null;
         clusterStore.setCluster({ clusterName: null, replicaCount: 1, shardCount: 1, availableClusters: [] });
+        if (!clusterChanged) {
+          void capStore.refresh(value.adapter).catch(() => {});
+        }
       }
     });
 
     return () => { cancelled = true; };
   }, [value]);
 
-  // Sync cluster name changes (from UI switcher) to the adapter
+  // Sync cluster changes to the adapter and refresh behavioral capabilities
+  // because the distributed query path may differ between clusters.
   useEffect(() => {
     const unsub = useClusterStore.subscribe((state, prev) => {
       if (state.clusterName !== prev.clusterName) {
         clusterAdapterRef.current?.setClusterName(state.clusterName);
+        if (value) {
+          void useMonitoringCapabilitiesStore.getState()
+            .refresh(value.adapter)
+            .catch(() => {});
+        }
         if (state.clusterName) {
           console.log(`[ClusterSwitch] Switched to cluster '${state.clusterName}'`);
         } else {
@@ -243,7 +238,7 @@ export function ClickHouseProvider({ children }: ClickHouseProviderProps) {
       }
     });
     return unsub;
-  }, []);
+  }, [value]);
 
   // Detect runtime environment (container, k8s, cgroup limits) when connection changes
   useEffect(() => {
