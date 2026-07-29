@@ -69,16 +69,22 @@ export interface MergeActivityRecord {
 export interface MergeActivityFilters {
   hideReplicaMerges?: boolean;
   excludeSystemDatabases?: boolean;
-  database?: string;
-  table?: string;
+  database?: string[];
+  table?: string[];
   /** Legacy active-only URL filter retained for compatible deep links. */
   liveCategory?: string;
-  category?: string;
+  category?: string[];
   minDurationMs?: number;
   minSizeBytes?: number;
-  status?: string;
-  hostname?: string;
+  status?: string[];
+  hostname?: string[];
   partName?: string;
+}
+
+function includesValue(filters: string[] | undefined, value: string | undefined): boolean {
+  if (!filters?.length) return true;
+  const normalizedValue = (value ?? '').toLowerCase();
+  return filters.some(filter => filter.toLowerCase() === normalizedValue);
 }
 
 export function createMergeActivityState(): MergeActivityState {
@@ -218,11 +224,11 @@ function matchesCommonFilter(
 ): boolean {
   if (filters.hideReplicaMerges && value.isReplicaMerge) return false;
   if (filters.excludeSystemDatabases && SYSTEM_DATABASES.has(value.database)) return false;
-  if (filters.database && value.database !== filters.database) return false;
-  if (filters.table && value.table !== filters.table) return false;
+  if (!includesValue(filters.database, value.database)) return false;
+  if (!includesValue(filters.table, value.table)) return false;
   if (filters.minDurationMs != null && value.durationMs < filters.minDurationMs) return false;
   if (filters.minSizeBytes != null && value.sizeBytes < filters.minSizeBytes) return false;
-  if (filters.hostname && value.hostname !== filters.hostname) return false;
+  if (!includesValue(filters.hostname, value.hostname)) return false;
   if (filters.partName) {
     const query = filters.partName.toLowerCase();
     const matchesPart = value.resultPartName.toLowerCase().includes(query)
@@ -240,9 +246,9 @@ export function filterMergeActivity(
   snapshot: MergeActivitySnapshot,
   filters: MergeActivityFilters,
 ): MergeActivitySnapshot {
-  const requestedStatus = filters.status?.toLowerCase();
+  const requestedStatuses = new Set(filters.status?.map(status => status.toLowerCase()) ?? []);
   const live = snapshot.live.filter(({ merge }) => {
-    if (requestedStatus && requestedStatus !== 'running') return false;
+    if (requestedStatuses.size > 0 && !requestedStatuses.has('running')) return false;
     if (!matchesCommonFilter({
       database: merge.database,
       table: merge.table,
@@ -255,14 +261,15 @@ export function filterMergeActivity(
     }, filters)) return false;
     const category = classifyActiveMerge(merge.merge_type, merge.is_mutation, merge.result_part_name);
     if (filters.liveCategory && category !== filters.liveCategory) return false;
-    if (filters.category && category !== filters.category) return false;
+    if (!includesValue(filters.category, category)) return false;
     return true;
   });
 
   const recent = snapshot.recent.filter(record => {
-    if (requestedStatus === 'running') return false;
-    if (requestedStatus === 'ok' && record.error) return false;
-    if (requestedStatus === 'error' && !record.error) return false;
+    if (requestedStatuses.size > 0) {
+      const status = record.error ? 'error' : 'ok';
+      if (!requestedStatuses.has(status)) return false;
+    }
     if (!matchesCommonFilter({
       database: record.database,
       table: record.table,
@@ -274,7 +281,7 @@ export function filterMergeActivity(
       sizeBytes: record.size_in_bytes,
     }, filters)) return false;
     const category = classifyMergeHistory(record.event_type, record.merge_reason, record.part_name);
-    if (filters.category && category !== filters.category) return false;
+    if (!includesValue(filters.category, category)) return false;
     return true;
   });
 

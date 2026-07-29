@@ -5,7 +5,7 @@
  *
  * Mirrors the QueryFilterBar pattern: typing shows autocomplete for field
  * names; after selecting a field, shows dropdown suggestions from props.
- * Confirmed entries become removable chips. All filters are ANDed.
+ * Confirmed entries become removable chips. Values within a field are ORed; fields are ANDed.
  */
 
 import React, { useState, useRef, useCallback, useMemo } from 'react';
@@ -42,16 +42,16 @@ interface MergeFilterBarProps {
   onHideReplicaMergesChange?: (v: boolean) => void;
   /** For Merge History: distinct merge_reason values */
   mergeReasons?: string[];
-  selectedMergeReason?: string;
-  onMergeReasonChange?: (v: string | undefined) => void;
+  selectedMergeReason?: string[];
+  onMergeReasonChange?: (v: string[] | undefined) => void;
   /** Host filter (client-side) */
   availableHosts?: string[];
-  selectedHost?: string;
-  onHostChange?: (v: string | undefined) => void;
+  selectedHost?: string[];
+  onHostChange?: (v: string[] | undefined) => void;
   /** Status filter (client-side): OK or Error */
   availableStatuses?: string[];
-  selectedStatus?: string;
-  onStatusChange?: (v: string | undefined) => void;
+  selectedStatus?: string[];
+  onStatusChange?: (v: string[] | undefined) => void;
   /** Part name filter (client-side, substring match) */
   selectedPartName?: string;
   onPartNameChange?: (v: string | undefined) => void;
@@ -72,57 +72,73 @@ interface FilterFieldDef {
   /** Get suggestions from props */
   getSuggestions: (props: MergeFilterBarProps) => string[];
   /** Extract current display value */
-  fromProps: (props: MergeFilterBarProps) => string | undefined;
+  fromProps: (props: MergeFilterBarProps) => string | string[] | undefined;
   /** Apply a value */
-  apply: (value: string, props: MergeFilterBarProps) => void;
+  apply: (value: string | string[], props: MergeFilterBarProps) => void;
   /** Clear this field */
   clear: (props: MergeFilterBarProps) => void;
+  multi?: boolean;
 }
+
+const valuesOf = (value: string | string[] | undefined): string[] =>
+  Array.isArray(value) ? value : value ? [value] : [];
+
+const singleValue = (value: string | string[]): string =>
+  Array.isArray(value) ? value[0] ?? '' : value;
+
+const multiValue = (value: string | string[]): string[] =>
+  Array.isArray(value) ? value : [value];
 
 const FILTER_FIELDS: FilterFieldDef[] = [
   {
     key: 'database', label: 'Database', placeholder: 'e.g. default',
     getSuggestions: p => p.availableDatabases,
     fromProps: p => p.filter.database,
-    apply: (v, p) => p.onFilterChange({ database: v || undefined, table: undefined }),
+    apply: (v, p) => p.onFilterChange({ database: multiValue(v) }),
     clear: p => p.onFilterChange({ database: undefined, table: undefined }),
+    multi: true,
   },
   {
     key: 'table', label: 'Table', placeholder: 'e.g. my_table',
     getSuggestions: p => p.availableTables,
     fromProps: p => p.filter.table,
-    apply: (v, p) => p.onFilterChange({ table: v || undefined }),
+    apply: (v, p) => p.onFilterChange({ table: multiValue(v) }),
     clear: p => p.onFilterChange({ table: undefined }),
+    multi: true,
   },
   {
     key: 'merge_reason', label: 'Category', placeholder: 'e.g. Regular, TTLDelete, Mutation',
     tabs: ['merges'],
     getSuggestions: p => p.mergeReasons || [],
     fromProps: p => p.selectedMergeReason,
-    apply: (v, p) => p.onMergeReasonChange?.(v || undefined),
+    apply: (v, p) => p.onMergeReasonChange?.(multiValue(v)),
     clear: p => p.onMergeReasonChange?.(undefined),
+    multi: true,
   },
   {
     key: 'status', label: 'Status', placeholder: 'OK or Error',
     tabs: ['merges'],
     getSuggestions: p => p.availableStatuses || [],
     fromProps: p => p.selectedStatus,
-    apply: (v, p) => p.onStatusChange?.(v || undefined),
+    apply: (v, p) => p.onStatusChange?.(multiValue(v)),
     clear: p => p.onStatusChange?.(undefined),
+    multi: true,
   },
   {
     key: 'host', label: 'Host', placeholder: 'e.g. chi-clickhouse-0-0',
     tabs: ['merges'],
     getSuggestions: p => p.availableHosts || [],
     fromProps: p => p.selectedHost,
-    apply: (v, p) => p.onHostChange?.(v || undefined),
+    apply: (v, p) => p.onHostChange?.(multiValue(v)),
     clear: p => p.onHostChange?.(undefined),
+    multi: true,
   },
   {
     key: 'part', label: 'Part', placeholder: 'e.g. all_1_3_1',
+    tabs: ['merges'],
     getSuggestions: () => [],
     fromProps: p => p.selectedPartName,
-    apply: (v, p) => p.onPartNameChange?.(v || undefined),
+    apply: (v, p) => p.onPartNameChange?.(singleValue(v) || undefined),
     clear: p => p.onPartNameChange?.(undefined),
   },
   {
@@ -131,7 +147,7 @@ const FILTER_FIELDS: FilterFieldDef[] = [
     getSuggestions: () => ['1', '5', '10', '30', '60'],
     fromProps: p => p.filter.minDurationMs != null ? String(p.filter.minDurationMs / 1000) : undefined,
     apply: (v, p) => {
-      const secs = parseFloat(v);
+      const secs = parseFloat(singleValue(v));
       p.onFilterChange({ minDurationMs: secs > 0 ? Math.round(secs * 1000) : undefined });
     },
     clear: p => p.onFilterChange({ minDurationMs: undefined }),
@@ -142,7 +158,7 @@ const FILTER_FIELDS: FilterFieldDef[] = [
     getSuggestions: () => ['10', '100', '500', '1000'],
     fromProps: p => p.filter.minSizeBytes != null ? String(Math.round(p.filter.minSizeBytes / (1024 * 1024))) : undefined,
     apply: (v, p) => {
-      const mb = parseFloat(v);
+      const mb = parseFloat(singleValue(v));
       p.onFilterChange({ minSizeBytes: mb > 0 ? Math.round(mb * 1024 * 1024) : undefined });
     },
     clear: p => p.onFilterChange({ minSizeBytes: undefined }),
@@ -206,10 +222,10 @@ export const MergeFilterBar: React.FC<MergeFilterBarProps> = (props) => {
 
   /* --- active chips derived from props --- */
   const activeChips = useMemo(() => {
-    const chips: { field: FilterFieldDef; displayValue: string }[] = [];
+    const chips: { field: FilterFieldDef; displayValues: string[] }[] = [];
     for (const f of visibleFields) {
-      const v = f.fromProps(props);
-      if (v) chips.push({ field: f, displayValue: v });
+      const displayValues = valuesOf(f.fromProps(props));
+      if (displayValues.length > 0) chips.push({ field: f, displayValues });
     }
     return chips;
   }, [visibleFields, props]);
@@ -217,7 +233,7 @@ export const MergeFilterBar: React.FC<MergeFilterBarProps> = (props) => {
   /* --- available fields (not yet used) --- */
   const availableFields = useMemo(() => {
     const usedKeys = new Set(activeChips.map(c => c.field.key));
-    return visibleFields.filter(f => !usedKeys.has(f.key));
+    return visibleFields.filter(f => f.multi || !usedKeys.has(f.key));
   }, [activeChips, visibleFields]);
 
   /* --- dropdown items based on phase --- */
@@ -230,8 +246,10 @@ export const MergeFilterBar: React.FC<MergeFilterBarProps> = (props) => {
     }
     if (phase === 'entering_value' && activeField) {
       const vals = activeField.getSuggestions(props);
+      const selected = new Set(valuesOf(activeField.fromProps(props)).map(v => v.toLowerCase()));
       const q = inputValue.toLowerCase();
       return vals
+        .filter(v => !selected.has(v.toLowerCase()))
         .filter(v => !q || v.toLowerCase().includes(q))
         .map(v => ({ id: v, label: v, field: activeField }));
     }
@@ -239,15 +257,33 @@ export const MergeFilterBar: React.FC<MergeFilterBarProps> = (props) => {
   }, [phase, inputValue, availableFields, activeField, props]);
 
   /* --- handlers --- */
-  const commitValue = useCallback((value: string) => {
-    if (!activeField || !value.trim()) return;
-    activeField.apply(value.trim(), props);
+  const finishValueEntry = useCallback(() => {
     setActiveField(null);
     setInputValue('');
     setPhase('idle');
     setShowDropdown(false);
     setHighlightIdx(-1);
-  }, [activeField, props]);
+  }, []);
+
+  const commitValue = useCallback((value: string, continueMultiEntry = true) => {
+    if (!activeField || !value.trim()) return;
+    if (activeField.multi) {
+      const current = valuesOf(activeField.fromProps(props));
+      const seen = new Set(current.map(item => item.toLowerCase()));
+      const next = [...current];
+      if (!seen.has(value.trim().toLowerCase())) next.push(value.trim());
+      activeField.apply(next, props);
+      if (continueMultiEntry) {
+        setInputValue('');
+        setShowDropdown(activeField.getSuggestions(props).length > 0);
+        setHighlightIdx(-1);
+        return;
+      }
+    } else {
+      activeField.apply(value.trim(), props);
+    }
+    finishValueEntry();
+  }, [activeField, props, finishValueEntry]);
 
   const selectField = useCallback((field: FilterFieldDef) => {
     setActiveField(field);
@@ -259,20 +295,25 @@ export const MergeFilterBar: React.FC<MergeFilterBarProps> = (props) => {
     setTimeout(() => inputRef.current?.focus(), 0);
   }, [props]);
 
-  const removeChip = useCallback((field: FilterFieldDef) => {
-    field.clear(props);
+  const removeValue = useCallback((field: FilterFieldDef, value: string) => {
+    if (!field.multi) {
+      field.clear(props);
+      return;
+    }
+    const remaining = valuesOf(field.fromProps(props))
+      .filter(item => item.toLowerCase() !== value.toLowerCase());
+    if (remaining.length > 0) field.apply(remaining, props);
+    else field.clear(props);
   }, [props]);
 
-  const editChip = useCallback((field: FilterFieldDef, currentValue: string) => {
-    field.clear(props);
+  const editChip = useCallback((field: FilterFieldDef) => {
     setActiveField(field);
-    setInputValue(currentValue);
+    setInputValue('');
     setPhase('entering_value');
     setHighlightIdx(-1);
     setShowDropdown(field.getSuggestions(props).length > 0);
     setTimeout(() => {
       inputRef.current?.focus();
-      inputRef.current?.select();
     }, 0);
   }, [props]);
 
@@ -285,22 +326,15 @@ export const MergeFilterBar: React.FC<MergeFilterBarProps> = (props) => {
     setTimeout(() => {
       setShowDropdown(false);
       if (phase === 'entering_value' && activeField && inputValue.trim()) {
-        activeField.apply(inputValue.trim(), props);
-        setActiveField(null);
-        setInputValue('');
-        setPhase('idle');
-        setHighlightIdx(-1);
+        commitValue(inputValue, false);
       } else if (phase === 'picking_field') {
         setPhase('idle');
         setInputValue('');
       } else if (phase === 'entering_value' && activeField && !inputValue.trim()) {
-        setActiveField(null);
-        setInputValue('');
-        setPhase('idle');
-        setHighlightIdx(-1);
+        finishValueEntry();
       }
     }, 200);
-  }, [phase, activeField, inputValue, props]);
+  }, [phase, activeField, inputValue, commitValue, finishValueEntry]);
 
   const handleKeyDown = useCallback((e: React.KeyboardEvent) => {
     if (e.key === 'Escape') {
@@ -327,6 +361,8 @@ export const MergeFilterBar: React.FC<MergeFilterBarProps> = (props) => {
         else if (phase === 'entering_value') commitValue(item.label);
       } else if (phase === 'entering_value' && inputValue.trim()) {
         commitValue(inputValue);
+      } else if (phase === 'entering_value') {
+        finishValueEntry();
       }
       return;
     }
@@ -336,9 +372,10 @@ export const MergeFilterBar: React.FC<MergeFilterBarProps> = (props) => {
     }
     if (e.key === 'Backspace' && !inputValue && phase === 'picking_field' && activeChips.length > 0) {
       const last = activeChips[activeChips.length - 1];
-      removeChip(last.field);
+      const lastValue = last.displayValues[last.displayValues.length - 1];
+      if (lastValue) removeValue(last.field, lastValue);
     }
-  }, [dropdownItems, highlightIdx, phase, inputValue, activeChips, selectField, commitValue, removeChip]);
+  }, [dropdownItems, highlightIdx, phase, inputValue, activeChips, selectField, commitValue, finishValueEntry, removeValue]);
 
   const handleInputChange = useCallback((e: React.ChangeEvent<HTMLInputElement>) => {
     setInputValue(e.target.value);
@@ -395,14 +432,35 @@ export const MergeFilterBar: React.FC<MergeFilterBarProps> = (props) => {
             {/* Existing chips */}
             {activeChips.map(c => (
               <span key={c.field.key} style={{ ...chipStyle, cursor: 'pointer' }}
-                onClick={e => { e.stopPropagation(); editChip(c.field, c.displayValue); }}>
+                onClick={e => { e.stopPropagation(); editChip(c.field); }}>
                 <span style={{ fontWeight: 600, fontSize: 10 }}>{c.field.label}:</span>
-                {c.displayValue}
-                <span style={chipRemoveStyle} onClick={e => { e.stopPropagation(); removeChip(c.field); }}>×</span>
+                {c.displayValues.map(displayValue => (
+                  <span
+                    key={displayValue}
+                    style={{
+                      display: 'inline-flex',
+                      alignItems: 'center',
+                      gap: 3,
+                      padding: '0 4px',
+                      borderRadius: 999,
+                      background: 'rgba(240,136,62,0.08)',
+                    }}
+                  >
+                    {displayValue}
+                    <span
+                      role="button"
+                      aria-label={`Remove ${c.field.label} ${displayValue}`}
+                      style={chipRemoveStyle}
+                      onClick={e => { e.stopPropagation(); removeValue(c.field, displayValue); }}
+                    >
+                      ×
+                    </span>
+                  </span>
+                ))}
               </span>
             ))}
             {/* Active field label (while entering value) */}
-            {phase === 'entering_value' && activeField && (
+            {phase === 'entering_value' && activeField && valuesOf(activeField.fromProps(props)).length === 0 && (
               <span style={{ ...chipStyle, background: 'rgba(240,136,62,0.06)', borderStyle: 'dashed' }}>
                 <span style={{ fontWeight: 600, fontSize: 10 }}>{activeField.label}:</span>
               </span>
@@ -417,7 +475,9 @@ export const MergeFilterBar: React.FC<MergeFilterBarProps> = (props) => {
               onKeyDown={handleKeyDown}
               placeholder={
                 phase === 'entering_value' && activeField
-                  ? activeField.placeholder
+                  ? activeField.multi && valuesOf(activeField.fromProps(props)).length > 0
+                    ? `Add another ${activeField.label.toLowerCase()}…`
+                    : activeField.placeholder
                   : activeChips.length > 0
                     ? 'Add filter…'
                     : 'Type to filter (database, table…)'

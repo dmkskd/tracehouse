@@ -64,12 +64,45 @@ describe('query activity records', () => {
       live: [running('live')],
       recent: [completed('done')],
     }, {
-      status: 'running',
+      status: ['running'],
       startTime: '2030-01-01T00:00:00.000Z',
       endTime: '2030-01-01T01:00:00.000Z',
     }, 5_000);
 
     expect(records.map(record => record.query_id)).toEqual(['live']);
+  });
+
+  it('ORs values within categorical filters while ANDing across fields', () => {
+    const records = buildQueryActivityRecords({
+      live: [
+        running('query-a', { user: 'alice', hostname: 'node-1', query_kind: 'Select' }),
+        running('query-b', { user: 'bob', hostname: 'node-2', query_kind: 'Insert' }),
+        running('query-c', { user: 'carol', hostname: 'node-1', query_kind: 'Select' }),
+      ],
+      recent: [],
+    }, {
+      queryId: ['query-a', 'query-b'],
+      user: ['alice', 'bob'],
+      hostname: ['node-1', 'node-2'],
+      queryKind: ['Select', 'Insert'],
+      status: ['running', 'error'],
+    }, 5_000);
+
+    expect(records.map(record => record.query_id)).toEqual(['query-a', 'query-b']);
+  });
+
+  it('combines selected running and terminal statuses', () => {
+    const success = completed('success');
+    const error = { ...completed('error'), type: 'error', exception: 'boom' };
+    const snapshot = {
+      live: [running('live')],
+      recent: [success, error],
+    };
+
+    expect(buildQueryActivityRecords(snapshot, { status: ['running', 'error'] }, 5_000)
+      .map(record => record.query_id)).toEqual(['live', 'error']);
+    expect(buildQueryActivityRecords(snapshot, { status: ['success', 'error'] }, 5_000)
+      .map(record => record.query_id)).toEqual(['success', 'error']);
   });
 
   it('pins live queries above newer completed rows and orders live by elapsed time', () => {

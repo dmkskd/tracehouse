@@ -69,9 +69,9 @@ import type { UrlSchema } from '../../hooks/useUrlState';
 // URL schema for shareable merge tracker links
 const mergeUrlSchema = {
   tab:       { type: 'string',  default: 'merges' },
-  database:  { type: 'string' },
-  table:     { type: 'string' },
-  category:  { type: 'string' },
+  database:  { type: 'string[]' },
+  table:     { type: 'string[]' },
+  category:  { type: 'string[]' },
   timeRange: { type: 'string',  default: '1 HOUR' },
   minDurMs:  { type: 'number' },
   minSizeB:  { type: 'number' },
@@ -79,8 +79,8 @@ const mergeUrlSchema = {
   excludeSys: { type: 'boolean', default: true },
   sortField: { type: 'string',  default: 'event_time' },
   sortDir:   { type: 'string',  default: 'desc' },
-  host:      { type: 'string' },
-  status:    { type: 'string' },
+  host:      { type: 'string[]' },
+  status:    { type: 'string[]' },
   mergeType: { type: 'string' },
   part:      { type: 'string' },
   // Merge detail deep-link: db, table, part_name to reopen modal
@@ -1723,9 +1723,9 @@ export const MergeTrackerView: React.FC = () => {
   const selectedMergeType = urlState.mergeType;
   const selectedMergeReason = historyFilter.category;
   const selectedHost = urlState.host;
-  const setSelectedHost = useCallback((v: string | undefined) => updateUrl({ host: v }), [updateUrl]);
+  const setSelectedHost = useCallback((v: string[] | undefined) => updateUrl({ host: v }), [updateUrl]);
   const selectedStatus = urlState.status;
-  const setSelectedStatus = useCallback((v: string | undefined) => updateUrl({ status: v }), [updateUrl]);
+  const setSelectedStatus = useCallback((v: string[] | undefined) => updateUrl({ status: v }), [updateUrl]);
   const selectedPartName = urlState.part;
   const setSelectedPartName = useCallback((v: string | undefined) => updateUrl({ part: v }), [updateUrl]);
   const { hideReplicaMerges, setHideReplicaMerges, experimentalEnabled } = useUserPreferenceStore();
@@ -1904,34 +1904,43 @@ export const MergeTrackerView: React.FC = () => {
     return () => { cancelled = true; };
   }, [services, activeMergeTables]);
 
-  const fetchTablesForDatabase = useCallback(async (database: string) => {
+  const fetchTablesForDatabases = useCallback(async (selectedDatabases: string[]) => {
     if (!services || !isConnected) return;
     try {
-      const tables = await databaseApi.fetchTables(services.databaseExplorer, database);
-      setAvailableTables(tables.map(t => t.name));
+      const tableGroups = await Promise.all(selectedDatabases.map(database =>
+        databaseApi.fetchTables(services.databaseExplorer, database)
+      ));
+      setAvailableTables(Array.from(new Set(
+        tableGroups.flatMap(tables => tables.map(table => table.name))
+      )).sort());
     } catch {
       setAvailableTables([]);
     }
   }, [services, isConnected]);
 
+  useEffect(() => {
+    const selectedDatabases = historyFilter.database ?? [];
+    if (selectedDatabases.length > 0) {
+      fetchTablesForDatabases(selectedDatabases);
+    } else {
+      setAvailableTables([]);
+    }
+  }, [fetchTablesForDatabases, historyFilter.database]);
+
   const handleFilterChange = useCallback((filter: Partial<typeof historyFilter>) => {
     setHistoryFilter(filter);
     // Mirror server-side filter changes to URL
     const urlPatch: Record<string, unknown> = {};
-    if ('database' in filter) urlPatch.database = filter.database || undefined;
-    if ('table' in filter) urlPatch.table = filter.table || undefined;
-    if ('category' in filter) urlPatch.category = filter.category || undefined;
+    if ('database' in filter) urlPatch.database = filter.database?.length ? filter.database : undefined;
+    if ('table' in filter) urlPatch.table = filter.table?.length ? filter.table : undefined;
+    if ('category' in filter) urlPatch.category = filter.category?.length ? filter.category : undefined;
     if ('timeRange' in filter) urlPatch.timeRange = filter.timeRange || undefined;
     if ('minDurationMs' in filter) urlPatch.minDurMs = filter.minDurationMs || undefined;
     if ('minSizeBytes' in filter) urlPatch.minSizeB = filter.minSizeBytes || undefined;
     if ('limit' in filter) urlPatch.limit = filter.limit;
     if ('excludeSystemDatabases' in filter) urlPatch.excludeSys = filter.excludeSystemDatabases;
     if (Object.keys(urlPatch).length > 0) updateUrl(urlPatch as any);
-    if (filter.database !== undefined) {
-      if (filter.database) fetchTablesForDatabase(filter.database);
-      else setAvailableTables([]);
-    }
-  }, [setHistoryFilter, fetchTablesForDatabase, updateUrl]);
+  }, [setHistoryFilter, updateUrl]);
 
   const handleSortChange = useCallback((sort: typeof historySort) => {
     setHistorySort(sort);
@@ -2034,8 +2043,8 @@ export const MergeTrackerView: React.FC = () => {
   // Filtered mutations (client-side: database, table)
   const filteredMutations = React.useMemo(() => {
     let result = mutations;
-    if (dbFilter) result = result.filter(m => m.database === dbFilter);
-    if (tblFilter) result = result.filter(m => m.table === tblFilter);
+    if (dbFilter?.length) result = result.filter(m => dbFilter.includes(m.database));
+    if (tblFilter?.length) result = result.filter(m => tblFilter.includes(m.table));
     return result;
   }, [mutations, dbFilter, tblFilter]);
 
@@ -2345,7 +2354,7 @@ export const MergeTrackerView: React.FC = () => {
               />
             ) : activeTab === 'merges' ? (
               <>
-                {selectedMergeReason && isCategoryClientSideOnly(selectedMergeReason as MergeCategory) && (
+                {selectedMergeReason?.some(reason => isCategoryClientSideOnly(reason as MergeCategory)) && (
                   <div style={{ padding: '6px 12px', fontSize: 11, color: 'var(--text-warning, #d4a72c)', background: 'var(--bg-warning, rgba(212,167,44,0.08))', borderRadius: 4, margin: '0 0 6px' }}>
                     This category is filtered client-side after the LIMIT — results may be incomplete. Increase the limit to see more rows.
                   </div>

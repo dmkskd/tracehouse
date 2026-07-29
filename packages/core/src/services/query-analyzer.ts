@@ -298,20 +298,27 @@ export interface QueryHistoryOptions {
   start_time: string;
   end_time: string;
   limit?: number;
-  user?: string;
-  query_id?: string;
+  user?: string | string[];
+  query_id?: string | string[];
   query_text?: string;
   min_duration_ms?: number;
   min_memory_bytes?: number;
   exclude_app_queries?: boolean;
   /** Filter by query kind (SELECT, INSERT, etc.) */
-  query_kind?: string;
-  /** Filter by status: 'success' or 'error' */
-  status?: string;
+  query_kind?: string | string[];
+  /** Filter by activity status: 'running', 'success', and/or 'error'. */
+  status?: string | string[];
   /** Filter by database name (case-insensitive contains on databases array) */
-  database?: string;
+  database?: string | string[];
   /** Filter by table name (case-insensitive contains on tables array) */
-  table?: string;
+  table?: string | string[];
+  /** Filter by ClickHouse server hostname (case-insensitive contains). */
+  hostname?: string | string[];
+}
+
+function filterValues(value?: string | string[]): string[] {
+  if (Array.isArray(value)) return value.map(item => item.trim()).filter(Boolean);
+  return value?.trim() ? [value.trim()] : [];
 }
 
 export class QueryAnalyzer {
@@ -386,9 +393,10 @@ export class QueryAnalyzer {
       "type IN ('QueryFinish', 'ExceptionWhileProcessing')"
     ];
 
-    if (options.user) {
-      whereConditions.push("user = {user}");
-      params.user = options.user;
+    const users = filterValues(options.user);
+    if (users.length) {
+      const userList = users.map(value => `'${escapeValue(value)}'`).join(', ');
+      whereConditions.push(`user IN (${userList})`);
     }
 
     if (options.min_duration_ms != null) {
@@ -406,8 +414,11 @@ export class QueryAnalyzer {
       params.query_text = options.query_text;
     }
 
-    if (options.query_id) {
-      const ids = options.query_id.split(/[\s,]+/).map(s => s.trim()).filter(Boolean);
+    const queryIds = filterValues(options.query_id);
+    if (queryIds.length) {
+      const ids = queryIds.flatMap(value =>
+        value.split(/[\s,]+/).map(item => item.trim()).filter(Boolean)
+      );
       if (ids.length > 1) {
         // Multiple IDs: exact match via IN list
         const inList = ids.map(id => `'${escapeValue(id)}'`).join(', ');
@@ -415,7 +426,7 @@ export class QueryAnalyzer {
       } else {
         // Single value: substring match (existing behaviour)
         whereConditions.push("positionCaseInsensitive(query_id, {query_id}) > 0");
-        params.query_id = options.query_id;
+        params.query_id = ids[0]!;
       }
     }
 
@@ -424,27 +435,54 @@ export class QueryAnalyzer {
       params.exclude_app_tag = APP_SOURCE_PREFIX;
     }
 
-    if (options.query_kind) {
-      whereConditions.push("query_kind = {query_kind}");
-      params.query_kind = options.query_kind;
+    const queryKinds = filterValues(options.query_kind);
+    if (queryKinds.length) {
+      const queryKindList = queryKinds.map(value => `'${escapeValue(value)}'`).join(', ');
+      whereConditions.push(`query_kind IN (${queryKindList})`);
     }
 
-    if (options.status) {
-      if (options.status === 'error') {
-        whereConditions.push("type = 'ExceptionWhileProcessing'");
-      } else if (options.status === 'success') {
-        whereConditions.push("type = 'QueryFinish'");
+    const statusValues = filterValues(options.status);
+    if (statusValues.length) {
+      const statuses = new Set(statusValues.map(value => value.toLowerCase()));
+      const terminalTypes: string[] = [];
+      if (statuses.has('success')) terminalTypes.push('QueryFinish');
+      if (statuses.has('error')) terminalTypes.push('ExceptionWhileProcessing');
+      if (terminalTypes.length === 0) {
+        // Running queries come from system.processes, never query_log.
+        whereConditions.push('0');
+      } else if (terminalTypes.length === 1) {
+        whereConditions.push(`type = '${terminalTypes[0]}'`);
       }
     }
 
-    if (options.database) {
-      whereConditions.push("arrayExists(x -> positionCaseInsensitive(x, {filter_database}) > 0, databases)");
-      params.filter_database = options.database;
+    const databases = filterValues(options.database);
+    if (databases.length) {
+      const matches = databases.map((value, index) => {
+        const key = `filter_database_${index}`;
+        params[key] = value;
+        return `positionCaseInsensitive(x, {${key}}) > 0`;
+      });
+      whereConditions.push(`arrayExists(x -> ${matches.length === 1 ? matches[0] : `(${matches.join(' OR ')})`}, databases)`);
     }
 
-    if (options.table) {
-      whereConditions.push("arrayExists(x -> positionCaseInsensitive(x, {filter_table}) > 0, tables)");
-      params.filter_table = options.table;
+    const tables = filterValues(options.table);
+    if (tables.length) {
+      const matches = tables.map((value, index) => {
+        const key = `filter_table_${index}`;
+        params[key] = value;
+        return `positionCaseInsensitive(x, {${key}}) > 0`;
+      });
+      whereConditions.push(`arrayExists(x -> ${matches.length === 1 ? matches[0] : `(${matches.join(' OR ')})`}, tables)`);
+    }
+
+    const hostnames = filterValues(options.hostname);
+    if (hostnames.length) {
+      const matches = hostnames.map((value, index) => {
+        const key = `filter_hostname_${index}`;
+        params[key] = value;
+        return `positionCaseInsensitive(hostName(), {${key}}) > 0`;
+      });
+      whereConditions.push(matches.length === 1 ? matches[0]! : `(${matches.join(' OR ')})`);
     }
 
     const sql = `

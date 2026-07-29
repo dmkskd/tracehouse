@@ -50,6 +50,33 @@ describe('QueryAnalyzer UTC history bounds', () => {
     );
     expect(adapter.queries[0]).toContain("event_date >= '2026-07-26'");
   });
+
+  it('ORs multiple categorical values in generated history SQL', async () => {
+    const adapter = new MockAdapter();
+    const analyzer = new QueryAnalyzer(adapter);
+
+    await analyzer.getQueryHistory({
+      start_date: '2026-07-26',
+      start_time: '2026-07-27T13:00:00Z',
+      end_time: '2026-07-27T14:00:00Z',
+      user: ['alice', "o'hara"],
+      query_id: ['query-a', 'query-b'],
+      query_kind: ['Select', 'Insert'],
+      status: ['running', 'error'],
+      database: ['db_a', 'db_b'],
+      table: ['table_a', 'table_b'],
+      hostname: ['node-1', 'node-2'],
+    });
+
+    const sql = adapter.queries[0]!;
+    expect(sql).toContain("user IN ('alice', 'o\\'hara')");
+    expect(sql).toContain("query_id IN ('query-a', 'query-b')");
+    expect(sql).toContain("query_kind IN ('Select', 'Insert')");
+    expect(sql).toContain("type = 'ExceptionWhileProcessing'");
+    expect(sql).toContain("positionCaseInsensitive(x, 'db_a') > 0 OR positionCaseInsensitive(x, 'db_b') > 0");
+    expect(sql).toContain("positionCaseInsensitive(x, 'table_a') > 0 OR positionCaseInsensitive(x, 'table_b') > 0");
+    expect(sql).toContain("positionCaseInsensitive(hostName(), 'node-1') > 0 OR positionCaseInsensitive(hostName(), 'node-2') > 0");
+  });
 });
 
 describe('QueryAnalyzer child query batching', () => {

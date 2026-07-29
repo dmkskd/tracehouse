@@ -29,18 +29,18 @@ export interface QueryHistoryFilter {
   timeRange?: string;
   startTime?: string;
   endTime?: string;
-  user?: string;
-  queryId?: string;
+  user?: string[];
+  queryId?: string[];
   queryText?: string;
   minDurationMs?: number;
   minMemoryBytes?: number;
-  hostname?: string;
+  hostname?: string[];
   limit?: number;
   excludeAppQueries?: boolean;
-  queryKind?: string;
-  status?: string;
-  database?: string;
-  table?: string;
+  queryKind?: string[];
+  status?: string[];
+  database?: string[];
+  table?: string[];
 }
 
 // Sort options for query history
@@ -308,6 +308,7 @@ export const queryApi = {
       status: filter.status,
       database: filter.database,
       table: filter.table,
+      hostname: filter.hostname,
     });
   },
 

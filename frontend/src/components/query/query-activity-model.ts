@@ -71,20 +71,40 @@ function liveRecord(query: RunningQuery, now: number): QueryActivityRecord {
   };
 }
 
+function normalized(values?: string[]): string[] {
+  return values?.map(value => value.toLowerCase()).filter(Boolean) ?? [];
+}
+
+function matchesAnyContains(value: string, filters?: string[]): boolean {
+  const requested = normalized(filters);
+  return requested.length === 0 || requested.some(filter => value.toLowerCase().includes(filter));
+}
+
+function matchesAnyExact(value: string, filters?: string[]): boolean {
+  const requested = normalized(filters);
+  return requested.length === 0 || requested.includes(value.toLowerCase());
+}
+
 function matchesLiveFilter(record: QueryActivityRecord, filter: QueryHistoryFilter): boolean {
   const query = record.liveQuery;
   if (!query) return true;
-  if (filter.queryId && !query.query_id.toLowerCase().includes(filter.queryId.toLowerCase())) return false;
-  if (filter.user && !query.user.toLowerCase().includes(filter.user.toLowerCase())) return false;
-  if (filter.hostname && !(query.hostname ?? '').toLowerCase().includes(filter.hostname.toLowerCase())) return false;
+  if (filter.queryId?.length) {
+    const matchesId = filter.queryId.length === 1
+      ? matchesAnyContains(query.query_id, filter.queryId)
+      : matchesAnyExact(query.query_id, filter.queryId);
+    if (!matchesId) return false;
+  }
+  if (!matchesAnyExact(query.user, filter.user)) return false;
+  if (!matchesAnyContains(query.hostname ?? '', filter.hostname)) return false;
   if (filter.queryText && !query.query.toLowerCase().includes(filter.queryText.toLowerCase())) return false;
   if (filter.minDurationMs != null && record.query_duration_ms < filter.minDurationMs) return false;
   if (filter.minMemoryBytes != null && query.memory_usage < filter.minMemoryBytes) return false;
-  if (filter.queryKind && query.query_kind.toLowerCase() !== filter.queryKind.toLowerCase()) return false;
+  if (!matchesAnyExact(query.query_kind, filter.queryKind)) return false;
   if (filter.excludeAppQueries && query.query.includes(APP_SOURCE_PREFIX)) return false;
-  if (filter.status && filter.status.toLowerCase() !== 'running') return false;
+  const statuses = normalized(filter.status);
+  if (statuses.length > 0 && !statuses.includes('running')) return false;
   // system.processes does not expose resolved databases/tables.
-  if (filter.database || filter.table) return false;
+  if (filter.database?.length || filter.table?.length) return false;
   return true;
 }
 
@@ -102,12 +122,14 @@ export function buildQueryActivityRecords(
   const live = snapshot.live
     .map(query => liveRecord(query, now))
     .filter(record => matchesLiveFilter(record, filter));
-  const recent = filter.status?.toLowerCase() === 'running'
-    ? []
-    : snapshot.recent.map(historyRecord);
+  const statuses = normalized(filter.status);
+  const includeSuccess = statuses.length === 0 || statuses.includes('success');
+  const includeError = statuses.length === 0 || statuses.includes('error');
+  const recent = snapshot.recent
+    .filter(query => query.type === 'error' ? includeError : includeSuccess)
+    .map(historyRecord);
   const activity = [...live, ...recent].filter(record =>
-    !filter.hostname
-    || (record.hostname ?? '').toLowerCase().includes(filter.hostname.toLowerCase())
+    matchesAnyContains(record.hostname ?? '', filter.hostname)
   );
   return filter.limit != null && filter.limit > 0
     ? activity.slice(0, filter.limit)

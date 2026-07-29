@@ -18,7 +18,7 @@ import { useSearchParams } from 'react-router-dom';
 
 // ─── Generic schema-driven URL state ───
 
-export type UrlParamType = 'string' | 'number' | 'boolean';
+export type UrlParamType = 'string' | 'string[]' | 'number' | 'boolean';
 
 export interface UrlParamDef<T = unknown> {
   type: UrlParamType;
@@ -32,7 +32,9 @@ export type UrlStateFromSchema<S extends UrlSchema> = {
     ? number | undefined
     : S[K]['type'] extends 'boolean'
       ? boolean | undefined
-      : string | undefined;
+      : S[K]['type'] extends 'string[]'
+        ? string[] | undefined
+        : string | undefined;
 };
 
 function parseParam(raw: string | null, def: UrlParamDef): unknown {
@@ -44,9 +46,22 @@ function parseParam(raw: string | null, def: UrlParamDef): unknown {
   }
 }
 
-function serializeParam(value: unknown, def: UrlParamDef): string | undefined {
+function parseSearchParam(params: URLSearchParams, key: string, def: UrlParamDef): unknown {
+  if (def.type === 'string[]') {
+    const values = params.getAll(key).map(value => value.trim()).filter(Boolean);
+    return values.length > 0 ? values : def.default;
+  }
+  return parseParam(params.get(key), def);
+}
+
+function serializeParam(value: unknown, def: UrlParamDef): string | string[] | undefined {
   if (value === undefined || value === null || value === '') return undefined;
   if (value === def.default) return undefined;
+  if (def.type === 'string[]') {
+    if (!Array.isArray(value)) return [String(value)];
+    const values = value.map(item => String(item).trim()).filter(Boolean);
+    return values.length > 0 ? values : undefined;
+  }
   if (def.type === 'boolean') return value ? '1' : '0';
   return String(value);
 }
@@ -63,7 +78,7 @@ export function useUrlState<S extends UrlSchema>(schema: S) {
   const state = useMemo(() => {
     const result: Record<string, unknown> = {};
     for (const [key, def] of Object.entries(schema)) {
-      result[key] = parseParam(searchParams.get(key), def);
+      result[key] = parseSearchParam(searchParams, key, def);
     }
     return result as UrlStateFromSchema<S>;
   }, [searchParams, schema]);
@@ -75,10 +90,14 @@ export function useUrlState<S extends UrlSchema>(schema: S) {
         for (const [key, def] of Object.entries(schema)) {
           const value = key in partial
             ? (partial as Record<string, unknown>)[key]
-            : parseParam(prev.get(key), def);
+            : parseSearchParam(prev, key, def);
           const serialized = serializeParam(value, def);
-          if (serialized !== undefined) next.set(key, serialized);
-          else next.delete(key);
+          next.delete(key);
+          if (Array.isArray(serialized)) {
+            serialized.forEach(item => next.append(key, item));
+          } else if (serialized !== undefined) {
+            next.set(key, serialized);
+          }
         }
         return next;
       }, { replace: !opts?.push });

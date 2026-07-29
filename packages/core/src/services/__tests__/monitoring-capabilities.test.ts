@@ -8,10 +8,15 @@ import { MonitoringCapabilitiesService } from '../monitoring-capabilities.js';
 function adapterWithLogCoverage(
   availableHosts: number,
   expectedHosts: number,
+  distributedLimitByError?: Error,
 ): IClickHouseAdapter {
   const executeQuery = vi.fn(async (sql: TaggedQuery) => {
     if (sql.includes('source:TraceHouse:Internal:serverVersion')) {
       return [{ version: '26.7.1.0' }];
+    }
+    if (sql.includes('source:TraceHouse:Internal:distributedLimitBy')) {
+      if (distributedLimitByError) throw distributedLimitByError;
+      return [{ dummy: 0 }];
     }
     if (sql.includes('source:TraceHouse:Internal:logTables')) {
       return [{
@@ -62,6 +67,38 @@ describe('MonitoringCapabilitiesService cluster log coverage', () => {
     expect(capability).toMatchObject({
       available: true,
       detail: 'MergeTree · 12 rows · 2/2 hosts',
+    });
+  });
+
+  it('reports distributed LIMIT BY when the behavioral probe succeeds', async () => {
+    const service = new MonitoringCapabilitiesService(
+      adapterWithLogCoverage(2, 2),
+    );
+
+    const result = await service.probe();
+    expect(result.capabilities.find(
+      item => item.id === 'distributed_limit_by',
+    )).toMatchObject({
+      available: true,
+      detail: 'Supported by the active query path',
+    });
+  });
+
+  it('disables distributed LIMIT BY when the planner probe fails', async () => {
+    const service = new MonitoringCapabilitiesService(
+      adapterWithLogCoverage(
+        2,
+        2,
+        new Error('Code: 8. Cannot find column in source stream (THERE_IS_NO_COLUMN)'),
+      ),
+    );
+
+    const result = await service.probe();
+    expect(result.capabilities.find(
+      item => item.id === 'distributed_limit_by',
+    )).toMatchObject({
+      available: false,
+      detail: 'Distributed LIMIT BY planner bug detected',
     });
   });
 });

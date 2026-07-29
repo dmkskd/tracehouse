@@ -125,6 +125,26 @@ SELECT version() AS version
 `;
 
 /**
+ * Probe whether LIMIT BY works through the active distributed query path.
+ *
+ * Older ClickHouse releases accept LIMIT BY syntax but can fail during
+ * distributed query-plan projection with THERE_IS_NO_COLUMN. Keep this probe
+ * aligned with ClickHouse's upstream regression test for that planner bug.
+ * The cluster-aware source makes the probe local on standalone servers and
+ * distributed when TraceHouse is configured to query a cluster.
+ */
+export const PROBE_DISTRIBUTED_LIMIT_BY = `
+SELECT dummy
+FROM {{cluster_aware:system.one}}
+WHERE dummy + dummy >= 0
+LIMIT 1 BY dummy + dummy + 0 AS limit_bucket
+SETTINGS
+  prefer_localhost_replica = 0,
+  distributed_group_by_no_merge = 0,
+  distributed_push_down_limit = 1
+`;
+
+/**
  * Check if the CPU profiler is actually producing samples in trace_log.
  * The profiler settings can be enabled but still produce 0 samples when
  * the SYS_PTRACE capability is missing (common in Kubernetes).

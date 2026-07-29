@@ -142,6 +142,13 @@ export const OverviewTab: React.FC<OverviewTabProps> = ({
 
   return (
     <div style={{ display: 'flex', flexDirection: 'column', gap: 28 }}>
+      {overviewSql && (
+        <SqlOverviewStrip
+          sql={overviewSql}
+          onOpen={() => onOpenTab('sql')}
+        />
+      )}
+
       <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, minmax(0, 1fr))', gap: 16 }}>
         <QuerySummaryPreview
           q={q}
@@ -176,13 +183,6 @@ export const OverviewTab: React.FC<OverviewTabProps> = ({
           onOpen={() => onOpenTab(executionTab)}
         />
       </div>
-
-      {overviewSql && (
-        <SqlOverviewStrip
-          sql={overviewSql}
-          onOpen={() => onOpenTab('sql')}
-        />
-      )}
 
       {q.exception && (
         <div style={{

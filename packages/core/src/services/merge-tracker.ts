@@ -2,13 +2,9 @@ import type { IClickHouseAdapter } from '../adapters/types.js';
 import type { MergeInfo, MergeHistoryRecord, MutationInfo, MutationHistoryRecord, BackgroundPoolMetrics, MutationDependencyInfo, MutationPartStatus, CoDependentMutation, StoragePolicyVolume, MergeTextLog, MergeThroughputEstimate } from '../types/merge.js';
 import {
   GET_ACTIVE_MERGES,
-  GET_MERGE_HISTORY,
   GET_ALL_MERGE_HISTORY,
-  GET_DATABASE_MERGE_HISTORY,
   GET_MUTATIONS,
   GET_MUTATION_HISTORY,
-  GET_DATABASE_MUTATION_HISTORY,
-  GET_TABLE_MUTATION_HISTORY,
   GET_BACKGROUND_POOL_METRICS,
   GET_OUTDATED_PARTS_SIZE,
   GET_STORAGE_POLICY_VOLUMES,
@@ -24,6 +20,7 @@ import {
 } from '../queries/merge-queries.js';
 import {
   buildQuery,
+  escapeValue,
   tagQuery,
   eventDateBound,
   utcDateTimeLiteral,
@@ -42,19 +39,24 @@ export class MergeTrackerError extends Error {
 }
 
 export interface MergeHistoryOptions {
-  database?: string;
-  table?: string;
+  database?: string | string[];
+  table?: string | string[];
   minDurationMs?: number;
   minSizeBytes?: number;
   excludeSystemDatabases?: boolean;
   /** Push merge category filter into SQL (e.g. 'TTLDelete', 'Mutation'). */
-  category?: string;
+  category?: string | string[];
   /**
    * ClickHouse interval string (e.g. '1 DAY') or a canonical absolute range.
    * CUSTOM bounds must be ISO instants with `Z` or an explicit UTC offset.
    */
   timeRange?: string | null;
   limit?: number;
+}
+
+function filterValues(value?: string | string[]): string[] {
+  if (Array.isArray(value)) return value.map(item => item.trim()).filter(Boolean);
+  return value?.trim() ? [value.trim()] : [];
 }
 
 function parseCanonicalCustomRange(timeRange: string): [string, string] {
@@ -87,6 +89,15 @@ function parseCanonicalCustomRange(timeRange: string): [string, string] {
  */
 function injectThresholdFilters(sql: string, opts: MergeHistoryOptions): string {
   const clauses: string[] = [];
+  const databases = filterValues(opts.database);
+  const tables = filterValues(opts.table);
+  const categories = filterValues(opts.category);
+  if (databases.length > 0) {
+    clauses.push(`database IN (${databases.map(value => `'${escapeValue(value)}'`).join(', ')})`);
+  }
+  if (tables.length > 0) {
+    clauses.push(`table IN (${tables.map(value => `'${escapeValue(value)}'`).join(', ')})`);
+  }
   if (opts.minDurationMs != null && opts.minDurationMs > 0) {
     clauses.push(`duration_ms >= ${Math.round(opts.minDurationMs)}`);
   }
@@ -96,9 +107,14 @@ function injectThresholdFilters(sql: string, opts: MergeHistoryOptions): string 
   if (opts.excludeSystemDatabases) {
     clauses.push(`database NOT IN ('system', 'information_schema', 'INFORMATION_SCHEMA')`);
   }
-  if (opts.category) {
-    const cond = categoryToPartLogCondition(opts.category as MergeCategory);
-    if (cond) clauses.push(`(${cond})`);
+  if (categories.length > 0) {
+    const categoryConditions = categories
+      .map(category => categoryToPartLogCondition(category as MergeCategory));
+    // If every selected category is representable in part_log, push their OR
+    // into SQL. Otherwise fetch the broader set and classify after mapping.
+    if (categoryConditions.every((condition): condition is string => condition != null)) {
+      clauses.push(`(${categoryConditions.map(condition => `(${condition})`).join(' OR ')})`);
+    }
   }
   if (opts.timeRange) {
     const tr = opts.timeRange;
@@ -120,31 +136,30 @@ function injectThresholdFilters(sql: string, opts: MergeHistoryOptions): string 
  * Mutation queries use create_time and have a subquery structure,
  * so we inject into the inner FROM clause.
  */
-function injectMutationTimeFilter(sql: string, opts: MergeHistoryOptions): string {
+function injectMutationFilters(sql: string, opts: MergeHistoryOptions): string {
+  const clauses: string[] = [];
+  const databases = filterValues(opts.database);
+  const tables = filterValues(opts.table);
+  if (databases.length > 0) {
+    clauses.push(`database IN (${databases.map(value => `'${escapeValue(value)}'`).join(', ')})`);
+  }
+  if (tables.length > 0) {
+    clauses.push(`table IN (${tables.map(value => `'${escapeValue(value)}'`).join(', ')})`);
+  }
   const tr = opts.timeRange;
-  if (!tr) return sql;
-  let clause: string;
-  if (tr.startsWith('CUSTOM:')) {
-    const [rawStart, rawEnd] = parseCanonicalCustomRange(tr);
-    clause = `create_time >= ${utcDateTimeLiteral(rawStart)} AND create_time <= ${utcDateTimeLiteral(rawEnd)}`;
-  } else {
-    clause = `create_time >= now() - INTERVAL ${tr}`;
+  if (tr) {
+    if (tr.startsWith('CUSTOM:')) {
+      const [rawStart, rawEnd] = parseCanonicalCustomRange(tr);
+      clauses.push(`create_time >= ${utcDateTimeLiteral(rawStart)}`);
+      clauses.push(`create_time <= ${utcDateTimeLiteral(rawEnd)}`);
+    } else {
+      clauses.push(`create_time >= now() - INTERVAL ${tr}`);
+    }
   }
-  // Inject WHERE into the inner subquery — after the FROM line, before the closing parenthesis.
-  // The inner subquery has pattern: FROM {{cluster_aware:system.mutations}}\n  )
-  // Add a WHERE clause if none exists, or AND if there's already a WHERE.
-  if (sql.includes('WHERE database =') || sql.includes('WHERE database=')) {
-    // Table/database-scoped variant already has WHERE — append AND
-    return sql.replace(/(FROM\s+\{\{cluster_aware:system\.mutations\}\})\s*\n(\s*WHERE\s)/,
-      `$1\n$2`).replace(
-      /(WHERE\s+database\s*=\s*\{database\})/,
-      `$1\n      AND ${clause}`
-    );
-  }
-  // Global variant — no WHERE in inner subquery
+  if (clauses.length === 0) return sql;
   return sql.replace(
     /(FROM\s+\{\{cluster_aware:system\.mutations\}\})\s*\n(\s*\))/,
-    `$1\n    WHERE ${clause}\n$2`
+    `$1\n    WHERE ${clauses.join('\n      AND ')}\n$2`
   );
 }
 
@@ -221,14 +236,7 @@ export class MergeTracker {
   async getMergeHistory(options: MergeHistoryOptions = {}): Promise<MergeHistoryRecord[]> {
     const limit = options.limit ?? 100;
     try {
-      let sql: string;
-      if (options.database && options.table) {
-        sql = buildQuery(GET_MERGE_HISTORY, { database: options.database, table: options.table, limit });
-      } else if (options.database) {
-        sql = buildQuery(GET_DATABASE_MERGE_HISTORY, { database: options.database, limit });
-      } else {
-        sql = buildQuery(GET_ALL_MERGE_HISTORY, { limit });
-      }
+      let sql = buildQuery(GET_ALL_MERGE_HISTORY, { limit });
       sql = injectThresholdFilters(sql, options);
       // Fetch merge history and table engines in parallel
       const [rows] = await Promise.all([
@@ -238,10 +246,6 @@ export class MergeTracker {
       let records = rows.map(mapMergeHistoryRecord);
       // Enrich with engine info and fix dedup engine misclassification
       this.enrichWithEngineInfo(records);
-      // Client-side table filter when database is not set (SQL only filters by table when database is also specified)
-      if (options.table && !options.database) {
-        records = records.filter(r => r.table === options.table);
-      }
       // Detect replica merges: same part_name from different hosts
       markReplicaMergeHistory(records);
       // Some categories are only known after mapping/enrichment (notably
@@ -249,8 +253,9 @@ export class MergeTracker {
       // For SQL-pushed categories this is a defensive consistency check:
       // mapMergeHistoryRecord/refineCategoryWithRowDiff must expose the same
       // category enum value used by categoryToPartLogCondition.
-      if (options.category) {
-        records = records.filter(r => r.merge_reason === options.category);
+      const categories = filterValues(options.category);
+      if (categories.length > 0) {
+        records = records.filter(r => categories.includes(r.merge_reason));
       }
       return records;
     } catch (error) {
@@ -272,24 +277,12 @@ export class MergeTracker {
   async getMutationHistory(options: MergeHistoryOptions = {}): Promise<MutationHistoryRecord[]> {
     const limit = options.limit ?? 100;
     try {
-      let sql: string;
-      if (options.database && options.table) {
-        sql = buildQuery(GET_TABLE_MUTATION_HISTORY, { database: options.database, table: options.table, limit });
-      } else if (options.database) {
-        sql = buildQuery(GET_DATABASE_MUTATION_HISTORY, { database: options.database, limit });
-      } else {
-        sql = buildQuery(GET_MUTATION_HISTORY, { limit });
-      }
+      let sql = buildQuery(GET_MUTATION_HISTORY, { limit });
       // Note: do NOT apply injectThresholdFilters here — system.mutations lacks duration_ms/size_in_bytes columns.
-      // But we do apply time range filter on create_time.
-      sql = injectMutationTimeFilter(sql, options);
+      // But database/table and time range filters can be pushed into the inner query.
+      sql = injectMutationFilters(sql, options);
       const rows = await this.adapter.executeQuery(tagQuery(sql, sourceTag(TAB_MERGES, 'mutationHistory')));
-      let records = rows.map(mapMutationHistoryRecord);
-      // Client-side table filter when database is not set
-      if (options.table && !options.database) {
-        records = records.filter(r => r.table === options.table);
-      }
-      return records;
+      return rows.map(mapMutationHistoryRecord);
     } catch (error) {
       if (error instanceof MergeTrackerError) throw error;
       throw new MergeTrackerError('Failed to get mutation history', error as Error);

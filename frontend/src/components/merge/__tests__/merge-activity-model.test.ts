@@ -169,15 +169,15 @@ describe('merge activity records', () => {
       recent: [success, error],
     };
 
-    expect(filterMergeActivity(snapshot, { status: 'Running' })).toMatchObject({
+    expect(filterMergeActivity(snapshot, { status: ['Running'] })).toMatchObject({
       live: [{ merge: running }, { merge: finalizing }],
       recent: [],
     });
-    expect(filterMergeActivity(snapshot, { status: 'OK' })).toMatchObject({
+    expect(filterMergeActivity(snapshot, { status: ['OK'] })).toMatchObject({
       live: [],
       recent: [success],
     });
-    expect(filterMergeActivity(snapshot, { status: 'Error' })).toMatchObject({
+    expect(filterMergeActivity(snapshot, { status: ['Error'] })).toMatchObject({
       live: [],
       recent: [error],
     });
@@ -211,7 +211,7 @@ describe('merge activity records', () => {
       ],
       recent: [historyMatch, historyOtherHost],
     }, {
-      hostname: 'node-2',
+      hostname: ['node-2'],
       partName: 'match',
       minSizeBytes: 15,
       hideReplicaMerges: true,
@@ -219,6 +219,32 @@ describe('merge activity records', () => {
 
     expect(filtered.live.map(item => item.merge.result_part_name)).toEqual(['match-live']);
     expect(filtered.recent.map(record => record.part_name)).toEqual(['match-history']);
+  });
+
+  it('ORs merge status, host, database, table, and category values', () => {
+    const live = active('live', { hostname: 'node-1', database: 'db_a', table: 'table_a' });
+    const ok = { ...completed('ok'), hostname: 'node-2', database: 'db_b', table: 'table_b' };
+    const error = {
+      ...completed('error'),
+      hostname: 'node-3',
+      database: 'db_c',
+      table: 'table_c',
+      error: 1,
+    };
+
+    const filtered = filterMergeActivity({
+      live: [{ merge: live, status: 'running' }],
+      recent: [ok, error],
+    }, {
+      status: ['Running', 'OK'],
+      hostname: ['node-1', 'node-2'],
+      database: ['db_a', 'db_b'],
+      table: ['table_a', 'table_b'],
+      category: ['Regular', 'TTLDelete'],
+    });
+
+    expect(filtered.live.map(item => item.merge.result_part_name)).toEqual(['live']);
+    expect(filtered.recent.map(record => record.part_name)).toEqual(['ok']);
   });
 
   it('derives shared filter options from both lifecycle sources', () => {

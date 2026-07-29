@@ -49,20 +49,34 @@ const ALL_QUERY_TYPES = ['Select', 'Insert', 'Alter', 'Create', 'Drop', 'System'
 const queryMonitorSchema = {
   tab:       { type: 'string',  default: 'activity' },
   qd_id:     { type: 'string' },
-  user:      { type: 'string' },
-  queryId:   { type: 'string' },
+  user:      { type: 'string[]' },
+  queryId:   { type: 'string[]' },
   queryText: { type: 'string' },
-  queryKind: { type: 'string' },
-  status:    { type: 'string' },
-  database:  { type: 'string' },
-  tableName: { type: 'string' },
-  hostname:  { type: 'string' },
+  queryKind: { type: 'string[]' },
+  status:    { type: 'string[]' },
+  database:  { type: 'string[]' },
+  tableName: { type: 'string[]' },
+  hostname:  { type: 'string[]' },
   minDurMs:  { type: 'number' },
   minMemB:   { type: 'number' },
   limit:     { type: 'number',  default: 100 },
   sortField: { type: 'string',  default: 'query_start_time' },
   sortDir:   { type: 'string',  default: 'desc' },
 } as const satisfies UrlSchema;
+
+const QUERY_MULTI_FILTER_KEYS = [
+  'user', 'queryId', 'queryKind', 'status', 'database', 'table', 'hostname',
+] as const;
+
+function normalizeQueryFilterArrays(filter: Record<string, unknown>): void {
+  QUERY_MULTI_FILTER_KEYS.forEach(key => {
+    const value = filter[key];
+    if (typeof value === 'string' && value) filter[key] = [value];
+  });
+}
+
+const nonEmptyValues = (value: unknown): unknown =>
+  Array.isArray(value) && value.length === 0 ? undefined : value;
 
 export const QueryMonitor: React.FC = () => {
   const { activeProfileId, profiles, setConnectionFormOpen } = useConnectionStore();
@@ -89,6 +103,7 @@ export const QueryMonitor: React.FC = () => {
     const patch: Record<string, unknown> = {};
     if (navFilter) {
       Object.assign(patch, navFilter);
+      normalizeQueryFilterArrays(patch);
     } else {
       if (urlState.user) patch.user = urlState.user;
       if (urlState.queryId) patch.queryId = urlState.queryId;
@@ -115,14 +130,14 @@ export const QueryMonitor: React.FC = () => {
   const handleFilterChange = useCallback((filter: Record<string, unknown>) => {
     setHistoryFilter(filter as any);
     const urlPatch: Record<string, unknown> = {};
-    if ('user' in filter) urlPatch.user = filter.user || undefined;
-    if ('queryId' in filter) urlPatch.queryId = filter.queryId || undefined;
+    if ('user' in filter) urlPatch.user = nonEmptyValues(filter.user);
+    if ('queryId' in filter) urlPatch.queryId = nonEmptyValues(filter.queryId);
     if ('queryText' in filter) urlPatch.queryText = filter.queryText || undefined;
-    if ('queryKind' in filter) urlPatch.queryKind = filter.queryKind || undefined;
-    if ('status' in filter) urlPatch.status = filter.status || undefined;
-    if ('database' in filter) urlPatch.database = filter.database || undefined;
-    if ('table' in filter) urlPatch.tableName = filter.table || undefined;
-    if ('hostname' in filter) urlPatch.hostname = filter.hostname || undefined;
+    if ('queryKind' in filter) urlPatch.queryKind = nonEmptyValues(filter.queryKind);
+    if ('status' in filter) urlPatch.status = nonEmptyValues(filter.status);
+    if ('database' in filter) urlPatch.database = nonEmptyValues(filter.database);
+    if ('table' in filter) urlPatch.tableName = nonEmptyValues(filter.table);
+    if ('hostname' in filter) urlPatch.hostname = nonEmptyValues(filter.hostname);
     if ('minDurationMs' in filter) urlPatch.minDurMs = filter.minDurationMs || undefined;
     if ('minMemoryBytes' in filter) urlPatch.minMemB = filter.minMemoryBytes || undefined;
     if ('limit' in filter) urlPatch.limit = filter.limit;

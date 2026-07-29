@@ -43,6 +43,40 @@ describe('MergeTracker UTC custom ranges', () => {
     );
   });
 
+  it('pushes multi-value database, table, and category filters before LIMIT', async () => {
+    const adapter = new MockAdapter();
+    const tracker = new MergeTracker(adapter);
+
+    await tracker.getMergeHistory({
+      database: ['db_a', "db_'b"],
+      table: ['table_a', 'table_b'],
+      category: ['TTLDelete', 'Mutation'],
+      limit: 25,
+    });
+
+    const sql = adapter.queries.find(query => query.includes('system.part_log'))!;
+    expect(sql).toContain("database IN ('db_a', 'db_\\'b')");
+    expect(sql).toContain("table IN ('table_a', 'table_b')");
+    expect(sql).toContain("merge_reason IN ('TTLDeleteMerge', 'TTLDropMerge', 'TTLMerge')");
+    expect(sql).toContain("event_type = 'MutatePart'");
+    expect(sql.indexOf('database IN')).toBeLessThan(sql.indexOf('ORDER BY'));
+    expect(sql).toContain('LIMIT 25');
+  });
+
+  it('pushes multi-value database and table filters into mutation history', async () => {
+    const adapter = new MockAdapter();
+    const tracker = new MergeTracker(adapter);
+
+    await tracker.getMutationHistory({
+      database: ['db_a', 'db_b'],
+      table: ['table_a', 'table_b'],
+    });
+
+    const sql = adapter.queries.find(query => query.includes('system.mutations'))!;
+    expect(sql).toContain("WHERE database IN ('db_a', 'db_b')");
+    expect(sql).toContain("AND table IN ('table_a', 'table_b')");
+  });
+
   it('uses explicit UTC bounds for mutation history', async () => {
     const adapter = new MockAdapter();
     const tracker = new MergeTracker(adapter);

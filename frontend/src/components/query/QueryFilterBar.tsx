@@ -6,7 +6,7 @@
  * The chip search input supports field:value pairs. Typing shows autocomplete
  * for field names; after selecting a field, User/Server show dropdown hints
  * from queryAnalyzer while other fields accept freeform text. Confirmed
- * entries become removable chips. All filters are ANDed.
+ * entries become removable chips. Values within a field are ORed; fields are ANDed.
  */
 
 import React, { useState, useEffect, useRef, useCallback, useMemo } from 'react';
@@ -32,9 +32,9 @@ import {
 
 export interface QueryFilterState {
   timeRange?: string;
-  queryId?: string;
-  user?: string;
-  hostname?: string;
+  queryId?: string[];
+  user?: string[];
+  hostname?: string[];
   queryText?: string;
   startTime?: string;
   endTime?: string;
@@ -42,10 +42,10 @@ export interface QueryFilterState {
   minMemoryBytes?: number;
   limit?: number;
   excludeAppQueries?: boolean;
-  queryKind?: string;
-  status?: string;
-  database?: string;
-  table?: string;
+  queryKind?: string[];
+  status?: string[];
+  database?: string[];
+  table?: string[];
 }
 
 interface QueryFilterBarProps {
@@ -66,9 +66,9 @@ interface FilterFieldDef {
   /** placeholder shown after the field is selected */
   placeholder: string;
   /** map typed value → QueryFilterState patch */
-  toFilter: (value: string) => Partial<QueryFilterState>;
+  toFilter: (value: string | string[]) => Partial<QueryFilterState>;
   /** extract display value from current filter state (for chip) */
-  fromFilter: (f: QueryFilterState) => string | undefined;
+  fromFilter: (f: QueryFilterState) => string | string[] | undefined;
   /** clear this field */
   clear: () => Partial<QueryFilterState>;
   /** whether queryAnalyzer provides suggestions */
@@ -78,73 +78,97 @@ interface FilterFieldDef {
   /** static suggestion values (no queryAnalyzer needed) */
   hasStaticSuggestions?: boolean;
   staticSuggestions?: string[];
+  /** Multiple values are ORed together; different fields remain ANDed. */
+  multi?: boolean;
 }
+
+const valuesOf = (value: string | string[] | undefined): string[] =>
+  Array.isArray(value) ? value : value ? [value] : [];
+
+const singleValue = (value: string | string[]): string =>
+  Array.isArray(value) ? value[0] ?? '' : value;
+
+const multiValue = (value: string | string[]): string[] =>
+  Array.isArray(value) ? value : [value];
 
 const FILTER_FIELDS: FilterFieldDef[] = [
   {
     key: 'user', label: 'User', placeholder: 'e.g. default',
-    toFilter: v => ({ user: v || undefined }),
+    toFilter: v => ({ user: multiValue(v) }),
     fromFilter: f => f.user,
     clear: () => ({ user: undefined }),
     hasSuggestions: true, suggestionKey: 'user',
+    multi: true,
   },
   {
     key: 'server', label: 'Server', placeholder: 'e.g. chi-clickhouse-0-0',
-    toFilter: v => ({ hostname: v || undefined }),
+    toFilter: v => ({ hostname: multiValue(v) }),
     fromFilter: f => f.hostname,
     clear: () => ({ hostname: undefined }),
     hasSuggestions: true, suggestionKey: 'hostname',
+    multi: true,
   },
   {
-    key: 'query_id', label: 'Query ID', placeholder: 'single or space/comma-separated',
-    toFilter: v => ({ queryId: v || undefined }),
+    key: 'query_id', label: 'Query ID', placeholder: 'enter a query ID',
+    toFilter: v => ({ queryId: multiValue(v) }),
     fromFilter: f => f.queryId,
     clear: () => ({ queryId: undefined }),
+    multi: true,
   },
   {
     key: 'query', label: 'Query Contains', placeholder: 'e.g. SELECT, s3(…',
-    toFilter: v => ({ queryText: v || undefined }),
+    toFilter: v => ({ queryText: singleValue(v) || undefined }),
     fromFilter: f => f.queryText,
     clear: () => ({ queryText: undefined }),
   },
   {
     key: 'min_duration', label: 'Min Duration (ms)', placeholder: 'e.g. 1000',
-    toFilter: v => ({ minDurationMs: v ? parseInt(v, 10) : undefined }),
+    toFilter: v => {
+      const value = singleValue(v);
+      return { minDurationMs: value ? parseInt(value, 10) : undefined };
+    },
     fromFilter: f => f.minDurationMs != null ? String(f.minDurationMs) : undefined,
     clear: () => ({ minDurationMs: undefined }),
   },
   {
     key: 'min_memory', label: 'Min Memory (MB)', placeholder: 'e.g. 100',
-    toFilter: v => ({ minMemoryBytes: v ? parseInt(v, 10) * 1024 * 1024 : undefined }),
+    toFilter: v => {
+      const value = singleValue(v);
+      return { minMemoryBytes: value ? parseInt(value, 10) * 1024 * 1024 : undefined };
+    },
     fromFilter: f => f.minMemoryBytes ? String(Math.round(f.minMemoryBytes / 1024 / 1024)) : undefined,
     clear: () => ({ minMemoryBytes: undefined }),
   },
   {
     key: 'query_kind', label: 'Type', placeholder: 'e.g. SELECT, INSERT…',
-    toFilter: v => ({ queryKind: v || undefined }),
+    toFilter: v => ({ queryKind: multiValue(v) }),
     fromFilter: f => f.queryKind,
     clear: () => ({ queryKind: undefined }),
     hasSuggestions: true, suggestionKey: 'query_kind',
+    multi: true,
   },
   {
     key: 'status', label: 'Status', placeholder: 'running, success, or error',
-    toFilter: v => ({ status: v || undefined }),
+    toFilter: v => ({ status: multiValue(v) }),
     fromFilter: f => f.status,
     clear: () => ({ status: undefined }),
     hasStaticSuggestions: true,
     staticSuggestions: ['running', 'success', 'error'],
+    multi: true,
   },
   {
     key: 'database', label: 'Database', placeholder: 'e.g. default',
-    toFilter: v => ({ database: v || undefined }),
+    toFilter: v => ({ database: multiValue(v) }),
     fromFilter: f => f.database,
     clear: () => ({ database: undefined }),
+    multi: true,
   },
   {
     key: 'table', label: 'Table', placeholder: 'e.g. my_table',
-    toFilter: v => ({ table: v || undefined }),
+    toFilter: v => ({ table: multiValue(v) }),
     fromFilter: f => f.table,
     clear: () => ({ table: undefined }),
+    multi: true,
   },
 ];
 
@@ -207,10 +231,10 @@ export const QueryFilterBar: React.FC<QueryFilterBarProps> = ({
 
   /* --- active chips derived from filter state --- */
   const activeChips = useMemo(() => {
-    const chips: { field: FilterFieldDef; displayValue: string }[] = [];
+    const chips: { field: FilterFieldDef; displayValues: string[] }[] = [];
     for (const f of FILTER_FIELDS) {
-      const v = f.fromFilter(filter);
-      if (v) chips.push({ field: f, displayValue: v });
+      const displayValues = valuesOf(f.fromFilter(filter));
+      if (displayValues.length > 0) chips.push({ field: f, displayValues });
     }
     return chips;
   }, [filter]);
@@ -218,7 +242,7 @@ export const QueryFilterBar: React.FC<QueryFilterBarProps> = ({
   /* --- which fields are still available (not yet used) --- */
   const availableFields = useMemo(() => {
     const usedKeys = new Set(activeChips.map(c => c.field.key));
-    return FILTER_FIELDS.filter(f => !usedKeys.has(f.key));
+    return FILTER_FIELDS.filter(f => f.multi || !usedKeys.has(f.key));
   }, [activeChips]);
 
   /* --- dropdown items based on phase --- */
@@ -232,31 +256,61 @@ export const QueryFilterBar: React.FC<QueryFilterBarProps> = ({
     }
     if (phase === 'entering_value' && activeField?.hasSuggestions) {
       const vals = suggestionCache[activeField.key] || [];
+      const selected = new Set(valuesOf(activeField.fromFilter(filter)).map(v => v.toLowerCase()));
       const q = inputValue.toLowerCase();
       return vals
+        .filter(v => !selected.has(v.toLowerCase()))
         .filter(v => !q || v.toLowerCase().includes(q))
         .map(v => ({ id: v, label: v, field: activeField }));
     }
     if (phase === 'entering_value' && activeField?.hasStaticSuggestions) {
       const vals = activeField.staticSuggestions || [];
+      const selected = new Set(valuesOf(activeField.fromFilter(filter)).map(v => v.toLowerCase()));
       const q = inputValue.toLowerCase();
       return vals
+        .filter(v => !selected.has(v.toLowerCase()))
         .filter(v => !q || v.toLowerCase().includes(q))
         .map(v => ({ id: v, label: v, field: activeField }));
     }
     return [];
-  }, [phase, inputValue, availableFields, activeField, suggestionCache]);
+  }, [phase, inputValue, availableFields, activeField, suggestionCache, filter]);
 
   /* --- handlers --- */
-  const commitValue = useCallback((value: string) => {
-    if (!activeField || !value.trim()) return;
-    onFilterChange(activeField.toFilter(value.trim()));
+  const finishValueEntry = useCallback(() => {
     setActiveField(null);
     setInputValue('');
     setPhase('idle');
     setShowDropdown(false);
     setHighlightIdx(-1);
-  }, [activeField, onFilterChange]);
+  }, []);
+
+  const commitValue = useCallback((value: string, continueMultiEntry = true) => {
+    if (!activeField || !value.trim()) return;
+    const additions = activeField.key === 'query_id'
+      ? value.split(/[\s,]+/).map(item => item.trim()).filter(Boolean)
+      : [value.trim()];
+    if (activeField.multi) {
+      const current = valuesOf(activeField.fromFilter(filter));
+      const seen = new Set(current.map(item => item.toLowerCase()));
+      const next = [...current];
+      additions.forEach(item => {
+        if (!seen.has(item.toLowerCase())) {
+          seen.add(item.toLowerCase());
+          next.push(item);
+        }
+      });
+      onFilterChange(activeField.toFilter(next));
+      if (continueMultiEntry) {
+        setInputValue('');
+        setShowDropdown(activeField.hasSuggestions === true || activeField.hasStaticSuggestions === true);
+        setHighlightIdx(-1);
+        return;
+      }
+    } else {
+      onFilterChange(activeField.toFilter(additions[0]!));
+    }
+    finishValueEntry();
+  }, [activeField, filter, onFilterChange, finishValueEntry]);
 
   const selectField = useCallback((field: FilterFieldDef) => {
     setActiveField(field);
@@ -268,24 +322,27 @@ export const QueryFilterBar: React.FC<QueryFilterBarProps> = ({
     setTimeout(() => inputRef.current?.focus(), 0);
   }, []);
 
-  const removeChip = useCallback((field: FilterFieldDef) => {
-    onFilterChange(field.clear());
-  }, [onFilterChange]);
+  const removeValue = useCallback((field: FilterFieldDef, value: string) => {
+    if (!field.multi) {
+      onFilterChange(field.clear());
+      return;
+    }
+    const remaining = valuesOf(field.fromFilter(filter))
+      .filter(item => item.toLowerCase() !== value.toLowerCase());
+    onFilterChange(remaining.length > 0 ? field.toFilter(remaining) : field.clear());
+  }, [filter, onFilterChange]);
 
-  /** Click a chip to edit it: clear the filter, pre-fill the input with the old value */
-  const editChip = useCallback((field: FilterFieldDef, currentValue: string) => {
-    onFilterChange(field.clear());
+  /** Reopen a field without clearing its selected values so more can be added. */
+  const editChip = useCallback((field: FilterFieldDef) => {
     setActiveField(field);
-    setInputValue(currentValue);
+    setInputValue('');
     setPhase('entering_value');
     setHighlightIdx(-1);
-    setShowDropdown(field.hasSuggestions === true);
+    setShowDropdown(field.hasSuggestions === true || field.hasStaticSuggestions === true);
     setTimeout(() => {
       inputRef.current?.focus();
-      // select all text so user can easily replace
-      inputRef.current?.select();
     }, 0);
-  }, [onFilterChange]);
+  }, []);
 
   const handleInputFocus = useCallback(() => {
     if (phase === 'idle') setPhase('picking_field');
@@ -298,23 +355,16 @@ export const QueryFilterBar: React.FC<QueryFilterBarProps> = ({
       setShowDropdown(false);
       // If we were entering a value and there's text, commit it on blur
       if (phase === 'entering_value' && activeField && inputValue.trim()) {
-        onFilterChange(activeField.toFilter(inputValue.trim()));
-        setActiveField(null);
-        setInputValue('');
-        setPhase('idle');
-        setHighlightIdx(-1);
+        commitValue(inputValue, false);
       } else if (phase === 'picking_field') {
         setPhase('idle');
         setInputValue('');
       } else if (phase === 'entering_value' && activeField && !inputValue.trim()) {
         // abandoned edit with no value — just reset
-        setActiveField(null);
-        setInputValue('');
-        setPhase('idle');
-        setHighlightIdx(-1);
+        finishValueEntry();
       }
     }, 200);
-  }, [phase, activeField, inputValue, onFilterChange]);
+  }, [phase, activeField, inputValue, commitValue, finishValueEntry]);
 
   const handleKeyDown = useCallback((e: React.KeyboardEvent) => {
     if (e.key === 'Escape') {
@@ -341,6 +391,8 @@ export const QueryFilterBar: React.FC<QueryFilterBarProps> = ({
         else if (phase === 'entering_value') commitValue(item.label);
       } else if (phase === 'entering_value' && inputValue.trim()) {
         commitValue(inputValue);
+      } else if (phase === 'entering_value') {
+        finishValueEntry();
       }
       return;
     }
@@ -350,11 +402,12 @@ export const QueryFilterBar: React.FC<QueryFilterBarProps> = ({
       return;
     }
     if (e.key === 'Backspace' && !inputValue && phase === 'picking_field' && activeChips.length > 0) {
-      // remove last chip
+      // Match tag-picker behavior: remove the last selected value.
       const last = activeChips[activeChips.length - 1];
-      removeChip(last.field);
+      const lastValue = last.displayValues[last.displayValues.length - 1];
+      if (lastValue) removeValue(last.field, lastValue);
     }
-  }, [dropdownItems, highlightIdx, phase, inputValue, activeChips, selectField, commitValue, removeChip]);
+  }, [dropdownItems, highlightIdx, phase, inputValue, activeChips, selectField, commitValue, finishValueEntry, removeValue]);
 
   const handleInputChange = useCallback((e: React.ChangeEvent<HTMLInputElement>) => {
     setInputValue(e.target.value);
@@ -430,14 +483,35 @@ export const QueryFilterBar: React.FC<QueryFilterBarProps> = ({
             {/* Existing chips */}
             {activeChips.map(c => (
               <span key={c.field.key} style={{ ...chipStyle, cursor: 'pointer' }}
-                onClick={e => { e.stopPropagation(); editChip(c.field, c.displayValue); }}>
+                onClick={e => { e.stopPropagation(); editChip(c.field); }}>
                 <span style={{ fontWeight: 600, fontSize: 10 }}>{c.field.label}:</span>
-                {c.displayValue}
-                <span style={chipRemoveStyle} onClick={e => { e.stopPropagation(); removeChip(c.field); }}>×</span>
+                {c.displayValues.map(displayValue => (
+                  <span
+                    key={displayValue}
+                    style={{
+                      display: 'inline-flex',
+                      alignItems: 'center',
+                      gap: 3,
+                      padding: '0 4px',
+                      borderRadius: 999,
+                      background: 'rgba(88,166,255,0.08)',
+                    }}
+                  >
+                    {displayValue}
+                    <span
+                      role="button"
+                      aria-label={`Remove ${c.field.label} ${displayValue}`}
+                      style={chipRemoveStyle}
+                      onClick={e => { e.stopPropagation(); removeValue(c.field, displayValue); }}
+                    >
+                      ×
+                    </span>
+                  </span>
+                ))}
               </span>
             ))}
             {/* Active field label (while entering value) */}
-            {phase === 'entering_value' && activeField && (
+            {phase === 'entering_value' && activeField && valuesOf(activeField.fromFilter(filter)).length === 0 && (
               <span style={{ ...chipStyle, background: 'rgba(88,166,255,0.06)', borderStyle: 'dashed' }}>
                 <span style={{ fontWeight: 600, fontSize: 10 }}>{activeField.label}:</span>
               </span>
@@ -452,7 +526,9 @@ export const QueryFilterBar: React.FC<QueryFilterBarProps> = ({
               onKeyDown={handleKeyDown}
               placeholder={
                 phase === 'entering_value' && activeField
-                  ? activeField.placeholder
+                  ? activeField.multi && valuesOf(activeField.fromFilter(filter)).length > 0
+                    ? `Add another ${activeField.label.toLowerCase()}…`
+                    : activeField.placeholder
                   : activeChips.length > 0
                     ? 'Add filter…'
                     : 'Type to filter (user, server, query…)'

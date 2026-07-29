@@ -32,13 +32,13 @@ export type {
 
 // Filter options for merge history
 export interface MergeHistoryFilter {
-  database?: string;
-  table?: string;
+  database?: string[];
+  table?: string[];
   minDurationMs?: number;
   minSizeBytes?: number;
   excludeSystemDatabases?: boolean;
-  /** Merge category pushed to server-side SQL (e.g. 'TTLDelete', 'Mutation'). */
-  category?: string;
+  /** Merge categories pushed to server-side SQL where classification permits. */
+  category?: string[];
   /** ClickHouse interval string (e.g. '1 DAY') or 'CUSTOM:start,end'. Default '1 DAY'. */
   timeRange?: string | null;
   limit: number;

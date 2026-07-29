@@ -21,6 +21,7 @@ import {
   PROBE_TRACEHOUSE_SAMPLING_TABLES,
   PROBE_SYSTEM_TABLE_ACCESS_TABLES,
   PROBE_METRIC_LOG_REPLICATION_COLUMNS,
+  PROBE_DISTRIBUTED_LIMIT_BY,
 } from '../queries/monitoring-capabilities-queries.js';
 import { tagQuery } from '../queries/builder.js';
 import { TAB_INTERNAL, sourceTag } from '../queries/source-tags.js';
@@ -197,7 +198,7 @@ export class MonitoringCapabilitiesService {
    * per-probe so partial results are still returned.
    */
   async probe(): Promise<MonitoringCapabilities> {
-    const [version, logTables, settings, hasZk, hasIntrospection, isCloud, cpuProfilerSampleCount, tracehouseTables, systemTableAccess, metricLogReplicationColumns] = await Promise.all([
+    const [version, logTables, settings, hasZk, hasIntrospection, isCloud, cpuProfilerSampleCount, tracehouseTables, systemTableAccess, metricLogReplicationColumns, distributedLimitBy] = await Promise.all([
       this.probeVersion(),
       this.probeLogTables(),
       this.probeSettings(),
@@ -208,6 +209,7 @@ export class MonitoringCapabilitiesService {
       this.probeTracehouseSamplingTables(),
       this.probeSystemTableAccess(),
       this.probeMetricLogReplicationColumns(),
+      this.probeDistributedLimitBy(),
     ]);
 
     const capabilities: MonitoringCapability[] = [];
@@ -274,6 +276,15 @@ export class MonitoringCapabilitiesService {
             .filter(column => !metricLogReplicationColumns.has(column))
             .join(', ')}`,
       source: 'system.metric_log.ProfileEvent_Replicated*',
+    });
+    capabilities.push({
+      id: 'distributed_limit_by',
+      label: 'Distributed LIMIT BY',
+      description: 'Per-category row limiting through the active distributed query path.',
+      available: distributedLimitBy.available,
+      category: 'profiling',
+      detail: distributedLimitBy.detail,
+      source: 'behavioral probe: distributed LIMIT BY',
     });
 
     // Add profile events capability (derived from settings)
@@ -609,6 +620,34 @@ export class MonitoringCapabilitiesService {
       return rows[0]?.version ?? 'unknown';
     } catch {
       return 'unknown';
+    }
+  }
+
+  private async probeDistributedLimitBy(): Promise<{
+    available: boolean;
+    detail: string;
+  }> {
+    try {
+      await this.adapter.executeQuery(
+        tagQuery(
+          PROBE_DISTRIBUTED_LIMIT_BY,
+          sourceTag(TAB_INTERNAL, 'distributedLimitBy'),
+        ),
+      );
+      return {
+        available: true,
+        detail: 'Supported by the active query path',
+      };
+    } catch (error) {
+      const message = error instanceof Error ? error.message : String(error);
+      const plannerBug = message.includes('THERE_IS_NO_COLUMN')
+        || message.includes('Cannot find column');
+      return {
+        available: false,
+        detail: plannerBug
+          ? 'Distributed LIMIT BY planner bug detected'
+          : `Probe failed: ${message.slice(0, 240)}`,
+      };
     }
   }
 
