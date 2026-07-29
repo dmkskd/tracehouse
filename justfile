@@ -137,12 +137,28 @@ frontend-stop:
 [group('services')]
 frontend-restart: frontend-stop frontend-start
 
-# Start CORS proxy (background) — needed for remote ClickHouse connections
+# Used by frontend-start so the proxy does not block Vite from starting.
+# Stop it with `just proxy-stop`; use `just proxy-run` for foreground operation.
+# Start the CORS proxy in the background; returns immediately and writes logs/proxy.log.
 [group('services')]
 proxy-start:
     @mkdir -p logs
     @echo "Starting CORS proxy on :8990..."
     @npx tracehouse-proxy 2>&1 | while IFS= read -r line; do echo "$(date '+%Y-%m-%d %H:%M:%S') $line"; done >> logs/proxy.log &
+
+# Unlike proxy-start, this intentionally occupies the terminal.
+# Run the CORS proxy in the foreground; shows logs and stops when you press Ctrl-C.
+[group('services')]
+proxy-run:
+    @echo "Running CORS proxy on :8990 (press Ctrl-C to stop)..."
+    npx tracehouse-proxy
+
+# Safe to run when the proxy is not running.
+# Stop a background CORS proxy started by `just proxy-start`.
+[group('services')]
+proxy-stop:
+    @echo "Stopping CORS proxy..."
+    @-pkill -f "tracehouse-proxy" 2>/dev/null || true
 
 # ─────────────────────────────────────────────────────────────────
 # INFRASTRUCTURE (Local Binary - No Containers)
