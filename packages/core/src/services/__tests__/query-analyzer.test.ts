@@ -31,6 +31,25 @@ describe('QueryAnalyzer running queries', () => {
   });
 });
 
+describe('QueryAnalyzer filter values', () => {
+  it('uses query-row server identities for hostname suggestions', async () => {
+    const adapter = new MockAdapter([
+      { hostname: 'node-1.cluster.local' },
+      { hostname: 'node-2' },
+    ]);
+    const analyzer = new QueryAnalyzer(adapter);
+
+    const values = await analyzer.getDistinctFilterValues('hostname');
+
+    expect(values).toEqual(['node-1', 'node-2']);
+    expect(adapter.queries).toHaveLength(1);
+    expect(adapter.queries[0]).toContain('SELECT DISTINCT hostName() AS hostname');
+    expect(adapter.queries[0]).toContain('FROM {{cluster_aware:system.one}}');
+    expect(adapter.queries[0]).not.toContain('system.clusters');
+    expect(adapter.queries[0]).toContain('/* source:TraceHouse:Queries:filterValues */');
+  });
+});
+
 describe('QueryAnalyzer UTC history bounds', () => {
   it('keeps offset conversion explicit in generated ClickHouse SQL', async () => {
     const adapter = new MockAdapter();
@@ -49,6 +68,9 @@ describe('QueryAnalyzer UTC history bounds', () => {
       "event_time <= toDateTime('2026-07-27 14:05:00', 'UTC')",
     );
     expect(adapter.queries[0]).toContain("event_date >= '2026-07-26'");
+    expect(adapter.queries[0]).toContain(
+      "type IN ('QueryFinish', 'ExceptionBeforeStart', 'ExceptionWhileProcessing')",
+    );
   });
 
   it('ORs multiple categorical values in generated history SQL', async () => {
@@ -72,10 +94,44 @@ describe('QueryAnalyzer UTC history bounds', () => {
     expect(sql).toContain("user IN ('alice', 'o\\'hara')");
     expect(sql).toContain("query_id IN ('query-a', 'query-b')");
     expect(sql).toContain("query_kind IN ('Select', 'Insert')");
-    expect(sql).toContain("type = 'ExceptionWhileProcessing'");
+    expect(sql).toContain(
+      "type IN ('ExceptionBeforeStart', 'ExceptionWhileProcessing')",
+    );
     expect(sql).toContain("positionCaseInsensitive(x, 'db_a') > 0 OR positionCaseInsensitive(x, 'db_b') > 0");
     expect(sql).toContain("positionCaseInsensitive(x, 'table_a') > 0 OR positionCaseInsensitive(x, 'table_b') > 0");
     expect(sql).toContain("positionCaseInsensitive(hostName(), 'node-1') > 0 OR positionCaseInsensitive(hostName(), 'node-2') > 0");
+  });
+
+  it('maps errors rejected before execution into query history errors', async () => {
+    const adapter = new MockAdapter([{
+      query_id: 'rejected-query',
+      type: 'ExceptionBeforeStart',
+      query_start_time: '2026-07-27 13:30:00',
+      query_duration_ms: 0,
+      query: 'SELECT missing FROM unknown_table',
+      exception: 'Unknown table',
+      user: 'default',
+      hostname: 'node-1',
+    }]);
+    const analyzer = new QueryAnalyzer(adapter);
+
+    const history = await analyzer.getQueryHistory({
+      start_date: '2026-07-27',
+      start_time: '2026-07-27T13:00:00Z',
+      end_time: '2026-07-27T14:00:00Z',
+      status: ['error'],
+    });
+
+    expect(history).toHaveLength(1);
+    expect(history[0]).toMatchObject({
+      query_id: 'rejected-query',
+      query_type: 'ExceptionBeforeStart',
+      type: 'error',
+      exception: 'Unknown table',
+    });
+    expect(adapter.queries[0]).toContain(
+      "type IN ('ExceptionBeforeStart', 'ExceptionWhileProcessing')",
+    );
   });
 });
 

@@ -24,7 +24,7 @@ const running = (queryId: string, overrides: Partial<RunningQuery> = {}): Runnin
 
 const completed = (queryId: string): QueryHistoryItem => ({
   query_id: queryId,
-  query_type: 'Select',
+  query_type: 'QueryFinish',
   query_kind: 'Select',
   query_start_time: '2026-07-26T00:00:00.000Z',
   query_duration_ms: 2500,
@@ -156,7 +156,23 @@ describe('query activity records', () => {
     expect(history).toMatchObject({
       query_id: 'done',
       is_running: false,
-      status: 'success',
+      status: 'QueryFinish',
     });
+  });
+
+  it('preserves the exact ClickHouse exception type for query details', () => {
+    const beforeStart = {
+      ...completed('failed'),
+      query_type: 'ExceptionBeforeStart',
+      type: 'error',
+      exception: 'Code: 60. Unknown table',
+    };
+
+    expect(querySelectionToSeries(beforeStart, 'history', 5_000))
+      .toMatchObject({
+        query_id: 'failed',
+        status: 'ExceptionBeforeStart',
+        exception: 'Code: 60. Unknown table',
+      });
   });
 });

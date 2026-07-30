@@ -64,7 +64,7 @@ export function buildQueryHistorySQL(options: QueryHistorySQLOptions = {}): stri
     'event_date >= {start_date}',
     'event_time >= {start_time}',
     'event_time <= {end_time}',
-    "type IN ('QueryFinish', 'ExceptionWhileProcessing')",
+    "type IN ('QueryFinish', 'ExceptionBeforeStart', 'ExceptionWhileProcessing')",
   ];
 
   if (options.user !== undefined) {

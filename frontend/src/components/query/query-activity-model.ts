@@ -188,7 +188,9 @@ export function querySelectionToSeries(
     net_recv: history.network_receive_bytes || 0,
     disk_read: history.disk_read_bytes || history.read_bytes || 0,
     disk_write: history.disk_write_bytes || 0,
-    status: history.type,
+    // Preserve ClickHouse's terminal event type for query details. The
+    // user-facing history `type` is intentionally only "success" or "error".
+    status: history.query_type || history.type,
     exception: history.exception ?? undefined,
     query_kind: history.query_kind,
     is_running: false,

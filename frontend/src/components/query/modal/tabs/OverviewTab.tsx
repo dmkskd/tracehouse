@@ -43,18 +43,69 @@ const PANEL: React.CSSProperties = {
 const fmtMs = formatDurationMs;
 const fmtUs = formatMicroseconds;
 
-function statusInfo(q: QuerySeries): { label: string; color: string; bg: string; code?: number } {
-  const isFailed = q.status === 'ExceptionWhileProcessing'
-    || q.status === 'ExceptionBeforeStart'
+export type ClickHouseExceptionType =
+  | 'ExceptionBeforeStart'
+  | 'ExceptionWhileProcessing';
+
+export function clickHouseExceptionType(
+  type: string | null | undefined,
+): ClickHouseExceptionType | null {
+  if (type === 'ExceptionBeforeStart' || type === 'ExceptionWhileProcessing') {
+    return type;
+  }
+  return null;
+}
+
+export function clickHouseExceptionPhase(
+  type: ClickHouseExceptionType | null,
+): string | null {
+  if (type === 'ExceptionBeforeStart') return 'before execution';
+  if (type === 'ExceptionWhileProcessing') return 'during execution';
+  return null;
+}
+
+function statusInfo(
+  q: QuerySeries,
+  detailType?: string,
+  detailExceptionCode?: number,
+): {
+  label: string;
+  color: string;
+  bg: string;
+  code?: number;
+  exceptionType: ClickHouseExceptionType | null;
+  exceptionPhase: string | null;
+} {
+  const exceptionType = clickHouseExceptionType(detailType ?? q.status);
+  const isFailed = exceptionType !== null
     || (q.exception_code !== undefined && q.exception_code !== 0)
     || Boolean(q.exception);
   if (q.is_running) {
-    return { label: 'Running', color: 'var(--color-warning)', bg: 'rgba(var(--color-warning-rgb), 0.1)' };
+    return {
+      label: 'Running',
+      color: '#58a6ff',
+      bg: 'rgba(88, 166, 255, 0.12)',
+      exceptionType: null,
+      exceptionPhase: null,
+    };
   }
   if (isFailed) {
-    return { label: 'Failed', color: 'var(--color-error)', bg: 'rgba(var(--color-error-rgb), 0.1)', code: q.exception_code };
+    return {
+      label: 'Failed',
+      color: 'var(--color-error)',
+      bg: 'rgba(var(--color-error-rgb), 0.1)',
+      code: detailExceptionCode ?? q.exception_code,
+      exceptionType,
+      exceptionPhase: clickHouseExceptionPhase(exceptionType),
+    };
   }
-  return { label: 'Success', color: 'var(--color-success)', bg: 'rgba(var(--color-success-rgb), 0.1)' };
+  return {
+    label: 'Success',
+    color: 'var(--color-success)',
+    bg: 'rgba(var(--color-success-rgb), 0.1)',
+    exceptionType: null,
+    exceptionPhase: null,
+  };
 }
 
 function shortId(id: string): string {
@@ -94,7 +145,11 @@ export const OverviewTab: React.FC<OverviewTabProps> = ({
   onOpenTab,
   onNavigateToQuery,
 }) => {
-  const status = statusInfo(q);
+  const status = statusInfo(
+    q,
+    queryDetail?.type,
+    queryDetail?.exception_code,
+  );
   const readRows = Number(queryDetail?.read_rows ?? 0);
   const readBytes = Number(queryDetail?.read_bytes ?? q.disk_read ?? 0);
   const resultRows = Number(queryDetail?.result_rows ?? 0);
@@ -184,14 +239,34 @@ export const OverviewTab: React.FC<OverviewTabProps> = ({
         />
       </div>
 
-      {q.exception && (
+      {(queryDetail?.exception || q.exception) && (
         <div style={{
           padding: '10px 12px',
           borderRadius: 6,
           background: 'rgba(var(--color-error-rgb), 0.08)',
           border: '1px solid rgba(var(--color-error-rgb), 0.2)',
         }}>
-          <div style={{ ...LABEL, marginBottom: 6, color: 'var(--color-error)' }}>Error</div>
+          <div style={{
+            ...LABEL,
+            marginBottom: 6,
+            color: 'var(--color-error)',
+            display: 'flex',
+            alignItems: 'baseline',
+            gap: 8,
+            flexWrap: 'wrap',
+          }}>
+            <span>{status.exceptionType ?? 'ClickHouse exception'}</span>
+            {status.exceptionPhase && (
+              <span style={{ color: 'var(--text-muted)', textTransform: 'none', letterSpacing: 0 }}>
+                {status.exceptionPhase}
+              </span>
+            )}
+            {status.code !== undefined && status.code !== 0 && (
+              <span style={{ color: 'var(--text-muted)', textTransform: 'none', letterSpacing: 0 }}>
+                Code {status.code}
+              </span>
+            )}
+          </div>
           <pre style={{
             margin: 0,
             fontFamily: 'monospace',
@@ -200,7 +275,7 @@ export const OverviewTab: React.FC<OverviewTabProps> = ({
             whiteSpace: 'pre-wrap',
             wordBreak: 'break-word',
           }}>
-            {q.exception}
+            {queryDetail?.exception || q.exception}
           </pre>
         </div>
       )}
@@ -391,7 +466,7 @@ const SqlOverviewStrip: React.FC<{
         </div>
       </div>
       <SqlHighlight
-        maxHeight={144}
+        maxHeight={126}
         style={{
           width: '100%',
           height: 144,
@@ -403,7 +478,9 @@ const SqlOverviewStrip: React.FC<{
           fontSize: 11,
           lineHeight: 1.45,
           boxSizing: 'border-box',
-          overflow: 'auto',
+          // CodeMirror's .cm-scroller owns scrolling. Making this wrapper
+          // scrollable as well produces two adjacent vertical scrollbars.
+          overflow: 'hidden',
         }}
       >
         {sql}
@@ -414,10 +491,11 @@ const SqlOverviewStrip: React.FC<{
 
 const PreviewCard: React.FC<{
   title: string;
+  titleBadge?: React.ReactNode;
   action: string;
   onOpen: () => void;
   children: React.ReactNode;
-}> = ({ title, action, onOpen, children }) => {
+}> = ({ title, titleBadge, action, onOpen, children }) => {
   const accent = previewAccent(title);
   return (
   <div
@@ -457,7 +535,10 @@ const PreviewCard: React.FC<{
     }}
   >
     <div style={{ padding: '12px 14px', display: 'flex', justifyContent: 'space-between', alignItems: 'baseline', gap: 10 }}>
-      <div style={{ ...LABEL, color: 'var(--text-tertiary)', fontWeight: 700, fontSize: 11 }}>{title}</div>
+      <div style={{ display: 'flex', alignItems: 'center', gap: 7, minWidth: 0 }}>
+        <div style={{ ...LABEL, color: 'var(--text-tertiary)', fontWeight: 700, fontSize: 11 }}>{title}</div>
+        {titleBadge}
+      </div>
       <div style={{ fontFamily: 'monospace', fontSize: 10, color: '#58a6ff', whiteSpace: 'nowrap' }}>
         View {action.toLowerCase()}
       </div>
@@ -492,19 +573,37 @@ const QuerySummaryPreview: React.FC<{
   onOpen: () => void;
   onNavigateToQuery: (queryId: string) => void;
 }> = ({ q, status, queryKind, host, queryRole, parentQueryId, onOpen, onNavigateToQuery }) => (
-  <PreviewCard title="Query Summary" action="SQL" onOpen={onOpen}>
+  <PreviewCard
+    title="Query Summary"
+    titleBadge={(
+      <span
+        title={status.exceptionType
+          ? `ClickHouse query_log.type · failed ${status.exceptionPhase}`
+          : status.label}
+        style={{
+          padding: '2px 6px',
+          borderRadius: 999,
+          background: status.bg,
+          color: status.color,
+          fontFamily: 'monospace',
+          fontSize: 9,
+          fontWeight: 700,
+          lineHeight: 1.2,
+          textTransform: 'lowercase',
+          whiteSpace: 'nowrap',
+        }}
+      >
+        {status.exceptionType ? 'error' : status.label}
+      </span>
+    )}
+    action="SQL"
+    onOpen={onOpen}
+  >
     <div style={{ display: 'flex', flexDirection: 'column', gap: 9, minWidth: 0 }}>
-      <div style={{ display: 'flex', alignItems: 'center', gap: 8, minWidth: 0, flexWrap: 'wrap' }}>
-        <span style={{ fontFamily: 'monospace', fontSize: 15, color: '#58a6ff', fontWeight: 700 }}>{shortId(q.query_id)}</span>
-        <Badge color={status.color}>{status.label.toLowerCase()}</Badge>
-      </div>
-
-      <div style={{ display: 'flex', alignItems: 'center', gap: 7, flexWrap: 'wrap' }}>
-        <Badge color="#58a6ff">{queryKind.toLowerCase()}</Badge>
-        {queryRole && <Badge color={queryRole === 'worker' ? '#d29922' : '#a371f7'}>{queryRole}</Badge>}
-      </div>
-
       <div style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
+        <SummaryFact label="id" value={shortId(q.query_id)} title={q.query_id} />
+        <SummaryFact label="kind" value={queryKind.toLowerCase()} />
+        {queryRole && <SummaryFact label="role" value={queryRole} />}
         <SummaryFact label="user" value={q.user || '-'} />
         <SummaryFact label="host" value={host} />
       </div>
@@ -534,11 +633,15 @@ const QuerySummaryPreview: React.FC<{
   </PreviewCard>
 );
 
-const SummaryFact: React.FC<{ label: string; value: string }> = ({ label, value }) => (
+const SummaryFact: React.FC<{
+  label: string;
+  value: string;
+  title?: string;
+}> = ({ label, value, title }) => (
   <div style={{ display: 'grid', gridTemplateColumns: '34px minmax(0, 1fr)', gap: 8, alignItems: 'baseline', minWidth: 0 }}>
     <span style={{ fontFamily: 'monospace', fontSize: 10, color: 'var(--text-muted)' }}>{label}</span>
     <span
-      title={value}
+      title={title ?? value}
       style={{
         fontFamily: 'monospace',
         fontSize: 12,
@@ -666,23 +769,6 @@ const ParallelExecutionPreview: React.FC<{
     </div>
     <ChildQueryBars subQueries={subQueries} rootDurationMs={rootDurationMs} />
   </PreviewCard>
-);
-
-const Badge: React.FC<{ color: string; children: React.ReactNode }> = ({ color, children }) => (
-  <span style={{
-    display: 'inline-flex',
-    padding: '3px 7px',
-    borderRadius: 5,
-    border: `1px solid ${color}55`,
-    background: `${color}18`,
-    color,
-    fontFamily: 'monospace',
-    fontSize: 11,
-    fontWeight: 700,
-    lineHeight: 1.2,
-  }}>
-    {children}
-  </span>
 );
 
 const MetricBar: React.FC<{ label: string; value: string; ratio: number; color: string; title?: string; labelWidth?: number }> = ({ label, value, ratio, color, title, labelWidth = 42 }) => (

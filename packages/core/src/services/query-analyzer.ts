@@ -353,10 +353,11 @@ export class QueryAnalyzer {
   async getDistinctFilterValues(column: 'user' | 'hostname' | 'query_kind', limit = 50): Promise<string[]> {
     let sql: string;
     if (column === 'hostname') {
-      // Use system.clusters instead of scanning query_log — it's a tiny virtual
-      // table that returns all cluster hostnames instantly, vs scanning 7 days
-      // of query_log on a busy cluster (potentially billions of rows).
-      sql = `SELECT DISTINCT host_name AS hostname FROM {{cluster_aware:system.clusters}} ORDER BY hostname LIMIT ${limit}`;
+      // Resolve hostName() on the same cluster-aware execution path used by
+      // query rows. system.clusters.host_name may be a connection alias such
+      // as "localhost", which does not match the server identity recorded by
+      // system.processes and system.query_log.
+      sql = `SELECT DISTINCT hostName() AS hostname FROM {{cluster_aware:system.one}} ORDER BY hostname LIMIT ${limit}`;
     } else if (column === 'query_kind') {
       // query_kind has very low cardinality (~6 values), so today() is enough
       sql = `SELECT DISTINCT query_kind FROM {{cluster_aware:system.query_log}} WHERE event_date >= today() AND query_kind != '' ORDER BY query_kind LIMIT ${limit}`;
@@ -390,7 +391,7 @@ export class QueryAnalyzer {
       "event_date >= {start_date}",
       "event_time >= {start_time}",
       "event_time <= {end_time}",
-      "type IN ('QueryFinish', 'ExceptionWhileProcessing')"
+      "type IN ('QueryFinish', 'ExceptionBeforeStart', 'ExceptionWhileProcessing')"
     ];
 
     const users = filterValues(options.user);
@@ -446,12 +447,16 @@ export class QueryAnalyzer {
       const statuses = new Set(statusValues.map(value => value.toLowerCase()));
       const terminalTypes: string[] = [];
       if (statuses.has('success')) terminalTypes.push('QueryFinish');
-      if (statuses.has('error')) terminalTypes.push('ExceptionWhileProcessing');
+      if (statuses.has('error')) {
+        terminalTypes.push('ExceptionBeforeStart', 'ExceptionWhileProcessing');
+      }
       if (terminalTypes.length === 0) {
         // Running queries come from system.processes, never query_log.
         whereConditions.push('0');
       } else if (terminalTypes.length === 1) {
         whereConditions.push(`type = '${terminalTypes[0]}'`);
+      } else if (terminalTypes.length < 3) {
+        whereConditions.push(`type IN (${terminalTypes.map(type => `'${type}'`).join(', ')})`);
       }
     }
 
