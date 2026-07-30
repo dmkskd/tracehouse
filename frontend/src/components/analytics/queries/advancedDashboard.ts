@@ -192,6 +192,7 @@ ORDER BY t ASC`,
 
   `-- @meta: title='In-Memory Caches (bytes)' group='Advanced Dashboard' interval='1 HOUR' description='Combined size of MarkCacheBytes and UncompressedCacheBytes'
 -- @chart: type=area group_by=t value=cache_bytes style=2d color=#a855f7
+-- @requires: clickhouse>=25.8
 -- @source: https://github.com/ClickHouse/ClickHouse/blob/master/src/Storages/System/StorageSystemDashboards.cpp
 SELECT
     toStartOfInterval(event_time, INTERVAL 1 MINUTE) AS t,

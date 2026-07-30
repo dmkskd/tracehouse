@@ -241,6 +241,7 @@ GROUP BY t
 ORDER BY t ASC`,
 
   `-- @meta: title='Distribution Insert Pressure' group='Replication' interval='1 HOUR' description='Throttled and rejected distributed INSERTs over time - high values mean the cluster cannot keep up'
+-- @requires: clickhouse>=24.3
 -- @chart: type=stacked_bar group_by=t value=count series=event orientation=v style=2d
 -- @source: https://clickhouse.com/docs/operations/system-tables/metric_log
 SELECT

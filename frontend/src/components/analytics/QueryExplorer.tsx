@@ -30,6 +30,7 @@ import { resolveTimeRange, resolveDrillParams, isDrillTarget } from './templateR
 import {
   QUERY_GROUPS, CHART_TYPE_LABELS,
   type QueryGroup, type ChartType, type ChartStyle,
+  evaluateQueryVersionCompatibility,
   parseCellStyles, parseRagRules, parseChartDirective, parseDirectives, resolveQueryRef,
 } from './metaLanguage';
 import { LinkQueryModal } from './LinkQueryModal';
@@ -191,6 +192,15 @@ export const QueryExplorer: React.FC<QueryExplorerProps> = ({ urlState, onUrlSta
   const [isFullscreen, setIsFullscreen] = useState(urlState?.fullscreen ?? false);
   const [timeRangeOverride, setTimeRangeOverride] = useState<string | null>('1 HOUR');
   const [showResolved, setShowResolved] = useState(false);
+  const currentVersionCompatibility = useMemo(() => {
+    const directives = parseDirectives(sql);
+    return evaluateQueryVersionCompatibility(
+      directives?.requires?.clickhouseMinVersion,
+      capabilityServerVersion,
+      capabilityProbeStatus === 'idle' || capabilityProbeStatus === 'probing',
+    );
+  }, [sql, capabilityServerVersion, capabilityProbeStatus]);
+  const versionUnavailable = currentVersionCompatibility.status !== 'compatible';
 
   /* ── dynamic ClickHouse function list for editor autocomplete ── */
   const [chFunctions, setChFunctions] = useState<ChFunction[] | undefined>();
@@ -248,6 +258,19 @@ export const QueryExplorer: React.FC<QueryExplorerProps> = ({ urlState, onUrlSta
     if (!services) return;
     const q = (queryStr ?? sql).trim();
     if (!q) return;
+    const activePreset = allQueries.find(p => p.sql.trim() === q);
+    const directives = activePreset?.directives ?? parseDirectives(q);
+    const compatibility = evaluateQueryVersionCompatibility(
+      directives?.requires?.clickhouseMinVersion,
+      capabilityServerVersion,
+      capabilityProbeStatus === 'idle' || capabilityProbeStatus === 'probing',
+    );
+    if (compatibility.status !== 'compatible') {
+      setIsRunning(false);
+      setError(null);
+      setResult(null);
+      return;
+    }
     setIsRunning(true);
     setError(null);
     setResult(null);
@@ -258,7 +281,6 @@ export const QueryExplorer: React.FC<QueryExplorerProps> = ({ urlState, onUrlSta
     const directive = parseChartDirective(q);
     try {
       // Resolve {{time_range}} using the active preset's default interval
-      const activePreset = allQueries.find(p => p.sql.trim() === q.trim());
       let resolvedSql = resolveTimeRange(q, activePreset?.directives.meta?.interval, timeRangeOverride);
       // Resolve {{drill:col | fallback}} - uses drill params if provided, else current stack, else empty (standalone)
       const params = drillParams ?? (drillStack.length > 0 ? drillStack[drillStack.length - 1].params : {});
@@ -337,6 +359,8 @@ export const QueryExplorer: React.FC<QueryExplorerProps> = ({ urlState, onUrlSta
     allQueries,
     drillStack,
     resetExecutionAnalysis,
+    capabilityServerVersion,
+    capabilityProbeStatus,
   ]);
 
   const runExecutionAnalysis = useCallback(async () => {
@@ -846,11 +870,15 @@ export const QueryExplorer: React.FC<QueryExplorerProps> = ({ urlState, onUrlSta
               <TimeRangePicker value={timeRangeOverride} onChange={setTimeRangeOverride} />
               <span style={{ fontSize: 10, color: 'var(--text-muted)', fontFamily: "'Share Tech Mono',monospace", padding: '2px 6px', background: 'rgba(255,255,255,0.05)', borderRadius: 4 }}>⌘ Enter</span>
               <span style={{ width: 1, height: 22, background: 'var(--border-primary)', marginLeft: 2 }} />
-              <button className="btn btn-primary" onClick={() => runQuery()} disabled={isRunning || isAnalyzing || !services}
+              <button
+                className="btn btn-primary"
+                onClick={() => runQuery()}
+                disabled={isRunning || isAnalyzing || !services || versionUnavailable}
+                title={versionUnavailable ? currentVersionCompatibility.message : undefined}
                 style={{
                   padding: '4px 14px', fontSize: 12,
-                  cursor: isRunning || isAnalyzing ? 'not-allowed' : 'pointer',
-                  opacity: isRunning || isAnalyzing ? 0.6 : 1,
+                  cursor: isRunning || isAnalyzing || versionUnavailable ? 'not-allowed' : 'pointer',
+                  opacity: isRunning || isAnalyzing || versionUnavailable ? 0.6 : 1,
                   fontWeight: 600,
                 }}>
                 {isRunning ? 'Running…' : '▶ Run Query'}
@@ -878,6 +906,27 @@ export const QueryExplorer: React.FC<QueryExplorerProps> = ({ urlState, onUrlSta
 
         {/* Results */}
         <div style={{ flex: 1, position: 'relative', minHeight: 0, display: 'flex', flexDirection: 'column', overflow: 'hidden' }}>
+          {currentVersionCompatibility.status !== 'compatible' && (
+            <div
+              role="status"
+              style={{
+                padding: '10px 16px',
+                fontSize: 12,
+                flexShrink: 0,
+                color: currentVersionCompatibility.status === 'checking' ? 'var(--text-muted)' : '#d29922',
+                background: currentVersionCompatibility.status === 'checking'
+                  ? 'var(--bg-secondary)'
+                  : 'rgba(210,153,34,0.08)',
+                borderBottom: `1px solid ${
+                  currentVersionCompatibility.status === 'checking'
+                    ? 'var(--border-primary)'
+                    : 'rgba(210,153,34,0.2)'
+                }`,
+              }}
+            >
+              {currentVersionCompatibility.message}
+            </div>
+          )}
           {displayError && (() => {
             const fmt = formatClickHouseError(displayError);
             return (
@@ -1184,7 +1233,7 @@ export const QueryExplorer: React.FC<QueryExplorerProps> = ({ urlState, onUrlSta
           )}
 
           {/* Placeholder */}
-          {!result && !analysisResult && !displayError && !isRunning && !isAnalyzing && viewMode !== 'queries' && (
+          {!versionUnavailable && !result && !analysisResult && !displayError && !isRunning && !isAnalyzing && viewMode !== 'queries' && (
             <div style={{ flex: 1, display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', gap: 8, color: 'var(--text-muted)' }}>
               <span style={{ fontSize: 13 }}>Select a preset query or write your own SQL</span>
               <span style={{ fontSize: 11 }}>Press <code style={{ background: 'rgba(255,255,255,0.05)', padding: '2px 6px', borderRadius: 4 }}>⌘ Enter</code> to run</span>

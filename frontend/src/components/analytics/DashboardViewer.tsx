@@ -14,7 +14,12 @@ import { type Query } from './types';
 import { getAllQueries } from './customQueries';
 import { resolveTimeRange, resolveDrillParams } from './templateResolution';
 import { formatClickHouseError } from '../../utils/errorFormatters';
-import { type ChartType, parseChartDirective, resolveQueryRef } from './metaLanguage';
+import {
+  type ChartType,
+  evaluateQueryVersionCompatibility,
+  parseChartDirective,
+  resolveQueryRef,
+} from './metaLanguage';
 import { LinkQueryModal } from './LinkQueryModal';
 import { PartInspector } from '../database/PartInspector';
 import { databaseApi } from '../../stores/databaseStore';
@@ -497,11 +502,24 @@ const DashboardPanelCard: React.FC<{
         )
       : undefined
   ));
+  const capabilityServerVersion = useMonitoringCapabilitiesStore(
+    state => state.capabilities?.serverVersion,
+  );
+  const capabilityProbeStatus = useMonitoringCapabilitiesStore(state => state.probeStatus);
   const capabilityUnavailable = requiredCapability?.available === false;
   const originalPreset = resolvePanel(panel);
   const [drillPreset, setDrillPreset] = useState<Query | null>(null);
   const [drillParams, setDrillParams] = useState<Record<string, string>>({});
   const preset = drillPreset ?? originalPreset;
+  const versionCompatibility = useMemo(
+    () => evaluateQueryVersionCompatibility(
+      preset?.directives.requires?.clickhouseMinVersion,
+      capabilityServerVersion,
+      capabilityProbeStatus === 'idle' || capabilityProbeStatus === 'probing',
+    ),
+    [preset, capabilityServerVersion, capabilityProbeStatus],
+  );
+  const versionUnavailable = versionCompatibility.status !== 'compatible';
   const [result, setResult] = useState<PanelResult | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
@@ -564,6 +582,12 @@ const DashboardPanelCard: React.FC<{
   const run = useCallback(async (overridePreset?: Query, overrideParams?: Record<string, string>) => {
     const p = overridePreset ?? preset;
     if (!services || !p || capabilityUnavailable) return;
+    const compatibility = evaluateQueryVersionCompatibility(
+      p.directives.requires?.clickhouseMinVersion,
+      capabilityServerVersion,
+      capabilityProbeStatus === 'idle' || capabilityProbeStatus === 'probing',
+    );
+    if (compatibility.status !== 'compatible') return;
     setLoading(true);
     setError(null);
     try {
@@ -580,13 +604,29 @@ const DashboardPanelCard: React.FC<{
     } finally {
       setLoading(false);
     }
-  }, [services, preset, timeRangeOverride, drillParams, filterParams, capabilityUnavailable]);
+  }, [
+    services,
+    preset,
+    timeRangeOverride,
+    drillParams,
+    filterParams,
+    capabilityUnavailable,
+    capabilityServerVersion,
+    capabilityProbeStatus,
+  ]);
 
   useEffect(() => {
-    if (services && preset && !capabilityUnavailable) {
+    if (services && preset && !capabilityUnavailable && !versionUnavailable) {
       run();
     }
-  }, [run, services, preset, capabilityUnavailable]);
+  }, [run, services, preset, capabilityUnavailable, versionUnavailable]);
+
+  useEffect(() => {
+    if (!versionUnavailable) return;
+    setLoading(false);
+    setError(null);
+    setResult(null);
+  }, [versionUnavailable]);
 
   // Re-run when time range changes (explicit trigger for prop changes)
   const prevTimeRange = React.useRef(timeRangeOverride);
@@ -596,11 +636,12 @@ const DashboardPanelCard: React.FC<{
       && services
       && preset
       && !capabilityUnavailable
+      && !versionUnavailable
     ) {
       prevTimeRange.current = timeRangeOverride;
       run();
     }
-  }, [timeRangeOverride, run, services, preset, capabilityUnavailable]);
+  }, [timeRangeOverride, run, services, preset, capabilityUnavailable, versionUnavailable]);
 
   // Build chart data from result
   const chartDirective = useMemo(() => preset ? parseChartDirective(preset.sql) : null, [preset]);
@@ -914,8 +955,21 @@ const DashboardPanelCard: React.FC<{
             {requiredCapability?.detail ? ` · ${requiredCapability.detail}` : ''}
           </div>
         )}
-        {!capabilityUnavailable && loading && <div style={{ color: 'var(--text-muted)', fontSize: 11, padding: '20px 0', textAlign: 'center' }}>Loading…</div>}
-        {!capabilityUnavailable && error && (() => {
+        {!capabilityUnavailable && versionCompatibility.status !== 'compatible' && (
+          <div
+            role="status"
+            style={{
+              color: versionCompatibility.status === 'checking' ? 'var(--text-muted)' : '#d29922',
+              fontSize: 11,
+              padding: '20px 0',
+              textAlign: 'center',
+            }}
+          >
+            {versionCompatibility.message}
+          </div>
+        )}
+        {!capabilityUnavailable && !versionUnavailable && loading && <div style={{ color: 'var(--text-muted)', fontSize: 11, padding: '20px 0', textAlign: 'center' }}>Loading…</div>}
+        {!capabilityUnavailable && !versionUnavailable && error && (() => {
           const fmt = formatClickHouseError(error);
           return (
             <div style={{ color: fmt.isPermissionError ? '#d29922' : '#f85149', fontSize: 11, padding: '8px 0', cursor: 'help' }} title={error}>
@@ -923,7 +977,7 @@ const DashboardPanelCard: React.FC<{
             </div>
           );
         })()}
-        {!capabilityUnavailable && !loading && !error && result && (
+        {!capabilityUnavailable && !versionUnavailable && !loading && !error && result && (
           <>
             {/* Chart view */}
             {view === 'chart' && hasChart && (
@@ -1483,13 +1537,26 @@ const MiniPanelCard: React.FC<{ panel: DashboardPanel; timeRangeOverride: string
         )
       : undefined
   ));
+  const capabilityServerVersion = useMonitoringCapabilitiesStore(
+    state => state.capabilities?.serverVersion,
+  );
+  const capabilityProbeStatus = useMonitoringCapabilitiesStore(state => state.probeStatus);
   const capabilityUnavailable = requiredCapability?.available === false;
   const preset = resolvePanel(panel);
+  const versionCompatibility = useMemo(
+    () => evaluateQueryVersionCompatibility(
+      preset?.directives.requires?.clickhouseMinVersion,
+      capabilityServerVersion,
+      capabilityProbeStatus === 'idle' || capabilityProbeStatus === 'probing',
+    ),
+    [preset, capabilityServerVersion, capabilityProbeStatus],
+  );
+  const versionUnavailable = versionCompatibility.status !== 'compatible';
   const [result, setResult] = useState<PanelResult | null>(null);
   const [loading, setLoading] = useState(false);
 
   useEffect(() => {
-    if (!services || !preset || capabilityUnavailable) return;
+    if (!services || !preset || capabilityUnavailable || versionUnavailable) return;
     let cancelled = false;
     setLoading(true);
     let sql: string;
@@ -1512,7 +1579,7 @@ const MiniPanelCard: React.FC<{ panel: DashboardPanel; timeRangeOverride: string
       .catch(() => { if (!cancelled) setResult(null); })
       .finally(() => { if (!cancelled) setLoading(false); });
     return () => { cancelled = true; };
-  }, [services, preset, timeRangeOverride, capabilityUnavailable]);
+  }, [services, preset, timeRangeOverride, capabilityUnavailable, versionUnavailable]);
 
   const chartDirective = useMemo(() => preset ? parseChartDirective(preset.sql) : null, [preset]);
   const chartData = useMemo((): ChartDataPoint[] => {
@@ -1565,8 +1632,25 @@ const MiniPanelCard: React.FC<{ panel: DashboardPanel; timeRangeOverride: string
             Source unavailable
           </div>
         )}
-        {!capabilityUnavailable && loading && <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', height: '100%', color: 'var(--text-muted)', fontSize: 10 }}>…</div>}
-        {!capabilityUnavailable && !loading && hasChart && (
+        {!capabilityUnavailable && versionCompatibility.status !== 'compatible' && (
+          <div
+            role="status"
+            style={{
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'center',
+              height: '100%',
+              padding: '0 8px',
+              color: versionCompatibility.status === 'checking' ? 'var(--text-muted)' : '#d29922',
+              fontSize: 9,
+              textAlign: 'center',
+            }}
+          >
+            {versionCompatibility.message}
+          </div>
+        )}
+        {!capabilityUnavailable && !versionUnavailable && loading && <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', height: '100%', color: 'var(--text-muted)', fontSize: 10 }}>…</div>}
+        {!capabilityUnavailable && !versionUnavailable && !loading && hasChart && (
           <>
             {effectiveChartStyle === '3d' ? (
               <Chart3DCanvas data={chartData} type={chartType} orientation={chartDirective?.orientation} groupedData={isGroupedChart2 ? groupedChartData2 : undefined} unit={chartDirective?.unit} />
@@ -1578,7 +1662,7 @@ const MiniPanelCard: React.FC<{ panel: DashboardPanel; timeRangeOverride: string
             )}
           </>
         )}
-        {!capabilityUnavailable && !loading && !hasChart && result && (
+        {!capabilityUnavailable && !versionUnavailable && !loading && !hasChart && result && (
           <div style={{ fontSize: 9, color: 'var(--text-muted)', padding: '4px 0', lineHeight: 1.6 }}>
             {result.rows.slice(0, 5).map((r, i) => (
               <div key={i} style={{ display: 'flex', gap: 4, overflow: 'hidden' }}>

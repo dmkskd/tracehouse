@@ -318,7 +318,7 @@ ORDER BY value DESC`,
 
   `-- @meta: title='RAM vs max_server_memory_usage' group='Knowledge Base' description='memory configuration settings - physical / cgroup RAM reported by the OS vs the configured server memory limit. ILIKE MemoryTotal surfaces the cgroup limit on k8s. Confirm the limit matches the host.'
 -- @source: https://kb.altinity.com/altinity-kb-setup-and-maintenance/altinity-kb-memory-configuration-settings/
-SELECT metric AS name, formatReadableSize(value) AS size, toInt64(value) AS bytes
+SELECT metric AS name, formatReadableSize(toUInt64(value)) AS size, toUInt64(value) AS bytes
 FROM system.asynchronous_metrics WHERE metric ILIKE '%MemoryTotal%'
 UNION ALL
 SELECT name, formatReadableSize(toUInt64(value)) AS size, toUInt64(value) AS bytes

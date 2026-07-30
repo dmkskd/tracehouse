@@ -467,6 +467,7 @@ ORDER BY t ASC`,
 
   `-- @meta: title='Merge Duration (avg)' group='Grafana Imports' interval='1 HOUR' description='Average merge duration in milliseconds'
 -- @chart: type=line group_by=t value=avg_ms style=2d color=#e3b341 unit=ms
+-- @requires: clickhouse>=24.8
 -- @drill: on=t into='Grafana Imports#Part Activity at Time'
 -- @source: https://github.com/ClickHouse/clickhouse-mixin
 SELECT

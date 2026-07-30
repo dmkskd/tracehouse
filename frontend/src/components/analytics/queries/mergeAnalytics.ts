@@ -157,6 +157,7 @@ ORDER BY estimated_merge_sec DESC
 LIMIT 50`,
 
   `-- @meta: title='Part Wait Time by Table' group='Merge Analytics' interval='7 DAY' description='How long parts sit idle before being picked up for a merge - for ReplacingMergeTree/CollapsingMergeTree this is how long stale/duplicate rows remain visible'
+-- @requires: clickhouse>=24.12
 -- @chart: type=bar group_by=tbl value=avg_wait_sec unit=sec style=2d
 -- @drill: on=tbl into='Part Wait Time by Size'
 WITH source_parts AS (
@@ -194,6 +195,7 @@ ORDER BY avg_wait_sec DESC
 LIMIT 30`,
 
   `-- @meta: title='Part Wait Time by Size' group='Merge Analytics' interval='7 DAY' description='How long parts wait before being picked up for a merge, broken down by size bucket - critical for ReplacingMergeTree and CollapsingMergeTree where stale/duplicate rows remain visible until the merge completes'
+-- @requires: clickhouse>=24.12
 -- @chart: type=bar group_by=size_bucket value=avg_wait_sec unit=sec style=2d
 -- @drill: on=size_bucket into='Part Wait Timeline'
 WITH source_parts AS (
@@ -244,6 +246,7 @@ GROUP BY size_bucket
 ORDER BY _sort ASC`,
 
   `-- @meta: title='Part Wait Timeline' group='Merge Analytics' interval='7 DAY' description='Per-merge wait time for a specific size bucket - each point is one source part consumed by a merge'
+-- @requires: clickhouse>=24.12
 -- @chart: type=line group_by=t value=wait_sec unit=sec style=2d
 WITH source_parts AS (
     SELECT

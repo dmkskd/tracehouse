@@ -308,6 +308,7 @@ FROM (
 ORDER BY sampler`,
 
   `-- @meta: title='Sampling Refresh Status' group='Self-Monitoring' interval='1 HOUR' description='Detailed refresh state of processes_sampler & merges_sampler refreshable MVs - last success, next refresh, retry count, exceptions'
+-- @requires: clickhouse>=24.9
 SELECT
     view AS sampler,
     status,

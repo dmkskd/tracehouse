@@ -5,6 +5,7 @@ import {
   getRagColor,
   parseChartDirective,
   resolveQueryRef,
+  evaluateQueryVersionCompatibility,
   type CellStyleRule,
 } from '../metaLanguage';
 import {
@@ -138,6 +139,13 @@ describe('parseDirectives', { tags: ['analytics'] }, () => {
         source: 'https://clickhouse.com/blog/example',
       },
     },
+    {
+      name: 'with minimum ClickHouse version',
+      sql: `-- @meta: title='Q' group='Overview'\n-- @requires: clickhouse>=26.3\nSELECT 1`,
+      expected: {
+        requires: { clickhouseMinVersion: '26.3' },
+      },
+    },
 
     /* ── full combo ── */
     {
@@ -148,6 +156,7 @@ describe('parseDirectives', { tags: ['analytics'] }, () => {
         `-- @drill: on=col1 into='Target Query'`,
         `-- @link: on=col4 into='Link Target'`,
         `-- @cell: column=col2 type=rag green<100 amber<500`,
+        `-- @requires: clickhouse>=25.8`,
         `-- @source: https://example.com/docs`,
         `SELECT 1`,
       ].join('\n'),
@@ -157,6 +166,7 @@ describe('parseDirectives', { tags: ['analytics'] }, () => {
         drill: { on: 'col1', into: 'Target Query' },
         link: { on: 'col4', into: 'Link Target' },
         cellStyles: [{ column: 'col2', type: 'rag', mode: 'numeric', direction: 'asc', greenThreshold: 100, amberThreshold: 500 }],
+        requires: { clickhouseMinVersion: '25.8' },
         source: 'https://example.com/docs',
       },
     },
@@ -189,6 +199,45 @@ describe('parseDirectives', { tags: ['analytics'] }, () => {
         expect(result).toHaveProperty(key, value);
       }
     }
+  });
+});
+
+describe('evaluateQueryVersionCompatibility', { tags: ['analytics'] }, () => {
+  test('allows queries without a minimum version before version discovery', () => {
+    expect(evaluateQueryVersionCompatibility(undefined, undefined, true)).toEqual({
+      status: 'compatible',
+    });
+  });
+
+  test('blocks a query while its minimum version is being checked', () => {
+    expect(evaluateQueryVersionCompatibility('24.8', undefined, true)).toEqual({
+      status: 'checking',
+      requiredVersion: '24.8',
+      message: 'Checking compatibility · Requires ClickHouse ≥ 24.8',
+    });
+  });
+
+  test('blocks a query below its minimum version with an explicit reason', () => {
+    expect(evaluateQueryVersionCompatibility('24.8', '24.3.18.7')).toEqual({
+      status: 'unsupported',
+      requiredVersion: '24.8',
+      serverVersion: '24.3.18.7',
+      message: 'Not run · Requires ClickHouse ≥ 24.8 · connected server 24.3.18.7',
+    });
+  });
+
+  test('allows the minimum and newer versions', () => {
+    expect(evaluateQueryVersionCompatibility('24.8', '24.8.14.39').status).toBe('compatible');
+    expect(evaluateQueryVersionCompatibility('24.8', '25.3.14.14').status).toBe('compatible');
+  });
+
+  test('fails closed when a required query has no usable server version', () => {
+    expect(evaluateQueryVersionCompatibility('24.8', 'unknown')).toEqual({
+      status: 'unknown',
+      requiredVersion: '24.8',
+      serverVersion: 'unknown',
+      message: 'Not run · Requires ClickHouse ≥ 24.8 · cannot interpret connected version unknown',
+    });
   });
 });
 

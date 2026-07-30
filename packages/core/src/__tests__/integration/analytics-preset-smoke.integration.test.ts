@@ -16,8 +16,23 @@ import { runTracehouseSetup } from './setup/tracehouse-setup.js';
 import { RAW_QUERIES } from '@frontend-queries/index';
 import { resolveTimeRange, resolveDrillParams } from '@frontend-analytics/templateResolution';
 import { parseQueryMetadata } from '@frontend-analytics/metaLanguage';
+import {
+  isClickHouseVersionAtLeast,
+  parseClickHouseVersion,
+} from '../../utils/clickhouse-version.js';
 
 const CONTAINER_TIMEOUT = 120_000;
+const CLUSTER_SYSTEM_TABLE_RE = /\{\{cluster_aware:system\.([A-Za-z0-9_]+)\}\}/g;
+const CLUSTER_TRACEHOUSE_TABLE_RE =
+  /\{\{cluster_aware:tracehouse\.([A-Za-z0-9_]+)\}\}/g;
+
+function referencedSystemTables(sql: string): string[] {
+  return [...sql.matchAll(CLUSTER_SYSTEM_TABLE_RE)].map(match => match[1]);
+}
+
+function referencedTracehouseTables(sql: string): string[] {
+  return [...sql.matchAll(CLUSTER_TRACEHOUSE_TABLE_RE)].map(match => match[1]);
+}
 
 // Queries that need infrastructure not available in a basic single-node container.
 const KNOWN_FAILURES = new Set([
@@ -30,6 +45,9 @@ const KNOWN_FAILURES = new Set([
 
 describe('Preset analytics query smoke tests', { tags: ['analytics'] }, () => {
   let ctx: TestClickHouseContext;
+  let availableSystemTables: Set<string>;
+  let availableTracehouseTables: Set<string>;
+  let serverVersion: string;
 
   beforeAll(async () => {
     ctx = await startClickHouse({ withKeeper: true });
@@ -46,10 +64,32 @@ describe('Preset analytics query smoke tests', { tags: ['analytics'] }, () => {
     }
     await ctx.client.command({ query: `OPTIMIZE TABLE smoke_test.t FINAL` });
 
-    // Create tracehouse sampling infrastructure using the production setup script.
-    await runTracehouseSetup(ctx);
+    const versionRows = await ctx.rawAdapter.executeQuery<{ version: string }>(
+      'SELECT version() AS version',
+    );
+    serverVersion = versionRows[0]?.version ?? '';
+
+    // APPEND refreshable materialized views were added in ClickHouse 24.9.
+    // Older versions can still exercise every preset that does not depend on
+    // TraceHouse's sampled history tables.
+    if (isClickHouseVersionAtLeast(serverVersion, 24, 9)) {
+      await runTracehouseSetup(ctx);
+    }
 
     await ctx.client.command({ query: `SYSTEM FLUSH LOGS` });
+
+    const tableRows = await ctx.rawAdapter.executeQuery<{ name: string }>(`
+      SELECT name
+      FROM system.tables
+      WHERE database = 'system'
+    `);
+    availableSystemTables = new Set(tableRows.map(row => row.name));
+    const tracehouseTableRows = await ctx.rawAdapter.executeQuery<{ name: string }>(`
+      SELECT name
+      FROM system.tables
+      WHERE database = 'tracehouse'
+    `);
+    availableTracehouseTables = new Set(tracehouseTableRows.map(row => row.name));
   }, CONTAINER_TIMEOUT);
 
   afterAll(async () => {
@@ -69,7 +109,35 @@ describe('Preset analytics query smoke tests', { tags: ['analytics'] }, () => {
       continue;
     }
 
-    it(`query: ${title}`, async () => {
+    it(`query: ${title}`, async ({ skip }) => {
+      const minimumVersion = parsed?.directives.requires?.clickhouseMinVersion;
+      if (minimumVersion) {
+        const parsedMinimum = parseClickHouseVersion(minimumVersion);
+        if (
+          parsedMinimum
+          && !isClickHouseVersionAtLeast(
+            serverVersion,
+            parsedMinimum.major,
+            parsedMinimum.minor,
+            parsedMinimum.patch,
+          )
+        ) {
+          skip(`Requires ClickHouse >= ${minimumVersion}; running ${serverVersion}`);
+        }
+      }
+
+      const missingSystemTables = referencedSystemTables(rawSql)
+        .filter(table => !availableSystemTables.has(table));
+      if (missingSystemTables.length > 0) {
+        skip(`Unavailable system tables: ${missingSystemTables.join(', ')}`);
+      }
+
+      const missingTracehouseTables = referencedTracehouseTables(rawSql)
+        .filter(table => !availableTracehouseTables.has(table));
+      if (missingTracehouseTables.length > 0) {
+        skip(`Unavailable TraceHouse tables: ${missingTracehouseTables.join(', ')}`);
+      }
+
       let sql = resolveTimeRange(rawSql, parsed?.directives.meta?.interval ?? '1 HOUR');
       sql = resolveDrillParams(sql, {});
       const rows = await ctx.adapter.executeQuery(sql);

@@ -2,6 +2,7 @@
 
 const queries: string[] = [
   `-- @meta: title='JSON Columns Inventory' group='JSON' description='Native JSON columns, configured path limits, and current storage footprint'
+-- @requires: clickhouse>=24.3
 -- @cell: column=json_bytes type=gauge max=max_json_bytes
 -- @cell: column=path_limit_pct type=gauge max=100 unit=%
 -- @cell: column=path_limit_pct type=rag green<60 amber<85
@@ -74,6 +75,7 @@ FROM (
 ORDER BY bytes_on_disk DESC`,
 
   `-- @meta: title='JSON Subcolumn Pressure' group='JSON' description='Materialized JSON subcolumns versus configured max_dynamic_paths'
+-- @requires: clickhouse>=24.3
 -- @cell: column=path_limit_pct type=gauge max=100 unit=%
 -- @cell: column=path_limit_pct type=rag green<60 amber<85
 SELECT
@@ -101,7 +103,7 @@ FROM (
     SELECT
         concat(database, '.', table, '.', column) AS json_column,
         subcolumn_name AS subcolumn,
-        any(subcolumn_type) AS subcolumn_type,
+        any(subcolumn_type_value) AS subcolumn_type,
         formatReadableSize(sum(subcolumn_bytes)) AS size,
         sum(subcolumn_bytes) AS bytes_on_disk,
         formatReadableSize(sum(subcolumn_uncompressed_bytes)) AS uncompressed_size,
@@ -109,7 +111,7 @@ FROM (
     FROM {{cluster_aware:system.parts_columns}}
     ARRAY JOIN
         subcolumns.names AS subcolumn_name,
-        subcolumns.types AS subcolumn_type,
+        subcolumns.types AS subcolumn_type_value,
         subcolumns.bytes_on_disk AS subcolumn_bytes,
         subcolumns.data_uncompressed_bytes AS subcolumn_uncompressed_bytes
     WHERE active
@@ -145,6 +147,7 @@ LIMIT 50`,
 
   `-- @meta: title='JSON Insert Throughput' group='JSON' interval='1 HOUR' description='Rows/sec and duration for INSERTs targeting tables with JSON columns'
 -- @chart: type=grouped_line group_by=minute value=rows_per_sec,avg_duration_ms style=2d
+-- @requires: clickhouse>=26.3
 WITH json_tables AS (
     SELECT database, table
     FROM {{cluster_aware:system.columns}}
@@ -170,6 +173,7 @@ GROUP BY minute, table_name
 ORDER BY minute ASC`,
 
   `-- @meta: title='JSON Insert CPU & Memory' group='JSON' interval='1 HOUR' description='Completed JSON table inserts ranked by CPU, memory, and throughput'
+-- @requires: clickhouse>=26.3
 WITH json_tables AS (
     SELECT database, table
     FROM {{cluster_aware:system.columns}}
@@ -265,6 +269,7 @@ FROM (
 ORDER BY minute DESC`,
 
   `-- @meta: title='Active JSON Inserts' group='JSON' description='Currently running INSERTs into tables that contain native JSON columns'
+-- @requires: clickhouse>=26.3
 WITH json_tables AS (
     SELECT database, table
     FROM {{cluster_aware:system.columns}}

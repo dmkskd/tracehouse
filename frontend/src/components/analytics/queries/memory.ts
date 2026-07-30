@@ -347,6 +347,7 @@ ORDER BY t ASC`,
 
   `-- @meta: title='Cache Trend' group='Memory' interval='1 HOUR' description='Individual cache sizes over time - mark cache, uncompressed cache, page cache, etc.'
 -- @chart: type=grouped_line group_by=t value=value_mb series=metric unit=MB style=2d
+-- @requires: clickhouse>=25.8
 -- @source: https://kb.altinity.com/altinity-kb-setup-and-maintenance/altinity-kb-who-ate-my-memory/
 SELECT t, metric, round(avg(val) / 1048576, 1) AS value_mb
 FROM (

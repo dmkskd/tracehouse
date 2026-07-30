@@ -7,8 +7,14 @@
  *   -- @cell: column-level table decorations (rag, gauge, sparkline)
  *   -- @drill:      click-through navigation between queries
  *   -- @link:       modal popup navigation between queries
+ *   -- @requires:   minimum ClickHouse version
  *   -- Source:      attribution URL
  */
+
+import {
+  isClickHouseVersionAtLeast,
+  parseClickHouseVersion,
+} from '@tracehouse/core';
 
 /* ─── types ─── */
 
@@ -151,7 +157,80 @@ export interface ParsedDirectives {
   };
   /** All cell style rules (rag, gauge, sparkline) from @cell: directives. */
   cellStyles: CellStyleRule[];
+  requires?: {
+    clickhouseMinVersion?: string;
+  };
   source?: string;
+}
+
+export type QueryVersionCompatibility =
+  | { status: 'compatible'; requiredVersion?: string; serverVersion?: string }
+  | { status: 'checking'; requiredVersion: string; message: string }
+  | { status: 'unsupported'; requiredVersion: string; serverVersion: string; message: string }
+  | { status: 'unknown'; requiredVersion: string; serverVersion?: string; message: string };
+
+/**
+ * Evaluate a query's minimum-version directive before executing its SQL.
+ * Queries without @requires are always runnable, including while the
+ * capability probe is still discovering the connected server version.
+ */
+export function evaluateQueryVersionCompatibility(
+  minimumVersion: string | undefined,
+  serverVersion: string | null | undefined,
+  versionCheckPending = false,
+): QueryVersionCompatibility {
+  if (!minimumVersion) {
+    return {
+      status: 'compatible',
+      ...(serverVersion ? { serverVersion } : {}),
+    };
+  }
+
+  if (!serverVersion) {
+    if (versionCheckPending) {
+      return {
+        status: 'checking',
+        requiredVersion: minimumVersion,
+        message: `Checking compatibility · Requires ClickHouse ≥ ${minimumVersion}`,
+      };
+    }
+    return {
+      status: 'unknown',
+      requiredVersion: minimumVersion,
+      message: `Not run · Requires ClickHouse ≥ ${minimumVersion} · connected server version unavailable`,
+    };
+  }
+
+  const minimum = parseClickHouseVersion(minimumVersion);
+  const current = parseClickHouseVersion(serverVersion);
+  if (!minimum || !current) {
+    return {
+      status: 'unknown',
+      requiredVersion: minimumVersion,
+      serverVersion,
+      message: `Not run · Requires ClickHouse ≥ ${minimumVersion} · cannot interpret connected version ${serverVersion}`,
+    };
+  }
+
+  if (isClickHouseVersionAtLeast(
+    serverVersion,
+    minimum.major,
+    minimum.minor,
+    minimum.patch,
+  )) {
+    return {
+      status: 'compatible',
+      requiredVersion: minimumVersion,
+      serverVersion,
+    };
+  }
+
+  return {
+    status: 'unsupported',
+    requiredVersion: minimumVersion,
+    serverVersion,
+    message: `Not run · Requires ClickHouse ≥ ${minimumVersion} · connected server ${serverVersion}`,
+  };
 }
 
 /** Detailed chart directive result (superset of chart in ParsedDirectives).
@@ -518,6 +597,13 @@ export function parseDirectives(sql: string): ParsedDirectives | null {
   if (queryLinkMatch) {
     const onMatch = queryLinkMatch[1].match(/on=(\w+)/);
     if (onMatch) result.queryLink = { on: onMatch[1] };
+  }
+
+  const requiresMatch = sql.match(
+    /--\s*@requires:\s*clickhouse\s*>=\s*(\d+\.\d+(?:\.\d+)?)/i,
+  );
+  if (requiresMatch) {
+    result.requires = { clickhouseMinVersion: requiresMatch[1] };
   }
 
   const sourceMatch = sql.match(/--\s*@source:\s*(https?:\/\/\S+)/i);

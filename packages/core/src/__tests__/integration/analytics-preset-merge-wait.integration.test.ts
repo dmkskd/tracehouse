@@ -16,10 +16,11 @@
 
 import { describe, it, expect, beforeAll, afterAll } from 'vitest';
 import {
+  configuredClickHouseIsBefore,
   startClickHouse,
   stopClickHouse,
   type TestClickHouseContext,
-} from './setup/clickhouse-container.js';
+} from './setup/index.js';
 import { resolveTimeRange, resolveDrillParams } from '@frontend-analytics/templateResolution';
 import mergeAnalyticsQueries from '@frontend-queries/mergeAnalytics';
 
@@ -30,6 +31,8 @@ const TABLE = `${DB}.events`;
 
 /** Pause in ms — parts will sit idle for at least this long. */
 const IDLE_PAUSE_MS = 5_000;
+const itWithProductionNonEquiJoin =
+  configuredClickHouseIsBefore(24, 12) ? it.skip : it;
 
 const sleep = (ms: number) => new Promise(r => setTimeout(r, ms));
 
@@ -98,7 +101,7 @@ describe('Merge analytics wait-time queries', { tags: ['analytics'] }, () => {
     }
   }, 30_000);
 
-  it('Part Wait Time by Table: wait times are non-negative and reflect idle period', async () => {
+  itWithProductionNonEquiJoin('Part Wait Time by Table: wait times are non-negative and reflect idle period', async () => {
     const sql = resolve(findQuery('Part Wait Time by Table'), { tbl: TABLE });
     const rows = await ctx.adapter.executeQuery<{
       tbl: string;
@@ -126,7 +129,7 @@ describe('Merge analytics wait-time queries', { tags: ['analytics'] }, () => {
     expect(p95).toBeLessThan(60);
   }, TEST_TIMEOUT);
 
-  it('Part Wait Time by Size: non-negative and plausible per bucket', async () => {
+  itWithProductionNonEquiJoin('Part Wait Time by Size: non-negative and plausible per bucket', async () => {
     const sql = resolve(findQuery('Part Wait Time by Size'), { tbl: TABLE });
     const rows = await ctx.adapter.executeQuery<{
       size_bucket: string;
@@ -147,7 +150,7 @@ describe('Merge analytics wait-time queries', { tags: ['analytics'] }, () => {
     }
   }, TEST_TIMEOUT);
 
-  it('Part Wait Timeline: non-negative per-event data', async () => {
+  itWithProductionNonEquiJoin('Part Wait Timeline: non-negative per-event data', async () => {
     const sql = resolve(findQuery('Part Wait Timeline'), { tbl: TABLE });
     const rows = await ctx.adapter.executeQuery<{
       t: string;
@@ -164,7 +167,7 @@ describe('Merge analytics wait-time queries', { tags: ['analytics'] }, () => {
     }
   }, TEST_TIMEOUT);
 
-  it('drill chain: table → size bucket → timeline', async () => {
+  itWithProductionNonEquiJoin('drill chain: table → size bucket → timeline', async () => {
     // Level 1: by table
     const tableSql = resolve(findQuery('Part Wait Time by Table'), { tbl: TABLE });
     const tableRows = await ctx.adapter.executeQuery<{ tbl: string }>(tableSql);

@@ -131,6 +131,7 @@ GROUP BY event_date, event_type, table, error_code
 ORDER BY event_date DESC, error_count DESC`,
 
   `-- @meta: title='Async Insert Log' group='Inserts' interval='1 DAY' description='Recent async insert flush events from system.asynchronous_insert_log - status, bytes flushed, buffer wait time'
+-- @requires: clickhouse>=24.3
 -- @source: https://clickhouse.com/blog/monitoring-troubleshooting-insert-queries-clickhouse
 SELECT
     event_time,
