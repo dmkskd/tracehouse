@@ -82,7 +82,6 @@ export interface QueryDetail {
   
   // Threading
   thread_ids: number[];
-  peak_threads_usage: number;
   
   // Objects touched
   databases: string[];
@@ -129,10 +128,6 @@ export interface QueryDetail {
   
   // Cache usage
   query_cache_usage: string;
-  
-  // Privileges
-  used_privileges: string[];
-  missing_privileges: string[];
   
   // Log comment
   log_comment: string;

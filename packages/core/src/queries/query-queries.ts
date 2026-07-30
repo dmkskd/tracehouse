@@ -471,7 +471,6 @@ export const QUERY_DETAIL = `
     
     -- Threading
     thread_ids,
-    peak_threads_usage,
     
     -- Objects touched
     databases,
@@ -518,10 +517,6 @@ export const QUERY_DETAIL = `
     
     -- Cache usage
     query_cache_usage,
-    
-    -- Privileges
-    used_privileges,
-    missing_privileges,
     
     -- Log comment (if set)
     log_comment,

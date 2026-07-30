@@ -39,6 +39,8 @@ import {
   GET_MUTATIONS,
   GET_OUTDATED_PARTS_SIZE,
   GET_MUTATION_HISTORY,
+  GET_MUTATION_CAPABILITIES,
+  withMutationKilledCapability,
 } from '../../queries/merge-queries.js';
 import {
   GET_PK_INDEX_BY_TABLE,
@@ -55,6 +57,27 @@ import {
 
 const CONTAINER_TIMEOUT = 180_000;
 const TEST_DB = 'dedup_test';
+const TEST_TABLE = 'events';
+
+const GET_FIXTURE_PK_MEMORY_DEDUP = `
+SELECT
+    sum(pk_bytes) AS pk_bytes,
+    count() AS logical_part_count,
+    sum(replica_count) AS physical_part_count,
+    min(replica_count) AS min_replica_count,
+    max(replica_count) AS max_replica_count
+FROM (
+    SELECT
+        name,
+        max(primary_key_bytes_in_memory) AS pk_bytes,
+        count() AS replica_count
+    FROM {{cluster_aware:system.parts}}
+    WHERE active
+      AND database = {database:String}
+      AND table = {table:String}
+    GROUP BY database, table, name
+)
+`;
 
 /** Wait until both replicas have the same row count for a table. */
 async function waitForReplication(
@@ -78,11 +101,59 @@ async function waitForReplication(
       const rows2 = await r2.json<{ cnt: string }>();
       if (Number(rows1[0]?.cnt) > 0 && rows1[0]?.cnt === rows2[0]?.cnt) return;
     } catch {
-      // Retry — table may not exist on node 2 yet (DDL propagation)
+      // Retry while the replicated table converges.
     }
     await new Promise(r => setTimeout(r, 1000));
   }
   throw new Error(`Replication did not complete for ${database}.${table} within timeout`);
+}
+
+/** Wait until both replicas expose the same frozen set of active part names. */
+async function waitForMatchingPartNames(
+  ctx: ClusterTestContext,
+  database: string,
+  table: string,
+  timeoutMs = 30_000,
+): Promise<void> {
+  const query = `
+    SELECT name
+    FROM system.parts
+    WHERE active
+      AND database = {database:String}
+      AND table = {table:String}
+    ORDER BY name
+  `;
+  const queryParams = { database, table };
+  const start = Date.now();
+  let lastParts1: Array<{ name: string }> = [];
+  let lastParts2: Array<{ name: string }> = [];
+
+  while (Date.now() - start < timeoutMs) {
+    try {
+      const [parts1, parts2] = await Promise.all([
+        ctx.adapter1.executeQuery<{ name: string }>(
+          buildQuery(query, queryParams),
+        ),
+        ctx.adapter2.executeQuery<{ name: string }>(
+          buildQuery(query, queryParams),
+        ),
+      ]);
+      lastParts1 = parts1;
+      lastParts2 = parts2;
+
+      if (parts1.length > 0 && JSON.stringify(parts1) === JSON.stringify(parts2)) {
+        return;
+      }
+    } catch {
+      // Retry while replication finishes attaching the parts.
+    }
+    await new Promise(r => setTimeout(r, 250));
+  }
+
+  throw new Error(
+    `Replicas did not expose matching active part names for ${database}.${table} within timeout: `
+      + `replica1=${JSON.stringify(lastParts1)}, replica2=${JSON.stringify(lastParts2)}`,
+  );
 }
 
 /** Resolve a query template for the cluster and execute it. */
@@ -113,62 +184,51 @@ describe('Cluster query dedup', { tags: ['cluster'] }, () => {
   beforeAll(async () => {
     ctx = await startCluster();
 
-    // Create a Replicated database on both nodes. Each node must create its
-    // own instance pointing to the same Keeper path. On 26.x+, ON CLUSTER is
-    // rejected for Replicated databases, so we create on each node individually.
-    // Once both nodes have the database, DDL within it (CREATE TABLE, etc.)
-    // propagates automatically via Keeper.
-    await ctx.client1.command({
-      query: `CREATE DATABASE IF NOT EXISTS ${TEST_DB}
-              ENGINE = Replicated('/clickhouse/databases/${TEST_DB}', '{shard}', '{replica}')`,
-    });
-    await ctx.client2.command({
-      query: `CREATE DATABASE IF NOT EXISTS ${TEST_DB}
-              ENGINE = Replicated('/clickhouse/databases/${TEST_DB}', '{shard}', '{replica}')`,
-    });
+    // Use an ordinary database and create the same ReplicatedMergeTree table
+    // on both nodes. This exercises replica dedup without requiring the
+    // experimental Replicated database engine on older ClickHouse versions.
+    await Promise.all([
+      ctx.client1.command({ query: `CREATE DATABASE IF NOT EXISTS ${TEST_DB}` }),
+      ctx.client2.command({ query: `CREATE DATABASE IF NOT EXISTS ${TEST_DB}` }),
+    ]);
 
-    await ctx.client1.command({
-      query: `
+    const createTableQuery = `
         CREATE TABLE IF NOT EXISTS ${TEST_DB}.events (
           id UInt64,
           ts DateTime DEFAULT now(),
           category String,
           value Float64
-        ) ENGINE = ReplicatedMergeTree()
+        ) ENGINE = ReplicatedMergeTree(
+          '/clickhouse/tables/{shard}/${TEST_DB}/${TEST_TABLE}',
+          '{replica}'
+        )
         PARTITION BY toYYYYMM(ts)
         ORDER BY (category, ts, id)
         PRIMARY KEY (category, ts)
-      `,
-    });
+      `;
+    await ctx.client1.command({ query: createTableQuery });
+    await ctx.client2.command({ query: createTableQuery });
 
-    // Wait for DDL propagation — table DDL replicates via Keeper asynchronously.
-    {
-      const start = Date.now();
-      while (Date.now() - start < 30_000) {
-        try {
-          const result = await ctx.client2.query({
-            query: `SELECT count() AS cnt FROM system.tables WHERE database = '${TEST_DB}' AND name = 'events'`,
-            format: 'JSONEachRow',
-          });
-          const rows = await result.json<{ cnt: string }>();
-          if (Number(rows[0]?.cnt) > 0) break;
-        } catch { /* retry */ }
-        await new Promise(r => setTimeout(r, 1000));
-      }
-    }
+    // Keep the fixture's part set stable. The test exercises replica dedup,
+    // not background-merge timing, so stop merges locally on both replicas.
+    await Promise.all([
+      ctx.client1.command({ query: `SYSTEM STOP MERGES ${TEST_DB}.${TEST_TABLE}` }),
+      ctx.client2.command({ query: `SYSTEM STOP MERGES ${TEST_DB}.${TEST_TABLE}` }),
+    ]);
 
     // Insert data in multiple batches to create multiple parts
     await ctx.client1.command({
-      query: `INSERT INTO ${TEST_DB}.events (id, category, value)
+      query: `INSERT INTO ${TEST_DB}.${TEST_TABLE} (id, category, value)
               SELECT number, 'cat_a', rand() FROM numbers(500)`,
     });
     await ctx.client1.command({
-      query: `INSERT INTO ${TEST_DB}.events (id, category, value)
+      query: `INSERT INTO ${TEST_DB}.${TEST_TABLE} (id, category, value)
               SELECT number + 500, 'cat_b', rand() FROM numbers(500)`,
     });
 
-    // Wait for replication to complete
-    await waitForReplication(ctx, TEST_DB, 'events');
+    // Wait for both the rows and the part metadata used by the assertion.
+    await waitForReplication(ctx, TEST_DB, TEST_TABLE);
+    await waitForMatchingPartNames(ctx, TEST_DB, TEST_TABLE);
 
     // Flush logs
     await ctx.client1.command({ query: 'SYSTEM FLUSH LOGS' });
@@ -177,9 +237,10 @@ describe('Cluster query dedup', { tags: ['cluster'] }, () => {
 
   afterAll(async () => {
     if (ctx) {
-      try {
-        await ctx.client1.command({ query: `DROP DATABASE IF EXISTS ${TEST_DB} SYNC` });
-      } catch { /* ignore */ }
+      await Promise.allSettled([
+        ctx.client1.command({ query: `DROP DATABASE IF EXISTS ${TEST_DB} SYNC` }),
+        ctx.client2.command({ query: `DROP DATABASE IF EXISTS ${TEST_DB} SYNC` }),
+      ]);
       await stopCluster(ctx);
     }
   }, 60_000);
@@ -317,20 +378,33 @@ describe('Cluster query dedup', { tags: ['cluster'] }, () => {
   });
 
   describe('GET_PK_MEMORY dedup', () => {
-    it('returns a single row', async () => {
+    it('returns one non-negative global total', async () => {
       const rows = await runClusterQuery<{ pk_bytes: string }>(ctx, GET_PK_MEMORY);
       expect(rows).toHaveLength(1);
+      expect(Number(rows[0].pk_bytes)).toBeGreaterThanOrEqual(0);
     });
 
-    it('pk_bytes matches local value', async () => {
-      const cluster = await runClusterQuery<{ pk_bytes: string }>(ctx, GET_PK_MEMORY);
-      const local = await runLocalQuery<{ pk_bytes: string }>(ctx, GET_PK_MEMORY);
-      // PK memory can differ slightly between replicas (compaction timing),
-      // so allow a small tolerance rather than exact match.
-      const clusterVal = Number(cluster[0].pk_bytes);
-      const localVal = Number(local[0].pk_bytes);
-      const diff = Math.abs(clusterVal - localVal);
-      expect(diff).toBeLessThan(Math.max(localVal * 0.2, 64)); // within 20% or 64 bytes
+    it('counts replicated fixture parts exactly once', async () => {
+      const params = { database: TEST_DB, table: TEST_TABLE };
+      const rows = await runClusterQuery<{
+        pk_bytes: string;
+        logical_part_count: string;
+        physical_part_count: string;
+        min_replica_count: string;
+        max_replica_count: string;
+      }>(
+        ctx,
+        GET_FIXTURE_PK_MEMORY_DEDUP,
+        params,
+      );
+
+      expect(rows).toHaveLength(1);
+      expect(Number(rows[0].pk_bytes)).toBeGreaterThan(0);
+      expect(Number(rows[0].logical_part_count)).toBeGreaterThan(0);
+      expect(Number(rows[0].physical_part_count))
+        .toBe(Number(rows[0].logical_part_count) * 2);
+      expect(Number(rows[0].min_replica_count)).toBe(2);
+      expect(Number(rows[0].max_replica_count)).toBe(2);
     });
   });
 
@@ -346,7 +420,15 @@ describe('Cluster query dedup', { tags: ['cluster'] }, () => {
   describe('GET_MUTATIONS dedup', () => {
     it('does not duplicate mutation rows', async () => {
       // No pending mutations expected, but query should not error
-      const rows = await runClusterQuery<{ mutation_id: string }>(ctx, GET_MUTATIONS, { limit: 100 });
+      const capabilityRows = await runClusterQuery<{ has_is_killed: number | string }>(
+        ctx,
+        GET_MUTATION_CAPABILITIES,
+      );
+      const sql = withMutationKilledCapability(
+        GET_MUTATIONS,
+        Number(capabilityRows[0]?.has_is_killed ?? 0) === 1,
+      );
+      const rows = await runClusterQuery<{ mutation_id: string }>(ctx, sql, { limit: 100 });
       const ids = rows.map(r => `${r.mutation_id}`);
       expect(new Set(ids).size).toBe(ids.length);
     });
@@ -367,8 +449,16 @@ describe('Cluster query dedup', { tags: ['cluster'] }, () => {
 
   describe('GET_MUTATION_HISTORY dedup', () => {
     it('does not duplicate completed mutations', async () => {
+      const capabilityRows = await runClusterQuery<{ has_is_killed: number | string }>(
+        ctx,
+        GET_MUTATION_CAPABILITIES,
+      );
+      const sql = withMutationKilledCapability(
+        GET_MUTATION_HISTORY,
+        Number(capabilityRows[0]?.has_is_killed ?? 0) === 1,
+      );
       const rows = await runClusterQuery<{ mutation_id: string; database: string; table: string }>(
-        ctx, GET_MUTATION_HISTORY, { limit: 100 },
+        ctx, sql, { limit: 100 },
       );
       const keys = rows.map(r => `${r.database}.${r.table}.${r.mutation_id}`);
       expect(new Set(keys).size).toBe(keys.length);

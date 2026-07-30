@@ -187,6 +187,7 @@ describe('merge-classification', { tags: ['merge-engine'] }, () => {
       const cond = categoryToPartLogCondition('Regular')!;
       expect(cond).toContain('MergeParts');
       expect(cond).toContain('RegularMerge');
+      expect(cond).toContain('toString(merge_reason)');
     });
 
     it('returns SQL for TTLDelete covering all CH variants', () => {

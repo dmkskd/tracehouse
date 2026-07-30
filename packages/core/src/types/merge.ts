@@ -87,6 +87,8 @@ export interface MutationInfo {
   latest_fail_time: string;
   latest_fail_reason: string;
   is_killed: boolean;
+  /** False when this ClickHouse schema cannot report killed mutations. */
+  is_killed_supported?: boolean;
   status: string;
   progress: number;
   /** Part names still waiting to be mutated */
@@ -161,6 +163,8 @@ export interface MutationHistoryRecord {
   create_time: string;
   is_done: boolean;
   is_killed: boolean;
+  /** False when this ClickHouse schema cannot report killed mutations. */
+  is_killed_supported?: boolean;
   latest_failed_part: string;
   latest_fail_time: string;
   latest_fail_reason: string;

@@ -5,6 +5,8 @@ import {
   GET_ALL_MERGE_HISTORY,
   GET_MUTATIONS,
   GET_MUTATION_HISTORY,
+  GET_MUTATION_CAPABILITIES,
+  withMutationKilledCapability,
   GET_BACKGROUND_POOL_METRICS,
   GET_OUTDATED_PARTS_SIZE,
   GET_STORAGE_POLICY_VOLUMES,
@@ -167,8 +169,24 @@ export class MergeTracker {
   private uuidCache = new Map<string, string>();
   /** Cache: "db\0table" → engine name. Refreshed on each getMergeHistory call. */
   private engineCache = new Map<string, string>();
+  private mutationKilledCapability?: Promise<boolean>;
 
   constructor(private adapter: IClickHouseAdapter) {}
+
+  private supportsMutationKilledState(): Promise<boolean> {
+    if (!this.mutationKilledCapability) {
+      this.mutationKilledCapability = this.adapter.executeQuery<{ has_is_killed: unknown }>(
+        tagQuery(
+          GET_MUTATION_CAPABILITIES,
+          sourceTag(TAB_MERGES, 'mutationCapabilities'),
+        ),
+      ).then(rows => Number(rows[0]?.has_is_killed ?? 0) === 1)
+        // Mutation monitoring remains useful when the schema probe is denied.
+        // The result explicitly reports that killed-state detection is absent.
+        .catch(() => false);
+    }
+    return this.mutationKilledCapability;
+  }
 
   /**
    * Fetch table engines and update the cache.
@@ -265,8 +283,12 @@ export class MergeTracker {
   }
 
   async getMutations(): Promise<MutationInfo[]> {
-    const sql = buildQuery(GET_MUTATIONS, {});
     try {
+      const supportsKilledState = await this.supportsMutationKilledState();
+      const sql = buildQuery(
+        withMutationKilledCapability(GET_MUTATIONS, supportsKilledState),
+        {},
+      );
       const rows = await this.adapter.executeQuery(tagQuery(sql, sourceTag(TAB_MERGES, 'mutations')));
       return rows.map(mapMutationInfo);
     } catch (error) {
@@ -277,10 +299,15 @@ export class MergeTracker {
   async getMutationHistory(options: MergeHistoryOptions = {}): Promise<MutationHistoryRecord[]> {
     const limit = options.limit ?? 100;
     try {
-      let sql = buildQuery(GET_MUTATION_HISTORY, { limit });
+      // Validate and inject caller filters before performing a capability
+      // probe, so invalid input never causes a server round-trip.
+      const template = injectMutationFilters(GET_MUTATION_HISTORY, options);
+      const supportsKilledState = await this.supportsMutationKilledState();
+      const sql = buildQuery(
+        withMutationKilledCapability(template, supportsKilledState),
+        { limit },
+      );
       // Note: do NOT apply injectThresholdFilters here — system.mutations lacks duration_ms/size_in_bytes columns.
-      // But database/table and time range filters can be pushed into the inner query.
-      sql = injectMutationFilters(sql, options);
       const rows = await this.adapter.executeQuery(tagQuery(sql, sourceTag(TAB_MERGES, 'mutationHistory')));
       return rows.map(mapMutationHistoryRecord);
     } catch (error) {

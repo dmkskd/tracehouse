@@ -313,7 +313,7 @@ FROM (
 export const GET_PK_MEMORY = `
 SELECT sum(pk_bytes) AS pk_bytes
 FROM (
-    SELECT name, any(primary_key_bytes_in_memory) AS pk_bytes
+    SELECT name, max(primary_key_bytes_in_memory) AS pk_bytes
     FROM {{cluster_aware:system.parts}}
     WHERE active
     GROUP BY database, table, name

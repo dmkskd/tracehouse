@@ -121,6 +121,9 @@ export function mapMutationInfo(row: RawRow): MutationInfo {
     latest_fail_time: latestFailTime,
     latest_fail_reason: latestFailReason,
     is_killed: isKilled,
+    is_killed_supported: row.is_killed_supported == null
+      ? true
+      : toBool(row.is_killed_supported),
     status,
     progress,
     parts_to_do_names: toStrArray(row.parts_to_do_names),
@@ -160,6 +163,9 @@ export function mapMutationHistoryRecord(row: RawRow): MutationHistoryRecord {
     create_time: normalizeTimestamp(row.create_time),
     is_done: toBool(row.is_done),
     is_killed: toBool(row.is_killed),
+    is_killed_supported: row.is_killed_supported == null
+      ? true
+      : toBool(row.is_killed_supported),
     latest_failed_part: toStr(row.latest_failed_part),
     latest_fail_time: row.latest_fail_time ? normalizeTimestamp(row.latest_fail_time) : '',
     latest_fail_reason: toStr(row.latest_fail_reason),

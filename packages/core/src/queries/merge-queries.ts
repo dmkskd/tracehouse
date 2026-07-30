@@ -6,6 +6,45 @@
  * {param} syntax compatible with buildQuery().
  */
 
+// Keep the exported query constants valid for capable/current ClickHouse
+// servers. The resolver recognizes these comments and substitutes only the
+// marked expressions for older schemas.
+const MUTATION_IS_KILLED_EXPRESSION =
+  'is_killed /* tracehouse:capability=mutation_is_killed */';
+const MUTATION_IS_KILLED_SUPPORTED =
+  'toUInt8(1) /* tracehouse:capability=mutation_is_killed_supported */';
+
+/**
+ * Resolve the optional system.mutations.is_killed column before buildQuery().
+ * Older servers still expose useful mutation state, but cannot distinguish a
+ * killed mutation from other unfinished/completed states.
+ */
+export function withMutationKilledCapability(sql: string, supported: boolean): string {
+  return sql
+    .replaceAll(
+      MUTATION_IS_KILLED_EXPRESSION,
+      supported ? 'is_killed' : 'toUInt8(0)',
+    )
+    .replaceAll(
+      MUTATION_IS_KILLED_SUPPORTED,
+      supported ? 'toUInt8(1)' : 'toUInt8(0)',
+    );
+}
+
+/** Detect system.mutations.is_killed on every queried host. */
+export const GET_MUTATION_CAPABILITIES = `
+  SELECT min(has_is_killed) AS has_is_killed
+  FROM (
+    SELECT
+      hostName() AS hostname,
+      countIf(name = 'is_killed') > 0 AS has_is_killed
+    FROM {{cluster_aware:system.columns}}
+    WHERE database = 'system'
+      AND table = 'mutations'
+    GROUP BY hostname
+  )
+`;
+
 /** Get currently active merges from system.merges. */
 export const GET_ACTIVE_MERGES = `
   SELECT
@@ -106,7 +145,8 @@ export const GET_MUTATIONS = `
     any(latest_failed_part) AS latest_failed_part,
     any(latest_fail_time) AS latest_fail_time,
     any(latest_fail_reason) AS latest_fail_reason,
-    max(raw_is_killed) AS is_killed
+    max(raw_is_killed) AS is_killed,
+    min(raw_is_killed_supported) AS is_killed_supported
   FROM (
     SELECT
       database,
@@ -122,7 +162,8 @@ export const GET_MUTATIONS = `
       latest_failed_part,
       latest_fail_time,
       latest_fail_reason,
-      is_killed AS raw_is_killed
+      ${MUTATION_IS_KILLED_EXPRESSION} AS raw_is_killed,
+      ${MUTATION_IS_KILLED_SUPPORTED} AS raw_is_killed_supported
     FROM {{cluster_aware:system.mutations}}
   )
   GROUP BY database, table, mutation_id
@@ -192,11 +233,16 @@ export const GET_MUTATION_HISTORY = `
     any(create_time) AS create_time,
     min(raw_is_done) AS is_done,
     max(raw_is_killed) AS is_killed,
+    min(raw_is_killed_supported) AS is_killed_supported,
     any(latest_failed_part) AS latest_failed_part,
     any(latest_fail_time) AS latest_fail_time,
     any(latest_fail_reason) AS latest_fail_reason
   FROM (
-    SELECT *, is_done AS raw_is_done, is_killed AS raw_is_killed
+    SELECT
+      *,
+      is_done AS raw_is_done,
+      ${MUTATION_IS_KILLED_EXPRESSION} AS raw_is_killed,
+      ${MUTATION_IS_KILLED_SUPPORTED} AS raw_is_killed_supported
     FROM {{cluster_aware:system.mutations}}
   )
   GROUP BY database, table, mutation_id
@@ -216,11 +262,16 @@ export const GET_DATABASE_MUTATION_HISTORY = `
     any(create_time) AS create_time,
     min(raw_is_done) AS is_done,
     max(raw_is_killed) AS is_killed,
+    min(raw_is_killed_supported) AS is_killed_supported,
     any(latest_failed_part) AS latest_failed_part,
     any(latest_fail_time) AS latest_fail_time,
     any(latest_fail_reason) AS latest_fail_reason
   FROM (
-    SELECT *, is_done AS raw_is_done, is_killed AS raw_is_killed
+    SELECT
+      *,
+      is_done AS raw_is_done,
+      ${MUTATION_IS_KILLED_EXPRESSION} AS raw_is_killed,
+      ${MUTATION_IS_KILLED_SUPPORTED} AS raw_is_killed_supported
     FROM {{cluster_aware:system.mutations}}
     WHERE database = {database}
   )
@@ -241,11 +292,16 @@ export const GET_TABLE_MUTATION_HISTORY = `
     any(create_time) AS create_time,
     min(raw_is_done) AS is_done,
     max(raw_is_killed) AS is_killed,
+    min(raw_is_killed_supported) AS is_killed_supported,
     any(latest_failed_part) AS latest_failed_part,
     any(latest_fail_time) AS latest_fail_time,
     any(latest_fail_reason) AS latest_fail_reason
   FROM (
-    SELECT *, is_done AS raw_is_done, is_killed AS raw_is_killed
+    SELECT
+      *,
+      is_done AS raw_is_done,
+      ${MUTATION_IS_KILLED_EXPRESSION} AS raw_is_killed,
+      ${MUTATION_IS_KILLED_SUPPORTED} AS raw_is_killed_supported
     FROM {{cluster_aware:system.mutations}}
     WHERE database = {database}
       AND table = {table}

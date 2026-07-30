@@ -275,12 +275,27 @@ const MutationsPanel: React.FC<{
 
   // Compute overall stats
   const totalMutationMerges = mutationMerges.length;
+  const killedStateUnavailable = mutations.some(
+    mutation => mutation.is_killed_supported === false,
+  );
 
   return (
     <div style={{ overflow: 'auto' }}>
       <style>{`
         .mutation-row:hover { background: var(--bg-hover) !important; }
       `}</style>
+
+      {killedStateUnavailable && (
+        <div style={{
+          marginBottom: 10, padding: '7px 10px', borderRadius: 4,
+          border: '1px solid rgba(245,158,11,0.35)',
+          background: 'rgba(245,158,11,0.08)', color: '#d97706', fontSize: 10,
+        }}>
+          Compatibility: this ClickHouse version does not expose mutation
+          killed-state. Active state is shown, but killed mutations cannot be
+          identified separately.
+        </div>
+      )}
 
       {/* Consolidated merge activity summary */}
       {totalMutationMerges > 0 && (
@@ -563,12 +578,26 @@ const MutationHistoryPanel: React.FC<{
     if (record.latest_fail_reason) return 'Failed';
     return 'Done';
   };
+  const killedStateUnavailable = history.some(
+    record => record.is_killed_supported === false,
+  );
 
   return (
     <div style={{ overflow: 'auto' }}>
       <style>{`
         .mutation-history-row:hover { background: var(--bg-hover) !important; }
       `}</style>
+      {killedStateUnavailable && (
+        <div style={{
+          margin: '0 0 10px', padding: '7px 10px', borderRadius: 4,
+          border: '1px solid rgba(245,158,11,0.35)',
+          background: 'rgba(245,158,11,0.08)', color: '#d97706', fontSize: 10,
+        }}>
+          Compatibility: this ClickHouse version does not expose mutation
+          killed-state. Completed mutations are shown, but killed mutations
+          cannot be identified separately.
+        </div>
+      )}
       <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 11 }}>
         <thead>
           <tr style={{ borderBottom: '1px solid var(--border-primary)' }}>

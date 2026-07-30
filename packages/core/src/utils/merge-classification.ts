@@ -166,8 +166,10 @@ export const ALL_MERGE_CATEGORIES: MergeCategory[] = [
 export function categoryToPartLogCondition(category: MergeCategory): string | undefined {
   switch (category) {
     case 'Regular':
-      // RegularMerge or empty merge_reason (older CH), but NOT mutations or moves
-      return `event_type = 'MergeParts' AND (merge_reason = 'RegularMerge' OR merge_reason = '')`;
+      // RegularMerge or empty merge_reason (older CH), but NOT mutations or moves.
+      // Cast to String because 24.8 exposes merge_reason as an Enum that cannot
+      // convert the legacy empty-string literal (ATTEMPT_TO_READ_AFTER_EOF).
+      return `event_type = 'MergeParts' AND toString(merge_reason) IN ('RegularMerge', '')`;
     case 'TTLDelete':
       return `merge_reason IN ('TTLDeleteMerge', 'TTLDropMerge', 'TTLMerge')`;
     case 'TTLRecompress':
