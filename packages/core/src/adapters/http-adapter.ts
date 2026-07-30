@@ -89,8 +89,14 @@ export class HttpAdapter implements IClickHouseAdapter {
   private wrapError(error: unknown): AdapterError {
     const msg = error instanceof Error ? error.message : String(error);
     const cause = error instanceof Error ? error : undefined;
+    const errorRecord = typeof error === 'object' && error !== null
+      ? error as { code?: unknown; type?: unknown }
+      : undefined;
+    const code = errorRecord?.code == null ? '' : String(errorRecord.code);
+    const type = errorRecord?.type == null ? '' : String(errorRecord.type);
 
     if (
+      type === 'NETWORK_ERROR' ||
       msg.includes('ECONNREFUSED') ||
       msg.includes('ENOTFOUND') ||
       msg.includes('CORS') ||
@@ -100,6 +106,7 @@ export class HttpAdapter implements IClickHouseAdapter {
       return new AdapterError(msg, 'network', cause);
     }
     if (
+      type === 'AUTHENTICATION_FAILED' ||
       msg.includes('Authentication') ||
       msg.includes('authentication') ||
       msg.includes('Access denied') ||
@@ -109,6 +116,7 @@ export class HttpAdapter implements IClickHouseAdapter {
       return new AdapterError(msg, 'authentication', cause);
     }
     if (
+      type === 'TIMEOUT_EXCEEDED' ||
       msg.includes('timeout') ||
       msg.includes('Timeout') ||
       msg.includes('ETIMEDOUT') ||
@@ -117,6 +125,7 @@ export class HttpAdapter implements IClickHouseAdapter {
       return new AdapterError(msg, 'timeout', cause);
     }
     if (
+      /^\d+$/.test(code) ||
       msg.includes('Syntax error') ||
       msg.includes('DB::Exception') ||
       msg.includes('Unknown') ||
