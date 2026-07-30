@@ -7,7 +7,11 @@
  *   import { ShadowAdapter } from './setup/index.js';
  */
 
-export { CH_IMAGE } from './constants.js';
+export {
+  CH_IMAGE,
+  CONFIGURED_CH_VERSION,
+  configuredClickHouseIsBefore,
+} from './constants.js';
 export { startClickHouse, stopClickHouse, TestAdapter, type TestClickHouseContext } from './clickhouse-container.js';
 export {
   createShadowDatabase,

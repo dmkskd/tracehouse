@@ -9,6 +9,7 @@
 
 import { describe, it, expect, beforeAll, afterAll, beforeEach } from 'vitest';
 import { startClickHouse, stopClickHouse, type TestClickHouseContext } from './setup/clickhouse-container.js';
+import { configuredClickHouseIsBefore } from './setup/constants.js';
 import { runTracehouseSetup } from './setup/tracehouse-setup.js';
 import { buildMergeSamplesSQL, mapMergeSampleRow, type MergeSample } from '../../queries/merge-sample-queries.js';
 import { tagQuery } from '../../queries/builder.js';
@@ -16,6 +17,8 @@ import { sourceTag, TAB_INTERNAL } from '../../queries/source-tags.js';
 
 const CONTAINER_TIMEOUT = 120_000;
 const q = (sql: string) => tagQuery(sql, sourceTag(TAB_INTERNAL, 'mergeSamplesIntegration'));
+const describeWithRefreshableAppend =
+  configuredClickHouseIsBefore(24, 9) ? describe.skip : describe;
 
 interface MergeSampleRow {
   hostname?: string;
@@ -64,7 +67,7 @@ function insertColumns(rows: MergeSampleRow[]): string {
          columns_written, memory_usage, thread_id)`;
 }
 
-describe('merge samples integration (delta calculations)', { tags: ['merge-engine'] }, () => {
+describeWithRefreshableAppend('merge samples integration (delta calculations)', { tags: ['merge-engine'] }, () => {
   let ctx: TestClickHouseContext;
 
   beforeAll(async () => {

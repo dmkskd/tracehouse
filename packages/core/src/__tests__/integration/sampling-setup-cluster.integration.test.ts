@@ -9,7 +9,12 @@
  */
 
 import { describe, it, expect, beforeAll, afterAll, beforeEach } from 'vitest';
-import { startAltinityCluster, stopAltinityCluster, type AltinityClusterContext } from './setup/index.js';
+import {
+  configuredClickHouseIsBefore,
+  startAltinityCluster,
+  stopAltinityCluster,
+  type AltinityClusterContext,
+} from './setup/index.js';
 import { execSync } from 'node:child_process';
 import { resolve } from 'node:path';
 
@@ -19,6 +24,7 @@ const SCRIPT_PATH = resolve(__dirname, '../../../../../infra/scripts/setup_sampl
 
 // The setup script takes ~10-20s per run (DDL + 3s live sample wait)
 const TEST_TIMEOUT = 120_000;
+const itWithRefreshableAppend = configuredClickHouseIsBefore(24, 9) ? it.skip : it;
 
 describe('setup_sampling.sh on Altinity-like cluster (2s×2r)', { tags: ['cluster'] }, () => {
   let ctx: AltinityClusterContext;
@@ -127,7 +133,7 @@ describe('setup_sampling.sh on Altinity-like cluster (2s×2r)', { tags: ['cluste
   // -----------------------------------------------------------------------
 
   describe('DDL propagation with --cluster dev', () => {
-    it('creates tracehouse database on ALL 4 nodes', { timeout: TEST_TIMEOUT }, async () => {
+    itWithRefreshableAppend('creates tracehouse database on ALL 4 nodes', { timeout: TEST_TIMEOUT }, async () => {
       runScript('--cluster dev');
 
       const results = await Promise.all([
@@ -140,7 +146,7 @@ describe('setup_sampling.sh on Altinity-like cluster (2s×2r)', { tags: ['cluste
       expect(results).toEqual([true, true, true, true]);
     });
 
-    it('creates all tables on ALL 4 nodes', { timeout: TEST_TIMEOUT }, async () => {
+    itWithRefreshableAppend('creates all tables on ALL 4 nodes', { timeout: TEST_TIMEOUT }, async () => {
       runScript('--cluster dev');
 
       const expectedTables = [
@@ -160,7 +166,7 @@ describe('setup_sampling.sh on Altinity-like cluster (2s×2r)', { tags: ['cluste
       }
     });
 
-    it('samplers are running on ALL 4 nodes', { timeout: TEST_TIMEOUT }, async () => {
+    itWithRefreshableAppend('samplers are running on ALL 4 nodes', { timeout: TEST_TIMEOUT }, async () => {
       runScript('--cluster dev');
 
       // Wait a moment for samplers to register
@@ -201,7 +207,7 @@ describe('setup_sampling.sh on Altinity-like cluster (2s×2r)', { tags: ['cluste
       expect(output).not.toMatch(/ON CLUSTER 'dev'/);
     });
 
-    it('when disabled, DDL is not propagated to other nodes', { timeout: TEST_TIMEOUT }, async () => {
+    itWithRefreshableAppend('when disabled, DDL is not propagated to other nodes', { timeout: TEST_TIMEOUT }, async () => {
       runScript('--cluster dev --on-cluster no');
 
       // Database and tables should exist on the connected node (ch1)
@@ -226,7 +232,7 @@ describe('setup_sampling.sh on Altinity-like cluster (2s×2r)', { tags: ['cluste
   // -----------------------------------------------------------------------
 
   describe('auto-detection (no --cluster flag)', () => {
-    it('auto-detects topology and selects a cluster', { timeout: TEST_TIMEOUT }, () => {
+    itWithRefreshableAppend('auto-detects topology and selects a cluster', { timeout: TEST_TIMEOUT }, () => {
       // Without --cluster, the script should detect the topology and pick one
       const output = runScript('');
       // It should succeed and create tables

@@ -9,12 +9,15 @@
 
 import { describe, it, expect, beforeAll, afterAll, beforeEach } from 'vitest';
 import { startClickHouse, stopClickHouse, type TestClickHouseContext } from './setup/clickhouse-container.js';
+import { configuredClickHouseIsBefore } from './setup/constants.js';
 import { runTracehouseSetup } from './setup/tracehouse-setup.js';
 import { buildProcessSamplesSQL, mapProcessSampleRow, type ProcessSample } from '../../queries/process-queries.js';
 import { tagQuery } from '../../queries/builder.js';
 import { sourceTag, TAB_INTERNAL } from '../../queries/source-tags.js';
 
 const CONTAINER_TIMEOUT = 120_000;
+const describeWithRefreshableAppend =
+  configuredClickHouseIsBefore(24, 9) ? describe.skip : describe;
 const q = (sql: string) => tagQuery(sql, sourceTag(TAB_INTERNAL, 'processHistoryIntegration'));
 
 interface SampleRow {
@@ -41,7 +44,7 @@ function buildInsertValues(rows: SampleRow[]): string {
   }).join(',\n');
 }
 
-describe('PROCESS_SAMPLES_SQL integration (delta calculations)', { tags: ['observability'] }, () => {
+describeWithRefreshableAppend('PROCESS_SAMPLES_SQL integration (delta calculations)', { tags: ['observability'] }, () => {
   let ctx: TestClickHouseContext;
   const TEST_QID = 'test-query-001';
 

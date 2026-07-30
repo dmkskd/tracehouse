@@ -26,8 +26,14 @@ import { GET_ACTIVE_PART_SIZES, GET_MERGE_EVENTS_BATCH, GET_L0_PART_SIZES } from
 const CONTAINER_TIMEOUT = 120_000;
 const TEST_DB = 'perf_lineage_test';
 
-/** Part-count tiers to exercise. */
-const TIERS = [100, 1_000, 5_000];
+/**
+ * Keep routine integration runs reasonably fast while retaining three scaling
+ * points. The 5,000-part tier creates 5,000 individual HTTP inserts and is
+ * reserved for explicit full performance runs.
+ */
+const TIERS = process.env.TRACEHOUSE_FULL_LINEAGE_PERF === '1'
+  ? [100, 1_000, 5_000]
+  : [100, 500, 1_000];
 
 interface QueryStats {
   query_duration_ms: number;

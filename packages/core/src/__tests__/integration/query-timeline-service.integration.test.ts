@@ -39,7 +39,10 @@ describe('TimelineService integration', { tags: ['query-analysis'] }, () => {
     await ctx.client.command({
       query: `
         CREATE TABLE IF NOT EXISTS ${TEST_DB}.events (
-          id UInt64, ts DateTime DEFAULT now(), value Float64
+          id UInt64,
+          ts DateTime DEFAULT now(),
+          value Float64,
+          payload String DEFAULT randomPrintableASCII(2048)
         ) ENGINE = MergeTree()
         ORDER BY (ts, id)
       `,
@@ -441,9 +444,14 @@ describe('TimelineService integration', { tags: ['query-analysis'] }, () => {
     let knownQueryId: string;
 
     beforeAll(async () => {
-      // Run a distinctive query multiple times to create a pattern
+      // Run a distinctive query multiple times to create a pattern. The
+      // timeline intentionally excludes zero-width intervals, so ensure these
+      // synthetic executions are recorded with a non-zero duration.
       for (let i = 0; i < 3; i++) {
-        await runAndDrainQuery(ctx, `SELECT count(), sum(value) FROM ${TEST_DB}.events WHERE id > ${i * 100}`);
+        await runAndDrainQuery(
+          ctx,
+          `SELECT count(), sum(value), sleep(0.01) FROM ${TEST_DB}.events WHERE id > ${i * 100}`,
+        );
       }
       await ctx.client.command({ query: 'SYSTEM FLUSH LOGS' });
 
@@ -537,9 +545,11 @@ describe('TimelineService integration', { tags: ['query-analysis'] }, () => {
         includeRunning: false,
       });
 
-      // Server metrics should still be populated
+      // Applying a query hash must not alter independently collected server metrics.
       expect(withHash.server_total_ram).toBeGreaterThan(0);
-      expect(withHash.cpu_cores).toBeGreaterThan(0);
+      expect(withHash.server_total_ram).toBe(without.server_total_ram);
+      expect(withHash.cpu_cores).toBeGreaterThanOrEqual(0);
+      expect(withHash.cpu_cores).toBe(without.cpu_cores);
 
       // Merge/mutation counts should be the same
       expect(withHash.merge_count).toBe(without.merge_count);

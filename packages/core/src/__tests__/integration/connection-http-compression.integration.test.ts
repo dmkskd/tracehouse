@@ -12,15 +12,32 @@ import { CLIENT_COMPRESSION } from '../../adapters/types.js';
 
 const CONTAINER_TIMEOUT = 120_000;
 
+type CompressionRow = {
+  t: string;
+  host: string;
+  v: string;
+  interval_ms: string;
+};
+
 /** Query that produces a non-trivial, compressible payload (similar to metric_log). */
 const QUERY = `
   SELECT
-    toString(now() - INTERVAL number SECOND) AS t,
+    toString(toDateTime('2024-01-01 00:00:00', 'UTC') - INTERVAL number SECOND) AS t,
     concat('dev-cluster-clickhouse-0-0-', toString(number % 3)) AS host,
     number * 1000 AS v,
     1000 AS interval_ms
   FROM numbers(3000)
 `;
+
+function firstMismatchedRow(left: CompressionRow[], right: CompressionRow[]): number {
+  const sharedLength = Math.min(left.length, right.length);
+  for (let index = 0; index < sharedLength; index += 1) {
+    if (JSON.stringify(left[index]) !== JSON.stringify(right[index])) {
+      return index;
+    }
+  }
+  return left.length === right.length ? -1 : sharedLength;
+}
 
 describe('HTTP response compression', { tags: ['storage'] }, () => {
   let ctx: TestClickHouseContext;
@@ -124,20 +141,24 @@ describe('HTTP response compression', { tags: ['storage'] }, () => {
 
     it('both clients return identical results', async () => {
       const plainResult = await plainClient.query({ query: QUERY, format: 'JSONEachRow' });
-      const plainRows = await plainResult.json();
+      const plainRows = await plainResult.json<CompressionRow>();
 
       const compressedResult = await compressedClient.query({ query: QUERY, format: 'JSONEachRow' });
-      const compressedRows = await compressedResult.json();
+      const compressedRows = await compressedResult.json<CompressionRow>();
 
       expect(plainRows).toHaveLength(3000);
       expect(compressedRows).toHaveLength(3000);
-      // Same data regardless of transport compression
-      expect(plainRows).toEqual(compressedRows);
+
+      const mismatchIndex = firstMismatchedRow(plainRows, compressedRows);
+      const mismatch = mismatchIndex >= 0
+        ? `row ${mismatchIndex}: plain=${JSON.stringify(plainRows[mismatchIndex])}, compressed=${JSON.stringify(compressedRows[mismatchIndex])}`
+        : '';
+      expect(mismatchIndex, `Transport compression changed response payload at ${mismatch}`).toBe(-1);
     });
 
     it('compressed client returns correct data shape', async () => {
       const result = await compressedClient.query({ query: QUERY, format: 'JSONEachRow' });
-      const rows = await result.json<{ t: string; host: string; v: string; interval_ms: string }>();
+      const rows = await result.json<CompressionRow>();
 
       expect(rows.length).toBe(3000);
       // Spot-check structure

@@ -8,11 +8,13 @@
 
 import { describe, it, expect, beforeAll, afterAll } from 'vitest';
 import { startClickHouse, stopClickHouse, type TestClickHouseContext } from './setup/clickhouse-container.js';
+import { configuredClickHouseIsBefore } from './setup/constants.js';
 import { runTracehouseSetup } from './setup/tracehouse-setup.js';
 import { MonitoringCapabilitiesService } from '../../services/monitoring-capabilities.js';
 import { deriveMonitoringFlags } from '../../types/monitoring-capabilities.js';
 
 const CONTAINER_TIMEOUT = 120_000;
+const itWithRefreshableAppend = configuredClickHouseIsBefore(24, 9) ? it.skip : it;
 
 describe('MonitoringCapabilitiesService integration', { tags: ['observability'] }, () => {
   let ctx: TestClickHouseContext;
@@ -63,7 +65,7 @@ describe('MonitoringCapabilitiesService integration', { tags: ['observability'] 
     expect(flags.hasProcessesHistory).toBe(false);
   });
 
-  it('should detect processes_history as available after creating the table', async () => {
+  itWithRefreshableAppend('should detect processes_history as available after creating the table', async () => {
     // Create the tracehouse database and processes_history table using the production script
     await runTracehouseSetup(ctx, { target: 'processes', tablesOnly: true });
 
@@ -80,7 +82,7 @@ describe('MonitoringCapabilitiesService integration', { tags: ['observability'] 
     expect(flags.hasProcessesHistory).toBe(true);
   });
 
-  it('should report row count in processes_history detail', async () => {
+  itWithRefreshableAppend('should report row count in processes_history detail', async () => {
     // Insert some synthetic data
     await ctx.client.command({
       query: `
@@ -131,10 +133,16 @@ describe('MonitoringCapabilitiesService integration', { tags: ['observability'] 
     const svc = new MonitoringCapabilitiesService(ctx.adapter);
     const result = await svc.probe();
     const flags = deriveMonitoringFlags(result.capabilities, result.serverVersion);
+    const rows = await ctx.rawAdapter.executeQuery<{ name: string }>(`
+      SELECT name
+      FROM system.tables
+      WHERE database = 'system'
+        AND name IN ('query_log', 'trace_log', 'metric_log')
+    `);
+    const availableLogs = new Set(rows.map(row => row.name));
 
-    // These should all exist on a standard ClickHouse instance
-    expect(flags.hasQueryLog).toBe(true);
-    expect(flags.hasTraceLog).toBe(true);
-    expect(flags.hasMetricLog).toBe(true);
+    expect(flags.hasQueryLog).toBe(availableLogs.has('query_log'));
+    expect(flags.hasTraceLog).toBe(availableLogs.has('trace_log'));
+    expect(flags.hasMetricLog).toBe(availableLogs.has('metric_log'));
   });
 });

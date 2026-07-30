@@ -19,6 +19,7 @@
 
 import { describe, it, expect, beforeAll, afterAll, beforeEach } from 'vitest';
 import { startClickHouse, stopClickHouse, type TestClickHouseContext } from './setup/clickhouse-container.js';
+import { configuredClickHouseIsBefore } from './setup/constants.js';
 import { runTracehouseSetup } from './setup/tracehouse-setup.js';
 import {
   startSamplingCluster,
@@ -37,6 +38,8 @@ import { sourceTag, TAB_INTERNAL } from '../../queries/source-tags.js';
 
 const CONTAINER_TIMEOUT = 120_000;
 const q = (sql: string) => tagQuery(sql, sourceTag(TAB_INTERNAL, 'processXrayIntegration'));
+const describeWithRefreshableAppend =
+  configuredClickHouseIsBefore(24, 9) ? describe.skip : describe;
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Shared helpers
@@ -78,7 +81,7 @@ const PE_ZERO = {
 // Suite 1: Single-node with synthetic data
 // ─────────────────────────────────────────────────────────────────────────────
 
-describe('X-Ray: single-node synthetic data', { tags: ['observability'] }, () => {
+describeWithRefreshableAppend('X-Ray: single-node synthetic data', { tags: ['observability'] }, () => {
   let ctx: TestClickHouseContext;
   const INITIAL_QID = 'dist-query-001';
 
@@ -395,7 +398,7 @@ describe('X-Ray: single-node synthetic data', { tags: ['observability'] }, () =>
 // Suite 2: Cluster with organic sampling
 // ─────────────────────────────────────────────────────────────────────────────
 
-describe('X-Ray: cluster with organic sampling', { tags: ['observability'] }, () => {
+describeWithRefreshableAppend('X-Ray: cluster with organic sampling', { tags: ['observability'] }, () => {
   let ctx: SamplingClusterContext;
   let adapter: ClusterAwareAdapter;
 

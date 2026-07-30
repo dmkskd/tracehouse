@@ -10,10 +10,12 @@
 
 import { describe, it, expect, beforeAll, afterAll, beforeEach } from 'vitest';
 import { startClickHouse, stopClickHouse, type TestClickHouseContext } from './setup/clickhouse-container.js';
+import { configuredClickHouseIsBefore } from './setup/constants.js';
 import { execSync } from 'node:child_process';
 import { resolve } from 'node:path';
 
 const CONTAINER_TIMEOUT = 120_000;
+const itWithRefreshableAppend = configuredClickHouseIsBefore(24, 9) ? it.skip : it;
 
 // Resolve script path relative to this file
 // This file is at packages/core/src/__tests__/integration/
@@ -112,7 +114,7 @@ describe('setup_sampling.sh script integration', { tags: ['setup'] }, () => {
   // -----------------------------------------------------------------------
 
   describe('--target all (default)', () => {
-    it('creates both processes_history and merges_history tables', async () => {
+    itWithRefreshableAppend('creates both processes_history and merges_history tables', async () => {
       runScript('');
 
       const tables = await getTracehouseTables();
@@ -129,7 +131,7 @@ describe('setup_sampling.sh script integration', { tags: ['setup'] }, () => {
       expect(tableNames).toContain('merges_sampler');
     });
 
-    it('creates tables with correct engines', async () => {
+    itWithRefreshableAppend('creates tables with correct engines', async () => {
       runScript('');
 
       const tables = await getTracehouseTables();
@@ -144,7 +146,7 @@ describe('setup_sampling.sh script integration', { tags: ['setup'] }, () => {
       expect(byName['merges_sampler']).toBe('MaterializedView');
     });
 
-    it('creates refreshable materialized views', async () => {
+    itWithRefreshableAppend('creates refreshable materialized views', async () => {
       runScript('');
 
       const views = await getRefreshableViews();
@@ -160,7 +162,7 @@ describe('setup_sampling.sh script integration', { tags: ['setup'] }, () => {
   // -----------------------------------------------------------------------
 
   describe('--target processes', () => {
-    it('creates only processes_history tables', async () => {
+    itWithRefreshableAppend('creates only processes_history tables', async () => {
       runScript('--target processes');
 
       const tables = await getTracehouseTables();
@@ -181,7 +183,7 @@ describe('setup_sampling.sh script integration', { tags: ['setup'] }, () => {
   // -----------------------------------------------------------------------
 
   describe('--target merges', () => {
-    it('creates only merges_history tables', async () => {
+    itWithRefreshableAppend('creates only merges_history tables', async () => {
       runScript('--target merges');
 
       const tables = await getTracehouseTables();
@@ -202,7 +204,7 @@ describe('setup_sampling.sh script integration', { tags: ['setup'] }, () => {
   // -----------------------------------------------------------------------
 
   describe('schema validation', () => {
-    it('processes_history has expected columns', async () => {
+    itWithRefreshableAppend('processes_history has expected columns', async () => {
       runScript('--target processes');
 
       const columns = await getTableColumns('processes_history');
@@ -222,7 +224,7 @@ describe('setup_sampling.sh script integration', { tags: ['setup'] }, () => {
       expect(columns).toContain('Settings');
     });
 
-    it('merges_history has expected columns', async () => {
+    itWithRefreshableAppend('merges_history has expected columns', async () => {
       runScript('--target merges');
 
       const columns = await getTableColumns('merges_history');
@@ -290,7 +292,7 @@ describe('setup_sampling.sh script integration', { tags: ['setup'] }, () => {
   // -----------------------------------------------------------------------
 
   describe('idempotency', () => {
-    it('can be run twice without error', async () => {
+    itWithRefreshableAppend('can be run twice without error', async () => {
       runScript('');
       // Second run should succeed (IF NOT EXISTS)
       expect(() => runScript('')).not.toThrow();
@@ -308,7 +310,7 @@ describe('setup_sampling.sh script integration', { tags: ['setup'] }, () => {
   // -----------------------------------------------------------------------
 
   describe('--ttl option', () => {
-    it('creates tables with TTL when specified', async () => {
+    itWithRefreshableAppend('creates tables with TTL when specified', async () => {
       runScript('--ttl 14');
 
       const result = await ctx.client.query({
@@ -319,7 +321,7 @@ describe('setup_sampling.sh script integration', { tags: ['setup'] }, () => {
       expect(rows[0].engine_full).toContain('TTL');
     });
 
-    it('creates tables without TTL when --ttl 0', async () => {
+    itWithRefreshableAppend('creates tables without TTL when --ttl 0', async () => {
       runScript('--ttl 0');
 
       const result = await ctx.client.query({
