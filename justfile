@@ -533,6 +533,11 @@ e2e-ui:
 e2e-headed slow="500":
     cd packages/e2e && SLOWMO={{slow}} npx playwright test --headed --workers=1
 
+# Build the real Grafana plugin and smoke-test it in provisioned Grafana + ClickHouse.
+[group('test')]
+e2e-grafana grafana_version="13.1.0" port="3003":
+    cd packages/e2e && GRAFANA_VERSION="{{grafana_version}}" GRAFANA_E2E_PORT="{{port}}" npx playwright test --config playwright.grafana.config.ts
+
 # Run Python data-utils tests (requires Docker)
 [group('test')]
 test-data-utils:
