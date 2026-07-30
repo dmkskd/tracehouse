@@ -144,45 +144,26 @@ export const QUERY_HISTORY = buildQueryHistorySQL();
 export const SUB_QUERIES = `
   SELECT
     query_id,
-    normalized_query_hash,
-    hostname,
+    toString(normalized_query_hash) AS normalized_query_hash,
+    hostName() AS hostname,
     query_duration_ms,
     memory_usage,
     read_rows,
     read_bytes,
-    selected_parts,
-    selected_parts_total,
-    selected_marks,
-    selected_marks_total,
-    selected_ranges,
-    query_preview,
+    ProfileEvents['SelectedParts'] AS selected_parts,
+    ProfileEvents['SelectedPartsTotal'] AS selected_parts_total,
+    ProfileEvents['SelectedMarks'] AS selected_marks,
+    ProfileEvents['SelectedMarksTotal'] AS selected_marks_total,
+    ProfileEvents['SelectedRanges'] AS selected_ranges,
+    if(length(formatted_query) > 0, formatted_query, query) AS query_preview,
     exception_code,
     exception,
     query_start_time_microseconds
-  FROM (
-    SELECT
-      query_id,
-      toString(normalized_query_hash) AS normalized_query_hash,
-      hostName() AS hostname,
-      query_duration_ms,
-      memory_usage,
-      read_rows,
-      read_bytes,
-      ProfileEvents['SelectedParts'] AS selected_parts,
-      ProfileEvents['SelectedPartsTotal'] AS selected_parts_total,
-      ProfileEvents['SelectedMarks'] AS selected_marks,
-      ProfileEvents['SelectedMarksTotal'] AS selected_marks_total,
-      ProfileEvents['SelectedRanges'] AS selected_ranges,
-      if(length(formatted_query) > 0, formatted_query, query) AS query_preview,
-      exception_code,
-      exception,
-      query_start_time_microseconds
-    FROM {{cluster_aware:system.query_log}}
-    WHERE initial_query_id = {initial_query_id}
-      AND is_initial_query = 0
-      AND type IN ('QueryFinish', 'ExceptionWhileProcessing', 'ExceptionBeforeStart')
-      AND event_date >= {event_date_bound}
-  )
+  FROM {{cluster_aware:system.query_log}}
+  WHERE initial_query_id = {initial_query_id}
+    AND is_initial_query = 0
+    AND type IN ('QueryFinish', 'ExceptionWhileProcessing', 'ExceptionBeforeStart')
+    AND event_date >= {event_date_bound}
   ORDER BY query_duration_ms DESC
   LIMIT 50
 `;

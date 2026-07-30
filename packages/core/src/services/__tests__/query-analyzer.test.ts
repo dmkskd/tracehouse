@@ -167,6 +167,21 @@ describe('QueryAnalyzer UTC history bounds', () => {
   });
 });
 
+describe('QueryAnalyzer child query lookup', () => {
+  it('queries system.query_log directly without an analyzer-breaking wrapper', async () => {
+    const adapter = new MockAdapter();
+    const analyzer = new QueryAnalyzer(adapter);
+
+    await analyzer.getSubQueries('parent-a', '2026-06-18');
+
+    expect(adapter.queries).toHaveLength(1);
+    expect(adapter.queries[0]).toContain('FROM {{cluster_aware:system.query_log}}');
+    expect(adapter.queries[0]).not.toMatch(/FROM\s*\(\s*SELECT/i);
+    expect(adapter.queries[0]).toContain('ORDER BY query_duration_ms DESC');
+    expect(adapter.queries[0]).toContain('/* source:TraceHouse:Queries:subQueries */');
+  });
+});
+
 describe('QueryAnalyzer child query batching', () => {
   it('returns an empty map without querying ClickHouse when no ids are provided', async () => {
     const adapter = new MockAdapter();

@@ -531,6 +531,31 @@ describe('Cluster query dedup', { tags: ['cluster'] }, () => {
 
   // ─── query-queries.ts ───
 
+  describe('getSubQueries', () => {
+    it('runs through clusterAllReplicas without the ClickHouse 26.7 nested-query analyzer failure', async () => {
+      const clusterAdapter = new ClusterAwareAdapter(ctx.adapter1);
+      clusterAdapter.setClusterName('default');
+      const analyzer = new QueryAnalyzer(clusterAdapter);
+      const missingCoordinatorId = `tracehouse-subquery-regression-${crypto.randomUUID()}`;
+      const startDate = new Date().toISOString().split('T')[0]!;
+
+      const children = await analyzer.getSubQueries(missingCoordinatorId, startDate);
+
+      expect(children).toEqual([]);
+
+      await ctx.client1.command({ query: 'SYSTEM FLUSH LOGS' });
+      const failures = await ctx.adapter1.executeQuery<{ failures: string }>(`
+        SELECT count() AS failures
+        FROM system.query_log
+        WHERE type = 'ExceptionBeforeStart'
+          AND exception_code = 10
+          AND query LIKE '%${missingCoordinatorId}%'
+          AND query LIKE '%source:TraceHouse:Queries:subQueries%'
+      `);
+      expect(Number(failures[0]?.failures ?? 0)).toBe(0);
+    });
+  });
+
   describe('getCoordinatorIds', () => {
     it('detects coordinator query that dispatched shard sub-queries', async () => {
       // Use clusterAllReplicas() which always fans out to all replicas,
