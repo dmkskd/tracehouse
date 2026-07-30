@@ -807,7 +807,7 @@ const DashboardPanelCard: React.FC<{
       } : {
         ...panelStyle,
         display: isHidden ? 'none' : 'flex',
-        borderColor: isFocusStageActive ? 'rgba(99,102,241,0.62)' : panelStyle.borderColor,
+        borderColor: isFocusStageActive ? 'rgba(99,102,241,0.62)' : 'var(--border-primary)',
         boxShadow: isFocusStageActive ? '0 0 0 2px rgba(99,102,241,0.10)' : undefined,
       }}>
         {isFocused && focusStage && <FocusStageHeader context={focusStage} onExit={onToggleFocus} />}
@@ -843,7 +843,7 @@ const DashboardPanelCard: React.FC<{
       } : {
         ...panelStyle,
         display: isHidden ? 'none' : 'flex',
-        borderColor: isFocusStageActive ? 'rgba(99,102,241,0.62)' : panelStyle.borderColor,
+        borderColor: isFocusStageActive ? 'rgba(99,102,241,0.62)' : 'var(--border-primary)',
         boxShadow: isFocusStageActive ? '0 0 0 2px rgba(99,102,241,0.10)' : undefined,
       }}>
       {isFocused && focusStage && <FocusStageHeader context={focusStage} onExit={onToggleFocus} />}
