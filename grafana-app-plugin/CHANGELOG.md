@@ -5,6 +5,24 @@ All notable changes to the TraceHouse Grafana plugin will be documented in this 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.18.3] - 2026-07-30
+
+### Improvements
+- **Queries / Merges:** You can now select multiple values for the same filter and use quick presets for running, recent, failed, and slow activity.
+- **Events:** Reduced initial collection to 100 events per source and added a visible truncation indicator.
+- **Analytics Dashboards:** Panels that require a newer ClickHouse version now show a clear compatibility message instead of failing.
+
+### Bug fixes
+- **Events:** Fixed event lists failing to load on ClickHouse versions earlier than 24.1 by using a compatible query when distributed `LIMIT BY` is unavailable.
+- **Queries:** Query history now includes ClickHouse `ExceptionBeforeStart` errors, and server filters use the server's actual `hostName()` instead of connection aliases. Query details now also load on ClickHouse 23.8.
+- **Mutations:** Fixed the Mutations view on ClickHouse 23.8. Active and completed mutations now load, with a warning that this version cannot identify killed mutations.
+- **Distributed Query Analysis:** The query topology view now works on ClickHouse 23.8 through 24.8. These versions provide less processor detail than ClickHouse 25.3+, so TraceHouse uses the available query data and explains the limitation.
+- **Grafana:** Preserved repeated URL parameters so multi-value filters survive navigation and reloads.
+- **Cluster Connections:** Feature availability is now rechecked after connecting to or switching clusters, preventing stale results and unnecessary errors in ClickHouse logs.
+
+### Security
+- Updated DOMPurify and Immutable dependencies to address npm audit findings.
+
 ## [0.18.2] - 2026-07-29
 
 ### Improvements
