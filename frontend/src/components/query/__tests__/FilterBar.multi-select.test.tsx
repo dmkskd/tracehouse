@@ -12,6 +12,72 @@ vi.mock('../../common/TimeRangePicker', () => ({
 afterEach(cleanup);
 
 describe('filter bar multi-value autocomplete', () => {
+  it('distinguishes prepared quick filters from field filters', () => {
+    const changes = vi.fn();
+
+    function Harness() {
+      const [filter, setFilter] = useState<QueryFilterState>({ timeRange: '1 HOUR' });
+      return (
+        <QueryFilterBar
+          filter={filter}
+          onFilterChange={patch => {
+            changes(patch);
+            setFilter(current => ({ ...current, ...patch }));
+          }}
+        />
+      );
+    }
+
+    render(<Harness />);
+
+    fireEvent.focus(screen.getByPlaceholderText('Type to filter (user, server, query…)'));
+
+    expect(screen.getByText('Quick filters')).toBeInTheDocument();
+    expect(screen.getByText('Add a filter')).toBeInTheDocument();
+    expect(screen.getByText('Currently executing')).toBeInTheDocument();
+    expect(screen.getByText('Completed in the selected time range')).toBeInTheDocument();
+    expect(screen.getByText('Errors in the selected time range')).toBeInTheDocument();
+    expect(screen.getByText('Duration ≥ 1 second')).toBeInTheDocument();
+
+    fireEvent.mouseDown(screen.getByText('Running now'));
+
+    expect(changes).toHaveBeenLastCalledWith({
+      quickFilter: 'running',
+      status: ['running'],
+      minDurationMs: undefined,
+    });
+    expect(screen.getByText('Running now')).toBeInTheDocument();
+    expect(screen.queryByText('Status:')).not.toBeInTheDocument();
+
+    fireEvent.click(screen.getByRole('button', { name: 'Remove quick filter Running now' }));
+
+    expect(changes).toHaveBeenLastCalledWith({
+      quickFilter: undefined,
+      status: undefined,
+      minDurationMs: undefined,
+    });
+  });
+
+  it.each([
+    ['Recent', { quickFilter: 'recent', status: ['success', 'error'], minDurationMs: undefined }],
+    ['Failed queries', { quickFilter: 'failed', status: ['error'], minDurationMs: undefined }],
+    ['Slow queries', { quickFilter: 'slow', status: undefined, minDurationMs: 1_000 }],
+  ])('applies the %s prepared filter through existing query criteria', (label, expectedPatch) => {
+    const changes = vi.fn();
+
+    render(
+      <QueryFilterBar
+        filter={{ timeRange: '1 HOUR' }}
+        onFilterChange={changes}
+      />,
+    );
+
+    fireEvent.focus(screen.getByPlaceholderText('Type to filter (user, server, query…)'));
+    fireEvent.mouseDown(screen.getByText(label));
+
+    expect(changes).toHaveBeenLastCalledWith(expectedPatch);
+  });
+
   it('keeps Query Status active and suggests only the remaining values', () => {
     const changes = vi.fn();
 
@@ -107,5 +173,164 @@ describe('filter bar multi-value autocomplete', () => {
     expect(changes).toHaveBeenLastCalledWith(['Error']);
     expect(screen.queryByRole('button', { name: 'Remove Status Running' })).not.toBeInTheDocument();
     expect(screen.getByText('Running')).toBeInTheDocument();
+  });
+
+  it('distinguishes prepared merge quick filters from field filters', () => {
+    const quickChanges = vi.fn();
+
+    function Harness() {
+      const [filter, setFilter] = useState<MergeHistoryFilter>({
+        timeRange: '1 HOUR',
+        limit: 100,
+      });
+      const [status, setStatus] = useState<string[]>();
+      const [quickFilter, setQuickFilter] = useState<'running' | 'recent' | 'failed' | 'slow'>();
+
+      return (
+        <MergeFilterBar
+          tab="merges"
+          filter={filter}
+          onFilterChange={patch => setFilter(current => ({ ...current, ...patch }))}
+          availableDatabases={[]}
+          availableTables={[]}
+          availableStatuses={['Running', 'OK', 'Error']}
+          selectedStatus={status}
+          onStatusChange={setStatus}
+          quickFilter={quickFilter}
+          onQuickFilterChange={(next, constraints) => {
+            quickChanges(next, constraints);
+            setQuickFilter(next);
+            setStatus(constraints.status);
+            setFilter(current => ({
+              ...current,
+              minDurationMs: constraints.minDurationMs,
+            }));
+          }}
+        />
+      );
+    }
+
+    render(<Harness />);
+
+    fireEvent.focus(screen.getByPlaceholderText('Type to filter (database, table…)'));
+
+    expect(screen.getByText('Quick filters')).toBeInTheDocument();
+    expect(screen.getByText('Add a filter')).toBeInTheDocument();
+    expect(screen.getByText('Currently executing')).toBeInTheDocument();
+    expect(screen.getByText('Completed in the selected time range')).toBeInTheDocument();
+    expect(screen.getByText('Errors in the selected time range')).toBeInTheDocument();
+    expect(screen.getByText('Duration ≥ 10 seconds')).toBeInTheDocument();
+
+    fireEvent.mouseDown(screen.getByText('Running now'));
+
+    expect(quickChanges).toHaveBeenLastCalledWith('running', {
+      status: ['Running'],
+      minDurationMs: undefined,
+    });
+    expect(screen.getByText('Running now')).toBeInTheDocument();
+    expect(screen.queryByText('Status:')).not.toBeInTheDocument();
+
+    fireEvent.click(screen.getByRole('button', { name: 'Remove quick filter Running now' }));
+
+    expect(quickChanges).toHaveBeenLastCalledWith(undefined, {
+      status: undefined,
+      minDurationMs: undefined,
+    });
+  });
+
+  it.each([
+    ['Recent', 'recent', ['OK', 'Error'], undefined],
+    ['Failed merges', 'failed', ['Error'], undefined],
+    ['Slow merges', 'slow', undefined, 10_000],
+  ])('applies the %s prepared merge filter through existing criteria', (
+    label,
+    quickFilter,
+    status,
+    minDurationMs,
+  ) => {
+    const quickChanges = vi.fn();
+
+    render(
+      <MergeFilterBar
+        tab="merges"
+        filter={{ timeRange: '1 HOUR', limit: 100 }}
+        onFilterChange={() => {}}
+        availableDatabases={[]}
+        availableTables={[]}
+        onQuickFilterChange={quickChanges}
+      />,
+    );
+
+    fireEvent.focus(screen.getByPlaceholderText('Type to filter (database, table…)'));
+    fireEvent.mouseDown(screen.getByText(label));
+
+    expect(quickChanges).toHaveBeenLastCalledWith(quickFilter, {
+      status,
+      minDurationMs,
+    });
+  });
+
+  it('turns a merge preset into ordinary filters when its constraints are edited', () => {
+    const quickChanges = vi.fn();
+    const statusChanges = vi.fn();
+
+    function Harness() {
+      const [status, setStatus] = useState<string[]>(['Running']);
+      const [quickFilter, setQuickFilter] = useState<'running' | 'recent' | 'failed' | 'slow'>('running');
+
+      return (
+        <MergeFilterBar
+          tab="merges"
+          filter={{ timeRange: '1 HOUR', limit: 100 }}
+          onFilterChange={() => {}}
+          availableDatabases={[]}
+          availableTables={[]}
+          availableStatuses={['Running', 'OK', 'Error']}
+          selectedStatus={status}
+          onStatusChange={next => {
+            statusChanges(next);
+            setStatus(next);
+            setQuickFilter(undefined);
+          }}
+          quickFilter={quickFilter}
+          onQuickFilterChange={(next, constraints) => {
+            quickChanges(next, constraints);
+            setQuickFilter(next);
+            setStatus(constraints.status);
+          }}
+        />
+      );
+    }
+
+    render(<Harness />);
+
+    fireEvent.focus(screen.getByPlaceholderText('Add filter…'));
+    fireEvent.mouseDown(screen.getByText('Status'));
+    fireEvent.mouseDown(screen.getByText('Error'));
+
+    expect(statusChanges).toHaveBeenLastCalledWith(['Running', 'Error']);
+    expect(quickChanges).not.toHaveBeenCalled();
+    expect(screen.queryByText('Running now')).not.toBeInTheDocument();
+    expect(screen.getByText('Status:')).toBeInTheDocument();
+  });
+
+  it('keeps the Hide replicas control visible without detected replica rows', () => {
+    const onHideReplicaMergesChange = vi.fn();
+
+    render(
+      <MergeFilterBar
+        tab="merges"
+        filter={{ timeRange: '1 HOUR', limit: 100 }}
+        onFilterChange={() => {}}
+        availableDatabases={[]}
+        availableTables={[]}
+        hideReplicaMerges={false}
+        onHideReplicaMergesChange={onHideReplicaMergesChange}
+      />,
+    );
+
+    fireEvent.click(screen.getByRole('checkbox', { name: 'Hide replicas' }));
+
+    expect(onHideReplicaMergesChange).toHaveBeenCalledWith(true);
   });
 });

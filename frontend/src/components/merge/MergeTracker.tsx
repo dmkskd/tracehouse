@@ -20,12 +20,11 @@ import { useRefreshSettingsStore } from '../../stores/refreshSettingsStore';
 import { useGlobalLastUpdatedStore } from '../../stores/refreshSettingsStore';
 import { MergeActivityTable } from './MergeActivityTable';
 import { MergeFilterBar } from './MergeFilterBar';
-import type { MergeTab } from './MergeFilterBar';
+import type { MergeQuickFilter, MergeTab } from './MergeFilterBar';
 import {
   createMergeActivityState,
   buildMergeActivityRecords,
   filterMergeActivity,
-  hasReplicaMergeActivity,
   isMergeStuck,
   limitMergeActivityRecords,
   mergeActivityHosts,
@@ -81,6 +80,7 @@ const mergeUrlSchema = {
   sortDir:   { type: 'string',  default: 'desc' },
   host:      { type: 'string[]' },
   status:    { type: 'string[]' },
+  quick:     { type: 'string' },
   mergeType: { type: 'string' },
   part:      { type: 'string' },
   // Merge detail deep-link: db, table, part_name to reopen modal
@@ -1725,7 +1725,27 @@ export const MergeTrackerView: React.FC = () => {
   const selectedHost = urlState.host;
   const setSelectedHost = useCallback((v: string[] | undefined) => updateUrl({ host: v }), [updateUrl]);
   const selectedStatus = urlState.status;
-  const setSelectedStatus = useCallback((v: string[] | undefined) => updateUrl({ status: v }), [updateUrl]);
+  const setSelectedStatus = useCallback(
+    (v: string[] | undefined) => updateUrl({ status: v, quick: undefined }),
+    [updateUrl],
+  );
+  const selectedQuickFilter = (
+    urlState.quick === 'running'
+    || urlState.quick === 'recent'
+    || urlState.quick === 'failed'
+    || urlState.quick === 'slow'
+  ) ? urlState.quick as MergeQuickFilter : undefined;
+  const setSelectedQuickFilter = useCallback((
+    v: MergeQuickFilter | undefined,
+    constraints: { status?: string[]; minDurationMs?: number },
+  ) => {
+    setHistoryFilter({ minDurationMs: constraints.minDurationMs });
+    updateUrl({
+      quick: v,
+      status: constraints.status,
+      minDurMs: constraints.minDurationMs,
+    });
+  }, [setHistoryFilter, updateUrl]);
   const selectedPartName = urlState.part;
   const setSelectedPartName = useCallback((v: string | undefined) => updateUrl({ part: v }), [updateUrl]);
   const { hideReplicaMerges, setHideReplicaMerges, experimentalEnabled } = useUserPreferenceStore();
@@ -1935,7 +1955,10 @@ export const MergeTrackerView: React.FC = () => {
     if ('table' in filter) urlPatch.table = filter.table?.length ? filter.table : undefined;
     if ('category' in filter) urlPatch.category = filter.category?.length ? filter.category : undefined;
     if ('timeRange' in filter) urlPatch.timeRange = filter.timeRange || undefined;
-    if ('minDurationMs' in filter) urlPatch.minDurMs = filter.minDurationMs || undefined;
+    if ('minDurationMs' in filter) {
+      urlPatch.minDurMs = filter.minDurationMs || undefined;
+      urlPatch.quick = undefined;
+    }
     if ('minSizeBytes' in filter) urlPatch.minSizeB = filter.minSizeBytes || undefined;
     if ('limit' in filter) urlPatch.limit = filter.limit;
     if ('excludeSystemDatabases' in filter) urlPatch.excludeSys = filter.excludeSystemDatabases;
@@ -2066,12 +2089,6 @@ export const MergeTrackerView: React.FC = () => {
   const availableStatuses = React.useMemo(
     () => mergeActivityStatuses(mergeHistory),
     [mergeHistory],
-  );
-
-  // Whether any replica merges exist (to decide whether to show toggle)
-  const hasReplicaMerges = useMemo(
-    () => hasReplicaMergeActivity(mergeActivity),
-    [mergeActivity],
   );
 
   const isHealthTab = activeTab === 'health';
@@ -2302,12 +2319,14 @@ export const MergeTrackerView: React.FC = () => {
                 availableStatuses={availableStatuses}
                 selectedStatus={selectedStatus}
                 onStatusChange={setSelectedStatus}
+                quickFilter={selectedQuickFilter}
+                onQuickFilterChange={setSelectedQuickFilter}
                 selectedPartName={selectedPartName}
                 onPartNameChange={setSelectedPartName}
                 excludeSystemDatabases={historyFilter.excludeSystemDatabases}
                 onExcludeSystemChange={(v) => handleFilterChange({ excludeSystemDatabases: v })}
-                hideReplicaMerges={activeTab === 'merges' && hasReplicaMerges ? hideReplicaMerges : undefined}
-                onHideReplicaMergesChange={activeTab === 'merges' && hasReplicaMerges ? setHideReplicaMerges : undefined}
+                hideReplicaMerges={activeTab === 'merges' ? hideReplicaMerges : undefined}
+                onHideReplicaMergesChange={activeTab === 'merges' ? setHideReplicaMerges : undefined}
                 onRefresh={activeTab === 'merges'
                   ? () => { fetchActiveMerges(false); fetchMergeHistory(true); }
                   : () => { fetchMutations(false); fetchMutationHistory(true); }}

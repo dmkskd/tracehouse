@@ -23,6 +23,7 @@ import {
 import { TRACKER_TIME_PRESETS } from '../../utils/trackerTimeRange';
 
 export type MergeTab = 'merges' | 'mutations' | 'health';
+export type MergeQuickFilter = 'running' | 'recent' | 'failed' | 'slow';
 
 /* ------------------------------------------------------------------ */
 /*  Public types                                                       */
@@ -55,6 +56,12 @@ interface MergeFilterBarProps {
   /** Part name filter (client-side, substring match) */
   selectedPartName?: string;
   onPartNameChange?: (v: string | undefined) => void;
+  /** Prepared merge filter, visually distinct from user-authored field filters. */
+  quickFilter?: MergeQuickFilter;
+  onQuickFilterChange?: (
+    v: MergeQuickFilter | undefined,
+    constraints: { status?: string[]; minDurationMs?: number },
+  ) => void;
   onRefresh?: () => void;
   isLoading?: boolean;
 }
@@ -165,6 +172,61 @@ const FILTER_FIELDS: FilterFieldDef[] = [
   },
 ];
 
+interface QuickFilterDef {
+  key: MergeQuickFilter;
+  label: string;
+  description: string;
+  status?: string[];
+  minDurationMs?: number;
+  matches: (props: MergeFilterBarProps) => boolean;
+}
+
+const hasOnlyStatus = (props: MergeFilterBarProps, status: string): boolean =>
+  props.selectedStatus?.length === 1
+  && props.selectedStatus[0]?.toLowerCase() === status
+  && props.filter.minDurationMs == null;
+
+const hasOnlyStatuses = (props: MergeFilterBarProps, statuses: string[]): boolean => {
+  const selected = new Set(props.selectedStatus?.map(status => status.toLowerCase()) ?? []);
+  return selected.size === statuses.length
+    && statuses.every(status => selected.has(status))
+    && props.filter.minDurationMs == null;
+};
+
+const QUICK_FILTERS: QuickFilterDef[] = [
+  {
+    key: 'running',
+    label: 'Running now',
+    description: 'Currently executing',
+    status: ['Running'],
+    matches: props => hasOnlyStatus(props, 'running'),
+  },
+  {
+    key: 'recent',
+    label: 'Recent',
+    description: 'Completed in the selected time range',
+    status: ['OK', 'Error'],
+    matches: props => hasOnlyStatuses(props, ['ok', 'error']),
+  },
+  {
+    key: 'failed',
+    label: 'Failed merges',
+    description: 'Errors in the selected time range',
+    status: ['Error'],
+    matches: props => hasOnlyStatus(props, 'error'),
+  },
+  {
+    key: 'slow',
+    label: 'Slow merges',
+    description: 'Duration ≥ 10 seconds',
+    minDurationMs: 10_000,
+    matches: props => !props.selectedStatus?.length && props.filter.minDurationMs === 10_000,
+  },
+];
+
+const isPresetConstraintField = (field: FilterFieldDef): boolean =>
+  field.key === 'status' || field.key === 'min_duration';
+
 /* ------------------------------------------------------------------ */
 /*  Styles                                                             */
 /* ------------------------------------------------------------------ */
@@ -179,6 +241,13 @@ const chipStyle: React.CSSProperties = {
 const chipRemoveStyle: React.CSSProperties = {
   cursor: 'pointer', fontSize: 13, lineHeight: 1, marginLeft: 2,
   color: '#f0883e', opacity: 0.7,
+};
+
+const quickChipStyle: React.CSSProperties = {
+  ...chipStyle,
+  background: 'rgba(163,113,247,0.12)',
+  color: '#a371f7',
+  border: '1px solid rgba(163,113,247,0.3)',
 };
 
 const dropdownContainerStyle: React.CSSProperties = {
@@ -198,6 +267,11 @@ const dropdownItemStyle: React.CSSProperties = {
 /* ------------------------------------------------------------------ */
 
 type Phase = 'idle' | 'picking_field' | 'entering_value';
+
+type DropdownItem =
+  | { id: string; label: string; group: 'quick'; quickFilter: QuickFilterDef }
+  | { id: string; label: string; group: 'field'; field: FilterFieldDef }
+  | { id: string; label: string; group: 'value'; field: FilterFieldDef };
 
 export const MergeFilterBar: React.FC<MergeFilterBarProps> = (props) => {
   const {
@@ -220,15 +294,25 @@ export const MergeFilterBar: React.FC<MergeFilterBarProps> = (props) => {
   const [showDropdown, setShowDropdown] = useState(false);
   const inputRef = useRef<HTMLInputElement>(null);
 
+  const activeQuickFilter = useMemo(
+    () => tab === 'merges'
+      ? QUICK_FILTERS.find(preset =>
+        preset.key === props.quickFilter && preset.matches(props)
+      ) ?? null
+      : null,
+    [props, tab],
+  );
+
   /* --- active chips derived from props --- */
   const activeChips = useMemo(() => {
     const chips: { field: FilterFieldDef; displayValues: string[] }[] = [];
     for (const f of visibleFields) {
+      if (activeQuickFilter && isPresetConstraintField(f)) continue;
       const displayValues = valuesOf(f.fromProps(props));
       if (displayValues.length > 0) chips.push({ field: f, displayValues });
     }
     return chips;
-  }, [visibleFields, props]);
+  }, [activeQuickFilter, visibleFields, props]);
 
   /* --- available fields (not yet used) --- */
   const availableFields = useMemo(() => {
@@ -240,9 +324,25 @@ export const MergeFilterBar: React.FC<MergeFilterBarProps> = (props) => {
   const dropdownItems = useMemo(() => {
     if (phase === 'idle' || phase === 'picking_field') {
       const q = inputValue.toLowerCase();
-      return availableFields
+      const quickItems: DropdownItem[] = tab === 'merges'
+        ? QUICK_FILTERS
+          .filter(preset => preset.key !== activeQuickFilter?.key)
+          .filter(preset =>
+            !q
+            || preset.label.toLowerCase().includes(q)
+            || preset.description.toLowerCase().includes(q)
+          )
+          .map(preset => ({
+            id: `quick:${preset.key}`,
+            label: preset.label,
+            group: 'quick',
+            quickFilter: preset,
+          }))
+        : [];
+      const fieldItems: DropdownItem[] = availableFields
         .filter(f => !q || f.label.toLowerCase().includes(q) || f.key.toLowerCase().includes(q))
-        .map(f => ({ id: f.key, label: f.label, field: f }));
+        .map(f => ({ id: `field:${f.key}`, label: f.label, group: 'field', field: f }));
+      return [...quickItems, ...fieldItems];
     }
     if (phase === 'entering_value' && activeField) {
       const vals = activeField.getSuggestions(props);
@@ -251,10 +351,10 @@ export const MergeFilterBar: React.FC<MergeFilterBarProps> = (props) => {
       return vals
         .filter(v => !selected.has(v.toLowerCase()))
         .filter(v => !q || v.toLowerCase().includes(q))
-        .map(v => ({ id: v, label: v, field: activeField }));
+        .map(v => ({ id: v, label: v, group: 'value', field: activeField }) satisfies DropdownItem);
     }
     return [];
-  }, [phase, inputValue, availableFields, activeField, props]);
+  }, [phase, inputValue, availableFields, activeField, props, tab, activeQuickFilter]);
 
   /* --- handlers --- */
   const finishValueEntry = useCallback(() => {
@@ -304,6 +404,25 @@ export const MergeFilterBar: React.FC<MergeFilterBarProps> = (props) => {
       .filter(item => item.toLowerCase() !== value.toLowerCase());
     if (remaining.length > 0) field.apply(remaining, props);
     else field.clear(props);
+  }, [props]);
+
+  const applyQuickFilter = useCallback((preset: QuickFilterDef) => {
+    props.onQuickFilterChange?.(preset.key, {
+      status: preset.status,
+      minDurationMs: preset.minDurationMs,
+    });
+    setActiveField(null);
+    setInputValue('');
+    setPhase('idle');
+    setShowDropdown(false);
+    setHighlightIdx(-1);
+  }, [props]);
+
+  const removeQuickFilter = useCallback(() => {
+    props.onQuickFilterChange?.(undefined, {
+      status: undefined,
+      minDurationMs: undefined,
+    });
   }, [props]);
 
   const editChip = useCallback((field: FilterFieldDef) => {
@@ -357,8 +476,9 @@ export const MergeFilterBar: React.FC<MergeFilterBarProps> = (props) => {
       e.preventDefault();
       if (highlightIdx >= 0 && highlightIdx < dropdownItems.length) {
         const item = dropdownItems[highlightIdx];
-        if (phase === 'picking_field') selectField(item.field);
-        else if (phase === 'entering_value') commitValue(item.label);
+        if (item.group === 'quick') applyQuickFilter(item.quickFilter);
+        else if (item.group === 'field') selectField(item.field);
+        else commitValue(item.label);
       } else if (phase === 'entering_value' && inputValue.trim()) {
         commitValue(inputValue);
       } else if (phase === 'entering_value') {
@@ -374,8 +494,12 @@ export const MergeFilterBar: React.FC<MergeFilterBarProps> = (props) => {
       const last = activeChips[activeChips.length - 1];
       const lastValue = last.displayValues[last.displayValues.length - 1];
       if (lastValue) removeValue(last.field, lastValue);
+      return;
     }
-  }, [dropdownItems, highlightIdx, phase, inputValue, activeChips, selectField, commitValue, finishValueEntry, removeValue]);
+    if (e.key === 'Backspace' && !inputValue && phase === 'picking_field' && activeQuickFilter) {
+      removeQuickFilter();
+    }
+  }, [dropdownItems, highlightIdx, phase, inputValue, activeChips, activeQuickFilter, selectField, commitValue, finishValueEntry, removeValue, applyQuickFilter, removeQuickFilter]);
 
   const handleInputChange = useCallback((e: React.ChangeEvent<HTMLInputElement>) => {
     setInputValue(e.target.value);
@@ -385,9 +509,10 @@ export const MergeFilterBar: React.FC<MergeFilterBarProps> = (props) => {
   }, [phase]);
 
   const handleDropdownClick = useCallback((item: typeof dropdownItems[0]) => {
-    if (phase === 'picking_field') selectField(item.field);
-    else if (phase === 'entering_value') commitValue(item.label);
-  }, [phase, selectField, commitValue]);
+    if (item.group === 'quick') applyQuickFilter(item.quickFilter);
+    else if (item.group === 'field') selectField(item.field);
+    else commitValue(item.label);
+  }, [applyQuickFilter, selectField, commitValue]);
 
   /* --- reset chips when tab changes (clear tab-specific filters) --- */
   const prevTabRef = useRef(tab);
@@ -429,6 +554,20 @@ export const MergeFilterBar: React.FC<MergeFilterBarProps> = (props) => {
             }}
             onClick={() => inputRef.current?.focus()}
           >
+            {activeQuickFilter && (
+              <span style={quickChipStyle}>
+                <span aria-hidden="true" style={{ fontSize: 10 }}>⚡</span>
+                <span style={{ fontWeight: 600 }}>{activeQuickFilter.label}</span>
+                <span
+                  role="button"
+                  aria-label={`Remove quick filter ${activeQuickFilter.label}`}
+                  style={{ ...chipRemoveStyle, color: '#a371f7' }}
+                  onClick={e => { e.stopPropagation(); removeQuickFilter(); }}
+                >
+                  ×
+                </span>
+              </span>
+            )}
             {/* Existing chips */}
             {activeChips.map(c => (
               <span key={c.field.key} style={{ ...chipStyle, cursor: 'pointer' }}
@@ -478,7 +617,7 @@ export const MergeFilterBar: React.FC<MergeFilterBarProps> = (props) => {
                   ? activeField.multi && valuesOf(activeField.fromProps(props)).length > 0
                     ? `Add another ${activeField.label.toLowerCase()}…`
                     : activeField.placeholder
-                  : activeChips.length > 0
+                  : activeQuickFilter || activeChips.length > 0
                     ? 'Add filter…'
                     : 'Type to filter (database, table…)'
               }
@@ -492,23 +631,55 @@ export const MergeFilterBar: React.FC<MergeFilterBarProps> = (props) => {
           {/* Dropdown */}
           {showDropdown && dropdownItems.length > 0 && (
             <div style={dropdownContainerStyle}>
-              {dropdownItems.map((item, idx) => (
-                <div
-                  key={item.id}
-                  onMouseDown={e => { e.preventDefault(); handleDropdownClick(item); }}
-                  onMouseEnter={() => setHighlightIdx(idx)}
-                  style={{
-                    ...dropdownItemStyle,
-                    background: idx === highlightIdx ? 'var(--bg-secondary)' : 'transparent',
-                    fontWeight: phase === 'picking_field' ? 500 : 400,
-                  }}
-                >
-                  {phase === 'picking_field' && (
-                    <span style={{ color: 'var(--text-muted)', fontSize: 10, marginRight: 6 }}>⊕</span>
-                  )}
-                  {item.label}
-                </div>
-              ))}
+              {dropdownItems.map((item, idx) => {
+                const showGroupLabel = item.group !== 'value'
+                  && dropdownItems[idx - 1]?.group !== item.group;
+                return (
+                  <React.Fragment key={item.id}>
+                    {showGroupLabel && (
+                      <div style={{
+                        padding: '8px 10px 4px',
+                        color: 'var(--text-muted)',
+                        fontSize: 9,
+                        fontWeight: 700,
+                        letterSpacing: '0.8px',
+                        textTransform: 'uppercase',
+                      }}>
+                        {item.group === 'quick' ? 'Quick filters' : 'Add a filter'}
+                      </div>
+                    )}
+                    <div
+                      onMouseDown={e => { e.preventDefault(); handleDropdownClick(item); }}
+                      onMouseEnter={() => setHighlightIdx(idx)}
+                      style={{
+                        ...dropdownItemStyle,
+                        background: idx === highlightIdx ? 'var(--bg-secondary)' : 'transparent',
+                        fontWeight: item.group === 'value' ? 400 : 500,
+                        display: 'flex',
+                        alignItems: 'center',
+                        gap: 7,
+                      }}
+                    >
+                      <span style={{
+                        color: item.group === 'quick' ? '#a371f7' : 'var(--text-muted)',
+                        fontSize: 10,
+                        width: 11,
+                        flex: '0 0 11px',
+                      }}>
+                        {item.group === 'quick' ? '⚡' : item.group === 'field' ? '⊕' : ''}
+                      </span>
+                      <span style={{ minWidth: 0 }}>
+                        <span>{item.label}</span>
+                        {item.group === 'quick' && (
+                          <span style={{ marginLeft: 8, color: 'var(--text-muted)', fontWeight: 400, fontSize: 10 }}>
+                            {item.quickFilter.description}
+                          </span>
+                        )}
+                      </span>
+                    </div>
+                  </React.Fragment>
+                );
+              })}
             </div>
           )}
         </div>

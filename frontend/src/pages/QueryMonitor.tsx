@@ -54,6 +54,7 @@ const queryMonitorSchema = {
   queryText: { type: 'string' },
   queryKind: { type: 'string[]' },
   status:    { type: 'string[]' },
+  quickFilter: { type: 'string' },
   database:  { type: 'string[]' },
   tableName: { type: 'string[]' },
   hostname:  { type: 'string[]' },
@@ -110,6 +111,9 @@ export const QueryMonitor: React.FC = () => {
       if (urlState.queryText) patch.queryText = urlState.queryText;
       if (urlState.queryKind) patch.queryKind = urlState.queryKind;
       if (urlState.status) patch.status = urlState.status;
+      if (urlState.quickFilter && ['running', 'recent', 'failed', 'slow'].includes(urlState.quickFilter)) {
+        patch.quickFilter = urlState.quickFilter;
+      }
       if (urlState.database) patch.database = urlState.database;
       if (urlState.tableName) patch.table = urlState.tableName;
       if (urlState.hostname) patch.hostname = urlState.hostname;
@@ -135,6 +139,7 @@ export const QueryMonitor: React.FC = () => {
     if ('queryText' in filter) urlPatch.queryText = filter.queryText || undefined;
     if ('queryKind' in filter) urlPatch.queryKind = nonEmptyValues(filter.queryKind);
     if ('status' in filter) urlPatch.status = nonEmptyValues(filter.status);
+    if ('quickFilter' in filter) urlPatch.quickFilter = filter.quickFilter || undefined;
     if ('database' in filter) urlPatch.database = nonEmptyValues(filter.database);
     if ('table' in filter) urlPatch.tableName = nonEmptyValues(filter.table);
     if ('hostname' in filter) urlPatch.hostname = nonEmptyValues(filter.hostname);

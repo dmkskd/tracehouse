@@ -26,6 +26,7 @@ export const DEFAULT_HISTORY_WINDOW_MS = 1 * 60 * 60 * 1000;
 
 // Filter options for query history
 export interface QueryHistoryFilter {
+  quickFilter?: 'running' | 'recent' | 'failed' | 'slow';
   timeRange?: string;
   startTime?: string;
   endTime?: string;
