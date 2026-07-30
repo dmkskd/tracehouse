@@ -8,6 +8,35 @@ import { formatDurationMs, formatMicroseconds } from '../../../../utils/formatte
 import { QueryKindDot } from '../shared/QueryKindDot';
 import { METRIC_COLORS, percentile, type ChartMetric } from '../shared/chartConstants';
 
+const HoverFocusHalo: React.FC<{ cx: number; cy: number; color: string }> = ({ cx, cy, color }) => (
+  <circle
+    cx={cx}
+    cy={cy}
+    r={10}
+    fill={color}
+    fillOpacity={0.18}
+    stroke={color}
+    strokeWidth={1.5}
+    strokeOpacity={0.9}
+    pointerEvents="none"
+    aria-hidden="true"
+  />
+);
+
+const SelectedQueryMarker: React.FC<{ cx: number; cy: number }> = ({ cx, cy }) => (
+  <circle
+    cx={cx}
+    cy={cy}
+    r={7.5}
+    fill="#f59e0b"
+    fillOpacity={0.1}
+    stroke="#f59e0b"
+    strokeWidth={2}
+    pointerEvents="none"
+    aria-hidden="true"
+  />
+);
+
 export const HistoryTab: React.FC<{
   similarQueries: SimilarQuery[];
   isLoading: boolean;
@@ -809,14 +838,16 @@ export const HistoryTab: React.FC<{
                   return (
                     <g key={`${metric}-point-${i}`}>
                       {isCurrent && (
-                        <circle
+                        <SelectedQueryMarker
                           cx={allPoints[i].x}
                           cy={allPoints[i].y}
-                          r={8}
-                          fill="none"
-                          stroke={pointColor}
-                          strokeWidth={1.5}
-                          strokeOpacity={0.5}
+                        />
+                      )}
+                      {isHovered && (
+                        <HoverFocusHalo
+                          cx={allPoints[i].x}
+                          cy={allPoints[i].y}
+                          color={pointColor}
                         />
                       )}
                       <circle
@@ -825,7 +856,7 @@ export const HistoryTab: React.FC<{
                         r={isHovered ? 5 : isCurrent ? 4.5 : (isOutlier && scaleMode === 'p5p95' ? 4 : 3)}
                         fill={pointColor}
                         stroke={isHovered || isCurrent ? 'var(--bg-primary)' : 'none'}
-                        strokeWidth={2}
+                        strokeWidth={isHovered ? 2.5 : 2}
                         style={{ cursor: 'pointer' }}
                         onMouseEnter={() => setHoveredPoint(origIdx)}
                         onMouseLeave={() => setHoveredPoint(null)}
@@ -843,15 +874,21 @@ export const HistoryTab: React.FC<{
                   const pointColor = metric === 'status'
                     ? (visibleQueries[visIdx].exception_code !== 0 ? '#f85149' : '#3fb950')
                     : color;
+                  const cx = getX(visIdx);
+                  const cy = chartPadding.top + chartHeight - (normalized * chartHeight);
                   return (
-                    <circle
-                      cx={getX(visIdx)}
-                      cy={chartPadding.top + chartHeight - (normalized * chartHeight)}
-                      r={5}
-                      fill={pointColor}
-                      stroke="var(--bg-primary)"
-                      strokeWidth={2}
-                    />
+                    <g>
+                      <HoverFocusHalo cx={cx} cy={cy} color={pointColor} />
+                      <circle
+                        cx={cx}
+                        cy={cy}
+                        r={5}
+                        fill={pointColor}
+                        stroke="var(--bg-primary)"
+                        strokeWidth={2.5}
+                        pointerEvents="none"
+                      />
+                    </g>
                   );
                 })()}
                 {/* Current query marker — always visible even when dots are hidden */}
@@ -867,7 +904,7 @@ export const HistoryTab: React.FC<{
                   const cy = chartPadding.top + chartHeight - (Math.max(0, Math.min(1, normalized)) * chartHeight);
                   return (
                     <g>
-                      <circle cx={cx} cy={cy} r={8} fill="none" stroke={pointColor} strokeWidth={1.5} strokeOpacity={0.5} />
+                      <SelectedQueryMarker cx={cx} cy={cy} />
                       <circle cx={cx} cy={cy} r={4.5} fill={pointColor} stroke="var(--bg-primary)" strokeWidth={2} />
                     </g>
                   );
