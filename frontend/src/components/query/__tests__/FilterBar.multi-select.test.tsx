@@ -132,10 +132,14 @@ describe('filter bar multi-value autocomplete', () => {
       return (
         <QueryFilterBar
           filter={filter}
-          errorCodeSuggestions={[
-            { code: 394, label: 'Code 394 · QUERY_WAS_CANCELLED (4)' },
-            { code: 60, label: 'Code 60 · UNKNOWN_TABLE (1)' },
-          ]}
+          errorCodeSuggestions={
+            filter.exceptionCode?.length
+              ? [{ code: 394, label: 'Code 394 · QUERY_WAS_CANCELLED (4)' }]
+              : [
+                  { code: 394, label: 'Code 394 · QUERY_WAS_CANCELLED (4)' },
+                  { code: 60, label: 'Code 60 · UNKNOWN_TABLE (1)' },
+                ]
+          }
           onFilterChange={patch => {
             changes(patch);
             setFilter(current => ({ ...current, ...patch }));
@@ -148,7 +152,7 @@ describe('filter bar multi-value autocomplete', () => {
 
     fireEvent.click(screen.getByText('Status:'));
 
-    expect(screen.getByText('Error codes in results')).toBeInTheDocument();
+    expect(screen.getByText('Error codes in results · ⌘/Ctrl-click for multiple')).toBeInTheDocument();
     expect(screen.getByText('Code 394 · QUERY_WAS_CANCELLED (4)')).toBeInTheDocument();
     expect(screen.getByText('Code 60 · UNKNOWN_TABLE (1)')).toBeInTheDocument();
 
@@ -157,6 +161,32 @@ describe('filter bar multi-value autocomplete', () => {
     expect(changes).toHaveBeenLastCalledWith({ exceptionCode: [394] });
     expect(screen.getByText('Error code:')).toBeInTheDocument();
     expect(screen.getByRole('button', { name: 'Remove Error code 394' })).toBeInTheDocument();
+    expect(screen.getByPlaceholderText('Add filter…')).toBeInTheDocument();
+    expect(screen.queryByText('Error codes in results · ⌘/Ctrl-click for multiple')).not.toBeInTheDocument();
+
+    fireEvent.click(screen.getByText('Error code:'));
+
+    expect(screen.getByPlaceholderText('Add another error code…')).toBeInTheDocument();
+    expect(screen.getByText('Code 60 · UNKNOWN_TABLE (1)')).toBeInTheDocument();
+    expect(screen.getByText('Code 394 · QUERY_WAS_CANCELLED (4)')).toBeInTheDocument();
+
+    fireEvent.mouseDown(
+      screen.getByText('Code 60 · UNKNOWN_TABLE (1)'),
+      { metaKey: true },
+    );
+
+    expect(changes).toHaveBeenLastCalledWith({ exceptionCode: [394, 60] });
+    expect(screen.getByRole('button', { name: 'Remove Error code 394' })).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Remove Error code 60' })).toBeInTheDocument();
+
+    fireEvent.mouseDown(
+      screen.getByText('Code 394 · QUERY_WAS_CANCELLED (4)'),
+      { ctrlKey: true },
+    );
+
+    expect(changes).toHaveBeenLastCalledWith({ exceptionCode: [60] });
+    expect(screen.queryByRole('button', { name: 'Remove Error code 394' })).not.toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Remove Error code 60' })).toBeInTheDocument();
   });
 
   it('offers error codes on demand after applying the Failed queries quick filter', () => {
@@ -189,21 +219,34 @@ describe('filter bar multi-value autocomplete', () => {
       status: ['error'],
       minDurationMs: undefined,
     });
-    expect(screen.queryByText('Error codes in results')).not.toBeInTheDocument();
+    expect(screen.queryByText('Error codes in results · ⌘/Ctrl-click for multiple')).not.toBeInTheDocument();
     expect(screen.getByPlaceholderText('Add filter…')).toBeInTheDocument();
 
     const refineButton = screen.getByRole('button', { name: '+ Error code' });
     expect(fireEvent.mouseDown(refineButton)).toBe(false);
     fireEvent.click(refineButton);
 
-    expect(screen.getByText('Error codes in results')).toBeInTheDocument();
+    expect(screen.getByText('Error codes in results · ⌘/Ctrl-click for multiple')).toBeInTheDocument();
     expect(screen.getByText('Code 160 · TOO_SLOW (23)')).toBeInTheDocument();
 
-    fireEvent.mouseDown(screen.getByText('Code 160 · TOO_SLOW (23)'));
+    fireEvent.mouseDown(
+      screen.getByText('Code 160 · TOO_SLOW (23)'),
+      { shiftKey: true },
+    );
 
     expect(changes).toHaveBeenLastCalledWith({ exceptionCode: [160] });
     expect(screen.getByText('Failed queries')).toBeInTheDocument();
     expect(screen.getByRole('button', { name: 'Remove Error code 160' })).toBeInTheDocument();
+    expect(screen.getByPlaceholderText('Add another error code…')).toBeInTheDocument();
+    expect(screen.getByText('Code 394 · QUERY_WAS_CANCELLED (5)')).toBeInTheDocument();
+
+    fireEvent.mouseDown(screen.getByText('Code 394 · QUERY_WAS_CANCELLED (5)'));
+
+    expect(changes).toHaveBeenLastCalledWith({ exceptionCode: [160, 394] });
+    expect(screen.getByRole('button', { name: 'Remove Error code 160' })).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Remove Error code 394' })).toBeInTheDocument();
+    expect(screen.getByPlaceholderText('Add filter…')).toBeInTheDocument();
+    expect(screen.queryByText('Error codes in results · ⌘/Ctrl-click for multiple')).not.toBeInTheDocument();
   });
 
   it('keeps Merge Status active and suggests only the remaining values', () => {
