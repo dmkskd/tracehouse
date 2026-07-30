@@ -265,6 +265,18 @@ const quickChipStyle: React.CSSProperties = {
   border: '1px solid rgba(163,113,247,0.3)',
 };
 
+const refineButtonStyle: React.CSSProperties = {
+  padding: '2px 7px',
+  border: '1px dashed var(--border-primary)',
+  borderRadius: 10,
+  background: 'transparent',
+  color: 'var(--text-secondary)',
+  fontSize: 10,
+  fontFamily: 'inherit',
+  cursor: 'pointer',
+  whiteSpace: 'nowrap',
+};
+
 const dropdownContainerStyle: React.CSSProperties = {
   position: 'absolute', top: '100%', left: 0, right: 0, zIndex: 20,
   maxHeight: 200, overflowY: 'auto',
@@ -301,6 +313,7 @@ export const QueryFilterBar: React.FC<QueryFilterBarProps> = ({
   /* --- suggestions from queryAnalyzer --- */
   const [suggestionCache, setSuggestionCache] = useState<Record<string, string[]>>({});
   const inputRef = useRef<HTMLInputElement>(null);
+  const blurTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   useEffect(() => {
     if (!queryAnalyzer) return;
@@ -452,6 +465,10 @@ export const QueryFilterBar: React.FC<QueryFilterBarProps> = ({
   }, [activeField, filter, onFilterChange, finishValueEntry]);
 
   const selectField = useCallback((field: FilterFieldDef) => {
+    if (blurTimeoutRef.current) {
+      clearTimeout(blurTimeoutRef.current);
+      blurTimeoutRef.current = null;
+    }
     setActiveField(field);
     setInputValue('');
     setPhase('entering_value');
@@ -524,7 +541,8 @@ export const QueryFilterBar: React.FC<QueryFilterBarProps> = ({
 
   const handleInputBlur = useCallback(() => {
     // delay to allow click on dropdown item or chip
-    setTimeout(() => {
+    blurTimeoutRef.current = setTimeout(() => {
+      blurTimeoutRef.current = null;
       setShowDropdown(false);
       // If we were entering a value and there's text, commit it on blur
       if (phase === 'entering_value' && activeField && inputValue.trim()) {
@@ -673,6 +691,26 @@ export const QueryFilterBar: React.FC<QueryFilterBarProps> = ({
                   ×
                 </span>
               </span>
+            )}
+            {activeQuickFilter?.key === 'failed'
+              && !filter.exceptionCode?.length
+              && activeField?.key !== 'error_code' && (
+              <button
+                type="button"
+                style={refineButtonStyle}
+                onMouseDown={e => {
+                  // Keep focus on the filter input so its delayed blur handler
+                  // cannot immediately close the error-code suggestions.
+                  e.preventDefault();
+                  e.stopPropagation();
+                }}
+                onClick={e => {
+                  e.stopPropagation();
+                  selectField(FILTER_FIELDS.find(field => field.key === 'error_code')!);
+                }}
+              >
+                + Error code
+              </button>
             )}
             {/* Existing chips */}
             {activeChips.map(c => (

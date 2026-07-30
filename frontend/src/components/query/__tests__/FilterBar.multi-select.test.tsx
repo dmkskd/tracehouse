@@ -159,6 +159,53 @@ describe('filter bar multi-value autocomplete', () => {
     expect(screen.getByRole('button', { name: 'Remove Error code 394' })).toBeInTheDocument();
   });
 
+  it('offers error codes on demand after applying the Failed queries quick filter', () => {
+    const changes = vi.fn();
+
+    function Harness() {
+      const [filter, setFilter] = useState<QueryFilterState>({ timeRange: '1 HOUR' });
+      return (
+        <QueryFilterBar
+          filter={filter}
+          errorCodeSuggestions={[
+            { code: 160, label: 'Code 160 · TOO_SLOW (23)' },
+            { code: 394, label: 'Code 394 · QUERY_WAS_CANCELLED (5)' },
+          ]}
+          onFilterChange={patch => {
+            changes(patch);
+            setFilter(current => ({ ...current, ...patch }));
+          }}
+        />
+      );
+    }
+
+    render(<Harness />);
+
+    fireEvent.focus(screen.getByPlaceholderText('Type to filter (user, server, query…)'));
+    fireEvent.mouseDown(screen.getByText('Failed queries'));
+
+    expect(changes).toHaveBeenLastCalledWith({
+      quickFilter: 'failed',
+      status: ['error'],
+      minDurationMs: undefined,
+    });
+    expect(screen.queryByText('Error codes in results')).not.toBeInTheDocument();
+    expect(screen.getByPlaceholderText('Add filter…')).toBeInTheDocument();
+
+    const refineButton = screen.getByRole('button', { name: '+ Error code' });
+    expect(fireEvent.mouseDown(refineButton)).toBe(false);
+    fireEvent.click(refineButton);
+
+    expect(screen.getByText('Error codes in results')).toBeInTheDocument();
+    expect(screen.getByText('Code 160 · TOO_SLOW (23)')).toBeInTheDocument();
+
+    fireEvent.mouseDown(screen.getByText('Code 160 · TOO_SLOW (23)'));
+
+    expect(changes).toHaveBeenLastCalledWith({ exceptionCode: [160] });
+    expect(screen.getByText('Failed queries')).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Remove Error code 160' })).toBeInTheDocument();
+  });
+
   it('keeps Merge Status active and suggests only the remaining values', () => {
     const changes = vi.fn();
 
