@@ -12,16 +12,14 @@ import type {
   MonitoringCapability,
 } from '../types/monitoring-capabilities.js';
 import {
+  PROBE_CAPABILITY_SNAPSHOT,
   PROBE_SYSTEM_LOG_TABLES,
   PROBE_MONITORING_SETTINGS,
-  PROBE_ZOOKEEPER,
-  PROBE_SERVER_VERSION,
   PROBE_CLOUD_SERVICE,
   PROBE_CPU_PROFILER_SAMPLES,
   PROBE_TRACEHOUSE_SAMPLING_TABLES,
   PROBE_SYSTEM_TABLE_ACCESS_TABLES,
   PROBE_METRIC_LOG_REPLICATION_COLUMNS,
-  PROBE_DISTRIBUTED_LIMIT_BY,
 } from '../queries/monitoring-capabilities-queries.js';
 import { tagQuery } from '../queries/builder.js';
 import { TAB_INTERNAL, sourceTag } from '../queries/source-tags.js';
@@ -190,6 +188,18 @@ interface LogTableProbe {
   expectedHosts: number;
 }
 
+interface CapabilitySnapshot {
+  version: string;
+  introspectionFunctionsPresent: boolean;
+  introspectionEnabled: boolean;
+  systemTables: Set<string>;
+}
+
+const DISTRIBUTED_LIMIT_BY_MIN_VERSION = {
+  major: 24,
+  minor: 1,
+} as const;
+
 export class MonitoringCapabilitiesService {
   constructor(private adapter: IClickHouseAdapter) {}
 
@@ -198,19 +208,42 @@ export class MonitoringCapabilitiesService {
    * per-probe so partial results are still returned.
    */
   async probe(): Promise<MonitoringCapabilities> {
-    const [version, logTables, settings, hasZk, hasIntrospection, isCloud, cpuProfilerSampleCount, tracehouseTables, systemTableAccess, metricLogReplicationColumns, distributedLimitBy] = await Promise.all([
-      this.probeVersion(),
+    const [
+      snapshot,
+      logTables,
+      settings,
+      isCloud,
+      tracehouseTables,
+      metricLogReplicationColumns,
+    ] = await Promise.all([
+      this.probeCapabilitySnapshot(),
       this.probeLogTables(),
       this.probeSettings(),
-      this.probeZookeeper(),
-      this.probeIntrospectionFunctions(),
       this.probeCloudService(),
-      this.probeCPUProfilerSamples(),
       this.probeTracehouseSamplingTables(),
-      this.probeSystemTableAccess(),
       this.probeMetricLogReplicationColumns(),
-      this.probeDistributedLimitBy(),
     ]);
+    const version = snapshot.version;
+    const systemTableAccess = snapshot.systemTables;
+    const hasZk = systemTableAccess.has('zookeeper');
+    const hasIntrospection = snapshot.introspectionFunctionsPresent
+      && snapshot.introspectionEnabled;
+    const distributedLimitByAvailable = isClickHouseVersionAtLeast(
+      version,
+      DISTRIBUTED_LIMIT_BY_MIN_VERSION.major,
+      DISTRIBUTED_LIMIT_BY_MIN_VERSION.minor,
+    );
+    const profilerPeriodForProbe = settings.get(
+      'query_profiler_cpu_time_period_ns',
+    );
+    const profilerEnabledForProbe = Number.parseInt(
+      profilerPeriodForProbe?.value ?? '0',
+      10,
+    ) > 0;
+    const cpuProfilerSampleCount = logTables.has('trace_log')
+      && profilerEnabledForProbe
+      ? await this.probeCPUProfilerSamples()
+      : 0;
 
     const capabilities: MonitoringCapability[] = [];
 
@@ -281,10 +314,12 @@ export class MonitoringCapabilitiesService {
       id: 'distributed_limit_by',
       label: 'Distributed LIMIT BY',
       description: 'Per-category row limiting through the active distributed query path.',
-      available: distributedLimitBy.available,
+      available: distributedLimitByAvailable,
       category: 'profiling',
-      detail: distributedLimitBy.detail,
-      source: 'behavioral probe: distributed LIMIT BY',
+      detail: distributedLimitByAvailable
+        ? `Supported by ClickHouse ${version}`
+        : `Disabled for ClickHouse ${version}; requires 24.1+`,
+      source: 'server version (ClickHouse #55836)',
     });
 
     // Add profile events capability (derived from settings)
@@ -372,17 +407,15 @@ export class MonitoringCapabilitiesService {
       description: 'Coordination service for replication. Enables replica health monitoring.',
       available: hasZk,
       category: 'introspection',
-      detail: hasZk ? 'Connected' : 'Not configured or not accessible',
-      source: 'config.xml: zookeeper',
+      detail: hasZk
+        ? 'Configured (system.zookeeper is present)'
+        : 'Not configured (system.zookeeper is absent)',
+      source: 'metadata: system.tables',
     });
 
-    // Add introspection functions capability (needed for flamegraphs and CPU sampling)
-    // We probe this by actually calling demangle('') — the setting value in
-    // system.settings can be stale or reflect the wrong profile, so a functional
-    // test is more reliable.
-    const introspectionSetting = settings.get('allow_introspection_functions');
+    // Introspection is derived from metadata instead of intentionally calling
+    // a restricted function and generating an expected query error.
     const introspectionEnabled = hasIntrospection;
-    const settingValue = introspectionSetting?.value;
     capabilities.push({
       id: 'introspection_functions',
       label: 'Introspection Functions',
@@ -390,9 +423,11 @@ export class MonitoringCapabilitiesService {
       available: introspectionEnabled,
       category: 'profiling',
       detail: introspectionEnabled
-        ? `Enabled${settingValue === '1' ? '' : ' (functional test passed)'}`
-        : `Disabled (set allow_introspection_functions=1)`,
-      source: 'setting: allow_introspection_functions',
+        ? 'Functions present · setting enabled'
+        : snapshot.introspectionFunctionsPresent
+          ? 'Functions present · setting disabled'
+          : 'Required functions are not present',
+      source: 'metadata: system.functions + system.settings',
     });
 
     // ClickStack (HyperDX) embedded log viewer — available in CH 26.2+
@@ -591,18 +626,27 @@ export class MonitoringCapabilitiesService {
     };
 
     for (const tableName of PROBE_SYSTEM_TABLE_ACCESS_TABLES) {
-      const accessible = systemTableAccess.has(tableName);
+      const present = systemTableAccess.has(tableName);
+      const available = tableName === 'distributed_ddl_queue'
+        ? present && hasZk
+        : tableName === 'stack_trace'
+          ? present && hasIntrospection
+          : present;
       const meta = SYSTEM_TABLE_META[tableName];
       if (!meta) continue;
       capabilities.push({
         id: `system_${tableName}`,
         label: meta.label,
         description: meta.description,
-        available: accessible,
+        available,
         category: meta.category,
-        detail: accessible
-          ? 'Accessible'
-          : 'Insufficient privileges to SELECT from system.' + tableName,
+        detail: !present
+          ? 'Not present or not visible'
+          : tableName === 'distributed_ddl_queue' && !hasZk
+            ? 'Present · Keeper not configured'
+            : tableName === 'stack_trace' && !hasIntrospection
+              ? 'Present · introspection disabled'
+              : 'Present · access verified when used',
         source: `system.${tableName}`,
       });
     }
@@ -614,39 +658,32 @@ export class MonitoringCapabilitiesService {
     };
   }
 
-  private async probeVersion(): Promise<string> {
+  private async probeCapabilitySnapshot(): Promise<CapabilitySnapshot> {
     try {
-      const rows = await this.adapter.executeQuery<{ version: string }>(tagQuery(PROBE_SERVER_VERSION, sourceTag(TAB_INTERNAL, 'serverVersion')));
-      return rows[0]?.version ?? 'unknown';
-    } catch {
-      return 'unknown';
-    }
-  }
-
-  private async probeDistributedLimitBy(): Promise<{
-    available: boolean;
-    detail: string;
-  }> {
-    try {
-      await this.adapter.executeQuery(
-        tagQuery(
-          PROBE_DISTRIBUTED_LIMIT_BY,
-          sourceTag(TAB_INTERNAL, 'distributedLimitBy'),
-        ),
-      );
+      const rows = await this.adapter.executeQuery<{
+        version: string;
+        introspection_functions_present: number;
+        introspection_enabled: number;
+        system_tables: string[] | string;
+      }>(tagQuery(
+        PROBE_CAPABILITY_SNAPSHOT,
+        sourceTag(TAB_INTERNAL, 'capabilitySnapshot'),
+      ));
+      const row = rows[0];
       return {
-        available: true,
-        detail: 'Supported by the active query path',
+        version: String(row?.version ?? 'unknown'),
+        introspectionFunctionsPresent: Number(
+          row?.introspection_functions_present ?? 0,
+        ) === 1,
+        introspectionEnabled: Number(row?.introspection_enabled ?? 0) === 1,
+        systemTables: new Set(parseStringArray(row?.system_tables)),
       };
-    } catch (error) {
-      const message = error instanceof Error ? error.message : String(error);
-      const plannerBug = message.includes('THERE_IS_NO_COLUMN')
-        || message.includes('Cannot find column');
+    } catch {
       return {
-        available: false,
-        detail: plannerBug
-          ? 'Distributed LIMIT BY planner bug detected'
-          : `Probe failed: ${message.slice(0, 240)}`,
+        version: 'unknown',
+        introspectionFunctionsPresent: false,
+        introspectionEnabled: false,
+        systemTables: new Set(),
       };
     }
   }
@@ -723,43 +760,6 @@ export class MonitoringCapabilitiesService {
     return result;
   }
 
-  private async probeZookeeper(): Promise<boolean> {
-    try {
-      // First check if the system.zookeeper virtual table exists
-      const rows = await this.adapter.executeQuery<{ cnt: number }>(tagQuery(PROBE_ZOOKEEPER, sourceTag(TAB_INTERNAL, 'zookeeper')));
-      if ((rows[0]?.cnt ?? 0) === 0) return false;
-
-      // Table exists — check if there are any replicated tables as a stronger signal
-      try {
-        const replicaRows = await this.adapter.executeQuery<{ cnt: number }>(
-          tagQuery(`SELECT count() AS cnt FROM (SELECT database, table FROM {{cluster_aware:system.replicas}} GROUP BY database, table) LIMIT 1`, sourceTag(TAB_INTERNAL, 'replicas'))
-        );
-        return (replicaRows[0]?.cnt ?? 0) > 0;
-      } catch {
-        // system.replicas might not be accessible, but zookeeper table exists
-        return true;
-      }
-    } catch {
-      return false;
-    }
-  }
-  /**
-   * Probe introspection functions by actually calling demangle('').
-   * This is more reliable than checking system.settings because the
-   * setting value can reflect the wrong profile or be stale when
-   * set via users.d/ XML config.
-   */
-  private async probeIntrospectionFunctions(): Promise<boolean> {
-    try {
-      await this.adapter.executeQuery<{ ok: number }>(
-        tagQuery(`SELECT demangle('') AS ok`, sourceTag(TAB_INTERNAL, 'introspection'))
-      );
-      return true;
-    } catch {
-      return false;
-    }
-  }
-
   /**
    * Check if the CPU profiler is actually producing samples in trace_log.
    * Returns the sample count (0 means profiler is broken or server is idle).
@@ -806,33 +806,6 @@ export class MonitoringCapabilitiesService {
   }
 
   /**
-   * Probe access to operational system tables by attempting a lightweight
-   * SELECT. Returns the set of table names that are accessible.
-   * Each probe is independent — a permission error on one table doesn't
-   * affect the others.
-   */
-  private async probeSystemTableAccess(): Promise<Set<string>> {
-    const accessible = new Set<string>();
-    const results = await Promise.allSettled(
-      PROBE_SYSTEM_TABLE_ACCESS_TABLES.map(async (table) => {
-        await this.adapter.executeQuery(
-          tagQuery(
-            `SELECT 1 FROM system.${table} LIMIT 0`,
-            sourceTag(TAB_INTERNAL, `probe_${table}`)
-          )
-        );
-        return table;
-      })
-    );
-    for (const result of results) {
-      if (result.status === 'fulfilled') {
-        accessible.add(result.value);
-      }
-    }
-    return accessible;
-  }
-
-  /**
    * Detect ClickHouse Cloud by probing for cloud-specific settings
    * or build options. Safe — returns false on any error.
    */
@@ -853,4 +826,29 @@ function formatRowCount(rows: number): string {
   if (rows < 1_000_000) return `${(rows / 1000).toFixed(1)}K`;
   if (rows < 1_000_000_000) return `${(rows / 1_000_000).toFixed(1)}M`;
   return `${(rows / 1_000_000_000).toFixed(1)}B`;
+}
+
+function parseStringArray(value: unknown): string[] {
+  if (Array.isArray(value)) {
+    return value.map(String).filter(Boolean);
+  }
+  if (typeof value !== 'string' || value.trim() === '') {
+    return [];
+  }
+
+  try {
+    const parsed: unknown = JSON.parse(value);
+    if (Array.isArray(parsed)) {
+      return parsed.map(String).filter(Boolean);
+    }
+  } catch {
+    // Some adapters expose ClickHouse arrays as ['a','b'] rather than JSON.
+  }
+
+  return value
+    .replace(/^\s*\[/, '')
+    .replace(/\]\s*$/, '')
+    .split(',')
+    .map(item => item.trim().replace(/^['"]|['"]$/g, ''))
+    .filter(Boolean);
 }

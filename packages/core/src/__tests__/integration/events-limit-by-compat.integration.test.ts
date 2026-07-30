@@ -46,10 +46,38 @@ describe('Events distributed LIMIT BY compatibility', { tags: ['cluster'] }, () 
     await stopCluster(ctx);
   }, 60_000);
 
-  it('detects the planner capability and keeps query-log events available', async () => {
+  it('version-gates LIMIT BY and keeps query-log events available', async () => {
     const capabilityResult = await new MonitoringCapabilitiesService(
       adapter,
     ).probe();
+    await Promise.all([
+      ctx.client1.command({ query: 'SYSTEM FLUSH LOGS' }),
+      ctx.client2.command({ query: 'SYSTEM FLUSH LOGS' }),
+    ]);
+    const probeAudit = await ctx.client1.query({
+      query: `
+        SELECT
+          countIf(
+            type = 'QueryFinish'
+            AND position(query, 'source:TraceHouse:Internal:capabilitySnapshot') > 0
+          ) AS snapshot_finishes,
+          countIf(
+            type IN ('ExceptionBeforeStart', 'ExceptionWhileProcessing')
+            AND position(query, 'source:TraceHouse:Internal:') > 0
+          ) AS internal_probe_errors
+        FROM system.query_log
+        WHERE event_date >= today() - 1
+          AND event_time >= now() - INTERVAL 5 MINUTE
+      `,
+      format: 'JSONEachRow',
+    });
+    const [probeAuditRow] = await probeAudit.json<{
+      snapshot_finishes: string;
+      internal_probe_errors: string;
+    }>();
+    expect(Number(probeAuditRow?.snapshot_finishes ?? 0)).toBeGreaterThan(0);
+    expect(Number(probeAuditRow?.internal_probe_errors ?? 0)).toBe(0);
+
     const distributedLimitBy = capabilityResult.capabilities.find(
       capability => capability.id === 'distributed_limit_by',
     );
@@ -58,7 +86,7 @@ describe('Events distributed LIMIT BY compatibility', { tags: ['cluster'] }, () 
     if (capabilityResult.serverVersion === '23.8.2.7') {
       expect(distributedLimitBy).toMatchObject({
         available: false,
-        detail: 'Distributed LIMIT BY planner bug detected',
+        detail: 'Disabled for ClickHouse 23.8.2.7; requires 24.1+',
       });
     } else if (isClickHouseVersionAtLeast(
       capabilityResult.serverVersion,
@@ -67,7 +95,7 @@ describe('Events distributed LIMIT BY compatibility', { tags: ['cluster'] }, () 
     )) {
       expect(distributedLimitBy).toMatchObject({
         available: true,
-        detail: 'Supported by the active query path',
+        detail: `Supported by ClickHouse ${capabilityResult.serverVersion}`,
       });
     }
 

@@ -125,26 +125,6 @@ SELECT version() AS version
 `;
 
 /**
- * Probe whether LIMIT BY works through the active distributed query path.
- *
- * Older ClickHouse releases accept LIMIT BY syntax but can fail during
- * distributed query-plan projection with THERE_IS_NO_COLUMN. Keep this probe
- * aligned with ClickHouse's upstream regression test for that planner bug.
- * The cluster-aware source makes the probe local on standalone servers and
- * distributed when TraceHouse is configured to query a cluster.
- */
-export const PROBE_DISTRIBUTED_LIMIT_BY = `
-SELECT dummy
-FROM {{cluster_aware:system.one}}
-WHERE dummy + dummy >= 0
-LIMIT 1 BY dummy + dummy + 0 AS limit_bucket
-SETTINGS
-  prefer_localhost_replica = 0,
-  distributed_group_by_no_merge = 0,
-  distributed_push_down_limit = 1
-`;
-
-/**
  * Check if the CPU profiler is actually producing samples in trace_log.
  * The profiler settings can be enabled but still produce 0 samples when
  * the SYS_PTRACE capability is missing (common in Kubernetes).
@@ -174,14 +154,7 @@ WHERE database = 'tracehouse'
 GROUP BY name
 `;
 
-/**
- * Probe access to operational system tables (not log tables) that pages
- * depend on. A simple `SELECT 1 FROM system.X LIMIT 0` per table.
- * Returns the table name only if the SELECT succeeds.
- *
- * We probe these individually via Promise.allSettled in the service
- * because a single failing table shouldn't block probing of the others.
- */
+/** Operational system tables whose presence is captured in one snapshot. */
 export const PROBE_SYSTEM_TABLE_ACCESS_TABLES = [
   'merges',     // Merge Tracker
   'mutations',  // Merge Tracker mutations tab
@@ -208,6 +181,41 @@ export const PROBE_SYSTEM_TABLE_ACCESS_TABLES = [
   'user_processes',         // per-user resource usage
   'query_cache',            // cached query results
 ] as const;
+
+/**
+ * One successful metadata snapshot for connection-wide capability detection.
+ *
+ * This intentionally avoids executing the features being detected. Calling
+ * demangle() or selecting from system.distributed_ddl_queue can throw expected
+ * errors and pollute system.query_log. Metadata is sufficient to establish:
+ * - server version;
+ * - whether introspection functions exist and are enabled for this session;
+ * - which operational system tables are present/visible, including the
+ *   system.zookeeper signal used for Keeper configuration.
+ *
+ * SELECT privileges for an individual feature are verified lazily when that
+ * feature is actually used.
+ */
+export const PROBE_CAPABILITY_SNAPSHOT = `
+SELECT
+  version() AS version,
+  (
+    SELECT count() = 2
+    FROM system.functions
+    WHERE name IN ('demangle', 'addressToSymbol')
+  ) AS introspection_functions_present,
+  (
+    SELECT max(toUInt8OrZero(value))
+    FROM system.settings
+    WHERE name = 'allow_introspection_functions'
+  ) AS introspection_enabled,
+  (
+    SELECT arraySort(groupUniqArray(name))
+    FROM {{cluster_aware:system.tables}}
+    WHERE database = 'system'
+      AND name IN (${PROBE_SYSTEM_TABLE_ACCESS_TABLES.map(table => `'${table}'`).join(', ')}, 'zookeeper')
+  ) AS system_tables
+`;
 
 /**
  * Detect ClickHouse Cloud by checking for cloud-specific build options
