@@ -3,6 +3,7 @@
 # Usage:
 #   ./scripts/build-release.sh              # build for current platform
 #   ./scripts/build-release.sh --target aarch64-apple-darwin
+#   ./scripts/build-release.sh --full-matrix # test every pinned ClickHouse version
 #   ./scripts/build-release.sh --skip-tests  # skip the pre-release test suite
 #
 # Outputs go to release/ directory.
@@ -11,13 +12,45 @@ set -euo pipefail
 
 TARGET=""
 SKIP_TESTS=false
+FULL_MATRIX=false
+
+usage() {
+  cat <<'EOF'
+Usage: ./scripts/build-release.sh [options]
+
+Options:
+  --target <triple>  Build the binary for a Rust target triple.
+  --full-matrix      Run all ClickHouse-backed and E2E tests against every
+                     image in scripts/clickhouse-test-matrix.txt.
+  --skip-tests       Skip all pre-release tests.
+  -h, --help         Show this help.
+
+Set CLICKHOUSE_TEST_MATRIX to a comma-separated image list to override the
+pinned matrix for one run.
+EOF
+}
+
 while [[ $# -gt 0 ]]; do
   case "$1" in
-    --target) TARGET="$2"; shift 2 ;;
+    --target)
+      if [[ $# -lt 2 ]]; then
+        echo "Missing value for --target" >&2
+        exit 1
+      fi
+      TARGET="$2"
+      shift 2
+      ;;
+    --full-matrix) FULL_MATRIX=true; shift ;;
     --skip-tests) SKIP_TESTS=true; shift ;;
-    *) echo "Unknown option: $1"; exit 1 ;;
+    -h|--help) usage; exit 0 ;;
+    *) echo "Unknown option: $1" >&2; usage >&2; exit 1 ;;
   esac
 done
+
+if [[ "$SKIP_TESTS" == "true" && "$FULL_MATRIX" == "true" ]]; then
+  echo "--skip-tests and --full-matrix cannot be used together" >&2
+  exit 1
+fi
 
 ROOT="$(cd "$(dirname "$0")/.." && pwd)"
 RELEASE_DIR="$ROOT/release"
@@ -40,13 +73,21 @@ else
   echo "=== Running tests ==="
   just test-frontend
   just test-core
-  just test-core-integration
-  echo "  ✓ Unit & integration tests passed"
 
-  echo ""
-  echo "=== Running e2e smoke tests ==="
-  just e2e
-  echo "  ✓ E2E smoke tests passed"
+  if [[ "$FULL_MATRIX" == "true" ]]; then
+    echo ""
+    echo "=== Running full ClickHouse test matrix ==="
+    "$ROOT/scripts/test-clickhouse-matrix.sh"
+    echo "  ✓ Full ClickHouse test matrix passed"
+  else
+    just test-core-integration
+    echo "  ✓ Unit & integration tests passed"
+
+    echo ""
+    echo "=== Running e2e smoke tests ==="
+    just e2e
+    echo "  ✓ E2E smoke tests passed"
+  fi
 fi
 
 # ── Single-file HTML ────────────────────────────────────────────

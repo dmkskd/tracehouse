@@ -92,6 +92,17 @@ npx vitest run --tags-filter="merge-engine || storage"
 npx vitest run --tags-filter="observability && !connectivity"
 ```
 
+The lineage performance suite uses reduced `100`, `500`, and `1,000` part
+tiers during routine integration runs. Run its full `5,000`-part workload
+explicitly when profiling lineage scalability:
+
+```bash
+cd packages/core
+TRACEHOUSE_FULL_LINEAGE_PERF=1 \
+  npx vitest run --config vitest.integration.config.ts \
+  src/__tests__/integration/lineage-query-perf.integration.test.ts
+```
+
 ### Listing tags
 
 ```bash
@@ -161,6 +172,44 @@ To check an older release without changing repository files:
 
 ```bash
 CLICKHOUSE_IMAGE=clickhouse/clickhouse-server:23.8.16.40-alpine just test-clickhouse
+```
+
+### Local ClickHouse compatibility matrix
+
+The pinned compatibility list lives in
+`scripts/clickhouse-test-matrix.txt`. Inspect it without running tests:
+
+```bash
+./scripts/test-clickhouse-matrix.sh --list
+```
+
+Run all ClickHouse-backed integration suites and E2E smoke tests against every
+pinned image:
+
+```bash
+./scripts/test-clickhouse-matrix.sh
+```
+
+Matrix runs use compact Vitest output: passing-test logs are suppressed, and
+failures end with the exact ClickHouse image that failed. JSON and HTML reports
+are still written normally for detailed inspection.
+
+Durable results and known version boundaries are recorded in the repository
+file `docs/development/clickhouse-compatibility.md`. Update that ledger before
+another matrix run overwrites the detailed reports.
+
+Pass one or more images to run a targeted subset:
+
+```bash
+./scripts/test-clickhouse-matrix.sh \
+  clickhouse/clickhouse-server:23.8.2.7-alpine \
+  clickhouse/clickhouse-server:26.7.1.1315-alpine
+```
+
+Release builds can use the same matrix as a pre-build gate:
+
+```bash
+./scripts/build-release.sh --full-matrix
 ```
 
 ### Cluster container (2-node)

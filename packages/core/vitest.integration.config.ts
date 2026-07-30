@@ -1,6 +1,8 @@
 import { defineConfig } from 'vitest/config';
 import { resolve } from 'path';
 
+const compactOutput = process.env.TRACEHOUSE_COMPACT_TEST_OUTPUT === '1';
+
 export default defineConfig({
   resolve: {
     alias: {
@@ -13,11 +15,12 @@ export default defineConfig({
     globals: true,
     include: ['src/__tests__/integration/**/*.integration.test.ts'],
     pool: 'forks',
-    maxWorkers: 20,
+    maxWorkers: 10,
     // Generous timeout for container startup + queries
     testTimeout: 60_000,
     hookTimeout: 120_000,
-    reporters: ['default', 'html', 'json'],
+    reporters: [compactOutput ? 'dot' : 'default', 'html', 'json'],
+    silent: compactOutput ? 'passed-only' : false,
     outputFile: {
       html: './test-reports/integration-html/index.html',
       json: './test-reports/integration-results.json',

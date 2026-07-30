@@ -17,6 +17,12 @@
 | [clickhouse-observability-tiers.md](clickhouse-observability-tiers.md) | The three tiers of ClickHouse metrics (server-wide → per-table → per-operation), system tables, how `query_id` joins everything, what our app uses vs what we could add |
 | [clickhouse-profile-events-classification.md](clickhouse-profile-events-classification.md) | Complete classification of ProfileEvents from `ProfileEvents.cpp` — merge profiling, mutations, insert pressure, replication, query performance, CPU/OS, disk I/O, S3, ZooKeeper, caches, thread pools, lock contention |
 
+## Development
+
+| Document | What it covers |
+|----------|---------------|
+| [development/clickhouse-compatibility.md](development/clickhouse-compatibility.md) | Exact matrix checkpoints, ClickHouse version boundaries, runtime capability findings, and compatibility-related test defects |
+
 ## Nice to Know
 
 | Document | What it covers |

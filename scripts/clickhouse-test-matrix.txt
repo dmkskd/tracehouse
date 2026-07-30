@@ -1,0 +1,21 @@
+# Exact images used by scripts/test-clickhouse-matrix.sh and
+# ./scripts/build-release.sh --full-matrix. One image per line.
+# Ordered newest to oldest because the runner stops at the first failure.
+#
+# Current release checkpoint
+#clickhouse/clickhouse-server:26.7.1.1315-alpine
+
+# LTS checkpoints, newest to oldest
+clickhouse/clickhouse-server:26.3.17.56-alpine
+clickhouse/clickhouse-server:25.8.28.1-alpine
+clickhouse/clickhouse-server:25.3.14.14-alpine
+clickhouse/clickhouse-server:24.8.14.39-alpine
+clickhouse/clickhouse-server:24.3.18.7-alpine
+clickhouse/clickhouse-server:23.8.16.40-alpine
+
+# Exact early 23.8 regression build
+clickhouse/clickhouse-server:23.8.2.7-alpine
+
+# Nice to have, but too supported yet
+#clickhouse/clickhouse-server:23.3.22.3-alpine
+#clickhouse/clickhouse-server:22.8.21.38-alpine
