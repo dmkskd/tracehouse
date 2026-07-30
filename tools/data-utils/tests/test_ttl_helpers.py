@@ -4,7 +4,13 @@ from __future__ import annotations
 
 import pytest
 
-from data_utils.tables.helpers import parse_ttl, ttl_clause, ttl_settings, partition_clause
+from data_utils.tables.helpers import (
+    parse_ttl,
+    partition_clause,
+    supports_merge_tree_settings,
+    ttl_clause,
+    ttl_settings,
+)
 
 
 # ── parse_ttl ─────────────────────────────────────────────────────
@@ -114,6 +120,34 @@ class TestPartitionClause:
         result = partition_clause("12 HOUR", "toYYYYMM(x)")
         assert "toStartOfHour" in result
         assert "toStartOfMinute" not in result
+
+
+class TestSupportsMergeTreeSettings:
+    def test_requires_every_requested_setting(self) -> None:
+        class ClientStub:
+            def execute(self, _query, _params):
+                return [("enable_block_number_column",)]
+
+        client = ClientStub()
+        assert supports_merge_tree_settings(
+            client,  # type: ignore[arg-type]
+            "enable_block_number_column",
+        )
+        assert not supports_merge_tree_settings(
+            client,  # type: ignore[arg-type]
+            "enable_block_number_column",
+            "enable_block_offset_column",
+        )
+
+    def test_fails_closed_when_settings_cannot_be_inspected(self) -> None:
+        class ClientStub:
+            def execute(self, _query, _params):
+                raise RuntimeError("metadata unavailable")
+
+        assert not supports_merge_tree_settings(
+            ClientStub(),  # type: ignore[arg-type]
+            "enable_block_number_column",
+        )
 
 
 # ── Integration: TTL-enabled dataset creates correct DDL ─────────

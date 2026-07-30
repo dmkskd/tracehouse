@@ -10,6 +10,7 @@ from .helpers import (
     retry_on_drop_race, create_database, drop_database,
     generate_month_list, check_existing_rows, run_batched_insert,
     wait_for_table, ttl_clause, ttl_settings, partition_clause, is_sharded,
+    supports_merge_tree_settings,
 )
 from data_utils.capabilities import Capabilities
 from .protocol import InsertMode, QuerySet
@@ -36,18 +37,34 @@ _SCHEMA = """
     )
 """
 
-def _order_and_settings(ttl_interval: str = "") -> str:
+_PATCH_PART_SETTINGS = (
+    "enable_block_number_column",
+    "enable_block_offset_column",
+)
+
+
+def _order_and_settings(
+    ttl_interval: str = "",
+    *,
+    enable_patch_part_columns: bool = False,
+) -> str:
     part = partition_clause(ttl_interval, "toYYYYMM(event_date)")
     ttl = ttl_clause(ttl_interval)
     ttl_s = ttl_settings(ttl_interval)
-    extra = f", {ttl_s}" if ttl_s else ""
+    settings = ["old_parts_lifetime = 60"]
+    if ttl_s:
+        settings.append(ttl_s)
+    if enable_patch_part_columns:
+        settings.extend([
+            "enable_block_number_column = 1",
+            "enable_block_offset_column = 1",
+        ])
+    settings_sql = ",\n        ".join(settings)
     return f"""
     {part}
     ORDER BY (event_date, user_id, event_time)
     {ttl}
-    SETTINGS old_parts_lifetime = 60{extra},
-        enable_block_number_column = 1,
-        enable_block_offset_column = 1
+    SETTINGS {settings_sql}
 """
 
 
@@ -66,7 +83,14 @@ def drop_synthetic_data(client: Client, caps: Capabilities | None = None) -> Non
 
 def create_synthetic_data(client: Client, caps: Capabilities | None = None, ttl_interval: str = "") -> None:
     sharded, cluster = is_sharded(caps)  # cluster is only set when multi-shard
-    oas = _order_and_settings(ttl_interval)
+    enable_patch_part_columns = supports_merge_tree_settings(
+        client,
+        *_PATCH_PART_SETTINGS,
+    )
+    oas = _order_and_settings(
+        ttl_interval,
+        enable_patch_part_columns=enable_patch_part_columns,
+    )
 
     if sharded:
         print(f"Creating synthetic_data database (Replicated, cluster={cluster})...")

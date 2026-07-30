@@ -17,6 +17,7 @@ from .helpers import (
     retry_on_drop_race, create_database, drop_database,
     generate_month_list, check_existing_rows, run_batched_insert,
     ttl_clause, ttl_settings, partition_clause, is_sharded,
+    supports_merge_tree_settings,
 )
 from data_utils.capabilities import Capabilities
 from .protocol import InsertMode, QuerySet
@@ -27,6 +28,10 @@ if TYPE_CHECKING:
 
 
 NUM_PRODUCTS = 3_000_000  # distinct product_id values
+_PATCH_PART_SETTINGS = (
+    "enable_block_number_column",
+    "enable_block_offset_column",
+)
 # With 10M rows and 3M products × 3 currencies (9M unique keys),
 # ~10% of rows are duplicates. After full merge ~90% of rows
 # survive — enough to keep the table meaningfully sized while
@@ -51,6 +56,14 @@ def create_replacing_merge(client: Client, caps: Capabilities | None = None, ttl
     ttl = ttl_clause(ttl_interval)
     ttl_s = ttl_settings(ttl_interval)
     extra = f", {ttl_s}" if ttl_s else ""
+    enable_patch_part_columns = supports_merge_tree_settings(
+        client,
+        *_PATCH_PART_SETTINGS,
+    )
+    patch_part_settings = """
+            enable_block_number_column = 1,
+            enable_block_offset_column = 1
+    """ if enable_patch_part_columns else ""
 
     _REPLACING_SCHEMA = """
         (
@@ -72,9 +85,8 @@ def create_replacing_merge(client: Client, caps: Capabilities | None = None, ttl
         {part}
         ORDER BY (product_id, currency)
         {ttl}
-        SETTINGS old_parts_lifetime = 60{extra},
-            enable_block_number_column = 1,
-            enable_block_offset_column = 1
+        SETTINGS old_parts_lifetime = 60{extra}{"," if patch_part_settings else ""}
+            {patch_part_settings}
     """
 
     if sharded:

@@ -18,6 +18,7 @@ from collections.abc import Generator
 import pytest
 from clickhouse_driver import Client
 
+from clickhouse_image import configured_clickhouse_is_before
 from cluster_fixture import ClusterContext, start_cluster, stop_cluster
 from data_utils.capabilities import Capabilities
 from data_utils.tables.helpers import create_database, drop_database, on_cluster_clause
@@ -41,6 +42,17 @@ def client2(cluster: ClusterContext) -> Client:
 
 
 CLUSTER = "dev"
+requires_production_json = pytest.mark.skipif(
+    configured_clickhouse_is_before(25, 3),
+    reason="Native JSON is experimental before ClickHouse 25.3",
+)
+requires_replicated_database = pytest.mark.skipif(
+    configured_clickhouse_is_before(24, 8),
+    reason=(
+        "Replicated database engine is experimental and disabled before "
+        "the tested ClickHouse 24.8 boundary"
+    ),
+)
 
 
 @pytest.fixture()
@@ -70,6 +82,7 @@ class TestOnClusterClause:
 class TestCreateDatabaseOnCluster:
     """CREATE DATABASE ON CLUSTER should make the database exist on all shards."""
 
+    @requires_replicated_database
     def test_replicated_database_on_all_shards(
         self, client1: Client, client2: Client,
     ) -> None:
@@ -82,10 +95,11 @@ class TestCreateDatabaseOnCluster:
             assert db in dbs1
 
             # Database should also exist on shard 2 (propagated via ON CLUSTER)
+            _wait_for_database(client2, db)
             dbs2 = [r[0] for r in client2.execute("SHOW DATABASES")]
             assert db in dbs2
         finally:
-            client1.execute(f"DROP DATABASE IF EXISTS {db} SYNC")
+            drop_database(client1, db, cluster=CLUSTER)
 
     def test_atomic_database_on_all_shards(
         self, client1: Client, client2: Client,
@@ -97,12 +111,14 @@ class TestCreateDatabaseOnCluster:
             dbs1 = [r[0] for r in client1.execute("SHOW DATABASES")]
             assert db in dbs1
 
+            _wait_for_database(client2, db)
             dbs2 = [r[0] for r in client2.execute("SHOW DATABASES")]
             assert db in dbs2
         finally:
-            client1.execute(f"DROP DATABASE IF EXISTS {db} ON CLUSTER '{CLUSTER}' SYNC")
+            drop_database(client1, db, cluster=CLUSTER)
 
 
+@requires_replicated_database
 class TestTableDDLPropagation:
     """Tables created inside a Replicated database should propagate to all shards."""
 
@@ -168,6 +184,7 @@ class TestTableDDLPropagation:
         assert {"events", "users", "sessions"} <= tables2
 
 
+@requires_replicated_database
 class TestDatasetCreateOnCluster:
     """End-to-end: dataset create() with caps should work on all shards.
 
@@ -223,6 +240,7 @@ class TestDatasetCreateOnCluster:
         assert "uk_price_paid_local" in tables
         assert "uk_price_paid" in tables
 
+    @requires_production_json
     def test_web_analytics(self, client1: Client, client2: Client, caps: Capabilities) -> None:
         from data_utils.tables.web_analytics import create_web_analytics
 
@@ -251,6 +269,7 @@ class TestDatasetCreateOnCluster:
 class TestDropDatabaseOnCluster:
     """DROP DATABASE ON CLUSTER should remove the database from all shards."""
 
+    @requires_replicated_database
     def test_drop_replicated_database_on_all_shards(
         self, client1: Client, client2: Client,
     ) -> None:
@@ -284,6 +303,7 @@ class TestDropDatabaseOnCluster:
         client2.execute(f"DROP DATABASE IF EXISTS {db} SYNC")
 
 
+@requires_replicated_database
 class TestDatasetDropOnCluster:
     """End-to-end: dataset drop() with caps should remove from all shards."""
 
@@ -346,6 +366,18 @@ def _wait_for_db_gone(client: Client, db: str, timeout: float = 30) -> None:
             return
         time.sleep(1)
     raise TimeoutError(f"Database {db} still exists after {timeout}s")
+
+
+def _wait_for_database(client: Client, db: str, timeout: float = 30) -> None:
+    """Wait for an ON CLUSTER database create to reach a node."""
+    import time
+    deadline = time.monotonic() + timeout
+    while time.monotonic() < deadline:
+        dbs = [r[0] for r in client.execute("SHOW DATABASES")]
+        if db in dbs:
+            return
+        time.sleep(1)
+    raise TimeoutError(f"Database {db} did not appear within {timeout}s")
 
 
 def _wait_for_table(client: Client, table: str, timeout: float = 30) -> None:

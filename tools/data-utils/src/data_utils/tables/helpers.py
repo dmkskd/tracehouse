@@ -24,6 +24,26 @@ _SAFE_CLUSTER_RE = re.compile(r'^[a-zA-Z0-9_.\-]+$')
 BuildInsertSQL = Callable[[str, int, int, int, int, int], str]
 
 
+def supports_merge_tree_settings(client: Client, *setting_names: str) -> bool:
+    """Return whether every requested MergeTree table setting is available.
+
+    MergeTree settings are part of the server schema and can differ across
+    ClickHouse versions. Fail closed when the metadata table is unavailable so
+    optional tuning never prevents creation of an otherwise compatible table.
+    """
+    if not setting_names:
+        return True
+    try:
+        rows = client.execute(
+            "SELECT name FROM system.merge_tree_settings WHERE name IN %(names)s",
+            {"names": tuple(setting_names)},
+        )
+    except Exception:
+        return False
+    available = {str(row[0]) for row in rows}
+    return available.issuperset(setting_names)
+
+
 # ── Progress tracker for parallel table loading ─────────────────────
 
 

@@ -11,6 +11,7 @@ from collections.abc import Generator
 import pytest
 from clickhouse_driver import Client
 
+from clickhouse_image import configured_clickhouse_is_before
 from data_utils.tables import (
     Dataset, InsertConfig, InsertMode, QuerySet,
     SyntheticData, NycTaxi, UkHousePrices, WebAnalytics,
@@ -45,6 +46,10 @@ def test_has_required_attrs(dataset: Dataset) -> None:
 # ── Integration tests (one per dataset) ───────────────────────────
 
 SMALL_CONFIG = InsertConfig(rows=1000, partitions=1, batch_size=500)
+requires_production_json = pytest.mark.skipif(
+    configured_clickhouse_is_before(25, 3),
+    reason="Native JSON is experimental before ClickHouse 25.3",
+)
 
 
 class TestSyntheticData:
@@ -112,12 +117,14 @@ class TestWebAnalytics:
         client.execute("DROP TABLE IF EXISTS web_analytics.pageviews SYNC")
         client.execute("DROP DATABASE IF EXISTS web_analytics SYNC")
 
+    @requires_production_json
     def test_create_and_insert(self) -> None:
         self.dataset.create(self.client)
         self.dataset.insert(self.client, SMALL_CONFIG)
         rows: int = self.client.execute("SELECT count() FROM web_analytics.pageviews")[0][0]
         assert rows == SMALL_CONFIG.rows
 
+    @requires_production_json
     def test_payload_columns_compare_json_storage_profiles(self) -> None:
         self.dataset.create(self.client)
         self.dataset.insert(self.client, SMALL_CONFIG)
