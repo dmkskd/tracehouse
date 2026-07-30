@@ -20,6 +20,7 @@ import {
   PROBE_TRACEHOUSE_SAMPLING_TABLES,
   PROBE_SYSTEM_TABLE_ACCESS_TABLES,
   PROBE_METRIC_LOG_REPLICATION_COLUMNS,
+  PROBE_PROCESSORS_PROFILE_LOG_SCHEMA,
 } from '../queries/monitoring-capabilities-queries.js';
 import { tagQuery } from '../queries/builder.js';
 import { TAB_INTERNAL, sourceTag } from '../queries/source-tags.js';
@@ -195,6 +196,14 @@ interface CapabilitySnapshot {
   systemTables: Set<string>;
 }
 
+interface ProcessorProfileSchemaProbe {
+  succeeded: boolean;
+  hostCount: number;
+  baseHostCount: number;
+  planStepHostCount: number;
+  error?: string;
+}
+
 const DISTRIBUTED_LIMIT_BY_MIN_VERSION = {
   major: 24,
   minor: 1,
@@ -215,6 +224,7 @@ export class MonitoringCapabilitiesService {
       isCloud,
       tracehouseTables,
       metricLogReplicationColumns,
+      processorProfileSchema,
     ] = await Promise.all([
       this.probeCapabilitySnapshot(),
       this.probeLogTables(),
@@ -222,6 +232,7 @@ export class MonitoringCapabilitiesService {
       this.probeCloudService(),
       this.probeTracehouseSamplingTables(),
       this.probeMetricLogReplicationColumns(),
+      this.probeProcessorProfileSchema(),
     ]);
     const version = snapshot.version;
     const systemTableAccess = snapshot.systemTables;
@@ -269,6 +280,46 @@ export class MonitoringCapabilitiesService {
         source: meta.source,
       });
     }
+
+    const processorProfileCapability = capabilities.find(
+      capability => capability.id === 'processors_profile_log',
+    );
+    const processorBaseSchemaAvailable = processorProfileSchema.succeeded
+      && processorProfileSchema.hostCount > 0
+      && processorProfileSchema.baseHostCount === processorProfileSchema.hostCount;
+    if (processorProfileCapability) {
+      processorProfileCapability.available = processorProfileCapability.available
+        && processorBaseSchemaAvailable;
+      if (!processorProfileSchema.succeeded) {
+        processorProfileCapability.detail = `Schema probe failed · ${processorProfileSchema.error ?? 'unknown error'}`;
+        processorProfileCapability.probeError = processorProfileSchema.error;
+      } else if (!processorBaseSchemaAvailable) {
+        processorProfileCapability.detail = processorProfileSchema.hostCount > 0
+          ? `Missing or partial base schema · ${processorProfileSchema.baseHostCount}/${processorProfileSchema.hostCount} hosts`
+          : 'Table/base schema not found';
+      }
+    }
+
+    const processorPlanStepSchemaAvailable = processorProfileCapability?.available === true
+      && processorProfileSchema.planStepHostCount === processorProfileSchema.hostCount;
+    capabilities.push({
+      id: 'processors_profile_log_plan_steps',
+      label: 'Processor Plan-Step Metadata',
+      description: 'Plan-step names and descriptions used to enrich Distributed query topology.',
+      available: processorPlanStepSchemaAvailable,
+      category: 'profiling',
+      detail: !processorProfileSchema.succeeded
+        ? `Schema probe failed · ${processorProfileSchema.error ?? 'unknown error'}`
+        : !processorBaseSchemaAvailable
+          ? 'processors_profile_log base schema unavailable'
+          : processorPlanStepSchemaAvailable
+            ? `Full schema · ${processorProfileSchema.planStepHostCount}/${processorProfileSchema.hostCount} hosts`
+            : `Legacy schema · plan-step columns on ${processorProfileSchema.planStepHostCount}/${processorProfileSchema.hostCount} hosts`,
+      source: 'metadata: system.columns',
+      ...(!processorProfileSchema.succeeded && {
+        probeError: processorProfileSchema.error,
+      }),
+    });
 
     const hasMetricLog = logTables.has('metric_log');
     const hasReadonlyReplicaMetric = metricLogReplicationColumns.has(
@@ -705,6 +756,35 @@ export class MonitoringCapabilitiesService {
       );
     }
     return result;
+  }
+
+  private async probeProcessorProfileSchema(): Promise<ProcessorProfileSchemaProbe> {
+    try {
+      const rows = await this.adapter.executeQuery<{
+        host_count: unknown;
+        base_host_count: unknown;
+        plan_step_host_count: unknown;
+      }>(
+        tagQuery(
+          PROBE_PROCESSORS_PROFILE_LOG_SCHEMA,
+          sourceTag(TAB_INTERNAL, 'processorProfileSchema'),
+        ),
+      );
+      return {
+        succeeded: true,
+        hostCount: Number(rows[0]?.host_count ?? 0),
+        baseHostCount: Number(rows[0]?.base_host_count ?? 0),
+        planStepHostCount: Number(rows[0]?.plan_step_host_count ?? 0),
+      };
+    } catch (error) {
+      return {
+        succeeded: false,
+        hostCount: 0,
+        baseHostCount: 0,
+        planStepHostCount: 0,
+        error: error instanceof Error ? error.message : String(error),
+      };
+    }
   }
 
   private async probeLogTables(): Promise<Map<string, LogTableProbe>> {

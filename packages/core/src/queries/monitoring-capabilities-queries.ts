@@ -76,6 +76,64 @@ ORDER BY name
 `;
 
 /**
+ * Detect the processors_profile_log query shape on every queried host.
+ *
+ * The base schema covers both Pipeline timing correlation and Distributed
+ * topology processor-name enrichment. Plan-step columns are optional and are
+ * used only by the richer Distributed topology projection.
+ */
+export const PROBE_PROCESSORS_PROFILE_LOG_SCHEMA = `
+SELECT
+  count() AS host_count,
+  countIf(has_base_schema) AS base_host_count,
+  countIf(has_plan_step_schema) AS plan_step_host_count
+FROM (
+  SELECT
+    hostName() AS hostname,
+    countIf(
+      database = 'system'
+      AND table = 'processors_profile_log'
+      AND name IN (
+        'query_id',
+        'initial_query_id',
+        'event_date',
+        'event_time_microseconds',
+        'name',
+        'elapsed_us',
+        'input_wait_elapsed_us',
+        'output_wait_elapsed_us',
+        'input_rows',
+        'input_bytes',
+        'output_rows',
+        'output_bytes'
+      )
+    ) = 12 AS has_base_schema,
+    countIf(
+      database = 'system'
+      AND table = 'processors_profile_log'
+      AND name IN (
+        'query_id',
+        'initial_query_id',
+        'event_date',
+        'event_time_microseconds',
+        'name',
+        'elapsed_us',
+        'input_wait_elapsed_us',
+        'output_wait_elapsed_us',
+        'input_rows',
+        'input_bytes',
+        'output_rows',
+        'output_bytes',
+        'plan_step_name',
+        'plan_step_description'
+      )
+    ) = 14 AS has_plan_step_schema
+  FROM {{cluster_aware:system.columns}}
+  GROUP BY hostname
+)
+`;
+
+/**
  * Probe relevant server settings that affect monitoring.
  * These settings control whether certain log tables are populated.
  */

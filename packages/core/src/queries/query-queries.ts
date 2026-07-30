@@ -278,13 +278,36 @@ export const DISTRIBUTED_TOPOLOGY_CLUSTER_HOSTS = `
  * Get processor profile hints for distributed topology inference.
  * Requires: initial_query_id param
  */
+const PROCESSOR_PLAN_STEP_NAME_EXPRESSION =
+  'plan_step_name /* tracehouse:capability=processor_plan_step_name */';
+const PROCESSOR_PLAN_STEP_DESCRIPTION_EXPRESSION =
+  'plan_step_description /* tracehouse:capability=processor_plan_step_description */';
+
+/**
+ * Resolve plan-step columns that are absent from older
+ * system.processors_profile_log schemas. Processor names still provide useful
+ * topology evidence, so the compatible fallback preserves the result shape
+ * with empty plan-step fields.
+ */
+export function withProcessorPlanStepCapability(sql: string, supported: boolean): string {
+  return sql
+    .replaceAll(
+      PROCESSOR_PLAN_STEP_NAME_EXPRESSION,
+      supported ? 'plan_step_name' : "'' AS plan_step_name",
+    )
+    .replaceAll(
+      PROCESSOR_PLAN_STEP_DESCRIPTION_EXPRESSION,
+      supported ? 'plan_step_description' : "'' AS plan_step_description",
+    );
+}
+
 export const DISTRIBUTED_TOPOLOGY_PROCESSORS = `
   SELECT
     query_id,
     initial_query_id,
     hostName() AS hostname,
-    plan_step_name,
-    plan_step_description,
+    ${PROCESSOR_PLAN_STEP_NAME_EXPRESSION},
+    ${PROCESSOR_PLAN_STEP_DESCRIPTION_EXPRESSION},
     name AS processor_name
   FROM {{cluster_aware:system.processors_profile_log}}
   WHERE (initial_query_id = {initial_query_id} OR query_id = {initial_query_id})

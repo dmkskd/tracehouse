@@ -24,6 +24,8 @@ export interface MonitoringCapability {
   category: 'logging' | 'profiling' | 'tracing' | 'introspection' | 'metrics';
   /** Optional detail (e.g. table engine, row count, setting value) */
   detail?: string;
+  /** Probe error retained for diagnostics when availability could not be determined */
+  probeError?: string;
   /** TTL retention period if detected (e.g. "30 days"), null for non-table capabilities */
   ttl?: string | null;
   /** Source resource (e.g. "system.query_log", "config.xml: query_log", "setting: allow_introspection_functions") */

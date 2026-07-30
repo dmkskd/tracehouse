@@ -4,6 +4,7 @@ import type {
   TaggedQuery,
 } from '../../adapters/types.js';
 import { MonitoringCapabilitiesService } from '../monitoring-capabilities.js';
+import { processorProfileCompatibilityFromMonitoringCapabilities } from '../distributed-query-topology.js';
 
 interface AdapterOptions {
   availableHosts?: number;
@@ -11,6 +12,7 @@ interface AdapterOptions {
   serverVersion?: string;
   systemTables?: string[];
   introspectionEnabled?: boolean;
+  processorProfileSchema?: 'full' | 'legacy' | 'missing' | 'error';
 }
 
 function adapterForCapabilities(options: AdapterOptions = {}): IClickHouseAdapter {
@@ -20,6 +22,7 @@ function adapterForCapabilities(options: AdapterOptions = {}): IClickHouseAdapte
     serverVersion = '26.7.1.0',
     systemTables = ['merges', 'distributed_ddl_queue', 'zookeeper'],
     introspectionEnabled = false,
+    processorProfileSchema = 'missing',
   } = options;
 
   const executeQuery = vi.fn(async (sql: TaggedQuery) => {
@@ -40,6 +43,26 @@ function adapterForCapabilities(options: AdapterOptions = {}): IClickHouseAdapte
         create_table_query: '',
         available_hosts: availableHosts,
         expected_hosts: expectedHosts,
+      }, ...(processorProfileSchema === 'missing' || processorProfileSchema === 'error'
+        ? []
+        : [{
+            name: 'processors_profile_log',
+            engine: 'MergeTree',
+            total_rows: 20,
+            total_bytes: 2048,
+            create_table_query: '',
+            available_hosts: availableHosts,
+            expected_hosts: expectedHosts,
+          }])];
+    }
+    if (sql.includes('source:TraceHouse:Internal:processorProfileSchema')) {
+      if (processorProfileSchema === 'error') {
+        throw new Error('system.columns denied');
+      }
+      return [{
+        host_count: expectedHosts,
+        base_host_count: processorProfileSchema === 'missing' ? 0 : availableHosts,
+        plan_step_host_count: processorProfileSchema === 'full' ? availableHosts : 0,
       }];
     }
     return [];
@@ -139,7 +162,7 @@ describe('MonitoringCapabilitiesService', () => {
 
     const executeQuery = vi.mocked(adapter.executeQuery);
     const queries = executeQuery.mock.calls.map(([sql]) => String(sql));
-    expect(queries).toHaveLength(6);
+    expect(queries).toHaveLength(7);
     expect(queries.filter(query =>
       query.includes('source:TraceHouse:Internal:capabilitySnapshot'),
     )).toHaveLength(1);
@@ -150,5 +173,67 @@ describe('MonitoringCapabilitiesService', () => {
     expect(queries.some(query =>
       query.includes('source:TraceHouse:Internal:probe_'),
     )).toBe(false);
+  });
+
+  it('detects the full processor plan-step schema at connection time', async () => {
+    const result = await new MonitoringCapabilitiesService(
+      adapterForCapabilities({ processorProfileSchema: 'full' }),
+    ).probe();
+
+    expect(result.capabilities.find(
+      item => item.id === 'processors_profile_log',
+    )).toMatchObject({ available: true });
+    expect(result.capabilities.find(
+      item => item.id === 'processors_profile_log_plan_steps',
+    )).toMatchObject({
+      available: true,
+      detail: 'Full schema · 2/2 hosts',
+    });
+    expect(processorProfileCompatibilityFromMonitoringCapabilities(result))
+      .toMatchObject({ mode: 'full', reason: 'full_schema' });
+  });
+
+  it('keeps the processor log available but marks plan steps unavailable on a legacy schema', async () => {
+    const result = await new MonitoringCapabilitiesService(
+      adapterForCapabilities({ processorProfileSchema: 'legacy' }),
+    ).probe();
+
+    expect(result.capabilities.find(
+      item => item.id === 'processors_profile_log',
+    )).toMatchObject({ available: true });
+    expect(result.capabilities.find(
+      item => item.id === 'processors_profile_log_plan_steps',
+    )).toMatchObject({
+      available: false,
+      detail: 'Legacy schema · plan-step columns on 0/2 hosts',
+    });
+    expect(processorProfileCompatibilityFromMonitoringCapabilities(result))
+      .toMatchObject({ mode: 'legacy', reason: 'legacy_schema' });
+  });
+
+  it('retains a processor schema probe error in connection capabilities', async () => {
+    const result = await new MonitoringCapabilitiesService(
+      adapterForCapabilities({ processorProfileSchema: 'error' }),
+    ).probe();
+
+    expect(result.capabilities.find(
+      item => item.id === 'processors_profile_log',
+    )).toMatchObject({
+      available: false,
+      detail: 'Schema probe failed · system.columns denied',
+      probeError: 'system.columns denied',
+    });
+    expect(result.capabilities.find(
+      item => item.id === 'processors_profile_log_plan_steps',
+    )).toMatchObject({
+      available: false,
+      probeError: 'system.columns denied',
+    });
+    expect(processorProfileCompatibilityFromMonitoringCapabilities(result))
+      .toMatchObject({
+        mode: 'unavailable',
+        reason: 'schema_probe_failed',
+        detail: 'system.columns denied',
+      });
   });
 });

@@ -1,10 +1,19 @@
 import { useEffect, useState } from 'react';
-import type { DistributedTopology, QuerySeries, QueryDetail as QueryDetailType, SubQueryInfo } from '@tracehouse/core';
+import {
+  processorProfileCompatibilityFromMonitoringCapabilities,
+  type DistributedTopology,
+  type QuerySeries,
+  type QueryDetail as QueryDetailType,
+  type SubQueryInfo,
+} from '@tracehouse/core';
 import { useClickHouseServices } from '../../../../providers/ClickHouseProvider';
+import { useMonitoringCapabilitiesStore } from '../../../../stores/monitoringCapabilitiesStore';
 import type { TopologyCoordinator } from '../shared/DistributedQueryTopology';
 
 export function useQueryTopology(activeQuery: QuerySeries | null, queryDetail: QueryDetailType | null) {
   const services = useClickHouseServices();
+  const monitoringCapabilities = useMonitoringCapabilitiesStore(state => state.capabilities);
+  const capabilityProbeStatus = useMonitoringCapabilitiesStore(state => state.probeStatus);
   const [subQueries, setSubQueries] = useState<SubQueryInfo[]>([]);
   const [isLoading, setIsLoading] = useState(false);
   const [coordinator, setCoordinator] = useState<TopologyCoordinator | null>(null);
@@ -18,7 +27,10 @@ export function useQueryTopology(activeQuery: QuerySeries | null, queryDetail: Q
   }, [activeQuery?.query_id]);
 
   useEffect(() => {
+    if (capabilityProbeStatus === 'idle' || capabilityProbeStatus === 'probing') return;
     if (!queryDetail || !services || !activeQuery || subQueries.length > 0 || isLoading) return;
+    const processorCompatibility =
+      processorProfileCompatibilityFromMonitoringCapabilities(monitoringCapabilities);
 
     if (queryDetail.is_initial_query === 1) {
       // Viewing the coordinator — fetch its sub-queries
@@ -34,7 +46,11 @@ export function useQueryTopology(activeQuery: QuerySeries | null, queryDetail: Q
       });
       Promise.all([
         services.queryAnalyzer.getSubQueries(activeQuery.query_id, activeQuery.start_time),
-        services.queryAnalyzer.getDistributedTopology(activeQuery.query_id, activeQuery.start_time).catch(() => null),
+        services.queryAnalyzer.getDistributedTopology(
+          activeQuery.query_id,
+          activeQuery.start_time,
+          processorCompatibility,
+        ).catch(() => null),
       ])
         .then(([children, richTopology]) => {
           setSubQueries(children);
@@ -48,7 +64,11 @@ export function useQueryTopology(activeQuery: QuerySeries | null, queryDetail: Q
       Promise.all([
         services.queryAnalyzer.getQueryDetail(queryDetail.initial_query_id),
         services.queryAnalyzer.getSubQueries(queryDetail.initial_query_id, activeQuery.start_time),
-        services.queryAnalyzer.getDistributedTopology(queryDetail.initial_query_id, activeQuery.start_time).catch(() => null),
+        services.queryAnalyzer.getDistributedTopology(
+          queryDetail.initial_query_id,
+          activeQuery.start_time,
+          processorCompatibility,
+        ).catch(() => null),
       ])
         .then(([coordDetail, siblings, richTopology]) => {
           if (coordDetail) {
@@ -69,7 +89,7 @@ export function useQueryTopology(activeQuery: QuerySeries | null, queryDetail: Q
         .finally(() => setIsLoading(false));
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [queryDetail, services]);
+  }, [queryDetail, services, monitoringCapabilities, capabilityProbeStatus]);
 
   return { subQueries, isLoading, coordinator, distributedTopology };
 }

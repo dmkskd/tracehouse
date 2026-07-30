@@ -364,6 +364,9 @@ export const DistributedQueryTopology: React.FC<DistributedQueryTopologyProps> =
       a.sortIndex - b.sortIndex,
     )
     : [];
+  const processorCompatibility = inferredTopology
+    ? topology.processorProfileCompatibility
+    : undefined;
 
   return (
     <div>
@@ -381,6 +384,23 @@ export const DistributedQueryTopology: React.FC<DistributedQueryTopologyProps> =
           </div>
         )}
       </div>
+
+      {processorCompatibility && processorCompatibility.mode !== 'full' && (
+        <div
+          data-testid="processor-profile-compatibility"
+          style={{
+            marginBottom: 8,
+            padding: '6px 8px',
+            border: '1px solid var(--border-primary)',
+            borderRadius: 4,
+            color: processorCompatibility.mode === 'legacy' ? NODE_COLOR : MUTED_COLOR,
+            fontSize: 10,
+            lineHeight: 1.4,
+          }}
+        >
+          {processorCompatibility.message}
+        </div>
+      )}
 
       {/* Time axis */}
       <div style={{

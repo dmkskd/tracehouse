@@ -17,6 +17,38 @@ class MockAdapter implements IClickHouseAdapter {
   }
 }
 
+class RoutingMockAdapter implements IClickHouseAdapter {
+  public queries: string[] = [];
+
+  constructor(
+    private readonly respond: (
+      sql: string,
+    ) => Record<string, unknown>[] | Promise<Record<string, unknown>[]>,
+  ) {}
+
+  async executeQuery<T extends Record<string, unknown>>(sql: TaggedQuery): Promise<T[]> {
+    this.queries.push(sql);
+    return await this.respond(sql) as T[];
+  }
+}
+
+const topologyExecutionRow = {
+  query_id: 'query-root',
+  initial_query_id: 'query-root',
+  is_initial_query: 1,
+  normalized_query_hash: '123',
+  hostname: 'node-a',
+  query_kind: 'Select',
+  query_start_time_microseconds: '2026-06-18 12:00:00.000000',
+  query_duration_ms: 10,
+  memory_usage: 1000,
+  read_rows: 10,
+  read_bytes: 100,
+  tables: ['db.table'],
+  query_preview: 'SELECT * FROM db.table',
+  ProfileEvents: {},
+};
+
 describe('QueryAnalyzer running queries', () => {
   it('applies a sanitized server-side result limit', async () => {
     const adapter = new MockAdapter();
@@ -236,7 +268,6 @@ describe('QueryAnalyzer distributed topology async insert links', () => {
         },
       ],
       [],
-      [],
       [
         {
           event_time_microseconds: '2026-06-18 12:00:00.001000',
@@ -313,7 +344,6 @@ describe('QueryAnalyzer distributed topology async insert links', () => {
         },
       ],
       [],
-      [],
       [
         {
           event_time_microseconds: '2026-06-18 12:00:00.001000',
@@ -368,5 +398,178 @@ describe('QueryAnalyzer distributed topology async insert links', () => {
       timeoutMilliseconds: 200,
     });
     expect(adapter.queries.some(sql => sql.includes("query_id IN ('insert-root')"))).toBe(true);
+  });
+});
+
+describe('QueryAnalyzer distributed topology processor compatibility', () => {
+  it('uses the full processor projection only when every host has plan-step columns', async () => {
+    const adapter = new RoutingMockAdapter((sql) => {
+      if (sql.includes('distributedTopologyExecutions')) return [topologyExecutionRow];
+      if (sql.includes('distributedTopologyProcessors')) {
+        return [{
+          query_id: 'query-root',
+          initial_query_id: 'query-root',
+          hostname: 'node-a',
+          plan_step_name: 'ReadFromStorage',
+          plan_step_description: 'Read db.table',
+          processor_name: 'ReadFromMergeTree',
+        }];
+      }
+      return [];
+    });
+    const analyzer = new QueryAnalyzer(adapter);
+
+    const topology = await analyzer.getDistributedTopology(
+      'query-root',
+      '2026-06-18',
+      {
+        mode: 'full',
+        reason: 'full_schema',
+        message: 'Processor names and plan-step metadata are available on every queried host.',
+      },
+    );
+
+    const processorSql = adapter.queries.find(sql =>
+      sql.includes('/* source:TraceHouse:Queries:distributedTopologyProcessors */'),
+    );
+    expect(adapter.queries.some(sql =>
+      sql.includes('distributedTopologyProcessorCapabilities'),
+    )).toBe(false);
+    expect(processorSql).toContain('plan_step_name');
+    expect(processorSql).toContain('plan_step_description');
+    expect(processorSql).not.toContain("'' AS plan_step_name");
+    expect(topology.processorProfileCompatibility).toMatchObject({
+      mode: 'full',
+      reason: 'full_schema',
+    });
+    expect(topology.capabilities.processorsProfileLog).toBe(true);
+  });
+
+  it('uses a legacy projection without referencing unsupported plan-step columns', async () => {
+    const adapter = new RoutingMockAdapter((sql) => {
+      if (sql.includes('distributedTopologyExecutions')) return [topologyExecutionRow];
+      if (sql.includes('distributedTopologyProcessors')) {
+        return [{
+          query_id: 'query-root',
+          initial_query_id: 'query-root',
+          hostname: 'node-a',
+          plan_step_name: '',
+          plan_step_description: '',
+          processor_name: 'ReadFromMergeTree',
+        }];
+      }
+      return [];
+    });
+    const analyzer = new QueryAnalyzer(adapter);
+
+    const topology = await analyzer.getDistributedTopology(
+      'query-root',
+      '2026-06-18',
+      {
+        mode: 'legacy',
+        reason: 'legacy_schema',
+        message: 'Processor plan-step metadata is unavailable on this ClickHouse schema; topology uses processor names and query_log/ProfileEvents.',
+      },
+    );
+
+    const processorSql = adapter.queries.find(sql =>
+      sql.includes('/* source:TraceHouse:Queries:distributedTopologyProcessors */'),
+    );
+    expect(processorSql).toContain("'' AS plan_step_name");
+    expect(processorSql).toContain("'' AS plan_step_description");
+    expect(processorSql).not.toContain('tracehouse:capability=processor_plan_step');
+    expect(topology.processorProfileCompatibility).toMatchObject({
+      mode: 'legacy',
+      reason: 'legacy_schema',
+    });
+    expect(topology.capabilities.processorsProfileLog).toBe(true);
+    expect(topology.decisions).toContainEqual(expect.objectContaining({
+      code: 'legacy-processors-profile-log',
+    }));
+  });
+
+  it('does not query processors_profile_log when any host lacks its base schema', async () => {
+    const adapter = new RoutingMockAdapter((sql) => {
+      if (sql.includes('distributedTopologyExecutions')) return [topologyExecutionRow];
+      return [];
+    });
+    const analyzer = new QueryAnalyzer(adapter);
+
+    const topology = await analyzer.getDistributedTopology(
+      'query-root',
+      '2026-06-18',
+      {
+        mode: 'unavailable',
+        reason: 'missing_or_partial_schema',
+        message: 'processors_profile_log is unavailable on one or more queried hosts; phase labels use query_log/ProfileEvents only.',
+      },
+    );
+
+    expect(adapter.queries.some(sql =>
+      sql.includes('/* source:TraceHouse:Queries:distributedTopologyProcessors */'),
+    )).toBe(false);
+    expect(topology.processorProfileCompatibility).toMatchObject({
+      mode: 'unavailable',
+      reason: 'missing_or_partial_schema',
+    });
+    expect(topology.capabilities.processorsProfileLog).toBe(false);
+  });
+
+  it('retains a connection-time probe failure instead of issuing a speculative processor query', async () => {
+    const adapter = new RoutingMockAdapter((sql) => {
+      if (sql.includes('distributedTopologyExecutions')) return [topologyExecutionRow];
+      return [];
+    });
+    const analyzer = new QueryAnalyzer(adapter);
+
+    const topology = await analyzer.getDistributedTopology(
+      'query-root',
+      '2026-06-18',
+      {
+        mode: 'unavailable',
+        reason: 'schema_probe_failed',
+        message: 'Processor-profile compatibility could not be determined at connection time; processor enrichment was not run.',
+        detail: 'system.columns access denied',
+      },
+    );
+
+    expect(adapter.queries.some(sql =>
+      sql.includes('/* source:TraceHouse:Queries:distributedTopologyProcessors */'),
+    )).toBe(false);
+    expect(topology.processorProfileCompatibility).toEqual({
+      mode: 'unavailable',
+      reason: 'schema_probe_failed',
+      message: 'Processor-profile compatibility could not be determined at connection time; processor enrichment was not run.',
+      detail: 'system.columns access denied',
+    });
+  });
+
+  it('retains an unexpected processor-query failure as structured degradation', async () => {
+    const adapter = new RoutingMockAdapter((sql) => {
+      if (sql.includes('distributedTopologyExecutions')) return [topologyExecutionRow];
+      if (sql.includes('distributedTopologyProcessors')) {
+        throw new Error('processor log query failed');
+      }
+      return [];
+    });
+    const analyzer = new QueryAnalyzer(adapter);
+
+    const topology = await analyzer.getDistributedTopology(
+      'query-root',
+      '2026-06-18',
+      {
+        mode: 'full',
+        reason: 'full_schema',
+        message: 'Processor names and plan-step metadata are available on every queried host.',
+      },
+    );
+
+    expect(topology.processorProfileCompatibility).toEqual({
+      mode: 'unavailable',
+      reason: 'query_failed',
+      message: 'Processor-profile enrichment could not be loaded; topology uses query_log/ProfileEvents only.',
+      detail: 'processor log query failed',
+    });
+    expect(topology.capabilities.processorsProfileLog).toBe(false);
   });
 });

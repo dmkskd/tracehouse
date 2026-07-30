@@ -8,11 +8,35 @@
 import { describe, it, expect, beforeAll, afterAll } from 'vitest';
 import { startClickHouse, stopClickHouse, type TestClickHouseContext } from './setup/clickhouse-container.js';
 import { QueryAnalyzer } from '../../services/query-analyzer.js';
+import { MonitoringCapabilitiesService } from '../../services/monitoring-capabilities.js';
+import { processorProfileCompatibilityFromMonitoringCapabilities } from '../../services/distributed-query-topology.js';
 import { tagQuery } from '../../queries/builder.js';
 import { sourceTag, TAB_INTERNAL } from '../../queries/source-tags.js';
+import type {
+  IClickHouseAdapter,
+  QueryExecutionOptions,
+  TaggedQuery,
+} from '../../adapters/types.js';
 
 const CONTAINER_TIMEOUT = 120_000;
 const q = (sql: string) => tagQuery(sql, sourceTag(TAB_INTERNAL, 'queryAnalyzerIntegration'));
+
+class RecordingAdapter implements IClickHouseAdapter {
+  readonly supportsExplicitQueryId?: boolean;
+  readonly queries: string[] = [];
+
+  constructor(private readonly delegate: IClickHouseAdapter) {
+    this.supportsExplicitQueryId = delegate.supportsExplicitQueryId;
+  }
+
+  async executeQuery<T extends Record<string, unknown>>(
+    sql: TaggedQuery,
+    options?: QueryExecutionOptions,
+  ): Promise<T[]> {
+    this.queries.push(sql);
+    return this.delegate.executeQuery<T>(sql, options);
+  }
+}
 
 describe('QueryAnalyzer integration', { tags: ['query-analysis'] }, () => {
   let ctx: TestClickHouseContext;
@@ -36,6 +60,13 @@ describe('QueryAnalyzer integration', { tags: ['query-analysis'] }, () => {
     });
     // Run a SELECT to generate a QueryFinish entry
     await ctx.adapter.executeQuery(q('SELECT count() FROM qa_test.data'));
+    // Materialize processors_profile_log on stock images so this suite
+    // exercises the legacy/full schema branch, not only table absence.
+    await ctx.adapter.executeQuery(q(`
+      SELECT sum(number)
+      FROM numbers(1000)
+      SETTINGS log_processors_profiles = 1
+    `));
     // Run a query that will fail to generate an ExceptionWhileProcessing entry
     try {
       await ctx.adapter.executeQuery(q('SELECT nonexistent_column FROM qa_test.data'));
@@ -165,6 +196,64 @@ describe('QueryAnalyzer integration', { tags: ['query-analysis'] }, () => {
     it('returns null for non-existent query id', async () => {
       const detail = await analyzer.getQueryDetail('nonexistent-id-xyz');
       expect(detail).toBeNull();
+    });
+  });
+
+  describe('getDistributedTopology', () => {
+    it('uses the connection-time processor schema capability without probing per topology', async () => {
+      const now = new Date();
+      const oneHourAgo = new Date(now.getTime() - 3600_000);
+      const history = await analyzer.getQueryHistory({
+        start_date: oneHourAgo.toISOString().split('T')[0],
+        start_time: oneHourAgo.toISOString(),
+        end_time: now.toISOString(),
+        limit: 1,
+      });
+      expect(history.length).toBeGreaterThan(0);
+
+      const recordingAdapter = new RecordingAdapter(ctx.adapter);
+      const recordingAnalyzer = new QueryAnalyzer(recordingAdapter);
+      const monitoring = await new MonitoringCapabilitiesService(recordingAdapter).probe();
+      const processorCompatibility =
+        processorProfileCompatibilityFromMonitoringCapabilities(monitoring);
+      const query = history[0]!;
+      const topology = await recordingAnalyzer.getDistributedTopology(
+        query.query_id,
+        query.query_start_time,
+        processorCompatibility,
+      );
+
+      expect(recordingAdapter.queries.some(sql =>
+        sql.includes('/* source:TraceHouse:Internal:processorProfileSchema */'),
+      )).toBe(true);
+      expect(recordingAdapter.queries.some(sql =>
+        sql.includes('distributedTopologyProcessorCapabilities'),
+      )).toBe(false);
+      expect(topology.processorProfileCompatibility?.mode).not.toBe('unavailable');
+      if (
+        process.env.CLICKHOUSE_IMAGE?.includes(':23.8.')
+        || process.env.CLICKHOUSE_IMAGE?.includes(':24.3.')
+        || process.env.CLICKHOUSE_IMAGE?.includes(':24.8.')
+      ) {
+        expect(topology.processorProfileCompatibility?.mode).toBe('legacy');
+      }
+      if (process.env.CLICKHOUSE_IMAGE?.includes(':25.3.')) {
+        expect(topology.processorProfileCompatibility?.mode).toBe('full');
+      }
+
+      const processorSql = recordingAdapter.queries.find(sql =>
+        sql.includes('/* source:TraceHouse:Queries:distributedTopologyProcessors */'),
+      );
+      if (topology.processorProfileCompatibility?.mode === 'unavailable') {
+        expect(processorSql).toBeUndefined();
+      } else if (topology.processorProfileCompatibility?.mode === 'legacy') {
+        expect(processorSql).toContain("'' AS plan_step_name");
+        expect(processorSql).toContain("'' AS plan_step_description");
+      } else {
+        expect(topology.processorProfileCompatibility?.mode).toBe('full');
+        expect(processorSql).toContain('plan_step_name');
+        expect(processorSql).toContain('plan_step_description');
+      }
     });
   });
 

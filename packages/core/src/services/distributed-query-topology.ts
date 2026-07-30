@@ -1,3 +1,5 @@
+import type { MonitoringCapabilities } from '../types/monitoring-capabilities.js';
+
 export type DistributedQueryKind =
   | 'local'
   | 'plain_distributed_select'
@@ -183,11 +185,87 @@ export interface DistributedTopologyCapabilities {
   cloudMetadata: boolean;
 }
 
+export type ProcessorProfileCompatibilityMode = 'full' | 'legacy' | 'unavailable';
+
+export type ProcessorProfileCompatibilityReason =
+  | 'full_schema'
+  | 'legacy_schema'
+  | 'missing_or_partial_schema'
+  | 'capability_not_probed'
+  | 'schema_probe_failed'
+  | 'query_failed';
+
+export interface ProcessorProfileCompatibility {
+  mode: ProcessorProfileCompatibilityMode;
+  reason: ProcessorProfileCompatibilityReason;
+  message: string;
+  /** Original adapter error retained for diagnostics; not intended as UI copy. */
+  detail?: string;
+}
+
+/**
+ * Translate the connection-time monitoring probe into the query shape used by
+ * Distributed topology. This is intentionally metadata-driven rather than a
+ * ClickHouse-version check.
+ */
+export function processorProfileCompatibilityFromMonitoringCapabilities(
+  monitoring: Pick<MonitoringCapabilities, 'capabilities'> | null | undefined,
+): ProcessorProfileCompatibility {
+  if (!monitoring) {
+    return {
+      mode: 'unavailable',
+      reason: 'capability_not_probed',
+      message: 'Processor-profile compatibility has not been probed for this connection; processor enrichment was not run.',
+    };
+  }
+
+  const base = monitoring.capabilities.find(
+    capability => capability.id === 'processors_profile_log',
+  );
+  const planSteps = monitoring.capabilities.find(
+    capability => capability.id === 'processors_profile_log_plan_steps',
+  );
+
+  if (base?.probeError || planSteps?.probeError) {
+    return {
+      mode: 'unavailable',
+      reason: 'schema_probe_failed',
+      message: 'Processor-profile compatibility could not be determined at connection time; processor enrichment was not run.',
+      detail: base?.probeError ?? planSteps?.probeError,
+    };
+  }
+
+  if (!base?.available) {
+    return {
+      mode: 'unavailable',
+      reason: 'missing_or_partial_schema',
+      message: 'processors_profile_log is unavailable on one or more queried hosts; phase labels use query_log/ProfileEvents only.',
+      detail: base?.detail,
+    };
+  }
+
+  if (planSteps?.available) {
+    return {
+      mode: 'full',
+      reason: 'full_schema',
+      message: 'Processor names and plan-step metadata are available on every queried host.',
+    };
+  }
+
+  return {
+    mode: 'legacy',
+    reason: 'legacy_schema',
+    message: 'Processor plan-step metadata is unavailable on this ClickHouse schema; topology uses processor names and query_log/ProfileEvents.',
+    detail: planSteps?.detail,
+  };
+}
+
 export interface DistributedTopologyInput {
   rootQueryId: string;
   executions: DistributedQueryExecutionInput[];
   clusterHosts?: ClusterHostInput[];
   processorProfiles?: ProcessorProfileInput[];
+  processorProfileCompatibility?: ProcessorProfileCompatibility;
   textLogs?: DistributedTextLogInput[];
   asyncInsertLogs?: AsyncInsertLogInput[];
   capabilities?: Partial<DistributedTopologyCapabilities>;
@@ -378,6 +456,7 @@ export interface DistributedTopology {
   fanoutMode: DistributedFanoutMode;
   rootQueryId: string;
   capabilities: DistributedTopologyCapabilities;
+  processorProfileCompatibility?: ProcessorProfileCompatibility;
   coordinator?: DistributedTopologyNode;
   nodes: DistributedTopologyNode[];
   shards: DistributedTopologyShard[];
@@ -1825,7 +1904,22 @@ export function inferDistributedTopology(input: DistributedTopologyInput): Distr
     addDecision(decisions, 'degraded', 'missing-system-clusters', 'capability', 'system.clusters mapping is unavailable; shard and replica labels may be unknown.');
   }
   if (!capabilities.processorsProfileLog) {
-    addDecision(decisions, 'info', 'missing-processors-profile-log', 'capability', 'processors_profile_log is unavailable; phase labels use query_log/ProfileEvents only.');
+    addDecision(
+      decisions,
+      'info',
+      'missing-processors-profile-log',
+      'capability',
+      input.processorProfileCompatibility?.message
+        ?? 'processors_profile_log is unavailable; phase labels use query_log/ProfileEvents only.',
+    );
+  } else if (input.processorProfileCompatibility?.mode === 'legacy') {
+    addDecision(
+      decisions,
+      'info',
+      'legacy-processors-profile-log',
+      'capability',
+      input.processorProfileCompatibility.message,
+    );
   }
   if (!capabilities.textLog) {
     addDecision(decisions, 'info', 'missing-text-log', 'capability', 'system.text_log was not used for execution phase enrichment.');
@@ -1939,6 +2033,7 @@ export function inferDistributedTopology(input: DistributedTopologyInput): Distr
     fanoutMode,
     rootQueryId: input.rootQueryId,
     capabilities,
+    processorProfileCompatibility: input.processorProfileCompatibility,
     coordinator,
     nodes,
     shards,

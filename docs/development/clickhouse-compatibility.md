@@ -101,6 +101,7 @@ fill such a cell from release-date assumptions.
 | Replicated database engine data-utils tests | ? | Test-gated | Full | Full | Requires the tested 24.8 boundary; 24.3 keeps the engine experimental and disabled. The 23.8 data-utils run is pending. See CH-COMPAT-012. |
 | Expression-based event `LIMIT BY` | Degraded | Full | Full | Full | Early 23.8 falls back to a strict global limit; later checkpoints keep per-group limiting. See CH-COMPAT-004. |
 | Optional system logs and metric columns | Runtime-probed | Runtime-probed | Runtime-probed | Runtime-probed | Availability is detected from `system.tables` / `system.columns`, not inferred only from version. See CH-COMPAT-005. |
+| Processor profiling (`system.processors_profile_log`) | Degraded if enabled | Degraded if enabled | Degraded if enabled | Full if enabled | Probed once per connection across all selected hosts. The first three checkpoints have the base schema but not plan-step columns; 25.3 has both. A disabled/missing log is unavailable on every version. See CH-COMPAT-017. |
 | Read-only access to `system.user_directories` | Known upstream exposure | Blocked | Blocked | Blocked | The exact 23.8 limitation is asserted and reported; it is reproducible without TraceHouse. See CH-COMPAT-013. |
 | Read-only access to own `system.quota_usage` | Denied by CH | Full | Full | Full | 23.8 requires `SHOW QUOTAS`; the matrix records the upstream authorization transition. |
 | Structured HTTP query-error classification | Full | Full | Full | Full | Numeric ClickHouse error codes are classified as query errors; message matching remains a fallback. |
@@ -584,6 +585,52 @@ line as its supported floor. The default pinned matrix retains both the
 `23.8.16.40` checkpoint and the early `23.8.2.7` regression checkpoint, and
 does not run 23.3 or 22.8. The runner still accepts any exact image as an
 explicit argument for exploratory work.
+
+### CH-COMPAT-017: processor-profile base and plan-step schemas
+
+**Classification:** connection-time schema capability.
+
+**Observed on:** `23.8.2.7-alpine`, `24.3.18.7-alpine`,
+`24.8.14.39-alpine`, and `25.3.14.14-alpine`.
+
+`system.processors_profile_log` serves two TraceHouse features:
+
+- the Query Detail **Pipeline** tab correlates `EXPLAIN PIPELINE` with the
+  base processor timing columns;
+- the Query Detail **Distributed** tab additionally uses `plan_step_name` and
+  `plan_step_description` to enrich its Timeline phase labels.
+
+The table itself is configuration-dependent (`log_processors_profiles=1`),
+while the two plan-step columns were added after the original table schema.
+Consequently, table presence, base-schema support, and plan-step support must
+not be inferred from a ClickHouse version alone. An unconditional full
+projection fails with code 47 on a legacy table, and querying a disabled or
+unmaterialized log fails with code 60.
+
+**Action:** the existing connection capability pass now probes
+`system.columns` across the active cluster and records two distinct
+capabilities:
+
+- `processors_profile_log` requires the table and all base timing columns on
+  every selected host;
+- `processors_profile_log_plan_steps` additionally requires both plan-step
+  columns on every selected host.
+
+Distributed topology consumes that connection result without issuing another
+schema query when the tab opens. A full schema selects the plan-step columns;
+a legacy schema keeps processor-name enrichment and substitutes empty
+plan-step fields; an unavailable or mixed schema skips the processor query and
+returns a structured reason for the UI. Unexpected processor-query failures
+are also retained as structured degradation rather than being collapsed by
+`.catch(() => null)`.
+
+After explicitly collecting a processor profile, exact schema checks found
+the base columns but no plan-step columns on 23.8, 24.3, or 24.8; 25.3 exposes
+both plan-step columns. The focused QueryAnalyzer integration suite asserts
+the legacy mode on 23.8, 24.3, and 24.8 and full mode on 25.3, verifies that
+topology performs no second schema probe, and executes the selected
+projection. Unit coverage also verifies partial-cluster, probe-failure, and
+unexpected query-failure paths.
 
 ## Compatibility policy
 

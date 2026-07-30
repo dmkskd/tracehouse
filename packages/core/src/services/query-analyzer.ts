@@ -1,6 +1,6 @@
 import type { IClickHouseAdapter } from '../adapters/types.js';
 import type { QueryMetrics, QueryHistoryItem } from '../types/query.js';
-import { RUNNING_QUERIES, QUERY_DETAIL, QUERY_THREAD_BREAKDOWN, PROFILE_EVENT_DESCRIPTIONS, SUB_QUERIES, BATCH_SUB_QUERIES, COORDINATOR_IDS, RUNNING_COORDINATOR_IDS, QUERY_LOG_FLUSH_INTERVAL, DISTRIBUTED_TOPOLOGY_EXECUTIONS, DISTRIBUTED_TOPOLOGY_EXECUTIONS_BY_QUERY_IDS, DISTRIBUTED_TOPOLOGY_CLUSTER_HOSTS, DISTRIBUTED_TOPOLOGY_PROCESSORS, DISTRIBUTED_TOPOLOGY_TEXT_LOGS, DISTRIBUTED_TOPOLOGY_ASYNC_INSERT_LOGS } from '../queries/query-queries.js';
+import { RUNNING_QUERIES, QUERY_DETAIL, QUERY_THREAD_BREAKDOWN, PROFILE_EVENT_DESCRIPTIONS, SUB_QUERIES, BATCH_SUB_QUERIES, COORDINATOR_IDS, RUNNING_COORDINATOR_IDS, QUERY_LOG_FLUSH_INTERVAL, DISTRIBUTED_TOPOLOGY_EXECUTIONS, DISTRIBUTED_TOPOLOGY_EXECUTIONS_BY_QUERY_IDS, DISTRIBUTED_TOPOLOGY_CLUSTER_HOSTS, DISTRIBUTED_TOPOLOGY_PROCESSORS, withProcessorPlanStepCapability, DISTRIBUTED_TOPOLOGY_TEXT_LOGS, DISTRIBUTED_TOPOLOGY_ASYNC_INSERT_LOGS } from '../queries/query-queries.js';
 /**
  * ProfileEvent comparison row between two queries.
  * Inspired by https://clickhouse.com/docs/knowledgebase/comparing-metrics-between-queries
@@ -42,6 +42,7 @@ import {
   type DistributedQueryExecutionInput,
   type DistributedTextLogInput,
   type DistributedTopology,
+  type ProcessorProfileCompatibility,
   type ProcessorProfileInput,
   type ProfileEventsMap,
 } from './distributed-query-topology.js';
@@ -314,6 +315,10 @@ export interface QueryHistoryOptions {
 function filterValues(value?: string | string[]): string[] {
   if (Array.isArray(value)) return value.map(item => item.trim()).filter(Boolean);
   return value?.trim() ? [value.trim()] : [];
+}
+
+function errorDetail(error: unknown): string {
+  return error instanceof Error ? error.message : String(error);
 }
 
 export class QueryAnalyzer {
@@ -645,31 +650,54 @@ export class QueryAnalyzer {
    * - system.text_log supplies last-resort human-readable execution phase breadcrumbs.
    * - query_log/ProfileEvents remains the baseline.
    */
-  async getDistributedTopology(initialQueryId: string, eventDate?: string): Promise<DistributedTopology> {
+  async getDistributedTopology(
+    initialQueryId: string,
+    eventDate?: string,
+    connectionProcessorCompatibility: ProcessorProfileCompatibility = {
+      mode: 'unavailable',
+      reason: 'capability_not_probed',
+      message: 'Processor-profile compatibility has not been probed for this connection; processor enrichment was not run.',
+    },
+  ): Promise<DistributedTopology> {
     const boundedEventDate = eventDateBound(eventDate);
     const executionsSql = buildQuery(
       DISTRIBUTED_TOPOLOGY_EXECUTIONS.replace('{event_date_bound}', boundedEventDate),
       { initial_query_id: initialQueryId },
     );
     const clusterHostsSql = DISTRIBUTED_TOPOLOGY_CLUSTER_HOSTS;
-    const processorsSql = buildQuery(
-      DISTRIBUTED_TOPOLOGY_PROCESSORS.replace('{event_date_bound}', boundedEventDate),
-      { initial_query_id: initialQueryId },
-    );
 
     try {
       const executionRows = await this.adapter.executeQuery<Record<string, unknown>>(
         tagQuery(executionsSql, sourceTag(TAB_QUERIES, 'distributedTopologyExecutions')),
       );
 
-      const [clusterHostRows, processorRows] = await Promise.all([
-        this.adapter.executeQuery<Record<string, unknown>>(
-          tagQuery(clusterHostsSql, sourceTag(TAB_QUERIES, 'distributedTopologyClusterHosts')),
-        ).catch(() => null),
-        this.adapter.executeQuery<Record<string, unknown>>(
-          tagQuery(processorsSql, sourceTag(TAB_QUERIES, 'distributedTopologyProcessors')),
-        ).catch(() => null),
-      ]);
+      const clusterHostRows = await this.adapter.executeQuery<Record<string, unknown>>(
+        tagQuery(clusterHostsSql, sourceTag(TAB_QUERIES, 'distributedTopologyClusterHosts')),
+      ).catch(() => null);
+
+      let processorProfileCompatibility = connectionProcessorCompatibility;
+      let processorRows: Record<string, unknown>[] = [];
+      if (processorProfileCompatibility.mode !== 'unavailable') {
+        const processorsSql = buildQuery(
+          withProcessorPlanStepCapability(
+            DISTRIBUTED_TOPOLOGY_PROCESSORS,
+            processorProfileCompatibility.mode === 'full',
+          ).replace('{event_date_bound}', boundedEventDate),
+          { initial_query_id: initialQueryId },
+        );
+        try {
+          processorRows = await this.adapter.executeQuery<Record<string, unknown>>(
+            tagQuery(processorsSql, sourceTag(TAB_QUERIES, 'distributedTopologyProcessors')),
+          );
+        } catch (error) {
+          processorProfileCompatibility = {
+            mode: 'unavailable',
+            reason: 'query_failed',
+            message: 'Processor-profile enrichment could not be loaded; topology uses query_log/ProfileEvents only.',
+            detail: errorDetail(error),
+          };
+        }
+      }
 
       let executions: DistributedQueryExecutionInput[] = executionRows.map(mapDistributedExecutionRow);
 
@@ -730,7 +758,7 @@ export class QueryAnalyzer {
         cluster: String(row.cluster ?? ''),
       })).filter(row => row.hostName && row.shardNum > 0 && row.replicaNum > 0);
 
-      const processorProfiles: ProcessorProfileInput[] = (processorRows ?? []).map((row) => ({
+      const processorProfiles: ProcessorProfileInput[] = processorRows.map((row) => ({
         queryId: String(row.query_id ?? ''),
         initialQueryId: String(row.initial_query_id ?? ''),
         hostname: String(row.hostname ?? ''),
@@ -769,13 +797,14 @@ export class QueryAnalyzer {
         executions,
         clusterHosts,
         processorProfiles,
+        processorProfileCompatibility,
         textLogs,
         asyncInsertLogs,
         capabilities: {
           queryLog: true,
           profileEvents: true,
           systemClusters: clusterHostRows !== null,
-          processorsProfileLog: processorRows !== null,
+          processorsProfileLog: processorProfileCompatibility.mode !== 'unavailable',
           textLog: textLogRows !== null,
           asynchronousInsertLog: asyncInsertLogRows !== null,
         },
