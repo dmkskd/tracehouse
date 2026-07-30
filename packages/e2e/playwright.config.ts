@@ -48,11 +48,22 @@ export default defineConfig({
     // },
   ],
 
-  webServer: {
-    command: 'npm run dev',
-    cwd: '../../frontend',
-    url: 'http://localhost:5173',
-    reuseExistingServer: !process.env.CI,
-    timeout: 30_000,
-  },
+  webServer: [
+    {
+      command: 'npm run dev',
+      cwd: '../../frontend',
+      url: 'http://localhost:5173',
+      reuseExistingServer: !process.env.CI,
+      timeout: 30_000,
+    },
+    {
+      // Older ClickHouse HTTP endpoints do not answer browser CORS preflight.
+      // The fixture enables this proxy only when the runtime probe requires it.
+      command: 'npm run dev',
+      cwd: '../proxy',
+      url: 'http://localhost:8990/health',
+      reuseExistingServer: !process.env.CI,
+      timeout: 30_000,
+    },
+  ],
 });

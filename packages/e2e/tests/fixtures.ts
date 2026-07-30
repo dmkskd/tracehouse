@@ -18,6 +18,10 @@ export interface ChConfig {
   port: number;
   user: string;
   password: string;
+  secure: boolean;
+  directCors: boolean;
+  useProxy: boolean;
+  proxyUrl: string;
 }
 
 /** Read ClickHouse connection details written by global-setup. */
@@ -38,6 +42,21 @@ async function waitForDataLoaded(page: Page, timeout = 30_000) {
   await expect(page.getByText(/\d+s ago|Just now/)).toBeVisible({ timeout });
 }
 
+/** Configure the browser transport selected by the global CORS capability probe. */
+export async function configureBrowserTransport(page: Page, config: ChConfig) {
+  if (!config.useProxy) return;
+
+  await page.addInitScript(({ proxyUrl }) => {
+    localStorage.setItem('tracehouse-proxy', JSON.stringify({
+      state: {
+        enabled: true,
+        url: proxyUrl,
+      },
+      version: 0,
+    }));
+  }, { proxyUrl: config.proxyUrl });
+}
+
 /**
  * Fill in the "Add Connection" form and connect.
  * Reusable helper — call this from any test that needs a connected app.
@@ -45,6 +64,8 @@ async function waitForDataLoaded(page: Page, timeout = 30_000) {
  * Uses placeholder-based selectors since the form labels don't use htmlFor.
  */
 export async function connectViaUI(page: Page, config: ChConfig) {
+  await configureBrowserTransport(page, config);
+
   // Force 2D mode — headless browsers don't support WebGL.
   // Use addInitScript so it's set before the page loads AND survives any
   // soft-navigations / React re-renders after form submission.
@@ -74,7 +95,7 @@ export async function connectViaUI(page: Page, config: ChConfig) {
   await nameInput.clear();
   await nameInput.fill('E2E Test');
 
-  const hostInput = page.getByPlaceholder('localhost');
+  const hostInput = page.getByPlaceholder('localhost', { exact: true });
   await hostInput.clear();
   await hostInput.fill(config.host);
 
@@ -118,6 +139,8 @@ export async function connectViaUI(page: Page, config: ChConfig) {
  * Useful when you don't need to test the connection form itself.
  */
 export async function connectViaLocalStorage(page: Page, config: ChConfig) {
+  await configureBrowserTransport(page, config);
+
   const profile = {
     id: 'e2e-test-profile',
     name: 'E2E Test',
@@ -127,7 +150,7 @@ export async function connectViaLocalStorage(page: Page, config: ChConfig) {
       user: config.user || 'default',
       password: config.password || '',
       database: 'default',
-      secure: false,
+      secure: config.secure,
       connect_timeout: 10,
       send_receive_timeout: 30,
     },

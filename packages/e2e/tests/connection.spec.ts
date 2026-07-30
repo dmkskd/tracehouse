@@ -1,4 +1,9 @@
-import { test, expect, connectViaUI } from './fixtures';
+import {
+  test,
+  expect,
+  configureBrowserTransport,
+  connectViaUI,
+} from './fixtures';
 
 function skipOnMobile() {
   if (test.info().project.name.includes('mobile')) test.skip();
@@ -22,12 +27,13 @@ test.describe('Connection form', () => {
 
   test('test connection button shows success', async ({ page, chConfig }) => {
     skipOnMobile();
+    await configureBrowserTransport(page, chConfig);
     await page.goto('/#/overview');
 
     await page.getByRole('button', { name: 'Add Connection' }).click();
 
     // Fill host & port using placeholders (labels don't use htmlFor)
-    const hostInput = page.getByPlaceholder('localhost');
+    const hostInput = page.getByPlaceholder('localhost', { exact: true });
     await hostInput.clear();
     await hostInput.fill(chConfig.host);
 

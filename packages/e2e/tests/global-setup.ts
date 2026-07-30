@@ -17,6 +17,58 @@ const CH_IMAGE =
   process.env.CLICKHOUSE_IMAGE ?? 'clickhouse/clickhouse-server:latest';
 const CONTAINER_NAME = 'tracehouse-e2e-clickhouse';
 const STATE_FILE = path.join(import.meta.dirname, '.ch-state.json');
+const FRONTEND_ORIGIN = 'http://localhost:5173';
+const PROXY_URL = 'http://localhost:8990/proxy';
+
+/**
+ * Stock ClickHouse images did not always expose a browser-compatible HTTP
+ * endpoint. Probe the behavior instead of deriving it from the version: custom
+ * deployments can add or remove CORS independently of their ClickHouse build.
+ */
+async function supportsDirectCors(url: string): Promise<boolean> {
+  try {
+    const response = await fetch(url, {
+      method: 'OPTIONS',
+      headers: {
+        Origin: FRONTEND_ORIGIN,
+        'Access-Control-Request-Method': 'POST',
+        'Access-Control-Request-Headers': 'authorization,x-clickhouse-format',
+      },
+      signal: AbortSignal.timeout(3_000),
+    });
+    const allowedOrigin = response.headers.get('access-control-allow-origin');
+    return response.ok &&
+      (allowedOrigin === '*' || allowedOrigin === FRONTEND_ORIGIN);
+  } catch {
+    return false;
+  }
+}
+
+async function writeState(
+  connection: {
+    host: string;
+    port: number;
+    user: string;
+    password: string;
+    secure: boolean;
+    managed: boolean;
+  },
+) {
+  const protocol = connection.secure ? 'https' : 'http';
+  const directCors = await supportsDirectCors(
+    `${protocol}://${connection.host}:${connection.port}/`,
+  );
+
+  fs.writeFileSync(STATE_FILE, JSON.stringify({
+    ...connection,
+    directCors,
+    useProxy: !directCors,
+    proxyUrl: PROXY_URL,
+  }));
+  console.log(
+    `  ClickHouse: browser transport = ${directCors ? 'direct CORS' : 'TraceHouse proxy (direct CORS unavailable)'}`,
+  );
+}
 
 /** Wait for ClickHouse to accept HTTP queries. */
 function waitForHealth(host: string, port: number, password: string, timeoutMs = 60_000) {
@@ -40,13 +92,14 @@ export default async function globalSetup() {
 
   if (externalUrl) {
     const url = new URL(externalUrl);
-    fs.writeFileSync(STATE_FILE, JSON.stringify({
+    await writeState({
       host: url.hostname,
-      port: parseInt(url.port) || 8123,
-      user: 'default',
-      password: '',
+      port: parseInt(url.port) || (url.protocol === 'https:' ? 8443 : 8123),
+      user: decodeURIComponent(url.username) || 'default',
+      password: decodeURIComponent(url.password),
+      secure: url.protocol === 'https:',
       managed: false,
-    }));
+    });
     console.log(`  ClickHouse: using external ${externalUrl}`);
     return;
   }
@@ -113,11 +166,12 @@ export default async function globalSetup() {
     console.log(`  ClickHouse: init complete (${statements.length} statements)`);
   }
 
-  fs.writeFileSync(STATE_FILE, JSON.stringify({
+  await writeState({
     host: 'localhost',
     port,
     user: 'default',
     password,
+    secure: false,
     managed: true,
-  }));
+  });
 }
