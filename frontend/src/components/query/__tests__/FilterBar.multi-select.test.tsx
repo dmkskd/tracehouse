@@ -121,6 +121,44 @@ describe('filter bar multi-value autocomplete', () => {
     expect(screen.getByText('running')).toBeInTheDocument();
   });
 
+  it('offers error codes from the current results under Status: error', () => {
+    const changes = vi.fn();
+
+    function Harness() {
+      const [filter, setFilter] = useState<QueryFilterState>({
+        timeRange: '1 HOUR',
+        status: ['error'],
+      });
+      return (
+        <QueryFilterBar
+          filter={filter}
+          errorCodeSuggestions={[
+            { code: 394, label: 'Code 394 · QUERY_WAS_CANCELLED (4)' },
+            { code: 60, label: 'Code 60 · UNKNOWN_TABLE (1)' },
+          ]}
+          onFilterChange={patch => {
+            changes(patch);
+            setFilter(current => ({ ...current, ...patch }));
+          }}
+        />
+      );
+    }
+
+    render(<Harness />);
+
+    fireEvent.click(screen.getByText('Status:'));
+
+    expect(screen.getByText('Error codes in results')).toBeInTheDocument();
+    expect(screen.getByText('Code 394 · QUERY_WAS_CANCELLED (4)')).toBeInTheDocument();
+    expect(screen.getByText('Code 60 · UNKNOWN_TABLE (1)')).toBeInTheDocument();
+
+    fireEvent.mouseDown(screen.getByText('Code 394 · QUERY_WAS_CANCELLED (4)'));
+
+    expect(changes).toHaveBeenLastCalledWith({ exceptionCode: [394] });
+    expect(screen.getByText('Error code:')).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Remove Error code 394' })).toBeInTheDocument();
+  });
+
   it('keeps Merge Status active and suggests only the remaining values', () => {
     const changes = vi.fn();
 

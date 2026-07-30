@@ -56,6 +56,7 @@ export function mapQueryHistoryItem(row: RawRow): QueryHistoryItem {
     memory_usage: toInt(row.memory_usage),
     query: toStr(row.query),
     exception,
+    exception_code: row.exception_code != null ? toInt(row.exception_code) : undefined,
     user: toStr(row.user),
     client_hostname: toStr(row.client_hostname),
     type,

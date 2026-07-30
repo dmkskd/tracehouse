@@ -54,6 +54,7 @@ const queryMonitorSchema = {
   queryText: { type: 'string' },
   queryKind: { type: 'string[]' },
   status:    { type: 'string[]' },
+  errorCode: { type: 'string[]' },
   quickFilter: { type: 'string' },
   database:  { type: 'string[]' },
   tableName: { type: 'string[]' },
@@ -111,6 +112,11 @@ export const QueryMonitor: React.FC = () => {
       if (urlState.queryText) patch.queryText = urlState.queryText;
       if (urlState.queryKind) patch.queryKind = urlState.queryKind;
       if (urlState.status) patch.status = urlState.status;
+      if (urlState.errorCode) {
+        patch.exceptionCode = urlState.errorCode
+          .map(value => Number(value))
+          .filter(value => Number.isInteger(value) && value >= 0);
+      }
       if (urlState.quickFilter && ['running', 'recent', 'failed', 'slow'].includes(urlState.quickFilter)) {
         patch.quickFilter = urlState.quickFilter;
       }
@@ -132,20 +138,32 @@ export const QueryMonitor: React.FC = () => {
 
   // Wrap filter/sort changes to sync back to URL
   const handleFilterChange = useCallback((filter: Record<string, unknown>) => {
-    setHistoryFilter(filter as any);
+    const effectiveFilter = { ...filter };
+    if ('status' in effectiveFilter && !('exceptionCode' in effectiveFilter)) {
+      const statuses = Array.isArray(effectiveFilter.status)
+        ? effectiveFilter.status.map(String)
+        : effectiveFilter.status ? [String(effectiveFilter.status)] : [];
+      if (!statuses.some(status => status.toLowerCase() === 'error')) {
+        effectiveFilter.exceptionCode = undefined;
+      }
+    }
+    setHistoryFilter(effectiveFilter as any);
     const urlPatch: Record<string, unknown> = {};
-    if ('user' in filter) urlPatch.user = nonEmptyValues(filter.user);
-    if ('queryId' in filter) urlPatch.queryId = nonEmptyValues(filter.queryId);
-    if ('queryText' in filter) urlPatch.queryText = filter.queryText || undefined;
-    if ('queryKind' in filter) urlPatch.queryKind = nonEmptyValues(filter.queryKind);
-    if ('status' in filter) urlPatch.status = nonEmptyValues(filter.status);
-    if ('quickFilter' in filter) urlPatch.quickFilter = filter.quickFilter || undefined;
-    if ('database' in filter) urlPatch.database = nonEmptyValues(filter.database);
-    if ('table' in filter) urlPatch.tableName = nonEmptyValues(filter.table);
-    if ('hostname' in filter) urlPatch.hostname = nonEmptyValues(filter.hostname);
-    if ('minDurationMs' in filter) urlPatch.minDurMs = filter.minDurationMs || undefined;
-    if ('minMemoryBytes' in filter) urlPatch.minMemB = filter.minMemoryBytes || undefined;
-    if ('limit' in filter) urlPatch.limit = filter.limit;
+    if ('user' in effectiveFilter) urlPatch.user = nonEmptyValues(effectiveFilter.user);
+    if ('queryId' in effectiveFilter) urlPatch.queryId = nonEmptyValues(effectiveFilter.queryId);
+    if ('queryText' in effectiveFilter) urlPatch.queryText = effectiveFilter.queryText || undefined;
+    if ('queryKind' in effectiveFilter) urlPatch.queryKind = nonEmptyValues(effectiveFilter.queryKind);
+    if ('status' in effectiveFilter) urlPatch.status = nonEmptyValues(effectiveFilter.status);
+    if ('exceptionCode' in effectiveFilter) {
+      urlPatch.errorCode = nonEmptyValues(effectiveFilter.exceptionCode);
+    }
+    if ('quickFilter' in effectiveFilter) urlPatch.quickFilter = effectiveFilter.quickFilter || undefined;
+    if ('database' in effectiveFilter) urlPatch.database = nonEmptyValues(effectiveFilter.database);
+    if ('table' in effectiveFilter) urlPatch.tableName = nonEmptyValues(effectiveFilter.table);
+    if ('hostname' in effectiveFilter) urlPatch.hostname = nonEmptyValues(effectiveFilter.hostname);
+    if ('minDurationMs' in effectiveFilter) urlPatch.minDurMs = effectiveFilter.minDurationMs || undefined;
+    if ('minMemoryBytes' in effectiveFilter) urlPatch.minMemB = effectiveFilter.minMemoryBytes || undefined;
+    if ('limit' in effectiveFilter) urlPatch.limit = effectiveFilter.limit;
     if (Object.keys(urlPatch).length > 0) updateUrl(urlPatch as any);
   }, [setHistoryFilter, updateUrl]);
 
@@ -172,6 +190,29 @@ export const QueryMonitor: React.FC = () => {
     ),
     [runningQueries, queryHistory, historyFilter],
   );
+  const errorCodeSuggestions = useMemo(() => {
+    const byCode = new Map<number, { count: number; name?: string }>();
+    for (const query of queryHistory) {
+      const code = query.exception_code
+        ?? Number(query.exception?.match(/^Code:\s*(\d+)/)?.[1]);
+      if (!Number.isInteger(code) || code <= 0) continue;
+      const names = [...(query.exception ?? '').matchAll(/\(([A-Z][A-Z0-9_]+)\)/g)];
+      const name = names.at(-1)?.[1];
+      const existing = byCode.get(code);
+      if (existing) {
+        existing.count += 1;
+        if (!existing.name && name) existing.name = name;
+      } else {
+        byCode.set(code, { count: 1, name });
+      }
+    }
+    return [...byCode.entries()]
+      .sort((a, b) => b[1].count - a[1].count || a[0] - b[0])
+      .map(([code, detail]) => ({
+        code,
+        label: `Code ${code}${detail.name ? ` · ${detail.name}` : ''} (${detail.count})`,
+      }));
+  }, [queryHistory]);
 
   // Preserve the selected row as a live process becomes a terminal log record.
   useEffect(() => {
@@ -540,6 +581,7 @@ export const QueryMonitor: React.FC = () => {
               filter={historyFilter}
               onFilterChange={handleFilterChange}
               queryAnalyzer={services?.queryAnalyzer}
+              errorCodeSuggestions={errorCodeSuggestions}
               onRefresh={triggerManualRefresh}
               isLoading={isLoadingHistory}
             />

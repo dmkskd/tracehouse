@@ -40,6 +40,7 @@ export interface QueryHistoryFilter {
   excludeAppQueries?: boolean;
   queryKind?: string[];
   status?: string[];
+  exceptionCode?: number[];
   database?: string[];
   table?: string[];
 }
@@ -307,6 +308,7 @@ export const queryApi = {
       exclude_app_queries: filter.excludeAppQueries,
       query_kind: filter.queryKind,
       status: filter.status,
+      exception_code: filter.exceptionCode,
       database: filter.database,
       table: filter.table,
       hostname: filter.hostname,

@@ -208,7 +208,7 @@ const toComparable = (q: QueryHistoryItem): ComparableQuery => ({
   result_rows: q.result_rows,
   memory_usage: q.memory_usage,
   cpu_time_us: q.cpu_time_us,
-  exception_code: q.type === 'ExceptionWhileProcessing' ? 1 : 0,
+  exception_code: q.exception_code ?? (q.type === 'error' ? 1 : 0),
   exception: q.exception,
   query: q.query,
   query_kind: q.query_kind,

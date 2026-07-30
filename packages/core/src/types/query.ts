@@ -29,6 +29,7 @@ export interface QueryHistoryItem {
   memory_usage: number;
   query: string;
   exception: string | null;
+  exception_code?: number;
   user: string;
   client_hostname: string;
   type: string;

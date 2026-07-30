@@ -103,6 +103,7 @@ function matchesLiveFilter(record: QueryActivityRecord, filter: QueryHistoryFilt
   if (filter.excludeAppQueries && query.query.includes(APP_SOURCE_PREFIX)) return false;
   const statuses = normalized(filter.status);
   if (statuses.length > 0 && !statuses.includes('running')) return false;
+  if (filter.exceptionCode?.length) return false;
   // system.processes does not expose resolved databases/tables.
   if (filter.database?.length || filter.table?.length) return false;
   return true;
@@ -127,6 +128,10 @@ export function buildQueryActivityRecords(
   const includeError = statuses.length === 0 || statuses.includes('error');
   const recent = snapshot.recent
     .filter(query => query.type === 'error' ? includeError : includeSuccess)
+    .filter(query =>
+      !filter.exceptionCode?.length
+      || filter.exceptionCode.includes(query.exception_code ?? 0)
+    )
     .map(historyRecord);
   const activity = [...live, ...recent].filter(record =>
     matchesAnyContains(record.hostname ?? '', filter.hostname)

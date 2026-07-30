@@ -105,6 +105,31 @@ describe('query activity records', () => {
       .map(record => record.query_id)).toEqual(['success', 'error']);
   });
 
+  it('filters terminal failures by ClickHouse exception code', () => {
+    const unknownTable = {
+      ...completed('unknown-table'),
+      type: 'error',
+      exception: 'Code: 60. UNKNOWN_TABLE',
+      exception_code: 60,
+    };
+    const cancelled = {
+      ...completed('cancelled'),
+      type: 'error',
+      exception: 'Code: 394. QUERY_WAS_CANCELLED',
+      exception_code: 394,
+    };
+
+    const records = buildQueryActivityRecords({
+      live: [running('live')],
+      recent: [unknownTable, cancelled],
+    }, {
+      status: ['error'],
+      exceptionCode: [394],
+    }, 5_000);
+
+    expect(records.map(record => record.query_id)).toEqual(['cancelled']);
+  });
+
   it('pins live queries above newer completed rows and orders live by elapsed time', () => {
     const records = buildQueryActivityRecords({
       live: [

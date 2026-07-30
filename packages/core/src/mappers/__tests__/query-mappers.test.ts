@@ -70,4 +70,26 @@ describe('mapQueryHistoryItem', { tags: ['query-analysis'] }, () => {
     expect(item.tables).toEqual(['system.tables']);
     expect(item.columns).toEqual(['name', 'database']);
   });
+
+  it('preserves the ClickHouse exception code for error filtering', () => {
+    const item = mapQueryHistoryItem({
+      query_id: 'q4',
+      query_type: 'ExceptionBeforeStart',
+      query_kind: 'Select',
+      query_start_time: '2026-03-25 10:00:00',
+      query_duration_ms: 0,
+      read_rows: 0,
+      read_bytes: 0,
+      result_rows: 0,
+      result_bytes: 0,
+      memory_usage: 0,
+      query: 'SELECT missing',
+      exception: 'Code: 60. DB::Exception: Unknown table. (UNKNOWN_TABLE)',
+      exception_code: '60',
+      user: 'default',
+      client_hostname: '',
+    });
+
+    expect(item.exception_code).toBe(60);
+  });
 });

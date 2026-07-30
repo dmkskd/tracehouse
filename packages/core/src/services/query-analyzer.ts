@@ -304,6 +304,8 @@ export interface QueryHistoryOptions {
   query_kind?: string | string[];
   /** Filter by activity status: 'running', 'success', and/or 'error'. */
   status?: string | string[];
+  /** Filter terminal failures by ClickHouse exception code. */
+  exception_code?: number | number[];
   /** Filter by database name (case-insensitive contains on databases array) */
   database?: string | string[];
   /** Filter by table name (case-insensitive contains on tables array) */
@@ -460,6 +462,17 @@ export class QueryAnalyzer {
       }
     }
 
+    const exceptionCodes = (Array.isArray(options.exception_code)
+      ? options.exception_code
+      : options.exception_code == null ? [] : [options.exception_code])
+      .filter(code => Number.isInteger(code) && code >= 0);
+    if (exceptionCodes.length === 1) {
+      whereConditions.push('exception_code = {exception_code}');
+      params.exception_code = exceptionCodes[0]!;
+    } else if (exceptionCodes.length > 1) {
+      whereConditions.push(`exception_code IN (${exceptionCodes.join(', ')})`);
+    }
+
     const databases = filterValues(options.database);
     if (databases.length) {
       const matches = databases.map((value, index) => {
@@ -504,6 +517,7 @@ export class QueryAnalyzer {
         memory_usage,
         query,
         exception,
+        exception_code,
         user,
         client_hostname,
         ProfileEvents['OSCPUVirtualTimeMicroseconds'] AS cpu_time_us,

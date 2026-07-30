@@ -117,6 +117,7 @@ describe('QueryAnalyzer UTC history bounds', () => {
       query_id: ['query-a', 'query-b'],
       query_kind: ['Select', 'Insert'],
       status: ['running', 'error'],
+      exception_code: [60, 394],
       database: ['db_a', 'db_b'],
       table: ['table_a', 'table_b'],
       hostname: ['node-1', 'node-2'],
@@ -129,6 +130,7 @@ describe('QueryAnalyzer UTC history bounds', () => {
     expect(sql).toContain(
       "type IN ('ExceptionBeforeStart', 'ExceptionWhileProcessing')",
     );
+    expect(sql).toContain('exception_code IN (60, 394)');
     expect(sql).toContain("positionCaseInsensitive(x, 'db_a') > 0 OR positionCaseInsensitive(x, 'db_b') > 0");
     expect(sql).toContain("positionCaseInsensitive(x, 'table_a') > 0 OR positionCaseInsensitive(x, 'table_b') > 0");
     expect(sql).toContain("positionCaseInsensitive(hostName(), 'node-1') > 0 OR positionCaseInsensitive(hostName(), 'node-2') > 0");

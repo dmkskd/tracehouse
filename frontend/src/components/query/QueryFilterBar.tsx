@@ -45,6 +45,7 @@ export interface QueryFilterState {
   excludeAppQueries?: boolean;
   queryKind?: string[];
   status?: string[];
+  exceptionCode?: number[];
   database?: string[];
   table?: string[];
 }
@@ -55,6 +56,7 @@ interface QueryFilterBarProps {
   filter: QueryFilterState;
   onFilterChange: (patch: Partial<QueryFilterState>) => void;
   queryAnalyzer?: QueryAnalyzer;
+  errorCodeSuggestions?: { code: number; label: string }[];
   onRefresh?: () => void;
   isLoading?: boolean;
 }
@@ -157,6 +159,17 @@ const FILTER_FIELDS: FilterFieldDef[] = [
     clear: () => ({ status: undefined }),
     hasStaticSuggestions: true,
     staticSuggestions: ['running', 'success', 'error'],
+    multi: true,
+  },
+  {
+    key: 'error_code', label: 'Error code', placeholder: 'e.g. 60',
+    toFilter: v => ({
+      exceptionCode: multiValue(v)
+        .map(value => Number(value))
+        .filter(value => Number.isInteger(value) && value >= 0),
+    }),
+    fromFilter: f => f.exceptionCode?.map(String),
+    clear: () => ({ exceptionCode: undefined }),
     multi: true,
   },
   {
@@ -273,10 +286,10 @@ type Phase = 'idle' | 'picking_field' | 'entering_value';
 type DropdownItem =
   | { id: string; label: string; group: 'quick'; quickFilter: QuickFilterDef }
   | { id: string; label: string; group: 'field'; field: FilterFieldDef }
-  | { id: string; label: string; group: 'value'; field: FilterFieldDef };
+  | { id: string; label: string; value: string; group: 'value' | 'error_code'; field: FilterFieldDef };
 
 export const QueryFilterBar: React.FC<QueryFilterBarProps> = ({
-  filter, onFilterChange, queryAnalyzer, onRefresh, isLoading,
+  filter, onFilterChange, queryAnalyzer, errorCodeSuggestions = [], onRefresh, isLoading,
 }) => {
   /* --- local state for the chip search input --- */
   const [phase, setPhase] = useState<Phase>('idle');
@@ -319,13 +332,33 @@ export const QueryFilterBar: React.FC<QueryFilterBarProps> = ({
   /* --- which fields are still available (not yet used) --- */
   const availableFields = useMemo(() => {
     const usedKeys = new Set(activeChips.map(c => c.field.key));
-    return FILTER_FIELDS.filter(f => f.multi || !usedKeys.has(f.key));
-  }, [activeChips]);
+    const errorSelected = filter.status?.some(status => status.toLowerCase() === 'error') ?? false;
+    return FILTER_FIELDS
+      .filter(f => f.key !== 'error_code' || errorSelected)
+      .filter(f => f.multi || !usedKeys.has(f.key));
+  }, [activeChips, filter.status]);
 
   /* --- dropdown items based on phase --- */
   const dropdownItems = useMemo(() => {
+    const errorCodeField = FILTER_FIELDS.find(field => field.key === 'error_code')!;
+    const selectedErrorCodes = new Set(filter.exceptionCode ?? []);
+    const q = inputValue.toLowerCase();
+    const errorCodeItems: DropdownItem[] = errorCodeSuggestions
+      .filter(suggestion => !selectedErrorCodes.has(suggestion.code))
+      .filter(suggestion =>
+        !q
+        || String(suggestion.code).includes(q)
+        || suggestion.label.toLowerCase().includes(q)
+      )
+      .map(suggestion => ({
+        id: `error_code:${suggestion.code}`,
+        label: suggestion.label,
+        value: String(suggestion.code),
+        group: 'error_code',
+        field: errorCodeField,
+      }));
+
     if (phase === 'idle' || phase === 'picking_field') {
-      const q = inputValue.toLowerCase();
       const quickItems: DropdownItem[] = QUICK_FILTERS
         .filter(preset => preset.key !== activeQuickFilter?.key)
         .filter(preset =>
@@ -347,23 +380,28 @@ export const QueryFilterBar: React.FC<QueryFilterBarProps> = ({
     if (phase === 'entering_value' && activeField?.hasSuggestions) {
       const vals = suggestionCache[activeField.key] || [];
       const selected = new Set(valuesOf(activeField.fromFilter(filter)).map(v => v.toLowerCase()));
-      const q = inputValue.toLowerCase();
       return vals
         .filter(v => !selected.has(v.toLowerCase()))
         .filter(v => !q || v.toLowerCase().includes(q))
-        .map(v => ({ id: v, label: v, group: 'value', field: activeField }) satisfies DropdownItem);
+        .map(v => ({ id: v, label: v, value: v, group: 'value', field: activeField }) satisfies DropdownItem);
     }
     if (phase === 'entering_value' && activeField?.hasStaticSuggestions) {
       const vals = activeField.staticSuggestions || [];
       const selected = new Set(valuesOf(activeField.fromFilter(filter)).map(v => v.toLowerCase()));
-      const q = inputValue.toLowerCase();
-      return vals
+      const staticItems: DropdownItem[] = vals
         .filter(v => !selected.has(v.toLowerCase()))
         .filter(v => !q || v.toLowerCase().includes(q))
-        .map(v => ({ id: v, label: v, group: 'value', field: activeField }) satisfies DropdownItem);
+        .map(v => ({ id: v, label: v, value: v, group: 'value', field: activeField }));
+      const errorSelected = filter.status?.some(status => status.toLowerCase() === 'error') ?? false;
+      return activeField.key === 'status' && errorSelected
+        ? [...staticItems, ...errorCodeItems]
+        : staticItems;
+    }
+    if (phase === 'entering_value' && activeField?.key === 'error_code') {
+      return errorCodeItems;
     }
     return [];
-  }, [phase, inputValue, availableFields, activeField, suggestionCache, filter, activeQuickFilter]);
+  }, [phase, inputValue, availableFields, activeField, suggestionCache, filter, activeQuickFilter, errorCodeSuggestions]);
 
   /* --- handlers --- */
   const finishValueEntry = useCallback(() => {
@@ -374,13 +412,14 @@ export const QueryFilterBar: React.FC<QueryFilterBarProps> = ({
     setHighlightIdx(-1);
   }, []);
 
-  const commitValue = useCallback((value: string, continueMultiEntry = true) => {
-    if (!activeField || !value.trim()) return;
-    const additions = activeField.key === 'query_id'
+  const commitValue = useCallback((value: string, continueMultiEntry = true, fieldOverride?: FilterFieldDef) => {
+    const field = fieldOverride ?? activeField;
+    if (!field || !value.trim()) return;
+    const additions = field.key === 'query_id'
       ? value.split(/[\s,]+/).map(item => item.trim()).filter(Boolean)
       : [value.trim()];
-    if (activeField.multi) {
-      const current = valuesOf(activeField.fromFilter(filter));
+    if (field.multi) {
+      const current = valuesOf(field.fromFilter(filter));
       const seen = new Set(current.map(item => item.toLowerCase()));
       const next = [...current];
       additions.forEach(item => {
@@ -390,19 +429,23 @@ export const QueryFilterBar: React.FC<QueryFilterBarProps> = ({
         }
       });
       onFilterChange({
-        ...activeField.toFilter(next),
-        ...(isPresetConstraintField(activeField) && filter.quickFilter ? { quickFilter: undefined } : {}),
+        ...field.toFilter(next),
+        ...(isPresetConstraintField(field) && filter.quickFilter ? { quickFilter: undefined } : {}),
       });
       if (continueMultiEntry) {
         setInputValue('');
-        setShowDropdown(activeField.hasSuggestions === true || activeField.hasStaticSuggestions === true);
+        setShowDropdown(
+          field.hasSuggestions === true
+          || field.hasStaticSuggestions === true
+          || field.key === 'error_code'
+        );
         setHighlightIdx(-1);
         return;
       }
     } else {
       onFilterChange({
-        ...activeField.toFilter(additions[0]!),
-        ...(isPresetConstraintField(activeField) && filter.quickFilter ? { quickFilter: undefined } : {}),
+        ...field.toFilter(additions[0]!),
+        ...(isPresetConstraintField(field) && filter.quickFilter ? { quickFilter: undefined } : {}),
       });
     }
     finishValueEntry();
@@ -414,7 +457,11 @@ export const QueryFilterBar: React.FC<QueryFilterBarProps> = ({
     setPhase('entering_value');
     setHighlightIdx(-1);
     // keep dropdown open for value suggestions
-    setShowDropdown(field.hasSuggestions === true || field.hasStaticSuggestions === true);
+    setShowDropdown(
+      field.hasSuggestions === true
+      || field.hasStaticSuggestions === true
+      || field.key === 'error_code'
+    );
     setTimeout(() => inputRef.current?.focus(), 0);
   }, []);
 
@@ -460,7 +507,11 @@ export const QueryFilterBar: React.FC<QueryFilterBarProps> = ({
     setInputValue('');
     setPhase('entering_value');
     setHighlightIdx(-1);
-    setShowDropdown(field.hasSuggestions === true || field.hasStaticSuggestions === true);
+    setShowDropdown(
+      field.hasSuggestions === true
+      || field.hasStaticSuggestions === true
+      || field.key === 'error_code'
+    );
     setTimeout(() => {
       inputRef.current?.focus();
     }, 0);
@@ -511,7 +562,7 @@ export const QueryFilterBar: React.FC<QueryFilterBarProps> = ({
         const item = dropdownItems[highlightIdx];
         if (item.group === 'quick') applyQuickFilter(item.quickFilter);
         else if (item.group === 'field') selectField(item.field);
-        else commitValue(item.label);
+        else commitValue(item.value, item.group === 'value', item.field);
       } else if (phase === 'entering_value' && inputValue.trim()) {
         commitValue(inputValue);
       } else if (phase === 'entering_value') {
@@ -549,7 +600,7 @@ export const QueryFilterBar: React.FC<QueryFilterBarProps> = ({
     } else if (item.group === 'field') {
       selectField(item.field);
     } else {
-      commitValue(item.label);
+      commitValue(item.value, item.group === 'value', item.field);
     }
   }, [applyQuickFilter, selectField, commitValue]);
 
@@ -700,7 +751,11 @@ export const QueryFilterBar: React.FC<QueryFilterBarProps> = ({
                         letterSpacing: '0.8px',
                         textTransform: 'uppercase',
                       }}>
-                        {item.group === 'quick' ? 'Quick filters' : 'Add a filter'}
+                        {item.group === 'quick'
+                          ? 'Quick filters'
+                          : item.group === 'error_code'
+                            ? 'Error codes in results'
+                            : 'Add a filter'}
                       </div>
                     )}
                     <div
@@ -709,7 +764,7 @@ export const QueryFilterBar: React.FC<QueryFilterBarProps> = ({
                       style={{
                         ...dropdownItemStyle,
                         background: idx === highlightIdx ? 'var(--bg-secondary)' : 'transparent',
-                        fontWeight: item.group === 'value' ? 400 : 500,
+                        fontWeight: item.group === 'value' || item.group === 'error_code' ? 400 : 500,
                         display: 'flex',
                         alignItems: 'center',
                         gap: 7,
@@ -721,7 +776,7 @@ export const QueryFilterBar: React.FC<QueryFilterBarProps> = ({
                         width: 11,
                         flex: '0 0 11px',
                       }}>
-                        {item.group === 'quick' ? '⚡' : item.group === 'field' ? '⊕' : ''}
+                        {item.group === 'quick' ? '⚡' : item.group === 'field' ? '⊕' : item.group === 'error_code' ? '!' : ''}
                       </span>
                       <span style={{ minWidth: 0 }}>
                         <span>{item.label}</span>
