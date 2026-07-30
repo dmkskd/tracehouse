@@ -5,6 +5,7 @@
   "type": "module",
   "scripts": {
     "test": "playwright test",
+    "test:grafana": "playwright test --config playwright.grafana.config.ts",
     "test:ui": "playwright test --ui",
     "test:headed": "SLOWMO=500 playwright test --headed",
     "test:report": "playwright show-report"
