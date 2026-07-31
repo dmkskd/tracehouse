@@ -193,6 +193,7 @@ export const TimeTravelPage: React.FC = () => {
   } = useUserPreferenceStore();
   const [windowSec, setWindowSec] = useState(150);
   const [isLive, setIsLive] = useState(!hasInitialEvent);
+  const [navigatorInteractionEpoch, setNavigatorInteractionEpoch] = useState(0);
   const [autoRefresh, setAutoRefresh] = useState(false);
   const [customStartTime, setCustomStartTime] = useState<string | null>(null);  // Custom range start (navigator)
   const [customEndTime, setCustomEndTime] = useState<string | null>(
@@ -978,11 +979,23 @@ export const TimeTravelPage: React.FC = () => {
 
   const clearDragPosition = () => { dragEndMsRef.current = null; setDragEndMs(null); };
 
-  const handleTimeRangeChange = (rangeLabel: string) => {
-    setSelectedTimeRange(rangeLabel);
+  const enterLiveMode = (rangeLabel?: string) => {
+    // Remounting the navigator cancels any active pointer interaction so a
+    // delayed mouse-up cannot restore a historical viewport after this action.
+    setNavigatorInteractionEpoch(epoch => epoch + 1);
     clearDragPosition();
-    // All presets: live mode (right edge = now), scrub bar shows last N hours
-    setIsLive(true); setCustomEndTime(null); setCustomStartTime(null); setViewportEndTime(null);
+    setIsLive(true);
+    setCustomEndTime(null);
+    setCustomStartTime(null);
+    setViewportEndTime(null);
+    setSelectedTimeRange(
+      rangeLabel ?? (selectedTimeRange === 'Custom' ? '1h' : selectedTimeRange),
+    );
+  };
+
+  const handleTimeRangeChange = (rangeLabel: string) => {
+    // "Last" presets are always anchored to now.
+    enterLiveMode(rangeLabel);
     setShowCustomPopover(false);
   };
 
@@ -1146,25 +1159,24 @@ export const TimeTravelPage: React.FC = () => {
               </select>
             </div>
 
-            {/* Include running toggle */}
-            <button onClick={() => isLive && setIncludeRunning(!includeRunning)} disabled={!isLive}
-              title={!isLive ? 'In-flight data only available in live mode' : (includeRunning ? 'Showing in-flight queries/merges - click to hide' : 'Hiding in-flight queries/merges - click to show')}
-              style={{
-                display:'flex', alignItems:'center', gap:6,
-                background: !isLive ? 'var(--bg-tertiary)' : (includeRunning ? 'rgba(88,166,255,0.1)' : 'var(--bg-tertiary)'),
-                color: !isLive ? 'var(--text-muted)' : (includeRunning ? '#58a6ff' : 'var(--text-muted)'),
-                border: !isLive ? '1px solid var(--border-primary)' : (includeRunning ? '1px solid rgba(88,166,255,0.3)' : '1px solid var(--border-primary)'),
-                borderRadius:6, padding:'8px 12px', fontSize:11, cursor: isLive ? 'pointer' : 'not-allowed',
-                fontWeight: isLive && includeRunning ? 500 : 400, opacity: isLive ? 1 : 0.5,
-              }}>
-              {isLive && includeRunning && <span style={{ display:'inline-block', width:6, height:6, borderRadius:'50%', background:'#58a6ff', animation:'pulse 1.5s ease-in-out infinite' }} />}
-              In-flight
-            </button>
-
-            {/* Go Live button */}
-            {!isLive && (
-              <button onClick={() => { clearDragPosition(); setIsLive(true); setCustomEndTime(null); setCustomStartTime(null); setViewportEndTime(null); setSelectedTimeRange('1h'); }} title="Jump to current time"
-                style={{ display:'flex', alignItems:'center', gap:6, background:'rgba(63,185,80,0.15)', color:'#3fb950', border:'1px solid rgba(63,185,80,0.4)', borderRadius:6, padding:'8px 12px', fontSize:11, cursor:'pointer', fontWeight:500 }}>
+            {/* One stable slot: in-flight control while live, return action while historical. */}
+            {isLive ? (
+              <button onClick={() => setIncludeRunning(!includeRunning)}
+                title={includeRunning ? 'Showing in-flight queries/merges - click to hide' : 'Hiding in-flight queries/merges - click to show'}
+                style={{
+                  display:'flex', alignItems:'center', justifyContent:'center', gap:6, minWidth:88,
+                  background: includeRunning ? 'rgba(88,166,255,0.1)' : 'var(--bg-tertiary)',
+                  color: includeRunning ? '#58a6ff' : 'var(--text-muted)',
+                  border: includeRunning ? '1px solid rgba(88,166,255,0.3)' : '1px solid var(--border-primary)',
+                  borderRadius:6, padding:'8px 12px', fontSize:11, cursor:'pointer',
+                  fontWeight: includeRunning ? 500 : 400,
+                }}>
+                {includeRunning && <span style={{ display:'inline-block', width:6, height:6, borderRadius:'50%', background:'#58a6ff', animation:'pulse 1.5s ease-in-out infinite' }} />}
+                In-flight
+              </button>
+            ) : (
+              <button onClick={() => enterLiveMode()} title="Jump to current time"
+                style={{ display:'flex', alignItems:'center', justifyContent:'center', gap:6, minWidth:88, background:'rgba(63,185,80,0.15)', color:'#3fb950', border:'1px solid rgba(63,185,80,0.4)', borderRadius:6, padding:'8px 12px', fontSize:11, cursor:'pointer', fontWeight:500 }}>
                 <span style={{ display:'inline-block', width:6, height:6, borderRadius:'50%', background:'#3fb950' }} />
                 Go Live
               </button>
@@ -1658,6 +1670,7 @@ export const TimeTravelPage: React.FC = () => {
                 <span>· Drag to navigate</span>
               </div>
               <TimelineNavigator
+                key={navigatorInteractionEpoch}
                 data={timeTravelNavigatorShape === 'trend'
                   ? navigatorMetricData.trend
                   : timeTravelNavigatorShape === 'peaks'
