@@ -101,3 +101,16 @@
   outline: 2px solid var(--accent-primary);
   outline-offset: 1px;
 }
+
+/* Keep compact native selects content-sized when embedded in hosts such as
+ * Grafana, whose global form styles make selects fill their container. */
+.tracehouse-compact-select-control {
+  flex: 0 0 auto;
+  width: fit-content;
+}
+
+.tracehouse-compact-native-select {
+  width: auto !important;
+  max-width: max-content;
+  flex: 0 0 auto;
+}

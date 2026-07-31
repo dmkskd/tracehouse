@@ -1142,18 +1142,18 @@ export const TimeTravelPage: React.FC = () => {
             </div>
 
             {/* Window size selector */}
-            <div style={{ display:'flex', alignItems:'center', gap:0, background:'var(--bg-tertiary)', borderRadius:6, border:'1px solid var(--border-primary)', overflow:'hidden' }}>
+            <div className="tracehouse-compact-select-control" style={{ display:'flex', alignItems:'center', gap:0, background:'var(--bg-tertiary)', borderRadius:6, border:'1px solid var(--border-primary)', overflow:'hidden' }}>
               <span style={{ padding:'5px 8px', fontSize:10, color:'var(--text-muted)', borderRight:'1px solid var(--border-primary)', whiteSpace:'nowrap', fontWeight:600 }}>Zoom</span>
-              <select value={windowSec} onChange={(e) => setWindowSec(Number(e.target.value))} title="Select time window duration"
+              <select className="tracehouse-compact-native-select" value={windowSec} onChange={(e) => setWindowSec(Number(e.target.value))} title="Select time window duration"
                 style={{ background:'transparent', color:'var(--text-primary)', border:'none', padding:'5px 10px', fontSize:11, outline:'none', cursor:'pointer', minWidth:60 }}>
                 {WINDOW_SIZES.map(w => <option key={w.sec} value={w.sec}>{w.label}</option>)}
               </select>
             </div>
 
             {/* Activity limit selector */}
-            <div style={{ display:'flex', alignItems:'center', gap:0, background:'var(--bg-tertiary)', borderRadius:6, border:'1px solid var(--border-primary)', overflow:'hidden' }}>
+            <div className="tracehouse-compact-select-control" style={{ display:'flex', alignItems:'center', gap:0, background:'var(--bg-tertiary)', borderRadius:6, border:'1px solid var(--border-primary)', overflow:'hidden' }}>
               <span style={{ padding:'8px 10px', fontSize:11, color:'var(--text-muted)', borderRight:'1px solid var(--border-primary)', whiteSpace:'nowrap' }}>Show</span>
-              <select value={activityLimit} onChange={(e) => setActivityLimit(Number(e.target.value))} title="Max items per activity type (queries, merges, mutations)"
+              <select className="tracehouse-compact-native-select" value={activityLimit} onChange={(e) => setActivityLimit(Number(e.target.value))} title="Max items per activity type (queries, merges, mutations)"
                 style={{ background:'transparent', color:'var(--text-primary)', border:'none', padding:'8px 12px', fontSize:13, outline:'none', cursor:'pointer', minWidth:50 }}>
                 {[25, 50, 100, 250, 500].map(n => <option key={n} value={n}>{n}</option>)}
               </select>
