@@ -14,6 +14,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Bug fixes
 - **Merges:** Fixed a bug where filters ran after the result limit, causing failed merges to be missed.
 - **Merges:** Fixed failed details being replaced by another replica's successful merge.
+- **Queries / Merges:** Fixed running activity outside the selected time range.
 
 ## [0.18.3] - 2026-07-31
 
