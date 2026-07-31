@@ -302,7 +302,14 @@ type DropdownItem =
       id: string;
       label: string;
       value: string;
-      group: 'value' | 'error_code';
+      group: 'value';
+      field: FilterFieldDef;
+    }
+  | {
+      id: string;
+      label: string;
+      value: string;
+      group: 'error_code';
       field: FilterFieldDef;
       selected?: boolean;
     };
