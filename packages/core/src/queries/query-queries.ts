@@ -686,3 +686,24 @@ export const QUERY_THREAD_BREAKDOWN = `
 export const PROFILE_EVENT_DESCRIPTIONS = `
   SELECT event, description FROM system.events ORDER BY event
 `;
+
+/** Build a scoped comment lookup for qualified columns recorded in query_log. */
+export function buildColumnCommentsSQL(
+  columns: Array<{ database: string; table: string; name: string }>,
+): string {
+  const quote = (value: string) => value.replace(/'/g, "''");
+  const conditions = columns.map(column =>
+    `(c.database = '${quote(column.database)}' AND c.table = '${quote(column.table)}' AND c.name = '${quote(column.name)}')`
+  ).join(' OR ');
+
+  return `
+    SELECT
+      c.database AS database,
+      c.table AS table,
+      c.name AS name,
+      any(c.comment) AS comment
+    FROM {{cluster_aware:system.columns}} AS c
+    WHERE (${conditions || '0'}) AND length(c.comment) > 0
+    GROUP BY c.database, c.table, c.name
+  `;
+}

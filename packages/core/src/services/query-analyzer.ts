@@ -1,6 +1,6 @@
 import type { IClickHouseAdapter } from '../adapters/types.js';
 import type { QueryMetrics, QueryHistoryItem } from '../types/query.js';
-import { RUNNING_QUERIES, QUERY_DETAIL, QUERY_THREAD_BREAKDOWN, PROFILE_EVENT_DESCRIPTIONS, SUB_QUERIES, BATCH_SUB_QUERIES, COORDINATOR_IDS, RUNNING_COORDINATOR_IDS, QUERY_LOG_FLUSH_INTERVAL, DISTRIBUTED_TOPOLOGY_EXECUTIONS, DISTRIBUTED_TOPOLOGY_EXECUTIONS_BY_QUERY_IDS, DISTRIBUTED_TOPOLOGY_CLUSTER_HOSTS, DISTRIBUTED_TOPOLOGY_PROCESSORS, withProcessorPlanStepCapability, DISTRIBUTED_TOPOLOGY_TEXT_LOGS, DISTRIBUTED_TOPOLOGY_ASYNC_INSERT_LOGS } from '../queries/query-queries.js';
+import { RUNNING_QUERIES, QUERY_DETAIL, QUERY_THREAD_BREAKDOWN, PROFILE_EVENT_DESCRIPTIONS, SUB_QUERIES, BATCH_SUB_QUERIES, COORDINATOR_IDS, RUNNING_COORDINATOR_IDS, QUERY_LOG_FLUSH_INTERVAL, DISTRIBUTED_TOPOLOGY_EXECUTIONS, DISTRIBUTED_TOPOLOGY_EXECUTIONS_BY_QUERY_IDS, DISTRIBUTED_TOPOLOGY_CLUSTER_HOSTS, DISTRIBUTED_TOPOLOGY_PROCESSORS, withProcessorPlanStepCapability, DISTRIBUTED_TOPOLOGY_TEXT_LOGS, DISTRIBUTED_TOPOLOGY_ASYNC_INSERT_LOGS, buildColumnCommentsSQL } from '../queries/query-queries.js';
 /**
  * ProfileEvent comparison row between two queries.
  * Inspired by https://clickhouse.com/docs/knowledgebase/comparing-metrics-between-queries
@@ -623,6 +623,37 @@ export class QueryAnalyzer {
       console.warn('[QueryAnalyzer] Failed to fetch table columns:', err);
     }
     return result;
+  }
+
+  /** Load non-empty comments for qualified columns recorded in query_log. */
+  async getColumnComments(qualifiedColumns: string[]): Promise<Record<string, string>> {
+    const parsed = [...new Set(qualifiedColumns)].flatMap(qualifiedName => {
+      const parts = qualifiedName.split('.');
+      if (parts.length < 3) return [];
+      return [{
+        database: parts[0],
+        table: parts[1],
+        name: parts.slice(2).join('.'),
+      }];
+    });
+    if (parsed.length === 0) return {};
+
+    try {
+      const rows = await this.adapter.executeQuery<Record<string, unknown>>(tagQuery(
+        buildColumnCommentsSQL(parsed),
+        sourceTag(TAB_QUERIES, 'columnComments'),
+      ));
+      const comments: Record<string, string> = {};
+      for (const row of rows) {
+        const qualifiedName = `${String(row.database ?? '')}.${String(row.table ?? '')}.${String(row.name ?? '')}`;
+        const comment = String(row.comment ?? '');
+        if (comment) comments[qualifiedName] = comment;
+      }
+      return comments;
+    } catch (err) {
+      console.warn('[QueryAnalyzer] Failed to fetch column comments:', err);
+      return {};
+    }
   }
 
   /**

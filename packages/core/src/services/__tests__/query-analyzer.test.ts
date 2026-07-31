@@ -63,6 +63,41 @@ describe('QueryAnalyzer running queries', () => {
   });
 });
 
+describe('QueryAnalyzer column comments', () => {
+  it('loads comments for qualified columns from any database and table', async () => {
+    const adapter = new MockAdapter([
+      { database: 'analytics', table: 'events', name: 'user_id', comment: 'Authenticated user identifier.' },
+      { database: 'system', table: 'query_log', name: 'query_id', comment: 'Query identifier.' },
+    ]);
+    const analyzer = new QueryAnalyzer(adapter);
+
+    const comments = await analyzer.getColumnComments([
+      'analytics.events.user_id',
+      'system.query_log.query_id',
+      'analytics.events.user_id',
+    ]);
+
+    expect(comments).toEqual({
+      'analytics.events.user_id': 'Authenticated user identifier.',
+      'system.query_log.query_id': 'Query identifier.',
+    });
+    expect(adapter.queries).toHaveLength(1);
+    expect(adapter.queries[0]).toContain("database = 'analytics'");
+    expect(adapter.queries[0]).toContain("table = 'events'");
+    expect(adapter.queries[0]).toContain('length(c.comment) > 0');
+    expect(adapter.queries[0]).toContain('{{cluster_aware:system.columns}}');
+    expect(adapter.queries[0]).toContain('source:TraceHouse:Queries:columnComments');
+  });
+
+  it('skips the lookup when query_log has no qualified columns', async () => {
+    const adapter = new MockAdapter();
+    const analyzer = new QueryAnalyzer(adapter);
+
+    await expect(analyzer.getColumnComments(['query_id'])).resolves.toEqual({});
+    expect(adapter.queries).toHaveLength(0);
+  });
+});
+
 describe('QueryAnalyzer filter values', () => {
   it('uses query-row server identities for hostname suggestions', async () => {
     const adapter = new MockAdapter([

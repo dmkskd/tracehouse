@@ -1,5 +1,5 @@
 import React from 'react';
-import { render, screen } from '@testing-library/react';
+import { fireEvent, render, screen } from '@testing-library/react';
 import { describe, expect, it, vi } from 'vitest';
 import {
   summarizeObjectStorageProfile,
@@ -80,5 +80,39 @@ describe('OverviewTab error rendering', () => {
     expect(screen.getByText('role').nextSibling).toHaveTextContent('coordinator');
     expect(document.querySelector('.cm-editor')?.parentElement)
       .toHaveStyle({ overflow: 'hidden' });
+  });
+
+  it('aligns parent query navigation with the summary facts', () => {
+    const onNavigateToQuery = vi.fn();
+    render(
+      <OverviewTab
+        q={QUERY}
+        queryDetail={{
+          ...DETAIL,
+          is_initial_query: 0,
+          initial_query_id: 'parent-query-id',
+        }}
+        isSelectQuery
+        subQueries={[]}
+        distributedTopology={null}
+        isLoadingSubQueries={false}
+        similarQueries={[]}
+        isLoadingSimilarQueries={false}
+        objectStorageSummary={summarizeObjectStorageProfile({})}
+        showLogsCard={false}
+        showHistoryCard={false}
+        showXRayCard={false}
+        showThreadsCard={false}
+        showFlamegraphCard={false}
+        onOpenTab={vi.fn()}
+        onNavigateToQuery={onNavigateToQuery}
+      />,
+    );
+
+    const parentLink = screen.getByRole('button', { name: 'parent-q' });
+    expect(screen.getByText('parent').nextSibling).toBe(parentLink);
+
+    fireEvent.click(parentLink);
+    expect(onNavigateToQuery).toHaveBeenCalledWith('parent-query-id');
   });
 });

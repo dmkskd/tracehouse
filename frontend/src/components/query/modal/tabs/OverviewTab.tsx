@@ -585,11 +585,11 @@ const QuerySummaryPreview: React.FC<{
           borderRadius: 999,
           background: status.bg,
           color: status.color,
-          fontFamily: 'monospace',
-          fontSize: 9,
+          fontSize: 8,
           fontWeight: 700,
-          lineHeight: 1.2,
-          textTransform: 'lowercase',
+          lineHeight: 1.25,
+          letterSpacing: '0.04em',
+          textTransform: 'uppercase',
           whiteSpace: 'nowrap',
         }}
       >
@@ -599,36 +599,22 @@ const QuerySummaryPreview: React.FC<{
     action="SQL"
     onOpen={onOpen}
   >
-    <div style={{ display: 'flex', flexDirection: 'column', gap: 9, minWidth: 0 }}>
-      <div style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
-        <SummaryFact label="id" value={shortId(q.query_id)} title={q.query_id} />
-        <SummaryFact label="kind" value={queryKind.toLowerCase()} />
-        {queryRole && <SummaryFact label="role" value={queryRole} />}
-        <SummaryFact label="user" value={q.user || '-'} />
-        <SummaryFact label="host" value={host} />
-      </div>
-
+    <div style={{ display: 'flex', flexDirection: 'column', gap: 5, minWidth: 0 }}>
+      <SummaryFact label="id" value={shortId(q.query_id)} title={q.query_id} monospace accent />
       {parentQueryId && (
-        <button
-          type="button"
-          onClick={(event) => {
-            event.stopPropagation();
-            onNavigateToQuery(parentQueryId);
-          }}
-          style={{
-            width: 'fit-content',
-            padding: 0,
-            border: 'none',
-            background: 'transparent',
-            color: '#58a6ff',
-            cursor: 'pointer',
-            fontFamily: 'monospace',
-            fontSize: 11,
-          }}
-        >
-          parent {shortId(parentQueryId)}
-        </button>
+        <SummaryFact
+          label="parent"
+          value={shortId(parentQueryId)}
+          title={parentQueryId}
+          monospace
+          accent
+          onActivate={() => onNavigateToQuery(parentQueryId)}
+        />
       )}
+      <SummaryFact label="kind" value={queryKind.toLowerCase()} />
+      {queryRole && <SummaryFact label="role" value={queryRole} />}
+      <SummaryFact label="user" value={q.user || '-'} />
+      <SummaryFact label="host" value={host} title={host} monospace />
     </div>
   </PreviewCard>
 );
@@ -637,24 +623,61 @@ const SummaryFact: React.FC<{
   label: string;
   value: string;
   title?: string;
-}> = ({ label, value, title }) => (
-  <div style={{ display: 'grid', gridTemplateColumns: '34px minmax(0, 1fr)', gap: 8, alignItems: 'baseline', minWidth: 0 }}>
-    <span style={{ fontFamily: 'monospace', fontSize: 10, color: 'var(--text-muted)' }}>{label}</span>
-    <span
-      title={title ?? value}
-      style={{
-        fontFamily: 'monospace',
-        fontSize: 12,
-        color: 'var(--text-secondary)',
-        overflow: 'hidden',
-        textOverflow: 'ellipsis',
-        whiteSpace: 'nowrap',
-      }}
-    >
-      {value}
-    </span>
-  </div>
-);
+  monospace?: boolean;
+  accent?: boolean;
+  onActivate?: () => void;
+}> = ({ label, value, title, monospace = false, accent = false, onActivate }) => {
+  const valueStyle: React.CSSProperties = {
+    minWidth: 0,
+    padding: 0,
+    color: accent ? 'var(--accent-blue)' : 'var(--text-primary)',
+    fontFamily: monospace ? 'var(--font-mono, monospace)' : 'inherit',
+    fontSize: 11,
+    fontWeight: accent ? 600 : 500,
+    lineHeight: 1.3,
+    overflow: 'hidden',
+    textOverflow: 'ellipsis',
+    whiteSpace: 'nowrap',
+  };
+
+  return (
+    <div style={{ display: 'grid', gridTemplateColumns: '48px minmax(0, 1fr)', gap: 8, alignItems: 'baseline', minWidth: 0 }}>
+      <span style={{
+        color: 'var(--text-muted)',
+        fontSize: 9,
+        fontWeight: 700,
+        letterSpacing: '0.06em',
+        lineHeight: 1.3,
+        textTransform: 'uppercase',
+      }}>
+        {label}
+      </span>
+      {onActivate ? (
+        <button
+          type="button"
+          title={title ?? value}
+          onClick={(event) => {
+            event.stopPropagation();
+            onActivate();
+          }}
+          style={{
+            ...valueStyle,
+            width: 'fit-content',
+            maxWidth: '100%',
+            border: 'none',
+            background: 'transparent',
+            cursor: 'pointer',
+            textAlign: 'left',
+          }}
+        >
+          {value}
+        </button>
+      ) : (
+        <span title={title ?? value} style={valueStyle}>{value}</span>
+      )}
+    </div>
+  );
+};
 
 const HistoryPreview: React.FC<{
   history: { count: number; p50: number; p95: number; rank: number } | null;

@@ -1,0 +1,25 @@
+/*
+ * Local categorical palette for table identity in the SQL tab.
+ * A table and its referenced columns share one color; these values have no
+ * application-wide semantic meaning, so they remain scoped to this tab.
+ */
+.query-sql-tab {
+  --sql-table-color-1: #58a6ff;
+  --sql-table-color-2: #3fb950;
+  --sql-table-color-3: #d29922;
+  --sql-table-color-4: #a371f7;
+  --sql-table-color-5: #f0883e;
+  --sql-table-color-6: #db61a2;
+  --sql-table-color-7: #39c5cf;
+}
+
+[data-theme="light"] .query-sql-tab,
+.theme-light .query-sql-tab {
+  --sql-table-color-1: #1d4ed8;
+  --sql-table-color-2: #166534;
+  --sql-table-color-3: #854d0e;
+  --sql-table-color-4: #7c3aed;
+  --sql-table-color-5: #9a3412;
+  --sql-table-color-6: #be185d;
+  --sql-table-color-7: #155e75;
+}

@@ -1,9 +1,11 @@
-import React, { useMemo, useState } from 'react';
+import React, { useEffect, useMemo, useState } from 'react';
 import type { QueryDetail as QueryDetailType, QuerySeries } from '@tracehouse/core';
 import { formatBytes } from '../../../../stores/databaseStore';
 import { formatDurationMs, formatMicroseconds } from '../../../../utils/formatters';
 import { querySqlText, type SqlDisplayMode } from '../../../../utils/querySqlText';
+import { useClickHouseServices } from '../../../../providers/ClickHouseProvider';
 import { SqlHighlight } from '../../../common/SqlHighlight';
+import './SqlTab.css';
 
 interface SqlTabProps {
   q: QuerySeries;
@@ -24,6 +26,16 @@ const LABEL: React.CSSProperties = {
   textTransform: 'uppercase',
   letterSpacing: '1px',
 };
+
+const TABLE_COLORS = [
+  'var(--sql-table-color-1)',
+  'var(--sql-table-color-2)',
+  'var(--sql-table-color-3)',
+  'var(--sql-table-color-4)',
+  'var(--sql-table-color-5)',
+  'var(--sql-table-color-6)',
+  'var(--sql-table-color-7)',
+];
 
 function shortHash(value: string | undefined): string {
   return value ? String(value).slice(0, 12) : '-';
@@ -183,10 +195,10 @@ const FormattedIcon = () => (
   </svg>
 );
 
-const FactRow: React.FC<{ label: string; value: React.ReactNode }> = ({ label, value }) => (
+const FactRow: React.FC<{ label: string; value: React.ReactNode; labelWidth?: number }> = ({ label, value, labelWidth = 140 }) => (
   <div style={{
     display: 'grid',
-    gridTemplateColumns: '140px minmax(0, 1fr)',
+    gridTemplateColumns: `${labelWidth}px minmax(0, 1fr)`,
     gap: 14,
     alignItems: 'baseline',
     padding: '8px 0',
@@ -211,7 +223,7 @@ const QueryLink: React.FC<{
     style={{
       fontFamily: 'monospace',
       fontSize: 12,
-      color: '#58a6ff',
+      color: 'var(--accent-blue)',
       background: 'transparent',
       border: 'none',
       cursor: 'pointer',
@@ -226,11 +238,24 @@ const QueryLink: React.FC<{
   </button>
 );
 
-const ChipList: React.FC<{ values: string[]; empty?: string; color?: string; limit?: number }> = ({
+const ChipList: React.FC<{
+  values: string[];
+  empty?: string;
+  color?: string;
+  limit?: number;
+  labelForValue?: (value: string) => string;
+  maxChipWidth?: number;
+  colorForValue?: (value: string) => string;
+  titleForValue?: (value: string) => string;
+}> = ({
   values,
   empty = '-',
-  color = '#58a6ff',
+  color = 'var(--text-secondary)',
   limit = 28,
+  labelForValue = value => value,
+  maxChipWidth = 220,
+  colorForValue,
+  titleForValue = value => value,
 }) => {
   const shown = values.slice(0, limit);
   const remaining = values.length - shown.length;
@@ -239,26 +264,26 @@ const ChipList: React.FC<{ values: string[]; empty?: string; color?: string; lim
   }
   return (
     <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6 }}>
-      {shown.map((value) => (
-        <span
-          key={value}
-          title={value}
-          style={{
-            maxWidth: 220,
-            overflow: 'hidden',
-            textOverflow: 'ellipsis',
-            whiteSpace: 'nowrap',
-            padding: '3px 7px',
-            borderRadius: 5,
-            border: `1px solid ${color}55`,
-            background: `${color}16`,
-            color,
-            fontSize: 11,
-          }}
-        >
-          {value}
-        </span>
-      ))}
+      {shown.map((value) => {
+        const chipColor = colorForValue?.(value) ?? color;
+        const chipStyle: React.CSSProperties = {
+          maxWidth: maxChipWidth,
+          overflow: 'hidden',
+          textOverflow: 'ellipsis',
+          whiteSpace: 'nowrap',
+          padding: '3px 7px',
+          borderRadius: 5,
+          border: `1px solid color-mix(in srgb, ${chipColor} 34%, transparent)`,
+          background: `color-mix(in srgb, ${chipColor} 9%, transparent)`,
+          color: chipColor,
+          fontSize: 11,
+        };
+        return (
+          <span key={value} title={titleForValue(value)} style={chipStyle}>
+            {labelForValue(value)}
+          </span>
+        );
+      })}
       {remaining > 0 && (
         <span style={{
           padding: '3px 7px',
@@ -274,6 +299,40 @@ const ChipList: React.FC<{ values: string[]; empty?: string; color?: string; lim
   );
 };
 
+function compactColumnLabel(value: string): string {
+  const parts = value.split('.').filter(Boolean);
+  return parts[parts.length - 1] || value;
+}
+
+function sourceTableForColumn(value: string, tables: string[]): string {
+  const matchingTable = [...tables]
+    .sort((a, b) => b.length - a.length)
+    .find(table => value.startsWith(`${table}.`));
+  if (matchingTable) return matchingTable;
+  const parts = value.split('.');
+  return parts.length >= 3 ? `${parts[0]}.${parts[1]}` : '';
+}
+
+function stableColorIndex(value: string): number {
+  let hash = 0;
+  for (let index = 0; index < value.length; index += 1) {
+    hash = ((hash << 5) - hash + value.charCodeAt(index)) | 0;
+  }
+  return Math.abs(hash) % TABLE_COLORS.length;
+}
+
+function columnTooltip(
+  qualifiedName: string,
+  tables: string[],
+  comment?: string,
+): string {
+  const sourceTable = sourceTableForColumn(qualifiedName, tables);
+  const lines = [qualifiedName];
+  if (sourceTable) lines.push(`Table: ${sourceTable}`);
+  if (comment) lines.push(`Comment: ${comment}`);
+  return lines.join('\n');
+}
+
 const Section: React.FC<{ title: string; children: React.ReactNode }> = ({ title, children }) => (
   <div style={PANEL}>
     <div style={{ padding: '12px 14px', borderBottom: '1px solid var(--border-secondary)' }}>
@@ -285,28 +344,85 @@ const Section: React.FC<{ title: string; children: React.ReactNode }> = ({ title
   </div>
 );
 
-export const SqlTab: React.FC<SqlTabProps> = ({ q, queryDetail, isSelectQuery, onNavigateToQuery }) => {
+export const SqlTab: React.FC<SqlTabProps> = ({
+  q,
+  queryDetail,
+  isSelectQuery,
+  onNavigateToQuery,
+}) => {
+  const services = useClickHouseServices();
   const [mode, setMode] = useState<SqlDisplayMode>('formatted');
   const [copied, setCopied] = useState(false);
+  const [loadedColumnComments, setLoadedColumnComments] = useState<{
+    queryId: string;
+    comments: Record<string, string>;
+  }>({ queryId: '', comments: {} });
+  const queryId = queryDetail?.query_id ?? q.query_id;
+  const columnComments = loadedColumnComments.queryId === queryId
+    ? loadedColumnComments.comments
+    : {};
   const sql = querySqlText(q, queryDetail, mode);
   const settingsCount = Object.keys(queryDetail?.Settings ?? {}).length;
   const profileEventsCount = Object.keys(queryDetail?.ProfileEvents ?? {}).length;
   const role = queryDetail?.is_initial_query === 0 ? 'Node sub-query' : 'Coordinator';
   const loggedDatabases = queryDetail?.databases ?? [];
+  const loggedTables = queryDetail?.tables ?? [];
+  const tableColors = useMemo(() => {
+    const colors: Record<string, string> = {};
+    (queryDetail?.tables ?? []).forEach((table, index) => {
+      colors[table] = TABLE_COLORS[index % TABLE_COLORS.length];
+    });
+    return colors;
+  }, [queryDetail?.tables]);
+  const colorForTable = (table: string) => tableColors[table]
+    ?? TABLE_COLORS[stableColorIndex(table)];
+  const colorForColumn = (column: string) => {
+    const sourceTable = sourceTableForColumn(column, loggedTables);
+    return sourceTable ? colorForTable(sourceTable) : 'var(--text-secondary)';
+  };
   const displayedDatabase = loggedDatabases.length > 0
     ? loggedDatabases.join(', ')
     : queryDetail?.current_database || 'default';
-  const metadataGroups = [
-    { label: 'Databases', values: queryDetail?.databases ?? [], color: '#58a6ff' },
-    { label: 'Tables', values: queryDetail?.tables ?? [], color: '#3fb950' },
-    { label: 'Columns', values: queryDetail?.columns ?? [], color: '#d29922', limit: 36 },
-    { label: 'Functions', values: queryDetail?.used_functions ?? [], color: '#58a6ff' },
-    { label: 'Aggregates', values: queryDetail?.used_aggregate_functions ?? [], color: '#a371f7' },
-    { label: 'Table funcs', values: queryDetail?.used_table_functions ?? [], color: '#3fb950' },
-    { label: 'Formats', values: queryDetail?.used_formats ?? [], color: '#f0883e' },
-    { label: 'Storages', values: queryDetail?.used_storages ?? [], color: '#8b949e' },
+  const metadataGroups: Array<{
+    label: string;
+    values: string[];
+    color: string;
+    limit?: number;
+    labelForValue?: (value: string) => string;
+    maxChipWidth?: number;
+    colorForValue?: (value: string) => string;
+  }> = [
+    { label: 'Databases', values: queryDetail?.databases ?? [], color: 'var(--text-secondary)' },
+    { label: 'Tables', values: loggedTables, color: TABLE_COLORS[0], colorForValue: colorForTable },
+    {
+      label: 'Columns',
+      values: queryDetail?.columns ?? [],
+      color: 'var(--text-secondary)',
+      limit: 36,
+      labelForValue: compactColumnLabel,
+      maxChipWidth: 180,
+      colorForValue: colorForColumn,
+    },
+    { label: 'Functions', values: queryDetail?.used_functions ?? [], color: 'var(--text-secondary)' },
+    { label: 'Aggregates', values: queryDetail?.used_aggregate_functions ?? [], color: 'var(--text-secondary)' },
+    { label: 'Table funcs', values: queryDetail?.used_table_functions ?? [], color: 'var(--text-secondary)' },
+    { label: 'Formats', values: queryDetail?.used_formats ?? [], color: 'var(--text-secondary)' },
+    { label: 'Storages', values: queryDetail?.used_storages ?? [], color: 'var(--text-secondary)' },
   ];
   const visibleMetadataGroups = metadataGroups.filter(group => group.values.length > 0);
+
+  useEffect(() => {
+    let cancelled = false;
+    const columns = queryDetail?.columns ?? [];
+    if (!services || columns.length === 0) return undefined;
+
+    void services.queryAnalyzer.getColumnComments(columns).then(comments => {
+      if (!cancelled) setLoadedColumnComments({ queryId, comments });
+    });
+    return () => {
+      cancelled = true;
+    };
+  }, [services, queryId, queryDetail?.columns]);
 
   const summary = useMemo(() => {
     return [
@@ -318,7 +434,7 @@ export const SqlTab: React.FC<SqlTabProps> = ({ q, queryDetail, isSelectQuery, o
   }, [displayedDatabase, q.query_kind, queryDetail, role]);
 
   return (
-    <div style={{ padding: 24 }}>
+    <div className="query-sql-tab" style={{ padding: 24 }}>
       <div style={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', gap: 16, marginBottom: 16 }}>
         <div>
           <div style={{ fontSize: 18, color: 'var(--text-primary)', fontFamily: 'monospace', marginBottom: 4 }}>
@@ -370,7 +486,7 @@ export const SqlTab: React.FC<SqlTabProps> = ({ q, queryDetail, isSelectQuery, o
           <FactRow label="Kind" value={queryDetail?.query_kind || q.query_kind || '-'} />
           <FactRow
             label={loggedDatabases.length > 0 ? 'Databases' : 'Current DB'}
-            value={loggedDatabases.length > 0 ? <ChipList values={loggedDatabases} color="#58a6ff" limit={8} /> : displayedDatabase}
+            value={loggedDatabases.length > 0 ? <ChipList values={loggedDatabases} limit={8} /> : displayedDatabase}
           />
           <FactRow label="User" value={queryDetail?.user || q.user || '-'} />
           <FactRow label="Role" value={role} />
@@ -394,13 +510,31 @@ export const SqlTab: React.FC<SqlTabProps> = ({ q, queryDetail, isSelectQuery, o
 
         <Section title="Logged Metadata">
           {visibleMetadataGroups.length > 0 ? (
-            visibleMetadataGroups.map(group => (
-              <FactRow
-                key={group.label}
-                label={group.label}
-                value={<ChipList values={group.values} color={group.color} limit={group.limit} />}
-              />
-            ))
+            visibleMetadataGroups.map(group => {
+              const isColumns = group.label === 'Columns';
+              return (
+                <FactRow
+                  key={group.label}
+                  label={group.label}
+                  labelWidth={82}
+                  value={(
+                    <div>
+                      <ChipList
+                        values={group.values}
+                        color={group.color}
+                        limit={group.limit}
+                        labelForValue={group.labelForValue}
+                        maxChipWidth={group.maxChipWidth}
+                        colorForValue={group.colorForValue}
+                        titleForValue={isColumns
+                          ? value => columnTooltip(value, loggedTables, columnComments[value])
+                          : undefined}
+                      />
+                    </div>
+                  )}
+                />
+              );
+            })
           ) : (
             <div style={{
               padding: '12px 0',
