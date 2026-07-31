@@ -507,6 +507,52 @@ export const GET_MERGE_HISTORY_BY_PART_NAME = `
 `;
 
 /**
+ * Look up the exact selected part_log operation. Replicated tables can record
+ * the same result part on multiple hosts, and retries can reuse a part name on
+ * one host, so part_name alone is not a stable event identity.
+ */
+export const GET_MERGE_HISTORY_BY_IDENTITY = `
+  SELECT
+    event_time,
+    event_type,
+    database,
+    table,
+    part_name,
+    partition_id,
+    rows,
+    size_in_bytes,
+    duration_ms,
+    merge_reason,
+    merged_from,
+    bytes_uncompressed,
+    read_bytes,
+    read_rows,
+    peak_memory_usage,
+    merge_algorithm,
+    disk_name,
+    path_on_disk,
+    query_id,
+    ProfileEvents,
+    error,
+    exception,
+    hostName() AS hostname
+  FROM {{cluster_aware:system.part_log}}
+  WHERE database = {database}
+    AND table = {table}
+    AND part_name = {part_name}
+    AND hostName() = {hostname}
+    AND event_type = {event_type}
+  ORDER BY
+    abs(dateDiff(
+      'millisecond',
+      event_time_microseconds,
+      parseDateTime64BestEffort({event_time}, 6)
+    )) ASC,
+    event_time_microseconds DESC
+  LIMIT 1
+`;
+
+/**
  * Get table engines for all user tables.
  * Used to enrich merge history with engine info (e.g. to distinguish
  * lightweight delete cleanup from ReplacingMergeTree dedup).

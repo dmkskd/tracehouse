@@ -25,6 +25,42 @@ describe('MergeTracker active merges', () => {
   });
 });
 
+describe('MergeTracker merge detail identity', () => {
+  it('keeps detail hydration on the selected host, operation, and event time', async () => {
+    const adapter = new MockAdapter();
+    const tracker = new MergeTracker(adapter);
+
+    await tracker.getMergeHistoryByPartName(
+      'analytics',
+      'events',
+      '202607_10_12_1',
+      {
+        hostname: 'replica-2',
+        event_time: '2026-07-31T11:27:04.250Z',
+        event_type: 'MergeParts',
+      },
+    );
+
+    expect(adapter.queries).toHaveLength(1);
+    expect(adapter.queries[0]).toContain("hostName() = 'replica-2'");
+    expect(adapter.queries[0]).toContain("event_type = 'MergeParts'");
+    expect(adapter.queries[0]).toContain(
+      "parseDateTime64BestEffort('2026-07-31T11:27:04.250Z', 6)",
+    );
+    expect(adapter.queries[0]).toContain("dateDiff(\n      'millisecond'");
+  });
+
+  it('retains the part-name-only fallback for source-part drilldown', async () => {
+    const adapter = new MockAdapter();
+    const tracker = new MergeTracker(adapter);
+
+    await tracker.getMergeHistoryByPartName('analytics', 'events', '202607_10_12_1');
+
+    expect(adapter.queries[0]).not.toContain('dateDiff(');
+    expect(adapter.queries[0]).toContain('ORDER BY event_time DESC');
+  });
+});
+
 describe('MergeTracker UTC custom ranges', () => {
   it('uses explicit UTC bounds for merge history', async () => {
     const adapter = new MockAdapter();

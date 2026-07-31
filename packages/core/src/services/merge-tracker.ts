@@ -16,6 +16,7 @@ import {
   GET_MERGE_TEXT_LOGS_BY_PART_SUFFIX_HOST,
   GET_TABLE_UUID,
   GET_MERGE_HISTORY_BY_PART_NAME,
+  GET_MERGE_HISTORY_BY_IDENTITY,
   GET_TABLE_COLUMNS,
   GET_MERGE_THROUGHPUT_ESTIMATE,
   GET_TABLE_ENGINES,
@@ -385,9 +386,31 @@ export class MergeTracker {
    * Look up a single MergeHistoryRecord by database + table + part_name.
    * Returns null if no matching part_log entry is found.
    */
-  async getMergeHistoryByPartName(database: string, table: string, partName: string): Promise<MergeHistoryRecord | null> {
+  async getMergeHistoryByPartName(
+    database: string,
+    table: string,
+    partName: string,
+    selectedRecord?: Pick<MergeHistoryRecord, 'hostname' | 'event_time' | 'event_type'>,
+  ): Promise<MergeHistoryRecord | null> {
     try {
-      const sql = buildQuery(GET_MERGE_HISTORY_BY_PART_NAME, { database, table, part_name: partName });
+      const hasStableIdentity = !!(
+        selectedRecord?.hostname
+        && selectedRecord.event_time
+        && selectedRecord.event_type
+      );
+      const sql = buildQuery(
+        hasStableIdentity ? GET_MERGE_HISTORY_BY_IDENTITY : GET_MERGE_HISTORY_BY_PART_NAME,
+        {
+          database,
+          table,
+          part_name: partName,
+          ...(hasStableIdentity ? {
+            hostname: selectedRecord.hostname!,
+            event_time: selectedRecord.event_time,
+            event_type: selectedRecord.event_type,
+          } : {}),
+        },
+      );
       const rows = await this.adapter.executeQuery(tagQuery(sql, sourceTag(TAB_MERGES, 'mergeHistoryByPart')));
       if (rows.length === 0) return null;
       return mapMergeHistoryRecord(rows[0]);

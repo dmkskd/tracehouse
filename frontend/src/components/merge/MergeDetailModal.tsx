@@ -1002,7 +1002,12 @@ export const MergeDetailModalFromRecord: React.FC<MergeDetailModalFromRecordProp
     setDetailError(null);
     if (!record || !services) return;
     let cancelled = false;
-    services.mergeTracker.getMergeHistoryByPartName(record.database, record.table, record.part_name)
+    services.mergeTracker.getMergeHistoryByPartName(
+      record.database,
+      record.table,
+      record.part_name,
+      record,
+    )
       .then(r => {
         if (cancelled) return;
         if (!r) {
@@ -1017,7 +1022,7 @@ export const MergeDetailModalFromRecord: React.FC<MergeDetailModalFromRecordProp
         setDetailError(err instanceof Error ? err.message : 'Failed to fetch detail record');
       });
     return () => { cancelled = true; };
-  }, [record?.database, record?.table, record?.part_name, services]); // eslint-disable-line react-hooks/exhaustive-deps
+  }, [record?.database, record?.table, record?.part_name, record?.hostname, record?.event_time, record?.event_type, services]); // eslint-disable-line react-hooks/exhaustive-deps
 
   if (!record) return null;
   const displayRecord = fullRecord ?? record;

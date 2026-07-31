@@ -864,7 +864,12 @@ const MergeHistoryDetailPanel: React.FC<{
     setDetailError(null);
     if (!liteRecord || !services) return;
     let cancelled = false;
-    services.mergeTracker.getMergeHistoryByPartName(liteRecord.database, liteRecord.table, liteRecord.part_name)
+    services.mergeTracker.getMergeHistoryByPartName(
+      liteRecord.database,
+      liteRecord.table,
+      liteRecord.part_name,
+      liteRecord,
+    )
       .then(r => {
         if (cancelled) return;
         if (!r) {
@@ -879,7 +884,7 @@ const MergeHistoryDetailPanel: React.FC<{
         setDetailError(err instanceof Error ? err.message : 'Failed to fetch detail record');
       });
     return () => { cancelled = true; };
-  }, [liteRecord?.database, liteRecord?.table, liteRecord?.part_name, services]); // eslint-disable-line react-hooks/exhaustive-deps
+  }, [liteRecord?.database, liteRecord?.table, liteRecord?.part_name, liteRecord?.hostname, liteRecord?.event_time, liteRecord?.event_type, services]); // eslint-disable-line react-hooks/exhaustive-deps
 
   const record = fullRecord ?? liteRecord;
 
