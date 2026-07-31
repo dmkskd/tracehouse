@@ -32,4 +32,14 @@ describe('ObservabilityMapService', { tags: ['observability'] }, () => {
     expect(result.get('system.query_log.query_id')).toBe('Query identifier');
     expect(mock.executeQuery).toHaveBeenCalledWith(expect.stringContaining('source:TraceHouse:Overview:observabilityColumnComments'));
   });
+
+  it('caches all column comments for the lifetime of the service', async () => {
+    const mock = adapter([{ table: 'query_log', name: 'query_id', comment: 'Query identifier' }]);
+    const service = new ObservabilityMapService(mock);
+
+    await service.getColumnComments();
+    await service.getColumnComments();
+
+    expect(mock.executeQuery).toHaveBeenCalledTimes(1);
+  });
 });

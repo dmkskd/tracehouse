@@ -19,6 +19,9 @@ export class ObservabilityMapServiceError extends Error {
 }
 
 export class ObservabilityMapService {
+  private systemTablesRequest: Promise<Map<string, ObservabilityServerTableInfo>> | null = null;
+  private columnCommentsRequest: Promise<ObservabilityColumnCommentMap> | null = null;
+
   constructor(private adapter: IClickHouseAdapter) {}
 
   async runDiagnostic<T extends Record<string, unknown>>(sql: string): Promise<T[]> {
@@ -32,36 +35,50 @@ export class ObservabilityMapService {
   }
 
   async getSystemTables(): Promise<Map<string, ObservabilityServerTableInfo>> {
-    try {
-      const rows = await this.adapter.executeQuery<ObservabilityServerTableInfo>(
-        tagQuery(OBSERVABILITY_SYSTEM_TABLES, sourceTag(TAB_OVERVIEW, 'observabilityTables')),
-      );
-      const map = new Map<string, ObservabilityServerTableInfo>();
-      for (const row of rows) {
-        map.set(`system.${row.name}`, {
-          name: `system.${row.name}`,
-          sorting_key: row.sorting_key || '',
-          primary_key: row.primary_key || '',
-        });
+    if (this.systemTablesRequest) return this.systemTablesRequest;
+
+    this.systemTablesRequest = (async () => {
+      try {
+        const rows = await this.adapter.executeQuery<ObservabilityServerTableInfo>(
+          tagQuery(OBSERVABILITY_SYSTEM_TABLES, sourceTag(TAB_OVERVIEW, 'observabilityTables')),
+        );
+        const map = new Map<string, ObservabilityServerTableInfo>();
+        for (const row of rows) {
+          map.set(`system.${row.name}`, {
+            name: `system.${row.name}`,
+            sorting_key: row.sorting_key || '',
+            primary_key: row.primary_key || '',
+          });
+        }
+        return map;
+      } catch (error) {
+        this.systemTablesRequest = null;
+        throw new ObservabilityMapServiceError('Failed to load observability system tables', error as Error);
       }
-      return map;
-    } catch (error) {
-      throw new ObservabilityMapServiceError('Failed to load observability system tables', error as Error);
-    }
+    })();
+
+    return this.systemTablesRequest;
   }
 
   async getColumnComments(): Promise<ObservabilityColumnCommentMap> {
-    try {
-      const rows = await this.adapter.executeQuery<{ table: string; name: string; comment: string }>(
-        tagQuery(OBSERVABILITY_COLUMN_COMMENTS, sourceTag(TAB_OVERVIEW, 'observabilityColumnComments')),
-      );
-      const map: ObservabilityColumnCommentMap = new Map();
-      for (const row of rows) {
-        if (row.comment) map.set(`system.${row.table}.${row.name}`, row.comment);
+    if (this.columnCommentsRequest) return this.columnCommentsRequest;
+
+    this.columnCommentsRequest = (async () => {
+      try {
+        const rows = await this.adapter.executeQuery<{ table: string; name: string; comment: string }>(
+          tagQuery(OBSERVABILITY_COLUMN_COMMENTS, sourceTag(TAB_OVERVIEW, 'observabilityColumnComments')),
+        );
+        const map: ObservabilityColumnCommentMap = new Map();
+        for (const row of rows) {
+          if (row.comment) map.set(`system.${row.table}.${row.name}`, row.comment);
+        }
+        return map;
+      } catch (error) {
+        this.columnCommentsRequest = null;
+        throw new ObservabilityMapServiceError('Failed to load observability column comments', error as Error);
       }
-      return map;
-    } catch (error) {
-      throw new ObservabilityMapServiceError('Failed to load observability column comments', error as Error);
-    }
+    })();
+
+    return this.columnCommentsRequest;
   }
 }

@@ -152,9 +152,15 @@ export const Overview: React.FC = () => {
   const activeProfile = profiles.find(p => p.id === activeProfileId);
   const isConnected = activeProfile?.is_connected ?? false;
 
-  // Probe server for available system tables + column comments (once per connection)
+  // Clear map enrichment when the connection changes. The map-specific data is
+  // loaded only if the user opens System Map.
   useEffect(() => {
-    if (!services) { setEnrichedMapData(null); setColumnComments(new Map()); return; }
+    setEnrichedMapData(null);
+    setColumnComments(new Map());
+  }, [services]);
+
+  useEffect(() => {
+    if (!services || viewMode !== 'map') return;
     let cancelled = false;
     services.observabilityMapService.getSystemTables()
       .then(serverTables => {
@@ -173,7 +179,7 @@ export const Overview: React.FC = () => {
         if (!cancelled) setColumnComments(new Map());
       });
     return () => { cancelled = true; };
-  }, [services]);
+  }, [services, viewMode]);
 
   const handleOpenConnectionForm = useCallback(() => {
     setConnectionFormOpen(true);
@@ -224,7 +230,6 @@ export const Overview: React.FC = () => {
     }
     setMapQueryResult(null);
   }, [mapClickedNode]);
-
 
   // Fetch historical metrics from ClickHouse (cluster-aware)
   const fetchHistoricalMetrics = useCallback(async () => {
