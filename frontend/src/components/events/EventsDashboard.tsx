@@ -65,6 +65,7 @@ interface EventsDashboardProps {
   onRangeSelect?: (startMs: number, endMs: number) => void;
   onSelectEvent: (event: OperationalEvent) => void;
   onOpenQueryDetails?: (event: OperationalEvent) => void;
+  onOpenMergeDetails?: (event: OperationalEvent) => void;
   onOpenAnalyticsDashboard?: () => void;
   onInvestigateEvent?: (event: OperationalEvent) => void;
   onBackToTimeTravel?: () => void;
@@ -82,6 +83,7 @@ export const EventsDashboard: React.FC<EventsDashboardProps> = ({
   onRangeSelect,
   onSelectEvent,
   onOpenQueryDetails,
+  onOpenMergeDetails,
   onOpenAnalyticsDashboard,
   onInvestigateEvent,
   onBackToTimeTravel,
@@ -777,10 +779,26 @@ export const EventsDashboard: React.FC<EventsDashboardProps> = ({
                   <EventDetailSectionView
                     key={section.id}
                     section={section}
-                    action={section.id === 'identifiers'
-                      && selectedEvent.query_id
-                      && onOpenQueryDetails
+                    action={section.id === 'details'
+                      && (selectedEvent.kind === 'merge_failure'
+                        || selectedEvent.kind === 'mutation_failure')
+                      && selectedEvent.database
+                      && selectedEvent.table
+                      && selectedEvent.part_name
+                      && selectedEvent.hostname
+                      && onOpenMergeDetails
                       ? (
+                        <button
+                          onClick={() => onOpenMergeDetails(selectedEvent)}
+                          style={eventNavigationButtonStyle}
+                        >
+                          View Merge Details ↗
+                        </button>
+                      )
+                      : section.id === 'identifiers'
+                        && selectedEvent.query_id
+                        && onOpenQueryDetails
+                        ? (
                         <button
                           onClick={() => onOpenQueryDetails(selectedEvent)}
                           style={eventNavigationButtonStyle}
@@ -788,7 +806,7 @@ export const EventsDashboard: React.FC<EventsDashboardProps> = ({
                           View Query Details ↗
                         </button>
                       )
-                      : undefined}
+                        : undefined}
                   />
                 ))}
               </div>

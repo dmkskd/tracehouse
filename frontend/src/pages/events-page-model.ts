@@ -53,3 +53,23 @@ export function eventToQuerySeries(event: OperationalEvent): QuerySeries {
     points: [],
   };
 }
+
+export function buildMergeDetailsUrl(event: OperationalEvent): string | undefined {
+  if (
+    (event.kind !== 'merge_failure' && event.kind !== 'mutation_failure')
+    || !event.database
+    || !event.table
+    || !event.part_name
+    || !event.hostname
+  ) return undefined;
+
+  const params = new URLSearchParams({
+    md_db: event.database,
+    md_tbl: event.table,
+    md_part: event.part_name,
+    md_host: event.hostname,
+    md_time: event.occurred_at,
+    md_type: event.operation ?? 'MergeParts',
+  });
+  return `/merges?${params.toString()}`;
+}

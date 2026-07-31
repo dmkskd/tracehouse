@@ -89,6 +89,9 @@ const mergeUrlSchema = {
   md_db:     { type: 'string' },
   md_tbl:    { type: 'string' },
   md_part:   { type: 'string' },
+  md_host:   { type: 'string' },
+  md_time:   { type: 'string' },
+  md_type:   { type: 'string' },
 } as const satisfies UrlSchema;
 
 interface PoolUsage {
@@ -1656,19 +1659,39 @@ export const MergeTrackerView: React.FC = () => {
   const [mergeDetailRecord, setMergeDetailRecordRaw] = useState<MergeHistoryRecord | null>(null);
   const [activeMergeDetail, setActiveMergeDetailRaw] = useState<MergeInfo | null>(null);
 
-  // Sync detail deep-link (md_db/md_tbl/md_part) to URL for all selection types
-  const syncDetailToUrl = useCallback((db?: string, tbl?: string, part?: string) => {
+  // Sync the detail deep-link to URL. Persisted rows include their stable
+  // host/time/type identity because replicas can produce the same part name.
+  const syncDetailToUrl = useCallback((
+    db?: string,
+    tbl?: string,
+    part?: string,
+    identity?: Pick<MergeHistoryRecord, 'hostname' | 'event_time' | 'event_type'>,
+  ) => {
     if (db && tbl && part) {
-      updateUrl({ md_db: db, md_tbl: tbl, md_part: part } as any);
+      updateUrl({
+        md_db: db,
+        md_tbl: tbl,
+        md_part: part,
+        md_host: identity?.hostname,
+        md_time: identity?.event_time,
+        md_type: identity?.event_type,
+      });
     } else {
-      updateUrl({ md_db: undefined, md_tbl: undefined, md_part: undefined } as any);
+      updateUrl({
+        md_db: undefined,
+        md_tbl: undefined,
+        md_part: undefined,
+        md_host: undefined,
+        md_time: undefined,
+        md_type: undefined,
+      });
     }
   }, [updateUrl]);
 
   const setSelectedMergeHistory = useCallback((record: MergeHistoryRecord | null) => {
     setSelectedMergeHistoryRaw(record);
     if (record) {
-      syncDetailToUrl(record.database, record.table, record.part_name);
+      syncDetailToUrl(record.database, record.table, record.part_name, record);
     } else {
       syncDetailToUrl();
     }
@@ -1701,7 +1724,7 @@ export const MergeTrackerView: React.FC = () => {
   const setMergeDetailRecord = useCallback((record: MergeHistoryRecord | null) => {
     setMergeDetailRecordRaw(record);
     if (record) {
-      syncDetailToUrl(record.database, record.table, record.part_name);
+      syncDetailToUrl(record.database, record.table, record.part_name, record);
     } else {
       syncDetailToUrl();
     }
@@ -1920,18 +1943,42 @@ export const MergeTrackerView: React.FC = () => {
     }
   }, []);
 
-  // Rehydrate merge detail panel from URL (md_db/md_tbl/md_part)
+  // Rehydrate merge details from the URL. New links carry the stable identity;
+  // older three-field links retain their best-effort latest-record behavior.
   const mdHydrated = useRef(false);
   useEffect(() => {
     if (mdHydrated.current || !services || !urlState.md_db || !urlState.md_tbl || !urlState.md_part) return;
     mdHydrated.current = true;
-    services.mergeTracker.getMergeHistoryByPartName(urlState.md_db, urlState.md_tbl, urlState.md_part)
+    const identity = urlState.md_host && urlState.md_time && urlState.md_type
+      ? {
+        hostname: urlState.md_host,
+        event_time: urlState.md_time,
+        event_type: urlState.md_type,
+      }
+      : undefined;
+    services.mergeTracker.getMergeHistoryByPartName(
+      urlState.md_db,
+      urlState.md_tbl,
+      urlState.md_part,
+      identity,
+    )
       .then(record => {
-        if (record) setSelectedMergeHistoryRaw(record);
+        if (record) {
+          setSelectedMergeHistoryRaw(record);
+          setMergeDetailRecordRaw(record);
+        }
         else console.warn(`[MergeTracker] No merge found for ${urlState.md_db}.${urlState.md_tbl}.${urlState.md_part}`);
       })
       .catch(err => console.error('[MergeTracker] Failed to fetch merge detail:', err));
-  }, [services, urlState.md_db, urlState.md_tbl, urlState.md_part]);
+  }, [
+    services,
+    urlState.md_db,
+    urlState.md_tbl,
+    urlState.md_part,
+    urlState.md_host,
+    urlState.md_time,
+    urlState.md_type,
+  ]);
 
   // Refresh history data when switching to history/mutationHistory tabs
   const setActiveTab = useCallback((tab: MergeTab) => {

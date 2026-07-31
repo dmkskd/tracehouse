@@ -8,6 +8,7 @@ import { useQueryDeepLink } from '../hooks/useQueryDeepLink';
 import { useEventsUrlState } from '../hooks/useUrlState';
 import { buildTimeTravelEventUrl } from '../components/events/event-model';
 import {
+  buildMergeDetailsUrl,
   EVENT_HOURS_INTERVAL,
   EVENT_INTERVAL_HOURS,
   eventToQuerySeries,
@@ -123,6 +124,10 @@ export const Events: React.FC = () => {
           })}
           onOpenQueryDetails={event => {
             if (event.query_id) setSelectedQuery(eventToQuerySeries(event));
+          }}
+          onOpenMergeDetails={event => {
+            const url = buildMergeDetailsUrl(event);
+            if (url) navigate(url);
           }}
           onOpenAnalyticsDashboard={() => navigate(
             '/analytics?tab=dashboards&fromDashboard=operational-events-explorer',

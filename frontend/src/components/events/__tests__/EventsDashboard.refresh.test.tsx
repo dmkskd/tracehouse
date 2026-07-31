@@ -187,6 +187,43 @@ describe('EventsDashboard refresh behavior', () => {
     expect(screen.getByText('truncated · 100')).toBeInTheDocument();
   });
 
+  it('offers merge details for a failed mutation part-log event', async () => {
+    const mutationFailure = {
+      id: 'mutation-failure',
+      occurred_at: '2026-07-31T20:14:33.880Z',
+      kind: 'mutation_failure' as const,
+      category: 'merges' as const,
+      severity: 'error' as const,
+      precision: 'exact' as const,
+      title: 'Mutation failed · analytics.events',
+      source: 'system.part_log',
+      capability: 'part_log',
+      hostname: 'ch-1',
+      database: 'analytics',
+      table: 'events',
+      part_name: 'all_1_1_0_2',
+      operation: 'MutatePart',
+    };
+    const onOpenMergeDetails = vi.fn();
+    mocks.getEvents.mockResolvedValueOnce({ events: [mutationFailure], coverage: [] });
+
+    await act(async () => {
+      render(
+        <EventsDashboard
+          selectedEventId={mutationFailure.id}
+          rangeHours={24}
+          timeRangeValue="1 DAY"
+          onTimeRangeChange={vi.fn()}
+          onSelectEvent={vi.fn()}
+          onOpenMergeDetails={onOpenMergeDetails}
+        />,
+      );
+    });
+
+    fireEvent.click(screen.getByRole('button', { name: 'View Merge Details ↗' }));
+    expect(onOpenMergeDetails).toHaveBeenCalledWith(mutationFailure);
+  });
+
   it('collapses similar bursts and keeps the individual events expandable', async () => {
     mocks.getEvents.mockResolvedValueOnce({
       events: [
