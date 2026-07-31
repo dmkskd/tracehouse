@@ -5,6 +5,7 @@
  */
 
 import React, { useEffect, useCallback } from 'react';
+import { createPortal } from 'react-dom';
 
 /**
  * Modal wrapper component for consistent styling
@@ -56,7 +57,7 @@ export const ModalWrapper: React.FC<{
   const modalBg = isDark ? '#0a0a1a' : '#f8fafc';
   const borderColor = isDark ? '#2a2a4a' : '#e2e8f0';
 
-  return (
+  return createPortal(
     <div
       role="dialog"
       aria-modal="true"
@@ -99,7 +100,8 @@ export const ModalWrapper: React.FC<{
       >
         {children}
       </div>
-    </div>
+    </div>,
+    document.body,
   );
 };
 
