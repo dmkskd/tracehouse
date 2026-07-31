@@ -28,7 +28,7 @@
       },
       {
         "name": "Documentation",
-        "url": "https://github.com/dmkskd/tracehouse/blob/main/README.md"
+        "url": "https://dmkskd.github.io/tracehouse/"
       },
       {
         "name": "Issues",
@@ -57,7 +57,7 @@
         "path": "img/screenshots/time-travel.png"
       }
     ],
-    "version": "0.18.3",
+    "version": "0.18.4",
     "updated": "%TODAY%"
   },
   "includes": [
