@@ -18,6 +18,7 @@ import type {
   MergeSeries,
   MutationSeries,
   OperationalEvent,
+  TimeseriesPoint,
 } from '@tracehouse/core';
 import {
   getTimelineCpuCapacity,
@@ -62,6 +63,20 @@ import {
   timeTravelRowHosts,
   updateTimeTravelHostSelection,
 } from '../components/timeline/time-travel-host-selection';
+import {
+  isRangeCovered,
+  mergeCoverage,
+  mergeTimelineEvents,
+  mergeTimelinePoints,
+  navigatorBucketSeconds,
+  navigatorChangePoints,
+  navigatorCacheBounds,
+  navigatorChunkMs,
+  panRangeToIncludeViewport,
+  uncoveredTimelineRanges,
+  type TimelineCoverage,
+  type TimelineRange,
+} from '../components/timeline/timeline-navigator-buffer';
 
 // CSS animation for pulse effect + experimental badge tooltip
 const pulseKeyframes = `
@@ -173,6 +188,8 @@ export const TimeTravelPage: React.FC = () => {
     experimentalEnabled,
     timeTravelEventsVisible,
     setTimeTravelEventsVisible,
+    timeTravelNavigatorShape,
+    setTimeTravelNavigatorShape,
   } = useUserPreferenceStore();
   const [windowSec, setWindowSec] = useState(150);
   const [isLive, setIsLive] = useState(!hasInitialEvent);
@@ -266,14 +283,21 @@ export const TimeTravelPage: React.FC = () => {
 
   // Navigator state — range derived from selected time preset
   const [selectedTimeRange, setSelectedTimeRange] = useState('1h');
-  const [navigatorData, setNavigatorData] = useState<MemoryTimeline | null>(null);
+  const [navigatorMetricData, setNavigatorMetricData] = useState<{
+    trend: TimeseriesPoint[];
+    peaks: TimeseriesPoint[];
+  }>({ trend: [], peaks: [] });
   const [navigatorEventData, setNavigatorEventData] = useState<EventsResult>({
     events: [],
     coverage: [],
   });
-  const [navigatorLoading, setNavigatorLoading] = useState(false);
-  const lastNavigatorFetchTime = useRef<string | null>(null);
-  const lastNavigatorRequestScope = useRef<string | null>(null);
+  const [navigatorRange, setNavigatorRange] = useState<TimelineRange | null>(null);
+  const navigatorRangeRef = useRef<TimelineRange | null>(null);
+  const navigatorCoverageRef = useRef<TimelineCoverage[]>([]);
+  const navigatorInFlightRef = useRef<Map<string, TimelineRange>>(new Map());
+  const navigatorGenerationRef = useRef(0);
+  const [navigatorLoadingCount, setNavigatorLoadingCount] = useState(0);
+  const navigatorLoading = navigatorLoadingCount > 0;
 
   // Navigator hours derived from selected time range preset, or custom range
   const navigatorHours = useMemo(() => {
@@ -288,26 +312,6 @@ export const TimeTravelPage: React.FC = () => {
   // Dragging state: visual-only viewport position during drag (no main chart fetch)
   const [dragEndMs, setDragEndMs] = useState<number | null>(null);
   const dragEndMsRef = useRef<number | null>(null);
-
-  const navigatorDataRange = useMemo(() => {
-    if (!navigatorData) return null;
-    return {
-      startMs: new Date(navigatorData.window_start).getTime(),
-      endMs: new Date(navigatorData.window_end).getTime(),
-    };
-  }, [navigatorData]);
-
-  // During drag, extend the navigator range just enough to fit the viewport (no extra padding)
-  // Frozen rangeMs in drag state ensures delta calc is immune to range changes
-  const navigatorRange = useMemo(() => {
-    if (!navigatorDataRange) return null;
-    if (dragEndMs == null) return navigatorDataRange;
-    const vpStart = dragEndMs - windowSec * 2 * 1000;
-    return {
-      startMs: Math.min(navigatorDataRange.startMs, vpStart),
-      endMs: Math.max(navigatorDataRange.endMs, Math.min(dragEndMs, Date.now())),
-    };
-  }, [navigatorDataRange, dragEndMs, windowSec]);
 
   // Sort state
   const [sortField, setSortField] = useState<SortField>('metric');
@@ -539,99 +543,224 @@ export const TimeTravelPage: React.FC = () => {
     };
   }, [effectiveData, queryHashOnly, queryHashFilter]);
 
-  // Fetch navigator data spanning the selected time range (navigatorHours → now)
-  const fetchNavigatorData = useCallback(async (force = false) => {
-    if (!services) return;
-    // Navigator always ends at "now" for presets; Custom uses customStartTime/customEndTime
-    const isCustom = selectedTimeRange === 'Custom';
-    const endDate = isCustom && customEndTime ? new Date(customEndTime) : new Date();
-    const requestScope = buildTimelineNavigatorRequestScope({
+  const navigatorSpanMs = Math.max(60_000, navigatorHours * 60 * 60_000);
+  const navigatorBucketSec = navigatorBucketSeconds(navigatorSpanMs);
+  const navigatorChangeData = useMemo(
+    () => navigatorChangePoints(navigatorMetricData.trend, navigatorBucketSec * 1000),
+    [navigatorMetricData.trend, navigatorBucketSec],
+  );
+  const navigatorPrefetchChunkMs = navigatorChunkMs(navigatorSpanMs);
+  const navigatorRequestScope = useMemo(
+    () => buildTimelineNavigatorRequestScope({
       activeMetric: metricMode,
       navigatorHours,
       hostname: hostnameFilter,
       activityLimit,
       eventCapabilities,
-    });
-    const endTimeKey = `${endDate.toISOString().slice(0, 13)}_${requestScope}`;
-    if (!force && lastNavigatorFetchTime.current === endTimeKey) return;
-    if (
-      !force
-      && navigatorData
-      && lastNavigatorRequestScope.current === requestScope
-    ) {
-      const navStart = new Date(navigatorData.window_start).getTime();
-      const navEnd = new Date(navigatorData.window_end).getTime();
-      const viewportEnd = endDate.getTime();
-      const viewportStart = viewportEnd - windowSec * 2 * 1000;
-      const margin = (navEnd - navStart) * 0.1;
-      if (viewportStart >= navStart - margin && viewportEnd <= navEnd + margin) return;
-    }
-    setNavigatorLoading(true);
+    }),
+    [metricMode, navigatorHours, hostnameFilter, activityLimit, eventCapabilities],
+  );
+  const navigatorCustomStart = selectedTimeRange === 'Custom' ? customStartTime : null;
+  const navigatorCustomEnd = selectedTimeRange === 'Custom' ? customEndTime : null;
+
+  const loadNavigatorInterval = useCallback(async (requested: TimelineRange) => {
+    if (!services || requested.endMs <= requested.startMs) return;
+    if (isRangeCovered(navigatorCoverageRef.current, requested)) return;
+    if ([...navigatorInFlightRef.current.values()].some(range =>
+      range.startMs <= requested.startMs && range.endMs >= requested.endMs
+    )) return;
+
+    const generation = navigatorGenerationRef.current;
+    const requestKey = `${generation}:${requested.startMs}:${requested.endMs}`;
+    navigatorInFlightRef.current.set(requestKey, requested);
+    setNavigatorLoadingCount(navigatorInFlightRef.current.size);
+
     try {
-      const navigatorWindowSec = navigatorHours * 60 * 60 / 2;
-      const centerDate = new Date(endDate.getTime() - navigatorWindowSec * 1000);
-      const navigatorStart = new Date(
-        centerDate.getTime() - navigatorWindowSec * 1000,
-      );
-      const navigatorEnd = new Date(
-        centerDate.getTime() + navigatorWindowSec * 1000,
-      );
-      const [result, eventsResult] = await Promise.all([
-        services.timelineService.getTimeline({
-          timestamp: centerDate,
-          windowSeconds: navigatorWindowSec,
+      const [metricResult, eventsResult] = await Promise.all([
+        services.timelineService.getNavigatorMetric({
+          startTime: new Date(requested.startMs),
+          endTime: new Date(requested.endMs),
+          metric: metricMode,
+          bucketSeconds: navigatorBucketSec,
           hostname: hostnameFilter,
-          activityLimit,
-          activeMetric: metricMode,
         }),
         eventCapabilities
           ? services.eventsService.getEvents({
-              startTime: navigatorStart.toISOString(),
-              endTime: navigatorEnd.toISOString(),
+              startTime: new Date(requested.startMs).toISOString(),
+              endTime: new Date(requested.endMs).toISOString(),
               hostname: hostnameFilter,
               availableCapabilities: eventCapabilities,
               origin: 'timeTravel',
             })
           : Promise.resolve({ events: [], coverage: [] }),
       ]);
-      setNavigatorData(result);
-      setNavigatorEventData(eventsResult);
-      lastNavigatorFetchTime.current = endTimeKey;
-      lastNavigatorRequestScope.current = requestScope;
-    } catch (e) {
-      console.error('[TimeTravelPage] Navigator fetch error:', e);
-    } finally { setNavigatorLoading(false); }
-  }, [services, selectedTimeRange, customStartTime, customEndTime, navigatorHours, navigatorData, windowSec, hostnameFilter, activityLimit, metricMode, eventCapabilities]);
+      if (generation !== navigatorGenerationRef.current) return;
 
-  // Debounced navigator fetch
-  const navigatorFetchTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
-  useEffect(() => {
-    if (services && isConnected) {
-      if (navigatorFetchTimeoutRef.current) clearTimeout(navigatorFetchTimeoutRef.current);
-      navigatorFetchTimeoutRef.current = setTimeout(() => fetchNavigatorData(), 300);
+      const currentRange = navigatorRangeRef.current ?? requested;
+      const cacheBounds = navigatorCacheBounds(currentRange);
+      setNavigatorMetricData(current => ({
+        trend: mergeTimelinePoints(
+          current.trend,
+          metricResult.points.map(point => ({ t: point.t, v: point.average_v })),
+          cacheBounds,
+        ),
+        peaks: mergeTimelinePoints(
+          current.peaks,
+          metricResult.points.map(point => ({ t: point.t, v: point.peak_v })),
+          cacheBounds,
+        ),
+      }));
+      setNavigatorEventData(current => ({
+        events: mergeTimelineEvents(current.events, eventsResult.events, cacheBounds),
+        coverage: eventsResult.coverage,
+      }));
+      navigatorCoverageRef.current = mergeCoverage(
+        navigatorCoverageRef.current,
+        requested,
+        cacheBounds,
+      );
+    } catch (error) {
+      if (generation === navigatorGenerationRef.current) {
+        console.error('[TimeTravelPage] Navigator chunk fetch error:', error);
+      }
+    } finally {
+      if (generation === navigatorGenerationRef.current) {
+        navigatorInFlightRef.current.delete(requestKey);
+        setNavigatorLoadingCount(navigatorInFlightRef.current.size);
+      }
     }
-    return () => { if (navigatorFetchTimeoutRef.current) clearTimeout(navigatorFetchTimeoutRef.current); };
-  }, [services, isConnected, customStartTime, customEndTime, isLive, fetchNavigatorData]);
+  }, [
+    services,
+    metricMode,
+    navigatorBucketSec,
+    hostnameFilter,
+    eventCapabilities,
+  ]);
 
-  // Auto-refresh navigator in live mode
+  const requestNavigatorChunkAt = useCallback((ms: number) => {
+    const startMs = Math.floor(ms / navigatorPrefetchChunkMs) * navigatorPrefetchChunkMs;
+    const endMs = Math.min(startMs + navigatorPrefetchChunkMs, Date.now());
+    if (endMs <= startMs) return;
+    const available = [
+      ...navigatorCoverageRef.current,
+      ...navigatorInFlightRef.current.values(),
+    ];
+    const bucketMs = navigatorBucketSec * 1000;
+    for (const gap of uncoveredTimelineRanges(available, { startMs, endMs })) {
+      // Re-read the boundary bucket so a live partial aggregate is replaced
+      // with the complete bucket once its remaining samples arrive.
+      void loadNavigatorInterval({
+        startMs: Math.max(startMs, Math.floor(gap.startMs / bucketMs) * bucketMs),
+        endMs: gap.endMs,
+      });
+    }
+  }, [
+    loadNavigatorInterval,
+    navigatorBucketSec,
+    navigatorPrefetchChunkMs,
+  ]);
+
+  // Reset the buffer only when its data scope or configured overview changes.
+  // Moving the five-minute viewport inside a preset does not invalidate it.
+  useEffect(() => {
+    if (!services || !isConnected) return;
+    navigatorGenerationRef.current += 1;
+    navigatorCoverageRef.current = [];
+    navigatorInFlightRef.current.clear();
+    navigatorRangeRef.current = null;
+    setNavigatorLoadingCount(0);
+    setNavigatorMetricData({ trend: [], peaks: [] });
+    setNavigatorEventData({ events: [], coverage: [] });
+    setNavigatorRange(null);
+
+    const now = Date.now();
+    const customStartMs = navigatorCustomStart
+      ? new Date(navigatorCustomStart).getTime()
+      : Number.NaN;
+    const customEndMs = navigatorCustomEnd
+      ? new Date(navigatorCustomEnd).getTime()
+      : Number.NaN;
+    const endMs = Number.isFinite(customEndMs) ? customEndMs : now;
+    const startMs = Number.isFinite(customStartMs)
+      ? customStartMs
+      : endMs - navigatorSpanMs;
+    if (endMs <= startMs) return;
+
+    const range = { startMs, endMs };
+    navigatorRangeRef.current = range;
+    setNavigatorRange(range);
+    void loadNavigatorInterval(range);
+    requestNavigatorChunkAt(startMs - 1);
+  }, [
+    services,
+    isConnected,
+    selectedTimeRange,
+    navigatorCustomStart,
+    navigatorCustomEnd,
+    navigatorRequestScope,
+    navigatorSpanMs,
+    loadNavigatorInterval,
+    requestNavigatorChunkAt,
+  ]);
+
+  const refreshLiveNavigator = useCallback(() => {
+    const currentRange = navigatorRangeRef.current;
+    if (!currentRange) return;
+    const endMs = Date.now();
+    const spanMs = currentRange.endMs - currentRange.startMs;
+    const nextRange = { startMs: endMs - spanMs, endMs };
+    navigatorRangeRef.current = nextRange;
+    setNavigatorRange(nextRange);
+    requestNavigatorChunkAt(endMs - 1);
+  }, [requestNavigatorChunkAt]);
+
+  // Auto-refresh the right edge in live mode.
   const navigatorRefreshRef = useRef<ReturnType<typeof setInterval> | null>(null);
   useEffect(() => {
     if (navigatorRefreshRef.current) { clearInterval(navigatorRefreshRef.current); navigatorRefreshRef.current = null; }
     if (autoRefresh && refreshRateSeconds > 0 && isLive && services && isConnected) {
       const intervalMs = clampToAllowed(refreshRateSeconds, refreshConfig) * 1000;
-      navigatorRefreshRef.current = setInterval(() => fetchNavigatorData(true), intervalMs);
+      navigatorRefreshRef.current = setInterval(refreshLiveNavigator, intervalMs);
     }
     return () => { if (navigatorRefreshRef.current) { clearInterval(navigatorRefreshRef.current); navigatorRefreshRef.current = null; } };
-  }, [autoRefresh, refreshRateSeconds, refreshConfig, isLive, services, isConnected, fetchNavigatorData]);
+  }, [autoRefresh, refreshRateSeconds, refreshConfig, isLive, services, isConnected, refreshLiveNavigator]);
 
-  // During drag: cheap visual-only update (clamp to now)
+  // During drag, pan the fixed-duration overview when the viewport reaches an
+  // edge and keep the adjacent chunks prefetched.
   const handleNavigatorViewportChange = useCallback((newEndMs: number) => {
     const clamped = Math.min(newEndMs, Date.now());
     dragEndMsRef.current = clamped;
     setDragEndMs(clamped);
-  }, []);
+    const currentRange = navigatorRangeRef.current;
+    if (!currentRange) return;
 
-  // On drag end: commit position, clear drag state, let normal fetch cycle update navigator
+    const viewport = {
+      startMs: clamped - windowSec * 2 * 1000,
+      endMs: clamped,
+    };
+    const nextRange = panRangeToIncludeViewport(currentRange, viewport, Date.now());
+    if (
+      nextRange.startMs !== currentRange.startMs
+      || nextRange.endMs !== currentRange.endMs
+    ) {
+      navigatorRangeRef.current = nextRange;
+      setNavigatorRange(nextRange);
+    }
+
+    const prefetchThresholdMs = (nextRange.endMs - nextRange.startMs) * 0.15;
+    if (viewport.startMs - nextRange.startMs <= prefetchThresholdMs) {
+      requestNavigatorChunkAt(nextRange.startMs - 1);
+    }
+    if (
+      nextRange.endMs - viewport.endMs <= prefetchThresholdMs
+      && nextRange.endMs < Date.now() - 1000
+    ) {
+      requestNavigatorChunkAt(nextRange.endMs + 1);
+    }
+  }, [windowSec, requestNavigatorChunkAt]);
+
+  // On drag end: commit the detail viewport. Navigator chunks have already
+  // loaded independently during the gesture.
   const handleNavigatorDragEnd = useCallback((endMs: number) => {
     const clampedEnd = Math.min(endMs, Date.now());
     dragEndMsRef.current = null;
@@ -706,26 +835,6 @@ export const TimeTravelPage: React.FC = () => {
     const maxEnd = navigatorRange?.endMs ?? Date.now();
     handleNavigatorDragEnd(Math.max(minEnd, Math.min(maxEnd, requestedEnd)));
   }, [viewportBounds, windowSec, navigatorRange, handleNavigatorDragEnd]);
-
-  const navigatorMetricData = useMemo(() => {
-    if (!navigatorData) return [];
-    if (metricMode === 'memory') return navigatorData.server_memory;
-    if (metricMode === 'cpu') return navigatorData.server_cpu;
-    if (metricMode === 'network') {
-      if (navigatorData.server_network_send.length > 0) {
-        return navigatorData.server_network_send.map((p, i) => ({
-          t: p.t, v: p.v + (navigatorData.server_network_recv[i]?.v ?? 0),
-        }));
-      }
-      return [];
-    }
-    if (navigatorData.server_disk_read && navigatorData.server_disk_read.length > 0) {
-      return navigatorData.server_disk_read.map((p, i) => ({
-        t: p.t, v: p.v + (navigatorData.server_disk_write?.[i]?.v ?? 0),
-      }));
-    }
-    return [];
-  }, [navigatorData, metricMode]);
 
   const activeMetricSampleCount = useMemo(() => {
     if (!data) return 0;
@@ -872,9 +981,6 @@ export const TimeTravelPage: React.FC = () => {
   const handleTimeRangeChange = (rangeLabel: string) => {
     setSelectedTimeRange(rangeLabel);
     clearDragPosition();
-    // Invalidate navigator cache so the new range triggers a fresh fetch
-    lastNavigatorFetchTime.current = null;
-    setNavigatorData(null);
     // All presets: live mode (right edge = now), scrub bar shows last N hours
     setIsLive(true); setCustomEndTime(null); setCustomStartTime(null); setViewportEndTime(null);
     setShowCustomPopover(false);
@@ -906,8 +1012,6 @@ export const TimeTravelPage: React.FC = () => {
     // Position viewport at the end of the custom range
     setViewportEndTime(customEndTime);
     clearDragPosition();
-    lastNavigatorFetchTime.current = null;
-    setNavigatorData(null);
     setShowCustomPopover(false);
   };
 
@@ -1501,10 +1605,70 @@ export const TimeTravelPage: React.FC = () => {
               <div style={{ display:'flex', alignItems:'center', gap:8, marginBottom:6, fontSize:11, color:'var(--text-muted)' }}>
                 <span style={{ textTransform:'uppercase', letterSpacing:'0.5px' }}>{navigatorHours >= 48 ? `${Math.round(navigatorHours / 24)}d` : navigatorHours >= 24 ? '1d' : `${Math.round(navigatorHours)}h`} Overview</span>
                 <span style={{ color: METRIC_CONFIG[metricMode].color }}>{METRIC_CONFIG[metricMode].label}</span>
-                <span>· Drag window to navigate</span>
+                <span
+                  role="group"
+                  aria-label="Navigator shape"
+                  style={{
+                    display: 'inline-flex',
+                    padding: 2,
+                    borderRadius: 5,
+                    border: '1px solid var(--border-primary)',
+                    background: 'var(--bg-secondary)',
+                  }}
+                >
+                  {([
+                    ['trend', 'Avg'],
+                    ['peaks', 'Max'],
+                    ['change', 'Δ'],
+                  ] as const).map(([shape, label]) => {
+                    const selected = timeTravelNavigatorShape === shape;
+                    return (
+                      <button
+                        key={shape}
+                        type="button"
+                        aria-pressed={selected}
+                        aria-label={shape === 'trend'
+                          ? 'Show bucket averages'
+                          : shape === 'peaks'
+                            ? 'Show bucket peaks'
+                            : 'Show change between buckets'}
+                        title={shape === 'trend'
+                          ? 'Average value per time bucket'
+                          : shape === 'peaks'
+                            ? 'Maximum value per time bucket'
+                            : 'Change from the previous time bucket · amber increases, cyan decreases'}
+                        onClick={() => setTimeTravelNavigatorShape(shape)}
+                        style={{
+                          border: 0,
+                          borderRadius: 3,
+                          padding: '1px 6px',
+                          fontSize: 10,
+                          lineHeight: '16px',
+                          cursor: 'pointer',
+                          color: selected ? 'var(--text-primary)' : 'var(--text-muted)',
+                          background: selected ? 'var(--bg-tertiary)' : 'transparent',
+                          boxShadow: selected ? '0 1px 2px rgba(0,0,0,0.18)' : 'none',
+                        }}
+                      >
+                        {label}
+                      </button>
+                    );
+                  })}
+                </span>
+                <span>· Drag to navigate</span>
               </div>
               <TimelineNavigator
-                data={navigatorMetricData} metricMode={metricMode}
+                data={timeTravelNavigatorShape === 'trend'
+                  ? navigatorMetricData.trend
+                  : timeTravelNavigatorShape === 'peaks'
+                    ? navigatorMetricData.peaks
+                    : navigatorChangeData}
+                scaleData={timeTravelNavigatorShape === 'change'
+                  ? undefined
+                  : navigatorMetricData.peaks}
+                variant={timeTravelNavigatorShape === 'change' ? 'delta' : 'area'}
+                bucketMs={navigatorBucketSec * 1000}
+                metricMode={metricMode}
                 rangeStartMs={navigatorRange.startMs} rangeEndMs={navigatorRange.endMs}
                 viewportStartMs={viewportBounds.startMs} viewportEndMs={viewportBounds.endMs}
                 onViewportChange={handleNavigatorViewportChange} height={70}

@@ -8,6 +8,7 @@ import { create } from 'zustand';
 import { persist } from 'zustand/middleware';
 
 export type ViewMode = '3d' | '2d';
+export type NavigatorShapeMode = 'trend' | 'peaks' | 'change';
 
 interface UserPreferenceState {
   preferredViewMode: ViewMode;
@@ -25,6 +26,9 @@ interface UserPreferenceState {
   /** Show event annotations on the Time Travel 2D chart and navigator. */
   timeTravelEventsVisible: boolean;
   setTimeTravelEventsVisible: (visible: boolean) => void;
+  /** Time Travel navigator rollup shape. */
+  timeTravelNavigatorShape: NavigatorShapeMode;
+  setTimeTravelNavigatorShape: (shape: NavigatorShapeMode) => void;
 }
 
 export const useUserPreferenceStore = create<UserPreferenceState>()(
@@ -41,6 +45,8 @@ export const useUserPreferenceStore = create<UserPreferenceState>()(
       setHideReplicaMerges: (enabled: boolean) => set({ hideReplicaMerges: enabled }),
       timeTravelEventsVisible: true,
       setTimeTravelEventsVisible: (visible: boolean) => set({ timeTravelEventsVisible: visible }),
+      timeTravelNavigatorShape: 'peaks',
+      setTimeTravelNavigatorShape: (shape: NavigatorShapeMode) => set({ timeTravelNavigatorShape: shape }),
     }),
     { name: 'tracehouse-view-preference' }
   )

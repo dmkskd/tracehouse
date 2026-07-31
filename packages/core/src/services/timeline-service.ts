@@ -5,6 +5,8 @@ import type { IClickHouseAdapter } from '../adapters/types.js';
 import type {
   MemoryTimeline,
   TimeseriesPoint,
+  TimelineNavigatorMetric,
+  TimelineNavigatorOptions,
   QuerySeries,
   MergeSeries,
   MutationSeries,
@@ -26,6 +28,10 @@ import {
   SERVER_CPU_TIMESERIES,
   SERVER_NETWORK_TIMESERIES,
   SERVER_DISK_IO_TIMESERIES,
+  NAVIGATOR_MEMORY_TIMESERIES,
+  NAVIGATOR_CPU_TIMESERIES,
+  NAVIGATOR_NETWORK_TIMESERIES,
+  NAVIGATOR_DISK_TIMESERIES,
   SERVER_TOTAL_RAM,
   SERVER_CPU_CAPACITY_HISTORY,
   SERVER_CPU_CAPACITY_CURRENT,
@@ -81,6 +87,73 @@ export class TimelineService {
     hosts: string[];
   }>();
   constructor(private adapter: IClickHouseAdapter) {}
+
+  /**
+   * Fetch a single downsampled server metric for the buffered navigator.
+   * This intentionally avoids the activity, capacity, and running-operation
+   * fan-out performed by getTimeline().
+   */
+  async getNavigatorMetric(options: TimelineNavigatorOptions): Promise<TimelineNavigatorMetric> {
+    const startMs = options.startTime.getTime();
+    const endMs = options.endTime.getTime();
+    if (!Number.isFinite(startMs) || !Number.isFinite(endMs) || endMs <= startMs) {
+      throw new TimelineServiceError('Invalid navigator time range');
+    }
+
+    const bucketSeconds = Math.max(1, Math.floor(options.bucketSeconds));
+    const hostnames = (Array.isArray(options.hostname)
+      ? options.hostname
+      : options.hostname
+        ? [options.hostname]
+        : [])
+      .map(host => host.replace(/[^a-zA-Z0-9._\-]/g, ''))
+      .filter((host, index, hosts) => host.length > 0 && hosts.indexOf(host) === index);
+    const hostnameFilter = hostnames.length === 0
+      ? ''
+      : hostnames.length === 1
+        ? `AND hostname() = '${hostnames[0]}'`
+        : `AND hostname() IN (${hostnames.map(host => `'${host}'`).join(', ')})`;
+
+    const template = {
+      memory: NAVIGATOR_MEMORY_TIMESERIES,
+      cpu: NAVIGATOR_CPU_TIMESERIES,
+      network: NAVIGATOR_NETWORK_TIMESERIES,
+      disk: NAVIGATOR_DISK_TIMESERIES,
+    }[options.metric];
+    const serviceName = {
+      memory: 'navigatorMemory',
+      cpu: 'navigatorCpu',
+      network: 'navigatorNetwork',
+      disk: 'navigatorDisk',
+    }[options.metric];
+
+    try {
+      const sql = buildQuery(template, {
+        start_time: utcDateTime(options.startTime),
+        end_time: utcDateTime(options.endTime),
+        bucket_seconds: bucketSeconds,
+      }).replaceAll('{hostname_filter}', hostnameFilter);
+      const rows = await this.adapter.executeQuery<{
+        t: string;
+        average_v: number;
+        peak_v: number;
+      }>(
+        tagQuery(sql, sourceTag(TAB_TIME_TRAVEL, serviceName)),
+      );
+      return {
+        window_start: options.startTime.toISOString(),
+        window_end: options.endTime.toISOString(),
+        bucket_seconds: bucketSeconds,
+        points: rows.map(row => ({
+          t: String(row.t || ''),
+          average_v: Number(row.average_v || 0),
+          peak_v: Number(row.peak_v || 0),
+        })),
+      };
+    } catch (error) {
+      throw new TimelineServiceError('Failed to fetch navigator metric', error as Error);
+    }
+  }
 
   async getTimeline(options: TimelineOptions): Promise<MemoryTimeline> {
     const {

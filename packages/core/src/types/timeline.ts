@@ -7,6 +7,29 @@ export interface TimeseriesPoint {
   v: number;  // Value
 }
 
+export type TimelineMetricMode = 'memory' | 'cpu' | 'network' | 'disk';
+
+export interface TimelineNavigatorOptions {
+  startTime: Date;
+  endTime: Date;
+  metric: TimelineMetricMode;
+  /** Server-side bucket width. All buffered chunks should use the same value. */
+  bucketSeconds: number;
+  /** Filter to one or more hosts (by hostname()). */
+  hostname?: string | readonly string[] | null;
+}
+
+export interface TimelineNavigatorMetric {
+  window_start: string;
+  window_end: string;
+  bucket_seconds: number;
+  points: Array<{
+    t: string;
+    average_v: number;
+    peak_v: number;
+  }>;
+}
+
 /**
  * Per-second sampled values for zoom mode.
  * All metrics are included so metric-mode switches don't require re-fetching.
@@ -164,7 +187,7 @@ export interface TimelineOptions {
   /** Max rows per activity type (queries, merges, mutations). Default: 100 */
   activityLimit?: number;
   /** Active metric tab. Controls which server metrics are fetched and which "top N" sort is used. Default: 'memory' */
-  activeMetric?: 'memory' | 'cpu' | 'network' | 'disk';
+  activeMetric?: TimelineMetricMode;
   /** When set, only fetch queries matching this normalized_query_hash (pattern mode). */
   normalizedQueryHash?: string;
 }

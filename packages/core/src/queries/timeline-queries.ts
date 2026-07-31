@@ -94,6 +94,108 @@ export const SERVER_DISK_IO_TIMESERIES = `
   ORDER BY event_time ASC
 `;
 
+/**
+ * Downsampled metric-only queries for the Time Travel navigator.
+ *
+ * Each query returns both average and peak values for every time bucket so the
+ * navigator can change shape without another request. Samples are summed
+ * across hosts at each timestamp before the time rollup. `{hostname_filter}`
+ * is replaced only with a service-built predicate after hostnames are
+ * sanitized.
+ */
+export const NAVIGATOR_MEMORY_TIMESERIES = `
+SELECT
+  toString(bucket) AS t,
+  avg(v) AS average_v,
+  max(v) AS peak_v
+FROM (
+  SELECT
+    toStartOfInterval(event_time, toIntervalSecond({bucket_seconds})) AS bucket,
+    event_time,
+    sum(CurrentMetric_MemoryTracking) AS v
+  FROM {{cluster_aware:system.metric_log}}
+  WHERE event_time >= {start_time}
+    AND event_time <= {end_time}
+    {hostname_filter}
+  GROUP BY bucket, event_time
+)
+GROUP BY bucket
+ORDER BY bucket ASC
+`;
+
+export const NAVIGATOR_CPU_TIMESERIES = `
+SELECT
+  toString(bucket) AS t,
+  avg(v) * 1000000 AS average_v,
+  max(v) * 1000000 AS peak_v
+FROM (
+  SELECT
+    bucket,
+    event_time,
+    sum(cpu_value) AS v
+  FROM (
+    SELECT
+      toStartOfInterval(event_time, toIntervalSecond({bucket_seconds})) AS bucket,
+      event_time,
+      hostname() AS host,
+      if(
+        countIf(metric IN ('CGroupUserTime', 'CGroupSystemTime')) > 0,
+        sumIf(value, metric IN ('CGroupUserTime', 'CGroupSystemTime')),
+        sumIf(value, metric IN ('OSUserTime', 'OSSystemTime'))
+      ) AS cpu_value
+    FROM {{cluster_aware:system.asynchronous_metric_log}}
+    WHERE metric IN ('CGroupUserTime', 'CGroupSystemTime', 'OSUserTime', 'OSSystemTime')
+      AND event_time >= {start_time}
+      AND event_time <= {end_time}
+      {hostname_filter}
+    GROUP BY bucket, event_time, host
+  )
+  GROUP BY bucket, event_time
+)
+GROUP BY bucket
+ORDER BY bucket ASC
+`;
+
+export const NAVIGATOR_NETWORK_TIMESERIES = `
+SELECT
+  toString(bucket) AS t,
+  avg(v) AS average_v,
+  max(v) AS peak_v
+FROM (
+  SELECT
+    toStartOfInterval(event_time, toIntervalSecond({bucket_seconds})) AS bucket,
+    event_time,
+    sum(ProfileEvent_NetworkSendBytes + ProfileEvent_NetworkReceiveBytes) AS v
+  FROM {{cluster_aware:system.metric_log}}
+  WHERE event_time >= {start_time}
+    AND event_time <= {end_time}
+    {hostname_filter}
+  GROUP BY bucket, event_time
+)
+GROUP BY bucket
+ORDER BY bucket ASC
+`;
+
+export const NAVIGATOR_DISK_TIMESERIES = `
+SELECT
+  toString(bucket) AS t,
+  avg(v) AS average_v,
+  max(v) AS peak_v
+FROM (
+  SELECT
+    toStartOfInterval(event_time, toIntervalSecond({bucket_seconds})) AS bucket,
+    event_time,
+    sum(ProfileEvent_OSReadBytes + ProfileEvent_OSWriteBytes) AS v
+  FROM {{cluster_aware:system.metric_log}}
+  WHERE event_time >= {start_time}
+    AND event_time <= {end_time}
+    {hostname_filter}
+  GROUP BY bucket, event_time
+)
+GROUP BY bucket
+ORDER BY bucket ASC
+`;
+
 /** Get total RAM from asynchronous_metric_log (per-host aware) */
 export const SERVER_TOTAL_RAM = `
   SELECT

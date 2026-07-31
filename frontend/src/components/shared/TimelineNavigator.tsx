@@ -1,16 +1,23 @@
 /**
  * TimelineNavigator - Mini timeline for navigating through a longer time range
  * 
- * Shows a 2-hour overview with metric data and a draggable viewport window
+ * Shows a longer overview with metric data and a draggable viewport window
  * representing the current view window that can be dragged to navigate time.
  * Mirrors the metric mode from the main chart (Memory, CPU, Network, Disk).
  */
 import React, { useState, useCallback, useMemo, useRef, useEffect } from 'react';
 import type { OperationalEvent, TimeseriesPoint } from '@tracehouse/core';
+import { formatBytes } from '../../utils/formatters';
 import {
   EVENT_SEVERITY_COLORS,
   clusterTimelineEvents,
 } from '../timeline/timeline-event-model';
+import {
+  clampNavigatorDragX,
+  navigatorByteScaleCeiling,
+  navigatorEdgeScrollVelocity,
+  navigatorPercentScaleCeiling,
+} from '../timeline/timeline-navigator-buffer';
 
 export type MetricMode = 'memory' | 'cpu' | 'network' | 'disk';
 
@@ -24,6 +31,12 @@ const METRIC_CONFIG: Record<MetricMode, { label: string; color: string; lightCol
 interface TimelineNavigatorProps {
   /** Timeseries data for the extended range */
   data: TimeseriesPoint[];
+  /** Optional series used only to keep the Y scale stable between shapes. */
+  scaleData?: TimeseriesPoint[];
+  /** Area for absolute values; delta renders signed, zero-centred bars. */
+  variant?: 'area' | 'delta';
+  /** Width of each downsampled metric bucket in milliseconds. */
+  bucketMs?: number;
   /** Current metric mode to display */
   metricMode: MetricMode;
   /** Start of the navigator range (ms) */
@@ -57,6 +70,9 @@ const fmtTime = (ms: number): string => new Date(ms).toLocaleTimeString([], { ho
 
 export const TimelineNavigator: React.FC<TimelineNavigatorProps> = ({
   data,
+  scaleData,
+  variant = 'area',
+  bucketMs,
   metricMode,
   rangeStartMs,
   rangeEndMs,
@@ -75,15 +91,22 @@ export const TimelineNavigator: React.FC<TimelineNavigatorProps> = ({
   const containerRef = useRef<HTMLDivElement>(null);
   const [containerWidth, setContainerWidth] = useState(1000);
   const [isDragging, setIsDragging] = useState(false);
+  const didDragRef = useRef(false);
+  const suppressClickUntilRef = useRef(0);
   const dragStateRef = useRef<{
     lastX: number;
+    pointerX: number;
     currentEndMs: number;
-    viewportWidth: number;
     frozenRangeMs: number;      // locked at drag start so delta calc stays stable
     frozenContainerWidth: number; // container width at drag start
   } | null>(null);
 
-  const [hoverInfo, setHoverInfo] = useState<{ x: number; y: number; value: string } | null>(null);
+  const [hoverInfo, setHoverInfo] = useState<{
+    x: number;
+    y: number;
+    value: string;
+    color?: string;
+  } | null>(null);
 
   useEffect(() => {
     const element = containerRef.current;
@@ -107,11 +130,35 @@ export const TimelineNavigator: React.FC<TimelineNavigatorProps> = ({
     }).filter(p => p.ms >= rangeStartMs && p.ms <= rangeEndMs);
   }, [data, rangeStartMs, rangeEndMs]);
 
+  const scalePoints = useMemo(() => {
+    if (!scaleData) return dataPoints;
+    return scaleData.map(p => {
+      const normalized = p.t.replace(' ', 'T') + (p.t.includes('Z') || p.t.includes('+') ? '' : 'Z');
+      return { ms: new Date(normalized).getTime(), v: p.v };
+    }).filter(p => p.ms >= rangeStartMs && p.ms <= rangeEndMs);
+  }, [scaleData, dataPoints, rangeStartMs, rangeEndMs]);
+
   // Calculate max Y for scaling
   const maxY = useMemo(() => {
-    if (dataPoints.length === 0) return 1;
-    return Math.max(...dataPoints.map(p => p.v)) * 1.1 || 1;
-  }, [dataPoints]);
+    const rawMax = variant === 'delta'
+      ? Math.max(0, ...dataPoints.map(point => Math.abs(point.v)))
+      : Math.max(0, ...scalePoints.map(point => point.v));
+    if (rawMax === 0) return 1;
+
+    const capacity = metricMode === 'cpu' && cpuCores > 0
+      ? cpuCores * 1_000_000
+      : metricMode === 'memory' && totalRam > 0
+        ? totalRam
+        : 0;
+    if (capacity > 0) {
+      const percent = (rawMax / capacity) * 100;
+      return capacity * navigatorPercentScaleCeiling(percent) / 100;
+    }
+    if (metricMode === 'network' || metricMode === 'disk') {
+      return navigatorByteScaleCeiling(rawMax);
+    }
+    return rawMax * 1.1;
+  }, [variant, dataPoints, scalePoints, metricMode, cpuCores, totalRam]);
 
   // Convert ms to X position (0-100%)
   const msToPercent = useCallback((ms: number) => {
@@ -123,19 +170,96 @@ export const TimelineNavigator: React.FC<TimelineNavigatorProps> = ({
     return rangeStartMs + (percent / 100) * rangeMs;
   }, [rangeStartMs, rangeMs]);
 
-  // Build SVG path for area chart
-  const areaPath = useMemo(() => {
-    if (dataPoints.length < 2) return '';
+  // Build touching step-filled buckets. Each contiguous run becomes its own
+  // sub-path, so missing buckets stay empty instead of becoming diagonal data.
+  const areaPaths = useMemo(() => {
+    if (variant !== 'area' || dataPoints.length === 0) return [];
     const chartHeight = height - 20; // Leave room for labels
-    const points = dataPoints.map(p => {
-      const x = msToPercent(p.ms);
-      const y = chartHeight - (p.v / maxY) * chartHeight;
-      return `${x},${y}`;
+    const sorted = [...dataPoints].sort((left, right) => left.ms - right.ms);
+    const positiveIntervals = sorted
+      .slice(1)
+      .map((point, index) => point.ms - sorted[index].ms)
+      .filter(interval => interval > 0)
+      .sort((left, right) => left - right);
+    const inferredBucketMs = positiveIntervals.length > 0
+      ? positiveIntervals[Math.floor(positiveIntervals.length / 2)]
+      : rangeMs;
+    const effectiveBucketMs = bucketMs && bucketMs > 0 ? bucketMs : inferredBucketMs;
+
+    const segments: typeof sorted[] = [];
+    for (const point of sorted) {
+      const segment = segments[segments.length - 1];
+      const previous = segment?.[segment.length - 1];
+      if (!segment || (previous && point.ms - previous.ms > effectiveBucketMs * 1.5)) {
+        segments.push([point]);
+      } else {
+        segment.push(point);
+      }
+    }
+
+    const xAt = (ms: number) => msToPercent(Math.max(rangeStartMs, Math.min(rangeEndMs, ms)));
+    const yAt = (value: number) => chartHeight - (value / maxY) * chartHeight;
+
+    return segments.map(segment => {
+      const startX = xAt(segment[0].ms);
+      const endX = xAt(segment[segment.length - 1].ms + effectiveBucketMs);
+      if (endX <= startX) return '';
+
+      let path = `M${startX},${chartHeight} L${startX},${yAt(segment[0].v)}`;
+      for (let index = 1; index < segment.length; index += 1) {
+        const boundaryX = xAt(segment[index].ms);
+        path += ` L${boundaryX},${yAt(segment[index - 1].v)}`;
+        path += ` L${boundaryX},${yAt(segment[index].v)}`;
+      }
+      path += ` L${endX},${yAt(segment[segment.length - 1].v)}`;
+      path += ` L${endX},${chartHeight} Z`;
+      return path;
+    }).filter(Boolean);
+  }, [variant, dataPoints, maxY, height, msToPercent, rangeStartMs, rangeEndMs, rangeMs, bucketMs]);
+
+  const deltaBars = useMemo(() => {
+    if (variant !== 'delta' || dataPoints.length === 0) return [];
+    const chartHeight = height - 20;
+    const zeroY = chartHeight / 2;
+    const width = Math.max(0.05, Math.min(1.5, (100 / dataPoints.length) * 0.82));
+    return dataPoints.map(point => {
+      const magnitude = Math.abs(point.v) / maxY;
+      const barHeight = magnitude * zeroY;
+      return {
+        x: msToPercent(point.ms) - width / 2,
+        y: point.v >= 0 ? zeroY - barHeight : zeroY,
+        width,
+        height: Math.max(point.v === 0 ? 0 : 0.35, barHeight),
+        color: point.v >= 0 ? '#d29922' : '#38bdf8',
+        opacity: 0.25 + Math.sqrt(magnitude) * 0.75,
+      };
     });
-    const firstX = msToPercent(dataPoints[0].ms);
-    const lastX = msToPercent(dataPoints[dataPoints.length - 1].ms);
-    return `M${firstX},${chartHeight} L${points.join(' L')} L${lastX},${chartHeight} Z`;
-  }, [dataPoints, maxY, height, msToPercent]);
+  }, [variant, dataPoints, height, maxY, msToPercent]);
+
+  const scaleValues = useMemo(() => {
+    const formatScaleValue = (value: number): string => {
+      const sign = value < 0 ? '−' : '';
+      const absolute = Math.abs(value);
+      if (metricMode === 'cpu' && cpuCores > 0) {
+        const percent = (absolute / (cpuCores * 1_000_000)) * 100;
+        return `${sign}${percent.toFixed(percent > 0 && percent < 10 ? 1 : 0)}%`;
+      }
+      if (metricMode === 'memory' && totalRam > 0) {
+        const percent = (absolute / totalRam) * 100;
+        return `${sign}${percent.toFixed(percent > 0 && percent < 10 ? 1 : 0)}%`;
+      }
+      if (metricMode === 'cpu') {
+        const cores = absolute / 1_000_000;
+        return `${sign}${cores.toFixed(cores > 0 && cores < 10 ? 1 : 0)}c`;
+      }
+      return `${sign}${formatBytes(absolute)}`;
+    };
+
+    return {
+      max: formatScaleValue(maxY),
+      min: formatScaleValue(variant === 'delta' ? -maxY : 0),
+    };
+  }, [maxY, variant, metricMode, cpuCores, totalRam]);
 
   // Viewport position as percentages (clamped to stay visible)
   const rawLeftPercent = msToPercent(viewportStartMs);
@@ -154,28 +278,34 @@ export const TimelineNavigator: React.FC<TimelineNavigatorProps> = ({
     // Lock rangeMs and container width at drag start for stable pixel→ms conversion
     dragStateRef.current = {
       lastX: x,
+      pointerX: x,
       currentEndMs: viewportEndMs,
-      viewportWidth: viewportWidthMs,
       frozenRangeMs: rangeMs,
       frozenContainerWidth: rect.width,
     };
+    didDragRef.current = false;
     setIsDragging(true);
     e.preventDefault();
-  }, [viewportEndMs, viewportWidthMs, rangeMs]);
+  }, [viewportEndMs, rangeMs]);
 
   const handleMouseMove = useCallback((e: MouseEvent) => {
     const dragState = dragStateRef.current;
     if (!isDragging || !dragState) return;
 
-    const currentX = e.clientX - (containerRef.current?.getBoundingClientRect().left ?? 0);
+    const rawX = e.clientX - (containerRef.current?.getBoundingClientRect().left ?? 0);
+    const currentX = clampNavigatorDragX(rawX, dragState.frozenContainerWidth);
     const deltaX = currentX - dragState.lastX;
     dragState.lastX = currentX;
+    // Edge velocity deliberately keeps the raw coordinate so holding beyond
+    // an edge can still accelerate scrolling without corrupting drag deltas.
+    dragState.pointerX = rawX;
+    if (Math.abs(deltaX) > 1) didDragRef.current = true;
 
     // Use frozen values from drag start — immune to range extension feedback loops
     const deltaPx = deltaX / dragState.frozenContainerWidth;
     const deltaMs = deltaPx * dragState.frozenRangeMs;
 
-    const newEndMs = dragState.currentEndMs + deltaMs;
+    const newEndMs = Math.min(dragState.currentEndMs + deltaMs, Date.now());
     dragState.currentEndMs = newEndMs;
 
     // Parent handles clamping (future, etc.) and range extension
@@ -186,6 +316,8 @@ export const TimelineNavigator: React.FC<TimelineNavigatorProps> = ({
     if (onDragEnd && dragStateRef.current) {
       onDragEnd(dragStateRef.current.currentEndMs);
     }
+    if (didDragRef.current) suppressClickUntilRef.current = Date.now() + 250;
+    didDragRef.current = false;
     setIsDragging(false);
     dragStateRef.current = null;
   }, [onDragEnd]);
@@ -193,6 +325,7 @@ export const TimelineNavigator: React.FC<TimelineNavigatorProps> = ({
   // Handle click to jump to position
   const handleClick = useCallback((e: React.MouseEvent) => {
     if (isDragging) return; // Don't jump if we were dragging
+    if (Date.now() < suppressClickUntilRef.current) return;
     if (!containerRef.current) return;
     
     const rect = containerRef.current.getBoundingClientRect();
@@ -223,6 +356,38 @@ export const TimelineNavigator: React.FC<TimelineNavigatorProps> = ({
       };
     }
   }, [isDragging, handleMouseMove, handleMouseUp]);
+
+  // Keep panning while the pointer is held at either edge. The parent shifts
+  // the fixed-duration range and prefetches adjacent chunks as time advances.
+  useEffect(() => {
+    if (!isDragging) return;
+    let frame = 0;
+    let previousFrame = performance.now();
+    const tick = (now: number) => {
+      const dragState = dragStateRef.current;
+      if (!dragState) return;
+      const elapsedSeconds = Math.min((now - previousFrame) / 1000, 0.05);
+      previousFrame = now;
+
+      const velocity = navigatorEdgeScrollVelocity(
+        dragState.pointerX,
+        dragState.frozenContainerWidth,
+        dragState.frozenRangeMs,
+      );
+      if (velocity !== 0) {
+        dragState.currentEndMs = Math.min(
+          dragState.currentEndMs + velocity * elapsedSeconds,
+          Date.now(),
+        );
+        didDragRef.current = true;
+        onViewportChange(dragState.currentEndMs);
+      }
+      frame = requestAnimationFrame(tick);
+    };
+
+    frame = requestAnimationFrame(tick);
+    return () => cancelAnimationFrame(frame);
+  }, [isDragging, onViewportChange]);
 
   // Time labels
   const timeLabels = useMemo(() => {
@@ -264,6 +429,31 @@ export const TimelineNavigator: React.FC<TimelineNavigatorProps> = ({
       }
     }
     
+    if (variant === 'delta') {
+      const sign = closest.v > 0 ? '+' : closest.v < 0 ? '−' : '';
+      const absolute = Math.abs(closest.v);
+      let value: string;
+      if (metricMode === 'cpu') {
+        const cores = absolute / 1_000_000;
+        value = `${sign}${cores.toFixed(cores >= 10 ? 0 : 1)} cores`;
+      } else if (metricMode === 'memory') {
+        const gib = absolute / (1024 ** 3);
+        const mib = absolute / (1024 ** 2);
+        value = gib >= 0.1
+          ? `${sign}${gib.toFixed(gib >= 10 ? 0 : 1)} GiB`
+          : `${sign}${mib.toFixed(mib >= 10 ? 0 : 1)} MiB`;
+      } else {
+        value = `${sign}${absolute.toLocaleString()}`;
+      }
+      setHoverInfo({
+        x: e.clientX - rect.left,
+        y: e.clientY - rect.top,
+        value,
+        color: closest.v >= 0 ? '#d29922' : '#38bdf8',
+      });
+      return;
+    }
+
     // Calculate percentage based on metric mode
     let valueStr = '';
     if (metricMode === 'memory' && totalRam > 0) {
@@ -280,7 +470,7 @@ export const TimelineNavigator: React.FC<TimelineNavigatorProps> = ({
     }
     
     setHoverInfo({ x: e.clientX - rect.left, y: e.clientY - rect.top, value: valueStr });
-  }, [dataPoints, percentToMs, metricMode, totalRam, cpuCores]);
+  }, [dataPoints, percentToMs, variant, metricMode, totalRam, cpuCores]);
 
   const handleMouseLeave = useCallback(() => {
     setHoverInfo(null);
@@ -303,18 +493,20 @@ export const TimelineNavigator: React.FC<TimelineNavigatorProps> = ({
       onMouseMove={handleMouseMoveHover}
       onMouseLeave={handleMouseLeave}
     >
-      {/* Loading overlay */}
+      {/* Non-blocking background-load indicator */}
       {isLoading && (
         <div style={{
           position: 'absolute',
-          inset: 0,
-          background: 'rgba(0,0,0,0.3)',
-          display: 'flex',
-          alignItems: 'center',
-          justifyContent: 'center',
+          top: 4,
+          right: 6,
+          background: 'var(--bg-secondary)',
+          border: '1px solid var(--border-primary)',
+          borderRadius: 4,
+          padding: '1px 6px',
           zIndex: 10,
+          pointerEvents: 'none',
         }}>
-          <span style={{ color: 'var(--text-muted)', fontSize: 11 }}>Loading...</span>
+          <span style={{ color: 'var(--text-muted)', fontSize: 10 }}>Loading history…</span>
         </div>
       )}
 
@@ -332,8 +524,39 @@ export const TimelineNavigator: React.FC<TimelineNavigatorProps> = ({
             <stop offset="100%" stopColor={cfg.color} stopOpacity="0.05" />
           </linearGradient>
         </defs>
-        {areaPath && (
-          <path d={areaPath} fill={`url(#navGradient-${metricMode})`} stroke={cfg.color} strokeWidth="0.5" />
+        {areaPaths.map((path, index) => (
+          <path
+            key={index}
+            d={path}
+            fill={`url(#navGradient-${metricMode})`}
+            stroke={cfg.color}
+            strokeWidth="2"
+            vectorEffect="non-scaling-stroke"
+          />
+        ))}
+        {variant === 'delta' && (
+          <>
+            <line
+              x1="0"
+              x2="100"
+              y1={chartHeight / 2}
+              y2={chartHeight / 2}
+              stroke="var(--border-primary)"
+              strokeWidth="0.45"
+              vectorEffect="non-scaling-stroke"
+            />
+            {deltaBars.map((bar, index) => (
+              <rect
+                key={index}
+                x={bar.x}
+                y={bar.y}
+                width={bar.width}
+                height={bar.height}
+                fill={bar.color}
+                opacity={bar.opacity}
+              />
+            ))}
+          </>
         )}
       </svg>
 
@@ -392,6 +615,38 @@ export const TimelineNavigator: React.FC<TimelineNavigatorProps> = ({
         background: 'var(--overlay-dim, rgba(0, 0, 0, 0.4))',
         pointerEvents: 'none',
       }} />
+
+      {/* Minimal adaptive scale values. */}
+      <span
+        data-testid="navigator-scale-max"
+        style={{
+          position: 'absolute',
+          top: 3,
+          left: 6,
+          zIndex: 9,
+          color: 'var(--text-muted)',
+          fontSize: 9,
+          lineHeight: 1,
+          pointerEvents: 'none',
+        }}
+      >
+        {scaleValues.max}
+      </span>
+      <span
+        data-testid="navigator-scale-min"
+        style={{
+          position: 'absolute',
+          top: Math.max(3, chartHeight - 12),
+          left: 6,
+          zIndex: 9,
+          color: 'var(--text-muted)',
+          fontSize: 9,
+          lineHeight: 1,
+          pointerEvents: 'none',
+        }}
+      >
+        {scaleValues.min}
+      </span>
 
       {/* Operational event ticks — clustered only when markers would overlap. */}
       {eventClusters.map(cluster => {
@@ -503,7 +758,7 @@ export const TimelineNavigator: React.FC<TimelineNavigatorProps> = ({
           ),
           transform: 'translateX(-50%)',
           fontSize: 10,
-          color: cfg.lightColor,
+          color: hoverInfo.color ?? cfg.lightColor,
           fontWeight: 600,
           background: 'rgba(13, 17, 23, 0.9)',
           padding: '2px 6px',
