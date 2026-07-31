@@ -21,6 +21,15 @@ import {
   trackerScopeOptionStyle,
 } from '../common/trackerFilterStyles';
 import { TRACKER_TIME_PRESETS } from '../../utils/trackerTimeRange';
+import {
+  ErrorCodeDropdownRow,
+  ErrorCodeRefineButton,
+} from '../common/ErrorCodeFilter';
+import {
+  ERROR_CODE_GROUP_LABEL,
+  useErrorCodeChoices,
+  type ErrorCodeSuggestion,
+} from '../common/errorCodeFilterModel';
 
 export type MergeTab = 'merges' | 'mutations' | 'health';
 export type MergeQuickFilter = 'running' | 'recent' | 'failed' | 'slow';
@@ -49,10 +58,12 @@ interface MergeFilterBarProps {
   availableHosts?: string[];
   selectedHost?: string[];
   onHostChange?: (v: string[] | undefined) => void;
-  /** Status filter (client-side): OK or Error */
+  /** Lifecycle status filter: Running, OK, or Error. */
   availableStatuses?: string[];
   selectedStatus?: string[];
   onStatusChange?: (v: string[] | undefined) => void;
+  /** Error codes found in the currently loaded failed merges. */
+  errorCodeSuggestions?: ErrorCodeSuggestion[];
   /** Part name filter (client-side, substring match) */
   selectedPartName?: string;
   onPartNameChange?: (v: string | undefined) => void;
@@ -129,6 +140,19 @@ const FILTER_FIELDS: FilterFieldDef[] = [
     fromProps: p => p.selectedStatus,
     apply: (v, p) => p.onStatusChange?.(multiValue(v)),
     clear: p => p.onStatusChange?.(undefined),
+    multi: true,
+  },
+  {
+    key: 'error_code', label: 'Error code', placeholder: 'e.g. 395',
+    tabs: ['merges'],
+    getSuggestions: p => p.errorCodeSuggestions?.map(suggestion => String(suggestion.code)) || [],
+    fromProps: p => p.filter.errorCode?.map(String),
+    apply: (v, p) => p.onFilterChange({
+      errorCode: multiValue(v)
+        .map(value => Number(value))
+        .filter(value => Number.isInteger(value) && value > 0),
+    }),
+    clear: p => p.onFilterChange({ errorCode: undefined }),
     multi: true,
   },
   {
@@ -271,7 +295,15 @@ type Phase = 'idle' | 'picking_field' | 'entering_value';
 type DropdownItem =
   | { id: string; label: string; group: 'quick'; quickFilter: QuickFilterDef }
   | { id: string; label: string; group: 'field'; field: FilterFieldDef }
-  | { id: string; label: string; group: 'value'; field: FilterFieldDef };
+  | { id: string; label: string; value: string; group: 'value'; field: FilterFieldDef }
+  | {
+      id: string;
+      label: string;
+      value: string;
+      group: 'error_code';
+      field: FilterFieldDef;
+      selected?: boolean;
+    };
 
 export const MergeFilterBar: React.FC<MergeFilterBarProps> = (props) => {
   const {
@@ -293,6 +325,11 @@ export const MergeFilterBar: React.FC<MergeFilterBarProps> = (props) => {
   const [highlightIdx, setHighlightIdx] = useState(-1);
   const [showDropdown, setShowDropdown] = useState(false);
   const inputRef = useRef<HTMLInputElement>(null);
+  const { choices: errorCodeChoices, rememberCurrentChoices } = useErrorCodeChoices(
+    props.errorCodeSuggestions ?? [],
+    filter.errorCode,
+    inputValue,
+  );
 
   const activeQuickFilter = useMemo(
     () => tab === 'merges'
@@ -317,13 +354,29 @@ export const MergeFilterBar: React.FC<MergeFilterBarProps> = (props) => {
   /* --- available fields (not yet used) --- */
   const availableFields = useMemo(() => {
     const usedKeys = new Set(activeChips.map(c => c.field.key));
-    return visibleFields.filter(f => f.multi || !usedKeys.has(f.key));
-  }, [activeChips, visibleFields]);
+    const errorSelected = props.selectedStatus?.some(
+      status => status.toLowerCase() === 'error',
+    ) ?? false;
+    return visibleFields
+      .filter(field => field.key !== 'error_code' || errorSelected)
+      .filter(field => field.multi || !usedKeys.has(field.key));
+  }, [activeChips, visibleFields, props.selectedStatus]);
 
   /* --- dropdown items based on phase --- */
   const dropdownItems = useMemo(() => {
+    const errorCodeField = FILTER_FIELDS.find(field => field.key === 'error_code')!;
+    const q = inputValue.toLowerCase();
+    const errorCodeItems: DropdownItem[] = errorCodeChoices
+      .map(suggestion => ({
+        id: `error_code:${suggestion.code}`,
+        label: suggestion.label,
+        value: String(suggestion.code),
+        group: 'error_code',
+        field: errorCodeField,
+        selected: suggestion.selected,
+      }));
+
     if (phase === 'idle' || phase === 'picking_field') {
-      const q = inputValue.toLowerCase();
       const quickItems: DropdownItem[] = tab === 'merges'
         ? QUICK_FILTERS
           .filter(preset => preset.key !== activeQuickFilter?.key)
@@ -345,16 +398,28 @@ export const MergeFilterBar: React.FC<MergeFilterBarProps> = (props) => {
       return [...quickItems, ...fieldItems];
     }
     if (phase === 'entering_value' && activeField) {
+      if (activeField.key === 'error_code') return errorCodeItems;
       const vals = activeField.getSuggestions(props);
       const selected = new Set(valuesOf(activeField.fromProps(props)).map(v => v.toLowerCase()));
-      const q = inputValue.toLowerCase();
-      return vals
+      const valueItems: DropdownItem[] = vals
         .filter(v => !selected.has(v.toLowerCase()))
         .filter(v => !q || v.toLowerCase().includes(q))
-        .map(v => ({ id: v, label: v, group: 'value', field: activeField }) satisfies DropdownItem);
+        .map(v => ({
+          id: v,
+          label: v,
+          value: v,
+          group: 'value',
+          field: activeField,
+        }) satisfies DropdownItem);
+      const errorSelected = props.selectedStatus?.some(
+        status => status.toLowerCase() === 'error',
+      ) ?? false;
+      return activeField.key === 'status' && errorSelected
+        ? [...valueItems, ...errorCodeItems]
+        : valueItems;
     }
     return [];
-  }, [phase, inputValue, availableFields, activeField, props, tab, activeQuickFilter]);
+  }, [phase, inputValue, availableFields, activeField, props, tab, activeQuickFilter, errorCodeChoices]);
 
   /* --- handlers --- */
   const finishValueEntry = useCallback(() => {
@@ -365,32 +430,43 @@ export const MergeFilterBar: React.FC<MergeFilterBarProps> = (props) => {
     setHighlightIdx(-1);
   }, []);
 
-  const commitValue = useCallback((value: string, continueMultiEntry = true) => {
-    if (!activeField || !value.trim()) return;
-    if (activeField.multi) {
-      const current = valuesOf(activeField.fromProps(props));
+  const commitValue = useCallback((
+    value: string,
+    continueMultiEntry = true,
+    fieldOverride?: FilterFieldDef,
+  ) => {
+    const field = fieldOverride ?? activeField;
+    if (!field || !value.trim()) return;
+    if (field.key === 'error_code' && !props.filter.errorCode?.length) {
+      rememberCurrentChoices();
+    }
+    if (field.multi) {
+      const current = valuesOf(field.fromProps(props));
       const seen = new Set(current.map(item => item.toLowerCase()));
       const next = [...current];
       if (!seen.has(value.trim().toLowerCase())) next.push(value.trim());
-      activeField.apply(next, props);
+      field.apply(next, props);
       if (continueMultiEntry) {
+        setActiveField(field);
         setInputValue('');
-        setShowDropdown(activeField.getSuggestions(props).length > 0);
+        setShowDropdown(
+          field.getSuggestions(props).length > 0 || field.key === 'error_code',
+        );
         setHighlightIdx(-1);
         return;
       }
     } else {
-      activeField.apply(value.trim(), props);
+      field.apply(value.trim(), props);
     }
     finishValueEntry();
-  }, [activeField, props, finishValueEntry]);
+  }, [activeField, props, finishValueEntry, rememberCurrentChoices]);
 
   const selectField = useCallback((field: FilterFieldDef) => {
     setActiveField(field);
     setInputValue('');
     setPhase('entering_value');
     setHighlightIdx(-1);
-    const hasSuggestions = field.getSuggestions(props).length > 0;
+    const hasSuggestions = field.getSuggestions(props).length > 0 || field.key === 'error_code';
     setShowDropdown(hasSuggestions);
     setTimeout(() => inputRef.current?.focus(), 0);
   }, [props]);
@@ -430,11 +506,31 @@ export const MergeFilterBar: React.FC<MergeFilterBarProps> = (props) => {
     setInputValue('');
     setPhase('entering_value');
     setHighlightIdx(-1);
-    setShowDropdown(field.getSuggestions(props).length > 0);
+    setShowDropdown(field.getSuggestions(props).length > 0 || field.key === 'error_code');
     setTimeout(() => {
       inputRef.current?.focus();
     }, 0);
   }, [props]);
+
+  const toggleErrorCode = useCallback((
+    item: Extract<DropdownItem, { group: 'error_code' }>,
+    keepOpen: boolean,
+  ) => {
+    if (item.selected) {
+      removeValue(item.field, item.value);
+      if (keepOpen) {
+        setActiveField(item.field);
+        setInputValue('');
+        setPhase('entering_value');
+        setShowDropdown(true);
+        setHighlightIdx(-1);
+      } else {
+        finishValueEntry();
+      }
+    } else {
+      commitValue(item.value, keepOpen, item.field);
+    }
+  }, [commitValue, finishValueEntry, removeValue]);
 
   const handleInputFocus = useCallback(() => {
     if (phase === 'idle') setPhase('picking_field');
@@ -478,7 +574,9 @@ export const MergeFilterBar: React.FC<MergeFilterBarProps> = (props) => {
         const item = dropdownItems[highlightIdx];
         if (item.group === 'quick') applyQuickFilter(item.quickFilter);
         else if (item.group === 'field') selectField(item.field);
-        else commitValue(item.label);
+        else if (item.group === 'error_code') {
+          toggleErrorCode(item, e.metaKey || e.ctrlKey || e.shiftKey);
+        } else commitValue(item.value, true, item.field);
       } else if (phase === 'entering_value' && inputValue.trim()) {
         commitValue(inputValue);
       } else if (phase === 'entering_value') {
@@ -499,7 +597,7 @@ export const MergeFilterBar: React.FC<MergeFilterBarProps> = (props) => {
     if (e.key === 'Backspace' && !inputValue && phase === 'picking_field' && activeQuickFilter) {
       removeQuickFilter();
     }
-  }, [dropdownItems, highlightIdx, phase, inputValue, activeChips, activeQuickFilter, selectField, commitValue, finishValueEntry, removeValue, applyQuickFilter, removeQuickFilter]);
+  }, [dropdownItems, highlightIdx, phase, inputValue, activeChips, activeQuickFilter, selectField, toggleErrorCode, commitValue, finishValueEntry, removeValue, applyQuickFilter, removeQuickFilter]);
 
   const handleInputChange = useCallback((e: React.ChangeEvent<HTMLInputElement>) => {
     setInputValue(e.target.value);
@@ -508,11 +606,19 @@ export const MergeFilterBar: React.FC<MergeFilterBarProps> = (props) => {
     setShowDropdown(true);
   }, [phase]);
 
-  const handleDropdownClick = useCallback((item: typeof dropdownItems[0]) => {
+  const handleDropdownClick = useCallback((
+    item: DropdownItem,
+    modifiers: { metaKey: boolean; ctrlKey: boolean; shiftKey: boolean },
+  ) => {
     if (item.group === 'quick') applyQuickFilter(item.quickFilter);
     else if (item.group === 'field') selectField(item.field);
-    else commitValue(item.label);
-  }, [applyQuickFilter, selectField, commitValue]);
+    else if (item.group === 'error_code') {
+      toggleErrorCode(
+        item,
+        modifiers.metaKey || modifiers.ctrlKey || modifiers.shiftKey,
+      );
+    } else commitValue(item.value, true, item.field);
+  }, [applyQuickFilter, selectField, toggleErrorCode, commitValue]);
 
   /* --- reset chips when tab changes (clear tab-specific filters) --- */
   const prevTabRef = useRef(tab);
@@ -567,6 +673,15 @@ export const MergeFilterBar: React.FC<MergeFilterBarProps> = (props) => {
                   ×
                 </span>
               </span>
+            )}
+            {activeQuickFilter?.key === 'failed'
+              && !filter.errorCode?.length
+              && activeField?.key !== 'error_code' && (
+              <ErrorCodeRefineButton
+                onOpen={() => selectField(
+                  FILTER_FIELDS.find(field => field.key === 'error_code')!,
+                )}
+              />
             )}
             {/* Existing chips */}
             {activeChips.map(c => (
@@ -645,38 +760,62 @@ export const MergeFilterBar: React.FC<MergeFilterBarProps> = (props) => {
                         letterSpacing: '0.8px',
                         textTransform: 'uppercase',
                       }}>
-                        {item.group === 'quick' ? 'Quick filters' : 'Add a filter'}
+                        {item.group === 'quick'
+                          ? 'Quick filters'
+                          : item.group === 'error_code'
+                            ? ERROR_CODE_GROUP_LABEL
+                            : 'Add a filter'}
                       </div>
                     )}
-                    <div
-                      onMouseDown={e => { e.preventDefault(); handleDropdownClick(item); }}
-                      onMouseEnter={() => setHighlightIdx(idx)}
-                      style={{
-                        ...dropdownItemStyle,
-                        background: idx === highlightIdx ? 'var(--bg-secondary)' : 'transparent',
-                        fontWeight: item.group === 'value' ? 400 : 500,
-                        display: 'flex',
-                        alignItems: 'center',
-                        gap: 7,
-                      }}
-                    >
-                      <span style={{
-                        color: item.group === 'quick' ? '#a371f7' : 'var(--text-muted)',
-                        fontSize: 10,
-                        width: 11,
-                        flex: '0 0 11px',
-                      }}>
-                        {item.group === 'quick' ? '⚡' : item.group === 'field' ? '⊕' : ''}
-                      </span>
-                      <span style={{ minWidth: 0 }}>
-                        <span>{item.label}</span>
-                        {item.group === 'quick' && (
-                          <span style={{ marginLeft: 8, color: 'var(--text-muted)', fontWeight: 400, fontSize: 10 }}>
-                            {item.quickFilter.description}
-                          </span>
-                        )}
-                      </span>
-                    </div>
+                    {item.group === 'error_code' ? (
+                      <ErrorCodeDropdownRow
+                        choice={{
+                          code: Number(item.value),
+                          label: item.label,
+                          selected: item.selected ?? false,
+                        }}
+                        accentColor="#f0883e"
+                        highlighted={idx === highlightIdx}
+                        onMouseDown={event => {
+                          event.preventDefault();
+                          handleDropdownClick(item, event);
+                        }}
+                        onMouseEnter={() => setHighlightIdx(idx)}
+                      />
+                    ) : (
+                      <div
+                        onMouseDown={event => {
+                          event.preventDefault();
+                          handleDropdownClick(item, event);
+                        }}
+                        onMouseEnter={() => setHighlightIdx(idx)}
+                        style={{
+                          ...dropdownItemStyle,
+                          background: idx === highlightIdx ? 'var(--bg-secondary)' : 'transparent',
+                          fontWeight: item.group === 'value' ? 400 : 500,
+                          display: 'flex',
+                          alignItems: 'center',
+                          gap: 7,
+                        }}
+                      >
+                        <span style={{
+                          color: item.group === 'quick' ? '#a371f7' : 'var(--text-muted)',
+                          fontSize: 10,
+                          width: 11,
+                          flex: '0 0 11px',
+                        }}>
+                          {item.group === 'quick' ? '⚡' : item.group === 'field' ? '⊕' : ''}
+                        </span>
+                        <span style={{ minWidth: 0 }}>
+                          <span>{item.label}</span>
+                          {item.group === 'quick' && (
+                            <span style={{ marginLeft: 8, color: 'var(--text-muted)', fontWeight: 400, fontSize: 10 }}>
+                              {item.quickFilter.description}
+                            </span>
+                          )}
+                        </span>
+                      </div>
+                    )}
                   </React.Fragment>
                 );
               })}

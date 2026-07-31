@@ -2,13 +2,14 @@
 #
 # Profiles:
 #   (default)    — ClickHouse + MinIO + Lakekeeper (Iceberg REST catalog)
-#   monitoring   — adds Prometheus + Grafana (requires Grafana plugin build)
+#   monitoring   — adds Prometheus + Grafana
 #   tracing      — adds Tempo (OpenTelemetry)
 #   full         — everything
 #
 # Via just (recommended):
 #   just docker-start                                  # ClickHouse + Iceberg (fast)
-#   just docker-start-full                             # everything (builds Grafana plugin first)
+#   just docker-start-full                             # everything (builds and mounts the Grafana plugin)
+#   just docker-start-full-no-plugin                   # everything except the TraceHouse Grafana plugin
 #   just docker-start-full 11.6.3                      # everything with a specific Grafana version
 #   just docker-start-full-release v0.16.12            # everything with the plugin ZIP from a GitHub release
 #
@@ -225,12 +226,11 @@ services:
     volumes:
       # Persist Grafana data
       - tracehouse-grafana-data:/var/lib/grafana
-      # Provisioning configuration (auto-loads datasources and dashboards)
-      - ./grafana/provisioning:/etc/grafana/provisioning
+      # Base provisioning configuration (auto-loads datasources and dashboards)
+      - ./grafana/provisioning/datasources:/etc/grafana/provisioning/datasources
+      - ./grafana/provisioning/dashboards:/etc/grafana/provisioning/dashboards
       # Dashboard JSON files
       - ./grafana/dashboards:/var/lib/grafana/dashboards
-      # TraceHouse Grafana app plugin (built by `just grafana-plugin-build`)
-      - ${GRAFANA_PLUGIN_DIR:-../../grafana-app-plugin/dist}:/var/lib/grafana/plugins/dmkskd-tracehouse-app
     environment:
       GF_DEFAULT_APP_MODE: development
       # Disable login for development
@@ -238,10 +238,8 @@ services:
       GF_AUTH_ANONYMOUS_ORG_ROLE: Admin
       # Allow embedding
       GF_SECURITY_ALLOW_EMBEDDING: "true"
-      # Install ClickHouse plugin
-      GF_INSTALL_PLUGINS: grafana-clickhouse-datasource
-      # Allow unsigned dev plugins
-      GF_PLUGINS_ALLOW_LOADING_UNSIGNED_PLUGINS: dmkskd-tracehouse-app
+      # Install the ClickHouse datasource before applying its provisioning config
+      GF_PLUGINS_PREINSTALL_SYNC: grafana-clickhouse-datasource
       GF_PLUGINS_ENABLE_FRONTEND_SANDBOX: "true"
     depends_on:
       clickhouse:

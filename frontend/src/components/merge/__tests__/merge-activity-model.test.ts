@@ -183,6 +183,16 @@ describe('merge activity records', () => {
     });
   });
 
+  it('filters failed history by ClickHouse error code', () => {
+    const memoryError = { ...completed('memory'), error: 241 };
+    const thrownError = { ...completed('throw-if'), error: 395 };
+
+    expect(filterMergeActivity(
+      { live: [], recent: [memoryError, thrownError] },
+      { status: ['Error'], errorCode: [395] },
+    ).recent).toEqual([thrownError]);
+  });
+
   it('uses the same host, part, size, and replica filters for both sources', () => {
     const liveMatch = active('match-live', {
       hostname: 'node-2',
@@ -247,7 +257,7 @@ describe('merge activity records', () => {
     expect(filtered.recent.map(record => record.part_name)).toEqual(['ok']);
   });
 
-  it('derives shared filter options from both lifecycle sources', () => {
+  it('derives shared host and replica filter options from both lifecycle sources', () => {
     const replica = active('replica', { hostname: 'node-2', is_replica_merge: true });
     const ok = completed('ok');
     const error = { ...completed('error'), hostname: 'node-3', error: 1 };
@@ -257,8 +267,11 @@ describe('merge activity records', () => {
     };
 
     expect(mergeActivityHosts(snapshot)).toEqual(['node-1', 'node-2', 'node-3']);
-    expect(mergeActivityStatuses(snapshot.recent)).toEqual(['Running', 'OK', 'Error']);
     expect(hasReplicaMergeActivity(snapshot)).toBe(true);
+  });
+
+  it('always offers every lifecycle status independently of the loaded page', () => {
+    expect(mergeActivityStatuses()).toEqual(['Running', 'OK', 'Error']);
   });
 
   it('treats limit as one cap across live and completed rows', () => {

@@ -63,6 +63,44 @@ describe('MergeTracker UTC custom ranges', () => {
     expect(sql).toContain('LIMIT 25');
   });
 
+  it('pushes terminal status filters before LIMIT', async () => {
+    const adapter = new MockAdapter();
+    const tracker = new MergeTracker(adapter);
+
+    await tracker.getMergeHistory({
+      status: ['Running', 'Error'],
+      limit: 1,
+    });
+
+    const sql = adapter.queries.find(query => query.includes('system.part_log'))!;
+    expect(sql).toContain('AND error != 0');
+    expect(sql.indexOf('error != 0')).toBeLessThan(sql.indexOf('ORDER BY'));
+    expect(sql).toContain('LIMIT 1');
+  });
+
+  it('returns no terminal rows for a running-only status filter', async () => {
+    const adapter = new MockAdapter();
+    const tracker = new MergeTracker(adapter);
+
+    await tracker.getMergeHistory({ status: ['Running'] });
+
+    const sql = adapter.queries.find(query => query.includes('system.part_log'))!;
+    expect(sql).toContain('AND 0');
+    expect(sql.indexOf('AND 0')).toBeLessThan(sql.indexOf('ORDER BY'));
+  });
+
+  it('pushes multiple merge error codes before LIMIT', async () => {
+    const adapter = new MockAdapter();
+    const tracker = new MergeTracker(adapter);
+
+    await tracker.getMergeHistory({ errorCode: [395, 241], limit: 2 });
+
+    const sql = adapter.queries.find(query => query.includes('system.part_log'))!;
+    expect(sql).toContain('AND error IN (395, 241)');
+    expect(sql.indexOf('error IN')).toBeLessThan(sql.indexOf('ORDER BY'));
+    expect(sql).toContain('LIMIT 2');
+  });
+
   it('pushes multi-value database and table filters into mutation history', async () => {
     const adapter = new MockAdapter();
     const tracker = new MergeTracker(adapter);

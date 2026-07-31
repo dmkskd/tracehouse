@@ -198,14 +198,19 @@ docker-start-bg:
 # Start everything: ClickHouse + MinIO + Prometheus + Grafana + Tempo (builds Grafana plugin first)
 [group('docker')]
 docker-start-full grafana_version="13.1.0": grafana-plugin-build
-    GRAFANA_VERSION="{{grafana_version}}" docker compose -f infra/docker/docker-compose.yml --profile full up
+    GRAFANA_VERSION="{{grafana_version}}" docker compose -f infra/docker/docker-compose.yml -f infra/docker/docker-compose.plugin.yml --profile full up
 
 # Start everything in background (builds Grafana plugin first)
 [group('docker')]
 docker-start-full-bg grafana_version="13.1.0": grafana-plugin-build
-    @GRAFANA_VERSION="{{grafana_version}}" docker compose -f infra/docker/docker-compose.yml --profile full up -d
+    @GRAFANA_VERSION="{{grafana_version}}" docker compose -f infra/docker/docker-compose.yml -f infra/docker/docker-compose.plugin.yml --profile full up -d
     @echo "Waiting for ClickHouse..."
     @sleep 3
+
+# Start everything without installing or mounting the TraceHouse Grafana plugin
+[group('docker')]
+docker-start-full-no-plugin grafana_version="13.1.0":
+    GRAFANA_VERSION="{{grafana_version}}" docker compose -f infra/docker/docker-compose.yml --profile full up
 
 # Start everything with an already-packaged Grafana plugin ZIP instead of local dist
 [group('docker')]
@@ -232,9 +237,9 @@ docker-start-full-plugin-zip plugin_zip grafana_version="13.1.0":
     fi
     echo "Using packaged Grafana plugin: $PLUGIN_ZIP"
     echo "Extracted plugin mount: $PLUGIN_DIR"
-    GRAFANA_VERSION="{{grafana_version}}" GRAFANA_PLUGIN_DIR="$PLUGIN_DIR" docker compose -f infra/docker/docker-compose.yml --profile full stop grafana >/dev/null 2>&1 || true
-    GRAFANA_VERSION="{{grafana_version}}" GRAFANA_PLUGIN_DIR="$PLUGIN_DIR" docker compose -f infra/docker/docker-compose.yml --profile full rm -f grafana >/dev/null 2>&1 || true
-    GRAFANA_VERSION="{{grafana_version}}" GRAFANA_PLUGIN_DIR="$PLUGIN_DIR" docker compose -f infra/docker/docker-compose.yml --profile full up
+    GRAFANA_VERSION="{{grafana_version}}" GRAFANA_PLUGIN_DIR="$PLUGIN_DIR" docker compose -f infra/docker/docker-compose.yml -f infra/docker/docker-compose.plugin.yml --profile full stop grafana >/dev/null 2>&1 || true
+    GRAFANA_VERSION="{{grafana_version}}" GRAFANA_PLUGIN_DIR="$PLUGIN_DIR" docker compose -f infra/docker/docker-compose.yml -f infra/docker/docker-compose.plugin.yml --profile full rm -f grafana >/dev/null 2>&1 || true
+    GRAFANA_VERSION="{{grafana_version}}" GRAFANA_PLUGIN_DIR="$PLUGIN_DIR" docker compose -f infra/docker/docker-compose.yml -f infra/docker/docker-compose.plugin.yml --profile full up
 
 # Download the Grafana plugin ZIP from a GitHub release and run that exact packaged artifact
 [group('docker')]
@@ -257,16 +262,16 @@ docker-start-full-release tag grafana_version="13.1.0":
 # Rebuild plugin, recreate Grafana, and remove Grafana's persisted dashboards/cache
 [group('docker')]
 docker-refresh-grafana-plugin grafana_version="13.1.0": grafana-plugin-build
-    @GRAFANA_VERSION="{{grafana_version}}" docker compose -f infra/docker/docker-compose.yml --profile full stop grafana
-    @GRAFANA_VERSION="{{grafana_version}}" docker compose -f infra/docker/docker-compose.yml --profile full rm -f grafana
+    @GRAFANA_VERSION="{{grafana_version}}" docker compose -f infra/docker/docker-compose.yml -f infra/docker/docker-compose.plugin.yml --profile full stop grafana
+    @GRAFANA_VERSION="{{grafana_version}}" docker compose -f infra/docker/docker-compose.yml -f infra/docker/docker-compose.plugin.yml --profile full rm -f grafana
     @docker volume rm tracehouse_tracehouse-grafana-data 2>/dev/null || true
-    @GRAFANA_VERSION="{{grafana_version}}" docker compose -f infra/docker/docker-compose.yml --profile full up -d grafana
+    @GRAFANA_VERSION="{{grafana_version}}" docker compose -f infra/docker/docker-compose.yml -f infra/docker/docker-compose.plugin.yml --profile full up -d grafana
     @echo "Grafana plugin refreshed at http://localhost:3001"
 
 # Fast plugin iteration: rebuild mounted plugin dist and restart Grafana without reinstalling deps or clearing data
 [group('docker')]
 docker-refresh-grafana-plugin-fast grafana_version="13.1.0": grafana-plugin-build-fast
-    @GRAFANA_VERSION="{{grafana_version}}" docker compose -f infra/docker/docker-compose.yml --profile full restart grafana
+    @GRAFANA_VERSION="{{grafana_version}}" docker compose -f infra/docker/docker-compose.yml -f infra/docker/docker-compose.plugin.yml --profile full restart grafana
     @echo "Grafana plugin fast-refreshed at http://localhost:3001"
 
 # Stop docker infrastructure (all profiles)
@@ -395,7 +400,7 @@ run-queries *args="":
     uv run --project tools/data-utils tracehouse-queries {{args}}
 
 # Generate safe operational events for the Time Travel event timeline
-# Defaults: DDL every 5m, timeout every 10m, query OOM every 15m
+# Defaults also include a disposable failed background mutation for Merge Tracker and Events
 [group('data')]
 run-events *args="":
     uv run --project tools/data-utils tracehouse-events {{args}}

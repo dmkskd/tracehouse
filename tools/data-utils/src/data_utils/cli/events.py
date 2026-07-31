@@ -5,7 +5,7 @@ It never crashes, restarts, fills, or corrupts a ClickHouse server.
 
 Usage:
     tracehouse-events --once
-    tracehouse-events --types ddl,oom,timeout,rejected,resource,coordination,network
+    tracehouse-events --types ddl,oom,timeout,merge,rejected,resource,coordination,network
 """
 
 from __future__ import annotations
@@ -34,6 +34,7 @@ EVENT_TYPES = (
     "ddl",
     "oom",
     "timeout",
+    "merge",
     "rejected",
     "resource",
     "coordination",
@@ -182,6 +183,72 @@ def generate_resource_limit(client: Client, database: str) -> bool:
     )
 
 
+def generate_merge_failure(client: Client, database: str) -> bool:
+    """Generate one observable failed MutatePart operation, then stop retries.
+
+    The intentionally failing mutation is isolated in a disposable MergeTree
+    table. We stop it as soon as system.mutations reports the failure, then the
+    normal system-log flush makes its part_log record available to Merge
+    Tracker and Events without letting the mutation retry forever.
+    """
+    db = quote_identifier(database)
+    table_name = "tracehouse_event_merge_failure"
+    table = f"{db}.`{table_name}`"
+    try:
+        _quiet_execute(client, f"CREATE DATABASE IF NOT EXISTS {db}")
+        _quiet_execute(client, f"DROP TABLE IF EXISTS {table} SYNC")
+        _quiet_execute(
+            client,
+            f"CREATE TABLE {table} (id UInt64, value UInt64) "
+            "ENGINE = MergeTree ORDER BY id",
+        )
+        _quiet_execute(client, f"INSERT INTO {table} VALUES (1, 10), (2, 20)")
+        _quiet_execute(
+            client,
+            (
+                f"/* {EVENT_TAG} kind:merge_failure */ "
+                f"ALTER TABLE {table} UPDATE value = "
+                "if(id = 1, throwIf(1, 'intentional Tracehouse merge failure'), value) "
+                "WHERE 1 SETTINGS mutations_sync = 0"
+            ),
+        )
+
+        deadline = time.monotonic() + 10
+        while time.monotonic() < deadline:
+            rows = client.execute(
+                "SELECT latest_fail_reason "
+                "FROM system.mutations "
+                "WHERE database = %(database)s AND table = %(table)s "
+                "AND latest_fail_reason != '' "
+                "ORDER BY create_time DESC LIMIT 1",
+                {"database": database, "table": table_name},
+                settings={"log_queries": 0},
+            )
+            if rows:
+                reason = str(rows[0][0])
+                code = exception_code(Exception(reason))
+                print(
+                    f"[{datetime.now():%H:%M:%S}] generated merge failure "
+                    f"(MutatePart, code {code or 'unknown'})"
+                )
+                return True
+            time.sleep(0.1)
+
+        print(
+            f"[{datetime.now():%H:%M:%S}] could not generate merge failure: "
+            "system.mutations did not report a failure within 10s"
+        )
+        return False
+    except Exception as error:
+        print(
+            f"[{datetime.now():%H:%M:%S}] could not generate merge failure: "
+            f"{str(error).splitlines()[0][:180]}"
+        )
+        return False
+    finally:
+        _best_effort_quiet_execute(client, f"DROP TABLE IF EXISTS {table} SYNC")
+
+
 def _quiet_execute(client: Client, query: str) -> None:
     """Run setup/cleanup SQL without adding it to the generated event set."""
     client.execute(query, settings={"log_queries": 0})
@@ -328,6 +395,7 @@ GENERATORS: dict[str, Callable[[Client, str], bool]] = {
     "ddl": generate_ddl,
     "oom": generate_oom,
     "timeout": generate_timeout,
+    "merge": generate_merge_failure,
     "rejected": generate_rejected,
     "resource": generate_resource_limit,
     "coordination": generate_coordination,
@@ -338,6 +406,7 @@ EVENT_TYPE_SOURCE = {
     "ddl": "query_log",
     "oom": "query_log",
     "timeout": "query_log",
+    "merge": "part_log",
     "rejected": "query_log",
     "resource": "query_log",
     "coordination": "error_log",
@@ -409,7 +478,7 @@ def _parse_args() -> tuple[argparse.Namespace, str | None]:
         default=parse_event_types(
             os.environ.get(
                 "CH_EVENT_TYPES",
-                "ddl,oom,timeout,rejected,resource,coordination,network",
+                "ddl,oom,timeout,merge,rejected,resource,coordination,network",
             )
         ),
         help=f"Comma-separated event types: {', '.join(EVENT_TYPES)} ($CH_EVENT_TYPES)",
@@ -443,6 +512,12 @@ def _parse_args() -> tuple[argparse.Namespace, str | None]:
         type=float,
         default=float(os.environ.get("CH_EVENT_TIMEOUT_INTERVAL", "600")),
         help="Seconds between query timeouts ($CH_EVENT_TIMEOUT_INTERVAL)",
+    )
+    parser.add_argument(
+        "--merge-interval",
+        type=float,
+        default=float(os.environ.get("CH_EVENT_MERGE_INTERVAL", "900")),
+        help="Seconds between failed background mutations ($CH_EVENT_MERGE_INTERVAL)",
     )
     parser.add_argument(
         "--rejected-interval",
@@ -534,6 +609,7 @@ def main() -> None:
             "ddl": args.ddl_interval,
             "oom": args.oom_interval,
             "timeout": args.timeout_interval,
+            "merge": args.merge_interval,
             "rejected": args.rejected_interval,
             "resource": args.resource_interval,
             "coordination": args.coordination_interval,

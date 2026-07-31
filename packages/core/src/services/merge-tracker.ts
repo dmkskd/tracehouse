@@ -48,6 +48,10 @@ export interface MergeHistoryOptions {
   excludeSystemDatabases?: boolean;
   /** Push merge category filter into SQL (e.g. 'TTLDelete', 'Mutation'). */
   category?: string | string[];
+  /** Filter terminal merge outcomes. Running merges come from system.merges. */
+  status?: string | string[];
+  /** Filter failed part operations by ClickHouse error code. */
+  errorCode?: number | number[];
   /**
    * ClickHouse interval string (e.g. '1 DAY') or a canonical absolute range.
    * CUSTOM bounds must be ISO instants with `Z` or an explicit UTC offset.
@@ -94,6 +98,11 @@ function injectThresholdFilters(sql: string, opts: MergeHistoryOptions): string 
   const databases = filterValues(opts.database);
   const tables = filterValues(opts.table);
   const categories = filterValues(opts.category);
+  const statuses = new Set(filterValues(opts.status).map(value => value.toLowerCase()));
+  const errorCodes = (Array.isArray(opts.errorCode)
+    ? opts.errorCode
+    : opts.errorCode == null ? [] : [opts.errorCode])
+    .filter(code => Number.isInteger(code) && code > 0);
   if (databases.length > 0) {
     clauses.push(`database IN (${databases.map(value => `'${escapeValue(value)}'`).join(', ')})`);
   }
@@ -117,6 +126,23 @@ function injectThresholdFilters(sql: string, opts: MergeHistoryOptions): string 
     if (categoryConditions.every((condition): condition is string => condition != null)) {
       clauses.push(`(${categoryConditions.map(condition => `(${condition})`).join(' OR ')})`);
     }
+  }
+  if (statuses.size > 0) {
+    const includesOk = statuses.has('ok');
+    const includesError = statuses.has('error');
+    if (includesOk && !includesError) {
+      clauses.push('error = 0');
+    } else if (includesError && !includesOk) {
+      clauses.push('error != 0');
+    } else if (!includesOk && !includesError) {
+      // Running merges come from system.merges, never system.part_log.
+      clauses.push('0');
+    }
+  }
+  if (errorCodes.length === 1) {
+    clauses.push(`error = ${errorCodes[0]}`);
+  } else if (errorCodes.length > 1) {
+    clauses.push(`error IN (${errorCodes.join(', ')})`);
   }
   if (opts.timeRange) {
     const tr = opts.timeRange;

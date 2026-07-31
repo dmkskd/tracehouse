@@ -77,6 +77,7 @@ export interface MergeActivityFilters {
   minDurationMs?: number;
   minSizeBytes?: number;
   status?: string[];
+  errorCode?: number[];
   hostname?: string[];
   partName?: string;
 }
@@ -270,6 +271,7 @@ export function filterMergeActivity(
       const status = record.error ? 'error' : 'ok';
       if (!requestedStatuses.has(status)) return false;
     }
+    if (filters.errorCode?.length && !filters.errorCode.includes(record.error ?? 0)) return false;
     if (!matchesCommonFilter({
       database: record.database,
       table: record.table,
@@ -299,10 +301,8 @@ export function mergeActivityHosts(snapshot: MergeActivitySnapshot): string[] {
   return Array.from(hosts).sort();
 }
 
-export function mergeActivityStatuses(history: MergeHistoryRecord[]): string[] {
-  const statuses = new Set<string>(['Running']);
-  history.forEach(record => statuses.add(record.error ? 'Error' : 'OK'));
-  return ['Running', 'OK', 'Error'].filter(status => statuses.has(status));
+export function mergeActivityStatuses(): string[] {
+  return ['Running', 'OK', 'Error'];
 }
 
 export function hasReplicaMergeActivity(snapshot: MergeActivitySnapshot): boolean {

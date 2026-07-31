@@ -16,6 +16,7 @@ from data_utils.cli.events import (
     exception_code,
     execute_expected_failure,
     generate_coordination,
+    generate_merge_failure,
     generate_rejected,
     parse_event_types,
     quote_identifier,
@@ -61,6 +62,17 @@ class KeeperClient:
         del settings
         self.queries.append(query)
         return [(1,)]
+
+
+class MergeFailureClient:
+    def __init__(self) -> None:
+        self.queries: list[tuple[str, object, object]] = []
+
+    def execute(self, query: str, params=None, settings=None):
+        self.queries.append((query, params, settings))
+        if "FROM system.mutations" in query:
+            return [("Code: 395. intentional test merge failure",)]
+        return []
 
 
 def test_parse_event_types_deduplicates_and_preserves_order() -> None:
@@ -122,6 +134,21 @@ def test_query_rejection_is_bounded_and_restores_merges() -> None:
         for query, settings in client.queries
         if "kind:query_rejected" not in query
     )
+
+
+def test_merge_failure_waits_for_background_failure_and_stops_retries() -> None:
+    client = MergeFailureClient()
+
+    assert generate_merge_failure(client, "tracehouse_event_demo")
+
+    queries = [query for query, _, _ in client.queries]
+    assert any("kind:merge_failure" in query and "throwIf" in query for query in queries)
+    assert any(
+        "FROM system.mutations" in query and "latest_fail_reason != ''" in query
+        for query in queries
+    )
+    assert queries[-1].startswith("DROP TABLE IF EXISTS")
+    assert client.queries[-1][2] == {"log_queries": 0}
 
 
 def test_coordination_failure_is_tagged_and_cleanup_is_quiet() -> None:

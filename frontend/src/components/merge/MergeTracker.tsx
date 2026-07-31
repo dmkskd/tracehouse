@@ -20,6 +20,7 @@ import { useRefreshSettingsStore } from '../../stores/refreshSettingsStore';
 import { useGlobalLastUpdatedStore } from '../../stores/refreshSettingsStore';
 import { MergeActivityTable } from './MergeActivityTable';
 import { MergeFilterBar } from './MergeFilterBar';
+import { buildErrorCodeSuggestions } from '../common/errorCodeFilterModel';
 import type { MergeQuickFilter, MergeTab } from './MergeFilterBar';
 import {
   createMergeActivityState,
@@ -80,6 +81,7 @@ const mergeUrlSchema = {
   sortDir:   { type: 'string',  default: 'desc' },
   host:      { type: 'string[]' },
   status:    { type: 'string[]' },
+  errorCode: { type: 'string[]' },
   quick:     { type: 'string' },
   mergeType: { type: 'string' },
   part:      { type: 'string' },
@@ -1753,10 +1755,21 @@ export const MergeTrackerView: React.FC = () => {
   const selectedMergeReason = historyFilter.category;
   const selectedHost = urlState.host;
   const setSelectedHost = useCallback((v: string[] | undefined) => updateUrl({ host: v }), [updateUrl]);
-  const selectedStatus = urlState.status;
+  const selectedStatus = historyFilter.status;
   const setSelectedStatus = useCallback(
-    (v: string[] | undefined) => updateUrl({ status: v, quick: undefined }),
-    [updateUrl],
+    (v: string[] | undefined) => {
+      const includesError = v?.some(status => status.toLowerCase() === 'error') ?? false;
+      setHistoryFilter({
+        status: v,
+        ...(!includesError ? { errorCode: undefined } : {}),
+      });
+      updateUrl({
+        status: v,
+        quick: undefined,
+        ...(!includesError ? { errorCode: undefined } : {}),
+      });
+    },
+    [setHistoryFilter, updateUrl],
   );
   const selectedQuickFilter = (
     urlState.quick === 'running'
@@ -1768,11 +1781,19 @@ export const MergeTrackerView: React.FC = () => {
     v: MergeQuickFilter | undefined,
     constraints: { status?: string[]; minDurationMs?: number },
   ) => {
-    setHistoryFilter({ minDurationMs: constraints.minDurationMs });
+    const includesError = constraints.status?.some(
+      status => status.toLowerCase() === 'error',
+    ) ?? false;
+    setHistoryFilter({
+      minDurationMs: constraints.minDurationMs,
+      status: constraints.status,
+      ...(!includesError ? { errorCode: undefined } : {}),
+    });
     updateUrl({
       quick: v,
       status: constraints.status,
       minDurMs: constraints.minDurationMs,
+      ...(!includesError ? { errorCode: undefined } : {}),
     });
   }, [setHistoryFilter, updateUrl]);
   const selectedPartName = urlState.part;
@@ -1874,6 +1895,12 @@ export const MergeTrackerView: React.FC = () => {
     if (urlState.database) patch.database = urlState.database;
     if (urlState.table) patch.table = urlState.table;
     if (urlState.category) patch.category = urlState.category;
+    if (urlState.status) patch.status = urlState.status;
+    if (urlState.errorCode) {
+      patch.errorCode = urlState.errorCode
+        .map(value => Number(value))
+        .filter(value => Number.isInteger(value) && value > 0);
+    }
     if (urlState.timeRange && urlState.timeRange !== '1 HOUR') patch.timeRange = urlState.timeRange;
     if (urlState.minDurMs) patch.minDurationMs = urlState.minDurMs;
     if (urlState.minSizeB) patch.minSizeBytes = urlState.minSizeB;
@@ -1983,6 +2010,7 @@ export const MergeTrackerView: React.FC = () => {
     if ('database' in filter) urlPatch.database = filter.database?.length ? filter.database : undefined;
     if ('table' in filter) urlPatch.table = filter.table?.length ? filter.table : undefined;
     if ('category' in filter) urlPatch.category = filter.category?.length ? filter.category : undefined;
+    if ('errorCode' in filter) urlPatch.errorCode = filter.errorCode?.map(String);
     if ('timeRange' in filter) urlPatch.timeRange = filter.timeRange || undefined;
     if ('minDurationMs' in filter) {
       urlPatch.minDurMs = filter.minDurationMs || undefined;
@@ -2063,6 +2091,7 @@ export const MergeTrackerView: React.FC = () => {
       minDurationMs: historyFilter.minDurationMs,
       minSizeBytes: historyFilter.minSizeBytes,
       status: selectedStatus,
+      errorCode: historyFilter.errorCode,
       hostname: selectedHost,
       partName: selectedPartName,
     }),
@@ -2077,6 +2106,7 @@ export const MergeTrackerView: React.FC = () => {
       selectedMergeType,
       selectedMergeReason,
       selectedStatus,
+      historyFilter.errorCode,
       selectedHost,
       selectedPartName,
     ],
@@ -2114,9 +2144,15 @@ export const MergeTrackerView: React.FC = () => {
     [mergeActivity],
   );
 
-  // Running is a lifecycle state in the same table as terminal outcomes.
-  const availableStatuses = React.useMemo(
-    () => mergeActivityStatuses(mergeHistory),
+  // These lifecycle states are always available. Terminal outcomes are
+  // filtered server-side, so suggestions must not depend on the limited page.
+  const availableStatuses = mergeActivityStatuses();
+  const errorCodeSuggestions = useMemo(
+    () => buildErrorCodeSuggestions(
+      mergeHistory,
+      record => record.error,
+      record => record.exception,
+    ),
     [mergeHistory],
   );
 
@@ -2346,6 +2382,7 @@ export const MergeTrackerView: React.FC = () => {
                 selectedHost={selectedHost}
                 onHostChange={setSelectedHost}
                 availableStatuses={availableStatuses}
+                errorCodeSuggestions={errorCodeSuggestions}
                 selectedStatus={selectedStatus}
                 onStatusChange={setSelectedStatus}
                 quickFilter={selectedQuickFilter}

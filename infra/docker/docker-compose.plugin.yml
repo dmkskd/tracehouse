@@ -1,0 +1,7 @@
+services:
+  grafana:
+    volumes:
+      - ${GRAFANA_PLUGIN_DIR:-../../grafana-app-plugin/dist}:/var/lib/grafana/plugins/dmkskd-tracehouse-app
+      - ./grafana/provisioning/plugins:/etc/grafana/provisioning/plugins
+    environment:
+      GF_PLUGINS_ALLOW_LOADING_UNSIGNED_PLUGINS: dmkskd-tracehouse-app

@@ -90,6 +90,7 @@ const MERGE_HISTORY_LITE_COLUMNS = `
     read_bytes,
     read_rows,
     error,
+    substring(exception, 1, 512) AS exception,
     hostName() AS hostname`;
 
 /** Get merge history for a specific database and table from system.part_log. */

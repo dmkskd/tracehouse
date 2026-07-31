@@ -3,6 +3,7 @@ import { useConnectionStore } from '../stores/connectionStore';
 import { useQueryStore, QueryWebSocket, queryApi } from '../stores/queryStore';
 import { QueryActivityTable } from '../components/query/QueryActivityTable';
 import { QueryFilterBar } from '../components/query/QueryFilterBar';
+import { buildErrorCodeSuggestions } from '../components/common/errorCodeFilterModel';
 import {
   buildQueryActivityRecords,
   queryActivityKey,
@@ -191,27 +192,12 @@ export const QueryMonitor: React.FC = () => {
     [runningQueries, queryHistory, historyFilter],
   );
   const errorCodeSuggestions = useMemo(() => {
-    const byCode = new Map<number, { count: number; name?: string }>();
-    for (const query of queryHistory) {
-      const code = query.exception_code
-        ?? Number(query.exception?.match(/^Code:\s*(\d+)/)?.[1]);
-      if (!Number.isInteger(code) || code <= 0) continue;
-      const names = [...(query.exception ?? '').matchAll(/\(([A-Z][A-Z0-9_]+)\)/g)];
-      const name = names.at(-1)?.[1];
-      const existing = byCode.get(code);
-      if (existing) {
-        existing.count += 1;
-        if (!existing.name && name) existing.name = name;
-      } else {
-        byCode.set(code, { count: 1, name });
-      }
-    }
-    return [...byCode.entries()]
-      .sort((a, b) => b[1].count - a[1].count || a[0] - b[0])
-      .map(([code, detail]) => ({
-        code,
-        label: `Code ${code}${detail.name ? ` · ${detail.name}` : ''} (${detail.count})`,
-      }));
+    return buildErrorCodeSuggestions(
+      queryHistory,
+      query => query.exception_code
+        ?? Number(query.exception?.match(/^Code:\s*(\d+)/)?.[1]),
+      query => query.exception,
+    );
   }, [queryHistory]);
 
   // Preserve the selected row as a live process becomes a terminal log record.

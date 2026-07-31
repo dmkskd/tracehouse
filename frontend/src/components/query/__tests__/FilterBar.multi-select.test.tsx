@@ -303,6 +303,86 @@ describe('filter bar multi-value autocomplete', () => {
     expect(screen.getByText('Running')).toBeInTheDocument();
   });
 
+  it('offers merge error codes after Error status is selected', () => {
+    const changes = vi.fn();
+
+    function Harness() {
+      const [filter, setFilter] = useState<MergeHistoryFilter>({
+        timeRange: '1 HOUR',
+        limit: 100,
+        status: ['Error'],
+      });
+      return (
+        <MergeFilterBar
+          tab="merges"
+          filter={filter}
+          onFilterChange={patch => {
+            changes(patch);
+            setFilter(current => ({ ...current, ...patch }));
+          }}
+          availableDatabases={[]}
+          availableTables={[]}
+          selectedStatus={filter.status}
+          errorCodeSuggestions={[
+            { code: 395, label: 'Code 395 · FUNCTION_THROW_IF_VALUE_IS_NON_ZERO (3)' },
+            { code: 241, label: 'Code 241 · MEMORY_LIMIT_EXCEEDED (1)' },
+          ]}
+        />
+      );
+    }
+
+    render(<Harness />);
+
+    fireEvent.focus(screen.getByPlaceholderText('Add filter…'));
+    fireEvent.mouseDown(screen.getByText('Error code'));
+    expect(screen.getByText('Code 395 · FUNCTION_THROW_IF_VALUE_IS_NON_ZERO (3)')).toBeInTheDocument();
+
+    fireEvent.mouseDown(screen.getByText('Code 395 · FUNCTION_THROW_IF_VALUE_IS_NON_ZERO (3)'));
+
+    expect(changes).toHaveBeenLastCalledWith({ errorCode: [395] });
+    expect(screen.getByRole('button', { name: 'Remove Error code 395' })).toBeInTheDocument();
+  });
+
+  it('offers merge error-code refinement from the Failed merges quick filter', () => {
+    const changes = vi.fn();
+
+    function Harness() {
+      const [filter, setFilter] = useState<MergeHistoryFilter>({
+        timeRange: '1 HOUR',
+        limit: 100,
+        status: ['Error'],
+      });
+      return (
+        <MergeFilterBar
+          tab="merges"
+          filter={filter}
+          onFilterChange={patch => {
+            changes(patch);
+            setFilter(current => ({ ...current, ...patch }));
+          }}
+          availableDatabases={[]}
+          availableTables={[]}
+          selectedStatus={filter.status}
+          quickFilter="failed"
+          errorCodeSuggestions={[
+            { code: 395, label: 'Code 395 · FUNCTION_THROW_IF_VALUE_IS_NON_ZERO (3)' },
+          ]}
+        />
+      );
+    }
+
+    render(<Harness />);
+
+    fireEvent.click(screen.getByRole('button', { name: '+ Error code' }));
+
+    expect(screen.getByText('Error codes in results · ⌘/Ctrl-click for multiple')).toBeInTheDocument();
+    fireEvent.mouseDown(screen.getByText('Code 395 · FUNCTION_THROW_IF_VALUE_IS_NON_ZERO (3)'));
+
+    expect(changes).toHaveBeenLastCalledWith({ errorCode: [395] });
+    expect(screen.getByText('Failed merges')).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Remove Error code 395' })).toBeInTheDocument();
+  });
+
   it('distinguishes prepared merge quick filters from field filters', () => {
     const quickChanges = vi.fn();
 

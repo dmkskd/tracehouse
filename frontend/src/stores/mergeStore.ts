@@ -39,6 +39,10 @@ export interface MergeHistoryFilter {
   excludeSystemDatabases?: boolean;
   /** Merge categories pushed to server-side SQL where classification permits. */
   category?: string[];
+  /** Lifecycle status. Terminal outcomes are pushed to history SQL. */
+  status?: string[];
+  /** ClickHouse error codes for failed part operations. */
+  errorCode?: number[];
   /** ClickHouse interval string (e.g. '1 DAY') or 'CUSTOM:start,end'. Default '1 DAY'. */
   timeRange?: string | null;
   limit: number;
@@ -280,6 +284,8 @@ export const mergeApi = {
       minSizeBytes: filter.minSizeBytes,
       excludeSystemDatabases: filter.excludeSystemDatabases,
       category: filter.category,
+      status: filter.status,
+      errorCode: filter.errorCode,
       timeRange,
       limit: filter.limit || 100,
     });

@@ -128,6 +128,9 @@ just run-events --types oom --oom-interval 900
 
 # Only disposable schema changes
 just run-events --types ddl --ddl-interval 60
+
+# One failed background mutation for Merge Tracker and Events
+just run-events --types merge --once
 ```
 
 The event workload first checks that the source log for each selected type is
@@ -141,6 +144,7 @@ promptly.
 | Disposable DDL cycle | Uses `tracehouse_event_demo`; includes create, alter, rename, optimize, truncate, and drop operations; removes its tables after each cycle | `ddl` |
 | Query OOM | Sets a 1 MB **query** memory limit; it is not a process/server OOM | `query_oom` |
 | Query timeout | Sets a 50 ms limit on one CPU query | `query_timeout` |
+| Failed merge/mutation | Runs `throwIf` inside a background mutation on a disposable table, waits for error 395, then drops the table to stop retries | `part_failure` |
 | Query rejection | Uses one tiny disposable MergeTree table with a table-local parts limit | `query_rejected` |
 | Query disk limit | Requires an impossible free-space threshold for one bounded external sort; it does not fill the disk | `query_resource_limit` |
 | Missing Keeper | Attempts one isolated replicated table when Keeper is unavailable, then cleans it up | `error_burst` / coordination |
@@ -148,13 +152,13 @@ promptly.
 
 The default database and cadences can be configured with `CH_EVENT_DATABASE`,
 `CH_EVENT_TYPES`, `CH_EVENT_DDL_INTERVAL`, `CH_EVENT_OOM_INTERVAL`,
-`CH_EVENT_TIMEOUT_INTERVAL`, `CH_EVENT_REJECTED_INTERVAL`,
+`CH_EVENT_TIMEOUT_INTERVAL`, `CH_EVENT_MERGE_INTERVAL`, `CH_EVENT_REJECTED_INTERVAL`,
 `CH_EVENT_RESOURCE_INTERVAL`, `CH_EVENT_COORDINATION_INTERVAL`, and
 `CH_EVENT_NETWORK_INTERVAL`.
 
 The workload only runs a type when the system log consumed by Events is
-available: `system.query_log` for query/DDL events and `system.error_log` for
-the operational probes. A Keeper-enabled server cannot safely manufacture
+available: `system.query_log` for query/DDL events, `system.part_log` for the
+failed mutation, and `system.error_log` for the operational probes. A Keeper-enabled server cannot safely manufacture
 `NO_ZOOKEEPER`; in that environment the coordination probe is cleaned up and
 reported as not generated.
 

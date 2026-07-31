@@ -18,6 +18,14 @@ This builds the plugin first (`just grafana-plugin-build`), then starts ClickHou
 
 The Grafana service mounts the built plugin from `grafana-app-plugin/dist/` and auto-installs the ClickHouse datasource plugin. Anonymous auth is enabled for local development.
 
+To start the same stack without installing or mounting the TraceHouse app plugin, use:
+
+```bash
+just docker-start-full-no-plugin
+```
+
+This still starts ClickHouse, Prometheus, Grafana, and Tempo, installs the Grafana ClickHouse datasource plugin, and provisions the local ClickHouse datasource. TraceHouse is left absent so it can be installed separately from the Grafana plugin catalog.
+
 ### Testing against different Grafana versions
 
 `just docker-start-full` accepts an optional Grafana image tag:

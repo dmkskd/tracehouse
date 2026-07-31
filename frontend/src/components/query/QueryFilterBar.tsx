@@ -25,6 +25,15 @@ import {
   TRACKER_TIME_PRESETS,
   trackerTimeRangeHours,
 } from '../../utils/trackerTimeRange';
+import {
+  ErrorCodeDropdownRow,
+  ErrorCodeRefineButton,
+} from '../common/ErrorCodeFilter';
+import {
+  ERROR_CODE_GROUP_LABEL,
+  useErrorCodeChoices,
+  type ErrorCodeSuggestion,
+} from '../common/errorCodeFilterModel';
 
 /* ------------------------------------------------------------------ */
 /*  Public types                                                       */
@@ -56,7 +65,7 @@ interface QueryFilterBarProps {
   filter: QueryFilterState;
   onFilterChange: (patch: Partial<QueryFilterState>) => void;
   queryAnalyzer?: QueryAnalyzer;
-  errorCodeSuggestions?: { code: number; label: string }[];
+  errorCodeSuggestions?: ErrorCodeSuggestion[];
   onRefresh?: () => void;
   isLoading?: boolean;
 }
@@ -265,18 +274,6 @@ const quickChipStyle: React.CSSProperties = {
   border: '1px solid rgba(163,113,247,0.3)',
 };
 
-const refineButtonStyle: React.CSSProperties = {
-  padding: '2px 7px',
-  border: '1px dashed var(--border-primary)',
-  borderRadius: 10,
-  background: 'transparent',
-  color: 'var(--text-secondary)',
-  fontSize: 10,
-  fontFamily: 'inherit',
-  cursor: 'pointer',
-  whiteSpace: 'nowrap',
-};
-
 const dropdownContainerStyle: React.CSSProperties = {
   position: 'absolute', top: '100%', left: 0, right: 0, zIndex: 20,
   maxHeight: 200, overflowY: 'auto',
@@ -326,11 +323,13 @@ export const QueryFilterBar: React.FC<QueryFilterBarProps> = ({
 
   /* --- suggestions from queryAnalyzer --- */
   const [suggestionCache, setSuggestionCache] = useState<Record<string, string[]>>({});
-  const [unfilteredErrorCodeSuggestions, setUnfilteredErrorCodeSuggestions] = useState(
-    errorCodeSuggestions,
-  );
   const inputRef = useRef<HTMLInputElement>(null);
   const blurTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const { choices: errorCodeChoices, rememberCurrentChoices } = useErrorCodeChoices(
+    errorCodeSuggestions,
+    filter.exceptionCode,
+    inputValue,
+  );
 
   useEffect(() => {
     if (!queryAnalyzer) return;
@@ -371,29 +370,15 @@ export const QueryFilterBar: React.FC<QueryFilterBarProps> = ({
   /* --- dropdown items based on phase --- */
   const dropdownItems = useMemo(() => {
     const errorCodeField = FILTER_FIELDS.find(field => field.key === 'error_code')!;
-    const selectedErrorCodes = new Set(filter.exceptionCode ?? []);
     const q = inputValue.toLowerCase();
-    const errorCodeChoices = filter.exceptionCode?.length
-      ? [...new Map(
-          [
-            ...unfilteredErrorCodeSuggestions,
-            ...errorCodeSuggestions,
-          ].map(suggestion => [suggestion.code, suggestion]),
-        ).values()]
-      : errorCodeSuggestions;
     const errorCodeItems: DropdownItem[] = errorCodeChoices
-      .filter(suggestion =>
-        !q
-        || String(suggestion.code).includes(q)
-        || suggestion.label.toLowerCase().includes(q)
-      )
       .map(suggestion => ({
         id: `error_code:${suggestion.code}`,
         label: suggestion.label,
         value: String(suggestion.code),
         group: 'error_code',
         field: errorCodeField,
-        selected: selectedErrorCodes.has(suggestion.code),
+        selected: suggestion.selected,
       }));
 
     if (phase === 'idle' || phase === 'picking_field') {
@@ -439,7 +424,7 @@ export const QueryFilterBar: React.FC<QueryFilterBarProps> = ({
       return errorCodeItems;
     }
     return [];
-  }, [phase, inputValue, availableFields, activeField, suggestionCache, filter, activeQuickFilter, errorCodeSuggestions, unfilteredErrorCodeSuggestions]);
+  }, [phase, inputValue, availableFields, activeField, suggestionCache, filter, activeQuickFilter, errorCodeChoices]);
 
   /* --- handlers --- */
   const finishValueEntry = useCallback(() => {
@@ -454,9 +439,7 @@ export const QueryFilterBar: React.FC<QueryFilterBarProps> = ({
     const field = fieldOverride ?? activeField;
     if (!field || !value.trim()) return;
     if (field.key === 'error_code' && !filter.exceptionCode?.length) {
-      // Query results refresh after the first code is selected. Snapshot the
-      // original choices during that selection so the rest remain available.
-      setUnfilteredErrorCodeSuggestions(errorCodeSuggestions);
+      rememberCurrentChoices();
     }
     const additions = field.key === 'query_id'
       ? value.split(/[\s,]+/).map(item => item.trim()).filter(Boolean)
@@ -496,7 +479,7 @@ export const QueryFilterBar: React.FC<QueryFilterBarProps> = ({
       });
     }
     finishValueEntry();
-  }, [activeField, filter, onFilterChange, finishValueEntry, errorCodeSuggestions]);
+  }, [activeField, filter, onFilterChange, finishValueEntry, rememberCurrentChoices]);
 
   const selectField = useCallback((field: FilterFieldDef) => {
     if (blurTimeoutRef.current) {
@@ -764,22 +747,11 @@ export const QueryFilterBar: React.FC<QueryFilterBarProps> = ({
             {activeQuickFilter?.key === 'failed'
               && !filter.exceptionCode?.length
               && activeField?.key !== 'error_code' && (
-              <button
-                type="button"
-                style={refineButtonStyle}
-                onMouseDown={e => {
-                  // Keep focus on the filter input so its delayed blur handler
-                  // cannot immediately close the error-code suggestions.
-                  e.preventDefault();
-                  e.stopPropagation();
-                }}
-                onClick={e => {
-                  e.stopPropagation();
-                  selectField(FILTER_FIELDS.find(field => field.key === 'error_code')!);
-                }}
-              >
-                + Error code
-              </button>
+              <ErrorCodeRefineButton
+                onOpen={() => selectField(
+                  FILTER_FIELDS.find(field => field.key === 'error_code')!,
+                )}
+              />
             )}
             {/* Existing chips */}
             {activeChips.map(c => (
@@ -861,61 +833,59 @@ export const QueryFilterBar: React.FC<QueryFilterBarProps> = ({
                         {item.group === 'quick'
                           ? 'Quick filters'
                           : item.group === 'error_code'
-                            ? 'Error codes in results · ⌘/Ctrl-click for multiple'
+                            ? ERROR_CODE_GROUP_LABEL
                             : 'Add a filter'}
                       </div>
                     )}
-                    <div
-                      onMouseDown={e => {
-                        e.preventDefault();
-                        handleDropdownClick(item, e);
-                      }}
-                      onMouseEnter={() => setHighlightIdx(idx)}
-                      style={{
-                        ...dropdownItemStyle,
-                        background: idx === highlightIdx ? 'var(--bg-secondary)' : 'transparent',
-                        fontWeight: item.group === 'value' || item.group === 'error_code' ? 400 : 500,
-                        display: 'flex',
-                        alignItems: 'center',
-                        gap: 7,
-                      }}
-                    >
-                      <span style={{
-                        fontSize: item.group === 'error_code' ? 11 : 10,
-                        width: item.group === 'error_code' ? 14 : 11,
-                        height: item.group === 'error_code' ? 14 : 'auto',
-                        flex: item.group === 'error_code' ? '0 0 14px' : '0 0 11px',
-                        border: item.group === 'error_code'
-                          ? `1px solid ${item.selected ? '#58a6ff' : 'var(--border-primary)'}`
-                          : 'none',
-                        borderRadius: item.group === 'error_code' ? 3 : 0,
-                        background: item.group === 'error_code' && item.selected
-                          ? '#58a6ff'
-                          : 'transparent',
-                        color: item.group === 'error_code' && item.selected
-                          ? '#fff'
-                          : item.group === 'quick' ? '#a371f7' : 'var(--text-muted)',
-                        display: 'inline-flex',
-                        alignItems: 'center',
-                        justifyContent: 'center',
-                      }}>
-                        {item.group === 'quick'
-                          ? '⚡'
-                          : item.group === 'field'
-                            ? '⊕'
-                            : item.group === 'error_code' && item.selected
-                              ? '✓'
-                              : ''}
-                      </span>
-                      <span style={{ minWidth: 0 }}>
-                        <span>{item.label}</span>
-                        {item.group === 'quick' && (
-                          <span style={{ marginLeft: 8, color: 'var(--text-muted)', fontWeight: 400, fontSize: 10 }}>
-                            {item.quickFilter.description}
-                          </span>
-                        )}
-                      </span>
-                    </div>
+                    {item.group === 'error_code' ? (
+                      <ErrorCodeDropdownRow
+                        choice={{
+                          code: Number(item.value),
+                          label: item.label,
+                          selected: item.selected ?? false,
+                        }}
+                        accentColor="#58a6ff"
+                        highlighted={idx === highlightIdx}
+                        onMouseDown={event => {
+                          event.preventDefault();
+                          handleDropdownClick(item, event);
+                        }}
+                        onMouseEnter={() => setHighlightIdx(idx)}
+                      />
+                    ) : (
+                      <div
+                        onMouseDown={event => {
+                          event.preventDefault();
+                          handleDropdownClick(item, event);
+                        }}
+                        onMouseEnter={() => setHighlightIdx(idx)}
+                        style={{
+                          ...dropdownItemStyle,
+                          background: idx === highlightIdx ? 'var(--bg-secondary)' : 'transparent',
+                          fontWeight: item.group === 'value' ? 400 : 500,
+                          display: 'flex',
+                          alignItems: 'center',
+                          gap: 7,
+                        }}
+                      >
+                        <span style={{
+                          color: item.group === 'quick' ? '#a371f7' : 'var(--text-muted)',
+                          fontSize: 10,
+                          width: 11,
+                          flex: '0 0 11px',
+                        }}>
+                          {item.group === 'quick' ? '⚡' : item.group === 'field' ? '⊕' : ''}
+                        </span>
+                        <span style={{ minWidth: 0 }}>
+                          <span>{item.label}</span>
+                          {item.group === 'quick' && (
+                            <span style={{ marginLeft: 8, color: 'var(--text-muted)', fontWeight: 400, fontSize: 10 }}>
+                              {item.quickFilter.description}
+                            </span>
+                          )}
+                        </span>
+                      </div>
+                    )}
                   </React.Fragment>
                 );
               })}
