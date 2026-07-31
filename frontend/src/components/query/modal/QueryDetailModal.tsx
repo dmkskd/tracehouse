@@ -92,27 +92,22 @@ export const QueryDetailModal: React.FC<TimelineQueryModalProps> = ({
     setAnalyticsSubTab('scan_efficiency');
   }, [query?.query_id, initialTab]);
 
-  // Reset tab state when navigating via history (queryOverride changes)
-  useEffect(() => {
-    if (!queryOverride) return;
-    setActiveTab('overview');
-    setDetailsSubTab('performance');
-    setAnalyticsSubTab('scan_efficiency');
-  }, [queryOverride?.query_id]);
-
   // Force off X-Ray when experimental is disabled mid-session
   useEffect(() => {
     if (!experimentalEnabled && activeTab === 'xray') setActiveTab('overview');
   }, [experimentalEnabled, activeTab]);
 
   // Navigate to a related query by ID (parent or child in distributed topology)
-  const navigateToQuery = useCallback(async (queryId: string) => {
+  const navigateToQuery = useCallback(async (queryId: string, targetTab?: QueryModalTab) => {
     if (!services) return;
     try {
       const d = await services.queryAnalyzer.getQueryDetail(queryId);
       if (!d) return;
       const durationMs = Number(d.query_duration_ms) || 0;
       const startMs = new Date(d.query_start_time).getTime();
+      setActiveTab(targetTab ?? 'overview');
+      setDetailsSubTab('performance');
+      setAnalyticsSubTab('scan_efficiency');
       setQueryOverride({
         query_id: d.query_id,
         label: d.query || '',
@@ -133,13 +128,17 @@ export const QueryDetailModal: React.FC<TimelineQueryModalProps> = ({
     } catch { /* ignore navigation errors */ }
   }, [services]);
 
+  const navigateWithinDistributed = useCallback((queryId: string) => {
+    void navigateToQuery(queryId, 'distributed');
+  }, [navigateToQuery]);
+
   const queryDetail = detail.queryDetail;
   const objectStorageSummary = summarizeObjectStorageProfile(queryDetail?.ProfileEvents);
   const distributedChildNodes = topology.distributedTopology?.nodes.filter(node =>
     node.role !== 'coordinator' && node.role !== 'insert_client'
   ) ?? [];
   const hasDistributedExecution = topology.subQueries.length > 0 || distributedChildNodes.length > 0;
-  const distributedUnavailable = Boolean(queryDetail) && !topology.isLoading && !hasDistributedExecution;
+  const distributedUnavailable = Boolean(queryDetail) && topology.isResolved && !hasDistributedExecution;
 
   useEffect(() => {
     if (activeTab === 'distributed' && distributedUnavailable) {
@@ -341,7 +340,7 @@ export const QueryDetailModal: React.FC<TimelineQueryModalProps> = ({
               distributedTopology={topology.distributedTopology}
               activeQueryId={activeQuery!.query_id}
               isLoading={topology.isLoading}
-              onNavigateToQuery={navigateToQuery}
+              onNavigateToQuery={navigateWithinDistributed}
             />
           )}
 
@@ -439,6 +438,9 @@ export const QueryDetailModal: React.FC<TimelineQueryModalProps> = ({
                   onSelectQuery={(sq) => {
                     const durationMs = Number(sq.query_duration_ms) || 0;
                     const startMs = new Date(sq.query_start_time).getTime();
+                    setActiveTab('overview');
+                    setDetailsSubTab('performance');
+                    setAnalyticsSubTab('scan_efficiency');
                     setQueryOverride({
                       query_id: sq.query_id,
                       label: q.label ?? '',

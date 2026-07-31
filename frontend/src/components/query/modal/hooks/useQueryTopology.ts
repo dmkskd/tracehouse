@@ -18,12 +18,14 @@ export function useQueryTopology(activeQuery: QuerySeries | null, queryDetail: Q
   const [isLoading, setIsLoading] = useState(false);
   const [coordinator, setCoordinator] = useState<TopologyCoordinator | null>(null);
   const [distributedTopology, setDistributedTopology] = useState<DistributedTopology | null>(null);
+  const [resolvedQueryId, setResolvedQueryId] = useState<string | null>(null);
 
   useEffect(() => {
     setSubQueries([]);
     setIsLoading(false);
     setCoordinator(null);
     setDistributedTopology(null);
+    setResolvedQueryId(null);
   }, [activeQuery?.query_id]);
 
   useEffect(() => {
@@ -57,7 +59,10 @@ export function useQueryTopology(activeQuery: QuerySeries | null, queryDetail: Q
           setDistributedTopology(richTopology);
         })
         .catch((err) => console.error('Failed to fetch sub-queries:', err))
-        .finally(() => setIsLoading(false));
+        .finally(() => {
+          setIsLoading(false);
+          setResolvedQueryId(activeQuery.query_id);
+        });
     } else if (queryDetail.is_initial_query === 0 && queryDetail.initial_query_id) {
       // Viewing a sub-query — fetch coordinator detail + all sibling sub-queries
       setIsLoading(true);
@@ -86,10 +91,19 @@ export function useQueryTopology(activeQuery: QuerySeries | null, queryDetail: Q
           setDistributedTopology(richTopology);
         })
         .catch((err) => console.error('Failed to fetch topology:', err))
-        .finally(() => setIsLoading(false));
+        .finally(() => {
+          setIsLoading(false);
+          setResolvedQueryId(activeQuery.query_id);
+        });
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [queryDetail, services, monitoringCapabilities, capabilityProbeStatus]);
 
-  return { subQueries, isLoading, coordinator, distributedTopology };
+  return {
+    subQueries,
+    isLoading,
+    coordinator,
+    distributedTopology,
+    isResolved: resolvedQueryId === activeQuery?.query_id,
+  };
 }
