@@ -5,10 +5,12 @@ All notable changes to the TraceHouse Grafana plugin will be documented in this 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
-## [0.18.3] - 2026-07-30
+## [0.18.3] - 2026-07-31
 
 ### Improvements
 - **Queries / Merges:** You can now select multiple values for the same filter and use quick presets for running, recent, failed, and slow activity.
+- **Queries:** Failed queries can now be filtered by one or more ClickHouse error codes, with suggestions based on the current results.
+- **Time Travel:** Enhanced the timeline navigator with Average, Maximum, and Change views, adaptive scales, and smooth navigation through historical data.
 - **Events:** Reduced initial collection to 100 events per source and added a visible truncation indicator.
 - **Analytics Dashboards:** Panels that require a newer ClickHouse version now show a clear compatibility message instead of failing.
 
