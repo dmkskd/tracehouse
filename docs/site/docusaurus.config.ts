@@ -7,6 +7,16 @@ const config: Config = {
   tagline: 'Real-time monitoring, 3D visualization, and deep observability for ClickHouse',
   favicon: 'img/favicon.svg',
 
+  scripts: [
+    {
+      type: 'module',
+      src: 'https://static.cloudflareinsights.com/beacon.min.js',
+      'data-cf-beacon': JSON.stringify({
+        token: 'ed96ef2e886c4010b8c1fad8e9f12a8d',
+      }),
+    },
+  ],
+
   future: {
     v4: true,
   },
