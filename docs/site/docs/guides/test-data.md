@@ -144,7 +144,7 @@ promptly.
 | Disposable DDL cycle | Uses `tracehouse_event_demo`; includes create, alter, rename, optimize, truncate, and drop operations; removes its tables after each cycle | `ddl` |
 | Query OOM | Sets a 1 MB **query** memory limit; it is not a process/server OOM | `query_oom` |
 | Query timeout | Sets a 50 ms limit on one CPU query | `query_timeout` |
-| Failed merge/mutation | Runs `throwIf` inside a background mutation on a disposable table, waits for error 395, then drops the table to stop retries | `part_failure` |
+| Failed merge/mutation | Runs `throwIf` inside a background mutation on a disposable table, waits for error 395, then drops the table to stop retries | `mutation_failure` |
 | Query rejection | Uses one tiny disposable MergeTree table with a table-local parts limit | `query_rejected` |
 | Query disk limit | Requires an impossible free-space threshold for one bounded external sort; it does not fill the disk | `query_resource_limit` |
 | Missing Keeper | Attempts one isolated replicated table when Keeper is unavailable, then cleans it up | `error_burst` / coordination |

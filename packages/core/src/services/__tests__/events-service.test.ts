@@ -559,6 +559,125 @@ describe('EventsService', () => {
     ]);
   });
 
+  it('maps failed MergeParts operations into the Merges category', async () => {
+    const mock = adapter(async sql => {
+      expect(sql).toContain('system.part_log');
+      expect(sql).toContain('error != 0');
+      return [{
+        host: 'ch-1',
+        occurred_at: '2026-07-25 12:21:01.250000',
+        query_id: '',
+        event_type: 'MergeParts',
+        database: 'analytics',
+        table: 'events',
+        part_name: '202607_10_12_1',
+        partition_id: '202607',
+        disk_name: 'default',
+        duration_ms: 1250,
+        error: 241,
+        exception: 'Memory limit exceeded',
+      }];
+    });
+    const service = new EventsService(mock);
+
+    const result = await service.getEvents({
+      ...OPTIONS,
+      availableCapabilities: ['part_log'],
+    });
+
+    expect(result.events).toEqual([
+      expect.objectContaining({
+        occurred_at: '2026-07-25T12:21:01.250Z',
+        kind: 'merge_failure',
+        category: 'merges',
+        severity: 'error',
+        title: 'Merge failed · analytics.events',
+        database: 'analytics',
+        table: 'events',
+        part_name: '202607_10_12_1',
+        operation: 'MergeParts',
+        exception_code: 241,
+      }),
+    ]);
+  });
+
+  it('maps failed MutatePart operations into the Merges category', async () => {
+    const mock = adapter(async () => [{
+      host: 'ch-1',
+      occurred_at: '2026-07-25 12:21:02.500000',
+      query_id: 'mutation-1',
+      event_type: 'MutatePart',
+      database: 'analytics',
+      table: 'events',
+      part_name: '202607_10_10_0_11',
+      partition_id: '202607',
+      disk_name: 'default',
+      duration_ms: 2500,
+      error: 395,
+      exception: 'Mutation expression failed',
+    }]);
+    const service = new EventsService(mock);
+
+    const result = await service.getEvents({
+      ...OPTIONS,
+      availableCapabilities: ['part_log'],
+    });
+
+    expect(result.events).toEqual([
+      expect.objectContaining({
+        kind: 'mutation_failure',
+        category: 'merges',
+        title: 'Mutation failed · analytics.events',
+        operation: 'MutatePart',
+        exception_code: 395,
+      }),
+    ]);
+  });
+
+  it('maps failed MovePart operations into Storage and defaults other part operations to Merges', async () => {
+    const mock = adapter(async () => [
+      {
+        host: 'ch-1',
+        occurred_at: '2026-07-25 12:21:03.000000',
+        event_type: 'MovePart',
+        database: 'analytics',
+        table: 'events',
+        part_name: '202607_10_10_0',
+        error: 243,
+        exception: 'Not enough space on destination disk',
+      },
+      {
+        host: 'ch-1',
+        occurred_at: '2026-07-25 12:21:04.000000',
+        event_type: 'RemovePart',
+        database: 'analytics',
+        table: 'events',
+        part_name: '202607_9_9_0',
+        error: 1000,
+        exception: 'Part cleanup failed',
+      },
+    ]);
+    const service = new EventsService(mock);
+
+    const result = await service.getEvents({
+      ...OPTIONS,
+      availableCapabilities: ['part_log'],
+    });
+
+    expect(result.events).toEqual(expect.arrayContaining([
+      expect.objectContaining({
+        kind: 'part_move_failure',
+        category: 'storage',
+        title: 'Part move failed · analytics.events',
+      }),
+      expect.objectContaining({
+        kind: 'part_failure',
+        category: 'merges',
+        title: 'Part operation failed · RemovePart',
+      }),
+    ]));
+  });
+
   it('maps failed background work as independently filterable maintenance events', async () => {
     const mock = adapter(async sql => {
       expect(sql).toContain('system.background_schedule_pool_log');

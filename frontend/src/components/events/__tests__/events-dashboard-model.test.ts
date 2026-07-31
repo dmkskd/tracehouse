@@ -262,15 +262,19 @@ describe('events dashboard model', () => {
   });
 
   it('catalogs only event kinds currently emitted by the service', () => {
-    expect(SUPPORTED_EVENT_TYPES).toHaveLength(16);
+    expect(SUPPORTED_EVENT_TYPES).toHaveLength(19);
     expect(SUPPORTED_EVENT_TYPES.map(item => item.kind)).toContain('server_restart');
     expect(SUPPORTED_EVENT_TYPES.map(item => item.kind)).toContain('replica_readonly');
     expect(SUPPORTED_EVENT_TYPES.map(item => item.kind)).toContain('backup');
     expect(SUPPORTED_EVENT_TYPES.map(item => item.kind)).toContain('async_insert_failure');
     expect(SUPPORTED_EVENT_TYPES.map(item => item.kind)).toContain('keeper_connection');
+    expect(SUPPORTED_EVENT_TYPES.map(item => item.kind)).toContain('merge_failure');
+    expect(SUPPORTED_EVENT_TYPES.map(item => item.kind)).toContain('mutation_failure');
+    expect(SUPPORTED_EVENT_TYPES.map(item => item.kind)).toContain('part_move_failure');
     expect(SUPPORTED_EVENT_TYPES.find(item => item.kind === 'backup')?.severity)
       .toBe('error');
     expect(supportedEventGroups().map(group => group.category)).toContain('coordination');
+    expect(supportedEventGroups().map(group => group.category)).toContain('merges');
     expect(supportedEventGroups().flatMap(group => group.events)).toHaveLength(
       SUPPORTED_EVENT_TYPES.length,
     );

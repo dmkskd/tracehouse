@@ -618,10 +618,19 @@ export class EventsService {
       const table = String(row.table ?? '');
       const partName = String(row.part_name ?? '');
       const code = Number(row.error ?? 0);
+      const isMerge = operation === 'MergeParts';
+      const isMutation = operation === 'MutatePart';
+      const isStorageMove = operation === 'MovePart';
       const isReplicationTask = /DownloadPart|FetchPart|Replicated/i.test(operation);
-      const kind: EventKind = isReplicationTask
-        ? 'replication_task_failure'
-        : 'part_failure';
+      const kind: EventKind = isMerge
+        ? 'merge_failure'
+        : isMutation
+          ? 'mutation_failure'
+          : isStorageMove
+            ? 'part_move_failure'
+            : isReplicationTask
+              ? 'replication_task_failure'
+              : 'part_failure';
       return {
         id: stableEventId([
           'part_log',
@@ -638,9 +647,21 @@ export class EventsService {
         kind,
         ...eventDefaults(kind),
         precision: 'exact',
-        title: isReplicationTask
-          ? `Replication task failed · ${operation}`
-          : operation ? `Part operation failed · ${operation}` : 'Part operation failed',
+        title: isMerge
+          ? database && table
+            ? `Merge failed · ${database}.${table}`
+            : 'Merge failed'
+          : isMutation
+            ? database && table
+              ? `Mutation failed · ${database}.${table}`
+              : 'Mutation failed'
+            : isStorageMove
+              ? database && table
+                ? `Part move failed · ${database}.${table}`
+                : 'Part move failed'
+              : isReplicationTask
+                ? `Replication task failed · ${operation}`
+                : operation ? `Part operation failed · ${operation}` : 'Part operation failed',
         detail: failureDetail(row),
         ...eventSourceFields('part_failures'),
         query_id: queryId || undefined,

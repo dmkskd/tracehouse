@@ -24,6 +24,7 @@ export const EVENT_CLUSTER_MARKER_SIZE = {
 export const EVENT_CATEGORY_COLORS: Record<EventCategory, string> = {
   lifecycle: '#d29922',
   queries: '#f0883e',
+  merges: '#3fb950',
   replication: '#a371f7',
   coordination: '#db61a2',
   storage: '#39c5cf',
@@ -34,6 +35,7 @@ export const EVENT_CATEGORY_COLORS: Record<EventCategory, string> = {
 export const EVENT_CATEGORY_SYMBOLS: Record<EventCategory, string> = {
   lifecycle: '↻',
   queries: '⌁',
+  merges: '⇉',
   replication: '⇄',
   coordination: '◇',
   storage: '▱',

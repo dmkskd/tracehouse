@@ -204,6 +204,7 @@ export function supportedEventGroups(): SupportedEventGroup[] {
   const categories: Array<{ category: SupportedEventCategory; label: string }> = [
     { category: 'lifecycle', label: 'Lifecycle' },
     { category: 'queries', label: 'Queries' },
+    { category: 'merges', label: 'Merges' },
     { category: 'replication', label: 'Replication' },
     { category: 'coordination', label: 'Coordination' },
     { category: 'storage', label: 'Storage' },

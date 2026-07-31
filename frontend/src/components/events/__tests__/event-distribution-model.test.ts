@@ -50,6 +50,7 @@ describe('event distribution model', () => {
     expect(lanes.map(lane => lane.category)).toEqual([
       'lifecycle',
       'queries',
+      'merges',
       'replication',
       'coordination',
       'storage',

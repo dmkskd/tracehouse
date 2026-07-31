@@ -317,20 +317,28 @@ important without indicating an error. Because it has both `category: changes`
 and `kind: ddl`, users can hide all change events or hide only DDL while keeping
 other future change kinds visible.
 
-### Part operation failures
+### Merge and part operation failures
 
 | Property | Value |
 | --- | --- |
 | Source | `system.part_log` |
 | Capability | `part_log` |
-| Event category | `storage`, or `replication` for replicated fetch/download work |
-| Event kind | `part_failure`, or `replication_task_failure` |
+| Event category | `merges` by default, `replication` for replicated fetch/download work, or `storage` for part moves |
+| Event kind | `merge_failure`, `mutation_failure`, `part_move_failure`, `part_failure`, or `replication_task_failure` |
 | Timing | Exact operation record time |
 | Default severity | error |
 
-Only rows with `error != 0` are emitted. Successful NewPart, merge, mutation,
-download, remove, and move records remain normal Time Travel activity and do not
-become events.
+Only rows with `error != 0` are emitted. Failed `MergeParts` and `MutatePart`
+operations are first-class `merge_failure` and `mutation_failure` events; they
+appear in the Merges lane rather than falling through to the generic Storage
+lane. Successful NewPart, merge, mutation, download, remove, and move records
+remain normal Time Travel activity and do not become events.
+
+Other failed `system.part_log` operations default to the Merges lane because
+they belong to MergeTree's part-processing subsystem. `DownloadPart` and
+`FetchPart` are routed to Replication, while `MovePart` is explicitly routed to
+Storage. Independent disk capacity, filesystem, I/O, and corruption signals
+from `system.error_log` also remain Storage events.
 
 The event retains the operation type, database, table, part, partition, disk,
 query ID, duration, error code, and exception. Replicated fetch/download
