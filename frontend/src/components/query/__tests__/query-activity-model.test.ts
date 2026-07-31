@@ -59,17 +59,41 @@ describe('query activity records', () => {
     expect(records[0]?.query_start_time).toBe('1970-01-01T00:00:03.000Z');
   });
 
-  it('supports status:running without hiding the live rows behind the history range', () => {
+  it('hides live rows that started after the selected range ended', () => {
     const records = buildQueryActivityRecords({
       live: [running('live')],
       recent: [completed('done')],
     }, {
       status: ['running'],
-      startTime: '2030-01-01T00:00:00.000Z',
-      endTime: '2030-01-01T01:00:00.000Z',
-    }, 5_000);
+      startTime: '2026-07-31T15:53:00.000Z',
+      endTime: '2026-07-31T16:44:00.000Z',
+    }, Date.parse('2026-07-31T16:53:00.000Z'));
+
+    expect(records).toEqual([]);
+  });
+
+  it('keeps live rows for a relative range', () => {
+    const records = buildQueryActivityRecords({
+      live: [running('live')],
+      recent: [],
+    }, {
+      status: ['running'],
+      timeRange: '15 MINUTE',
+    }, Date.parse('2026-07-31T16:53:00.000Z'));
 
     expect(records.map(record => record.query_id)).toEqual(['live']);
+  });
+
+  it('keeps a 30-minute live query that crossed a range ending 10 minutes ago', () => {
+    const now = Date.parse('2026-07-31T16:53:00.000Z');
+    const records = buildQueryActivityRecords({
+      live: [running('spanning-live', { elapsed_seconds: 30 * 60 })],
+      recent: [],
+    }, {
+      timeRange: 'CUSTOM:2026-07-31T15:53:00.000Z,2026-07-31T16:43:00.000Z',
+    }, now);
+
+    expect(records.map(record => record.query_id)).toEqual(['spanning-live']);
   });
 
   it('ORs values within categorical filters while ANDing across fields', () => {

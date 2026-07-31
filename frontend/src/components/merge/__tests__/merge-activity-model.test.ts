@@ -183,6 +183,36 @@ describe('merge activity records', () => {
     });
   });
 
+  it('hides live merges that started after the selected range ended', () => {
+    const running = active('running');
+    const success = completed('success');
+    const now = Date.parse('2026-07-31T16:53:00.000Z');
+
+    const filtered = filterMergeActivity({
+      live: [{ merge: running, status: 'running' }],
+      recent: [success],
+    }, {
+      timeRange: 'CUSTOM:2026-07-31T15:53:00.000Z,2026-07-31T16:44:00.000Z',
+    }, now);
+
+    expect(filtered.live).toEqual([]);
+    expect(filtered.recent).toEqual([success]);
+  });
+
+  it('keeps a 30-minute live merge that crossed a range ending 10 minutes ago', () => {
+    const merge = active('spanning-live', { elapsed: 30 * 60 });
+    const now = Date.parse('2026-07-31T16:53:00.000Z');
+
+    const filtered = filterMergeActivity({
+      live: [{ merge, status: 'running' }],
+      recent: [],
+    }, {
+      timeRange: 'CUSTOM:2026-07-31T15:53:00.000Z,2026-07-31T16:43:00.000Z',
+    }, now);
+
+    expect(filtered.live.map(item => item.merge.result_part_name)).toEqual(['spanning-live']);
+  });
+
   it('filters failed history by ClickHouse error code', () => {
     const memoryError = { ...completed('memory'), error: 241 };
     const thrownError = { ...completed('throw-if'), error: 395 };

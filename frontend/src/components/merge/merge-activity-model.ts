@@ -5,6 +5,7 @@ import {
   classifyMergeHistory,
   type MergeCategory,
 } from '@tracehouse/core';
+import { trackerTimeRangeOverlapsInterval } from '../../utils/trackerTimeRange';
 
 export const MERGE_FINALIZING_GRACE_MS = 10_000;
 const MERGE_WARN_SECONDS = 10 * 60;
@@ -80,6 +81,7 @@ export interface MergeActivityFilters {
   errorCode?: number[];
   hostname?: string[];
   partName?: string;
+  timeRange?: string | null;
 }
 
 function includesValue(filters: string[] | undefined, value: string | undefined): boolean {
@@ -246,9 +248,18 @@ function matchesCommonFilter(
 export function filterMergeActivity(
   snapshot: MergeActivitySnapshot,
   filters: MergeActivityFilters,
+  now = Date.now(),
 ): MergeActivitySnapshot {
   const requestedStatuses = new Set(filters.status?.map(status => status.toLowerCase()) ?? []);
   const live = snapshot.live.filter(({ merge }) => {
+    if (!trackerTimeRangeOverlapsInterval(
+      filters.timeRange,
+      undefined,
+      undefined,
+      now - Math.max(0, merge.elapsed * 1000),
+      now,
+      new Date(now),
+    )) return false;
     if (requestedStatuses.size > 0 && !requestedStatuses.has('running')) return false;
     if (!matchesCommonFilter({
       database: merge.database,

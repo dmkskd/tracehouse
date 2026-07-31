@@ -2099,6 +2099,7 @@ export const MergeTrackerView: React.FC = () => {
       errorCode: historyFilter.errorCode,
       hostname: selectedHost,
       partName: selectedPartName,
+      timeRange: historyFilter.timeRange,
     }),
     [
       mergeActivity,
@@ -2114,6 +2115,7 @@ export const MergeTrackerView: React.FC = () => {
       historyFilter.errorCode,
       selectedHost,
       selectedPartName,
+      historyFilter.timeRange,
     ],
   );
   const mergeActivityRecords = useMemo(

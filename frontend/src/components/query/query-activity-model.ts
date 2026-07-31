@@ -6,6 +6,7 @@ import {
   type RunningQuery,
 } from '../../stores/queryStore';
 import { APP_SOURCE_PREFIX, type QuerySeries } from '@tracehouse/core';
+import { trackerTimeRangeOverlapsInterval } from '../../utils/trackerTimeRange';
 
 export interface QueryActivitySnapshot {
   live: RunningQuery[];
@@ -111,9 +112,8 @@ function matchesLiveFilter(record: QueryActivityRecord, filter: QueryHistoryFilt
 
 /**
  * Merge live and terminal records into the one list users perceive as query
- * activity. Live rows are intentionally not constrained by the historical
- * time range: an active query must remain visible even when it began before
- * the selected history window.
+ * activity. A live row is included when its inferred execution interval
+ * overlaps the selected range, including a completed custom window.
  */
 export function buildQueryActivityRecords(
   snapshot: QueryActivitySnapshot,
@@ -121,6 +121,14 @@ export function buildQueryActivityRecords(
   now = Date.now(),
 ): QueryActivityRecord[] {
   const live = snapshot.live
+    .filter(query => trackerTimeRangeOverlapsInterval(
+      filter.timeRange,
+      filter.startTime,
+      filter.endTime,
+      runningStartTime(query, now),
+      now,
+      new Date(now),
+    ))
     .map(query => liveRecord(query, now))
     .filter(record => matchesLiveFilter(record, filter));
   const statuses = normalized(filter.status);

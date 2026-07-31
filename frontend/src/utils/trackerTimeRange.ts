@@ -57,3 +57,30 @@ export function trackerTimeRangeHours(
   const resolved = resolveTrackerTimeRange(timeRange, explicitStartTime, explicitEndTime);
   return (Date.parse(resolved.endTime) - Date.parse(resolved.startTime)) / (60 * 60 * 1000);
 }
+
+/**
+ * Whether an activity interval overlaps a tracker range. `now` is kept
+ * separate from the interval end so relative presets can be resolved against
+ * the current instant while testing an arbitrary activity interval.
+ */
+export function trackerTimeRangeOverlapsInterval(
+  timeRange?: string | null,
+  explicitStartTime?: string,
+  explicitEndTime?: string,
+  intervalStartMs = Date.now(),
+  intervalEndMs = Date.now(),
+  now = new Date(),
+): boolean {
+  if (!Number.isFinite(intervalStartMs) || !Number.isFinite(intervalEndMs)) return false;
+  if (intervalEndMs < intervalStartMs) return false;
+
+  const resolved = resolveTrackerTimeRange(
+    timeRange,
+    explicitStartTime,
+    explicitEndTime,
+    now,
+  );
+  const rangeStartMs = Date.parse(resolved.startTime);
+  const rangeEndMs = Date.parse(resolved.endTime);
+  return intervalStartMs <= rangeEndMs && intervalEndMs >= rangeStartMs;
+}

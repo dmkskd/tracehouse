@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest';
 import {
   TRACKER_TIME_PRESETS,
   resolveTrackerTimeRange,
+  trackerTimeRangeOverlapsInterval,
   trackerTimeRangeHours,
 } from '../trackerTimeRange';
 
@@ -56,5 +57,31 @@ describe('tracker time ranges', () => {
       startTime: '2026-07-01T00:00:00.000Z',
       endTime: '2026-07-02T00:00:00.000Z',
     });
+  });
+
+  it('detects activity interval overlap with completed absolute ranges', () => {
+    const now = new Date('2026-07-31T16:53:00.000Z');
+    const nowMs = now.getTime();
+    const completedWindow = 'CUSTOM:2026-07-31T15:53:00.000Z,2026-07-31T16:44:00.000Z';
+
+    expect(trackerTimeRangeOverlapsInterval(
+      '1 HOUR', undefined, undefined, nowMs - 1_000, nowMs, now,
+    )).toBe(true);
+    expect(trackerTimeRangeOverlapsInterval(
+      completedWindow,
+      undefined,
+      undefined,
+      nowMs - 2_000,
+      nowMs,
+      now,
+    )).toBe(false);
+    expect(trackerTimeRangeOverlapsInterval(
+      completedWindow,
+      undefined,
+      undefined,
+      nowMs - 30 * 60 * 1000,
+      nowMs,
+      now,
+    )).toBe(true);
   });
 });
