@@ -4,8 +4,8 @@ import { formatBytes } from '../../../../stores/databaseStore';
 import { formatDurationMs, formatMicroseconds } from '../../../../utils/formatters';
 import { querySqlText, type SqlDisplayMode } from '../../../../utils/querySqlText';
 import { useClickHouseServices } from '../../../../providers/ClickHouseProvider';
+import { useThemeDetection } from '../../../../hooks/useThemeDetection';
 import { SqlHighlight } from '../../../common/SqlHighlight';
-import './SqlTab.css';
 
 interface SqlTabProps {
   q: QuerySeries;
@@ -36,6 +36,32 @@ const TABLE_COLORS = [
   'var(--sql-table-color-6)',
   'var(--sql-table-color-7)',
 ];
+
+type SqlTableColorStyles = React.CSSProperties & Record<
+  `--sql-table-color-${1 | 2 | 3 | 4 | 5 | 6 | 7}`,
+  string
+>;
+
+const SQL_TABLE_COLOR_STYLES: Record<'dark' | 'light', SqlTableColorStyles> = {
+  dark: {
+    '--sql-table-color-1': '#58a6ff',
+    '--sql-table-color-2': '#3fb950',
+    '--sql-table-color-3': '#d29922',
+    '--sql-table-color-4': '#a371f7',
+    '--sql-table-color-5': '#f0883e',
+    '--sql-table-color-6': '#db61a2',
+    '--sql-table-color-7': '#39c5cf',
+  },
+  light: {
+    '--sql-table-color-1': '#1d4ed8',
+    '--sql-table-color-2': '#166534',
+    '--sql-table-color-3': '#854d0e',
+    '--sql-table-color-4': '#7c3aed',
+    '--sql-table-color-5': '#9a3412',
+    '--sql-table-color-6': '#be185d',
+    '--sql-table-color-7': '#155e75',
+  },
+};
 
 function shortHash(value: string | undefined): string {
   return value ? String(value).slice(0, 12) : '-';
@@ -351,6 +377,7 @@ export const SqlTab: React.FC<SqlTabProps> = ({
   onNavigateToQuery,
 }) => {
   const services = useClickHouseServices();
+  const theme = useThemeDetection();
   const [mode, setMode] = useState<SqlDisplayMode>('formatted');
   const [copied, setCopied] = useState(false);
   const [loadedColumnComments, setLoadedColumnComments] = useState<{
@@ -434,7 +461,7 @@ export const SqlTab: React.FC<SqlTabProps> = ({
   }, [displayedDatabase, q.query_kind, queryDetail, role]);
 
   return (
-    <div className="query-sql-tab" style={{ padding: 24 }}>
+    <div style={{ padding: 24, ...SQL_TABLE_COLOR_STYLES[theme] }}>
       <div style={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', gap: 16, marginBottom: 16 }}>
         <div>
           <div style={{ fontSize: 18, color: 'var(--text-primary)', fontFamily: 'monospace', marginBottom: 4 }}>
