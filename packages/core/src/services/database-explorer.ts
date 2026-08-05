@@ -13,7 +13,7 @@ import {
   GET_TABLE_COLUMN_NAMES,
   GET_PART_DATA,
 } from '../queries/database-queries.js';
-import { buildQuery, tagQuery } from '../queries/builder.js';
+import { buildQuery, escapeIdentifier, escapeValue, tagQuery } from '../queries/builder.js';
 import { TAB_DATABASES, sourceTag } from '../queries/source-tags.js';
 import {
   mapDatabaseInfo,
@@ -206,18 +206,21 @@ export class DatabaseExplorer {
 
     if (scalarCols.length === 0) return new Map();
 
-    const escapedPart = partName.replace(/'/g, "\\'");
+    const escapedPart = escapeValue(partName);
     // Build one SELECT with min/max for each column, cast to String.
     // Include count() so we can detect an empty result set — when _part matches
     // no rows (e.g. the part was merged away), ClickHouse min() returns epoch
     // sentinel values (1970-01-01) instead of NULL, which would show as bogus dates.
     const selects = scalarCols.map(c => {
-      const col = `\`${c.column_name}\``;
-      return `toString(min(${col})) AS \`min_${c.column_name}\`, toString(max(${col})) AS \`max_${c.column_name}\``;
+      const col = `\`${escapeIdentifier(c.column_name)}\``;
+      // Escape the alias too: ClickHouse unescapes it back to the raw column
+      // name, so the result-row lookup below still matches.
+      const alias = escapeIdentifier(c.column_name);
+      return `toString(min(${col})) AS \`min_${alias}\`, toString(max(${col})) AS \`max_${alias}\``;
     }).join(',\n    ');
 
     const sql = tagQuery(
-      `SELECT count() AS _cnt, ${selects} FROM \`${database}\`.\`${table}\` WHERE _part = '${escapedPart}'`,
+      `SELECT count() AS _cnt, ${selects} FROM \`${escapeIdentifier(database)}\`.\`${escapeIdentifier(table)}\` WHERE _part = '${escapedPart}'`,
       sourceTag(TAB_DATABASES, 'partColumnMinMax'),
     );
 
@@ -260,8 +263,8 @@ export class DatabaseExplorer {
       // Build queries with proper backtick escaping for table names
       const countSql = tagQuery(`
         SELECT count() AS cnt
-        FROM \`${database}\`.\`${table}\`
-        WHERE _part = '${partName.replace(/'/g, "\\'")}'
+        FROM \`${escapeIdentifier(database)}\`.\`${escapeIdentifier(table)}\`
+        WHERE _part = '${escapeValue(partName)}'
       `, sourceTag(TAB_DATABASES, 'partDataCount'));
       const countRows = await this.adapter.executeQuery(countSql);
       const totalRows = Number((countRows[0] as Record<string, unknown>)?.cnt ?? 0);
@@ -278,8 +281,8 @@ export class DatabaseExplorer {
       // Get sample data from the part
       const dataSql = tagQuery(`
         SELECT *
-        FROM \`${database}\`.\`${table}\`
-        WHERE _part = '${partName.replace(/'/g, "\\'")}'
+        FROM \`${escapeIdentifier(database)}\`.\`${escapeIdentifier(table)}\`
+        WHERE _part = '${escapeValue(partName)}'
         LIMIT ${limit}
       `, sourceTag(TAB_DATABASES, 'partDataSample'));
       const dataRows = await this.adapter.executeQuery(dataSql);

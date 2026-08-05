@@ -13,6 +13,7 @@
  */
 
 import type { IClickHouseAdapter, QueryExecutionOptions, TaggedQuery } from './types.js';
+import { escapeValue } from '../queries/builder.js';
 
 /** Match every `FROM system.<table>` reference. */
 const FROM_SYSTEM_RE = /\bFROM\s+(system\.\w+)/gi;
@@ -59,13 +60,13 @@ export class HostTargetedAdapter implements IClickHouseAdapter {
       return sql.replace(
         /clusterAllReplicas\(\s*'([^']+)'\s*,\s*(system\.\w+)\s*\)/gi,
         (_match, _cluster: string, table: string) =>
-          `(SELECT * FROM clusterAllReplicas('${this.clusterName}', ${table}) WHERE hostname() = '${this.targetHost}')`
+          `(SELECT * FROM clusterAllReplicas('${escapeValue(this.clusterName)}', ${table}) WHERE hostname() = '${escapeValue(this.targetHost)}')`
       );
     }
 
     // Rewrite every `FROM system.X` → inline filtered subquery
     const replaced = sql.replace(FROM_SYSTEM_RE, (_match, table: string) => {
-      return `FROM (SELECT * FROM clusterAllReplicas('${this.clusterName}', ${table}) WHERE hostname() = '${this.targetHost}')`;
+      return `FROM (SELECT * FROM clusterAllReplicas('${escapeValue(this.clusterName)}', ${table}) WHERE hostname() = '${escapeValue(this.targetHost)}')`;
     });
 
     if (replaced !== sql) return replaced;
@@ -73,7 +74,7 @@ export class HostTargetedAdapter implements IClickHouseAdapter {
     // Queries with no FROM (e.g. `SELECT hostName(), version()`) —
     // route through clusterAllReplicas on system.one
     if (/\bhostName\(\)/i.test(sql) && !/\bFROM\b/i.test(sql)) {
-      return `${sql.trimEnd().replace(/;?\s*$/, '')} FROM (SELECT * FROM clusterAllReplicas('${this.clusterName}', system.one) WHERE hostname() = '${this.targetHost}')`;
+      return `${sql.trimEnd().replace(/;?\s*$/, '')} FROM (SELECT * FROM clusterAllReplicas('${escapeValue(this.clusterName)}', system.one) WHERE hostname() = '${escapeValue(this.targetHost)}')`;
     }
 
     return sql;

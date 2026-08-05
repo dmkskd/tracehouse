@@ -1,5 +1,6 @@
 export {
   escapeValue,
+  escapeIdentifier,
   formatUtcDateTime,
   utcDateTime,
   utcDateTimeLiteral,

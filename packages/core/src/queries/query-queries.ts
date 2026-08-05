@@ -5,6 +5,8 @@
  * use {param} syntax compatible with buildQuery().
  */
 
+import { escapeValue } from './builder.js';
+
 /** Get currently running queries from system.processes. */
 export const RUNNING_QUERIES = `
   SELECT
@@ -691,9 +693,8 @@ export const PROFILE_EVENT_DESCRIPTIONS = `
 export function buildColumnCommentsSQL(
   columns: Array<{ database: string; table: string; name: string }>,
 ): string {
-  const quote = (value: string) => value.replace(/'/g, "''");
   const conditions = columns.map(column =>
-    `(c.database = '${quote(column.database)}' AND c.table = '${quote(column.table)}' AND c.name = '${quote(column.name)}')`
+    `(c.database = '${escapeValue(column.database)}' AND c.table = '${escapeValue(column.table)}' AND c.name = '${escapeValue(column.name)}')`
   ).join(' OR ');
 
   return `

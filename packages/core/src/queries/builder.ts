@@ -25,6 +25,19 @@ export function escapeValue(value: string): string {
   return value.replace(/\\/g, '\\\\').replace(/'/g, "\\'");
 }
 
+/**
+ * Escape an identifier for inclusion in a backtick-quoted name.
+ *
+ * ClickHouse identifiers may contain backticks and backslashes (both escaped
+ * with a backslash), so database/table/column names read back from system
+ * tables must be escaped before being interpolated into `db`.`table`.
+ *
+ * Use this for identifiers only — string values go through escapeValue().
+ */
+export function escapeIdentifier(name: string): string {
+  return name.replace(/\\/g, '\\\\').replace(/`/g, '\\`');
+}
+
 function parseUtcDate(value: string | Date): Date {
   if (value instanceof Date) return value;
   const input = value.trim();

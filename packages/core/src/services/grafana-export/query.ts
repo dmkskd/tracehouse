@@ -1,9 +1,10 @@
 import type { GrafanaExportInput } from './types.js';
 import type { GrafanaRadarCellStyle, GrafanaRadarAxisRange } from './types.js';
 import { convertTracehouseTimeRangeMacros, quoteIdent, radarImageColumn, resolveResultColumn, sparklineImageColumn, valueColumns } from './utils.js';
+import { escapeValue } from '../../queries/builder.js';
 
 function quoteStringLiteral(value: string): string {
-  return `'${value.replace(/'/g, "''")}'`;
+  return `'${escapeValue(value)}'`;
 }
 
 function pivotSeriesBarSql(input: GrafanaExportInput, sql: string): string | undefined {

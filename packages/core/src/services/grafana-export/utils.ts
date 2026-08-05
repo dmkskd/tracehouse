@@ -1,4 +1,5 @@
 import type { GrafanaExportInput, GrafanaRagRuleInput, GrafanaThreshold } from './types.js';
+import { escapeIdentifier } from '../../queries/builder.js';
 
 export const GROUP_COLORS = [
   '#3b82f6',
@@ -148,7 +149,7 @@ export function resolveNumericColumnMax(column: string, input: GrafanaExportInpu
 }
 
 export function quoteIdent(identifier: string): string {
-  return `\`${identifier.replace(/`/g, '``')}\``;
+  return `\`${escapeIdentifier(identifier)}\``;
 }
 
 export function cleanTracehouseSql(sql: string): string {

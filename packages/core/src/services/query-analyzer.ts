@@ -603,8 +603,8 @@ export class QueryAnalyzer {
           : { db: 'default', tbl: t };
       });
       // Build a single query with OR conditions for all tables
-      const conditions = parsed.map((p, i) =>
-        `(database = '${p.db.replace(/'/g, "''")}' AND table = '${p.tbl.replace(/'/g, "''")}')`
+      const conditions = parsed.map(p =>
+        `(database = '${escapeValue(p.db)}' AND table = '${escapeValue(p.tbl)}')`
       ).join(' OR ');
       const sql = `
         SELECT database, table, groupArray(name) AS columns
@@ -1006,7 +1006,7 @@ export class QueryAnalyzer {
     if (settingNames.length === 0) return [];
     
     // Build the IN clause with quoted setting names
-    const quotedNames = settingNames.map(n => `'${n.replace(/'/g, "''")}'`).join(', ');
+    const quotedNames = settingNames.map(n => `'${escapeValue(n)}'`).join(', ');
     const sql = `
       SELECT
         name,
@@ -1254,8 +1254,8 @@ export class QueryAnalyzer {
     eventDates?: string[],
   ): Promise<ProfileEventComparison[]> {
     // We inject query IDs directly since buildQuery quotes them and we need string comparison
-    const escapedId1 = queryId1.replace(/'/g, "''");
-    const escapedId2 = queryId2.replace(/'/g, "''");
+    const escapedId1 = escapeValue(queryId1);
+    const escapedId2 = escapeValue(queryId2);
 
     // Compute the earliest date bound across both queries (with 30-day fallback)
     const dateBound = this.earliestDateBound(eventDates, 30);
@@ -1308,7 +1308,7 @@ export class QueryAnalyzer {
       throw new QueryAnalysisError('Need at least 2 query IDs for comparison');
     }
 
-    const escaped = queryIds.map(id => `'${id.replace(/'/g, "''")}'`);
+    const escaped = queryIds.map(id => `'${escapeValue(id)}'`);
     const caseLines = escaped.map((eid, i) =>
       `sumIf(PE.2, query_id = ${eid}) AS v${i}`
     ).join(',\n        ');

@@ -698,9 +698,20 @@ export function parseQueryMetadata(sql: string, type: QueryType = 'preset'): Que
   };
 }
 
-/** Build a SQL string with embedded @meta header. */
+/**
+ * Build a SQL string with embedded @meta header.
+ *
+ * NOTE: this is a `--` comment line, not a SQL string literal, so escapeValue()
+ * does not apply — nothing here reaches the parser as executable SQL. The
+ * quoting only has to round-trip with the @meta reader (see the title=/group=
+ * regexes above), which matches [^']+ and does not interpret backslashes.
+ * Escaping is therefore deliberately asymmetric; fixing that is a separate
+ * correctness issue tracked apart from the SQL injection work.
+ */
 export function buildDirectiveHeader(name: string, description: string, group?: string): string {
+  // nosemgrep: clickhouse-incomplete-quote-escaping
   const desc = description ? ` description='${description.replace(/'/g, "\\'")}'` : '';
   const g = group?.trim() || 'Custom';
+  // nosemgrep: clickhouse-incomplete-quote-escaping
   return `-- @meta: title='${name.replace(/'/g, "\\'")}' group='${g.replace(/'/g, "\\'")}'${desc}`;
 }

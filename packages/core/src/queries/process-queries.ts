@@ -9,6 +9,8 @@
  * by integration tests.
  */
 
+import { escapeValue } from './builder.js';
+
 // ── Types ──
 
 export interface ProcessSample {
@@ -62,7 +64,7 @@ export interface ProcessSample {
  */
 export function buildProcessSamplesSQL(queryIds: string[]): string {
   const multi = queryIds.length > 1;
-  const escaped = queryIds.map(id => `'${id.replace(/'/g, "''")}'`);
+  const escaped = queryIds.map(id => `'${escapeValue(id)}'`);
   const whereClause = multi
     ? `query_id IN (${escaped.join(', ')}) OR initial_query_id IN (${escaped.join(', ')})`
     : `query_id = ${escaped[0]} OR initial_query_id = ${escaped[0]}`;
@@ -144,7 +146,7 @@ ORDER BY ${multi ? 'query_id, ' : ''}t
  * Returns HostProcessSample rows — one time series per host.
  */
 export function buildHostProcessSamplesSQL(queryId: string): string {
-  const escaped = `'${queryId.replace(/'/g, "''")}'`;
+  const escaped = `'${escapeValue(queryId)}'`;
   return `
 SELECT
     hostname, t,

@@ -4,6 +4,7 @@
  * Handles {{time_range}}, {{drill:col | fallback}}, {{drill_value:col | fallback}}.
  */
 
+import { escapeValue } from '@tracehouse/core';
 import { resolveCustomTimeRange } from '../../utils/customTimeRange';
 
 export { TIME_RANGE_OPTIONS } from '../common/time-range-options';
@@ -56,7 +57,7 @@ export function resolveDrillParams(sql: string, drillParams: Record<string, stri
     (_match, column: string, fallback: string) => {
       const value = drillParams[column];
       if (value !== undefined) {
-        const escaped = value.replace(/'/g, "''");
+        const escaped = escapeValue(value);
         return `${column} = '${escaped}'`;
       }
       return fallback.trim();
@@ -67,7 +68,7 @@ export function resolveDrillParams(sql: string, drillParams: Record<string, stri
     (_match, column: string, fallback: string) => {
       const value = drillParams[column];
       if (value !== undefined) {
-        const escaped = value.replace(/'/g, "''");
+        const escaped = escapeValue(value);
         return `'${escaped}'`;
       }
       return fallback.trim();

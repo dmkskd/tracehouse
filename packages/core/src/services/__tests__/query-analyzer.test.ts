@@ -96,6 +96,30 @@ describe('QueryAnalyzer column comments', () => {
     await expect(analyzer.getColumnComments(['query_id'])).resolves.toEqual({});
     expect(adapter.queries).toHaveLength(0);
   });
+
+  it('escapes a column name whose backslash precedes a quote', async () => {
+    const adapter = new MockAdapter();
+    const analyzer = new QueryAnalyzer(adapter);
+
+    await analyzer.getColumnComments(["default.tracehouse_escape_test.x\\' OR 1=1 --"]);
+
+    expect(adapter.queries).toHaveLength(1);
+    expect(adapter.queries[0]).toContain("c.name = 'x\\\\\\' OR 1=1 --'");
+    expect(adapter.queries[0]).not.toContain("'x\\' OR 1=1 --'");
+  });
+});
+
+describe('QueryAnalyzer table columns', () => {
+  it('escapes a table name whose backslash precedes a quote', async () => {
+    const adapter = new MockAdapter();
+    const analyzer = new QueryAnalyzer(adapter);
+
+    await analyzer.getTableColumns(["default.t\\' OR 1=1 --"]);
+
+    expect(adapter.queries).toHaveLength(1);
+    expect(adapter.queries[0]).toContain("table = 't\\\\\\' OR 1=1 --'");
+    expect(adapter.queries[0]).not.toContain("'t\\' OR 1=1 --'");
+  });
 });
 
 describe('QueryAnalyzer filter values', () => {

@@ -1,6 +1,6 @@
 import type { IClickHouseAdapter } from '../adapters/types.js';
 import type { PartLineage, LineageNode, MergeEvent } from '../types/lineage.js';
-import { buildQuery, tagQuery } from '../queries/builder.js';
+import { buildQuery, escapeValue, tagQuery } from '../queries/builder.js';
 import { TAB_DATABASES, sourceTag } from '../queries/source-tags.js';
 import { GET_ACTIVE_PART_SIZES, GET_MERGE_EVENTS_BATCH, GET_L0_PART_SIZES } from '../queries/lineage-queries.js';
 import { normalizeTimestamp } from '../mappers/timestamp.js';
@@ -67,7 +67,7 @@ export class LineageService {
 
       if (toFetch.length === 0) break;
 
-      const inList = toFetch.map(p => `'${p}'`).join(',');
+      const inList = toFetch.map(p => `'${escapeValue(p)}'`).join(',');
       const mergeSql = tagQuery(
         buildQuery(GET_MERGE_EVENTS_BATCH, { database, table }).replace('{partNames}', inList),
         sourceTag(TAB_DATABASES, 'lineageMergeEvents'),
@@ -122,7 +122,7 @@ export class LineageService {
       // Fetch in chunks of 500 to avoid huge IN clauses
       for (let i = 0; i < l0Parts.length; i += 500) {
         const chunk = l0Parts.slice(i, i + 500);
-        const l0InList = chunk.map(p => `'${p}'`).join(',');
+        const l0InList = chunk.map(p => `'${escapeValue(p)}'`).join(',');
         const l0Sql = tagQuery(
           buildQuery(GET_L0_PART_SIZES, { database, table }).replace('{partNames}', l0InList),
           sourceTag(TAB_DATABASES, 'lineageL0Sizes'),

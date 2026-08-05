@@ -661,16 +661,32 @@ describe('resolveDrillParams', { tags: ['analytics'] }, () => {
       expected: `WHERE component = 'api' AND t > '2025-01-01 00:00:00'`,
     },
     {
+      // escapeValue() escapes quotes as \' (not ''), because doubling alone
+      // leaves backslashes unescaped — see the backslash cases below.
       name: 'value with single quotes is escaped',
       sql: `WHERE {{drill:name | 1=1}}`,
       params: { name: "O'Reilly" },
-      expected: `WHERE name = 'O''Reilly'`,
+      expected: `WHERE name = 'O\\'Reilly'`,
     },
     {
       name: 'drill_value with single quotes is escaped',
       sql: `WHERE x = {{drill_value:name | ''}}`,
       params: { name: "it's" },
-      expected: `WHERE x = 'it''s'`,
+      expected: `WHERE x = 'it\\'s'`,
+    },
+    {
+      // Regression: a backslash immediately before a quote must not let the
+      // value break out of the string literal.
+      name: 'value with a backslash before a quote cannot escape the literal',
+      sql: `WHERE {{drill:name | 1=1}}`,
+      params: { name: "x\\' OR 1=1 --" },
+      expected: `WHERE name = 'x\\\\\\' OR 1=1 --'`,
+    },
+    {
+      name: 'drill_value with a backslash before a quote cannot escape the literal',
+      sql: `WHERE x = {{drill_value:name | ''}}`,
+      params: { name: "x\\' OR 1=1 --" },
+      expected: `WHERE x = 'x\\\\\\' OR 1=1 --'`,
     },
     {
       name: 'partial params — some resolved, some fallback',

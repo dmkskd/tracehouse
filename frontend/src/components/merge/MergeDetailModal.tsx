@@ -13,7 +13,7 @@ import type { MergeHistoryRecord, MergeInfo, MergeThroughputEstimate } from '@tr
 import type { MergeSeries, MutationSeries } from '@tracehouse/core';
 import type { VerticalMergeProgress } from '@tracehouse/core';
 import type { PartDetailInfo } from '@tracehouse/core';
-import { classifyActiveMerge, parseVerticalMergeProgress, isMergedPart, computeMergeEta, pickThroughputEstimate } from '@tracehouse/core';
+import { classifyActiveMerge, parseVerticalMergeProgress, isMergedPart, computeMergeEta, pickThroughputEstimate, escapeValue } from '@tracehouse/core';
 import { useNavigate } from '../../hooks/useAppLocation';
 import { ModalWrapper } from '../shared/ModalWrapper';
 import { formatBytes, databaseApi } from '../../stores/databaseStore';
@@ -827,8 +827,8 @@ const MergeDetailInner: React.FC<{
           {etaInfo && (
             <button
               onClick={() => {
-                const db = record.database.replace(/'/g, "\\'");
-                const tbl = record.table.replace(/'/g, "\\'");
+                const db = escapeValue(record.database);
+                const tbl = escapeValue(record.table);
                 const sql = [
                   `-- Merge performance analysis for ${db}.${tbl}`,
                   `-- Throughput stats by size bucket and algorithm`,

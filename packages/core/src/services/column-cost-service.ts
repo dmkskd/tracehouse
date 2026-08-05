@@ -1,6 +1,6 @@
 import type { IClickHouseAdapter } from '../adapters/types.js';
 import { HostTargetedAdapter } from '../adapters/host-targeted-adapter.js';
-import { escapeValue, tagQuery } from '../queries/builder.js';
+import { escapeIdentifier, escapeValue, tagQuery } from '../queries/builder.js';
 import { TAB_QUERIES, sourceTag } from '../queries/source-tags.js';
 
 export interface ColumnCost {
@@ -89,10 +89,9 @@ export class ColumnCostService {
       throw new ColumnCostServiceError('Could not determine output columns for this query.');
     }
 
-    const byteSizeExprs = outputColumns.map(col => {
-      const escaped = col.replace(/`/g, '\\`');
-      return `sum(byteSize(\`${escaped}\`)) AS \`__bytes_${escaped}\``;
-    });
+    const byteSizeExprs = outputColumns.map(col =>
+      `sum(byteSize(\`${escapeIdentifier(col)}\`)) AS \`__bytes_${escapeIdentifier(col)}\``
+    );
 
     const analysisSql = `SELECT ${byteSizeExprs.join(', ')} FROM (${query.replace(/;\s*$/, '')})`;
     const result = await queryAdapter.executeQuery<Record<string, number>>(
@@ -128,11 +127,12 @@ export class ColumnCostService {
 
     for (let i = 0; i < outputColumns.length; i++) {
       const col = outputColumns[i];
-      const escaped = col.replace(/`/g, '\\`');
       options.onProgress?.({ total: outputColumns.length, completed: i, currentColumn: col });
 
       const tag = `${runTag}_${i}`;
-      const analysisSql = `SELECT count() AS \`${tag}\` FROM (SELECT \`${escaped}\` FROM (${strippedQuery}))`;
+      // `tag` is internally generated (runTag + loop index), never user data.
+      // nosemgrep: clickhouse-unescaped-identifier-interpolation
+      const analysisSql = `SELECT count() AS \`${tag}\` FROM (SELECT \`${escapeIdentifier(col)}\` FROM (${strippedQuery}))`;
 
       let failed = false;
       try {

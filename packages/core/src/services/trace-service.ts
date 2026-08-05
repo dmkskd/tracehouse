@@ -5,6 +5,7 @@ import type { IClickHouseAdapter } from '../adapters/types.js';
 import type { TraceLog, ExplainType, ExplainResult, OpenTelemetrySpan, FlamegraphSample, ProcessorProfile } from '../types/trace.js';
 import {
   buildQuery,
+  escapeValue,
   tagQuery,
   eventDateBound,
   utcDateTime64,
@@ -36,7 +37,7 @@ export class TraceService {
 
       if (logLevels && logLevels.length > 0) {
         // Build IN clause for log levels
-        const levelsStr = logLevels.map(l => `'${l}'`).join(', ');
+        const levelsStr = logLevels.map(l => `'${escapeValue(l)}'`).join(', ');
         sql = `
           SELECT
             toString(event_time) AS event_time,

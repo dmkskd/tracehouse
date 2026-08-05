@@ -11,6 +11,8 @@
  * Used by the frontend and validated by integration tests.
  */
 
+import { escapeValue } from './builder.js';
+
 // ── Types ──
 
 export interface MergeSample {
@@ -73,11 +75,11 @@ export function buildMergeSamplesSQL(opts: {
   hostname?: string;
 }): string {
   const { database, table, resultPartName, hostname } = opts;
-  const escDb = database.replace(/'/g, "''");
-  const escTable = table.replace(/'/g, "''");
+  const escDb = escapeValue(database);
+  const escTable = escapeValue(table);
 
   const whereClause = resultPartName
-    ? `database = '${escDb}' AND table = '${escTable}' AND result_part_name = '${resultPartName.replace(/'/g, "''")}'`
+    ? `database = '${escDb}' AND table = '${escTable}' AND result_part_name = '${escapeValue(resultPartName)}'`
     : `database = '${escDb}' AND table = '${escTable}'`;
 
   // Window must partition by hostname so that delta calculations don't mix
@@ -138,7 +140,7 @@ FROM (
     WINDOW w AS (PARTITION BY ${partitionCols} ORDER BY sample_time)
 )
 WHERE hostname = ${hostname
-    ? `'${hostname.replace(/'/g, "''")}'`
+    ? `'${escapeValue(hostname)}'`
     : `(
     SELECT hostname
     FROM {{cluster_aware:tracehouse.merges_history}}
