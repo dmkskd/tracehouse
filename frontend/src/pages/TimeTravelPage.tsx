@@ -151,6 +151,18 @@ const CUSTOM_RANGE_PRESETS = [
 type SortField = 'metric' | 'duration' | 'started';
 type SortDir = 'asc' | 'desc';
 
+/**
+ * Standing reminder of Time Travel's two sampling limits, shown as a tooltip on
+ * the activity counts and the breakdown link. Time Travel is a fast first
+ * glance; the Analytics "Workload Breakdown" dashboard is the precise view.
+ */
+const SAMPLING_NOTE = (metric: MetricMode): string =>
+  `Time Travel is a sampled first glance: it shows the top ${TIMELINE_ACTIVITY_LIMIT} `
+  + `queries / merges / mutations by ${metric.toUpperCase()}, and operations under `
+  + `1 MB of memory are not collected (excluded from these totals too).\n\n`
+  + `For a complete, precise accounting of CPU / memory / disk split across `
+  + `queries, merges, and mutations, open Analytics → Workload Breakdown.`;
+
 /** Read a param from the hash-based URL (/#/path?key=val) or standard search */
 
 export const TimeTravelPage: React.FC = () => {
@@ -815,6 +827,11 @@ export const TimeTravelPage: React.FC = () => {
     navigate(buildEventsUrl(event));
   }, [navigate]);
 
+  // Hand-off to the precise view: open the Workload Breakdown dashboard in Analytics.
+  const openWorkloadBreakdown = useCallback(() => {
+    navigate('/analytics?tab=dashboards&fromDashboard=workload-breakdown&from=timetravel');
+  }, [navigate]);
+
   const handleNavigatorEventSelect = useCallback((event: OperationalEvent) => {
     const eventMs = new Date(event.occurred_at).getTime();
     if (!Number.isFinite(eventMs)) return;
@@ -1285,19 +1302,40 @@ export const TimeTravelPage: React.FC = () => {
                 label="queries"
                 value={`${filteredQueries.length}/${data.query_count ?? data.queries.length}`}
                 indicatorColor="#79c0ff"
+                title={SAMPLING_NOTE(metricMode)}
               />
               <MetricStripItem
                 label="merges"
                 value={`${filteredMerges.length}/${data.merge_count}`}
                 indicatorColor="#f0883e"
+                title={SAMPLING_NOTE(metricMode)}
               />
               {(data.mutation_count ?? 0) > 0 && (
                 <MetricStripItem
                   label="mutations"
                   value={`${filteredMutations.length}/${data.mutation_count}`}
                   indicatorColor="#f778ba"
+                  title={SAMPLING_NOTE(metricMode)}
                 />
               )}
+              <MetricStripDivider />
+              <button
+                type="button"
+                onClick={openWorkloadBreakdown}
+                title={SAMPLING_NOTE(metricMode)}
+                style={{
+                  display:'inline-flex', alignItems:'center', gap:5,
+                  padding:'2px 8px', fontSize:11, cursor:'pointer',
+                  color:'var(--text-muted)', background:'transparent',
+                  border:'1px solid var(--border-secondary)', borderRadius:5,
+                  fontFamily:'inherit', whiteSpace:'nowrap', transition:'color 0.15s ease, border-color 0.15s ease',
+                }}
+                onMouseEnter={e => { e.currentTarget.style.color = 'var(--text-primary)'; e.currentTarget.style.borderColor = 'var(--border-primary)'; }}
+                onMouseLeave={e => { e.currentTarget.style.color = 'var(--text-muted)'; e.currentTarget.style.borderColor = 'var(--border-secondary)'; }}
+              >
+                <span aria-hidden="true" style={{ opacity:0.8 }}>ⓘ</span>
+                sampled
+              </button>
               {(timelineRamCapacity > 0 || timelineCpuCapacity > 0) && (
                 <MetricStripDivider />
               )}

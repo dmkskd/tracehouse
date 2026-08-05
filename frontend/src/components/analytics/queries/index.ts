@@ -21,6 +21,7 @@ import clickHouseKb from './clickhouseKb';
 import json from './json';
 import xray from './xray';
 import events from './events';
+import workloadBreakdown from './workloadBreakdown';
 
 export const RAW_QUERIES: string[] = [
   ...overview,
@@ -44,4 +45,5 @@ export const RAW_QUERIES: string[] = [
   ...json,
   ...xray,
   ...events,
+  ...workloadBreakdown,
 ];

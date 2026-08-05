@@ -18,7 +18,7 @@ import {
 
 /* ─── types ─── */
 
-export type ChartType = 'bar' | 'line' | 'pie' | 'area' | 'grouped_bar' | 'stacked_bar' | 'grouped_line' | 'radar';
+export type ChartType = 'bar' | 'line' | 'pie' | 'area' | 'grouped_bar' | 'stacked_bar' | 'grouped_stacked_bar' | 'grouped_line' | 'radar';
 export type ChartStyle = '2d' | '3d';
 /** Rendering variant within a chart type (currently overlay/spaghetti for grouped_line;
  *  reserved for future siblings like band / small_multiples). */
@@ -122,6 +122,7 @@ export interface ParsedDirectives {
     groupByColumn?: string;
     valueColumn?: string;
     seriesColumn?: string;
+    clusterColumn?: string;
     descriptionColumn?: string;
     profile?: string;
     axes?: Record<string, string>;
@@ -242,6 +243,9 @@ export interface ChartDirective {
   valueColumn?: string;
   valueColumns?: string[];
   seriesColumn?: string;
+  /** Second categorical dimension for grouped_stacked_bar: bars are clustered by
+   *  this column (e.g. server) and stacked by seriesColumn (e.g. kind). */
+  clusterColumn?: string;
   orientation?: 'horizontal' | 'vertical';
   visualization?: '2d' | '3d';
   title?: string;
@@ -545,6 +549,7 @@ export function parseDirectives(sql: string): ParsedDirectives | null {
     const l = c.match(/group_by=(\w+)/);
     const v = c.match(/value=([\w,]+)/);
     const g = c.match(/series=(\w+)/);
+    const cl = c.match(/cluster=(\w+)/);
     const dc = c.match(/description=(\w+)/i);
     const rd = c.match(/render=(\w+)/i);
     if (t) {
@@ -555,6 +560,7 @@ export function parseDirectives(sql: string): ParsedDirectives | null {
         groupByColumn: l?.[1],
         valueColumn: v?.[1],
         seriesColumn: g?.[1],
+        clusterColumn: cl?.[1],
         descriptionColumn: dc?.[1],
         render: rd ? rd[1] as ChartRender : undefined,
       };
@@ -629,6 +635,7 @@ export function parseChartDirective(sql: string): Partial<ChartDirective> | null
     if (cols.length > 1) cfg.valueColumns = cols;
   }
   const g = d.match(/series=(\w+)/i); if (g) cfg.seriesColumn = g[1];
+  const cl = d.match(/cluster=(\w+)/i); if (cl) cfg.clusterColumn = cl[1];
   const o = d.match(/orientation=(\w+)/i);
   if (o) cfg.orientation = o[1].toLowerCase() === 'vertical' || o[1].toLowerCase() === 'v' ? 'vertical' : 'horizontal';
   const s = d.match(/style=(\w+)/i); if (s) cfg.visualization = s[1] as '2d' | '3d';

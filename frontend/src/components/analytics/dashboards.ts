@@ -406,6 +406,35 @@ const BUILTIN_DASHBOARDS: Dashboard[] = [
     ],
   },
   {
+    id: 'workload-breakdown',
+    title: 'TimeTravel Workload Breakdown',
+    description: 'Resource usage split by kind (queries/merges/mutations) and by server - the after-the-fact counterpart to Time Travel. Figures are approximate; a directional first pass.',
+    group: 'TraceHouse',
+    category: 'Resources',
+    columns: 2,
+    filters: [
+      {
+        param: 'host',
+        label: 'Server',
+        // One row per node on a cluster, one on single-node. Keys off hostname()
+        // so it matches the `hostname() = ...` scoping in every panel query.
+        query: 'SELECT DISTINCT hostname() AS host FROM {{cluster_aware:system.one}} ORDER BY host',
+      },
+    ],
+    panels: [
+      { queryName: 'Workload#CPU Split (% of workload)', section: 'Totals' },
+      { queryName: 'Workload#CPU by Workload (cores)', section: 'Over Time' },
+      { queryName: 'Workload#Peak Memory per Op by Kind (GB)' },
+      { queryName: 'Workload#Disk I/O by Workload (MB/s)' },
+      { queryName: 'Workload#Network by Workload (MB/s)' },
+      { queryName: 'Workload#CPU by Server (cores)', section: 'Per Server' },
+      { queryName: 'Workload#Top Query Patterns by CPU', section: 'Top Contributors', requiredCapability: 'query_log' },
+      { queryName: 'Workload#Top Tables by Merge/Mutation CPU', requiredCapability: 'part_log' },
+      { queryName: 'Workload#Top Query Patterns by Memory', requiredCapability: 'query_log' },
+      { queryName: 'Workload#Top Tables by Merge/Mutation Memory', requiredCapability: 'part_log' },
+    ],
+  },
+  {
     id: 'self-monitoring',
     title: 'App Query Cost',
     description: 'Track our app footprint: query cost per component, error rates, server load share',

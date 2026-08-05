@@ -28,9 +28,9 @@ import type { QueryModalTab } from '../query/modal/QueryDetailModal';
 import { TimeRangePicker } from '../common/TimeRangePicker';
 import {
   formatCell,
-  buildChartData, buildGroupedChartData, isGroupedChartType, sortRows,
+  buildChartData, buildGroupedChartData, buildGroupedStackedChartData, isGroupedChartType, sortRows,
   ChartRenderer, isTimeSeriesChartType, OverlayChart, chartColorByIndex, compactFormatter,
-  type ChartDataPoint, type GroupedChartData, type DrillDownEvent, type CorrelationEntry,
+  type ChartDataPoint, type GroupedChartData, type GroupedStackedChartData, type DrillDownEvent, type CorrelationEntry,
 } from './charts';
 import { Chart3DCanvas } from './charts3d';
 import { ResultsTable } from './ResultsTable';
@@ -657,6 +657,13 @@ const DashboardPanelCard: React.FC<{
     return buildGroupedChartData(result.rows, chartDirective.groupByColumn, chartDirective.valueColumn, chartDirective.seriesColumn, chartDirective.valueColumns, isTimeSeries ? undefined : 30);
   }, [result, chartDirective]);
 
+  const groupedStackedData = useMemo((): GroupedStackedChartData | null => {
+    if (chartDirective?.type !== 'grouped_stacked_bar') return null;
+    if (!result || !chartDirective.groupByColumn || !chartDirective.clusterColumn || !chartDirective.seriesColumn || !chartDirective.valueColumn) return null;
+    // Cap x-buckets so the clustered-and-stacked bars stay legible.
+    return buildGroupedStackedChartData(result.rows, chartDirective.groupByColumn, chartDirective.clusterColumn, chartDirective.seriesColumn, chartDirective.valueColumn, 12);
+  }, [result, chartDirective]);
+
   const hasChartDirective = !!(chartDirective?.type || preset?.directives.chart?.type);
   const chartType: ChartType = chartDirective?.type || preset?.directives.chart?.type || 'bar';
   const chartStyle = chartDirective?.visualization || preset?.directives.chart?.style || '2d';
@@ -667,6 +674,7 @@ const DashboardPanelCard: React.FC<{
   const isTimeSeries = isTimeSeriesChartType(chartType);
   const hasChart = hasChartDirective && (chartType === 'radar'
     ? !!result && result.rows.length > 0 && (!!chartDirective?.valuesColumn || !!chartDirective?.axes && Object.keys(chartDirective.axes).length > 0)
+    : chartType === 'grouped_stacked_bar' ? !!groupedStackedData && groupedStackedData.rows.length > 0
     : isGroupedChart ? groupedChartData.length > 0 : chartData.length > 0);
 
   // Report time-series data upward for correlation
@@ -995,7 +1003,7 @@ const DashboardPanelCard: React.FC<{
                     onDrillDown={isDrillable ? handleDrillDown : isPartLinkable ? handlePartLinkChartClick : isQueryLinkable ? handleQueryLinkChartClick : undefined}
                     unit={chartUnit} />
                 ) : (
-                  <ChartRenderer chartType={chartType} data={chartData} groupedData={groupedChartData}
+                  <ChartRenderer chartType={chartType} data={chartData} groupedData={groupedChartData} groupedStackedData={groupedStackedData ?? undefined}
                     rawRows={result.rows} radarConfig={chartDirective ?? undefined}
                     orientation={chartDirective?.orientation} fullHeight unit={chartUnit} color={chartColor}
                     onDrillDown={isDrillable ? handleDrillDown : isPartLinkable ? handlePartLinkChartClick : isQueryLinkable ? handleQueryLinkChartClick : undefined}
@@ -1588,20 +1596,27 @@ const MiniPanelCard: React.FC<{ panel: DashboardPanel; timeRangeOverride: string
     return buildChartData(result.rows, result.columns, chartDirective?.groupByColumn, chartDirective?.valueColumn, isTimeSeries ? undefined : 20, chartDirective?.descriptionColumn);
   }, [result, chartDirective]);
 
-  const groupedChartData2 = useMemo((): GroupedChartData[] => {
+  const groupedChartData = useMemo((): GroupedChartData[] => {
     if (!result || !chartDirective?.groupByColumn || !chartDirective?.valueColumn) return [];
     const isTimeSeries = chartDirective?.type && ['line', 'area', 'grouped_line'].includes(chartDirective.type);
     return buildGroupedChartData(result.rows, chartDirective.groupByColumn, chartDirective.valueColumn, chartDirective.seriesColumn, chartDirective.valueColumns, isTimeSeries ? undefined : 20);
+  }, [result, chartDirective]);
+
+  const groupedStackedData = useMemo((): GroupedStackedChartData | null => {
+    if (chartDirective?.type !== 'grouped_stacked_bar') return null;
+    if (!result || !chartDirective.groupByColumn || !chartDirective.clusterColumn || !chartDirective.seriesColumn || !chartDirective.valueColumn) return null;
+    return buildGroupedStackedChartData(result.rows, chartDirective.groupByColumn, chartDirective.clusterColumn, chartDirective.seriesColumn, chartDirective.valueColumn, 12);
   }, [result, chartDirective]);
 
   const chartType: ChartType = chartDirective?.type || preset?.directives.chart?.type || 'bar';
   const chartStyle = chartDirective?.visualization || preset?.directives.chart?.style || '2d';
   const effectiveChartStyle = chartType === 'radar' ? '2d' : chartStyle;
   const miniChartColor = chartDirective?.color;
-  const isGroupedChart2 = isGroupedChartType(chartType);
+  const isGroupedChart = isGroupedChartType(chartType);
   const hasChart = chartType === 'radar'
     ? !!result && result.rows.length > 0 && (!!chartDirective?.valuesColumn || !!chartDirective?.axes && Object.keys(chartDirective.axes).length > 0)
-    : isGroupedChart2 ? groupedChartData2.length > 0 : chartData.length > 0;
+    : chartType === 'grouped_stacked_bar' ? !!groupedStackedData && groupedStackedData.rows.length > 0
+    : isGroupedChart ? groupedChartData.length > 0 : chartData.length > 0;
 
   if (!preset) return null;
 
@@ -1653,9 +1668,9 @@ const MiniPanelCard: React.FC<{ panel: DashboardPanel; timeRangeOverride: string
         {!capabilityUnavailable && !versionUnavailable && !loading && hasChart && (
           <>
             {effectiveChartStyle === '3d' ? (
-              <Chart3DCanvas data={chartData} type={chartType} orientation={chartDirective?.orientation} groupedData={isGroupedChart2 ? groupedChartData2 : undefined} unit={chartDirective?.unit} />
+              <Chart3DCanvas data={chartData} type={chartType} orientation={chartDirective?.orientation} groupedData={isGroupedChart ? groupedChartData : undefined} unit={chartDirective?.unit} />
             ) : (
-              <ChartRenderer chartType={chartType} data={chartData} groupedData={groupedChartData2}
+              <ChartRenderer chartType={chartType} data={chartData} groupedData={groupedChartData} groupedStackedData={groupedStackedData ?? undefined}
                 rawRows={result?.rows ?? []} radarConfig={chartDirective ?? undefined}
                 orientation={chartDirective?.orientation} fullHeight color={miniChartColor}
                 valueColumns={chartDirective?.valueColumns} />

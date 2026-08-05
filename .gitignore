@@ -59,3 +59,7 @@ tmp.ignore/
 
 # Agent files
 .agent/
+
+# Local agent settings with secrets (Langfuse keys, etc.)
+.claude/settings.local.json
+.codex/langfuse.json

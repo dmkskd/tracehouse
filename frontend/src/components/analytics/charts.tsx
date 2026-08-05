@@ -380,6 +380,76 @@ export function isGroupedChartType(type: ChartType): boolean {
   return type === 'grouped_bar' || type === 'stacked_bar' || type === 'grouped_line';
 }
 
+/**
+ * Data for a grouped-stacked bar chart: three categorical dimensions.
+ * x (e.g. time bucket) → clusters (e.g. servers, side by side) → series (e.g.
+ * kind, stacked within each cluster's bar). Recharts renders one <Bar> per
+ * (cluster, series) with stackId = cluster, so same-cluster bars stack and
+ * different clusters sit side by side.
+ */
+export interface GroupedStackedChartData {
+  /** One entry per x value: { name, "<cluster>${GS_SEP}<series>": number, ... }. */
+  rows: Record<string, string | number>[];
+  clusters: string[];
+  seriesNames: string[];
+  /** series name → color (colour encodes kind; clusters are told apart by position). */
+  colorMap: Record<string, string>;
+}
+
+/** Delimiter for composite (cluster, series) dataKeys - a control char that
+ *  cannot appear in cluster/series text (which may contain spaces or dots). */
+const GS_SEP = String.fromCharCode(31);
+export const gsKey = (cluster: string, series: string) => `${cluster}${GS_SEP}${series}`;
+export const gsSplit = (key: string): [string, string] => {
+  const i = key.indexOf(GS_SEP);
+  return [key.slice(0, i), key.slice(i + GS_SEP.length)];
+};
+
+/** Pivot flat (x, cluster, series, value) rows into GroupedStackedChartData. */
+export function buildGroupedStackedChartData(
+  rows: Record<string, unknown>[],
+  xColumn: string,
+  clusterColumn: string,
+  seriesColumn: string,
+  valueColumn: string,
+  maxX?: number,
+): GroupedStackedChartData {
+  const xOrder: string[] = [];
+  const xSeen = new Set<string>();
+  const clusters: string[] = [];
+  const cSeen = new Set<string>();
+  const seriesNames: string[] = [];
+  const sSeen = new Set<string>();
+  const cell = new Map<string, number>();
+  for (const row of rows) {
+    const x = formatCell(row[xColumn], xColumn);
+    const c = formatCell(row[clusterColumn], clusterColumn);
+    const s = formatCell(row[seriesColumn], seriesColumn);
+    const v = extractNumeric(row[valueColumn]);
+    if (!xSeen.has(x)) { xSeen.add(x); xOrder.push(x); }
+    if (!cSeen.has(c)) { cSeen.add(c); clusters.push(c); }
+    if (!sSeen.has(s)) { sSeen.add(s); seriesNames.push(s); }
+    const k = `${x}${GS_SEP}${c}${GS_SEP}${s}`;
+    cell.set(k, (cell.get(k) ?? 0) + v);
+  }
+  clusters.sort();
+  seriesNames.sort();
+  // Keep the most recent maxX buckets (rows arrive in time order).
+  const xs = maxX && xOrder.length > maxX ? xOrder.slice(xOrder.length - maxX) : xOrder;
+  const outRows: Record<string, string | number>[] = xs.map(x => {
+    const r: Record<string, string | number> = { name: x };
+    for (const c of clusters) {
+      for (const s of seriesNames) {
+        r[gsKey(c, s)] = cell.get(`${x}${GS_SEP}${c}${GS_SEP}${s}`) ?? 0;
+      }
+    }
+    return r;
+  });
+  const colorMap: Record<string, string> = {};
+  seriesNames.forEach((s, i) => { colorMap[s] = CHART_COLORS[i % CHART_COLORS.length]; });
+  return { rows: outRows, clusters, seriesNames, colorMap };
+}
+
 /** Sort rows by a column, handling numeric vs string comparison. */
 export function sortRows(
   rows: Record<string, unknown>[],
@@ -1103,6 +1173,103 @@ export const StackedBarChart2D: React.FC<{ data: GroupedChartData[]; orientation
   );
 };
 
+/** Tooltip for grouped-stacked bars: groups the hovered bucket's values by cluster. */
+const GroupedStackedTooltip: React.FC<{
+  active?: boolean;
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  payload?: any[];
+  label?: string;
+  clusters: string[];
+  colorMap: Record<string, string>;
+  unit?: string;
+}> = ({ active, payload, label, clusters, colorMap, unit }) => {
+  if (!active || !payload || payload.length === 0) return null;
+  const fmt = compactFormatter(unit);
+  const byCluster = new Map<string, { series: string; value: number }[]>();
+  for (const p of payload) {
+    const key = typeof p.dataKey === 'string' ? p.dataKey : '';
+    const value = typeof p.value === 'number' ? p.value : 0;
+    if (!key || value === 0) continue;
+    const [c, s] = gsSplit(key);
+    if (!byCluster.has(c)) byCluster.set(c, []);
+    byCluster.get(c)!.push({ series: s, value });
+  }
+  const shown = clusters.filter(c => byCluster.has(c));
+  if (shown.length === 0) return null;
+  return (
+    <div style={{ ...tooltipStyle, maxWidth: 300 }}>
+      {label && <div style={tooltipLabelStyle}>{formatXTick(String(label))}</div>}
+      {shown.map((c, ci) => {
+        const items = byCluster.get(c)!;
+        const total = items.reduce((a, b) => a + b.value, 0);
+        return (
+          <div key={c} style={{ marginTop: ci > 0 ? 6 : 3 }}>
+            <div style={{ display: 'flex', justifyContent: 'space-between', gap: 12 }}>
+              <span style={{ fontSize: 11, fontWeight: 600, color: 'var(--text-secondary, #cbd5e1)' }}>{c}</span>
+              <span style={{ fontSize: 11, fontWeight: 700, color: 'var(--text-primary, #f1f5f9)' }}>{fmt(total)}</span>
+            </div>
+            {/* Kinds as compact colour-coded value chips (colour matches the legend). */}
+            <div style={{ display: 'flex', flexWrap: 'wrap', gap: '2px 8px', marginTop: 2, paddingLeft: 1 }}>
+              {items.map(it => (
+                <span key={it.series} title={it.series} style={{ display: 'inline-flex', alignItems: 'center', gap: 3, fontSize: 9.5, color: 'var(--text-muted, #94a3b8)' }}>
+                  <span style={{ width: 7, height: 7, borderRadius: '50%', background: colorMap[it.series], flexShrink: 0 }} />
+                  {fmt(it.value)}
+                </span>
+              ))}
+            </div>
+          </div>
+        );
+      })}
+    </div>
+  );
+};
+
+/**
+ * Grouped stacked bar chart: x = bucket, one side-by-side bar per cluster, each
+ * bar stacked by series. Colour encodes the series (kind); clusters (servers)
+ * are told apart by their side-by-side position and the tooltip.
+ */
+export const GroupedStackedBarChart2D: React.FC<{ data: GroupedStackedChartData; unit?: string; fullHeight?: boolean }> = ({ data, unit, fullHeight }) => {
+  const { rows, clusters, seriesNames, colorMap } = data;
+  if (!rows.length || clusters.length === 0) return null;
+  return (
+    <div style={{ height: fullHeight ? '100%' : 380, display: 'flex', flexDirection: 'column', minHeight: 0 }}>
+      <div style={{ flex: 1, minHeight: 0 }}>
+        <ResponsiveContainer width="100%" height="100%">
+          <RBarChart data={rows} margin={{ top: 10, right: 20, left: 10, bottom: 5 }} barCategoryGap="14%">
+            <CartesianGrid strokeDasharray="3 3" stroke={gridStroke} vertical={false} />
+            <XAxis dataKey="name" tick={axisTickStyle} tickLine={axisLineStyle} axisLine={axisLineStyle}
+              interval="preserveStartEnd" tickFormatter={formatXTick} />
+            <YAxis tick={axisTickStyle} tickLine={axisLineStyle} axisLine={axisLineStyle} tickFormatter={compactFormatter(unit)} width={50} />
+            {/* Keep the tooltip inside the chart bounds so Recharts flips it to
+                the cursor's other side near an edge instead of letting it run
+                off the panel (which overflow:hidden would then clip). */}
+            <Tooltip content={<GroupedStackedTooltip clusters={clusters} colorMap={colorMap} unit={unit} />} cursor={{ fill: 'rgba(99,102,241,0.06)' }}
+              wrapperStyle={{ zIndex: 1000 }} allowEscapeViewBox={{ x: false, y: false }} />
+            {clusters.map(c => seriesNames.map((s, si) => (
+              <Bar key={gsKey(c, s)} dataKey={gsKey(c, s)} stackId={c} fill={colorMap[s]}
+                stroke="var(--bg-primary, #030712)" strokeWidth={0.5}
+                radius={si === seriesNames.length - 1 ? [2, 2, 0, 0] : undefined}
+                maxBarSize={26} animationDuration={400} />
+            )))}
+          </RBarChart>
+        </ResponsiveContainer>
+      </div>
+      {/* Colour encodes kind, so the legend lists each kind once (not every
+          server×kind dataKey). Rendered as a plain wrapping row below the chart
+          so it can't be clipped by the chart's fixed legend box. */}
+      <div style={{ flexShrink: 0, display: 'flex', flexWrap: 'wrap', justifyContent: 'center', gap: '3px 14px', padding: '6px 8px 2px' }}>
+        {seriesNames.map(s => (
+          <span key={s} style={{ display: 'inline-flex', alignItems: 'center', gap: 6 }}>
+            <span style={{ width: 8, height: 8, borderRadius: '50%', background: colorMap[s], flexShrink: 0 }} />
+            <span style={{ fontSize: 11, color: 'var(--text-secondary)' }}>{s}</span>
+          </span>
+        ))}
+      </div>
+    </div>
+  );
+};
+
 export const GroupedLineChart2D: React.FC<{ data: GroupedChartData[]; onDrillDown?: (e: DrillDownEvent) => void; unit?: string; drillIntoQuery?: string; renderMode?: ChartRender } & CrosshairProps> = ({ data, onDrillDown, unit, drillIntoQuery, renderMode, hoveredTimestamp, onTimestampHover, correlationValues, currentPanelName, isHoveredPanel}) => {
   const [hoveredLine, setHoveredLine] = useState<string | null>(null);
   if (!data.length) return null;
@@ -1727,6 +1894,7 @@ export interface ChartRendererProps extends CrosshairProps {
   chartType: ChartType;
   data: ChartDataPoint[];
   groupedData: GroupedChartData[];
+  groupedStackedData?: GroupedStackedChartData;
   rawRows?: Record<string, unknown>[];
   radarConfig?: RadarChartConfig;
   orientation?: 'horizontal' | 'vertical';
@@ -1742,7 +1910,7 @@ export interface ChartRendererProps extends CrosshairProps {
 }
 
 export const ChartRenderer: React.FC<ChartRendererProps> = ({
-  chartType, data, groupedData, orientation, fullHeight, unit, color, onDrillDown, drillIntoQuery,
+  chartType, data, groupedData, groupedStackedData, orientation, fullHeight, unit, color, onDrillDown, drillIntoQuery,
   rawRows, radarConfig,
   hoveredTimestamp, onTimestampHover, correlationValues, currentPanelName, isHoveredPanel, valueColumns, renderMode,
 }) => {
@@ -1763,6 +1931,8 @@ export const ChartRenderer: React.FC<ChartRendererProps> = ({
       return <GroupedBarChart2D data={groupedData} orientation={orientation} onDrillDown={onDrillDown} unit={unit} drillIntoQuery={drillIntoQuery} />;
     case 'stacked_bar':
       return <StackedBarChart2D data={groupedData} orientation={orientation} onDrillDown={onDrillDown} unit={unit} drillIntoQuery={drillIntoQuery} />;
+    case 'grouped_stacked_bar':
+      return groupedStackedData ? <GroupedStackedBarChart2D data={groupedStackedData} unit={unit} fullHeight={fullHeight} /> : null;
     case 'grouped_line':
       return <GroupedLineChart2D data={groupedData} onDrillDown={onDrillDown} unit={unit} drillIntoQuery={drillIntoQuery} renderMode={renderMode} hoveredTimestamp={hoveredTimestamp} onTimestampHover={onTimestampHover} correlationValues={correlationValues} currentPanelName={currentPanelName} isHoveredPanel={isHoveredPanel} />;
     default:

@@ -76,7 +76,10 @@ export const TimelineChart: React.FC<{
   const containerRef = useRef<HTMLDivElement>(null);
   const [chartWidth, setChartWidth] = useState(1000);
   const W = chartWidth, H = height;
-  const padTop = 12, padRight = 90, padBottom = 30, padLeft = 52;
+  // Memory Y-axis labels carry the byte value + percent (e.g. "5.05 GB (50%)"),
+  // which is far wider than the CPU "50%" label - widen the left gutter so they
+  // aren't clipped at the chart's left edge.
+  const padTop = 12, padRight = 90, padBottom = 30, padLeft = metricMode === 'memory' ? 86 : 52;
   const cw = W - padLeft - padRight, ch = H - padTop - padBottom;
   const svgRef = useRef<SVGSVGElement>(null);
   const [dragStart, setDragStart] = useState<number | null>(null);

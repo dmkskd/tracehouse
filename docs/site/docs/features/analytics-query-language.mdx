@@ -39,15 +39,30 @@ Tells the explorer how to visualise the result set.
 
 | Parameter     | Required | Description |
 |---------------|----------|-------------|
-| `type`        | Yes      | Chart type: `bar`, `line`, `pie`, `area`, `grouped_bar`, `stacked_bar`, `grouped_line`, or `radar` |
+| `type`        | Yes      | Chart type: `bar`, `line`, `pie`, `area`, `grouped_bar`, `stacked_bar`, `grouped_stacked_bar`, `grouped_line`, or `radar` |
 | `group_by`    | Yes for non-radar charts | Column name to use for the X-axis / category grouping |
 | `value`       | Yes for non-radar charts | Column name(s) for the Y-axis. Can be a single column or comma-separated list (e.g. `value=p50,p95,p99`) |
-| `series`      | No       | Column name used for series splitting (for `grouped_bar`, `stacked_bar`, `grouped_line`) |
+| `series`      | No       | Column name used for series splitting (for `grouped_bar`, `stacked_bar`, `grouped_stacked_bar`, `grouped_line`). In `grouped_stacked_bar` this is the **stacked** dimension |
+| `cluster`     | No       | Second categorical dimension, `grouped_stacked_bar` only. Bars are **clustered side by side** by this column and **stacked** by `series` within each cluster (e.g. `cluster=host series=kind`) |
 | `style`       | No       | `2d` (default SVG/recharts) or `3d` (Three.js) |
 | `unit`        | No       | Unit suffix for value axis ticks, e.g. `ms`, `s`, `MB`, `%`. Time units (`ms`, `s`) auto-scale (e.g. 1400 ms → 1.4 s) |
 | `orientation` | No       | `horizontal` (default for grouped/stacked bars) or `vertical` (shorthand `v`). Controls bar direction — horizontal puts labels on the left for readability |
 | `color`       | No       | Override the default chart color with a hex value (e.g. `#f59e0b`) |
 | `render`      | No       | Rendering variant within the chart `type`. `overlay` = many-series "spaghetti" (no legend, thin translucent lines, hover to spotlight one, click to isolate); `grouped_line` only |
+
+#### `type=grouped_stacked_bar` — Clustered stacked bars
+
+Shows three categorical dimensions at once: the X-axis (`group_by`, e.g. a time bucket), a set of side-by-side bars per X value (`cluster`, e.g. server), and a stack within each bar (`series`, e.g. activity kind). Colour encodes the `series`; the clusters are told apart by their side-by-side position and the tooltip, which groups values by cluster. Use it to answer "for each bucket, what is each server doing, broken down by kind?"
+
+```sql
+-- @chart: type=grouped_stacked_bar group_by=t value=cpu_cores cluster=host series=kind style=2d
+SELECT t, host, kind, sum(cost) AS cpu_cores
+FROM ...
+GROUP BY t, host, kind
+ORDER BY t ASC
+```
+
+The query returns one row per `(group_by, cluster, series)` combination. To stay legible, keep the number of X buckets small (the renderer keeps the most recent ~12) and the cluster/series cardinality modest — many servers × many kinds produces a dense chart. This type is 2D only.
 
 #### `type=radar` — Multi-axis pressure chart
 
