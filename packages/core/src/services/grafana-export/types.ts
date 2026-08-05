@@ -5,7 +5,7 @@ export interface GrafanaExportInput {
   title: string;
   /** Chart configuration — if absent, exports as a table panel */
   chart?: {
-    type: 'bar' | 'line' | 'pie' | 'area' | 'grouped_bar' | 'stacked_bar' | 'grouped_line' | 'radar';
+    type: 'bar' | 'line' | 'pie' | 'area' | 'grouped_bar' | 'stacked_bar' | 'grouped_stacked_bar' | 'grouped_line' | 'radar';
     labelColumn?: string;
     groupByColumn: string;
     valueColumn: string;
