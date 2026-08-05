@@ -40,7 +40,7 @@ import { useMonitoringCapabilitiesStore } from '../../stores/monitoringCapabilit
 import type { PartDetailInfo, QuerySeries } from '@tracehouse/core';
 import {
   isNumericValue, formatCell,
-  buildChartData, buildGroupedChartData, isGroupedChartType, sortRows,
+  buildChartData, buildGroupedChartData, isGroupedChartType, isTimeSeriesChartType, sortRows,
   ChartRenderer,
   type ChartDataPoint, type ChartConfig, type GroupedChartData, type DrillDownEvent,
 } from './charts';
@@ -685,14 +685,14 @@ export const QueryExplorer: React.FC<QueryExplorerProps> = ({ urlState, onUrlSta
   /* ── chart data ── */
   const chartData = useMemo((): ChartDataPoint[] => {
     if (!result || !chartConfig.groupByColumn || !chartConfig.valueColumn) return [];
-    const isTimeSeries = chartConfig.type && ['line', 'area', 'grouped_line'].includes(chartConfig.type);
+    const isTimeSeries = !!chartConfig.type && isTimeSeriesChartType(chartConfig.type);
     return buildChartData(result.rows, result.columns, chartConfig.groupByColumn, chartConfig.valueColumn, isTimeSeries ? undefined : 50, chartConfig.descriptionColumn);
   }, [result, chartConfig.groupByColumn, chartConfig.valueColumn, chartConfig.type, chartConfig.descriptionColumn]);
 
   /* ── grouped chart data (for grouped_bar, stacked_bar, grouped_line) ── */
   const groupedChartData = useMemo((): GroupedChartData[] => {
     if (!result || !chartConfig.groupByColumn || !chartConfig.valueColumn) return [];
-    const isTimeSeries = chartConfig.type && ['line', 'area', 'grouped_line'].includes(chartConfig.type);
+    const isTimeSeries = !!chartConfig.type && isTimeSeriesChartType(chartConfig.type);
     return buildGroupedChartData(result.rows, chartConfig.groupByColumn, chartConfig.valueColumn, chartConfig.seriesColumn, chartConfig.valueColumns, isTimeSeries ? undefined : 30);
   }, [result, chartConfig.groupByColumn, chartConfig.valueColumn, chartConfig.valueColumns, chartConfig.seriesColumn]);
 

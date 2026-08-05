@@ -1,5 +1,6 @@
 import React, { useMemo, useState } from 'react';
 import type { ChartType } from './metaLanguage';
+import { isTimeSeriesChartType } from './charts';
 import type { GrafanaExportCapability } from '@tracehouse/core/services/grafana-export';
 
 export interface GrafanaDashboardOption {
@@ -148,7 +149,7 @@ export const GrafanaExportDialog: React.FC<GrafanaExportDialogProps> = ({
     fontSize: 12,
     boxSizing: 'border-box',
   }), []);
-  const maxRowsDisabled = viewMode !== 'chart' || ['line', 'area', 'grouped_line'].includes(chartType);
+  const maxRowsDisabled = viewMode !== 'chart' || isTimeSeriesChartType(chartType);
   const exportDisabled = options.dashboardMode === 'existing' && !options.dashboardUid;
 
   return (

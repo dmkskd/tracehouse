@@ -58,6 +58,7 @@ export const Analytics: React.FC = () => {
   const fromObsMap = fromPage === 'obsmap';
   const fromMerges = fromPage === 'merges';
   const fromQueries = fromPage === 'queries';
+  const fromTimeTravel = fromPage === 'timetravel';
   // URL state - tab, lookback, db filter are persisted in the URL
   const { state: urlState, update: updateUrl, copyShareableUrl } = useAnalyticsUrlState();
 
@@ -455,6 +456,23 @@ export const Analytics: React.FC = () => {
                 >
                   <span>←</span>
                   <span>Back to Merge Tracker</span>
+                </button>
+              )}
+              {fromTimeTravel && activeTab === 'dashboards' && (
+                <button
+                  onClick={() => navigate('/timetravel')}
+                  style={{
+                    display: 'inline-flex', alignItems: 'center', gap: 4,
+                    padding: '2px 8px', fontSize: 11, color: 'var(--text-muted)',
+                    background: 'transparent', border: '1px solid var(--border-secondary)',
+                    borderRadius: 4, cursor: 'pointer', fontFamily: 'inherit',
+                    transition: 'color 0.15s ease, border-color 0.15s ease',
+                  }}
+                  onMouseEnter={(e) => { e.currentTarget.style.color = 'var(--text-primary)'; e.currentTarget.style.borderColor = 'var(--border-primary)'; }}
+                  onMouseLeave={(e) => { e.currentTarget.style.color = 'var(--text-muted)'; e.currentTarget.style.borderColor = 'var(--border-secondary)'; }}
+                >
+                  <span>←</span>
+                  <span>Back to Time Travel</span>
                 </button>
               )}
               {urlState.fromDashboard && activeTab === 'misc' && (

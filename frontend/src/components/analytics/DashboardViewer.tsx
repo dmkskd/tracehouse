@@ -647,13 +647,13 @@ const DashboardPanelCard: React.FC<{
   const chartDirective = useMemo(() => preset ? parseChartDirective(preset.sql) : null, [preset]);
   const chartData = useMemo((): ChartDataPoint[] => {
     if (!result || result.rows.length === 0) return [];
-    const isTimeSeries = chartDirective?.type && ['line', 'area', 'grouped_line'].includes(chartDirective.type);
+    const isTimeSeries = !!chartDirective?.type && isTimeSeriesChartType(chartDirective.type);
     return buildChartData(result.rows, result.columns, chartDirective?.groupByColumn, chartDirective?.valueColumn, isTimeSeries ? undefined : 50, chartDirective?.descriptionColumn);
   }, [result, chartDirective]);
 
   const groupedChartData = useMemo((): GroupedChartData[] => {
     if (!result || !chartDirective?.groupByColumn || !chartDirective?.valueColumn) return [];
-    const isTimeSeries = chartDirective?.type && ['line', 'area', 'grouped_line'].includes(chartDirective.type);
+    const isTimeSeries = !!chartDirective?.type && isTimeSeriesChartType(chartDirective.type);
     return buildGroupedChartData(result.rows, chartDirective.groupByColumn, chartDirective.valueColumn, chartDirective.seriesColumn, chartDirective.valueColumns, isTimeSeries ? undefined : 30);
   }, [result, chartDirective]);
 
@@ -1592,13 +1592,13 @@ const MiniPanelCard: React.FC<{ panel: DashboardPanel; timeRangeOverride: string
   const chartDirective = useMemo(() => preset ? parseChartDirective(preset.sql) : null, [preset]);
   const chartData = useMemo((): ChartDataPoint[] => {
     if (!result || result.rows.length === 0) return [];
-    const isTimeSeries = chartDirective?.type && ['line', 'area', 'grouped_line'].includes(chartDirective.type);
+    const isTimeSeries = !!chartDirective?.type && isTimeSeriesChartType(chartDirective.type);
     return buildChartData(result.rows, result.columns, chartDirective?.groupByColumn, chartDirective?.valueColumn, isTimeSeries ? undefined : 20, chartDirective?.descriptionColumn);
   }, [result, chartDirective]);
 
   const groupedChartData = useMemo((): GroupedChartData[] => {
     if (!result || !chartDirective?.groupByColumn || !chartDirective?.valueColumn) return [];
-    const isTimeSeries = chartDirective?.type && ['line', 'area', 'grouped_line'].includes(chartDirective.type);
+    const isTimeSeries = !!chartDirective?.type && isTimeSeriesChartType(chartDirective.type);
     return buildGroupedChartData(result.rows, chartDirective.groupByColumn, chartDirective.valueColumn, chartDirective.seriesColumn, chartDirective.valueColumns, isTimeSeries ? undefined : 20);
   }, [result, chartDirective]);
 

@@ -9,7 +9,7 @@ import {
   type GrafanaExportInput,
 } from '@tracehouse/core/services/grafana-export';
 import { resolveDrillParams } from './templateResolution';
-import { isGroupedChartType, type ChartConfig } from './charts';
+import { isGroupedChartType, isTimeSeriesChartType, type ChartConfig } from './charts';
 import type { CellStyleRule } from './metaLanguage';
 import type { Query } from './types';
 import type {
@@ -84,7 +84,7 @@ function grafanaPanelTypeLabel(panelType: string): string {
 }
 
 function isTimeSeriesChart(type: ChartConfig['type']): boolean {
-  return ['line', 'area', 'grouped_line'].includes(type);
+  return isTimeSeriesChartType(type);
 }
 
 function defaultMaxRows(result: QueryResultForExport | null, chartConfig: ChartConfig): number {

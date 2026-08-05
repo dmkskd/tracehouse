@@ -18,7 +18,10 @@ import {
 
 /* ─── types ─── */
 
-export type ChartType = 'bar' | 'line' | 'pie' | 'area' | 'grouped_bar' | 'stacked_bar' | 'grouped_stacked_bar' | 'grouped_line' | 'radar';
+// ChartType is defined once in @tracehouse/core so the frontend parser and the
+// Grafana export can't drift. Re-exported here for existing local imports.
+export type { ChartType } from '@tracehouse/core';
+import type { ChartType } from '@tracehouse/core';
 export type ChartStyle = '2d' | '3d';
 /** Rendering variant within a chart type (currently overlay/spaghetti for grouped_line;
  *  reserved for future siblings like band / small_multiples). */
