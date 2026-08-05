@@ -553,7 +553,7 @@ test-data-utils:
 fmt:
     cd frontend && npm run lint -- --fix
 
-# Run security scan (npm audit + semgrep)
+# Run security scan (npm audit + semgrep: local ClickHouse rules + registry)
 [group('test')]
 security-scan:
     #!/usr/bin/env bash
@@ -567,8 +567,44 @@ security-scan:
         echo "Install it with: ./scripts/setup.sh --security"
         EXIT=1
     else
+        echo "--- local ClickHouse SQL injection rules ---"
+        {{just_executable()}} security-scan-sql || EXIT=$?
+        echo ""
+        echo "--- semgrep registry (auto) ---"
         semgrep --config auto packages/ frontend/src/ || EXIT=$?
     fi
+    exit $EXIT
+
+# Run only the local ClickHouse SQL injection rules (offline, no registry)
+[group('test')]
+security-scan-sql:
+    #!/usr/bin/env bash
+    # Self-test the rules against .semgrep/clickhouse-sql-injection.ts first, so
+    # a broken rule fails loudly instead of silently matching nothing.
+    EXIT=0
+    semgrep --test \
+        --config .semgrep/clickhouse-sql-injection.yaml \
+        .semgrep/clickhouse-sql-injection.ts \
+        --metrics=off --disable-version-check || EXIT=$?
+
+    # Advisory pass: WARNING-level audit rules. Counts only — these are review
+    # aids with known false positives, and never affect the exit code.
+    # (Semgrep labels every local finding "Blocking" regardless of severity;
+    # that is a cloud-policy artifact and means nothing here, hence counts only.)
+    echo ""
+    echo "--- advisory (not gating, review only) ---"
+    semgrep scan --config .semgrep/ --severity WARNING \
+        --metrics=off --disable-version-check --json \
+        packages/core/src frontend/src 2>/dev/null \
+      | python3 -c 'import json,sys,collections; d=json.load(sys.stdin); c=collections.Counter(r["check_id"].split(".")[-1] for r in d["results"]); [print(f"  {v:4d}  {k}") for k,v in c.most_common()] or print("  none")' || true
+
+    # Gating pass: ERROR-level rules only. These are false-positive free, so any
+    # finding is a real defect and fails the build. --error sets a non-zero exit.
+    echo ""
+    echo "--- gating (ERROR only) ---"
+    semgrep scan --config .semgrep/ --severity ERROR --error \
+        --metrics=off --disable-version-check \
+        packages/core/src frontend/src || EXIT=$?
     exit $EXIT
 
 # ─────────────────────────────────────────────────────────────────
