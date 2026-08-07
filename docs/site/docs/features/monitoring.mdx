@@ -15,7 +15,7 @@ Every query TraceHouse sends to ClickHouse is tagged with a SQL comment like `/*
 - **Query duration by component**: which parts of the UI (Overview, Merge Tracker, Query Monitor, etc.) generate the most expensive queries
 - **Query volume by component**: how many queries each component fires
 - **Cost breakdown per query**: duration, memory, rows read, bytes read, CPU time for every unique query TraceHouse runs
-- **App % of server load**: how much of the cluster's total workload comes from TraceHouse
+- **TraceHouse % of server load**: how much of the cluster's total workload comes from TraceHouse
 - **Slowest and failed queries**: performance outliers and errors in TraceHouse's own queries
 - **Sampling health**: status of the `system.processes` and `system.merges` sampling pipeline
 

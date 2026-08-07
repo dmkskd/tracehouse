@@ -412,15 +412,15 @@ FROM query_pressure
   it('reports TraceHouse query interactions as unsupported in Grafana export analysis', () => {
     const analysis = analyzeGrafanaExport({
       sql: 'SELECT query_hash FROM query_costs',
-      title: 'App Query Cost Details',
+      title: 'TraceHouse Query Cost Details',
       resultColumns: ['query_hash'],
       interactions: [
-        { type: 'link', on: 'query_hash', into: 'App Query Executions' },
+        { type: 'link', on: 'query_hash', into: 'TraceHouse Query Executions' },
       ],
     });
 
     expect(analysis.capabilities).toContainEqual({
-      tracehouseFeature: '@link on=query_hash into="App Query Executions"',
+      tracehouseFeature: '@link on=query_hash into="TraceHouse Query Executions"',
       grafanaFeature: 'panel links / data links',
       level: 'unsupported',
       message: 'Not exported. TraceHouse query navigation opens another TraceHouse query with inherited parameters; this exporter does not currently translate that behavior into Grafana data links.',
@@ -582,7 +582,7 @@ SELECT component, metric, value_ms
 FROM query_duration_components
 ORDER BY component, metric
 `,
-      title: 'App Query Duration by Component',
+      title: 'TraceHouse Query Duration by Component',
       chart: {
         type: 'stacked_bar',
         groupByColumn: 'component',

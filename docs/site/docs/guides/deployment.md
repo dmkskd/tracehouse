@@ -20,7 +20,7 @@ TraceHouse can be deployed as a standalone binary, a Docker container, a single 
 :::warning Resource Usage on Production Clusters
 TraceHouse polls system tables at regular intervals to power its dashboards. While the overhead is typically small, the actual cost depends on your environment - some users are sensitive to network egress, others to CPU time or read I/O on shared clusters.
 
-After deploying, check the **Self-Monitoring dashboard** (Analytics > Self-Monitoring > App Query Cost Details) to see exactly what the app is reading and how often. Different environments have different cost profiles, so review the numbers for your setup. We are constantly reviewing and improving the app's query efficiency.
+After deploying, check the **Self-Monitoring dashboard** (Analytics > Self-Monitoring > TraceHouse Query Cost Details) to see exactly what the app is reading and how often. Different environments have different cost profiles, so review the numbers for your setup. We are constantly reviewing and improving the app's query efficiency.
 
 See the [Polling Reference](/docs/reference/polling) for tuning intervals or disabling specific pollers.
 :::

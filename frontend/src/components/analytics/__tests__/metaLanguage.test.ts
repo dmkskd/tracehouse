@@ -99,9 +99,9 @@ describe('parseDirectives', { tags: ['analytics'] }, () => {
     /* ── @link ── */
     {
       name: 'with link directive',
-      sql: `-- @meta: title='Query Cost' group='Self-Monitoring'\n-- @link: on=query_hash into='App Query Executions'\nSELECT 1`,
+      sql: `-- @meta: title='Query Cost' group='Self-Monitoring'\n-- @link: on=query_hash into='TraceHouse Query Executions'\nSELECT 1`,
       expected: {
-        link: { on: 'query_hash', into: 'App Query Executions' },
+        link: { on: 'query_hash', into: 'TraceHouse Query Executions' },
       },
     },
 

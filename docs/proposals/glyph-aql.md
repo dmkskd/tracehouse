@@ -171,9 +171,9 @@ Concrete candidates from current presets:
 | --- | --- | --- | --- |
 | Query cost | `Selects#Most Expensive Selects` | Rows already show duration, read rows, read bytes, result rows, memory. A radar would summarize the pressure shape before opening query details. | duration, memory, rows read, bytes read, result size |
 | Query cost | `Selects#Recent Selects` | This is a query-picking table. A radar beside `query_id` would make expensive recent queries stand out without adding more columns. | duration, memory, rows read, bytes read, result rows |
-| App self-monitoring | `Self-Monitoring#App Query Cost Details` | Already has many RAG columns for memory/result bytes. A radar would combine duration, memory, rows, bytes, CPU into one row signal. | avg duration, max memory, total rows read, total bytes read, total CPU |
-| App self-monitoring | `Self-Monitoring#App Query Executions` | Individual executions are exactly the same shape as query history. | duration, memory, rows read, read bytes, CPU |
-| App self-monitoring | `Self-Monitoring#Slowest App Queries` | Good for spotting whether "slow" means CPU, read volume, memory, or all of them. | duration, memory, read MB, rows read, CPU |
+| App self-monitoring | `Self-Monitoring#TraceHouse Query Cost Details` | Already has many RAG columns for memory/result bytes. A radar would combine duration, memory, rows, bytes, CPU into one row signal. | avg duration, max memory, total rows read, total bytes read, total CPU |
+| App self-monitoring | `Self-Monitoring#TraceHouse Query Executions` | Individual executions are exactly the same shape as query history. | duration, memory, rows read, read bytes, CPU |
+| App self-monitoring | `Self-Monitoring#Slowest TraceHouse Queries` | Good for spotting whether "slow" means CPU, read volume, memory, or all of them. | duration, memory, read MB, rows read, CPU |
 | Memory | `Memory#Historical Top Memory Queries` | Current RAG focuses only on memory. Radar can separate memory-only queries from memory+CPU+I/O queries. | memory, duration, read bytes, read rows, CPU |
 | Memory | `Memory#Memory Query Executions` | Drill target for a query shape; radar helps compare executions of the same shape. | memory, duration, read bytes, read rows, CPU |
 | Memory | `Memory#Top Running Queries by Memory` | Running queries can be memory-heavy but otherwise cheap, or heavy across all resources. | memory, elapsed, read rows, read bytes, CPU if available |
@@ -197,7 +197,7 @@ Concrete candidates from current presets:
 Best first implementation candidates:
 
 1. `Selects#Most Expensive Selects`
-2. `Self-Monitoring#App Query Cost Details`
+2. `Self-Monitoring#TraceHouse Query Cost Details`
 3. `Memory#Historical Top Memory Queries`
 4. `JSON#JSON Columns Inventory`
 5. `Replication#Replica Status`
@@ -235,7 +235,7 @@ Concrete candidates from current presets:
 | Area | Existing query / dashboard | Why full radar chart fits | Suggested label |
 | --- | --- | --- | --- |
 | Query comparison | `Selects#Most Expensive Selects` as a new chart variant | Show top N query shapes together. Useful when asking "what kind of expensive queries do we have?" | short query id or normalized query hash |
-| App self-monitoring | `Self-Monitoring#App Query Cost Details` | Compare TraceHouse internal query shapes by service/component. | service + query hash |
+| App self-monitoring | `Self-Monitoring#TraceHouse Query Cost Details` | Compare TraceHouse internal query shapes by service/component. | service + query hash |
 | Cloud provider | `Cloud Providers#ClickHouse Cloud Query Cost Details` | Compare provider/internal/console query shapes. | user or query hash |
 | Memory | `Memory#Historical Top Memory Queries` | Compare top memory offenders by whether they are memory-only or multi-resource-heavy. | query hash |
 | Merge analytics | `Merge Analytics#Merge Throughput by Table` + `Merge Analytics#Merge Duration by Table` | A new combined query could compare tables by merge duration, throughput, wait time, and active-part pressure. | table |
