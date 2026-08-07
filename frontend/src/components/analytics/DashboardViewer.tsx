@@ -165,7 +165,7 @@ const FocusStageHeader: React.FC<{
       >
         {context.allPanelsExpanded ? 'Collapse all' : 'Expand all'}
       </button>
-      <button onClick={onExit} style={focusStageNavButtonStyle} title="Return to dashboard grid (Esc)">Grid ⌗</button>
+      <button onClick={onExit} style={focusStageNavButtonStyle} title="Close focus view, return to the dashboard grid (Esc)">Close ✕</button>
     </div>
   </div>
 );
@@ -916,7 +916,7 @@ const DashboardPanelCard: React.FC<{
             onClick={onToggleFocus}
             aria-label={isFocused ? 'Exit focus mode' : 'Focus panel'}
             style={{
-              width: 25, height: 23, display: 'grid', placeItems: 'center', padding: 0,
+              width: 20, height: 17, display: 'grid', placeItems: 'center', padding: 0,
               color: isFocused ? 'var(--accent-primary, #6366f1)' : 'var(--text-muted)',
               background: isFocused ? 'rgba(99,102,241,0.10)' : 'transparent',
               border: isFocused ? '1px solid rgba(99,102,241,0.24)' : '1px solid transparent',
