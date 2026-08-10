@@ -61,6 +61,8 @@ For full functionality, the following system tables are queried:
 - `system.clusters`, `system.replicas`, `system.disks`
 - `system.dictionaries`, `system.replication_queue`
 
+Grants are only one of the two requirements. A feature the connecting user has access to can still be unavailable if the server is older than the version that feature needs. See [ClickHouse Compatibility](../reference/clickhouse-compatibility) for the minimum version of each gated feature.
+
 ### Automatic capability detection
 
 On connect, the app probes the server to determine what is available and degrades gracefully when features are missing. The detection covers:

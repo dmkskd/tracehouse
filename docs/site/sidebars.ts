@@ -58,6 +58,7 @@ const sidebars: SidebarsConfig = {
       type: 'category',
       label: 'Reference',
       items: [
+        'reference/clickhouse-compatibility',
         'reference/metrics',
         'reference/polling',
         'reference/clickhouse-internals',

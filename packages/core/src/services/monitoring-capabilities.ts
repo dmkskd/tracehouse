@@ -25,11 +25,15 @@ import {
 import { tagQuery } from '../queries/builder.js';
 import { TAB_INTERNAL, sourceTag } from '../queries/source-tags.js';
 import { parseTTL } from '../utils/ttl-parser.js';
-import { isClickHouseVersionAtLeast } from '../utils/clickhouse-version.js';
+import { isClickHouseVersionAtLeast, parseClickHouseVersion } from '../utils/clickhouse-version.js';
 import {
   EXPLAIN_ANALYZE_MIN_CLICKHOUSE_VERSION,
   EXPLAIN_ANALYZE_MIN_CLICKHOUSE_VERSION_LABEL,
 } from '../types/execution-analysis.js';
+import {
+  VERSION_GATED_CAPABILITIES,
+  SAMPLER_DDL_CAPABILITY_ID,
+} from '../types/version-gated-capabilities.js';
 
 export class MonitoringCapabilitiesServiceError extends Error {
   constructor(message: string, public readonly cause?: Error) {
@@ -204,10 +208,37 @@ interface ProcessorProfileSchemaProbe {
   error?: string;
 }
 
-const DISTRIBUTED_LIMIT_BY_MIN_VERSION = {
-  major: 24,
-  minor: 1,
-} as const;
+/**
+ * Evaluate a declared minimum version against the connected server.
+ * Unparseable versions fail closed, matching isClickHouseVersionAtLeast().
+ */
+function meetsMinVersion(serverVersion: string, minVersion: string): boolean {
+  const minimum = parseClickHouseVersion(minVersion);
+  if (!minimum) return false;
+  return isClickHouseVersionAtLeast(serverVersion, minimum.major, minimum.minor);
+}
+
+/** Build the capability entries whose only requirement is the server version. */
+function buildVersionGatedCapabilities(serverVersion: string): MonitoringCapability[] {
+  return VERSION_GATED_CAPABILITIES.map(gate => {
+    const available = meetsMinVersion(serverVersion, gate.minVersion);
+    return {
+      id: gate.id,
+      label: gate.label,
+      description: gate.description,
+      available,
+      category: gate.category,
+      detail: available
+        ? `Available (v${serverVersion})`
+        : gate.reason === 'ddl'
+          ? `ClickHouse ${serverVersion} rejects the required DDL; needs ${gate.minVersion}+`
+          : `Requires ClickHouse ${gate.minVersion}+ (current: v${serverVersion})`,
+      source: gate.source,
+      minVersion: gate.minVersion,
+      ...(available ? {} : { unavailableReason: gate.reason ?? 'version' as const }),
+    };
+  });
+}
 
 export class MonitoringCapabilitiesService {
   constructor(private adapter: IClickHouseAdapter) {}
@@ -239,11 +270,6 @@ export class MonitoringCapabilitiesService {
     const hasZk = systemTableAccess.has('zookeeper');
     const hasIntrospection = snapshot.introspectionFunctionsPresent
       && snapshot.introspectionEnabled;
-    const distributedLimitByAvailable = isClickHouseVersionAtLeast(
-      version,
-      DISTRIBUTED_LIMIT_BY_MIN_VERSION.major,
-      DISTRIBUTED_LIMIT_BY_MIN_VERSION.minor,
-    );
     const profilerPeriodForProbe = settings.get(
       'query_profiler_cpu_time_period_ns',
     );
@@ -361,17 +387,8 @@ export class MonitoringCapabilitiesService {
             .join(', ')}`,
       source: 'system.metric_log.ProfileEvent_Replicated*',
     });
-    capabilities.push({
-      id: 'distributed_limit_by',
-      label: 'Distributed LIMIT BY',
-      description: 'Per-category row limiting through the active distributed query path.',
-      available: distributedLimitByAvailable,
-      category: 'profiling',
-      detail: distributedLimitByAvailable
-        ? `Supported by ClickHouse ${version}`
-        : `Disabled for ClickHouse ${version}; requires 24.1+`,
-      source: 'server version (ClickHouse #55836)',
-    });
+    // Version-gated capabilities — no probe needed, the version is the test.
+    capabilities.push(...buildVersionGatedCapabilities(version));
 
     // Add profile events capability (derived from settings)
     // This requires both query_log AND the log_profile_events setting enabled.
@@ -527,6 +544,17 @@ export class MonitoringCapabilitiesService {
     });
 
     // Tracehouse processes_history — live process sampling (setup_sampling.sh)
+    // When the server cannot run the refreshable-MV DDL, the samplers are not
+    // merely uninstalled: they cannot be installed. Say so rather than sending
+    // the user to a setup script that will fail.
+    const samplerDdlSupported = capabilities.find(
+      capability => capability.id === SAMPLER_DDL_CAPABILITY_ID,
+    )?.available ?? true;
+    const samplerUnavailableDetail = samplerDdlSupported
+      ? 'Not installed — run infra/scripts/setup_sampling.sh'
+      : `Not supported — ClickHouse ${version} cannot create refreshable materialized views`;
+    const samplerUnavailableReason = samplerDdlSupported ? 'config' as const : 'ddl' as const;
+
     const hasProcessesHistory = tracehouseTables.has('processes_history');
     const processesInfo = tracehouseTables.get('processes_history');
     capabilities.push({
@@ -537,8 +565,9 @@ export class MonitoringCapabilitiesService {
       category: 'profiling',
       detail: hasProcessesHistory
         ? `${processesInfo!.engine} · ${formatRowCount(processesInfo!.totalRows)} rows`
-        : 'Not installed — run infra/scripts/setup_sampling.sh',
+        : samplerUnavailableDetail,
       source: 'tracehouse.processes_history',
+      ...(hasProcessesHistory ? {} : { unavailableReason: samplerUnavailableReason }),
     });
 
     // Tracehouse merges_history — live merge sampling (setup_sampling.sh)
@@ -552,8 +581,9 @@ export class MonitoringCapabilitiesService {
       category: 'profiling',
       detail: hasMergesHistory
         ? `${mergesInfo!.engine} · ${formatRowCount(mergesInfo!.totalRows)} rows`
-        : 'Not installed — run infra/scripts/setup_sampling.sh',
+        : samplerUnavailableDetail,
       source: 'tracehouse.merges_history',
+      ...(hasMergesHistory ? {} : { unavailableReason: samplerUnavailableReason }),
     });
 
     // System table access capabilities — these tables always exist on ClickHouse

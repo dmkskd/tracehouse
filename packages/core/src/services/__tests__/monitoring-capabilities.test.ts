@@ -115,7 +115,8 @@ describe('MonitoringCapabilitiesService', () => {
       item => item.id === 'distributed_limit_by',
     )).toMatchObject({
       available: true,
-      detail: 'Supported by ClickHouse 24.1.1.1',
+      detail: 'Available (v24.1.1.1)',
+      minVersion: '24.1',
     });
   });
 
@@ -128,8 +129,56 @@ describe('MonitoringCapabilitiesService', () => {
       item => item.id === 'distributed_limit_by',
     )).toMatchObject({
       available: false,
-      detail: 'Disabled for ClickHouse 23.8.2.7; requires 24.1+',
+      detail: 'Requires ClickHouse 24.1+ (current: v23.8.2.7)',
+      minVersion: '24.1',
+      unavailableReason: 'version',
     });
+  });
+
+  it('gates analytics presets on their tested minimum version', async () => {
+    const result = await new MonitoringCapabilitiesService(
+      adapterForCapabilities({ serverVersion: '24.3.18.7' }),
+    ).probe();
+    const byId = (id: string) => result.capabilities.find(item => item.id === id);
+
+    // 24.3 has the JSON and async-insert boundaries but not the merge ones.
+    expect(byId('json_subcolumn_analysis')).toMatchObject({ available: true });
+    expect(byId('async_insert_log_data_kind')).toMatchObject({ available: true });
+    expect(byId('merge_duration_metric')).toMatchObject({
+      available: false,
+      unavailableReason: 'version',
+    });
+    expect(byId('merge_wait_analytics')).toMatchObject({ available: false });
+  });
+
+  it('reports the sampler as unsupported, not uninstalled, below the DDL floor', async () => {
+    const result = await new MonitoringCapabilitiesService(
+      adapterForCapabilities({ serverVersion: '24.8.14.39' }),
+    ).probe();
+    const processes = result.capabilities.find(
+      item => item.id === 'tracehouse_processes_history',
+    );
+
+    expect(processes).toMatchObject({
+      available: false,
+      unavailableReason: 'ddl',
+    });
+    expect(processes?.detail).toContain('cannot create refreshable materialized views');
+  });
+
+  it('points at the setup script when the version supports the sampler DDL', async () => {
+    const result = await new MonitoringCapabilitiesService(
+      adapterForCapabilities({ serverVersion: '25.3.14.14' }),
+    ).probe();
+    const processes = result.capabilities.find(
+      item => item.id === 'tracehouse_processes_history',
+    );
+
+    expect(processes).toMatchObject({
+      available: false,
+      unavailableReason: 'config',
+    });
+    expect(processes?.detail).toContain('setup_sampling.sh');
   });
 
   it('derives Keeper and system-table capabilities from metadata', async () => {

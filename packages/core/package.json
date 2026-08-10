@@ -41,6 +41,10 @@
       "import": "./dist/services/merge-tracker.js",
       "types": "./dist/services/merge-tracker.d.ts"
     },
+    "./types/version-gated-capabilities": {
+      "import": "./dist/types/version-gated-capabilities.js",
+      "types": "./dist/types/version-gated-capabilities.d.ts"
+    },
     "./types/database": {
       "import": "./dist/types/database.js",
       "types": "./dist/types/database.d.ts"

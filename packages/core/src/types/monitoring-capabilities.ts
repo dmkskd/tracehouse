@@ -30,6 +30,17 @@ export interface MonitoringCapability {
   ttl?: string | null;
   /** Source resource (e.g. "system.query_log", "config.xml: query_log", "setting: allow_introspection_functions") */
   source?: string;
+  /**
+   * Minimum ClickHouse version required, e.g. "24.8". Present only on
+   * version-gated capabilities. When set and the server is older, the
+   * capability is unavailable and no amount of configuration will fix it.
+   */
+  minVersion?: string;
+  /**
+   * Why the capability is unavailable. Distinguishes what the user can fix
+   * (config, grant) from what they cannot (version, ddl). Absent when available.
+   */
+  unavailableReason?: 'version' | 'config' | 'grant' | 'ddl';
 }
 
 /** Full set of probed capabilities for a connection */

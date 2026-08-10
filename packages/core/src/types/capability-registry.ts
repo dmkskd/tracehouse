@@ -122,6 +122,56 @@ export const CAPABILITY_REGISTRY: CapabilityRegistryEntry[] = [
     ],
   },
   {
+    capabilityId: 'processors_profile_log_plan_steps',
+    consumers: [
+      { screen: 'Distributed Topology', tab: 'Queries', enables: 'Plan-step names and descriptions on Timeline phase labels', importance: 'optional' },
+    ],
+  },
+  {
+    capabilityId: 'distributed_limit_by',
+    consumers: [
+      { screen: 'Events', tab: 'Events', route: '/events', enables: 'Per-category row limiting; falls back to a global limit when unavailable', importance: 'optional' },
+    ],
+  },
+  {
+    capabilityId: 'async_insert_log_data_kind',
+    consumers: [
+      { screen: 'Analytics', tab: 'Analytics', route: '/analytics', enables: 'Async Insert Log preset data_kind column', importance: 'optional' },
+      { screen: 'Distributed Topology', tab: 'Queries', enables: 'Buffer-kind badge on async insert evidence', importance: 'optional' },
+    ],
+  },
+  {
+    capabilityId: 'metric_log_distributed_insert_failures',
+    consumers: [
+      { screen: 'Analytics', tab: 'Analytics', route: '/analytics', enables: 'Distribution Insert Pressure preset failure series', importance: 'optional' },
+    ],
+  },
+  {
+    capabilityId: 'json_subcolumn_analysis',
+    consumers: [
+      { screen: 'Analytics', tab: 'Analytics', route: '/analytics', enables: 'JSON Columns Inventory and JSON Subcolumn Pressure presets', importance: 'optional' },
+    ],
+  },
+  {
+    capabilityId: 'merge_duration_metric',
+    consumers: [
+      { screen: 'Analytics', tab: 'Analytics', route: '/analytics', enables: 'Merge Duration (avg) preset', importance: 'optional' },
+    ],
+  },
+  {
+    capabilityId: 'merge_wait_analytics',
+    consumers: [
+      { screen: 'Analytics', tab: 'Analytics', route: '/analytics', enables: 'Part Wait Time by Table, by Size, and Timeline presets', importance: 'optional' },
+    ],
+  },
+  {
+    capabilityId: 'refreshable_mv_sampler',
+    consumers: [
+      { screen: 'Query Resource Timeline', tab: 'Queries', enables: 'Server-side DDL required to install the process and merge samplers', importance: 'required' },
+      { screen: 'Merge Tracker', tab: 'Merges', route: '/merge-tracker', enables: 'Server-side DDL required to install the merge sampler', importance: 'optional' },
+    ],
+  },
+  {
     capabilityId: 'explain_analyze',
     consumers: [
       { screen: 'Query Explorer', tab: 'Analytics', route: '/analytics', enables: 'Execution-aware query plans with measured runtime, I/O, memory, and parallelism', importance: 'optional' },

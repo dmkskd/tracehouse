@@ -1,0 +1,77 @@
+import ClickHouseCompatibility from '@site/src/components/ClickHouseCompatibility';
+
+# ClickHouse Compatibility
+
+TraceHouse supports **ClickHouse 23.8 and newer**. Core features are available
+on all supported versions. A small number of features have a higher minimum
+version, because they depend on a column, metric, or SQL syntax that was added
+to ClickHouse after 23.8. Each of those minimums is listed below.
+
+Select a version below to list which features are gated on it.
+
+<ClickHouseCompatibility />
+
+## Features by minimum version
+
+Cumulative, so 25.3 includes everything below it. ClickHouse designates the
+`.3` and `.8` release of each year as long-term support, and those are marked
+LTS below. 24.1 and 24.12 are regular releases, listed because a feature
+boundary falls on them.
+
+| Version | Additional features available |
+|---|---|
+| **23.8** (LTS) | Query tracking, analytics, time travel, merges, events, database explorer, replication, cluster view. Mutation tracking works but cannot distinguish killed mutations. Browser connections need the bundled proxy. |
+| **24.1** | Per-category row limiting on the Events screen. Older servers fall back to a single global limit. |
+| **24.3** (LTS) | Async Insert Log, Distribution Insert Pressure, JSON Columns Inventory and JSON Subcolumn Pressure. Full mutation killed-state. Direct browser connection without the proxy. |
+| **24.8** (LTS) | Merge Duration (avg) panel. |
+| **24.12** | Merge wait-time analytics: Part Wait Time by Table, by Size, and Timeline. |
+| **25.3** (LTS) | CPU and query resource sampling. Plan-step labels in the Query Detail Distributed tab. |
+
+## Server configuration requirements
+
+Most TraceHouse features read ClickHouse system log tables. These tables can be
+disabled in the server configuration, and the connecting user may not have been
+granted access to them (see
+[Required Permissions](../guides/connecting#required-permissions)). Both are
+independent of the server version, so a feature listed as supported on your
+version can still be unavailable.
+
+For example, `system.trace_log` powers CPU Sampling and query flamegraphs, and
+exists on every supported version, but it is disabled by default in some
+deployments and the server version does not indicate whether it is enabled.
+
+For an accurate assessment of a connected server, open **Engine Internals →
+Monitoring Capabilities**. It probes the live connection and lists each
+capability, its availability, and the screens that depend on it. The **By
+Screen** view reports which pages are full, partial, or unavailable.
+
+## Disabled panels
+
+A panel can be disabled for three reasons, each with a different fix:
+
+- **"Requires ClickHouse X+"** - a version gate. Nothing to configure; the
+  query is not sent to the server at all. Upgrading is the only fix.
+- **"requires system.X (not available on this server)"** - the log table is
+  missing or disabled. Enable it in your server config and restart.
+- **"Not supported - ClickHouse X cannot create refreshable materialized
+  views"** - sampling requires 25.3 or newer. Running the setup script on an
+  older server will fail.
+
+## ClickHouse Cloud
+
+Cloud services are detected automatically. ClickHouse Cloud does not expose
+some OS-level metrics, such as `cpu_id` in the trace log and direct host
+counters, so a few Engine Internals panels show reduced detail. This applies to
+every version.
+
+## Accuracy of the version boundaries
+
+The minimum versions above are the **tested** boundaries from the pinned
+compatibility matrix, not necessarily the first ClickHouse release that
+introduced support. A feature listed as requiring 24.8 was verified broken on
+24.3 and working on 24.8; the exact release in between has not been
+established.
+
+The evidence behind each boundary, including the error codes and affected
+queries, is documented in `docs/development/clickhouse-compatibility.md` in the
+repository.

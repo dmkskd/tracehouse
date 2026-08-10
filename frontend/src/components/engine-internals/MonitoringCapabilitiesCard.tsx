@@ -281,7 +281,12 @@ export function MonitoringCapabilitiesCard({ className = '' }: MonitoringCapabil
                         </td>
                         <td style={{ padding: '3px 2px', textAlign: 'center' }}>
                           {!cap.available && (
-                            <span style={{ fontSize: 8, color: '#64748b' }} title={cap.detail || ''}>!</span>
+                            <span
+                              style={{ fontSize: 8, color: cap.unavailableReason === 'version' || cap.unavailableReason === 'ddl' ? '#f59e0b' : '#64748b' }}
+                              title={cap.detail || ''}
+                            >
+                              {cap.unavailableReason === 'version' || cap.unavailableReason === 'ddl' ? '↑' : '!'}
+                            </span>
                           )}
                         </td>
                         <td style={{ padding: '3px 6px' }}>
