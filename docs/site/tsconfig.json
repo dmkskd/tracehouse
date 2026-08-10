@@ -2,7 +2,13 @@
   // This file is not used in compilation. It is here just for a nice editor experience.
   "extends": "@docusaurus/tsconfig",
   "compilerOptions": {
-    "baseUrl": "."
+    "baseUrl": ".",
+    // Mirrors the webpack alias in docusaurus.config.ts (tracehouseCoreAlias).
+    "paths": {
+      "@tracehouse/core/types/version-gated-capabilities": [
+        "../../packages/core/src/types/version-gated-capabilities"
+      ]
+    }
   },
   "exclude": [".docusaurus", "build"]
 }

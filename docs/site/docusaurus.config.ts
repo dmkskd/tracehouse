@@ -1,6 +1,32 @@
+import path from 'path';
 import {themes as prismThemes} from 'prism-react-renderer';
-import type {Config} from '@docusaurus/types';
+import type {Config, Plugin} from '@docusaurus/types';
 import type * as Preset from '@docusaurus/preset-classic';
+
+/**
+ * The ClickHouse compatibility page renders VERSION_GATED_CAPABILITIES, the
+ * same list the app gates features on, so the page cannot drift from the
+ * product. docs/site is not part of the root npm workspace, so the package
+ * specifier does not resolve here: point it at the core source file.
+ *
+ * Source and not dist, so building the docs does not require a prior
+ * packages/core build.
+ */
+const CORE_SOURCE_ALIASES = {
+  '@tracehouse/core/types/version-gated-capabilities': path.resolve(
+    __dirname,
+    '../../packages/core/src/types/version-gated-capabilities.ts',
+  ),
+};
+
+function tracehouseCoreAlias(): Plugin {
+  return {
+    name: 'tracehouse-core-alias',
+    configureWebpack() {
+      return {resolve: {alias: CORE_SOURCE_ALIASES}};
+    },
+  };
+}
 
 const config: Config = {
   title: 'TraceHouse',
@@ -41,6 +67,8 @@ const config: Config = {
   },
 
   clientModules: ['./src/demoStatus.ts'],
+
+  plugins: [tracehouseCoreAlias],
 
   presets: [
     [
