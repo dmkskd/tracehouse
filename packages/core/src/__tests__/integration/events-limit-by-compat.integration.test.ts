@@ -86,7 +86,7 @@ describe('Events distributed LIMIT BY compatibility', { tags: ['cluster'] }, () 
     if (capabilityResult.serverVersion === '23.8.2.7') {
       expect(distributedLimitBy).toMatchObject({
         available: false,
-        detail: 'Disabled for ClickHouse 23.8.2.7; requires 24.1+',
+        detail: 'Requires ClickHouse 24.1+ (current: v23.8.2.7)',
       });
     } else if (isClickHouseVersionAtLeast(
       capabilityResult.serverVersion,
@@ -95,7 +95,7 @@ describe('Events distributed LIMIT BY compatibility', { tags: ['cluster'] }, () 
     )) {
       expect(distributedLimitBy).toMatchObject({
         available: true,
-        detail: `Supported by ClickHouse ${capabilityResult.serverVersion}`,
+        detail: `Available (v${capabilityResult.serverVersion})`,
       });
     }
 
