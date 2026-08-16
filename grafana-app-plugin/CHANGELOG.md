@@ -5,6 +5,13 @@ All notable changes to the TraceHouse Grafana plugin will be documented in this 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.18.6] - 2026-08-17
+
+### Improvements
+- **Monitoring Capabilities:** Unavailable features now indicate whether they require a newer ClickHouse version or simply need to be enabled.
+- **Analytics:** Renamed the "App Query Cost" dashboard to "TraceHouse Query Cost".
+- **Analytics:** Cosmetic fixes to Dashboard Focus mode.
+
 ## [0.18.5] - 2026-08-05
 
 ### Improvements
