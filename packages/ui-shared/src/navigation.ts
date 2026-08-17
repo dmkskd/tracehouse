@@ -44,3 +44,40 @@ export const TRACEHOUSE_NAVIGATION = [
   ...TRACEHOUSE_PRIMARY_NAVIGATION,
   ...TRACEHOUSE_OVERFLOW_ITEMS,
 ] as const satisfies readonly TracehouseNavigationItem[];
+
+export interface NavigationFitOptions {
+  /** Rendered width of each primary item, in source order. */
+  itemWidths: readonly number[];
+  /** Gap between adjacent items. */
+  gap: number;
+  /** Width the nav row has to work with, including the overflow trigger. */
+  availableWidth: number;
+  /** Width of the overflow ("More") trigger, which is always on screen. */
+  overflowTriggerWidth: number;
+}
+
+/**
+ * How many leading primary items fit alongside the overflow trigger.
+ *
+ * The trigger is always rendered — it holds the pages that are never promoted to tabs — so
+ * its width is reserved up front, and every item is costed with the gap that follows it.
+ * Items past the returned count belong in the overflow menu.
+ */
+export function countVisibleNavigationItems({
+  itemWidths,
+  gap,
+  availableWidth,
+  overflowTriggerWidth,
+}: NavigationFitOptions): number {
+  let remaining = availableWidth - overflowTriggerWidth;
+  if (remaining <= 0) return 0;
+
+  let count = 0;
+  for (const width of itemWidths) {
+    remaining -= width + gap;
+    if (remaining < 0) break;
+    count += 1;
+  }
+
+  return count;
+}

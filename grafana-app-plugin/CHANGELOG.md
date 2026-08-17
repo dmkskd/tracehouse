@@ -12,6 +12,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **Analytics:** Renamed the "App Query Cost" dashboard to "TraceHouse Query Cost".
 - **Analytics:** Cosmetic fixes to Dashboard Focus mode.
 
+### Bug fixes
+- **Grafana:** Fixed the navigation menu and breadcrumb staying on the previous page.
+
 ## [0.18.5] - 2026-08-05
 
 ### Improvements

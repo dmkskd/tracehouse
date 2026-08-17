@@ -1,10 +1,12 @@
 // @tracehouse/ui-shared barrel export
 
 export {
+  countVisibleNavigationItems,
   TRACEHOUSE_NAVIGATION,
   TRACEHOUSE_OVERFLOW_ITEMS,
   TRACEHOUSE_OVERFLOW_NAVIGATION,
   TRACEHOUSE_PRIMARY_NAVIGATION,
+  type NavigationFitOptions,
   type TracehouseNavigationGroup,
   type TracehouseNavigationItem,
 } from './navigation.js';
@@ -68,6 +70,9 @@ export {
   DEFAULT_REFRESH_CONFIG,
   type RefreshConfig,
   type RefreshRateOption,
+  // Header nav fitting
+  useNavigationOverflow,
+  type NavigationOverflowOptions,
 } from './hooks/index.js';
 
 // Style-agnostic 2D components

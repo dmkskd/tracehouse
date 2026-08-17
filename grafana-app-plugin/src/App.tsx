@@ -14,8 +14,10 @@ import {
   TRACEHOUSE_OVERFLOW_NAVIGATION,
   TRACEHOUSE_NAVIGATION,
   TRACEHOUSE_PRIMARY_NAVIGATION,
+  useNavigationOverflow,
   useRefreshConfig,
   type RefreshRateOption,
+  type TracehouseNavigationItem,
 } from '@tracehouse/ui-shared';
 import pluginJson from './plugin.json';
 
@@ -328,10 +330,28 @@ const GrafanaRefreshIndicator: React.FC = () => {
   );
 };
 
-const GrafanaOverflowNavigation: React.FC<{ routeKey: string }> = ({ routeKey }) => {
+/** Gap between header nav items, matching the row's flex `gap`. */
+const NAV_ITEM_GAP = 2;
+const PRIMARY_NAV_KEYS = TRACEHOUSE_PRIMARY_NAVIGATION.map(item => item.key);
+
+interface GrafanaOverflowNavigationProps {
+  routeKey: string;
+  /** Primary tabs that did not fit the row, folded into this menu. */
+  foldedItems: readonly TracehouseNavigationItem[];
+  /** Measured by useNavigationOverflow to reserve room for this trigger. */
+  triggerRef: React.MutableRefObject<HTMLElement | null>;
+}
+
+const GrafanaOverflowNavigation: React.FC<GrafanaOverflowNavigationProps> = ({
+  routeKey,
+  foldedItems,
+  triggerRef,
+}) => {
   const [open, setOpen] = useState(false);
-  const ref = useRef<HTMLDivElement>(null);
-  const activeItem = TRACEHOUSE_OVERFLOW_ITEMS.find(item => item.key === routeKey);
+  const ref = useRef<HTMLDivElement | null>(null);
+  // The trigger names the active page whenever that page sits in here rather than in the
+  // tab row, which now covers folded tabs as well as the always-secondary pages.
+  const activeItem = [...foldedItems, ...TRACEHOUSE_OVERFLOW_ITEMS].find(item => item.key === routeKey);
 
   useEffect(() => {
     if (!open) return;
@@ -350,7 +370,13 @@ const GrafanaOverflowNavigation: React.FC<{ routeKey: string }> = ({ routeKey })
   }, [open]);
 
   return (
-    <div ref={ref} style={{ position: 'relative', flexShrink: 0 }}>
+    <div
+      ref={node => {
+        ref.current = node;
+        triggerRef.current = node;
+      }}
+      style={{ position: 'relative', flexShrink: 0 }}
+    >
       <button
         type="button"
         aria-haspopup="menu"
@@ -386,6 +412,47 @@ const GrafanaOverflowNavigation: React.FC<{ routeKey: string }> = ({ routeKey })
             boxShadow: '0 12px 32px rgba(0,0,0,0.28)',
           }}
         >
+          {foldedItems.length > 0 && (
+            <div style={{
+              paddingBottom: 8,
+              marginBottom: 6,
+              borderBottom: '1px solid var(--border-primary)',
+            }}>
+              <div style={{
+                padding: '3px 8px 5px',
+                color: 'var(--text-muted)',
+                fontSize: 9,
+                fontWeight: 600,
+                letterSpacing: '0.08em',
+                textTransform: 'uppercase',
+              }}>
+                Navigate
+              </div>
+              {foldedItems.map(item => {
+                const active = routeKey === item.key;
+                return (
+                  <a
+                    key={item.key}
+                    href={`/a/dmkskd-tracehouse-app${item.path}`}
+                    role="menuitem"
+                    onClick={() => setOpen(false)}
+                    style={{
+                      display: 'block',
+                      padding: '7px 8px',
+                      borderRadius: 5,
+                      color: active ? '#a855f7' : 'var(--text-secondary)',
+                      background: active ? 'rgba(168,85,247,0.1)' : 'transparent',
+                      fontSize: 12,
+                      textDecoration: 'none',
+                    }}
+                  >
+                    {item.label}
+                  </a>
+                );
+              })}
+            </div>
+          )}
+
           {TRACEHOUSE_OVERFLOW_NAVIGATION.map((group, groupIndex) => (
             <div
               key={group.label}
@@ -514,6 +581,12 @@ function AppContent({ path }: AppContentProps) {
   const PageComponent = ROUTES[routeKey] || Overview;
   const pageOwnsScroll = routeKey === 'queries' || routeKey === 'merges';
   const pageNav = usePageNav(routeKey);
+  const {
+    rowRef: navRowRef,
+    triggerRef: navTriggerRef,
+    registerItem,
+    visibleCount,
+  } = useNavigationOverflow({ itemKeys: PRIMARY_NAV_KEYS, gap: NAV_ITEM_GAP, resetKey: routeKey });
 
   return (
     <PluginPage layout={PageLayoutType.Custom} pageNav={pageNav}>
@@ -545,44 +618,68 @@ function AppContent({ path }: AppContentProps) {
           display: 'flex',
           alignItems: 'center',
           gap: 12,
+          // Claim the space the right-hand controls leave, so the nav row below is measured
+          // against what is actually free rather than against its own contents.
+          flex: '1 1 0%',
           minWidth: 0,
         }}>
-          <span style={{ 
-            fontSize: 14, 
-            fontWeight: 500, 
+          <span style={{
+            fontSize: 14,
+            fontWeight: 500,
             color: 'var(--text-primary)',
             fontFamily: 'system-ui, sans-serif',
+            flexShrink: 0,
           }}>
             TraceHouse
           </span>
-          
+
           {/* Priority navigation shared with the standalone app */}
-          <div style={{
-            display: 'flex',
-            alignItems: 'center',
-            gap: 2,
-            marginLeft: 8,
-            minWidth: 0,
-            whiteSpace: 'nowrap',
-          }}>
-            {TRACEHOUSE_PRIMARY_NAVIGATION.map(item => (
-              <a
-                key={item.key}
-                href={`/a/dmkskd-tracehouse-app${item.path}`}
-                style={{
-                  color: routeKey === item.key ? '#a855f7' : 'var(--text-secondary)',
-                  fontSize: 12,
-                  textDecoration: 'none',
-                  padding: '4px 8px',
-                  borderRadius: 4,
-                  background: routeKey === item.key ? 'rgba(168, 85, 247, 0.1)' : 'transparent',
-                  fontFamily: 'system-ui, sans-serif',
-                }}
-              >
-                {item.label}
-              </a>
-            ))}
-            <GrafanaOverflowNavigation routeKey={routeKey} />
+          <div
+            ref={navRowRef as React.RefObject<HTMLDivElement>}
+            style={{
+              display: 'flex',
+              alignItems: 'center',
+              gap: NAV_ITEM_GAP,
+              marginLeft: 8,
+              flex: '1 1 0%',
+              minWidth: 0,
+              whiteSpace: 'nowrap',
+            }}
+          >
+            {/* Only the tabs clip. The overflow trigger is a sibling so it can never be
+                clipped away, which would make the folded pages unreachable. */}
+            <div style={{
+              display: 'flex',
+              alignItems: 'center',
+              gap: NAV_ITEM_GAP,
+              minWidth: 0,
+              overflow: 'hidden',
+            }}>
+              {TRACEHOUSE_PRIMARY_NAVIGATION.slice(0, visibleCount).map(item => (
+                <a
+                  key={item.key}
+                  ref={el => registerItem(item.key, el)}
+                  href={`/a/dmkskd-tracehouse-app${item.path}`}
+                  style={{
+                    color: routeKey === item.key ? '#a855f7' : 'var(--text-secondary)',
+                    fontSize: 12,
+                    textDecoration: 'none',
+                    padding: '4px 8px',
+                    borderRadius: 4,
+                    background: routeKey === item.key ? 'rgba(168, 85, 247, 0.1)' : 'transparent',
+                    fontFamily: 'system-ui, sans-serif',
+                    flexShrink: 0,
+                  }}
+                >
+                  {item.label}
+                </a>
+              ))}
+            </div>
+            <GrafanaOverflowNavigation
+              routeKey={routeKey}
+              foldedItems={TRACEHOUSE_PRIMARY_NAVIGATION.slice(visibleCount)}
+              triggerRef={navTriggerRef}
+            />
           </div>
         </div>
         

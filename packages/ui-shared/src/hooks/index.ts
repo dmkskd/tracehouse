@@ -46,3 +46,8 @@ export {
   type RefreshConfig,
   type RefreshRateOption,
 } from './useRefreshConfig.js';
+
+export {
+  useNavigationOverflow,
+  type NavigationOverflowOptions,
+} from './useNavigationOverflow.js';

@@ -12,8 +12,10 @@ import {
   TRACEHOUSE_OVERFLOW_ITEMS,
   TRACEHOUSE_OVERFLOW_NAVIGATION,
   TRACEHOUSE_PRIMARY_NAVIGATION,
+  useNavigationOverflow,
   useRefreshConfig,
   type RefreshRateOption,
+  type TracehouseNavigationItem,
 } from '@tracehouse/ui-shared';
 import { useRefreshSettingsStore, useGlobalLastUpdatedStore } from '../stores/refreshSettingsStore';
 import { buildConfig } from '../buildConfig';
@@ -23,12 +25,24 @@ interface LayoutProps {
   children: React.ReactNode;
 }
 
-const OverflowNavigation: React.FC = () => {
+/** Matches the nav row's Tailwind `gap-4`. */
+const NAV_ITEM_GAP = 16;
+const PRIMARY_NAV_KEYS = TRACEHOUSE_PRIMARY_NAVIGATION.map(item => item.key);
+
+interface OverflowNavigationProps {
+  /** Primary tabs that did not fit the row, folded into this menu. */
+  foldedItems: readonly TracehouseNavigationItem[];
+  /** Measured by useNavigationOverflow to reserve room for this trigger. */
+  triggerRef: React.MutableRefObject<HTMLElement | null>;
+}
+
+const OverflowNavigation: React.FC<OverflowNavigationProps> = ({ foldedItems, triggerRef }) => {
   const [open, setOpen] = useState(false);
-  const ref = useRef<HTMLDivElement>(null);
+  const ref = useRef<HTMLDivElement | null>(null);
   const location = useLocation();
-  const activeItem = TRACEHOUSE_OVERFLOW_ITEMS.find(item => location.pathname.startsWith(item.path));
-  const activePrimaryItem = TRACEHOUSE_PRIMARY_NAVIGATION.find(
+  // The trigger names the active page whenever that page sits in here rather than in the
+  // tab row, which now covers folded tabs as well as the always-secondary pages.
+  const activeItem = [...foldedItems, ...TRACEHOUSE_OVERFLOW_ITEMS].find(
     item => location.pathname.startsWith(item.path),
   );
 
@@ -49,7 +63,13 @@ const OverflowNavigation: React.FC = () => {
   }, [open]);
 
   return (
-    <div ref={ref} style={{ position: 'relative' }}>
+    <div
+      ref={node => {
+        ref.current = node;
+        triggerRef.current = node;
+      }}
+      style={{ position: 'relative', flexShrink: 0 }}
+    >
       <button
         type="button"
         aria-haspopup="menu"
@@ -75,12 +95,7 @@ const OverflowNavigation: React.FC = () => {
             ? '1px solid var(--accent-secondary)'
             : '1px solid transparent',
         }}>
-          <span className="tracehouse-desktop-menu-label">
-            {activeItem?.label ?? 'More'}
-          </span>
-          <span className="tracehouse-mobile-menu-label">
-            {activePrimaryItem?.label ?? activeItem?.label ?? 'Menu'}
-          </span>
+          {activeItem?.label ?? 'More'}
           {' '}<span aria-hidden="true">⌄</span>
         </span>
       </button>
@@ -101,8 +116,8 @@ const OverflowNavigation: React.FC = () => {
             boxShadow: '0 12px 32px rgba(0,0,0,0.24)',
           }}
         >
+          {foldedItems.length > 0 && (
           <div
-            className="tracehouse-mobile-menu-items"
             style={{
               paddingBottom: 8,
               marginBottom: 6,
@@ -119,7 +134,7 @@ const OverflowNavigation: React.FC = () => {
             }}>
               Navigate
             </div>
-            {TRACEHOUSE_PRIMARY_NAVIGATION.map(item => (
+            {foldedItems.map(item => (
               <NavLink
                 key={item.path}
                 to={item.path}
@@ -139,6 +154,7 @@ const OverflowNavigation: React.FC = () => {
               </NavLink>
             ))}
           </div>
+          )}
           {TRACEHOUSE_OVERFLOW_NAVIGATION.map((group, groupIndex) => (
             <div
               key={group.label}
@@ -527,6 +543,17 @@ const GlobalRefreshIndicator: React.FC = () => {
 
 export const Layout: React.FC<LayoutProps> = ({ children }) => {
   const { theme } = useTheme();
+  const location = useLocation();
+  const {
+    rowRef: navRowRef,
+    triggerRef: navTriggerRef,
+    registerItem,
+    visibleCount,
+  } = useNavigationOverflow({
+    itemKeys: PRIMARY_NAV_KEYS,
+    gap: NAV_ITEM_GAP,
+    resetKey: location.pathname,
+  });
 
   return (
     <div 
@@ -537,31 +564,20 @@ export const Layout: React.FC<LayoutProps> = ({ children }) => {
         transition: 'background 0.2s ease, color 0.2s ease',
       }}
     >
+      {/*
+        The nav tabs used to be hidden wholesale below 900px. They are now folded into the
+        overflow menu one at a time by useNavigationOverflow, which measures the row instead
+        of guessing a viewport width, so the tabs are left out of this block.
+      */}
       <style>{`
-        .tracehouse-mobile-menu-label,
-        .tracehouse-mobile-menu-items {
-          display: none;
-        }
-
         @media (max-width: 900px) {
           .tracehouse-app-header {
             padding-left: 12px !important;
             padding-right: 12px !important;
           }
 
-          .tracehouse-primary-nav-link,
-          .tracehouse-desktop-menu-label,
           .tracehouse-mobile-secondary-action {
             display: none !important;
-          }
-
-          .tracehouse-mobile-menu-label,
-          .tracehouse-mobile-menu-items {
-            display: inline;
-          }
-
-          .tracehouse-mobile-menu-items {
-            display: block;
           }
 
           .tracehouse-header-actions {
@@ -583,13 +599,24 @@ export const Layout: React.FC<LayoutProps> = ({ children }) => {
         }}
       >
         {/* Left: Nav */}
-        <div className="flex items-center min-w-0">
-          <nav className="flex items-center gap-4" style={{ whiteSpace: 'nowrap' }}>
-            {TRACEHOUSE_PRIMARY_NAVIGATION.map((item) => (
+        <div className="flex items-center min-w-0" style={{ flex: '1 1 0%' }}>
+          <nav
+            ref={navRowRef as React.RefObject<HTMLElement>}
+            className="flex items-center gap-4"
+            style={{ whiteSpace: 'nowrap', flex: '1 1 0%', minWidth: 0 }}
+          >
+            {/* Only the tabs clip. The overflow trigger is a sibling so it can never be
+                clipped away, which would make the folded pages unreachable. */}
+            <div
+              className="flex items-center gap-4"
+              style={{ minWidth: 0, overflow: 'hidden' }}
+            >
+            {TRACEHOUSE_PRIMARY_NAVIGATION.slice(0, visibleCount).map((item) => (
               <NavLink
                 key={item.path}
                 to={item.path}
-                style={{ fontFamily: "'Orbitron', 'Rajdhani', monospace" }}
+                ref={el => registerItem(item.key, el)}
+                style={{ fontFamily: "'Orbitron', 'Rajdhani', monospace", flexShrink: 0 }}
                 className={() =>
                   `tracehouse-primary-nav-link py-1.5 text-[11px] font-medium transition-all uppercase tracking-widest`
                 }
@@ -607,7 +634,11 @@ export const Layout: React.FC<LayoutProps> = ({ children }) => {
                 )}
               </NavLink>
             ))}
-            <OverflowNavigation />
+            </div>
+            <OverflowNavigation
+              foldedItems={TRACEHOUSE_PRIMARY_NAVIGATION.slice(visibleCount)}
+              triggerRef={navTriggerRef}
+            />
           </nav>
         </div>
         
