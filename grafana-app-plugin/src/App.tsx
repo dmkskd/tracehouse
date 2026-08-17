@@ -1,6 +1,6 @@
 import React, { lazy, Suspense, useState, useCallback, useMemo, useEffect, useRef } from 'react';
-import { AppRootProps } from '@grafana/data';
-import { config } from '@grafana/runtime';
+import { AppRootProps, PageLayoutType } from '@grafana/data';
+import { config, PluginPage } from '@grafana/runtime';
 import { ServiceProvider, useServices } from './ServiceProvider';
 import { PluginConfigProvider, usePluginConfig } from './PluginConfigContext';
 import type { AppPluginSettings } from './types';
@@ -12,6 +12,7 @@ import { useRefreshSettingsStore, useGlobalLastUpdatedStore } from '@frontend/st
 import {
   TRACEHOUSE_OVERFLOW_ITEMS,
   TRACEHOUSE_OVERFLOW_NAVIGATION,
+  TRACEHOUSE_NAVIGATION,
   TRACEHOUSE_PRIMARY_NAVIGATION,
   useRefreshConfig,
   type RefreshRateOption,
@@ -434,6 +435,66 @@ const GrafanaOverflowNavigation: React.FC<{ routeKey: string }> = ({ routeKey })
   );
 };
 
+const PLUGIN_BASE_PATH = '/a/dmkskd-tracehouse-app';
+
+const pluginIncludes = (pluginJson as {
+  includes?: Array<{ path?: string; addToNav?: boolean; defaultNav?: boolean }>;
+}).includes ?? [];
+
+const routeKeyOf = (path?: string) => path?.split('/').pop();
+
+/** The `defaultNav` page — Grafana represents it as the section root itself, not a child. */
+const DEFAULT_NAV_ROUTE = routeKeyOf(pluginIncludes.find(include => include.defaultNav)?.path);
+
+/** Pages Grafana renders as children of the section, and can therefore resolve on its own. */
+const SECTION_CHILD_ROUTES = new Set(
+  pluginIncludes.filter(include => include.addToNav).map(include => routeKeyOf(include.path)),
+);
+SECTION_CHILD_ROUTES.delete(DEFAULT_NAV_ROUTE);
+
+const pluginUrl = (path: string) => `${config.appSubUrl ?? ''}${PLUGIN_BASE_PATH}${path}`;
+
+/**
+ * Breadcrumb leaf for the active page.
+ *
+ * Grafana only refreshes the left-nav highlight and the breadcrumbs when a `<Page>` renders
+ * (it pushes `sectionNav`/`pageNav` into the app chrome from a layout effect). `AppRootPage`
+ * skips that render entirely for plugins that never call `onNavChanged`, so without
+ * `<PluginPage>` the chrome stays frozen on whatever page was active during the initial load.
+ *
+ * What the leaf has to supply depends on how much of the trail Grafana can already build.
+ * `getAppPluginRoutes` hands `AppRootPage` the *root* section ("More apps"), and
+ * `buildPluginSectionNav` walks down it looking for a nav item whose url prefixes the current
+ * one, so the three cases are:
+ *
+ * - a page in `includes` with `addToNav` resolves to its own nav item, and the parent chain
+ *   already reads "More apps > TraceHouse > Page". Adding a leaf here would only duplicate it.
+ * - the `defaultNav` page resolves to the section root, which stops at "More apps > TraceHouse".
+ *   It needs a leaf, but no url: the url it would carry is the section root's own, and
+ *   `buildBreadcrumbs` would then dedupe away the "TraceHouse" crumb instead of a duplicate.
+ * - a page not in the nav tree resolves to nothing, so the trail collapses to "More apps".
+ *   It needs both a leaf and an explicit `parentItem` to put "TraceHouse" back.
+ */
+function usePageNav(routeKey: string) {
+  return useMemo(() => {
+    const item = TRACEHOUSE_NAVIGATION.find(entry => entry.key === routeKey);
+    if (!item || SECTION_CHILD_ROUTES.has(routeKey)) return undefined;
+
+    if (routeKey === DEFAULT_NAV_ROUTE) {
+      return { text: item.label };
+    }
+
+    return {
+      text: item.label,
+      url: pluginUrl(item.path),
+      parentItem: {
+        text: (pluginJson as { name?: string }).name ?? 'TraceHouse',
+        url: pluginUrl(`/${DEFAULT_NAV_ROUTE}`),
+      },
+    };
+  }, [routeKey]);
+}
+
 interface AppContentProps {
   path: string;
 }
@@ -452,8 +513,10 @@ function AppContent({ path }: AppContentProps) {
   const routeKey = path.split('/').pop() || 'overview';
   const PageComponent = ROUTES[routeKey] || Overview;
   const pageOwnsScroll = routeKey === 'queries' || routeKey === 'merges';
+  const pageNav = usePageNav(routeKey);
 
   return (
+    <PluginPage layout={PageLayoutType.Custom} pageNav={pageNav}>
     <div
       className="grafana-app-container"
       style={{
@@ -603,6 +666,7 @@ function AppContent({ path }: AppContentProps) {
         )}
       </div>
     </div>
+    </PluginPage>
   );
 }
 
@@ -617,6 +681,17 @@ export function App(props: AppRootProps<AppPluginSettings>) {
     hash: '',
     state: null,
   }));
+
+  // Grafana's own nav links navigate client-side, which re-renders us with a new
+  // props.path but never goes through `navigate()`. Keep our location state in sync
+  // so consumers of useAppLocation() don't read a stale pathname.
+  useEffect(() => {
+    setLocation(current =>
+      current.pathname === props.path
+        ? current
+        : { pathname: props.path, search: '', hash: '', state: null },
+    );
+  }, [props.path]);
 
   const navigate = useCallback((to: string, options?: { state?: unknown; replace?: boolean }) => {
     setLocation({

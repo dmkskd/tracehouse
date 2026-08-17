@@ -116,21 +116,21 @@
       "name": "Cluster",
       "path": "/a/dmkskd-tracehouse-app/cluster",
       "role": "Viewer",
-      "addToNav": false
+      "addToNav": true
     },
     {
       "type": "page",
       "name": "Replication",
       "path": "/a/dmkskd-tracehouse-app/replication",
       "role": "Viewer",
-      "addToNav": false
+      "addToNav": true
     },
     {
       "type": "page",
       "name": "Engine Internals",
       "path": "/a/dmkskd-tracehouse-app/engine-internals",
       "role": "Viewer",
-      "addToNav": false
+      "addToNav": true
     }
   ],
   "dependencies": {
