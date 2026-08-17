@@ -23,6 +23,35 @@ export function groupDashboardPanels(panels: DashboardPanel[]): DashboardPanelSe
   return sections.filter(section => section.panels.length > 0);
 }
 
+/**
+ * Narrow the rail to sections/panels matching a free-text query. A match on the
+ * section name keeps the whole section; otherwise only matching panels survive.
+ * Global panel indexes are preserved so selection still addresses the dashboard.
+ */
+export function filterDashboardPanelSections(
+  sections: DashboardPanelSection[],
+  query: string,
+  panelTitle: (panel: DashboardPanel) => string,
+): DashboardPanelSection[] {
+  const needle = query.trim().toLowerCase();
+  if (!needle) return sections;
+  const terms = needle.split(/\s+/);
+  const matches = (haystack: string) => {
+    const lower = haystack.toLowerCase();
+    return terms.every(term => lower.includes(term));
+  };
+
+  return sections.reduce<DashboardPanelSection[]>((kept, section) => {
+    if (section.name && matches(section.name)) {
+      kept.push(section);
+      return kept;
+    }
+    const panels = section.panels.filter(entry => matches(panelTitle(entry.panel)));
+    if (panels.length > 0) kept.push({ name: section.name, panels });
+    return kept;
+  }, []);
+}
+
 /** Return the first panel in the adjacent section, wrapping at either end. */
 export function adjacentSectionPanelIndex(
   sections: DashboardPanelSection[],

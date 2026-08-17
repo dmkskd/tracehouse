@@ -4,6 +4,7 @@ import {
   adjacentSectionPanelIndex,
   dashboardOwnsEscape,
   dashboardOwnsFocusNavigation,
+  filterDashboardPanelSections,
   groupDashboardPanels,
   panelOwnsShortcut,
 } from '../dashboardFocusStage';
@@ -49,6 +50,47 @@ describe('dashboard focus stage', { tags: ['analytics'] }, () => {
     expect(adjacentSectionPanelIndex(sections, 6, -1)).toBe(1);
     expect(adjacentSectionPanelIndex(sections, 11, 1)).toBe(0);
     expect(adjacentSectionPanelIndex(sections, 0, -1)).toBe(8);
+  });
+
+  test('filters rail panels by title while keeping global indexes', () => {
+    const sections = groupDashboardPanels(panels);
+    const title = (panel: DashboardPanel) => panel.queryName.split('#').pop() ?? panel.queryName;
+
+    const shape = (query: string) =>
+      filterDashboardPanelSections(sections, query, title).map(section => ({
+        name: section.name,
+        indexes: section.panels.map(entry => entry.globalIndex),
+      }));
+
+    expect(shape('reads')).toEqual([{ name: 'Storage & merges', indexes: [5] }]);
+    expect(shape('send')).toEqual([{ name: 'Memory & network', indexes: [10] }]);
+    expect(shape('disk')).toEqual([{ name: 'Storage & merges', indexes: [7] }]);
+    expect(shape('nothing-here')).toEqual([]);
+  });
+
+  test('keeps every panel of a section whose name matches', () => {
+    const sections = groupDashboardPanels(panels);
+    const title = (panel: DashboardPanel) => panel.queryName.split('#').pop() ?? panel.queryName;
+
+    expect(filterDashboardPanelSections(sections, 'query pressure', title)).toEqual([
+      { name: 'Query pressure', panels: sections[1].panels },
+    ]);
+  });
+
+  test('matches all whitespace-separated terms and is case-insensitive', () => {
+    const sections = groupDashboardPanels([panel('A#Peak memory usage', 'Sec')]);
+    const title = (p: DashboardPanel) => p.queryName.split('#').pop() ?? p.queryName;
+
+    expect(filterDashboardPanelSections(sections, 'MEMORY usage', title)).toHaveLength(1);
+    expect(filterDashboardPanelSections(sections, 'memory disk', title)).toEqual([]);
+  });
+
+  test('returns the original sections for an empty or blank query', () => {
+    const sections = groupDashboardPanels(panels);
+    const title = (panel: DashboardPanel) => panel.queryName;
+
+    expect(filterDashboardPanelSections(sections, '', title)).toBe(sections);
+    expect(filterDashboardPanelSections(sections, '   ', title)).toBe(sections);
   });
 
   test('prevents a hidden panel with stale hover state from handling shortcuts', () => {

@@ -40,6 +40,7 @@ import {
   type DashboardFilter,
   DASHBOARD_GROUPS,
   resolvePanel,
+  panelDisplayTitle,
   loadDashboards,
   upsertDashboard,
   deleteDashboard,
@@ -52,6 +53,7 @@ import {
   dashboardOwnsEscape,
   dashboardOwnsFocusNavigation,
   DASHBOARD_ESCAPE_LAYER_SELECTOR,
+  filterDashboardPanelSections,
   groupDashboardPanels,
   panelOwnsShortcut,
   type DashboardPanelSection,
@@ -1088,10 +1090,40 @@ const FocusStageRail: React.FC<{
   onSelectPanel: (index: number) => void;
 }> = ({ viewportTop, dashboardTitle, sections, focusedPanelIndex, onSelectPanel }) => {
   const activeItemRef = useRef<HTMLButtonElement>(null);
+  const searchInputRef = useRef<HTMLInputElement>(null);
+  const [filterQuery, setFilterQuery] = useState('');
+  const totalPanels = sections.reduce((count, section) => count + section.panels.length, 0);
+  const visibleSections = useMemo(
+    () => filterDashboardPanelSections(sections, filterQuery, panelDisplayTitle),
+    [sections, filterQuery],
+  );
+  const visiblePanels = visibleSections.reduce((count, section) => count + section.panels.length, 0);
+  const isFiltering = filterQuery.trim().length > 0;
 
   useEffect(() => {
     activeItemRef.current?.scrollIntoView({ block: 'nearest' });
   }, [focusedPanelIndex]);
+
+  // Enter focuses the first match so filtering alone can drive navigation.
+  const handleSearchKeyDown = (event: React.KeyboardEvent<HTMLInputElement>) => {
+    if (event.key === 'Escape') {
+      event.stopPropagation();
+      if (isFiltering) {
+        event.preventDefault();
+        setFilterQuery('');
+      } else {
+        searchInputRef.current?.blur();
+      }
+      return;
+    }
+    if (event.key === 'Enter') {
+      const first = visibleSections[0]?.panels[0];
+      if (first) {
+        event.preventDefault();
+        onSelectPanel(first.globalIndex);
+      }
+    }
+  };
 
   return (
     <aside
@@ -1111,7 +1143,7 @@ const FocusStageRail: React.FC<{
           color: 'var(--text-muted)', fontSize: 9, fontWeight: 700,
           letterSpacing: '0.08em', textTransform: 'uppercase',
         }}>
-          Dashboard map · {sections.reduce((count, section) => count + section.panels.length, 0)} panels
+          Dashboard map · {isFiltering ? `${visiblePanels} of ${totalPanels}` : totalPanels} panels
         </div>
         <div style={{
           marginTop: 5, color: 'var(--text-primary)', fontSize: 12, fontWeight: 600,
@@ -1119,9 +1151,50 @@ const FocusStageRail: React.FC<{
         }}>
           {dashboardTitle}
         </div>
+        <div style={{ position: 'relative', marginTop: 9 }}>
+          <span style={{
+            position: 'absolute', left: 8, top: '50%', transform: 'translateY(-50%)',
+            color: 'var(--text-muted)', fontSize: 10, pointerEvents: 'none',
+          }}>⌕</span>
+          <input
+            ref={searchInputRef}
+            type="text"
+            value={filterQuery}
+            onChange={event => setFilterQuery(event.target.value)}
+            onKeyDown={handleSearchKeyDown}
+            placeholder="Filter panels…"
+            aria-label="Filter dashboard panels"
+            style={{
+              width: '100%', height: 26, padding: '0 24px 0 22px',
+              color: 'var(--text-primary)', background: 'var(--bg-primary)',
+              border: '1px solid var(--border-primary)', borderRadius: 6,
+              fontSize: 10.5, fontFamily: 'inherit', outline: 'none',
+            }}
+          />
+          {isFiltering && (
+            <button
+              onClick={() => { setFilterQuery(''); searchInputRef.current?.focus(); }}
+              title="Clear filter (Esc)"
+              aria-label="Clear panel filter"
+              style={{
+                position: 'absolute', right: 4, top: '50%', transform: 'translateY(-50%)',
+                width: 18, height: 18, display: 'flex', alignItems: 'center', justifyContent: 'center',
+                color: 'var(--text-muted)', background: 'none', border: 'none',
+                borderRadius: 4, cursor: 'pointer', fontSize: 11, lineHeight: 1,
+              }}
+            >
+              ✕
+            </button>
+          )}
+        </div>
       </div>
       <div style={{ flex: 1, minHeight: 0, overflowY: 'auto', padding: 8 }}>
-        {sections.map((section, sectionIndex) => {
+        {isFiltering && visibleSections.length === 0 && (
+          <div style={{ padding: '14px 8px', color: 'var(--text-muted)', fontSize: 10.5 }}>
+            No panels match “{filterQuery.trim()}”.
+          </div>
+        )}
+        {visibleSections.map((section, sectionIndex) => {
           const isActiveSection = section.panels.some(entry => entry.globalIndex === focusedPanelIndex);
           const sectionLabel = section.name ?? 'General';
           return (
@@ -1150,8 +1223,7 @@ const FocusStageRail: React.FC<{
               </button>
               {section.panels.map(({ panel, globalIndex }) => {
                 const active = globalIndex === focusedPanelIndex;
-                const preset = resolvePanel(panel);
-                const title = preset?.name ?? panel.queryName.split('#').pop() ?? panel.queryName;
+                const title = panelDisplayTitle(panel);
                 return (
                   <button
                     key={`${panel.queryName}-${globalIndex}`}
@@ -1196,7 +1268,7 @@ const FocusStageRail: React.FC<{
         flexShrink: 0, padding: '8px 12px', color: 'var(--text-muted)',
         borderTop: '1px solid var(--border-primary)', fontSize: 9,
       }}>
-        ↑ ↓ panels · [ ] sections · Shift+F focus · F fullscreen · Esc grid
+        ↑ ↓ panels · [ ] sections · Enter first match · Shift+F focus · F fullscreen · Esc grid
       </div>
     </aside>
   );

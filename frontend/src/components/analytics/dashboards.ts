@@ -111,6 +111,11 @@ export function resolvePanel(panel: DashboardPanel): Query | undefined {
   return resolveQueryRef(panel.queryName, undefined, allQueries);
 }
 
+/** Human-readable panel label: preset name, else the query ref's last segment. */
+export function panelDisplayTitle(panel: DashboardPanel): string {
+  return resolvePanel(panel)?.name ?? panel.queryName.split('#').pop() ?? panel.queryName;
+}
+
 // ─── localStorage persistence ───
 
 const STORAGE_KEY = 'tracehouse-dashboards-user';
