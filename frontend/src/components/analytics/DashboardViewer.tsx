@@ -49,6 +49,7 @@ import {
   importDashboardJson,
 } from './dashboards';
 import {
+  adjacentPanelIndex,
   adjacentSectionPanelIndex,
   dashboardOwnsEscape,
   dashboardOwnsFocusNavigation,
@@ -1082,21 +1083,39 @@ const DashboardPanelCard: React.FC<{
   );
 }
 
+/** Keyboard legend for the focus rail, laid out as a two-column key/label grid. */
+const FOCUS_RAIL_SHORTCUTS: [keys: string, label: string][] = [
+  ['↑ ↓', 'Panels'],
+  ['[ ]', 'Sections'],
+  ['⏎', 'First match'],
+  ['⇧F', 'Focus'],
+  ['F', 'Fullscreen'],
+  ['Esc', 'Back to grid'],
+];
+
+const focusRailKeyStyle: React.CSSProperties = {
+  flexShrink: 0, minWidth: 22, padding: '1px 5px', color: 'var(--text-primary)',
+  background: 'var(--bg-primary)', border: '1px solid var(--border-primary)',
+  borderRadius: 4, fontFamily: 'inherit', fontSize: 9.5, lineHeight: '15px',
+  textAlign: 'center', whiteSpace: 'nowrap',
+};
+
 const FocusStageRail: React.FC<{
   viewportTop: number;
   dashboardTitle: string;
-  sections: DashboardPanelSection[];
+  /** Already narrowed by `filterQuery`; ↑/↓ walk this same set. */
+  visibleSections: DashboardPanelSection[];
+  totalPanels: number;
+  filterQuery: string;
+  onFilterQueryChange: (query: string) => void;
   focusedPanelIndex: number;
   onSelectPanel: (index: number) => void;
-}> = ({ viewportTop, dashboardTitle, sections, focusedPanelIndex, onSelectPanel }) => {
+}> = ({
+  viewportTop, dashboardTitle, visibleSections, totalPanels,
+  filterQuery, onFilterQueryChange, focusedPanelIndex, onSelectPanel,
+}) => {
   const activeItemRef = useRef<HTMLButtonElement>(null);
   const searchInputRef = useRef<HTMLInputElement>(null);
-  const [filterQuery, setFilterQuery] = useState('');
-  const totalPanels = sections.reduce((count, section) => count + section.panels.length, 0);
-  const visibleSections = useMemo(
-    () => filterDashboardPanelSections(sections, filterQuery, panelDisplayTitle),
-    [sections, filterQuery],
-  );
   const visiblePanels = visibleSections.reduce((count, section) => count + section.panels.length, 0);
   const isFiltering = filterQuery.trim().length > 0;
 
@@ -1110,7 +1129,7 @@ const FocusStageRail: React.FC<{
       event.stopPropagation();
       if (isFiltering) {
         event.preventDefault();
-        setFilterQuery('');
+        onFilterQueryChange('');
       } else {
         searchInputRef.current?.blur();
       }
@@ -1160,7 +1179,7 @@ const FocusStageRail: React.FC<{
             ref={searchInputRef}
             type="text"
             value={filterQuery}
-            onChange={event => setFilterQuery(event.target.value)}
+            onChange={event => onFilterQueryChange(event.target.value)}
             onKeyDown={handleSearchKeyDown}
             placeholder="Filter panels…"
             aria-label="Filter dashboard panels"
@@ -1173,7 +1192,7 @@ const FocusStageRail: React.FC<{
           />
           {isFiltering && (
             <button
-              onClick={() => { setFilterQuery(''); searchInputRef.current?.focus(); }}
+              onClick={() => { onFilterQueryChange(''); searchInputRef.current?.focus(); }}
               title="Clear filter (Esc)"
               aria-label="Clear panel filter"
               style={{
@@ -1265,10 +1284,20 @@ const FocusStageRail: React.FC<{
         })}
       </div>
       <div style={{
-        flexShrink: 0, padding: '8px 12px', color: 'var(--text-muted)',
-        borderTop: '1px solid var(--border-primary)', fontSize: 9,
+        flexShrink: 0, padding: '8px 10px', borderTop: '1px solid var(--border-primary)',
+        display: 'grid', gridTemplateColumns: 'repeat(2, minmax(0, 1fr))', gap: '5px 10px',
       }}>
-        ↑ ↓ panels · [ ] sections · Enter first match · Shift+F focus · F fullscreen · Esc grid
+        {FOCUS_RAIL_SHORTCUTS.map(([keys, label]) => (
+          <div key={label} style={{
+            display: 'flex', alignItems: 'center', gap: 5, minWidth: 0,
+            color: 'var(--text-secondary)', fontSize: 10,
+          }}>
+            <kbd style={focusRailKeyStyle}>{keys}</kbd>
+            <span style={{ minWidth: 0, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+              {label}
+            </span>
+          </div>
+        ))}
       </div>
     </aside>
   );
@@ -2155,6 +2184,7 @@ export const DashboardViewer: React.FC<{ initialDashboardId?: string; onOpenQuer
   const [allFocusPanelsExpanded, setAllFocusPanelsExpanded] = useState(false);
   const [fullscreenPanelIndex, setFullscreenPanelIndex] = useState<number | null>(null);
   const [focusStageTop, setFocusStageTop] = useState(resolveFocusStageTop);
+  const [railFilterQuery, setRailFilterQuery] = useState('');
   const [toast, setToast] = useState<string | null>(null);
 
   const selectFocusedPanel = useCallback((panelIndex: number) => {
@@ -2164,6 +2194,7 @@ export const DashboardViewer: React.FC<{ initialDashboardId?: string; onOpenQuer
   const exitFocusStage = useCallback(() => {
     setFocusedPanelIndex(null);
     setAllFocusPanelsExpanded(false);
+    setRailFilterQuery('');
   }, []);
 
   useEffect(() => {
@@ -2354,6 +2385,12 @@ export const DashboardViewer: React.FC<{ initialDashboardId?: string; onOpenQuer
     }))
   ), [panelSections, panelDataVersion]);
 
+  /** The rail filter narrows both the rail list and keyboard panel navigation. */
+  const navigableSections = useMemo(
+    () => filterDashboardPanelSections(panelSections, railFilterQuery, panelDisplayTitle),
+    [panelSections, railFilterQuery],
+  );
+
   const hasSections = panelSections.some(s => s.name !== null);
   const expandedPanelIndex = allFocusPanelsExpanded
     ? fullscreenPanelIndex
@@ -2367,18 +2404,17 @@ export const DashboardViewer: React.FC<{ initialDashboardId?: string; onOpenQuer
 
   const moveFocusedPanel = useCallback((direction: -1 | 1) => {
     setFocusedPanelIndex(current => {
-      const panelCount = activeDashboard?.panels.length ?? 0;
-      if (current === null || panelCount === 0) return current;
-      return (current + direction + panelCount) % panelCount;
+      if (current === null) return current;
+      return adjacentPanelIndex(navigableSections, current, direction);
     });
-  }, [activeDashboard]);
+  }, [navigableSections]);
 
   const moveFocusedSection = useCallback((direction: -1 | 1) => {
     setFocusedPanelIndex(current => {
       if (current === null) return current;
-      return adjacentSectionPanelIndex(panelSections, current, direction);
+      return adjacentSectionPanelIndex(navigableSections, current, direction);
     });
-  }, [panelSections]);
+  }, [navigableSections]);
 
   const toggleAllFocusPanels = useCallback(() => {
     setAllFocusPanelsExpanded(expanded => !expanded);
@@ -2767,7 +2803,10 @@ export const DashboardViewer: React.FC<{ initialDashboardId?: string; onOpenQuer
         <FocusStageRail
           viewportTop={focusStageTop}
           dashboardTitle={activeDashboard.title}
-          sections={panelSections}
+          visibleSections={navigableSections}
+          totalPanels={activeDashboard.panels.length}
+          filterQuery={railFilterQuery}
+          onFilterQueryChange={setRailFilterQuery}
           focusedPanelIndex={focusedPanelIndex}
           onSelectPanel={selectFocusedPanel}
         />

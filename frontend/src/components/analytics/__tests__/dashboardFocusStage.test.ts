@@ -1,6 +1,7 @@
 import { describe, expect, test } from 'vitest';
 import type { DashboardPanel } from '../dashboards';
 import {
+  adjacentPanelIndex,
   adjacentSectionPanelIndex,
   dashboardOwnsEscape,
   dashboardOwnsFocusNavigation,
@@ -41,6 +42,42 @@ describe('dashboard focus stage', { tags: ['analytics'] }, () => {
       { name: 'Storage & merges', indexes: [4, 5, 6, 7] },
       { name: 'Memory & network', indexes: [8, 9, 10, 11] },
     ]);
+  });
+
+  test('steps through every panel and wraps when nothing is filtered', () => {
+    const sections = groupDashboardPanels(panels);
+
+    expect(adjacentPanelIndex(sections, 0, 1)).toBe(1);
+    expect(adjacentPanelIndex(sections, 5, -1)).toBe(4);
+    expect(adjacentPanelIndex(sections, 11, 1)).toBe(0);
+    expect(adjacentPanelIndex(sections, 0, -1)).toBe(11);
+  });
+
+  test('confines panel and section steps to the filtered set', () => {
+    const title = (panel: DashboardPanel) => panel.queryName.split('#').pop() ?? panel.queryName;
+    const filtered = filterDashboardPanelSections(
+      groupDashboardPanels(panels), 's', title,
+    );
+    // 's' matches two section names outright, plus Pressure, Usage and Send.
+    expect(filtered.flatMap(section => section.panels.map(entry => entry.globalIndex)))
+      .toEqual([0, 1, 2, 3, 4, 5, 6, 7, 8, 10]);
+
+    expect(adjacentPanelIndex(filtered, 8, 1)).toBe(10);
+    expect(adjacentPanelIndex(filtered, 10, 1)).toBe(0);
+    expect(adjacentPanelIndex(filtered, 0, -1)).toBe(10);
+    expect(adjacentSectionPanelIndex(filtered, 5, 1)).toBe(8);
+  });
+
+  test('re-enters the filtered set from a panel that filtering excluded', () => {
+    const title = (panel: DashboardPanel) => panel.queryName.split('#').pop() ?? panel.queryName;
+    const filtered = filterDashboardPanelSections(
+      groupDashboardPanels(panels), 'disk', title,
+    );
+    expect(filtered.flatMap(section => section.panels.map(entry => entry.globalIndex))).toEqual([7]);
+
+    expect(adjacentPanelIndex(filtered, 0, 1)).toBe(7);
+    expect(adjacentPanelIndex(filtered, 11, -1)).toBe(7);
+    expect(adjacentPanelIndex([], 3, 1)).toBe(3);
   });
 
   test('jumps to the first panel of the adjacent section and wraps', () => {

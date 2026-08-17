@@ -52,6 +52,24 @@ export function filterDashboardPanelSections(
   }, []);
 }
 
+/**
+ * Step to the neighbouring panel within `sections`, wrapping at either end.
+ * `sections` is the navigable set, so a rail filter narrows what ↑/↓ reach.
+ * A current panel outside that set (filtered out while focused) still lands on
+ * the nearest panel in the travel direction.
+ */
+export function adjacentPanelIndex(
+  sections: DashboardPanelSection[],
+  currentPanelIndex: number,
+  direction: -1 | 1,
+): number {
+  const indexes = sections.flatMap(section => section.panels.map(entry => entry.globalIndex));
+  if (indexes.length === 0) return currentPanelIndex;
+  return direction === 1
+    ? indexes.find(index => index > currentPanelIndex) ?? indexes[0]
+    : [...indexes].reverse().find(index => index < currentPanelIndex) ?? indexes[indexes.length - 1];
+}
+
 /** Return the first panel in the adjacent section, wrapping at either end. */
 export function adjacentSectionPanelIndex(
   sections: DashboardPanelSection[],
