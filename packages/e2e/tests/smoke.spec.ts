@@ -58,9 +58,20 @@ test.describe('App boot', () => {
 
     if (test.info().project.name.includes('mobile')) {
       await overflowTrigger.click();
+
+      // Tabs fold into the overflow menu one at a time as the row narrows, rather than all
+      // at once, so how many remain on screen depends on the viewport. What matters is that
+      // every page stays reachable: either as a tab or as a menu item.
       for (const { label } of ROUTES) {
-        await expect(nav.getByRole('menuitem', { name: label })).toBeVisible();
+        const tab = nav.getByRole('link', { name: label, exact: true });
+        const menuItem = nav.getByRole('menuitem', { name: label });
+        await expect(tab.or(menuItem)).toBeVisible();
       }
+
+      // At this width the row cannot hold every tab, so the last primary page must have
+      // folded. Without this the assertion above would still pass if nothing folded at all.
+      const lastPrimary = PRIMARY_ROUTES[PRIMARY_ROUTES.length - 1];
+      await expect(nav.getByRole('menuitem', { name: lastPrimary.label })).toBeVisible();
     } else {
       for (const { label } of PRIMARY_ROUTES) {
         await expect(nav.getByRole('link', { name: label, exact: true })).toBeVisible();
