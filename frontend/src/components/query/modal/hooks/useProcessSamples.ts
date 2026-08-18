@@ -71,15 +71,22 @@ function aggregateHostSamples(
       read_bytes: group.reduce((sum, s) => sum + s.read_bytes, 0),
       cpu_us: group.reduce((sum, s) => sum + s.cpu_us, 0),
       io_wait_us: group.reduce((sum, s) => sum + s.io_wait_us, 0),
+      cpu_wait_us: group.reduce((sum, s) => sum + s.cpu_wait_us, 0),
+      net_recv_wait_us: group.reduce((sum, s) => sum + s.net_recv_wait_us, 0),
+      net_send_wait_us: group.reduce((sum, s) => sum + s.net_send_wait_us, 0),
       net_send_bytes: group.reduce((sum, s) => sum + s.net_send_bytes, 0),
       net_recv_bytes: group.reduce((sum, s) => sum + s.net_recv_bytes, 0),
       d_cpu_cores: group.reduce((sum, s) => sum + s.d_cpu_cores, 0),
       d_io_wait_s: group.reduce((sum, s) => sum + s.d_io_wait_s, 0),
+      d_cpu_wait_s: group.reduce((sum, s) => sum + s.d_cpu_wait_s, 0),
+      d_net_recv_wait_s: group.reduce((sum, s) => sum + s.d_net_recv_wait_s, 0),
+      d_net_send_wait_s: group.reduce((sum, s) => sum + s.d_net_send_wait_s, 0),
       d_read_mb: group.reduce((sum, s) => sum + s.d_read_mb, 0),
       d_read_rows: group.reduce((sum, s) => sum + s.d_read_rows, 0),
       d_written_rows: group.reduce((sum, s) => sum + s.d_written_rows, 0),
       d_net_send_kb: group.reduce((sum, s) => sum + s.d_net_send_kb, 0),
       d_net_recv_kb: group.reduce((sum, s) => sum + s.d_net_recv_kb, 0),
+      rate_clamped: group.some(s => s.rate_clamped),
     };
     return agg;
   });

@@ -804,7 +804,16 @@ const HoverTooltip: React.FC<{
             </div>
             <div><span style={{ color: '#636EFA' }}>Memory:</span> {fmtMB(s.memory_mb)}</div>
             <div><span style={{ color: '#FECB52' }}>CPU:</span> {s.d_cpu_cores.toFixed(2)} cores</div>
-            <div><span style={{ color: '#7B83FF' }}>I/O Wait:</span> {s.d_io_wait_s.toFixed(3)}s</div>
+            {/* Wait metrics share the unit of d_cpu_cores: threads-worth of the
+                sampling window, so they read directly against CPU. */}
+            <div><span style={{ color: '#7B83FF' }}>Disk Wait:</span> {s.d_io_wait_s.toFixed(3)}</div>
+            {s.d_cpu_wait_s > 0 && <div><span style={{ color: '#B682FF' }}>CPU Wait:</span> {s.d_cpu_wait_s.toFixed(3)}</div>}
+            {s.d_net_recv_wait_s > 0 && <div><span style={{ color: '#FF6692' }}>Net Wait:</span> {s.d_net_recv_wait_s.toFixed(3)}</div>}
+            {s.rate_clamped && (
+              <div style={{ color: '#FFA15A' }} title="A thread-time counter jumped by more than this interval's threads could produce — usually thread teardown landing accumulated wait in one sample. Rates above are clamped to the thread count, so they read as a floor.">
+                ⚠ clamped to thread count
+              </div>
+            )}
             <div><span style={{ color: '#00DD99' }}>read_bytes:</span> {s.d_read_mb.toFixed(1)} MB/s</div>
             {s.d_net_send_kb > 0 && <div><span style={{ color: '#33DDFF' }}>Net Send:</span> {s.d_net_send_kb.toFixed(1)} KB</div>}
             {s.d_net_recv_kb > 0 && <div><span style={{ color: '#33DDFF' }}>Net Recv:</span> {s.d_net_recv_kb.toFixed(1)} KB</div>}

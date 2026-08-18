@@ -184,7 +184,8 @@ const Scrubber: React.FC<{
         <span style={{ color: '#636EFA', flexShrink: 0 }}>{s.t.toFixed(0)}s</span>
         <span style={{ color: '#5577dd' }}>Mem {fmtMB(s.memory_mb)}</span>
         <span style={{ color: '#ddaa33' }}>CPU {s.d_cpu_cores.toFixed(1)}</span>
-        <span style={{ color: '#7B83FF' }}>IO {s.d_io_wait_s.toFixed(2)}s</span>
+        <span style={{ color: '#7B83FF' }}>IO {s.d_io_wait_s.toFixed(2)}</span>
+        <span style={{ color: '#FF6692' }}>Net {s.d_net_recv_wait_s.toFixed(2)}</span>
         <span style={{ color: '#00DD99' }}>read_bytes {s.d_read_mb.toFixed(0)} MB/s</span>
         <span style={{ color: '#aaa' }}>{s.thread_count} thr</span>
       </div>

@@ -15,6 +15,13 @@ Useful links for ClickHouse monitoring, performance tuning, and internals.
   deep-diving into query execution, tracking average duration trends, and diagnosing
   `TOO_MANY_SIMULTANEOUS_QUERIES`.
 
+- [Pipeline Optimization for Distributed Tables with Synchronous Inserts](https://altinity.com/blog/pipeline-optimization-for-clickhouse-distributed-tables-with-synchronous-inserts)
+  Altinity. Debugging insert lag with idle CPU: using `system.query_views_log` to separate
+  network wait from CPU work, recognizing fixed per-insert round-trip cost by its flat
+  response to throughput, and redirecting a materialized view from a `Distributed` wrapper
+  to its `_local` table. Motivates
+  [proposals/wait-vs-work-breakdown.md](proposals/wait-vs-work-breakdown.md).
+
 ## Query Performance
 
 - [Secrets of ClickHouse Query Performance (PDF)](https://altinity.com/wp-content/uploads/2024/05/Secrets-of-ClickHouse-Query-Performance.pdf)

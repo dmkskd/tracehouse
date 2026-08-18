@@ -122,10 +122,40 @@ FROM
 GROUP BY query_id, t
 ORDER BY t, query_id`,
 
-  `-- @meta: title='Query I/O Wait' group='X-Ray' interval='1 HOUR' description='Per-second I/O wait (s) per query over time — top 50 by I/O wait in range. Filter by database/table; click a line to open its X-Ray in query details.'
--- @chart: type=grouped_line group_by=t value=io_wait_s series=query_id style=2d render=overlay
+  `-- @meta: title='Query CPU Wait' group='X-Ray' interval='1 HOUR' description='Per-second CPU run-queue wait per query over time — threads runnable but with no free CPU, i.e. run-queue contention. Not disk wait (see Disk I/O Wait). Top 50 by CPU wait in range.'
+-- @chart: type=grouped_line group_by=t value=cpu_wait_s series=query_id style=2d render=overlay
 -- @query_link: on=query_id
 ${TOP_Q("ProfileEvents['OSCPUWaitMicroseconds']")}
+SELECT
+    t,
+    query_id,
+    round(avg(cpu_wait_s), 3) AS cpu_wait_s
+FROM
+(
+    SELECT
+        query_id,
+        toStartOfInterval(sample_time, INTERVAL 1 SECOND) AS t,
+        greatest((pe_cpu_wait - lagInFrame(pe_cpu_wait) OVER w) / 1e6 / dt, 0) AS cpu_wait_s
+    FROM
+    (
+        SELECT
+            query_id,
+            sample_time,
+            ProfileEvents['OSCPUWaitMicroseconds'] AS pe_cpu_wait,
+            greatest(dateDiff('millisecond', lagInFrame(sample_time) OVER w0, sample_time) / 1000, 0.1) AS dt
+        FROM {{cluster_aware:tracehouse.processes_history}}
+        ${IN_TOP_Q}
+        WINDOW w0 AS (PARTITION BY query_id ORDER BY sample_time)
+    )
+    WINDOW w AS (PARTITION BY query_id ORDER BY sample_time)
+)
+GROUP BY query_id, t
+ORDER BY t, query_id`,
+
+  `-- @meta: title='Query Disk I/O Wait' group='X-Ray' interval='1 HOUR' description='Per-second disk I/O wait per query over time — threads blocked on a block device (real reads, not page cache). Top 50 by I/O wait in range. Reads 0 where procfs/taskstats is unavailable.'
+-- @chart: type=grouped_line group_by=t value=io_wait_s series=query_id style=2d render=overlay
+-- @query_link: on=query_id
+${TOP_Q("ProfileEvents['OSIOWaitMicroseconds']")}
 SELECT
     t,
     query_id,
@@ -141,7 +171,37 @@ FROM
         SELECT
             query_id,
             sample_time,
-            ProfileEvents['OSCPUWaitMicroseconds'] AS pe_io,
+            ProfileEvents['OSIOWaitMicroseconds'] AS pe_io,
+            greatest(dateDiff('millisecond', lagInFrame(sample_time) OVER w0, sample_time) / 1000, 0.1) AS dt
+        FROM {{cluster_aware:tracehouse.processes_history}}
+        ${IN_TOP_Q}
+        WINDOW w0 AS (PARTITION BY query_id ORDER BY sample_time)
+    )
+    WINDOW w AS (PARTITION BY query_id ORDER BY sample_time)
+)
+GROUP BY query_id, t
+ORDER BY t, query_id`,
+
+  `-- @meta: title='Query Network Wait' group='X-Ray' interval='1 HOUR' description='Per-second socket wait per query over time — threads blocked reading from sockets. Invisible to CPU and disk counters: a query waiting on a remote shard burns no CPU and issues no I/O. High network wait with low CPU means round-trip latency, not saturation. Top 50 by network wait in range.'
+-- @chart: type=grouped_line group_by=t value=net_wait_s series=query_id style=2d render=overlay
+-- @query_link: on=query_id
+${TOP_Q("ProfileEvents['NetworkReceiveElapsedMicroseconds']")}
+SELECT
+    t,
+    query_id,
+    round(avg(net_wait_s), 3) AS net_wait_s
+FROM
+(
+    SELECT
+        query_id,
+        toStartOfInterval(sample_time, INTERVAL 1 SECOND) AS t,
+        greatest((pe_net_wait - lagInFrame(pe_net_wait) OVER w) / 1e6 / dt, 0) AS net_wait_s
+    FROM
+    (
+        SELECT
+            query_id,
+            sample_time,
+            ProfileEvents['NetworkReceiveElapsedMicroseconds'] AS pe_net_wait,
             greatest(dateDiff('millisecond', lagInFrame(sample_time) OVER w0, sample_time) / 1000, 0.1) AS dt
         FROM {{cluster_aware:tracehouse.processes_history}}
         ${IN_TOP_Q}

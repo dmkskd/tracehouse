@@ -28,18 +28,35 @@ export interface ProcessSample {
   read_bytes: number;
   /** Cumulative CPU time in microseconds */
   cpu_us: number;
-  /** Cumulative I/O wait in microseconds */
+  /** Cumulative block-device I/O wait in microseconds (OSIOWaitMicroseconds) */
   io_wait_us: number;
+  /** Cumulative CPU run-queue wait in microseconds (OSCPUWaitMicroseconds) */
+  cpu_wait_us: number;
+  /** Cumulative time blocked reading from sockets (NetworkReceiveElapsedMicroseconds) */
+  net_recv_wait_us: number;
+  /** Cumulative time blocked writing to sockets (NetworkSendElapsedMicroseconds) */
+  net_send_wait_us: number;
   /** Cumulative network send bytes */
   net_send_bytes: number;
   /** Cumulative network recv bytes */
   net_recv_bytes: number;
 
   // --- Per-second rates (deltas normalized by dt between consecutive samples) ---
+  /**
+   * Concurrency-style wait/work rates: delta µs / 1e6 / dt. A value of 1.0 means
+   * one thread's worth of the sampling window was spent this way, so these are
+   * directly comparable to each other and to d_cpu_cores.
+   */
   /** CPU cores (delta µs / 1e6 / dt) */
   d_cpu_cores: number;
-  /** I/O wait seconds per second of wall time */
+  /** Threads-worth of blocking on real disk I/O */
   d_io_wait_s: number;
+  /** Threads-worth of waiting for a free CPU (run-queue contention) */
+  d_cpu_wait_s: number;
+  /** Threads-worth of blocking on socket reads */
+  d_net_recv_wait_s: number;
+  /** Threads-worth of blocking on socket writes */
+  d_net_send_wait_s: number;
   /** MB/s read throughput */
   d_read_mb: number;
   /** Rows/s read */
@@ -50,6 +67,14 @@ export interface ProcessSample {
   d_net_send_kb: number;
   /** Network recv KB/s */
   d_net_recv_kb: number;
+
+  /**
+   * True when a thread-time rate in this interval exceeded what its thread
+   * count could produce and was clamped. Caused by a thread detaching and
+   * merging its accumulated counters into one interval — the displayed rate is
+   * a floor, not the raw counter delta.
+   */
+  rate_clamped: boolean;
 }
 
 // ── SQL ──
@@ -84,10 +109,21 @@ SELECT
     sum(read_bytes) AS read_bytes,
     sum(cpu_us) AS cpu_us,
     sum(io_wait_us) AS io_wait_us,
+    sum(cpu_wait_us) AS cpu_wait_us,
+    sum(net_recv_wait_us) AS net_recv_wait_us,
+    sum(net_send_wait_us) AS net_send_wait_us,
     sum(net_send_bytes) AS net_send_bytes,
     sum(net_recv_bytes) AS net_recv_bytes,
-    sum(greatest(raw_d_cpu / dt, 0)) AS d_cpu_cores,
-    sum(greatest(raw_d_io / dt, 0)) AS d_io_wait_s,
+    -- Thread-time rates are clamped to the interval's thread bound: a process
+    -- cannot spend more than N threads-worth of a second with N threads. See
+    -- thread_bound below for why the raw counters can exceed it.
+    sum(least(greatest(raw_d_cpu / dt, 0), thread_bound)) AS d_cpu_cores,
+    sum(least(greatest(raw_d_io / dt, 0), thread_bound)) AS d_io_wait_s,
+    sum(least(greatest(raw_d_cpu_wait / dt, 0), thread_bound)) AS d_cpu_wait_s,
+    sum(least(greatest(raw_d_net_recv_wait / dt, 0), thread_bound)) AS d_net_recv_wait_s,
+    sum(least(greatest(raw_d_net_send_wait / dt, 0), thread_bound)) AS d_net_send_wait_s,
+    max(greatest(raw_d_cpu, raw_d_io, raw_d_cpu_wait, raw_d_net_recv_wait, raw_d_net_send_wait) / dt
+        > thread_bound) AS rate_clamped,
     sum(greatest(raw_d_read_mb / dt, 0)) AS d_read_mb,
     sum(greatest(raw_d_read_rows / dt, 0)) AS d_read_rows,
     sum(greatest(raw_d_written_rows / dt, 0)) AS d_written_rows,
@@ -101,7 +137,8 @@ FROM (
         memory_usage / (1024 * 1024) AS memory_mb,
         peak_memory_usage / (1024 * 1024) AS peak_memory_mb,
         read_rows, written_rows, read_bytes,
-        pe_cpu AS cpu_us, pe_io_wait AS io_wait_us,
+        pe_cpu AS cpu_us, pe_io_wait AS io_wait_us, pe_cpu_wait AS cpu_wait_us,
+        pe_net_recv_wait AS net_recv_wait_us, pe_net_send_wait AS net_send_wait_us,
         pe_net_send AS net_send_bytes, pe_net_recv AS net_recv_bytes,
         -- dt: seconds since previous sample (floor 0.1s to prevent div-by-zero)
         greatest(
@@ -111,9 +148,26 @@ FROM (
             )) / 1000,
             0.1
         ) AS dt,
+        -- Upper bound on thread-time rates for this interval. Thread counters
+        -- are merged into the query total when a thread *detaches*, and pipeline
+        -- threads come and go throughout execution, so any interval that catches
+        -- a detach absorbs that thread's whole accumulated wait — observed as
+        -- +75s of OSCPUWaitMicroseconds inside 0.9s on a 4-thread process. The
+        -- time is real, but attributing it to one interval yields a rate no
+        -- number of threads could produce. Bound by the larger of the two
+        -- samples' thread counts, since threads may have exited mid-interval.
+        -- Measured at ~1.3% of intervals on a live cluster, more often
+        -- mid-query than at teardown.
+        toFloat64(greatest(
+            length(thread_ids),
+            lagInFrame(length(thread_ids), 1, length(thread_ids)) OVER w
+        )) AS thread_bound,
         -- raw deltas (lag defaults to self so first sample = 0)
         (pe_cpu - lagInFrame(pe_cpu, 1, pe_cpu) OVER w) / 1000000 AS raw_d_cpu,
         (pe_io_wait - lagInFrame(pe_io_wait, 1, pe_io_wait) OVER w) / 1000000 AS raw_d_io,
+        (pe_cpu_wait - lagInFrame(pe_cpu_wait, 1, pe_cpu_wait) OVER w) / 1000000 AS raw_d_cpu_wait,
+        (pe_net_recv_wait - lagInFrame(pe_net_recv_wait, 1, pe_net_recv_wait) OVER w) / 1000000 AS raw_d_net_recv_wait,
+        (pe_net_send_wait - lagInFrame(pe_net_send_wait, 1, pe_net_send_wait) OVER w) / 1000000 AS raw_d_net_send_wait,
         (read_bytes - lagInFrame(read_bytes, 1, read_bytes) OVER w) / (1024 * 1024) AS raw_d_read_mb,
         toFloat64(read_rows - lagInFrame(read_rows, 1, read_rows) OVER w) AS raw_d_read_rows,
         toFloat64(written_rows - lagInFrame(written_rows, 1, written_rows) OVER w) AS raw_d_written_rows,
@@ -126,7 +180,19 @@ FROM (
             elapsed, memory_usage, peak_memory_usage,
             read_bytes, read_rows, written_rows, thread_ids,
             ProfileEvents['OSCPUVirtualTimeMicroseconds'] AS pe_cpu,
-            ProfileEvents['OSCPUWaitMicroseconds'] AS pe_io_wait,
+            -- OSIOWaitMicroseconds: blocked on a block device (real disk reads).
+            -- OSCPUWaitMicroseconds: runnable but no free CPU (run-queue contention).
+            -- These are different stalls with opposite remedies; keep them apart.
+            -- OSIOWaitMicroseconds needs procfs/taskstats access and reads 0 in
+            -- some containerised deployments, so we sample both rather than
+            -- substituting one for the other.
+            ProfileEvents['OSIOWaitMicroseconds'] AS pe_io_wait,
+            ProfileEvents['OSCPUWaitMicroseconds'] AS pe_cpu_wait,
+            -- Socket blocking is invisible to every OS-level counter above: a
+            -- thread parked in recv() burns no CPU, holds no run-queue slot and
+            -- issues no block I/O. ClickHouse times its own socket calls instead.
+            ProfileEvents['NetworkReceiveElapsedMicroseconds'] AS pe_net_recv_wait,
+            ProfileEvents['NetworkSendElapsedMicroseconds'] AS pe_net_send_wait,
             ProfileEvents['NetworkSendBytes'] AS pe_net_send,
             ProfileEvents['NetworkReceiveBytes'] AS pe_net_recv
         FROM {{cluster_aware:tracehouse.processes_history}}
@@ -159,10 +225,21 @@ SELECT
     sum(read_bytes) AS read_bytes,
     sum(cpu_us) AS cpu_us,
     sum(io_wait_us) AS io_wait_us,
+    sum(cpu_wait_us) AS cpu_wait_us,
+    sum(net_recv_wait_us) AS net_recv_wait_us,
+    sum(net_send_wait_us) AS net_send_wait_us,
     sum(net_send_bytes) AS net_send_bytes,
     sum(net_recv_bytes) AS net_recv_bytes,
-    sum(greatest(raw_d_cpu / dt, 0)) AS d_cpu_cores,
-    sum(greatest(raw_d_io / dt, 0)) AS d_io_wait_s,
+    -- Thread-time rates are clamped to the interval's thread bound: a process
+    -- cannot spend more than N threads-worth of a second with N threads. See
+    -- thread_bound below for why the raw counters can exceed it.
+    sum(least(greatest(raw_d_cpu / dt, 0), thread_bound)) AS d_cpu_cores,
+    sum(least(greatest(raw_d_io / dt, 0), thread_bound)) AS d_io_wait_s,
+    sum(least(greatest(raw_d_cpu_wait / dt, 0), thread_bound)) AS d_cpu_wait_s,
+    sum(least(greatest(raw_d_net_recv_wait / dt, 0), thread_bound)) AS d_net_recv_wait_s,
+    sum(least(greatest(raw_d_net_send_wait / dt, 0), thread_bound)) AS d_net_send_wait_s,
+    max(greatest(raw_d_cpu, raw_d_io, raw_d_cpu_wait, raw_d_net_recv_wait, raw_d_net_send_wait) / dt
+        > thread_bound) AS rate_clamped,
     sum(greatest(raw_d_read_mb / dt, 0)) AS d_read_mb,
     sum(greatest(raw_d_read_rows / dt, 0)) AS d_read_rows,
     sum(greatest(raw_d_written_rows / dt, 0)) AS d_written_rows,
@@ -176,7 +253,8 @@ FROM (
         memory_usage / (1024 * 1024) AS memory_mb,
         peak_memory_usage / (1024 * 1024) AS peak_memory_mb,
         read_rows, written_rows, read_bytes,
-        pe_cpu AS cpu_us, pe_io_wait AS io_wait_us,
+        pe_cpu AS cpu_us, pe_io_wait AS io_wait_us, pe_cpu_wait AS cpu_wait_us,
+        pe_net_recv_wait AS net_recv_wait_us, pe_net_send_wait AS net_send_wait_us,
         pe_net_send AS net_send_bytes, pe_net_recv AS net_recv_bytes,
         greatest(
             toFloat64(dateDiff('millisecond',
@@ -185,8 +263,16 @@ FROM (
             )) / 1000,
             0.1
         ) AS dt,
+        -- See buildProcessSamplesSQL for why thread-time rates need this bound.
+        toFloat64(greatest(
+            length(thread_ids),
+            lagInFrame(length(thread_ids), 1, length(thread_ids)) OVER w
+        )) AS thread_bound,
         (pe_cpu - lagInFrame(pe_cpu, 1, pe_cpu) OVER w) / 1000000 AS raw_d_cpu,
         (pe_io_wait - lagInFrame(pe_io_wait, 1, pe_io_wait) OVER w) / 1000000 AS raw_d_io,
+        (pe_cpu_wait - lagInFrame(pe_cpu_wait, 1, pe_cpu_wait) OVER w) / 1000000 AS raw_d_cpu_wait,
+        (pe_net_recv_wait - lagInFrame(pe_net_recv_wait, 1, pe_net_recv_wait) OVER w) / 1000000 AS raw_d_net_recv_wait,
+        (pe_net_send_wait - lagInFrame(pe_net_send_wait, 1, pe_net_send_wait) OVER w) / 1000000 AS raw_d_net_send_wait,
         (read_bytes - lagInFrame(read_bytes, 1, read_bytes) OVER w) / (1024 * 1024) AS raw_d_read_mb,
         toFloat64(read_rows - lagInFrame(read_rows, 1, read_rows) OVER w) AS raw_d_read_rows,
         toFloat64(written_rows - lagInFrame(written_rows, 1, written_rows) OVER w) AS raw_d_written_rows,
@@ -199,7 +285,19 @@ FROM (
             elapsed, memory_usage, peak_memory_usage,
             read_bytes, read_rows, written_rows, thread_ids,
             ProfileEvents['OSCPUVirtualTimeMicroseconds'] AS pe_cpu,
-            ProfileEvents['OSCPUWaitMicroseconds'] AS pe_io_wait,
+            -- OSIOWaitMicroseconds: blocked on a block device (real disk reads).
+            -- OSCPUWaitMicroseconds: runnable but no free CPU (run-queue contention).
+            -- These are different stalls with opposite remedies; keep them apart.
+            -- OSIOWaitMicroseconds needs procfs/taskstats access and reads 0 in
+            -- some containerised deployments, so we sample both rather than
+            -- substituting one for the other.
+            ProfileEvents['OSIOWaitMicroseconds'] AS pe_io_wait,
+            ProfileEvents['OSCPUWaitMicroseconds'] AS pe_cpu_wait,
+            -- Socket blocking is invisible to every OS-level counter above: a
+            -- thread parked in recv() burns no CPU, holds no run-queue slot and
+            -- issues no block I/O. ClickHouse times its own socket calls instead.
+            ProfileEvents['NetworkReceiveElapsedMicroseconds'] AS pe_net_recv_wait,
+            ProfileEvents['NetworkSendElapsedMicroseconds'] AS pe_net_send_wait,
             ProfileEvents['NetworkSendBytes'] AS pe_net_send,
             ProfileEvents['NetworkReceiveBytes'] AS pe_net_recv
         FROM {{cluster_aware:tracehouse.processes_history}}
@@ -256,16 +354,23 @@ export function mapProcessSampleRow(r: Record<string, unknown>): ProcessSample {
     read_bytes: Number(r.read_bytes) || 0,
     cpu_us: Number(r.cpu_us) || 0,
     io_wait_us: Number(r.io_wait_us) || 0,
+    cpu_wait_us: Number(r.cpu_wait_us) || 0,
+    net_recv_wait_us: Number(r.net_recv_wait_us) || 0,
+    net_send_wait_us: Number(r.net_send_wait_us) || 0,
     net_send_bytes: Number(r.net_send_bytes) || 0,
     net_recv_bytes: Number(r.net_recv_bytes) || 0,
     // deltas
     d_cpu_cores: Number(r.d_cpu_cores) || 0,
     d_io_wait_s: Number(r.d_io_wait_s) || 0,
+    d_cpu_wait_s: Number(r.d_cpu_wait_s) || 0,
+    d_net_recv_wait_s: Number(r.d_net_recv_wait_s) || 0,
+    d_net_send_wait_s: Number(r.d_net_send_wait_s) || 0,
     d_read_mb: Number(r.d_read_mb) || 0,
     d_read_rows: Number(r.d_read_rows) || 0,
     d_written_rows: Number(r.d_written_rows) || 0,
     d_net_send_kb: Number(r.d_net_send_kb) || 0,
     d_net_recv_kb: Number(r.d_net_recv_kb) || 0,
+    rate_clamped: Number(r.rate_clamped) > 0,
   };
 }
 
@@ -294,8 +399,15 @@ export const TIMELINE_METRICS: TimelineMetric[] = [
     lines: [{ key: 'memory_mb', suffix: '' }] },
   { id: 'd_read_mb', label: 'read_bytes', unit: 'MB/s', formatter: v => `${v.toFixed(2)} MB/s`,
     lines: [{ key: 'd_read_mb', suffix: '' }] },
-  { id: 'd_io_wait_s', label: 'I/O Wait', unit: 's', formatter: v => `${v.toFixed(3)} s`,
+  { id: 'd_io_wait_s', label: 'Disk I/O Wait', unit: 'threads', formatter: v => `${v.toFixed(2)} threads`,
     lines: [{ key: 'd_io_wait_s', suffix: '' }] },
+  { id: 'd_cpu_wait_s', label: 'CPU Wait', unit: 'threads', formatter: v => `${v.toFixed(2)} threads`,
+    lines: [{ key: 'd_cpu_wait_s', suffix: '' }] },
+  { id: 'network_wait', label: 'Network Wait', unit: 'threads', formatter: v => `${v.toFixed(2)} threads`,
+    lines: [
+      { key: 'd_net_recv_wait_s', suffix: ' recv' },
+      { key: 'd_net_send_wait_s', suffix: ' send', strokeDasharray: '4 2' },
+    ] },
   { id: 'network', label: 'Network', unit: 'KB/s', formatter: v => `${v.toFixed(1)} KB/s`,
     lines: [
       { key: 'd_net_send_kb', suffix: ' send' },

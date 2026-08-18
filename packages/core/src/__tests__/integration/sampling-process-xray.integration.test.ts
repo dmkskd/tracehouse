@@ -72,7 +72,10 @@ function buildInsertValues(rows: SampleRow[]): string {
 
 const PE_ZERO = {
   OSCPUVirtualTimeMicroseconds: 0,
+  OSIOWaitMicroseconds: 0,
   OSCPUWaitMicroseconds: 0,
+  NetworkReceiveElapsedMicroseconds: 0,
+  NetworkSendElapsedMicroseconds: 0,
   NetworkSendBytes: 0,
   NetworkReceiveBytes: 0,
 };
@@ -134,7 +137,10 @@ describeWithRefreshableAppend('X-Ray: single-node synthetic data', { tags: ['obs
         thread_ids: [1, 2, 3, 4],
         profile_events: {
           OSCPUVirtualTimeMicroseconds: i * 2_000_000,
-          OSCPUWaitMicroseconds: i * 500_000,
+          OSIOWaitMicroseconds: i * 500_000,
+          OSCPUWaitMicroseconds: i * 300_000,
+          NetworkReceiveElapsedMicroseconds: i * 700_000,
+          NetworkSendElapsedMicroseconds: i * 100_000,
           NetworkSendBytes: i * 10240,
           NetworkReceiveBytes: i * 20480,
         },
@@ -150,6 +156,136 @@ describeWithRefreshableAppend('X-Ray: single-node synthetic data', { tags: ['obs
       expect(results[1].d_io_wait_s).toBeCloseTo(0.5, 4);
       expect(results[1].thread_count).toBe(4);
       expect(results[1].memory_mb).toBeCloseTo(50, 0);
+    });
+
+    it('maps each wait counter to its own field', async () => {
+      // Regression: d_io_wait_s used to read OSCPUWaitMicroseconds (run-queue
+      // contention) while being labelled I/O wait. The two are different stalls
+      // with opposite remedies, so every counter gets a distinct value here and
+      // each field must pick up its own.
+      const rows: SampleRow[] = [0, 1, 2].map(i => ({
+        hostname: 'host-a',
+        sample_time: `2025-06-01 12:00:0${i}.000`,
+        query_id: INITIAL_QID,
+        initial_query_id: INITIAL_QID,
+        elapsed: i,
+        memory_usage: 1024 * 1024,
+        peak_memory_usage: 1024 * 1024,
+        read_rows: 0, read_bytes: 0, written_rows: 0,
+        thread_ids: [1],
+        profile_events: {
+          OSCPUVirtualTimeMicroseconds: i * 1_000_000,
+          OSIOWaitMicroseconds: i * 200_000,
+          OSCPUWaitMicroseconds: i * 400_000,
+          NetworkReceiveElapsedMicroseconds: i * 600_000,
+          NetworkSendElapsedMicroseconds: i * 800_000,
+          NetworkSendBytes: 0,
+          NetworkReceiveBytes: 0,
+        },
+      }));
+
+      const results = await seedAndQuery(rows);
+      expect(results[1].d_cpu_cores).toBeCloseTo(1.0, 4);
+      expect(results[1].d_io_wait_s).toBeCloseTo(0.2, 4);
+      expect(results[1].d_cpu_wait_s).toBeCloseTo(0.4, 4);
+      expect(results[1].d_net_recv_wait_s).toBeCloseTo(0.6, 4);
+      expect(results[1].d_net_send_wait_s).toBeCloseTo(0.8, 4);
+    });
+
+    it('surfaces network wait when the query is blocked but transferring almost nothing', async () => {
+      // The failure mode this exists for: a query parked on a socket burns no
+      // CPU, holds no run-queue slot and issues no block I/O, so every OS-level
+      // counter reads ~0 and byte throughput is negligible. Only network wait
+      // shows the stall.
+      const rows: SampleRow[] = [0, 1, 2].map(i => ({
+        hostname: 'host-a',
+        sample_time: `2025-06-01 12:00:0${i}.000`,
+        query_id: INITIAL_QID,
+        initial_query_id: INITIAL_QID,
+        elapsed: i,
+        memory_usage: 1024 * 1024,
+        peak_memory_usage: 1024 * 1024,
+        read_rows: 0, read_bytes: 0, written_rows: 0,
+        thread_ids: [1, 2, 3, 4],
+        profile_events: {
+          ...PE_ZERO,
+          OSCPUVirtualTimeMicroseconds: i * 5_000,   // ~0.005 cores
+          NetworkReceiveElapsedMicroseconds: i * 3_800_000,
+          NetworkReceiveBytes: i * 512,              // trivial payload
+        },
+      }));
+
+      const results = await seedAndQuery(rows);
+      expect(results[1].d_cpu_cores).toBeLessThan(0.01);
+      expect(results[1].d_io_wait_s).toBe(0);
+      expect(results[1].d_cpu_wait_s).toBe(0);
+      expect(results[1].d_net_recv_kb).toBeCloseTo(0.5, 1);
+      // ~3.8 threads-worth of the second spent blocked on a socket
+      expect(results[1].d_net_recv_wait_s).toBeCloseTo(3.8, 4);
+      expect(results[1].d_net_recv_wait_s).toBeGreaterThan(results[1].d_cpu_cores * 100);
+    });
+
+    it('clamps thread-time rates to the thread bound on counter teardown spikes', async () => {
+      // Observed on a real 4-thread process: OSCPUWaitMicroseconds jumped
+      // 40.7s -> 115.6s inside 0.877s. Thread counters merge into the query
+      // total when a thread detaches, so a query that ran many threads earlier
+      // dumps their accumulated wait into whichever interval catches teardown.
+      // The time is real but the resulting rate (85 threads-worth) is not
+      // physically producible by 4 threads, so it is clamped and flagged.
+      const rows: SampleRow[] = [
+        {
+          hostname: 'host-a',
+          sample_time: '2025-06-01 12:00:00.000',
+          query_id: INITIAL_QID,
+          initial_query_id: INITIAL_QID,
+          elapsed: 0,
+          memory_usage: 1024 * 1024,
+          peak_memory_usage: 1024 * 1024,
+          read_rows: 0, read_bytes: 0, written_rows: 0,
+          thread_ids: [1, 2, 3, 4],
+          profile_events: { ...PE_ZERO, OSCPUWaitMicroseconds: 40_680_330 },
+        },
+        {
+          hostname: 'host-a',
+          sample_time: '2025-06-01 12:00:00.877',
+          query_id: INITIAL_QID,
+          initial_query_id: INITIAL_QID,
+          elapsed: 0.877,
+          memory_usage: 1024 * 1024,
+          peak_memory_usage: 1024 * 1024,
+          read_rows: 0, read_bytes: 0, written_rows: 0,
+          thread_ids: [1, 2, 3, 4],
+          profile_events: { ...PE_ZERO, OSCPUWaitMicroseconds: 115_585_907 },
+        },
+      ];
+
+      const results = await seedAndQuery(rows);
+      // Unclamped this would be (115.6 - 40.7) / 0.877 ≈ 85 threads-worth.
+      expect(results[1].d_cpu_wait_s).toBeCloseTo(4, 4);
+      expect(results[1].rate_clamped).toBe(true);
+      // The first sample has no predecessor, so nothing is clamped there.
+      expect(results[0].rate_clamped).toBe(false);
+    });
+
+    it('leaves physically plausible rates untouched', async () => {
+      // Guard against the clamp masking real data: 2 threads-worth of wait on a
+      // 4-thread process is under the bound and must pass through exactly.
+      const rows: SampleRow[] = [0, 1].map(i => ({
+        hostname: 'host-a',
+        sample_time: `2025-06-01 12:00:0${i}.000`,
+        query_id: INITIAL_QID,
+        initial_query_id: INITIAL_QID,
+        elapsed: i,
+        memory_usage: 1024 * 1024,
+        peak_memory_usage: 1024 * 1024,
+        read_rows: 0, read_bytes: 0, written_rows: 0,
+        thread_ids: [1, 2, 3, 4],
+        profile_events: { ...PE_ZERO, OSCPUWaitMicroseconds: i * 2_000_000 },
+      }));
+
+      const results = await seedAndQuery(rows);
+      expect(results[1].d_cpu_wait_s).toBeCloseTo(2, 4);
+      expect(results[1].rate_clamped).toBe(false);
     });
   });
 
@@ -172,7 +308,7 @@ describeWithRefreshableAppend('X-Ray: single-node synthetic data', { tags: ['obs
         thread_ids: [1, 2],
         profile_events: {
           OSCPUVirtualTimeMicroseconds: i * 2_000_000,
-          OSCPUWaitMicroseconds: i * 100_000,
+          OSIOWaitMicroseconds: i * 100_000,
           NetworkSendBytes: i * 1024,
           NetworkReceiveBytes: i * 2048,
         },
@@ -190,7 +326,7 @@ describeWithRefreshableAppend('X-Ray: single-node synthetic data', { tags: ['obs
         thread_ids: [10, 11, 12, 13, 14, 15],
         profile_events: {
           OSCPUVirtualTimeMicroseconds: i * 3_000_000,
-          OSCPUWaitMicroseconds: i * 200_000,
+          OSIOWaitMicroseconds: i * 200_000,
           NetworkSendBytes: i * 5120,
           NetworkReceiveBytes: i * 10240,
         },

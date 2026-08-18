@@ -39,6 +39,8 @@ const COLORS = {
   memory: '#636EFA',   // matches 3D memory edge
   read: '#00DD99',     // matches 3D read trace
   ioWait: '#7B83FF',   // matches 3D I/O wait trace
+  cpuWait: '#B682FF',  // run-queue contention
+  netWait: '#FF6692',  // socket blocking
   net: '#33DDFF',      // matches 3D network trace
 };
 
@@ -49,7 +51,6 @@ const fmtCores = (v: number) => v.toFixed(2);
 const fmtMemAxis = (v: number) => (v >= 1024 ? `${(v / 1024).toFixed(1)}G` : `${v.toFixed(0)}M`);
 const fmtMemFull = (v: number) => formatBytes(v * 1024 * 1024);
 const fmtMbs = (v: number) => `${v.toFixed(1)} MB/s`;
-const fmtSec = (v: number) => `${v.toFixed(2)}s`;
 
 const ChartCard: React.FC<{ title: string; children: React.ReactNode }> = ({ title, children }) => (
   <div style={{ marginBottom: 8 }}>
@@ -105,10 +106,13 @@ export const Query2DCharts: React.FC<{
     memory_mb: s.memory_mb,
     read_mb: s.d_read_mb,
     io_wait_s: s.d_io_wait_s,
+    cpu_wait_s: s.d_cpu_wait_s,
+    net_wait_s: s.d_net_recv_wait_s,
     net_kb: s.d_net_send_kb + s.d_net_recv_kb,
   })), [samples]);
 
-  const hasIoWait = samples.some(s => s.d_io_wait_s > 0);
+  const hasIoWait = samples.some(s =>
+    s.d_io_wait_s > 0 || s.d_cpu_wait_s > 0 || s.d_net_recv_wait_s > 0);
   const hasRead = samples.some(s => s.d_read_mb > 0);
   const hasNet = samples.some(s => s.d_net_send_kb > 0 || s.d_net_recv_kb > 0);
 
@@ -162,16 +166,19 @@ export const Query2DCharts: React.FC<{
         </ChartCard>
       )}
 
-      {/* I/O wait */}
+      {/* Wait breakdown — same unit as CPU cores above (threads-worth of the
+          sampling window), so these read directly against the CPU chart. */}
       {hasIoWait && (
-        <ChartCard title="I/O Wait (s)">
+        <ChartCard title="Wait (threads)">
           <ResponsiveContainer width="100%" height={CHART_HEIGHT}>
             <LineChart data={chartData}>
               <CartesianGrid strokeDasharray="3 3" stroke={GRID_STROKE} />
               <XAxis {...xAxisProps} />
               <YAxis tickFormatter={v => v.toFixed(2)} tick={axisTick} stroke={GRID_STROKE} />
-              <Tooltip content={<CustomTooltip formatter={(_, v) => fmtSec(v)} />} cursor={{ stroke: GRID_STROKE }} />
-              <Line type="monotone" dataKey="io_wait_s" stroke={COLORS.ioWait} strokeWidth={1.5} dot={false} name="I/O Wait" isAnimationActive={false} />
+              <Tooltip content={<CustomTooltip formatter={(_, v) => v.toFixed(2)} />} cursor={{ stroke: GRID_STROKE }} />
+              <Line type="monotone" dataKey="io_wait_s" stroke={COLORS.ioWait} strokeWidth={1.5} dot={false} name="Disk" isAnimationActive={false} />
+              <Line type="monotone" dataKey="cpu_wait_s" stroke={COLORS.cpuWait} strokeWidth={1.5} dot={false} name="CPU queue" isAnimationActive={false} />
+              <Line type="monotone" dataKey="net_wait_s" stroke={COLORS.netWait} strokeWidth={1.5} dot={false} name="Network" isAnimationActive={false} />
               {scrubberLine}
             </LineChart>
           </ResponsiveContainer>
