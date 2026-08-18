@@ -1,7 +1,8 @@
 import React, { useMemo } from 'react';
 import type { DistributedTopology, ObjectStorageProfileSummary, QueryDetail as QueryDetailType, QuerySeries, SimilarQuery, SubQueryInfo, TimeBreakdown } from '@tracehouse/core';
 import { computeTimeBreakdown } from '@tracehouse/core';
-import { TimeBreakdownBar, PARKED_EXPLANATION_THRESHOLD } from '../shared/TimeBreakdownBar';
+import { TimeBreakdownBar } from '../shared/TimeBreakdownBar';
+import { PARKED_EXPLANATION_THRESHOLD } from '../shared/timeBreakdownDisplay';
 import { useParkedTimeExplanation } from '../hooks/useParkedTimeExplanation';
 import { formatBytes } from '../../../../stores/databaseStore';
 import { formatDurationMs, formatMicroseconds, formatNumberCompact } from '../../../../utils/formatters';

@@ -13,59 +13,11 @@
  */
 
 import React, { useCallback, useEffect, useRef, useState } from 'react';
-import type { TimeBreakdown, TimeBreakdownKey } from '@tracehouse/core';
+import type { TimeBreakdown } from '@tracehouse/core';
 import { TIME_BREAKDOWN_EVENTS, TIME_BREAKDOWN_DENOMINATOR, pipelineStallHint, totalBlockedSamples, MIN_BLOCKED_SAMPLES } from '@tracehouse/core';
 import type { ParkedTimeExplanation } from '../hooks/useParkedTimeExplanation';
 import { TimeBreakdownPopover, type PopoverLayer } from './TimeBreakdownPopover';
-
-/** Work reads warm, waits read cool, the unknown reads grey. */
-const SEGMENT_COLORS: Record<TimeBreakdownKey, string> = {
-  cpu: '#d29922',
-  disk_wait: '#7B83FF',
-  cpu_wait: '#B682FF',
-  network_wait: '#FF6692',
-  unaccounted: '#6e7681',
-};
-
-// Kept short: these read as one line each in the popover, next to the counter
-// they come from.
-const SEGMENT_HINTS: Record<TimeBreakdownKey, string> = {
-  cpu: 'working',
-  disk_wait: 'blocked on disk',
-  cpu_wait: 'waiting for a free CPU',
-  network_wait: 'blocked on a socket',
-  // RealTimeMicroseconds is thread *lifetime*, not busy time, so an idle-but-
-  // alive thread lands here. Three very different things look identical:
-  // over-parallelised short queries (threads waiting for work), a distributed
-  // coordinator waiting on shards (async epoll, which Network*Elapsed does not
-  // time — measured at 10ms of a 5.63s wait), and genuine lock contention.
-  // Hence naming the state rather than diagnosing a cause.
-  unaccounted: 'thread alive but blocked — waiting on shards, pipeline, or locks',
-};
-
-const pct = (share: number) => `${(share * 100).toFixed(share < 0.1 ? 1 : 0)}%`;
-
-/**
- * Parked share below which the deeper layers are neither fetched nor shown.
- *
- * Low deliberately: if the bar renders a Parked segment at all, the panel
- * should be willing to explain it. A higher floor produced the confusing state
- * of showing a 9.4% segment while silently declining to say anything about it.
- * The floor exists only to skip two log-table scans for residuals too small to
- * be worth a query.
- *
- * Shared with the caller so the fetch condition and the display condition
- * cannot drift apart — the panel must never advertise a layer never queried.
- */
-export const PARKED_EXPLANATION_THRESHOLD = 0.02;
-
-/** Compact duration for per-stage wait totals, which span µs to minutes. */
-function fmtWait(us: number): string {
-  const seconds = us / 1_000_000;
-  if (seconds >= 60) return `${(seconds / 60).toFixed(1)}m`;
-  if (seconds >= 1) return `${seconds.toFixed(1)}s`;
-  return `${Math.round(us / 1000)}ms`;
-}
+import { SEGMENT_COLORS, SEGMENT_HINTS, pct, PARKED_EXPLANATION_THRESHOLD, fmtWait } from './timeBreakdownDisplay';
 
 /**
  * 'full' lists every segment — needs real width, so it is for wide layouts.

@@ -51,6 +51,8 @@ export const TimeBreakdownPopover: React.FC<{
   /** Viewport rect of the element being hovered, captured on mouse enter. */
   anchor: DOMRect | null;
   title: string;
+  /** Identity/metric rows shown above the composition, e.g. host and query_id. */
+  facts?: { label: string; value: string }[];
   segments: PopoverSegment[];
   layers: PopoverLayer[];
   /** Heading tying the layers to the segment they explain, e.g. "Unaccounted 23%". */
@@ -59,7 +61,16 @@ export const TimeBreakdownPopover: React.FC<{
   /** Keeps the panel open while the pointer is over it. */
   onPointerEnter?: () => void;
   onPointerLeave?: () => void;
-}> = ({ anchor, title, segments, layers, layersHeading, caveats, onPointerEnter, onPointerLeave }) => {
+  /**
+   * Whether the panel accepts the pointer.
+   *
+   * True where the content is long enough to want reading or selecting. False
+   * where the user is scanning a list and the panel would sit over the rows
+   * they are comparing — there it must be transparent to the pointer so moving
+   * on is never blocked by the explanation of what you just left.
+   */
+  interactive?: boolean;
+}> = ({ anchor, title, facts = [], segments, layers, layersHeading, caveats, onPointerEnter, onPointerLeave, interactive = true }) => {
   const theme = useThemeDetection();
   const c = THEME[theme];
 
@@ -73,13 +84,13 @@ export const TimeBreakdownPopover: React.FC<{
   const placement: React.CSSProperties = flipUp
     ? { bottom: Math.max(8, window.innerHeight - anchor.top + 8) }
     : { top: anchor.bottom + 8 };
-  const left = Math.min(anchor.left, Math.max(8, window.innerWidth - 580));
+  const left = Math.min(anchor.left, Math.max(8, window.innerWidth - 700));
 
   return createPortal(
     <div
       role="tooltip"
-      onMouseEnter={onPointerEnter}
-      onMouseLeave={onPointerLeave}
+      onMouseEnter={interactive ? onPointerEnter : undefined}
+      onMouseLeave={interactive ? onPointerLeave : undefined}
       style={{
         position: 'fixed',
         ...placement,
@@ -93,7 +104,7 @@ export const TimeBreakdownPopover: React.FC<{
         borderRadius: 8,
         boxShadow: '0 8px 28px rgba(0,0,0,0.28)',
         padding: '10px 12px',
-        pointerEvents: 'auto',
+        pointerEvents: interactive ? 'auto' : 'none',
         fontFamily: 'var(--font-mono, monospace)',
         fontSize: 11,
         lineHeight: 1.5,
@@ -103,6 +114,33 @@ export const TimeBreakdownPopover: React.FC<{
       <div style={{ color: c.muted, fontSize: 9, textTransform: 'uppercase', letterSpacing: '0.7px', marginBottom: 7 }}>
         {title}
       </div>
+
+      {facts.length > 0 && (
+        <div style={{ marginBottom: segments.length > 0 ? 8 : 0 }}>
+          {facts.map(fact => (
+            <div key={fact.label} style={{ display: 'grid', gridTemplateColumns: '78px 1fr', gap: 7, whiteSpace: 'nowrap' }}>
+              <span style={{ color: c.faint }}>{fact.label}</span>
+              <span style={{ color: c.text, overflow: 'hidden', textOverflow: 'ellipsis' }}>{fact.value}</span>
+            </div>
+          ))}
+        </div>
+      )}
+
+      {segments.length > 0 && facts.length > 0 && (
+        <div style={{ borderTop: `1px solid ${c.border}`, paddingTop: 8, marginBottom: 4, color: c.muted, fontSize: 9, textTransform: 'uppercase', letterSpacing: '0.7px' }}>
+          time spent
+        </div>
+      )}
+
+      {/* The composition as a bar lives here rather than on any timeline: this
+          panel has no time axis, so left-to-right can safely mean proportion. */}
+      {segments.length > 1 && (
+        <div style={{ display: 'flex', height: 6, borderRadius: 999, overflow: 'hidden', marginBottom: 8 }}>
+          {segments.map(s => (
+            <div key={s.label} style={{ width: s.pct, background: s.color }} />
+          ))}
+        </div>
+      )}
 
       {/* One line per segment. Aligned columns rather than run-on text: the
           percentage is the thing being scanned, so it gets its own column and

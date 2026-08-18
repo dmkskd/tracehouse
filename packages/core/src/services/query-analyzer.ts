@@ -189,9 +189,38 @@ export interface SubQueryInfo {
   exception_code: number;
   exception: string;
   query_start_time_microseconds: string;
+  /**
+   * Time-composition counters, shaped like a ProfileEvents map so the same
+   * breakdown code can consume them. Present so the Distributed timeline keeps
+   * its per-node composition when topology inference is unavailable.
+   */
+  profileEvents?: Record<string, number>;
 }
 
 export type SubQueriesByInitialQueryId = Map<string, SubQueryInfo[]>;
+
+/**
+ * Rebuild a ProfileEvents-shaped map from the flat columns SUB_QUERIES selects,
+ * so the shared time-breakdown code can consume sub-query rows unchanged.
+ */
+function subQueryProfileEvents(row: Record<string, unknown>): Record<string, number> | undefined {
+  const events: Record<string, number> = {};
+  const pairs: [string, unknown][] = [
+    ['RealTimeMicroseconds', row.real_time_us],
+    ['OSCPUVirtualTimeMicroseconds', row.cpu_time_us],
+    ['OSIOWaitMicroseconds', row.io_wait_us],
+    ['OSCPUWaitMicroseconds', row.cpu_wait_us],
+    ['NetworkReceiveElapsedMicroseconds', row.net_recv_wait_us],
+    ['NetworkSendElapsedMicroseconds', row.net_send_wait_us],
+  ];
+  for (const [name, raw] of pairs) {
+    const value = Number(raw);
+    // Absent keys must stay absent: the breakdown distinguishes an unreported
+    // disk counter from one that genuinely read zero.
+    if (raw != null && Number.isFinite(value)) events[name] = value;
+  }
+  return Object.keys(events).length > 0 ? events : undefined;
+}
 
 function parseStringArray(raw: unknown): string[] {
   if (Array.isArray(raw)) return raw.map(String);
@@ -685,6 +714,7 @@ export class QueryAnalyzer {
         selected_marks: Number(r.selected_marks) || 0,
         selected_marks_total: Number(r.selected_marks_total) || 0,
         selected_ranges: Number(r.selected_ranges) || 0,
+        profileEvents: subQueryProfileEvents(r as Record<string, unknown>),
         query_preview: String(r.query_preview || ''),
         exception_code: Number(r.exception_code) || 0,
         exception: String(r.exception || ''),

@@ -157,6 +157,15 @@ export const SUB_QUERIES = `
     ProfileEvents['SelectedMarks'] AS selected_marks,
     ProfileEvents['SelectedMarksTotal'] AS selected_marks_total,
     ProfileEvents['SelectedRanges'] AS selected_ranges,
+    -- Time-composition counters. Without these the Distributed timeline falls
+    -- back to solid bars whenever topology inference fails and this query is
+    -- the only source — the bars would silently lose their explanation.
+    ProfileEvents['RealTimeMicroseconds'] AS real_time_us,
+    ProfileEvents['OSCPUVirtualTimeMicroseconds'] AS cpu_time_us,
+    ProfileEvents['OSIOWaitMicroseconds'] AS io_wait_us,
+    ProfileEvents['OSCPUWaitMicroseconds'] AS cpu_wait_us,
+    ProfileEvents['NetworkReceiveElapsedMicroseconds'] AS net_recv_wait_us,
+    ProfileEvents['NetworkSendElapsedMicroseconds'] AS net_send_wait_us,
     if(length(formatted_query) > 0, formatted_query, query) AS query_preview,
     exception_code,
     exception,

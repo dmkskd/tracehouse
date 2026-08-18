@@ -3,7 +3,7 @@
  * Renders inline metrics on each bar and supports click-to-navigate between queries.
  */
 
-import React, { useMemo } from 'react';
+import React, { useMemo, useState } from 'react';
 import {
   inferDistributedTopology,
   topologyNodeRoleLabel,
@@ -14,6 +14,9 @@ import {
 } from '@tracehouse/core';
 import { formatDurationMs } from '../../../../utils/formatters';
 import { formatBytes } from '../../../../stores/databaseStore';
+import { computeTimeBreakdown, TIME_BREAKDOWN_EVENTS } from '@tracehouse/core';
+import { SEGMENT_COLORS, SEGMENT_HINTS, pct } from './timeBreakdownDisplay';
+import { TimeBreakdownPopover } from './TimeBreakdownPopover';
 
 export interface TopologyCoordinator {
   query_id: string;
@@ -257,6 +260,7 @@ export const DistributedQueryTopology: React.FC<DistributedQueryTopologyProps> =
           durationMs: node.queryDurationMs,
           memoryUsage: matchingSubQuery?.memory_usage ?? 0,
           readRows: node.readRows,
+          profileEvents: node.profileEvents,
           hasError: false,
           offsetUs: Math.max(0, nodeStartUs > 0 ? nodeStartUs - coordStartUs : 0),
           durationUs,
@@ -288,6 +292,10 @@ export const DistributedQueryTopology: React.FC<DistributedQueryTopologyProps> =
           durationMs: sq.query_duration_ms,
           memoryUsage: sq.memory_usage,
           readRows: sq.read_rows,
+          // Prefer the topology node's full ProfileEvents map; fall back to the
+          // counters SUB_QUERIES carries so the composition survives when
+          // topology inference finds nothing.
+          profileEvents: node?.profileEvents ?? sq.profileEvents,
           hasError: !!sq.exception_code,
           offsetUs: Math.max(0, nodeStartUs - coordStartUs),
           durationUs: nodeDurationUs,
@@ -364,6 +372,12 @@ export const DistributedQueryTopology: React.FC<DistributedQueryTopologyProps> =
       a.sortIndex - b.sortIndex,
     )
     : [];
+  // The coordinator's own counters live on its topology node, not on the
+  // coordinator summary row that drives the header.
+  const coordinatorProfileEvents = topology.nodes.find(
+    node => node.role === 'coordinator' && node.queryId === coordinator.query_id,
+  )?.profileEvents;
+
   const processorCompatibility = inferredTopology
     ? topology.processorProfileCompatibility
     : undefined;
@@ -443,6 +457,7 @@ export const DistributedQueryTopology: React.FC<DistributedQueryTopologyProps> =
         durationMs={coordinator.query_duration_ms}
         memoryUsage={coordinator.memory_usage}
         readRows={coordinator.read_rows}
+        profileEvents={coordinatorProfileEvents}
         hasError={!!coordinator.exception}
         isActive={activeQueryId === coordinator.query_id}
         onClick={() => onNavigate(coordinator.query_id)}
@@ -485,6 +500,7 @@ export const DistributedQueryTopology: React.FC<DistributedQueryTopologyProps> =
             durationMs={row.durationMs}
             memoryUsage={row.memoryUsage}
             readRows={row.readRows}
+            profileEvents={row.profileEvents}
             hasError={row.hasError}
             isActive={activeQueryId === row.queryId}
             onClick={() => onNavigate(row.queryId)}
@@ -766,6 +782,8 @@ const TopologyBar: React.FC<{
   durationMs: number;
   memoryUsage: number;
   readRows: number;
+  /** Raw ProfileEvents for this node, used to paint the bar's composition. */
+  profileEvents?: Record<string, number | string | undefined>;
   hasError: boolean;
   isActive: boolean;
   isCoordinator?: boolean;
@@ -775,23 +793,36 @@ const TopologyBar: React.FC<{
   labelWidth: number;
   metricWidth: number;
 }> = ({
-  queryId, label, hostname, leftPct, widthPct, color, durationMs, memoryUsage, readRows,
+  queryId, label, hostname, leftPct, widthPct, color, durationMs, memoryUsage, readRows, profileEvents,
   hasError, isActive, isCoordinator, roleLabel, indentLevel = 0, onClick, labelWidth, metricWidth, hostColor,
 }) => {
   const fmtMs = formatDurationMs;
-  const tooltip = [
-    `query_id: ${queryId}`,
-    `role: ${roleLabel}`,
-    `host: ${hostname || label}`,
-    `duration: ${fmtMs(durationMs)}`,
-    `memory: ${formatBytes(memoryUsage)}`,
-    `rows: ${fmtCompact(readRows)}`,
-  ].join('\n');
+
+  // Composition is computed for the hover panel only — deliberately not painted
+  // onto the bar. This bar sits on a time axis, so any colouring across it reads
+  // as a sequence of phases ("CPU, then queue, then parked") when the parts are
+  // a composition with no order. The bar keeps meaning one thing: elapsed time.
+  const breakdown = useMemo(
+    () => computeTimeBreakdown(profileEvents, { wallClockMs: durationMs }),
+    [profileEvents, durationMs],
+  );
+
+  // Same panel as the Overview bar: the composition needs a legend and named
+  // counters to be readable, which a native title tooltip cannot give.
+  const [anchorRect, setAnchorRect] = useState<DOMRect | null>(null);
+  const facts = [
+    { label: 'query_id', value: queryId },
+    { label: 'role', value: roleLabel },
+    { label: 'host', value: hostname || label },
+    { label: 'duration', value: fmtMs(durationMs) },
+    { label: 'memory', value: formatBytes(memoryUsage) },
+    { label: 'rows', value: fmtCompact(readRows) },
+  ];
 
   return (
     <div
       onClick={onClick}
-      title={tooltip}
+      onMouseMove={event => setAnchorRect(event.currentTarget.getBoundingClientRect())}
       style={{
         display: 'flex', alignItems: 'center', minHeight: 30, marginBottom: 2,
         cursor: 'pointer',
@@ -799,9 +830,34 @@ const TopologyBar: React.FC<{
         transition: 'background 0.1s',
         background: isActive ? 'var(--bg-hover)' : 'transparent',
       }}
-      onMouseEnter={e => { e.currentTarget.style.background = 'var(--bg-hover)'; }}
-      onMouseLeave={e => { e.currentTarget.style.background = isActive ? 'var(--bg-hover)' : 'transparent'; }}
+      onMouseEnter={e => {
+        e.currentTarget.style.background = 'var(--bg-hover)';
+        setAnchorRect(e.currentTarget.getBoundingClientRect());
+      }}
+      onMouseLeave={e => {
+        e.currentTarget.style.background = isActive ? 'var(--bg-hover)' : 'transparent';
+        setAnchorRect(null);
+      }}
     >
+      {anchorRect && (
+        <TimeBreakdownPopover
+          anchor={anchorRect}
+          title={isCoordinator ? 'Coordinator' : roleLabel}
+          facts={facts}
+          segments={breakdown.segments.map(segment => ({
+            label: segment.label,
+            color: SEGMENT_COLORS[segment.key],
+            pct: pct(segment.share),
+            hint: SEGMENT_HINTS[segment.key],
+            source: TIME_BREAKDOWN_EVENTS[segment.key],
+          }))}
+          layers={[]}
+          caveats={breakdown.normalized ? ['! counters overlapped past total; scaled to fit'] : []}
+          // Non-interactive: these rows are meant to be compared, and a panel
+          // that captures the pointer traps you on the row you just read.
+          interactive={false}
+        />
+      )}
       {/* Label */}
       <div style={{
         width: labelWidth, flexShrink: 0,
@@ -863,7 +919,6 @@ const TopologyBar: React.FC<{
         background: 'var(--bg-tertiary)', borderRadius: 3, overflow: 'hidden',
       }}>
         <div
-          title={tooltip}
           style={{
             position: 'absolute',
             left: `${leftPct}%`,
