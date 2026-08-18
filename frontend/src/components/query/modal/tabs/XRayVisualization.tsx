@@ -580,14 +580,15 @@ const InnerTraces: React.FC<{
   // Inner traces run along the corridor at fixed height fractions
   // Y position: proportional to CPU width for "inside corridor" feel
   // Z position: fixed fraction of corridor height for readability
+  // Disk wait is a thread-time rate too, so it shares the CPU axis for the same
+  // reason as the other waits.
   const ioPoints = useMemo(() =>
-    samples.map((s, i) => {
-      const x = mapT(s.t, maxT);
-      const cpu = mapCpu(smoothCpu[i], maxCpu);
-      const yNorm = smoothIo[i] / maxIo;
-      return new THREE.Vector3(x, cpu * (0.2 + yNorm * 0.15), MAX_Z * 0.5);
-    }),
-    [samples, maxT, maxCpu, smoothCpu, smoothIo, maxIo]
+    samples.map((s, i) => new THREE.Vector3(
+      mapT(s.t, maxT),
+      mapCpu(smoothIo[i], maxCpu),
+      MAX_Z * 0.5,
+    )),
+    [samples, maxT, maxCpu, smoothIo]
   );
 
   const readPoints = useMemo(() =>
@@ -600,24 +601,31 @@ const InnerTraces: React.FC<{
     [samples, maxT, maxCpu, smoothCpu, smoothRead, maxRead]
   );
 
+  // Wait traces are plotted on the CPU axis at the CPU scale, NOT scaled by the
+  // corridor width like the throughput traces are.
+  //
+  // d_*_wait_s and d_cpu_cores share a unit — threads-worth of the sampling
+  // window — so they are directly comparable and belong on one axis. Riding
+  // them inside the corridor (y = cpu * f) would collapse them to the floor
+  // whenever CPU approaches zero, which is exactly the case they exist to
+  // explain: a query at 0.2 cores with 8 threads blocked on a socket. Here that
+  // query draws a narrow corridor with a wide wait trace beside it.
   const netWaitPoints = useMemo(() =>
-    samples.map((s, i) => {
-      const x = mapT(s.t, maxT);
-      const cpu = mapCpu(smoothCpu[i], maxCpu);
-      const yNorm = smoothNetWait[i] / maxNetWait;
-      return new THREE.Vector3(x, cpu * (0.65 + yNorm * 0.15), MAX_Z * 0.75);
-    }),
-    [samples, maxT, maxCpu, smoothCpu, smoothNetWait, maxNetWait]
+    samples.map((s, i) => new THREE.Vector3(
+      mapT(s.t, maxT),
+      mapCpu(smoothNetWait[i], maxCpu),
+      MAX_Z * 0.75,
+    )),
+    [samples, maxT, maxCpu, smoothNetWait]
   );
 
   const cpuWaitPoints = useMemo(() =>
-    samples.map((s, i) => {
-      const x = mapT(s.t, maxT);
-      const cpu = mapCpu(smoothCpu[i], maxCpu);
-      const yNorm = smoothCpuWait[i] / maxCpuWait;
-      return new THREE.Vector3(x, cpu * (0.35 + yNorm * 0.15), MAX_Z * 0.9);
-    }),
-    [samples, maxT, maxCpu, smoothCpu, smoothCpuWait, maxCpuWait]
+    samples.map((s, i) => new THREE.Vector3(
+      mapT(s.t, maxT),
+      mapCpu(smoothCpuWait[i], maxCpu),
+      MAX_Z * 0.9,
+    )),
+    [samples, maxT, maxCpu, smoothCpuWait]
   );
 
   // A trace is only drawn when its metric actually fired. Threading a flat line
