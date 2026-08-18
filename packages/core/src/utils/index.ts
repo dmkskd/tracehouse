@@ -38,3 +38,6 @@ export { pearson, spearman, crossCorrelation, crossCorrelationDetail, rollingCor
 export type { CorrelationFn, CorrelationAlgorithm, CorrelationInsight, CorrelationStrength, CrossCorrelationResult, NormalizedSeries, CorrelationResult, CorrelatedWindow } from './correlation.js';
 export { processLanesData, aggregateLanes, rankLanes, computeLaneBreakdowns, formatLaneLabels, formatTimeLabels, buildMergeTotalsMap, buildCombinedSystemTotals, buildChannelGrid, STRESS_COMPONENTS, MERGE_CHANNEL_MAP } from './resource-lanes-processor.js';
 export type { ResourceChannel, ViewMode, StressScale, LaneResourceBreakdown, ProcessedLanes } from './resource-lanes-processor.js';
+export { computeTimeBreakdown, dominantSegment, waitShare } from './time-breakdown.js';
+export type { TimeBreakdown, TimeBreakdownKey, TimeBreakdownSegment, ProfileEventsInput } from './time-breakdown.js';
+export { TIME_BREAKDOWN_EVENTS, TIME_BREAKDOWN_DENOMINATOR } from './time-breakdown.js';

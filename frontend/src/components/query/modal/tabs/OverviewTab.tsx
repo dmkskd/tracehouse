@@ -1,5 +1,7 @@
 import React, { useMemo } from 'react';
-import type { DistributedTopology, ObjectStorageProfileSummary, QueryDetail as QueryDetailType, QuerySeries, SimilarQuery, SubQueryInfo } from '@tracehouse/core';
+import type { DistributedTopology, ObjectStorageProfileSummary, QueryDetail as QueryDetailType, QuerySeries, SimilarQuery, SubQueryInfo, TimeBreakdown } from '@tracehouse/core';
+import { computeTimeBreakdown } from '@tracehouse/core';
+import { TimeBreakdownBar } from '../shared/TimeBreakdownBar';
 import { formatBytes } from '../../../../stores/databaseStore';
 import { formatDurationMs, formatMicroseconds, formatNumberCompact } from '../../../../utils/formatters';
 import { querySqlLineCount, querySqlText } from '../../../../utils/querySqlText';
@@ -187,6 +189,14 @@ export const OverviewTab: React.FC<OverviewTabProps> = ({
   }, [q.duration_ms, queryDetail?.query_duration_ms, similarQueries]);
 
   const executionTab: OverviewTargetTab = hasDistributedExecution ? 'distributed' : (isSelectQuery ? 'pipeline' : 'details');
+
+  // QUERY_DETAIL already selects the full ProfileEvents map, so this costs no
+  // extra query — it just reads counters we were already fetching and dropping.
+  const timeBreakdown: TimeBreakdown = useMemo(
+    () => computeTimeBreakdown(queryDetail?.ProfileEvents),
+    [queryDetail?.ProfileEvents],
+  );
+
   const pressureScores = {
     time: history?.p95 ? Math.min(1, q.duration_ms / Math.max(history.p95, 1)) : Math.min(1, q.duration_ms / 60_000),
     memory: Math.min(1, q.peak_memory / Math.max(q.peak_memory, 512 * 1024 * 1024)),
@@ -302,8 +312,14 @@ export const OverviewTab: React.FC<OverviewTabProps> = ({
           primary={fmtMs(q.duration_ms)}
           secondary={`CPU ${fmtUs(q.cpu_us)} / memory ${formatBytes(q.peak_memory)}`}
           onAction={() => onOpenTab('details')}
+          contentMaxHeight={timeBreakdown.available ? 28 : undefined}
         >
-          <ProgressBar value={q.duration_ms > 0 ? ((q.cpu_us / 1000) / q.duration_ms) * 100 : 0} color="#a371f7" />
+          {/* Replaces an unlabelled cpu_us/duration_ms bar: same question —
+              how much of this time was CPU — but decomposed, labelled, and
+              with the waits named instead of lumped into the empty remainder. */}
+          {timeBreakdown.available
+            ? <TimeBreakdownBar breakdown={timeBreakdown} />
+            : <ProgressBar value={q.duration_ms > 0 ? ((q.cpu_us / 1000) / q.duration_ms) * 100 : 0} color="#a371f7" />}
         </ExploreDestinationCard>
 
         <ExploreDestinationCard
@@ -778,21 +794,35 @@ const ParallelExecutionPreview: React.FC<{
   childCount: number;
   rootDurationMs: number;
   onOpen: () => void;
-}> = ({ subQueries, nodeCount, childCount, rootDurationMs, onOpen }) => (
-  <PreviewCard title="Parallel Execution" action={childCount > 0 ? 'Distributed' : 'Pipeline'} onOpen={onOpen}>
-    <div style={{
-      display: 'flex',
-      justifyContent: 'space-between',
-      alignItems: 'baseline',
-      gap: 10,
-      marginBottom: 10,
-    }}>
-      <div style={{ fontFamily: 'monospace', fontSize: 18, color: 'var(--text-primary)' }}>{nodeCount} {nodeCount === 1 ? 'node' : 'nodes'}</div>
-      <div style={{ fontFamily: 'monospace', fontSize: 12, color: '#a371f7' }}>{childCount} child {childCount === 1 ? 'query' : 'queries'}</div>
-    </div>
-    <ChildQueryBars subQueries={subQueries} rootDurationMs={rootDurationMs} />
-  </PreviewCard>
-);
+}> = ({ subQueries, nodeCount, childCount, rootDurationMs, onOpen }) => {
+  // A query that never left this node is still an execution worth describing —
+  // it just has one participant. Saying "single execution" reads as a fact
+  // about the query; "1 node / 0 child queries" reads like missing data.
+  const distributed = childCount > 0;
+
+  return (
+    <PreviewCard title="Parallel Execution" action={distributed ? 'Distributed' : 'Pipeline'} onOpen={onOpen}>
+      <div style={{
+        display: 'flex',
+        justifyContent: 'space-between',
+        alignItems: 'baseline',
+        gap: 10,
+        marginBottom: 10,
+      }}>
+        <div style={{ fontFamily: 'monospace', fontSize: 18, color: 'var(--text-primary)' }}>
+          {distributed ? `${nodeCount} ${nodeCount === 1 ? 'node' : 'nodes'}` : 'Single execution'}
+        </div>
+        {distributed && (
+          <div style={{ fontFamily: 'monospace', fontSize: 12, color: '#a371f7' }}>
+            {childCount} child {childCount === 1 ? 'query' : 'queries'}
+          </div>
+        )}
+      </div>
+
+      {distributed && <ChildQueryBars subQueries={subQueries} rootDurationMs={rootDurationMs} />}
+    </PreviewCard>
+  );
+};
 
 const MetricBar: React.FC<{ label: string; value: string; ratio: number; color: string; title?: string; labelWidth?: number }> = ({ label, value, ratio, color, title, labelWidth = 42 }) => (
   <div
@@ -832,7 +862,13 @@ const ExploreDestinationCard: React.FC<{
   secondary: string;
   onAction: () => void;
   children: React.ReactNode;
-}> = ({ title, accent, icon, primary, secondary, onAction, children }) => (
+  /**
+   * Height of the content slot. Defaults to a single 8px bar or chip row;
+   * raise it for content that needs a second line, such as a bar with its own
+   * legend. Opt-in so one card growing does not resize every other card.
+   */
+  contentMaxHeight?: number;
+}> = ({ title, accent, icon, primary, secondary, onAction, children, contentMaxHeight = 16 }) => (
   <button
     type="button"
     onClick={onAction}
@@ -879,7 +915,7 @@ const ExploreDestinationCard: React.FC<{
       </div>
     </div>
 
-    <div style={{ flex: 1, minHeight: 14, maxHeight: 16, overflow: 'hidden', display: 'flex', flexDirection: 'column', justifyContent: 'center' }}>
+    <div style={{ flex: 1, minHeight: 14, maxHeight: contentMaxHeight, overflow: 'hidden', display: 'flex', flexDirection: 'column', justifyContent: 'center' }}>
       {children}
     </div>
   </button>
