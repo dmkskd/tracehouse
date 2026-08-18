@@ -57,6 +57,8 @@ interface SampleRow {
   read_bytes: number;
   written_rows: number;
   thread_ids: number[];
+  /** Omitted in most fixtures; defaults to 0, which exercises the fallback. */
+  peak_threads_usage?: number;
   profile_events: Record<string, number>;
 }
 
@@ -66,7 +68,7 @@ function buildInsertValues(rows: SampleRow[]): string {
       .map(([k, v]) => `'${k}', ${v}`)
       .join(', ');
     const threadArr = `[${r.thread_ids.join(', ')}]`;
-    return `('${r.hostname}', '${r.sample_time}', '${r.query_id}', '${r.initial_query_id}', ${r.elapsed}, ${r.memory_usage}, ${r.peak_memory_usage}, ${r.read_rows}, ${r.read_bytes}, ${r.written_rows}, ${threadArr}, map(${pe}))`;
+    return `('${r.hostname}', '${r.sample_time}', '${r.query_id}', '${r.initial_query_id}', ${r.elapsed}, ${r.memory_usage}, ${r.peak_memory_usage}, ${r.read_rows}, ${r.read_bytes}, ${r.written_rows}, ${threadArr}, ${r.peak_threads_usage ?? 0}, map(${pe}))`;
   }).join(',\n');
 }
 
@@ -111,7 +113,7 @@ describeWithRefreshableAppend('X-Ray: single-node synthetic data', { tags: ['obs
     await ctx.client.command({
       query: `INSERT INTO tracehouse.processes_history
         (hostname, sample_time, query_id, initial_query_id, elapsed, memory_usage, peak_memory_usage,
-         read_rows, read_bytes, written_rows, thread_ids, ProfileEvents)
+         read_rows, read_bytes, written_rows, thread_ids, peak_threads_usage, ProfileEvents)
         VALUES ${values}`,
     });
 
@@ -265,6 +267,61 @@ describeWithRefreshableAppend('X-Ray: single-node synthetic data', { tags: ['obs
       expect(results[1].rate_clamped).toBe(true);
       // The first sample has no predecessor, so nothing is clamped there.
       expect(results[0].rate_clamped).toBe(false);
+    });
+
+    it('bounds rates by peak_threads_usage, not the cumulative thread list', async () => {
+      // ClickHouse docs: thread_ids is "the list of identifiers of all threads
+      // which participated in this query" — cumulative — while
+      // peak_threads_usage is "maximum count of simultaneous threads executing
+      // the query". ClickHouse pools and re-attaches threads, so the cumulative
+      // list keeps growing and gives a ceiling far above real concurrency:
+      // measured on a live cluster at 32 cumulative against 17 peak.
+      //
+      // Here 8 ids ever attached but only 2 ran at once, so a teardown spike
+      // must clamp to 2 rather than sailing through under an 8-thread ceiling.
+      const rows: SampleRow[] = [0, 1].map(i => ({
+        hostname: 'host-a',
+        sample_time: `2025-06-01 12:00:0${i}.000`,
+        query_id: INITIAL_QID,
+        initial_query_id: INITIAL_QID,
+        elapsed: i,
+        memory_usage: 1024 * 1024,
+        peak_memory_usage: 1024 * 1024,
+        read_rows: 0, read_bytes: 0, written_rows: 0,
+        thread_ids: [1, 2, 3, 4, 5, 6, 7, 8],
+        peak_threads_usage: 2,
+        profile_events: { ...PE_ZERO, OSCPUWaitMicroseconds: i * 50_000_000 },
+      }));
+
+      const results = await seedAndQuery(rows);
+      // Unclamped this is 50 threads-worth; under the cumulative ceiling it
+      // would have clamped to 8.
+      expect(results[1].d_cpu_wait_s).toBeCloseTo(2, 4);
+      expect(results[1].rate_clamped).toBe(true);
+    });
+
+    it('falls back to the cumulative count when peak_threads_usage is absent', async () => {
+      // Some managed providers strip peak_threads_usage from system.processes.
+      // The bound is then loose, but it must still never clamp a legitimate
+      // rate — so it falls back rather than collapsing to zero.
+      const rows: SampleRow[] = [0, 1].map(i => ({
+        hostname: 'host-a',
+        sample_time: `2025-06-01 12:00:0${i}.000`,
+        query_id: INITIAL_QID,
+        initial_query_id: INITIAL_QID,
+        elapsed: i,
+        memory_usage: 1024 * 1024,
+        peak_memory_usage: 1024 * 1024,
+        read_rows: 0, read_bytes: 0, written_rows: 0,
+        thread_ids: [1, 2, 3],
+        peak_threads_usage: 0,
+        profile_events: { ...PE_ZERO, OSCPUVirtualTimeMicroseconds: i * 2_000_000 },
+      }));
+
+      const results = await seedAndQuery(rows);
+      // 2 threads-worth is under the 3-thread fallback ceiling, so untouched.
+      expect(results[1].d_cpu_cores).toBeCloseTo(2, 4);
+      expect(results[1].rate_clamped).toBe(false);
     });
 
     it('leaves physically plausible rates untouched', async () => {

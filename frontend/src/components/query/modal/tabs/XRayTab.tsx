@@ -6,7 +6,8 @@
  *   Y = CPU cores used (width of corridor)
  *   Z = Memory MB (height of corridor)
  *
- * Inner traces show I/O Wait, Read throughput, and Network.
+ * Inner traces show read throughput plus the three metered waits — disk, CPU
+ * queue, and network — each drawn only when it actually fired.
  * A slider scrubs through text_log events, highlighting each event's
  * time position with a vertical marker in the 3D scene.
  */
@@ -187,7 +188,7 @@ const Scrubber: React.FC<{
         <span style={{ color: '#7B83FF' }}>IO {s.d_io_wait_s.toFixed(2)}</span>
         <span style={{ color: '#FF6692' }}>Net {s.d_net_recv_wait_s.toFixed(2)}</span>
         <span style={{ color: '#00DD99' }}>read_bytes {s.d_read_mb.toFixed(0)} MB/s</span>
-        <span style={{ color: '#aaa' }}>{s.thread_count} thr</span>
+        <span style={{ color: '#aaa' }} title="Threads joined so far, cumulative — not concurrency">{s.thread_count} thr used</span>
       </div>
     );
   })();

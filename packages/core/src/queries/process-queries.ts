@@ -17,7 +17,17 @@ export interface ProcessSample {
   /** Seconds since query start */
   t: number;
   elapsed: number;
-  /** Number of active threads */
+  /**
+   * length(thread_ids) — "the list of identifiers of all threads which
+   * participated in this query" (ClickHouse docs). Cumulative, not concurrency:
+   * ClickHouse pools threads and re-attaches them, so pooled workers
+   * (VFSRead, Reader, ParquetDecoder) stay in the list after finishing, and the
+   * value climbs monotonically through a query.
+   *
+   * Use peak_threads_usage for concurrency — "maximum count of simultaneous
+   * threads executing the query". Never present this as "threads running now",
+   * and never derive per-interval concurrency from it.
+   */
   thread_count: number;
 
   // --- Cumulative (running totals at sample time) ---
@@ -133,7 +143,7 @@ FROM (
     SELECT
         ${multi ? 'initial_query_id,' : ''} query_id,
         toFloat64(dateDiff('millisecond', min_time, sample_time)) / 1000 AS t,
-        elapsed, length(thread_ids) AS thread_count,
+        elapsed, length(thread_ids) AS thread_count, peak_threads_usage,
         memory_usage / (1024 * 1024) AS memory_mb,
         peak_memory_usage / (1024 * 1024) AS peak_memory_mb,
         read_rows, written_rows, read_bytes,
@@ -148,19 +158,31 @@ FROM (
             )) / 1000,
             0.1
         ) AS dt,
-        -- Upper bound on thread-time rates for this interval. Thread counters
-        -- are merged into the query total when a thread *detaches*, and pipeline
-        -- threads come and go throughout execution, so any interval that catches
-        -- a detach absorbs that thread's whole accumulated wait — observed as
-        -- +75s of OSCPUWaitMicroseconds inside 0.9s on a 4-thread process. The
-        -- time is real, but attributing it to one interval yields a rate no
-        -- number of threads could produce. Bound by the larger of the two
-        -- samples' thread counts, since threads may have exited mid-interval.
-        -- Measured at ~1.3% of intervals on a live cluster, more often
-        -- mid-query than at teardown.
+        -- Upper bound on thread-time rates for this interval: the largest number
+        -- of threads that ran this query at once.
+        --
+        -- peak_threads_usage, not length(thread_ids). The docs are explicit:
+        -- thread_ids is "the list of identifiers of all threads which
+        -- participated in this query" — cumulative — while peak_threads_usage is
+        -- "maximum count of simultaneous threads executing the query". ClickHouse
+        -- pools and re-attaches threads (one query showed 424 query_thread_log
+        -- rows across 38 distinct OS threads), so the cumulative list climbs all
+        -- query long and gave a ceiling roughly double the real one.
+        --
+        -- Falls back to the cumulative count when peak_threads_usage is absent —
+        -- some managed providers strip it — which is loose but never clamps a
+        -- legitimate rate.
+        --
+        -- The bound is needed because thread counters are merged into the query
+        -- total when a thread *detaches*, and pooled threads detach constantly,
+        -- so any interval catching a detach absorbs that thread's whole
+        -- accumulated wait: observed as +75s of OSCPUWaitMicroseconds inside
+        -- 0.9s on a 4-thread process. The time is real, but attributing it to one
+        -- interval yields a rate no number of threads could produce.
         toFloat64(greatest(
-            length(thread_ids),
-            lagInFrame(length(thread_ids), 1, length(thread_ids)) OVER w
+            if(peak_threads_usage > 0, peak_threads_usage, length(thread_ids)),
+            lagInFrame(if(peak_threads_usage > 0, peak_threads_usage, length(thread_ids)), 1,
+                       if(peak_threads_usage > 0, peak_threads_usage, length(thread_ids))) OVER w
         )) AS thread_bound,
         -- raw deltas (lag defaults to self so first sample = 0)
         (pe_cpu - lagInFrame(pe_cpu, 1, pe_cpu) OVER w) / 1000000 AS raw_d_cpu,
@@ -178,7 +200,7 @@ FROM (
             ${multi ? 'initial_query_id,' : ''} query_id, sample_time,
             min(sample_time) OVER (${minTimePartition}) AS min_time,
             elapsed, memory_usage, peak_memory_usage,
-            read_bytes, read_rows, written_rows, thread_ids,
+            read_bytes, read_rows, written_rows, thread_ids, peak_threads_usage,
             ProfileEvents['OSCPUVirtualTimeMicroseconds'] AS pe_cpu,
             -- OSIOWaitMicroseconds: blocked on a block device (real disk reads).
             -- OSCPUWaitMicroseconds: runnable but no free CPU (run-queue contention).
@@ -249,7 +271,7 @@ FROM (
     SELECT
         hostname, query_id,
         toFloat64(dateDiff('millisecond', min_time, sample_time)) / 1000 AS t,
-        elapsed, length(thread_ids) AS thread_count,
+        elapsed, length(thread_ids) AS thread_count, peak_threads_usage,
         memory_usage / (1024 * 1024) AS memory_mb,
         peak_memory_usage / (1024 * 1024) AS peak_memory_mb,
         read_rows, written_rows, read_bytes,
@@ -265,8 +287,9 @@ FROM (
         ) AS dt,
         -- See buildProcessSamplesSQL for why thread-time rates need this bound.
         toFloat64(greatest(
-            length(thread_ids),
-            lagInFrame(length(thread_ids), 1, length(thread_ids)) OVER w
+            if(peak_threads_usage > 0, peak_threads_usage, length(thread_ids)),
+            lagInFrame(if(peak_threads_usage > 0, peak_threads_usage, length(thread_ids)), 1,
+                       if(peak_threads_usage > 0, peak_threads_usage, length(thread_ids))) OVER w
         )) AS thread_bound,
         (pe_cpu - lagInFrame(pe_cpu, 1, pe_cpu) OVER w) / 1000000 AS raw_d_cpu,
         (pe_io_wait - lagInFrame(pe_io_wait, 1, pe_io_wait) OVER w) / 1000000 AS raw_d_io,
@@ -283,7 +306,7 @@ FROM (
             hostname, query_id, sample_time,
             min(sample_time) OVER (PARTITION BY hostname) AS min_time,
             elapsed, memory_usage, peak_memory_usage,
-            read_bytes, read_rows, written_rows, thread_ids,
+            read_bytes, read_rows, written_rows, thread_ids, peak_threads_usage,
             ProfileEvents['OSCPUVirtualTimeMicroseconds'] AS pe_cpu,
             -- OSIOWaitMicroseconds: blocked on a block device (real disk reads).
             -- OSCPUWaitMicroseconds: runnable but no free CPU (run-queue contention).

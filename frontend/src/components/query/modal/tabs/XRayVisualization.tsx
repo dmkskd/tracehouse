@@ -6,7 +6,9 @@
  *   Y = CPU cores used (width of corridor)
  *   Z = Memory MB (height of corridor)
  *
- * Inner traces show I/O Wait, Read throughput, and Network.
+ * Inner traces show read throughput plus the three metered waits — disk, CPU
+ * queue, and network — each drawn only when it actually fired, and coloured to
+ * match its segment in the time-breakdown bar.
  * A slider scrubs through text_log events, highlighting each event's
  * time position with a vertical marker in the 3D scene.
  */
@@ -560,11 +562,20 @@ const InnerTraces: React.FC<{
   // Smooth the inner metrics too
   const smoothIo = useMemo(() => smooth(samples.map(s => s.d_io_wait_s), 5), [samples]);
   const smoothRead = useMemo(() => smooth(samples.map(s => s.d_read_mb), 5), [samples]);
-  const smoothNet = useMemo(() => smooth(samples.map(s => (s.d_net_send_kb + s.d_net_recv_kb)), 5), [samples]);
+  // Network *wait*, not bytes. The previous trace used d_net_*_kb — throughput,
+  // which stays near zero on exactly the queries this view exists to catch: a
+  // thread blocked on a socket transfers almost nothing. It was also drawn at a
+  // constant height, so it carried no information at all.
+  const smoothNetWait = useMemo(
+    () => smooth(samples.map(s => s.d_net_recv_wait_s + s.d_net_send_wait_s), 5),
+    [samples],
+  );
+  const smoothCpuWait = useMemo(() => smooth(samples.map(s => s.d_cpu_wait_s), 5), [samples]);
 
   const maxIo = useMemo(() => Math.max(...smoothIo, 0.001), [smoothIo]);
   const maxRead = useMemo(() => Math.max(...smoothRead, 0.001), [smoothRead]);
-  const maxNet = useMemo(() => Math.max(...smoothNet, 0), [smoothNet]);
+  const maxNetWait = useMemo(() => Math.max(...smoothNetWait, 0.001), [smoothNetWait]);
+  const maxCpuWait = useMemo(() => Math.max(...smoothCpuWait, 0.001), [smoothCpuWait]);
 
   // Inner traces run along the corridor at fixed height fractions
   // Y position: proportional to CPU width for "inside corridor" feel
@@ -589,26 +600,42 @@ const InnerTraces: React.FC<{
     [samples, maxT, maxCpu, smoothCpu, smoothRead, maxRead]
   );
 
-  const netPoints = useMemo(() =>
-    maxNet > 0
-      ? samples.map((s, i) => {
-          const x = mapT(s.t, maxT);
-          const cpu = mapCpu(smoothCpu[i], maxCpu);
-          return new THREE.Vector3(x, cpu * 0.4, MAX_Z * 0.75);
-        })
-      : [],
-    [samples, maxT, maxCpu, smoothCpu, maxNet]
+  const netWaitPoints = useMemo(() =>
+    samples.map((s, i) => {
+      const x = mapT(s.t, maxT);
+      const cpu = mapCpu(smoothCpu[i], maxCpu);
+      const yNorm = smoothNetWait[i] / maxNetWait;
+      return new THREE.Vector3(x, cpu * (0.65 + yNorm * 0.15), MAX_Z * 0.75);
+    }),
+    [samples, maxT, maxCpu, smoothCpu, smoothNetWait, maxNetWait]
   );
+
+  const cpuWaitPoints = useMemo(() =>
+    samples.map((s, i) => {
+      const x = mapT(s.t, maxT);
+      const cpu = mapCpu(smoothCpu[i], maxCpu);
+      const yNorm = smoothCpuWait[i] / maxCpuWait;
+      return new THREE.Vector3(x, cpu * (0.35 + yNorm * 0.15), MAX_Z * 0.9);
+    }),
+    [samples, maxT, maxCpu, smoothCpu, smoothCpuWait, maxCpuWait]
+  );
+
+  // A trace is only drawn when its metric actually fired. Threading a flat line
+  // through the corridor for a wait that never happened reads as a measurement.
+  const hasNetWait = maxNetWait > 0.001;
+  const hasCpuWait = maxCpuWait > 0.001;
+  const hasIoWait = maxIo > 0.001;
 
   if (n < 2) return null;
 
   return (
     <group>
-      <Line points={ioPoints} color="#7B83FF" lineWidth={5} />
+      {/* Colours match the composition palette in timeBreakdownDisplay.ts, so a
+          trace here means the same thing as its segment in the breakdown bar. */}
+      {hasIoWait && <Line points={ioPoints} color="#7B83FF" lineWidth={5} />}
       <Line points={readPoints} color="#00DD99" lineWidth={4} />
-      {netPoints.length > 1 && (
-        <Line points={netPoints} color="#33DDFF" lineWidth={3} />
-      )}
+      {hasNetWait && <Line points={netWaitPoints} color="#FF6692" lineWidth={4} />}
+      {hasCpuWait && <Line points={cpuWaitPoints} color="#B682FF" lineWidth={4} />}
     </group>
   );
 };
@@ -817,7 +844,9 @@ const HoverTooltip: React.FC<{
             <div><span style={{ color: '#00DD99' }}>read_bytes:</span> {s.d_read_mb.toFixed(1)} MB/s</div>
             {s.d_net_send_kb > 0 && <div><span style={{ color: '#33DDFF' }}>Net Send:</span> {s.d_net_send_kb.toFixed(1)} KB</div>}
             {s.d_net_recv_kb > 0 && <div><span style={{ color: '#33DDFF' }}>Net Recv:</span> {s.d_net_recv_kb.toFixed(1)} KB</div>}
-            <div><span style={{ color: '#aaa' }}>Threads:</span> {s.thread_count}</div>
+            <div title="Threads that have joined this query so far, including short-lived pool threads that have already finished. Not concurrency.">
+              <span style={{ color: '#aaa' }}>Threads used:</span> {s.thread_count}
+            </div>
             {sampleCounts && hasTraceSamplesInRange(sampleCounts, s.t + sampleOffset, s.t + sampleOffset + 1) && (
               <div style={{
                 borderTop: '1px solid #333', paddingTop: 3, marginTop: 3,
