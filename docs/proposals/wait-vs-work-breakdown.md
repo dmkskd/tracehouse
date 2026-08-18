@@ -1,7 +1,7 @@
 # Proposal: Wait vs work breakdown
 
-**Status:** Phases 1–2 implemented and validated on a live cluster, 2026-08-18.
-Phases 3–5 proposed. Prompted by an Altinity write-up of a Kafka→ClickHouse
+**Status:** Phases 1 through 4.5 implemented and validated on a live cluster,
+2026-08-18. Phase 5 not started. Prompted by an Altinity write-up of a Kafka→ClickHouse
 pipeline where the fix hinged on a signal TraceHouse collects but never surfaces.
 
 Phases 1–2 gave X-Ray a per-second answer to "where did the time go". Phases 3–4
@@ -118,7 +118,7 @@ contention and scheduling gaps hide.
 Note this is sampled at the sampler's REFRESH interval, not exact. The signal in
 question was a 3.3s-out-of-3.3s ratio; it survives sampling comfortably.
 
-## Phase 3 — `<TimeBreakdownBar>` in Overview: where a query's time went
+## Phase 3 — `<TimeBreakdownBar>` in Overview: where a query's time went  ✅ implemented
 
 X-Ray answers this per second, for one query, on a page you have to go looking
 for. Phases 3 and 4 answer it as a *summary*, everywhere a duration is already
@@ -223,7 +223,7 @@ you would expect:
 - `OSIOWaitMicroseconds` reads 0 without procfs/taskstats, so an absent disk
   segment must not be presented as "no disk wait".
 
-## Phase 4 — the same bar in the distributed timeline
+## Phase 4 — the same bar in the distributed timeline  ✅ implemented
 
 One component, three placements. This is where the payoff is highest.
 
@@ -304,7 +304,7 @@ falls back to "Query log only", the bars render unsegmented. Two extra
 `ProfileEvents[...]` lines in `SUB_QUERIES` close it; worth doing in the same
 pass so the fill does not silently vanish.
 
-## Phase 4.5 — an analytics dashboard to explore the numbers
+## Phase 4.5 — an analytics dashboard to explore the numbers  ✅ implemented
 
 Phases 3–4 answer "where did *this* query's time go". This phase answers "where
 is time going *across the workload*", and lets a user pull the numbers apart
@@ -510,17 +510,60 @@ Two further ideas that follow from it, both larger:
   `distributed-query-topology.ts` and `DistributedQueryTopology.tsx` already do
   this for SELECT fan-out; this is the same rendering on the write path.
 
+## What building it changed
+
+Five claims in the sections above were wrong, and are corrected here rather
+than quietly edited out — each was disproven by measurement, and the reasoning
+is worth keeping.
+
+**1. The composition must not be painted onto a timeline.** Phase 4 originally
+filled the Gantt bars with the composition, on the argument that bar length
+stays wall clock so only the paint changes. In practice a horizontally
+segmented bar on a time axis reads as a *sequence* — "CPU, then queue, then
+parked" — when the parts have no order. The composition now appears only in the
+hover panel, which has no time axis. Stacking vertically was tried first and
+still implied phases.
+
+**2. The coordinator-overhead split cannot use `Network*Elapsed`.** Already
+noted below, but confirmed on a clean case: a coordinator that waited 5.63s of
+its 5.64s for a shard recorded 10ms. The existing wall-clock arithmetic
+(coordinator duration minus slowest child) is honest and needs no counter.
+
+**3. The residual is not mainly lock contention.** `RealTimeMicroseconds` is
+thread *lifetime*, so idle-but-alive threads dominate it. Three
+indistinguishable causes: over-parallelised short queries, coordinators on
+async epoll, and genuine contention. Renamed from "Unaccounted" to **Parked**,
+which names the thread state instead of implying a measurement failure.
+
+**4. `query_thread_log` is not a portable fallback.** `log_query_threads`
+defaults to 0 (verified `changed = 0`), so the exact per-thread denominator is
+unavailable on most deployments. The connection-handler discount is an
+approximation instead — and it must be *skipped* when it would not fit rather
+than clamped, or it reports a fabricated 100% accounting. That clamp fired on 5
+of 6 queries before it was caught.
+
+**5. `processors_profile_log` cannot apportion the residual.** Per-processor
+waits overlap across concurrently blocked processors — measured at 3x to 100x a
+query's thread-time residual. It ranks stalled stages; it never divides a
+duration.
+
+One further constraint found while wiring the dashboard: `@query_link` opens a
+query via a lookup that filters `is_initial_query = 1`, so any panel listing
+shard children produces clicks that silently do nothing. Panels that link must
+filter to coordinators.
+
 ## Suggested order
 
-Phases 1–2 are done (see below). Then **Phase 3 before Phase 4**: build
-`<TimeBreakdownBar>` in Overview first. It reaches every query rather than the
-subset that fans out, it is a smaller surface on which to get the composition
-maths right, and the distributed timeline then reuses a component already proven
-on real data. Phase 4 adds placements, not new logic.
+Phases 1 through 4.5 are done. What remains:
 
-Phase 4.5 (the analytics dashboard) depends on the same accessor Phase 3
-defines, so it should not start before Phase 3 lands. Phase 5 is its own body of
-work and should not block any of it.
+1. **Grant `allow_introspection_functions`** to the connection user. Layer 3
+   works when queried directly but reports "not permitted" in the app, so a
+   third of the explanation is currently invisible. No code; it decides whether
+   layer 3 earned its place.
+2. **Phase 5** — materialized view coverage, below. Still the blind spot the
+   original article was actually about.
+3. **The X-Ray analytics panels** do not filter `is_initial_query`, so ~3% of
+   their rows (shard children) are dead clicks. One line per panel.
 
 ## What Phases 1–2 established
 

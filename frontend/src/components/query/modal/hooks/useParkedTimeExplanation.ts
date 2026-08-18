@@ -50,7 +50,11 @@ export function useParkedTimeExplanation(
 ): ParkedTimeExplanation {
   const services = useClickHouseServices();
   const { available: hasProcessors } = useCapabilityCheck(['processors_profile_log']);
-  const { available: hasTraceLog } = useCapabilityCheck(['trace_log']);
+  // Both, not just trace_log: the layer needs symbolization, and
+  // introspection_functions is the probe Engine Internals already gates its CPU
+  // sampling on. Checking only the table produced a panel that advertised the
+  // layer and then reported it denied.
+  const { available: hasTraceLog } = useCapabilityCheck(['trace_log', 'introspection_functions']);
 
   const [stallRows, setStallRows] = useState<Awaited<ReturnType<NonNullable<typeof services>['queryAnalyzer']['getPipelineStall']>>>([]);
   const [blockedRows, setBlockedRows] = useState<BlockedStackRow[]>([]);
