@@ -352,6 +352,138 @@ a stray value is far less scrutinised than in a modal:
   (procfs/taskstats). At dashboard scale that ambiguity spreads silently — the
   panel needs to say which.
 
+## Three layers of explaining "Parked"
+
+The composition is always the same five segments. What changes by deployment is
+how far you can subdivide the parked one. Each layer is capability-probed and
+degrades to the layer above it, so the bar never depends on a source being
+present.
+
+| Layer | Source | Availability | What it says about Parked |
+|---|---|---|---|
+| **1** | `query_log` ProfileEvents | always | that it happened, and how much |
+| **2** | `processors_profile_log` | usually — no special privilege | *which pipeline stage*, and which side (starved on input vs back-pressured on output) |
+| **3** | `trace_log` Real + introspection | often blocked, especially on SaaS | *the actual blocking call*, by proportion |
+
+**Layer 1** is the floor. It gives CPU / Queue / Disk / Network and a residual it
+cannot open. Measured below: on distributed coordinators that residual reaches
+99%, and no amount of ProfileEvents arithmetic reduces it.
+
+**Layer 2** ranks the stalled stages. `input_wait_elapsed_us` and
+`output_wait_elapsed_us` per processor distinguish *starved waiting for upstream
+data* from *back-pressured because downstream could not consume*. Per-processor
+waits overlap heavily — measured at 3x-100x the thread-time residual — so this
+layer ranks stages and never apportions a duration.
+
+**Layer 3** is the real answer, and the least available. `Real` traces fire on a
+per-thread wall-clock timer, so they sample threads while they are blocked and
+capture the stack. Walking past the unresolved kernel frame names the call:
+
+```
+ExecutionThreadContext::wait          48,255   parked pipeline thread
+Epoll::getManyReady                   37,234   waiting for a remote shard
+ConcurrentBoundedQueue<Chunk>::pop    29,792   waiting on an async queue
+WriteBufferFromPocoSocket::send        7,686   blocked writing to the client
+```
+
+That is every hypothesis in this document, measured. Note the second row: the
+async shard wait that `NetworkReceiveElapsedMicroseconds` misses entirely is
+plainly visible here.
+
+Layer 3 gates on three things, all probeable: `allow_introspection_functions`
+(a privilege, commonly denied to read-only users and on hosted offerings),
+symbols in the binary, and `query_profiler_real_time_period_ns > 0`. Sampling
+is also incomplete — coverage measured at 24-65% of `RealTimeMicroseconds` at a
+10ms period — so this layer gives proportions among sampled blocked stacks, not
+an absolute apportionment.
+
+**The rule that holds across all three layers:** every source here is usable as
+a ratio and none as a duration on a wall-clock axis.
+
+### Layers 2 and 3 compared, same queries
+
+They are not two resolutions of one answer — they answer different questions,
+and neither implies the other.
+
+```
+query b5e19c26
+  L2  MarshallBlocks    22.1s in-wait    starved
+      MergeTreeSelect   17.4s out-wait   back-pressured
+  L3  pipeline 32.3% · client 31.7% · remote_shard 24.4% · queue 9.1%
+
+query 9a1d7fa0
+  L2  MarshallBlocks    21.4s out-wait   back-pressured
+      ConvertingAggregated... 19.8s out-wait   back-pressured
+  L3  pipeline 31.1% · client 28.6% · remote_shard 26.1% · queue 10.7%
+```
+
+- **Layer 2 locates the choke point in the plan.** "MergeTreeSelect is
+  back-pressured" tells you reads are being held up by something downstream —
+  actionable against the query shape.
+- **Layer 3 names the cause outside the plan.** "client 32%" says the consumer
+  cannot keep up. Layer 2 cannot see that: it reports back-pressure without
+  saying what is applying it.
+- Conversely layer 3 cannot see plan structure — "MarshallBlocks starved" is
+  invisible there, folded into `pipeline` and `queue`.
+
+So the useful reading is both together: *reads back-pressured (L2) because the
+client is not consuming (L3)*. Neither sentence is derivable from one layer.
+
+Practical consequence for the UI: layer 3 is not a drill-down of layer 2 and
+should not be rendered as one. Two sentences, not a tree.
+
+## Layer 1 detail: where the floor is
+
+Measured on the dev cluster, this is the limit of what `query_log` can explain.
+A distributed GROUP BY over `nyc_taxi.trips` (168ms wall):
+
+| row | RealTime | CPU | named waits | residual |
+|---|---|---|---|---|
+| coordinator | 834ms | 7.6ms | ~1ms | **99%** |
+| shard child A | 814ms | 486ms | ~78ms | ~31% |
+| shard child B | 703ms | 420ms | ~54ms | ~31% |
+
+Two structurally untimed contributors dominate it:
+
+- **Coordinators blocked on shards.** Remote reads go through async epoll, so
+  blocking never hits the receive timer — `NetworkReceiveElapsedMicroseconds`
+  read 305µs on that coordinator. Nothing else in its ProfileEvents map is
+  nameable: no disk read, no IO wait, no thread-pool wait.
+- **Pipeline threads starved on ports.** Threads attached to the query thread
+  group accrue RealTime while waiting on input/output ports, and no `query_log`
+  counter names it.
+
+`system.processors_profile_log` names both, per plan step. For the query above,
+`ExpressionTransform` showed 937ms of `input_wait_elapsed_us` against 208ms of
+real work in `AggregatingTransform`. Cluster-wide the pattern is stark —
+`ExpressionTransform` totals 1,570s of input wait against 9.6s of work.
+
+That turns "80% unaccounted" into something actionable: *starved waiting on the
+read pool* vs *blocked pushing to the coordinator*. It is the only source found
+that decomposes the residual.
+
+**Constraints for whoever builds it:**
+
+- `log_query_threads` defaults to 0 (verified `changed = 0` on a live cluster),
+  so per-thread data is not a portable fallback. Do not design around it.
+- `log_processors_profiles` was enabled on the dev cluster (`changed = 1`), so
+  treat it as a capability to detect, not to assume.
+- `input_wait`/`output_wait` are summed across processors and threads, so they
+  are subject to the same rule as everything else here: usable as ratios, never
+  as durations on a wall-clock axis.
+- `OSIOWaitMicroseconds` is 0 on every pod in this deployment (no taskstats in
+  the containers), so the Disk segment reads zero there regardless.
+
+**Layer 1 alone should not present a residual it cannot explain.** Where neither
+layer 2 nor 3 is available and the named segments do not account for most of the
+denominator, fall back to the existing CPU bar rather than showing a user "80%
+parked" with no way to open it.
+
+Build order follows availability, not precision: layer 2 first, since it works
+everywhere and turns the residual from a dead end into "which stage". Layer 3
+layers on top for the deployments that allow it — the same segment, subdivided
+further, no different UI.
+
 ## Phase 5 — materialized view coverage
 
 `system.query_views_log` is granted to the demo read-only user, configured in

@@ -1,6 +1,15 @@
 import type { IClickHouseAdapter } from '../adapters/types.js';
 import type { QueryMetrics, QueryHistoryItem } from '../types/query.js';
-import { RUNNING_QUERIES, QUERY_DETAIL, QUERY_THREAD_BREAKDOWN, PROFILE_EVENT_DESCRIPTIONS, SUB_QUERIES, BATCH_SUB_QUERIES, COORDINATOR_IDS, RUNNING_COORDINATOR_IDS, QUERY_LOG_FLUSH_INTERVAL, DISTRIBUTED_TOPOLOGY_EXECUTIONS, DISTRIBUTED_TOPOLOGY_EXECUTIONS_BY_QUERY_IDS, DISTRIBUTED_TOPOLOGY_CLUSTER_HOSTS, DISTRIBUTED_TOPOLOGY_PROCESSORS, withProcessorPlanStepCapability, DISTRIBUTED_TOPOLOGY_TEXT_LOGS, DISTRIBUTED_TOPOLOGY_ASYNC_INSERT_LOGS, buildColumnCommentsSQL } from '../queries/query-queries.js';
+import { RUNNING_QUERIES, QUERY_DETAIL, QUERY_THREAD_BREAKDOWN, PROFILE_EVENT_DESCRIPTIONS, SUB_QUERIES, BATCH_SUB_QUERIES, COORDINATOR_IDS, RUNNING_COORDINATOR_IDS, QUERY_LOG_FLUSH_INTERVAL, DISTRIBUTED_TOPOLOGY_EXECUTIONS, DISTRIBUTED_TOPOLOGY_EXECUTIONS_BY_QUERY_IDS, DISTRIBUTED_TOPOLOGY_CLUSTER_HOSTS, DISTRIBUTED_TOPOLOGY_PROCESSORS, withProcessorPlanStepCapability, DISTRIBUTED_TOPOLOGY_TEXT_LOGS, DISTRIBUTED_TOPOLOGY_ASYNC_INSERT_LOGS, buildColumnCommentsSQL, QUERY_PIPELINE_STALL, QUERY_BLOCKED_STACKS } from '../queries/query-queries.js';
+import { mapPipelineStallRow, type PipelineStallRow } from '../utils/pipeline-stall.js';
+import { mapBlockedStackRow, type BlockedStackRow } from '../utils/blocked-stacks.js';
+
+/** Blocked-stack rows plus why they might be empty. */
+export interface BlockedStacksResult {
+  rows: BlockedStackRow[];
+  /** True when the server refused the introspection functions the query needs. */
+  denied: boolean;
+}
 /**
  * ProfileEvent comparison row between two queries.
  * Inspired by https://clickhouse.com/docs/knowledgebase/comparing-metrics-between-queries
@@ -1370,6 +1379,49 @@ export class QueryAnalyzer {
       if (name) map[name] = desc;
     }
     return map;
+  }
+
+  /**
+   * Layer 2 of explaining parked thread time: which pipeline stage stalled, and
+   * on which side. Needs no special privilege beyond reading the log table.
+   *
+   * Returns an empty array when processors_profile_log is unavailable — an
+   * absent layer is a normal state here, not an error.
+   */
+  async getPipelineStall(queryId: string, eventDate?: string): Promise<PipelineStallRow[]> {
+    const sql = buildQuery(QUERY_PIPELINE_STALL.replace('{event_date_bound}', eventDateBound(eventDate)), { query_id: queryId });
+    try {
+      const rows = await this.adapter.executeQuery(tagQuery(sql, sourceTag(TAB_QUERIES, 'pipelineStall')));
+      return rows.map(r => mapPipelineStallRow(r as Record<string, unknown>));
+    } catch {
+      return [];
+    }
+  }
+
+  /**
+   * Layer 3: the call each parked thread was actually blocked in, sampled from
+   * trace_log Real traces.
+   *
+   * Requires allow_introspection_functions, which is commonly denied to
+   * read-only users and on hosted offerings, so failure is expected and means
+   * "layer unavailable". Callers should gate on the capability first; this
+   * still swallows errors so a denied privilege cannot break the surface.
+   */
+  async getBlockedStacks(queryId: string, eventDate?: string): Promise<BlockedStacksResult> {
+    const sql = buildQuery(QUERY_BLOCKED_STACKS.replace('{event_date_bound}', eventDateBound(eventDate)), { query_id: queryId });
+    try {
+      const rows = await this.adapter.executeQuery(tagQuery(sql, sourceTag(TAB_QUERIES, 'blockedStacks')));
+      return { rows: rows.map(r => mapBlockedStackRow(r as Record<string, unknown>)), denied: false };
+    } catch (error) {
+      // A query with zero samples and one the server refused to symbolize both
+      // return nothing, but they mean different things to a user: one is "this
+      // query was never sampled", the other "your user cannot use introspection
+      // functions". Guessing between them puts a misleading fix in front of
+      // someone who cannot act on it.
+      const message = error instanceof Error ? error.message : String(error);
+      const denied = /introspection|ACCESS_DENIED|not enough privileges|allow_introspection/i.test(message);
+      return { rows: [], denied };
+    }
   }
 
 }

@@ -134,6 +134,63 @@ describe('computeTimeBreakdown', { tags: ['observability'] }, () => {
   });
 });
 
+describe('connection handler correction', { tags: ['observability'] }, () => {
+  it('discounts one wall-clock of handler thread from the denominator', () => {
+    // Real coordinator shape: 2 threads, both alive the full 11.75s, but one is
+    // TCPHandler doing 0.03s of work. Leaving it in halves every share.
+    const pe = {
+      RealTimeMicroseconds: 23.5 * S,
+      OSCPUVirtualTimeMicroseconds: 2.01 * S,
+    };
+
+    const raw = computeTimeBreakdown(pe);
+    expect(raw.segments.find(s => s.key === 'cpu')?.share).toBeCloseTo(0.0855, 3);
+    expect(raw.handlerThreadExcluded).toBe(false);
+
+    const corrected = computeTimeBreakdown(pe, { wallClockMs: 11_750 });
+    expect(corrected.handlerThreadExcluded).toBe(true);
+    expect(corrected.totalUs).toBeCloseTo(11.75 * S, 0);
+    expect(corrected.segments.find(s => s.key === 'cpu')?.share).toBeCloseTo(0.171, 3);
+  });
+
+  it('skips the correction rather than fabricating a full accounting', () => {
+    // Regression: clamping the denominator up to `named` reported a residual of
+    // exactly zero with no overlap warning — a confident claim the query was
+    // fully explained. Measured on a live cluster this fired on most queries.
+    // When the subtraction does not fit, leave the denominator alone.
+    const b = computeTimeBreakdown({
+      RealTimeMicroseconds: 10 * S,
+      OSCPUVirtualTimeMicroseconds: 9 * S,
+    }, { wallClockMs: 10_000 });
+
+    expect(b.handlerThreadExcluded).toBe(false);
+    expect(b.totalUs).toBe(10 * S);
+    // The residual survives instead of being swallowed by the clamp.
+    expect(b.segments.find(s => s.key === 'unaccounted')?.share).toBeCloseTo(0.1, 6);
+  });
+
+  it('still reports overlap when counters exceed real time', () => {
+    // Live example: 102s of named time against 55s of RealTime. The correction
+    // must not turn that into a clean 100% with no warning.
+    const b = computeTimeBreakdown({
+      RealTimeMicroseconds: 55 * S,
+      OSCPUVirtualTimeMicroseconds: 30 * S,
+      OSCPUWaitMicroseconds: 72 * S,
+    }, { wallClockMs: 21_600 });
+
+    expect(b.handlerThreadExcluded).toBe(false);
+    expect(b.normalized).toBe(true);
+    expect(b.segments.some(s => s.key === 'unaccounted')).toBe(false);
+  });
+
+  it('ignores a missing or nonsensical wall clock', () => {
+    const pe = { RealTimeMicroseconds: 20 * S, OSCPUVirtualTimeMicroseconds: 5 * S };
+    expect(computeTimeBreakdown(pe).handlerThreadExcluded).toBe(false);
+    expect(computeTimeBreakdown(pe, { wallClockMs: 0 }).handlerThreadExcluded).toBe(false);
+    expect(computeTimeBreakdown(pe, { wallClockMs: -5 }).handlerThreadExcluded).toBe(false);
+  });
+});
+
 describe('dominantSegment / waitShare', { tags: ['observability'] }, () => {
   it('reports the widest non-residual segment as dominant', () => {
     const b = computeTimeBreakdown({

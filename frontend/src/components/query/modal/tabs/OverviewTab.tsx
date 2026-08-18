@@ -1,7 +1,8 @@
 import React, { useMemo } from 'react';
 import type { DistributedTopology, ObjectStorageProfileSummary, QueryDetail as QueryDetailType, QuerySeries, SimilarQuery, SubQueryInfo, TimeBreakdown } from '@tracehouse/core';
 import { computeTimeBreakdown } from '@tracehouse/core';
-import { TimeBreakdownBar } from '../shared/TimeBreakdownBar';
+import { TimeBreakdownBar, PARKED_EXPLANATION_THRESHOLD } from '../shared/TimeBreakdownBar';
+import { useParkedTimeExplanation } from '../hooks/useParkedTimeExplanation';
 import { formatBytes } from '../../../../stores/databaseStore';
 import { formatDurationMs, formatMicroseconds, formatNumberCompact } from '../../../../utils/formatters';
 import { querySqlLineCount, querySqlText } from '../../../../utils/querySqlText';
@@ -193,8 +194,16 @@ export const OverviewTab: React.FC<OverviewTabProps> = ({
   // QUERY_DETAIL already selects the full ProfileEvents map, so this costs no
   // extra query — it just reads counters we were already fetching and dropping.
   const timeBreakdown: TimeBreakdown = useMemo(
-    () => computeTimeBreakdown(queryDetail?.ProfileEvents),
-    [queryDetail?.ProfileEvents],
+    () => computeTimeBreakdown(queryDetail?.ProfileEvents, {
+      wallClockMs: Number(queryDetail?.query_duration_ms ?? q.duration_ms) || 0,
+    }),
+    [queryDetail?.ProfileEvents, queryDetail?.query_duration_ms, q.duration_ms],
+  );
+
+  // Only worth fetching once the bar has a parked segment worth explaining.
+  const parkedExplanation = useParkedTimeExplanation(
+    q,
+    timeBreakdown.available && timeBreakdown.segments.some(s => s.key === 'unaccounted' && s.share >= PARKED_EXPLANATION_THRESHOLD),
   );
 
   const pressureScores = {
@@ -318,7 +327,7 @@ export const OverviewTab: React.FC<OverviewTabProps> = ({
               how much of this time was CPU — but decomposed, labelled, and
               with the waits named instead of lumped into the empty remainder. */}
           {timeBreakdown.available
-            ? <TimeBreakdownBar breakdown={timeBreakdown} />
+            ? <TimeBreakdownBar breakdown={timeBreakdown} parked={parkedExplanation} />
             : <ProgressBar value={q.duration_ms > 0 ? ((q.cpu_us / 1000) / q.duration_ms) * 100 : 0} color="#a371f7" />}
         </ExploreDestinationCard>
 

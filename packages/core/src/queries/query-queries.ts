@@ -708,3 +708,63 @@ export function buildColumnCommentsSQL(
     GROUP BY c.database, c.table, c.name
   `;
 }
+
+/**
+ * Per-processor stall summary for one query, from system.processors_profile_log.
+ *
+ * Answers the question query_log cannot: when a query's thread time is mostly
+ * parked, which pipeline stage was blocked and on which side. `input_wait` means
+ * starved waiting for upstream data; `output_wait` means back-pressured because
+ * downstream could not consume.
+ *
+ * These are per-processor wall times and overlap heavily across concurrent
+ * processors — measured at 3x to 100x a query's thread-time residual. They are
+ * usable to *rank* stages, never to apportion a duration.
+ *
+ * Requires: query_id param. Gate on the processors_profile_log capability.
+ */
+export const QUERY_PIPELINE_STALL = `
+  SELECT
+    name,
+    sum(input_wait_elapsed_us) AS input_wait_us,
+    sum(output_wait_elapsed_us) AS output_wait_us,
+    sum(elapsed_us) AS active_us
+  FROM {{cluster_aware:system.processors_profile_log}}
+  WHERE (query_id = {query_id} OR initial_query_id = {query_id})
+    AND event_date >= {event_date_bound}
+  GROUP BY name
+  ORDER BY greatest(input_wait_us, output_wait_us) DESC
+  LIMIT 10
+`;
+
+/**
+ * Blocked-stack profile for one query, from system.trace_log Real samples.
+ *
+ * Layer 3 of the parked-time explanation (see utils/blocked-stacks.ts). `Real`
+ * traces fire on a per-thread wall-clock timer, so they sample threads while
+ * blocked. A sample whose top frame does not symbolize is in a syscall; the
+ * first ClickHouse frame beneath names what it is waiting for.
+ *
+ * REQUIRES allow_introspection_functions, which is commonly denied to read-only
+ * users and on hosted offerings — probe before running, and treat failure as
+ * "layer unavailable" rather than an error.
+ *
+ * Requires: query_id param.
+ */
+export const QUERY_BLOCKED_STACKS = `
+  SELECT
+    arrayFirst(
+      frame -> frame != '' AND positionCaseInsensitive(frame, 'DB::') > 0,
+      arrayMap(addr -> demangle(addressToSymbol(addr)), trace)
+    ) AS blocked_in,
+    count() AS samples
+  FROM {{cluster_aware:system.trace_log}}
+  WHERE (query_id = {query_id} OR initial_query_id = {query_id})
+    AND trace_type = 'Real'
+    AND event_date >= {event_date_bound}
+    AND demangle(addressToSymbol(trace[1])) = ''
+  GROUP BY blocked_in
+  HAVING blocked_in != ''
+  ORDER BY samples DESC
+  LIMIT 20
+`;

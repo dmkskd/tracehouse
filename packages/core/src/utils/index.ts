@@ -41,3 +41,7 @@ export type { ResourceChannel, ViewMode, StressScale, LaneResourceBreakdown, Pro
 export { computeTimeBreakdown, dominantSegment, waitShare } from './time-breakdown.js';
 export type { TimeBreakdown, TimeBreakdownKey, TimeBreakdownSegment, ProfileEventsInput } from './time-breakdown.js';
 export { TIME_BREAKDOWN_EVENTS, TIME_BREAKDOWN_DENOMINATOR } from './time-breakdown.js';
+export { summarizePipelineStall, mapPipelineStallRow, pipelineStallHint } from './pipeline-stall.js';
+export type { PipelineStall, PipelineStallKind, PipelineStallRow } from './pipeline-stall.js';
+export { classifyBlockedFrame, summarizeBlockedStacks, describeBlockedStacks, mapBlockedStackRow, totalBlockedSamples, MIN_BLOCKED_SAMPLES } from './blocked-stacks.js';
+export type { BlockedCategory, BlockedStackRow, BlockedCategorySummary } from './blocked-stacks.js';
