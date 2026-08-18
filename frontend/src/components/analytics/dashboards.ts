@@ -349,6 +349,22 @@ const BUILTIN_DASHBOARDS: Dashboard[] = [
     ],
   },
   {
+    id: 'wait-breakdown',
+    title: 'Wait Breakdown',
+    description: 'Work vs waiting across the workload — which query shapes wait, on what, and whether cost scales with data',
+    source: 'https://altinity.com/blog/pipeline-optimization-for-clickhouse-distributed-tables-with-synchronous-inserts',
+    group: 'ClickHouse',
+    category: 'Queries',
+    columns: 2,
+    panels: [
+      { queryName: 'Wait Breakdown#Where Query Time Goes' },
+      { queryName: 'Wait Breakdown#Wait Composition Over Time' },
+      { queryName: 'Wait Breakdown#Waiting by User' },
+      { queryName: 'Wait Breakdown#Fixed Cost vs Saturation' },
+      { queryName: 'Wait Breakdown#Worst Waiting Queries' },
+    ],
+  },
+  {
     id: 'storage-parts',
     title: 'Storage & Parts',
     description: 'Disk usage, part counts, and merge pressure indicators',

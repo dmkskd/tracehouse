@@ -20,6 +20,7 @@ import altinityKb from './altinityKb';
 import clickHouseKb from './clickhouseKb';
 import json from './json';
 import xray from './xray';
+import waitBreakdown from './waitBreakdown';
 import events from './events';
 import workloadBreakdown from './workloadBreakdown';
 
@@ -44,6 +45,7 @@ export const RAW_QUERIES: string[] = [
   ...clickHouseKb,
   ...json,
   ...xray,
+  ...waitBreakdown,
   ...events,
   ...workloadBreakdown,
 ];

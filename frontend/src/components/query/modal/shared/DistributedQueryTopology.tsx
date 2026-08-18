@@ -822,7 +822,6 @@ const TopologyBar: React.FC<{
   return (
     <div
       onClick={onClick}
-      onMouseMove={event => setAnchorRect(event.currentTarget.getBoundingClientRect())}
       style={{
         display: 'flex', alignItems: 'center', minHeight: 30, marginBottom: 2,
         cursor: 'pointer',
@@ -830,14 +829,8 @@ const TopologyBar: React.FC<{
         transition: 'background 0.1s',
         background: isActive ? 'var(--bg-hover)' : 'transparent',
       }}
-      onMouseEnter={e => {
-        e.currentTarget.style.background = 'var(--bg-hover)';
-        setAnchorRect(e.currentTarget.getBoundingClientRect());
-      }}
-      onMouseLeave={e => {
-        e.currentTarget.style.background = isActive ? 'var(--bg-hover)' : 'transparent';
-        setAnchorRect(null);
-      }}
+      onMouseEnter={e => { e.currentTarget.style.background = 'var(--bg-hover)'; }}
+      onMouseLeave={e => { e.currentTarget.style.background = isActive ? 'var(--bg-hover)' : 'transparent'; }}
     >
       {anchorRect && (
         <TimeBreakdownPopover
@@ -919,6 +912,8 @@ const TopologyBar: React.FC<{
         background: 'var(--bg-tertiary)', borderRadius: 3, overflow: 'hidden',
       }}>
         <div
+          onMouseEnter={event => setAnchorRect(event.currentTarget.getBoundingClientRect())}
+          onMouseLeave={() => setAnchorRect(null)}
           style={{
             position: 'absolute',
             left: `${leftPct}%`,
