@@ -837,8 +837,8 @@ const HoverTooltip: React.FC<{
             {s.d_cpu_wait_s > 0 && <div><span style={{ color: '#B682FF' }}>CPU Wait:</span> {s.d_cpu_wait_s.toFixed(3)}</div>}
             {s.d_net_recv_wait_s > 0 && <div><span style={{ color: '#FF6692' }}>Net Wait:</span> {s.d_net_recv_wait_s.toFixed(3)}</div>}
             {s.rate_clamped && (
-              <div style={{ color: '#FFA15A' }} title="A thread-time counter jumped by more than this interval's threads could produce — usually thread teardown landing accumulated wait in one sample. Rates above are clamped to the thread count, so they read as a floor.">
-                ⚠ clamped to thread count
+              <div style={{ color: '#FFA15A' }} title="A thread-time counter jumped by more than the query's peak concurrent threads could produce — a pooled thread detaching and merging its whole accumulated wait into one sample. Rates above are capped at peak_threads_usage, so they read as a floor.">
+                ⚠ clamped to peak concurrency
               </div>
             )}
             <div><span style={{ color: '#00DD99' }}>read_bytes:</span> {s.d_read_mb.toFixed(1)} MB/s</div>
