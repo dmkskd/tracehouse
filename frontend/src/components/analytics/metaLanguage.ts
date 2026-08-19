@@ -516,29 +516,44 @@ export function parseSparklineRules(sql: string): SparklineCellStyle[] {
 }
 
 /** Parse all -- directives from a SQL string. Returns null if no @meta directive found. */
+/**
+ * Read a single-quoted @meta value, honouring the backslash escapes that
+ * buildDirectiveHeader() writes.
+ *
+ * A plain `[^']+` stops at the first quote, and an escaped apostrophe is a
+ * quote, so "that shape\'s own RealTimeMicroseconds" truncated to
+ * "that shape\". The writer has always escaped; only the reader was missing
+ * the other half.
+ */
+function matchQuotedDirective(source: string, key: string): string | undefined {
+  const match = source.match(new RegExp(`${key}='((?:[^'\\\\]|\\\\.)+)'`));
+  return match ? match[1].replace(/\\(.)/g, '$1') : undefined;
+}
+
 export function parseDirectives(sql: string): ParsedDirectives | null {
   const metaMatch = sql.match(/--\s*@meta:\s*(.+)/i);
   if (!metaMatch) return null;
 
+
   const m = metaMatch[1];
-  const titleMatch = m.match(/title='([^']+)'/);
-  const groupMatch = m.match(/group='([^']+)'/);
-  if (!titleMatch || !groupMatch) return null;
+  const title = matchQuotedDirective(m, 'title');
+  const groupRaw = matchQuotedDirective(m, 'group');
+  if (title === undefined || groupRaw === undefined) return null;
 
-  const descMatch = m.match(/description='([^']+)'/);
-  const intervalMatch = m.match(/interval='([^']+)'/);
+  const description = matchQuotedDirective(m, 'description');
+  const interval = matchQuotedDirective(m, 'interval');
 
-  const group = groupMatch[1].trim();
+  const group = groupRaw.trim();
   if (!QUERY_GROUPS[group as QueryGroup]) {
     (QUERY_GROUPS as Record<string, { color: string; builtin: boolean }>)[group] = { color: '#79c0ff', builtin: false };
   }
 
   const result: ParsedDirectives = {
     meta: {
-      title: titleMatch[1].trim(),
+      title: title.trim(),
       group,
-      description: descMatch?.[1]?.trim(),
-      interval: intervalMatch?.[1]?.trim(),
+      description: description?.trim(),
+      interval: interval?.trim(),
     },
     cellStyles: [...parseCellStyles(sql), ...parseRagRules(sql)],
   };
@@ -648,8 +663,8 @@ export function parseChartDirective(sql: string): Partial<ChartDirective> | null
   applyRadarOptionsToChart(cfg, parseRadarOptions(d));
   const mm = sql.match(/--\s*@meta:\s*(.+)/i);
   if (mm) {
-    const ti = mm[1].match(/title='([^']+)'/); if (ti) cfg.title = ti[1];
-    const de = mm[1].match(/description='([^']+)'/); if (de) cfg.description = de[1];
+    const ti = matchQuotedDirective(mm[1], 'title'); if (ti) cfg.title = ti;
+    const de = matchQuotedDirective(mm[1], 'description'); if (de) cfg.description = de;
   }
   return Object.keys(cfg).length > 0 ? cfg : null;
 }
@@ -703,10 +718,8 @@ export function parseQueryMetadata(sql: string, type: QueryType = 'preset'): Que
  *
  * NOTE: this is a `--` comment line, not a SQL string literal, so escapeValue()
  * does not apply — nothing here reaches the parser as executable SQL. The
- * quoting only has to round-trip with the @meta reader (see the title=/group=
- * regexes above), which matches [^']+ and does not interpret backslashes.
- * Escaping is therefore deliberately asymmetric; fixing that is a separate
- * correctness issue tracked apart from the SQL injection work.
+ * quoting only has to round-trip with the @meta reader, which unescapes via
+ * matchQuotedDirective().
  */
 export function buildDirectiveHeader(name: string, description: string, group?: string): string {
   // nosemgrep: clickhouse-incomplete-quote-escaping
