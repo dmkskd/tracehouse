@@ -21,6 +21,8 @@ import {
 import { configuredClickHouseIsBefore } from './setup/constants.js';
 import { RAW_QUERIES } from '@frontend-queries/index';
 import { parseQueryMetadata } from '@frontend-analytics/metaLanguage';
+import { resolveTimeRange, resolveDrillParams } from '@frontend-analytics/templateResolution';
+import { ClusterService } from '../../services/cluster-service.js';
 
 const CLUSTER_TIMEOUT = 180_000;
 const describeCluster = configuredClickHouseIsBefore(24, 9) ? describe.skip : describe;
@@ -33,23 +35,19 @@ function worstWaitingQueriesSQL(): string {
 }
 
 /**
- * Resolve the panel's templates by hand.
+ * Resolve the panel exactly as the app does.
  *
- * The production resolver needs a live cluster context; this test only needs
- * the drill and time-range placeholders filled, and doing it here keeps the
- * assertion about the SQL's own logic.
- *
- * cluster_aware becomes clusterAllReplicas, matching what ClusterAwareAdapter
- * emits. It has to: a shard child's query_log row lives on the node that ran
- * it, so a single-node resolution cannot see the children at all.
+ * An earlier version of this test substituted the placeholders with its own
+ * regexes. It passed while the real drill returned nothing, because a
+ * hand-rolled resolver cannot reproduce what the production one emits — the
+ * bug lived in the gap between them. Everything here now goes through the
+ * same functions the dashboard calls.
  */
-function resolve(sql: string, shape: string): string {
-  return sql
-    .replace(/--\s*@\w+:.*$/gm, '')
-    .replace(/\{\{cluster_aware:system\.(\w+)\}\}/g, "clusterAllReplicas('test', system.$1)")
-    .replace(/\{\{time_range\}\}/g, "now() - INTERVAL 1 HOUR")
-    .replace(/\{\{drill_value:query_shape\s*\|\s*''\}\}/g, `'${shape.replace(/'/g, "\\'")}'`)
-    .replace(/\{\{drill_value:\w+\s*\|\s*''\}\}/g, "''");
+function resolve(sql: string, shape: string, clusterName: string | null = 'test'): string {
+  const interval = parseQueryMetadata(sql)?.directives.meta?.interval ?? '1 HOUR';
+  let resolved = resolveTimeRange(sql, interval);
+  resolved = resolveDrillParams(resolved, { query_shape: shape });
+  return ClusterService.resolveTableRefs(resolved, clusterName);
 }
 
 describeCluster('Wait Breakdown drill reaches shard-child shapes', { tags: ['analytics'] }, () => {
@@ -62,9 +60,12 @@ describeCluster('Wait Breakdown drill reaches shard-child shapes', { tags: ['ana
     // A distributed SELECT: ClickHouse rewrites it per shard, and those
     // rewrites are the rows the drill has to resolve back to this coordinator.
     // Slow enough to clear the panel's query_duration_ms > 100 floor.
+    // Fans out to ch2 only, so ch1 holds the coordinator row and no child row.
+    // With remote('ch1,ch2') the coordinator node also runs a child, and a
+    // node-local subquery still finds one — which hid the real bug.
     await ctx.clients[0].command({
       query: `SELECT count(), sum(sleepEachRow(0.05))
-              FROM remote('ch1,ch2', 'system', 'numbers', 'default', 'test')
+              FROM remote('ch2', 'system', 'numbers', 'default', 'test')
               WHERE number < 4
               SETTINGS max_block_size = 1`,
       query_id: COORDINATOR_QID,
@@ -84,13 +85,22 @@ describeCluster('Wait Breakdown drill reaches shard-child shapes', { tags: ['ana
     }
   }, 60_000);
 
-  /** The shard-child shapes the top panel would offer for this query. */
+  /**
+   * The shard-child shapes this query produced, restricted to those the panel
+   * can actually list.
+   *
+   * A distributed SELECT also logs incidental children — `DESC TABLE
+   * system.numbers` here, at 0ms — which the panel's own 100ms floor excludes.
+   * Asserting the drill returns rows for those would be asserting against the
+   * panel's design.
+   */
   async function childShapes(): Promise<string[]> {
     const rows = await ctx.clients[0].query({
       query: `SELECT DISTINCT substring(normalizeQuery(query), 1, 60) AS shape
               FROM clusterAllReplicas('test', system.query_log)
               WHERE type = 'QueryFinish'
                 AND is_initial_query = 0
+                AND query_duration_ms > 100
                 AND initial_query_id = {qid:String}`,
       query_params: { qid: COORDINATOR_QID },
       format: 'JSONEachRow',
@@ -104,7 +114,10 @@ describeCluster('Wait Breakdown drill reaches shard-child shapes', { tags: ['ana
     expect(shapes.length).toBeGreaterThan(0);
   });
 
-  it('drilling a shard-child shape returns the coordinator that produced it', async () => {
+  it('drilling a shard-child shape returns those shard executions', async () => {
+    // The point of the drill: you clicked a bar, you get the executions that
+    // make up that bar. Returning their coordinators instead produced rows
+    // whose composition looked nothing like the bar clicked.
     const shapes = await childShapes();
     const sql = worstWaitingQueriesSQL();
 
@@ -113,11 +126,28 @@ describeCluster('Wait Breakdown drill reaches shard-child shapes', { tags: ['ana
         query: resolve(sql, shape),
         format: 'JSONEachRow',
       });
-      const rows = await result.json<{ query_id: string }>();
-      const ids = new Set(rows.map(r => r.query_id));
+      const rows = await result.json<{ query_id: string; segment: string; ms: number }>();
+      expect(rows.length).toBeGreaterThan(0);
 
-      expect(ids.size).toBeGreaterThan(0);
-      expect(ids).toContain(COORDINATOR_QID);
+      // The reason this drill exists. A shard execution's wait is largely
+      // network — streaming results back — while its coordinator's is parked.
+      // Clicking a bar with a network segment and landing on rows without one
+      // is the bug the coordinator-matching version shipped.
+      expect(rows.map(r => r.segment)).toContain('network');
+
+      // Every row must be an execution of the clicked shape, not something
+      // merely related to it.
+      const shapesBack = await ctx.clients[0].query({
+        query: `SELECT DISTINCT substring(normalizeQuery(query), 1, 60) AS shape
+                FROM clusterAllReplicas('test', system.query_log)
+                WHERE type = 'QueryFinish' AND query_id IN ({ids:Array(String)})`,
+        query_params: { ids: rows.map(r => r.query_id) },
+        format: 'JSONEachRow',
+      });
+      expect((await shapesBack.json<{ shape: string }>()).map(r => r.shape)).toEqual([shape]);
+
+      // The coordinator has a different shape, so it must not appear.
+      expect(rows.map(r => r.query_id)).not.toContain(COORDINATOR_QID);
     }
   }, 60_000);
 

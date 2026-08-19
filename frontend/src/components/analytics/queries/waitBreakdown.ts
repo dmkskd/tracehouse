@@ -152,7 +152,7 @@ GROUP BY query_shape, rows_bucket
 -- non-monotonic x-axis (… 65536, 8388608, 131072, 32 …) and meaningless curves.
 ORDER BY rows_bucket ASC, query_shape`,
 
-  `-- @meta: title='Worst Waiting Queries' group='Wait Breakdown' interval='6 HOUR' description='Top 20 individual executions ranked by thread time spent NOT working (queue + disk + network + parked), so this lists queries whose cost is waiting rather than queries that merely ran longest. Client-submitted queries over 100ms — shard children are excluded since they cannot be opened directly. Drilling a shard-child shape lists the coordinators that produced it, so open one and use its Distributed tab for the per-node split. Bars are absolute thread-milliseconds, so lengths are comparable between queries — unlike the proportional panels, a longer bar here really did waste more time. Click a bar to open that execution, or click a shape in 'Where Query Time Goes' to filter to that shape.'
+  `-- @meta: title='Worst Waiting Queries' group='Wait Breakdown' interval='6 HOUR' description='Top 20 individual executions ranked by thread time spent NOT working (queue + disk + network + parked), so this lists queries whose cost is waiting rather than queries that merely ran longest. Executions over 100ms. On its own this lists client-submitted queries, which open on click. Drilled in from a shape, it lists that shape\\'s own executions instead, so the composition matches the bar you clicked — including shard queries, which show the network time their coordinators never record. Shard executions cannot be opened directly: open the parent and use its Distributed tab. Bars are absolute thread-milliseconds, so lengths are comparable between queries — unlike the proportional panels, a longer bar here really did waste more time. Click a bar to open that execution, or click a shape in 'Where Query Time Goes' to filter to that shape.'
 -- @chart: type=stacked_bar group_by=query_id value=ms series=segment style=2d unit=ms
 -- @query_link: on=query_id
 WITH worst AS (
@@ -161,40 +161,32 @@ WITH worst AS (
     ${SEGMENTS_SINGLE}
   FROM {{cluster_aware:system.query_log}}
   WHERE type = 'QueryFinish'
-    -- Coordinators only. Shard children carry is_initial_query = 0 and cannot
-    -- be opened — the modal's lookup fetches initial queries only — so listing
-    -- them gives rows whose click silently does nothing. Their time is not
-    -- lost: open the parent and the Distributed tab breaks it down per node.
-    AND is_initial_query = 1
     AND event_time > {{time_range}}
     AND ProfileEvents['RealTimeMicroseconds'] > 0
     AND query_duration_ms > 100
     AND ({{drill_value:db  | ''}} = '' OR has(databases, {{drill_value:db  | ''}}))
     AND ({{drill_value:tbl | ''}} = '' OR has(tables,    {{drill_value:tbl | ''}}))
-    -- Set when drilled in from 'Where Query Time Goes'. The substring length
-    -- must stay identical to that panel's or the filter matches nothing.
+    -- Which executions belong in the list depends on how you got here.
     --
-    -- Two arms, because that panel ranks every query_log row while this one
-    -- lists coordinators. A client-submitted shape matches on its own text. A
-    -- shard-child shape — the __table1 rewrites ClickHouse sends to remote
-    -- nodes — can never match it, since those rows carry is_initial_query = 0,
-    -- so the second arm matches the coordinator that produced them instead.
-    -- Without it, drilling any shard-child shape returned zero rows, which on a
-    -- distributed workload is most of the panel.
+    -- Undrilled, this is a standalone leaderboard, so it lists coordinators:
+    -- every row opens, and shard children would only pad it with rows that
+    -- do nothing when clicked.
+    --
+    -- Drilled from 'Where Query Time Goes', the question is narrower — "show
+    -- me the executions behind this bar" — so it lists whatever that shape
+    -- actually is. Shard-child shapes (the __table1 rewrites ClickHouse sends
+    -- to remote nodes) are the reason: filtering them out returned an empty
+    -- panel, and matching their coordinators instead returned rows whose
+    -- composition looked nothing like the bar that was clicked, because a
+    -- coordinator's wait is parked while its children's is network. Listing
+    -- the executions themselves keeps the drill on the same subject.
+    --
+    -- The substring length must stay identical to that panel's or nothing
+    -- matches.
     AND (
-      {{drill_value:query_shape | ''}} = ''
-      OR substring(normalizeQuery(query), 1, 60) = {{drill_value:query_shape | ''}}
-      OR query_id IN (
-        SELECT initial_query_id
-        FROM {{cluster_aware:system.query_log}}
-        WHERE type = 'QueryFinish'
-          AND is_initial_query = 0
-          -- Constant-false when nothing was drilled, so the planner drops this
-          -- subquery instead of scanning query_log a second time.
-          AND {{drill_value:query_shape | ''}} != ''
-          AND event_time > {{time_range}}
-          AND substring(normalizeQuery(query), 1, 60) = {{drill_value:query_shape | ''}}
-      )
+      ({{drill_value:query_shape | ''}} = '' AND is_initial_query = 1)
+      OR ({{drill_value:query_shape | ''}} != ''
+          AND substring(normalizeQuery(query), 1, 60) = {{drill_value:query_shape | ''}})
     )
   -- Ranked by time spent not working, so the list is the queries whose cost is
   -- waiting rather than the queries that merely ran longest.
