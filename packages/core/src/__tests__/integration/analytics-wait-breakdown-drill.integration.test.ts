@@ -23,6 +23,8 @@ import { RAW_QUERIES } from '@frontend-queries/index';
 import { parseQueryMetadata } from '@frontend-analytics/metaLanguage';
 import { resolveTimeRange, resolveDrillParams } from '@frontend-analytics/templateResolution';
 import { ClusterService } from '../../services/cluster-service.js';
+import { INITIAL_QUERY_ID_FOR } from '../../queries/analytics-queries.js';
+import { buildQuery } from '../../queries/builder.js';
 
 const CLUSTER_TIMEOUT = 180_000;
 const describeCluster = configuredClickHouseIsBefore(24, 9) ? describe.skip : describe;
@@ -149,6 +151,30 @@ describeCluster('Wait Breakdown drill reaches shard-child shapes', { tags: ['ana
       // The coordinator has a different shape, so it must not appear.
       expect(rows.map(r => r.query_id)).not.toContain(COORDINATOR_QID);
     }
+  }, 60_000);
+
+  it('resolves a shard execution to the coordinator that produced it', async () => {
+    // Shard rows are listed but cannot be opened: QUERY_BY_ID filters
+    // is_initial_query = 1. Clicking one falls back to this lookup so the row
+    // opens its coordinator on the Distributed tab instead of doing nothing.
+    const shapes = await childShapes();
+    const sql = worstWaitingQueriesSQL();
+
+    const drilled = await ctx.clients[0].query({
+      query: resolve(sql, shapes[0]),
+      format: 'JSONEachRow',
+    });
+    const shardId = (await drilled.json<{ query_id: string }>())[0]?.query_id;
+    expect(shardId).toBeDefined();
+    expect(shardId).not.toBe(COORDINATOR_QID);
+
+    const parent = await ctx.clients[0].query({
+      query: buildQuery(INITIAL_QUERY_ID_FOR, { query_id: shardId })
+        .replace(/\{\{cluster_aware:system\.(\w+)\}\}/g, "clusterAllReplicas('test', system.$1)"),
+      format: 'JSONEachRow',
+    });
+    const rows = await parent.json<{ initial_query_id: string }>();
+    expect(rows[0]?.initial_query_id).toBe(COORDINATOR_QID);
   }, 60_000);
 
   it('still matches client-submitted shapes on their own text', async () => {

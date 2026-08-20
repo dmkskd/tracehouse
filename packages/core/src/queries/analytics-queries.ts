@@ -187,6 +187,26 @@ ORDER BY event_time DESC
 LIMIT 1
 `;
 
+/**
+ * The coordinator that produced a shard execution.
+ *
+ * QUERY_BY_ID only matches initial queries, so a shard execution's query_id
+ * resolves to nothing there. Panels that list shard executions need somewhere
+ * to send a click, and the useful destination is the coordinator: its
+ * Distributed tab breaks the query's time down per node, which is where that
+ * shard's contribution actually lives.
+ */
+export const INITIAL_QUERY_ID_FOR = `
+SELECT initial_query_id
+FROM {{cluster_aware:system.query_log}}
+WHERE type = 'QueryFinish'
+    AND query_id = {query_id:String}
+    AND is_initial_query = 0
+    AND initial_query_id != ''
+ORDER BY event_time DESC
+LIMIT 1
+`;
+
 /** Fetch a single finished query by its query_id, mapped into QuerySeries. */
 export const QUERY_BY_ID = `
 SELECT

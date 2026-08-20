@@ -803,7 +803,21 @@ const DashboardPanelCard: React.FC<{
     const queryId = event.label;
     if (!queryId) return;
     services.analyticsService.getQueryById(queryId)
-      .then(q => { if (q) onOpenQueryDetail(q, { tab: 'xray' }); })
+      .then(q => {
+        if (q) {
+          onOpenQueryDetail(q, { tab: 'xray' });
+          return undefined;
+        }
+        // Not an initial query, so it is a shard execution — panels that drill
+        // into a query shape list those alongside client-submitted ones. They
+        // cannot be opened on their own, so open the coordinator instead, on
+        // the tab that splits its time per node. Without this the click is
+        // swallowed and the row looks broken.
+        return services.analyticsService.getCoordinatorForQuery(queryId)
+          .then(coordinator => {
+            if (coordinator) onOpenQueryDetail(coordinator, { tab: 'distributed' });
+          });
+      })
       .catch(() => { /* query not found / query_log unavailable */ });
   }, [preset, services, onOpenQueryDetail]);
 
