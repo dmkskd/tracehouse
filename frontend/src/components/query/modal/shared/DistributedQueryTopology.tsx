@@ -20,6 +20,7 @@ import { DistributedFlowDiagram } from './DistributedFlowDiagram';
 import {
   COORD_COLOR,
   ERROR_COLOR,
+  HOVER_TRANSITION,
   INSERT_COLOR,
   NESTED_COORDINATOR_COLOR,
   NODE_COLOR,
@@ -879,13 +880,13 @@ const TopologyBar: React.FC<{
   // Same panel as the Overview bar: the composition needs a legend and named
   // counters to be readable, which a native title tooltip cannot give.
   const [anchorRect, setAnchorRect] = useState<DOMRect | null>(null);
+  // Role is the panel's title, so it is not repeated as a fact, and the metrics
+  // fold into one line each: the same shape the flow view's panel uses.
   const facts = [
     { label: 'query_id', value: queryId },
-    { label: 'role', value: roleLabel },
     { label: 'host', value: hostname || label },
-    { label: 'duration', value: fmtMs(durationMs) },
-    { label: 'memory', value: formatBytes(memoryUsage) },
-    { label: 'rows', value: fmtCompact(readRows) },
+    { label: 'read', value: `${fmtCompact(readRows)} rows` },
+    { label: 'cost', value: `${fmtMs(durationMs)} · ${formatBytes(memoryUsage)} peak` },
   ];
 
   return (
@@ -895,7 +896,7 @@ const TopologyBar: React.FC<{
         display: 'flex', alignItems: 'center', minHeight: 30, marginBottom: 2,
         cursor: 'pointer',
         borderRadius: 3,
-        transition: 'background 0.1s',
+        transition: `background ${HOVER_TRANSITION}`,
         background: isActive ? 'var(--bg-hover)' : 'transparent',
       }}
       onMouseEnter={e => { e.currentTarget.style.background = 'var(--bg-hover)'; }}
@@ -918,6 +919,9 @@ const TopologyBar: React.FC<{
           // Non-interactive: these rows are meant to be compared, and a panel
           // that captures the pointer traps you on the row you just read.
           interactive={false}
+          // Same frosted overlay the flow view uses: it opens over the rows
+          // being compared, so it has to be readable through.
+          variant="overlay"
         />
       )}
       {/* Label */}

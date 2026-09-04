@@ -38,11 +38,11 @@ export interface PopoverLayer {
 
 const THEME = {
   dark: {
-    bg: '#161b22', border: '#30363d', text: '#e6edf3',
+    bg: '#161b22', veil: 'rgba(22, 27, 34, 0.82)', border: '#30363d', text: '#e6edf3',
     muted: '#8b949e', faint: '#6e7681', warn: '#FFA15A',
   },
   light: {
-    bg: '#ffffff', border: 'rgba(0,0,0,0.14)', text: '#1f2328',
+    bg: '#ffffff', veil: 'rgba(255, 255, 255, 0.82)', border: 'rgba(0,0,0,0.14)', text: '#1f2328',
     muted: '#57606a', faint: '#8c959f', warn: '#bc4c00',
   },
 } as const;
@@ -76,7 +76,24 @@ export const TimeBreakdownPopover: React.FC<{
    * does not span half the screen to describe one node.
    */
   maxWidth?: number;
-}> = ({ anchor, title, facts = [], segments, layers, layersHeading, caveats, onPointerEnter, onPointerLeave, interactive = true, maxWidth = 680 }) => {
+  /**
+   * How the panel carries itself.
+   *
+   * 'panel' is the full explanation: solid, wide, every counter named. It is
+   * what the three-layer breakdown needs.
+   *
+   * 'overlay' is for panels that open over the thing being read — a diagram, a
+   * list of rows being compared. Frosted so what is underneath stays legible,
+   * narrow, and without the ProfileEvent column, which is the widest thing in
+   * the panel and the least useful when you are scanning.
+   */
+  variant?: 'panel' | 'overlay';
+}> = ({
+  anchor, title, facts = [], segments, layers, layersHeading, caveats,
+  onPointerEnter, onPointerLeave, interactive = true, variant = 'panel',
+  maxWidth = variant === 'overlay' ? 360 : 680,
+}) => {
+  const overlay = variant === 'overlay';
   const theme = useThemeDetection();
   const c = THEME[theme];
 
@@ -105,10 +122,12 @@ export const TimeBreakdownPopover: React.FC<{
         // that it renders behind the very modal it belongs to.
         zIndex: 100_001,
         maxWidth,
-        background: c.bg,
+        background: overlay ? c.veil : c.bg,
+        backdropFilter: overlay ? 'blur(14px) saturate(1.4)' : undefined,
+        WebkitBackdropFilter: overlay ? 'blur(14px) saturate(1.4)' : undefined,
         border: `1px solid ${c.border}`,
         borderRadius: 8,
-        boxShadow: '0 8px 28px rgba(0,0,0,0.28)',
+        boxShadow: overlay ? '0 6px 20px rgba(0,0,0,0.16)' : '0 8px 28px rgba(0,0,0,0.28)',
         padding: '10px 12px',
         pointerEvents: interactive ? 'auto' : 'none',
         fontFamily: 'var(--font-mono, monospace)',
@@ -156,7 +175,7 @@ export const TimeBreakdownPopover: React.FC<{
           key={s.label}
           style={{
             display: 'grid',
-            gridTemplateColumns: '8px 62px 44px 1fr',
+            gridTemplateColumns: overlay ? '8px 62px 44px auto' : '8px 62px 44px 1fr',
             gap: 7,
             alignItems: 'baseline',
             marginBottom: 3,
@@ -168,7 +187,7 @@ export const TimeBreakdownPopover: React.FC<{
           <span style={{ color: c.text, textAlign: 'right', fontVariantNumeric: 'tabular-nums' }}>{s.pct}</span>
           <span style={{ minWidth: 0, overflow: 'hidden', textOverflow: 'ellipsis' }}>
             <span style={{ color: c.muted }}>{s.hint}</span>
-            <span style={{ color: c.faint }}> · {s.source}</span>
+            {!overlay && <span style={{ color: c.faint }}> · {s.source}</span>}
           </span>
         </div>
       ))}

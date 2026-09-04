@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { buildDistributedFlowDiagram } from '../distributedFlowLayout';
+import { buildDistributedFlowDiagram, computeFlowGauges } from '../distributedFlowLayout';
 import {
   inferDistributedTopology,
   type ClusterHostInput,
@@ -291,5 +291,31 @@ describe('buildDistributedFlowDiagram', () => {
     expect(diagram.nodes).toHaveLength(0);
     expect(diagram.edges).toHaveLength(0);
     expect(diagram.groups).toHaveLength(0);
+  });
+
+  it('scales each cube gauge against the largest node in the diagram', () => {
+    const diagram = buildDistributedFlowDiagram(fanOutTopology());
+    const gauges = computeFlowGauges(diagram.nodes);
+
+    const slowest = Math.max(...diagram.nodes.map(node => node.metrics.durationMs));
+    for (const node of diagram.nodes) {
+      const duration = gauges.get(node.id)?.find(gauge => gauge.key === 'duration');
+      expect(duration?.share).toBeCloseTo(node.metrics.durationMs / slowest, 6);
+    }
+    // Exactly one node tops each metric, and it fills its bar.
+    expect(
+      diagram.nodes.filter(node => gauges.get(node.id)?.[0].share === 1),
+    ).toHaveLength(1);
+  });
+
+  it('draws an empty gauge rather than a full one when no node reported the metric', () => {
+    const diagram = buildDistributedFlowDiagram(fanOutTopology());
+    const gauges = computeFlowGauges(
+      diagram.nodes.map(node => ({ ...node, metrics: { ...node.metrics, memoryUsage: 0 } })),
+    );
+
+    for (const node of diagram.nodes) {
+      expect(gauges.get(node.id)?.find(gauge => gauge.key === 'memory')?.share).toBe(0);
+    }
   });
 });

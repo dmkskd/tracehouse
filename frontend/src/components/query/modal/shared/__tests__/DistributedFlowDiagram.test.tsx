@@ -62,9 +62,25 @@ describe('DistributedFlowDiagram', () => {
     expect(screen.getByText('node-1-0')).toBeTruthy();
     // Once on the coordinator cube, once in the shard legend.
     expect(screen.getAllByText('Coordinator')).toHaveLength(2);
-    expect(screen.getByText('Shard 2')).toBeTruthy();
+    // The legend is drawn in the canvas, inside the cluster box, so it pans and
+    // zooms with the cubes it describes rather than sitting under them as HTML.
+    const legend = screen.getByText('replicas are lighter shades');
+    expect(legend.closest('svg')).toBeTruthy();
+    const [box] = container.querySelectorAll('rect[stroke-dasharray]');
+    expect(Number(legend.getAttribute('y'))).toBeLessThan(
+      Number(box.getAttribute('y')) + Number(box.getAttribute('height')),
+    );
     // Three polygons make one cube, so two participants means six faces.
-    expect(container.querySelectorAll('polygon')).toHaveLength(6);
+    const cubes = '[role="button"] polygon';
+    expect(
+      container.querySelectorAll(`${cubes}:not([data-gauge]):not([data-gauge-track])`),
+    ).toHaveLength(6);
+    // A gauge track per metric per cube, in two segments because the bar wraps
+    // the cube's front corner, and a fill only where the node reported that
+    // metric: neither participant reported memory here.
+    expect(container.querySelectorAll(`${cubes}[data-gauge-track="memory"]`)).toHaveLength(4);
+    expect(container.querySelectorAll(`${cubes}[data-gauge="duration"]`).length).toBeGreaterThan(0);
+    expect(container.querySelectorAll(`${cubes}[data-gauge="memory"]`)).toHaveLength(0);
     expect(container.querySelectorAll('path[marker-end]')).toHaveLength(1);
     expect(screen.getByText('55 rows · 2.83 KB')).toBeTruthy();
   });
@@ -104,6 +120,59 @@ describe('DistributedFlowDiagram', () => {
 
     fireEvent.mouseLeave(screen.getByLabelText(/node-1-0/));
     expect(screen.queryByRole('tooltip')).toBeNull();
+  });
+
+  it('names each stripe beside the bars while the cube is hovered', () => {
+    const { container } = render(
+      <DistributedFlowDiagram
+        topology={topology()}
+        activeQueryId="root"
+        onNavigate={vi.fn()}
+        hostLabel={shortHost}
+      />,
+    );
+
+    const captions = (label: string) =>
+      [...container.querySelectorAll('text')].filter(node => node.textContent === label);
+
+    // The bars are always drawn; their names appear only while pointed at, so
+    // three captions per cube never become the loudest thing on the canvas.
+    expect(captions('duration')).toHaveLength(0);
+
+    fireEvent.mouseEnter(screen.getByLabelText(/node-1-0/));
+    expect(captions('duration')).toHaveLength(1);
+    expect(captions('rows read')).toHaveLength(1);
+
+    fireEvent.mouseLeave(screen.getByLabelText(/node-1-0/));
+    expect(captions('duration')).toHaveLength(0);
+  });
+
+  it('lifts the hovered cube so it is clear which one the panel describes', () => {
+    render(
+      <DistributedFlowDiagram
+        topology={topology()}
+        activeQueryId="root"
+        onNavigate={vi.fn()}
+        hostLabel={shortHost}
+      />,
+    );
+
+    const node = screen.getByLabelText(/node-1-0/).querySelector('[data-node-visual]')!;
+    // Both states are the same chain of transform functions so the browser can
+    // interpolate between them; at rest the scale is simply 1.
+    expect(node.getAttribute('style')).toContain('scale(1)');
+
+    // The hover target itself never moves: a cube that grew its own hit area
+    // would shrink out from under the pointer and flicker.
+    const target = screen.getByLabelText(/node-1-0/).querySelector('rect')!;
+    const before = target.getAttribute('x');
+
+    fireEvent.mouseEnter(screen.getByLabelText(/node-1-0/));
+    expect(node.getAttribute('style')).toContain('scale(1.07)');
+    expect(target.getAttribute('x')).toBe(before);
+
+    fireEvent.mouseLeave(screen.getByLabelText(/node-1-0/));
+    expect(node.getAttribute('style')).toContain('scale(1)');
   });
 
   it('reports when there is nothing to draw', () => {

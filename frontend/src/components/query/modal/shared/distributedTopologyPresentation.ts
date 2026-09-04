@@ -5,6 +5,12 @@ import type {
   TopologyNodeRole,
 } from '@tracehouse/core';
 
+/**
+ * Hover motion shared by the two topology views, so a cube rising under the
+ * pointer and a bar row lighting up feel like the same gesture.
+ */
+export const HOVER_TRANSITION = '180ms cubic-bezier(0.22, 0.61, 0.36, 1)';
+
 export const COORD_COLOR = '#58a6ff';
 export const NODE_COLOR = '#d29922';
 export const SHARD_LEADER_COLOR = '#a371f7';
@@ -51,6 +57,14 @@ export function shadeColor(hex: string, amount: number): string {
 }
 
 /**
+ * How far each replica's colour is lightened from its shard's hue, indexed by
+ * replica number. The steps open up quickly and then tighten: telling r1 from
+ * r2 is the case that comes up, and a ramp that keeps its early pace ends up
+ * washed out against the canvas. Replicas past the table reuse the last step.
+ */
+const REPLICA_SHADES = [0, 0.3, 0.48, 0.6, 0.7];
+
+/**
  * Colour for a participant: its shard's hue, lightened per replica. Falls back
  * to the role palette when the topology could not attribute a shard.
  */
@@ -64,10 +78,12 @@ export function participantColor(
   if (role === 'coordinator') return COORD_COLOR;
   if (shardNum == null) return topologyRoleColor(role, false);
   const base = SHARD_COLORS[(shardNum - 1) % SHARD_COLORS.length];
-  const replicaStep = replicaNum != null && replicaNum > 1 ? Math.min((replicaNum - 1) * 0.16, 0.48) : 0;
+  const shade = replicaNum != null && replicaNum > 1
+    ? REPLICA_SHADES[Math.min(replicaNum - 1, REPLICA_SHADES.length - 1)]
+    : 0;
   // Always #rrggbb, including for shaded replicas: callers derive cube faces
   // from this and should not have to handle two colour syntaxes.
-  return replicaStep > 0 ? shadeColor(base, replicaStep) : base;
+  return shade !== 0 ? shadeColor(base, shade) : base;
 }
 
 /** The hue a shard is drawn in, for legends. */

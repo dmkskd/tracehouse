@@ -553,3 +553,50 @@ export function buildDistributedFlowDiagram(
     columnLabels,
   };
 }
+
+/**
+ * Gauges painted on each cube: how big this participant is next to the biggest
+ * one in the same diagram. The numbers beside a cube say "6ms · 2 rows", which
+ * only answers "how big" once you have read every other cube and done the
+ * division; a share of the maximum answers it at a glance.
+ *
+ * Normalised against the whole diagram, coordinator included: a coordinator
+ * that holds 8 MB while its children hold 200 KB each is the point of the
+ * picture, so flattening it out of the scale would hide the finding.
+ */
+export type FlowGaugeKey = 'duration' | 'memory' | 'rows';
+
+export interface FlowNodeGauge {
+  key: FlowGaugeKey;
+  /** Short caption for the legend and the accessible description. */
+  label: string;
+  value: number;
+  /** Value as a fraction of the largest node's value for this metric, 0..1. */
+  share: number;
+}
+
+const GAUGE_SPECS: { key: FlowGaugeKey; label: string; read: (node: DistributedFlowNode) => number }[] = [
+  { key: 'duration', label: 'duration', read: node => node.metrics.durationMs },
+  { key: 'memory', label: 'memory', read: node => node.metrics.memoryUsage },
+  { key: 'rows', label: 'rows read', read: node => node.metrics.readRows },
+];
+
+export function computeFlowGauges(nodes: DistributedFlowNode[]): Map<string, FlowNodeGauge[]> {
+  const maxima = GAUGE_SPECS.map(spec => Math.max(0, ...nodes.map(spec.read)));
+  const byNodeId = new Map<string, FlowNodeGauge[]>();
+  for (const node of nodes) {
+    byNodeId.set(node.id, GAUGE_SPECS.map((spec, index) => {
+      const value = spec.read(node);
+      const max = maxima[index];
+      return {
+        key: spec.key,
+        label: spec.label,
+        value,
+        // A metric no node reported draws as an empty track rather than a full
+        // one: "nobody has this" must not read as "this node has all of it".
+        share: max > 0 && value > 0 ? Math.min(1, value / max) : 0,
+      };
+    }));
+  }
+  return byNodeId;
+}
