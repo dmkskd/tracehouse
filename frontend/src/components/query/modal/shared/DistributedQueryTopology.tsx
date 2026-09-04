@@ -5,8 +5,8 @@
 
 import React, { useMemo, useState } from 'react';
 import {
+  distributedNodeRoleLabel,
   inferDistributedTopology,
-  topologyNodeRoleLabel,
   type DistributedQueryExecutionInput,
   type DistributedTopology,
   type DistributedTopologyNode,
@@ -16,6 +16,18 @@ import { formatDurationMs } from '../../../../utils/formatters';
 import { formatBytes } from '../../../../stores/databaseStore';
 import { computeTimeBreakdown, TIME_BREAKDOWN_EVENTS } from '@tracehouse/core';
 import { SEGMENT_COLORS, SEGMENT_HINTS, pct } from './timeBreakdownDisplay';
+import { DistributedFlowDiagram } from './DistributedFlowDiagram';
+import {
+  COORD_COLOR,
+  ERROR_COLOR,
+  INSERT_COLOR,
+  NESTED_COORDINATOR_COLOR,
+  NODE_COLOR,
+  OBJECT_WORKER_COLOR,
+  REPLICA_READER_COLOR,
+  SHARD_LEADER_COLOR,
+  topologyRoleColor,
+} from './distributedTopologyPresentation';
 import { TimeBreakdownPopover } from './TimeBreakdownPopover';
 
 export interface TopologyCoordinator {
@@ -39,15 +51,28 @@ interface DistributedQueryTopologyProps {
   isLoading?: boolean;
 }
 
-const COORD_COLOR = '#58a6ff';
-const NODE_COLOR = '#d29922';
-const SHARD_LEADER_COLOR = '#a371f7';
-const NESTED_COORDINATOR_COLOR = '#8b5cf6';
-const REPLICA_READER_COLOR = '#d29922';
-const OBJECT_WORKER_COLOR = '#3fb950';
-const INSERT_COLOR = '#db6d28';
-const ERROR_COLOR = '#f85149';
 const MUTED_COLOR = 'var(--text-muted)';
+
+type TopologyView = 'timeline' | 'flow';
+const VIEW_STORAGE_KEY = 'tracehouse.distributedTopology.view';
+
+function loadTopologyView(): TopologyView {
+  if (typeof window === 'undefined') return 'timeline';
+  try {
+    return window.localStorage.getItem(VIEW_STORAGE_KEY) === 'flow' ? 'flow' : 'timeline';
+  } catch {
+    return 'timeline';
+  }
+}
+
+function saveTopologyView(view: TopologyView): void {
+  if (typeof window === 'undefined') return;
+  try {
+    window.localStorage.setItem(VIEW_STORAGE_KEY, view);
+  } catch {
+    // Keep the in-memory choice when storage is unavailable.
+  }
+}
 function stableHostColor(host: string, index = 0): string {
   let hash = 0;
   for (let i = 0; i < host.length; i += 1) {
@@ -87,10 +112,7 @@ function fmtCompact(n: number): string {
 
 function roleLabel(node?: DistributedTopologyNode): string {
   if (!node) return 'Child';
-  if (node.role === 'shard_leader' && node.shardNum) return `Shard ${node.shardNum} coordinator`;
-  if (node.role === 'replica_reader' && node.shardNum) return `Shard ${node.shardNum} reader`;
-  if (node.role === 'remote_child' && node.shardNum) return `Shard ${node.shardNum} child`;
-  return topologyNodeRoleLabel(node.role);
+  return distributedNodeRoleLabel(node.role, node.shardNum);
 }
 
 function coordinatorRoleLabel(topology: DistributedTopology): string {
@@ -106,12 +128,7 @@ function coordinatorRoleLabel(topology: DistributedTopology): string {
 function roleColor(node: DistributedTopologyNode | undefined, hasError: boolean): string {
   if (hasError) return ERROR_COLOR;
   if (!node) return NODE_COLOR;
-  if (node.role === 'shard_leader') return SHARD_LEADER_COLOR;
-  if (node.role === 'nested_coordinator') return NESTED_COORDINATOR_COLOR;
-  if (node.role === 'replica_reader') return REPLICA_READER_COLOR;
-  if (node.role === 'object_storage_worker' || node.role === 'hybrid_segment') return OBJECT_WORKER_COLOR;
-  if (node.role === 'insert_forwarder' || node.role === 'async_insert_flush') return INSERT_COLOR;
-  return NODE_COLOR;
+  return topologyRoleColor(node.role, false);
 }
 
 function hostIdentity(hostname: string): string {
@@ -223,6 +240,19 @@ export const DistributedQueryTopology: React.FC<DistributedQueryTopologyProps> =
         .map(node => node.id),
     );
   }, [topology.nodes]);
+
+  // Navigating to a child query remounts this component, so the chosen view has
+  // to live outside it or every click would drop the user back on the timeline.
+  const [view, setViewState] = useState<TopologyView>(loadTopologyView);
+  const setView = (next: TopologyView) => {
+    setViewState(next);
+    saveTopologyView(next);
+  };
+
+  const failedQueryIds = useMemo(
+    () => subQueries.filter(sq => sq.exception_code).map(sq => sq.query_id),
+    [subQueries],
+  );
 
   const timeline = useMemo(() => {
     const coordStartUs = parseUs(coordinator.query_start_time_microseconds);
@@ -392,11 +422,38 @@ export const DistributedQueryTopology: React.FC<DistributedQueryTopologyProps> =
         <div style={{ fontSize: 9, color: MUTED_COLOR, textTransform: 'uppercase', letterSpacing: '1px' }}>
           Distributed Query ({renderedChildCount} remote {renderedChildCount === 1 ? 'query' : 'queries'} · {distinctNodeCount} remote node{distinctNodeCount !== 1 ? 's' : ''}{participantLabel})
         </div>
-        {overhead > 0 && (
-          <div style={{ fontSize: 10, color: 'var(--text-muted)' }}>
-            Coordinator overhead: <span style={{ color: COORD_COLOR, fontFamily: 'var(--font-mono, monospace)' }}>{fmtMs(overhead)}</span>
+        <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
+          {overhead > 0 && (
+            <div style={{ fontSize: 10, color: 'var(--text-muted)' }}>
+              Coordinator overhead: <span style={{ color: COORD_COLOR, fontFamily: 'var(--font-mono, monospace)' }}>{fmtMs(overhead)}</span>
+            </div>
+          )}
+          <div style={{ display: 'flex', border: '1px solid var(--border-secondary)', borderRadius: 4, overflow: 'hidden' }}>
+            {(['timeline', 'flow'] as const).map(candidate => (
+              <button
+                key={candidate}
+                type="button"
+                onClick={() => setView(candidate)}
+                aria-pressed={view === candidate}
+                title={candidate === 'timeline'
+                  ? 'When each participant ran, on a shared time axis'
+                  : 'Who dispatched to whom, and how many rows came back'}
+                style={{
+                  border: 'none',
+                  padding: '3px 10px',
+                  fontSize: 10,
+                  textTransform: 'uppercase',
+                  letterSpacing: '0.8px',
+                  cursor: 'pointer',
+                  background: view === candidate ? 'var(--bg-hover, rgba(88, 166, 255, 0.15))' : 'transparent',
+                  color: view === candidate ? 'var(--text-primary)' : MUTED_COLOR,
+                }}
+              >
+                {candidate}
+              </button>
+            ))}
           </div>
-        )}
+        </div>
       </div>
 
       {processorCompatibility && processorCompatibility.mode !== 'full' && (
@@ -416,6 +473,16 @@ export const DistributedQueryTopology: React.FC<DistributedQueryTopologyProps> =
         </div>
       )}
 
+      {view === 'flow' ? (
+        <DistributedFlowDiagram
+          topology={topology}
+          activeQueryId={activeQueryId}
+          onNavigate={onNavigate}
+          hostLabel={shortHost}
+          failedQueryIds={failedQueryIds}
+        />
+      ) : (
+      <>
       {/* Time axis */}
       <div style={{
         display: 'flex', justifyContent: 'space-between',
@@ -559,6 +626,8 @@ export const DistributedQueryTopology: React.FC<DistributedQueryTopologyProps> =
           </div>
         )}
       </div>
+      </>
+      )}
     </div>
   );
 };

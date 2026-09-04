@@ -5,6 +5,76 @@ import type {
   TopologyNodeRole,
 } from '@tracehouse/core';
 
+export const COORD_COLOR = '#58a6ff';
+export const NODE_COLOR = '#d29922';
+export const SHARD_LEADER_COLOR = '#a371f7';
+export const NESTED_COORDINATOR_COLOR = '#8b5cf6';
+export const REPLICA_READER_COLOR = '#d29922';
+export const OBJECT_WORKER_COLOR = '#3fb950';
+export const INSERT_COLOR = '#db6d28';
+export const ERROR_COLOR = '#f85149';
+
+/** Role palette shared by the timeline and flow renderings, so both agree on a color. */
+export function topologyRoleColor(
+  role: TopologyNodeRole | 'local_reader' | undefined,
+  hasError = false,
+): string {
+  if (hasError) return ERROR_COLOR;
+  if (role === 'coordinator') return COORD_COLOR;
+  if (role === 'shard_leader') return SHARD_LEADER_COLOR;
+  if (role === 'nested_coordinator') return NESTED_COORDINATOR_COLOR;
+  if (role === 'replica_reader' || role === 'local_reader') return REPLICA_READER_COLOR;
+  if (role === 'object_storage_worker' || role === 'hybrid_segment') return OBJECT_WORKER_COLOR;
+  if (role === 'insert_forwarder' || role === 'async_insert_flush') return INSERT_COLOR;
+  return NODE_COLOR;
+}
+
+/**
+ * Hue per shard. Replicas of one shard are shades of its hue, so "same colour"
+ * reads as "same data" and a skewed shard is visible without reading a label.
+ * The coordinator keeps COORD_COLOR: it is a role, not a shard.
+ */
+const SHARD_COLORS = ['#d29922', '#3fb950', '#a371f7', '#2bb5b5', '#db61a2', '#db6d28'];
+
+function clampChannel(value: number): number {
+  return Math.max(0, Math.min(255, Math.round(value)));
+}
+
+/** Lighten (amount > 0) or darken (amount < 0) a #rrggbb colour, returning #rrggbb. */
+export function shadeColor(hex: string, amount: number): string {
+  const value = parseInt(hex.slice(1), 16);
+  const channels = [(value >> 16) & 0xff, (value >> 8) & 0xff, value & 0xff];
+  const mixed = channels.map(channel => clampChannel(
+    amount >= 0 ? channel + (255 - channel) * amount : channel * (1 + amount),
+  ));
+  return `#${mixed.map(channel => channel.toString(16).padStart(2, '0')).join('')}`;
+}
+
+/**
+ * Colour for a participant: its shard's hue, lightened per replica. Falls back
+ * to the role palette when the topology could not attribute a shard.
+ */
+export function participantColor(
+  role: TopologyNodeRole | 'local_reader' | undefined,
+  shardNum: number | undefined,
+  replicaNum: number | undefined,
+  hasError = false,
+): string {
+  if (hasError) return ERROR_COLOR;
+  if (role === 'coordinator') return COORD_COLOR;
+  if (shardNum == null) return topologyRoleColor(role, false);
+  const base = SHARD_COLORS[(shardNum - 1) % SHARD_COLORS.length];
+  const replicaStep = replicaNum != null && replicaNum > 1 ? Math.min((replicaNum - 1) * 0.16, 0.48) : 0;
+  // Always #rrggbb, including for shaded replicas: callers derive cube faces
+  // from this and should not have to handle two colour syntaxes.
+  return replicaStep > 0 ? shadeColor(base, replicaStep) : base;
+}
+
+/** The hue a shard is drawn in, for legends. */
+export function shardColor(shardNum: number): string {
+  return SHARD_COLORS[(shardNum - 1) % SHARD_COLORS.length];
+}
+
 const REMOTE_EXECUTION_NOUN: Partial<Record<TopologyNodeRole, string>> = {
   insert_forwarder: 'Remote table INSERT',
   async_insert_flush: 'Async insert flush',

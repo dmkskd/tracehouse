@@ -74,6 +74,7 @@ export {
   parseDistributedTextLogPhases,
   processorProfileCompatibilityFromMonitoringCapabilities,
   topologyNodeRoleLabel,
+  distributedNodeRoleLabel,
   topologyNodeRoleText,
   type AsyncInsertLogInput,
   type ClusterHostInput,

@@ -70,7 +70,13 @@ export const TimeBreakdownPopover: React.FC<{
    * on is never blocked by the explanation of what you just left.
    */
   interactive?: boolean;
-}> = ({ anchor, title, facts = [], segments, layers, layersHeading, caveats, onPointerEnter, onPointerLeave, interactive = true }) => {
+  /**
+   * Widest the panel may get. The default suits the three-layer explanation;
+   * callers with only facts and segments pass something narrower so the panel
+   * does not span half the screen to describe one node.
+   */
+  maxWidth?: number;
+}> = ({ anchor, title, facts = [], segments, layers, layersHeading, caveats, onPointerEnter, onPointerLeave, interactive = true, maxWidth = 680 }) => {
   const theme = useThemeDetection();
   const c = THEME[theme];
 
@@ -84,7 +90,7 @@ export const TimeBreakdownPopover: React.FC<{
   const placement: React.CSSProperties = flipUp
     ? { bottom: Math.max(8, window.innerHeight - anchor.top + 8) }
     : { top: anchor.bottom + 8 };
-  const left = Math.min(anchor.left, Math.max(8, window.innerWidth - 700));
+  const left = Math.min(anchor.left, Math.max(8, window.innerWidth - (maxWidth + 20)));
 
   return createPortal(
     <div
@@ -98,7 +104,7 @@ export const TimeBreakdownPopover: React.FC<{
         // Must clear ModalWrapper's 100000: this portals to body, so without
         // that it renders behind the very modal it belongs to.
         zIndex: 100_001,
-        maxWidth: 680,
+        maxWidth,
         background: c.bg,
         border: `1px solid ${c.border}`,
         borderRadius: 8,

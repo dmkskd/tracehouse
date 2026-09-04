@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import {
   buildDistributedExecutionFlowSteps,
+  distributedNodeRoleLabel,
   formatDistributedTopologyReport,
   inferDistributedTopology,
   parseDistributedTextLogPhases,
@@ -1313,5 +1314,20 @@ describe('parseDistributedTextLogPhases', { tags: ['query-analysis'] }, () => {
       textLog({ source: 'Planner', message: 'Query to stage Complete' }),
       textLog({ source: 'SelectExecutor', message: 'Key condition: unknown' }),
     ])).toEqual([]);
+  });
+});
+
+describe('distributedNodeRoleLabel', () => {
+  it('qualifies the roles that belong to a shard', () => {
+    expect(distributedNodeRoleLabel('shard_leader', 2)).toBe('Shard 2 coordinator');
+    expect(distributedNodeRoleLabel('replica_reader', 3)).toBe('Shard 3 reader');
+    expect(distributedNodeRoleLabel('remote_child', 1)).toBe('Shard 1 child');
+  });
+
+  it('falls back to the plain role label without a shard', () => {
+    expect(distributedNodeRoleLabel('shard_leader')).toBe('Shard coordinator');
+    expect(distributedNodeRoleLabel('replica_reader', 0)).toBe('Reader');
+    expect(distributedNodeRoleLabel('coordinator', 2)).toBe('Coordinator');
+    expect(distributedNodeRoleLabel('local_reader')).toBe('Local reader');
   });
 });

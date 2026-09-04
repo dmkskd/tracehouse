@@ -515,6 +515,25 @@ export function topologyNodeRoleLabel(role: TopologyNodeRole | 'local_reader'): 
   }
 }
 
+/**
+ * Role label qualified by the shard it ran for, e.g. "Shard 2 reader".
+ *
+ * Lives here rather than in each view because it is a classification of a
+ * topology role, and the timeline and flow renderings must not be able to
+ * describe the same node differently.
+ */
+export function distributedNodeRoleLabel(
+  role: TopologyNodeRole | 'local_reader',
+  shardNum?: number,
+): string {
+  if (shardNum) {
+    if (role === 'shard_leader') return `Shard ${shardNum} coordinator`;
+    if (role === 'replica_reader') return `Shard ${shardNum} reader`;
+    if (role === 'remote_child') return `Shard ${shardNum} child`;
+  }
+  return topologyNodeRoleLabel(role);
+}
+
 export function topologyNodeRoleText(role: TopologyNodeRole | 'local_reader'): string {
   switch (role) {
     case 'shard_leader': return 'shard coordinator';

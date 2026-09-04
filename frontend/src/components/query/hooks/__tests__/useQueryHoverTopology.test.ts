@@ -138,6 +138,77 @@ describe('useQueryHoverTopology', () => {
     expect(result.current.getChildQueriesForQuery(parentB)?.[0]?.query_id).toBe('child-b');
   });
 
+  it('re-reads a newly appeared query whose children were still being flushed', async () => {
+    vi.useFakeTimers();
+    try {
+      // Each node flushes system.query_log on its own schedule, so the first
+      // read of a fresh distributed query can see only part of the fan-out.
+      const partial = new Map([['parent', [makeChild('child-a')]]]);
+      const complete = new Map([['parent', [makeChild('child-a'), makeChild('child-b')]]]);
+      const getSubQueriesForInitialQueries = vi.fn()
+        .mockResolvedValueOnce(partial)
+        .mockResolvedValueOnce(complete);
+      const analyzer = makeAnalyzer(getSubQueriesForInitialQueries);
+      const coordinator = makeQuery({ query_id: 'parent', is_initial_query: 1 });
+
+      const { result } = renderHook(() => useQueryHoverTopology({
+        enabled: true,
+        queryAnalyzer: analyzer,
+        history: [coordinator],
+        coordinatorIds: new Set(['parent']),
+        startTime: '2026-06-18',
+      }));
+
+      await act(async () => { await Promise.resolve(); });
+      expect(result.current.getChildQueriesForQuery(coordinator)).toHaveLength(1);
+
+      await act(async () => { await vi.advanceTimersByTimeAsync(15_000); });
+
+      expect(getSubQueriesForInitialQueries).toHaveBeenCalledTimes(2);
+      expect(getSubQueriesForInitialQueries).toHaveBeenLastCalledWith(['parent'], '2026-06-18');
+      expect(result.current.getChildQueriesForQuery(coordinator)).toHaveLength(2);
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it('re-reads only the roots that appeared since the last fetch', async () => {
+    vi.useFakeTimers();
+    try {
+      const rows = new Map([['parent', [makeChild('child-a')]]]);
+      const getSubQueriesForInitialQueries = vi.fn().mockResolvedValue(rows);
+      const analyzer = makeAnalyzer(getSubQueriesForInitialQueries);
+      const first = makeQuery({ query_id: 'parent', is_initial_query: 1 });
+      const second = makeQuery({ query_id: 'parent-2', is_initial_query: 1 });
+
+      const { rerender } = renderHook(
+        ({ history }) => useQueryHoverTopology({
+          enabled: true,
+          queryAnalyzer: analyzer,
+          history,
+          coordinatorIds: new Set(['parent', 'parent-2']),
+          startTime: '2026-06-18',
+        }),
+        { initialProps: { history: [first] } },
+      );
+
+      await act(async () => { await Promise.resolve(); });
+      await act(async () => { await vi.advanceTimersByTimeAsync(15_000); });
+      getSubQueriesForInitialQueries.mockClear();
+
+      // A newly arrived query joins the list: only it needs a second read.
+      rerender({ history: [second, first] });
+      await act(async () => { await Promise.resolve(); });
+      expect(getSubQueriesForInitialQueries).toHaveBeenLastCalledWith(['parent-2', 'parent'], '2026-06-18');
+
+      await act(async () => { await vi.advanceTimersByTimeAsync(15_000); });
+      expect(getSubQueriesForInitialQueries).toHaveBeenCalledTimes(2);
+      expect(getSubQueriesForInitialQueries).toHaveBeenLastCalledWith(['parent-2'], '2026-06-18');
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
   it('surfaces child-query fetch errors instead of silently returning no topology', async () => {
     const error = new Error('ClickHouse rejected hover topology SQL');
     const consoleError = vi.spyOn(console, 'error').mockImplementation(() => undefined);
