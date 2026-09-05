@@ -72,3 +72,13 @@ tracehouse-agent-kit/
 # Fault-injection scenario runs (tracehouse-scenarios). Generated per run, and
 # the answer keys must never be handed to a model being evaluated.
 scenario-runs/
+
+# Design explorations and moodboard references. Kept locally, not shipped.
+demos/
+
+# Local Claude Code state. settings.json is shareable but the rest is personal:
+# local overrides, and a stray copy of the per-project memory directory.
+.claude/
+
+# Project instructions for Claude Code. Kept local rather than shared.
+CLAUDE.md
