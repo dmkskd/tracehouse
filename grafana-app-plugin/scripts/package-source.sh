@@ -12,6 +12,23 @@ if [[ ! -d "$PLUGIN_DIR/dist" ]]; then
   exit 1
 fi
 
+# rsync does not read .gitignore, so anything generated or downloaded into the
+# tree is staged unless named here. Two of these have failed Grafana's
+# submission scan: Playwright's trace viewer ships a large minified bundle that
+# ClamAV reports as obfuscated JS, and testing/plugin-dist holds third-party
+# plugins whose code trips Grafana's own code rules — reported against us.
+#
+# None of it is referenced by a source map, and the pruning step below only
+# walks src/, so it cannot remove any of it.
+TEST_OUTPUT_EXCLUDES=(
+  --exclude 'plugin-dist'
+  --exclude 'playwright-report'
+  --exclude 'test-results'
+  --exclude 'test-reports'
+  --exclude 'playwright/.cache'
+  --exclude 'coverage'
+)
+
 mkdir -p "$(dirname "$SOURCE_ZIP")"
 SOURCE_ZIP="$(cd "$(dirname "$SOURCE_ZIP")" && pwd)/$(basename "$SOURCE_ZIP")"
 
@@ -30,6 +47,7 @@ rsync -a \
   --exclude '.DS_Store' \
   --exclude '*.zip' \
   --exclude '/dist' \
+  "${TEST_OUTPUT_EXCLUDES[@]}" \
   "$PLUGIN_DIR/" "$STAGE_DIR/tracehouse/"
 
 echo "    staging packages and frontend inside src/ for validator"
@@ -40,6 +58,7 @@ rsync -a \
   --exclude '/e2e' \
   --exclude '/proxy' \
   --exclude 'package.json' --exclude 'package-lock.json' \
+  "${TEST_OUTPUT_EXCLUDES[@]}" \
   "$REPO_ROOT/packages/" "$STAGE_DIR/tracehouse/src/packages/"
 rsync -a \
   --exclude 'node_modules' \
@@ -48,6 +67,7 @@ rsync -a \
   --exclude 'package.json' --exclude 'package-lock.json' \
   --exclude 'tsconfig*.json' --exclude 'vite.config*' --exclude 'vitest.config*' \
   --exclude 'index.html' --exclude '.eslintrc*' \
+  "${TEST_OUTPUT_EXCLUDES[@]}" \
   "$REPO_ROOT/frontend/" "$STAGE_DIR/tracehouse/src/frontend/"
 
 # Prune frontend/src and packages/*/src to only files actually referenced by
