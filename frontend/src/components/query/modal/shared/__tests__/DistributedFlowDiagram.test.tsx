@@ -40,6 +40,8 @@ function topology() {
         queryDurationMs: 21,
         readRows: 55,
         readBytes: 2900,
+        resultRows: 4,
+        resultBytes: 320,
       }),
     ],
   });
@@ -139,7 +141,9 @@ describe('DistributedFlowDiagram', () => {
     expect(container.querySelectorAll(`${cubes}[data-gauge="duration"]`).length).toBeGreaterThan(0);
     expect(container.querySelectorAll(`${cubes}[data-gauge="memory"]`)).toHaveLength(0);
     expect(container.querySelectorAll('path[marker-end]')).toHaveLength(1);
-    expect(screen.getByText('55 rows · 2.83 KB')).toBeTruthy();
+    // Bytes before rows, the order the cube labels and the stripes use, and
+    // the child's result counters rather than the 55 rows it read to get them.
+    expect(screen.getByText('320 B · 4 rows')).toBeTruthy();
   });
 
   it('navigates when a participant is clicked', () => {

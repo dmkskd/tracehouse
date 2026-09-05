@@ -140,13 +140,28 @@ export const TimeBreakdownPopover: React.FC<{
         {title}
       </div>
 
+      {/* One grid for every fact rather than a grid per row, so the label
+          column measures itself against the longest label and all the values
+          still line up. A fixed column was narrower than labels like "bytes
+          returned", which then ran into their own value; the 78px stays as a
+          floor so a panel of short labels does not look cramped. */}
       {facts.length > 0 && (
-        <div style={{ marginBottom: segments.length > 0 ? 8 : 0 }}>
+        <div
+          style={{
+            display: 'grid',
+            gridTemplateColumns: 'minmax(78px, max-content) 1fr',
+            columnGap: 7,
+            marginBottom: segments.length > 0 ? 8 : 0,
+            whiteSpace: 'nowrap',
+          }}
+        >
           {facts.map(fact => (
-            <div key={fact.label} style={{ display: 'grid', gridTemplateColumns: '78px 1fr', gap: 7, whiteSpace: 'nowrap' }}>
+            <React.Fragment key={fact.label}>
               <span style={{ color: c.faint }}>{fact.label}</span>
-              <span style={{ color: c.text, overflow: 'hidden', textOverflow: 'ellipsis' }}>{fact.value}</span>
-            </div>
+              <span style={{ color: c.text, minWidth: 0, overflow: 'hidden', textOverflow: 'ellipsis' }}>
+                {fact.value}
+              </span>
+            </React.Fragment>
           ))}
         </div>
       )}

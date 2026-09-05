@@ -70,6 +70,14 @@ export interface DistributedFlowNodeMetrics {
   durationMs: number;
   readRows: number;
   readBytes: number;
+  /**
+   * What this node handed back to its parent, which is what actually crossed
+   * the link the edge draws. A shard reading a hundred million rows to answer
+   * a GROUP BY returns a few hundred; read volume on an edge would say the
+   * whole scan travelled.
+   */
+  resultRows: number;
+  resultBytes: number;
   memoryUsage: number;
   /** Share of all rows read by any participant, 0..1. Undefined when unknown. */
   rowShare?: number;
@@ -112,9 +120,16 @@ export interface DistributedFlowEdge {
   path: string;
   labelX: number;
   labelY: number;
-  /** Rows/bytes travelling back up this edge, when the target reported them. */
-  rows?: number;
-  bytes?: number;
+  /**
+   * What the target returned to its parent, which is what actually crossed
+   * this link. Named for that rather than "rows"/"bytes": the generic names
+   * once held the target's read counters, which sat here reading as though the
+   * whole scan had travelled. Undefined when query_log carried no result
+   * counters — an edge with nothing to say draws bare, and "0 rows returned"
+   * is a claim this data cannot support.
+   */
+  returnedRows?: number;
+  returnedBytes?: number;
 }
 
 export interface DistributedFlowGroup {
@@ -272,6 +287,8 @@ export function buildDistributedFlowDiagram(
         durationMs: source.queryDurationMs,
         readRows: source.readRows,
         readBytes: source.readBytes,
+        resultRows: source.resultRows,
+        resultBytes: source.resultBytes,
         memoryUsage: source.memoryUsage,
         rowShare: rowShareByParticipant.get(key),
         selectedParts: partsByParticipant.get(key),
@@ -314,6 +331,9 @@ export function buildDistributedFlowDiagram(
         durationMs: 0,
         readRows: topology.localRead.readRows ?? 0,
         readBytes: topology.localRead.readBytes ?? 0,
+        // A folded read never left the initiator, so nothing travelled.
+        resultRows: 0,
+        resultBytes: 0,
         memoryUsage: 0,
         selectedParts: topology.localRead.selectedParts,
       },
@@ -489,8 +509,8 @@ export function buildDistributedFlowDiagram(
       path,
       labelX,
       labelY,
-      rows: node.metrics.readRows > 0 ? node.metrics.readRows : undefined,
-      bytes: node.metrics.readBytes > 0 ? node.metrics.readBytes : undefined,
+      returnedRows: node.metrics.resultRows > 0 ? node.metrics.resultRows : undefined,
+      returnedBytes: node.metrics.resultBytes > 0 ? node.metrics.resultBytes : undefined,
     });
   }
 

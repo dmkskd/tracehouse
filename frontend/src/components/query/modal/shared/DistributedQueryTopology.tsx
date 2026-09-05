@@ -33,6 +33,7 @@ import {
   topologyRoleColor,
 } from './distributedTopologyPresentation';
 import { TimeBreakdownPopover } from './TimeBreakdownPopover';
+import { nodeMetricFacts } from './distributedFlowLabels';
 
 export interface TopologyCoordinator {
   query_id: string;
@@ -891,13 +892,14 @@ const TopologyBar: React.FC<{
   // Same panel as the Overview bar: the composition needs a legend and named
   // counters to be readable, which a native title tooltip cannot give.
   const [anchorRect, setAnchorRect] = useState<DOMRect | null>(null);
-  // Role is the panel's title, so it is not repeated as a fact, and the metrics
-  // fold into one line each: the same shape the flow view's panel uses.
+  // Role is the panel's title, so it is not repeated as a fact. The metric rows
+  // come from the same helper the flow view's panel uses, so the two views name
+  // the same numbers in the same order; only the row formatting differs, since
+  // a bar chart of many rows reads better with 65.0M than with 64,980,417.
   const facts = [
     { label: 'query_id', value: queryId },
     { label: 'host', value: hostname || label },
-    { label: 'read', value: `${fmtCompact(readRows)} rows` },
-    { label: 'cost', value: `${fmtMs(durationMs)} · ${formatBytes(memoryUsage)} peak` },
+    ...nodeMetricFacts({ durationMs, memoryUsage, readRows }, { formatRows: fmtCompact }),
   ];
 
   return (

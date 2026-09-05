@@ -10,8 +10,6 @@
 import React, { useEffect, useId, useMemo, useRef, useState } from 'react';
 import {
   computeTimeBreakdown,
-  distributedNodeRoleLabel,
-  participantCoordinate,
   topologyRoleTitle,
   TIME_BREAKDOWN_EVENTS,
   type DistributedTopology,
@@ -19,12 +17,30 @@ import {
 import {
   buildDistributedFlowDiagram,
   computeFlowGauges,
-  type DistributedFlowEdge,
   type DistributedFlowNode,
   type FlowNodeGauge,
 } from './distributedFlowLayout';
-import { formatBytes } from '../../../../stores/databaseStore';
-import { formatDurationMs } from '../../../../utils/formatters';
+import {
+  edgeLabel,
+  isDispatcher,
+  nodeDetails,
+  nodeIdentity,
+  nodeMetricFacts,
+  nodeRoleLabel,
+} from './distributedFlowLabels';
+import {
+  barSegments,
+  frontFaceBar,
+  gaugeLabelAnchor,
+  gaugeRowY,
+  CUBE_DEPTH,
+  CUBE_HEIGHT,
+  CUBE_WIDTH,
+  GAUGE_MIN_FILL,
+  GAUGE_U0,
+  GAUGE_U1,
+  type CubeFace,
+} from './distributedFlowCubeGeometry';
 import {
   COORD_COLOR,
   ERROR_COLOR,
@@ -45,28 +61,9 @@ interface DistributedFlowDiagramProps {
   failedQueryIds?: string[];
 }
 
-/** Cube dimensions. The anchor (x, y) is the horizontal centre of the base. */
-const CUBE_WIDTH = 62;
-const CUBE_DEPTH = 32;
-const CUBE_HEIGHT = 68;
 const MUTED_EDGE_COLOR = 'var(--text-muted)';
 /** Left edge of the label block, measured from the cube's anchor. */
 const LABEL_OFFSET_X = 44;
-
-/**
- * Gauge bars painted across both front faces of the cube, in face-local units:
- * `u` runs 0..1 across the whole front, `v` runs downward from the top of the
- * faces. Bars sit on the lower half so the shard hue still reads as a block of
- * colour above them, and wrapping the corner buys twice the bar length.
- */
-const GAUGE_U0 = 0.09;
-const GAUGE_U1 = 0.91;
-const GAUGE_THICKNESS = 5;
-const GAUGE_GAP = 4;
-/** Distance from the cube's base to the bottom of the lowest bar. */
-const GAUGE_BOTTOM_INSET = 10;
-/** A share this small still gets a visible sliver, so "a little" != "none". */
-const GAUGE_MIN_FILL = 0.05;
 
 /** How much a hovered cube grows, as a fraction of its size, and how far it rises. */
 const HOVER_SCALE = 0.07;
@@ -116,71 +113,6 @@ function face(color: string, amount: number): string {
   return color.startsWith('#') ? shadeColor(color, amount) : color;
 }
 
-/**
- * A participant that hands work out rather than doing the reading itself.
- *
- * These lead with their job and carry their coordinate underneath; everyone
- * else leads with the coordinate. The two kinds are told apart by different
- * facts, which is the whole reason the lines swap. There is one initiator per
- * query and one per shard, so naming the job identifies the cube: "Shard 1
- * initiator" is unique in the diagram. There are many replicas and remote
- * nodes per shard, so their job is the one thing they all share and only the
- * coordinate separates them. Leading each with the line that distinguishes it
- * keeps every heading unique down the column.
- */
-function isDispatcher(node: DistributedFlowNode): boolean {
-  return node.isCoordinator || node.role === 'shard_leader' || node.role === 'nested_coordinator';
-}
-
-/**
- * What to call this participant on its second line, and whether that name
- * places it in the cluster or merely identifies the machine.
- *
- * The coordinate comes from system.clusters by way of the topology, not from
- * parsing the hostname. Hostnames are container ids and cloud hashes as often
- * as they are names, so a regex over them answers "s1r2" for some deployments
- * and a twelve-character hash for others, from data that was equally available
- * in both cases. The read-distribution table below the diagram has always used
- * the coordinate; this is the same rule, so the two panels agree.
- *
- * `placed` is false when the topology could not attribute a shard and replica.
- * The name shown then is the machine's, and the caller renders it differently:
- * "we could not place this host" and "this host is called s1r2" should not look
- * like the same statement.
- */
-function nodeIdentity(node: DistributedFlowNode): { label: string; placed: boolean } {
-  const coordinate = participantCoordinate(node.shardNum, node.replicaNum);
-  return coordinate ? { label: coordinate, placed: true } : { label: node.hostLabel, placed: false };
-}
-
-function nodeRoleLabel(node: DistributedFlowNode): string {
-  if (node.isFolded) {
-    return node.shardNum != null && node.replicaNum != null
-      ? `Local read · s${node.shardNum}r${node.replicaNum}`
-      : 'Local read';
-  }
-  return distributedNodeRoleLabel(node.role, node.shardNum);
-}
-
-/** Two lines at most: work on the first, memory on the second. Anything taller
- * would run into the cube of the row below. */
-function nodeDetails(node: DistributedFlowNode): string[] {
-  const work: string[] = [];
-  if (node.metrics.durationMs > 0) work.push(formatDurationMs(node.metrics.durationMs));
-  work.push(node.metrics.readRows > 0 ? `${node.metrics.readRows.toLocaleString()} rows` : 'no rows read');
-  const details = [work.join(' · ')];
-  if (node.metrics.memoryUsage > 0) details.push(formatBytes(node.metrics.memoryUsage));
-  return details;
-}
-
-function edgeLabel(edge: DistributedFlowEdge): string {
-  if (edge.rows == null && edge.bytes == null) return '';
-  const parts: string[] = [];
-  if (edge.rows != null) parts.push(`${edge.rows.toLocaleString()} rows`);
-  if (edge.bytes != null) parts.push(formatBytes(edge.bytes));
-  return parts.join(' · ');
-}
-
 /** The ClickHouse wordmark drawn on the cluster boundary box, as in the pattern explorer. */
 const ClickHouseMark: React.FC<{ x: number; y: number }> = ({ x, y }) => (
   <g transform={`translate(${x} ${y})`} fill="var(--text-muted)" opacity={0.8}>
@@ -192,68 +124,12 @@ const ClickHouseMark: React.FC<{ x: number; y: number }> = ({ x, y }) => (
   </g>
 );
 
-/**
- * A point on one of the cube's two front faces. `u` runs 0..1 across the whole
- * front of the cube — the first half on the left face, the second on the right —
- * and `v` runs downward from the top of the faces. Both faces are
- * parallelograms, so moving along u also moves the point vertically.
- */
-function frontFacePoint(x: number, base: number, u: number, v: number): [number, number] {
-  const halfWidth = CUBE_WIDTH / 2;
-  const topOfFaces = base - CUBE_HEIGHT;
-  if (u <= 0.5) {
-    const t = u * 2;
-    return [x - halfWidth + t * halfWidth, topOfFaces + CUBE_DEPTH / 2 + t * (CUBE_DEPTH / 2) + v];
-  }
-  const t = u * 2 - 1;
-  return [x + t * halfWidth, topOfFaces + CUBE_DEPTH - t * (CUBE_DEPTH / 2) + v];
-}
-
-/**
- * Polygon points for one isometric bar segment lying on a front face. Segments
- * stop at the cube's front corner: a single quad spanning both faces would cut
- * the corner off and stop looking like paint on a solid.
- */
-function frontFaceBar(x: number, base: number, u0: number, u1: number, v: number): string {
-  return [
-    frontFacePoint(x, base, u0, v),
-    frontFacePoint(x, base, u1, v),
-    frontFacePoint(x, base, u1, v + GAUGE_THICKNESS),
-    frontFacePoint(x, base, u0, v + GAUGE_THICKNESS),
-  ]
-    .map(([px, py]) => `${px.toFixed(2)},${py.toFixed(2)}`)
-    .join(' ');
-}
-
-/** Splits a bar at the front corner, so each piece sits on exactly one face. */
-function barSegments(u0: number, u1: number): { face: 'left' | 'right'; u0: number; u1: number }[] {
-  const segments: { face: 'left' | 'right'; u0: number; u1: number }[] = [];
-  if (u0 < 0.5) segments.push({ face: 'left', u0, u1: Math.min(u1, 0.5) });
-  if (u1 > 0.5) segments.push({ face: 'right', u0: Math.max(u0, 0.5), u1 });
-  return segments;
-}
-
-/** Vertical offset of the nth bar, counted so the stack sits above the base. */
-function gaugeRowY(index: number, count: number): number {
-  const fromBottom = (count - index) * GAUGE_THICKNESS + (count - 1 - index) * GAUGE_GAP;
-  return CUBE_HEIGHT - GAUGE_BOTTOM_INSET - fromBottom;
-}
-
-/**
- * Where a bar's caption goes: level with the bar, off the cube's left corner,
- * which is the side no label block occupies.
- */
-function gaugeLabelAnchor(x: number, base: number, index: number, count: number): [number, number] {
-  const [px, py] = frontFacePoint(x, base, GAUGE_U0, gaugeRowY(index, count) + GAUGE_THICKNESS / 2);
-  return [px - 8, py];
-}
-
 /** The unfilled track and the filled part, per face, so the fold stays visible. */
-const GAUGE_TRACK_FILL: Record<'left' | 'right', string> = {
+const GAUGE_TRACK_FILL: Record<CubeFace, string> = {
   left: 'rgba(0, 0, 0, 0.34)',
   right: 'rgba(0, 0, 0, 0.24)',
 };
-const GAUGE_BAR_FILL: Record<'left' | 'right', string> = {
+const GAUGE_BAR_FILL: Record<CubeFace, string> = {
   left: 'rgba(255, 255, 255, 0.72)',
   right: 'rgba(255, 255, 255, 0.92)',
 };
@@ -384,8 +260,10 @@ export const DistributedFlowDiagram: React.FC<DistributedFlowDiagramProps> = ({
 
   /**
    * In a wrapped fan-out the edges run past several cubes, so their labels land
-   * on top of each other. Every number they carry is already on the target's own
-   * label, so drop them there and keep the stroke weight as the volume cue.
+   * on top of each other and are dropped; the stroke weight stays as the volume
+   * cue and the hover panel still carries the numbers. This does lose what
+   * travelled, which no cube reports — the cubes carry read volume, not result
+   * volume — so it is a real gap in the wide layout rather than a tidy-up.
    */
   const hideEdgeLabels = useMemo(
     () => diagram.nodes.some(node => node.subColumn > 0),
@@ -681,7 +559,7 @@ export const DistributedFlowDiagram: React.FC<DistributedFlowDiagramProps> = ({
                   participant. */}
               <text
                 x={node.x + LABEL_OFFSET_X}
-                y={node.y - 44}
+                y={node.y - 56}
                 // A coordinate heading is set in the mono face the metrics use,
                 // and a shade larger: it is an identifier and reads as one.
                 fontSize={leadsWithRole ? 12 : 13}
@@ -694,7 +572,7 @@ export const DistributedFlowDiagram: React.FC<DistributedFlowDiagramProps> = ({
               </text>
               <text
                 x={node.x + LABEL_OFFSET_X}
-                y={node.y - 28}
+                y={node.y - 40}
                 fontSize={10}
                 // An unplaced host is dimmer and italic: it is the machine's own
                 // name standing in for a coordinate we could not resolve, not a
@@ -705,12 +583,29 @@ export const DistributedFlowDiagram: React.FC<DistributedFlowDiagramProps> = ({
               >
                 {leadsWithRole ? identity.label : nodeRoleLabel(node)}
               </text>
+              {/* One metric per line, in stripe order, and the whole label
+                  block sits high enough that the last line clears the lane
+                  outgoing edges leave in — they depart at y + EDGE_OUT_Y_OFFSET
+                  and cross this column on their way right, so a third line at
+                  the old height was drawn through by every edge the node
+                  dispatches. Raising the block only clears this node's own
+                  edges, though: in a multi-column chain the traffic between the
+                  columns either side passes through here too, so the text is
+                  knocked out of whatever runs behind it, as the gauge captions
+                  are.
+
+                  Tried on hover only, and put back: at rest the cubes then had
+                  three unlabelled bars and no figures, and in the wrapped
+                  layout — where edge labels are dropped — no numbers at all. */}
               <text
                 x={node.x + LABEL_OFFSET_X}
-                y={node.y - 10}
+                y={node.y - 24}
                 fontSize={10}
                 fill="var(--text-muted)"
                 fontFamily="var(--font-mono, monospace)"
+                stroke="var(--bg-secondary, #fff)"
+                strokeWidth={3}
+                paintOrder="stroke"
               >
                 {details.map((detail, index) => (
                   <tspan key={detail} x={node.x + LABEL_OFFSET_X} dy={index === 0 ? 0 : 12}>{detail}</tspan>
@@ -790,23 +685,16 @@ const NodePopover: React.FC<{
     [profileEvents, node.metrics.durationMs],
   );
 
-  // The cube already carries duration, rows and memory beside it, so the panel
-  // is for what the cube cannot say: which query this was, and where its time
-  // went. Metrics stay, but folded into one line per kind of work rather than
-  // one row each, which is what made the panel taller than the diagram.
+  // The cube already carries duration, memory and rows beside it, so the panel
+  // is for what the cube cannot say: which query this was, where its time went,
+  // and the counters there is no room for on the canvas. The metric rows come
+  // from nodeMetricFacts, shared with the timeline's panel so the two views
+  // name the same numbers the same way.
   const facts = [
     { label: 'query_id', value: node.queryId },
     { label: 'host', value: node.hostname },
     ...(node.shapeLabel ? [{ label: 'query', value: node.shapeLabel }] : []),
-    {
-      label: 'read',
-      value: `${node.metrics.readRows.toLocaleString()} rows · ${formatBytes(node.metrics.readBytes)}`
-        + (node.metrics.selectedParts ? ` · ${node.metrics.selectedParts.toLocaleString()} parts` : ''),
-    },
-    {
-      label: 'cost',
-      value: `${formatDurationMs(node.metrics.durationMs)} · ${formatBytes(node.metrics.memoryUsage)} peak`,
-    },
+    ...nodeMetricFacts(node.metrics),
     ...(node.metrics.rowShare != null
       ? [{ label: 'share', value: `${pct(node.metrics.rowShare)} of rows read` }]
       : []),

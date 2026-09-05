@@ -50,6 +50,9 @@ function fanOutTopology() {
         queryDurationMs: 21,
         readRows: 55,
         readBytes: 2900,
+        // Scans 55 rows, hands back 4: the gap the edge label exists to show.
+        resultRows: 4,
+        resultBytes: 320,
       }),
       row({
         queryId: 'child-b',
@@ -75,7 +78,7 @@ describe('buildDistributedFlowDiagram', () => {
     }
   });
 
-  it('draws one edge per parent/child pair, carrying the childrows back up', () => {
+  it('draws one edge per parent/child pair, carrying what the child returned', () => {
     const diagram = buildDistributedFlowDiagram(fanOutTopology());
     const coordinator = diagram.nodes.find(node => node.isCoordinator)!;
 
@@ -90,13 +93,15 @@ describe('buildDistributedFlowDiagram', () => {
       const target = diagram.nodes.find(node => node.id === edge.targetId);
       return target?.queryId === 'child-a';
     });
-    expect(readEdge?.rows).toBe(55);
-    expect(readEdge?.bytes).toBe(2900);
+    // The child's result counters, not its read counters: an edge measures
+    // what crossed it, and the 55 rows it scanned never left the shard.
+    expect(readEdge?.returnedRows).toBe(4);
+    expect(readEdge?.returnedBytes).toBe(320);
     const idleEdge = diagram.edges.find(edge => {
       const target = diagram.nodes.find(node => node.id === edge.targetId);
       return target?.queryId === 'child-b';
     });
-    expect(idleEdge?.rows).toBeUndefined();
+    expect(idleEdge?.returnedRows).toBeUndefined();
   });
 
   it('never stacks two nodes on the same anchor', () => {

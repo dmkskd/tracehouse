@@ -315,6 +315,14 @@ export interface DistributedTopologyNode {
   readBytes: number;
   writtenRows: number;
   writtenBytes: number;
+  /**
+   * What this participant handed back to whoever asked it, from query_log's
+   * result_rows/result_bytes. Distinct from readRows/readBytes: a shard that
+   * scans a hundred million rows to answer a GROUP BY returns a handful, and
+   * the gap between the two is the point of a distributed query.
+   */
+  resultRows: number;
+  resultBytes: number;
   memoryUsage: number;
   queryPreview?: string;
   settings: Record<string, string | number | boolean | undefined>;
@@ -972,6 +980,8 @@ function buildNode(
     readBytes: num(execution.readBytes),
     writtenRows: num(execution.writtenRows),
     writtenBytes: num(execution.writtenBytes),
+    resultRows: num(execution.resultRows),
+    resultBytes: num(execution.resultBytes),
     memoryUsage: num(execution.memoryUsage),
     queryPreview: execution.queryPreview,
     settings: execution.settings ?? {},

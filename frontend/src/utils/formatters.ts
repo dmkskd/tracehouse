@@ -63,6 +63,17 @@ export function formatDuration(seconds: number): string {
   return `${days}d ${hours % 24}h`;
 }
 
+/**
+ * Format a row count with its unit (e.g. 1 row, 55 rows, 129,282,941 rows).
+ *
+ * Single-row results are ordinary — a filtered read, a one-shard cluster, an
+ * aggregate — and "1 rows" beside a figure reads as a bug in the display
+ * rather than as the data.
+ */
+export function formatRowCount(rows: number): string {
+  return `${rows.toLocaleString()} ${rows === 1 ? 'row' : 'rows'}`;
+}
+
 /** Format milliseconds → human-readable (e.g. 3.14ms, 1.25s, 22:30m, 1:05:03h) */
 export function formatDurationMs(ms: number): string {
   if (ms < 1000) return `${Number(ms.toFixed(2))}ms`;
