@@ -63,3 +63,12 @@ tmp.ignore/
 # Local agent settings with secrets (Langfuse keys, etc.)
 .claude/settings.local.json
 .codex/langfuse.json
+
+# Notebook HTML export CLI: built, never shipped, removed before first commit.
+# Kept on disk in case the "send a notebook to someone without TraceHouse" case
+# turns out to be real. Rationale in docs/proposals/notebooks.md.
+tracehouse-agent-kit/
+
+# Fault-injection scenario runs (tracehouse-scenarios). Generated per run, and
+# the answer keys must never be handed to a model being evaluated.
+scenario-runs/

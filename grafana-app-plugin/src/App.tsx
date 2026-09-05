@@ -14,6 +14,8 @@ import {
   TRACEHOUSE_OVERFLOW_NAVIGATION,
   TRACEHOUSE_NAVIGATION,
   TRACEHOUSE_PRIMARY_NAVIGATION,
+  routeRequiresDatasource,
+  visibleNavigationGroups,
   useNavigationOverflow,
   useRefreshConfig,
   type RefreshRateOption,
@@ -229,6 +231,7 @@ const Events = lazy(() => import('@frontend/pages/Events').then(m => ({ default:
 const Analytics = lazy(() => import('@frontend/pages/Analytics').then(m => ({ default: m.Analytics })));
 const ClusterOverview = lazy(() => import('@frontend/pages/ClusterOverview').then(m => ({ default: m.ClusterOverview })));
 const Replication = lazy(() => import('@frontend/pages/Replication').then(m => ({ default: m.Replication })));
+const Notebooks = lazy(() => import('@frontend/pages/Notebooks').then(m => ({ default: m.Notebooks })));
 
 // Route mapping based on plugin.json paths (matching main app order)
 const ROUTES: Record<string, React.LazyExoticComponent<React.ComponentType>> = {
@@ -242,6 +245,7 @@ const ROUTES: Record<string, React.LazyExoticComponent<React.ComponentType>> = {
   'merges': MergeTracker,
   'replication': Replication,
   'analytics': Analytics,
+  'notebooks': Notebooks,
 };
 
 function NoDatasourceMessage() {
@@ -349,6 +353,8 @@ const GrafanaOverflowNavigation: React.FC<GrafanaOverflowNavigationProps> = ({
 }) => {
   const [open, setOpen] = useState(false);
   const ref = useRef<HTMLDivElement | null>(null);
+  const experimentalEnabled = useUserPreferenceStore(state => state.experimentalEnabled);
+  const groups = visibleNavigationGroups(TRACEHOUSE_OVERFLOW_NAVIGATION, experimentalEnabled);
   // The trigger names the active page whenever that page sits in here rather than in the
   // tab row, which now covers folded tabs as well as the always-secondary pages.
   const activeItem = [...foldedItems, ...TRACEHOUSE_OVERFLOW_ITEMS].find(item => item.key === routeKey);
@@ -453,7 +459,7 @@ const GrafanaOverflowNavigation: React.FC<GrafanaOverflowNavigationProps> = ({
             </div>
           )}
 
-          {TRACEHOUSE_OVERFLOW_NAVIGATION.map((group, groupIndex) => (
+          {groups.map((group, groupIndex) => (
             <div
               key={group.label}
               style={{
@@ -491,6 +497,13 @@ const GrafanaOverflowNavigation: React.FC<GrafanaOverflowNavigationProps> = ({
                     }}
                   >
                     {item.label}
+                    {item.experimental && (
+                      <span style={{
+                        marginLeft: 6, padding: '1px 4px', borderRadius: 3,
+                        border: '1px solid #d29922', color: '#d29922',
+                        fontFamily: 'monospace', fontSize: 8, fontWeight: 700,
+                      }}>EXP</span>
+                    )}
                   </a>
                 );
               })}
@@ -744,7 +757,7 @@ function AppContent({ path }: AppContentProps) {
           overflow: pageOwnsScroll ? 'hidden' : 'auto',
         }}
       >
-        {!services ? (
+        {!services && routeRequiresDatasource(routeKey) ? (
           <NoDatasourceMessage />
         ) : (
           <Suspense fallback={

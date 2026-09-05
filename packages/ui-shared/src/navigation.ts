@@ -2,6 +2,22 @@ export interface TracehouseNavigationItem {
   key: string;
   label: string;
   path: string;
+  /**
+   * Hidden unless the user opts into experimental features, and badged when
+   * shown. Declared here so the standalone app and the Grafana plugin cannot
+   * disagree about what is experimental.
+   */
+  experimental?: boolean;
+  /**
+   * Whether the page is useless without a configured ClickHouse datasource.
+   * Defaults to true, because almost every page reads from the cluster.
+   *
+   * Declared rather than branched on. The Grafana host previously carried
+   * `routeKey !== 'notebooks'` inline, which put one feature's requirements
+   * inside the shell: every further exception would add another clause, and
+   * removing a feature meant finding and unpicking it.
+   */
+  requiresDatasource?: boolean;
 }
 
 export interface TracehouseNavigationGroup {
@@ -30,6 +46,7 @@ export const TRACEHOUSE_OVERFLOW_NAVIGATION = [
   {
     label: 'Advanced',
     items: [
+      { key: 'notebooks', label: 'Notebooks', path: '/notebooks', experimental: true, requiresDatasource: false },
       { key: 'engine-internals', label: 'Engine Internals', path: '/engine-internals' },
     ],
   },
@@ -80,4 +97,31 @@ export function countVisibleNavigationItems({
   }
 
   return count;
+}
+
+/** Drop experimental entries unless the user has opted in. */
+export function visibleNavigationItems<T extends TracehouseNavigationItem>(
+  items: readonly T[],
+  experimentalEnabled: boolean,
+): readonly T[] {
+  return experimentalEnabled ? items : items.filter(item => !item.experimental);
+}
+
+/** Same, for the grouped overflow menu. Groups left empty by the filter are dropped. */
+export function visibleNavigationGroups(
+  groups: readonly TracehouseNavigationGroup[],
+  experimentalEnabled: boolean,
+): readonly TracehouseNavigationGroup[] {
+  return groups
+    .map(group => ({ ...group, items: visibleNavigationItems(group.items, experimentalEnabled) }))
+    .filter(group => group.items.length > 0);
+}
+
+/**
+ * Whether a route needs a datasource before it can render anything useful.
+ * Unknown routes are assumed to need one, which is the safe default.
+ */
+export function routeRequiresDatasource(routeKey: string): boolean {
+  const item = TRACEHOUSE_NAVIGATION.find(entry => entry.key === routeKey);
+  return (item as TracehouseNavigationItem | undefined)?.requiresDatasource !== false;
 }

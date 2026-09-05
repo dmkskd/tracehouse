@@ -1,0 +1,97 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://tracehouse.dev/schemas/notebook-0.1.json",
+  "title": "TraceHouse Notebook 0.1",
+  "type": "object",
+  "required": ["schemaVersion", "title", "question", "scope", "evidence", "stages"],
+  "properties": {
+    "schemaVersion": { "const": "0.1" },
+    "kind": {
+      "description": "What this notebook is for. Omitted means investigation.",
+      "enum": ["investigation", "runbook", "report"]
+    },
+    "title": { "type": "string", "minLength": 1 },
+    "question": { "type": "string", "minLength": 1 },
+    "scope": {
+      "type": "object",
+      "required": ["from", "to"],
+      "properties": {
+        "from": { "type": "string", "format": "date-time" },
+        "to": { "type": "string", "format": "date-time" },
+        "sourceLabel": { "type": "string" },
+        "cluster": { "type": ["string", "null"] },
+        "hosts": { "type": "array", "items": { "type": "string" }, "uniqueItems": true }
+      },
+      "additionalProperties": false
+    },
+    "evidence": {
+      "type": "object",
+      "minProperties": 1,
+      "additionalProperties": { "$ref": "#/$defs/evidence" }
+    },
+    "stages": {
+      "type": "array",
+      "minItems": 1,
+      "items": { "$ref": "#/$defs/stage" }
+    },
+    "limitations": { "type": "array", "items": { "type": "string" } }
+  },
+  "additionalProperties": false,
+  "$defs": {
+    "evidence": {
+      "type": "object",
+      "required": ["title", "mode", "columns", "rows"],
+      "properties": {
+        "title": { "type": "string", "minLength": 1 },
+        "mode": { "enum": ["snapshot", "live-link", "snapshot-with-live-link"] },
+        "columns": { "type": "array", "minItems": 1, "items": { "type": "string" }, "uniqueItems": true },
+        "rows": { "type": "array", "items": { "type": "object" } },
+        "units": { "type": "object", "additionalProperties": { "type": "string" } },
+        "provenance": { "type": "object" },
+        "view": {
+          "type": "object",
+          "required": ["descriptorVersion"],
+          "anyOf": [
+            { "required": ["href"] },
+            { "required": ["route"] }
+          ],
+          "properties": {
+            "href": { "type": "string", "minLength": 1 },
+            "route": { "type": "string", "pattern": "^/[^/]" },
+            "descriptorVersion": { "type": "integer", "minimum": 1 }
+          },
+          "additionalProperties": false
+        }
+      },
+      "additionalProperties": false
+    },
+    "stage": {
+      "type": "object",
+      "required": ["id", "headline", "claimType", "block", "evidence", "encoding", "takeaway"],
+      "properties": {
+        "id": { "type": "string", "pattern": "^[a-z0-9][a-z0-9-]*$" },
+        "headline": { "type": "string", "minLength": 1 },
+        "claimType": { "enum": ["observed", "derived", "inferred", "recommended"] },
+        "block": { "type": "string" },
+        "evidence": { "type": "string" },
+        "encoding": { "type": "object" },
+        "takeaway": { "type": "string", "minLength": 1 },
+        "caveat": { "type": "string", "minLength": 1 },
+        "highlight": { "type": "object" },
+        "actions": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "required": ["type", "evidence"],
+            "properties": {
+              "type": { "const": "open-evidence" },
+              "evidence": { "type": "string" }
+            },
+            "additionalProperties": false
+          }
+        }
+      },
+      "additionalProperties": false
+    }
+  }
+}

@@ -8,6 +8,7 @@ import { TimeTravelPage } from './pages/TimeTravelPage';
 import { EngineInternals } from './pages/EngineInternals';
 import { ClusterOverview } from './pages/ClusterOverview';
 import { Analytics } from './pages/Analytics';
+import { Notebooks } from './pages/Notebooks';
 import { Events } from './pages/Events';
 import { Replication } from './pages/Replication';
 import { ClickHouseProvider } from './providers/ClickHouseProvider';
@@ -36,6 +37,7 @@ function App() {
                 <Route path="/cluster" element={<ClusterOverview />} />
                 <Route path="/replication" element={<Replication />} />
                 <Route path="/analytics" element={<Analytics />} />
+                <Route path="/notebooks" element={<Notebooks />} />
               </Routes>
             </Layout>
           </RefreshConfigContext.Provider>

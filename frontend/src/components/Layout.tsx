@@ -12,6 +12,7 @@ import {
   TRACEHOUSE_OVERFLOW_ITEMS,
   TRACEHOUSE_OVERFLOW_NAVIGATION,
   TRACEHOUSE_PRIMARY_NAVIGATION,
+  visibleNavigationGroups,
   useNavigationOverflow,
   useRefreshConfig,
   type RefreshRateOption,
@@ -36,8 +37,22 @@ interface OverflowNavigationProps {
   triggerRef: React.MutableRefObject<HTMLElement | null>;
 }
 
+/** Marks a nav entry whose feature is still changing shape. */
+const ExperimentalBadge: React.FC = () => (
+  <span style={{
+    marginLeft: 6, padding: '1px 4px', borderRadius: 3,
+    border: '1px solid var(--accent-yellow)', color: 'var(--accent-yellow)',
+    fontFamily: 'monospace', fontSize: 8, fontWeight: 700, letterSpacing: '0.06em',
+    verticalAlign: 'middle',
+  }}>
+    EXP
+  </span>
+);
+
 const OverflowNavigation: React.FC<OverflowNavigationProps> = ({ foldedItems, triggerRef }) => {
   const [open, setOpen] = useState(false);
+  const experimentalEnabled = useUserPreferenceStore(s => s.experimentalEnabled);
+  const groups = visibleNavigationGroups(TRACEHOUSE_OVERFLOW_NAVIGATION, experimentalEnabled);
   const ref = useRef<HTMLDivElement | null>(null);
   const location = useLocation();
   // The trigger names the active page whenever that page sits in here rather than in the
@@ -155,7 +170,7 @@ const OverflowNavigation: React.FC<OverflowNavigationProps> = ({ foldedItems, tr
             ))}
           </div>
           )}
-          {TRACEHOUSE_OVERFLOW_NAVIGATION.map((group, groupIndex) => (
+          {groups.map((group, groupIndex) => (
             <div
               key={group.label}
               style={{
@@ -191,6 +206,7 @@ const OverflowNavigation: React.FC<OverflowNavigationProps> = ({ foldedItems, tr
                   })}
                 >
                   {item.label}
+                  {item.experimental && <ExperimentalBadge />}
                 </NavLink>
               ))}
             </div>

@@ -1,6 +1,12 @@
 import { describe, expect, it } from 'vitest';
 
-import { countVisibleNavigationItems } from '../navigation.js';
+import {
+  countVisibleNavigationItems,
+  visibleNavigationGroups,
+  visibleNavigationItems,
+  routeRequiresDatasource,
+  TRACEHOUSE_OVERFLOW_NAVIGATION,
+} from '../navigation.js';
 
 const fit = (
   itemWidths: number[],
@@ -49,5 +55,53 @@ describe('countVisibleNavigationItems', () => {
 
   it('never returns more items than it was given', () => {
     expect(fit([10, 10], 100_000)).toBe(2);
+  });
+});
+
+describe('experimental navigation gating', () => {
+  it('hides experimental items when the user has not opted in', () => {
+    const items = visibleNavigationItems(
+      [{ key: 'a', label: 'A', path: '/a' }, { key: 'b', label: 'B', path: '/b', experimental: true }],
+      false,
+    );
+    expect(items.map(i => i.key)).toEqual(['a']);
+  });
+
+  it('keeps them when opted in', () => {
+    const items = visibleNavigationItems(
+      [{ key: 'a', label: 'A', path: '/a' }, { key: 'b', label: 'B', path: '/b', experimental: true }],
+      true,
+    );
+    expect(items.map(i => i.key)).toEqual(['a', 'b']);
+  });
+
+  it('drops a group left empty by the filter', () => {
+    const groups = visibleNavigationGroups(
+      [{ label: 'Only experimental', items: [{ key: 'x', label: 'X', path: '/x', experimental: true }] }],
+      false,
+    );
+    expect(groups).toEqual([]);
+  });
+
+  it('gates Notebooks, which is the feature this exists for', () => {
+    const off = visibleNavigationGroups(TRACEHOUSE_OVERFLOW_NAVIGATION, false)
+      .flatMap(g => g.items).map(i => i.key);
+    const on = visibleNavigationGroups(TRACEHOUSE_OVERFLOW_NAVIGATION, true)
+      .flatMap(g => g.items).map(i => i.key);
+    expect(off).not.toContain('notebooks');
+    expect(on).toContain('notebooks');
+  });
+});
+
+describe('datasource requirement', () => {
+  it('defaults to required, including for unknown routes', () => {
+    expect(routeRequiresDatasource('queries')).toBe(true);
+    expect(routeRequiresDatasource('does-not-exist')).toBe(true);
+  });
+
+  it('honours an explicit opt-out', () => {
+    // Notebooks renders a pasted document and needs no cluster. Declared on the
+    // nav entry rather than branched on in the Grafana shell.
+    expect(routeRequiresDatasource('notebooks')).toBe(false);
   });
 });

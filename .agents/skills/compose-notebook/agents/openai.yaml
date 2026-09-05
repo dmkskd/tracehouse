@@ -1,0 +1,4 @@
+interface:
+  display_name: "Compose TraceHouse Notebook"
+  short_description: "Turn evidence into a visual notebook"
+  default_prompt: "Use $compose-notebook to turn these ClickHouse findings into a validated visual notebook."

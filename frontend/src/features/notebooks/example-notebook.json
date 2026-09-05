@@ -1,0 +1,281 @@
+{
+  "schemaVersion": "0.1",
+  "kind": "investigation",
+  "title": "Memory limit failure on ch-02",
+  "question": "Why did ClickHouse report MEMORY_LIMIT_EXCEEDED around 13:05?",
+  "scope": {
+    "from": "2026-07-28T12:55:00Z",
+    "to": "2026-07-28T13:15:00Z",
+    "sourceLabel": "hypothetical-demo",
+    "cluster": "analytics-prod",
+    "hosts": [
+      "ch-02"
+    ]
+  },
+  "evidence": {
+    "host-memory": {
+      "title": "Host ch-02 memory around the failure",
+      "mode": "snapshot-with-live-link",
+      "columns": [
+        "timestamp",
+        "memory_gib"
+      ],
+      "rows": [
+        {
+          "timestamp": "2026-07-28T12:55:00Z",
+          "memory_gib": 22.4
+        },
+        {
+          "timestamp": "2026-07-28T12:58:00Z",
+          "memory_gib": 24.1
+        },
+        {
+          "timestamp": "2026-07-28T13:01:00Z",
+          "memory_gib": 31.8
+        },
+        {
+          "timestamp": "2026-07-28T13:03:00Z",
+          "memory_gib": 43.6
+        },
+        {
+          "timestamp": "2026-07-28T13:05:00Z",
+          "memory_gib": 50.7
+        },
+        {
+          "timestamp": "2026-07-28T13:07:00Z",
+          "memory_gib": 29.2
+        },
+        {
+          "timestamp": "2026-07-28T13:10:00Z",
+          "memory_gib": 23.8
+        },
+        {
+          "timestamp": "2026-07-28T13:15:00Z",
+          "memory_gib": 22.9
+        }
+      ],
+      "units": {
+        "memory_gib": "GiB"
+      },
+      "provenance": {
+        "kind": "fixture",
+        "diagnostic": "host-memory-history",
+        "capturedAt": "2026-07-28T13:20:00Z"
+      },
+      "view": {
+        "route": "/timetravel?event_time=2026-07-28T13%3A05%3A00Z&event_id=evt-memory-241",
+        "descriptorVersion": 1
+      }
+    },
+    "memory-contributors": {
+      "title": "Attributed memory contributors at 13:05",
+      "mode": "snapshot-with-live-link",
+      "columns": [
+        "actor_id",
+        "actor",
+        "kind",
+        "peak_gib",
+        "share_pct"
+      ],
+      "rows": [
+        {
+          "actor_id": "q-123",
+          "actor": "q-123",
+          "kind": "query",
+          "peak_gib": 31.0,
+          "share_pct": 61.1
+        },
+        {
+          "actor_id": "q-456",
+          "actor": "q-456",
+          "kind": "query",
+          "peak_gib": 7.4,
+          "share_pct": 14.6
+        },
+        {
+          "actor_id": "background-merges",
+          "actor": "Background merges",
+          "kind": "merge",
+          "peak_gib": 2.1,
+          "share_pct": 4.1
+        },
+        {
+          "actor_id": "other",
+          "actor": "Other/unattributed",
+          "kind": "other",
+          "peak_gib": 10.2,
+          "share_pct": 20.2
+        }
+      ],
+      "units": {
+        "peak_gib": "GiB",
+        "share_pct": "%"
+      },
+      "provenance": {
+        "kind": "fixture",
+        "diagnostic": "memory-attribution",
+        "capturedAt": "2026-07-28T13:20:00Z"
+      },
+      "view": {
+        "route": "/queries?qd_id=q-123&hostname=ch-02&status=Exception",
+        "descriptorVersion": 1
+      }
+    },
+    "query-mechanism": {
+      "title": "Facts for query q-123",
+      "mode": "snapshot-with-live-link",
+      "columns": [
+        "fact_id",
+        "fact",
+        "value"
+      ],
+      "rows": [
+        {
+          "fact_id": "peak",
+          "fact": "Peak query memory",
+          "value": "31.0 GiB"
+        },
+        {
+          "fact_id": "error",
+          "fact": "Exception",
+          "value": "241 MEMORY_LIMIT_EXCEEDED"
+        },
+        {
+          "fact_id": "plan",
+          "fact": "Join algorithm",
+          "value": "hash"
+        },
+        {
+          "fact_id": "build",
+          "fact": "Estimated build-side rows",
+          "value": "482 million"
+        },
+        {
+          "fact_id": "merges",
+          "fact": "Background pool utilization",
+          "value": "18%"
+        },
+        {
+          "fact_id": "concurrency",
+          "fact": "Concurrent executions of same hash",
+          "value": "2"
+        }
+      ],
+      "provenance": {
+        "kind": "fixture",
+        "diagnostic": "query-detail-and-plan",
+        "capturedAt": "2026-07-28T13:20:00Z"
+      },
+      "view": {
+        "route": "/queries?qd_id=q-123",
+        "descriptorVersion": 1
+      }
+    }
+  },
+  "stages": [
+    {
+      "id": "establish-failure",
+      "headline": "Host memory reached 50.7 GiB when error 241 occurred",
+      "claimType": "observed",
+      "block": "timeseries.annotated",
+      "evidence": "host-memory",
+      "encoding": {
+        "x": "timestamp",
+        "y": [
+          "memory_gib"
+        ]
+      },
+      "takeaway": "The failure coincided with a sharp host-memory rise on ch-02, followed by a rapid release after the queries ended.",
+      "highlight": {
+        "timestamp": "2026-07-28T13:05:00Z"
+      },
+      "actions": [
+        {
+          "type": "open-evidence",
+          "evidence": "host-memory"
+        }
+      ]
+    },
+    {
+      "id": "identify-contributor",
+      "headline": "Query q-123 contributed 61% of the attributed peak",
+      "claimType": "derived",
+      "block": "table.ranked",
+      "evidence": "memory-contributors",
+      "encoding": {
+        "label": "actor",
+        "rankBy": "peak_gib"
+      },
+      "takeaway": "q-123 reached 31.0 GiB, more than four times the next identified query and far above background merges.",
+      "highlight": {
+        "rowKey": {
+          "actor_id": "q-123"
+        }
+      },
+      "actions": [
+        {
+          "type": "open-evidence",
+          "evidence": "memory-contributors"
+        }
+      ]
+    },
+    {
+      "id": "explain-mechanism",
+      "headline": "The evidence points to hash-join build-side growth",
+      "claimType": "inferred",
+      "block": "facts.list",
+      "evidence": "query-mechanism",
+      "encoding": {
+        "label": "fact",
+        "value": "value"
+      },
+      "takeaway": "q-123 used a hash join with an estimated 482 million build-side rows while two executions of the same normalized query overlapped.",
+      "caveat": "The fixture has plan and query-level metrics but no per-operator memory tracker, so the exact allocation site is not directly measured.",
+      "highlight": {
+        "rowKey": {
+          "fact_id": "plan"
+        }
+      },
+      "actions": [
+        {
+          "type": "open-evidence",
+          "evidence": "query-mechanism"
+        }
+      ]
+    },
+    {
+      "id": "rule-out-merges",
+      "headline": "Background merges were not the dominant contributor",
+      "claimType": "derived",
+      "block": "table.ranked",
+      "evidence": "memory-contributors",
+      "encoding": {
+        "label": "actor",
+        "rankBy": "peak_gib"
+      },
+      "takeaway": "Background merges accounted for 2.1 GiB, compared with 31.0 GiB for q-123; this makes merge pressure an unlikely primary cause in this fixture.",
+      "highlight": {
+        "rowKey": {
+          "actor_id": "background-merges"
+        }
+      }
+    },
+    {
+      "id": "recommend-action",
+      "headline": "Reduce the build side, then compare the same query hash",
+      "claimType": "recommended",
+      "block": "facts.list",
+      "evidence": "query-mechanism",
+      "encoding": {
+        "label": "fact",
+        "value": "value"
+      },
+      "takeaway": "Test a smaller build input or a different join strategy, prevent overlapping copies where possible, and compare peak memory for the same normalized query hash before and after the change."
+    }
+  ],
+  "limitations": [
+    "All values are synthetic and exist only to test the composition workflow.",
+    "The current TraceHouse app does not yet restore every state needed by a full evidence descriptor.",
+    "The proposed hash-join mechanism remains an inference without per-operator memory measurements."
+  ]
+}

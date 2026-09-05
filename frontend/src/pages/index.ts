@@ -8,3 +8,4 @@ export { Overview } from './Overview';
 export { TimeTravelPage } from './TimeTravelPage';
 export { Analytics } from './Analytics';
 export { Replication } from './Replication';
+export { Notebooks } from './Notebooks';
