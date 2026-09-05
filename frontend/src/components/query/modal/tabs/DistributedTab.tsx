@@ -10,6 +10,7 @@ import type {
 } from '@tracehouse/core';
 import {
   TOPOLOGY_ACTOR_LABELS,
+  TOPOLOGY_EVENT_LABELS,
   buildDistributedExecutionFlowSteps,
   distributedQueryKindLabel,
   distributedReadMetricValue,
@@ -1224,7 +1225,7 @@ function flowEventDetail(event: DistributedExecutionFlowEvent, detail: FlowStepD
     if (detail.roleId === 'async_insert_flush') {
       return detail.hostname ? `Async insert flush completed on ${hostIdentity(detail.hostname)}.` : 'Async insert flush completed.';
     }
-    return detail.hostname ? `Completed on ${hostIdentity(detail.hostname)}.` : 'Remote child completed.';
+    return detail.hostname ? `Completed on ${hostIdentity(detail.hostname)}.` : TOPOLOGY_EVENT_LABELS.remote_read_completed.detail;
   }
   if (event.kind === 'coordinator_read_completed' && event.rows != null) {
     return `Processed ${event.rows.toLocaleString()} rows.`;

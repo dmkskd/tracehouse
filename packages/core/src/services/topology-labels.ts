@@ -8,8 +8,7 @@
  * The copies drifted - one role was "Reader" in core and "Reader query" in the
  * frontend - and renaming anything meant finding all five and missing some.
  *
- * They all read from here now, and topology-labels.guard.test.ts fails the
- * build if a sixth place appears. The keys are the stable API; the strings are
+ * They all read from here now. The keys are the stable API; the strings are
  * the only place a label is written, so renaming is an edit to this file.
  *
  * The wording follows ClickHouse's own, which several of these did not:

@@ -130,8 +130,7 @@ function coordinatorRoleLabel(topology: DistributedTopology): string {
   if (topology.localRead) {
     const shard = topology.localRead.shardNum != null && topology.localRead.replicaNum != null
       ? `s${topology.localRead.shardNum}r${topology.localRead.replicaNum}`
-      // labels-exempt: says which replica is unknown, rather than naming the
-      // local_reader role.
+      // Says which replica is unknown, rather than naming the local_reader role.
       : 'local replica';
     return `${topologyRoleTitle('coordinator')} + local read (${shard})`;
   }

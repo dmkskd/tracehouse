@@ -117,6 +117,22 @@ function face(color: string, amount: number): string {
 }
 
 /**
+ * A participant that hands work out rather than doing the reading itself.
+ *
+ * These lead with their job and carry their coordinate underneath; everyone
+ * else leads with the coordinate. The two kinds are told apart by different
+ * facts, which is the whole reason the lines swap. There is one initiator per
+ * query and one per shard, so naming the job identifies the cube: "Shard 1
+ * initiator" is unique in the diagram. There are many replicas and remote
+ * nodes per shard, so their job is the one thing they all share and only the
+ * coordinate separates them. Leading each with the line that distinguishes it
+ * keeps every heading unique down the column.
+ */
+function isDispatcher(node: DistributedFlowNode): boolean {
+  return node.isCoordinator || node.role === 'shard_leader' || node.role === 'nested_coordinator';
+}
+
+/**
  * What to call this participant on its second line, and whether that name
  * places it in the cluster or merely identifies the machine.
  *
@@ -560,6 +576,9 @@ export const DistributedFlowDiagram: React.FC<DistributedFlowDiagramProps> = ({
           const isActive = node.queryId === activeQueryId && !node.isFolded;
           const details = nodeDetails(node);
           const identity = nodeIdentity(node);
+          // A cube with no coordinate has nothing else to lead with, so it
+          // keeps the role on top and the hostname below, whatever its role.
+          const leadsWithRole = isDispatcher(node) || node.isFolded || !identity.placed;
           const gauges = gaugesByNodeId.get(node.id);
           const isHovered = hovered?.id === node.id;
           return (
@@ -663,11 +682,14 @@ export const DistributedFlowDiagram: React.FC<DistributedFlowDiagramProps> = ({
               <text
                 x={node.x + LABEL_OFFSET_X}
                 y={node.y - 44}
-                fontSize={12}
-                fontWeight={600}
+                // A coordinate heading is set in the mono face the metrics use,
+                // and a shade larger: it is an identifier and reads as one.
+                fontSize={leadsWithRole ? 12 : 13}
+                fontWeight={leadsWithRole ? 600 : 700}
+                fontFamily={leadsWithRole ? undefined : 'var(--font-mono, monospace)'}
                 fill="var(--text-primary)"
               >
-                {nodeRoleLabel(node)}
+                {leadsWithRole ? nodeRoleLabel(node) : identity.label}
                 {node.hasError && <tspan fill={ERROR_COLOR} fontWeight={400}> · failed</tspan>}
               </text>
               <text
@@ -677,11 +699,11 @@ export const DistributedFlowDiagram: React.FC<DistributedFlowDiagramProps> = ({
                 // An unplaced host is dimmer and italic: it is the machine's own
                 // name standing in for a coordinate we could not resolve, not a
                 // name for its part in the query.
-                fill={identity.placed ? 'var(--text-secondary)' : 'var(--text-muted)'}
-                fontStyle={identity.placed ? undefined : 'italic'}
-                fontFamily="var(--font-mono, monospace)"
+                fill={leadsWithRole && !identity.placed ? 'var(--text-muted)' : 'var(--text-secondary)'}
+                fontStyle={leadsWithRole && !identity.placed ? 'italic' : undefined}
+                fontFamily={leadsWithRole ? 'var(--font-mono, monospace)' : undefined}
               >
-                {identity.label}
+                {leadsWithRole ? identity.label : nodeRoleLabel(node)}
               </text>
               <text
                 x={node.x + LABEL_OFFSET_X}

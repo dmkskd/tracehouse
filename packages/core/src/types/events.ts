@@ -207,8 +207,8 @@ export const EVENT_KIND_DEFINITIONS = {
   },
   async_insert_failure: {
     label: 'Async insert failure',
-    // labels-exempt: the Events dashboard's own short name for a failed async
-    // insert, unrelated to the async-insert actor in a distributed query.
+    // The Events dashboard's own short name for a failed async insert,
+    // unrelated to the async-insert actor in a distributed query.
     shortLabel: 'Async insert',
     description: 'An asynchronous insert failed.',
     detailLabel: 'ClickHouse error',

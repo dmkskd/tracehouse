@@ -452,7 +452,7 @@ export const QueryActivityTable: React.FC<QueryActivityTableProps> = ({
                       <td style={{ ...tdStyle, whiteSpace: 'nowrap' }}>
                         <QueryKindBadge kind={q.query_kind} />
                         {q.is_initial_query === 0 && (
-                          <span title={`Remote worker query (parent: ${q.initial_query_id || 'unknown'})`} style={{
+                          <span title={`Child query (parent: ${q.initial_query_id || 'unknown'})`} style={{
                             display: 'inline-block',
                             marginLeft: 4,
                             padding: '2px 5px',
@@ -462,11 +462,11 @@ export const QueryActivityTable: React.FC<QueryActivityTableProps> = ({
                             background: 'rgba(210,169,34,0.15)',
                             color: '#d29922',
                           }}>
-                            worker
+                            {queryRowRoleNoun(false)}
                           </span>
                         )}
                         {coordinatorIds?.has(q.query_id) && (
-                          <span title="Coordinator — dispatched child queries to remote workers or replicas" style={{
+                          <span title="Initiator — dispatched child queries to remote nodes" style={{
                             display: 'inline-block',
                             marginLeft: 4,
                             padding: '2px 5px',

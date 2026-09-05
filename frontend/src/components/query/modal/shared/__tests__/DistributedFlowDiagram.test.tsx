@@ -80,6 +80,27 @@ describe('DistributedFlowDiagram', () => {
     expect(fallback.getAttribute('font-style')).toBe('italic');
   });
 
+  it('leads a dispatcher with its job and everyone else with their coordinate', () => {
+    const { container } = render(
+      <DistributedFlowDiagram
+        topology={topology()}
+        activeQueryId="root"
+        onNavigate={vi.fn()}
+        hostLabel={shortHost}
+      />,
+    );
+
+    const headingFor = (text: string) => {
+      const label = [...container.querySelectorAll('text')].find(node => node.textContent?.startsWith(text));
+      return label ? { size: label.getAttribute('font-size'), weight: label.getAttribute('font-weight') } : null;
+    };
+
+    // One initiator per query and one per shard, so the job names the cube.
+    // Many replicas per shard, so only the coordinate does.
+    expect(headingFor('Initiator')).toEqual({ size: '12', weight: '600' });
+    expect(headingFor('s2r1')).toEqual({ size: '13', weight: '700' });
+  });
+
   it('draws a labelled cube per participant and an edge carrying the rows read', () => {
     const { container } = render(
       <DistributedFlowDiagram
