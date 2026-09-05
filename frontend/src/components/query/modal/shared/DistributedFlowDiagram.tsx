@@ -631,7 +631,11 @@ export const DistributedFlowDiagram: React.FC<DistributedFlowDiagramProps> = ({
                 );
               })}
               {/* Labels sit beside the cube, not under it: a row then costs the
-                  height of a cube instead of a cube plus four lines of text. */}
+                  height of a cube instead of a cube plus four lines of text.
+                  The role leads and the hostname follows it: what a cube does
+                  in this query is the thing being read, and one host can appear
+                  twice under two roles, so the name alone does not identify a
+                  participant. */}
               <text
                 x={node.x + LABEL_OFFSET_X}
                 y={node.y - 44}
@@ -639,16 +643,17 @@ export const DistributedFlowDiagram: React.FC<DistributedFlowDiagramProps> = ({
                 fontWeight={600}
                 fill="var(--text-primary)"
               >
-                {node.hostLabel}
+                {nodeRoleLabel(node)}
                 {node.hasError && <tspan fill={ERROR_COLOR} fontWeight={400}> · failed</tspan>}
               </text>
               <text
                 x={node.x + LABEL_OFFSET_X}
                 y={node.y - 28}
                 fontSize={10}
-                fill="var(--text-secondary)"
+                fill="var(--text-muted)"
+                fontFamily="var(--font-mono, monospace)"
               >
-                {nodeRoleLabel(node)}
+                {node.hostLabel}
               </text>
               <text
                 x={node.x + LABEL_OFFSET_X}
