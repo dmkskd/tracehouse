@@ -9,3 +9,10 @@ tmp.ignore
 grafana-app-plugin/node_modules
 grafana-app-plugin/dist
 *.md
+
+# Test output. Regenerable, never needed in an image, and Playwright's trace
+# viewer bundle trips ClamAV heuristics as obfuscated JS.
+**/playwright-report
+**/test-results
+**/test-reports
+**/playwright/.cache
