@@ -116,6 +116,31 @@ export {
   type TopologyEvidence,
   type TopologyNodeRole,
 } from './distributed-query-topology.js';
+export {
+  TOPOLOGY_ROLE_LABELS,
+  TOPOLOGY_EVENT_LABELS,
+  TOPOLOGY_ACTOR_LABELS,
+  QUERY_ROW_LABELS,
+  THREAD_LABELS,
+  QUERY_KIND_LABELS,
+  UNNAMED_REMOTE_EXECUTION,
+  UNKNOWN_QUERY_KIND,
+  topologyRoleTitle,
+  topologyRoleNoun,
+  topologyRoleTitleForShard,
+  localReadTitle,
+  participantCoordinate,
+  FOLDED_LOCAL_READ_GROUP_LABEL,
+  remoteExecutionNoun,
+  topologyEventTitle,
+  topologyEventHeadline,
+  queryRowRoleTitle,
+  queryRowRoleNoun,
+  queryKindTitle,
+  type LabelledTopologyRole,
+  type TopologyRoleLabels,
+  type TopologyEventLabels,
+} from './topology-labels.js';
 export { ReplicationService, ReplicationServiceError, extractShardId, shardIdToNum, assembleShards, parseShardingKey, buildEngineInfo, filterQueueEntries, classifyReplicaHealth, classifyDelaySeverity, buildKeeperTableInfo } from './replication-service.js';
 export type { ClusterInfo, AvailableCluster } from './cluster-service.js';
 export { EnvironmentDetector } from './environment-detector.js';

@@ -1,8 +1,10 @@
-import type {
-  DistributedExecutionFlowEventKind,
-  DistributedTopologyNode,
-  SubQueryInfo,
-  TopologyNodeRole,
+import {
+  remoteExecutionNoun,
+  topologyEventHeadline,
+  type DistributedExecutionFlowEventKind,
+  type DistributedTopologyNode,
+  type SubQueryInfo,
+  type TopologyNodeRole,
 } from '@tracehouse/core';
 
 /**
@@ -91,27 +93,9 @@ export function shardColor(shardNum: number): string {
   return SHARD_COLORS[(shardNum - 1) % SHARD_COLORS.length];
 }
 
-const REMOTE_EXECUTION_NOUN: Partial<Record<TopologyNodeRole, string>> = {
-  insert_forwarder: 'Remote table INSERT',
-  async_insert_flush: 'Async insert flush',
-  shard_leader: 'Shard coordinator',
-  nested_coordinator: 'Nested coordinator',
-  replica_reader: 'Reader query',
-};
-
-const EVENT_TITLE: Partial<Record<DistributedExecutionFlowEventKind, string>> = {
-  coordinator_started: 'Coordinator accepted query',
-  async_insert_buffered: 'Remote INSERT buffered for async flush',
-  local_read_started: 'Local read started',
-  local_read_completed: 'Local read folded into coordinator',
-  coordinator_merge: 'Coordinator merged remote results',
-  coordinator_output: 'Coordinator produced output',
-  coordinator_read_completed: 'Coordinator completed query',
-};
-
-function remoteExecutionNoun(role?: TopologyNodeRole): string {
-  return role ? REMOTE_EXECUTION_NOUN[role] ?? 'Remote query' : 'Remote query';
-}
+// The role nouns and event titles this module used to keep were a second copy
+// of the ones in core, and had drifted from them. They now come from the label
+// table, so the flow view and the timeline cannot describe one thing two ways.
 
 export function isWritePathRole(role?: TopologyNodeRole): boolean {
   return role === 'insert_forwarder' || role === 'async_insert_flush';
@@ -132,12 +116,14 @@ export function distributedFlowEventTitle(
   role?: TopologyNodeRole,
   hostname?: string,
 ): string {
-  if (eventKind === 'coordinator_started' && hostname) return `${EVENT_TITLE.coordinator_started} on ${hostname}`;
+  if (eventKind === 'coordinator_started' && hostname) {
+    return `${topologyEventHeadline('coordinator_started')} on ${hostname}`;
+  }
   if (eventKind === 'remote_started') return `${remoteExecutionNoun(role)} started`;
   if (eventKind === 'remote_read_completed') {
     return `${remoteExecutionNoun(role)} completed${hostname ? ` on ${hostname}` : ''}`;
   }
-  return EVENT_TITLE[eventKind] ?? 'Remote query';
+  return topologyEventHeadline(eventKind);
 }
 
 export function distributedRemoteEventPrefix(

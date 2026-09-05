@@ -77,7 +77,7 @@ describe('OverviewTab error rendering', () => {
     expect(screen.getByText('Code: 160. TOO_SLOW')).toBeInTheDocument();
     expect(screen.getByText('id').nextSibling).toHaveTextContent('query-id');
     expect(screen.getByText('kind').nextSibling).toHaveTextContent('select');
-    expect(screen.getByText('role').nextSibling).toHaveTextContent('coordinator');
+    expect(screen.getByText('role').nextSibling).toHaveTextContent('initiator');
     expect(document.querySelector('.cm-editor')?.parentElement)
       .toHaveStyle({ overflow: 'hidden' });
   });

@@ -6,6 +6,7 @@
 
 import React, { useState, useMemo, useEffect } from 'react';
 import type { TraceLog, TraceLogFilter, LogLevel } from '../../stores/traceStore';
+import { THREAD_LABELS } from '@tracehouse/core';
 import {
   filterTraceLogs,
   VALID_LOG_LEVELS,
@@ -99,7 +100,7 @@ const TimelineView: React.FC<{ logs: ProcessedLog[] }> = ({ logs }) => {
           startTime: time,
           endTime: time,
           threads: new Set([log.thread_id]),
-          description: isCoord ? 'Coordinator init' : 'Worker start',
+          description: isCoord ? THREAD_LABELS.master.start : THREAD_LABELS.worker.start,
         };
       } else if (prevIsCoord && !isCoord) {
         // Coordinator → Worker = FORK

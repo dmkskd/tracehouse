@@ -9,11 +9,14 @@ import type {
   SubQueryInfo,
 } from '@tracehouse/core';
 import {
+  TOPOLOGY_ACTOR_LABELS,
   buildDistributedExecutionFlowSteps,
   distributedQueryKindLabel,
   distributedReadMetricValue,
   topologyNodeRoleLabel,
   topologyNodeRoleText,
+  topologyRoleTitle,
+  type LabelledTopologyRole,
 } from '@tracehouse/core';
 import { formatBytes } from '../../../../stores/databaseStore';
 import { formatDurationMs } from '../../../../utils/formatters';
@@ -913,7 +916,7 @@ const AsyncInsertLinksPanel: React.FC<{
                   {link.flushQueryId.slice(0, 12)}
                 </div>
                 <div style={{ color: MUTED, marginTop: 3, fontSize: 9 }}>
-                  {flushNode ? roleLabel(flushNode) : 'Async insert flush'}
+                  {flushNode ? roleLabel(flushNode) : topologyRoleTitle('async_insert_flush')}
                 </div>
               </button>
 
@@ -969,7 +972,12 @@ interface FlowStepDetail {
   actorType: 'coordinator' | 'local' | 'remote';
   queryId?: string;
   hostname?: string;
+  /** Display text for the role. Never branch on this: it is a label, and
+   * labels are renamed. Branch on `roleId`. */
   role: string;
+  /** The role itself, for the handful of places that need to treat the write
+   * path differently from a read. */
+  roleId?: LabelledTopologyRole;
   startMs: number;
   durationMs: number;
   color: string;
@@ -1003,11 +1011,12 @@ function buildStepDetails(
   ]);
   const details: FlowStepDetail[] = [{
     id: 'coordinator',
-    actor: 'Coordinator',
+    actor: TOPOLOGY_ACTOR_LABELS.coordinator,
     actorType: 'coordinator',
     queryId: coordinator.query_id,
     hostname: coordinator.hostname,
-    role: 'Coordinator',
+    role: topologyRoleTitle('coordinator'),
+    roleId: 'coordinator',
     startMs: 0,
     durationMs: coordinator.query_duration_ms,
     color: COORD_COLOR,
@@ -1018,7 +1027,8 @@ function buildStepDetails(
   if (topology.localRead) {
     details.push({
       id: `local:${topology.localRead.queryId}:${topology.localRead.hostname}`,
-      actor: 'Local reader',
+      actor: TOPOLOGY_ACTOR_LABELS.localReader,
+      roleId: 'local_reader',
       actorType: 'local',
       queryId: topology.localRead.queryId,
       hostname: topology.localRead.hostname,
@@ -1049,7 +1059,8 @@ function buildStepDetails(
     const startUs = parseUs(subQuery?.query_start_time_microseconds || node?.queryStartTimeMicroseconds || '');
     const startMs = Math.max(0, startUs > 0 && rootStartUs > 0 ? (startUs - rootStartUs) / 1000 : 0);
     const durationMs = node?.queryDurationMs ?? subQuery?.query_duration_ms ?? 0;
-    const role = node ? roleLabel(node) : 'Remote child';
+    const roleId: LabelledTopologyRole = node?.role ?? 'remote_child';
+    const role = node ? roleLabel(node) : topologyRoleTitle('remote_child');
     const scan = node && !isWritePathRole(node.role) ? nodeScan(node) : subQuery ? subQueryScan(subQuery) : undefined;
     details.push({
       id: node?.id ?? `${queryId}:${hostname}:${index}`,
@@ -1058,6 +1069,7 @@ function buildStepDetails(
       queryId,
       hostname,
       role,
+      roleId,
       startMs,
       durationMs,
       color: hostColors.get(hostIdentity(hostname)) ?? REMOTE_COLOR,
@@ -1090,7 +1102,8 @@ function detailForEvent(
     return details.find(detail => detail.actorType === 'local') ?? {
       ...details[0],
       id: `local:${event.queryId ?? event.hostname ?? event.offsetMs}`,
-      actor: 'Local reader',
+      actor: TOPOLOGY_ACTOR_LABELS.localReader,
+      roleId: 'local_reader',
       actorType: 'local',
       role: 'Local read',
       rows: event.rows ?? 0,
@@ -1116,7 +1129,8 @@ function detailForEvent(
     actorType: 'remote',
     queryId: event.queryId,
     hostname: event.hostname,
-    role: 'Remote child',
+    role: topologyRoleTitle('remote_child'),
+    roleId: 'remote_child',
     startMs: event.offsetMs,
     durationMs: 0,
     color: event.hostname ? hostColorMap([event.hostname]).get(hostIdentity(event.hostname)) ?? REMOTE_COLOR : REMOTE_COLOR,
@@ -1195,19 +1209,19 @@ function flowEventDetail(event: DistributedExecutionFlowEvent, detail: FlowStepD
     return event.detail || 'Remote INSERT was buffered and linked to a later AsyncInsertFlush row.';
   }
   if (event.kind === 'remote_started') {
-    if (detail.role === 'Remote table INSERT') {
+    if (detail.roleId === 'insert_forwarder') {
       return detail.hostname ? `Remote table INSERT on ${hostIdentity(detail.hostname)}.` : 'Remote table INSERT began.';
     }
-    if (detail.role === 'Async insert flush') {
+    if (detail.roleId === 'async_insert_flush') {
       return detail.hostname ? `Async insert flush on ${hostIdentity(detail.hostname)}.` : 'Async insert flush began.';
     }
     return detail.hostname ? `Sent to ${hostIdentity(detail.hostname)}.` : 'Remote execution began.';
   }
   if (event.kind === 'remote_read_completed') {
-    if (detail.role === 'Remote table INSERT') {
+    if (detail.roleId === 'insert_forwarder') {
       return detail.hostname ? `Remote table INSERT completed on ${hostIdentity(detail.hostname)}.` : 'Remote table INSERT completed.';
     }
-    if (detail.role === 'Async insert flush') {
+    if (detail.roleId === 'async_insert_flush') {
       return detail.hostname ? `Async insert flush completed on ${hostIdentity(detail.hostname)}.` : 'Async insert flush completed.';
     }
     return detail.hostname ? `Completed on ${hostIdentity(detail.hostname)}.` : 'Remote child completed.';
@@ -1219,7 +1233,7 @@ function flowEventDetail(event: DistributedExecutionFlowEvent, detail: FlowStepD
 }
 
 function shouldShowScanStats(detail: FlowStepDetail): boolean {
-  return detail.role !== 'Remote table INSERT' && detail.role !== 'Async insert flush';
+  return detail.roleId !== 'insert_forwarder' && detail.roleId !== 'async_insert_flush';
 }
 
 function compactEventMeta(event: DistributedExecutionFlowEvent): string {

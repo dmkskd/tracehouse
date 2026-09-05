@@ -1,5 +1,5 @@
 import React, { useEffect, useMemo, useState } from 'react';
-import type { QueryDetail as QueryDetailType, QuerySeries } from '@tracehouse/core';
+import { queryRowRoleTitle, type QueryDetail as QueryDetailType, type QuerySeries } from '@tracehouse/core';
 import { formatBytes } from '../../../../stores/databaseStore';
 import { formatDurationMs, formatMicroseconds } from '../../../../utils/formatters';
 import { querySqlText, type SqlDisplayMode } from '../../../../utils/querySqlText';
@@ -391,7 +391,7 @@ export const SqlTab: React.FC<SqlTabProps> = ({
   const sql = querySqlText(q, queryDetail, mode);
   const settingsCount = Object.keys(queryDetail?.Settings ?? {}).length;
   const profileEventsCount = Object.keys(queryDetail?.ProfileEvents ?? {}).length;
-  const role = queryDetail?.is_initial_query === 0 ? 'Node sub-query' : 'Coordinator';
+  const role = queryRowRoleTitle(queryDetail?.is_initial_query !== 0);
   const loggedDatabases = queryDetail?.databases ?? [];
   const loggedTables = queryDetail?.tables ?? [];
   const tableColors = useMemo(() => {

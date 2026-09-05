@@ -48,6 +48,38 @@ function topology() {
 const shortHost = (hostname: string) => hostname.split('.')[0].replace('chi-dev-cluster-dev-', 'node-');
 
 describe('DistributedFlowDiagram', () => {
+  it('falls back to the hostname, marked as unplaced, when system.clusters could not place a host', () => {
+    // No clusterHosts, so no shard and replica were attributed. The machine's
+    // own name is all that is left, and it is rendered in italics so it does
+    // not read as a coordinate: "we could not place this host" and "this host
+    // is s1r2" must not look like the same statement.
+    const unplaced = inferDistributedTopology({
+      rootQueryId: 'root',
+      executions: [
+        row({ queryId: 'root', isInitialQuery: true, queryDurationMs: 69, readRows: 55 }),
+        row({
+          queryId: 'child-a',
+          hostname: 'chi-dev-cluster-dev-1-0.clickhouse.svc.cluster.local',
+          queryDurationMs: 21,
+          readRows: 55,
+        }),
+      ],
+    });
+
+    render(
+      <DistributedFlowDiagram
+        topology={unplaced}
+        activeQueryId="root"
+        onNavigate={vi.fn()}
+        hostLabel={shortHost}
+      />,
+    );
+
+    expect(screen.queryByText('s2r1')).toBeNull();
+    const fallback = screen.getByText('node-1-0');
+    expect(fallback.getAttribute('font-style')).toBe('italic');
+  });
+
   it('draws a labelled cube per participant and an edge carrying the rows read', () => {
     const { container } = render(
       <DistributedFlowDiagram
@@ -58,10 +90,14 @@ describe('DistributedFlowDiagram', () => {
       />,
     );
 
-    expect(screen.getByText('node-0-0')).toBeTruthy();
-    expect(screen.getByText('node-1-0')).toBeTruthy();
+    // Participants are named by where they sit in the cluster, which
+    // system.clusters gave us, rather than by a hostname that is a container id
+    // or a cloud hash as often as it is a name.
+    expect(screen.getByText('s1r1')).toBeTruthy();
+    expect(screen.getByText('s2r1')).toBeTruthy();
+    expect(screen.queryByText('node-1-0')).toBeNull();
     // Once on the coordinator cube, once in the shard legend.
-    expect(screen.getAllByText('Coordinator')).toHaveLength(2);
+    expect(screen.getAllByText('Initiator')).toHaveLength(2);
     // The legend is drawn in the canvas, inside the cluster box, so it pans and
     // zooms with the cubes it describes rather than sitting under them as HTML.
     const legend = screen.getByText('replicas are lighter shades');
@@ -96,7 +132,7 @@ describe('DistributedFlowDiagram', () => {
       />,
     );
 
-    fireEvent.click(screen.getByLabelText(/node-1-0/));
+    fireEvent.click(screen.getByLabelText(/s2r1/));
     expect(onNavigate).toHaveBeenCalledWith('child-a');
   });
 
@@ -113,12 +149,12 @@ describe('DistributedFlowDiagram', () => {
     expect(container.querySelector('title')).toBeNull();
     expect(screen.queryByRole('tooltip')).toBeNull();
 
-    fireEvent.mouseEnter(screen.getByLabelText(/node-1-0/));
+    fireEvent.mouseEnter(screen.getByLabelText(/s2r1/));
     const tooltip = screen.getByRole('tooltip');
     expect(tooltip.textContent).toContain('child-a');
-    expect(tooltip.textContent).toContain('Shard 2 child');
+    expect(tooltip.textContent).toContain('Shard 2 remote node');
 
-    fireEvent.mouseLeave(screen.getByLabelText(/node-1-0/));
+    fireEvent.mouseLeave(screen.getByLabelText(/s2r1/));
     expect(screen.queryByRole('tooltip')).toBeNull();
   });
 
@@ -139,11 +175,11 @@ describe('DistributedFlowDiagram', () => {
     // three captions per cube never become the loudest thing on the canvas.
     expect(captions('duration')).toHaveLength(0);
 
-    fireEvent.mouseEnter(screen.getByLabelText(/node-1-0/));
+    fireEvent.mouseEnter(screen.getByLabelText(/s2r1/));
     expect(captions('duration')).toHaveLength(1);
     expect(captions('rows read')).toHaveLength(1);
 
-    fireEvent.mouseLeave(screen.getByLabelText(/node-1-0/));
+    fireEvent.mouseLeave(screen.getByLabelText(/s2r1/));
     expect(captions('duration')).toHaveLength(0);
   });
 
@@ -157,21 +193,21 @@ describe('DistributedFlowDiagram', () => {
       />,
     );
 
-    const node = screen.getByLabelText(/node-1-0/).querySelector('[data-node-visual]')!;
+    const node = screen.getByLabelText(/s2r1/).querySelector('[data-node-visual]')!;
     // Both states are the same chain of transform functions so the browser can
     // interpolate between them; at rest the scale is simply 1.
     expect(node.getAttribute('style')).toContain('scale(1)');
 
     // The hover target itself never moves: a cube that grew its own hit area
     // would shrink out from under the pointer and flicker.
-    const target = screen.getByLabelText(/node-1-0/).querySelector('rect')!;
+    const target = screen.getByLabelText(/s2r1/).querySelector('rect')!;
     const before = target.getAttribute('x');
 
-    fireEvent.mouseEnter(screen.getByLabelText(/node-1-0/));
+    fireEvent.mouseEnter(screen.getByLabelText(/s2r1/));
     expect(node.getAttribute('style')).toContain('scale(1.07)');
     expect(target.getAttribute('x')).toBe(before);
 
-    fireEvent.mouseLeave(screen.getByLabelText(/node-1-0/));
+    fireEvent.mouseLeave(screen.getByLabelText(/s2r1/));
     expect(node.getAttribute('style')).toContain('scale(1)');
   });
 

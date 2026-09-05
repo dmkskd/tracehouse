@@ -1,6 +1,6 @@
 import React, { useMemo } from 'react';
 import type { DistributedTopology, ObjectStorageProfileSummary, QueryDetail as QueryDetailType, QuerySeries, SimilarQuery, SubQueryInfo, TimeBreakdown } from '@tracehouse/core';
-import { computeTimeBreakdown } from '@tracehouse/core';
+import { computeTimeBreakdown, queryRowRoleNoun } from '@tracehouse/core';
 import { TimeBreakdownBar } from '../shared/TimeBreakdownBar';
 import { PARKED_EXPLANATION_THRESHOLD } from '../shared/timeBreakdownDisplay';
 import { useParkedTimeExplanation } from '../hooks/useParkedTimeExplanation';
@@ -172,7 +172,7 @@ export const OverviewTab: React.FC<OverviewTabProps> = ({
   const db = queryDetail?.current_database || 'default';
   const overviewSql = querySqlText(q, queryDetail, 'formatted', '');
   const parentQueryId = queryDetail?.is_initial_query === 0 ? queryDetail.initial_query_id : '';
-  const queryRole = queryDetail ? (queryDetail.is_initial_query === 0 ? 'worker' : 'coordinator') : undefined;
+  const queryRole = queryDetail ? queryRowRoleNoun(queryDetail.is_initial_query !== 0) : undefined;
 
   const history = useMemo(() => {
     const durations = similarQueries

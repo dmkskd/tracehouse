@@ -674,7 +674,7 @@ describe('inferDistributedTopology', { tags: ['query-analysis'] }, () => {
     });
     expect(topology.readDistribution.groups).toContainEqual(expect.objectContaining({
       key: 'local_reader',
-      label: 'Coordinator local read',
+      label: 'Initiator local read',
       entries: [expect.objectContaining({ foldedIntoCoordinator: true })],
     }));
   });
@@ -1136,7 +1136,7 @@ describe('inferDistributedTopology', { tags: ['query-analysis'] }, () => {
       rows: 2_344_901,
     });
     expect(topology.executionFlow[4]).toMatchObject({
-      actor: 'Coordinator',
+      actor: 'Initiator',
       source: 'text_log',
       offsetMs: 67_080,
     });
@@ -1319,15 +1319,15 @@ describe('parseDistributedTextLogPhases', { tags: ['query-analysis'] }, () => {
 
 describe('distributedNodeRoleLabel', () => {
   it('qualifies the roles that belong to a shard', () => {
-    expect(distributedNodeRoleLabel('shard_leader', 2)).toBe('Shard 2 coordinator');
-    expect(distributedNodeRoleLabel('replica_reader', 3)).toBe('Shard 3 reader');
-    expect(distributedNodeRoleLabel('remote_child', 1)).toBe('Shard 1 child');
+    expect(distributedNodeRoleLabel('shard_leader', 2)).toBe('Shard 2 initiator');
+    expect(distributedNodeRoleLabel('replica_reader', 3)).toBe('Shard 3 replica');
+    expect(distributedNodeRoleLabel('remote_child', 1)).toBe('Shard 1 remote node');
   });
 
   it('falls back to the plain role label without a shard', () => {
-    expect(distributedNodeRoleLabel('shard_leader')).toBe('Shard coordinator');
-    expect(distributedNodeRoleLabel('replica_reader', 0)).toBe('Reader');
-    expect(distributedNodeRoleLabel('coordinator', 2)).toBe('Coordinator');
-    expect(distributedNodeRoleLabel('local_reader')).toBe('Local reader');
+    expect(distributedNodeRoleLabel('shard_leader')).toBe('Shard initiator');
+    expect(distributedNodeRoleLabel('replica_reader', 0)).toBe('Replica');
+    expect(distributedNodeRoleLabel('coordinator', 2)).toBe('Initiator');
+    expect(distributedNodeRoleLabel('local_reader')).toBe('Local replica');
   });
 });

@@ -18,7 +18,7 @@ import type { ComparableQuery } from './QueryComparisonPanel';
 import { QueryFilterBar } from './QueryFilterBar';
 import { QueryFingerprintGlyph, QueryHoverPreview } from './QueryHoverPreview';
 import { resourcePressureTooltip } from '../../utils/queryHoverMetrics';
-import type { QueryAnalyzer } from '@tracehouse/core';
+import { queryRowRoleNoun, type QueryAnalyzer } from '@tracehouse/core';
 import { useQueryHoverTopology } from './hooks/useQueryHoverTopology';
 import { sortQueryActivityRecords, type QueryActivityRecord } from './query-activity-model';
 import { useUserPreferenceStore } from '../../stores/userPreferenceStore';
@@ -476,7 +476,7 @@ export const QueryActivityTable: React.FC<QueryActivityTableProps> = ({
                             background: 'rgba(139,92,246,0.15)',
                             color: '#a78bfa',
                           }}>
-                            coordinator
+                            {queryRowRoleNoun(true)}
                           </span>
                         )}
                       </td>

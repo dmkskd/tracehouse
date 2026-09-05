@@ -1,4 +1,14 @@
 import type { MonitoringCapabilities } from '../types/monitoring-capabilities.js';
+import {
+  FOLDED_LOCAL_READ_GROUP_LABEL,
+  participantCoordinate,
+  TOPOLOGY_ACTOR_LABELS,
+  TOPOLOGY_EVENT_LABELS,
+  queryKindTitle,
+  topologyRoleNoun,
+  topologyRoleTitle,
+  topologyRoleTitleForShard,
+} from './topology-labels.js';
 
 export type DistributedQueryKind =
   | 'local'
@@ -484,35 +494,11 @@ export interface DistributedExecutionFlowStep {
 }
 
 export function distributedQueryKindLabel(kind?: DistributedQueryKind): string {
-  switch (kind) {
-    case 'local': return 'Local';
-    case 'plain_distributed_select': return 'Distributed SELECT';
-    case 'parallel_replicas_select': return 'Parallel replicas';
-    case 'cluster_all_replicas': return 'All replicas fan-out';
-    case 'object_storage_swarm_select': return 'Object storage swarm';
-    case 'hybrid_storage_select': return 'Hybrid storage';
-    case 'distributed_insert': return 'Distributed INSERT';
-    case 'unknown_distributed': return 'Distributed';
-    default: return 'Unknown';
-  }
+  return queryKindTitle(kind);
 }
 
 export function topologyNodeRoleLabel(role: TopologyNodeRole | 'local_reader'): string {
-  switch (role) {
-    case 'coordinator': return 'Coordinator';
-    case 'shard_leader': return 'Shard coordinator';
-    case 'nested_coordinator': return 'Nested coordinator';
-    case 'replica_reader': return 'Reader';
-    case 'remote_child': return 'Remote child';
-    case 'independent_child': return 'Independent child';
-    case 'object_storage_worker': return 'Object worker';
-    case 'hybrid_segment': return 'Hybrid segment';
-    case 'insert_client': return 'Insert client';
-    case 'insert_forwarder': return 'Remote table INSERT';
-    case 'async_insert_flush': return 'Async insert flush';
-    case 'local_reader': return 'Local reader';
-    default: return 'Unknown';
-  }
+  return topologyRoleTitle(role);
 }
 
 /**
@@ -526,26 +512,11 @@ export function distributedNodeRoleLabel(
   role: TopologyNodeRole | 'local_reader',
   shardNum?: number,
 ): string {
-  if (shardNum) {
-    if (role === 'shard_leader') return `Shard ${shardNum} coordinator`;
-    if (role === 'replica_reader') return `Shard ${shardNum} reader`;
-    if (role === 'remote_child') return `Shard ${shardNum} child`;
-  }
-  return topologyNodeRoleLabel(role);
+  return topologyRoleTitleForShard(role, shardNum);
 }
 
 export function topologyNodeRoleText(role: TopologyNodeRole | 'local_reader'): string {
-  switch (role) {
-    case 'shard_leader': return 'shard coordinator';
-    case 'nested_coordinator': return 'nested coordinator';
-    case 'replica_reader': return 'reader';
-    case 'insert_forwarder': return 'remote table INSERT';
-    case 'async_insert_flush': return 'async insert flush';
-    case 'object_storage_worker': return 'object worker';
-    case 'hybrid_segment': return 'hybrid segment';
-    case 'local_reader': return 'local reader';
-    default: return role.replace(/_/g, ' ');
-  }
+  return topologyRoleNoun(role);
 }
 
 const DEFAULT_CAPABILITIES: DistributedTopologyCapabilities = {
@@ -1330,7 +1301,7 @@ function buildReadDistributionGroups(
       const stats = roleStats.get(key);
       return {
         key,
-        label: hasFoldedLocalReader ? 'Coordinator local read' : label !== 'Ungrouped' ? label : `Query shape ${index + 1}`,
+        label: hasFoldedLocalReader ? FOLDED_LOCAL_READ_GROUP_LABEL : label !== 'Ungrouped' ? label : `Query shape ${index + 1}`,
         queryPreview,
         shardCount: stats?.shardCount ?? new Set(groupEntries.map(entry => entry.shardNum).filter(value => value != null)).size,
         shardCoordinatorCount: stats?.shardCoordinatorCount ?? groupEntries.filter(entry => entry.role === 'shard_leader').length,
@@ -1618,9 +1589,8 @@ function attachPhaseOffsets(
 }
 
 function actorLabelForNode(node: DistributedTopologyNode): string {
-  if (node.role === 'coordinator' || node.role === 'insert_client') return 'Coordinator';
-  if (node.shardNum != null && node.replicaNum != null) return `s${node.shardNum}r${node.replicaNum}`;
-  return normalizeHost(node.hostname);
+  if (node.role === 'coordinator' || node.role === 'insert_client') return TOPOLOGY_ACTOR_LABELS.coordinator;
+  return participantCoordinate(node.shardNum, node.replicaNum) ?? normalizeHost(node.hostname);
 }
 
 function eventDetailMetrics(rows: number, bytes: number): string {
@@ -1650,8 +1620,8 @@ function buildExecutionFlow(
     offsetMs: 0,
     actor: actorLabelForNode(rootNode),
     actorType: 'coordinator',
-    title: 'Coordinator started',
-    detail: 'Top-level query accepted by the coordinator.',
+    title: TOPOLOGY_EVENT_LABELS.coordinator_started.title,
+    detail: TOPOLOGY_EVENT_LABELS.coordinator_started.detail,
     queryId: rootNode.queryId,
     hostname: rootNode.hostname,
   }];
@@ -1665,9 +1635,9 @@ function buildExecutionFlow(
       kind: 'async_insert_buffered',
       source: 'asynchronous_insert_log',
       offsetMs,
-      actor: 'Async insert',
+      actor: TOPOLOGY_ACTOR_LABELS.asyncInsert,
       actorType: 'remote',
-      title: 'Async insert buffered',
+      title: TOPOLOGY_EVENT_LABELS.async_insert_buffered.title,
       detail: [
         tableName ? `Buffered for ${tableName}.` : 'Buffered for async insert flush.',
         link.flushQueryId ? 'Flush query recorded in query_log.' : '',
@@ -1685,9 +1655,9 @@ function buildExecutionFlow(
       kind: 'local_read_started',
       source: 'query_log',
       offsetMs: 0,
-      actor: 'Local reader',
+      actor: TOPOLOGY_ACTOR_LABELS.localReader,
       actorType: 'local',
-      title: 'Local read folded into coordinator',
+      title: TOPOLOGY_EVENT_LABELS.local_read_started.title,
       detail: localRead.shardNum != null && localRead.replicaNum != null
         ? `Coordinator also reads local replica s${localRead.shardNum}r${localRead.replicaNum}; this work is included in the initial query row.`
         : 'Coordinator also reads its local replica; this work is included in the initial query row.',
@@ -1700,10 +1670,10 @@ function buildExecutionFlow(
       kind: 'local_read_completed',
       source: 'query_log',
       offsetMs: rootNode.queryDurationMs,
-      actor: 'Local reader',
+      actor: TOPOLOGY_ACTOR_LABELS.localReader,
       actorType: 'local',
-      title: 'Local read accounted in coordinator row',
-      detail: eventDetailMetrics(localRead.readRows ?? 0, localRead.readBytes ?? 0) || 'Local participant work is folded into coordinator metrics.',
+      title: TOPOLOGY_EVENT_LABELS.local_read_completed.title,
+      detail: eventDetailMetrics(localRead.readRows ?? 0, localRead.readBytes ?? 0) || TOPOLOGY_EVENT_LABELS.local_read_completed.detail,
       queryId: localRead.queryId,
       hostname: localRead.hostname,
       rows: localRead.readRows,
@@ -1724,7 +1694,7 @@ function buildExecutionFlow(
       offsetMs: startOffsetMs,
       actor,
       actorType: 'remote',
-      title: 'Remote read started',
+      title: TOPOLOGY_EVENT_LABELS.remote_started.title,
       detail: `${actor} started ${node.queryKind || 'query'} on ${normalizeHost(node.hostname)}.`,
       queryId: node.queryId,
       hostname: node.hostname,
@@ -1736,8 +1706,8 @@ function buildExecutionFlow(
       offsetMs: startOffsetMs + node.queryDurationMs,
       actor,
       actorType: 'remote',
-      title: 'Remote read completed',
-      detail: eventDetailMetrics(node.readRows, node.readBytes) || 'Remote child query completed.',
+      title: TOPOLOGY_EVENT_LABELS.remote_read_completed.title,
+      detail: eventDetailMetrics(node.readRows, node.readBytes) || TOPOLOGY_EVENT_LABELS.remote_read_completed.detail,
       queryId: node.queryId,
       hostname: node.hostname,
       rows: node.readRows,
@@ -1755,9 +1725,9 @@ function buildExecutionFlow(
         kind: 'remote_setup',
         source: 'text_log',
         offsetMs: phase.offsetMs,
-        actor: normalizeHost(phase.hostname ?? 'remote'),
+        actor: normalizeHost(phase.hostname ?? TOPOLOGY_ACTOR_LABELS.unknownRemote),
         actorType: 'remote',
-        title: 'Remote setup',
+        title: TOPOLOGY_EVENT_LABELS.remote_setup.title,
         detail: phase.detail,
         queryId: phase.queryId,
         hostname: phase.hostname,
@@ -1768,9 +1738,9 @@ function buildExecutionFlow(
         kind: 'coordinator_merge',
         source: 'text_log',
         offsetMs: phase.offsetMs,
-        actor: 'Coordinator',
+        actor: TOPOLOGY_ACTOR_LABELS.coordinator,
         actorType: 'coordinator',
-        title: 'Coordinator merge',
+        title: TOPOLOGY_EVENT_LABELS.coordinator_merge.title,
         detail: phase.detail,
         queryId: phase.queryId,
         rows: phase.rows,
@@ -1780,9 +1750,9 @@ function buildExecutionFlow(
         kind: 'coordinator_output',
         source: 'text_log',
         offsetMs: phase.offsetMs,
-        actor: 'Coordinator',
+        actor: TOPOLOGY_ACTOR_LABELS.coordinator,
         actorType: 'coordinator',
-        title: 'Result output',
+        title: TOPOLOGY_EVENT_LABELS.coordinator_output.title,
         detail: phase.detail,
         queryId: phase.queryId,
         rows: phase.rows,
@@ -1794,9 +1764,9 @@ function buildExecutionFlow(
         kind: 'coordinator_read_completed',
         source: 'text_log',
         offsetMs: phase.offsetMs,
-        actor: 'Coordinator',
+        actor: TOPOLOGY_ACTOR_LABELS.coordinator,
         actorType: 'coordinator',
-        title: 'Coordinator read completed',
+        title: TOPOLOGY_EVENT_LABELS.coordinator_read_completed.title,
         detail: phase.detail,
         queryId: phase.queryId,
         rows: phase.rows,

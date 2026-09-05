@@ -11,7 +11,7 @@ import { formatBytes, formatDuration, formatNumber } from '../../stores/querySto
 import { formatDurationMs, formatMicroseconds } from '../../utils/formatters';
 import { useClickHouseServices } from '../../providers/ClickHouseProvider';
 import { useCapabilityCheck } from '../shared/RequiresCapability';
-import type { QueryThreadBreakdown } from '@tracehouse/core';
+import { queryRowRoleTitle, type QueryThreadBreakdown } from '@tracehouse/core';
 import type { TraceLog, TraceLogFilter, OpenTelemetrySpan } from '../../stores/traceStore';
 import { TraceLogViewer } from '../tracing/TraceLogViewer';
 import { SpeedscopeViewer } from '../tracing/SpeedscopeViewer';
@@ -127,7 +127,7 @@ const RunningQueryMetrics: React.FC<{ query: RunningQuery; onKill?: () => void; 
               color: query.is_initial_query === 1 ? '#58a6ff' : '#d29922',
               fontSize: 11,
             }}>
-              {query.is_initial_query === 1 ? 'Coordinator' : 'Node sub-query'}
+              {queryRowRoleTitle(query.is_initial_query === 1)}
             </span>
           } />
           {query.is_initial_query === 0 && query.initial_query_id && (
@@ -227,7 +227,7 @@ const HistoryQueryMetrics: React.FC<{ query: QueryHistoryItem }> = ({ query }) =
                 color: query.is_initial_query === 1 ? '#58a6ff' : '#d29922',
                 fontSize: 11,
               }}>
-                {query.is_initial_query === 1 ? 'Coordinator' : 'Node sub-query'}
+                {queryRowRoleTitle(query.is_initial_query === 1)}
               </span>
             } />
           )}

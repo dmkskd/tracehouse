@@ -11,6 +11,8 @@ import React, { useEffect, useId, useMemo, useRef, useState } from 'react';
 import {
   computeTimeBreakdown,
   distributedNodeRoleLabel,
+  participantCoordinate,
+  topologyRoleTitle,
   TIME_BREAKDOWN_EVENTS,
   type DistributedTopology,
 } from '@tracehouse/core';
@@ -112,6 +114,27 @@ function usePrefersReducedMotion(): boolean {
 /** Cube faces are three tones of one colour: lit top, shaded sides. */
 function face(color: string, amount: number): string {
   return color.startsWith('#') ? shadeColor(color, amount) : color;
+}
+
+/**
+ * What to call this participant on its second line, and whether that name
+ * places it in the cluster or merely identifies the machine.
+ *
+ * The coordinate comes from system.clusters by way of the topology, not from
+ * parsing the hostname. Hostnames are container ids and cloud hashes as often
+ * as they are names, so a regex over them answers "s1r2" for some deployments
+ * and a twelve-character hash for others, from data that was equally available
+ * in both cases. The read-distribution table below the diagram has always used
+ * the coordinate; this is the same rule, so the two panels agree.
+ *
+ * `placed` is false when the topology could not attribute a shard and replica.
+ * The name shown then is the machine's, and the caller renders it differently:
+ * "we could not place this host" and "this host is called s1r2" should not look
+ * like the same statement.
+ */
+function nodeIdentity(node: DistributedFlowNode): { label: string; placed: boolean } {
+  const coordinate = participantCoordinate(node.shardNum, node.replicaNum);
+  return coordinate ? { label: coordinate, placed: true } : { label: node.hostLabel, placed: false };
 }
 
 function nodeRoleLabel(node: DistributedFlowNode): string {
@@ -536,6 +559,7 @@ export const DistributedFlowDiagram: React.FC<DistributedFlowDiagramProps> = ({
           const color = participantColor(node.role, node.shardNum, node.replicaNum, node.hasError);
           const isActive = node.queryId === activeQueryId && !node.isFolded;
           const details = nodeDetails(node);
+          const identity = nodeIdentity(node);
           const gauges = gaugesByNodeId.get(node.id);
           const isHovered = hovered?.id === node.id;
           return (
@@ -545,7 +569,7 @@ export const DistributedFlowDiagram: React.FC<DistributedFlowDiagramProps> = ({
               cursor={node.isFolded ? 'default' : 'pointer'}
               tabIndex={node.isFolded ? undefined : 0}
               role={node.isFolded ? undefined : 'button'}
-              aria-label={`${node.hostLabel} · ${nodeRoleLabel(node)}`}
+              aria-label={`${identity.label} · ${nodeRoleLabel(node)} · ${node.hostname}`}
               onKeyDown={event => {
                 if (node.isFolded) return;
                 if (event.key === 'Enter' || event.key === ' ') {
@@ -650,10 +674,14 @@ export const DistributedFlowDiagram: React.FC<DistributedFlowDiagramProps> = ({
                 x={node.x + LABEL_OFFSET_X}
                 y={node.y - 28}
                 fontSize={10}
-                fill="var(--text-muted)"
+                // An unplaced host is dimmer and italic: it is the machine's own
+                // name standing in for a coordinate we could not resolve, not a
+                // name for its part in the query.
+                fill={identity.placed ? 'var(--text-secondary)' : 'var(--text-muted)'}
+                fontStyle={identity.placed ? undefined : 'italic'}
                 fontFamily="var(--font-mono, monospace)"
               >
-                {node.hostLabel}
+                {identity.label}
               </text>
               <text
                 x={node.x + LABEL_OFFSET_X}
@@ -698,7 +726,7 @@ const LEGEND_ENTRY_GAP = 16;
 
 const Legend: React.FC<{ x: number; y: number; shards: number[] }> = ({ x, y, shards }) => {
   const entries = [
-    { color: COORD_COLOR, label: 'Coordinator' },
+    { color: COORD_COLOR, label: topologyRoleTitle('coordinator') },
     ...shards.map(shard => ({ color: shardColor(shard), label: `Shard ${shard}` })),
   ];
   let cursor = x;

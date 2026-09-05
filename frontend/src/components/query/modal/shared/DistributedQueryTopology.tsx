@@ -7,6 +7,9 @@ import React, { useMemo, useState } from 'react';
 import {
   distributedNodeRoleLabel,
   inferDistributedTopology,
+  participantCoordinate,
+  localReadTitle,
+  topologyRoleTitle,
   type DistributedQueryExecutionInput,
   type DistributedTopology,
   type DistributedTopologyNode,
@@ -93,15 +96,22 @@ function parseUs(ts: string): number {
   return baseMs * 1000 + parseInt(usFrac.padEnd(6, '0').substring(0, 6), 10);
 }
 
+/**
+ * A hostname trimmed to its first segment, for when a participant has no
+ * coordinate.
+ *
+ * This used to infer `s1r2` from names shaped like `chi-…-0-1-0` and
+ * `ch-s1r2`. That reads a coordinate out of a string someone chose, and the
+ * string is under no obligation to agree with the cluster: a host configured
+ * as `ch-s1r1` in one cluster is `s1r1` there and `s1r1` of `default` too,
+ * while its actual numbering lives in system.clusters. Guessing produced a
+ * confident answer for deployments whose naming happened to match, and a bare
+ * hash for the rest, from data that was equally available in both cases. The
+ * coordinate now comes from system.clusters via participantCoordinate, and
+ * this is only the fallback name for a host we could not place.
+ */
 function shortHost(hostname: string): string {
-  const short = hostname.split('.')[0] || hostname;
-  const tail = short.match(/-(\d+)-(\d+)-\d+$/);
-  if (short.startsWith('chi-') && tail) return `s${Number(tail[1]) + 1}r${Number(tail[2]) + 1}`;
-  const cloudServerMatch = short.match(/-server-([a-z0-9]+)-\d+$/);
-  if (cloudServerMatch) return cloudServerMatch[1];
-  const demoMatch = short.match(/ch-s(\d+)r(\d+)/);
-  if (demoMatch) return `s${demoMatch[1]}r${demoMatch[2]}`;
-  return short;
+  return hostname.split('.')[0] || hostname;
 }
 
 function fmtCompact(n: number): string {
@@ -120,10 +130,14 @@ function coordinatorRoleLabel(topology: DistributedTopology): string {
   if (topology.localRead) {
     const shard = topology.localRead.shardNum != null && topology.localRead.replicaNum != null
       ? `s${topology.localRead.shardNum}r${topology.localRead.replicaNum}`
+      // labels-exempt: says which replica is unknown, rather than naming the
+      // local_reader role.
       : 'local replica';
-    return `Coordinator + local read (${shard})`;
+    return `${topologyRoleTitle('coordinator')} + local read (${shard})`;
   }
-  return topology.clusterAllReplicas ? 'Coordinator · all-replicas fan-out' : 'Coordinator';
+  return topology.clusterAllReplicas
+    ? `${topologyRoleTitle('coordinator')} · all-replicas fan-out`
+    : topologyRoleTitle('coordinator');
 }
 
 function roleColor(node: DistributedTopologyNode | undefined, hasError: boolean): string {
@@ -271,12 +285,12 @@ export const DistributedQueryTopology: React.FC<DistributedQueryTopologyProps> =
         const insertLink = node.role === 'insert_forwarder' ? asyncLinkByInsertQueryId.get(node.queryId) : undefined;
         const flushLink = node.role === 'async_insert_flush' ? asyncLinkByFlushQueryId.get(node.queryId) : undefined;
         const baseRoleLabel = coordinatorReaderIds.has(node.id)
-          ? (node.shardNum ? `Shard ${node.shardNum} local reader` : 'Local reader')
+          ? localReadTitle(node.shardNum)
           : roleLabel(node);
         return {
           queryId: node.queryId,
           hostname: node.hostname,
-          label: shortHost(node.hostname),
+          label: participantCoordinate(node.shardNum, node.replicaNum) ?? shortHost(node.hostname),
           roleLabel: insertLink
             ? `${baseRoleLabel} -> ${insertLink.flushQueryId.slice(0, 8)}`
             : flushLink
@@ -308,7 +322,7 @@ export const DistributedQueryTopology: React.FC<DistributedQueryTopologyProps> =
         return {
           queryId: sq.query_id,
           hostname: sq.hostname,
-          label: shortHost(sq.hostname),
+          label: participantCoordinate(node?.shardNum, node?.replicaNum) ?? shortHost(sq.hostname),
           roleLabel: insertLink
             ? `${baseRoleLabel} -> ${insertLink.flushQueryId.slice(0, 8)}`
             : flushLink
@@ -516,7 +530,7 @@ export const DistributedQueryTopology: React.FC<DistributedQueryTopologyProps> =
       {/* Coordinator bar */}
       <TopologyBar
         queryId={coordinator.query_id}
-        label="Coordinator"
+        label={topologyRoleTitle('coordinator')}
         hostname={coordinator.hostname}
         leftPct={0}
         widthPct={100}
@@ -651,9 +665,7 @@ const InsertPairBar: React.FC<{
   onNavigate: (queryId: string) => void;
 }> = ({ pair, coordinatorStartUs, totalDurationUs, labelWidth, metricWidth, activeQueryId, onNavigate }) => {
   const fmtMs = formatDurationMs;
-  const laneLabel = pair.shardNum != null && pair.replicaNum != null
-    ? `s${pair.shardNum}r${pair.replicaNum}`
-    : shortHost(pair.hostname);
+  const laneLabel = participantCoordinate(pair.shardNum, pair.replicaNum) ?? shortHost(pair.hostname);
   const insertStartUs = parseUs(pair.insertNode?.queryStartTimeMicroseconds ?? '');
   const flushStartUs = parseUs(pair.flushNode?.queryStartTimeMicroseconds ?? '');
   const insertLeftPct = Math.max(0, ((insertStartUs - coordinatorStartUs) / totalDurationUs) * 100);
@@ -905,7 +917,7 @@ const TopologyBar: React.FC<{
       {anchorRect && (
         <TimeBreakdownPopover
           anchor={anchorRect}
-          title={isCoordinator ? 'Coordinator' : roleLabel}
+          title={isCoordinator ? topologyRoleTitle('coordinator') : roleLabel}
           facts={facts}
           segments={breakdown.segments.map(segment => ({
             label: segment.label,
