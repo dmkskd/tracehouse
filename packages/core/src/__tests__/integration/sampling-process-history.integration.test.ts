@@ -92,6 +92,7 @@ describeWithRefreshableAppend('PROCESS_SAMPLES_SQL integration (delta calculatio
     intervalMs?: number;
     cpuPerSec?: number;
     ioWaitPerSec?: number;
+    cpuWaitPerSec?: number;
     readBytesPerSec?: number;
     readRowsPerSec?: number;
     writtenRowsPerSec?: number;
@@ -108,6 +109,7 @@ describeWithRefreshableAppend('PROCESS_SAMPLES_SQL integration (delta calculatio
       intervalMs = 1000,
       cpuPerSec = 0,
       ioWaitPerSec = 0,
+      cpuWaitPerSec = 0,
       readBytesPerSec = 0,
       readRowsPerSec = 0,
       writtenRowsPerSec = 0,
@@ -140,7 +142,10 @@ describeWithRefreshableAppend('PROCESS_SAMPLES_SQL integration (delta calculatio
         thread_ids: Array.from({ length: threadsPerSample }, (_, t) => t + 1),
         profile_events: {
           OSCPUVirtualTimeMicroseconds: Math.round(cpuPerSec * elapsedSec),
-          OSCPUWaitMicroseconds: Math.round(ioWaitPerSec * elapsedSec),
+          // Disk I/O wait. Distinct from OSCPUWaitMicroseconds (run-queue
+          // contention), which the SQL reads into cpu_wait_us instead.
+          OSIOWaitMicroseconds: Math.round(ioWaitPerSec * elapsedSec),
+          OSCPUWaitMicroseconds: Math.round(cpuWaitPerSec * elapsedSec),
           NetworkSendBytes: Math.round(netSendPerSec * elapsedSec),
           NetworkReceiveBytes: Math.round(netRecvPerSec * elapsedSec),
         },
@@ -240,7 +245,9 @@ describeWithRefreshableAppend('PROCESS_SAMPLES_SQL integration (delta calculatio
   describe('CPU delta (d_cpu_cores)', () => {
     it('computes per-second CPU cores correctly (1s interval)', async () => {
       // 2_000_000 µs per second = 2 cores worth of CPU time
-      const results = await seedAndQuery(makeSamples({ count: 4, cpuPerSec: 2_000_000 }));
+      // 4 threads: rates are clamped to the concurrency the query actually had,
+      // and one thread cannot burn 2 CPU-seconds per second.
+      const results = await seedAndQuery(makeSamples({ count: 4, cpuPerSec: 2_000_000, threadsPerSample: 4 }));
 
       // i=0: first sample, lag defaults to self → delta=0
       expect(results[0].d_cpu_cores).toBeCloseTo(0, 5);
@@ -468,7 +475,7 @@ describeWithRefreshableAppend('PROCESS_SAMPLES_SQL integration (delta calculatio
           query_id: TEST_QID, initial_query_id: TEST_QID,
           elapsed: 0, memory_usage: 0, peak_memory_usage: 0,
           read_rows: 0, read_bytes: 0, written_rows: 0,
-          thread_ids: [1],
+          thread_ids: [1, 2, 3, 4],
           profile_events: { OSCPUVirtualTimeMicroseconds: 0, OSCPUWaitMicroseconds: 0, NetworkSendBytes: 0, NetworkReceiveBytes: 0 },
         },
         {
@@ -476,7 +483,7 @@ describeWithRefreshableAppend('PROCESS_SAMPLES_SQL integration (delta calculatio
           query_id: TEST_QID, initial_query_id: TEST_QID,
           elapsed: 1, memory_usage: 0, peak_memory_usage: 0,
           read_rows: 1000, read_bytes: 0, written_rows: 0,
-          thread_ids: [1],
+          thread_ids: [1, 2, 3, 4],
           profile_events: { OSCPUVirtualTimeMicroseconds: 2_000_000, OSCPUWaitMicroseconds: 0, NetworkSendBytes: 0, NetworkReceiveBytes: 0 },
         },
         {
@@ -485,7 +492,7 @@ describeWithRefreshableAppend('PROCESS_SAMPLES_SQL integration (delta calculatio
           query_id: TEST_QID, initial_query_id: TEST_QID,
           elapsed: 5, memory_usage: 0, peak_memory_usage: 0,
           read_rows: 9000, read_bytes: 0, written_rows: 0,
-          thread_ids: [1],
+          thread_ids: [1, 2, 3, 4],
           profile_events: { OSCPUVirtualTimeMicroseconds: 10_000_000, OSCPUWaitMicroseconds: 0, NetworkSendBytes: 0, NetworkReceiveBytes: 0 },
         },
       ];
@@ -517,7 +524,7 @@ describeWithRefreshableAppend('PROCESS_SAMPLES_SQL integration (delta calculatio
     it('produces correct rates with 500ms interval', async () => {
       // 2 CPU cores at 500ms intervals
       const results = await seedAndQuery(makeSamples({
-        count: 4, intervalMs: 500, cpuPerSec: 2_000_000,
+        count: 4, intervalMs: 500, cpuPerSec: 2_000_000, threadsPerSample: 4,
         readBytesPerSec: 10 * 1024 * 1024,
       }));
 
@@ -534,7 +541,7 @@ describeWithRefreshableAppend('PROCESS_SAMPLES_SQL integration (delta calculatio
     it('produces correct rates with 10s interval', async () => {
       // 2 CPU cores at 10s intervals
       const results = await seedAndQuery(makeSamples({
-        count: 4, intervalMs: 10_000, cpuPerSec: 2_000_000,
+        count: 4, intervalMs: 10_000, cpuPerSec: 2_000_000, threadsPerSample: 4,
         readRowsPerSec: 5000,
       }));
 
