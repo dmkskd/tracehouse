@@ -1,0 +1,118 @@
+rules:
+  # ---------------------------------------------------------------------------
+  # 1. Incomplete quote escaping.
+  #
+  # ClickHouse string literals honour backslash escapes, so a value ending in
+  # a backslash before a quote closes the literal early:
+  #   name = "x\\' OR 1=1 --"  ->  c.name = 'x\'' OR 1=1 --'
+  # Doubling quotes ('') or escaping quotes without doubling backslashes (\')
+  # are both insufficient. escapeValue() in packages/core/src/queries/builder.ts
+  # escapes backslashes first, then quotes.
+  # ---------------------------------------------------------------------------
+  - id: clickhouse-incomplete-quote-escaping
+    languages: [typescript, javascript]
+    severity: ERROR
+    message: >-
+      Incomplete SQL escaping: this doubles or escapes quotes but leaves
+      backslashes intact, so a value containing a backslash immediately before
+      a quote breaks out of the string literal. Use escapeValue() from
+      packages/core/src/queries/builder.ts instead.
+    paths:
+      exclude:
+        - "*.test.ts"
+        - "*.test.tsx"
+        - "*.integration.test.ts"
+        # The canonical (correct) implementation lives here.
+        - "/packages/core/src/queries/builder.ts"
+    patterns:
+      - pattern-either:
+          - pattern: $V.replace(/'/g, "''")
+          - pattern: $V.replace(/'/g, "\\'")
+          - pattern: $V.replaceAll("'", "''")
+          - pattern: $V.replaceAll("'", "\\'")
+
+  # ---------------------------------------------------------------------------
+  # 2. A value interpolated directly inside a SQL string literal.
+  #
+  # Catches `... = '${expr}'` where expr is not an escapeValue() call. This is
+  # the syntactic shape of the bug regardless of which helper is used, so it
+  # also flags sites with no escaping at all.
+  # ---------------------------------------------------------------------------
+  - id: clickhouse-unescaped-sql-literal-interpolation
+    languages: [typescript, javascript]
+    severity: WARNING
+    message: >-
+      Value interpolated into a SQL string literal without escapeValue().
+      If this value can originate from ClickHouse data (query_id, database,
+      table or column names are all attacker-controlled) it is a SQL injection.
+      Wrap it in escapeValue() or pass it through buildQuery().
+    paths:
+      exclude:
+        - "*.test.ts"
+        - "*.test.tsx"
+        - "__tests__/"
+    # Skips escapeValue() calls and SCREAMING_CASE compile-time constants
+    # (regex literals, datasource placeholders), which are not user data.
+    pattern-regex: "'\\$\\{(?!escapeValue\\()(?![A-Z][A-Z0-9_]*\\})[^}]*\\}'"
+
+  # ---------------------------------------------------------------------------
+  # 3. Identifier interpolated into a backtick-quoted name.
+  #
+  # ClickHouse identifiers may contain backticks (escaped as \`), so
+  # interpolating a raw database/table/column name breaks out of the quoting.
+  # ---------------------------------------------------------------------------
+  # ERROR: currently at zero findings and false-positive free, so it gates CI.
+  - id: clickhouse-unescaped-identifier-interpolation
+    languages: [typescript, javascript]
+    severity: ERROR
+    message: >-
+      Database/table/column name interpolated into a backtick-quoted identifier
+      without escaping. ClickHouse identifiers can contain backticks, so a
+      crafted name breaks out of the quoting. Escape backticks and backslashes
+      before interpolating.
+    paths:
+      exclude:
+        - "*.test.ts"
+        - "*.test.tsx"
+        - "__tests__/"
+    pattern-regex: "\\\\`\\$\\{(?!escapeIdentifier\\()[^}]*\\}\\\\`"
+
+  # ---------------------------------------------------------------------------
+  # 4. Taint: a function parameter reaching executeQuery() without escaping.
+  #
+  # Intra-file only on the OSS engine, but it covers the common shape where a
+  # service method builds SQL from its own arguments and executes it.
+  # ---------------------------------------------------------------------------
+  # WARNING, not ERROR: sources are broad (any string parameter), so this has
+  # known false positives — e.g. InteractiveQueryService.run(), which passes
+  # user-authored SQL through by design. Review these, don't gate on them.
+  - id: clickhouse-tainted-param-to-executequery
+    languages: [typescript, javascript]
+    severity: WARNING
+    mode: taint
+    message: >-
+      Untrusted value flows into executeQuery() without passing through
+      escapeValue() or buildQuery(). Build the SQL with buildQuery() or escape
+      every interpolated value.
+    paths:
+      exclude:
+        - "*.test.ts"
+        - "*.test.tsx"
+        - "__tests__/"
+    pattern-sources:
+      - patterns:
+          - pattern-either:
+              - pattern: "function $F(..., $X: string, ...) { ... }"
+              - pattern: "function $F(..., $X: string[], ...) { ... }"
+              - pattern: "async function $F(..., $X: string, ...) { ... }"
+              - pattern: "async function $F(..., $X: string[], ...) { ... }"
+              - pattern: "$F(..., $X: string, ...) { ... }"
+              - pattern: "$F(..., $X: string[], ...) { ... }"
+          - focus-metavariable: $X
+    pattern-sanitizers:
+      - pattern: escapeValue(...)
+      - pattern: buildQuery(...)
+      - pattern: Number(...)
+      - pattern: parseInt(...)
+    pattern-sinks:
+      - pattern: $A.executeQuery(...)

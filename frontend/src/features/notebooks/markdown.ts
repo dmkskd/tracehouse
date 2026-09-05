@@ -58,6 +58,8 @@ export function stageToMarkdown(stage: NotebookStage, evidence: NotebookEvidence
   const lines = [
     `## ${String(index + 1).padStart(2, '0')} · ${stage.headline}`,
     '',
+    // Markdown inline code spans, not ClickHouse identifiers.
+    // nosemgrep: clickhouse-unescaped-identifier-interpolation
     `\`${stage.claimType}\` · \`${stage.block}\``,
     '',
     stage.takeaway,
@@ -70,6 +72,8 @@ export function stageToMarkdown(stage: NotebookStage, evidence: NotebookEvidence
   if (!evidence) {
     // Validation rejects this, so it only shows up for documents rendered
     // outside the loader. Say so rather than printing an empty section.
+    // Markdown inline code span, not a ClickHouse identifier.
+    // nosemgrep: clickhouse-unescaped-identifier-interpolation
     lines.push('', `_Missing evidence: \`${stage.evidence}\`_`);
     return lines;
   }
