@@ -25,7 +25,7 @@ spec:
   containerTemplate:
     image:
       repository: clickhouse/clickhouse-server
-      tag: "26.7.1"
+      tag: "26.8.2"
     resources:
       requests:
         memory: "8Gi"
@@ -176,8 +176,22 @@ spec:
             value: "POST, GET, OPTIONS"
           - name: Access-Control-Max-Age
             value: "86400"
+      # CORS handler so the browser frontend can query ClickHouse directly.
+      #
+      # The `url` matcher is required. A rule without one matches EVERY path,
+      # including /ping, and hands it to the dynamic query handler, which then
+      # fails with "Code: 62 ... Empty query. (SYNTAX_ERROR)" because there is no
+      # query parameter. `defaults: true` never gets a chance to serve /ping.
+      #
+      # The ClickHouse Cloud operator's readiness probe is httpGet /ping on the
+      # management-http port (9002), so an unscoped rule leaves every server pod
+      # stuck at 0/1 Running forever. Scoping to "/" keeps the frontend working
+      # (it POSTs to / with ?query=) while /ping and /replicas_status fall
+      # through to the built-in handlers.
       http_handlers:
         rule:
+          url: /
+          methods: "POST,GET"
           handler:
             type: dynamic_query_handler
             query_param_name: query
