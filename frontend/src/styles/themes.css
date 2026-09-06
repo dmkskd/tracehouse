@@ -27,7 +27,10 @@
   --bg-modal: linear-gradient(180deg, #14142a 0%, #0c0c1a 100%);
   --bg-code: #0d1117;
   --bg-hover: rgba(255, 255, 255, 0.05);
-  
+  /* Translucent panel background, pairs with backdrop-filter: blur() */
+  --bg-glass: rgba(10, 10, 26, 0.55);
+  --shadow-panel: -6px 0 24px rgba(0, 0, 0, 0.25);
+
   /* Borders */
   --border-primary: rgba(255, 255, 255, 0.1);
   --border-secondary: rgba(255, 255, 255, 0.06);
@@ -121,7 +124,10 @@
   --bg-modal: linear-gradient(180deg, #ffffff 0%, #f8fafc 100%);
   --bg-code: #f6f8fa;
   --bg-hover: rgba(0, 0, 0, 0.04);
-  
+  /* Translucent panel background, pairs with backdrop-filter: blur() */
+  --bg-glass: rgba(255, 255, 255, 0.65);
+  --shadow-panel: -6px 0 24px rgba(15, 23, 42, 0.08);
+
   /* Borders */
   --border-primary: rgba(0, 0, 0, 0.12);
   --border-secondary: rgba(0, 0, 0, 0.06);

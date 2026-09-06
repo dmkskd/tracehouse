@@ -13,11 +13,11 @@ import { OBSERVABILITY_DATA } from './data';
 
 const sidebarBase: React.CSSProperties = {
   width: 440,
-  background: 'rgba(10, 10, 26, 0.55)',
+  background: 'var(--bg-glass)',
   backdropFilter: 'blur(16px)',
   WebkitBackdropFilter: 'blur(16px)',
-  borderLeft: '1px solid rgba(255, 255, 255, 0.08)',
-  boxShadow: '-6px 0 24px rgba(0, 0, 0, 0.25)',
+  borderLeft: '1px solid var(--border-secondary)',
+  boxShadow: 'var(--shadow-panel)',
   overflowY: 'auto',
   padding: 20,
   flexShrink: 0,
