@@ -125,10 +125,9 @@ function getColor(d: PartitionedNode): string {
   while (node.depth > 1 && node.parent) node = node.parent;
   const base = d3.color(defaultCategoryColors[node.data.name] || '#64748b');
   if (!base) return '#64748b';
-  // Subtle brightness variation — depth conveyed via opacity, not heavy color shifts
-  if (d.depth === 1) return base.toString();
-  if (d.depth === 2) return base.brighter(0.25).toString();
-  return base.brighter(0.5).toString();
+  // Subtle brightness variation — depth conveyed via opacity, not heavy color
+  // shifts. Only two rings exist: category (1) and table (2).
+  return d.depth === 1 ? base.toString() : base.brighter(0.25).toString();
 }
 
 // ─── Component ───────────────────────────────────────────────
@@ -174,9 +173,6 @@ export const ObservabilitySunburst: React.FC<ObservabilitySunburstProps> = ({
           cat.name.toLowerCase().includes(q) ||
           table.desc.toLowerCase().includes(q) ||
           table.cols.some(c => c.toLowerCase().includes(q)) ||
-          table.children.some(col =>
-            col.name.toLowerCase().includes(q) || col.desc.toLowerCase().includes(q)
-          ) ||
           table.queries.some(qr =>
             qr.label.toLowerCase().includes(q) || qr.sql.toLowerCase().includes(q)
           ) ||
@@ -326,10 +322,7 @@ export const ObservabilitySunburst: React.FC<ObservabilitySunburstProps> = ({
     if (focusedNode) {
       const found = partitionedRoot.descendants().find(d =>
         d.data.name === focusedNode.data.name &&
-        d.data.meta?.type === focusedNode.data.meta?.type &&
-        // Column names are not unique across tables; disambiguate by owner.
-        (focusedNode.data.meta?.type !== 'column' ||
-          d.data.meta?.table === focusedNode.data.meta?.table)
+        d.data.meta?.type === focusedNode.data.meta?.type
       );
       if (found) focus = found;
     }
@@ -367,62 +360,31 @@ export const ObservabilitySunburst: React.FC<ObservabilitySunburstProps> = ({
     // Compute opacity — softer depth layering for premium feel
     const getOpacity = (d: PartitionedNode): number => {
       const depthFromFocus = d.depth - focus.depth;
-      let base = depthFromFocus === 1 ? 0.88 : depthFromFocus === 2 ? 0.7 : 0.82;
-      // Dim unavailable tables (and their children)
-      const isUnavailable =
-        (d.data.meta?.type === 'table' && d.data.meta.available === false) ||
-        (d.data.meta?.type === 'column' && d.parent?.data.meta?.available === false);
-      if (isUnavailable) return 0.2;
+      const base = depthFromFocus === 1 ? 0.88 : 0.7;
+      if (d.data.meta?.type === 'table' && d.data.meta.available === false) return 0.2;
       if (matchingNodes !== null) {
-        const tableName = d.data.meta?.type === 'table'
-          ? d.data.name
-          : d.data.meta?.type === 'column'
-            ? (d.parent?.data.name || '')
-            : '';
         if (d.data.meta?.type === 'table') {
           return matchingNodes.has(d.data.name) ? 1 : 0.15;
         }
-        if (d.data.meta?.type === 'column') {
-          return matchingNodes.has(tableName) ? 1 : 0.15;
-        }
         // Category: check if any child table matches
-        const hasMatch = d.leaves().some(leaf => {
-          const tn = leaf.parent?.data.name || leaf.data.name;
-          return matchingNodes.has(tn);
-        });
+        const hasMatch = d.leaves().some(leaf => matchingNodes.has(leaf.data.name));
         return hasMatch ? base : 0.15;
       }
       return base;
     };
 
-    // Check if a node (or its ancestor) matches the currently selected node.
-    //
-    // Column names repeat across tables — System Resources alone has several
-    // tables exposing `labels`, `value` and `metric` — so a column must be
-    // matched on its parent table as well as its name, or every same-named
-    // segment in the ring lights up together.
-    const isSelected = (d: PartitionedNode): boolean => {
-      if (!selectedNodeProp) return false;
-      if (d.data.name !== selectedNodeProp.name) return false;
-      if (d.data.meta?.type !== selectedNodeProp.meta?.type) return false;
-      if (selectedNodeProp.meta?.type === 'column') {
-        return d.data.meta?.table === selectedNodeProp.meta?.table;
-      }
-      return true;
-    };
+    // Table names are unique across the whole catalog, so name plus type is
+    // enough to identify the selected segment.
+    const isSelected = (d: PartitionedNode): boolean =>
+      !!selectedNodeProp &&
+      d.data.name === selectedNodeProp.name &&
+      d.data.meta?.type === selectedNodeProp.meta?.type;
+
     const isSelectedOrParent = (d: PartitionedNode): boolean => {
       if (!selectedNodeProp) return false;
       if (isSelected(d)) return true;
-      // Check if this node is an ancestor of the selected node
-      const selType = selectedNodeProp.meta?.type;
-      if (selType === 'column' && d.data.meta?.type === 'table') {
-        return d.data.name === selectedNodeProp.meta?.table;
-      }
-      if ((selType === 'table' || selType === 'column') && d.data.meta?.type === 'category') {
-        if (selType === 'table') {
-          return d.children?.some(c => c.data.name === selectedNodeProp.name) ?? false;
-        }
-        // column: the owning category is recorded on the node
+      // The category ring lights up for the selected table's owning category.
+      if (selectedNodeProp.meta?.type === 'table' && d.data.meta?.type === 'category') {
         return d.data.name === selectedNodeProp.meta?.category;
       }
       return false;
@@ -459,8 +421,6 @@ export const ObservabilitySunburst: React.FC<ObservabilitySunburstProps> = ({
           desc = `${d.children?.length || 0} system tables`;
         } else if (meta?.type === 'table') {
           desc = meta.desc ? (meta.desc.length > 120 ? meta.desc.slice(0, 117) + '...' : meta.desc) : undefined;
-        } else if (meta?.type === 'column') {
-          desc = meta.desc;
         }
         setTooltip({
           x: event.clientX - rect.left,
@@ -486,7 +446,7 @@ export const ObservabilitySunburst: React.FC<ObservabilitySunburstProps> = ({
         const meta = d.data.meta;
         if (meta?.type === 'category') {
           setFocusedNode(d);
-        } else if (meta?.type === 'table' || meta?.type === 'column') {
+        } else if (meta?.type === 'table') {
           onSelectNode(d.data);
         }
       });
@@ -572,32 +532,13 @@ export const ObservabilitySunburst: React.FC<ObservabilitySunburstProps> = ({
       .attr('text-anchor', 'middle')
       .attr('dominant-baseline', 'middle')
       .attr('fill', '#f8fafc')
-      .attr('font-size', isZoomed ? '11px' : '9px')
+      .attr('font-size', isZoomed ? '13px' : '11px')
       .attr('font-weight', '400')
       .attr('font-family', "'JetBrains Mono', monospace")
       .attr('pointer-events', 'none')
       .text(d => d.data.name)
       .nodes().forEach((el, i) => {
         fitLabel(el as SVGTextElement, tableNodes[i], 16, 0.85);
-      });
-
-    // Column labels (depth 3 from focus)
-    const colNodes = visibleNodes.filter(d => d.depth - focus.depth === 3);
-    labelsG.selectAll('text.col-label')
-      .data(colNodes)
-      .join('text')
-      .attr('class', 'col-label')
-      .attr('transform', getLabelTransform)
-      .attr('text-anchor', 'middle')
-      .attr('dominant-baseline', 'middle')
-      .attr('fill', '#f8fafc')
-      .attr('font-size', isZoomed ? '10px' : '8px')
-      .attr('font-weight', '400')
-      .attr('font-family', "'DM Sans', system-ui, sans-serif")
-      .attr('pointer-events', 'none')
-      .text(d => d.data.name)
-      .nodes().forEach((el, i) => {
-        fitLabel(el as SVGTextElement, colNodes[i], 14, 0.8);
       });
 
     // ─── Center label ──────────────────────────────────────

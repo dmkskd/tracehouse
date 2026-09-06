@@ -102,16 +102,40 @@ const DS = {
   colTag: {
     fontFamily: "'JetBrains Mono', monospace",
     fontSize: 10.5,
-    background: 'rgba(255, 255, 255, 0.06)',
+    background: 'var(--bg-card)',
     color: 'var(--text-secondary)',
     padding: '3px 10px',
     borderRadius: 4,
-    border: 'none',
+    border: '1px solid var(--border-secondary)',
   } as React.CSSProperties,
-  colTagWithTitle: {
-    cursor: 'help',
-    textDecoration: 'underline dotted var(--border-secondary)',
-    textUnderlineOffset: '3px',
+  fieldTag: {
+    display: 'inline-flex',
+    alignItems: 'center',
+    gap: 5,
+    fontFamily: "'JetBrains Mono', monospace",
+    fontSize: 10.5,
+    background: 'var(--bg-card)',
+    color: 'var(--text-secondary)',
+    padding: '3px 10px',
+    borderRadius: 4,
+    border: '1px solid var(--border-primary)',
+    cursor: 'pointer',
+    textAlign: 'left',
+  } as React.CSSProperties,
+  fieldTagHover: {
+    background: 'var(--bg-card-hover)',
+    color: 'var(--text-primary)',
+  } as React.CSSProperties,
+  fieldTagSelected: {
+    color: 'var(--text-primary)',
+    fontWeight: 700,
+    background: 'var(--bg-tertiary)',
+    borderColor: 'var(--text-muted)',
+  } as React.CSSProperties,
+  headingIdent: {
+    textTransform: 'none',
+    letterSpacing: 0,
+    fontSize: 10,
   } as React.CSSProperties,
 };
 
@@ -187,28 +211,24 @@ export const DetailSidebar: React.FC<DetailSidebarProps> = ({
   onToggleExpand,
 }) => {
   const [editingSql, setEditingSql] = useState<string | null>(null);
+  // Field selection is panel-local: the sunburst stops at the table ring, so a
+  // field has no segment to own it and nothing outside this panel reacts to it.
+  // It is stored with its owning table so that moving to another table drops it
+  // by derivation, with no reset effect to keep in sync.
+  const [fieldPick, setFieldPick] = useState<{ table: string; name: string } | null>(null);
   const sourceData = enrichedData || OBSERVABILITY_DATA;
 
   // Resolve the table-level data
-  let tableInfo: ReturnType<typeof findTableData> = null;
-  let selectedColumn: string | null = null;
+  const tableInfo = selectedNode?.meta?.type === 'table'
+    ? findTableData(selectedNode.name, sourceData)
+    : null;
 
-  if (selectedNode?.meta?.type === 'table') {
-    tableInfo = findTableData(selectedNode.name, sourceData);
-  } else if (selectedNode?.meta?.type === 'column' && selectedNode.meta.category) {
-    // Walk up: find parent table
-    const cat = sourceData.children.find(c => c.name === selectedNode.meta!.category);
-    if (cat) {
-      // Resolve by the parent table recorded on the node. Matching on the column
-      // name alone picks the first table in the category exposing that name, which
-      // opens the wrong table for generic columns like `value` or `description`.
-      const parent = cat.children.find(t => t.name === selectedNode.meta!.table);
-      if (parent) {
-        tableInfo = { category: cat.name, color: cat.color, table: parent };
-        selectedColumn = selectedNode.name;
-      }
-    }
-  } else if (selectedNode?.meta?.type === 'category') {
+  const shownTable = tableInfo?.table.name ?? null;
+  const selectedField = fieldPick && fieldPick.table === shownTable ? fieldPick.name : null;
+  const selectField = (name: string | null) =>
+    setFieldPick(name && shownTable ? { table: shownTable, name } : null);
+
+  if (selectedNode?.meta?.type === 'category') {
     const cat = sourceData.children.find(c => c.name === selectedNode.name);
     if (cat) {
       return (
@@ -262,6 +282,7 @@ export const DetailSidebar: React.FC<DetailSidebarProps> = ({
   }
 
   const { category, table } = tableInfo;
+
 
   return (
     <div style={sidebarStyle(expanded)}>
@@ -336,54 +357,46 @@ export const DetailSidebar: React.FC<DetailSidebarProps> = ({
         </div>
       )}
 
-      {/* Key columns */}
+      {/* Columns — every column is selectable, not just the curated few */}
       {table.cols.length > 0 && (
         <div style={{ marginBottom: 16 }}>
-          <h3 style={DS.sectionTitle}>Key Columns</h3>
+          <h3 style={DS.sectionTitle}>Columns</h3>
           <div style={DS.colsList}>
-            {table.cols.map(c => {
-              const comment = columnComments?.get(`${table.name}.${c}`);
-              return (
-                <span
-                  key={c}
-                  title={comment || undefined}
-                  style={{
-                    ...DS.colTag,
-                    ...(comment ? DS.colTagWithTitle : {}),
-                    ...(selectedColumn === c ? { color: 'var(--text-primary)', fontWeight: 700 } : {}),
-                  }}
-                >
-                  {c}
-                </span>
-              );
-            })}
+            {table.cols.map(c => (
+              <FieldTag
+                key={c}
+                name={c}
+                comment={columnComments?.get(`${table.name}.${c}`)}
+                selected={selectedField === c}
+                onSelect={selectField}
+              />
+            ))}
           </div>
         </div>
       )}
 
-      {/* Selected column highlight */}
-      {selectedColumn && (
+      {/* Selected field */}
+      {selectedField && (
         <div style={{ marginBottom: 16 }}>
           <h3 style={DS.sectionTitle}>Selected</h3>
           <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
-            <div style={{ ...DS.tableName, fontSize: 13, color: 'var(--text-primary)' }}>{selectedColumn}</div>
-            {selectedNode?.meta?.since && (
-              <span
-                title={`Requires ClickHouse ${selectedNode.meta.since} or newer`}
-                style={badgeStyle('#64748b')}
-              >
-                Since {selectedNode.meta.since}
-              </span>
-            )}
+            <div style={{ ...DS.tableName, fontSize: 13, color: 'var(--text-primary)' }}>{selectedField}</div>
           </div>
-          <div style={DS.desc}>{columnComments?.get(`${table.name}.${selectedColumn}`) || selectedNode?.meta?.desc || ''}</div>
+          <div style={DS.desc}>
+            {columnComments?.get(`${table.name}.${selectedField}`)
+              || 'No description available on this server.'}
+          </div>
         </div>
       )}
 
       {/* Diagnostic queries */}
       {table.queries.length > 0 && (
         <div style={{ marginBottom: 16 }}>
-          <h3 style={DS.sectionTitle}>Diagnostic Queries</h3>
+          {/* Named after the table, so it stays clear these are table-level
+              diagnostics that do not change with the selected field. */}
+          <h3 style={DS.sectionTitle}>
+            Diagnostic Queries <span style={DS.headingIdent}>· {table.name}</span>
+          </h3>
           {table.queries.map((q, i) => {
             const isResultForThis = queryResult && runQueryIndex === i;
             return (
@@ -444,6 +457,42 @@ export const DetailSidebar: React.FC<DetailSidebarProps> = ({
         </div>
       )}
     </div>
+  );
+};
+
+// ─── FieldTag sub-component ──────────────────────────────────
+
+/**
+ * One selectable column in the detail panel.
+ *
+ * Every column is clickable. Earlier only the handful of fields that had a
+ * segment in the sunburst's outer ring could be selected, while the rest were
+ * inert spans that still carried a dotted underline — so most of the list
+ * looked interactive and wasn't.
+ */
+const FieldTag: React.FC<{
+  name: string;
+  comment?: string;
+  selected: boolean;
+  onSelect: (name: string | null) => void;
+}> = ({ name, comment, selected, onSelect }) => {
+  const [hover, setHover] = useState(false);
+  return (
+    <button
+      type="button"
+      title={comment || undefined}
+      aria-pressed={selected}
+      onClick={() => onSelect(selected ? null : name)}
+      onMouseEnter={() => setHover(true)}
+      onMouseLeave={() => setHover(false)}
+      style={{
+        ...DS.fieldTag,
+        ...(hover && !selected ? DS.fieldTagHover : {}),
+        ...(selected ? DS.fieldTagSelected : {}),
+      }}
+    >
+      {name}
+    </button>
   );
 };
 

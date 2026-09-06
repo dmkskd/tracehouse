@@ -29,23 +29,11 @@ export interface DiagnosticQuery {
   sql: string;
 }
 
-export interface ObservabilityColumn {
-  name: string;
-  desc: string;
-  size: number;
-  /**
-   * Minimum ClickHouse version that exposes this column, e.g. "26.8".
-   * Omit when the column predates the catalog baseline (26.3).
-   */
-  since?: string;
-}
-
 export interface SystemTable {
   name: string;
   desc: string;
   cols: string[];
   queries: DiagnosticQuery[];
-  children: ObservabilityColumn[];
   since?: string;
   cloudOnly?: boolean;
   available?: boolean;
@@ -66,27 +54,27 @@ export interface ObservabilityData {
 
 // ─── D3 hierarchy types ──────────────────────────────────────
 
+/**
+ * A node in the sunburst. The wheel has exactly two rings: category -> table.
+ *
+ * Tables are leaves. An earlier version drew a third ring of hand-picked columns,
+ * which was dropped: its arc widths encoded a hand-assigned 1-4 importance
+ * score rather than anything measurable, its labels were unreadable at ~280
+ * leaves, and because d3 sums leaf values upward it made the table and category
+ * arc widths meaningless too. The detail panel now lists every column instead
+ * of that four-item subset.
+ */
 export interface SunburstNodeData {
   name: string;
   value?: number;
   children?: SunburstNodeData[];
   meta?: {
-    type: 'root' | 'category' | 'table' | 'column';
+    type: 'root' | 'category' | 'table';
     category?: string;
-    /**
-     * For column nodes: the qualified name of the table this column belongs to.
-     *
-     * Required to resolve a selected column back to its table. Column names are
-     * not unique within a category — System Resources alone has several tables
-     * exposing `value`, `metric`, `labels`, `description` and `name` — so
-     * matching on the column name alone opens the wrong table.
-     */
-    table?: string;
     color?: string;
     desc?: string;
     cols?: string[];
     queries?: DiagnosticQuery[];
-    size?: number;
     since?: string;
     cloudOnly?: boolean;
     available?: boolean;
@@ -154,6 +142,10 @@ export function buildHierarchy(data: ObservabilityData): SunburstNodeData {
       meta: { type: 'category' as const, color: cat.color, category: cat.name },
       children: cat.children.map(table => ({
         name: table.name,
+        // Tables are leaves and all weigh the same, so every table gets an
+        // equal slice and a category's width reflects how many tables it has.
+        // There is no per-table magnitude worth encoding here.
+        value: 1,
         meta: {
           type: 'table' as const,
           category: cat.name,
@@ -165,19 +157,6 @@ export function buildHierarchy(data: ObservabilityData): SunburstNodeData {
           cloudOnly: table.cloudOnly,
           available: table.available,
         },
-        children: table.children.map(col => ({
-          name: col.name,
-          value: col.size,
-          meta: {
-            type: 'column' as const,
-            category: cat.name,
-            table: table.name,
-            color: cat.color,
-            desc: col.desc,
-            size: col.size,
-            since: col.since,
-          },
-        })),
       })),
     })),
   };
@@ -195,7 +174,7 @@ export const OBSERVABILITY_DATA: ObservabilityData = {
         {
           name: "system.query_log",
           desc: "Complete history of all executed queries with detailed execution statistics. The single most important table for performance analysis.",
-          cols: ["event_time", "query_duration_ms", "read_rows", "read_bytes", "written_rows", "written_bytes", "result_rows", "memory_usage", "query", "query_kind", "type", "exception_code", "ProfileEvents", "Settings", "thread_ids", "user", "client_hostname", "query_cache_usage", "used_aggregate_functions", "initial_query_start_time"],
+          cols: ["event_time", "query_duration_ms", "read_rows", "read_bytes", "written_rows", "written_bytes", "result_rows", "memory_usage", "query", "query_kind", "type", "exception_code", "ProfileEvents", "Settings", "thread_ids", "user", "client_hostname", "query_cache_usage", "used_aggregate_functions", "initial_query_start_time", "client_agent"],
           queries: [
             {
               label: "Slow queries today", sql: `SELECT query_start_time,
@@ -258,16 +237,6 @@ WHERE type = 'QueryFinish'
 ORDER BY coordinator_delay_ms DESC
 LIMIT 10` }
           ],
-          children: [
-            { name: "query_duration_ms", desc: "Total wall-clock time", size: 3 },
-            { name: "read_rows / read_bytes", desc: "Data scanned", size: 3 },
-            { name: "memory_usage", desc: "Peak memory (bytes)", size: 2 },
-            { name: "written_rows", desc: "Rows written (inserts)", size: 2 },
-            { name: "ProfileEvents{}", desc: "Map of 500+ counters per query", size: 4 },
-            { name: "exception_code", desc: "Non-zero = failed query", size: 2 },
-            { name: "query_cache_usage", desc: "None, Used, or Stored", size: 1 },
-            { name: "client_agent", desc: "Detected AI coding agent that invoked clickhouse-client", size: 1, since: "26.6" }
-          ]
         },
         {
           name: "system.processes",
@@ -284,11 +253,6 @@ ORDER BY elapsed DESC` },
               label: "Kill a slow query", sql: `KILL QUERY
   WHERE query_id = '...'` }
           ],
-          children: [
-            { name: "elapsed", desc: "Seconds running", size: 2 },
-            { name: "memory_usage", desc: "Current memory", size: 2 },
-            { name: "query_id", desc: "Unique query identifier", size: 2 }
-          ]
         },
         {
           name: "system.query_thread_log",
@@ -302,10 +266,6 @@ ORDER BY elapsed DESC` },
 FROM system.query_thread_log
 WHERE query_id = '...'` }
           ],
-          children: [
-            { name: "thread_name", desc: "QueryPipeline, MergeMutate, etc.", size: 2 },
-            { name: "ProfileEvents", desc: "Counters per thread", size: 3 }
-          ]
         },
         {
           name: "system.query_views_log",
@@ -320,10 +280,6 @@ FROM system.query_views_log
 WHERE view_duration_ms > 500
 ORDER BY view_duration_ms DESC` }
           ],
-          children: [
-            { name: "view_duration_ms", desc: "MV processing time", size: 2 },
-            { name: "status", desc: "QueryFinish or exception", size: 1 }
-          ]
         },
         {
           name: "system.query_metric_log",
@@ -347,10 +303,6 @@ FROM system.query_metric_log
 WHERE query_id = '...'
 ORDER BY event_time` }
           ],
-          children: [
-            { name: "memory_usage", desc: "Memory at each sample point", size: 2 },
-            { name: "ProfileEvents", desc: "Cumulative counters at each sample", size: 3 }
-          ]
         },
         {
           name: "EXPLAIN variants",
@@ -370,17 +322,11 @@ SELECT ...` },
 SELECT * FROM my_table
 WHERE id = 42` }
           ],
-          children: [
-            { name: "EXPLAIN PLAN", desc: "Logical plan with filters", size: 2 },
-            { name: "EXPLAIN PIPELINE", desc: "Execution graph & threads", size: 2 },
-            { name: "EXPLAIN indexes=1", desc: "Parts/marks selected vs total", size: 3 },
-            { name: "EXPLAIN ESTIMATE", desc: "Estimated rows/bytes", size: 2 }
-          ]
         },
         {
           name: "system.user_query_log",
           desc: "Each user's own query_log rows, readable without any grant on the query log table itself. Same schema as system.query_log, filtered to queries the current user initiated.",
-          cols: ["event_time", "query_duration_ms", "read_rows", "read_bytes", "memory_usage", "query", "query_kind", "type", "exception_code", "user", "query_id", "ProfileEvents"],
+          cols: ["event_time", "query_duration_ms", "read_rows", "read_bytes", "memory_usage", "query", "query_kind", "type", "exception_code", "user", "query_id", "ProfileEvents", "client_agent"],
           since: "26.8",
           queries: [
             { label: "My slowest queries today", sql: `SELECT event_time,
@@ -398,13 +344,6 @@ WHERE exception_code != 0
 ORDER BY event_time DESC
 LIMIT 20` }
           ],
-          children: [
-            { name: "query_duration_ms", desc: "Wall-clock duration", size: 3 },
-            { name: "read_rows", desc: "Rows read by this query", size: 2 },
-            { name: "memory_usage", desc: "Peak memory for the query", size: 2 },
-            { name: "exception_code", desc: "0 when the query succeeded", size: 2 },
-            { name: "client_agent", desc: "Detected AI coding agent, when clickhouse-client was invoked by one", size: 1, since: "26.6" }
-          ]
         },
       ]
     },
@@ -436,12 +375,6 @@ LIMIT 20` },
               label: "Memory alloc traces", sql: `SELECT ... trace_type = 'Memory'
   AND size > 1048576  -- >1MB allocs` }
           ],
-          children: [
-            { name: "CPU traces", desc: "trace_type='CPU'", size: 3 },
-            { name: "Real traces", desc: "trace_type='Real' (wall clock)", size: 2 },
-            { name: "Memory traces", desc: "trace_type='Memory'", size: 2 },
-            { name: "MemorySample", desc: "Sampled allocations", size: 2 }
-          ]
         },
         {
           name: "system.opentelemetry_span_log",
@@ -456,10 +389,6 @@ FROM system.opentelemetry_span_log
 WHERE trace_id = '...'
 ORDER BY start_time_us` }
           ],
-          children: [
-            { name: "operation_name", desc: "Span label", size: 2 },
-            { name: "finish_time_us", desc: "Span end (start_time_us for begin)", size: 2 }
-          ]
         },
         {
           name: "system.processors_profile_log",
@@ -476,11 +405,6 @@ FROM system.processors_profile_log
 WHERE query_id = '...'
 ORDER BY elapsed_us DESC` }
           ],
-          children: [
-            { name: "elapsed_us", desc: "Total processor time", size: 2 },
-            { name: "input_wait_elapsed_us", desc: "Stalled waiting for data", size: 2 },
-            { name: "output_wait_elapsed_us", desc: "Stalled on downstream", size: 2 }
-          ]
         },
         {
           name: "system.predicate_statistics_log",
@@ -496,11 +420,6 @@ GROUP BY database, table, predicate
 ORDER BY samples DESC
 LIMIT 20` }
           ],
-          children: [
-            { name: "predicate", desc: "The filter expression that was sampled", size: 3 },
-            { name: "table", desc: "Table the predicate was applied to", size: 2 },
-            { name: "query_id", desc: "Query that produced the sample", size: 2 }
-          ]
         },
         {
           name: "system.stack_trace",
@@ -519,11 +438,6 @@ FROM system.stack_trace
 WHERE query_id != ''
 LIMIT 5` }
           ],
-          children: [
-            { name: "trace", desc: "Raw instruction addresses", size: 3 },
-            { name: "thread_name", desc: "Thread role", size: 2 },
-            { name: "query_id", desc: "Query the thread serves, when any", size: 2 }
-          ]
         }
       ]
     },
@@ -558,15 +472,6 @@ GROUP BY database, table
 HAVING parts > 100
 ORDER BY parts DESC` }
           ],
-          children: [
-            { name: "rows", desc: "Row count per part", size: 2 },
-            { name: "bytes_on_disk", desc: "Compressed on-disk size", size: 2 },
-            { name: "data_uncompressed_bytes", desc: "Uncompressed logical size", size: 2 },
-            { name: "marks", desc: "Number of index granules", size: 1 },
-            { name: "level", desc: "Merge generation (0=new)", size: 1 },
-            { name: "active", desc: "1=live, 0=being merged away", size: 1 },
-            { name: "data_version", desc: "Mutation version (24.3+)", size: 1 }
-          ]
         },
         {
           name: "system.parts_columns",
@@ -588,15 +493,11 @@ WHERE database='mydb'
 GROUP BY column, type
 ORDER BY sum(data_compressed_bytes) DESC` }
           ],
-          children: [
-            { name: "per-column bytes", desc: "Compressed vs uncompressed per col", size: 3 },
-            { name: "marks_bytes", desc: "Mark file size per column", size: 1 }
-          ]
         },
         {
           name: "system.merges",
           desc: "Currently running merge operations. Monitor progress, size, and whether they are mutations.",
-          cols: ["database", "table", "elapsed", "progress", "num_parts", "result_part_name", "total_size_bytes_compressed", "bytes_read_uncompressed", "bytes_written_uncompressed", "is_mutation", "memory_usage"],
+          cols: ["database", "table", "elapsed", "progress", "num_parts", "result_part_name", "total_size_bytes_compressed", "bytes_read_uncompressed", "bytes_written_uncompressed", "is_mutation", "memory_usage", "current_projection", "current_projection_progress", "projections_completed", "projections_remaining"],
           queries: [
             {
               label: "Active merges", sql: `SELECT database, table,
@@ -607,20 +508,11 @@ ORDER BY sum(data_compressed_bytes) DESC` }
   ) AS size
 FROM system.merges` }
           ],
-          children: [
-            { name: "progress", desc: "0.0 to 1.0", size: 2 },
-            { name: "num_parts", desc: "Source parts being merged", size: 1 },
-            { name: "is_mutation", desc: "ALTER UPDATE/DELETE merge", size: 2 },
-            { name: "current_projection", desc: "Projection currently being merged", size: 1, since: "26.6" },
-            { name: "current_projection_progress", desc: "Progress of the projection being merged, 0.0 to 1.0", size: 1, since: "26.6" },
-            { name: "projections_completed", desc: "Projections merged so far", size: 1, since: "26.6" },
-            { name: "projections_remaining", desc: "Projections still to merge", size: 1, since: "26.6" }
-          ]
         },
         {
           name: "system.mutations",
           desc: "Track ALTER UPDATE / DELETE operations. Mutations rewrite entire parts and can be very expensive.",
-          cols: ["database", "table", "mutation_id", "command", "create_time", "is_done", "parts_to_do", "parts_to_do_names", "latest_failed_part", "latest_fail_reason"],
+          cols: ["database", "table", "mutation_id", "command", "create_time", "is_done", "parts_to_do", "parts_to_do_names", "latest_failed_part", "latest_fail_reason", "finish_time"],
           queries: [
             {
               label: "Stuck mutations", sql: `SELECT database, table,
@@ -634,17 +526,11 @@ ORDER BY create_time` },
               label: "Kill stuck mutation", sql: `KILL MUTATION
   WHERE mutation_id = '...'` }
           ],
-          children: [
-            { name: "is_done", desc: "0=still running", size: 2 },
-            { name: "parts_to_do", desc: "Remaining parts to rewrite", size: 2 },
-            { name: "latest_fail_reason", desc: "Why it's stuck", size: 2 },
-            { name: "finish_time", desc: "When the mutation completed; zero if unfinished", size: 1, since: "26.8" }
-          ]
         },
         {
           name: "system.part_log",
           desc: "Historical log of all part lifecycle events: creation, merge, mutation, download, removal.",
-          cols: ["event_type", "event_time", "database", "table", "part_name", "rows", "size_in_bytes", "merge_reason", "error", "duration_ms"],
+          cols: ["event_type", "event_time", "database", "table", "part_name", "rows", "size_in_bytes", "merge_reason", "error", "duration_ms", "projections_duration_ms"],
           queries: [
             {
               label: "Failed merge/mutate events", sql: `SELECT event_date, event_type,
@@ -658,13 +544,6 @@ GROUP BY event_date,
   event_type, table, error
 ORDER BY event_date DESC` }
           ],
-          children: [
-            { name: "NewPart", desc: "INSERT created a part", size: 1 },
-            { name: "MergeParts", desc: "Background merge completed", size: 2 },
-            { name: "MutatePart", desc: "Mutation completed", size: 1 },
-            { name: "RemovePart", desc: "Part garbage collected", size: 1 },
-            { name: "projections_duration_ms", desc: "Per-projection merge/rebuild duration", size: 1, since: "26.4" }
-          ]
         },
         {
           name: "system.detached_parts",
@@ -677,9 +556,6 @@ ORDER BY event_date DESC` }
 FROM system.detached_parts
 ORDER BY database, table` }
           ],
-          children: [
-            { name: "reason", desc: "broken, noquorum, clone, covered", size: 3 }
-          ]
         },
         {
           name: "system.dropped_tables_parts",
@@ -696,10 +572,6 @@ FROM system.dropped_tables_parts
 GROUP BY database, table
 ORDER BY sum(bytes_on_disk) DESC` }
           ],
-          children: [
-            { name: "bytes_on_disk", desc: "Storage awaiting cleanup", size: 2 },
-            { name: "rows", desc: "Rows not yet removed", size: 1 }
-          ]
         },
         {
           name: "system.remote_data_paths",
@@ -712,10 +584,6 @@ ORDER BY sum(bytes_on_disk) DESC` }
 FROM system.remote_data_paths
 LIMIT 20` }
           ],
-          children: [
-            { name: "remote_path", desc: "Blob path in object storage", size: 3 },
-            { name: "size", desc: "Size of the file (compressed)", size: 2 }
-          ]
         },
         {
           name: "system.projection_parts",
@@ -735,11 +603,6 @@ FROM system.projection_parts
 WHERE is_broken
 ORDER BY parent_name` }
           ],
-          children: [
-            { name: "bytes", desc: "Size of the projection part", size: 3 },
-            { name: "is_broken", desc: "Projection part failed validation", size: 2 },
-            { name: "parent_name", desc: "Part this projection belongs to", size: 2 }
-          ]
         }
       ]
     },
@@ -774,12 +637,6 @@ WHERE name ILIKE '%iceberg%'
    OR name ILIKE '%data_lake%'
 ORDER BY name` }
           ],
-          children: [
-            { name: "DeltaLake", desc: "Delta Lake engine family (S3, Azure, Local)", size: 3 },
-            { name: "Hudi", desc: "Apache Hudi engine", size: 2 },
-            { name: "DataLakeCatalog", desc: "Database engine for Glue, Unity, REST and Hive catalogs", size: 3 },
-            { name: "Iceberg", desc: "Iceberg engine family; the only format with dedicated system tables", size: 3 }
-          ]
         },
         {
           name: "system.iceberg_files",
@@ -802,12 +659,6 @@ FROM system.iceberg_files
 GROUP BY database, table, file_format
 ORDER BY small_files DESC` }
           ],
-          children: [
-            { name: "file_size_in_bytes", desc: "Size of the data or delete file", size: 3 },
-            { name: "record_count", desc: "Rows contained in the file", size: 2 },
-            { name: "content", desc: "Data file vs delete file", size: 2 },
-            { name: "snapshot_id", desc: "Snapshot the file belongs to", size: 2 }
-          ]
         },
         {
           name: "system.iceberg_history",
@@ -827,12 +678,6 @@ FROM system.iceberg_history
 GROUP BY database, table, operation
 ORDER BY snapshots DESC` }
           ],
-          children: [
-            { name: "made_current_at", desc: "When the snapshot became current", size: 3 },
-            { name: "operation", desc: "append, overwrite, delete, replace", size: 2 },
-            { name: "is_current_ancestor", desc: "Whether it is an ancestor of the current snapshot", size: 2 },
-            { name: "parent_id", desc: "Preceding snapshot", size: 1 }
-          ]
         }
       ]
     },
@@ -843,7 +688,7 @@ ORDER BY snapshots DESC` }
         {
           name: "system.tables",
           desc: "Metadata for every table: engine, sorting key, partition key, total size, row count.",
-          cols: ["database", "name", "engine", "engine_full", "create_table_query", "sorting_key", "partition_key", "primary_key", "total_rows", "total_bytes", "lifetime_rows", "lifetime_bytes"],
+          cols: ["database", "name", "engine", "engine_full", "create_table_query", "sorting_key", "partition_key", "primary_key", "total_rows", "total_bytes", "lifetime_rows", "lifetime_bytes", "skipping_indices_types"],
           queries: [
             {
               label: "Table overview", sql: `SELECT database, name,
@@ -857,12 +702,6 @@ WHERE database NOT IN (
   'system','INFORMATION_SCHEMA')
 ORDER BY total_bytes DESC` }
           ],
-          children: [
-            { name: "engine_full", desc: "Full CREATE TABLE engine clause", size: 2 },
-            { name: "sorting_key", desc: "ORDER BY expression", size: 2 },
-            { name: "partition_key", desc: "PARTITION BY expression", size: 2 },
-            { name: "skipping_indices_types", desc: "Distinct data-skipping index types on the table", size: 1, since: "26.8" }
-          ]
         },
         {
           name: "system.columns",
@@ -880,10 +719,6 @@ FROM system.columns
 WHERE database='mydb'
   AND table='mytable'` }
           ],
-          children: [
-            { name: "type", desc: "Column data type", size: 2 },
-            { name: "compression_codec", desc: "LZ4, ZSTD, Delta, etc.", size: 2 }
-          ]
         },
         {
           name: "system.data_skipping_indices",
@@ -898,13 +733,6 @@ FROM system.data_skipping_indices
 WHERE database NOT IN
   ('system')` }
           ],
-          children: [
-            { name: "minmax", desc: "Range-based pruning", size: 1 },
-            { name: "set", desc: "Unique value set per granule", size: 1 },
-            { name: "bloom_filter", desc: "Probabilistic membership", size: 2 },
-            { name: "ngrambf_v1", desc: "N-gram bloom for LIKE", size: 1 },
-            { name: "tokenbf_v1", desc: "Token bloom for hasToken()", size: 1 }
-          ]
         },
         {
           name: "system.constraints",
@@ -917,10 +745,6 @@ WHERE database NOT IN
 FROM system.constraints
 ORDER BY database, table` }
           ],
-          children: [
-            { name: "expression", desc: "The constraint expression", size: 3 },
-            { name: "type", desc: "CHECK or ASSUME", size: 2 }
-          ]
         },
         {
           name: "system.hypothetical_indexes",
@@ -932,11 +756,6 @@ ORDER BY database, table` }
   type_full, expression, granularity
 FROM system.hypothetical_indexes` }
           ],
-          children: [
-            { name: "expression", desc: "Indexed expression", size: 3 },
-            { name: "type_full", desc: "Index type with parameters", size: 2 },
-            { name: "granularity", desc: "Granules per index mark", size: 1 }
-          ]
         },
         {
           name: "system.data_skipping_index_types",
@@ -948,10 +767,6 @@ FROM system.hypothetical_indexes` }
 FROM system.data_skipping_index_types
 ORDER BY name` }
           ],
-          children: [
-            { name: "introduced_in", desc: "Version the index type appeared in", size: 2 },
-            { name: "syntax", desc: "Declaration syntax", size: 2 }
-          ]
         },
         {
           name: "system.projections",
@@ -963,11 +778,6 @@ ORDER BY name` }
 FROM system.projections
 ORDER BY database, table` }
           ],
-          children: [
-            { name: "type", desc: "Aggregate or normal projection", size: 3 },
-            { name: "sorting_key", desc: "Projection ordering", size: 2 },
-            { name: "query", desc: "Projection definition", size: 2 }
-          ]
         },
         {
           name: "system.view_refreshes",
@@ -986,12 +796,6 @@ FROM system.view_refreshes
 WHERE exception != ''
 ORDER BY database, view` }
           ],
-          children: [
-            { name: "status", desc: "Scheduled, running or errored", size: 3 },
-            { name: "exception", desc: "Failure detail from the last run", size: 2 },
-            { name: "last_success_duration_ms", desc: "Duration of the last good refresh", size: 2 },
-            { name: "next_refresh_time", desc: "When it runs again", size: 1 }
-          ]
         },
         {
           name: "system.detached_tables",
@@ -1003,10 +807,6 @@ ORDER BY database, view` }
 FROM system.detached_tables
 ORDER BY database, table` }
           ],
-          children: [
-            { name: "is_permanently", desc: "DETACH PERMANENTLY vs session detach", size: 3 },
-            { name: "metadata_path", desc: "Where the definition lives on disk", size: 2 }
-          ]
         },
         {
           name: "system.dropped_tables",
@@ -1018,11 +818,6 @@ ORDER BY database, table` }
 FROM system.dropped_tables
 ORDER BY table_dropped_time` }
           ],
-          children: [
-            { name: "table_dropped_time", desc: "When the DROP was issued", size: 3 },
-            { name: "engine", desc: "Engine of the dropped table", size: 2 },
-            { name: "metadata_dropped_path", desc: "Retained metadata location", size: 1 }
-          ]
         }
       ]
     },
@@ -1049,11 +844,6 @@ WHERE absolute_delay > 60
    OR is_readonly = 1
    OR queue_size > 100` }
           ],
-          children: [
-            { name: "absolute_delay", desc: "Seconds behind leader", size: 3 },
-            { name: "is_readonly", desc: "1 = ZK session lost", size: 2 },
-            { name: "queue_size", desc: "Pending fetch/merge tasks", size: 2 }
-          ]
         },
         {
           name: "system.replication_queue",
@@ -1069,11 +859,6 @@ FROM system.replication_queue
 WHERE num_tries > 5
 ORDER BY create_time` }
           ],
-          children: [
-            { name: "num_tries", desc: "Retry count (high=stuck)", size: 2 },
-            { name: "last_exception", desc: "Error message", size: 2 },
-            { name: "type", desc: "GET_PART, MERGE_PARTS, MUTATE_PART", size: 2 }
-          ]
         },
         {
           name: "system.replicated_fetches",
@@ -1088,10 +873,6 @@ ORDER BY create_time` }
     total_size_bytes_compressed)
 FROM system.replicated_fetches` }
           ],
-          children: [
-            { name: "progress", desc: "0.0 to 1.0", size: 1 },
-            { name: "elapsed", desc: "Seconds since start", size: 1 }
-          ]
         },
         {
           name: "system.distribution_queue",
@@ -1106,10 +887,6 @@ FROM system.replicated_fetches` }
     data_compressed_bytes)
 FROM system.distribution_queue` }
           ],
-          children: [
-            { name: "is_blocked", desc: "1 = sending stalled", size: 2 },
-            { name: "error_count", desc: "Send failures", size: 1 }
-          ]
         },
         {
           name: "system.clusters",
@@ -1122,10 +899,6 @@ FROM system.distribution_queue` }
   port, is_local
 FROM system.clusters` }
           ],
-          children: [
-            { name: "shard_num", desc: "Shard index", size: 1 },
-            { name: "replica_num", desc: "Replica index in shard", size: 1 }
-          ]
         },
         {
           name: "system.zookeeper",
@@ -1139,10 +912,6 @@ FROM system.zookeeper
 WHERE path =
   '/clickhouse/tables/01/mytable'` }
           ],
-          children: [
-            { name: "path", desc: "ZK znode path", size: 2 },
-            { name: "numChildren", desc: "Child znodes", size: 1 }
-          ]
         },
         {
           name: "system.database_replicas",
@@ -1156,12 +925,6 @@ WHERE path =
 FROM system.database_replicas
 ORDER BY entries_behind DESC` }
           ],
-          children: [
-            { name: "log_ptr", desc: "Entries this replica has applied", size: 3 },
-            { name: "max_log_ptr", desc: "Latest entry in the log", size: 2 },
-            { name: "is_readonly", desc: "Replica cannot accept DDL", size: 2 },
-            { name: "is_session_expired", desc: "Keeper session lost", size: 2 }
-          ]
         },
         {
           name: "system.distributed_ddl_queue",
@@ -1180,12 +943,6 @@ WHERE exception_code != 0
 ORDER BY query_create_time DESC
 LIMIT 20` }
           ],
-          children: [
-            { name: "status", desc: "Per-host execution state", size: 3 },
-            { name: "exception_text", desc: "Failure detail", size: 2 },
-            { name: "query_duration_ms", desc: "Execution time on the host", size: 2 },
-            { name: "cluster", desc: "Target cluster", size: 1 }
-          ]
         },
         {
           name: "system.zookeeper_connection",
@@ -1198,12 +955,6 @@ LIMIT 20` }
   is_expired, availability_zone
 FROM system.zookeeper_connection` }
           ],
-          children: [
-            { name: "host", desc: "Keeper host currently connected to", size: 3 },
-            { name: "session_uptime_elapsed_seconds", desc: "How long the session has held", size: 2 },
-            { name: "is_expired", desc: "Session has expired", size: 2 },
-            { name: "last_zxid_seen", desc: "Last transaction id observed", size: 1 }
-          ]
         },
         {
           name: "system.part_moves_between_shards",
@@ -1221,12 +972,6 @@ FROM system.part_moves_between_shards
 WHERE num_tries > 0
 ORDER BY num_tries DESC` }
           ],
-          children: [
-            { name: "state", desc: "Current stage of the move", size: 3 },
-            { name: "num_tries", desc: "Retry count", size: 2 },
-            { name: "last_exception", desc: "Most recent failure", size: 2 },
-            { name: "to_shard", desc: "Destination shard", size: 1 }
-          ]
         }
       ]
     },
@@ -1260,14 +1005,6 @@ FROM system.metrics
 WHERE metric =
   'MemoryTracking'` }
           ],
-          children: [
-            { name: "MemoryTracking", desc: "Total RSS tracked", size: 3 },
-            { name: "Query", desc: "Active query count", size: 2 },
-            { name: "Merge", desc: "Active merge count", size: 2 },
-            { name: "BackgroundPoolTask", desc: "Background threads busy", size: 2 },
-            { name: "TCPConnection", desc: "Open TCP sessions", size: 1 },
-            { name: "HTTPConnection", desc: "Open HTTP sessions", size: 1 }
-          ]
         },
         {
           name: "system.events",
@@ -1292,13 +1029,6 @@ FROM system.events
 WHERE event LIKE '%Cache%'
 ORDER BY value DESC` }
           ],
-          children: [
-            { name: "SelectQuery", desc: "Total SELECTs executed", size: 2 },
-            { name: "InsertQuery", desc: "Total INSERTs executed", size: 2 },
-            { name: "FailedQuery", desc: "Total failed queries", size: 2 },
-            { name: "NetworkSendBytes", desc: "Total bytes sent", size: 1 },
-            { name: "FileOpen", desc: "Total file opens", size: 1 }
-          ]
         },
         {
           name: "system.asynchronous_metrics",
@@ -1319,12 +1049,6 @@ WHERE metric IN (
   'MarkCacheBytes'
 )` }
           ],
-          children: [
-            { name: "LoadAverage1/5/15", desc: "OS load averages", size: 2 },
-            { name: "MaxPartCountForPartition", desc: "Alert if >300", size: 3 },
-            { name: "jemalloc.*", desc: "Allocator internals", size: 2 },
-            { name: "OSMemory*", desc: "Total/Available RAM", size: 2 }
-          ]
         },
         {
           name: "system.disks",
@@ -1340,10 +1064,6 @@ WHERE metric IN (
   type
 FROM system.disks` }
           ],
-          children: [
-            { name: "free_space", desc: "Bytes available", size: 2 },
-            { name: "type", desc: "local, s3, hdfs", size: 1 }
-          ]
         },
         {
           name: "system.dns_cache",
@@ -1358,10 +1078,6 @@ FROM system.disks` }
 FROM system.dns_cache
 ORDER BY cached_at DESC` }
           ],
-          children: [
-            { name: "hostname", desc: "Resolved hostname", size: 2 },
-            { name: "ip_address", desc: "Cached IP result", size: 1 }
-          ]
         },
         {
           name: "system.metric_log",
@@ -1376,11 +1092,6 @@ FROM system.metric_log
 WHERE event_date = today()
 ORDER BY event_time` }
           ],
-          children: [
-            { name: "CurrentMetric_*", desc: "Gauge snapshots", size: 2 },
-            { name: "ProfileEvent_*", desc: "Counter deltas", size: 2 },
-            { name: "histograms", desc: "Nested snapshot of every registered histogram metric", size: 1, since: "26.5" }
-          ]
         },
         {
           name: "system.disk_types",
@@ -1392,10 +1103,6 @@ ORDER BY event_time` }
 FROM system.disk_types
 ORDER BY name` }
           ],
-          children: [
-            { name: "introduced_in", desc: "Version the disk type appeared in", size: 2 },
-            { name: "description", desc: "What the disk type does", size: 2 }
-          ]
         },
         {
           name: "system.asynchronous_metric_log",
@@ -1415,11 +1122,6 @@ GROUP BY metric
 ORDER BY spread DESC
 LIMIT 20` }
           ],
-          children: [
-            { name: "metric", desc: "Asynchronous metric name", size: 3 },
-            { name: "value", desc: "Sampled value", size: 2 },
-            { name: "event_time", desc: "Sample timestamp", size: 2 }
-          ]
         },
         {
           name: "system.dimensional_metrics",
@@ -1431,11 +1133,6 @@ FROM system.dimensional_metrics
 WHERE value != 0
 ORDER BY metric` }
           ],
-          children: [
-            { name: "labels", desc: "Dimension keys and values", size: 3 },
-            { name: "value", desc: "Current value", size: 2 },
-            { name: "description", desc: "What the metric counts", size: 2 }
-          ]
         },
         {
           name: "system.histogram_metrics",
@@ -1447,11 +1144,6 @@ FROM system.histogram_metrics
 WHERE value != 0
 ORDER BY metric, labels` }
           ],
-          children: [
-            { name: "metric", desc: "Histogram name", size: 3 },
-            { name: "labels", desc: "Bucket boundary and dimensions", size: 2 },
-            { name: "value", desc: "Observations in the bucket", size: 2 }
-          ]
         },
         {
           name: "system.user_processes",
@@ -1469,11 +1161,6 @@ ORDER BY memory_usage DESC` },
 FROM system.user_processes
 ORDER BY rows_read DESC` }
           ],
-          children: [
-            { name: "memory_usage", desc: "Memory currently attributed to the user", size: 3 },
-            { name: "peak_memory_usage", desc: "High-water mark", size: 2 },
-            { name: "ProfileEvents", desc: "Per-user event counters", size: 2 }
-          ]
         },
         {
           name: "system.jemalloc_stats",
@@ -1483,9 +1170,6 @@ ORDER BY rows_read DESC` }
             { label: "Allocator statistics", sql: `SELECT stats
 FROM system.jemalloc_stats` }
           ],
-          children: [
-            { name: "stats", desc: "Full jemalloc statistics dump", size: 3 }
-          ]
         },
         {
           name: "system.asynchronous_loader",
@@ -1503,12 +1187,6 @@ FROM system.asynchronous_loader
 WHERE is_blocked OR exception != ''
 LIMIT 20` }
           ],
-          children: [
-            { name: "status", desc: "Job lifecycle state", size: 3 },
-            { name: "elapsed", desc: "Time spent so far", size: 2 },
-            { name: "dependencies_left", desc: "Jobs still blocking this one", size: 2 },
-            { name: "execution_pool", desc: "Pool running the job", size: 1 }
-          ]
         },
         {
           name: "system.scheduler",
@@ -1521,12 +1199,6 @@ LIMIT 20` }
 FROM system.scheduler
 ORDER BY queue_length DESC` }
           ],
-          children: [
-            { name: "queue_length", desc: "Requests waiting", size: 3 },
-            { name: "throttling_us", desc: "Time spent throttled", size: 2 },
-            { name: "is_satisfied", desc: "Node within its limits", size: 2 },
-            { name: "resource", desc: "Resource being scheduled", size: 1 }
-          ]
         },
         {
           name: "system.workloads",
@@ -1537,10 +1209,6 @@ ORDER BY queue_length DESC` }
 FROM system.workloads
 ORDER BY parent, name` }
           ],
-          children: [
-            { name: "parent", desc: "Parent workload in the tree", size: 3 },
-            { name: "create_query", desc: "Definition including limits", size: 2 }
-          ]
         },
         {
           name: "system.resources",
@@ -1552,11 +1220,6 @@ ORDER BY parent, name` }
 FROM system.resources
 ORDER BY name` }
           ],
-          children: [
-            { name: "read_disks", desc: "Disks governed for reads", size: 3 },
-            { name: "write_disks", desc: "Disks governed for writes", size: 2 },
-            { name: "unit", desc: "Unit the limits are expressed in", size: 1 }
-          ]
         }
       ]
     },
@@ -1577,10 +1240,6 @@ WHERE level = 'Error'
 ORDER BY event_time DESC
 LIMIT 50` }
           ],
-          children: [
-            { name: "level", desc: "Fatal, Error, Warning, Info, Debug, Trace", size: 3 },
-            { name: "logger_name", desc: "Component name", size: 2 }
-          ]
         },
         {
           name: "system.errors",
@@ -1596,10 +1255,6 @@ FROM system.errors
 ORDER BY value DESC
 LIMIT 20` }
           ],
-          children: [
-            { name: "value", desc: "Total occurrences", size: 2 },
-            { name: "last_error_message", desc: "Most recent error text", size: 2 }
-          ]
         },
         {
           name: "system.crash_log",
@@ -1614,10 +1269,6 @@ LIMIT 20` }
 FROM system.crash_log
 ORDER BY event_time DESC` }
           ],
-          children: [
-            { name: "signal", desc: "SIGSEGV, SIGABRT, etc.", size: 2 },
-            { name: "trace_full", desc: "Full symbolized stack", size: 2 }
-          ]
         },
         {
           name: "system.session_log",
@@ -1633,11 +1284,6 @@ WHERE event_type =
   'LoginFailure'
 ORDER BY event_time DESC` }
           ],
-          children: [
-            { name: "LoginSuccess", desc: "Successful auth", size: 1 },
-            { name: "LoginFailure", desc: "Failed auth attempt", size: 2 },
-            { name: "Logout", desc: "Session ended", size: 1 }
-          ]
         },
         {
           name: "system.warnings",
@@ -1647,10 +1293,6 @@ ORDER BY event_time DESC` }
             { label: "All active warnings", sql: `SELECT message
 FROM system.warnings` }
           ],
-          children: [
-            { name: "message", desc: "Human-readable warning text", size: 3 },
-            { name: "message_format_string", desc: "Stable format string for grouping", size: 2 }
-          ]
         },
         {
           name: "system.error_log",
@@ -1671,12 +1313,6 @@ GROUP BY t, error
 ORDER BY t DESC
 LIMIT 50` }
           ],
-          children: [
-            { name: "error", desc: "Error name", size: 3 },
-            { name: "value", desc: "Cumulative count for this error", size: 2 },
-            { name: "remote", desc: "Raised on a remote server", size: 1 },
-            { name: "last_error_message", desc: "Most recent message for the code", size: 2 }
-          ]
         },
         {
           name: "system.background_schedule_pool_log",
@@ -1698,11 +1334,6 @@ WHERE error != 0
 ORDER BY event_time DESC
 LIMIT 20` }
           ],
-          children: [
-            { name: "duration_ms", desc: "Task execution time", size: 3 },
-            { name: "log_name", desc: "Task identifier", size: 2 },
-            { name: "exception", desc: "Failure detail when error is set", size: 2 }
-          ]
         }
       ]
     },
@@ -1721,10 +1352,6 @@ LIMIT 20` }
 FROM system.settings
 WHERE changed` }
           ],
-          children: [
-            { name: "changed", desc: "1 = differs from default", size: 2 },
-            { name: "readonly", desc: "0/1/2 restriction level", size: 1 }
-          ]
         },
         {
           name: "system.merge_tree_settings",
@@ -1741,10 +1368,6 @@ WHERE name IN (
   'min_rows_for_wide_part'
 )` }
           ],
-          children: [
-            { name: "index_granularity", desc: "Default 8192", size: 2 },
-            { name: "parts_to_throw_insert", desc: "Max parts before reject", size: 2 }
-          ]
         },
         {
           name: "system.server_settings",
@@ -1758,10 +1381,6 @@ FROM system.server_settings
 WHERE changed
 ORDER BY name` }
           ],
-          children: [
-            { name: "max_thread_pool_size", desc: "Global thread limit", size: 1 },
-            { name: "max_server_memory_usage", desc: "Server memory cap", size: 2 }
-          ]
         },
         {
           name: "system.quota_usage",
@@ -1774,10 +1393,6 @@ ORDER BY name` }
   errors, result_rows
 FROM system.quota_usage` }
           ],
-          children: [
-            { name: "queries", desc: "Queries consumed in window", size: 2 },
-            { name: "execution_time", desc: "Total CPU seconds used", size: 1 }
-          ]
         },
         {
           name: "system.storage_policies",
@@ -1791,10 +1406,6 @@ FROM system.quota_usage` }
   move_factor
 FROM system.storage_policies` }
           ],
-          children: [
-            { name: "volume_name", desc: "hot, warm, cold, etc.", size: 2 },
-            { name: "move_factor", desc: "Auto-move threshold (0-1)", size: 1 }
-          ]
         },
         {
           name: "system.database_engines",
@@ -1807,14 +1418,11 @@ FROM system.storage_policies` }
 FROM system.database_engines
 ORDER BY name` }
           ],
-          children: [
-            { name: "name", desc: "Engine name (Atomic, Lazy, etc.)", size: 2 }
-          ]
         },
         {
           name: "system.backups",
           desc: "Status of BACKUP/RESTORE operations.",
-          cols: ["id", "name", "status", "error", "start_time", "end_time", "num_files", "total_size", "uncompressed_size", "compressed_size"],
+          cols: ["id", "name", "status", "error", "start_time", "end_time", "num_files", "total_size", "uncompressed_size", "compressed_size", "settings", "engine_settings"],
           queries: [
             {
               label: "Backup status", sql: `SELECT name, status,
@@ -1825,12 +1433,6 @@ ORDER BY name` }
 FROM system.backups
 ORDER BY start_time DESC` }
           ],
-          children: [
-            { name: "status", desc: "CREATING, BACKUP_CREATED, ERROR", size: 2 },
-            { name: "compressed_size", desc: "Final backup size", size: 1 },
-            { name: "settings", desc: "Backup/restore settings requested for the operation", size: 1, since: "26.7" },
-            { name: "engine_settings", desc: "Engine-level settings for the operation", size: 1, since: "26.7" }
-          ]
         },
         {
           name: "system.documentation",
@@ -1847,11 +1449,6 @@ FROM system.documentation
 GROUP BY type
 ORDER BY entries DESC` }
           ],
-          children: [
-            { name: "type", desc: "Function, setting, table engine, …", size: 3 },
-            { name: "description", desc: "Rendered reference text", size: 2 },
-            { name: "source", desc: "Source file the docs come from", size: 1, since: "26.7" }
-          ]
         },
         {
           name: "system.handlers",
@@ -1864,11 +1461,6 @@ ORDER BY entries DESC` }
 FROM system.handlers
 ORDER BY name` }
           ],
-          children: [
-            { name: "url", desc: "Matched request path", size: 3 },
-            { name: "methods", desc: "Accepted HTTP methods", size: 2 },
-            { name: "query", desc: "SQL the handler runs", size: 2 }
-          ]
         },
         {
           name: "system.masking_policies",
@@ -1882,11 +1474,6 @@ ORDER BY name` }
 FROM system.masking_policies
 ORDER BY database, table` }
           ],
-          children: [
-            { name: "where_condition", desc: "Rows the policy applies to", size: 3 },
-            { name: "update_assignments", desc: "How matched values are masked", size: 2 },
-            { name: "priority", desc: "Evaluation order", size: 1 }
-          ]
         },
       ]
     },
@@ -1908,10 +1495,6 @@ FROM system.asynchronous_insert_log
 ORDER BY event_time DESC
 LIMIT 50` }
           ],
-          children: [
-            { name: "status", desc: "Ok, FlushError", size: 2 },
-            { name: "flush_time_microseconds", desc: "Buffer flush latency", size: 2 }
-          ]
         },
         {
           name: "system.moves",
@@ -1927,10 +1510,6 @@ LIMIT 50` }
     part_size)
 FROM system.moves` }
           ],
-          children: [
-            { name: "target_disk_name", desc: "s3, cold, etc.", size: 2 },
-            { name: "elapsed", desc: "Seconds in progress", size: 1 }
-          ]
         },
         {
           name: "system.zookeeper_log",
@@ -1945,10 +1524,6 @@ WHERE duration_ms > 100
 ORDER BY event_time DESC
 LIMIT 30` }
           ],
-          children: [
-            { name: "type", desc: "Create, Get, Set, Multi", size: 2 },
-            { name: "duration_ms", desc: "ZK operation latency", size: 2 }
-          ]
         },
         {
           name: "system.s3_queue_metadata",
@@ -1963,11 +1538,6 @@ LIMIT 30` }
 FROM system.s3_queue_metadata
 ORDER BY failed_nodes_count DESC` }
           ],
-          children: [
-            { name: "failed_nodes_count", desc: "Files that failed processing", size: 3 },
-            { name: "processing_nodes_count", desc: "Files in flight", size: 2 },
-            { name: "processed_nodes_count", desc: "Files completed", size: 2 }
-          ]
         },
         {
           name: "system.azure_queue_metadata",
@@ -1982,11 +1552,6 @@ ORDER BY failed_nodes_count DESC` }
 FROM system.azure_queue_metadata
 ORDER BY failed_nodes_count DESC` }
           ],
-          children: [
-            { name: "failed_nodes_count", desc: "Blobs that failed processing", size: 3 },
-            { name: "processing_nodes_count", desc: "Blobs in flight", size: 2 },
-            { name: "processed_nodes_count", desc: "Blobs completed", size: 2 }
-          ]
         },
         {
           name: "system.asynchronous_inserts",
@@ -2000,11 +1565,6 @@ ORDER BY failed_nodes_count DESC` }
 FROM system.asynchronous_inserts
 ORDER BY total_bytes DESC` }
           ],
-          children: [
-            { name: "total_bytes", desc: "Bytes waiting to flush", size: 3 },
-            { name: "first_update", desc: "When the buffer opened", size: 2 },
-            { name: "format", desc: "Insert format", size: 1 }
-          ]
         },
         {
           name: "system.kafka_consumers",
@@ -2024,11 +1584,6 @@ FROM system.kafka_consumers` },
 FROM system.kafka_consumers
 ORDER BY num_rebalance_revocations DESC` }
           ],
-          children: [
-            { name: "assignments.current_offset", desc: "Committed offset per partition", size: 3 },
-            { name: "num_rebalance_revocations", desc: "Partitions taken away", size: 2 },
-            { name: "is_currently_used", desc: "Consumer actively reading", size: 1 }
-          ]
         },
         {
           name: "system.s3queue_metadata_cache",
@@ -2046,11 +1601,6 @@ FROM system.s3queue_metadata_cache
 WHERE exception != ''
 LIMIT 20` }
           ],
-          children: [
-            { name: "status", desc: "Processing state for the file", size: 3 },
-            { name: "rows_processed", desc: "Rows ingested from the file", size: 2 },
-            { name: "exception", desc: "Failure detail", size: 2 }
-          ]
         }
       ]
     },
@@ -2070,10 +1620,6 @@ LIMIT 20` }
 FROM system.query_cache
 ORDER BY result_size DESC LIMIT 20` }
           ],
-          children: [
-            { name: "result_size", desc: "Size of cached result", size: 2 },
-            { name: "stale", desc: "Is cache entry stale", size: 1 }
-          ]
         },
         {
           name: "system.filesystem_cache",
@@ -2089,11 +1635,6 @@ ORDER BY result_size DESC LIMIT 20` }
 FROM system.filesystem_cache
 GROUP BY cache_name` }
           ],
-          children: [
-            { name: "size", desc: "Cached segment size", size: 2 },
-            { name: "cache_hits", desc: "Hits on this segment", size: 2 },
-            { name: "state", desc: "DOWNLOADED, PARTIALLY_DOWNLOADED", size: 1 }
-          ]
         },
         {
           name: "system.filesystem_cache_log",
@@ -2112,10 +1653,6 @@ GROUP BY query_id
 ORDER BY miss_pct DESC
 LIMIT 20` }
           ],
-          children: [
-            { name: "read_from_cache_bytes", desc: "Bytes served from local cache", size: 2 },
-            { name: "read_from_source_bytes", desc: "Bytes fetched from remote", size: 2 }
-          ]
         },
         {
           name: "system.dictionaries",
@@ -2129,11 +1666,6 @@ LIMIT 20` }
 FROM system.dictionaries
 ORDER BY bytes_allocated DESC` }
           ],
-          children: [
-            { name: "bytes_allocated", desc: "RAM used by dict", size: 3 },
-            { name: "element_count", desc: "Number of rows", size: 2 },
-            { name: "status", desc: "LOADED, NOT_LOADED, FAILED", size: 2 }
-          ]
         },
         {
           name: "system.dictionary_layouts",
@@ -2145,10 +1677,6 @@ ORDER BY bytes_allocated DESC` }
 FROM system.dictionary_layouts
 ORDER BY name` }
           ],
-          children: [
-            { name: "is_complex", desc: "Whether the layout takes a composite key", size: 2 },
-            { name: "introduced_in", desc: "Version the layout appeared in", size: 2 }
-          ]
         },
         {
           name: "system.dictionary_sources",
@@ -2160,10 +1688,6 @@ ORDER BY name` }
 FROM system.dictionary_sources
 ORDER BY name` }
           ],
-          children: [
-            { name: "introduced_in", desc: "Version the source appeared in", size: 2 },
-            { name: "syntax", desc: "Source declaration syntax", size: 2 }
-          ]
         },
         {
           name: "system.query_condition_cache",
@@ -2177,10 +1701,6 @@ FROM system.query_condition_cache
 ORDER BY entry_size DESC
 LIMIT 20` }
           ],
-          children: [
-            { name: "entry_size", desc: "Memory held by the entry", size: 3 },
-            { name: "matching_marks", desc: "Marks the condition matched", size: 2 }
-          ]
         },
         {
           name: "system.filesystem_cache_settings",
@@ -2195,12 +1715,6 @@ LIMIT 20` }
   current_elements_num, max_elements
 FROM system.filesystem_cache_settings` }
           ],
-          children: [
-            { name: "current_size", desc: "Bytes currently cached", size: 3 },
-            { name: "max_size", desc: "Configured capacity", size: 2 },
-            { name: "current_elements_num", desc: "Segments held", size: 2 },
-            { name: "is_initialized", desc: "Cache is ready", size: 1 }
-          ]
         },
         {
           name: "system.schema_inference_cache",
@@ -2213,11 +1727,6 @@ FROM system.schema_inference_cache
 ORDER BY registration_time DESC
 LIMIT 30` }
           ],
-          children: [
-            { name: "storage", desc: "File, URL, S3, HDFS, …", size: 3 },
-            { name: "schema", desc: "Inferred column definitions", size: 2 },
-            { name: "registration_time", desc: "When it was cached", size: 1 }
-          ]
         }
       ]
     }

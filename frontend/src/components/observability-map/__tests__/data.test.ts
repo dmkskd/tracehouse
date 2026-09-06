@@ -45,7 +45,6 @@ describe('observability catalog', { tags: ['observability'] }, () => {
     // Only real system tables have a column list; concept entries do not.
     if (table.name.startsWith('system.')) expect(table.cols.length).toBeGreaterThan(0);
     expect(table.queries.length).toBeGreaterThan(0);
-    expect(table.children.length).toBeGreaterThan(0);
   });
 
   it.each(allTables)('$table.name has runnable-looking diagnostics', ({ table }) => {
@@ -58,72 +57,46 @@ describe('observability catalog', { tags: ['observability'] }, () => {
 
   it.each(allTables)('$table.name declares valid version prerequisites', ({ table }) => {
     if (table.since !== undefined) expect(table.since).toMatch(SEMVER_MINOR);
-    for (const col of table.children) {
-      if (col.since !== undefined) expect(col.since).toMatch(SEMVER_MINOR);
-    }
   });
 
-  it.each(allTables)('$table.name has positive column weights', ({ table }) => {
-    for (const col of table.children) {
-      expect(col.name).not.toHaveLength(0);
-      expect(col.size).toBeGreaterThan(0);
-    }
+  it.each(allTables)('$table.name lists each column once', ({ table }) => {
+    expect(table.cols).toHaveLength(new Set(table.cols).size);
   });
 
-  it('propagates column-level version prerequisites into the hierarchy', () => {
-    const root = buildHierarchy(OBSERVABILITY_DATA);
-    const columns = root.children!.flatMap(c => c.children!.flatMap(t => t.children ?? []));
-
-    const versioned = columns.filter(c => c.meta?.since);
-    expect(versioned.length).toBeGreaterThan(0);
-    for (const col of versioned) {
-      expect(col.meta!.type).toBe('column');
-      expect(col.meta!.since).toMatch(SEMVER_MINOR);
-    }
-  });
-
-  it('tags every column node with its parent table', () => {
-    // Column names are not unique within a category, so a consumer resolving a
-    // selected column back to its table must use meta.table. Without it, generic
-    // names like `value` or `description` resolve to whichever table lists them
-    // first, opening the wrong table in the detail panel.
-    const root = buildHierarchy(OBSERVABILITY_DATA);
-
-    for (const cat of root.children!) {
-      for (const table of cat.children!) {
-        for (const col of table.children ?? []) {
-          expect(col.meta!.table).toBe(table.name);
-          expect(col.meta!.category).toBe(cat.name);
-        }
-      }
-    }
-  });
-
-  it('has column names that repeat within a category, so name-only lookup is unsafe', () => {
-    // Guards the assumption behind the test above: if this ever stops being true
-    // the parent-table tagging is still correct, but the bug it prevents is real
-    // today and this documents it.
-    const duplicated = OBSERVABILITY_DATA.children.flatMap(cat => {
-      const seen = new Map<string, number>();
-      for (const t of cat.children) {
-        for (const c of t.children) seen.set(c.name, (seen.get(c.name) ?? 0) + 1);
-      }
-      return [...seen.entries()].filter(([, n]) => n > 1).map(([name]) => `${cat.name}.${name}`);
-    });
-
-    expect(duplicated.length).toBeGreaterThan(0);
-  });
-
-  it('builds a hierarchy that preserves every table and column', () => {
+  it('builds a two-ring hierarchy: category then table, with tables as leaves', () => {
+    // The outer column ring was removed: its arc widths encoded a hand-assigned
+    // importance score rather than any measurable quantity, and because d3 sums
+    // leaf values upward it made the table and category widths meaningless too.
     const root = buildHierarchy(OBSERVABILITY_DATA);
     expect(root.children).toHaveLength(OBSERVABILITY_DATA.children.length);
 
     const built = root.children!.flatMap(c => c.children!);
     expect(built).toHaveLength(allTables.length);
 
-    const builtColumns = built.flatMap(t => t.children ?? []).length;
-    const sourceColumns = allTables.reduce((n, { table }) => n + table.children.length, 0);
-    expect(builtColumns).toBe(sourceColumns);
+    for (const table of built) {
+      expect(table.meta!.type).toBe('table');
+      expect(table.children).toBeUndefined();
+    }
+  });
+
+  it('gives every table an equal slice of its category', () => {
+    // Nothing about a system table has a magnitude worth encoding as arc width,
+    // so a category's width reflects only how many tables it holds.
+    const root = buildHierarchy(OBSERVABILITY_DATA);
+    const values = root.children!.flatMap(c => c.children!.map(t => t.value));
+    expect(new Set(values)).toEqual(new Set([1]));
+  });
+
+  it('carries the table payload the detail panel renders', () => {
+    const root = buildHierarchy(OBSERVABILITY_DATA);
+
+    for (const cat of root.children!) {
+      for (const table of cat.children!) {
+        expect(table.meta!.category).toBe(cat.name);
+        expect(table.meta!.desc).not.toHaveLength(0);
+        expect(table.meta!.queries!.length).toBeGreaterThan(0);
+      }
+    }
   });
 
   it('treats every table as available when the probe returns nothing', () => {
