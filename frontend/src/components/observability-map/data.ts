@@ -73,6 +73,15 @@ export interface SunburstNodeData {
   meta?: {
     type: 'root' | 'category' | 'table' | 'column';
     category?: string;
+    /**
+     * For column nodes: the qualified name of the table this column belongs to.
+     *
+     * Required to resolve a selected column back to its table. Column names are
+     * not unique within a category — System Resources alone has several tables
+     * exposing `value`, `metric`, `labels`, `description` and `name` — so
+     * matching on the column name alone opens the wrong table.
+     */
+    table?: string;
     color?: string;
     desc?: string;
     cols?: string[];
@@ -162,6 +171,7 @@ export function buildHierarchy(data: ObservabilityData): SunburstNodeData {
           meta: {
             type: 'column' as const,
             category: cat.name,
+            table: table.name,
             color: cat.color,
             desc: col.desc,
             size: col.size,
@@ -492,6 +502,29 @@ LIMIT 20` }
             { name: "query_id", desc: "Query that produced the sample", size: 2 }
           ]
         },
+        {
+          name: "system.stack_trace",
+          desc: "Unsymbolized stack traces for every thread in the server process. The last resort when the server is wedged and trace_log says nothing.",
+          cols: ["thread_name", "thread_id", "query_id", "trace", "untracked_memory"],
+          queries: [
+            { label: "Threads by name", sql: `SELECT thread_name, count() AS threads
+FROM system.stack_trace
+GROUP BY thread_name
+ORDER BY threads DESC` },
+            { label: "Traces for running queries", sql: `SELECT thread_name, thread_id, query_id,
+  arrayStringConcat(
+    arrayMap(x -> demangle(addressToSymbol(x)),
+    trace), '\n') AS stack
+FROM system.stack_trace
+WHERE query_id != ''
+LIMIT 5` }
+          ],
+          children: [
+            { name: "trace", desc: "Raw instruction addresses", size: 3 },
+            { name: "thread_name", desc: "Thread role", size: 2 },
+            { name: "query_id", desc: "Query the thread serves, when any", size: 2 }
+          ]
+        }
       ]
     },
     {
@@ -579,6 +612,7 @@ FROM system.merges` }
             { name: "num_parts", desc: "Source parts being merged", size: 1 },
             { name: "is_mutation", desc: "ALTER UPDATE/DELETE merge", size: 2 },
             { name: "current_projection", desc: "Projection currently being merged", size: 1, since: "26.6" },
+            { name: "current_projection_progress", desc: "Progress of the projection being merged, 0.0 to 1.0", size: 1, since: "26.6" },
             { name: "projections_completed", desc: "Projections merged so far", size: 1, since: "26.6" },
             { name: "projections_remaining", desc: "Projections still to merge", size: 1, since: "26.6" }
           ]
@@ -683,6 +717,30 @@ LIMIT 20` }
             { name: "size", desc: "Size of the file (compressed)", size: 2 }
           ]
         },
+        {
+          name: "system.projection_parts",
+          desc: "Projection parts on disk, one row per projection copy of a parent part, with size and broken-part state.",
+          cols: ["partition", "name", "part_type", "parent_name", "parent_part_type", "bytes", "marks_size", "part_name", "is_broken", "exception_code", "exception"],
+          queries: [
+            { label: "Projection footprint", sql: `SELECT parent_name, name,
+  count() AS parts,
+  formatReadableSize(sum(bytes)) AS total
+FROM system.projection_parts
+GROUP BY parent_name, name
+ORDER BY sum(bytes) DESC
+LIMIT 20` },
+            { label: "Broken projection parts", sql: `SELECT parent_name, name, part_name,
+  exception_code, exception
+FROM system.projection_parts
+WHERE is_broken
+ORDER BY parent_name` }
+          ],
+          children: [
+            { name: "bytes", desc: "Size of the projection part", size: 3 },
+            { name: "is_broken", desc: "Projection part failed validation", size: 2 },
+            { name: "parent_name", desc: "Part this projection belongs to", size: 2 }
+          ]
+        }
       ]
     },
     {
@@ -895,6 +953,77 @@ ORDER BY name` }
             { name: "syntax", desc: "Declaration syntax", size: 2 }
           ]
         },
+        {
+          name: "system.projections",
+          desc: "Every projection defined across all tables, with its type, sorting key and query. The schema-side counterpart to system.projection_parts.",
+          cols: ["database", "table", "name", "type", "sorting_key", "query", "settings"],
+          queries: [
+            { label: "Projections by table", sql: `SELECT database, table, name,
+  type, sorting_key
+FROM system.projections
+ORDER BY database, table` }
+          ],
+          children: [
+            { name: "type", desc: "Aggregate or normal projection", size: 3 },
+            { name: "sorting_key", desc: "Projection ordering", size: 2 },
+            { name: "query", desc: "Projection definition", size: 2 }
+          ]
+        },
+        {
+          name: "system.view_refreshes",
+          desc: "Refreshable materialized views on this server: last refresh outcome, duration, progress and next scheduled run.",
+          cols: ["database", "view", "status", "last_success_time", "last_success_duration_ms", "read_rows", "written_rows", "last_refresh_time", "next_refresh_time", "exception", "retry", "progress"],
+          queries: [
+            { label: "Refresh health", sql: `SELECT database, view, status,
+  last_success_time,
+  last_success_duration_ms,
+  next_refresh_time
+FROM system.view_refreshes
+ORDER BY last_success_time ASC` },
+            { label: "Failing refreshes", sql: `SELECT database, view, status,
+  retry, exception
+FROM system.view_refreshes
+WHERE exception != ''
+ORDER BY database, view` }
+          ],
+          children: [
+            { name: "status", desc: "Scheduled, running or errored", size: 3 },
+            { name: "exception", desc: "Failure detail from the last run", size: 2 },
+            { name: "last_success_duration_ms", desc: "Duration of the last good refresh", size: 2 },
+            { name: "next_refresh_time", desc: "When it runs again", size: 1 }
+          ]
+        },
+        {
+          name: "system.detached_tables",
+          desc: "Tables detached on this server, including whether the detach is permanent. Explains tables that vanished from system.tables.",
+          cols: ["database", "table", "uuid", "metadata_path", "is_permanently"],
+          queries: [
+            { label: "Detached tables", sql: `SELECT database, table,
+  is_permanently, metadata_path
+FROM system.detached_tables
+ORDER BY database, table` }
+          ],
+          children: [
+            { name: "is_permanently", desc: "DETACH PERMANENTLY vs session detach", size: 3 },
+            { name: "metadata_path", desc: "Where the definition lives on disk", size: 2 }
+          ]
+        },
+        {
+          name: "system.dropped_tables",
+          desc: "Tables dropped from Atomic databases whose data has not been removed yet. Explains disk still held after a DROP.",
+          cols: ["index", "database", "table", "uuid", "engine", "metadata_dropped_path", "table_dropped_time"],
+          queries: [
+            { label: "Pending drops", sql: `SELECT database, table, engine,
+  table_dropped_time
+FROM system.dropped_tables
+ORDER BY table_dropped_time` }
+          ],
+          children: [
+            { name: "table_dropped_time", desc: "When the DROP was issued", size: 3 },
+            { name: "engine", desc: "Engine of the dropped table", size: 2 },
+            { name: "metadata_dropped_path", desc: "Retained metadata location", size: 1 }
+          ]
+        }
       ]
     },
     {
@@ -1013,6 +1142,90 @@ WHERE path =
           children: [
             { name: "path", desc: "ZK znode path", size: 2 },
             { name: "numChildren", desc: "Child znodes", size: 1 }
+          ]
+        },
+        {
+          name: "system.database_replicas",
+          desc: "Status of every Replicated database replica on this server, including log pointer lag and Keeper session health.",
+          cols: ["database", "is_readonly", "max_log_ptr", "replica_name", "replica_path", "zookeeper_path", "shard_name", "log_ptr", "total_replicas", "zookeeper_exception", "is_session_expired"],
+          queries: [
+            { label: "Replicated database lag", sql: `SELECT database, replica_name,
+  log_ptr, max_log_ptr,
+  max_log_ptr - log_ptr AS entries_behind,
+  is_readonly, is_session_expired
+FROM system.database_replicas
+ORDER BY entries_behind DESC` }
+          ],
+          children: [
+            { name: "log_ptr", desc: "Entries this replica has applied", size: 3 },
+            { name: "max_log_ptr", desc: "Latest entry in the log", size: 2 },
+            { name: "is_readonly", desc: "Replica cannot accept DDL", size: 2 },
+            { name: "is_session_expired", desc: "Keeper session lost", size: 2 }
+          ]
+        },
+        {
+          name: "system.distributed_ddl_queue",
+          desc: "ON CLUSTER DDL queries and their per-host execution status. The place to look when a distributed DDL appears stuck.",
+          cols: ["entry", "initiator_host", "cluster", "query", "exception_text", "query_finish_time", "query_duration_ms", "query_create_time", "host", "status", "exception_code"],
+          queries: [
+            { label: "Unfinished distributed DDL", sql: `SELECT entry, cluster, host, status,
+  query_create_time, query
+FROM system.distributed_ddl_queue
+WHERE status != 'Finished'
+ORDER BY query_create_time DESC` },
+            { label: "Failed distributed DDL", sql: `SELECT entry, host, exception_code,
+  exception_text, query
+FROM system.distributed_ddl_queue
+WHERE exception_code != 0
+ORDER BY query_create_time DESC
+LIMIT 20` }
+          ],
+          children: [
+            { name: "status", desc: "Per-host execution state", size: 3 },
+            { name: "exception_text", desc: "Failure detail", size: 2 },
+            { name: "query_duration_ms", desc: "Execution time on the host", size: 2 },
+            { name: "cluster", desc: "Target cluster", size: 1 }
+          ]
+        },
+        {
+          name: "system.zookeeper_connection",
+          desc: "Live [Zoo]Keeper connections, including which host is in use, session uptime and negotiated feature flags. Complements system.zookeeper_log.",
+          cols: ["name", "host", "port", "index", "connected_time", "session_uptime_elapsed_seconds", "session_timeout_ms", "last_zxid_seen", "is_expired", "keeper_api_version", "client_id", "availability_zone"],
+          queries: [
+            { label: "Current Keeper connections", sql: `SELECT name, host, port,
+  connected_time,
+  session_uptime_elapsed_seconds,
+  is_expired, availability_zone
+FROM system.zookeeper_connection` }
+          ],
+          children: [
+            { name: "host", desc: "Keeper host currently connected to", size: 3 },
+            { name: "session_uptime_elapsed_seconds", desc: "How long the session has held", size: 2 },
+            { name: "is_expired", desc: "Session has expired", size: 2 },
+            { name: "last_zxid_seen", desc: "Last transaction id observed", size: 1 }
+          ]
+        },
+        {
+          name: "system.part_moves_between_shards",
+          desc: "Parts currently moving between shards, with progress and failure state. Only relevant when using MOVE PART TO SHARD.",
+          cols: ["database", "table", "task_name", "create_time", "part_name", "num_tries", "last_exception", "to_shard", "dst_part_name", "update_time", "state"],
+          queries: [
+            { label: "In-flight shard moves", sql: `SELECT database, table, part_name,
+  to_shard, state, num_tries,
+  create_time, update_time
+FROM system.part_moves_between_shards
+ORDER BY create_time DESC` },
+            { label: "Retrying or failing moves", sql: `SELECT database, table, part_name,
+  state, num_tries, last_exception
+FROM system.part_moves_between_shards
+WHERE num_tries > 0
+ORDER BY num_tries DESC` }
+          ],
+          children: [
+            { name: "state", desc: "Current stage of the move", size: 3 },
+            { name: "num_tries", desc: "Retry count", size: 2 },
+            { name: "last_exception", desc: "Most recent failure", size: 2 },
+            { name: "to_shard", desc: "Destination shard", size: 1 }
           ]
         }
       ]
@@ -1184,6 +1397,167 @@ ORDER BY name` }
             { name: "description", desc: "What the disk type does", size: 2 }
           ]
         },
+        {
+          name: "system.asynchronous_metric_log",
+          desc: "Historical values of system.asynchronous_metrics, sampled once per interval. The time-series counterpart to the point-in-time metrics table.",
+          cols: ["hostname", "event_date", "event_time", "metric", "value"],
+          queries: [
+            { label: "Metric over the last hour", sql: `SELECT event_time, value
+FROM system.asynchronous_metric_log
+WHERE metric = 'OSMemoryAvailable'
+  AND event_time > now() - INTERVAL 1 HOUR
+ORDER BY event_time` },
+            { label: "Most volatile metrics today", sql: `SELECT metric,
+  round(max(value) - min(value), 2) AS spread
+FROM system.asynchronous_metric_log
+WHERE event_date = today()
+GROUP BY metric
+ORDER BY spread DESC
+LIMIT 20` }
+          ],
+          children: [
+            { name: "metric", desc: "Asynchronous metric name", size: 3 },
+            { name: "value", desc: "Sampled value", size: 2 },
+            { name: "event_time", desc: "Sample timestamp", size: 2 }
+          ]
+        },
+        {
+          name: "system.dimensional_metrics",
+          desc: "Metrics carrying labels, so a single metric can be broken down by dimension, for example failed merges by error code. Exported to Prometheus.",
+          cols: ["metric", "value", "description", "labels", "name"],
+          queries: [
+            { label: "Dimensional metrics with labels", sql: `SELECT metric, labels, value, description
+FROM system.dimensional_metrics
+WHERE value != 0
+ORDER BY metric` }
+          ],
+          children: [
+            { name: "labels", desc: "Dimension keys and values", size: 3 },
+            { name: "value", desc: "Current value", size: 2 },
+            { name: "description", desc: "What the metric counts", size: 2 }
+          ]
+        },
+        {
+          name: "system.histogram_metrics",
+          desc: "Histogram metrics computed on demand, such as Keeper response time, in a Prometheus-compatible shape.",
+          cols: ["metric", "value", "description", "labels", "name"],
+          queries: [
+            { label: "Histogram buckets", sql: `SELECT metric, labels, value, description
+FROM system.histogram_metrics
+WHERE value != 0
+ORDER BY metric, labels` }
+          ],
+          children: [
+            { name: "metric", desc: "Histogram name", size: 3 },
+            { name: "labels", desc: "Bucket boundary and dimensions", size: 2 },
+            { name: "value", desc: "Observations in the bucket", size: 2 }
+          ]
+        },
+        {
+          name: "system.user_processes",
+          desc: "Per-user memory usage and ProfileEvents totals, aggregating what system.processes shows per query.",
+          cols: ["user", "memory_usage", "peak_memory_usage", "ProfileEvents"],
+          queries: [
+            { label: "Memory by user", sql: `SELECT user,
+  formatReadableSize(memory_usage) AS current,
+  formatReadableSize(peak_memory_usage) AS peak
+FROM system.user_processes
+ORDER BY memory_usage DESC` },
+            { label: "Read volume by user", sql: `SELECT user,
+  ProfileEvents['SelectedRows'] AS rows_read,
+  ProfileEvents['SelectedBytes'] AS bytes_read
+FROM system.user_processes
+ORDER BY rows_read DESC` }
+          ],
+          children: [
+            { name: "memory_usage", desc: "Memory currently attributed to the user", size: 3 },
+            { name: "peak_memory_usage", desc: "High-water mark", size: 2 },
+            { name: "ProfileEvents", desc: "Per-user event counters", size: 2 }
+          ]
+        },
+        {
+          name: "system.jemalloc_stats",
+          desc: "Raw jemalloc allocator statistics in a single row, equivalent to SYSTEM JEMALLOC STATS. For diagnosing allocator fragmentation.",
+          cols: ["stats"],
+          queries: [
+            { label: "Allocator statistics", sql: `SELECT stats
+FROM system.jemalloc_stats` }
+          ],
+          children: [
+            { name: "stats", desc: "Full jemalloc statistics dump", size: 3 }
+          ]
+        },
+        {
+          name: "system.asynchronous_loader",
+          desc: "Recent asynchronous jobs such as table loading, with dependencies, pool and timing. Explains why startup or attach is slow.",
+          cols: ["job", "job_id", "dependencies", "dependencies_left", "status", "is_executing", "schedule_time", "start_time", "finish_time", "execution_pool", "execution_priority", "exception", "is_blocked", "elapsed"],
+          queries: [
+            { label: "Slowest load jobs", sql: `SELECT job, status, execution_pool,
+  elapsed, dependencies_left
+FROM system.asynchronous_loader
+ORDER BY elapsed DESC
+LIMIT 20` },
+            { label: "Blocked jobs", sql: `SELECT job, status, dependencies_left,
+  is_blocked, exception
+FROM system.asynchronous_loader
+WHERE is_blocked OR exception != ''
+LIMIT 20` }
+          ],
+          children: [
+            { name: "status", desc: "Job lifecycle state", size: 3 },
+            { name: "elapsed", desc: "Time spent so far", size: 2 },
+            { name: "dependencies_left", desc: "Jobs still blocking this one", size: 2 },
+            { name: "execution_pool", desc: "Pool running the job", size: 1 }
+          ]
+        },
+        {
+          name: "system.scheduler",
+          desc: "Workload scheduling nodes on this server, with queue depth, throttling and admission counters. Shows where workload limits bite.",
+          cols: ["resource", "path", "type", "weight", "priority", "pending", "queue_length", "queue_cost", "throttling_us", "max_speed", "max_burst", "is_satisfied"],
+          queries: [
+            { label: "Scheduler queues", sql: `SELECT resource, path, type,
+  queue_length, queue_cost,
+  throttling_us, is_satisfied
+FROM system.scheduler
+ORDER BY queue_length DESC` }
+          ],
+          children: [
+            { name: "queue_length", desc: "Requests waiting", size: 3 },
+            { name: "throttling_us", desc: "Time spent throttled", size: 2 },
+            { name: "is_satisfied", desc: "Node within its limits", size: 2 },
+            { name: "resource", desc: "Resource being scheduled", size: 1 }
+          ]
+        },
+        {
+          name: "system.workloads",
+          desc: "Workloads defined with CREATE WORKLOAD, forming the hierarchy that the scheduler enforces.",
+          cols: ["name", "parent", "create_query"],
+          queries: [
+            { label: "Workload hierarchy", sql: `SELECT name, parent, create_query
+FROM system.workloads
+ORDER BY parent, name` }
+          ],
+          children: [
+            { name: "parent", desc: "Parent workload in the tree", size: 3 },
+            { name: "create_query", desc: "Definition including limits", size: 2 }
+          ]
+        },
+        {
+          name: "system.resources",
+          desc: "Resources defined with CREATE RESOURCE, mapping scheduler control onto specific disks for read and write.",
+          cols: ["name", "read_disks", "write_disks", "unit", "create_query"],
+          queries: [
+            { label: "Defined resources", sql: `SELECT name, unit,
+  read_disks, write_disks
+FROM system.resources
+ORDER BY name` }
+          ],
+          children: [
+            { name: "read_disks", desc: "Disks governed for reads", size: 3 },
+            { name: "write_disks", desc: "Disks governed for writes", size: 2 },
+            { name: "unit", desc: "Unit the limits are expressed in", size: 1 }
+          ]
+        }
       ]
     },
     {
@@ -1263,6 +1637,71 @@ ORDER BY event_time DESC` }
             { name: "LoginSuccess", desc: "Successful auth", size: 1 },
             { name: "LoginFailure", desc: "Failed auth attempt", size: 2 },
             { name: "Logout", desc: "Session ended", size: 1 }
+          ]
+        },
+        {
+          name: "system.warnings",
+          desc: "Server configuration warnings, the same ones clickhouse-client prints on connect. A fast first look when a server behaves oddly.",
+          cols: ["message", "message_format_string"],
+          queries: [
+            { label: "All active warnings", sql: `SELECT message
+FROM system.warnings` }
+          ],
+          children: [
+            { name: "message", desc: "Human-readable warning text", size: 3 },
+            { name: "message_format_string", desc: "Stable format string for grouping", size: 2 }
+          ]
+        },
+        {
+          name: "system.error_log",
+          desc: "Periodic snapshots of system.errors flushed to disk, giving error counts over time rather than only the current totals.",
+          cols: ["hostname", "event_date", "event_time", "code", "error", "value", "remote", "last_error_message", "last_error_query_id"],
+          queries: [
+            { label: "Top errors today", sql: `SELECT error, max(value) AS occurrences
+FROM system.error_log
+WHERE event_date = today()
+GROUP BY error
+ORDER BY occurrences DESC
+LIMIT 20` },
+            { label: "Error growth last hour", sql: `SELECT toStartOfMinute(event_time) AS t,
+  error, max(value) AS total
+FROM system.error_log
+WHERE event_time > now() - INTERVAL 1 HOUR
+GROUP BY t, error
+ORDER BY t DESC
+LIMIT 50` }
+          ],
+          children: [
+            { name: "error", desc: "Error name", size: 3 },
+            { name: "value", desc: "Cumulative count for this error", size: 2 },
+            { name: "remote", desc: "Raised on a remote server", size: 1 },
+            { name: "last_error_message", desc: "Most recent message for the code", size: 2 }
+          ]
+        },
+        {
+          name: "system.background_schedule_pool_log",
+          desc: "History of background schedule pool task executions, with per-task duration and exceptions. Useful when background work stalls.",
+          cols: ["hostname", "event_date", "event_time", "query_id", "database", "table", "log_name", "duration_ms", "error", "exception"],
+          queries: [
+            { label: "Slowest background tasks", sql: `SELECT log_name, database, table,
+  max(duration_ms) AS slowest_ms,
+  count() AS runs
+FROM system.background_schedule_pool_log
+WHERE event_date = today()
+GROUP BY log_name, database, table
+ORDER BY slowest_ms DESC
+LIMIT 20` },
+            { label: "Failing background tasks", sql: `SELECT event_time, log_name, database,
+  table, exception
+FROM system.background_schedule_pool_log
+WHERE error != 0
+ORDER BY event_time DESC
+LIMIT 20` }
+          ],
+          children: [
+            { name: "duration_ms", desc: "Task execution time", size: 3 },
+            { name: "log_name", desc: "Task identifier", size: 2 },
+            { name: "exception", desc: "Failure detail when error is set", size: 2 }
           ]
         }
       ]
@@ -1549,6 +1988,70 @@ ORDER BY failed_nodes_count DESC` }
             { name: "processed_nodes_count", desc: "Blobs completed", size: 2 }
           ]
         },
+        {
+          name: "system.asynchronous_inserts",
+          desc: "Asynchronous inserts still buffered in server memory, before they are flushed. The in-flight counterpart to system.asynchronous_insert_log.",
+          cols: ["query", "database", "table", "format", "first_update", "total_bytes", "entries.query_id", "entries.bytes"],
+          queries: [
+            { label: "Pending async insert buffers", sql: `SELECT database, table, format,
+  first_update,
+  formatReadableSize(total_bytes) AS buffered,
+  length(entries.query_id) AS queries
+FROM system.asynchronous_inserts
+ORDER BY total_bytes DESC` }
+          ],
+          children: [
+            { name: "total_bytes", desc: "Bytes waiting to flush", size: 3 },
+            { name: "first_update", desc: "When the buffer opened", size: 2 },
+            { name: "format", desc: "Insert format", size: 1 }
+          ]
+        },
+        {
+          name: "system.kafka_consumers",
+          desc: "Kafka engine consumers with partition assignments, offsets, rebalance counts and librdkafka statistics. The place to diagnose consumer lag.",
+          cols: ["database", "table", "consumer_id", "assignments.topic", "assignments.partition_id", "assignments.current_offset", "num_commits", "last_rebalance_time", "num_rebalance_revocations", "num_rebalance_assignments", "is_currently_used", "last_used"],
+          queries: [
+            { label: "Consumer offsets", sql: `SELECT database, table, consumer_id,
+  assignments.topic,
+  assignments.partition_id,
+  assignments.current_offset
+FROM system.kafka_consumers` },
+            { label: "Rebalance churn", sql: `SELECT database, table, consumer_id,
+  num_commits,
+  num_rebalance_assignments,
+  num_rebalance_revocations,
+  last_rebalance_time
+FROM system.kafka_consumers
+ORDER BY num_rebalance_revocations DESC` }
+          ],
+          children: [
+            { name: "assignments.current_offset", desc: "Committed offset per partition", size: 3 },
+            { name: "num_rebalance_revocations", desc: "Partitions taken away", size: 2 },
+            { name: "is_currently_used", desc: "Consumer actively reading", size: 1 }
+          ]
+        },
+        {
+          name: "system.s3queue_metadata_cache",
+          desc: "In-memory S3Queue processing state per file, including status and rows processed. Reads the cache rather than Keeper, unlike system.s3_queue_metadata.",
+          cols: ["zookeeper_path", "file_path", "file_name", "rows_processed", "status", "processing_start_time", "processing_end_time", "exception"],
+          queries: [
+            { label: "S3Queue file status", sql: `SELECT zookeeper_path, file_name,
+  status, rows_processed,
+  processing_start_time
+FROM system.s3queue_metadata_cache
+ORDER BY processing_start_time DESC
+LIMIT 50` },
+            { label: "Failed S3Queue files", sql: `SELECT file_path, status, exception
+FROM system.s3queue_metadata_cache
+WHERE exception != ''
+LIMIT 20` }
+          ],
+          children: [
+            { name: "status", desc: "Processing state for the file", size: 3 },
+            { name: "rows_processed", desc: "Rows ingested from the file", size: 2 },
+            { name: "exception", desc: "Failure detail", size: 2 }
+          ]
+        }
       ]
     },
     {
@@ -1662,6 +2165,60 @@ ORDER BY name` }
             { name: "syntax", desc: "Source declaration syntax", size: 2 }
           ]
         },
+        {
+          name: "system.query_condition_cache",
+          desc: "Entries in the query condition cache, which remembers which marks a WHERE condition matched so later queries can skip them.",
+          cols: ["key_hash", "entry_size", "matching_marks"],
+          queries: [
+            { label: "Condition cache contents", sql: `SELECT key_hash,
+  formatReadableSize(entry_size) AS size,
+  length(matching_marks) AS marks
+FROM system.query_condition_cache
+ORDER BY entry_size DESC
+LIMIT 20` }
+          ],
+          children: [
+            { name: "entry_size", desc: "Memory held by the entry", size: 3 },
+            { name: "matching_marks", desc: "Marks the condition matched", size: 2 }
+          ]
+        },
+        {
+          name: "system.filesystem_cache_settings",
+          desc: "Configured limits and live utilisation for every filesystem cache, alongside the per-entry view in system.filesystem_cache.",
+          cols: ["cache_name", "path", "max_size", "max_elements", "max_file_segment_size", "boundary_alignment", "is_initialized", "current_size", "current_elements_num"],
+          queries: [
+            { label: "Cache utilisation", sql: `SELECT cache_name,
+  formatReadableSize(current_size) AS used,
+  formatReadableSize(max_size) AS capacity,
+  round(current_size / nullIf(max_size, 0) * 100, 1)
+    AS pct_full,
+  current_elements_num, max_elements
+FROM system.filesystem_cache_settings` }
+          ],
+          children: [
+            { name: "current_size", desc: "Bytes currently cached", size: 3 },
+            { name: "max_size", desc: "Configured capacity", size: 2 },
+            { name: "current_elements_num", desc: "Segments held", size: 2 },
+            { name: "is_initialized", desc: "Cache is ready", size: 1 }
+          ]
+        },
+        {
+          name: "system.schema_inference_cache",
+          desc: "Schemas inferred from files, URLs and object storage, cached to avoid re-reading sources. Explains stale-schema surprises on file-backed tables.",
+          cols: ["storage", "source", "format", "additional_format_info", "registration_time", "schema", "number_of_rows", "schema_inference_mode"],
+          queries: [
+            { label: "Cached inferred schemas", sql: `SELECT storage, format, source,
+  registration_time, number_of_rows
+FROM system.schema_inference_cache
+ORDER BY registration_time DESC
+LIMIT 30` }
+          ],
+          children: [
+            { name: "storage", desc: "File, URL, S3, HDFS, …", size: 3 },
+            { name: "schema", desc: "Inferred column definitions", size: 2 },
+            { name: "registration_time", desc: "When it was cached", size: 1 }
+          ]
+        }
       ]
     }
   ]

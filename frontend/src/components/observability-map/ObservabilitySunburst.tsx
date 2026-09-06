@@ -326,7 +326,10 @@ export const ObservabilitySunburst: React.FC<ObservabilitySunburstProps> = ({
     if (focusedNode) {
       const found = partitionedRoot.descendants().find(d =>
         d.data.name === focusedNode.data.name &&
-        d.data.meta?.type === focusedNode.data.meta?.type
+        d.data.meta?.type === focusedNode.data.meta?.type &&
+        // Column names are not unique across tables; disambiguate by owner.
+        (focusedNode.data.meta?.type !== 'column' ||
+          d.data.meta?.table === focusedNode.data.meta?.table)
       );
       if (found) focus = found;
     }
@@ -392,10 +395,20 @@ export const ObservabilitySunburst: React.FC<ObservabilitySunburstProps> = ({
       return base;
     };
 
-    // Check if a node (or its ancestor) matches the currently selected node
+    // Check if a node (or its ancestor) matches the currently selected node.
+    //
+    // Column names repeat across tables — System Resources alone has several
+    // tables exposing `labels`, `value` and `metric` — so a column must be
+    // matched on its parent table as well as its name, or every same-named
+    // segment in the ring lights up together.
     const isSelected = (d: PartitionedNode): boolean => {
       if (!selectedNodeProp) return false;
-      return d.data.name === selectedNodeProp.name && d.data.meta?.type === selectedNodeProp.meta?.type;
+      if (d.data.name !== selectedNodeProp.name) return false;
+      if (d.data.meta?.type !== selectedNodeProp.meta?.type) return false;
+      if (selectedNodeProp.meta?.type === 'column') {
+        return d.data.meta?.table === selectedNodeProp.meta?.table;
+      }
+      return true;
     };
     const isSelectedOrParent = (d: PartitionedNode): boolean => {
       if (!selectedNodeProp) return false;
@@ -403,14 +416,14 @@ export const ObservabilitySunburst: React.FC<ObservabilitySunburstProps> = ({
       // Check if this node is an ancestor of the selected node
       const selType = selectedNodeProp.meta?.type;
       if (selType === 'column' && d.data.meta?.type === 'table') {
-        return d.children?.some(c => c.data.name === selectedNodeProp.name && c.data.meta?.type === 'column') ?? false;
+        return d.data.name === selectedNodeProp.meta?.table;
       }
       if ((selType === 'table' || selType === 'column') && d.data.meta?.type === 'category') {
         if (selType === 'table') {
           return d.children?.some(c => c.data.name === selectedNodeProp.name) ?? false;
         }
-        // column: check grandchildren
-        return d.children?.some(t => t.children?.some(c => c.data.name === selectedNodeProp.name && c.data.meta?.type === 'column')) ?? false;
+        // column: the owning category is recorded on the node
+        return d.data.name === selectedNodeProp.meta?.category;
       }
       return false;
     };

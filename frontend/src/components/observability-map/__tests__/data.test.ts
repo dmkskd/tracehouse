@@ -82,6 +82,38 @@ describe('observability catalog', { tags: ['observability'] }, () => {
     }
   });
 
+  it('tags every column node with its parent table', () => {
+    // Column names are not unique within a category, so a consumer resolving a
+    // selected column back to its table must use meta.table. Without it, generic
+    // names like `value` or `description` resolve to whichever table lists them
+    // first, opening the wrong table in the detail panel.
+    const root = buildHierarchy(OBSERVABILITY_DATA);
+
+    for (const cat of root.children!) {
+      for (const table of cat.children!) {
+        for (const col of table.children ?? []) {
+          expect(col.meta!.table).toBe(table.name);
+          expect(col.meta!.category).toBe(cat.name);
+        }
+      }
+    }
+  });
+
+  it('has column names that repeat within a category, so name-only lookup is unsafe', () => {
+    // Guards the assumption behind the test above: if this ever stops being true
+    // the parent-table tagging is still correct, but the bug it prevents is real
+    // today and this documents it.
+    const duplicated = OBSERVABILITY_DATA.children.flatMap(cat => {
+      const seen = new Map<string, number>();
+      for (const t of cat.children) {
+        for (const c of t.children) seen.set(c.name, (seen.get(c.name) ?? 0) + 1);
+      }
+      return [...seen.entries()].filter(([, n]) => n > 1).map(([name]) => `${cat.name}.${name}`);
+    });
+
+    expect(duplicated.length).toBeGreaterThan(0);
+  });
+
   it('builds a hierarchy that preserves every table and column', () => {
     const root = buildHierarchy(OBSERVABILITY_DATA);
     expect(root.children).toHaveLength(OBSERVABILITY_DATA.children.length);

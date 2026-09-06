@@ -199,12 +199,13 @@ export const DetailSidebar: React.FC<DetailSidebarProps> = ({
     // Walk up: find parent table
     const cat = sourceData.children.find(c => c.name === selectedNode.meta!.category);
     if (cat) {
-      for (const table of cat.children) {
-        if (table.children.some(c => c.name === selectedNode.name)) {
-          tableInfo = { category: cat.name, color: cat.color, table };
-          selectedColumn = selectedNode.name;
-          break;
-        }
+      // Resolve by the parent table recorded on the node. Matching on the column
+      // name alone picks the first table in the category exposing that name, which
+      // opens the wrong table for generic columns like `value` or `description`.
+      const parent = cat.children.find(t => t.name === selectedNode.meta!.table);
+      if (parent) {
+        tableInfo = { category: cat.name, color: cat.color, table: parent };
+        selectedColumn = selectedNode.name;
       }
     }
   } else if (selectedNode?.meta?.type === 'category') {
