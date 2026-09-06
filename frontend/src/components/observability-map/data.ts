@@ -3,7 +3,24 @@
  *
  * System tables organized by category with key columns and diagnostic queries.
  * Based on Brendan Gregg-style observability tool maps adapted for ClickHouse.
+ *
+ * ── Catalog currency ──────────────────────────────────────────
+ * LAST_ANALYSED_CH_VERSION: 26.8.2.7  (verified 2026-09-06)
+ *
+ * The catalog is curated, not exhaustive: it covers system tables useful for
+ * observability and deliberately omits reference/lookup tables (system.numbers,
+ * system.collations, system.keywords, system.time_zones, …).
+ *
+ * To re-verify against a running server, diff this catalog against:
+ *   SELECT name FROM system.tables WHERE database = 'system' ORDER BY name;
+ *   SELECT table, name FROM system.columns WHERE database = 'system';
+ *
+ * Note that log tables (query_views_log, session_log, zookeeper_log, crash_log,
+ * filesystem_cache_log, …) only materialise once enabled in config or once they
+ * first receive data, so their absence from a live server is not a catalog error.
+ * The `available` flag is resolved at runtime by the probe below.
  */
+export const LAST_ANALYSED_CH_VERSION = '26.8.2.7';
 
 // ─── Domain types ────────────────────────────────────────────
 
@@ -16,6 +33,11 @@ export interface ObservabilityColumn {
   name: string;
   desc: string;
   size: number;
+  /**
+   * Minimum ClickHouse version that exposes this column, e.g. "26.8".
+   * Omit when the column predates the catalog baseline (26.3).
+   */
+  since?: string;
 }
 
 export interface SystemTable {
@@ -143,6 +165,7 @@ export function buildHierarchy(data: ObservabilityData): SunburstNodeData {
             color: cat.color,
             desc: col.desc,
             size: col.size,
+            since: col.since,
           },
         })),
       })),
@@ -232,7 +255,8 @@ LIMIT 10` }
             { name: "written_rows", desc: "Rows written (inserts)", size: 2 },
             { name: "ProfileEvents{}", desc: "Map of 500+ counters per query", size: 4 },
             { name: "exception_code", desc: "Non-zero = failed query", size: 2 },
-            { name: "query_cache_usage", desc: "None, Used, or Stored", size: 1 }
+            { name: "query_cache_usage", desc: "None, Used, or Stored", size: 1 },
+            { name: "client_agent", desc: "Detected AI coding agent that invoked clickhouse-client", size: 1, since: "26.6" }
           ]
         },
         {
@@ -342,7 +366,36 @@ WHERE id = 42` }
             { name: "EXPLAIN indexes=1", desc: "Parts/marks selected vs total", size: 3 },
             { name: "EXPLAIN ESTIMATE", desc: "Estimated rows/bytes", size: 2 }
           ]
-        }
+        },
+        {
+          name: "system.user_query_log",
+          desc: "Each user's own query_log rows, readable without any grant on the query log table itself. Same schema as system.query_log, filtered to queries the current user initiated.",
+          cols: ["event_time", "query_duration_ms", "read_rows", "read_bytes", "memory_usage", "query", "query_kind", "type", "exception_code", "user", "query_id", "ProfileEvents"],
+          since: "26.8",
+          queries: [
+            { label: "My slowest queries today", sql: `SELECT event_time,
+  query_duration_ms, read_rows, query
+FROM system.user_query_log
+WHERE type = 'QueryFinish'
+  AND event_date = today()
+ORDER BY query_duration_ms DESC
+LIMIT 20` },
+            { label: "My failed queries", sql: `SELECT event_time, exception_code,
+  exception, query
+FROM system.user_query_log
+WHERE exception_code != 0
+  AND event_date = today()
+ORDER BY event_time DESC
+LIMIT 20` }
+          ],
+          children: [
+            { name: "query_duration_ms", desc: "Wall-clock duration", size: 3 },
+            { name: "read_rows", desc: "Rows read by this query", size: 2 },
+            { name: "memory_usage", desc: "Peak memory for the query", size: 2 },
+            { name: "exception_code", desc: "0 when the query succeeded", size: 2 },
+            { name: "client_agent", desc: "Detected AI coding agent, when clickhouse-client was invoked by one", size: 1, since: "26.6" }
+          ]
+        },
       ]
     },
     {
@@ -395,7 +448,7 @@ ORDER BY start_time_us` }
           ],
           children: [
             { name: "operation_name", desc: "Span label", size: 2 },
-            { name: "duration_us", desc: "finish - start", size: 2 }
+            { name: "finish_time_us", desc: "Span end (start_time_us for begin)", size: 2 }
           ]
         },
         {
@@ -415,10 +468,30 @@ ORDER BY elapsed_us DESC` }
           ],
           children: [
             { name: "elapsed_us", desc: "Total processor time", size: 2 },
-            { name: "input_wait_us", desc: "Stalled waiting for data", size: 2 },
-            { name: "output_wait_us", desc: "Stalled on downstream", size: 2 }
+            { name: "input_wait_elapsed_us", desc: "Stalled waiting for data", size: 2 },
+            { name: "output_wait_elapsed_us", desc: "Stalled on downstream", size: 2 }
           ]
-        }
+        },
+        {
+          name: "system.predicate_statistics_log",
+          desc: "Sampled log of predicate filter selectivity and MergeTree index-granule pruning per query. Disabled by default; enable with the predicate_statistics_sample_rate server setting.",
+          cols: ["event_time", "query_id", "database", "table", "predicate"],
+          since: "26.5",
+          queries: [
+            { label: "Least selective predicates", sql: `SELECT database, table, predicate,
+  count() AS samples
+FROM system.predicate_statistics_log
+WHERE event_date = today()
+GROUP BY database, table, predicate
+ORDER BY samples DESC
+LIMIT 20` }
+          ],
+          children: [
+            { name: "predicate", desc: "The filter expression that was sampled", size: 3 },
+            { name: "table", desc: "Table the predicate was applied to", size: 2 },
+            { name: "query_id", desc: "Query that produced the sample", size: 2 }
+          ]
+        },
       ]
     },
     {
@@ -428,7 +501,7 @@ ORDER BY elapsed_us DESC` }
         {
           name: "system.parts",
           desc: "Every data part in every MergeTree table. The key to understanding storage layout, part counts, and compression.",
-          cols: ["database", "table", "name", "partition", "active", "rows", "bytes_on_disk", "data_compressed_bytes", "data_uncompressed_bytes", "marks_count", "modification_time", "min_block_number", "max_block_number", "level", "primary_key_bytes_in_memory", "data_version"],
+          cols: ["database", "table", "name", "partition", "active", "rows", "bytes_on_disk", "data_compressed_bytes", "data_uncompressed_bytes", "marks", "modification_time", "min_block_number", "max_block_number", "level", "primary_key_bytes_in_memory", "data_version"],
           queries: [
             {
               label: "Storage per table", sql: `SELECT database, table,
@@ -456,7 +529,7 @@ ORDER BY parts DESC` }
             { name: "rows", desc: "Row count per part", size: 2 },
             { name: "bytes_on_disk", desc: "Compressed on-disk size", size: 2 },
             { name: "data_uncompressed_bytes", desc: "Uncompressed logical size", size: 2 },
-            { name: "marks_count", desc: "Number of index granules", size: 1 },
+            { name: "marks", desc: "Number of index granules", size: 1 },
             { name: "level", desc: "Merge generation (0=new)", size: 1 },
             { name: "active", desc: "1=live, 0=being merged away", size: 1 },
             { name: "data_version", desc: "Mutation version (24.3+)", size: 1 }
@@ -504,7 +577,10 @@ FROM system.merges` }
           children: [
             { name: "progress", desc: "0.0 to 1.0", size: 2 },
             { name: "num_parts", desc: "Source parts being merged", size: 1 },
-            { name: "is_mutation", desc: "ALTER UPDATE/DELETE merge", size: 2 }
+            { name: "is_mutation", desc: "ALTER UPDATE/DELETE merge", size: 2 },
+            { name: "current_projection", desc: "Projection currently being merged", size: 1, since: "26.6" },
+            { name: "projections_completed", desc: "Projections merged so far", size: 1, since: "26.6" },
+            { name: "projections_remaining", desc: "Projections still to merge", size: 1, since: "26.6" }
           ]
         },
         {
@@ -527,7 +603,8 @@ ORDER BY create_time` },
           children: [
             { name: "is_done", desc: "0=still running", size: 2 },
             { name: "parts_to_do", desc: "Remaining parts to rewrite", size: 2 },
-            { name: "latest_fail_reason", desc: "Why it's stuck", size: 2 }
+            { name: "latest_fail_reason", desc: "Why it's stuck", size: 2 },
+            { name: "finish_time", desc: "When the mutation completed; zero if unfinished", size: 1, since: "26.8" }
           ]
         },
         {
@@ -551,7 +628,8 @@ ORDER BY event_date DESC` }
             { name: "NewPart", desc: "INSERT created a part", size: 1 },
             { name: "MergeParts", desc: "Background merge completed", size: 2 },
             { name: "MutatePart", desc: "Mutation completed", size: 1 },
-            { name: "RemovePart", desc: "Part garbage collected", size: 1 }
+            { name: "RemovePart", desc: "Part garbage collected", size: 1 },
+            { name: "projections_duration_ms", desc: "Per-projection merge/rebuild duration", size: 1, since: "26.4" }
           ]
         },
         {
@@ -604,6 +682,99 @@ LIMIT 20` }
             { name: "remote_path", desc: "Blob path in object storage", size: 3 },
             { name: "size", desc: "Size of the file (compressed)", size: 2 }
           ]
+        },
+      ]
+    },
+    {
+      name: "Open Table Formats",
+      color: "#84cc16",
+      children: [
+        {
+          name: "Lake formats and catalogs",
+          desc: "Delta Lake and Hudi have no dedicated system tables, unlike Iceberg. They are introspected through the generic engine, table-function and database-engine catalogs, plus their allow_* settings.",
+          cols: [],
+          queries: [
+            { label: "Lake table engines in this build", sql: `SELECT name
+FROM system.table_engines
+WHERE name ILIKE '%iceberg%'
+   OR name ILIKE '%delta%'
+   OR name ILIKE '%hudi%'
+ORDER BY name` },
+            { label: "Lake table functions", sql: `SELECT name, description
+FROM system.table_functions
+WHERE name ILIKE '%iceberg%'
+   OR name ILIKE '%delta%'
+   OR name ILIKE '%hudi%'
+ORDER BY name` },
+            { label: "Catalog databases in use", sql: `SELECT name, engine
+FROM system.databases
+WHERE engine = 'DataLakeCatalog'` },
+            { label: "Lake format settings", sql: `SELECT name, value, changed
+FROM system.settings
+WHERE name ILIKE '%iceberg%'
+   OR name ILIKE '%delta%'
+   OR name ILIKE '%data_lake%'
+ORDER BY name` }
+          ],
+          children: [
+            { name: "DeltaLake", desc: "Delta Lake engine family (S3, Azure, Local)", size: 3 },
+            { name: "Hudi", desc: "Apache Hudi engine", size: 2 },
+            { name: "DataLakeCatalog", desc: "Database engine for Glue, Unity, REST and Hive catalogs", size: 3 },
+            { name: "Iceberg", desc: "Iceberg engine family; the only format with dedicated system tables", size: 3 }
+          ]
+        },
+        {
+          name: "system.iceberg_files",
+          desc: "Data and delete files of currently loaded Iceberg tables: one row per file in the table's current snapshot, with size, record count and partition metadata.",
+          cols: ["database", "table", "snapshot_id", "content", "file_path", "file_format", "record_count", "file_size_in_bytes", "partition", "schema_id", "sequence_number"],
+          since: "26.6",
+          queries: [
+            { label: "Iceberg footprint by table", sql: `SELECT database, table,
+  count() AS files,
+  formatReadableSize(
+    sum(file_size_in_bytes)) AS total
+FROM system.iceberg_files
+GROUP BY database, table
+ORDER BY sum(file_size_in_bytes) DESC` },
+            { label: "Small-file skew", sql: `SELECT database, table, file_format,
+  countIf(file_size_in_bytes < 1048576)
+    AS small_files,
+  count() AS total_files
+FROM system.iceberg_files
+GROUP BY database, table, file_format
+ORDER BY small_files DESC` }
+          ],
+          children: [
+            { name: "file_size_in_bytes", desc: "Size of the data or delete file", size: 3 },
+            { name: "record_count", desc: "Rows contained in the file", size: 2 },
+            { name: "content", desc: "Data file vs delete file", size: 2 },
+            { name: "snapshot_id", desc: "Snapshot the file belongs to", size: 2 }
+          ]
+        },
+        {
+          name: "system.iceberg_history",
+          desc: "Snapshot history of Iceberg tables, equivalent to the Spark history table. Filter on database and table to avoid scanning unrelated remote databases.",
+          cols: ["database", "table", "made_current_at", "snapshot_id", "parent_id", "is_current_ancestor", "operation", "summary"],
+          queries: [
+            { label: "Recent snapshots for a table", sql: `SELECT made_current_at, snapshot_id,
+  parent_id, operation
+FROM system.iceberg_history
+WHERE database = 'my_db'
+  AND table = 'my_table'
+ORDER BY made_current_at DESC
+LIMIT 20` },
+            { label: "Snapshot churn by operation", sql: `SELECT database, table, operation,
+  count() AS snapshots
+FROM system.iceberg_history
+GROUP BY database, table, operation
+ORDER BY snapshots DESC` }
+          ],
+          children: [
+            { name: "made_current_at", desc: "When the snapshot became current", size: 3 },
+            { name: "operation", desc: "append, overwrite, delete, replace", size: 2 },
+            { name: "is_current_ancestor", desc: "Whether it is an ancestor of the current snapshot", size: 2 },
+            { name: "parent_id", desc: "Preceding snapshot", size: 1 }
+          ]
         }
       ]
     },
@@ -631,7 +802,8 @@ ORDER BY total_bytes DESC` }
           children: [
             { name: "engine_full", desc: "Full CREATE TABLE engine clause", size: 2 },
             { name: "sorting_key", desc: "ORDER BY expression", size: 2 },
-            { name: "partition_key", desc: "PARTITION BY expression", size: 2 }
+            { name: "partition_key", desc: "PARTITION BY expression", size: 2 },
+            { name: "skipping_indices_types", desc: "Distinct data-skipping index types on the table", size: 1, since: "26.8" }
           ]
         },
         {
@@ -675,7 +847,54 @@ WHERE database NOT IN
             { name: "ngrambf_v1", desc: "N-gram bloom for LIKE", size: 1 },
             { name: "tokenbf_v1", desc: "Token bloom for hasToken()", size: 1 }
           ]
-        }
+        },
+        {
+          name: "system.constraints",
+          desc: "All CHECK and ASSUME constraints across every table, with constraint name, type and expression.",
+          cols: ["database", "table", "name", "type", "expression"],
+          since: "26.6",
+          queries: [
+            { label: "Constraints by table", sql: `SELECT database, table, name,
+  type, expression
+FROM system.constraints
+ORDER BY database, table` }
+          ],
+          children: [
+            { name: "expression", desc: "The constraint expression", size: 3 },
+            { name: "type", desc: "CHECK or ASSUME", size: 2 }
+          ]
+        },
+        {
+          name: "system.hypothetical_indexes",
+          desc: "Session-scoped what-if skip indexes created with CREATE HYPOTHETICAL INDEX, for use with EXPLAIN WHATIF to estimate skip ratio and cost without materialising the index.",
+          cols: ["database", "table", "name", "type", "type_full", "expression", "granularity"],
+          since: "26.6",
+          queries: [
+            { label: "Hypothetical indexes in session", sql: `SELECT database, table, name,
+  type_full, expression, granularity
+FROM system.hypothetical_indexes` }
+          ],
+          children: [
+            { name: "expression", desc: "Indexed expression", size: 3 },
+            { name: "type_full", desc: "Index type with parameters", size: 2 },
+            { name: "granularity", desc: "Granules per index mark", size: 1 }
+          ]
+        },
+        {
+          name: "system.data_skipping_index_types",
+          desc: "Available data skipping index types with embedded reference documentation (description, syntax, examples, introduced_in).",
+          cols: ["name", "description", "syntax", "examples", "introduced_in", "related"],
+          since: "26.6",
+          queries: [
+            { label: "Available index types", sql: `SELECT name, introduced_in, syntax
+FROM system.data_skipping_index_types
+ORDER BY name` }
+          ],
+          children: [
+            { name: "introduced_in", desc: "Version the index type appeared in", size: 2 },
+            { name: "syntax", desc: "Declaration syntax", size: 2 }
+          ]
+        },
       ]
     },
     {
@@ -946,9 +1165,25 @@ ORDER BY event_time` }
           ],
           children: [
             { name: "CurrentMetric_*", desc: "Gauge snapshots", size: 2 },
-            { name: "ProfileEvent_*", desc: "Counter deltas", size: 2 }
+            { name: "ProfileEvent_*", desc: "Counter deltas", size: 2 },
+            { name: "histograms", desc: "Nested snapshot of every registered histogram metric", size: 1, since: "26.5" }
           ]
-        }
+        },
+        {
+          name: "system.disk_types",
+          desc: "Available disk types with embedded reference documentation (description, syntax, examples, introduced_in).",
+          cols: ["name", "description", "syntax", "examples", "introduced_in", "related"],
+          since: "26.6",
+          queries: [
+            { label: "Available disk types", sql: `SELECT name, introduced_in, description
+FROM system.disk_types
+ORDER BY name` }
+          ],
+          children: [
+            { name: "introduced_in", desc: "Version the disk type appeared in", size: 2 },
+            { name: "description", desc: "What the disk type does", size: 2 }
+          ]
+        },
       ]
     },
     {
@@ -1153,9 +1388,67 @@ ORDER BY start_time DESC` }
           ],
           children: [
             { name: "status", desc: "CREATING, BACKUP_CREATED, ERROR", size: 2 },
-            { name: "compressed_size", desc: "Final backup size", size: 1 }
+            { name: "compressed_size", desc: "Final backup size", size: 1 },
+            { name: "settings", desc: "Backup/restore settings requested for the operation", size: 1, since: "26.7" },
+            { name: "engine_settings", desc: "Engine-level settings for the operation", size: 1, since: "26.7" }
           ]
-        }
+        },
+        {
+          name: "system.documentation",
+          desc: "Embedded reference documentation for functions, table engines, data types, settings, formats and system tables, collected into one queryable table. Backs the built-in /docs search page.",
+          cols: ["name", "type", "description", "source"],
+          since: "26.6",
+          queries: [
+            { label: "Search the docs", sql: `SELECT name, type, description
+FROM system.documentation
+WHERE description ILIKE '%projection%'
+LIMIT 20` },
+            { label: "Documented entities by type", sql: `SELECT type, count() AS entries
+FROM system.documentation
+GROUP BY type
+ORDER BY entries DESC` }
+          ],
+          children: [
+            { name: "type", desc: "Function, setting, table engine, …", size: 3 },
+            { name: "description", desc: "Rendered reference text", size: 2 },
+            { name: "source", desc: "Source file the docs come from", size: 1, since: "26.7" }
+          ]
+        },
+        {
+          name: "system.handlers",
+          desc: "SQL-defined HTTP handlers created with CREATE HANDLER, persisted in local or Keeper storage.",
+          cols: ["name", "protocol", "url_match_type", "url", "methods", "type", "query", "create_query"],
+          since: "26.8",
+          queries: [
+            { label: "Defined HTTP handlers", sql: `SELECT name, protocol, methods,
+  url, type
+FROM system.handlers
+ORDER BY name` }
+          ],
+          children: [
+            { name: "url", desc: "Matched request path", size: 3 },
+            { name: "methods", desc: "Accepted HTTP methods", size: 2 },
+            { name: "query", desc: "SQL the handler runs", size: 2 }
+          ]
+        },
+        {
+          name: "system.masking_policies",
+          desc: "Column masking policies and SHOW MASKING POLICIES introspection. Masking policies are a ClickHouse Cloud feature, so this table is always empty in open-source builds.",
+          cols: ["name", "short_name", "database", "table", "storage", "update_assignments", "where_condition", "priority", "apply_to_all", "apply_to_list"],
+          since: "26.7",
+          cloudOnly: true,
+          queries: [
+            { label: "Masking policies", sql: `SELECT name, database, table,
+  where_condition, priority
+FROM system.masking_policies
+ORDER BY database, table` }
+          ],
+          children: [
+            { name: "where_condition", desc: "Rows the policy applies to", size: 3 },
+            { name: "update_assignments", desc: "How matched values are masked", size: 2 },
+            { name: "priority", desc: "Evaluation order", size: 1 }
+          ]
+        },
       ]
     },
     {
@@ -1178,7 +1471,7 @@ LIMIT 50` }
           ],
           children: [
             { name: "status", desc: "Ok, FlushError", size: 2 },
-            { name: "flush_time_us", desc: "Buffer flush latency", size: 2 }
+            { name: "flush_time_microseconds", desc: "Buffer flush latency", size: 2 }
           ]
         },
         {
@@ -1217,7 +1510,45 @@ LIMIT 30` }
             { name: "type", desc: "Create, Get, Set, Multi", size: 2 },
             { name: "duration_ms", desc: "ZK operation latency", size: 2 }
           ]
-        }
+        },
+        {
+          name: "system.s3_queue_metadata",
+          desc: "Keeper-backed S3Queue metadata: processed, processing and failed node counts per metadata object, with node contents available on demand. Unlike s3queue_metadata_cache this reads Keeper, not the in-memory cache.",
+          cols: ["zookeeper_path", "processed_nodes_count", "processing_nodes_count", "failed_nodes_count", "processed_nodes", "processing_nodes", "failed_nodes", "processed_path"],
+          since: "26.8",
+          queries: [
+            { label: "S3Queue backlog and failures", sql: `SELECT zookeeper_path,
+  processed_nodes_count,
+  processing_nodes_count,
+  failed_nodes_count
+FROM system.s3_queue_metadata
+ORDER BY failed_nodes_count DESC` }
+          ],
+          children: [
+            { name: "failed_nodes_count", desc: "Files that failed processing", size: 3 },
+            { name: "processing_nodes_count", desc: "Files in flight", size: 2 },
+            { name: "processed_nodes_count", desc: "Files completed", size: 2 }
+          ]
+        },
+        {
+          name: "system.azure_queue_metadata",
+          desc: "Keeper-backed AzureQueue metadata: processed, processing and failed node counts per metadata object, with node contents available on demand.",
+          cols: ["zookeeper_path", "processed_nodes_count", "processing_nodes_count", "failed_nodes_count", "processed_nodes", "processing_nodes", "failed_nodes", "processed_path"],
+          since: "26.8",
+          queries: [
+            { label: "AzureQueue backlog and failures", sql: `SELECT zookeeper_path,
+  processed_nodes_count,
+  processing_nodes_count,
+  failed_nodes_count
+FROM system.azure_queue_metadata
+ORDER BY failed_nodes_count DESC` }
+          ],
+          children: [
+            { name: "failed_nodes_count", desc: "Blobs that failed processing", size: 3 },
+            { name: "processing_nodes_count", desc: "Blobs in flight", size: 2 },
+            { name: "processed_nodes_count", desc: "Blobs completed", size: 2 }
+          ]
+        },
       ]
     },
     {
@@ -1244,7 +1575,7 @@ ORDER BY result_size DESC LIMIT 20` }
         {
           name: "system.filesystem_cache",
           desc: "Object storage cache (S3/Azure/GCS) — cached segments on local disk. Critical for data lake setups.",
-          cols: ["cache_name", "file_segment_range_begin", "file_segment_range_end", "size", "state", "cache_hits", "file_path", "downloaded_size"],
+          cols: ["cache_name", "file_segment_range_begin", "file_segment_range_end", "size", "state", "cache_hits", "cache_path", "downloaded_size"],
           queries: [
             {
               label: "Cache usage summary", sql: `SELECT cache_name,
@@ -1286,7 +1617,7 @@ LIMIT 20` }
         {
           name: "system.dictionaries",
           desc: "In-memory key-value stores used for fast lookups. Essential for joins but can consume massive RAM.",
-          cols: ["database", "name", "status", "origin", "type", "key", "attribute.names", "bytes_allocated", "hierarchical_index_bytes_allocated", "element_count", "load_factor", "source"],
+          cols: ["database", "name", "status", "origin", "type", "key.names", "attribute.names", "bytes_allocated", "hierarchical_index_bytes_allocated", "element_count", "load_factor", "source"],
           queries: [
             {
               label: "Memory used by dicts", sql: `SELECT name, status,
@@ -1300,7 +1631,37 @@ ORDER BY bytes_allocated DESC` }
             { name: "element_count", desc: "Number of rows", size: 2 },
             { name: "status", desc: "LOADED, NOT_LOADED, FAILED", size: 2 }
           ]
-        }
+        },
+        {
+          name: "system.dictionary_layouts",
+          desc: "Available dictionary layouts with embedded reference documentation (description, syntax, examples, introduced_in).",
+          cols: ["name", "is_complex", "description", "syntax", "examples", "introduced_in", "related"],
+          since: "26.6",
+          queries: [
+            { label: "Layouts and complexity", sql: `SELECT name, is_complex, introduced_in
+FROM system.dictionary_layouts
+ORDER BY name` }
+          ],
+          children: [
+            { name: "is_complex", desc: "Whether the layout takes a composite key", size: 2 },
+            { name: "introduced_in", desc: "Version the layout appeared in", size: 2 }
+          ]
+        },
+        {
+          name: "system.dictionary_sources",
+          desc: "Available dictionary sources with embedded reference documentation (description, syntax, examples, introduced_in).",
+          cols: ["name", "description", "syntax", "examples", "introduced_in", "related"],
+          since: "26.6",
+          queries: [
+            { label: "Available sources", sql: `SELECT name, introduced_in, description
+FROM system.dictionary_sources
+ORDER BY name` }
+          ],
+          children: [
+            { name: "introduced_in", desc: "Version the source appeared in", size: 2 },
+            { name: "syntax", desc: "Source declaration syntax", size: 2 }
+          ]
+        },
       ]
     }
   ]

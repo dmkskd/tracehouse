@@ -364,7 +364,17 @@ export const DetailSidebar: React.FC<DetailSidebarProps> = ({
       {selectedColumn && (
         <div style={{ marginBottom: 16 }}>
           <h3 style={DS.sectionTitle}>Selected</h3>
-          <div style={{ ...DS.tableName, fontSize: 13, color: 'var(--text-primary)' }}>{selectedColumn}</div>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
+            <div style={{ ...DS.tableName, fontSize: 13, color: 'var(--text-primary)' }}>{selectedColumn}</div>
+            {selectedNode?.meta?.since && (
+              <span
+                title={`Requires ClickHouse ${selectedNode.meta.since} or newer`}
+                style={badgeStyle('#64748b')}
+              >
+                Since {selectedNode.meta.since}
+              </span>
+            )}
+          </div>
           <div style={DS.desc}>{columnComments?.get(`${table.name}.${selectedColumn}`) || selectedNode?.meta?.desc || ''}</div>
         </div>
       )}
