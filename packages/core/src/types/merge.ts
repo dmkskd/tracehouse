@@ -43,6 +43,20 @@ export interface MergeHistoryRecord {
   size_diff_pct: number;
   /** Row count delta: output rows minus input rows. Negative = rows removed (e.g. TTL delete). */
   rows_diff: number;
+  /**
+   * True when the merge dropped an entire part because every row had expired
+   * (merge_reason `TTLDropMerge`).
+   *
+   * Set only when the dropped row count is genuinely unknowable. ClickHouse 26.8
+   * skips the data-reading step for these merges, so part_log reports `rows = 0`
+   * AND `read_rows = 0`, leaving `rows_diff` at 0 even though rows were removed.
+   * Consumers should report "whole part dropped" rather than reading that zero as
+   * "nothing was removed".
+   *
+   * Servers before 26.8 still populate `read_rows` for drop merges, so this stays
+   * unset there and `rows_diff` carries the real (negative) count instead.
+   */
+  whole_part_dropped?: boolean;
   /** Server hostname where this merge was executed */
   hostname?: string;
   /** Disk where the part resides after this event (from system.part_log) */

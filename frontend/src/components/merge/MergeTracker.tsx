@@ -1013,7 +1013,8 @@ const MergeHistoryDetailPanel: React.FC<{
               { label: 'Throughput', value: throughput > 0 ? `${formatBytes(throughput)}/s` : '-' },
             ];
             if (record.read_rows > 0) stats.push({ label: 'Read Rows (input)', value: record.read_rows.toLocaleString() });
-            if ((record.rows_diff ?? 0) !== 0) stats.push({ label: 'Rows Diff', value: record.rows_diff.toLocaleString(), highlight: record.rows_diff < 0 ? '#e5534b' : '#3fb950' });
+            if (record.whole_part_dropped) stats.push({ label: 'Rows Diff', value: 'whole part dropped', highlight: '#e5534b' });
+            else if ((record.rows_diff ?? 0) !== 0) stats.push({ label: 'Rows Diff', value: record.rows_diff.toLocaleString(), highlight: record.rows_diff < 0 ? '#e5534b' : '#3fb950' });
             return stats;
           })().map(({ label, value, highlight }) => (
             <div key={label} style={{ borderRadius: 8, padding: 12, background: 'var(--bg-tertiary)' }}>

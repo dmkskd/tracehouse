@@ -40,10 +40,19 @@ export function mapMergeHistoryRecord(row: RawRow): MergeHistoryRecord {
   const sizeDiffPct = readBytes > 0 ? (sizeDiff / readBytes) * 100 : 0;
   // Row delta: negative means rows were removed (e.g. TTL delete merge).
   const rowsDiff = readRows > 0 ? outputRows - readRows : 0;
+  // A TTL merge where every row expired drops the whole part instead of
+  // rewriting it. Since CH 26.8 the read step is skipped for these, so part_log
+  // reports rows = 0 and read_rows = 0 and rowsDiff above is 0. Flag the case so
+  // consumers do not read that zero as "no rows removed".
+  const rawMergeReason = toStr(row.merge_reason);
+  // Requires read_rows === 0 as well: servers before 26.8 still populate it for
+  // drop merges, and there rows_diff carries the real number, which is strictly
+  // more useful than the flag.
+  const wholePartDropped = rawMergeReason === 'TTLDropMerge' && outputRows === 0 && readRows === 0;
   // Classify merge reason, then refine: a Regular merge with row loss
   // is likely a lightweight delete cleanup (unless the engine naturally deduplicates).
   const tableEngine = row.engine != null ? toStr(row.engine) : undefined;
-  const baseCategory = classifyMergeHistory(toStr(row.event_type), toStr(row.merge_reason), toStr(row.part_name));
+  const baseCategory = classifyMergeHistory(toStr(row.event_type), rawMergeReason, toStr(row.part_name));
   const category = refineCategoryWithRowDiff(baseCategory, rowsDiff, tableEngine);
   
   return {
@@ -65,6 +74,7 @@ export function mapMergeHistoryRecord(row: RawRow): MergeHistoryRecord {
     size_diff: sizeDiff,
     size_diff_pct: sizeDiffPct,
     rows_diff: rowsDiff,
+    whole_part_dropped: wholePartDropped || undefined,
     hostname: row.hostname != null ? toStr(row.hostname) : undefined,
     disk_name: row.disk_name != null ? toStr(row.disk_name) : undefined,
     path_on_disk: row.path_on_disk != null ? toStr(row.path_on_disk) : undefined,

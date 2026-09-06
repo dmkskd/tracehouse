@@ -288,11 +288,22 @@ describe('merge history enrichment integration', { tags: ['merge-engine'] }, () 
         `,
       });
 
-      // Insert with already-expired timestamps
+      // Insert a MIX of expired and live rows.
+      //
+      // This mix is load-bearing. If every row in a part is expired, ClickHouse
+      // drops the whole part (merge_reason 'TTLDropMerge') instead of rewriting
+      // it: part_log then reports rows = 0 AND read_rows = 0, so rows_diff is 0
+      // and the "negative rows_diff" assertion below can never hold. Only a
+      // partially-expired part produces a 'TTLDeleteMerge' that reads N rows and
+      // writes M < N. Both reasons classify as 'TTLDelete' in the app, so the
+      // classification test above passes either way.
       await ctx.client.command({
         query: `
           INSERT INTO ${TEST_DB}.ttl_del (id, ts, value)
-          SELECT number, now() - toIntervalSecond(10), rand()
+          SELECT
+            number,
+            if(number % 2 = 0, now() - toIntervalSecond(600), now() + toIntervalHour(24)),
+            rand()
           FROM numbers(200)
         `,
       });
@@ -558,8 +569,9 @@ describe('merge history enrichment integration', { tags: ['merge-engine'] }, () 
     });
 
     it('TTL DELETE merge shows negative rows_diff', async () => {
-      // ttl_del table was created earlier with TTL ts + INTERVAL 1 SECOND DELETE
-      // and populated with already-expired rows
+      // ttl_del was created earlier with TTL ts + INTERVAL 1 SECOND DELETE and
+      // populated with a mix of expired and live rows, so the TTL merge rewrites
+      // the part (TTLDeleteMerge) rather than dropping it whole (TTLDropMerge).
       const history = await tracker.getMergeHistory({
         database: TEST_DB,
         table: 'ttl_del',
