@@ -553,13 +553,21 @@ test-data-utils:
 fmt:
     cd frontend && npm run lint -- --fix
 
-# Run security scan (npm audit + semgrep: local ClickHouse rules + registry)
+# Run security scan (npm audit + cargo audit + local semgrep rules). Registry rules: security-scan-deep
 [group('test')]
 security-scan:
     #!/usr/bin/env bash
     EXIT=0
     echo "=== npm audit ==="
-    npm audit || EXIT=$?
+    # Gates on critical only. The full report still prints at every severity —
+    # --audit-level changes the exit code, not the output. Most of the 30-odd
+    # high/moderate findings are transitive through @grafana/ui and cannot be
+    # cleared without a breaking Grafana bump, so gating lower means a red
+    # build that never goes green and stops being read.
+    npm audit --audit-level=critical || EXIT=$?
+    echo ""
+    echo "=== cargo audit ==="
+    {{just_executable()}} security-scan-cargo || EXIT=$?
     echo ""
     echo "=== semgrep ==="
     if ! command -v semgrep &>/dev/null; then
@@ -570,10 +578,58 @@ security-scan:
         echo "--- local ClickHouse SQL injection rules ---"
         {{just_executable()}} security-scan-sql || EXIT=$?
         echo ""
-        echo "--- semgrep registry (auto) ---"
-        semgrep --config auto packages/ frontend/src/ || EXIT=$?
+        # Advisory pass: pinned registry rulesets, never gating. The registry
+        # serves these, so the rule set can change upstream without a commit
+        # here — not something to fail a build on. The local rules above are
+        # the deterministic, offline, gating ones.
+        #
+        # Pinned rather than --config auto: auto selects by language, so it
+        # pulled the whole Express server-side set onto browser React code
+        # (express is only in packages/proxy) and spent the scan budget on
+        # rules that cannot fire.
+        #
+        # --timeout 30: taint-mode rules cost superlinear time in scope size
+        # and the 5s default aborts them on our 1500-2800 line components.
+        # --timeout-threshold 0: without it semgrep drops the whole FILE from
+        # every remaining rule after 3 timeouts, losing coverage silently on
+        # exactly the largest files.
+        echo ""
+        echo "Registry rules are not run here — they take ~3 min and never gate."
+        echo "Run them with: just security-scan-deep"
     fi
     exit $EXIT
+
+# Split out of security-scan so the everyday command stays fast; run in CI or before a release.
+# Registry semgrep pass (~3 min, advisory only, never gates)
+[group('test')]
+security-scan-deep:
+    #!/usr/bin/env bash
+    if ! command -v semgrep &>/dev/null; then
+        echo "semgrep is not installed."
+        echo "Install it with: ./scripts/setup.sh --security"
+        exit 1
+    fi
+    # Never gating: the registry serves these rules, so the set can change
+    # upstream without a commit here. The local .semgrep/ rules in
+    # security-scan-sql are the deterministic, offline, gating ones.
+    #
+    # Pinned rather than --config auto: auto selects by language, so it pulled
+    # the whole Express server-side set onto browser React code (express is
+    # only in packages/proxy) and spent the scan budget on rules that cannot
+    # fire. Pinning cut it to 74 rules; p/typescript still bundles a few
+    # javascript.express.* rules, so the noise is reduced, not gone.
+    #
+    # --timeout 15: taint-mode rules cost superlinear time in scope size, and
+    # the 5s default aborts them on our 1500-2800 line components. 15s is a
+    # compromise — most of the wall clock is a serial tail of two or three
+    # huge files, so every extra second here costs real time.
+    # --timeout-threshold 0: without it semgrep drops the whole FILE from
+    # every remaining rule after 3 timeouts, losing coverage silently on
+    # exactly the largest files.
+    semgrep scan --config p/typescript --config p/react --config p/xss \
+        --timeout 15 --timeout-threshold 0 \
+        --metrics=off --disable-version-check \
+        packages/ frontend/src/
 
 # Run only the local ClickHouse SQL injection rules (offline, no registry)
 [group('test')]
@@ -594,6 +650,7 @@ security-scan-sql:
     echo ""
     echo "--- advisory (not gating, review only) ---"
     semgrep scan --config .semgrep/ --severity WARNING \
+        --timeout 15 --timeout-threshold 0 \
         --metrics=off --disable-version-check --json \
         packages/core/src frontend/src 2>/dev/null \
       | python3 -c 'import json,sys,collections; d=json.load(sys.stdin); c=collections.Counter(r["check_id"].split(".")[-1] for r in d["results"]); [print(f"  {v:4d}  {k}") for k,v in c.most_common()] or print("  none")' || true
@@ -602,10 +659,31 @@ security-scan-sql:
     # finding is a real defect and fails the build. --error sets a non-zero exit.
     echo ""
     echo "--- gating (ERROR only) ---"
+    # --timeout 15 (default 5): the quote-escaping rule's four unconstrained
+    # $V patterns abort on our 1500-2800 line components. --timeout-threshold 0
+    # keeps a timeout from dropping the whole file from the remaining rules.
     semgrep scan --config .semgrep/ --severity ERROR --error \
+        --timeout 15 --timeout-threshold 0 \
         --metrics=off --disable-version-check \
         packages/core/src frontend/src || EXIT=$?
     exit $EXIT
+
+# Audit Rust dependencies (infra/binary) against the RustSec advisory DB
+[group('test')]
+security-scan-cargo:
+    #!/usr/bin/env bash
+    if ! command -v cargo-audit &>/dev/null; then
+        echo "cargo-audit is not installed."
+        echo "Install it with: ./scripts/setup.sh --security"
+        exit 1
+    fi
+    # Cargo.lock records every optional dependency of every crate, including
+    # ones no enabled feature pulls in (reqwest's quinn/http3 stack, for one),
+    # so cargo-audit reports crates that are never compiled into the binary.
+    # Cross-check a finding before acting on it:
+    #     cd infra/binary && cargo tree -i <crate>
+    # No output means the crate is lockfile-only and not in the build graph.
+    cd infra/binary && cargo audit
 
 # ─────────────────────────────────────────────────────────────────
 # GRAFANA APP PLUGIN

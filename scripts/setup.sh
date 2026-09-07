@@ -6,7 +6,7 @@
 # Usage:
 #   ./setup.sh              # check & install everything
 #   ./setup.sh --check      # dry-run: only report what's missing
-#   ./setup.sh --security   # also install security tools (semgrep)
+#   ./setup.sh --security   # also install security tools (semgrep, cargo-audit)
 #
 # This script must live OUTSIDE the justfile since just itself is a dependency.
 
@@ -246,6 +246,21 @@ check_semgrep() {
     fi
 }
 
+check_cargo_audit() {
+    echo ""
+    echo "cargo-audit (RustSec advisory scanner for infra/binary)"
+    if has cargo-audit; then
+        ok "cargo-audit $(cargo-audit audit --version 2>/dev/null | awk '{print $2}')" ""
+    else
+        MISSING=$((MISSING + 1))
+        fail "cargo-audit" "not found"
+        case "$PKG_MGR" in
+            brew) install_or_warn "cargo-audit" "brew install cargo-audit" ;;
+            *)    install_or_warn "cargo-audit" "cargo install cargo-audit --locked" ;;
+        esac
+    fi
+}
+
 # ── Optional tools ───────────────────────────────────────────────
 
 check_optional() {
@@ -318,6 +333,7 @@ main() {
     check_npm
     if $INSTALL_SECURITY; then
         check_semgrep
+        check_cargo_audit
     fi
     check_optional
 
