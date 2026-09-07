@@ -24,7 +24,8 @@
     "@types/three": "^0.182.0",
     "serialize-javascript": "7.0.4",
     "dompurify": "3.4.12",
-    "immutable": "5.1.9"
+    "immutable": "5.1.9",
+    "js-cookie": "3.0.8"
   },
   "dependencies": {
     "react-is": "^19.1.0"
