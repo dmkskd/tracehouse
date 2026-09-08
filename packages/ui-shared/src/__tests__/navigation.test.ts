@@ -83,13 +83,22 @@ describe('experimental navigation gating', () => {
     expect(groups).toEqual([]);
   });
 
-  it('gates Notebooks, which is the feature this exists for', () => {
+  it('drops a hidden entry whatever the experimental toggle says', () => {
+    const items = [{ key: 'x', label: 'X', path: '/x', experimental: true, hidden: true }];
+    expect(visibleNavigationItems(items, false)).toEqual([]);
+    expect(visibleNavigationItems(items, true)).toEqual([]);
+  });
+
+  it('keeps Notebooks out of the menu, the feature this exists for', () => {
+    // Unfinished, and plugin.json has no Grafana nav entry for it either, so
+    // the in-app menu should not be the one place it surfaces. The route still
+    // resolves for anyone who types the URL.
     const off = visibleNavigationGroups(TRACEHOUSE_OVERFLOW_NAVIGATION, false)
       .flatMap(g => g.items).map(i => i.key);
     const on = visibleNavigationGroups(TRACEHOUSE_OVERFLOW_NAVIGATION, true)
       .flatMap(g => g.items).map(i => i.key);
     expect(off).not.toContain('notebooks');
-    expect(on).toContain('notebooks');
+    expect(on).not.toContain('notebooks');
   });
 });
 

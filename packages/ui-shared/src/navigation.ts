@@ -9,6 +9,12 @@ export interface TracehouseNavigationItem {
    */
   experimental?: boolean;
   /**
+   * Kept out of every menu, whatever the experimental toggle says. The route
+   * still resolves, so the page is reachable by URL and keeps its metadata
+   * below — this hides an unfinished feature without unpicking its entry.
+   */
+  hidden?: boolean;
+  /**
    * Whether the page is useless without a configured ClickHouse datasource.
    * Defaults to true, because almost every page reads from the cluster.
    *
@@ -46,7 +52,7 @@ export const TRACEHOUSE_OVERFLOW_NAVIGATION = [
   {
     label: 'Advanced',
     items: [
-      { key: 'notebooks', label: 'Notebooks', path: '/notebooks', experimental: true, requiresDatasource: false },
+      { key: 'notebooks', label: 'Notebooks', path: '/notebooks', experimental: true, hidden: true, requiresDatasource: false },
       { key: 'engine-internals', label: 'Engine Internals', path: '/engine-internals' },
     ],
   },
@@ -99,12 +105,12 @@ export function countVisibleNavigationItems({
   return count;
 }
 
-/** Drop experimental entries unless the user has opted in. */
+/** Drop hidden entries always, and experimental ones unless the user has opted in. */
 export function visibleNavigationItems<T extends TracehouseNavigationItem>(
   items: readonly T[],
   experimentalEnabled: boolean,
 ): readonly T[] {
-  return experimentalEnabled ? items : items.filter(item => !item.experimental);
+  return items.filter(item => !item.hidden && (experimentalEnabled || !item.experimental));
 }
 
 /** Same, for the grouped overflow menu. Groups left empty by the filter are dropped. */
