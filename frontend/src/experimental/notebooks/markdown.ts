@@ -24,6 +24,20 @@ import type {
 } from './model';
 import { notebookKindLabel, rowMatchesKey } from './model';
 
+/**
+ * A Markdown inline code span. Field, block and evidence names come from the
+ * manifest, so a name containing a backtick would close the span early and
+ * spill the rest of the line into prose. CommonMark's escape is a delimiter run
+ * longer than any run inside the content, padded with spaces when the content
+ * itself begins or ends with a backtick.
+ */
+function code(value: string): string {
+  const longest = (value.match(/`+/g) ?? []).reduce((max, run) => Math.max(max, run.length), 0);
+  const fence = '`'.repeat(longest + 1);
+  const pad = value.startsWith('`') || value.endsWith('`') ? ' ' : '';
+  return `${fence}${pad}${value}${pad}${fence}`;
+}
+
 /** Pipes would break the table; newlines would break the row. */
 function cell(value: EvidenceValue | undefined): string {
   if (value === null || value === undefined) return '';
@@ -88,7 +102,7 @@ function columnParts(columns: NotebookCell['columns']): string[] {
   if (!columns?.length) return [];
   const renames = columns.map(column => {
     const type = column.type ? ` (${column.type})` : '';
-    return `\`${column.field}\` → ${column.label}${type}`;
+    return `${code(column.field)} → ${column.label}${type}`;
   });
   return ['', `Displayed columns: ${renames.join(' · ')}`];
 }
@@ -105,10 +119,10 @@ export function cellToMarkdown(cell: NotebookCell, evidence: NotebookEvidence | 
     `## ${String(index + 1).padStart(2, '0')} · ${cell.headline}`,
     '',
     [
-      `block \`${cell.block}\``,
+      `block ${code(cell.block)}`,
       ...encodingParts(cell.encoding),
       ...highlightParts(cell.highlight),
-      `id \`${cell.id}\``,
+      `id ${code(cell.id)}`,
     ].join(' · '),
     '',
     cell.takeaway,
@@ -117,23 +131,19 @@ export function cellToMarkdown(cell: NotebookCell, evidence: NotebookEvidence | 
   if (!evidence) {
     // Validation rejects this, so it only shows up for documents rendered
     // outside the loader. Say so rather than printing an empty section.
-    // Markdown inline code span, not a ClickHouse identifier.
-    // nosemgrep: clickhouse-unescaped-identifier-interpolation
-    lines.push('', `_Missing evidence: \`${cell.evidence}\`_`);
+    lines.push('', `_Missing evidence: ${code(cell.evidence)}_`);
     return lines;
   }
 
   const mode = evidence.mode === 'live-link' ? 'linked evidence' : 'captured evidence';
-  // Markdown inline code span, not a ClickHouse identifier.
-  // nosemgrep: clickhouse-unescaped-identifier-interpolation
-  lines.push('', `**Evidence — ${evidence.title}** (\`${cell.evidence}\`, ${mode})`);
+  lines.push('', `**Evidence — ${evidence.title}** (${code(cell.evidence)}, ${mode})`);
   lines.push(...provenanceParts(evidence));
   lines.push(...columnParts(cell.columns));
   lines.push('');
   lines.push(...table(evidence, cell.highlight?.rowKey, cell.columns));
 
   if (cell.actions?.length) {
-    lines.push('', `Actions: ${cell.actions.map(action => `${action.type} → \`${action.evidence}\``).join(' · ')}`);
+    lines.push('', `Actions: ${cell.actions.map(action => `${action.type} → ${code(action.evidence)}`).join(' · ')}`);
   }
 
   const route = evidence.view?.route ?? evidence.view?.href;
