@@ -27,16 +27,19 @@ Read both references before composing:
    existing TraceHouse links. Do not chart column names blindly.
 3. Restate the question. Separate what was observed from the proposed cause.
 4. Select the minimum evidence needed to answer the question. Retain material
-   counter-evidence and missing-data caveats.
+   counter-evidence.
 5. Write an ordered sequence of conclusion-shaped headlines. Prefer “Query
    q-123 accounted for 61% of the peak” over “Top queries.”
-6. Classify every stage as `observed`, `derived`, `inferred`, or `recommended`.
-   An inferred stage must include a caveat describing what is not directly
-   measured.
-7. Bind each stage to one primary evidence ID and a stable highlight. Use entity
+6. Say how sure you are in the takeaway itself, in plain words. State a
+   measured finding directly; write an uncertain explanation as one, naming
+   what would confirm it. Follow the plain-language examples in the visual
+   grammar; do not add classification jargon to prose.
+7. Bind each cell to one primary evidence ID and a stable highlight. Use entity
    keys and timestamps, never row positions.
-8. Prefer a ClickHouse domain block. Use a generic semantic chart only when no
-   domain block fits. Keep the same entity color/identity across stages.
+8. Choose a supported block using the visual grammar. Repeated query or error
+   records belong in a compact table; `facts.list` is for short label/value
+   facts, not full exception messages or SQL. Preserve the underlying evidence
+   without putting every captured field in the main visual.
 9. Preserve two evidence forms when available:
    - snapshot rows used for the claim;
    - a TraceHouse-native `view.route` with frozen absolute time.
@@ -61,11 +64,11 @@ Read both references before composing:
 
 ## Prototype scope
 
-The current TraceHouse workbook supports `timeseries.annotated`,
+The current TraceHouse notebook supports `timeseries.annotated`,
 `table.ranked`, and `facts.list`. It reuses the dashboard `ChartRenderer`,
-`ResultsTable`, and Focus Stage interaction conventions. If another block is
+`ResultsTable`, and Focus Cell interaction conventions. If another block is
 needed, report the unsupported visual instead of inventing a block name.
 
-The standalone HTML packer is a development preview only. App-relative
-evidence routes are deliberately not activated there. The supported product
-experience is the TraceHouse `/notebooks` route in standalone and Grafana.
+The supported product experience is the TraceHouse `/notebooks` route in
+standalone and Grafana. Confidence lives in the prose, not in badges or
+metadata fields.

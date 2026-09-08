@@ -7,9 +7,12 @@
  * until you have mentally transposed it. The same rows as a Markdown table are
  * readable at a glance.
  *
- * This is a lossy view by design: it carries what a human needs to audit the
- * notebook, not what a machine needs to reconstruct it. Fields that only matter
- * to the renderer (encodings, descriptor versions, action lists) are omitted.
+ * The view is a full account of the cell, not a summary of it. Every field a
+ * cell declares in the manifest appears here, including the ones that only the
+ * renderer consumes — `block`, `encoding`, `highlight`. Those decide whether a
+ * cell draws as a table, a chart or a grid of tiles, so a reader comparing two
+ * cells that look different has no way to explain the difference unless the
+ * source view says which block each one asked for.
  */
 
 import type {
@@ -17,7 +20,7 @@ import type {
   EvidenceValue,
   NotebookDocument,
   NotebookEvidence,
-  NotebookStage,
+  NotebookCell,
 } from './model';
 import { notebookKindLabel, rowMatchesKey } from './model';
 
@@ -27,10 +30,11 @@ function cell(value: EvidenceValue | undefined): string {
   return String(value).replace(/\|/g, '\\|').replace(/\n/g, ' ');
 }
 
-function table(evidence: NotebookEvidence, highlight?: Record<string, EvidenceValue>): string[] {
-  const header = evidence.columns.map(column => {
-    const unit = evidence.units?.[column];
-    return unit ? `${column} (${unit})` : column;
+function table(evidence: NotebookEvidence, highlight?: Record<string, EvidenceValue>, columns?: NotebookCell['columns']): string[] {
+  const fields = columns ?? evidence.columns.map(field => ({ field, label: field }));
+  const header = fields.map(column => {
+    const unit = evidence.units?.[column.field];
+    return unit ? `${column.label} (${unit})` : column.label;
   });
 
   const lines = [
@@ -39,12 +43,12 @@ function table(evidence: NotebookEvidence, highlight?: Record<string, EvidenceVa
   ];
 
   for (const row of evidence.rows as EvidenceRow[]) {
-    const cells = evidence.columns.map(column => cell(row[column]));
+    const cells = fields.map(column => cell(row[column.field]));
     // The highlighted row is the one the claim rests on, so it has to survive
     // the trip into Markdown or the table stops supporting the headline.
     //
     // Guarded on `highlight` because rowMatchesKey is vacuously true for an
-    // absent key — a stage highlighting a timestamp instead of a row would
+    // absent key — a cell highlighting a timestamp instead of a row would
     // otherwise mark every row, which marks nothing.
     const marker = highlight && rowMatchesKey(row, highlight) ? ' **←**' : '';
     lines.push(`| ${cells.join(' | ')} |${marker}`);
@@ -53,33 +57,84 @@ function table(evidence: NotebookEvidence, highlight?: Record<string, EvidenceVa
   return lines;
 }
 
-/** One stage as Markdown lines. Exported so a panel can show its own source. */
-export function stageToMarkdown(stage: NotebookStage, evidence: NotebookEvidence | undefined, index: number): string[] {
-  const lines = [
-    `## ${String(index + 1).padStart(2, '0')} · ${stage.headline}`,
-    '',
-    // Markdown inline code spans, not ClickHouse identifiers.
-    // nosemgrep: clickhouse-unescaped-identifier-interpolation
-    `\`${stage.claimType}\` · \`${stage.block}\``,
-    '',
-    stage.takeaway,
-  ];
+/**
+ * The encoding names which evidence columns drive the visual. `y` is the one
+ * field that may be a list, so it is joined rather than special-cased upstream.
+ */
+function encodingParts(encoding: NotebookCell['encoding']): string[] {
+  return Object.entries(encoding)
+    .filter(([, value]) => value !== undefined && value !== null)
+    .map(([key, value]) => `${key}: ${Array.isArray(value) ? value.join(', ') : String(value)}`);
+}
 
-  if (stage.caveat) {
-    lines.push('', `> **Inference boundary.** ${stage.caveat}`);
+/**
+ * A row highlight also shows up as `←` on its table row. It is named here as
+ * well because the marker says which row, not what made it the one that matters
+ * — and a timestamp highlight has no row to mark at all.
+ */
+function highlightParts(highlight: NotebookCell['highlight']): string[] {
+  if (!highlight) return [];
+  const parts: string[] = [];
+  if (highlight.timestamp) parts.push(`highlight: ${highlight.timestamp}`);
+  if (highlight.rowKey) {
+    const key = Object.entries(highlight.rowKey).map(([field, value]) => `${field}=${cell(value)}`);
+    if (key.length > 0) parts.push(`highlight: ${key.join(', ')}`);
   }
+  return parts;
+}
+
+/** Presentation renames hide the underlying field, so state the mapping. */
+function columnParts(columns: NotebookCell['columns']): string[] {
+  if (!columns?.length) return [];
+  const renames = columns.map(column => {
+    const type = column.type ? ` (${column.type})` : '';
+    return `\`${column.field}\` → ${column.label}${type}`;
+  });
+  return ['', `Displayed columns: ${renames.join(' · ')}`];
+}
+
+function provenanceParts(evidence: NotebookEvidence): string[] {
+  const entries = Object.entries(evidence.provenance ?? {});
+  if (entries.length === 0) return [];
+  return ['', `Provenance: ${entries.map(([key, value]) => `${key}=${cell(value as EvidenceValue)}`).join(' · ')}`];
+}
+
+/** One cell as Markdown lines. Exported so a panel can show its own source. */
+export function cellToMarkdown(cell: NotebookCell, evidence: NotebookEvidence | undefined, index: number): string[] {
+  const lines = [
+    `## ${String(index + 1).padStart(2, '0')} · ${cell.headline}`,
+    '',
+    [
+      `block \`${cell.block}\``,
+      ...encodingParts(cell.encoding),
+      ...highlightParts(cell.highlight),
+      `id \`${cell.id}\``,
+    ].join(' · '),
+    '',
+    cell.takeaway,
+  ];
 
   if (!evidence) {
     // Validation rejects this, so it only shows up for documents rendered
     // outside the loader. Say so rather than printing an empty section.
     // Markdown inline code span, not a ClickHouse identifier.
     // nosemgrep: clickhouse-unescaped-identifier-interpolation
-    lines.push('', `_Missing evidence: \`${stage.evidence}\`_`);
+    lines.push('', `_Missing evidence: \`${cell.evidence}\`_`);
     return lines;
   }
 
-  lines.push('', `**Evidence — ${evidence.title}** (${evidence.mode})`, '');
-  lines.push(...table(evidence, stage.highlight?.rowKey));
+  const mode = evidence.mode === 'live-link' ? 'linked evidence' : 'captured evidence';
+  // Markdown inline code span, not a ClickHouse identifier.
+  // nosemgrep: clickhouse-unescaped-identifier-interpolation
+  lines.push('', `**Evidence — ${evidence.title}** (\`${cell.evidence}\`, ${mode})`);
+  lines.push(...provenanceParts(evidence));
+  lines.push(...columnParts(cell.columns));
+  lines.push('');
+  lines.push(...table(evidence, cell.highlight?.rowKey, cell.columns));
+
+  if (cell.actions?.length) {
+    lines.push('', `Actions: ${cell.actions.map(action => `${action.type} → \`${action.evidence}\``).join(' · ')}`);
+  }
 
   const route = evidence.view?.route ?? evidence.view?.href;
   if (route) lines.push('', `[Open evidence](${route})`);
@@ -94,7 +149,7 @@ export function notebookToMarkdown(document: NotebookDocument): string {
     '',
     `> ${document.question}`,
     '',
-    `**${notebookKindLabel(document)}** · ${scope.from} → ${scope.to}`,
+    `**${notebookKindLabel(document)}** · schema ${document.schemaVersion} · ${scope.from} → ${scope.to}`,
   ];
 
   const context = [
@@ -104,8 +159,8 @@ export function notebookToMarkdown(document: NotebookDocument): string {
   ].filter(Boolean);
   if (context.length > 0) lines.push('', context.join(' · '));
 
-  document.stages.forEach((stage, index) => {
-    lines.push('', ...stageToMarkdown(stage, document.evidence[stage.evidence], index));
+  document.cells.forEach((cell, index) => {
+    lines.push('', ...cellToMarkdown(cell, document.evidence[cell.evidence], index));
   });
 
   if (document.limitations?.length) {

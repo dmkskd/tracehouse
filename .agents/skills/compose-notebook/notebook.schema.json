@@ -3,7 +3,7 @@
   "$id": "https://tracehouse.dev/schemas/notebook-0.1.json",
   "title": "TraceHouse Notebook 0.1",
   "type": "object",
-  "required": ["schemaVersion", "title", "question", "scope", "evidence", "stages"],
+  "required": ["schemaVersion", "title", "question", "scope", "evidence", "cells"],
   "properties": {
     "schemaVersion": { "const": "0.1" },
     "kind": {
@@ -29,10 +29,10 @@
       "minProperties": 1,
       "additionalProperties": { "$ref": "#/$defs/evidence" }
     },
-    "stages": {
+    "cells": {
       "type": "array",
       "minItems": 1,
-      "items": { "$ref": "#/$defs/stage" }
+      "items": { "$ref": "#/$defs/cell" }
     },
     "limitations": { "type": "array", "items": { "type": "string" } }
   },
@@ -65,18 +65,28 @@
       },
       "additionalProperties": false
     },
-    "stage": {
+    "cell": {
       "type": "object",
-      "required": ["id", "headline", "claimType", "block", "evidence", "encoding", "takeaway"],
+      "required": ["id", "headline", "block", "evidence", "encoding", "takeaway"],
       "properties": {
         "id": { "type": "string", "pattern": "^[a-z0-9][a-z0-9-]*$" },
         "headline": { "type": "string", "minLength": 1 },
-        "claimType": { "enum": ["observed", "derived", "inferred", "recommended"] },
         "block": { "type": "string" },
         "evidence": { "type": "string" },
         "encoding": { "type": "object" },
+        "columns": {
+          "type": "array", "minItems": 1,
+          "items": {
+            "type": "object", "required": ["field", "label"],
+            "properties": {
+              "field": { "type": "string" },
+              "label": { "type": "string", "minLength": 1 },
+              "type": { "enum": ["text", "query", "sql", "bytes", "timestamp"] }
+            },
+            "additionalProperties": false
+          }
+        },
         "takeaway": { "type": "string", "minLength": 1 },
-        "caveat": { "type": "string", "minLength": 1 },
         "highlight": { "type": "object" },
         "actions": {
           "type": "array",

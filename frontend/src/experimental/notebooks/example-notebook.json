@@ -172,11 +172,10 @@
       }
     }
   },
-  "stages": [
+  "cells": [
     {
       "id": "establish-failure",
       "headline": "Host memory reached 50.7 GiB when error 241 occurred",
-      "claimType": "observed",
       "block": "timeseries.annotated",
       "evidence": "host-memory",
       "encoding": {
@@ -199,7 +198,6 @@
     {
       "id": "identify-contributor",
       "headline": "Query q-123 contributed 61% of the attributed peak",
-      "claimType": "derived",
       "block": "table.ranked",
       "evidence": "memory-contributors",
       "encoding": {
@@ -222,7 +220,6 @@
     {
       "id": "explain-mechanism",
       "headline": "The evidence points to hash-join build-side growth",
-      "claimType": "inferred",
       "block": "facts.list",
       "evidence": "query-mechanism",
       "encoding": {
@@ -230,7 +227,6 @@
         "value": "value"
       },
       "takeaway": "q-123 used a hash join with an estimated 482 million build-side rows while two executions of the same normalized query overlapped.",
-      "caveat": "The fixture has plan and query-level metrics but no per-operator memory tracker, so the exact allocation site is not directly measured.",
       "highlight": {
         "rowKey": {
           "fact_id": "plan"
@@ -246,7 +242,6 @@
     {
       "id": "rule-out-merges",
       "headline": "Background merges were not the dominant contributor",
-      "claimType": "derived",
       "block": "table.ranked",
       "evidence": "memory-contributors",
       "encoding": {
@@ -263,7 +258,6 @@
     {
       "id": "recommend-action",
       "headline": "Reduce the build side, then compare the same query hash",
-      "claimType": "recommended",
       "block": "facts.list",
       "evidence": "query-mechanism",
       "encoding": {

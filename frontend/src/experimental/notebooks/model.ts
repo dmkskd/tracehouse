@@ -7,7 +7,6 @@
  */
 export type NotebookKind = 'investigation' | 'runbook' | 'report';
 
-export type NotebookClaimType = 'observed' | 'derived' | 'inferred' | 'recommended';
 export type NotebookBlock = 'timeseries.annotated' | 'table.ranked' | 'facts.list';
 export type EvidenceValue = string | number | boolean | null;
 export type EvidenceRow = Record<string, EvidenceValue>;
@@ -28,10 +27,15 @@ export interface NotebookEvidence {
   };
 }
 
-export interface NotebookStage {
+export interface NotebookColumn {
+  field: string;
+  label: string;
+  type?: 'text' | 'query' | 'sql' | 'bytes' | 'timestamp';
+}
+
+export interface NotebookCell {
   id: string;
   headline: string;
-  claimType: NotebookClaimType;
   block: NotebookBlock;
   evidence: string;
   encoding: {
@@ -41,8 +45,9 @@ export interface NotebookStage {
     value?: string;
     rankBy?: string;
   };
+  /** Readable presentation columns; raw evidence remains intact. */
+  columns?: NotebookColumn[];
   takeaway: string;
-  caveat?: string;
   highlight?: {
     timestamp?: string;
     rowKey?: Record<string, EvidenceValue>;
@@ -64,7 +69,7 @@ export interface NotebookDocument {
     hosts?: string[];
   };
   evidence: Record<string, NotebookEvidence>;
-  stages: NotebookStage[];
+  cells: NotebookCell[];
   limitations?: string[];
 }
 
@@ -97,4 +102,15 @@ export function evidenceTarget(evidence: NotebookEvidence):
     return { kind: 'external', value: evidence.view.href };
   }
   return undefined;
+}
+
+/**
+ * Fact tiles sit in one grid and are read across, so a long value shrinks
+ * rather than breaking mid-token: `MEMORY_LIMIT_EXCEEDED` is a single word
+ * wider than its tile at the default size.
+ */
+export function factValueFontSize(value: string): number {
+  if (value.length > 24) return 12;
+  if (value.length > 14) return 14;
+  return 17;
 }

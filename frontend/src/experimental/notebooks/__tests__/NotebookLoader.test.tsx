@@ -25,7 +25,7 @@ describe('NotebookLoader', () => {
   });
 
   it('reports validation errors and renders nothing', () => {
-    const broken = { ...memoryLimitNotebook, stages: [{ ...memoryLimitNotebook.stages[0], evidence: 'nope' }] };
+    const broken = { ...memoryLimitNotebook, cells: [{ ...memoryLimitNotebook.cells[0], evidence: 'nope' }] };
     const { container } = renderLoader();
     paste(JSON.stringify(broken));
 
@@ -59,14 +59,14 @@ describe('NotebookLoader', () => {
     await screen.findByText(memoryLimitNotebook.title);
 
     expect(screen.queryByLabelText('Notebook source')).toBeNull();
-    fireEvent.click(screen.getByText('Full source'));
+    fireEvent.click(screen.getAllByText('Markdown')[0]);
 
     const source = screen.getByLabelText('Notebook source').textContent ?? '';
     expect(source).toContain(`# ${memoryLimitNotebook.title}`);
     expect(source).toContain('| ---');
     expect(source).not.toContain('"schemaVersion"');
 
-    fireEvent.click(screen.getByText('Hide full source'));
+    fireEvent.click(screen.getByText('Hide Markdown'));
     expect(screen.queryByLabelText('Notebook source')).toBeNull();
   });
 
@@ -74,5 +74,11 @@ describe('NotebookLoader', () => {
     renderLoader();
     fireEvent.click(screen.getByText('View example'));
     expect(await screen.findByText(memoryLimitNotebook.title)).toBeDefined();
+  });
+
+  it('says the feature is a preview, not only that the format changes', () => {
+    renderLoader();
+    expect(screen.getByText('PREVIEW')).toBeInTheDocument();
+    expect(screen.getByText(/Pre-alpha and actively being designed/)).toBeInTheDocument();
   });
 });

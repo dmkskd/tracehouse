@@ -10,7 +10,7 @@ Required top-level fields:
 - `question`
 - `scope.from` and `scope.to` as absolute UTC timestamps
 - `evidence`, keyed by stable evidence ID
-- one or more ordered `stages`
+- one or more ordered `cells`
 
 Each evidence item contains:
 
@@ -25,17 +25,17 @@ Each evidence item contains:
   TraceHouse-owned evidence
 - optional `view.descriptorVersion`
 
-Each stage contains:
+Each cell contains:
 
 - `id`: stable within the notebook
 - `headline`: a conclusion, not a panel label
-- `claimType`: `observed`, `derived`, `inferred`, or `recommended`
-- `block`: an ID from `visual-catalog.json`
+- `block`: a supported ID from [visual-grammar.md](visual-grammar.md)
 - `evidence`: one evidence ID
 - `encoding`: block-specific field bindings
+- optional `columns`: display fields with readable `label` and optional `type`
+  (`text`, `query`, `sql`, `bytes`, `timestamp`); raw evidence stays intact
 - `takeaway`: at most two short sentences
 - optional `highlight`: a timestamp, interval, or stable `rowKey`
-- optional `caveat`: required for inferred claims
 - optional `actions`: currently `open-evidence`
 
 Use `snapshot-with-live-link` when both rows and a reproducible view exist,
@@ -45,5 +45,4 @@ remain auditable.
 
 The validator checks references and block bindings in addition to JSON shape.
 It rejects unknown blocks, missing evidence, missing encoded columns, relative
-scope timestamps, row-position highlights, and inferred claims without a
-caveat.
+scope timestamps, and row-position highlights.

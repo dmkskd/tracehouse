@@ -12,19 +12,19 @@ describe('validateNotebook', () => {
     expect(result.ok).toBe(true);
   });
 
-  it('rejects a stage naming evidence that does not exist', () => {
+  it('rejects a cell naming evidence that does not exist', () => {
     // The crash this module exists to prevent: the renderer reads
-    // document.evidence[stage.evidence].title and white-screens the route.
+    // document.evidence[cell.evidence].title and white-screens the route.
     const doc = valid();
-    doc.stages[0].evidence = 'does-not-exist';
+    doc.cells[0].evidence = 'does-not-exist';
     const result = validateNotebook(doc);
     expect(result.ok).toBe(false);
     expect(result.ok === false && result.errors.join('\n')).toContain('unknown evidence does-not-exist');
   });
 
-  it('rejects duplicate stage IDs', () => {
+  it('rejects duplicate cell IDs', () => {
     const doc = valid();
-    doc.stages = [doc.stages[0], { ...doc.stages[0] }];
+    doc.cells = [doc.cells[0], { ...doc.cells[0] }];
     const result = validateNotebook(doc);
     expect(result.ok === false && result.errors.join('\n')).toMatch(/duplicates/);
   });
@@ -46,12 +46,6 @@ describe('validateNotebook', () => {
     expect(validateNotebook(doc).ok).toBe(false);
   });
 
-  it('rejects an inferred claim with no caveat', () => {
-    const doc = valid();
-    doc.stages[0].claimType = 'inferred';
-    delete doc.stages[0].caveat;
-    expect(validateNotebook(doc).ok).toBe(false);
-  });
 
   it('rejects an unknown kind but allows an absent one', () => {
     const doc = valid();
@@ -65,13 +59,13 @@ describe('validateNotebook', () => {
 
   it('rejects row-position highlights', () => {
     const doc = valid();
-    doc.stages[0].highlight = { row: 0 };
+    doc.cells[0].highlight = { row: 0 };
     expect(validateNotebook(doc).ok).toBe(false);
   });
 
   it('rejects encodings referencing a column the evidence lacks', () => {
     const doc = valid();
-    doc.stages[0].encoding = { ...doc.stages[0].encoding, label: 'no_such_column' };
+    doc.cells[0].encoding = { ...doc.cells[0].encoding, label: 'no_such_column' };
     expect(validateNotebook(doc).ok).toBe(false);
   });
 

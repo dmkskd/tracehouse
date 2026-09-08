@@ -1,17 +1,10 @@
 import React, { useEffect, useMemo, useState } from 'react';
 import { Link } from 'react-router-dom';
-import { buildChartData, ChartRenderer, sortRows } from '../../components/analytics/charts';
-import { ResultsTable } from '../../components/analytics/ResultsTable';
-import type { NotebookDocument, NotebookEvidence, NotebookStage } from './model';
-import { evidenceTarget, notebookKindLabel, rowMatchesKey } from './model';
-import { stageToMarkdown } from './markdown';
-
-const claimColors = {
-  observed: 'var(--accent-blue)',
-  derived: 'var(--accent-yellow)',
-  inferred: '#f59e0b',
-  recommended: 'var(--accent-green)',
-} as const;
+import { buildChartData, ChartRenderer } from '../../components/analytics/charts';
+import { NotebookTable } from './NotebookTable';
+import type { NotebookDocument, NotebookEvidence, NotebookCell } from './model';
+import { evidenceTarget, factValueFontSize, notebookKindLabel, rowMatchesKey } from './model';
+import { cellToMarkdown } from './markdown';
 
 const buttonStyle: React.CSSProperties = {
   padding: '7px 10px',
@@ -67,15 +60,12 @@ function EvidenceAction({ evidence }: { evidence: NotebookEvidence }) {
   );
 }
 
-function StageVisual({ stage, evidence }: { stage: NotebookStage; evidence: NotebookEvidence }) {
-  const [sortColumn, setSortColumn] = useState<string | null>(null);
-  const [sortDirection, setSortDirection] = useState<'asc' | 'desc'>('desc');
-  const rows = evidence.rows as Record<string, unknown>[];
-  const sortedRows = sortColumn ? sortRows(rows, sortColumn, sortDirection) : rows;
+function CellVisual({ cell, evidence }: { cell: NotebookCell; evidence: NotebookEvidence }) {
+  const rows = evidence.rows;
 
-  if (stage.block === 'timeseries.annotated') {
-    const x = stage.encoding.x;
-    const y = Array.isArray(stage.encoding.y) ? stage.encoding.y[0] : stage.encoding.y;
+  if (cell.block === 'timeseries.annotated') {
+    const x = cell.encoding.x;
+    const y = Array.isArray(cell.encoding.y) ? cell.encoding.y[0] : cell.encoding.y;
     const data = buildChartData(rows, evidence.columns, x, y);
     return (
       <div style={{ height: 320, minHeight: 240 }}>
@@ -90,57 +80,40 @@ function StageVisual({ stage, evidence }: { stage: NotebookStage; evidence: Note
     );
   }
 
-  if (stage.block === 'table.ranked') {
-    const rankBy = stage.encoding.rankBy;
-    const rankedRows = rankBy ? sortRows(rows, rankBy, 'desc') : sortedRows;
-    // Guarded: rowMatchesKey is vacuously true for an absent key, so a stage
-    // with no rowKey would otherwise report its first row as the highlight.
-    const rowKey = stage.highlight?.rowKey;
-    const highlighted = rowKey ? rankedRows.find(row => rowMatchesKey(row, rowKey)) : undefined;
-    return (
-      <div>
-        {highlighted && rankBy && (
-          <div style={{
-            marginBottom: 10, padding: '8px 10px', borderLeft: '2px solid var(--accent-yellow)',
-            background: 'rgba(210,153,34,0.09)', color: 'var(--text-secondary)', fontSize: 12,
-          }}>
-            Highlighted: {String(highlighted[stage.encoding.label ?? evidence.columns[0]])}
-            {' · '}{String(highlighted[rankBy])}{evidence.units?.[rankBy] ? ` ${evidence.units[rankBy]}` : ''}
-          </div>
-        )}
-        <ResultsTable
-          columns={evidence.columns}
-          rows={rankedRows}
-          sortColumn={sortColumn}
-          sortDirection={sortDirection}
-          onSort={column => {
-            if (sortColumn === column) setSortDirection(value => value === 'asc' ? 'desc' : 'asc');
-            else { setSortColumn(column); setSortDirection('desc'); }
-          }}
-          compact
-          enableRowDetails
-        />
-      </div>
-    );
-  }
+  if (cell.block === 'table.ranked') return <NotebookTable cell={cell} evidence={evidence} />;
 
-  const label = stage.encoding.label ?? evidence.columns[0];
-  const value = stage.encoding.value ?? evidence.columns[1];
-  const factRowKey = stage.highlight?.rowKey;
+  const label = cell.encoding.label ?? evidence.columns[0];
+  const value = cell.encoding.value ?? evidence.columns[1];
+  const factRowKey = cell.highlight?.rowKey;
+  if (rows.some(row => String(row[value] ?? '').length > 100)) {
+    return <NotebookTable cell={{ ...cell, columns: cell.columns ?? [{ field: label, label: 'Record' }, { field: value, label: 'Details' }] }} evidence={evidence} />;
+  }
   return (
-    <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(180px, 1fr))', gap: 10 }}>
+    <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(190px, 1fr))', gap: 10 }}>
       {rows.map((row, index) => {
         // Same guard: without it every tile renders highlighted, which
         // highlights nothing.
         const highlighted = factRowKey ? rowMatchesKey(row, factRowKey) : false;
+        const text = String(row[value] ?? '—');
         return (
-          <div key={index} style={{
-            padding: 14, border: `1px solid ${highlighted ? 'var(--accent-yellow)' : 'var(--border-primary)'}`,
-            borderRadius: 7, background: highlighted ? 'rgba(210,153,34,0.09)' : 'var(--bg-primary)',
+          // `stat-card` is the app's own tile: one background, one border, one
+          // radius, and a light-theme override that already exists.
+          <div key={index} className="stat-card" style={{
+            display: 'flex', flexDirection: 'column', minWidth: 0, padding: 14,
+            border: `1px solid ${highlighted ? 'var(--accent-yellow)' : 'var(--border-primary)'}`,
+            background: highlighted ? 'rgba(210,153,34,0.09)' : undefined,
           }}>
-            <div style={{ color: 'var(--text-muted)', fontSize: 11 }}>{String(row[label] ?? '—')}</div>
-            <div style={{ marginTop: 5, color: 'var(--text-primary)', fontSize: 17, fontFamily: 'monospace', fontWeight: 650 }}>
-              {String(row[value] ?? '—')}
+            <div style={{ color: 'var(--text-muted)', fontSize: 11, lineHeight: 1.35 }}>{String(row[label] ?? '—')}</div>
+            {/* Values are read across the row, so they sit on a common bottom
+                edge: a label that wraps to two lines must not push its value
+                out of line with its neighbours'. `anywhere` is the backstop for
+                a token with no space to wrap at. */}
+            <div style={{
+              marginTop: 'auto', paddingTop: 8, color: 'var(--text-primary)',
+              fontSize: factValueFontSize(text), fontFamily: 'monospace', fontWeight: 650,
+              lineHeight: 1.3, overflowWrap: 'anywhere',
+            }}>
+              {text}
             </div>
           </div>
         );
@@ -149,14 +122,14 @@ function StageVisual({ stage, evidence }: { stage: NotebookStage; evidence: Note
   );
 }
 
-function StageCard({
-  stage,
+function CellCard({
+  cell,
   evidence,
   index,
   focused,
   onFocus,
 }: {
-  stage: NotebookStage;
+  cell: NotebookCell;
   evidence: NotebookEvidence;
   index: number;
   focused: boolean;
@@ -164,7 +137,7 @@ function StageCard({
 }) {
   const [showSource, setShowSource] = useState(false);
   return (
-    <section id={`notebook-stage-${stage.id}`} style={{
+    <section id={`notebook-cell-${cell.id}`} style={{
       border: focused ? '1px solid rgba(99,102,241,0.62)' : '1px solid var(--border-primary)',
       borderRadius: 8, background: 'var(--bg-card)', overflow: 'hidden',
       boxShadow: focused ? '0 0 0 2px rgba(99,102,241,0.10)' : undefined,
@@ -172,14 +145,7 @@ function StageCard({
       <header style={{ padding: '17px 18px', borderBottom: '1px solid var(--border-primary)' }}>
         <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
           <span style={{ color: 'var(--accent-yellow)', fontFamily: 'monospace', fontSize: 10, fontWeight: 700 }}>
-            STEP {String(index + 1).padStart(2, '0')}
-          </span>
-          <span style={{
-            padding: '2px 6px', border: `1px solid ${claimColors[stage.claimType]}`,
-            borderRadius: 4, color: claimColors[stage.claimType], fontFamily: 'monospace',
-            fontSize: 9, fontWeight: 700, textTransform: 'uppercase',
-          }}>
-            {stage.claimType}
+            CELL {String(index + 1).padStart(2, '0')}
           </span>
           {/* Every panel action lives here: one row, one style, nothing in a
               footer. */}
@@ -187,36 +153,31 @@ function StageCard({
             <button
               onClick={() => setShowSource(value => !value)}
               style={showSource ? panelActionActiveStyle : panelActionStyle}
-              title="Show this step as Markdown"
+              title="Show this cell as Markdown"
             >
-              Source
+              Markdown
             </button>
             <EvidenceAction evidence={evidence} />
             <button
               onClick={onFocus}
               style={focused ? panelActionActiveStyle : panelActionStyle}
-              title="Focus this step"
+              title="Focus this cell"
             >
               Focus
             </button>
           </div>
         </div>
-        <h2 style={{ margin: '9px 0 7px', fontSize: 20, color: 'var(--text-primary)' }}>{stage.headline}</h2>
-        <p style={{ margin: 0, color: 'var(--text-secondary)', fontSize: 13, lineHeight: 1.55 }}>{stage.takeaway}</p>
-        {stage.caveat && (
-          <div style={{ marginTop: 11, padding: '8px 10px', borderLeft: '2px solid #f59e0b', background: 'rgba(245,158,11,0.08)', color: '#d99a30', fontSize: 11 }}>
-            Inference boundary: {stage.caveat}
-          </div>
-        )}
+        <h2 style={{ margin: '9px 0 7px', fontSize: 20, color: 'var(--text-primary)' }}>{cell.headline}</h2>
+        <p style={{ margin: 0, color: 'var(--text-secondary)', fontSize: 13, lineHeight: 1.55 }}>{cell.takeaway}</p>
       </header>
       <div style={{ padding: 18 }}>
         <div style={{ marginBottom: 12, color: 'var(--text-muted)', fontFamily: 'monospace', fontSize: 10 }}>
-          {evidence.title} · {evidence.mode}
+          {evidence.title} · {evidence.mode === 'live-link' ? 'Linked evidence' : 'Captured evidence'}
         </div>
-        <StageVisual stage={stage} evidence={evidence} />
+        <CellVisual cell={cell} evidence={evidence} />
         {showSource && (
           <pre
-            aria-label={`Source for step ${index + 1}`}
+            aria-label={`Source for cell ${index + 1}`}
             style={{
               margin: '14px 0 0', padding: 12, overflow: 'auto',
               border: '1px solid var(--border-primary)', borderRadius: 6,
@@ -224,7 +185,7 @@ function StageCard({
               fontFamily: 'monospace', fontSize: 11, lineHeight: 1.5, whiteSpace: 'pre-wrap',
             }}
           >
-            {stageToMarkdown(stage, evidence, index).join('\n')}
+            {cellToMarkdown(cell, evidence, index).join('\n')}
           </pre>
         )}
       </div>
@@ -232,8 +193,14 @@ function StageCard({
   );
 }
 
-export function NotebookView({ document }: { document: NotebookDocument }) {
-  const [focusIndex, setFocusIndex] = useState<number | null>(null);
+export function NotebookView({ document, focusIndex: controlledFocus, onFocusChange }: {
+  document: NotebookDocument;
+  focusIndex?: number | null;
+  onFocusChange?: (index: number | null) => void;
+}) {
+  const [localFocus, setLocalFocus] = useState<number | null>(null);
+  const focusIndex = controlledFocus === undefined ? localFocus : controlledFocus;
+  const setFocusIndex = onFocusChange ?? setLocalFocus;
   const focusActive = focusIndex !== null;
 
   useEffect(() => {
@@ -242,20 +209,20 @@ export function NotebookView({ document }: { document: NotebookDocument }) {
       if (event.key === 'Escape') setFocusIndex(null);
       if (event.key === 'ArrowDown' || event.key === 'ArrowRight') {
         event.preventDefault();
-        setFocusIndex(value => value === null ? 0 : Math.min(document.stages.length - 1, value + 1));
+        setFocusIndex(Math.min(document.cells.length - 1, (focusIndex ?? -1) + 1));
       }
       if (event.key === 'ArrowUp' || event.key === 'ArrowLeft') {
         event.preventDefault();
-        setFocusIndex(value => value === null ? 0 : Math.max(0, value - 1));
+        setFocusIndex(Math.max(0, (focusIndex ?? 1) - 1));
       }
     };
     window.addEventListener('keydown', onKeyDown);
     return () => window.removeEventListener('keydown', onKeyDown);
-  }, [document.stages.length, focusActive]);
+  }, [document.cells.length, focusActive, focusIndex, setFocusIndex]);
 
-  const visibleStages = useMemo(() => focusIndex === null
-    ? document.stages.map((stage, index) => ({ stage, index }))
-    : [{ stage: document.stages[focusIndex], index: focusIndex }], [document.stages, focusIndex]);
+  const visibleCells = useMemo(() => focusIndex === null
+    ? document.cells.map((cell, index) => ({ cell, index }))
+    : [{ cell: document.cells[focusIndex], index: focusIndex }], [document.cells, focusIndex]);
 
   return (
     <div className="page-layout" style={{ height: '100%', overflow: 'auto', gap: 0 }}>
@@ -267,9 +234,9 @@ export function NotebookView({ document }: { document: NotebookDocument }) {
             </span>
             <span className="badge">{notebookKindLabel(document)}</span>
             {document.scope.sourceLabel && <span className="badge">{document.scope.sourceLabel}</span>}
-            <button onClick={() => setFocusIndex(focusActive ? null : 0)} style={{ ...buttonStyle, marginLeft: 'auto' }}>
-              {focusActive ? 'Exit focus' : 'Present notebook'}
-            </button>
+            {controlledFocus === undefined && <button onClick={() => setFocusIndex(focusActive ? null : 0)} style={{ ...buttonStyle, marginLeft: 'auto' }}>
+              {focusActive ? 'Exit focus' : 'Focus'}
+            </button>}
           </div>
           <h1 style={{ margin: '10px 0 5px', color: 'var(--text-primary)', fontSize: 27 }}>{document.title}</h1>
           <p style={{ margin: 0, color: 'var(--text-secondary)', fontSize: 15 }}>{document.question}</p>
@@ -282,28 +249,28 @@ export function NotebookView({ document }: { document: NotebookDocument }) {
         <div style={{ display: 'grid', gridTemplateColumns: focusActive ? '220px minmax(0, 1fr)' : '1fr', gap: 18, padding: '22px 0 40px' }}>
           {focusActive && (
             <aside style={{ position: 'sticky', top: 0, alignSelf: 'start', display: 'grid', gap: 6 }}>
-              {document.stages.map((stage, index) => (
-                <button key={stage.id} onClick={() => setFocusIndex(index)} style={{
+              {document.cells.map((cell, index) => (
+                <button key={cell.id} onClick={() => setFocusIndex(index)} style={{
                   padding: '9px 10px', border: '1px solid var(--border-primary)', borderRadius: 6,
                   background: index === focusIndex ? 'var(--bg-card-hover)' : 'var(--bg-card)',
                   color: index === focusIndex ? 'var(--text-primary)' : 'var(--text-muted)',
                   textAlign: 'left', fontSize: 11, cursor: 'pointer',
                 }}>
                   <span style={{ color: 'var(--accent-yellow)', fontFamily: 'monospace', marginRight: 7 }}>{String(index + 1).padStart(2, '0')}</span>
-                  {stage.headline}
+                  {cell.headline}
                 </button>
               ))}
               <div style={{ color: 'var(--text-muted)', fontSize: 9, fontFamily: 'monospace', padding: '6px 2px' }}>
-                ↑ ↓ steps · Esc workbook
+                ↑ ↓ cells · Esc exit focus
               </div>
             </aside>
           )}
           <main style={{ display: 'grid', gap: 18, minWidth: 0 }}>
-            {visibleStages.map(({ stage, index }) => (
-              <StageCard
-                key={stage.id}
-                stage={stage}
-                evidence={document.evidence[stage.evidence]}
+            {visibleCells.map(({ cell, index }) => (
+              <CellCard
+                key={cell.id}
+                cell={cell}
+                evidence={document.evidence[cell.evidence]}
                 index={index}
                 focused={focusIndex === index}
                 onFocus={() => setFocusIndex(index)}

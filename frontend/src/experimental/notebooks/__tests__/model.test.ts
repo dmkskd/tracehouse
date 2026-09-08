@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { memoryLimitNotebook } from '../example';
-import { evidenceTarget, notebookKind, notebookKindLabel, rowMatchesKey } from '../model';
+import { evidenceTarget, factValueFontSize, notebookKind, notebookKindLabel, rowMatchesKey } from '../model';
 
 describe('notebook model', () => {
   it('keeps TraceHouse evidence links host-independent', () => {
@@ -36,5 +36,12 @@ describe('notebook model', () => {
   it('treats a document without a kind as an investigation', () => {
     const { kind, ...withoutKind } = memoryLimitNotebook;
     expect(notebookKind(withoutKind)).toBe('investigation');
+  });
+
+  it('shrinks a fact value that is wider than its tile', () => {
+    // A single unbroken token has no space to wrap at, so size is the only
+    // lever before it overflows the card.
+    expect(factValueFontSize('hash')).toBeGreaterThan(factValueFontSize('241 MEMORY_LIMIT_EXCEEDED'));
+    expect(factValueFontSize('31.0 GiB')).toBe(17);
   });
 });

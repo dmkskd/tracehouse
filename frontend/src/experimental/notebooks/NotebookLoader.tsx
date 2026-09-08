@@ -55,6 +55,7 @@ export function NotebookLoader() {
   const [dragging, setDragging] = useState(false);
   const [pasted, setPasted] = useState('');
   const [showSource, setShowSource] = useState(false);
+  const [focusIndex, setFocusIndex] = useState<number | null>(null);
   const inputRef = useRef<HTMLInputElement>(null);
 
   /** Single entry point, so every source is validated the same way. */
@@ -79,6 +80,7 @@ export function NotebookLoader() {
     setErrors(null);
     setSourceName(null);
     setShowSource(false);
+    setFocusIndex(null);
     setPasted('');
     if (inputRef.current) inputRef.current.value = '';
   }, []);
@@ -109,7 +111,10 @@ export function NotebookLoader() {
               color: showSource ? 'var(--text-primary)' : 'var(--text-secondary)',
             }}
           >
-            {showSource ? 'Hide full source' : 'Full source'}
+            {showSource ? 'Hide Markdown' : 'Markdown'}
+          </button>
+          <button onClick={() => setFocusIndex(focusIndex === null ? 0 : null)} style={{ ...buttonStyle, padding: '4px 9px' }}>
+            {focusIndex === null ? 'Focus' : 'Exit focus'}
           </button>
           <button onClick={reset} style={{ ...buttonStyle, padding: '4px 9px' }}>
             Close
@@ -118,7 +123,7 @@ export function NotebookLoader() {
         <div style={{ flex: 1, minHeight: 0, display: 'flex', overflow: 'hidden' }}>
           <div style={{ flex: 1, minWidth: 0, overflow: 'auto' }}>
             <NotebookErrorBoundary title={sourceName ?? undefined} onReset={reset}>
-              <NotebookView document={document} />
+              <NotebookView document={document} focusIndex={focusIndex} onFocusChange={setFocusIndex} />
             </NotebookErrorBoundary>
           </div>
           {showSource && (
@@ -156,6 +161,24 @@ export function NotebookLoader() {
           <code style={{ fontFamily: 'monospace', fontSize: 12 }}>notebook.schema.json</code>.
           TraceHouse renders it and links each claim back to live evidence.
         </p>
+
+        {/* The banner above warns that saved documents may stop loading. This
+            says the broader thing: the feature is being designed right now, so
+            the interface is as unsettled as the format. Set as an eyebrow, not
+            an alert box — the page has one warning bar already and does not
+            need a second thing shouting. */}
+        <div style={{ margin: '0 0 24px', display: 'flex', alignItems: 'baseline', gap: 9 }}>
+          <span style={{
+            color: 'var(--accent-yellow)', fontFamily: 'monospace',
+            fontSize: 10, fontWeight: 700, letterSpacing: '0.1em',
+          }}>
+            PREVIEW
+          </span>
+          <span style={{ color: 'var(--text-muted)', fontSize: 12 }}>
+            Pre-alpha and actively being designed. The format, the blocks and the
+            interface will all change.
+          </span>
+        </div>
 
         <div
           onDragOver={event => { event.preventDefault(); setDragging(true); }}

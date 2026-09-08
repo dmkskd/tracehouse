@@ -46,5 +46,5 @@ export type {
   NotebookDocument,
   NotebookEvidence,
   NotebookKind,
-  NotebookStage,
+  NotebookCell,
 } from './model';

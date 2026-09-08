@@ -36,36 +36,36 @@ describe('NotebookView', () => {
   });
 });
 
-describe('stage panel actions', () => {
+describe('cell panel actions', () => {
   it('groups Source, Evidence and Focus in one toolbar', () => {
     wrap(memoryLimitNotebook);
     // Previously Evidence sat alone in a footer while Focus was in the header.
     expect(screen.getAllByText('Focus').length).toBeGreaterThan(0);
-    expect(screen.getAllByText('Source').length).toBeGreaterThan(0);
+    expect(screen.getAllByText('Markdown').length).toBeGreaterThan(0);
     expect(screen.getAllByText('Evidence ↗').length).toBeGreaterThan(0);
   });
 
-  it('shows that step as Markdown on demand', () => {
+  it('shows that cell as Markdown on demand', () => {
     wrap(memoryLimitNotebook);
-    expect(screen.queryByLabelText('Source for step 1')).toBeNull();
+    expect(screen.queryByLabelText('Source for cell 1')).toBeNull();
 
-    fireEvent.click(screen.getAllByText('Source')[0]);
-    const source = screen.getByLabelText('Source for step 1').textContent ?? '';
-    expect(source).toContain(memoryLimitNotebook.stages[0].headline);
+    fireEvent.click(screen.getAllByText('Markdown')[0]);
+    const source = screen.getByLabelText('Source for cell 1').textContent ?? '';
+    expect(source).toContain(memoryLimitNotebook.cells[0].headline);
     expect(source).toContain('| ---');
 
-    fireEvent.click(screen.getAllByText('Source')[0]);
-    expect(screen.queryByLabelText('Source for step 1')).toBeNull();
+    fireEvent.click(screen.getAllByText('Markdown')[0]);
+    expect(screen.queryByLabelText('Source for cell 1')).toBeNull();
   });
 
   it('marks only the highlighted fact tile', () => {
-    // rowMatchesKey is vacuously true for an absent key, so a facts stage with
+    // rowMatchesKey is vacuously true for an absent key, so a facts cell with
     // no rowKey rendered every tile highlighted, which highlights nothing.
-    const factsStage = memoryLimitNotebook.stages.find(s => s.block === 'facts.list');
+    const factsStage = memoryLimitNotebook.cells.find(s => s.block === 'facts.list');
     expect(factsStage).toBeDefined();
     const document: NotebookDocument = {
       ...memoryLimitNotebook,
-      stages: [{ ...factsStage!, highlight: undefined }],
+      cells: [{ ...factsStage!, highlight: undefined }],
     };
     const { container } = wrap(document);
     const highlighted = [...container.querySelectorAll('div')]
@@ -80,7 +80,7 @@ describe('NotebookErrorBoundary', () => {
     // the failures we did not predict.
     const broken: NotebookDocument = {
       ...memoryLimitNotebook,
-      stages: [{ ...memoryLimitNotebook.stages[0], evidence: 'does-not-exist' }],
+      cells: [{ ...memoryLimitNotebook.cells[0], evidence: 'does-not-exist' }],
     };
 
     const { container } = render(
