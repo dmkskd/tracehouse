@@ -2,8 +2,6 @@
 
 An open-source tool to visually explore and monitor ClickHouse. [Documentation](https://dmkskd.github.io/tracehouse/)
 
-> **Early stage.** This project is under heavy development. Breaking changes are expected. Saved dashboards and queries are stored in browser localStorage and may be lost after updates.
-
 ## Quickstart
 
 Requires only Docker.
