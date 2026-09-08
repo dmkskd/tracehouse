@@ -188,8 +188,10 @@ export const QueryMonitor: React.FC = () => {
     () => buildQueryActivityRecords(
       { live: runningQueries, recent: queryHistory },
       historyFilter,
+      Date.now(),
+      historySort,
     ),
-    [runningQueries, queryHistory, historyFilter],
+    [runningQueries, queryHistory, historyFilter, historySort],
   );
   const errorCodeSuggestions = useMemo(() => {
     return buildErrorCodeSuggestions(

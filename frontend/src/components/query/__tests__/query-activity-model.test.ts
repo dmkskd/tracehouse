@@ -169,6 +169,42 @@ describe('query activity records', () => {
     }).map(record => record.query_id)).toEqual(['long', 'short', 'done']);
   });
 
+  it('ranks live and completed rows as one list when sorting by duration', () => {
+    const records = buildQueryActivityRecords({
+      live: [running('quick', { elapsed_seconds: 0.003 })],
+      recent: [{ ...completed('slow'), query_duration_ms: 40_000 }],
+    }, {}, 30_000);
+
+    expect(sortQueryActivityRecords(records, {
+      field: 'query_duration_ms',
+      direction: 'desc',
+    }).map(record => record.query_id)).toEqual(['slow', 'quick']);
+  });
+
+  it('reverses pinned live rows when the start-time sort flips to ascending', () => {
+    const records = buildQueryActivityRecords({
+      live: [
+        running('short', { elapsed_seconds: 2 }),
+        running('long', { elapsed_seconds: 20 }),
+      ],
+      recent: [],
+    }, {}, 30_000);
+
+    expect(sortQueryActivityRecords(records, {
+      field: 'query_start_time',
+      direction: 'asc',
+    }).map(record => record.query_id)).toEqual(['short', 'long']);
+  });
+
+  it('applies the limit after sorting so the top-ranked rows survive', () => {
+    const records = buildQueryActivityRecords({
+      live: [running('quick', { elapsed_seconds: 0.003 })],
+      recent: [{ ...completed('slow'), query_duration_ms: 40_000 }],
+    }, { limit: 1 }, 30_000, { field: 'query_duration_ms', direction: 'desc' });
+
+    expect(records.map(record => record.query_id)).toEqual(['slow']);
+  });
+
   it('never infers running state after a query leaves the live source', () => {
     const records = buildQueryActivityRecords({
       live: [],

@@ -380,7 +380,17 @@ export class QueryAnalyzer {
         : `${RUNNING_QUERIES}\n  LIMIT ${normalizedLimit}`;
       const rows = await this.adapter.executeQuery(tagQuery(sql, sourceTag(TAB_QUERIES, 'runningQueries')));
       // RUNNING_QUERIES returns `elapsed` but QueryMetrics expects `elapsed_seconds`
-      return rows.map(r => mapQueryMetrics({ ...r, elapsed_seconds: (r as Record<string, unknown>).elapsed }));
+      const metrics = rows.map(r => mapQueryMetrics({ ...r, elapsed_seconds: (r as Record<string, unknown>).elapsed }));
+      // clusterAllReplicas can visit the same host more than once when a node
+      // appears in several shards, so the same query_id comes back duplicated.
+      // Callers key rows on hostname + query_id, which duplicates would break.
+      const seen = new Set<string>();
+      return metrics.filter(metric => {
+        const key = `${metric.hostname ?? ''}\u0000${metric.query_id}`;
+        if (seen.has(key)) return false;
+        seen.add(key);
+        return true;
+      });
     } catch (error) {
       throw new QueryAnalysisError('Failed to get running queries', error as Error);
     }

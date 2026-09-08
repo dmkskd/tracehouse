@@ -119,6 +119,7 @@ export function buildQueryActivityRecords(
   snapshot: QueryActivitySnapshot,
   filter: QueryHistoryFilter,
   now = Date.now(),
+  sort?: QueryHistorySort,
 ): QueryActivityRecord[] {
   const live = snapshot.live
     .filter(query => trackerTimeRangeOverlapsInterval(
@@ -144,9 +145,11 @@ export function buildQueryActivityRecords(
   const activity = [...live, ...recent].filter(record =>
     matchesAnyContains(record.hostname ?? '', filter.hostname)
   );
-  return filter.limit != null && filter.limit > 0
-    ? activity.slice(0, filter.limit)
-    : activity;
+  if (filter.limit == null || filter.limit <= 0) return activity;
+  // Sort before capping: slicing the unsorted merge would drop rows the
+  // active sort ranks highest (e.g. the slowest completed query).
+  const ranked = sort ? sortQueryActivityRecords(activity, sort) : activity;
+  return ranked.slice(0, filter.limit);
 }
 
 /**
@@ -212,19 +215,26 @@ export function querySelectionToSeries(
 }
 
 /**
- * Live work stays visible above terminal history regardless of the history
- * sort. For the default start-time sort, order live rows by elapsed time so
- * the oldest/longest-running query is the first row.
+ * For the default start-time sort, live work stays pinned above terminal
+ * history and is ordered by elapsed time, so the oldest/longest-running query
+ * is the first row; the direction toggle reverses that order.
+ *
+ * Every other field sorts live and completed rows as one list, so "sort by
+ * duration" ranks a 40s completed query above a 3ms running one.
  */
 export function sortQueryActivityRecords(
   records: QueryActivityRecord[],
   sort: QueryHistorySort,
 ): QueryActivityRecord[] {
+  if (sort.field !== 'query_start_time') {
+    return sortQueryHistory(records, sort) as QueryActivityRecord[];
+  }
   const live = records.filter(record => record.activitySource !== 'history');
   const history = records.filter(record => record.activitySource === 'history');
-  const sortedLive = sort.field === 'query_start_time'
-    ? [...live].sort((a, b) => b.query_duration_ms - a.query_duration_ms)
-    : sortQueryHistory(live, sort) as QueryActivityRecord[];
+  const elapsedDirection = sort.direction === 'asc' ? -1 : 1;
+  const sortedLive = [...live].sort(
+    (a, b) => (b.query_duration_ms - a.query_duration_ms) * elapsedDirection
+  );
   const sortedHistory = sortQueryHistory(history, sort) as QueryActivityRecord[];
   return [...sortedLive, ...sortedHistory];
 }

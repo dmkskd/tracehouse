@@ -17,6 +17,10 @@ import { ModalWrapper } from '../shared/ModalWrapper';
 
 export interface ResultsTableProps {
   columns: string[];
+  columnLabels?: Record<string, string>;
+  detailColumns?: string[];
+  renderCell?: (column: string, row: Record<string, unknown>) => React.ReactNode;
+  isRowHighlighted?: (row: Record<string, unknown>) => boolean;
   rows: Record<string, unknown>[];
   /** Currently sorted column (null = unsorted) */
   sortColumn: string | null;
@@ -66,6 +70,7 @@ function formatComplexValue(value: unknown): string {
 
 export const ResultsTable: React.FC<ResultsTableProps> = ({
   columns, rows, sortColumn, sortDirection, onSort,
+  columnLabels, detailColumns, renderCell, isRowHighlighted,
   linkOnColumn, cellStyles, onLinkClick,
   drillOnColumn, onDrillClick, drillIntoQuery,
   partLinkOnColumn, onPartLinkClick,
@@ -217,7 +222,7 @@ export const ResultsTable: React.FC<ResultsTableProps> = ({
                 whiteSpace: 'nowrap', userSelect: 'none',
                 letterSpacing: '0.06em', textTransform: 'uppercase',
               }}>
-                {col}{sortable && sortColumn === col ? (sortDirection === 'asc' ? ' ↑' : ' ↓') : ''}
+                {columnLabels?.[col] ?? col}{sortable && sortColumn === col ? (sortDirection === 'asc' ? ' ↑' : ' ↓') : ''}
               </th>
               );
             })}
@@ -245,7 +250,7 @@ export const ResultsTable: React.FC<ResultsTableProps> = ({
                     ? 'var(--bg-card-hover, rgba(88,166,255,0.09))'
                     : hoveredRow === i
                       ? 'var(--bg-card-hover, rgba(88,166,255,0.07))'
-                      : i % 2 === 1 ? 'rgba(255,255,255,0.04)' : 'transparent',
+                      : isRowHighlighted?.(row) ? 'rgba(210,153,34,0.09)' : i % 2 === 1 ? 'rgba(255,255,255,0.04)' : 'transparent',
                   transition: 'background 0.1s ease',
                   cursor: enableRowDetails ? 'pointer' : undefined,
                   outline: 'none',
@@ -315,7 +320,7 @@ export const ResultsTable: React.FC<ResultsTableProps> = ({
                     }}
                     title={isDrill && drillIntoQuery ? `Drill into: ${drillIntoQuery}` : isPartLink ? 'Open part details' : enableRowDetails ? 'Open row details' : undefined}
                     onClick={isLink ? (e) => { e.stopPropagation(); onLinkClick!(col, cellValue); } : isDrill ? (e) => { e.stopPropagation(); onDrillClick!(col, cellValue); } : isPartLink ? (e) => { e.stopPropagation(); onPartLinkClick!(col, cellValue, row); } : undefined}
-                    >{cellValue}</td>
+                    >{renderCell ? renderCell(col, row) : cellValue}</td>
                   );
                 })}
               </tr>
@@ -348,7 +353,7 @@ export const ResultsTable: React.FC<ResultsTableProps> = ({
               <div>
                 <div style={{ fontSize: 15, fontWeight: 600, color: 'var(--text-primary)' }}>Row Details</div>
                 <div style={{ fontSize: 11, color: 'var(--text-muted)', marginTop: 3 }}>
-                  Row {selectedRowNumber} of {rows.length} · {displayColumns.length} column{displayColumns.length === 1 ? '' : 's'}
+                  Row {selectedRowNumber} of {rows.length} · {(detailColumns ?? displayColumns).length} column{(detailColumns ?? displayColumns).length === 1 ? '' : 's'}
                 </div>
               </div>
               <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
@@ -402,7 +407,7 @@ export const ResultsTable: React.FC<ResultsTableProps> = ({
             </div>
             <div style={{ padding: 18, overflow: 'auto', minHeight: 0, maxHeight: 'calc(min(78vh, 760px) - 74px)' }}>
               <div style={{ display: 'grid', gridTemplateColumns: 'minmax(160px, 240px) minmax(360px, 1fr)', border: '1px solid var(--border-secondary)', borderBottom: 'none', borderRadius: 6, overflow: 'hidden' }}>
-                {displayColumns.map((col) => (
+                {(detailColumns ?? displayColumns).map((col) => (
                   <React.Fragment key={col}>
                     <div style={{
                       padding: '10px 12px',
