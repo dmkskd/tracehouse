@@ -6,7 +6,7 @@
  *
  * ## Everything outside this directory imports from here
  *
- * Nothing else in the app may reach into `features/notebooks/*`. That keeps the
+ * Nothing else in the app may reach into `experimental/notebooks/*`. That keeps the
  * churn inside a feature that is expected to change shape, and it makes removal
  * a directory delete plus the hooks listed below.
  *

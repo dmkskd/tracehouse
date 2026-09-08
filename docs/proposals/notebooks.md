@@ -221,12 +221,12 @@ with a warning, especially once retention has removed the ability to re-capture.
 
 ## 5. Architecture and isolation
 
-The feature is unfinished and will churn. It is therefore contained so that it
-can change or be deleted cheaply.
+The feature is unfinished and will churn. It lives under `frontend/src/experimental/`
+so that its isolation is explicit and it can change or be deleted cheaply.
 
 ### One public surface
 
-`frontend/src/features/notebooks/index.ts` is the only entry point. Nothing
+`frontend/src/experimental/notebooks/index.ts` is the only entry point. Nothing
 outside the directory may reach past it. Verified: no such import exists.
 
 ### Four hooks, all registration
