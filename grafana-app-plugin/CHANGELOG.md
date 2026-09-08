@@ -5,6 +5,24 @@ All notable changes to the TraceHouse Grafana plugin will be documented in this 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.19.0] - 2026-09-08
+
+### New features
+- **Query Details:** New Flow view on the Distributed tab, showing an execution step by step across initiator and shards.
+- **Query Details:** Overview now splits query time into work and waiting (CPU, queue, disk, network), plus a "Parked" remainder.
+- **Analytics:** New "Wait Breakdown" dashboard: work vs waiting per query shape, over time, and by user.
+
+### Improvements
+- **System Map:** Added light mode and more metrics, simplified the map, and refreshed the catalog to ClickHouse 26.8.
+- **X-Ray:** Disk, CPU, and network wait are now shown separately instead of as one figure.
+- **Merges:** A TTL merge that drops a whole part is now labelled as such, not as no rows removed.
+
+### Bug fixes
+- **Queries:** Sorting by a column other than start time now ranks running and completed queries as one list.
+
+### Security
+- Updated the `js-cookie` and `uuid` dependencies to address npm audit findings.
+
 ## [0.18.6] - 2026-08-17
 
 ### Improvements

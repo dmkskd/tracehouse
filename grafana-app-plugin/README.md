@@ -29,6 +29,12 @@ Query breakdown by user, query kind, and status. Identify slow queries, see norm
 
 ![Query History](https://raw.githubusercontent.com/dmkskd/tracehouse/main/grafana-app-plugin/src/img/screenshots/history.png)
 
+### Query Flow Map
+
+See how a distributed query ran across the initiator and its shards.
+
+![Query Flow Map](https://raw.githubusercontent.com/dmkskd/tracehouse/main/grafana-app-plugin/src/img/screenshots/query-details-flow-map.png)
+
 ### 3D Analytics
 
 3D surface visualizations for query and merge patterns over time.
