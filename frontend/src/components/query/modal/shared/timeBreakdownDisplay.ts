@@ -6,7 +6,7 @@
  * pulling in a component, and mixing the two breaks fast refresh.
  */
 
-import type { TimeBreakdown, TimeBreakdownKey } from '@tracehouse/core';
+import type { TimeBreakdown, TimeBreakdownKey, ThreadTimeContext } from '@tracehouse/core';
 
 /** Work reads warm, waits read cool, the unknown reads grey. */
 export const SEGMENT_COLORS: Record<TimeBreakdownKey, string> = {
@@ -25,13 +25,47 @@ export const SEGMENT_HINTS: Record<TimeBreakdownKey, string> = {
   cpu_wait: 'waiting for a free CPU',
   network_wait: 'blocked on a socket',
   // RealTimeMicroseconds is thread *lifetime*, not busy time, so an idle-but-
-  // alive thread lands here. Three very different things look identical:
-  // over-parallelised short queries (threads waiting for work), a distributed
-  // coordinator waiting on shards (async epoll, which Network*Elapsed does not
-  // time — measured at 10ms of a 5.63s wait), and genuine lock contention.
-  // Hence naming the state rather than diagnosing a cause.
+  // alive thread lands here. On short queries that is usually plain
+  // over-parallelisation - threads started, then left with no work - and only
+  // sometimes genuine lock contention. The two are indistinguishable in this
+  // counter, so the hint names the state and the panel's thread-time line
+  // carries the parallelism figure that separates them.
+  //
+  // A distributed initiator's wait on its shards may or may not be metered as
+  // network_wait, depending on version (26.8.2 counts it, 26.7.1 did not).
+  // See the module header of core's time-breakdown.ts. Either way its idle
+  // sibling threads land here, so the wording keeps shards.
   unaccounted: 'thread alive but blocked — waiting on shards, pipeline, or locks',
 };
+
+/**
+ * The one line that makes the shares above it readable: what the denominator
+ * was, and how far it exceeds the elapsed time.
+ *
+ * Written for the case that sends people to this panel confused - a short
+ * distributed query showing 79% Parked. With "23 threads · 335ms thread time /
+ * 49ms wall · 6.8x" underneath, the segment stops looking like a measurement
+ * gap and starts reading as what it is: threads alive with nothing to do.
+ *
+ * Every part is optional because callers know different things. The flow
+ * diagram has no thread count, so it says the rest and omits that word rather
+ * than printing a zero.
+ */
+export function threadTimeNote(context: ThreadTimeContext | undefined): string | undefined {
+  if (!context) return undefined;
+  const parts: string[] = [];
+  if (context.threads) parts.push(`${context.threads} threads`);
+  const threadMs = Math.round(context.threadTimeUs / 1000);
+  parts.push(context.wallClockMs != null
+    ? `${threadMs}ms thread time / ${Math.round(context.wallClockMs)}ms wall`
+    : `${threadMs}ms thread time`);
+  // Below ~1.5x the ratio says nothing a reader needs; above it, it is the
+  // whole explanation for a wide residual.
+  if (context.parallelism != null && context.parallelism >= 1.5) {
+    parts.push(`${context.parallelism.toFixed(1)}x parallel`);
+  }
+  return parts.join(' · ');
+}
 
 export const pct = (share: number) => `${(share * 100).toFixed(share < 0.1 ? 1 : 0)}%`;
 

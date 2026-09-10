@@ -328,7 +328,7 @@ export const OverviewTab: React.FC<OverviewTabProps> = ({
               how much of this time was CPU — but decomposed, labelled, and
               with the waits named instead of lumped into the empty remainder. */}
           {timeBreakdown.available
-            ? <TimeBreakdownBar breakdown={timeBreakdown} parked={parkedExplanation} />
+            ? <TimeBreakdownBar breakdown={timeBreakdown} parked={parkedExplanation} wallClockMs={q.duration_ms} threads={q.thread_ids?.length} />
             : <ProgressBar value={q.duration_ms > 0 ? ((q.cpu_us / 1000) / q.duration_ms) * 100 : 0} color="#a371f7" />}
         </ExploreDestinationCard>
 

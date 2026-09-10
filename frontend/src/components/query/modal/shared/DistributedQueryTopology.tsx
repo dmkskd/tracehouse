@@ -17,8 +17,8 @@ import {
 } from '@tracehouse/core';
 import { formatDurationMs } from '../../../../utils/formatters';
 import { formatBytes } from '../../../../stores/databaseStore';
-import { computeTimeBreakdown, TIME_BREAKDOWN_EVENTS } from '@tracehouse/core';
-import { SEGMENT_COLORS, SEGMENT_HINTS, pct } from './timeBreakdownDisplay';
+import { computeTimeBreakdown, threadTimeContext, TIME_BREAKDOWN_EVENTS } from '@tracehouse/core';
+import { SEGMENT_COLORS, SEGMENT_HINTS, pct, threadTimeNote } from './timeBreakdownDisplay';
 import { DistributedFlowDiagram } from './DistributedFlowDiagram';
 import {
   COORD_COLOR,
@@ -42,6 +42,8 @@ export interface TopologyCoordinator {
   query_start_time_microseconds: string;
   memory_usage: number;
   read_rows: number;
+  /** length(thread_ids), when query_log gave it. Names the breakdown's denominator. */
+  thread_count?: number;
   exception?: string;
 }
 
@@ -305,6 +307,9 @@ export const DistributedQueryTopology: React.FC<DistributedQueryTopologyProps> =
           durationMs: node.queryDurationMs,
           memoryUsage: matchingSubQuery?.memory_usage ?? 0,
           readRows: node.readRows,
+          // Only the child row carries it; inferred nodes are built from
+          // evidence that does not include thread_ids.
+          threads: matchingSubQuery?.thread_count,
           profileEvents: node.profileEvents,
           hasError: false,
           offsetUs: Math.max(0, nodeStartUs > 0 ? nodeStartUs - coordStartUs : 0),
@@ -337,6 +342,7 @@ export const DistributedQueryTopology: React.FC<DistributedQueryTopologyProps> =
           durationMs: sq.query_duration_ms,
           memoryUsage: sq.memory_usage,
           readRows: sq.read_rows,
+          threads: sq.thread_count,
           // Prefer the topology node's full ProfileEvents map; fall back to the
           // counters SUB_QUERIES carries so the composition survives when
           // topology inference finds nothing.
@@ -539,6 +545,7 @@ export const DistributedQueryTopology: React.FC<DistributedQueryTopologyProps> =
         durationMs={coordinator.query_duration_ms}
         memoryUsage={coordinator.memory_usage}
         readRows={coordinator.read_rows}
+        threads={coordinator.thread_count}
         profileEvents={coordinatorProfileEvents}
         hasError={!!coordinator.exception}
         isActive={activeQueryId === coordinator.query_id}
@@ -582,6 +589,7 @@ export const DistributedQueryTopology: React.FC<DistributedQueryTopologyProps> =
             durationMs={row.durationMs}
             memoryUsage={row.memoryUsage}
             readRows={row.readRows}
+            threads={row.threads}
             profileEvents={row.profileEvents}
             hasError={row.hasError}
             isActive={activeQueryId === row.queryId}
@@ -864,6 +872,11 @@ const TopologyBar: React.FC<{
   durationMs: number;
   memoryUsage: number;
   readRows: number;
+  /**
+   * length(thread_ids) for this participant. Optional: older child rows and
+   * inferred nodes may not carry it, and the panel simply omits the word.
+   */
+  threads?: number;
   /** Raw ProfileEvents for this node, used to paint the bar's composition. */
   profileEvents?: Record<string, number | string | undefined>;
   hasError: boolean;
@@ -875,7 +888,7 @@ const TopologyBar: React.FC<{
   labelWidth: number;
   metricWidth: number;
 }> = ({
-  queryId, label, hostname, leftPct, widthPct, color, durationMs, memoryUsage, readRows, profileEvents,
+  queryId, label, hostname, leftPct, widthPct, color, durationMs, memoryUsage, readRows, threads, profileEvents,
   hasError, isActive, isCoordinator, roleLabel, indentLevel = 0, onClick, labelWidth, metricWidth, hostColor,
 }) => {
   const fmtMs = formatDurationMs;
@@ -920,6 +933,7 @@ const TopologyBar: React.FC<{
           anchor={anchorRect}
           title={isCoordinator ? topologyRoleTitle('coordinator') : roleLabel}
           facts={facts}
+          denominatorNote={threadTimeNote(threadTimeContext(breakdown, { wallClockMs: durationMs, threads }))}
           segments={breakdown.segments.map(segment => ({
             label: segment.label,
             color: SEGMENT_COLORS[segment.key],

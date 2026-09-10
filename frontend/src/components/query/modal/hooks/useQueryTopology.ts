@@ -44,6 +44,7 @@ export function useQueryTopology(activeQuery: QuerySeries | null, queryDetail: Q
         query_start_time_microseconds: queryDetail.query_start_time_microseconds,
         memory_usage: queryDetail.memory_usage,
         read_rows: queryDetail.read_rows,
+        thread_count: queryDetail.thread_ids?.length,
         exception: queryDetail.exception,
       });
       Promise.all([
@@ -84,6 +85,7 @@ export function useQueryTopology(activeQuery: QuerySeries | null, queryDetail: Q
               query_start_time_microseconds: coordDetail.query_start_time_microseconds,
               memory_usage: coordDetail.memory_usage,
               read_rows: coordDetail.read_rows,
+              thread_count: coordDetail.thread_ids?.length,
               exception: coordDetail.exception,
             });
           }

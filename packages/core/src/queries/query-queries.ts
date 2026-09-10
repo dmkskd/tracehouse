@@ -157,6 +157,11 @@ export const SUB_QUERIES = `
     ProfileEvents['SelectedMarks'] AS selected_marks,
     ProfileEvents['SelectedMarksTotal'] AS selected_marks_total,
     ProfileEvents['SelectedRanges'] AS selected_ranges,
+    -- How many threads the row's RealTimeMicroseconds is summed over. Without
+    -- it a large Parked share is unreadable: a short query that started 20
+    -- threads has most of them alive and idle, which is a different finding
+    -- from one thread genuinely blocked.
+    length(thread_ids) AS thread_count,
     -- Time-composition counters. Without these the Distributed timeline falls
     -- back to solid bars whenever topology inference fails and this query is
     -- the only source — the bars would silently lose their explanation.
@@ -382,6 +387,7 @@ export const BATCH_SUB_QUERIES = `
     selected_marks,
     selected_marks_total,
     selected_ranges,
+    thread_count,
     query_preview,
     exception_code,
     exception,
@@ -408,6 +414,7 @@ export const BATCH_SUB_QUERIES = `
         ProfileEvents['SelectedMarks'] AS selected_marks,
         ProfileEvents['SelectedMarksTotal'] AS selected_marks_total,
         ProfileEvents['SelectedRanges'] AS selected_ranges,
+        length(thread_ids) AS thread_count,
         if(length(formatted_query) > 0, formatted_query, query) AS query_preview,
         exception_code,
         exception,

@@ -10,6 +10,7 @@
 import React, { useEffect, useId, useMemo, useRef, useState } from 'react';
 import {
   computeTimeBreakdown,
+  threadTimeContext,
   topologyRoleTitle,
   TIME_BREAKDOWN_EVENTS,
   type DistributedTopology,
@@ -49,7 +50,7 @@ import {
   shadeColor,
   shardColor,
 } from './distributedTopologyPresentation';
-import { SEGMENT_COLORS, SEGMENT_HINTS, pct } from './timeBreakdownDisplay';
+import { SEGMENT_COLORS, SEGMENT_HINTS, pct, threadTimeNote } from './timeBreakdownDisplay';
 import { TimeBreakdownPopover } from './TimeBreakdownPopover';
 
 interface DistributedFlowDiagramProps {
@@ -705,6 +706,10 @@ const NodePopover: React.FC<{
       anchor={anchor}
       title={node.isFolded ? 'Folded local read' : nodeRoleLabel(node)}
       facts={facts}
+      // No thread count here: flow nodes are built from the topology service,
+      // whose evidence does not include thread_ids. The thread-time ratio still
+      // says whether a wide Parked segment is parallelism or a real block.
+      denominatorNote={threadTimeNote(threadTimeContext(breakdown, { wallClockMs: node.metrics.durationMs }))}
       segments={breakdown.segments.map(segment => ({
         label: segment.label,
         color: SEGMENT_COLORS[segment.key],

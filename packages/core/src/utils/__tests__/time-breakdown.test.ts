@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { computeTimeBreakdown, dominantSegment, waitShare } from '../time-breakdown.js';
+import { computeTimeBreakdown, dominantSegment, waitShare, threadTimeContext } from '../time-breakdown.js';
 
 const S = 1_000_000; // one thread-second in microseconds
 
@@ -216,5 +216,38 @@ describe('dominantSegment / waitShare', { tags: ['observability'] }, () => {
     const b = computeTimeBreakdown({});
     expect(dominantSegment(b)).toBeUndefined();
     expect(waitShare(b)).toBe(0);
+  });
+});
+
+describe('threadTimeContext', { tags: ['observability'] }, () => {
+  // The measured case this exists for: a 49ms distributed query whose row
+  // reported 334ms of RealTime across 23 threads, which is why its Parked
+  // segment read 79% without anything being blocked for 79% of 49ms.
+  it('reports the denominator against the wall clock', () => {
+    const b = computeTimeBreakdown({
+      RealTimeMicroseconds: 334_556,
+      OSCPUVirtualTimeMicroseconds: 60_000,
+      NetworkReceiveElapsedMicroseconds: 3_610,
+    }, { wallClockMs: 49 });
+    const ctx = threadTimeContext(b, { wallClockMs: 49, threads: 23 });
+    expect(ctx?.threads).toBe(23);
+    expect(ctx?.wallClockMs).toBe(49);
+    // The handler thread is discounted from the denominator, so parallelism is
+    // measured against what remains, not against the raw RealTime.
+    expect(ctx?.threadTimeUs).toBe(b.totalUs);
+    expect(ctx?.parallelism).toBeCloseTo(b.totalUs / 49_000, 6);
+  });
+
+  it('omits what the caller does not know rather than reporting zero', () => {
+    const b = computeTimeBreakdown({ RealTimeMicroseconds: 10 * S, OSCPUVirtualTimeMicroseconds: 4 * S });
+    const ctx = threadTimeContext(b);
+    expect(ctx?.threadTimeUs).toBe(10 * S);
+    expect(ctx?.wallClockMs).toBeUndefined();
+    expect(ctx?.parallelism).toBeUndefined();
+    expect(ctx?.threads).toBeUndefined();
+  });
+
+  it('is undefined when there is no composition', () => {
+    expect(threadTimeContext(computeTimeBreakdown({}))).toBeUndefined();
   });
 });

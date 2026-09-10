@@ -54,6 +54,15 @@ export const TimeBreakdownPopover: React.FC<{
   /** Identity/metric rows shown above the composition, e.g. host and query_id. */
   facts?: { label: string; value: string }[];
   segments: PopoverSegment[];
+  /**
+   * One line naming the denominator behind the segment shares, e.g.
+   * "23 threads · 335ms thread time / 49ms wall · 6.8x parallel".
+   *
+   * Sits directly above the composition because it is what the percentages are
+   * *of*: without it a wide Parked segment on a short query reads as a
+   * measurement failure rather than as idle threads.
+   */
+  denominatorNote?: string;
   layers: PopoverLayer[];
   /** Heading tying the layers to the segment they explain, e.g. "Unaccounted 23%". */
   layersHeading?: string;
@@ -89,7 +98,7 @@ export const TimeBreakdownPopover: React.FC<{
    */
   variant?: 'panel' | 'overlay';
 }> = ({
-  anchor, title, facts = [], segments, layers, layersHeading, caveats,
+  anchor, title, facts = [], segments, denominatorNote, layers, layersHeading, caveats,
   onPointerEnter, onPointerLeave, interactive = true, variant = 'panel',
   maxWidth = variant === 'overlay' ? 360 : 680,
 }) => {
@@ -169,6 +178,12 @@ export const TimeBreakdownPopover: React.FC<{
       {segments.length > 0 && facts.length > 0 && (
         <div style={{ borderTop: `1px solid ${c.border}`, paddingTop: 8, marginBottom: 4, color: c.muted, fontSize: 9, textTransform: 'uppercase', letterSpacing: '0.7px' }}>
           time spent
+        </div>
+      )}
+
+      {segments.length > 0 && denominatorNote && (
+        <div style={{ color: c.faint, marginBottom: 6, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
+          {denominatorNote}
         </div>
       )}
 

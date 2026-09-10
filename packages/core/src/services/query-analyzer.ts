@@ -185,6 +185,12 @@ export interface SubQueryInfo {
   selected_marks: number;
   selected_marks_total: number;
   selected_ranges: number;
+  /**
+   * length(thread_ids) for this child. The denominator behind every time-
+   * breakdown share is thread-summed, so the count is what makes a large
+   * Parked share readable rather than mysterious.
+   */
+  thread_count: number;
   query_preview: string;
   exception_code: number;
   exception: string;
@@ -724,6 +730,7 @@ export class QueryAnalyzer {
         selected_marks: Number(r.selected_marks) || 0,
         selected_marks_total: Number(r.selected_marks_total) || 0,
         selected_ranges: Number(r.selected_ranges) || 0,
+        thread_count: Number(r.thread_count) || 0,
         profileEvents: subQueryProfileEvents(r as Record<string, unknown>),
         query_preview: String(r.query_preview || ''),
         exception_code: Number(r.exception_code) || 0,
@@ -947,6 +954,7 @@ export class QueryAnalyzer {
         selected_marks: Number(r.selected_marks) || 0,
         selected_marks_total: Number(r.selected_marks_total) || 0,
         selected_ranges: Number(r.selected_ranges) || 0,
+        thread_count: Number(r.thread_count) || 0,
         query_preview: String(r.query_preview || ''),
         exception_code: Number(r.exception_code) || 0,
         exception: String(r.exception || ''),

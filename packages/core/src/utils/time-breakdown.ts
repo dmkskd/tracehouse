@@ -15,9 +15,33 @@
  *
  * The residual segment (key `unaccounted`, displayed as "Parked") is the point
  * of doing this as one composition rather than four separate metrics: threads
- * starved on pipeline ports, coordinators blocked on async shard reads, and
- * lock contention have no counter of their own, so they only ever show up as
- * the gap between RealTimeMicroseconds and everything nameable.
+ * starved on pipeline ports, idle-but-alive threads on over-parallelised
+ * queries, and lock contention have no counter of their own, so they only ever
+ * show up as the gap between RealTimeMicroseconds and everything nameable.
+ *
+ * An initiator's wait on its shards is NOT one of those. Measured on 26.8.2,
+ * that wait lands in `network_wait`: the Stopwatch in
+ * ReadBufferFromPocoSocketBase::socketReceiveBytesImpl spans the async_callback
+ * suspension, so the epoll wait is inside the timed interval. A `remote()` read
+ * whose shard slept 3s reported 3009ms of NetworkReceiveElapsedMicroseconds
+ * against 14 KB transferred; clusterAllReplicas over two sleeping shards
+ * reported 4017ms on a 2016ms query, with and without hedged requests.
+ *
+ * So on that version `network_wait` on an initiator is dominated by "the
+ * remotes were still computing", not by bytes on the wire, and it is
+ * thread-summed: it fans out with shard count and routinely exceeds the wall
+ * clock. That is one more reason this module emits shares only.
+ *
+ * It is not universal. The same query shape on a 26.7.1 cluster reported
+ * 3.6ms of NetworkReceiveElapsedMicroseconds for a 49ms distributed query
+ * whose three children ran 12-16ms, i.e. the shard wait was not metered there
+ * and did land in the residual. Treat neither version as the rule: read
+ * network_wait as "at least the transfer, possibly the whole shard wait".
+ *
+ * Either way it is rarely the dominant share on an initiator, because the
+ * denominator is thread-summed lifetime. That same 49ms query had 23 threads
+ * and 334ms of RealTime, so even a fully metered 25ms wait would read as under
+ * 10%, and the idle lifetime of the other threads is what fills the bar.
  */
 
 export type TimeBreakdownKey =
@@ -83,11 +107,11 @@ export interface TimeBreakdownOptions {
    * defaults to 0 (verified unchanged on a live cluster), so most deployments
    * cannot supply it. This approximation is the portable option.
    *
-   * It only removes the one attributable slice of the residual. The rest —
-   * coordinators blocked on async remote reads, and pipeline threads starved on
-   * input/output ports — is structurally untimed in query_log. Decomposing that
-   * needs system.processors_profile_log (input_wait_elapsed_us /
-   * output_wait_elapsed_us per plan step), not more ProfileEvents.
+   * It only removes the one attributable slice of the residual. The rest is
+   * mostly pipeline threads starved on input/output ports, which is untimed in
+   * query_log. Decomposing that needs system.processors_profile_log
+   * (input_wait_elapsed_us / output_wait_elapsed_us per plan step), not more
+   * ProfileEvents.
    */
   wallClockMs?: number;
 }
@@ -216,6 +240,45 @@ export function computeTimeBreakdown(
     diskWaitReported: 'OSIOWaitMicroseconds' in profileEvents,
     handlerThreadExcluded,
     available: segments.length > 0,
+  };
+}
+
+/**
+ * How much thread time the shares are taken over, and how that compares to the
+ * wall clock.
+ *
+ * The shares alone cannot explain themselves. A 49ms distributed query measured
+ * on a live cluster reported 334ms of RealTime across 23 threads: with a
+ * denominator 6.8x the elapsed time, every named segment is squeezed into a few
+ * percent and the idle lifetime of the threads doing nothing fills the rest.
+ * Reading that bar as "the query spent 79% parked" is wrong; it spent 79% of
+ * *thread lifetime* parked, which is a statement about parallelism.
+ *
+ * So this returns the numbers a caller needs to say so, and nothing formatted:
+ * the wording differs between a hover panel and a legend.
+ */
+export interface ThreadTimeContext {
+  /** The denominator itself, after any handler-thread discount. */
+  threadTimeUs: number;
+  /** Wall clock, when the caller knows it. */
+  wallClockMs?: number;
+  /** threadTimeUs / wall clock. Undefined when the wall clock is unknown or 0. */
+  parallelism?: number;
+  /** length(thread_ids), when the caller knows it. */
+  threads?: number;
+}
+
+export function threadTimeContext(
+  breakdown: TimeBreakdown,
+  options: { wallClockMs?: number; threads?: number } = {},
+): ThreadTimeContext | undefined {
+  if (!breakdown.available || breakdown.totalUs <= 0) return undefined;
+  const wallClockUs = Math.max(0, options.wallClockMs ?? 0) * 1000;
+  return {
+    threadTimeUs: breakdown.totalUs,
+    wallClockMs: options.wallClockMs && options.wallClockMs > 0 ? options.wallClockMs : undefined,
+    parallelism: wallClockUs > 0 ? breakdown.totalUs / wallClockUs : undefined,
+    threads: options.threads && options.threads > 0 ? options.threads : undefined,
   };
 }
 

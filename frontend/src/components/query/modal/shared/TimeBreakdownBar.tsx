@@ -14,10 +14,10 @@
 
 import React, { useCallback, useEffect, useRef, useState } from 'react';
 import type { TimeBreakdown } from '@tracehouse/core';
-import { TIME_BREAKDOWN_EVENTS, TIME_BREAKDOWN_DENOMINATOR, pipelineStallHint, totalBlockedSamples, MIN_BLOCKED_SAMPLES } from '@tracehouse/core';
+import { TIME_BREAKDOWN_EVENTS, TIME_BREAKDOWN_DENOMINATOR, pipelineStallHint, totalBlockedSamples, MIN_BLOCKED_SAMPLES, threadTimeContext } from '@tracehouse/core';
 import type { ParkedTimeExplanation } from '../hooks/useParkedTimeExplanation';
 import { TimeBreakdownPopover, type PopoverLayer } from './TimeBreakdownPopover';
-import { SEGMENT_COLORS, SEGMENT_HINTS, pct, PARKED_EXPLANATION_THRESHOLD, fmtWait } from './timeBreakdownDisplay';
+import { SEGMENT_COLORS, SEGMENT_HINTS, pct, PARKED_EXPLANATION_THRESHOLD, fmtWait, threadTimeNote } from './timeBreakdownDisplay';
 
 /**
  * 'full' lists every segment — needs real width, so it is for wide layouts.
@@ -36,7 +36,14 @@ export const TimeBreakdownBar: React.FC<{
    * renders fine without it — this only enriches the tooltip.
    */
   parked?: ParkedTimeExplanation;
-}> = ({ breakdown, legend = 'full', height = 8, parked }) => {
+  /**
+   * Wall clock and thread count for the same query, used only to name the
+   * denominator in the panel. Optional: the bar is unchanged without them,
+   * it just cannot say how parallel the query was.
+   */
+  wallClockMs?: number;
+  threads?: number;
+}> = ({ breakdown, legend = 'full', height = 8, parked, wallClockMs, threads }) => {
   // The anchor's rect is captured on hover rather than held as an element ref:
   // the popover positions from it directly, so there is no second render to
   // measure and place, and nothing to strand the panel off-screen.
@@ -150,6 +157,7 @@ export const TimeBreakdownBar: React.FC<{
             hint: SEGMENT_HINTS[s.key],
             source: TIME_BREAKDOWN_EVENTS[s.key],
           }))}
+          denominatorNote={threadTimeNote(threadTimeContext(breakdown, { wallClockMs, threads }))}
           layers={layers}
           layersHeading={`explaining parked ${pct(parkedShare)}`}
           caveats={caveats}
