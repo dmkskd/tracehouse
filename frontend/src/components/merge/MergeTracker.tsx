@@ -64,35 +64,34 @@ import type { MergeCategory } from '@tracehouse/core';
 import { useUserPreferenceStore } from '../../stores/userPreferenceStore';
 import { MergeHealthSunburst } from './MergeHealthSunburst';
 import { useUrlState } from '../../hooks/useUrlState';
-import type { UrlSchema } from '../../hooks/useUrlState';
+import { defineShareSchema } from '../../share/shareSchema';
 
-// URL schema for shareable merge tracker links
-const mergeUrlSchema = {
-  tab:       { type: 'string',  default: 'merges' },
-  database:  { type: 'string[]' },
-  table:     { type: 'string[]' },
-  category:  { type: 'string[]' },
-  timeRange: { type: 'string',  default: '1 HOUR' },
-  minDurMs:  { type: 'number' },
-  minSizeB:  { type: 'number' },
-  limit:     { type: 'number',  default: 100 },
+/** State listed here must survive copying and reopening a Merge Tracker URL. */
+export const MERGE_TRACKER_SHARE_SCHEMA = defineShareSchema({
+  tab: { type: 'string', default: 'merges' },
+  database: { type: 'string[]' },
+  table: { type: 'string[]' },
+  category: { type: 'string[]' },
+  timeRange: { type: 'string', default: '1 HOUR' },
+  minDurMs: { type: 'number' },
+  minSizeB: { type: 'number' },
+  limit: { type: 'number', default: 100, persistDefault: true },
   excludeSys: { type: 'boolean', default: true },
-  sortField: { type: 'string',  default: 'event_time' },
-  sortDir:   { type: 'string',  default: 'desc' },
-  host:      { type: 'string[]' },
-  status:    { type: 'string[]' },
+  sortField: { type: 'string', default: 'event_time' },
+  sortDir: { type: 'string', default: 'desc' },
+  host: { type: 'string[]' },
+  status: { type: 'string[]' },
   errorCode: { type: 'string[]' },
-  quick:     { type: 'string' },
+  quick: { type: 'string' },
   mergeType: { type: 'string' },
-  part:      { type: 'string' },
-  // Merge detail deep-link: db, table, part_name to reopen modal
-  md_db:     { type: 'string' },
-  md_tbl:    { type: 'string' },
-  md_part:   { type: 'string' },
-  md_host:   { type: 'string' },
-  md_time:   { type: 'string' },
-  md_type:   { type: 'string' },
-} as const satisfies UrlSchema;
+  part: { type: 'string' },
+  md_db: { type: 'string' },
+  md_tbl: { type: 'string' },
+  md_part: { type: 'string' },
+  md_host: { type: 'string' },
+  md_time: { type: 'string' },
+  md_type: { type: 'string' },
+});
 
 interface PoolUsage {
   label: string;
@@ -1626,7 +1625,7 @@ export const MergeTrackerView: React.FC = () => {
   const { databases, setDatabases } = useDatabaseStore();
 
   // URL-synced state for shareable links
-  const { state: urlState, update: updateUrl } = useUrlState(mergeUrlSchema);
+  const { state: urlState, update: updateUrl } = useUrlState(MERGE_TRACKER_SHARE_SCHEMA);
   const requestedTab = urlState.tab || 'merges';
   const activeTab: MergeTab = requestedTab === 'health'
     ? 'health'

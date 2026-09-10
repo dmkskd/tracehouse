@@ -5,7 +5,8 @@ import { DocsLink } from '../components/common/DocsLink';
 import { QueryDetailModal } from '../components/query/modal/QueryDetailModal';
 import { useNavigate } from '../hooks/useAppLocation';
 import { useQueryDeepLink } from '../hooks/useQueryDeepLink';
-import { useEventsUrlState } from '../hooks/useUrlState';
+import { useUrlState } from '../hooks/useUrlState';
+import { defineShareSchema } from '../share/shareSchema';
 import { buildTimeTravelEventUrl } from '../components/events/event-model';
 import {
   buildMergeDetailsUrl,
@@ -15,9 +16,25 @@ import {
   legacyEventsRangeCenter,
 } from './events-page-model';
 
+/** State listed here must survive copying and reopening an Events URL. */
+export const EVENTS_SHARE_SCHEMA = defineShareSchema({
+  event_id: { type: 'string' },
+  event_time: { type: 'string' },
+  range_center: { type: 'string' },
+  event_range: { type: 'number', default: 1 },
+  from: { type: 'string' },
+  event_search: { type: 'string' },
+  event_severity: { type: 'string', default: 'all' },
+  event_category: { type: 'string', default: 'all' },
+  event_kind: { type: 'string', default: 'all' },
+  event_auto: { type: 'boolean', default: false },
+  event_group: { type: 'boolean', default: true },
+  event_panel: { type: 'string', default: 'details' },
+});
+
 export const Events: React.FC = () => {
   const navigate = useNavigate();
-  const { state, update } = useEventsUrlState();
+  const { state, update } = useUrlState(EVENTS_SHARE_SCHEMA);
   const [selectedQuery, setSelectedQuery] = useState<QuerySeries | null>(null);
   const { query: modalQuery, onClose: closeQueryDetails } = useQueryDeepLink(
     selectedQuery,
@@ -95,6 +112,20 @@ export const Events: React.FC = () => {
 
       <div style={{ flex: 1, minHeight: 0 }}>
         <EventsDashboard
+          search={state.event_search ?? ''}
+          onSearchChange={event_search => update({ event_search: event_search || undefined })}
+          severity={(state.event_severity ?? 'all') as React.ComponentProps<typeof EventsDashboard>['severity']}
+          onSeverityChange={event_severity => update({ event_severity })}
+          category={(state.event_category ?? 'all') as React.ComponentProps<typeof EventsDashboard>['category']}
+          onCategoryChange={event_category => update({ event_category })}
+          kind={(state.event_kind ?? 'all') as React.ComponentProps<typeof EventsDashboard>['kind']}
+          onKindChange={event_kind => update({ event_kind })}
+          autoRefresh={state.event_auto ?? false}
+          onAutoRefreshChange={event_auto => update({ event_auto })}
+          groupSimilarEvents={state.event_group ?? true}
+          onGroupSimilarEventsChange={event_group => update({ event_group })}
+          selectedPanel={(state.event_panel ?? 'details') as 'details' | 'context'}
+          onSelectedPanelChange={event_panel => update({ event_panel })}
           selectedEventId={state.event_id}
           selectedEventTime={state.event_time}
           rangeCenterTime={effectiveRangeCenter}

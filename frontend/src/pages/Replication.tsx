@@ -4,7 +4,9 @@
  */
 
 import React, { useEffect, useState, useMemo } from 'react';
-import { useNavigate } from 'react-router-dom';
+import { useNavigate } from '../hooks/useAppLocation';
+import { useUrlState } from '../hooks/useUrlState';
+import { defineShareSchema } from '../share/shareSchema';
 import { useClickHouseServices } from '../providers/ClickHouseProvider';
 import { useConnectionStore } from '../stores/connectionStore';
 import { useClusterStore } from '../stores/clusterStore';
@@ -22,6 +24,12 @@ import { useCapabilityCheck } from '../components/shared/RequiresCapability';
 import { DocsLink } from '../components/common/DocsLink';
 import { ReplicationTopology } from '../components/replication/ReplicationTopology';
 import { encodeSql } from '../hooks/useUrlState';
+
+/** State listed here must survive copying and reopening a Replication URL. */
+export const REPLICATION_SHARE_SCHEMA = defineShareSchema({
+  table: { type: 'string' },
+  queue: { type: 'string' },
+});
 
 // ── Types ──
 
@@ -91,6 +99,7 @@ const StatCard: React.FC<{ label: string; value: string | number; warn?: boolean
 
 export const Replication: React.FC = () => {
   const navigate = useNavigate();
+  const { state: sharedState, update: updateSharedState } = useUrlState(REPLICATION_SHARE_SCHEMA);
   const services = useClickHouseServices();
   const { activeProfileId, profiles, setConnectionFormOpen } = useConnectionStore();
   const { detected } = useClusterStore();
@@ -104,10 +113,12 @@ export const Replication: React.FC = () => {
   const { available: hasReplicas, probing: isCapProbing } = useCapabilityCheck(['system_replicas']);
 
   // Selected table for topology view
-  const [selectedTable, setSelectedTable] = useState<string | null>(null);
+  const selectedTable = sharedState.table ?? null;
+  const setSelectedTable = (table: string | null) => updateSharedState({ table: table ?? undefined });
 
   // Queue expansion: key is "db.table", value is fetched queue rows
-  const [expandedQueue, setExpandedQueue] = useState<string | null>(null);
+  const expandedQueue = sharedState.queue ?? null;
+  const setExpandedQueue = (queue: string | null) => updateSharedState({ queue: queue ?? undefined });
   const [queueRows, setQueueRows] = useState<Record<string, unknown>[]>([]);
   const [queueLoading, setQueueLoading] = useState(false);
 

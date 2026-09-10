@@ -47,7 +47,6 @@ import { TimelineChart3DSurface } from '../components/timeline/TimelineChart3DSu
 import { QueryTable, MergeTable } from '../components/timeline/TimelineTable';
 import { TimelineEventControls } from '../components/timeline/TimelineEventControls';
 import {
-  emptyTimelineEventFilter,
   buildTimelineNavigatorRequestScope,
   buildEventsUrl,
   filterTimelineEvents,
@@ -63,6 +62,11 @@ import {
   timeTravelRowHosts,
   updateTimeTravelHostSelection,
 } from '../components/timeline/time-travel-host-selection';
+import {
+  readTimeTravelCoordinates,
+  writeTimeTravelCoordinates,
+} from './timeTravelCoordinates';
+import { defineShareSchema } from '../share/shareSchema';
 import {
   isRangeCovered,
   mergeCoverage,
@@ -148,6 +152,36 @@ const CUSTOM_RANGE_PRESETS = [
   { label: '7d', ms: 7 * 86400000 },
 ];
 
+/** State listed here must survive copying and reopening a Time Travel URL. */
+export const TIME_TRAVEL_SHARE_SCHEMA = defineShareSchema({
+  tt_hash_only: { type: 'boolean', default: false, persistDefault: true },
+  tt_window: { type: 'number', default: 150, persistDefault: true },
+  tt_live: { type: 'boolean', default: true, persistDefault: true },
+  tt_auto: { type: 'boolean', default: false, persistDefault: true },
+  tt_start: { type: 'string' },
+  tt_end: { type: 'string' },
+  tt_viewport: { type: 'string' },
+  tt_pin: { type: 'number' },
+  event_id: { type: 'string' },
+  tt_zoom_start: { type: 'number' },
+  tt_zoom_end: { type: 'number' },
+  tt_metric: { type: 'string', default: 'cpu', persistDefault: true },
+  tt_view: { type: 'string', default: '2d', persistDefault: true },
+  tt_hide: { type: 'string[]' },
+  tt_limit: { type: 'number', default: 100, persistDefault: true },
+  tt_host: { type: 'string[]' },
+  tt_split: { type: 'boolean', default: false, persistDefault: true },
+  tt_range: { type: 'string', default: '1h', persistDefault: true },
+  tt_sort: { type: 'string', default: 'metric', persistDefault: true },
+  tt_dir: { type: 'string', default: 'desc', persistDefault: true },
+  tt_running: { type: 'boolean', default: true, persistDefault: true },
+  tt_events: { type: 'boolean', default: true, persistDefault: true },
+  tt_nav: { type: 'string', default: 'peaks', persistDefault: true },
+  tt_event_severity: { type: 'string[]' },
+  tt_event_category: { type: 'string[]' },
+  tt_event_kind: { type: 'string[]' },
+});
+
 type SortField = 'metric' | 'duration' | 'started';
 type SortDir = 'asc' | 'desc';
 
@@ -171,20 +205,6 @@ export const TimeTravelPage: React.FC = () => {
   const { detected: clusterDetected } = useClusterStore();
   const [searchParams, setSearchParams] = useSearchParams();
   const navigate = useNavigate();
-  const eventTimeParam = searchParams.get('event_time');
-  const initialEventMs = eventTimeParam ? Date.parse(eventTimeParam) : Number.NaN;
-  const hasInitialEvent = Number.isFinite(initialEventMs);
-
-  // Query hash filter: highlight/filter timeline to a specific normalized_query_hash (from URL ?nqh=...)
-  const [queryHashFilter, setQueryHashFilter] = useState<string | null>(() => getUrlParam('nqh'));
-  // When true, show only hash-matched queries (hide everything else including merges/mutations)
-  const [queryHashOnly, setQueryHashOnly] = useState(false);
-
-  // Sync queryHashFilter from URL search params (e.g. when navigating from another page)
-  useEffect(() => {
-    const nqh = searchParams.get('nqh');
-    if (nqh !== queryHashFilter) setQueryHashFilter(nqh);
-  }, [searchParams]); // eslint-disable-line react-hooks/exhaustive-deps
   const refreshConfig = useRefreshConfig();
   const { refreshRateSeconds } = useRefreshSettingsStore();
   const manualRefreshTick = useGlobalLastUpdatedStore(s => s.manualRefreshTick);
@@ -198,20 +218,43 @@ export const TimeTravelPage: React.FC = () => {
   );
   const {
     experimentalEnabled,
-    timeTravelEventsVisible,
-    setTimeTravelEventsVisible,
-    timeTravelNavigatorShape,
-    setTimeTravelNavigatorShape,
+    timeTravelEventsVisible: preferredEventsVisible,
+    setTimeTravelEventsVisible: persistEventsVisible,
+    timeTravelNavigatorShape: preferredNavigatorShape,
+    setTimeTravelNavigatorShape: persistNavigatorShape,
   } = useUserPreferenceStore();
-  const [windowSec, setWindowSec] = useState(150);
-  const [isLive, setIsLive] = useState(!hasInitialEvent);
+  const [initialCoordinates] = useState(() => readTimeTravelCoordinates(searchParams, {
+    eventsVisible: preferredEventsVisible,
+    navigatorShape: preferredNavigatorShape,
+  }));
+
+  // Query hash filter: highlight/filter timeline to a specific normalized_query_hash (from URL ?nqh=...)
+  const [queryHashFilter, setQueryHashFilter] = useState<string | null>(() => getUrlParam('nqh'));
+  // When true, show only hash-matched queries (hide everything else including merges/mutations)
+  const [queryHashOnly, setQueryHashOnly] = useState(initialCoordinates.queryHashOnly);
+
+  // Sync queryHashFilter from URL search params (e.g. when navigating from another page)
+  useEffect(() => {
+    const nqh = searchParams.get('nqh');
+    if (nqh !== queryHashFilter) setQueryHashFilter(nqh);
+  }, [searchParams]); // eslint-disable-line react-hooks/exhaustive-deps
+  const [timeTravelEventsVisible, setEventsVisible] = useState(initialCoordinates.eventsVisible);
+  const [timeTravelNavigatorShape, setNavigatorShape] = useState(initialCoordinates.navigatorShape);
+  const setTimeTravelEventsVisible = useCallback((visible: boolean) => {
+    setEventsVisible(visible);
+    persistEventsVisible(visible);
+  }, [persistEventsVisible]);
+  const setTimeTravelNavigatorShape = useCallback((shape: typeof timeTravelNavigatorShape) => {
+    setNavigatorShape(shape);
+    persistNavigatorShape(shape);
+  }, [persistNavigatorShape]);
+  const [windowSec, setWindowSec] = useState(initialCoordinates.windowSec);
+  const [isLive, setIsLive] = useState(initialCoordinates.isLive);
   const [navigatorInteractionEpoch, setNavigatorInteractionEpoch] = useState(0);
-  const [autoRefresh, setAutoRefresh] = useState(false);
-  const [customStartTime, setCustomStartTime] = useState<string | null>(null);  // Custom range start (navigator)
-  const [customEndTime, setCustomEndTime] = useState<string | null>(
-    hasInitialEvent ? toLocalDatetimeStr(initialEventMs + 150_000) : null,
-  );      // Custom range end (navigator)
-  const [viewportEndTime, setViewportEndTime] = useState<string | null>(null);  // Viewport position within custom range
+  const [autoRefresh, setAutoRefresh] = useState(initialCoordinates.autoRefresh);
+  const [customStartTime, setCustomStartTime] = useState<string | null>(initialCoordinates.customStartTime);  // Custom range start (navigator)
+  const [customEndTime, setCustomEndTime] = useState<string | null>(initialCoordinates.customEndTime); // Custom range end (navigator)
+  const [viewportEndTime, setViewportEndTime] = useState<string | null>(initialCoordinates.viewportEndTime);  // Viewport position within custom range
   const [data, setData] = useState<MemoryTimeline | null>(null);
   const fetchDataRequestGateRef = useRef(createTimeTravelRequestGate());
   const [eventData, setEventData] = useState<EventsResult>({
@@ -221,23 +264,24 @@ export const TimeTravelPage: React.FC = () => {
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [hoverMs, setHoverMs] = useState<number | null>(null);
-  const [pinnedMs, setPinnedMs] = useState<number | null>(
-    hasInitialEvent ? initialEventMs : null,
-  );
-  const [selectedEventId, setSelectedEventId] = useState<string | null>(
-    searchParams.get('event_id'),
-  );
+  const [pinnedMs, setPinnedMs] = useState<number | null>(initialCoordinates.pinnedMs);
+  const [selectedEventId, setSelectedEventId] = useState<string | null>(initialCoordinates.selectedEventId);
   const [eventFilter, setEventFilter] = useState<TimelineEventFilter>(
-    emptyTimelineEventFilter,
+    () => ({
+      hiddenSeverities: initialCoordinates.hiddenEventSeverities,
+      hiddenCategories: initialCoordinates.hiddenEventCategories,
+      hiddenKinds: initialCoordinates.hiddenEventKinds,
+    } as TimelineEventFilter),
   );
   const pendingEventPinRef = useRef<number | null>(null);
-  const [zoomRange, setZoomRange] = useState<[number, number] | null>(null);
-  const [metricMode, setMetricMode] = useState<MetricMode>('cpu');
+  const preserveInitialInspectionRef = useRef(initialCoordinates.pinnedMs != null || initialCoordinates.zoomRange != null);
+  const [zoomRange, setZoomRange] = useState<[number, number] | null>(initialCoordinates.zoomRange);
+  const [metricMode, setMetricMode] = useState<MetricMode>(initialCoordinates.metricMode);
   const [highlightedItem, setHighlightedItem] = useState<HighlightedItem>(null);
-  const [viewMode, setViewMode] = useState<'2d' | '3d' | '3d-surface'>('2d');
+  const [viewMode, setViewMode] = useState<'2d' | '3d' | '3d-surface'>(initialCoordinates.viewMode);
   // Reset to 2D when experimental is turned off
   useEffect(() => { if (!experimentalEnabled && viewMode !== '2d') setViewMode('2d'); }, [experimentalEnabled]);
-  const [hiddenCategories, setHiddenCategories] = useState<Set<'query' | 'merge' | 'mutation'>>(new Set());
+  const [hiddenCategories, setHiddenCategories] = useState<Set<'query' | 'merge' | 'mutation'>>(initialCoordinates.hiddenCategories);
   const toggleCategory = useCallback((cat: 'query' | 'merge' | 'mutation') => {
     setHiddenCategories(prev => {
       const next = new Set(prev);
@@ -245,7 +289,7 @@ export const TimeTravelPage: React.FC = () => {
       return next;
     });
   }, []);
-  const [activityLimit, setActivityLimit] = useState(TIMELINE_ACTIVITY_LIMIT);
+  const [activityLimit, setActivityLimit] = useState(initialCoordinates.activityLimit);
   const autoRefreshRef = useRef<ReturnType<typeof setInterval> | null>(null);
   const prevDataEndRef = useRef<number | null>(null);
 
@@ -256,14 +300,14 @@ export const TimeTravelPage: React.FC = () => {
 
   // Cluster host selector
   const [clusterHosts, setClusterHosts] = useState<string[]>([]);
-  const [selectedHosts, setSelectedHosts] = useState<string[]>([]);
+  const [selectedHosts, setSelectedHosts] = useState<string[]>(initialCoordinates.selectedHosts);
   const hostnameFilter = useMemo(
     () => timeTravelHostnameFilter(selectedHosts),
     [selectedHosts],
   );
 
   // Per-server view: show one chart per selected host stacked vertically.
-  const [perServerView, setPerServerView] = useState(false);
+  const [perServerView, setPerServerView] = useState(initialCoordinates.perServerView);
   const [perHostData, setPerHostData] = useState<Map<string, MemoryTimeline>>(new Map());
   const [splitLoading, setSplitLoading] = useState(false);
   const rowHosts = useMemo(
@@ -295,7 +339,7 @@ export const TimeTravelPage: React.FC = () => {
   );
 
   // Navigator state — range derived from selected time preset
-  const [selectedTimeRange, setSelectedTimeRange] = useState('1h');
+  const [selectedTimeRange, setSelectedTimeRange] = useState(initialCoordinates.selectedTimeRange);
   const [navigatorMetricData, setNavigatorMetricData] = useState<{
     trend: TimeseriesPoint[];
     peaks: TimeseriesPoint[];
@@ -327,9 +371,95 @@ export const TimeTravelPage: React.FC = () => {
   const dragEndMsRef = useRef<number | null>(null);
 
   // Sort state
-  const [sortField, setSortField] = useState<SortField>('metric');
-  const [sortDir, setSortDir] = useState<SortDir>('desc');
-  const [includeRunning, setIncludeRunning] = useState(true);
+  const [sortField, setSortField] = useState<SortField>(initialCoordinates.sortField);
+  const [sortDir, setSortDir] = useState<SortDir>(initialCoordinates.sortDir);
+  const [includeRunning, setIncludeRunning] = useState(initialCoordinates.includeRunning);
+  const lastWrittenCoordinatesRef = useRef<string | null>(null);
+
+  // Apply pasted URLs and browser navigation back into the page state. Writes
+  // made by the effect below are ignored on their return trip.
+  useEffect(() => {
+    const incoming = searchParams.toString();
+    if (incoming === lastWrittenCoordinatesRef.current) {
+      lastWrittenCoordinatesRef.current = null;
+      return;
+    }
+    const coordinates = readTimeTravelCoordinates(searchParams, {
+      eventsVisible: preferredEventsVisible,
+      navigatorShape: preferredNavigatorShape,
+    });
+    preserveInitialInspectionRef.current = coordinates.pinnedMs != null || coordinates.zoomRange != null;
+    setQueryHashOnly(coordinates.queryHashOnly);
+    setWindowSec(coordinates.windowSec);
+    setIsLive(coordinates.isLive);
+    setAutoRefresh(coordinates.autoRefresh);
+    setCustomStartTime(coordinates.customStartTime);
+    setCustomEndTime(coordinates.customEndTime);
+    setViewportEndTime(coordinates.viewportEndTime);
+    setPinnedMs(coordinates.pinnedMs);
+    setSelectedEventId(coordinates.selectedEventId);
+    setZoomRange(coordinates.zoomRange);
+    setMetricMode(coordinates.metricMode);
+    setViewMode(coordinates.viewMode);
+    setHiddenCategories(coordinates.hiddenCategories);
+    setActivityLimit(coordinates.activityLimit);
+    setSelectedHosts(coordinates.selectedHosts);
+    setPerServerView(coordinates.perServerView);
+    setSelectedTimeRange(coordinates.selectedTimeRange);
+    setSortField(coordinates.sortField);
+    setSortDir(coordinates.sortDir);
+    setIncludeRunning(coordinates.includeRunning);
+    setEventsVisible(coordinates.eventsVisible);
+    setNavigatorShape(coordinates.navigatorShape);
+    setEventFilter({
+      hiddenSeverities: coordinates.hiddenEventSeverities,
+      hiddenCategories: coordinates.hiddenEventCategories,
+      hiddenKinds: coordinates.hiddenEventKinds,
+    } as TimelineEventFilter);
+  }, [searchParams]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  // Keep the address bar as the canonical share surface. Replacing the current
+  // entry avoids creating a browser-history item for every drag or hover-free
+  // coordinate change while still making copy/paste restore the investigation.
+  useEffect(() => {
+    setSearchParams(previous => {
+      const next = writeTimeTravelCoordinates(previous, {
+      queryHashOnly,
+      windowSec,
+      isLive,
+      autoRefresh,
+      customStartTime,
+      customEndTime,
+      viewportEndTime,
+      pinnedMs,
+      selectedEventId,
+      zoomRange,
+      metricMode,
+      viewMode,
+      hiddenCategories,
+      activityLimit,
+      selectedHosts,
+      perServerView,
+      selectedTimeRange,
+      sortField,
+      sortDir,
+      includeRunning,
+      eventsVisible: timeTravelEventsVisible,
+      navigatorShape: timeTravelNavigatorShape,
+      hiddenEventSeverities: new Set(eventFilter.hiddenSeverities),
+      hiddenEventCategories: new Set(eventFilter.hiddenCategories),
+      hiddenEventKinds: new Set(eventFilter.hiddenKinds),
+      });
+      lastWrittenCoordinatesRef.current = next.toString();
+      return next;
+    }, { replace: true });
+  }, [
+    queryHashOnly, windowSec, isLive, autoRefresh, customStartTime, customEndTime,
+    viewportEndTime, pinnedMs, selectedEventId, zoomRange, metricMode, viewMode,
+    hiddenCategories, activityLimit, selectedHosts, perServerView, selectedTimeRange,
+    sortField, sortDir, includeRunning, timeTravelEventsVisible,
+    timeTravelNavigatorShape, eventFilter, setSearchParams,
+  ]);
 
   const handleSort = (field: SortField) => {
     if (sortField === field) setSortDir(sortDir === 'desc' ? 'asc' : 'desc');
@@ -464,9 +594,13 @@ export const TimeTravelPage: React.FC = () => {
     fetchDataRequestGateRef.current.invalidate();
     if (services && isConnected) {
       // Clear zoom/pin when user changes time parameters
-      setZoomRange(null);
-      setPinnedMs(null);
-      if (pendingEventPinRef.current == null) setSelectedEventId(null);
+      if (preserveInitialInspectionRef.current) {
+        preserveInitialInspectionRef.current = false;
+      } else {
+        setZoomRange(null);
+        setPinnedMs(null);
+        if (pendingEventPinRef.current == null) setSelectedEventId(null);
+      }
       prevDataEndRef.current = null;
       if (fetchDataTimeoutRef.current) clearTimeout(fetchDataTimeoutRef.current);
       fetchDataTimeoutRef.current = setTimeout(() => fetchData(), 200);

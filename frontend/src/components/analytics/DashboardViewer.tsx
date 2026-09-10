@@ -7,6 +7,8 @@
 
 import React, { useState, useEffect, useCallback, useMemo, useRef } from 'react';
 import { createPortal } from 'react-dom';
+import { useUrlState } from '../../hooks/useUrlState';
+import { defineShareSchema } from '../../share/shareSchema';
 import { buildConfig } from '../../buildConfig';
 import { useClickHouseServices } from '../../providers/ClickHouseProvider';
 import { sourceTag, TAB_ANALYTICS } from '@tracehouse/core';
@@ -48,6 +50,18 @@ import {
   exportDashboardJson,
   importDashboardJson,
 } from './dashboards';
+
+/** State listed here must survive copying a built-in Analytics dashboard URL. */
+export const ANALYTICS_DASHBOARD_SHARE_SCHEMA = defineShareSchema({
+  dashboard: { type: 'string' },
+  dashboard_time: { type: 'string', default: '1 HOUR', persistDefault: true },
+  dashboard_filters: { type: 'string' },
+  dashboard_focus: { type: 'string' },
+  dashboard_focus_all: { type: 'string' },
+  dashboard_fullscreen: { type: 'string' },
+  dashboard_crosshair: { type: 'string' },
+  dashboard_overlay: { type: 'string' },
+});
 import {
   adjacentPanelIndex,
   adjacentSectionPanelIndex,
@@ -2192,14 +2206,41 @@ const DashboardFilterBar: React.FC<{
 
 type ViewState = { mode: 'list' } | { mode: 'view'; dashboardId: string } | { mode: 'edit'; dashboard?: Dashboard } | { mode: 'import' };
 
+function dashboardPanelIndex(value: string | null): number | null {
+  if (value === null) return null;
+  const parsed = Number(value);
+  return Number.isInteger(parsed) && parsed >= 0 ? parsed : null;
+}
+
+function dashboardFilters(value: string | null): Record<string, string> {
+  if (!value) return {};
+  try {
+    const parsed = JSON.parse(value);
+    if (!parsed || typeof parsed !== 'object' || Array.isArray(parsed)) return {};
+    return Object.fromEntries(
+      Object.entries(parsed).filter((entry): entry is [string, string] => typeof entry[1] === 'string'),
+    );
+  } catch {
+    return {};
+  }
+}
+
 export const DashboardViewer: React.FC<{ initialDashboardId?: string; onOpenQueryDetail?: (query: QuerySeries, opts?: { tab?: QueryModalTab }) => void; onOpenQuery?: (query: Query, dashboardId: string) => void }> = ({ initialDashboardId, onOpenQueryDetail, onOpenQuery }) => {
+  const { state: sharedState, update: updateSharedState } = useUrlState(ANALYTICS_DASHBOARD_SHARE_SCHEMA);
+  const dashboardIdFromUrl = sharedState.dashboard ?? initialDashboardId;
   const [dashboards, setDashboards] = useState<Dashboard[]>(() => loadDashboards());
-  const [focusedPanelIndex, setFocusedPanelIndex] = useState<number | null>(null);
-  const [allFocusPanelsExpanded, setAllFocusPanelsExpanded] = useState(false);
-  const [fullscreenPanelIndex, setFullscreenPanelIndex] = useState<number | null>(null);
+  const [focusedPanelIndex, setFocusedPanelIndex] = useState<number | null>(() => dashboardPanelIndex(sharedState.dashboard_focus ?? null));
+  const [allFocusPanelsExpanded, setAllFocusPanelsExpanded] = useState(() => sharedState.dashboard_focus_all === '1');
+  const [fullscreenPanelIndex, setFullscreenPanelIndex] = useState<number | null>(() => dashboardPanelIndex(sharedState.dashboard_fullscreen ?? null));
   const [focusStageTop, setFocusStageTop] = useState(resolveFocusStageTop);
   const [railFilterQuery, setRailFilterQuery] = useState('');
   const [toast, setToast] = useState<string | null>(null);
+
+  const setDashboardCoordinates = useCallback((updates: Record<string, string | null>) => {
+    updateSharedState(Object.fromEntries(
+      Object.entries(updates).map(([key, value]) => [key, value ?? undefined]),
+    ));
+  }, [updateSharedState]);
 
   const selectFocusedPanel = useCallback((panelIndex: number) => {
     setFocusedPanelIndex(panelIndex);
@@ -2227,25 +2268,27 @@ export const DashboardViewer: React.FC<{ initialDashboardId?: string; onOpenQuer
     return () => clearTimeout(t);
   }, [toast]);
   const [view, setView] = useState<ViewState>(() => {
-    if (initialDashboardId) {
+    if (dashboardIdFromUrl) {
       const dbs = loadDashboards();
-      if (dbs.some(d => d.id === initialDashboardId)) {
-        return { mode: 'view', dashboardId: initialDashboardId };
+      if (dbs.some(d => d.id === dashboardIdFromUrl)) {
+        return { mode: 'view', dashboardId: dashboardIdFromUrl };
       }
     }
     return { mode: 'list' };
   });
 
-  // When navigating back from query editor with a dashboard ID, open that dashboard
+  // Restore dashboard identity from the address bar, including back/forward.
   useEffect(() => {
-    if (initialDashboardId && dashboards.some(d => d.id === initialDashboardId)) {
-      setView({ mode: 'view', dashboardId: initialDashboardId });
+    if (dashboardIdFromUrl && dashboards.some(d => d.id === dashboardIdFromUrl)) {
+      setView({ mode: 'view', dashboardId: dashboardIdFromUrl });
+    } else if (!dashboardIdFromUrl) {
+      setView(current => current.mode === 'view' ? { mode: 'list' } : current);
     }
-  }, [initialDashboardId, dashboards]);
-  const [timeRangeOverride, setTimeRangeOverride] = useState<string | null>('1 HOUR');
+  }, [dashboardIdFromUrl, dashboards]);
+  const [timeRangeOverride, setTimeRangeOverride] = useState<string | null>(() => sharedState.dashboard_time ?? '1 HOUR');
 
   // ─── Global dashboard filters ───
-  const [filterValues, setFilterValues] = useState<Record<string, string>>({});
+  const [filterValues, setFilterValues] = useState<Record<string, string>>(() => dashboardFilters(sharedState.dashboard_filters ?? null));
   const handleFilterChange = useCallback((param: string, value: string) => {
     setFilterValues(prev => {
       if (!value) {
@@ -2258,13 +2301,23 @@ export const DashboardViewer: React.FC<{ initialDashboardId?: string; onOpenQuer
   }, []);
   // Reset filters when switching dashboards
   const activeDashboardIdForFilters = view.mode === 'view' ? view.dashboardId : null;
-  useEffect(() => { setFilterValues({}); }, [activeDashboardIdForFilters]);
+  const previousDashboardId = useRef(activeDashboardIdForFilters);
+  useEffect(() => {
+    if (previousDashboardId.current !== activeDashboardIdForFilters) {
+      previousDashboardId.current = activeDashboardIdForFilters;
+      setFilterValues(
+        activeDashboardIdForFilters === dashboardIdFromUrl
+          ? dashboardFilters(sharedState.dashboard_filters ?? null)
+          : {},
+      );
+    }
+  }, [activeDashboardIdForFilters, dashboardIdFromUrl, sharedState.dashboard_filters]);
 
   // ─── Overlay mode ───
-  const [overlayVisible, setOverlayVisible] = useState(false);
+  const [overlayVisible, setOverlayVisible] = useState(() => sharedState.dashboard_overlay === '1');
 
   // ─── Cross-panel correlation ───
-  const [correlationEnabled, setCorrelationEnabled] = useState(false);
+  const [correlationEnabled, setCorrelationEnabled] = useState(() => sharedState.dashboard_crosshair === '1');
   const [hoveredTimestamp, setHoveredTimestamp] = useState<string | null>(null);
   const [hoveredPanelIndex, setHoveredPanelIndex] = useState<number | null>(null);
   // Keep last non-null timestamp so the strip doesn't flicker away on mouse leave
@@ -2304,13 +2357,46 @@ export const DashboardViewer: React.FC<{ initialDashboardId?: string; onOpenQuer
 
   // Clear correlation state when switching dashboards
   const activeDashboardId = view.mode === 'view' ? view.dashboardId : null;
+
+  // The address bar is the sharing surface. Keep every meaningful dashboard
+  // coordinate current so copying it also captures nested dashboard state.
+  useEffect(() => {
+    setDashboardCoordinates({
+      dashboard: activeDashboardId,
+      dashboard_time: activeDashboardId ? timeRangeOverride : null,
+      dashboard_filters: activeDashboardId && Object.keys(filterValues).length > 0
+        ? JSON.stringify(filterValues)
+        : null,
+      dashboard_focus: activeDashboardId && focusedPanelIndex !== null ? String(focusedPanelIndex) : null,
+      dashboard_focus_all: activeDashboardId && allFocusPanelsExpanded ? '1' : null,
+      dashboard_fullscreen: activeDashboardId && fullscreenPanelIndex !== null ? String(fullscreenPanelIndex) : null,
+      dashboard_crosshair: activeDashboardId && correlationEnabled ? '1' : null,
+      dashboard_overlay: activeDashboardId && overlayVisible ? '1' : null,
+    });
+  }, [
+    activeDashboardId,
+    allFocusPanelsExpanded,
+    correlationEnabled,
+    filterValues,
+    focusedPanelIndex,
+    fullscreenPanelIndex,
+    overlayVisible,
+    setDashboardCoordinates,
+    timeRangeOverride,
+  ]);
+
   useEffect(() => {
     panelDataRef.current.clear();
     setHoveredTimestamp(null);
-    exitFocusStage();
-    setFullscreenPanelIndex(null);
+    const restoringUrlDashboard = activeDashboardId === dashboardIdFromUrl;
+    setFocusedPanelIndex(restoringUrlDashboard ? dashboardPanelIndex(sharedState.dashboard_focus ?? null) : null);
+    setAllFocusPanelsExpanded(restoringUrlDashboard && sharedState.dashboard_focus_all === '1');
+    setFullscreenPanelIndex(restoringUrlDashboard ? dashboardPanelIndex(sharedState.dashboard_fullscreen ?? null) : null);
+    setCorrelationEnabled(restoringUrlDashboard && sharedState.dashboard_crosshair === '1');
+    setOverlayVisible(restoringUrlDashboard && sharedState.dashboard_overlay === '1');
+    setTimeRangeOverride(restoringUrlDashboard ? sharedState.dashboard_time ?? '1 HOUR' : '1 HOUR');
     lastTimestampRef.current = null;
-  }, [activeDashboardId, exitFocusStage]);
+  }, [activeDashboardId]); // eslint-disable-line react-hooks/exhaustive-deps
 
   const activeDashboard = view.mode === 'view'
     ? dashboards.find(d => d.id === view.dashboardId)

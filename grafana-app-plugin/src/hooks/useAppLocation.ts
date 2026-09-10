@@ -69,7 +69,9 @@ function getSearch(): string {
  * This replaces the no-op stub so pages like QueryTracer and
  * DashboardViewer can pass state through the URL.
  */
-export function useSearchParams(): [URLSearchParams, (params: URLSearchParams, opts?: { replace?: boolean }) => void] {
+type SearchParamsUpdater = URLSearchParams | ((previous: URLSearchParams) => URLSearchParams);
+
+export function useSearchParams(): [URLSearchParams, (params: SearchParamsUpdater, opts?: { replace?: boolean }) => void] {
   const [search, setSearch] = useState(getSearch);
 
   useEffect(() => {
@@ -82,18 +84,17 @@ export function useSearchParams(): [URLSearchParams, (params: URLSearchParams, o
   const params = useMemo(() => new URLSearchParams(search), [search]);
 
   const setParams = useCallback(
-    (newParams: URLSearchParams, opts?: { replace?: boolean }) => {
-      const query: Record<string, string | null> = {};
-
-      // Null out all current params first
+    (updater: SearchParamsUpdater, opts?: { replace?: boolean }) => {
       const currentParams = new URLSearchParams(getSearch());
-      currentParams.forEach((_val, key) => {
-        query[key] = null;
-      });
+      const newParams = typeof updater === 'function'
+        ? updater(new URLSearchParams(currentParams))
+        : updater;
+      const query: Record<string, string | string[] | null> = {};
+      const keys = new Set([...currentParams.keys(), ...newParams.keys()]);
 
-      // Set new params
-      newParams.forEach((val, key) => {
-        query[key] = val;
+      keys.forEach(key => {
+        const values = newParams.getAll(key);
+        query[key] = values.length === 0 ? null : values.length === 1 ? values[0] : values;
       });
 
       const replace = opts?.replace !== false; // default to replace

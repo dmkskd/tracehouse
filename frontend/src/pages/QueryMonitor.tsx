@@ -29,7 +29,28 @@ import { OverviewService } from '@tracehouse/core';
 import { useUserPreferenceStore } from '../stores/userPreferenceStore';
 import { QueryHealthSunburst } from '../components/query/QueryHealthSunburst';
 import { useUrlState } from '../hooks/useUrlState';
-import type { UrlSchema } from '../hooks/useUrlState';
+import { defineShareSchema } from '../share/shareSchema';
+
+/** State listed here must survive copying and reopening a Queries URL. */
+export const QUERY_MONITOR_SHARE_SCHEMA = defineShareSchema({
+  tab: { type: 'string', default: 'activity' },
+  qd_id: { type: 'string' },
+  user: { type: 'string[]' },
+  queryId: { type: 'string[]' },
+  queryText: { type: 'string' },
+  queryKind: { type: 'string[]' },
+  status: { type: 'string[]' },
+  errorCode: { type: 'string[]' },
+  quickFilter: { type: 'string' },
+  database: { type: 'string[]' },
+  tableName: { type: 'string[]' },
+  hostname: { type: 'string[]' },
+  minDurMs: { type: 'number' },
+  minMemB: { type: 'number' },
+  limit: { type: 'number', default: 100, persistDefault: true },
+  sortField: { type: 'string', default: 'query_start_time' },
+  sortDir: { type: 'string', default: 'desc' },
+});
 
 // Query type colors shared by the activity table and summary strip
 const QUERY_TYPE_COLORS: Record<string, string> = {
@@ -45,27 +66,6 @@ const QUERY_TYPE_COLORS: Record<string, string> = {
 
 // All query types to always show
 const ALL_QUERY_TYPES = ['Select', 'Insert', 'Alter', 'Create', 'Drop', 'System', 'Optimize', 'Other'];
-
-// URL schema for shareable query monitor links
-const queryMonitorSchema = {
-  tab:       { type: 'string',  default: 'activity' },
-  qd_id:     { type: 'string' },
-  user:      { type: 'string[]' },
-  queryId:   { type: 'string[]' },
-  queryText: { type: 'string' },
-  queryKind: { type: 'string[]' },
-  status:    { type: 'string[]' },
-  errorCode: { type: 'string[]' },
-  quickFilter: { type: 'string' },
-  database:  { type: 'string[]' },
-  tableName: { type: 'string[]' },
-  hostname:  { type: 'string[]' },
-  minDurMs:  { type: 'number' },
-  minMemB:   { type: 'number' },
-  limit:     { type: 'number',  default: 100 },
-  sortField: { type: 'string',  default: 'query_start_time' },
-  sortDir:   { type: 'string',  default: 'desc' },
-} as const satisfies UrlSchema;
 
 const QUERY_MULTI_FILTER_KEYS = [
   'user', 'queryId', 'queryKind', 'status', 'database', 'table', 'hostname',
@@ -89,7 +89,7 @@ export const QueryMonitor: React.FC = () => {
   const experimentalEnabled = useUserPreferenceStore(s => s.experimentalEnabled);
 
   // URL-synced state for shareable links
-  const { state: urlState, update: updateUrl } = useUrlState(queryMonitorSchema);
+  const { state: urlState, update: updateUrl } = useUrlState(QUERY_MONITOR_SHARE_SCHEMA);
   const requestedTab = locationState?.tab || urlState.tab || 'activity';
   const activeTab: 'activity' | 'health' = requestedTab === 'health' ? 'health' : 'activity';
   const setActiveTab = useCallback((tab: 'activity' | 'health') => {

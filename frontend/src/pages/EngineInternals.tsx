@@ -21,6 +21,8 @@ import { useEngineInternalsStore, EngineInternalsPoller } from '../stores/engine
 import { EngineInternalsService, HostTargetedAdapter, tagQuery, sourceTag, escapeValue, TAB_ENGINE } from '@tracehouse/core';
 import { TruncatedHost } from '../components/common/TruncatedHost';
 import { DocsLink } from '../components/common/DocsLink';
+import { useUrlState } from '../hooks/useUrlState';
+import { defineShareSchema } from '../share/shareSchema';
 import {
   MemoryXRay,
   CPUCoreMap,
@@ -31,6 +33,11 @@ import {
   CPUSamplingCard,
   CoreTimelineCard,
 } from '../components/engine-internals';
+
+/** State listed here must survive copying and reopening an Engine Internals URL. */
+export const ENGINE_INTERNALS_SHARE_SCHEMA = defineShareSchema({
+  host: { type: 'string' },
+});
 
 // No Connection Component
 const NoConnection: React.FC<{ onConnect: () => void }> = ({ onConnect }) => (
@@ -54,6 +61,7 @@ const NoConnection: React.FC<{ onConnect: () => void }> = ({ onConnect }) => (
 );
 
 export const EngineInternals: React.FC = () => {
+  const { state: sharedState, update: updateSharedState } = useUrlState(ENGINE_INTERNALS_SHARE_SCHEMA);
   const services = useClickHouseServices();
   const { activeProfileId, profiles, setConnectionFormOpen } = useConnectionStore();
   const { clusterName } = useClusterStore();
@@ -71,7 +79,10 @@ export const EngineInternals: React.FC = () => {
 
   // Cluster host selector state
   const [clusterHosts, setClusterHosts] = useState<string[]>([]);
-  const [selectedHost, setSelectedHost] = useState<string | null>(null); // null = connected node
+  const selectedHost = sharedState.host ?? null; // null = connected node
+  const setSelectedHost = useCallback((host: string | null) => {
+    updateSharedState({ host: host ?? undefined });
+  }, [updateSharedState]);
 
   const activeProfile = profiles.find(p => p.id === activeProfileId);
   const isConnected = activeProfile?.is_connected ?? false;
@@ -100,9 +111,9 @@ export const EngineInternals: React.FC = () => {
         } catch { /* ignore */ }
       }
       setClusterHosts(hosts);
-      if (hosts.length > 1) setSelectedHost(prev => prev && hosts.includes(prev) ? prev : hosts[0]);
+      if (hosts.length > 1 && (!selectedHost || !hosts.includes(selectedHost))) setSelectedHost(hosts[0]);
     })();
-  }, [services, isConnected, clusterName]);
+  }, [services, isConnected, clusterName, selectedHost, setSelectedHost]);
 
   // Reset selected host if it disappears from the list
   useEffect(() => {

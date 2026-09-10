@@ -74,21 +74,6 @@ export function useUrlState<S extends UrlSchema>(schema: S) {
   return { state, update };
 }
 
-// ─── Events URL state ───
-
-const EVENTS_URL_SCHEMA = {
-  event_id: { type: 'string' },
-  event_time: { type: 'string' },
-  range_center: { type: 'string' },
-  event_range: { type: 'number', default: 1 },
-  from: { type: 'string' },
-} as const satisfies UrlSchema;
-
-/** Shareable selection and time-window state for the Events page. */
-export function useEventsUrlState() {
-  return useUrlState(EVENTS_URL_SCHEMA);
-}
-
 // ─── Analytics URL state ───
 
 export interface AnalyticsUrlState {
@@ -105,6 +90,17 @@ export interface AnalyticsUrlState {
   lookback?: number;
   fullscreen?: boolean;
   fromDashboard?: string;
+  noAutoExecute?: boolean;
+  eventId?: string;
+  eventTime?: string;
+  eventRange?: number;
+  systemDbs?: boolean;
+  surfaceTab?: string;
+  surfaceDb?: string;
+  surfaceTable?: string;
+  surfaceTime?: string;
+  surfaceLanes?: number;
+  surfaceDrill?: string;
 }
 
 export function encodeSql(sql: string): string {
@@ -155,11 +151,31 @@ function parseParams(search: string): AnalyticsUrlState {
   if (fullscreen === '1') state.fullscreen = true;
   const fromDashboard = params.get('fromDashboard');
   if (fromDashboard) state.fromDashboard = fromDashboard;
+  if (params.get('noAutoExecute') === '1') state.noAutoExecute = true;
+  const eventId = params.get('event_id');
+  if (eventId) state.eventId = eventId;
+  const eventTime = params.get('event_time');
+  if (eventTime) state.eventTime = eventTime;
+  const eventRange = params.get('event_range');
+  if (eventRange !== null && Number.isFinite(Number(eventRange))) state.eventRange = Number(eventRange);
+  if (params.get('system_dbs') === '1') state.systemDbs = true;
+  const surfaceTab = params.get('surface_tab');
+  if (surfaceTab) state.surfaceTab = surfaceTab;
+  const surfaceDb = params.get('surface_db');
+  if (surfaceDb) state.surfaceDb = surfaceDb;
+  const surfaceTable = params.get('surface_table');
+  if (surfaceTable) state.surfaceTable = surfaceTable;
+  const surfaceTime = params.get('surface_time');
+  if (surfaceTime) state.surfaceTime = surfaceTime;
+  const surfaceLanes = params.get('surface_lanes');
+  if (surfaceLanes !== null && Number.isFinite(Number(surfaceLanes))) state.surfaceLanes = Number(surfaceLanes);
+  const surfaceDrill = params.get('surface_drill');
+  if (surfaceDrill) state.surfaceDrill = surfaceDrill;
   return state;
 }
 
 /** All param keys we manage — used to null out stale keys with locationService.partial() */
-const ALL_KEYS = ['tab', 'preset', 'sql', 'view', 'chart', 'group_by', 'value', 'series', 'style', 'db', 'lookback', 'fullscreen', 'fromDashboard'] as const;
+const ALL_KEYS = ['tab', 'preset', 'sql', 'view', 'chart', 'group_by', 'value', 'series', 'style', 'db', 'lookback', 'fullscreen', 'fromDashboard', 'noAutoExecute', 'event_id', 'event_time', 'event_range', 'system_dbs', 'surface_tab', 'surface_db', 'surface_table', 'surface_time', 'surface_lanes', 'surface_drill'] as const;
 
 function buildParams(state: AnalyticsUrlState): Record<string, string> {
   const params: Record<string, string> = {};
@@ -176,6 +192,17 @@ function buildParams(state: AnalyticsUrlState): Record<string, string> {
   if (state.lookback && state.lookback !== ANALYTICS_DEFAULTS.lookback) params.lookback = String(state.lookback);
   if (state.fullscreen) params.fullscreen = '1';
   if (state.fromDashboard) params.fromDashboard = state.fromDashboard;
+  if (state.noAutoExecute) params.noAutoExecute = '1';
+  if (state.eventId) params.event_id = state.eventId;
+  if (state.eventTime) params.event_time = state.eventTime;
+  if (state.eventRange) params.event_range = String(state.eventRange);
+  if (state.systemDbs) params.system_dbs = '1';
+  if (state.surfaceTab && state.surfaceTab !== 'resource') params.surface_tab = state.surfaceTab;
+  if (state.surfaceDb) params.surface_db = state.surfaceDb;
+  if (state.surfaceTable) params.surface_table = state.surfaceTable;
+  if (state.surfaceTime && state.surfaceTime !== '1 DAY') params.surface_time = state.surfaceTime;
+  if (state.surfaceLanes && state.surfaceLanes !== 10) params.surface_lanes = String(state.surfaceLanes);
+  if (state.surfaceDrill) params.surface_drill = state.surfaceDrill;
   return params;
 }
 

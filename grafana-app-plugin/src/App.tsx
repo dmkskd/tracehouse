@@ -1,6 +1,6 @@
 import React, { lazy, Suspense, useState, useCallback, useMemo, useEffect, useRef } from 'react';
 import { AppRootProps, PageLayoutType } from '@grafana/data';
-import { config, PluginPage } from '@grafana/runtime';
+import { config, locationService, PluginPage } from '@grafana/runtime';
 import { ServiceProvider, useServices } from './ServiceProvider';
 import { PluginConfigProvider, usePluginConfig } from './PluginConfigContext';
 import type { AppPluginSettings } from './types';
@@ -580,7 +580,7 @@ interface AppContentProps {
 }
 
 function AppContent({ path }: AppContentProps) {
-  const { services, datasourceUid, setDatasourceUid } = useServices();
+  const { services, datasourceUid, setDatasourceUid, error, isLoading } = useServices();
   const pluginConfig = usePluginConfig();
 
   // Sync plugin-level killQueriesEnabled into the user preference store
@@ -757,7 +757,15 @@ function AppContent({ path }: AppContentProps) {
           overflow: pageOwnsScroll ? 'hidden' : 'auto',
         }}
       >
-        {!services && routeRequiresDatasource(routeKey) ? (
+        {isLoading && routeRequiresDatasource(routeKey) ? (
+          <div style={{ padding: 32, color: 'var(--text-secondary)', textAlign: 'center' }}>
+            Restoring shared datasource and cluster…
+          </div>
+        ) : error && routeRequiresDatasource(routeKey) ? (
+          <div style={{ padding: 32, color: 'var(--color-error)', textAlign: 'center' }}>
+            {error}
+          </div>
+        ) : !services && routeRequiresDatasource(routeKey) ? (
           <NoDatasourceMessage />
         ) : (
           <Suspense fallback={
@@ -787,8 +795,8 @@ export function App(props: AppRootProps<AppPluginSettings>) {
   // Our own location state - no react-router needed
   const [location, setLocation] = useState<AppLocation>(() => ({
     pathname: props.path || '/overview',
-    search: '',
-    hash: '',
+    search: locationService.getLocation().search ?? '',
+    hash: locationService.getLocation().hash ?? '',
     state: null,
   }));
 
@@ -799,15 +807,23 @@ export function App(props: AppRootProps<AppPluginSettings>) {
     setLocation(current =>
       current.pathname === props.path
         ? current
-        : { pathname: props.path, search: '', hash: '', state: null },
+        : { ...current, pathname: props.path, state: null },
     );
   }, [props.path]);
+
+  useEffect(() => locationService.getHistory().listen(hostLocation => {
+    setLocation(current => ({
+      ...current,
+      search: hostLocation.search ?? '',
+      hash: hostLocation.hash ?? '',
+    }));
+  }), []);
 
   const navigate = useCallback((to: string, options?: { state?: unknown; replace?: boolean }) => {
     setLocation({
       pathname: to,
-      search: '',
-      hash: '',
+      search: locationService.getLocation().search ?? '',
+      hash: locationService.getLocation().hash ?? '',
       state: options?.state ?? null,
     });
   }, []);

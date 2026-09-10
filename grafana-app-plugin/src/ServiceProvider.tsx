@@ -1,5 +1,5 @@
-import React, { createContext, useContext, useState, useEffect, useMemo, useCallback } from 'react';
-import { getDataSourceSrv } from '@grafana/runtime';
+import React, { createContext, useContext, useState, useEffect, useMemo, useCallback, useRef } from 'react';
+import { getDataSourceSrv, locationService } from '@grafana/runtime';
 import { dateTime } from '@grafana/data';
 import { lastValueFrom } from 'rxjs';
 import { GrafanaAdapter, type AdapterFrame, type AdapterQueryFn } from '@tracehouse/core/adapters/grafana-adapter';
@@ -32,6 +32,10 @@ import { useConnectionStore } from './stores/connectionStore';
 import { useMonitoringCapabilitiesStore } from '@frontend/stores/monitoringCapabilitiesStore';
 import { useClusterStore } from '@frontend/stores/clusterStore';
 import { usePluginConfig } from './PluginConfigContext';
+import {
+  readShareCoordinates,
+  shareCoordinateUpdate,
+} from './shareCoordinates';
 
 // Re-export for convenience
 export { useClickHouseServices };
@@ -50,6 +54,14 @@ const ServiceContext = createContext<ServiceContextValue | null>(null);
 
 const STORAGE_KEY = 'tracehouse-datasource';
 const CLUSTER_STORAGE_KEY = 'tracehouse-cluster';
+
+function listClickHouseDatasources() {
+  try {
+    return getDataSourceSrv().getList({ type: 'grafana-clickhouse-datasource' });
+  } catch {
+    return [];
+  }
+}
 
 function loadClusterOverride(datasourceUid: string): string | null {
   try {
@@ -76,7 +88,16 @@ function saveClusterOverride(datasourceUid: string, clusterName: string | null):
 }
 
 export function ServiceProvider({ children }: { children: React.ReactNode }) {
+  const sharedCoordinatesRef = useRef(readShareCoordinates(locationService.getLocation().search));
+  const restoringSharedClusterRef = useRef(sharedCoordinatesRef.current !== null);
   const [datasourceUid, setDatasourceUidState] = useState<string | null>(() => {
+    const requestedUid = sharedCoordinatesRef.current?.datasourceUid;
+    if (requestedUid) {
+      const requested = listClickHouseDatasources()
+        .find(candidate => candidate.uid === requestedUid);
+      if (requested) return requested.uid;
+      return null;
+    }
     try {
       const stored = localStorage.getItem(STORAGE_KEY);
       if (stored) {
@@ -94,6 +115,11 @@ export function ServiceProvider({ children }: { children: React.ReactNode }) {
     return null;
   });
   const [datasourceName, setDatasourceName] = useState<string | null>(() => {
+    const requestedUid = sharedCoordinatesRef.current?.datasourceUid;
+    if (requestedUid) {
+      return listClickHouseDatasources()
+        .find(candidate => candidate.uid === requestedUid)?.name ?? null;
+    }
     try {
       const stored = localStorage.getItem(STORAGE_KEY);
       if (stored) {
@@ -103,12 +129,23 @@ export function ServiceProvider({ children }: { children: React.ReactNode }) {
     } catch { /* ignore */ }
     return null;
   });
-  const [error, setError] = useState<string | null>(null);
-  const [isLoading, setIsLoading] = useState(false);
+  const [error, setError] = useState<string | null>(() => {
+    const requestedUid = sharedCoordinatesRef.current?.datasourceUid;
+    return requestedUid && !listClickHouseDatasources()
+      .some(candidate => candidate.uid === requestedUid)
+      ? `The shared datasource "${requestedUid}" is unavailable in this Grafana organization.`
+      : null;
+  });
+  const [clusterReady, setClusterReady] = useState(false);
 
   const setDatasourceUid = useCallback((uid: string, name?: string) => {
+    sharedCoordinatesRef.current = null;
+    restoringSharedClusterRef.current = false;
+    setClusterReady(false);
+    setError(null);
     setDatasourceUidState(uid);
     setDatasourceName(name || null);
+    locationService.partial(shareCoordinateUpdate(uid, undefined), true);
     try {
       localStorage.setItem(STORAGE_KEY, JSON.stringify({ uid, name }));
     } catch { /* ignore */ }
@@ -118,10 +155,16 @@ export function ServiceProvider({ children }: { children: React.ReactNode }) {
     connectionStore._setGrafanaDatasource(uid, name || 'ClickHouse');
   }, []);
 
+  useEffect(() => {
+    if (!datasourceUid) return;
+    const resolvedName = datasourceName || 'ClickHouse';
+    useConnectionStore.getState()._setGrafanaDatasource(datasourceUid, resolvedName);
+  }, [datasourceUid, datasourceName]);
+
   // Auto-select datasource if none is stored and exactly one exists
   useEffect(() => {
-    if (datasourceUid) return;
-    const list = getDataSourceSrv().getList({ type: 'grafana-clickhouse-datasource' });
+    if (datasourceUid || sharedCoordinatesRef.current) return;
+    const list = listClickHouseDatasources();
     if (list.length === 1) {
       setDatasourceUid(list[0].uid, list[0].name);
     }
@@ -192,7 +235,8 @@ export function ServiceProvider({ children }: { children: React.ReactNode }) {
   }, [datasourceUid]);
 
   // Unwrap for context consumers
-  const clickHouseServices = services?.svcs ?? null;
+  const unresolvedServices = services?.svcs ?? null;
+  const clickHouseServices = clusterReady ? unresolvedServices : null;
 
   useEffect(() => {
     if (clickHouseServices) {
@@ -229,14 +273,49 @@ export function ServiceProvider({ children }: { children: React.ReactNode }) {
   const { cluster: preferredCluster } = usePluginConfig();
   useEffect(() => {
     const clusterStore = useClusterStore.getState();
-    if (!clickHouseServices) {
+    if (!unresolvedServices) {
       clusterStore.reset();
+      setClusterReady(false);
       return;
     }
 
     let cancelled = false;
-    ClusterService.detect(clickHouseServices.adapter, preferredCluster).then(info => {
+    ClusterService.detect(unresolvedServices.adapter, preferredCluster).then(info => {
       if (!cancelled) {
+        const sharedCoordinates = sharedCoordinatesRef.current;
+        if (sharedCoordinates?.datasourceUid === datasourceUid) {
+          if (sharedCoordinates.clusterName === undefined) {
+            clusterStore.setCluster(info);
+            services?.clusterAdapter.setClusterName(info.clusterName);
+            setClusterReady(true);
+            setError(null);
+          } else if (sharedCoordinates.clusterName === null) {
+            clusterStore.setCluster({ ...info, clusterName: null, replicaCount: 1, shardCount: 1 });
+            services?.clusterAdapter.setClusterName(null);
+            setClusterReady(true);
+            setError(null);
+          } else {
+            const requested = info.availableClusters.find(c => c.name === sharedCoordinates.clusterName);
+            if (!requested) {
+              clusterStore.setCluster(info);
+              setClusterReady(false);
+              setError(`The shared cluster "${sharedCoordinates.clusterName}" is unavailable for this datasource.`);
+            } else {
+              clusterStore.setCluster({
+                ...info,
+                clusterName: requested.name,
+                replicaCount: requested.replicaCount,
+                shardCount: requested.shardCount,
+              });
+              services?.clusterAdapter.setClusterName(requested.name);
+              setClusterReady(true);
+              setError(null);
+            }
+          }
+          restoringSharedClusterRef.current = false;
+          return;
+        }
+
         // Check if user has a saved override for this datasource
         const userOverride = datasourceUid ? loadClusterOverride(datasourceUid) : null;
         const hasOverride = userOverride && info.availableClusters.some(c => c.name === userOverride);
@@ -253,16 +332,26 @@ export function ServiceProvider({ children }: { children: React.ReactNode }) {
           clusterStore.setCluster(info);
           services?.clusterAdapter.setClusterName(info.clusterName);
         }
+        setClusterReady(true);
+        setError(null);
       }
     }).catch((err) => {
       console.error('[ClusterDetect] Cluster topology detection failed, falling back to single-node:', err);
       if (!cancelled) {
         clusterStore.setCluster({ clusterName: null, replicaCount: 1, shardCount: 1, availableClusters: [] });
+        if (sharedCoordinatesRef.current?.clusterName) {
+          setClusterReady(false);
+          setError(`The shared cluster "${sharedCoordinatesRef.current.clusterName}" could not be resolved.`);
+        } else {
+          services?.clusterAdapter.setClusterName(null);
+          setClusterReady(true);
+        }
+        restoringSharedClusterRef.current = false;
       }
     });
 
     return () => { cancelled = true; };
-  }, [clickHouseServices, services, preferredCluster, datasourceUid]);
+  }, [unresolvedServices, services, preferredCluster, datasourceUid]);
 
   // Sync ClusterAwareAdapter when user switches cluster via dropdown
   useEffect(() => {
@@ -270,8 +359,12 @@ export function ServiceProvider({ children }: { children: React.ReactNode }) {
     return useClusterStore.subscribe((state, prev) => {
       if (state.clusterName !== prev.clusterName) {
         services.clusterAdapter.setClusterName(state.clusterName);
+        if (restoringSharedClusterRef.current) return;
+        locationService.partial(shareCoordinateUpdate(datasourceUid!, state.clusterName), true);
+        setClusterReady(true);
+        setError(null);
         // Persist user's choice per datasource
-        if (datasourceUid) {
+        if (datasourceUid && !restoringSharedClusterRef.current) {
           saveClusterOverride(datasourceUid, state.clusterName);
         }
       }
@@ -284,7 +377,7 @@ export function ServiceProvider({ children }: { children: React.ReactNode }) {
     datasourceName,
     setDatasourceUid,
     error,
-    isLoading,
+    isLoading: Boolean(datasourceUid && !clusterReady && !error),
   };
 
   return (

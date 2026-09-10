@@ -8,8 +8,21 @@
  * When `state` is passed (e.g. for back-navigation), Link uses the
  * LocationContext.navigate so the state is preserved in-memory.
  */
-import React, { useContext, useState, useCallback } from 'react';
-import { LocationContext } from '../hooks/useAppLocation';
+import React, { useContext } from 'react';
+import { config } from '@grafana/runtime';
+import {
+  LocationContext,
+  useAppLocation,
+  useNavigate as useAppNavigate,
+  useParams as useAppParams,
+  useSearchParams as useAppSearchParams,
+} from '../hooks/useAppLocation';
+
+const PLUGIN_BASE_PATH = '/a/dmkskd-tracehouse-app';
+const pluginHref = (to: string) => {
+  if (!to.startsWith('/') || to.startsWith(PLUGIN_BASE_PATH)) return to;
+  return `${config.appSubUrl ?? ''}${PLUGIN_BASE_PATH}${to}`;
+};
 
 // Link → plain <a> that uses Grafana's page navigation
 // When state is provided, uses LocationContext.navigate to preserve it
@@ -18,7 +31,7 @@ export const Link = React.forwardRef<
   React.AnchorHTMLAttributes<HTMLAnchorElement> & { to: string; replace?: boolean; state?: unknown }
 >(({ to, replace: _replace, state, children, onClick, ...rest }, ref) => {
   const ctx = useContext(LocationContext);
-  const href = to.startsWith('/') ? `/a/dmkskd-tracehouse-app${to}` : to;
+  const href = pluginHref(to);
 
   if (state && ctx) {
     return (
@@ -47,7 +60,7 @@ export const NavLink = React.forwardRef<
   HTMLAnchorElement,
   React.AnchorHTMLAttributes<HTMLAnchorElement> & { to: string; end?: boolean }
 >(({ to, end: _end, children, ...rest }, ref) => {
-  const href = to.startsWith('/') ? `/a/dmkskd-tracehouse-app${to}` : to;
+  const href = pluginHref(to);
   return <a ref={ref} href={href} {...rest}>{children}</a>;
 });
 NavLink.displayName = 'NavLink';
@@ -58,38 +71,10 @@ export function Navigate(_props: { to: string; replace?: boolean }) {
 }
 
 // Hooks → safe no-ops
-export function useLocation() {
-  return { pathname: '/', search: '', hash: '', state: null, key: 'default' };
-}
-
-export function useNavigate() {
-  return (_to: string | number, _opts?: { replace?: boolean; state?: unknown }) => {};
-}
-
-export function useParams<T extends Record<string, string | undefined> = Record<string, string | undefined>>(): T {
-  return {} as T;
-}
-
-export function useSearchParams(): [URLSearchParams, (updater: URLSearchParams | ((prev: URLSearchParams) => URLSearchParams), opts?: { replace?: boolean }) => void] {
-  const readSearch = () => (typeof window !== 'undefined' ? window.location : { search: '' }).search;
-  const [params, setParamsState] = useState(() => new URLSearchParams(readSearch()));
-
-  const setParams = useCallback((updater: URLSearchParams | ((prev: URLSearchParams) => URLSearchParams), opts?: { replace?: boolean }) => {
-    const next = typeof updater === 'function'
-      ? updater(new URLSearchParams(readSearch()))
-      : updater;
-    const qs = next.toString();
-    const url = qs ? `${window.location.pathname}?${qs}` : window.location.pathname;
-    if (opts?.replace) {
-      window.history.replaceState(null, '', url);
-    } else {
-      window.history.pushState(null, '', url);
-    }
-    setParamsState(next);
-  }, []);
-
-  return [params, setParams];
-}
+export const useLocation = useAppLocation;
+export const useNavigate = useAppNavigate;
+export const useParams = useAppParams;
+export const useSearchParams = useAppSearchParams;
 
 // Router components → pass-through
 export function BrowserRouter({ children }: { children: React.ReactNode }) {

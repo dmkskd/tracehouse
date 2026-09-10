@@ -7,7 +7,9 @@
  */
 
 import React, { useCallback, useEffect, useState } from 'react';
-import { useNavigate } from 'react-router-dom';
+import { useNavigate } from '../../../hooks/useAppLocation';
+import { useUrlState } from '../../../hooks/useUrlState';
+import { QUERY_DETAILS_SHARE_SCHEMA } from '../../../hooks/useQueryDeepLink';
 import { summarizeObjectStorageProfile, type QuerySeries } from '@tracehouse/core';
 import { ThreadBreakdownSection } from '../QueryDetail';
 import { TraceLogViewer } from '../../tracing/TraceLogViewer';
@@ -37,6 +39,17 @@ import { useQueryTopology } from './hooks/useQueryTopology';
 
 export type QueryModalTab = 'overview' | 'sql' | 'distributed' | 'details' | 'analytics' | 'object-storage' | 'history' | 'logs' | 'spans' | 'flamegraph' | 'pipeline' | 'threads' | 'xray';
 
+const QUERY_MODAL_TABS: readonly QueryModalTab[] = [
+  'overview', 'sql', 'distributed', 'details', 'analytics', 'object-storage',
+  'history', 'logs', 'spans', 'flamegraph', 'pipeline', 'threads', 'xray',
+];
+
+function queryModalTab(value: string | null | undefined): QueryModalTab | null {
+  return value && QUERY_MODAL_TABS.includes(value as QueryModalTab)
+    ? value as QueryModalTab
+    : null;
+}
+
 export interface TimelineQueryModalProps {
   /** The query from timeline data (null to hide modal) */
   query: QuerySeries | null;
@@ -64,9 +77,23 @@ export const QueryDetailModal: React.FC<TimelineQueryModalProps> = ({
   const { experimentalEnabled } = useUserPreferenceStore();
 
   const navigate = useNavigate();
-  const [activeTab, setActiveTab] = useState<QueryModalTab>(initialTab ?? 'overview');
+  const { state: sharedState, update: updateSharedState } = useUrlState(QUERY_DETAILS_SHARE_SCHEMA);
+  const tabFromUrl = queryModalTab(sharedState.qd_tab);
+  const [activeTab, setActiveTab] = useState<QueryModalTab>(tabFromUrl ?? initialTab ?? 'overview');
+  const lastUrlTab = React.useRef<QueryModalTab>(tabFromUrl ?? initialTab ?? 'overview');
   const [detailsSubTab, setDetailsSubTab] = useState<DetailsSubTab>('performance');
   const [analyticsSubTab, setAnalyticsSubTab] = useState<AnalyticsSubTab>('scan_efficiency');
+
+  const selectTab = useCallback((tab: QueryModalTab) => {
+    setActiveTab(tab);
+    lastUrlTab.current = tab;
+    updateSharedState({ qd_tab: tab === 'overview' ? undefined : tab });
+  }, [updateSharedState]);
+
+  const closeModal = useCallback(() => {
+    updateSharedState({ qd_tab: undefined });
+    onClose();
+  }, [onClose, updateSharedState]);
 
   // Internal query override — when user clicks a query ID in the History tab,
   // we build a QuerySeries from the SimilarQuery and switch to it
@@ -87,15 +114,24 @@ export const QueryDetailModal: React.FC<TimelineQueryModalProps> = ({
   // Open on the caller-requested tab (initialTab), defaulting to overview.
   useEffect(() => {
     setQueryOverride(null);
-    setActiveTab(initialTab ?? 'overview');
+    selectTab(tabFromUrl ?? initialTab ?? 'overview');
     setDetailsSubTab('performance');
     setAnalyticsSubTab('scan_efficiency');
-  }, [query?.query_id, initialTab]);
+  }, [query?.query_id, initialTab]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  // Browser back/forward can change the modal tab without changing the query.
+  useEffect(() => {
+    const next = tabFromUrl ?? 'overview';
+    if (next !== lastUrlTab.current) {
+      lastUrlTab.current = next;
+      setActiveTab(next);
+    }
+  }, [tabFromUrl]);
 
   // Force off X-Ray when experimental is disabled mid-session
   useEffect(() => {
-    if (!experimentalEnabled && activeTab === 'xray') setActiveTab('overview');
-  }, [experimentalEnabled, activeTab]);
+    if (!experimentalEnabled && activeTab === 'xray') selectTab('overview');
+  }, [experimentalEnabled, activeTab, selectTab]);
 
   // Navigate to a related query by ID (parent or child in distributed topology)
   const navigateToQuery = useCallback(async (queryId: string, targetTab?: QueryModalTab) => {
@@ -105,7 +141,7 @@ export const QueryDetailModal: React.FC<TimelineQueryModalProps> = ({
       if (!d) return;
       const durationMs = Number(d.query_duration_ms) || 0;
       const startMs = new Date(d.query_start_time).getTime();
-      setActiveTab(targetTab ?? 'overview');
+      selectTab(targetTab ?? 'overview');
       setDetailsSubTab('performance');
       setAnalyticsSubTab('scan_efficiency');
       setQueryOverride({
@@ -126,7 +162,7 @@ export const QueryDetailModal: React.FC<TimelineQueryModalProps> = ({
         points: [],
       });
     } catch { /* ignore navigation errors */ }
-  }, [services]);
+  }, [services, selectTab]);
 
   const navigateWithinDistributed = useCallback((queryId: string) => {
     void navigateToQuery(queryId, 'distributed');
@@ -142,9 +178,9 @@ export const QueryDetailModal: React.FC<TimelineQueryModalProps> = ({
 
   useEffect(() => {
     if (activeTab === 'distributed' && distributedUnavailable) {
-      setActiveTab('overview');
+      selectTab('overview');
     }
-  }, [activeTab, distributedUnavailable]);
+  }, [activeTab, distributedUnavailable, selectTab]);
 
   if (!query) return null;
 
@@ -179,7 +215,7 @@ export const QueryDetailModal: React.FC<TimelineQueryModalProps> = ({
   );
 
   return (
-    <ModalWrapper isOpen={!!query} onClose={onClose} maxWidth={1400}>
+    <ModalWrapper isOpen={!!query} onClose={closeModal} maxWidth={1400}>
       <div style={{ display: 'flex', flexDirection: 'column', height: '100%' }}>
         {/* Header */}
         <div style={{
@@ -202,7 +238,7 @@ export const QueryDetailModal: React.FC<TimelineQueryModalProps> = ({
               </h2>
             </div>
             <button
-              onClick={onClose}
+              onClick={closeModal}
               style={{
                 padding: 6,
                 background: 'transparent',
@@ -232,7 +268,7 @@ export const QueryDetailModal: React.FC<TimelineQueryModalProps> = ({
             {tabs.map((tab) => (
               <button
                 key={tab.key}
-                onClick={() => !tab.unavailable && setActiveTab(tab.key)}
+                onClick={() => !tab.unavailable && selectTab(tab.key)}
                 title={tab.unavailable
                   ? tab.key === 'distributed'
                     ? tab.reason
@@ -319,7 +355,7 @@ export const QueryDetailModal: React.FC<TimelineQueryModalProps> = ({
               showXRayCard={experimentalEnabled && hasProcessesHistory}
               showThreadsCard={hasQueryThreadLog}
               showFlamegraphCard={hasTraceLog}
-              onOpenTab={setActiveTab}
+              onOpenTab={selectTab}
               onNavigateToQuery={navigateToQuery}
             />
           )}
@@ -438,7 +474,7 @@ export const QueryDetailModal: React.FC<TimelineQueryModalProps> = ({
                   onSelectQuery={(sq) => {
                     const durationMs = Number(sq.query_duration_ms) || 0;
                     const startMs = new Date(sq.query_start_time).getTime();
-                    setActiveTab('overview');
+                    selectTab('overview');
                     setDetailsSubTab('performance');
                     setAnalyticsSubTab('scan_efficiency');
                     setQueryOverride({
@@ -462,10 +498,10 @@ export const QueryDetailModal: React.FC<TimelineQueryModalProps> = ({
                   onViewInTimeTravel={queryDetail?.normalized_query_hash ? () => {
                     const hash = queryDetail.normalized_query_hash;
                     if (onViewInTimeTravel) {
-                      onClose();
+                      closeModal();
                       onViewInTimeTravel(String(hash));
                     } else {
-                      onClose();
+                      closeModal();
                       navigate(`/timetravel?nqh=${hash}`);
                     }
                   } : undefined}

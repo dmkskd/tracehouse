@@ -1,6 +1,6 @@
 import React from 'react';
 import { fireEvent, render, screen, waitFor } from '@testing-library/react';
-import { MemoryRouter } from 'react-router-dom';
+import { MemoryRouter, useLocation } from 'react-router-dom';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import type { QuerySeries } from '@tracehouse/core';
 
@@ -66,7 +66,7 @@ vi.mock('../hooks/useQueryTimelines', () => ({ useQueryTimelines: () => ({}) }))
 vi.mock('../tabs/OverviewTab', () => ({
   OverviewTab: () => <div data-testid="overview-tab">Overview</div>,
 }));
-vi.mock('../tabs/SqlTab', () => ({ SqlTab: () => null }));
+vi.mock('../tabs/SqlTab', () => ({ SqlTab: () => <div data-testid="sql-tab">SQL</div> }));
 vi.mock('../tabs/DistributedTab', () => ({
   DistributedTab: ({
     activeQueryId,
@@ -109,6 +109,10 @@ const ROOT_QUERY: QuerySeries = {
   points: [],
 };
 
+function LocationProbe() {
+  return <output data-testid="location-search">{useLocation().search}</output>;
+}
+
 describe('QueryDetailModal related-query navigation', () => {
   beforeEach(() => {
     mocks.getQueryDetail.mockReset();
@@ -140,5 +144,21 @@ describe('QueryDetailModal related-query navigation', () => {
       expect(screen.getByRole('button', { name: 'distributed-child-query' })).toBeInTheDocument();
     });
     expect(screen.queryByTestId('overview-tab')).not.toBeInTheDocument();
+  });
+
+  it('restores and updates the active modal tab through the URL', async () => {
+    render(
+      <MemoryRouter initialEntries={['/?qd_id=root-query&qd_tab=sql']}>
+        <QueryDetailModal query={ROOT_QUERY} onClose={vi.fn()} />
+        <LocationProbe />
+      </MemoryRouter>,
+    );
+
+    expect(screen.getByTestId('sql-tab')).toBeInTheDocument();
+    fireEvent.click(screen.getByRole('button', { name: 'History' }));
+
+    await waitFor(() => {
+      expect(screen.getByTestId('location-search')).toHaveTextContent('qd_tab=history');
+    });
   });
 });

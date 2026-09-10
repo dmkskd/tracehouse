@@ -12,10 +12,16 @@
  */
 
 import { useState, useEffect, useRef, useCallback } from 'react';
-import { useSearchParams } from 'react-router-dom';
 import { useClickHouseServices } from '../providers/ClickHouseProvider';
-import { getUrlParam } from '../utils/urlParams';
 import type { QuerySeries } from '@tracehouse/core';
+import { useUrlState } from './useUrlState';
+import { defineShareSchema } from '../share/shareSchema';
+
+/** State listed here must survive copying a URL with Query Details open. */
+export const QUERY_DETAILS_SHARE_SCHEMA = defineShareSchema({
+  qd_id: { type: 'string' },
+  qd_tab: { type: 'string' },
+});
 
 function detailToSeries(detail: any): QuerySeries {
   const durationMs = Number(detail.query_duration_ms) || 0;
@@ -49,25 +55,21 @@ export function useQueryDeepLink(
   onClose: () => void,
 ): { query: QuerySeries | null; onClose: () => void } {
   const services = useClickHouseServices();
-  const [, setSearchParams] = useSearchParams();
+  const { state: sharedState, update: updateSharedState } = useUrlState(QUERY_DETAILS_SHARE_SCHEMA);
   const [deepLinkedQuery, setDeepLinkedQuery] = useState<QuerySeries | null>(null);
 
-  // Read qd_id once on mount from the raw URL — avoids React Router timing race.
-  const mountQdId = useRef(getUrlParam('qd_id'));
-  const [pendingQdId, setPendingQdId] = useState<string | null>(mountQdId.current);
+  const [pendingQdId, setPendingQdId] = useState<string | null>(sharedState.qd_id ?? null);
   const fetchedRef = useRef('');
 
-  // Listen for hash changes (e.g. programmatic navigations)
+  // The URL adapter emits standalone hash changes and Grafana location changes.
   useEffect(() => {
-    const onHashChange = () => {
-      const qdId = getUrlParam('qd_id');
-      if (qdId && qdId !== fetchedRef.current) {
-        setPendingQdId(qdId);
-      }
-    };
-    window.addEventListener('hashchange', onHashChange);
-    return () => window.removeEventListener('hashchange', onHashChange);
-  }, []);
+    const qdId = sharedState.qd_id;
+    if (qdId && qdId !== fetchedRef.current) setPendingQdId(qdId);
+    if (!qdId) {
+      setPendingQdId(null);
+      setDeepLinkedQuery(null);
+    }
+  }, [sharedState.qd_id]);
 
   // When the parent selects a query, write qd_id to URL
   useEffect(() => {
@@ -75,11 +77,7 @@ export function useQueryDeepLink(
     setDeepLinkedQuery(null);
     setPendingQdId(null);
     fetchedRef.current = query.query_id;
-    setSearchParams(prev => {
-      const next = new URLSearchParams(prev);
-      next.set('qd_id', query.query_id);
-      return next;
-    }, { replace: true });
+    updateSharedState({ qd_id: query.query_id });
   }, [query?.query_id]);
 
   // When we have a pending qd_id and services are ready, fetch
@@ -106,13 +104,9 @@ export function useQueryDeepLink(
     setDeepLinkedQuery(null);
     setPendingQdId(null);
     fetchedRef.current = '';
-    setSearchParams(prev => {
-      const next = new URLSearchParams(prev);
-      next.delete('qd_id');
-      return next;
-    }, { replace: true });
+    updateSharedState({ qd_id: undefined, qd_tab: undefined });
     onClose();
-  }, [onClose, setSearchParams]);
+  }, [onClose, updateSharedState]);
 
   return { query: query ?? deepLinkedQuery, onClose: handleClose };
 }

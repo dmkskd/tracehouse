@@ -69,6 +69,20 @@ interface EventsDashboardProps {
   onOpenAnalyticsDashboard?: () => void;
   onInvestigateEvent?: (event: OperationalEvent) => void;
   onBackToTimeTravel?: () => void;
+  search: string;
+  onSearchChange: (value: string) => void;
+  severity: 'all' | EventSeverity;
+  onSeverityChange: (value: 'all' | EventSeverity) => void;
+  category: 'all' | EventCategory;
+  onCategoryChange: (value: 'all' | EventCategory) => void;
+  kind: 'all' | EventKind;
+  onKindChange: (value: 'all' | EventKind) => void;
+  autoRefresh: boolean;
+  onAutoRefreshChange: (value: boolean) => void;
+  groupSimilarEvents: boolean;
+  onGroupSimilarEventsChange: (value: boolean) => void;
+  selectedPanel: 'details' | 'context';
+  onSelectedPanelChange: (value: 'details' | 'context') => void;
 }
 
 const EVENTS_MIN_AUTO_REFRESH_SECONDS = 10;
@@ -87,6 +101,20 @@ export const EventsDashboard: React.FC<EventsDashboardProps> = ({
   onOpenAnalyticsDashboard,
   onInvestigateEvent,
   onBackToTimeTravel,
+  search,
+  onSearchChange,
+  severity,
+  onSeverityChange,
+  category,
+  onCategoryChange,
+  kind,
+  onKindChange,
+  autoRefresh,
+  onAutoRefreshChange,
+  groupSimilarEvents,
+  onGroupSimilarEventsChange,
+  selectedPanel,
+  onSelectedPanelChange,
 }) => {
   const services = useClickHouseServices();
   const refreshConfig = useRefreshConfig();
@@ -109,11 +137,6 @@ export const EventsDashboard: React.FC<EventsDashboardProps> = ({
   const [coverage, setCoverage] = useState<EventSourceCoverage[]>([]);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  const [search, setSearch] = useState('');
-  const [severity, setSeverity] = useState<'all' | EventSeverity>('all');
-  const [category, setCategory] = useState<'all' | EventCategory>('all');
-  const [kind, setKind] = useState<'all' | EventKind>('all');
-  const [autoRefresh, setAutoRefresh] = useState(false);
   const [eventHelpView, setEventHelpView] = useState<'events' | 'sources' | null>(null);
   const eventHelpRef = useRef<HTMLDivElement>(null);
   const fetchInFlightRef = useRef(false);
@@ -121,11 +144,9 @@ export const EventsDashboard: React.FC<EventsDashboardProps> = ({
   const [clusterSelection, setClusterSelection] = useState<EventMarkerSelection | null>(
     null,
   );
-  const [groupSimilarEvents, setGroupSimilarEvents] = useState(true);
   const [expandedEventClusters, setExpandedEventClusters] = useState<ReadonlySet<string>>(
     () => new Set(),
   );
-  const [selectedPanel, setSelectedPanel] = useState<'details' | 'context'>('details');
 
   const parsedRangeCenterMs = rangeCenterTime ? Date.parse(rangeCenterTime) : Number.NaN;
   const hasAnchoredRange = Number.isFinite(parsedRangeCenterMs);
@@ -458,7 +479,7 @@ export const EventsDashboard: React.FC<EventsDashboardProps> = ({
           )}
         </div>
         <button
-          onClick={() => setAutoRefresh(value => !value)}
+          onClick={() => onAutoRefreshChange(!autoRefresh)}
           disabled={hasAnchoredRange || refreshRateSeconds <= 0}
           title={
             hasAnchoredRange
@@ -510,7 +531,7 @@ export const EventsDashboard: React.FC<EventsDashboardProps> = ({
           selectedEventId={selectedEvent?.id}
           focusedCategory={category === 'all' ? undefined : category}
           onCategoryFocus={nextCategory => {
-            setCategory(nextCategory ?? 'all');
+            onCategoryChange(nextCategory ?? 'all');
             setClusterSelection(null);
           }}
           onSelectEvent={event => {
@@ -535,13 +556,13 @@ export const EventsDashboard: React.FC<EventsDashboardProps> = ({
       }}>
         <input
           value={search}
-          onChange={event => setSearch(event.target.value)}
+          onChange={event => onSearchChange(event.target.value)}
           placeholder="Search title, host, query ID, table, exception…"
           style={{ ...inputStyle, flex: 1 }}
         />
         <select
           value={severity}
-          onChange={event => setSeverity(event.target.value as typeof severity)}
+          onChange={event => onSeverityChange(event.target.value as typeof severity)}
           style={inputStyle}
         >
           <option value="all">All severities</option>
@@ -552,7 +573,7 @@ export const EventsDashboard: React.FC<EventsDashboardProps> = ({
         </select>
         <select
           value={category}
-          onChange={event => setCategory(event.target.value as typeof category)}
+          onChange={event => onCategoryChange(event.target.value as typeof category)}
           style={inputStyle}
         >
           <option value="all">All categories</option>
@@ -562,7 +583,7 @@ export const EventsDashboard: React.FC<EventsDashboardProps> = ({
         </select>
         <select
           value={kind}
-          onChange={event => setKind(event.target.value as typeof kind)}
+          onChange={event => onKindChange(event.target.value as typeof kind)}
           style={inputStyle}
         >
           <option value="all">All event types</option>
@@ -632,7 +653,7 @@ export const EventsDashboard: React.FC<EventsDashboardProps> = ({
               <button
                 type="button"
                 aria-pressed={groupSimilarEvents}
-                onClick={() => setGroupSimilarEvents(value => !value)}
+                onClick={() => onGroupSimilarEventsChange(!groupSimilarEvents)}
                 title="Group adjacent events with the same type, title, host, source, and severity within 5 seconds"
                 style={{
                   ...secondaryButtonStyle,
@@ -709,7 +730,7 @@ export const EventsDashboard: React.FC<EventsDashboardProps> = ({
                   {(['details', 'context'] as const).map(panel => (
                     <button
                       key={panel}
-                      onClick={() => setSelectedPanel(panel)}
+                      onClick={() => onSelectedPanelChange(panel)}
                       style={{
                         ...panelTabStyle,
                         color: selectedPanel === panel ? '#58a6ff' : 'var(--text-muted)',

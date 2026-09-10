@@ -40,6 +40,25 @@ import type { SunburstNodeData, QueryResult, ObservabilityData, ColumnCommentMap
 import { useUserPreferenceStore } from '../stores/userPreferenceStore';
 import { DocsLink } from '../components/common/DocsLink';
 import useMonitoringCapabilitiesStore from '../stores/monitoringCapabilitiesStore';
+import { useUrlState } from '../hooks/useUrlState';
+import { defineShareSchema } from '../share/shareSchema';
+
+/** State listed here must survive copying and reopening an Overview URL. */
+export const OVERVIEW_SHARE_SCHEMA = defineShareSchema({
+  overview_view: { type: 'string', default: 'snapshot', persistDefault: true },
+  overview_metric: {
+    type: 'string[]',
+    default: ['cpu_usage', 'memory_percentage', 'disk_read_rate', 'disk_write_rate', 'network_send_rate', 'network_recv_rate'],
+    persistDefault: true,
+  },
+  overview_host: { type: 'string' },
+  overview_split: { type: 'boolean', default: false, persistDefault: true },
+  overview_arena_split: { type: 'boolean', default: false, persistDefault: true },
+  overview_range: { type: 'number', default: 15, persistDefault: true },
+  overview_map_search: { type: 'string' },
+  overview_map_node: { type: 'string' },
+  overview_map_detail: { type: 'boolean', default: false, persistDefault: true },
+});
 
 
 // No Connection Component
@@ -69,6 +88,7 @@ const EMPTY_MERGES: ActiveMergeInfo[] = [];
 
 export const Overview: React.FC = () => {
   const location = useAppLocation();
+  const { state: sharedState, update: updateSharedState } = useUrlState(OVERVIEW_SHARE_SCHEMA);
   const services = useClickHouseServices();
   const activeProfileId = useConnectionStore(s => s.activeProfileId);
   const profiles = useConnectionStore(s => s.profiles);
@@ -77,7 +97,29 @@ export const Overview: React.FC = () => {
   const { refreshRateSeconds } = useRefreshSettingsStore();
   const { metrics, metricsHistory, clearMetrics } = useMetricsStore();
   const manualRefreshTick = useGlobalLastUpdatedStore(s => s.manualRefreshTick);
-  const { viewMode, selectedMetrics, setViewMode, toggleMetric } = useTimeSeriesStore();
+  const {
+    viewMode: preferredOverviewView,
+    selectedMetrics: preferredMetrics,
+    setViewMode: persistOverviewView,
+    setSelectedMetrics: persistSelectedMetrics,
+  } = useTimeSeriesStore();
+  const viewMode = (sharedState.overview_view ?? preferredOverviewView) as 'snapshot' | 'trend' | 'map';
+  const selectedMetrics = (sharedState.overview_metric ?? preferredMetrics) as TrendMetricType[];
+  const setViewMode = useCallback((mode: 'snapshot' | 'trend' | 'map') => {
+    persistOverviewView(mode);
+    updateSharedState({ overview_view: mode });
+  }, [persistOverviewView, updateSharedState]);
+  const toggleMetric = useCallback((metric: TrendMetricType) => {
+    const next = selectedMetrics.includes(metric)
+      ? selectedMetrics.length > 1 ? selectedMetrics.filter(value => value !== metric) : selectedMetrics
+      : [...selectedMetrics, metric];
+    persistSelectedMetrics(next);
+    updateSharedState({ overview_metric: next });
+  }, [selectedMetrics, persistSelectedMetrics, updateSharedState]);
+
+  useEffect(() => {
+    updateSharedState({ overview_view: viewMode, overview_metric: selectedMetrics });
+  }, []); // eslint-disable-line react-hooks/exhaustive-deps
 
   // Restore map view when navigating back from Analytics obs-map link
   useEffect(() => {
@@ -100,22 +142,27 @@ export const Overview: React.FC = () => {
   // Historical metrics state (cluster-aware)
   const [clusterHosts, setClusterHosts] = useState<string[]>([]);
   const [clusterMetrics, setClusterMetrics] = useState<ClusterHistoricalMetricsPoint[]>([]);
-  const [selectedHost, setSelectedHost] = useState<string | null>(null);
-  const [splitView, setSplitView] = useState(false);
-  const [arenaSplitView, setArenaSplitView] = useState(false);
+  const selectedHost = sharedState.overview_host ?? null;
+  const setSelectedHost = (host: string | null) => updateSharedState({ overview_host: host ?? undefined });
+  const splitView = sharedState.overview_split ?? false;
+  const setSplitView = (enabled: boolean) => updateSharedState({ overview_split: enabled });
+  const arenaSplitView = sharedState.overview_arena_split ?? false;
+  const setArenaSplitView = (enabled: boolean) => updateSharedState({ overview_arena_split: enabled });
   const preferredViewMode = useUserPreferenceStore(s => s.preferredViewMode);
 
   // Cluster hostnames from server info (reliable - always returns all nodes)
   const arenaHosts = liveData?.serverInfo?.clusterHosts ?? [];
 
-  const [timeRangeMinutes, setTimeRangeMinutes] = useState(15);
+  const timeRangeMinutes = sharedState.overview_range ?? 15;
+  const setTimeRangeMinutes = (minutes: number) => updateSharedState({ overview_range: minutes });
   const [isLoadingHistory, setIsLoadingHistory] = useState(false);
   const [historyError, setHistoryError] = useState<string | null>(null);
 
   // Observability map state - restore selected table from session if navigating back
-  const [mapSearchQuery, setMapSearchQuery] = useState('');
+  const mapSearchQuery = sharedState.overview_map_search ?? '';
+  const setMapSearchQuery = (value: string) => updateSharedState({ overview_map_search: value || undefined });
   const [mapClickedNode, setMapClickedNode] = useState<SunburstNodeData | null>(() => {
-    const saved = sessionStorage.getItem('obsmap:selectedTable');
+    const saved = sharedState.overview_map_node ?? sessionStorage.getItem('obsmap:selectedTable');
     if (saved) {
       // Find the table in data to rebuild the node with full metadata
       for (const cat of OBSERVABILITY_DATA.children) {
@@ -135,7 +182,8 @@ export const Overview: React.FC = () => {
   const [mapRunQueryIndex, setMapRunQueryIndex] = useState<number | null>(null);
   const [enrichedMapData, setEnrichedMapData] = useState<ObservabilityData | null>(null);
   const [columnComments, setColumnComments] = useState<ColumnCommentMap>(new Map());
-  const [mapDetailExpanded, setMapDetailExpanded] = useState(false);
+  const mapDetailExpanded = sharedState.overview_map_detail ?? false;
+  const setMapDetailExpanded = (expanded: boolean) => updateSharedState({ overview_map_detail: expanded });
 
   // Monotonic key that bumps whenever the services object changes (i.e. connection switch/reconnect).
   // Used to force-remount stateful children like ResourceArena3D.
@@ -219,17 +267,20 @@ export const Overview: React.FC = () => {
       setMapClickedNode(null);
       setMapHoveredNode(null);
       sessionStorage.removeItem('obsmap:selectedTable');
+      updateSharedState({ overview_map_node: undefined });
     } else {
       setMapClickedNode(node);
       setMapHoveredNode(null);
       if (node?.meta?.type === 'table') {
         sessionStorage.setItem('obsmap:selectedTable', node.name);
+        updateSharedState({ overview_map_node: node.name });
       } else {
         sessionStorage.removeItem('obsmap:selectedTable');
+        updateSharedState({ overview_map_node: undefined });
       }
     }
     setMapQueryResult(null);
-  }, [mapClickedNode]);
+  }, [mapClickedNode, updateSharedState]);
 
   // Fetch historical metrics from ClickHouse (cluster-aware)
   const fetchHistoricalMetrics = useCallback(async () => {
@@ -621,7 +672,7 @@ export const Overview: React.FC = () => {
               onQueryClick={toggleExpandedQuery}
               splitAvailable={arenaHosts.length > 1}
               splitActive={arenaSplitView}
-              onSplitToggle={() => setArenaSplitView(v => !v)}
+              onSplitToggle={() => setArenaSplitView(!arenaSplitView)}
             />
           ) : (
             <ResourceArenaSwimlane
@@ -633,7 +684,7 @@ export const Overview: React.FC = () => {
               onQueryClick={toggleExpandedQuery}
               splitAvailable={arenaHosts.length > 1}
               splitActive={arenaSplitView}
-              onSplitToggle={() => setArenaSplitView(v => !v)}
+              onSplitToggle={() => setArenaSplitView(!arenaSplitView)}
             />
           )}
 
@@ -846,7 +897,7 @@ export const Overview: React.FC = () => {
             enrichedData={enrichedMapData ?? undefined}
             columnComments={columnComments}
             expanded={mapDetailExpanded}
-            onToggleExpand={() => setMapDetailExpanded(v => !v)}
+            onToggleExpand={() => setMapDetailExpanded(!mapDetailExpanded)}
           />
         </div>
       )}

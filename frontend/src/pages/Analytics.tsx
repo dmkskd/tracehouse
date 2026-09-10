@@ -60,7 +60,7 @@ export const Analytics: React.FC = () => {
   const fromQueries = fromPage === 'queries';
   const fromTimeTravel = fromPage === 'timetravel';
   // URL state - tab, lookback, db filter are persisted in the URL
-  const { state: urlState, update: updateUrl, copyShareableUrl } = useAnalyticsUrlState();
+  const { state: urlState, update: updateUrl } = useAnalyticsUrlState();
 
   const activeTab: AnalyticsTab = (
     urlState.tab === 'misc' ? 'misc' :
@@ -113,14 +113,18 @@ export const Analytics: React.FC = () => {
   const [allDatabases, setAllDatabases] = useState<string[]>([]);
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  const [showSystemDbs, setShowSystemDbs] = useState(false);
-  const [linkCopied, setLinkCopied] = useState(false);
+  const showSystemDbs = urlState.systemDbs ?? false;
+  const setShowSystemDbs = useCallback((show: boolean) => updateUrl({ systemDbs: show || undefined }), [updateUrl]);
 
   // ── Surfaces tab state ──
-  const [surfaceSubTab, setSurfaceSubTab] = useState<SurfaceSubTab>('resource');
-  const [surfaceDb, setSurfaceDb] = useState<string>('');
-  const [surfaceTableName, setSurfaceTableName] = useState<string>('');
-  const [surfaceTimeRange, setSurfaceTimeRange] = useState<string | null>('1 DAY');
+  const surfaceSubTab: SurfaceSubTab = urlState.surfaceTab === 'pattern' ? 'pattern' : 'resource';
+  const setSurfaceSubTab = useCallback((tab: SurfaceSubTab) => updateUrl({ surfaceTab: tab }), [updateUrl]);
+  const surfaceDb = urlState.surfaceDb ?? '';
+  const setSurfaceDb = useCallback((database: string) => updateUrl({ surfaceDb: database || undefined }), [updateUrl]);
+  const surfaceTableName = urlState.surfaceTable ?? '';
+  const setSurfaceTableName = useCallback((table: string) => updateUrl({ surfaceTable: table || undefined }), [updateUrl]);
+  const surfaceTimeRange = urlState.surfaceTime ?? '1 DAY';
+  const setSurfaceTimeRange = useCallback((range: string | null) => updateUrl({ surfaceTime: range ?? undefined }), [updateUrl]);
   const [, setStressData] = useState<unknown>(null);
   const [patternData, setPatternData] = useState<PatternSurfaceRow[] | null>(null);
   const [surfaceLoading, setSurfaceLoading] = useState(false);
@@ -140,8 +144,10 @@ export const Analytics: React.FC = () => {
   const [resourceLoading, setResourceLoading] = useState(false);
   const [resourceError, setResourceError] = useState<string | null>(null);
   const resourceFetchId = useRef(0);
-  const [resourceDrillTable, setResourceDrillTable] = useState<string | null>(null);
-  const [resourceMaxLanes, setResourceMaxLanes] = useState(10);
+  const resourceDrillTable = urlState.surfaceDrill ?? null;
+  const setResourceDrillTable = useCallback((table: string | null) => updateUrl({ surfaceDrill: table ?? undefined }), [updateUrl]);
+  const resourceMaxLanes = urlState.surfaceLanes ?? 10;
+  const setResourceMaxLanes = useCallback((lanes: number) => updateUrl({ surfaceLanes: lanes }), [updateUrl]);
 
   // Reset to Tables tab if experimental is disabled while on Surfaces
   useEffect(() => {
@@ -493,22 +499,6 @@ export const Analytics: React.FC = () => {
                 </button>
               )}
             </div>
-            <button
-              onClick={async () => {
-                const ok = await copyShareableUrl();
-                if (ok) { setLinkCopied(true); setTimeout(() => setLinkCopied(false), 2000); }
-              }}
-              title="Copy shareable link"
-              style={{
-                padding: '4px 10px', fontSize: 11, fontWeight: 500,
-                color: linkCopied ? 'var(--accent-green, #3fb950)' : 'var(--text-muted)',
-                background: 'var(--bg-card)', border: '1px solid var(--border-primary)',
-                borderRadius: 4, cursor: 'pointer', transition: 'all 0.15s',
-                fontFamily: "'Share Tech Mono', monospace",
-              }}
-            >
-              {linkCopied ? '✓ Copied' : '⧉ Share'}
-            </button>
           </div>
           {/* Tab bar */}
           <div style={{ display: 'flex', gap: 4, borderBottom: '1px solid var(--border-primary)', marginLeft: -4 }}>

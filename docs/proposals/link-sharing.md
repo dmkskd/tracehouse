@@ -1,7 +1,9 @@
 # Proposal: dependable link sharing
 
-Status: draft, assessment complete; implementation not started  
+Status: draft; Grafana Queries proof of concept implemented, product-wide coverage incomplete
 Author: repository assessment, 2026-08-01
+
+Updated: 2026-09-10 — Grafana implementation recommendations (section 11)
 
 ---
 
@@ -15,18 +17,11 @@ In TraceHouse, **Share** should mean:
 > time context, subject to the colleague's access and the continued existence
 > of the underlying data.
 
-This is stronger than "the URL opens the same page" and slightly weaker than
-"the pixels are identical." Live data, viewport size, theme, hover state, and
-permissions can legitimately differ. If the underlying data may disappear or
-change, exact reproduction requires a stored snapshot rather than a permalink.
-
-The feature should therefore expose two related outcomes:
-
-1. **Link to view**: a compact URL that reconstructs the investigation by
-   querying the recipient's authorized data source.
-2. **Snapshot**: an immutable, access-controlled capture for cases where the
-   data or state cannot be reconstructed later. This can be a snapshot link
-   once server-side storage exists, and an exported file/image before then.
+This is stronger than "the URL opens the same page," but it does not promise
+identical rows or pixels. The link carries the screen's coordinates and queries
+the recipient's authorized ClickHouse datasource as it exists when opened.
+ClickHouse data and metadata may legitimately change or expire between the two
+visits; preserving that evidence is outside the scope of this feature.
 
 The product promise is "Share is available everywhere." It does not mean every
 piece of transient UI state belongs in a URL.
@@ -42,11 +37,9 @@ reproduce the screen the sender was viewing.
 - Events and Analytics preserve selected parts of an investigation.
 - Most other pages preserve only the route. A copied browser URL often opens a
   visibly different state for the recipient.
-- Only Analytics has an explicit Share button. Elsewhere the user must infer
-  that copying the browser address might work.
+- The browser address is not yet a dependable representation of every screen.
 - The standalone and Grafana builds use different URL implementations. They
   already have different schemas and behavior.
-- Neither build has an immutable snapshot mechanism.
 
 The result does not meet the definition above. It is a collection of useful
 deep-link features, not yet a product-wide sharing capability.
@@ -106,11 +99,10 @@ must never be put in a URL, but a non-secret, resolvable source identity must be
 
 #### Relative time is not reproducible
 
-Values such as `1 HOUR`, "live," and "last 15 minutes" move with the clock. A
-recipient opening the link tomorrow sees another investigation. "Link to view"
-must freeze a live range to absolute `from` and `to` timestamps at share time.
-The UI may also offer an explicit "keep live" option, but it cannot be the
-default meaning of "same thing I am seeing."
+Time controls are coordinates too. Absolute windows remain absolute; relative
+or live windows remain relative or live. The recipient may therefore see newer
+rows while using the same time mode, which is consistent with this feature's
+coordinate-sharing contract.
 
 #### Grafana has split URL ownership
 
@@ -134,9 +126,9 @@ serialization, and Analytics fields. The Grafana Analytics type currently lacks
 fields present in standalone, including `noAutoExecute` and the legacy event
 fields. Fixes made in one build are not automatically fixes in the other.
 
-#### The current Share action can discard context
+#### Some URL writers can discard context
 
-Analytics constructs a fresh query string containing only its known fields.
+The Analytics Share action constructs a fresh query string containing only its known fields.
 That can drop unknown but important parameters. In Grafana it can also discard
 Grafana-owned parameters such as organization context. In standalone it can
 drop a query-detail `qd_id` even though generic URL updates otherwise preserve
@@ -230,21 +222,15 @@ Do not capture incidental interaction state:
 
 ## 5. User experience
 
-Add one Share control to the common application header in both builds. Page
-components supply the descriptor; they do not implement their own clipboard
-logic.
-
-The initial menu should offer:
-
-- **Copy link to this view** — default; freezes relative time and reports
-  success or a useful failure.
-- **Keep time range live** — optional when the current view is live/relative.
-- **Export snapshot** — file/image fallback until stored snapshot links exist.
+The address bar is the sharing interface. Every meaningful state change must
+update it immediately, including modal open/close state and the selected modal
+tab. Users share a view with the browser's ordinary copy-URL behavior; pages and
+modals must not need their own Share controls.
 
 Before copying, the menu should state which source and cluster are included and
 whether the link contains SQL or other potentially sensitive fields. If the URL
-would exceed the supported budget, offer snapshot/export instead of producing a
-fragile link.
+would exceed the supported budget, report that the current state cannot yet be
+represented by a dependable link.
 
 When opening a link, render an explicit degraded-state banner when exact restore
 is impossible, for example:
@@ -274,6 +260,21 @@ frontend code should use the router-agnostic location API, including query
 detail deep links. Navigation and search state must have one observable source
 of truth per build.
 
+### An explicit code-level contract
+
+Every surface declares its durable URL state with `defineShareSchema` beside
+the component that owns it. An entry in that schema means "this coordinate must
+survive copy/paste, reload, and browser navigation." State kept only in local
+`useState` is intentionally ephemeral. The shared codec owns parsing and
+serialization; standalone React Router and Grafana `locationService` are
+transport adapters for the same contract.
+
+Defaults that must remain visible in copied URLs use `persistDefault: true`.
+For example, Time Travel declares its activity limit this way, so `Show 100`
+produces `tt_limit=100` rather than relying on an implicit recipient default.
+Query Details declares `qd_id` and `qd_tab` in the existing deep-link hook used
+by both the modal and its record loader.
+
 Each page should implement the equivalent of:
 
 ```ts
@@ -284,7 +285,7 @@ interface ShareableSurface<S> {
 }
 ```
 
-Normalization removes defaults, freezes relative time, replaces unstable row
+Normalization removes defaults, preserves the selected time mode, replaces unstable row
 indices with stable identities, and rejects secrets or unsupported values.
 
 ### Schema evolution
@@ -299,22 +300,12 @@ Include `v=1` from the first product-wide release. Decoders must:
 Existing unversioned `qd_id`, merge, event, and Analytics links should remain
 valid through compatibility decoders.
 
-### Permalink versus snapshot
+### Coordinate contract
 
-A permalink stores intent and re-runs queries. It cannot guarantee identical
-rows if data changes or expires.
-
-A snapshot stores the rendered evidence (structured result data plus the share
-descriptor, not necessarily a screenshot). A future snapshot service requires:
-
-- unpredictable IDs;
-- explicit viewer authorization;
-- expiry and deletion controls;
-- size and rate limits;
-- redaction rules and an audit trail;
-- a clear indication that the view is a snapshot and when it was captured.
-
-Until that service exists, do not call permalinks "snapshots."
+A shared link stores intent and re-runs queries. Changed rows, expired system-log
+entries, and refreshed metadata do not make the link incorrect as long as the
+same source and screen coordinates were applied. The UI should distinguish a
+selection that no longer exists from a failure to restore its coordinates.
 
 ## 7. Delivery plan
 
@@ -325,7 +316,10 @@ Until that service exists, do not call permalinks "snapshots."
 3. Preserve Grafana-owned and unknown parameters when sharing.
 4. Add schema versioning, validation, URL-size checks, and sensitive-state
    classification.
-5. Add a common Share control that can initially report incomplete coverage.
+5. Resolve source/organization/cluster before page queries start in both builds;
+   link context takes precedence over browser-local defaults.
+6. Make the address bar continuously represent the current coordinates,
+   including nested views and modals.
 
 This phase fixes the foundation without pretending every screen is shareable.
 
@@ -343,22 +337,19 @@ Implement and verify, in order:
 
 ### Phase 2 — remaining surfaces
 
-Add source context everywhere, then cover Overview, Replication, Engine
-Internals, Cluster, and remaining secondary controls. Query and Merge schemas
+With source context established in phase 0, cover Overview, Replication, Engine
+Internals, Cluster, and remaining secondary controls. Include every registered
+route, including hidden/experimental Notebooks and nested detail views, in the
+coverage inventory; hidden navigation does not exempt a reachable page. Query and Merge schemas
 should be migrated to the shared codec and checked for missing detail-tab/time
 state rather than rewritten.
-
-### Phase 3 — snapshots
-
-Start with downloadable structured snapshots or a self-contained report. Add a
-server-side snapshot-link service only after its authorization, retention, and
-redaction model is approved.
 
 ## 8. Acceptance criteria
 
 The feature is ready when all of the following hold:
 
-1. Every top-level surface has the common Share control.
+1. Every top-level surface and meaningful nested view continuously exposes its
+   coordinates in the browser URL.
 2. Every surface documents its captured, deliberately omitted, and unsupported
    state.
 3. Opening a copied link in a clean browser profile restores the same route,
@@ -374,29 +365,183 @@ The feature is ready when all of the following hold:
 8. Missing source, permission, capability, retained data, or descriptor version
    produces an explicit degraded state; no silent source substitution occurs.
 9. No credentials or known secrets are serialized. SQL-bearing links warn the
-   sender. Oversized state falls back to export/snapshot.
+   sender. Oversized state produces an explicit unsupported-state message.
 10. Automated round-trip tests prove `decode(encode(state))` for every schema,
     and end-to-end tests share from one browser context and open in another.
 
 ## 9. Decisions required
 
-1. Is "same investigation" (re-query authorized data) the default promise, with
-   exact historical evidence delegated to snapshots? This proposal recommends
-   yes.
-2. Should standalone deployments support configured source aliases? Without
+1. Should standalone deployments support configured source aliases? Without
    them, cross-user source selection cannot be automatic or safe.
-3. What URL size budget should trigger snapshot/export fallback? A conservative
+2. What URL size budget should reject link creation? A conservative
    product budget should be chosen and tested through supported proxies rather
    than relying on browser maximums.
-4. Are raw SQL and object names acceptable in warned permalinks, or must any
-   SQL-bearing share use protected snapshot storage?
-5. What retention and authorization policy should a future snapshot service
-   use?
+3. Are raw SQL and object names acceptable in warned permalinks?
 
 ## 10. Recommendation
 
 Approve phases 0 and 1 before adding more isolated deep links. The most valuable
-first user-visible result is a trustworthy Share action on Time Travel, because
+first user-visible result is a trustworthy address-bar URL on Time Travel, because
 that page currently has both the highest investigation value and one of the
 largest gaps between a copied URL and the screen being viewed. Build it on one
 shared URL contract so the Grafana plugin and standalone app cannot drift again.
+
+
+## 11. Grafana-focused implementation recommendations
+
+### 11.1 Assessment and scope
+
+Grafana is the highest-risk **integration** work because the host owns routing,
+organization context, datasource access, and deployment prefixes. It is not
+necessarily the largest implementation effort: capturing all page controls
+remains substantial shared work. Prove the Grafana
+foundation first, while keeping page schemas shared with standalone.
+
+The recommendations below follow inspection of the current repository. They
+are proposed changes, not claims that sharing is already implemented.
+
+### 11.2 Concrete issues confirmed in the code
+
+| Location | Current behavior | Recommended change |
+|---|---|---|
+| `grafana-app-plugin/src/App.tsx` and `src/hooks/useAppLocation.ts` | App location context and Grafana location are separate mechanisms; navigation updates context as well as the host. | Derive route and search from one subscribed host location. Keep only genuinely transient navigation hints in memory. |
+| `grafana-app-plugin/src/stubs/react-router-dom.tsx` | Search writes call `window.history` directly; several router hooks are no-ops. Links construct a hard-coded plugin path. | Make compatibility exports delegate to the same platform adapter; remove independent history writes and migrate shared consumers to the app location API. |
+| `frontend/src/hooks/useQueryDeepLink.ts` | Imports `useSearchParams` directly from `react-router-dom`, reaching the stub in Grafana. | Use the common adapter and test detail open/close with back/forward and a fresh browser. |
+| `grafana-app-plugin/src/hooks/useAppLocation.ts` | Search replacement clears all existing parameters and converts repeated values into a scalar record. | Update only explicitly owned keys, preserve unrelated host parameters, and retain repeated values such as multiple hosts. |
+| `grafana-app-plugin/src/hooks/useUrlState.ts` | Generic schema updates preserve unrelated keys, but Analytics Share constructs a new query string; Analytics fields differ from standalone. | Retain the generic ownership behavior, move codecs into shared code, and build shares from the current host URL plus the normalized descriptor. |
+| `grafana-app-plugin/src/ServiceProvider.tsx` | Datasource initialization, single-source auto-selection, and cluster overrides depend on local defaults. | Resolve explicit link context first and prevent default selection or cluster detection from overwriting it. |
+| `grafana-app-plugin/.config/webpack/` | Multiple build configurations alias shared hooks and router imports. | Verify development and production builds use the same adapter; a passing standalone test does not verify the plugin aliases. |
+
+### 11.3 One host adapter and explicit parameter ownership
+
+Use one Grafana adapter for reading location, subscribing to changes, building
+URLs, and performing push/replace navigation. Its consumers include header
+navigation, page state, and modal deep links. All writes go
+through `locationService`; location context reflects that source rather than
+optimistically maintaining a second durable route.
+
+The adapter must:
+
+- Preserve Grafana organization and other unrelated host parameters on updates
+  and Share. On a page change, remove the previous page's owned state while
+  retaining global source context and host context.
+- Reserve a TraceHouse namespace for new global fields, for example `th_v`,
+  `th_ds`, `th_cluster`, `th_from`, and `th_to`. Existing `from` already has
+  page-specific meaning; do not silently reinterpret legacy parameters.
+- Distinguish an omitted cluster (use defaults) from an explicit connected-node
+  scope (no cluster). The schema must encode both without ambiguity.
+- Merge against the latest host location, preserving repeated query values and
+  preventing concurrent modal/page updates from overwriting one another.
+- Respect the configured Grafana deployment subpath when building absolute
+  links. Test both `/a/...` and a deployment such as `/grafana/a/...`; do not
+  assume Grafana is mounted at the origin root.
+- Preserve normal anchor behavior for new tabs and modifier clicks. Navigation
+  hints stored in memory cannot be required to restore a shared view.
+- Use replace for frequent control adjustments and push for meaningful
+  navigation, with tested back/forward semantics and no feedback loops.
+
+Verify the precise host API and subpath behavior against the supported Grafana
+versions during implementation. Treat this as a compatibility requirement,
+not an assumption based only on mocked location services.
+
+### 11.4 Restore source context before executing page queries
+
+Implement an explicit restore sequence:
+
+1. Decode and validate the descriptor without querying ClickHouse.
+2. Establish or validate the requested Grafana organization through supported
+   host navigation. Carry the complete target through login/organization
+   navigation; never assume adding an `orgId` parameter grants access.
+3. Resolve the requested datasource UID within that organization using the
+   recipient's permissions. Names are display labels, not stable identity.
+4. Discover available clusters through that datasource and validate the exact
+   requested cluster or connected-node scope.
+5. Apply page selection, filters, absolute time, and refresh mode; only then
+   enable investigation queries and polling.
+
+Datasource discovery may require host/backend requests; the gate applies to
+page investigation queries that could otherwise run against the wrong source.
+While resolving, show a restoring state. On failure, preserve the requested
+view and show a specific unresolved-source state with a source picker. Do not
+fall back silently to the recipient's saved datasource or first available one.
+
+Keep link overrides separate from saved preferences: opening a colleague's
+link should not permanently change the recipient's default source or refresh
+settings. On subsequent URL/source changes, cancel or ignore stale requests,
+clear source-dependent selections/caches as appropriate, and repeat resolution.
+Late cluster discovery must not replace the requested scope.
+
+### 11.5 Browser links and Share links
+
+Keep meaningful view state synchronized to the browser URL so copying the
+address works for selections and controls. Preserve the displayed time
+coordinate: absolute intervals remain absolute, and relative or live intervals
+remain relative or live. The recipient re-queries ClickHouse;
+different returned data is expected and does not mean coordinate restoration
+failed.
+
+TraceHouse custom dashboards are app content, not automatically Grafana
+Dashboards. Sharing them requires a portable definition/version or a shared
+repository. Likewise, inventory Notebooks and their portable definitions before
+choosing reusable infrastructure; the page-coverage table above predates that
+route. A browser-local artifact ID is never sufficient.
+
+Default scope is sharing within the same Grafana deployment, or within the same
+standalone deployment. The common schema supports equivalent behavior in both;
+a Grafana URL does not automatically become a standalone URL. Cross-deployment
+or cross-build transfer requires an explicit import/source-mapping flow.
+
+### 11.6 Recommended implementation slices and release gates
+
+1. **Grafana adapter and compatibility fixes.** Unify host location ownership,
+   repair query-detail navigation, preserve host/repeated parameters, and verify
+   subpath handling in the real plugin. Migrate shared codecs without breaking
+   existing URLs. Gate: route, detail selection, reload, and back/forward agree.
+2. **Source-aware restoration.** Add organization/datasource/cluster identity and
+   the initialization gate. Add standalone alias resolution in the same shared
+   contract. Gate: a conflicting saved source never receives page queries when
+   an explicit shared source is requested.
+3. **Complete Time Travel in both builds.** Capture all investigation state,
+   time mode, and selected detail in the live address-bar URL. Gate:
+   browser B restores browser A's normalized descriptor without local storage
+   from A.
+4. **Every remaining surface.** Maintain a checklist derived from the route
+   registry plus nested views, with captured/omitted/unsupported fields. Cover
+   portable dashboard/notebook content as needed. Gate: no reachable page is
+   silently considered complete merely because its route opens.
+Run the following Grafana acceptance matrix in actual browser contexts, in
+addition to shared codec and adapter unit tests:
+
+| Scenario | Required outcome |
+|---|---|
+| Clean recipient and recipient with conflicting local preferences | Same requested source, cluster, controls, and time mode; saved defaults remain unchanged. |
+| Non-default organization; unavailable datasource/cluster; insufficient access | Correct host context or explicit unresolved state; no silent source substitution. |
+| Root and subpath deployment; development and production plugin builds | Correct absolute URL, route restoration, and adapter wiring. |
+| Copy address, Share, reload, back/forward, detail open/close, new tab | Consistent coordinates and time mode across each entry path. |
+| Multiple hosts, unknown host parameters, legacy URLs, malformed/newer versions | Repeated values and host context survive; compatibility or visible degradation works. |
+| Slow source resolution and switching sources during requests | No investigation query starts on the wrong source; stale responses cannot repaint the new view. |
+| Login redirect and recipient opening the link later | Target coordinates survive authentication; missing or expired selected objects are reported. |
+
+Use at least two provisioned datasources and a non-default organization so
+accidental reliance on defaults cannot pass. Run against supported Grafana
+versions; decide the version matrix before declaring the adapter complete.
+
+### 11.7 Proof-of-concept status
+
+The initial Grafana Queries proof of concept now keeps `th_v`, `th_ds`, and
+`th_cluster` coordinates in the address bar, restores an explicit datasource
+ahead of browser-local preferences, and gates page services until cluster
+resolution. Query filters, sorting, `qd_id`, and the active query-detail tab use
+the page URL. The Grafana router compatibility layer now sends search changes
+through `locationService` and preserves repeated parameters.
+
+The Analytics proof now keeps dashboard identity, time mode, dashboard filter
+values, focused/fullscreen panel, focus expansion, crosshair/overlay modes,
+Tables system-database visibility, Surfaces controls, and query-detail state in
+the address bar. Query Explorer continues to use its existing URL-backed query
+and chart coordinates.
+
+This proves the implementation direction, not the product-wide acceptance
+criteria. It still needs real two-browser Grafana validation, explicit
+organization-transition testing, richer missing-source recovery, and coordinate
+coverage for the other registered surfaces.

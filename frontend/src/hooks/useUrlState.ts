@@ -15,56 +15,23 @@
 
 import { useCallback, useMemo } from 'react';
 import { useSearchParams } from 'react-router-dom';
+import {
+  parseShareParam,
+  serializeShareParam,
+} from '../share/shareSchema';
+import type {
+  ShareParamDef,
+  ShareParamType,
+  ShareSchema,
+  ShareStateFromSchema,
+} from '../share/shareSchema';
 
 // ─── Generic schema-driven URL state ───
 
-export type UrlParamType = 'string' | 'string[]' | 'number' | 'boolean';
-
-export interface UrlParamDef<T = unknown> {
-  type: UrlParamType;
-  default?: T;
-}
-
-export type UrlSchema = Record<string, UrlParamDef>;
-
-export type UrlStateFromSchema<S extends UrlSchema> = {
-  [K in keyof S]: S[K]['type'] extends 'number'
-    ? number | undefined
-    : S[K]['type'] extends 'boolean'
-      ? boolean | undefined
-      : S[K]['type'] extends 'string[]'
-        ? string[] | undefined
-        : string | undefined;
-};
-
-function parseParam(raw: string | null, def: UrlParamDef): unknown {
-  if (raw === null || raw === '') return def.default;
-  switch (def.type) {
-    case 'number': { const n = Number(raw); return Number.isFinite(n) ? n : def.default; }
-    case 'boolean': return raw === '1' || raw === 'true';
-    default: return raw;
-  }
-}
-
-function parseSearchParam(params: URLSearchParams, key: string, def: UrlParamDef): unknown {
-  if (def.type === 'string[]') {
-    const values = params.getAll(key).map(value => value.trim()).filter(Boolean);
-    return values.length > 0 ? values : def.default;
-  }
-  return parseParam(params.get(key), def);
-}
-
-function serializeParam(value: unknown, def: UrlParamDef): string | string[] | undefined {
-  if (value === undefined || value === null || value === '') return undefined;
-  if (value === def.default) return undefined;
-  if (def.type === 'string[]') {
-    if (!Array.isArray(value)) return [String(value)];
-    const values = value.map(item => String(item).trim()).filter(Boolean);
-    return values.length > 0 ? values : undefined;
-  }
-  if (def.type === 'boolean') return value ? '1' : '0';
-  return String(value);
-}
+export type UrlParamType = ShareParamType;
+export type UrlParamDef<T = unknown> = ShareParamDef<T>;
+export type UrlSchema = ShareSchema;
+export type UrlStateFromSchema<S extends UrlSchema> = ShareStateFromSchema<S>;
 
 /**
  * Generic schema-driven URL state hook.
@@ -78,7 +45,7 @@ export function useUrlState<S extends UrlSchema>(schema: S) {
   const state = useMemo(() => {
     const result: Record<string, unknown> = {};
     for (const [key, def] of Object.entries(schema)) {
-      result[key] = parseSearchParam(searchParams, key, def);
+      result[key] = parseShareParam(searchParams, key, def);
     }
     return result as UrlStateFromSchema<S>;
   }, [searchParams, schema]);
@@ -90,12 +57,12 @@ export function useUrlState<S extends UrlSchema>(schema: S) {
         for (const [key, def] of Object.entries(schema)) {
           const value = key in partial
             ? (partial as Record<string, unknown>)[key]
-            : parseSearchParam(prev, key, def);
-          const serialized = serializeParam(value, def);
+            : parseShareParam(prev, key, def);
+          const serialized = serializeShareParam(value, def);
           next.delete(key);
           if (Array.isArray(serialized)) {
             serialized.forEach(item => next.append(key, item));
-          } else if (serialized !== undefined) {
+          } else if (serialized !== null) {
             next.set(key, serialized);
           }
         }
@@ -148,6 +115,13 @@ export interface AnalyticsUrlState {
   eventId?: string;      // selected operational event
   eventTime?: string;    // selected event occurrence time
   eventRange?: number;   // event investigation range in hours
+  systemDbs?: boolean;
+  surfaceTab?: string;
+  surfaceDb?: string;
+  surfaceTable?: string;
+  surfaceTime?: string;
+  surfaceLanes?: number;
+  surfaceDrill?: string;
 }
 
 const ANALYTICS_DEFAULTS: AnalyticsUrlState = {
@@ -197,6 +171,19 @@ function parseAnalyticsParams(params: URLSearchParams): AnalyticsUrlState {
     const parsed = parseFloat(eventRange);
     if (Number.isFinite(parsed) && parsed > 0) state.eventRange = parsed;
   }
+  if (params.get('system_dbs') === '1') state.systemDbs = true;
+  const surfaceTab = params.get('surface_tab');
+  if (surfaceTab) state.surfaceTab = surfaceTab;
+  const surfaceDb = params.get('surface_db');
+  if (surfaceDb) state.surfaceDb = surfaceDb;
+  const surfaceTable = params.get('surface_table');
+  if (surfaceTable) state.surfaceTable = surfaceTable;
+  const surfaceTime = params.get('surface_time');
+  if (surfaceTime) state.surfaceTime = surfaceTime;
+  const surfaceLanes = params.get('surface_lanes');
+  if (surfaceLanes !== null && Number.isFinite(Number(surfaceLanes))) state.surfaceLanes = Number(surfaceLanes);
+  const surfaceDrill = params.get('surface_drill');
+  if (surfaceDrill) state.surfaceDrill = surfaceDrill;
   return state;
 }
 
@@ -220,11 +207,18 @@ function buildAnalyticsParams(state: AnalyticsUrlState): Record<string, string> 
   if (state.eventId) params.event_id = state.eventId;
   if (state.eventTime) params.event_time = state.eventTime;
   if (state.eventRange) params.event_range = String(state.eventRange);
+  if (state.systemDbs) params.system_dbs = '1';
+  if (state.surfaceTab && state.surfaceTab !== 'resource') params.surface_tab = state.surfaceTab;
+  if (state.surfaceDb) params.surface_db = state.surfaceDb;
+  if (state.surfaceTable) params.surface_table = state.surfaceTable;
+  if (state.surfaceTime && state.surfaceTime !== '1 DAY') params.surface_time = state.surfaceTime;
+  if (state.surfaceLanes && state.surfaceLanes !== 10) params.surface_lanes = String(state.surfaceLanes);
+  if (state.surfaceDrill) params.surface_drill = state.surfaceDrill;
   return params;
 }
 
 /** All param keys managed by useAnalyticsUrlState */
-const ANALYTICS_KEYS = ['tab', 'preset', 'sql', 'view', 'chart', 'group_by', 'value', 'series', 'style', 'db', 'lookback', 'fullscreen', 'fromDashboard', 'noAutoExecute', 'event_id', 'event_time', 'event_range'] as const;
+const ANALYTICS_KEYS = ['tab', 'preset', 'sql', 'view', 'chart', 'group_by', 'value', 'series', 'style', 'db', 'lookback', 'fullscreen', 'fromDashboard', 'noAutoExecute', 'event_id', 'event_time', 'event_range', 'system_dbs', 'surface_tab', 'surface_db', 'surface_table', 'surface_time', 'surface_lanes', 'surface_drill'] as const;
 
 // ─── Hook ───
 
@@ -284,19 +278,4 @@ export function useAnalyticsUrlState() {
   );
 
   return { state, update, getShareableUrl, copyShareableUrl };
-}
-
-// ─── Events URL state ───
-
-const EVENTS_URL_SCHEMA = {
-  event_id: { type: 'string' },
-  event_time: { type: 'string' },
-  range_center: { type: 'string' },
-  event_range: { type: 'number', default: 1 },
-  from: { type: 'string' },
-} as const satisfies UrlSchema;
-
-/** Shareable selection and investigation-window state for the Events page. */
-export function useEventsUrlState() {
-  return useUrlState(EVENTS_URL_SCHEMA);
 }

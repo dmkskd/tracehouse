@@ -27,11 +27,24 @@ import { extractErrorMessage } from '../utils/errorFormatters';
 import { classifyActiveMerge, getMergeCategoryInfo } from '@tracehouse/core';
 import { useCapabilityCheck } from '../components/shared/RequiresCapability';
 import { PermissionGate } from '../components/shared/PermissionGate';
+import { useUrlState } from '../hooks/useUrlState';
+import { defineShareSchema } from '../share/shareSchema';
 import { 
   HierarchyVisualization, 
   type HierarchyItem, 
   type HierarchyLevel 
 } from '../components/3d/HierarchyVisualization';
+
+/** State listed here must survive copying and reopening a Database Explorer URL. */
+export const DATABASE_EXPLORER_SHARE_SCHEMA = defineShareSchema({
+  db: { type: 'string' },
+  table: { type: 'string' },
+  partition: { type: 'string' },
+  part: { type: 'string' },
+  db_view: { type: 'string', persistDefault: true },
+  db_performance: { type: 'boolean', default: false, persistDefault: true },
+  db_auto: { type: 'boolean', default: true, persistDefault: true },
+});
 
 // Shared UI components from @tracehouse/ui-shared
 
@@ -783,6 +796,7 @@ const MergeInfoCardCompact: React.FC<MergeInfoCardCompactProps> = ({ merge, comp
 // ============================================================================
 
 export const DatabaseExplorer: React.FC = () => {
+  const { state: sharedState, update: updateSharedState } = useUrlState(DATABASE_EXPLORER_SHARE_SCHEMA);
   const { activeProfileId, profiles, setConnectionFormOpen } = useConnectionStore();
   const {
     databases, tables, tableParts,
@@ -791,19 +805,31 @@ export const DatabaseExplorer: React.FC = () => {
   } = useDatabaseStore();
 
   // Navigation state
-  const [breadcrumb, setBreadcrumb] = useState<BreadcrumbItem[]>([
-    { level: 'databases', id: 'root', name: 'Databases' }
-  ]);
-  const [selectedDatabase, setSelectedDatabase] = useState<string | null>(null);
-  const [selectedTable, setSelectedTable] = useState<string | null>(null);
-  const [selectedPartition, setSelectedPartition] = useState<string | null>(null);
+  const selectedDatabase = sharedState.db ?? null;
+  const selectedTable = sharedState.table ?? null;
+  const selectedPartition = sharedState.partition ?? null;
+  const selectedPart = sharedState.part ?? null;
+  const breadcrumb = useMemo<BreadcrumbItem[]>(() => {
+    const items: BreadcrumbItem[] = [{ level: 'databases', id: 'root', name: 'Databases' }];
+    if (selectedDatabase) items.push({ level: 'tables', id: selectedDatabase, name: selectedDatabase });
+    if (selectedTable) items.push({ level: 'partitions', id: selectedTable, name: selectedTable });
+    if (selectedPartition) items.push({ level: 'parts', id: selectedPartition, name: selectedPartition });
+    return items;
+  }, [selectedDatabase, selectedTable, selectedPartition]);
   
   // View mode state (3D or 2D) - synced with global preference
   const { preferredViewMode } = useUserPreferenceStore();
-  const viewMode = preferredViewMode;
+  const viewMode = (sharedState.db_view ?? preferredViewMode) as '2d' | '3d';
+
+  useEffect(() => {
+    if (!sharedState.db_view) updateSharedState({ db_view: preferredViewMode });
+  }, [sharedState.db_view, preferredViewMode, updateSharedState]);
   
   // Performance mode state for 3D view
-  const [performanceMode, setPerformanceMode] = useState(false);
+  const performanceMode = sharedState.db_performance ?? false;
+  const setPerformanceMode = useCallback((enabled: boolean) => {
+    updateSharedState({ db_performance: enabled });
+  }, [updateSharedState]);
   
   // Hover state
   const [_hoveredItem, setHoveredItem] = useState<HierarchyItem | null>(null);
@@ -818,13 +844,15 @@ export const DatabaseExplorer: React.FC = () => {
   const refreshConfig = useRefreshConfig();
   const { refreshRateSeconds: globalRate } = useRefreshSettingsStore();
   const manualRefreshTick = useGlobalLastUpdatedStore(s => s.manualRefreshTick);
-  const [autoRefresh, setAutoRefresh] = useState(true);
+  const autoRefresh = sharedState.db_auto ?? true;
+  const setAutoRefresh = useCallback((enabled: boolean) => {
+    updateSharedState({ db_auto: enabled });
+  }, [updateSharedState]);
   const refreshInterval = globalRate > 0 ? clampToAllowed(globalRate, refreshConfig) * 1000 : 2000;
   const [_lastRefresh, setLastRefresh] = useState<Date | null>(null);
   const pollingRef = useRef<ReturnType<typeof setInterval> | null>(null);
 
   // Part inspector state
-  const [_selectedPart, setSelectedPart] = useState<string | null>(null);
   const [partDetail, setPartDetail] = useState<PartDetailInfo | null>(null);
   const [isLoadingPartDetail, setIsLoadingPartDetail] = useState(false);
 
@@ -963,6 +991,37 @@ export const DatabaseExplorer: React.FC = () => {
     fetchActiveMerges(); // Also fetch merges for the info wall
   }, [services, isConnected, isCapProbing, hasSystemDatabases]);
 
+  // Restore a copied breadcrumb before the user interacts with the explorer.
+  useEffect(() => {
+    if (!services || !isConnected || isCapProbing || !hasSystemDatabases) return;
+    let cancelled = false;
+    void (async () => {
+      if (selectedDatabase) await fetchTables(selectedDatabase);
+      if (cancelled) return;
+      if (selectedDatabase && selectedTable) await fetchParts(selectedDatabase, selectedTable);
+      if (cancelled || !selectedDatabase || !selectedTable || !selectedPart) return;
+      setIsLoadingPartDetail(true);
+      try {
+        const detail = await databaseApi.fetchPartDetail(
+          services.databaseExplorer,
+          selectedDatabase,
+          selectedTable,
+          selectedPart,
+        );
+        if (!cancelled) setPartDetail(detail);
+      } catch (error) {
+        console.error('Failed to restore shared part detail:', error);
+        if (!cancelled) setPartDetail(null);
+      } finally {
+        if (!cancelled) setIsLoadingPartDetail(false);
+      }
+    })();
+    return () => { cancelled = true; };
+  }, [
+    services, isConnected, isCapProbing, hasSystemDatabases,
+    selectedDatabase, selectedTable, selectedPart, fetchTables, fetchParts,
+  ]);
+
   // Auto-refresh effect - refresh data based on current level
   useEffect(() => {
     if (!autoRefresh || globalRate === 0 || !services || !isConnected) {
@@ -1032,31 +1091,28 @@ export const DatabaseExplorer: React.FC = () => {
   const handleItemClick = useCallback(async (item: HierarchyItem) => {
     switch (currentLevel) {
       case 'databases':
-        setSelectedDatabase(item.id);
         // Fetch data FIRST, then update breadcrumb
         await fetchTables(item.id);
-        setBreadcrumb(prev => [...prev, { level: 'tables', id: item.id, name: item.name }]);
+        updateSharedState({ db: item.id, table: undefined, partition: undefined, part: undefined }, { push: true });
         break;
       case 'tables':
-        setSelectedTable(item.id);
         if (selectedDatabase) {
           // Fetch data FIRST, then update breadcrumb
           await fetchParts(selectedDatabase, item.id);
-          setBreadcrumb(prev => [...prev, { level: 'partitions', id: item.id, name: item.name }]);
+          updateSharedState({ table: item.id, partition: undefined, part: undefined }, { push: true });
           // Also fetch active merges to highlight parts being merged
           fetchActiveMerges();
         }
         break;
       case 'partitions':
-        setSelectedPartition(item.id);
-        setBreadcrumb(prev => [...prev, { level: 'parts', id: item.id, name: item.name }]);
+        updateSharedState({ partition: item.id, part: undefined }, { push: true });
         // Refresh merges when drilling into parts
         fetchActiveMerges();
         break;
       case 'parts':
         // Open part inspector with detailed info
         if (selectedDatabase && selectedTable && services) {
-          setSelectedPart(item.id);
+          updateSharedState({ part: item.id });
           setIsLoadingPartDetail(true);
           try {
             const detail = await databaseApi.fetchPartDetail(
@@ -1076,38 +1132,33 @@ export const DatabaseExplorer: React.FC = () => {
         break;
     }
     setHoveredItem(null);
-  }, [currentLevel, selectedDatabase, selectedTable, services, fetchTables, fetchParts, fetchActiveMerges]);
+  }, [currentLevel, selectedDatabase, selectedTable, services, fetchTables, fetchParts, fetchActiveMerges, updateSharedState]);
 
   // Close part inspector
   const closePartInspector = useCallback(() => {
-    setSelectedPart(null);
+    updateSharedState({ part: undefined });
     setPartDetail(null);
-  }, []);
+  }, [updateSharedState]);
 
   // Handle breadcrumb navigation
   const handleNavigate = useCallback((index: number) => {
     const newBreadcrumb = breadcrumb.slice(0, index + 1);
-    setBreadcrumb(newBreadcrumb);
-    
     const targetLevel = newBreadcrumb[newBreadcrumb.length - 1].level;
     
     // Reset state based on navigation
     if (targetLevel === 'databases') {
-      setSelectedDatabase(null);
-      setSelectedTable(null);
-      setSelectedPartition(null);
+      updateSharedState({ db: undefined, table: undefined, partition: undefined, part: undefined }, { push: true });
       setTables([]);
       setTableParts([]);
     } else if (targetLevel === 'tables') {
-      setSelectedTable(null);
-      setSelectedPartition(null);
+      updateSharedState({ table: undefined, partition: undefined, part: undefined }, { push: true });
       setTableParts([]);
     } else if (targetLevel === 'partitions') {
-      setSelectedPartition(null);
+      updateSharedState({ partition: undefined, part: undefined }, { push: true });
     }
     
     setHoveredItem(null);
-  }, [breadcrumb]);
+  }, [breadcrumb, setTables, setTableParts, updateSharedState]);
 
   // No connection
   if (!activeProfileId || !isConnected) {

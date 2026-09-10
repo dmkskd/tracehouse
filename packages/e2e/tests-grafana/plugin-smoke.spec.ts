@@ -1,6 +1,7 @@
 import { expect, test, type Page } from '@playwright/test';
 
 const APP_ROOT = '/a/dmkskd-tracehouse-app';
+let clickHouseDatasourceUid = '';
 
 test.beforeEach(async ({ page, request }) => {
   const response = await request.get('/api/datasources');
@@ -15,6 +16,7 @@ test.beforeEach(async ({ page, request }) => {
     datasource => datasource.type === 'grafana-clickhouse-datasource',
   );
   expect(clickHouse).toBeDefined();
+  clickHouseDatasourceUid = clickHouse!.uid;
 
   // A real user normally has this selection persisted by TraceHouse. Seed the
   // same browser state so these tests exercise plugin pages rather than the
@@ -73,6 +75,19 @@ test.describe('Grafana app plugin smoke tests', () => {
     );
   });
 
+  test('Queries restores explicit shared datasource and connected-node coordinates', async ({ page }) => {
+    await expectPluginPage(
+      page,
+      `/queries?orgId=1&th_v=1&th_ds=${encodeURIComponent(clickHouseDatasourceUid)}&th_cluster=__connected__&status=Running&status=Completed`,
+      'Query Tracker',
+    );
+
+    const url = new URL(page.url());
+    expect(url.searchParams.get('th_ds')).toBe(clickHouseDatasourceUid);
+    expect(url.searchParams.get('th_cluster')).toBe('__connected__');
+    expect(url.searchParams.getAll('status')).toEqual(['Running', 'Completed']);
+  });
+
   test('core plugin routes render against the provisioned datasource', async ({ page }) => {
     await expectPluginPage(page, '/overview', 'Overview');
     await expectPluginPage(page, '/databases', 'Databases');
@@ -85,6 +100,7 @@ test.describe('Grafana app plugin smoke tests', () => {
       '/analytics?tab=dashboards&fromDashboard=ops-overview',
       'Operations Overview',
     );
+    await expect(page).toHaveURL(/(?:[?&])dashboard=ops-overview(?:&|$)/);
 
     const panel = page.locator('[data-dashboard-panel-index]').first();
     await expect(panel).toBeVisible();
@@ -101,5 +117,18 @@ test.describe('Grafana app plugin smoke tests', () => {
     expect(border.borderWidth).toBe('1px');
     expect(border.borderStyle).toBe('solid');
     expect(border.borderColor).not.toBe(border.color);
+  });
+
+  test('Analytics restores dashboard coordinates from the address bar', async ({ page }) => {
+    await expectPluginPage(
+      page,
+      '/analytics?dashboard=ops-overview&dashboard_time=1%20DAY&dashboard_focus=0',
+      'Operations Overview',
+    );
+
+    const url = new URL(page.url());
+    expect(url.searchParams.get('dashboard')).toBe('ops-overview');
+    expect(url.searchParams.get('dashboard_time')).toBe('1 DAY');
+    expect(url.searchParams.get('dashboard_focus')).toBe('0');
   });
 });
