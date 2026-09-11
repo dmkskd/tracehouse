@@ -4,7 +4,9 @@
  *
  * The adapter is created from the active connection profile stored in
  * the connectionStore. When no profile is active the context value is null,
- * allowing consumers to show a connection form.
+ * allowing consumers to show a connection form. The context stays null until
+ * cluster detection has settled, so consumers never issue a query while
+ * {{cluster_aware:...}} would still resolve to the local node only.
  *
  * connection profile and injects it into Service_Layer classes.
  */
@@ -13,6 +15,7 @@ import {
   useMemo,
   useEffect,
   useRef,
+  useState,
   type ReactNode,
 } from 'react';
 import {
@@ -140,7 +143,7 @@ export function ClickHouseProvider({ children }: ClickHouseProviderProps) {
   const closeRef = useRef<(() => Promise<void>) | null>(null);
   const clusterAdapterRef = useRef<ClusterAwareAdapter | null>(null);
 
-  const value = useMemo<ClickHouseServices | null>(() => {
+  const unresolvedValue = useMemo<ClickHouseServices | null>(() => {
     // Clean up previous adapter
     if (closeRef.current) {
       closeRef.current().catch(() => {/* ignore close errors */});
@@ -157,6 +160,15 @@ export function ClickHouseProvider({ children }: ClickHouseProviderProps) {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [configKey]);
 
+  // Services are withheld from consumers until cluster detection has settled.
+  // Until then ClusterAwareAdapter still has clusterName === null, so every
+  // {{cluster_aware:...}} reference resolves to the local node only — a
+  // deep-linked fetch (e.g. ?qd_id=) firing in that window silently misses
+  // rows that live on another replica. The Grafana plugin gates the same way
+  // (ServiceProvider.tsx: `clusterReady ? unresolvedServices : null`).
+  const [clusterReady, setClusterReady] = useState(false);
+  const value = clusterReady ? unresolvedValue : null;
+
   // Cleanup on unmount
   useEffect(() => {
     return () => {
@@ -172,19 +184,21 @@ export function ClickHouseProvider({ children }: ClickHouseProviderProps) {
   useEffect(() => {
     const clusterStore = useClusterStore.getState();
     const capStore = useMonitoringCapabilitiesStore.getState();
-    if (!value) {
+    if (!unresolvedValue) {
       clusterStore.reset();
       capStore.reset();
+      setClusterReady(false);
       return;
     }
 
+    setClusterReady(false);
     capStore.setProbeStatus('probing');
     let cancelled = false;
     const configuredCluster = buildConfig.defaultConnection.cluster;
 
     const detectPromise = configuredCluster
-      ? ClusterService.detect(value.adapter, configuredCluster)
-      : ClusterService.detect(value.adapter);
+      ? ClusterService.detect(unresolvedValue.adapter, configuredCluster)
+      : ClusterService.detect(unresolvedValue.adapter);
 
     detectPromise.then(info => {
       if (!cancelled) {
@@ -195,8 +209,9 @@ export function ClickHouseProvider({ children }: ClickHouseProviderProps) {
         // Cluster changes trigger a probe through the subscription below.
         // Probe explicitly when a new connection resolves to the same name.
         if (!clusterChanged) {
-          void capStore.refresh(value.adapter).catch(() => {});
+          void capStore.refresh(unresolvedValue.adapter).catch(() => {});
         }
+        setClusterReady(true);
         if (info.clusterName) {
           console.log(`[ClusterDetect] Cluster '${info.clusterName}' detected (${info.replicaCount} replicas) — queries will use clusterAllReplicas()`);
         } else {
@@ -211,13 +226,14 @@ export function ClickHouseProvider({ children }: ClickHouseProviderProps) {
         const clusterChanged = clusterStore.clusterName !== null;
         clusterStore.setCluster({ clusterName: null, replicaCount: 1, shardCount: 1, availableClusters: [] });
         if (!clusterChanged) {
-          void capStore.refresh(value.adapter).catch(() => {});
+          void capStore.refresh(unresolvedValue.adapter).catch(() => {});
         }
+        setClusterReady(true);
       }
     });
 
     return () => { cancelled = true; };
-  }, [value]);
+  }, [unresolvedValue]);
 
   // Sync cluster changes to the adapter and refresh behavioral capabilities
   // because the distributed query path may differ between clusters.
@@ -225,9 +241,9 @@ export function ClickHouseProvider({ children }: ClickHouseProviderProps) {
     const unsub = useClusterStore.subscribe((state, prev) => {
       if (state.clusterName !== prev.clusterName) {
         clusterAdapterRef.current?.setClusterName(state.clusterName);
-        if (value) {
+        if (unresolvedValue) {
           void useMonitoringCapabilitiesStore.getState()
-            .refresh(value.adapter)
+            .refresh(unresolvedValue.adapter)
             .catch(() => {});
         }
         if (state.clusterName) {
@@ -238,19 +254,19 @@ export function ClickHouseProvider({ children }: ClickHouseProviderProps) {
       }
     });
     return unsub;
-  }, [value]);
+  }, [unresolvedValue]);
 
   // Detect runtime environment (container, k8s, cgroup limits) when connection changes
   useEffect(() => {
     const envStore = useEnvironmentStore.getState();
-    if (!value) {
+    if (!unresolvedValue) {
       envStore.reset();
       return;
     }
 
     let cancelled = false;
     envStore.setProbing(true);
-    value.environmentDetector.detect().then(info => {
+    unresolvedValue.environmentDetector.detect().then(info => {
       if (!cancelled) {
         envStore.setEnvironment(info);
         if (info.isCgroupLimited) {
@@ -262,19 +278,19 @@ export function ClickHouseProvider({ children }: ClickHouseProviderProps) {
     });
 
     return () => { cancelled = true; };
-  }, [value]);
+  }, [unresolvedValue]);
 
   // Fetch profile event descriptions at connection time, refresh every 60s
   useEffect(() => {
     const descStore = useProfileEventDescriptionsStore.getState();
-    if (!value) {
+    if (!unresolvedValue) {
       descStore.reset();
       return;
     }
 
     let cancelled = false;
     const fetch = () => {
-      value.queryAnalyzer.fetchProfileEventDescriptions().then(map => {
+      unresolvedValue.queryAnalyzer.fetchProfileEventDescriptions().then(map => {
         if (!cancelled) {
           descStore.setDescriptions(map);
         }
@@ -285,7 +301,7 @@ export function ClickHouseProvider({ children }: ClickHouseProviderProps) {
     const interval = setInterval(fetch, 60_000);
 
     return () => { cancelled = true; clearInterval(interval); };
-  }, [value]);
+  }, [unresolvedValue]);
 
   return (
     <ClickHouseContext.Provider value={value}>

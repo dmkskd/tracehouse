@@ -13,6 +13,7 @@
 
 import { useState, useEffect, useRef, useCallback } from 'react';
 import { useClickHouseServices } from '../providers/ClickHouseProvider';
+import { useClusterStore } from '../stores/clusterStore';
 import type { QuerySeries } from '@tracehouse/core';
 import { useUrlState } from './useUrlState';
 import { defineShareSchema } from '../share/shareSchema';
@@ -60,6 +61,10 @@ export function useQueryDeepLink(
 
   const [pendingQdId, setPendingQdId] = useState<string | null>(sharedState.qd_id ?? null);
   const fetchedRef = useRef('');
+  /** `qd_id::clusterName` of the attempt in flight — dedupes repeat renders
+   *  while still allowing a retry once the cluster name changes. */
+  const attemptRef = useRef('');
+  const clusterName = useClusterStore(s => s.clusterName);
 
   // The URL adapter emits standalone hash changes and Grafana location changes.
   useEffect(() => {
@@ -80,30 +85,38 @@ export function useQueryDeepLink(
     updateSharedState({ qd_id: query.query_id });
   }, [query?.query_id]);
 
-  // When we have a pending qd_id and services are ready, fetch
+  // When we have a pending qd_id and services are ready, fetch.
+  // fetchedRef is only claimed once a detail actually comes back — a miss or an
+  // error must stay retryable, because the same qd_id is re-attempted when the
+  // cluster name resolves and {{cluster_aware:...}} starts fanning out across
+  // replicas instead of hitting the local node.
   useEffect(() => {
     if (query || !pendingQdId || !services) return;
     if (fetchedRef.current === pendingQdId) return;
     const qdId = pendingQdId;
-    fetchedRef.current = qdId;
-    setPendingQdId(null);
+    const attempt = `${qdId}::${clusterName ?? ''}`;
+    if (attemptRef.current === attempt) return;
+    attemptRef.current = attempt;
 
     services.queryAnalyzer.getQueryDetail(qdId).then(detail => {
       if (!detail) {
         console.warn(`[useQueryDeepLink] No query found for qd_id=${qdId}`);
         return;
       }
+      fetchedRef.current = qdId;
+      setPendingQdId(null);
       setDeepLinkedQuery(detailToSeries(detail));
     }).catch(err => {
       console.error('[useQueryDeepLink] Failed to fetch query detail:', { qdId, err });
     });
-  }, [query, pendingQdId, services]);
+  }, [query, pendingQdId, services, clusterName]);
 
   // Close: clear qd_id from URL (preserving other params)
   const handleClose = useCallback(() => {
     setDeepLinkedQuery(null);
     setPendingQdId(null);
     fetchedRef.current = '';
+    attemptRef.current = '';
     updateSharedState({ qd_id: undefined, qd_tab: undefined });
     onClose();
   }, [onClose, updateSharedState]);

@@ -29,6 +29,7 @@ import { OverviewService } from '@tracehouse/core';
 import { useUserPreferenceStore } from '../stores/userPreferenceStore';
 import { QueryHealthSunburst } from '../components/query/QueryHealthSunburst';
 import { useUrlState } from '../hooks/useUrlState';
+import { useClusterStore } from '../stores/clusterStore';
 import { defineShareSchema } from '../share/shareSchema';
 
 /** State listed here must survive copying and reopening a Queries URL. */
@@ -274,6 +275,10 @@ export const QueryMonitor: React.FC = () => {
   // competing setSearchParams calls.
   const [deepLinkedQuery, setDeepLinkedQuery] = useState<QuerySeries | null>(null);
   const deepLinkFetched = useRef('');
+  /** `qd_id::clusterName` of the attempt in flight — dedupes repeat renders
+   *  while still allowing a retry once the cluster name changes. */
+  const deepLinkAttempt = useRef('');
+  const clusterName = useClusterStore(s => s.clusterName);
 
   // When user selects a query, write qd_id to URL
   useEffect(() => {
@@ -283,14 +288,24 @@ export const QueryMonitor: React.FC = () => {
     updateUrl({ qd_id: convertedQuery.query_id } as any);
   }, [convertedQuery, updateUrl]);
 
-  // On mount: if qd_id is in URL but no query selected, fetch the detail
+  // On mount: if qd_id is in URL but no query selected, fetch the detail.
+  // The guard is only claimed once a detail actually comes back — a miss or an
+  // error must stay retryable, because the same qd_id is re-attempted when the
+  // cluster name resolves and {{cluster_aware:...}} starts fanning out across
+  // replicas instead of hitting the local node.
   useEffect(() => {
     const qdId = urlState.qd_id;
     if (!qdId || convertedQuery || !services) return;
     if (deepLinkFetched.current === qdId) return;
-    deepLinkFetched.current = qdId;
+    const attempt = `${qdId}::${clusterName ?? ''}`;
+    if (deepLinkAttempt.current === attempt) return;
+    deepLinkAttempt.current = attempt;
     services.queryAnalyzer.getQueryDetail(qdId).then((detail: any) => {
-      if (!detail) return;
+      if (!detail) {
+        console.warn(`[QueryMonitor] No query found for qd_id=${qdId}`);
+        return;
+      }
+      deepLinkFetched.current = qdId;
       const durationMs = Number(detail.query_duration_ms) || 0;
       const startMs = new Date(detail.query_start_time).getTime();
       setDeepLinkedQuery({
@@ -313,13 +328,14 @@ export const QueryMonitor: React.FC = () => {
     }).catch((err: any) => {
       console.error('[QueryMonitor] Failed to fetch query detail:', { qdId, err });
     });
-  }, [urlState.qd_id, convertedQuery, services, updateUrl]);
+  }, [urlState.qd_id, convertedQuery, services, clusterName, updateUrl]);
 
   const modalQuery = convertedQuery ?? deepLinkedQuery;
   const handleQueryClose = useCallback(() => {
     selectQuery(null, null);
     setDeepLinkedQuery(null);
     deepLinkFetched.current = '';
+    deepLinkAttempt.current = '';
     updateUrl({ qd_id: undefined } as any);
   }, [selectQuery, updateUrl]);
 
