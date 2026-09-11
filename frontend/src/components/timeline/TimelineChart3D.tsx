@@ -17,6 +17,7 @@ import { useThemeDetection } from '../../hooks/useThemeDetection';
 import { OrbitControls, Text, Line, Html } from '@react-three/drei';
 import * as THREE from 'three';
 import type { MemoryTimeline, QuerySeries, MergeSeries, MutationSeries } from '@tracehouse/core';
+import { operationAverageRate } from '@tracehouse/core';
 import { parseTimestamp, formatBytes } from '../../utils/formatters';
 import { type MetricMode, type HighlightedItem, Q_COLORS, M_COLORS, MUT_COLORS, METRIC_CONFIG } from './timeline-constants';
 
@@ -70,13 +71,9 @@ interface TimelineChart3DProps {
 
 import { formatDurationMs as fmtMs } from '../../utils/formatters';
 
-function getRate(item: { cpu_us: number; peak_memory: number; duration_ms: number; net_send: number; net_recv: number; disk_read: number; disk_write: number }, mode: MetricMode): number {
-  const durS = Math.max(item.duration_ms / 1000, 0.001);
-  if (mode === 'memory') return item.peak_memory;
-  if (mode === 'cpu') return item.cpu_us / durS;
-  if (mode === 'network') return (item.net_send + item.net_recv) / durS;
-  return (item.disk_read + item.disk_write) / durS;
-}
+/** Band height is the operation's average rate — the same one the 2D chart uses. */
+const getRate = operationAverageRate;
+
 
 /* ── Camera ──────────────────────────────────────────────────────────── */
 

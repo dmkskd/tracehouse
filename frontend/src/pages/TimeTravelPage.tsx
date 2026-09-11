@@ -21,9 +21,24 @@ import type {
   TimeseriesPoint,
 } from '@tracehouse/core';
 import {
+  buildOperationRows,
+  countOperationRows,
+  filterOperationRowsByKind,
+  findOperationRow,
   getTimelineCpuCapacity,
   getTimelineRamCapacity,
+  operationKeyFor,
+  operationRowHighlightKey,
+  operationTotals,
   TIMELINE_ACTIVITY_LIMIT,
+} from '@tracehouse/core';
+import type {
+  OperationKind,
+  OperationKindFilter,
+  OperationSortField,
+  OperationRow,
+  OperationScope,
+  OperationSelectionKey,
 } from '@tracehouse/core';
 import { TimelineNavigator } from '../components/shared/TimelineNavigator';
 import { RangeSlider } from '../components/shared/RangeSlider';
@@ -31,7 +46,7 @@ import { QueryDetailModal } from '../components/query/modal/QueryDetailModal';
 import { MergeDetailModal, MutationDetailModal } from '../components/merge/MergeDetailModal';
 import { useQueryDeepLink } from '../hooks/useQueryDeepLink';
 import { TruncatedHost } from '../components/common/TruncatedHost';
-import { formatBytes, parseTimestamp } from '../utils/formatters';
+import { formatBytes } from '../utils/formatters';
 import { getUrlParam } from '../utils/urlParams';
 import { useUserPreferenceStore } from '../stores/userPreferenceStore';
 import { useMonitoringCapabilitiesStore } from '../stores/monitoringCapabilitiesStore';
@@ -44,7 +59,7 @@ import {
 import { TimelineChart } from '../components/timeline/TimelineChart';
 import { TimelineChart3D } from '../components/timeline/TimelineChart3D';
 import { TimelineChart3DSurface } from '../components/timeline/TimelineChart3DSurface';
-import { QueryTable, MergeTable } from '../components/timeline/TimelineTable';
+import { OperationsTable } from '../components/timeline/OperationsTable';
 import { TimelineEventControls } from '../components/timeline/TimelineEventControls';
 import {
   buildTimelineNavigatorRequestScope,
@@ -54,7 +69,7 @@ import {
 } from '../components/timeline/timeline-event-model';
 import {
   type MetricMode, type HighlightedItem,
-  Q_COLORS, M_COLORS, MUT_COLORS, METRIC_CONFIG, getMetricValue,
+  METRIC_CONFIG,
 } from '../components/timeline/timeline-constants';
 import {
   createTimeTravelRequestGate,
@@ -174,6 +189,9 @@ export const TIME_TRAVEL_SHARE_SCHEMA = defineShareSchema({
   tt_range: { type: 'string', default: '1h', persistDefault: true },
   tt_sort: { type: 'string', default: 'metric', persistDefault: true },
   tt_dir: { type: 'string', default: 'desc', persistDefault: true },
+  tt_ops: { type: 'string', default: 'all', persistDefault: true },
+  tt_scope: { type: 'string', default: 'window', persistDefault: true },
+  tt_q: { type: 'string' },
   tt_running: { type: 'boolean', default: true, persistDefault: true },
   tt_events: { type: 'boolean', default: true, persistDefault: true },
   tt_nav: { type: 'string', default: 'peaks', persistDefault: true },
@@ -182,7 +200,7 @@ export const TIME_TRAVEL_SHARE_SCHEMA = defineShareSchema({
   tt_event_kind: { type: 'string[]' },
 });
 
-type SortField = 'metric' | 'duration' | 'started';
+type SortField = OperationSortField;
 type SortDir = 'asc' | 'desc';
 
 /**
@@ -373,6 +391,11 @@ export const TimeTravelPage: React.FC = () => {
   // Sort state
   const [sortField, setSortField] = useState<SortField>(initialCoordinates.sortField);
   const [sortDir, setSortDir] = useState<SortDir>(initialCoordinates.sortDir);
+
+  // Operations table: one list for queries, merges and mutations.
+  const [operationKind, setOperationKind] = useState<OperationKindFilter>(initialCoordinates.operationKind);
+  const [operationScope, setOperationScope] = useState<OperationScope>(initialCoordinates.operationScope);
+  const [operationSearch, setOperationSearch] = useState(initialCoordinates.operationSearch);
   const [includeRunning, setIncludeRunning] = useState(initialCoordinates.includeRunning);
   const lastWrittenCoordinatesRef = useRef<string | null>(null);
 
@@ -408,6 +431,9 @@ export const TimeTravelPage: React.FC = () => {
     setSelectedTimeRange(coordinates.selectedTimeRange);
     setSortField(coordinates.sortField);
     setSortDir(coordinates.sortDir);
+    setOperationKind(coordinates.operationKind);
+    setOperationScope(coordinates.operationScope);
+    setOperationSearch(coordinates.operationSearch);
     setIncludeRunning(coordinates.includeRunning);
     setEventsVisible(coordinates.eventsVisible);
     setNavigatorShape(coordinates.navigatorShape);
@@ -443,6 +469,9 @@ export const TimeTravelPage: React.FC = () => {
       selectedTimeRange,
       sortField,
       sortDir,
+      operationKind,
+      operationScope,
+      operationSearch,
       includeRunning,
       eventsVisible: timeTravelEventsVisible,
       navigatorShape: timeTravelNavigatorShape,
@@ -457,7 +486,8 @@ export const TimeTravelPage: React.FC = () => {
     queryHashOnly, windowSec, isLive, autoRefresh, customStartTime, customEndTime,
     viewportEndTime, pinnedMs, selectedEventId, zoomRange, metricMode, viewMode,
     hiddenCategories, activityLimit, selectedHosts, perServerView, selectedTimeRange,
-    sortField, sortDir, includeRunning, timeTravelEventsVisible,
+    sortField, sortDir, operationKind, operationScope, operationSearch,
+    includeRunning, timeTravelEventsVisible,
     timeTravelNavigatorShape, eventFilter, setSearchParams,
   ]);
 
@@ -1017,62 +1047,87 @@ export const TimeTravelPage: React.FC = () => {
     [navigatorEventData.events, eventFilter],
   );
 
-  const inspectMs = pinnedMs;
+  // ── Operations table: one list for queries, merges and mutations ─────────
+  // Pinning an instant scopes the table to it; clearing the pin returns to the
+  // window. A scope the user picked by hand is left alone until the pin changes.
+  const pinnedAtLastScopeSync = useRef<number | null>(pinnedMs);
+  useEffect(() => {
+    if (pinnedAtLastScopeSync.current === pinnedMs) return;
+    pinnedAtLastScopeSync.current = pinnedMs;
+    setOperationScope(pinnedMs === null ? 'window' : 'pin');
+  }, [pinnedMs]);
 
-  // Sort helper
-  const sortItems = <T extends QuerySeries | MergeSeries | MutationSeries>(items: T[]): T[] => {
-    return [...items].sort((a, b) => {
-      let aVal: number, bVal: number;
-      if (sortField === 'metric') { aVal = getMetricValue(a, metricMode); bVal = getMetricValue(b, metricMode); }
-      else if (sortField === 'duration') { aVal = a.duration_ms; bVal = b.duration_ms; }
-      else { aVal = parseTimestamp(a.start_time); bVal = parseTimestamp(b.start_time); }
-      return sortDir === 'desc' ? bVal - aVal : aVal - bVal;
-    });
-  };
-
-  const filteredQueries = useMemo(() => {
+  const operationRows = useMemo(() => {
     if (!data) return [];
-    let result: QuerySeries[];
-    if (inspectMs !== null) {
-      result = data.queries.filter(q => { const s = parseTimestamp(q.start_time), e = parseTimestamp(q.end_time); return inspectMs >= s && inspectMs <= e; });
-    } else if (zoomRange) {
-      result = data.queries.filter(q => { const s = parseTimestamp(q.start_time), e = parseTimestamp(q.end_time); return s <= zoomRange[1] && e >= zoomRange[0]; });
-    } else { result = [...data.queries]; }
-    // In queryHashOnly mode, show only hash-matched queries
-    if (queryHashOnly && queryHashFilter) {
-      result = result.filter(q => q.matched_hash);
-    }
-    const sorted = sortItems(result);
-    // In hash filter mode, float matched queries to the top
-    if (queryHashFilter && !queryHashOnly) {
-      const matched = sorted.filter(q => q.matched_hash);
-      const rest = sorted.filter(q => !q.matched_hash);
-      return [...matched, ...rest];
-    }
-    return sorted;
-  }, [data, inspectMs, zoomRange, metricMode, sortField, sortDir, queryHashOnly, queryHashFilter]);
+    return buildOperationRows(
+      { queries: data.queries, merges: data.merges, mutations: data.mutations ?? [] },
+      {
+        metricMode,
+        sortField,
+        sortDir,
+        scope: operationScope,
+        pinnedMs,
+        zoomRange,
+        hashFilterActive: !!queryHashFilter,
+        hashOnly: queryHashOnly,
+        search: operationSearch,
+      },
+    );
+  }, [data, metricMode, sortField, sortDir, operationScope, pinnedMs, zoomRange, queryHashFilter, queryHashOnly, operationSearch]);
 
-  const filteredMerges = useMemo(() => {
-    if (!data || (queryHashOnly && queryHashFilter)) return [];
-    let result: MergeSeries[];
-    if (inspectMs !== null) {
-      result = data.merges.filter(m => { const s = parseTimestamp(m.start_time), e = parseTimestamp(m.end_time); return inspectMs >= s && inspectMs <= e; });
-    } else if (zoomRange) {
-      result = data.merges.filter(m => { const s = parseTimestamp(m.start_time), e = parseTimestamp(m.end_time); return s <= zoomRange[1] && e >= zoomRange[0]; });
-    } else { result = [...data.merges]; }
-    return sortItems(result);
-  }, [data, inspectMs, zoomRange, metricMode, sortField, sortDir, queryHashOnly, queryHashFilter]);
+  const operationCounts = useMemo(() => countOperationRows(operationRows), [operationRows]);
+  const visibleOperationRows = useMemo(
+    () => filterOperationRowsByKind(operationRows, operationKind),
+    [operationRows, operationKind],
+  );
+  const operationScopeTotals = useMemo(() => operationTotals({
+    queryTotal: data?.query_count ?? data?.queries.length ?? 0,
+    mergeTotal: data?.merge_count ?? 0,
+    mutationTotal: data?.mutation_count ?? 0,
+    queryLoaded: data?.queries.length ?? 0,
+    mergeLoaded: data?.merges.length ?? 0,
+    mutationLoaded: data?.mutations?.length ?? 0,
+  }, operationKind), [data, operationKind]);
 
-  const filteredMutations = useMemo(() => {
-    if (!data || (queryHashOnly && queryHashFilter)) return [];
-    let result: MutationSeries[];
-    if (inspectMs !== null) {
-      result = (data.mutations ?? []).filter(m => { const s = parseTimestamp(m.start_time), e = parseTimestamp(m.end_time); return inspectMs >= s && inspectMs <= e; });
-    } else if (zoomRange) {
-      result = (data.mutations ?? []).filter(m => { const s = parseTimestamp(m.start_time), e = parseTimestamp(m.end_time); return s <= zoomRange[1] && e >= zoomRange[0]; });
-    } else { result = [...(data.mutations ?? [])]; }
-    return sortItems(result);
-  }, [data, inspectMs, zoomRange, metricMode, sortField, sortDir, queryHashOnly, queryHashFilter]);
+  const handleOpenOperationDetails = useCallback((row: OperationRow) => {
+    if (row.kind === 'query') setSelectedTimelineQuery(row.source as QuerySeries);
+    else if (row.kind === 'merge') setSelectedTimelineMerge(row.source as MergeSeries);
+    else setSelectedTimelineMutation(row.source as MutationSeries);
+  }, []);
+
+  // Selection is held as a key, not as a series object, so it survives a refresh
+  // and drops itself once the operation leaves the loaded window.
+  const [selectedOperationKey, setSelectedOperationKey] = useState<OperationSelectionKey | null>(null);
+
+  const selectedOperation = useMemo(() => {
+    if (!data) return null;
+    return findOperationRow(
+      { queries: data.queries, merges: data.merges, mutations: data.mutations ?? [] },
+      selectedOperationKey,
+      metricMode,
+    );
+  }, [data, selectedOperationKey, metricMode]);
+
+  /**
+   * Clicking a row or a band marks it in the table and opens its detail modal.
+   * While the right-hand inspector is parked there is nowhere else for a
+   * selection to go; restore the panel to split these apart again.
+   */
+  const handleOperationSelect = useCallback((row: OperationRow) => {
+    setSelectedOperationKey(operationKeyFor(row.kind, row.source));
+    handleOpenOperationDetails(row);
+  }, [handleOpenOperationDetails]);
+
+  const handleBandSelect = useCallback((
+    kind: OperationKind,
+    item: QuerySeries | MergeSeries | MutationSeries | undefined,
+  ) => {
+    if (!item) return;
+    setSelectedOperationKey(operationKeyFor(kind, item));
+    if (kind === 'query') setSelectedTimelineQuery(item as QuerySeries);
+    else if (kind === 'merge') setSelectedTimelineMerge(item as MergeSeries);
+    else setSelectedTimelineMutation(item as MutationSeries);
+  }, []);
 
   const ALL_WINDOW_SIZES = [
     { label: '1m', sec: 30 },
@@ -1434,20 +1489,20 @@ export const TimeTravelPage: React.FC = () => {
               <MetricStripDivider />
               <MetricStripItem
                 label="queries"
-                value={`${filteredQueries.length}/${data.query_count ?? data.queries.length}`}
+                value={`${operationCounts.query}/${data.query_count ?? data.queries.length}`}
                 indicatorColor="#79c0ff"
                 title={SAMPLING_NOTE(metricMode)}
               />
               <MetricStripItem
                 label="merges"
-                value={`${filteredMerges.length}/${data.merge_count}`}
+                value={`${operationCounts.merge}/${data.merge_count}`}
                 indicatorColor="#f0883e"
                 title={SAMPLING_NOTE(metricMode)}
               />
               {(data.mutation_count ?? 0) > 0 && (
                 <MetricStripItem
                   label="mutations"
-                  value={`${filteredMutations.length}/${data.mutation_count}`}
+                  value={`${operationCounts.mutation}/${data.mutation_count}`}
                   indicatorColor="#f778ba"
                   title={SAMPLING_NOTE(metricMode)}
                 />
@@ -1698,9 +1753,9 @@ export const TimeTravelPage: React.FC = () => {
                       onClearEventSelection={handleClearEventSelection}
                       onViewEventDetails={handleViewEventDetails}
                       onBandClick={(band) => {
-                        if (band.type === 'query' && hostData.queries[band.idx]) setSelectedTimelineQuery(hostData.queries[band.idx]);
-                        else if (band.type === 'merge' && hostData.merges[band.idx]) setSelectedTimelineMerge(hostData.merges[band.idx]);
-                        else if (band.type === 'mutation' && (hostData.mutations ?? [])[band.idx]) setSelectedTimelineMutation((hostData.mutations ?? [])[band.idx]);
+                        if (band.type === 'query') handleBandSelect('query', hostData.queries[band.idx]);
+                        else if (band.type === 'merge') handleBandSelect('merge', hostData.merges[band.idx]);
+                        else handleBandSelect('mutation', (hostData.mutations ?? [])[band.idx]);
                       }} />
                   </div>
                 );
@@ -1716,17 +1771,17 @@ export const TimeTravelPage: React.FC = () => {
               <TimelineChart3D data={data} metricMode={metricMode} height={500} hiddenCategories={hiddenCategories}
                 onHighlightItem={setHighlightedItem}
                 onBandClick={(band) => {
-                  if (band.type === 'query' && data.queries[band.idx]) setSelectedTimelineQuery(data.queries[band.idx]);
-                  else if (band.type === 'merge' && data.merges[band.idx]) setSelectedTimelineMerge(data.merges[band.idx]);
-                  else if (band.type === 'mutation' && (data.mutations ?? [])[band.idx]) setSelectedTimelineMutation((data.mutations ?? [])[band.idx]);
+                  if (band.type === 'query') handleBandSelect('query', data.queries[band.idx]);
+                  else if (band.type === 'merge') handleBandSelect('merge', data.merges[band.idx]);
+                  else handleBandSelect('mutation', (data.mutations ?? [])[band.idx]);
                 }} />
             ) : viewMode === '3d-surface' ? (
               <TimelineChart3DSurface data={data} metricMode={metricMode} height={500} hiddenCategories={hiddenCategories}
                 onHighlightItem={setHighlightedItem}
                 onBandClick={(band) => {
-                  if (band.type === 'query' && data.queries[band.idx]) setSelectedTimelineQuery(data.queries[band.idx]);
-                  else if (band.type === 'merge' && data.merges[band.idx]) setSelectedTimelineMerge(data.merges[band.idx]);
-                  else if (band.type === 'mutation' && (data.mutations ?? [])[band.idx]) setSelectedTimelineMutation((data.mutations ?? [])[band.idx]);
+                  if (band.type === 'query') handleBandSelect('query', data.queries[band.idx]);
+                  else if (band.type === 'merge') handleBandSelect('merge', data.merges[band.idx]);
+                  else handleBandSelect('mutation', (data.mutations ?? [])[band.idx]);
                 }} />
             ) : (
             <>
@@ -1774,9 +1829,9 @@ export const TimeTravelPage: React.FC = () => {
               onClearEventSelection={handleClearEventSelection}
               onViewEventDetails={handleViewEventDetails}
               onBandClick={(band) => {
-                if (band.type === 'query' && data.queries[band.idx]) setSelectedTimelineQuery(data.queries[band.idx]);
-                else if (band.type === 'merge' && data.merges[band.idx]) setSelectedTimelineMerge(data.merges[band.idx]);
-                else if (band.type === 'mutation' && (data.mutations ?? [])[band.idx]) setSelectedTimelineMutation((data.mutations ?? [])[band.idx]);
+                if (band.type === 'query') handleBandSelect('query', data.queries[band.idx]);
+                else if (band.type === 'merge') handleBandSelect('merge', data.merges[band.idx]);
+                else handleBandSelect('mutation', (data.mutations ?? [])[band.idx]);
               }} />
             </>
             )}
@@ -1868,57 +1923,39 @@ export const TimeTravelPage: React.FC = () => {
             </div>
           )}
 
-          {/* Detail tables */}
-          <div style={{ display:'grid', gridTemplateColumns:'repeat(3, 1fr)', gap:16, marginTop:16 }}>
-            <QueryTable
-              queries={filteredQueries} allQueries={data.queries}
-              totalCount={data.query_count ?? data.queries.length}
-              pinnedMs={pinnedMs} metricMode={metricMode}
-              colors={Q_COLORS} accentColor="#58a6ff"
-              highlightedItem={highlightedItem} onHighlightItem={setHighlightedItem}
-              onSelect={setSelectedTimelineQuery}
+          {/*
+            Right-hand inspector is parked, not removed: OperationInspector.tsx
+            and its core modules (operation-instant, operation-context) are
+            intact and unmounted. Restore by wrapping the chart and navigator
+            above in a two-column grid and rendering <OperationInspector /> here.
+          */}
+
+          {/* Operations */}
+          <div style={{ marginTop:16 }}>
+            <OperationsTable
+              rows={visibleOperationRows}
+              counts={operationCounts}
+              totalCount={operationScopeTotals.total}
+              loadedCount={operationScopeTotals.loaded}
+              kindFilter={operationKind}
+              onKindFilterChange={setOperationKind}
+              scope={operationScope}
+              onScopeChange={setOperationScope}
+              pinnedMs={pinnedMs}
+              metricMode={metricMode}
               sortField={sortField} sortDir={sortDir} onSort={handleSort}
-              showHost={clusterHosts.length > 1}
-              isHiddenInChart={hiddenCategories.has('query')}
-              onToggleChartVisibility={() => toggleCategory('query')}
-              queryHashActive={!!queryHashFilter}
-            />
-            <MergeTable
-              items={filteredMerges} allItems={data.merges}
-              totalCount={data.merge_count}
-              pinnedMs={pinnedMs} metricMode={metricMode}
-              colors={M_COLORS} accentColor="#f0883e" highlightColor="rgba(240,136,62,0.35)"
-              label="Merges" itemType="merge"
               highlightedItem={highlightedItem} onHighlightItem={setHighlightedItem}
-              onSelect={(m) => setSelectedTimelineMerge(m as MergeSeries)}
-              sortField={sortField} sortDir={sortDir} onSort={handleSort}
+              onSelect={handleOperationSelect}
+              search={operationSearch}
+              onSearchChange={setOperationSearch}
+              selectedId={selectedOperation ? operationRowHighlightKey(selectedOperation) : null}
               showHost={clusterHosts.length > 1}
-              isHiddenInChart={hiddenCategories.has('merge')}
-              onToggleChartVisibility={() => toggleCategory('merge')}
-              queryHashActive={!!queryHashFilter}
-            />
-            <MergeTable
-              items={filteredMutations} allItems={data.mutations ?? []}
-              totalCount={data.mutation_count ?? 0}
-              pinnedMs={pinnedMs} metricMode={metricMode}
-              colors={MUT_COLORS} accentColor="#f778ba" highlightColor="rgba(247,120,186,0.35)"
-              label="Mutations" itemType="mutation"
-              highlightedItem={highlightedItem} onHighlightItem={setHighlightedItem}
-              onSelect={(m) => setSelectedTimelineMutation(m as MutationSeries)}
-              sortField={sortField} sortDir={sortDir} onSort={handleSort}
-              showHost={clusterHosts.length > 1}
-              isHiddenInChart={hiddenCategories.has('mutation')}
-              onToggleChartVisibility={() => toggleCategory('mutation')}
+              hiddenCategories={hiddenCategories}
+              onToggleChartVisibility={toggleCategory}
               queryHashActive={!!queryHashFilter}
             />
           </div>
 
-          {/* Empty state */}
-          {filteredQueries.length === 0 && filteredMerges.length === 0 && filteredMutations.length === 0 && data.server_memory.length > 0 && (
-            <div style={{ marginTop:16, padding:'20px', borderRadius:10, textAlign:'center', background:'var(--bg-secondary)', border:'1px solid var(--border-primary)', color:'var(--text-muted)', fontSize:13 }}>
-              {pinnedMs !== null ? 'No queries, merges, or mutations active at pinned time.' : 'No queries, merges, or mutations found in this window.'}
-            </div>
-          )}
         </div>
       )}
 

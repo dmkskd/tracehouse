@@ -1,7 +1,7 @@
 /**
  * Shared constants and types for the Time Travel timeline feature.
  */
-import type { QuerySeries, MergeSeries, MutationSeries } from '@tracehouse/core';
+import type { QuerySeries, MergeSeries, MutationSeries, OperationKind } from '@tracehouse/core';
 import { formatBytes, formatMicroseconds } from '../../utils/formatters';
 
 export type MetricMode = 'memory' | 'cpu' | 'network' | 'disk';
@@ -28,22 +28,6 @@ export const METRIC_CONFIG: Record<MetricMode, { label: string; color: string; f
   network: { label: 'Network', color: '#d29922', fmtVal: formatBytes },
 };
 
-/** Format a timeline item's metric value based on the current mode */
-export function metricForItem(item: QuerySeries | MergeSeries | MutationSeries, mode: MetricMode): string {
-  if (mode === 'memory') return formatBytes(item.peak_memory);
-  if (mode === 'cpu') return formatMicroseconds(item.cpu_us);
-  if (mode === 'network') return formatBytes(item.net_send + item.net_recv);
-  return formatBytes(item.disk_read + item.disk_write);
-}
-
-/** Get raw metric value for sorting */
-export function getMetricValue(item: QuerySeries | MergeSeries | MutationSeries, mode: MetricMode): number {
-  if (mode === 'memory') return item.peak_memory;
-  if (mode === 'cpu') return item.cpu_us;
-  if (mode === 'network') return item.net_send + item.net_recv;
-  return item.disk_read + item.disk_write;
-}
-
 /** Bar chart config for the rich tooltip — shows all 4 resource dimensions at once */
 export const METRIC_BAR_CONFIG = [
   { key: 'cpu' as const, label: 'CPU', color: '#3fb950', getValue: (item: QuerySeries | MergeSeries | MutationSeries) => item.cpu_us, fmt: formatMicroseconds },
@@ -51,3 +35,27 @@ export const METRIC_BAR_CONFIG = [
   { key: 'disk' as const, label: 'DISK', color: '#bc8cff', getValue: (item: QuerySeries | MergeSeries | MutationSeries) => item.disk_read + item.disk_write, fmt: formatBytes },
   { key: 'network' as const, label: 'NET', color: '#d29922', getValue: (item: QuerySeries | MergeSeries | MutationSeries) => item.net_send + item.net_recv, fmt: formatBytes },
 ] as const;
+
+/** Chart band color for an operation, matching how TimelineChart indexes its palettes. */
+export function operationBandColor(kind: OperationKind, idx: number): string {
+  const palette = kind === 'query' ? Q_COLORS : kind === 'merge' ? M_COLORS : MUT_COLORS;
+  return palette[idx % palette.length];
+}
+
+/** Badge colors per query kind, shared by the operations table and the inspector. */
+export const QUERY_KIND_COLORS: Record<string, string> = {
+  SELECT: '#3b82f6',
+  INSERT: '#8b5cf6',
+  ALTER: '#ef4444',
+  CREATE: '#22c55e',
+  DROP: '#f43f5e',
+  SYSTEM: '#a78bfa',
+  OPTIMIZE: '#06b6d4',
+};
+
+/** Color for one breakdown segment: query kinds by name, merges and mutations by kind. */
+export function segmentColor(key: string, kind: OperationKind): string {
+  if (kind === 'merge') return M_COLORS[0];
+  if (kind === 'mutation') return MUT_COLORS[0];
+  return QUERY_KIND_COLORS[key] ?? Q_COLORS[0];
+}

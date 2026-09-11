@@ -1,6 +1,8 @@
 export type TimeTravelMetric = 'memory' | 'cpu' | 'network' | 'disk';
 export type TimeTravelView = '2d' | '3d' | '3d-surface';
-export type TimeTravelSortField = 'metric' | 'duration' | 'started';
+export type TimeTravelSortField = 'metric' | 'duration' | 'started' | 'kind' | 'user' | 'server';
+export type TimeTravelOperationKind = 'all' | 'query' | 'merge' | 'mutation';
+export type TimeTravelOperationScope = 'window' | 'pin';
 export type TimeTravelSortDir = 'asc' | 'desc';
 export type TimeTravelNavigatorShape = 'trend' | 'peaks' | 'change';
 export type TimeTravelActivityCategory = 'query' | 'merge' | 'mutation';
@@ -25,6 +27,9 @@ export interface TimeTravelCoordinates {
   selectedTimeRange: string;
   sortField: TimeTravelSortField;
   sortDir: TimeTravelSortDir;
+  operationKind: TimeTravelOperationKind;
+  operationScope: TimeTravelOperationScope;
+  operationSearch: string;
   includeRunning: boolean;
   eventsVisible: boolean;
   navigatorShape: TimeTravelNavigatorShape;
@@ -35,7 +40,9 @@ export interface TimeTravelCoordinates {
 
 const METRICS = new Set<TimeTravelMetric>(['memory', 'cpu', 'network', 'disk']);
 const VIEWS = new Set<TimeTravelView>(['2d', '3d', '3d-surface']);
-const SORT_FIELDS = new Set<TimeTravelSortField>(['metric', 'duration', 'started']);
+const SORT_FIELDS = new Set<TimeTravelSortField>(['metric', 'duration', 'started', 'kind', 'user', 'server']);
+const OPERATION_KINDS = new Set<TimeTravelOperationKind>(['all', 'query', 'merge', 'mutation']);
+const OPERATION_SCOPES = new Set<TimeTravelOperationScope>(['window', 'pin']);
 const SORT_DIRS = new Set<TimeTravelSortDir>(['asc', 'desc']);
 const NAVIGATOR_SHAPES = new Set<TimeTravelNavigatorShape>(['trend', 'peaks', 'change']);
 const ACTIVITY_CATEGORIES = new Set<TimeTravelActivityCategory>(['query', 'merge', 'mutation']);
@@ -97,6 +104,12 @@ export function readTimeTravelCoordinates(
     selectedTimeRange: range && TIME_RANGES.has(range) ? range : '1h',
     sortField: enumParam(params, 'tt_sort', SORT_FIELDS, 'metric'),
     sortDir: enumParam(params, 'tt_dir', SORT_DIRS, 'desc'),
+    operationKind: enumParam(params, 'tt_ops', OPERATION_KINDS, 'all'),
+    // Scope follows the pin unless the URL says otherwise; a pinned link that
+    // omits tt_scope is a link to that instant's operations.
+    operationScope: enumParam(params, 'tt_scope', OPERATION_SCOPES,
+      nullableFiniteNumber(params, 'tt_pin') != null ? 'pin' : 'window'),
+    operationSearch: params.get('tt_q') ?? '',
     includeRunning: params.get('tt_running') !== '0',
     eventsVisible: params.has('tt_events') ? params.get('tt_events') === '1' : preferences.eventsVisible,
     navigatorShape: enumParam(params, 'tt_nav', NAVIGATOR_SHAPES, preferences.navigatorShape),
@@ -144,6 +157,9 @@ export function writeTimeTravelCoordinates(params: URLSearchParams, coordinates:
   next.set('tt_range', coordinates.selectedTimeRange);
   next.set('tt_sort', coordinates.sortField);
   next.set('tt_dir', coordinates.sortDir);
+  next.set('tt_ops', coordinates.operationKind);
+  next.set('tt_scope', coordinates.operationScope);
+  setOptional(next, 'tt_q', coordinates.operationSearch);
   next.set('tt_running', coordinates.includeRunning ? '1' : '0');
   next.set('tt_events', coordinates.eventsVisible ? '1' : '0');
   next.set('tt_nav', coordinates.navigatorShape);

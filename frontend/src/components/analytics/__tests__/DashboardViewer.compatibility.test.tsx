@@ -1,4 +1,5 @@
 import { act, cleanup, render, screen, waitFor } from '@testing-library/react';
+import { MemoryRouter } from 'react-router-dom';
 import { afterEach, beforeEach, describe, expect, test, vi } from 'vitest';
 import { useMonitoringCapabilitiesStore } from '../../../stores/monitoringCapabilitiesStore';
 import { DashboardViewer } from '../DashboardViewer';
@@ -56,7 +57,11 @@ describe('DashboardViewer query version compatibility', () => {
   test('shows the compatibility reason and does not execute an unsupported panel', async () => {
     setServerVersion('24.3.18.7');
 
-    render(<DashboardViewer initialDashboardId="cloud-monitoring" />);
+    render(
+      <MemoryRouter>
+        <DashboardViewer initialDashboardId="cloud-monitoring" />
+      </MemoryRouter>,
+    );
 
     expect(await screen.findByText(
       'Not run · Requires ClickHouse ≥ 24.8 · connected server 24.3.18.7',
@@ -73,7 +78,11 @@ describe('DashboardViewer query version compatibility', () => {
   test('executes the panel at its minimum supported version', async () => {
     setServerVersion('24.8.14.39');
 
-    render(<DashboardViewer initialDashboardId="cloud-monitoring" />);
+    render(
+      <MemoryRouter>
+        <DashboardViewer initialDashboardId="cloud-monitoring" />
+      </MemoryRouter>,
+    );
 
     await waitFor(() => {
       expect(

@@ -45,3 +45,40 @@ export { summarizePipelineStall, mapPipelineStallRow, pipelineStallHint } from '
 export type { PipelineStall, PipelineStallKind, PipelineStallRow } from './pipeline-stall.js';
 export { classifyBlockedFrame, summarizeBlockedStacks, describeBlockedStacks, mapBlockedStackRow, totalBlockedSamples, MIN_BLOCKED_SAMPLES } from './blocked-stacks.js';
 export type { BlockedCategory, BlockedStackRow, BlockedCategorySummary } from './blocked-stacks.js';
+export {
+  buildOperationRows,
+  countOperationRows,
+  describeOperationContext,
+  filterOperationRowsByKind,
+  findOperationRow,
+  getOperationMetric,
+  matchesOperationSearch,
+  maxOperationMetric,
+  operationKeyFor,
+  operationHighlightKey,
+  operationRowHighlightKey,
+  operationTotals,
+  parseOperationTimestamp,
+  summarizeOperations,
+} from './timeline-operations.js';
+export type {
+  OperationContextCell,
+  OperationCounts,
+  OperationKind,
+  OperationKindFilter,
+  OperationMetricMode,
+  OperationRow,
+  OperationRowInput,
+  OperationRowOptions,
+  OperationScope,
+  OperationSelectionKey,
+  OperationSortDir,
+  OperationSortField,
+  OperationTotalsInput,
+  OperationHostSummary,
+  OperationSummary,
+} from './timeline-operations.js';
+export { buildOperationContext, buildOperationSpan, operationsOverlap } from './operation-context.js';
+export type { OperationContext, OperationSpan } from './operation-context.js';
+export { buildInstantBreakdown, measuredValueAt, operationAverageRate, selectServerSeries } from './operation-instant.js';
+export type { InstantBreakdown, InstantBreakdownInput, InstantBreakdownOptions, InstantSegment } from './operation-instant.js';

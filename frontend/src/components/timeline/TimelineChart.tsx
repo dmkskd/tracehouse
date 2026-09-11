@@ -10,6 +10,8 @@ import {
   getMergeCategoryInfo,
   getTimelineCpuCapacity,
   getTimelineRamCapacity,
+  operationAverageRate,
+  operationHighlightKey,
   type MergeCategory,
 } from '@tracehouse/core';
 import { formatBytes, parseTimestamp } from '../../utils/formatters';
@@ -49,6 +51,20 @@ function lookupSample(samples: { ms: number; v: number }[], t: number): number {
 
 /** Highlight color for hash-matched queries */
 const HASH_MATCH_COLOR = '#58a6ff';
+
+/**
+ * The hover tooltip floats over the chart with a blurred backdrop. Safari
+ * repaints that blur against the whole SVG on every mouse move, which can
+ * dominate hover cost on a dense timeline; other engines composite it cheaply.
+ * Set localStorage `th_tooltip_blur` to `off` to drop the blur and compare.
+ */
+const TOOLTIP_BLUR_ENABLED = (() => {
+  try {
+    return localStorage.getItem('th_tooltip_blur') !== 'off';
+  } catch {
+    return true;  // Storage can be blocked; the blur is the normal appearance.
+  }
+})();
 
 export const TimelineChart: React.FC<{
   data: MemoryTimeline; metricMode: MetricMode; height?: number;
@@ -160,36 +176,27 @@ export const TimelineChart: React.FC<{
   // Compute query/merge ranges for stacked areas
   const qRanges: Rng[] = useMemo(() => {
     return data.queries.map(q => {
-      const durS = Math.max(q.duration_ms / 1000, 0.001);
-      let realPeak = 0;
-      if (metricMode === 'memory') realPeak = q.peak_memory;
-      else if (metricMode === 'cpu') realPeak = q.cpu_us / durS;
-      else if (metricMode === 'network') realPeak = (q.net_send + q.net_recv) / durS;
-      else realPeak = (q.disk_read + q.disk_write) / durS;
+      // Band height is the operation's average rate; shared with the core
+      // breakdown so the chart and any panel reading it cannot disagree.
+      const realPeak = operationAverageRate(q, metricMode);
       const samples = q.zoomSamples ? mapZoomToMetric(q.zoomSamples) : undefined;
       return { startMs: parseTimestamp(q.start_time), endMs: parseTimestamp(q.end_time), peak: realPeak, realPeak, samples };
     });
   }, [data.queries, metricMode, mapZoomToMetric]);
   const mRanges: Rng[] = useMemo(() => {
     return data.merges.map(m => {
-      const durS = Math.max(m.duration_ms / 1000, 0.001);
-      let realPeak = 0;
-      if (metricMode === 'memory') realPeak = m.peak_memory;
-      else if (metricMode === 'cpu') realPeak = m.cpu_us / durS;
-      else if (metricMode === 'network') realPeak = (m.net_send + m.net_recv) / durS;
-      else realPeak = (m.disk_read + m.disk_write) / durS;
+      // Band height is the operation's average rate; shared with the core
+      // breakdown so the chart and any panel reading it cannot disagree.
+      const realPeak = operationAverageRate(m, metricMode);
       const samples = m.zoomSamples ? mapZoomToMetric(m.zoomSamples) : undefined;
       return { startMs: parseTimestamp(m.start_time), endMs: parseTimestamp(m.end_time), peak: realPeak, realPeak, samples };
     });
   }, [data.merges, metricMode, mapZoomToMetric]);
   const mutRanges: Rng[] = useMemo(() => {
     return (data.mutations ?? []).map(m => {
-      const durS = Math.max(m.duration_ms / 1000, 0.001);
-      let realPeak = 0;
-      if (metricMode === 'memory') realPeak = m.peak_memory;
-      else if (metricMode === 'cpu') realPeak = m.cpu_us / durS;
-      else if (metricMode === 'network') realPeak = (m.net_send + m.net_recv) / durS;
-      else realPeak = (m.disk_read + m.disk_write) / durS;
+      // Band height is the operation's average rate; shared with the core
+      // breakdown so the chart and any panel reading it cannot disagree.
+      const realPeak = operationAverageRate(m, metricMode);
       const samples = m.zoomSamples ? mapZoomToMetric(m.zoomSamples) : undefined;
       return { startMs: parseTimestamp(m.start_time), endMs: parseTimestamp(m.end_time), peak: realPeak, realPeak, samples };
     });
@@ -474,17 +481,18 @@ export const TimelineChart: React.FC<{
           if (idx < nq) {
             v0 = b0.qv[idx]; v1 = b1.qv[idx];
             bandType = 'query'; bandIdx = idx;
-            bandId = data.queries[idx]?.query_id ?? '';
+            const q = data.queries[idx];
+            bandId = q ? operationHighlightKey('query', q) : '';
           } else if (idx < nq + nm) {
             v0 = b0.mv[idx - nq]; v1 = b1.mv[idx - nq];
             bandType = 'merge'; bandIdx = idx - nq;
             const m = data.merges[idx - nq];
-            bandId = m ? `${m.table}:${m.part_name}:${m.hostname ?? ''}` : '';
+            bandId = m ? operationHighlightKey('merge', m) : '';
           } else {
             v0 = b0.mutv[idx - nq - nm]; v1 = b1.mutv[idx - nq - nm];
             bandType = 'mutation'; bandIdx = idx - nq - nm;
             const mu = (data.mutations ?? [])[idx - nq - nm];
-            bandId = mu ? `${mu.table}:${mu.part_name}:${mu.hostname ?? ''}` : '';
+            bandId = mu ? operationHighlightKey('mutation', mu) : '';
           }
           const interpVal = v0 + (v1 - v0) * frac;
           if (interpVal <= 0) continue;
@@ -783,11 +791,14 @@ export const TimelineChart: React.FC<{
             bottom: localSvgY >= H * 0.5 ? `${100 - (localSvgY / H) * 100 + 2}%` : undefined,
             left: crossX > W * 0.6 ? undefined : `${(crossX / W) * 100 + 1}%`,
             right: crossX > W * 0.6 ? `${100 - (crossX / W) * 100 + 1}%` : undefined,
-            background: 'color-mix(in srgb, var(--bg-secondary), transparent 35%)',
             border: '1px solid var(--border-primary)',
             borderRadius: 10, padding: '10px 14px', pointerEvents: 'none', zIndex: 10,
             width: 240, fontSize: 10,
-            backdropFilter: 'blur(12px)', WebkitBackdropFilter: 'blur(12px)',
+            background: TOOLTIP_BLUR_ENABLED
+              ? 'color-mix(in srgb, var(--bg-secondary), transparent 35%)'
+              : 'var(--bg-secondary)',
+            backdropFilter: TOOLTIP_BLUR_ENABLED ? 'blur(12px)' : undefined,
+            WebkitBackdropFilter: TOOLTIP_BLUR_ENABLED ? 'blur(12px)' : undefined,
             boxShadow: '0 8px 32px rgba(0,0,0,0.45), 0 1px 4px rgba(0,0,0,0.2)',
           }}>
             <div style={{ color: 'var(--text-primary)', fontWeight: 600, marginBottom: 6, fontSize: 12 }}>

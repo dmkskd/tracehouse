@@ -74,16 +74,48 @@ vi.mock('../../common/DocsLink', () => ({
   DocsLink: () => null,
 }));
 
-function dashboard(rangeCenterTime?: string) {
+/**
+ * The dashboard's filter and toggle state lives in the Events page, not in the
+ * component, so the test owns it too. Without this the component renders with
+ * `search` undefined and the UI toggles it exposes have nothing to write to.
+ */
+type DashboardProps = React.ComponentProps<typeof EventsDashboard>;
+
+const Harness: React.FC<Partial<DashboardProps>> = (overrides) => {
+  const [search, setSearch] = React.useState('');
+  const [severity, setSeverity] = React.useState<React.ComponentProps<typeof EventsDashboard>['severity']>('all');
+  const [category, setCategory] = React.useState<React.ComponentProps<typeof EventsDashboard>['category']>('all');
+  const [kind, setKind] = React.useState<React.ComponentProps<typeof EventsDashboard>['kind']>('all');
+  const [autoRefresh, setAutoRefresh] = React.useState(false);
+  const [groupSimilarEvents, setGroupSimilarEvents] = React.useState(true);
+  const [selectedPanel, setSelectedPanel] = React.useState<'details' | 'context'>('details');
   return (
     <EventsDashboard
-      rangeCenterTime={rangeCenterTime}
       rangeHours={24}
       timeRangeValue="1 DAY"
       onTimeRangeChange={vi.fn()}
       onSelectEvent={vi.fn()}
+      search={search}
+      onSearchChange={setSearch}
+      severity={severity}
+      onSeverityChange={setSeverity}
+      category={category}
+      onCategoryChange={setCategory}
+      kind={kind}
+      onKindChange={setKind}
+      autoRefresh={autoRefresh}
+      onAutoRefreshChange={setAutoRefresh}
+      groupSimilarEvents={groupSimilarEvents}
+      onGroupSimilarEventsChange={setGroupSimilarEvents}
+      selectedPanel={selectedPanel}
+      onSelectedPanelChange={setSelectedPanel}
+      {...overrides}
     />
   );
+};
+
+function dashboard(rangeCenterTime?: string) {
+  return <Harness rangeCenterTime={rangeCenterTime} />;
 }
 
 describe('EventsDashboard refresh behavior', () => {
@@ -209,12 +241,8 @@ describe('EventsDashboard refresh behavior', () => {
 
     await act(async () => {
       render(
-        <EventsDashboard
+        <Harness
           selectedEventId={mutationFailure.id}
-          rangeHours={24}
-          timeRangeValue="1 DAY"
-          onTimeRangeChange={vi.fn()}
-          onSelectEvent={vi.fn()}
           onOpenMergeDetails={onOpenMergeDetails}
         />,
       );

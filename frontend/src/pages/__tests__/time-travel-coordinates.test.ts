@@ -24,6 +24,9 @@ describe('Time Travel URL coordinates', () => {
       selectedTimeRange: 'Custom',
       sortField: 'duration',
       sortDir: 'asc',
+      operationKind: 'merge',
+      operationScope: 'pin',
+      operationSearch: 'analytics.events',
       includeRunning: false,
       eventsVisible: false,
       navigatorShape: 'change',
@@ -46,6 +49,9 @@ describe('Time Travel URL coordinates', () => {
       selectedTimeRange: 'Custom',
       sortField: 'duration',
       sortDir: 'asc',
+      operationKind: 'merge',
+      operationScope: 'pin',
+      operationSearch: 'analytics.events',
       includeRunning: false,
       eventsVisible: false,
       navigatorShape: 'change',
@@ -74,4 +80,86 @@ describe('Time Travel URL coordinates', () => {
     expect(encoded.get('tt_metric')).toBe('cpu');
     expect(encoded.get('tt_live')).toBe('1');
   });
+
+  it('scopes the operations table to the pin when a pinned link omits the scope', () => {
+    const decoded = readTimeTravelCoordinates(
+      new URLSearchParams('tt_pin=1789030800000'),
+      { eventsVisible: true, navigatorShape: 'trend' },
+    );
+    expect(decoded.operationScope).toBe('pin');
+  });
+
+  it('defaults the operations table to the window when nothing is pinned', () => {
+    const decoded = readTimeTravelCoordinates(
+      new URLSearchParams(''),
+      { eventsVisible: true, navigatorShape: 'trend' },
+    );
+    expect(decoded).toMatchObject({ operationScope: 'window', operationKind: 'all', operationSearch: '' });
+  });
+
+  it('lets an explicit scope override the pin default', () => {
+    const decoded = readTimeTravelCoordinates(
+      new URLSearchParams('tt_pin=1789030800000&tt_scope=window'),
+      { eventsVisible: true, navigatorShape: 'trend' },
+    );
+    expect(decoded.operationScope).toBe('window');
+  });
+
+  it('falls back for unknown filter values rather than trusting the URL', () => {
+    const decoded = readTimeTravelCoordinates(
+      new URLSearchParams('tt_ops=bogus&tt_scope=bogus&tt_sort=bogus'),
+      { eventsVisible: true, navigatorShape: 'trend' },
+    );
+    expect(decoded).toMatchObject({ operationKind: 'all', operationScope: 'window', sortField: 'metric' });
+  });
+
+  it('accepts the text-sorted columns', () => {
+    const decoded = readTimeTravelCoordinates(
+      new URLSearchParams('tt_sort=user'),
+      { eventsVisible: true, navigatorShape: 'trend' },
+    );
+    expect(decoded.sortField).toBe('user');
+  });
+
+  it('keeps an empty search out of the URL', () => {
+    const params = writeTimeTravelCoordinates(new URLSearchParams(), {
+      ...baseCoordinates(),
+      operationSearch: '',
+    });
+    expect(params.has('tt_q')).toBe(false);
+  });
 });
+
+/** Minimal valid coordinates, for cases that only care about one field. */
+function baseCoordinates() {
+  return {
+    queryHashOnly: false,
+    windowSec: 150,
+    isLive: true,
+    autoRefresh: false,
+    customStartTime: null,
+    customEndTime: null,
+    viewportEndTime: null,
+    pinnedMs: null,
+    selectedEventId: null,
+    zoomRange: null,
+    metricMode: 'cpu' as const,
+    viewMode: '2d' as const,
+    hiddenCategories: new Set<'query' | 'merge' | 'mutation'>(),
+    activityLimit: 100,
+    selectedHosts: [],
+    perServerView: false,
+    selectedTimeRange: '1h',
+    sortField: 'metric' as const,
+    sortDir: 'desc' as const,
+    operationKind: 'all' as const,
+    operationScope: 'window' as const,
+    operationSearch: '',
+    includeRunning: true,
+    eventsVisible: true,
+    navigatorShape: 'peaks' as const,
+    hiddenEventSeverities: new Set<string>(),
+    hiddenEventCategories: new Set<string>(),
+    hiddenEventKinds: new Set<string>(),
+  };
+}
