@@ -9,6 +9,7 @@
 
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import { locationService } from '@grafana/runtime';
+import { copyToClipboard } from '@tracehouse/ui-shared';
 import {
   parseSearchParam,
   serializeParam,
@@ -257,12 +258,7 @@ export function useAnalyticsUrlState() {
       const loc = window.location;
       const base = `${loc.origin}${loc.pathname}`;
       const url = qs ? `${base}?${qs}` : base;
-      try {
-        await navigator.clipboard.writeText(url);
-        return true;
-      } catch {
-        return false;
-      }
+      return copyToClipboard(url);
     },
     [],
   );

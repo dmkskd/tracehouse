@@ -14,6 +14,8 @@ export {
   type TracehouseNavigationItem,
 } from './navigation.js';
 
+export { copyToClipboard } from './clipboard.js';
+
 // 3D visualization components
 export {
   // Size calculations

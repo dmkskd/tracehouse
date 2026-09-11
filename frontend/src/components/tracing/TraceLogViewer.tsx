@@ -18,6 +18,7 @@ import { ZoomPanContainer } from '../common/ZoomPanContainer';
 import { useThemeDetection } from '../../hooks/useThemeDetection';
 import { getLevelColor, stringToHslColor, getThreadIdColor, processLogsWithDuration } from './traceUtils';
 import type { ProcessedLog } from './traceUtils';
+import { copyToClipboard } from '@tracehouse/ui-shared';
 
 interface TraceLogViewerProps {
   logs: TraceLog[];
@@ -1160,18 +1161,7 @@ export const TraceLogViewer: React.FC<TraceLogViewerProps> = ({
                 const text = filteredLogs
                   .map(l => `${formatTime(l.event_time_microseconds || l.event_time)}\t${l.source}\t${l.thread_name}(${l.thread_id})\t${l.level}\t${l.message}`)
                   .join('\n');
-                try {
-                  await navigator.clipboard.writeText(text);
-                } catch {
-                  const textarea = document.createElement('textarea');
-                  textarea.value = text;
-                  textarea.style.position = 'fixed';
-                  textarea.style.opacity = '0';
-                  document.body.appendChild(textarea);
-                  textarea.select();
-                  document.execCommand('copy');
-                  document.body.removeChild(textarea);
-                }
+                await copyToClipboard(text);
                 setCopied(true);
                 setTimeout(() => setCopied(false), 1500);
               }}

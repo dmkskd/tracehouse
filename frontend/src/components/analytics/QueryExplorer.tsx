@@ -61,6 +61,7 @@ import {
   ExecutionAnalysisPanel,
   ProcessorTimingOption,
 } from '../query/ExecutionAnalysis';
+import { copyToClipboard } from '@tracehouse/ui-shared';
 
 /* ═══════════════════════════════════════════════════════════════════════════
    SQL Syntax Highlighting - imported from utils/sqlHighlighter
@@ -734,7 +735,7 @@ export const QueryExplorer: React.FC<QueryExplorerProps> = ({ urlState, onUrlSta
   const copyResults = useCallback(async () => {
     if (!result) return;
     const tsv = [result.columns.join('\t'), ...result.rows.map(r => result.columns.map(c => formatCell(r[c], c)).join('\t'))].join('\n');
-    await navigator.clipboard.writeText(tsv);
+    if (!await copyToClipboard(tsv)) return;
     setCopied(true);
     setTimeout(() => setCopied(false), 2000);
   }, [result]);

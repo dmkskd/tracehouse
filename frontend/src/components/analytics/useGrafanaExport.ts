@@ -18,6 +18,7 @@ import type {
   GrafanaPanelOption,
   GrafanaPanelSummary,
 } from './GrafanaExportDialog';
+import { copyToClipboard } from '@tracehouse/ui-shared';
 
 const GRAFANA_SIMPLE_CHART_MAX_ROWS = 50;
 const GRAFANA_GROUPED_CHART_MAX_ROWS = 30;
@@ -334,8 +335,9 @@ export function useGrafanaExport({
       } catch (e) {
         console.error('[Grafana export]', e);
         setError(e instanceof Error ? e.message : String(e));
-        await navigator.clipboard.writeText(JSON.stringify(dashboard, null, 2));
-        setStatus('copied');
+        if (await copyToClipboard(JSON.stringify(dashboard, null, 2))) {
+          setStatus('copied');
+        }
       }
     }
     setTimeout(() => setStatus('idle'), 2500);

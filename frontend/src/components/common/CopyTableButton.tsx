@@ -9,6 +9,7 @@
  */
 
 import React, { useState, useCallback } from 'react';
+import { copyToClipboard } from '@tracehouse/ui-shared';
 
 interface CopyTableButtonProps {
   /** Column headers */
@@ -35,12 +36,11 @@ export const CopyTableButton: React.FC<CopyTableButtonProps> = ({
       headers.join('\t'),
       ...rows.map(row => row.map(cell => (cell == null ? '' : String(cell))).join('\t')),
     ].join('\n');
-    try {
-      await navigator.clipboard.writeText(tsv);
+    if (await copyToClipboard(tsv)) {
       setCopied(true);
       setTimeout(() => setCopied(false), 2000);
-    } catch (err) {
-      console.warn('[CopyTableButton] Clipboard write failed:', err);
+    } else {
+      console.warn('[CopyTableButton] Clipboard write failed');
     }
   }, [headers, rows]);
 

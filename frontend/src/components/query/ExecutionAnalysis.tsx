@@ -3,6 +3,7 @@ import type { QueryExecutionAnalysisResult } from '@tracehouse/core';
 import { formatBytes, formatDurationMs, formatMicroseconds } from '../../utils/formatters';
 import type { PreviousExecutionMetrics } from './executionAnalysisModel';
 import { ExecutionAnalysisVisual } from './ExecutionAnalysisVisual';
+import { copyToClipboard } from '@tracehouse/ui-shared';
 
 interface AnalysisRunButtonProps {
   label: string;
@@ -301,7 +302,7 @@ export const ExecutionAnalysisPanel: React.FC<ExecutionAnalysisPanelProps> = ({
   const [activeView, setActiveView] = useState<'visual' | 'raw'>('visual');
 
   const copy = async () => {
-    await navigator.clipboard.writeText(result.output);
+    if (!await copyToClipboard(result.output)) return;
     setCopied(true);
     window.setTimeout(() => setCopied(false), 2000);
   };

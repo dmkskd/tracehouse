@@ -15,6 +15,7 @@
 
 import { useCallback, useMemo } from 'react';
 import { useSearchParams } from 'react-router-dom';
+import { copyToClipboard } from '@tracehouse/ui-shared';
 import {
   parseShareParam,
   serializeShareParam,
@@ -266,13 +267,7 @@ export function useAnalyticsUrlState() {
   /** Copy shareable URL to clipboard */
   const copyShareableUrl = useCallback(
     async (overrides?: Partial<AnalyticsUrlState>) => {
-      const url = getShareableUrl(overrides);
-      try {
-        await navigator.clipboard.writeText(url);
-        return true;
-      } catch {
-        return false;
-      }
+      return copyToClipboard(getShareableUrl(overrides));
     },
     [getShareableUrl],
   );

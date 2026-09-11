@@ -6,6 +6,7 @@ import { querySqlText, type SqlDisplayMode } from '../../../../utils/querySqlTex
 import { useClickHouseServices } from '../../../../providers/ClickHouseProvider';
 import { useThemeDetection } from '../../../../hooks/useThemeDetection';
 import { SqlHighlight } from '../../../common/SqlHighlight';
+import { copyToClipboard } from '@tracehouse/ui-shared';
 
 interface SqlTabProps {
   q: QuerySeries;
@@ -475,9 +476,11 @@ export const SqlTab: React.FC<SqlTabProps> = ({
           <SqlModeToggle mode={mode} onChange={setMode} />
           <ToolbarIconButton
             onClick={() => {
-              navigator.clipboard.writeText(sql);
-              setCopied(true);
-              window.setTimeout(() => setCopied(false), 1200);
+              void copyToClipboard(sql).then(ok => {
+                if (!ok) return;
+                setCopied(true);
+                window.setTimeout(() => setCopied(false), 1200);
+              });
             }}
             title="Copy SQL"
             ariaLabel="Copy SQL"

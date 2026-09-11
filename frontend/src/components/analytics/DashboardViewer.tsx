@@ -74,6 +74,7 @@ import {
   type DashboardPanelSection,
 } from './dashboardFocusStage';
 import { useMonitoringCapabilitiesStore } from '../../stores/monitoringCapabilitiesStore';
+import { copyToClipboard } from '@tracehouse/ui-shared';
 
 // ─── Panel component - executes one preset query and shows result ───
 
@@ -2418,9 +2419,9 @@ export const DashboardViewer: React.FC<{ initialDashboardId?: string; onOpenQuer
 
   const handleExport = useCallback((d: Dashboard) => {
     const json = exportDashboardJson(d);
-    navigator.clipboard.writeText(json)
-      .then(() => setToast('Dashboard JSON copied to clipboard'))
-      .catch((err) => setToast(`Copy failed: ${err?.message || 'clipboard unavailable'}`));
+    void copyToClipboard(json).then(ok => setToast(
+      ok ? 'Dashboard JSON copied to clipboard' : 'Copy failed: clipboard unavailable',
+    ));
   }, []);
 
   const handleImport = useCallback((json: string) => {

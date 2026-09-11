@@ -7,6 +7,7 @@
 
 import React, { useState } from 'react';
 import type { ExplainResult, ExplainType } from '../../stores/traceStore';
+import { copyToClipboard } from '@tracehouse/ui-shared';
 
 interface ExplainViewerProps {
   result: ExplainResult | null;
@@ -117,12 +118,11 @@ const ExplainOutput: React.FC<{
   const [copied, setCopied] = useState(false);
   
   const handleCopy = async () => {
-    try {
-      await navigator.clipboard.writeText(output);
+    if (await copyToClipboard(output)) {
       setCopied(true);
       setTimeout(() => setCopied(false), 2000);
-    } catch (err) {
-      console.error('Failed to copy:', err);
+    } else {
+      console.error('[ExplainViewer] Failed to copy EXPLAIN output');
     }
   };
   
