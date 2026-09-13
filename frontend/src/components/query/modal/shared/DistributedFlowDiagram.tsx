@@ -114,14 +114,13 @@ function face(color: string, amount: number): string {
   return color.startsWith('#') ? shadeColor(color, amount) : color;
 }
 
-/** The ClickHouse wordmark drawn on the cluster boundary box, as in the pattern explorer. */
-const ClickHouseMark: React.FC<{ x: number; y: number }> = ({ x, y }) => (
-  <g transform={`translate(${x} ${y})`} fill="var(--text-muted)" opacity={0.8}>
-    <rect width="3" height="20" />
-    <rect x="5.5" width="3" height="20" />
-    <rect x="11" width="3" height="20" />
-    <rect x="16.5" width="3" height="20" />
-    <rect x="22" y="7" width="3" height="6" />
+/** Generic connected-node symbol for the cluster boundary. */
+const ClusterMark: React.FC<{ x: number; y: number }> = ({ x, y }) => (
+  <g transform={`translate(${x} ${y})`} fill="none" stroke="var(--text-muted)" strokeWidth={1.5} opacity={0.8} aria-hidden="true">
+    <path d="M12.5 7v4M4.5 14v-3h16v3" />
+    <rect x="8.5" y="1" width="8" height="6" rx="1.5" />
+    <rect x="0.5" y="14" width="8" height="6" rx="1.5" />
+    <rect x="16.5" y="14" width="8" height="6" rx="1.5" />
   </g>
 );
 
@@ -365,7 +364,7 @@ export const DistributedFlowDiagram: React.FC<DistributedFlowDiagramProps> = ({
               stroke="var(--border-primary)"
               strokeDasharray="6 5"
             />
-            <ClickHouseMark x={group.x + 16} y={group.y + 12} />
+            <ClusterMark x={group.x + 16} y={group.y + 12} />
             <text
               x={group.x + 50}
               y={group.y + 27}
@@ -630,7 +629,7 @@ export const DistributedFlowDiagram: React.FC<DistributedFlowDiagramProps> = ({
 };
 
 /**
- * Colour legend, drawn inside the cluster box next to its wordmark rather than
+ * Colour legend, drawn inside the cluster box next to its cluster symbol rather than
  * as HTML under the canvas: it describes the cubes, so it pans and zooms with
  * them. Laid out by hand in monospace, where an advance is a known fraction of
  * the font size and no measuring pass is needed.

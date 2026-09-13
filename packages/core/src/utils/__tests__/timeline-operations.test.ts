@@ -2,7 +2,7 @@ import { describe, it, expect } from 'vitest';
 import {
   buildOperationRows,
   countOperationRows,
-  describeOperationContext,
+  notableMergeReason,
   filterOperationRowsByKind,
   findOperationRow,
   getOperationMetric,
@@ -442,38 +442,30 @@ describe('buildOperationRows — text sorting', () => {
   });
 });
 
-describe('describeOperationContext', () => {
-  it('gives a query its user', () => {
+describe('notableMergeReason', () => {
+  it('suppresses the Regular reason that nearly every merge carries', () => {
+    const [merge] = buildOperationRows(
+      { queries: [], merges: [makeMerge({ merge_reason: 'Regular' })], mutations: [] }, baseOptions);
+    expect(notableMergeReason(merge)).toBeNull();
+  });
+
+  it('returns the reason when it says something happened', () => {
+    const [merge] = buildOperationRows(
+      { queries: [], merges: [makeMerge({ merge_reason: 'TTLDelete' })], mutations: [] }, baseOptions);
+    expect(notableMergeReason(merge)).toBe('TTLDelete');
+  });
+
+  it('returns null for an unknown reason rather than inventing a badge', () => {
+    const [merge] = buildOperationRows(
+      { queries: [], merges: [makeMerge({ merge_reason: 'SomethingElse' })], mutations: [] }, baseOptions);
+    expect(notableMergeReason(merge)).toBeNull();
+  });
+
+  it('returns null for queries and mutations', () => {
     const [query] = buildOperationRows({ queries: [makeQuery()], merges: [], mutations: [] }, baseOptions);
-    expect(describeOperationContext(query)).toEqual({ type: 'user', user: 'th_eve' });
-  });
-
-  it('reports nothing for a query with no user', () => {
-    const [query] = buildOperationRows({ queries: [makeQuery({ user: '' })], merges: [], mutations: [] }, baseOptions);
-    expect(describeOperationContext(query)).toEqual({ type: 'none' });
-  });
-
-  it('gives a merge its reason and its read and written bytes', () => {
-    const [merge] = buildOperationRows({ queries: [], merges: [makeMerge()], mutations: [] }, baseOptions);
-    expect(describeOperationContext(merge)).toEqual({
-      type: 'part', reason: 'RegularMerge', readBytes: 5_000, writtenBytes: 6_000, progress: undefined,
-    });
-  });
-
-  it('omits the reason for a mutation but keeps its byte counts', () => {
     const [mutation] = buildOperationRows({ queries: [], merges: [], mutations: [makeMutation()] }, baseOptions);
-    expect(describeOperationContext(mutation)).toMatchObject({
-      type: 'part', reason: undefined, readBytes: 1_000, writtenBytes: 2_000,
-    });
-  });
-
-  it('carries progress only while the operation is running', () => {
-    const [running] = buildOperationRows(
-      { queries: [], merges: [makeMerge({ is_running: true, progress: 0.4 })], mutations: [] }, baseOptions);
-    expect(describeOperationContext(running)).toMatchObject({ progress: 0.4 });
-    const [done] = buildOperationRows(
-      { queries: [], merges: [makeMerge({ is_running: false, progress: 0.4 })], mutations: [] }, baseOptions);
-    expect(describeOperationContext(done)).toMatchObject({ progress: undefined });
+    expect(notableMergeReason(query)).toBeNull();
+    expect(notableMergeReason(mutation)).toBeNull();
   });
 });
 

@@ -1,16 +1,39 @@
-import React, { useMemo } from 'react';
-import type { DistributedTopology, ObjectStorageProfileSummary, QueryDetail as QueryDetailType, QuerySeries, SimilarQuery, SubQueryInfo, TimeBreakdown } from '@tracehouse/core';
-import { computeTimeBreakdown, queryRowRoleNoun } from '@tracehouse/core';
-import { TimeBreakdownBar } from '../shared/TimeBreakdownBar';
-import { PARKED_EXPLANATION_THRESHOLD } from '../shared/timeBreakdownDisplay';
-import { useParkedTimeExplanation } from '../hooks/useParkedTimeExplanation';
-import { formatBytes } from '../../../../stores/databaseStore';
-import { formatDurationMs, formatMicroseconds, formatNumberCompact } from '../../../../utils/formatters';
-import { querySqlLineCount, querySqlText } from '../../../../utils/querySqlText';
-import { SqlHighlight } from '../../../common/SqlHighlight';
-import { percentile } from '../shared/chartConstants';
+import React, { useMemo } from "react";
+import type {
+  DistributedTopology,
+  ObjectStorageProfileSummary,
+  QueryDetail as QueryDetailType,
+  QuerySeries,
+  SimilarQuery,
+  SubQueryInfo,
+} from "@tracehouse/core";
+import { queryRowRoleNoun } from "@tracehouse/core";
+import { formatBytes } from "../../../../stores/databaseStore";
+import {
+  formatDurationMs,
+  formatMicroseconds,
+  formatNumberCompact,
+} from "../../../../utils/formatters";
+import {
+  querySqlLineCount,
+  querySqlText,
+} from "../../../../utils/querySqlText";
+import { SqlHighlight } from "../../../common/SqlHighlight";
+import { percentile } from "../shared/chartConstants";
 
-type OverviewTargetTab = 'sql' | 'details' | 'analytics' | 'object-storage' | 'distributed' | 'logs' | 'history' | 'pipeline' | 'xray' | 'threads' | 'flamegraph';
+type OverviewTargetTab =
+  | "sql"
+  | "details"
+  | "analytics"
+  | "object-storage"
+  | "distributed"
+  | "logs"
+  | "history"
+  | "pipeline"
+  | "xray"
+  | "threads"
+  | "flamegraph"
+  | "spans";
 
 interface OverviewTabProps {
   q: QuerySeries;
@@ -22,6 +45,9 @@ interface OverviewTabProps {
   similarQueries: SimilarQuery[];
   isLoadingSimilarQueries: boolean;
   objectStorageSummary: ObjectStorageProfileSummary;
+  /** Disable all mini charts and illustrations without changing the guidance cards. */
+  showMiniVisuals?: boolean;
+  showSpansCard?: boolean;
   showLogsCard: boolean;
   showHistoryCard: boolean;
   showXRayCard: boolean;
@@ -31,30 +57,17 @@ interface OverviewTabProps {
   onNavigateToQuery: (queryId: string) => void;
 }
 
-const LABEL: React.CSSProperties = {
-  fontSize: 9,
-  color: 'var(--text-muted)',
-  textTransform: 'uppercase',
-  letterSpacing: '1px',
-};
-
-const PANEL: React.CSSProperties = {
-  background: 'var(--bg-card)',
-  border: '1px solid var(--border-secondary)',
-  borderRadius: 8,
-};
-
 const fmtMs = formatDurationMs;
 const fmtUs = formatMicroseconds;
 
 export type ClickHouseExceptionType =
-  | 'ExceptionBeforeStart'
-  | 'ExceptionWhileProcessing';
+  | "ExceptionBeforeStart"
+  | "ExceptionWhileProcessing";
 
 export function clickHouseExceptionType(
   type: string | null | undefined,
 ): ClickHouseExceptionType | null {
-  if (type === 'ExceptionBeforeStart' || type === 'ExceptionWhileProcessing') {
+  if (type === "ExceptionBeforeStart" || type === "ExceptionWhileProcessing") {
     return type;
   }
   return null;
@@ -63,8 +76,8 @@ export function clickHouseExceptionType(
 export function clickHouseExceptionPhase(
   type: ClickHouseExceptionType | null,
 ): string | null {
-  if (type === 'ExceptionBeforeStart') return 'before execution';
-  if (type === 'ExceptionWhileProcessing') return 'during execution';
+  if (type === "ExceptionBeforeStart") return "before execution";
+  if (type === "ExceptionWhileProcessing") return "during execution";
   return null;
 }
 
@@ -81,32 +94,33 @@ function statusInfo(
   exceptionPhase: string | null;
 } {
   const exceptionType = clickHouseExceptionType(detailType ?? q.status);
-  const isFailed = exceptionType !== null
-    || (q.exception_code !== undefined && q.exception_code !== 0)
-    || Boolean(q.exception);
+  const isFailed =
+    exceptionType !== null ||
+    (q.exception_code !== undefined && q.exception_code !== 0) ||
+    Boolean(q.exception);
   if (q.is_running) {
     return {
-      label: 'Running',
-      color: '#58a6ff',
-      bg: 'rgba(88, 166, 255, 0.12)',
+      label: "Running",
+      color: "#58a6ff",
+      bg: "rgba(88, 166, 255, 0.12)",
       exceptionType: null,
       exceptionPhase: null,
     };
   }
   if (isFailed) {
     return {
-      label: 'Failed',
-      color: 'var(--color-error)',
-      bg: 'rgba(var(--color-error-rgb), 0.1)',
+      label: "Failed",
+      color: "var(--color-error)",
+      bg: "rgba(var(--color-error-rgb), 0.1)",
       code: detailExceptionCode ?? q.exception_code,
       exceptionType,
       exceptionPhase: clickHouseExceptionPhase(exceptionType),
     };
   }
   return {
-    label: 'Success',
-    color: 'var(--color-success)',
-    bg: 'rgba(var(--color-success-rgb), 0.1)',
+    label: "Success",
+    color: "var(--color-success)",
+    bg: "rgba(var(--color-success-rgb), 0.1)",
     exceptionType: null,
     exceptionPhase: null,
   };
@@ -117,19 +131,14 @@ function shortId(id: string): string {
 }
 
 function ratioLabel(numerator: number, denominator: number): string {
-  if (denominator <= 0) return numerator > 0 ? 'no result rows' : '-';
+  if (denominator <= 0) return numerator > 0 ? "no result rows" : "-";
   const ratio = numerator / denominator;
   if (ratio >= 100) return `${Math.round(ratio).toLocaleString()}:1`;
   if (ratio >= 10) return `${ratio.toFixed(1)}:1`;
   return `${ratio.toFixed(2)}:1`;
 }
 
-function percentLabel(value: number): string {
-  if (!Number.isFinite(value)) return '-';
-  if (value < 0.01 && value > 0) return '<0.01%';
-  if (value < 10) return `${value.toFixed(2)}%`;
-  return `${value.toFixed(1)}%`;
-}
+import "./OverviewTab.css";
 
 export const OverviewTab: React.FC<OverviewTabProps> = ({
   q,
@@ -146,992 +155,438 @@ export const OverviewTab: React.FC<OverviewTabProps> = ({
   showXRayCard,
   showThreadsCard,
   showFlamegraphCard,
+  showSpansCard = false,
+  showMiniVisuals = false,
   onOpenTab,
   onNavigateToQuery,
 }) => {
-  const status = statusInfo(
-    q,
-    queryDetail?.type,
-    queryDetail?.exception_code,
-  );
+  const status = statusInfo(q, queryDetail?.type, queryDetail?.exception_code);
+  const sql = querySqlText(q, queryDetail, "formatted", "");
   const readRows = Number(queryDetail?.read_rows ?? 0);
-  const readBytes = Number(queryDetail?.read_bytes ?? q.disk_read ?? 0);
   const resultRows = Number(queryDetail?.result_rows ?? 0);
-  const netBytes = Number(q.net_recv ?? 0) + Number(q.net_send ?? 0);
-  const diskBytes = Number(q.disk_read ?? 0) + Number(q.disk_write ?? 0);
-  const tables = queryDetail?.tables ?? [];
-  const columns = queryDetail?.columns ?? [];
-  const host = queryDetail?.hostname || q.hostname || 'unknown host';
-  const childCount = subQueries.length || distributedTopology?.nodes.filter(node => node.role !== 'coordinator' && node.role !== 'insert_client').length || 0;
-  const nodeCount = distributedTopology
-    ? new Set(distributedTopology.nodes.map(node => node.hostname).filter(Boolean)).size
-    : new Set(subQueries.map(sq => sq.hostname).filter(Boolean)).size;
-  const displayNodeCount = nodeCount || 1;
-  const hasDistributedExecution = childCount > 0;
-  const queryKind = queryDetail?.query_kind || q.query_kind || 'Query';
-  const db = queryDetail?.current_database || 'default';
-  const overviewSql = querySqlText(q, queryDetail, 'formatted', '');
-  const parentQueryId = queryDetail?.is_initial_query === 0 ? queryDetail.initial_query_id : '';
-  const queryRole = queryDetail ? queryRowRoleNoun(queryDetail.is_initial_query !== 0) : undefined;
-
+  const nodeCount =
+    new Set(
+      (distributedTopology?.nodes ?? subQueries)
+        .map((n) => n.hostname)
+        .filter(Boolean),
+    ).size || 1;
+  const childCount =
+    subQueries.length ||
+    distributedTopology?.nodes.filter(
+      (n) => n.role !== "coordinator" && n.role !== "insert_client",
+    ).length ||
+    0;
+  const parent =
+    queryDetail?.is_initial_query === 0 ? queryDetail.initial_query_id : "";
   const history = useMemo(() => {
-    const durations = similarQueries
-      .map(item => Number(item.query_duration_ms))
-      .filter(value => Number.isFinite(value) && value >= 0)
-      .sort((a, b) => a - b);
-    if (durations.length === 0) return null;
-    const current = Number(queryDetail?.query_duration_ms ?? q.duration_ms);
-    const rank = Math.round((durations.filter(value => value <= current).length / durations.length) * 100);
-    return {
-      count: durations.length,
-      p50: percentile(durations, 50),
-      p95: percentile(durations, 95),
-      rank,
-    };
-  }, [q.duration_ms, queryDetail?.query_duration_ms, similarQueries]);
-
-  const executionTab: OverviewTargetTab = hasDistributedExecution ? 'distributed' : (isSelectQuery ? 'pipeline' : 'details');
-
-  // QUERY_DETAIL already selects the full ProfileEvents map, so this costs no
-  // extra query — it just reads counters we were already fetching and dropping.
-  const timeBreakdown: TimeBreakdown = useMemo(
-    () => computeTimeBreakdown(queryDetail?.ProfileEvents, {
-      wallClockMs: Number(queryDetail?.query_duration_ms ?? q.duration_ms) || 0,
-    }),
-    [queryDetail?.ProfileEvents, queryDetail?.query_duration_ms, q.duration_ms],
-  );
-
-  // Only worth fetching once the bar has a parked segment worth explaining.
-  const parkedExplanation = useParkedTimeExplanation(
-    q,
-    timeBreakdown.available && timeBreakdown.segments.some(s => s.key === 'unaccounted' && s.share >= PARKED_EXPLANATION_THRESHOLD),
-  );
-
-  const pressureScores = {
-    time: history?.p95 ? Math.min(1, q.duration_ms / Math.max(history.p95, 1)) : Math.min(1, q.duration_ms / 60_000),
-    memory: Math.min(1, q.peak_memory / Math.max(q.peak_memory, 512 * 1024 * 1024)),
-    cpu: q.duration_ms > 0 ? Math.min(1, (q.cpu_us / 1000) / q.duration_ms) : 0,
-    io: Math.min(1, (readBytes + diskBytes + netBytes) / Math.max(readBytes + diskBytes + netBytes, 1024 * 1024 * 1024)),
-    scan: readRows > 0 ? Math.min(1, readRows / Math.max(readRows, resultRows || 1)) : 0,
-  };
-
+    const values = similarQueries
+      .map((n) => Number(n.query_duration_ms))
+      .filter((n) => Number.isFinite(n) && n >= 0);
+    return values.length
+      ? {
+          values,
+          median: percentile(
+            [...values].sort((a, b) => a - b),
+            50,
+          ),
+        }
+      : null;
+  }, [similarQueries]);
+  const historyText = history
+    ? `Median ${fmtMs(history.median)} · ${history.values.length} runs`
+    : isLoadingSimilarQueries
+      ? "Loading similar runs…"
+      : "No similar runs";
+  const io =
+    Number(queryDetail?.read_bytes ?? q.disk_read ?? 0) +
+    Number(q.disk_write ?? 0) +
+    Number(q.net_recv ?? 0) +
+    Number(q.net_send ?? 0);
+  const destinations: Destination[] = [
+    {
+      tab: "sql",
+      title: "SQL",
+      question: "Which SQL statement was executed?",
+      description: "Query text, tables and columns",
+      signal: `${queryDetail?.tables?.length ?? 0} tables · ${queryDetail?.columns?.length ?? 0} columns`,
+    },
+    {
+      tab: "details",
+      title: "Internals",
+      question: "Where was the time spent?",
+      description: "CPU, I/O and execution waits",
+      signal: `${fmtMs(q.duration_ms)} · ${formatBytes(q.peak_memory)}`,
+    },
+    {
+      tab: "analytics",
+      title: "Analysis",
+      question: "How much data did it read?",
+      description: "Rows scanned, filtering and results",
+      signal: queryDetail
+        ? `${formatNumberCompact(readRows)} rows → ${formatNumberCompact(resultRows)}`
+        : "Loading query details…",
+    },
+    ...(childCount > 0 || isLoadingSubQueries
+      ? [
+          {
+            tab: "distributed" as const,
+            title: "Distributed",
+            question: "How was work shared?",
+            description: "Child queries and execution across nodes",
+            signal: isLoadingSubQueries
+              ? "Loading child queries…"
+              : `${nodeCount} nodes · ${childCount} children`,
+          },
+        ]
+      : []),
+    ...(showHistoryCard
+      ? [
+          {
+            tab: "history" as const,
+            title: "History",
+            question: "Is this run typical?",
+            description: "Compare duration with similar executions",
+            signal: historyText,
+          },
+        ]
+      : []),
+    ...(showLogsCard
+      ? [
+          {
+            tab: "logs" as const,
+            title: "Logs",
+            question: "What did the server report?",
+            description: "Query-related server messages",
+            signal: "Server logs",
+          },
+        ]
+      : []),
+    ...(isSelectQuery
+      ? [
+          {
+            tab: "pipeline" as const,
+            title: "Pipeline",
+            question: "Where did processors wait?",
+            description: "Processor plan, throughput and bottlenecks",
+            signal: "DAG · waits · throughput",
+          },
+        ]
+      : []),
+    ...(showXRayCard
+      ? [
+          {
+            tab: "xray" as const,
+            title: "X-Ray",
+            question: "What happened over time?",
+            description: "CPU and memory during execution",
+            signal: "Process timeline · experimental",
+          },
+        ]
+      : []),
+    ...(showThreadsCard
+      ? [
+          {
+            tab: "threads" as const,
+            title: "Threads",
+            question: "Which threads did the work?",
+            description: "Per-thread CPU and memory usage",
+            signal: queryDetail?.thread_ids?.length
+              ? `${queryDetail.thread_ids.length} threads`
+              : "Thread activity",
+          },
+        ]
+      : []),
+    ...(showFlamegraphCard
+      ? [
+          {
+            tab: "flamegraph" as const,
+            title: "Flamegraph",
+            question: "Which functions used CPU?",
+            description: "Sampled call stacks and hotspots",
+            signal: "CPU profile",
+          },
+        ]
+      : []),
+    ...(showSpansCard
+      ? [
+          {
+            tab: "spans" as const,
+            title: "Spans",
+            question: "How did operations connect?",
+            description: "Trace spans and their timing",
+            signal: "Trace spans",
+          },
+        ]
+      : []),
+    ...(objectStorageSummary.hasObjectStorageIO
+      ? [
+          {
+            tab: "object-storage" as const,
+            title: "Object Storage",
+            question: "What did remote storage cost?",
+            description: "Requests, transferred bytes and I/O time",
+            signal: `${formatBytes(objectStorageSummary.bytesRead)} read · ${formatBytes(objectStorageSummary.bytesWritten)} written`,
+          },
+        ]
+      : []),
+  ];
   return (
-    <div style={{ display: 'flex', flexDirection: 'column', gap: 28 }}>
-      {overviewSql && (
-        <SqlOverviewStrip
-          sql={overviewSql}
-          onOpen={() => onOpenTab('sql')}
+    <div className="query-overview">
+      <div className="overview-identity">
+        <span
+          className="overview-status"
+          style={{ color: status.color, background: status.bg }}
+        >
+          {status.exceptionType ? "error" : status.label}
+        </span>
+        <Fact label="id" value={shortId(q.query_id)} title={q.query_id} />
+        {parent && (
+          <Fact
+            label="parent"
+            value={shortId(parent)}
+            title={parent}
+            onClick={() => onNavigateToQuery(parent)}
+          />
+        )}
+        <Fact
+          label="kind"
+          value={(
+            queryDetail?.query_kind ||
+            q.query_kind ||
+            "Query"
+          ).toLowerCase()}
         />
-      )}
-
-      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, minmax(0, 1fr))', gap: 16 }}>
-        <QuerySummaryPreview
-          q={q}
-          status={status}
-          queryKind={queryKind}
-          host={host}
-          queryRole={queryRole}
-          parentQueryId={parentQueryId}
-          onOpen={() => onOpenTab('sql')}
-          onNavigateToQuery={onNavigateToQuery}
-        />
-        <ResourcePressurePreview
-          scores={pressureScores}
-          durationMs={q.duration_ms}
-          cpuUs={q.cpu_us}
-          memoryBytes={q.peak_memory}
-          ioBytes={readBytes + diskBytes + netBytes}
-          onOpen={() => onOpenTab('details')}
-        />
-        <HistoryPreview
-          history={history}
-          durationMs={q.duration_ms}
-          similarQueries={similarQueries}
-          isLoading={isLoadingSimilarQueries}
-          onOpen={() => onOpenTab('history')}
-        />
-        <ParallelExecutionPreview
-          subQueries={subQueries}
-          nodeCount={displayNodeCount}
-          childCount={childCount}
-          rootDurationMs={q.duration_ms}
-          onOpen={() => onOpenTab(executionTab)}
+        {queryDetail && (
+          <Fact
+            label="role"
+            value={queryRowRoleNoun(queryDetail.is_initial_query !== 0)}
+          />
+        )}
+        <Fact label="user" value={q.user || "-"} />
+        <Fact
+          label="host"
+          value={queryDetail?.hostname || q.hostname || "unknown host"}
         />
       </div>
-
-      {(queryDetail?.exception || q.exception) && (
-        <div style={{
-          padding: '10px 12px',
-          borderRadius: 6,
-          background: 'rgba(var(--color-error-rgb), 0.08)',
-          border: '1px solid rgba(var(--color-error-rgb), 0.2)',
-        }}>
-          <div style={{
-            ...LABEL,
-            marginBottom: 6,
-            color: 'var(--color-error)',
-            display: 'flex',
-            alignItems: 'baseline',
-            gap: 8,
-            flexWrap: 'wrap',
-          }}>
-            <span>{status.exceptionType ?? 'ClickHouse exception'}</span>
-            {status.exceptionPhase && (
-              <span style={{ color: 'var(--text-muted)', textTransform: 'none', letterSpacing: 0 }}>
-                {status.exceptionPhase}
-              </span>
-            )}
-            {status.code !== undefined && status.code !== 0 && (
-              <span style={{ color: 'var(--text-muted)', textTransform: 'none', letterSpacing: 0 }}>
-                Code {status.code}
-              </span>
-            )}
+      {sql && (
+        <section className="overview-sql">
+          <div className="overview-sql-heading">
+            <strong>SQL preview</strong>
+            <button onClick={() => onOpenTab("sql")}>Open SQL ↗</button>
           </div>
-          <pre style={{
-            margin: 0,
-            fontFamily: 'monospace',
-            fontSize: 12,
-            color: 'var(--color-error)',
-            whiteSpace: 'pre-wrap',
-            wordBreak: 'break-word',
-          }}>
-            {queryDetail?.exception || q.exception}
-          </pre>
-        </div>
-      )}
-
-      <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
-        <div style={{ ...LABEL, color: 'var(--text-tertiary)', fontWeight: 700 }}>Explore</div>
-
-        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(220px, 1fr))', gap: 16 }}>
-          <ExploreDestinationCard
-          title="SQL"
-          accent="#58a6ff"
-          icon={<Icon><path d="M4 7h16" /><path d="M4 12h10" /><path d="M4 17h16" /></Icon>}
-          primary={queryKind.toUpperCase()}
-          secondary={`${db} / ${tables.length || 0} tables / ${columns.length || 0} columns`}
-          onAction={() => onOpenTab('sql')}
-        >
-          <ChipPreview values={[db, ...tables].filter(Boolean)} empty="query text and shape" color="#58a6ff" />
-        </ExploreDestinationCard>
-
-        <ExploreDestinationCard
-          title="Execution Internals"
-          accent="#a371f7"
-          icon={<Icon><circle cx="12" cy="12" r="9" /><path d="M12 7v5l3 2" /></Icon>}
-          primary={fmtMs(q.duration_ms)}
-          secondary={`CPU ${fmtUs(q.cpu_us)} / memory ${formatBytes(q.peak_memory)}`}
-          onAction={() => onOpenTab('details')}
-          contentMaxHeight={timeBreakdown.available ? 28 : undefined}
-        >
-          {/* Replaces an unlabelled cpu_us/duration_ms bar: same question —
-              how much of this time was CPU — but decomposed, labelled, and
-              with the waits named instead of lumped into the empty remainder. */}
-          {timeBreakdown.available
-            ? <TimeBreakdownBar breakdown={timeBreakdown} parked={parkedExplanation} wallClockMs={q.duration_ms} threads={queryDetail?.thread_ids?.length} />
-            : <ProgressBar value={q.duration_ms > 0 ? ((q.cpu_us / 1000) / q.duration_ms) * 100 : 0} color="#a371f7" />}
-        </ExploreDestinationCard>
-
-        <ExploreDestinationCard
-          title="Analysis"
-          accent="#3fb950"
-          icon={<Icon><path d="M4 19V9" /><path d="M10 19V5" /><path d="M16 19v-8" /><path d="M3 19h18" /></Icon>}
-          primary={`${formatNumberCompact(readRows)} → ${formatNumberCompact(resultRows)}`}
-          secondary={`scan ratio ${ratioLabel(readRows, resultRows)}`}
-          onAction={() => onOpenTab('analytics')}
-        >
-          <ReadResultBars readRows={readRows} resultRows={resultRows} />
-        </ExploreDestinationCard>
-
-        {objectStorageSummary.hasObjectStorageIO && (
-          <ExploreDestinationCard
-            title="Object Storage"
-            accent="#f0883e"
-            icon={<Icon><path d="M5 17.5h13a4 4 0 0 0 .7-7.94 6 6 0 0 0-11.54-1.7A4.5 4.5 0 0 0 5 17.5Z" /></Icon>}
-            primary={objectStoragePrimary(objectStorageSummary)}
-            secondary={objectStorageSecondary(objectStorageSummary)}
-            onAction={() => onOpenTab('object-storage')}
-          >
-            <ObjectStorageBars summary={objectStorageSummary} />
-          </ExploreDestinationCard>
-        )}
-
-        {hasDistributedExecution && (
-          <ExploreDestinationCard
-            title="Distributed"
-            accent="#d29922"
-            icon={<Icon><path d="M4 7h6" /><path d="M4 17h6" /><path d="M10 7l4 5-4 5" /><path d="M14 12h6" /></Icon>}
-            primary={`${displayNodeCount} ${displayNodeCount === 1 ? 'node' : 'nodes'}`}
-            secondary={`${childCount} child ${childCount === 1 ? 'query' : 'queries'}${isLoadingSubQueries ? ' / loading' : ''}`}
-            onAction={() => onOpenTab('distributed')}
-          >
-            <DotRow count={displayNodeCount} active={displayNodeCount} color="#d29922" />
-          </ExploreDestinationCard>
-        )}
-
-        {showLogsCard && (
-          <ExploreDestinationCard
-            title="Logs"
-            accent="#58a6ff"
-            icon={<Icon><path d="M4 6h16" /><path d="M4 12h12" /><path d="M4 18h8" /></Icon>}
-            primary="Server logs"
-            secondary={status.code ? `code ${status.code} · system.text_log entries` : 'system.text_log entries for this query'}
-            onAction={() => onOpenTab('logs')}
-          >
-            <ChipPreview values={['system.text_log']} empty="system.text_log" color="#58a6ff" />
-          </ExploreDestinationCard>
-        )}
-
-        {showHistoryCard && (
-          <ExploreDestinationCard
-            title="History"
-            accent="#58a6ff"
-            icon={<Icon><path d="M3 12a9 9 0 1 0 3-6.7" /><path d="M3 4v5h5" /><path d="M12 7v5l3 2" /></Icon>}
-            primary={history ? `p${history.rank}` : (isLoadingSimilarQueries ? 'loading' : 'no data')}
-            secondary={history ? `p50 ${fmtMs(history.p50)} / p95 ${fmtMs(history.p95)}` : 'similar executions'}
-            onAction={() => onOpenTab('history')}
-          >
-            <MiniSparkline values={similarQueries.map(item => Number(item.query_duration_ms)).filter(Number.isFinite)} color="#58a6ff" height={16} />
-          </ExploreDestinationCard>
-        )}
-
-        {isSelectQuery && (
-          <ExploreDestinationCard
-            title="Pipeline"
-            accent="#d29922"
-            icon={<Icon><path d="M6 5h12" /><path d="M8 12h8" /><path d="M10 19h4" /><path d="M12 5v14" /></Icon>}
-            primary="Processor plan"
-            secondary="DAG / waits / throughput"
-            onAction={() => onOpenTab('pipeline')}
-          >
-            <ChipPreview values={['DAG', 'Bars', 'Table']} empty="pipeline views" color="#d29922" />
-          </ExploreDestinationCard>
-        )}
-
-        {showXRayCard && (
-          <ExploreDestinationCard
-            title="X-Ray"
-            accent="#f0883e"
-            icon={<Icon><path d="M12 3v18" /><path d="M3 12h18" /><circle cx="12" cy="12" r="4" /><circle cx="12" cy="12" r="8" /></Icon>}
-            primary="Process timeline"
-            secondary="CPU / memory / query threads"
-            onAction={() => onOpenTab('xray')}
-          >
-            <ChipPreview values={['experimental']} empty="tracehouse.processes_history" color="#f0883e" />
-          </ExploreDestinationCard>
-        )}
-
-        {showThreadsCard && (
-          <ExploreDestinationCard
-            title="Threads"
-            accent="#a371f7"
-            icon={<Icon><path d="M7 4v16" /><path d="M12 4v16" /><path d="M17 4v16" /><path d="M4 8h16" /><path d="M4 16h16" /></Icon>}
-            primary={threadCardPrimary(queryDetail)}
-            secondary="CPU / memory by thread"
-            onAction={() => onOpenTab('threads')}
-          >
-            <ChipPreview values={['system.query_thread_log']} empty="system.query_thread_log" color="#a371f7" />
-          </ExploreDestinationCard>
-        )}
-
-          {showFlamegraphCard && (
-            <ExploreDestinationCard
-              title="Flamegraph"
-              accent="#f0883e"
-              icon={<Icon><path d="M12 3c3 3 5 5.5 5 9a5 5 0 0 1-10 0c0-2 1-3.5 2.4-5.2" /><path d="M12 13c1.3 1.2 2 2.2 2 3.4a2 2 0 0 1-4 0c0-1 .5-1.9 1.2-2.8" /></Icon>}
-              primary="CPU profile"
-              secondary="stack samples / hotspots"
-              onAction={() => onOpenTab('flamegraph')}
-            >
-              <ChipPreview values={['system.trace_log']} empty="system.trace_log" color="#f0883e" />
-            </ExploreDestinationCard>
-          )}
-        </div>
-      </div>
-    </div>
-  );
-};
-
-const SqlOverviewStrip: React.FC<{
-  sql: string;
-  onOpen: () => void;
-}> = ({ sql, onOpen }) => {
-  const lineCount = querySqlLineCount(sql);
-  return (
-    <div
-      style={{
-        ...PANEL,
-        border: '1px solid var(--border-primary)',
-        padding: '10px 12px',
-        boxShadow: 'var(--shadow-sm)',
-      }}
-    >
-      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'baseline', gap: 12, marginBottom: 6 }}>
-        <div style={{ ...LABEL, color: 'var(--text-tertiary)', fontWeight: 700, fontSize: 11 }}>
-          SQL preview
-        </div>
-        <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
-          <span style={{ fontFamily: 'monospace', fontSize: 11, color: 'var(--text-muted)', whiteSpace: 'nowrap' }}>
-            {lineCount} {lineCount === 1 ? 'line' : 'lines'}
-          </span>
-          <button
-            type="button"
-            onClick={onOpen}
+          <SqlHighlight
+            maxHeight={126}
             style={{
-              border: 'none',
-              background: 'transparent',
-              color: '#58a6ff',
-              cursor: 'pointer',
-              padding: 0,
-              fontFamily: 'monospace',
-              fontSize: 11,
+              height: Math.min(
+                126,
+                Math.max(48, querySqlLineCount(sql) * 18 + 16),
+              ),
+              overflow: "hidden",
+              width: "100%",
+              fontSize: 12,
+              background: "var(--bg-tertiary)",
+              borderRadius: 6,
             }}
           >
-            Open SQL
-          </button>
-        </div>
-      </div>
-      <SqlHighlight
-        maxHeight={126}
-        style={{
-          width: '100%',
-          height: 144,
-          padding: '8px 10px',
-          borderRadius: 6,
-          border: '1px solid var(--border-secondary)',
-          background: 'var(--bg-tertiary)',
-          color: 'var(--text-secondary)',
-          fontSize: 11,
-          lineHeight: 1.45,
-          boxSizing: 'border-box',
-          // CodeMirror's .cm-scroller owns scrolling. Making this wrapper
-          // scrollable as well produces two adjacent vertical scrollbars.
-          overflow: 'hidden',
-        }}
-      >
-        {sql}
-      </SqlHighlight>
-    </div>
-  );
-};
-
-const PreviewCard: React.FC<{
-  title: string;
-  titleBadge?: React.ReactNode;
-  action: string;
-  onOpen: () => void;
-  children: React.ReactNode;
-}> = ({ title, titleBadge, action, onOpen, children }) => {
-  const accent = previewAccent(title);
-  return (
-  <div
-    role="button"
-    tabIndex={0}
-    onClick={onOpen}
-    onKeyDown={event => {
-      if (event.currentTarget === event.target && (event.key === 'Enter' || event.key === ' ')) {
-        event.preventDefault();
-        onOpen();
-      }
-    }}
-    style={{
-      textAlign: 'left',
-      padding: 0,
-      borderRadius: 8,
-      border: '1px solid var(--border-primary)',
-      background: 'var(--bg-card)',
-      cursor: 'pointer',
-      minWidth: 0,
-      overflow: 'hidden',
-      display: 'flex',
-      flexDirection: 'column',
-      boxShadow: 'var(--shadow-sm)',
-      transition: 'border-color 0.15s ease, transform 0.15s ease, background 0.15s ease',
-      outline: 'none',
-    }}
-    onMouseEnter={event => {
-      event.currentTarget.style.borderColor = accent;
-      event.currentTarget.style.background = 'var(--bg-card-hover)';
-      event.currentTarget.style.transform = 'translateY(-1px)';
-    }}
-    onMouseLeave={event => {
-      event.currentTarget.style.borderColor = 'var(--border-primary)';
-      event.currentTarget.style.background = 'var(--bg-card)';
-      event.currentTarget.style.transform = 'none';
-    }}
-  >
-    <div style={{ padding: '12px 14px', display: 'flex', justifyContent: 'space-between', alignItems: 'baseline', gap: 10 }}>
-      <div style={{ display: 'flex', alignItems: 'center', gap: 7, minWidth: 0 }}>
-        <div style={{ ...LABEL, color: 'var(--text-tertiary)', fontWeight: 700, fontSize: 11 }}>{title}</div>
-        {titleBadge}
-      </div>
-      <div style={{ fontFamily: 'monospace', fontSize: 10, color: '#58a6ff', whiteSpace: 'nowrap' }}>
-        View {action.toLowerCase()}
-      </div>
-    </div>
-    <div style={{ padding: '0 14px 14px', flex: 1 }}>
-      {children}
-    </div>
-  </div>
-  );
-};
-
-function previewAccent(title: string): string {
-  switch (title) {
-    case 'Resource Pressure':
-      return '#d29922';
-    case 'Runtime':
-      return '#d29922';
-    case 'Parallel Execution':
-      return '#d29922';
-    default:
-      return '#58a6ff';
-  }
-}
-
-const QuerySummaryPreview: React.FC<{
-  q: QuerySeries;
-  status: ReturnType<typeof statusInfo>;
-  queryKind: string;
-  host: string;
-  queryRole?: string;
-  parentQueryId?: string;
-  onOpen: () => void;
-  onNavigateToQuery: (queryId: string) => void;
-}> = ({ q, status, queryKind, host, queryRole, parentQueryId, onOpen, onNavigateToQuery }) => (
-  <PreviewCard
-    title="Query Summary"
-    titleBadge={(
-      <span
-        title={status.exceptionType
-          ? `ClickHouse query_log.type · failed ${status.exceptionPhase}`
-          : status.label}
-        style={{
-          padding: '2px 6px',
-          borderRadius: 999,
-          background: status.bg,
-          color: status.color,
-          fontSize: 8,
-          fontWeight: 700,
-          lineHeight: 1.25,
-          letterSpacing: '0.04em',
-          textTransform: 'uppercase',
-          whiteSpace: 'nowrap',
-        }}
-      >
-        {status.exceptionType ? 'error' : status.label}
-      </span>
-    )}
-    action="SQL"
-    onOpen={onOpen}
-  >
-    <div style={{ display: 'flex', flexDirection: 'column', gap: 5, minWidth: 0 }}>
-      <SummaryFact label="id" value={shortId(q.query_id)} title={q.query_id} monospace accent />
-      {parentQueryId && (
-        <SummaryFact
-          label="parent"
-          value={shortId(parentQueryId)}
-          title={parentQueryId}
-          monospace
-          accent
-          onActivate={() => onNavigateToQuery(parentQueryId)}
-        />
+            {sql}
+          </SqlHighlight>
+        </section>
       )}
-      <SummaryFact label="kind" value={queryKind.toLowerCase()} />
-      {queryRole && <SummaryFact label="role" value={queryRole} />}
-      <SummaryFact label="user" value={q.user || '-'} />
-      <SummaryFact label="host" value={host} title={host} monospace />
+      {(queryDetail?.exception || q.exception) && (
+        <section className="overview-error">
+          <div>
+            {status.exceptionType ?? "ClickHouse exception"}{" "}
+            {status.exceptionPhase && <span>{status.exceptionPhase}</span>}{" "}
+            {Boolean(status.code) && <span>Code {status.code}</span>}
+          </div>
+          <pre>{queryDetail?.exception || q.exception}</pre>
+        </section>
+      )}
+      <section className="overview-summary" aria-label="Query summary">
+        <Metric
+          label="Duration"
+          value={fmtMs(q.duration_ms)}
+          detail={historyText}
+        />
+        <Metric
+          label="Resources"
+          value={formatBytes(q.peak_memory)}
+          detail={`CPU ${fmtUs(q.cpu_us)} · I/O ${formatBytes(io)}`}
+        />
+        <Metric
+          label="Rows read → returned"
+          value={
+            queryDetail
+              ? `${formatNumberCompact(readRows)} → ${formatNumberCompact(resultRows)}`
+              : "—"
+          }
+          detail={
+            queryDetail
+              ? `Scan ratio ${ratioLabel(readRows, resultRows)}`
+              : "Loading query details…"
+          }
+        />
+        <Metric
+          label="Distribution"
+          value={`${nodeCount} ${nodeCount === 1 ? "node" : "nodes"}`}
+          detail={
+            isLoadingSubQueries
+              ? "Loading child queries…"
+              : `${childCount} child queries${queryDetail?.thread_ids?.length ? ` · ${queryDetail.thread_ids.length} threads` : ""}`
+          }
+        />
+      </section>
+      <section>
+        <div className="overview-explore-heading">
+          <h3>Explore this query</h3>
+        </div>
+        <div className="overview-destinations">
+          {destinations.map((d) => (
+            <button
+              className="overview-destination"
+              key={d.tab}
+              onClick={() => onOpenTab(d.tab)}
+            >
+              <div className="overview-destination-title">
+                <strong>{d.title}</strong>
+                <span aria-hidden="true">↗</span>
+              </div>
+              <h4>{d.question}</h4>
+              <p>{d.description}</p>
+              <div className="overview-signal">
+                <small>{d.signal}</small>
+                {showMiniVisuals && (
+                  <MiniVisual tab={d.tab} />
+                )}
+              </div>
+            </button>
+          ))}
+        </div>
+      </section>
     </div>
-  </PreviewCard>
-);
-
-const SummaryFact: React.FC<{
+  );
+};
+interface Destination {
+  tab: OverviewTargetTab;
+  title: string;
+  question: string;
+  description: string;
+  signal: string;
+}
+function Fact({
+  label,
+  value,
+  title,
+  onClick,
+}: {
   label: string;
   value: string;
   title?: string;
-  monospace?: boolean;
-  accent?: boolean;
-  onActivate?: () => void;
-}> = ({ label, value, title, monospace = false, accent = false, onActivate }) => {
-  const valueStyle: React.CSSProperties = {
-    minWidth: 0,
-    padding: 0,
-    color: accent ? 'var(--accent-blue)' : 'var(--text-primary)',
-    fontFamily: monospace ? 'var(--font-mono, monospace)' : 'inherit',
-    fontSize: 11,
-    fontWeight: accent ? 600 : 500,
-    lineHeight: 1.3,
-    overflow: 'hidden',
-    textOverflow: 'ellipsis',
-    whiteSpace: 'nowrap',
-  };
-
+  onClick?: () => void;
+}) {
   return (
-    <div style={{ display: 'grid', gridTemplateColumns: '48px minmax(0, 1fr)', gap: 8, alignItems: 'baseline', minWidth: 0 }}>
-      <span style={{
-        color: 'var(--text-muted)',
-        fontSize: 9,
-        fontWeight: 700,
-        letterSpacing: '0.06em',
-        lineHeight: 1.3,
-        textTransform: 'uppercase',
-      }}>
-        {label}
-      </span>
-      {onActivate ? (
-        <button
-          type="button"
-          title={title ?? value}
-          onClick={(event) => {
-            event.stopPropagation();
-            onActivate();
-          }}
-          style={{
-            ...valueStyle,
-            width: 'fit-content',
-            maxWidth: '100%',
-            border: 'none',
-            background: 'transparent',
-            cursor: 'pointer',
-            textAlign: 'left',
-          }}
-        >
+    <div className="overview-fact">
+      <span>{label}</span>
+      {onClick ? (
+        <button onClick={onClick} title={title}>
           {value}
         </button>
       ) : (
-        <span title={title ?? value} style={valueStyle}>{value}</span>
+        <strong title={title ?? value}>{value}</strong>
       )}
     </div>
   );
-};
-
-const HistoryPreview: React.FC<{
-  history: { count: number; p50: number; p95: number; rank: number } | null;
-  durationMs: number;
-  similarQueries: SimilarQuery[];
-  isLoading: boolean;
-  onOpen: () => void;
-}> = ({ history, durationMs, similarQueries, isLoading, onOpen }) => (
-  <PreviewCard title="History" action="History" onOpen={onOpen}>
-    <div style={{ fontFamily: 'monospace', fontSize: 18, color: 'var(--text-primary)', lineHeight: 1.15, marginBottom: 6 }}>
-      {history ? `p${history.rank}` : (isLoading ? 'loading' : 'no data')}
-    </div>
-    <div style={{ fontFamily: 'monospace', fontSize: 11, color: 'var(--text-secondary)', marginBottom: 18 }}>
-      {history ? `current ${fmtMs(durationMs)} / p50 ${fmtMs(history.p50)}` : 'similar executions'}
-    </div>
-    <div style={{ minHeight: 32 }}>
-      <MiniSparkline values={similarQueries.map(item => Number(item.query_duration_ms)).filter(Number.isFinite)} color="#58a6ff" />
-    </div>
-    {history && (
-      <div style={{ marginTop: 8, fontFamily: 'monospace', fontSize: 10, color: 'var(--text-muted)' }}>
-        p95 {fmtMs(history.p95)} / {history.count} runs
-      </div>
-    )}
-  </PreviewCard>
-);
-
-const ResourcePressurePreview: React.FC<{
-  scores: { time: number; memory: number; cpu: number; io: number; scan: number };
-  durationMs: number;
-  cpuUs: number;
-  memoryBytes: number;
-  ioBytes: number;
-  onOpen: () => void;
-}> = ({ scores, durationMs, cpuUs, memoryBytes, ioBytes, onOpen }) => (
-  <PreviewCard title="Resource Pressure" action="Internals" onOpen={onOpen}>
-    <div style={{ display: 'grid', gridTemplateColumns: '144px minmax(0, 1fr)', gap: 20, alignItems: 'center' }}>
-      <PressureGlyphPanel scores={scores} />
-      <div>
-        <MetricBar label="Time" value={fmtMs(durationMs)} ratio={scores.time} color="#58a6ff" />
-        <MetricBar label="Memory" value={formatBytes(memoryBytes)} ratio={scores.memory} color="#a371f7" />
-        <MetricBar label="CPU" value={fmtUs(cpuUs)} ratio={scores.cpu} color="#d29922" />
-        <MetricBar label="I/O" value={formatBytes(ioBytes)} ratio={scores.io} color="#3fb950" />
-        <MetricBar label="Scan" value={scores.scan > 0 ? percentLabel(scores.scan * 100) : 'n/a'} ratio={scores.scan} color="#8b949e" />
-      </div>
-    </div>
-  </PreviewCard>
-);
-
-const PressureGlyphPanel: React.FC<{ scores: { time: number; memory: number; cpu: number; io: number; scan: number } }> = ({ scores }) => (
-  <div style={{ position: 'relative', display: 'grid', placeItems: 'center', height: 128, width: 144, minWidth: 0 }}>
-    <PressureGlyph scores={scores} size={94} />
-    <AxisLabel label="Time" style={{ top: 0, left: '50%', transform: 'translateX(-50%)' }} />
-    <AxisLabel label="Mem" style={{ top: 38, right: 0 }} />
-    <AxisLabel label="CPU" style={{ bottom: 4, right: 18 }} />
-    <AxisLabel label="I/O" style={{ bottom: 4, left: 22 }} />
-    <AxisLabel label="Scan" style={{ top: 38, left: 0 }} />
-  </div>
-);
-
-const AxisLabel: React.FC<{ label: string; style: React.CSSProperties }> = ({ label, style }) => (
-  <div style={{
-    position: 'absolute',
-    color: 'var(--text-muted)',
-    fontSize: 8,
-    fontWeight: 700,
-    letterSpacing: '0.05em',
-    textTransform: 'uppercase',
-    ...style,
-  }}>
-    {label}
-  </div>
-);
-
-const PressureGlyph: React.FC<{ scores: { time: number; memory: number; cpu: number; io: number; scan: number }; size?: number }> = ({ scores, size = 76 }) => {
-  const values = [scores.time, scores.memory, scores.cpu, scores.io, scores.scan];
-  const center = 48;
-  const radius = 35;
-  const points = values.map((score, i) => {
-    const angle = (-90 + i * 72) * Math.PI / 180;
-    const r = 8 + Math.max(0, Math.min(1, score)) * radius;
-    return `${center + Math.cos(angle) * r},${center + Math.sin(angle) * r}`;
-  }).join(' ');
-  return (
-    <svg width={size} height={size} viewBox="0 0 96 96" aria-hidden="true" style={{ flexShrink: 0 }}>
-      <circle cx={center} cy={center} r={radius} fill="transparent" stroke="var(--border-primary)" strokeWidth="2" />
-      {[0, 1, 2, 3, 4].map((i) => {
-        const angle = (-90 + i * 72) * Math.PI / 180;
-        return <line key={i} x1={center} y1={center} x2={center + Math.cos(angle) * radius} y2={center + Math.sin(angle) * radius} stroke="var(--border-primary)" />;
-      })}
-      <polygon points={points} fill="rgba(210,153,34,0.2)" stroke="#d29922" strokeWidth="3" />
-    </svg>
-  );
-};
-
-const ParallelExecutionPreview: React.FC<{
-  subQueries: SubQueryInfo[];
-  nodeCount: number;
-  childCount: number;
-  rootDurationMs: number;
-  onOpen: () => void;
-}> = ({ subQueries, nodeCount, childCount, rootDurationMs, onOpen }) => {
-  // A query that never left this node is still an execution worth describing —
-  // it just has one participant. Saying "single execution" reads as a fact
-  // about the query; "1 node / 0 child queries" reads like missing data.
-  const distributed = childCount > 0;
-
-  return (
-    <PreviewCard title="Parallel Execution" action={distributed ? 'Distributed' : 'Pipeline'} onOpen={onOpen}>
-      <div style={{
-        display: 'flex',
-        justifyContent: 'space-between',
-        alignItems: 'baseline',
-        gap: 10,
-        marginBottom: 10,
-      }}>
-        <div style={{ fontFamily: 'monospace', fontSize: 18, color: 'var(--text-primary)' }}>
-          {distributed ? `${nodeCount} ${nodeCount === 1 ? 'node' : 'nodes'}` : 'Single execution'}
-        </div>
-        {distributed && (
-          <div style={{ fontFamily: 'monospace', fontSize: 12, color: '#a371f7' }}>
-            {childCount} child {childCount === 1 ? 'query' : 'queries'}
-          </div>
-        )}
-      </div>
-
-      {distributed && <ChildQueryBars subQueries={subQueries} rootDurationMs={rootDurationMs} />}
-    </PreviewCard>
-  );
-};
-
-const MetricBar: React.FC<{ label: string; value: string; ratio: number; color: string; title?: string; labelWidth?: number }> = ({ label, value, ratio, color, title, labelWidth = 42 }) => (
-  <div
-    title={title}
-    style={{
-      display: 'grid',
-      gridTemplateColumns: `${labelWidth}px minmax(0, 1fr) 72px`,
-      columnGap: 6,
-      alignItems: 'center',
-      marginBottom: 7,
-      cursor: title ? 'help' : undefined,
-    }}
-  >
-    <div style={{ fontFamily: 'monospace', fontSize: 10, color: 'var(--text-muted)' }}>{label}</div>
-    <div style={{ height: 8, borderRadius: 999, overflow: 'hidden', background: 'var(--bg-tertiary)' }}>
-      <div style={{ width: `${Math.max(0, Math.min(100, ratio * 100))}%`, height: '100%', borderRadius: 999, background: color }} />
-    </div>
-    <div style={{ fontFamily: 'monospace', fontSize: 10, color: 'var(--text-secondary)', textAlign: 'right', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', paddingRight: 4 }}>
-      {value}
-    </div>
-  </div>
-);
-
-function Icon({ children }: { children: React.ReactNode }) {
-  return (
-    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
-      {children}
-    </svg>
-  );
 }
-
-const ExploreDestinationCard: React.FC<{
-  title: string;
-  accent: string;
-  icon: React.ReactNode;
-  primary: string;
-  secondary: string;
-  onAction: () => void;
-  children: React.ReactNode;
-  /**
-   * Height of the content slot. Defaults to a single 8px bar or chip row;
-   * raise it for content that needs a second line, such as a bar with its own
-   * legend. Opt-in so one card growing does not resize every other card.
-   */
-  contentMaxHeight?: number;
-}> = ({ title, accent, icon, primary, secondary, onAction, children, contentMaxHeight = 16 }) => (
-  <button
-    type="button"
-    onClick={onAction}
-    style={{
-      ...PANEL,
-      border: '1px solid var(--border-primary)',
-      minHeight: 90,
-      padding: '7px 10px',
-      color: 'inherit',
-      font: 'inherit',
-      textAlign: 'left',
-      cursor: 'pointer',
-      display: 'flex',
-      flexDirection: 'column',
-      gap: 4,
-      minWidth: 0,
-      boxShadow: 'var(--shadow-sm)',
-      transition: 'border-color 0.15s ease, transform 0.15s ease, background 0.15s ease',
-    }}
-    onMouseEnter={event => {
-      event.currentTarget.style.borderColor = accent;
-      event.currentTarget.style.background = 'var(--bg-card-hover)';
-      event.currentTarget.style.transform = 'translateY(-1px)';
-    }}
-    onMouseLeave={event => {
-      event.currentTarget.style.borderColor = 'var(--border-primary)';
-      event.currentTarget.style.background = 'var(--bg-card)';
-      event.currentTarget.style.transform = 'none';
-    }}
-  >
-    <div style={{ display: 'flex', alignItems: 'center', gap: 10, color: 'var(--text-secondary)' }}>
-      <span style={{ display: 'flex', alignItems: 'center', gap: 9, minWidth: 0 }}>
-        <span style={{ color: accent, display: 'flex', alignItems: 'center', flexShrink: 0 }}>{icon}</span>
-        <span style={{ fontSize: 12, fontWeight: 700, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{title}</span>
-      </span>
-    </div>
-
+function Metric({
+  label,
+  value,
+  detail,
+}: {
+  label: string;
+  value: string;
+  detail: string;
+}) {
+  return (
     <div>
-      <div style={{ color: 'var(--text-primary)', fontSize: 16, lineHeight: 1.15, fontWeight: 700, letterSpacing: 0, fontVariantNumeric: 'tabular-nums' }}>
-        {primary}
-      </div>
-      <div style={{ marginTop: 2, color: 'var(--text-secondary)', fontSize: 10, lineHeight: 1.25, minHeight: 12, maxHeight: 13, overflow: 'hidden', whiteSpace: 'nowrap', textOverflow: 'ellipsis' }}>
-        {secondary}
-      </div>
-    </div>
-
-    <div style={{ flex: 1, minHeight: 14, maxHeight: contentMaxHeight, overflow: 'hidden', display: 'flex', flexDirection: 'column', justifyContent: 'center' }}>
-      {children}
-    </div>
-  </button>
-);
-
-const ChipPreview: React.FC<{ values: string[]; empty: string; color: string }> = ({ values, empty, color }) => {
-  const shown = values.slice(0, 5);
-  if (shown.length === 0) {
-    return <div style={{ fontFamily: 'monospace', fontSize: 10, color: 'var(--text-muted)' }}>{empty}</div>;
-  }
-  return (
-    <div style={{ display: 'flex', flexWrap: 'nowrap', gap: 4, overflow: 'hidden', minWidth: 0 }}>
-      {shown.map(value => (
-        <span
-          key={value}
-          title={value}
-          style={{
-            maxWidth: 90,
-            minWidth: 0,
-            overflow: 'hidden',
-            textOverflow: 'ellipsis',
-            whiteSpace: 'nowrap',
-            padding: '2px 5px',
-            borderRadius: 5,
-            border: `1px solid ${color}55`,
-            background: `${color}14`,
-            color,
-            fontFamily: 'monospace',
-            fontSize: 9,
-          }}
-        >
-          {value}
-        </span>
-      ))}
-      {values.length > shown.length && (
-        <span style={{ flexShrink: 0, fontFamily: 'monospace', fontSize: 9, color: 'var(--text-muted)', padding: '2px 0' }}>
-          +{values.length - shown.length}
-        </span>
-      )}
+      <small>{label}</small>
+      <strong>{value}</strong>
+      <span>{detail}</span>
     </div>
   );
+}
+const illustrations: Record<OverviewTargetTab, React.ReactNode> = {
+  details: <>{[26,17,14,19].map((width,i) => <rect key={i} x={[2,30,49,65][i]} y="7" width={width === 19 ? 13 : width} height="6" rx="2" />)}</>,
+  analytics: <><rect x="2" y="4" width="76" height="4" rx="2"/><rect x="2" y="12" width="12" height="4" rx="2"/></>,
+  distributed: <>{[76,51,42,34].map((width,i)=><rect key={i} x="2" y={i*5+1} width={width} height="3" rx="1"/>)}</>,
+  history: <path d="M2 12L18 8L33 10L49 4L64 7L78 5"/>,
+  sql: <path d="M3 4h17m5 0h30M3 10h9m5 0h47M3 16h23m5 0h17" />,
+  logs: <path d="M3 4h3m6 0h61M3 10h3m6 0h44M3 16h3m6 0h54" />,
+  pipeline: (
+    <>
+      <path d="M13 10h15m12 0h13M28 10V3h25M28 10v7h25" />
+      {[
+        [3, 7, 10],
+        [30, 7, 10],
+        [54, 0, 12],
+        [54, 7, 12],
+        [54, 14, 12],
+      ].map(([x, y, w]) => (
+        <rect key={`${x}-${y}`} x={x} y={y} width={w} height="6" rx="2" />
+      ))}
+    </>
+  ),
+  xray: (
+    <>
+      <path d="M2 18h76M3 14l9-2 9 1 9-7 9 4 9-6 9 5 9-1 11 4" />
+      <path d="M3 16l10-1 10-1 10 1 10-3 10 1 10-2 14 1" />
+    </>
+  ),
+  threads: (
+    <path d="M3 3h9m6 0h21m6 0h12M3 8h23m6 0h14m6 0h24M3 13h15m6 0h35M3 18h31m6 0h12m6 0h15" />
+  ),
+  flamegraph: (
+    <>
+      {[
+        [2, 15, 76],
+        [2, 10, 44],
+        [48, 10, 30],
+        [2, 5, 19],
+        [23, 5, 23],
+        [49, 5, 15],
+        [24, 0, 14],
+      ].map(([x, y, w]) => (
+        <rect key={`${x}-${y}`} x={x} y={y} width={w} height="4" rx="1" />
+      ))}
+    </>
+  ),
+  spans: <path d="M3 3h72M10 8h35M18 13h19M49 8h21M54 13h12M23 18h11" />,
+  "object-storage": (
+    <>
+      <path d="M8 10h20m24 0h20M28 10l12-7 12 7-12 7Z" />
+      <path d="M8 5v10m64-10v10" />
+    </>
+  ),
 };
-
-function ReadResultBars({ readRows, resultRows }: { readRows: number; resultRows: number }) {
-  const resultPct = readRows > 0 ? (resultRows / readRows) * 100 : 0;
+function MiniVisual({tab}: {tab: OverviewTargetTab}) {
+  const visual = illustrations[tab];
+  const explanation = "Static illustration of what this tab offers; not measured query data.";
   return (
-    <div style={{ display: 'flex', flexDirection: 'column', gap: 3 }}>
-      <div style={{ height: 5, borderRadius: 999, overflow: 'hidden', background: 'rgba(63, 185, 80, 0.14)' }}>
-        <div style={{ width: readRows > 0 ? '100%' : 0, height: '100%', borderRadius: 999, background: '#3fb950' }} />
-      </div>
-      <div style={{ height: 5, borderRadius: 999, overflow: 'hidden', background: 'rgba(163, 113, 247, 0.14)' }}>
-        <div style={{
-          width: resultRows > 0 ? `${Math.max(2, Math.min(100, resultPct))}%` : 0,
-          height: '100%',
-          borderRadius: 999,
-          background: '#a371f7',
-        }} />
-      </div>
-    </div>
+    <span
+      className={`overview-mini overview-mini-${tab}`}
+      tabIndex={0}
+      role="img"
+      aria-label={explanation}
+      onClick={(e) => e.stopPropagation()}
+      onKeyDown={(e) => {
+        if (e.key === "Enter" || e.key === " ") e.stopPropagation();
+      }}
+    >
+      <svg viewBox="0 0 80 20" aria-hidden="true">
+        {visual}
+      </svg>
+      <span className="overview-mini-tooltip" aria-hidden="true">
+        {explanation}
+      </span>
+    </span>
   );
 }
-
-function objectStorageRequestCount(summary: ObjectStorageProfileSummary): number {
-  const readRequests = Math.max(summary.readRequests, summary.getRequests + summary.headRequests);
-  const writeRequests = Math.max(summary.writeRequests, summary.putRequests + summary.postRequests);
-  return readRequests + writeRequests + summary.listRequests;
-}
-
-function objectStoragePrimary(summary: ObjectStorageProfileSummary): string {
-  if (summary.bytesRead > 0) return `${formatBytes(summary.bytesRead)} read`;
-  if (summary.bytesWritten > 0) return `${formatBytes(summary.bytesWritten)} write`;
-  return `${formatNumberCompact(objectStorageRequestCount(summary))} requests`;
-}
-
-function objectStorageSecondary(summary: ObjectStorageProfileSummary): string {
-  const requests = objectStorageRequestCount(summary);
-  const elapsedUs = Math.max(
-    summary.bufferReadMicroseconds,
-    summary.bufferWriteMicroseconds,
-    summary.s3ReadMicroseconds,
-    summary.s3WriteMicroseconds,
-  );
-  const requestPart = requests > 0 ? `${formatNumberCompact(requests)} requests` : 'object storage I/O';
-  return elapsedUs > 0 ? `${requestPart} / ${fmtUs(elapsedUs)}` : requestPart;
-}
-
-function threadCardPrimary(queryDetail: QueryDetailType | null): string {
-  const threadCount = queryDetail?.thread_ids?.length ?? 0;
-  if (threadCount > 0) return `${threadCount} ${threadCount === 1 ? 'thread' : 'threads'}`;
-  return 'Threads';
-}
-
-function ObjectStorageBars({ summary }: { summary: ObjectStorageProfileSummary }) {
-  const maxBytes = Math.max(summary.bytesRead, summary.bytesWritten, 1);
-  const rows = [
-    { label: 'read', value: summary.bytesRead, color: '#3fb950' },
-    ...(summary.bytesWritten > 0 ? [{ label: 'write', value: summary.bytesWritten, color: '#f0883e' }] : []),
-  ];
-  return (
-    <div style={{ display: 'flex', flexDirection: 'column', gap: 3 }}>
-      {rows.map(row => (
-        <div key={row.label} style={{ display: 'grid', gridTemplateColumns: '34px 1fr', gap: 5, alignItems: 'center' }}>
-          <div style={{ fontFamily: 'monospace', fontSize: 9, color: 'var(--text-muted)' }}>{row.label}</div>
-          <div style={{ height: 5, borderRadius: 999, overflow: 'hidden', background: `${row.color}16` }}>
-            <div
-              style={{
-                width: row.value > 0 ? `${Math.max(2, Math.min(100, (row.value / maxBytes) * 100))}%` : 0,
-                height: '100%',
-                borderRadius: 999,
-                background: row.color,
-              }}
-            />
-          </div>
-        </div>
-      ))}
-      {rows.length === 1 && (
-        <div style={{ fontFamily: 'monospace', fontSize: 9, color: 'var(--text-muted)', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
-          {summary.patterns.slice(0, 2).join(' / ') || 'remote storage'}
-        </div>
-      )}
-    </div>
-  );
-}
-
-function ProgressBar({ value, color }: { value: number; color: string }) {
-  const pct = Math.max(0, Math.min(100, value));
-  return (
-    <div style={{ height: 6, borderRadius: 999, overflow: 'hidden', background: 'var(--bg-tertiary)' }}>
-      <div style={{ width: `${pct}%`, height: '100%', borderRadius: 999, background: color, transition: 'width 0.2s ease' }} />
-    </div>
-  );
-}
-
-function DotRow({ count, active, color }: { count: number; active: number; color: string }) {
-  const visible = Math.max(1, Math.min(count, 8));
-  return (
-    <div style={{ display: 'flex', gap: 4, alignItems: 'center', height: 14 }}>
-      {Array.from({ length: visible }, (_, index) => (
-        <span
-          key={index}
-          style={{
-            width: 7,
-            height: 7,
-            borderRadius: '50%',
-            background: index < active ? color : 'transparent',
-            border: `1px solid ${index < active ? color : 'var(--border-primary)'}`,
-            boxShadow: index < active ? `0 0 0 2px ${color}18` : 'none',
-          }}
-        />
-      ))}
-    </div>
-  );
-}
-
-function MiniSparkline({ values, color, height = 24 }: { values: number[]; color: string; height?: number }) {
-  const points = values.slice(-18);
-  if (points.length < 2) {
-    return <div style={{ height }} />;
-  }
-
-  const min = Math.min(...points);
-  const max = Math.max(...points);
-  const span = Math.max(max - min, 1);
-  const d = points
-    .map((value, index) => {
-      const x = (index / (points.length - 1)) * 100;
-      const y = 28 - ((value - min) / span) * 24 - 2;
-      return `${index === 0 ? 'M' : 'L'} ${x.toFixed(2)} ${y.toFixed(2)}`;
-    })
-    .join(' ');
-
-  return (
-    <svg viewBox="0 0 100 32" preserveAspectRatio="none" style={{ width: '100%', height, display: 'block' }}>
-      <path d={d} fill="none" stroke={color} strokeWidth="2.4" strokeLinecap="round" strokeLinejoin="round" vectorEffect="non-scaling-stroke" />
-    </svg>
-  );
-}
-
-const ChildQueryBars: React.FC<{ subQueries: SubQueryInfo[]; rootDurationMs: number }> = ({ subQueries, rootDurationMs }) => {
-  if (subQueries.length === 0) {
-    return (
-      <div style={{ height: 46, display: 'flex', alignItems: 'center', color: 'var(--text-muted)', fontFamily: 'monospace', fontSize: 11 }}>
-        local or not detected
-      </div>
-    );
-  }
-  const rows = subQueries.slice(0, 4);
-  const maxDuration = Math.max(rootDurationMs, ...rows.map(row => Number(row.query_duration_ms) || 0), 1);
-  return (
-    <div style={{ display: 'flex', flexDirection: 'column', gap: 6, marginTop: 2 }}>
-      {rows.map(row => {
-        const duration = Number(row.query_duration_ms) || 0;
-        return (
-          <div key={row.query_id} style={{ display: 'grid', gridTemplateColumns: '58px 1fr 44px', gap: 8, alignItems: 'center' }}>
-            <div style={{ fontFamily: 'monospace', fontSize: 10, color: 'var(--text-muted)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
-              {row.hostname.split('.')[0]}
-            </div>
-            <div style={{ height: 8, borderRadius: 3, background: 'var(--bg-tertiary)', overflow: 'hidden' }}>
-              <div style={{ width: `${Math.max(2, (duration / maxDuration) * 100)}%`, height: '100%', borderRadius: 3, background: '#d29922' }} />
-            </div>
-            <div style={{ fontFamily: 'monospace', fontSize: 10, color: 'var(--text-secondary)', textAlign: 'right' }}>
-              {fmtMs(duration)}
-            </div>
-          </div>
-        );
-      })}
-    </div>
-  );
-};

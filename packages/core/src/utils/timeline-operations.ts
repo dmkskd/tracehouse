@@ -8,6 +8,7 @@
  * so the UI layer only renders.
  */
 import type { QuerySeries, MergeSeries, MutationSeries } from '../types/timeline.js';
+import { MERGE_CATEGORIES, type MergeCategory } from './merge-classification.js';
 
 export type OperationKind = 'query' | 'merge' | 'mutation';
 
@@ -371,26 +372,18 @@ export function findOperationRow(
 
 
 /**
- * What the table's one flexible column shows for a row. Queries and merges
- * carry different facts, and a column that means "user" only for queries wastes
- * its width on every merge.
+ * The merge reason worth calling out next to the operation.
+ *
+ * `Regular` is what almost every merge is, so printing it on every row costs a
+ * line of noise and tells the reader nothing. Only the reasons that say
+ * something happened — TTL work, mutations, lightweight deletes — come back
+ * here; everything else returns null and renders nothing.
  */
-export type OperationContextCell =
-  | { type: 'user'; user: string }
-  | { type: 'part'; reason?: string; readBytes: number; writtenBytes: number; progress?: number }
-  | { type: 'none' };
-
-export function describeOperationContext(row: OperationRow): OperationContextCell {
-  if (row.kind === 'query') {
-    return row.user ? { type: 'user', user: row.user } : { type: 'none' };
-  }
-  return {
-    type: 'part',
-    reason: row.kind === 'merge' ? row.mergeReason : undefined,
-    readBytes: row.diskReadBytes,
-    writtenBytes: row.diskWriteBytes,
-    progress: row.isRunning ? row.progress : undefined,
-  };
+export function notableMergeReason(row: OperationRow): MergeCategory | null {
+  if (row.kind !== 'merge') return null;
+  const reason = row.mergeReason as MergeCategory | undefined;
+  if (!reason || reason === 'Regular') return null;
+  return MERGE_CATEGORIES[reason] ? reason : null;
 }
 
 /**

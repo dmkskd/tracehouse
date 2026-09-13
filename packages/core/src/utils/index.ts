@@ -48,7 +48,7 @@ export type { BlockedCategory, BlockedStackRow, BlockedCategorySummary } from '.
 export {
   buildOperationRows,
   countOperationRows,
-  describeOperationContext,
+  notableMergeReason,
   filterOperationRowsByKind,
   findOperationRow,
   getOperationMetric,
@@ -62,7 +62,6 @@ export {
   summarizeOperations,
 } from './timeline-operations.js';
 export type {
-  OperationContextCell,
   OperationCounts,
   OperationKind,
   OperationKindFilter,

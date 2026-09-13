@@ -14,7 +14,7 @@ import type {
   OperationSortDir,
   OperationSortField,
 } from '@tracehouse/core';
-import { describeOperationContext, getMergeCategoryInfo, maxOperationMetric, operationRowHighlightKey, type MergeCategory } from '@tracehouse/core';
+import { getMergeCategoryInfo, maxOperationMetric, notableMergeReason, operationRowHighlightKey, type MergeCategory } from '@tracehouse/core';
 import { formatBytes, formatDurationMs as fmtMs } from '../../utils/formatters';
 import { TruncatedHost } from '../common/TruncatedHost';
 import {
@@ -53,8 +53,8 @@ const KindBadge: React.FC<{ row: OperationRow }> = ({ row }) => {
   );
 };
 
-const MergeReasonBadge: React.FC<{ reason?: string }> = ({ reason }) => {
-  const info = getMergeCategoryInfo((reason || 'Regular') as MergeCategory);
+const MergeReasonBadge: React.FC<{ category: MergeCategory }> = ({ category }) => {
+  const info = getMergeCategoryInfo(category);
   if (!info) return null;
   return (
     <span style={{
@@ -63,34 +63,6 @@ const MergeReasonBadge: React.FC<{ reason?: string }> = ({ reason }) => {
       whiteSpace: 'nowrap',
     }}>
       {info.label}
-    </span>
-  );
-};
-
-/**
- * The one column whose meaning follows the row: a query's user, or a merge's
- * reason and how many bytes it read and wrote.
- */
-const ContextCell: React.FC<{ row: OperationRow }> = ({ row }) => {
-  const context = describeOperationContext(row);
-  if (context.type === 'none') return <span style={{ color: 'var(--text-muted)' }}>—</span>;
-  if (context.type === 'user') {
-    return <span style={{ color: 'var(--text-secondary)' }}>{context.user}</span>;
-  }
-  const hasBytes = context.readBytes > 0 || context.writtenBytes > 0;
-  return (
-    <span style={{ display: 'flex', alignItems: 'center', gap: 6, overflow: 'hidden', whiteSpace: 'nowrap' }}>
-      {context.reason && <MergeReasonBadge reason={context.reason} />}
-      {hasBytes && (
-        <span style={{ color: 'var(--text-muted)', fontFamily: 'monospace', fontSize: 10 }}>
-          {formatBytes(context.readBytes)} → {formatBytes(context.writtenBytes)}
-        </span>
-      )}
-      {context.progress !== undefined && (
-        <span style={{ color: 'var(--text-secondary)', fontSize: 10 }}>
-          {Math.round(context.progress * 100)}%
-        </span>
-      )}
     </span>
   );
 };
@@ -266,9 +238,9 @@ export const OperationsTable: React.FC<{
                 Kind {sortIndicator('kind')}
               </th>
               <th style={th()}>Operation</th>
-              <th onClick={() => onSort('user')} title="User for queries, merge reason and bytes read → written for merges. Sorts by user."
-                style={{ ...th({ width:220 }), cursor:'pointer', userSelect:'none', color: sortField === 'user' ? metric.color : 'var(--text-muted)' }}>
-                Context {sortIndicator('user')}
+              <th onClick={() => onSort('user')} title="system.query_log.user — the user that ran the query. Background merges and mutations have none."
+                style={{ ...th({ width:110 }), cursor:'pointer', userSelect:'none', color: sortField === 'user' ? metric.color : 'var(--text-muted)' }}>
+                User {sortIndicator('user')}
               </th>
               {showHost && (
                 <th onClick={() => onSort('server')} style={{ ...th({ width:100 }), cursor:'pointer', userSelect:'none', color: sortField === 'server' ? metric.color : 'var(--text-muted)' }}>
@@ -291,6 +263,7 @@ export const OperationsTable: React.FC<{
               const isHighlighted = highlightedItem?.type === row.kind && highlightedItem.id === id;
               const isSelected = selectedId === id;
               const isDimmed = queryHashActive === true && !row.matchedHash;
+              const notableReason = notableMergeReason(row);
               return (
                 <tr key={`${row.kind}-${id}-${i}`}
                   onClick={() => onSelect(row)}
@@ -314,8 +287,9 @@ export const OperationsTable: React.FC<{
                   <td style={{ padding:'5px 8px' }}><KindBadge row={row} /></td>
                   <td style={{ padding:'5px 8px', overflow:'hidden', textOverflow:'ellipsis', whiteSpace:'nowrap' }} title={`${row.label}\n${row.id}`}>
                     {/* Queries lead with their id, parts with their table: in both
-                        cases the identifier you would search for comes first.
-                        The merge reason lives in Context, not here. */}
+                        cases the identifier you would search for comes first. A
+                        merge reason worth naming (TTL, mutation) trails the part;
+                        the Regular majority renders nothing. */}
                     {row.kind === 'query' ? (
                       <>
                         <span style={{ fontFamily:'monospace', color:'#58a6ff', marginRight:8 }}>{row.id.slice(0, 8)}</span>
@@ -324,12 +298,14 @@ export const OperationsTable: React.FC<{
                     ) : (
                       <>
                         <span style={{ color:'var(--text-secondary)', marginRight:8 }}>{row.label}</span>
-                        <span style={{ fontFamily:'monospace', color:'var(--text-muted)', fontSize:10 }}>{row.id}</span>
+                        <span style={{ fontFamily:'monospace', color:'var(--text-muted)', fontSize:10, marginRight:8 }}>{row.id}</span>
+                        {notableReason && <MergeReasonBadge category={notableReason} />}
                       </>
                     )}
                   </td>
-                  <td style={{ padding:'5px 8px', overflow:'hidden', textOverflow:'ellipsis', whiteSpace:'nowrap' }}>
-                    <ContextCell row={row} />
+                  <td style={{ padding:'5px 8px', color:'var(--text-secondary)', overflow:'hidden', textOverflow:'ellipsis', whiteSpace:'nowrap' }}
+                      title={row.user || 'Background operation — no user'}>
+                    {row.user || <span style={{ color:'var(--text-muted)' }}>—</span>}
                   </td>
                   {showHost && (
                     <td style={{ padding:'5px 8px', color:'var(--text-muted)', overflow:'hidden', textOverflow:'ellipsis', whiteSpace:'nowrap', fontSize:10 }} title={row.hostname}>
@@ -337,7 +313,9 @@ export const OperationsTable: React.FC<{
                     </td>
                   )}
                   <td style={{ padding:'5px 8px', textAlign:'center' }}
-                      title={row.isRunning ? 'Running' : row.failed ? 'Failed' : 'Completed'}>
+                      title={row.isRunning
+                        ? (row.progress !== undefined ? `Running — ${Math.round(row.progress * 100)}% complete` : 'Running')
+                        : row.failed ? 'Failed' : 'Completed'}>
                     {row.isRunning ? (
                       <span style={{ display:'inline-block', width:8, height:8, borderRadius:'50%', background: KIND_ACCENT[row.kind], animation:'pulse 1.5s ease-in-out infinite' }} />
                     ) : row.failed ? (
@@ -353,6 +331,9 @@ export const OperationsTable: React.FC<{
                   <td style={{ padding:'5px 8px' }}
                     title={metricMax > 0
                       ? `${metric.fmtVal(row.metricValue)} of ${metric.label.toLowerCase()} over this operation's lifetime\n`
+                        + (metricMode === 'disk'
+                          ? `Read ${formatBytes(row.diskReadBytes)}, written ${formatBytes(row.diskWriteBytes)}\n`
+                          : '')
                         + `Bar: ${Math.round((row.metricValue / metricMax) * 100)}% of the largest row shown (${metric.fmtVal(metricMax)})`
                       : undefined}>
                     <span style={{ display:'flex', alignItems:'center', gap:6, justifyContent:'flex-end' }}>

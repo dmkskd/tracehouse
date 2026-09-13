@@ -350,6 +350,7 @@ export const QueryDetailModal: React.FC<TimelineQueryModalProps> = ({
               similarQueries={similar.similarQueries}
               isLoadingSimilarQueries={similar.isLoading}
               objectStorageSummary={objectStorageSummary}
+              showSpansCard={hasOpenTelemetry}
               showLogsCard={hasTextLog}
               showHistoryCard={hasQueryLog}
               showXRayCard={experimentalEnabled && hasProcessesHistory}
