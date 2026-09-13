@@ -138,7 +138,7 @@ function ratioLabel(numerator: number, denominator: number): string {
   return `${ratio.toFixed(2)}:1`;
 }
 
-import "./OverviewTab.css";
+import { overviewStyles } from "./overviewStyles";
 
 export const OverviewTab: React.FC<OverviewTabProps> = ({
   q,
@@ -331,7 +331,7 @@ export const OverviewTab: React.FC<OverviewTabProps> = ({
       : []),
   ];
   return (
-    <div className="query-overview">
+    <div className={`query-overview ${overviewStyles}`}>
       <div className="overview-identity">
         <span
           className="overview-status"
