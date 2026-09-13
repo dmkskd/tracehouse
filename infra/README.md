@@ -52,9 +52,8 @@ just docker-stop
 ```
 
 The canonical server and Keeper images live in `infra/clickhouse.env`.
-Repository-managed `just` commands load that file automatically, as does the
-demo wrapper (`infra/demo/compose.sh`). Other commands run directly with Docker
-Compose use `latest` unless an image is supplied.
+Repository-managed `just` commands load that file automatically. Commands run
+directly with Docker Compose use `latest` unless an image is supplied.
 
 Override either full image for one command without editing tracked files:
 
@@ -124,25 +123,6 @@ Kind Cluster
 ```
 
 See `k8s/README.md` for more details on the K8s setup.
-
-## Demo Stack (infra/demo)
-
-Four ClickHouse nodes (2 shards x 2 replicas), Keeper, MinIO, Caddy, Grafana and
-a continuous workload generator. Start it through the wrapper, which loads the
-image pins from `infra/clickhouse.env` plus the generated `.env` passwords:
-
-```bash
-cd infra/demo
-./setup.sh              # once — generates .env with random passwords
-./compose.sh pull
-./compose.sh up -d
-```
-
-`compose.sh` forwards every argument to `docker compose`. A bare
-`docker compose` call in that directory fails instead of silently falling back
-to `:latest`, so the demo always runs the same server version as the rest of
-the repository. Bump the demo by editing `CLICKHOUSE_IMAGE` in
-`infra/clickhouse.env`, then `./compose.sh pull && ./compose.sh up -d`.
 
 ## Test Data
 
