@@ -18,7 +18,7 @@ from typing import TYPE_CHECKING
 from clickhouse_driver import Client
 from .helpers import (
     generate_month_list, check_existing_rows, run_batched_insert,
-    wait_for_table,
+    wait_for_table, on_cluster_clause,
 )
 from .protocol import InsertMode, QuerySet
 from data_utils.capabilities import Capabilities
@@ -46,11 +46,25 @@ def _engine_args(caps: Capabilities, path: str) -> str:
     return f"'{url}', '{caps.iceberg_s3_key}', '{caps.iceberg_s3_secret}'"
 
 
+def _on_cluster(caps: Capabilities | None) -> str:
+    """``ON CLUSTER`` clause so the IcebergS3 tables exist on every node.
+
+    The tables are stateless pointers at the same S3 location, so every
+    node can carry an identical definition.  Without this the database
+    only exists on the node that ran the DDL, and any query (or EXPLAIN
+    from the UI) routed to another node fails with UNKNOWN_DATABASE.
+    """
+    if not caps or not caps.has_cluster or not caps.has_keeper:
+        return ""
+    return on_cluster_clause(caps.cluster_name)
+
+
 def drop_iceberg_nyc_taxi(client: Client, caps: Capabilities | None = None) -> None:
     print("Dropping iceberg_nyc_taxi...")
-    client.execute("DROP TABLE IF EXISTS iceberg_nyc_taxi.trips SYNC")
-    client.execute("DROP TABLE IF EXISTS iceberg_nyc_taxi.locations SYNC")
-    client.execute("DROP DATABASE IF EXISTS iceberg_nyc_taxi SYNC")
+    oc = _on_cluster(caps)
+    client.execute(f"DROP TABLE IF EXISTS iceberg_nyc_taxi.trips {oc} SYNC")
+    client.execute(f"DROP TABLE IF EXISTS iceberg_nyc_taxi.locations {oc} SYNC")
+    client.execute(f"DROP DATABASE IF EXISTS iceberg_nyc_taxi {oc} SYNC")
 
 
 def create_iceberg_nyc_taxi(client: Client, caps: Capabilities | None = None) -> None:
@@ -58,14 +72,16 @@ def create_iceberg_nyc_taxi(client: Client, caps: Capabilities | None = None) ->
         print("  Skipping iceberg_nyc_taxi: Iceberg insert not supported")
         return
 
+    oc = _on_cluster(caps)
+
     print("Creating iceberg_nyc_taxi database...")
-    client.execute("CREATE DATABASE IF NOT EXISTS iceberg_nyc_taxi")
+    client.execute(f"CREATE DATABASE IF NOT EXISTS iceberg_nyc_taxi {oc}")
 
     trips_engine = f"IcebergS3({_engine_args(caps, 'tracehouse/iceberg_nyc_taxi/trips/')})"
 
     print(f"Creating iceberg_nyc_taxi.trips (IcebergS3)...")
     client.execute(f"""
-        CREATE TABLE IF NOT EXISTS iceberg_nyc_taxi.trips
+        CREATE TABLE IF NOT EXISTS iceberg_nyc_taxi.trips {oc}
         (
             trip_id Int64,
             pickup_datetime DateTime,
@@ -91,7 +107,7 @@ def create_iceberg_nyc_taxi(client: Client, caps: Capabilities | None = None) ->
 
     print("Creating iceberg_nyc_taxi.locations (IcebergS3)...")
     client.execute(f"""
-        CREATE TABLE IF NOT EXISTS iceberg_nyc_taxi.locations
+        CREATE TABLE IF NOT EXISTS iceberg_nyc_taxi.locations {oc}
         (
             location_id Int32,
             borough String,
