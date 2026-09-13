@@ -15,7 +15,10 @@
 
 import React, { useMemo, useState, useRef, useCallback } from 'react';
 import { Canvas, useThree } from '@react-three/fiber';
-import { OrbitControls, Text, Line, Html } from '@react-three/drei';
+import { OrbitControls, Line, Html } from '@react-three/drei';
+// SafeText, not drei's Text: it falls back to <Html> on null-origin (file://)
+// pages, where troika's blob-URL workers are blocked by the browser.
+import { SafeText as Text } from '@tracehouse/ui-shared';
 import * as THREE from 'three';
 import type { ProcessSample } from '../hooks/useProcessSamples';
 import { hasTraceSamplesInRange } from '../hooks/useHotFunctions';

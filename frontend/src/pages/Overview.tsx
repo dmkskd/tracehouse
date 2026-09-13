@@ -652,6 +652,7 @@ export const Overview: React.FC = () => {
         <>
           {/* Compact stat strip */}
           <OverviewVitalsStrip
+            compact
             data={liveData}
             metrics={metrics}
             cpuHistory={sparkCpu}

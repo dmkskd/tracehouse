@@ -1,4 +1,5 @@
 import React, { useMemo } from 'react';
+import { css } from '@emotion/css';
 import type { OverviewData, ServerMetrics } from '@tracehouse/core';
 import { normalizeRadarValue, radarShapeLayout, shortRadarLabel } from '../analytics/radarModel';
 import { OVERVIEW_COLORS, RESOURCE_COLORS } from '../../styles/overviewColors';
@@ -12,6 +13,7 @@ interface OverviewVitalsStripProps {
   diskReadHistory: number[];
   diskWriteHistory: number[];
   isLoading?: boolean;
+  compact?: boolean;
 }
 
 const ioRange = { low: '1Ki', high: '1Gi' };
@@ -314,6 +316,7 @@ export function OverviewVitalsStrip({
   diskReadHistory,
   diskWriteHistory,
   isLoading = false,
+  compact = false,
 }: OverviewVitalsStripProps) {
   const ra = data?.resourceAttribution;
   const waitingForLiveData = isLoading && !data;
@@ -359,6 +362,23 @@ export function OverviewVitalsStrip({
     `${activeMerges}`,
     `${runningQueries}`,
   ];
+
+  if (compact) {
+    const heading: React.CSSProperties = { fontSize: 11, fontWeight: 400, color: 'var(--text-muted)', lineHeight: '14px' };
+    const value: React.CSSProperties = { fontSize: 23, fontWeight: 600, fontFamily: 'monospace', margin: '13px 0 9px', color: 'var(--text-primary)' };
+    const detail: React.CSSProperties = { fontSize: 11, lineHeight: 1.6, color: 'var(--text-muted)' };
+    return (
+      <div className={css`display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 14px; @media(max-width:850px){grid-template-columns:repeat(2,minmax(0,1fr));}`}>
+        <VitalsCard style={{ padding: '13px 17px' }}>
+          <div style={heading}>Resource Radar</div>
+          {waitingForLiveData ? <LoadingRadar /> : <PressureRadar values={radar.values} labels={radar.labels} rawValues={pressureVisibleValues} color={radar.color} title={pressureTooltip} />}
+        </VitalsCard>
+        <VitalsCard style={{ padding: '13px 17px' }}><div style={heading}>CPU</div><div style={value}>{waitingForLiveData && !metrics ? 'Loading...' : pct(cpuPct)}</div><div style={detail}>{cores} cores{ra ? ` · queries ${ra.cpu.breakdown.queries.toFixed(1)}%` : ''}</div><HeatStrip values={cpuHistory} color={OVERVIEW_COLORS.queries} /></VitalsCard>
+        <VitalsCard style={{ padding: '13px 17px' }}><div style={heading}>Memory</div><div style={value}>{waitingForLiveData && !metrics ? 'Loading...' : formatBytes(memoryUsed)}</div><div style={detail}>{memoryTotal > 0 ? `${pct(memoryPct)} of ${formatBytes(memoryTotal)}` : 'waiting for memory totals'}</div><MemoryTrendBand valuePct={memoryPct} peakPct={peakMemory} values={memoryHistory} color={OVERVIEW_COLORS.replication} /></VitalsCard>
+        <VitalsCard style={{ padding: '13px 17px' }}><div style={heading}>Disk I/O</div><div style={value}>{waitingForLiveData && !metrics ? 'Loading...' : formatBytesPerSec(ioBps)}</div><div style={detail}>Read {formatBytesPerSec(readBps)} · write {formatBytesPerSec(writeBps)}</div><DiskLines read={diskReadHistory} write={diskWriteHistory} /></VitalsCard>
+      </div>
+    );
+  }
 
   return (
     <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, minmax(0, 1fr))', gap: 16 }}>
