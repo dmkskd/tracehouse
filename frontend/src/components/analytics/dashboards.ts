@@ -429,7 +429,8 @@ const BUILTIN_DASHBOARDS: Dashboard[] = [
   {
     id: 'workload-breakdown',
     title: 'TimeTravel Workload Breakdown',
-    description: 'Resource usage split by kind (queries/merges/mutations) and by server - the after-the-fact counterpart to Time Travel. Figures are approximate; a directional first pass.',
+    description:
+      "CPU, memory, disk and network per server, broken down by queries, merges and mutations, with Time Travel's top-100 cap and 1 MB memory floor removed",
     group: 'TraceHouse',
     category: 'Resources',
     columns: 2,

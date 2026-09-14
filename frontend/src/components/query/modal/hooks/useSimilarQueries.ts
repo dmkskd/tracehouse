@@ -15,7 +15,7 @@ export function useSimilarQueries(
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [hasFetched, setHasFetched] = useState(false);
-  const [limit, setLimit] = useState(50);
+  const [limit, setLimit] = useState(100);
   const [hashMode, setHashMode] = useState<HistoryHashMode>('normalized');
 
   const fetchSimilarQueries = useCallback(

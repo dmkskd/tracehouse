@@ -1,16 +1,16 @@
 /**
- * Workload Breakdown queries - the "precise" counterpart to Time Travel.
+ * Workload Breakdown queries.
  *
- * Time Travel is a fast, sampled first glance: it caps each activity type at
- * the top 100 rows and drops anything under 1 MB of memory. These queries do
- * full accounting instead - no LIMIT, no memory floor - so the totals add up.
+ * The same workload Time Travel plots, without its two filters: the top-100 cap
+ * per activity type and the 1 MB memory floor (TIMELINE_ACTIVITY_LIMIT and
+ * MIN_MEMORY_BYTES in timeline-queries.ts).
  *
- * Resource cost is attributed to five categories:
+ * Cost is attributed to five categories:
  *   Query · Select / Query · Insert / Query · Other  (system.query_log)
  *   Merge / Mutation                                  (system.part_log)
  *
- * Completed work only (QueryFinish, finished part_log rows), which is exactly
- * the after-the-fact precision role. In-flight estimation stays in Time Travel.
+ * Completed work only: QueryFinish rows and finished part_log rows. Anything
+ * still running belongs to Time Travel.
  */
 
 import { APP_SOURCE_LIKE } from '@tracehouse/core';
