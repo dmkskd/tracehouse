@@ -40,21 +40,32 @@ const MODE_META: Record<ScrubberMode, { icon: string; label: string; color: stri
   logs: { icon: '☰', label: 'Logs', color: '#FECB52' },
 };
 
-const pillStyle = (active: boolean, color: string): React.CSSProperties => ({
+/**
+ * One segment of a toggle, styled like the modal's tab bar rather than as a
+ * standalone pill, so every switch in the X-Ray reads as the same control.
+ */
+const segmentStyle = (active: boolean, first: boolean): React.CSSProperties => ({
   padding: '3px 10px',
-  borderRadius: 12,
+  border: 'none',
+  borderLeft: first ? 'none' : '1px solid var(--border-primary)',
+  fontFamily: 'monospace',
   fontSize: 10,
-  fontWeight: 600,
-  letterSpacing: '0.4px',
+  letterSpacing: '1px',
+  textTransform: 'uppercase',
   cursor: 'pointer',
-  border: `1px solid ${active ? color + '66' : 'var(--border-primary)'}`,
-  background: active ? `${color}1a` : 'transparent',
-  color: active ? color : 'var(--text-muted)',
-  transition: 'all 0.2s ease',
-  userSelect: 'none',
   whiteSpace: 'nowrap',
-  backdropFilter: 'blur(4px)',
+  background: active ? 'rgba(88, 166, 255, 0.12)' : 'transparent',
+  color: active ? '#58a6ff' : 'var(--text-muted)',
+  transition: 'all 0.2s ease',
 });
+
+const segmentGroupStyle: React.CSSProperties = {
+  display: 'flex',
+  flexShrink: 0,
+  border: '1px solid var(--border-primary)',
+  borderRadius: 5,
+  overflow: 'hidden',
+};
 
 const navBtnStyle: React.CSSProperties = {
   background: 'var(--bg-tertiary)',
@@ -211,18 +222,20 @@ const Scrubber: React.FC<{
       {/* Top row: mode pills + time + nav buttons */}
       <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 6, minWidth: 0 }}>
         {/* Mode selector pills */}
-        <div style={{ display: 'flex', gap: 5, flexShrink: 0 }}>
-          {(Object.keys(MODE_META) as ScrubberMode[]).map(m => (
-            <span
+        <div style={segmentGroupStyle}>
+          {(Object.keys(MODE_META) as ScrubberMode[]).map((m, i) => (
+            <button
               key={m}
-              style={pillStyle(mode === m, MODE_META[m].color)}
+              type="button"
+              aria-pressed={mode === m}
+              style={segmentStyle(mode === m, i === 0)}
               onClick={() => onModeChange(m)}
             >
               {MODE_META[m].icon} {MODE_META[m].label}
               <span style={{ opacity: 0.5, marginLeft: 4, fontSize: 9 }}>
                 {m === 'logs' ? logEvents.length : samples.length}
               </span>
-            </span>
+            </button>
           ))}
         </div>
 
@@ -640,31 +653,22 @@ export const XRayTab: React.FC<XRayTabProps> = ({
         <span>{samples.length} samples</span>
         {logEvents.length > 0 && <span>{logEvents.length} log events</span>}
 
-        {/* 3D / 2D view toggle */}
+        {/* 3D / 2D view toggle. Styled like the modal's tab bar - monospace,
+            uppercase, theme variables - so it reads as part of the same chrome
+            in both light and dark mode. */}
         <span style={{ flex: 1 }} />
-        <div style={{ display: 'flex', gap: 4, flexShrink: 0 }}>
-          {(['3d', '2d'] as const).map(m => (
-            <span
+        <div style={segmentGroupStyle}>
+          {(['3d', '2d'] as const).map((m, i) => (
+            <button
               key={m}
+              type="button"
               onClick={() => setViewMode(m)}
+              aria-pressed={viewMode === m}
               title={m === '3d' ? '3D resource corridor' : '2D stacked charts (exact values)'}
-              style={{
-                padding: '2px 9px',
-                borderRadius: 10,
-                fontSize: 10,
-                fontWeight: 600,
-                letterSpacing: '0.4px',
-                cursor: 'pointer',
-                userSelect: 'none',
-                textTransform: 'uppercase',
-                border: `1px solid ${viewMode === m ? '#636EFA66' : '#2a2a3a'}`,
-                background: viewMode === m ? '#636EFA1a' : 'rgba(255,255,255,0.02)',
-                color: viewMode === m ? '#636EFA' : '#555',
-                transition: 'all 0.15s ease',
-              }}
+              style={segmentStyle(viewMode === m, i === 0)}
             >
               {m}
-            </span>
+            </button>
           ))}
         </div>
       </div>

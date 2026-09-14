@@ -5,6 +5,16 @@ All notable changes to the TraceHouse Grafana plugin will be documented in this 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.19.1] - 2026-09-14
+
+### Improvements
+- **Query Details:** Redesigned the Overview tab: identity and status on one line, the SQL and any error, one summary block, then the links to the other tabs.
+- **Overview:** Redesigned the main page: a compact vitals row, and uniform destination cards that each lead with the question they answer instead of a per-card mix of sparklines and bars.
+- **Time Travel:** The Operations table now shows a plain User column, and only labels a merge when its reason is notable (TTL, mutation, lightweight delete).
+
+### Bug fixes
+- **X-Ray / Time Travel:** Fixed missing labels in the 3D views when TraceHouse is opened from a local file.
+
 ## [0.19.0] - 2026-09-12
 
 ### New features
