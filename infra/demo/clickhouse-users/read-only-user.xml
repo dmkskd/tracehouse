@@ -17,6 +17,10 @@
         <query>GRANT SELECT ON uk_price_paid.*</query>
         <query>GRANT SELECT ON web_analytics.*</query>
         <query>GRANT SELECT ON replacing_test.*</query>
+        <!-- Iceberg / lakehouse databases -->
+        <query>GRANT SELECT ON iceberg_nyc_taxi.*</query>
+        <query>GRANT SELECT ON lakekeeper_iceberg.*</query>
+        <query>GRANT SELECT ON lakekeeper_nyc_taxi_bootstrap.*</query>
         <!-- System tables the app needs -->
         <query>GRANT SELECT ON system.asynchronous_inserts</query>
         <query>GRANT SELECT ON system.asynchronous_insert_log</query>

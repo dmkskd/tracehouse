@@ -36,6 +36,10 @@ GRANT SELECT ON nyc_taxi.* TO read_only;
 GRANT SELECT ON uk_price_paid.* TO read_only;
 GRANT SELECT ON web_analytics.* TO read_only;
 GRANT SELECT ON replacing_test.* TO read_only;
+-- Iceberg / lakehouse databases
+GRANT SELECT ON iceberg_nyc_taxi.* TO read_only;
+GRANT SELECT ON lakekeeper_iceberg.* TO read_only;
+GRANT SELECT ON lakekeeper_nyc_taxi_bootstrap.* TO read_only;
 
 -- ============================================================
 -- Grants — system tables the app needs
