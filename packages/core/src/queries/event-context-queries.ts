@@ -6,7 +6,7 @@ import { APP_SOURCE_LIKE } from './source-tags.js';
  */
 export const EVENT_CONTEXT_WORKLOAD = `
 SELECT
-  hostname() AS host,
+  host,
   query_id,
   initial_query_id,
   user,
@@ -15,7 +15,7 @@ SELECT
   toString(query_start_time_microseconds + toIntervalMillisecond(query_duration_ms)) AS end_time,
   query_duration_ms,
   memory_usage,
-  ProfileEvents['OSCPUVirtualTimeMicroseconds'] AS cpu_us,
+  cpu_us,
   read_rows,
   read_bytes,
   written_rows,
@@ -25,13 +25,36 @@ SELECT
   substring(exception, 1, 2000) AS exception,
   substring(query, 1, 4000) AS query,
   query_id = {query_id} OR initial_query_id = {initial_query_id} AS is_event_query
-FROM {{cluster_aware:system.query_log}}
-WHERE event_date >= toDate({window_start}) - 1
-  AND type IN ('QueryFinish', 'ExceptionBeforeStart', 'ExceptionWhileProcessing')
-  AND query_start_time_microseconds <= {event_time}
-  AND query_start_time_microseconds + toIntervalMillisecond(query_duration_ms) >= {event_time}
-  AND ({hostname} = '' OR hostname() = {hostname})
-  AND query NOT LIKE ${APP_SOURCE_LIKE}
+FROM (
+  SELECT
+    hostname() AS host,
+    query_id,
+    initial_query_id,
+    user,
+    query_kind,
+    query_start_time_microseconds,
+    query_duration_ms,
+    memory_usage,
+    ProfileEvents['OSCPUVirtualTimeMicroseconds'] AS cpu_us,
+    read_rows,
+    read_bytes,
+    written_rows,
+    written_bytes,
+    type,
+    exception_code,
+    exception,
+    query
+  FROM {{cluster_aware:system.query_log}}
+  WHERE event_date >= toDate({window_start}) - 1
+    AND type IN ('QueryFinish', 'ExceptionBeforeStart', 'ExceptionWhileProcessing')
+    AND query_start_time_microseconds <= {event_time}
+    AND query_start_time_microseconds + toIntervalMillisecond(query_duration_ms) >= {event_time}
+    AND ({hostname} = '' OR hostname() = {hostname})
+    -- Self-filter stays in this scope so it sees the untruncated text: tagQuery()
+    -- puts the source comment at the END of the query, and the outer
+    -- substring(query, 1, 4000) would cut it off for our longest queries.
+    AND query NOT LIKE ${APP_SOURCE_LIKE}
+)
 ORDER BY is_event_query DESC, memory_usage DESC, cpu_us DESC
 LIMIT {context_limit}
 `;
