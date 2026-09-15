@@ -189,7 +189,8 @@ SELECT
     type,
     event_time,
     initial_query_id AS query_id,
-    formatReadableSize(memory_usage) AS memory_usage,
+    formatReadableSize(memory_usage) AS memory,
+    memory_usage,
     query
 FROM {{cluster_aware:system.query_log}}
 WHERE event_time > {{time_range}}
