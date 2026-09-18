@@ -27,7 +27,7 @@ import {
   addCustomQuery, deleteCustomQuery, loadCustomQueries, isQueryNameTaken,
   buildCustomQuerySql, getAllQueries as getAllQueriesFromPresets,
 } from './customQueries';
-import { resolveQueryXRaySQL, resolveTimeRange, resolveDrillParams, isDrillTarget } from './templateResolution';
+import { resolveQueryXRaySQL, resolveExportTemplate, resolveTimeRange, resolveDrillParams, isDrillTarget } from './templateResolution';
 import {
   QUERY_GROUPS, CHART_TYPE_LABELS,
   type QueryGroup, type ChartType, type ChartStyle,
@@ -683,14 +683,13 @@ export const QueryExplorer: React.FC<QueryExplorerProps> = ({ urlState, onUrlSta
   const grafanaViewMode: 'table' | 'chart' | 'queries' =
     viewMode === 'analysis' ? 'table' : viewMode;
 
-  // Export a concrete source query while retaining time/drill templates for Grafana.
-  const exportTemplateSql = useMemo(() => {
-    try { return resolveQueryXRaySQL(sql, xraySelection); }
-    catch { return null; }
-  }, [sql, xraySelection]);
+  // Export a concrete source query while retaining time/drill templates for
+  // Grafana. A failure carries its reason to the disabled export button,
+  // matching how resolvedSql above surfaces the same failure in the editor.
+  const exportTemplate = useMemo(() => resolveExportTemplate(sql, xraySelection), [sql, xraySelection]);
 
   const grafanaExport = useGrafanaExport({
-    sql: exportTemplateSql ?? '',
+    sql: exportTemplate.sql ?? '',
     clusterName,
     drillParams: currentDrillParams,
     activeQueryName: activeQueryName ?? undefined,
@@ -1082,13 +1081,13 @@ export const QueryExplorer: React.FC<QueryExplorerProps> = ({ urlState, onUrlSta
                   <button
                     className="btn"
                     onClick={grafanaExport.openDialog}
-                    disabled={!exportTemplateSql}
+                    disabled={!exportTemplate.sql}
                     aria-label="Export this TraceHouse result as a Grafana dashboard panel"
                     style={{
                       ...RESULT_ACTION_BUTTON_STYLE,
                       color: grafanaExport.status !== 'idle' ? 'var(--accent-green)' : RESULT_ACTION_BUTTON_STYLE.color,
                     }}
-                    title="Export this TraceHouse result as a Grafana dashboard panel"
+                    title={exportTemplate.error ?? 'Export this TraceHouse result as a Grafana dashboard panel'}
                   >
                     {grafanaExport.status === 'created' ? '✓ Created in Grafana' : grafanaExport.status === 'copied' ? '✓ JSON copied' : 'As Grafana panel'}
                   </button>

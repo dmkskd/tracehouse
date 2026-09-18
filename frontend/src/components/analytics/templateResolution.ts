@@ -19,6 +19,25 @@ export function resolveQueryXRaySQL(sql: string, selection: SelectQueryXRaySourc
     }));
 }
 
+/**
+ * Resolution result for the Grafana export path.
+ *
+ * The export keeps time and drill templates unresolved, but the X-Ray source
+ * must be concrete, and that resolution can legitimately fail: the active
+ * source may be unable to serve the panel at all. The reason is carried rather
+ * than discarded, because it is the only explanation the disabled export
+ * button can give.
+ */
+export type ExportTemplate = { sql: string; error?: undefined } | { sql?: undefined; error: string };
+
+export function resolveExportTemplate(sql: string, selection: SelectQueryXRaySourceInput): ExportTemplate {
+  try {
+    return { sql: resolveQueryXRaySQL(sql, selection) };
+  } catch (error) {
+    return { error: error instanceof Error ? error.message : String(error) };
+  }
+}
+
 export class InvalidCustomTimeRangeError extends Error {
   constructor(value: string) {
     super(`Invalid custom time range: ${value}`);
