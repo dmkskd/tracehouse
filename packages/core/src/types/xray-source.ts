@@ -85,13 +85,21 @@ export const SYSTEM_LOG_FLUSH_LAG_MS = 7500;
 /**
  * Which source automatic selection prefers when both can serve the query.
  *
- * query_metric_log wins: it needs no install, samples finer, and reads far
- * cheaper (real columns instead of a ProfileEvents Map that must be read whole).
- * The cost is `missing` — no thread count, and progress counters replaced by
- * ProfileEvent approximations. Flip this constant to make the sampler the
- * default again.
+ * The sampler wins. It populates every field (query_metric_log has no thread
+ * count and no progress counters), and it observes the query for as long as it
+ * sits in the process list. query_metric_log only starts collecting when the
+ * query's pipeline starts executing: QueryMetricLog::startQuery() is called
+ * from logQueryStart(), which executeQuery.cpp reaches after
+ * interpreter->execute(), so work done during analysis, scalar subqueries
+ * included, arrives as one lump instead of a curve. Measured on 26.8.2: a
+ * 12.4s query spending its time in two scalar subqueries produced 2 rows, both
+ * in the final 8ms, against 12 sampler samples.
+ *
+ * query_metric_log remains the automatic choice when the sampler is absent,
+ * where it needs no install and no writes. Flip this constant to prefer it
+ * everywhere.
  */
-export const AUTO_PREFERRED_SOURCE: QueryXRaySource = 'query_metric_log';
+export const AUTO_PREFERRED_SOURCE: QueryXRaySource = 'processes_history';
 
 /** Fields processes_history can always populate. */
 const PROCESSES_HISTORY_MISSING: readonly string[] = [];
@@ -152,9 +160,9 @@ function describe(
  *     execution, and log_queries_min_type defaults to QUERY_START so the
  *     identity join finds the query before it finishes. The cost is the flush
  *     lag (reported as lagMs) and no clamp ceiling until the query ends.
- *  2. Otherwise the available source wins; when both are available,
- *     AUTO_PREFERRED_SOURCE decides for a finished query, and the sampler wins
- *     for a live one — it is fresher and carries thread counts and progress.
+ *  2. Otherwise the available source wins; when both are available the sampler
+ *     is preferred (AUTO_PREFERRED_SOURCE), and it wins for a live query
+ *     regardless, being fresher and carrying thread counts and progress.
  */
 export function selectQueryXRaySource(input: SelectQueryXRaySourceInput): QueryXRaySourceSelection {
   const { availability } = input;
@@ -198,11 +206,11 @@ export function selectQueryXRaySource(input: SelectQueryXRaySourceInput): QueryX
   if (!availability.processesHistory) {
     return describe('query_metric_log', 'only_available', { live, ...(live ? { note: liveNote } : {}) });
   }
-  // Both exist: the sampler is strictly better for a query still in flight
-  // (fresher, tighter clamp, real thread counts and progress counters).
-  return live
-    ? describe('processes_history', 'auto')
-    : describe(AUTO_PREFERRED_SOURCE, 'auto');
+  // Both exist. The sampler also wins unconditionally for a query still in
+  // flight: query_metric_log lags by a flush interval and has no clamp ceiling
+  // until peak_threads_usage lands in query_log.
+  if (live) return describe('processes_history', 'auto');
+  return describe(AUTO_PREFERRED_SOURCE, 'auto');
 }
 
 /** Label for the source badge in the X-Ray header. */

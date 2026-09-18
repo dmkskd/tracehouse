@@ -8,9 +8,12 @@ import * as publicQueries from '../queries/index.js';
 const availability = { processesHistory: true, queryMetricLog: true };
 
 describe('Query X-Ray sample façade', () => {
-  it('selects fresh sampler samples for a live query and metric log for finished queries', () => {
-    expect(buildXRaySamplesSQL({ availability, queryState: 'running' }, ['q'])).toContain('tracehouse.processes_history');
-    expect(buildXRaySamplesSQL({ availability, queryState: 'finished' }, ['q'])).toContain('system.query_metric_log');
+  it('prefers the sampler whenever it is installed, and the metric log when it is not', () => {
+    for (const queryState of ['running', 'finished'] as const) {
+      expect(buildXRaySamplesSQL({ availability, queryState }, ['q'])).toContain('tracehouse.processes_history');
+    }
+    const metricLogOnly = { processesHistory: false, queryMetricLog: true };
+    expect(buildXRaySamplesSQL({ availability: metricLogOnly, queryState: 'finished' }, ['q'])).toContain('system.query_metric_log');
   });
 
   it('falls back from an unavailable pin for both output shapes', () => {

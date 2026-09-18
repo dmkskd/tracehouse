@@ -55,33 +55,14 @@ describe('Query X-Ray preference layers', () => {
     expect(useUserPreferenceStore.getState().queryXraySource).toEqual({ a: 'query_metric_log', b: 'processes_history' });
   });
 
-  it('migrates the legacy pin onto existing profiles and the saved Grafana datasource', async () => {
-    localStorage.setItem('tracehouse-connections', JSON.stringify({ state: { profiles: [{ id: 'a' }, { id: 'b' }] } }));
-    localStorage.setItem('tracehouse-datasource', JSON.stringify({ uid: 'grafana-uid' }));
+  it('drops the legacy browser-wide pin and keeps the rest of the persisted state', async () => {
     localStorage.setItem('tracehouse-view-preference', JSON.stringify({ version: 0, state: { xraySource: 'query_metric_log', preferredViewMode: '2d' } }));
     await act(() => useUserPreferenceStore.persist.rehydrate());
-    expect(useUserPreferenceStore.getState().queryXraySource).toEqual({ a: 'query_metric_log', b: 'query_metric_log', 'grafana-uid': 'query_metric_log' });
-    expect(useUserPreferenceStore.getState().preferredViewMode).toBe('2d');
+    // A browser-wide string cannot be attributed to a connection, so it is not
+    // converted into pins: everyone lands on automatic.
+    expect(useUserPreferenceStore.getState().queryXraySource).toEqual({});
     expect(useUserPreferenceStore.getState()).not.toHaveProperty('xraySource');
-  });
-
-  it('leaves legacy auto unset and tolerates invalid connection storage', async () => {
-    localStorage.setItem('tracehouse-connections', 'invalid');
-    localStorage.setItem('tracehouse-datasource', 'invalid');
-    localStorage.setItem('tracehouse-view-preference', JSON.stringify({ version: 0, state: { xraySource: 'auto' } }));
-    await act(() => useUserPreferenceStore.persist.rehydrate());
-    expect(useUserPreferenceStore.getState().queryXraySource).toEqual({});
-    localStorage.setItem('tracehouse-view-preference', JSON.stringify({ version: 0, state: { xraySource: 'processes_history' } }));
-    const warn = vi.spyOn(console, 'warn').mockImplementation(() => {});
-    await act(() => useUserPreferenceStore.persist.rehydrate());
-    expect(useUserPreferenceStore.getState().queryXraySource).toEqual({});
-    // Dropping a pin the user chose must be reported, not silent: this is the
-    // only signal that unreadable storage, and not the user, cleared it.
-    expect(warn.mock.calls.map(c => String(c[0]))).toEqual([
-      expect.stringContaining('tracehouse-connections is not valid JSON'),
-      expect.stringContaining('tracehouse-datasource is not valid JSON'),
-    ]);
-    warn.mockRestore();
+    expect(useUserPreferenceStore.getState().preferredViewMode).toBe('2d');
   });
 
   it('disables editing while disconnected and exposes an inherit option', () => {

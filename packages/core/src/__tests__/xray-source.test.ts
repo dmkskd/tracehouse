@@ -19,10 +19,15 @@ const NEITHER: QueryXRaySourceAvailability = { processesHistory: false, queryMet
 
 describe('selectQueryXRaySource', { tags: ['query-analysis'] }, () => {
   describe('automatic selection', () => {
-    it('prefers the configured auto source for a finished query when both exist', () => {
+    it('prefers the sampler for a finished query when both exist', () => {
+      // Asserted concretely, not against AUTO_PREFERRED_SOURCE: comparing the
+      // result to the constant that produced it passes whatever the constant
+      // says, so a change of policy has to show up as a change here.
       const sel = selectQueryXRaySource({ availability: BOTH, queryState: 'finished' });
-      expect(sel.source).toBe(AUTO_PREFERRED_SOURCE);
+      expect(sel.source).toBe('processes_history');
+      expect(AUTO_PREFERRED_SOURCE).toBe('processes_history');
       expect(sel.reason).toBe('auto');
+      expect(sel.missing).toEqual([]);
     });
 
     it('uses processes_history for a running query even when both exist', () => {

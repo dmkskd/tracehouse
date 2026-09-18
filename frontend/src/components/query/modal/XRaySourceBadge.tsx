@@ -23,15 +23,24 @@ const REASON_TITLE: Record<QueryXRaySourceSelection['reason'], string> = {
 };
 
 /**
- * The select is the whole control: showing the active table next to it repeated
- * the same word twice. Under 'auto' the chosen table is named in the option
- * itself, so the effective source is always visible without a second label.
+ * What 'automatic' does, stated in the option rather than left to the reader.
+ * The rule is fixed, so this text never changes as the active source changes:
+ * naming the resolved table here made the option read as a mirror of the
+ * current pin, which is what made it look like the rule was flipping.
  */
-function preferenceLabels(active: string): Record<QueryXRaySourcePreference, string> {
+const AUTO_RULE_LABEL = 'automatic (sampler when installed)';
+
+/**
+ * Option text. The row the samples actually came from is marked, so a glance
+ * answers "which one is in use" even when the selected row is `automatic`, and
+ * even when a pin fell back to the other source.
+ */
+function preferenceLabels(active: QueryXRaySourceSelection['source']): Record<QueryXRaySourcePreference, string> {
+  const inUse = (source: QueryXRaySourcePreference) => source === active ? ' · in use' : '';
   return {
-    auto: `automatic (${active})`,
-    processes_history: 'processes_history',
-    query_metric_log: 'query_metric_log',
+    auto: AUTO_RULE_LABEL,
+    processes_history: `processes_history${inUse('processes_history')}`,
+    query_metric_log: `query_metric_log${inUse('query_metric_log')}`,
   };
 }
 
@@ -73,7 +82,7 @@ export const XRaySourceBadge: React.FC<XRaySourceBadgeProps> = ({ meta }) => {
   // shows two options that differ only in whether an entry is stored. The
   // explicit pin is listed only when it can override an admin-pinned table.
   const inheritsAuto = defaultSource === 'auto';
-  const labels = preferenceLabels(xraySourceLabel(meta.source));
+  const labels = preferenceLabels(meta.source);
   const title = [
     meta.reason === 'override' && override === undefined ? 'Configured default' : REASON_TITLE[meta.reason],
     meta.note,
@@ -95,7 +104,7 @@ export const XRaySourceBadge: React.FC<XRaySourceBadgeProps> = ({ meta }) => {
         outlineOffset: 2,
         borderRadius: 2,
       }}>
-        {override === undefined && !inheritsAuto ? `default (${xraySourceLabel(meta.source)})` : labels[preference]}
+        {preference === 'auto' ? `automatic: ${xraySourceLabel(meta.source)}` : xraySourceLabel(meta.source)}
         <span aria-hidden style={{ fontSize: 8, color: '#555' }}>▾</span>
         <select
           aria-label="Query X-Ray source"
@@ -106,7 +115,7 @@ export const XRaySourceBadge: React.FC<XRaySourceBadgeProps> = ({ meta }) => {
           onBlur={() => setFocused(false)}
           style={overlaySelectStyle}
         >
-          <option value="inherit">{inheritsAuto ? `automatic (${xraySourceLabel(meta.source)})` : `default (${defaultSource})`}</option>
+          <option value="inherit">{inheritsAuto ? AUTO_RULE_LABEL : `default (${defaultSource})`}</option>
           {(Object.keys(labels) as QueryXRaySourcePreference[])
             .filter(key => !(inheritsAuto && key === 'auto'))
             .map(key => (
