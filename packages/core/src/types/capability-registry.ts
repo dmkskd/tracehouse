@@ -77,6 +77,16 @@ export const CAPABILITY_REGISTRY: CapabilityRegistryEntry[] = [
     ],
   },
   {
+    capabilityId: 'query_metric_log_xray',
+    consumers: [
+      { screen: 'Query X-Ray', tab: 'Queries', enables: 'X-Ray timelines without the tracehouse sampler installed, at query_metric_log resolution', importance: 'optional' },
+      { screen: 'Query Detail Modal', tab: 'Queries', enables: 'Alternate Query X-Ray source (no thread counts or progress counters)', importance: 'optional' },
+      { screen: 'Query Comparison', tab: 'Queries', enables: 'Comparison timelines using the Query X-Ray source preference', importance: 'optional' },
+      { screen: 'Time Travel Zoom', tab: 'Time Travel', route: '/timetravel', enables: 'Sampled query CPU, memory, and network; disk retains the query-log average', importance: 'optional' },
+      { screen: 'Series X-Ray', tab: 'Analytics', route: '/analytics', enables: 'Query CPU, memory, and wait overlays using the Query X-Ray source preference', importance: 'optional' },
+    ],
+  },
+  {
     capabilityId: 'metric_log',
     consumers: [
       { screen: 'Time Travel', tab: 'Time Travel', route: '/timetravel', enables: 'Memory and metric timeline visualization', importance: 'required' },
@@ -280,8 +290,10 @@ export const CAPABILITY_REGISTRY: CapabilityRegistryEntry[] = [
     capabilityId: 'tracehouse_processes_history',
     experimental: true,
     consumers: [
-      { screen: 'Query Resource Timeline', tab: 'Queries', enables: 'Second-by-second CPU, memory, and I/O timeline for individual queries', importance: 'required' },
-      { screen: 'Timeline Comparison', tab: 'Queries', enables: 'Overlaid time-series charts when comparing 2+ queries in History tab', importance: 'required' },
+      { screen: 'Query Resource Timeline', tab: 'Queries', enables: 'Sampler source for Query X-Ray, including sampled progress counters', importance: 'optional' },
+      { screen: 'Timeline Comparison', tab: 'Queries', enables: 'Sampler source for comparison timelines', importance: 'optional' },
+      { screen: 'Time Travel Zoom', tab: 'Time Travel', route: '/timetravel', enables: 'Sampler source for sampled query resources, including progress bytes', importance: 'optional' },
+      { screen: 'Series X-Ray', tab: 'Analytics', route: '/analytics', enables: 'Sampler source for resource overlays, including progress-byte throughput', importance: 'optional' },
       { screen: '3D Surface View', tab: 'Analytics', enables: 'Time × resource 3D surface visualization across queries', importance: 'required' },
     ],
   },

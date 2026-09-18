@@ -101,6 +101,7 @@ fill such a cell from release-date assumptions.
 | Replicated database engine data-utils tests | ? | Test-gated | Full | Full | Requires the tested 24.8 boundary; 24.3 keeps the engine experimental and disabled. The 23.8 data-utils run is pending. See CH-COMPAT-012. |
 | Expression-based event `LIMIT BY` | Degraded | Full | Full | Full | Early 23.8 falls back to a strict global limit; later checkpoints keep per-group limiting. See CH-COMPAT-004. |
 | Optional system logs and metric columns | Runtime-probed | Runtime-probed | Runtime-probed | Runtime-probed | Availability is detected from `system.tables` / `system.columns`, not inferred only from version. See CH-COMPAT-005. |
+| Query X-Ray from `system.query_metric_log` | Unavailable; sampler only | Unavailable; sampler only | Unavailable; sampler only | Runtime-probed | The table was added in 24.10, so the first three checkpoints have no alternative source and the X-Ray uses `tracehouse.processes_history`. Availability is probed from `system.tables` and the required `ProfileEvent_*` columns, never from the version alone. See CH-COMPAT-018. |
 | Processor profiling (`system.processors_profile_log`) | Degraded if enabled | Degraded if enabled | Degraded if enabled | Full if enabled | Probed once per connection across all selected hosts. The first three checkpoints have the base schema but not plan-step columns; 25.3 has both. A disabled/missing log is unavailable on every version. See CH-COMPAT-017. |
 | Read-only access to `system.user_directories` | Known upstream exposure | Blocked | Blocked | Blocked | The exact 23.8 limitation is asserted and reported; it is reproducible without TraceHouse. See CH-COMPAT-013. |
 | Read-only access to own `system.quota_usage` | Denied by CH | Full | Full | Full | 23.8 requires `SHOW QUOTAS`; the matrix records the upstream authorization transition. |
@@ -631,6 +632,38 @@ the legacy mode on 23.8, 24.3, and 24.8 and full mode on 25.3, verifies that
 topology performs no second schema probe, and executes the selected
 projection. Unit coverage also verifies partial-cluster, probe-failure, and
 unexpected query-failure paths.
+
+### CH-COMPAT-018: `system.query_metric_log` availability boundary
+
+**Classification:** upstream feature boundary, applied as a runtime capability.
+
+**Observed on:** upstream release tags, plus the 26.8.2 development server.
+
+`system.query_metric_log` is the alternate Query X-Ray source. It first appears
+in ClickHouse 24.10:
+
+- `src/Interpreters/QueryMetricLog.cpp` is absent at `v24.9.1.3278-stable` and
+  present at `v24.10.1.2812-stable`;
+- added by [#66532](https://github.com/ClickHouse/ClickHouse/pull/66532),
+  listed under 24.10 in the upstream changelog;
+- `programs/server/config.xml` at `v24.10.1.2812-stable` enables it by default
+  with `flush_interval_milliseconds` 7500 and `collect_interval_milliseconds`
+  1000, and `query_metric_log_interval` exists in `Settings.cpp` at that tag.
+
+The 24.10 schema is `query_id`, `hostname`, `event_date`, `event_time`,
+`event_time_microseconds`, `memory_usage`, `peak_memory_usage` and one
+`ProfileEvent_*` column per event. `clickhouse_version` and `system_processor`
+are later additions; the X-Ray does not select them, so its SQL does not depend
+on the newer schema.
+
+**Action:** no version gate is registered in `version-gated-capabilities.ts`.
+The table can be disabled by configuration on any version that has it, so the
+capability stays probed (`query_metric_log_xray`), and the X-Ray falls back to
+the sampler when the probe reports it absent. The 24.10 boundary is documentation
+of why the probe fails on older checkpoints, not a second source of truth.
+
+**Unmeasured:** the matrix has not exercised the metric-log X-Ray path on
+`25.3.14.14`. The cell records the probe behaviour, not a measured run.
 
 ## Compatibility policy
 

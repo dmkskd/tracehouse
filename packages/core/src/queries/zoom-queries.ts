@@ -1,43 +1,4 @@
-/**
- * SQL queries for zoom-mode timeline data.
- *
- * Fetches per-second process samples from tracehouse.processes_history
- * for a given time window. Unlike buildProcessSamplesSQL (which queries
- * by query_id), this fetches ALL active queries in the window.
- *
- * The service layer computes per-second deltas from cumulative counters.
- */
-
-import { APP_SOURCE_LIKE } from './source-tags.js';
-
-/**
- * Fetch raw process samples for all queries active in a time window.
- *
- * Returns cumulative counters per sample — the service computes deltas.
- * Filtered to exclude TraceHouse's own queries via source tag.
- *
- * @param hostname - Optional one-or-more-host filter.
- */
-export function buildZoomProcessSamplesSQL(hostname?: string | readonly string[]): string {
-  const hostFilter = buildZoomHostFilter(hostname);
-  return `
-SELECT
-    initial_query_id AS query_id,
-    toUnixTimestamp64Milli(sample_time) AS ts_ms,
-    memory_usage,
-    ProfileEvents['OSCPUVirtualTimeMicroseconds'] AS pe_cpu,
-    ProfileEvents['NetworkSendBytes'] AS pe_net_send,
-    ProfileEvents['NetworkReceiveBytes'] AS pe_net_recv,
-    read_bytes,
-    written_bytes
-FROM {{cluster_aware:tracehouse.processes_history}}
-WHERE sample_time >= {start_time}
-  AND sample_time <= {end_time}
-  AND query NOT LIKE ${APP_SOURCE_LIKE}
-  ${hostFilter}
-ORDER BY initial_query_id, sample_time
-`;
-}
+/** Merge zoom sampling remains independent of Query X-Ray source selection. */
 
 /**
  * Fetch raw merge samples for all merges active in a time window.

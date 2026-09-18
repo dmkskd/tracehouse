@@ -21,6 +21,8 @@ import { OrbitControls, Line, Html } from '@react-three/drei';
 import { SafeText as Text } from '@tracehouse/ui-shared';
 import * as THREE from 'three';
 import type { ProcessSample } from '../hooks/useProcessSamples';
+import { useXRaySourceMeta } from '../XRaySourceContext';
+import { peakSustainedCores } from '@tracehouse/core';
 import { hasTraceSamplesInRange } from '../hooks/useHotFunctions';
 
 /* ── Constants ──────────────────────────────────────────────────────── */
@@ -50,8 +52,18 @@ function mapT(t: number, maxT: number): number {
   return maxT > 0 ? (t / maxT) * RUNWAY_X : 0;
 }
 
+/**
+ * Map a CPU rate onto the cage's Y axis, clipping at the top.
+ *
+ * The axis is scaled to the peak SUSTAINED rate, so intervals that hit the
+ * query's thread ceiling (typically the teardown interval, where pooled threads
+ * detach and merge their accumulated time into one sample) sit above it and are
+ * clipped rather than allowed to set the scale for the whole query. They stay
+ * visible as a line pinned to the ceiling, and are called out in the summary
+ * bar, in the 2D CPU chart, and in this view's hover tooltip.
+ */
 function mapCpu(v: number, maxCpu: number): number {
-  return maxCpu > 0 ? (v / maxCpu) * MAX_Y : 0;
+  return maxCpu > 0 ? Math.min(v / maxCpu, 1) * MAX_Y : 0;
 }
 
 function mapMem(v: number, maxMem: number): number {
@@ -315,7 +327,7 @@ const SplitCorridorMesh: React.FC<{
       const laneY = hi * (laneW + laneGap);
       const sCpu = smooth(samples.map(s => s.d_cpu_cores), 5);
       const sMem = smooth(samples.map(s => s.memory_mb), 5);
-      const cpuInLane = (v: number) => maxCpu > 0 ? (v / maxCpu) * laneW : 0;
+      const cpuInLane = (v: number) => maxCpu > 0 ? Math.min(v / maxCpu, 1) * laneW : 0;
 
       // Back wall: y=laneY, z=0..mem
       const backGeo = buildWallGeoIdx(n, i => {
@@ -328,7 +340,7 @@ const SplitCorridorMesh: React.FC<{
         const x = mapT(samples[i].t, maxT);
         const y = laneY + cpuInLane(sCpu[i]);
         return [x, y, 0, x, y, mapMem(sMem[i], maxMem)];
-      }, color, i => maxCpu > 0 ? sCpu[i] / maxCpu : 0);
+      }, color, i => maxCpu > 0 ? Math.min(sCpu[i] / maxCpu, 1) : 0);
 
       // Floor: z=0, y=laneY..laneY+cpu
       const floorGeo = buildWallGeoIdx(n, i => {
@@ -440,7 +452,7 @@ const CorridorMesh: React.FC<{
       const mem = mapMem(smoothMem[i], maxMem);
       return [x, 0, mem, x, cpu, mem];
     },
-    cpuColor, s => s.d_cpu_cores / maxCpu,
+    cpuColor, s => Math.min(s.d_cpu_cores / maxCpu, 1),
   ), [samples, maxT, maxCpu, maxMem, smoothCpu, smoothMem, cpuColor]);
 
   // Back wall: (y=0, z=0) to (y=0, z=mem)
@@ -744,6 +756,7 @@ const HoverTooltip: React.FC<{
   sampleOffset?: number;
   onShowFlamegraphForT?: (t: number) => void;
 }> = ({ samples, maxT, maxCpu, maxMem, smoothCpu, smoothMem, sampleCounts, sampleOffset = 0, onShowFlamegraphForT }) => {
+  const sourceMeta = useXRaySourceMeta();
   const meshRef = useRef<THREE.Mesh>(null);
   const [hoverIdx, setHoverIdx] = useState<number | null>(null);
   const [hoverPos, setHoverPos] = useState<THREE.Vector3 | null>(null);
@@ -852,12 +865,21 @@ const HoverTooltip: React.FC<{
                 ⚠ clamped to peak concurrency
               </div>
             )}
-            <div><span style={{ color: '#00DD99' }}>read_bytes:</span> {s.d_read_mb.toFixed(1)} MB/s</div>
+            {s.rate_unclamped && (
+              <div style={{ color: '#FFA15A' }} title="peak_threads_usage is written to query_log when the query finishes, so there is no ceiling for this query yet. A detaching thread can merge its whole accumulated time into one sample, making a spike that no thread count could produce.">
+                ⚠ unclamped (no thread ceiling)
+              </div>
+            )}
+            {!sourceMeta.missing.includes('d_read_mb') && (
+              <div><span style={{ color: '#00DD99' }}>read_bytes:</span> {s.d_read_mb.toFixed(1)} MB/s</div>
+            )}
             {s.d_net_send_kb > 0 && <div><span style={{ color: '#33DDFF' }}>Net Send:</span> {s.d_net_send_kb.toFixed(1)} KB</div>}
             {s.d_net_recv_kb > 0 && <div><span style={{ color: '#33DDFF' }}>Net Recv:</span> {s.d_net_recv_kb.toFixed(1)} KB</div>}
-            <div title="Threads that have joined this query so far, including short-lived pool threads that have already finished. Not concurrency.">
-              <span style={{ color: '#aaa' }}>Threads used:</span> {s.thread_count}
-            </div>
+            {!sourceMeta.missing.includes('thread_count') && (
+              <div title="Threads that have joined this query so far, including short-lived pool threads that have already finished. Not concurrency.">
+                <span style={{ color: '#aaa' }}>Threads used:</span> {s.thread_count}
+              </div>
+            )}
             {sampleCounts && hasTraceSamplesInRange(sampleCounts, s.t + sampleOffset, s.t + sampleOffset + 1) && (
               <div style={{
                 borderTop: '1px solid #333', paddingTop: 3, marginTop: 3,
@@ -877,7 +899,10 @@ const HoverTooltip: React.FC<{
 
 const XRayScene: React.FC<XRaySceneProps> = ({ samples, highlightTime, highlightLabel, sampleCounts, sampleOffset = 0, onShowFlamegraphForT, stackedView, hostSamples, hosts }) => {
   const maxT = useMemo(() => Math.max(...samples.map(s => s.t), 1), [samples]);
-  const maxCpu = useMemo(() => Math.max(...samples.map(s => s.d_cpu_cores), 1), [samples]);
+  // Scaled to the sustained peak, matching the summary bar's headline. A plain
+  // max let one capped teardown interval halve the visible amplitude of the
+  // whole query, and made the same query look different per X-Ray source.
+  const maxCpu = useMemo(() => Math.max(peakSustainedCores(samples).value, 1), [samples]);
   const maxMem = useMemo(() => Math.max(...samples.map(s => s.memory_mb), 1), [samples]);
 
   // Smooth CPU and memory for corridor shape — removes sample-to-sample jitter

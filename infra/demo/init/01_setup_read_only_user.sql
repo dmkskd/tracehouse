@@ -71,6 +71,7 @@ GRANT SELECT ON system.processes TO read_only;
 GRANT SELECT ON system.processors_profile_log TO read_only;
 GRANT SELECT ON system.query_cache TO read_only;
 GRANT SELECT ON system.query_log TO read_only;
+GRANT SELECT ON system.query_metric_log TO read_only;
 GRANT SELECT ON system.query_thread_log TO read_only;
 GRANT SELECT ON system.replicas TO read_only;
 GRANT SELECT ON system.replication_queue TO read_only;

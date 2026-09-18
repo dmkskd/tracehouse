@@ -6,7 +6,7 @@ type Feature = {
   title: string;
   description: string | React.ReactNode;
   imageUrl: string;
-  videoFile?: string; // filename only — resolved against assetsBaseUrl
+  videoFile?: string; // filename only - resolved against assetsBaseUrl
 };
 
 const features: Feature[] = [

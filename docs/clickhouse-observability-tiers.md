@@ -14,10 +14,10 @@ These are global counters/gauges for the entire ClickHouse server process.
 They answer: "how is the server doing overall?"
 
 **Scope:** Per-server instance. In a cluster, each node has its own values.
-**Prometheus:** Yes — all exposed automatically.
+**Prometheus:** Yes - all exposed automatically.
 **Correlation key:** None (global).
 
-### system.events (ProfileEvents — cumulative counters)
+### system.events (ProfileEvents - cumulative counters)
 Prometheus prefix: `ClickHouseProfileEvents_`
 
 Every ProfileEvent from `ProfileEvents.cpp` lives here. These are monotonically
@@ -38,7 +38,7 @@ Key ones for us:
 **Limitation:** You cannot tell which table, which query, or which specific merge
 contributed to these numbers. It's all summed together.
 
-### system.metrics (CurrentMetrics — instant gauges)
+### system.metrics (CurrentMetrics - instant gauges)
 Prometheus prefix: `ClickHouseMetrics_`
 
 Point-in-time values. "Right now, how many X are happening?"
@@ -81,8 +81,8 @@ They answer: "what's happening with this table's data?"
 **Prometheus:** Not directly (you query these via SQL).
 **Correlation key:** `database` + `table` (and sometimes `partition_id`).
 
-### system.parts — current state of all data parts
-**Type:** Live state (not a log — reflects current reality)
+### system.parts - current state of all data parts
+**Type:** Live state (not a log - reflects current reality)
 
 | Column | What it tells you |
 |---|---|
@@ -104,7 +104,7 @@ They answer: "what's happening with this table's data?"
 **Use for:** Part count per table, compression ratios, merge level distribution,
 partition health, "too many parts" detection.
 
-### system.merges — currently running merges (live state)
+### system.merges - currently running merges (live state)
 **Type:** Live state (only shows in-progress merges, disappears when done)
 
 | Column | What it tells you |
@@ -129,7 +129,7 @@ partition health, "too many parts" detection.
 **Use for:** Real-time merge monitoring, progress tracking, identifying slow merges.
 This is what our MergeTracker currently uses.
 
-### system.mutations — mutation state per table
+### system.mutations - mutation state per table
 **Type:** Persistent state (stays until mutation completes + cleanup)
 
 | Column | What it tells you |
@@ -147,7 +147,7 @@ This is what our MergeTracker currently uses.
 
 **Use for:** Mutation progress tracking, stuck mutation detection.
 
-### system.replication_queue — pending replication tasks (ReplicatedMergeTree only)
+### system.replication_queue - pending replication tasks (ReplicatedMergeTree only)
 **Type:** Live state (tasks pending in ZK/Keeper)
 
 | Column | What it tells you |
@@ -166,7 +166,7 @@ This is what our MergeTracker currently uses.
 
 **Use for:** Replication lag, stuck tasks, merge queue depth per table.
 
-### system.replicas — replica health per table (ReplicatedMergeTree only)
+### system.replicas - replica health per table (ReplicatedMergeTree only)
 **Type:** Live state
 
 Key columns: `database`, `table`, `is_leader`, `is_readonly`, `queue_size`,
@@ -184,7 +184,7 @@ They answer: "what exactly happened during this specific merge/query?"
 
 **Scope:** Per-operation, identified by `query_id` (UUID).
 **Prometheus:** Not directly (query via SQL, or export to external systems).
-**Correlation key:** `query_id` (UUID) — this is the golden thread.
+**Correlation key:** `query_id` (UUID) - this is the golden thread.
 
 ### The query_id is everything
 
@@ -196,14 +196,14 @@ Every operation in ClickHouse gets a `query_id`. This includes:
 
 You can join across ALL Tier 3 tables using `query_id`.
 
-### system.query_log — the master record for every operation
+### system.query_log - the master record for every operation
 **Type:** Append-only log (MergeTree table, persisted to disk)
 
 Each query produces 2 rows: `QueryStart` + `QueryFinish` (or `ExceptionWhileProcessing`).
 
 | Column | What it tells you |
 |---|---|
-| `query_id` | **The UUID** — join key for everything |
+| `query_id` | **The UUID** - join key for everything |
 | `type` | QueryStart, QueryFinish, ExceptionBeforeStart, ExceptionWhileProcessing |
 | `query` | The SQL text (for merges: internal merge command) |
 | `query_kind` | Select, Insert, etc. |
@@ -219,7 +219,7 @@ Each query produces 2 rows: `QueryStart` + `QueryFinish` (or `ExceptionWhileProc
 | `user` | Who ran it |
 | `thread_ids` | OS thread IDs involved |
 | `peak_threads_usage` | Max concurrent threads |
-| `ProfileEvents` | **Map(String, UInt64)** — per-query ProfileEvents! |
+| `ProfileEvents` | **Map(String, UInt64)** - per-query ProfileEvents! |
 | `Settings` | Query settings that were active |
 
 **The `ProfileEvents` column is the key insight:** Every ProfileEvent counter
@@ -228,7 +228,7 @@ So for a specific merge, you can see exactly how many `MergedRows`,
 `DiskReadElapsedMicroseconds`, `MergeHorizontalStageTotalMilliseconds`, etc.
 that specific merge consumed.
 
-### system.part_log — per-part lifecycle events
+### system.part_log - per-part lifecycle events
 **Type:** Append-only log (MergeTree table, persisted to disk)
 
 One row per part event (create, merge, mutate, remove, move).
@@ -256,7 +256,7 @@ One row per part event (create, merge, mutate, remove, move).
 with full timing, source parts, result part, memory usage, and the complete
 ProfileEvents breakdown for that specific merge.
 
-Example from the docs — a single merge row contains:
+Example from the docs - a single merge row contains:
 ```
 ProfileEvents: {
   'Merge':2, 'MergeSourceParts':14, 'MergedRows':3285733,
@@ -272,7 +272,7 @@ ProfileEvents: {
 }
 ```
 
-### system.query_thread_log — per-thread breakdown of a query
+### system.query_thread_log - per-thread breakdown of a query
 **Type:** Append-only log
 
 | Column | What it tells you |
@@ -289,7 +289,33 @@ ProfileEvents: {
 **Use for:** Understanding parallelism, which threads did the most work,
 thread-level memory/IO breakdown for a specific query or merge.
 
-### system.text_log — raw log messages with query_id
+### system.query_metric_log - per-query time series (24.10+)
+**Type:** Append-only log
+
+The per-query counterpart of `system.metric_log`: the same ProfileEvent
+namespace as [Tier 1's `system.events`](#systemevents-profileevents--cumulative-counters),
+but attributed to one query and sampled repeatedly while it runs.
+
+| Column | What it tells you |
+|---|---|
+| `query_id` | **Links to query_log** (no `initial_query_id`, so distributed sub-queries cannot be rolled up without a join) |
+| `event_time`, `event_time_microseconds` | Sample timestamp. Each query is on its own schedule, not a global tick |
+| `memory_usage`, `peak_memory_usage` | The only two CurrentMetrics kept; the rest are global and meaningless per query |
+| `ProfileEvent_*` | ~900 wide columns, each holding that INTERVAL's delta (same convention as `metric_log`, opposite of `system.processes`). Divide by the interval for a rate; sum for a running total |
+
+Sampled every `query_metric_log_interval` ms (default 1000, settable per query,
+sub-second capable), plus a final row when the query finishes.
+
+**Use for:** memory and ProfileEvent curves over the life of a query, after it
+has run. No query text, user, settings, progress or thread counts - join
+`query_log` for those, which means the data is complete only post-mortem.
+
+**How TraceHouse uses it:** the Query X-Ray reads either this table or
+`tracehouse.processes_history`, chosen per query by `selectQueryXRaySource()`. See
+[X-Ray / Data Source](metrics/xray.md#data-source) for the trade-offs, what the
+`query_log` join recovers, and what stays sampler-only.
+
+### system.text_log - raw log messages with query_id
 **Type:** Append-only log
 
 | Column | What it tells you |
@@ -305,7 +331,7 @@ thread-level memory/IO breakdown for a specific query or merge.
 to get all log messages for a specific merge/query. This is what our
 `QueryTracer.get_query_logs()` already uses.
 
-### system.trace_log — sampling profiler stack traces
+### system.trace_log - sampling profiler stack traces
 **Type:** Append-only log
 
 | Column | What it tells you |
@@ -321,7 +347,7 @@ to get all log messages for a specific merge/query. This is what our
 **Use for:** CPU profiling, memory allocation profiling, finding hot code paths
 for a specific query. Can be exported to Chrome trace format / flamegraphs.
 
-### system.opentelemetry_span_log — OpenTelemetry spans
+### system.opentelemetry_span_log - OpenTelemetry spans
 **Type:** Append-only log
 
 | Column | What it tells you |
@@ -335,7 +361,7 @@ for a specific query. Can be exported to Chrome trace format / flamegraphs.
 **Use for:** Distributed tracing, waterfall views. Requires OpenTelemetry
 to be enabled (`opentelemetry_start_trace_probability`).
 
-### system.query_views_log — materialized view execution per query
+### system.query_views_log - materialized view execution per query
 **Type:** Append-only log
 
 | Column | What it tells you |
@@ -397,6 +423,6 @@ For a specific merge, you can:
 | Tier 2 | `system.mutations` | Mutation progress tracking |
 | Tier 2 | `system.replication_queue` | Replication task queue (if using ReplicatedMergeTree) |
 | Tier 2 | `system.replicas` | Replica health/lag |
-| **Tier 3** | **`system.part_log`** | **Per-merge ProfileEvents, duration, source parts, memory — this is the biggest gap** |
+| **Tier 3** | **`system.part_log`** | **Per-merge ProfileEvents, duration, source parts, memory - this is the biggest gap** |
 | Tier 3 | `system.query_log.ProfileEvents` | Per-query ProfileEvents (we query query_log but don't extract the ProfileEvents map) |
 | Tier 3 | `system.query_thread_log` | Per-thread breakdown for slow queries |

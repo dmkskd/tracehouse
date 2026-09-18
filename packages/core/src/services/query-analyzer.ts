@@ -1,3 +1,4 @@
+import type { EnvironmentDetector } from './environment-detector.js';
 import type { IClickHouseAdapter } from '../adapters/types.js';
 import type { QueryMetrics, QueryHistoryItem } from '../types/query.js';
 import { RUNNING_QUERIES, QUERY_DETAIL, QUERY_THREAD_BREAKDOWN, PROFILE_EVENT_DESCRIPTIONS, SUB_QUERIES, BATCH_SUB_QUERIES, COORDINATOR_IDS, RUNNING_COORDINATOR_IDS, QUERY_LOG_FLUSH_INTERVAL, DISTRIBUTED_TOPOLOGY_EXECUTIONS, DISTRIBUTED_TOPOLOGY_EXECUTIONS_BY_QUERY_IDS, DISTRIBUTED_TOPOLOGY_CLUSTER_HOSTS, DISTRIBUTED_TOPOLOGY_PROCESSORS, withProcessorPlanStepCapability, DISTRIBUTED_TOPOLOGY_TEXT_LOGS, DISTRIBUTED_TOPOLOGY_ASYNC_INSERT_LOGS, buildColumnCommentsSQL, QUERY_PIPELINE_STALL, QUERY_BLOCKED_STACKS } from '../queries/query-queries.js';
@@ -368,11 +369,11 @@ function errorDetail(error: unknown): string {
 }
 
 export class QueryAnalyzer {
-  private envDetector: import('./environment-detector.js').EnvironmentDetector | null;
+  private envDetector: EnvironmentDetector | null;
 
   constructor(
     private adapter: IClickHouseAdapter,
-    envDetector?: import('./environment-detector.js').EnvironmentDetector,
+    envDetector?: EnvironmentDetector,
   ) {
     this.envDetector = envDetector ?? null;
   }

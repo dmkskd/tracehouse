@@ -179,7 +179,7 @@ export const TimelineChart: React.FC<{
       // Band height is the operation's average rate; shared with the core
       // breakdown so the chart and any panel reading it cannot disagree.
       const realPeak = operationAverageRate(q, metricMode);
-      const samples = q.zoomSamples ? mapZoomToMetric(q.zoomSamples) : undefined;
+      const samples = q.zoomSamples && !q.zoomMissing?.includes(metricMode) ? mapZoomToMetric(q.zoomSamples) : undefined;
       return { startMs: parseTimestamp(q.start_time), endMs: parseTimestamp(q.end_time), peak: realPeak, realPeak, samples };
     });
   }, [data.queries, metricMode, mapZoomToMetric]);

@@ -1,3 +1,4 @@
+import type { QueryXRaySourcePreference } from '@tracehouse/core';
 /**
  * Admin-configurable settings for the TraceHouse app plugin.
  * Stored in Grafana's plugin jsonData (persisted by Grafana API).
@@ -48,6 +49,7 @@ export interface AppPluginSettings {
    * If set, ClusterService.detect() will use this cluster instead of auto-detecting.
    * Leave empty for auto-detection.
    */
+  queryXraySource?: QueryXRaySourcePreference;
   cluster?: string;
 }
 
@@ -60,6 +62,7 @@ export interface ResolvedPluginConfig {
   /** Whether kill query is allowed (admin-level) */
   killQueriesEnabled: boolean;
   /** Preferred cluster name, or undefined for auto-detection */
+  queryXraySource: QueryXRaySourcePreference;
   cluster: string | undefined;
 }
 
@@ -83,6 +86,7 @@ export function resolvePluginConfig(jsonData?: AppPluginSettings): ResolvedPlugi
     defaultRefreshRate: effectiveDefault,
     refreshRateOptions,
     killQueriesEnabled: jsonData?.killQueriesEnabled ?? false,
+    queryXraySource: jsonData?.queryXraySource ?? 'auto',
     cluster: jsonData?.cluster || undefined,
   };
 }

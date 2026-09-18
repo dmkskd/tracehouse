@@ -1,3 +1,4 @@
+import { useQueryXRayPreference } from './query-xray-preference';
 /**
  * QueryComparisonPanel - Reusable comparison panel for 2+ queries
  * 
@@ -8,12 +9,23 @@
  * Renders as a sticky bottom panel so it's always visible regardless of scroll.
  */
 
-import React, { useState, useMemo } from 'react';
-import type { ProfileEventComparison, MultiProfileEventRow, TaggedProcessSample } from '@tracehouse/core';
-import { buildProcessSamplesSQL, mapTaggedProcessSampleRow, buildTimelineChartData, tagQuery, sourceTag, TAB_QUERIES } from '@tracehouse/core';
+import React, { useState, useMemo, useEffect } from 'react';
+import type { ProfileEventComparison, MultiProfileEventRow, TaggedProcessSample, QueryXRaySourceSelection } from '@tracehouse/core';
+import {
+  commonScanStart,
+  mapTaggedProcessSampleRow,
+  buildTimelineChartData,
+  timelineMetricsExcluding,
+  selectQueryXRaySource,
+  buildXRaySamplesSQL,
+  tagQuery,
+  sourceTag,
+  TAB_QUERIES,
+} from '@tracehouse/core';
+import { useMonitoringCapabilitiesStore } from '../../stores/monitoringCapabilitiesStore';
+import { XRaySourceBadge } from './modal/XRaySourceBadge';
 import { LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer } from 'recharts';
 import { useClickHouseServices } from '../../providers/ClickHouseProvider';
-import { useCapabilityCheck } from '../shared/RequiresCapability';
 import { formatBytes } from '../../stores/queryStore';
 import { formatDurationMs, formatMicroseconds } from '../../utils/formatters';
 
@@ -69,7 +81,26 @@ export const QueryComparisonPanel: React.FC<QueryComparisonPanelProps> = ({ quer
   const [isLoadingTimeline, setIsLoadingTimeline] = useState(false);
   const [timelineError, setTimelineError] = useState<string | null>(null);
   const services = useClickHouseServices();
-  const { available: hasProcessesHistory } = useCapabilityCheck(['tracehouse_processes_history']);
+  const flags = useMonitoringCapabilitiesStore(s => s.flags);
+  const probeStatus = useMonitoringCapabilitiesStore(s => s.probeStatus);
+  const { preference } = useQueryXRayPreference();
+  // See useProcessSamples: before the probe answers, assume the sampler rather
+  // than hiding the Timeline tab on a connection that has it.
+  const probed = probeStatus === 'done';
+
+  // ONE source for the whole set. Resolving per query would put a sampler
+  // series (progress counters, 1s tick) on the same axis as a query_metric_log
+  // series (ProfileEvent counters, per-query clock) and invite a false read.
+  // Compared queries have finished by definition.
+  const sourceMeta = useMemo(() => selectQueryXRaySource({
+    availability: {
+      processesHistory: probed ? flags.hasProcessesHistory : true,
+      queryMetricLog: probed ? flags.hasQueryMetricLogXRay : false,
+    },
+    preference,
+    queryState: 'finished',
+  }), [probed, flags.hasProcessesHistory, flags.hasQueryMetricLogXRay, preference]);
+  const hasTimelineSource = sourceMeta.source !== null;
 
   const fetchDetailedComparison = async () => {
     if (!services) return;
@@ -94,13 +125,27 @@ export const QueryComparisonPanel: React.FC<QueryComparisonPanelProps> = ({ quer
 
   const fetchTimeline = async () => {
     if (!services) return;
+    if (!sourceMeta.source) {
+      setTimelineError(sourceMeta.note ?? 'No timeline source available on this connection');
+      return;
+    }
     setIsLoadingTimeline(true);
     setTimelineError(null);
     try {
       const ids = queries.map(q => q.query_id);
-      const sql = buildProcessSamplesSQL(ids);
+      const usingMetricLog = sourceMeta.source === 'query_metric_log';
+      const sql = buildXRaySamplesSQL({
+        availability: {
+          processesHistory: probed ? flags.hasProcessesHistory : true,
+          queryMetricLog: probed ? flags.hasQueryMetricLogXRay : false,
+        },
+        preference,
+        queryState: 'finished',
+      }, ids, { startedAt: commonScanStart(queries.map(q => q.query_start_time)) });
       const rows = await services.adapter.executeQuery<Record<string, unknown>>(
-        tagQuery(sql, sourceTag(TAB_QUERIES, 'comparisonTimeline')),
+        tagQuery(sql, sourceTag(TAB_QUERIES, usingMetricLog
+          ? 'comparisonTimelineMetricLog'
+          : 'comparisonTimeline')),
       );
       setTimelineSamples(rows.map(mapTaggedProcessSampleRow));
     } catch (e) {
@@ -109,6 +154,23 @@ export const QueryComparisonPanel: React.FC<QueryComparisonPanelProps> = ({ quer
       setIsLoadingTimeline(false);
     }
   };
+
+  // Both call sites rebuild the `queries` array on every render, so the effect
+  // below must key on a VALUE derived from it. Keying on the array (or on a
+  // callback that closes over it) re-runs the effect every render, and each run
+  // sets state — an unbounded fetch loop.
+  const comparedIdsKey = queries.map(q => q.query_id).join(',');
+
+  // Fetch when the Timeline tab opens, when the compared set changes, and when
+  // the source is switched — the two sources are different queries against
+  // different tables.
+  useEffect(() => {
+    if (compareView !== 'timeline') return;
+    void fetchTimeline();
+    // fetchTimeline is intentionally omitted: it is redefined every render, and
+    // depending on it would reintroduce the loop described above.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [compareView, sourceMeta.source, comparedIdsKey]);
 
   // Check if queries have different SQL text (cross-hash comparison)
   const hasDifferentQueries = queries.length >= 2 && queries.some(q => q.query !== queries[0].query);
@@ -144,10 +206,18 @@ export const QueryComparisonPanel: React.FC<QueryComparisonPanelProps> = ({ quer
             cross-query
           </span>
         )}
-        <div className="tabs" style={{ marginLeft: 'auto' }}
+        {compareView === 'timeline' && hasTimelineSource && (
+          <div
+            style={{ marginLeft: 'auto', fontSize: 11, fontFamily: 'monospace', display: 'inline-flex' }}
+            onClick={e => e.stopPropagation()}
+          >
+            <XRaySourceBadge meta={sourceMeta} />
+          </div>
+        )}
+        <div className="tabs" style={{ marginLeft: compareView === 'timeline' && hasTimelineSource ? 12 : 'auto' }}
           onClick={e => e.stopPropagation()}
         >
-          {(['overview', 'detailed', ...(hasProcessesHistory ? ['timeline'] as const : [])] as const).map(view => (
+          {(['overview', 'detailed', ...(hasTimelineSource ? ['timeline'] as const : [])] as const).map(view => (
             <button
               key={view}
               className={`tab ${compareView === view ? 'active' : ''}`}
@@ -155,9 +225,6 @@ export const QueryComparisonPanel: React.FC<QueryComparisonPanelProps> = ({ quer
                 setCompareView(view);
                 if (view === 'detailed' && profileEventComparison.length === 0 && multiComparison.length === 0 && !isLoadingDetailed) {
                   fetchDetailedComparison();
-                }
-                if (view === 'timeline' && timelineSamples.length === 0 && !isLoadingTimeline) {
-                  fetchTimeline();
                 }
               }}
               style={{ textTransform: 'capitalize', position: 'relative' }}
@@ -193,7 +260,16 @@ export const QueryComparisonPanel: React.FC<QueryComparisonPanelProps> = ({ quer
 
       {/* Collapsible body */}
       {!isCollapsed && (
-        <div style={{ padding: '0 16px 16px', maxHeight: mode === 'overlay' ? (compareView === 'timeline' ? 600 : 450) : 400, overflow: 'auto' }}>
+        <div style={{
+          padding: '0 16px 16px',
+          // The panel is anchored to the bottom, so it grows upward: a fixed
+          // body height taller than the viewport pushed the header off the top
+          // of the modal, behind the tab bar. Cap against the viewport too.
+          maxHeight: mode === 'overlay'
+            ? (compareView === 'timeline' ? 'min(600px, 60vh)' : 'min(450px, 55vh)')
+            : 'min(400px, 55vh)',
+          overflow: 'auto',
+        }}>
           {/* Query text preview for cross-hash comparisons */}
           {hasDifferentQueries && (
             <div style={{ marginBottom: 12, display: 'flex', flexDirection: 'column', gap: 4 }}>
@@ -218,6 +294,7 @@ export const QueryComparisonPanel: React.FC<QueryComparisonPanelProps> = ({ quer
               samples={timelineSamples}
               isLoading={isLoadingTimeline}
               error={timelineError}
+              sourceMeta={sourceMeta}
             />
           )}
 
@@ -591,10 +668,19 @@ const TimelineComparison: React.FC<{
   samples: TaggedProcessSample[];
   isLoading: boolean;
   error: string | null;
-}> = ({ queries, samples, isLoading, error }) => {
+  /** Active source for the whole set: decides which series can be drawn. */
+  sourceMeta: QueryXRaySourceSelection;
+}> = ({ queries, samples, isLoading, error, sourceMeta }) => {
   const chartData = useMemo(
-    () => buildTimelineChartData(samples, queries.map(q => q.query_id)),
-    [samples, queries],
+    () => buildTimelineChartData(
+      samples,
+      queries.map(q => q.query_id),
+      // The active source declares which series it cannot populate; drawing
+      // them anyway would show a read-throughput curve here for a query whose
+      // own X-Ray hides it, with numbers matching neither source.
+      timelineMetricsExcluding(sourceMeta.missing),
+    ),
+    [samples, queries, sourceMeta.missing],
   );
 
   if (isLoading) return (
@@ -610,7 +696,10 @@ const TimelineComparison: React.FC<{
   );
   if (samples.length === 0) return (
     <div style={{ padding: 16, textAlign: 'center', fontSize: 11, color: 'var(--text-muted)' }}>
-      No process samples found. Queries may have been too short (&lt;1s) or processes_history may not be enabled.
+      No samples found in {sourceMeta.source ?? 'any source'} for these queries.
+      {sourceMeta.source === 'processes_history'
+        ? ' They may have been too short to be caught by the 1s sampler.'
+        : ' They may predate the log retention, or their query_log rows may not have flushed yet.'}
     </div>
   );
 

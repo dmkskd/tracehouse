@@ -1,3 +1,4 @@
+import { selectQueryXRaySource, type SelectQueryXRaySourceInput } from '../types/xray-source.js';
 /**
  * TimelineService - Fetches server metrics and activity data for time travel visualization.
  */
@@ -15,12 +16,12 @@ import type {
   CpuSpikeAnalysis,
   ZoomSample,
 } from '../types/timeline.js';
-import { buildQuery, tagQuery, utcDateTime } from '../queries/builder.js';
+import { buildQuery, tagQuery, utcDateTime, escapeValue } from '../queries/builder.js';
+import { buildXRayWindowSamplesSQL } from '../queries/xray-window-queries.js';
 import type { QueryParameter } from '../queries/builder.js';
 import { classifyMergeHistory, classifyActiveMerge } from '../utils/merge-classification.js';
 import { TAB_TIME_TRAVEL, sourceTag } from '../queries/source-tags.js';
 import {
-  buildZoomProcessSamplesSQL,
   buildZoomMergeSamplesSQL,
 } from '../queries/zoom-queries.js';
 import {
@@ -77,6 +78,18 @@ function parseChTime(s: string): Date {
   const normalized = s.trim().replace(' ', 'T');
   const withTz = normalized.includes('Z') || normalized.includes('+') ? normalized : normalized + 'Z';
   return new Date(withTz);
+}
+
+interface QueryZoomInterval {
+  query_id: string;
+  sample_query_id: string;
+  hostname: string;
+  ts_ms: number;
+  memory_usage: number;
+  dt: number;
+  cpu_us: number;
+  net_bytes: number;
+  disk_bytes: number;
 }
 
 export class TimelineService {
@@ -560,7 +573,7 @@ export class TimelineService {
    * Fetch per-second sampled data for zoom mode.
    *
    * Enriches the provided MemoryTimeline's queries/merges/mutations with
-   * real per-second ZoomSample arrays from processes_history and merges_history.
+   * real per-second ZoomSample arrays from the selected query source and merges_history.
    * Returns a shallow copy of the timeline with zoomSamples attached.
    *
    * @param timeline - The existing MemoryTimeline (from getTimeline)
@@ -573,6 +586,7 @@ export class TimelineService {
     startMs: number,
     endMs: number,
     hostname?: string | readonly string[] | null,
+    selection: SelectQueryXRaySourceInput = { availability: { processesHistory: true, queryMetricLog: false } },
   ): Promise<MemoryTimeline> {
     const start = new Date(startMs);
     const end = new Date(endMs);
@@ -581,9 +595,10 @@ export class TimelineService {
       end_time: utcDateTime(end),
     };
 
+    const meta = selectQueryXRaySource(selection);
     // Fetch process samples and merge samples in parallel
     const [processSamples, mergeSamples] = await Promise.all([
-      this.fetchZoomProcessSamples(params, hostname ?? undefined),
+      meta.source ? this.fetchZoomProcessSamples(params, hostname ?? undefined, selection, timeline.queries) : Promise.resolve([]),
       this.fetchZoomMergeSamples(params, hostname ?? undefined),
     ]);
 
@@ -596,7 +611,9 @@ export class TimelineService {
     // Attach zoom samples to matching series (shallow copy)
     const queries = timeline.queries.map(q => {
       const samples = queryZoom.get(q.query_id);
-      return samples ? { ...q, zoomSamples: samples } : q;
+      const { zoomSamples: previousSamples, zoomMissing: previousMissing, ...base } = q;
+      void previousSamples; void previousMissing;
+      return samples ? { ...base, zoomSamples: samples, zoomMissing: meta.source === 'query_metric_log' ? ['disk' as const] : [] } : base;
     });
     const merges = timeline.merges.map(m => {
       const entry = mergeZoom.get(m.part_name);
@@ -619,27 +636,36 @@ export class TimelineService {
 
   private async fetchZoomProcessSamples(
     params: Record<string, QueryParameter>,
-    hostname?: string | readonly string[],
-  ): Promise<Array<{ query_id: string; ts_ms: number; memory_usage: number; pe_cpu: number; pe_net_send: number; pe_net_recv: number; read_bytes: number; written_bytes: number }>> {
+    hostname: string | readonly string[] | undefined,
+    selection: SelectQueryXRaySourceInput,
+    queries: QuerySeries[],
+  ): Promise<QueryZoomInterval[]> {
+    if (!queries.length) return [];
     try {
-      const sql = buildQuery(buildZoomProcessSamplesSQL(hostname), params);
+      const ids = [...new Set(queries.map(q => q.query_id))];
+      const earliestStart = queries.map(q => q.start_time).sort()[0];
+      const sql = buildQuery(buildXRayWindowSamplesSQL(selection, {
+        start: '{start_time}', end: '{end_time}', hostname,
+        queryIdsSQL: `SELECT arrayJoin([${ids.map(id => "'" + escapeValue(id) + "'").join(', ')}])`,
+        identityStart: '{identity_start}',
+      }), { ...params, identity_start: utcDateTime(earliestStart) });
       const rows = await this.adapter.executeQuery(tagQuery(sql, sourceTag(TAB_TIME_TRAVEL, 'zoomProcess')));
       return rows.map(r => {
         const row = r as Record<string, unknown>;
         return {
-          query_id: String(row.query_id || ''),
-          ts_ms: Number(row.ts_ms || 0),
-          memory_usage: Number(row.memory_usage || 0),
-          pe_cpu: Number(row.pe_cpu || 0),
-          pe_net_send: Number(row.pe_net_send || 0),
-          pe_net_recv: Number(row.pe_net_recv || 0),
-          read_bytes: Number(row.read_bytes || 0),
-          written_bytes: Number(row.written_bytes || 0),
+          query_id: String(row.query_id ?? ''),
+          sample_query_id: String(row.sample_query_id ?? ''),
+          hostname: String(row.hostname ?? ''),
+          ts_ms: Number(row.ts_ms),
+          memory_usage: Number(row.memory_usage ?? 0), dt: Number(row.dt ?? 0.001),
+          cpu_us: Number(row.cpu_us ?? 0),
+          net_bytes: Number(row.net_send_bytes ?? 0) + Number(row.net_recv_bytes ?? 0),
+          disk_bytes: Number(row.read_bytes ?? 0) + Number(row.written_bytes ?? 0),
         };
       });
     } catch (e) {
       console.error('[TimelineService] zoom process samples error:', e);
-      return [];
+      throw e;
     }
   }
 
@@ -668,48 +694,33 @@ export class TimelineService {
   }
 
   /**
-   * Convert raw cumulative process samples into per-second ZoomSample arrays.
-   * Groups by query_id, then computes deltas between consecutive samples.
+   * Convert normalized local-query intervals into per-second ZoomSample arrays.
    */
-  private computeQueryZoomSamples(
-    raw: Array<{ query_id: string; ts_ms: number; memory_usage: number; pe_cpu: number; pe_net_send: number; pe_net_recv: number; read_bytes: number; written_bytes: number }>,
-  ): Map<string, ZoomSample[]> {
-    // Group by query_id (already sorted by query_id, sample_time from SQL)
-    const grouped = new Map<string, typeof raw>();
-    for (const s of raw) {
-      let arr = grouped.get(s.query_id);
-      if (!arr) { arr = []; grouped.set(s.query_id, arr); }
-      arr.push(s);
+  private computeQueryZoomSamples(raw: QueryZoomInterval[]): Map<string, ZoomSample[]> {
+    // First average intervals of each LOCAL execution within a wall-clock
+    // second, then sum local executions. Interleaved shards never share deltas
+    // and sub-second samples never multiply gauges or rates.
+    const localBuckets = new Map<string, { queryId: string; ms: number; memory: number; count: number; dt: number; cpu: number; net: number; disk: number }>();
+    for (const row of raw) {
+      const ms = Math.floor(row.ts_ms / 1000) * 1000;
+      const key = JSON.stringify([row.query_id, row.hostname, row.sample_query_id, ms]);
+      const bucket = localBuckets.get(key) ?? { queryId: row.query_id, ms, memory: 0, count: 0, dt: 0, cpu: 0, net: 0, disk: 0 };
+      bucket.memory += row.memory_usage; bucket.count++;
+      bucket.dt += row.dt; bucket.cpu += row.cpu_us;
+      bucket.net += row.net_bytes; bucket.disk += row.disk_bytes;
+      localBuckets.set(key, bucket);
     }
-
-    const result = new Map<string, ZoomSample[]>();
-    for (const [qid, samples] of grouped) {
-      const zoomed: ZoomSample[] = [];
-      for (let i = 0; i < samples.length; i++) {
-        const cur = samples[i];
-        if (i === 0) {
-          // First sample: no delta available, use memory only
-          zoomed.push({ ms: cur.ts_ms, memory: cur.memory_usage, cpu_cores: 0, net_rate: 0, disk_rate: 0 });
-          continue;
-        }
-        const prev = samples[i - 1];
-        const dtSec = Math.max((cur.ts_ms - prev.ts_ms) / 1000, 0.1);
-
-        const cpuDelta = Math.max(cur.pe_cpu - prev.pe_cpu, 0);
-        const netDelta = Math.max(cur.pe_net_send - prev.pe_net_send, 0) + Math.max(cur.pe_net_recv - prev.pe_net_recv, 0);
-        const diskDelta = Math.max(cur.read_bytes - prev.read_bytes, 0) + Math.max(cur.written_bytes - prev.written_bytes, 0);
-
-        zoomed.push({
-          ms: cur.ts_ms,
-          memory: cur.memory_usage,
-          cpu_cores: cpuDelta / 1_000_000 / dtSec,  // µs → cores
-          net_rate: netDelta / dtSec,
-          disk_rate: diskDelta / dtSec,
-        });
-      }
-      if (zoomed.length > 0) result.set(qid, zoomed);
+    const grouped = new Map<string, Map<number, ZoomSample>>();
+    for (const bucket of localBuckets.values()) {
+      const samples = grouped.get(bucket.queryId) ?? new Map<number, ZoomSample>();
+      const sample = samples.get(bucket.ms) ?? { ms: bucket.ms, memory: 0, cpu_cores: 0, net_rate: 0, disk_rate: 0 };
+      sample.memory += bucket.memory / bucket.count;
+      sample.cpu_cores += bucket.cpu / 1e6 / bucket.dt;
+      sample.net_rate += bucket.net / bucket.dt;
+      sample.disk_rate += bucket.disk / bucket.dt;
+      samples.set(bucket.ms, sample); grouped.set(bucket.queryId, samples);
     }
-    return result;
+    return new Map([...grouped].map(([id, samples]) => [id, [...samples.values()].sort((a, b) => a.ms - b.ms)]));
   }
 
   /**

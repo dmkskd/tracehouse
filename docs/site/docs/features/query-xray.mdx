@@ -3,12 +3,12 @@ import FeatureVideo from '@site/src/components/FeatureVideo';
 # Query X-Ray
 
 :::caution Experimental
-This feature is experimental and under active development. To enable it, open the **Settings** popover (gear icon in the top bar) and check **Experimental Features**. It requires `processes_history` (see below).
+This feature is experimental and under active development. To enable it, open the **Settings** popover (gear icon in the top bar) and check **Experimental Features**. It needs one of two sources: `system.query_metric_log`, built into ClickHouse 24.10+, or `tracehouse.processes_history` (see below).
 :::
 
 <FeatureVideo src="query-xray-1920.mp4" />
 
-See what a query is doing at every second of its execution. X-Ray uses per-second snapshots of `system.processes` to reconstruct how a query consumed CPU, memory, I/O, and network over time, making it easy to spot the exact moment a query hit a bottleneck.
+See what a query is doing at every second of its execution. X-Ray reads a time series of a single query's CPU, memory, I/O, and network use, making it easy to spot the exact moment a query hit a bottleneck.
 
 ## What You See
 
@@ -41,11 +41,29 @@ The scrubber at the bottom of the X-Ray view lets you move through a query's exe
 
 ## Query History Timeline
 
-The same `processes_history` data is also used by the **Timeline** tab in the query comparison panel. When you select multiple executions of the same query (from Query History or Similar Queries), the timeline view overlays their resource profiles on the same chart so you can see how performance changed across executions, for example whether a query got slower after a schema change or a config tweak.
+The same samples feed the **Timeline** tab in the query comparison panel. When you select multiple executions of the same query (from Query History or Similar Queries), the timeline view overlays their resource profiles on the same chart so you can see how performance changed across executions, for example whether a query got slower after a schema change or a config tweak.
+
+## Data Sources
+
+X-Ray reads one of two tables. The **source** control in the X-Ray header shows which one is active and lets you pin the other.
+
+| Source | What it needs | What it gives you |
+|--------|---------------|-------------------|
+| **query_metric_log** | Nothing, built into ClickHouse 24.10+ | Memory, CPU, wait and network curves. No thread counts, no read/write progress |
+| **processes_history** | The sampler script below | Everything, sampled every second |
+
+Left on auto, X-Ray picks the sampler for a query that is still running, because it is fresher and carries thread counts, and `system.query_metric_log` for a query that has finished. A pin applies to the current connection, and a Grafana administrator can set the default for everyone.
+
+Two things to know about `system.query_metric_log`:
+
+- **Flush lag** - rows reach the table on the server's flush interval, so the last few seconds of a query may not be there yet.
+- **Coverage** - its clock starts when the query's pipeline starts executing, not when the query arrives. Work done during query analysis, which includes scalar subqueries, arrives as a single point rather than a curve, so a query shaped that way looks much flatter here than it does through the sampler.
+
+Merge X-Ray always reads `tracehouse.merges_history`. `system.query_metric_log` is keyed by query, and background merges have no query to key on.
 
 ## processes_history
 
-X-Ray is built on top of `tracehouse.processes_history`, a table that stores per-second snapshots of `system.processes`. While ClickHouse's built-in `system.query_log` only records a final summary after a query finishes, `processes_history` captures resource usage *while the query is still running*, giving you a time series of CPU, memory, I/O, and network for every second of execution.
+`tracehouse.processes_history` is a table that stores per-second snapshots of `system.processes`. While ClickHouse's built-in `system.query_log` only records a final summary after a query finishes, `processes_history` captures resource usage *while the query is still running*, giving you a time series of CPU, memory, I/O, and network for every second of execution.
 
 :::danger tracehouse writes to ClickHouse
 Unlike every other tracehouse feature (which only reads from system tables), `processes_history` creates a `tracehouse` database and **continuously writes data** into it via a refreshable materialized view. Make sure you understand the write footprint before enabling this on production clusters.
@@ -53,7 +71,7 @@ Unlike every other tracehouse feature (which only reads from system tables), `pr
 
 ### Setup
 
-Tracehouse needs a `tracehouse.processes_history` table it can read from. How you populate it is up to you. We provide a setup script as a reference implementation, but you're free to adapt the approach to your cluster topology and preferences. This is an alpha-level feature.
+To use this source, TraceHouse needs a `tracehouse.processes_history` table it can read from. How you populate it is up to you. We provide a setup script as a reference implementation, but you're free to adapt the approach to your cluster topology and preferences. This is an alpha-level feature.
 
 The provided script uses a refreshable materialized view that snapshots `system.processes` every N seconds into a MergeTree table via a Buffer:
 

@@ -59,7 +59,7 @@ Current integration test coverage:
 
 ## Test tags
 
-Every test suite is tagged by **domain** — what capability it validates, not how it's tested. Tags use Vitest 4.x native `{ tags: [...] }` syntax on top-level `describe()` blocks.
+Every test suite is tagged by **domain** - what capability it validates, not how it's tested. Tags use Vitest 4.x native `{ tags: [...] }` syntax on top-level `describe()` blocks.
 
 ### Available tags
 
@@ -314,7 +314,7 @@ tools/data-utils/tests/
 just test-data-utils
 ```
 
-Docker must be running — the tests spin up a ClickHouse container automatically.
+Docker must be running - the tests spin up a ClickHouse container automatically.
 
 ### What they cover
 
@@ -333,7 +333,7 @@ Browser-based e2e tests live in `packages/e2e/` and use [Playwright](https://pla
 |---|---|
 | `smoke.spec.ts` | App boot, nav items, route transitions, settings toggles, responsiveness, performance |
 | `connection.spec.ts` | "Add Connection" form flow and "Test Connection" button against real ClickHouse |
-| `connected-pages.spec.ts` | Overview metrics, Engine Internals, Explorer databases, Queries, Analytics — all with real data |
+| `connected-pages.spec.ts` | Overview metrics, Engine Internals, Explorer databases, Queries, Analytics - all with real data |
 
 The `connectedPage` fixture injects a ClickHouse connection via localStorage and **waits for actual data to arrive** (the refresh indicator must show "Just now" or "Xs ago", not "Connecting...") before handing the page to the test. This means tests that pass are genuinely connected and showing real ClickHouse data.
 
@@ -343,7 +343,7 @@ The `connectedPage` fixture injects a ClickHouse connection via localStorage and
 # Run all e2e tests (headless)
 just e2e
 
-# Interactive Playwright UI — step through tests, inspect screenshots, replay traces
+# Interactive Playwright UI - step through tests, inspect screenshots, replay traces
 just e2e-ui
 
 # Watch tests run in a visible browser (500ms between actions by default)
@@ -379,8 +379,8 @@ The e2e setup follows the same pattern as core integration tests:
 - **Global setup** (`tests/global-setup.ts`): starts a ClickHouse container with `docker run`, waits for health, runs the init SQL from `infra/demo/init/` to set up users and grants. Writes connection details to `.ch-state.json`.
 - **Global teardown** (`tests/global-teardown.ts`): stops the container.
 - **Fixtures** (`tests/fixtures.ts`): provides `chConfig` (connection details) and `connectedPage` (a Page with an active ClickHouse connection). Two connection methods:
-  - `connectViaLocalStorage` — injects the connection profile directly into localStorage (fast, used by most tests)
-  - `connectViaUI` — fills in the "Add Connection" form like a real user (used by connection form tests)
+  - `connectViaLocalStorage` - injects the connection profile directly into localStorage (fast, used by most tests)
+  - `connectViaUI` - fills in the "Add Connection" form like a real user (used by connection form tests)
 
 ### Browser projects
 

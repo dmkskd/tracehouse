@@ -404,13 +404,13 @@ export const MergeFilterBar: React.FC<MergeFilterBarProps> = (props) => {
       const valueItems: DropdownItem[] = vals
         .filter(v => !selected.has(v.toLowerCase()))
         .filter(v => !q || v.toLowerCase().includes(q))
-        .map(v => ({
+        .map((v): DropdownItem => ({
           id: v,
           label: v,
           value: v,
           group: 'value',
           field: activeField,
-        }) satisfies DropdownItem);
+        }));
       const errorSelected = props.selectedStatus?.some(
         status => status.toLowerCase() === 'error',
       ) ?? false;

@@ -107,7 +107,7 @@ Controls: time range picker (15 minutes to 30 days), database/table selector.
 
 ### Pattern Surface
 
-Shows the top 12 most time-consuming query patterns for a table. Each pattern (by `normalized_query_hash`) gets its own lane on the Z-axis, ranked by total duration. Time runs along the X-axis, and the Y-axis (height) shows average duration in milliseconds — this is the actual latency value, not a normalized score.
+Shows the top 12 most time-consuming query patterns for a table. Each pattern (by `normalized_query_hash`) gets its own lane on the Z-axis, ranked by total duration. Time runs along the X-axis, and the Y-axis (height) shows average duration in milliseconds - this is the actual latency value, not a normalized score.
 
 The color scale uses a magma palette (dark purple to bright yellow) to indicate intensity. A collapsible side panel lists each pattern with its query count, average duration, average memory, and a sample query. Hovering over the surface highlights the corresponding pattern.
 
@@ -117,8 +117,8 @@ This reveals which query shapes dominate a table's workload and how their perfor
 
 A system-wide or per-table view of where resources are being consumed. It operates at two levels:
 
-- **System level** — Time × Tables. Each lane represents a table, ranked by resource consumption. Shows which tables are stressing the system most at any point in time.
-- **Table level** — Time × Query patterns. Drill into a table to see which query patterns drive its resource usage.
+- **System level** - Time × Tables. Each lane represents a table, ranked by resource consumption. Shows which tables are stressing the system most at any point in time.
+- **Table level** - Time × Query patterns. Drill into a table to see which query patterns drive its resource usage.
 
 By default the height represents a **composite stress** metric: a weighted combination of CPU, memory, I/O, and marks, each normalized as a percentage of system-wide usage. You can switch to a single metric instead:
 

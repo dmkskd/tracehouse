@@ -1,3 +1,4 @@
+import { QueryXRayDefaultContext } from '../../query/query-xray-preference';
 import { act, cleanup, render, screen, waitFor } from '@testing-library/react';
 import { MemoryRouter } from 'react-router-dom';
 import { afterEach, beforeEach, describe, expect, test, vi } from 'vitest';
@@ -25,13 +26,10 @@ const localStorageMock: Storage = {
 };
 vi.stubGlobal('localStorage', localStorageMock);
 
-vi.mock('../../../providers/ClickHouseProvider', () => ({
-  useClickHouseServices: () => ({
-    interactiveQueryService: {
-      run: mocks.run,
-    },
-  }),
-}));
+vi.mock('../../../providers/ClickHouseProvider', () => {
+  const services = { interactiveQueryService: { run: mocks.run } };
+  return { useClickHouseServices: () => services };
+});
 
 function setServerVersion(serverVersion: string): void {
   act(() => {
@@ -93,5 +91,33 @@ describe('DashboardViewer query version compatibility', () => {
     });
 
     expect(screen.queryByText(/Not run · Requires ClickHouse ≥ 24\.8/)).not.toBeInTheDocument();
+  });
+});
+
+
+describe('Series dashboard source preference', () => {
+  afterEach(() => { cleanup(); useMonitoringCapabilitiesStore.getState().reset(); });
+
+  test('reruns supported panels when the runtime default changes and explains unavailable progress bytes', async () => {
+    mocks.run.mockClear();
+    useMonitoringCapabilitiesStore.setState(state => ({
+      probeStatus: 'done',
+      flags: { ...state.flags, hasProcessesHistory: true, hasQueryMetricLogXRay: true },
+    }));
+    const { rerender } = render(
+      <MemoryRouter><QueryXRayDefaultContext.Provider value="processes_history">
+        <DashboardViewer initialDashboardId="xray" />
+      </QueryXRayDefaultContext.Provider></MemoryRouter>,
+    );
+    await waitFor(() => expect(mocks.run.mock.calls.filter(([sql]) => sql.includes('tracehouse.processes_history'))).toHaveLength(4));
+    mocks.run.mockClear();
+    rerender(
+      <MemoryRouter><QueryXRayDefaultContext.Provider value="query_metric_log">
+        <DashboardViewer initialDashboardId="xray" />
+      </QueryXRayDefaultContext.Provider></MemoryRouter>,
+    );
+    await waitFor(() => expect(mocks.run.mock.calls.filter(([sql]) => sql.includes('system.query_metric_log'))).toHaveLength(3));
+    expect(mocks.run.mock.calls.every(([sql]) => !sql.includes('{{query_xray_overlay:'))).toBe(true);
+    expect(await screen.findByText(/Sampled read_bytes is unavailable/)).toBeInTheDocument();
   });
 });

@@ -1,3 +1,4 @@
+import type { MergeTextLog } from '@tracehouse/core';
 /**
  * MergeDetailModal — Full detail modal for merge/mutation operations.
  *
@@ -636,7 +637,7 @@ const MergeDetailInner: React.FC<{
 
   const [activeTab, setActiveTab] = useState<MergeDetailTab>('details');
   const [volumeInfo, setVolumeInfo] = useState<{ volumeName: string; policyName: string } | null>(null);
-  const [textLogs, setTextLogs] = useState<import('@tracehouse/core').MergeTextLog[]>([]);
+  const [textLogs, setTextLogs] = useState<MergeTextLog[]>([]);
   const [isLoadingLogs, setIsLoadingLogs] = useState(false);
   const [logsError, setLogsError] = useState<string | null>(null);
   const [logFilter, setLogFilter] = useState<TraceLogFilter>({});

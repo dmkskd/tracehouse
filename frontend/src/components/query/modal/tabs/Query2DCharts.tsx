@@ -18,6 +18,8 @@
 import React, { useMemo } from 'react';
 import { LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, Area, AreaChart, ReferenceLine } from 'recharts';
 import type { ProcessSample } from '../hooks/useProcessSamples';
+import { useXRaySourceMeta } from '../XRaySourceContext';
+import { peakSustainedCores } from '@tracehouse/core';
 import { formatElapsed, formatBytes } from '../../../../utils/formatters';
 
 const CHART_HEIGHT = 120;
@@ -45,6 +47,8 @@ const COLORS = {
 };
 
 const SCRUBBER_LINE_COLOR = '#FECB52';
+/** Shared by the clamp dots and the clamp badge so they read as one signal. */
+const CLAMP_COLOR = '#FFA15A';
 
 const fmtTime = (v: number) => formatElapsed(v);
 const fmtCores = (v: number) => v.toFixed(2);
@@ -52,10 +56,16 @@ const fmtMemAxis = (v: number) => (v >= 1024 ? `${(v / 1024).toFixed(1)}G` : `${
 const fmtMemFull = (v: number) => formatBytes(v * 1024 * 1024);
 const fmtMbs = (v: number) => `${v.toFixed(1)} MB/s`;
 
-const ChartCard: React.FC<{ title: string; children: React.ReactNode }> = ({ title, children }) => (
+const ChartCard: React.FC<{
+  title: string;
+  /** Optional caveat shown next to the title, e.g. a clamp warning. */
+  badge?: React.ReactNode;
+  children: React.ReactNode;
+}> = ({ title, badge, children }) => (
   <div style={{ marginBottom: 8 }}>
-    <div style={{ fontSize: 9, fontWeight: 600, color: TITLE_COLOR, marginBottom: 3, textTransform: 'uppercase', letterSpacing: '0.5px' }}>
+    <div style={{ fontSize: 9, fontWeight: 600, color: TITLE_COLOR, marginBottom: 3, textTransform: 'uppercase', letterSpacing: '0.5px', display: 'flex', alignItems: 'center', gap: 6 }}>
       {title}
+      {badge}
     </div>
     <div style={{ background: CARD_BG, border: `1px solid ${CARD_BORDER}`, borderRadius: 6, padding: '4px 4px 2px 4px' }}>
       {children}
@@ -96,12 +106,55 @@ const xAxisProps = {
   stroke: GRID_STROKE,
 };
 
+/**
+ * Dot renderer that marks only the samples whose thread-time rate was capped.
+ * Recharts calls this for every point, so it returns null for the rest.
+ */
+const ClampDot: React.FC<{
+  cx?: number;
+  cy?: number;
+  payload?: { clamped?: boolean };
+}> = ({ cx, cy, payload }) => {
+  if (!payload?.clamped || cx == null || cy == null) return null;
+  return <circle cx={cx} cy={cy} r={2.5} fill={CLAMP_COLOR} stroke={CARD_BG} strokeWidth={1} />;
+};
+
+/**
+ * Caveat shown on the CPU card. Two different situations, and conflating them
+ * would mislead: 'clamped' means we capped a spike at the query's peak
+ * concurrency, 'unclamped' means no ceiling was available at all, so a spike
+ * may be an artefact rather than real work.
+ */
+const ClampBadge: React.FC<{ anyUnclamped: boolean; anyClamped: boolean }> = ({ anyUnclamped, anyClamped }) => {
+  if (anyUnclamped) {
+    return (
+      <span
+        style={{ color: CLAMP_COLOR, textTransform: 'none', fontWeight: 500 }}
+        title="No thread ceiling is available for this query yet: peak_threads_usage is written to query_log when the query finishes. A pooled thread detaching can merge its whole accumulated time into one sample, so spikes here may exceed what the query's threads could actually produce."
+      >
+        ⚠ unclamped
+      </span>
+    );
+  }
+  if (!anyClamped) return null;
+  return (
+    <span
+      style={{ color: CLAMP_COLOR, textTransform: 'none', fontWeight: 500 }}
+      title="Marked samples were capped at the query's peak concurrent threads. A thread detaching merges its whole accumulated time into one interval, producing a rate no thread count could reach. The plotted value is a floor, not the raw counter delta."
+    >
+      ⚠ clamped samples marked
+    </span>
+  );
+};
+
 export const Query2DCharts: React.FC<{
   samples: ProcessSample[];
   highlightTime: number | null;
 }> = ({ samples, highlightTime }) => {
+  const { missing } = useXRaySourceMeta();
   const chartData = useMemo(() => samples.map(s => ({
     t: s.t,
+    clamped: s.rate_clamped,
     cpu_cores: s.d_cpu_cores,
     memory_mb: s.memory_mb,
     read_mb: s.d_read_mb,
@@ -113,7 +166,15 @@ export const Query2DCharts: React.FC<{
 
   const hasIoWait = samples.some(s =>
     s.d_io_wait_s > 0 || s.d_cpu_wait_s > 0 || s.d_net_recv_wait_s > 0);
-  const hasRead = samples.some(s => s.d_read_mb > 0);
+  // Hidden rather than approximated when the active source has no real progress
+  // counters: a plausible-looking curve built from a different quantity is worse
+  // than no curve.
+  const hasRead = !missing.includes('d_read_mb') && samples.some(s => s.d_read_mb > 0);
+  const anyClamped = samples.some(s => s.rate_clamped);
+  // Observed from the rows, not inferred from the source: only the query knows
+  // whether a thread ceiling was actually found.
+  const anyUnclamped = samples.some(s => s.rate_unclamped);
+  const sustainedCpuMax = Math.max(peakSustainedCores(samples).value, 0.001);
   const hasNet = samples.some(s => s.d_net_send_kb > 0 || s.d_net_recv_kb > 0);
 
   const scrubberLine = highlightTime != null
@@ -123,14 +184,26 @@ export const Query2DCharts: React.FC<{
   return (
     <div style={{ flex: 1, minHeight: 0, overflow: 'auto', padding: '12px 16px', background: SURFACE_BG }}>
       {/* CPU cores */}
-      <ChartCard title="CPU Cores (cores)">
+      <ChartCard
+        title="CPU Cores (cores)"
+        badge={<ClampBadge anyUnclamped={anyUnclamped} anyClamped={anyClamped} />}
+      >
         <ResponsiveContainer width="100%" height={CHART_HEIGHT}>
           <AreaChart data={chartData}>
             <CartesianGrid strokeDasharray="3 3" stroke={GRID_STROKE} />
             <XAxis {...xAxisProps} />
-            <YAxis tickFormatter={fmtCores} tick={axisTick} stroke={GRID_STROKE} />
+            {/* Same ceiling as the 3D cage and the summary-bar headline:
+                scaled to the sustained peak, with capped intervals clipping at
+                the top and marked by ClampDot rather than setting the scale. */}
+            <YAxis
+              tickFormatter={fmtCores}
+              tick={axisTick}
+              stroke={GRID_STROKE}
+              domain={[0, sustainedCpuMax]}
+              allowDataOverflow
+            />
             <Tooltip content={<CustomTooltip formatter={(_, v) => `${fmtCores(v)} cores`} />} cursor={{ stroke: GRID_STROKE }} />
-            <Area type="monotone" dataKey="cpu_cores" stroke={COLORS.cpu} fill={COLORS.cpu} fillOpacity={0.15} strokeWidth={1.5} dot={false} name="CPU" isAnimationActive={false} />
+            <Area type="monotone" dataKey="cpu_cores" stroke={COLORS.cpu} fill={COLORS.cpu} fillOpacity={0.15} strokeWidth={1.5} dot={<ClampDot />} activeDot={false} name="CPU" isAnimationActive={false} />
             {scrubberLine}
           </AreaChart>
         </ResponsiveContainer>

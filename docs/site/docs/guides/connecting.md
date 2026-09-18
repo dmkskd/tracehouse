@@ -67,14 +67,14 @@ Grants are only one of the two requirements. A feature the connecting user has a
 
 On connect, the app probes the server to determine what is available and degrades gracefully when features are missing. The detection covers:
 
-- **Server version** — via `version()`
-- **System log tables** — checks which log tables exist in `system.tables` (e.g. `query_log`, `trace_log`, `part_log`, `metric_log`)
-- **Introspection functions** — tests `demangle('')` to see if flamegraphs and stack trace demangling will work
-- **CPU profiler** — reads `query_profiler_cpu_time_period_ns` / `query_profiler_real_time_period_ns` from `system.settings`
-- **Cluster topology** — queries `system.clusters`, falls back to `system.replicas` if inaccessible
-- **ZooKeeper / Keeper** — checks if `system.zookeeper` is present
-- **ClickHouse Cloud** — detects cloud via `cloud_mode_engine` setting and `system.build_options`
-- **Container environment** — reads cgroup CPU/memory limits, detects Kubernetes by hostname pattern
+- **Server version** - via `version()`
+- **System log tables** - checks which log tables exist in `system.tables` (e.g. `query_log`, `trace_log`, `part_log`, `metric_log`)
+- **Introspection functions** - tests `demangle('')` to see if flamegraphs and stack trace demangling will work
+- **CPU profiler** - reads `query_profiler_cpu_time_period_ns` / `query_profiler_real_time_period_ns` from `system.settings`
+- **Cluster topology** - queries `system.clusters`, falls back to `system.replicas` if inaccessible
+- **ZooKeeper / Keeper** - checks if `system.zookeeper` is present
+- **ClickHouse Cloud** - detects cloud via `cloud_mode_engine` setting and `system.build_options`
+- **Container environment** - reads cgroup CPU/memory limits, detects Kubernetes by hostname pattern
 
 Screens that depend on a missing capability are either hidden or show a message explaining what is needed. See `packages/core/src/services/monitoring-capabilities.ts` for the full probe logic.
 
@@ -91,7 +91,7 @@ Screens that depend on a missing capability are either hidden or show a message 
 | **Flamegraphs** | Requires introspection functions | Requires introspection functions + profiler | Not supported (no `trace_log`) | Requires introspection functions + profiler |
 
 :::tip Aiven
-Aiven has significant system table restrictions that affect several features. Aiven also enforces a short TTL (typically 1 hour) on most system log tables — their recommended workaround is to create materialized views that copy log data into regular tables for longer retention. We are planning to support configurable system table locations so the app can read from those materialized views instead. See the dedicated [Aiven for ClickHouse](./aiven.md) guide for full details on limitations and workarounds.
+Aiven has significant system table restrictions that affect several features. Aiven also enforces a short TTL (typically 1 hour) on most system log tables - their recommended workaround is to create materialized views that copy log data into regular tables for longer retention. We are planning to support configurable system table locations so the app can read from those materialized views instead. See the dedicated [Aiven for ClickHouse](./aiven.md) guide for full details on limitations and workarounds.
 :::
 
 ## Recommended Settings

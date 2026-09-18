@@ -1,3 +1,4 @@
+import { useQueryXRaySelection } from '../query/query-xray-preference';
 /**
  * QueryExplorer - run preset (or custom) monitoring queries with inline charts.
  * Mirrors the k8s-compass AnalyticsView pattern:
@@ -26,7 +27,7 @@ import {
   addCustomQuery, deleteCustomQuery, loadCustomQueries, isQueryNameTaken,
   buildCustomQuerySql, getAllQueries as getAllQueriesFromPresets,
 } from './customQueries';
-import { resolveTimeRange, resolveDrillParams, isDrillTarget } from './templateResolution';
+import { resolveQueryXRaySQL, resolveTimeRange, resolveDrillParams, isDrillTarget } from './templateResolution';
 import {
   QUERY_GROUPS, CHART_TYPE_LABELS,
   type QueryGroup, type ChartType, type ChartStyle,
@@ -142,6 +143,7 @@ interface QueryExplorerProps {
 
 export const QueryExplorer: React.FC<QueryExplorerProps> = ({ urlState, onUrlStateChange, onExportToGrafana, onOpenQueryDetail }) => {
   const services = useClickHouseServices();
+  const xraySelection = useQueryXRaySelection();
   const { clusterName } = useClusterStore();
   const hasExplainAnalyze = useMonitoringCapabilitiesStore(state => state.flags.hasExplainAnalyze);
   const capabilityProbeStatus = useMonitoringCapabilitiesStore(state => state.probeStatus);
@@ -190,6 +192,7 @@ export const QueryExplorer: React.FC<QueryExplorerProps> = ({ urlState, onUrlSta
 
   const isDragging = useRef(false);
   const hasAutoExecuted = useRef(false);
+  const queryRunId = useRef(0);
   const [isFullscreen, setIsFullscreen] = useState(urlState?.fullscreen ?? false);
   const [timeRangeOverride, setTimeRangeOverride] = useState<string | null>('1 HOUR');
   const [showResolved, setShowResolved] = useState(false);
@@ -223,7 +226,7 @@ export const QueryExplorer: React.FC<QueryExplorerProps> = ({ urlState, onUrlSta
   const resolvedSql = useMemo(() => {
     const activePreset = allQueries.find(p => p.sql.trim() === sql.trim());
     try {
-      let resolved = resolveTimeRange(sql, activePreset?.directives.meta?.interval, timeRangeOverride);
+      let resolved = resolveTimeRange(resolveQueryXRaySQL(sql, xraySelection), activePreset?.directives.meta?.interval, timeRangeOverride);
       resolved = resolveDrillParams(resolved, currentDrillParams);
       resolved = ClusterService.resolveTableRefs(resolved, clusterName);
       return resolved;
@@ -231,7 +234,7 @@ export const QueryExplorer: React.FC<QueryExplorerProps> = ({ urlState, onUrlSta
       const message = error instanceof Error ? error.message : String(error);
       return `-- ${message}\n${sql}`;
     }
-  }, [sql, allQueries, timeRangeOverride, currentDrillParams, clusterName]);
+  }, [sql, allQueries, timeRangeOverride, currentDrillParams, clusterName, xraySelection]);
   const isExplainAnalyzeEligible = useMemo(
     () => isSelectStatement(resolvedSql),
     [resolvedSql],
@@ -259,6 +262,7 @@ export const QueryExplorer: React.FC<QueryExplorerProps> = ({ urlState, onUrlSta
     if (!services) return;
     const q = (queryStr ?? sql).trim();
     if (!q) return;
+    const runId = ++queryRunId.current;
     const activePreset = allQueries.find(p => p.sql.trim() === q);
     const directives = activePreset?.directives ?? parseDirectives(q);
     const compatibility = evaluateQueryVersionCompatibility(
@@ -282,7 +286,7 @@ export const QueryExplorer: React.FC<QueryExplorerProps> = ({ urlState, onUrlSta
     const directive = parseChartDirective(q);
     try {
       // Resolve {{time_range}} using the active preset's default interval
-      let resolvedSql = resolveTimeRange(q, activePreset?.directives.meta?.interval, timeRangeOverride);
+      let resolvedSql = resolveTimeRange(resolveQueryXRaySQL(q, xraySelection), activePreset?.directives.meta?.interval, timeRangeOverride);
       // Resolve {{drill:col | fallback}} - uses drill params if provided, else current stack, else empty (standalone)
       const params = drillParams ?? (drillStack.length > 0 ? drillStack[drillStack.length - 1].params : {});
       resolvedSql = resolveDrillParams(resolvedSql, params);
@@ -292,6 +296,7 @@ export const QueryExplorer: React.FC<QueryExplorerProps> = ({ urlState, onUrlSta
         sourceTag(TAB_ANALYTICS, activePreset ? 'queryExplorerPreset' : 'queryExplorerCustom'),
         queryId ? { queryId } : undefined,
       );
+      if (runId !== queryRunId.current) return;
       const executionTime = performance.now() - t0;
       const columns = rows.length > 0 ? Object.keys(rows[0]) : [];
       setResult({
@@ -347,9 +352,9 @@ export const QueryExplorer: React.FC<QueryExplorerProps> = ({ urlState, onUrlSta
         }
       }
     } catch (e) {
-      setError(e instanceof Error ? e.message : String(e));
+      if (runId === queryRunId.current) setError(e instanceof Error ? e.message : String(e));
     } finally {
-      setIsRunning(false);
+      if (runId === queryRunId.current) setIsRunning(false);
     }
   }, [
     services,
@@ -362,7 +367,15 @@ export const QueryExplorer: React.FC<QueryExplorerProps> = ({ urlState, onUrlSta
     resetExecutionAnalysis,
     capabilityServerVersion,
     capabilityProbeStatus,
+    xraySelection,
   ]);
+
+  const previousXraySelection = useRef(xraySelection);
+  useEffect(() => {
+    if (previousXraySelection.current === xraySelection) return;
+    previousXraySelection.current = xraySelection;
+    if (sql.includes('{{query_xray_overlay:')) runQuery();
+  }, [xraySelection, sql, runQuery]);
 
   const runExecutionAnalysis = useCallback(async () => {
     if (!resolvedSql.trim() || !hasExplainAnalyze || !isExplainAnalyzeEligible) return;
@@ -410,7 +423,7 @@ export const QueryExplorer: React.FC<QueryExplorerProps> = ({ urlState, onUrlSta
 
   /* ── drill-down handlers ── */
   // Match saved query first; fall back to parsing directives from the live editor SQL
-  const currentQuery = useMemo(() => {
+  const currentQuery = useMemo<Query | undefined>(() => {
     const saved = allQueries.find(q => q.sql.trim() === sql.trim());
     if (saved) return saved;
     // Parse directives from the live SQL so edits (e.g. adding @drill) work without saving
@@ -424,7 +437,7 @@ export const QueryExplorer: React.FC<QueryExplorerProps> = ({ urlState, onUrlSta
       type: 'custom',
       directives,
       sql,
-    } satisfies Query;
+    };
   }, [allQueries, sql]);
   const isDrillable = !!(currentQuery?.directives.drill?.on && currentQuery?.directives.drill?.into) &&
     (!result || result.columns.includes(currentQuery.directives.drill.on));
@@ -670,8 +683,14 @@ export const QueryExplorer: React.FC<QueryExplorerProps> = ({ urlState, onUrlSta
   const grafanaViewMode: 'table' | 'chart' | 'queries' =
     viewMode === 'analysis' ? 'table' : viewMode;
 
+  // Export a concrete source query while retaining time/drill templates for Grafana.
+  const exportTemplateSql = useMemo(() => {
+    try { return resolveQueryXRaySQL(sql, xraySelection); }
+    catch { return null; }
+  }, [sql, xraySelection]);
+
   const grafanaExport = useGrafanaExport({
-    sql,
+    sql: exportTemplateSql ?? '',
     clusterName,
     drillParams: currentDrillParams,
     activeQueryName: activeQueryName ?? undefined,
@@ -1063,6 +1082,7 @@ export const QueryExplorer: React.FC<QueryExplorerProps> = ({ urlState, onUrlSta
                   <button
                     className="btn"
                     onClick={grafanaExport.openDialog}
+                    disabled={!exportTemplateSql}
                     aria-label="Export this TraceHouse result as a Grafana dashboard panel"
                     style={{
                       ...RESULT_ACTION_BUTTON_STYLE,

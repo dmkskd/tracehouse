@@ -1,3 +1,4 @@
+import { QueryXRayDefaultContext } from '@frontend/components/query/query-xray-preference';
 import React, { createContext, useContext, useMemo } from 'react';
 import {
   type AppPluginSettings,
@@ -41,9 +42,11 @@ export function PluginConfigProvider({ jsonData, children }: PluginConfigProvide
 
   return (
     <PluginConfigContext.Provider value={resolved}>
-      <RefreshConfigContext.Provider value={sharedConfig}>
-        {children}
-      </RefreshConfigContext.Provider>
+      <QueryXRayDefaultContext.Provider value={resolved.queryXraySource}>
+        <RefreshConfigContext.Provider value={sharedConfig}>
+          {children}
+        </RefreshConfigContext.Provider>
+      </QueryXRayDefaultContext.Provider>
     </PluginConfigContext.Provider>
   );
 }

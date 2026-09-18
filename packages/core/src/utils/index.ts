@@ -30,6 +30,8 @@ export type { MergeEtaInfo } from './merge-eta.js';
 export { deriveHealth, mergeThroughputHealth, worstHealth, isMergeStuck } from './merge-health.js';
 export type { Health, HealthNode, ThroughputMap } from './merge-health.js';
 export { deriveQueryHealth, isQueryStuck } from './query-health.js';
+export { peakSustainedCores } from './xray-peaks.js';
+export type { PeakCores, ClampablePeakSample } from './xray-peaks.js';
 export { DEFAULT_OBJECT_STORAGE_PRICING_PROFILE, summarizeObjectStorageProfile } from './object-storage-profile.js';
 export type { ObjectStorageCostEstimate, ObjectStorageEvent, ObjectStoragePricingProfile, ObjectStorageProfileSummary } from './object-storage-profile.js';
 export { detectTimestamp, timestampToDate, formatCell, parseReadableBytes } from './format-cell.js';

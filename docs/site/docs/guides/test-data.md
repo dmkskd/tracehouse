@@ -203,14 +203,14 @@ CH_USERS=5
 CH_USER_SKEW=1
 ```
 
-**Security:** Users are created with random passwords (fresh each run). On exit, all test users are locked with `HOST NONE` — no one can connect as them. If the script crashes, the random 128-bit password provides protection until the next run resets it.
+**Security:** Users are created with random passwords (fresh each run). On exit, all test users are locked with `HOST NONE` - no one can connect as them. If the script crashes, the random 128-bit password provides protection until the next run resets it.
 
 **Skew values:**
 
 | `--user-skew` | th_alice | th_bob | th_charlie | Effect                  |
 | ------------- | -------- | ------ | ---------- | ----------------------- |
 | 0 (default)   | 33%      | 33%    | 33%        | Equal                   |
-| 1             | 55%      | 27%    | 18%        | Zipf — clear noisy user |
+| 1             | 55%      | 27%    | 18%        | Zipf - clear noisy user |
 | 2             | 74%      | 18%    | 8%         | Very noisy th_alice     |
 
 ## Resetting Data
@@ -228,7 +228,7 @@ just drop-data -y
 
 ## Configuration
 
-All CLI scripts (`just generate-data`, `just run-queries`, `just run-mutations`, etc.) automatically load `.env` from the repo root if it exists. This file is **not** used by the frontend app — only by the data-utils CLI tools.
+All CLI scripts (`just generate-data`, `just run-queries`, `just run-mutations`, etc.) automatically load `.env` from the repo root if it exists. This file is **not** used by the frontend app - only by the data-utils CLI tools.
 
 ```bash
 cp .env.example .env
@@ -243,7 +243,7 @@ just generate-data --env-file .env.aiven
 ```
 
 ```bash
-# .env — used by CLI scripts only, not the app UI
+# .env - used by CLI scripts only, not the app UI
 CH_HOST=your-cluster.example.com
 CH_PORT=9440
 CH_USER=default
@@ -267,5 +267,5 @@ CH_ASSUME_YES=true just generate-data
 ```
 
 :::info
-By default, all CLI tools automatically look for a `.env` file in the repo root. If no `.env` is found and no `CH_ENV_FILE` is set, the tools fall back to built-in defaults (`localhost:9000`, user `default`, no password) — which works out of the box for local Docker Compose or Local Binary setups.
+By default, all CLI tools automatically look for a `.env` file in the repo root. If no `.env` is found and no `CH_ENV_FILE` is set, the tools fall back to built-in defaults (`localhost:9000`, user `default`, no password) - which works out of the box for local Docker Compose or Local Binary setups.
 :::

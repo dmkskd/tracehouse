@@ -67,6 +67,10 @@ export interface MonitoringFlags {
   hasQueryProfileEvents: boolean;
   hasProcessorProfileLog: boolean;
   hasMetricLog: boolean;
+  /** system.query_metric_log exists (per-query time series, CH 24.10+) */
+  hasQueryMetricLog: boolean;
+  /** query_metric_log exists AND carries every ProfileEvent column the X-Ray reads */
+  hasQueryMetricLogXRay: boolean;
   hasAsyncMetricLog: boolean;
   hasZookeeper: boolean;
   hasCrashLog: boolean;
@@ -115,6 +119,8 @@ export function deriveMonitoringFlags(capabilities: MonitoringCapability[], serv
     hasQueryProfileEvents: has('query_log_profile_events'),
     hasProcessorProfileLog: has('processors_profile_log'),
     hasMetricLog: has('metric_log'),
+    hasQueryMetricLog: has('query_metric_log'),
+    hasQueryMetricLogXRay: has('query_metric_log_xray'),
     hasAsyncMetricLog: has('asynchronous_metric_log'),
     hasZookeeper: has('zookeeper'),
     hasCrashLog: has('crash_log'),

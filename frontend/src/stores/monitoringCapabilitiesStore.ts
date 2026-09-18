@@ -53,6 +53,8 @@ const EMPTY_FLAGS: MonitoringFlags = {
   hasQueryProfileEvents: false,
   hasProcessorProfileLog: false,
   hasMetricLog: false,
+  hasQueryMetricLog: false,
+  hasQueryMetricLogXRay: false,
   hasAsyncMetricLog: false,
   hasZookeeper: false,
   hasCrashLog: false,

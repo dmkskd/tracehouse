@@ -12,6 +12,7 @@ export * from './execution-analysis.js';
 export * from './overview.js';
 export * from './engine-internals.js';
 export * from './monitoring-capabilities.js';
+export * from './xray-source.js';
 export * from './capability-registry.js';
 export * from './version-gated-capabilities.js';
 export * from './analytics.js';

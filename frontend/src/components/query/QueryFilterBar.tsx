@@ -406,7 +406,7 @@ export const QueryFilterBar: React.FC<QueryFilterBarProps> = ({
       return vals
         .filter(v => !selected.has(v.toLowerCase()))
         .filter(v => !q || v.toLowerCase().includes(q))
-        .map(v => ({ id: v, label: v, value: v, group: 'value', field: activeField }) satisfies DropdownItem);
+        .map((v): DropdownItem => ({ id: v, label: v, value: v, group: 'value', field: activeField }));
     }
     if (phase === 'entering_value' && activeField?.hasStaticSuggestions) {
       const vals = activeField.staticSuggestions || [];
@@ -414,7 +414,7 @@ export const QueryFilterBar: React.FC<QueryFilterBarProps> = ({
       const staticItems: DropdownItem[] = vals
         .filter(v => !selected.has(v.toLowerCase()))
         .filter(v => !q || v.toLowerCase().includes(q))
-        .map(v => ({ id: v, label: v, value: v, group: 'value', field: activeField }));
+        .map((v): DropdownItem => ({ id: v, label: v, value: v, group: 'value', field: activeField }));
       const errorSelected = filter.status?.some(status => status.toLowerCase() === 'error') ?? false;
       return activeField.key === 'status' && errorSelected
         ? [...staticItems, ...errorCodeItems]

@@ -283,9 +283,9 @@ ORDER BY view_duration_ms DESC` }
         },
         {
           name: "system.query_metric_log",
-          desc: "Per-query time-series metrics sampled during execution — memory, CPU events over time.",
+          desc: "Per-query time-series metrics sampled during execution — memory gauges plus one column per ProfileEvent, each holding that interval's delta.",
           since: "24.10",
-          cols: ["event_time", "query_id", "memory_usage", "ProfileEvents"],
+          cols: ["event_time", "event_time_microseconds", "query_id", "hostname", "memory_usage", "peak_memory_usage", "ProfileEvent_*"],
           queries: [
             {
               label: "Memory timeline for query", sql: `SELECT event_time,
@@ -294,14 +294,18 @@ FROM system.query_metric_log
 WHERE query_id = '...'
 ORDER BY event_time` },
             {
-              label: "CPU usage over time", sql: `SELECT event_time,
-  ProfileEvents['RealTimeMicroseconds']
-    AS real_us,
-  ProfileEvents['UserTimeMicroseconds']
-    AS user_us
+              label: "CPU per interval (values are deltas)", sql: `SELECT event_time_microseconds AS t,
+  ProfileEvent_OSCPUVirtualTimeMicroseconds
+    / 1e6 AS cpu_seconds_in_interval
 FROM system.query_metric_log
 WHERE query_id = '...'
-ORDER BY event_time` }
+ORDER BY t` },
+            {
+              label: "Total CPU for a query", sql: `SELECT sum(
+  ProfileEvent_OSCPUVirtualTimeMicroseconds
+) / 1e6 AS total_cpu_seconds
+FROM system.query_metric_log
+WHERE query_id = '...'` }
           ],
         },
         {

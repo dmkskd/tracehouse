@@ -13,8 +13,11 @@
  */
 
 import React, { useMemo, useState, useEffect, useRef, useCallback } from 'react';
-import type { TraceLog } from '@tracehouse/core';
+import type { TraceLog, XRayQueryState } from '@tracehouse/core';
+import { peakSustainedCores } from '@tracehouse/core';
 import { useProcessSamples } from '../hooks/useProcessSamples';
+import { XRaySourceBadge } from '../XRaySourceBadge';
+import { XRaySourceProvider } from '../XRaySourceContext';
 import type { ProcessSample } from '../hooks/useProcessSamples';
 import { useTraceSampleCounts, hasTraceSamplesInRange, useTimeScopedFlamegraph } from '../hooks/useHotFunctions';
 import { SpeedscopeViewer } from '../../../tracing/SpeedscopeViewer';
@@ -151,7 +154,9 @@ const Scrubber: React.FC<{
   samples: ProcessSample[];
   activeIdx: number;
   onChange: (idx: number) => void;
-}> = ({ mode, onModeChange, logEvents, samples, activeIdx, onChange }) => {
+  /** Fields the active X-Ray source cannot populate; their readouts are hidden. */
+  missingFields: readonly string[];
+}> = ({ mode, onModeChange, logEvents, samples, activeIdx, onChange, missingFields }) => {
   const items = mode === 'logs' ? logEvents : samples;
   const count = items.length;
   const sliderRef = useRef<HTMLInputElement>(null);
@@ -198,8 +203,12 @@ const Scrubber: React.FC<{
         <span style={{ color: '#ddaa33' }}>CPU {s.d_cpu_cores.toFixed(1)}</span>
         <span style={{ color: '#7B83FF' }}>IO {s.d_io_wait_s.toFixed(2)}</span>
         <span style={{ color: '#FF6692' }}>Net {s.d_net_recv_wait_s.toFixed(2)}</span>
-        <span style={{ color: '#00DD99' }}>read_bytes {s.d_read_mb.toFixed(0)} MB/s</span>
-        <span style={{ color: '#aaa' }} title="Threads joined so far, cumulative — not concurrency">{s.thread_count} thr used</span>
+        {!missingFields.includes('d_read_mb') && (
+          <span style={{ color: '#00DD99' }}>read_bytes {s.d_read_mb.toFixed(0)} MB/s</span>
+        )}
+        {!missingFields.includes('thread_count') && (
+          <span style={{ color: '#aaa' }} title="Threads joined so far, cumulative — not concurrency">{s.thread_count} thr used</span>
+        )}
       </div>
     );
   })();
@@ -330,14 +339,26 @@ export interface XRayTabProps {
   queryId: string;
   logs: TraceLog[];
   queryStartTime?: string;
+  /**
+   * Whether the query is still executing. Feeds source selection: both sources
+   * can serve a live query, but the sampler is preferred for one — it is
+   * current to the last tick, and query_metric_log has no thread ceiling for
+   * the clamp until peak_threads_usage reaches query_log at finish.
+   * Undefined means unknown, treated as possibly live.
+   */
+  isRunning?: boolean;
 }
 
 export const XRayTab: React.FC<XRayTabProps> = ({
   queryId,
   logs,
   queryStartTime,
+  isRunning,
 }) => {
-  const { samples: allSamples, hostSamples, hosts, isLoading: isLoadingSamples, error, fetch: fetchSamples } = useProcessSamples(queryId);
+  const queryState: XRayQueryState = isRunning === undefined
+    ? 'unknown'
+    : isRunning ? 'running' : 'finished';
+  const { meta: sourceMeta, samples: allSamples, hostSamples, hosts, isLoading: isLoadingSamples, error, fetch: fetchSamples } = useProcessSamples(queryId, queryState, queryStartTime);
   const { sampleCounts, fetch: fetchSampleCounts } = useTraceSampleCounts(queryId, queryStartTime, queryStartTime);
   const timeScopedFlamegraph = useTimeScopedFlamegraph();
   const [showFlamegraphPopup, setShowFlamegraphPopup] = useState(false);
@@ -352,6 +373,11 @@ export const XRayTab: React.FC<XRayTabProps> = ({
     if (selectedHost === null) return allSamples;
     return hostSamples.get(selectedHost) || [];
   }, [selectedHost, allSamples, hostSamples]);
+
+  // Reported by the query, not inferred: only the SQL knows whether a thread
+  // ceiling was actually found. Derived from the ACTIVE samples so selecting a
+  // host does not carry another host's warning onto this host's numbers.
+  const anyUnclamped = samples.some(s => s.rate_unclamped);
 
   // Fetch samples and probe trace_log on mount
   useEffect(() => {
@@ -545,11 +571,30 @@ export const XRayTab: React.FC<XRayTabProps> = ({
           <div style={{ fontSize: 12, color: 'var(--text-muted)', marginBottom: 16, fontFamily: 'monospace' }}>
             {error}
           </div>
+          {/* Name the source that actually failed. Pointing at the sampler
+              while reading system.query_metric_log sends people to fix the
+              wrong thing. */}
           <div style={{ fontSize: 12, color: '#888', lineHeight: 1.6 }}>
-            This requires <code style={{ background: '#1a1a2e', padding: '1px 4px', borderRadius: 3 }}>
-            tracehouse.processes_history</code> — see{' '}
-            <code style={{ background: '#1a1a2e', padding: '1px 4px', borderRadius: 3 }}>
-            infra/scripts/setup_sampling.sh</code>
+            {sourceMeta.source === 'query_metric_log' ? (
+              <>
+                Read from <code style={{ background: '#1a1a2e', padding: '1px 4px', borderRadius: 3 }}>
+                system.query_metric_log</code>. Pin a different source from the badge above, or install{' '}
+                <code style={{ background: '#1a1a2e', padding: '1px 4px', borderRadius: 3 }}>
+                tracehouse.processes_history</code> via{' '}
+                <code style={{ background: '#1a1a2e', padding: '1px 4px', borderRadius: 3 }}>
+                infra/scripts/setup_sampling.sh</code>
+              </>
+            ) : (
+              <>
+                This requires <code style={{ background: '#1a1a2e', padding: '1px 4px', borderRadius: 3 }}>
+                tracehouse.processes_history</code> — see{' '}
+                <code style={{ background: '#1a1a2e', padding: '1px 4px', borderRadius: 3 }}>
+                infra/scripts/setup_sampling.sh</code>
+              </>
+            )}
+          </div>
+          <div style={{ marginTop: 12, fontSize: 11, fontFamily: 'monospace', display: 'flex', justifyContent: 'center', color: '#888' }}>
+            <XRaySourceBadge meta={sourceMeta} />
           </div>
           <button
             onClick={fetchSamples}
@@ -578,8 +623,18 @@ export const XRayTab: React.FC<XRayTabProps> = ({
             No Process Samples
           </div>
           <div style={{ fontSize: 12, color: 'var(--text-muted)', lineHeight: 1.6 }}>
-            This query ran too fast for the process sampler to capture data,
-            or the sampler wasn't active when this query executed.
+            {sourceMeta.source === 'query_metric_log'
+              ? <>Nothing in <code>system.query_metric_log</code> for this query.
+                  It may predate the log's retention, or its rows may not have
+                  flushed yet.</>
+              : <>This query ran too fast for the process sampler to capture data,
+                  or the sampler wasn't active when this query executed.</>}
+          </div>
+          {/* The source picker lives in the summary bar, which this early return
+              skips — without it here, the message names a fix the user has no
+              way to apply on this screen. */}
+          <div style={{ marginTop: 12, fontSize: 11, fontFamily: 'monospace', display: 'flex', justifyContent: 'center', color: '#888' }}>
+            <XRaySourceBadge meta={sourceMeta} />
           </div>
         </div>
       </div>
@@ -588,13 +643,19 @@ export const XRayTab: React.FC<XRayTabProps> = ({
 
   // Summary stats
   const peakMem = Math.max(...samples.map(s => s.peak_memory_mb));
-  const peakCpu = Math.max(...samples.map(s => s.d_cpu_cores));
+  // Peak SUSTAINED cores: capped intervals are excluded, since they are thread
+  // ceilings hit during teardown rather than measured work. See
+  // peakSustainedCores() for why a plain max made the two X-Ray sources
+  // disagree on the same query.
+  const peakCores = peakSustainedCores(samples);
+  const peakCpu = peakCores.value;
   const duration = samples[samples.length - 1].t;
   const totalRows = Math.max(...samples.map(s => s.read_rows));
 
   const multiHost = hosts.length > 1;
 
   return (
+    <XRaySourceProvider meta={sourceMeta}>
     <div style={{ display: 'flex', flexDirection: 'column', height: '100%' }}>
       {/* Host tab bar — only shown for multi-host (distributed) queries */}
       {multiHost && (
@@ -640,6 +701,10 @@ export const XRayTab: React.FC<XRayTabProps> = ({
         background: 'var(--bg-secondary, #111)',
         borderBottom: '1px solid var(--border-accent, #333)',
         display: 'flex',
+        // Without this the row stretches to its tallest child, so any control
+        // in the bar (the source picker, the view toggle) pushes the stats out
+        // of line instead of sitting with them.
+        alignItems: 'center',
         gap: 16,
         fontSize: 11,
         fontFamily: 'monospace',
@@ -648,9 +713,40 @@ export const XRayTab: React.FC<XRayTabProps> = ({
       }}>
         <span>{duration.toFixed(1)}s</span>
         <span style={{ color: '#636EFA' }}>{fmtMB(peakMem)} peak mem</span>
-        <span style={{ color: '#FECB52' }}>{peakCpu.toFixed(1)} peak cores</span>
-        <span>{totalRows.toLocaleString()} rows</span>
+        <span style={{ color: '#FECB52' }}>
+          {peakCpu.toFixed(1)} peak cores
+          {/* The 3D view has no chart-level badge, so the caveat rides on the
+              number it applies to. */}
+          {peakCores.allCapped && !anyUnclamped && (
+            <span
+              style={{ color: '#FFA15A', marginLeft: 4 }}
+              title="Every interval hit the query's thread ceiling, so this is a cap rather than a measured rate. No sustained peak could be derived."
+            >
+              ⚠ capped
+            </span>
+          )}
+          {peakCores.excludedCapped && !anyUnclamped && (
+            <span
+              style={{ color: '#666', marginLeft: 4 }}
+              title="Sustained peak. Intervals that hit the query's thread ceiling are excluded — those are teardown spikes, where pooled threads detach and merge their accumulated time into one interval. They are still drawn on the chart and marked there."
+            >
+              (sustained)
+            </span>
+          )}
+          {anyUnclamped && (
+            <span
+              style={{ color: '#FFA15A', marginLeft: 4 }}
+              title="No thread ceiling was available for this query, so this peak is the raw counter delta. peak_threads_usage reaches system.query_log when a query finishes; without it a detaching pool thread can produce a spike no thread count could sustain."
+            >
+              ⚠ unclamped
+            </span>
+          )}
+        </span>
+        {!sourceMeta.missing.includes('read_rows') && (
+          <span>{totalRows.toLocaleString()} rows</span>
+        )}
         <span>{samples.length} samples</span>
+        <XRaySourceBadge meta={sourceMeta} />
         {logEvents.length > 0 && <span>{logEvents.length} log events</span>}
 
         {/* 3D / 2D view toggle. Styled like the modal's tab bar - monospace,
@@ -700,6 +796,7 @@ export const XRayTab: React.FC<XRayTabProps> = ({
         samples={samples}
         activeIdx={scrubberIdx}
         onChange={setScrubberIdx}
+        missingFields={sourceMeta.missing}
       />
 
       {/* Time-scoped flamegraph popup */}
@@ -749,5 +846,6 @@ export const XRayTab: React.FC<XRayTabProps> = ({
         </div>
       )}
     </div>
+    </XRaySourceProvider>
   );
 };

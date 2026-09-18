@@ -20,8 +20,10 @@ import {
   PROBE_TRACEHOUSE_SAMPLING_TABLES,
   PROBE_SYSTEM_TABLE_ACCESS_TABLES,
   PROBE_METRIC_LOG_REPLICATION_COLUMNS,
+  PROBE_QUERY_METRIC_LOG_COLUMNS,
   PROBE_PROCESSORS_PROFILE_LOG_SCHEMA,
 } from '../queries/monitoring-capabilities-queries.js';
+import { QUERY_METRIC_LOG_PROFILE_EVENT_COLUMNS } from '../queries/query-metric-log-queries.js';
 import { tagQuery } from '../queries/builder.js';
 import { TAB_INTERNAL, sourceTag } from '../queries/source-tags.js';
 import { parseTTL } from '../utils/ttl-parser.js';
@@ -91,6 +93,12 @@ const LOG_TABLE_META: Record<string, { label: string; description: string; categ
     description: '1-second snapshots of system.metrics (gauges) and system.events (ProfileEvents deltas). Enables metric time-series charts.',
     category: 'metrics',
     source: 'system.metric_log',
+  },
+  query_metric_log: {
+    label: 'Query Metric Log',
+    description: 'Per-query time series of memory and ProfileEvents, sampled while the query runs (CH 24.10+). Alternate X-Ray source when the sampler is not installed.',
+    category: 'metrics',
+    source: 'system.query_metric_log',
   },
   asynchronous_metric_log: {
     label: 'Async Metric Log',
@@ -255,6 +263,7 @@ export class MonitoringCapabilitiesService {
       isCloud,
       tracehouseTables,
       metricLogReplicationColumns,
+      queryMetricLogColumns,
       processorProfileSchema,
     ] = await Promise.all([
       this.probeCapabilitySnapshot(),
@@ -263,6 +272,7 @@ export class MonitoringCapabilitiesService {
       this.probeCloudService(),
       this.probeTracehouseSamplingTables(),
       this.probeMetricLogReplicationColumns(),
+      this.probeQueryMetricLogColumns(),
       this.probeProcessorProfileSchema(),
     ]);
     const version = snapshot.version;
@@ -386,6 +396,27 @@ export class MonitoringCapabilitiesService {
             .filter(column => !metricLogReplicationColumns.has(column))
             .join(', ')}`,
       source: 'system.metric_log.ProfileEvent_Replicated*',
+    });
+    // X-Ray alternate source: the table alone is not enough, the counters the
+    // X-Ray reads must exist too. See PROBE_QUERY_METRIC_LOG_COLUMNS.
+    const hasQueryMetricLogTable = logTables.has('query_metric_log');
+    // Every column the SQL reads, not a subset: a missing one fails the query at
+    // runtime, so partial coverage must report the capability as unavailable.
+    const missingQueryMetricLogColumns = QUERY_METRIC_LOG_PROFILE_EVENT_COLUMNS.filter(
+      column => !queryMetricLogColumns.has(column),
+    );
+    capabilities.push({
+      id: 'query_metric_log_xray',
+      label: 'Query X-Ray from Query Metric Log',
+      description: 'Per-query CPU, memory, and network timelines read from system.query_metric_log instead of the tracehouse sampler.',
+      available: hasQueryMetricLogTable && missingQueryMetricLogColumns.length === 0,
+      category: 'profiling',
+      detail: !hasQueryMetricLogTable
+        ? 'query_metric_log not available'
+        : missingQueryMetricLogColumns.length === 0
+          ? 'All X-Ray ProfileEvent columns available'
+          : `Missing: ${missingQueryMetricLogColumns.join(', ')}`,
+      source: 'system.query_metric_log.ProfileEvent_*',
     });
     // Version-gated capabilities — no probe needed, the version is the test.
     capabilities.push(...buildVersionGatedCapabilities(version));
@@ -767,6 +798,29 @@ export class MonitoringCapabilitiesService {
         systemTables: new Set(),
       };
     }
+  }
+
+  /**
+   * Which of the ProfileEvent columns the X-Ray needs exist in query_metric_log.
+   * Empty set when the table is absent, which the caller reports as unavailable.
+   */
+  private async probeQueryMetricLogColumns(): Promise<Set<string>> {
+    const result = new Set<string>();
+    try {
+      const rows = await this.adapter.executeQuery<{ name: string }>(
+        tagQuery(
+          PROBE_QUERY_METRIC_LOG_COLUMNS,
+          sourceTag(TAB_INTERNAL, 'queryMetricLogColumns'),
+        ),
+      );
+      for (const row of rows) result.add(String(row.name));
+    } catch (error) {
+      console.error(
+        '[MonitoringCapabilitiesService] probeQueryMetricLogColumns error:',
+        error,
+      );
+    }
+    return result;
   }
 
   private async probeMetricLogReplicationColumns(): Promise<Set<string>> {

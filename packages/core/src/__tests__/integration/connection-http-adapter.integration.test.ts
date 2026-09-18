@@ -1,3 +1,4 @@
+import type { ConnectionConfig } from '../../types/connection.js';
 /**
  * Integration tests for HttpAdapter error categorization against a real ClickHouse instance.
  *
@@ -28,7 +29,7 @@ describe('HttpAdapter integration', { tags: ['connectivity'] }, () => {
   }, 30_000);
 
   /** Build a ConnectionConfig pointing at the test container. */
-  function containerConfig(): import('../../types/connection.js').ConnectionConfig {
+  function containerConfig(): ConnectionConfig {
     if (!ctx.container) throw new Error('containerConfig() requires a testcontainer (not CH_TEST_URL mode)');
     return {
       host: ctx.container.getHost(),

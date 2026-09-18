@@ -55,6 +55,7 @@
         <query>GRANT SELECT ON system.processors_profile_log</query>
         <query>GRANT SELECT ON system.query_cache</query>
         <query>GRANT SELECT ON system.query_log</query>
+        <query>GRANT SELECT ON system.query_metric_log</query>
         <query>GRANT SELECT ON system.query_thread_log</query>
         <query>GRANT SELECT ON system.replicas</query>
         <query>GRANT SELECT ON system.replication_queue</query>

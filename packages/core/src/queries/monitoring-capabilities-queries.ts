@@ -5,6 +5,8 @@
  * and what observability features the server supports.
  */
 
+import { QUERY_METRIC_LOG_PROFILE_EVENT_COLUMNS } from './query-metric-log-queries.js';
+
 /**
  * Probe which system log tables exist and have data.
  *
@@ -32,6 +34,7 @@ WHERE database = 'system'
     'query_log',
     'query_thread_log',
     'query_views_log',
+    'query_metric_log',
     'part_log',
     'trace_log',
     'opentelemetry_span_log',
@@ -72,6 +75,26 @@ WHERE database = 'system'
     'ProfileEvent_ReplicatedPartFailedFetches',
     'ProfileEvent_ReplicatedPartChecksFailed'
   )
+ORDER BY name
+`;
+
+/**
+ * ProfileEvent columns the X-Ray reads out of system.query_metric_log.
+ *
+ * The table may exist without every counter we need: the ProfileEvent set grows
+ * between versions, and OSIOWaitMicroseconds in particular is absent or always
+ * zero in some containerised deployments. Table-level capability is therefore
+ * insufficient to know the alternate X-Ray source is usable.
+ *
+ * Generated from QUERY_METRIC_LOG_PROFILE_EVENT_COLUMNS, the same list the SQL
+ * reads, so the probe cannot check a different set than the query needs.
+ */
+export const PROBE_QUERY_METRIC_LOG_COLUMNS = `
+SELECT name
+FROM system.columns
+WHERE database = 'system'
+  AND table = 'query_metric_log'
+  AND name IN (${QUERY_METRIC_LOG_PROFILE_EVENT_COLUMNS.map(c => `'${c}'`).join(', ')})
 ORDER BY name
 `;
 

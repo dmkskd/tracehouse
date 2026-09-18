@@ -4,10 +4,20 @@
  * Handles {{time_range}}, {{drill:col | fallback}}, {{drill_value:col | fallback}}.
  */
 
-import { escapeValue } from '@tracehouse/core';
+import { escapeValue, buildSelectedXRayOverlaySQL, type SelectQueryXRaySourceInput, type XRayOverlayMetric } from '@tracehouse/core';
 import { resolveCustomTimeRange } from '../../utils/customTimeRange';
 
 export { TIME_RANGE_OPTIONS } from '../common/time-range-options';
+
+/** Expand only explicit source-aware templates; custom SQL remains untouched. */
+export function resolveQueryXRaySQL(sql: string, selection: SelectQueryXRaySourceInput): string {
+  return sql.replace(/\{\{query_xray_overlay:(cpu_cores|mem_mb|read_mb_s|cpu_wait_s|io_wait_s|net_wait_s)\}\}/g,
+    (_match, metric: XRayOverlayMetric) => buildSelectedXRayOverlaySQL(selection, metric, {
+      start: '{{time_range}}', end: 'now()',
+      queryIdsSQL: 'SELECT query_id FROM top_q',
+      identityStart: 'if((SELECT count() FROM top_q) = 0, {{time_range}}, (SELECT min(query_start) FROM top_q))',
+    }));
+}
 
 export class InvalidCustomTimeRangeError extends Error {
   constructor(value: string) {

@@ -85,6 +85,13 @@ export interface ProcessSample {
    * a floor, not the raw counter delta.
    */
   rate_clamped: boolean;
+  /**
+   * True when the interval had no thread ceiling available at all, so the rate
+   * above is the raw counter delta and a spike may be a detaching thread rather
+   * than real work. Only possible on the query_metric_log source, and only
+   * while peak_threads_usage has not reached query_log yet.
+   */
+  rate_unclamped: boolean;
 }
 
 // ── SQL ──
@@ -134,6 +141,9 @@ SELECT
     sum(least(greatest(raw_d_net_send_wait / dt, 0), thread_bound)) AS d_net_send_wait_s,
     max(greatest(raw_d_cpu, raw_d_io, raw_d_cpu_wait, raw_d_net_recv_wait, raw_d_net_send_wait) / dt
         > thread_bound) AS rate_clamped,
+    -- Always 0 here: system.processes gives a thread bound on every sample.
+    -- Present so both X-Ray sources return the same columns.
+    0 AS rate_unclamped,
     sum(greatest(raw_d_read_mb / dt, 0)) AS d_read_mb,
     sum(greatest(raw_d_read_rows / dt, 0)) AS d_read_rows,
     sum(greatest(raw_d_written_rows / dt, 0)) AS d_written_rows,
@@ -262,6 +272,9 @@ SELECT
     sum(least(greatest(raw_d_net_send_wait / dt, 0), thread_bound)) AS d_net_send_wait_s,
     max(greatest(raw_d_cpu, raw_d_io, raw_d_cpu_wait, raw_d_net_recv_wait, raw_d_net_send_wait) / dt
         > thread_bound) AS rate_clamped,
+    -- Always 0 here: system.processes gives a thread bound on every sample.
+    -- Present so both X-Ray sources return the same columns.
+    0 AS rate_unclamped,
     sum(greatest(raw_d_read_mb / dt, 0)) AS d_read_mb,
     sum(greatest(raw_d_read_rows / dt, 0)) AS d_read_rows,
     sum(greatest(raw_d_written_rows / dt, 0)) AS d_written_rows,
@@ -394,6 +407,7 @@ export function mapProcessSampleRow(r: Record<string, unknown>): ProcessSample {
     d_net_send_kb: Number(r.d_net_send_kb) || 0,
     d_net_recv_kb: Number(r.d_net_recv_kb) || 0,
     rate_clamped: Number(r.rate_clamped) > 0,
+    rate_unclamped: Number(r.rate_unclamped) > 0,
   };
 }
 
@@ -460,6 +474,23 @@ export interface TimelineChartData {
  * @param queryIds - Ordered list of query IDs (index determines the suffix _0, _1, etc.)
  * @param metrics - Which metrics to include (defaults to TIMELINE_METRICS)
  */
+/**
+ * Drop the timeline metrics an X-Ray source cannot populate faithfully.
+ *
+ * Pass `QueryXRaySourceSelection.missing`. A metric is dropped when ANY of its lines
+ * reads an unavailable field, so a two-line chart is not silently halved. This
+ * keeps the comparison timeline consistent with the single-query X-Ray, which
+ * hides the same series rather than plotting a differently-defined quantity
+ * under the old label.
+ */
+export function timelineMetricsExcluding(
+  missing: readonly string[],
+  metrics: TimelineMetric[] = TIMELINE_METRICS,
+): TimelineMetric[] {
+  if (missing.length === 0) return metrics;
+  return metrics.filter(m => !m.lines.some(line => missing.includes(line.key)));
+}
+
 export function buildTimelineChartData(
   samples: TaggedProcessSample[],
   queryIds: string[],

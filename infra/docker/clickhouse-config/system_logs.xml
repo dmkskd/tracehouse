@@ -44,6 +44,18 @@
         <engine>ENGINE = MergeTree PARTITION BY toYYYYMM(event_date) ORDER BY (event_date, event_time) TTL event_time + INTERVAL 1 DAY SETTINGS merge_with_ttl_timeout = 900</engine>
     </trace_log>
 
+    <!-- Per-query metric samples, the alternate Query X-Ray source (CH 24.10+).
+         Enabled by default upstream; declared here so the demo states it and
+         bounds it: ~900 ProfileEvent columns per sample per query is the
+         highest-volume log in this file. -->
+    <query_metric_log replace="replace">
+        <database>system</database>
+        <table>query_metric_log</table>
+        <flush_interval_milliseconds>7500</flush_interval_milliseconds>
+        <collect_interval_milliseconds>1000</collect_interval_milliseconds>
+        <engine>ENGINE = MergeTree PARTITION BY toYYYYMM(event_date) ORDER BY (event_date, event_time) TTL event_time + INTERVAL 1 DAY SETTINGS merge_with_ttl_timeout = 900</engine>
+    </query_metric_log>
+
     <query_thread_log replace="replace">
         <database>system</database>
         <table>query_thread_log</table>

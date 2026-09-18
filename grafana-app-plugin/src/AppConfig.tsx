@@ -1,3 +1,4 @@
+import type { QueryXRaySourcePreference } from '@tracehouse/core';
 import React, { useState, useEffect } from 'react';
 import { AppPluginMeta, PluginConfigPageProps } from '@grafana/data';
 import { getBackendSrv } from '@grafana/runtime';
@@ -17,6 +18,7 @@ export function AppConfig({ plugin }: AppConfigProps) {
     () => new Set(resolved.allowedRefreshRates)
   );
   const [defaultRate, setDefaultRate] = useState<number>(resolved.defaultRefreshRate);
+  const [queryXraySource, setQueryXraySource] = useState(resolved.queryXraySource);
   const [cluster, setCluster] = useState<string>(resolved.cluster ?? '');
   const [saving, setSaving] = useState(false);
   const [saved, setSaved] = useState(false);
@@ -51,6 +53,8 @@ export function AppConfig({ plugin }: AppConfigProps) {
     setSaving(true);
     try {
       const settings: AppPluginSettings = {
+        ...jsonData,
+        queryXraySource,
         allowedRefreshRates: ALL_REFRESH_RATE_OPTIONS
           .filter(o => allowedRates.has(o.seconds))
           .map(o => o.seconds),
@@ -93,6 +97,14 @@ export function AppConfig({ plugin }: AppConfigProps) {
         These can be overridden per-user where applicable.
       </p>
 
+      <label>Default Query X-Ray source
+        <select value={queryXraySource} onChange={e => setQueryXraySource(e.target.value as QueryXRaySourcePreference)}>
+          <option value="auto">Automatic</option>
+          <option value="processes_history">processes_history</option>
+          <option value="query_metric_log">query_metric_log</option>
+        </select>
+      </label>
+      <p>Users can override this default for each datasource.</p>
       {/* Cluster Section */}
       <div style={{
         background: 'var(--bg-secondary, rgba(255,255,255,0.04))',

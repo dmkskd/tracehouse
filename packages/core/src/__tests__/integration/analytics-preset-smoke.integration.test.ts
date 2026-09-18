@@ -14,7 +14,7 @@ import {
 } from './setup/clickhouse-container.js';
 import { runTracehouseSetup } from './setup/tracehouse-setup.js';
 import { RAW_QUERIES } from '@frontend-queries/index';
-import { resolveTimeRange, resolveDrillParams } from '@frontend-analytics/templateResolution';
+import { resolveQueryXRaySQL, resolveTimeRange, resolveDrillParams } from '@frontend-analytics/templateResolution';
 import { parseQueryMetadata } from '@frontend-analytics/metaLanguage';
 import {
   isClickHouseVersionAtLeast,
@@ -100,7 +100,16 @@ describe('Preset analytics query smoke tests', { tags: ['analytics'] }, () => {
     }
   }, 30_000);
 
-  for (const rawSql of RAW_QUERIES) {
+  const cases = RAW_QUERIES.flatMap<{ rawSql: string; source?: 'processes_history' | 'query_metric_log' }>(rawSql => {
+    if (!rawSql.includes('{{query_xray_overlay:')) return [{ rawSql, source: undefined }];
+    // Exercise both concrete sources, while respecting the declared absence of
+    // progress bytes in query_metric_log (covered by the source-selection tests).
+    const sources = rawSql.includes('{{query_xray_overlay:read_mb_s}}')
+      ? ['processes_history' as const]
+      : ['processes_history' as const, 'query_metric_log' as const];
+    return sources.map(source => ({ rawSql, source }));
+  });
+  for (const { rawSql, source } of cases) {
     const parsed = parseQueryMetadata(rawSql, 'preset');
     const title = parsed?.name ?? '(untitled)';
 
@@ -109,7 +118,7 @@ describe('Preset analytics query smoke tests', { tags: ['analytics'] }, () => {
       continue;
     }
 
-    it(`query: ${title}`, async ({ skip }) => {
+    it(`query: ${title}${source ? ` (${source})` : ''}`, async ({ skip }) => {
       const minimumVersion = parsed?.directives.requires?.clickhouseMinVersion;
       if (minimumVersion) {
         const parsedMinimum = parseClickHouseVersion(minimumVersion);
@@ -126,19 +135,35 @@ describe('Preset analytics query smoke tests', { tags: ['analytics'] }, () => {
         }
       }
 
-      const missingSystemTables = referencedSystemTables(rawSql)
+      const availability = {
+        processesHistory: availableTracehouseTables.has('processes_history'),
+        queryMetricLog: availableSystemTables.has('query_metric_log'),
+      };
+      if (source === 'processes_history' && !availability.processesHistory) {
+        skip('Sampler source is unavailable');
+      }
+      if (source === 'query_metric_log' && !availability.queryMetricLog) {
+        skip('Metric-log source is unavailable');
+      }
+      // Match the app's execution order: source templates introduce tables and
+      // time placeholders, so expand them before capability and time checks.
+      const sourceSql = resolveQueryXRaySQL(rawSql, {
+        availability, preference: source, queryState: 'finished',
+      });
+
+      const missingSystemTables = referencedSystemTables(sourceSql)
         .filter(table => !availableSystemTables.has(table));
       if (missingSystemTables.length > 0) {
         skip(`Unavailable system tables: ${missingSystemTables.join(', ')}`);
       }
 
-      const missingTracehouseTables = referencedTracehouseTables(rawSql)
+      const missingTracehouseTables = referencedTracehouseTables(sourceSql)
         .filter(table => !availableTracehouseTables.has(table));
       if (missingTracehouseTables.length > 0) {
         skip(`Unavailable TraceHouse tables: ${missingTracehouseTables.join(', ')}`);
       }
 
-      let sql = resolveTimeRange(rawSql, parsed?.directives.meta?.interval ?? '1 HOUR');
+      let sql = resolveTimeRange(sourceSql, parsed?.directives.meta?.interval ?? '1 HOUR');
       sql = resolveDrillParams(sql, {});
       const rows = await ctx.adapter.executeQuery(sql);
       expect(Array.isArray(rows)).toBe(true);

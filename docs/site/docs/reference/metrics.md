@@ -36,14 +36,14 @@ RSS = Query memory + Merge memory + Mark cache + Uncompressed cache
 
 ## Merge Throughput
 
-**Active merges** (overview page — I/O attribution):
+**Active merges** (overview page - I/O attribution):
 
 ```
 read_rate  = bytes_read_uncompressed / elapsed
 write_rate = bytes_written_uncompressed / elapsed
 ```
 
-**Completed merges** (merge tracker — on-disk throughput):
+**Completed merges** (merge tracker - on-disk throughput):
 
 ```
 throughput = size_in_bytes / (duration_ms / 1000)
@@ -64,12 +64,12 @@ Higher pruning % = better primary key usage (more data skipped). See [Query Deta
 
 ## X-Ray
 
-The X-Ray tab provides a 3D corridor visualization of query resource consumption over time, sampled from `tracehouse.processes_history`:
+The X-Ray tab provides a 3D corridor visualization of query resource consumption over time, read from `tracehouse.processes_history` or `system.query_metric_log` (ClickHouse 24.10+), whichever the source control selects:
 
 - **Width** = CPU cores used (`Δ(OSCPUVirtualTimeMicroseconds) / 1e6 / Δt`)
 - **Height** = memory MB (`memory_usage / 1048576`)
 
-Additional timeline charts show I/O wait, read throughput (MB/s), and network (KB/s). All delta metrics are normalized to per-second rates via `lagInFrame` window functions.
+Additional timeline charts show I/O wait, read throughput (MB/s), and network (KB/s). Read throughput needs the sampler: `system.query_metric_log` has no progress counters, so that chart is hidden rather than approximated. All delta metrics are normalized to per-second rates via `lagInFrame` window functions.
 
 For distributed queries, X-Ray collects samples from all hosts (`WHERE query_id = {id} OR initial_query_id = {id}`). "ALL" mode sums across hosts; per-host mode isolates individual nodes.
 

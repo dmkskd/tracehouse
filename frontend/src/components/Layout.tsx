@@ -1,3 +1,5 @@
+import { QueryXRaySourceControl } from './query/QueryXRayPreference';
+import { SettingsSection, SegmentedControl, SETTINGS_POPOVER_WIDTH } from './settings/SettingsControls';
 /**
  * Layout - Main dashboard layout with top navigation
  * Supports dark/light themes via CSS variables
@@ -282,81 +284,44 @@ const SettingsPopover: React.FC = () => {
           borderRadius: 10,
           boxShadow: '0 8px 24px rgba(0,0,0,0.15)',
           backdropFilter: 'blur(12px)',
-          minWidth: 160,
+          width: SETTINGS_POPOVER_WIDTH,
           zIndex: 1000,
           overflow: 'hidden',
         }}>
-          {/* View Mode */}
-          <div style={{ padding: '10px 12px 6px' }}>
-            <div style={{
-              fontSize: 9, fontWeight: 600, color: 'var(--text-muted)',
-              textTransform: 'uppercase', letterSpacing: '1.5px', marginBottom: 6,
-            }}>
-              View
-            </div>
-            <div style={{
-              display: 'flex', gap: 0,
-              background: 'var(--bg-primary)',
-              borderRadius: 6,
-              border: '1px solid var(--border-primary)',
-              padding: 2,
-            }}>
-              {(['3d', '2d'] as const).map(mode => (
-                <button
-                  key={mode}
-                  onClick={() => setPreferredViewMode(mode)}
-                  style={{
-                    flex: 1, padding: '4px 0', border: 'none', cursor: 'pointer',
-                    borderRadius: 4, fontSize: 11, fontWeight: 600,
-                    fontFamily: "'Share Tech Mono', monospace",
-                    transition: 'all 0.15s ease',
-                    ...(preferredViewMode === mode
-                      ? { background: 'var(--bg-card-hover)', color: 'var(--text-primary)', boxShadow: '0 1px 3px rgba(0,0,0,0.1)' }
-                      : { background: 'transparent', color: 'var(--text-muted)' }),
-                  }}
-                >
-                  {mode.toUpperCase()}
-                </button>
-              ))}
-            </div>
-          </div>
+          <SettingsSection label="View">
+            <SegmentedControl
+              ariaLabel="View mode"
+              columns={2}
+              value={preferredViewMode}
+              onSelect={setPreferredViewMode}
+              options={[
+                { value: '3d' as const, label: '3D' },
+                { value: '2d' as const, label: '2D' },
+              ]}
+            />
+          </SettingsSection>
 
           <div style={{ height: 1, background: 'var(--border-primary)', margin: '4px 12px' }} />
 
-          {/* Theme */}
-          <div style={{ padding: '6px 12px 10px' }}>
-            <div style={{
-              fontSize: 9, fontWeight: 600, color: 'var(--text-muted)',
-              textTransform: 'uppercase', letterSpacing: '1.5px', marginBottom: 6,
-            }}>
-              Theme
-            </div>
-            <div style={{
-              display: 'flex', gap: 0,
-              background: 'var(--bg-primary)',
-              borderRadius: 6,
-              border: '1px solid var(--border-primary)',
-              padding: 2,
-            }}>
-              {(['dark', 'light'] as const).map(t => (
-                <button
-                  key={t}
-                  onClick={() => { if (theme !== t) toggleTheme(); }}
-                  style={{
-                    flex: 1, padding: '4px 0', border: 'none', cursor: 'pointer',
-                    borderRadius: 4, fontSize: 11, fontWeight: 600,
-                    display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 4,
-                    transition: 'all 0.15s ease',
-                    ...(theme === t
-                      ? { background: 'var(--bg-card-hover)', color: 'var(--text-primary)', boxShadow: '0 1px 3px rgba(0,0,0,0.1)' }
-                      : { background: 'transparent', color: 'var(--text-muted)' }),
-                  }}
-                >
-                  {t === 'dark' ? (
+          <SettingsSection label="Theme">
+            <SegmentedControl
+              ariaLabel="Theme"
+              columns={2}
+              value={theme}
+              onSelect={next => { if (theme !== next) toggleTheme(); }}
+              options={[
+                {
+                  value: 'dark' as const,
+                  label: <>
                     <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
                       <path d="M21 12.79A9 9 0 1 1 11.21 3 7 7 0 0 0 21 12.79z" />
                     </svg>
-                  ) : (
+                    Dark
+                  </>,
+                },
+                {
+                  value: 'light' as const,
+                  label: <>
                     <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
                       <circle cx="12" cy="12" r="5" />
                       <line x1="12" y1="1" x2="12" y2="3" />
@@ -368,52 +333,28 @@ const SettingsPopover: React.FC = () => {
                       <line x1="4.22" y1="19.78" x2="5.64" y2="18.36" />
                       <line x1="18.36" y1="5.64" x2="19.78" y2="4.22" />
                     </svg>
-                  )}
-                  {t === 'dark' ? 'Dark' : 'Light'}
-                </button>
-              ))}
-            </div>
-          </div>
+                    Light
+                  </>,
+                },
+              ]}
+            />
+          </SettingsSection>
 
           <div style={{ height: 1, background: 'var(--border-primary)', margin: '4px 12px' }} />
 
-          {/* Refresh Rate */}
-          <div style={{ padding: '6px 12px 10px' }}>
-            <div style={{
-              fontSize: 9, fontWeight: 600, color: 'var(--text-muted)',
-              textTransform: 'uppercase', letterSpacing: '1.5px', marginBottom: 6,
-            }}>
-              Refresh Rate
-            </div>
-            <div style={{
-              display: 'flex', flexWrap: 'wrap', gap: 2,
-              background: 'var(--bg-primary)',
-              borderRadius: 6,
-              border: '1px solid var(--border-primary)',
-              padding: 2,
-            }}>
-              {refreshConfig.refreshRateOptions.map((opt: RefreshRateOption) => (
-                <button
-                  key={opt.seconds}
-                  onClick={() => setRefreshRate(opt.seconds)}
-                  style={{
-                    flex: '1 0 auto', padding: '4px 6px', border: 'none', cursor: 'pointer',
-                    borderRadius: 4, fontSize: 10, fontWeight: 600,
-                    fontFamily: "'Share Tech Mono', monospace",
-                    transition: 'all 0.15s ease',
-                    minWidth: 32,
-                    ...(refreshRateSeconds === opt.seconds
-                      ? { background: 'var(--bg-card-hover)', color: 'var(--text-primary)', boxShadow: '0 1px 3px rgba(0,0,0,0.1)' }
-                      : { background: 'transparent', color: 'var(--text-muted)' }),
-                  }}
-                >
-                  {opt.label}
-                </button>
-              ))}
-            </div>
-          </div>
+          <SettingsSection label="Refresh Rate">
+            <SegmentedControl
+              ariaLabel="Refresh rate"
+              columns={Math.min(4, refreshConfig.refreshRateOptions.length)}
+              value={refreshRateSeconds}
+              onSelect={setRefreshRate}
+              options={refreshConfig.refreshRateOptions.map((opt: RefreshRateOption) => ({ value: opt.seconds, label: opt.label }))}
+            />
+          </SettingsSection>
 
           <div style={{ height: 1, background: 'var(--border-primary)', margin: '4px 12px' }} />
+
+          <QueryXRaySourceControl />
 
           {/* Kill Queries Toggle */}
           <div style={{ padding: '6px 12px' }}>

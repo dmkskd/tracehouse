@@ -46,11 +46,11 @@ Tells the explorer how to visualise the result set.
 | `cluster`     | No       | Second categorical dimension, `grouped_stacked_bar` only. Bars are **clustered side by side** by this column and **stacked** by `series` within each cluster (e.g. `cluster=host series=kind`) |
 | `style`       | No       | `2d` (default SVG/recharts) or `3d` (Three.js) |
 | `unit`        | No       | Unit suffix for value axis ticks, e.g. `ms`, `s`, `MB`, `%`. Time units (`ms`, `s`) auto-scale (e.g. 1400 ms → 1.4 s) |
-| `orientation` | No       | `horizontal` (default for grouped/stacked bars) or `vertical` (shorthand `v`). Controls bar direction — horizontal puts labels on the left for readability |
+| `orientation` | No       | `horizontal` (default for grouped/stacked bars) or `vertical` (shorthand `v`). Controls bar direction - horizontal puts labels on the left for readability |
 | `color`       | No       | Override the default chart color with a hex value (e.g. `#f59e0b`) |
 | `render`      | No       | Rendering variant within the chart `type`. `overlay` = many-series "spaghetti" (no legend, thin translucent lines, hover to spotlight one, click to isolate); `grouped_line` only |
 
-#### `type=grouped_stacked_bar` — Clustered stacked bars
+#### `type=grouped_stacked_bar` - Clustered stacked bars
 
 Shows three categorical dimensions at once: the X-axis (`group_by`, e.g. a time bucket), a set of side-by-side bars per X value (`cluster`, e.g. server), and a stack within each bar (`series`, e.g. activity kind). Colour encodes the `series`; the clusters are told apart by their side-by-side position and the tooltip, which groups values by cluster. Use it to answer "for each bucket, what is each server doing, broken down by kind?"
 
@@ -62,9 +62,9 @@ GROUP BY t, host, kind
 ORDER BY t ASC
 ```
 
-The query returns one row per `(group_by, cluster, series)` combination. To stay legible, keep the number of X buckets small (the renderer keeps the most recent ~12) and the cluster/series cardinality modest — many servers × many kinds produces a dense chart. This type is 2D only.
+The query returns one row per `(group_by, cluster, series)` combination. To stay legible, keep the number of X buckets small (the renderer keeps the most recent ~12) and the cluster/series cardinality modest - many servers × many kinds produces a dense chart. This type is 2D only.
 
-#### `type=radar` — Multi-axis pressure chart
+#### `type=radar` - Multi-axis pressure chart
 
 Radar charts render one normalized shape from several result columns. They are useful for summarizing competing resource signals such as CPU, memory, I/O, network, and query load.
 
@@ -129,26 +129,26 @@ Decorates table columns with visual styles. Each `@cell:` line targets one colum
 | `column`  | Yes, except synthetic radar cells | Column name to decorate |
 | `type`    | Yes      | Decoration type: `rag`, `gauge`, `sparkline`, or `radar` |
 
-#### `type=rag` — Red / Amber / Green coloring
+#### `type=rag` - Red / Amber / Green coloring
 
 Applies conditional coloring to table cells. Only affects table view.
 
-**Numeric** (ascending — lower is better):
+**Numeric** (ascending - lower is better):
 ```sql
 -- @cell: column=avg_bytes_read type=rag green<2000 amber<40000
 ```
 
-**Numeric** (descending — higher is better):
+**Numeric** (descending - higher is better):
 ```sql
 -- @cell: column=uptime_days type=rag green>30 amber>7
 ```
 
-**Text mode** — match exact string values:
+**Text mode** - match exact string values:
 ```sql
 -- @cell: column=status type=rag green=ok,healthy amber=degraded red=error,down
 ```
 
-#### `type=gauge` — Inline horizontal bar
+#### `type=gauge` - Inline horizontal bar
 
 Renders a column as a horizontal gauge bar in the table. Combine with `type=rag` on the same column for colored bars.
 
@@ -160,10 +160,10 @@ Renders a column as a horizontal gauge bar in the table. Combine with `type=rag`
 
 | Parameter | Required | Description |
 |-----------|----------|-------------|
-| `max`     | Yes      | Bar's 100% value — a fixed number (e.g. `100`) or another column name (e.g. `disk_total`) |
+| `max`     | Yes      | Bar's 100% value - a fixed number (e.g. `100`) or another column name (e.g. `disk_total`) |
 | `unit`    | No       | Unit suffix displayed beside the value |
 
-#### `type=sparkline` — Inline trend line
+#### `type=sparkline` - Inline trend line
 
 Renders a column as a tiny SVG trend in the table. The column should contain an array of numeric values (e.g. from `groupArray()`).
 
@@ -178,7 +178,7 @@ Renders a column as a tiny SVG trend in the table. The column should contain an 
 | `color`   | No       | Hex color for the sparkline stroke |
 | `fill`    | No       | `true` to fill the area under the line |
 
-#### `type=radar` — Compact row shape
+#### `type=radar` - Compact row shape
 
 Renders a compact radar badge in a table cell. This is intended for row scanning: for example, showing whether a query is time-heavy, memory-heavy, I/O-heavy, or expensive across several dimensions.
 

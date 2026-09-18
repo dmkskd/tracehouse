@@ -1,5 +1,5 @@
 /**
- * Docusaurus client module — wires up the Live Demo navbar link and
+ * Docusaurus client module - wires up the Live Demo navbar link and
  * pings the demo instance to show a green status dot when it's up.
  *
  * Configuration: set `customFields.demoUrl` in docusaurus.config.ts.
@@ -11,7 +11,7 @@ const DEMO_URL = (siteConfig.customFields?.demoUrl as string) || '';
 
 function setup() {
   if (!DEMO_URL) {
-    // No demo configured — hide the navbar link
+    // No demo configured - hide the navbar link
     const link = document.getElementById('navbar-demo-link');
     if (link) link.style.display = 'none';
     return;
@@ -23,7 +23,7 @@ function setup() {
     (link as HTMLAnchorElement).href = DEMO_URL;
   }
 
-  // Ping the demo — show green dot on success, do nothing on failure
+  // Ping the demo - show green dot on success, do nothing on failure
   const pingUrl = DEMO_URL.replace(/\/$/, '') + '/proxy/ping';
   fetch(pingUrl, { mode: 'cors', cache: 'no-store' })
     .then((r) => {
@@ -37,7 +37,7 @@ function setup() {
       });
     })
     .catch(() => {
-      // Silently ignore — the link still works, just no status dot
+      // Silently ignore - the link still works, just no status dot
     });
 }
 
@@ -46,7 +46,7 @@ if (typeof window !== 'undefined') {
   if (document.readyState === 'loading') {
     document.addEventListener('DOMContentLoaded', setup);
   } else {
-    // Defer slightly — Docusaurus may not have rendered the navbar yet
+    // Defer slightly - Docusaurus may not have rendered the navbar yet
     setTimeout(setup, 0);
   }
 }

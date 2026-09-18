@@ -537,6 +537,7 @@ export const QueryDetailModal: React.FC<TimelineQueryModalProps> = ({
                 queryId={q.query_id}
                 logs={logsHook.logs}
                 queryStartTime={q.start_time}
+                isRunning={(q as QuerySeries & { is_running?: boolean }).is_running === true}
               />
             </div>
           )}

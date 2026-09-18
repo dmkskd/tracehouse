@@ -1,3 +1,6 @@
+import { selectQueryXRaySource } from '@tracehouse/core';
+import { XRaySourceBadge } from '../query/modal/XRaySourceBadge';
+import { useQueryXRaySelection } from '../query/query-xray-preference';
 /**
  * DashboardViewer - renders a dashboard as a grid of panels, each executing
  * its referenced preset query and displaying a mini chart + data table.
@@ -14,7 +17,7 @@ import { useClickHouseServices } from '../../providers/ClickHouseProvider';
 import { sourceTag, TAB_ANALYTICS } from '@tracehouse/core';
 import { type Query } from './types';
 import { getAllQueries } from './customQueries';
-import { resolveTimeRange, resolveDrillParams } from './templateResolution';
+import { resolveQueryXRaySQL, resolveTimeRange, resolveDrillParams } from './templateResolution';
 import { formatClickHouseError } from '../../utils/errorFormatters';
 import {
   type ChartType,
@@ -513,6 +516,8 @@ const DashboardPanelCard: React.FC<{
   isFocusStageActive?: boolean;
 }> = ({ panel, timeRangeOverride, dashboardId, isFocused, onToggleFocus, isFullscreen, onToggleFullscreen, isHidden, hoveredTimestamp, onTimestampHover, onTimeSeriesData, correlationValues, isHoveredPanel, filterParams, panelIndex, onOpenQueryDetail, onOpenQuery, focusStage, isFocusStageActive = false }) => {
   const services = useClickHouseServices();
+  const xraySelection = useQueryXRaySelection();
+  const xrayMeta = useMemo(() => selectQueryXRaySource(xraySelection), [xraySelection]);
   const requiredCapability = useMonitoringCapabilitiesStore(state => (
     panel.requiredCapability
       ? state.capabilities?.capabilities.find(
@@ -541,6 +546,8 @@ const DashboardPanelCard: React.FC<{
   const [result, setResult] = useState<PanelResult | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
+  const runIdRef = useRef(0);
+  const invalidateRun = useCallback(() => { runIdRef.current++; }, []);
   const [view, setView] = useState<PanelView>('chart');
   const [sortCol, setSortCol] = useState<string | null>(null);
   const [sortDir, setSortDir] = useState<'asc' | 'desc'>('desc');
@@ -606,21 +613,24 @@ const DashboardPanelCard: React.FC<{
       capabilityProbeStatus === 'idle' || capabilityProbeStatus === 'probing',
     );
     if (compatibility.status !== 'compatible') return;
+    const runId = ++runIdRef.current;
     setLoading(true);
     setError(null);
+    setResult(null);
     try {
-      let sql = resolveTimeRange(p.sql, p.directives.meta?.interval, timeRangeOverride);
+      let sql = resolveTimeRange(resolveQueryXRaySQL(p.sql, xraySelection), p.directives.meta?.interval, timeRangeOverride);
       sql = resolveDrillParams(sql, { ...filterParams, ...(overrideParams ?? drillParams) });
       const rows = await services.interactiveQueryService.run<Record<string, unknown>>(
         sql,
         sourceTag(TAB_ANALYTICS, 'dashboardPanel'),
       );
+      if (runId !== runIdRef.current) return;
       const columns = rows.length > 0 ? Object.keys(rows[0]) : [];
       setResult({ columns, rows });
     } catch (e) {
-      setError(e instanceof Error ? e.message : String(e));
+      if (runId === runIdRef.current) setError(e instanceof Error ? e.message : String(e));
     } finally {
-      setLoading(false);
+      if (runId === runIdRef.current) setLoading(false);
     }
   }, [
     services,
@@ -631,13 +641,15 @@ const DashboardPanelCard: React.FC<{
     capabilityUnavailable,
     capabilityServerVersion,
     capabilityProbeStatus,
+    xraySelection,
   ]);
 
   useEffect(() => {
     if (services && preset && !capabilityUnavailable && !versionUnavailable) {
       run();
     }
-  }, [run, services, preset, capabilityUnavailable, versionUnavailable]);
+    return invalidateRun;
+  }, [run, services, preset, capabilityUnavailable, versionUnavailable, invalidateRun]);
 
   useEffect(() => {
     if (!versionUnavailable) return;
@@ -929,6 +941,9 @@ const DashboardPanelCard: React.FC<{
               </span>
             )}
           </div>
+          {preset.sql.includes('{{query_xray_overlay:') && (
+            <div style={{ fontSize: 11, marginTop: 4 }}><XRaySourceBadge meta={xrayMeta} /></div>
+          )}
           {preset.description && (
             <div style={{ fontSize: expanded ? 13 : 10, color: 'var(--text-muted)', marginTop: 2, lineHeight: 1.3 }}>{preset.description}</div>
           )}
@@ -1668,6 +1683,7 @@ const ImportModal: React.FC<{ onImport: (json: string) => void; onClose: () => v
 
 const MiniPanelCard: React.FC<{ panel: DashboardPanel; timeRangeOverride: string | null }> = ({ panel, timeRangeOverride }) => {
   const services = useClickHouseServices();
+  const xraySelection = useQueryXRaySelection();
   const requiredCapability = useMonitoringCapabilitiesStore(state => (
     panel.requiredCapability
       ? state.capabilities?.capabilities.find(
@@ -1699,7 +1715,7 @@ const MiniPanelCard: React.FC<{ panel: DashboardPanel; timeRangeOverride: string
     setLoading(true);
     let sql: string;
     try {
-      sql = resolveTimeRange(preset.sql, preset.directives.meta?.interval, timeRangeOverride);
+      sql = resolveTimeRange(resolveQueryXRaySQL(preset.sql, xraySelection), preset.directives.meta?.interval, timeRangeOverride);
     } catch {
       setResult(null);
       setLoading(false);
@@ -1717,7 +1733,7 @@ const MiniPanelCard: React.FC<{ panel: DashboardPanel; timeRangeOverride: string
       .catch(() => { if (!cancelled) setResult(null); })
       .finally(() => { if (!cancelled) setLoading(false); });
     return () => { cancelled = true; };
-  }, [services, preset, timeRangeOverride, capabilityUnavailable, versionUnavailable]);
+  }, [services, preset, timeRangeOverride, capabilityUnavailable, versionUnavailable, xraySelection]);
 
   const chartDirective = useMemo(() => preset ? parseChartDirective(preset.sql) : null, [preset]);
   const chartData = useMemo((): ChartDataPoint[] => {

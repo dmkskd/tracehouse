@@ -1,4 +1,4 @@
-/* Shared layout — structural styles that don't change between themes.
+/* Shared layout - structural styles that don't change between themes.
    Each theme file imports this, then overrides colors. */
 
 .hero-clickhouse {

@@ -211,7 +211,9 @@ describe('MonitoringCapabilitiesService', () => {
 
     const executeQuery = vi.mocked(adapter.executeQuery);
     const queries = executeQuery.mock.calls.map(([sql]) => String(sql));
-    expect(queries).toHaveLength(7);
+    // snapshot, log tables, settings, cloud, tracehouse tables,
+    // metric_log replication columns, query_metric_log columns, processor schema
+    expect(queries).toHaveLength(8);
     expect(queries.filter(query =>
       query.includes('source:TraceHouse:Internal:capabilitySnapshot'),
     )).toHaveLength(1);

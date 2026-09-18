@@ -1,6 +1,13 @@
+import { useQueryXRayPreference } from '../../query-xray-preference';
 /**
- * useProcessSamples — fetches per-second process samples from tracehouse.processes_history
- * with server-side delta computation (no ProfileEvents maps shipped to browser).
+ * useProcessSamples — fetches per-sample query resource series with server-side
+ * delta computation (no ProfileEvents maps shipped to browser).
+ *
+ * The table is chosen by selectQueryXRaySource(), not by this hook: either
+ * tracehouse.processes_history (the sampler) or system.query_metric_log. Both
+ * builders emit the same columns, so everything below the fetch is identical.
+ * The selection is returned as `meta` so the UI can badge the source and hide
+ * the fields the chosen source could not populate (`meta.missing`).
  *
  * Exposes both cumulative and per-interval delta values so consumers can choose
  * without re-summing.
@@ -9,21 +16,27 @@
  * per host and aggregated into an "All" view that sums metrics across hosts.
  */
 
-import { useState, useCallback } from 'react';
+import { useState, useCallback, useMemo } from 'react';
 import { useClickHouseServices } from '../../../../providers/ClickHouseProvider';
 import {
-  buildHostProcessSamplesSQL,
   mapHostProcessSampleRow,
+  selectQueryXRaySource,
+  buildXRaySamplesSQL,
   tagQuery,
   sourceTag,
   TAB_QUERIES,
   type ProcessSample,
   type HostProcessSample,
+  type XRayQueryState,
+  type QueryXRaySourceSelection,
 } from '@tracehouse/core';
+import { useMonitoringCapabilitiesStore } from '../../../../stores/monitoringCapabilitiesStore';
 
 export type { ProcessSample, HostProcessSample };
 
 export interface ProcessSamplesResult {
+  /** Which table these samples came from, and what it could not provide. */
+  meta: QueryXRaySourceSelection;
   /** Aggregated samples (summed across all hosts, aligned by time bucket) */
   samples: ProcessSample[];
   /** Per-host sample arrays, keyed by hostname */
@@ -87,13 +100,43 @@ function aggregateHostSamples(
       d_net_send_kb: group.reduce((sum, s) => sum + s.d_net_send_kb, 0),
       d_net_recv_kb: group.reduce((sum, s) => sum + s.d_net_recv_kb, 0),
       rate_clamped: group.some(s => s.rate_clamped),
+      rate_unclamped: group.some(s => s.rate_unclamped),
     };
     return agg;
   });
 }
 
-export function useProcessSamples(queryId: string | undefined): ProcessSamplesResult {
+export function useProcessSamples(
+  queryId: string | undefined,
+  queryState: XRayQueryState = 'unknown',
+  /**
+   * Query start time, when known. Only used by the query_metric_log source, to
+   * bound its system.query_log identity scan to the right day; without it an
+   * older query falls outside the default lookback and returns nothing.
+   */
+  startedAt?: string,
+): ProcessSamplesResult {
   const services = useClickHouseServices();
+  const flags = useMonitoringCapabilitiesStore(s => s.flags);
+  const probeStatus = useMonitoringCapabilitiesStore(s => s.probeStatus);
+  const { preference } = useQueryXRayPreference();
+
+  // Until the capability probe has answered, every flag reads false, which would
+  // make the X-Ray refuse to query at all — a regression against the old
+  // behaviour of simply asking processes_history and reporting what came back.
+  // Embedders that never probe (the Grafana plugin) would be stuck there. So an
+  // unprobed connection is assumed to have the sampler, and the real answer
+  // takes over once it arrives.
+  const probed = probeStatus === 'done';
+  const meta = useMemo(() => selectQueryXRaySource({
+    availability: {
+      processesHistory: probed ? flags.hasProcessesHistory : true,
+      queryMetricLog: probed ? flags.hasQueryMetricLogXRay : false,
+    },
+    preference,
+    queryState,
+  }), [probed, flags.hasProcessesHistory, flags.hasQueryMetricLogXRay, preference, queryState]);
+
   const [samples, setSamples] = useState<ProcessSample[]>([]);
   const [hostSamples, setHostSamples] = useState<Map<string, ProcessSample[]>>(new Map());
   const [hosts, setHosts] = useState<string[]>([]);
@@ -102,26 +145,39 @@ export function useProcessSamples(queryId: string | undefined): ProcessSamplesRe
 
   const fetch = useCallback(async () => {
     if (!services || !queryId) return;
+    if (!meta.source) {
+      setError(meta.note ?? 'No X-Ray source available on this connection');
+      return;
+    }
     setIsLoading(true);
     setError(null);
     try {
-      const sql = buildHostProcessSamplesSQL(queryId);
+      const sql = buildXRaySamplesSQL({
+        availability: {
+          processesHistory: probed ? flags.hasProcessesHistory : true,
+          queryMetricLog: probed ? flags.hasQueryMetricLogXRay : false,
+        },
+        preference,
+        queryState: queryState,
+      }, [queryId], { startedAt, perHost: true });
       const rows = await services.adapter.executeQuery<Record<string, unknown>>(
-        tagQuery(sql, sourceTag(TAB_QUERIES, 'processSamples')),
+        tagQuery(sql, sourceTag(TAB_QUERIES, meta.source === 'query_metric_log'
+          ? 'queryMetricLogSamples'
+          : 'processSamples')),
       );
       const tagged = rows.map(mapHostProcessSampleRow);
 
       // Group by hostname
       const perHost = new Map<string, ProcessSample[]>();
       for (const s of tagged) {
-        const key = s.hostname;
+        const { hostname, ...sample } = s;
+        const key = hostname;
         let arr = perHost.get(key);
         if (!arr) {
           arr = [];
           perHost.set(key, arr);
         }
         // Strip hostname for the ProcessSample stored per-host
-        const { hostname: _, ...sample } = s;
         arr.push(sample);
       }
 
@@ -141,7 +197,7 @@ export function useProcessSamples(queryId: string | undefined): ProcessSamplesRe
     } finally {
       setIsLoading(false);
     }
-  }, [services, queryId]);
+  }, [services, queryId, meta, startedAt, probed, flags.hasProcessesHistory, flags.hasQueryMetricLogXRay, preference, queryState]);
 
-  return { samples, hostSamples, hosts, isLoading, error, fetch };
+  return { meta, samples, hostSamples, hosts, isLoading, error, fetch };
 }

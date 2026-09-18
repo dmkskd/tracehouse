@@ -568,7 +568,7 @@ const BUILTIN_DASHBOARDS: Dashboard[] = [
       { queryName: 'X-Ray#Query CPU Cores' },
       { queryName: 'X-Ray#Query Memory' },
       { queryName: 'X-Ray#Query read_bytes' },
-      { queryName: 'X-Ray#Query I/O Wait' },
+      { queryName: 'X-Ray#Query Disk I/O Wait' },
     ],
   },
   {

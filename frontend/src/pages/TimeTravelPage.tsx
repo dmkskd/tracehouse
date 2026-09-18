@@ -1,3 +1,5 @@
+import { useQueryXRaySelection } from '../components/query/query-xray-preference';
+import { selectQueryXRaySource } from '@tracehouse/core';
 /**
  * TimeTravelPage - Memory/CPU/Network/Disk IO timeline with interactive hover + click + drag-to-zoom.
  * Toggle buttons switch Y-axis metric. Same time axis, hover, pin, zoom across all views.
@@ -217,6 +219,8 @@ const SAMPLING_NOTE = (metric: MetricMode): string =>
 
 /** Read a param from the hash-based URL (/#/path?key=val) or standard search */
 
+const ZOOM_MAX_SPAN_MS = 10 * 60 * 1000;
+
 export const TimeTravelPage: React.FC = () => {
   const { activeProfileId, profiles } = useConnectionStore();
   const services = useClickHouseServices();
@@ -312,6 +316,9 @@ export const TimeTravelPage: React.FC = () => {
   const prevDataEndRef = useRef<number | null>(null);
 
   // Zoom mode: per-second sampled data from processes_history/merges_history
+  const xraySelection = useQueryXRaySelection(isLive ? 'running' : 'finished');
+  const zoomSource = useMemo(() => selectQueryXRaySource(xraySelection), [xraySelection]);
+  const [zoomError, setZoomError] = useState<string | null>(null);
   const [zoomData, setZoomData] = useState<MemoryTimeline | null>(null);
   const [zoomLoading, setZoomLoading] = useState(false);
   const zoomFetchRef = useRef<ReturnType<typeof setTimeout> | null>(null);
@@ -677,31 +684,32 @@ export const TimeTravelPage: React.FC = () => {
   }, [autoRefresh, refreshRateSeconds, refreshConfig, isLive, services, isConnected, fetchData, rowHosts, fetchSplitData]);
 
   // Zoom mode: fetch per-second sampled data when zoomed into a narrow window (< 10 min)
-  const ZOOM_MAX_SPAN_MS = 10 * 60 * 1000; // 10 minutes
   useEffect(() => {
+    let cancelled = false;
+    setZoomData(null);
+    setZoomError(null);
+    setZoomLoading(false);
     if (zoomFetchRef.current) { clearTimeout(zoomFetchRef.current); zoomFetchRef.current = null; }
-    if (!zoomRange || !data || !services) { setZoomData(null); return; }
+    if (!zoomRange || !data || !services) return;
     const span = zoomRange[1] - zoomRange[0];
-    if (span > ZOOM_MAX_SPAN_MS) { setZoomData(null); return; }
+    if (span > ZOOM_MAX_SPAN_MS) return;
 
-    // Debounce to avoid firing on every scroll-zoom tick
     zoomFetchRef.current = setTimeout(async () => {
       setZoomLoading(true);
       try {
         const enriched = await services.timelineService.getZoomData(
-          data, zoomRange[0], zoomRange[1], hostnameFilter,
+          data, zoomRange[0], zoomRange[1], hostnameFilter, xraySelection,
         );
-        setZoomData(enriched);
+        if (!cancelled) setZoomData(enriched);
       } catch (e) {
-        console.error('[TimeTravelPage] Zoom fetch error:', e);
-        setZoomData(null);
+        if (!cancelled) setZoomError(e instanceof Error ? e.message : String(e));
       } finally {
-        setZoomLoading(false);
+        if (!cancelled) setZoomLoading(false);
       }
     }, 300);
 
-    return () => { if (zoomFetchRef.current) clearTimeout(zoomFetchRef.current); };
-  }, [zoomRange, data, services, hostnameFilter]); // eslint-disable-line react-hooks/exhaustive-deps
+    return () => { cancelled = true; if (zoomFetchRef.current) clearTimeout(zoomFetchRef.current); };
+  }, [zoomRange, data, services, hostnameFilter, xraySelection]);
 
   // Clear zoom data when base data changes
   useEffect(() => { setZoomData(null); }, [data]);
@@ -1799,9 +1807,11 @@ export const TimeTravelPage: React.FC = () => {
                 )}
                 {zoomData && (
                   <span style={{ fontSize:10, color:'#3fb950', opacity: 0.8 }}>
-                    {zoomLoading ? 'Loading samples...' : 'Per-second sampled'}
+                    {zoomLoading ? 'Loading samples...' : `Per-second sampled · ${zoomSource.source ?? 'merges only'}`}
+                    {!zoomLoading && zoomSource.source === 'query_metric_log' && metricMode === 'disk' && ' · Query disk uses query-log average'}
                   </span>
                 )}
+                {zoomError && <span role="status" style={{ fontSize: 10, color: '#f85149' }}>{zoomError}</span>}
                 {zoomLoading && !zoomData && (
                   <span style={{ fontSize:10, color:'#58a6ff', opacity: 0.8 }}>Loading samples...</span>
                 )}

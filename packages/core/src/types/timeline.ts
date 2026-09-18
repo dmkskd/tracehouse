@@ -69,7 +69,9 @@ export interface QuerySeries {
   /** True when this query matches the normalizedQueryHash filter (pattern mode overlay) */
   matched_hash?: boolean;
   points: TimeseriesPoint[];
-  /** Per-second sampled metrics from processes_history (zoom mode only) */
+  /** Metrics that lack sampled values; retain the query-log average estimate. */
+  zoomMissing?: TimelineMetricMode[];
+  /** Per-second sampled metrics from the selected Query X-Ray source. */
   zoomSamples?: ZoomSample[];
 }
 

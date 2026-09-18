@@ -1,3 +1,4 @@
+import { QueryXRaySourceControl } from '@frontend/components/query/QueryXRayPreference';
 import React, { lazy, Suspense, useState, useCallback, useMemo, useEffect, useRef } from 'react';
 import { AppRootProps, PageLayoutType } from '@grafana/data';
 import { config, locationService, PluginPage } from '@grafana/runtime';
@@ -182,6 +183,8 @@ const SettingsDropdown: React.FC = () => {
               ))}
             </div>
           </div>
+
+          <QueryXRaySourceControl />
 
           {/* Experimental features (user-level) */}
           <label style={{

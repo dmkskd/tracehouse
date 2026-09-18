@@ -340,7 +340,7 @@ export const mergeApi = {
       table: string;
       part_name: string;
     },
-  ): Promise<import('@tracehouse/core').MergeTextLog[]> {
+  ): Promise<MergeTextLog[]> {
     return service.getMergeEventTextLogs(record);
   },
 };
