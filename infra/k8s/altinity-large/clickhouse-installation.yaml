@@ -52,6 +52,12 @@ spec:
       processors_profile_log/database: system
       processors_profile_log/table: processors_profile_log
       processors_profile_log/flush_interval_milliseconds: "7500"
+      # Predicate selectivity + index pruning (CH 26.5+); rows also need
+      # the default/predicate_statistics_sample_rate profile setting below.
+      predicate_statistics_log/database: system
+      predicate_statistics_log/table: predicate_statistics_log
+      predicate_statistics_log/flush_interval_milliseconds: "7500"
+      predicate_statistics_log/engine: "ENGINE = MergeTree PARTITION BY toYYYYMM(event_date) ORDER BY (event_date, event_time) TTL event_date + INTERVAL 1 DAY"
       opentelemetry_span_log/database: system
       opentelemetry_span_log/table: opentelemetry_span_log
       opentelemetry_span_log/flush_interval_milliseconds: "7500"
@@ -61,6 +67,8 @@ spec:
       default/query_profiler_real_time_period_ns: "10000000"
       default/memory_profiler_step: "0"
       default/log_processors_profiles: "1"
+      # 1 = sample every query; raise N to sample ~1/N by query-id hash.
+      default/predicate_statistics_sample_rate: "1"
       default/opentelemetry_start_trace_probability: "1"
       default/opentelemetry_trace_processors: "1"
     users:

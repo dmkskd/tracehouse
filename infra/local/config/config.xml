@@ -26,6 +26,8 @@
             <opentelemetry_start_trace_probability>1</opentelemetry_start_trace_probability>
             <!-- Trace processor operations (pipeline execution) -->
             <opentelemetry_trace_processors>1</opentelemetry_trace_processors>
+            <!-- 1 = sample every query; raise N to sample ~1/N by query-id hash. -->
+            <predicate_statistics_sample_rate>1</predicate_statistics_sample_rate>
         </default>
     </profiles>
     
@@ -52,6 +54,15 @@
         <table>query_views_log</table>
         <flush_interval_milliseconds>7500</flush_interval_milliseconds>
     </query_views_log>
+
+    <!-- Predicate selectivity + index-granule pruning per query (CH 26.5+).
+         Needs predicate_statistics_sample_rate > 0 in the default profile
+         above; a server binary older than 26.5 ignores this section. -->
+    <predicate_statistics_log>
+        <database>system</database>
+        <table>predicate_statistics_log</table>
+        <flush_interval_milliseconds>7500</flush_interval_milliseconds>
+    </predicate_statistics_log>
 
     <processors_profile_log>
         <database>system</database>

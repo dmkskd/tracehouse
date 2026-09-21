@@ -92,6 +92,8 @@ spec:
           query_profiler_real_time_period_ns: 10000000
           memory_profiler_step: 0
           log_processors_profiles: 1
+          # 1 = sample every query; raise N to sample ~1/N by query-id hash.
+          predicate_statistics_sample_rate: 1
     extraConfig:
       # Disable client certificate requirement (server TLS only, no mTLS)
       openSSL:
@@ -161,6 +163,13 @@ spec:
         database: system
         table: processors_profile_log
         flush_interval_milliseconds: 7500
+      # Predicate selectivity + index pruning (CH 26.5+); rows also need the
+      # predicate_statistics_sample_rate profile setting in extraUsersConfig.
+      predicate_statistics_log:
+        database: system
+        table: predicate_statistics_log
+        flush_interval_milliseconds: 7500
+        engine: "ENGINE = MergeTree PARTITION BY toYYYYMM(event_date) ORDER BY (event_date, event_time) TTL event_date + INTERVAL 1 DAY"
       opentelemetry_span_log:
         database: system
         table: opentelemetry_span_log

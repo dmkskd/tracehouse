@@ -67,6 +67,7 @@ GRANT SELECT ON system.opentelemetry_span_log TO read_only;
 GRANT SELECT ON system.part_log TO read_only;
 GRANT SELECT ON system.parts TO read_only;
 GRANT SELECT ON system.parts_columns TO read_only;
+GRANT SELECT ON system.predicate_statistics_log TO read_only;
 GRANT SELECT ON system.processes TO read_only;
 GRANT SELECT ON system.processors_profile_log TO read_only;
 GRANT SELECT ON system.query_cache TO read_only;

@@ -56,6 +56,21 @@
         <engine>ENGINE = MergeTree PARTITION BY toYYYYMM(event_date) ORDER BY (event_date, event_time) TTL event_time + INTERVAL 1 DAY SETTINGS merge_with_ttl_timeout = 900</engine>
     </query_metric_log>
 
+    <!-- Predicate selectivity + index-granule pruning per query (CH 26.5+).
+         No section in the shipped config.xml, so the table is only created when
+         declared here. Rows are also gated by the per-user setting
+         predicate_statistics_sample_rate (see users.d/query_profiler.xml);
+         with the section alone the table stays empty.
+         Volume: one row per prewhere/filter step per reading stream, plus one
+         index row per table scan, and predicate_expression is an ActionsDAG
+         dump, so keep it on the short TTL. -->
+    <predicate_statistics_log replace="replace">
+        <database>system</database>
+        <table>predicate_statistics_log</table>
+        <flush_interval_milliseconds>7500</flush_interval_milliseconds>
+        <engine>ENGINE = MergeTree PARTITION BY toYYYYMM(event_date) ORDER BY (event_date, event_time) TTL event_time + INTERVAL 1 DAY SETTINGS merge_with_ttl_timeout = 900</engine>
+    </predicate_statistics_log>
+
     <query_thread_log replace="replace">
         <database>system</database>
         <table>query_thread_log</table>

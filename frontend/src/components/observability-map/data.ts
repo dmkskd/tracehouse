@@ -1,5 +1,5 @@
 /**
- * ClickHouse Observability Map — static data model
+ * ClickHouse Observability Map - static data model
  *
  * System tables organized by category with key columns and diagnostic queries.
  * Based on Brendan Gregg-style observability tool maps adapted for ClickHouse.
@@ -240,7 +240,7 @@ LIMIT 10` }
         },
         {
           name: "system.processes",
-          desc: "Currently running queries — the 'top' for ClickHouse. Shows live resource consumption.",
+          desc: "Currently running queries - the 'top' for ClickHouse. Shows live resource consumption.",
           cols: ["query", "elapsed", "read_rows", "read_bytes", "total_rows_approx", "memory_usage", "query_id", "user", "is_cancelled"],
           queries: [
             {
@@ -256,7 +256,7 @@ ORDER BY elapsed DESC` },
         },
         {
           name: "system.query_thread_log",
-          desc: "Per-thread execution stats for each query — useful for diagnosing thread-level imbalances.",
+          desc: "Per-thread execution stats for each query - useful for diagnosing thread-level imbalances.",
           cols: ["thread_name", "thread_id", "query_id", "read_rows", "read_bytes", "written_rows", "memory_usage", "ProfileEvents"],
           queries: [
             {
@@ -269,7 +269,7 @@ WHERE query_id = '...'` }
         },
         {
           name: "system.query_views_log",
-          desc: "Materialized view execution triggered by INSERTs — track which views are slow.",
+          desc: "Materialized view execution triggered by INSERTs - track which views are slow.",
           cols: ["view_name", "view_type", "view_query", "view_duration_ms", "read_rows", "written_rows", "status", "exception_code"],
           queries: [
             {
@@ -283,7 +283,7 @@ ORDER BY view_duration_ms DESC` }
         },
         {
           name: "system.query_metric_log",
-          desc: "Per-query time-series metrics sampled during execution — memory gauges plus one column per ProfileEvent, each holding that interval's delta.",
+          desc: "Per-query time-series metrics sampled during execution - memory gauges plus one column per ProfileEvent, each holding that interval's delta.",
           since: "24.10",
           cols: ["event_time", "event_time_microseconds", "query_id", "hostname", "memory_usage", "peak_memory_usage", "ProfileEvent_*"],
           queries: [
@@ -396,7 +396,7 @@ ORDER BY start_time_us` }
         },
         {
           name: "system.processors_profile_log",
-          desc: "Per-processor (pipeline node) execution profile — input/output waits, rows processed per step.",
+          desc: "Per-processor (pipeline node) execution profile - input/output waits, rows processed per step.",
           cols: ["name", "id", "parent_ids", "elapsed_us", "input_wait_elapsed_us", "output_wait_elapsed_us", "input_rows", "output_rows"],
           queries: [
             {
@@ -412,16 +412,33 @@ ORDER BY elapsed_us DESC` }
         },
         {
           name: "system.predicate_statistics_log",
-          desc: "Sampled log of predicate filter selectivity and MergeTree index-granule pruning per query. Disabled by default; enable with the predicate_statistics_sample_rate server setting.",
-          cols: ["event_time", "query_id", "database", "table", "predicate"],
+          desc: "Per-query filter selectivity and MergeTree index-granule pruning. Off by default: needs a <predicate_statistics_log> section in config.d AND the per-query setting predicate_statistics_sample_rate > 0 (1 = every query, N = ~1/N by query-id hash). Index rows carry the pruning funnel in parallel arrays; filter rows carry per-prewhere-step row counts and an ActionsDAG dump of the predicate.",
+          cols: ["event_time", "query_id", "database", "table", "predicate_expression", "input_rows", "passed_rows", "filter_selectivity", "total_selectivity", "index_names", "index_types", "total_granules", "granules_after", "index_selectivities"],
           since: "26.5",
           queries: [
-            { label: "Least selective predicates", sql: `SELECT database, table, predicate,
-  count() AS samples
+            { label: "Index pruning funnel", sql: `SELECT event_time, database, table, query_id,
+  arrayZip(index_names, total_granules, granules_after, index_selectivities) AS index_stages
 FROM system.predicate_statistics_log
+WHERE event_date = today() AND notEmpty(index_names)
+ORDER BY event_time DESC
+LIMIT 20` },
+            { label: "Indexes that never prune", sql: `SELECT database, table, idx.1 AS index_name, idx.2 AS index_type,
+  count() AS scans,
+  round(avg(idx.5), 4) AS avg_selectivity,
+  sum(idx.3 - idx.4) AS granules_pruned
+FROM system.predicate_statistics_log
+ARRAY JOIN arrayZip(index_names, index_types, total_granules, granules_after, index_selectivities) AS idx
 WHERE event_date = today()
-GROUP BY database, table, predicate
-ORDER BY samples DESC
+GROUP BY database, table, index_name, index_type
+ORDER BY avg_selectivity DESC
+LIMIT 20` },
+            { label: "Least selective filter steps", sql: `SELECT event_time, database, table, query_id,
+  input_rows, passed_rows,
+  round(filter_selectivity, 4) AS step_selectivity,
+  substring(predicate_expression, 1, 80) AS predicate_dag
+FROM system.predicate_statistics_log
+WHERE event_date = today() AND empty(index_names)
+ORDER BY input_rows DESC
 LIMIT 20` }
           ],
         },
@@ -551,7 +568,7 @@ ORDER BY event_date DESC` }
         },
         {
           name: "system.detached_parts",
-          desc: "Parts removed from active dataset — broken, orphaned, or manually detached. Monitor for data issues.",
+          desc: "Parts removed from active dataset - broken, orphaned, or manually detached. Monitor for data issues.",
           cols: ["database", "table", "partition_id", "name", "reason", "disk", "min_block_number", "max_block_number"],
           queries: [
             {
@@ -709,7 +726,7 @@ ORDER BY total_bytes DESC` }
         },
         {
           name: "system.columns",
-          desc: "Every column in every table — types, codecs, default expressions, compression stats.",
+          desc: "Every column in every table - types, codecs, default expressions, compression stats.",
           cols: ["database", "table", "name", "type", "compression_codec", "default_kind", "default_expression", "data_compressed_bytes", "data_uncompressed_bytes"],
           queries: [
             {
@@ -726,7 +743,7 @@ WHERE database='mydb'
         },
         {
           name: "system.data_skipping_indices",
-          desc: "Skip indexes defined on tables — minmax, set, bloom_filter, tokenbf, ngrambf.",
+          desc: "Skip indexes defined on tables - minmax, set, bloom_filter, tokenbf, ngrambf.",
           cols: ["database", "table", "name", "type", "expr", "granularity", "data_compressed_bytes", "data_uncompressed_bytes"],
           queries: [
             {
@@ -985,7 +1002,7 @@ ORDER BY num_tries DESC` }
       children: [
         {
           name: "system.metrics",
-          desc: "Real-time gauge metrics — current values of 150+ counters covering queries, merges, memory, threads, connections.",
+          desc: "Real-time gauge metrics - current values of 150+ counters covering queries, merges, memory, threads, connections.",
           cols: ["metric", "value", "description"],
           queries: [
             {
@@ -1012,7 +1029,7 @@ WHERE metric =
         },
         {
           name: "system.events",
-          desc: "Cumulative counter events since server start — queries, reads, writes, network bytes, etc.",
+          desc: "Cumulative counter events since server start - queries, reads, writes, network bytes, etc.",
           cols: ["event", "value", "description"],
           queries: [
             {
@@ -1487,7 +1504,7 @@ ORDER BY database, table` }
       children: [
         {
           name: "system.asynchronous_insert_log",
-          desc: "Log of async insert buffer flushes — status, timing, exceptions.",
+          desc: "Log of async insert buffer flushes - status, timing, exceptions.",
           cols: ["event_time", "database", "table", "format", "query_id", "bytes", "rows", "status", "exception", "flush_time_microseconds", "flush_query_id"],
           queries: [
             {
@@ -1627,7 +1644,7 @@ ORDER BY result_size DESC LIMIT 20` }
         },
         {
           name: "system.filesystem_cache",
-          desc: "Object storage cache (S3/Azure/GCS) — cached segments on local disk. Critical for data lake setups.",
+          desc: "Object storage cache (S3/Azure/GCS) - cached segments on local disk. Critical for data lake setups.",
           cols: ["cache_name", "file_segment_range_begin", "file_segment_range_end", "size", "state", "cache_hits", "cache_path", "downloaded_size"],
           queries: [
             {

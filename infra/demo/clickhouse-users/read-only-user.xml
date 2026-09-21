@@ -51,6 +51,7 @@
         <query>GRANT SELECT ON system.part_log</query>
         <query>GRANT SELECT ON system.parts</query>
         <query>GRANT SELECT ON system.parts_columns</query>
+        <query>GRANT SELECT ON system.predicate_statistics_log</query>
         <query>GRANT SELECT ON system.processes</query>
         <query>GRANT SELECT ON system.processors_profile_log</query>
         <query>GRANT SELECT ON system.query_cache</query>

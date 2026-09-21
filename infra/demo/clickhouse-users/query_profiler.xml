@@ -25,6 +25,12 @@
 
             <!-- Log per-query processor pipeline profile -->
             <log_processors_profiles>1</log_processors_profiles>
+
+            <!-- Predicate selectivity + index pruning into
+                 system.predicate_statistics_log (CH 26.5+). N = 1 samples every
+                 query; raise N to sample ~1/N of queries by query-id hash.
+                 The table must also be declared in config.d/system_logs.xml. -->
+            <predicate_statistics_sample_rate>1</predicate_statistics_sample_rate>
         </default>
     </profiles>
 </clickhouse>
