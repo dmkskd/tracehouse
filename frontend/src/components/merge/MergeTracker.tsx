@@ -2419,7 +2419,14 @@ export const MergeTrackerView: React.FC = () => {
           padding: '0 24px 24px',
         }}
       >
-      <div className="flex flex-col min-w-0" style={{ minHeight: isHealthTab ? '520px' : '400px' }}>
+      <div
+        className="flex flex-col min-w-0"
+        style={{
+          minHeight: isHealthTab ? '520px' : '400px',
+          // Health map sizes itself from its container, so give it a definite height.
+          height: isHealthTab ? '100%' : undefined,
+        }}
+      >
           {/* Filter Bar */}
           {!isHealthTab && (
             <div style={{ paddingTop: 12 }}>
@@ -2472,7 +2479,15 @@ export const MergeTrackerView: React.FC = () => {
           )}
 
           {/* Content and optional preview share a row so their top edges align. */}
-          <div className="flex gap-4" style={{ paddingTop: 12, alignItems: 'flex-start' }}>
+          <div
+            className="flex gap-4"
+            style={{
+              paddingTop: 12,
+              alignItems: isHealthTab ? 'stretch' : 'flex-start',
+              flex: isHealthTab ? 1 : undefined,
+              minHeight: isHealthTab ? 0 : undefined,
+            }}
+          >
           <div className="flex-1 overflow-auto min-w-0">
             {activeTab === 'health' ? (
               <MergeHealthSunburst
