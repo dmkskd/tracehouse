@@ -1,5 +1,6 @@
 import React from 'react';
 import { cleanup, render, screen } from '@testing-library/react';
+import { MemoryRouter } from 'react-router-dom';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import {
   inferDistributedTopology,
@@ -68,6 +69,7 @@ describe('DistributedQueryTopology processor compatibility', () => {
     const message = 'Processor plan-step metadata is unavailable on this ClickHouse schema; topology uses processor names and query_log/ProfileEvents.';
 
     render(
+      <MemoryRouter>
       <DistributedQueryTopology
         coordinator={coordinator}
         subQueries={subQueries}
@@ -78,7 +80,8 @@ describe('DistributedQueryTopology processor compatibility', () => {
         })}
         activeQueryId={coordinator.query_id}
         onNavigate={vi.fn()}
-      />,
+      />
+      </MemoryRouter>,
     );
 
     expect(screen.getByTestId('processor-profile-compatibility')).toHaveTextContent(message);
@@ -86,6 +89,7 @@ describe('DistributedQueryTopology processor compatibility', () => {
 
   it('does not show a compatibility notice for the full schema', () => {
     render(
+      <MemoryRouter>
       <DistributedQueryTopology
         coordinator={coordinator}
         subQueries={subQueries}
@@ -96,7 +100,8 @@ describe('DistributedQueryTopology processor compatibility', () => {
         })}
         activeQueryId={coordinator.query_id}
         onNavigate={vi.fn()}
-      />,
+      />
+      </MemoryRouter>,
     );
 
     expect(screen.queryByTestId('processor-profile-compatibility')).toBeNull();

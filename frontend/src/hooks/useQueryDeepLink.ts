@@ -22,6 +22,8 @@ import { defineShareSchema } from '../share/shareSchema';
 export const QUERY_DETAILS_SHARE_SCHEMA = defineShareSchema({
   qd_id: { type: 'string' },
   qd_tab: { type: 'string' },
+  /** Distributed tab topology view: 'timeline' | 'flow'. */
+  qd_topo: { type: 'string' },
 });
 
 function detailToSeries(detail: any): QuerySeries {
@@ -117,7 +119,7 @@ export function useQueryDeepLink(
     setPendingQdId(null);
     fetchedRef.current = '';
     attemptRef.current = '';
-    updateSharedState({ qd_id: undefined, qd_tab: undefined });
+    updateSharedState({ qd_id: undefined, qd_tab: undefined, qd_topo: undefined });
     onClose();
   }, [onClose, updateSharedState]);
 

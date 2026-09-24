@@ -15,6 +15,8 @@ import {
   type DistributedTopologyNode,
   type SubQueryInfo,
 } from '@tracehouse/core';
+import { useUrlState } from '../../../../hooks/useUrlState';
+import { QUERY_DETAILS_SHARE_SCHEMA } from '../../../../hooks/useQueryDeepLink';
 import { formatDurationMs } from '../../../../utils/formatters';
 import { formatBytes } from '../../../../stores/databaseStore';
 import { computeTimeBreakdown, threadTimeContext, TIME_BREAKDOWN_EVENTS } from '@tracehouse/core';
@@ -62,6 +64,11 @@ const MUTED_COLOR = 'var(--text-muted)';
 
 type TopologyView = 'timeline' | 'flow';
 const VIEW_STORAGE_KEY = 'tracehouse.distributedTopology.view';
+
+/** Narrow a raw qd_topo param to a view, so junk in the URL falls back to local state. */
+function topologyViewParam(value: string | null | undefined): TopologyView | null {
+  return value === 'timeline' || value === 'flow' ? value : null;
+}
 
 function loadTopologyView(): TopologyView {
   if (typeof window === 'undefined') return 'timeline';
@@ -260,10 +267,16 @@ export const DistributedQueryTopology: React.FC<DistributedQueryTopologyProps> =
 
   // Navigating to a child query remounts this component, so the chosen view has
   // to live outside it or every click would drop the user back on the timeline.
-  const [view, setViewState] = useState<TopologyView>(loadTopologyView);
+  // The URL wins when present, so a copied link opens on the view it was shared
+  // from instead of the recipient's stored preference.
+  const { state: sharedState, update: updateSharedState } = useUrlState(QUERY_DETAILS_SHARE_SCHEMA);
+  const urlView = topologyViewParam(sharedState.qd_topo);
+  const [storedView, setStoredView] = useState<TopologyView>(loadTopologyView);
+  const view = urlView ?? storedView;
   const setView = (next: TopologyView) => {
-    setViewState(next);
+    setStoredView(next);
     saveTopologyView(next);
+    updateSharedState({ qd_topo: next });
   };
 
   const failedQueryIds = useMemo(

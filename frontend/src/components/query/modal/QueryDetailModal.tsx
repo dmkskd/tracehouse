@@ -91,7 +91,7 @@ export const QueryDetailModal: React.FC<TimelineQueryModalProps> = ({
   }, [updateSharedState]);
 
   const closeModal = useCallback(() => {
-    updateSharedState({ qd_tab: undefined });
+    updateSharedState({ qd_tab: undefined, qd_topo: undefined });
     onClose();
   }, [onClose, updateSharedState]);
 

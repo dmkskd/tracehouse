@@ -696,7 +696,7 @@ const NodePopover: React.FC<{
     ...(node.shapeLabel ? [{ label: 'query', value: node.shapeLabel }] : []),
     ...nodeMetricFacts(node.metrics),
     ...(node.metrics.rowShare != null
-      ? [{ label: 'share', value: `${pct(node.metrics.rowShare)} of rows read` }]
+      ? [{ label: 'share', value: `${pct(node.metrics.rowShare)} of query rows read` }]
       : []),
   ];
 
