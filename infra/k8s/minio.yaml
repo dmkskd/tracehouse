@@ -30,10 +30,16 @@ spec:
       labels:
         app: minio
     spec:
+      # Bitnami runs MinIO as uid 1001, so the PVC has to be group-writable by it.
+      securityContext:
+        fsGroup: 1001
       containers:
         - name: minio
-          image: minio/minio:latest
-          args: ["server", "/data", "--console-address", ":9001"]
+          # Bitnami's frozen build, not minio/minio. MinIO withdrew both official
+          # images: the `minio` Docker Hub namespace no longer lists `minio` or
+          # `mc`, and quay.io now refuses anonymous pulls for them. Bitnami's
+          # run.sh builds its own server args, hence no `args` here.
+          image: bitnamilegacy/minio:2025.7.23
           env:
             - name: MINIO_ROOT_USER
               value: "clickhouse"
@@ -46,7 +52,7 @@ spec:
               name: console
           volumeMounts:
             - name: data
-              mountPath: /data
+              mountPath: /bitnami/minio/data
           readinessProbe:
             httpGet:
               path: /minio/health/ready
@@ -107,7 +113,7 @@ spec:
           command: ["sh", "-c", "until wget -qO- http://minio:9000/minio/health/ready; do sleep 2; done"]
       containers:
         - name: mc
-          image: minio/mc:latest
+          image: bitnamilegacy/minio-client:2025.7.21
           command:
             - /bin/sh
             - -c

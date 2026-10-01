@@ -21,7 +21,7 @@ spec:
   containerTemplate:
     image:
       repository: clickhouse/clickhouse-keeper
-      tag: "26.8.2"
+      tag: "26.9.7"
     resources:
       requests:
         cpu: "100m"

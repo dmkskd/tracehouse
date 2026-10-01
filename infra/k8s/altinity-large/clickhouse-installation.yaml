@@ -115,7 +115,7 @@ spec:
                   topologyKey: kubernetes.io/hostname
           containers:
             - name: clickhouse
-              image: clickhouse/clickhouse-server:26.7.1
+              image: clickhouse/clickhouse-server:26.9.7
               securityContext:
                 capabilities:
                   add:

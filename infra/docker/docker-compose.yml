@@ -18,18 +18,21 @@
 
 services:
   # MinIO — S3-compatible object storage for ClickHouse tiered storage
+  # Bitnami's frozen build, not minio/minio. MinIO withdrew both official images:
+  # the `minio` Docker Hub namespace no longer lists `minio` or `mc`, and quay.io
+  # now refuses anonymous pulls for them, so neither source resolves. Bitnami's
+  # run.sh builds its own server args, hence no `command:` and its own data dir.
   minio:
-    image: minio/minio:latest
+    image: bitnamilegacy/minio:2025.7.23
     container_name: tracehouse-minio
     ports:
       - "9001:9000"   # S3 API (9000 conflicts with CH native port)
       - "9002:9001"   # MinIO Console UI
     volumes:
-      - tracehouse-minio-data:/data
+      - tracehouse-minio-data:/bitnami/minio/data
     environment:
       MINIO_ROOT_USER: clickhouse
       MINIO_ROOT_PASSWORD: clickhouse_secret
-    command: server /data --console-address ":9001"
     healthcheck:
       test: ["CMD", "mc", "ready", "local"]
       interval: 10s
@@ -40,7 +43,7 @@ services:
 
   # Create the ClickHouse bucket on first start
   minio-init:
-    image: minio/mc:latest
+    image: bitnamilegacy/minio-client:2025.7.21
     container_name: tracehouse-minio-init
     depends_on:
       minio:
