@@ -67,3 +67,20 @@ export interface BlockEntry {
   partName?: string;
   hostname?: string;
 }
+
+/* ── History backfill ───────────────────────────────── */
+
+/** Lookback fetched at page load; each arena keeps only what fits its own horizon. */
+export const ARENA_BACKFILL_WINDOW_SEC = 300;
+
+/**
+ * History from the logs ignores operations shorter than this: the live 5s poll of
+ * system.processes cannot show them either, and hundreds of them are unreadable.
+ */
+export const ARENA_BACKFILL_MIN_DURATION_MS = 1000;
+
+/** Legend note explaining that short activity is not drawn */
+export const ARENA_SAMPLED_NOTE = `sampled: operations under ${ARENA_BACKFILL_MIN_DURATION_MS / 1000}s are not shown`;
+
+/** Lanes reserved per host block in split-by-host view */
+export const HOST_LANE_BLOCK = 6;

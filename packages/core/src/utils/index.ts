@@ -83,3 +83,5 @@ export { buildOperationContext, buildOperationSpan, operationsOverlap } from './
 export type { OperationContext, OperationSpan } from './operation-context.js';
 export { buildInstantBreakdown, measuredValueAt, operationAverageRate, selectServerSeries } from './operation-instant.js';
 export type { InstantBreakdown, InstantBreakdownInput, InstantBreakdownOptions, InstantSegment } from './operation-instant.js';
+export { packLanes } from './arena-lanes.js';
+export type { LaneItem } from './arena-lanes.js';

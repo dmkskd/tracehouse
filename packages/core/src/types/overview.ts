@@ -85,6 +85,23 @@ export interface ActiveMergeInfo {
   hostname?: string;
 }
 
+/** A query that finished within the arena lookback window */
+export interface CompletedQueryInfo extends RunningQueryInfo {
+  /** Seconds between the query finishing and the moment the backfill was fetched */
+  endedAgoSec: number;
+}
+
+/** A merge or mutation that finished within the arena lookback window */
+export interface CompletedMergeInfo extends ActiveMergeInfo {
+  /** Seconds between the merge finishing and the moment the backfill was fetched */
+  endedAgoSec: number;
+}
+
+export interface RecentActivity {
+  queries: CompletedQueryInfo[];
+  merges: CompletedMergeInfo[];
+}
+
 export interface ReplicationSummary {
   totalTables: number;
   healthyTables: number;

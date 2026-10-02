@@ -15,6 +15,7 @@ import type {
   QueryConcurrency,
   QpsPoint,
   DeepDiveWidgets,
+  RecentActivity,
 } from '../types/overview.js';
 import { DEFAULT_ALERT_THRESHOLDS } from '../types/overview.js';
 import {
@@ -37,8 +38,11 @@ import {
   GET_MAX_CONCURRENT_QUERIES,
   GET_RECENT_IO_RATES,
   GET_QUERY_MONITOR_STATS,
+  GET_RECENT_FINISHED_QUERIES,
+  GET_RECENT_FINISHED_MERGES,
 } from '../queries/overview-queries.js';
 import { buildQuery, tagQuery } from '../queries/builder.js';
+import { classifyMergeHistory } from '../utils/merge-classification.js';
 import { TAB_OVERVIEW, TAB_QUERIES, sourceTag } from '../queries/source-tags.js';
 
 export class OverviewServiceError extends Error {
@@ -406,6 +410,133 @@ export class OverviewService {
     }
   }
 
+
+  /**
+   * Queries and merges that finished within the last `windowSeconds`, for
+   * backfilling the resource arena timeline. Only operations of at least
+   * `minDurationMs` are returned (default 1s), matching what the live poll can
+   * observe. If only one of query_log / part_log fails it is logged and that
+   * source is returned empty; if both fail the error propagates to the caller.
+   */
+  async getRecentActivity(
+    windowSeconds: number,
+    { minDurationMs = 1000, rowLimit = 1000 }: { minDurationMs?: number; rowLimit?: number } = {},
+  ): Promise<RecentActivity> {
+    const params = { window_seconds: windowSeconds, min_duration_ms: minDurationMs, row_limit: rowLimit };
+    const [queryResult, mergeResult] = await Promise.allSettled([
+      this.adapter.executeQuery<{
+        hostname: string;
+        query_id: string;
+        user: string;
+        elapsed: number;
+        ended_ago_sec: number;
+        memory_usage: number;
+        read_rows: number;
+        read_bytes: number;
+        query_kind: string;
+        query: string;
+        user_time_us: number;
+        system_time_us: number;
+        os_read_bytes: number;
+        os_write_bytes: number;
+        selected_parts: number;
+        selected_marks: number;
+        mark_cache_hits: number;
+        mark_cache_misses: number;
+      }>(tagQuery(buildQuery(GET_RECENT_FINISHED_QUERIES, params), sourceTag(TAB_OVERVIEW, 'recentQueries'))),
+      this.adapter.executeQuery<{
+        hostname: string;
+        database: string;
+        table: string;
+        part_name: string;
+        elapsed: number;
+        ended_ago_sec: number;
+        memory_usage: number;
+        read_bytes: number;
+        written_bytes: number;
+        read_rows: number;
+        num_parts: number;
+        is_mutation: number;
+        event_type: string;
+        merge_reason: string;
+        user_time_us: number;
+        system_time_us: number;
+      }>(tagQuery(buildQuery(GET_RECENT_FINISHED_MERGES, params), sourceTag(TAB_OVERVIEW, 'recentMerges'))),
+    ]);
+
+    // query_log and part_log are independent: one being unavailable (not enabled,
+    // missing column on an older server) must not hide the other source.
+    if (queryResult.status === 'rejected' && mergeResult.status === 'rejected') {
+      throw queryResult.reason;
+    }
+    if (queryResult.status === 'rejected') {
+      console.error('[OverviewService] getRecentActivity query_log error:', queryResult.reason);
+    }
+    if (mergeResult.status === 'rejected') {
+      console.error('[OverviewService] getRecentActivity part_log error:', mergeResult.reason);
+    }
+    const queryRows = queryResult.status === 'fulfilled' ? queryResult.value : [];
+    const mergeRows = mergeResult.status === 'fulfilled' ? mergeResult.value : [];
+
+    const queries = queryRows.map(row => {
+      const elapsed = Number(row.elapsed) || 0;
+      const userTimeUs = Number(row.user_time_us) || 0;
+      const systemTimeUs = Number(row.system_time_us) || 0;
+      const readRows = Number(row.read_rows) || 0;
+      const osReadBytes = Number(row.os_read_bytes) || 0;
+      return {
+        queryId: String(row.query_id),
+        user: String(row.user),
+        elapsed,
+        endedAgoSec: Math.max(0, Number(row.ended_ago_sec) || 0),
+        cpuCores: calculateCpuCores(userTimeUs, systemTimeUs, elapsed),
+        memoryUsage: Number(row.memory_usage) || 0,
+        ioReadRate: calculateRate(osReadBytes, elapsed),
+        rowsRead: readRows,
+        bytesRead: Number(row.read_bytes) || 0,
+        progress: 100,
+        queryKind: String(row.query_kind) || 'Unknown',
+        query: String(row.query),
+        hostname: String(row.hostname || ''),
+        profileEvents: {
+          userTimeMicroseconds: userTimeUs,
+          systemTimeMicroseconds: systemTimeUs,
+          osReadBytes,
+          osWriteBytes: Number(row.os_write_bytes) || 0,
+          selectedParts: Number(row.selected_parts) || 0,
+          selectedMarks: Number(row.selected_marks) || 0,
+          markCacheHits: Number(row.mark_cache_hits) || 0,
+          markCacheMisses: Number(row.mark_cache_misses) || 0,
+        },
+      };
+    });
+
+    const merges = mergeRows.map(row => {
+      const elapsed = Number(row.elapsed) || 0;
+      const isMutation = Boolean(Number(row.is_mutation));
+      return {
+        database: String(row.database),
+        table: String(row.table),
+        partName: String(row.part_name),
+        elapsed,
+        endedAgoSec: Math.max(0, Number(row.ended_ago_sec) || 0),
+        // Same scale as system.merges.progress (0..1); queries use 0..100
+        progress: 1,
+        memoryUsage: Number(row.memory_usage) || 0,
+        readBytesPerSec: calculateRate(Number(row.read_bytes) || 0, elapsed),
+        writeBytesPerSec: calculateRate(Number(row.written_bytes) || 0, elapsed),
+        rowsRead: Number(row.read_rows) || 0,
+        numParts: Number(row.num_parts) || 0,
+        isMutation,
+        cpuEstimate: calculateCpuCores(Number(row.user_time_us) || 0, Number(row.system_time_us) || 0, elapsed),
+        // system.merges.merge_type naming (Regular, TTLDelete, ...), empty for mutations
+        mergeType: isMutation ? '' : classifyMergeHistory(row.event_type, row.merge_reason, row.part_name),
+        hostname: String(row.hostname || ''),
+      };
+    });
+
+    return { queries, merges };
+  }
 
   async getInstantMetrics(): Promise<Map<string, number>> {
     try {

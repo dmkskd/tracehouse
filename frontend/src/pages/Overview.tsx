@@ -13,6 +13,8 @@
 import React, { useEffect, useState, useCallback, useRef, useMemo } from 'react';
 import { useAppLocation } from '../hooks/useAppLocation';
 import { useClickHouseServices } from '../providers/ClickHouseProvider';
+import { useRecentActivity } from '../hooks/useRecentActivity';
+import { ARENA_BACKFILL_WINDOW_SEC, ARENA_BACKFILL_MIN_DURATION_MS } from '../components/overview/arena-types';
 import { useConnectionStore } from '../stores/connectionStore';
 import { useRefreshConfig, clampToAllowed } from '@tracehouse/ui-shared';
 import { useRefreshSettingsStore } from '../stores/refreshSettingsStore';
@@ -199,6 +201,7 @@ export const Overview: React.FC = () => {
 
   const activeProfile = profiles.find(p => p.id === activeProfileId);
   const isConnected = activeProfile?.is_connected ?? false;
+  const arenaHistory = useRecentActivity(ARENA_BACKFILL_WINDOW_SEC, ARENA_BACKFILL_MIN_DURATION_MS, isConnected);
 
   // Clear map enrichment when the connection changes. The map-specific data is
   // loaded only if the user opens System Map.
@@ -674,6 +677,7 @@ export const Overview: React.FC = () => {
               splitAvailable={arenaHosts.length > 1}
               splitActive={arenaSplitView}
               onSplitToggle={() => setArenaSplitView(!arenaSplitView)}
+              history={arenaHistory}
             />
           ) : (
             <ResourceArenaSwimlane
@@ -686,6 +690,7 @@ export const Overview: React.FC = () => {
               splitAvailable={arenaHosts.length > 1}
               splitActive={arenaSplitView}
               onSplitToggle={() => setArenaSplitView(!arenaSplitView)}
+              history={arenaHistory}
             />
           )}
 

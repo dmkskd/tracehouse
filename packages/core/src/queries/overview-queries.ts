@@ -198,6 +198,75 @@ FROM {{cluster_aware:system.metric_log}}
 WHERE event_time >= now() - INTERVAL 10 SECOND
 `;
 
+/**
+ * Initial queries that finished inside the arena lookback window, used to
+ * backfill the resource arena timeline at page load.
+ * ended_ago_sec is computed server-side so client clock skew does not matter.
+ * min_duration_ms drops sub-poll-interval noise (sampler inserts, metric polls)
+ * that the live 5s poll of system.processes could never have shown.
+ */
+export const GET_RECENT_FINISHED_QUERIES = `
+SELECT
+    hostName() AS hostname,
+    query_id,
+    user,
+    query_duration_ms / 1000 AS elapsed,
+    (toUnixTimestamp64Micro(now64(6)) - toUnixTimestamp64Micro(event_time_microseconds)) / 1000000 AS ended_ago_sec,
+    memory_usage,
+    read_rows,
+    read_bytes,
+    query_kind,
+    query,
+    ProfileEvents['UserTimeMicroseconds'] AS user_time_us,
+    ProfileEvents['SystemTimeMicroseconds'] AS system_time_us,
+    ProfileEvents['OSReadBytes'] AS os_read_bytes,
+    ProfileEvents['OSWriteBytes'] AS os_write_bytes,
+    ProfileEvents['SelectedParts'] AS selected_parts,
+    ProfileEvents['SelectedMarks'] AS selected_marks,
+    ProfileEvents['MarkCacheHits'] AS mark_cache_hits,
+    ProfileEvents['MarkCacheMisses'] AS mark_cache_misses
+FROM {{cluster_aware:system.query_log}}
+WHERE type IN ('QueryFinish', 'ExceptionWhileProcessing')
+  AND is_initial_query = 1
+  AND query_duration_ms >= {min_duration_ms:UInt32}
+  AND event_date >= toDate(now() - INTERVAL {window_seconds:UInt32} SECOND)
+  AND event_time > now() - INTERVAL {window_seconds:UInt32} SECOND
+ORDER BY event_time DESC
+LIMIT {row_limit:UInt32}
+`;
+
+/**
+ * Merges and mutations that finished inside the arena lookback window.
+ * part_log rows are written when the operation ends, so the start is derived
+ * from duration_ms.
+ */
+export const GET_RECENT_FINISHED_MERGES = `
+SELECT
+    hostName() AS hostname,
+    database,
+    table,
+    part_name,
+    duration_ms / 1000 AS elapsed,
+    (toUnixTimestamp64Micro(now64(6)) - toUnixTimestamp64Micro(event_time_microseconds)) / 1000000 AS ended_ago_sec,
+    peak_memory_usage AS memory_usage,
+    read_bytes,
+    bytes_uncompressed AS written_bytes,
+    read_rows,
+    length(merged_from) AS num_parts,
+    event_type = 'MutatePart' AS is_mutation,
+    event_type,
+    toString(merge_reason) AS merge_reason,
+    ProfileEvents['UserTimeMicroseconds'] AS user_time_us,
+    ProfileEvents['SystemTimeMicroseconds'] AS system_time_us
+FROM {{cluster_aware:system.part_log}}
+WHERE event_type IN ('MergeParts', 'MutatePart')
+  AND duration_ms >= {min_duration_ms:UInt32}
+  AND event_date >= toDate(now() - INTERVAL {window_seconds:UInt32} SECOND)
+  AND event_time > now() - INTERVAL {window_seconds:UInt32} SECOND
+ORDER BY event_time DESC
+LIMIT {row_limit:UInt32}
+`;
+
 // =============================================================================
 // TIER 2: Log Tables - Poll every 30 seconds (light reads)
 // =============================================================================

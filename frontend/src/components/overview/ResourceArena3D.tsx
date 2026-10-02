@@ -15,9 +15,11 @@ import * as THREE from 'three';
 import { Link } from 'react-router-dom';
 import type { RunningQueryInfo, ActiveMergeInfo, TraceLog } from '@tracehouse/core';
 import { truncateQuery, formatBytes } from '../../utils/formatters';
+import type { RecentActivity } from '@tracehouse/core';
+import { seedRegistry, repackFinishedLanes } from './arena-history';
 import { useClickHouseServices } from '../../providers/ClickHouseProvider';
 import {
-  Ts, Cs, MIN_DIM, LANE_GAP, DECK_GAP,
+  Ts, Cs, MIN_DIM, LANE_GAP, DECK_GAP, HOST_LANE_BLOCK, ARENA_SAMPLED_NOTE,
   DECK_ORDER, deckOf, deckBaseY,
   type BlockEntry, type Deck,
 } from './arena-types';
@@ -63,8 +65,9 @@ const colorOf = (k: string) => {
 
 /* ── local constants ─────────────────────────────────── */
 
-const FADE_SECS = 60;
 const HORIZON = 120;
+/** Finished blocks fade across the whole visible timeline, then expire */
+const FADE_SECS = HORIZON;
 
 /* ── shared geometries ───────────────────────────────── */
 
@@ -1244,7 +1247,6 @@ function Floor({ maxLane = 0 }: { maxLane?: number }) {
 
 /* ── Scene ────────────────────────────────────────────── */
 
-const HOST_LANE_BLOCK = 6;
 const HOST_COLORS = ['#60a5fa', '#f472b6', '#4ade80', '#fbbf24', '#a78bfa', '#fb923c'];
 
 function HostLabels({ hosts }: { hosts: string[] }) {
@@ -1417,6 +1419,8 @@ export interface ResourceArena3DProps {
   splitActive?: boolean;
   /** Toggle split view */
   onSplitToggle?: () => void;
+  /** Finished queries/merges fetched at page load, to backfill the timeline */
+  history?: RecentActivity | null;
 }
 
 const hdrLabel: React.CSSProperties = {
@@ -1426,7 +1430,7 @@ const hdrVal: React.CSSProperties = { marginLeft: 6, fontWeight: 700 };
 
 export const ResourceArena3D: React.FC<ResourceArena3DProps> = ({
   queries, merges, cpuUsage, memoryPct, compact,
-  splitAvailable, splitActive, onSplitToggle,
+  splitAvailable, splitActive, onSplitToggle, history,
 }) => {
   const [hovered, setHovered] = useState<BlockEntry | null>(null);
   const [selected, setSelected] = useState<BlockEntry | null>(null);
@@ -1505,6 +1509,34 @@ export const ResourceArena3D: React.FC<ResourceArena3DProps> = ({
     window.addEventListener('keydown', onKey);
     return () => window.removeEventListener('keydown', onKey);
   }, [toggleFullscreen, handleKeyDown]);
+
+  // Backfill finished operations (page load, connection switch) and re-pack lanes when split mode changes
+  const seedStateRef = useRef<{ history: RecentActivity | null | undefined; split: boolean | undefined }>({ history: null, split: undefined });
+  if (seedStateRef.current.history !== history || seedStateRef.current.split !== !!splitActive) {
+    const historyChanged = seedStateRef.current.history !== history;
+    seedStateRef.current = { history, split: !!splitActive };
+    const registry = registryRef.current;
+    const now = Date.now();
+    if (history && historyChanged) {
+      seedRegistry(registry, history, { horizonSec: HORIZON, splitActive: !!splitActive, now }, (it, deck) => ({
+        id: it.id, kind: it.kind, color: colorForBlock(it.kind, it.tableHint),
+        label: it.isMerge ? it.label : truncateQuery(it.label, 50), tableHint: it.tableHint,
+        isMerge: it.isMerge, deck, lane: 0,
+        startTime: it.startTime, endTime: it.endTime,
+        cpu: it.cpu, mem: it.mem, elapsed: it.elapsed,
+        queryId: it.queryId, user: it.user, progress: it.progress,
+        ioReadRate: it.ioReadRate, rowsRead: it.rowsRead, bytesRead: it.bytesRead,
+        profileEvents: it.profileEvents,
+        readBytesPerSec: it.readBytesPerSec, writeBytesPerSec: it.writeBytesPerSec,
+        numParts: it.numParts, mergeType: it.mergeType,
+        database: it.database, table: it.table, partName: it.partName,
+        hostname: it.hostname,
+      }));
+    } else {
+      repackFinishedLanes(registry, !!splitActive, now);
+    }
+    setVisibleIds([...registry.keys()].sort());
+  }
 
   // Update registry when poll data changes
   const prevPollRef = useRef<{ q: RunningQueryInfo[]; m: ActiveMergeInfo[] }>({ q: [], m: [] });
@@ -1759,6 +1791,16 @@ export const ResourceArena3D: React.FC<ResourceArena3DProps> = ({
           <span style={{ fontSize: 8, fontFamily: 'monospace', color: 'rgba(255,255,255,0.15)', marginLeft: 8 }}>
             length = duration &middot; tall = cpu &middot; deep = memory
           </span>
+        </div>
+      )}
+
+      {!compact && (
+        <div style={{
+          position: 'absolute', bottom: 10, right: 46, height: 28, zIndex: 10,
+          display: 'flex', alignItems: 'center', pointerEvents: 'none',
+          fontSize: 10, fontFamily: 'monospace', color: 'rgba(255,255,255,0.55)',
+        }}>
+          &#9432; {ARENA_SAMPLED_NOTE}
         </div>
       )}
 

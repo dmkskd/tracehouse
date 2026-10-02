@@ -8,8 +8,10 @@
  */
 
 import React, { useRef, useState, useCallback, useEffect } from 'react';
-import type { RunningQueryInfo, ActiveMergeInfo } from '@tracehouse/core';
+import type { RunningQueryInfo, ActiveMergeInfo, RecentActivity } from '@tracehouse/core';
 import { truncateQuery, formatBytes } from '../../utils/formatters';
+import { HOST_LANE_BLOCK, ARENA_SAMPLED_NOTE } from './arena-types';
+import { seedRegistry, repackFinishedLanes } from './arena-history';
 
 /* ── palette ─────────────────────────────────────────── */
 
@@ -46,8 +48,9 @@ function colorOf(kind: string): string {
 
 /* ── constants ───────────────────────────────────────── */
 
-const FADE_SECS = 6;
 const HORIZON = 300;
+/** Finished bars fade across the whole visible timeline, then expire */
+const FADE_SECS = HORIZON;
 const BAR_HEIGHT = 16;
 const LANE_GAP = 2;
 const DECK_GAP = 6;
@@ -482,9 +485,9 @@ export interface ResourceArenaSwimlaneProps {
   splitAvailable?: boolean;
   splitActive?: boolean;
   onSplitToggle?: () => void;
+  /** Finished queries/merges fetched at page load, to backfill the timeline */
+  history?: RecentActivity | null;
 }
-
-const HOST_LANE_BLOCK = 6;
 
 const hdrLabel: React.CSSProperties = {
   fontSize: 10, fontFamily: 'monospace', color: 'rgba(255,255,255,0.35)', fontWeight: 600, letterSpacing: 1,
@@ -493,7 +496,7 @@ const hdrVal: React.CSSProperties = { marginLeft: 6, fontWeight: 700 };
 
 export const ResourceArenaSwimlane: React.FC<ResourceArenaSwimlaneProps> = ({
   queries, merges, cpuUsage, memoryPct, compact,
-  splitAvailable, splitActive, onSplitToggle,
+  splitAvailable, splitActive, onSplitToggle, history,
 }) => {
   const [hovered, setHovered] = useState<SwimEntry | null>(null);
   const [selected, setSelected] = useState<SwimEntry | null>(null);
@@ -567,6 +570,33 @@ export const ResourceArenaSwimlane: React.FC<ResourceArenaSwimlaneProps> = ({
     window.addEventListener('keydown', onKey);
     return () => window.removeEventListener('keydown', onKey);
   }, [toggleFullscreen]);
+
+  // Backfill finished operations (page load, connection switch) and re-pack lanes when split mode changes
+  const seedStateRef = useRef<{ history: RecentActivity | null | undefined; split: boolean | undefined }>({ history: null, split: undefined });
+  if (seedStateRef.current.history !== history || seedStateRef.current.split !== !!splitActive) {
+    const historyChanged = seedStateRef.current.history !== history;
+    seedStateRef.current = { history, split: !!splitActive };
+    const registry = registryRef.current;
+    const now = Date.now();
+    if (history && historyChanged) {
+      seedRegistry(registry, history, { horizonSec: HORIZON, splitActive: !!splitActive, now }, (it, deck) => ({
+        id: it.id, kind: it.kind, color: colorForBlock(it.kind, it.tableHint),
+        label: it.isMerge ? it.label : truncateQuery(it.label, 50), tableHint: it.tableHint,
+        isMerge: it.isMerge, deck, lane: 0,
+        startTime: it.startTime, endTime: it.endTime,
+        cpu: it.cpu, mem: it.mem, elapsed: it.elapsed,
+        queryId: it.queryId, user: it.user, progress: it.progress,
+        ioReadRate: it.ioReadRate, rowsRead: it.rowsRead,
+        hostname: it.hostname,
+        readBytesPerSec: it.readBytesPerSec, writeBytesPerSec: it.writeBytesPerSec,
+        numParts: it.numParts, mergeType: it.mergeType,
+        database: it.database, table: it.table, partName: it.partName,
+      }));
+    } else {
+      repackFinishedLanes(registry, !!splitActive, now);
+    }
+    setVisibleIds([...registry.keys()].sort());
+  }
 
   // Registry update — same pattern as 3D
   const prevPollRef = useRef<{ q: RunningQueryInfo[]; m: ActiveMergeInfo[] }>({ q: [], m: [] });
@@ -914,6 +944,16 @@ export const ResourceArenaSwimlane: React.FC<ResourceArenaSwimlaneProps> = ({
           <span style={{ fontSize: 8, fontFamily: 'monospace', color: 'rgba(255,255,255,0.15)', marginLeft: 8 }}>
             length = duration · brightness = cpu
           </span>
+        </div>
+      )}
+
+      {!compact && (
+        <div style={{
+          position: 'absolute', bottom: 10, right: 46, height: 28, zIndex: 10,
+          display: 'flex', alignItems: 'center', pointerEvents: 'none',
+          fontSize: 10, fontFamily: 'monospace', color: 'rgba(255,255,255,0.55)',
+        }}>
+          &#9432; {ARENA_SAMPLED_NOTE}
         </div>
       )}
 
