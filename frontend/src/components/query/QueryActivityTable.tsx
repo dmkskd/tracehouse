@@ -223,7 +223,8 @@ export const QueryActivityTable: React.FC<QueryActivityTableProps> = ({
 }) => {
   const killQueriesEnabled = useUserPreferenceStore(state => state.killQueriesEnabled);
   const [compareMode, setCompareMode] = useState(false);
-  const [selectedForCompare, setSelectedForCompare] = useState<Set<string>>(new Set());
+  // Snapshot of each selected query, so auto-refresh pushing it out of the list doesn't drop it from the comparison
+  const [selectedForCompare, setSelectedForCompare] = useState<Map<string, ComparableQuery>>(new Map());
   const [comparisonOpen, setComparisonOpen] = useState(false);
   const [hoveredQueryId, setHoveredQueryId] = useState<string | null>(null);
   const [showHoverPreview, setShowHoverPreview] = useState(
@@ -244,11 +245,11 @@ export const QueryActivityTable: React.FC<QueryActivityTableProps> = ({
     [filter.endTime, filter.startTime, filter.timeRange],
   );
 
-  const toggleCompareSelection = useCallback((queryId: string) => {
+  const toggleCompareSelection = useCallback((query: QueryHistoryItem) => {
     setComparisonOpen(false);
     setSelectedForCompare(prev => {
-      const next = new Set(prev);
-      if (next.has(queryId)) next.delete(queryId); else next.add(queryId);
+      const next = new Map(prev);
+      if (next.has(query.query_id)) next.delete(query.query_id); else next.set(query.query_id, toComparable(query));
       return next;
     });
   }, []);
@@ -256,11 +257,11 @@ export const QueryActivityTable: React.FC<QueryActivityTableProps> = ({
   const cancelCompare = useCallback(() => {
     setCompareMode(false);
     setComparisonOpen(false);
-    setSelectedForCompare(new Set());
+    setSelectedForCompare(new Map());
   }, []);
 
   const comparedQueries: ComparableQuery[] = compareMode && selectedForCompare.size >= 2
-    ? sortedActivity.filter(q => q.activitySource === 'history' && selectedForCompare.has(q.query_id)).map(toComparable)
+    ? [...selectedForCompare.values()]
     : [];
   const previewQuery = sortedActivity.find(q => q.query_id === hoveredQueryId)
     ?? sortedActivity.find(q => q.query_id === selectedQueryId)
@@ -415,7 +416,7 @@ export const QueryActivityTable: React.FC<QueryActivityTableProps> = ({
                       onMouseEnter={() => setHoveredQueryId(q.query_id)}
                       onClick={() => {
                         if (compareMode) {
-                          if (!isLive) toggleCompareSelection(q.query_id);
+                          if (!isLive) toggleCompareSelection(q);
                         } else if (q.liveQuery) {
                           onSelectRunningQuery(q.liveQuery);
                         } else {
