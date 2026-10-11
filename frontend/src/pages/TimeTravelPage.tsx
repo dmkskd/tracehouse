@@ -47,6 +47,7 @@ import { RangeSlider } from '../components/shared/RangeSlider';
 import { QueryDetailModal } from '../components/query/modal/QueryDetailModal';
 import { MergeDetailModal, MutationDetailModal } from '../components/merge/MergeDetailModal';
 import { useQueryDeepLink } from '../hooks/useQueryDeepLink';
+import { useViewportHeight } from '../hooks/useViewportHeight';
 import { TruncatedHost } from '../components/common/TruncatedHost';
 import { formatBytes } from '../utils/formatters';
 import { getUrlParam } from '../utils/urlParams';
@@ -59,6 +60,7 @@ import {
   MetricStripItem,
 } from '../components/common/MetricStrip';
 import { TimelineChart } from '../components/timeline/TimelineChart';
+import { getTimelineChartHeight } from '../components/timeline/timeline-chart-height';
 import { TimelineChart3D } from '../components/timeline/TimelineChart3D';
 import { TimelineChart3DSurface } from '../components/timeline/TimelineChart3DSurface';
 import { OperationsTable } from '../components/timeline/OperationsTable';
@@ -226,6 +228,7 @@ export const TimeTravelPage: React.FC = () => {
   const services = useClickHouseServices();
   const { detected: clusterDetected } = useClusterStore();
   const [searchParams, setSearchParams] = useSearchParams();
+  const mainChartHeight = getTimelineChartHeight(useViewportHeight());
   const navigate = useNavigate();
   const refreshConfig = useRefreshConfig();
   const { refreshRateSeconds } = useRefreshSettingsStore();
@@ -1719,7 +1722,7 @@ export const TimeTravelPage: React.FC = () => {
                 if (!hostData) return null;
                 const hostCpuCapacity = getTimelineCpuCapacity(hostData);
                 const hostRamCapacity = getTimelineRamCapacity(hostData);
-                const chartHeight = Math.max(140, Math.floor(460 / rowHosts.length));
+                const chartHeight = Math.max(140, Math.floor((mainChartHeight - 40) / rowHosts.length));
                 return (
                   <div key={host} style={{
                     borderRadius:8, background:'var(--bg-secondary)', border:'1px solid var(--border-primary)',
@@ -1776,7 +1779,7 @@ export const TimeTravelPage: React.FC = () => {
             boxShadow:'0 1px 3px rgba(0,0,0,0.2)', overflow:'hidden', position:'relative',
           }}>
             {viewMode === '3d' ? (
-              <TimelineChart3D data={data} metricMode={metricMode} height={500} hiddenCategories={hiddenCategories}
+              <TimelineChart3D data={data} metricMode={metricMode} height={mainChartHeight} hiddenCategories={hiddenCategories}
                 onHighlightItem={setHighlightedItem}
                 onBandClick={(band) => {
                   if (band.type === 'query') handleBandSelect('query', data.queries[band.idx]);
@@ -1784,7 +1787,7 @@ export const TimeTravelPage: React.FC = () => {
                   else handleBandSelect('mutation', (data.mutations ?? [])[band.idx]);
                 }} />
             ) : viewMode === '3d-surface' ? (
-              <TimelineChart3DSurface data={data} metricMode={metricMode} height={500} hiddenCategories={hiddenCategories}
+              <TimelineChart3DSurface data={data} metricMode={metricMode} height={mainChartHeight} hiddenCategories={hiddenCategories}
                 onHighlightItem={setHighlightedItem}
                 onBandClick={(band) => {
                   if (band.type === 'query') handleBandSelect('query', data.queries[band.idx]);
@@ -1825,7 +1828,7 @@ export const TimeTravelPage: React.FC = () => {
                 Server CPU reads as 0 — ClickHouse on macOS does not expose CPU metrics. Run in Docker or Linux for CPU data.
               </div>
             )}
-            <TimelineChart data={chartData!} metricMode={metricMode} height={500}
+            <TimelineChart data={chartData!} metricMode={metricMode} height={mainChartHeight}
               hoverMs={hoverMs} pinnedMs={pinnedMs}
               onHover={setHoverMs} onPin={handleChartPin}
               zoomRange={zoomRange} onZoom={setZoomRange}
