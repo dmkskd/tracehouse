@@ -62,12 +62,16 @@ function PressureRadar({
   rawValues,
   color,
   title,
+  minHeight = 112,
+  maxHeight = 132,
 }: {
   values: number[];
   labels: string[];
   rawValues: string[];
   color: string;
   title: string;
+  minHeight?: number;
+  maxHeight?: number;
 }) {
   const layout = radarShapeLayout(values, labels, 'chart');
   const viewBox = '-10 -6 120 112';
@@ -81,8 +85,8 @@ function PressureRadar({
       style={{
         width: '100%',
         height: '100%',
-        minHeight: 112,
-        maxHeight: 132,
+        minHeight,
+        maxHeight,
         display: 'block',
         overflow: 'visible',
         userSelect: 'none',
@@ -145,12 +149,12 @@ function LoadingLines() {
   );
 }
 
-function LoadingRadar() {
+function LoadingRadar({ size = 122 }: { size?: number }) {
   return (
     <div
       style={{
-        width: 122,
-        height: 122,
+        width: size,
+        height: size,
         borderRadius: '50%',
         border: '1px solid var(--border-primary)',
         display: 'grid',
@@ -160,8 +164,8 @@ function LoadingRadar() {
     >
       <div
         style={{
-          width: 72,
-          height: 72,
+          width: size * 0.6,
+          height: size * 0.6,
           borderRadius: '50%',
           border: '1px solid var(--border-secondary)',
           background: 'var(--bg-tertiary)',
@@ -365,17 +369,18 @@ export function OverviewVitalsStrip({
 
   if (compact) {
     const heading: React.CSSProperties = { fontSize: 11, fontWeight: 400, color: 'var(--text-muted)', lineHeight: '14px' };
-    const value: React.CSSProperties = { fontSize: 23, fontWeight: 600, fontFamily: 'monospace', margin: '13px 0 9px', color: 'var(--text-primary)' };
+    const value: React.CSSProperties = { fontSize: 23, fontWeight: 600, fontFamily: 'monospace', margin: '6px 0 4px', color: 'var(--text-primary)' };
     const detail: React.CSSProperties = { fontSize: 11, lineHeight: 1.6, color: 'var(--text-muted)' };
+    const compactCard: React.CSSProperties = { padding: '10px 14px', minHeight: 0 };
     return (
       <div className={css`display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 14px; @media(max-width:850px){grid-template-columns:repeat(2,minmax(0,1fr));}`}>
-        <VitalsCard style={{ padding: '13px 17px' }}>
+        <VitalsCard style={compactCard}>
           <div style={heading}>Resource Radar</div>
-          {waitingForLiveData ? <LoadingRadar /> : <PressureRadar values={radar.values} labels={radar.labels} rawValues={pressureVisibleValues} color={radar.color} title={pressureTooltip} />}
+          {waitingForLiveData ? <LoadingRadar size={96} /> : <PressureRadar values={radar.values} labels={radar.labels} rawValues={pressureVisibleValues} color={radar.color} title={pressureTooltip} minHeight={96} maxHeight={104} />}
         </VitalsCard>
-        <VitalsCard style={{ padding: '13px 17px' }}><div style={heading}>CPU</div><div style={value}>{waitingForLiveData && !metrics ? 'Loading...' : pct(cpuPct)}</div><div style={detail}>{cores} cores{ra ? ` · queries ${ra.cpu.breakdown.queries.toFixed(1)}%` : ''}</div><HeatStrip values={cpuHistory} color={OVERVIEW_COLORS.queries} /></VitalsCard>
-        <VitalsCard style={{ padding: '13px 17px' }}><div style={heading}>Memory</div><div style={value}>{waitingForLiveData && !metrics ? 'Loading...' : formatBytes(memoryUsed)}</div><div style={detail}>{memoryTotal > 0 ? `${pct(memoryPct)} of ${formatBytes(memoryTotal)}` : 'waiting for memory totals'}</div><MemoryTrendBand valuePct={memoryPct} peakPct={peakMemory} values={memoryHistory} color={OVERVIEW_COLORS.replication} /></VitalsCard>
-        <VitalsCard style={{ padding: '13px 17px' }}><div style={heading}>Disk I/O</div><div style={value}>{waitingForLiveData && !metrics ? 'Loading...' : formatBytesPerSec(ioBps)}</div><div style={detail}>Read {formatBytesPerSec(readBps)} · write {formatBytesPerSec(writeBps)}</div><DiskLines read={diskReadHistory} write={diskWriteHistory} /></VitalsCard>
+        <VitalsCard style={compactCard}><div style={heading}>CPU</div><div style={value}>{waitingForLiveData && !metrics ? 'Loading...' : pct(cpuPct)}</div><div style={detail}>{cores} cores{ra ? ` · queries ${ra.cpu.breakdown.queries.toFixed(1)}%` : ''}</div><HeatStrip values={cpuHistory} color={OVERVIEW_COLORS.queries} /></VitalsCard>
+        <VitalsCard style={compactCard}><div style={heading}>Memory</div><div style={value}>{waitingForLiveData && !metrics ? 'Loading...' : formatBytes(memoryUsed)}</div><div style={detail}>{memoryTotal > 0 ? `${pct(memoryPct)} of ${formatBytes(memoryTotal)}` : 'waiting for memory totals'}</div><MemoryTrendBand valuePct={memoryPct} peakPct={peakMemory} values={memoryHistory} color={OVERVIEW_COLORS.replication} /></VitalsCard>
+        <VitalsCard style={compactCard}><div style={heading}>Disk I/O</div><div style={value}>{waitingForLiveData && !metrics ? 'Loading...' : formatBytesPerSec(ioBps)}</div><div style={detail}>Read {formatBytesPerSec(readBps)} · write {formatBytesPerSec(writeBps)}</div><DiskLines read={diskReadHistory} write={diskWriteHistory} /></VitalsCard>
       </div>
     );
   }

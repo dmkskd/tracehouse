@@ -47,7 +47,7 @@ import { RangeSlider } from '../components/shared/RangeSlider';
 import { QueryDetailModal } from '../components/query/modal/QueryDetailModal';
 import { MergeDetailModal, MutationDetailModal } from '../components/merge/MergeDetailModal';
 import { useQueryDeepLink } from '../hooks/useQueryDeepLink';
-import { useViewportHeight } from '../hooks/useViewportHeight';
+import { useAvailableHeight } from '../hooks/useAvailableHeight';
 import { TruncatedHost } from '../components/common/TruncatedHost';
 import { formatBytes } from '../utils/formatters';
 import { getUrlParam } from '../utils/urlParams';
@@ -228,7 +228,8 @@ export const TimeTravelPage: React.FC = () => {
   const services = useClickHouseServices();
   const { detected: clusterDetected } = useClusterStore();
   const [searchParams, setSearchParams] = useSearchParams();
-  const mainChartHeight = getTimelineChartHeight(useViewportHeight());
+  const [chartAnchorRef, chartAvailableHeight] = useAvailableHeight();
+  const mainChartHeight = getTimelineChartHeight(chartAvailableHeight);
   const navigate = useNavigate();
   const refreshConfig = useRefreshConfig();
   const { refreshRateSeconds } = useRefreshSettingsStore();
@@ -1713,7 +1714,7 @@ export const TimeTravelPage: React.FC = () => {
           {/* Chart */}
           {rowHosts.length > 0 ? (
             /* Per-server view: one chart per selected host */
-            <div style={{ display:'flex', flexDirection:'column', gap:2 }}>
+            <div ref={chartAnchorRef} style={{ display:'flex', flexDirection:'column', gap:2 }}>
               {splitLoading && rowHosts.every(host => !perHostData.has(host)) && (
                 <div style={{ padding:20, textAlign:'center', color:'var(--text-muted)', fontSize:13 }}>Loading per-host data…</div>
               )}
@@ -1774,7 +1775,7 @@ export const TimeTravelPage: React.FC = () => {
             </div>
           ) : (
           /* Single chart (Overall selected-host total or one server) */
-          <div style={{
+          <div ref={chartAnchorRef} style={{
             borderRadius:10, padding:0, background:'var(--bg-secondary)', border:'1px solid var(--border-primary)',
             boxShadow:'0 1px 3px rgba(0,0,0,0.2)', overflow:'hidden', position:'relative',
           }}>

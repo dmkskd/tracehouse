@@ -12,6 +12,8 @@
 
 import React, { useEffect, useState, useCallback, useRef, useMemo } from 'react';
 import { useAppLocation } from '../hooks/useAppLocation';
+import { useAvailableHeight } from '../hooks/useAvailableHeight';
+import { getArenaHeight } from '../components/overview/arena-height';
 import { useClickHouseServices } from '../providers/ClickHouseProvider';
 import { useRecentActivity } from '../hooks/useRecentActivity';
 import { ARENA_BACKFILL_WINDOW_SEC, ARENA_BACKFILL_MIN_DURATION_MS } from '../components/overview/arena-types';
@@ -186,6 +188,8 @@ export const Overview: React.FC = () => {
   const [columnComments, setColumnComments] = useState<ColumnCommentMap>(new Map());
   const mapDetailExpanded = sharedState.overview_map_detail ?? false;
   const setMapDetailExpanded = (expanded: boolean) => updateSharedState({ overview_map_detail: expanded });
+
+  const [arenaAnchorRef, arenaAvailableHeight] = useAvailableHeight();
 
   // Monotonic key that bumps whenever the services object changes (i.e. connection switch/reconnect).
   // Used to force-remount stateful children like ResourceArena3D.
@@ -667,8 +671,10 @@ export const Overview: React.FC = () => {
 
           {/* Resource arena - driven by global 2D/3D preference */}
           {preferredViewMode === '3d' ? (
+            <div ref={arenaAnchorRef}>
             <ResourceArena3D
               key={`3d-${activeProfileId}-${servicesGenRef.current}`}
+              height={getArenaHeight(arenaAvailableHeight)}
               queries={liveData?.runningQueries ?? EMPTY_QUERIES}
               merges={liveData?.activeMerges ?? EMPTY_MERGES}
               cpuUsage={isCluster ? clusterCpuPct : (metrics?.cpu_usage ?? 0)}
@@ -679,6 +685,7 @@ export const Overview: React.FC = () => {
               onSplitToggle={() => setArenaSplitView(!arenaSplitView)}
               history={arenaHistory}
             />
+            </div>
           ) : (
             <ResourceArenaSwimlane
               key={`swim-${activeProfileId}-${servicesGenRef.current}`}

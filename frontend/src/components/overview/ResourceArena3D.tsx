@@ -1421,6 +1421,8 @@ export interface ResourceArena3DProps {
   onSplitToggle?: () => void;
   /** Finished queries/merges fetched at page load, to backfill the timeline */
   history?: RecentActivity | null;
+  /** Height in px when not fullscreen */
+  height?: number;
 }
 
 const hdrLabel: React.CSSProperties = {
@@ -1430,7 +1432,7 @@ const hdrVal: React.CSSProperties = { marginLeft: 6, fontWeight: 700 };
 
 export const ResourceArena3D: React.FC<ResourceArena3DProps> = ({
   queries, merges, cpuUsage, memoryPct, compact,
-  splitAvailable, splitActive, onSplitToggle, history,
+  splitAvailable, splitActive, onSplitToggle, history, height = 520,
 }) => {
   const [hovered, setHovered] = useState<BlockEntry | null>(null);
   const [selected, setSelected] = useState<BlockEntry | null>(null);
@@ -1722,7 +1724,7 @@ export const ResourceArena3D: React.FC<ResourceArena3DProps> = ({
         position: 'relative', borderRadius: isFullscreen ? 0 : 10, overflow: 'hidden',
         background: 'linear-gradient(180deg, #1e1e32 0%, #1a1a2e 40%, #141422 100%)',
         border: isFullscreen ? 'none' : '1px solid rgba(255,255,255,0.08)',
-        height: isFullscreen ? '100vh' : 520,
+        height: isFullscreen ? '100vh' : height,
       }}
     >
       {/* Header */}
