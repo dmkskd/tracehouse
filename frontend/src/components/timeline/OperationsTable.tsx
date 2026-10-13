@@ -80,7 +80,9 @@ const CHART_TOGGLES: { key: 'query' | 'merge' | 'mutation'; label: string; color
   { key: 'mutation', label: 'Mutations', color: MUT_COLORS[0] },
 ];
 
-export const OperationsTable: React.FC<{
+// Memoized: the page re-renders on every chart mouse move (hoverMs), which the
+// table does not use; re-rendering every row per move made chart hover lag.
+export const OperationsTable = React.memo<{
   /** Rows already scoped, sorted and filtered by kind. */
   rows: OperationRow[];
   /** Counts per kind before the kind filter, so tab counts share one scope. */
@@ -110,7 +112,7 @@ export const OperationsTable: React.FC<{
   hiddenCategories: Set<'query' | 'merge' | 'mutation'>;
   onToggleChartVisibility: (kind: 'query' | 'merge' | 'mutation') => void;
   queryHashActive?: boolean;
-}> = ({
+}>(({
   rows, counts, totalCount, loadedCount, kindFilter, onKindFilterChange, scope, onScopeChange,
   pinnedMs, metricMode, sortField, sortDir, onSort, highlightedItem, onHighlightItem, onSelect,
   search, onSearchChange, selectedId, showHost, hiddenCategories, onToggleChartVisibility, queryHashActive,
@@ -367,4 +369,4 @@ export const OperationsTable: React.FC<{
       )}
     </div>
   );
-};
+});

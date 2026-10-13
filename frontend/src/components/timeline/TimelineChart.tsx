@@ -521,12 +521,15 @@ export const TimelineChart: React.FC<{
     return { t: hoverMs, srv: near.v, aq, am, amut, qt: aq.reduce((s, x) => s + x.p, 0), mt: am.reduce((s, x) => s + x.p, 0), mutt: amut.reduce((s, x) => s + x.p, 0), line1Val, line2Val, hoveredBand, hostCpuValues };
   }, [hoverMs, serverPts, qRanges, mRanges, mutRanges, isDualMode, dualLine1, dualLine2, localSvgY, padTop, ch, maxY, buckets, nq, nm, nmut, perHostCpuPts]);
 
-  // Sync chart hover to parent so table rows highlight when hovering graph bands
+  // Sync chart hover to parent so table rows highlight when hovering graph bands.
+  // `snap` is rebuilt on every mouse move, so key on the band identity: syncing
+  // a fresh object each move re-rendered the whole page twice per move.
+  const hoveredBandKey = snap?.hoveredBand ? `${snap.hoveredBand.type}:${snap.hoveredBand.id}` : null;
   useEffect(() => {
     hoveredBandRef.current = snap?.hoveredBand ?? null;
     if (!onHighlightItem) return;
     onHighlightItem(snap?.hoveredBand ?? null);
-  }, [snap?.hoveredBand]);
+  }, [hoveredBandKey]);
 
   const crossX = localSvgX;
   const pinX = pinnedMs !== null ? xScale(pinnedMs) : null;

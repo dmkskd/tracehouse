@@ -502,10 +502,10 @@ export const TimeTravelPage: React.FC = () => {
     timeTravelNavigatorShape, eventFilter, setSearchParams,
   ]);
 
-  const handleSort = (field: SortField) => {
+  const handleSort = useCallback((field: SortField) => {
     if (sortField === field) setSortDir(sortDir === 'desc' ? 'asc' : 'desc');
     else { setSortField(field); setSortDir('desc'); }
-  };
+  }, [sortField, sortDir]);
 
   let activeProfile = profiles.find(p => p.id === activeProfileId);
   if (!activeProfile && profiles.length > 0) activeProfile = profiles.find(p => p.is_connected);
