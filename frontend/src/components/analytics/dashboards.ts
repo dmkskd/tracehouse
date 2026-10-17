@@ -815,11 +815,18 @@ const BUILTIN_DASHBOARDS: Dashboard[] = [
   {
     id: 'clickhouse-kb',
     title: 'ClickHouse Knowledge Base',
-    description: 'Read-only diagnostics adapted from the official ClickHouse Knowledge Base - part formats, memory pressure and JSON schema inventory',
+    description: 'Read-only diagnostics adapted from the official ClickHouse Knowledge Base - part formats, memory pressure, too many parts, mutations, changed settings and JSON schema inventory',
     source: 'https://clickhouse.com/docs/knowledgebase',
     group: 'Knowledge Base',
     category: 'ClickHouse.com',
     columns: 2,
+    filters: [
+      {
+        param: 'tbl',
+        label: 'Table',
+        query: "SELECT concat(database, '.', name) AS tbl FROM system.tables WHERE database NOT IN ('system', 'INFORMATION_SCHEMA', 'information_schema') AND engine LIKE '%MergeTree%' ORDER BY tbl",
+      },
+    ],
     panels: [
       // ── https://clickhouse.com/docs/knowledgebase/understanding-part-types-and-storage-formats ──
       { queryName: 'Knowledge Base#Part Type Summary', section: 'Understanding part types and storage formats' },
@@ -838,6 +845,17 @@ const BUILTIN_DASHBOARDS: Dashboard[] = [
       // ── https://clickhouse.com/docs/knowledgebase ──
       { queryName: 'Knowledge Base#JSON Column Inventory', section: 'Runbook: JSON schema' },
       { queryName: 'Knowledge Base#JSON Columns by Table' },
+
+      // ── https://clickhouse.com/docs/knowledgebase/exception-too-many-parts ──
+      { queryName: 'Knowledge Base#Partitions Closest to Too Many Parts', section: 'Resolving the Too many parts exception' },
+      { queryName: 'Knowledge Base#Tables Closest to max_parts_in_total' },
+
+      // ── https://clickhouse.com/docs/knowledgebase/view_number_of_active_mutations ──
+      { queryName: 'Knowledge Base#Active or Queued Mutations', section: 'How do I view the number of active or queued mutations?' },
+
+      // ── https://clickhouse.com/docs/knowledgebase/useful-queries-for-troubleshooting ──
+      { queryName: 'Knowledge Base#Settings Changed from Default', section: 'Useful queries for troubleshooting' },
+      { queryName: 'Knowledge Base#Projection Disk Usage' },
     ],
   },
 
@@ -944,6 +962,28 @@ const BUILTIN_DASHBOARDS: Dashboard[] = [
       { queryName: 'Knowledge Base#Cluster connectivity probe', section: 'Notes on errors (replication & distributed connections)' },
       { queryName: 'Knowledge Base#Errors by Type' },
       { queryName: 'Knowledge Base#Cluster Connectivity' },
+
+      // ── https://kb.altinity.com/altinity-kb-queries-and-syntax/mutations/ ──
+      { queryName: 'Knowledge Base#Mutations on All Nodes', section: 'Mutations' },
+      { queryName: 'Knowledge Base#Mutation Settings' },
+
+      // ── https://kb.altinity.com/altinity-kb-queries-and-syntax/ttl/what-are-my-ttls/ ──
+      { queryName: 'Knowledge Base#Parts with TTL', section: 'What are my TTL settings?' },
+
+      // ── https://kb.altinity.com/altinity-kb-useful-queries/compare_query_log_for_2_intervals/ ──
+      { queryName: 'Knowledge Base#Query Shapes Changed Between Intervals', section: 'Compare query_log for 2 intervals' },
+
+      // ── https://kb.altinity.com/altinity-kb-useful-queries/table-meta-in-zookeeper/ ──
+      { queryName: 'Knowledge Base#Replica Metadata in ZooKeeper', section: 'Check table metadata in zookeeper', requiredCapability: 'zookeeper' },
+
+      // ── https://kb.altinity.com/altinity-kb-useful-queries/parts-consistency/ ──
+      { queryName: 'Knowledge Base#Missing Block Numbers', section: 'Parts consistency' },
+      { queryName: 'Knowledge Base#Parts in ZooKeeper Not on Disk', requiredCapability: 'zookeeper' },
+
+      // ── https://kb.altinity.com/altinity-kb-integrations/altinity-kb-kafka/04-operations-troubleshooting/background_message_broker_schedule_pool_size/ ──
+      { queryName: 'Knowledge Base#Message Broker Pool Usage', section: 'Setting the background message broker schedule pool size' },
+      { queryName: 'Knowledge Base#Message Broker Pool Min Free Threads' },
+      { queryName: 'Knowledge Base#Message Broker Pool Sizing' },
     ],
   },
 ];

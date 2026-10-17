@@ -235,6 +235,106 @@ WHERE database != 'system'
 GROUP BY database, table
 ORDER BY columns DESC, database, table
 LIMIT 100`,
+
+  // ═══════════════════ Resolving the Too many parts exception ═══════════════════
+  // https://clickhouse.com/docs/knowledgebase/exception-too-many-parts
+  // The KB queries filter one table; the panels use the dashboard Table filter
+  // and add the server-default limits each count is checked against.
+
+  `-- @meta: title='Partitions Closest to Too Many Parts' group='Knowledge Base' description='Resolving the Too many parts exception - partitions with the most active parts, against the server default parts_to_delay_insert (inserts slowed) and parts_to_throw_insert (inserts rejected). Table-level overrides in SETTINGS are not reflected. Uses the Table filter; empty means all tables.'
+-- @cell: column=pct_of_throw_limit type=rag green<33 amber<80
+-- @source: https://clickhouse.com/docs/knowledgebase/exception-too-many-parts
+WITH
+    {{drill_value:tbl | ''}} AS target_table,
+    (SELECT toUInt64(value) FROM system.merge_tree_settings WHERE name = 'parts_to_delay_insert') AS delay_limit,
+    (SELECT toUInt64(value) FROM system.merge_tree_settings WHERE name = 'parts_to_throw_insert') AS throw_limit
+SELECT
+    hostName() AS host,
+    database,
+    table,
+    partition_id,
+    count() AS active_parts,
+    sum(rows) AS rows,
+    formatReadableSize(sum(bytes_on_disk)) AS size_on_disk,
+    delay_limit,
+    throw_limit,
+    round(100 * active_parts / throw_limit, 1) AS pct_of_throw_limit
+FROM {{cluster_aware:system.parts}}
+WHERE active
+  AND (target_table = '' OR concat(database, '.', table) = target_table)
+GROUP BY host, database, table, partition_id
+ORDER BY active_parts DESC
+LIMIT 50`,
+
+  `-- @meta: title='Tables Closest to max_parts_in_total' group='Knowledge Base' description='Resolving the Too many parts exception - active parts per table against the server default max_parts_in_total, the table-wide limit. Table-level overrides in SETTINGS are not reflected. Uses the Table filter; empty means all tables.'
+-- @cell: column=pct_of_total_limit type=rag green<33 amber<80
+-- @source: https://clickhouse.com/docs/knowledgebase/exception-too-many-parts
+WITH
+    {{drill_value:tbl | ''}} AS target_table,
+    (SELECT toUInt64(value) FROM system.merge_tree_settings WHERE name = 'max_parts_in_total') AS total_limit
+SELECT
+    hostName() AS host,
+    database,
+    table,
+    count() AS active_parts,
+    sum(rows) AS rows,
+    formatReadableSize(sum(bytes_on_disk)) AS size_on_disk,
+    total_limit,
+    round(100 * active_parts / total_limit, 1) AS pct_of_total_limit
+FROM {{cluster_aware:system.parts}}
+WHERE active
+  AND (target_table = '' OR concat(database, '.', table) = target_table)
+GROUP BY host, database, table
+ORDER BY active_parts DESC
+LIMIT 50`,
+
+  // ═══════════════════ How do I view the number of active or queued mutations? ═══════════════════
+  // https://clickhouse.com/docs/knowledgebase/view_number_of_active_mutations
+
+  `-- @meta: title='Active or Queued Mutations' group='Knowledge Base' description='How do I view the number of active or queued mutations - unfinished mutations per host. Any non-zero count is work still pending.'
+-- @cell: column=active_or_queued type=rag green<1 amber<10
+-- @source: https://clickhouse.com/docs/knowledgebase/view_number_of_active_mutations
+SELECT
+    hostName() AS host,
+    count() AS active_or_queued
+FROM {{cluster_aware:system.mutations}}
+WHERE NOT is_done
+GROUP BY host
+ORDER BY active_or_queued DESC`,
+
+  // ═══════════════════ Useful queries for troubleshooting ═══════════════════
+  // https://clickhouse.com/docs/knowledgebase/useful-queries-for-troubleshooting
+
+  // Fan-out side effect, verified on 26.9: a clusterAllReplicas query reports
+  // queue_max_wait_ms, run_query_in_background, skip_unavailable_shards(_mode)
+  // as changed on the initiator and interactive_delay on the other nodes. They
+  // are excluded so the panel only shows settings the profile actually changes.
+  `-- @meta: title='Settings Changed from Default' group='Knowledge Base' description='Useful queries for troubleshooting - session settings that differ from the default, per host, as seen by the TraceHouse user profile. Settings set by the cluster fan-out itself are excluded.'
+-- @source: https://clickhouse.com/docs/knowledgebase/useful-queries-for-troubleshooting
+SELECT
+    hostName() AS host,
+    name,
+    value
+FROM {{cluster_aware:system.settings}}
+WHERE changed
+  AND name NOT IN ('queue_max_wait_ms', 'run_query_in_background', 'skip_unavailable_shards', 'skip_unavailable_shards_mode', 'interactive_delay')
+ORDER BY host, name`,
+
+  `-- @meta: title='Projection Disk Usage' group='Knowledge Base' description='Useful queries for troubleshooting - how much disk space projections use, per projection part, and the ratio to the parent part.'
+-- @source: https://clickhouse.com/docs/knowledgebase/useful-queries-for-troubleshooting
+SELECT
+    hostName() AS host,
+    database,
+    table,
+    name,
+    parent_name,
+    formatReadableSize(bytes_on_disk) AS bytes,
+    formatReadableSize(parent_bytes_on_disk) AS parent_bytes,
+    round(bytes_on_disk / parent_bytes_on_disk, 3) AS ratio
+FROM {{cluster_aware:system.projection_parts}}
+WHERE active
+ORDER BY bytes_on_disk DESC
+LIMIT 100`,
 ];
 
 export default queries;

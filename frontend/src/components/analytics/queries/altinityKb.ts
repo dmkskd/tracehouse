@@ -19,6 +19,8 @@
  * must not contain apostrophes / single quotes.
  */
 
+import { APP_SOURCE_LIKE } from '@tracehouse/core';
+
 const queries: string[] = [
   // ═══════════════════ Who ate my CPU ═══════════════════
   // https://kb.altinity.com/altinity-kb-setup-and-maintenance/who-ate-my-cpu/
@@ -390,57 +392,118 @@ GROUP BY function_name
 ORDER BY queries DESC
 LIMIT 50`,
 
-  `-- @meta: title='Most Selected Columns' group='Knowledge Base' interval='1 DAY' description='Handy queries for system.query_log - columns most frequently referenced by completed queries, using the query_log columns array.'
--- @chart: type=bar group_by=column_name value=queries style=2d
--- @source: https://kb.altinity.com/altinity-kb-useful-queries/query_log/
-SELECT
-    arrayJoin(columns) AS column_name,
-    count() AS queries,
-    uniqExact(normalized_query_hash) AS query_shapes,
-    round(sum(query_duration_ms) / 1000, 2) AS total_duration_sec,
-    formatReadableSize(sum(read_bytes)) AS read_bytes
-FROM {{cluster_aware:system.query_log}}
-WHERE event_time > {{time_range}}
-  AND type = 'QueryFinish'
-  AND notEmpty(columns)
-GROUP BY column_name
-ORDER BY queries DESC
-LIMIT 50`,
-
-  `-- @meta: title='Columns Used in WHERE' group='Knowledge Base' interval='1 DAY' description='Handy queries for system.query_log - likely predicate columns extracted from WHERE and PREWHERE clauses, grouped with query_log table context.'
--- @chart: type=bar group_by=table_column value=queries style=2d
+  // The KB query counts every query_log columns entry. Over a TraceHouse
+  // connection most entries are TraceHouse polling system tables, so the panel
+  // excludes its own queries, system and _table_function columns, and reports
+  // each column against the number of selects that read its table.
+  `-- @meta: title='Most Selected Columns' group='Knowledge Base' interval='1 DAY' description='Handy queries for system.query_log - for each user table, the columns its SELECT queries read and the percent of those queries that read each column. Low percentages mark rarely read columns; high ones are candidates for ORDER BY or skip indexes. TraceHouse queries are excluded. Uses the Table filter; empty means all tables.'
+-- @cell: column=pct_of_table_queries type=gauge max=100
 -- @source: https://kb.altinity.com/altinity-kb-useful-queries/query_log/
 WITH {{drill_value:tbl | ''}} AS target_table
 SELECT
-    table_name,
-    lower(column_name) AS column_name,
-    concat(table_name, '.', lower(column_name)) AS table_column,
-    count() AS queries,
-    uniqExact(query_hash) AS query_shapes,
-    round(sum(query_duration_ms) / 1000, 2) AS total_duration_sec
+    c.table_name AS table_name,
+    c.column_name AS column_name,
+    c.queries AS queries,
+    round(100 * c.queries / t.table_queries, 1) AS pct_of_table_queries,
+    c.query_shapes AS query_shapes,
+    t.table_queries AS table_queries
 FROM (
     SELECT
-        lower(hex(normalized_query_hash)) AS query_hash,
-        query_duration_ms,
-        if(
-            target_table = '',
-            if(empty(tables), 'unknown', arrayStringConcat(tables, ', ')),
-            arrayFirst(x -> positionCaseInsensitive(x, target_table) > 0, tables)
-        ) AS table_name,
-        arrayJoin(extractAll(
-            extract(query, '(?is)\\\\b(?:WHERE|PREWHERE)\\\\b(.+?)(?:\\\\bGROUP\\\\s+BY\\\\b|\\\\bORDER\\\\s+BY\\\\b|\\\\bLIMIT\\\\b|\\\\bSETTINGS\\\\b|$)'),
-            '\`?([A-Za-z_][A-Za-z0-9_]*)\`?\\\\s*(?:=|!=|<>|<=|>=|<|>|IN\\\\s*\\\\(|LIKE|ILIKE|BETWEEN)'
-        )) AS column_name
-    FROM {{cluster_aware:system.query_log}}
-    WHERE event_time > {{time_range}}
-      AND type = 'QueryFinish'
-      AND match(query, '(?i)\\\\bWHERE\\\\b|\\\\bPREWHERE\\\\b')
-      AND (target_table = '' OR arrayExists(x -> positionCaseInsensitive(x, target_table) > 0, tables))
-)
-WHERE column_name NOT IN ('and', 'or', 'not', 'in', 'like', 'ilike', 'between')
-GROUP BY table_name, column_name
-ORDER BY queries DESC
-LIMIT 50`,
+        concat(parts[1], '.', parts[2]) AS table_name,
+        arrayStringConcat(arraySlice(parts, 3), '.') AS column_name,
+        uniqExact(query_id) AS queries,
+        uniqExact(normalized_query_hash) AS query_shapes
+    FROM (
+        SELECT query_id, normalized_query_hash, splitByChar('.', col) AS parts
+        FROM {{cluster_aware:system.query_log}}
+        ARRAY JOIN columns AS col
+        WHERE event_time > {{time_range}}
+          AND type = 'QueryFinish'
+          AND query_kind = 'Select'
+          AND query NOT LIKE ${APP_SOURCE_LIKE}
+    )
+    WHERE parts[1] NOT IN ('system', '_table_function', 'INFORMATION_SCHEMA', 'information_schema')
+      AND (target_table = '' OR concat(parts[1], '.', parts[2]) = target_table)
+    GROUP BY table_name, column_name
+) AS c
+INNER JOIN (
+    SELECT
+        concat(parts[1], '.', parts[2]) AS table_name,
+        uniqExact(query_id) AS table_queries
+    FROM (
+        SELECT query_id, splitByChar('.', col) AS parts
+        FROM {{cluster_aware:system.query_log}}
+        ARRAY JOIN columns AS col
+        WHERE event_time > {{time_range}}
+          AND type = 'QueryFinish'
+          AND query_kind = 'Select'
+          AND query NOT LIKE ${APP_SOURCE_LIKE}
+    )
+    GROUP BY table_name
+) AS t ON c.table_name = t.table_name
+ORDER BY t.table_queries DESC, table_name, queries DESC
+LIMIT 100`,
+
+  // Same treatment as Most Selected Columns. The WHERE/PREWHERE regex alone
+  // cannot tell which table a name belongs to and also matches aliases, so its
+  // names are intersected with the query_log columns array (db.table.column
+  // actually read); only real columns, attributed to their own table, remain.
+  `-- @meta: title='Columns Used in WHERE' group='Knowledge Base' interval='1 DAY' description='Handy queries for system.query_log - for each user table, the columns its SELECT queries filter on in WHERE or PREWHERE, and the percent of those queries that filter on each. Frequently filtered columns are candidates for the ORDER BY prefix or skip indexes. TraceHouse queries are excluded. Uses the Table filter; empty means all tables.'
+-- @cell: column=pct_of_table_queries type=gauge max=100
+-- @source: https://kb.altinity.com/altinity-kb-useful-queries/query_log/
+WITH {{drill_value:tbl | ''}} AS target_table
+SELECT
+    c.table_name AS table_name,
+    c.column_name AS column_name,
+    c.queries AS queries,
+    round(100 * c.queries / t.table_queries, 1) AS pct_of_table_queries,
+    c.query_shapes AS query_shapes,
+    t.table_queries AS table_queries
+FROM (
+    SELECT
+        concat(parts[1], '.', parts[2]) AS table_name,
+        replaceAll(arrayStringConcat(arraySlice(parts, 3), '.'), '\`', '') AS column_name,
+        uniqExact(query_id) AS queries,
+        uniqExact(normalized_query_hash) AS query_shapes
+    FROM (
+        SELECT
+            query_id,
+            normalized_query_hash,
+            splitByChar('.', col) AS parts,
+            arrayDistinct(arrayMap(x -> lower(x), extractAll(
+                extract(query, '(?is)\\\\b(?:WHERE|PREWHERE)\\\\b(.+?)(?:\\\\bGROUP\\\\s+BY\\\\b|\\\\bORDER\\\\s+BY\\\\b|\\\\bLIMIT\\\\b|\\\\bSETTINGS\\\\b|$)'),
+                '\`?([A-Za-z_][A-Za-z0-9_]*)\`?\\\\s*(?:=|!=|<>|<=|>=|<|>|IN\\\\s*\\\\(|LIKE|ILIKE|BETWEEN)'
+            ))) AS predicate_columns
+        FROM {{cluster_aware:system.query_log}}
+        ARRAY JOIN columns AS col
+        WHERE event_time > {{time_range}}
+          AND type = 'QueryFinish'
+          AND query_kind = 'Select'
+          AND query NOT LIKE ${APP_SOURCE_LIKE}
+          AND match(query, '(?i)\\\\bWHERE\\\\b|\\\\bPREWHERE\\\\b')
+    )
+    WHERE parts[1] NOT IN ('system', '_table_function', 'INFORMATION_SCHEMA', 'information_schema')
+      AND has(predicate_columns, lower(replaceAll(arrayStringConcat(arraySlice(parts, 3), '.'), '\`', '')))
+      AND (target_table = '' OR concat(parts[1], '.', parts[2]) = target_table)
+    GROUP BY table_name, column_name
+) AS c
+INNER JOIN (
+    SELECT
+        concat(parts[1], '.', parts[2]) AS table_name,
+        uniqExact(query_id) AS table_queries
+    FROM (
+        SELECT query_id, splitByChar('.', col) AS parts
+        FROM {{cluster_aware:system.query_log}}
+        ARRAY JOIN columns AS col
+        WHERE event_time > {{time_range}}
+          AND type = 'QueryFinish'
+          AND query_kind = 'Select'
+          AND query NOT LIKE ${APP_SOURCE_LIKE}
+    )
+    GROUP BY table_name
+) AS t ON c.table_name = t.table_name
+ORDER BY t.table_queries DESC, table_name, queries DESC
+LIMIT 100`,
 
   `-- @meta: title='Unfinished or Failed Queries' group='Knowledge Base' interval='1 DAY' description='Handy queries for system.query_log - currently running queries plus recent query exceptions from query_log.'
 -- @link: on=query_id into='Query Detail by ID'
@@ -962,6 +1025,255 @@ SELECT
 FROM {{cluster_aware:system.clusters}}
 WHERE errors_count > 0 OR slowdowns_count > 0
 ORDER BY errors_count DESC`,
+
+  // ═══════════════════ Mutations ═══════════════════
+  // https://kb.altinity.com/altinity-kb-queries-and-syntax/mutations/
+  // The KB selects hostname(), * - the panel keeps the columns needed to tell
+  // whether a mutation finished on every node and why it is stuck.
+
+  `-- @meta: title='Mutations on All Nodes' group='Knowledge Base' description='Mutations - was an ALTER TABLE DELETE/UPDATE ON CLUSTER mutation finished on all the nodes? Unfinished mutations first, with parts left to do and the latest failure reason per host.'
+-- @cell: column=parts_to_do type=rag green<1 amber<100
+-- @source: https://kb.altinity.com/altinity-kb-queries-and-syntax/mutations/
+SELECT
+    hostName() AS host,
+    database,
+    table,
+    mutation_id,
+    substring(command, 1, 120) AS command,
+    create_time,
+    is_done,
+    parts_to_do,
+    is_killed,
+    latest_fail_time,
+    latest_fail_reason
+FROM {{cluster_aware:system.mutations}}
+ORDER BY is_done ASC, create_time DESC
+LIMIT 200`,
+
+  `-- @meta: title='Mutation Settings' group='Knowledge Base' description='Mutations - MergeTree settings that control the parallelism of mutations.'
+-- @source: https://kb.altinity.com/altinity-kb-queries-and-syntax/mutations/
+SELECT name, value, changed, description
+FROM system.merge_tree_settings
+WHERE name LIKE '%mutation%'
+ORDER BY name`,
+
+  // ═══════════════════ What are my TTL settings? ═══════════════════
+  // https://kb.altinity.com/altinity-kb-queries-and-syntax/ttl/what-are-my-ttls/
+  // The KB query uses columns('ttl_info.min') APPLY (min); the panel spells the
+  // same aggregates out with readable aliases, restricts to active parts (the
+  // KB also counts outdated parts waiting for removal) and adds delete_ttl_expired.
+
+  `-- @meta: title='Parts with TTL' group='Knowledge Base' description='What are my TTL settings - partitions whose parts carry TTL info (delete, move, recompress, group by, rows where). delete_ttl_expired = 1 means the delete TTL is already in the past but the rows are still on disk, waiting for a TTL merge.'
+-- @cell: column=delete_ttl_expired type=rag green=0 red=1
+-- @source: https://kb.altinity.com/altinity-kb-queries-and-syntax/ttl/what-are-my-ttls/
+SELECT
+    hostName() AS host,
+    database,
+    table,
+    partition_id,
+    count() AS parts,
+    min(delete_ttl_info_min) AS delete_ttl_min,
+    max(delete_ttl_info_max) AS delete_ttl_max,
+    delete_ttl_min > toDateTime(0) AND delete_ttl_min < now() AS delete_ttl_expired,
+    min(move_ttl_info.min) AS move_ttl_min,
+    min(recompression_ttl_info.min) AS recompression_ttl_min,
+    min(group_by_ttl_info.min) AS group_by_ttl_min,
+    min(rows_where_ttl_info.min) AS rows_where_ttl_min
+FROM {{cluster_aware:system.parts}}
+WHERE active
+GROUP BY host, database, table, partition_id
+HAVING min(delete_ttl_info_min) > toDateTime(0)
+    OR NOT empty(min(move_ttl_info.min))
+    OR NOT empty(min(recompression_ttl_info.min))
+    OR NOT empty(min(group_by_ttl_info.min))
+    OR NOT empty(min(rows_where_ttl_info.min))
+ORDER BY min(delete_ttl_info_min)
+LIMIT 100`,
+
+  // ═══════════════════ Compare query_log for 2 intervals ═══════════════════
+  // https://kb.altinity.com/altinity-kb-useful-queries/compare_query_log_for_2_intervals/
+  // The KB second query, with timestamp_of_issue = the start of the selected
+  // window: "after" is the selected window, "before" is the same length
+  // immediately preceding it.
+
+  `-- @meta: title='Query Shapes Changed Between Intervals' group='Knowledge Base' interval='1 DAY' description='Compare query_log for 2 intervals - query shapes whose count grew more than 10 percent, or whose read bytes or user CPU grew more than 20 percent, in the selected window (after) vs the window of the same length before it. Sorted by the read bytes increase. Click a row for executions.'
+-- @drill: on=query_hash into='CPU Query Executions'
+-- @source: https://kb.altinity.com/altinity-kb-useful-queries/compare_query_log_for_2_intervals/
+WITH
+    {{time_range}} AS timestamp_of_issue,
+    event_time < timestamp_of_issue AS before,
+    event_time >= timestamp_of_issue AS after
+SELECT
+    lower(hex(normalized_query_hash)) AS query_hash,
+    substring(any(query), 1, 120) AS query_sample,
+    round(quantileIf(0.9)(query_duration_ms, before)) AS duration_q90_before,
+    round(quantileIf(0.9)(query_duration_ms, after)) AS duration_q90_after,
+    countIf(before) AS cnt_before,
+    countIf(after) AS cnt_after,
+    sumIf(query_duration_ms, before) AS duration_sum_before,
+    sumIf(query_duration_ms, after) AS duration_sum_after,
+    sumIf(ProfileEvents['UserTimeMicroseconds'], before) AS usertime_sum_before,
+    sumIf(ProfileEvents['UserTimeMicroseconds'], after) AS usertime_sum_after,
+    sumIf(read_bytes, before) AS sum_read_bytes_before,
+    sumIf(read_bytes, after) AS sum_read_bytes_after,
+    formatReadableSize(toInt64(sum_read_bytes_after) - toInt64(sum_read_bytes_before)) AS read_bytes_delta
+FROM {{cluster_aware:system.query_log}}
+WHERE event_time >= timestamp_of_issue - (now() - timestamp_of_issue)
+  AND type IN ('QueryFinish', 'ExceptionWhileProcessing')
+GROUP BY query_hash
+HAVING cnt_after > 1.1 * cnt_before
+    OR sum_read_bytes_after > 1.2 * sum_read_bytes_before
+    OR usertime_sum_after > 1.2 * usertime_sum_before
+ORDER BY toInt64(sum_read_bytes_after) - toInt64(sum_read_bytes_before) DESC
+LIMIT 50`,
+
+  // ═══════════════════ Check table metadata in zookeeper ═══════════════════
+  // https://kb.altinity.com/altinity-kb-useful-queries/table-meta-in-zookeeper/
+  // The KB filters one table by name; the panel uses the dashboard Table filter
+  // and covers every replicated table on the connected node when it is empty.
+  // With several tables the window is partitioned per table Keeper path, so a
+  // table node is never compared with the previous table's last replica.
+
+  `-- @meta: title='Replica Metadata in ZooKeeper' group='Knowledge Base' description='Check table metadata in zookeeper - compares the metadata and columns nodes of every replica with the table node in Keeper. looks_good = 0 means a replica has diverging metadata. Uses the Table filter; empty means every replicated table on the connected node.'
+-- @cell: column=looks_good type=rag green=1 red=0
+-- @source: https://kb.altinity.com/altinity-kb-useful-queries/table-meta-in-zookeeper/
+WITH {{drill_value:tbl | ''}} AS target_table
+SELECT
+    path,
+    name,
+    if(prev_name = name AND name != 'is_active', prev_value = value, 1) AS looks_good,
+    ctime,
+    mtime,
+    value
+FROM (
+    SELECT
+        name,
+        path,
+        ctime,
+        mtime,
+        value,
+        lagInFrame(name) OVER w AS prev_name,
+        lagInFrame(value) OVER w AS prev_value
+    FROM system.zookeeper
+    WHERE (path IN (
+        SELECT arrayJoin(groupUniqArray(if(path LIKE '%/replicas', concat(path, '/', name), path)))
+        FROM system.zookeeper
+        WHERE path IN (
+            SELECT arrayJoin([zookeeper_path, concat(zookeeper_path, '/replicas')])
+            FROM system.replicas
+            WHERE target_table = '' OR concat(database, '.', table) = target_table
+        )
+    )) AND (name IN ('metadata', 'columns', 'is_active'))
+    WINDOW w AS (PARTITION BY splitByString('/replicas/', path)[1] ORDER BY name = 'is_active', name ASC, path ASC ROWS BETWEEN UNBOUNDED PRECEDING AND CURRENT ROW)
+)
+ORDER BY looks_good ASC, path, name`,
+
+  // ═══════════════════ Parts consistency ═══════════════════
+  // https://kb.altinity.com/altinity-kb-useful-queries/parts-consistency/
+  // The KB filters one table and partition; the panel uses the Table filter,
+  // scans every partition, and groups per host so replicas are not mixed.
+  // The KB orphan-cleanup generator (delete commands) is excluded.
+
+  `-- @meta: title='Missing Block Numbers' group='Knowledge Base' description='Parts consistency - gaps in block numbers between adjacent active parts of a partition, per host. A gap means blocks are missing: lost data, or an intentional DROP PART / partition operation. Uses the Table filter; empty means all non-system tables.'
+-- @cell: column=missing_blocks type=rag green<1 amber<10
+-- @source: https://kb.altinity.com/altinity-kb-useful-queries/parts-consistency/
+WITH {{drill_value:tbl | ''}} AS target_table
+SELECT
+    host,
+    database,
+    table,
+    partition_id,
+    ranges.1 AS previous_part,
+    ranges.2 AS next_part,
+    ranges.3 AS previous_block_number,
+    ranges.4 AS next_block_number,
+    length(range(toUInt64(previous_block_number + 1), toUInt64(next_block_number))) AS missing_blocks
+FROM
+(
+    WITH
+        arrayPopFront(groupArray(min_block_number) AS min) AS min_adj,
+        arrayPopBack(groupArray(max_block_number) AS max) AS max_adj,
+        arrayFilter((x, y, z) -> (y != (z + 1)), arrayZip(arrayPopBack(groupArray(name) AS name_arr), arrayPopFront(name_arr), max_adj, min_adj), min_adj, max_adj) AS missing_ranges
+    SELECT host, database, table, partition_id, missing_ranges
+    FROM
+    (
+        SELECT *, hostName() AS host
+        FROM {{cluster_aware:system.parts}}
+        WHERE active AND database != 'system'
+          AND (target_table = '' OR concat(database, '.', table) = target_table)
+        ORDER BY min_block_number ASC
+    )
+    GROUP BY host, database, table, partition_id
+)
+ARRAY JOIN missing_ranges AS ranges
+ORDER BY missing_blocks DESC
+LIMIT 100`,
+
+  `-- @meta: title='Parts in ZooKeeper Not on Disk' group='Knowledge Base' description='Parts consistency - parts registered in Keeper for a replica of the connected node but missing from its disk, older than 1 hour. These are orphan Keeper records. Runs on the connected node only (replica paths are per node).'
+-- @source: https://kb.altinity.com/altinity-kb-useful-queries/parts-consistency/
+SELECT zoo.p_path AS part_zoo, zoo.ctime, zoo.mtime, disk.p_path AS part_disk
+FROM
+(
+    SELECT concat(path, '/', name) AS p_path, ctime, mtime
+    FROM system.zookeeper
+    WHERE path IN (SELECT concat(replica_path, '/parts') FROM system.replicas)
+) zoo
+LEFT JOIN
+(
+    SELECT concat(replica_path, '/parts/', name) AS p_path
+    FROM system.parts INNER JOIN system.replicas USING (database, table)
+) disk ON zoo.p_path = disk.p_path
+WHERE part_disk = '' AND zoo.mtime <= now() - INTERVAL 1 HOUR
+ORDER BY part_zoo
+LIMIT 200`,
+
+  // ═══════════════════ Setting the background message broker schedule pool size ═══════════════════
+  // https://kb.altinity.com/altinity-kb-integrations/altinity-kb-kafka/04-operations-troubleshooting/background_message_broker_schedule_pool_size/
+  // Kafka, RabbitMQ and NATS consumers share this pool; when it runs out of
+  // free threads, streaming tables stop consuming.
+
+  `-- @meta: title='Message Broker Pool Usage' group='Knowledge Base' description='Background message broker schedule pool size - current tasks vs pool size per host. free_threads = 0 means Kafka / RabbitMQ / NATS tables are starved and stop consuming.'
+-- @cell: column=free_threads type=rag red=0
+-- @source: https://kb.altinity.com/altinity-kb-integrations/altinity-kb-kafka/04-operations-troubleshooting/background_message_broker_schedule_pool_size/
+SELECT
+    hostName() AS host,
+    sumIf(value, metric = 'BackgroundMessageBrokerSchedulePoolTask') AS tasks,
+    sumIf(value, metric = 'BackgroundMessageBrokerSchedulePoolSize') AS pool_size,
+    pool_size - tasks AS free_threads
+FROM {{cluster_aware:system.metrics}}
+WHERE metric IN ('BackgroundMessageBrokerSchedulePoolTask', 'BackgroundMessageBrokerSchedulePoolSize')
+GROUP BY host
+ORDER BY free_threads ASC`,
+
+  `-- @meta: title='Message Broker Pool Min Free Threads' group='Knowledge Base' interval='1 DAY' description='Background message broker schedule pool size - the lowest number of free pool threads per host over the selected window, from metric_log. 0 means the pool was exhausted at some point.'
+-- @cell: column=min_free_threads type=rag red=0
+-- @source: https://kb.altinity.com/altinity-kb-integrations/altinity-kb-kafka/04-operations-troubleshooting/background_message_broker_schedule_pool_size/
+SELECT
+    hostName() AS host,
+    min(CurrentMetric_BackgroundMessageBrokerSchedulePoolSize - CurrentMetric_BackgroundMessageBrokerSchedulePoolTask) AS min_free_threads
+FROM {{cluster_aware:system.metric_log}}
+WHERE event_time > {{time_range}}
+GROUP BY host
+ORDER BY min_free_threads ASC`,
+
+  `-- @meta: title='Message Broker Pool Sizing' group='Knowledge Base' description='Background message broker schedule pool size - threads needed by the Kafka, RabbitMQ and NATS tables of the connected node (kafka_num_consumers with kafka_thread_per_consumer, else 1; 3 for RabbitMQ and NATS) and the KB recommended pool size (needed x 1.25) vs the current pool size.'
+-- @source: https://kb.altinity.com/altinity-kb-integrations/altinity-kb-kafka/04-operations-troubleshooting/background_message_broker_schedule_pool_size/
+WITH
+    toUInt32OrDefault(extract(engine_full, 'kafka_num_consumers\\\\s*=\\\\s*(\\\\d+)')) AS kafka_num_consumers,
+    extract(engine_full, 'kafka_thread_per_consumer\\\\s*=\\\\s*(\\\\d+|\\'true\\')') NOT IN ('', '0') AS kafka_thread_per_consumer,
+    multiIf(
+        engine = 'Kafka', if(kafka_thread_per_consumer AND kafka_num_consumers > 0, kafka_num_consumers, 1),
+        engine = 'RabbitMQ', 3,
+        engine = 'NATS', 3,
+        0
+    ) AS threads_needed
+SELECT
+    count() AS streaming_tables,
+    sum(threads_needed) AS total_threads_needed,
+    ceil(sum(threads_needed) * 1.25) AS recommended_pool_size,
+    (SELECT value FROM system.metrics WHERE metric = 'BackgroundMessageBrokerSchedulePoolSize') AS current_pool_size
+FROM system.tables
+WHERE engine IN ('Kafka', 'RabbitMQ', 'NATS')`,
 ];
 
 export default queries;
