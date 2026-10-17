@@ -460,6 +460,17 @@ services:
     volumes:
       - tracehouse-grafana-plugin:/output
 
+  # ─── Prometheus (backs the Prometheus-based Grafana dashboards) ─────────
+
+  prometheus:
+    image: prom/prometheus:v3.2.1
+    container_name: tracehouse-demo-prometheus
+    # No exposed ports — only Grafana queries it, over the compose network
+    volumes:
+      - ./prometheus/prometheus.yml:/etc/prometheus/prometheus.yml:ro
+      - tracehouse-prometheus-data:/prometheus
+    restart: unless-stopped
+
   # ─── Grafana ─────────────────────────────────────────────────────────────
 
   grafana:
@@ -482,6 +493,7 @@ services:
       CLICKHOUSE_READONLY_PASSWORD: ${CLICKHOUSE_READONLY_PASSWORD}
     depends_on:
       ch-s1r1: { condition: service_healthy }
+      prometheus: { condition: service_started }
       grafana-plugin-build: { condition: service_completed_successfully }
     restart: unless-stopped
 
@@ -504,6 +516,8 @@ volumes:
   tracehouse-caddy-config:
   # Lakekeeper
   tracehouse-lakekeeper-db-data:
+  # Prometheus
+  tracehouse-prometheus-data:
   # Grafana
   tracehouse-grafana-plugin:
   tracehouse-grafana-data:

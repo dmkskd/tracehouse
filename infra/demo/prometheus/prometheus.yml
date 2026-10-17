@@ -1,0 +1,21 @@
+global:
+  scrape_interval: 15s
+  evaluation_interval: 15s
+
+# ClickHouse native exporter (prometheus.xml, port 9363) on every demo node, plus
+# the standalone Keeper. The `cluster` label feeds the Cluster selectors of the
+# provisioned Grafana dashboards (e.g. grafana.com 23285).
+scrape_configs:
+  - job_name: 'clickhouse'
+    metrics_path: /metrics
+    static_configs:
+      - targets: ['ch-s1r1:9363', 'ch-s1r2:9363', 'ch-s2r1:9363', 'ch-s2r2:9363']
+        labels:
+          cluster: 'tracehouse'
+
+  - job_name: 'clickhouse-keeper'
+    metrics_path: /metrics
+    static_configs:
+      - targets: ['keeper:9363']
+        labels:
+          cluster: 'tracehouse'

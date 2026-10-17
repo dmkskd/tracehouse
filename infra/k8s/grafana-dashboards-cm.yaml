@@ -50,7 +50,7 @@ data:
           "gridPos": {"h": 4, "w": 6, "x": 12, "y": 0},
           "id": 3,
           "options": {"colorMode": "value", "graphMode": "area", "justifyMode": "auto", "orientation": "auto", "reduceOptions": {"calcs": ["lastNotNull"], "fields": "", "values": false}, "textMode": "auto"},
-          "targets": [{"datasource": {"type": "grafana-clickhouse-datasource", "uid": "${DS_CLICKHOUSE}"}, "format": 1, "queryType": "sql", "rawSql": "SELECT round(100 * sum(total_bytes) / (sum(total_bytes) + sum(free_space)), 2) as disk_usage FROM system.disks", "refId": "A"}],
+          "targets": [{"datasource": {"type": "grafana-clickhouse-datasource", "uid": "${DS_CLICKHOUSE}"}, "format": 1, "queryType": "sql", "rawSql": "SELECT round(100 * (1 - sum(free_space) / sum(total_space)), 2) as disk_usage FROM system.disks WHERE type = 'Local'", "refId": "A"}],
           "title": "Disk Usage",
           "type": "stat"
         },

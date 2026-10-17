@@ -1,4 +1,5 @@
 {
+  "description": "Origin: ClickHouse Inc., official mixin https://github.com/ClickHouse/clickhouse-mixin, published as https://grafana.com/grafana/dashboards/23415. Built for the ClickHouse Cloud Prometheus endpoint; on self-managed the Cloud-only panels (service info, version, CGroup normalized CPU) stay empty.",
   "__elements": {},
   "annotations": {
     "list": [
@@ -20,7 +21,7 @@
   "fiscalYearStartMonth": 0,
   "graphTooltip": 1,
   "id": null,
-  "links": [],
+  "links": [{"title": "Source: grafana.com 23415 (ClickHouse Inc.)", "type": "link", "url": "https://grafana.com/grafana/dashboards/23415-prom-exporter-instance-dashboard-v2/", "icon": "external link", "targetBlank": true, "asDropdown": false, "includeVars": false, "keepTime": false, "tags": [], "tooltip": "Where this dashboard comes from"}],
   "panels": [
     {
       "collapsed": false,
@@ -4413,7 +4414,7 @@
             "uid": "Prometheus"
           },
           "editorMode": "code",
-          "expr": "increase(ClickHouseProfileEvents_DelayedInsertMilliseconds{clickhouse_service=\"$service_id\"}[$__rate_interval])  / increase(ClickHouseProfileEvents_DelayedInserts{clickhouse_service=\"$service_id\"}[$__rate_interval])",
+          "expr": "increase(ClickHouseProfileEvents_DelayedInsertsMilliseconds{clickhouse_service=\"$service_id\"}[$__rate_interval])  / increase(ClickHouseProfileEvents_DelayedInserts{clickhouse_service=\"$service_id\"}[$__rate_interval])",
           "legendFormat": "{{instance}}",
           "range": true,
           "refId": "A"
@@ -4806,7 +4807,7 @@
             "uid": "Prometheus"
           },
           "editorMode": "code",
-          "expr": "increase(ClickHouseProfileEvents_MergesTimeMilliseconds{clickhouse_service=\"$service_id\"}[$__rate_interval])  / increase(ClickHouseProfileEvents_Merge{clickhouse_service=\"$service_id\"}[$__rate_interval])",
+          "expr": "increase(ClickHouseProfileEvents_MergeTotalMilliseconds{clickhouse_service=\"$service_id\"}[$__rate_interval])  / increase(ClickHouseProfileEvents_Merge{clickhouse_service=\"$service_id\"}[$__rate_interval])",
           "legendFormat": "{{instance}}",
           "range": true,
           "refId": "A"
@@ -6287,7 +6288,7 @@
   ],
   "refresh": "30s",
   "schemaVersion": 40,
-  "tags": [],
+  "tags": ["clickhouse", "origin:clickhouse-official"],
   "templating": {
     "list": [
       {
@@ -6349,7 +6350,7 @@
   },
   "timepicker": {},
   "timezone": "utc",
-  "title": "ClickHouse Mixin (Prometheus)",
+  "title": "Prom-Exporter Instance Dashboard v2 [ClickHouse Inc. official, grafana.com 23415]",
   "uid": "clickhouse-mixin",
   "version": 2,
   "weekStart": "",

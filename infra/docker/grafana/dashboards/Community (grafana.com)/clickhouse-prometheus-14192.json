@@ -25,26 +25,13 @@
       }
     ]
   },
-  "description": "ClickHouse internal exporter metrics",
+  "description": "Origin: community dashboard by weastur, https://grafana.com/grafana/dashboards/14192 (last updated 2021). Prometheus, ClickHouse native exporter. Metric names updated for current ClickHouse.",
   "editable": true,
   "gnetId": 14192,
   "graphTooltip": 1,
   "id": null,
   "iteration": 1617958425076,
-  "links": [
-    {
-      "asDropdown": false,
-      "icon": "external link",
-      "includeVars": false,
-      "keepTime": false,
-      "tags": [],
-      "targetBlank": true,
-      "title": "ClickHouse monitoring docs",
-      "tooltip": "",
-      "type": "link",
-      "url": "https://clickhouse.tech/docs/en/operations/monitoring/"
-    }
-  ],
+  "links": [{"title": "Source: grafana.com 14192 (community)", "type": "link", "url": "https://grafana.com/grafana/dashboards/14192-clickhouse/", "icon": "external link", "targetBlank": true, "asDropdown": false, "includeVars": false, "keepTime": false, "tags": [], "tooltip": "Where this dashboard comes from"}, {"asDropdown": false, "icon": "external link", "includeVars": false, "keepTime": false, "tags": [], "targetBlank": true, "title": "ClickHouse monitoring docs", "tooltip": "", "type": "link", "url": "https://clickhouse.tech/docs/en/operations/monitoring/"}],
   "panels": [
     {
       "datasource": "Prometheus",
@@ -5249,7 +5236,7 @@
           "targets": [
             {
               "exemplar": false,
-              "expr": "increase(ClickHouseProfileEvents_MergesTimeMilliseconds{instance=~\"$instance\"}[$__rate_interval]) / increase(ClickHouseProfileEvents_Merge{instance=~\"$instance\"}[$__rate_interval])",
+              "expr": "increase(ClickHouseProfileEvents_MergeTotalMilliseconds{instance=~\"$instance\"}[$__rate_interval]) / increase(ClickHouseProfileEvents_Merge{instance=~\"$instance\"}[$__rate_interval])",
               "interval": "",
               "legendFormat": "{{instance}}",
               "refId": "A"
@@ -7109,107 +7096,6 @@
             "align": false,
             "alignLevel": null
           }
-        },
-        {
-          "aliasColors": {},
-          "bars": false,
-          "dashLength": 10,
-          "dashes": false,
-          "datasource": "Prometheus",
-          "description": "In-memory parts.",
-          "fieldConfig": {
-            "defaults": {},
-            "overrides": []
-          },
-          "fill": 0,
-          "fillGradient": 0,
-          "gridPos": {
-            "h": 8,
-            "w": 12,
-            "x": 0,
-            "y": 59
-          },
-          "hiddenSeries": false,
-          "id": 121,
-          "legend": {
-            "alignAsTable": true,
-            "avg": false,
-            "current": false,
-            "max": false,
-            "min": false,
-            "rightSide": true,
-            "show": true,
-            "total": false,
-            "values": false
-          },
-          "lines": true,
-          "linewidth": 2,
-          "maxDataPoints": 200,
-          "nullPointMode": "null",
-          "options": {
-            "alertThreshold": true
-          },
-          "percentage": false,
-          "pluginVersion": "7.5.2",
-          "pointradius": 2,
-          "points": false,
-          "renderer": "flot",
-          "seriesOverrides": [],
-          "spaceLength": 10,
-          "stack": false,
-          "steppedLine": false,
-          "targets": [
-            {
-              "exemplar": false,
-              "expr": "ClickHouseMetrics_PartsInMemory",
-              "interval": "",
-              "legendFormat": "{{instance}}",
-              "refId": "A"
-            }
-          ],
-          "thresholds": [],
-          "timeFrom": null,
-          "timeRegions": [],
-          "timeShift": null,
-          "title": "In-memory",
-          "tooltip": {
-            "shared": true,
-            "sort": 2,
-            "value_type": "individual"
-          },
-          "transparent": true,
-          "type": "graph",
-          "xaxis": {
-            "buckets": null,
-            "mode": "time",
-            "name": null,
-            "show": true,
-            "values": []
-          },
-          "yaxes": [
-            {
-              "$$hashKey": "object:176",
-              "format": "short",
-              "label": "",
-              "logBase": 1,
-              "max": null,
-              "min": null,
-              "show": true
-            },
-            {
-              "$$hashKey": "object:177",
-              "format": "short",
-              "label": null,
-              "logBase": 1,
-              "max": null,
-              "min": null,
-              "show": true
-            }
-          ],
-          "yaxis": {
-            "align": false,
-            "alignLevel": null
-          }
         }
       ],
       "title": "Parts",
@@ -8140,7 +8026,7 @@
           "targets": [
             {
               "exemplar": false,
-              "expr": "ClickHouseMetrics_BackgroundPoolTask",
+              "expr": "ClickHouseMetrics_BackgroundMergesAndMutationsPoolTask",
               "interval": "",
               "legendFormat": "{{instance}}",
               "refId": "A"
@@ -11076,10 +10962,7 @@
   "refresh": "30s",
   "schemaVersion": 27,
   "style": "dark",
-  "tags": [
-    "ClickHouse",
-    "DB"
-  ],
+  "tags": ["clickhouse", "origin:grafana.com-community"],
   "templating": {
     "list": [
       {
@@ -11200,7 +11083,7 @@
   },
   "timepicker": {},
   "timezone": "",
-  "title": "ClickHouse Prometheus Metrics",
+  "title": "ClickHouse Prometheus Metrics [community, grafana.com 14192]",
   "uid": "clickhouse-prometheus",
   "version": 40
 }

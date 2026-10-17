@@ -1,13 +1,15 @@
 apiVersion: 1
 
+# One Grafana folder per origin, taken from the subdirectories of
+# /var/lib/grafana/dashboards (ClickHouse official, Grafana Labs plugin,
+# Community grafana.com). Titles, tags and header links also carry the origin.
 providers:
   - name: 'ClickHouse Dashboards'
     orgId: 1
-    folder: 'ClickHouse'
-    folderUid: clickhouse
     type: file
     disableDeletion: false
     updateIntervalSeconds: 30
     allowUiUpdates: true
     options:
       path: /var/lib/grafana/dashboards
+      foldersFromFilesStructure: true

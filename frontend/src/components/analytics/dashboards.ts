@@ -735,7 +735,7 @@ const BUILTIN_DASHBOARDS: Dashboard[] = [
   {
     id: 'altinity-operator',
     title: 'Altinity ClickHouse Operator',
-    description: 'All panels from the Altinity ClickHouse Operator Grafana dashboard - reproduced natively without Prometheus',
+    description: 'All panels from the Altinity ClickHouse Operator Grafana dashboard - reproduced natively without Prometheus (except Failed Pods, which needs the Kubernetes API)',
     source: 'https://grafana.com/grafana/dashboards/12163',
     group: 'Grafana Imports',
     category: 'Altinity',
@@ -756,6 +756,7 @@ const BUILTIN_DASHBOARDS: Dashboard[] = [
       { queryName: 'Grafana Imports#Query Rate by Type', section: 'Queries' },
       { queryName: 'Grafana Imports#Read Rows/sec' },
       { queryName: 'Grafana Imports#Read Bytes/sec' },
+      { queryName: 'Grafana Imports#Mark Cache Hit Rate' },
 
       // ── Inserts ──
       { queryName: 'Grafana Imports#Insert Rate', section: 'Inserts' },
@@ -764,7 +765,8 @@ const BUILTIN_DASHBOARDS: Dashboard[] = [
       { queryName: 'Grafana Imports#Delayed & Rejected Inserts' },
 
       // ── Replication & ZooKeeper ──
-      { queryName: 'Grafana Imports#Replica Lag (max)', section: 'Replication & ZooKeeper' },
+      { queryName: 'Grafana Imports#ReadOnly Replicas (Altinity)', section: 'Replication & ZooKeeper' },
+      { queryName: 'Grafana Imports#Replica Lag (max)' },
       { queryName: 'Grafana Imports#Replication Queue Size (Altinity)' },
       { queryName: 'Grafana Imports#ZooKeeper Request Rate' },
       { queryName: 'Grafana Imports#ZooKeeper Wait Time (avg)' },
@@ -784,11 +786,14 @@ const BUILTIN_DASHBOARDS: Dashboard[] = [
       // ── Memory ──
       { queryName: 'Grafana Imports#Memory Tracking (Altinity)', section: 'Memory' },
       { queryName: 'Grafana Imports#Memory by Subsystem' },
+      { queryName: 'Grafana Imports#Primary Keys Memory (Altinity)' },
+      { queryName: 'Memory#Dictionary Memory' },
 
       // ── Disk & Tables ──
       { queryName: 'Grafana Imports#Total MergeTree Bytes', section: 'Disk & Tables' },
       { queryName: 'Grafana Imports#Total MergeTree Rows' },
       { queryName: 'Grafana Imports#Table Sizes (top 20)' },
+      { queryName: 'Disks#Disk Free Space' },
 
       // ── Background & Mutations ──
       { queryName: 'Grafana Imports#Background Pool Utilization (Altinity)', section: 'Background & Mutations' },
@@ -799,11 +804,13 @@ const BUILTIN_DASHBOARDS: Dashboard[] = [
       { queryName: 'Grafana Imports#CPU System Time' },
       { queryName: 'Grafana Imports#CPU IO Wait' },
       { queryName: 'Grafana Imports#CPU Breakdown' },
+      { queryName: 'Grafana Imports#Load Average 1m (Altinity)' },
 
       // ── Network & I/O ──
       { queryName: 'Grafana Imports#Network Bytes (send/receive)', section: 'Network & I/O' },
       { queryName: 'Grafana Imports#Disk Read/Write Bytes' },
       { queryName: 'Grafana Imports#Disk Read/Write IOps' },
+      { queryName: 'Grafana Imports#Network / Disk CPU Time (Altinity)' },
     ],
   },
 

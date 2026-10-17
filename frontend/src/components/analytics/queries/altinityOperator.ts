@@ -188,6 +188,17 @@ ORDER BY t ASC`,
 
   // ─── Replication & ZooKeeper ─────────────────────────────────────────
 
+  `-- @meta: title='ReadOnly Replicas (Altinity)' group='Grafana Imports' interval='1 HOUR' description='Replicated tables in read-only mode, max per minute - usually a lost Keeper session'
+-- @chart: type=area group_by=t value=readonly_replicas style=2d color=#ef4444
+-- @source: https://grafana.com/grafana/dashboards/12163
+SELECT
+    toStartOfInterval(event_time, INTERVAL 1 MINUTE) AS t,
+    max(CurrentMetric_ReadonlyReplica) AS readonly_replicas
+FROM {{cluster_aware:system.metric_log}}
+WHERE event_time > {{time_range}}
+GROUP BY t
+ORDER BY t ASC`,
+
   `-- @meta: title='Replica Lag (max)' group='Grafana Imports' interval='1 HOUR' description='Maximum absolute_delay across all replicated tables - growing lag signals replication falling behind'
 -- @chart: type=area group_by=t value=max_delay style=2d color=#ef4444
 -- @cell: column=max_delay type=rag green<10 amber<300
@@ -351,18 +362,29 @@ WHERE event_time > {{time_range}}
 GROUP BY t
 ORDER BY t ASC`,
 
-  `-- @meta: title='Memory by Subsystem' group='Grafana Imports' interval='1 HOUR' description='Memory breakdown: queries, merges, background moves, and fetches'
--- @chart: type=grouped_line group_by=t value=queries,merges,moves,fetches style=2d
+  `-- @meta: title='Memory by Subsystem' group='Grafana Imports' interval='1 HOUR' description='Tracked memory split into merges and mutations vs everything else (queries, caches, primary keys). Both series are bytes; background pool task counts are in Background Pool Utilization.'
+-- @chart: type=grouped_line group_by=t value=queries_and_other,merges style=2d unit=bytes
 -- @source: https://grafana.com/grafana/dashboards/12163
 SELECT
     toStartOfInterval(event_time, INTERVAL 1 MINUTE) AS t,
-    avg(CurrentMetric_MemoryTracking) - avg(CurrentMetric_MergesMutationsMemoryTracking) AS queries,
-    avg(CurrentMetric_MergesMutationsMemoryTracking) AS merges,
-    avg(CurrentMetric_BackgroundMovePoolTask) AS moves,
-    avg(CurrentMetric_BackgroundFetchesPoolTask) AS fetches
+    avg(CurrentMetric_MemoryTracking) - avg(CurrentMetric_MergesMutationsMemoryTracking) AS queries_and_other,
+    avg(CurrentMetric_MergesMutationsMemoryTracking) AS merges
 FROM {{cluster_aware:system.metric_log}}
 WHERE event_time > {{time_range}}
 GROUP BY t
+ORDER BY t ASC`,
+
+  `-- @meta: title='Primary Keys Memory (Altinity)' group='Grafana Imports' interval='1 HOUR' description='Memory allocated for primary keys of all MergeTree tables, per host (TotalPrimaryKeyBytesInMemoryAllocated)'
+-- @chart: type=grouped_line group_by=t value=primary_key_bytes series=host style=2d unit=bytes
+-- @source: https://grafana.com/grafana/dashboards/12163
+SELECT
+    toStartOfInterval(event_time, INTERVAL 1 MINUTE) AS t,
+    hostname AS host,
+    avg(value) AS primary_key_bytes
+FROM {{cluster_aware:system.asynchronous_metric_log}}
+WHERE event_time > {{time_range}}
+  AND metric = 'TotalPrimaryKeyBytesInMemoryAllocated'
+GROUP BY t, host
 ORDER BY t ASC`,
 
   // ─── Disk & Tables ───────────────────────────────────────────────────
@@ -509,6 +531,19 @@ SELECT t, avg(val) AS value, op FROM (
 GROUP BY t, op
 ORDER BY t ASC, op`,
 
+  `-- @meta: title='Load Average 1m (Altinity)' group='Grafana Imports' interval='1 HOUR' description='1-minute OS load average per host'
+-- @chart: type=grouped_line group_by=t value=load1 series=host style=2d
+-- @source: https://grafana.com/grafana/dashboards/12163
+SELECT
+    toStartOfInterval(event_time, INTERVAL 1 MINUTE) AS t,
+    hostname AS host,
+    avg(value) AS load1
+FROM {{cluster_aware:system.asynchronous_metric_log}}
+WHERE event_time > {{time_range}}
+  AND metric = 'LoadAverage1'
+GROUP BY t, host
+ORDER BY t ASC`,
+
   // ─── Network & I/O ───────────────────────────────────────────────────
 
   `-- @meta: title='Network Bytes (send/receive)' group='Grafana Imports' interval='1 HOUR' description='Network throughput - bytes sent and received per second'
@@ -542,6 +577,20 @@ SELECT
     toStartOfInterval(event_time, INTERVAL 1 MINUTE) AS t,
     avg(ProfileEvent_OSReadChars) AS reads,
     avg(ProfileEvent_OSWriteChars) AS writes
+FROM {{cluster_aware:system.metric_log}}
+WHERE event_time > {{time_range}}
+GROUP BY t
+ORDER BY t ASC`,
+
+  `-- @meta: title='Network / Disk CPU Time (Altinity)' group='Grafana Imports' interval='1 HOUR' description='Microseconds per second spent in disk read/write and network send/receive syscalls'
+-- @chart: type=grouped_line group_by=t value=disk_read,disk_write,network_receive,network_send style=2d unit=µs
+-- @source: https://grafana.com/grafana/dashboards/12163
+SELECT
+    toStartOfInterval(event_time, INTERVAL 1 MINUTE) AS t,
+    sum(ProfileEvent_DiskReadElapsedMicroseconds) / 60 AS disk_read,
+    sum(ProfileEvent_DiskWriteElapsedMicroseconds) / 60 AS disk_write,
+    sum(ProfileEvent_NetworkReceiveElapsedMicroseconds) / 60 AS network_receive,
+    sum(ProfileEvent_NetworkSendElapsedMicroseconds) / 60 AS network_send
 FROM {{cluster_aware:system.metric_log}}
 WHERE event_time > {{time_range}}
 GROUP BY t
