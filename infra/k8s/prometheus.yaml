@@ -14,6 +14,12 @@ data:
       - job_name: 'clickhouse'
         static_configs:
           - targets: ['dev-cluster-clickhouse-headless:9363']
+      # Altinity operator metrics exporter (chi_clickhouse_* series) for the
+      # grafana.com 12163 dashboard. Only exists with ./setup.sh --operator altinity;
+      # with the ClickHouse operator this target is simply down.
+      - job_name: 'altinity-operator-metrics'
+        static_configs:
+          - targets: ['clickhouse-operator-metrics.kube-system.svc.cluster.local:8888']
 ---
 apiVersion: apps/v1
 kind: Deployment

@@ -49,6 +49,159 @@ def _sql_array(items: list[str]) -> str:
     return "['" + "','".join(items) + "']"
 
 
+# ── refactor pairs: same result, different query shape (v1 → v3) ───
+# Each variant starts with "/* refactor:<name> vN ... */" so filtering on
+# "refactor:<name>" lists the variants side by side for Compare Queries.
+# Variants also differ in result-neutral settings, named in the comment.
+#
+# Windows are anchored to the newest trip, not today(): generated trips end
+# in Feb 2026, so today()-relative windows would match nothing.
+#
+# _cpu_work() is an always-true predicate costing REFACTOR_CPU_OPS hashes per
+# row. It is the first AND argument and PREWHERE is disabled, so it runs on
+# every row read: versions that read fewer rows get proportionally faster.
+# Off by default (a full scan of ~700M rows already takes ~3s); raise it via
+# --refactor-cpu-ops to make small datasets slow.
+
+REFACTOR_CPU_OPS = 0
+
+_DATA_END = "(SELECT max(pickup_date) FROM nyc_taxi.trips)"
+
+
+def _data_day(offset: int) -> str:
+    """A day inside the data range: `offset` days before the newest, wrapped."""
+    return (
+        "(SELECT max(pickup_date) - "
+        f"{offset} % (max(pickup_date) - min(pickup_date) + 1) FROM nyc_taxi.trips)"
+    )
+
+
+def _cpu_work(alias: str = "") -> str:
+    if REFACTOR_CPU_OPS <= 0:
+        return "1"
+    col = f"{alias}pickup_datetime"
+    return f"arraySum(arrayMap(i -> cityHash64({col}, i), range({REFACTOR_CPU_OPS}))) >= 0"
+
+
+def _variant(name: str, version: str, desc: str, settings: str, sql: str) -> tuple[str, str]:
+    """Build one variant: comment names the change and its settings."""
+    comment = f"{name} {version}: {desc} [settings: {settings}]"
+    return comment, (
+        f"{sql.rstrip()}\n"
+        f"    SETTINGS use_query_cache = 0, optimize_move_to_prewhere = 0, {settings}\n    "
+    )
+
+
+def _refactor_borough_revenue() -> list[tuple[str, str]]:
+    days = random.randint(30, 120)
+    name = "refactor:taxi-borough-revenue"
+    return [
+        _variant(name, "v1", "original: JOIN raw trips to locations, then GROUP BY borough", "join_algorithm = 'hash', max_threads = 2", f"""
+    SELECT l.borough, count() AS trips, sum(t.total_amount) AS revenue
+    FROM nyc_taxi.trips AS t
+    INNER JOIN nyc_taxi.locations AS l ON t.pickup_location_id = l.location_id
+    WHERE {_cpu_work('t.')} AND t.pickup_date >= {_DATA_END} - {days}
+    GROUP BY l.borough
+    ORDER BY l.borough
+    """),
+        _variant(name, "v2", "refactor: pre-aggregate trips per location, then JOIN the small result", "join_algorithm = 'parallel_hash', max_threads = 4", f"""
+    SELECT l.borough, sum(t.trips) AS trips, sum(t.revenue) AS revenue
+    FROM (
+        SELECT pickup_location_id, count() AS trips, sum(total_amount) AS revenue
+        FROM nyc_taxi.trips
+        WHERE {_cpu_work()} AND pickup_date >= {_DATA_END} - {days}
+        GROUP BY pickup_location_id
+    ) AS t
+    INNER JOIN nyc_taxi.locations AS l ON t.pickup_location_id = l.location_id
+    GROUP BY l.borough
+    ORDER BY l.borough
+    """),
+        _variant(name, "v3", "refactor: no JOIN, map location to borough with transform() over a scalar lookup", "max_threads = 8", f"""
+    WITH (SELECT (groupArray(location_id), groupArray(borough)) FROM nyc_taxi.locations) AS lookup
+    SELECT transform(pickup_location_id, lookup.1, lookup.2, '') AS borough,
+           count() AS trips, sum(total_amount) AS revenue
+    FROM nyc_taxi.trips
+    WHERE {_cpu_work()} AND pickup_date >= {_DATA_END} - {days}
+    GROUP BY borough
+    HAVING borough != ''
+    ORDER BY borough
+    """),
+    ]
+
+
+def _refactor_day_filter() -> list[tuple[str, str]]:
+    day = _data_day(random.randint(0, 30))
+    name = "refactor:taxi-day-filter"
+    return [
+        _variant(name, "v1", "original: filter on toDate(pickup_datetime), a function over the 3rd key column", "max_threads = 2", f"""
+    SELECT payment_type, count() AS trips, sum(total_amount) AS revenue
+    FROM nyc_taxi.trips
+    WHERE {_cpu_work()} AND toDate(pickup_datetime) = {day}
+    GROUP BY payment_type
+    ORDER BY payment_type
+    """),
+        _variant(name, "v2", "refactor: range on raw pickup_datetime, no function but only the 3rd key column", "max_threads = 4, max_block_size = 16384", f"""
+    SELECT payment_type, count() AS trips, sum(total_amount) AS revenue
+    FROM nyc_taxi.trips
+    WHERE {_cpu_work()}
+      AND pickup_datetime >= toDateTime({day})
+      AND pickup_datetime < toDateTime({day} + 1)
+    GROUP BY payment_type
+    ORDER BY payment_type
+    """),
+        _variant(name, "v3", "refactor: filter on pickup_date, the leading primary key and partition column", "max_threads = 4, force_primary_key = 1", f"""
+    SELECT payment_type, count() AS trips, sum(total_amount) AS revenue
+    FROM nyc_taxi.trips
+    WHERE {_cpu_work()} AND pickup_date = {day}
+    GROUP BY payment_type
+    ORDER BY payment_type
+    """),
+    ]
+
+
+def _refactor_tip_share() -> list[tuple[str, str]]:
+    days = random.randint(30, 120)
+    name = "refactor:taxi-tip-share"
+    return [
+        _variant(name, "v1", "original: two scans of trips joined on payment_type", "join_algorithm = 'hash', max_threads = 2", f"""
+    SELECT a.payment_type, a.trips, b.tipped, round(b.tipped / a.trips, 4) AS tip_share
+    FROM (
+        SELECT payment_type, count() AS trips
+        FROM nyc_taxi.trips
+        WHERE {_cpu_work()} AND pickup_date >= {_DATA_END} - {days}
+        GROUP BY payment_type
+    ) AS a
+    LEFT JOIN (
+        SELECT payment_type, count() AS tipped
+        FROM nyc_taxi.trips
+        WHERE {_cpu_work()} AND pickup_date >= {_DATA_END} - {days} AND tip_amount > 0
+        GROUP BY payment_type
+    ) AS b ON a.payment_type = b.payment_type
+    ORDER BY a.payment_type
+    """),
+        _variant(name, "v2", "refactor: single scan grouped by (payment_type, has_tip), pivoted with sumIf", "max_threads = 4, max_bytes_before_external_group_by = 100000000", f"""
+    SELECT payment_type, sum(c) AS trips, sumIf(c, has_tip) AS tipped,
+           round(tipped / trips, 4) AS tip_share
+    FROM (
+        SELECT payment_type, tip_amount > 0 AS has_tip, count() AS c
+        FROM nyc_taxi.trips
+        WHERE {_cpu_work()} AND pickup_date >= {_DATA_END} - {days}
+        GROUP BY payment_type, has_tip
+    )
+    GROUP BY payment_type
+    ORDER BY payment_type
+    """),
+        _variant(name, "v3", "refactor: single scan, single GROUP BY with countIf", "max_threads = 4", f"""
+    SELECT payment_type, count() AS trips, countIf(tip_amount > 0) AS tipped,
+           round(tipped / trips, 4) AS tip_share
+    FROM nyc_taxi.trips
+    WHERE {_cpu_work()} AND pickup_date >= {_DATA_END} - {days}
+    GROUP BY payment_type
+    ORDER BY payment_type
+    """),
+    ]
+
+
 def drop_nyc_taxi(client: Client, caps: Capabilities | None = None) -> None:
     print("Dropping nyc_taxi...")
     sharded, cluster = is_sharded(caps)
@@ -466,6 +619,11 @@ class NycTaxi:
     ORDER BY hour
     SETTINGS max_threads = {_rand_max_threads()}, use_query_cache = 0
     """,
+            ],
+            refactor_pair_generators=[
+                _refactor_borough_revenue,
+                _refactor_day_filter,
+                _refactor_tip_share,
             ],
         )
 

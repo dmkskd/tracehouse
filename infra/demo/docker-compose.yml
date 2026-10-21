@@ -285,6 +285,8 @@ services:
       CH_QUERY_JOIN_WORKERS: "1"
       CH_QUERY_SETTINGS_INTERVAL: "10"
       CH_QUERY_SETTINGS_WORKERS: "1"
+      CH_QUERY_REFACTOR_INTERVAL: "60"
+      CH_QUERY_REFACTOR_WORKERS: "1"
       # Mutation config (sparse — mutations are a corner case)
       CH_MUTATION_COUNT: "5"
       CH_MUTATION_INTERVAL: "600"

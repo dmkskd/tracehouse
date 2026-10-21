@@ -17,14 +17,13 @@ describe('Time Travel URL coordinates', () => {
       zoomRange: [1_789_030_700_000, 1_789_030_900_000],
       metricMode: 'memory',
       viewMode: '2d',
-      hiddenCategories: new Set(['merge']),
       activityLimit: 250,
       selectedHosts: ['host-b', 'host-a'],
       perServerView: true,
       selectedTimeRange: 'Custom',
       sortField: 'duration',
       sortDir: 'asc',
-      operationKind: 'merge',
+      operationKinds: new Set(['query', 'merge']),
       operationScope: 'pin',
       operationSearch: 'analytics.events',
       includeRunning: false,
@@ -38,6 +37,7 @@ describe('Time Travel URL coordinates', () => {
     expect(encoded.get('nqh')).toBe('42');
     expect(encoded.get('qd_id')).toBe('query-1');
     expect(encoded.getAll('tt_host')).toEqual(['host-b', 'host-a']);
+    expect(encoded.getAll('tt_ops')).toEqual(['merge', 'query']);
     const decoded = readTimeTravelCoordinates(encoded, { eventsVisible: true, navigatorShape: 'trend' });
     expect(decoded).toMatchObject({
       queryHashOnly: true,
@@ -49,14 +49,13 @@ describe('Time Travel URL coordinates', () => {
       selectedTimeRange: 'Custom',
       sortField: 'duration',
       sortDir: 'asc',
-      operationKind: 'merge',
       operationScope: 'pin',
       operationSearch: 'analytics.events',
       includeRunning: false,
       eventsVisible: false,
       navigatorShape: 'change',
     });
-    expect([...decoded.hiddenCategories]).toEqual(['merge']);
+    expect([...decoded.operationKinds].sort()).toEqual(['merge', 'query']);
     expect([...decoded.hiddenEventKinds]).toEqual(['error_burst']);
   });
 
@@ -94,7 +93,8 @@ describe('Time Travel URL coordinates', () => {
       new URLSearchParams(''),
       { eventsVisible: true, navigatorShape: 'trend' },
     );
-    expect(decoded).toMatchObject({ operationScope: 'window', operationKind: 'all', operationSearch: '' });
+    expect(decoded).toMatchObject({ operationScope: 'window', operationSearch: '' });
+    expect(decoded.operationKinds.size).toBe(0);
   });
 
   it('lets an explicit scope override the pin default', () => {
@@ -110,7 +110,8 @@ describe('Time Travel URL coordinates', () => {
       new URLSearchParams('tt_ops=bogus&tt_scope=bogus&tt_sort=bogus'),
       { eventsVisible: true, navigatorShape: 'trend' },
     );
-    expect(decoded).toMatchObject({ operationKind: 'all', operationScope: 'window', sortField: 'metric' });
+    expect(decoded).toMatchObject({ operationScope: 'window', sortField: 'metric' });
+    expect(decoded.operationKinds.size).toBe(0);
   });
 
   it('accepts the text-sorted columns', () => {
@@ -145,14 +146,13 @@ function baseCoordinates() {
     zoomRange: null,
     metricMode: 'cpu' as const,
     viewMode: '2d' as const,
-    hiddenCategories: new Set<'query' | 'merge' | 'mutation'>(),
     activityLimit: 100,
     selectedHosts: [],
     perServerView: false,
     selectedTimeRange: '1h',
     sortField: 'metric' as const,
     sortDir: 'desc' as const,
-    operationKind: 'all' as const,
+    operationKinds: new Set<'query' | 'merge' | 'mutation'>(),
     operationScope: 'window' as const,
     operationSearch: '',
     includeRunning: true,

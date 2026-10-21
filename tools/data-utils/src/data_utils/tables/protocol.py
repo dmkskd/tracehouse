@@ -16,6 +16,12 @@ if TYPE_CHECKING:
 # parameters under the same normalized_query_hash.
 QueryGenerator = Callable[[], str]
 
+# A refactor-pair generator returns two or more variants of the same logical
+# query, built with the same randomized literals so their results match.
+# Each variant is (comment, sql): the comment leads the query text so the
+# variants sort together in the Queries list and can be compared.
+RefactorPairGenerator = Callable[[], list[tuple[str, str]]]
+
 
 class InsertMode(Enum):
     """How the generator handles existing data."""
@@ -51,6 +57,7 @@ class QuerySet:
     pk_generators: list[QueryGenerator] = field(default_factory=list)
     join_generators: list[QueryGenerator] = field(default_factory=list)
     settings_generators: list[QueryGenerator] = field(default_factory=list)
+    refactor_pair_generators: list[RefactorPairGenerator] = field(default_factory=list)
 
 
 @runtime_checkable

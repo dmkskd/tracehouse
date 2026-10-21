@@ -24,6 +24,7 @@ import type {
 } from '@tracehouse/core';
 import {
   buildOperationRows,
+  chartHiddenOperationKinds,
   countOperationRows,
   filterOperationRowsByKind,
   findOperationRow,
@@ -36,7 +37,7 @@ import {
 } from '@tracehouse/core';
 import type {
   OperationKind,
-  OperationKindFilter,
+  OperationKindSelection,
   OperationSortField,
   OperationRow,
   OperationScope,
@@ -186,14 +187,13 @@ export const TIME_TRAVEL_SHARE_SCHEMA = defineShareSchema({
   tt_zoom_end: { type: 'number' },
   tt_metric: { type: 'string', default: 'cpu', persistDefault: true },
   tt_view: { type: 'string', default: '2d', persistDefault: true },
-  tt_hide: { type: 'string[]' },
   tt_limit: { type: 'number', default: 100, persistDefault: true },
   tt_host: { type: 'string[]' },
   tt_split: { type: 'boolean', default: false, persistDefault: true },
   tt_range: { type: 'string', default: '1h', persistDefault: true },
   tt_sort: { type: 'string', default: 'metric', persistDefault: true },
   tt_dir: { type: 'string', default: 'desc', persistDefault: true },
-  tt_ops: { type: 'string', default: 'all', persistDefault: true },
+  tt_ops: { type: 'string[]', default: ['all'], persistDefault: true },
   tt_scope: { type: 'string', default: 'window', persistDefault: true },
   tt_q: { type: 'string' },
   tt_running: { type: 'boolean', default: true, persistDefault: true },
@@ -307,14 +307,6 @@ export const TimeTravelPage: React.FC = () => {
   const [viewMode, setViewMode] = useState<'2d' | '3d' | '3d-surface'>(initialCoordinates.viewMode);
   // Reset to 2D when experimental is turned off
   useEffect(() => { if (!experimentalEnabled && viewMode !== '2d') setViewMode('2d'); }, [experimentalEnabled]);
-  const [hiddenCategories, setHiddenCategories] = useState<Set<'query' | 'merge' | 'mutation'>>(initialCoordinates.hiddenCategories);
-  const toggleCategory = useCallback((cat: 'query' | 'merge' | 'mutation') => {
-    setHiddenCategories(prev => {
-      const next = new Set(prev);
-      if (next.has(cat)) next.delete(cat); else next.add(cat);
-      return next;
-    });
-  }, []);
   const [activityLimit, setActivityLimit] = useState(initialCoordinates.activityLimit);
   const autoRefreshRef = useRef<ReturnType<typeof setInterval> | null>(null);
   const prevDataEndRef = useRef<number | null>(null);
@@ -404,7 +396,8 @@ export const TimeTravelPage: React.FC = () => {
   const [sortDir, setSortDir] = useState<SortDir>(initialCoordinates.sortDir);
 
   // Operations table: one list for queries, merges and mutations.
-  const [operationKind, setOperationKind] = useState<OperationKindFilter>(initialCoordinates.operationKind);
+  const [operationKinds, setOperationKinds] = useState<OperationKindSelection>(initialCoordinates.operationKinds);
+  const hiddenCategories = useMemo(() => chartHiddenOperationKinds(operationKinds), [operationKinds]);
   const [operationScope, setOperationScope] = useState<OperationScope>(initialCoordinates.operationScope);
   const [operationSearch, setOperationSearch] = useState(initialCoordinates.operationSearch);
   const [includeRunning, setIncludeRunning] = useState(initialCoordinates.includeRunning);
@@ -435,14 +428,13 @@ export const TimeTravelPage: React.FC = () => {
     setZoomRange(coordinates.zoomRange);
     setMetricMode(coordinates.metricMode);
     setViewMode(coordinates.viewMode);
-    setHiddenCategories(coordinates.hiddenCategories);
     setActivityLimit(coordinates.activityLimit);
     setSelectedHosts(coordinates.selectedHosts);
     setPerServerView(coordinates.perServerView);
     setSelectedTimeRange(coordinates.selectedTimeRange);
     setSortField(coordinates.sortField);
     setSortDir(coordinates.sortDir);
-    setOperationKind(coordinates.operationKind);
+    setOperationKinds(coordinates.operationKinds);
     setOperationScope(coordinates.operationScope);
     setOperationSearch(coordinates.operationSearch);
     setIncludeRunning(coordinates.includeRunning);
@@ -473,14 +465,13 @@ export const TimeTravelPage: React.FC = () => {
       zoomRange,
       metricMode,
       viewMode,
-      hiddenCategories,
       activityLimit,
       selectedHosts,
       perServerView,
       selectedTimeRange,
       sortField,
       sortDir,
-      operationKind,
+      operationKinds,
       operationScope,
       operationSearch,
       includeRunning,
@@ -496,8 +487,8 @@ export const TimeTravelPage: React.FC = () => {
   }, [
     queryHashOnly, windowSec, isLive, autoRefresh, customStartTime, customEndTime,
     viewportEndTime, pinnedMs, selectedEventId, zoomRange, metricMode, viewMode,
-    hiddenCategories, activityLimit, selectedHosts, perServerView, selectedTimeRange,
-    sortField, sortDir, operationKind, operationScope, operationSearch,
+    activityLimit, selectedHosts, perServerView, selectedTimeRange,
+    sortField, sortDir, operationKinds, operationScope, operationSearch,
     includeRunning, timeTravelEventsVisible,
     timeTravelNavigatorShape, eventFilter, setSearchParams,
   ]);
@@ -1089,8 +1080,8 @@ export const TimeTravelPage: React.FC = () => {
 
   const operationCounts = useMemo(() => countOperationRows(operationRows), [operationRows]);
   const visibleOperationRows = useMemo(
-    () => filterOperationRowsByKind(operationRows, operationKind),
-    [operationRows, operationKind],
+    () => filterOperationRowsByKind(operationRows, operationKinds),
+    [operationRows, operationKinds],
   );
   const operationScopeTotals = useMemo(() => operationTotals({
     queryTotal: data?.query_count ?? data?.queries.length ?? 0,
@@ -1099,7 +1090,7 @@ export const TimeTravelPage: React.FC = () => {
     queryLoaded: data?.queries.length ?? 0,
     mergeLoaded: data?.merges.length ?? 0,
     mutationLoaded: data?.mutations?.length ?? 0,
-  }, operationKind), [data, operationKind]);
+  }, operationKinds), [data, operationKinds]);
 
   const handleOpenOperationDetails = useCallback((row: OperationRow) => {
     if (row.kind === 'query') setSelectedTimelineQuery(row.source as QuerySeries);
@@ -1951,8 +1942,8 @@ export const TimeTravelPage: React.FC = () => {
               counts={operationCounts}
               totalCount={operationScopeTotals.total}
               loadedCount={operationScopeTotals.loaded}
-              kindFilter={operationKind}
-              onKindFilterChange={setOperationKind}
+              kindFilter={operationKinds}
+              onKindFilterChange={setOperationKinds}
               scope={operationScope}
               onScopeChange={setOperationScope}
               pinnedMs={pinnedMs}
@@ -1964,8 +1955,6 @@ export const TimeTravelPage: React.FC = () => {
               onSearchChange={setOperationSearch}
               selectedId={selectedOperation ? operationRowHighlightKey(selectedOperation) : null}
               showHost={clusterHosts.length > 1}
-              hiddenCategories={hiddenCategories}
-              onToggleChartVisibility={toggleCategory}
               queryHashActive={!!queryHashFilter}
             />
           </div>

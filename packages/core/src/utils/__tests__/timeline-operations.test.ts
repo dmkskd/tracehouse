@@ -3,7 +3,9 @@ import {
   buildOperationRows,
   countOperationRows,
   notableMergeReason,
+  chartHiddenOperationKinds,
   filterOperationRowsByKind,
+  toggleOperationKind,
   findOperationRow,
   getOperationMetric,
   matchesOperationSearch,
@@ -251,9 +253,27 @@ describe('countOperationRows / filterOperationRowsByKind', () => {
 
   it('filters to one kind and leaves counts untouched', () => {
     const rows = buildOperationRows(baseInput, baseOptions);
-    expect(filterOperationRowsByKind(rows, 'merge').map(r => r.kind)).toEqual(['merge']);
-    expect(filterOperationRowsByKind(rows, 'all')).toHaveLength(3);
+    expect(filterOperationRowsByKind(rows, new Set(['merge'])).map(r => r.kind)).toEqual(['merge']);
+    expect(filterOperationRowsByKind(rows, new Set(['query', 'merge'])).map(r => r.kind).sort()).toEqual(['merge', 'query']);
+    expect(filterOperationRowsByKind(rows, new Set())).toHaveLength(3);
     expect(countOperationRows(rows).all).toBe(3);
+  });
+
+  it('hides the unselected kinds from the chart', () => {
+    expect([...chartHiddenOperationKinds(new Set())]).toEqual([]);
+    expect([...chartHiddenOperationKinds(new Set(['query']))]).toEqual(['merge', 'mutation']);
+    expect([...chartHiddenOperationKinds(new Set(['query', 'mutation']))]).toEqual(['merge']);
+  });
+
+  it('selects one kind on click and adds or removes kinds on shift-click', () => {
+    const all = new Set<never>();
+    expect([...toggleOperationKind(all, 'merge', false)]).toEqual(['merge']);
+    expect([...toggleOperationKind(new Set(['merge', 'query']), 'mutation', false)]).toEqual(['mutation']);
+    expect([...toggleOperationKind(new Set(['query']), 'mutation', true)]).toEqual(['query', 'mutation']);
+    expect([...toggleOperationKind(new Set(['query', 'mutation']), 'query', true)]).toEqual(['mutation']);
+    // Removing the last kind, or selecting all three, means "All".
+    expect(toggleOperationKind(new Set(['query']), 'query', true).size).toBe(0);
+    expect(toggleOperationKind(new Set(['query', 'merge']), 'mutation', true).size).toBe(0);
   });
 });
 
@@ -264,13 +284,12 @@ describe('operationTotals', () => {
   };
 
   it('sums every kind for the All filter', () => {
-    expect(operationTotals(totals, 'all')).toEqual({ total: 2309, loaded: 180 });
+    expect(operationTotals(totals, new Set())).toEqual({ total: 2309, loaded: 180 });
   });
 
-  it('reports one kind at a time', () => {
-    expect(operationTotals(totals, 'query')).toEqual({ total: 1406, loaded: 100 });
-    expect(operationTotals(totals, 'merge')).toEqual({ total: 903, loaded: 80 });
-    expect(operationTotals(totals, 'mutation')).toEqual({ total: 0, loaded: 0 });
+  it('sums only the selected kinds', () => {
+    expect(operationTotals(totals, new Set(['query']))).toEqual({ total: 1406, loaded: 100 });
+    expect(operationTotals(totals, new Set(['merge', 'mutation']))).toEqual({ total: 903, loaded: 80 });
   });
 });
 

@@ -1,11 +1,10 @@
 export type TimeTravelMetric = 'memory' | 'cpu' | 'network' | 'disk';
 export type TimeTravelView = '2d' | '3d' | '3d-surface';
 export type TimeTravelSortField = 'metric' | 'duration' | 'started' | 'kind' | 'user' | 'server';
-export type TimeTravelOperationKind = 'all' | 'query' | 'merge' | 'mutation';
+export type TimeTravelOperationKind = 'query' | 'merge' | 'mutation';
 export type TimeTravelOperationScope = 'window' | 'pin';
 export type TimeTravelSortDir = 'asc' | 'desc';
 export type TimeTravelNavigatorShape = 'trend' | 'peaks' | 'change';
-export type TimeTravelActivityCategory = 'query' | 'merge' | 'mutation';
 
 export interface TimeTravelCoordinates {
   queryHashOnly: boolean;
@@ -20,14 +19,14 @@ export interface TimeTravelCoordinates {
   zoomRange: [number, number] | null;
   metricMode: TimeTravelMetric;
   viewMode: TimeTravelView;
-  hiddenCategories: Set<TimeTravelActivityCategory>;
   activityLimit: number;
   selectedHosts: string[];
   perServerView: boolean;
   selectedTimeRange: string;
   sortField: TimeTravelSortField;
   sortDir: TimeTravelSortDir;
-  operationKind: TimeTravelOperationKind;
+  /** Selected operation kinds; empty means All. */
+  operationKinds: Set<TimeTravelOperationKind>;
   operationScope: TimeTravelOperationScope;
   operationSearch: string;
   includeRunning: boolean;
@@ -41,11 +40,10 @@ export interface TimeTravelCoordinates {
 const METRICS = new Set<TimeTravelMetric>(['memory', 'cpu', 'network', 'disk']);
 const VIEWS = new Set<TimeTravelView>(['2d', '3d', '3d-surface']);
 const SORT_FIELDS = new Set<TimeTravelSortField>(['metric', 'duration', 'started', 'kind', 'user', 'server']);
-const OPERATION_KINDS = new Set<TimeTravelOperationKind>(['all', 'query', 'merge', 'mutation']);
+const OPERATION_KINDS = new Set<TimeTravelOperationKind>(['query', 'merge', 'mutation']);
 const OPERATION_SCOPES = new Set<TimeTravelOperationScope>(['window', 'pin']);
 const SORT_DIRS = new Set<TimeTravelSortDir>(['asc', 'desc']);
 const NAVIGATOR_SHAPES = new Set<TimeTravelNavigatorShape>(['trend', 'peaks', 'change']);
-const ACTIVITY_CATEGORIES = new Set<TimeTravelActivityCategory>(['query', 'merge', 'mutation']);
 const TIME_RANGES = new Set(['1h', '3h', '6h', '12h', '1d', 'Custom']);
 
 function enumParam<T extends string>(params: URLSearchParams, key: string, values: Set<T>, fallback: T): T {
@@ -95,16 +93,16 @@ export function readTimeTravelCoordinates(
     zoomRange: zoomStart != null && zoomEnd != null && zoomEnd > zoomStart ? [zoomStart, zoomEnd] : null,
     metricMode: enumParam(params, 'tt_metric', METRICS, 'cpu'),
     viewMode: enumParam(params, 'tt_view', VIEWS, '2d'),
-    hiddenCategories: new Set(
-      params.getAll('tt_hide').filter((value): value is TimeTravelActivityCategory => ACTIVITY_CATEGORIES.has(value as TimeTravelActivityCategory)),
-    ),
     activityLimit: finiteNumber(params, 'tt_limit', 100),
     selectedHosts: params.getAll('tt_host').filter(Boolean),
     perServerView: params.get('tt_split') === '1',
     selectedTimeRange: range && TIME_RANGES.has(range) ? range : '1h',
     sortField: enumParam(params, 'tt_sort', SORT_FIELDS, 'metric'),
     sortDir: enumParam(params, 'tt_dir', SORT_DIRS, 'desc'),
-    operationKind: enumParam(params, 'tt_ops', OPERATION_KINDS, 'all'),
+    // Repeated tt_ops values; 'all', unknown values or none at all mean every kind.
+    operationKinds: new Set(
+      params.getAll('tt_ops').filter((value): value is TimeTravelOperationKind => OPERATION_KINDS.has(value as TimeTravelOperationKind)),
+    ),
     // Scope follows the pin unless the URL says otherwise; a pinned link that
     // omits tt_scope is a link to that instant's operations.
     operationScope: enumParam(params, 'tt_scope', OPERATION_SCOPES,
@@ -150,14 +148,15 @@ export function writeTimeTravelCoordinates(params: URLSearchParams, coordinates:
   setOptional(next, 'tt_zoom_end', coordinates.zoomRange ? String(coordinates.zoomRange[1]) : null);
   next.set('tt_metric', coordinates.metricMode);
   next.set('tt_view', coordinates.viewMode);
-  replaceMany(next, 'tt_hide', [...coordinates.hiddenCategories].sort());
+  // Retired: chart visibility now follows tt_ops. Drop it from older links.
+  next.delete('tt_hide');
   next.set('tt_limit', String(coordinates.activityLimit));
   replaceMany(next, 'tt_host', coordinates.selectedHosts);
   next.set('tt_split', coordinates.perServerView ? '1' : '0');
   next.set('tt_range', coordinates.selectedTimeRange);
   next.set('tt_sort', coordinates.sortField);
   next.set('tt_dir', coordinates.sortDir);
-  next.set('tt_ops', coordinates.operationKind);
+  replaceMany(next, 'tt_ops', coordinates.operationKinds.size > 0 ? [...coordinates.operationKinds].sort() : ['all']);
   next.set('tt_scope', coordinates.operationScope);
   setOptional(next, 'tt_q', coordinates.operationSearch);
   next.set('tt_running', coordinates.includeRunning ? '1' : '0');

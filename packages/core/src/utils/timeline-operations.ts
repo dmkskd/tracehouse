@@ -12,8 +12,10 @@ import { MERGE_CATEGORIES, type MergeCategory } from './merge-classification.js'
 
 export type OperationKind = 'query' | 'merge' | 'mutation';
 
-/** Kind filter of the table, including the "everything" option. */
-export type OperationKindFilter = OperationKind | 'all';
+/** Kinds the table and chart show. Empty means every kind ("All"). */
+export type OperationKindSelection = ReadonlySet<OperationKind>;
+
+export const OPERATION_KINDS: readonly OperationKind[] = ['query', 'merge', 'mutation'];
 
 /** Which operations the table lists. */
 export type OperationScope = 'window' | 'pin';
@@ -235,11 +237,36 @@ export function countOperationRows(rows: readonly OperationRow[]): OperationCoun
   return counts;
 }
 
+export function isOperationKindShown(selection: OperationKindSelection, kind: OperationKind): boolean {
+  return selection.size === 0 || selection.has(kind);
+}
+
+/**
+ * Next selection after clicking a kind tab. A plain click selects only that
+ * kind; an additive (shift) click adds or removes it. Selecting every kind, or
+ * removing the last one, falls back to the empty "All" selection.
+ */
+export function toggleOperationKind(
+  selection: OperationKindSelection,
+  kind: OperationKind,
+  additive: boolean,
+): Set<OperationKind> {
+  if (!additive) return new Set([kind]);
+  const next = new Set(selection);
+  if (next.has(kind)) next.delete(kind); else next.add(kind);
+  return next.size === OPERATION_KINDS.length ? new Set() : next;
+}
+
 export function filterOperationRowsByKind(
   rows: readonly OperationRow[],
-  kind: OperationKindFilter,
+  selection: OperationKindSelection,
 ): OperationRow[] {
-  return kind === 'all' ? [...rows] : rows.filter(row => row.kind === kind);
+  return rows.filter(row => isOperationKindShown(selection, row.kind));
+}
+
+/** Kinds the chart leaves out: the kind tabs also scope the chart. */
+export function chartHiddenOperationKinds(selection: OperationKindSelection): Set<OperationKind> {
+  return new Set(OPERATION_KINDS.filter(kind => !isOperationKindShown(selection, kind)));
 }
 
 export interface OperationTotalsInput {
@@ -253,18 +280,24 @@ export interface OperationTotalsInput {
   mutationLoaded: number;
 }
 
-/** Total and loaded operation counts for the active kind filter. */
+/** Total and loaded operation counts summed over the selected kinds. */
 export function operationTotals(
   input: OperationTotalsInput,
-  kind: OperationKindFilter,
+  selection: OperationKindSelection,
 ): { total: number; loaded: number } {
-  if (kind === 'query') return { total: input.queryTotal, loaded: input.queryLoaded };
-  if (kind === 'merge') return { total: input.mergeTotal, loaded: input.mergeLoaded };
-  if (kind === 'mutation') return { total: input.mutationTotal, loaded: input.mutationLoaded };
-  return {
-    total: input.queryTotal + input.mergeTotal + input.mutationTotal,
-    loaded: input.queryLoaded + input.mergeLoaded + input.mutationLoaded,
+  const perKind: Record<OperationKind, { total: number; loaded: number }> = {
+    query: { total: input.queryTotal, loaded: input.queryLoaded },
+    merge: { total: input.mergeTotal, loaded: input.mergeLoaded },
+    mutation: { total: input.mutationTotal, loaded: input.mutationLoaded },
   };
+  let total = 0;
+  let loaded = 0;
+  for (const kind of OPERATION_KINDS) {
+    if (!isOperationKindShown(selection, kind)) continue;
+    total += perKind[kind].total;
+    loaded += perKind[kind].loaded;
+  }
+  return { total, loaded };
 }
 
 export interface OperationHostSummary {

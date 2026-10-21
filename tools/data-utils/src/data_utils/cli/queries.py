@@ -1,6 +1,7 @@
 """Continuous Query Runner for TraceHouse Testing
 
-Runs queries of varying types (slow, fast, PK-pattern, JOIN, S3, settings-variation)
+Runs queries of varying types (slow, fast, PK-pattern, JOIN, S3, settings-variation,
+refactor pairs)
 to generate activity for the monitoring dashboard.
 
 Queries are collected from table plugins — each table defines its own workload
@@ -28,6 +29,7 @@ from clickhouse_driver import Client
 from data_utils.capabilities import Capabilities, probe
 from data_utils.env import env_int, pre_parse_env_file, print_connection, add_connection_args, make_client
 from data_utils.tables import build_all_datasets, DATASET_ALIASES, list_datasets
+from data_utils.tables import nyc_taxi
 from data_utils.users import (
     create_test_users, load_test_users_from_env, lock_test_users,
     make_user_client, pick_random_user, print_test_users, TestUser,
@@ -191,16 +193,21 @@ _stop_event = threading.Event()
 
 
 def run_query(client_holder: list, host: str, port: int, conn_kwargs: dict,
-              query: str, query_type: str, username: str = "") -> None:
+              query: str, query_type: str, username: str = "",
+              lead_comment: str = "") -> None:
     """Execute a single query, reconnecting on socket errors.
 
     client_holder is a 1-element list so we can swap the client on reconnect.
+    lead_comment, when set, is placed before the run-queries tag so it is the
+    first thing visible in the query text.
     """
     if _stop_event.is_set():
         return
     global _restricted_settings_detected
     table = _extract_table(query)
     tagged_query = f"/* run-queries type:{query_type.lower()} table:{table} */ {query}"
+    if lead_comment:
+        tagged_query = f"/* {lead_comment} */ {tagged_query}"
     start = time.time()
 
     extra_settings: dict | None = None if _restricted_settings_detected else {
@@ -252,15 +259,27 @@ def _query_worker(
     host: str, port: int, interval: float, label: str,
     queries: list[str] | None = None,
     generators: list[Callable[[], str]] | None = None,
+    pair_generators: list[Callable[[], list[tuple[str, str]]]] | None = None,
     jitter: float = 0.5,
     test_user: TestUser | None = None,
     **conn_kwargs,
 ) -> None:
-    """Generic worker loop. Supply either static queries or generators."""
+    """Generic worker loop. Supply static queries, generators or pair generators.
+
+    Pair generators yield all variants of one refactor pair; they run back to
+    back with the same literals so their metrics are comparable.
+    """
     if test_user:
         conn_kwargs = {**conn_kwargs, 'user': test_user.name, 'password': test_user.password}
     client_holder = [_make_client(host, port, **conn_kwargs)]
+    username = test_user.name if test_user else ""
     while not _stop_event.is_set():
+        if pair_generators:
+            for comment, query in random.choice(pair_generators)():
+                run_query(client_holder, host, port, conn_kwargs, query, label,
+                          username=username, lead_comment=comment)
+            _stop_event.wait(interval + random.uniform(0, interval * jitter))
+            continue
         if generators:
             query = random.choice(generators)()
         elif queries:
@@ -268,7 +287,7 @@ def _query_worker(
         else:
             return
         run_query(client_holder, host, port, conn_kwargs, query, label,
-                  username=test_user.name if test_user else "")
+                  username=username)
         _stop_event.wait(interval + random.uniform(0, interval * jitter))
 
 
@@ -303,6 +322,7 @@ def _collect_queries(
     pk_generators: list[Callable[[], str]] = []
     join_generators: list[Callable[[], str]] = []
     settings_generators: list[Callable[[], str]] = []
+    refactor_pair_generators: list[Callable[[], list[tuple[str, str]]]] = []
 
     for plugin in datasets:
         # Check if any table from this database exists
@@ -314,6 +334,7 @@ def _collect_queries(
         pk_generators.extend(qs.pk_generators)
         join_generators.extend(qs.join_generators)
         settings_generators.extend(qs.settings_generators)
+        refactor_pair_generators.extend(qs.refactor_pair_generators)
 
     # S3 queries are independent of local tables
     s3 = S3_PARQUET_QUERIES if caps.has_s3_function else []
@@ -324,6 +345,7 @@ def _collect_queries(
         'pk_generators': pk_generators,
         'join_generators': join_generators,
         'settings_generators': settings_generators,
+        'refactor_pair_generators': refactor_pair_generators,
         's3': s3,
     }
 
@@ -345,6 +367,9 @@ def main():
     parser.add_argument("--join-workers", type=int, default=env_int("CH_QUERY_JOIN_WORKERS", "2"), help="Number of JOIN query workers (default: $CH_QUERY_JOIN_WORKERS or 2)")
     parser.add_argument("--settings-interval", type=float, default=float(os.environ.get("CH_QUERY_SETTINGS_INTERVAL", "5.0")), help="Interval between settings-variation queries (default: $CH_QUERY_SETTINGS_INTERVAL or 5)")
     parser.add_argument("--settings-workers", type=int, default=env_int("CH_QUERY_SETTINGS_WORKERS", "1"), help="Number of settings-variation query workers (default: $CH_QUERY_SETTINGS_WORKERS or 1)")
+    parser.add_argument("--refactor-interval", type=float, default=float(os.environ.get("CH_QUERY_REFACTOR_INTERVAL", "15.0")), help="Interval between refactor-pair runs (default: $CH_QUERY_REFACTOR_INTERVAL or 15)")
+    parser.add_argument("--refactor-workers", type=int, default=env_int("CH_QUERY_REFACTOR_WORKERS", "1"), help="Number of refactor-pair workers (default: $CH_QUERY_REFACTOR_WORKERS or 1)")
+    parser.add_argument("--refactor-cpu-ops", type=int, default=env_int("CH_QUERY_REFACTOR_CPU_OPS", str(nyc_taxi.REFACTOR_CPU_OPS)), help=f"Hashes per row read added to refactor-pair queries to make them CPU-heavy; 0 disables (default: $CH_QUERY_REFACTOR_CPU_OPS or {nyc_taxi.REFACTOR_CPU_OPS})")
     parser.add_argument("--dataset", default=os.environ.get("CH_QUERY_DATASET", ""),
                         help="Dataset to query: synthetic, taxi, uk, web, replacing, or blank for all (default: $CH_QUERY_DATASET)")
     parser.add_argument("--list-datasets", action="store_true", help="List available datasets and exit")
@@ -355,6 +380,7 @@ def main():
         return
 
     conn_kwargs = dict(user=args.user, password=args.password, secure=args.secure)
+    nyc_taxi.REFACTOR_CPU_OPS = args.refactor_cpu_ops
 
     # ── Probe capabilities ──────────────────────────────────────────
     print_connection(args, env_path)
@@ -406,12 +432,16 @@ def main():
     print(f"  JOIN query generators: {len(pools['join_generators'])}")
     print(f"  S3 parquet queries:    {len(pools['s3'])}")
     print(f"  Settings-variation:    {len(pools['settings_generators'])}")
+    print(f"  Refactor pairs:        {len(pools['refactor_pair_generators'])}")
 
     if not any(pools.values()):
         print("\nNo queries available — have you generated test data? (just generate-data)")
         return
 
     # ── Start workers ───────────────────────────────────────────────
+    pair_configs = [
+        ("REFAC", pools['refactor_pair_generators'], args.refactor_workers, args.refactor_interval, 0.3),
+    ]
     worker_configs = [
         ("SLOW",  pools['slow'],              None,                         args.slow_workers,     args.slow_interval,     0.5),
         ("FAST",  pools['fast'],              None,                         args.fast_workers,     args.fast_interval,     0.3),
@@ -438,6 +468,24 @@ def main():
                 target=_query_worker,
                 args=(args.host, args.port, interval, label),
                 kwargs={**conn_kwargs, 'queries': queries, 'generators': generators, 'jitter': jitter, 'test_user': user},
+                daemon=True,
+                name=f"{label.lower()}-worker-{i}",
+            )
+            t.start()
+            threads.append(t)
+            worker_index += 1
+
+    for label, pair_generators, num_workers, interval, jitter in pair_configs:
+        if not pair_generators:
+            print(f"  {label:5} skipped (no queries)")
+            continue
+        print(f"  {label:5} {num_workers} workers (interval: {interval}s)")
+        for i in range(num_workers):
+            user = pick_random_user(test_users, skew=args.user_skew) if test_users else None
+            t = threading.Thread(
+                target=_query_worker,
+                args=(args.host, args.port, interval, label),
+                kwargs={**conn_kwargs, 'pair_generators': pair_generators, 'jitter': jitter, 'test_user': user},
                 daemon=True,
                 name=f"{label.lower()}-worker-{i}",
             )

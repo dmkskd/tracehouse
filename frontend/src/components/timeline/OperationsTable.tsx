@@ -8,13 +8,14 @@
 import React from 'react';
 import type {
   OperationCounts,
-  OperationKindFilter,
+  OperationKind,
+  OperationKindSelection,
   OperationRow,
   OperationScope,
   OperationSortDir,
   OperationSortField,
 } from '@tracehouse/core';
-import { getMergeCategoryInfo, maxOperationMetric, notableMergeReason, operationRowHighlightKey, type MergeCategory } from '@tracehouse/core';
+import { getMergeCategoryInfo, maxOperationMetric, toggleOperationKind, notableMergeReason, operationRowHighlightKey, type MergeCategory } from '@tracehouse/core';
 import { formatBytes, formatDurationMs as fmtMs } from '../../utils/formatters';
 import { TruncatedHost } from '../common/TruncatedHost';
 import {
@@ -67,17 +68,12 @@ const MergeReasonBadge: React.FC<{ category: MergeCategory }> = ({ category }) =
   );
 };
 
-const FILTERS: { key: OperationKindFilter; label: string }[] = [
+// The swatch doubles as the chart legend: the selected kinds also scope the chart.
+const FILTERS: { key: OperationKind | 'all'; label: string; color?: string }[] = [
   { key: 'all', label: 'All' },
-  { key: 'query', label: 'Queries' },
-  { key: 'merge', label: 'Merges' },
-  { key: 'mutation', label: 'Mutations' },
-];
-
-const CHART_TOGGLES: { key: 'query' | 'merge' | 'mutation'; label: string; color: string }[] = [
-  { key: 'query', label: 'Queries', color: Q_COLORS[0] },
-  { key: 'merge', label: 'Merges', color: M_COLORS[0] },
-  { key: 'mutation', label: 'Mutations', color: MUT_COLORS[0] },
+  { key: 'query', label: 'Queries', color: KIND_ACCENT.query },
+  { key: 'merge', label: 'Merges', color: KIND_ACCENT.merge },
+  { key: 'mutation', label: 'Mutations', color: KIND_ACCENT.mutation },
 ];
 
 // Memoized: the page re-renders on every chart mouse move (hoverMs), which the
@@ -91,8 +87,9 @@ export const OperationsTable = React.memo<{
   totalCount: number;
   /** How many operations were loaded (the top-N cap). */
   loadedCount: number;
-  kindFilter: OperationKindFilter;
-  onKindFilterChange: (kind: OperationKindFilter) => void;
+  /** Selected kinds; empty means All. */
+  kindFilter: OperationKindSelection;
+  onKindFilterChange: (kinds: OperationKindSelection) => void;
   scope: OperationScope;
   onScopeChange: (scope: OperationScope) => void;
   pinnedMs: number | null;
@@ -109,13 +106,11 @@ export const OperationsTable = React.memo<{
   /** Currently selected operation, shown in the inspector. */
   selectedId?: string | null;
   showHost?: boolean;
-  hiddenCategories: Set<'query' | 'merge' | 'mutation'>;
-  onToggleChartVisibility: (kind: 'query' | 'merge' | 'mutation') => void;
   queryHashActive?: boolean;
 }>(({
   rows, counts, totalCount, loadedCount, kindFilter, onKindFilterChange, scope, onScopeChange,
   pinnedMs, metricMode, sortField, sortDir, onSort, highlightedItem, onHighlightItem, onSelect,
-  search, onSearchChange, selectedId, showHost, hiddenCategories, onToggleChartVisibility, queryHashActive,
+  search, onSearchChange, selectedId, showHost, queryHashActive,
 }) => {
   const metric = METRIC_CONFIG[metricMode];
   // Bars are scaled to the heaviest row in view, so they stay readable when the
@@ -148,10 +143,14 @@ export const OperationsTable = React.memo<{
         <span style={{ color:'var(--text-primary)', fontSize:13, fontWeight:600 }}>Operations</span>
         <div role="group" aria-label="Operation kind" style={{ display:'inline-flex', gap:2, padding:2, borderRadius:7, background:'var(--bg-tertiary)', border:'1px solid var(--border-primary)' }}>
           {FILTERS.map(f => {
-            const selected = kindFilter === f.key;
+            const selected = f.key === 'all' ? kindFilter.size === 0 : kindFilter.has(f.key);
+            const kind = f.key;
             return (
               <button key={f.key} type="button" aria-pressed={selected}
-                onClick={() => onKindFilterChange(f.key)}
+                title={kind === 'all' ? undefined : 'Shift-click to combine kinds'}
+                // Shift-click would otherwise extend the page's text selection.
+                onMouseDown={e => { if (e.shiftKey) e.preventDefault(); }}
+                onClick={e => onKindFilterChange(kind === 'all' ? new Set() : toggleOperationKind(kindFilter, kind, e.shiftKey))}
                 disabled={f.key !== 'all' && counts[f.key] === 0}
                 style={{
                   display:'flex', alignItems:'center', gap:6, border:'none', borderRadius:5,
@@ -163,6 +162,7 @@ export const OperationsTable = React.memo<{
                   boxShadow: selected ? '0 1px 3px rgba(0,0,0,0.15)' : 'none',
                   transition:'all 0.15s ease',
                 }}>
+                {f.color && <span aria-hidden style={{ width:8, height:8, borderRadius:2, background:f.color }} />}
                 {f.label}
                 <span style={{ fontFamily:"'Share Tech Mono',monospace", fontSize:10, color: selected ? metric.color : 'var(--text-muted)' }}>
                   {counts[f.key].toLocaleString()}
@@ -178,29 +178,6 @@ export const OperationsTable = React.memo<{
         </span>
 
         <div style={{ marginLeft:'auto', display:'flex', alignItems:'center', gap:10 }}>
-          {/* Chart visibility per kind — kept here now that the three tables are one */}
-          <div style={{ display:'flex', alignItems:'center', gap:6 }}>
-            <span style={{ fontSize:10, color:'var(--text-muted)' }}>Chart</span>
-            {CHART_TOGGLES.map(t => {
-              const hidden = hiddenCategories.has(t.key);
-              return (
-                <button key={t.key} type="button" aria-pressed={!hidden}
-                  onClick={() => onToggleChartVisibility(t.key)}
-                  title={hidden ? `Show ${t.label.toLowerCase()} in chart` : `Hide ${t.label.toLowerCase()} from chart`}
-                  style={{
-                    display:'flex', alignItems:'center', gap:4, border:'none', background:'transparent',
-                    padding:'2px 4px', fontSize:10, cursor:'pointer',
-                    color: hidden ? 'var(--text-muted)' : 'var(--text-secondary)',
-                    textDecoration: hidden ? 'line-through' : 'none',
-                    opacity: hidden ? 0.55 : 1,
-                  }}>
-                  <span style={{ width:8, height:8, borderRadius:2, background:t.color, opacity: hidden ? 0.3 : 1 }} />
-                  {t.label}
-                </button>
-              );
-            })}
-          </div>
-
           <div style={{ position:'relative', display:'flex', alignItems:'center' }}>
             <input
               type="search"
