@@ -449,7 +449,7 @@ const MergeScrubber: React.FC<{
             ))}
           </div>
           <div style={{ fontSize: 10, color: 'var(--text-muted)', textAlign: 'center', padding: 8 }}>
-            No text_log entries found. Requires system.text_log to be enabled.
+            No text_log entries found for this merge. Merge messages are logged at Debug/Trace level, so they are missing when the server's text_log level is Information or higher.
           </div>
         </div>
       );

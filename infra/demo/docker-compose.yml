@@ -287,6 +287,8 @@ services:
       CH_QUERY_SETTINGS_WORKERS: "1"
       CH_QUERY_REFACTOR_INTERVAL: "60"
       CH_QUERY_REFACTOR_WORKERS: "1"
+      # Hashes per row read; ~3-5s per refactor query on the 10M-row demo
+      CH_QUERY_REFACTOR_CPU_OPS: "600"
       # Mutation config (sparse — mutations are a corner case)
       CH_MUTATION_COUNT: "5"
       CH_MUTATION_INTERVAL: "600"

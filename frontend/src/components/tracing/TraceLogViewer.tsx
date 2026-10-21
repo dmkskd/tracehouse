@@ -1615,8 +1615,13 @@ export const TraceLogViewer: React.FC<TraceLogViewerProps> = ({
                 <div style={{ textAlign: 'center', color: 'var(--text-muted)' }}>
                   <div style={{ fontSize: 24, marginBottom: 8 }}>—</div>
                   <div style={{ fontSize: 12 }}>
-                    {logs.length === 0 ? 'No trace logs found' : 'No logs match filter'}
+                    {logs.length === 0 ? 'No trace logs found in system.text_log' : 'No logs match filter'}
                   </div>
+                  {logs.length === 0 && (
+                    <div style={{ fontSize: 11, marginTop: 6, maxWidth: 420 }}>
+                      Query and merge execution messages are logged at Debug/Trace level. If the server's text_log level is Information or higher (as on some ClickHouse Cloud services), they are not recorded.
+                    </div>
+                  )}
                 </div>
               </div>
             )}
