@@ -1311,7 +1311,8 @@
                 "value": [
                   {
                     "title": "Open in TraceHouse",
-                    "url": "/a/dmkskd-tracehouse-app/queries?qd_id=${__value.raw}&th_ds=${datasource}"
+                    "url": "/a/dmkskd-tracehouse-app/queries?qd_id=${__value.raw}&th_ds=${datasource}",
+                    "targetBlank": true
                   }
                 ]
               },

@@ -26,7 +26,7 @@ export interface TimeTravelCoordinates {
   sortField: TimeTravelSortField;
   sortDir: TimeTravelSortDir;
   /** Selected operation kinds; empty means All. */
-  operationKinds: Set<TimeTravelOperationKind>;
+  operationKinds: ReadonlySet<TimeTravelOperationKind>;
   operationScope: TimeTravelOperationScope;
   operationSearch: string;
   includeRunning: boolean;
