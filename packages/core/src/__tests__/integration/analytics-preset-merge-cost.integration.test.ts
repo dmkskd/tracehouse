@@ -1,3 +1,4 @@
+/** Validate frontend analytics presets against ClickHouse, outside the core library build. */
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { startClickHouse, stopClickHouse, type TestClickHouseContext } from './setup/clickhouse-container.js';
 import queries from '@frontend-queries/mergeCost';
