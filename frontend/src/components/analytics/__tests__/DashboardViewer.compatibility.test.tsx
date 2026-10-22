@@ -225,6 +225,44 @@ describe('DashboardViewer query version compatibility', () => {
     await waitFor(() => expect(mocks.run.mock.calls.some(([sql]) => sql.includes("SELECT detail WHERE tbl = 'app.other'"))).toBe(true));
   });
 
+  test('keeps dashboard parameters editable in single-panel and expanded focus views', async () => {
+    const originalScroll = HTMLElement.prototype.scrollIntoView;
+    HTMLElement.prototype.scrollIntoView = vi.fn();
+    try {
+      localStorage.setItem('tracehouse-dashboards-user', JSON.stringify([{
+        id: 'focus-filters', title: 'Focus filters', columns: 2,
+        panels: [{ queryName: 'Custom#First' }, { queryName: 'Custom#Second' }],
+        filters: [{ param: 'tbl', label: 'Table', query: 'SELECT filter_options' }],
+        queries: [
+          "-- @meta: title='First' group='Custom'\nSELECT first_panel WHERE {{drill:tbl | 1=1}}",
+          "-- @meta: title='Second' group='Custom'\nSELECT second_panel WHERE {{drill:tbl | 1=1}}",
+        ],
+      }]));
+      mocks.run.mockImplementation(async (sql: string) => sql.includes('SELECT filter_options')
+        ? [{ tbl: 'app.events' }, { tbl: 'app.other' }] : []);
+      render(<MemoryRouter initialEntries={['/?dashboard=focus-filters']}><DashboardViewer /></MemoryRouter>);
+      await screen.findByRole('option', { name: 'app.events' });
+      fireEvent.change(screen.getByRole('combobox', { name: 'Table' }), { target: { value: 'app.events' } });
+      fireEvent.click(screen.getByRole('button', { name: 'Focus', exact: true }));
+      let controls = screen.getByRole('region', { name: 'Focus view controls' });
+      await within(controls).findByRole('option', { name: 'app.other' });
+      expect(within(controls).getByRole('combobox', { name: 'Table' })).toHaveValue('app.events');
+      fireEvent.change(within(controls).getByRole('combobox', { name: 'Table' }), { target: { value: 'app.other' } });
+      await waitFor(() => expect(mocks.run.mock.calls.some(([sql]) => sql.includes("SELECT first_panel WHERE tbl = 'app.other'"))).toBe(true));
+      await waitFor(() => expect(mocks.run.mock.calls.some(([sql]) => sql.includes("SELECT second_panel WHERE tbl = 'app.other'"))).toBe(true));
+      fireEvent.click(within(controls).getByRole('button', { name: 'Expand all' }));
+      controls = screen.getByRole('region', { name: 'Focus view controls' });
+      await within(controls).findByRole('option', { name: 'app.events' });
+      fireEvent.change(within(controls).getByRole('combobox', { name: 'Table' }), { target: { value: 'app.events' } });
+      fireEvent.click(within(controls).getByRole('button', { name: 'Close ✕' }));
+      expect(screen.queryByRole('region', { name: 'Focus view controls' })).not.toBeInTheDocument();
+      await screen.findByRole('option', { name: 'app.events' });
+      expect(screen.getByRole('combobox', { name: 'Table' })).toHaveValue('app.events');
+    } finally {
+      HTMLElement.prototype.scrollIntoView = originalScroll;
+    }
+  });
+
   test('shows the compatibility reason and does not execute an unsupported panel', async () => {
     setServerVersion('24.3.18.7');
 

@@ -82,6 +82,7 @@ import {
 import { useMonitoringCapabilitiesStore } from '../../stores/monitoringCapabilitiesStore';
 import { copyToClipboard } from '@tracehouse/ui-shared';
 import './DashboardExport.css';
+import { useDashboardScrollFocus } from './useDashboardScrollFocus';
 
 // ─── Panel component - executes one preset query and shows result ───
 
@@ -127,6 +128,7 @@ interface FocusStageContext {
   onNextSection: () => void;
   allPanelsExpanded: boolean;
   onToggleAllPanels: () => void;
+  filterControls?: React.ReactNode;
 }
 
 interface FocusStageItem {
@@ -146,10 +148,10 @@ const FocusStageHeader: React.FC<{
   context: FocusStageContext;
   onExit: () => void;
 }> = ({ context, onExit }) => (
-  <div style={{
+  <div role="region" aria-label="Focus view controls" style={{
     position: 'sticky', top: 0, zIndex: 4,
-    minHeight: 56, flexShrink: 0, display: 'flex', alignItems: 'center', gap: 12,
-    padding: '0 18px', background: 'var(--bg-secondary)', borderBottom: '1px solid var(--border-primary)',
+    minHeight: 56, flexShrink: 0, display: 'flex', alignItems: 'center', gap: 12, flexWrap: 'wrap',
+    padding: '12px 18px', background: 'var(--bg-secondary)', borderBottom: '1px solid var(--border-primary)',
     boxShadow: '0 3px 12px rgba(0,0,0,0.04)',
   }}>
     <button
@@ -192,6 +194,7 @@ const FocusStageHeader: React.FC<{
       </button>
       <button onClick={onExit} style={focusStageNavButtonStyle} title="Close focus view, return to the dashboard grid (Esc)">Close ✕</button>
     </div>
+    {context.filterControls && <div style={{ flexBasis: '100%', minWidth: 0 }}>{context.filterControls}</div>}
   </div>
 );
 
@@ -2280,11 +2283,12 @@ const DashboardFilterBar: React.FC<{
   }, [filters, filterValues, visibleOptions, onFilterChange]);
 
   return (
-    <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
+    <div style={{ display: 'flex', gap: 8, alignItems: 'center', flexWrap: 'wrap' }}>
       {filters.map(f => (
         <div key={f.param} style={{ display: 'flex', alignItems: 'center', gap: 4 }}>
           <span style={{ fontSize: 11, color: 'var(--text-tertiary)' }}>{f.label}:</span>
           <select
+            aria-label={f.label}
             value={filterValues[f.param] ?? ''}
             onChange={e => onFilterChange(f.param, e.target.value)}
             style={{
@@ -2673,15 +2677,9 @@ export const DashboardViewer: React.FC<{ initialDashboardId?: string; onOpenQuer
     setAllFocusPanelsExpanded(expanded => !expanded);
   }, []);
 
-  useEffect(() => {
-    if (!allFocusPanelsExpanded || focusedPanelIndex === null) return;
-    const frame = window.requestAnimationFrame(() => {
-      document
-        .querySelector<HTMLElement>(`[data-dashboard-panel-index="${focusedPanelIndex}"]`)
-        ?.scrollIntoView({ block: 'start', behavior: 'smooth' });
-    });
-    return () => window.cancelAnimationFrame(frame);
-  }, [allFocusPanelsExpanded, focusedPanelIndex]);
+  const focusScrollViewport = useRef<HTMLDivElement>(null);
+  useDashboardScrollFocus(focusScrollViewport, allFocusPanelsExpanded && fullscreenPanelIndex === null,
+    focusedPanelIndex, setFocusedPanelIndex);
 
   useEffect(() => {
     if (focusedPanelIndex === null && fullscreenPanelIndex === null) return;
@@ -2768,6 +2766,9 @@ export const DashboardViewer: React.FC<{ initialDashboardId?: string; onOpenQuer
       onNextSection: () => moveFocusedSection(1),
       allPanelsExpanded: allFocusPanelsExpanded,
       onToggleAllPanels: toggleAllFocusPanels,
+      filterControls: activeDashboard.filters?.length
+        ? <DashboardFilterBar filters={activeDashboard.filters} filterValues={filterValues} onFilterChange={handleFilterChange} />
+        : undefined,
     } : undefined;
 
   // ─── List view ───
@@ -2948,7 +2949,7 @@ export const DashboardViewer: React.FC<{ initialDashboardId?: string; onOpenQuer
       </div>
 
       {/* Filter bar */}
-      {activeDashboard.filters && activeDashboard.filters.length > 0 && (
+      {focusedPanelIndex === null && activeDashboard.filters && activeDashboard.filters.length > 0 && (
         <div style={{ flexShrink: 0, padding: '8px 24px', borderBottom: '1px solid var(--border-primary)', background: 'var(--bg-primary)' }}>
           <DashboardFilterBar filters={activeDashboard.filters} filterValues={filterValues} onFilterChange={handleFilterChange} />
         </div>
@@ -2963,7 +2964,7 @@ export const DashboardViewer: React.FC<{ initialDashboardId?: string; onOpenQuer
         {allFocusPanelsExpanded && focusStageContext && (
           <FocusStageHeader context={focusStageContext} onExit={exitFocusStage} />
         )}
-        <div style={allFocusPanelsExpanded ? {
+        <div ref={focusScrollViewport} style={allFocusPanelsExpanded ? {
           flex: 1, minHeight: 0, overflow: 'auto', padding: '18px 24px 28px',
         } : { display: 'contents' }}>
         {/* Overlay chart panel */}
