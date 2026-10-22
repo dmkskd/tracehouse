@@ -3,6 +3,26 @@ import { PRESET_QUERIES } from '../presetQueries';
 import { loadDashboards } from '../dashboards';
 
 describe('preset queries', { tags: ['analytics'] }, () => {
+  test('Merge Analytics cost panels and table drill targets resolve to registered queries', () => {
+    Object.defineProperty(globalThis, 'localStorage', {
+      value: { getItem: () => null }, configurable: true,
+    });
+    const dashboard = loadDashboards().find(d => d.id === 'merge-analytics');
+    expect(dashboard?.filters?.some(filter => filter.param === 'tbl')).toBe(true);
+    const panels = dashboard!.panels.slice(0, 7);
+    expect(panels[0].section).toBe('Where merge CPU and time go');
+    for (const panel of panels) {
+      const query = PRESET_QUERIES.find(q => `${q.group}#${q.name}` === panel.queryName);
+      expect(query).toBeDefined();
+      expect(query!.sql).toContain('{{drill_value:tbl');
+      if (query!.directives.drill) {
+        const target = PRESET_QUERIES.find(q => q.group === query!.group && q.name === query!.directives.drill!.into);
+        expect(target).toBeDefined();
+        expect(target!.sql).toContain('{{drill_value:tbl');
+      }
+    }
+  });
+
   test('Most Expensive Selects exposes query pressure as a radar cell', () => {
     const query = PRESET_QUERIES.find(q => q.group === 'Selects' && q.name === 'Most Expensive Selects');
 

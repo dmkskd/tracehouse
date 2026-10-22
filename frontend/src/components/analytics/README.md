@@ -5,6 +5,22 @@ pure data** - a dashboard is a titled grid of references to preset SQL queries. 
 needs **no React/service/hook/store code**: you write SQL with directive comments, register
 it, and list it in a dashboard.
 
+Dashboards can also own SQL definitions in their `queries` array. These definitions take
+precedence over preset and custom queries within that dashboard. They do not modify the
+global query library.
+
+In **Edit**, use **Embed SQL** for one panel, **Embed all queries** for the dashboard, or
+**New embedded query** to write a query directly. The SQL editors under **Dashboard
+queries** include chart and drill directives. Keep each definition's `@meta` title and
+group unchanged; panel and drill references use that identity.
+
+**Export ▾ → Include queries** bundles panel SQL and recursive drill/link targets. Import
+creates a separate dashboard with its own definitions. **Dashboard only** exports query
+references without SQL definitions. Legacy exports remain
+supported. Importing does not execute SQL; opening the dashboard runs its panels as usual.
+The import dialog fills the dashboard name from the JSON. Existing names are highlighted;
+choose a different name before importing. Name checks ignore case and surrounding spaces.
+
 > Layering note: the project rule (see root `CLAUDE.md`) is that SQL lives in
 > `packages/core/src/queries/`. The Analytics **preset queries** are the deliberate
 > exception - they are user-visible, editable SQL shown in the query explorer, so they live

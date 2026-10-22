@@ -327,7 +327,10 @@ export function buildChartData(
   const lblCol = labelCol || columns.find(c => !rows.some(r => isNumericValue(r[c]))) || columns[0];
   const valCol = valueCol || columns.find(c => c !== lblCol && rows.some(r => isNumericValue(r[c]))) || columns[1];
   if (!lblCol || !valCol) return [];
-  const sliced = maxRows ? rows.slice(0, maxRows) : rows;
+  // Missing measurements are not zero (e.g. merge CPU counters unavailable).
+  // Preserve them in the results table, but do not invent a zero-valued bar.
+  const measured = rows.filter(row => row[valCol] != null);
+  const sliced = maxRows ? measured.slice(0, maxRows) : measured;
   const palette = sequentialPalette(sliced.length);
   return sliced.map((r, i) => ({
     label: formatCell(r[lblCol], lblCol),

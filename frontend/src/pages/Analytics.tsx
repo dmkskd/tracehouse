@@ -99,7 +99,7 @@ export const Analytics: React.FC = () => {
 
   const handleOpenDashboardQuery = useCallback((query: Query, dashboardId: string) => {
     const all = getAllQueries();
-    const idx = all.findIndex(q => q.name === query.name);
+    const idx = all.findIndex(q => q.sql.trim() === query.sql.trim());
     updateUrl({
       tab: 'misc',
       fromDashboard: dashboardId,

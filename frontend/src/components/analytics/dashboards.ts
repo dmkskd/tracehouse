@@ -20,7 +20,7 @@
 import { PRESET_QUERIES } from './presetQueries';
 import { type Query } from './types';
 import { loadCustomQueries, resetCustomQueries } from './customQueries';
-import { resolveQueryRef } from './metaLanguage';
+import { parseQueryMetadata, resolveQueryRef } from './metaLanguage';
 
 // ─── Types ───
 
@@ -79,6 +79,8 @@ export interface Dashboard {
   builtin?: boolean;
   /** Optional global filters shown as dropdowns in the dashboard header - values propagate to all panels */
   filters?: DashboardFilter[];
+  /** SQL definitions owned by this dashboard, including drill/link targets. */
+  queries?: string[];
 }
 
 /** Match every search term across dashboard metadata and its panel definitions. */
@@ -106,14 +108,21 @@ export function dashboardMatchesSearch(dashboard: Dashboard, search: string): bo
 
 // ─── Resolve panel → Query ───
 
-export function resolvePanel(panel: DashboardPanel): Query | undefined {
-  const allQueries = [...PRESET_QUERIES, ...loadCustomQueries()];
-  return resolveQueryRef(panel.queryName, undefined, allQueries);
+export function getDashboardQueries(dashboard?: Pick<Dashboard, 'queries'>): Query[] {
+  const local = (dashboard?.queries ?? []).map(sql => parseQueryMetadata(sql, 'custom'))
+    .filter((query): query is Query => query !== null);
+  const localRefs = new Set(local.map(query => `${query.group}#${query.name}`));
+  return [...local, ...[...PRESET_QUERIES, ...loadCustomQueries()]
+    .filter(query => !localRefs.has(`${query.group}#${query.name}`))];
+}
+
+export function resolvePanel(panel: DashboardPanel, queries = getDashboardQueries()): Query | undefined {
+  return resolveQueryRef(panel.queryName, undefined, queries);
 }
 
 /** Human-readable panel label: preset name, else the query ref's last segment. */
-export function panelDisplayTitle(panel: DashboardPanel): string {
-  return resolvePanel(panel)?.name ?? panel.queryName.split('#').pop() ?? panel.queryName;
+export function panelDisplayTitle(panel: DashboardPanel, queries?: Query[]): string {
+  return resolvePanel(panel, queries)?.name ?? panel.queryName.split('#').pop() ?? panel.queryName;
 }
 
 // ─── localStorage persistence ───
@@ -209,8 +218,30 @@ export function deleteDashboard(dashboards: Dashboard[], id: string): Dashboard[
 }
 
 /** Export a single dashboard as a JSON string (for copy/paste or file save). */
-export function exportDashboardJson(dashboard: Dashboard): string {
+export function exportDashboardJson(dashboard: Dashboard, embedQueries = false): string {
   const { builtin, ...clean } = dashboard;
+  delete clean.queries;
+  if (embedQueries) {
+    const available = getDashboardQueries(dashboard);
+    const bundled = new Map<string, string>();
+    const include = (ref: string, group?: string) => {
+      const query = resolveQueryRef(ref, group, available);
+      if (!query) throw new Error(`Query not found: ${ref}`);
+      const key = `${query.group}#${query.name}`;
+      if (bundled.has(key)) return;
+      bundled.set(key, query.sql);
+      for (const directive of [query.directives.drill, query.directives.link]) {
+        if (directive?.into) include(directive.into, query.group);
+      }
+    };
+    for (const panel of dashboard.panels) include(panel.queryName);
+    // Retain dashboard-owned helpers even when they are not currently referenced.
+    for (const sql of dashboard.queries ?? []) {
+      const query = parseQueryMetadata(sql, 'custom');
+      if (query) include(`${query.group}#${query.name}`);
+    }
+    clean.queries = [...bundled.values()];
+  }
   return JSON.stringify(clean, null, 2);
 }
 
@@ -220,10 +251,25 @@ export function importDashboardJson(json: string): Omit<Dashboard, 'builtin'> {
   if (!obj.title || !Array.isArray(obj.panels)) {
     throw new Error('Invalid dashboard JSON: needs at least "title" and "panels"');
   }
+  if (obj.queries !== undefined) {
+    if (!Array.isArray(obj.queries)) throw new Error('Dashboard queries must be an array of SQL strings');
+    const names = new Set<string>();
+    for (const sql of obj.queries) {
+      const query = typeof sql === 'string' ? parseQueryMetadata(sql, 'custom') : null;
+      if (!query) throw new Error('Each embedded query needs a valid @meta title and group');
+      const key = `${query.group}#${query.name}`;
+      if (names.has(key)) throw new Error(`Duplicate embedded query: ${key}`);
+      names.add(key);
+    }
+  }
   return {
-    id: obj.id || generateId(),
+    // Imports are independent copies, including exports of built-in dashboards.
+    id: generateId(),
     title: obj.title,
     description: obj.description,
+    group: 'Custom',
+    ...(typeof obj.category === 'string' && { category: obj.category }),
+    ...(obj.queries !== undefined && { queries: obj.queries }),
     ...(obj.source && { source: String(obj.source) }),
     columns: [1, 2, 3, 4].includes(obj.columns) ? obj.columns : 2,
     panels: obj.panels.map((p: { queryName?: string; section?: string; requiredCapability?: string }) => ({
@@ -240,6 +286,7 @@ export function importDashboardJson(json: string): Omit<Dashboard, 'builtin'> {
           param: String(f.param),
           label: String(f.label ?? f.param),
           query: String(f.query),
+          ...(typeof f.dependsOn === 'string' && { dependsOn: f.dependsOn }),
         })),
     }),
   };
@@ -408,7 +455,7 @@ const BUILTIN_DASHBOARDS: Dashboard[] = [
   {
     id: 'merge-analytics',
     title: 'Merge Analytics',
-    description: 'Deep merge analysis - throughput, duration scaling, part staleness, and estimated merge cost per table',
+    description: 'Where merge CPU and time go by level, size, reason, and table; throughput, part staleness, and estimated merge cost',
     group: 'ClickHouse',
     category: 'Merges',
     columns: 2,
@@ -420,7 +467,14 @@ const BUILTIN_DASHBOARDS: Dashboard[] = [
       },
     ],
     panels: [
-      { queryName: 'Merge Analytics#Merge Throughput by Table' },
+      { queryName: 'Merge Analytics#Merge CPU by Table', section: 'Where merge CPU and time go' },
+      { queryName: 'Merge Analytics#Merge Elapsed Time by Table' },
+      { queryName: 'Merge Analytics#Merge CPU by Level Transition' },
+      { queryName: 'Merge Analytics#Merge Elapsed Time by Level Transition' },
+      { queryName: 'Merge Analytics#Merge CPU by Result Size' },
+      { queryName: 'Merge Analytics#Merge Elapsed Time by Result Size' },
+      { queryName: 'Merge Analytics#Merge Cost by Reason' },
+      { queryName: 'Merge Analytics#Merge Throughput by Table', section: 'Throughput, duration, and part lifecycle' },
       { queryName: 'Merge Analytics#Merge Duration by Table' },
       { queryName: 'Merge Analytics#Estimated Merge Time (active parts)' },
       { queryName: 'Merge Analytics#Part Wait Time by Table' },

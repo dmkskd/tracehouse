@@ -1,6 +1,8 @@
-/** Merge analytics queries - throughput, duration scaling, part wait time, estimated merge cost. */
+/** Merge analytics queries - CPU attribution, duration scaling, part wait time, estimated merge cost. */
+import mergeCost from './mergeCost';
 
 const queries: string[] = [
+  ...mergeCost,
   `-- @meta: title='Merge Throughput by Table' group='Merge Analytics' interval='1 DAY' description='Average merge throughput (MB/s) per table - low values indicate I/O-bound or structurally expensive merges. Excludes mutation-triggered re-merges.'
 -- @chart: type=bar group_by=tbl value=avg_mb_per_sec unit=MB/s style=2d
 -- @drill: on=tbl into='Merge Throughput by Size Bucket'

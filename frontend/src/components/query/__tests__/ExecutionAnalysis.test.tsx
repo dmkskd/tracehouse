@@ -84,6 +84,24 @@ describe('ExecutionAnalysisPanel', () => {
     expect(screen.getByText('50.0% pruned')).toBeInTheDocument();
     expect(screen.getByText('event_type')).toBeInTheDocument();
 
+    const orderToggle = screen.getByRole('button', { name: 'Toggle operator order' });
+    expect(orderToggle).toHaveAttribute('aria-pressed', 'false');
+    expect(orderToggle).toHaveAttribute('title', expect.stringContaining('original ClickHouse plan order'));
+    fireEvent.click(orderToggle);
+    expect(orderToggle).toHaveAttribute('aria-pressed', 'true');
+    expect(screen.getByText('ClickHouse plan')).toBeInTheDocument();
+    expect(screen.getByText(/result → source/)).toBeInTheDocument();
+    expect(result.compareDocumentPosition(source) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+    expect(result.closest('button')?.parentElement).toHaveStyle({ paddingLeft: '12px' });
+    expect(source.closest('button')?.parentElement).toHaveStyle({ paddingLeft: '30px' });
+    // Expanded details stay attached to their operator when its position changes.
+    expect(screen.getByText('Index pruning')).toBeInTheDocument();
+    fireEvent.click(orderToggle);
+    expect(orderToggle).toHaveAttribute('aria-pressed', 'false');
+    expect(source.compareDocumentPosition(result) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+    expect(source.closest('button')?.parentElement).toHaveStyle({ paddingLeft: '12px' });
+    expect(result.closest('button')?.parentElement).toHaveStyle({ paddingLeft: '30px' });
+
     const tabs = screen.getAllByRole('tab');
     expect(tabs.map(tab => tab.textContent)).toEqual(['Visual plan', 'Raw plan']);
     fireEvent.click(screen.getByRole('tab', { name: 'Raw plan' }));

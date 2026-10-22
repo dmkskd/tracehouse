@@ -618,11 +618,12 @@ function PlanRow({ node }: { node: ExecutionAnalysisNode }) {
 }
 
 export const ExecutionAnalysisVisual: React.FC<ExecutionAnalysisVisualProps> = ({ output }) => {
+  const [planOrder, setPlanOrder] = useState(false);
   const parsed = useMemo(() => parseExecutionAnalysis(output), [output]);
   const summary = parsed.summary;
   const visualNodes = useMemo(
-    () => buildExecutionFlowNodes(parsed.nodes),
-    [parsed.nodes],
+    () => planOrder ? parsed.nodes : buildExecutionFlowNodes(parsed.nodes),
+    [parsed.nodes, planOrder],
   );
 
   return (
@@ -676,10 +677,29 @@ export const ExecutionAnalysisVisual: React.FC<ExecutionAnalysisVisualProps> = (
           letterSpacing: '1px',
           textTransform: 'uppercase',
         }}>
-          Data flow
+          {planOrder ? 'ClickHouse plan' : 'Data flow'}
         </div>
-        <div style={{ color: 'var(--text-muted)', fontFamily: MONO, fontSize: 8 }}>
-          {visualNodes.length} operators · source → result
+        <div style={{ display: 'flex', alignItems: 'center', gap: 8, color: 'var(--text-muted)', fontFamily: MONO, fontSize: 8 }}>
+          <span>{visualNodes.length} operators · {planOrder ? 'result → source' : 'source → result'}</span>
+          <button
+            type="button"
+            aria-label="Toggle operator order"
+            aria-pressed={planOrder}
+            title={planOrder
+              ? 'ClickHouse plan order: result → source. Click to follow data flow from source → result.'
+              : 'Data flow: source → result. Click to use the original ClickHouse plan order.'}
+            onClick={() => setPlanOrder(value => !value)}
+            style={{
+              display: 'inline-flex', alignItems: 'center', justifyContent: 'center',
+              width: 24, height: 24, padding: 0, borderRadius: 4,
+              border: '1px solid var(--border-primary)', background: 'var(--bg-secondary)',
+              color: 'var(--text-secondary)', cursor: 'pointer',
+            }}
+          >
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+              <path d="M8 20V4m-4 4 4-4 4 4M16 4v16m-4-4 4 4 4-4" />
+            </svg>
+          </button>
         </div>
       </div>
 

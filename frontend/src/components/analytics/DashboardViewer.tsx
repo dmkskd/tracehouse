@@ -16,7 +16,7 @@ import { buildConfig } from '../../buildConfig';
 import { useClickHouseServices } from '../../providers/ClickHouseProvider';
 import { sourceTag, TAB_ANALYTICS } from '@tracehouse/core';
 import { type Query } from './types';
-import { getAllQueries } from './customQueries';
+import { buildCustomQuerySql } from './customQueries';
 import { resolveQueryXRaySQL, resolveTimeRange, resolveDrillParams } from './templateResolution';
 import { formatClickHouseError } from '../../utils/errorFormatters';
 import {
@@ -24,6 +24,7 @@ import {
   evaluateQueryVersionCompatibility,
   parseChartDirective,
   resolveQueryRef,
+  parseQueryMetadata,
 } from './metaLanguage';
 import { LinkQueryModal } from './LinkQueryModal';
 import { PartInspector } from '../database/PartInspector';
@@ -39,6 +40,7 @@ import {
 } from './charts';
 import { Chart3DCanvas } from './charts3d';
 import { ResultsTable } from './ResultsTable';
+import { SqlEditor } from './editor/SqlEditor';
 import {
   type Dashboard,
   type DashboardPanel,
@@ -52,6 +54,7 @@ import {
   dashboardMatchesSearch,
   exportDashboardJson,
   importDashboardJson,
+  getDashboardQueries,
 } from './dashboards';
 
 /** State listed here must survive copying a built-in Analytics dashboard URL. */
@@ -78,6 +81,7 @@ import {
 } from './dashboardFocusStage';
 import { useMonitoringCapabilitiesStore } from '../../stores/monitoringCapabilitiesStore';
 import { copyToClipboard } from '@tracehouse/ui-shared';
+import './DashboardExport.css';
 
 // ─── Panel component - executes one preset query and shows result ───
 
@@ -494,6 +498,7 @@ const PanelActionsMenu: React.FC<{
 
 const DashboardPanelCard: React.FC<{
   panel: DashboardPanel;
+  queries: Query[];
   timeRangeOverride: string | null;
   dashboardId: string;
   isFocused: boolean;
@@ -508,13 +513,14 @@ const DashboardPanelCard: React.FC<{
   isHoveredPanel?: boolean;
   /** Global filter params from the dashboard filter bar - merged into drill params */
   filterParams?: Record<string, string>;
+  onTableSelect?: (table: string) => void;
   /** Index in the dashboard panel list - used to assign distinct overlay colors */
   panelIndex?: number;
   onOpenQueryDetail?: (query: QuerySeries, opts?: { tab?: QueryModalTab }) => void;
   onOpenQuery?: (query: Query, dashboardId: string) => void;
   focusStage?: FocusStageContext;
   isFocusStageActive?: boolean;
-}> = ({ panel, timeRangeOverride, dashboardId, isFocused, onToggleFocus, isFullscreen, onToggleFullscreen, isHidden, hoveredTimestamp, onTimestampHover, onTimeSeriesData, correlationValues, isHoveredPanel, filterParams, panelIndex, onOpenQueryDetail, onOpenQuery, focusStage, isFocusStageActive = false }) => {
+}> = ({ panel, queries, timeRangeOverride, dashboardId, isFocused, onToggleFocus, isFullscreen, onToggleFullscreen, isHidden, hoveredTimestamp, onTimestampHover, onTimeSeriesData, correlationValues, isHoveredPanel, filterParams, onTableSelect, panelIndex, onOpenQueryDetail, onOpenQuery, focusStage, isFocusStageActive = false }) => {
   const services = useClickHouseServices();
   const xraySelection = useQueryXRaySelection();
   const xrayMeta = useMemo(() => selectQueryXRaySource(xraySelection), [xraySelection]);
@@ -530,7 +536,7 @@ const DashboardPanelCard: React.FC<{
   );
   const capabilityProbeStatus = useMonitoringCapabilitiesStore(state => state.probeStatus);
   const capabilityUnavailable = requiredCapability?.available === false;
-  const originalPreset = resolvePanel(panel);
+  const originalPreset = resolvePanel(panel, queries);
   const [drillPreset, setDrillPreset] = useState<Query | null>(null);
   const [drillParams, setDrillParams] = useState<Record<string, string>>({});
   const preset = drillPreset ?? originalPreset;
@@ -731,15 +737,20 @@ const DashboardPanelCard: React.FC<{
 
   const handleDrillDown = useCallback((event: DrillDownEvent) => {
     if (!preset?.directives.drill?.on || !preset?.directives.drill?.into) return;
-    const all = getAllQueries();
-    const target = resolveQueryRef(preset.directives.drill.into, preset.group, all);
+    const target = resolveQueryRef(preset.directives.drill.into, preset.group, queries);
     if (!target) return;
+    const selectsTable = preset.directives.drill.on === 'tbl' && !!onTableSelect;
+    if (selectsTable) onTableSelect(event.label);
     const newParams = { ...drillParams, [preset.directives.drill.on]: event.label };
     setDrillPreset(target);
-    setDrillParams(newParams);
+    // The dashboard filter owns tbl after a table click. Do not retain a stale
+    // panel-local tbl that would override later dropdown selections.
+    const storedParams = { ...newParams };
+    if (selectsTable) delete storedParams.tbl;
+    setDrillParams(storedParams);
     setResult(null);
     setTimeout(() => run(target, newParams), 0);
-  }, [preset, drillParams, run]);
+  }, [preset, drillParams, run, queries, onTableSelect]);
 
   const handleDrillReset = useCallback(() => {
     setDrillPreset(null);
@@ -768,11 +779,10 @@ const DashboardPanelCard: React.FC<{
 
   const handleLinkClick = useCallback((column: string, value: string) => {
     if (!preset?.directives.link?.into) return;
-    const all = getAllQueries();
-    const target = resolveQueryRef(preset.directives.link.into, preset.group, all);
+    const target = resolveQueryRef(preset.directives.link.into, preset.group, queries);
     if (!target) return;
     setLinkModal({ targetQuery: target, params: { [column]: value } });
-  }, [preset]);
+  }, [preset, queries]);
 
   // @part_link support - open PartInspector for a part name
   const [partLinkTarget, setPartLinkTarget] = useState<{ partName: string; database: string; table: string } | null>(null);
@@ -1145,6 +1155,7 @@ const focusRailKeyStyle: React.CSSProperties = {
 };
 
 const FocusStageRail: React.FC<{
+  queries: Query[];
   viewportTop: number;
   dashboardTitle: string;
   /** Already narrowed by `filterQuery`; ↑/↓ walk this same set. */
@@ -1155,7 +1166,7 @@ const FocusStageRail: React.FC<{
   focusedPanelIndex: number;
   onSelectPanel: (index: number) => void;
 }> = ({
-  viewportTop, dashboardTitle, visibleSections, totalPanels,
+  queries, viewportTop, dashboardTitle, visibleSections, totalPanels,
   filterQuery, onFilterQueryChange, focusedPanelIndex, onSelectPanel,
 }) => {
   const activeItemRef = useRef<HTMLButtonElement>(null);
@@ -1286,7 +1297,7 @@ const FocusStageRail: React.FC<{
               </button>
               {section.panels.map(({ panel, globalIndex }) => {
                 const active = globalIndex === focusedPanelIndex;
-                const title = panelDisplayTitle(panel);
+                const title = panelDisplayTitle(panel, queries);
                 return (
                   <button
                     key={`${panel.queryName}-${globalIndex}`}
@@ -1436,8 +1447,21 @@ const DashboardEditor: React.FC<EditorProps> = ({ initial, onSave, onCancel }) =
   const [panels, setPanels] = useState<DashboardPanel[]>(initial?.panels ?? []);
   const [addQuery, setAddQuery] = useState('');
   const [filters, setFilters] = useState<DashboardFilter[]>(initial?.filters ?? []);
+  const [queryDefinitions, setQueryDefinitions] = useState<Record<string, string>>(() => Object.fromEntries(
+    (initial?.queries ?? []).map(sql => {
+      const query = parseQueryMetadata(sql, 'custom');
+      return [query ? `${query.group}#${query.name}` : '', sql];
+    }),
+  ));
+  const [queryError, setQueryError] = useState<string | null>(null);
+  const ownedSql = Object.values(queryDefinitions);
+  const scopedQueries = getDashboardQueries({ queries: ownedSql });
+  const invalidQuery = Object.entries(queryDefinitions).some(([ref, sql]) => {
+    const query = parseQueryMetadata(sql, 'custom');
+    return !query || `${query.group}#${query.name}` !== ref;
+  });
 
-  const availableQueries = getAllQueries()
+  const availableQueries = scopedQueries
     .filter(q => !panels.some(p => p.queryName === `${q.group}#${q.name}`))
     .sort((a, b) => a.group.localeCompare(b.group) || a.name.localeCompare(b.name));
 
@@ -1469,7 +1493,20 @@ const DashboardEditor: React.FC<EditorProps> = ({ initial, onSave, onCancel }) =
     });
   };
 
-  const canSave = title.trim().length > 0 && panels.length > 0;
+  const canSave = title.trim().length > 0 && panels.length > 0 && !invalidQuery;
+
+  const embedPanels = (selected: DashboardPanel[]) => {
+    try {
+      const bundled = JSON.parse(exportDashboardJson({ id: '', title: 'Panel', columns: 1, panels: selected, queries: ownedSql }, true)) as Dashboard;
+      setQueryDefinitions(Object.fromEntries((bundled.queries ?? []).map(sql => {
+        const query = parseQueryMetadata(sql, 'custom')!;
+        return [`${query.group}#${query.name}`, sql];
+      })));
+      setQueryError(null);
+    } catch (error) {
+      setQueryError(error instanceof Error ? error.message : 'Unable to embed queries');
+    }
+  };
 
   return (
     <div style={{ padding: 24, maxWidth: 600 }}>
@@ -1507,7 +1544,7 @@ const DashboardEditor: React.FC<EditorProps> = ({ initial, onSave, onCancel }) =
           </div>
         )}
         {panels.map((p, i) => {
-          const resolved = resolvePanel(p);
+          const resolved = resolvePanel(p, scopedQueries);
           return (
             <React.Fragment key={i}>
               {/* Section badge - shown above the panel that starts a section */}
@@ -1537,6 +1574,10 @@ const DashboardEditor: React.FC<EditorProps> = ({ initial, onSave, onCancel }) =
                 <span style={{ flex: 1, fontSize: 12, color: resolved ? 'var(--text-secondary)' : '#f85149' }}>
                   {resolved?.name ?? p.queryName}{!resolved && ' (not found)'}
                 </span>
+                {resolved && !queryDefinitions[`${resolved.group}#${resolved.name}`] && (
+                  <button onClick={() => embedPanels([p])} style={{ ...iconBtnStyle, fontSize: 10 }} title="Copy this query and its drill/link targets into the dashboard">Embed SQL</button>
+                )}
+                {resolved && queryDefinitions[`${resolved.group}#${resolved.name}`] && <span style={{ fontSize: 10, color: 'var(--text-muted)' }}>embedded</span>}
                 {!p.section && (
                   <button
                     onClick={() => {
@@ -1562,13 +1603,38 @@ const DashboardEditor: React.FC<EditorProps> = ({ initial, onSave, onCancel }) =
           style={{ ...inputStyle, flex: 1, marginBottom: 0 }}>
           <option value="">Add a preset query…</option>
           {availableQueries.map(q => (
-            <option key={q.name} value={`${q.group}#${q.name}`}>{q.group} - {q.name}</option>
+            <option key={`${q.group}#${q.name}`} value={`${q.group}#${q.name}`}>{q.group} - {q.name}</option>
           ))}
         </select>
         <button onClick={handleAdd} disabled={!addQuery}
           style={{ ...primaryBtnStyle, opacity: addQuery ? 1 : 0.4, cursor: addQuery ? 'pointer' : 'not-allowed' }}>
           Add
         </button>
+      </div>
+
+      <div style={{ marginBottom: 24 }}>
+        <div style={labelStyle}>Dashboard queries ({ownedSql.length})</div>
+        <p style={{ fontSize: 12, color: 'var(--text-muted)' }}>Embedded queries belong to this dashboard. Edit SQL and chart directives below; keep @meta title and group unchanged to preserve references.</p>
+        <div style={{ display: 'flex', gap: 8, marginBottom: 12 }}>
+          <button onClick={() => embedPanels(panels)} style={secondaryBtnStyle}>Embed all queries</button>
+          <button onClick={() => {
+            let index = 1;
+            while (scopedQueries.some(query => query.name === `Dashboard query ${index}` && query.group === 'Custom')) index++;
+            const name = `Dashboard query ${index}`;
+            const ref = `Custom#${name}`;
+            setQueryDefinitions(previous => ({ ...previous, [ref]: buildCustomQuerySql(name, '', 'SELECT 1 AS value', 'Custom') }));
+            setPanels(previous => [...previous, { queryName: ref }]);
+          }} style={secondaryBtnStyle}>+ New embedded query</button>
+        </div>
+        {(queryError || invalidQuery) && <div role="alert" style={{ color: '#f85149', fontSize: 12, marginBottom: 12 }}>{queryError ?? 'Each query must retain its original @meta title and group.'}</div>}
+        {Object.entries(queryDefinitions).map(([ref, sql]) => (
+          <details key={ref} style={{ marginBottom: 8, border: '1px solid var(--border-primary)', borderRadius: 6 }}>
+            <summary style={{ padding: 10, color: 'var(--text-secondary)', fontSize: 12, cursor: 'pointer' }}>{ref}</summary>
+            <div style={{ height: 240, position: 'relative', borderTop: '1px solid var(--border-primary)' }}>
+              <SqlEditor value={sql} onChange={value => setQueryDefinitions(previous => ({ ...previous, [ref]: value }))} />
+            </div>
+          </details>
+        ))}
       </div>
 
       <label style={labelStyle}>Filters ({filters.length})</label>
@@ -1607,8 +1673,8 @@ const DashboardEditor: React.FC<EditorProps> = ({ initial, onSave, onCancel }) =
       <div style={{ display: 'flex', gap: 8, justifyContent: 'flex-end', borderTop: '1px solid var(--border-secondary)', paddingTop: 16 }}>
         <button onClick={onCancel} style={secondaryBtnStyle}>Cancel</button>
         <button onClick={() => {
-          const cleanFilters = filters.filter(f => f.param.trim() && f.query.trim()).map(f => ({ param: f.param.trim(), label: f.label.trim() || f.param.trim(), query: f.query.trim() }));
-          onSave({ id: initial?.id ?? '', title: title.trim(), description: description.trim() || undefined, columns, panels, ...(cleanFilters.length > 0 && { filters: cleanFilters }) });
+          const cleanFilters = filters.filter(f => f.param.trim() && f.query.trim()).map(f => ({ ...f, param: f.param.trim(), label: f.label.trim() || f.param.trim(), query: f.query.trim() }));
+          onSave({ id: initial?.builtin ? '' : initial?.id ?? '', title: title.trim(), description: description.trim() || undefined, source: initial?.source, group: initial?.builtin ? 'Custom' : initial?.group, category: initial?.category, columns, panels, queries: ownedSql, filters: cleanFilters });
         }}
           disabled={!canSave}
           style={{ ...primaryBtnStyle, opacity: canSave ? 1 : 0.4, cursor: canSave ? 'pointer' : 'not-allowed' }}>
@@ -1647,14 +1713,26 @@ const dashboardHeaderButtonStyle: React.CSSProperties = {
 
 // ─── Import/Export modal ───
 
-const ImportModal: React.FC<{ onImport: (json: string) => void; onClose: () => void }> = ({ onImport, onClose }) => {
+const ImportModal: React.FC<{ dashboards: Dashboard[]; onImport: (json: string) => void; onClose: () => void }> = ({ dashboards, onImport, onClose }) => {
   const [json, setJson] = useState('');
   const [err, setErr] = useState<string | null>(null);
+  const [nameOverride, setNameOverride] = useState<string | null>(null);
+  const jsonTitle = useMemo(() => {
+    try {
+      const value = JSON.parse(json).title;
+      return typeof value === 'string' ? value : '';
+    } catch { return ''; }
+  }, [json]);
+  const name = nameOverride ?? jsonTitle;
+  const trimmedName = name.trim();
+  const nameClash = trimmedName.length > 0 && dashboards.some(dashboard => dashboard.title.trim().toLocaleLowerCase() === trimmedName.toLocaleLowerCase());
 
   const handleImport = () => {
+    if (!trimmedName || nameClash) return;
     try {
-      importDashboardJson(json); // validate
-      onImport(json);
+      const renamedJson = JSON.stringify({ ...JSON.parse(json), title: trimmedName });
+      importDashboardJson(renamedJson); // validate
+      onImport(renamedJson);
     } catch (e) {
       setErr(e instanceof Error ? e.message : 'Invalid JSON');
     }
@@ -1669,10 +1747,20 @@ const ImportModal: React.FC<{ onImport: (json: string) => void; onClose: () => v
         <textarea value={json} onChange={e => { setJson(e.target.value); setErr(null); }}
           placeholder='Paste dashboard JSON here…'
           style={{ width: '100%', height: 200, padding: 10, fontSize: 12, fontFamily: "'Share Tech Mono',monospace", borderRadius: 4, border: '1px solid var(--border-primary)', background: 'var(--bg-card)', color: 'var(--text-primary)', resize: 'vertical', boxSizing: 'border-box' }} />
+        <label htmlFor="import-dashboard-name" style={{ ...labelStyle, marginTop: 14 }}>Dashboard name</label>
+        <input id="import-dashboard-name" value={name}
+          onChange={event => { setNameOverride(event.target.value); setErr(null); }}
+          aria-invalid={nameClash}
+          aria-describedby={nameClash ? 'import-dashboard-name-clash' : undefined}
+          placeholder="Dashboard name"
+          style={{ ...inputStyle, marginBottom: 0, border: nameClash ? '1px solid #f85149' : inputStyle.border }} />
+        {nameClash && <div id="import-dashboard-name-clash" role="alert" style={{ color: '#f85149', fontSize: 11, marginTop: 6 }}>
+          A dashboard named “{trimmedName}” already exists. Choose another name.
+        </div>}
         {err && <div style={{ color: '#f85149', fontSize: 11, marginTop: 6 }}>⚠ {err}</div>}
         <div style={{ display: 'flex', gap: 8, justifyContent: 'flex-end', marginTop: 12 }}>
           <button onClick={onClose} style={secondaryBtnStyle}>Cancel</button>
-          <button onClick={handleImport} disabled={!json.trim()} style={{ ...primaryBtnStyle, opacity: json.trim() ? 1 : 0.4 }}>Import</button>
+          <button onClick={handleImport} disabled={!json.trim() || !trimmedName || nameClash} style={{ ...primaryBtnStyle, opacity: json.trim() && trimmedName && !nameClash ? 1 : 0.4 }}>Import</button>
         </div>
       </div>
     </div>
@@ -1681,7 +1769,7 @@ const ImportModal: React.FC<{ onImport: (json: string) => void; onClose: () => v
 
 // ─── Mini panel - lightweight version for previews (no drill-down, no toolbar) ───
 
-const MiniPanelCard: React.FC<{ panel: DashboardPanel; timeRangeOverride: string | null }> = ({ panel, timeRangeOverride }) => {
+const MiniPanelCard: React.FC<{ panel: DashboardPanel; queries: Query[]; timeRangeOverride: string | null }> = ({ panel, queries, timeRangeOverride }) => {
   const services = useClickHouseServices();
   const xraySelection = useQueryXRaySelection();
   const requiredCapability = useMonitoringCapabilitiesStore(state => (
@@ -1696,7 +1784,7 @@ const MiniPanelCard: React.FC<{ panel: DashboardPanel; timeRangeOverride: string
   );
   const capabilityProbeStatus = useMonitoringCapabilitiesStore(state => state.probeStatus);
   const capabilityUnavailable = requiredCapability?.available === false;
-  const preset = resolvePanel(panel);
+  const preset = resolvePanel(panel, queries);
   const versionCompatibility = useMemo(
     () => evaluateQueryVersionCompatibility(
       preset?.directives.requires?.clickhouseMinVersion,
@@ -1848,6 +1936,7 @@ const DashboardPreviewPopup: React.FC<{
   mouseX: number;
   mouseY: number;
 }> = ({ dashboard, mouseX, mouseY }) => {
+  const queries = useMemo(() => getDashboardQueries(dashboard), [dashboard]);
   const POPUP_W = 720;
   const POPUP_H = 530;
   const CURSOR_GAP = 16; // gap between cursor and popup edge
@@ -1938,7 +2027,7 @@ const DashboardPreviewPopup: React.FC<{
             className="preview-panel"
             style={{ animationDelay: `${i * 0.12}s` }}
           >
-            <MiniPanelCard panel={panel} timeRangeOverride="1 DAY" />
+            <MiniPanelCard panel={panel} queries={queries} timeRangeOverride="1 DAY" />
           </div>
         ))}
       </div>
@@ -2221,7 +2310,7 @@ const DashboardFilterBar: React.FC<{
 
 // ─── Main DashboardViewer ───
 
-type ViewState = { mode: 'list' } | { mode: 'view'; dashboardId: string } | { mode: 'edit'; dashboard?: Dashboard } | { mode: 'import' };
+type ViewState = { mode: 'list' } | { mode: 'view'; dashboardId: string } | { mode: 'edit'; dashboard?: Dashboard; returnDashboardId?: string } | { mode: 'import' };
 
 function dashboardPanelIndex(value: string | null): number | null {
   if (value === null) return null;
@@ -2252,12 +2341,42 @@ export const DashboardViewer: React.FC<{ initialDashboardId?: string; onOpenQuer
   const [focusStageTop, setFocusStageTop] = useState(resolveFocusStageTop);
   const [railFilterQuery, setRailFilterQuery] = useState('');
   const [toast, setToast] = useState<string | null>(null);
+  const [exportMenuPosition, setExportMenuPosition] = useState<{ top: number; right: number } | null>(null);
+  const exportButtonRef = useRef<HTMLDivElement>(null);
+  const exportMenuRef = useRef<HTMLDivElement>(null);
+  const previousUrlDashboardId = useRef(dashboardIdFromUrl);
+  const restoringNavigation = useRef(false);
+
+  useEffect(() => {
+    if (!exportMenuPosition) return;
+    exportMenuRef.current?.querySelector<HTMLButtonElement>('button')?.focus();
+    const closeOutside = (event: PointerEvent) => {
+      if (event.target instanceof Node && !exportButtonRef.current?.contains(event.target) && !exportMenuRef.current?.contains(event.target)) setExportMenuPosition(null);
+    };
+    const closeOnEscape = (event: KeyboardEvent) => {
+      if (event.key !== 'Escape') return;
+      event.preventDefault();
+      event.stopImmediatePropagation();
+      setExportMenuPosition(null);
+      exportButtonRef.current?.querySelector<HTMLButtonElement>('[aria-haspopup]')?.focus();
+    };
+    const close = () => setExportMenuPosition(null);
+    document.addEventListener('pointerdown', closeOutside);
+    window.addEventListener('keydown', closeOnEscape, true);
+    window.addEventListener('resize', close);
+    return () => {
+      document.removeEventListener('pointerdown', closeOutside);
+      window.removeEventListener('keydown', closeOnEscape, true);
+      window.removeEventListener('resize', close);
+    };
+  }, [exportMenuPosition]);
 
   const setDashboardCoordinates = useCallback((updates: Record<string, string | null>) => {
+    if ('dashboard' in updates) previousUrlDashboardId.current = updates.dashboard ?? initialDashboardId;
     updateSharedState(Object.fromEntries(
       Object.entries(updates).map(([key, value]) => [key, value ?? undefined]),
     ));
-  }, [updateSharedState]);
+  }, [updateSharedState, initialDashboardId]);
 
   const selectFocusedPanel = useCallback((panelIndex: number) => {
     setFocusedPanelIndex(panelIndex);
@@ -2296,6 +2415,11 @@ export const DashboardViewer: React.FC<{ initialDashboardId?: string; onOpenQuer
 
   // Restore dashboard identity from the address bar, including back/forward.
   useEffect(() => {
+    // Local edits/clones also change dashboards. Only navigation should restore
+    // the URL's dashboard; otherwise it fights the editor and URL sync effects.
+    if (previousUrlDashboardId.current === dashboardIdFromUrl) return;
+    previousUrlDashboardId.current = dashboardIdFromUrl;
+    restoringNavigation.current = true;
     if (dashboardIdFromUrl && dashboards.some(d => d.id === dashboardIdFromUrl)) {
       setView({ mode: 'view', dashboardId: dashboardIdFromUrl });
     } else if (!dashboardIdFromUrl) {
@@ -2378,6 +2502,14 @@ export const DashboardViewer: React.FC<{ initialDashboardId?: string; onOpenQuer
   // The address bar is the sharing surface. Keep every meaningful dashboard
   // coordinate current so copying it also captures nested dashboard state.
   useEffect(() => {
+    // Navigation updates local state above; do not write the previous render's
+    // coordinates back over the newly navigated URL in this same commit.
+    if (restoringNavigation.current) {
+      restoringNavigation.current = false;
+      return;
+    }
+    // Keep the viewed dashboard URL while its editor/import flow is open.
+    if (view.mode === 'edit' || view.mode === 'import') return;
     setDashboardCoordinates({
       dashboard: activeDashboardId,
       dashboard_time: activeDashboardId ? timeRangeOverride : null,
@@ -2400,6 +2532,7 @@ export const DashboardViewer: React.FC<{ initialDashboardId?: string; onOpenQuer
     overlayVisible,
     setDashboardCoordinates,
     timeRangeOverride,
+    view.mode,
   ]);
 
   useEffect(() => {
@@ -2418,11 +2551,12 @@ export const DashboardViewer: React.FC<{ initialDashboardId?: string; onOpenQuer
   const activeDashboard = view.mode === 'view'
     ? dashboards.find(d => d.id === view.dashboardId)
     : undefined;
+  const dashboardQueries = useMemo(() => getDashboardQueries(activeDashboard), [activeDashboard]);
 
   const handleSave = useCallback((d: Omit<Dashboard, 'builtin'>) => {
     const next = upsertDashboard(dashboards, d);
     setDashboards(next);
-    const saved = next.find(x => x.title === d.title) ?? next[next.length - 1];
+    const saved = (d.id ? next.find(x => x.id === d.id) : undefined) ?? next[next.length - 1];
     setView({ mode: 'view', dashboardId: saved.id });
   }, [dashboards]);
 
@@ -2433,11 +2567,16 @@ export const DashboardViewer: React.FC<{ initialDashboardId?: string; onOpenQuer
     setView({ mode: 'list' });
   }, [dashboards]);
 
-  const handleExport = useCallback((d: Dashboard) => {
-    const json = exportDashboardJson(d);
-    void copyToClipboard(json).then(ok => setToast(
-      ok ? 'Dashboard JSON copied to clipboard' : 'Copy failed: clipboard unavailable',
-    ));
+  const handleExport = useCallback((d: Dashboard, includeQueries = false) => {
+    setExportMenuPosition(null);
+    try {
+      const json = exportDashboardJson(d, includeQueries);
+      void copyToClipboard(json).then(ok => setToast(
+        ok ? 'Dashboard JSON copied to clipboard' : 'Copy failed: clipboard unavailable',
+      ));
+    } catch (error) {
+      setToast(error instanceof Error ? error.message : 'Dashboard export failed');
+    }
   }, []);
 
   const handleImport = useCallback((json: string) => {
@@ -2452,17 +2591,14 @@ export const DashboardViewer: React.FC<{ initialDashboardId?: string; onOpenQuer
 
   const handleClone = useCallback((d: Dashboard) => {
     const clone: Omit<Dashboard, 'builtin'> = {
+      ...d,
       id: '',
       title: d.title + ' (copy)',
-      description: d.description,
-      columns: d.columns,
       panels: [...d.panels],
     };
-    const next = upsertDashboard(dashboards, clone);
-    setDashboards(next);
-    const added = next[next.length - 1];
-    setView({ mode: 'edit', dashboard: next.find(x => x.id === added.id) });
-  }, [dashboards]);
+    delete (clone as Dashboard).builtin;
+    setView({ mode: 'edit', dashboard: clone, returnDashboardId: d.id });
+  }, []);
 
   // ─── Section collapse state ───
   const [collapsedSections, setCollapsedSections] = useState<Set<string>>(new Set());
@@ -2484,7 +2620,7 @@ export const DashboardViewer: React.FC<{ initialDashboardId?: string; onOpenQuer
 
   const focusStageItems = useMemo<FocusStageItem[]>(() => (
     panelSections.flatMap(section => section.panels.map(({ panel, globalIndex }, panelIndex) => {
-      const preset = resolvePanel(panel);
+      const preset = resolvePanel(panel, dashboardQueries);
       const timeSeries = panelDataRef.current.get(globalIndex);
       const values = timeSeries ? Array.from(timeSeries.dataByLabel.values()) : undefined;
       return {
@@ -2500,12 +2636,12 @@ export const DashboardViewer: React.FC<{ initialDashboardId?: string; onOpenQuer
         sparklineColor: timeSeries?.color,
       };
     }))
-  ), [panelSections, panelDataVersion]);
+  ), [panelSections, panelDataVersion, dashboardQueries]);
 
   /** The rail filter narrows both the rail list and keyboard panel navigation. */
   const navigableSections = useMemo(
-    () => filterDashboardPanelSections(panelSections, railFilterQuery, panelDisplayTitle),
-    [panelSections, railFilterQuery],
+    () => filterDashboardPanelSections(panelSections, railFilterQuery, panel => panelDisplayTitle(panel, dashboardQueries)),
+    [panelSections, railFilterQuery, dashboardQueries],
   );
 
   const hasSections = panelSections.some(s => s.name !== null);
@@ -2650,7 +2786,7 @@ export const DashboardViewer: React.FC<{ initialDashboardId?: string; onOpenQuer
   if (view.mode === 'import') {
     return (
       <>
-        <ImportModal onImport={handleImport} onClose={() => setView({ mode: 'list' })} />
+        <ImportModal dashboards={dashboards} onImport={handleImport} onClose={() => setView({ mode: 'list' })} />
         <div style={{ padding: 24, opacity: 0.3 }}>
           <span style={{ color: 'var(--text-muted)' }}>Importing…</span>
         </div>
@@ -2665,7 +2801,10 @@ export const DashboardViewer: React.FC<{ initialDashboardId?: string; onOpenQuer
         <DashboardEditor
           initial={view.dashboard}
           onSave={handleSave}
-          onCancel={() => view.dashboard ? setView({ mode: 'view', dashboardId: view.dashboard.id }) : setView({ mode: 'list' })}
+          onCancel={() => {
+            const returnId = view.returnDashboardId ?? view.dashboard?.id;
+            setView(returnId ? { mode: 'view', dashboardId: returnId } : { mode: 'list' });
+          }}
         />
       </div>
     );
@@ -2682,10 +2821,11 @@ export const DashboardViewer: React.FC<{ initialDashboardId?: string; onOpenQuer
 
   return (
     <div style={{ height: '100%', display: 'flex', flexDirection: 'column', overflow: 'hidden' }}>
-      {toast && (
-        <div style={{ position: 'fixed', top: 16, right: 16, zIndex: 1000, padding: '10px 16px', borderRadius: 6, background: 'var(--bg-secondary)', border: '1px solid var(--border-primary)', color: 'var(--text-primary)', fontSize: 13, boxShadow: '0 4px 12px rgba(0,0,0,0.2)' }}>
+      {toast && createPortal(
+        <div role="status" style={{ position: 'fixed', bottom: 24, right: 24, zIndex: 100001, maxWidth: 'calc(100vw - 48px)', padding: '10px 16px', borderRadius: 6, background: 'var(--bg-secondary)', border: '1px solid var(--border-primary)', color: 'var(--text-primary)', fontSize: 13, boxShadow: '0 4px 12px rgba(0,0,0,0.2)' }}>
           {toast}
-        </div>
+        </div>,
+        document.body,
       )}
       {/* Dashboard header */}
       <div style={{ flexShrink: 0, padding: '12px 24px', display: 'flex', alignItems: 'center', justifyContent: 'space-between', borderBottom: '1px solid var(--border-primary)', background: 'var(--bg-secondary)' }}>
@@ -2776,7 +2916,23 @@ export const DashboardViewer: React.FC<{ initialDashboardId?: string; onOpenQuer
           <div role="group" aria-label="Dashboard operations" style={dashboardHeaderGroupStyle}>
             <button onClick={() => setView({ mode: 'edit', dashboard: activeDashboard })} className="tab dashboard-header-action" style={dashboardHeaderButtonStyle} title="Edit dashboard">Edit</button>
             <button onClick={() => handleClone(activeDashboard)} className="tab dashboard-header-action" style={dashboardHeaderButtonStyle} title="Clone dashboard">Clone</button>
-            <button onClick={() => handleExport(activeDashboard)} className="tab dashboard-header-action" style={dashboardHeaderButtonStyle} title="Copy dashboard JSON to clipboard">Export</button>
+            <div ref={exportButtonRef} style={{ display: 'flex', alignItems: 'center' }}>
+              <button aria-label="Export" aria-haspopup="menu" aria-expanded={!!exportMenuPosition}
+                className="tab dashboard-header-action" style={dashboardHeaderButtonStyle}
+                onClick={() => {
+                  const bounds = exportButtonRef.current!.getBoundingClientRect();
+                  setExportMenuPosition(previous => previous ? null : { top: bounds.bottom + 6, right: Math.max(8, window.innerWidth - bounds.right) });
+                }}>
+                Export
+                <svg aria-hidden="true" width="11" height="11" viewBox="0 0 20 20" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round"><path d="m5 7.5 5 5 5-5" /></svg>
+              </button>
+            </div>
+            {exportMenuPosition && createPortal(
+              <div ref={exportMenuRef} role="menu" aria-label="Export options" className="dashboard-export-menu" style={exportMenuPosition}>
+                <button role="menuitem" onClick={() => handleExport(activeDashboard)}>Dashboard only</button>
+                <button role="menuitem" onClick={() => handleExport(activeDashboard, true)} title="Export panel SQL and drill/link targets with the dashboard">Include queries</button>
+              </div>, document.body,
+            )}
             {!activeDashboard.builtin && (
               <button
                 onClick={() => handleDelete(activeDashboard.id)}
@@ -2876,6 +3032,8 @@ export const DashboardViewer: React.FC<{ initialDashboardId?: string; onOpenQuer
                     <DashboardPanelCard
                       key={`${panel.queryName}-${i}`}
                       panel={panel}
+                      queries={dashboardQueries}
+                      onTableSelect={activeDashboard.filters?.some(filter => filter.param === 'tbl') ? table => handleFilterChange('tbl', table) : undefined}
                       timeRangeOverride={timeRangeOverride}
                       dashboardId={activeDashboard.id}
                       isFocused={!allFocusPanelsExpanded && focusedPanelIndex === i}
@@ -2918,6 +3076,7 @@ export const DashboardViewer: React.FC<{ initialDashboardId?: string; onOpenQuer
       </div>
       {focusedPanelIndex !== null && (
         <FocusStageRail
+          queries={dashboardQueries}
           viewportTop={focusStageTop}
           dashboardTitle={activeDashboard.title}
           visibleSections={navigableSections}
