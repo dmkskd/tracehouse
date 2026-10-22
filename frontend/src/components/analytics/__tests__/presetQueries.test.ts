@@ -3,6 +3,16 @@ import { PRESET_QUERIES } from '../presetQueries';
 import { loadDashboards } from '../dashboards';
 
 describe('preset queries', { tags: ['analytics'] }, () => {
+  test.each(['Table', 'Level Transition', 'Result Size'])('declares matching CPU and elapsed summaries by %s', dimension => {
+    for (const metric of ['CPU', 'Elapsed Time']) {
+      const query = PRESET_QUERIES.find(q => q.group === 'Merge Analytics' && q.name === `Merge ${metric} by ${dimension}`)!;
+      expect(query.directives.summaries).toEqual({ metrics: [
+        { valueColumn: metric === 'CPU' ? 'total_cpu_seconds' : 'total_elapsed_seconds', label: metric === 'CPU' ? 'Total CPU' : 'Total duration', unit: 's' },
+        { valueColumn: 'total_merge_count', label: 'Merges' },
+      ], diagnostics: [] });
+      expect(query.sql).toContain('unit=s style=2d');
+    }
+  });
   test('Merge Analytics cost panels and table drill targets resolve to registered queries', () => {
     Object.defineProperty(globalThis, 'localStorage', {
       value: { getItem: () => null }, configurable: true,

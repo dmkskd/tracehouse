@@ -1,7 +1,7 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { exportDashboardJson, getDashboardQueries, importDashboardJson, loadDashboards, resolvePanel, type Dashboard } from '../dashboards';
 import { PRESET_QUERIES } from '../presetQueries';
-import { resolveQueryRef } from '../metaLanguage';
+import { resolveQueryRef, parseSummaryDirectives } from '../metaLanguage';
 
 const root = `-- @meta: title='Root' group='Custom'
 -- @drill: on=tbl into='Detail'
@@ -26,6 +26,14 @@ beforeEach(() => {
 });
 
 describe('dashboard-owned queries', () => {
+  it('preserves structured summaries through embedded export/import without leaking queries', () => {
+    const sql = root.replace('SELECT', "-- @summary: value=total label='Total' unit=s\nSELECT");
+    const imported = importDashboardJson(exportDashboardJson({ ...dashboard, queries: [sql, detail] }, true));
+    const query = resolvePanel(imported.panels[0], getDashboardQueries(imported))!;
+    expect(query.sql).toBe(sql);
+    expect(query.directives.summaries).toEqual(parseSummaryDirectives(sql));
+    expect(localStorage.getItem('tracehouse-custom-queries')).toBeNull();
+  });
   it('round-trips SQL, cyclic drill/link dependencies, sections, capabilities, and filters', () => {
     const imported = importDashboardJson(exportDashboardJson(dashboard, true));
     expect(imported.id).not.toBe(dashboard.id);

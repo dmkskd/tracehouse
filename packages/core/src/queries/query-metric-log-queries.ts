@@ -169,7 +169,7 @@ function samplesProjection(
   return `
     SELECT
         ${extraSelect}
-        toFloat64(dateDiff('millisecond', min_time, sample_time)) / 1000 AS t,
+        toFloat64(dateDiff('microsecond', min_time, sample_time)) / 1000000 AS t,
         -- Seconds since the query started, NOT since the first sample. Mirrors
         -- system.processes.elapsed, which XRayTab uses (samples[0].elapsed) to
         -- align trace_log windows and the flamegraph to absolute time. Measuring
@@ -177,8 +177,8 @@ function samplesProjection(
         -- greatest(..., 0): the query_log row and the sample can come from
         -- different nodes, so clock skew could otherwise make elapsed negative.
         greatest(if(query_start > toDateTime64(0, 6),
-           toFloat64(dateDiff('millisecond', query_start, sample_time)) / 1000,
-           toFloat64(dateDiff('millisecond', min_time, sample_time)) / 1000), 0) AS elapsed,
+           toFloat64(dateDiff('microsecond', query_start, sample_time)) / 1000000,
+           toFloat64(dateDiff('microsecond', min_time, sample_time)) / 1000000), 0) AS elapsed,
         -- Thread count is not exposed per sample by query_metric_log. Reported
         -- as 0 and declared in QUERY_METRIC_LOG_MISSING_FIELDS.
         0 AS thread_count,
@@ -205,11 +205,11 @@ function samplesProjection(
         -- manufacture a spike big enough to hit the thread ceiling.
         -- lagInFrame's default is evaluated per row, so query_start fills in
         -- exactly where there is no previous sample.
-        toFloat64(dateDiff('millisecond',
+        toFloat64(dateDiff('microsecond',
             lagInFrame(sample_time, 1,
                 if(query_start > toDateTime64(0, 6), query_start, sample_time)) OVER w,
             sample_time
-        )) / 1000 AS raw_gap,
+        )) / 1000000 AS raw_gap,
         -- dt floors the gap so a rate stays finite. raw_gap above is kept
         -- unfloored because the roll-up bucket must be narrower than the
         -- SMALLEST real gap, which the closing row can undercut.
@@ -367,7 +367,10 @@ FROM (
         -- divide by zero. Uses raw_gap, not dt: dt is floored, so a closing row
         -- arriving inside that floor would make the bucket wider than the real
         -- gap and merge the pair it was meant to keep apart.
-        SELECT *, greatest(least(0.5, min(raw_gap) OVER ()), 0.001) AS bucket_width
+        -- Keep DateTime64(6) precision through alignment. The closing sample can
+        -- arrive less than 1 ms after a periodic sample; millisecond timestamps
+        -- or a 1 ms bucket floor collapse the two and sum their memory gauges.
+        SELECT *, greatest(least(0.5, min(raw_gap) OVER ()), 0.000001) AS bucket_width
         FROM (${'{{PROJECTION}}'}
         )
     )

@@ -25,6 +25,8 @@ import {
   parseChartDirective,
   resolveQueryRef,
   parseQueryMetadata,
+  parseSummaryDirectives,
+  type SummaryDirectives,
 } from './metaLanguage';
 import { LinkQueryModal } from './LinkQueryModal';
 import { PartInspector } from '../database/PartInspector';
@@ -81,17 +83,58 @@ import {
 } from './dashboardFocusStage';
 import { useMonitoringCapabilitiesStore } from '../../stores/monitoringCapabilitiesStore';
 import { copyToClipboard } from '@tracehouse/ui-shared';
-import './DashboardExport.css';
+import { css } from '@emotion/css';
 import { useDashboardScrollFocus } from './useDashboardScrollFocus';
+import { ChartSummary } from './ChartSummary';
 
 // ─── Panel component - executes one preset query and shows result ───
 
 interface PanelResult {
   columns: string[];
   rows: Record<string, unknown>[];
+  summaries?: SummaryDirectives;
 }
 
 type PanelView = 'chart' | 'table';
+
+const dashboardExportMenuClass = css`
+  position: fixed;
+  z-index: 100000;
+  min-width: 210px;
+  padding: 6px;
+  border: 1px solid var(--border-primary);
+  border-radius: 12px;
+  background: var(--bg-secondary);
+  box-shadow: var(--shadow-lg);
+
+  button {
+    display: flex;
+    align-items: center;
+    width: 100%;
+    min-height: 40px;
+    padding: 10px 12px;
+    border: 0;
+    border-radius: 7px;
+    background: transparent;
+    color: var(--text-secondary);
+    font: inherit;
+    font-size: 12px;
+    text-align: left;
+    cursor: pointer;
+    transition: background 120ms ease, color 120ms ease;
+  }
+
+  button:hover,
+  button:focus-visible {
+    background: var(--bg-card-hover, rgba(139, 92, 246, 0.08));
+    color: var(--text-primary);
+  }
+
+  button:focus-visible {
+    outline: 2px solid var(--accent-primary, #8b5cf6);
+    outline-offset: 2px;
+  }
+`;
 
 const FOCUS_STAGE_RAIL_WIDTH = 312;
 const FOCUS_STAGE_READING_WIDTH = 1120;
@@ -635,7 +678,7 @@ const DashboardPanelCard: React.FC<{
       );
       if (runId !== runIdRef.current) return;
       const columns = rows.length > 0 ? Object.keys(rows[0]) : [];
-      setResult({ columns, rows });
+      setResult({ columns, rows, summaries: parseSummaryDirectives(p.sql) });
     } catch (e) {
       if (runId === runIdRef.current) setError(e instanceof Error ? e.message : String(e));
     } finally {
@@ -1047,6 +1090,8 @@ const DashboardPanelCard: React.FC<{
         })()}
         {!capabilityUnavailable && !versionUnavailable && !loading && !error && result && (
           <>
+            <ChartSummary rows={result.rows} config={result.summaries}
+              unavailableReason={view === 'chart' && effectiveChartStyle === '3d' ? 'Summaries are available in 2D or table view.' : undefined} />
             {/* Chart view */}
             {view === 'chart' && hasChart && (
               <div style={{
@@ -1904,6 +1949,7 @@ const MiniPanelCard: React.FC<{ panel: DashboardPanel; queries: Query[]; timeRan
         {!capabilityUnavailable && !versionUnavailable && loading && <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', height: '100%', color: 'var(--text-muted)', fontSize: 10 }}>…</div>}
         {!capabilityUnavailable && !versionUnavailable && !loading && hasChart && (
           <>
+            {parseSummaryDirectives(preset.sql) && <div style={{ fontSize: 9, color: 'var(--text-muted)' }}>Summaries are not shown in linked mini panels.</div>}
             {effectiveChartStyle === '3d' ? (
               <Chart3DCanvas data={chartData} type={chartType} orientation={chartDirective?.orientation} groupedData={isGroupedChart ? groupedChartData : undefined} unit={chartDirective?.unit} />
             ) : (
@@ -2929,7 +2975,7 @@ export const DashboardViewer: React.FC<{ initialDashboardId?: string; onOpenQuer
               </button>
             </div>
             {exportMenuPosition && createPortal(
-              <div ref={exportMenuRef} role="menu" aria-label="Export options" className="dashboard-export-menu" style={exportMenuPosition}>
+              <div ref={exportMenuRef} role="menu" aria-label="Export options" className={dashboardExportMenuClass} style={exportMenuPosition}>
                 <button role="menuitem" onClick={() => handleExport(activeDashboard)}>Dashboard only</button>
                 <button role="menuitem" onClick={() => handleExport(activeDashboard, true)} title="Export panel SQL and drill/link targets with the dashboard">Include queries</button>
               </div>, document.body,
@@ -2971,13 +3017,18 @@ export const DashboardViewer: React.FC<{ initialDashboardId?: string; onOpenQuer
         {overlayVisible && (
           <div style={{
             height: 420,
+            display: 'flex', flexDirection: 'column',
             marginBottom: 16,
             borderBottom: '1px solid var(--border-primary)',
             background: 'var(--bg-primary)',
           }}>
-            <OverlayChart
+            {activeDashboard.panels.some(panel => {
+              const query = resolvePanel(panel, dashboardQueries);
+              return query && parseSummaryDirectives(query.sql);
+            }) && <div style={{ fontSize: 11, color: 'var(--text-muted)', padding: '4px 12px' }}>Summaries are shown on individual panels, not the combined overlay.</div>}
+            <div style={{ flex: 1, minHeight: 0 }}><OverlayChart
               panels={panelDataVersion >= 0 ? Array.from(panelDataRef.current.entries()).sort((a, b) => a[0] - b[0]).map(([, v]) => v) : []}
-            />
+            /></div>
           </div>
         )}
         {panelSections.map((section, sIdx) => {

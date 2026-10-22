@@ -16,6 +16,15 @@ ORDER BY bytes_size DESC
 `;
 
 describe('grafana-export', () => {
+  it('reports result summaries as unsupported instead of silently claiming complete export', () => {
+    const input = { sql: "-- @summary: value=total label='Total' unit=s\nSELECT 12 AS total", title: 'Summary example' };
+    expect(analyzeGrafanaExport(input).capabilities).toContainEqual(expect.objectContaining({
+      tracehouseFeature: '@summary', level: 'unsupported', decision: 'drop',
+    }));
+    expect(toGrafanaPanel(input).targets[0].rawSql).toContain('SELECT 12 AS total');
+    expect(analyzeGrafanaExport({ sql: 'SELECT 1', title: 'Plain' }).capabilities)
+      .not.toContainEqual(expect.objectContaining({ tracehouseFeature: '@summary' }));
+  });
   it('exports a styled bar chart panel from Tracehouse chart metadata', () => {
     const panel = toGrafanaPanel({
       sql: baseSql,

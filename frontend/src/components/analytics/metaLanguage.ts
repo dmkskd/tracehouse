@@ -4,6 +4,7 @@
  * Parses structured comments embedded in SQL queries:
  *   -- @meta:       title, group, description, interval
  *   -- @chart:      type, group_by, value, series, style, unit, orientation
+ *   -- @summary:    value, label, unit (repeatable result-wide numeric metrics)
  *   -- @cell: column-level table decorations (rag, gauge, sparkline)
  *   -- @drill:      click-through navigation between queries
  *   -- @link:       modal popup navigation between queries
@@ -110,6 +111,17 @@ export type GaugeRule = GaugeCellStyle;
 /** @deprecated Use CellStyleRule with type='sparkline' instead. */
 export type SparklineRule = SparklineCellStyle;
 
+export interface SummaryMetric {
+  valueColumn: string;
+  label: string;
+  unit?: string;
+}
+
+export interface SummaryDirectives {
+  metrics: SummaryMetric[];
+  diagnostics: string[];
+}
+
 /** Result of parsing all -- directives from a SQL string. */
 export interface ParsedDirectives {
   meta?: {
@@ -161,6 +173,7 @@ export interface ParsedDirectives {
   };
   /** All cell style rules (rag, gauge, sparkline) from @cell: directives. */
   cellStyles: CellStyleRule[];
+  summaries?: SummaryDirectives;
   requires?: {
     clickhouseMinVersion?: string;
   };
@@ -530,6 +543,33 @@ function matchQuotedDirective(source: string, key: string): string | undefined {
   return match ? match[1].replace(/\\(.)/g, '$1') : undefined;
 }
 
+/** Parse standalone result summaries, including queries without @meta or @chart. */
+export function parseSummaryDirectives(sql: string): SummaryDirectives | undefined {
+  const lines = [...sql.matchAll(/^[ \t]*--[ \t]*@summary[ \t]*:[ \t]*([^\r\n]*)/gim)];
+  if (!lines.length) return undefined;
+  const result: SummaryDirectives = { metrics: [], diagnostics: [] };
+  for (const [index, match] of lines.entries()) {
+    const text = match[1];
+    // Tokenise quoted labels with the same escaping as the other AQL directives.
+    const token = /(?:^|\s+)(\w+)=([^\s'=]+|'(?:[^'\\]|\\.)*')(?=\s|$)/g;
+    const options: Record<string, string> = {};
+    let invalid = false;
+    const remainder = text.replace(token, (_whole, key: string, value: string) => {
+      if (!['value', 'label', 'unit'].includes(key) || key in options) invalid = true;
+      options[key] = value;
+      return ' ';
+    });
+    const label = matchQuotedDirective(text, 'label');
+    if (invalid || remainder.trim() || !/^\w+$/.test(options.value ?? '') || !label?.trim()
+      || !options.label?.startsWith("'") || (options.unit !== undefined && !/^[^\s'=]+$/.test(options.unit))) {
+      result.diagnostics.push(`@summary ${index + 1}: expected value=column label='Label' and optional unit=unit.`);
+      continue;
+    }
+    result.metrics.push({ valueColumn: options.value, label: label.trim(), ...(options.unit ? { unit: options.unit } : {}) });
+  }
+  return result;
+}
+
 export function parseDirectives(sql: string): ParsedDirectives | null {
   const metaMatch = sql.match(/--\s*@meta:\s*(.+)/i);
   if (!metaMatch) return null;
@@ -557,6 +597,8 @@ export function parseDirectives(sql: string): ParsedDirectives | null {
     },
     cellStyles: [...parseCellStyles(sql), ...parseRagRules(sql)],
   };
+  const summaries = parseSummaryDirectives(sql);
+  if (summaries) result.summaries = summaries;
 
   const chartMatch = sql.match(/--\s*@chart:\s*(.+)/i);
   if (chartMatch) {

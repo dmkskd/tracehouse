@@ -11,11 +11,12 @@ const GiB = 1073741824;
 describe('Merge cost attribution', { tags: ['analytics'] }, () => {
   let ctx: TestClickHouseContext;
 
-  async function run(title: string, params: Record<string, string> = { tbl: 'app.events' }) {
+  async function run(title: string, params: Record<string, string> = { tbl: 'app.events' }, interval = '1 DAY', clock?: string) {
     const raw = analyticsQueries.find(q => q.includes(`title='${title}'`));
     if (!raw) throw new Error(`Missing query: ${title}`);
-    const sql = resolveDrillParams(resolveTimeRange(raw, '1 DAY'), params)
+    let sql = resolveDrillParams(resolveTimeRange(raw, '1 DAY', interval), params)
       .replaceAll('{{cluster_aware:system.part_log}}', `${DB}.events`);
+    if (clock) sql = sql.replaceAll('now()', `toDateTime('${clock}', 'UTC')`);
     return ctx.rawAdapter.executeQuery<Record<string, unknown>>(sql);
   }
 
@@ -165,6 +166,7 @@ describe('Merge cost attribution', { tags: ['analytics'] }, () => {
       ProfileEvents: kind === 'missing' ? {} : { OSCPUVirtualTimeMicroseconds: 0 } }]);
     const [row] = await run('Merge CPU by Table');
     expect(row.cpu_seconds).toBe(kind === 'missing' ? null : 0);
+    expect(row.total_cpu_seconds).toBe(kind === 'missing' ? null : 0);
     expect(row.avg_cpu_seconds).toBe(kind === 'missing' ? null : 0);
     expect(Number(row.cpu_coverage_pct)).toBe(kind === 'missing' ? 0 : 100);
     expect(row.cpu_share_pct).toBeNull();
@@ -196,6 +198,11 @@ describe('Merge cost attribution', { tags: ['analytics'] }, () => {
       const rows = await run(title, {});
       expect(rows).toHaveLength(30);
       for (const row of rows) {
+        expect(Number(row.total_merge_count)).toBe(31);
+        expect(Number(row.total_elapsed_seconds)).toBe(31);
+        expect(Number(row.total_cpu_seconds)).toBe(31);
+        expect(row).not.toHaveProperty('chart_summary');
+        expect(row).not.toHaveProperty('chart_detail');
         for (const metric of ['cpu_share_pct', 'elapsed_share_pct', 'merge_share_pct']) {
           expect(Number(row[metric]), metric).toBe(3.23); // 100 / 31, not 100 / 30
         }
@@ -208,6 +215,11 @@ describe('Merge cost attribution', { tags: ['analytics'] }, () => {
     for (const title of ['Merge CPU by Level Transition', 'Merge Elapsed Time by Level Transition',
       'Merge CPU by Result Size', 'Merge Elapsed Time by Result Size', 'Merge Cost by Reason', 'Table Merge Cost Breakdown']) {
       const rows = await run(title);
+      for (const row of rows) {
+        expect(Number(row.total_merge_count), title).toBe(Number(total.merge_count));
+        expect(Number(row.total_elapsed_seconds), title).toBe(Number(total.elapsed_seconds));
+        expect(Number(row.total_cpu_seconds), title).toBe(Number(total.cpu_seconds));
+      }
       for (const metric of ['merge_count', 'cpu_profiled_merges', 'cpu_seconds', 'elapsed_seconds']) {
         expect(rows.reduce((sum, row) => sum + Number(row[metric]), 0), `${title}: ${metric}`).toBe(Number(total[metric]));
       }
@@ -215,6 +227,15 @@ describe('Merge cost attribution', { tags: ['analytics'] }, () => {
         expect(rows.reduce((sum, row) => sum + Number(row[metric]), 0), `${title}: ${metric}`).toBeCloseTo(100, 1);
       }
     }
+  });
+
+  it('preserves quoted UInt64 and Int64 values under explicit JSONEachRow integer settings', async () => {
+    const [row] = await ctx.rawAdapter.executeQuery(`SELECT
+      toUInt64('18446744073709551615') AS large_count,
+      toInt64('-9223372036854775808') AS signed_count,
+      toUInt64(454) AS merge_count
+      SETTINGS output_format_json_quote_64bit_integers = 1`);
+    expect(row).toEqual({ large_count: '18446744073709551615', signed_count: '-9223372036854775808', merge_count: '454' });
   });
 
   it('keeps original throughput and duration arithmetic in MB/s and seconds', async () => {
@@ -312,6 +333,60 @@ describe('Merge cost attribution', { tags: ['analytics'] }, () => {
       for (const metric of ['cpu_share_pct', 'elapsed_share_pct', 'merge_share_pct']) {
         expect(Number(row[metric]), metric).toBe(0.25); // 100 / 400, not 100 / 200
       }
+    }
+  });
+
+  it('returns hand-calculated 15m, 1h, and 6h totals across midnight for every cost breakdown', async () => {
+    const clock = '2026-10-22 00:30:00';
+    const clockMs = Date.parse('2026-10-22T00:30:00Z');
+    function event(minutesAgo: number, durationMs: number, cpuUs: number, extra: Record<string, unknown> = {}) {
+      const timestamp = new Date(clockMs - minutesAgo * 60000).toISOString();
+      return { ...first, event_time: timestamp.slice(0, 19).replace('T', ' '), event_date: timestamp.slice(0, 10),
+        duration_ms: durationMs, ProfileEvents: { OSCPUVirtualTimeMicroseconds: cpuUs }, ...extra };
+    }
+    await seed([
+      event(5, 120000, 90e6),
+      event(10, 180000, 120e6, { size_in_bytes: 20 * 1048576 }),
+      event(30, 240000, 180e6, { part_name: 'all_1_4_2', merged_from: ['all_1_2_1'], size_in_bytes: 200 * 1048576 }),
+      event(120, 600000, 450e6, { part_name: 'all_1_8_3', merged_from: ['all_1_4_2', 'all_5_5_0'], size_in_bytes: 2 * GiB, merge_reason: 'TTLRecompressMerge' }),
+      event(420, 900000, 600e6), // outside all three windows
+      event(5, 900000, 600e6, { table: 'other' }), // outside the selected table
+    ]);
+    // CPU is microseconds → seconds; duration is milliseconds → seconds.
+    // These exact totals also catch an extra /1000 or a default 1 DAY leaking through.
+    const expectations = [
+      { interval: '15 MINUTE', count: 2, cpu: 210, elapsed: 300 },
+      { interval: '1 HOUR', count: 3, cpu: 390, elapsed: 540 },
+      { interval: '6 HOUR', count: 4, cpu: 840, elapsed: 1140 },
+    ];
+    for (const expected of expectations) {
+      for (const query of queries) {
+        const title = query.match(/title='([^']+)'/)![1];
+        const rows = await run(title, { tbl: 'app.events' }, expected.interval, clock);
+        for (const [metric, value] of Object.entries({
+          merge_count: expected.count, cpu_seconds: expected.cpu, elapsed_seconds: expected.elapsed,
+        })) {
+          expect(rows.reduce((sum, row) => sum + Number(row[metric]), 0), `${expected.interval} / ${title} / ${metric}`).toBe(value);
+        }
+      }
+    }
+  });
+
+  it('applies the exact lower cutoff independently for 15m, 1h, and 6h', async () => {
+    const clock = '2026-10-22 12:00:00';
+    const clockMs = Date.parse('2026-10-22T12:00:00Z');
+    const minutes = [15, 60, 360];
+    await seed(minutes.flatMap((age, index) => [-1, 0, 1].map(offset => ({
+      ...first, duration_ms: 1000, ProfileEvents: { OSCPUVirtualTimeMicroseconds: 1e6 },
+      table: `boundary_${index}`,
+      event_time: new Date(clockMs - age * 60000 + offset * 1000).toISOString().slice(0, 19).replace('T', ' '),
+      event_date: '2026-10-22',
+    }))));
+    for (const [index, interval] of ['15 MINUTE', '1 HOUR', '6 HOUR'].entries()) {
+      const [row] = await run('Merge CPU by Table', { tbl: `app.boundary_${index}` }, interval, clock);
+      expect(Number(row.merge_count), interval).toBe(1); // only the sample one second inside the window
+      expect(Number(row.cpu_seconds), interval).toBe(1);
+      expect(Number(row.elapsed_seconds), interval).toBe(1);
     }
   });
 });

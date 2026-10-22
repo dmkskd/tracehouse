@@ -227,6 +227,12 @@ export function analyzeGrafanaExport(input: GrafanaExportInput): GrafanaExportAn
     panelType,
     capabilities: [
       chartCapability(input, panelType),
+      ...(/^\s*--\s*@summary\s*:/im.test(input.sql) ? [capability({
+        tracehouseFeature: '@summary',
+        level: 'unsupported',
+        message: 'Result summaries are not exported to Grafana. The query and its numeric result columns are preserved.',
+        decision: 'drop',
+      })] : []),
       ...(input.cellStyles ?? []).map(style => cellCapability(style, input)),
       ...interactionCapabilities(input),
     ],

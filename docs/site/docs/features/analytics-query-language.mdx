@@ -48,6 +48,7 @@ Tells the explorer how to visualise the result set.
 | `unit`        | No       | Unit suffix for value axis ticks, e.g. `ms`, `s`, `MB`, `%`. Time units (`ms`, `s`) auto-scale (e.g. 1400 ms → 1.4 s) |
 | `orientation` | No       | `horizontal` (default for grouped/stacked bars) or `vertical` (shorthand `v`). Controls bar direction - horizontal puts labels on the left for readability |
 | `color`       | No       | Override the default chart color with a hex value (e.g. `#f59e0b`) |
+| `description` | No       | Column containing additional text for each data point's tooltip. |
 | `render`      | No       | Rendering variant within the chart `type`. `overlay` = many-series "spaghetti" (no legend, thin translucent lines, hover to spotlight one, click to isolate); `grouped_line` only |
 
 #### `type=grouped_stacked_bar` - Clustered stacked bars
@@ -91,6 +92,24 @@ SQL-created radar values are also supported when the query already returns norma
 ```sql
 -- @chart: type=radar label=query_id values=pressure_values labels=pressure_labels color_by=pressure_score
 ```
+
+### `@summary` - Result-wide numeric metrics
+
+Repeat this directive to show labelled metrics above a result in dashboards and Query Explorer:
+
+```sql
+-- @chart: type=bar group_by=table value=elapsed_seconds unit=s style=2d
+-- @summary: value=total_elapsed_seconds label='Total duration' unit=s
+-- @summary: value=total_merge_count label='Merges'
+```
+
+`value` selects a numeric result column; `label` is required and single-quoted; `unit` is optional and uses the same formatter as chart axes. For example, 5648.305 with `unit=s` displays as **1.6 h**. The value's accessible label and hover title retain the original SQL value and unit.
+
+SQL must return the same summary value on every row. Use window aggregates **before LIMIT** to include all groups. Summaries use the full SQL-defined population even when the chart displays only its first 50 rows (30 for grouped charts). The UI does not sum chart points or infer summaries from column names.
+
+Numbers and numeric strings are accepted, including quoted UInt64/Int64 values. Integers outside JavaScript's safe-integer range display their exact digits. NULL displays **—**; an empty result has no summary. Missing columns, unsupported values, and differing values across rows produce a nonblocking **Summary unavailable** diagnostic.
+
+Summaries work with each surface's existing 2D charts and remain visible in table view, including dashboard focus/fullscreen. Query Explorer does not yet support grouped stacked bars. 3D charts, linked mini panels, and combined overlays do not display summaries; those surfaces state the limitation. Native dashboard export/import preserves the directives with the SQL, including embedded queries. Older versions ignore the new directive. Grafana export reports summaries as unsupported.
 
 ### `@drill` - Drill-down navigation
 

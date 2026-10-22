@@ -21,6 +21,7 @@ vi.mock('../editor/SqlEditor', () => ({
     <textarea aria-label="Query SQL" value={value} onChange={event => onChange(event.target.value)} />
   ),
 }));
+vi.mock('../charts3d', () => ({ Chart3DCanvas: () => <div data-testid="3d-chart" /> }));
 
 const storedValues = new Map<string, string>();
 const localStorageMock: Storage = {
@@ -72,6 +73,100 @@ describe('DashboardViewer query version compatibility', () => {
     cleanup();
     useMonitoringCapabilitiesStore.getState().reset();
     mocks.run.mockReset().mockResolvedValue([]);
+  });
+
+  test('updates summary totals with the selected time range and retains them in table view', async () => {
+    localStorage.setItem('tracehouse-dashboards-user', JSON.stringify([{
+      id: 'merge-totals-test', title: 'Merge totals test', columns: 1,
+      panels: [{ queryName: 'Merge Analytics#Merge Elapsed Time by Level Transition' }],
+    }]));
+    mocks.run.mockImplementation(async (sql: string) => {
+      const short = sql.includes('INTERVAL 15 MINUTE');
+      return [{ level_transition: '0 → 1', merge_count: 5, elapsed_seconds: 0.615,
+        avg_elapsed_seconds: 0.123, total_merge_count: short ? '74' : '271',
+        total_elapsed_seconds: short ? 4.736 : 12.488 }];
+    });
+    render(<MemoryRouter><DashboardViewer initialDashboardId="merge-totals-test" /></MemoryRouter>);
+    expect(await screen.findByLabelText('Result summary')).toHaveTextContent('Total duration 12.5 s');
+    expect(screen.getByLabelText('Result summary')).toHaveTextContent('Merges 271');
+    fireEvent.click(screen.getByRole('button', { name: '15m', exact: true }));
+    await waitFor(() => expect(screen.getByLabelText('Result summary')).toHaveTextContent('Total duration 4.7 s'));
+    expect(screen.getByLabelText('Total duration: 4.736 s')).toBeInTheDocument();
+    expect(screen.getByLabelText('Result summary')).toHaveTextContent('Merges 74');
+    fireEvent.click(screen.getByTitle('Table view'));
+    expect(screen.getByLabelText('Result summary')).toHaveTextContent('Total duration 4.7 s');
+    fireEvent.click(screen.getByTitle('Chart view'));
+    expect(screen.getByLabelText('Result summary')).toHaveTextContent('Total duration 4.7 s');
+  });
+
+  test('shows the corresponding totals on both CPU and elapsed panels', async () => {
+    localStorage.setItem('tracehouse-dashboards-user', JSON.stringify([{
+      id: 'paired-summaries', title: 'Paired summaries', columns: 2,
+      panels: [
+        { queryName: 'Merge Analytics#Merge CPU by Table' },
+        { queryName: 'Merge Analytics#Merge Elapsed Time by Table' },
+      ],
+    }]));
+    mocks.run.mockResolvedValue([{ tbl: 'app.events', cpu_seconds: 60, elapsed_seconds: 120,
+      total_cpu_seconds: 60, total_elapsed_seconds: 120, total_merge_count: '5' }]);
+    render(<MemoryRouter><DashboardViewer initialDashboardId="paired-summaries" /></MemoryRouter>);
+    expect(await screen.findByLabelText('Total CPU: 60 s')).toHaveTextContent('1.0 min');
+    expect(await screen.findByLabelText('Total duration: 120 s')).toHaveTextContent('2.0 min');
+    expect(screen.getAllByLabelText('Merges: 5')).toHaveLength(2);
+  });
+
+  test.each(['bar', 'line', 'area', 'pie', 'grouped_bar', 'stacked_bar', 'grouped_stacked_bar', 'grouped_line', 'radar'])(
+    'uses the shared result summary for dashboard %s charts', async type => {
+      localStorage.setItem('tracehouse-dashboards-user', JSON.stringify([{
+        id: 'summary-family', title: 'Summary family', columns: 1,
+        panels: [{ queryName: 'Custom#Family' }],
+        queries: [`-- @meta: title='Family' group='Custom'
+-- @chart: type=${type} style=2d group_by=region value=metric series=kind cluster=host axes=a:metric,b:total ranges=a:0..100,b:0..100
+-- @summary: value=total label='Total' unit=s
+SELECT 1`],
+      }]));
+      mocks.run.mockResolvedValue([{ region: 'West', metric: 2, kind: 'Work', host: 'A', total: 64 }]);
+      render(<MemoryRouter><DashboardViewer initialDashboardId="summary-family" /></MemoryRouter>);
+      expect(await screen.findByLabelText('Total: 64 s')).toHaveTextContent('1.1 min');
+      expect(screen.getByTitle('Table view')).toBeInTheDocument();
+    },
+  );
+
+  test('states the 3D limitation and still shows the same result summary in table view', async () => {
+    localStorage.setItem('tracehouse-dashboards-user', JSON.stringify([{
+      id: 'summary-3d', title: '3D summary', columns: 1,
+      panels: [{ queryName: 'Custom#3D' }],
+      queries: ["-- @meta: title='3D' group='Custom'\n-- @chart: type=bar style=3d group_by=region value=metric\n-- @summary: value=total label='Total' unit=s\nSELECT 1"],
+    }]));
+    mocks.run.mockResolvedValue([{ region: 'West', metric: 2, total: 64 }]);
+    render(<MemoryRouter><DashboardViewer initialDashboardId="summary-3d" /></MemoryRouter>);
+    expect(await screen.findByText('Summaries are available in 2D or table view.')).toBeInTheDocument();
+    expect(screen.queryByLabelText('Result summary')).not.toBeInTheDocument();
+    fireEvent.click(screen.getByTitle('Table view'));
+    expect(screen.getByLabelText('Total: 64 s')).toBeInTheDocument();
+  });
+
+  test('discards stale summaries after a time change and clears them on a failed refresh', async () => {
+    localStorage.setItem('tracehouse-dashboards-user', JSON.stringify([{
+      id: 'summary-race', title: 'Summary race', columns: 1,
+      panels: [{ queryName: 'Merge Analytics#Merge Elapsed Time by Level Transition' }],
+    }]));
+    const pending: Array<(rows: Record<string, unknown>[]) => void> = [];
+    const row = (total: number) => [{ level_transition: '0 → 1', elapsed_seconds: 1, total_elapsed_seconds: total, total_merge_count: '5' }];
+    mocks.run.mockImplementation((sql: string) => sql.includes('INTERVAL 15 MINUTE')
+      ? new Promise(resolve => pending.push(resolve)) : Promise.resolve(row(sql.includes('INTERVAL 6 HOUR') ? 3600 : 60)));
+    render(<MemoryRouter><DashboardViewer initialDashboardId="summary-race" /></MemoryRouter>);
+    await screen.findByLabelText('Total duration: 60 s');
+    fireEvent.click(screen.getByRole('button', { name: '15m', exact: true }));
+    await waitFor(() => expect(pending.length).toBeGreaterThan(0));
+    fireEvent.click(screen.getByRole('button', { name: '6h', exact: true }));
+    await screen.findByLabelText('Total duration: 3600 s');
+    await act(async () => { for (const resolve of pending) resolve(row(15)); });
+    expect(screen.getByLabelText('Total duration: 3600 s')).toBeInTheDocument();
+    mocks.run.mockRejectedValue(new Error('Refresh failed'));
+    fireEvent.click(screen.getByRole('button', { name: '1h', exact: true }));
+    await screen.findByText(/Refresh failed/);
+    expect(screen.queryByLabelText('Result summary')).not.toBeInTheDocument();
   });
 
   test.each([

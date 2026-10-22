@@ -33,6 +33,7 @@ import {
   type QueryGroup, type ChartType, type ChartStyle,
   evaluateQueryVersionCompatibility,
   parseCellStyles, parseRagRules, parseChartDirective, parseDirectives, resolveQueryRef,
+  parseSummaryDirectives, type SummaryDirectives,
 } from './metaLanguage';
 import { LinkQueryModal } from './LinkQueryModal';
 import { PartInspector } from '../database/PartInspector';
@@ -46,6 +47,7 @@ import {
   type ChartDataPoint, type ChartConfig, type GroupedChartData, type DrillDownEvent,
 } from './charts';
 import { Chart3DCanvas } from './charts3d';
+import { ChartSummary } from './ChartSummary';
 import { ResultsTable } from './ResultsTable';
 import { highlightSQL } from '../../utils/sqlHighlighter';
 import DOMPurify from 'dompurify';
@@ -114,6 +116,7 @@ interface QueryResult {
   query: string;
   startedAt: string;
   endedAt: string;
+  summaries?: SummaryDirectives;
 }
 
 type ViewMode = 'table' | 'chart' | 'queries' | 'analysis';
@@ -308,6 +311,7 @@ export const QueryExplorer: React.FC<QueryExplorerProps> = ({ urlState, onUrlSta
         query: resolvedSql,
         startedAt,
         endedAt: new Date().toISOString(),
+        summaries: parseSummaryDirectives(q),
       });
 
       if (directive) {
@@ -1140,7 +1144,9 @@ export const QueryExplorer: React.FC<QueryExplorerProps> = ({ urlState, onUrlSta
 
           {/* Table view */}
           {result && viewMode === 'table' && (
-            <div style={{ flex: 1, overflow: 'auto', position: 'relative' }}>
+            <div style={{ flex: 1, minHeight: 0, display: 'flex', flexDirection: 'column' }}>
+              <div style={{ padding: '0 24px' }}><ChartSummary rows={result.rows} config={result.summaries} /></div>
+              <div style={{ flex: 1, overflow: 'auto', position: 'relative' }}>
               <ResultsTable
                 columns={result.columns}
                 rows={sortedRows}
@@ -1157,6 +1163,7 @@ export const QueryExplorer: React.FC<QueryExplorerProps> = ({ urlState, onUrlSta
                 onPartLinkClick={isPartLinkable ? handlePartLinkClick : undefined}
                 enableRowDetails
               />
+              </div>
             </div>
           )}
 
@@ -1214,6 +1221,8 @@ export const QueryExplorer: React.FC<QueryExplorerProps> = ({ urlState, onUrlSta
               )}
 
               {/* Chart area */}
+              <div style={{ padding: '0 24px' }}><ChartSummary rows={result.rows} config={result.summaries}
+                unavailableReason={chartVisualization === '3d' ? 'Summaries are available in 2D or table view.' : undefined} /></div>
               <div style={{ flex: 1, overflow: 'auto', padding: chartVisualization === '3d' ? 0 : 24, minHeight: 0 }}>
                 {chartVisualization === '2d' ? (
                   <div style={{ position: 'relative', width: '100%', height: '100%' }}>
