@@ -71,6 +71,7 @@ const costMetrics = `count() AS merge_count,
     round(sum(sum(cpu)) OVER (), 3) AS total_cpu_seconds`;
 
 const reasonCostMetrics = `count() AS merge_count,
+    count(cpu) AS cpu_profiled_merges,
     round(sum(cpu), 3) AS cpu_seconds,
     round(sum(elapsed), 3) AS elapsed_seconds,
     round(100.0 * sum(cpu) / nullIf(sum(sum(cpu)) OVER (), 0), 2) AS cpu_share_pct,
