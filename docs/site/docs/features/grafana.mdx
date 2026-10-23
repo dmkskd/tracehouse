@@ -26,6 +26,40 @@ TraceHouse can export a Query Explorer result as a Grafana panel. The query, cha
 
 This lets you define the panel in TraceHouse first, where editing SQL and chart directives is often faster than configuring the same panel manually in Grafana.
 
+## Linking From Existing Dashboards
+
+You don't have to replace your existing ClickHouse dashboards to use TraceHouse. A Grafana [data link](https://grafana.com/docs/grafana/latest/panels-visualizations/configure-data-links/) on any panel that shows a query ID can open that query directly in the TraceHouse query monitor.
+
+The link never leaves Grafana. It points to the TraceHouse app plugin installed in the same Grafana instance (a relative `/a/<plugin-id>/...` path), not to a separate TraceHouse deployment. The user stays in the same Grafana session, with the same login and data source permissions, and the query detail is fetched through the same ClickHouse data source the dashboard uses.
+
+The demo stack ships an example: **ClickHouse - Query Analysis [TraceHouse linked]** (`infra/docker/grafana/dashboards/TraceHouse/query-analysis-linked.json`). It is the standard query analysis dashboard with one addition - a field override on the `Query id` column of the "Query overview" table:
+
+```json
+{
+  "matcher": { "id": "byName", "options": "Query id" },
+  "properties": [
+    {
+      "id": "links",
+      "value": [
+        {
+          "title": "Open in TraceHouse",
+          "url": "/a/dmkskd-tracehouse-app/queries?qd_id=${__value.raw}&th_ds=${datasource}",
+          "targetBlank": true
+        }
+      ]
+    }
+  ]
+}
+```
+
+Clicking a query ID opens the TraceHouse app page inside Grafana with that query's detail view already loaded. `/a/dmkskd-tracehouse-app/` is Grafana's own route for app plugins, so the URL has no host and resolves against the Grafana instance serving the dashboard. The URL parameters:
+
+- `qd_id` - the query ID to open. `${__value.raw}` is the clicked cell's value.
+- `th_ds` - the ClickHouse data source UID. Passing the dashboard's `${datasource}` variable makes TraceHouse use the same data source the dashboard is querying, instead of the last one selected in the app.
+- `th_cluster` (optional) - the cluster name to query. If omitted, TraceHouse uses its normal cluster selection.
+
+To add this to your own dashboard, open the table panel, add a field override for the column that holds the query ID, and add a data link with the URL above. Adjust `${datasource}` if your dashboard's data source variable has a different name.
+
 ## Differences from Standalone
 
 - **No connection setup** - Users don't enter host, port, or credentials. They pick from the Grafana ClickHouse data sources already configured in their Grafana instance.
