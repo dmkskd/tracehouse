@@ -5,6 +5,23 @@ All notable changes to the TraceHouse Grafana plugin will be documented in this 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.19.2] - 2026-10-22
+
+### New features
+- **X-Ray:** Queries can now be inspected from the built-in `system.query_metric_log` (ClickHouse 24.10+), without installing the TraceHouse sampler.
+- **Analytics:** Dashboards can embed their own SQL; export can include queries, and import creates an independent copy.
+- **Analytics:** New `@summary` directive shows result-wide totals above a chart or table.
+
+### Improvements
+- **Overview:** The resource arena now shows recently finished queries and merges, not only running ones.
+- **Query Details:** The execution plan can be shown in ClickHouse plan order as well as data-flow order.
+- **Time Travel / Overview:** Chart heights now adapt to the screen size.
+- **Analytics:** Merge Analytics now shows where merge CPU and time go by table, level, result size, and reason.
+
+### Bug fixes
+- **Time Travel:** Fixed lag when hovering the chart.
+- **Queries:** Query comparison no longer drops selected queries when auto-refresh pushes them out of the list.
+
 ## [0.19.1] - 2026-09-14
 
 ### Improvements
