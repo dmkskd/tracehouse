@@ -120,6 +120,7 @@ function formatParameter(value: QueryParameter): string {
  * Build a SQL query from a template and parameters.
  * Named placeholders like {database} or {limit:UInt32} are replaced with escaped values.
  * Supports ClickHouse-style typed placeholders like {name:Type}.
+ * This escapes parameters; it does not validate or restrict the SQL statement.
  */
 export function buildQuery(
   template: string,
@@ -138,7 +139,7 @@ export function buildQuery(
 }
 
 /**
- * Prepend a SQL comment tag to a query for traceability.
+ * Append a SQL comment tag to a query for traceability.
  * The tag appears in system.query_log.query, making it searchable
  * via the existing query_text filter (positionCaseInsensitive).
  *

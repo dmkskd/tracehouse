@@ -1,0 +1,772 @@
+/**
+ * Meta language parser for query explorer directives.
+ *
+ * Parses structured comments embedded in SQL queries:
+ *   -- @meta:       title, group, description, interval
+ *   -- @chart:      type, group_by, value, series, style, unit, orientation
+ *   -- @summary:    value, label, unit (repeatable result-wide numeric metrics)
+ *   -- @cell: column-level table decorations (rag, gauge, sparkline)
+ *   -- @drill:      click-through navigation between queries
+ *   -- @link:       modal popup navigation between queries
+ *   -- @requires:   minimum ClickHouse version
+ *   -- Source:      attribution URL
+ */
+
+import {
+  isClickHouseVersionAtLeast,
+  parseClickHouseVersion,
+} from '../utils/clickhouse-version.js';
+
+/* ─── types ─── */
+
+// ChartType is defined once in @tracehouse/core so the frontend parser and the
+// Grafana export can't drift. Re-exported here for existing local imports.
+export type { ChartType } from '../types/chart.js';
+import type { ChartType } from '../types/chart.js';
+export type ChartStyle = '2d' | '3d';
+/** Rendering variant within a chart type (currently overlay/spaghetti for grouped_line;
+ *  reserved for future siblings like band / small_multiples). */
+export type ChartRender = 'overlay';
+
+/** Cell style type - determines how a table column is decorated. */
+export type CellStyleType = 'rag' | 'gauge' | 'sparkline' | 'radar';
+
+/** Unified cell style rule parsed from @cell: directives. */
+export type CellStyleRule = RagCellStyle | GaugeCellStyle | SparklineCellStyle | RadarCellStyle;
+
+/** RAG (Red/Amber/Green) cell style - conditional coloring based on thresholds or text values. */
+export interface RagCellStyle {
+  column: string;
+  type: 'rag';
+  mode: 'numeric' | 'text';
+  /** Numeric mode */
+  direction?: 'asc' | 'desc';
+  greenThreshold?: number;
+  amberThreshold?: number;
+  /** Text mode - comma-separated values for each level */
+  greenValues?: string[];
+  amberValues?: string[];
+  redValues?: string[];
+}
+
+/** Gauge cell style - inline horizontal bar. */
+export interface GaugeCellStyle {
+  column: string;
+  type: 'gauge';
+  /** Fixed number or another column name for the bar's 100% value */
+  max: number | string;
+  unit?: string;
+}
+
+/** Sparkline cell style - tiny inline SVG trend. */
+export interface SparklineCellStyle {
+  column: string;
+  type: 'sparkline';
+  /** Optional horizontal reference line value (e.g. 0 for delta charts) */
+  ref?: number;
+  color?: string;
+  fill?: boolean;
+}
+
+export interface RadarAxisRange {
+  low: string;
+  high: string;
+}
+
+interface RadarOptions {
+  profile?: string;
+  axes?: Record<string, string>;
+  ranges?: Record<string, RadarAxisRange>;
+  transforms?: Record<string, string>;
+  values?: string;
+  labels?: string;
+  color?: string;
+  colorBy?: string;
+  colorScale?: string;
+  colors?: string;
+}
+
+/** Radar cell style. Uses either an existing SQL array column or a synthetic display-only radar column. */
+export interface RadarCellStyle {
+  type: 'radar';
+  /** Existing SQL result column containing normalized values. Mutually exclusive with radarColumn. */
+  column?: string;
+  /** Display-only column created by AQL from axes/ranges. Mutually exclusive with column. */
+  radarColumn?: string;
+  profile?: string;
+  axes?: Record<string, string>;
+  ranges?: Record<string, RadarAxisRange>;
+  transforms?: Record<string, string>;
+  labels?: string;
+  color?: string;
+  colorBy?: string;
+  colorScale?: string;
+  colors?: string;
+}
+
+/** @deprecated Use CellStyleRule with type='rag' instead. Alias for backward compat in consumer code. */
+export type RagRule = RagCellStyle;
+/** @deprecated Use CellStyleRule with type='gauge' instead. */
+export type GaugeRule = GaugeCellStyle;
+/** @deprecated Use CellStyleRule with type='sparkline' instead. */
+export type SparklineRule = SparklineCellStyle;
+
+export interface SummaryMetric {
+  valueColumn: string;
+  label: string;
+  unit?: string;
+}
+
+export interface SummaryDirectives {
+  metrics: SummaryMetric[];
+  diagnostics: string[];
+}
+
+/** Result of parsing all -- directives from a SQL string. */
+export interface ParsedDirectives {
+  meta?: {
+    title: string;
+    group: string;
+    description?: string;
+    interval?: string;
+  };
+  chart?: {
+    type: ChartType;
+    style?: ChartStyle;
+    labelColumn?: string;
+    groupByColumn?: string;
+    valueColumn?: string;
+    seriesColumn?: string;
+    clusterColumn?: string;
+    descriptionColumn?: string;
+    profile?: string;
+    axes?: Record<string, string>;
+    ranges?: Record<string, RadarAxisRange>;
+    transforms?: Record<string, string>;
+    valuesColumn?: string;
+    labelsColumn?: string;
+    color?: string;
+    colorByColumn?: string;
+    render?: ChartRender;
+  };
+  drill?: {
+    on: string;
+    into: string;
+  };
+  link?: {
+    on: string;
+    into: string;
+  };
+  /** @part_link: click a part name to open PartInspector. */
+  partLink?: {
+    /** Column containing the part name */
+    on: string;
+    /** Column or drill-param name for the database */
+    database: string;
+    /** Column or drill-param name for the table */
+    table: string;
+  };
+  /** @query_link: click a query_id to open the Query Detail modal on the X-Ray tab. */
+  queryLink?: {
+    /** Column containing the query_id */
+    on: string;
+  };
+  /** All cell style rules (rag, gauge, sparkline) from @cell: directives. */
+  cellStyles: CellStyleRule[];
+  summaries?: SummaryDirectives;
+  requires?: {
+    clickhouseMinVersion?: string;
+  };
+  source?: string;
+}
+
+export type QueryVersionCompatibility =
+  | { status: 'compatible'; requiredVersion?: string; serverVersion?: string }
+  | { status: 'checking'; requiredVersion: string; message: string }
+  | { status: 'unsupported'; requiredVersion: string; serverVersion: string; message: string }
+  | { status: 'unknown'; requiredVersion: string; serverVersion?: string; message: string };
+
+/**
+ * Evaluate a query's minimum-version directive before executing its SQL.
+ * Queries without @requires are always runnable, including while the
+ * capability probe is still discovering the connected server version.
+ */
+export function evaluateQueryVersionCompatibility(
+  minimumVersion: string | undefined,
+  serverVersion: string | null | undefined,
+  versionCheckPending = false,
+): QueryVersionCompatibility {
+  if (!minimumVersion) {
+    return {
+      status: 'compatible',
+      ...(serverVersion ? { serverVersion } : {}),
+    };
+  }
+
+  if (!serverVersion) {
+    if (versionCheckPending) {
+      return {
+        status: 'checking',
+        requiredVersion: minimumVersion,
+        message: `Checking compatibility · Requires ClickHouse ≥ ${minimumVersion}`,
+      };
+    }
+    return {
+      status: 'unknown',
+      requiredVersion: minimumVersion,
+      message: `Not run · Requires ClickHouse ≥ ${minimumVersion} · connected server version unavailable`,
+    };
+  }
+
+  const minimum = parseClickHouseVersion(minimumVersion);
+  const current = parseClickHouseVersion(serverVersion);
+  if (!minimum || !current) {
+    return {
+      status: 'unknown',
+      requiredVersion: minimumVersion,
+      serverVersion,
+      message: `Not run · Requires ClickHouse ≥ ${minimumVersion} · cannot interpret connected version ${serverVersion}`,
+    };
+  }
+
+  if (isClickHouseVersionAtLeast(
+    serverVersion,
+    minimum.major,
+    minimum.minor,
+    minimum.patch,
+  )) {
+    return {
+      status: 'compatible',
+      requiredVersion: minimumVersion,
+      serverVersion,
+    };
+  }
+
+  return {
+    status: 'unsupported',
+    requiredVersion: minimumVersion,
+    serverVersion,
+    message: `Not run · Requires ClickHouse ≥ ${minimumVersion} · connected server ${serverVersion}`,
+  };
+}
+
+/** Detailed chart directive result (superset of chart in ParsedDirectives).
+ *  Supports multi-column values, orientation, unit - used for rendering config. */
+export interface ChartDirective {
+  type?: ChartType;
+  labelColumn?: string;
+  groupByColumn?: string;
+  valueColumn?: string;
+  valueColumns?: string[];
+  seriesColumn?: string;
+  /** Second categorical dimension for grouped_stacked_bar: bars are clustered by
+   *  this column (e.g. server) and stacked by seriesColumn (e.g. kind). */
+  clusterColumn?: string;
+  orientation?: 'horizontal' | 'vertical';
+  visualization?: '2d' | '3d';
+  title?: string;
+  description?: string;
+  /** Column name whose value is shown as description in chart tooltips */
+  descriptionColumn?: string;
+  unit?: string;
+  /** Override the default chart color (hex, e.g. '#f59e0b'). Used for stroke and area fill. */
+  color?: string;
+  /** Rendering variant within the chart type. `overlay` = many-series spaghetti
+   *  (no legend, faint lines, hover to spotlight, click to isolate); grouped_line only. */
+  render?: ChartRender;
+  profile?: string;
+  axes?: Record<string, string>;
+  ranges?: Record<string, RadarAxisRange>;
+  transforms?: Record<string, string>;
+  valuesColumn?: string;
+  labelsColumn?: string;
+  colorByColumn?: string;
+}
+
+/* ─── constants ─── */
+
+export type QueryGroup = 'Overview' | 'Inserts' | 'Selects' | 'Parts' | 'Merges' | 'Resources' | 'Events' | 'Advanced Dashboard' | 'Self-Monitoring' | 'Cloud Providers' | 'Grafana Imports' | 'Knowledge Base' | 'Custom';
+
+export const QUERY_GROUPS: Record<QueryGroup, { color: string; builtin: boolean }> = {
+  'Overview':           { color: '#58a6ff', builtin: true },
+  'Advanced Dashboard': { color: '#d2a8ff', builtin: true },
+  'Inserts':            { color: '#3fb950', builtin: true },
+  'Selects':            { color: '#a78bfa', builtin: true },
+  'Parts':              { color: '#f0883e', builtin: true },
+  'Merges':             { color: '#e3b341', builtin: true },
+  'Resources':          { color: '#f85149', builtin: true },
+  'Events':             { color: '#fb7185', builtin: true },
+  'Self-Monitoring':    { color: '#f0c674', builtin: true },
+  'Cloud Providers':    { color: '#14b8a6', builtin: true },
+  'Grafana Imports':   { color: '#38bdf8', builtin: true },
+  'Knowledge Base':    { color: '#f97316', builtin: true },
+  'Custom':             { color: '#79c0ff', builtin: false },
+};
+
+export const CHART_TYPE_LABELS: Record<string, string> = {
+  bar: 'Bar',
+  line: 'Line',
+  pie: 'Pie',
+  area: 'Area',
+  grouped_bar: 'Grouped Bar',
+  stacked_bar: 'Stacked Bar',
+  grouped_line: 'Grouped Line',
+  radar: 'Radar',
+};
+
+/* ─── RAG evaluation ─── */
+
+/** Resolve RAG color for a cell value. Accepts either CellStyleRule[] or legacy RagRule[]. */
+export function getRagColor(column: string, value: unknown, rules?: CellStyleRule[] | RagCellStyle[]): string | undefined {
+  if (!rules) return undefined;
+  const rule = rules.find(r => r.column === column && (r as CellStyleRule).type === 'rag') as RagCellStyle | undefined;
+  if (!rule) return undefined;
+
+  if (rule.mode === 'text') {
+    const s = String(value).toLowerCase().trim();
+    if (rule.greenValues?.some(v => v === s)) return '#22c55e';
+    if (rule.amberValues?.some(v => v === s)) return '#f59e0b';
+    if (rule.redValues?.some(v => v === s)) return '#ef4444';
+    return undefined;
+  }
+
+  const num = typeof value === 'number' ? value : Number(value);
+  if (isNaN(num)) return undefined;
+  if (rule.direction === 'desc') {
+    if (num > rule.greenThreshold!) return '#22c55e';
+    if (num > rule.amberThreshold!) return '#f59e0b';
+    return '#ef4444';
+  }
+  if (num < rule.greenThreshold!) return '#22c55e';
+  if (num < rule.amberThreshold!) return '#f59e0b';
+  return '#ef4444';
+}
+
+/* ─── parsers ─── */
+
+/** Parse a single @cell: line body into a CellStyleRule, or null if invalid. */
+function parseCellStyleLine(body: string): CellStyleRule | null {
+  const typeMatch = body.match(/type=(\w+)/);
+  const type = typeMatch ? typeMatch[1] : 'rag'; // default to rag for backward compat
+
+  const colMatch = body.match(/(?:^|\s)column=(\w+)/);
+  const column = colMatch?.[1];
+  if (type !== 'radar' && !column) return null;
+
+  switch (type) {
+    case 'rag': {
+      if (!column) return null;
+      // Numeric: green>N amber>N or green<N amber<N
+      const greenNum = body.match(/green([<>])(\d+(?:\.\d+)?)/);
+      const amberNum = body.match(/amber([<>])(\d+(?:\.\d+)?)/);
+      if (greenNum && amberNum) {
+        return {
+          column, type: 'rag', mode: 'numeric',
+          direction: greenNum[1] === '>' ? 'desc' : 'asc',
+          greenThreshold: Number(greenNum[2]),
+          amberThreshold: Number(amberNum[2]),
+        };
+      }
+      // Text: green=ok,healthy amber=degraded red=error,down
+      const greenText = body.match(/green=([^\s]+)/);
+      const amberText = body.match(/amber=([^\s]+)/);
+      const redText = body.match(/red=([^\s]+)/);
+      if (greenText || amberText || redText) {
+        return {
+          column, type: 'rag', mode: 'text',
+          greenValues: greenText?.[1].toLowerCase().split(','),
+          amberValues: amberText?.[1].toLowerCase().split(','),
+          redValues: redText?.[1].toLowerCase().split(','),
+        };
+      }
+      return null;
+    }
+    case 'gauge': {
+      if (!column) return null;
+      const maxMatch = body.match(/max=(\w+(?:\.\d+)?)/);
+      if (!maxMatch) return null;
+      const maxVal = /^\d+(\.\d+)?$/.test(maxMatch[1]) ? Number(maxMatch[1]) : maxMatch[1];
+      const unitMatch = body.match(/unit=(\S+)/);
+      const rule: GaugeCellStyle = { column, type: 'gauge', max: maxVal };
+      if (unitMatch) rule.unit = unitMatch[1];
+      return rule;
+    }
+    case 'sparkline': {
+      if (!column) return null;
+      const rule: SparklineCellStyle = { column, type: 'sparkline' };
+      const refMatch = body.match(/ref=(-?\d+(?:\.\d+)?)/);
+      if (refMatch) rule.ref = Number(refMatch[1]);
+      const colorMatch = body.match(/color=(#[0-9a-fA-F]{3,8})/);
+      if (colorMatch) rule.color = colorMatch[1];
+      const fillMatch = body.match(/fill=(true|false)/i);
+      if (fillMatch) rule.fill = fillMatch[1].toLowerCase() === 'true';
+      return rule;
+    }
+    case 'radar': {
+      const radarColumn = body.match(/(?:^|\s)radar_column=(\w+)/)?.[1];
+      if ((column && radarColumn) || (!column && !radarColumn)) return null;
+      const rule: RadarCellStyle = { type: 'radar' };
+      if (column) rule.column = column;
+      if (radarColumn) rule.radarColumn = radarColumn;
+      const radar = parseRadarOptions(body);
+      if (radar.profile) rule.profile = radar.profile;
+      if (radar.axes) rule.axes = radar.axes;
+      if (radar.ranges) rule.ranges = radar.ranges;
+      if (radar.transforms) rule.transforms = radar.transforms;
+      if (radar.labels) rule.labels = radar.labels;
+      if (radar.color) rule.color = radar.color;
+      if (radar.colorBy) rule.colorBy = radar.colorBy;
+      if (radar.colorScale) rule.colorScale = radar.colorScale;
+      if (radar.colors) rule.colors = radar.colors;
+      if (radarColumn && (!rule.axes || !rule.ranges)) return null;
+      return rule;
+    }
+    default:
+      return null;
+  }
+}
+
+function parseKeyValueList(raw?: string): Record<string, string> | undefined {
+  if (!raw) return undefined;
+  const entries = raw.split(',').filter(Boolean);
+  if (!entries.length) return undefined;
+  const result: Record<string, string> = {};
+  for (const entry of entries) {
+    const idx = entry.indexOf(':');
+    if (idx <= 0 || idx === entry.length - 1) return undefined;
+    result[entry.slice(0, idx)] = entry.slice(idx + 1);
+  }
+  return result;
+}
+
+function parseRanges(raw?: string): Record<string, RadarAxisRange> | undefined {
+  if (!raw) return undefined;
+  const entries = raw.split(',').filter(Boolean);
+  if (!entries.length) return undefined;
+  const result: Record<string, RadarAxisRange> = {};
+  for (const entry of entries) {
+    const idx = entry.indexOf(':');
+    if (idx <= 0 || idx === entry.length - 1) return undefined;
+    const range = entry.slice(idx + 1);
+    const sep = range.indexOf('..');
+    if (sep <= 0 || sep >= range.length - 2) return undefined;
+    result[entry.slice(0, idx)] = {
+      low: range.slice(0, sep),
+      high: range.slice(sep + 2),
+    };
+  }
+  return result;
+}
+
+function parseRadarOptions(body: string): RadarOptions {
+  const options: RadarOptions = {};
+  const profile = body.match(/profile=([\w-]+)/i)?.[1];
+  if (profile) options.profile = profile;
+  const axes = parseKeyValueList(body.match(/axes=([^\s]+)/i)?.[1]);
+  if (axes) options.axes = axes;
+  const ranges = parseRanges(body.match(/ranges=([^\s]+)/i)?.[1]);
+  if (ranges) options.ranges = ranges;
+  const transforms = parseKeyValueList(body.match(/transforms=([^\s]+)/i)?.[1]);
+  if (transforms) options.transforms = transforms;
+  const values = body.match(/values=(\w+)/i)?.[1];
+  if (values) options.values = values;
+  const labels = body.match(/labels=(\w+)/i)?.[1];
+  if (labels) options.labels = labels;
+  const color = body.match(/color=(#[0-9a-fA-F]{3,8}|[\w-]+)/i)?.[1];
+  if (color) options.color = color;
+  const colorBy = body.match(/color_by=(\w+)/i)?.[1];
+  if (colorBy) options.colorBy = colorBy;
+  const colorScale = body.match(/color_scale=([\w-]+)/i)?.[1];
+  if (colorScale) options.colorScale = colorScale;
+  const colors = body.match(/colors=([^\s]+)/i)?.[1];
+  if (colors) options.colors = colors;
+  return options;
+}
+
+function applyRadarOptionsToChart(chart: NonNullable<ParsedDirectives['chart']> | Partial<ChartDirective>, options: RadarOptions): void {
+  if (options.profile) chart.profile = options.profile;
+  if (options.axes) chart.axes = options.axes;
+  if (options.ranges) chart.ranges = options.ranges;
+  if (options.transforms) chart.transforms = options.transforms;
+  if (options.values) chart.valuesColumn = options.values;
+  if (options.labels) chart.labelsColumn = options.labels;
+  if (options.color) chart.color = options.color;
+  if (options.colorBy) chart.colorByColumn = options.colorBy;
+}
+
+/** Parse all @cell: directives from raw SQL. */
+export function parseCellStyles(sql: string): CellStyleRule[] {
+  const rules: CellStyleRule[] = [];
+  const regex = /--\s*@cell:\s*(.+)/gi;
+  let m;
+  while ((m = regex.exec(sql)) !== null) {
+    const rule = parseCellStyleLine(m[1]);
+    if (rule) rules.push(rule);
+  }
+  return rules;
+}
+
+/** @deprecated Parse legacy @rag: directives - use parseCellStyles instead. */
+export function parseRagRules(sql: string): RagCellStyle[] {
+  const rules: RagCellStyle[] = [];
+  const ragRegex = /--\s*@rag:\s*(.+)/gi;
+  let ragMatch;
+  while ((ragMatch = ragRegex.exec(sql)) !== null) {
+    const rule = parseCellStyleLine('type=rag ' + ragMatch[1]);
+    if (rule && rule.type === 'rag') rules.push(rule);
+  }
+  return rules;
+}
+
+/** @deprecated Use parseCellStyles instead. */
+export function parseGaugeRules(sql: string): GaugeCellStyle[] {
+  return parseCellStyles(sql).filter((r): r is GaugeCellStyle => r.type === 'gauge');
+}
+
+/** @deprecated Use parseCellStyles instead. */
+export function parseSparklineRules(sql: string): SparklineCellStyle[] {
+  return parseCellStyles(sql).filter((r): r is SparklineCellStyle => r.type === 'sparkline');
+}
+
+/** Parse all -- directives from a SQL string. Returns null if no @meta directive found. */
+/**
+ * Read a single-quoted @meta value, honouring the backslash escapes that
+ * buildDirectiveHeader() writes.
+ *
+ * A plain `[^']+` stops at the first quote, and an escaped apostrophe is a
+ * quote, so "that shape\'s own RealTimeMicroseconds" truncated to
+ * "that shape\". The writer has always escaped; only the reader was missing
+ * the other half.
+ */
+function matchQuotedDirective(source: string, key: string): string | undefined {
+  const match = source.match(new RegExp(`${key}='((?:[^'\\\\]|\\\\.)+)'`));
+  return match ? match[1].replace(/\\(.)/g, '$1') : undefined;
+}
+
+/** Parse standalone result summaries, including queries without @meta or @chart. */
+export function parseSummaryDirectives(sql: string): SummaryDirectives | undefined {
+  const lines = [...sql.matchAll(/^[ \t]*--[ \t]*@summary[ \t]*:[ \t]*([^\r\n]*)/gim)];
+  if (!lines.length) return undefined;
+  const result: SummaryDirectives = { metrics: [], diagnostics: [] };
+  for (const [index, match] of lines.entries()) {
+    const text = match[1];
+    // Tokenise quoted labels with the same escaping as the other AQL directives.
+    const token = /(?:^|\s+)(\w+)=([^\s'=]+|'(?:[^'\\]|\\.)*')(?=\s|$)/g;
+    const options: Record<string, string> = {};
+    let invalid = false;
+    const remainder = text.replace(token, (_whole, key: string, value: string) => {
+      if (!['value', 'label', 'unit'].includes(key) || key in options) invalid = true;
+      options[key] = value;
+      return ' ';
+    });
+    const label = matchQuotedDirective(text, 'label');
+    if (invalid || remainder.trim() || !/^\w+$/.test(options.value ?? '') || !label?.trim()
+      || !options.label?.startsWith("'") || (options.unit !== undefined && !/^[^\s'=]+$/.test(options.unit))) {
+      result.diagnostics.push(`@summary ${index + 1}: expected value=column label='Label' and optional unit=unit.`);
+      continue;
+    }
+    result.metrics.push({ valueColumn: options.value, label: label.trim(), ...(options.unit ? { unit: options.unit } : {}) });
+  }
+  return result;
+}
+
+export function parseDirectives(sql: string): ParsedDirectives | null {
+  const metaMatch = sql.match(/--\s*@meta:\s*(.+)/i);
+  if (!metaMatch) return null;
+
+
+  const m = metaMatch[1];
+  const title = matchQuotedDirective(m, 'title');
+  const groupRaw = matchQuotedDirective(m, 'group');
+  if (title === undefined || groupRaw === undefined) return null;
+
+  const description = matchQuotedDirective(m, 'description');
+  const interval = matchQuotedDirective(m, 'interval');
+
+  const group = groupRaw.trim();
+  if (!QUERY_GROUPS[group as QueryGroup]) {
+    (QUERY_GROUPS as Record<string, { color: string; builtin: boolean }>)[group] = { color: '#79c0ff', builtin: false };
+  }
+
+  const result: ParsedDirectives = {
+    meta: {
+      title: title.trim(),
+      group,
+      description: description?.trim(),
+      interval: interval?.trim(),
+    },
+    cellStyles: [...parseCellStyles(sql), ...parseRagRules(sql)],
+  };
+  const summaries = parseSummaryDirectives(sql);
+  if (summaries) result.summaries = summaries;
+
+  const chartMatch = sql.match(/--\s*@chart:\s*(.+)/i);
+  if (chartMatch) {
+  const c = chartMatch[1];
+    const t = c.match(/type=(\w+)/);
+    const s = c.match(/style=(\w+)/);
+    const label = c.match(/label=(\w+)/);
+    const l = c.match(/group_by=(\w+)/);
+    const v = c.match(/value=([\w,]+)/);
+    const g = c.match(/series=(\w+)/);
+    const cl = c.match(/cluster=(\w+)/);
+    const dc = c.match(/description=(\w+)/i);
+    const rd = c.match(/render=(\w+)/i);
+    if (t) {
+      result.chart = {
+        type: t[1] as ChartType,
+        style: s ? s[1] as ChartStyle : undefined,
+        labelColumn: label?.[1],
+        groupByColumn: l?.[1],
+        valueColumn: v?.[1],
+        seriesColumn: g?.[1],
+        clusterColumn: cl?.[1],
+        descriptionColumn: dc?.[1],
+        render: rd ? rd[1] as ChartRender : undefined,
+      };
+      applyRadarOptionsToChart(result.chart, parseRadarOptions(c));
+    }
+  }
+
+  const drillMatch = sql.match(/--\s*@drill:\s*(.+)/i);
+  if (drillMatch) {
+    const dr = drillMatch[1];
+    const onMatch = dr.match(/on=(\w+)/);
+    const intoMatch = dr.match(/into='([^']+)'/);
+    if (onMatch && intoMatch) {
+      result.drill = { on: onMatch[1], into: intoMatch[1] };
+    }
+  }
+
+  const linkMatch = sql.match(/--\s*@link:\s*(.+)/i);
+  if (linkMatch) {
+    const lk = linkMatch[1];
+    const onMatch = lk.match(/on=(\w+)/);
+    const intoMatch = lk.match(/into='([^']+)'/);
+    if (onMatch && intoMatch) {
+      result.link = { on: onMatch[1], into: intoMatch[1] };
+    }
+  }
+
+  const partLinkMatch = sql.match(/--\s*@part_link:\s*(.+)/i);
+  if (partLinkMatch) {
+    const pl = partLinkMatch[1];
+    const onMatch = pl.match(/on=(\w+)/);
+    const dbMatch = pl.match(/database=(\w+)/);
+    const tblMatch = pl.match(/table=(\w+)/);
+    if (onMatch && dbMatch && tblMatch) {
+      result.partLink = { on: onMatch[1], database: dbMatch[1], table: tblMatch[1] };
+    }
+  }
+
+  const queryLinkMatch = sql.match(/--\s*@query_link:\s*(.+)/i);
+  if (queryLinkMatch) {
+    const onMatch = queryLinkMatch[1].match(/on=(\w+)/);
+    if (onMatch) result.queryLink = { on: onMatch[1] };
+  }
+
+  const requiresMatch = sql.match(
+    /--\s*@requires:\s*clickhouse\s*>=\s*(\d+\.\d+(?:\.\d+)?)/i,
+  );
+  if (requiresMatch) {
+    result.requires = { clickhouseMinVersion: requiresMatch[1] };
+  }
+
+  const sourceMatch = sql.match(/--\s*@source:\s*(https?:\/\/\S+)/i);
+  if (sourceMatch) result.source = sourceMatch[1];
+
+  return result;
+}
+
+/** Parse @chart directive with full detail (multi-column values, orientation, unit).
+ *  Also extracts title/description from @meta if present. */
+export function parseChartDirective(sql: string): Partial<ChartDirective> | null {
+  const cm = sql.match(/--\s*@chart:\s*(.+)/i);
+  if (!cm) return null;
+  const d = cm[1];
+  const cfg: Partial<ChartDirective> = {};
+  const t = d.match(/type=(\w+)/i); if (t) cfg.type = t[1] as ChartType;
+  const label = d.match(/label=(\w+)/i); if (label) cfg.labelColumn = label[1];
+  const l = d.match(/group_by=(\w+)/i); if (l) cfg.groupByColumn = l[1];
+  const v = d.match(/value=([\w,]+)/i);
+  if (v) {
+    const cols = v[1].split(',').filter(Boolean);
+    cfg.valueColumn = cols[0];
+    if (cols.length > 1) cfg.valueColumns = cols;
+  }
+  const g = d.match(/series=(\w+)/i); if (g) cfg.seriesColumn = g[1];
+  const cl = d.match(/cluster=(\w+)/i); if (cl) cfg.clusterColumn = cl[1];
+  const o = d.match(/orientation=(\w+)/i);
+  if (o) cfg.orientation = o[1].toLowerCase() === 'vertical' || o[1].toLowerCase() === 'v' ? 'vertical' : 'horizontal';
+  const s = d.match(/style=(\w+)/i); if (s) cfg.visualization = s[1] as '2d' | '3d';
+  const rd = d.match(/render=(\w+)/i); if (rd) cfg.render = rd[1] as ChartRender;
+  const u = d.match(/unit=(\S+)/i); if (u) cfg.unit = u[1];
+  const dc = d.match(/description=(\w+)/i); if (dc) cfg.descriptionColumn = dc[1];
+  applyRadarOptionsToChart(cfg, parseRadarOptions(d));
+  const mm = sql.match(/--\s*@meta:\s*(.+)/i);
+  if (mm) {
+    const ti = matchQuotedDirective(mm[1], 'title'); if (ti) cfg.title = ti;
+    const de = matchQuotedDirective(mm[1], 'description'); if (de) cfg.description = de;
+  }
+  return Object.keys(cfg).length > 0 ? cfg : null;
+}
+
+/* ─── query ref resolution ─── */
+
+/**
+ * Resolve a query reference like 'Group#Name' or bare 'Name'.
+ * - 'Group#Name': match by group + name (cross-group drill)
+ * - Bare 'Name': match within sourceGroup first, then fall back to any group
+ */
+export function resolveQueryRef<T extends { name: string; group: string }>(
+  ref: string,
+  sourceGroup: string | undefined,
+  queries: T[],
+): T | undefined {
+  const hashIdx = ref.indexOf('#');
+  if (hashIdx >= 0) {
+    const group = ref.slice(0, hashIdx);
+    const name = ref.slice(hashIdx + 1);
+    return queries.find(q => q.group === group && q.name === name);
+  }
+  // Bare name - prefer same group, then any
+  if (sourceGroup) {
+    const sameGroup = queries.find(q => q.group === sourceGroup && q.name === ref);
+    if (sameGroup) return sameGroup;
+  }
+  return queries.find(q => q.name === ref);
+}
+
+/* ─── SQL → Query mapping ─── */
+
+import type { Query, QueryType } from './types.js';
+
+/** Parse raw SQL into a Query. Returns null if no valid @meta found. */
+export function parseQueryMetadata(sql: string, type: QueryType = 'preset'): Query | null {
+  const directives = parseDirectives(sql);
+  if (!directives) return null;
+  return {
+    name: directives.meta!.title,
+    description: directives.meta!.description ?? '',
+    sql,
+    group: directives.meta!.group as QueryGroup,
+    type,
+    directives,
+  };
+}
+
+/**
+ * Build a SQL string with embedded @meta header.
+ *
+ * NOTE: this is a `--` comment line, not a SQL string literal, so escapeValue()
+ * does not apply — nothing here reaches the parser as executable SQL. The
+ * quoting only has to round-trip with the @meta reader, which unescapes via
+ * matchQuotedDirective().
+ */
+export function buildDirectiveHeader(name: string, description: string, group?: string): string {
+  // nosemgrep: clickhouse-incomplete-quote-escaping
+  const desc = description ? ` description='${description.replace(/'/g, "\\'")}'` : '';
+  const g = group?.trim() || 'Custom';
+  // nosemgrep: clickhouse-incomplete-quote-escaping
+  return `-- @meta: title='${name.replace(/'/g, "\\'")}' group='${g.replace(/'/g, "\\'")}'${desc}`;
+}

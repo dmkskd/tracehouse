@@ -1,4 +1,5 @@
 import { selectQueryXRaySource } from '@tracehouse/core';
+import { acceptDashboardImport, inspectDashboardImport } from '@tracehouse/core/analytics/dashboard-import';
 import { XRaySourceBadge } from '../query/modal/XRaySourceBadge';
 import { useQueryXRaySelection } from '../query/query-xray-preference';
 /**
@@ -55,7 +56,6 @@ import {
   deleteDashboard,
   dashboardMatchesSearch,
   exportDashboardJson,
-  importDashboardJson,
   getDashboardQueries,
 } from './dashboards';
 
@@ -1761,26 +1761,24 @@ const dashboardHeaderButtonStyle: React.CSSProperties = {
 
 // ─── Import/Export modal ───
 
-const ImportModal: React.FC<{ dashboards: Dashboard[]; onImport: (json: string) => void; onClose: () => void }> = ({ dashboards, onImport, onClose }) => {
+const ImportModal: React.FC<{ dashboards: Dashboard[]; onImport: (dashboard: Omit<Dashboard, 'builtin'>) => void; onClose: () => void }> = ({ dashboards, onImport, onClose }) => {
   const [json, setJson] = useState('');
   const [err, setErr] = useState<string | null>(null);
   const [nameOverride, setNameOverride] = useState<string | null>(null);
-  const jsonTitle = useMemo(() => {
-    try {
-      const value = JSON.parse(json).title;
-      return typeof value === 'string' ? value : '';
-    } catch { return ''; }
-  }, [json]);
-  const name = nameOverride ?? jsonTitle;
-  const trimmedName = name.trim();
-  const nameClash = trimmedName.length > 0 && dashboards.some(dashboard => dashboard.title.trim().toLocaleLowerCase() === trimmedName.toLocaleLowerCase());
+  const [sqlAcknowledged, setSqlAcknowledged] = useState(false);
+  const importOptions = useMemo(() => ({
+    nameOverride,
+    existingTitles: dashboards.map(dashboard => dashboard.title),
+    sqlAcknowledged,
+  }), [nameOverride, dashboards, sqlAcknowledged]);
+  const inspection = useMemo(() => inspectDashboardImport(json, importOptions), [json, importOptions]);
+  const embeddedSql = inspection.ok ? inspection.embeddedSql : [];
+  const name = inspection.title;
+  const nameClash = inspection.nameClash;
 
   const handleImport = () => {
-    if (!trimmedName || nameClash) return;
     try {
-      const renamedJson = JSON.stringify({ ...JSON.parse(json), title: trimmedName });
-      importDashboardJson(renamedJson); // validate
-      onImport(renamedJson);
+      onImport(acceptDashboardImport(json, importOptions));
     } catch (e) {
       setErr(e instanceof Error ? e.message : 'Invalid JSON');
     }
@@ -1792,7 +1790,21 @@ const ImportModal: React.FC<{ dashboards: Dashboard[]; onImport: (json: string) 
       <div style={{ background: 'var(--bg-secondary)', borderRadius: 8, border: '1px solid var(--border-primary)', padding: 20, width: 500, maxHeight: '80vh', overflow: 'auto' }}
         onClick={e => e.stopPropagation()}>
         <h3 style={{ margin: '0 0 12px', fontSize: 14, fontWeight: 600, color: 'var(--text-primary)' }}>Import Dashboard JSON</h3>
-        <textarea value={json} onChange={e => { setJson(e.target.value); setErr(null); }}
+        <div role="note" aria-label="SQL safety" style={{
+          marginBottom: 14, padding: '10px 12px', borderRadius: 4,
+          border: '1px solid rgba(var(--color-warning-rgb), 0.45)',
+          borderLeft: '4px solid var(--color-warning)',
+          background: 'rgba(var(--color-warning-rgb), 0.1)',
+          color: 'var(--text-primary)', fontSize: 12, lineHeight: 1.5,
+        }}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 7, fontWeight: 600, marginBottom: 4 }}>
+            <span aria-hidden="true" style={{ color: 'var(--color-warning)', fontSize: 16 }}>⚠</span>
+            SQL safety
+          </div>
+          Dashboards may contain SQL that runs automatically when opened, using your connection's permissions.
+          {' '}Only import from sources you trust and use a <strong>read-only ClickHouse user</strong>.
+        </div>
+        <textarea value={json} onChange={e => { setJson(e.target.value); setErr(null); setSqlAcknowledged(false); }}
           placeholder='Paste dashboard JSON here…'
           style={{ width: '100%', height: 200, padding: 10, fontSize: 12, fontFamily: "'Share Tech Mono',monospace", borderRadius: 4, border: '1px solid var(--border-primary)', background: 'var(--bg-card)', color: 'var(--text-primary)', resize: 'vertical', boxSizing: 'border-box' }} />
         <label htmlFor="import-dashboard-name" style={{ ...labelStyle, marginTop: 14 }}>Dashboard name</label>
@@ -1803,12 +1815,42 @@ const ImportModal: React.FC<{ dashboards: Dashboard[]; onImport: (json: string) 
           placeholder="Dashboard name"
           style={{ ...inputStyle, marginBottom: 0, border: nameClash ? '1px solid #f85149' : inputStyle.border }} />
         {nameClash && <div id="import-dashboard-name-clash" role="alert" style={{ color: '#f85149', fontSize: 11, marginTop: 6 }}>
-          A dashboard named “{trimmedName}” already exists. Choose another name.
+          A dashboard named “{name.trim()}” already exists. Choose another name.
         </div>}
-        {err && <div style={{ color: '#f85149', fontSize: 11, marginTop: 6 }}>⚠ {err}</div>}
+        {inspection.ok && embeddedSql.length === 0 && <div role="status" style={{
+          marginTop: 14, padding: '10px 12px', borderRadius: 4,
+          border: '1px solid rgba(var(--color-success-rgb), 0.35)',
+          background: 'rgba(var(--color-success-rgb), 0.08)',
+          color: 'var(--text-primary)', fontSize: 12, lineHeight: 1.5,
+        }}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 7, fontWeight: 600, marginBottom: 4 }}>
+            <span aria-hidden="true" style={{ color: 'var(--color-success)' }}>✓</span>
+            No embedded SQL detected
+          </div>
+          This JSON contains no embedded query or filter SQL. Panels can still run queries already available in TraceHouse.
+        </div>}
+        {embeddedSql.length > 0 && <div role="alert" style={{ marginTop: 14, padding: 10, borderRadius: 4, border: '1px solid #f0883e', background: 'rgba(240,136,62,0.08)' }}>
+          <div style={{ fontSize: 12, fontWeight: 600, color: '#f0883e', marginBottom: 6 }}>
+            ⚠ This dashboard contains {embeddedSql.length} SQL statement{embeddedSql.length === 1 ? '' : 's'}
+          </div>
+          <div style={{ fontSize: 11, color: 'var(--text-secondary)', marginBottom: 8, lineHeight: 1.5 }}>
+            Panel and filter SQL can run automatically when the dashboard opens; drill and link queries run when used. SQL runs with your connection's permissions, which may allow writes and DDL. Review it before importing.
+          </div>
+          {embeddedSql.map((item, index) => (
+            <details key={index} style={{ marginBottom: 4 }}>
+              <summary style={{ fontSize: 11, color: 'var(--text-primary)', cursor: 'pointer' }}>{item.kind === 'filter' ? 'Filter' : 'Query'}: {item.label}</summary>
+              <pre style={{ margin: '4px 0 0', padding: 8, fontSize: 11, fontFamily: "'Share Tech Mono',monospace", background: 'var(--bg-card)', color: 'var(--text-primary)', borderRadius: 4, whiteSpace: 'pre-wrap', wordBreak: 'break-word', maxHeight: 200, overflow: 'auto' }}>{item.sql}</pre>
+            </details>
+          ))}
+          <label style={{ display: 'flex', alignItems: 'center', gap: 6, marginTop: 8, fontSize: 11, color: 'var(--text-primary)', cursor: 'pointer' }}>
+            <input type="checkbox" checked={sqlAcknowledged} onChange={event => setSqlAcknowledged(event.target.checked)} />
+            I have reviewed this SQL and trust its source
+          </label>
+        </div>}
+        {(err || (json.trim() && !inspection.ok)) && <div role="alert" style={{ color: '#f85149', fontSize: 11, marginTop: 6 }}>⚠ {err ?? (!inspection.ok ? inspection.error : '')}</div>}
         <div style={{ display: 'flex', gap: 8, justifyContent: 'flex-end', marginTop: 12 }}>
           <button onClick={onClose} style={secondaryBtnStyle}>Cancel</button>
-          <button onClick={handleImport} disabled={!json.trim() || !trimmedName || nameClash} style={{ ...primaryBtnStyle, opacity: json.trim() && trimmedName && !nameClash ? 1 : 0.4 }}>Import</button>
+          <button onClick={handleImport} disabled={!inspection.canImport} style={{ ...primaryBtnStyle, opacity: inspection.canImport ? 1 : 0.4 }}>Import</button>
         </div>
       </div>
     </div>
@@ -2622,21 +2664,20 @@ export const DashboardViewer: React.FC<{ initialDashboardId?: string; onOpenQuer
     try {
       const json = exportDashboardJson(d, includeQueries);
       void copyToClipboard(json).then(ok => setToast(
-        ok ? 'Dashboard JSON copied to clipboard' : 'Copy failed: clipboard unavailable',
+        ok
+          ? `Dashboard JSON copied to clipboard (${includeQueries ? 'including queries' : 'dashboard only'})`
+          : 'Copy failed: clipboard unavailable',
       ));
     } catch (error) {
       setToast(error instanceof Error ? error.message : 'Dashboard export failed');
     }
   }, []);
 
-  const handleImport = useCallback((json: string) => {
-    try {
-      const imported = importDashboardJson(json);
-      const next = upsertDashboard(dashboards, imported);
-      setDashboards(next);
-      const added = next[next.length - 1];
-      setView({ mode: 'view', dashboardId: added.id });
-    } catch { /* ImportModal already validates */ }
+  const handleImport = useCallback((imported: Omit<Dashboard, 'builtin'>) => {
+    const next = upsertDashboard(dashboards, imported);
+    setDashboards(next);
+    const added = next[next.length - 1];
+    setView({ mode: 'view', dashboardId: added.id });
   }, [dashboards]);
 
   const handleClone = useCallback((d: Dashboard) => {

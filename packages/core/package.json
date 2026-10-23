@@ -64,6 +64,18 @@
     "./services/grafana-export": {
       "import": "./dist/services/grafana-export.js",
       "types": "./dist/services/grafana-export.d.ts"
+    },
+    "./analytics/dashboard-import": {
+      "import": "./dist/analytics/dashboard-import.js",
+      "types": "./dist/analytics/dashboard-import.d.ts"
+    },
+    "./analytics/meta-language": {
+      "import": "./dist/analytics/meta-language.js",
+      "types": "./dist/analytics/meta-language.d.ts"
+    },
+    "./analytics/types": {
+      "import": "./dist/analytics/types.js",
+      "types": "./dist/analytics/types.d.ts"
     }
   },
   "scripts": {

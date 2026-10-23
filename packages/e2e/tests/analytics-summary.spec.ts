@@ -33,15 +33,20 @@ for (const scenario of [{ theme: 'light', width: 1280 }, { theme: 'dark', width:
     const assertLayout = async () => {
       const plot = page.locator('.recharts-wrapper:visible').first();
       await expect(plot).toBeVisible();
-      const summaryBox = await summary.boundingBox();
-      const plotBox = await plot.boundingBox();
-      expect(summaryBox).not.toBeNull();
-      expect(plotBox).not.toBeNull();
-      expect(plotBox!.width).toBeGreaterThan(100);
-      expect(plotBox!.height).toBeGreaterThan(100);
-      expect(summaryBox!.y + summaryBox!.height).toBeLessThanOrEqual(plotBox!.y + 1);
-      expect(summaryBox!.x).toBeGreaterThanOrEqual(0);
-      expect(summaryBox!.x + summaryBox!.width).toBeLessThanOrEqual(scenario.width);
+      // Bounding-box reads do not retry like locator assertions. A panel rerun
+      // or remount can briefly hide the summary after the earlier content checks.
+      // Retry the complete layout check so every constraint still has to pass.
+      await expect(async () => {
+        const summaryBox = await summary.boundingBox();
+        const plotBox = await plot.boundingBox();
+        expect(summaryBox).not.toBeNull();
+        expect(plotBox).not.toBeNull();
+        expect(plotBox!.width).toBeGreaterThan(100);
+        expect(plotBox!.height).toBeGreaterThan(100);
+        expect(summaryBox!.y + summaryBox!.height).toBeLessThanOrEqual(plotBox!.y + 1);
+        expect(summaryBox!.x).toBeGreaterThanOrEqual(0);
+        expect(summaryBox!.x + summaryBox!.width).toBeLessThanOrEqual(scenario.width);
+      }).toPass({ timeout: 5_000 });
       // Fullscreen remounts the chart. Wait for the bars to finish animating
       // before inspecting screenshots, rather than capturing an empty first frame.
       let previous = -1;

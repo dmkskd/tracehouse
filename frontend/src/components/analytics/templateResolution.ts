@@ -79,6 +79,8 @@ export function resolveTimeRange(sql: string, defaultInterval?: string, userInte
 
 /**
  * Replace {{drill:column | fallback}} and {{drill_value:column | fallback}} placeholders.
+ * Selected values are escaped as SQL string literals. Fallbacks remain authored
+ * SQL expressions; this function does not validate the complete SQL statement.
  */
 export function resolveDrillParams(sql: string, drillParams: Record<string, string>): string {
   let result = sql.replace(

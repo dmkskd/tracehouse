@@ -24,18 +24,9 @@ import { parseQueryMetadata, resolveQueryRef } from './metaLanguage';
 
 // ─── Types ───
 
-export interface DashboardPanel {
-  /** Query reference - namespaced as 'Group#Query Name', or bare 'Query Name' for backward compat */
-  queryName: string;
-  /** Optional monitoring capability required to execute this panel. */
-  requiredCapability?: string;
-  /** If set, this panel starts a new collapsible section with this title.
-   *  All subsequent panels until the next section belong to this section. */
-  section?: string;
-}
-
-/** Dashboard group for visual categorization in the list view. */
-export type DashboardGroup = 'ClickHouse' | 'Cloud Providers' | 'Grafana Imports' | 'Knowledge Base' | 'TraceHouse' | 'Custom';
+import type { Dashboard, DashboardPanel, DashboardGroup } from '@tracehouse/core/analytics/dashboard-import';
+export type { Dashboard, DashboardPanel, DashboardFilter, DashboardGroup } from '@tracehouse/core/analytics/dashboard-import';
+export { importDashboardJson, inspectDashboardImport, listEmbeddedSql } from '@tracehouse/core/analytics/dashboard-import';
 
 export const DASHBOARD_GROUPS: { name: DashboardGroup; color: string }[] = [
   { name: 'ClickHouse', color: '#facc15' },
@@ -45,43 +36,6 @@ export const DASHBOARD_GROUPS: { name: DashboardGroup; color: string }[] = [
   { name: 'TraceHouse', color: '#7c3aed' },
   { name: 'Custom', color: '#79c0ff' },
 ];
-
-/** Declares a global filter that the dashboard supports. The `param` value is injected into `{{drill_value:param}}` templates. */
-export interface DashboardFilter {
-  /** The template parameter name (e.g. 'tbl') - maps to {{drill_value:tbl}} in queries */
-  param: string;
-  /** Display label for the filter dropdown */
-  label: string;
-  /** SQL query that returns the list of values for the dropdown. First column is used as the value. */
-  query: string;
-  /**
-   * Optional parent filter param. When set, this dropdown only shows options scoped to the
-   * parent's current value — an option is kept if it equals the parent value or starts with
-   * `parentValue + '.'` (e.g. a Table filter with dependsOn: 'db' whose options are
-   * 'database.table' shows only the selected database's tables). Pure client-side filtering of
-   * the already-fetched options; a now-invalid selection is cleared automatically.
-   */
-  dependsOn?: string;
-}
-
-export interface Dashboard {
-  id: string;
-  title: string;
-  description?: string;
-  /** Attribution URL for dashboards derived from external sources */
-  source?: string;
-  group?: DashboardGroup;
-  /** Optional sub-category within the group (e.g. 'Merges', 'Storage') for visual grouping in the list view */
-  category?: string;
-  columns: 1 | 2 | 3 | 4;
-  panels: DashboardPanel[];
-  /** true for shipped defaults (user can clone but not delete the originals) */
-  builtin?: boolean;
-  /** Optional global filters shown as dropdowns in the dashboard header - values propagate to all panels */
-  filters?: DashboardFilter[];
-  /** SQL definitions owned by this dashboard, including drill/link targets. */
-  queries?: string[];
-}
 
 /** Match every search term across dashboard metadata and its panel definitions. */
 export function dashboardMatchesSearch(dashboard: Dashboard, search: string): boolean {
@@ -243,53 +197,6 @@ export function exportDashboardJson(dashboard: Dashboard, embedQueries = false):
     clean.queries = [...bundled.values()];
   }
   return JSON.stringify(clean, null, 2);
-}
-
-/** Import a dashboard from a JSON string. Throws on invalid input. */
-export function importDashboardJson(json: string): Omit<Dashboard, 'builtin'> {
-  const obj = JSON.parse(json);
-  if (!obj.title || !Array.isArray(obj.panels)) {
-    throw new Error('Invalid dashboard JSON: needs at least "title" and "panels"');
-  }
-  if (obj.queries !== undefined) {
-    if (!Array.isArray(obj.queries)) throw new Error('Dashboard queries must be an array of SQL strings');
-    const names = new Set<string>();
-    for (const sql of obj.queries) {
-      const query = typeof sql === 'string' ? parseQueryMetadata(sql, 'custom') : null;
-      if (!query) throw new Error('Each embedded query needs a valid @meta title and group');
-      const key = `${query.group}#${query.name}`;
-      if (names.has(key)) throw new Error(`Duplicate embedded query: ${key}`);
-      names.add(key);
-    }
-  }
-  return {
-    // Imports are independent copies, including exports of built-in dashboards.
-    id: generateId(),
-    title: obj.title,
-    description: obj.description,
-    group: 'Custom',
-    ...(typeof obj.category === 'string' && { category: obj.category }),
-    ...(obj.queries !== undefined && { queries: obj.queries }),
-    ...(obj.source && { source: String(obj.source) }),
-    columns: [1, 2, 3, 4].includes(obj.columns) ? obj.columns : 2,
-    panels: obj.panels.map((p: { queryName?: string; section?: string; requiredCapability?: string }) => ({
-      queryName: p.queryName ?? '',
-      ...(p.section && { section: String(p.section) }),
-      ...(p.requiredCapability && {
-        requiredCapability: String(p.requiredCapability),
-      }),
-    })),
-    ...(Array.isArray(obj.filters) && obj.filters.length > 0 && {
-      filters: obj.filters
-        .filter((f: Record<string, unknown>) => f.param && f.query)
-        .map((f: Record<string, unknown>) => ({
-          param: String(f.param),
-          label: String(f.label ?? f.param),
-          query: String(f.query),
-          ...(typeof f.dependsOn === 'string' && { dependsOn: f.dependsOn }),
-        })),
-    }),
-  };
 }
 
 // ─── Built-in seed dashboards ───

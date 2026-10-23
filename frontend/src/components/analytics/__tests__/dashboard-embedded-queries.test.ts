@@ -78,3 +78,4 @@ describe('dashboard-owned queries', () => {
     expect(() => exportDashboardJson({ ...dashboard, queries: [], panels: [{ queryName: 'Missing#Unknown' }] }, true)).toThrow(/Query not found/);
   });
 });
+

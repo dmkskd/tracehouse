@@ -170,7 +170,7 @@ SELECT 1`],
   });
 
   test.each([
-    [true, 'Dashboard JSON copied to clipboard'],
+    [true, 'Dashboard JSON copied to clipboard (dashboard only)'],
     [false, 'Copy failed: clipboard unavailable'],
   ])('shows the export result outside the dashboard container (clipboard success: %s)', async (success, message) => {
     mocks.copyToClipboard.mockResolvedValue(success);
@@ -215,12 +215,13 @@ SELECT 1`],
     fireEvent.click(screen.getByRole('button', { name: 'Export', exact: true }));
     fireEvent.click(screen.getByRole('menuitem', { name: 'Dashboard only' }));
     expect(JSON.parse(mocks.copyToClipboard.mock.lastCall![0]).queries).toBeUndefined();
+    await screen.findByText('Dashboard JSON copied to clipboard (dashboard only)');
     fireEvent.click(screen.getByRole('button', { name: 'Export', exact: true }));
     fireEvent.click(screen.getByRole('menuitem', { name: 'Include queries' }));
     const bundled = JSON.parse(mocks.copyToClipboard.mock.lastCall![0]);
     expect(bundled.queries.length).toBeGreaterThan(bundled.panels.length);
     expect(screen.queryByRole('menu')).not.toBeInTheDocument();
-    await screen.findByText('Dashboard JSON copied to clipboard');
+    await screen.findByText('Dashboard JSON copied to clipboard (including queries)');
   });
 
   test('edits embedded SQL inside a dashboard without creating a global custom query', async () => {
@@ -271,7 +272,9 @@ SELECT 1`],
     const name = screen.getByRole('textbox', { name: 'Dashboard name' });
     expect(name).toHaveValue(source.title);
     expect(name).toHaveAttribute('aria-invalid', 'true');
-    expect(screen.getByRole('alert')).toHaveTextContent('already exists');
+    expect(screen.getByText(/already exists/)).toBeInTheDocument();
+    expect(screen.getByText(/This dashboard contains \d+ SQL statements/)).toBeInTheDocument();
+    expect(screen.getByText(/imported wait-breakdown SQL/, { selector: 'pre' })).toBeInTheDocument();
     expect(screen.getByRole('button', { name: 'Import', exact: true })).toBeDisabled();
     expect(loadDashboards()).toEqual(before);
 
@@ -279,7 +282,9 @@ SELECT 1`],
     expect(screen.getByRole('button', { name: 'Import', exact: true })).toBeDisabled();
     const newTitle = `${source.title} imported`;
     fireEvent.change(name, { target: { value: newTitle } });
-    expect(screen.queryByRole('alert')).not.toBeInTheDocument();
+    expect(screen.queryByText(/already exists/)).not.toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Import', exact: true })).toBeDisabled();
+    fireEvent.click(screen.getByRole('checkbox', { name: 'I have reviewed this SQL and trust its source' }));
     expect(screen.getByRole('button', { name: 'Import', exact: true })).toBeEnabled();
     fireEvent.click(screen.getByRole('button', { name: 'Import', exact: true }));
 
@@ -292,6 +297,31 @@ SELECT 1`],
     expect(imported.id).not.toBe(source.id);
     expect(imported.queries).toEqual(payload.queries);
     expect(localStorage.getItem('tracehouse-custom-queries')).toBeNull();
+  });
+
+  test.each(['query', 'filter'])('requires SQL confirmation after supplying a missing title for a %s', async kind => {
+    const sql = "-- @meta: title='ImportReview' group='Custom'\nSELECT 987654321 AS import_review";
+    const payload = kind === 'query'
+      ? { panels: [{ queryName: 'Custom#ImportReview' }], queries: [sql] }
+      : { panels: [], filters: [{ param: 'review', query: 'SELECT 987654321 AS import_review' }] };
+    render(<MemoryRouter><DashboardViewer /></MemoryRouter>);
+    fireEvent.click(screen.getByRole('button', { name: 'Import JSON' }));
+    const input = screen.getByPlaceholderText('Paste dashboard JSON here…');
+    fireEvent.change(input, { target: { value: JSON.stringify(payload) } });
+    expect(screen.getByRole('button', { name: 'Import', exact: true })).toBeDisabled();
+    fireEvent.change(screen.getByRole('textbox', { name: 'Dashboard name' }), { target: { value: 'Import review regression' } });
+    const consent = screen.getByRole('checkbox', { name: 'I have reviewed this SQL and trust its source' });
+    expect(screen.getByRole('button', { name: 'Import', exact: true })).toBeDisabled();
+    expect(mocks.run).not.toHaveBeenCalled();
+    fireEvent.click(consent);
+    expect(screen.getByRole('button', { name: 'Import', exact: true })).toBeEnabled();
+    fireEvent.change(input, { target: { value: JSON.stringify({ ...payload, description: 'Edited after review' }) } });
+    expect(consent).not.toBeChecked();
+    expect(screen.getByRole('button', { name: 'Import', exact: true })).toBeDisabled();
+    fireEvent.click(consent);
+    fireEvent.click(screen.getByRole('button', { name: 'Import', exact: true }));
+    await waitFor(() => expect(mocks.run.mock.calls.some(([query]) => query.includes('987654321'))).toBe(true));
+    expect(loadDashboards().find(dashboard => dashboard.title === 'Import review regression')).toMatchObject(payload);
   });
 
   test('table drill updates the dashboard filter and later table selections reach the drilled panel', async () => {

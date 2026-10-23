@@ -63,6 +63,14 @@ For full functionality, the following system tables are queried:
 
 Grants are only one of the two requirements. A feature the connecting user has access to can still be unavailable if the server is older than the version that feature needs. See [ClickHouse Compatibility](../reference/clickhouse-compatibility) for the minimum version of each gated feature.
 
+### Imported dashboards and custom SQL
+
+Dashboards may contain SQL that runs automatically when opened. Dashboard queries and SQL entered in the Query Explorer run with your ClickHouse connection's permissions. TraceHouse does not restrict them to read-only statements.
+
+Only import dashboards from sources you trust. When an import contains embedded SQL, the dialog lists it and requires your confirmation before importing. Review that SQL before proceeding. If no embedded SQL is detected, the dialog says so; panels may still run existing queries referenced by the dashboard.
+
+Use a dedicated read-only ClickHouse account with access limited to the data you need. Import confirmation does not change the connection's permissions.
+
 ### Automatic capability detection
 
 On connect, the app probes the server to determine what is available and degrades gracefully when features are missing. The detection covers:
