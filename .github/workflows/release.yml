@@ -81,7 +81,7 @@ jobs:
             echo "GRAFANA_ACCESS_POLICY_TOKEN is not set; leaving plugin unsigned."
             exit 0
           fi
-          npx @grafana/sign-plugin@latest
+          npx @grafana/sign-plugin@3.3.3
 
       - name: Package plugin
         id: package_plugin
