@@ -20,7 +20,9 @@ import type {
 import { DEFAULT_ALERT_THRESHOLDS } from '../types/overview.js';
 import {
   GET_RUNNING_QUERIES,
+  GET_RUNNING_QUERY_BY_ID,
   GET_ACTIVE_MERGES_LIVE,
+  GET_ACTIVE_MERGE_BY_PART,
   GET_INSTANT_METRICS,
   GET_ASYNC_METRICS,
   GET_RECENT_MERGE_CPU,
@@ -141,6 +143,101 @@ function formatUptime(seconds: number): string {
 }
 
 import type { EnvironmentDetector } from './environment-detector.js';
+
+type RunningQueryRow = {
+  hostname: string;
+  query_id: string;
+  user: string;
+  elapsed: number;
+  memory_usage: number;
+  read_rows: number;
+  read_bytes: number;
+  total_rows_approx: number;
+  query_kind: string;
+  query: string;
+  user_time_us: number;
+  system_time_us: number;
+  os_read_bytes: number;
+  os_write_bytes: number;
+  selected_parts: number;
+  selected_marks: number;
+  mark_cache_hits: number;
+  mark_cache_misses: number;
+};
+
+function mapRunningQueryRow(row: RunningQueryRow): RunningQueryInfo {
+  const elapsed = Number(row.elapsed) || 0;
+  const userTimeUs = Number(row.user_time_us) || 0;
+  const systemTimeUs = Number(row.system_time_us) || 0;
+  const readRows = Number(row.read_rows) || 0;
+  const totalRowsApprox = Number(row.total_rows_approx) || 0;
+  const osReadBytes = Number(row.os_read_bytes) || 0;
+
+  return {
+    queryId: String(row.query_id),
+    user: String(row.user),
+    elapsed,
+    cpuCores: calculateCpuCores(userTimeUs, systemTimeUs, elapsed),
+    memoryUsage: Number(row.memory_usage) || 0,
+    ioReadRate: calculateRate(osReadBytes, elapsed),
+    rowsRead: readRows,
+    bytesRead: Number(row.read_bytes) || 0,
+    progress: calculateProgress(readRows, totalRowsApprox),
+    queryKind: String(row.query_kind) || 'Unknown',
+    query: String(row.query),
+    hostname: String(row.hostname || ''),
+    profileEvents: {
+      userTimeMicroseconds: userTimeUs,
+      systemTimeMicroseconds: systemTimeUs,
+      osReadBytes,
+      osWriteBytes: Number(row.os_write_bytes) || 0,
+      selectedParts: Number(row.selected_parts) || 0,
+      selectedMarks: Number(row.selected_marks) || 0,
+      markCacheHits: Number(row.mark_cache_hits) || 0,
+      markCacheMisses: Number(row.mark_cache_misses) || 0,
+    },
+  };
+}
+
+type ActiveMergeRow = {
+  hostname: string;
+  database: string;
+  table: string;
+  part_name: string;
+  elapsed: number;
+  progress: number;
+  memory_usage: number;
+  bytes_read_uncompressed: number;
+  bytes_written_uncompressed: number;
+  rows_read: number;
+  num_parts: number;
+  is_mutation: number;
+  merge_type: string;
+};
+
+function mapActiveMergeRow(row: ActiveMergeRow): ActiveMergeInfo {
+  const elapsed = Number(row.elapsed) || 0;
+  const bytesRead = Number(row.bytes_read_uncompressed) || 0;
+  const bytesWritten = Number(row.bytes_written_uncompressed) || 0;
+
+  return {
+    database: String(row.database),
+    table: String(row.table),
+    partName: String(row.part_name),
+    elapsed,
+    progress: Number(row.progress) || 0,
+    memoryUsage: Number(row.memory_usage) || 0,
+    readBytesPerSec: calculateRate(bytesRead, elapsed),
+    writeBytesPerSec: calculateRate(bytesWritten, elapsed),
+    rowsRead: Number(row.rows_read) || 0,
+    numParts: Number(row.num_parts) || 0,
+    isMutation: Boolean(row.is_mutation),
+    cpuEstimate: 0, // Will be estimated from historical data
+    mergeType: String(row.merge_type || ''),
+    hostname: String(row.hostname || ''),
+  };
+}
+
 
 export class OverviewService {
   private thresholds: AlertThresholds;
@@ -304,110 +401,54 @@ export class OverviewService {
 
   async getRunningQueries(): Promise<RunningQueryInfo[]> {
     try {
-      const rows = await this.adapter.executeQuery<{
-        hostname: string;
-        query_id: string;
-        user: string;
-        elapsed: number;
-        memory_usage: number;
-        read_rows: number;
-        read_bytes: number;
-        total_rows_approx: number;
-        query_kind: string;
-        query: string;
-        user_time_us: number;
-        system_time_us: number;
-        os_read_bytes: number;
-        os_write_bytes: number;
-        selected_parts: number;
-        selected_marks: number;
-        mark_cache_hits: number;
-        mark_cache_misses: number;
-      }>(tagQuery(GET_RUNNING_QUERIES, sourceTag(TAB_OVERVIEW, 'runningQueries')));
-
-      return rows.map(row => {
-        const elapsed = Number(row.elapsed) || 0;
-        const userTimeUs = Number(row.user_time_us) || 0;
-        const systemTimeUs = Number(row.system_time_us) || 0;
-        const readRows = Number(row.read_rows) || 0;
-        const totalRowsApprox = Number(row.total_rows_approx) || 0;
-        const osReadBytes = Number(row.os_read_bytes) || 0;
-
-        return {
-          queryId: String(row.query_id),
-          user: String(row.user),
-          elapsed,
-          cpuCores: calculateCpuCores(userTimeUs, systemTimeUs, elapsed),
-          memoryUsage: Number(row.memory_usage) || 0,
-          ioReadRate: calculateRate(osReadBytes, elapsed),
-          rowsRead: readRows,
-          bytesRead: Number(row.read_bytes) || 0,
-          progress: calculateProgress(readRows, totalRowsApprox),
-          queryKind: String(row.query_kind) || 'Unknown',
-          query: String(row.query),
-          hostname: String(row.hostname || ''),
-          profileEvents: {
-            userTimeMicroseconds: userTimeUs,
-            systemTimeMicroseconds: systemTimeUs,
-            osReadBytes,
-            osWriteBytes: Number(row.os_write_bytes) || 0,
-            selectedParts: Number(row.selected_parts) || 0,
-            selectedMarks: Number(row.selected_marks) || 0,
-            markCacheHits: Number(row.mark_cache_hits) || 0,
-            markCacheMisses: Number(row.mark_cache_misses) || 0,
-          },
-        };
-      });
+      const rows = await this.adapter.executeQuery<RunningQueryRow>(
+        tagQuery(GET_RUNNING_QUERIES, sourceTag(TAB_OVERVIEW, 'runningQueries')),
+      );
+      return rows.map(mapRunningQueryRow);
     } catch (error) {
       console.error('[OverviewService] getRunningQueries error:', error);
       return [];
     }
   }
 
+  /**
+   * One running initial query, or null once it has left system.processes.
+   * For the arena detail panel's 1s refresh; errors propagate to the caller.
+   */
+  async getRunningQuery(queryId: string): Promise<RunningQueryInfo | null> {
+    const rows = await this.adapter.executeQuery<RunningQueryRow>(
+      tagQuery(buildQuery(GET_RUNNING_QUERY_BY_ID, { query_id: queryId }), sourceTag(TAB_OVERVIEW, 'runningQuery')),
+    );
+    return rows.length > 0 ? mapRunningQueryRow(rows[0]) : null;
+  }
+
   async getActiveMerges(): Promise<ActiveMergeInfo[]> {
     try {
-      const rows = await this.adapter.executeQuery<{
-        hostname: string;
-        database: string;
-        table: string;
-        part_name: string;
-        elapsed: number;
-        progress: number;
-        memory_usage: number;
-        bytes_read_uncompressed: number;
-        bytes_written_uncompressed: number;
-        rows_read: number;
-        num_parts: number;
-        is_mutation: number;
-        merge_type: string;
-      }>(tagQuery(GET_ACTIVE_MERGES_LIVE, sourceTag(TAB_OVERVIEW, 'activeMerges')));
-
-      return rows.map(row => {
-        const elapsed = Number(row.elapsed) || 0;
-        const bytesRead = Number(row.bytes_read_uncompressed) || 0;
-        const bytesWritten = Number(row.bytes_written_uncompressed) || 0;
-
-        return {
-          database: String(row.database),
-          table: String(row.table),
-          partName: String(row.part_name),
-          elapsed,
-          progress: Number(row.progress) || 0,
-          memoryUsage: Number(row.memory_usage) || 0,
-          readBytesPerSec: calculateRate(bytesRead, elapsed),
-          writeBytesPerSec: calculateRate(bytesWritten, elapsed),
-          rowsRead: Number(row.rows_read) || 0,
-          numParts: Number(row.num_parts) || 0,
-          isMutation: Boolean(row.is_mutation),
-          cpuEstimate: 0, // Will be estimated from historical data
-          mergeType: String(row.merge_type || ''),
-          hostname: String(row.hostname || ''),
-        };
-      });
+      const rows = await this.adapter.executeQuery<ActiveMergeRow>(
+        tagQuery(GET_ACTIVE_MERGES_LIVE, sourceTag(TAB_OVERVIEW, 'activeMerges')),
+      );
+      return rows.map(mapActiveMergeRow);
     } catch (error) {
       console.error('[OverviewService] getActiveMerges error:', error);
       return [];
     }
+  }
+
+  /**
+   * One active merge or mutation by its result part on `hostname`, or null
+   * once it has left system.merges there. Replicas merge the same part name
+   * independently, so without a hostname the first replica's row is returned.
+   * For the arena detail panel's 1s refresh; errors propagate.
+   */
+  async getActiveMerge(database: string, table: string, partName: string, hostname?: string): Promise<ActiveMergeInfo | null> {
+    const rows = await this.adapter.executeQuery<ActiveMergeRow>(
+      tagQuery(
+        buildQuery(GET_ACTIVE_MERGE_BY_PART, { database, table, part_name: partName }),
+        sourceTag(TAB_OVERVIEW, 'activeMerge'),
+      ),
+    );
+    const row = hostname ? rows.find(r => String(r.hostname) === hostname) : rows[0];
+    return row ? mapActiveMergeRow(row) : null;
   }
 
 

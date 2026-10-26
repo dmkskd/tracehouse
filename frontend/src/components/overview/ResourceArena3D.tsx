@@ -15,12 +15,19 @@ import * as THREE from 'three';
 import { Link } from 'react-router-dom';
 import type { RunningQueryInfo, ActiveMergeInfo, TraceLog } from '@tracehouse/core';
 import { truncateQuery, formatBytes } from '../../utils/formatters';
+import { buildQueryLinkUrl, buildMergeLinkUrl } from '@tracehouse/core';
 import type { RecentActivity } from '@tracehouse/core';
+import { useSelectedLiveRefresh } from './useSelectedLiveRefresh';
 import { seedRegistry, repackFinishedLanes } from './arena-history';
+import {
+  fmtRate, fmtMicro, fmtNum, fmtCpuCores, LOG_LEVEL_COLORS, parseLogTime, fmtDelta, panelFont, type MetricSnapshot,
+} from './arena-hud-format';
+import { Sparkline, MiniBar } from './arena-hud-shared';
+import { ArenaInspector } from './ArenaInspector';
 import { useClickHouseServices } from '../../providers/ClickHouseProvider';
 import {
   Ts, Cs, MIN_DIM, LANE_GAP, DECK_GAP, HOST_LANE_BLOCK, ARENA_SAMPLED_NOTE,
-  DECK_ORDER, deckOf, deckBaseY,
+  DECK_ORDER, deckOf, deckBaseY, heightCpu,
   type BlockEntry, type Deck,
 } from './arena-types';
 import {
@@ -65,6 +72,13 @@ const colorOf = (k: string) => {
 
 /* ── local constants ─────────────────────────────────── */
 
+/**
+ * Clicked-block detail: true = docked ArenaInspector panel, false = the
+ * previous full-viewport ImmersiveHUD. Also switches the hover card hint and
+ * the pointer cursor over blocks. Set to false to roll back.
+ */
+const USE_ARENA_INSPECTOR = true;
+
 const HORIZON = 120;
 /** Finished blocks fade across the whole visible timeline, then expire */
 const FADE_SECS = HORIZON;
@@ -77,53 +91,19 @@ const _plate = new THREE.PlaneGeometry(1, 1);
 
 /* ── helpers ─────────────────────────────────────────── */
 
-function fmtRate(bps: number): string {
-  if (bps < 1024) return `${bps.toFixed(0)} B/s`;
-  if (bps < 1048576) return `${(bps / 1024).toFixed(1)} KB/s`;
-  return `${(bps / 1048576).toFixed(1)} MB/s`;
-}
-
-function fmtMicro(us: number): string {
-  if (us < 1000) return `${us.toFixed(0)}µs`;
-  if (us < 1_000_000) return `${(us / 1000).toFixed(1)}ms`;
-  return `${(us / 1_000_000).toFixed(2)}s`;
-}
-
-function fmtNum(n: number): string {
-  if (n < 1000) return n.toFixed(0);
-  if (n < 1_000_000) return `${(n / 1000).toFixed(1)}K`;
-  if (n < 1_000_000_000) return `${(n / 1_000_000).toFixed(1)}M`;
-  return `${(n / 1_000_000_000).toFixed(2)}B`;
-}
-
 /** Compute 3D anchor position for a card near an entry's right edge */
 function entryCardPos(entry: BlockEntry, offsetY: number, offsetZ: number): THREE.Vector3 {
   const now = Date.now();
   const running = entry.endTime === null;
   const baseY = deckBaseY(entry.deck);
   const laneZ = -entry.lane * LANE_GAP;
-  const cpuH = Math.max(MIN_DIM, entry.cpu * Cs);
+  const cpuH = Math.max(MIN_DIM, heightCpu(entry) * Cs);
   const GAP = 0.03;
   const rightX = (running ? 0 : -((now - entry.endTime!) / 1000) * Ts) - GAP;
   return new THREE.Vector3(rightX + 0.15, baseY + cpuH + offsetY, laneZ + offsetZ);
 }
 
 /* ── Metric history for sparklines ───────────────────── */
-
-interface MetricSnapshot {
-  t: number; // timestamp ms
-  cpu: number;
-  mem: number;
-  io: number;
-  rows: number;
-  write: number;
-  progress: number;
-  // Profile event cumulative totals (for delta computation)
-  userTimeMicro: number;
-  sysTimeMicro: number;
-  diskRead: number;
-  diskWrite: number;
-}
 
 const MAX_HISTORY = 120; // ~2 minutes at 1s intervals
 
@@ -171,12 +151,6 @@ function useMetricHistory(entry: BlockEntry | null): MetricSnapshot[] {
 }
 
 /* ── Live log tail ──────────────────────────────────── */
-
-const LOG_LEVEL_COLORS: Record<string, string> = {
-  Fatal: '#ef4444', Critical: '#ef4444', Error: '#f87171',
-  Warning: '#fbbf24', Notice: '#60a5fa', Information: '#818cf8',
-  Debug: 'rgba(255,255,255,0.35)', Trace: 'rgba(255,255,255,0.2)',
-};
 
 function useLogTail(entry: BlockEntry | null): { logs: TraceLog[]; prefetch: (e: BlockEntry) => void } {
   const services = useClickHouseServices();
@@ -248,31 +222,6 @@ function useLogTail(entry: BlockEntry | null): { logs: TraceLog[]; prefetch: (e:
   }, [entryId, services, doFetch]);
 
   return { logs, prefetch };
-}
-
-/** Parse a ClickHouse event_time_microseconds string into epoch ms */
-function parseLogTime(raw: string): number {
-  if (!raw) return 0;
-  try {
-    // "2025-03-07 01:00:33.860123" or "01:00:33.860123"
-    if (raw.includes('-')) return new Date(raw.replace(' ', 'T') + 'Z').getTime();
-    const [h, m, rest] = raw.split(':');
-    const secs = parseFloat(rest || '0');
-    const d = new Date();
-    d.setUTCHours(+h, +m, Math.floor(secs), Math.round((secs % 1) * 1000));
-    return d.getTime();
-  } catch { return 0; }
-}
-
-/** Compact duration string */
-function fmtDelta(ms: number): string {
-  if (ms <= 0) return '';
-  const s = ms / 1000;
-  if (s < 0.01) return '<10ms';
-  if (s < 1) return `${(s * 1000).toFixed(0)}ms`;
-  if (s < 60) return `${s.toFixed(1)}s`;
-  const m = Math.floor(s / 60);
-  return `${m}m${Math.floor(s % 60)}s`;
 }
 
 function LogTail({ logs, maxLines = 6, elapsedSec = 0 }: { logs: TraceLog[]; maxLines?: number; elapsedSec?: number }) {
@@ -378,72 +327,6 @@ function LogTail({ logs, maxLines = 6, elapsedSec = 0 }: { logs: TraceLog[]; max
 
 /* ── SVG Sparkline ──────────────────────────────────── */
 
-function Sparkline({ data, color, width = 140, height = 32, label, currentValue }: {
-  data: number[];
-  color: string;
-  width?: number;
-  height?: number;
-  label: string;
-  currentValue: string;
-}) {
-  if (data.length < 2) {
-    return (
-      <div style={{ width, height: height + 20, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
-        <span style={{ fontSize: 8, color: 'rgba(255,255,255,0.15)', letterSpacing: 1 }}>collecting...</span>
-      </div>
-    );
-  }
-
-  const max = Math.max(...data) || 1;
-  const min = Math.min(...data);
-  const range = max - min || 1;
-  const pad = 2;
-  const plotW = width - pad * 2;
-  const plotH = height - pad * 2;
-
-  const points = data.map((v, i) => {
-    const x = pad + (i / (data.length - 1)) * plotW;
-    const y = pad + plotH - ((v - min) / range) * plotH;
-    return `${x},${y}`;
-  });
-
-  const fillPoints = [
-    `${pad},${height - pad}`,
-    ...points,
-    `${pad + plotW},${height - pad}`,
-  ].join(' ');
-
-  return (
-    <div style={{ marginBottom: 2 }}>
-      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'baseline', marginBottom: 1 }}>
-        <span style={{ fontSize: 8, color: 'rgba(255,255,255,0.3)', letterSpacing: 1.5, fontWeight: 700 }}>{label}</span>
-        <span style={{ fontSize: 11, color, fontWeight: 600, fontVariantNumeric: 'tabular-nums',
-          filter: `drop-shadow(0 0 6px ${color}80)`,
-        }}>{currentValue}</span>
-      </div>
-      <svg width={width} height={height} style={{ display: 'block' }}>
-        <defs>
-          <linearGradient id={`spark-fill-${label}`} x1="0" y1="0" x2="0" y2="1">
-            <stop offset="0%" stopColor={color} stopOpacity={0.15} />
-            <stop offset="100%" stopColor={color} stopOpacity={0} />
-          </linearGradient>
-        </defs>
-        <polygon points={fillPoints} fill={`url(#spark-fill-${label})`} />
-        <polyline points={points.join(' ')} fill="none" stroke={color} strokeWidth={1.5}
-          strokeLinejoin="round" strokeLinecap="round"
-          style={{ filter: `drop-shadow(0 0 6px ${color}90) drop-shadow(0 0 2px ${color})` }} />
-        {/* Current value dot — glowing */}
-        {data.length > 0 && (() => {
-          const lastX = pad + plotW;
-          const lastY = pad + plotH - ((data[data.length - 1] - min) / range) * plotH;
-          return <circle cx={lastX} cy={lastY} r={3} fill={color}
-            style={{ filter: `drop-shadow(0 0 8px ${color}) drop-shadow(0 0 3px ${color})` }} />;
-        })()}
-      </svg>
-    </div>
-  );
-}
-
 /* ── LiveBlock ───────────────────────────────────────── */
 
 function LiveBlock({ entry, hoveredId, selectedId, onHover, onClick, cheatInfo }: {
@@ -462,7 +345,7 @@ function LiveBlock({ entry, hoveredId, selectedId, onHover, onClick, cheatInfo }
   const downXY = useRef<[number, number] | null>(null);
   const col = new THREE.Color(entry.color);
 
-  const cpuH = Math.max(MIN_DIM, entry.cpu * Cs);
+  const cpuH = Math.max(MIN_DIM, heightCpu(entry) * Cs);
   // Log scale for memory depth so huge allocations don't swallow the scene
   const memGB = entry.mem / 1073741824;
   const memD = Math.max(MIN_DIM * 3, Math.log2(1 + memGB) * 0.4);
@@ -626,25 +509,6 @@ function LiveBlock({ entry, hoveredId, selectedId, onHover, onClick, cheatInfo }
 
 /* ── CSS bar helper for overlay cards ────────────────── */
 
-const panelFont = "'JetBrains Mono', 'Fira Code', 'SF Mono', monospace";
-
-/** Tiny inline bar for the hover card */
-function MiniBar({ ratio, color }: { ratio: number; color: string }) {
-  const pct = Math.max(2, Math.min(100, ratio * 100));
-  return (
-    <div style={{
-      width: 40, height: 4, borderRadius: 2,
-      background: 'rgba(255,255,255,0.06)', overflow: 'hidden', display: 'inline-block',
-      verticalAlign: 'middle', marginLeft: 4,
-    }}>
-      <div style={{
-        height: '100%', borderRadius: 2, width: `${pct}%`,
-        background: color, boxShadow: `0 0 4px ${color}40`,
-      }} />
-    </div>
-  );
-}
-
 /* ── Position bridge: projects 3D positions to DOM overlay positions ── */
 
 function CardPositionBridge({ entry, domRef, offsetY, offsetZ }: {
@@ -747,6 +611,9 @@ function ImmersiveHUD({ entry, onClose, history, logs }: { entry: BlockEntry; on
   const accent = entry.color;
   const tableInfo = entry.tableHint !== 'unknown' ? entry.tableHint
     : (entry.database && entry.table ? `${entry.database}.${entry.table}` : '');
+  const detailUrl = entry.isMerge
+    ? (entry.database && entry.table && entry.partName ? buildMergeLinkUrl(entry.database, entry.table, entry.partName, entry.hostname) : null)
+    : (entry.queryId ? buildQueryLinkUrl(entry.queryId, entry.endTime) : null);
 
   const hasHistory = history.length >= 2;
   const showSparks = running || hasHistory;
@@ -960,13 +827,30 @@ function ImmersiveHUD({ entry, onClose, history, logs }: { entry: BlockEntry; on
         ESC or click to exit
       </div>
 
-      {/* Top-right: query ID */}
-      {entry.queryId && (
+      {/* Top-right: query ID + link to the Queries / Merges page */}
+      {(entry.queryId || detailUrl) && (
         <div style={{
           position: 'absolute', top: 14, right: 20,
-          fontSize: 8, color: 'rgba(255,255,255,0.1)', letterSpacing: 1,
+          display: 'flex', flexDirection: 'column', alignItems: 'flex-end', gap: 6,
           animation: 'arena-fade-in 0.4s ease 0.6s both',
-        }}>{entry.queryId}</div>
+        }}>
+          {entry.queryId && (
+            <div style={{ fontSize: 8, color: 'rgba(255,255,255,0.1)', letterSpacing: 1 }}>{entry.queryId}</div>
+          )}
+          {detailUrl && (
+            <Link
+              to={detailUrl}
+              state={{ from: { path: '/overview', label: 'Overview' } }}
+              onClick={e => e.stopPropagation()}
+              style={{
+                fontSize: 10, letterSpacing: 1, color: accent, textDecoration: 'none',
+                pointerEvents: 'auto',
+              }}
+            >
+              {entry.isMerge ? 'Open in Merges' : 'Open in Queries'} &rarr;
+            </Link>
+          )}
+        </div>
       )}
 
       {/* Accent border glow on left */}
@@ -1063,7 +947,7 @@ function HoverCardOverlay({ entry, domRef }: {
         }}>
           <div>
             <span style={{ fontSize: 9, color: 'rgba(255,255,255,0.3)' }}>CPU </span>
-            <span style={{ fontWeight: 600 }}>{entry.cpu.toFixed(2)}</span>
+            <span style={{ fontWeight: 600 }}>{fmtCpuCores(entry.cpu, entry.isMerge)}</span>
             <MiniBar ratio={cpuRatio} color="#60a5fa" />
           </div>
           <div>
@@ -1087,7 +971,11 @@ function HoverCardOverlay({ entry, domRef }: {
           {entry.user && (
             <span style={{ fontSize: 9, color: 'rgba(255,255,255,0.25)' }}>{entry.user}</span>
           )}
-          <span style={{ fontSize: 8, color: 'rgba(255,255,255,0.15)', marginLeft: 'auto' }}>click to inspect</span>
+          {USE_ARENA_INSPECTOR ? (
+            <span style={{ fontSize: 10, color: accent, marginLeft: 'auto', fontWeight: 600 }}>Click for details &rsaquo;</span>
+          ) : (
+            <span style={{ fontSize: 8, color: 'rgba(255,255,255,0.15)', marginLeft: 'auto' }}>click to inspect</span>
+          )}
         </div>
       </div>
     </div>
@@ -1419,8 +1307,14 @@ export interface ResourceArena3DProps {
   splitActive?: boolean;
   /** Toggle split view */
   onSplitToggle?: () => void;
-  /** Finished queries/merges fetched at page load, to backfill the timeline */
+  /** Finished queries/merges, to backfill the timeline and finalize entries seen live */
   history?: RecentActivity | null;
+  /**
+   * Called after a poll in which operations seen live finished. Their values
+   * are those of the last poll until `history` is refetched with their final
+   * query_log / part_log records.
+   */
+  onOperationsFinished?: () => void;
   /** Height in px when not fullscreen */
   height?: number;
 }
@@ -1432,7 +1326,7 @@ const hdrVal: React.CSSProperties = { marginLeft: 6, fontWeight: 700 };
 
 export const ResourceArena3D: React.FC<ResourceArena3DProps> = ({
   queries, merges, cpuUsage, memoryPct, compact,
-  splitAvailable, splitActive, onSplitToggle, history, height = 520,
+  splitAvailable, splitActive, onSplitToggle, history, onOperationsFinished, height = 520,
 }) => {
   const [hovered, setHovered] = useState<BlockEntry | null>(null);
   const [selected, setSelected] = useState<BlockEntry | null>(null);
@@ -1455,6 +1349,8 @@ export const ResourceArena3D: React.FC<ResourceArena3DProps> = ({
 
   const metricHistory = useMetricHistory(selected);
   const { logs: traceLogs, prefetch: prefetchLogs } = useLogTail(selected);
+
+  const selectedLive = useSelectedLiveRefresh(selected);
 
   const handleHover = useCallback((v: BlockEntry | null) => {
     setHovered(v);
@@ -1520,7 +1416,7 @@ export const ResourceArena3D: React.FC<ResourceArena3DProps> = ({
     const registry = registryRef.current;
     const now = Date.now();
     if (history && historyChanged) {
-      seedRegistry(registry, history, { horizonSec: HORIZON, splitActive: !!splitActive, now }, (it, deck) => ({
+      const finalized = seedRegistry(registry, history, { horizonSec: HORIZON, splitActive: !!splitActive, now }, (it, deck) => ({
         id: it.id, kind: it.kind, color: colorForBlock(it.kind, it.tableHint),
         label: it.isMerge ? it.label : truncateQuery(it.label, 50), tableHint: it.tableHint,
         isMerge: it.isMerge, deck, lane: 0,
@@ -1534,10 +1430,36 @@ export const ResourceArena3D: React.FC<ResourceArena3DProps> = ({
         database: it.database, table: it.table, partName: it.partName,
         hostname: it.hostname,
       }));
+      if (selected && finalized.includes(selected.id)) {
+        setSelected({ ...registry.get(selected.id)! });
+      }
     } else {
       repackFinishedLanes(registry, !!splitActive, now);
     }
     setVisibleIds([...registry.keys()].sort());
+  }
+
+  // Operations seen live that finished in the last poll: ask for their final
+  // records (outside render, so StrictMode's double render asks once).
+  const finishedSincePollRef = useRef(false);
+  useEffect(() => {
+    if (!finishedSincePollRef.current) return;
+    finishedSincePollRef.current = false;
+    onOperationsFinished?.();
+  });
+
+  // The panel's 1s refresh found the selected operation gone: mark it finished
+  // now (the page poll may be minutes away or paused), keep its latest sample
+  // in the registry once (the final history record replaces it, as for any
+  // finished entry), and ask for that final record.
+  if (selected && selected.endTime === null && selectedLive.finishedAt !== null) {
+    const entry = registryRef.current.get(selected.id);
+    if (entry && entry.endTime === null) {
+      if (selectedLive.metrics) Object.assign(entry, selectedLive.metrics);
+      entry.endTime = selectedLive.finishedAt;
+      finishedSincePollRef.current = true;
+    }
+    setSelected({ ...(entry ?? { ...selected, ...selectedLive.metrics }), endTime: selectedLive.finishedAt });
   }
 
   // Update registry when poll data changes
@@ -1576,7 +1498,7 @@ export const ResourceArena3D: React.FC<ResourceArena3DProps> = ({
       ...merges.map(m => ({
         id: `m:${m.hostname ? m.hostname + ':' : ''}${m.database}.${m.table}.${m.partName}`,
         kind: m.isMutation ? 'MUTATION' : 'MERGE',
-        elapsed: m.elapsed, cpu: m.cpuEstimate || 0.3, mem: m.memoryUsage,
+        elapsed: m.elapsed, cpu: m.cpuEstimate, mem: m.memoryUsage,
         label: `${m.database}.${m.table}`, tableHint: `${m.database}.${m.table}`, isMerge: true,
         progress: m.progress,
         ioReadRate: m.readBytesPerSec, rowsRead: m.rowsRead, bytesRead: 0,
@@ -1589,19 +1511,14 @@ export const ResourceArena3D: React.FC<ResourceArena3DProps> = ({
 
     const currentIds = new Set(items.map(it => it.id));
 
-    // If poll returns nothing but registry has active (running) entries, this is a
-    // connection switch — the stale data from the old server should not fade; clear immediately.
-    const hasActive = items.length === 0 && [...registry.values()].some(e => e.endTime === null);
-    if (hasActive) {
-      registry.clear();
-      setSelected(null);
-      setVisibleIds([]);
-      return;
-    }
+    // An empty poll is normal: the last running operation just finished. It is
+    // not a connection switch; Overview remounts the arena (key includes the
+    // profile and services generation) when the connection changes.
 
     for (const [, entry] of registry) {
       if (!currentIds.has(entry.id) && entry.endTime === null) {
         entry.endTime = now;
+        finishedSincePollRef.current = true;
         // Update selected state once so HUD reflects finished status
         if (selected && selected.id === entry.id) {
           setSelected({ ...entry });
@@ -1696,8 +1613,12 @@ export const ResourceArena3D: React.FC<ResourceArena3DProps> = ({
       }
     }
 
-    if (selected && !registry.has(selected.id)) {
-      setSelected(null);
+    if (selected) {
+      const current = registry.get(selected.id);
+      // `selected` is a copy taken on click; refresh it so the detail view
+      // follows the poll (progress, memory, rates) instead of freezing.
+      if (!current) setSelected(null);
+      else if (current.endTime === null) setSelected({ ...current });
     }
 
     const newIds = [...registry.keys()].sort();
@@ -1725,6 +1646,7 @@ export const ResourceArena3D: React.FC<ResourceArena3DProps> = ({
         background: 'linear-gradient(180deg, #1e1e32 0%, #1a1a2e 40%, #141422 100%)',
         border: isFullscreen ? 'none' : '1px solid rgba(255,255,255,0.08)',
         height: isFullscreen ? '100vh' : height,
+        cursor: USE_ARENA_INSPECTOR && hovered ? 'pointer' : undefined,
       }}
     >
       {/* Header */}
@@ -1874,7 +1796,9 @@ export const ResourceArena3D: React.FC<ResourceArena3DProps> = ({
         <HoverCardOverlay entry={hovered} domRef={hoverCardRef} />
       )}
       {selected && !cheatState.active && (
-        <ImmersiveHUD entry={selected} onClose={handleBgClick} history={metricHistory} logs={traceLogs} />
+        USE_ARENA_INSPECTOR
+          ? <ArenaInspector entry={selected.endTime === null && selectedLive.metrics ? { ...selected, ...selectedLive.metrics } : selected} onClose={handleBgClick} logs={traceLogs} compact={compact} />
+          : <ImmersiveHUD entry={selected} onClose={handleBgClick} history={metricHistory} logs={traceLogs} />
       )}
 
       {/* Cinematic camera controller */}

@@ -24,6 +24,7 @@ import { useUserPreferenceStore } from '../stores/userPreferenceStore';
 import { DocsLink } from '../components/common/DocsLink';
 import { QueryDetailModal, type QueryModalTab } from '../components/query/modal/QueryDetailModal';
 import { useQueryDeepLink } from '../hooks/useQueryDeepLink';
+import { DeepLinkStatusBanner } from '../components/common/DeepLinkStatusBanner';
 import type { Query } from '../components/analytics/types';
 import type { TableOrderingKeyEfficiency, PatternSurfaceRow, QuerySeries, ResourceLanesData } from '@tracehouse/core';
 import { resolveCustomTimeRange } from '../utils/customTimeRange';
@@ -134,7 +135,7 @@ export const Analytics: React.FC = () => {
   const [modalTab, setModalTab] = useState<QueryModalTab>('overview');
 
   // Deep-link: sync query detail modal to URL (qd_id param)
-  const { query: deepLinkedQuery, onClose: handleQueryClose } = useQueryDeepLink(
+  const { query: deepLinkedQuery, onClose: handleQueryClose, linkBanner, dismissLinkStatus } = useQueryDeepLink(
     modalQuery,
     () => setModalQuery(null),
   );
@@ -744,6 +745,7 @@ export const Analytics: React.FC = () => {
 
       {/* Query Detail Modal - opened from pattern surface hover cards */}
       <QueryDetailModal query={deepLinkedQuery} initialTab={modalTab} onClose={() => { handleQueryClose(); setModalTab('overview'); }} />
+      <DeepLinkStatusBanner banner={linkBanner} onDismiss={dismissLinkStatus} />
     </div>
   );
 };

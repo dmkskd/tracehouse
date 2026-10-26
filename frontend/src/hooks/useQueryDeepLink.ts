@@ -17,6 +17,7 @@ import { useClusterStore } from '../stores/clusterStore';
 import type { QuerySeries } from '@tracehouse/core';
 import { useUrlState } from './useUrlState';
 import { defineShareSchema } from '../share/shareSchema';
+import { useDeepLinkResolution, type DeepLinkBannerState } from './useDeepLinkResolution';
 
 /** State listed here must survive copying a URL with Query Details open. */
 export const QUERY_DETAILS_SHARE_SCHEMA = defineShareSchema({
@@ -56,7 +57,12 @@ function detailToSeries(detail: any): QuerySeries {
 export function useQueryDeepLink(
   query: QuerySeries | null,
   onClose: () => void,
-): { query: QuerySeries | null; onClose: () => void } {
+): {
+  query: QuerySeries | null;
+  onClose: () => void;
+  linkBanner: DeepLinkBannerState | null;
+  dismissLinkStatus: () => void;
+} {
   const services = useClickHouseServices();
   const { state: sharedState, update: updateSharedState } = useUrlState(QUERY_DETAILS_SHARE_SCHEMA);
   const [deepLinkedQuery, setDeepLinkedQuery] = useState<QuerySeries | null>(null);
@@ -67,6 +73,7 @@ export function useQueryDeepLink(
    *  while still allowing a retry once the cluster name changes. */
   const attemptRef = useRef('');
   const clusterName = useClusterStore(s => s.clusterName);
+  const { run: resolveLink, dismiss: dismissLinkStatus, banner: linkBanner } = useDeepLinkResolution();
 
   // The URL adapter emits standalone hash changes and Grafana location changes.
   useEffect(() => {
@@ -81,6 +88,7 @@ export function useQueryDeepLink(
   // When the parent selects a query, write qd_id to URL
   useEffect(() => {
     if (!query) return;
+    dismissLinkStatus();
     setDeepLinkedQuery(null);
     setPendingQdId(null);
     fetchedRef.current = query.query_id;
@@ -100,18 +108,31 @@ export function useQueryDeepLink(
     if (attemptRef.current === attempt) return;
     attemptRef.current = attempt;
 
-    services.queryAnalyzer.getQueryDetail(qdId).then(detail => {
-      if (!detail) {
-        console.warn(`[useQueryDeepLink] No query found for qd_id=${qdId}`);
-        return;
-      }
+    let settled = false;
+    resolveLink(
+      services.linkResolver,
+      'query',
+      qdId,
+      () => services.queryAnalyzer.getQueryDetail(qdId),
+      () => services.linkResolver.diagnoseQuery(qdId),
+    ).then(detail => {
+      settled = true;
+      if (!detail) return;
       fetchedRef.current = qdId;
       setPendingQdId(null);
       setDeepLinkedQuery(detailToSeries(detail));
     }).catch(err => {
+      settled = true;
       console.error('[useQueryDeepLink] Failed to fetch query detail:', { qdId, err });
     });
-  }, [query, pendingQdId, services, clusterName]);
+    // Teardown while still resolving (StrictMode remount, deps change): cancel
+    // and release the guard so the next run starts the lookup again.
+    return () => {
+      if (settled) return;
+      attemptRef.current = '';
+      dismissLinkStatus();
+    };
+  }, [query, pendingQdId, services, clusterName, resolveLink, dismissLinkStatus]);
 
   // Close: clear qd_id from URL (preserving other params)
   const handleClose = useCallback(() => {
@@ -119,9 +140,10 @@ export function useQueryDeepLink(
     setPendingQdId(null);
     fetchedRef.current = '';
     attemptRef.current = '';
+    dismissLinkStatus();
     updateSharedState({ qd_id: undefined, qd_tab: undefined, qd_topo: undefined });
     onClose();
-  }, [onClose, updateSharedState]);
+  }, [onClose, updateSharedState, dismissLinkStatus]);
 
-  return { query: query ?? deepLinkedQuery, onClose: handleClose };
+  return { query: query ?? deepLinkedQuery, onClose: handleClose, linkBanner, dismissLinkStatus };
 }

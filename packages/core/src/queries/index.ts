@@ -57,3 +57,4 @@ export { TIMELINE_ACTIVITY_LIMIT } from './timeline-queries.js';
 export { buildXRaySamplesSQL } from './xray-samples-queries.js';
 export { buildXRayWindowSamplesSQL, type XRayWindowOptions } from './xray-window-queries.js';
 export { buildSelectedXRayOverlaySQL, type XRayOverlayMetric } from './xray-overlay-queries.js';
+export * from './link-resolution-queries.js';

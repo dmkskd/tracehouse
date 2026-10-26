@@ -81,6 +81,9 @@ const reasonCostMetrics = `count() AS merge_count,
     round(sum(sum(elapsed)) OVER (), 3) AS total_elapsed_seconds,
     round(sum(sum(cpu)) OVER (), 3) AS total_cpu_seconds`;
 
+/** Row caps for unbounded dimensions; the summaries are computed before the LIMIT. */
+const DIMENSION_LIMIT: Record<string, number> = { tbl: 30, level_transition: 10 };
+
 function costQuery(title: string, dimension: string, metric: 'cpu_seconds' | 'elapsed_seconds', description: string, drill = ''): string {
   return `-- @meta: title='${title}' group='Merge Analytics' interval='1 DAY' description='${description}'
 -- @chart: type=bar group_by=${dimension} value=${metric} unit=s style=2d
@@ -94,14 +97,14 @@ SELECT
 FROM merge_costs
 GROUP BY ${dimension}
 ORDER BY ${metric} DESC NULLS LAST, ${dimension}
-${dimension === 'tbl' ? 'LIMIT 30' : ''}`;
+${DIMENSION_LIMIT[dimension] ? `LIMIT ${DIMENSION_LIMIT[dimension]}` : ''}`;
 }
 
 const queries: string[] = [
   costQuery('Merge CPU by Table', 'tbl', 'cpu_seconds', 'Tables ranked by total merge CPU. Click a table for the cost breakdown.', "-- @drill: on=tbl into='Table Merge Cost Breakdown'"),
   costQuery('Merge Elapsed Time by Table', 'tbl', 'elapsed_seconds', 'Tables ranked by total merge duration.', "-- @drill: on=tbl into='Table Merge Cost Breakdown'"),
-  costQuery('Merge CPU by Level Transition', 'level_transition', 'cpu_seconds', 'CPU by source → result part level. Mixed source levels appear as a range.'),
-  costQuery('Merge Elapsed Time by Level Transition', 'level_transition', 'elapsed_seconds', 'Total duration of completed merges, grouped by level transition.'),
+  costQuery('Merge CPU by Level Transition', 'level_transition', 'cpu_seconds', 'Top 10 level transitions by CPU (totals cover all merges). Source → result part level; mixed source levels appear as a range.'),
+  costQuery('Merge Elapsed Time by Level Transition', 'level_transition', 'elapsed_seconds', 'Top 10 level transitions by total merge duration (totals cover all merges).'),
   costQuery('Merge CPU by Result Size', 'size_bucket', 'cpu_seconds', 'CPU by compressed result-part size.'),
   costQuery('Merge Elapsed Time by Result Size', 'size_bucket', 'elapsed_seconds', 'Total merge duration by compressed result-part size.'),
   `-- @meta: title='Merge Cost by Reason' group='Merge Analytics' interval='1 DAY' description='CPU and duration for regular, TTL delete, and TTL recompression merges.'

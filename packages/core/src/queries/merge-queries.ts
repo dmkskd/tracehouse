@@ -507,6 +507,47 @@ export const GET_MERGE_HISTORY_BY_PART_NAME = `
 `;
 
 /**
+ * Most recent part_log record for a result part on one host. Replicas each
+ * record the same part name, so a link from a specific replica's merge must
+ * not fall back to another replica's row. Same host filter as
+ * GET_MERGE_HISTORY_BY_IDENTITY.
+ */
+export const GET_MERGE_HISTORY_BY_PART_ON_HOST = `
+  SELECT
+    event_time,
+    event_type,
+    database,
+    table,
+    part_name,
+    partition_id,
+    rows,
+    size_in_bytes,
+    duration_ms,
+    merge_reason,
+    merged_from,
+    bytes_uncompressed,
+    read_bytes,
+    read_rows,
+    peak_memory_usage,
+    merge_algorithm,
+    disk_name,
+    path_on_disk,
+    query_id,
+    ProfileEvents,
+    error,
+    exception,
+    hostName() AS hostname
+  FROM {{cluster_aware:system.part_log}}
+  WHERE database = {database}
+    AND table = {table}
+    AND part_name = {part_name}
+    AND hostName() = {hostname}
+    AND event_type IN ('MergeParts', 'MutatePart', 'MovePart', 'DownloadPart')
+  ORDER BY event_time DESC
+  LIMIT 1
+`;
+
+/**
  * Look up the exact selected part_log operation. Replicated tables can record
  * the same result part on multiple hosts, and retries can reuse a part name on
  * one host, so part_name alone is not a stable event identity.

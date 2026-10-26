@@ -17,6 +17,8 @@ import { useGlobalLastUpdatedStore } from '../stores/refreshSettingsStore';
 import { useCapabilityCheck } from '../components/shared/RequiresCapability';
 import { PermissionGate } from '../components/shared/PermissionGate';
 import { BackLink } from '../components/common/BackLink';
+import { DeepLinkStatusBanner } from '../components/common/DeepLinkStatusBanner';
+import { useDeepLinkResolution } from '../hooks/useDeepLinkResolution';
 import { DocsLink } from '../components/common/DocsLink';
 import {
   MetricStrip,
@@ -36,6 +38,8 @@ import { defineShareSchema } from '../share/shareSchema';
 export const QUERY_MONITOR_SHARE_SCHEMA = defineShareSchema({
   tab: { type: 'string', default: 'activity' },
   qd_id: { type: 'string' },
+  /** Epoch ms when the linking page saw the query finish (see buildQueryLinkUrl). */
+  qd_end: { type: 'number' },
   user: { type: 'string[]' },
   queryId: { type: 'string[]' },
   queryText: { type: 'string' },
@@ -279,14 +283,16 @@ export const QueryMonitor: React.FC = () => {
    *  while still allowing a retry once the cluster name changes. */
   const deepLinkAttempt = useRef('');
   const clusterName = useClusterStore(s => s.clusterName);
+  const { run: resolveLink, dismiss: dismissLinkStatus, banner: linkBanner } = useDeepLinkResolution();
 
   // When user selects a query, write qd_id to URL
   useEffect(() => {
     if (!convertedQuery) return;
+    dismissLinkStatus();
     deepLinkFetched.current = convertedQuery.query_id;
     setDeepLinkedQuery(null);
     updateUrl({ qd_id: convertedQuery.query_id } as any);
-  }, [convertedQuery, updateUrl]);
+  }, [convertedQuery, updateUrl, dismissLinkStatus]);
 
   // On mount: if qd_id is in URL but no query selected, fetch the detail.
   // The guard is only claimed once a detail actually comes back — a miss or an
@@ -300,11 +306,17 @@ export const QueryMonitor: React.FC = () => {
     const attempt = `${qdId}::${clusterName ?? ''}`;
     if (deepLinkAttempt.current === attempt) return;
     deepLinkAttempt.current = attempt;
-    services.queryAnalyzer.getQueryDetail(qdId).then((detail: any) => {
-      if (!detail) {
-        console.warn(`[QueryMonitor] No query found for qd_id=${qdId}`);
-        return;
-      }
+    const endedAt = urlState.qd_end;
+    let settled = false;
+    resolveLink(
+      services.linkResolver,
+      'query',
+      qdId,
+      () => services.queryAnalyzer.getQueryDetail(qdId),
+      () => services.linkResolver.diagnoseQuery(qdId, endedAt),
+    ).then((detail: any) => {
+      settled = true;
+      if (!detail) return;
       deepLinkFetched.current = qdId;
       const durationMs = Number(detail.query_duration_ms) || 0;
       const startMs = new Date(detail.query_start_time).getTime();
@@ -326,9 +338,17 @@ export const QueryMonitor: React.FC = () => {
         points: [],
       });
     }).catch((err: any) => {
+      settled = true;
       console.error('[QueryMonitor] Failed to fetch query detail:', { qdId, err });
     });
-  }, [urlState.qd_id, convertedQuery, services, clusterName, updateUrl]);
+    // Teardown while still resolving (StrictMode remount, deps change): cancel
+    // and release the guard so the next run starts the lookup again.
+    return () => {
+      if (settled) return;
+      deepLinkAttempt.current = '';
+      dismissLinkStatus();
+    };
+  }, [urlState.qd_id, urlState.qd_end, convertedQuery, services, clusterName, updateUrl, resolveLink, dismissLinkStatus]);
 
   const modalQuery = convertedQuery ?? deepLinkedQuery;
   const handleQueryClose = useCallback(() => {
@@ -336,8 +356,9 @@ export const QueryMonitor: React.FC = () => {
     setDeepLinkedQuery(null);
     deepLinkFetched.current = '';
     deepLinkAttempt.current = '';
-    updateUrl({ qd_id: undefined } as any);
-  }, [selectQuery, updateUrl]);
+    dismissLinkStatus();
+    updateUrl({ qd_id: undefined, qd_end: undefined } as any);
+  }, [selectQuery, updateUrl, dismissLinkStatus]);
 
   // Compute query type counts for running queries
   const queryTypeCounts = useMemo(() => {
@@ -443,7 +464,9 @@ export const QueryMonitor: React.FC = () => {
             )}
           </div>
         </div>
-        
+
+        <DeepLinkStatusBanner banner={linkBanner} onDismiss={dismissLinkStatus} />
+
         {/* Compact query vitals */}
         <MetricStrip
           ariaLabel="Query monitor summary"

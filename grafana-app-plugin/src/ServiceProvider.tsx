@@ -20,6 +20,7 @@ import {
 import { TraceService } from '@tracehouse/core/services/trace-service';
 import { AnalyticsService } from '@tracehouse/core/services/analytics-service';
 import { ObservabilityMapService } from '@tracehouse/core/services/observability-map-service';
+import { LinkResolver } from '@tracehouse/core/services/link-resolver';
 import { MonitoringCapabilitiesService } from '@tracehouse/core/services/monitoring-capabilities';
 import { EnvironmentDetector } from '@tracehouse/core/services/environment-detector';
 import type { IClickHouseAdapter } from '@tracehouse/core/adapters/types';
@@ -224,6 +225,7 @@ export function ServiceProvider({ children }: { children: React.ReactNode }) {
         traceService: new TraceService(adapter),
         analyticsService: new AnalyticsService(adapter),
         observabilityMapService: new ObservabilityMapService(adapter),
+        linkResolver: new LinkResolver(adapter),
         environmentDetector: envDetector,
       };
       return { svcs, clusterAdapter: adapter };

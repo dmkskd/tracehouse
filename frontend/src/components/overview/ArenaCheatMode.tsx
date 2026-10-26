@@ -10,7 +10,7 @@ import React, { useRef, useState, useCallback, useEffect } from 'react';
 import { useFrame, useThree } from '@react-three/fiber';
 import * as THREE from 'three';
 import {
-  Ts, Cs, MIN_DIM, LANE_GAP, DECK_GAP,
+  Ts, Cs, MIN_DIM, LANE_GAP, DECK_GAP, heightCpu,
   DECK_ORDER, type Deck, type BlockEntry,
 } from './arena-types';
 
@@ -652,7 +652,7 @@ function CheatModeShootingBridge({ entries, cheatState, cheatInfoMap, onHit, onA
       const running = entry.endTime === null;
       const baseY = DECK_ORDER.indexOf(entry.deck as Deck) * DECK_GAP;
       const laneZ = -entry.lane * LANE_GAP;
-      const cpuH = Math.max(MIN_DIM, entry.cpu * Cs);
+      const cpuH = Math.max(MIN_DIM, heightCpu(entry) * Cs);
       const memGB = entry.mem / 1073741824;
       const memD = Math.max(MIN_DIM * 3, Math.log2(1 + memGB) * 0.4);
       const ci = cheatInfoMap.get(entry.id);

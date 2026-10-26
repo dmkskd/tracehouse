@@ -145,3 +145,5 @@ export { ReplicationService, ReplicationServiceError, extractShardId, shardIdToN
 export type { ClusterInfo, AvailableCluster } from './cluster-service.js';
 export { EnvironmentDetector } from './environment-detector.js';
 export type { EnvironmentInfo } from './environment-detector.js';
+export { LinkResolver, LINK_RESOLUTION_CONFIG } from './link-resolver.js';
+export type { LinkResolutionConfig, LinkStatus, MergeLinkRef } from './link-resolver.js';

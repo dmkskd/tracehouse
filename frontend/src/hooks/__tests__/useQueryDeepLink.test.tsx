@@ -7,7 +7,7 @@
  * that miss as retryable and re-issue the fetch once the cluster name lands.
  */
 
-import type { PropsWithChildren } from 'react';
+import { StrictMode, type PropsWithChildren } from 'react';
 import { act, renderHook, waitFor } from '@testing-library/react';
 import { MemoryRouter } from 'react-router-dom';
 import { afterEach, describe, expect, it, vi } from 'vitest';
@@ -31,18 +31,26 @@ const detail = {
   ProfileEvents: {},
 };
 
-function harness(getQueryDetail: ReturnType<typeof vi.fn>) {
+function harness(getQueryDetail: ReturnType<typeof vi.fn>, { strict = false } = {}) {
   const services = {
     queryAnalyzer: { getQueryDetail },
+    linkResolver: {
+      pollIntervalMs: 1_000,
+      pendingFlushWindowMs: 5_000,
+      diagnoseQuery: vi.fn().mockResolvedValue({ state: 'not_found' }),
+    },
   } as unknown as ClickHouseServices;
 
-  const wrapper = ({ children }: PropsWithChildren) => (
-    <MemoryRouter initialEntries={[`/queries?qd_id=${QD_ID}`]}>
-      <ClickHouseContext.Provider value={services}>
-        {children}
-      </ClickHouseContext.Provider>
-    </MemoryRouter>
-  );
+  const wrapper = ({ children }: PropsWithChildren) => {
+    const tree = (
+      <MemoryRouter initialEntries={[`/queries?qd_id=${QD_ID}`]}>
+        <ClickHouseContext.Provider value={services}>
+          {children}
+        </ClickHouseContext.Provider>
+      </MemoryRouter>
+    );
+    return strict ? <StrictMode>{tree}</StrictMode> : tree;
+  };
 
   return renderHook(() => useQueryDeepLink(null, () => {}), { wrapper });
 }
@@ -130,5 +138,13 @@ describe('useQueryDeepLink', () => {
     // A resolved query_id is held by fetchedRef, so a later cluster switch
     // must not re-issue the request.
     expect(getQueryDetail).toHaveBeenCalledTimes(1);
+  });
+
+  it('resolves under StrictMode, where effects mount, unmount and remount', async () => {
+    const getQueryDetail = vi.fn().mockResolvedValue(detail);
+
+    const hook = harness(getQueryDetail, { strict: true });
+
+    await waitFor(() => expect(hook.result.current.query?.query_id).toBe(QD_ID));
   });
 });

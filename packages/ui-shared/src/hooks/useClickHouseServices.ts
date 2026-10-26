@@ -25,6 +25,7 @@ import type {
   TraceService,
   AnalyticsService,
   ObservabilityMapService,
+  LinkResolver,
   EnvironmentDetector,
 } from '@tracehouse/core';
 
@@ -43,6 +44,7 @@ export interface ClickHouseServices {
   traceService: TraceService;
   analyticsService: AnalyticsService;
   observabilityMapService: ObservabilityMapService;
+  linkResolver: LinkResolver;
   environmentDetector: EnvironmentDetector;
 }
 

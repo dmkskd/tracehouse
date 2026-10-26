@@ -48,6 +48,7 @@ import { RangeSlider } from '../components/shared/RangeSlider';
 import { QueryDetailModal } from '../components/query/modal/QueryDetailModal';
 import { MergeDetailModal, MutationDetailModal } from '../components/merge/MergeDetailModal';
 import { useQueryDeepLink } from '../hooks/useQueryDeepLink';
+import { DeepLinkStatusBanner } from '../components/common/DeepLinkStatusBanner';
 import { useAvailableHeight } from '../hooks/useAvailableHeight';
 import { TruncatedHost } from '../components/common/TruncatedHost';
 import { formatBytes } from '../utils/formatters';
@@ -354,7 +355,7 @@ export const TimeTravelPage: React.FC = () => {
   const [selectedTimelineMutation, setSelectedTimelineMutation] = useState<MutationSeries | null>(null);
 
   // Deep-link: sync query detail modal to URL (qd_id param)
-  const { query: deepLinkedQuery, onClose: handleQueryClose } = useQueryDeepLink(
+  const { query: deepLinkedQuery, onClose: handleQueryClose, linkBanner, dismissLinkStatus } = useQueryDeepLink(
     selectedTimelineQuery,
     () => setSelectedTimelineQuery(null),
   );
@@ -1971,6 +1972,7 @@ export const TimeTravelPage: React.FC = () => {
 
       {/* Modals */}
       <QueryDetailModal query={deepLinkedQuery} onClose={handleQueryClose} onViewInTimeTravel={activateQueryHashFilter} />
+      <DeepLinkStatusBanner banner={linkBanner} onDismiss={dismissLinkStatus} />
       <MergeDetailModal merge={selectedTimelineMerge} onClose={() => setSelectedTimelineMerge(null)} />
       <MutationDetailModal mutation={selectedTimelineMutation} onClose={() => setSelectedTimelineMutation(null)} />
     </div>

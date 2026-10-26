@@ -37,6 +37,8 @@ import { MergeDependencyDiagram } from './MergeDependencyDiagram';
 import type { MutationHistoryRecord, MergeHistoryRecord } from '../../stores/mergeStore';
 import { CopyTableButton } from '../common/CopyTableButton';
 import { BackLink } from '../common/BackLink';
+import { DeepLinkStatusBanner } from '../common/DeepLinkStatusBanner';
+import { useDeepLinkResolution } from '../../hooks/useDeepLinkResolution';
 import { DocsLink } from '../common/DocsLink';
 import {
   MetricStrip,
@@ -1659,6 +1661,8 @@ export const MergeTrackerView: React.FC = () => {
   const [mergeDetailRecord, setMergeDetailRecordRaw] = useState<MergeHistoryRecord | null>(null);
   const [activeMergeDetail, setActiveMergeDetailRaw] = useState<MergeInfo | null>(null);
 
+  const { run: resolveLink, dismiss: dismissLinkStatus, banner: linkBanner } = useDeepLinkResolution();
+
   // Sync the detail deep-link to URL. Persisted rows include their stable
   // host/time/type identity because replicas can produce the same part name.
   const syncDetailToUrl = useCallback((
@@ -1722,13 +1726,14 @@ export const MergeTrackerView: React.FC = () => {
   }, [mutationHistory, mutations, selectedActiveMutation]);
 
   const setMergeDetailRecord = useCallback((record: MergeHistoryRecord | null) => {
+    dismissLinkStatus();
     setMergeDetailRecordRaw(record);
     if (record) {
       syncDetailToUrl(record.database, record.table, record.part_name, record);
     } else {
       syncDetailToUrl();
     }
-  }, [syncDetailToUrl]);
+  }, [syncDetailToUrl, dismissLinkStatus]);
   const setActiveMergeDetail = useCallback((merge: MergeInfo | null) => {
     setActiveMergeDetailRaw(merge);
     if (merge) {
@@ -1949,27 +1954,44 @@ export const MergeTrackerView: React.FC = () => {
   useEffect(() => {
     if (mdHydrated.current || !services || !urlState.md_db || !urlState.md_tbl || !urlState.md_part) return;
     mdHydrated.current = true;
-    const identity = urlState.md_host && urlState.md_time && urlState.md_type
+    // Host alone (links from the Overview arena) still scopes the lookup to
+    // that replica; host + time + type pins the exact part_log record.
+    const identity = urlState.md_host
       ? {
         hostname: urlState.md_host,
         event_time: urlState.md_time,
         event_type: urlState.md_type,
       }
       : undefined;
-    services.mergeTracker.getMergeHistoryByPartName(
-      urlState.md_db,
-      urlState.md_tbl,
-      urlState.md_part,
-      identity,
+    const ref = {
+      database: urlState.md_db, table: urlState.md_tbl, partName: urlState.md_part, hostname: urlState.md_host,
+    };
+    let settled = false;
+    resolveLink(
+      services.linkResolver,
+      'merge',
+      `${ref.database}.${ref.table} ${ref.partName}`,
+      () => services.mergeTracker.getMergeHistoryByPartName(ref.database, ref.table, ref.partName, identity),
+      () => services.linkResolver.diagnoseMerge(ref),
     )
       .then(record => {
+        settled = true;
         if (record) {
           setSelectedMergeHistoryRaw(record);
           setMergeDetailRecordRaw(record);
         }
-        else console.warn(`[MergeTracker] No merge found for ${urlState.md_db}.${urlState.md_tbl}.${urlState.md_part}`);
       })
-      .catch(err => console.error('[MergeTracker] Failed to fetch merge detail:', err));
+      .catch(err => {
+        settled = true;
+        console.error('[MergeTracker] Failed to fetch merge detail:', err);
+      });
+    // Teardown while still resolving (StrictMode remount, deps change): cancel
+    // and release the guard so the next run starts the lookup again.
+    return () => {
+      if (settled) return;
+      mdHydrated.current = false;
+      dismissLinkStatus();
+    };
   }, [
     services,
     urlState.md_db,
@@ -1978,6 +2000,8 @@ export const MergeTrackerView: React.FC = () => {
     urlState.md_host,
     urlState.md_time,
     urlState.md_type,
+    resolveLink,
+    dismissLinkStatus,
   ]);
 
   // Refresh history data when switching to history/mutationHistory tabs
@@ -2629,6 +2653,7 @@ export const MergeTrackerView: React.FC = () => {
       {/* Full merge detail modal */}
       <MergeDetailModalFromRecord record={mergeDetailRecord} onClose={() => setMergeDetailRecord(null)} />
       <ActiveMergeDetailModal merge={activeMergeDetail} onClose={() => setActiveMergeDetail(null)} />
+      <DeepLinkStatusBanner banner={linkBanner} onDismiss={dismissLinkStatus} />
     </div>
   );
 };

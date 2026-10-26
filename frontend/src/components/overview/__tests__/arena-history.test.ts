@@ -52,6 +52,25 @@ describe('seedRegistry', () => {
     // q-done overlaps the running entry in time, so it must not share its lane
     expect(registry.get('q-done')!.lane).toBe(1);
   });
+
+  it('replaces the last-poll values of an entry seen live once its final record arrives', () => {
+    type Live = Entry & { progress: number; mem: number };
+    const makeLive = (it: { id: string; startTime: number; endTime: number; progress: number; mem: number }, deck: HistoryEntryBase['deck']): Live =>
+      ({ id: it.id, deck, lane: 0, startTime: it.startTime, endTime: it.endTime, progress: it.progress, mem: it.mem });
+    const registry = new Map<string, Live>([
+      // Last poll saw it at 37% with 10 bytes; then it left system.processes.
+      ['q1', { id: 'q1', deck: 'select', lane: 2, startTime: NOW - 9_000, endTime: NOW - 4_000, progress: 37, mem: 10 }],
+    ]);
+    const finalized = seedRegistry(
+      registry,
+      { queries: [query('q1', 6, 5, { memoryUsage: 99 })], merges: [] },
+      { horizonSec: 120, splitActive: false, now: NOW },
+      makeLive,
+    );
+    expect(finalized).toEqual(['q1']);
+    const q1 = registry.get('q1')!;
+    expect(q1).toMatchObject({ progress: 100, mem: 99, final: true, endTime: NOW - 5_000, startTime: NOW - 11_000 });
+  });
 });
 
 describe('repackFinishedLanes in split view', () => {

@@ -7,6 +7,17 @@
 export const Ts = 0.12;
 export const Cs = 0.6;
 export const MIN_DIM = 0.06;
+
+/**
+ * CPU used for a block's HEIGHT only. Merges without recorded CPU (system.merges
+ * exposes none; a part_log row may lack ProfileEvents) get a placeholder height
+ * so they stay visible. Their `cpu` value stays 0 and is never shown as a
+ * measurement.
+ */
+export const MERGE_PLACEHOLDER_CPU = 0.3;
+export function heightCpu(entry: { cpu: number; isMerge: boolean }): number {
+  return entry.isMerge && entry.cpu <= 0 ? MERGE_PLACEHOLDER_CPU : entry.cpu;
+}
 export const LANE_GAP = 0.55;
 export const DECK_GAP = 1.2;
 
@@ -39,6 +50,8 @@ export interface BlockEntry {
   lane: number;
   startTime: number;
   endTime: number | null;
+  /** Values are final (from query_log / part_log), not the last live poll. See HistoryEntryBase. */
+  final?: boolean;
   cpu: number;
   mem: number;
   elapsed: number;

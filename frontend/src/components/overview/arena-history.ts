@@ -14,6 +14,12 @@ export interface HistoryEntryBase {
   hostname?: string;
   startTime: number;
   endTime: number | null;
+  /**
+   * Values come from query_log / part_log (final totals, peak memory, run
+   * averages). Unset on an entry seen live that has since finished: its values
+   * are still those of the last live poll.
+   */
+  final?: boolean;
 }
 
 /** Normalised finished operation handed to each arena's entry factory. */
@@ -75,7 +81,7 @@ export function historyItems(activity: RecentActivity, horizonSec: number, now: 
     const endTime = now - m.endedAgoSec * 1000;
     items.push({
       id: mergeId(m), kind: m.isMutation ? 'MUTATION' : 'MERGE', isMerge: true,
-      elapsed: m.elapsed, cpu: m.cpuEstimate || 0.3, mem: m.memoryUsage, progress: m.progress,
+      elapsed: m.elapsed, cpu: m.cpuEstimate, mem: m.memoryUsage, progress: m.progress,
       ioReadRate: m.readBytesPerSec, rowsRead: m.rowsRead, bytesRead: 0,
       readBytesPerSec: m.readBytesPerSec, writeBytesPerSec: m.writeBytesPerSec,
       numParts: m.numParts, mergeType: m.mergeType,
@@ -126,18 +132,28 @@ export function repackFinishedLanes<E extends HistoryEntryBase>(
 }
 
 /**
- * Add finished operations that are not in the registry yet, then re-pack lanes.
+ * Add finished operations that are not in the registry yet, and replace the
+ * last-poll values of entries seen live that have since finished with their
+ * final values, then re-pack lanes. Running entries are left alone.
  * `makeEntry` builds the arena-specific entry (colour, label) from a HistoryItem.
+ * Returns the ids of existing entries that were finalized.
  */
 export function seedRegistry<E extends HistoryEntryBase>(
   registry: Map<string, E>,
   activity: RecentActivity,
   opts: { horizonSec: number; splitActive: boolean; now: number },
   makeEntry: (item: HistoryItem, deck: Deck) => E,
-): void {
+): string[] {
+  const finalized: string[] = [];
   for (const item of historyItems(activity, opts.horizonSec, opts.now)) {
-    if (registry.has(item.id)) continue;
-    registry.set(item.id, makeEntry(item, deckOf(item.kind, item.isMerge)));
+    const existing = registry.get(item.id);
+    if (!existing) {
+      registry.set(item.id, { ...makeEntry(item, deckOf(item.kind, item.isMerge)), final: true });
+    } else if (existing.endTime !== null && !existing.final) {
+      Object.assign(existing, makeEntry(item, existing.deck), { lane: existing.lane, final: true });
+      finalized.push(item.id);
+    }
   }
   repackFinishedLanes(registry, opts.splitActive, opts.now);
+  return finalized;
 }

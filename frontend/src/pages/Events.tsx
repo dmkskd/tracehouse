@@ -5,6 +5,7 @@ import { DocsLink } from '../components/common/DocsLink';
 import { QueryDetailModal } from '../components/query/modal/QueryDetailModal';
 import { useNavigate } from '../hooks/useAppLocation';
 import { useQueryDeepLink } from '../hooks/useQueryDeepLink';
+import { DeepLinkStatusBanner } from '../components/common/DeepLinkStatusBanner';
 import { useUrlState } from '../hooks/useUrlState';
 import { defineShareSchema } from '../share/shareSchema';
 import { buildTimeTravelEventUrl } from '../components/events/event-model';
@@ -36,7 +37,7 @@ export const Events: React.FC = () => {
   const navigate = useNavigate();
   const { state, update } = useUrlState(EVENTS_SHARE_SCHEMA);
   const [selectedQuery, setSelectedQuery] = useState<QuerySeries | null>(null);
-  const { query: modalQuery, onClose: closeQueryDetails } = useQueryDeepLink(
+  const { query: modalQuery, onClose: closeQueryDetails, linkBanner, dismissLinkStatus } = useQueryDeepLink(
     selectedQuery,
     () => setSelectedQuery(null),
   );
@@ -168,6 +169,7 @@ export const Events: React.FC = () => {
         />
       </div>
       <QueryDetailModal query={modalQuery} onClose={closeQueryDetails} />
+      <DeepLinkStatusBanner banner={linkBanner} onDismiss={dismissLinkStatus} />
     </div>
   );
 };

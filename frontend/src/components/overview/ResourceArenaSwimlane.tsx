@@ -11,6 +11,7 @@ import React, { useRef, useState, useCallback, useEffect } from 'react';
 import type { RunningQueryInfo, ActiveMergeInfo, RecentActivity } from '@tracehouse/core';
 import { truncateQuery, formatBytes } from '../../utils/formatters';
 import { HOST_LANE_BLOCK, ARENA_SAMPLED_NOTE } from './arena-types';
+import { fmtCpuCores } from './arena-hud-format';
 import { seedRegistry, repackFinishedLanes } from './arena-history';
 
 /* ── palette ─────────────────────────────────────────── */
@@ -319,7 +320,7 @@ function DetailPanel({ entry, onClose }: { entry: SwimEntry; onClose: () => void
         <div style={{ flex: 1, minWidth: 0 }}>
           <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '6px 16px', fontSize: 10 }}>
             {[
-              { label: 'CPU', value: `${entry.cpu.toFixed(2)} cores`, ratio: Math.min(1, entry.cpu / 8), color: '#60a5fa' },
+              { label: 'CPU', value: fmtCpuCores(entry.cpu, entry.isMerge, ' cores'), ratio: Math.min(1, entry.cpu / 8), color: '#60a5fa' },
               { label: 'MEM', value: formatBytes(entry.mem), ratio: Math.min(1, entry.mem / (4 * 1073741824)), color: '#a78bfa' },
               { label: 'I/O', value: fmtRate(ioRate), ratio: Math.min(1, ioRate / (100 * 1048576)), color: '#34d399' },
               { label: 'ROWS', value: fmtNum(entry.rowsRead), ratio: Math.min(1, entry.rowsRead / 1_000_000), color: '#f472b6' },
@@ -462,7 +463,7 @@ function SwimTooltip({ entry, mousePos, containerWidth, containerHeight }: {
           display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '3px 12px', fontSize: 10,
           color: 'rgba(255,255,255,0.5)', borderTop: '1px solid rgba(255,255,255,0.06)', paddingTop: 4,
         }}>
-          <div><span style={{ fontSize: 9, color: 'rgba(255,255,255,0.3)' }}>CPU </span>{entry.cpu.toFixed(2)}</div>
+          <div><span style={{ fontSize: 9, color: 'rgba(255,255,255,0.3)' }}>CPU </span>{fmtCpuCores(entry.cpu, entry.isMerge)}</div>
           <div><span style={{ fontSize: 9, color: 'rgba(255,255,255,0.3)' }}>MEM </span>{formatBytes(entry.mem)}</div>
           <div><span style={{ fontSize: 9, color: 'rgba(255,255,255,0.3)' }}>I/O </span>{fmtRate(entry.ioReadRate)}</div>
           <div><span style={{ fontSize: 9, color: 'rgba(255,255,255,0.3)' }}>ROWS </span>{fmtNum(entry.rowsRead)}</div>
@@ -485,8 +486,14 @@ export interface ResourceArenaSwimlaneProps {
   splitAvailable?: boolean;
   splitActive?: boolean;
   onSplitToggle?: () => void;
-  /** Finished queries/merges fetched at page load, to backfill the timeline */
+  /** Finished queries/merges, to backfill the timeline and finalize entries seen live */
   history?: RecentActivity | null;
+  /**
+   * Called after a poll in which operations seen live finished, so `history`
+   * is refetched with their final query_log / part_log records. Same contract
+   * as ResourceArena3D.
+   */
+  onOperationsFinished?: () => void;
 }
 
 const hdrLabel: React.CSSProperties = {
@@ -496,7 +503,7 @@ const hdrVal: React.CSSProperties = { marginLeft: 6, fontWeight: 700 };
 
 export const ResourceArenaSwimlane: React.FC<ResourceArenaSwimlaneProps> = ({
   queries, merges, cpuUsage, memoryPct, compact,
-  splitAvailable, splitActive, onSplitToggle, history,
+  splitAvailable, splitActive, onSplitToggle, history, onOperationsFinished,
 }) => {
   const [hovered, setHovered] = useState<SwimEntry | null>(null);
   const [selected, setSelected] = useState<SwimEntry | null>(null);
@@ -579,7 +586,7 @@ export const ResourceArenaSwimlane: React.FC<ResourceArenaSwimlaneProps> = ({
     const registry = registryRef.current;
     const now = Date.now();
     if (history && historyChanged) {
-      seedRegistry(registry, history, { horizonSec: HORIZON, splitActive: !!splitActive, now }, (it, deck) => ({
+      const finalized = seedRegistry(registry, history, { horizonSec: HORIZON, splitActive: !!splitActive, now }, (it, deck) => ({
         id: it.id, kind: it.kind, color: colorForBlock(it.kind, it.tableHint),
         label: it.isMerge ? it.label : truncateQuery(it.label, 50), tableHint: it.tableHint,
         isMerge: it.isMerge, deck, lane: 0,
@@ -592,11 +599,23 @@ export const ResourceArenaSwimlane: React.FC<ResourceArenaSwimlaneProps> = ({
         numParts: it.numParts, mergeType: it.mergeType,
         database: it.database, table: it.table, partName: it.partName,
       }));
+      if (selected && finalized.includes(selected.id)) {
+        setSelected({ ...registry.get(selected.id)! });
+      }
     } else {
       repackFinishedLanes(registry, !!splitActive, now);
     }
     setVisibleIds([...registry.keys()].sort());
   }
+
+  // Operations seen live that finished in the last poll: ask for their final
+  // records (outside render, so StrictMode's double render asks once).
+  const finishedSincePollRef = useRef(false);
+  useEffect(() => {
+    if (!finishedSincePollRef.current) return;
+    finishedSincePollRef.current = false;
+    onOperationsFinished?.();
+  });
 
   // Registry update — same pattern as 3D
   const prevPollRef = useRef<{ q: RunningQueryInfo[]; m: ActiveMergeInfo[] }>({ q: [], m: [] });
@@ -632,7 +651,7 @@ export const ResourceArenaSwimlane: React.FC<ResourceArenaSwimlaneProps> = ({
       ...merges.map(m => ({
         id: `m:${m.hostname ? m.hostname + ':' : ''}${m.database}.${m.table}.${m.partName}`,
         kind: m.isMutation ? 'MUTATION' : 'MERGE',
-        elapsed: m.elapsed, cpu: m.cpuEstimate || 0.3, mem: m.memoryUsage,
+        elapsed: m.elapsed, cpu: m.cpuEstimate, mem: m.memoryUsage,
         label: `${m.database}.${m.table}`, tableHint: `${m.database}.${m.table}`, isMerge: true,
         progress: m.progress,
         ioReadRate: m.readBytesPerSec, rowsRead: m.rowsRead,
@@ -645,17 +664,14 @@ export const ResourceArenaSwimlane: React.FC<ResourceArenaSwimlaneProps> = ({
 
     const currentIds = new Set(items.map(it => it.id));
 
-    const hasActive = items.length === 0 && [...registry.values()].some(e => e.endTime === null);
-    if (hasActive) {
-      registry.clear();
-      setSelected(null);
-      setVisibleIds([]);
-      return;
-    }
+    // An empty poll is normal: the last running operation just finished. It is
+    // not a connection switch; Overview remounts the arena (key includes the
+    // profile and services generation) when the connection changes.
 
     for (const [, entry] of registry) {
       if (!currentIds.has(entry.id) && entry.endTime === null) {
         entry.endTime = now;
+        finishedSincePollRef.current = true;
         if (selected && selected.id === entry.id) setSelected({ ...entry, endTime: now });
       }
     }

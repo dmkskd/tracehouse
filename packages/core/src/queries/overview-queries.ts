@@ -7,11 +7,8 @@
 // TIER 1: Virtual Tables - Poll every 5 seconds (zero cost)
 // =============================================================================
 
-/**
- * Running queries with ProfileEvents for CPU/IO attribution
- */
-export const GET_RUNNING_QUERIES = `
-SELECT
+/** Columns of a running query, shared by the full poll and the single-query lookup. */
+const RUNNING_QUERY_COLUMNS = `
     hostName() AS hostname,
     query_id,
     user,
@@ -29,17 +26,31 @@ SELECT
     ProfileEvents['SelectedParts'] AS selected_parts,
     ProfileEvents['SelectedMarks'] AS selected_marks,
     ProfileEvents['MarkCacheHits'] AS mark_cache_hits,
-    ProfileEvents['MarkCacheMisses'] AS mark_cache_misses
+    ProfileEvents['MarkCacheMisses'] AS mark_cache_misses`;
+
+/**
+ * Running queries with ProfileEvents for CPU/IO attribution
+ */
+export const GET_RUNNING_QUERIES = `
+SELECT${RUNNING_QUERY_COLUMNS}
 FROM {{cluster_aware:system.processes}}
 WHERE is_initial_query = 1
 ORDER BY (user_time_us + system_time_us) DESC
 `;
 
 /**
- * Active merges with progress and resource usage
+ * One running query, for the arena detail panel's 1s refresh.
  */
-export const GET_ACTIVE_MERGES_LIVE = `
-SELECT
+export const GET_RUNNING_QUERY_BY_ID = `
+SELECT${RUNNING_QUERY_COLUMNS}
+FROM {{cluster_aware:system.processes}}
+WHERE is_initial_query = 1
+  AND query_id = {query_id}
+LIMIT 1
+`;
+
+/** Columns of an active merge, shared by the full poll and the single-merge lookup. */
+const ACTIVE_MERGE_COLUMNS = `
     hostName() AS hostname,
     database,
     table,
@@ -52,9 +63,28 @@ SELECT
     rows_read,
     num_parts,
     is_mutation,
-    merge_type
+    merge_type`;
+
+/**
+ * Active merges with progress and resource usage
+ */
+export const GET_ACTIVE_MERGES_LIVE = `
+SELECT${ACTIVE_MERGE_COLUMNS}
 FROM {{cluster_aware:system.merges}}
 ORDER BY elapsed DESC
+`;
+
+/**
+ * One active merge or mutation, for the arena detail panel's 1s refresh.
+ * Replicas merge the same part independently, so this returns one row per
+ * replica; the caller picks the host it wants.
+ */
+export const GET_ACTIVE_MERGE_BY_PART = `
+SELECT${ACTIVE_MERGE_COLUMNS}
+FROM {{cluster_aware:system.merges}}
+WHERE database = {database}
+  AND table = {table}
+  AND result_part_name = {part_name}
 `;
 
 /**

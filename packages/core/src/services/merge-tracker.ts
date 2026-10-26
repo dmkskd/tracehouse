@@ -17,6 +17,7 @@ import {
   GET_TABLE_UUID,
   GET_MERGE_HISTORY_BY_PART_NAME,
   GET_MERGE_HISTORY_BY_IDENTITY,
+  GET_MERGE_HISTORY_BY_PART_ON_HOST,
   GET_TABLE_COLUMNS,
   GET_MERGE_THROUGHPUT_ESTIMATE,
   GET_TABLE_ENGINES,
@@ -384,33 +385,31 @@ export class MergeTracker {
 
   /**
    * Look up a single MergeHistoryRecord by database + table + part_name.
+   * With the full identity (host, event_time, event_type) that exact record;
+   * with only a host, the most recent record on that host (replicas record the
+   * same part name independently); with neither, the most recent on any host.
    * Returns null if no matching part_log entry is found.
    */
   async getMergeHistoryByPartName(
     database: string,
     table: string,
     partName: string,
-    selectedRecord?: Pick<MergeHistoryRecord, 'hostname' | 'event_time' | 'event_type'>,
+    selectedRecord?: Partial<Pick<MergeHistoryRecord, 'hostname' | 'event_time' | 'event_type'>>,
   ): Promise<MergeHistoryRecord | null> {
     try {
-      const hasStableIdentity = !!(
-        selectedRecord?.hostname
-        && selectedRecord.event_time
-        && selectedRecord.event_type
-      );
-      const sql = buildQuery(
-        hasStableIdentity ? GET_MERGE_HISTORY_BY_IDENTITY : GET_MERGE_HISTORY_BY_PART_NAME,
-        {
-          database,
-          table,
-          part_name: partName,
-          ...(hasStableIdentity ? {
-            hostname: selectedRecord.hostname!,
-            event_time: selectedRecord.event_time,
-            event_type: selectedRecord.event_type,
-          } : {}),
-        },
-      );
+      const hostname = selectedRecord?.hostname;
+      const hasStableIdentity = !!(hostname && selectedRecord.event_time && selectedRecord.event_type);
+      const params = { database, table, part_name: partName };
+      const sql = hasStableIdentity
+        ? buildQuery(GET_MERGE_HISTORY_BY_IDENTITY, {
+          ...params,
+          hostname: hostname!,
+          event_time: selectedRecord!.event_time!,
+          event_type: selectedRecord!.event_type!,
+        })
+        : hostname
+          ? buildQuery(GET_MERGE_HISTORY_BY_PART_ON_HOST, { ...params, hostname })
+          : buildQuery(GET_MERGE_HISTORY_BY_PART_NAME, params);
       const rows = await this.adapter.executeQuery(tagQuery(sql, sourceTag(TAB_MERGES, 'mergeHistoryByPart')));
       if (rows.length === 0) return null;
       return mapMergeHistoryRecord(rows[0]);
