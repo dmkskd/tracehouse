@@ -5,6 +5,12 @@ All notable changes to the TraceHouse Grafana plugin will be documented in this 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.19.3] - 2026-10-26
+
+### Improvements
+- **Overview:** Clicking a block in the resource arena now opens a live details panel.
+- **Queries / Merges:** Links to a running or just-finished operation now wait for it instead of reporting "not found".
+
 ## [0.19.2] - 2026-10-22
 
 ### New features
