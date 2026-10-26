@@ -362,7 +362,7 @@ const BUILTIN_DASHBOARDS: Dashboard[] = [
   {
     id: 'merge-analytics',
     title: 'Merge Analytics',
-    description: 'Where merge CPU and time go by level, size, reason, and table; throughput, part staleness, and estimated merge cost',
+    description: 'Where merge and mutation CPU and time go by level, size, reason, and table; throughput, part staleness, and estimated merge cost',
     group: 'ClickHouse',
     category: 'Merges',
     columns: 2,
@@ -381,6 +381,9 @@ const BUILTIN_DASHBOARDS: Dashboard[] = [
       { queryName: 'Merge Analytics#Merge CPU by Result Size' },
       { queryName: 'Merge Analytics#Merge Elapsed Time by Result Size' },
       { queryName: 'Merge Analytics#Merge Cost by Reason' },
+      { queryName: 'Merge Analytics#Mutation CPU by Table', section: 'Where mutation CPU and time go' },
+      { queryName: 'Merge Analytics#Mutation Elapsed Time by Table' },
+      { queryName: 'Merge Analytics#Mutation Cost by Command' },
       { queryName: 'Merge Analytics#Merge Throughput by Table', section: 'Throughput, duration, and part lifecycle' },
       { queryName: 'Merge Analytics#Merge Duration by Table' },
       { queryName: 'Merge Analytics#Estimated Merge Time (active parts)' },

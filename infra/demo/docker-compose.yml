@@ -269,7 +269,8 @@ services:
       # Generate config
       CH_GEN_ROWS: "${WORKLOAD_ROWS:-2000000}"
       CH_GEN_PARALLELISM: "${WORKLOAD_PARALLELISM:-5}"
-      CH_GEN_BATCH_SIZE: "100000"
+      # Smaller inserts -> more parts -> a steady stream of visible merges.
+      CH_GEN_BATCH_SIZE: "50000"
       CH_GEN_THROTTLE_MIN: "1.5"
       CH_GEN_THROTTLE_MAX: "3.0"
       CH_GEN_MODE: "resume"

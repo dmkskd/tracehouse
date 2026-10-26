@@ -15,7 +15,8 @@ describe('Merge cost attribution', { tags: ['analytics'] }, () => {
     const raw = analyticsQueries.find(q => q.includes(`title='${title}'`));
     if (!raw) throw new Error(`Missing query: ${title}`);
     let sql = resolveDrillParams(resolveTimeRange(raw, '1 DAY', interval), params)
-      .replaceAll('{{cluster_aware:system.part_log}}', `${DB}.events`);
+      .replaceAll('{{cluster_aware:system.part_log}}', `${DB}.events`)
+      .replaceAll('{{cluster_aware:system.mutations}}', `${DB}.mutations`);
     if (clock) sql = sql.replaceAll('now()', `toDateTime('${clock}', 'UTC')`);
     return ctx.rawAdapter.executeQuery<Record<string, unknown>>(sql);
   }
@@ -30,11 +31,16 @@ describe('Merge cost attribution', { tags: ['analytics'] }, () => {
       error UInt16 DEFAULT 0, event_date Date DEFAULT today(), event_time DateTime DEFAULT now(),
       part_name String, merged_from Array(String), size_in_bytes UInt64 DEFAULT 1024,
       read_bytes UInt64 DEFAULT 1073741824, duration_ms UInt64, rows UInt64 DEFAULT 0,
-      ProfileEvents Map(String, UInt64)
+      ProfileEvents Map(String, UInt64), partition_id String DEFAULT 'all'
+    ) ENGINE = Memory` });
+    // Stand-in for system.mutations: block_numbers maps partition -> mutation version.
+    await ctx.client.command({ query: `CREATE TABLE ${DB}.mutations (
+      database String DEFAULT 'app', table String DEFAULT 'events', mutation_id String, command String,
+      \`block_numbers.partition_id\` Array(String), \`block_numbers.number\` Array(Int64)
     ) ENGINE = Memory` });
   }, 120_000);
 
-  const first = { part_name: 'all_1_2_1', merged_from: ['all_1_1_0', 'all_2_2_0'], duration_ms: 4000, ProfileEvents: { OSCPUVirtualTimeMicroseconds: 3e6 } };
+  const first = { part_name: 'all_1_2_1', merged_from: ['all_1_1_0', 'all_2_2_0'], duration_ms: 4000, ProfileEvents: { UserTimeMicroseconds: 3e6 } };
 
   async function seed(rows: Record<string, unknown>[]) {
     await ctx.client.command({ query: `TRUNCATE TABLE ${DB}.events` });
@@ -44,16 +50,15 @@ describe('Merge cost attribution', { tags: ['analytics'] }, () => {
   beforeEach(async () => {
     await seed([
       first,
-      { ...first, part_name: 'all_3_4_1', duration_ms: 2000, ProfileEvents: { OSCPUVirtualTimeMicroseconds: 1e6 } },
-      { ...first, part_name: 'all_1_8_3', merged_from: ['all_1_4_2', 'all_5_5_0'], size_in_bytes: GiB, read_bytes: 2 * GiB, duration_ms: 3000, ProfileEvents: { OSCPUVirtualTimeMicroseconds: 6e6 } },
+      { ...first, part_name: 'all_3_4_1', duration_ms: 2000, ProfileEvents: { UserTimeMicroseconds: 1e6 } },
+      { ...first, part_name: 'all_1_8_3', merged_from: ['all_1_4_2', 'all_5_5_0'], size_in_bytes: GiB, read_bytes: 2 * GiB, duration_ms: 3000, ProfileEvents: { UserTimeMicroseconds: 6e6 } },
       { ...first, part_name: 'all_1_4_2_99', merged_from: ['all_1_2_1_99', 'all_3_4_1_99'], size_in_bytes: 10485760, duration_ms: 1000, merge_reason: 'TTLRecompressMerge', ProfileEvents: { UserTimeMicroseconds: 1.5e6, SystemTimeMicroseconds: 0.5e6 } },
       { ...first, part_name: 'unrecognized', merged_from: ['unrecognized'], duration_ms: 5000, ProfileEvents: {} },
-      { ...first, part_name: 'all_7_8_1', duration_ms: 0, ProfileEvents: { OSCPUVirtualTimeMicroseconds: 0 } },
-      { ...first, table: 'other', ProfileEvents: { OSCPUVirtualTimeMicroseconds: 100e6 } },
+      { ...first, part_name: 'all_7_8_1', duration_ms: 0, ProfileEvents: { UserTimeMicroseconds: 0 } },
+      { ...first, table: 'other', ProfileEvents: { UserTimeMicroseconds: 100e6 } },
       { ...first, error: 1 },
       { ...first, event_type: 'MutatePart' },
       { ...first, event_type: 'MergePartsStart' },
-      { ...first, merge_reason: 'NotAMerge' },
       { ...first, database: 'system' },
       { ...first, event_date: '2000-01-01', event_time: '2000-01-01 00:00:00' },
       { ...first, event_time: '2000-01-01 00:00:00' }, // event_time filter independent of event_date
@@ -65,6 +70,52 @@ describe('Merge cost attribution', { tags: ['analytics'] }, () => {
       try { await ctx.client.command({ query: `DROP DATABASE IF EXISTS ${DB}` }); }
       finally { await stopClickHouse(ctx); }
     }
+  });
+
+  it('attributes mutation cost to its ALTER command for non-replicated and replicated version records', async () => {
+    const mutated = (part: string, partition: string, cpuUs: number) => ({
+      ...first, event_type: 'MutatePart', part_name: part, merged_from: [], partition_id: partition,
+      duration_ms: 1000, ProfileEvents: { UserTimeMicroseconds: cpuUs },
+    });
+    await seed([
+      mutated('all_1_5_2_7', 'all', 4e6),            // version 7: non-replicated record (partition '')
+      mutated('all_6_9_1_7', 'all', 2e6),
+      mutated('202601_1_3_1_12', '202601', 1e6),     // version 12: replicated record, per partition
+      mutated('202602_1_3_1_12', '202602', 1e6),     // same version, but no record for this partition
+      mutated('all_10_11_1_3', 'all', 0.5e6),        // version 3: no longer in system.mutations
+    ]);
+    await ctx.client.command({ query: `TRUNCATE TABLE ${DB}.mutations` });
+    await ctx.client.insert({ table: `${DB}.mutations`, format: 'JSONEachRow', values: [
+      { mutation_id: 'mutation_7.txt', command: 'DELETE WHERE x = 1', 'block_numbers.partition_id': [''], 'block_numbers.number': [7] },
+      // Two replicas report the same replicated mutation: must not double the rows.
+      { mutation_id: '0000000001', command: 'UPDATE y = 2 WHERE 1', 'block_numbers.partition_id': ['202601'], 'block_numbers.number': [12] },
+      { mutation_id: '0000000001', command: 'UPDATE y = 2 WHERE 1', 'block_numbers.partition_id': ['202601'], 'block_numbers.number': [12] },
+    ] });
+
+    const rows = await run('Mutation Cost by Command');
+    const byVersion = Object.fromEntries(rows.map(r => [Number(r.mutation_version), r]));
+    expect(byVersion[7]).toMatchObject({ command: 'DELETE WHERE x = 1' });
+    expect(Number(byVersion[7].parts_rewritten)).toBe(2);
+    expect(Number(byVersion[7].cpu_seconds)).toBe(6);
+    expect(byVersion[12]).toMatchObject({ command: 'UPDATE y = 2 WHERE 1' });
+    expect(Number(byVersion[12].parts_rewritten)).toBe(2);
+    expect(Number(byVersion[12].cpu_seconds)).toBe(2);
+    expect(byVersion[3]).toMatchObject({ command: '(no longer in system.mutations)' });
+    expect(rows.map(r => Number(r.mutation_version))).toEqual([7, 12, 3]); // by CPU
+  });
+
+  it('attributes completed mutations by table, separately from merges', async () => {
+    // The seed's one MutatePart row: 3s CPU, 4s, on app.events.
+    const cpu = await run('Mutation CPU by Table');
+    expect(cpu).toHaveLength(1);
+    expect(cpu[0]).toMatchObject({ tbl: 'app.events' });
+    expect(Number(cpu[0].parts_rewritten)).toBe(1);
+    expect(Number(cpu[0].cpu_seconds)).toBe(3);
+    expect(Number(cpu[0].elapsed_seconds)).toBe(4);
+    expect(Number(cpu[0].total_parts_rewritten)).toBe(1);
+
+    const elapsed = await run('Mutation Elapsed Time by Table');
+    expect(Number(elapsed[0].total_elapsed_seconds)).toBe(4);
   });
 
   it('counts each merge once, sums core-seconds separately from elapsed, and scopes tables', async () => {
@@ -119,8 +170,8 @@ describe('Merge cost attribution', { tags: ['analytics'] }, () => {
     // 8 CPU seconds over 3 measured input GiB = 2.667 s/GiB.
     // Averaging the per-merge rates gives 2.5; including unprofiled input gives 8/103.
     await seed([
-      { ...first, duration_ms: 1000, ProfileEvents: { OSCPUVirtualTimeMicroseconds: 2e6 } },
-      { ...first, duration_ms: 3000, read_bytes: 2 * GiB, ProfileEvents: { OSCPUVirtualTimeMicroseconds: 6e6 } },
+      { ...first, duration_ms: 1000, ProfileEvents: { UserTimeMicroseconds: 2e6 } },
+      { ...first, duration_ms: 3000, read_bytes: 2 * GiB, ProfileEvents: { UserTimeMicroseconds: 6e6 } },
       { ...first, part_name: 'all_1_4_2', merged_from: ['all_1_2_1', 'all_3_4_1'], size_in_bytes: GiB,
         read_bytes: 100 * GiB, merge_reason: 'TTLRecompressMerge', duration_ms: 6000, ProfileEvents: {} },
     ]);
@@ -144,26 +195,25 @@ describe('Merge cost attribution', { tags: ['analytics'] }, () => {
     expect(Number(unprofiled.merge_share_pct)).toBe(33.33);
   });
 
-  it('prefers OS CPU counters, including zero, and only falls back to a complete user/system pair', async () => {
+  it('counts CPU as user + system time, treating an omitted counter as 0 and only an empty map as unknown', async () => {
+    // ClickHouse leaves zero counters out of ProfileEvents, so a missing key is 0, not unknown.
     await seed([
-      { ...first, ProfileEvents: { OSCPUVirtualTimeMicroseconds: 0, UserTimeMicroseconds: 9e6, SystemTimeMicroseconds: 1e6 } },
-      { ...first, ProfileEvents: { OSCPUVirtualTimeMicroseconds: 2e6, UserTimeMicroseconds: 7e6, SystemTimeMicroseconds: 5e6 } },
-      { ...first, ProfileEvents: { UserTimeMicroseconds: 3e6, SystemTimeMicroseconds: 1e6 } },
-      { ...first, ProfileEvents: { UserTimeMicroseconds: 9e6 } },
-      { ...first, ProfileEvents: { SystemTimeMicroseconds: 2e6 } },
-      { ...first, ProfileEvents: {} },
+      { ...first, ProfileEvents: { UserTimeMicroseconds: 3e6, SystemTimeMicroseconds: 1e6 } }, // 4
+      { ...first, ProfileEvents: { UserTimeMicroseconds: 2e6 } },                                // 2: system omitted
+      { ...first, ProfileEvents: { SystemTimeMicroseconds: 1e6 } },                              // 1: user omitted
+      { ...first, ProfileEvents: { OSCPUVirtualTimeMicroseconds: 9e6 } },                        // 0: no user/system time
+      { ...first, ProfileEvents: {} },                                                           // unknown
     ]);
     const [row] = await run('Merge CPU by Table');
-    expect(Number(row.cpu_seconds)).toBe(6);
-    expect(Number(row.cpu_profiled_merges)).toBe(3);
-    expect(Number(row.cpu_coverage_pct)).toBe(50);
-    expect(Number(row.avg_cpu_seconds)).toBe(2);
-    expect(Number(row.cpu_seconds_per_input_gib)).toBe(2);
+    expect(Number(row.cpu_seconds)).toBe(7);
+    expect(Number(row.cpu_profiled_merges)).toBe(4);
+    expect(Number(row.cpu_coverage_pct)).toBe(80);
+    expect(Number(row.avg_cpu_seconds)).toBe(1.75);
   });
 
   it.each(['missing', 'zero'] as const)('handles entirely %s CPU without NaN, infinity, or invented percentages', async kind => {
     await seed([{ ...first, read_bytes: 0, duration_ms: 0,
-      ProfileEvents: kind === 'missing' ? {} : { OSCPUVirtualTimeMicroseconds: 0 } }]);
+      ProfileEvents: kind === 'missing' ? {} : { UserTimeMicroseconds: 0 } }]);
     const [row] = await run('Merge CPU by Table');
     expect(row.cpu_seconds).toBe(kind === 'missing' ? null : 0);
     expect(row.total_cpu_seconds).toBe(kind === 'missing' ? null : 0);
@@ -180,8 +230,8 @@ describe('Merge cost attribution', { tags: ['analytics'] }, () => {
 
   it('calculates percentages from unrounded CPU values', async () => {
     await seed([
-      { ...first, ProfileEvents: { OSCPUVirtualTimeMicroseconds: 1 } },
-      { ...first, part_name: 'all_1_4_2', merged_from: ['all_1_2_1'], ProfileEvents: { OSCPUVirtualTimeMicroseconds: 3 } },
+      { ...first, ProfileEvents: { UserTimeMicroseconds: 1 } },
+      { ...first, part_name: 'all_1_4_2', merged_from: ['all_1_2_1'], ProfileEvents: { UserTimeMicroseconds: 3 } },
     ]);
     const rows = await run('Merge CPU by Level Transition');
     expect(rows.map(row => Number(row.cpu_seconds))).toEqual([0, 0]);
@@ -192,7 +242,7 @@ describe('Merge cost attribution', { tags: ['analytics'] }, () => {
   it('uses the full population for shares before the top-30 table limit', async () => {
     await seed(Array.from({ length: 31 }, (_, index) => ({
       ...first, table: `table_${index.toString().padStart(2, '0')}`,
-      duration_ms: 1000, ProfileEvents: { OSCPUVirtualTimeMicroseconds: 1e6 },
+      duration_ms: 1000, ProfileEvents: { UserTimeMicroseconds: 1e6 },
     })));
     for (const title of ['Merge CPU by Table', 'Merge Elapsed Time by Table']) {
       const rows = await run(title, {});
@@ -263,7 +313,7 @@ describe('Merge cost attribution', { tags: ['analytics'] }, () => {
     ];
     await seed(cases.map(([size], index) => ({
       ...first, size_in_bytes: size, read_bytes: 200 * GiB,
-      ProfileEvents: { OSCPUVirtualTimeMicroseconds: (index + 1) * 1e6 },
+      ProfileEvents: { UserTimeMicroseconds: (index + 1) * 1e6 },
     })));
     const rows = await run('Merge CPU by Result Size');
     for (const bucket of new Set(cases.map(([, bucket]) => bucket))) {
@@ -277,8 +327,8 @@ describe('Merge cost attribution', { tags: ['analytics'] }, () => {
   it('counts work on each replica and allows CPU core-seconds to exceed merge duration', async () => {
     // Same result part and completion time on two hosts: both consumed resources.
     await seed([
-      { ...first, hostname: 'replica_a', duration_ms: 2000, ProfileEvents: { OSCPUVirtualTimeMicroseconds: 6e6 } },
-      { ...first, hostname: 'replica_b', duration_ms: 2000, ProfileEvents: { OSCPUVirtualTimeMicroseconds: 4e6 } },
+      { ...first, hostname: 'replica_a', duration_ms: 2000, ProfileEvents: { UserTimeMicroseconds: 6e6 } },
+      { ...first, hostname: 'replica_b', duration_ms: 2000, ProfileEvents: { UserTimeMicroseconds: 4e6 } },
     ]);
     const [row] = await run('Merge CPU by Table');
     expect(Number(row.merge_count)).toBe(2);
@@ -291,8 +341,8 @@ describe('Merge cost attribution', { tags: ['analytics'] }, () => {
 
   it('ranks CPU and elapsed panels by their respective costs', async () => {
     await seed([
-      { ...first, table: 'cpu_heavy', duration_ms: 1000, ProfileEvents: { OSCPUVirtualTimeMicroseconds: 10e6 } },
-      { ...first, table: 'slow', duration_ms: 10000, ProfileEvents: { OSCPUVirtualTimeMicroseconds: 1e6 } },
+      { ...first, table: 'cpu_heavy', duration_ms: 1000, ProfileEvents: { UserTimeMicroseconds: 10e6 } },
+      { ...first, table: 'slow', duration_ms: 10000, ProfileEvents: { UserTimeMicroseconds: 1e6 } },
     ]);
     const cpu = await run('Merge CPU by Table', {});
     const elapsed = await run('Merge Elapsed Time by Table', {});
@@ -323,7 +373,7 @@ describe('Merge cost attribution', { tags: ['analytics'] }, () => {
   it('keeps the drilldown percentage denominator intact beyond its 200-row limit', async () => {
     await seed(Array.from({ length: 400 }, (_, level) => ({
       ...first, part_name: `all_1_2_${level + 1}`, merged_from: [`all_1_1_${level}`],
-      ProfileEvents: { OSCPUVirtualTimeMicroseconds: 1e6 },
+      ProfileEvents: { UserTimeMicroseconds: 1e6 },
     })));
     const [total] = await run('Merge CPU by Table');
     expect(Number(total.merge_count)).toBe(400);
@@ -342,7 +392,7 @@ describe('Merge cost attribution', { tags: ['analytics'] }, () => {
     function event(minutesAgo: number, durationMs: number, cpuUs: number, extra: Record<string, unknown> = {}) {
       const timestamp = new Date(clockMs - minutesAgo * 60000).toISOString();
       return { ...first, event_time: timestamp.slice(0, 19).replace('T', ' '), event_date: timestamp.slice(0, 10),
-        duration_ms: durationMs, ProfileEvents: { OSCPUVirtualTimeMicroseconds: cpuUs }, ...extra };
+        duration_ms: durationMs, ProfileEvents: { UserTimeMicroseconds: cpuUs }, ...extra };
     }
     await seed([
       event(5, 120000, 90e6),
@@ -351,21 +401,25 @@ describe('Merge cost attribution', { tags: ['analytics'] }, () => {
       event(120, 600000, 450e6, { part_name: 'all_1_8_3', merged_from: ['all_1_4_2', 'all_5_5_0'], size_in_bytes: 2 * GiB, merge_reason: 'TTLRecompressMerge' }),
       event(420, 900000, 600e6), // outside all three windows
       event(5, 900000, 600e6, { table: 'other' }), // outside the selected table
+      // Mutations: only in the mutation charts, never in the merge totals above.
+      event(5, 60000, 30e6, { event_type: 'MutatePart', part_name: 'all_1_2_1_7', merged_from: ['all_1_2_1'] }),
+      event(120, 90000, 45e6, { event_type: 'MutatePart', part_name: 'all_3_4_1_7', merged_from: ['all_3_4_1'] }),
     ]);
     // CPU is microseconds → seconds; duration is milliseconds → seconds.
     // These exact totals also catch an extra /1000 or a default 1 DAY leaking through.
     const expectations = [
-      { interval: '15 MINUTE', count: 2, cpu: 210, elapsed: 300 },
-      { interval: '1 HOUR', count: 3, cpu: 390, elapsed: 540 },
-      { interval: '6 HOUR', count: 4, cpu: 840, elapsed: 1140 },
+      { interval: '15 MINUTE', count: 2, cpu: 210, elapsed: 300, mutations: { parts_rewritten: 1, cpu_seconds: 30, elapsed_seconds: 60 } },
+      { interval: '1 HOUR', count: 3, cpu: 390, elapsed: 540, mutations: { parts_rewritten: 1, cpu_seconds: 30, elapsed_seconds: 60 } },
+      { interval: '6 HOUR', count: 4, cpu: 840, elapsed: 1140, mutations: { parts_rewritten: 2, cpu_seconds: 75, elapsed_seconds: 150 } },
     ];
     for (const expected of expectations) {
       for (const query of queries) {
         const title = query.match(/title='([^']+)'/)![1];
         const rows = await run(title, { tbl: 'app.events' }, expected.interval, clock);
-        for (const [metric, value] of Object.entries({
-          merge_count: expected.count, cpu_seconds: expected.cpu, elapsed_seconds: expected.elapsed,
-        })) {
+        const totals = title.startsWith('Mutation ')
+          ? expected.mutations
+          : { merge_count: expected.count, cpu_seconds: expected.cpu, elapsed_seconds: expected.elapsed };
+        for (const [metric, value] of Object.entries(totals)) {
           expect(rows.reduce((sum, row) => sum + Number(row[metric]), 0), `${expected.interval} / ${title} / ${metric}`).toBe(value);
         }
       }
@@ -377,7 +431,7 @@ describe('Merge cost attribution', { tags: ['analytics'] }, () => {
     const clockMs = Date.parse('2026-10-22T12:00:00Z');
     const minutes = [15, 60, 360];
     await seed(minutes.flatMap((age, index) => [-1, 0, 1].map(offset => ({
-      ...first, duration_ms: 1000, ProfileEvents: { OSCPUVirtualTimeMicroseconds: 1e6 },
+      ...first, duration_ms: 1000, ProfileEvents: { UserTimeMicroseconds: 1e6 },
       table: `boundary_${index}`,
       event_time: new Date(clockMs - age * 60000 + offset * 1000).toISOString().slice(0, 19).replace('T', ' '),
       event_date: '2026-10-22',
