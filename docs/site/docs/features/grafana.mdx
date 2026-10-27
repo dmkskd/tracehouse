@@ -18,14 +18,6 @@ Grafana:      Browser ──▶ Grafana backend ──▶ ClickHouse data source
 
 The app itself is identical - same React UI, same `packages/core` query logic, same attribution models. Only the transport changes.
 
-## Grafana Panel Export
-
-<FeatureVideo src="grafana-export-1920.mp4" />
-
-TraceHouse can export a Query Explorer result as a Grafana panel. The query, chart settings, table styling, drill-downs, links, and panel metadata are derived from the SQL and [Analytics Query Language](analytics-query-language) directives.
-
-This lets you define the panel in TraceHouse first, where editing SQL and chart directives is often faster than configuring the same panel manually in Grafana.
-
 ## Linking From Existing Dashboards
 
 <FeatureVideo src="grafana-to-tracehouse-1920.mp4" />
@@ -61,6 +53,14 @@ Clicking a query ID opens the TraceHouse app page inside Grafana with that query
 - `th_cluster` (optional) - the cluster name to query. If omitted, TraceHouse uses its normal cluster selection.
 
 To add this to your own dashboard, open the table panel, add a field override for the column that holds the query ID, and add a data link with the URL above. Adjust `${datasource}` if your dashboard's data source variable has a different name.
+
+## Grafana Panel Export
+
+<FeatureVideo src="grafana-export-1920.mp4" />
+
+TraceHouse can export a Query Explorer result as a Grafana panel. The query, chart settings, table styling, drill-downs, links, and panel metadata are derived from the SQL and [Analytics Query Language](analytics-query-language) directives.
+
+This lets you define the panel in TraceHouse first, where editing SQL and chart directives is often faster than configuring the same panel manually in Grafana.
 
 ## Differences from Standalone
 
