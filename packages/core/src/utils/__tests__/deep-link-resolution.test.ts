@@ -1,5 +1,5 @@
 import { describe, it, expect, vi, afterEach } from 'vitest';
-import { resolveDeepLink, describeLinkStatus } from '../deep-link-resolution.js';
+import { resolveDeepLink, describeLinkStatus, buildMergeLinkUrl } from '../deep-link-resolution.js';
 import type { LinkStatus } from '../../services/link-resolver.js';
 
 afterEach(() => {
@@ -61,4 +61,10 @@ describe('describeLinkStatus', () => {
     expect(describeLinkStatus('merge', 'db.t part', { state: 'running', hostname: 'h1', elapsedSec: 10435, progress: 0.238 }))
       .toBe('Merge still running on h1 · 24% · 2h 53m. Details open when it finishes.');
   });
+});
+
+it('carries the overview attempt start and replica in merge links', () => {
+  const params = new URL(buildMergeLinkUrl('db', 'tbl', 'part', 'node-1', 123456), 'https://tracehouse.local').searchParams;
+  expect(params.get('md_host')).toBe('node-1');
+  expect(params.get('md_start')).toBe('123456');
 });

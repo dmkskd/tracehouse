@@ -9,7 +9,7 @@ import type { MergeTextLog } from '@tracehouse/core';
  * Shows Details (with TTLMove info), Logs, and Profile tabs.
  */
 
-import React, { useState, useEffect, useMemo } from 'react';
+import React, { useState, useEffect, useMemo, useRef } from 'react';
 import type { MergeHistoryRecord, MergeInfo, MergeThroughputEstimate } from '@tracehouse/core';
 import type { MergeSeries, MutationSeries } from '@tracehouse/core';
 import type { VerticalMergeProgress } from '@tracehouse/core';
@@ -1056,6 +1056,7 @@ export const MergeDetailModal: React.FC<MergeDetailModalProps> = ({ merge, onClo
     setRecord(null);
     setError(null);
     if (!merge || !services) return;
+    if (merge.is_running) { setLoading(false); return; }
     let cancelled = false;
     setLoading(true);
     // merge.table is "database.table" format
@@ -1067,7 +1068,7 @@ export const MergeDetailModal: React.FC<MergeDetailModalProps> = ({ merge, onClo
       .catch(e => { if (!cancelled) setError(e instanceof Error ? e.message : `Failed to fetch ${kind} details`); })
       .finally(() => { if (!cancelled) setLoading(false); });
     return () => { cancelled = true; };
-  }, [merge?.part_name, merge?.table, services, kind]);
+  }, [merge?.part_name, merge?.table, merge?.is_running, services, kind]);
 
   if (!merge) return null;
 
@@ -1128,33 +1129,37 @@ export const ActiveMergeDetailModal: React.FC<ActiveMergeDetailModalProps> = ({ 
   // Once the merge completes (disappears from system.merges), fetch part_log record
   const [completedRecord, setCompletedRecord] = useState<MergeHistoryRecord | null>(null);
 
+  const attemptStart = useRef(Date.now() - (merge?.elapsed ?? 0) * 1000);
+
   // Reset when the prop merge identity changes
   useEffect(() => {
     setLiveMerge(merge);
     setCompletedRecord(null);
-  }, [merge?.database, merge?.table, merge?.result_part_name]); // eslint-disable-line react-hooks/exhaustive-deps
+    attemptStart.current = Date.now() - (merge?.elapsed ?? 0) * 1000;
+  }, [merge?.database, merge?.table, merge?.result_part_name, merge?.hostname]); // eslint-disable-line react-hooks/exhaustive-deps
 
   // Poll active merges every 5s to refresh stats
   useEffect(() => {
     if (!liveMerge || !services || completedRecord) return;
     const poll = () => {
       services.mergeTracker.getActiveMerges(liveMerge.database, liveMerge.table).then(merges => {
-        const found = merges.find(m => m.result_part_name === liveMerge.result_part_name);
+        const found = merges.find(m => m.result_part_name === liveMerge.result_part_name
+          && (m.hostname ?? '') === (liveMerge.hostname ?? ''));
         if (found) {
           setLiveMerge(found);
         } else {
           // Merge completed — fetch part_log record
           services.mergeTracker.getMergeHistoryByPartName(
-            liveMerge.database, liveMerge.table, liveMerge.result_part_name,
+            liveMerge.database, liveMerge.table, liveMerge.result_part_name, { hostname: liveMerge.hostname },
           ).then(r => {
-            if (r) setCompletedRecord(r);
+            if (r && Date.parse(r.event_time) >= Math.floor(attemptStart.current / 1000) * 1000) setCompletedRecord(r);
           });
         }
       }).catch(() => {});
     };
     const timer = setInterval(poll, 5000);
     return () => clearInterval(timer);
-  }, [liveMerge?.database, liveMerge?.table, liveMerge?.result_part_name, services, completedRecord]); // eslint-disable-line react-hooks/exhaustive-deps
+  }, [liveMerge?.database, liveMerge?.table, liveMerge?.result_part_name, liveMerge?.hostname, services, completedRecord]); // eslint-disable-line react-hooks/exhaustive-deps
 
   // Stable event_time — captured once when the modal opens, so text_log effects don't re-trigger
   const [stableEventTime] = useState(() => new Date().toISOString());

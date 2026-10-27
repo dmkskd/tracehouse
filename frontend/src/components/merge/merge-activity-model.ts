@@ -409,3 +409,24 @@ export function reconcileMergeActivity(
 
   return { live, recent: history };
 }
+
+/** Resolve an overview attempt without substituting an earlier retry's result. */
+export async function resolveOverviewMerge(
+  tracker: {
+    getActiveMerges(database: string, table: string): Promise<MergeInfo[]>;
+    getMergeHistoryByPartName(database: string, table: string, part: string, identity?: { hostname?: string }): Promise<MergeHistoryRecord | null>;
+  },
+  ref: { database: string; table: string; partName: string; hostname?: string },
+  startedAt: number,
+): Promise<{ live: MergeInfo } | { history: MergeHistoryRecord } | null> {
+  const live = (await tracker.getActiveMerges(ref.database, ref.table)).find(merge =>
+    merge.database === ref.database && merge.table === ref.table
+    && merge.result_part_name === ref.partName
+    && (merge.hostname ?? '') === (ref.hostname ?? ''),
+  );
+  if (live) return { live };
+  const history = await tracker.getMergeHistoryByPartName(ref.database, ref.table, ref.partName, { hostname: ref.hostname });
+  // part_log timestamps have second precision; allow that rounding only.
+  return history && Date.parse(history.event_time) >= Math.floor(startedAt / 1000) * 1000
+    ? { history } : null;
+}

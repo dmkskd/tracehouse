@@ -33,9 +33,10 @@ export function buildQueryLinkUrl(queryId: string, endedAt?: number | null): str
  * `hostname`. Replicas merge the same part name independently, so the host
  * keeps the link on the replica it came from.
  */
-export function buildMergeLinkUrl(database: string, table: string, partName: string, hostname?: string): string {
+export function buildMergeLinkUrl(database: string, table: string, partName: string, hostname?: string, startedAt?: number): string {
   const params = new URLSearchParams({ md_db: database, md_tbl: table, md_part: partName });
   if (hostname) params.set('md_host', hostname);
+  if (startedAt != null) params.set('md_start', String(startedAt));
   return `/merges?${params.toString()}`;
 }
 

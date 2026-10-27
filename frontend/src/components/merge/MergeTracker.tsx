@@ -31,6 +31,7 @@ import {
   mergeActivityHosts,
   mergeActivityStatuses,
   reconcileMergeActivity,
+  resolveOverviewMerge,
 } from './merge-activity-model';
 import { MutationDependencyDiagram } from '../tracing/MutationDependencyDiagram';
 import { MergeDependencyDiagram } from './MergeDependencyDiagram';
@@ -91,6 +92,7 @@ export const MERGE_TRACKER_SHARE_SCHEMA = defineShareSchema({
   md_tbl: { type: 'string' },
   md_part: { type: 'string' },
   md_host: { type: 'string' },
+  md_start: { type: 'number' },
   md_time: { type: 'string' },
   md_type: { type: 'string' },
 });
@@ -1673,6 +1675,7 @@ export const MergeTrackerView: React.FC = () => {
   ) => {
     if (db && tbl && part) {
       updateUrl({
+        md_start: undefined,
         md_db: db,
         md_tbl: tbl,
         md_part: part,
@@ -1682,6 +1685,7 @@ export const MergeTrackerView: React.FC = () => {
       });
     } else {
       updateUrl({
+        md_start: undefined,
         md_db: undefined,
         md_tbl: undefined,
         md_part: undefined,
@@ -1971,14 +1975,23 @@ export const MergeTrackerView: React.FC = () => {
       services.linkResolver,
       'merge',
       `${ref.database}.${ref.table} ${ref.partName}`,
-      () => services.mergeTracker.getMergeHistoryByPartName(ref.database, ref.table, ref.partName, identity),
+      async () => {
+        if (urlState.md_start != null) {
+          return resolveOverviewMerge(services.mergeTracker, ref, urlState.md_start);
+        }
+        const history = await services.mergeTracker.getMergeHistoryByPartName(ref.database, ref.table, ref.partName, identity);
+        return history ? { history } : null;
+      },
       () => services.linkResolver.diagnoseMerge(ref),
     )
       .then(record => {
         settled = true;
-        if (record) {
-          setSelectedMergeHistoryRaw(record);
-          setMergeDetailRecordRaw(record);
+        if (record && 'live' in record) {
+          selectMerge(record.live);
+          setActiveMergeDetailRaw(record.live);
+        } else if (record && 'history' in record) {
+          setSelectedMergeHistoryRaw(record.history);
+          setMergeDetailRecordRaw(record.history);
         }
       })
       .catch(err => {
@@ -1998,6 +2011,7 @@ export const MergeTrackerView: React.FC = () => {
     urlState.md_tbl,
     urlState.md_part,
     urlState.md_host,
+    urlState.md_start,
     urlState.md_time,
     urlState.md_type,
     resolveLink,

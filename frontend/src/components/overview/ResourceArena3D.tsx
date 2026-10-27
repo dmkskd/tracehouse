@@ -612,7 +612,7 @@ function ImmersiveHUD({ entry, onClose, history, logs }: { entry: BlockEntry; on
   const tableInfo = entry.tableHint !== 'unknown' ? entry.tableHint
     : (entry.database && entry.table ? `${entry.database}.${entry.table}` : '');
   const detailUrl = entry.isMerge
-    ? (entry.database && entry.table && entry.partName ? buildMergeLinkUrl(entry.database, entry.table, entry.partName, entry.hostname) : null)
+    ? (entry.database && entry.table && entry.partName ? buildMergeLinkUrl(entry.database, entry.table, entry.partName, entry.hostname, entry.startTime) : null)
     : (entry.queryId ? buildQueryLinkUrl(entry.queryId, entry.endTime) : null);
 
   const hasHistory = history.length >= 2;

@@ -143,7 +143,7 @@ export function ArenaInspector({ entry, onClose, logs, compact }: {
     : (entry.database && entry.table ? `${entry.database}.${entry.table}` : kindLabel);
   const model = buildInspectorModel(entry);
   const detailUrl = entry.isMerge
-    ? (entry.database && entry.table && entry.partName ? buildMergeLinkUrl(entry.database, entry.table, entry.partName, entry.hostname) : null)
+    ? (entry.database && entry.table && entry.partName ? buildMergeLinkUrl(entry.database, entry.table, entry.partName, entry.hostname, entry.startTime) : null)
     : (entry.queryId ? buildQueryLinkUrl(entry.queryId, entry.endTime) : null);
   const latestLog = logs.length > 0 ? logs[logs.length - 1] : null;
 

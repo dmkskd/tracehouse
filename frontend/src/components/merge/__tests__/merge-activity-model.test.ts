@@ -12,6 +12,7 @@ import {
   mergeActivityHosts,
   mergeActivityStatuses,
   reconcileMergeActivity,
+  resolveOverviewMerge,
   sortMergeActivityRecords,
 } from '../merge-activity-model';
 
@@ -339,5 +340,40 @@ describe('merge activity selection', () => {
     const records = buildMergeActivityRecords([], events);
     expect(records.map(record => isMergeActivityRecordSelected(record, null, { ...selected })))
       .toEqual([true, false, false, false, false, false]);
+  });
+});
+
+describe('overview merge resolution', () => {
+  const ref = { database: 'default', table: 'events', partName: 'part', hostname: 'node-1' };
+  const start = Date.parse('2026-07-26T00:00:01.500Z');
+
+  it('opens the running replica instead of a previous failed attempt', async () => {
+    let historyCalls = 0;
+    const live = active('part');
+    const result = await resolveOverviewMerge({
+      getActiveMerges: async () => [active('part', { hostname: 'node-2' }), live],
+      getMergeHistoryByPartName: async () => { historyCalls++; return { ...completed('part'), error: 241 }; },
+    }, ref, start);
+    expect(result).toEqual({ live });
+    expect(historyCalls).toBe(0);
+  });
+
+  it('waits for the selected attempt rather than opening an older failure', async () => {
+    const result = await resolveOverviewMerge({
+      getActiveMerges: async () => [],
+      getMergeHistoryByPartName: async (_db, _table, _part, identity) => {
+        expect(identity).toEqual({ hostname: 'node-1' });
+        return { ...completed('part'), event_time: '2026-07-26T00:00:00Z', error: 241 };
+      },
+    }, ref, start);
+    expect(result).toBeNull();
+  });
+
+  it('opens the terminal result if the selected merge finished during navigation', async () => {
+    const history = completed('part');
+    expect(await resolveOverviewMerge({
+      getActiveMerges: async () => [],
+      getMergeHistoryByPartName: async () => history,
+    }, ref, start)).toEqual({ history });
   });
 });
