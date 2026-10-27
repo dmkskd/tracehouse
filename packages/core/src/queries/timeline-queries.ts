@@ -389,6 +389,7 @@ export const ACTIVE_MERGES_DETAIL = `
     database || '.' || table AS tbl,
     peak_memory_usage,
     duration_ms,
+    error,
     merge_reason,
     event_type,
     toString(event_time - toIntervalMillisecond(duration_ms)) AS merge_start,
@@ -440,6 +441,7 @@ export const ACTIVE_MUTATIONS_DETAIL = `
     database || '.' || table AS tbl,
     peak_memory_usage,
     duration_ms,
+    error,
     toString(event_time - toIntervalMillisecond(duration_ms)) AS mut_start,
     toString(event_time) AS mut_end
   FROM {{cluster_aware:system.part_log}}

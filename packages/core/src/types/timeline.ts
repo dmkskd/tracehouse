@@ -90,6 +90,8 @@ export interface MergeSeries {
   end_time: string;
   merge_reason?: string;  // RegularMerge, TTLDeleteMerge, TTLRecompressMerge, etc.
   is_running?: boolean;  // True if merge is currently in-flight
+  /** ClickHouse part_log error code; zero means success. */
+  error?: number;
   progress?: number;  // Progress 0-1 for running merges
   /** Per-second sampled metrics from merges_history (zoom mode only) */
   zoomSamples?: ZoomSample[];
@@ -109,6 +111,8 @@ export interface MutationSeries {
   start_time: string;
   end_time: string;
   is_running?: boolean;  // True if mutation is currently in-flight
+  /** ClickHouse part_log error code; zero means success. */
+  error?: number;
   progress?: number;  // Progress 0-1 for running mutations
   /** Per-second sampled metrics from merges_history (zoom mode only) */
   zoomSamples?: ZoomSample[];

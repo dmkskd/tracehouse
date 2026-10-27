@@ -61,7 +61,7 @@ export interface OperationRow {
   metricEstimated: boolean;
   /** Queries only: matches the active normalized-hash filter. */
   matchedHash: boolean;
-  /** Queries only: finished with an exception. */
+  /** Finished with a query exception or a part_log error. */
   failed: boolean;
   /** Merges only: the merge reason, for the category badge. */
   mergeReason?: string;
@@ -153,7 +153,7 @@ function toRow(
     isRunning: item.is_running === true,
     metricEstimated: mode === 'cpu' && kind !== 'query' && item.is_running === true,
     matchedHash: query?.matched_hash === true,
-    failed: query !== undefined && (query.exception_code ?? 0) !== 0,
+    failed: (query ? query.exception_code ?? 0 : part?.error ?? 0) !== 0,
     mergeReason: merge?.merge_reason,
     source: item,
   };

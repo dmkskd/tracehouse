@@ -234,6 +234,19 @@ describe('buildOperationRows', () => {
     expect(rows[0].failed).toBe(true);
   });
 
+  it('reports failed merges and mutations alongside successful and running operations', () => {
+    const rows = buildOperationRows({
+      queries: [],
+      merges: [makeMerge({ error: 241 }), makeMerge({ error: 0 }), makeMerge({ is_running: true })],
+      mutations: [makeMutation({ error: 241 }), makeMutation({ error: 0 }), makeMutation({ is_running: true })],
+    }, baseOptions);
+    for (const kind of ['merge', 'mutation']) {
+      const operations = rows.filter(row => row.kind === kind);
+      expect(operations.map(row => row.failed)).toEqual([true, false, false]);
+      expect(operations.map(row => row.isRunning)).toEqual([false, false, true]);
+    }
+  });
+
   it('carries the source series through for selection handlers', () => {
     const query = makeQuery();
     const rows = buildOperationRows({ queries: [query], merges: [], mutations: [] }, baseOptions);

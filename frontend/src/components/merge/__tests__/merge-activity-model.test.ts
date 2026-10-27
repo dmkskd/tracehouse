@@ -6,6 +6,7 @@ import {
   filterMergeActivity,
   hasReplicaMergeActivity,
   isMergeStuck,
+  isMergeActivityRecordSelected,
   limitMergeActivityRecords,
   mergeActivityKey,
   mergeActivityHosts,
@@ -321,5 +322,22 @@ describe('merge activity records', () => {
       'live-2',
       'done-1',
     ]);
+  });
+});
+
+describe('merge activity selection', () => {
+  it('highlights only the same history event when tables share part names and timestamps', () => {
+    const selected = completed('1793142000_419_419_0');
+    const events = [
+      selected,
+      { ...selected, database: 'other' },
+      { ...selected, table: 'other' },
+      { ...selected, event_type: 'MovePart' },
+      { ...selected, hostname: 'node-2' },
+      { ...selected, event_time: '2026-07-26T00:00:03.000Z' },
+    ];
+    const records = buildMergeActivityRecords([], events);
+    expect(records.map(record => isMergeActivityRecordSelected(record, null, { ...selected })))
+      .toEqual([true, false, false, false, false, false]);
   });
 });

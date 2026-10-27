@@ -333,7 +333,10 @@ export function isMergeActivityRecordSelected(
       && (record.hostname || '') === (selectedLiveMerge.hostname || '');
   }
   if (record.historyRecord && selectedHistoryRecord) {
-    return record.historyRecord.event_time === selectedHistoryRecord.event_time
+    return record.database === selectedHistoryRecord.database
+      && record.table === selectedHistoryRecord.table
+      && record.historyRecord.event_type === selectedHistoryRecord.event_type
+      && record.historyRecord.event_time === selectedHistoryRecord.event_time
       && record.partName === selectedHistoryRecord.part_name
       && (record.hostname || '') === (selectedHistoryRecord.hostname || '');
   }
