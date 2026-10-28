@@ -6,8 +6,6 @@ import {
   parseChartDirective,
   resolveQueryRef,
   evaluateQueryVersionCompatibility,
-  mergeLinkUrl,
-  panelMergeLinkUrl,
   type CellStyleRule,
 } from '../metaLanguage';
 import {
@@ -840,43 +838,5 @@ describe('resolveQueryRef', { tags: ['analytics'] }, () => {
       expect(result!.name).toBe(expectedName);
       expect(result!.group).toBe(expectedGroup);
     }
-  });
-});
-
-describe('@merge_link', () => {
-  const sql = `-- @meta: title='Failing' group='Merge Analytics'
--- @merge_link: on=part_name database=database table=table part=part_name host=last_failure_host
-SELECT 1`;
-
-  test('links a row to its merge on the Merges page, on the row\'s replica', () => {
-    const link = parseDirectives(sql)!.mergeLink!;
-    expect(link).toEqual({ on: 'part_name', database: 'database', table: 'table', part: 'part_name', host: 'last_failure_host' });
-    const url = mergeLinkUrl(link, { database: 'web', table: 'page views', part_name: '1793149200_0_517_4', last_failure_host: 'ch-s1r2' });
-    expect(url).toBe('/merges?md_db=web&md_tbl=page+views&md_part=1793149200_0_517_4&md_host=ch-s1r2');
-  });
-
-  test('gives no link when the row lacks a locating value', () => {
-    const link = parseDirectives(sql)!.mergeLink!;
-    const row = { database: 'web', table: 'pv', part_name: 'all_1_2_1', last_failure_host: 'ch-1' };
-    for (const column of ['database', 'table', 'part_name', 'last_failure_host']) {
-      expect(mergeLinkUrl(link, { ...row, [column]: null }), column).toBeNull();
-      expect(mergeLinkUrl(link, { ...row, [column]: '' }), column).toBeNull();
-    }
-  });
-
-  test('ignores a directive that cannot locate a merge', () => {
-    expect(parseDirectives(sql.replace(' part=part_name', ''))!.mergeLink).toBeUndefined();
-  });
-
-  test('a panel link opens the merge only when every row is that merge, on any replica', () => {
-    const link = parseDirectives(`-- @meta: title='Attempts' group='Merge Analytics'
--- @merge_link: database=database table=table part=part_name
-SELECT 1`)!.mergeLink!;
-    expect(link).toEqual({ database: 'database', table: 'table', part: 'part_name' });
-    const attempt = (part: string, host: string) => ({ database: 'web', table: 'pv', part_name: part, host });
-    expect(panelMergeLinkUrl(link, [attempt('all_1_8_3', 'ch-1'), attempt('all_1_8_3', 'ch-2')]))
-      .toBe('/merges?md_db=web&md_tbl=pv&md_part=all_1_8_3');
-    expect(panelMergeLinkUrl(link, [attempt('all_1_8_3', 'ch-1'), attempt('all_9_20_2', 'ch-1')])).toBeNull();
-    expect(panelMergeLinkUrl(link, [])).toBeNull();
   });
 });

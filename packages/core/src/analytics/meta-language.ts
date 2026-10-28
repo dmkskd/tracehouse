@@ -16,7 +16,6 @@ import {
   isClickHouseVersionAtLeast,
   parseClickHouseVersion,
 } from '../utils/clickhouse-version.js';
-import { buildMergeLinkUrl } from '../utils/deep-link-resolution.js';
 
 /* ─── types ─── */
 
@@ -167,8 +166,6 @@ export interface ParsedDirectives {
     /** Column or drill-param name for the table */
     table: string;
   };
-  /** @merge_link: a cell (with on=) or a panel header button (without on=) linking to the merge on the Merges page. */
-  mergeLink?: MergeLinkDirective;
   /** @query_link: click a query_id to open the Query Detail modal on the X-Ray tab. */
   queryLink?: {
     /** Column containing the query_id */
@@ -573,38 +570,6 @@ export function parseSummaryDirectives(sql: string): SummaryDirectives | undefin
   return result;
 }
 
-/** Columns that locate a merge for @merge_link. */
-export interface MergeLinkDirective {
-  /** Column whose cells link to the merge; absent = one link for the whole panel */
-  on?: string;
-  database: string;
-  table: string;
-  /** Column with the result part name */
-  part: string;
-  /** Column with the replica to open the merge on; absent = any replica */
-  host?: string;
-}
-
-/**
- * Merges page URL for a @merge_link row, or null when a locating value is missing.
- * Merge-level: the Merges page opens the latest part_log record of the part
- * (on that host when the link names one).
- */
-export function mergeLinkUrl(link: MergeLinkDirective, row: Record<string, unknown>): string | null {
-  const columns = [link.database, link.table, link.part, ...(link.host ? [link.host] : [])];
-  const values = columns.map(column => row[column]);
-  if (values.some(value => value == null || value === '')) return null;
-  const [database, table, part, host] = values.map(String);
-  return buildMergeLinkUrl(database, table, part, host);
-}
-
-/** The panel-level link: only when every row is the same merge, so the button cannot open the wrong one. */
-export function panelMergeLinkUrl(link: MergeLinkDirective, rows: Record<string, unknown>[]): string | null {
-  const urls = new Set(rows.map(row => mergeLinkUrl(link, row)));
-  if (urls.size !== 1) return null;
-  return [...urls][0];
-}
-
 export function parseDirectives(sql: string): ParsedDirectives | null {
   const metaMatch = sql.match(/--\s*@meta:\s*(.+)/i);
   if (!metaMatch) return null;
@@ -691,16 +656,6 @@ export function parseDirectives(sql: string): ParsedDirectives | null {
     const tblMatch = pl.match(/table=(\w+)/);
     if (onMatch && dbMatch && tblMatch) {
       result.partLink = { on: onMatch[1], database: dbMatch[1], table: tblMatch[1] };
-    }
-  }
-
-  const mergeLinkMatch = sql.match(/--\s*@merge_link:\s*(.+)/i);
-  if (mergeLinkMatch) {
-    const ml = mergeLinkMatch[1];
-    const value = (key: string) => ml.match(new RegExp(`\\b${key}=(\\w+)`))?.[1];
-    const [database, table, part, on, host] = ['database', 'table', 'part', 'on', 'host'].map(value);
-    if (database && table && part) {
-      result.mergeLink = { database, table, part, ...(on ? { on } : {}), ...(host ? { host } : {}) };
     }
   }
 

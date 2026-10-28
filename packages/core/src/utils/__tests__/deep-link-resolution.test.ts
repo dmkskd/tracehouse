@@ -43,14 +43,6 @@ describe('resolveDeepLink', () => {
     expect(seen.filter(s => s?.state === 'pending_flush')).toHaveLength(5);
   });
 
-  it('reports a record that does not exist as not found, without polling', async () => {
-    const { promise, seen } = run([null], [{ state: 'not_found' }]);
-    expect(await promise).toBeNull();
-    expect(seen).toEqual([{ state: 'not_found' }]);
-    expect(describeLinkStatus('merge', 'web.pv all_1_2_1', { state: 'not_found' }))
-      .toBe('No record of merge web.pv all_1_2_1 in system.part_log. It may be outside the log\'s retention, on another cluster, or the log may be disabled.');
-  });
-
   it('stops polling when aborted', async () => {
     vi.useFakeTimers();
     const controller = new AbortController();

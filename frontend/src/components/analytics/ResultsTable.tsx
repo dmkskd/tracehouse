@@ -7,7 +7,6 @@
  */
 
 import React from 'react';
-import { Link } from 'react-router-dom';
 import { formatCell } from './charts';
 import { getRagColor, type CellStyleRule, type GaugeCellStyle, type SparklineCellStyle, type RadarCellStyle } from './metaLanguage';
 import { GaugeBar } from './GaugeBar';
@@ -44,10 +43,6 @@ export interface ResultsTableProps {
   partLinkOnColumn?: string;
   /** Called when a part-link cell is clicked */
   onPartLinkClick?: (column: string, value: string, row: Record<string, unknown>) => void;
-  /** Column whose cells link to the merge on the Merges page */
-  mergeLinkOnColumn?: string;
-  /** Merges page URL for a row, or null when the row cannot be linked */
-  mergeLinkUrl?: (row: Record<string, unknown>) => string | null;
   /** Visual density variant */
   compact?: boolean;
   /** Allow clicking a table row to expand all row values */
@@ -78,7 +73,7 @@ export const ResultsTable: React.FC<ResultsTableProps> = ({
   columnLabels, detailColumns, renderCell, isRowHighlighted,
   linkOnColumn, cellStyles, onLinkClick,
   drillOnColumn, onDrillClick, drillIntoQuery,
-  partLinkOnColumn, onPartLinkClick, mergeLinkOnColumn, mergeLinkUrl,
+  partLinkOnColumn, onPartLinkClick,
   compact = false,
   enableRowDetails = false,
 }) => {
@@ -116,7 +111,6 @@ export const ResultsTable: React.FC<ResultsTableProps> = ({
   const hasLinks = !!linkOnColumn && !!onLinkClick;
   const hasDrill = !!drillOnColumn && !!onDrillClick;
   const hasPartLink = !!partLinkOnColumn && !!onPartLinkClick;
-  const hasMergeLink = !!mergeLinkOnColumn && !!mergeLinkUrl;
   const numericCols = React.useMemo(
     () => new Set(displayColumns.filter(c => columns.includes(c) && isNumericColumn(rows, c))),
     [columns, displayColumns, rows],
@@ -265,9 +259,7 @@ export const ResultsTable: React.FC<ResultsTableProps> = ({
                   const isLink = hasLinks && col === linkOnColumn;
                   const isDrill = hasDrill && col === drillOnColumn;
                   const isPartLink = hasPartLink && col === partLinkOnColumn;
-                  const mergeHref = hasMergeLink && col === mergeLinkOnColumn ? mergeLinkUrl!(row) : null;
-                  const isMergeLink = mergeHref != null;
-                  const isClickable = isLink || isDrill || isPartLink || isMergeLink;
+                  const isClickable = isLink || isDrill || isPartLink;
                   const cellValue = formatCell(row[col], col);
                   const ragColor = getRagColor(col, row[col], cellStyles);
                   const numeric = numericCols.has(col);
@@ -326,11 +318,9 @@ export const ResultsTable: React.FC<ResultsTableProps> = ({
                       textAlign: numeric ? 'right' : 'left',
                       fontVariantNumeric: numeric ? 'tabular-nums' : undefined,
                     }}
-                    title={isDrill && drillIntoQuery ? `Drill into: ${drillIntoQuery}` : isPartLink ? 'Open part details' : isMergeLink ? 'Open merge on the Merges page' : enableRowDetails ? 'Open row details' : undefined}
+                    title={isDrill && drillIntoQuery ? `Drill into: ${drillIntoQuery}` : isPartLink ? 'Open part details' : enableRowDetails ? 'Open row details' : undefined}
                     onClick={isLink ? (e) => { e.stopPropagation(); onLinkClick!(col, cellValue); } : isDrill ? (e) => { e.stopPropagation(); onDrillClick!(col, cellValue); } : isPartLink ? (e) => { e.stopPropagation(); onPartLinkClick!(col, cellValue, row); } : undefined}
-                    >{isMergeLink
-                      ? <Link to={mergeHref} onClick={e => e.stopPropagation()} style={{ color: 'inherit' }}>{renderCell ? renderCell(col, row) : cellValue}</Link>
-                      : renderCell ? renderCell(col, row) : cellValue}</td>
+                    >{renderCell ? renderCell(col, row) : cellValue}</td>
                   );
                 })}
               </tr>

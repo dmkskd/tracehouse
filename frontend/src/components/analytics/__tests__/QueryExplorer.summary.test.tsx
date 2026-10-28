@@ -1,8 +1,6 @@
 import { act, cleanup, fireEvent, render, screen } from '@testing-library/react';
-import { MemoryRouter, Route, Routes, useLocation } from 'react-router-dom';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { QueryExplorer } from '../QueryExplorer';
-import mergeCostQueries from '../queries/mergeCost';
 
 const mocks = vi.hoisted(() => ({ run: vi.fn() }));
 vi.mock('../../../providers/ClickHouseProvider', () => {
@@ -68,53 +66,5 @@ describe('Query Explorer structured summaries', () => {
     expect(screen.queryByLabelText('Result summary')).not.toBeInTheDocument();
     fireEvent.click(screen.getByRole('button', { name: 'Table', exact: true }));
     expect(screen.getByLabelText('Total: 64 s')).toBeInTheDocument();
-  });
-});
-
-describe('Query Explorer merge links', () => {
-  function MergesPage() {
-    const location = useLocation();
-    return <output aria-label="Merges page">{location.pathname + location.search}</output>;
-  }
-
-  it('after drilling into one merge\'s attempts, Open merge goes to that merge on the Merges page', async () => {
-    const topFailing = mergeCostQueries.find(q => q.includes("title='Top Failing Merges'"))!;
-    const attempt = (host: string) => ({ attempt: `2026-10-28 10:00:00.000001 ${host}`, host, cpu_seconds: 4,
-      database: 'web', table: 'pv', part_name: 'all_1_8_3' });
-    mocks.run.mockImplementation(async (sql: string) => sql.includes('AS attempt,')
-      ? [attempt('ch-1'), attempt('ch-2')]
-      : [{ merge: 'web.pv:all_1_8_3', part_name: 'all_1_8_3', failed_cpu_seconds: 8, database: 'web', table: 'pv', last_failure_host: 'ch-2' }]);
-    render(
-      <MemoryRouter initialEntries={['/analytics']}>
-        <Routes>
-          <Route path="/analytics" element={<QueryExplorer urlState={{ sql: topFailing, view: 'table' }} />} />
-          <Route path="/merges" element={<MergesPage />} />
-        </Routes>
-      </MemoryRouter>,
-    );
-    // The preset opens as a chart; the drill is on the table's merge cell.
-    fireEvent.click(await screen.findByRole('button', { name: 'Table', exact: true }));
-    fireEvent.click(await screen.findByText('web.pv:all_1_8_3'));
-    await screen.findByRole('link', { name: /Open merge/ });
-    await act(async () => { await new Promise(resolve => setTimeout(resolve, 0)); });
-    fireEvent.click(screen.getByRole('link', { name: /Open merge/ }));
-    expect(screen.getByLabelText('Merges page')).toHaveTextContent('/merges?md_db=web&md_tbl=pv&md_part=all_1_8_3');
-  });
-
-  it('navigates from a merge cell to that merge on the Merges page, on the row\'s replica', async () => {
-    mocks.run.mockResolvedValue([{ database: 'web', table: 'pv', part_name: 'all_1_8_3', last_failure_host: 'ch-s1r2' }]);
-    const sql = `-- @meta: title='Failing merges' group='Custom'
--- @merge_link: on=part_name database=database table=table part=part_name host=last_failure_host
-SELECT 1`;
-    render(
-      <MemoryRouter initialEntries={['/analytics']}>
-        <Routes>
-          <Route path="/analytics" element={<QueryExplorer urlState={{ sql, view: 'table' }} />} />
-          <Route path="/merges" element={<MergesPage />} />
-        </Routes>
-      </MemoryRouter>,
-    );
-    fireEvent.click(await screen.findByRole('link', { name: 'all_1_8_3' }));
-    expect(screen.getByLabelText('Merges page')).toHaveTextContent('/merges?md_db=web&md_tbl=pv&md_part=all_1_8_3&md_host=ch-s1r2');
   });
 });

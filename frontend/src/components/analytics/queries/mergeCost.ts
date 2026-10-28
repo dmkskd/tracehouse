@@ -509,18 +509,16 @@ FROM failures
 GROUP BY tbl, failure_kind
 ORDER BY sum(sum(cpu)) OVER (PARTITION BY tbl) DESC NULLS LAST, tbl, failed_cpu_seconds DESC NULLS LAST, failure_kind
 LIMIT 100`,
-  `-- @meta: title='Top Failing Merges' group='Merge Analytics' interval='1 DAY' description='Merges that failed at least once, ranked by CPU spent on failed attempts. Each retry of the same merge is a new attempt; many attempts with the same error mean the merge keeps redoing the same work. Click a bar for its attempts, or a part name to open the merge on the Merges page.'
+  `-- @meta: title='Top Failing Merges' group='Merge Analytics' interval='1 DAY' description='Merges that failed at least once, ranked by CPU spent on failed attempts. Each retry of the same merge is a new attempt; many attempts with the same error mean the merge keeps redoing the same work. Click a merge for its attempts.'
 -- @chart: type=bar group_by=merge value=failed_cpu_seconds unit=s style=2d
 -- @summary: value=total_failed_cpu_seconds label='Failed CPU' unit=s
 -- @summary: value=total_failed_attempts label='Failed attempts'
 -- @drill: on=merge into='Merge Attempts'
--- @merge_link: on=part_name database=database table=table part=part_name host=last_failure_host
 -- One row per merge (table + result part name), summed over replicas and retries.
 -- CPU: user + system time (omitted counters are 0); NULL only when the failed rows have no counters.
 -- last_failure_kind, last_error and last_exception describe the latest failed attempt.
 -- max_merge_peak_memory is the merge's own peak; a Server memory limit failure is caused by the server total, not by it.
 -- succeeded: whether any attempt of this merge succeeded in the selected time range.
--- The part_name link opens the latest record of the merge on last_failure_host, the replica of the latest failure.
 -- Totals cover the selected table and time range, before LIMIT.
 WITH attempts AS (
     SELECT
@@ -559,7 +557,6 @@ WITH attempts AS (
 )
 SELECT
     concat(database, '.', table, ':', part_name) AS merge,
-    part_name,
     countIf(error != 0) AS failed_attempts,
     round(sumIf(cpu, error != 0), 3) AS failed_cpu_seconds,
     round(sumIf(elapsed, error != 0), 3) AS failed_elapsed_seconds,
@@ -572,9 +569,6 @@ SELECT
     uniqExact(host) AS replicas,
     minIf(event_time, error != 0) AS first_failure,
     maxIf(event_time, error != 0) AS last_failure,
-    argMaxIf(host, event_time_microseconds, error != 0) AS last_failure_host,
-    database,
-    table,
     sum(countIf(error != 0)) OVER () AS total_failed_attempts,
     round(sum(sumIf(cpu, error != 0)) OVER (), 3) AS total_failed_cpu_seconds
 FROM attempts
@@ -582,18 +576,12 @@ GROUP BY database, table, part_name
 HAVING failed_attempts > 0
 ORDER BY failed_cpu_seconds DESC NULLS LAST, failed_attempts DESC, merge
 LIMIT 30`,
-  `-- @meta: title='Merge Attempts' group='Merge Analytics' interval='1 DAY' description='Every attempt of one merge, oldest first. Open merge shows it on the Merges page. Attempts that keep failing with Server memory limit will keep failing until the server has memory to spare; Merge memory limit means the merge itself is too big.'
+  `-- @meta: title='Merge Attempts' group='Merge Analytics' interval='1 DAY' description='Every attempt of one merge, oldest first. Attempts that keep failing with Server memory limit will keep failing until the server has memory to spare; Merge memory limit means the merge itself is too big.'
 -- @chart: type=bar group_by=attempt value=cpu_seconds unit=s style=2d
--- @merge_link: database=database table=table part=part_name
 -- One row per attempt on each replica. CPU: user + system time; NULL only when the row has no counters.
 -- merge_peak_memory is the merge's own peak; a Server memory limit failure is caused by the server total, not by it.
--- Open merge (database, table, part_name) appears when every row is the same merge, i.e. after the drill;
--- it names no replica because the attempts span them, so the Merges page opens the latest record on any.
 WITH attempts AS (
     SELECT
-        database,
-        table,
-        part_name,
         hostName() AS host,
         event_time_microseconds,
         error,
@@ -633,10 +621,7 @@ SELECT
     round(elapsed, 3) AS elapsed_seconds,
     formatReadableSize(peak_memory_usage) AS merge_peak_memory,
     formatReadableSize(read_bytes) AS input_read,
-    substring(exception, 1, 300) AS exception,
-    database,
-    table,
-    part_name
+    substring(exception, 1, 300) AS exception
 FROM attempts
 ORDER BY event_time_microseconds, host
 LIMIT 500`,
