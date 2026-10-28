@@ -203,7 +203,7 @@ describe('Merge cost attribution', { tags: ['analytics'] }, () => {
     const failing = await run('Top Failing Merges', { tbl: 'app.events' }, '1 DAY', clock);
     expect(failing.map(r => r.merge)).toEqual(['app.events:all_1_8_3', 'app.events:all_9_20_2', 'app.events:all_30_40_2']);
     expect(failing[0]).toMatchObject({ last_error: 'MEMORY_LIMIT_EXCEEDED', succeeded: 'yes',
-      last_exception: 'Code: 241. DB::Exception: attempt 3', max_failed_peak_memory: '2.00 GiB' });
+      last_exception: 'Code: 241. DB::Exception: attempt 3', max_merge_peak_memory: '2.00 GiB' });
     expect(Number(failing[0].failed_attempts)).toBe(3);
     expect(Number(failing[0].failed_cpu_seconds)).toBe(13);
     expect(failing[1]).toMatchObject({ succeeded: 'no' });
@@ -516,7 +516,7 @@ describe('Merge cost attribution', { tags: ['analytics'] }, () => {
         const title = query.match(/title='([^']+)'/)![1];
         const rows = await run(title, { tbl: 'app.events' }, expected.interval, clock);
         const totals = title.startsWith('Mutation ') ? expected.mutations
-          : title === 'Top Failing Merges' ? expected.failed
+          : title === 'Top Failing Merges' || title === 'Merge Failures by Table and Error' ? expected.failed
           // One row per attempt, successful and failed.
           : title === 'Merge Attempts' ? { cpu_seconds: expected.cpu + expected.failed.failed_cpu_seconds }
           // Outcome rows: successful merges plus failed attempts.

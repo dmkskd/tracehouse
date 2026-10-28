@@ -559,6 +559,7 @@ WITH attempts AS (
 )
 SELECT
     concat(database, '.', table, ':', part_name) AS merge,
+    part_name,
     countIf(error != 0) AS failed_attempts,
     round(sumIf(cpu, error != 0), 3) AS failed_cpu_seconds,
     round(sumIf(elapsed, error != 0), 3) AS failed_elapsed_seconds,
@@ -574,7 +575,6 @@ SELECT
     argMaxIf(host, event_time_microseconds, error != 0) AS last_failure_host,
     database,
     table,
-    part_name,
     sum(countIf(error != 0)) OVER () AS total_failed_attempts,
     round(sum(sumIf(cpu, error != 0)) OVER (), 3) AS total_failed_cpu_seconds
 FROM attempts
