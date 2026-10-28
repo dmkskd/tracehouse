@@ -20,11 +20,7 @@ const sidebars: SidebarsConfig = {
       items: [
         'features/guided-tour',
         'features/overview',
-        'features/engine-internals',
-        'features/cluster',
-        'features/database-explorer',
         'features/time-travel',
-        'features/events',
         'features/query-monitor',
         {
           type: 'doc',
@@ -35,7 +31,11 @@ const sidebars: SidebarsConfig = {
         'features/merge-tracker',
         'features/analytics',
         'features/analytics-query-language',
+        'features/events',
+        'features/database-explorer',
+        'features/cluster',
         'features/replication',
+        'features/engine-internals',
         'features/system-map',
         'features/monitoring',
         'features/grafana',
