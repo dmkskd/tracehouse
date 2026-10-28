@@ -87,16 +87,16 @@ describe('DashboardViewer query version compatibility', () => {
         total_elapsed_seconds: short ? 4.736 : 12.488 }];
     });
     render(<MemoryRouter><DashboardViewer initialDashboardId="merge-totals-test" /></MemoryRouter>);
-    expect(await screen.findByLabelText('Result summary')).toHaveTextContent('Total duration 12.5 s');
+    expect(await screen.findByLabelText('Result summary')).toHaveTextContent('Successful duration 12.5 s');
     expect(screen.getByLabelText('Result summary')).toHaveTextContent('Merges 271');
     fireEvent.click(screen.getByRole('button', { name: '15m', exact: true }));
-    await waitFor(() => expect(screen.getByLabelText('Result summary')).toHaveTextContent('Total duration 4.7 s'));
-    expect(screen.getByLabelText('Total duration: 4.736 s')).toBeInTheDocument();
+    await waitFor(() => expect(screen.getByLabelText('Result summary')).toHaveTextContent('Successful duration 4.7 s'));
+    expect(screen.getByLabelText('Successful duration: 4.736 s')).toBeInTheDocument();
     expect(screen.getByLabelText('Result summary')).toHaveTextContent('Merges 74');
     fireEvent.click(screen.getByTitle('Table view'));
-    expect(screen.getByLabelText('Result summary')).toHaveTextContent('Total duration 4.7 s');
+    expect(screen.getByLabelText('Result summary')).toHaveTextContent('Successful duration 4.7 s');
     fireEvent.click(screen.getByTitle('Chart view'));
-    expect(screen.getByLabelText('Result summary')).toHaveTextContent('Total duration 4.7 s');
+    expect(screen.getByLabelText('Result summary')).toHaveTextContent('Successful duration 4.7 s');
   });
 
   test('shows the corresponding totals on both CPU and elapsed panels', async () => {
@@ -108,11 +108,12 @@ describe('DashboardViewer query version compatibility', () => {
       ],
     }]));
     mocks.run.mockResolvedValue([{ tbl: 'app.events', cpu_seconds: 60, elapsed_seconds: 120,
-      total_cpu_seconds: 60, total_failed_cpu_seconds: 30, total_elapsed_seconds: 120, total_merge_count: '5' }]);
+      total_cpu_seconds: 60, total_failed_cpu_seconds: 30, total_elapsed_seconds: 120, total_failed_elapsed_seconds: 90, total_merge_count: '5' }]);
     render(<MemoryRouter><DashboardViewer initialDashboardId="paired-summaries" /></MemoryRouter>);
     expect(await screen.findByLabelText('Successful CPU: 60 s')).toHaveTextContent('1.0 min');
     expect(await screen.findByLabelText('Failed CPU: 30 s')).toHaveTextContent('30');
-    expect(await screen.findByLabelText('Total duration: 120 s')).toHaveTextContent('2.0 min');
+    expect(await screen.findByLabelText('Successful duration: 120 s')).toHaveTextContent('2.0 min');
+    expect(await screen.findByLabelText('Failed duration: 90 s')).toHaveTextContent('1.5 min');
     expect(screen.getAllByLabelText('Merges: 5')).toHaveLength(2);
   });
 
@@ -157,13 +158,13 @@ SELECT 1`],
     mocks.run.mockImplementation((sql: string) => sql.includes('INTERVAL 15 MINUTE')
       ? new Promise(resolve => pending.push(resolve)) : Promise.resolve(row(sql.includes('INTERVAL 6 HOUR') ? 3600 : 60)));
     render(<MemoryRouter><DashboardViewer initialDashboardId="summary-race" /></MemoryRouter>);
-    await screen.findByLabelText('Total duration: 60 s');
+    await screen.findByLabelText('Successful duration: 60 s');
     fireEvent.click(screen.getByRole('button', { name: '15m', exact: true }));
     await waitFor(() => expect(pending.length).toBeGreaterThan(0));
     fireEvent.click(screen.getByRole('button', { name: '6h', exact: true }));
-    await screen.findByLabelText('Total duration: 3600 s');
+    await screen.findByLabelText('Successful duration: 3600 s');
     await act(async () => { for (const resolve of pending) resolve(row(15)); });
-    expect(screen.getByLabelText('Total duration: 3600 s')).toBeInTheDocument();
+    expect(screen.getByLabelText('Successful duration: 3600 s')).toBeInTheDocument();
     mocks.run.mockRejectedValue(new Error('Refresh failed'));
     fireEvent.click(screen.getByRole('button', { name: '1h', exact: true }));
     await screen.findByText(/Refresh failed/);

@@ -6,14 +6,16 @@ describe('preset queries', { tags: ['analytics'] }, () => {
   test.each(['Table', 'Level Transition', 'Result Size'])('declares matching CPU and elapsed summaries by %s', dimension => {
     for (const metric of ['CPU', 'Elapsed Time']) {
       const query = PRESET_QUERIES.find(q => q.group === 'Merge Analytics' && q.name === `Merge ${metric} by ${dimension}`)!;
-      // Merge CPU by Table splits successful merges from failed attempts.
-      const cpu = metric !== 'CPU' ? [{ valueColumn: 'total_elapsed_seconds', label: 'Total duration', unit: 's' }]
-        : dimension === 'Table' ? [
-          { valueColumn: 'total_cpu_seconds', label: 'Successful CPU', unit: 's' },
-          { valueColumn: 'total_failed_cpu_seconds', label: 'Failed CPU', unit: 's' },
-        ] : [{ valueColumn: 'total_cpu_seconds', label: 'Total CPU', unit: 's' }];
+      // Table and level panels split successful merges from failed attempts; failed attempts have no result size.
+      const [column, label] = metric === 'CPU' ? ['cpu_seconds', 'CPU'] : ['elapsed_seconds', 'duration'];
+      const totals = dimension === 'Result Size'
+        ? [{ valueColumn: `total_${column}`, label: `Total ${label}`, unit: 's' }]
+        : [
+          { valueColumn: `total_${column}`, label: `Successful ${label}`, unit: 's' },
+          { valueColumn: `total_failed_${column}`, label: `Failed ${label}`, unit: 's' },
+        ];
       expect(query.directives.summaries).toEqual({ metrics: [
-        ...cpu,
+        ...totals,
         { valueColumn: 'total_merge_count', label: 'Merges' },
       ], diagnostics: [] });
       expect(query.sql).toContain('unit=s style=2d');

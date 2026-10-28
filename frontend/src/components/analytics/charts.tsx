@@ -131,7 +131,8 @@ export interface ChartConfig {
 
 export interface GroupedChartData {
   label: string;
-  groups: { name: string; value: number; color: string }[];
+  /** value is null when the measurement is missing (e.g. merge CPU counters unavailable), not zero. */
+  groups: { name: string; value: number | null; color: string }[];
 }
 
 export interface DrillDownEvent {
@@ -293,7 +294,8 @@ export function buildMultiColumnGrouped(
     label: formatCell(row[groupByColumn], groupByColumn),
     groups: valueColumns.map((col, i) => ({
       name: col,
-      value: extractNumeric(row[col]),
+      // Keep missing measurements missing: a NULL drawn as 0 reads as "no cost".
+      value: row[col] == null ? null : extractNumeric(row[col]),
       color: GROUP_COLORS[i % GROUP_COLORS.length],
     })),
   }));
@@ -659,7 +661,7 @@ const PulsatingDot: React.FC<{ cx?: number; cy?: number; fill?: string; drillabl
 
 export const AnalyticsTooltip: React.FC<{
   active?: boolean;
-  payload?: Array<{ value: number; name?: string; color?: string; payload?: Record<string, unknown> }>;
+  payload?: Array<{ value: number | null; name?: string; color?: string; payload?: Record<string, unknown> }>;
   label?: string;
   drillIntoQuery?: string;
   correlationValues?: CorrelationEntry[];
@@ -688,7 +690,7 @@ export const AnalyticsTooltip: React.FC<{
             <span style={{ width: 8, height: 8, borderRadius: '50%', background: entry.color, flexShrink: 0 }} />
           )}
           <span style={tooltipValueStyle}>
-            {Number(entry.value).toLocaleString(undefined, { maximumFractionDigits: 2 })}
+            {entry.value == null ? 'not measured' : Number(entry.value).toLocaleString(undefined, { maximumFractionDigits: 2 })}
           </span>
           {entry.name && entry.name !== 'value' && payload.length > 1 && (
             <span style={{ fontSize: 10, color: 'var(--text-muted, #94a3b8)' }}>{entry.name}</span>
@@ -1136,7 +1138,7 @@ export const StackedBarChart2D: React.FC<{ data: GroupedChartData[]; orientation
           <XAxis type="number" tick={axisTickStyle} tickLine={axisLineStyle} axisLine={axisLineStyle} tickFormatter={compactFormatter(unit)} />
           <YAxis type="category" dataKey="name" tick={axisTickStyle} tickLine={false} axisLine={axisLineStyle} width={110}
             tickFormatter={(v: string) => v.length > 15 ? v.slice(0, 15) + '…' : v} />
-          <Tooltip content={<AnalyticsTooltip drillIntoQuery={drillIntoQuery} />} cursor={{ fill: 'rgba(99,102,241,0.06)' }} />
+          <Tooltip filterNull={false} content={<AnalyticsTooltip drillIntoQuery={drillIntoQuery} />} cursor={{ fill: 'rgba(99,102,241,0.06)' }} />
           <Legend iconType="circle" iconSize={8}
             formatter={(value: string) => <span style={{ fontSize: 11, color: 'var(--text-secondary)' }}>{value}</span>} />
           {groupNames.map(name => (
@@ -1160,7 +1162,7 @@ export const StackedBarChart2D: React.FC<{ data: GroupedChartData[]; orientation
           interval="preserveStartEnd"
           tickFormatter={formatXTick} />
         <YAxis tick={axisTickStyle} tickLine={axisLineStyle} axisLine={axisLineStyle} tickFormatter={compactFormatter(unit)} width={50} />
-        <Tooltip content={<AnalyticsTooltip drillIntoQuery={drillIntoQuery} />} cursor={{ fill: 'rgba(99,102,241,0.06)' }} />
+        <Tooltip filterNull={false} content={<AnalyticsTooltip drillIntoQuery={drillIntoQuery} />} cursor={{ fill: 'rgba(99,102,241,0.06)' }} />
         <Legend iconType="circle" iconSize={8}
           formatter={(value: string) => <span style={{ fontSize: 11, color: 'var(--text-secondary)' }}>{value}</span>} />
         {groupNames.map(name => (

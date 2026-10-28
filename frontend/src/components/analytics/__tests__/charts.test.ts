@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { buildChartData, extractNumeric, isNumericValue, sortRows } from '../charts';
+import { buildChartData, buildGroupedChartData, extractNumeric, isNumericValue, sortRows } from '../charts';
 
 describe('analytics chart helpers', () => {
   it('omits missing CPU measurements while retaining measured zero CPU', () => {
@@ -12,6 +12,18 @@ describe('analytics chart helpers', () => {
       .map(({ label, value }) => ({ label, value }))).toEqual([
       { label: '0 → 1', value: 0 },
       { label: '1 → 2', value: 5 },
+    ]);
+  });
+
+  it('keeps missing CPU missing in multi-column stacked data, distinct from measured zero', () => {
+    const rows = [
+      { tbl: 'app.events', cpu_seconds: 2, failed_cpu_seconds: null },
+      { tbl: 'app.steady', cpu_seconds: 9, failed_cpu_seconds: 0 },
+    ];
+    expect(buildGroupedChartData(rows, 'tbl', 'cpu_seconds', undefined, ['cpu_seconds', 'failed_cpu_seconds'])
+      .map(({ label, groups }) => ({ label, values: groups.map(g => g.value) }))).toEqual([
+      { label: 'app.events', values: [2, null] },
+      { label: 'app.steady', values: [9, 0] },
     ]);
   });
 

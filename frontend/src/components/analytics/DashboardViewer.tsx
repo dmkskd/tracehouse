@@ -767,7 +767,7 @@ const DashboardPanelCard: React.FC<{
     if (isGroupedChart && groupedChartData.length > 0) {
       // Sum all series values per timestamp (e.g. TCP + MySQL + HTTP + Interserver)
       for (const d of groupedChartData) {
-        const sum = d.groups.reduce((acc, g) => acc + g.value, 0);
+        const sum = d.groups.reduce((acc, g) => acc + (g.value ?? 0), 0);
         dataByLabel.set(d.label, sum);
       }
     } else {
