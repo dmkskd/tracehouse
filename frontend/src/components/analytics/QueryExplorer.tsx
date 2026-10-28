@@ -33,7 +33,7 @@ import {
   type QueryGroup, type ChartType, type ChartStyle,
   evaluateQueryVersionCompatibility,
   parseCellStyles, parseRagRules, parseChartDirective, parseDirectives, resolveQueryRef,
-  parseSummaryDirectives, type SummaryDirectives,
+  parseSummaryDirectives, type SummaryDirectives, mergeLinkUrl,
 } from './metaLanguage';
 import { LinkQueryModal } from './LinkQueryModal';
 import { PartInspector } from '../database/PartInspector';
@@ -517,6 +517,13 @@ export const QueryExplorer: React.FC<QueryExplorerProps> = ({ urlState, onUrlSta
   const [partLinkTarget, setPartLinkTarget] = useState<{ partName: string; database: string; table: string } | null>(null);
   const [partLinkDetail, setPartLinkDetail] = useState<PartDetailInfo | null>(null);
   const [partLinkLoading, setPartLinkLoading] = useState(false);
+  // @merge_link support - a table cell linking to the merge on the Merges page
+  const mergeLinkDirective = currentQuery?.directives.mergeLink;
+  const mergeLinkRowUrl = useMemo(
+    () => mergeLinkDirective ? (row: Record<string, unknown>) => mergeLinkUrl(mergeLinkDirective, row) : undefined,
+    [mergeLinkDirective],
+  );
+
   const isPartLinkable = !!(currentQuery?.directives.partLink?.on) &&
     (!result || result.columns.includes(currentQuery.directives.partLink.on));
 
@@ -1161,6 +1168,8 @@ export const QueryExplorer: React.FC<QueryExplorerProps> = ({ urlState, onUrlSta
                 drillIntoQuery={isDrillable ? currentQuery?.directives.drill?.into : undefined}
                 partLinkOnColumn={isPartLinkable ? currentQuery?.directives.partLink?.on : undefined}
                 onPartLinkClick={isPartLinkable ? handlePartLinkClick : undefined}
+                mergeLinkOnColumn={mergeLinkDirective?.on}
+                mergeLinkUrl={mergeLinkRowUrl}
                 enableRowDetails
               />
               </div>

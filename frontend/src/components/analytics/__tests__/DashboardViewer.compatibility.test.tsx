@@ -1,6 +1,6 @@
 import { QueryXRayDefaultContext } from '../../query/query-xray-preference';
 import { act, cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/react';
-import { MemoryRouter, useNavigate } from 'react-router-dom';
+import { MemoryRouter, Route, Routes, useLocation, useNavigate } from 'react-router-dom';
 import { afterEach, beforeEach, describe, expect, test, vi } from 'vitest';
 import { useMonitoringCapabilitiesStore } from '../../../stores/monitoringCapabilitiesStore';
 import { DashboardViewer } from '../DashboardViewer';
@@ -97,6 +97,31 @@ describe('DashboardViewer query version compatibility', () => {
     expect(screen.getByLabelText('Result summary')).toHaveTextContent('Successful duration 4.7 s');
     fireEvent.click(screen.getByTitle('Chart view'));
     expect(screen.getByLabelText('Result summary')).toHaveTextContent('Successful duration 4.7 s');
+  });
+
+  test('links a Top Failing Merges row to that merge on the Merges page, on the row\'s replica', async () => {
+    localStorage.setItem('tracehouse-dashboards-user', JSON.stringify([{
+      id: 'merge-link', title: 'Merge link', columns: 1,
+      panels: [{ queryName: 'Merge Analytics#Top Failing Merges' }],
+    }]));
+    mocks.run.mockResolvedValue([{ merge: 'web.pv:all_1_8_3', failed_cpu_seconds: 13, database: 'web', table: 'pv',
+      part_name: 'all_1_8_3', last_failure_host: 'ch-s1r2', total_failed_cpu_seconds: 13, total_failed_attempts: 3 }]);
+    function MergesPage() {
+      const location = useLocation();
+      return <output aria-label="Merges page">{location.pathname + location.search}</output>;
+    }
+    render(
+      <MemoryRouter initialEntries={['/analytics']}>
+        <Routes>
+          <Route path="/analytics" element={<DashboardViewer initialDashboardId="merge-link" />} />
+          <Route path="/merges" element={<MergesPage />} />
+        </Routes>
+      </MemoryRouter>,
+    );
+    await screen.findByLabelText('Failed CPU: 13 s');
+    fireEvent.click(screen.getByTitle('Table view'));
+    fireEvent.click(screen.getByRole('link', { name: 'all_1_8_3' }));
+    expect(screen.getByLabelText('Merges page')).toHaveTextContent('/merges?md_db=web&md_tbl=pv&md_part=all_1_8_3&md_host=ch-s1r2');
   });
 
   test('shows the corresponding totals on both CPU and elapsed panels', async () => {

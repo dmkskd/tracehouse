@@ -6,6 +6,7 @@ import {
   parseChartDirective,
   resolveQueryRef,
   evaluateQueryVersionCompatibility,
+  mergeLinkUrl,
   type CellStyleRule,
 } from '../metaLanguage';
 import {
@@ -838,5 +839,31 @@ describe('resolveQueryRef', { tags: ['analytics'] }, () => {
       expect(result!.name).toBe(expectedName);
       expect(result!.group).toBe(expectedGroup);
     }
+  });
+});
+
+describe('@merge_link', () => {
+  const sql = `-- @meta: title='Failing' group='Merge Analytics'
+-- @merge_link: on=part_name database=database table=table part=part_name host=last_failure_host
+SELECT 1`;
+
+  test('links a row to its merge on the Merges page, on the row\'s replica', () => {
+    const link = parseDirectives(sql)!.mergeLink!;
+    expect(link).toEqual({ on: 'part_name', database: 'database', table: 'table', part: 'part_name', host: 'last_failure_host' });
+    const url = mergeLinkUrl(link, { database: 'web', table: 'page views', part_name: '1793149200_0_517_4', last_failure_host: 'ch-s1r2' });
+    expect(url).toBe('/merges?md_db=web&md_tbl=page+views&md_part=1793149200_0_517_4&md_host=ch-s1r2');
+  });
+
+  test('gives no link when the row lacks a locating value', () => {
+    const link = parseDirectives(sql)!.mergeLink!;
+    const row = { database: 'web', table: 'pv', part_name: 'all_1_2_1', last_failure_host: 'ch-1' };
+    for (const column of ['database', 'table', 'part_name', 'last_failure_host']) {
+      expect(mergeLinkUrl(link, { ...row, [column]: null }), column).toBeNull();
+      expect(mergeLinkUrl(link, { ...row, [column]: '' }), column).toBeNull();
+    }
+  });
+
+  test('ignores an incomplete directive', () => {
+    expect(parseDirectives(sql.replace(' host=last_failure_host', ''))!.mergeLink).toBeUndefined();
   });
 });

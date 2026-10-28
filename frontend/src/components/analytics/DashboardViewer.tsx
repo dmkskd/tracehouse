@@ -28,6 +28,7 @@ import {
   parseQueryMetadata,
   parseSummaryDirectives,
   type SummaryDirectives,
+  mergeLinkUrl,
 } from './metaLanguage';
 import { LinkQueryModal } from './LinkQueryModal';
 import { PartInspector } from '../database/PartInspector';
@@ -876,6 +877,13 @@ const DashboardPanelCard: React.FC<{
     return () => { cancelled = true; };
   }, [partLinkTarget, services]);
 
+  // @merge_link support - a table cell linking to the merge on the Merges page
+  const mergeLinkDirective = preset?.directives.mergeLink;
+  const mergeLinkRowUrl = useMemo(
+    () => mergeLinkDirective ? (row: Record<string, unknown>) => mergeLinkUrl(mergeLinkDirective, row) : undefined,
+    [mergeLinkDirective],
+  );
+
   // @query_link support - open the Query Detail modal (X-Ray tab) for a clicked query_id
   const isQueryLinkable = !!(preset?.directives.queryLink?.on) &&
     (!result || result.columns.includes(preset.directives.queryLink.on));
@@ -1146,6 +1154,8 @@ const DashboardPanelCard: React.FC<{
                     drillIntoQuery={isDrillable ? preset?.directives.drill?.into : undefined}
                     partLinkOnColumn={isPartLinkable ? preset?.directives.partLink?.on : undefined}
                     onPartLinkClick={isPartLinkable ? handlePartLinkClick : undefined}
+                    mergeLinkOnColumn={mergeLinkDirective?.on}
+                    mergeLinkUrl={mergeLinkRowUrl}
                     compact
                     enableRowDetails
                   />

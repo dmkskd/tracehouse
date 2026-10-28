@@ -50,6 +50,16 @@ describe('MergeTracker merge detail identity', () => {
     expect(adapter.queries[0]).toContain("dateDiff(\n      'millisecond'");
   });
 
+  it('opens the latest record on the linked replica when the link carries a host but no time', async () => {
+    const adapter = new MockAdapter();
+    const tracker = new MergeTracker(adapter);
+
+    await tracker.getMergeHistoryByPartName('analytics', 'events', '202607_10_12_1', { hostname: 'replica-2' });
+
+    expect(adapter.queries[0]).toContain("hostName() = 'replica-2'");
+    expect(adapter.queries[0]).not.toContain('dateDiff(');
+  });
+
   it('retains the part-name-only fallback for source-part drilldown', async () => {
     const adapter = new MockAdapter();
     const tracker = new MergeTracker(adapter);

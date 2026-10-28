@@ -1,4 +1,5 @@
 import { act, cleanup, fireEvent, render, screen } from '@testing-library/react';
+import { MemoryRouter, Route, Routes, useLocation } from 'react-router-dom';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { QueryExplorer } from '../QueryExplorer';
 
@@ -66,5 +67,29 @@ describe('Query Explorer structured summaries', () => {
     expect(screen.queryByLabelText('Result summary')).not.toBeInTheDocument();
     fireEvent.click(screen.getByRole('button', { name: 'Table', exact: true }));
     expect(screen.getByLabelText('Total: 64 s')).toBeInTheDocument();
+  });
+});
+
+describe('Query Explorer merge links', () => {
+  function MergesPage() {
+    const location = useLocation();
+    return <output aria-label="Merges page">{location.pathname + location.search}</output>;
+  }
+
+  it('navigates from a merge cell to that merge on the Merges page, on the row\'s replica', async () => {
+    mocks.run.mockResolvedValue([{ database: 'web', table: 'pv', part_name: 'all_1_8_3', last_failure_host: 'ch-s1r2' }]);
+    const sql = `-- @meta: title='Failing merges' group='Custom'
+-- @merge_link: on=part_name database=database table=table part=part_name host=last_failure_host
+SELECT 1`;
+    render(
+      <MemoryRouter initialEntries={['/analytics']}>
+        <Routes>
+          <Route path="/analytics" element={<QueryExplorer urlState={{ sql, view: 'table' }} />} />
+          <Route path="/merges" element={<MergesPage />} />
+        </Routes>
+      </MemoryRouter>,
+    );
+    fireEvent.click(await screen.findByRole('link', { name: 'all_1_8_3' }));
+    expect(screen.getByLabelText('Merges page')).toHaveTextContent('/merges?md_db=web&md_tbl=pv&md_part=all_1_8_3&md_host=ch-s1r2');
   });
 });

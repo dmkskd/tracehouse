@@ -16,6 +16,7 @@ import {
   isClickHouseVersionAtLeast,
   parseClickHouseVersion,
 } from '../utils/clickhouse-version.js';
+import { buildMergeLinkUrl } from '../utils/deep-link-resolution.js';
 
 /* ─── types ─── */
 
@@ -166,6 +167,8 @@ export interface ParsedDirectives {
     /** Column or drill-param name for the table */
     table: string;
   };
+  /** @merge_link: a cell that links to the merge on the Merges page. */
+  mergeLink?: MergeLinkDirective;
   /** @query_link: click a query_id to open the Query Detail modal on the X-Ray tab. */
   queryLink?: {
     /** Column containing the query_id */
@@ -570,6 +573,29 @@ export function parseSummaryDirectives(sql: string): SummaryDirectives | undefin
   return result;
 }
 
+/** Columns that locate a merge for @merge_link. */
+export interface MergeLinkDirective {
+  /** Column whose cells link to the merge */
+  on: string;
+  database: string;
+  table: string;
+  /** Column with the result part name */
+  part: string;
+  /** Column with the replica to open the merge on */
+  host: string;
+}
+
+/**
+ * Merges page URL for a @merge_link row, or null when a locating value is missing.
+ * Merge-level: the Merges page opens the latest part_log record of the part on that host.
+ */
+export function mergeLinkUrl(link: MergeLinkDirective, row: Record<string, unknown>): string | null {
+  const values = [row[link.database], row[link.table], row[link.part], row[link.host]];
+  if (values.some(value => value == null || value === '')) return null;
+  const [database, table, part, host] = values.map(String);
+  return buildMergeLinkUrl(database, table, part, host);
+}
+
 export function parseDirectives(sql: string): ParsedDirectives | null {
   const metaMatch = sql.match(/--\s*@meta:\s*(.+)/i);
   if (!metaMatch) return null;
@@ -656,6 +682,16 @@ export function parseDirectives(sql: string): ParsedDirectives | null {
     const tblMatch = pl.match(/table=(\w+)/);
     if (onMatch && dbMatch && tblMatch) {
       result.partLink = { on: onMatch[1], database: dbMatch[1], table: tblMatch[1] };
+    }
+  }
+
+  const mergeLinkMatch = sql.match(/--\s*@merge_link:\s*(.+)/i);
+  if (mergeLinkMatch) {
+    const ml = mergeLinkMatch[1];
+    const keys = ['on', 'database', 'table', 'part', 'host'] as const;
+    const values = keys.map(key => ml.match(new RegExp(`\\b${key}=(\\w+)`))?.[1]);
+    if (values.every(Boolean)) {
+      result.mergeLink = Object.fromEntries(keys.map((key, i) => [key, values[i]])) as unknown as MergeLinkDirective;
     }
   }
 

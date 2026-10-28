@@ -455,67 +455,180 @@ FROM merge_costs
 GROUP BY outcome, level_transition, size_bucket, reason
 ORDER BY cpu_seconds DESC NULLS LAST, elapsed_seconds DESC
 LIMIT 200`,
-  `-- @meta: title='Top Failing Merges' group='Merge Analytics' interval='1 DAY' description='Merges that failed at least once, ranked by CPU spent on failed attempts. Each retry of the same merge is a new attempt; many attempts with the same error mean the merge keeps redoing the same work. Click a merge for its attempts.'
+  `-- @meta: title='Merge Failures by Table and Error' group='Merge Analytics' interval='1 DAY' description='CPU spent on failed merge attempts per table, split by why they failed. Server memory limit means the whole server was at max_server_memory_usage, so merges of any size fail; Merge memory limit means the merge itself was too big. Click a table for its failing merges.'
+-- @chart: type=stacked_bar group_by=tbl value=failed_cpu_seconds series=failure_kind unit=s style=2d
+-- @summary: value=total_failed_cpu_seconds label='Failed CPU' unit=s
+-- @summary: value=total_failed_attempts label='Failed attempts'
+-- @drill: on=tbl into='Top Failing Merges'
+-- @cell: column=failed_cpu_share_pct type=gauge max=100 unit=%
+-- One row per table and failure kind. Failed attempts only (error != 0), including work on each replica.
+-- CPU: user + system time (omitted counters are 0); NULL only when the rows have no counters.
+-- merges: distinct result parts that failed. Shares and totals cover the selected table and time range, before LIMIT.
+WITH failures AS (
+    SELECT
+        concat(database, '.', table) AS tbl,
+        part_name,
+        event_time,
+        duration_ms / 1000.0 AS elapsed,
+        if(empty(ProfileEvents), NULL,
+            (ProfileEvents['UserTimeMicroseconds'] + ProfileEvents['SystemTimeMicroseconds']) / 1e6) AS cpu,
+        multiIf(
+            error = 0, 'succeeded',
+            -- The whole server reached max_server_memory_usage: any merge asking for memory then fails, small ones too.
+            -- Wording by version: 'Memory limit (total)' before 24.11, 'Global memory limit' in 24.11, '(total) memory limit' after.
+            error = 241 AND (position(exception, '(total) memory limit') > 0
+                OR position(exception, 'Global memory limit') > 0
+                OR position(exception, 'Memory limit (total)') > 0), 'Server memory limit',
+            -- The merge's own memory tracker.
+            error = 241 AND position(exception, 'Background process (mutate/merge) memory limit') > 0, 'Merge memory limit',
+            error = 241, 'Other memory limit',
+            errorCodeToName(error)
+        ) AS failure_kind
+    FROM {{cluster_aware:system.part_log}}
+    WHERE event_type = 'MergeParts'
+      -- A replica that fetches instead of merging logs a failed fetch as MergeParts with no merge reason: not a merge.
+      AND (error = 0 OR merge_reason != 'NotAMerge')
+      AND database NOT IN ('system', 'INFORMATION_SCHEMA', 'information_schema')
+      AND event_date >= toDate({{time_range}})
+      AND event_time > {{time_range}}
+      AND error != 0
+      AND concat(database, '.', table) = {{drill_value:tbl | concat(database, '.', table)}}
+)
+SELECT
+    tbl,
+    failure_kind,
+    count() AS failed_attempts,
+    uniqExact(part_name) AS merges,
+    round(sum(cpu), 3) AS failed_cpu_seconds,
+    round(sum(elapsed), 3) AS failed_elapsed_seconds,
+    round(100.0 * sum(cpu) / nullIf(sum(sum(cpu)) OVER (), 0), 2) AS failed_cpu_share_pct,
+    max(event_time) AS last_failure,
+    sum(count()) OVER () AS total_failed_attempts,
+    round(sum(sum(cpu)) OVER (), 3) AS total_failed_cpu_seconds
+FROM failures
+GROUP BY tbl, failure_kind
+ORDER BY sum(sum(cpu)) OVER (PARTITION BY tbl) DESC NULLS LAST, tbl, failed_cpu_seconds DESC NULLS LAST, failure_kind
+LIMIT 100`,
+  `-- @meta: title='Top Failing Merges' group='Merge Analytics' interval='1 DAY' description='Merges that failed at least once, ranked by CPU spent on failed attempts. Each retry of the same merge is a new attempt; many attempts with the same error mean the merge keeps redoing the same work. Click a bar for its attempts, or a part name to open the merge on the Merges page.'
 -- @chart: type=bar group_by=merge value=failed_cpu_seconds unit=s style=2d
 -- @summary: value=total_failed_cpu_seconds label='Failed CPU' unit=s
 -- @summary: value=total_failed_attempts label='Failed attempts'
 -- @drill: on=merge into='Merge Attempts'
+-- @merge_link: on=part_name database=database table=table part=part_name host=last_failure_host
 -- One row per merge (table + result part name), summed over replicas and retries.
 -- CPU: user + system time (omitted counters are 0); NULL only when the failed rows have no counters.
+-- last_failure_kind, last_error and last_exception describe the latest failed attempt.
+-- max_merge_peak_memory is the merge's own peak; a Server memory limit failure is caused by the server total, not by it.
 -- succeeded: whether any attempt of this merge succeeded in the selected time range.
+-- The part_name link opens the latest record of the merge on last_failure_host, the replica of the latest failure.
 -- Totals cover the selected table and time range, before LIMIT.
+WITH attempts AS (
+    SELECT
+        database,
+        table,
+        part_name,
+        hostName() AS host,
+        error,
+        exception,
+        event_time,
+        event_time_microseconds,
+        peak_memory_usage,
+        duration_ms / 1000.0 AS elapsed,
+        if(empty(ProfileEvents), NULL,
+            (ProfileEvents['UserTimeMicroseconds'] + ProfileEvents['SystemTimeMicroseconds']) / 1e6) AS cpu,
+        multiIf(
+            error = 0, 'succeeded',
+            -- The whole server reached max_server_memory_usage: any merge asking for memory then fails, small ones too.
+            -- Wording by version: 'Memory limit (total)' before 24.11, 'Global memory limit' in 24.11, '(total) memory limit' after.
+            error = 241 AND (position(exception, '(total) memory limit') > 0
+                OR position(exception, 'Global memory limit') > 0
+                OR position(exception, 'Memory limit (total)') > 0), 'Server memory limit',
+            -- The merge's own memory tracker.
+            error = 241 AND position(exception, 'Background process (mutate/merge) memory limit') > 0, 'Merge memory limit',
+            error = 241, 'Other memory limit',
+            errorCodeToName(error)
+        ) AS failure_kind
+    FROM {{cluster_aware:system.part_log}}
+    WHERE event_type = 'MergeParts'
+      -- A replica that fetches instead of merging logs a failed fetch as MergeParts with no merge reason: not a merge.
+      AND (error = 0 OR merge_reason != 'NotAMerge')
+      AND database NOT IN ('system', 'INFORMATION_SCHEMA', 'information_schema')
+      AND event_date >= toDate({{time_range}})
+      AND event_time > {{time_range}}
+      AND concat(database, '.', table) = {{drill_value:tbl | concat(database, '.', table)}}
+)
 SELECT
     concat(database, '.', table, ':', part_name) AS merge,
     countIf(error != 0) AS failed_attempts,
-    round(sumIf(if(empty(ProfileEvents), NULL,
-        (ProfileEvents['UserTimeMicroseconds'] + ProfileEvents['SystemTimeMicroseconds']) / 1e6), error != 0), 3) AS failed_cpu_seconds,
-    round(sumIf(duration_ms, error != 0) / 1000.0, 3) AS failed_elapsed_seconds,
-    formatReadableSize(maxIf(peak_memory_usage, error != 0)) AS max_failed_peak_memory,
+    round(sumIf(cpu, error != 0), 3) AS failed_cpu_seconds,
+    round(sumIf(elapsed, error != 0), 3) AS failed_elapsed_seconds,
     -- event_time has second resolution; retries within one second would tie.
+    argMaxIf(failure_kind, event_time_microseconds, error != 0) AS last_failure_kind,
     errorCodeToName(argMaxIf(error, event_time_microseconds, error != 0)) AS last_error,
     substring(argMaxIf(exception, event_time_microseconds, error != 0), 1, 300) AS last_exception,
+    formatReadableSize(maxIf(peak_memory_usage, error != 0)) AS max_merge_peak_memory,
     if(countIf(error = 0) > 0, 'yes', 'no') AS succeeded,
-    uniqExact(hostName()) AS replicas,
+    uniqExact(host) AS replicas,
     minIf(event_time, error != 0) AS first_failure,
     maxIf(event_time, error != 0) AS last_failure,
+    argMaxIf(host, event_time_microseconds, error != 0) AS last_failure_host,
+    database,
+    table,
+    part_name,
     sum(countIf(error != 0)) OVER () AS total_failed_attempts,
-    round(sum(sumIf(if(empty(ProfileEvents), NULL,
-        (ProfileEvents['UserTimeMicroseconds'] + ProfileEvents['SystemTimeMicroseconds']) / 1e6), error != 0)) OVER (), 3) AS total_failed_cpu_seconds
-FROM {{cluster_aware:system.part_log}}
-WHERE event_type = 'MergeParts'
-  -- A replica that fetches instead of merging logs a failed fetch as MergeParts with no merge reason: not a merge.
-  AND (error = 0 OR merge_reason != 'NotAMerge')
-  AND database NOT IN ('system', 'INFORMATION_SCHEMA', 'information_schema')
-  AND event_date >= toDate({{time_range}})
-  AND event_time > {{time_range}}
-  AND concat(database, '.', table) = {{drill_value:tbl | concat(database, '.', table)}}
+    round(sum(sumIf(cpu, error != 0)) OVER (), 3) AS total_failed_cpu_seconds
+FROM attempts
 GROUP BY database, table, part_name
 HAVING failed_attempts > 0
 ORDER BY failed_cpu_seconds DESC NULLS LAST, failed_attempts DESC, merge
 LIMIT 30`,
-  `-- @meta: title='Merge Attempts' group='Merge Analytics' interval='1 DAY' description='Every attempt of one merge, oldest first. Attempts that fail with the same error at a similar peak memory will keep failing until the limit or the merge changes.'
+  `-- @meta: title='Merge Attempts' group='Merge Analytics' interval='1 DAY' description='Every attempt of one merge, oldest first. Attempts that keep failing with Server memory limit will keep failing until the server has memory to spare; Merge memory limit means the merge itself is too big.'
 -- @chart: type=bar group_by=attempt value=cpu_seconds unit=s style=2d
 -- One row per attempt on each replica. CPU: user + system time; NULL only when the row has no counters.
+-- merge_peak_memory is the merge's own peak; a Server memory limit failure is caused by the server total, not by it.
+WITH attempts AS (
+    SELECT
+        hostName() AS host,
+        event_time_microseconds,
+        error,
+        exception,
+        duration_ms / 1000.0 AS elapsed,
+        peak_memory_usage,
+        read_bytes,
+        if(empty(ProfileEvents), NULL,
+            (ProfileEvents['UserTimeMicroseconds'] + ProfileEvents['SystemTimeMicroseconds']) / 1e6) AS cpu,
+        multiIf(
+            error = 0, 'succeeded',
+            -- The whole server reached max_server_memory_usage: any merge asking for memory then fails, small ones too.
+            -- Wording by version: 'Memory limit (total)' before 24.11, 'Global memory limit' in 24.11, '(total) memory limit' after.
+            error = 241 AND (position(exception, '(total) memory limit') > 0
+                OR position(exception, 'Global memory limit') > 0
+                OR position(exception, 'Memory limit (total)') > 0), 'Server memory limit',
+            -- The merge's own memory tracker.
+            error = 241 AND position(exception, 'Background process (mutate/merge) memory limit') > 0, 'Merge memory limit',
+            error = 241, 'Other memory limit',
+            errorCodeToName(error)
+        ) AS failure_kind
+    FROM {{cluster_aware:system.part_log}}
+    WHERE event_type = 'MergeParts'
+      -- A replica that fetches instead of merging logs a failed fetch as MergeParts with no merge reason: not a merge.
+      AND (error = 0 OR merge_reason != 'NotAMerge')
+      AND event_date >= toDate({{time_range}})
+      AND event_time > {{time_range}}
+      AND concat(database, '.', table, ':', part_name) = {{drill_value:merge | concat(database, '.', table, ':', part_name)}}
+      AND concat(database, '.', table) = {{drill_value:tbl | concat(database, '.', table)}}
+)
 SELECT
-    concat(toString(event_time_microseconds), ' ', hostName()) AS attempt,
-    event_time,
-    hostName() AS host,
+    concat(toString(event_time_microseconds), ' ', host) AS attempt,
+    host,
     if(error = 0, 'succeeded', errorCodeToName(error)) AS outcome,
-    round(if(empty(ProfileEvents), NULL,
-        (ProfileEvents['UserTimeMicroseconds'] + ProfileEvents['SystemTimeMicroseconds']) / 1e6), 3) AS cpu_seconds,
-    round(duration_ms / 1000.0, 3) AS elapsed_seconds,
-    formatReadableSize(peak_memory_usage) AS peak_memory,
+    failure_kind,
+    round(cpu, 3) AS cpu_seconds,
+    round(elapsed, 3) AS elapsed_seconds,
+    formatReadableSize(peak_memory_usage) AS merge_peak_memory,
     formatReadableSize(read_bytes) AS input_read,
-    rows AS rows_written,
     substring(exception, 1, 300) AS exception
-FROM {{cluster_aware:system.part_log}}
-WHERE event_type = 'MergeParts'
-  -- A replica that fetches instead of merging logs a failed fetch as MergeParts with no merge reason: not a merge.
-  AND (error = 0 OR merge_reason != 'NotAMerge')
-  AND event_date >= toDate({{time_range}})
-  AND event_time > {{time_range}}
-  AND concat(database, '.', table, ':', part_name) = {{drill_value:merge | concat(database, '.', table, ':', part_name)}}
-  AND concat(database, '.', table) = {{drill_value:tbl | concat(database, '.', table)}}
+FROM attempts
 ORDER BY event_time_microseconds, host
 LIMIT 500`,
   `-- @meta: title='Mutation CPU by Table' group='Merge Analytics' interval='1 DAY' description='Top 10 tables by mutation CPU (totals cover all mutations). Mutations are not in the merge charts above.'
