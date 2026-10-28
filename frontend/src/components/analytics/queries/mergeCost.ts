@@ -97,7 +97,62 @@ ${DIMENSION_LIMIT[dimension] ? `LIMIT ${DIMENSION_LIMIT[dimension]}` : ''}`;
 }
 
 const queries: string[] = [
-  costQuery('Merge CPU by Table', 'tbl', 'cpu_seconds', 'Tables ranked by total merge CPU. Click a table for the cost breakdown.', "-- @drill: on=tbl into='Table Merge Cost Breakdown'"),
+  `-- @meta: title='Merge CPU by Table' group='Merge Analytics' interval='1 DAY' description='Tables ranked by total merge CPU, split into successful merges and failed attempts. CPU on failed attempts produced no part. Click a table for the cost breakdown.'
+-- @chart: type=stacked_bar group_by=tbl value=cpu_seconds,failed_cpu_seconds unit=s style=2d
+-- @summary: value=total_cpu_seconds label='Successful CPU' unit=s
+-- @summary: value=total_failed_cpu_seconds label='Failed CPU' unit=s
+-- @summary: value=total_merge_count label='Merges'
+-- @drill: on=tbl into='Table Merge Cost Breakdown'
+-- Completed merges (event_type = 'MergeParts'), including work on each replica.
+-- Successful merges (error = 0) feed every column except the failed_* ones.
+-- Failed attempts (error != 0) write a row with the CPU spent until the exception; each retry adds a row.
+-- CPU: core-seconds of user + system time. ClickHouse omits zero counters from ProfileEvents,
+-- so a missing counter counts as 0; CPU is NULL only when the row has no counters at all.
+-- Shares and totals use the selected table and time range, before LIMIT. Ranked by successful + failed CPU.
+WITH merge_costs AS (
+    SELECT
+        concat(database, '.', table) AS tbl,
+        error = 0 AS ok,
+        size_in_bytes,
+        read_bytes,
+        duration_ms / 1000.0 AS elapsed,
+        if(empty(ProfileEvents), NULL,
+            (ProfileEvents['UserTimeMicroseconds'] + ProfileEvents['SystemTimeMicroseconds']) / 1e6) AS cpu
+    FROM {{cluster_aware:system.part_log}}
+    WHERE event_type = 'MergeParts'
+      AND database NOT IN ('system', 'INFORMATION_SCHEMA', 'information_schema')
+      AND event_date >= toDate({{time_range}})
+      AND event_time > {{time_range}}
+      AND concat(database, '.', table) = {{drill_value:tbl | concat(database, '.', table)}}
+)
+SELECT
+    tbl,
+    countIf(ok) AS merge_count,
+    countIf(ok AND isNotNull(cpu)) AS cpu_profiled_merges,
+    round(100.0 * cpu_profiled_merges / nullIf(merge_count, 0), 1) AS cpu_coverage_pct,
+    round(sumIf(cpu, ok), 3) AS cpu_seconds,
+    round(sumIf(elapsed, ok), 3) AS elapsed_seconds,
+    round(100.0 * sumIf(cpu, ok) / nullIf(sum(sumIf(cpu, ok)) OVER (), 0), 2) AS cpu_share_pct,
+    round(100.0 * sumIf(elapsed, ok) / nullIf(sum(sumIf(elapsed, ok)) OVER (), 0), 2) AS elapsed_share_pct,
+    round(100.0 * countIf(ok) / nullIf(sum(countIf(ok)) OVER (), 0), 2) AS merge_share_pct,
+    round(avgIf(cpu, ok), 3) AS avg_cpu_seconds,
+    round(avgIf(elapsed, ok), 3) AS avg_elapsed_seconds,
+    round(quantileIf(0.95)(elapsed, ok), 3) AS p95_elapsed_seconds,
+    round(sumIf(cpu, ok) / nullIf(sumIf(read_bytes, ok AND isNotNull(cpu)) / 1073741824.0, 0), 3) AS cpu_seconds_per_input_gib,
+    formatReadableSize(sumIf(read_bytes, ok)) AS input_uncompressed,
+    formatReadableSize(sumIf(size_in_bytes, ok)) AS result_compressed,
+    countIf(NOT ok) AS failed_attempts,
+    round(sumIf(cpu, NOT ok), 3) AS failed_cpu_seconds,
+    round(100.0 * sumIf(cpu, NOT ok) / nullIf(sum(cpu), 0), 1) AS failed_cpu_pct,
+    round(sumIf(elapsed, NOT ok), 3) AS failed_elapsed_seconds,
+    sum(countIf(ok)) OVER () AS total_merge_count,
+    round(sum(sumIf(elapsed, ok)) OVER (), 3) AS total_elapsed_seconds,
+    round(sum(sumIf(cpu, ok)) OVER (), 3) AS total_cpu_seconds,
+    round(sum(sumIf(cpu, NOT ok)) OVER (), 3) AS total_failed_cpu_seconds
+FROM merge_costs
+GROUP BY tbl
+ORDER BY sum(cpu) DESC NULLS LAST, tbl
+LIMIT 30`,
   costQuery('Merge Elapsed Time by Table', 'tbl', 'elapsed_seconds', 'Tables ranked by total merge duration.', "-- @drill: on=tbl into='Table Merge Cost Breakdown'"),
   costQuery('Merge CPU by Level Transition', 'level_transition', 'cpu_seconds', 'Top 10 level transitions by CPU (totals cover all merges). Source → result part level; mixed source levels appear as a range.'),
   costQuery('Merge Elapsed Time by Level Transition', 'level_transition', 'elapsed_seconds', 'Top 10 level transitions by total merge duration (totals cover all merges).'),
@@ -125,6 +180,64 @@ FROM merge_costs
 GROUP BY level_transition, size_bucket, reason
 ORDER BY cpu_seconds DESC NULLS LAST, elapsed_seconds DESC
 LIMIT 200`,
+  `-- @meta: title='Top Failing Merges' group='Merge Analytics' interval='1 DAY' description='Merges that failed at least once, ranked by CPU spent on failed attempts. Each retry of the same merge is a new attempt; many attempts with the same error mean the merge keeps redoing the same work. Click a merge for its attempts.'
+-- @chart: type=bar group_by=merge value=failed_cpu_seconds unit=s style=2d
+-- @summary: value=total_failed_cpu_seconds label='Failed CPU' unit=s
+-- @summary: value=total_failed_attempts label='Failed attempts'
+-- @drill: on=merge into='Merge Attempts'
+-- One row per merge (table + result part name), summed over replicas and retries.
+-- CPU: user + system time (omitted counters are 0); NULL only when the failed rows have no counters.
+-- succeeded: whether any attempt of this merge succeeded in the selected time range.
+-- Totals cover the selected table and time range, before LIMIT.
+SELECT
+    concat(database, '.', table, ':', part_name) AS merge,
+    countIf(error != 0) AS failed_attempts,
+    round(sumIf(if(empty(ProfileEvents), NULL,
+        (ProfileEvents['UserTimeMicroseconds'] + ProfileEvents['SystemTimeMicroseconds']) / 1e6), error != 0), 3) AS failed_cpu_seconds,
+    round(sumIf(duration_ms, error != 0) / 1000.0, 3) AS failed_elapsed_seconds,
+    formatReadableSize(maxIf(peak_memory_usage, error != 0)) AS max_failed_peak_memory,
+    errorCodeToName(argMaxIf(error, event_time, error != 0)) AS last_error,
+    substring(argMaxIf(exception, event_time, error != 0), 1, 300) AS last_exception,
+    if(countIf(error = 0) > 0, 'yes', 'no') AS succeeded,
+    uniqExact(hostName()) AS replicas,
+    minIf(event_time, error != 0) AS first_failure,
+    maxIf(event_time, error != 0) AS last_failure,
+    sum(countIf(error != 0)) OVER () AS total_failed_attempts,
+    round(sum(sumIf(if(empty(ProfileEvents), NULL,
+        (ProfileEvents['UserTimeMicroseconds'] + ProfileEvents['SystemTimeMicroseconds']) / 1e6), error != 0)) OVER (), 3) AS total_failed_cpu_seconds
+FROM {{cluster_aware:system.part_log}}
+WHERE event_type = 'MergeParts'
+  AND database NOT IN ('system', 'INFORMATION_SCHEMA', 'information_schema')
+  AND event_date >= toDate({{time_range}})
+  AND event_time > {{time_range}}
+  AND concat(database, '.', table) = {{drill_value:tbl | concat(database, '.', table)}}
+GROUP BY database, table, part_name
+HAVING failed_attempts > 0
+ORDER BY failed_cpu_seconds DESC NULLS LAST, failed_attempts DESC, merge
+LIMIT 30`,
+  `-- @meta: title='Merge Attempts' group='Merge Analytics' interval='1 DAY' description='Every attempt of one merge, oldest first. Attempts that fail with the same error at a similar peak memory will keep failing until the limit or the merge changes.'
+-- @chart: type=bar group_by=attempt value=cpu_seconds unit=s style=2d
+-- One row per attempt on each replica. CPU: user + system time; NULL only when the row has no counters.
+SELECT
+    concat(toString(event_time), ' ', hostName()) AS attempt,
+    event_time,
+    hostName() AS host,
+    if(error = 0, 'succeeded', errorCodeToName(error)) AS outcome,
+    round(if(empty(ProfileEvents), NULL,
+        (ProfileEvents['UserTimeMicroseconds'] + ProfileEvents['SystemTimeMicroseconds']) / 1e6), 3) AS cpu_seconds,
+    round(duration_ms / 1000.0, 3) AS elapsed_seconds,
+    formatReadableSize(peak_memory_usage) AS peak_memory,
+    formatReadableSize(read_bytes) AS input_read,
+    rows AS rows_written,
+    substring(exception, 1, 300) AS exception
+FROM {{cluster_aware:system.part_log}}
+WHERE event_type = 'MergeParts'
+  AND event_date >= toDate({{time_range}})
+  AND event_time > {{time_range}}
+  AND concat(database, '.', table, ':', part_name) = {{drill_value:merge | concat(database, '.', table, ':', part_name)}}
+  AND concat(database, '.', table) = {{drill_value:tbl | concat(database, '.', table)}}
+ORDER BY event_time, host
+LIMIT 500`,
   `-- @meta: title='Mutation CPU by Table' group='Merge Analytics' interval='1 DAY' description='Top 10 tables by mutation CPU (totals cover all mutations). Mutations are not in the merge charts above.'
 -- @chart: type=bar group_by=tbl value=cpu_seconds unit=s style=2d
 -- @summary: value=total_cpu_seconds label='Total CPU' unit=s

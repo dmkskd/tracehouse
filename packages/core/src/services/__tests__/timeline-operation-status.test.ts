@@ -15,6 +15,8 @@ describe('TimelineService operation status', () => {
         return [0, '241'].map((error, index) => ({
           part_name: `part-${index}`, host: 'node-1', tbl: 'default.events',
           peak_memory_usage: 10_000_000, duration_ms: 1000, error,
+          event_type: merge ? 'MergeParts' : 'MutatePart',
+          operation_time: `2026-10-27 12:00:01.00000${index}`,
           merge_start: '2026-10-27 12:00:00', merge_end: '2026-10-27 12:00:01',
           mut_start: '2026-10-27 12:00:00', mut_end: '2026-10-27 12:00:01',
         })) as unknown as T[];
@@ -25,6 +27,10 @@ describe('TimelineService operation status', () => {
     });
     expect(detailQueries).toHaveLength(2);
     for (const sql of detailQueries) expect(sql).toMatch(/\berror\s*,/);
+    expect(timeline.merges.map(merge => merge.operation_id)).toEqual([
+      JSON.stringify(['MergeParts', '2026-10-27 12:00:01.000000']),
+      JSON.stringify(['MergeParts', '2026-10-27 12:00:01.000001']),
+    ]);
     expect(timeline.merges.map(merge => merge.error)).toEqual([0, 241]);
     expect(timeline.mutations.map(mutation => mutation.error)).toEqual([0, 241]);
     const rows = buildOperationRows(timeline, {

@@ -31,7 +31,8 @@ describe('Merge cost attribution', { tags: ['analytics'] }, () => {
       error UInt16 DEFAULT 0, event_date Date DEFAULT today(), event_time DateTime DEFAULT now(),
       part_name String, merged_from Array(String), size_in_bytes UInt64 DEFAULT 1024,
       read_bytes UInt64 DEFAULT 1073741824, duration_ms UInt64, rows UInt64 DEFAULT 0,
-      ProfileEvents Map(String, UInt64), partition_id String DEFAULT 'all'
+      ProfileEvents Map(String, UInt64), partition_id String DEFAULT 'all',
+      peak_memory_usage UInt64 DEFAULT 0, exception String DEFAULT ''
     ) ENGINE = Memory` });
     // Stand-in for system.mutations: block_numbers maps partition -> mutation version.
     await ctx.client.command({ query: `CREATE TABLE ${DB}.mutations (
@@ -132,6 +133,63 @@ describe('Merge cost attribution', { tags: ['analytics'] }, () => {
     const all = await run('Merge CPU by Table', {});
     expect(all.map(r => r.tbl)).toEqual(['app.other', 'app.events']);
     expect(Number(all[1].cpu_share_pct)).toBeCloseTo(12 / 112 * 100, 2);
+  });
+
+  it('splits table CPU into successful merges and failed attempts, ranking by both', async () => {
+    const oom = { error: 241, size_in_bytes: 0, exception: 'Code: 241. DB::Exception: Memory limit exceeded' };
+    await seed([
+      { ...first, ProfileEvents: { UserTimeMicroseconds: 2e6 } },
+      { ...first, ...oom, ProfileEvents: { UserTimeMicroseconds: 5e6 } },
+      { ...first, ...oom, ProfileEvents: { UserTimeMicroseconds: 3e6 } },
+      { ...first, ...oom, ProfileEvents: {} },                                   // failed, CPU unknown
+      { ...first, table: 'steady', ProfileEvents: { UserTimeMicroseconds: 9e6 } },
+      { ...first, table: 'stuck', ...oom, ProfileEvents: { UserTimeMicroseconds: 1e6 } }, // never succeeds
+    ]);
+    const rows = await run('Merge CPU by Table', {});
+    expect(rows.map(r => r.tbl)).toEqual(['app.events', 'app.steady', 'app.stuck']); // 10s, 9s, 1s
+    const byTable = Object.fromEntries(rows.map(r => [String(r.tbl), r]));
+    for (const [key, expected] of Object.entries({
+      merge_count: 1, cpu_seconds: 2, failed_attempts: 3, failed_cpu_seconds: 8, failed_cpu_pct: 80,
+      cpu_share_pct: 18.18, total_cpu_seconds: 11, total_failed_cpu_seconds: 9, total_merge_count: 2,
+    })) expect(Number(byTable['app.events'][key]), key).toBe(expected);
+    expect(Number(byTable['app.stuck'].merge_count)).toBe(0);
+    expect(byTable['app.stuck'].cpu_seconds).toBeNull();
+    expect(byTable['app.stuck'].cpu_coverage_pct).toBeNull();
+    expect(Number(byTable['app.stuck'].failed_cpu_pct)).toBe(100);
+    expect(byTable['app.steady'].failed_cpu_seconds).toBeNull();
+    expect(Number(byTable['app.steady'].failed_attempts)).toBe(0);
+  });
+
+  it('ranks failing merges by wasted CPU and lists each attempt of one merge', async () => {
+    const attempt = (minute: number, error: number, cpuUs: number, peak: number, extra: Record<string, unknown> = {}) => ({
+      ...first, part_name: 'all_1_8_3', event_time: `2026-10-22 00:${String(minute).padStart(2, '0')}:00`,
+      event_date: '2026-10-22', error, size_in_bytes: error ? 0 : 1024, peak_memory_usage: peak,
+      exception: error ? `Code: ${error}. DB::Exception: attempt ${minute}` : '', duration_ms: 1000,
+      ProfileEvents: { UserTimeMicroseconds: cpuUs }, ...extra,
+    });
+    await seed([
+      attempt(1, 241, 4e6, 2 * GiB),
+      attempt(2, 241, 4e6, 2 * GiB),
+      attempt(3, 241, 5e6, 2 * GiB),
+      attempt(4, 0, 6e6, GiB),                                                   // finally succeeds
+      attempt(5, 241, 1e6, GiB, { part_name: 'all_9_20_2' }),
+      attempt(6, 0, 1e6, GiB, { part_name: 'all_21_22_1' }),                     // never failed: excluded
+      attempt(7, 241, 50e6, GiB, { table: 'other' }),
+    ]);
+    const clock = '2026-10-22 00:30:00';
+    const failing = await run('Top Failing Merges', { tbl: 'app.events' }, '1 DAY', clock);
+    expect(failing.map(r => r.merge)).toEqual(['app.events:all_1_8_3', 'app.events:all_9_20_2']);
+    expect(failing[0]).toMatchObject({ last_error: 'MEMORY_LIMIT_EXCEEDED', succeeded: 'yes',
+      last_exception: 'Code: 241. DB::Exception: attempt 3', max_failed_peak_memory: '2.00 GiB' });
+    expect(Number(failing[0].failed_attempts)).toBe(3);
+    expect(Number(failing[0].failed_cpu_seconds)).toBe(13);
+    expect(failing[1]).toMatchObject({ succeeded: 'no' });
+    expect(Number(failing[0].total_failed_cpu_seconds)).toBe(14);
+    expect(Number(failing[0].total_failed_attempts)).toBe(4);
+
+    const attempts = await run('Merge Attempts', { merge: 'app.events:all_1_8_3' }, '1 DAY', clock);
+    expect(attempts.map(r => r.outcome)).toEqual(['MEMORY_LIMIT_EXCEEDED', 'MEMORY_LIMIT_EXCEEDED', 'MEMORY_LIMIT_EXCEEDED', 'succeeded']);
+    expect(attempts.map(r => Number(r.cpu_seconds))).toEqual([4, 4, 5, 6]);
   });
 
   it('distinguishes first-level, mixed-level, and mutated source part names', async () => {
@@ -401,6 +459,9 @@ describe('Merge cost attribution', { tags: ['analytics'] }, () => {
       event(120, 600000, 450e6, { part_name: 'all_1_8_3', merged_from: ['all_1_4_2', 'all_5_5_0'], size_in_bytes: 2 * GiB, merge_reason: 'TTLRecompressMerge' }),
       event(420, 900000, 600e6), // outside all three windows
       event(5, 900000, 600e6, { table: 'other' }), // outside the selected table
+      // Failed attempts: only in the failed columns and failure panels, never in the successful totals above.
+      event(5, 30000, 20e6, { error: 241, part_name: 'all_1_9_4' }),
+      event(120, 30000, 40e6, { error: 241, part_name: 'all_1_9_4' }),
       // Mutations: only in the mutation charts, never in the merge totals above.
       event(5, 60000, 30e6, { event_type: 'MutatePart', part_name: 'all_1_2_1_7', merged_from: ['all_1_2_1'] }),
       event(120, 90000, 45e6, { event_type: 'MutatePart', part_name: 'all_3_4_1_7', merged_from: ['all_3_4_1'] }),
@@ -408,16 +469,19 @@ describe('Merge cost attribution', { tags: ['analytics'] }, () => {
     // CPU is microseconds → seconds; duration is milliseconds → seconds.
     // These exact totals also catch an extra /1000 or a default 1 DAY leaking through.
     const expectations = [
-      { interval: '15 MINUTE', count: 2, cpu: 210, elapsed: 300, mutations: { parts_rewritten: 1, cpu_seconds: 30, elapsed_seconds: 60 } },
-      { interval: '1 HOUR', count: 3, cpu: 390, elapsed: 540, mutations: { parts_rewritten: 1, cpu_seconds: 30, elapsed_seconds: 60 } },
-      { interval: '6 HOUR', count: 4, cpu: 840, elapsed: 1140, mutations: { parts_rewritten: 2, cpu_seconds: 75, elapsed_seconds: 150 } },
+      { interval: '15 MINUTE', count: 2, cpu: 210, elapsed: 300, failed: { failed_attempts: 1, failed_cpu_seconds: 20 }, mutations: { parts_rewritten: 1, cpu_seconds: 30, elapsed_seconds: 60 } },
+      { interval: '1 HOUR', count: 3, cpu: 390, elapsed: 540, failed: { failed_attempts: 1, failed_cpu_seconds: 20 }, mutations: { parts_rewritten: 1, cpu_seconds: 30, elapsed_seconds: 60 } },
+      { interval: '6 HOUR', count: 4, cpu: 840, elapsed: 1140, failed: { failed_attempts: 2, failed_cpu_seconds: 60 }, mutations: { parts_rewritten: 2, cpu_seconds: 75, elapsed_seconds: 150 } },
     ];
     for (const expected of expectations) {
       for (const query of queries) {
         const title = query.match(/title='([^']+)'/)![1];
         const rows = await run(title, { tbl: 'app.events' }, expected.interval, clock);
-        const totals = title.startsWith('Mutation ')
-          ? expected.mutations
+        const totals = title.startsWith('Mutation ') ? expected.mutations
+          : title === 'Top Failing Merges' ? expected.failed
+          // One row per attempt, successful and failed.
+          : title === 'Merge Attempts' ? { cpu_seconds: expected.cpu + expected.failed.failed_cpu_seconds }
+          : title === 'Merge CPU by Table' ? { merge_count: expected.count, cpu_seconds: expected.cpu, elapsed_seconds: expected.elapsed, ...expected.failed }
           : { merge_count: expected.count, cpu_seconds: expected.cpu, elapsed_seconds: expected.elapsed };
         for (const [metric, value] of Object.entries(totals)) {
           expect(rows.reduce((sum, row) => sum + Number(row[metric]), 0), `${expected.interval} / ${title} / ${metric}`).toBe(value);

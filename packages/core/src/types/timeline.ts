@@ -76,6 +76,8 @@ export interface QuerySeries {
 }
 
 export interface MergeSeries {
+  /** Original part_log event identity, independent of the visible window. */
+  operation_id?: string;
   part_name: string;
   table: string;
   hostname?: string;
@@ -98,6 +100,8 @@ export interface MergeSeries {
 }
 
 export interface MutationSeries {
+  /** Original part_log event identity, independent of the visible window. */
+  operation_id?: string;
   part_name: string;
   table: string;
   hostname?: string;

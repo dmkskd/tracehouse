@@ -597,10 +597,10 @@ export const TimelineChart: React.FC<{
             areaId = data.queries[i]?.query_id ?? '';
           } else if (i < nq + nm) {
             const m = data.merges[i - nq];
-            areaId = m ? `${m.table}:${m.part_name}:${m.hostname ?? ''}` : '';
+            areaId = m ? operationHighlightKey('merge', m) : '';
           } else {
             const mu = (data.mutations ?? [])[i - nq - nm];
-            areaId = mu ? `${mu.table}:${mu.part_name}:${mu.hostname ?? ''}` : '';
+            areaId = mu ? operationHighlightKey('mutation', mu) : '';
           }
           // Check table highlight first (takes priority), match by id for cross-server correctness
           if (highlightedItem) {

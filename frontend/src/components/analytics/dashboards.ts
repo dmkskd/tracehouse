@@ -381,6 +381,7 @@ const BUILTIN_DASHBOARDS: Dashboard[] = [
       { queryName: 'Merge Analytics#Merge CPU by Result Size' },
       { queryName: 'Merge Analytics#Merge Elapsed Time by Result Size' },
       { queryName: 'Merge Analytics#Merge Cost by Reason' },
+      { queryName: 'Merge Analytics#Top Failing Merges' },
       { queryName: 'Merge Analytics#Mutation CPU by Table', section: 'Where mutation CPU and time go' },
       { queryName: 'Merge Analytics#Mutation Elapsed Time by Table' },
       { queryName: 'Merge Analytics#Mutation Cost by Command' },

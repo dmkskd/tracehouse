@@ -108,9 +108,10 @@ describe('DashboardViewer query version compatibility', () => {
       ],
     }]));
     mocks.run.mockResolvedValue([{ tbl: 'app.events', cpu_seconds: 60, elapsed_seconds: 120,
-      total_cpu_seconds: 60, total_elapsed_seconds: 120, total_merge_count: '5' }]);
+      total_cpu_seconds: 60, total_failed_cpu_seconds: 30, total_elapsed_seconds: 120, total_merge_count: '5' }]);
     render(<MemoryRouter><DashboardViewer initialDashboardId="paired-summaries" /></MemoryRouter>);
-    expect(await screen.findByLabelText('Total CPU: 60 s')).toHaveTextContent('1.0 min');
+    expect(await screen.findByLabelText('Successful CPU: 60 s')).toHaveTextContent('1.0 min');
+    expect(await screen.findByLabelText('Failed CPU: 30 s')).toHaveTextContent('30');
     expect(await screen.findByLabelText('Total duration: 120 s')).toHaveTextContent('2.0 min');
     expect(screen.getAllByLabelText('Merges: 5')).toHaveLength(2);
   });

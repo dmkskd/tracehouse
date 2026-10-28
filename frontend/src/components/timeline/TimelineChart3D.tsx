@@ -20,7 +20,7 @@ import { OrbitControls, Line, Html } from '@react-three/drei';
 import { SafeText as Text } from '@tracehouse/ui-shared';
 import * as THREE from 'three';
 import type { MemoryTimeline, QuerySeries, MergeSeries, MutationSeries } from '@tracehouse/core';
-import { operationAverageRate } from '@tracehouse/core';
+import { operationAverageRate, operationHighlightKey } from '@tracehouse/core';
 import { parseTimestamp, formatBytes } from '../../utils/formatters';
 import { type MetricMode, type HighlightedItem, Q_COLORS, M_COLORS, MUT_COLORS, METRIC_CONFIG } from './timeline-constants';
 
@@ -509,7 +509,7 @@ export const TimelineChart3D: React.FC<TimelineChart3DProps> = ({
     if (!hideM) {
       data.merges.forEach((m, i) => {
         result.push({
-          type: 'merge', idx: i, id: `${m.table}:${m.part_name}:${m.hostname ?? ''}`,
+          type: 'merge', idx: i, id: operationHighlightKey('merge', m),
           color: M_COLORS[i % M_COLORS.length],
           peakMemory: m.peak_memory,
           isRunning: m.is_running ?? false,
@@ -521,7 +521,7 @@ export const TimelineChart3D: React.FC<TimelineChart3DProps> = ({
     if (!hideMut) {
       (data.mutations ?? []).forEach((m, i) => {
         result.push({
-          type: 'mutation', idx: i, id: `${m.table}:${m.part_name}:${m.hostname ?? ''}`,
+          type: 'mutation', idx: i, id: operationHighlightKey('mutation', m),
           color: MUT_COLORS[i % MUT_COLORS.length],
           peakMemory: m.peak_memory,
           isRunning: m.is_running ?? false,

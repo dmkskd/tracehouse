@@ -356,7 +356,7 @@ describe('summarizeOperations', () => {
 describe('operationKeyFor / findOperationRow', () => {
   it('keys a query by query_id and a part by part_name', () => {
     expect(operationKeyFor('query', makeQuery())).toEqual({ kind: 'query', id: 'q1', hostname: '40936b28' });
-    expect(operationKeyFor('merge', makeMerge())).toEqual({ kind: 'merge', id: 'all_1_5_1', hostname: '7c7914e4' });
+    expect(operationKeyFor('merge', makeMerge())).toEqual({ kind: 'merge', id: 'all_1_5_1', hostname: '7c7914e4', operationId: operationHighlightKey('merge', makeMerge()) });
   });
 
   it('resolves a key against fresh data and reports the current index', () => {
@@ -544,9 +544,35 @@ describe('operationHighlightKey / operationRowHighlightKey', () => {
     expect(operationHighlightKey('query', query)).toBe('q1');
   });
 
-  it('identifies a part by table, part name and host together', () => {
-    expect(operationHighlightKey('merge', makeMerge()))
-      .toBe('analytics.events:all_1_5_1:7c7914e4');
+  it('identifies a part by table, part name, host and attempt together', () => {
+    expect(JSON.parse(operationHighlightKey('merge', makeMerge()))).toEqual([
+      'merge', 'analytics.events', 'all_1_5_1', '7c7914e4',
+      JSON.stringify(['2026-09-10 17:17:05', '2026-09-10 17:17:55', 50_000]),
+    ]);
+  });
+
+  it('highlights and selects only one retry on the same server', () => {
+    const merges = ['attempt-1', 'attempt-2', 'attempt-3'].map(operation_id => makeMerge({ operation_id, error: 241 }));
+    const input = { queries: [], merges, mutations: [] };
+    const rows = buildOperationRows(input, baseOptions);
+    const hovered = operationRowHighlightKey(rows[1]);
+    expect(rows.map(row => operationRowHighlightKey(row) === hovered)).toEqual([false, true, false]);
+    expect(findOperationRow(input, operationKeyFor('merge', merges[1]), 'cpu')?.source).toBe(merges[1]);
+    expect(findOperationRow({ ...input, merges: [merges[0], merges[2]] }, operationKeyFor('merge', merges[1]), 'cpu')).toBeNull();
+  });
+
+  it('keeps historical attempt identity when the visible time interval changes', () => {
+    const merge = makeMerge({ operation_id: 'MergeParts:2026-09-10 17:17:55.123456' });
+    expect(operationHighlightKey('merge', merge)).toBe(operationHighlightKey('merge', {
+      ...merge, start_time: '2026-09-10 17:17:30', end_time: '2026-09-10 17:17:40',
+    }));
+  });
+
+  it('keeps running identity while its elapsed time advances', () => {
+    const merge = makeMerge({ is_running: true });
+    expect(operationHighlightKey('merge', merge)).toBe(operationHighlightKey('merge', {
+      ...merge, duration_ms: 60_000, end_time: '2026-09-10 17:18:05',
+    }));
   });
 
   it('separates the same part name on different replicas', () => {

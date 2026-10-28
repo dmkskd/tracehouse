@@ -347,12 +347,14 @@ export interface OperationSelectionKey {
   kind: OperationKind;
   id: string;
   hostname?: string;
+  /** Full attempt identity for parts; optional for legacy selections. */
+  operationId?: string;
 }
 
 /**
  * Key shared by the chart bands, the table rows and the highlight state.
  * Queries are their query_id; parts need table, part and host together,
- * because the same part name exists on every replica.
+ * because replicas and retries can reuse the same part name.
  */
 export function operationHighlightKey(
   kind: OperationKind,
@@ -360,12 +362,14 @@ export function operationHighlightKey(
 ): string {
   if (kind === 'query') return (item as QuerySeries).query_id;
   const part = item as MergeSeries | MutationSeries;
-  return `${part.table}:${part.part_name}:${part.hostname ?? ''}`;
+  const attempt = part.is_running ? 'running'
+    : part.operation_id ?? JSON.stringify([part.start_time, part.end_time, part.duration_ms]);
+  return JSON.stringify([kind, part.table, part.part_name, part.hostname ?? '', attempt]);
 }
 
 /** The same key, derived from a row the table already holds. */
 export function operationRowHighlightKey(row: OperationRow): string {
-  return row.kind === 'query' ? row.id : `${row.label}:${row.id}:${row.hostname ?? ''}`;
+  return operationHighlightKey(row.kind, row.source);
 }
 
 /** Selection key for a series, used when a chart band is clicked. */
@@ -377,6 +381,7 @@ export function operationKeyFor(
     kind,
     id: kind === 'query' ? (item as QuerySeries).query_id : (item as MergeSeries | MutationSeries).part_name,
     hostname: item.hostname,
+    ...(kind === 'query' ? {} : { operationId: operationHighlightKey(kind, item) }),
   };
 }
 
@@ -397,6 +402,7 @@ export function findOperationRow(
     const item = items[idx];
     const candidate = operationKeyFor(key.kind, item);
     if (candidate.id !== key.id) continue;
+    if (key.operationId !== undefined && candidate.operationId !== key.operationId) continue;
     if (key.hostname !== undefined && candidate.hostname !== key.hostname) continue;
     return toRow(key.kind, idx, item, mode);
   }
