@@ -11,6 +11,7 @@ import { useQueryXRaySelection } from '../query/query-xray-preference';
 
 import React, { useState, useEffect, useCallback, useMemo, useRef } from 'react';
 import { createPortal } from 'react-dom';
+import { Link } from 'react-router-dom';
 import { useUrlState } from '../../hooks/useUrlState';
 import { defineShareSchema } from '../../share/shareSchema';
 import { buildConfig } from '../../buildConfig';
@@ -29,6 +30,7 @@ import {
   parseSummaryDirectives,
   type SummaryDirectives,
   mergeLinkUrl,
+  panelMergeLinkUrl,
 } from './metaLanguage';
 import { LinkQueryModal } from './LinkQueryModal';
 import { PartInspector } from '../database/PartInspector';
@@ -883,6 +885,11 @@ const DashboardPanelCard: React.FC<{
     () => mergeLinkDirective ? (row: Record<string, unknown>) => mergeLinkUrl(mergeLinkDirective, row) : undefined,
     [mergeLinkDirective],
   );
+  // Without on=, one header button for the merge every row belongs to (e.g. Merge Attempts after the drill)
+  const panelMergeUrl = useMemo(
+    () => mergeLinkDirective && !mergeLinkDirective.on && result ? panelMergeLinkUrl(mergeLinkDirective, result.rows) : null,
+    [mergeLinkDirective, result],
+  );
 
   // @query_link support - open the Query Detail modal (X-Ray tab) for a clicked query_id
   const isQueryLinkable = !!(preset?.directives.queryLink?.on) &&
@@ -1003,6 +1010,11 @@ const DashboardPanelCard: React.FC<{
               <span style={{ fontSize: 9, color: 'var(--text-muted)', fontWeight: 400 }}>
                 ({Object.entries(drillParams).map(([, v]) => v).join(' → ')})
               </span>
+            )}
+            {panelMergeUrl && (
+              <Link to={panelMergeUrl} title="Open this merge on the Merges page" style={{ fontSize: 10, fontWeight: 500, color: 'var(--accent-primary, #6366f1)', whiteSpace: 'nowrap' }}>
+                Open merge ↗
+              </Link>
             )}
           </div>
           {preset.sql.includes('{{query_xray_overlay:') && (

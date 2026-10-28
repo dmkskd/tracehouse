@@ -11,6 +11,7 @@ import { useQueryXRaySelection } from '../query/query-xray-preference';
  */
 
 import React, { useState, useCallback, useMemo, useRef, useEffect } from 'react';
+import { Link } from 'react-router-dom';
 import { useClickHouseServices } from '../../providers/ClickHouseProvider';
 import {
   EXPLAIN_ANALYZE_MIN_CLICKHOUSE_VERSION_LABEL,
@@ -33,7 +34,7 @@ import {
   type QueryGroup, type ChartType, type ChartStyle,
   evaluateQueryVersionCompatibility,
   parseCellStyles, parseRagRules, parseChartDirective, parseDirectives, resolveQueryRef,
-  parseSummaryDirectives, type SummaryDirectives, mergeLinkUrl,
+  parseSummaryDirectives, type SummaryDirectives, mergeLinkUrl, panelMergeLinkUrl,
 } from './metaLanguage';
 import { LinkQueryModal } from './LinkQueryModal';
 import { PartInspector } from '../database/PartInspector';
@@ -522,6 +523,11 @@ export const QueryExplorer: React.FC<QueryExplorerProps> = ({ urlState, onUrlSta
   const mergeLinkRowUrl = useMemo(
     () => mergeLinkDirective ? (row: Record<string, unknown>) => mergeLinkUrl(mergeLinkDirective, row) : undefined,
     [mergeLinkDirective],
+  );
+  // Without on=, one button for the merge every row belongs to (e.g. Merge Attempts after the drill)
+  const panelMergeUrl = useMemo(
+    () => mergeLinkDirective && !mergeLinkDirective.on && result ? panelMergeLinkUrl(mergeLinkDirective, result.rows) : null,
+    [mergeLinkDirective, result],
   );
 
   const isPartLinkable = !!(currentQuery?.directives.partLink?.on) &&
@@ -1146,6 +1152,11 @@ export const QueryExplorer: React.FC<QueryExplorerProps> = ({ urlState, onUrlSta
                   )}
                 </React.Fragment>
               ))}
+              {panelMergeUrl && (
+                <Link to={panelMergeUrl} title="Open this merge on the Merges page" style={{ marginLeft: 8, fontSize: 11, fontWeight: 500, color: 'var(--accent-primary, #6366f1)', whiteSpace: 'nowrap' }}>
+                  Open merge ↗
+                </Link>
+              )}
             </div>
           )}
 

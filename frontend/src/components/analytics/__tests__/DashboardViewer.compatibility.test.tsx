@@ -124,6 +124,40 @@ describe('DashboardViewer query version compatibility', () => {
     expect(screen.getByLabelText('Merges page')).toHaveTextContent('/merges?md_db=web&md_tbl=pv&md_part=all_1_8_3&md_host=ch-s1r2');
   });
 
+  test('after drilling into one merge\'s attempts, Open merge goes to that merge on the Merges page', async () => {
+    localStorage.setItem('tracehouse-dashboards-user', JSON.stringify([{
+      id: 'merge-drill', title: 'Merge drill', columns: 1,
+      panels: [{ queryName: 'Merge Analytics#Top Failing Merges' }],
+    }]));
+    const attempt = (host: string) => ({ attempt: `2026-10-28 10:00:00.000001 ${host}`, host, cpu_seconds: 4,
+      database: 'web', table: 'pv', part_name: 'all_1_8_3' });
+    mocks.run.mockImplementation(async (sql: string) => sql.includes('AS attempt,')
+      ? [attempt('ch-1'), attempt('ch-2')]
+      : [{ merge: 'web.pv:all_1_8_3', part_name: 'all_1_8_3', failed_cpu_seconds: 8, database: 'web', table: 'pv',
+        last_failure_host: 'ch-2', total_failed_cpu_seconds: 8, total_failed_attempts: 2 }]);
+    function MergesPage() {
+      const location = useLocation();
+      return <output aria-label="Merges page">{location.pathname + location.search}</output>;
+    }
+    render(
+      <MemoryRouter initialEntries={['/analytics']}>
+        <Routes>
+          <Route path="/analytics" element={<DashboardViewer initialDashboardId="merge-drill" />} />
+          <Route path="/merges" element={<MergesPage />} />
+        </Routes>
+      </MemoryRouter>,
+    );
+    await screen.findByLabelText('Failed CPU: 8 s');
+    expect(screen.queryByRole('link', { name: /Open merge/ })).not.toBeInTheDocument();
+    fireEvent.click(screen.getByTitle('Table view'));
+    fireEvent.click(screen.getByText('web.pv:all_1_8_3'));
+    // The panel re-renders once the drilled result settles; click the link that is on the page then.
+    await screen.findByRole('link', { name: /Open merge/ });
+    await act(async () => { await new Promise(resolve => setTimeout(resolve, 0)); });
+    fireEvent.click(screen.getByRole('link', { name: /Open merge/ }));
+    expect(screen.getByLabelText('Merges page')).toHaveTextContent('/merges?md_db=web&md_tbl=pv&md_part=all_1_8_3');
+  });
+
   test('shows the corresponding totals on both CPU and elapsed panels', async () => {
     localStorage.setItem('tracehouse-dashboards-user', JSON.stringify([{
       id: 'paired-summaries', title: 'Paired summaries', columns: 2,
