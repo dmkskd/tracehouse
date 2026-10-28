@@ -28,7 +28,7 @@ describe('Merge cost attribution', { tags: ['analytics'] }, () => {
       database String DEFAULT 'app', table String DEFAULT 'events',
       hostname String DEFAULT 'replica_a',
       event_type String DEFAULT 'MergeParts', merge_reason String DEFAULT 'RegularMerge',
-      error UInt16 DEFAULT 0, event_date Date DEFAULT today(), event_time DateTime DEFAULT now(),
+      error UInt16 DEFAULT 0, event_date Date DEFAULT today(), event_time DateTime DEFAULT now(), event_time_microseconds DateTime64(6) DEFAULT event_time,
       part_name String, merged_from Array(String), size_in_bytes UInt64 DEFAULT 1024,
       read_bytes UInt64 DEFAULT 1073741824, duration_ms UInt64, rows UInt64 DEFAULT 0,
       ProfileEvents Map(String, UInt64), partition_id String DEFAULT 'all',
@@ -144,20 +144,39 @@ describe('Merge cost attribution', { tags: ['analytics'] }, () => {
       { ...first, ...oom, ProfileEvents: {} },                                   // failed, CPU unknown
       { ...first, table: 'steady', ProfileEvents: { UserTimeMicroseconds: 9e6 } },
       { ...first, table: 'stuck', ...oom, ProfileEvents: { UserTimeMicroseconds: 1e6 } }, // never succeeds
+      { ...first, table: 'blind', ...oom, ProfileEvents: {} },                   // failed, no counters at all
+      // A failed fetch-instead-of-merge is logged as MergeParts with no merge reason: excluded everywhere.
+      { ...first, error: 234, merge_reason: 'NotAMerge', size_in_bytes: 0, ProfileEvents: { UserTimeMicroseconds: 50e6 } },
     ]);
     const rows = await run('Merge CPU by Table', {});
-    expect(rows.map(r => r.tbl)).toEqual(['app.events', 'app.steady', 'app.stuck']); // 10s, 9s, 1s
+    expect(rows.map(r => r.tbl)).toEqual(['app.events', 'app.steady', 'app.stuck', 'app.blind']); // 10s, 9s, 1s, unknown
     const byTable = Object.fromEntries(rows.map(r => [String(r.tbl), r]));
     for (const [key, expected] of Object.entries({
       merge_count: 1, cpu_seconds: 2, failed_attempts: 3, failed_cpu_seconds: 8, failed_cpu_pct: 80,
       cpu_share_pct: 18.18, total_cpu_seconds: 11, total_failed_cpu_seconds: 9, total_merge_count: 2,
     })) expect(Number(byTable['app.events'][key]), key).toBe(expected);
+    // No rows of an outcome is 0; rows of an outcome without counters is unknown (NULL), never 0.
     expect(Number(byTable['app.stuck'].merge_count)).toBe(0);
-    expect(byTable['app.stuck'].cpu_seconds).toBeNull();
+    expect(byTable['app.stuck'].cpu_seconds).toBe(0);
     expect(byTable['app.stuck'].cpu_coverage_pct).toBeNull();
     expect(Number(byTable['app.stuck'].failed_cpu_pct)).toBe(100);
-    expect(byTable['app.steady'].failed_cpu_seconds).toBeNull();
+    expect(byTable['app.steady'].failed_cpu_seconds).toBe(0);
+    expect(byTable['app.steady'].failed_cpu_pct).toBe(0);
     expect(Number(byTable['app.steady'].failed_attempts)).toBe(0);
+    expect(Number(byTable['app.blind'].failed_attempts)).toBe(1);
+    expect(byTable['app.blind'].failed_cpu_seconds).toBeNull();
+    expect(byTable['app.blind'].failed_cpu_pct).toBeNull();
+    // Every failed attempt above is a 0 → 1 merge; the level and reason panels split it the same way.
+    for (const title of ['Merge CPU by Level Transition', 'Merge Cost by Reason']) {
+      const [row] = await run(title, {});
+      expect(Number(row.cpu_seconds), title).toBe(11);
+      expect(Number(row.failed_attempts), title).toBe(5);
+      expect(Number(row.failed_cpu_seconds), title).toBe(9);
+      expect(Number(row.failed_cpu_pct), title).toBe(45);
+    }
+    const [elapsed] = await run('Merge Elapsed Time by Level Transition', {});
+    expect(Number(elapsed.failed_elapsed_seconds)).toBe(20);
+    expect(Number(elapsed.total_failed_elapsed_seconds)).toBe(20);
   });
 
   it('ranks failing merges by wasted CPU and lists each attempt of one merge', async () => {
@@ -175,21 +194,28 @@ describe('Merge cost attribution', { tags: ['analytics'] }, () => {
       attempt(5, 241, 1e6, GiB, { part_name: 'all_9_20_2' }),
       attempt(6, 0, 1e6, GiB, { part_name: 'all_21_22_1' }),                     // never failed: excluded
       attempt(7, 241, 50e6, GiB, { table: 'other' }),
+      attempt(8, 234, 90e6, 0, { merge_reason: 'NotAMerge' }),                   // failed fetch, not a merge attempt
+      // Two retries in the same second: event_time ties, so the latest must come from event_time_microseconds.
+      attempt(10, 241, 0.1e6, GiB, { part_name: 'all_30_40_2', event_time_microseconds: '2026-10-22 00:10:00.100000' }),
+      attempt(10, 236, 0.1e6, GiB, { part_name: 'all_30_40_2', event_time_microseconds: '2026-10-22 00:10:00.900000' }),
     ]);
     const clock = '2026-10-22 00:30:00';
     const failing = await run('Top Failing Merges', { tbl: 'app.events' }, '1 DAY', clock);
-    expect(failing.map(r => r.merge)).toEqual(['app.events:all_1_8_3', 'app.events:all_9_20_2']);
+    expect(failing.map(r => r.merge)).toEqual(['app.events:all_1_8_3', 'app.events:all_9_20_2', 'app.events:all_30_40_2']);
     expect(failing[0]).toMatchObject({ last_error: 'MEMORY_LIMIT_EXCEEDED', succeeded: 'yes',
       last_exception: 'Code: 241. DB::Exception: attempt 3', max_failed_peak_memory: '2.00 GiB' });
     expect(Number(failing[0].failed_attempts)).toBe(3);
     expect(Number(failing[0].failed_cpu_seconds)).toBe(13);
     expect(failing[1]).toMatchObject({ succeeded: 'no' });
-    expect(Number(failing[0].total_failed_cpu_seconds)).toBe(14);
-    expect(Number(failing[0].total_failed_attempts)).toBe(4);
+    expect(failing[2]).toMatchObject({ last_error: 'ABORTED', last_exception: 'Code: 236. DB::Exception: attempt 10' });
+    expect(Number(failing[0].total_failed_cpu_seconds)).toBe(14.2);
+    expect(Number(failing[0].total_failed_attempts)).toBe(6);
 
     const attempts = await run('Merge Attempts', { merge: 'app.events:all_1_8_3' }, '1 DAY', clock);
     expect(attempts.map(r => r.outcome)).toEqual(['MEMORY_LIMIT_EXCEEDED', 'MEMORY_LIMIT_EXCEEDED', 'MEMORY_LIMIT_EXCEEDED', 'succeeded']);
     expect(attempts.map(r => Number(r.cpu_seconds))).toEqual([4, 4, 5, 6]);
+    const tied = await run('Merge Attempts', { merge: 'app.events:all_30_40_2' }, '1 DAY', clock);
+    expect(tied.map(r => r.outcome)).toEqual(['MEMORY_LIMIT_EXCEEDED', 'ABORTED']);
   });
 
   it('distinguishes first-level, mixed-level, and mutated source part names', async () => {
@@ -211,7 +237,7 @@ describe('Merge cost attribution', { tags: ['analytics'] }, () => {
     expect(Number(sizes.find(r => r.size_bucket === '10-100 MiB')?.cpu_seconds)).toBe(2);
     const reasons = await run('Merge Cost by Reason');
     expect(Number(reasons.find(r => r.reason === 'TTLRecompressMerge')?.cpu_seconds)).toBe(2);
-    const details = await run('Table Merge Cost Breakdown');
+    const details = (await run('Table Merge Cost Breakdown')).filter(r => r.outcome === 'succeeded');
     expect(details.reduce((sum, r) => sum + Number(r.cpu_seconds), 0)).toBe(12);
     expect(details.reduce((sum, r) => sum + Number(r.merge_count), 0)).toBe(6);
   });
@@ -321,7 +347,7 @@ describe('Merge cost attribution', { tags: ['analytics'] }, () => {
   it('conserves counts, CPU, and duration across every grouping and the table drilldown', async () => {
     const [total] = await run('Merge CPU by Table');
     for (const title of ['Merge CPU by Level Transition', 'Merge Elapsed Time by Level Transition',
-      'Merge CPU by Result Size', 'Merge Elapsed Time by Result Size', 'Merge Cost by Reason', 'Table Merge Cost Breakdown']) {
+      'Merge CPU by Result Size', 'Merge Elapsed Time by Result Size', 'Merge Cost by Reason']) {
       const rows = await run(title);
       for (const row of rows) {
         expect(Number(row.total_merge_count), title).toBe(Number(total.merge_count));
@@ -334,6 +360,18 @@ describe('Merge cost attribution', { tags: ['analytics'] }, () => {
       for (const metric of ['cpu_share_pct', 'elapsed_share_pct', 'merge_share_pct']) {
         expect(rows.reduce((sum, row) => sum + Number(row[metric]), 0), `${title}: ${metric}`).toBeCloseTo(100, 1);
       }
+    }
+    // The breakdown adds the failed attempt (3s CPU, 4s) as its own outcome row.
+    const breakdown = await run('Table Merge Cost Breakdown');
+    const failed = breakdown.filter(row => row.outcome === 'failed');
+    expect(failed.map(row => row.size_bucket)).toEqual(['no part (failed)']);
+    expect(Number(failed[0].merge_count)).toBe(1);
+    for (const [metric, extra] of [['merge_count', 1], ['cpu_seconds', 3], ['elapsed_seconds', 4]] as const) {
+      expect(breakdown.reduce((sum, row) => sum + Number(row[metric]), 0), metric).toBe(Number(total[metric]) + extra);
+    }
+    expect(Number(breakdown[0].total_cpu_seconds)).toBe(Number(total.cpu_seconds) + 3);
+    for (const metric of ['cpu_share_pct', 'elapsed_share_pct', 'merge_share_pct']) {
+      expect(breakdown.reduce((sum, row) => sum + Number(row[metric]), 0), metric).toBeCloseTo(100, 1);
     }
   });
 
@@ -469,9 +507,9 @@ describe('Merge cost attribution', { tags: ['analytics'] }, () => {
     // CPU is microseconds → seconds; duration is milliseconds → seconds.
     // These exact totals also catch an extra /1000 or a default 1 DAY leaking through.
     const expectations = [
-      { interval: '15 MINUTE', count: 2, cpu: 210, elapsed: 300, failed: { failed_attempts: 1, failed_cpu_seconds: 20 }, mutations: { parts_rewritten: 1, cpu_seconds: 30, elapsed_seconds: 60 } },
-      { interval: '1 HOUR', count: 3, cpu: 390, elapsed: 540, failed: { failed_attempts: 1, failed_cpu_seconds: 20 }, mutations: { parts_rewritten: 1, cpu_seconds: 30, elapsed_seconds: 60 } },
-      { interval: '6 HOUR', count: 4, cpu: 840, elapsed: 1140, failed: { failed_attempts: 2, failed_cpu_seconds: 60 }, mutations: { parts_rewritten: 2, cpu_seconds: 75, elapsed_seconds: 150 } },
+      { interval: '15 MINUTE', count: 2, cpu: 210, elapsed: 300, failed: { failed_attempts: 1, failed_cpu_seconds: 20, failed_elapsed_seconds: 30 }, mutations: { parts_rewritten: 1, cpu_seconds: 30, elapsed_seconds: 60 } },
+      { interval: '1 HOUR', count: 3, cpu: 390, elapsed: 540, failed: { failed_attempts: 1, failed_cpu_seconds: 20, failed_elapsed_seconds: 30 }, mutations: { parts_rewritten: 1, cpu_seconds: 30, elapsed_seconds: 60 } },
+      { interval: '6 HOUR', count: 4, cpu: 840, elapsed: 1140, failed: { failed_attempts: 2, failed_cpu_seconds: 60, failed_elapsed_seconds: 60 }, mutations: { parts_rewritten: 2, cpu_seconds: 75, elapsed_seconds: 150 } },
     ];
     for (const expected of expectations) {
       for (const query of queries) {
@@ -481,8 +519,12 @@ describe('Merge cost attribution', { tags: ['analytics'] }, () => {
           : title === 'Top Failing Merges' ? expected.failed
           // One row per attempt, successful and failed.
           : title === 'Merge Attempts' ? { cpu_seconds: expected.cpu + expected.failed.failed_cpu_seconds }
-          : title === 'Merge CPU by Table' ? { merge_count: expected.count, cpu_seconds: expected.cpu, elapsed_seconds: expected.elapsed, ...expected.failed }
-          : { merge_count: expected.count, cpu_seconds: expected.cpu, elapsed_seconds: expected.elapsed };
+          // Outcome rows: successful merges plus failed attempts.
+          : title === 'Table Merge Cost Breakdown' ? { merge_count: expected.count + expected.failed.failed_attempts,
+            cpu_seconds: expected.cpu + expected.failed.failed_cpu_seconds, elapsed_seconds: expected.elapsed + expected.failed.failed_elapsed_seconds }
+          // Result size panels are successful-only; the others carry failed_* columns.
+          : title.includes('Result Size') ? { merge_count: expected.count, cpu_seconds: expected.cpu, elapsed_seconds: expected.elapsed }
+          : { merge_count: expected.count, cpu_seconds: expected.cpu, elapsed_seconds: expected.elapsed, ...expected.failed };
         for (const [metric, value] of Object.entries(totals)) {
           expect(rows.reduce((sum, row) => sum + Number(row[metric]), 0), `${expected.interval} / ${title} / ${metric}`).toBe(value);
         }
