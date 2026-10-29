@@ -4,7 +4,7 @@ import FeatureVideo from '@site/src/components/FeatureVideo';
 
 <FeatureVideo src="grafana-1920.mp4" />
 
-TraceHouse is also distributed as a Grafana app plugin. The plugin packages the same static frontend as the standalone build, including the overview, merge tracker, query monitor and database explorer, and Grafana serves it as an app page.
+TraceHouse is available as a Grafana app plugin. The plugin includes the same static frontend as the standalone build, including the overview, merge tracker, query monitor and database explorer. Grafana serves the frontend as an app page.
 
 ## How It Works
 
@@ -16,24 +16,24 @@ Standalone:   Browser ──HTTP──▶ ClickHouse
 Grafana:      Browser ──▶ Grafana backend ──▶ ClickHouse data source plugin ──▶ ClickHouse
 ```
 
-Both builds use the same React UI, the same SQL and services from `packages/core`, and the same attribution models. Only the adapter that executes queries differs.
+Both builds use the same React UI, SQL, services from `packages/core`, and attribution models. They use different adapters to execute queries.
 
 ## Linking From Existing Dashboards
 
 <FeatureVideo src="grafana-to-tracehouse-1920.mp4" />
 
-Existing ClickHouse dashboards can link into TraceHouse. A Grafana [data link](https://grafana.com/docs/grafana/latest/panels-visualizations/configure-data-links/) on a panel column that holds a query ID or a part name opens the query or merge detail view in TraceHouse.
+Grafana table panels can link to query and merge details in TraceHouse. Configure a Grafana [data link](https://grafana.com/docs/grafana/latest/panels-visualizations/configure-data-links/) on the query ID or part name field to open the corresponding detail view.
 
-The link target is the TraceHouse app plugin in the same Grafana instance, not a separate TraceHouse deployment. `/a/dmkskd-tracehouse-app/` is the Grafana route for the plugin, so the URL is relative (no host) and resolves against the Grafana instance that serves the dashboard. The page opens in the same Grafana session, with the same user and data source permissions, and TraceHouse queries ClickHouse through the data source given in `th_ds`.
+The data link targets the TraceHouse app plugin in the Grafana instance serving the dashboard. The URL path starts with the plugin route, `/a/dmkskd-tracehouse-app/`, and resolves against that Grafana instance's origin. The destination page uses the current Grafana session and its user and data source permissions. TraceHouse executes ClickHouse queries through the data source identified by the `th_ds` URL parameter.
 
 Both link types accept these parameters:
 
-- `th_ds` - UID of the ClickHouse data source. With `${datasource}`, TraceHouse uses the data source selected in the dashboard instead of the one last selected in TraceHouse. Replace `datasource` with the name of your dashboard's data source variable. If no ClickHouse data source has this UID, no data source is selected.
-- `th_cluster` (optional, requires `th_ds`) - name of the cluster to query, as listed in `system.clusters`. If the cluster does not exist, TraceHouse shows an error. If omitted, TraceHouse uses the cluster from the plugin settings, or the auto-detected one.
+- `th_ds` - UID of the ClickHouse data source. `${datasource}` references the dashboard's data source variable and overrides the previous data source selection in TraceHouse. Replace `datasource` with the name of your dashboard's data source variable. If no ClickHouse data source matches this UID, no data source is selected.
+- `th_cluster` (optional, requires `th_ds`) - name of the cluster to query, as listed in `system.clusters`. If the cluster does not exist, TraceHouse displays an error. If omitted, TraceHouse uses the cluster configured in the plugin settings or the automatically detected cluster.
 
 ### Linking a Query
 
-The demo stack ships an example: **ClickHouse - Query Analysis [TraceHouse linked]** (`infra/docker/grafana/dashboards/TraceHouse/query-analysis-linked.json`). It is the standard query analysis dashboard plus one field override on the `Query id` column of the "Query overview" table:
+The demo stack includes the **ClickHouse - Query Analysis [TraceHouse linked]** dashboard, defined in `infra/docker/grafana/dashboards/TraceHouse/query-analysis-linked.json`. This dashboard adds a data link to the standard query analysis dashboard through a field override for the `Query id` field in the "Query overview" table panel:
 
 ```json
 {
@@ -53,15 +53,15 @@ The demo stack ships an example: **ClickHouse - Query Analysis [TraceHouse linke
 }
 ```
 
-A click on a query ID opens the TraceHouse query monitor with the detail view of that query.
+Selecting the data link for a query ID opens the query detail view in the TraceHouse query monitor.
 
-- `qd_id` - the query ID. `${__value.raw}` is the raw value of the clicked cell.
+- `qd_id` - query ID used to retrieve the query details. `${__value.raw}` references the raw field value of the selected table cell.
 
 To add the link to another dashboard, edit the table panel, add a field override for the query ID column, and add a data link with the URL above.
 
 ### Linking a Merge
 
-A merge has no single ID. It is identified by the database, table and name of the part it produced, so the URL takes values from several columns of the same row. The panel query must read `system.part_log` and return at least `database`, `table` and `part_name`:
+TraceHouse identifies a merge by the database, table and output part name. The data link URL references these values from the selected table row. The panel query must read `system.part_log` and return `database`, `table` and `part_name`. The following query also returns the host, event timestamp and event type used by the optional URL parameters:
 
 ```sql
 SELECT
@@ -77,19 +77,19 @@ WHERE event_type = 'MergeParts'
 ORDER BY event_time DESC
 ```
 
-Add a data link on the `part_name` column. `${__data.fields.<column>}` is the value of another column in the clicked row:
+Configure a data link on the `part_name` field. `${__data.fields.<column>}` references the value of another field in the selected table row:
 
 ```
 /a/dmkskd-tracehouse-app/merges?md_db=${__data.fields.database}&md_tbl=${__data.fields.table}&md_part=${__value.raw}&md_host=${__data.fields.hostname}&md_time=${__data.fields.event_time}&md_type=${__data.fields.event_type}&th_ds=${datasource}
 ```
 
-A click on a part name opens the TraceHouse merge tracker with the detail view of that merge.
+Selecting the data link for a part name opens the merge detail view in the TraceHouse merge tracker.
 
 - `md_db`, `md_tbl`, `md_part` (required) - database, table and name of the part produced by the merge.
-- `md_host` (optional) - host name of the replica. On a replicated table each replica writes its own `part_log` row for the same part (`MergeParts` where the merge ran, `MergeParts` or `DownloadPart` on the other replicas), so this selects the row of one replica.
-- `md_time`, `md_type` (optional, used only with `md_host`) - `event_time` and `event_type` of the `part_log` row. With `md_host`, `md_time` and `md_type`, the lookup returns that exact row.
+- `md_host` (optional) - replica host name used to restrict the `system.part_log` lookup to that replica. For replicated tables, multiple replicas can record events for the same part, including `MergeParts` when a replica performs the merge and `DownloadPart` when a replica fetches the part.
+- `md_time`, `md_type` (optional, used only with `md_host`) - `event_time` and `event_type` of the `system.part_log` entry. Together with `md_host`, these parameters identify the event to retrieve.
 
-Without `md_host`, TraceHouse returns the most recent `part_log` row for the part with `event_type` in `MergeParts`, `MutatePart`, `MovePart` or `DownloadPart`, on any replica. On a single node this is the merge itself; on a replicated cluster, set at least `md_host`.
+Without `md_host`, TraceHouse returns the most recent `system.part_log` entry for the part across all replicas, filtered to the event types `MergeParts`, `MutatePart`, `MovePart` and `DownloadPart`. Set `md_host` to restrict the lookup to the replica that performed the merge.
 
 ## Grafana Panel Export
 
@@ -97,21 +97,21 @@ Without `md_host`, TraceHouse returns the most recent `part_log` row for the par
 
 Query Explorer exports the current query and visualization as Grafana panel JSON. The panel query, chart settings, table styling, drill-downs, links and panel metadata are generated from the SQL and its [Analytics Query Language](analytics-query-language) directives.
 
-A panel can therefore be written and tested as SQL with directives in TraceHouse, then imported into Grafana, instead of being configured field by field in the Grafana panel editor.
+Define and test the SQL query and visualization directives in TraceHouse, then import the generated panel JSON into Grafana.
 
 ## Differences from Standalone
 
 - **No connection settings** - Users do not enter host, port or credentials. They select one of the ClickHouse data sources configured in Grafana.
 - **Grafana permissions** - Access control, team permissions and credentials are managed by Grafana. A user can use a data source in TraceHouse if Grafana grants them access to it.
 - **No CORS proxy** - The browser sends queries to the Grafana backend, not to ClickHouse, so ClickHouse does not need CORS headers.
-- **No separate deployment** - Grafana serves the frontend. There is no static site or other component to host.
+- **No separate deployment** - Grafana serves the plugin's static frontend.
 
 ## Cluster Selection
 
-The data source is selected from a dropdown in the TraceHouse header, which lists the ClickHouse data sources configured in Grafana. The selection can be changed at any time.
+The data source dropdown in the TraceHouse header lists the ClickHouse data sources configured in Grafana.
 
-After a data source is selected, TraceHouse reads `system.clusters` to find the available clusters and their shard and replica counts. If there is more than one cluster, a second dropdown next to the data source selects the cluster to query. The cluster choice is stored per data source in the browser's localStorage.
+After a data source is selected, TraceHouse queries `system.clusters` for the available clusters and their shard and replica counts. If multiple clusters are available, a cluster dropdown appears next to the data source dropdown. TraceHouse stores the cluster selection for each data source in the browser's `localStorage`.
 
 With a cluster selected, queries that read system tables from all nodes use `clusterAllReplicas('cluster_name', db.table)`. On a single node, TraceHouse queries the tables directly.
 
-A Grafana admin can set a default cluster name in the plugin settings (Configuration > Plugins > TraceHouse). When set, it replaces auto-detection.
+A Grafana administrator can configure a default cluster name in the plugin settings (Configuration > Plugins > TraceHouse). The configured name takes precedence over automatic cluster detection.
