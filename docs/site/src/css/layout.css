@@ -296,3 +296,46 @@
     grid-template-columns: repeat(2, 1fr);
   }
 }
+
+/* --- Navbar Contact popover (src/components/ContactNavbarItem.tsx) --- */
+.contact-navbar-item {
+  position: relative;
+}
+
+.contact-navbar-button {
+  background: none;
+  border: none;
+  cursor: pointer;
+  font: inherit;
+  font-weight: 500;
+}
+
+.contact-popover {
+  position: absolute;
+  top: calc(100% + 6px);
+  right: 0;
+  white-space: nowrap;
+}
+
+.contact-popover-title {
+  padding: 0.6rem 1rem 0.35rem;
+  font-size: 0.85rem;
+  color: var(--ifm-color-emphasis-700);
+}
+
+.contact-option-label {
+  display: inline-block;
+  min-width: 4.5rem;
+  font-size: 0.8rem;
+  color: var(--ifm-color-emphasis-600);
+}
+
+.contact-email {
+  font-family: var(--ifm-font-family-monospace);
+  font-size: 0.9rem;
+  user-select: all;
+}
+
+.contact-mobile-options {
+  padding-left: 0.75rem;
+}

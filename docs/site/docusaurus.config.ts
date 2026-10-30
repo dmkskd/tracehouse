@@ -110,6 +110,11 @@ const config: Config = {
           value: '<a id="navbar-demo-link" class="navbar-demo-link navbar__item navbar__link" target="_blank" rel="noopener noreferrer">Live Demo<span id="navbar-demo-dot" class="demo-status-dot" hidden></span></a>',
         },
         {
+          // src/components/ContactNavbarItem.tsx, registered in src/theme/NavbarItem/ComponentTypes.tsx
+          type: 'custom-contact',
+          position: 'right',
+        },
+        {
           href: 'https://github.com/dmkskd/tracehouse',
           position: 'right',
           className: 'header-github-link',

@@ -5,8 +5,10 @@ import Link from '@docusaurus/Link';
 import Layout from '@theme/Layout';
 
 import useDocusaurusContext from '@docusaurus/useDocusaurusContext';
+import useBrokenLinks from '@docusaurus/useBrokenLinks';
 import InteractiveFeatures from '../components/InteractiveFeatures';
 import FAQ from '../components/FAQ';
+import { contactEmail } from '../components/contactEmail';
 
 function DemoButton({ demoUrl }: { demoUrl: string }): ReactNode {
   const [open, setOpen] = useState(false);
@@ -198,18 +200,19 @@ function QuickStartSection(): ReactNode {
 }
 
 function ContactSection(): ReactNode {
+  // Register the anchor so the build's broken-anchor check knows it exists
+  useBrokenLinks().collectAnchor('contact');
   const [revealed, setRevealed] = useState(false);
+
   const handleReveal = useCallback((e: React.MouseEvent) => {
     e.preventDefault();
     setRevealed(true);
   }, []);
 
-  const email = revealed
-    ? ['ddmmkk', 'proton', 'me'].join('\u0040').replace('proton\u0040', 'proton.')
-    : null;
+  const email = revealed ? contactEmail() : null;
 
   return (
-    <section style={{ textAlign: 'center', padding: '2rem 0 3rem' }}>
+    <section id="contact" style={{ textAlign: 'center', padding: '2rem 0 3rem' }}>
       <p style={{ color: 'var(--ifm-color-emphasis-600)', fontSize: '0.95rem' }}>
         Questions or feedback?{' '}
         {email ? (
