@@ -36,7 +36,6 @@ import type { PartDetailInfo, QuerySeries } from '@tracehouse/core';
 import type { QueryModalTab } from '../query/modal/QueryDetailModal';
 import { TimeRangePicker } from '../common/TimeRangePicker';
 import {
-  formatCell,
   buildChartData, buildGroupedChartData, buildGroupedStackedChartData, isGroupedChartType, sortRows,
   ChartRenderer, isTimeSeriesChartType, OverlayChart, chartColorByIndex, compactFormatter,
   type ChartDataPoint, type GroupedChartData, type GroupedStackedChartData, type DrillDownEvent, type CorrelationEntry,
@@ -82,6 +81,7 @@ import {
   type DashboardPanelSection,
 } from './dashboardFocusStage';
 import { useMonitoringCapabilitiesStore } from '../../stores/monitoringCapabilitiesStore';
+import { useUserPreferenceStore } from '../../stores/userPreferenceStore';
 import { copyToClipboard } from '@tracehouse/ui-shared';
 import { css } from '@emotion/css';
 import { useDashboardScrollFocus } from './useDashboardScrollFocus';
@@ -566,7 +566,9 @@ const DashboardPanelCard: React.FC<{
   onOpenQuery?: (query: Query, dashboardId: string) => void;
   focusStage?: FocusStageContext;
   isFocusStageActive?: boolean;
-}> = ({ panel, queries, timeRangeOverride, dashboardId, isFocused, onToggleFocus, isFullscreen, onToggleFullscreen, isHidden, hoveredTimestamp, onTimestampHover, onTimeSeriesData, correlationValues, isHoveredPanel, filterParams, onTableSelect, panelIndex, onOpenQueryDetail, onOpenQuery, focusStage, isFocusStageActive = false }) => {
+  /** Read-only rendering for the dashboard list hover preview: no panel controls, fills its grid cell. */
+  preview?: boolean;
+}> = ({ panel, queries, timeRangeOverride, dashboardId, isFocused, onToggleFocus, isFullscreen, onToggleFullscreen, isHidden, hoveredTimestamp, onTimestampHover, onTimeSeriesData, correlationValues, isHoveredPanel, filterParams, onTableSelect, panelIndex, onOpenQueryDetail, onOpenQuery, focusStage, isFocusStageActive = false, preview = false }) => {
   const services = useClickHouseServices();
   const xraySelection = useQueryXRaySelection();
   const xrayMeta = useMemo(() => selectQueryXRaySource(xraySelection), [xraySelection]);
@@ -674,7 +676,7 @@ const DashboardPanelCard: React.FC<{
       sql = resolveDrillParams(sql, { ...filterParams, ...(overrideParams ?? drillParams) });
       const rows = await services.interactiveQueryService.run<Record<string, unknown>>(
         sql,
-        sourceTag(TAB_ANALYTICS, 'dashboardPanel'),
+        sourceTag(TAB_ANALYTICS, preview ? 'dashboardPreview' : 'dashboardPanel'),
       );
       if (runId !== runIdRef.current) return;
       const columns = rows.length > 0 ? Object.keys(rows[0]) : [];
@@ -694,6 +696,7 @@ const DashboardPanelCard: React.FC<{
     capabilityServerVersion,
     capabilityProbeStatus,
     xraySelection,
+    preview,
   ]);
 
   useEffect(() => {
@@ -914,6 +917,7 @@ const DashboardPanelCard: React.FC<{
         overflowX: 'hidden', overflowY: isFocused ? 'auto' : 'hidden',
       } : {
         ...panelStyle,
+        ...(preview ? { height: '100%', overflow: 'hidden' } : {}),
         display: isHidden ? 'none' : 'flex',
         borderColor: isFocusStageActive ? 'rgba(99,102,241,0.62)' : 'var(--border-primary)',
         boxShadow: isFocusStageActive ? '0 0 0 2px rgba(99,102,241,0.10)' : undefined,
@@ -950,6 +954,7 @@ const DashboardPanelCard: React.FC<{
         display: 'flex', flexDirection: 'column', overflowX: 'hidden', overflowY: isFocused ? 'auto' : 'hidden',
       } : {
         ...panelStyle,
+        ...(preview ? { height: '100%', overflow: 'hidden' } : {}),
         display: isHidden ? 'none' : 'flex',
         borderColor: isFocusStageActive ? 'rgba(99,102,241,0.62)' : 'var(--border-primary)',
         boxShadow: isFocusStageActive ? '0 0 0 2px rgba(99,102,241,0.10)' : undefined,
@@ -1004,7 +1009,7 @@ const DashboardPanelCard: React.FC<{
             <div style={{ fontSize: expanded ? 13 : 10, color: 'var(--text-muted)', marginTop: 2, lineHeight: 1.3 }}>{preset.description}</div>
           )}
         </div>
-        <div style={{ display: 'flex', alignItems: 'center', gap: 2, flexShrink: 0 }}>
+        {!preview && <div style={{ display: 'flex', alignItems: 'center', gap: 2, flexShrink: 0 }}>
           {result && hasChart && (
             <div style={{ display: 'flex', borderRadius: 4, overflow: 'hidden', border: '1px solid var(--border-primary)' }}>
               <button onClick={() => setView('chart')}
@@ -1040,7 +1045,7 @@ const DashboardPanelCard: React.FC<{
             onOpenEditor={openInEditor}
             onRefresh={() => { void run(); }}
           />
-        </div>
+        </div>}
       </div>
       <div style={{
         padding: expanded ? '0 8px 8px' : '0 14px 10px',
@@ -1098,7 +1103,7 @@ const DashboardPanelCard: React.FC<{
                 marginBottom: expanded ? 0 : 6,
                 flex: isFocused ? '0 0 auto' : 1,
                 height: isFocused ? FOCUS_STAGE_CHART_HEIGHT : undefined,
-                minHeight: isFocused ? 280 : expanded ? 0 : (chartStyle === '3d' ? 250 : 180),
+                minHeight: isFocused ? 280 : expanded || preview ? 0 : (chartStyle === '3d' ? 250 : 180),
               }}>
                 {effectiveChartStyle === '3d' ? (
                   <Chart3DCanvas key={isFullscreen ? 'fullscreen' : isFocused ? 'focus' : 'normal'} data={chartData} type={chartType}
@@ -1857,199 +1862,43 @@ const ImportModal: React.FC<{ dashboards: Dashboard[]; onImport: (dashboard: Omi
   );
 };
 
-// ─── Mini panel - lightweight version for previews (no drill-down, no toolbar) ───
-
-const MiniPanelCard: React.FC<{ panel: DashboardPanel; queries: Query[]; timeRangeOverride: string | null }> = ({ panel, queries, timeRangeOverride }) => {
-  const services = useClickHouseServices();
-  const xraySelection = useQueryXRaySelection();
-  const requiredCapability = useMonitoringCapabilitiesStore(state => (
-    panel.requiredCapability
-      ? state.capabilities?.capabilities.find(
-          capability => capability.id === panel.requiredCapability,
-        )
-      : undefined
-  ));
-  const capabilityServerVersion = useMonitoringCapabilitiesStore(
-    state => state.capabilities?.serverVersion,
-  );
-  const capabilityProbeStatus = useMonitoringCapabilitiesStore(state => state.probeStatus);
-  const capabilityUnavailable = requiredCapability?.available === false;
-  const preset = resolvePanel(panel, queries);
-  const versionCompatibility = useMemo(
-    () => evaluateQueryVersionCompatibility(
-      preset?.directives.requires?.clickhouseMinVersion,
-      capabilityServerVersion,
-      capabilityProbeStatus === 'idle' || capabilityProbeStatus === 'probing',
-    ),
-    [preset, capabilityServerVersion, capabilityProbeStatus],
-  );
-  const versionUnavailable = versionCompatibility.status !== 'compatible';
-  const [result, setResult] = useState<PanelResult | null>(null);
-  const [loading, setLoading] = useState(false);
-
-  useEffect(() => {
-    if (!services || !preset || capabilityUnavailable || versionUnavailable) return;
-    let cancelled = false;
-    setLoading(true);
-    let sql: string;
-    try {
-      sql = resolveTimeRange(resolveQueryXRaySQL(preset.sql, xraySelection), preset.directives.meta?.interval, timeRangeOverride);
-    } catch {
-      setResult(null);
-      setLoading(false);
-      return;
-    }
-    services.interactiveQueryService.run<Record<string, unknown>>(
-      sql,
-      sourceTag(TAB_ANALYTICS, 'dashboardMiniPanel'),
-    )
-      .then(rows => {
-        if (cancelled) return;
-        const columns = rows.length > 0 ? Object.keys(rows[0]) : [];
-        setResult({ columns, rows });
-      })
-      .catch(() => { if (!cancelled) setResult(null); })
-      .finally(() => { if (!cancelled) setLoading(false); });
-    return () => { cancelled = true; };
-  }, [services, preset, timeRangeOverride, capabilityUnavailable, versionUnavailable, xraySelection]);
-
-  const chartDirective = useMemo(() => preset ? parseChartDirective(preset.sql) : null, [preset]);
-  const chartData = useMemo((): ChartDataPoint[] => {
-    if (!result || result.rows.length === 0) return [];
-    const isTimeSeries = !!chartDirective?.type && isTimeSeriesChartType(chartDirective.type);
-    return buildChartData(result.rows, result.columns, chartDirective?.groupByColumn, chartDirective?.valueColumn, isTimeSeries ? undefined : 20, chartDirective?.descriptionColumn);
-  }, [result, chartDirective]);
-
-  const groupedChartData = useMemo((): GroupedChartData[] => {
-    if (!result || !chartDirective?.groupByColumn || !chartDirective?.valueColumn) return [];
-    const isTimeSeries = !!chartDirective?.type && isTimeSeriesChartType(chartDirective.type);
-    return buildGroupedChartData(result.rows, chartDirective.groupByColumn, chartDirective.valueColumn, chartDirective.seriesColumn, chartDirective.valueColumns, isTimeSeries ? undefined : 20);
-  }, [result, chartDirective]);
-
-  const groupedStackedData = useMemo((): GroupedStackedChartData | null => {
-    if (chartDirective?.type !== 'grouped_stacked_bar') return null;
-    if (!result || !chartDirective.groupByColumn || !chartDirective.clusterColumn || !chartDirective.seriesColumn || !chartDirective.valueColumn) return null;
-    return buildGroupedStackedChartData(result.rows, chartDirective.groupByColumn, chartDirective.clusterColumn, chartDirective.seriesColumn, chartDirective.valueColumn, 12);
-  }, [result, chartDirective]);
-
-  const chartType: ChartType = chartDirective?.type || preset?.directives.chart?.type || 'bar';
-  const chartStyle = chartDirective?.visualization || preset?.directives.chart?.style || '2d';
-  const effectiveChartStyle = chartType === 'radar' ? '2d' : chartStyle;
-  const miniChartColor = chartDirective?.color;
-  const isGroupedChart = isGroupedChartType(chartType);
-  const hasChart = chartType === 'radar'
-    ? !!result && result.rows.length > 0 && (!!chartDirective?.valuesColumn || !!chartDirective?.axes && Object.keys(chartDirective.axes).length > 0)
-    : chartType === 'grouped_stacked_bar' ? !!groupedStackedData && groupedStackedData.rows.length > 0
-    : isGroupedChart ? groupedChartData.length > 0 : chartData.length > 0;
-
-  if (!preset) return null;
-
-  return (
-    <div style={{
-      background: 'var(--bg-card, var(--bg-secondary))',
-      border: '1px solid var(--border-secondary)',
-      borderRadius: 6,
-      overflow: 'hidden',
-      display: 'flex',
-      flexDirection: 'column',
-      height: 140,
-    }}>
-      <div style={{ padding: '5px 8px 2px', fontSize: 10, fontWeight: 600, color: 'var(--text-secondary)', flexShrink: 0, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
-        {preset.name}
-      </div>
-      <div style={{ flex: 1, minHeight: 0, padding: '0 4px 4px', overflow: 'hidden' }}>
-        {capabilityUnavailable && (
-          <div style={{
-            display: 'flex',
-            alignItems: 'center',
-            justifyContent: 'center',
-            height: '100%',
-            color: 'var(--text-muted)',
-            fontSize: 9,
-            textAlign: 'center',
-          }}>
-            Source unavailable
-          </div>
-        )}
-        {!capabilityUnavailable && versionCompatibility.status !== 'compatible' && (
-          <div
-            role="status"
-            style={{
-              display: 'flex',
-              alignItems: 'center',
-              justifyContent: 'center',
-              height: '100%',
-              padding: '0 8px',
-              color: versionCompatibility.status === 'checking' ? 'var(--text-muted)' : '#d29922',
-              fontSize: 9,
-              textAlign: 'center',
-            }}
-          >
-            {versionCompatibility.message}
-          </div>
-        )}
-        {!capabilityUnavailable && !versionUnavailable && loading && <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', height: '100%', color: 'var(--text-muted)', fontSize: 10 }}>…</div>}
-        {!capabilityUnavailable && !versionUnavailable && !loading && hasChart && (
-          <>
-            {parseSummaryDirectives(preset.sql) && <div style={{ fontSize: 9, color: 'var(--text-muted)' }}>Summaries are not shown in linked mini panels.</div>}
-            {effectiveChartStyle === '3d' ? (
-              <Chart3DCanvas data={chartData} type={chartType} orientation={chartDirective?.orientation} groupedData={isGroupedChart ? groupedChartData : undefined} unit={chartDirective?.unit} />
-            ) : (
-              <ChartRenderer chartType={chartType} data={chartData} groupedData={groupedChartData} groupedStackedData={groupedStackedData ?? undefined}
-                rawRows={result?.rows ?? []} radarConfig={chartDirective ?? undefined}
-                orientation={chartDirective?.orientation} fullHeight color={miniChartColor}
-                valueColumns={chartDirective?.valueColumns} />
-            )}
-          </>
-        )}
-        {!capabilityUnavailable && !versionUnavailable && !loading && !hasChart && result && (
-          <div style={{ fontSize: 9, color: 'var(--text-muted)', padding: '4px 0', lineHeight: 1.6 }}>
-            {result.rows.slice(0, 5).map((r, i) => (
-              <div key={i} style={{ display: 'flex', gap: 4, overflow: 'hidden' }}>
-                {result.columns.map(c => (
-                  <span key={c} style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', flex: 1 }}>
-                    {formatCell(r[c], c)}
-                  </span>
-                ))}
-              </div>
-            ))}
-          </div>
-        )}
-      </div>
-    </div>
-  );
-};
-
 // ─── Hover preview popup ───
+
+const noop = () => {};
 
 const DashboardPreviewPopup: React.FC<{
   dashboard: Dashboard;
-  mouseX: number;
-  mouseY: number;
-}> = ({ dashboard, mouseX, mouseY }) => {
+  anchor: DOMRect;
+  timeRangeOverride: string | null;
+}> = ({ dashboard, anchor, timeRangeOverride }) => {
   const queries = useMemo(() => getDashboardQueries(dashboard), [dashboard]);
   const POPUP_W = 720;
-  const POPUP_H = 530;
-  const CURSOR_GAP = 16; // gap between cursor and popup edge
+  const POPUP_H = 560;
+  const CARD_GAP = 12; // gap between card and popup edge
   const SCREEN_PAD = 10; // min distance from viewport edges
+  const maxLeft = window.innerWidth - SCREEN_PAD - POPUP_W;
+  const maxTop = window.innerHeight - SCREEN_PAD - POPUP_H;
 
-  // Prefer right of cursor; flip to left if it would overflow
-  let left = mouseX + CURSOR_GAP;
-  if (left + POPUP_W > window.innerWidth - SCREEN_PAD) {
-    left = mouseX - POPUP_W - CURSOR_GAP;
-  }
-  // Prefer below cursor; flip above if it would overflow
-  let top = mouseY + CURSOR_GAP;
-  if (top + POPUP_H > window.innerHeight - SCREEN_PAD) {
-    top = mouseY - POPUP_H - CURSOR_GAP;
+  // Fixed beside the hovered card (right, then left); below/above it when neither side fits
+  let left: number;
+  let top: number;
+  if (anchor.right + CARD_GAP <= maxLeft) {
+    left = anchor.right + CARD_GAP;
+    top = anchor.top;
+  } else if (anchor.left - CARD_GAP - POPUP_W >= SCREEN_PAD) {
+    left = anchor.left - CARD_GAP - POPUP_W;
+    top = anchor.top;
+  } else {
+    left = anchor.left;
+    top = anchor.bottom + CARD_GAP <= maxTop ? anchor.bottom + CARD_GAP : anchor.top - CARD_GAP - POPUP_H;
   }
   // Hard-clamp to viewport
-  left = Math.max(SCREEN_PAD, left);
-  top = Math.max(SCREEN_PAD, top);
+  left = Math.max(SCREEN_PAD, Math.min(left, maxLeft));
+  top = Math.max(SCREEN_PAD, Math.min(top, maxTop));
 
   const cols = Math.min(dashboard.columns, 2); // at most 2 cols in preview
-  const PANEL_H = 160;
-  const MAX_PANELS = cols * 3;
+  const PANEL_H = 220;
+  const MAX_PANELS = cols * 2;
 
   return (
     <div style={{
@@ -2107,7 +1956,7 @@ const DashboardPreviewPopup: React.FC<{
         padding: 12,
         overflow: 'hidden',
         display: 'grid',
-        gridTemplateColumns: `repeat(${cols}, 1fr)`,
+        gridTemplateColumns: `repeat(${cols}, minmax(0, 1fr))`,
         gridAutoRows: `${PANEL_H}px`,
         gap: 10,
         alignContent: 'start',
@@ -2116,9 +1965,21 @@ const DashboardPreviewPopup: React.FC<{
           <div
             key={`${panel.queryName}-${i}`}
             className="preview-panel"
-            style={{ animationDelay: `${i * 0.12}s` }}
+            style={{ animationDelay: `${i * 0.12}s`, minHeight: 0, minWidth: 0 }}
           >
-            <MiniPanelCard panel={panel} queries={queries} timeRangeOverride="1 DAY" />
+            <DashboardPanelCard
+              panel={panel}
+              queries={queries}
+              timeRangeOverride={timeRangeOverride}
+              dashboardId={dashboard.id}
+              isFocused={false}
+              onToggleFocus={noop}
+              isFullscreen={false}
+              onToggleFullscreen={noop}
+              isHidden={false}
+              panelIndex={i}
+              preview
+            />
           </div>
         ))}
       </div>
@@ -2134,36 +1995,34 @@ const DashboardPreviewPopup: React.FC<{
 
 const DashboardListView: React.FC<{
   dashboards: Dashboard[];
+  timeRangeOverride: string | null;
   onOpen: (id: string) => void;
   onImport: () => void;
   onNew: () => void;
-}> = ({ dashboards, onOpen, onImport, onNew }) => {
-  const previewEnabled = buildConfig.dashboardPreview;
+}> = ({ dashboards, timeRangeOverride, onOpen, onImport, onNew }) => {
+  const previewEnabled = useUserPreferenceStore(s => s.dashboardPreviewEnabled);
+  const setPreviewEnabled = useUserPreferenceStore(s => s.setDashboardPreviewEnabled);
   const [search, setSearch] = useState('');
   const [hoveredId, setHoveredId] = useState<string | null>(null);
-  const [mousePos, setMousePos] = useState<{ x: number; y: number } | null>(null);
+  const [anchorRect, setAnchorRect] = useState<DOMRect | null>(null);
   const containerRef = useRef<HTMLDivElement>(null);
   const hoverTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   const handleMouseEnter = (id: string, e: React.MouseEvent<HTMLDivElement>) => {
     (e.currentTarget as HTMLDivElement).style.borderColor = 'var(--accent-primary)';
     if (!previewEnabled) return;
-    // start 1-second delay before showing preview
+    // start 600ms delay before showing preview
     if (hoverTimer.current) clearTimeout(hoverTimer.current);
-    const x = e.clientX; const y = e.clientY;
+    const card = e.currentTarget as HTMLDivElement;
     hoverTimer.current = setTimeout(() => {
       setHoveredId(id);
-      setMousePos({ x, y });
-    }, 1000);
-  };
-  const handleMouseMove = (e: React.MouseEvent<HTMLDivElement>) => {
-    if (!previewEnabled) return;
-    setMousePos({ x: e.clientX, y: e.clientY });
+      setAnchorRect(card.getBoundingClientRect());
+    }, 600);
   };
   const handleMouseLeave = (e: React.MouseEvent<HTMLDivElement>) => {
     if (hoverTimer.current) { clearTimeout(hoverTimer.current); hoverTimer.current = null; }
     setHoveredId(null);
-    setMousePos(null);
+    setAnchorRect(null);
     (e.currentTarget as HTMLDivElement).style.borderColor = 'var(--border-primary)';
   };
 
@@ -2188,7 +2047,6 @@ const DashboardListView: React.FC<{
       key={d.id}
       onClick={() => onOpen(d.id)}
       onMouseEnter={e => handleMouseEnter(d.id, e)}
-      onMouseMove={handleMouseMove}
       onMouseLeave={handleMouseLeave}
       style={{ ...panelStyle, cursor: 'pointer', padding: 16, transition: 'border-color 0.15s', position: 'relative' }}
     >
@@ -2240,7 +2098,7 @@ const DashboardListView: React.FC<{
             onChange={event => {
               setSearch(event.target.value);
               setHoveredId(null);
-              setMousePos(null);
+              setAnchorRect(null);
             }}
             onKeyDown={event => {
               if (event.key === 'Escape' && search) {
@@ -2270,6 +2128,18 @@ const DashboardListView: React.FC<{
             </button>
           )}
         </div>
+        <label
+          title="Show a live preview of a dashboard after hovering its card for 600ms"
+          style={{ display: 'flex', alignItems: 'center', gap: 6, flexShrink: 0, cursor: 'pointer', color: 'var(--text-tertiary)', fontSize: 11, whiteSpace: 'nowrap' }}
+        >
+          <input
+            type="checkbox"
+            checked={previewEnabled}
+            onChange={e => setPreviewEnabled(e.target.checked)}
+            style={{ margin: 0, accentColor: 'var(--accent-primary)' }}
+          />
+          Preview on hover
+        </label>
         <span style={{ minWidth: 96, color: 'var(--text-tertiary)', fontSize: 11, textAlign: 'right', whiteSpace: 'nowrap' }}>
           {search
             ? `${filteredDashboards.length} of ${dashboards.length}`
@@ -2305,12 +2175,12 @@ const DashboardListView: React.FC<{
         </div>
       )}
 
-      {/* Hover preview - uses fixed positioning, follows cursor */}
-      {hoveredDashboard && mousePos && (
+      {/* Hover preview - fixed position, anchored to the hovered card */}
+      {hoveredDashboard && anchorRect && (
         <DashboardPreviewPopup
           dashboard={hoveredDashboard}
-          mouseX={mousePos.x}
-          mouseY={mousePos.y}
+          anchor={anchorRect}
+          timeRangeOverride={timeRangeOverride}
         />
       )}
     </div>
@@ -2863,6 +2733,7 @@ export const DashboardViewer: React.FC<{ initialDashboardId?: string; onOpenQuer
     return (
       <DashboardListView
         dashboards={dashboards}
+        timeRangeOverride={timeRangeOverride}
         onOpen={id => setView({ mode: 'view', dashboardId: id })}
         onImport={() => setView({ mode: 'import' })}
         onNew={() => setView({ mode: 'edit' })}

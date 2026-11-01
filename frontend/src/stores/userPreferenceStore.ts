@@ -7,6 +7,7 @@
 import { create } from 'zustand';
 import { persist } from 'zustand/middleware';
 import type { QueryXRaySourcePreference } from '@tracehouse/core';
+import { buildConfig } from '../buildConfig';
 
 export type ViewMode = '3d' | '2d';
 
@@ -31,6 +32,9 @@ interface UserPreferenceState {
   /** Time Travel navigator rollup shape. */
   timeTravelNavigatorShape: NavigatorShapeMode;
   setTimeTravelNavigatorShape: (shape: NavigatorShapeMode) => void;
+  /** Show a live preview of a dashboard when hovering its card in the Analytics list. Defaults to the TH_DASHBOARD_PREVIEW build flag. */
+  dashboardPreviewEnabled: boolean;
+  setDashboardPreviewEnabled: (enabled: boolean) => void;
   /**
    * Which table the Query X-Ray reads. 'auto' lets selectQueryXRaySource() decide
    * from what the connection has and whether the query is still running.
@@ -55,6 +59,8 @@ export const useUserPreferenceStore = create<UserPreferenceState>()(
       setTimeTravelEventsVisible: (visible: boolean) => set({ timeTravelEventsVisible: visible }),
       timeTravelNavigatorShape: 'peaks',
       setTimeTravelNavigatorShape: (shape: NavigatorShapeMode) => set({ timeTravelNavigatorShape: shape }),
+      dashboardPreviewEnabled: buildConfig.dashboardPreview,
+      setDashboardPreviewEnabled: (enabled: boolean) => set({ dashboardPreviewEnabled: enabled }),
       queryXraySource: {},
       setQueryXraySource: (connectionId, source) => set(state => {
         const queryXraySource = { ...state.queryXraySource };

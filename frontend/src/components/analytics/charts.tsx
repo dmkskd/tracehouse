@@ -310,7 +310,7 @@ export function formatXTick(v: string): string {
   return v.length > 12 ? v.slice(0, 12) + '…' : v;
 }
 
-// ─── Data builders (shared by QueryExplorer, DashboardViewer, MiniPanelCard) ───
+// ─── Data builders (shared by QueryExplorer, DashboardViewer) ───
 
 /**
  * Auto-detect label/value columns and build ChartDataPoint[] from query results.
