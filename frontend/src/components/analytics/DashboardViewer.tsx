@@ -2293,7 +2293,13 @@ function dashboardFilters(value: string | null): Record<string, string> {
   }
 }
 
-export const DashboardViewer: React.FC<{ initialDashboardId?: string; onOpenQueryDetail?: (query: QuerySeries, opts?: { tab?: QueryModalTab }) => void; onOpenQuery?: (query: Query, dashboardId: string) => void }> = ({ initialDashboardId, onOpenQueryDetail, onOpenQuery }) => {
+export const DashboardViewer: React.FC<{
+  initialDashboardId?: string;
+  onOpenQueryDetail?: (query: QuerySeries, opts?: { tab?: QueryModalTab }) => void;
+  onOpenQuery?: (query: Query, dashboardId: string) => void;
+  /** Bumped by the host (e.g. re-clicking the active Dashboards tab) to return an open dashboard to the list. */
+  listRequestKey?: number;
+}> = ({ initialDashboardId, onOpenQueryDetail, onOpenQuery, listRequestKey }) => {
   const { state: sharedState, update: updateSharedState } = useUrlState(ANALYTICS_DASHBOARD_SHARE_SCHEMA);
   const dashboardIdFromUrl = sharedState.dashboard ?? initialDashboardId;
   const [dashboards, setDashboards] = useState<Dashboard[]>(() => loadDashboards());
@@ -2388,6 +2394,16 @@ export const DashboardViewer: React.FC<{ initialDashboardId?: string; onOpenQuer
       setView(current => current.mode === 'view' ? { mode: 'list' } : current);
     }
   }, [dashboardIdFromUrl, dashboards]);
+
+  // Host asked for the list (same as the back button). Only react to bumps after mount:
+  // the viewer remounts on tab switches and must not drop a dashboard restored from the URL.
+  // Leave the editor/import flows alone.
+  const mountedListRequestKey = useRef(listRequestKey);
+  useEffect(() => {
+    if (listRequestKey === mountedListRequestKey.current) return;
+    mountedListRequestKey.current = listRequestKey;
+    setView(current => current.mode === 'view' ? { mode: 'list' } : current);
+  }, [listRequestKey]);
   const [timeRangeOverride, setTimeRangeOverride] = useState<string | null>(() => sharedState.dashboard_time ?? '1 HOUR');
 
   // ─── Global dashboard filters ───
@@ -2791,11 +2807,12 @@ export const DashboardViewer: React.FC<{ initialDashboardId?: string; onOpenQuer
         <div style={{ display: 'flex', alignItems: 'center', gap: 12, minWidth: 0, flex: 1 }}>
           <button
             onClick={() => setView({ mode: 'list' })}
-            style={{ ...iconBtnStyle, fontSize: 16 }}
+            className="tab dashboard-header-action dashboard-back-button"
+            style={{ ...dashboardHeaderButtonStyle, width: 32, height: 32, padding: 0, fontSize: 15, flexShrink: 0 }}
             aria-label="Back to dashboard list"
             title="Back to dashboard list (Esc)"
           >
-            ←
+            <span aria-hidden="true">←</span>
           </button>
           <div style={{ minWidth: 0 }}>
             <div style={{ fontSize: 14, fontWeight: 600, color: 'var(--text-primary)', display: 'flex', alignItems: 'center', gap: 8 }}>

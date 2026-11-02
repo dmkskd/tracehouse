@@ -70,6 +70,8 @@ export const Analytics: React.FC = () => {
     'dashboards'
   );
   const setActiveTab = useCallback((tab: AnalyticsTab) => updateUrl({ tab, fromDashboard: undefined }, { push: true }), [updateUrl]);
+  // Re-clicking the active Dashboards tab returns an open dashboard to the list.
+  const [dashboardListRequest, setDashboardListRequest] = useState(0);
 
   // Preserve links created before Events became a top-level page.
   useEffect(() => {
@@ -503,7 +505,12 @@ export const Analytics: React.FC = () => {
           </div>
           {/* Tab bar */}
           <div style={{ display: 'flex', gap: 4, borderBottom: '1px solid var(--border-primary)', marginLeft: -4 }}>
-            <button onClick={() => setActiveTab('dashboards')} style={tabStyle(activeTab === 'dashboards')}>Dashboards</button>
+            <button
+              onClick={() => activeTab === 'dashboards' ? setDashboardListRequest(n => n + 1) : setActiveTab('dashboards')}
+              style={tabStyle(activeTab === 'dashboards')}
+            >
+              Dashboards
+            </button>
             <button onClick={() => setActiveTab('misc')} style={tabStyle(activeTab === 'misc')}>Queries</button>
             {experimentalEnabled && (
               <button onClick={() => setActiveTab('surfaces')} style={{ ...tabStyle(activeTab === 'surfaces'), position: 'relative' }}>
@@ -739,7 +746,7 @@ export const Analytics: React.FC = () => {
       {/* ─── Dashboards tab content ─── */}
       {activeTab === 'dashboards' && (
         <div style={{ flex: 1, overflow: 'hidden' }}>
-          <DashboardViewer initialDashboardId={urlState.fromDashboard} onOpenQueryDetail={(q, opts) => { setModalQuery(q); setModalTab(opts?.tab ?? 'overview'); }} onOpenQuery={handleOpenDashboardQuery} />
+          <DashboardViewer initialDashboardId={urlState.fromDashboard} listRequestKey={dashboardListRequest} onOpenQueryDetail={(q, opts) => { setModalQuery(q); setModalTab(opts?.tab ?? 'overview'); }} onOpenQuery={handleOpenDashboardQuery} />
         </div>
       )}
 
