@@ -321,6 +321,57 @@ WHERE changed
   AND name NOT IN ('queue_max_wait_ms', 'run_query_in_background', 'skip_unavailable_shards', 'skip_unavailable_shards_mode', 'interactive_delay')
 ORDER BY host, name`,
 
+  // system.settings is not compared here: the fan-out sends the initiator's
+  // session settings to every node, so remote hosts report those values as
+  // their own (verified on 26.9). Server, MergeTree and profile config are
+  // read from each node's own configuration. interserver_http_host is each
+  // node's own address, so it always differs. Values the server computes
+  // itself are kept (max_server_memory_usage differs per node and over time);
+  // set_in_config tells them apart from values set in config.
+  `-- @meta: title='Settings Drift Across Hosts' group='Knowledge Base' description='Useful queries for troubleshooting - server, MergeTree and profile settings that differ between hosts or are missing on some. Empty on a single node.'
+WITH per_host AS (
+    SELECT hostName() AS host, 'server' AS scope, name, value, changed
+    FROM {{cluster_aware:system.server_settings}}
+    WHERE name != 'interserver_http_host'
+    UNION ALL
+    SELECT hostName() AS host, 'merge_tree' AS scope, name, value, changed
+    FROM {{cluster_aware:system.merge_tree_settings}}
+    UNION ALL
+    SELECT hostName() AS host, concat('profile ', profile_name) AS scope, setting_name AS name, toString(value) AS value, 1 AS changed
+    FROM {{cluster_aware:system.settings_profile_elements}}
+    WHERE setting_name != '' AND profile_name IS NOT NULL
+),
+all_hosts AS (
+    SELECT arraySort(groupUniqArray(host)) AS hosts FROM per_host
+),
+by_value AS (
+    SELECT scope, name, value, arraySort(groupArray(host)) AS hosts, sum(changed) AS set_hosts
+    FROM per_host
+    GROUP BY scope, name, value
+),
+by_setting AS (
+    -- Value groups, most common first; ties broken by value for a stable order.
+    SELECT
+        scope,
+        name,
+        arraySort(g -> (-length(g.2), g.1), groupArray((value, hosts))) AS value_groups,
+        arrayFilter(h -> NOT has(arrayFlatten(groupArray(hosts)), h), (SELECT hosts FROM all_hosts)) AS missing_hosts,
+        sum(set_hosts) AS set_hosts
+    FROM by_value
+    GROUP BY scope, name
+)
+SELECT
+    scope,
+    name,
+    value_groups[1].1 AS most_common_value,
+    concat(toString(length(value_groups[1].2)), ' of ', toString(length((SELECT hosts FROM all_hosts)))) AS on_hosts,
+    arrayStringConcat(arrayMap(g -> concat(g.1, ' on ', arrayStringConcat(g.2, ', ')), arraySlice(value_groups, 2)), '; ') AS other_values,
+    arrayStringConcat(missing_hosts, ', ') AS missing_on,
+    if(set_hosts = 0, 'no', concat(toString(set_hosts), ' of ', toString(length((SELECT hosts FROM all_hosts))))) AS set_in_config
+FROM by_setting
+WHERE length(value_groups) > 1 OR notEmpty(missing_hosts)
+ORDER BY set_hosts = 0, scope, name`,
+
   `-- @meta: title='Projection Disk Usage' group='Knowledge Base' description='Useful queries for troubleshooting - how much disk space projections use, per projection part, and the ratio to the parent part.'
 -- @source: https://clickhouse.com/docs/knowledgebase/useful-queries-for-troubleshooting
 SELECT

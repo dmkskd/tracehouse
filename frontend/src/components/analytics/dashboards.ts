@@ -827,6 +827,7 @@ const BUILTIN_DASHBOARDS: Dashboard[] = [
 
       // ── https://clickhouse.com/docs/knowledgebase/useful-queries-for-troubleshooting ──
       { queryName: 'Knowledge Base#Settings Changed from Default', section: 'Useful queries for troubleshooting' },
+      { queryName: 'Knowledge Base#Settings Drift Across Hosts' },
       { queryName: 'Knowledge Base#Projection Disk Usage' },
     ],
   },
