@@ -314,7 +314,8 @@ ORDER BY active_or_queued DESC`,
 SELECT
     hostName() AS host,
     name,
-    value
+    value,
+    default
 FROM {{cluster_aware:system.settings}}
 WHERE changed
   AND name NOT IN ('queue_max_wait_ms', 'run_query_in_background', 'skip_unavailable_shards', 'skip_unavailable_shards_mode', 'interactive_delay')
