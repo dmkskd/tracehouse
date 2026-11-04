@@ -14,6 +14,8 @@ export default defineConfig({
   test: {
     globals: true,
     include: ['src/__tests__/integration/**/*.integration.test.ts'],
+    // Fail once with a clear message when Docker is down, not once per suite
+    globalSetup: ['src/__tests__/integration/setup/global-setup.ts'],
     pool: 'forks',
     maxWorkers: 10,
     // Generous timeout for container startup + queries

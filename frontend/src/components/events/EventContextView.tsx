@@ -47,6 +47,7 @@ export const EventContextView: React.FC<EventContextViewProps> = ({
     event.hostname ?? '',
     event.query_id ?? '',
     event.initial_query_id ?? '',
+    event.exception_name ?? '',
     windowSeconds,
     availableCapabilities.join(','),
   ].join(':');
@@ -63,6 +64,7 @@ export const EventContextView: React.FC<EventContextViewProps> = ({
       hostname: event.hostname,
       queryId: event.query_id,
       initialQueryId: event.initial_query_id,
+      exceptionName: event.exception_name,
       availableCapabilities,
       windowSeconds,
       limit: 100,
@@ -246,7 +248,7 @@ export const EventContextView: React.FC<EventContextViewProps> = ({
           title="Server logs"
           source={context?.logs}
           loading={loading && !context}
-          empty="No query-correlated or warning-and-higher log entries were recorded."
+          empty="No query-correlated, error-code-matching, or warning-and-higher log entries were recorded."
           count={context?.logs.data.length}
         >
           {context?.logs.data.slice(0, 20).map((entry, index) => (
@@ -255,6 +257,7 @@ export const EventContextView: React.FC<EventContextViewProps> = ({
                 <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
                   <Tag label={entry.level || 'Log'} color={logLevelColor(entry.level)} />
                   {entry.is_event_query && <Tag label="event query" color="#58a6ff" />}
+                  {entry.is_event_error && <Tag label="event error" color="#f0883e" />}
                   <span style={{ color: 'var(--text-muted)', fontSize: 8 }}>
                     {entry.logger}
                   </span>

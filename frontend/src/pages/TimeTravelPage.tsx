@@ -56,6 +56,7 @@ import { getUrlParam } from '../utils/urlParams';
 import { useUserPreferenceStore } from '../stores/userPreferenceStore';
 import { useMonitoringCapabilitiesStore } from '../stores/monitoringCapabilitiesStore';
 import { DocsLink } from '../components/common/DocsLink';
+import { RefreshingOverlay } from '../components/common/RefreshingOverlay';
 import {
   MetricStrip,
   MetricStripDivider,
@@ -1704,6 +1705,7 @@ export const TimeTravelPage: React.FC = () => {
           </div>
 
           {/* Chart */}
+          <RefreshingOverlay active={rowHosts.length > 0 ? splitLoading : isLoading} dim={!isLive}>
           {rowHosts.length > 0 ? (
             /* Per-server view: one chart per selected host */
             <div ref={chartAnchorRef} style={{ display:'flex', flexDirection:'column', gap:2 }}>
@@ -1843,6 +1845,7 @@ export const TimeTravelPage: React.FC = () => {
             )}
           </div>
           )}
+          </RefreshingOverlay>
 
           {/* Timeline Navigator */}
           {navigatorRange && (

@@ -53,6 +53,8 @@ export interface EventContextLogEntry {
   query_id?: string;
   thread_name?: string;
   is_event_query: boolean;
+  /** Message carries the event's error code name, e.g. "(KEEPER_EXCEPTION)". */
+  is_event_error: boolean;
 }
 
 export interface EventContextResult {
@@ -71,6 +73,8 @@ export interface EventContextOptions {
   hostname?: string | null;
   queryId?: string;
   initialQueryId?: string;
+  /** Error code name (e.g. KEEPER_EXCEPTION) used to surface the matching log line. */
+  exceptionName?: string;
   availableCapabilities: readonly string[];
   /** Context on either side of the event. Defaults to five minutes. */
   windowSeconds?: number;

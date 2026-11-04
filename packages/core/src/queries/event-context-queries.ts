@@ -83,7 +83,10 @@ ORDER BY host, sample_time
 
 /**
  * Exact query breadcrumbs plus warning-or-higher server messages on the same
- * host and within the selected context window.
+ * host and within the selected context window. When the event carries an
+ * error code name, messages tagged with it ("Code: N. ... (NAME)") are kept
+ * at any level and ranked first, so the matching exception is not crowded out
+ * by unrelated warnings.
  */
 export const EVENT_CONTEXT_SERVER_LOGS = `
 SELECT
@@ -94,7 +97,8 @@ SELECT
   substring(message, 1, 4000) AS message,
   query_id,
   thread_name,
-  ({query_id} != '' AND (query_id = {query_id} OR query_id = {initial_query_id})) AS is_event_query
+  ({query_id} != '' AND (query_id = {query_id} OR query_id = {initial_query_id})) AS is_event_query,
+  ({exception_name} != '' AND position(message, concat('(', {exception_name}, ')')) > 0) AS is_event_error
 FROM {{cluster_aware:system.text_log}}
 WHERE event_date >= toDate({window_start}) - 1
   AND event_time_microseconds BETWEEN toDateTime64({window_start}, 6)
@@ -102,10 +106,12 @@ WHERE event_date >= toDate({window_start}) - 1
   AND ({hostname} = '' OR hostname() = {hostname})
   AND (
     ({query_id} != '' AND (query_id = {query_id} OR query_id = {initial_query_id}))
+    OR ({exception_name} != '' AND position(message, concat('(', {exception_name}, ')')) > 0)
     OR level IN ('Fatal', 'Critical', 'Error', 'Warning')
   )
 ORDER BY
   is_event_query DESC,
+  is_event_error DESC,
   abs(dateDiff('millisecond', event_time_microseconds, toDateTime64({event_time}, 6))),
   event_time_microseconds
 LIMIT {context_limit}

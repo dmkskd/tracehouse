@@ -50,33 +50,36 @@ export const DATABASE_EXPLORER_SHARE_SCHEMA = defineShareSchema({
 
 // Shared PartInspector component
 import { PartInspector } from '../components/database/PartInspector';
+import { ActiveMergeDetailModal } from '../components/merge/MergeDetailModal';
+import { useThemeDetection } from '../hooks/useThemeDetection';
 
 // ============================================================================
 // MERGE GROUP COLORS - Must match HierarchyVisualization.tsx
 // ============================================================================
 
+// main: borders/fills; light: text on dark theme; dark: text on light theme
 const MERGE_GROUP_COLORS = [
-  { main: '#06b6d4', light: '#67e8f9' }, // Cyan
-  { main: '#f59e0b', light: '#fcd34d' }, // Amber
-  { main: '#ec4899', light: '#f9a8d4' }, // Pink/Magenta
-  { main: '#3b82f6', light: '#93c5fd' }, // Blue
-  { main: '#8b5cf6', light: '#c4b5fd' }, // Purple
-  { main: '#14b8a6', light: '#5eead4' }, // Teal
-  { main: '#f472b6', light: '#fbcfe8' }, // Light Pink
-  { main: '#a78bfa', light: '#ddd6fe' }, // Violet
+  { main: '#06b6d4', light: '#67e8f9', dark: '#0e7490' }, // Cyan
+  { main: '#f59e0b', light: '#fcd34d', dark: '#b45309' }, // Amber
+  { main: '#ec4899', light: '#f9a8d4', dark: '#be185d' }, // Pink/Magenta
+  { main: '#3b82f6', light: '#93c5fd', dark: '#1d4ed8' }, // Blue
+  { main: '#8b5cf6', light: '#c4b5fd', dark: '#6d28d9' }, // Purple
+  { main: '#14b8a6', light: '#5eead4', dark: '#0f766e' }, // Teal
+  { main: '#f472b6', light: '#fbcfe8', dark: '#be185d' }, // Light Pink
+  { main: '#a78bfa', light: '#ddd6fe', dark: '#5b21b6' }, // Violet
   // Extended palette to avoid color reuse
-  { main: '#0891b2', light: '#22d3ee' }, // Dark Cyan
-  { main: '#d97706', light: '#fbbf24' }, // Dark Amber
-  { main: '#db2777', light: '#f472b6' }, // Dark Pink
-  { main: '#2563eb', light: '#60a5fa' }, // Dark Blue
-  { main: '#7c3aed', light: '#a78bfa' }, // Dark Purple
-  { main: '#0d9488', light: '#2dd4bf' }, // Dark Teal
-  { main: '#c026d3', light: '#e879f9' }, // Fuchsia
-  { main: '#4f46e5', light: '#818cf8' }, // Indigo
-  { main: '#0284c7', light: '#38bdf8' }, // Sky Blue
-  { main: '#ea580c', light: '#fb923c' }, // Orange
-  { main: '#9333ea', light: '#c084fc' }, // Purple 2
-  { main: '#0e7490', light: '#06b6d4' }, // Cyan 2
+  { main: '#0891b2', light: '#22d3ee', dark: '#155e75' }, // Dark Cyan
+  { main: '#d97706', light: '#fbbf24', dark: '#92400e' }, // Dark Amber
+  { main: '#db2777', light: '#f472b6', dark: '#9d174d' }, // Dark Pink
+  { main: '#2563eb', light: '#60a5fa', dark: '#1e40af' }, // Dark Blue
+  { main: '#7c3aed', light: '#a78bfa', dark: '#5b21b6' }, // Dark Purple
+  { main: '#0d9488', light: '#2dd4bf', dark: '#115e59' }, // Dark Teal
+  { main: '#c026d3', light: '#e879f9', dark: '#86198f' }, // Fuchsia
+  { main: '#4f46e5', light: '#818cf8', dark: '#3730a3' }, // Indigo
+  { main: '#0284c7', light: '#38bdf8', dark: '#075985' }, // Sky Blue
+  { main: '#ea580c', light: '#fb923c', dark: '#9a3412' }, // Orange
+  { main: '#9333ea', light: '#c084fc', dark: '#6b21a8' }, // Purple 2
+  { main: '#0e7490', light: '#06b6d4', dark: '#164e63' }, // Cyan 2
 ];
 
 // Level colors for breadcrumb - must match HierarchyVisualization.tsx
@@ -330,9 +333,10 @@ interface MergeInfoWallProps {
   highlightedMergeId?: string | null;
   mergeColorMap: Map<string, number>;  // Shared color assignments
   onMergeHover?: (mergeId: string | null) => void;
+  onMergeOpen?: (merge: MergeInfo) => void;
 }
 
-const MergeInfoWall: React.FC<MergeInfoWallProps> = ({ merges, currentDatabase, currentTable, currentPartition, level, highlightedMergeId, mergeColorMap, onMergeHover }) => {
+const MergeInfoWall: React.FC<MergeInfoWallProps> = ({ merges, currentDatabase, currentTable, currentPartition, level, highlightedMergeId, mergeColorMap, onMergeHover, onMergeOpen }) => {
   // Track recently completed merges to show them briefly after completion
   const [recentlyCompleted, setRecentlyCompleted] = useState<Map<string, { merge: MergeInfo; completedAt: number }>>(new Map());
   const prevMergesRef = useRef<Map<string, MergeInfo>>(new Map());
@@ -538,6 +542,7 @@ const MergeInfoWall: React.FC<MergeInfoWallProps> = ({ merges, currentDatabase, 
                   isHighlighted={highlightedMergeId === mergeId}
                   colorIndex={colorIndex}
                   onHover={(hovering) => onMergeHover?.(hovering ? mergeId : null)}
+                  onOpen={onMergeOpen ? () => onMergeOpen(merge) : undefined}
                 />
               );
             })}
@@ -571,6 +576,7 @@ const MergeInfoWall: React.FC<MergeInfoWallProps> = ({ merges, currentDatabase, 
                   isHighlighted={highlightedMergeId === mergeId}
                   colorIndex={colorIndex}
                   onHover={(hovering) => onMergeHover?.(hovering ? mergeId : null)}
+                  onOpen={onMergeOpen ? () => onMergeOpen(merge) : undefined}
                 />
               );
             })}
@@ -589,14 +595,18 @@ interface MergeInfoCardCompactProps {
   isHighlighted?: boolean;
   colorIndex?: number;  // Index into MERGE_GROUP_COLORS
   onHover?: (hovering: boolean) => void;
+  onOpen?: () => void;
 }
 
-const MergeInfoCardCompact: React.FC<MergeInfoCardCompactProps> = ({ merge, completed, isOldest, isHighlighted, colorIndex = 0, onHover }) => {
+const MergeInfoCardCompact: React.FC<MergeInfoCardCompactProps> = ({ merge, completed, isOldest, isHighlighted, colorIndex = 0, onHover, onOpen }) => {
   const [isHovered, setIsHovered] = useState(false);
+  const isLight = useThemeDetection() === 'light';
   const progressPct = Math.round(merge.progress * 100);
   
   // Get merge group color
   const mergeColor = MERGE_GROUP_COLORS[colorIndex % MERGE_GROUP_COLORS.length];
+  const accentText = isLight ? mergeColor.dark : mergeColor.light;
+  const doneColor = isLight ? '#047857' : '#10b981';
   
   // Calculate throughput (bytes/sec) - use compressed bytes * progress since bytes_read_uncompressed may not be populated
   const bytesProcessed = merge.total_size_bytes_compressed * merge.progress;
@@ -607,7 +617,9 @@ const MergeInfoCardCompact: React.FC<MergeInfoCardCompactProps> = ({ merge, comp
   const dataGB = merge.total_size_bytes_compressed / (1024 * 1024 * 1024);
   const cost = merge.elapsed * memoryGB * (1 + dataGB);
   const costLabel = cost < 0.5 ? 'Low' : cost < 5 ? 'Medium' : 'High';
-  const costColor = cost < 0.5 ? 'text-cyan-400' : cost < 5 ? 'text-amber-400' : 'text-rose-400';
+  const costColor = isLight
+    ? (cost < 0.5 ? 'text-cyan-700' : cost < 5 ? 'text-amber-700' : 'text-rose-700')
+    : (cost < 0.5 ? 'text-cyan-400' : cost < 5 ? 'text-amber-400' : 'text-rose-400');
   const costBg = cost < 0.5 ? 'bg-cyan-500/20' : cost < 5 ? 'bg-amber-500/20' : 'bg-rose-500/20';
   
   const handleMouseEnter = () => {
@@ -644,6 +656,8 @@ const MergeInfoCardCompact: React.FC<MergeInfoCardCompactProps> = ({ merge, comp
       }}
       onMouseEnter={handleMouseEnter}
       onMouseLeave={handleMouseLeave}
+      onClick={onOpen}
+      title={onOpen ? 'Open merge details' : undefined}
     >
       {/* Progress bar at top - uses merge group color */}
       <div style={{ height: 6, background: 'var(--bg-hover)' }}>
@@ -664,13 +678,13 @@ const MergeInfoCardCompact: React.FC<MergeInfoCardCompactProps> = ({ merge, comp
             <div className="flex items-center gap-2">
               <span 
                 className="text-[10px] font-semibold uppercase tracking-wide"
-                style={{ color: mergeColor.light }}
+                style={{ color: accentText }}
               >
                 {getMergeCategoryInfo(classifyActiveMerge(merge.merge_type, merge.is_mutation, merge.result_part_name)).label}
               </span>
               {/* Small status indicator */}
               {completed ? (
-                <span className="text-[9px] px-1.5 py-0.5 rounded bg-emerald-500/20 text-emerald-400 font-medium">
+                <span className={`text-[9px] px-1.5 py-0.5 rounded bg-emerald-500/20 font-medium ${isLight ? 'text-emerald-700' : 'text-emerald-400'}`}>
                   ✓ Done
                 </span>
               ) : (
@@ -680,7 +694,7 @@ const MergeInfoCardCompact: React.FC<MergeInfoCardCompactProps> = ({ merge, comp
             {/* Result part name */}
             <div 
               className="text-[11px] font-mono mt-0.5 truncate" 
-              style={{ color: mergeColor.light }}
+              style={{ color: accentText }}
               title={merge.result_part_name}
             >
               → {isHovered 
@@ -692,7 +706,7 @@ const MergeInfoCardCompact: React.FC<MergeInfoCardCompactProps> = ({ merge, comp
           </div>
           <div 
             className="text-xl font-bold font-mono tabular-nums"
-            style={{ color: completed ? '#10b981' : mergeColor.light }}
+            style={{ color: completed ? doneColor : accentText }}
           >
             {progressPct}%
           </div>
@@ -721,7 +735,7 @@ const MergeInfoCardCompact: React.FC<MergeInfoCardCompactProps> = ({ merge, comp
                     style={{ 
                       background: `${mergeColor.main}20`,
                       border: `1px solid ${mergeColor.main}40`,
-                      color: mergeColor.light,
+                      color: accentText,
                     }}
                     title={part}
                   >
@@ -776,7 +790,7 @@ const MergeInfoCardCompact: React.FC<MergeInfoCardCompactProps> = ({ merge, comp
             
             {/* Thread ID if available */}
             {(merge.thread_id || 0) > 0 && (
-              <div className="text-[9px] font-mono" style={{ color: 'var(--text-disabled)' }}>
+              <div className="text-[9px] font-mono" style={{ color: 'var(--text-muted)' }}>
                 Thread: {merge.thread_id}
               </div>
             )}
@@ -839,6 +853,8 @@ export const DatabaseExplorer: React.FC = () => {
   
   // Active merges for highlighting parts being merged
   const [activeMerges, setActiveMerges] = useState<MergeInfo[]>([]);
+  // Merge whose full detail modal is open (clicked from the merge wall)
+  const [openedMerge, setOpenedMerge] = useState<MergeInfo | null>(null);
   
   // Auto-refresh state
   const refreshConfig = useRefreshConfig();
@@ -1379,7 +1395,9 @@ export const DatabaseExplorer: React.FC = () => {
           highlightedMergeId={highlightedMergeId}
           mergeColorMap={mergeColorAssignments}
           onMergeHover={setHighlightedMergeId}
+          onMergeOpen={setOpenedMerge}
         />
+        <ActiveMergeDetailModal merge={openedMerge} onClose={() => setOpenedMerge(null)} />
         
         {/* Part Inspector - Slide-out panel for part details */}
         <PartInspector 

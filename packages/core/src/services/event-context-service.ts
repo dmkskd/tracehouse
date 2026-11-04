@@ -83,6 +83,7 @@ export class EventContextService {
       hostname: options.hostname ?? '',
       query_id: options.queryId ?? '',
       initial_query_id: options.initialQueryId ?? options.queryId ?? '',
+      exception_name: options.exceptionName ?? '',
       context_limit: limit,
     };
 
@@ -178,6 +179,7 @@ export class EventContextService {
               query_id: stringValue(row.query_id) || undefined,
               thread_name: stringValue(row.thread_name) || undefined,
               is_event_query: booleanValue(row.is_event_query),
+              is_event_error: booleanValue(row.is_event_error),
             };
           });
         },
