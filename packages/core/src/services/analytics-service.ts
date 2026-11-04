@@ -8,7 +8,7 @@
 import type { IClickHouseAdapter } from '../adapters/types.js';
 import type { TableOrderingKeyEfficiency, OrderingKeyEfficiencyOptions, TableQueryPattern, ExplainIndexesResult, StressSurfaceData, StressSurfaceRow, StressSurfaceInsertRow, StressSurfaceMergeRow, PatternSurfaceRow, SurfaceQueryOptions, ResourceLanesData, ResourceLaneRow, ResourceLaneMergeRow, ResourceTotalsRow, ResourceLanesOptions, ResourceLanesTableOptions } from '../types/analytics.js';
 import type { QuerySeries } from '../types/timeline.js';
-import { INITIAL_QUERY_ID_FOR, LATEST_QUERY_FOR_PATTERN, QUERY_BY_ID, MERGETREE_DATABASES, TABLE_ORDERING_KEY_EFFICIENCY, TABLE_QUERY_PATTERNS } from '../queries/analytics-queries.js';
+import { LATEST_QUERY_FOR_PATTERN, MERGETREE_DATABASES, TABLE_ORDERING_KEY_EFFICIENCY, TABLE_QUERY_PATTERNS } from '../queries/analytics-queries.js';
 import { stressSurfaceQueries, stressSurfaceInserts, stressSurfaceMerges, patternSurface, buildSurfaceTimeFilter, resourceLanesSystem, resourceLanesSystemTotals, resourceLanesTable, resourceLanesMerges, resourceLanesMergeTotals, resourceLanesTableMerges } from '../queries/surface-queries.js';
 import { buildQuery, tagQuery } from '../queries/builder.js';
 import { TAB_ANALYTICS, sourceTag } from '../queries/source-tags.js';
@@ -40,7 +40,7 @@ function parseClickHouseDateTime(raw: unknown): string {
   return Number.isNaN(date.getTime()) ? new Date().toISOString() : date.toISOString();
 }
 
-/** Map a query_log row (from LATEST_QUERY_FOR_PATTERN / QUERY_BY_ID) into QuerySeries. */
+/** Map a query_log row (from LATEST_QUERY_FOR_PATTERN) into QuerySeries. */
 function mapQueryLogRowToQuerySeries(row: Record<string, unknown>): QuerySeries {
   const durationMs = Number(row.query_duration_ms ?? 0);
   const startTime = parseClickHouseDateTime(row.event_time);
@@ -206,51 +206,6 @@ export class AnalyticsService {
     } catch (error) {
       const msg = error instanceof Error ? error.message : String(error);
       throw new AnalyticsServiceError(`Failed to get latest query for pattern ${queryHash}: ${msg}`, error as Error);
-    }
-  }
-
-  /**
-   * Fetch a single finished query by its query_id, mapped into the QuerySeries
-   * shape consumed by QueryDetailModal. Returns null if not found.
-   */
-  async getQueryById(queryId: string): Promise<QuerySeries | null> {
-    if (!queryId) return null;
-    const sql = buildQuery(QUERY_BY_ID, { query_id: queryId });
-    try {
-      const rows = await this.adapter.executeQuery<Record<string, unknown>>(
-        tagQuery(sql, sourceTag(TAB_ANALYTICS, 'queryById')),
-      );
-      if (rows.length === 0) return null;
-      return mapQueryLogRowToQuerySeries(rows[0]);
-    } catch (error) {
-      const msg = error instanceof Error ? error.message : String(error);
-      throw new AnalyticsServiceError(`Failed to get query ${queryId}: ${msg}`, error as Error);
-    }
-  }
-
-  /**
-   * Resolve a shard execution to the coordinator that produced it.
-   *
-   * Returns null when the id is already a coordinator, or when the parent row
-   * is missing — query_log rows on other nodes can be rotated away
-   * independently, so a child can outlive its parent.
-   */
-  async getCoordinatorForQuery(queryId: string): Promise<QuerySeries | null> {
-    if (!queryId) return null;
-    const sql = buildQuery(INITIAL_QUERY_ID_FOR, { query_id: queryId });
-    try {
-      const rows = await this.adapter.executeQuery<{ initial_query_id?: string }>(
-        tagQuery(sql, sourceTag(TAB_ANALYTICS, 'coordinatorForQuery')),
-      );
-      const coordinatorId = rows[0]?.initial_query_id;
-      if (!coordinatorId || coordinatorId === queryId) return null;
-      return this.getQueryById(coordinatorId);
-    } catch (error) {
-      const msg = error instanceof Error ? error.message : String(error);
-      throw new AnalyticsServiceError(
-        `Failed to resolve the coordinator for ${queryId}: ${msg}`,
-        error as Error,
-      );
     }
   }
 
