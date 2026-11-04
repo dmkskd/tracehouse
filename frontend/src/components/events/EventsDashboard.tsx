@@ -7,6 +7,8 @@ import type {
   EventSeverity,
   EventSourceCoverage,
 } from '@tracehouse/core';
+import { describeErrorCounterState } from '@tracehouse/core';
+import type { EventErrorStateResult } from '@tracehouse/core';
 import { clampToAllowed, useRefreshConfig } from '@tracehouse/ui-shared';
 import { useClickHouseServices } from '../../providers/ClickHouseProvider';
 import { useMonitoringCapabilitiesStore } from '../../stores/monitoringCapabilitiesStore';
@@ -832,6 +834,14 @@ export const EventsDashboard: React.FC<EventsDashboardProps> = ({
                 ))}
               </div>
 
+              {selectedEvent.kind === 'error_burst'
+                && selectedEvent.hostname
+                && selectedEvent.exception_name && (
+                <EventErrorCounterView
+                  event={selectedEvent}
+                  availableCapabilities={availableCapabilities ?? []}
+                />
+              )}
               {selectedEvent.detail && (
                 <DetailBlock
                   label={eventDetailLabel(selectedEvent)}
@@ -1567,3 +1577,84 @@ const DetailBlock: React.FC<{ label: string; value: string; code?: boolean }> = 
     </pre>
   </div>
 );
+
+/** Live system.errors state for an error event; all wording comes from core. */
+const EventErrorCounterView: React.FC<{
+  event: OperationalEvent;
+  availableCapabilities: readonly string[];
+}> = ({ event, availableCapabilities }) => {
+  const services = useClickHouseServices();
+  const requestKey = [event.id, availableCapabilities.join(',')].join(':');
+  const [result, setResult] = useState<{
+    key: string;
+    value: EventErrorStateResult | null;
+    error: string | null;
+  } | null>(null);
+  const current = result?.key === requestKey ? result : null;
+
+  useEffect(() => {
+    if (!services || !event.hostname || !event.exception_name) return;
+    let cancelled = false;
+    services.eventContextService.getErrorState({
+      eventTime: event.occurred_at,
+      hostname: event.hostname,
+      exceptionName: event.exception_name,
+      remote: event.remote ?? false,
+      availableCapabilities,
+    }).then(value => {
+      if (!cancelled) setResult({ key: requestKey, value, error: null });
+    }).catch(cause => {
+      if (!cancelled) {
+        setResult({
+          key: requestKey,
+          value: null,
+          error: cause instanceof Error ? cause.message : String(cause),
+        });
+      }
+    });
+    return () => { cancelled = true; };
+  }, [services, event, availableCapabilities, requestKey]);
+
+  const source = current?.value?.source;
+  let body: React.ReactNode;
+  if (!current) {
+    body = 'Reading system.errors…';
+  } else if (current.error || source?.status === 'failed') {
+    body = `Could not read system.errors: ${current.error ?? source?.detail}`;
+  } else if (source?.status === 'unavailable') {
+    body = 'system.errors is not readable on this server, so the current state is unknown.';
+  } else {
+    const state = describeErrorCounterState(
+      event.occurred_at,
+      event.exception_name!,
+      source?.data.find(row => row.hostname === event.hostname) ?? source?.data[0],
+      formatEventDateTime,
+    );
+    body = (
+      <>
+        {state.summary}
+        {state.message_label && state.counter?.last_error_message && (
+          <DetailBlock label={state.message_label} value={state.counter.last_error_message} code />
+        )}
+      </>
+    );
+  }
+
+  return (
+    <div style={{ marginTop: 10 }}>
+      <div style={{
+        color: 'var(--text-muted)',
+        fontSize: 8,
+        fontWeight: 700,
+        textTransform: 'uppercase',
+        letterSpacing: '0.5px',
+        marginBottom: 4,
+      }}>
+        Current state · system.errors
+      </div>
+      <div style={{ color: 'var(--text-secondary)', fontSize: 11, lineHeight: 1.45 }}>
+        {body}
+      </div>
+    </div>
+  );
+};

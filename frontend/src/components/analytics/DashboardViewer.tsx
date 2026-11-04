@@ -27,8 +27,12 @@ import {
   resolveQueryRef,
   parseQueryMetadata,
   parseSummaryDirectives,
+  chartClickAction,
+  chartClickHint,
+  type ChartClickAction,
   type SummaryDirectives,
 } from './metaLanguage';
+import { usePageLink } from './usePageLink';
 import { LinkQueryModal } from './LinkQueryModal';
 import { PartInspector } from '../database/PartInspector';
 import { databaseApi } from '../../stores/databaseStore';
@@ -879,33 +883,25 @@ const DashboardPanelCard: React.FC<{
     return () => { cancelled = true; };
   }, [partLinkTarget, services]);
 
-  // @query_link support - open the Query Detail modal (X-Ray tab) for a clicked query_id
+  // @query_link / @merge_link: open the clicked query or merge on its page (usePageLink)
+  const pageLink = usePageLink(preset?.directives, result?.rows);
   const isQueryLinkable = !!(preset?.directives.queryLink?.on) &&
     (!result || result.columns.includes(preset.directives.queryLink.on));
+  const isMergeLinkable = !!(preset?.directives.mergeLink?.on) &&
+    (!result || result.columns.includes(preset.directives.mergeLink.on));
 
-  const handleQueryLinkChartClick = useCallback((event: DrillDownEvent) => {
-    const ql = preset?.directives.queryLink;
-    if (!ql || !services || !onOpenQueryDetail) return;
-    const queryId = event.label;
-    if (!queryId) return;
-    services.analyticsService.getQueryById(queryId)
-      .then(q => {
-        if (q) {
-          onOpenQueryDetail(q, { tab: 'xray' });
-          return undefined;
-        }
-        // Not an initial query, so it is a shard execution — panels that drill
-        // into a query shape list those alongside client-submitted ones. They
-        // cannot be opened on their own, so open the coordinator instead, on
-        // the tab that splits its time per node. Without this the click is
-        // swallowed and the row looks broken.
-        return services.analyticsService.getCoordinatorForQuery(queryId)
-          .then(coordinator => {
-            if (coordinator) onOpenQueryDetail(coordinator, { tab: 'distributed' });
-          });
-      })
-      .catch(() => { /* query not found / query_log unavailable */ });
-  }, [preset, services, onOpenQueryDetail]);
+  // What a chart click does, and its tooltip hint: one action per panel (core chartClickAction)
+  const chartClick = useMemo(() => {
+    const action = preset ? chartClickAction(preset.directives, result?.columns) : null;
+    if (!action) return { onClick: undefined, hint: undefined };
+    const handlers: Record<ChartClickAction, (event: DrillDownEvent) => void> = {
+      drill: handleDrillDown,
+      partLink: handlePartLinkChartClick,
+      queryLink: event => pageLink.openLabel('queryLink', event.label),
+      mergeLink: event => pageLink.openLabel('mergeLink', event.label),
+    };
+    return { onClick: handlers[action], hint: chartClickHint(action, preset?.directives.drill?.into) };
+  }, [preset, result?.columns, handleDrillDown, handlePartLinkChartClick, pageLink]);
 
   if (!preset) {
     const expandedTop = isFocused ? focusStage?.viewportTop ?? 48 : 48;
@@ -1110,14 +1106,14 @@ const DashboardPanelCard: React.FC<{
                     orientation={chartDirective?.orientation}
                     groupedData={isGroupedChart ? groupedChartData : undefined}
                     isFullscreen={isFullscreen}
-                    onDrillDown={isDrillable ? handleDrillDown : isPartLinkable ? handlePartLinkChartClick : isQueryLinkable ? handleQueryLinkChartClick : undefined}
+                    onDrillDown={chartClick.onClick}
                     unit={chartUnit} />
                 ) : (
                   <ChartRenderer chartType={chartType} data={chartData} groupedData={groupedChartData} groupedStackedData={groupedStackedData ?? undefined}
                     rawRows={result.rows} radarConfig={chartDirective ?? undefined}
                     orientation={chartDirective?.orientation} fullHeight unit={chartUnit} color={chartColor}
-                    onDrillDown={isDrillable ? handleDrillDown : isPartLinkable ? handlePartLinkChartClick : isQueryLinkable ? handleQueryLinkChartClick : undefined}
-                    drillIntoQuery={isDrillable ? preset?.directives.drill?.into : isPartLinkable ? 'Part Inspector' : isQueryLinkable ? 'Query X-Ray' : undefined}
+                    onDrillDown={chartClick.onClick}
+                    clickHint={chartClick.hint}
                     valueColumns={chartDirective?.valueColumns} renderMode={chartDirective?.render}
                     hoveredTimestamp={hoveredTimestamp} onTimestampHover={onTimestampHover} correlationValues={correlationValues} currentPanelName={preset?.name} isHoveredPanel={isHoveredPanel} />
                 )}
@@ -1151,6 +1147,10 @@ const DashboardPanelCard: React.FC<{
                     drillIntoQuery={isDrillable ? preset?.directives.drill?.into : undefined}
                     partLinkOnColumn={isPartLinkable ? preset?.directives.partLink?.on : undefined}
                     onPartLinkClick={isPartLinkable ? handlePartLinkClick : undefined}
+                    mergeLinkOnColumn={isMergeLinkable ? preset?.directives.mergeLink?.on : undefined}
+                    onMergeLinkClick={isMergeLinkable ? row => pageLink.openRow('mergeLink', row) : undefined}
+                    queryLinkOnColumn={isQueryLinkable ? preset?.directives.queryLink?.on : undefined}
+                    onQueryLinkClick={isQueryLinkable ? row => pageLink.openRow('queryLink', row) : undefined}
                     compact
                     enableRowDetails
                   />

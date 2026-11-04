@@ -1,5 +1,6 @@
 import { act, cleanup, fireEvent, render, screen } from '@testing-library/react';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import { MemoryRouter } from 'react-router-dom';
 import { QueryExplorer } from '../QueryExplorer';
 
 const mocks = vi.hoisted(() => ({ run: vi.fn() }));
@@ -29,7 +30,7 @@ afterEach(cleanup);
 describe('Query Explorer structured summaries', () => {
   it.each(['bar', 'line', 'area', 'pie', 'grouped_bar', 'stacked_bar', 'grouped_line', 'radar'])(
     'renders the shared summary for its supported %s chart', async type => {
-      render(<QueryExplorer urlState={{ sql: query(type), view: 'chart' }} />);
+      render(<MemoryRouter><QueryExplorer urlState={{ sql: query(type), view: 'chart' }} /></MemoryRouter>);
       expect(await screen.findByLabelText('Total: 64 s')).toHaveTextContent('1.1 min');
       expect(screen.getByLabelText('Count: 454')).toHaveTextContent('454');
       fireEvent.click(screen.getByRole('button', { name: 'Table', exact: true }));
@@ -38,7 +39,7 @@ describe('Query Explorer structured summaries', () => {
   );
 
   it('binds summary configuration to executed SQL instead of unexecuted editor changes', async () => {
-    render(<QueryExplorer urlState={{ sql: query(), view: 'chart' }} />);
+    render(<MemoryRouter><QueryExplorer urlState={{ sql: query(), view: 'chart' }} /></MemoryRouter>);
     await screen.findByLabelText('Total: 64 s');
     fireEvent.change(screen.getByLabelText('Query SQL'), { target: { value: query().replace("label='Total'", "label='Unexecuted'") } });
     expect(screen.getByLabelText('Total: 64 s')).toBeInTheDocument();
@@ -50,7 +51,7 @@ describe('Query Explorer structured summaries', () => {
   it('keeps the newest summary after an older request finishes', async () => {
     let completeOld!: (rows: Record<string, unknown>[]) => void;
     mocks.run.mockImplementationOnce(() => new Promise(resolve => { completeOld = resolve; }));
-    render(<QueryExplorer urlState={{ sql: query(), view: 'chart' }} />);
+    render(<MemoryRouter><QueryExplorer urlState={{ sql: query(), view: 'chart' }} /></MemoryRouter>);
     fireEvent.change(screen.getByLabelText('Query SQL'), { target: { value: query().replace("label='Total'", "label='New result'") } });
     // A pending request disables Run Query; changing the time range starts a replacement request.
     fireEvent.click(screen.getByRole('button', { name: '6h', exact: true }));
@@ -61,7 +62,7 @@ describe('Query Explorer structured summaries', () => {
   });
 
   it('does not display metrics in 3D but retains them when switching to table view', async () => {
-    render(<QueryExplorer urlState={{ sql: query('bar', '3d'), view: 'chart' }} />);
+    render(<MemoryRouter><QueryExplorer urlState={{ sql: query('bar', '3d'), view: 'chart' }} /></MemoryRouter>);
     expect(await screen.findByText('Summaries are available in 2D or table view.')).toBeInTheDocument();
     expect(screen.queryByLabelText('Result summary')).not.toBeInTheDocument();
     fireEvent.click(screen.getByRole('button', { name: 'Table', exact: true }));

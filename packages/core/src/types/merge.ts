@@ -25,6 +25,8 @@ export interface MergeInfo {
 
 export interface MergeHistoryRecord {
   event_time: string;
+  /** Server-formatted event_time_microseconds; set by the single-record lookups. */
+  event_time_microseconds?: string;
   event_type: string;
   database: string;
   table: string;

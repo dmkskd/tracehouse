@@ -33,8 +33,9 @@ import {
   type QueryGroup, type ChartType, type ChartStyle,
   evaluateQueryVersionCompatibility,
   parseCellStyles, parseRagRules, parseChartDirective, parseDirectives, resolveQueryRef,
-  parseSummaryDirectives, type SummaryDirectives,
+  parseSummaryDirectives, type SummaryDirectives, chartClickAction, chartClickHint, type ChartClickAction,
 } from './metaLanguage';
+import { usePageLink } from './usePageLink';
 import { LinkQueryModal } from './LinkQueryModal';
 import { PartInspector } from '../database/PartInspector';
 import { databaseApi } from '../../stores/databaseStore';
@@ -513,6 +514,13 @@ export const QueryExplorer: React.FC<QueryExplorerProps> = ({ urlState, onUrlSta
     setLinkModal({ targetQuery: target, params: { [column]: value } });
   }, [currentQuery]);
 
+  // @query_link / @merge_link: open the clicked query or merge on its page (usePageLink)
+  const pageLink = usePageLink(currentQuery?.directives, result?.rows);
+  const isQueryLinkable = !!(currentQuery?.directives.queryLink?.on) &&
+    (!result || result.columns.includes(currentQuery.directives.queryLink.on));
+  const isMergeLinkable = !!(currentQuery?.directives.mergeLink?.on) &&
+    (!result || result.columns.includes(currentQuery.directives.mergeLink.on));
+
   /* ── @part_link state ── */
   const [partLinkTarget, setPartLinkTarget] = useState<{ partName: string; database: string; table: string } | null>(null);
   const [partLinkDetail, setPartLinkDetail] = useState<PartDetailInfo | null>(null);
@@ -541,6 +549,19 @@ export const QueryExplorer: React.FC<QueryExplorerProps> = ({ urlState, onUrlSta
     const row = result.rows.find(r => String(r[pl.on]) === event.label);
     resolvePartLink(event.label, row ?? undefined);
   }, [currentQuery, result, resolvePartLink]);
+
+  // What a chart click does, and its tooltip hint: one action per panel (core chartClickAction)
+  const chartClick = useMemo(() => {
+    const action = currentQuery ? chartClickAction(currentQuery.directives, result?.columns) : null;
+    if (!action) return { onClick: undefined, hint: undefined };
+    const handlers: Record<ChartClickAction, (event: DrillDownEvent) => void> = {
+      drill: handleDrillDown,
+      partLink: handlePartLinkChartClick,
+      queryLink: event => pageLink.openLabel('queryLink', event.label),
+      mergeLink: event => pageLink.openLabel('mergeLink', event.label),
+    };
+    return { onClick: handlers[action], hint: chartClickHint(action, currentQuery?.directives.drill?.into) };
+  }, [currentQuery, result?.columns, handleDrillDown, handlePartLinkChartClick, pageLink]);
 
   useEffect(() => {
     if (!partLinkTarget || !services) {
@@ -1161,6 +1182,10 @@ export const QueryExplorer: React.FC<QueryExplorerProps> = ({ urlState, onUrlSta
                 drillIntoQuery={isDrillable ? currentQuery?.directives.drill?.into : undefined}
                 partLinkOnColumn={isPartLinkable ? currentQuery?.directives.partLink?.on : undefined}
                 onPartLinkClick={isPartLinkable ? handlePartLinkClick : undefined}
+                mergeLinkOnColumn={isMergeLinkable ? currentQuery?.directives.mergeLink?.on : undefined}
+                onMergeLinkClick={isMergeLinkable ? row => pageLink.openRow('mergeLink', row) : undefined}
+                queryLinkOnColumn={isQueryLinkable ? currentQuery?.directives.queryLink?.on : undefined}
+                onQueryLinkClick={isQueryLinkable ? row => pageLink.openRow('queryLink', row) : undefined}
                 enableRowDetails
               />
               </div>
@@ -1229,8 +1254,8 @@ export const QueryExplorer: React.FC<QueryExplorerProps> = ({ urlState, onUrlSta
                     <ChartRenderer chartType={chartConfig.type} data={chartData} groupedData={groupedChartData}
                       rawRows={result.rows} radarConfig={chartConfig}
                       orientation={chartConfig.orientation} unit={chartConfig.unit} color={chartConfig.color}
-                      onDrillDown={isDrillable ? handleDrillDown : isPartLinkable ? handlePartLinkChartClick : undefined}
-                      drillIntoQuery={isDrillable ? currentQuery?.directives.drill?.into : isPartLinkable ? 'Part Inspector' : undefined}
+                      onDrillDown={chartClick.onClick}
+                      clickHint={chartClick.hint}
                       valueColumns={chartConfig.valueColumns} renderMode={chartConfig.render} />
                     <button
                       onClick={toggleFullscreen}
@@ -1253,7 +1278,7 @@ export const QueryExplorer: React.FC<QueryExplorerProps> = ({ urlState, onUrlSta
                     description={chartConfig.description}
                     isFullscreen={isFullscreen}
                     onToggleFullscreen={toggleFullscreen}
-                    onDrillDown={isDrillable ? handleDrillDown : isPartLinkable ? handlePartLinkChartClick : undefined}
+                    onDrillDown={chartClick.onClick}
                     unit={chartConfig.unit}
                   />
                 )}

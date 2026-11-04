@@ -21,10 +21,12 @@ export interface ResolveDeepLinkOptions<T> {
 /**
  * Queries page link for one query. `endedAt` (epoch ms) tells the target page
  * the query finished recently, so a missing query_log row reads as pending flush.
+ * `tab` opens the query detail on that tab (`qd_tab`, read by the modal).
  */
-export function buildQueryLinkUrl(queryId: string, endedAt?: number | null): string {
+export function buildQueryLinkUrl(queryId: string, endedAt?: number | null, tab?: string): string {
   const params = new URLSearchParams({ qd_id: queryId });
   if (endedAt != null) params.set('qd_end', String(endedAt));
+  if (tab) params.set('qd_tab', tab);
   return `/queries?${params.toString()}`;
 }
 
@@ -37,6 +39,30 @@ export function buildMergeLinkUrl(database: string, table: string, partName: str
   const params = new URLSearchParams({ md_db: database, md_tbl: table, md_part: partName });
   if (hostname) params.set('md_host', hostname);
   if (startedAt != null) params.set('md_start', String(startedAt));
+  return `/merges?${params.toString()}`;
+}
+
+/**
+ * Merges page link for one part_log record: host + event_type +
+ * event_time_microseconds select exactly that record
+ * (GET_MERGE_HISTORY_BY_EXACT_TIME), so a retry or a later fetch / move of
+ * the same part name on that host is never opened instead.
+ * `eventTimeMicroseconds` is toString(event_time_microseconds) from the server.
+ */
+export function buildMergeRecordLinkUrl(
+  database: string,
+  table: string,
+  partName: string,
+  record: { hostname: string; eventTimeMicroseconds: string; eventType: string },
+): string {
+  const params = new URLSearchParams({
+    md_db: database,
+    md_tbl: table,
+    md_part: partName,
+    md_host: record.hostname,
+    md_us: record.eventTimeMicroseconds,
+    md_type: record.eventType,
+  });
   return `/merges?${params.toString()}`;
 }
 

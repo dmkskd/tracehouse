@@ -17,6 +17,8 @@ import {
   GET_TABLE_UUID,
   GET_MERGE_HISTORY_BY_PART_NAME,
   GET_MERGE_HISTORY_BY_IDENTITY,
+  GET_MERGE_HISTORY_BY_EXACT_TIME,
+  GET_MERGE_HISTORY_BY_START,
   GET_MERGE_HISTORY_BY_PART_ON_HOST,
   GET_TABLE_COLUMNS,
   GET_MERGE_THROUGHPUT_ESTIMATE,
@@ -384,8 +386,34 @@ export class MergeTracker {
   }
 
   /**
+   * The merge record on `hostname` whose attempt started at `startedMs`
+   * (within `toleranceMs`), or null. See GET_MERGE_HISTORY_BY_START.
+   */
+  async getMergeHistoryByStart(
+    database: string,
+    table: string,
+    partName: string,
+    hostname: string,
+    startedMs: number,
+    toleranceMs: number,
+  ): Promise<MergeHistoryRecord | null> {
+    try {
+      const sql = buildQuery(GET_MERGE_HISTORY_BY_START, {
+        database, table, part_name: partName, hostname,
+        started_ms: Math.round(startedMs), tolerance_ms: Math.round(toleranceMs),
+      });
+      const rows = await this.adapter.executeQuery(tagQuery(sql, sourceTag(TAB_MERGES, 'mergeHistoryByStart')));
+      return rows.length === 0 ? null : mapMergeHistoryRecord(rows[0]);
+    } catch (error) {
+      throw new MergeTrackerError('Failed to get merge history by start', error as Error);
+    }
+  }
+
+  /**
    * Look up a single MergeHistoryRecord by database + table + part_name.
-   * With the full identity (host, event_time, event_type) that exact record;
+   * With host, event_type and event_time_microseconds, the record with exactly
+   * that time, or null; with the full identity (host, event_time, event_type)
+   * the record nearest that time;
    * with only a host, the most recent record on that host (replicas record the
    * same part name independently); with neither, the most recent on any host.
    * Returns null if no matching part_log entry is found.
@@ -394,13 +422,21 @@ export class MergeTracker {
     database: string,
     table: string,
     partName: string,
-    selectedRecord?: Partial<Pick<MergeHistoryRecord, 'hostname' | 'event_time' | 'event_type'>>,
+    selectedRecord?: Partial<Pick<MergeHistoryRecord, 'hostname' | 'event_time' | 'event_time_microseconds' | 'event_type'>>,
   ): Promise<MergeHistoryRecord | null> {
     try {
       const hostname = selectedRecord?.hostname;
+      const hasExactTime = !!(hostname && selectedRecord.event_time_microseconds && selectedRecord.event_type);
       const hasStableIdentity = !!(hostname && selectedRecord.event_time && selectedRecord.event_type);
       const params = { database, table, part_name: partName };
-      const sql = hasStableIdentity
+      const sql = hasExactTime
+        ? buildQuery(GET_MERGE_HISTORY_BY_EXACT_TIME, {
+          ...params,
+          hostname: hostname!,
+          event_type: selectedRecord!.event_type!,
+          event_time_us: selectedRecord!.event_time_microseconds!,
+        })
+        : hasStableIdentity
         ? buildQuery(GET_MERGE_HISTORY_BY_IDENTITY, {
           ...params,
           hostname: hostname!,

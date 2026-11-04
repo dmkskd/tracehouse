@@ -13,6 +13,7 @@ import {
   mergeActivityStatuses,
   reconcileMergeActivity,
   resolveOverviewMerge,
+  MERGE_START_TOLERANCE_MS,
   sortMergeActivityRecords,
 } from '../merge-activity-model';
 
@@ -346,34 +347,40 @@ describe('merge activity selection', () => {
 describe('overview merge resolution', () => {
   const ref = { database: 'default', table: 'events', partName: 'part', hostname: 'node-1' };
   const start = Date.parse('2026-07-26T00:00:01.500Z');
+  // active() has elapsed 2s: seen 2s after `start`, it is the linked attempt.
+  const now = start + 2_000;
+  const noHistory = {
+    getMergeHistoryByPartName: async () => null,
+    getMergeHistoryByStart: async () => null,
+  };
 
-  it('opens the running replica instead of a previous failed attempt', async () => {
-    let historyCalls = 0;
+  it('opens the running attempt on the linked replica', async () => {
     const live = active('part');
     const result = await resolveOverviewMerge({
+      ...noHistory,
       getActiveMerges: async () => [active('part', { hostname: 'node-2' }), live],
-      getMergeHistoryByPartName: async () => { historyCalls++; return { ...completed('part'), error: 241 }; },
-    }, ref, start);
+    }, ref, start, now);
     expect(result).toEqual({ live });
-    expect(historyCalls).toBe(0);
   });
 
-  it('waits for the selected attempt rather than opening an older failure', async () => {
+  it('does not open a retry that started after the linked attempt', async () => {
+    // The linked attempt failed; a retry of the same part has been running for 1s.
+    const retry = active('part', { elapsed: 1 });
+    expect(await resolveOverviewMerge({
+      ...noHistory,
+      getActiveMerges: async () => [retry],
+    }, ref, start, start + 5_000)).toBeNull();
+  });
+
+  it('opens the finished record of the attempt that started at the link time', async () => {
+    const history = completed('part');
+    const calls: unknown[][] = [];
     const result = await resolveOverviewMerge({
       getActiveMerges: async () => [],
-      getMergeHistoryByPartName: async (_db, _table, _part, identity) => {
-        expect(identity).toEqual({ hostname: 'node-1' });
-        return { ...completed('part'), event_time: '2026-07-26T00:00:00Z', error: 241 };
-      },
-    }, ref, start);
-    expect(result).toBeNull();
-  });
-
-  it('opens the terminal result if the selected merge finished during navigation', async () => {
-    const history = completed('part');
-    expect(await resolveOverviewMerge({
-      getActiveMerges: async () => [],
-      getMergeHistoryByPartName: async () => history,
-    }, ref, start)).toEqual({ history });
+      getMergeHistoryByPartName: async () => { throw new Error('host is known: lookup by start'); },
+      getMergeHistoryByStart: async (...args) => { calls.push(args); return history; },
+    }, ref, start, now);
+    expect(result).toEqual({ history });
+    expect(calls).toEqual([['default', 'events', 'part', 'node-1', start, MERGE_START_TOLERANCE_MS]]);
   });
 });

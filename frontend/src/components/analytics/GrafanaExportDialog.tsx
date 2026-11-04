@@ -105,7 +105,7 @@ const GRAFANA_SUPPORT_REFERENCE: Array<{
     detail: 'TraceHouse array-cell sparklines export as generated SVG Image cells. Grafana native table sparklines require time-series-to-table shaped data.',
   },
   {
-    label: '@link / @drill / @part_link',
+    label: '@link / @drill / @part_link / @merge_link',
     status: 'Not exported',
     detail: 'TraceHouse navigation is reported in the preview but not converted to Grafana links yet. Native Grafana drill support needs dashboard variables and target SQL rewriting.',
   },

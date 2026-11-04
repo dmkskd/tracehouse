@@ -1,5 +1,5 @@
 import { describe, it, expect, vi, afterEach } from 'vitest';
-import { resolveDeepLink, describeLinkStatus, buildMergeLinkUrl } from '../deep-link-resolution.js';
+import { resolveDeepLink, describeLinkStatus, buildMergeLinkUrl, buildQueryLinkUrl } from '../deep-link-resolution.js';
 import type { LinkStatus } from '../../services/link-resolver.js';
 
 afterEach(() => {
@@ -67,4 +67,9 @@ it('carries the overview attempt start and replica in merge links', () => {
   const params = new URL(buildMergeLinkUrl('db', 'tbl', 'part', 'node-1', 123456), 'https://tracehouse.local').searchParams;
   expect(params.get('md_host')).toBe('node-1');
   expect(params.get('md_start')).toBe('123456');
+});
+
+it('opens query links on the requested detail tab', () => {
+  const params = new URL(buildQueryLinkUrl('q-1', null, 'xray'), 'https://tracehouse.local').searchParams;
+  expect(Object.fromEntries(params)).toEqual({ qd_id: 'q-1', qd_tab: 'xray' });
 });

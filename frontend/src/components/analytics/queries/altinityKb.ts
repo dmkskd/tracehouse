@@ -28,16 +28,21 @@ const queries: string[] = [
 
   `-- @meta: title='Merges' group='Knowledge Base' description='Who ate my CPU - currently running merges, with completion estimate, progress, compressed size and memory usage.'
 -- @source: https://kb.altinity.com/altinity-kb-setup-and-maintenance/who-ate-my-cpu/
+-- @merge_link: on=result_part_name database=database table=table part=result_part_name host=host start=started_ms
+-- result_part_name and started_ms are added to the KB query: the part name is the link to the merge
+-- on the Merges page.
 SELECT
     hostName() AS host,
     database,
     table,
+    result_part_name,
     round((elapsed * (1 / progress)) - elapsed, 2) AS estimate_sec,
     round(elapsed, 1) AS elapsed_sec,
     round(progress, 3) AS progress,
     is_mutation,
     formatReadableSize(total_size_bytes_compressed) AS size,
-    formatReadableSize(memory_usage) AS memory
+    formatReadableSize(memory_usage) AS memory,
+    toInt64(toUnixTimestamp64Milli(now64(3))) - toInt64(elapsed * 1000) AS started_ms
 FROM {{cluster_aware:system.merges}}
 ORDER BY elapsed DESC`,
 
@@ -57,6 +62,7 @@ ORDER BY parts_to_do DESC`,
 
   `-- @meta: title='Current Processes' group='Knowledge Base' description='Who ate my CPU - initial queries currently running for more than 2 seconds.'
 -- @source: https://kb.altinity.com/altinity-kb-setup-and-maintenance/who-ate-my-cpu/
+-- @query_link: on=query_id
 SELECT
     hostName() AS host,
     round(elapsed, 1) AS elapsed_sec,

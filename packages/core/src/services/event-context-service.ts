@@ -3,6 +3,7 @@ import {
   EVENT_CONTEXT_HOST_METRICS,
   EVENT_CONTEXT_SERVER_LOGS,
   EVENT_CONTEXT_WORKLOAD,
+  EVENT_ERROR_COUNTER_STATE,
 } from '../queries/event-context-queries.js';
 import { buildQuery, tagQuery, utcDateTime64 } from '../queries/builder.js';
 import type { QueryParameter } from '../queries/builder.js';
@@ -15,6 +16,9 @@ import type {
   EventContextQuery,
   EventContextResult,
   EventContextSource,
+  EventErrorCounter,
+  EventErrorStateOptions,
+  EventErrorStateResult,
 } from '../types/event-context.js';
 
 function parseChTime(value: unknown): string {
@@ -54,6 +58,9 @@ function emptySource<T>(
   };
 }
 
+/** ClickHouse error code names, e.g. KEEPER_EXCEPTION. */
+const ERROR_CODE_NAME = /^[A-Z0-9_]+$/;
+
 function failureDetail(cause: unknown): string {
   return cause instanceof Error ? cause.message : String(cause);
 }
@@ -83,7 +90,8 @@ export class EventContextService {
       hostname: options.hostname ?? '',
       query_id: options.queryId ?? '',
       initial_query_id: options.initialQueryId ?? options.queryId ?? '',
-      exception_name: options.exceptionName ?? '',
+      // Spliced into a regex in SQL: accept only ClickHouse error code names.
+      exception_name: ERROR_CODE_NAME.test(options.exceptionName ?? '') ? options.exceptionName! : '',
       context_limit: limit,
     };
 
@@ -210,6 +218,50 @@ export class EventContextService {
       metrics,
       logs,
     };
+  }
+
+  /**
+   * Live system.errors counter for an error event's host. Returns the raw
+   * counter; describeErrorCounterState turns it into a statement. A failed
+   * or unavailable source is reported on `source`, never as "no errors".
+   */
+  async getErrorState(options: EventErrorStateOptions): Promise<EventErrorStateResult> {
+    const available = new Set(options.availableCapabilities);
+    const source = emptySource<EventErrorCounter>('system.errors', 'system_errors', available);
+    if (!available.has(source.capability)) return { source };
+    if (!ERROR_CODE_NAME.test(options.exceptionName)) {
+      throw new Error(`Invalid error code name: ${options.exceptionName}`);
+    }
+
+    const sql = buildQuery(EVENT_ERROR_COUNTER_STATE, {
+      exception_name: options.exceptionName,
+      remote: options.remote ? 1 : 0,
+      hostname: options.hostname,
+    });
+    try {
+      const rows = await this.adapter.executeQuery(
+        tagQuery(sql, sourceTag(TAB_EVENTS, 'errorCounterState')),
+      );
+      source.data = rows.map(raw => {
+        const row = raw as Record<string, unknown>;
+        const lastErrorTime = numberValue(row.has_counter) > 0
+          ? parseChTime(row.last_seen_at)
+          : undefined;
+        return {
+          hostname: stringValue(row.host),
+          process_started_at: parseChTime(row.process_started_at),
+          has_counter: numberValue(row.has_counter) > 0,
+          value: numberValue(row.value),
+          last_error_time: lastErrorTime,
+          last_error_message: stringValue(row.last_message) || undefined,
+        };
+      });
+    } catch (cause) {
+      source.status = 'failed';
+      source.detail = failureDetail(cause);
+      source.data = [];
+    }
+    return { source };
   }
 
   private metricSnapshots(

@@ -445,7 +445,7 @@ span:has(> .split-3d-tooltip):hover > .split-3d-tooltip {
 }
 
 /* RefreshingOverlay: indeterminate bar + pill over stale content.
-   Everything fades in after 300ms so fast refreshes never flicker. */
+   Everything fades in after 1s: refreshes faster than that never show it. */
 @keyframes refreshing-overlay-slide {
   0% { transform: translateX(-100%); }
   100% { transform: translateX(250%); }
@@ -466,7 +466,7 @@ span:has(> .split-3d-tooltip):hover > .split-3d-tooltip {
 }
 
 .refreshing-overlay[data-dim] > .refreshing-overlay-content {
-  animation: refreshing-overlay-dim 0.2s ease 300ms both;
+  animation: refreshing-overlay-dim 0.2s ease 1s both;
 }
 
 .refreshing-overlay-bar {
@@ -479,7 +479,7 @@ span:has(> .split-3d-tooltip):hover > .split-3d-tooltip {
   z-index: 20;
   background: rgba(88, 166, 255, 0.15);
   pointer-events: none;
-  animation: refreshing-overlay-appear 0.2s ease 300ms both;
+  animation: refreshing-overlay-appear 0.2s ease 1s both;
 }
 
 .refreshing-overlay-pill {
@@ -500,7 +500,7 @@ span:has(> .split-3d-tooltip):hover > .split-3d-tooltip {
   color: var(--text-secondary);
   box-shadow: var(--shadow-lg);
   pointer-events: none;
-  animation: refreshing-overlay-appear 0.2s ease 300ms both;
+  animation: refreshing-overlay-appear 0.2s ease 1s both;
 }
 
 .refreshing-overlay-bar::after {

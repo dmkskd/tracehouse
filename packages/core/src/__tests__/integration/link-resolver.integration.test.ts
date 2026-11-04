@@ -103,6 +103,49 @@ describe('LinkResolver integration', () => {
       expect(await tracker.getMergeHistoryByPartName(TEST_DB, 'merged', partName, { hostname: 'other-replica' })).toBeNull();
     });
 
+    it('opens exactly the linked record by its microsecond time, and nothing for a neighbouring time', async () => {
+      const partName = await resultPartName();
+      await ctx.client.command({ query: 'SYSTEM FLUSH LOGS' });
+      const result = await ctx.client.query({
+        query: `SELECT hostName() AS host, toString(event_time_microseconds) AS us FROM system.part_log
+                WHERE database = '${TEST_DB}' AND table = 'merged' AND part_name = '${partName}' AND event_type = 'MergeParts'`,
+        format: 'JSONEachRow',
+      });
+      const [{ host, us }] = await result.json<{ host: string; us: string }>();
+      const tracker = new MergeTracker(ctx.adapter);
+      const link = { hostname: host, event_type: 'MergeParts', event_time_microseconds: us };
+
+      const record = await tracker.getMergeHistoryByPartName(TEST_DB, 'merged', partName, link);
+      expect(record).toMatchObject({ part_name: partName, hostname: host, event_time_microseconds: us });
+      // The detail modal looks the record up again with the record itself: same row.
+      expect(await tracker.getMergeHistoryByPartName(TEST_DB, 'merged', partName, record!))
+        .toMatchObject({ event_time_microseconds: us });
+
+      const lastDigit = Number(us.slice(-1));
+      const neighbour = us.slice(0, -1) + String((lastDigit + 1) % 10);
+      expect(await tracker.getMergeHistoryByPartName(TEST_DB, 'merged', partName, { ...link, event_time_microseconds: neighbour }))
+        .toBeNull();
+    });
+
+    it('finds a finished merge by its start time, and not by a later start (a retry)', async () => {
+      const partName = await resultPartName();
+      await ctx.client.command({ query: 'SYSTEM FLUSH LOGS' });
+      const result = await ctx.client.query({
+        query: `SELECT hostName() AS host, toString(event_time_microseconds) AS us,
+                       toInt64(toUnixTimestamp64Milli(event_time_microseconds)) - toInt64(duration_ms) AS started
+                FROM system.part_log
+                WHERE database = '${TEST_DB}' AND table = 'merged' AND part_name = '${partName}' AND event_type = 'MergeParts'`,
+        format: 'JSONEachRow',
+      });
+      const [{ host, us, started }] = await result.json<{ host: string; us: string; started: string }>();
+      const tracker = new MergeTracker(ctx.adapter);
+
+      expect(await tracker.getMergeHistoryByStart(TEST_DB, 'merged', partName, host, Number(started), 1500))
+        .toMatchObject({ part_name: partName, hostname: host, event_time_microseconds: us });
+      expect(await tracker.getMergeHistoryByStart(TEST_DB, 'merged', partName, host, Number(started) - 5000, 1500)).toBeNull();
+      expect(await tracker.getMergeHistoryByStart(TEST_DB, 'merged', partName, 'other-replica', Number(started), 1500)).toBeNull();
+    });
+
     it('reports not_found for an unknown part', async () => {
       const status = await resolver.diagnoseMerge({ database: TEST_DB, table: 'merged', partName: 'all_999_999_1' });
       expect(status).toEqual({ state: 'not_found' });

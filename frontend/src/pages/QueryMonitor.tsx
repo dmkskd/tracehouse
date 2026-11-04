@@ -19,6 +19,7 @@ import { PermissionGate } from '../components/shared/PermissionGate';
 import { BackLink } from '../components/common/BackLink';
 import { DeepLinkStatusBanner } from '../components/common/DeepLinkStatusBanner';
 import { useDeepLinkResolution } from '../hooks/useDeepLinkResolution';
+import { useReturnToOrigin } from '../hooks/useReturnToOrigin';
 import { DocsLink } from '../components/common/DocsLink';
 import {
   MetricStrip,
@@ -91,6 +92,9 @@ export const QueryMonitor: React.FC = () => {
   const { runningQueries, queryHistory, selectedQuery, selectedQueryType, historyFilter, historySort, wsStatus, error, isLoadingHistory, isKillingQuery, setRunningQueries, setQueryHistory, selectQuery, setHistoryFilter, setHistorySort, setIsLoadingHistory, setIsKillingQuery, setError, clearError, clearQueries } = useQueryStore();
   const location = useLocation();
   const locationState = location.state as { tab?: 'activity' | 'running' | 'history'; filter?: Record<string, unknown> } | null;
+  // A query opened by a link from another page (Analytics, Overview) closes back to it;
+  // queries opened here afterwards close as usual.
+  const { from: cameFrom, returnToOrigin } = useReturnToOrigin();
   const experimentalEnabled = useUserPreferenceStore(s => s.experimentalEnabled);
 
   // URL-synced state for shareable links
@@ -352,13 +356,17 @@ export const QueryMonitor: React.FC = () => {
 
   const modalQuery = convertedQuery ?? deepLinkedQuery;
   const handleQueryClose = useCallback(() => {
+    if (cameFrom && !convertedQuery && deepLinkedQuery) {
+      returnToOrigin();
+      return;
+    }
     selectQuery(null, null);
     setDeepLinkedQuery(null);
     deepLinkFetched.current = '';
     deepLinkAttempt.current = '';
     dismissLinkStatus();
     updateUrl({ qd_id: undefined, qd_end: undefined } as any);
-  }, [selectQuery, updateUrl, dismissLinkStatus]);
+  }, [cameFrom, convertedQuery, deepLinkedQuery, returnToOrigin, selectQuery, updateUrl, dismissLinkStatus]);
 
   // Compute query type counts for running queries
   const queryTypeCounts = useMemo(() => {
@@ -449,7 +457,7 @@ export const QueryMonitor: React.FC = () => {
             <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
               <h2 style={{ color: 'var(--text-primary)', fontSize: 18, fontWeight: 600, margin: 0 }}>Query Tracker</h2>
               <DocsLink path="/features/query-monitor" />
-              <BackLink />
+              <BackLink from={cameFrom} />
             </div>
           </div>
           <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>

@@ -8,16 +8,18 @@
 
 import React from 'react';
 import { useAppLocation, useNavigate } from '../../hooks/useAppLocation';
+import type { LinkOrigin } from '../../hooks/useReturnToOrigin';
 
-interface FromState {
-  path: string;
-  label: string;
-}
+type FromState = LinkOrigin;
 
-export const BackLink: React.FC = () => {
+/**
+ * `from` overrides the navigation state, for pages whose own URL updates clear
+ * that state after arrival (they capture it on mount and pass it here).
+ */
+export const BackLink: React.FC<{ from?: FromState }> = ({ from: fromProp }) => {
   const location = useAppLocation();
   const navigate = useNavigate();
-  const from = (location.state as { from?: FromState } | null)?.from;
+  const from = fromProp ?? (location.state as { from?: FromState } | null)?.from;
 
   if (!from) return null;
 

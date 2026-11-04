@@ -3,9 +3,11 @@
 const queries: string[] = [
   `-- @meta: title='Active Merges' group='Merges' description='Currently running merges with progress, elapsed time, size, and memory usage'
 -- @cell: column=progress_pct type=gauge max=100 unit=%
+-- @merge_link: on=result_part_name database=database table=table part=result_part_name host=host start=started_ms
 SELECT
     database,
     table,
+    result_part_name,
     round(elapsed, 1) AS elapsed_sec,
     round(progress * 100, 1) AS progress_pct,
     num_parts,
@@ -15,20 +17,29 @@ SELECT
     formatReadableSize(bytes_written_uncompressed) AS bytes_written,
     formatReadableSize(memory_usage) AS memory,
     rows_read,
-    rows_written
+    rows_written,
+    hostName() AS host,
+    toInt64(toUnixTimestamp64Milli(now64(3))) - toInt64(elapsed * 1000) AS started_ms
 FROM system.merges
 ORDER BY elapsed DESC`,
 
   `-- @meta: title='Merge Throughput (bytes/sec)' group='Merges' description='Estimated merge read throughput for each active merge'
 -- @chart: type=bar group_by=merge value=bytes_per_sec style=2d
 -- @cell: column=progress_pct type=gauge max=100 unit=%
+-- @merge_link: on=merge database=database table=table part=result_part_name host=host start=started_ms
+-- merge names the result part so each bar is one merge (the link opens it).
 SELECT
-    concat(database, '.', table, ' #', toString(num_parts), 'p') AS merge,
+    concat(database, '.', table, ' ', result_part_name, ' #', toString(num_parts), 'p') AS merge,
     round(elapsed, 0) AS elapsed_sec,
     round(progress * 100, 1) AS progress_pct,
     formatReadableSize(bytes_read_uncompressed) AS read,
     if(elapsed > 0, round(bytes_read_uncompressed / elapsed, 0), 0) AS bytes_per_sec,
-    formatReadableSize(if(elapsed > 0, bytes_read_uncompressed / elapsed, 0)) AS throughput
+    formatReadableSize(if(elapsed > 0, bytes_read_uncompressed / elapsed, 0)) AS throughput,
+    database,
+    table,
+    result_part_name,
+    hostName() AS host,
+    toInt64(toUnixTimestamp64Milli(now64(3))) - toInt64(elapsed * 1000) AS started_ms
 FROM system.merges
 ORDER BY bytes_per_sec DESC`,
 
@@ -47,14 +58,18 @@ GROUP BY hour
 ORDER BY hour ASC`,
 
   `-- @meta: title='Merge Errors' group='Merges' interval='7 DAY' description='Failed or errored merge operations from part_log'
+-- @merge_link: on=part_name database=database table=table part=part_name host=host time=event_time_us
 SELECT
     event_time,
     database,
     table,
+    part_name,
     partition_id,
     duration_ms,
     error,
-    exception
+    exception,
+    hostName() AS host,
+    toString(event_time_microseconds) AS event_time_us
 FROM {{cluster_aware:system.part_log}}
 WHERE event_type = 'MergeParts'
   AND exception != ''

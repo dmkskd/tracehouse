@@ -663,11 +663,11 @@ export const AnalyticsTooltip: React.FC<{
   active?: boolean;
   payload?: Array<{ value: number | null; name?: string; color?: string; payload?: Record<string, unknown> }>;
   label?: string;
-  drillIntoQuery?: string;
+  clickHint?: string;
   correlationValues?: CorrelationEntry[];
   currentPanelName?: string;
   isHoveredPanel?: boolean;
-}> = ({ active, payload, label, drillIntoQuery, correlationValues, currentPanelName, isHoveredPanel }) => {
+}> = ({ active, payload, label, clickHint, correlationValues, currentPanelName, isHoveredPanel }) => {
   if (!active || !payload?.length) return null;
   if (isHoveredPanel === false) return null;
   // Extract description from the underlying data point (set by buildChartData)
@@ -702,8 +702,8 @@ export const AnalyticsTooltip: React.FC<{
           {description}
         </div>
       )}
-      {drillIntoQuery && (
-        <div style={drillHintStyle}>{drillIntoQuery === 'Part Inspector' ? 'Click to inspect part' : `Click to drill into ${drillIntoQuery}`}</div>
+      {clickHint && (
+        <div style={drillHintStyle}>{clickHint}</div>
       )}
       {orderedCorrelation && orderedCorrelation.length > 0 && (
         <div style={{ borderTop: '1px solid var(--border-secondary, rgba(148,163,184,0.2))', marginTop: 6, paddingTop: 5 }}>
@@ -749,9 +749,9 @@ export const AnalyticsTooltip: React.FC<{
 const PieTooltip: React.FC<{
   active?: boolean;
   payload?: Array<{ payload: { label: string; value: number; pct: number; description?: string }; color?: string }>;
-  drillIntoQuery?: string;
+  clickHint?: string;
   unit?: string;
-}> = ({ active, payload, drillIntoQuery, unit }) => {
+}> = ({ active, payload, clickHint, unit }) => {
   if (!active || !payload?.length) return null;
   const d = payload[0].payload;
   return (
@@ -768,8 +768,8 @@ const PieTooltip: React.FC<{
           {d.description}
         </div>
       )}
-      {drillIntoQuery && (
-        <div style={drillHintStyle}>{drillIntoQuery === 'Part Inspector' ? 'Click to inspect part' : `Click to drill into ${drillIntoQuery}`}</div>
+      {clickHint && (
+        <div style={drillHintStyle}>{clickHint}</div>
       )}
     </div>
   );
@@ -779,7 +779,7 @@ const PieTooltip: React.FC<{
 // 2D Charts - all using recharts
 // ═══════════════════════════════════════════════════════════════════════════
 
-export const BarChart2D: React.FC<{ data: ChartDataPoint[]; fullHeight?: boolean; onDrillDown?: (e: DrillDownEvent) => void; unit?: string; drillIntoQuery?: string }> = ({ data, fullHeight, onDrillDown, unit, drillIntoQuery }) => {
+export const BarChart2D: React.FC<{ data: ChartDataPoint[]; fullHeight?: boolean; onDrillDown?: (e: DrillDownEvent) => void; unit?: string; clickHint?: string }> = ({ data, fullHeight, onDrillDown, unit, clickHint }) => {
   if (!data.length) return null;
   const rechartsData = data.map(d => ({ name: d.label, value: d.value, fill: d.color, description: d.description }));
   const defaultHeight = Math.max(200, data.length * 28 + 40);
@@ -804,7 +804,7 @@ export const BarChart2D: React.FC<{ data: ChartDataPoint[]; fullHeight?: boolean
           width={110}
           tickFormatter={(v: string) => v.length > 16 ? v.slice(0, 16) + '…' : v}
         />
-        <Tooltip content={<AnalyticsTooltip drillIntoQuery={drillIntoQuery} />} cursor={{ fill: 'rgba(99,102,241,0.06)' }} />
+        <Tooltip content={<AnalyticsTooltip clickHint={clickHint} />} cursor={{ fill: 'rgba(99,102,241,0.06)' }} />
         <Bar dataKey="value" radius={[0, 4, 4, 0]} animationDuration={400} maxBarSize={22}
           cursor={onDrillDown ? 'pointer' : undefined}
           // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -819,7 +819,7 @@ export const BarChart2D: React.FC<{ data: ChartDataPoint[]; fullHeight?: boolean
   );
 };
 
-export const LineChart2D: React.FC<{ data: ChartDataPoint[]; fullHeight?: boolean; onDrillDown?: (e: DrillDownEvent) => void; unit?: string; drillIntoQuery?: string; color?: string } & CrosshairProps> = ({ data, fullHeight, onDrillDown, unit, drillIntoQuery, color, hoveredTimestamp, onTimestampHover, correlationValues, currentPanelName, isHoveredPanel}) => {
+export const LineChart2D: React.FC<{ data: ChartDataPoint[]; fullHeight?: boolean; onDrillDown?: (e: DrillDownEvent) => void; unit?: string; clickHint?: string; color?: string } & CrosshairProps> = ({ data, fullHeight, onDrillDown, unit, clickHint, color, hoveredTimestamp, onTimestampHover, correlationValues, currentPanelName, isHoveredPanel}) => {
   const dataByLabel = useMemo(() => new Map(data.map(d => [d.label, d.value])), [data]);
   if (data.length < 2) return null;
   const c = color || '#6366f1';
@@ -850,7 +850,7 @@ export const LineChart2D: React.FC<{ data: ChartDataPoint[]; fullHeight?: boolea
           tickFormatter={compactFormatter(unit)}
           width={50}
         />
-        <Tooltip content={<AnalyticsTooltip drillIntoQuery={drillIntoQuery} correlationValues={correlationValues} currentPanelName={currentPanelName} isHoveredPanel={isHoveredPanel} />} offset={20} wrapperStyle={{ zIndex: 1000, pointerEvents: 'none' }} cursor={<CrosshairCursor />} />
+        <Tooltip content={<AnalyticsTooltip clickHint={clickHint} correlationValues={correlationValues} currentPanelName={currentPanelName} isHoveredPanel={isHoveredPanel} />} offset={20} wrapperStyle={{ zIndex: 1000, pointerEvents: 'none' }} cursor={<CrosshairCursor />} />
         {hoveredTimestamp && <SyncedCrosshair hoveredTimestamp={hoveredTimestamp} dataByLabel={dataByLabel} />}
         <Line
           type="monotone"
@@ -868,7 +868,7 @@ export const LineChart2D: React.FC<{ data: ChartDataPoint[]; fullHeight?: boolea
   );
 };
 
-export const PieChart2D: React.FC<{ data: ChartDataPoint[]; fullHeight?: boolean; onDrillDown?: (e: DrillDownEvent) => void; drillIntoQuery?: string; unit?: string }> = ({ data, fullHeight, onDrillDown, drillIntoQuery, unit }) => {
+export const PieChart2D: React.FC<{ data: ChartDataPoint[]; fullHeight?: boolean; onDrillDown?: (e: DrillDownEvent) => void; clickHint?: string; unit?: string }> = ({ data, fullHeight, onDrillDown, clickHint, unit }) => {
   if (!data.length) return null;
   const total = data.reduce((s, d) => s + d.value, 0);
   const pieData = data.map(d => ({
@@ -911,7 +911,7 @@ export const PieChart2D: React.FC<{ data: ChartDataPoint[]; fullHeight?: boolean
             <Cell key={i} fill={entry.color} stroke="var(--bg-primary, #030712)" strokeWidth={1} />
           ))}
         </Pie>
-        <Tooltip content={<PieTooltip drillIntoQuery={drillIntoQuery} unit={unit} />} />
+        <Tooltip content={<PieTooltip clickHint={clickHint} unit={unit} />} />
         <Legend
           layout="vertical"
           align="right"
@@ -930,7 +930,7 @@ export const PieChart2D: React.FC<{ data: ChartDataPoint[]; fullHeight?: boolean
   );
 };
 
-export const AreaChart2D: React.FC<{ data: ChartDataPoint[]; fullHeight?: boolean; onDrillDown?: (e: DrillDownEvent) => void; unit?: string; drillIntoQuery?: string; color?: string } & CrosshairProps> = ({ data, fullHeight, onDrillDown, unit, drillIntoQuery, color, hoveredTimestamp, onTimestampHover, correlationValues, currentPanelName, isHoveredPanel}) => {
+export const AreaChart2D: React.FC<{ data: ChartDataPoint[]; fullHeight?: boolean; onDrillDown?: (e: DrillDownEvent) => void; unit?: string; clickHint?: string; color?: string } & CrosshairProps> = ({ data, fullHeight, onDrillDown, unit, clickHint, color, hoveredTimestamp, onTimestampHover, correlationValues, currentPanelName, isHoveredPanel}) => {
   const dataByLabel = useMemo(() => new Map(data.map(d => [d.label, d.value])), [data]);
   if (data.length < 2) return null;
   const c = color || '#6366f1';
@@ -968,7 +968,7 @@ export const AreaChart2D: React.FC<{ data: ChartDataPoint[]; fullHeight?: boolea
           tickFormatter={compactFormatter(unit)}
           width={50}
         />
-        <Tooltip content={<AnalyticsTooltip drillIntoQuery={drillIntoQuery} correlationValues={correlationValues} currentPanelName={currentPanelName} isHoveredPanel={isHoveredPanel} />} offset={20} wrapperStyle={{ zIndex: 1000, pointerEvents: 'none' }} cursor={<CrosshairCursor />} />
+        <Tooltip content={<AnalyticsTooltip clickHint={clickHint} correlationValues={correlationValues} currentPanelName={currentPanelName} isHoveredPanel={isHoveredPanel} />} offset={20} wrapperStyle={{ zIndex: 1000, pointerEvents: 'none' }} cursor={<CrosshairCursor />} />
         {hoveredTimestamp && <SyncedCrosshair hoveredTimestamp={hoveredTimestamp} dataByLabel={dataByLabel} />}
         <Area
           type="monotone"
@@ -991,7 +991,7 @@ export const AreaChart2D: React.FC<{ data: ChartDataPoint[]; fullHeight?: boolea
 // Dual-axis Area Chart - two value columns, left + right Y axes
 // ═══════════════════════════════════════════════════════════════════════════
 
-export const DualAxisAreaChart2D: React.FC<{ data: GroupedChartData[]; valueColumns: string[]; fullHeight?: boolean; onDrillDown?: (e: DrillDownEvent) => void; drillIntoQuery?: string } & CrosshairProps> = ({ data, valueColumns, fullHeight, onDrillDown, drillIntoQuery, hoveredTimestamp, onTimestampHover, correlationValues, currentPanelName, isHoveredPanel}) => {
+export const DualAxisAreaChart2D: React.FC<{ data: GroupedChartData[]; valueColumns: string[]; fullHeight?: boolean; onDrillDown?: (e: DrillDownEvent) => void; clickHint?: string } & CrosshairProps> = ({ data, valueColumns, fullHeight, onDrillDown, clickHint, hoveredTimestamp, onTimestampHover, correlationValues, currentPanelName, isHoveredPanel}) => {
   // For dual-axis, skip horizontal crosshair (ambiguous which y-axis to use)
   if (data.length < 2) return null;
   const { rows, groupNames, colorMap } = flattenGrouped(data);
@@ -1028,7 +1028,7 @@ export const DualAxisAreaChart2D: React.FC<{ data: GroupedChartData[]; valueColu
           tickFormatter={compactFormatter()} width={50} />
         <YAxis yAxisId="right" orientation="right" tick={axisTickStyle} tickLine={axisLineStyle} axisLine={axisLineStyle}
           tickFormatter={compactFormatter()} width={55} />
-        <Tooltip content={<AnalyticsTooltip drillIntoQuery={drillIntoQuery} correlationValues={correlationValues} currentPanelName={currentPanelName} isHoveredPanel={isHoveredPanel} />} offset={20} wrapperStyle={{ zIndex: 1000, pointerEvents: 'none' }} cursor={<CrosshairCursor />} />
+        <Tooltip content={<AnalyticsTooltip clickHint={clickHint} correlationValues={correlationValues} currentPanelName={currentPanelName} isHoveredPanel={isHoveredPanel} />} offset={20} wrapperStyle={{ zIndex: 1000, pointerEvents: 'none' }} cursor={<CrosshairCursor />} />
         {hoveredTimestamp && <SyncedCrosshair hoveredTimestamp={hoveredTimestamp} />}
         <Legend iconType="line" iconSize={14} formatter={(value: string) => (
           <span style={{ fontSize: 11, color: 'var(--text-secondary)' }}>
@@ -1076,7 +1076,7 @@ function barClickLabel(entry: any): string {
   return String(entry?.payload?.name ?? entry?.name ?? '');
 }
 
-export const GroupedBarChart2D: React.FC<{ data: GroupedChartData[]; orientation?: 'horizontal' | 'vertical'; onDrillDown?: (e: DrillDownEvent) => void; unit?: string; drillIntoQuery?: string }> = ({ data, orientation = 'horizontal', onDrillDown, unit, drillIntoQuery }) => {
+export const GroupedBarChart2D: React.FC<{ data: GroupedChartData[]; orientation?: 'horizontal' | 'vertical'; onDrillDown?: (e: DrillDownEvent) => void; unit?: string; clickHint?: string }> = ({ data, orientation = 'horizontal', onDrillDown, unit, clickHint }) => {
   if (!data.length) return null;
   const { rows, groupNames, colorMap } = flattenGrouped(data);
 
@@ -1087,7 +1087,7 @@ export const GroupedBarChart2D: React.FC<{ data: GroupedChartData[]; orientation
           <CartesianGrid strokeDasharray="3 3" stroke={gridStroke} horizontal={false} />
           <XAxis type="number" tick={axisTickStyle} tickLine={axisLineStyle} axisLine={axisLineStyle} tickFormatter={compactFormatter(unit)} />
           <YAxis type="category" dataKey="name" tick={axisTickStyle} tickLine={false} axisLine={axisLineStyle} width={150} />
-          <Tooltip content={<AnalyticsTooltip drillIntoQuery={drillIntoQuery} />} cursor={{ fill: 'rgba(99,102,241,0.06)' }} />
+          <Tooltip content={<AnalyticsTooltip clickHint={clickHint} />} cursor={{ fill: 'rgba(99,102,241,0.06)' }} />
           <Legend iconType="circle" iconSize={8}
             formatter={(value: string) => <span style={{ fontSize: 11, color: 'var(--text-secondary)' }}>{value}</span>} />
           {groupNames.map(name => (
@@ -1111,7 +1111,7 @@ export const GroupedBarChart2D: React.FC<{ data: GroupedChartData[]; orientation
           interval={0} angle={-45} textAnchor="end" height={60}
           tickFormatter={formatXTick} />
         <YAxis tick={axisTickStyle} tickLine={axisLineStyle} axisLine={axisLineStyle} tickFormatter={compactFormatter(unit)} width={50} />
-        <Tooltip content={<AnalyticsTooltip drillIntoQuery={drillIntoQuery} />} cursor={{ fill: 'rgba(99,102,241,0.06)' }} />
+        <Tooltip content={<AnalyticsTooltip clickHint={clickHint} />} cursor={{ fill: 'rgba(99,102,241,0.06)' }} />
         <Legend iconType="circle" iconSize={8}
           formatter={(value: string) => <span style={{ fontSize: 11, color: 'var(--text-secondary)' }}>{value}</span>} />
         {groupNames.map(name => (
@@ -1126,7 +1126,7 @@ export const GroupedBarChart2D: React.FC<{ data: GroupedChartData[]; orientation
   );
 };
 
-export const StackedBarChart2D: React.FC<{ data: GroupedChartData[]; orientation?: 'horizontal' | 'vertical'; onDrillDown?: (e: DrillDownEvent) => void; unit?: string; drillIntoQuery?: string }> = ({ data, orientation = 'horizontal', onDrillDown, unit, drillIntoQuery }) => {
+export const StackedBarChart2D: React.FC<{ data: GroupedChartData[]; orientation?: 'horizontal' | 'vertical'; onDrillDown?: (e: DrillDownEvent) => void; unit?: string; clickHint?: string }> = ({ data, orientation = 'horizontal', onDrillDown, unit, clickHint }) => {
   if (!data.length) return null;
   const { rows, groupNames, colorMap } = flattenGrouped(data);
 
@@ -1138,7 +1138,7 @@ export const StackedBarChart2D: React.FC<{ data: GroupedChartData[]; orientation
           <XAxis type="number" tick={axisTickStyle} tickLine={axisLineStyle} axisLine={axisLineStyle} tickFormatter={compactFormatter(unit)} />
           <YAxis type="category" dataKey="name" tick={axisTickStyle} tickLine={false} axisLine={axisLineStyle} width={110}
             tickFormatter={(v: string) => v.length > 15 ? v.slice(0, 15) + '…' : v} />
-          <Tooltip filterNull={false} content={<AnalyticsTooltip drillIntoQuery={drillIntoQuery} />} cursor={{ fill: 'rgba(99,102,241,0.06)' }} />
+          <Tooltip filterNull={false} content={<AnalyticsTooltip clickHint={clickHint} />} cursor={{ fill: 'rgba(99,102,241,0.06)' }} />
           <Legend iconType="circle" iconSize={8}
             formatter={(value: string) => <span style={{ fontSize: 11, color: 'var(--text-secondary)' }}>{value}</span>} />
           {groupNames.map(name => (
@@ -1162,7 +1162,7 @@ export const StackedBarChart2D: React.FC<{ data: GroupedChartData[]; orientation
           interval="preserveStartEnd"
           tickFormatter={formatXTick} />
         <YAxis tick={axisTickStyle} tickLine={axisLineStyle} axisLine={axisLineStyle} tickFormatter={compactFormatter(unit)} width={50} />
-        <Tooltip filterNull={false} content={<AnalyticsTooltip drillIntoQuery={drillIntoQuery} />} cursor={{ fill: 'rgba(99,102,241,0.06)' }} />
+        <Tooltip filterNull={false} content={<AnalyticsTooltip clickHint={clickHint} />} cursor={{ fill: 'rgba(99,102,241,0.06)' }} />
         <Legend iconType="circle" iconSize={8}
           formatter={(value: string) => <span style={{ fontSize: 11, color: 'var(--text-secondary)' }}>{value}</span>} />
         {groupNames.map(name => (
@@ -1275,7 +1275,7 @@ export const GroupedStackedBarChart2D: React.FC<{ data: GroupedStackedChartData;
   );
 };
 
-export const GroupedLineChart2D: React.FC<{ data: GroupedChartData[]; onDrillDown?: (e: DrillDownEvent) => void; unit?: string; drillIntoQuery?: string; renderMode?: ChartRender } & CrosshairProps> = ({ data, onDrillDown, unit, drillIntoQuery, renderMode, hoveredTimestamp, onTimestampHover, correlationValues, currentPanelName, isHoveredPanel}) => {
+export const GroupedLineChart2D: React.FC<{ data: GroupedChartData[]; onDrillDown?: (e: DrillDownEvent) => void; unit?: string; clickHint?: string; renderMode?: ChartRender } & CrosshairProps> = ({ data, onDrillDown, unit, clickHint, renderMode, hoveredTimestamp, onTimestampHover, correlationValues, currentPanelName, isHoveredPanel}) => {
   const [hoveredLine, setHoveredLine] = useState<string | null>(null);
   if (!data.length) return null;
   const { rows, groupNames, colorMap } = flattenGrouped(data);
@@ -1316,7 +1316,7 @@ export const GroupedLineChart2D: React.FC<{ data: GroupedChartData[]; onDrillDow
             }}
           />
         ) : (
-          <Tooltip content={<AnalyticsTooltip drillIntoQuery={drillIntoQuery} correlationValues={correlationValues} currentPanelName={currentPanelName} isHoveredPanel={isHoveredPanel} />} offset={20} wrapperStyle={{ zIndex: 1000, pointerEvents: 'none' }} cursor={<CrosshairCursor />} />
+          <Tooltip content={<AnalyticsTooltip clickHint={clickHint} correlationValues={correlationValues} currentPanelName={currentPanelName} isHoveredPanel={isHoveredPanel} />} offset={20} wrapperStyle={{ zIndex: 1000, pointerEvents: 'none' }} cursor={<CrosshairCursor />} />
         )}
         {hoveredTimestamp && <SyncedCrosshair hoveredTimestamp={hoveredTimestamp} />}
         {!spaghetti && (
@@ -1907,7 +1907,7 @@ export interface ChartRendererProps extends CrosshairProps {
   unit?: string;
   color?: string;
   onDrillDown?: (e: DrillDownEvent) => void;
-  drillIntoQuery?: string;
+  clickHint?: string;
   /** When set, enables dual Y-axis mode for area/line charts (first col = left, second col = right) */
   valueColumns?: string[];
   /** Rendering variant (e.g. 'overlay' for grouped_line spaghetti mode). */
@@ -1915,32 +1915,32 @@ export interface ChartRendererProps extends CrosshairProps {
 }
 
 export const ChartRenderer: React.FC<ChartRendererProps> = ({
-  chartType, data, groupedData, groupedStackedData, orientation, fullHeight, unit, color, onDrillDown, drillIntoQuery,
+  chartType, data, groupedData, groupedStackedData, orientation, fullHeight, unit, color, onDrillDown, clickHint,
   rawRows, radarConfig,
   hoveredTimestamp, onTimestampHover, correlationValues, currentPanelName, isHoveredPanel, valueColumns, renderMode,
 }) => {
   // Dual-axis mode: area/line with exactly 2 value columns
   if ((chartType === 'area' || chartType === 'line') && valueColumns && valueColumns.length === 2 && groupedData.length > 0) {
-    return <DualAxisAreaChart2D data={groupedData} valueColumns={valueColumns} fullHeight={fullHeight} onDrillDown={onDrillDown} drillIntoQuery={drillIntoQuery} hoveredTimestamp={hoveredTimestamp} onTimestampHover={onTimestampHover} correlationValues={correlationValues} currentPanelName={currentPanelName} isHoveredPanel={isHoveredPanel} />;
+    return <DualAxisAreaChart2D data={groupedData} valueColumns={valueColumns} fullHeight={fullHeight} onDrillDown={onDrillDown} clickHint={clickHint} hoveredTimestamp={hoveredTimestamp} onTimestampHover={onTimestampHover} correlationValues={correlationValues} currentPanelName={currentPanelName} isHoveredPanel={isHoveredPanel} />;
   }
   switch (chartType) {
     case 'radar':
       return <RadarChart2D rows={rawRows ?? []} config={radarConfig ?? {}} fullHeight={fullHeight} />;
     case 'line':
-      return <LineChart2D data={data} fullHeight={fullHeight} onDrillDown={onDrillDown} unit={unit} color={color} drillIntoQuery={drillIntoQuery} hoveredTimestamp={hoveredTimestamp} onTimestampHover={onTimestampHover} correlationValues={correlationValues} currentPanelName={currentPanelName} isHoveredPanel={isHoveredPanel} />;
+      return <LineChart2D data={data} fullHeight={fullHeight} onDrillDown={onDrillDown} unit={unit} color={color} clickHint={clickHint} hoveredTimestamp={hoveredTimestamp} onTimestampHover={onTimestampHover} correlationValues={correlationValues} currentPanelName={currentPanelName} isHoveredPanel={isHoveredPanel} />;
     case 'pie':
-      return <PieChart2D data={data} fullHeight={fullHeight} onDrillDown={onDrillDown} drillIntoQuery={drillIntoQuery} unit={unit} />;
+      return <PieChart2D data={data} fullHeight={fullHeight} onDrillDown={onDrillDown} clickHint={clickHint} unit={unit} />;
     case 'area':
-      return <AreaChart2D data={data} fullHeight={fullHeight} onDrillDown={onDrillDown} unit={unit} color={color} drillIntoQuery={drillIntoQuery} hoveredTimestamp={hoveredTimestamp} onTimestampHover={onTimestampHover} correlationValues={correlationValues} currentPanelName={currentPanelName} isHoveredPanel={isHoveredPanel} />;
+      return <AreaChart2D data={data} fullHeight={fullHeight} onDrillDown={onDrillDown} unit={unit} color={color} clickHint={clickHint} hoveredTimestamp={hoveredTimestamp} onTimestampHover={onTimestampHover} correlationValues={correlationValues} currentPanelName={currentPanelName} isHoveredPanel={isHoveredPanel} />;
     case 'grouped_bar':
-      return <GroupedBarChart2D data={groupedData} orientation={orientation} onDrillDown={onDrillDown} unit={unit} drillIntoQuery={drillIntoQuery} />;
+      return <GroupedBarChart2D data={groupedData} orientation={orientation} onDrillDown={onDrillDown} unit={unit} clickHint={clickHint} />;
     case 'stacked_bar':
-      return <StackedBarChart2D data={groupedData} orientation={orientation} onDrillDown={onDrillDown} unit={unit} drillIntoQuery={drillIntoQuery} />;
+      return <StackedBarChart2D data={groupedData} orientation={orientation} onDrillDown={onDrillDown} unit={unit} clickHint={clickHint} />;
     case 'grouped_stacked_bar':
       return groupedStackedData ? <GroupedStackedBarChart2D data={groupedStackedData} unit={unit} fullHeight={fullHeight} /> : null;
     case 'grouped_line':
-      return <GroupedLineChart2D data={groupedData} onDrillDown={onDrillDown} unit={unit} drillIntoQuery={drillIntoQuery} renderMode={renderMode} hoveredTimestamp={hoveredTimestamp} onTimestampHover={onTimestampHover} correlationValues={correlationValues} currentPanelName={currentPanelName} isHoveredPanel={isHoveredPanel} />;
+      return <GroupedLineChart2D data={groupedData} onDrillDown={onDrillDown} unit={unit} clickHint={clickHint} renderMode={renderMode} hoveredTimestamp={hoveredTimestamp} onTimestampHover={onTimestampHover} correlationValues={correlationValues} currentPanelName={currentPanelName} isHoveredPanel={isHoveredPanel} />;
     default:
-      return <BarChart2D data={data} fullHeight={fullHeight} onDrillDown={onDrillDown} unit={unit} drillIntoQuery={drillIntoQuery} />;
+      return <BarChart2D data={data} fullHeight={fullHeight} onDrillDown={onDrillDown} unit={unit} clickHint={clickHint} />;
   }
 };

@@ -8,6 +8,7 @@
  *   -- @cell: column-level table decorations (rag, gauge, sparkline)
  *   -- @drill:      click-through navigation between queries
  *   -- @link:       modal popup navigation between queries
+ *   -- @merge_link: click a merge attempt to open it on the Merges page
  *   -- @requires:   minimum ClickHouse version
  *   -- Source:      attribution URL
  */
@@ -16,6 +17,7 @@ import {
   isClickHouseVersionAtLeast,
   parseClickHouseVersion,
 } from '../utils/clickhouse-version.js';
+import { buildMergeLinkUrl, buildMergeRecordLinkUrl, buildQueryLinkUrl } from '../utils/deep-link-resolution.js';
 
 /* ─── types ─── */
 
@@ -171,6 +173,8 @@ export interface ParsedDirectives {
     /** Column containing the query_id */
     on: string;
   };
+  /** @merge_link: click a merge attempt to open that part_log record on the Merges page. */
+  mergeLink?: MergeLinkDirective;
   /** All cell style rules (rag, gauge, sparkline) from @cell: directives. */
   cellStyles: CellStyleRule[];
   summaries?: SummaryDirectives;
@@ -178,6 +182,24 @@ export interface ParsedDirectives {
     clickhouseMinVersion?: string;
   };
   source?: string;
+}
+
+/**
+ * Column names, in the panel's result rows, that identify one merge attempt.
+ * Exactly one of `time` (a finished MergeParts record) or `start` (a merge that
+ * may still be running) is set.
+ */
+export interface MergeLinkDirective {
+  /** Clickable column (chart group_by / table cell) */
+  on: string;
+  database: string;
+  table: string;
+  part: string;
+  host: string;
+  /** toString(event_time_microseconds) of a finished record */
+  time?: string;
+  /** Start of a running merge, epoch ms (server clock) */
+  start?: string;
 }
 
 export type QueryVersionCompatibility =
@@ -665,6 +687,17 @@ export function parseDirectives(sql: string): ParsedDirectives | null {
     if (onMatch) result.queryLink = { on: onMatch[1] };
   }
 
+  const mergeLinkMatch = sql.match(/--\s*@merge_link:\s*(.+)/i);
+  if (mergeLinkMatch) {
+    const ml = mergeLinkMatch[1];
+    const field = (name: string) => ml.match(new RegExp(`\\b${name}=(\\w+)`))?.[1];
+    const on = field('on'), database = field('database'), table = field('table');
+    const part = field('part'), host = field('host'), time = field('time'), start = field('start');
+    if (on && database && table && part && host && (time ? !start : start)) {
+      result.mergeLink = time ? { on, database, table, part, host, time } : { on, database, table, part, host, start };
+    }
+  }
+
   const requiresMatch = sql.match(
     /--\s*@requires:\s*clickhouse\s*>=\s*(\d+\.\d+(?:\.\d+)?)/i,
   );
@@ -680,6 +713,74 @@ export function parseDirectives(sql: string): ParsedDirectives | null {
 
 /** Parse @chart directive with full detail (multi-column values, orientation, unit).
  *  Also extracts title/description from @meta if present. */
+/**
+ * Merges page URL for the merge attempt in `row`, or null when the row lacks
+ * a value: the exact finished record (`time`), or the merge started at
+ * `start`, running or finished. The URL is app-relative (`/merges?...`); the caller maps it
+ * to the standalone or Grafana plugin href.
+ */
+export function mergeLinkUrl(link: MergeLinkDirective, row: Record<string, unknown>): string | null {
+  const value = (col: string) => {
+    const v = row[col];
+    return v == null || v === '' ? null : String(v);
+  };
+  const database = value(link.database), table = value(link.table), part = value(link.part);
+  const hostname = value(link.host);
+  if (!database || !table || !part || !hostname) return null;
+  if (link.start) {
+    const startedAt = Number(value(link.start));
+    return Number.isFinite(startedAt) && startedAt > 0 ? buildMergeLinkUrl(database, table, part, hostname, startedAt) : null;
+  }
+  const eventTimeMicroseconds = link.time ? value(link.time) : null;
+  if (!eventTimeMicroseconds) return null;
+  return buildMergeRecordLinkUrl(database, table, part, { hostname, eventTimeMicroseconds, eventType: 'MergeParts' });
+}
+
+/** What a click on a chart bar / point does. One per panel. */
+export type ChartClickAction = 'drill' | 'partLink' | 'queryLink' | 'mergeLink';
+
+/**
+ * The directive a chart click follows, in this order: @drill, @part_link,
+ * @query_link, @merge_link. A directive whose `on` column is missing from the
+ * result does not apply; before the first run (`columns` undefined) it does.
+ */
+export function chartClickAction(
+  directives: Pick<ParsedDirectives, 'drill' | 'partLink' | 'queryLink' | 'mergeLink'>,
+  columns?: string[],
+): ChartClickAction | null {
+  const has = (on?: string) => !!on && (!columns || columns.includes(on));
+  if (directives.drill?.into && has(directives.drill.on)) return 'drill';
+  if (has(directives.partLink?.on)) return 'partLink';
+  if (has(directives.queryLink?.on)) return 'queryLink';
+  if (has(directives.mergeLink?.on)) return 'mergeLink';
+  return null;
+}
+
+/** Tooltip line telling the user what a chart click does. */
+export function chartClickHint(action: ChartClickAction, drillInto?: string): string {
+  switch (action) {
+    case 'drill': return `Click to drill into ${drillInto ?? ''}`.trim();
+    case 'partLink': return 'Click to inspect part';
+    case 'queryLink': return 'Click to open this query on the Queries page';
+    case 'mergeLink': return 'Click to open this merge on the Merges page';
+  }
+}
+
+/**
+ * Page URL a @query_link / @merge_link opens for `row`, or null when the
+ * panel has no such link or the row lacks a value. Query links open the
+ * Queries page on the X-Ray tab.
+ */
+export function pageLinkUrl(
+  directives: Pick<ParsedDirectives, 'queryLink' | 'mergeLink'>,
+  kind: 'queryLink' | 'mergeLink',
+  row: Record<string, unknown>,
+): string | null {
+  if (kind === 'mergeLink') return directives.mergeLink ? mergeLinkUrl(directives.mergeLink, row) : null;
+  const queryId = directives.queryLink ? row[directives.queryLink.on] : null;
+  return queryId == null || queryId === '' ? null : buildQueryLinkUrl(String(queryId), null, 'xray');
+}
+
 export function parseChartDirective(sql: string): Partial<ChartDirective> | null {
   const cm = sql.match(/--\s*@chart:\s*(.+)/i);
   if (!cm) return null;

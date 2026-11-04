@@ -80,3 +80,51 @@ export interface EventContextOptions {
   windowSeconds?: number;
   limit?: number;
 }
+
+/** Current system.errors counter for an error event's error on one host. */
+export interface EventErrorCounter {
+  hostname: string;
+  /** Start of the host's current server process (now() - uptime()). */
+  process_started_at: string;
+  /** False when the host has no counter row for this error and remote flag. */
+  has_counter: boolean;
+  value: number;
+  last_error_time?: string;
+  last_error_message?: string;
+}
+
+/**
+ * What the live counter says relative to the event. Only facts the counter
+ * can support: it covers the current process only.
+ */
+export type EventErrorStateKind =
+  | 'no_later_occurrence'
+  | 'later_occurrence'
+  | 'restarted_since'
+  | 'no_counter'
+  | 'host_not_returned';
+
+export interface EventErrorState {
+  kind: EventErrorStateKind;
+  /** One-sentence factual statement for display. */
+  summary: string;
+  /**
+   * Label for counter.last_error_message, which belongs to the last
+   * occurrence; that occurrence may be after the event or in a later process.
+   * Absent when there is no message to show.
+   */
+  message_label?: string;
+  counter?: EventErrorCounter;
+}
+
+export interface EventErrorStateOptions {
+  eventTime: string;
+  hostname: string;
+  exceptionName: string;
+  remote: boolean;
+  availableCapabilities: readonly string[];
+}
+
+export interface EventErrorStateResult {
+  source: EventContextSource<EventErrorCounter>;
+}

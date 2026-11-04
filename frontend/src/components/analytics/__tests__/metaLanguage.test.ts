@@ -6,8 +6,14 @@ import {
   parseChartDirective,
   resolveQueryRef,
   evaluateQueryVersionCompatibility,
+  mergeLinkUrl,
+  chartClickAction,
+  chartClickHint,
+  pageLinkUrl,
   type CellStyleRule,
 } from '../metaLanguage';
+import mergeCostQueries from '../queries/mergeCost';
+import mergeQueries from '../queries/merges';
 import {
   resolveTimeRange,
   resolveDrillParams,
@@ -93,6 +99,23 @@ describe('parseDirectives', { tags: ['analytics'] }, () => {
       sql: `-- @meta: title='X-Ray CPU' group='X-Ray'\n-- @query_link: on=query_id\nSELECT 1`,
       expected: {
         queryLink: { on: 'query_id' },
+      },
+    },
+
+    /* ── @merge_link ── */
+    {
+      name: 'with merge_link directive',
+      sql: `-- @meta: title='Attempts' group='Merge Analytics'\n-- @merge_link: on=attempt database=db table=tbl part=part_name host=host time=event_time\nSELECT 1`,
+      expected: {
+        mergeLink: { on: 'attempt', database: 'db', table: 'tbl', part: 'part_name', host: 'host', time: 'event_time' },
+      },
+    },
+
+    {
+      name: 'with merge_link start directive (running merge)',
+      sql: `-- @meta: title='Active' group='Merges'\n-- @merge_link: on=result_part_name database=database table=table part=result_part_name host=host start=started_ms\nSELECT 1`,
+      expected: {
+        mergeLink: { on: 'result_part_name', database: 'database', table: 'table', part: 'result_part_name', host: 'host', start: 'started_ms' },
       },
     },
 
@@ -838,5 +861,74 @@ describe('resolveQueryRef', { tags: ['analytics'] }, () => {
       expect(result!.name).toBe(expectedName);
       expect(result!.group).toBe(expectedGroup);
     }
+  });
+});
+
+describe('mergeLinkUrl on the Merge Attempts panel', { tags: ['analytics'] }, () => {
+  const sql = mergeCostQueries.find(q => q.includes("title='Merge Attempts'"))!;
+  const link = parseDirectives(sql)!.mergeLink!;
+  const row = {
+    attempt: '2026-11-04 10:00:00.123456 node-2', host: 'node-2',
+    database: 'web', table: 'pageviews_local', part_name: 'all_1_5_1',
+    event_time: '2026-11-04 10:00:00.123456',
+  };
+
+  test('opens the exact MergeParts record on the clicked replica', () => {
+    const params = new URLSearchParams(mergeLinkUrl(link, row)!.split('?')[1]);
+    expect(Object.fromEntries(params)).toEqual({
+      md_db: 'web', md_tbl: 'pageviews_local', md_part: 'all_1_5_1',
+      md_host: 'node-2', md_us: '2026-11-04 10:00:00.123456', md_type: 'MergeParts',
+    });
+  });
+
+  test('returns null when a value is missing', () => {
+    expect(mergeLinkUrl(link, { ...row, host: '' })).toBeNull();
+  });
+});
+
+describe('mergeLinkUrl on the Active Merges panel', { tags: ['analytics'] }, () => {
+  const sql = mergeQueries.find(q => q.includes("title='Active Merges'"))!;
+  const link = parseDirectives(sql)!.mergeLink!;
+  const row = { database: 'web', table: 'pageviews_local', result_part_name: 'all_1_9_2', host: 'node-1', started_ms: 1793799201485 };
+
+  test('opens the running merge by its start time on its replica', () => {
+    const params = new URLSearchParams(mergeLinkUrl(link, row)!.split('?')[1]);
+    expect(Object.fromEntries(params)).toEqual({
+      md_db: 'web', md_tbl: 'pageviews_local', md_part: 'all_1_9_2', md_host: 'node-1', md_start: '1793799201485',
+    });
+  });
+
+  test('rejects a directive that sets both time and start', () => {
+    const both = `-- @meta: title='X' group='Merges'\n-- @merge_link: on=a database=b table=c part=d host=e time=f start=g\nSELECT 1`;
+    expect(parseDirectives(both)!.mergeLink).toBeUndefined();
+  });
+});
+
+describe('chart click action', { tags: ['analytics'] }, () => {
+  const drill = { on: 'tbl', into: 'Detail' };
+  const queryLink = { on: 'query_id' };
+  const mergeLink = { on: 'part', database: 'd', table: 't', part: 'part', host: 'h', time: 'us' };
+
+  test('one action per panel, drill first, then part, query and merge links', () => {
+    expect(chartClickAction({ drill, queryLink, mergeLink })).toBe('drill');
+    expect(chartClickAction({ queryLink, mergeLink })).toBe('queryLink');
+    expect(chartClickAction({ mergeLink })).toBe('mergeLink');
+    expect(chartClickAction({})).toBeNull();
+  });
+
+  test('a directive whose column is not in the result does not apply', () => {
+    expect(chartClickAction({ drill, mergeLink }, ['part'])).toBe('mergeLink');
+    expect(chartClickAction({ mergeLink }, ['other'])).toBeNull();
+  });
+
+  test('hint says where the click goes', () => {
+    expect(chartClickHint('drill', 'Detail')).toBe('Click to drill into Detail');
+    expect(chartClickHint('mergeLink')).toBe('Click to open this merge on the Merges page');
+  });
+
+  test('query links open the Queries page on the X-Ray tab; a missing id opens nothing', () => {
+    expect(pageLinkUrl({ queryLink }, 'queryLink', { query_id: 'q-1' })).toBe('/queries?qd_id=q-1&qd_tab=xray');
+    expect(pageLinkUrl({ queryLink }, 'queryLink', { query_id: '' })).toBeNull();
+    expect(pageLinkUrl({}, 'mergeLink', { part: 'p' })).toBeNull();
   });
 });

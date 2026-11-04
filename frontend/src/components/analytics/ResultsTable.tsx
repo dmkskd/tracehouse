@@ -43,6 +43,14 @@ export interface ResultsTableProps {
   partLinkOnColumn?: string;
   /** Called when a part-link cell is clicked */
   onPartLinkClick?: (column: string, value: string, row: Record<string, unknown>) => void;
+  /** Column whose cells open the merge on the Merges page */
+  mergeLinkOnColumn?: string;
+  /** Called when a merge-link cell is clicked */
+  onMergeLinkClick?: (row: Record<string, unknown>) => void;
+  /** Column whose cells open the query on the Queries page */
+  queryLinkOnColumn?: string;
+  /** Called when a query-link cell is clicked */
+  onQueryLinkClick?: (row: Record<string, unknown>) => void;
   /** Visual density variant */
   compact?: boolean;
   /** Allow clicking a table row to expand all row values */
@@ -74,6 +82,8 @@ export const ResultsTable: React.FC<ResultsTableProps> = ({
   linkOnColumn, cellStyles, onLinkClick,
   drillOnColumn, onDrillClick, drillIntoQuery,
   partLinkOnColumn, onPartLinkClick,
+  mergeLinkOnColumn, onMergeLinkClick,
+  queryLinkOnColumn, onQueryLinkClick,
   compact = false,
   enableRowDetails = false,
 }) => {
@@ -111,6 +121,8 @@ export const ResultsTable: React.FC<ResultsTableProps> = ({
   const hasLinks = !!linkOnColumn && !!onLinkClick;
   const hasDrill = !!drillOnColumn && !!onDrillClick;
   const hasPartLink = !!partLinkOnColumn && !!onPartLinkClick;
+  const hasMergeLink = !!mergeLinkOnColumn && !!onMergeLinkClick;
+  const hasQueryLink = !!queryLinkOnColumn && !!onQueryLinkClick;
   const numericCols = React.useMemo(
     () => new Set(displayColumns.filter(c => columns.includes(c) && isNumericColumn(rows, c))),
     [columns, displayColumns, rows],
@@ -259,7 +271,9 @@ export const ResultsTable: React.FC<ResultsTableProps> = ({
                   const isLink = hasLinks && col === linkOnColumn;
                   const isDrill = hasDrill && col === drillOnColumn;
                   const isPartLink = hasPartLink && col === partLinkOnColumn;
-                  const isClickable = isLink || isDrill || isPartLink;
+                  const isMergeLink = hasMergeLink && col === mergeLinkOnColumn;
+                  const isQueryLink = hasQueryLink && col === queryLinkOnColumn;
+                  const isClickable = isLink || isDrill || isPartLink || isMergeLink || isQueryLink;
                   const cellValue = formatCell(row[col], col);
                   const ragColor = getRagColor(col, row[col], cellStyles);
                   const numeric = numericCols.has(col);
@@ -318,8 +332,8 @@ export const ResultsTable: React.FC<ResultsTableProps> = ({
                       textAlign: numeric ? 'right' : 'left',
                       fontVariantNumeric: numeric ? 'tabular-nums' : undefined,
                     }}
-                    title={isDrill && drillIntoQuery ? `Drill into: ${drillIntoQuery}` : isPartLink ? 'Open part details' : enableRowDetails ? 'Open row details' : undefined}
-                    onClick={isLink ? (e) => { e.stopPropagation(); onLinkClick!(col, cellValue); } : isDrill ? (e) => { e.stopPropagation(); onDrillClick!(col, cellValue); } : isPartLink ? (e) => { e.stopPropagation(); onPartLinkClick!(col, cellValue, row); } : undefined}
+                    title={isDrill && drillIntoQuery ? `Drill into: ${drillIntoQuery}` : isPartLink ? 'Open part details' : isMergeLink ? 'Open this merge on the Merges page' : isQueryLink ? 'Open this query on the Queries page' : enableRowDetails ? 'Open row details' : undefined}
+                    onClick={isLink ? (e) => { e.stopPropagation(); onLinkClick!(col, cellValue); } : isDrill ? (e) => { e.stopPropagation(); onDrillClick!(col, cellValue); } : isPartLink ? (e) => { e.stopPropagation(); onPartLinkClick!(col, cellValue, row); } : isMergeLink ? (e) => { e.stopPropagation(); onMergeLinkClick!(row); } : isQueryLink ? (e) => { e.stopPropagation(); onQueryLinkClick!(row); } : undefined}
                     >{renderCell ? renderCell(col, row) : cellValue}</td>
                   );
                 })}

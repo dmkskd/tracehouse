@@ -475,6 +475,8 @@ export const GET_MERGE_THROUGHPUT_ESTIMATE = `
 export const GET_MERGE_HISTORY_BY_PART_NAME = `
   SELECT
     event_time,
+    -- Not aliased as event_time_microseconds: the alias would shadow the column in WHERE / ORDER BY.
+    toString(event_time_microseconds) AS event_time_us,
     event_type,
     database,
     table,
@@ -515,6 +517,8 @@ export const GET_MERGE_HISTORY_BY_PART_NAME = `
 export const GET_MERGE_HISTORY_BY_PART_ON_HOST = `
   SELECT
     event_time,
+    -- Not aliased as event_time_microseconds: the alias would shadow the column in WHERE / ORDER BY.
+    toString(event_time_microseconds) AS event_time_us,
     event_type,
     database,
     table,
@@ -555,6 +559,8 @@ export const GET_MERGE_HISTORY_BY_PART_ON_HOST = `
 export const GET_MERGE_HISTORY_BY_IDENTITY = `
   SELECT
     event_time,
+    -- Not aliased as event_time_microseconds: the alias would shadow the column in WHERE / ORDER BY.
+    toString(event_time_microseconds) AS event_time_us,
     event_type,
     database,
     table,
@@ -590,6 +596,96 @@ export const GET_MERGE_HISTORY_BY_IDENTITY = `
       parseDateTime64BestEffort({event_time}, 6)
     )) ASC,
     event_time_microseconds DESC
+  LIMIT 1
+`;
+
+/**
+ * The part_log record with exactly this event_time_microseconds (as returned
+ * by toString on the server). Used by links that name one attempt: no
+ * nearest-time fallback, so a retry in the same second or millisecond is never
+ * substituted.
+ */
+export const GET_MERGE_HISTORY_BY_EXACT_TIME = `
+  SELECT
+    event_time,
+    -- Not aliased as event_time_microseconds: the alias would shadow the column in WHERE / ORDER BY.
+    toString(event_time_microseconds) AS event_time_us,
+    event_type,
+    database,
+    table,
+    part_name,
+    partition_id,
+    rows,
+    size_in_bytes,
+    duration_ms,
+    merge_reason,
+    merged_from,
+    bytes_uncompressed,
+    read_bytes,
+    read_rows,
+    peak_memory_usage,
+    merge_algorithm,
+    disk_name,
+    path_on_disk,
+    query_id,
+    ProfileEvents,
+    error,
+    exception,
+    hostName() AS hostname
+  FROM {{cluster_aware:system.part_log}}
+  WHERE database = {database}
+    AND table = {table}
+    AND part_name = {part_name}
+    AND hostName() = {hostname}
+    AND event_type = {event_type}
+    AND event_time_microseconds = toDateTime64({event_time_us}, 6)
+  LIMIT 1
+`;
+
+/**
+ * The merge (or mutation) record on one host whose attempt started at
+ * `started_ms` (epoch ms), within `tolerance_ms`. For links to a merge that
+ * was running when the link was made and may have finished since: a retry of
+ * the same part starts later and a fetch / move is not a merge, so neither is
+ * returned.
+ */
+export const GET_MERGE_HISTORY_BY_START = `
+  SELECT
+    event_time,
+    -- Not aliased as event_time_microseconds: the alias would shadow the column in WHERE / ORDER BY.
+    toString(event_time_microseconds) AS event_time_us,
+    event_type,
+    database,
+    table,
+    part_name,
+    partition_id,
+    rows,
+    size_in_bytes,
+    duration_ms,
+    merge_reason,
+    merged_from,
+    bytes_uncompressed,
+    read_bytes,
+    read_rows,
+    peak_memory_usage,
+    merge_algorithm,
+    disk_name,
+    path_on_disk,
+    query_id,
+    ProfileEvents,
+    error,
+    exception,
+    hostName() AS hostname
+  FROM {{cluster_aware:system.part_log}}
+  WHERE database = {database}
+    AND table = {table}
+    AND part_name = {part_name}
+    AND hostName() = {hostname}
+    AND event_type IN ('MergeParts', 'MutatePart')
+    -- Start of the attempt = finish - duration. Within the tolerance of the
+    -- link's start (both server clock), so a later retry is never taken.
+    AND abs(toInt64(toUnixTimestamp64Milli(event_time_microseconds)) - toInt64(duration_ms) - {started_ms}) <= {tolerance_ms}
+  ORDER BY abs(toInt64(toUnixTimestamp64Milli(event_time_microseconds)) - toInt64(duration_ms) - {started_ms}) ASC
   LIMIT 1
 `;
 

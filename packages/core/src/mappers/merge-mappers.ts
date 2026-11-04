@@ -57,6 +57,7 @@ export function mapMergeHistoryRecord(row: RawRow): MergeHistoryRecord {
   
   return {
     event_time: normalizeTimestamp(row.event_time),
+    event_time_microseconds: row.event_time_us != null ? toStr(row.event_time_us) : undefined,
     event_type: toStr(row.event_type),
     database: toStr(row.database),
     table: toStr(row.table),

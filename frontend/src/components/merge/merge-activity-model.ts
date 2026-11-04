@@ -410,22 +410,42 @@ export function reconcileMergeActivity(
   return { live, recent: history };
 }
 
-/** Resolve an overview attempt without substituting an earlier retry's result. */
+/**
+ * Tolerance when matching a merge's start to a link's start. Starts are
+ * derived from elapsed time on one side and from the server or browser clock
+ * on the other, so this also absorbs clock skew between them.
+ */
+export const MERGE_START_TOLERANCE_MS = 1500;
+
+/**
+ * Resolve a link to the merge attempt that started at `startedAt` (epoch ms):
+ * the running merge if it is still in system.merges, else its part_log record.
+ * A retry of the same part starts later and a fetch / move is not a merge, so
+ * neither is opened in its place; without a host the finished lookup falls
+ * back to the latest record not older than the start.
+ */
 export async function resolveOverviewMerge(
   tracker: {
     getActiveMerges(database: string, table: string): Promise<MergeInfo[]>;
     getMergeHistoryByPartName(database: string, table: string, part: string, identity?: { hostname?: string }): Promise<MergeHistoryRecord | null>;
+    getMergeHistoryByStart(database: string, table: string, part: string, hostname: string, startedMs: number, toleranceMs: number): Promise<MergeHistoryRecord | null>;
   },
   ref: { database: string; table: string; partName: string; hostname?: string },
   startedAt: number,
+  now: number = Date.now(),
 ): Promise<{ live: MergeInfo } | { history: MergeHistoryRecord } | null> {
   const live = (await tracker.getActiveMerges(ref.database, ref.table)).find(merge =>
     merge.database === ref.database && merge.table === ref.table
     && merge.result_part_name === ref.partName
-    && (merge.hostname ?? '') === (ref.hostname ?? ''),
+    && (merge.hostname ?? '') === (ref.hostname ?? '')
+    && Math.abs(now - merge.elapsed * 1000 - startedAt) <= MERGE_START_TOLERANCE_MS,
   );
   if (live) return { live };
-  const history = await tracker.getMergeHistoryByPartName(ref.database, ref.table, ref.partName, { hostname: ref.hostname });
+  if (ref.hostname) {
+    const history = await tracker.getMergeHistoryByStart(ref.database, ref.table, ref.partName, ref.hostname, startedAt, MERGE_START_TOLERANCE_MS);
+    return history ? { history } : null;
+  }
+  const history = await tracker.getMergeHistoryByPartName(ref.database, ref.table, ref.partName);
   // part_log timestamps have second precision; allow that rounding only.
   return history && Date.parse(history.event_time) >= Math.floor(startedAt / 1000) * 1000
     ? { history } : null;

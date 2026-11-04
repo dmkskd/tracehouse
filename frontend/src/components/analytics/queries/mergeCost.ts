@@ -578,10 +578,14 @@ ORDER BY failed_cpu_seconds DESC NULLS LAST, failed_attempts DESC, merge
 LIMIT 30`,
   `-- @meta: title='Merge Attempts' group='Merge Analytics' interval='1 DAY' description='Every attempt of one merge, oldest first. Attempts that keep failing with Server memory limit will keep failing until the server has memory to spare; Merge memory limit means the merge itself is too big.'
 -- @chart: type=bar group_by=attempt value=cpu_seconds unit=s style=2d
+-- @merge_link: on=attempt database=database table=table part=part_name host=host time=event_time
 -- One row per attempt on each replica. CPU: user + system time; NULL only when the row has no counters.
 -- merge_peak_memory is the merge's own peak; a Server memory limit failure is caused by the server total, not by it.
 WITH attempts AS (
     SELECT
+        database,
+        table,
+        part_name,
         hostName() AS host,
         event_time_microseconds,
         error,
@@ -621,7 +625,11 @@ SELECT
     round(elapsed, 3) AS elapsed_seconds,
     formatReadableSize(peak_memory_usage) AS merge_peak_memory,
     formatReadableSize(read_bytes) AS input_read,
-    substring(exception, 1, 300) AS exception
+    substring(exception, 1, 300) AS exception,
+    database,
+    table,
+    part_name,
+    toString(event_time_microseconds) AS event_time
 FROM attempts
 ORDER BY event_time_microseconds, host
 LIMIT 500`,
