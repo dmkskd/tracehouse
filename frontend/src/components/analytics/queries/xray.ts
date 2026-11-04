@@ -10,7 +10,7 @@ const panels = [
 
 const queries = panels.map(([title, metric, rank, description]) => `-- @meta: title='${title}' group='X-Ray' interval='1 HOUR' description='Per-second ${description} for the top 50 queries. Uses the Query X-Ray source preference. Filter by database/table; click a line to open its X-Ray.'
 -- @chart: type=grouped_line group_by=t value=${metric} series=query_id style=2d render=overlay
--- @query_link: on=query_id
+-- @query_link: on=query_id tab=xray
 WITH top_q AS (
     SELECT query_id, min(query_start_time_microseconds) AS query_start
     FROM {{cluster_aware:system.query_log}}

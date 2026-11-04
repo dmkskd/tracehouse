@@ -168,10 +168,12 @@ export interface ParsedDirectives {
     /** Column or drill-param name for the table */
     table: string;
   };
-  /** @query_link: click a query_id to open the Query Detail modal on the X-Ray tab. */
+  /** @query_link: click a query_id to open the Query Detail modal. */
   queryLink?: {
     /** Column containing the query_id */
     on: string;
+    /** Query Detail tab to open on (`qd_tab`); the modal defaults to Overview. */
+    tab?: string;
   };
   /** @merge_link: click a merge attempt to open that part_log record on the Merges page. */
   mergeLink?: MergeLinkDirective;
@@ -684,7 +686,8 @@ export function parseDirectives(sql: string): ParsedDirectives | null {
   const queryLinkMatch = sql.match(/--\s*@query_link:\s*(.+)/i);
   if (queryLinkMatch) {
     const onMatch = queryLinkMatch[1].match(/on=(\w+)/);
-    if (onMatch) result.queryLink = { on: onMatch[1] };
+    const tabMatch = queryLinkMatch[1].match(/tab=([\w-]+)/);
+    if (onMatch) result.queryLink = tabMatch ? { on: onMatch[1], tab: tabMatch[1] } : { on: onMatch[1] };
   }
 
   const mergeLinkMatch = sql.match(/--\s*@merge_link:\s*(.+)/i);
@@ -769,7 +772,7 @@ export function chartClickHint(action: ChartClickAction, drillInto?: string): st
 /**
  * Page URL a @query_link / @merge_link opens for `row`, or null when the
  * panel has no such link or the row lacks a value. Query links open the
- * Queries page on the X-Ray tab.
+ * Queries page on the directive's `tab`, if any.
  */
 export function pageLinkUrl(
   directives: Pick<ParsedDirectives, 'queryLink' | 'mergeLink'>,
@@ -778,7 +781,7 @@ export function pageLinkUrl(
 ): string | null {
   if (kind === 'mergeLink') return directives.mergeLink ? mergeLinkUrl(directives.mergeLink, row) : null;
   const queryId = directives.queryLink ? row[directives.queryLink.on] : null;
-  return queryId == null || queryId === '' ? null : buildQueryLinkUrl(String(queryId), null, 'xray');
+  return queryId == null || queryId === '' ? null : buildQueryLinkUrl(String(queryId), null, directives.queryLink?.tab);
 }
 
 export function parseChartDirective(sql: string): Partial<ChartDirective> | null {

@@ -101,6 +101,13 @@ describe('parseDirectives', { tags: ['analytics'] }, () => {
         queryLink: { on: 'query_id' },
       },
     },
+    {
+      name: 'with query_link directive and tab',
+      sql: `-- @meta: title='Slow Reads' group='Storage'\n-- @query_link: on=query_id tab=object-storage\nSELECT 1`,
+      expected: {
+        queryLink: { on: 'query_id', tab: 'object-storage' },
+      },
+    },
 
     /* ── @merge_link ── */
     {
@@ -926,8 +933,9 @@ describe('chart click action', { tags: ['analytics'] }, () => {
     expect(chartClickHint('mergeLink')).toBe('Click to open this merge on the Merges page');
   });
 
-  test('query links open the Queries page on the X-Ray tab; a missing id opens nothing', () => {
-    expect(pageLinkUrl({ queryLink }, 'queryLink', { query_id: 'q-1' })).toBe('/queries?qd_id=q-1&qd_tab=xray');
+  test('query links open the Queries page on the directive tab, if any; a missing id opens nothing', () => {
+    expect(pageLinkUrl({ queryLink }, 'queryLink', { query_id: 'q-1' })).toBe('/queries?qd_id=q-1');
+    expect(pageLinkUrl({ queryLink: { on: 'query_id', tab: 'xray' } }, 'queryLink', { query_id: 'q-1' })).toBe('/queries?qd_id=q-1&qd_tab=xray');
     expect(pageLinkUrl({ queryLink }, 'queryLink', { query_id: '' })).toBeNull();
     expect(pageLinkUrl({}, 'mergeLink', { part: 'p' })).toBeNull();
   });
