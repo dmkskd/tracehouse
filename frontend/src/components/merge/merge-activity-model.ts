@@ -161,7 +161,7 @@ function completedRecord(record: MergeHistoryRecord): MergeActivityRecord {
   const sourceCount = record.source_part_names?.length ?? 0;
 
   return {
-    activityKey: `${historyActivityKey(record)}\u0000${record.event_time}\u0000${record.event_type}`,
+    activityKey: `${historyActivityKey(record)}\u0000${record.event_time_microseconds ?? record.event_time}\u0000${record.event_type}\u0000${record.duration_ms}`,
     activitySource: 'history',
     status: record.error ? 'error' : 'ok',
     database: record.database,
@@ -196,10 +196,19 @@ export function buildMergeActivityRecords(
   history: MergeHistoryRecord[],
   now = Date.now(),
 ): MergeActivityRecord[] {
-  return [
+  const records = [
     ...live.map(item => liveRecord(item, now)),
     ...history.map(completedRecord),
   ];
+  // part_log can contain multiple retries of the same part within one second,
+  // even with identical durations. Give every occurrence a unique React key
+  // before sorting so reconciliation cannot duplicate or leave stale rows.
+  const occurrences = new Map<string, number>();
+  return records.map(record => {
+    const occurrence = occurrences.get(record.activityKey) ?? 0;
+    occurrences.set(record.activityKey, occurrence + 1);
+    return { ...record, activityKey: `${record.activityKey}\u0000${occurrence}` };
+  });
 }
 
 /** Apply the table's single display cap after both ClickHouse sources are combined. */

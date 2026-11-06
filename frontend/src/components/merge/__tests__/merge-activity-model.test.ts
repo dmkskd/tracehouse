@@ -85,6 +85,16 @@ describe('reconcileMergeActivity', () => {
 });
 
 describe('merge activity records', () => {
+  it('gives same-second retries unique keys, including identical history rows', () => {
+    const failure = { ...completed('retry'), error: 241, duration_ms: 5 };
+    const history = [failure, { ...failure, duration_ms: 14 }, { ...failure }];
+    const records = buildMergeActivityRecords([], history);
+
+    expect(new Set(records.map(record => record.activityKey)).size).toBe(3);
+    expect(buildMergeActivityRecords([], history).map(record => record.activityKey))
+      .toEqual(records.map(record => record.activityKey));
+  });
+
   it('normalizes live and completed merges to one lifecycle shape', () => {
     const merge = active('all_1_2_1', { elapsed: 2, progress: 0.5 });
     const history = completed('all_3_4_1');
