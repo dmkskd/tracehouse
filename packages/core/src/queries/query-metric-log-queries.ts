@@ -1,3 +1,4 @@
+import { parseAbsoluteTimestamp, parseUtcDateTimeInput } from '../utils/absolute-timestamp.js';
 /**
  * SQL query builders for process samples sourced from `system.query_metric_log`
  * instead of `tracehouse.processes_history`.
@@ -102,13 +103,9 @@ const NO_THREAD_BOUND = '1000000000.';
  */
 function normalizeStartedAt(startedAt?: string): string | undefined {
   if (!startedAt) return undefined;
-  const parsed = new Date(
-    /(?:[zZ]|[+-]\d{2}:?\d{2})$/.test(startedAt.trim())
-      ? startedAt.trim().replace(' ', 'T')
-      : `${startedAt.trim().replace(' ', 'T')}Z`,
-  );
-  if (!Number.isFinite(parsed.getTime())) return undefined;
-  return formatUtcDateTime(parsed);
+  const ms = parseUtcDateTimeInput(startedAt);
+  if (!Number.isFinite(ms)) return undefined;
+  return formatUtcDateTime(new Date(ms));
 }
 
 /**
@@ -274,7 +271,7 @@ function samplesProjection(
 export function commonScanStart(startTimes: readonly (string | undefined)[]): string | undefined {
   const times = startTimes
     .filter((t): t is string => !!t)
-    .map(t => ({ raw: t, ms: new Date(t.replace(' ', 'T')).getTime() }))
+    .map(t => ({ raw: t, ms: parseAbsoluteTimestamp(t) }))
     .filter(t => Number.isFinite(t.ms));
   if (times.length === 0 || times.length !== startTimes.length) return undefined;
 

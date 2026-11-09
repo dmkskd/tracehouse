@@ -1,3 +1,4 @@
+import { parseAbsoluteTimestamp } from '@tracehouse/core';
 import React, { useState } from 'react';
 import type { SimilarQuery, LiteralDiff } from '@tracehouse/core';
 import { extractLiterals, diffLiterals, formatLiteral } from '@tracehouse/core';
@@ -89,7 +90,7 @@ export const HistoryTab: React.FC<{
   const visibleQueries = React.useMemo(() => {
     if (!zoomRange) return similarQueries;
     return similarQueries.filter(q => {
-      const t = new Date(q.query_start_time).getTime();
+      const t = parseAbsoluteTimestamp(q.query_start_time);
       return t >= zoomRange.start && t <= zoomRange.end;
     });
   }, [similarQueries, zoomRange]);
@@ -99,7 +100,7 @@ export const HistoryTab: React.FC<{
     if (!zoomRange) return similarQueries.map((_, i) => i);
     const map: number[] = [];
     similarQueries.forEach((q, i) => {
-      const t = new Date(q.query_start_time).getTime();
+      const t = parseAbsoluteTimestamp(q.query_start_time);
       if (t >= zoomRange.start && t <= zoomRange.end) map.push(i);
     });
     return map;
@@ -113,7 +114,7 @@ export const HistoryTab: React.FC<{
       let cmp = 0;
       switch (sortKey) {
         case 'query_id': cmp = a.query_id.localeCompare(b.query_id); break;
-        case 'time': cmp = new Date(a.query_start_time).getTime() - new Date(b.query_start_time).getTime(); break;
+        case 'time': cmp = parseAbsoluteTimestamp(a.query_start_time) - parseAbsoluteTimestamp(b.query_start_time); break;
         case 'duration': cmp = Number(a.query_duration_ms) - Number(b.query_duration_ms); break;
         case 'cpu': cmp = (Number(a.cpu_time_us) || 0) - (Number(b.cpu_time_us) || 0); break;
         case 'memory': cmp = Number(a.memory_usage) - Number(b.memory_usage); break;
@@ -236,7 +237,7 @@ export const HistoryTab: React.FC<{
   const fmtMs = formatDurationMs;
   const fmtUs = formatMicroseconds;
   const fmtTimeShort = (ts: string) => {
-    const d = new Date(ts);
+    const d = new Date(parseAbsoluteTimestamp(ts));
     return `${d.getMonth() + 1}/${d.getDate()} ${d.getHours().toString().padStart(2, '0')}:${d.getMinutes().toString().padStart(2, '0')}`;
   };
 
@@ -673,7 +674,7 @@ export const HistoryTab: React.FC<{
             if (brushStart !== null && brushEnd !== null && Math.abs(brushEnd - brushStart) > 5) {
               // Convert SVG x coordinates to timestamps
               const chartWidth = 800 - chartPadding.left - chartPadding.right;
-              const queryTimes = visibleQueries.map(q => new Date(q.query_start_time).getTime());
+              const queryTimes = visibleQueries.map(q => parseAbsoluteTimestamp(q.query_start_time));
               const tMin = queryTimes[0] ?? 0;
               const tMax = queryTimes[queryTimes.length - 1] ?? 0;
               const tRange = tMax - tMin || 1;
@@ -779,7 +780,7 @@ export const HistoryTab: React.FC<{
             const chartWidth = 800 - chartPadding.left - chartPadding.right;
 
             // Use time-based X positioning for proper spacing
-            const queryTimes = visibleQueries.map(q => new Date(q.query_start_time).getTime());
+            const queryTimes = visibleQueries.map(q => parseAbsoluteTimestamp(q.query_start_time));
             const tMin = queryTimes[0];
             const tMax = queryTimes[queryTimes.length - 1];
             const tRange = tMax - tMin || 1;
@@ -916,7 +917,7 @@ export const HistoryTab: React.FC<{
           {/* Invisible hover zones when many points */}
           {visibleQueries.length > 80 && (() => {
             const chartWidth = 800 - chartPadding.left - chartPadding.right;
-            const queryTimes = visibleQueries.map(q => new Date(q.query_start_time).getTime());
+            const queryTimes = visibleQueries.map(q => parseAbsoluteTimestamp(q.query_start_time));
             const tMin = queryTimes[0];
             const tMax = queryTimes[queryTimes.length - 1];
             const tRange = tMax - tMin || 1;
@@ -941,7 +942,7 @@ export const HistoryTab: React.FC<{
 
           {/* CPU Load overlay - dotted line */}
           {showCpuOverlay && cpuTimeline && cpuTimeline.length >= 2 && visibleQueries.length >= 2 && (() => {
-            const queryTimes = visibleQueries.map(q => new Date(q.query_start_time).getTime());
+            const queryTimes = visibleQueries.map(q => parseAbsoluteTimestamp(q.query_start_time));
             const chartWidth = 800 - chartPadding.left - chartPadding.right;
             const qTimeMin = queryTimes[0];
             const qTimeMax = queryTimes[queryTimes.length - 1];
@@ -950,7 +951,7 @@ export const HistoryTab: React.FC<{
             // CPU data is already aggregated to ~100 buckets server-side
             const cpuPoints = cpuTimeline
               .map(p => {
-                const t = new Date(p.t).getTime();
+                const t = parseAbsoluteTimestamp(p.t);
                 const x = chartPadding.left + ((t - qTimeMin) / qTimeRange) * chartWidth;
                 const y = chartPadding.top + chartHeight - (Math.min(p.cpu_pct, 100) / 100) * chartHeight;
                 return { x: Math.max(chartPadding.left, Math.min(800 - chartPadding.right, x)), y, pct: p.cpu_pct };
@@ -987,7 +988,7 @@ export const HistoryTab: React.FC<{
 
           {/* Memory Load overlay - dotted line */}
           {showMemOverlay && memTimeline && memTimeline.length >= 2 && visibleQueries.length >= 2 && (() => {
-            const queryTimes = visibleQueries.map(q => new Date(q.query_start_time).getTime());
+            const queryTimes = visibleQueries.map(q => parseAbsoluteTimestamp(q.query_start_time));
             const chartWidth = 800 - chartPadding.left - chartPadding.right;
             const qTimeMin = queryTimes[0];
             const qTimeMax = queryTimes[queryTimes.length - 1];
@@ -995,7 +996,7 @@ export const HistoryTab: React.FC<{
 
             const memPoints = memTimeline
               .map(p => {
-                const t = new Date(p.t).getTime();
+                const t = parseAbsoluteTimestamp(p.t);
                 const x = chartPadding.left + ((t - qTimeMin) / qTimeRange) * chartWidth;
                 const y = chartPadding.top + chartHeight - (Math.min(p.mem_pct, 100) / 100) * chartHeight;
                 return { x: Math.max(chartPadding.left, Math.min(800 - chartPadding.right, x)), y, pct: p.mem_pct };
@@ -1033,12 +1034,12 @@ export const HistoryTab: React.FC<{
           {/* Settings change event markers */}
           {showSettingsEvents && settingsEvents.length > 0 && (() => {
             const chartWidth = 800 - chartPadding.left - chartPadding.right;
-            const queryTimes = visibleQueries.map(q => new Date(q.query_start_time).getTime());
+            const queryTimes = visibleQueries.map(q => parseAbsoluteTimestamp(q.query_start_time));
             const tMin = queryTimes[0];
             const tMax = queryTimes[queryTimes.length - 1];
             const tRange = tMax - tMin || 1;
             const getX = (origIdx: number) => {
-              const t = new Date(similarQueries[origIdx].query_start_time).getTime();
+              const t = parseAbsoluteTimestamp(similarQueries[origIdx].query_start_time);
               if (visibleQueries.length === 1) return chartPadding.left + chartWidth / 2;
               return chartPadding.left + ((t - tMin) / tRange) * chartWidth;
             };
@@ -1123,31 +1124,31 @@ export const HistoryTab: React.FC<{
                 if (!q) return null;
                 const chartWidth = 800 - chartPadding.left - chartPadding.right;
                 // Time-based X positioning matching the chart (use visible range)
-                const queryTimes = visibleQueries.map(sq => new Date(sq.query_start_time).getTime());
+                const queryTimes = visibleQueries.map(sq => parseAbsoluteTimestamp(sq.query_start_time));
                 const tMin = queryTimes[0];
                 const tMax = queryTimes[queryTimes.length - 1];
                 const tRange = tMax - tMin || 1;
-                const qTime = new Date(q.query_start_time).getTime();
+                const qTime = parseAbsoluteTimestamp(q.query_start_time);
                 const xNum = visibleQueries.length === 1
                   ? chartPadding.left + chartWidth / 2
                   : chartPadding.left + ((qTime - tMin) / tRange) * chartWidth;
                 // Find nearest CPU value for this query's timestamp
                 let cpuAtPoint: number | null = null;
                 if (showCpuOverlay && cpuTimeline && cpuTimeline.length > 0) {
-                  const qTime = new Date(q.query_start_time).getTime();
+                  const qTime = parseAbsoluteTimestamp(q.query_start_time);
                   let bestDist = Infinity;
                   for (const cp of cpuTimeline) {
-                    const d = Math.abs(new Date(cp.t).getTime() - qTime);
+                    const d = Math.abs(parseAbsoluteTimestamp(cp.t) - qTime);
                     if (d < bestDist) { bestDist = d; cpuAtPoint = cp.cpu_pct; }
                   }
                 }
                 // Find nearest memory value for this query's timestamp
                 let memAtPoint: number | null = null;
                 if (showMemOverlay && memTimeline && memTimeline.length > 0) {
-                  const qTime = new Date(q.query_start_time).getTime();
+                  const qTime = parseAbsoluteTimestamp(q.query_start_time);
                   let bestDist = Infinity;
                   for (const mp of memTimeline) {
-                    const d = Math.abs(new Date(mp.t).getTime() - qTime);
+                    const d = Math.abs(parseAbsoluteTimestamp(mp.t) - qTime);
                     if (d < bestDist) { bestDist = d; memAtPoint = mp.mem_pct; }
                   }
                 }

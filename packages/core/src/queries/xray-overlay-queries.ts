@@ -18,13 +18,13 @@ export function buildSelectedXRayOverlaySQL(
   const value = metric === 'mem_mb'
     ? 'avg(memory_usage) / 1048576'
     : `sum(${columns[metric]}) / sum(dt) / ${metric === 'read_mb_s' ? '1048576' : '1e6'}`;
-  return `SELECT t, query_id, round(sum(value), ${metric === 'cpu_cores' ? 2 : metric === 'mem_mb' || metric === 'read_mb_s' ? 1 : 3}) AS ${metric}
+  return `SELECT time_utc AS t, query_id, ${metric} FROM (SELECT concat(toString(t, 'UTC'), 'Z') AS time_utc, query_id, round(sum(value), ${metric === 'cpu_cores' ? 2 : metric === 'mem_mb' || metric === 'read_mb_s' ? 1 : 3}) AS ${metric}
 FROM (
   SELECT toStartOfInterval(event_time, INTERVAL 1 SECOND) AS t,
     query_id, hostname, sample_query_id, ${value} AS value
   FROM (${normalized})
   GROUP BY t, query_id, hostname, sample_query_id
 )
-GROUP BY t, query_id
+GROUP BY t, query_id)
 ORDER BY t, query_id`;
 }

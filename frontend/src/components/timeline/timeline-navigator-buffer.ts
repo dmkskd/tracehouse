@@ -1,3 +1,4 @@
+import { parseAbsoluteTimestamp } from '@tracehouse/core';
 import type { OperationalEvent, TimeseriesPoint } from '@tracehouse/core';
 
 export interface TimelineRange {
@@ -8,9 +9,7 @@ export interface TimelineRange {
 export type TimelineCoverage = TimelineRange;
 
 const parsePointMs = (point: TimeseriesPoint): number => {
-  const normalized = point.t.replace(' ', 'T')
-    + (point.t.includes('Z') || point.t.includes('+') ? '' : 'Z');
-  return new Date(normalized).getTime();
+  return parseAbsoluteTimestamp(point.t);
 };
 
 export function navigatorBucketSeconds(

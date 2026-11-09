@@ -77,6 +77,8 @@ export const GET_ACTIVE_MERGES = `
  * are fetched on-demand via GET_MERGE_HISTORY_BY_PART_NAME. */
 const MERGE_HISTORY_LITE_COLUMNS = `
     event_time,
+    toString(event_time, 'UTC') AS event_time_utc,
+    concat(toString(event_time_microseconds, 'UTC'), 'Z') AS event_time_us,
     event_type,
     database,
     table,
@@ -127,6 +129,8 @@ export const GET_DATABASE_MERGE_HISTORY = `
  * Natural key: (database, table, mutation_id). Dedup across replicas/shards.
  * Uses HAVING instead of WHERE so that a mutation only appears as active
  * when ALL shards still have work to do (min(is_done) = 0).
+ * Qualify aggregated clocks and repeat the aggregate in ORDER BY: bare aliases
+ * can resolve to source columns with prefer_column_name_to_alias=1.
  * Note: parts_to_do_names is an Array column that doesn't resolve through
  * clusterAllReplicas subqueries, so we flatten via toString(). */
 export const GET_MUTATIONS = `
@@ -135,7 +139,8 @@ export const GET_MUTATIONS = `
     table,
     mutation_id,
     any(command) AS command,
-    any(create_time) AS create_time,
+    any(mutation_rows.create_time) AS create_time,
+    toString(any(mutation_rows.create_time), 'UTC') AS create_time_utc,
     any(partition_ids) AS partition_ids,
     any(block_numbers) AS block_numbers,
     sum(sub_parts_to_do) AS parts_to_do,
@@ -144,7 +149,8 @@ export const GET_MUTATIONS = `
     '[]' AS parts_in_progress_names,
     min(raw_is_done) AS is_done,
     any(latest_failed_part) AS latest_failed_part,
-    any(latest_fail_time) AS latest_fail_time,
+    any(mutation_rows.latest_fail_time) AS latest_fail_time,
+    toString(any(mutation_rows.latest_fail_time), 'UTC') AS latest_fail_time_utc,
     any(latest_fail_reason) AS latest_fail_reason,
     max(raw_is_killed) AS is_killed,
     min(raw_is_killed_supported) AS is_killed_supported
@@ -166,12 +172,12 @@ export const GET_MUTATIONS = `
       ${MUTATION_IS_KILLED_EXPRESSION} AS raw_is_killed,
       ${MUTATION_IS_KILLED_SUPPORTED} AS raw_is_killed_supported
     FROM {{cluster_aware:system.mutations}}
-  )
+  ) AS mutation_rows
   GROUP BY database, table, mutation_id
   HAVING min(raw_is_done) = 0 AND max(raw_is_killed) = 0
   ORDER BY
     parts_to_do DESC,
-    create_time DESC
+    any(mutation_rows.create_time) DESC
 `;
 
 /** Get background thread pool metrics from system.metrics (cluster-aggregated). */
@@ -231,12 +237,14 @@ export const GET_MUTATION_HISTORY = `
     table,
     mutation_id,
     any(command) AS command,
-    any(create_time) AS create_time,
+    any(mutation_rows.create_time) AS create_time,
+    toString(any(mutation_rows.create_time), 'UTC') AS create_time_utc,
     min(raw_is_done) AS is_done,
     max(raw_is_killed) AS is_killed,
     min(raw_is_killed_supported) AS is_killed_supported,
     any(latest_failed_part) AS latest_failed_part,
-    any(latest_fail_time) AS latest_fail_time,
+    any(mutation_rows.latest_fail_time) AS latest_fail_time,
+    toString(any(mutation_rows.latest_fail_time), 'UTC') AS latest_fail_time_utc,
     any(latest_fail_reason) AS latest_fail_reason
   FROM (
     SELECT
@@ -245,10 +253,10 @@ export const GET_MUTATION_HISTORY = `
       ${MUTATION_IS_KILLED_EXPRESSION} AS raw_is_killed,
       ${MUTATION_IS_KILLED_SUPPORTED} AS raw_is_killed_supported
     FROM {{cluster_aware:system.mutations}}
-  )
+  ) AS mutation_rows
   GROUP BY database, table, mutation_id
   HAVING min(raw_is_done) = 1 OR max(raw_is_killed) = 1
-  ORDER BY create_time DESC
+  ORDER BY any(mutation_rows.create_time) DESC
   LIMIT {limit}
 `;
 
@@ -260,12 +268,14 @@ export const GET_DATABASE_MUTATION_HISTORY = `
     table,
     mutation_id,
     any(command) AS command,
-    any(create_time) AS create_time,
+    any(mutation_rows.create_time) AS create_time,
+    toString(any(mutation_rows.create_time), 'UTC') AS create_time_utc,
     min(raw_is_done) AS is_done,
     max(raw_is_killed) AS is_killed,
     min(raw_is_killed_supported) AS is_killed_supported,
     any(latest_failed_part) AS latest_failed_part,
-    any(latest_fail_time) AS latest_fail_time,
+    any(mutation_rows.latest_fail_time) AS latest_fail_time,
+    toString(any(mutation_rows.latest_fail_time), 'UTC') AS latest_fail_time_utc,
     any(latest_fail_reason) AS latest_fail_reason
   FROM (
     SELECT
@@ -275,10 +285,10 @@ export const GET_DATABASE_MUTATION_HISTORY = `
       ${MUTATION_IS_KILLED_SUPPORTED} AS raw_is_killed_supported
     FROM {{cluster_aware:system.mutations}}
     WHERE database = {database}
-  )
+  ) AS mutation_rows
   GROUP BY database, table, mutation_id
   HAVING min(raw_is_done) = 1 OR max(raw_is_killed) = 1
-  ORDER BY create_time DESC
+  ORDER BY any(mutation_rows.create_time) DESC
   LIMIT {limit}
 `;
 
@@ -290,12 +300,14 @@ export const GET_TABLE_MUTATION_HISTORY = `
     table,
     mutation_id,
     any(command) AS command,
-    any(create_time) AS create_time,
+    any(mutation_rows.create_time) AS create_time,
+    toString(any(mutation_rows.create_time), 'UTC') AS create_time_utc,
     min(raw_is_done) AS is_done,
     max(raw_is_killed) AS is_killed,
     min(raw_is_killed_supported) AS is_killed_supported,
     any(latest_failed_part) AS latest_failed_part,
-    any(latest_fail_time) AS latest_fail_time,
+    any(mutation_rows.latest_fail_time) AS latest_fail_time,
+    toString(any(mutation_rows.latest_fail_time), 'UTC') AS latest_fail_time_utc,
     any(latest_fail_reason) AS latest_fail_reason
   FROM (
     SELECT
@@ -306,10 +318,10 @@ export const GET_TABLE_MUTATION_HISTORY = `
     FROM {{cluster_aware:system.mutations}}
     WHERE database = {database}
       AND table = {table}
-  )
+  ) AS mutation_rows
   GROUP BY database, table, mutation_id
   HAVING min(raw_is_done) = 1 OR max(raw_is_killed) = 1
-  ORDER BY create_time DESC
+  ORDER BY any(mutation_rows.create_time) DESC
   LIMIT {limit}
 `;
 
@@ -334,8 +346,8 @@ export const GET_STORAGE_POLICY_VOLUMES = `
  */
 export const GET_MERGE_TEXT_LOGS_BY_QUERY_ID = `
   SELECT
-    toString(event_time) AS event_time,
-    toString(event_time_microseconds) AS event_time_microseconds,
+    toString(event_time, 'UTC') AS event_time,
+    toString(event_time_microseconds, 'UTC') AS event_time_microseconds,
     query_id,
     level,
     message,
@@ -352,8 +364,8 @@ export const GET_MERGE_TEXT_LOGS_BY_QUERY_ID = `
 /** Same as GET_MERGE_TEXT_LOGS_BY_QUERY_ID but filtered to a specific hostname. */
 export const GET_MERGE_TEXT_LOGS_BY_QUERY_ID_HOST = `
   SELECT
-    toString(event_time) AS event_time,
-    toString(event_time_microseconds) AS event_time_microseconds,
+    toString(event_time, 'UTC') AS event_time,
+    toString(event_time_microseconds, 'UTC') AS event_time_microseconds,
     query_id,
     level,
     message,
@@ -378,8 +390,8 @@ export const GET_MERGE_TEXT_LOGS_BY_QUERY_ID_HOST = `
  */
 export const GET_MERGE_TEXT_LOGS_BY_PART_SUFFIX = `
   SELECT
-    toString(event_time) AS event_time,
-    toString(event_time_microseconds) AS event_time_microseconds,
+    toString(event_time, 'UTC') AS event_time,
+    toString(event_time_microseconds, 'UTC') AS event_time_microseconds,
     query_id,
     level,
     message,
@@ -396,8 +408,8 @@ export const GET_MERGE_TEXT_LOGS_BY_PART_SUFFIX = `
 /** Same as above but filtered to a specific hostname. */
 export const GET_MERGE_TEXT_LOGS_BY_PART_SUFFIX_HOST = `
   SELECT
-    toString(event_time) AS event_time,
-    toString(event_time_microseconds) AS event_time_microseconds,
+    toString(event_time, 'UTC') AS event_time,
+    toString(event_time_microseconds, 'UTC') AS event_time_microseconds,
     query_id,
     level,
     message,
@@ -475,8 +487,9 @@ export const GET_MERGE_THROUGHPUT_ESTIMATE = `
 export const GET_MERGE_HISTORY_BY_PART_NAME = `
   SELECT
     event_time,
+    toString(event_time, 'UTC') AS event_time_utc,
     -- Not aliased as event_time_microseconds: the alias would shadow the column in WHERE / ORDER BY.
-    toString(event_time_microseconds) AS event_time_us,
+    concat(toString(event_time_microseconds, 'UTC'), 'Z') AS event_time_us,
     event_type,
     database,
     table,
@@ -517,8 +530,9 @@ export const GET_MERGE_HISTORY_BY_PART_NAME = `
 export const GET_MERGE_HISTORY_BY_PART_ON_HOST = `
   SELECT
     event_time,
+    toString(event_time, 'UTC') AS event_time_utc,
     -- Not aliased as event_time_microseconds: the alias would shadow the column in WHERE / ORDER BY.
-    toString(event_time_microseconds) AS event_time_us,
+    concat(toString(event_time_microseconds, 'UTC'), 'Z') AS event_time_us,
     event_type,
     database,
     table,
@@ -559,8 +573,9 @@ export const GET_MERGE_HISTORY_BY_PART_ON_HOST = `
 export const GET_MERGE_HISTORY_BY_IDENTITY = `
   SELECT
     event_time,
+    toString(event_time, 'UTC') AS event_time_utc,
     -- Not aliased as event_time_microseconds: the alias would shadow the column in WHERE / ORDER BY.
-    toString(event_time_microseconds) AS event_time_us,
+    concat(toString(event_time_microseconds, 'UTC'), 'Z') AS event_time_us,
     event_type,
     database,
     table,
@@ -593,23 +608,23 @@ export const GET_MERGE_HISTORY_BY_IDENTITY = `
     abs(dateDiff(
       'millisecond',
       event_time_microseconds,
-      parseDateTime64BestEffort({event_time}, 6)
+      parseDateTime64BestEffort({event_time}, 6, 'UTC')
     )) ASC,
     event_time_microseconds DESC
   LIMIT 1
 `;
 
 /**
- * The part_log record with exactly this event_time_microseconds (as returned
- * by toString on the server). Used by links that name one attempt: no
+ * The part_log record with exactly this event_time_microseconds (as a UTC string with an explicit Z suffix). Used by links that name one attempt: no
  * nearest-time fallback, so a retry in the same second or millisecond is never
  * substituted.
  */
 export const GET_MERGE_HISTORY_BY_EXACT_TIME = `
   SELECT
     event_time,
+    toString(event_time, 'UTC') AS event_time_utc,
     -- Not aliased as event_time_microseconds: the alias would shadow the column in WHERE / ORDER BY.
-    toString(event_time_microseconds) AS event_time_us,
+    concat(toString(event_time_microseconds, 'UTC'), 'Z') AS event_time_us,
     event_type,
     database,
     table,
@@ -638,8 +653,48 @@ export const GET_MERGE_HISTORY_BY_EXACT_TIME = `
     AND part_name = {part_name}
     AND hostName() = {hostname}
     AND event_type = {event_type}
-    AND event_time_microseconds = toDateTime64({event_time_us}, 6)
+    AND event_time_microseconds = parseDateTime64BestEffort({event_time_us}, 6, 'UTC')
   LIMIT 1
+`;
+
+/** Old unzoned identities are opaque source-rendered keys. Return up to two
+ * candidates so the service can reject ambiguity without choosing a retry. */
+export const GET_MERGE_HISTORY_BY_LEGACY_TIME = `
+  SELECT
+    event_time,
+    toString(event_time, 'UTC') AS event_time_utc,
+    -- Not aliased as event_time_microseconds: the alias would shadow the column in WHERE / ORDER BY.
+    concat(toString(event_time_microseconds, 'UTC'), 'Z') AS event_time_us,
+    event_type,
+    database,
+    table,
+    part_name,
+    partition_id,
+    rows,
+    size_in_bytes,
+    duration_ms,
+    merge_reason,
+    merged_from,
+    bytes_uncompressed,
+    read_bytes,
+    read_rows,
+    peak_memory_usage,
+    merge_algorithm,
+    disk_name,
+    path_on_disk,
+    query_id,
+    ProfileEvents,
+    error,
+    exception,
+    hostName() AS hostname
+  FROM {{cluster_aware:system.part_log}}
+  WHERE database = {database}
+    AND table = {table}
+    AND part_name = {part_name}
+    AND hostName() = {hostname}
+    AND event_type = {event_type}
+    AND toString(event_time_microseconds) = {event_time_us}
+  LIMIT 2
 `;
 
 /**
@@ -652,8 +707,9 @@ export const GET_MERGE_HISTORY_BY_EXACT_TIME = `
 export const GET_MERGE_HISTORY_BY_START = `
   SELECT
     event_time,
+    toString(event_time, 'UTC') AS event_time_utc,
     -- Not aliased as event_time_microseconds: the alias would shadow the column in WHERE / ORDER BY.
-    toString(event_time_microseconds) AS event_time_us,
+    concat(toString(event_time_microseconds, 'UTC'), 'Z') AS event_time_us,
     event_type,
     database,
     table,

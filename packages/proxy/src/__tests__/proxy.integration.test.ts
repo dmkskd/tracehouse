@@ -17,6 +17,8 @@ import { ClickHouseContainer, type StartedClickHouseContainer } from '@testconta
 import type { Server } from 'http';
 import type { AddressInfo } from 'net';
 import { createApp } from '../index.js';
+import { ProxyAdapter } from '../../../core/src/adapters/proxy-adapter.js';
+import { InteractiveQueryService } from '../../../core/src/services/interactive-query-service.js';
 
 const CH_IMAGE =
   process.env.CLICKHOUSE_IMAGE ?? 'clickhouse/clickhouse-server:latest';
@@ -119,6 +121,18 @@ describe('health checks', { tags: ['connectivity'] }, () => {
     expect(resp.ok).toBe(true);
     const body = await resp.json();
     expect(body).toEqual({ status: 'ok', service: 'clickhouse-cors-proxy' });
+  });
+});
+
+describe('Analytics through the production ProxyAdapter', () => {
+  it.each(['UTC', 'Europe/Copenhagen', 'America/New_York'])('%s: retains UTC instants, microseconds and calendar values', async zone => {
+    const adapter = new ProxyAdapter({ host: chHost, port: chPort, user: chUser, password: chPassword, database: 'default', secure: false, connect_timeout: 10, send_receive_timeout: 30 }, `${proxyBaseUrl}/proxy`);
+    const rows = await new InteractiveQueryService(adapter).run(`SELECT
+      toDateTime(1794157200, '${zone}') AS clock,
+      fromUnixTimestamp64Micro(1794157200123456, '${zone}') AS micro,
+      toDate('2026-11-08') AS calendar, '2026-11-08 18:00:00' AS text,
+      CAST(NULL AS Nullable(DateTime)) AS missing`, 'TraceHouse:Analytics:proxyTimezone');
+    expect(rows).toEqual([{ clock: '2026-11-08T17:00:00Z', micro: '2026-11-08T17:00:00.123456Z', calendar: '2026-11-08', text: '2026-11-08 18:00:00', missing: null }]);
   });
 });
 

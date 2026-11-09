@@ -1,3 +1,4 @@
+import { parseAbsoluteTimestamp } from '@tracehouse/core';
 /**
  * XRayTab — 3D resource corridor with log event scrubber.
  *
@@ -393,7 +394,7 @@ export const XRayTab: React.FC<XRayTabProps> = ({
 
     // Parse all log timestamps
     const logTimes = logs.map(log =>
-      new Date(log.event_time_microseconds || log.event_time).getTime()
+      parseAbsoluteTimestamp(log.event_time_microseconds || log.event_time)
     );
 
     // Use the first log timestamp as reference, then scale to sample range.
@@ -405,7 +406,7 @@ export const XRayTab: React.FC<XRayTabProps> = ({
 
     // If we have a queryStartTime, use it to align logs to sample timeline.
     // Otherwise, scale log span to fit within sample range.
-    const queryStartMs = queryStartTime ? new Date(queryStartTime).getTime() : null;
+    const queryStartMs = queryStartTime ? parseAbsoluteTimestamp(queryStartTime) : null;
 
     const events: LogEvent[] = [];
 
@@ -459,7 +460,7 @@ export const XRayTab: React.FC<XRayTabProps> = ({
   // Works in both time and logs mode.
   const currentTimeWindow = useMemo(() => {
     if (samples.length === 0 || !queryStartTime || !sampleCounts) return null;
-    const startMs = new Date(queryStartTime).getTime();
+    const startMs = parseAbsoluteTimestamp(queryStartTime);
     let currentT: number;
     let nextT: number;
     if (scrubberMode === 'logs') {
@@ -492,7 +493,7 @@ export const XRayTab: React.FC<XRayTabProps> = ({
   // t is process-sample-relative; add sampleOffset to get queryStartTime-relative
   const handleShowFlamegraphForT = useCallback((t: number) => {
     if (!queryStartTime || !sampleCounts) return;
-    const startMs = new Date(queryStartTime).getTime();
+    const startMs = parseAbsoluteTimestamp(queryStartTime);
     const absT = t + sampleOffset;
     const from = new Date(startMs + absT * 1000).toISOString();
     const to = new Date(startMs + (absT + 1) * 1000).toISOString();

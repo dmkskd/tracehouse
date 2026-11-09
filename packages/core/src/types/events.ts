@@ -357,6 +357,8 @@ export interface EventSourceDefinition {
 /** An individual operational event occurrence or state episode. */
 export interface OperationalEvent {
   id: string;
+  /** Opaque pre-UTC IDs for link compatibility. Resolve only when unambiguous. */
+  legacy_ids?: string[];
   occurred_at: string;
   ended_at?: string;
   observed_at?: string;

@@ -1,4 +1,10 @@
-/** Aggregates all raw query strings from per-group modules. */
+/**
+ * Aggregates built-in Analytics SQL. All new/changed timestamp instants must
+ * use UTC projections and absolute UTC bounds; localize only in UI formatting.
+ * This applies outside Grafana too: do not rely on datasource time conversion.
+ * Preserve calendar Dates and intentional local-calendar analysis separately.
+ * See packages/core/src/queries/README.md for the full query-authoring contract.
+ */
 
 import overview from './overview';
 import inserts from './inserts';

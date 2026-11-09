@@ -6,6 +6,8 @@
   "scripts": {
     "test": "playwright test",
     "test:grafana": "playwright test --config playwright.grafana.config.ts",
+    "test:timezone": "playwright test --config playwright.timezone.config.ts",
+    "test:timezone-transports": "playwright test --config playwright.timezone-transports.config.ts",
     "test:ui": "playwright test --ui",
     "test:headed": "SLOWMO=500 playwright test --headed",
     "test:report": "playwright show-report"

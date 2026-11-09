@@ -1,3 +1,4 @@
+import { normalizeOptionalSystemTimestamp } from '../mappers/timestamp.js';
 /**
  * EngineInternalsService
  * Service for collecting detailed engine metrics for the Engine Internals page
@@ -840,9 +841,7 @@ export class EngineInternalsService {
         loadFactor: Number(row.load_factor) || 0,
         source: String(row.source),
         loadingStatus: String(row.loading_status),
-        lastSuccessfulUpdate: row.last_successful_update_time
-          ? String(row.last_successful_update_time)
-          : null,
+        lastSuccessfulUpdate: normalizeOptionalSystemTimestamp(row.last_successful_update_time) || null,
       }));
     } catch (error) {
       console.error('[EngineInternalsService] getDictionaries error:', error);

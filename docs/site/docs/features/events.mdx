@@ -48,6 +48,11 @@ Available actions include:
 - Expand a group to see each event
 - Select an event to see its details and what was happening nearby
 
+If a filter hides an event you selected on this page, the selection moves to the
+first visible event, or clears when none remain. A saved link behaves differently:
+if its event is hidden by filters or cannot be resolved in the selected range,
+the details panel explains the problem instead of selecting another incident.
+
 ## Event Details
 
 The details panel shows when the event happened, how serious it was, where the
@@ -72,6 +77,11 @@ queries, merges, and mutations that were active.
 
 From Time Travel, select an event marker and use **View details** to open it on
 the Events page.
+
+Read-only replica periods are reconstructed from saved metric samples. Changing
+a link's range can exclude the samples needed to identify its original period.
+In that case, restore the original range or include the earlier samples; TraceHouse
+keeps the link unresolved rather than guessing which period it refers to.
 
 ## Data Availability
 

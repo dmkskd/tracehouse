@@ -1,3 +1,5 @@
+/** All new/changed timestamp queries must follow the UTC contract in ./README.md.
+ * UTC in SQL and parsing; local timezone only in UI formatting. */
 export {
   escapeValue,
   escapeIdentifier,
@@ -6,10 +8,12 @@ export {
   utcDateTimeLiteral,
   utcDateTime64,
   utcDateTime64Literal,
+  eventDateBoundParameter,
   buildQuery,
   tagQuery,
 } from './builder.js';
 export type {
+  EventDateBoundParameter,
   QueryParameter,
   UtcDateTimeParameter,
   UtcDateTime64Parameter,

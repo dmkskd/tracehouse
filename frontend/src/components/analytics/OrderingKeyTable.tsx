@@ -1,3 +1,4 @@
+import { parseAbsoluteTimestamp } from '@tracehouse/core';
 /**
  * OrderingKeyTable - shows per-table ordering key efficiency analysis.
  * Expanding a row fetches the per-query-pattern breakdown (by normalized_query_hash)
@@ -331,8 +332,8 @@ const QueryPatternsTable: React.FC<{ patterns: TableQueryPattern[]; sortingKey: 
       const q = similar[similar.length - 1]; // latest (sorted ASC, so last = most recent)
       // ClickHouse may return "2024-01-15 12:34:56" (space-separated, no T/Z).
       // Normalise to ISO-8601 so Date() parses reliably across browsers.
-      const rawStart = String(q.query_start_time).replace(' ', 'T');
-      const startDate = new Date(rawStart.includes('Z') || rawStart.includes('+') ? rawStart : rawStart + 'Z');
+      const rawStart = String(q.query_start_time);
+      const startDate = new Date(parseAbsoluteTimestamp(rawStart));
       const endDate = new Date(startDate.getTime() + (q.query_duration_ms || 0));
       const startIso = isNaN(startDate.getTime()) ? rawStart : startDate.toISOString();
       const endIso = isNaN(endDate.getTime()) ? rawStart : endDate.toISOString();

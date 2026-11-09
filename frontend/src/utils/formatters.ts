@@ -1,3 +1,4 @@
+import { parseAbsoluteTimestamp } from '@tracehouse/core';
 /**
  * Shared formatting utilities.
  *
@@ -116,8 +117,7 @@ export function formatMicroseconds(us: number): string {
 
 /** Parse a ClickHouse timestamp string (with or without timezone) to epoch ms */
 export function parseTimestamp(s: string): number {
-  const n = s.replace(' ', 'T') + (s.includes('+') || s.includes('Z') || s.includes('T') ? '' : 'Z');
-  return new Date(n).getTime();
+  return parseAbsoluteTimestamp(s);
 }
 
 // ── Query helpers ──────────────────────────────────────────────────────────

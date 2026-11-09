@@ -18,6 +18,12 @@ export class InteractiveQueryService {
    * The connected ClickHouse user's permissions govern statement execution.
    */
   async run<T extends Record<string, unknown>>(sql: string, source: string, options?: InteractiveQueryOptions): Promise<T[]> {
-    return this.adapter.executeQuery<T>(tagQuery(sql, source), options?.queryId ? { queryId: options.queryId } : undefined);
+    // Use the server's DateTime type / Grafana time-field metadata, never a
+    // datetime-looking string heuristic. Authored SQL and calendar Dates remain
+    // unchanged. Other services retain their explicit producer migration paths.
+    return this.adapter.executeQuery<T>(tagQuery(sql, source), {
+      utcDateTimeOutput: true,
+      ...(options?.queryId ? { queryId: options.queryId } : {}),
+    });
   }
 }

@@ -617,7 +617,7 @@ WITH attempts AS (
       AND concat(database, '.', table) = {{drill_value:tbl | concat(database, '.', table)}}
 )
 SELECT
-    concat(toString(event_time_microseconds), ' ', host) AS attempt,
+    concat(concat(toString(event_time_microseconds, 'UTC'), 'Z'), ' ', host) AS attempt,
     host,
     if(error = 0, 'succeeded', errorCodeToName(error)) AS outcome,
     failure_kind,
@@ -629,7 +629,7 @@ SELECT
     database,
     table,
     part_name,
-    toString(event_time_microseconds) AS event_time
+    concat(toString(event_time_microseconds, 'UTC'), 'Z') AS event_time
 FROM attempts
 ORDER BY event_time_microseconds, host
 LIMIT 500`,

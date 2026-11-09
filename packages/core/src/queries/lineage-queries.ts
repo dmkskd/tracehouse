@@ -15,7 +15,7 @@ export const GET_ACTIVE_PART_SIZES = `
 /** Get merge/mutation events for a batch of parts from system.part_log. */
 export const GET_MERGE_EVENTS_BATCH = `
   SELECT
-    event_time, part_name, merged_from, duration_ms, rows, size_in_bytes,
+    toString(event_time, 'UTC') AS event_time, part_name, merged_from, duration_ms, rows, size_in_bytes,
     bytes_uncompressed, read_bytes, peak_memory_usage, merge_reason, merge_algorithm,
     event_type
   FROM {{cluster_aware:system.part_log}}

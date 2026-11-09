@@ -11,8 +11,8 @@ SELECT
   initial_query_id,
   user,
   query_kind,
-  toString(query_start_time_microseconds) AS start_time,
-  toString(query_start_time_microseconds + toIntervalMillisecond(query_duration_ms)) AS end_time,
+  toString(query_start_time_microseconds, 'UTC') AS start_time,
+  toString(query_start_time_microseconds + toIntervalMillisecond(query_duration_ms), 'UTC') AS end_time,
   query_duration_ms,
   memory_usage,
   cpu_us,
@@ -67,7 +67,7 @@ LIMIT {context_limit}
 export const EVENT_CONTEXT_HOST_METRICS = `
 SELECT
   hostname() AS host,
-  toString(toStartOfInterval(event_time, INTERVAL 5 SECOND)) AS sample_time,
+  toString(toStartOfInterval(event_time, INTERVAL 5 SECOND), 'UTC') AS sample_time,
   avg(CurrentMetric_MemoryTracking) AS memory_usage,
   avg(CurrentMetric_Query) AS active_queries,
   avg(CurrentMetric_Merge) AS active_merges,
@@ -93,7 +93,7 @@ ORDER BY host, sample_time
 export const EVENT_CONTEXT_SERVER_LOGS = `
 SELECT
   hostname() AS host,
-  toString(event_time_microseconds) AS occurred_at,
+  toString(event_time_microseconds, 'UTC') AS occurred_at,
   toString(level) AS level,
   logger_name,
   substring(message, 1, 4000) AS message,
@@ -135,10 +135,10 @@ LIMIT {context_limit}
 export const EVENT_ERROR_COUNTER_STATE = `
 SELECT
   hostname() AS host,
-  toString(now() - toIntervalSecond(uptime())) AS process_started_at,
+  toString(now() - toIntervalSecond(uptime()), 'UTC') AS process_started_at,
   countIf(name = {exception_name} AND remote = {remote}) AS has_counter,
   sumIf(value, name = {exception_name} AND remote = {remote}) AS value,
-  toString(maxIf(last_error_time, name = {exception_name} AND remote = {remote})) AS last_seen_at,
+  toString(maxIf(last_error_time, name = {exception_name} AND remote = {remote}), 'UTC') AS last_seen_at,
   substring(
     argMaxIf(last_error_message, last_error_time, name = {exception_name} AND remote = {remote}),
     1, 4000

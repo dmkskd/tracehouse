@@ -3,7 +3,8 @@
  */
 
 export interface TimeseriesPoint {
-  t: string;  // ISO timestamp
+  /** Absolute timestamp: ISO with an offset, or a timezone-less ClickHouse UTC string. */
+  t: string;
   v: number;  // Value
 }
 
@@ -24,6 +25,7 @@ export interface TimelineNavigatorMetric {
   window_end: string;
   bucket_seconds: number;
   points: Array<{
+    /** Timezone-less ClickHouse datetime strings are normalized to UTC by SQL. */
     t: string;
     average_v: number;
     peak_v: number;

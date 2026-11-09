@@ -1,0 +1,3 @@
+<clickhouse>
+    <timezone from_env="CLICKHOUSE_TIMEZONE" />
+</clickhouse>

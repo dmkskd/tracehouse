@@ -1,33 +1,26 @@
-/**
- * Normalize a timestamp value from ClickHouse into an ISO 8601 string.
- * Handles: epoch seconds, epoch milliseconds, Date objects,
- * space-separated datetime strings ("2024-01-15 10:30:00"), and ISO strings.
- */
+import { parseAbsoluteTimestamp } from '../utils/absolute-timestamp.js';
+
+/** Normalize an absolute timestamp to ISO. Source SQL must emit UTC for
+ * unmarked datetime strings. Numeric seconds/ms and Date inputs keep their
+ * existing units; invalid inputs remain empty. Localize only for UI display. */
 export function normalizeTimestamp(val: unknown): string {
   if (val == null) return '';
-  if (val instanceof Date) {
-    return isNaN(val.getTime()) ? '' : val.toISOString();
-  }
+  if (val instanceof Date) return Number.isFinite(val.getTime()) ? val.toISOString() : '';
   if (typeof val === 'number') {
-    const ms = val < 1e12 ? val * 1000 : val;
-    const d = new Date(ms);
-    return isNaN(d.getTime()) ? '' : d.toISOString();
+    const date = new Date(val < 1e12 ? val * 1000 : val);
+    return Number.isFinite(date.getTime()) ? date.toISOString() : '';
   }
-  if (typeof val === 'string') {
-    const trimmed = val.trim();
-    if (!trimmed) return '';
-    // ClickHouse "2024-01-15 10:30:00" → "2024-01-15T10:30:00"
-    const normalized = trimmed.replace(' ', 'T');
-    let d = new Date(normalized);
-    if (!isNaN(d.getTime())) return d.toISOString();
-    d = new Date(normalized + 'Z');
-    if (!isNaN(d.getTime())) return d.toISOString();
-    const n = Number(trimmed);
-    if (!isNaN(n)) {
-      const ms = n < 1e12 ? n * 1000 : n;
-      const nd = new Date(ms);
-      return isNaN(nd.getTime()) ? '' : nd.toISOString();
-    }
-  }
-  return '';
+  if (typeof val !== 'string' || !val.trim()) return '';
+  const input = val.trim();
+  const ms = parseAbsoluteTimestamp(input);
+  if (Number.isFinite(ms)) return new Date(ms).toISOString();
+  const number = Number(input);
+  return Number.isFinite(number) ? normalizeTimestamp(number) : '';
+}
+
+/** Only for optional ClickHouse system clocks where epoch zero means absent.
+ * General timestamp parsing must continue to accept the Unix epoch. */
+export function normalizeOptionalSystemTimestamp(value: unknown): string {
+  const normalized = normalizeTimestamp(value);
+  return normalized === '1970-01-01T00:00:00.000Z' ? '' : normalized;
 }

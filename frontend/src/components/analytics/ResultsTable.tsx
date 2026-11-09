@@ -1,3 +1,4 @@
+import { formatAnalyticsCell } from './timestamp';
 /**
  * ResultsTable - shared sortable table for query results.
  *
@@ -274,7 +275,7 @@ export const ResultsTable: React.FC<ResultsTableProps> = ({
                   const isMergeLink = hasMergeLink && col === mergeLinkOnColumn;
                   const isQueryLink = hasQueryLink && col === queryLinkOnColumn;
                   const isClickable = isLink || isDrill || isPartLink || isMergeLink || isQueryLink;
-                  const cellValue = formatCell(row[col], col);
+                  const cellValue = formatAnalyticsCell(formatCell(row[col], col), col, row);
                   const ragColor = getRagColor(col, row[col], cellStyles);
                   const numeric = numericCols.has(col);
                   const gauge = gaugeMap.get(col);

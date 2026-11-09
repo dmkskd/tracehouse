@@ -1,3 +1,5 @@
+import { buildEventIdentity } from '../utils/event-identity.js';
+import { normalizeAbsoluteTimestamp } from '../utils/absolute-timestamp.js';
 import type { IClickHouseAdapter } from '../adapters/types.js';
 import { buildQuery, tagQuery, utcDateTime } from '../queries/builder.js';
 import type { QueryParameter } from '../queries/builder.js';
@@ -112,19 +114,8 @@ function classifyOperationalError(errorName: string): {
   };
 }
 
-function parseChTime(value: unknown): string {
-  const raw = String(value ?? '').trim();
-  const normalized = raw.replace(' ', 'T');
-  const withTimezone = normalized.includes('Z') || /[+-]\d\d:\d\d$/.test(normalized)
-    ? normalized
-    : `${normalized}Z`;
-  const parsed = new Date(withTimezone);
-  return Number.isNaN(parsed.getTime()) ? raw : parsed.toISOString();
-}
 
-function stableEventId(parts: Array<string | number | undefined>): string {
-  return parts.map(part => String(part ?? '')).join(':');
-}
+
 
 function parseChBool(value: unknown): boolean {
   return value === true || value === 1 || value === '1' || value === 'true';
@@ -324,7 +315,7 @@ export class EventsService {
     );
     return rows.map(raw => {
       const row = raw as Record<string, unknown>;
-      const occurredAt = parseChTime(row.occurred_at);
+      const occurredAt = normalizeAbsoluteTimestamp(row.occurred_at);
       const hostname = String(row.host ?? '');
       const queryId = String(row.query_id ?? '');
       const code = Number(row.exception_code ?? 0);
@@ -333,13 +324,13 @@ export class EventsService {
       const classification = classifyQueryFailure(code);
       const semantics = isDdl ? eventDefaults('ddl') : classification;
       return {
-        id: stableEventId([
+        ...buildEventIdentity([
           'query_log',
           hostname,
           occurredAt,
           queryId,
           isDdl ? queryKind : code,
-        ]),
+        ], row.occurred_at, row.identity_time),
         occurred_at: occurredAt,
         hostname: hostname || undefined,
         kind: isDdl ? 'ddl' : classification.kind,
@@ -379,7 +370,7 @@ export class EventsService {
     );
     return rows.map(raw => {
       const row = raw as Record<string, unknown>;
-      const occurredAt = parseChTime(row.occurred_at);
+      const occurredAt = normalizeAbsoluteTimestamp(row.occurred_at);
       const hostname = String(row.host ?? '');
       const queryId = String(row.query_id ?? '');
       const flushQueryId = String(row.flush_query_id ?? '');
@@ -387,14 +378,14 @@ export class EventsService {
       const table = String(row.table ?? '');
       const status = String(row.status ?? '');
       return {
-        id: stableEventId([
+        ...buildEventIdentity([
           'asynchronous_insert_log',
           hostname,
           occurredAt,
           queryId,
           flushQueryId,
           status,
-        ]),
+        ], row.occurred_at, row.identity_time),
         occurred_at: occurredAt,
         hostname: hostname || undefined,
         kind: 'async_insert_failure',
@@ -427,13 +418,13 @@ export class EventsService {
     );
     return rows.map(raw => {
       const row = raw as Record<string, unknown>;
-      const occurredAt = parseChTime(row.occurred_at);
+      const occurredAt = normalizeAbsoluteTimestamp(row.occurred_at);
       const hostname = String(row.host ?? '');
       const operationId = String(row.operation_id ?? '');
       const queryId = String(row.query_id ?? '');
       const status = String(row.status ?? '');
       const storageName = String(row.storage_name ?? '');
-      const startedAt = parseChTime(row.start_time);
+      const startedAt = normalizeAbsoluteTimestamp(row.start_time);
       const isRestore = status.startsWith('RESTOR');
       const isFailed = status.endsWith('_FAILED');
       const isCancelled = status.endsWith('_CANCELLED');
@@ -451,13 +442,13 @@ export class EventsService {
         : Math.max(0, endMs - startMs);
       const error = String(row.error ?? '').trim();
       return {
-        id: stableEventId([
+        ...buildEventIdentity([
           'backup_log',
           hostname,
           occurredAt,
           operationId,
           status,
-        ]),
+        ], row.occurred_at, row.identity_time),
         occurred_at: occurredAt,
         hostname: hostname || undefined,
         kind: 'backup',
@@ -490,7 +481,7 @@ export class EventsService {
     );
     return rows.map(raw => {
       const row = raw as Record<string, unknown>;
-      const occurredAt = parseChTime(row.occurred_at);
+      const occurredAt = normalizeAbsoluteTimestamp(row.occurred_at);
       const hostname = String(row.host ?? '');
       const state = String(row.connection_state ?? '');
       const keeperName = String(row.keeper_name ?? '');
@@ -500,7 +491,7 @@ export class EventsService {
       const reason = String(row.reason ?? '').trim();
       const connected = state === 'Connected';
       return {
-        id: stableEventId([
+        ...buildEventIdentity([
           'zookeeper_connection_log',
           hostname,
           occurredAt,
@@ -509,7 +500,7 @@ export class EventsService {
           keeperPort,
           keeperClientId,
           state,
-        ]),
+        ], row.occurred_at, row.identity_time),
         occurred_at: occurredAt,
         hostname: hostname || undefined,
         kind: 'keeper_connection',
@@ -541,14 +532,14 @@ export class EventsService {
     );
     return rows.map(raw => {
       const row = raw as Record<string, unknown>;
-      const occurredAt = parseChTime(row.occurred_at);
-      const observedAt = parseChTime(row.observed_at);
+      const occurredAt = normalizeAbsoluteTimestamp(row.occurred_at);
+      const observedAt = normalizeAbsoluteTimestamp(row.observed_at);
       const hostname = String(row.host ?? '');
       const uptime = Number(row.uptime ?? 0);
       const previousUptime = Number(row.previous_uptime ?? uptime);
       const detectedFromReset = previousUptime > uptime + 5;
       return {
-        id: stableEventId(['asynchronous_metric_log', hostname, occurredAt, 'restart']),
+        ...buildEventIdentity(['asynchronous_metric_log', hostname, occurredAt, 'restart'], row.occurred_at, row.identity_time),
         occurred_at: occurredAt,
         observed_at: observedAt,
         hostname: hostname || undefined,
@@ -580,12 +571,12 @@ export class EventsService {
     );
     return rows.map(raw => {
       const row = raw as Record<string, unknown>;
-      const occurredAt = parseChTime(row.occurred_at);
+      const occurredAt = normalizeAbsoluteTimestamp(row.occurred_at);
       const hostname = String(row.host ?? '');
       const signal = Number(row.signal ?? 0);
       const queryId = String(row.query_id ?? '');
       return {
-        id: stableEventId(['crash_log', hostname, occurredAt, signal, queryId]),
+        ...buildEventIdentity(['crash_log', hostname, occurredAt, signal, queryId], row.occurred_at, row.identity_time),
         occurred_at: occurredAt,
         hostname: hostname || undefined,
         kind: 'server_crash',
@@ -610,7 +601,7 @@ export class EventsService {
     );
     return rows.map(raw => {
       const row = raw as Record<string, unknown>;
-      const occurredAt = parseChTime(row.occurred_at);
+      const occurredAt = normalizeAbsoluteTimestamp(row.occurred_at);
       const hostname = String(row.host ?? '');
       const queryId = String(row.query_id ?? '');
       const operation = String(row.event_type ?? '');
@@ -632,7 +623,7 @@ export class EventsService {
               ? 'replication_task_failure'
               : 'part_failure';
       return {
-        id: stableEventId([
+        ...buildEventIdentity([
           'part_log',
           hostname,
           occurredAt,
@@ -641,7 +632,7 @@ export class EventsService {
           partName,
           operation,
           code,
-        ]),
+        ], row.occurred_at, row.identity_time),
         occurred_at: occurredAt,
         hostname: hostname || undefined,
         kind,
@@ -687,7 +678,7 @@ export class EventsService {
     );
     return rows.map(raw => {
       const row = raw as Record<string, unknown>;
-      const occurredAt = parseChTime(row.occurred_at);
+      const occurredAt = normalizeAbsoluteTimestamp(row.occurred_at);
       const hostname = String(row.host ?? '');
       const queryId = String(row.query_id ?? '');
       const database = String(row.database ?? '');
@@ -699,7 +690,7 @@ export class EventsService {
         ? 'replication_task_failure'
         : 'background_task_failure';
       return {
-        id: stableEventId([
+        ...buildEventIdentity([
           'background_schedule_pool_log',
           hostname,
           occurredAt,
@@ -708,7 +699,7 @@ export class EventsService {
           taskName,
           queryId,
           code,
-        ]),
+        ], row.occurred_at, row.identity_time),
         occurred_at: occurredAt,
         hostname: hostname || undefined,
         kind,
@@ -739,7 +730,7 @@ export class EventsService {
     );
     return rows.map(raw => {
       const row = raw as Record<string, unknown>;
-      const occurredAt = parseChTime(row.occurred_at);
+      const occurredAt = normalizeAbsoluteTimestamp(row.occurred_at);
       const hostname = String(row.host ?? '');
       const errorName = String(row.error ?? '');
       const code = Number(row.code ?? 0);
@@ -747,14 +738,14 @@ export class EventsService {
       const remote = parseChBool(row.remote);
       const classification = classifyOperationalError(errorName);
       return {
-        id: stableEventId([
+        ...buildEventIdentity([
           'error_log',
           hostname,
           occurredAt,
           code,
           errorName,
           remote ? 1 : 0,
-        ]),
+        ], row.occurred_at, row.identity_time),
         occurred_at: occurredAt,
         hostname: hostname || undefined,
         kind: 'error_burst',
@@ -784,14 +775,16 @@ export class EventsService {
     );
     return rows.map(raw => {
       const row = raw as Record<string, unknown>;
-      const occurredAt = parseChTime(row.occurred_at);
+      const occurredAt = normalizeAbsoluteTimestamp(row.occurred_at);
       const rawEndedAt = String(row.ended_at ?? '').trim();
-      const endedAt = rawEndedAt ? parseChTime(rawEndedAt) : undefined;
+      const endedAt = rawEndedAt ? normalizeAbsoluteTimestamp(rawEndedAt) : undefined;
       const hostname = String(row.host ?? '');
       const count = Number(row.max_readonly_tables ?? 0);
       return {
-        id: stableEventId(['metric_log', hostname, occurredAt, 'replica_readonly']),
+        ...buildEventIdentity(['metric_log', hostname, occurredAt, 'replica_readonly'], row.episode_started_at ?? row.occurred_at, row.identity_time),
         occurred_at: occurredAt,
+        started_at: normalizeAbsoluteTimestamp(row.episode_started_at ?? row.occurred_at),
+        observed_at: normalizeAbsoluteTimestamp(row.observed_at ?? row.occurred_at),
         ended_at: endedAt,
         hostname: hostname || undefined,
         kind: 'replica_readonly',
@@ -819,7 +812,7 @@ export class EventsService {
     );
     return rows.map(raw => {
       const row = raw as Record<string, unknown>;
-      const occurredAt = parseChTime(row.occurred_at);
+      const occurredAt = normalizeAbsoluteTimestamp(row.occurred_at);
       const hostname = String(row.host ?? '');
       const failureKind = String(row.failure_kind ?? '');
       const count = Number(row.value ?? 0);
@@ -833,12 +826,12 @@ export class EventsService {
         ? 'replication_data_loss'
         : 'replication_task_failure';
       return {
-        id: stableEventId([
+        ...buildEventIdentity([
           'metric_log',
           hostname,
           occurredAt,
           failureKind,
-        ]),
+        ], row.occurred_at, row.identity_time),
         occurred_at: occurredAt,
         hostname: hostname || undefined,
         kind,

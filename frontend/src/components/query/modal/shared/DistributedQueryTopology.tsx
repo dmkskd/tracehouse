@@ -1,3 +1,4 @@
+import { parseOptionalTimestampMicros } from '@tracehouse/core';
 /**
  * DistributedQueryTopology — Gantt-style timeline showing coordinator + node sub-queries.
  * Renders inline metrics on each bar and supports click-to-navigate between queries.
@@ -97,14 +98,7 @@ function stableHostColor(host: string, index = 0): string {
 }
 
 /** Parse ClickHouse microsecond timestamp to epoch microseconds */
-function parseUs(ts: string): number {
-  if (!ts) return 0;
-  const dotIdx = ts.lastIndexOf('.');
-  const baseDateStr = dotIdx >= 0 ? ts.substring(0, dotIdx) : ts;
-  const usFrac = dotIdx >= 0 ? ts.substring(dotIdx + 1) : '0';
-  const baseMs = new Date(baseDateStr.replace(' ', 'T') + 'Z').getTime();
-  return baseMs * 1000 + parseInt(usFrac.padEnd(6, '0').substring(0, 6), 10);
-}
+
 
 /**
  * A hostname trimmed to its first segment, for when a participant has no
@@ -285,7 +279,7 @@ export const DistributedQueryTopology: React.FC<DistributedQueryTopologyProps> =
   );
 
   const timeline = useMemo(() => {
-    const coordStartUs = parseUs(coordinator.query_start_time_microseconds);
+    const coordStartUs = parseOptionalTimestampMicros(coordinator.query_start_time_microseconds);
     const coordDurationUs = coordinator.query_duration_ms * 1000;
     const totalDurationUs = Math.max(1, coordDurationUs);
     const richChildNodes = inferredTopology
@@ -295,7 +289,7 @@ export const DistributedQueryTopology: React.FC<DistributedQueryTopologyProps> =
     const nodeQueries = richChildNodes.length > 0
       ? richChildNodes.map((node, i) => {
         const matchingSubQuery = subQueries.find(sq => sq.query_id === node.queryId && shortHost(sq.hostname) === shortHost(node.hostname));
-        const nodeStartUs = parseUs(matchingSubQuery?.query_start_time_microseconds || node.queryStartTimeMicroseconds || '');
+        const nodeStartUs = parseOptionalTimestampMicros(matchingSubQuery?.query_start_time_microseconds || node.queryStartTimeMicroseconds || '');
         const durationUs = node.queryDurationMs * 1000;
         const insertLink = node.role === 'insert_forwarder' ? asyncLinkByInsertQueryId.get(node.queryId) : undefined;
         const flushLink = node.role === 'async_insert_flush' ? asyncLinkByFlushQueryId.get(node.queryId) : undefined;
@@ -331,7 +325,7 @@ export const DistributedQueryTopology: React.FC<DistributedQueryTopologyProps> =
         };
       })
       : subQueries.map((sq, i) => {
-        const nodeStartUs = parseUs(sq.query_start_time_microseconds);
+        const nodeStartUs = parseOptionalTimestampMicros(sq.query_start_time_microseconds);
         const nodeDurationUs = sq.query_duration_ms * 1000;
         const node = nodeByQueryId.get(sq.query_id)?.find(candidate => shortHost(candidate.hostname) === shortHost(sq.hostname));
         const insertLink = node?.role === 'insert_forwarder' ? asyncLinkByInsertQueryId.get(sq.query_id) : undefined;
@@ -577,7 +571,7 @@ export const DistributedQueryTopology: React.FC<DistributedQueryTopologyProps> =
         <InsertPairBar
           key={`${pair.link.queryId}:${pair.link.flushQueryId}:${pair.hostname}:${i}`}
           pair={pair}
-          coordinatorStartUs={parseUs(coordinator.query_start_time_microseconds)}
+          coordinatorStartUs={parseOptionalTimestampMicros(coordinator.query_start_time_microseconds)}
           totalDurationUs={timeline.totalDurationUs}
           labelWidth={LABEL_W}
           metricWidth={METRIC_W}
@@ -687,8 +681,8 @@ const InsertPairBar: React.FC<{
 }> = ({ pair, coordinatorStartUs, totalDurationUs, labelWidth, metricWidth, activeQueryId, onNavigate }) => {
   const fmtMs = formatDurationMs;
   const laneLabel = participantCoordinate(pair.shardNum, pair.replicaNum) ?? shortHost(pair.hostname);
-  const insertStartUs = parseUs(pair.insertNode?.queryStartTimeMicroseconds ?? '');
-  const flushStartUs = parseUs(pair.flushNode?.queryStartTimeMicroseconds ?? '');
+  const insertStartUs = parseOptionalTimestampMicros(pair.insertNode?.queryStartTimeMicroseconds ?? '');
+  const flushStartUs = parseOptionalTimestampMicros(pair.flushNode?.queryStartTimeMicroseconds ?? '');
   const insertLeftPct = Math.max(0, ((insertStartUs - coordinatorStartUs) / totalDurationUs) * 100);
   const flushLeftPct = Math.max(0, ((flushStartUs - coordinatorStartUs) / totalDurationUs) * 100);
   const insertWidthPct = Math.max(0.5, ((pair.insertNode?.queryDurationMs ?? 0) * 1000 / totalDurationUs) * 100);

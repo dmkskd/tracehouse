@@ -1,3 +1,13 @@
+/**
+ * QUERY TIMEZONE CONTRACT: use UTC for every timestamp instant going forward.
+ * Bind absolute inputs with utcDateTime()/utcDateTime64(); project datetime
+ * strings with toString(value, 'UTC'). Localize only for UI display. Preserve
+ * microsecond identities as explicitly zoned strings, not JavaScript Dates.
+ * This also applies to inline service SQL and Analytics SQL. Grafana and direct
+ * clients serialize raw DateTime fields differently: verify both transports.
+ * See ./README.md for alias, partition-pruning and legacy-identity rules.
+ */
+import { parseUtcDateTimeInput } from '../utils/absolute-timestamp.js';
 import type { TaggedQuery } from '../adapters/types.js';
 
 export interface UtcDateTimeParameter {
@@ -11,11 +21,22 @@ export interface UtcDateTime64Parameter {
   readonly precision: number;
 }
 
+export interface EventDateBoundParameter {
+  readonly kind: 'event_date_bound';
+  readonly value: string;
+}
+
+/** Safely plumb the existing conservative partition-date helper into buildQuery. */
+export function eventDateBoundParameter(value: string): EventDateBoundParameter {
+  return { kind: 'event_date_bound', value };
+}
+
 export type QueryParameter =
   | string
   | number
   | UtcDateTimeParameter
-  | UtcDateTime64Parameter;
+  | UtcDateTime64Parameter
+  | EventDateBoundParameter;
 
 /**
  * Escape a string value for safe inclusion in SQL.
@@ -40,10 +61,7 @@ export function escapeIdentifier(name: string): string {
 
 function parseUtcDate(value: string | Date): Date {
   if (value instanceof Date) return value;
-  const input = value.trim();
-  const hasOffset = /(?:[zZ]|[+-]\d{2}:?\d{2})$/.test(input);
-  const normalized = input.replace(' ', 'T');
-  return new Date(hasOffset ? normalized : `${normalized}Z`);
+  return new Date(parseUtcDateTimeInput(value));
 }
 
 /**
@@ -111,6 +129,7 @@ export function utcDateTime64Literal(
 function formatParameter(value: QueryParameter): string {
   if (typeof value === 'string') return `'${escapeValue(value)}'`;
   if (typeof value === 'number') return String(value);
+  if (value.kind === 'event_date_bound') return eventDateBound(value.value);
   return value.kind === 'utc_datetime'
     ? utcDateTimeLiteral(value.value)
     : utcDateTime64Literal(value.value, value.precision);
@@ -171,8 +190,33 @@ export function eventDateBound(eventDate?: string, fallbackDays = 7): string {
     // Extract YYYY-MM-DD from ISO string or ClickHouse datetime
     const dateStr = eventDate.slice(0, 10);
     if (/^\d{4}-\d{2}-\d{2}$/.test(dateStr)) {
-      return `toDate('${dateStr}') - 1`;
+      return conservativeEventDateBound(`'${dateStr}'`);
     }
   }
   return `today() - ${fallbackDays}`;
+}
+
+/** One lower-bound policy; public helpers below admit only validated inputs. */
+function conservativeEventDateBound(utcStartExpression: string): string {
+  return `toDate(${utcStartExpression}) - 1`;
+}
+
+/** A date or explicitly UTC datetime placeholder in a query template. */
+export function eventDateBoundForParameter(name: string): string {
+  if (!/^[A-Za-z_]\w*$/.test(name)) throw new Error('Invalid date-bound parameter name');
+  return conservativeEventDateBound(`{${name}}`);
+}
+
+/** Runtime windows use the same UTC-start/previous-date policy as absolute
+ * ranges. A parameter reference is constrained to a UInt32 placeholder. */
+export function eventDateBoundForWindow(seconds: number | { parameter: string }): string {
+  let interval: string;
+  if (typeof seconds === 'number') {
+    if (!Number.isSafeInteger(seconds) || seconds < 0) throw new Error('Invalid date-bound window');
+    interval = String(seconds);
+  } else {
+    if (!/^[A-Za-z_]\w*$/.test(seconds.parameter)) throw new Error('Invalid date-bound parameter name');
+    interval = `{${seconds.parameter}:UInt32}`;
+  }
+  return conservativeEventDateBound(`toTimeZone(now(), 'UTC') - toIntervalSecond(${interval})`);
 }

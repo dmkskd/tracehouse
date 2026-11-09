@@ -1,3 +1,4 @@
+import { parseAbsoluteTimestamp } from '@tracehouse/core';
 /**
  * useQueryDeepLink — syncs query detail modal state to URL (qd_id param).
  *
@@ -29,7 +30,7 @@ export const QUERY_DETAILS_SHARE_SCHEMA = defineShareSchema({
 
 function detailToSeries(detail: any): QuerySeries {
   const durationMs = Number(detail.query_duration_ms) || 0;
-  const startMs = new Date(detail.query_start_time).getTime();
+  const startMs = parseAbsoluteTimestamp(detail.query_start_time);
   return {
     query_id: detail.query_id,
     label: detail.query || '',

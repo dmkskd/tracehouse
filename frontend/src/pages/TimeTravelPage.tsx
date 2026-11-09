@@ -1,5 +1,5 @@
 import { useQueryXRaySelection } from '../components/query/query-xray-preference';
-import { selectQueryXRaySource } from '@tracehouse/core';
+import { selectQueryXRaySource, resolveEventIdentity } from '@tracehouse/core';
 /**
  * TimeTravelPage - Memory/CPU/Network/Disk IO timeline with interactive hover + click + drag-to-zoom.
  * Toggle buttons switch Y-axis metric. Same time axis, hover, pin, zoom across all views.
@@ -371,6 +371,9 @@ export const TimeTravelPage: React.FC = () => {
     events: [],
     coverage: [],
   });
+  const selectedEventIdForDisplay = useMemo(() => resolveEventIdentity(
+    [...eventData.events, ...navigatorEventData.events], selectedEventId,
+  )?.id ?? selectedEventId, [eventData.events, navigatorEventData.events, selectedEventId]);
   const [navigatorRange, setNavigatorRange] = useState<TimelineRange | null>(null);
   const navigatorRangeRef = useRef<TimelineRange | null>(null);
   const navigatorCoverageRef = useRef<TimelineCoverage[]>([]);
@@ -1754,7 +1757,7 @@ export const TimeTravelPage: React.FC = () => {
                             eventFilter,
                           )
                         : []}
-                      selectedEventId={selectedEventId}
+                      selectedEventId={selectedEventIdForDisplay}
                       onEventSelect={handleEventSelect}
                       onClearEventSelection={handleClearEventSelection}
                       onViewEventDetails={handleViewEventDetails}
@@ -1832,7 +1835,7 @@ export const TimeTravelPage: React.FC = () => {
               hiddenCategories={hiddenCategories}
               queryHashActive={!!queryHashFilter}
               eventAnnotations={timeTravelEventsVisible ? filteredWindowEvents : []}
-              selectedEventId={selectedEventId}
+              selectedEventId={selectedEventIdForDisplay}
               onEventSelect={handleEventSelect}
               onClearEventSelection={handleClearEventSelection}
               onViewEventDetails={handleViewEventDetails}
@@ -1926,7 +1929,7 @@ export const TimeTravelPage: React.FC = () => {
                 cpuCores={timelineCpuCapacity}
                 onDragEnd={handleNavigatorDragEnd}
                 events={timeTravelEventsVisible ? filteredNavigatorEvents : []}
-                selectedEventId={selectedEventId}
+                selectedEventId={selectedEventIdForDisplay}
                 onEventSelect={handleNavigatorEventSelect}
               />
             </div>

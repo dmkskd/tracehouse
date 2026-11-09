@@ -1,3 +1,4 @@
+import { parseAbsoluteTimestamp } from '../utils/absolute-timestamp.js';
 import { selectQueryXRaySource, type SelectQueryXRaySourceInput } from '../types/xray-source.js';
 /**
  * TimelineService - Fetches server metrics and activity data for time travel visualization.
@@ -16,7 +17,7 @@ import type {
   CpuSpikeAnalysis,
   ZoomSample,
 } from '../types/timeline.js';
-import { buildQuery, tagQuery, utcDateTime, escapeValue } from '../queries/builder.js';
+import { buildQuery, tagQuery, utcDateTime, escapeValue, eventDateBoundParameter } from '../queries/builder.js';
 import { buildXRayWindowSamplesSQL } from '../queries/xray-window-queries.js';
 import type { QueryParameter } from '../queries/builder.js';
 import { classifyMergeHistory, classifyActiveMerge } from '../utils/merge-classification.js';
@@ -72,12 +73,10 @@ function toClickHouseDateTime(date: Date): string {
 }
 
 /**
- * Parse ClickHouse timestamp string to Date.
+ * Parse a timeline datetime projection. SQL guarantees UTC for timezone-less strings.
  */
 function parseChTime(s: string): Date {
-  const normalized = s.trim().replace(' ', 'T');
-  const withTz = normalized.includes('Z') || normalized.includes('+') ? normalized : normalized + 'Z';
-  return new Date(withTz);
+  return new Date(parseAbsoluteTimestamp(s));
 }
 
 interface QueryZoomInterval {
@@ -190,7 +189,10 @@ export class TimelineService {
 
     const start = new Date(timestamp.getTime() - windowSeconds * 1000);
     const end = new Date(timestamp.getTime() + windowSeconds * 1000);
-    const startDate = start.toISOString().split('T')[0];
+    // event_date is a server/column-local calendar date. A negative-offset
+    // timezone can still be on the previous day when the UTC window starts.
+    // Keep partition pruning conservative; absolute timestamp predicates below
+    // still determine which operations actually overlap the requested window.
 
     // ORDER BY expressions per metric, per query type.
     // Queries use query_log columns; merges/mutations use part_log columns.
@@ -223,7 +225,7 @@ export class TimelineService {
     const params: Record<string, QueryParameter> = {
       start_time: utcDateTime(start),
       end_time: utcDateTime(end),
-      start_date: startDate,
+      start_date: eventDateBoundParameter(start.toISOString()),
       activity_limit: activityLimit,
     };
 

@@ -1,3 +1,4 @@
+import { parseOptionalTimestampMicros } from '@tracehouse/core';
 /**
  * QueryDetail - Component for displaying detailed information about a selected query
  * 
@@ -161,16 +162,16 @@ const RunningQueryMetrics: React.FC<{ query: RunningQuery; onKill?: () => void; 
 const HistoryQueryMetrics: React.FC<{ query: QueryHistoryItem }> = ({ query }) => {
   const fmtMs = formatDurationMs;
   const fmtTime = (ts: string) => new Date(ts).toLocaleString();
-  
+
   // Calculate derived metrics
   const markCacheHitRate = (query.mark_cache_hits && query.mark_cache_misses) 
     ? (query.mark_cache_hits / (query.mark_cache_hits + query.mark_cache_misses)) * 100 
     : null;
-  
+
   const parallelism = (query.user_time_us && query.system_time_us && query.real_time_us && query.real_time_us > 0)
     ? (query.user_time_us + query.system_time_us) / query.real_time_us
     : null;
-  
+
   const ioWaitPct = (query.io_wait_us && query.real_time_us && query.real_time_us > 0)
     ? (query.io_wait_us / query.real_time_us) * 100
     : null;
@@ -179,7 +180,7 @@ const HistoryQueryMetrics: React.FC<{ query: QueryHistoryItem }> = ({ query }) =
   const partsSelectivity = (query.selected_parts !== undefined && query.selected_parts_total && query.selected_parts_total > 0)
     ? (query.selected_parts / query.selected_parts_total) * 100
     : null;
-  
+
   const marksSelectivity = (query.selected_marks !== undefined && query.selected_marks_total && query.selected_marks_total > 0)
     ? (query.selected_marks / query.selected_marks_total) * 100
     : null;
@@ -206,7 +207,7 @@ const HistoryQueryMetrics: React.FC<{ query: QueryHistoryItem }> = ({ query }) =
         <MetricItem label="Result Rows" value={formatNumber(query.result_rows)} />
         <MetricItem label="Result Bytes" value={formatBytes(query.result_bytes)} />
       </div>
-      
+
       {/* Client / Distributed query info */}
       <div className="mt-3">
         <div className="text-xs font-medium mb-2" style={{ color: 'var(--text-muted)' }}>Origin</div>
@@ -245,9 +246,9 @@ const HistoryQueryMetrics: React.FC<{ query: QueryHistoryItem }> = ({ query }) =
           )}
         </div>
       </div>
-      
+
       <EfficiencyDisplay readRows={query.read_rows} resultRows={query.result_rows} efficiencyScore={query.efficiency_score} />
-      
+
       {/* Index Selectivity - shows how well the primary key pruned data */}
       {(partsSelectivity !== null || marksSelectivity !== null) && (
         <div className="mt-3">
@@ -278,7 +279,7 @@ const HistoryQueryMetrics: React.FC<{ query: QueryHistoryItem }> = ({ query }) =
           </div>
         </div>
       )}
-      
+
       {/* Performance Metrics */}
       {(markCacheHitRate !== null || parallelism !== null || ioWaitPct !== null || query.cpu_time_us !== undefined) && (
         <div className="mt-3">
@@ -305,7 +306,7 @@ const HistoryQueryMetrics: React.FC<{ query: QueryHistoryItem }> = ({ query }) =
           </div>
         </div>
       )}
-      
+
       {query.exception && <ErrorDisplay exception={query.exception} />}
     </div>
   );
@@ -606,18 +607,11 @@ export const ThreadBreakdownSection: React.FC<{
     if (threads.length === 0) return { rows: [], totalDurationUs: 0 };
 
     // Parse microsecond timestamps: "2026-02-20 11:26:43.867493"
-    const parseUs = (ts: string): number => {
-      if (!ts) return 0;
-      const dotIdx = ts.lastIndexOf('.');
-      const baseDateStr = dotIdx >= 0 ? ts.substring(0, dotIdx) : ts;
-      const usFrac = dotIdx >= 0 ? ts.substring(dotIdx + 1) : '0';
-      const baseMs = new Date(baseDateStr.replace(' ', 'T') + 'Z').getTime();
-      return baseMs * 1000 + parseInt(usFrac.padEnd(6, '0').substring(0, 6), 10);
-    };
+
 
     const rows = threads.map(t => {
-      const t0 = parseUs(t.initial_query_start_time_us); // true T=0
-      const endUs = parseUs(t.event_time_us);
+      const t0 = parseOptionalTimestampMicros(t.initial_query_start_time_us); // true T=0
+      const endUs = parseOptionalTimestampMicros(t.event_time_us);
       const durationUs = t.query_duration_ms * 1000;
       const threadEndOffset = endUs - t0;
       const threadStartOffset = threadEndOffset - durationUs;

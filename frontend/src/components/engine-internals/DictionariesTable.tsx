@@ -3,6 +3,7 @@
  */
 
 import type { DictionaryInfo } from '@tracehouse/core';
+import { parseAbsoluteTimestamp } from '@tracehouse/core';
 import { CopyTableButton } from '../common/CopyTableButton';
 import { formatBytes } from '../../utils/formatters';
 
@@ -84,7 +85,7 @@ export function DictionariesTable({ dictionaries, className = '' }: Dictionaries
                     <span style={{ fontFamily: 'monospace', color: 'var(--text-primary)' }}>{dict.name}</span>
                     {dict.lastSuccessfulUpdate && (
                       <div style={{ fontSize: 10, marginTop: 2, color: 'var(--text-muted)' }}>
-                        Updated: {new Date(dict.lastSuccessfulUpdate).toLocaleString()}
+                        Updated: {new Date(parseAbsoluteTimestamp(dict.lastSuccessfulUpdate)).toLocaleString()}
                       </div>
                     )}
                   </td>

@@ -1,3 +1,5 @@
+import { rowToQuerySeries, type QueryRow } from './query-series';
+import { formatAnalyticsCell } from './timestamp';
 /**
  * LinkQueryModal - bridges the @link directive to QueryDetailModal.
  *
@@ -18,7 +20,7 @@ import { type Query } from './types';
 import { resolveTimeRange, resolveDrillParams } from './templateResolution';
 import { getRagColor } from './metaLanguage';
 import { QueryDetailModal } from '../query/modal/QueryDetailModal';
-import { type QuerySeries, parseTimeValue } from '@tracehouse/core';
+import { type QuerySeries } from '@tracehouse/core';
 import { formatCell, isNumericValue, extractNumeric } from './charts';
 
 export interface LinkQueryModalProps {
@@ -34,44 +36,6 @@ export interface LinkQueryModalProps {
   onClose: () => void;
   /** Opens query detail at page level (for deep-linking). Falls back to inline modal. */
   onOpenQueryDetail?: (query: QuerySeries) => void;
-}
-
-interface QueryRow {
-  query_id?: string;
-  event_time?: string;
-  query_duration_ms?: number;
-  memory_usage?: number;
-  read_rows?: number;
-  read_bytes?: number;
-  query?: string;
-  query_text?: string;
-  user?: string;
-  type?: string;
-  [key: string]: unknown;
-}
-
-/** Build a QuerySeries from a query_log row so QueryDetailModal can take over. */
-function rowToQuerySeries(row: QueryRow): QuerySeries {
-  const durationMs = Number(row.query_duration_ms ?? 0);
-  const { timeMs, timeStr: startTime } = parseTimeValue(row.event_time ?? new Date().toISOString());
-  const endTime = new Date(timeMs + durationMs).toISOString();
-
-  return {
-    query_id: String(row.query_id ?? ''),
-    label: String(row.query ?? row.query_text ?? ''),
-    user: String(row.user ?? 'default'),
-    start_time: startTime,
-    end_time: endTime,
-    duration_ms: durationMs,
-    peak_memory: Number(row.memory_usage ?? 0),
-    cpu_us: 0,
-    net_send: 0,
-    net_recv: 0,
-    disk_read: Number(row.read_bytes ?? 0),
-    disk_write: 0,
-    status: String(row.type ?? 'QueryFinish'),
-    points: [],
-  };
 }
 
 export const LinkQueryModal: React.FC<LinkQueryModalProps> = ({
@@ -294,7 +258,7 @@ export const LinkQueryModal: React.FC<LinkQueryModalProps> = ({
                           fontWeight: getRagColor(col, row[col], targetQuery.directives.cellStyles) ? 600 : undefined,
                           whiteSpace: 'nowrap', maxWidth: 400, overflow: 'hidden', textOverflow: 'ellipsis',
                         }}>
-                          {formatCell(row[col], col)}
+                          {formatAnalyticsCell(formatCell(row[col], col), col, row)}
                         </td>
                       ))}
                     </tr>

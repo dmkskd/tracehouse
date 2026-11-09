@@ -197,7 +197,7 @@ SELECT
     any(load_factor) AS load_factor,
     any(source) AS source,
     any(status) AS loading_status,
-    any(last_successful_update_time) AS last_successful_update_time
+    concat(toString(any(last_successful_update_time), 'UTC'), 'Z') AS last_successful_update_time
 FROM {{cluster_aware:system.dictionaries}}
 GROUP BY name
 ORDER BY bytes_allocated DESC
@@ -378,7 +378,7 @@ LIMIT 20
 export const GET_CORE_TIMELINE = `
 SELECT
     toUInt32(cpu_id) AS core,
-    toStartOfInterval(event_time_microseconds, INTERVAL ${SLOT_INTERVAL_MICROSECONDS} microsecond) AS slot,
+    concat(toString(toStartOfInterval(event_time_microseconds, INTERVAL ${SLOT_INTERVAL_MICROSECONDS} microsecond), 'UTC'), 'Z') AS slot,
     thread_name,
     query_id,
     count() AS samples,
@@ -395,7 +395,7 @@ ORDER BY core, slot, samples DESC
 export const GET_CORE_TIMELINE_FALLBACK = `
 SELECT
     toUInt32(cpu_id) AS core,
-    toStartOfInterval(event_time_microseconds, INTERVAL ${SLOT_INTERVAL_MICROSECONDS} microsecond) AS slot,
+    concat(toString(toStartOfInterval(event_time_microseconds, INTERVAL ${SLOT_INTERVAL_MICROSECONDS} microsecond), 'UTC'), 'Z') AS slot,
     CAST(thread_id, 'String') AS thread_name,
     query_id,
     count() AS samples,
@@ -418,7 +418,7 @@ ORDER BY core, slot, samples DESC
 export const GET_CORE_TIMELINE_NO_CPU_ID = `
 SELECT
     toUInt32(thread_id % {core_count:UInt32}) AS core,
-    toStartOfInterval(event_time_microseconds, INTERVAL ${SLOT_INTERVAL_MICROSECONDS} microsecond) AS slot,
+    concat(toString(toStartOfInterval(event_time_microseconds, INTERVAL ${SLOT_INTERVAL_MICROSECONDS} microsecond), 'UTC'), 'Z') AS slot,
     thread_name,
     query_id,
     count() AS samples,
@@ -435,7 +435,7 @@ ORDER BY core, slot, samples DESC
 export const GET_CORE_TIMELINE_NO_CPU_ID_NO_THREAD_NAME = `
 SELECT
     toUInt32(thread_id % {core_count:UInt32}) AS core,
-    toStartOfInterval(event_time_microseconds, INTERVAL ${SLOT_INTERVAL_MICROSECONDS} microsecond) AS slot,
+    concat(toString(toStartOfInterval(event_time_microseconds, INTERVAL ${SLOT_INTERVAL_MICROSECONDS} microsecond), 'UTC'), 'Z') AS slot,
     CAST(thread_id, 'String') AS thread_name,
     query_id,
     count() AS samples,

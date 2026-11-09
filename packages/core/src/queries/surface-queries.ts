@@ -40,7 +40,7 @@ export function buildSurfaceTimeFilter(
  */
 export const stressSurfaceQueries = (timeClause: string) => `
 SELECT
-    toStartOfMinute(event_time) AS ts,
+    concat(toString(toStartOfMinute(event_time), 'UTC'), 'Z') AS ts,
     count() AS query_count,
     sum(query_duration_ms) AS total_duration_ms,
     avg(query_duration_ms) AS avg_duration_ms,
@@ -66,7 +66,7 @@ ORDER BY ts
  */
 export const stressSurfaceInserts = (timeClause: string) => `
 SELECT
-    toStartOfMinute(event_time) AS ts,
+    concat(toString(toStartOfMinute(event_time), 'UTC'), 'Z') AS ts,
     count() AS insert_count,
     sum(written_rows) AS inserted_rows,
     sum(written_bytes) AS inserted_bytes
@@ -84,7 +84,7 @@ ORDER BY ts
  */
 export const stressSurfaceMerges = (timeClause: string) => `
 SELECT
-    toStartOfMinute(event_time) AS ts,
+    concat(toString(toStartOfMinute(event_time), 'UTC'), 'Z') AS ts,
     countIf(event_type = 'MergeParts') AS merges,
     countIf(event_type = 'NewPart') AS new_parts,
     sumIf(duration_ms, event_type = 'MergeParts') AS merge_ms
@@ -105,7 +105,7 @@ ORDER BY ts
  */
 export const resourceLanesMerges = (timeClause: string) => `
 SELECT
-    toStartOfMinute(event_time) AS ts,
+    concat(toString(toStartOfMinute(event_time), 'UTC'), 'Z') AS ts,
     concat(database, '.', \`table\`) AS lane_id,
     count() AS merge_count,
     sum(duration_ms) AS total_duration_ms,
@@ -127,7 +127,7 @@ ORDER BY ts, lane_id
  */
 export const resourceLanesMergeTotals = (timeClause: string) => `
 SELECT
-    toStartOfMinute(event_time) AS ts,
+    concat(toString(toStartOfMinute(event_time), 'UTC'), 'Z') AS ts,
     count() AS merge_count,
     sum(duration_ms) AS total_duration_ms,
     sum(read_rows) AS total_read_rows,
@@ -148,7 +148,7 @@ ORDER BY ts
  */
 export const resourceLanesTableMerges = (timeClause: string) => `
 SELECT
-    toStartOfMinute(event_time) AS ts,
+    concat(toString(toStartOfMinute(event_time), 'UTC'), 'Z') AS ts,
     count() AS merge_count,
     sum(duration_ms) AS total_duration_ms,
     sum(read_rows) AS total_read_rows,
@@ -194,7 +194,7 @@ WITH top_tables AS (
     LIMIT {max_lanes}
 )
 SELECT
-    toStartOfMinute(event_time) AS ts,
+    concat(toString(toStartOfMinute(event_time), 'UTC'), 'Z') AS ts,
     ft AS lane_id,
     ft AS lane_label,
     count() AS query_count,
@@ -223,7 +223,7 @@ ORDER BY ts, lane_id
  */
 export const resourceLanesSystemTotals = (timeClause: string) => `
 SELECT
-    toStartOfMinute(event_time) AS ts,
+    concat(toString(toStartOfMinute(event_time), 'UTC'), 'Z') AS ts,
     count() AS query_count,
     sum(query_duration_ms) AS total_duration_ms,
     sum(read_rows) AS total_read_rows,
@@ -263,7 +263,7 @@ WITH top_patterns AS (
     LIMIT {max_lanes}
 )
 SELECT
-    toStartOfMinute(event_time) AS ts,
+    concat(toString(toStartOfMinute(event_time), 'UTC'), 'Z') AS ts,
     toString(q.normalized_query_hash) AS lane_id,
     substring(any(q.query), 1, 80) AS lane_label,
     count() AS query_count,
@@ -303,7 +303,7 @@ WITH top_patterns AS (
     LIMIT 12
 )
 SELECT
-    toStartOfMinute(event_time) AS ts,
+    concat(toString(toStartOfMinute(event_time), 'UTC'), 'Z') AS ts,
     toString(q.normalized_query_hash) AS normalized_query_hash,
     avg(query_duration_ms) AS avg_duration_ms,
     count() AS query_count,

@@ -2,6 +2,7 @@ import React from 'react';
 import { act, cleanup, fireEvent, render, screen } from '@testing-library/react';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { EventsDashboard } from '../EventsDashboard';
+import type { OperationalEvent } from '@tracehouse/core';
 
 const mocks = vi.hoisted(() => {
   const getEvents = vi.fn();
@@ -136,6 +137,52 @@ describe('EventsDashboard refresh behavior', () => {
   afterEach(() => {
     cleanup();
     vi.useRealTimers();
+  });
+
+  function selectionEvents(): OperationalEvent[] {
+    return [
+      { id: 'newer', occurred_at: '2026-07-26T11:59:59Z', title: 'Newer incident' },
+      { id: 'older', occurred_at: '2026-07-26T11:58:59Z', title: 'Older incident' },
+    ].map(item => ({ ...item, kind: 'ddl', category: 'changes', severity: 'info', precision: 'exact', source: 'system.query_log', capability: 'query_log' }));
+  }
+
+  it('reselects a visible event after search hides an in-app choice, and clears an empty selection', async () => {
+    mocks.getEvents.mockResolvedValue({ events: selectionEvents(), coverage: [] });
+    const onClear = vi.fn();
+    const onSelected = vi.fn();
+    function SelectionHarness() {
+      const [id, setId] = React.useState<string>();
+      return <Harness selectedEventId={id}
+        onSelectEvent={event => { setId(event.id); onSelected(event.id); }}
+        onClearSelection={() => { setId(undefined); onClear(); }} />;
+    }
+    await act(async () => { render(<SelectionHarness />); });
+    fireEvent.click(screen.getByRole('button', { name: /^Older incident/ }));
+    expect(screen.getByRole('heading', { name: 'Older incident' })).toBeInTheDocument();
+    const search = screen.getByPlaceholderText('Search title, host, query ID, table, exception…');
+    fireEvent.change(search, { target: { value: 'Newer' } });
+    expect(screen.getByRole('heading', { name: 'Newer incident' })).toBeInTheDocument();
+    expect(onSelected).toHaveBeenLastCalledWith('newer');
+    fireEvent.change(search, { target: { value: 'nothing matches' } });
+    expect(onClear).toHaveBeenCalledTimes(1);
+    expect(screen.queryByRole('heading', { name: /incident/ })).not.toBeInTheDocument();
+  });
+
+  it('explains a linked event hidden by search instead of selecting another event', async () => {
+    mocks.getEvents.mockResolvedValue({ events: selectionEvents(), coverage: [] });
+    const onSelectEvent = vi.fn();
+    await act(async () => { render(<Harness selectedEventId="older" onSelectEvent={onSelectEvent} />); });
+    fireEvent.change(screen.getByPlaceholderText('Search title, host, query ID, table, exception…'), { target: { value: 'Newer' } });
+    expect(screen.getByText(/The linked event is hidden by the current filters/)).toBeInTheDocument();
+    expect(screen.queryByRole('heading', { name: /incident/ })).not.toBeInTheDocument();
+    expect(onSelectEvent).not.toHaveBeenCalled();
+  });
+
+  it('explains a missing or ambiguous explicit link instead of selecting the first event', async () => {
+    mocks.getEvents.mockResolvedValue({ events: selectionEvents(), coverage: [] });
+    await act(async () => { render(<Harness selectedEventId="missing" />); });
+    expect(screen.getByText(/The linked event could not be resolved in this range/)).toBeInTheDocument();
+    expect(screen.queryByRole('heading', { name: /incident/ })).not.toBeInTheDocument();
   });
 
   it('polls an opted-in live range at the Events minimum and advances its query window', async () => {

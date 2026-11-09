@@ -1,3 +1,4 @@
+import { parseAbsoluteTimestamp } from '@tracehouse/core';
 /**
  * Trace log utility functions: color generation, log level colors,
  * and log duration processing.
@@ -63,7 +64,7 @@ export function processLogsWithDuration(logs: TraceLog[]): ProcessedLog[] {
 
   // Pre-parse all timestamps
   const timestamps = logs.map(log =>
-    new Date(log.event_time_microseconds?.replace(' ', 'T') + 'Z').getTime()
+    parseAbsoluteTimestamp(log.event_time_microseconds || log.event_time)
   );
 
   return logs.map((log, i) => {

@@ -43,7 +43,8 @@ export class ProxyAdapter implements IClickHouseAdapter {
       const headers = options?.queryId
         ? { ...this.headers, 'x-ch-query-id': options.queryId }
         : this.headers;
-      const resp = await fetch(`${this.proxyUrl}/query?format=JSONEachRow`, {
+      const utcSetting = options?.utcDateTimeOutput ? '&date_time_output_format=iso' : '';
+      const resp = await fetch(`${this.proxyUrl}/query?format=JSONEachRow${utcSetting}`, {
         method: 'POST',
         headers,
         body: sql,
@@ -93,7 +94,8 @@ export class ProxyAdapter implements IClickHouseAdapter {
       if (options?.queryId) {
         headers = { ...headers, 'x-ch-query-id': options.queryId };
       }
-      const resp = await fetch(`${this.proxyUrl}/query`, {
+      const utcSetting = options?.utcDateTimeOutput ? '?date_time_output_format=iso' : '';
+      const resp = await fetch(`${this.proxyUrl}/query${utcSetting}`, {
         method: 'POST',
         headers,
         body: sql,

@@ -45,7 +45,7 @@ describe('MergeTracker merge detail identity', () => {
     expect(adapter.queries[0]).toContain("hostName() = 'replica-2'");
     expect(adapter.queries[0]).toContain("event_type = 'MergeParts'");
     expect(adapter.queries[0]).toContain(
-      "parseDateTime64BestEffort('2026-07-31T11:27:04.250Z', 6)",
+      "parseDateTime64BestEffort('2026-07-31T11:27:04.250Z', 6, 'UTC')",
     );
     expect(adapter.queries[0]).toContain("dateDiff(\n      'millisecond'");
   });

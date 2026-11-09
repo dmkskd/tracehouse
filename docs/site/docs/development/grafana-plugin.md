@@ -98,6 +98,67 @@ Reload the Grafana page after each rebuild.
 - **Theme bridge:** Reads `config.theme2.isDark` from Grafana and sets the `data-theme` attribute on `<html>` so the frontend's CSS variables match Grafana's theme
 - **Shared code:** Pages and utilities come from workspace packages (`@tracehouse/core`, `@tracehouse/ui-shared`) and from `frontend/src/` via webpack aliases. The plugin reuses the same page components as the standalone app
 
+### Analytics result types and metadata lookup
+
+**Potential performance cost: each time-bearing Analytics execution adds one
+sequential datasource request. There is currently no metadata cache.** A dashboard
+with many time-bearing panels, or frequent refreshes, can therefore incur extra
+latency and ClickHouse load. This does not imply that every query takes twice as
+long: the additional cost depends on network latency and metadata analysis time.
+
+The installed ClickHouse datasource represents both calendar `Date`/`Date32`
+columns and `DateTime`/`DateTime64` instants as Grafana `time` fields containing
+epoch milliseconds. They need different treatment: a calendar date must retain
+its day, while an instant must retain its absolute time and localize for display.
+Treating a calendar date as an instant can shift it to the preceding day.
+
+`InteractiveQueryService` requests `utcDateTimeOutput`. In GrafanaAdapter:
+
+1. The main query runs with datasource target `refId: q`.
+2. If its returned frames contain a `time` field, a second request runs
+   `DESCRIBE TABLE (<query>)` with `refId: types` to obtain native column types.
+3. Calendar dates are reconstructed as date strings; timestamp instants become
+   UTC ISO strings. Native types are resolved once per column, not per cell.
+
+The metadata request starts after the main query completes and is repeated on
+each qualifying execution, including refreshes and repeated identical SQL. It
+performs type analysis; scalar subqueries may evaluate during analysis, so it
+must not be assumed to be free or incapable of running expressions. Queries
+without returned time fields skip the lookup. Other service calls that do not
+request typed UTC output skip it too. Direct browser, HTTP and proxy transports
+use ClickHouse's ISO output setting and do not make this metadata request.
+
+Calendar-date decoding depends on the datasource request using
+`GRAFANA_QUERY_TIMEZONE = 'browser'`, shared with ServiceProvider. Changing that
+setting requires revisiting decoding and its timezone tests. Grafana time frames
+retain milliseconds; exact microsecond identities must remain SQL string
+projections rather than pass through a Grafana time field.
+
+#### Diagnosing slowness or lookup failures
+
+- In browser DevTools, inspect `/api/ds/query` requests. Compare the main `q`
+  target with the following `types` target containing `DESCRIBE TABLE (...)`.
+  Measure their durations separately; panel completion includes both. Count the
+  metadata requests during a dashboard refresh to assess the extra traffic.
+- If the main request succeeds but the panel fails with
+  `Cannot safely interpret Grafana time fields: native column-type lookup failed`,
+  inspect the `types` response. Permissions, datasource behavior or metadata SQL
+  analysis can fail independently of the main query. The adapter reports that
+  failure rather than silently returning potentially incorrect dates.
+- Metadata SQL is constructed in `packages/core/src/queries/result-type-queries.ts`.
+  Its scanner removes outer output clauses and terminators while respecting
+  quotes and comments. When reporting a failure, include the main SQL, generated
+  metadata SQL, error, and ClickHouse/Grafana/datasource versions.
+- Conversion lives in `packages/core/src/adapters/grafana-adapter.ts`; datasource
+  request construction lives in `grafana-app-plugin/src/ServiceProvider.tsx`.
+  Relevant checks are `just test-core`, `just test-timezone-integration` and,
+  with the development services running, `just test-timezone-transports`.
+
+Caching is a possible future optimization, not current behavior. A cache design
+must account for datasource/database identity and schema changes; SQL text alone
+does not guarantee stable result types. Native type information in the main
+datasource response would be another way to remove the extra request.
+
 ## Workarounds
 
 - **No React Router:** Grafana's plugin sandbox doesn't provide a Router context. The plugin stubs out `react-router-dom` entirely (see `src/stubs/react-router-dom.tsx`) and replaces navigation hooks with a custom `LocationContext`-based implementation (`src/hooks/useAppLocation.ts`)

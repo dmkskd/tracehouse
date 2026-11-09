@@ -65,7 +65,7 @@ const buildComposite = (opts: {
   const bucketExpr = `toStartOfInterval(event_time, toIntervalSecond(${BUCKET_SEC}))`;
   const split = SPLIT_BY_CATEGORY;
   return `SELECT
-    toString(t) AS t,
+    concat(toString(t, 'UTC'), 'Z') AS t,
     ${split.seriesAlias},
     ${opts.valueExpr} AS ${opts.valueAlias}
   FROM (
@@ -128,7 +128,7 @@ ${buildComposite({ metricQuery: NET_COST_Q, metricPart: NET_COST_P, valueExpr: `
   `-- @meta: title='CPU by Server (cores)' group='Workload' interval='1 HOUR' description='One bar per server each bucket, split by activity kind - shows how evenly CPU load is spread across nodes.'
 -- @chart: type=grouped_stacked_bar group_by=t value=cpu_cores cluster=host series=kind style=2d
 SELECT
-    toString(t) AS t,
+    concat(toString(t, 'UTC'), 'Z') AS t,
     host,
     kind,
     sum(cost) / 1e6 / ${SERVER_BUCKET_SEC} AS cpu_cores

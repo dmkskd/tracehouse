@@ -69,7 +69,7 @@ SELECT
     error,
     exception,
     hostName() AS host,
-    toString(event_time_microseconds) AS event_time_us
+    concat(toString(event_time_microseconds, 'UTC'), 'Z') AS event_time_us
 FROM {{cluster_aware:system.part_log}}
 WHERE event_type = 'MergeParts'
   AND exception != ''

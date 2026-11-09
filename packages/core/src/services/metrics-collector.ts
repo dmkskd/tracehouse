@@ -1,3 +1,4 @@
+import { parseAbsoluteTimestamp } from '../utils/absolute-timestamp.js';
 import type { IClickHouseAdapter } from '../adapters/types.js';
 import type { ServerMetrics, HistoricalMetricsPoint, ClusterHistoricalMetricsPoint } from '../types/metrics.js';
 import { METRICS_QUERY, MEMORY_INFO_QUERY, CPU_METRICS_QUERY } from '../queries/metrics-queries.js';
@@ -225,9 +226,7 @@ export class MetricsCollector {
   }
 
   private parseTimestamp(s: string): number {
-    const normalized = s.trim().replace(' ', 'T');
-    const withTz = normalized.includes('Z') || normalized.includes('+') ? normalized : normalized + 'Z';
-    return new Date(withTz).getTime();
+    return parseAbsoluteTimestamp(s);
   }
 
   private async fetchTimeseries(query: string, params: Record<string, QueryParameter>): Promise<Array<{ t: string; v: number; interval_ms?: number }>> {

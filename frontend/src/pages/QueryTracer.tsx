@@ -1,3 +1,4 @@
+import { parseAbsoluteTimestamp } from '@tracehouse/core';
 /**
  * QueryTracer - Main page component for query tracing and debugging
  * 
@@ -247,7 +248,7 @@ const TimelineViewer: React.FC<{
   // Parse timestamps and find time range
   const parsed = logs.map(log => ({
     ...log,
-    time: new Date(log.event_time_microseconds?.replace(' ', 'T') + 'Z').getTime(),
+    time: parseAbsoluteTimestamp(log.event_time_microseconds),
   }));
   
   const minTime = Math.min(...parsed.map(l => l.time));

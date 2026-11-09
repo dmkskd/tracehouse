@@ -225,3 +225,34 @@ describe('GrafanaAdapter', { tags: ['connectivity'] }, () => {
     });
   });
 });
+
+
+describe('Grafana Analytics native column types', () => {
+  it('distinguishes calendar Dates from timestamp instants without changing string identities', async () => {
+    const query = vi.fn<AdapterQueryFn>(async (_sql, ref) => ref === 'types'
+      ? [makeFrame([{ name: 'name' }, { name: 'type' }], [
+          ['calendar', 'clock', 'identity', 'missing'], ['LowCardinality(Date)', "LowCardinality(Nullable(DateTime64(6, 'Europe/Copenhagen')))", 'String', 'Nullable(DateTime)'],
+        ])]
+      : [makeFrame([{ name: 'calendar', type: 'time' }, { name: 'clock', type: 'time' }, { name: 'identity', type: 'string' }, { name: 'missing', type: 'time' }],
+          [[new Date(2026, 10, 8).getTime()], [Date.parse('2026-11-08T17:00:00.123Z')], ['2026-11-08 17:00:00.123456Z'], [null]])]);
+    const rows = await new GrafanaAdapter(query).executeQuery(q('SELECT fixture;'), { utcDateTimeOutput: true });
+    expect(rows[0]).toEqual({ calendar: '2026-11-08', clock: '2026-11-08T17:00:00.123Z', identity: '2026-11-08 17:00:00.123456Z', missing: null });
+    const describe = query.mock.calls.find(([, ref]) => ref === 'types')![0];
+    expect(describe).toContain('DESCRIBE TABLE (');
+    expect(describe).not.toContain('fixture;');
+  });
+
+  it('reports native metadata failure instead of silently weakening the timestamp contract', async () => {
+    const query: AdapterQueryFn = async (_sql, ref) => {
+      if (ref === 'types') throw new Error('Metadata unavailable');
+      return [makeFrame([{ name: 'unknown', type: 'time' }], [[Date.parse('2026-11-08T00:00:00Z')]])];
+    };
+    await expect(new GrafanaAdapter(query).executeQuery(q('SELECT fixture'), { utcDateTimeOutput: true })).rejects.toThrow('native column-type lookup failed: Metadata unavailable');
+  });
+
+  it('skips metadata when the result has no time fields', async () => {
+    const query = vi.fn<AdapterQueryFn>().mockResolvedValue([makeFrame([{ name: 'value', type: 'string' }], [['unchanged']])]);
+    expect(await new GrafanaAdapter(query).executeQuery(q('SELECT fixture'), { utcDateTimeOutput: true })).toEqual([{ value: 'unchanged' }]);
+    expect(query).toHaveBeenCalledTimes(1);
+  });
+});

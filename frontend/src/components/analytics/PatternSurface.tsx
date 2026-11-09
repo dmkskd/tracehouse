@@ -1,3 +1,4 @@
+import { formatTimeLabels } from '@tracehouse/core';
 /**
  * PatternSurface - 3D surface: Query pattern × Time × actual duration.
  *
@@ -148,10 +149,7 @@ function processPatternData(rows: PatternSurfaceRow[]): ProcessedPattern | null 
 
   const maxDuration = Math.max(...smoothed.flat(), 1);
 
-  const timeLabels = times.map(t => {
-    const match = t.match(/(\d{2}:\d{2})/);
-    return match ? match[1] : t.slice(11, 16);
-  });
+  const timeLabels = formatTimeLabels(times);
 
   const patternLabels = patterns.map((_h, i) => `#${i + 1}`);
 

@@ -1,5 +1,8 @@
 import { APP_SOURCE_LIKE } from './source-tags.js';
 
+// Datetime values consumed as instants are UTC. identity_time deliberately keeps
+// the old server-local wall-clock representation ONLY for opaque legacy ID aliases.
+
 /**
  * Query-log events that materially change how the surrounding workload should
  * be interpreted. Both failures and successful DDL are placed at query end,
@@ -11,7 +14,8 @@ import { APP_SOURCE_LIKE } from './source-tags.js';
 const QUERY_EVENTS_BASE = `
 SELECT
   hostname() AS host,
-  toString(query_start_time_microseconds + toIntervalMillisecond(query_duration_ms)) AS occurred_at,
+  toString(query_start_time_microseconds + toIntervalMillisecond(query_duration_ms)) AS identity_time,
+  toString(query_start_time_microseconds + toIntervalMillisecond(query_duration_ms), 'UTC') AS occurred_at,
   type,
   query_id,
   initial_query_id,
@@ -65,7 +69,8 @@ LIMIT {event_limit}
 export const ASYNC_INSERT_FAILURE_EVENTS = `
 SELECT
   hostname() AS host,
-  toString(event_time_microseconds) AS occurred_at,
+  toString(event_time_microseconds) AS identity_time,
+  toString(event_time_microseconds, 'UTC') AS occurred_at,
   query_id,
   flush_query_id,
   database,
@@ -91,14 +96,15 @@ LIMIT {event_limit}
 export const BACKUP_EVENTS = `
 SELECT
   hostname() AS host,
-  toString(event_time_microseconds) AS occurred_at,
+  toString(event_time_microseconds) AS identity_time,
+  toString(event_time_microseconds, 'UTC') AS occurred_at,
   id AS operation_id,
   query_id,
   name AS storage_name,
   status,
   substring(error, 1, 2000) AS error,
-  toString(start_time) AS start_time,
-  toString(end_time) AS end_time,
+  toString(start_time, 'UTC') AS start_time,
+  toString(end_time, 'UTC') AS end_time,
   num_files,
   total_size
 FROM {{cluster_aware:system.backup_log}}
@@ -125,7 +131,8 @@ LIMIT {event_limit}
 export const KEEPER_CONNECTION_EVENTS = `
 SELECT
   hostname() AS host,
-  toString(event_time_microseconds) AS occurred_at,
+  toString(event_time_microseconds) AS identity_time,
+  toString(event_time_microseconds, 'UTC') AS occurred_at,
   type AS connection_state,
   name AS keeper_name,
   host AS keeper_host,
@@ -180,8 +187,9 @@ WITH samples AS (
 )
 SELECT
   host,
-  toString(event_time - toIntervalSecond(toUInt32(uptime))) AS occurred_at,
-  toString(event_time) AS observed_at,
+  toString(event_time - toIntervalSecond(toUInt32(uptime))) AS identity_time,
+  toString(event_time - toIntervalSecond(toUInt32(uptime)), 'UTC') AS occurred_at,
+  toString(event_time, 'UTC') AS observed_at,
   uptime,
   previous_uptime
 FROM samples
@@ -203,7 +211,8 @@ LIMIT {event_limit}
 export const SERVER_CRASH_EVENTS = `
 SELECT
   hostname() AS host,
-  toString(event_time) AS occurred_at,
+  toString(event_time) AS identity_time,
+  toString(event_time, 'UTC') AS occurred_at,
   signal,
   query_id,
   version
@@ -222,7 +231,8 @@ LIMIT {event_limit}
 export const PART_FAILURE_EVENTS = `
 SELECT
   hostname() AS host,
-  toString(event_time_microseconds) AS occurred_at,
+  toString(event_time_microseconds) AS identity_time,
+  toString(event_time_microseconds, 'UTC') AS occurred_at,
   query_id,
   event_type,
   database,
@@ -249,7 +259,8 @@ LIMIT {event_limit}
 export const BACKGROUND_TASK_FAILURE_EVENTS = `
 SELECT
   hostname() AS host,
-  toString(event_time_microseconds) AS occurred_at,
+  toString(event_time_microseconds) AS identity_time,
+  toString(event_time_microseconds, 'UTC') AS occurred_at,
   query_id,
   database,
   table,
@@ -277,7 +288,8 @@ LIMIT {event_limit}
 export const OPERATIONAL_ERROR_EVENTS = `
 SELECT
   hostname() AS host,
-  toString(event_time) AS occurred_at,
+  toString(event_time) AS identity_time,
+  toString(event_time, 'UTC') AS occurred_at,
   code,
   error,
   value,
@@ -356,6 +368,7 @@ episodes AS (
     host,
     episode,
     min(event_time) AS episode_start,
+    max(event_time) AS last_observed_at,
     max(readonly_tables) AS max_readonly_tables,
     argMax(next_readonly_tables, event_time) AS next_value,
     argMax(next_event_time, event_time) AS recovery_time
@@ -365,8 +378,11 @@ episodes AS (
 )
 SELECT
   host,
-  toString(greatest(episode_start, toDateTime64({start_time}, 3))) AS occurred_at,
-  if(next_value = 0, toString(recovery_time), '') AS ended_at,
+  toString(episode_start, 'UTC') AS episode_started_at,
+  toString(last_observed_at, 'UTC') AS observed_at,
+  toString(greatest(episode_start, toDateTime64({start_time}, 3))) AS identity_time,
+  toString(greatest(episode_start, toDateTime64({start_time}, 3)), 'UTC') AS occurred_at,
+  if(next_value = 0, toString(recovery_time, 'UTC'), '') AS ended_at,
   max_readonly_tables
 FROM episodes
 WHERE episode_start <= {end_time}
@@ -383,7 +399,8 @@ LIMIT {event_limit}
 export const REPLICATION_FAILURE_EVENTS = `
 SELECT
   host,
-  toString(event_time) AS occurred_at,
+  toString(event_time) AS identity_time,
+  toString(event_time, 'UTC') AS occurred_at,
   tupleElement(failure, 1) AS failure_kind,
   tupleElement(failure, 2) AS value
 FROM (

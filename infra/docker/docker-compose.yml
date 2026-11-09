@@ -84,6 +84,9 @@ services:
       - ../scripts/setup_read_only_user.sql:/docker-entrypoint-initdb.d/01_setup_read_only_user.sql:ro
       - ../scripts/setup_sampling.sh:/docker-entrypoint-initdb.d/02_setup_sampling.sh:ro
     environment:
+      # Actual server timezone; applies to every normal docker-start variant.
+      CLICKHOUSE_TIMEZONE: ${CLICKHOUSE_TIMEZONE:-UTC}
+      TZ: ${CLICKHOUSE_TIMEZONE:-UTC}
       # Default user password (empty for development)
       CLICKHOUSE_DEFAULT_ACCESS_MANAGEMENT: 1
       # Enable query logging for monitoring features

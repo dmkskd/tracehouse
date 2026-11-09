@@ -1,3 +1,4 @@
+import { parseAbsoluteTimestamp } from '@tracehouse/core';
 /**
  * Formatters and constants shared by the ResourceArena3D overlays
  * (hover card, HUD, inspector).
@@ -48,7 +49,7 @@ export function parseLogTime(raw: string): number {
   if (!raw) return 0;
   try {
     // "2025-03-07 01:00:33.860123" or "01:00:33.860123"
-    if (raw.includes('-')) return new Date(raw.replace(' ', 'T') + 'Z').getTime();
+    if (raw.includes('-')) return parseAbsoluteTimestamp(raw);
     const [h, m, rest] = raw.split(':');
     const secs = parseFloat(rest || '0');
     const d = new Date();

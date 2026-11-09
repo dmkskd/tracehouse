@@ -1,3 +1,4 @@
+import { parseAbsoluteTimestamp } from './absolute-timestamp.js';
 /**
  * Unified operation rows for the Time Travel operations table.
  *
@@ -101,9 +102,7 @@ export interface OperationCounts {
 
 /** Parse a ClickHouse datetime string as UTC when it carries no zone. */
 export function parseOperationTimestamp(value: string): number {
-  const normalized = value.replace(' ', 'T')
-    + (value.includes('+') || value.includes('Z') || value.includes('T') ? '' : 'Z');
-  return new Date(normalized).getTime();
+  return parseAbsoluteTimestamp(value);
 }
 
 /** Raw value of one resource dimension for an operation. */

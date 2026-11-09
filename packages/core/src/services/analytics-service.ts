@@ -12,6 +12,8 @@ import { LATEST_QUERY_FOR_PATTERN, MERGETREE_DATABASES, TABLE_ORDERING_KEY_EFFIC
 import { stressSurfaceQueries, stressSurfaceInserts, stressSurfaceMerges, patternSurface, buildSurfaceTimeFilter, resourceLanesSystem, resourceLanesSystemTotals, resourceLanesTable, resourceLanesMerges, resourceLanesMergeTotals, resourceLanesTableMerges } from '../queries/surface-queries.js';
 import { buildQuery, tagQuery } from '../queries/builder.js';
 import { TAB_ANALYTICS, sourceTag } from '../queries/source-tags.js';
+import { parseAbsoluteTimestamp } from '../utils/absolute-timestamp.js';
+import { normalizeTimestamp } from '../mappers/timestamp.js';
 import { parseExplainIndexesJson } from './explain-parser.js';
 
 export class AnalyticsServiceError extends Error {
@@ -35,15 +37,14 @@ function parseUserBreakdown(raw: unknown): Record<string, number> {
 function parseClickHouseDateTime(raw: unknown): string {
   const value = String(raw ?? '');
   if (!value) return new Date().toISOString();
-  const normalized = value.includes('Z') || /[+-]\d{2}:?\d{2}$/.test(value) ? value : `${value}Z`;
-  const date = new Date(normalized);
+  const date = new Date(parseAbsoluteTimestamp(value));
   return Number.isNaN(date.getTime()) ? new Date().toISOString() : date.toISOString();
 }
 
 /** Map a query_log row (from LATEST_QUERY_FOR_PATTERN) into QuerySeries. */
 function mapQueryLogRowToQuerySeries(row: Record<string, unknown>): QuerySeries {
   const durationMs = Number(row.query_duration_ms ?? 0);
-  const startTime = parseClickHouseDateTime(row.event_time);
+  const startTime = parseClickHouseDateTime(row.query_start_time_utc ?? row.event_time);
   const endTime = new Date(new Date(startTime).getTime() + durationMs).toISOString();
   return {
     query_id: String(row.query_id ?? ''),
@@ -172,8 +173,8 @@ export class AnalyticsService {
         p50_memory_bytes: Number(row.p50_memory_bytes ?? 0),
         p95_memory_bytes: Number(row.p95_memory_bytes ?? 0),
         p99_memory_bytes: Number(row.p99_memory_bytes ?? 0),
-        first_seen: String(row.first_seen ?? ''),
-        last_seen: String(row.last_seen ?? ''),
+        first_seen: normalizeTimestamp(row.first_seen),
+        last_seen: normalizeTimestamp(row.last_seen),
         user_breakdown: parseUserBreakdown(row.user_breakdown),
       }));
     } catch (error) {

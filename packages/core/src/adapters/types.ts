@@ -18,6 +18,9 @@ export type AdapterErrorCategory = 'network' | 'authentication' | 'query' | 'tim
 
 export interface QueryExecutionOptions {
   queryId?: string;
+  /** Return typed DateTime instants as explicit UTC ISO strings. Dates and SQL
+   * string columns retain their original meaning; used by authored Analytics SQL. */
+  utcDateTimeOutput?: boolean;
 }
 
 export class AdapterError extends Error {

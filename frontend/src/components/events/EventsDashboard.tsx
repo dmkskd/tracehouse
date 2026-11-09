@@ -7,7 +7,7 @@ import type {
   EventSeverity,
   EventSourceCoverage,
 } from '@tracehouse/core';
-import { describeErrorCounterState } from '@tracehouse/core';
+import { describeErrorCounterState, resolveEventIdentity } from '@tracehouse/core';
 import type { EventErrorStateResult } from '@tracehouse/core';
 import { clampToAllowed, useRefreshConfig } from '@tracehouse/ui-shared';
 import { useClickHouseServices } from '../../providers/ClickHouseProvider';
@@ -66,6 +66,7 @@ interface EventsDashboardProps {
   onTimeRangeChange: (value: string | null) => void;
   onRangeSelect?: (startMs: number, endMs: number) => void;
   onSelectEvent: (event: OperationalEvent) => void;
+  onClearSelection?: () => void;
   onOpenQueryDetails?: (event: OperationalEvent) => void;
   onOpenMergeDetails?: (event: OperationalEvent) => void;
   onOpenAnalyticsDashboard?: () => void;
@@ -98,6 +99,7 @@ export const EventsDashboard: React.FC<EventsDashboardProps> = ({
   onTimeRangeChange,
   onRangeSelect,
   onSelectEvent,
+  onClearSelection,
   onOpenQueryDetails,
   onOpenMergeDetails,
   onOpenAnalyticsDashboard,
@@ -142,6 +144,15 @@ export const EventsDashboard: React.FC<EventsDashboardProps> = ({
   const [eventHelpView, setEventHelpView] = useState<'events' | 'sources' | null>(null);
   const eventHelpRef = useRef<HTMLDivElement>(null);
   const fetchInFlightRef = useRef(false);
+  const interactedEventIdRef = useRef<string | undefined>(undefined);
+  const handleSelectEvent = useCallback((event: OperationalEvent) => {
+    interactedEventIdRef.current = event.id;
+    onSelectEvent(event);
+  }, [onSelectEvent]);
+  useEffect(() => {
+    // A changed URL target that was not chosen here is an explicit link again.
+    if (selectedEventId !== interactedEventIdRef.current) interactedEventIdRef.current = undefined;
+  }, [selectedEventId]);
   const [liveRangeEndMs, setLiveRangeEndMs] = useState(() => Date.now());
   const [clusterSelection, setClusterSelection] = useState<EventMarkerSelection | null>(
     null,
@@ -313,20 +324,36 @@ export const EventsDashboard: React.FC<EventsDashboardProps> = ({
     }
   }, [clusterSelection, filteredEvents]);
 
+  const selectionSource = selectedEventId && interactedEventIdRef.current === selectedEventId ? 'interaction' : 'link';
   const selectedEvent = useMemo(() => {
     return selectEvent(
       displayedEvents,
-      filteredEvents.length > 0 ? filteredEvents : sortedEvents,
+      sortedEvents,
       selectedEventId,
       selectedEventTime,
+      selectionSource,
     );
   }, [
     displayedEvents,
-    filteredEvents,
+    selectionSource,
     selectedEventId,
     selectedEventTime,
     sortedEvents,
   ]);
+  useEffect(() => {
+    if (loading || selectionSource !== 'interaction' || !selectedEventId || selectedEvent?.id === selectedEventId) return;
+    // Keep the shareable URL in sync when a filter hides an in-app selection.
+    if (selectedEvent) handleSelectEvent(selectedEvent);
+    else {
+      interactedEventIdRef.current = undefined;
+      onClearSelection?.();
+    }
+  }, [loading, selectionSource, selectedEventId, selectedEvent, handleSelectEvent, onClearSelection]);
+  const unresolvedLinkMessage = selectedEventId && selectionSource === 'link' && !loading
+    ? resolveEventIdentity(sortedEvents, selectedEventId)
+      ? 'The linked event is hidden by the current filters. Clear the filters or select a visible event.'
+      : 'The linked event could not be resolved in this range. Its data may be unavailable or its identity ambiguous. Adjust the range or select an event.'
+    : undefined;
   const eventListClusters = useMemo(
     () => clusterSimilarEvents(displayedEvents),
     [displayedEvents],
@@ -538,13 +565,13 @@ export const EventsDashboard: React.FC<EventsDashboardProps> = ({
           }}
           onSelectEvent={event => {
             setClusterSelection(buildEventMarkerSelection([event], timeRange.endMs));
-            onSelectEvent(event);
+            handleSelectEvent(event);
           }}
           onSelectCluster={(clusterEvents, primaryEvent) => {
             setClusterSelection(
               buildEventMarkerSelection(clusterEvents, timeRange.endMs),
             );
-            onSelectEvent(primaryEvent);
+            handleSelectEvent(primaryEvent);
           }}
           onRangeSelect={onRangeSelect}
         />
@@ -692,7 +719,7 @@ export const EventsDashboard: React.FC<EventsDashboardProps> = ({
                     key={event.id}
                     event={event}
                     selected={event.id === selectedEvent?.id}
-                    onSelect={onSelectEvent}
+                    onSelect={handleSelectEvent}
                   />
                 );
               }
@@ -716,7 +743,7 @@ export const EventsDashboard: React.FC<EventsDashboardProps> = ({
                       return next;
                     });
                   }}
-                  onSelect={onSelectEvent}
+                  onSelect={handleSelectEvent}
                 />
               );
             })}
@@ -762,7 +789,7 @@ export const EventsDashboard: React.FC<EventsDashboardProps> = ({
             </span>
           </div>
           {!selectedEvent ? (
-            <div style={emptyStyle}>Select an event to inspect its context and source details.</div>
+            <div style={emptyStyle}>{unresolvedLinkMessage ?? 'Select an event to inspect its context and source details.'}</div>
           ) : selectedPanel === 'context' ? (
             <EventContextView
               event={selectedEvent}

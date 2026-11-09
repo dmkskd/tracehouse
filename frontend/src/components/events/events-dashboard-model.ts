@@ -10,6 +10,7 @@ import type {
 import {
   EVENT_KIND_DEFINITIONS,
   EVENT_SOURCE_DEFINITIONS,
+  resolveEventIdentity,
 } from '@tracehouse/core';
 import {
   EVENT_CATEGORY_LABELS,
@@ -478,12 +479,19 @@ export function observedEventKinds(events: readonly OperationalEvent[]): EventKi
 
 export function selectEvent(
   displayedEvents: readonly OperationalEvent[],
-  fallbackEvents: readonly OperationalEvent[],
+  loadedEvents: readonly OperationalEvent[],
   selectedEventId?: string,
   selectedEventTime?: string,
+  selectionSource: 'link' | 'interaction' = 'link',
 ): OperationalEvent | undefined {
-  const exact = displayedEvents.find(event => event.id === selectedEventId);
+  // Resolve against all loaded evidence so filters cannot make an ambiguous
+  // legacy alias appear unique, but never display a selection hidden by filters.
+  const resolved = resolveEventIdentity([...displayedEvents, ...loadedEvents], selectedEventId);
+  const exact = resolved && displayedEvents.find(event => event.id === resolved.id);
   if (exact) return exact;
+  // An explicit link must not silently select another event if its legacy ID
+  // is ambiguous or the requested event lies outside the current range.
+  if (selectedEventId) return selectionSource === 'interaction' ? displayedEvents[0] : undefined;
   if (selectedEventTime && displayedEvents.length > 0) {
     const target = Date.parse(selectedEventTime);
     return [...displayedEvents].sort(
@@ -491,7 +499,7 @@ export function selectEvent(
         - Math.abs(Date.parse(b.occurred_at) - target),
     )[0];
   }
-  return displayedEvents[0] ?? fallbackEvents[0];
+  return displayedEvents[0];
 }
 
 export function countEventSeverities(

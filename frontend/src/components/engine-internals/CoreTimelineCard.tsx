@@ -1,3 +1,4 @@
+import { parseAbsoluteTimestamp } from '@tracehouse/core';
 /**
  * CoreTimelineCard - Per-core CPU swimlane visualization from trace_log.
  * Shows what each physical CPU core was doing over time, colored by thread pool.
@@ -37,14 +38,10 @@ interface CoreTimelineCardProps {
   adapter?: IClickHouseAdapter;
 }
 
-function parseSlotTime(s: string): number {
-  const n = s.trim().replace(' ', 'T');
-  return new Date(n.includes('Z') || n.includes('+') ? n : n + 'Z').getTime();
-}
 
 function fmtTime(ms: number): string {
   const d = new Date(ms);
-  return `${d.getUTCHours().toString().padStart(2, '0')}:${d.getUTCMinutes().toString().padStart(2, '0')}:${d.getUTCSeconds().toString().padStart(2, '0')}.${Math.floor(d.getUTCMilliseconds() / 100)}`;
+  return `${d.getHours().toString().padStart(2, '0')}:${d.getMinutes().toString().padStart(2, '0')}:${d.getSeconds().toString().padStart(2, '0')}.${Math.floor(d.getMilliseconds() / 100)}`;
 }
 
 export function CoreTimelineCard({ className = '', cpuCoresMeta, adapter: adapterOverride }: CoreTimelineCardProps) {
@@ -106,7 +103,7 @@ export function CoreTimelineCard({ className = '', cpuCoresMeta, adapter: adapte
     for (const s of filteredSlots) { timeSet.add(s.time); coreSet.add(s.core); }
     const times: string[] = Array.from(timeSet).sort();
     const cores: number[] = Array.from(coreSet).sort((a, b) => a - b);
-    const timeMsArr = times.map(parseSlotTime);
+    const timeMsArr = times.map(parseAbsoluteTimestamp);
     const coreToIdx = new Map<number, number>(cores.map((c, i) => [c, i]));
     // Build per-core slot arrays sorted by timeMs
     const perCore: CoreTimelineSlot[][] = cores.map(() => []);
@@ -648,11 +645,11 @@ function TimeAxis({ vStart, vEnd, labelWidth }: {
     // Show sub-second precision when zoomed in enough
     const showMs = range < 10000;
     const d = new Date(ms);
-    const hh = d.getUTCHours().toString().padStart(2, '0');
-    const mm = d.getUTCMinutes().toString().padStart(2, '0');
-    const ss = d.getUTCSeconds().toString().padStart(2, '0');
+    const hh = d.getHours().toString().padStart(2, '0');
+    const mm = d.getMinutes().toString().padStart(2, '0');
+    const ss = d.getSeconds().toString().padStart(2, '0');
     const text = showMs
-      ? `${hh}:${mm}:${ss}.${Math.floor(d.getUTCMilliseconds() / 100)}`
+      ? `${hh}:${mm}:${ss}.${Math.floor(d.getMilliseconds() / 100)}`
       : `${hh}:${mm}:${ss}`;
     labels.push({ pct, text });
   }

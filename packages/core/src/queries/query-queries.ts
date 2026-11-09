@@ -5,7 +5,7 @@
  * use {param} syntax compatible with buildQuery().
  */
 
-import { escapeValue } from './builder.js';
+import { escapeValue, eventDateBoundForParameter } from './builder.js';
 
 /** Get currently running queries from system.processes. */
 export const RUNNING_QUERIES = `
@@ -63,7 +63,7 @@ export interface QueryHistorySQLOptions {
  */
 export function buildQueryHistorySQL(options: QueryHistorySQLOptions = {}): string {
   const filters: string[] = [
-    'event_date >= {start_date}',
+    `event_date >= ${eventDateBoundForParameter('start_date')}`,
     'event_time >= {start_time}',
     'event_time <= {end_time}',
     "type IN ('QueryFinish', 'ExceptionBeforeStart', 'ExceptionWhileProcessing')",
@@ -93,7 +93,7 @@ export function buildQueryHistorySQL(options: QueryHistorySQLOptions = {}): stri
   SELECT
     query_id,
     type,
-    query_start_time,
+    toString(query_start_time, 'UTC') AS query_start_time,
     query_duration_ms,
     read_rows,
     read_bytes,
@@ -174,7 +174,7 @@ export const SUB_QUERIES = `
     if(length(formatted_query) > 0, formatted_query, query) AS query_preview,
     exception_code,
     exception,
-    query_start_time_microseconds
+    toString(query_start_time_microseconds, 'UTC') AS query_start_time_microseconds
   FROM {{cluster_aware:system.query_log}}
   WHERE initial_query_id = {initial_query_id}
     AND is_initial_query = 0
@@ -199,7 +199,7 @@ export const DISTRIBUTED_TOPOLOGY_EXECUTIONS = `
     toString(normalized_query_hash) AS normalized_query_hash,
     hostName() AS hostname,
     query_kind,
-    toString(query_start_time_microseconds) AS query_start_time_microseconds,
+    toString(query_start_time_microseconds, 'UTC') AS query_start_time_microseconds,
     query_duration_ms,
     memory_usage,
     read_rows,
@@ -235,7 +235,7 @@ export const DISTRIBUTED_TOPOLOGY_EXECUTIONS_BY_QUERY_IDS = `
     toString(normalized_query_hash) AS normalized_query_hash,
     hostName() AS hostname,
     query_kind,
-    toString(query_start_time_microseconds) AS query_start_time_microseconds,
+    toString(query_start_time_microseconds, 'UTC') AS query_start_time_microseconds,
     query_duration_ms,
     memory_usage,
     read_rows,
@@ -323,7 +323,7 @@ export const DISTRIBUTED_TOPOLOGY_PROCESSORS = `
  */
 export const DISTRIBUTED_TOPOLOGY_TEXT_LOGS = `
   SELECT
-    toString(event_time_microseconds) AS event_time_microseconds,
+    toString(event_time_microseconds, 'UTC') AS event_time_microseconds,
     query_id,
     level,
     logger_name AS source,
@@ -344,7 +344,7 @@ export const DISTRIBUTED_TOPOLOGY_TEXT_LOGS = `
  */
 export const DISTRIBUTED_TOPOLOGY_ASYNC_INSERT_LOGS = `
   SELECT
-    toString(event_time_microseconds) AS event_time_microseconds,
+    toString(event_time_microseconds, 'UTC') AS event_time_microseconds,
     hostname,
     query_id,
     flush_query_id,
@@ -356,7 +356,7 @@ export const DISTRIBUTED_TOPOLOGY_ASYNC_INSERT_LOGS = `
     exception,
     rows,
     bytes,
-    toString(flush_time_microseconds) AS flush_time_microseconds,
+    toString(flush_time_microseconds, 'UTC') AS flush_time_microseconds,
     timeout_milliseconds
   FROM {{cluster_aware:system.asynchronous_insert_log}}
   WHERE (query_id IN ({{query_id_list}}) OR flush_query_id IN ({{query_id_list}}))
@@ -391,7 +391,7 @@ export const BATCH_SUB_QUERIES = `
     query_preview,
     exception_code,
     exception,
-    query_start_time_microseconds
+    toString(query_start_time_microseconds, 'UTC') AS query_start_time_microseconds
   FROM (
     SELECT
       *,
@@ -444,7 +444,7 @@ export const COORDINATOR_IDS = `
   SELECT DISTINCT initial_query_id
   FROM {{cluster_aware:system.query_log}}
   WHERE initial_query_id IN ({{query_id_list}})
-    AND event_date >= {start_date}
+    AND event_date >= ${eventDateBoundForParameter('start_date')}
     AND is_initial_query = 0
     AND type IN ('QueryFinish', 'ExceptionWhileProcessing', 'ExceptionBeforeStart')
 `;
@@ -471,8 +471,8 @@ export const QUERY_DETAIL = `
     -- Basic info
     query_id,
     type,
-    query_start_time,
-    query_start_time_microseconds,
+    toString(query_start_time, 'UTC') AS query_start_time,
+    toString(query_start_time_microseconds, 'UTC') AS query_start_time_microseconds,
     query_duration_ms,
     query,
     formatted_query,
@@ -531,7 +531,7 @@ export const QUERY_DETAIL = `
     initial_user,
     initial_query_id,
     initial_address,
-    initial_query_start_time,
+    toString(initial_query_start_time, 'UTC') AS initial_query_start_time,
     
     -- Settings and profile events (full maps)
     Settings,
@@ -599,7 +599,7 @@ export const QUERY_LOG_FLUSH_INTERVAL = `
 export const SIMILAR_QUERIES = `
   SELECT
     query_id,
-    query_start_time,
+    toString(query_start_time, 'UTC') AS query_start_time,
     query_duration_ms,
     read_rows,
     read_bytes,
@@ -634,7 +634,7 @@ export const QUERY_PATTERNS = `
     sum(read_rows) AS total_read_rows,
     countIf(exception_code != 0) AS error_count
   FROM {{cluster_aware:system.query_log}}
-  WHERE event_date >= {start_date}
+  WHERE event_date >= ${eventDateBoundForParameter('start_date')}
     AND event_time >= {start_time}
     AND event_time <= {end_time}
     AND type IN ('QueryFinish', 'ExceptionWhileProcessing')
@@ -679,9 +679,9 @@ export const QUERY_THREAD_BREAKDOWN = `
     written_bytes,
     memory_usage,
     peak_memory_usage,
-    event_time_microseconds,
-    query_start_time_microseconds,
-    initial_query_start_time_microseconds,
+    toString(event_time_microseconds, 'UTC') AS event_time_microseconds,
+    toString(query_start_time_microseconds, 'UTC') AS query_start_time_microseconds,
+    toString(initial_query_start_time_microseconds, 'UTC') AS initial_query_start_time_microseconds,
     ProfileEvents['OSCPUVirtualTimeMicroseconds'] AS cpu_time_us,
     ProfileEvents['UserTimeMicroseconds'] AS user_time_us,
     ProfileEvents['SystemTimeMicroseconds'] AS system_time_us,

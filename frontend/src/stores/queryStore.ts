@@ -289,9 +289,8 @@ export const queryApi = {
       filter.startTime,
       filter.endTime,
     );
-    // event_date follows the server/storage timezone. A one-day buffer keeps
-    // partition pruning safe even when that timezone differs from UTC.
-    const startDate = new Date(Date.parse(startTime) - 24 * 60 * 60 * 1000)
+    // Core owns the conservative event_date buffer; pass the actual UTC day.
+    const startDate = new Date(startTime)
       .toISOString()
       .split('T')[0]!;
 

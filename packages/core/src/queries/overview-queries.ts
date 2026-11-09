@@ -1,3 +1,4 @@
+import { eventDateBoundForWindow } from './builder.js';
 /**
  * SQL queries for the Overview page
  * Organized by polling tier for efficient data fetching
@@ -94,10 +95,10 @@ WHERE database = {database}
  */
 export const GET_QPS_HISTORY = `
 SELECT
-    toStartOfInterval(event_time, INTERVAL 15 SECOND) AS t,
+    concat(toString(toStartOfInterval(event_time, INTERVAL 15 SECOND), 'UTC'), 'Z') AS t,
     avg(ProfileEvent_Query) AS qps
 FROM {{cluster_aware:system.metric_log}}
-WHERE event_date >= today()
+WHERE event_date >= ${eventDateBoundForWindow(900)}
   AND event_time > now() - INTERVAL 15 MINUTE
 GROUP BY t
 ORDER BY t ASC
@@ -147,7 +148,7 @@ SELECT count() AS cnt
 FROM {{cluster_aware:system.query_log}}
 WHERE type = 'ExceptionBeforeStart'
   AND exception LIKE '%TOO_MANY_SIMULTANEOUS_QUERIES%'
-  AND event_date >= today() - 1
+  AND event_date >= ${eventDateBoundForWindow(3600)}
   AND event_time > now() - INTERVAL 1 HOUR
 `;
 
@@ -259,7 +260,7 @@ FROM {{cluster_aware:system.query_log}}
 WHERE type IN ('QueryFinish', 'ExceptionWhileProcessing')
   AND is_initial_query = 1
   AND query_duration_ms >= {min_duration_ms:UInt32}
-  AND event_date >= toDate(now() - INTERVAL {window_seconds:UInt32} SECOND)
+  AND event_date >= ${eventDateBoundForWindow({ parameter: 'window_seconds' })}
   AND event_time > now() - INTERVAL {window_seconds:UInt32} SECOND
 ORDER BY event_time DESC
 LIMIT {row_limit:UInt32}
@@ -291,7 +292,7 @@ SELECT
 FROM {{cluster_aware:system.part_log}}
 WHERE event_type IN ('MergeParts', 'MutatePart')
   AND duration_ms >= {min_duration_ms:UInt32}
-  AND event_date >= toDate(now() - INTERVAL {window_seconds:UInt32} SECOND)
+  AND event_date >= ${eventDateBoundForWindow({ parameter: 'window_seconds' })}
   AND event_time > now() - INTERVAL {window_seconds:UInt32} SECOND
 ORDER BY event_time DESC
 LIMIT {row_limit:UInt32}
@@ -311,7 +312,7 @@ SELECT
     sum(ProfileEvents['SystemTimeMicroseconds']) AS system_time_us
 FROM {{cluster_aware:system.part_log}}
 WHERE event_type = 'MergeParts'
-  AND event_date >= today()
+  AND event_date >= ${eventDateBoundForWindow({ parameter: 'window_seconds' })}
   AND event_time > now() - INTERVAL {window_seconds:UInt32} SECOND
 `;
 
@@ -325,7 +326,7 @@ SELECT
     sum(ProfileEvents['SystemTimeMicroseconds']) AS system_time_us
 FROM {{cluster_aware:system.part_log}}
 WHERE event_type = 'MutatePart'
-  AND event_date >= today()
+  AND event_date >= ${eventDateBoundForWindow({ parameter: 'window_seconds' })}
   AND event_time > now() - INTERVAL {window_seconds:UInt32} SECOND
 `;
 
@@ -488,7 +489,7 @@ SELECT 'rejected', 'count', toString(count())
 FROM {{cluster_aware:system.query_log}}
 WHERE type = 'ExceptionBeforeStart'
   AND exception LIKE '%TOO_MANY_SIMULTANEOUS_QUERIES%'
-  AND event_date >= today() - 1
+  AND event_date >= ${eventDateBoundForWindow(3600)}
   AND event_time > now() - INTERVAL 1 HOUR
 
 UNION ALL
@@ -496,10 +497,10 @@ UNION ALL
 SELECT 'qps', toString(t), toString(qps)
 FROM (
   SELECT
-    toStartOfInterval(event_time, INTERVAL 15 SECOND) AS t,
+    concat(toString(toStartOfInterval(event_time, INTERVAL 15 SECOND), 'UTC'), 'Z') AS t,
     avg(ProfileEvent_Query) AS qps
   FROM {{cluster_aware:system.metric_log}}
-  WHERE event_date >= today()
+  WHERE event_date >= ${eventDateBoundForWindow(900)}
     AND event_time > now() - INTERVAL 15 MINUTE
   GROUP BY t
   ORDER BY t ASC
@@ -574,7 +575,7 @@ SELECT
 FROM {{cluster_aware:system.query_log}}
 WHERE type = 'QueryFinish'
   AND query_duration_ms > 10000
-  AND event_date >= today() - 1
+  AND event_date >= ${eventDateBoundForWindow(3600)}
   AND event_time > now() - INTERVAL 1 HOUR
   AND query_kind = 'Select'
 `;
@@ -596,7 +597,7 @@ SELECT
 FROM {{cluster_aware:system.query_log}}
 WHERE type = 'QueryFinish'
   AND query_kind = 'Select'
-  AND event_date >= today() - 1
+  AND event_date >= ${eventDateBoundForWindow(86400)}
   AND event_time > now() - INTERVAL 24 HOUR
   AND length(databases) = 1
   AND length(tables) = 1
@@ -625,11 +626,11 @@ SELECT
     max(cpu_pct) AS max_cpu
 FROM (
     SELECT
-        toStartOfInterval(event_time, INTERVAL 30 SECOND) AS t,
+        concat(toString(toStartOfInterval(event_time, INTERVAL 30 SECOND), 'UTC'), 'Z') AS t,
         100 * avg(ProfileEvent_OSCPUVirtualTimeMicroseconds)
             / ({cpu_cores:UInt32} * 1000000) AS cpu_pct
     FROM {{cluster_aware:system.metric_log}}
-    WHERE event_date >= today()
+    WHERE event_date >= ${eventDateBoundForWindow(900)}
       AND event_time > now() - INTERVAL 15 MINUTE
     GROUP BY t
     HAVING cpu_pct > 70

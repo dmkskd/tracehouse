@@ -107,7 +107,7 @@ const KEEPER_CONFIG_XML = `<clickhouse>
  * If CH_TEST_URL is set, connects to that instance instead of starting
  * a container. Set CH_TEST_KEEP_DATA=1 to preserve test databases on teardown.
  */
-export async function startClickHouse(opts: { withKeeper?: boolean } = {}): Promise<TestClickHouseContext> {
+export async function startClickHouse(opts: { withKeeper?: boolean; timezone?: string } = {}): Promise<TestClickHouseContext> {
   const externalUrl = process.env.CH_TEST_URL;
   const keepData = process.env.CH_TEST_KEEP_DATA === '1';
 
@@ -118,17 +118,41 @@ export async function startClickHouse(opts: { withKeeper?: boolean } = {}): Prom
     return { container: null, client, adapter, rawAdapter, keepData };
   }
 
+  // Only isolated containers honor this override. External instances above are
+  // never reconfigured or implicitly claimed to have the requested timezone.
+  const timezone = process.env.CLICKHOUSE_TEST_TIMEZONE ?? opts.timezone;
   let builder = new ClickHouseContainer(CH_IMAGE).withStartupTimeout(120_000);
-  if (opts.withKeeper) {
-    builder = builder.withCopyContentToContainer([
-      { content: KEEPER_CONFIG_XML, target: '/etc/clickhouse-server/config.d/keeper.xml' },
-    ]);
+  const configFiles: { content: string; target: string }[] = [];
+  if (timezone) {
+    if (!/^[A-Za-z0-9_+\-/]+$/.test(timezone)) throw new Error('Invalid test timezone');
+    configFiles.push({
+      content: `<clickhouse><timezone>${timezone}</timezone></clickhouse>`,
+      target: '/etc/clickhouse-server/config.d/timezone.xml',
+    });
   }
+  if (opts.withKeeper) {
+    configFiles.push(
+      { content: KEEPER_CONFIG_XML, target: '/etc/clickhouse-server/config.d/keeper.xml' },
+    );
+  }
+  if (configFiles.length) builder = builder.withCopyContentToContainer(configFiles);
   const container = await builder.start();
 
   const client = createClient({
     url: container.getConnectionUrl(),
   });
+
+  if (timezone) {
+    try {
+      const result = await client.query({ query: 'SELECT timezone() AS zone', format: 'JSONEachRow' });
+      const rows = await result.json<{ zone: string }>();
+      if (rows[0]?.zone !== timezone) throw new Error(`Test server timezone ${rows[0]?.zone} does not match ${timezone}`);
+    } catch (error) {
+      await client.close();
+      await container.stop();
+      throw error;
+    }
+  }
 
   const rawAdapter = new TestAdapter(client);
   const adapter = new ClusterAwareAdapter(rawAdapter);

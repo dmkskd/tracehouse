@@ -16,7 +16,7 @@ describe('LinkResolver integration', () => {
   let resolver: LinkResolver;
 
   beforeAll(async () => {
-    ctx = await startClickHouse();
+    ctx = await startClickHouse({ timezone: 'Europe/Copenhagen' });
     resolver = new LinkResolver(ctx.adapter);
     await ctx.client.command({ query: `CREATE DATABASE IF NOT EXISTS ${TEST_DB}` });
   }, CONTAINER_TIMEOUT);
@@ -107,23 +107,28 @@ describe('LinkResolver integration', () => {
       const partName = await resultPartName();
       await ctx.client.command({ query: 'SYSTEM FLUSH LOGS' });
       const result = await ctx.client.query({
-        query: `SELECT hostName() AS host, toString(event_time_microseconds) AS us FROM system.part_log
+        query: `SELECT hostName() AS host, toString(event_time_microseconds) AS us,
+                       concat(toString(event_time_microseconds, 'UTC'), 'Z') AS utc_us FROM system.part_log
                 WHERE database = '${TEST_DB}' AND table = 'merged' AND part_name = '${partName}' AND event_type = 'MergeParts'`,
         format: 'JSONEachRow',
       });
-      const [{ host, us }] = await result.json<{ host: string; us: string }>();
+      const [{ host, us, utc_us }] = await result.json<{ host: string; us: string; utc_us: string }>();
       const tracker = new MergeTracker(ctx.adapter);
+      // Old links contain server-local text; returned/new identities must be UTC.
       const link = { hostname: host, event_type: 'MergeParts', event_time_microseconds: us };
 
       const record = await tracker.getMergeHistoryByPartName(TEST_DB, 'merged', partName, link);
-      expect(record).toMatchObject({ part_name: partName, hostname: host, event_time_microseconds: us });
+      expect(record).toMatchObject({ part_name: partName, hostname: host, event_time_microseconds: utc_us });
       // The detail modal looks the record up again with the record itself: same row.
       expect(await tracker.getMergeHistoryByPartName(TEST_DB, 'merged', partName, record!))
-        .toMatchObject({ event_time_microseconds: us });
+        .toMatchObject({ event_time_microseconds: utc_us });
 
       const lastDigit = Number(us.slice(-1));
       const neighbour = us.slice(0, -1) + String((lastDigit + 1) % 10);
       expect(await tracker.getMergeHistoryByPartName(TEST_DB, 'merged', partName, { ...link, event_time_microseconds: neighbour }))
+        .toBeNull();
+      const utcNeighbour = utc_us.replace(/(\d)Z$/, (_, digit: string) => `${(Number(digit) + 1) % 10}Z`);
+      expect(await tracker.getMergeHistoryByPartName(TEST_DB, 'merged', partName, { ...link, event_time_microseconds: utcNeighbour }))
         .toBeNull();
     });
 
@@ -131,7 +136,7 @@ describe('LinkResolver integration', () => {
       const partName = await resultPartName();
       await ctx.client.command({ query: 'SYSTEM FLUSH LOGS' });
       const result = await ctx.client.query({
-        query: `SELECT hostName() AS host, toString(event_time_microseconds) AS us,
+        query: `SELECT hostName() AS host, concat(toString(event_time_microseconds, 'UTC'), 'Z') AS us,
                        toInt64(toUnixTimestamp64Milli(event_time_microseconds)) - toInt64(duration_ms) AS started
                 FROM system.part_log
                 WHERE database = '${TEST_DB}' AND table = 'merged' AND part_name = '${partName}' AND event_type = 'MergeParts'`,

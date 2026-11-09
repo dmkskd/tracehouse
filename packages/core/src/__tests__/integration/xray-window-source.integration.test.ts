@@ -79,6 +79,9 @@ describe('X-Ray window source parity', () => {
       const metrics = await execute(buildSelectedXRayOverlaySQL({ availability, preference: 'query_metric_log' }, metric, options));
       expect(metrics).toEqual(sampler);
       expect(metrics).toHaveLength(3);
+      expect(metrics.map(row => row.t)).toEqual([
+        '2026-09-18 12:00:00Z', '2026-09-18 12:00:01Z', '2026-09-18 12:00:02Z',
+      ]);
       expect(metrics.map(row => Number(row[metric]))).toEqual([metric === 'mem_mb' ? 30 : 3, metric === 'mem_mb' ? 30 : 3, metric === 'mem_mb' ? 30 : 3]);
     }
   });

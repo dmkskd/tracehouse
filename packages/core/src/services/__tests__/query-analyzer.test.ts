@@ -158,7 +158,7 @@ describe('QueryAnalyzer UTC history bounds', () => {
     expect(adapter.queries[0]).toContain(
       "event_time <= toDateTime('2026-07-27 14:05:00', 'UTC')",
     );
-    expect(adapter.queries[0]).toContain("event_date >= '2026-07-26'");
+    expect(adapter.queries[0]).toContain("event_date >= toDate('2026-07-26') - 1");
     expect(adapter.queries[0]).toContain(
       "type IN ('QueryFinish', 'ExceptionBeforeStart', 'ExceptionWhileProcessing')",
     );

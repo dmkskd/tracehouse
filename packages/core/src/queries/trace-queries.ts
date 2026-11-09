@@ -15,8 +15,8 @@
  */
 export const QUERY_TRACE_LOGS = `
   SELECT
-    toString(event_time) AS event_time,
-    toString(event_time_microseconds) AS event_time_microseconds,
+    toString(event_time, 'UTC') AS event_time,
+    toString(event_time_microseconds, 'UTC') AS event_time_microseconds,
     query_id,
     level,
     message,
@@ -36,8 +36,8 @@ export const QUERY_TRACE_LOGS = `
  */
 export const QUERY_TRACE_LOGS_WITH_LEVELS = `
   SELECT
-    toString(event_time) AS event_time,
-    toString(event_time_microseconds) AS event_time_microseconds,
+    toString(event_time, 'UTC') AS event_time,
+    toString(event_time_microseconds, 'UTC') AS event_time_microseconds,
     query_id,
     level,
     message,

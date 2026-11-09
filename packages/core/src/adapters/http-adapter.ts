@@ -40,6 +40,7 @@ export class HttpAdapter implements IClickHouseAdapter {
         format: 'JSONEachRow',
         session_id: this.sessionIdFor(sql),
         ...(options?.queryId ? { query_id: options.queryId } : {}),
+        ...(options?.utcDateTimeOutput ? { clickhouse_settings: { date_time_output_format: 'iso' as const } } : {}),
       });
       return await result.json<T>();
     } catch (error) {

@@ -31,6 +31,7 @@ import {
 import type { ChartType, ChartRender } from './metaLanguage';
 import { formatBytes } from '../../utils/formatters';
 import { formatCell, parseReadableBytes } from '@tracehouse/core';
+import { formatAnalyticsTimestamp, formatAnalyticsCell, parseAnalyticsTimestamp } from './timestamp';
 import { RadarShape } from './RadarCell';
 import { buildRadarChartPlot, type RadarChartConfig } from './radarModel';
 
@@ -94,6 +95,8 @@ export const GROUP_COLORS = [
 
 export interface ChartDataPoint {
   label: string;
+  /** Presentation only. Raw label remains the key for correlations and links. */
+  displayLabel?: string;
   value: number;
   color: string;
   /** Optional description text, surfaced in tooltip (from @chart description=column) */
@@ -303,6 +306,8 @@ export function buildMultiColumnGrouped(
 
 /** Smart X-axis tick formatter: extracts HH:MM:SS from datetime strings, truncates others */
 export function formatXTick(v: string): string {
+  const local = formatAnalyticsTimestamp(v);
+  if (local !== v) return local.slice(11, 19);
   // Match datetime like "2026-03-08 19:15:00" → "19:15:00"
   const m = v.match(/\d{4}-\d{2}-\d{2}\s+(\d{2}:\d{2}(?::\d{2})?)/);
   if (m) return m[1];
@@ -336,6 +341,7 @@ export function buildChartData(
   const palette = sequentialPalette(sliced.length);
   return sliced.map((r, i) => ({
     label: formatCell(r[lblCol], lblCol),
+    ...(lblCol === 'attempt' ? { displayLabel: formatAnalyticsCell(formatCell(r[lblCol], lblCol), lblCol, r) } : {}),
     value: extractNumeric(r[valCol]),
     color: palette[i],
     ...(descriptionCol && r[descriptionCol] != null ? { description: String(r[descriptionCol]) } : {}),
@@ -568,9 +574,9 @@ const SyncedCrosshair: React.FC<{ hoveredTimestamp: string; dataByLabel?: Map<st
   if (exactIdx >= 0) {
     xFrac = exactIdx / (xDomain.length - 1);
   } else {
-    const hTs = new Date(hoveredTimestamp).getTime();
-    const firstTs = new Date(xDomain[0]).getTime();
-    const lastTs = new Date(xDomain[xDomain.length - 1]).getTime();
+    const hTs = parseAnalyticsTimestamp(hoveredTimestamp);
+    const firstTs = parseAnalyticsTimestamp(xDomain[0]);
+    const lastTs = parseAnalyticsTimestamp(xDomain[xDomain.length - 1]);
     if (!isNaN(hTs) && !isNaN(firstTs) && !isNaN(lastTs) && lastTs > firstTs) {
       const f = (hTs - firstTs) / (lastTs - firstTs);
       if (f >= 0 && f <= 1) xFrac = f;
@@ -588,11 +594,11 @@ const SyncedCrosshair: React.FC<{ hoveredTimestamp: string; dataByLabel?: Map<st
       val = dataByLabel.get(hoveredTimestamp);
     } else {
       // Interpolate: find nearest labels by time
-      const hTs = new Date(hoveredTimestamp).getTime();
+      const hTs = parseAnalyticsTimestamp(hoveredTimestamp);
       let before: { ts: number; v: number } | null = null;
       let after: { ts: number; v: number } | null = null;
       for (const [label, v] of dataByLabel) {
-        const t = new Date(label).getTime();
+        const t = parseAnalyticsTimestamp(label);
         if (isNaN(t)) continue;
         if (t <= hTs && (!before || t > before.ts)) before = { ts: t, v };
         if (t >= hTs && (!after || t < after.ts)) after = { ts: t, v };
@@ -683,7 +689,7 @@ export const AnalyticsTooltip: React.FC<{
 
   const content = (
     <div style={tooltipStyle}>
-      {label && <div style={tooltipLabelStyle}>{label}</div>}
+      {label && <div style={tooltipLabelStyle}>{String(payload[0]?.payload?.displayLabel ?? formatAnalyticsTimestamp(String(label)))}</div>}
       {payload.map((entry, i) => (
         <div key={i} style={{ display: 'flex', alignItems: 'center', gap: 6, marginTop: i > 0 ? 2 : 0 }}>
           {payload.length > 1 && (
@@ -781,7 +787,7 @@ const PieTooltip: React.FC<{
 
 export const BarChart2D: React.FC<{ data: ChartDataPoint[]; fullHeight?: boolean; onDrillDown?: (e: DrillDownEvent) => void; unit?: string; clickHint?: string }> = ({ data, fullHeight, onDrillDown, unit, clickHint }) => {
   if (!data.length) return null;
-  const rechartsData = data.map(d => ({ name: d.label, value: d.value, fill: d.color, description: d.description }));
+  const rechartsData = data.map(d => ({ name: d.label, displayLabel: d.displayLabel, value: d.value, fill: d.color, description: d.description }));
   const defaultHeight = Math.max(200, data.length * 28 + 40);
   // Use horizontal layout (bars going right) for readability with labels
   return (
@@ -802,7 +808,11 @@ export const BarChart2D: React.FC<{ data: ChartDataPoint[]; fullHeight?: boolean
           tickLine={false}
           axisLine={axisLineStyle}
           width={110}
-          tickFormatter={(v: string) => v.length > 16 ? v.slice(0, 16) + '…' : v}
+          tickFormatter={(v: string) => {
+            const label = data.find(d => d.label === v)?.displayLabel;
+            if (!label) return v.length > 16 ? v.slice(0, 16) + '…' : v;
+            return label.length > 24 ? label.slice(11, 26) + '…' : label;
+          }}
         />
         <Tooltip content={<AnalyticsTooltip clickHint={clickHint} />} cursor={{ fill: 'rgba(99,102,241,0.06)' }} />
         <Bar dataKey="value" radius={[0, 4, 4, 0]} animationDuration={400} maxBarSize={22}

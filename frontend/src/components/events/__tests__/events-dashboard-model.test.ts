@@ -12,6 +12,7 @@ import {
   supportedEventCoverage,
   supportedEventGroups,
   toUtcEventInstant,
+  selectEvent,
 } from '../events-dashboard-model';
 
 function event(
@@ -28,6 +29,31 @@ function event(
 }
 
 describe('events dashboard model', () => {
+  it('resolves a unique legacy event link but never substitutes another event for an explicit ID', () => {
+    const first = event({
+      id: 'event-v2:first', legacy_ids: ['old-id'], occurred_at: '2026-11-08T17:00:00Z',
+      kind: 'ddl', category: 'changes',
+    });
+    const second = event({
+      ...first, id: 'event-v2:second', occurred_at: '2026-11-08T17:00:01Z',
+    });
+    expect(selectEvent([first], [], 'old-id')).toBe(first);
+    expect(selectEvent([first, second], [], 'old-id', first.occurred_at)).toBeUndefined();
+    expect(selectEvent([first], [], 'missing-id', first.occurred_at)).toBeUndefined();
+    expect(selectEvent([first, second], [], second.id)).toBe(second);
+    expect(selectEvent([], [second], second.id)).toBeUndefined();
+    expect(selectEvent([first], [])).toBe(first);
+  });
+  it('keeps selection inside visible filters, with separate link and interaction policies', () => {
+    const hidden = event({ id: 'hidden', occurred_at: '2026-11-08T17:00:00Z', kind: 'ddl', category: 'changes', legacy_ids: ['ambiguous'] });
+    const visible = event({ ...hidden, id: 'visible', occurred_at: '2026-11-08T17:00:01Z' });
+    expect(selectEvent([visible], [hidden, visible], hidden.id, undefined, 'interaction')).toBe(visible);
+    expect(selectEvent([visible], [hidden, visible], hidden.id)).toBeUndefined();
+    expect(selectEvent([], [hidden, visible], hidden.id, undefined, 'interaction')).toBeUndefined();
+    expect(selectEvent([], [hidden, visible])).toBeUndefined();
+    // Filtering must not make a globally ambiguous legacy alias look unique.
+    expect(selectEvent([visible], [hidden, visible], 'ambiguous')).toBeUndefined();
+  });
   it('keeps service bounds as explicit UTC instants', () => {
     expect(toUtcEventInstant(new Date('2026-07-25T19:39:29.049Z')))
       .toBe('2026-07-25T19:39:29.049Z');

@@ -1,3 +1,4 @@
+import { parseAbsoluteTimestamp } from './absolute-timestamp.js';
 /**
  * Pure data processing for resource lanes surface visualization.
  *
@@ -281,8 +282,10 @@ export function formatLaneLabels(
 /** Format timestamps to HH:MM labels */
 export function formatTimeLabels(times: string[]): string[] {
   return times.map(t => {
-    const match = t.match(/(\d{2}:\d{2})/);
-    return match ? match[1] : t.slice(11, 16);
+    const ms = parseAbsoluteTimestamp(t);
+    if (!Number.isFinite(ms)) return t;
+    const date = new Date(ms);
+    return `${String(date.getHours()).padStart(2, '0')}:${String(date.getMinutes()).padStart(2, '0')}`;
   });
 }
 

@@ -1,3 +1,4 @@
+import { parseAbsoluteTimestamp } from './absolute-timestamp.js';
 /**
  * Parse text_log entries from a vertical merge to extract per-column
  * Gantt-style timeline data.
@@ -60,11 +61,7 @@ const TTL_REMOVED_ALL_RE = /Removed all rows from part \S+ due to expired TTL/;
 
 /** Parse event_time_microseconds string to epoch-ms (float). */
 function parseMicroseconds(ts: string): number {
-  // Format: "2025-03-12 12:16:55.892123" → parse to ms
-  const d = new Date(ts.replace(' ', 'T') + 'Z');
-  if (!isNaN(d.getTime())) return d.getTime();
-  // Fallback: try direct parse
-  return new Date(ts).getTime();
+  return parseAbsoluteTimestamp(ts);
 }
 
 /**

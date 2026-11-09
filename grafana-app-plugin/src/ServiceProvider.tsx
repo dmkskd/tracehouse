@@ -2,7 +2,7 @@ import React, { createContext, useContext, useState, useEffect, useMemo, useCall
 import { getDataSourceSrv, locationService } from '@grafana/runtime';
 import { dateTime } from '@grafana/data';
 import { lastValueFrom } from 'rxjs';
-import { GrafanaAdapter, type AdapterFrame, type AdapterQueryFn } from '@tracehouse/core/adapters/grafana-adapter';
+import { GrafanaAdapter, GRAFANA_QUERY_TIMEZONE, type AdapterFrame, type AdapterQueryFn } from '@tracehouse/core/adapters/grafana-adapter';
 import { ClusterAwareAdapter } from '@tracehouse/core/adapters/cluster-adapter';
 import { ClusterService } from '@tracehouse/core/services/cluster-service';
 import { DatabaseExplorer } from '@tracehouse/core/services/database-explorer';
@@ -195,7 +195,7 @@ export function ServiceProvider({ children }: { children: React.ReactNode }) {
             interval: '1s',
             intervalMs: 1000,
             scopedVars: {},
-            timezone: 'browser',
+            timezone: GRAFANA_QUERY_TIMEZONE,
             app: 'tracehouse',
             startTime: Date.now(),
           } as Parameters<typeof ds.query>[0])

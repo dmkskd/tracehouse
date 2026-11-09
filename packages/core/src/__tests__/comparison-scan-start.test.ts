@@ -17,6 +17,13 @@ describe('commonScanStart', { tags: ['query-analysis'] }, () => {
       .toBe('2026-09-17T10:00:00.000Z');
   });
 
+  it('compares mixed UTC projections and explicit offsets as absolute instants', () => {
+    expect(commonScanStart(['2026-09-17 10:00:00', '2026-09-18T09:30:00Z']))
+      .toBe('2026-09-17 10:00:00');
+    expect(commonScanStart(['2026-09-17 10:00:00', '2026-09-17T05:30:00-05:00']))
+      .toBe('2026-09-17 10:00:00');
+  });
+
   it('gives up when the queries span more than a day, rather than dropping the far ones', () => {
     expect(commonScanStart(['2026-09-12 10:00:00', '2026-09-17 10:00:00'])).toBeUndefined();
   });

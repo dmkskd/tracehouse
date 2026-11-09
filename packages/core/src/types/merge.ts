@@ -25,7 +25,7 @@ export interface MergeInfo {
 
 export interface MergeHistoryRecord {
   event_time: string;
-  /** Server-formatted event_time_microseconds; set by the single-record lookups. */
+  /** Exact UTC microsecond identity with Z suffix; preserve as a string. Legacy links may contain unzoned server-rendered keys. */
   event_time_microseconds?: string;
   event_type: string;
   database: string;

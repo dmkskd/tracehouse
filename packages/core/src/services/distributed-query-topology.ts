@@ -1,3 +1,4 @@
+import { parseAbsoluteTimestamp } from '../utils/absolute-timestamp.js';
 import type { MonitoringCapabilities } from '../types/monitoring-capabilities.js';
 import {
   FOLDED_LOCAL_READ_GROUP_LABEL,
@@ -661,14 +662,8 @@ function parseDurationSeconds(value: string | undefined): number | undefined {
 
 function parseTimestampMs(timestamp: string | undefined): number | undefined {
   if (!timestamp) return undefined;
-  const dotIdx = timestamp.lastIndexOf('.');
-  const base = dotIdx >= 0 ? timestamp.slice(0, dotIdx) : timestamp;
-  const parsed = Date.parse(`${base.replace(' ', 'T')}Z`);
-  if (!Number.isFinite(parsed)) return undefined;
-  if (dotIdx < 0) return parsed;
-  const fraction = timestamp.slice(dotIdx + 1).padEnd(6, '0').slice(0, 6);
-  const milliseconds = Number(fraction.slice(0, 3));
-  return parsed + (Number.isFinite(milliseconds) ? milliseconds : 0);
+  const parsed = parseAbsoluteTimestamp(timestamp);
+  return Number.isFinite(parsed) ? parsed : undefined;
 }
 
 function hasEvent(events: ProfileEventsMap | undefined, name: string): boolean {

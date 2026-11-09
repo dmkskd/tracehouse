@@ -1,3 +1,4 @@
+import { hasExplicitOffset, parseUtcDateTimeInput } from '../utils/absolute-timestamp.js';
 import type { IClickHouseAdapter } from '../adapters/types.js';
 import type { MergeInfo, MergeHistoryRecord, MutationInfo, MutationHistoryRecord, BackgroundPoolMetrics, MutationDependencyInfo, MutationPartStatus, CoDependentMutation, StoragePolicyVolume, MergeTextLog, MergeThroughputEstimate } from '../types/merge.js';
 import {
@@ -18,6 +19,7 @@ import {
   GET_MERGE_HISTORY_BY_PART_NAME,
   GET_MERGE_HISTORY_BY_IDENTITY,
   GET_MERGE_HISTORY_BY_EXACT_TIME,
+  GET_MERGE_HISTORY_BY_LEGACY_TIME,
   GET_MERGE_HISTORY_BY_START,
   GET_MERGE_HISTORY_BY_PART_ON_HOST,
   GET_TABLE_COLUMNS,
@@ -72,10 +74,8 @@ function filterValues(value?: string | string[]): string[] {
 function parseCanonicalCustomRange(timeRange: string): [string, string] {
   const values = timeRange.slice('CUSTOM:'.length).split(',');
   const [start, end] = values;
-  const hasExplicitOffset = (value: string | undefined) =>
-    !!value && /(?:[zZ]|[+-]\d{2}:?\d{2})$/.test(value);
-  const startMs = start ? Date.parse(start) : Number.NaN;
-  const endMs = end ? Date.parse(end) : Number.NaN;
+  const startMs = start ? parseUtcDateTimeInput(start) : Number.NaN;
+  const endMs = end ? parseUtcDateTimeInput(end) : Number.NaN;
 
   if (
     values.length !== 2
@@ -429,8 +429,12 @@ export class MergeTracker {
       const hasExactTime = !!(hostname && selectedRecord.event_time_microseconds && selectedRecord.event_type);
       const hasStableIdentity = !!(hostname && selectedRecord.event_time && selectedRecord.event_type);
       const params = { database, table, part_name: partName };
+      // Explicitly zoned identities are absolute. Old unzoned links remain opaque
+      // server-rendered keys: match their original text and reject ambiguity.
+      const legacyExactTime = hasExactTime && !hasExplicitOffset(selectedRecord!.event_time_microseconds);
+      const exactTemplate = legacyExactTime ? GET_MERGE_HISTORY_BY_LEGACY_TIME : GET_MERGE_HISTORY_BY_EXACT_TIME;
       const sql = hasExactTime
-        ? buildQuery(GET_MERGE_HISTORY_BY_EXACT_TIME, {
+        ? buildQuery(exactTemplate, {
           ...params,
           hostname: hostname!,
           event_type: selectedRecord!.event_type!,
@@ -447,7 +451,7 @@ export class MergeTracker {
           ? buildQuery(GET_MERGE_HISTORY_BY_PART_ON_HOST, { ...params, hostname })
           : buildQuery(GET_MERGE_HISTORY_BY_PART_NAME, params);
       const rows = await this.adapter.executeQuery(tagQuery(sql, sourceTag(TAB_MERGES, 'mergeHistoryByPart')));
-      if (rows.length === 0) return null;
+      if (rows.length === 0 || (legacyExactTime && rows.length !== 1)) return null;
       return mapMergeHistoryRecord(rows[0]);
     } catch (error) {
       console.error('[MergeTracker] getMergeHistoryByPartName error:', error);

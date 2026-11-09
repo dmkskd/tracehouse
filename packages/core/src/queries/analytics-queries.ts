@@ -144,8 +144,8 @@ SELECT
     quantile(0.50)(memory_usage) AS p50_memory_bytes,
     quantile(0.95)(memory_usage) AS p95_memory_bytes,
     quantile(0.99)(memory_usage) AS p99_memory_bytes,
-    min(query_start_time) AS first_seen,
-    max(query_start_time) AS last_seen,
+    toString(min(query_start_time), 'UTC') AS first_seen,
+    toString(max(query_start_time), 'UTC') AS last_seen,
     cast(sumMap(map(user, toUInt64(1))) AS Map(String, UInt64)) AS user_breakdown
 FROM {{cluster_aware:system.query_log}}
 ARRAY JOIN tables AS full_table_name
@@ -170,7 +170,8 @@ SELECT
     query_id,
     query,
     user,
-    event_time,
+    toString(event_time, 'UTC') AS event_time,
+    toString(query_start_time_microseconds, 'UTC') AS query_start_time_utc,
     query_duration_ms,
     memory_usage,
     ProfileEvents['OSCPUVirtualTimeMicroseconds'] AS cpu_us,

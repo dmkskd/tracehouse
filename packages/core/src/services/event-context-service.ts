@@ -1,3 +1,4 @@
+import { parseAbsoluteTimestamp, normalizeAbsoluteTimestamp } from '../utils/absolute-timestamp.js';
 import type { IClickHouseAdapter } from '../adapters/types.js';
 import {
   EVENT_CONTEXT_HOST_METRICS,
@@ -21,15 +22,7 @@ import type {
   EventErrorStateResult,
 } from '../types/event-context.js';
 
-function parseChTime(value: unknown): string {
-  const raw = String(value ?? '').trim();
-  const normalized = raw.replace(' ', 'T');
-  const withTimezone = normalized.includes('Z') || /[+-]\d\d:\d\d$/.test(normalized)
-    ? normalized
-    : `${normalized}Z`;
-  const parsed = new Date(withTimezone);
-  return Number.isNaN(parsed.getTime()) ? raw : parsed.toISOString();
-}
+
 
 function numberValue(value: unknown): number {
   const parsed = Number(value ?? 0);
@@ -73,7 +66,7 @@ export class EventContextService {
   constructor(private adapter: IClickHouseAdapter) {}
 
   async getContext(options: EventContextOptions): Promise<EventContextResult> {
-    const eventDate = new Date(options.eventTime);
+    const eventDate = new Date(parseAbsoluteTimestamp(options.eventTime));
     if (Number.isNaN(eventDate.getTime())) {
       throw new Error(`Invalid event time: ${options.eventTime}`);
     }
@@ -130,8 +123,8 @@ export class EventContextService {
               initial_query_id: stringValue(row.initial_query_id) || undefined,
               user: stringValue(row.user) || undefined,
               query_kind: stringValue(row.query_kind) || undefined,
-              start_time: parseChTime(row.start_time),
-              end_time: parseChTime(row.end_time),
+              start_time: normalizeAbsoluteTimestamp(row.start_time),
+              end_time: normalizeAbsoluteTimestamp(row.end_time),
               duration_ms: numberValue(row.query_duration_ms),
               memory_usage: numberValue(row.memory_usage),
               cpu_us: numberValue(row.cpu_us),
@@ -159,7 +152,7 @@ export class EventContextService {
             const row = raw as Record<string, unknown>;
             return {
               hostname: stringValue(row.host) || undefined,
-              time: parseChTime(row.sample_time),
+              time: normalizeAbsoluteTimestamp(row.sample_time),
               memory_usage: numberValue(row.memory_usage),
               active_queries: numberValue(row.active_queries),
               active_merges: numberValue(row.active_merges),
@@ -180,7 +173,7 @@ export class EventContextService {
             const row = raw as Record<string, unknown>;
             return {
               hostname: stringValue(row.host) || undefined,
-              time: parseChTime(row.occurred_at),
+              time: normalizeAbsoluteTimestamp(row.occurred_at),
               level: stringValue(row.level),
               logger: stringValue(row.logger_name),
               message: stringValue(row.message),
@@ -245,11 +238,11 @@ export class EventContextService {
       source.data = rows.map(raw => {
         const row = raw as Record<string, unknown>;
         const lastErrorTime = numberValue(row.has_counter) > 0
-          ? parseChTime(row.last_seen_at)
+          ? normalizeAbsoluteTimestamp(row.last_seen_at)
           : undefined;
         return {
           hostname: stringValue(row.host),
-          process_started_at: parseChTime(row.process_started_at),
+          process_started_at: normalizeAbsoluteTimestamp(row.process_started_at),
           has_counter: numberValue(row.has_counter) > 0,
           value: numberValue(row.value),
           last_error_time: lastErrorTime,

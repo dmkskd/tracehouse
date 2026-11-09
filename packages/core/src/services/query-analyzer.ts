@@ -44,6 +44,7 @@ import {
 import type { QueryParameter } from '../queries/builder.js';
 import { TAB_QUERIES, TAB_INTERNAL, APP_SOURCE_PREFIX, sourceTag } from '../queries/source-tags.js';
 import { mapQueryMetrics, mapQueryHistoryItem } from '../mappers/query-mappers.js';
+import { normalizeTimestamp } from '../mappers/timestamp.js';
 import { shortenHostname } from '../mappers/helpers.js';
 import {
   inferDistributedTopology,
@@ -437,7 +438,6 @@ export class QueryAnalyzer {
     const limit = options.limit ?? 100;
     
     const params: Record<string, QueryParameter> = {
-      start_date: options.start_date,
       start_time: utcDateTime(options.start_time),
       end_time: utcDateTime(options.end_time),
       limit,
@@ -445,7 +445,7 @@ export class QueryAnalyzer {
 
     // Build WHERE conditions dynamically
     let whereConditions = [
-      "event_date >= {start_date}",
+      `event_date >= ${eventDateBound(options.start_date)}`,
       "event_time >= {start_time}",
       "event_time <= {end_time}",
       "type IN ('QueryFinish', 'ExceptionBeforeStart', 'ExceptionWhileProcessing')"
@@ -563,7 +563,7 @@ export class QueryAnalyzer {
         query_id,
         type,
         query_kind,
-        query_start_time,
+        toString(query_start_time, 'UTC') AS query_start_time,
         query_duration_ms,
         read_rows,
         read_bytes,
@@ -635,7 +635,9 @@ export class QueryAnalyzer {
     try {
       const rows = await this.adapter.executeQuery(tagQuery(sql, sourceTag(TAB_QUERIES, 'queryDetail')));
       if (rows.length === 0) return null;
-      return rows[0] as unknown as QueryDetail;
+      const row = rows[0];
+      return { ...row, query_start_time: normalizeTimestamp(row.query_start_time),
+        initial_query_start_time: normalizeTimestamp(row.initial_query_start_time) } as unknown as QueryDetail;
     } catch (error) {
       throw new QueryAnalysisError('Failed to get query detail', error as Error);
     }
@@ -1024,7 +1026,7 @@ export class QueryAnalyzer {
       SELECT * FROM (
         SELECT
           query_id,
-          any(query_start_time) AS query_start_time,
+          toString(any(similar_rows.query_start_time), 'UTC') AS query_start_time,
           any(query_duration_ms) AS query_duration_ms,
           any(read_rows) AS read_rows,
           any(read_bytes) AS read_bytes,
@@ -1038,19 +1040,19 @@ export class QueryAnalyzer {
           any(Settings) AS Settings,
           any(query) AS query,
           any(query_kind) AS query_kind
-        FROM {{cluster_aware:system.query_log}}
+        FROM {{cluster_aware:system.query_log}} AS similar_rows
         WHERE ${whereClause}
           AND type IN ('QueryFinish', 'ExceptionWhileProcessing', 'ExceptionBeforeStart')
           AND event_date >= today() - 30
         GROUP BY query_id
-        ORDER BY query_start_time DESC
+        ORDER BY any(similar_rows.query_start_time) DESC
         LIMIT ${limit}
       )
       ORDER BY query_start_time ASC
     `;
     try {
       const rows = await this.adapter.executeQuery(tagQuery(sql, sourceTag(TAB_QUERIES, 'similarQueries')));
-      return rows as unknown as SimilarQuery[];
+      return rows.map(row => ({ ...row, query_start_time: normalizeTimestamp(row.query_start_time) })) as unknown as SimilarQuery[];
     } catch (error) {
       throw new QueryAnalysisError('Failed to get similar queries', error as Error);
     }
@@ -1141,7 +1143,7 @@ export class QueryAnalyzer {
     // Aggregate into ~100 time buckets server-side to avoid transferring 86k+ rows
     const sql = buildQuery(`
       SELECT
-        toString(min(event_time)) AS t,
+        toString(min(event_time), 'UTC') AS t,
         avg(ProfileEvent_OSCPUVirtualTimeMicroseconds) AS avg_cpu_us
       FROM {{cluster_aware:system.metric_log}}
       WHERE event_time >= {start_time}
@@ -1161,7 +1163,7 @@ export class QueryAnalyzer {
         const row = r as Record<string, unknown>;
         const avgCpuUs = Number(row.avg_cpu_us || 0);
         const pct = fullUtil > 0 ? Math.min(100, (avgCpuUs / fullUtil) * 100) : 0;
-        return { t: String(row.t), cpu_pct: pct };
+        return { t: normalizeTimestamp(row.t), cpu_pct: pct };
       });
     } catch (error) {
       throw new QueryAnalysisError('Failed to get server CPU data', error as Error);
@@ -1228,7 +1230,7 @@ export class QueryAnalyzer {
 
     const sql = buildQuery(`
       SELECT
-        toString(min(event_time)) AS t,
+        toString(min(event_time), 'UTC') AS t,
         avg(CurrentMetric_MemoryTracking) AS avg_mem
       FROM {{cluster_aware:system.metric_log}}
       WHERE event_time >= {start_time}
@@ -1244,7 +1246,7 @@ export class QueryAnalyzer {
         const row = r as Record<string, unknown>;
         const avgMem = Number(row.avg_mem || 0);
         const pct = Math.min(100, (avgMem / totalRam) * 100);
-        return { t: String(row.t), mem_pct: pct };
+        return { t: normalizeTimestamp(row.t), mem_pct: pct };
       });
     } catch (error) {
       throw new QueryAnalysisError('Failed to get server memory data', error as Error);

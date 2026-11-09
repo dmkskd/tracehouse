@@ -1,5 +1,5 @@
 import type { MergeInfo, MergeHistoryRecord, MutationInfo, MutationHistoryRecord, BackgroundPoolMetrics, MergeTextLog } from '../types/merge.js';
-import { normalizeTimestamp } from './timestamp.js';
+import { normalizeTimestamp, normalizeOptionalSystemTimestamp } from './timestamp.js';
 import { type RawRow, toInt, toStr, toFloat, toBool, toStrArray } from './helpers.js';
 import { classifyMergeHistory, refineCategoryWithRowDiff } from '../utils/merge-classification.js';
 
@@ -56,7 +56,7 @@ export function mapMergeHistoryRecord(row: RawRow): MergeHistoryRecord {
   const category = refineCategoryWithRowDiff(baseCategory, rowsDiff, tableEngine);
   
   return {
-    event_time: normalizeTimestamp(row.event_time),
+    event_time: normalizeTimestamp(row.event_time_utc ?? row.event_time),
     event_time_microseconds: row.event_time_us != null ? toStr(row.event_time_us) : undefined,
     event_type: toStr(row.event_type),
     database: toStr(row.database),
@@ -94,7 +94,7 @@ export function mapMutationInfo(row: RawRow): MutationInfo {
   const isKilled = toBool(row.is_killed);
   const latestFailReason = toStr(row.latest_fail_reason);
   const latestFailedPart = toStr(row.latest_failed_part);
-  const latestFailTime = row.latest_fail_time ? normalizeTimestamp(row.latest_fail_time) : '';
+  const latestFailTime = normalizeOptionalSystemTimestamp(row.latest_fail_time_utc ?? row.latest_fail_time);
 
   // system.mutations only provides parts_to_do (parts remaining).
   // In-progress detection comes from cross-referencing with system.merges in the UI.
@@ -122,7 +122,7 @@ export function mapMutationInfo(row: RawRow): MutationInfo {
     table: toStr(row.table),
     mutation_id: toStr(row.mutation_id),
     command: toStr(row.command),
-    create_time: normalizeTimestamp(row.create_time),
+    create_time: normalizeTimestamp(row.create_time_utc ?? row.create_time),
     parts_to_do: partsToDo,
     total_parts: partsToDo,
     parts_in_progress: 0,
@@ -171,14 +171,14 @@ export function mapMutationHistoryRecord(row: RawRow): MutationHistoryRecord {
     table: toStr(row.table),
     mutation_id: toStr(row.mutation_id),
     command: toStr(row.command),
-    create_time: normalizeTimestamp(row.create_time),
+    create_time: normalizeTimestamp(row.create_time_utc ?? row.create_time),
     is_done: toBool(row.is_done),
     is_killed: toBool(row.is_killed),
     is_killed_supported: row.is_killed_supported == null
       ? true
       : toBool(row.is_killed_supported),
     latest_failed_part: toStr(row.latest_failed_part),
-    latest_fail_time: row.latest_fail_time ? normalizeTimestamp(row.latest_fail_time) : '',
+    latest_fail_time: normalizeOptionalSystemTimestamp(row.latest_fail_time_utc ?? row.latest_fail_time),
     latest_fail_reason: toStr(row.latest_fail_reason),
   };
 }

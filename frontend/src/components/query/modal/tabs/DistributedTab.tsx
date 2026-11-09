@@ -1,3 +1,4 @@
+import { parseOptionalTimestampMicros } from '@tracehouse/core';
 import React from 'react';
 import type {
   DistributedExecutionFlowEvent,
@@ -53,14 +54,7 @@ function stableHostColor(host: string, index = 0): string {
   return `hsl(${hue} 72% 48%)`;
 }
 
-function parseUs(ts: string): number {
-  if (!ts) return 0;
-  const dotIdx = ts.lastIndexOf('.');
-  const baseDateStr = dotIdx >= 0 ? ts.substring(0, dotIdx) : ts;
-  const usFrac = dotIdx >= 0 ? ts.substring(dotIdx + 1) : '0';
-  const baseMs = new Date(baseDateStr.replace(' ', 'T') + 'Z').getTime();
-  return baseMs * 1000 + parseInt(usFrac.padEnd(6, '0').substring(0, 6), 10);
-}
+
 
 function shortHost(hostname: string): string {
   const short = hostname.split('.')[0] || hostname;
@@ -82,8 +76,8 @@ function scanText(selected: number, total: number): string {
 }
 
 function formatAsyncWait(eventTimeMicroseconds?: string, flushTimeMicroseconds?: string): string {
-  const eventUs = parseUs(eventTimeMicroseconds ?? '');
-  const flushUs = parseUs(flushTimeMicroseconds ?? '');
+  const eventUs = parseOptionalTimestampMicros(eventTimeMicroseconds ?? '');
+  const flushUs = parseOptionalTimestampMicros(flushTimeMicroseconds ?? '');
   if (!eventUs || !flushUs || flushUs < eventUs) return '';
   return formatDurationMs((flushUs - eventUs) / 1000);
 }
@@ -748,8 +742,8 @@ const AsyncInsertLinksPanel: React.FC<{
     .filter(duration => duration > 0);
   const insertWaits = topology.asyncInsertLinks
     .map(link => {
-      const eventUs = parseUs(link.eventTimeMicroseconds ?? '');
-      const flushUs = parseUs(link.flushTimeMicroseconds ?? '');
+      const eventUs = parseOptionalTimestampMicros(link.eventTimeMicroseconds ?? '');
+      const flushUs = parseOptionalTimestampMicros(link.flushTimeMicroseconds ?? '');
       return eventUs > 0 && flushUs >= eventUs ? (flushUs - eventUs) / 1000 : 0;
     })
     .filter(wait => wait > 0);
@@ -1003,7 +997,7 @@ function buildStepDetails(
   subQueries: SubQueryInfo[],
   topology: DistributedTopology,
 ): FlowStepDetail[] {
-  const rootStartUs = parseUs(coordinator.query_start_time_microseconds);
+  const rootStartUs = parseOptionalTimestampMicros(coordinator.query_start_time_microseconds);
   const hostColors = hostColorMap([
     ...topology.nodes
       .filter(node => node.role !== 'coordinator' && node.role !== 'insert_client')
@@ -1057,7 +1051,7 @@ function buildStepDetails(
       : subQueries.find(sq => sq.query_id === row.node.queryId && hostMatches(sq.hostname, row.node.hostname));
     const queryId = node?.queryId ?? subQuery?.query_id ?? '';
     const hostname = node?.hostname ?? subQuery?.hostname ?? '';
-    const startUs = parseUs(subQuery?.query_start_time_microseconds || node?.queryStartTimeMicroseconds || '');
+    const startUs = parseOptionalTimestampMicros(subQuery?.query_start_time_microseconds || node?.queryStartTimeMicroseconds || '');
     const startMs = Math.max(0, startUs > 0 && rootStartUs > 0 ? (startUs - rootStartUs) / 1000 : 0);
     const durationMs = node?.queryDurationMs ?? subQuery?.query_duration_ms ?? 0;
     const roleId: LabelledTopologyRole = node?.role ?? 'remote_child';

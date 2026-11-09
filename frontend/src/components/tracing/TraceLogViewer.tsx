@@ -1,3 +1,4 @@
+import { parseAbsoluteTimestamp } from '@tracehouse/core';
 /**
  * TraceLogViewer - Clean, minimal trace log viewer
  * 
@@ -62,7 +63,7 @@ const TimelineView: React.FC<{ logs: ProcessedLog[] }> = ({ logs }) => {
   }
 
   // Parse timestamps
-  const timestamps = logs.map(l => new Date(l.event_time_microseconds?.replace(' ', 'T') + 'Z').getTime());
+  const timestamps = logs.map(l => parseAbsoluteTimestamp(l.event_time_microseconds || l.event_time));
   const minTime = Math.min(...timestamps);
   const maxTime = Math.max(...timestamps);
   const totalDuration = maxTime - minTime || 1;

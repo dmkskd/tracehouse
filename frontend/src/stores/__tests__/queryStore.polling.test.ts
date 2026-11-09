@@ -1,6 +1,6 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import type { QueryAnalyzer, QueryMetrics } from '@tracehouse/core';
-import { QueryWebSocket, useQueryStore } from '../queryStore';
+import { QueryWebSocket, useQueryStore, queryApi } from '../queryStore';
 
 const LIVE_QUERY: QueryMetrics = {
   query_id: 'live-query',
@@ -21,6 +21,12 @@ afterEach(() => {
 });
 
 describe('QueryWebSocket polling adapter', () => {
+  it('passes the actual UTC start day; core applies the partition buffer once', async () => {
+    const getQueryHistory = vi.fn().mockResolvedValue([]);
+    await queryApi.fetchQueryHistory({ getQueryHistory } as unknown as QueryAnalyzer,
+      { timeRange: 'custom', startTime: '2026-11-08T00:30:00Z', endTime: '2026-11-08T01:00:00Z' });
+    expect(getQueryHistory.mock.calls[0][0].start_date).toBe('2026-11-08');
+  });
   it('fetches once when automatic refresh is paused', async () => {
     vi.useFakeTimers();
     const getRunningQueries = vi.fn().mockResolvedValue([LIVE_QUERY]);

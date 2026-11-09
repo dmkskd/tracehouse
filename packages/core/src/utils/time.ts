@@ -1,3 +1,4 @@
+import { parseAbsoluteTimestamp } from './absolute-timestamp.js';
 /**
  * Safely parse a time slot from different ClickHouse adapters and Grafana DataFrame layers.
  * 
@@ -35,12 +36,10 @@ function parseToMilliseconds(val: unknown): number {
       return Number(val);
     }
 
-    // Check for standard ClickHouse datetime format like "2023-01-01 12:00:00"
-    // and format it into a spec-compliant ISO string so Chrome Date doesn't barf.
-    if (/^\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2}/.test(val)) {
-      const isUTC = val.includes('Z') || val.includes('+');
-      const isoFormat = val.trim().replace(' ', 'T') + (isUTC ? '' : 'Z');
-      return new Date(isoFormat).getTime();
+    // SQL guarantees UTC for unmarked datetime strings. Preserve numeric and
+    // legacy RFC inputs above/below, but never let native parsing localize ISO.
+    if (/^\d{4}-\d{2}-\d{2}[ T]/.test(val.trim())) {
+      return parseAbsoluteTimestamp(val);
     }
 
     // Fallback to native JS Date.parse (will handle RFC2822, ISO strings, etc.)

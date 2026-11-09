@@ -2,6 +2,8 @@ import type { ServerMetrics } from '../types/metrics.js';
 import { normalizeTimestamp } from './timestamp.js';
 import { type RawRow, toInt, toFloat } from './helpers.js';
 
+/** Caller-supplied timestamp must be an epoch, Date or UTC/explicitly zoned string.
+ * No production SQL caller exists in this repository; do not pass local wall time. */
 export function mapServerMetrics(row: RawRow): ServerMetrics {
   return {
     timestamp: normalizeTimestamp(row.timestamp),

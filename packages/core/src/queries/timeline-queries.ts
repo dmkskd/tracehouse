@@ -2,6 +2,8 @@
  * SQL queries for timeline/snapshot analysis.
  * These queries fetch server metrics, query activity, merges, and mutations
  * within a time window for the Time Travel visualization.
+ * Datetime string projections are UTC, including timezone-less strings.
+ * Keep normalization at the SQL boundary: source columns can use different zones.
  */
 
 /** Max rows returned per activity type (queries, merges, mutations). */
@@ -27,7 +29,7 @@ export const RUNNING_MERGE_CPU_CORES = 0.5;
 /** Total server memory usage across the selected hosts from metric_log */
 export const SERVER_MEMORY_TIMESERIES = `
   SELECT
-    toString(event_time) AS t,
+    toString(event_time, 'UTC') AS t,
     sum(CurrentMetric_MemoryTracking) AS v
   FROM {{cluster_aware:system.metric_log}}
   WHERE event_time >= {start_time}
@@ -51,7 +53,7 @@ export const SERVER_CPU_TIMESERIES = `
     toUInt32(${DEFAULT_INTERVAL_MS}) AS interval_ms
   FROM (
     SELECT
-      toString(event_time) AS t,
+      toString(event_time, 'UTC') AS t,
       hostname() AS host,
       if(
         countIf(metric IN ('CGroupUserTime', 'CGroupSystemTime')) > 0,
@@ -71,7 +73,7 @@ export const SERVER_CPU_TIMESERIES = `
 /** Server network timeseries from metric_log */
 export const SERVER_NETWORK_TIMESERIES = `
   SELECT
-    toString(event_time) AS t,
+    toString(event_time, 'UTC') AS t,
     avg(ProfileEvent_NetworkSendBytes) AS send_v,
     avg(ProfileEvent_NetworkReceiveBytes) AS recv_v
   FROM {{cluster_aware:system.metric_log}}
@@ -84,7 +86,7 @@ export const SERVER_NETWORK_TIMESERIES = `
 /** Server disk IO timeseries from metric_log */
 export const SERVER_DISK_IO_TIMESERIES = `
   SELECT
-    toString(event_time) AS t,
+    toString(event_time, 'UTC') AS t,
     avg(ProfileEvent_OSReadBytes) AS read_v,
     avg(ProfileEvent_OSWriteBytes) AS write_v
   FROM {{cluster_aware:system.metric_log}}
@@ -105,7 +107,7 @@ export const SERVER_DISK_IO_TIMESERIES = `
  */
 export const NAVIGATOR_MEMORY_TIMESERIES = `
 SELECT
-  toString(bucket) AS t,
+  toString(bucket, 'UTC') AS t,
   avg(v) AS average_v,
   max(v) AS peak_v
 FROM (
@@ -125,7 +127,7 @@ ORDER BY bucket ASC
 
 export const NAVIGATOR_CPU_TIMESERIES = `
 SELECT
-  toString(bucket) AS t,
+  toString(bucket, 'UTC') AS t,
   avg(v) * 1000000 AS average_v,
   max(v) * 1000000 AS peak_v
 FROM (
@@ -158,7 +160,7 @@ ORDER BY bucket ASC
 
 export const NAVIGATOR_NETWORK_TIMESERIES = `
 SELECT
-  toString(bucket) AS t,
+  toString(bucket, 'UTC') AS t,
   avg(v) AS average_v,
   max(v) AS peak_v
 FROM (
@@ -178,7 +180,7 @@ ORDER BY bucket ASC
 
 export const NAVIGATOR_DISK_TIMESERIES = `
 SELECT
-  toString(bucket) AS t,
+  toString(bucket, 'UTC') AS t,
   avg(v) AS average_v,
   max(v) AS peak_v
 FROM (
@@ -303,8 +305,8 @@ export const ACTIVE_QUERIES = `
     memory_usage,
     query_duration_ms,
     query_kind,
-    toString(query_start_time) AS qst,
-    toString(query_start_time + toIntervalMillisecond(query_duration_ms)) AS qet,
+    toString(query_start_time, 'UTC') AS qst,
+    toString(query_start_time + toIntervalMillisecond(query_duration_ms), 'UTC') AS qet,
     ProfileEvents['OSCPUVirtualTimeMicroseconds'] AS cpu_us,
     ProfileEvents['NetworkSendBytes'] AS net_send,
     ProfileEvents['NetworkReceiveBytes'] AS net_recv,
@@ -333,8 +335,8 @@ export const ACTIVE_QUERIES_BY_HASH = `
     memory_usage,
     query_duration_ms,
     query_kind,
-    toString(query_start_time) AS qst,
-    toString(query_start_time + toIntervalMillisecond(query_duration_ms)) AS qet,
+    toString(query_start_time, 'UTC') AS qst,
+    toString(query_start_time + toIntervalMillisecond(query_duration_ms), 'UTC') AS qet,
     ProfileEvents['OSCPUVirtualTimeMicroseconds'] AS cpu_us,
     ProfileEvents['NetworkSendBytes'] AS net_send,
     ProfileEvents['NetworkReceiveBytes'] AS net_recv,
@@ -390,11 +392,11 @@ export const ACTIVE_MERGES_DETAIL = `
     peak_memory_usage,
     duration_ms,
     error,
-    toString(event_time_microseconds) AS operation_time,
+    toString(event_time_microseconds, 'UTC') AS operation_time,
     merge_reason,
     event_type,
-    toString(event_time - toIntervalMillisecond(duration_ms)) AS merge_start,
-    toString(event_time) AS merge_end
+    toString(event_time - toIntervalMillisecond(duration_ms), 'UTC') AS merge_start,
+    toString(event_time, 'UTC') AS merge_end
   FROM {{cluster_aware:system.part_log}}
   WHERE event_type IN ('MergeParts', 'MovePart')
     AND event_date >= {start_date}
@@ -444,9 +446,9 @@ export const ACTIVE_MUTATIONS_DETAIL = `
     duration_ms,
     error,
     event_type,
-    toString(event_time_microseconds) AS operation_time,
-    toString(event_time - toIntervalMillisecond(duration_ms)) AS mut_start,
-    toString(event_time) AS mut_end
+    toString(event_time_microseconds, 'UTC') AS operation_time,
+    toString(event_time - toIntervalMillisecond(duration_ms), 'UTC') AS mut_start,
+    toString(event_time, 'UTC') AS mut_end
   FROM {{cluster_aware:system.part_log}}
   WHERE event_type = 'MutatePart'
     AND event_date >= {start_date}
@@ -488,7 +490,7 @@ export const RUNNING_QUERIES_TIMELINE = `
     memory_usage,
     toUInt64(elapsed * ${SEC_TO_MS}) AS query_duration_ms,
     query_kind,
-    toString(now() - toIntervalSecond(toUInt32(elapsed))) AS qst,
+    toString(now() - toIntervalSecond(toUInt32(elapsed)), 'UTC') AS qst,
     ProfileEvents['UserTimeMicroseconds'] + ProfileEvents['SystemTimeMicroseconds'] AS cpu_us,
     ProfileEvents['NetworkSendBytes'] AS net_send,
     ProfileEvents['NetworkReceiveBytes'] AS net_recv,
@@ -515,7 +517,7 @@ export const RUNNING_MERGES_TIMELINE = `
     memory_usage AS peak_memory_usage,
     toUInt64(elapsed * ${SEC_TO_MS}) AS duration_ms,
     merge_type,
-    toString(now() - toIntervalSecond(toUInt32(elapsed))) AS merge_start,
+    toString(now() - toIntervalSecond(toUInt32(elapsed)), 'UTC') AS merge_start,
     progress,
     toUInt64(elapsed * ${RUNNING_MERGE_CPU_CORES * 1_000_000}) AS cpu_us,
     bytes_read_uncompressed AS disk_read,
@@ -541,7 +543,7 @@ export const CPU_SPIKE_TIMESERIES = `
     toUInt32(${DEFAULT_INTERVAL_MS}) AS interval_ms
   FROM (
     SELECT
-      toString(event_time) AS t,
+      toString(event_time, 'UTC') AS t,
       hostname() AS host,
       if(
         countIf(metric IN ('CGroupUserTime', 'CGroupSystemTime')) > 0,
@@ -567,7 +569,7 @@ export const CPU_SPIKE_TIMESERIES = `
 /** Per-host memory timeseries */
 export const CLUSTER_MEMORY_TIMESERIES = `
   SELECT
-    toString(event_time) AS t,
+    toString(event_time, 'UTC') AS t,
     hostname() AS host,
     CurrentMetric_MemoryTracking AS v
   FROM {{cluster_aware:system.metric_log}}
@@ -579,7 +581,7 @@ export const CLUSTER_MEMORY_TIMESERIES = `
 /** Per-host CPU timeseries from asynchronous_metric_log (captures all process CPU) */
 export const CLUSTER_CPU_TIMESERIES = `
   SELECT
-    toString(event_time) AS t,
+    toString(event_time, 'UTC') AS t,
     hostname() AS host,
     if(
       countIf(metric IN ('CGroupUserTime', 'CGroupSystemTime')) > 0,
@@ -598,7 +600,7 @@ export const CLUSTER_CPU_TIMESERIES = `
 /** Per-host network timeseries */
 export const CLUSTER_NETWORK_TIMESERIES = `
   SELECT
-    toString(event_time) AS t,
+    toString(event_time, 'UTC') AS t,
     hostname() AS host,
     ProfileEvent_NetworkSendBytes AS send_v,
     ProfileEvent_NetworkReceiveBytes AS recv_v
@@ -611,7 +613,7 @@ export const CLUSTER_NETWORK_TIMESERIES = `
 /** Per-host disk IO timeseries */
 export const CLUSTER_DISK_IO_TIMESERIES = `
   SELECT
-    toString(event_time) AS t,
+    toString(event_time, 'UTC') AS t,
     hostname() AS host,
     ProfileEvent_OSReadBytes AS read_v,
     ProfileEvent_OSWriteBytes AS write_v

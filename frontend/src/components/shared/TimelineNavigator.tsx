@@ -1,3 +1,4 @@
+import { parseAbsoluteTimestamp } from '@tracehouse/core';
 /**
  * TimelineNavigator - Mini timeline for navigating through a longer time range
  * 
@@ -125,16 +126,14 @@ export const TimelineNavigator: React.FC<TimelineNavigatorProps> = ({
   // Parse data to ms timestamps
   const dataPoints = useMemo(() => {
     return data.map(p => {
-      const normalized = p.t.replace(' ', 'T') + (p.t.includes('Z') || p.t.includes('+') ? '' : 'Z');
-      return { ms: new Date(normalized).getTime(), v: p.v };
+      return { ms: parseAbsoluteTimestamp(p.t), v: p.v };
     }).filter(p => p.ms >= rangeStartMs && p.ms <= rangeEndMs);
   }, [data, rangeStartMs, rangeEndMs]);
 
   const scalePoints = useMemo(() => {
     if (!scaleData) return dataPoints;
     return scaleData.map(p => {
-      const normalized = p.t.replace(' ', 'T') + (p.t.includes('Z') || p.t.includes('+') ? '' : 'Z');
-      return { ms: new Date(normalized).getTime(), v: p.v };
+      return { ms: parseAbsoluteTimestamp(p.t), v: p.v };
     }).filter(p => p.ms >= rangeStartMs && p.ms <= rangeEndMs);
   }, [scaleData, dataPoints, rangeStartMs, rangeEndMs]);
 

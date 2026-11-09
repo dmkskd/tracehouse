@@ -154,6 +154,7 @@ export const Events: React.FC = () => {
             event_id: event.id,
             event_time: event.occurred_at,
           })}
+          onClearSelection={() => update({ event_id: undefined, event_time: undefined })}
           onOpenQueryDetails={event => {
             if (event.query_id) setSelectedQuery(eventToQuerySeries(event));
           }}

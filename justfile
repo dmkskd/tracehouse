@@ -113,8 +113,8 @@ restart: stop start
 
 # Start frontend (foreground - see logs directly)
 [group('services')]
-frontend-start: install proxy-start
-    cd frontend && npm run dev
+frontend-start *args="": install proxy-start
+    cd frontend && npm run dev -- {{args}}
 
 # Start frontend (background)
 [group('services')]
@@ -135,7 +135,7 @@ frontend-stop:
 
 # Restart frontend only
 [group('services')]
-frontend-restart: frontend-stop frontend-start
+frontend-restart *args="": frontend-stop (frontend-start args)
 
 # Used by frontend-start so the proxy does not block Vite from starting.
 # Stop it with `just proxy-stop`; use `just proxy-run` for foreground operation.
@@ -439,6 +439,42 @@ drop-data confirm="":
 [group('test')]
 test: test-frontend test-core test-core-integration test-data-utils
 
+[group('test')]
+test-timezone:
+    CH_TEST_URL="${CH_TEST_URL:-http://localhost:8123}" npm run test:integration --workspace packages/core -- src/__tests__/integration/timeline-timezone.integration.test.ts
+
+# All migrated service SQL contracts. Isolated containers unless CH_TEST_URL is set.
+# Override their server timezone with CLICKHOUSE_TEST_TIMEZONE=UTC (or Europe/Copenhagen).
+[group('test')]
+test-timezone-integration *args="":
+    npm run test:integration --workspace packages/core -- src/__tests__/integration/timeline-timezone.integration.test.ts src/__tests__/integration/events-timezone.integration.test.ts src/__tests__/integration/query-timezone.integration.test.ts src/__tests__/integration/merge-timezone.integration.test.ts src/__tests__/integration/part-timezone.integration.test.ts src/__tests__/integration/analytics-timezone.integration.test.ts src/__tests__/integration/engine-overview-timezone.integration.test.ts {{args}}
+
+# Shared parser contract under three Node host timezones; no running services needed.
+[group('test')]
+test-timezone-parser:
+    #!/usr/bin/env bash
+    set -euo pipefail
+    for parser_timezone in UTC Europe/Copenhagen America/New_York; do
+      TZ="$parser_timezone" npm test --workspace packages/core -- src/utils/__tests__/absolute-timestamp.test.ts src/utils/__tests__/absolute-microseconds.test.ts src/mappers/__tests__/utc-timestamp.test.ts src/queries/__tests__/utc-boundaries.test.ts src/__tests__/comparison-scan-start.test.ts
+    done
+
+# Install engines for the isolated parser browser matrix.
+[group('test')]
+test-timezone-browser-setup:
+    cd packages/e2e && npx playwright install chromium webkit firefox
+
+# Browser parser contract only; does not start or change ClickHouse/Grafana.
+[group('test')]
+test-timezone-browser *args="":
+    npm run build --workspace packages/core
+    npm run test:timezone --workspace packages/e2e -- {{args}}
+
+# Read-only parity checks using running dev frontend (:5173), CH (:8123), GF (:3001).
+[group('test')]
+test-timezone-transports *args="":
+    npm run build --workspace packages/core
+    npm run test:timezone-transports --workspace packages/e2e -- {{args}}
+
 # Run frontend tests
 [group('test')]
 test-frontend:
@@ -451,8 +487,8 @@ test-core:
 
 # Run core integration tests (requires Docker)
 [group('test')]
-test-core-integration:
-    cd packages/core && npx vitest run --config vitest.integration.config.ts
+test-core-integration *args="":
+    cd packages/core && npx vitest run --config vitest.integration.config.ts {{args}}
 
 # Run proxy integration tests (requires Docker)
 [group('test')]

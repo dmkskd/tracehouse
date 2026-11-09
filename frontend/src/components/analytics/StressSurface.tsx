@@ -1,3 +1,4 @@
+import { formatTimeLabels } from '@tracehouse/core';
 /**
  * StressSurface - 3D surface: Time × Resource dimension × normalized stress.
  *
@@ -141,12 +142,7 @@ function processSurfaceData(rows: StressSurfaceRow[]): ProcessedSurface | null {
     return peak > 0 ? row.map(v => v / peak) : row;
   });
 
-  const timeLabels = rows.map(r => {
-    const s = String(r.ts);
-    // Extract HH:MM from timestamp
-    const match = s.match(/(\d{2}:\d{2})/);
-    return match ? match[1] : s.slice(11, 16);
-  });
+  const timeLabels = formatTimeLabels(rows.map(r => String(r.ts)));
 
   return {
     Z,

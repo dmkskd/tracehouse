@@ -1,3 +1,4 @@
+import { parseAbsoluteTimestamp } from '@tracehouse/core';
 /**
  * MergeXRay — 2D timeline visualization of merge progress from tracehouse.merges_history.
  *
@@ -146,7 +147,7 @@ export const MergeXRay: React.FC<MergeXRayProps> = ({ database, table, resultPar
     const startMs = endMs - totalElapsedForLogs * 1000;
     return textLogs
       .map(log => {
-        const logMs = new Date(log.event_time_microseconds?.replace(' ', 'T') || log.event_time).getTime();
+        const logMs = parseAbsoluteTimestamp(log.event_time_microseconds || log.event_time);
         return {
           t: Math.max(0, (logMs - startMs) / 1000),
           level: log.level,

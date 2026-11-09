@@ -18,6 +18,8 @@ export {
 } from './merge-classification.js';
 export type { MergeCategory, MergeCategoryInfo, MutationSubtype, MutationSubtypeInfo } from './merge-classification.js';
 export { parseTimeValue } from './time.js';
+export { parseAbsoluteTimestamp, parseAbsoluteTimestampMicros, parseOptionalTimestampMicros, normalizeAbsoluteTimestamp, parseUtcDateTimeInput, hasExplicitOffset } from './absolute-timestamp.js';
+export { resolveEventIdentity } from './event-identity.js';
 export { parseClickHouseVersion, isClickHouseVersionAtLeast } from './clickhouse-version.js';
 export type { ClickHouseVersion } from './clickhouse-version.js';
 export { leadingSqlKeyword, isSelectStatement } from './sql-statement.js';
