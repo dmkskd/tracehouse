@@ -163,3 +163,42 @@ function baseCoordinates() {
     hiddenEventKinds: new Set<string>(),
   };
 }
+
+describe('Time Travel link time inputs', () => {
+  const AT = Date.parse('2026-11-09T12:00:00Z');
+  const NOW = Date.parse('2026-11-09T18:00:00Z');
+  const preferences = { eventsVisible: true, navigatorShape: 'peaks' as const };
+  // fetchData loads [viewportEnd - 2 × windowSec, viewportEnd], centred on viewportEnd - windowSec.
+  const centreOf = (decoded: ReturnType<typeof readTimeTravelCoordinates>) =>
+    Date.parse(decoded.viewportEndTime!) - decoded.windowSec * 1000;
+
+  it('opens a clicked instant historically, pinned and centred, with the default pad on each side', () => {
+    const decoded = readTimeTravelCoordinates(new URLSearchParams(`th_at=${AT}`), preferences, NOW);
+    expect(decoded).toMatchObject({ isLive: false, pinnedMs: AT, operationScope: 'pin', selectedTimeRange: 'Custom' });
+    expect(decoded.windowSec).toBe(450);
+    expect(centreOf(decoded)).toBe(AT);
+  });
+
+  it('centres on the instant inside the dashboard range rather than at the end of it', () => {
+    const params = new URLSearchParams(`th_from=${AT - 6 * 3_600_000}&th_to=${NOW}&th_at=${AT}`);
+    const decoded = readTimeTravelCoordinates(params, preferences, NOW);
+    expect(centreOf(decoded)).toBe(AT);
+    expect(Date.parse(decoded.customStartTime!)).toBeLessThanOrEqual(AT - 6 * 3_600_000 + 60_000);
+  });
+
+  it('rounds the pad up to a zoom step that shows it whole', () => {
+    const decoded = readTimeTravelCoordinates(new URLSearchParams(`th_at=${AT}&th_pad=20m`), preferences, NOW);
+    expect(decoded.windowSec).toBe(1800);
+  });
+
+  it('wins over the page parameters and is dropped when the page writes its URL', () => {
+    const params = new URLSearchParams(`tt_live=1&tt_pin=1&th_at=${AT}&th_ds=ch`);
+    const decoded = readTimeTravelCoordinates(params, preferences, NOW);
+    expect(decoded.pinnedMs).toBe(AT);
+    const written = writeTimeTravelCoordinates(params, decoded);
+    expect(written.has('th_at')).toBe(false);
+    expect(written.get('th_ds')).toBe('ch');
+    expect(written.get('tt_pin')).toBe(String(AT));
+    expect(written.get('tt_live')).toBe('0');
+  });
+});

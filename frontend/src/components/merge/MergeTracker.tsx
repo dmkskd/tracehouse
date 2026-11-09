@@ -67,6 +67,8 @@ import { classifyActiveMerge, getMergeCategoryInfo, classifyMutationCommand, MUT
 import type { MergeCategory } from '@tracehouse/core';
 import { useUserPreferenceStore } from '../../stores/userPreferenceStore';
 import { MergeHealthSunburst } from './MergeHealthSunburst';
+import { LINK_TIME_PARAMS, hasLinkTimeParams, linkTimeToCustomRange, readLinkTime } from '../../utils/linkCoordinates';
+import { createRequestGate } from '../../utils/requestGate';
 import { useUrlState } from '../../hooks/useUrlState';
 import { defineShareSchema } from '../../share/shareSchema';
 
@@ -1625,13 +1627,13 @@ export const MergeTrackerView: React.FC = () => {
     statistics, isLoadingMerges, isLoadingHistory, isLoadingMutations, isLoadingMutationHistory, isLoadingPoolMetrics,
     error,
     setActiveMerges, setMergeHistory, setMutations, setMutationHistory, setPoolMetrics, selectMerge, setHistoryFilter,
-    setHistorySort, setIsLoadingMerges, setIsLoadingHistory, setIsLoadingMutations, setIsLoadingMutationHistory,
+    resetHistoryFilter, setHistorySort, setIsLoadingMerges, setIsLoadingHistory, setIsLoadingMutations, setIsLoadingMutationHistory,
     setIsLoadingPoolMetrics, setError, clearError, clearAll,
   } = useMergeStore();
   const { databases, setDatabases } = useDatabaseStore();
 
   // URL-synced state for shareable links
-  const { state: urlState, update: updateUrl } = useUrlState(MERGE_TRACKER_SHARE_SCHEMA);
+  const { state: urlState, update: updateUrl, searchParams } = useUrlState(MERGE_TRACKER_SHARE_SCHEMA);
   const requestedTab = urlState.tab || 'merges';
   const activeTab: MergeTab = requestedTab === 'health'
     ? 'health'
@@ -1875,19 +1877,24 @@ export const MergeTrackerView: React.FC = () => {
     }
   }, [services, isConnected, hasMerges, historyFilter.limit, setActiveMerges, setIsLoadingMerges, setError, clearError]);
 
+  // A response for an older filter (e.g. the default window, fetched before a link's
+  // window was applied) must not overwrite a newer one.
+  const mergeHistoryRequestGateRef = useRef(createRequestGate());
   const fetchMergeHistory = useCallback(async (isInitialLoad = false) => {
     if (!services || !isConnected || !hasMerges) return;
+    const gate = mergeHistoryRequestGateRef.current;
+    const requestId = gate.begin();
     if (isInitialLoad) {
       setIsLoadingHistory(true);
       clearError();
     }
     try {
       const history = await mergeApi.fetchMergeHistory(services.mergeTracker, historyFilter);
-      setMergeHistory(history);
+      if (gate.isLatest(requestId)) setMergeHistory(history);
     } catch (err) {
-      setError(extractErrorMessage(err, 'Failed to fetch history'));
+      if (gate.isLatest(requestId)) setError(extractErrorMessage(err, 'Failed to fetch history'));
     } finally {
-      if (isInitialLoad) {
+      if (isInitialLoad && gate.isLatest(requestId)) {
         setIsLoadingHistory(false);
       }
     }
@@ -1942,12 +1949,18 @@ export const MergeTrackerView: React.FC = () => {
         .map(value => Number(value))
         .filter(value => Number.isInteger(value) && value > 0);
     }
-    if (urlState.timeRange && urlState.timeRange !== '1 HOUR') patch.timeRange = urlState.timeRange;
+    // Link time inputs (th_at, th_from, th_to) win over timeRange. They are consumed here,
+    // in the first hydration, so they never sit next to the page's own state.
+    const linkTime = readLinkTime(searchParams);
+    const timeRange = linkTime ? linkTimeToCustomRange(linkTime) : urlState.timeRange;
+    if (timeRange && timeRange !== '1 HOUR') patch.timeRange = timeRange;
+    if (hasLinkTimeParams(searchParams)) updateUrl({ timeRange }, { remove: LINK_TIME_PARAMS });
     if (urlState.minDurMs) patch.minDurationMs = urlState.minDurMs;
     if (urlState.minSizeB) patch.minSizeBytes = urlState.minSizeB;
     if (urlState.limit && urlState.limit !== 100) patch.limit = urlState.limit;
     if (urlState.excludeSys !== undefined && !urlState.excludeSys) patch.excludeSystemDatabases = false;
-    if (Object.keys(patch).length > 0) setHistoryFilter(patch);
+    // A URL or link describes the whole filter: drop what a previous visit left in the store.
+    if (Object.keys(patch).length > 0) resetHistoryFilter(patch);
     if (urlState.sortField || urlState.sortDir) {
       setHistorySort({
         field: (urlState.sortField || 'event_time') as typeof historySort.field,

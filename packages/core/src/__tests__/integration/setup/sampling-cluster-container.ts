@@ -19,6 +19,7 @@ import { execSync } from 'node:child_process';
 import { resolve } from 'node:path';
 import { ClusterTestAdapter } from './cluster-container.js';
 import { CH_IMAGE } from './constants.js';
+import { startWithPortRetry } from './start-container.js';
 
 const SETUP_SCRIPT = resolve(__dirname, '../../../../../../infra/scripts/setup_sampling.sh');
 const CH_USER = 'default';
@@ -194,7 +195,7 @@ export async function startSamplingCluster(
   // Start network + keeper
   const network = await new Network().start();
 
-  const keeper = await new GenericContainer(CH_IMAGE)
+  const keeper = await startWithPortRetry(() => new GenericContainer(CH_IMAGE)
     .withNetwork(network)
     .withNetworkAliases('keeper')
     .withEnvironment({ CLICKHOUSE_USER: CH_USER, CLICKHOUSE_PASSWORD: CH_PASSWORD })
@@ -205,12 +206,12 @@ export async function startSamplingCluster(
     .withExposedPorts(8123, 9181)
     .withWaitStrategy(Wait.forHttp('/ping', 8123).forStatusCode(200))
     .withStartupTimeout(60_000)
-    .start();
+    );
 
   // Start CH nodes in parallel
   const containers = await Promise.all(
     nodeNames.map(name =>
-      new GenericContainer(CH_IMAGE)
+      startWithPortRetry(() => new GenericContainer(CH_IMAGE)
         .withNetwork(network)
         .withNetworkAliases(name)
         .withEnvironment({ CLICKHOUSE_USER: CH_USER, CLICKHOUSE_PASSWORD: CH_PASSWORD })
@@ -221,7 +222,7 @@ export async function startSamplingCluster(
         .withExposedPorts(8123, 9000)
         .withWaitStrategy(Wait.forHttp('/ping', 8123).forStatusCode(200))
         .withStartupTimeout(60_000)
-        .start()
+        )
     ),
   );
 

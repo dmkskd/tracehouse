@@ -17,6 +17,7 @@ describe('Grafana share coordinates', () => {
   it('distinguishes connected-node scope from a missing cluster coordinate', () => {
     expect(readShareCoordinates(`?th_ds=clickhouse-a&th_cluster=${CONNECTED_NODE_SCOPE}`)?.clusterName).toBeNull();
     expect(readShareCoordinates('?th_ds=clickhouse-a')?.clusterName).toBeUndefined();
+    expect(readShareCoordinates('?th_ds=clickhouse-a&th_cluster=')?.clusterName).toBeUndefined();
     expect(shareCoordinateUpdate('clickhouse-a', undefined).th_cluster).toBeNull();
   });
 });

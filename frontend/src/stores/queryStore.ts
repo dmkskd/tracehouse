@@ -100,6 +100,8 @@ interface QueryState {
   setQueryHistory: (history: QueryHistoryItem[]) => void;
   selectQuery: (query: RunningQuery | QueryHistoryItem | null, type: 'running' | 'history' | null) => void;
   setHistoryFilter: (filter: Partial<QueryHistoryFilter>) => void;
+  /** Replace the filter with the defaults plus `filter`: a link describes the whole state. */
+  resetHistoryFilter: (filter?: Partial<QueryHistoryFilter>) => void;
   setHistorySort: (sort: QueryHistorySort) => void;
   setWsStatus: (status: WebSocketStatus) => void;
   setWsError: (error: string | null) => void;
@@ -110,6 +112,12 @@ interface QueryState {
   clearQueries: () => void;
 }
 
+// Default filter: last 1 hour, limit 100
+const DEFAULT_HISTORY_FILTER: QueryHistoryFilter = {
+  timeRange: '1 HOUR',
+  limit: 100,
+};
+
 export const useQueryStore = create<QueryState>((set) => ({
   // Initial state
   runningQueries: [],
@@ -117,11 +125,7 @@ export const useQueryStore = create<QueryState>((set) => ({
   selectedQuery: null,
   selectedQueryType: null,
   
-  // Default filter: last 1 hour, limit 100
-  historyFilter: {
-    timeRange: '1 HOUR',
-    limit: 100,
-  },
+  historyFilter: DEFAULT_HISTORY_FILTER,
   
   // Default sort: by start time descending
   historySort: {
@@ -159,6 +163,10 @@ export const useQueryStore = create<QueryState>((set) => ({
   setHistoryFilter: (filter) => set((state) => ({
     historyFilter: { ...state.historyFilter, ...filter },
   })),
+
+  resetHistoryFilter: (filter = {}) => set({
+    historyFilter: { ...DEFAULT_HISTORY_FILTER, ...filter },
+  }),
   
   setHistorySort: (sort) => set({ historySort: sort }),
   
@@ -282,7 +290,8 @@ export const queryApi = {
    */
   async fetchQueryHistory(
     service: QueryAnalyzer,
-    filter: QueryHistoryFilter
+    filter: QueryHistoryFilter,
+    sort?: QueryHistorySort,
   ): Promise<QueryHistoryItem[]> {
     const { startTime, endTime } = resolveTrackerTimeRange(
       filter.timeRange,
@@ -311,6 +320,8 @@ export const queryApi = {
       database: filter.database,
       table: filter.table,
       hostname: filter.hostname,
+      order_by: sort?.field,
+      order_dir: sort?.direction,
     });
   },
 

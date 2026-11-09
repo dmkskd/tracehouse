@@ -10,6 +10,7 @@ import { createClient, type ClickHouseClient } from '@clickhouse/client';
 import type { IClickHouseAdapter } from '../../../adapters/types.js';
 import { AdapterError } from '../../../adapters/types.js';
 import { CH_IMAGE } from './constants.js';
+import { startWithPortRetry } from './start-container.js';
 
 const CH_USER = 'default';
 const CH_PASSWORD = 'test';
@@ -113,7 +114,7 @@ export async function startCluster(): Promise<ClusterTestContext> {
 
   // Start Keeper first — uses the same CH image with embedded Keeper.
   // The server logs go to a file (not stdout), so we wait on HTTP /ping instead.
-  const keeper = await new GenericContainer(CH_IMAGE)
+  const keeper = await startWithPortRetry(() => new GenericContainer(CH_IMAGE)
     .withNetwork(network)
     .withNetworkAliases('keeper')
     .withEnvironment({ CLICKHOUSE_USER: CH_USER, CLICKHOUSE_PASSWORD: CH_PASSWORD })
@@ -124,11 +125,11 @@ export async function startCluster(): Promise<ClusterTestContext> {
     .withExposedPorts(8123, 9181)
     .withWaitStrategy(Wait.forHttp('/ping', 8123).forStatusCode(200))
     .withStartupTimeout(60_000)
-    .start();
+    );
 
   // Start CH nodes in parallel
   const [ch1, ch2] = await Promise.all([
-    new GenericContainer(CH_IMAGE)
+    startWithPortRetry(() => new GenericContainer(CH_IMAGE)
       .withNetwork(network)
       .withNetworkAliases('ch1')
       .withEnvironment({ CLICKHOUSE_USER: CH_USER, CLICKHOUSE_PASSWORD: CH_PASSWORD })
@@ -139,8 +140,8 @@ export async function startCluster(): Promise<ClusterTestContext> {
       .withExposedPorts(8123, 9000)
       .withWaitStrategy(Wait.forHttp('/ping', 8123).forStatusCode(200))
       .withStartupTimeout(60_000)
-      .start(),
-    new GenericContainer(CH_IMAGE)
+      ),
+    startWithPortRetry(() => new GenericContainer(CH_IMAGE)
       .withNetwork(network)
       .withNetworkAliases('ch2')
       .withEnvironment({ CLICKHOUSE_USER: CH_USER, CLICKHOUSE_PASSWORD: CH_PASSWORD })
@@ -151,7 +152,7 @@ export async function startCluster(): Promise<ClusterTestContext> {
       .withExposedPorts(8123, 9000)
       .withWaitStrategy(Wait.forHttp('/ping', 8123).forStatusCode(200))
       .withStartupTimeout(60_000)
-      .start(),
+      ),
   ]);
 
   const client1 = createClient({

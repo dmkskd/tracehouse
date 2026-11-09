@@ -164,6 +164,20 @@ datasource response would be another way to remove the extra request.
 - **No React Router:** Grafana's plugin sandbox doesn't provide a Router context. The plugin stubs out `react-router-dom` entirely (see `src/stubs/react-router-dom.tsx`) and replaces navigation hooks with a custom `LocationContext`-based implementation (`src/hooks/useAppLocation.ts`)
 - **Store aliasing:** The standalone app's `connectionStore` and `ClickHouseProvider` are aliased at webpack level to Grafana-compatible shims that source the connection from the selected datasource instead of user-entered credentials
 - **`useUrlState` via `locationService`:** Analytics state syncs to URL query params using Grafana's `locationService`, so links like `/a/dmkskd-tracehouse-app/analytics?tab=misc&preset=3` are fully shareable, same as in the standalone app
+- **Swapped modules keep the frontend API.** The webpack config (`.config/webpack/webpack.config.cjs`, `resolve.alias`) replaces these frontend modules with plugin versions:
+
+  | Frontend module | Plugin module |
+  |---|---|
+  | `frontend/src/stores/connectionStore` | `src/stores/connectionStore` |
+  | `frontend/src/providers/ClickHouseProvider` | `src/ServiceProvider` |
+  | `frontend/src/hooks/useAppLocation` | `src/hooks/useAppLocation.ts` |
+  | `frontend/src/hooks/useUrlState` | `src/hooks/useUrlState.ts` |
+  | `frontend/src/utils/urlParams` | `src/utils/urlParams.ts` |
+  | `react-router-dom` | `src/stubs/react-router-dom.tsx` |
+
+  Pages are typechecked against the frontend module but run the plugin one, so the frontend typecheck and tests cannot catch a difference. **When you change one of these frontend modules, change its plugin version in the same change:** every exported name, and every field and option of what the hooks return. A missing field fails only at runtime in Grafana (for example `undefined is not an object (evaluating 'e.get')`).
+
+  `src/aliasParity.typecheck.ts` checks `useUrlState`, `useAppLocation` and `urlParams`: the plugin module exports every frontend name, and its hooks are assignable to the frontend ones. It runs with `npm test` in `grafana-app-plugin` (`tsc -p tsconfig.alias-parity.json`). `connectionStore`, `ServiceProvider`, the router stub, and the `useSearchParams` setter (the plugin accepts a `URLSearchParams` or an updater function, not every `react-router` init form) are not covered.
 - **AMD output format:** Grafana's plugin loader requires AMD modules. The webpack config sets `output.library.type: 'amd'` with `uniqueName: 'dmkskd-tracehouse-app'` for namespace isolation
 - **Node.js polyfill stubs:** Webpack config stubs all Node.js core modules (`stream`, `zlib`, `crypto`, etc.) to `false` since the plugin runs in the browser but some transitive dependencies reference them
 - **Unsigned plugin allowlist:** For local development, `GF_PLUGINS_ALLOW_LOADING_UNSIGNED_PLUGINS=dmkskd-tracehouse-app` is set in the Docker Compose config

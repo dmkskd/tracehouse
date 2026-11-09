@@ -22,14 +22,70 @@ Both builds use the same React UI, SQL, services from `packages/core`, and attri
 
 <FeatureVideo src="grafana-to-tracehouse-1920.mp4" />
 
-Grafana table panels can link to query and merge details in TraceHouse. Configure a Grafana [data link](https://grafana.com/docs/grafana/latest/panels-visualizations/configure-data-links/) on the query ID or part name field to open the corresponding detail view.
+A Grafana [data link](https://grafana.com/docs/grafana/latest/panels-visualizations/configure-data-links/) on a panel can open TraceHouse at the query, merge or point in time that the panel shows.
 
-The data link targets the TraceHouse app plugin in the Grafana instance serving the dashboard. The URL path starts with the plugin route, `/a/dmkskd-tracehouse-app/`, and resolves against that Grafana instance's origin. The destination page uses the current Grafana session and its user and data source permissions. TraceHouse executes ClickHouse queries through the data source identified by the `th_ds` URL parameter.
+The link targets the TraceHouse app plugin in the Grafana instance serving the dashboard. The URL path starts with the plugin route, `/a/dmkskd-tracehouse-app/`, and resolves against that Grafana instance's origin. The destination page uses the current Grafana session and its user and data source permissions.
 
-Both link types accept these parameters:
+### Adding a Link
 
-- `th_ds` - UID of the ClickHouse data source. `${datasource}` references the dashboard's data source variable and overrides the previous data source selection in TraceHouse. Replace `datasource` with the name of your dashboard's data source variable. If no ClickHouse data source matches this UID, no data source is selected.
-- `th_cluster` (optional, requires `th_ds`) - name of the cluster to query, as listed in `system.clusters`. If the cluster does not exist, TraceHouse displays an error. If omitted, TraceHouse uses the cluster configured in the plugin settings or the automatically detected cluster.
+1. Edit the panel.
+2. In **Data links and actions**, select **+ Add link**.
+3. Enter a **Title** and paste a **URL** from the recipes below.
+4. Turn on **Open in a new tab**.
+5. Save the dashboard.
+
+Grafana shows the link when the user clicks a data point or line on a time series panel, or a cell on a table panel.
+
+### Linking a Point in Time
+
+On a time series panel, `${__value.time}` holds the timestamp of the clicked point, and the link passes it to TraceHouse in the `th_at` parameter:
+
+```
+/a/dmkskd-tracehouse-app/queries?status=error&th_at=${__value.time}
+```
+
+This link opens the Queries page filtered to the failed queries that finished between 5 minutes before and 5 minutes after the clicked point. TraceHouse opens a window rather than the exact instant because a rate panel computes each point over the interval that ends at the point's timestamp, so the queries counted in a spike finished before that timestamp, and with a rate interval of 5 minutes or less they fall inside the window.
+
+In the following table, each URL is relative to the plugin route, `/a/dmkskd-tracehouse-app`.
+
+| Panel shows | URL | Opens |
+|---|---|---|
+| Failed queries | `/queries?status=error&th_at=${__value.time}` | Failed queries, ±5 min |
+| Queries over the memory limit | `/queries?status=error&errorCode=241&th_at=${__value.time}` | Queries that failed with `MEMORY_LIMIT_EXCEEDED` (241), ±5 min |
+| Rejected inserts | `/queries?status=error&queryKind=Insert&errorCode=252&th_at=${__value.time}` | Inserts that failed with `TOO_MANY_PARTS` (252), ±5 min |
+| Delayed inserts | `/queries?queryKind=Insert&sortField=query_duration_ms&sortDir=desc&th_at=${__value.time}` | Inserts, slowest first, ±5 min |
+| Failed asynchronous inserts | `/events?event_kind=async_insert_failure&th_at=${__value.time}` | Failures from `system.asynchronous_insert_log`, ±5 min |
+| Merges | `/merges?th_at=${__value.time}` | Merges, ±5 min |
+| CPU, memory or query rate | `/timetravel?th_at=${__value.time}` | Time Travel, centered on the point |
+
+ClickHouse delays an INSERT, rather than rejecting it, when a partition has more active parts than `parts_to_delay_insert`, and the delayed INSERT completes without an error. Because delayed inserts do not appear as failed queries, the delayed inserts link lists the inserts in the window ordered by duration, slowest first.
+
+Time Travel opens with a 15-minute view centered on the point, which is the smallest of its zoom levels that shows 5 minutes on each side. To select the metric, add `tt_metric=cpu` or `tt_metric=memory` to the link, and to show only queries or only merges, add `tt_ops=query` or `tt_ops=merge`.
+
+A panel can have more than one data link, in which case Grafana lists all of them when the user clicks a point. The Rejected Inserts panel in the example dashboard, for example, links to the rejected inserts, to merges and to Time Travel at the same point.
+
+The Queries, Merges and Events pages write their filters to the page URL, so a link for another filter can be built by setting the filter on the page, copying the query string from the address bar and replacing its time range parameters with `th_at=${__value.time}`.
+
+### Link Parameters
+
+| Parameter | Value | Default |
+|---|---|---|
+| `th_at` | Point in time, as epoch milliseconds (`${__value.time}`) or an ISO date (`2026-11-09T12:00:00Z`) | |
+| `th_pad` | Time shown on each side of `th_at`: `1m`, `15m`, `1h` | `5m`, with a minimum of `1m`. Time Travel rounds the value up to its next zoom level |
+| `th_from`, `th_to` | Time range, for example `${__from}` and `${__to}` for the dashboard's time range | |
+| `th_ds` | UID of the ClickHouse data source | The only ClickHouse data source, or the one last selected in TraceHouse |
+| `th_cluster` | Cluster name, as listed in `system.clusters` | The cluster configured in the plugin settings, or the detected cluster |
+
+- When a link includes both `th_at` and a range, the Queries, Merges and Events pages use `th_at`, and Time Travel uses `th_at` for the view and the range for its time navigator.
+- When the page opens, TraceHouse replaces `th_at`, `th_pad`, `th_from` and `th_to` with the page's own time range parameters, so a URL copied from the page reflects any later change to the time range.
+- `th_ds` is required only when Grafana has more than one ClickHouse data source. In a link, `${datasource}` references a dashboard's data source variable, with `datasource` replaced by the variable's name. If no ClickHouse data source matches the UID, TraceHouse displays an error.
+- `th_cluster` is required only when the data source has more than one cluster. TraceHouse treats an empty value as omitted and displays an error if the named cluster does not exist.
+
+### Dashboards Built on Prometheus
+
+A dashboard built on Prometheus, such as the ClickHouse mixin, has a data source variable that refers to Prometheus and therefore cannot be used for `th_ds`. When Grafana has more than one ClickHouse data source, add a dashboard variable of type **Data source** that is limited to ClickHouse data sources, and pass it in each link as `th_ds=${th_datasource}`.
+
+Prometheus series labels identify the scrape target, for example `instance="ch-s1r1:9363"`, which may differ from the host name that ClickHouse reports, so the recipes do not filter by host. TraceHouse also does not derive `th_ds` or `th_cluster` from Prometheus labels, so when a dashboard selects one of several services or clusters, its links must set `th_ds` and `th_cluster` to match the selection.
 
 ### Linking a Query
 
@@ -90,6 +146,13 @@ Selecting the data link for a part name opens the merge detail view in the Trace
 - `md_time`, `md_type` (optional, used only with `md_host`) - `event_time` and `event_type` of the `system.part_log` entry. Together with `md_host`, these parameters identify the event to retrieve.
 
 Without `md_host`, TraceHouse returns the most recent `system.part_log` entry for the part across all replicas, filtered to the event types `MergeParts`, `MutatePart`, `MovePart` and `DownloadPart`. Set `md_host` to restrict the lookup to the replica that performed the merge.
+
+### Example Dashboards
+
+The demo stack provisions two linked dashboards in the TraceHouse folder:
+
+- **ClickHouse - Query Analysis [TraceHouse linked]** (`infra/docker/grafana/dashboards/TraceHouse/query-analysis-linked.json`) links the query ID column of a `query_log` table to the query detail view.
+- **ClickHouse - Prom-Exporter Instance [TraceHouse linked]** (`infra/docker/grafana/dashboards/TraceHouse/clickhouse-mixin-linked.json`) adds the point-in-time links above to the query, insert, merge, CPU and memory panels of the official ClickHouse mixin. `infra/docker/grafana/scripts/link_mixin_dashboard.py` generates it from the upstream dashboard.
 
 ## Grafana Panel Export
 

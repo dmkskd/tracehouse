@@ -32,6 +32,9 @@ import { OverviewService } from '@tracehouse/core';
 import { useUserPreferenceStore } from '../stores/userPreferenceStore';
 import { QueryHealthSunburst } from '../components/query/QueryHealthSunburst';
 import { useUrlState } from '../hooks/useUrlState';
+import { LINK_TIME_PARAMS, hasLinkTimeParams, linkTimeToCustomRange, readLinkTime } from '../utils/linkCoordinates';
+import { createRequestGate } from '../utils/requestGate';
+import { resolveTrackerTimeRange } from '../utils/trackerTimeRange';
 import { useClusterStore } from '../stores/clusterStore';
 import { defineShareSchema } from '../share/shareSchema';
 
@@ -41,6 +44,7 @@ export const QUERY_MONITOR_SHARE_SCHEMA = defineShareSchema({
   qd_id: { type: 'string' },
   /** Epoch ms when the linking page saw the query finish (see buildQueryLinkUrl). */
   qd_end: { type: 'number' },
+  timeRange: { type: 'string', default: '1 HOUR' },
   user: { type: 'string[]' },
   queryId: { type: 'string[]' },
   queryText: { type: 'string' },
@@ -89,7 +93,7 @@ const nonEmptyValues = (value: unknown): unknown =>
 
 export const QueryMonitor: React.FC = () => {
   const { activeProfileId, profiles, setConnectionFormOpen } = useConnectionStore();
-  const { runningQueries, queryHistory, selectedQuery, selectedQueryType, historyFilter, historySort, wsStatus, error, isLoadingHistory, isKillingQuery, setRunningQueries, setQueryHistory, selectQuery, setHistoryFilter, setHistorySort, setIsLoadingHistory, setIsKillingQuery, setError, clearError, clearQueries } = useQueryStore();
+  const { runningQueries, queryHistory, selectedQuery, selectedQueryType, historyFilter, historySort, wsStatus, error, isLoadingHistory, isKillingQuery, setRunningQueries, setQueryHistory, selectQuery, setHistoryFilter, resetHistoryFilter, setHistorySort, setIsLoadingHistory, setIsKillingQuery, setError, clearError, clearQueries } = useQueryStore();
   const location = useLocation();
   const locationState = location.state as { tab?: 'activity' | 'running' | 'history'; filter?: Record<string, unknown> } | null;
   // A query opened by a link from another page (Analytics, Overview) closes back to it;
@@ -98,7 +102,7 @@ export const QueryMonitor: React.FC = () => {
   const experimentalEnabled = useUserPreferenceStore(s => s.experimentalEnabled);
 
   // URL-synced state for shareable links
-  const { state: urlState, update: updateUrl } = useUrlState(QUERY_MONITOR_SHARE_SCHEMA);
+  const { state: urlState, update: updateUrl, searchParams } = useUrlState(QUERY_MONITOR_SHARE_SCHEMA);
   const requestedTab = locationState?.tab || urlState.tab || 'activity';
   const activeTab: 'activity' | 'health' = requestedTab === 'health' ? 'health' : 'activity';
   const setActiveTab = useCallback((tab: 'activity' | 'health') => {
@@ -136,8 +140,15 @@ export const QueryMonitor: React.FC = () => {
       if (urlState.minDurMs) patch.minDurationMs = urlState.minDurMs;
       if (urlState.minMemB) patch.minMemoryBytes = urlState.minMemB;
       if (urlState.limit && urlState.limit !== 100) patch.limit = urlState.limit;
+      // Link time inputs (th_at, th_from, th_to) win over timeRange. They are consumed here,
+      // in the first hydration, so they never sit next to the page's own state.
+      const linkTime = readLinkTime(searchParams);
+      const timeRange = linkTime ? linkTimeToCustomRange(linkTime) : urlState.timeRange;
+      if (timeRange && timeRange !== '1 HOUR') patch.timeRange = timeRange;
+      if (hasLinkTimeParams(searchParams)) updateUrl({ timeRange }, { remove: LINK_TIME_PARAMS });
     }
-    if (Object.keys(patch).length > 0) setHistoryFilter(patch as any);
+    // A URL or link describes the whole filter: drop what a previous visit left in the store.
+    if (Object.keys(patch).length > 0) resetHistoryFilter(patch as any);
     if (urlState.sortField || urlState.sortDir) {
       setHistorySort({
         field: (urlState.sortField || 'query_start_time') as any,
@@ -167,6 +178,7 @@ export const QueryMonitor: React.FC = () => {
     if ('exceptionCode' in effectiveFilter) {
       urlPatch.errorCode = nonEmptyValues(effectiveFilter.exceptionCode);
     }
+    if ('timeRange' in effectiveFilter) urlPatch.timeRange = effectiveFilter.timeRange || undefined;
     if ('quickFilter' in effectiveFilter) urlPatch.quickFilter = effectiveFilter.quickFilter || undefined;
     if ('database' in effectiveFilter) urlPatch.database = nonEmptyValues(effectiveFilter.database);
     if ('table' in effectiveFilter) urlPatch.tableName = nonEmptyValues(effectiveFilter.table);
@@ -243,27 +255,36 @@ export const QueryMonitor: React.FC = () => {
   if (!activeProfile && profiles.length > 0) activeProfile = profiles.find(p => p.is_connected);
   const isConnected = activeProfile?.is_connected ?? false;
   const historyFetchInFlightRef = useRef(false);
+  const historyRequestGateRef = useRef(createRequestGate());
 
-  const fetchHistory = useCallback(async () => {
-    if (!services || !isConnected || historyFetchInFlightRef.current) return;
+  // A poll waits for the request in flight; any other fetch (filter, sort, refresh)
+  // replaces it, so a change made while a request is running is never dropped.
+  const fetchHistory = useCallback(async (opts?: { poll?: boolean }) => {
+    if (!services || !isConnected) return;
+    if (opts?.poll && historyFetchInFlightRef.current) return;
+    const gate = historyRequestGateRef.current;
+    const requestId = gate.begin();
     historyFetchInFlightRef.current = true;
     setIsLoadingHistory(true); clearError();
     try {
-      const h = await queryApi.fetchQueryHistory(services.queryAnalyzer, historyFilter);
+      const h = await queryApi.fetchQueryHistory(services.queryAnalyzer, historyFilter, historySort);
+      if (!gate.isLatest(requestId)) return;
       setQueryHistory(h);
-      // Fetch coordinator IDs scoped to the returned query IDs
+      // Fetch coordinator IDs scoped to the returned query IDs. Rows can be sorted by
+      // any field, so the date bound comes from the window, not from the last row.
       const queryIds = h.map(q => q.query_id);
-      const startDate = h.length > 0
-        ? String(h[h.length - 1].query_start_time).slice(0, 10)
-        : new Date().toISOString().slice(0, 10);
-      services.queryAnalyzer.getCoordinatorIds(queryIds, startDate!).then(setHistoryCoordinatorIds).catch(() => {});
+      const startDate = resolveTrackerTimeRange(historyFilter.timeRange, historyFilter.startTime, historyFilter.endTime)
+        .startTime.slice(0, 10);
+      services.queryAnalyzer.getCoordinatorIds(queryIds, startDate).then(setHistoryCoordinatorIds).catch(() => {});
     }
-    catch (e) { setError(e instanceof Error ? e.message : 'Failed'); }
+    catch (e) { if (gate.isLatest(requestId)) setError(e instanceof Error ? e.message : 'Failed'); }
     finally {
-      historyFetchInFlightRef.current = false;
-      setIsLoadingHistory(false);
+      if (gate.isLatest(requestId)) {
+        historyFetchInFlightRef.current = false;
+        setIsLoadingHistory(false);
+      }
     }
-  }, [services, isConnected, historyFilter]);
+  }, [services, isConnected, historyFilter, historySort]);
 
   const handleKillQuery = useCallback(async (qid: string) => {
     if (!services) return;
@@ -415,7 +436,7 @@ export const QueryMonitor: React.FC = () => {
     if (hasQueryLog) {
       fetchHistory();
       if (refreshRateSeconds > 0) {
-        historyIntervalRef.current = setInterval(fetchHistory, Math.max(5_000, queryIntervalMs));
+        historyIntervalRef.current = setInterval(() => fetchHistory({ poll: true }), Math.max(5_000, queryIntervalMs));
       }
     }
     return () => {

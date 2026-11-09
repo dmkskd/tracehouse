@@ -14,6 +14,7 @@ import { GenericContainer, Network, Wait, type StartedNetwork, type StartedTestC
 import { createClient, type ClickHouseClient } from '@clickhouse/client';
 import { ClusterTestAdapter } from './cluster-container.js';
 import { CH_IMAGE } from './constants.js';
+import { startWithPortRetry } from './start-container.js';
 
 const CH_USER = 'default';
 const CH_PASSWORD = 'test';
@@ -136,7 +137,7 @@ function startChNode(
   shard: string,
   replica: string,
 ): Promise<StartedTestContainer> {
-  return new GenericContainer(image)
+  return startWithPortRetry(() => new GenericContainer(image)
     .withNetwork(network)
     .withNetworkAliases(alias)
     .withEnvironment({ CLICKHOUSE_USER: CH_USER, CLICKHOUSE_PASSWORD: CH_PASSWORD })
@@ -147,7 +148,7 @@ function startChNode(
     .withExposedPorts(8123, 9000)
     .withWaitStrategy(Wait.forHttp('/ping', 8123).forStatusCode(200))
     .withStartupTimeout(60_000)
-    .start();
+    );
 }
 
 /**
@@ -159,7 +160,7 @@ function startChNode(
 export async function startAltinityCluster(): Promise<AltinityClusterContext> {
   const network = await new Network().start();
 
-  const keeper = await new GenericContainer(CH_IMAGE)
+  const keeper = await startWithPortRetry(() => new GenericContainer(CH_IMAGE)
     .withNetwork(network)
     .withNetworkAliases('keeper')
     .withEnvironment({ CLICKHOUSE_USER: CH_USER, CLICKHOUSE_PASSWORD: CH_PASSWORD })
@@ -170,7 +171,7 @@ export async function startAltinityCluster(): Promise<AltinityClusterContext> {
     .withExposedPorts(8123, 9181)
     .withWaitStrategy(Wait.forHttp('/ping', 8123).forStatusCode(200))
     .withStartupTimeout(60_000)
-    .start();
+    );
 
   // Start all 4 CH nodes in parallel
   //   ch1: shard 01, replica ch1

@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import type { OperationalEvent } from '@tracehouse/core';
-import { buildMergeDetailsUrl, legacyEventsRangeCenter } from '../events-page-model';
+import { buildMergeDetailsUrl, legacyEventsRangeCenter, linkTimeToEventsRange } from '../events-page-model';
+import { readLinkTime } from '../../utils/linkCoordinates';
 
 const mergeFailureEvent = (overrides: Partial<OperationalEvent> = {}): OperationalEvent => ({
   id: 'merge-failure',
@@ -79,5 +80,17 @@ describe('buildMergeDetailsUrl', () => {
     expect(buildMergeDetailsUrl(mergeFailureEvent({ kind: 'part_move_failure' }))).toBeUndefined();
     expect(buildMergeDetailsUrl(mergeFailureEvent({ part_name: undefined }))).toBeUndefined();
     expect(buildMergeDetailsUrl(mergeFailureEvent({ hostname: undefined }))).toBeUndefined();
+  });
+});
+
+describe('linkTimeToEventsRange', () => {
+  it('centres the Events range on a linked instant, pad on each side', () => {
+    const time = readLinkTime(new URLSearchParams('th_at=2026-11-09T12:00:00Z&th_pad=15m'))!;
+    expect(linkTimeToEventsRange(time)).toEqual({ range_center: '2026-11-09T12:00:00.000Z', event_range: 0.5 });
+  });
+
+  it('spans a linked dashboard range', () => {
+    const time = readLinkTime(new URLSearchParams('th_from=2026-11-09T06:00:00Z&th_to=2026-11-09T12:00:00Z'))!;
+    expect(linkTimeToEventsRange(time)).toEqual({ range_center: '2026-11-09T09:00:00.000Z', event_range: 6 });
   });
 });

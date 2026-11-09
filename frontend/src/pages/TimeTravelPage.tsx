@@ -86,6 +86,7 @@ import {
 } from '../components/timeline/time-travel-host-selection';
 import {
   readTimeTravelCoordinates,
+  TIME_TRAVEL_WINDOW_SIZES,
   writeTimeTravelCoordinates,
 } from './timeTravelCoordinates';
 import { defineShareSchema } from '../share/shareSchema';
@@ -1137,18 +1138,9 @@ export const TimeTravelPage: React.FC = () => {
     else setSelectedTimelineMutation(item as MutationSeries);
   }, []);
 
-  const ALL_WINDOW_SIZES = [
-    { label: '1m', sec: 30 },
-    { label: '5m', sec: 150 },
-    { label: '15m', sec: 450 },
-    { label: '30m', sec: 900 },
-    { label: '1h', sec: 1800 },
-    { label: '3h', sec: 5400 },
-    { label: '6h', sec: 10800 },
-  ];
   // Filter zoom options: displayed span (sec*2) must be ≤ selected Last range
   const maxZoomSec = navigatorHours * 3600;
-  const WINDOW_SIZES = ALL_WINDOW_SIZES.filter(w => w.sec * 2 <= maxZoomSec);
+  const WINDOW_SIZES = TIME_TRAVEL_WINDOW_SIZES.filter(w => w.sec * 2 <= maxZoomSec);
   // If current windowSec exceeds the allowed max, clamp it down
   useEffect(() => {
     if (WINDOW_SIZES.length > 0 && !WINDOW_SIZES.some(w => w.sec === windowSec)) {

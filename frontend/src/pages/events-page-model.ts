@@ -1,4 +1,5 @@
 import type { QuerySeries, OperationalEvent } from '@tracehouse/core';
+import { linkTimeWindow, type LinkTime } from '../utils/linkCoordinates';
 
 export const EVENT_INTERVAL_HOURS: Record<string, number> = {
   '15 MINUTE': 0.25,
@@ -13,6 +14,15 @@ export const EVENT_INTERVAL_HOURS: Record<string, number> = {
 export const EVENT_HOURS_INTERVAL = new Map(
   Object.entries(EVENT_INTERVAL_HOURS).map(([interval, hours]) => [hours, interval]),
 );
+
+/** The Events range (centre and width in hours) for a link's time inputs. */
+export function linkTimeToEventsRange(time: LinkTime): { range_center: string; event_range: number } {
+  const { startMs, endMs } = linkTimeWindow(time);
+  return {
+    range_center: new Date(startMs + (endMs - startMs) / 2).toISOString(),
+    event_range: (endMs - startMs) / 3_600_000,
+  };
+}
 
 /**
  * Older Time Travel links used the selected event time as the Events range

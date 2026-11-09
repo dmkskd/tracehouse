@@ -17,6 +17,7 @@ import type { IClickHouseAdapter, QueryExecutionOptions } from '../../../adapter
 import { AdapterError } from '../../../adapters/types.js';
 import { ClusterAwareAdapter } from '../../../adapters/cluster-adapter.js';
 import { CH_IMAGE } from './constants.js';
+import { startWithPortRetry } from './start-container.js';
 
 /** Thin adapter wrapping @clickhouse/client for integration tests. */
 export class TestAdapter implements IClickHouseAdapter {
@@ -121,7 +122,6 @@ export async function startClickHouse(opts: { withKeeper?: boolean; timezone?: s
   // Only isolated containers honor this override. External instances above are
   // never reconfigured or implicitly claimed to have the requested timezone.
   const timezone = process.env.CLICKHOUSE_TEST_TIMEZONE ?? opts.timezone;
-  let builder = new ClickHouseContainer(CH_IMAGE).withStartupTimeout(120_000);
   const configFiles: { content: string; target: string }[] = [];
   if (timezone) {
     if (!/^[A-Za-z0-9_+\-/]+$/.test(timezone)) throw new Error('Invalid test timezone');
@@ -135,8 +135,10 @@ export async function startClickHouse(opts: { withKeeper?: boolean; timezone?: s
       { content: KEEPER_CONFIG_XML, target: '/etc/clickhouse-server/config.d/keeper.xml' },
     );
   }
-  if (configFiles.length) builder = builder.withCopyContentToContainer(configFiles);
-  const container = await builder.start();
+  const container = await startWithPortRetry(() => {
+    const builder = new ClickHouseContainer(CH_IMAGE).withStartupTimeout(120_000);
+    return configFiles.length ? builder.withCopyContentToContainer(configFiles) : builder;
+  });
 
   const client = createClient({
     url: container.getConnectionUrl(),

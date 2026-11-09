@@ -24,6 +24,7 @@ import { readFileSync, readdirSync } from 'node:fs';
 import { resolve, dirname } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { CH_IMAGE, CONFIGURED_CH_VERSION } from './setup/constants.js';
+import { startWithPortRetry } from './setup/start-container.js';
 
 const CONTAINER_TIMEOUT = 120_000;
 const RO_PASSWORD = 'testpass';
@@ -80,7 +81,7 @@ describe('read-only user sandbox escape tests', { tags: ['security'] }, () => {
   let roClient: ClickHouseClient;
 
   beforeAll(async () => {
-    container = await new GenericContainer(CH_IMAGE)
+    container = await startWithPortRetry(() => new GenericContainer(CH_IMAGE)
       .withCopyContentToContainer([{
         content: ADMIN_USERS_XML,
         target: '/etc/clickhouse-server/users.d/default-user.xml',
@@ -88,7 +89,7 @@ describe('read-only user sandbox escape tests', { tags: ['security'] }, () => {
       .withExposedPorts(8123)
       .withWaitStrategy(Wait.forHttp('/ping', 8123).forStatusCode(200))
       .withStartupTimeout(CONTAINER_TIMEOUT)
-      .start();
+      );
 
     const adminUrl = `http://localhost:${container.getMappedPort(8123)}`;
     adminClient = createClient({ url: adminUrl });

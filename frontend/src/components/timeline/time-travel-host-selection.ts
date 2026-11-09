@@ -1,3 +1,5 @@
+import { createRequestGate, type RequestGate } from '../../utils/requestGate';
+
 export function updateTimeTravelHostSelection(
   selectedHosts: readonly string[],
   host: string,
@@ -26,21 +28,7 @@ export function timeTravelRowHosts(
   return clusterHosts.filter(host => selectedHosts.includes(host));
 }
 
-export interface TimeTravelRequestGate {
-  begin(): number;
-  invalidate(): void;
-  isLatest(requestId: number): boolean;
-}
+export type TimeTravelRequestGate = RequestGate;
 
-/**
- * Keeps asynchronous timeline responses aligned with the current host scope.
- * Starting or invalidating a request makes every older request stale.
- */
-export function createTimeTravelRequestGate(): TimeTravelRequestGate {
-  let latestRequestId = 0;
-  return {
-    begin: () => ++latestRequestId,
-    invalidate: () => { latestRequestId += 1; },
-    isLatest: requestId => requestId === latestRequestId,
-  };
-}
+/** Keeps asynchronous timeline responses aligned with the current host scope. */
+export const createTimeTravelRequestGate = createRequestGate;

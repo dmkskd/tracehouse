@@ -162,6 +162,30 @@ describe('QueryAnalyzer integration', { tags: ['query-analysis'] }, () => {
 
       expect(history).toEqual([]);
     });
+
+    it('orders before the limit, so the slowest query survives even when it is not among the latest', async () => {
+      const marker = `order_probe_${Date.now()}`;
+      const from = new Date(Date.now() - 60_000);
+      await ctx.adapter.executeQuery(q(`SELECT sleep(0.3), '${marker}'`));
+      for (let i = 0; i < 3; i++) {
+        await ctx.adapter.executeQuery(q(`SELECT ${i}, '${marker}'`));
+      }
+      await ctx.client.command({ query: 'SYSTEM FLUSH LOGS' });
+
+      const window = {
+        start_date: from.toISOString().split('T')[0]!,
+        start_time: from.toISOString(),
+        end_time: new Date(Date.now() + 60_000).toISOString(),
+        limit: 2,
+        query_text: marker,
+        query_kind: 'Select',
+      };
+      const latest = await analyzer.getQueryHistory(window);
+      const slowest = await analyzer.getQueryHistory({ ...window, order_by: 'query_duration_ms', order_dir: 'desc' });
+
+      expect(latest.some(row => row.query.includes('sleep(0.3)'))).toBe(false);
+      expect(slowest[0]?.query).toContain('sleep(0.3)');
+    });
   });
 
   describe('killQuery', () => {

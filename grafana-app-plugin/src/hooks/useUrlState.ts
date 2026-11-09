@@ -48,19 +48,25 @@ export function useUrlState<S extends UrlSchema>(schema: S) {
     return unlisten;
   }, []);
 
+  const searchParams = useMemo(() => new URLSearchParams(search), [search]);
+
   const state = useMemo(() => {
-    const params = new URLSearchParams(search);
     const result: Record<string, unknown> = {};
     for (const [key, def] of Object.entries(schema)) {
-      result[key] = parseSearchParam(params, key, def);
+      result[key] = parseSearchParam(searchParams, key, def);
     }
     return result as UrlStateFromSchema<S>;
-  }, [search, schema]);
+  }, [searchParams, schema]);
 
   const update = useCallback(
-    (partial: Partial<UrlStateFromSchema<S>>, opts?: { push?: boolean }) => {
+    (
+      partial: Partial<UrlStateFromSchema<S>>,
+      // remove: keys outside the schema to drop in the same update (e.g. consumed link inputs)
+      opts?: { push?: boolean; remove?: readonly string[] },
+    ) => {
       const params = new URLSearchParams(getSearch());
       const partialUpdate: Record<string, string | string[] | null> = {};
+      opts?.remove?.forEach(key => { partialUpdate[key] = null; });
       for (const [key, def] of Object.entries(schema)) {
         const value = key in partial
           ? (partial as Record<string, unknown>)[key]
@@ -72,7 +78,7 @@ export function useUrlState<S extends UrlSchema>(schema: S) {
     [schema],
   );
 
-  return { state, update };
+  return { state, update, searchParams };
 }
 
 // ─── Analytics URL state ───

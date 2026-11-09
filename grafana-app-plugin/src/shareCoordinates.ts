@@ -14,8 +14,9 @@ export function readShareCoordinates(search: string): GrafanaShareCoordinates | 
   const datasourceUid = params.get(SHARE_DATASOURCE_PARAM)?.trim();
   if (!datasourceUid) return null;
 
-  const hasCluster = params.has(SHARE_CLUSTER_PARAM);
-  const cluster = params.get(SHARE_CLUSTER_PARAM);
+  // A blank cluster (an empty dashboard variable) means "not set": use the default cluster.
+  const cluster = params.get(SHARE_CLUSTER_PARAM)?.trim();
+  const hasCluster = Boolean(cluster);
   return {
     version: 1,
     datasourceUid,

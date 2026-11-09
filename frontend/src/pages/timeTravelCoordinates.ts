@@ -1,3 +1,5 @@
+import { LINK_TIME_PARAMS, readLinkTime, type LinkTime } from '../utils/linkCoordinates';
+
 export type TimeTravelMetric = 'memory' | 'cpu' | 'network' | 'disk';
 export type TimeTravelView = '2d' | '3d' | '3d-surface';
 export type TimeTravelSortField = 'metric' | 'duration' | 'started' | 'kind' | 'user' | 'server';
@@ -46,6 +48,64 @@ const SORT_DIRS = new Set<TimeTravelSortDir>(['asc', 'desc']);
 const NAVIGATOR_SHAPES = new Set<TimeTravelNavigatorShape>(['trend', 'peaks', 'change']);
 const TIME_RANGES = new Set(['1h', '3h', '6h', '12h', '1d', 'Custom']);
 
+/** Zoom steps: `sec` is the half-width (`tt_window`), the label the total view. */
+export const TIME_TRAVEL_WINDOW_SIZES = [
+  { label: '1m', sec: 30 },
+  { label: '5m', sec: 150 },
+  { label: '15m', sec: 450 },
+  { label: '30m', sec: 900 },
+  { label: '1h', sec: 1800 },
+  { label: '3h', sec: 5400 },
+  { label: '6h', sec: 10800 },
+] as const;
+
+/** The navigator range is at least an hour (see navigatorHours in TimeTravelPage). */
+const MIN_LINK_NAVIGATOR_MS = 3_600_000;
+
+/**
+ * Coordinates for a link's time inputs. An instant is pinned and centred, with the
+ * smallest zoom step that shows th_pad on each side; the navigator spans the linked
+ * range when it covers the view, otherwise a range around the instant. A range alone
+ * becomes the navigator range.
+ */
+function linkTimeCoordinates(time: LinkTime, now: number): Partial<TimeTravelCoordinates> {
+  if (time.kind === 'window') {
+    return {
+      isLive: false,
+      selectedTimeRange: 'Custom',
+      customStartTime: toLocalDatetimeString(time.startMs),
+      customEndTime: toLocalDatetimeString(time.endMs),
+      viewportEndTime: null,
+    };
+  }
+  const step = TIME_TRAVEL_WINDOW_SIZES.find(size => size.sec * 1000 >= time.padMs)
+    ?? TIME_TRAVEL_WINDOW_SIZES[TIME_TRAVEL_WINDOW_SIZES.length - 1];
+  const viewMs = step.sec * 2 * 1000;
+  const viewStartMs = time.atMs - step.sec * 1000;
+  const viewEndMs = time.atMs + step.sec * 1000;
+  const rangeCoversView = time.range
+    && time.range.startMs <= viewStartMs
+    && time.range.endMs >= viewEndMs
+    && time.range.endMs - time.range.startMs >= MIN_LINK_NAVIGATOR_MS;
+  const navigatorHalfMs = Math.max(MIN_LINK_NAVIGATOR_MS, viewMs * 2) / 2;
+  const navigator = rangeCoversView
+    ? time.range!
+    : {
+      startMs: time.atMs - navigatorHalfMs,
+      endMs: Math.min(time.atMs + navigatorHalfMs, Math.max(now, viewEndMs)),
+    };
+  return {
+    isLive: false,
+    selectedTimeRange: 'Custom',
+    customStartTime: toLocalDatetimeString(navigator.startMs),
+    customEndTime: toLocalDatetimeString(navigator.endMs),
+    viewportEndTime: new Date(viewEndMs).toISOString(),
+    pinnedMs: time.atMs,
+    windowSec: step.sec,
+    operationScope: 'pin',
+  };
+}
+
 function enumParam<T extends string>(params: URLSearchParams, key: string, values: Set<T>, fallback: T): T {
   const value = params.get(key) as T | null;
   return value && values.has(value) ? value : fallback;
@@ -70,6 +130,18 @@ function stringSet(params: URLSearchParams, key: string): Set<string> {
 }
 
 export function readTimeTravelCoordinates(
+  params: URLSearchParams,
+  preferences: { eventsVisible: boolean; navigatorShape: TimeTravelNavigatorShape },
+  now = Date.now(),
+): TimeTravelCoordinates {
+  const coordinates = readPageCoordinates(params, preferences);
+  // Link time inputs (th_at, th_from, th_to) win over the page's own parameters.
+  // writeTimeTravelCoordinates drops them, so they are used once.
+  const linkTime = readLinkTime(params);
+  return linkTime ? { ...coordinates, ...linkTimeCoordinates(linkTime, now) } : coordinates;
+}
+
+function readPageCoordinates(
   params: URLSearchParams,
   preferences: { eventsVisible: boolean; navigatorShape: TimeTravelNavigatorShape },
 ): TimeTravelCoordinates {
@@ -135,6 +207,7 @@ function setOptional(params: URLSearchParams, key: string, value: string | null,
 
 export function writeTimeTravelCoordinates(params: URLSearchParams, coordinates: TimeTravelCoordinates): URLSearchParams {
   const next = new URLSearchParams(params);
+  LINK_TIME_PARAMS.forEach(key => next.delete(key));
   next.set('tt_hash_only', coordinates.queryHashOnly ? '1' : '0');
   next.set('tt_window', String(coordinates.windowSec));
   next.set('tt_live', coordinates.isLive ? '1' : '0');

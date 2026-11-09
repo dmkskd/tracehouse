@@ -120,6 +120,8 @@ interface MergeState {
   setPoolMetrics: (metrics: BackgroundPoolMetrics | null) => void;
   selectMerge: (merge: MergeInfo | null) => void;
   setHistoryFilter: (filter: Partial<MergeHistoryFilter>) => void;
+  /** Replace the filter with the defaults plus `filter`: a link describes the whole state. */
+  resetHistoryFilter: (filter?: Partial<MergeHistoryFilter>) => void;
   setHistorySort: (sort: MergeHistorySort) => void;
   setIsLoadingMerges: (loading: boolean) => void;
   setIsLoadingHistory: (loading: boolean) => void;
@@ -131,6 +133,13 @@ interface MergeState {
   clearAll: () => void;
 }
 
+// Default filter
+const DEFAULT_HISTORY_FILTER: MergeHistoryFilter = {
+  excludeSystemDatabases: true,
+  timeRange: '1 HOUR',
+  limit: 100,
+};
+
 export const useMergeStore = create<MergeState>((set) => ({
   // Initial state
   activeMerges: [],
@@ -141,12 +150,7 @@ export const useMergeStore = create<MergeState>((set) => ({
   poolMetrics: null,
   selectedMerge: null,
   
-  // Default filter
-  historyFilter: {
-    excludeSystemDatabases: true,
-    timeRange: '1 HOUR',
-    limit: 100,
-  },
+  historyFilter: DEFAULT_HISTORY_FILTER,
   
   // Default sort: by event time descending
   historySort: {
@@ -223,6 +227,10 @@ export const useMergeStore = create<MergeState>((set) => ({
   setHistoryFilter: (filter) => set((state) => ({
     historyFilter: { ...state.historyFilter, ...filter },
   })),
+
+  resetHistoryFilter: (filter = {}) => set({
+    historyFilter: { ...DEFAULT_HISTORY_FILTER, ...filter },
+  }),
   
   setHistorySort: (sort) => set({ historySort: sort }),
   

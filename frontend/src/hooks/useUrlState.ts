@@ -52,9 +52,14 @@ export function useUrlState<S extends UrlSchema>(schema: S) {
   }, [searchParams, schema]);
 
   const update = useCallback(
-    (partial: Partial<UrlStateFromSchema<S>>, opts?: { push?: boolean }) => {
+    (
+      partial: Partial<UrlStateFromSchema<S>>,
+      // remove: keys outside the schema to drop in the same update (e.g. consumed link inputs)
+      opts?: { push?: boolean; remove?: readonly string[] },
+    ) => {
       setSearchParams(prev => {
         const next = new URLSearchParams(prev); // preserve unknown params
+        opts?.remove?.forEach(key => next.delete(key));
         for (const [key, def] of Object.entries(schema)) {
           const value = key in partial
             ? (partial as Record<string, unknown>)[key]
@@ -73,7 +78,7 @@ export function useUrlState<S extends UrlSchema>(schema: S) {
     [setSearchParams, schema],
   );
 
-  return { state, update };
+  return { state, update, searchParams };
 }
 
 // ─── SQL encoding (matches k8s-compass pattern) ───

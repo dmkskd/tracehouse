@@ -358,6 +358,29 @@ export interface QueryHistoryOptions {
   table?: string | string[];
   /** Filter by ClickHouse server hostname (case-insensitive contains). */
   hostname?: string | string[];
+  /**
+   * Sort applied before LIMIT, so the limit keeps e.g. the slowest queries of
+   * the window rather than the slowest of the latest rows. Fields without a
+   * query_log column fall back to the latest finished.
+   */
+  order_by?: string;
+  order_dir?: 'asc' | 'desc';
+}
+
+/** Sort fields the history query can order by on the server. */
+const HISTORY_ORDER_COLUMNS: Record<string, string> = {
+  query_start_time: 'query_start_time_microseconds',
+  query_duration_ms: 'query_duration_ms',
+  read_rows: 'read_rows',
+  read_bytes: 'read_bytes',
+  result_rows: 'result_rows',
+  memory_usage: 'memory_usage',
+};
+
+function historyOrderBy(field?: string, direction?: 'asc' | 'desc'): string {
+  const column = field ? HISTORY_ORDER_COLUMNS[field] : undefined;
+  if (!column) return 'event_time DESC';
+  return `${column} ${direction === 'asc' ? 'ASC' : 'DESC'}, event_time DESC`;
 }
 
 function filterValues(value?: string | string[]): string[] {
@@ -600,7 +623,7 @@ export class QueryAnalyzer {
         tables
       FROM {{cluster_aware:system.query_log}}
       WHERE ${whereConditions.join('\n    AND ')}
-      ORDER BY event_time DESC
+      ORDER BY ${historyOrderBy(options.order_by, options.order_dir)}
       LIMIT {limit}
     `;
 

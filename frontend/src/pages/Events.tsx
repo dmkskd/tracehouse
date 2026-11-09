@@ -15,7 +15,9 @@ import {
   EVENT_INTERVAL_HOURS,
   eventToQuerySeries,
   legacyEventsRangeCenter,
+  linkTimeToEventsRange,
 } from './events-page-model';
+import { LINK_TIME_PARAMS, hasLinkTimeParams, readLinkTime } from '../utils/linkCoordinates';
 
 /** State listed here must survive copying and reopening an Events URL. */
 export const EVENTS_SHARE_SCHEMA = defineShareSchema({
@@ -35,7 +37,7 @@ export const EVENTS_SHARE_SCHEMA = defineShareSchema({
 
 export const Events: React.FC = () => {
   const navigate = useNavigate();
-  const { state, update } = useUrlState(EVENTS_SHARE_SCHEMA);
+  const { state, update, searchParams } = useUrlState(EVENTS_SHARE_SCHEMA);
   const [selectedQuery, setSelectedQuery] = useState<QuerySeries | null>(null);
   const { query: modalQuery, onClose: closeQueryDetails, linkBanner, dismissLinkStatus } = useQueryDeepLink(
     selectedQuery,
@@ -48,8 +50,26 @@ export const Events: React.FC = () => {
     state.event_time,
   ));
   const migratedLegacyRangeRef = useRef(false);
-  const effectiveRangeCenter = state.range_center
+
+  // Link time inputs (th_at, th_from, th_to) win over the page's range. They are used
+  // from the first render and then replaced in the URL by range_center / event_range.
+  const [hasLinkTime] = useState(() => hasLinkTimeParams(searchParams));
+  const [linkRange] = useState(() => {
+    const time = readLinkTime(searchParams);
+    return time ? linkTimeToEventsRange(time) : undefined;
+  });
+  const consumedLinkTimeRef = useRef(false);
+  const pendingLinkRange = consumedLinkTimeRef.current ? undefined : linkRange;
+
+  const effectiveRangeCenter = pendingLinkRange?.range_center
+    ?? state.range_center
     ?? (!migratedLegacyRangeRef.current ? legacyRangeCenter : undefined);
+
+  useEffect(() => {
+    if (!hasLinkTime || consumedLinkTimeRef.current) return;
+    consumedLinkTimeRef.current = true;
+    update(linkRange ?? {}, { remove: LINK_TIME_PARAMS });
+  }, [hasLinkTime, linkRange, update]);
 
   useEffect(() => {
     if (!legacyRangeCenter || migratedLegacyRangeRef.current) return;
@@ -57,7 +77,7 @@ export const Events: React.FC = () => {
     update({ range_center: legacyRangeCenter });
   }, [legacyRangeCenter, update]);
 
-  const rangeHours = state.event_range ?? 1;
+  const rangeHours = pendingLinkRange?.event_range ?? state.event_range ?? 1;
   const rangeCenterMs = effectiveRangeCenter
     ? Date.parse(effectiveRangeCenter)
     : Number.NaN;
