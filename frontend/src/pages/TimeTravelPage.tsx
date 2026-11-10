@@ -90,6 +90,7 @@ import {
   writeTimeTravelCoordinates,
 } from './timeTravelCoordinates';
 import { defineShareSchema } from '../share/shareSchema';
+import { createUrlWriteEchoes } from '../utils/urlWriteEchoes';
 import {
   isRangeCovered,
   mergeCoverage,
@@ -407,16 +408,13 @@ export const TimeTravelPage: React.FC = () => {
   const [operationScope, setOperationScope] = useState<OperationScope>(initialCoordinates.operationScope);
   const [operationSearch, setOperationSearch] = useState(initialCoordinates.operationSearch);
   const [includeRunning, setIncludeRunning] = useState(initialCoordinates.includeRunning);
-  const lastWrittenCoordinatesRef = useRef<string | null>(null);
+  const coordinateWriteEchoesRef = useRef(createUrlWriteEchoes());
 
   // Apply pasted URLs and browser navigation back into the page state. Writes
-  // made by the effect below are ignored on their return trip.
+  // made by the effect below are ignored on their return trip, including when
+  // the router reports several quick writes one by one (Grafana plugin).
   useEffect(() => {
-    const incoming = searchParams.toString();
-    if (incoming === lastWrittenCoordinatesRef.current) {
-      lastWrittenCoordinatesRef.current = null;
-      return;
-    }
+    if (coordinateWriteEchoesRef.current.consumeEcho(searchParams.toString())) return;
     const coordinates = readTimeTravelCoordinates(searchParams, {
       eventsVisible: preferredEventsVisible,
       navigatorShape: preferredNavigatorShape,
@@ -487,7 +485,7 @@ export const TimeTravelPage: React.FC = () => {
       hiddenEventCategories: new Set(eventFilter.hiddenCategories),
       hiddenEventKinds: new Set(eventFilter.hiddenKinds),
       });
-      lastWrittenCoordinatesRef.current = next.toString();
+      coordinateWriteEchoesRef.current.recordWrite(next.toString());
       return next;
     }, { replace: true });
   }, [
