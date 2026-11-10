@@ -5,6 +5,25 @@ All notable changes to the TraceHouse Grafana plugin will be documented in this 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.20.0] - 2026-11-10
+
+This release's highlight is support for ClickHouse clusters configured with a timezone other than UTC, where TraceHouse used to show shifted or missing data ([#5](https://github.com/dmkskd/tracehouse/issues/5)).
+
+### New features
+- **Grafana:** Data links on time series panels can open TraceHouse at the clicked point in time (`th_at`, `th_pad`, `th_from`, `th_to`), on the Queries, Merges, Events, and Time Travel pages. The demo stack includes a linked copy of the ClickHouse mixin dashboard.
+- **Analytics:** New `@merge_link` directive: clicking a merge in a chart or table opens it on the Merges page. The merge panels in Merge Analytics and the Knowledge Base use it.
+- **Events:** Error events now show the current `system.errors` state for that error: whether it occurred again since, or the server restarted.
+
+### Improvements
+- **Analytics:** New "Preview on hover" option in the dashboard list shows a live preview of a dashboard while you hover over its card. It is off by default.
+
+### Bug fixes
+- Fixed timestamps when the ClickHouse server runs in a timezone other than UTC. Time Travel charts showed shifted or missing points, and Analytics dates could be off by one day.
+- **Merges:** Fixed duplicate or stale rows when sorting merge activity that contains several retries of the same part.
+
+### Security
+- Updated dependencies to address npm audit findings.
+
 ## [0.19.3] - 2026-10-26
 
 ### Improvements
