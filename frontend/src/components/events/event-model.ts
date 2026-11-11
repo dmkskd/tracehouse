@@ -208,6 +208,161 @@ export function eventFilterFromLists(lists: {
   };
 }
 
+/** What a filter checkbox shows: everything shown, nothing shown, or part of it. */
+export type EventFilterCheckState = 'checked' | 'unchecked' | 'partial';
+
+/**
+ * Categories each kind appears in among the loaded events. Usually one, but
+ * some detectors classify per event (error_burst spans several categories).
+ */
+function categoriesByKind(events: readonly OperationalEvent[]): Map<EventKind, Set<EventCategory>> {
+  const byKind = new Map<EventKind, Set<EventCategory>>();
+  for (const event of events) {
+    const categories = byKind.get(event.kind) ?? new Set<EventCategory>();
+    categories.add(event.category);
+    byKind.set(event.kind, categories);
+  }
+  return byKind;
+}
+
+/**
+ * A kind is shown only where its category is shown, so its checkbox follows
+ * the category: unchecked when hidden itself or when all its categories are
+ * hidden, partial when only some are.
+ */
+export function eventKindCheckState(
+  kind: EventKind,
+  filter: EventFilter,
+  events: readonly OperationalEvent[],
+): EventFilterCheckState {
+  if (filter.hiddenKinds.has(kind)) return 'unchecked';
+  const categories = [...(categoriesByKind(events).get(kind) ?? [])];
+  const shown = categories.filter(category => !filter.hiddenCategories.has(category)).length;
+  if (categories.length > 0 && shown === 0) return 'unchecked';
+  return shown < categories.length ? 'partial' : 'checked';
+}
+
+/** A category is partial when some of its kinds are hidden. */
+export function eventCategoryCheckState(
+  category: EventCategory,
+  filter: EventFilter,
+  events: readonly OperationalEvent[],
+): EventFilterCheckState {
+  if (filter.hiddenCategories.has(category)) return 'unchecked';
+  const kinds = [...new Set(events.filter(event => event.category === category).map(event => event.kind))];
+  const hidden = kinds.filter(kind => filter.hiddenKinds.has(kind)).length;
+  if (kinds.length > 0 && hidden === kinds.length) return 'unchecked';
+  return hidden > 0 ? 'partial' : 'checked';
+}
+
+/** Checked hides the category; partial or unchecked shows it with all its kinds. */
+export function toggleEventCategory(
+  filter: EventFilter,
+  category: EventCategory,
+  events: readonly OperationalEvent[],
+): EventFilter {
+  if (eventCategoryCheckState(category, filter, events) === 'checked') {
+    return { ...filter, hiddenCategories: toggleSetValue(filter.hiddenCategories, category) };
+  }
+  const kinds = new Set(events.filter(event => event.category === category).map(event => event.kind));
+  const hiddenCategories = new Set(filter.hiddenCategories);
+  hiddenCategories.delete(category);
+  return {
+    ...filter,
+    hiddenCategories,
+    hiddenKinds: new Set([...filter.hiddenKinds].filter(kind => !kinds.has(kind))),
+  };
+}
+
+/**
+ * Checked hides the kind. Partial or unchecked shows it everywhere it occurs:
+ * hidden categories it belongs to come back, but only for this kind, so the
+ * other kinds in those categories stay hidden.
+ */
+export function toggleEventKind(
+  filter: EventFilter,
+  kind: EventKind,
+  events: readonly OperationalEvent[],
+): EventFilter {
+  if (eventKindCheckState(kind, filter, events) === 'checked') {
+    return { ...filter, hiddenKinds: toggleSetValue(filter.hiddenKinds, kind) };
+  }
+  const byKind = categoriesByKind(events);
+  const reopened = [...(byKind.get(kind) ?? [])].filter(category => filter.hiddenCategories.has(category));
+  const hiddenCategories = new Set(filter.hiddenCategories);
+  const hiddenKinds = new Set(filter.hiddenKinds);
+  hiddenKinds.delete(kind);
+  for (const category of reopened) {
+    hiddenCategories.delete(category);
+    for (const [other, categories] of byKind) {
+      if (other === kind || !categories.has(category)) continue;
+      // Kinds that were fully hidden by the category stay hidden.
+      if (eventKindCheckState(other, filter, events) === 'unchecked') hiddenKinds.add(other);
+    }
+  }
+  return { ...filter, hiddenCategories, hiddenKinds };
+}
+
+/** Section-wide "all" / "none" for severities. */
+export function setAllEventSeverities(filter: EventFilter, visible: boolean): EventFilter {
+  return { ...filter, hiddenSeverities: new Set(visible ? [] : EVENT_SEVERITY_VALUES) };
+}
+
+/** Section-wide "all" / "none" for categories; "all" also brings back their kinds. */
+export function setAllEventCategories(
+  filter: EventFilter,
+  visible: boolean,
+  events: readonly OperationalEvent[],
+): EventFilter {
+  return visible
+    ? { ...filter, hiddenCategories: new Set(), hiddenKinds: new Set() }
+    : { ...filter, hiddenCategories: new Set(observedEventFilterCategories(events)) };
+}
+
+/** Section-wide "all" / "none" for kinds; "all" also brings back hidden categories. */
+export function setAllEventKinds(
+  filter: EventFilter,
+  visible: boolean,
+  events: readonly OperationalEvent[],
+): EventFilter {
+  return visible
+    ? { ...filter, hiddenCategories: new Set(), hiddenKinds: new Set() }
+    : { ...filter, hiddenKinds: new Set(observedEventFilterKinds(events)) };
+}
+
+/** "Only" on a severity row: every other severity is hidden. */
+export function onlyEventSeverity(filter: EventFilter, severity: EventSeverity): EventFilter {
+  return { ...filter, hiddenSeverities: new Set(EVENT_SEVERITY_VALUES.filter(value => value !== severity)) };
+}
+
+/** "Only" on a category row: every other category is hidden and this one shows all its kinds. */
+export function onlyEventCategory(
+  filter: EventFilter,
+  category: EventCategory,
+  events: readonly OperationalEvent[],
+): EventFilter {
+  const kinds = new Set(events.filter(event => event.category === category).map(event => event.kind));
+  return {
+    ...filter,
+    hiddenCategories: new Set(observedEventFilterCategories(events).filter(value => value !== category)),
+    hiddenKinds: new Set([...filter.hiddenKinds].filter(kind => !kinds.has(kind))),
+  };
+}
+
+/** "Only" on a kind row: every other kind is hidden and this kind's categories are shown. */
+export function onlyEventKind(
+  filter: EventFilter,
+  kind: EventKind,
+  events: readonly OperationalEvent[],
+): EventFilter {
+  const categories = categoriesByKind(events).get(kind) ?? new Set<EventCategory>();
+  return {
+    ...filter,
+    hiddenCategories: new Set([...filter.hiddenCategories].filter(category => !categories.has(category))),
+    hiddenKinds: new Set(observedEventFilterKinds(events).filter(value => value !== kind)),
+  };
+}
+
 export function severityPresetFilter(
   visible: ReadonlySet<EventSeverity>,
 ): EventFilter {

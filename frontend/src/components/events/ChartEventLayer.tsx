@@ -5,6 +5,7 @@ import type { OperationalEvent } from '@tracehouse/core';
 import { EVENT_SEVERITY_COLORS, eventKindName, type EventCluster } from './event-model';
 import { buildEventLayerMarks, type EventBand } from './event-layer-model';
 import { formatEventDateTime } from './events-dashboard-model';
+import { eventClusterMarkerRadius } from './event-distribution-model';
 
 type HoveredMark =
   | { kind: 'point'; cluster: EventCluster }
@@ -140,9 +141,18 @@ export const ChartEventLayer: React.FC<ChartEventLayerProps> = ({ events, onHove
             const x = toX(point.occurredAtMs);
             const color = EVENT_SEVERITY_COLORS[point.severity];
             const hovered = hoveredId === point.id;
+            const radius = eventClusterMarkerRadius(point.events.length);
             return (
               <g key={point.id}>
-                <circle cx={x} cy={top + 5} r={(point.events.length > 1 ? 5 : 4) + (hovered ? 1 : 0)} fill={color} pointerEvents="none" />
+                {/* Same bubble as the Events page: area grows with the count, the count is written inside. */}
+                <circle cx={x} cy={top + radius + 1} r={radius} fill={color} pointerEvents="none"
+                  stroke={hovered ? 'var(--text-primary)' : 'var(--bg-secondary)'} strokeWidth={hovered ? 2 : 1} />
+                {point.events.length > 1 && (
+                  <text x={x} y={top + radius + 3.7} textAnchor="middle" fill="#fff"
+                    fontSize={radius >= 10 ? 8 : 7} fontWeight={700} pointerEvents="none">
+                    {point.events.length > 99 ? '99+' : point.events.length}
+                  </text>
+                )}
                 {/* Full-height target: anywhere on the marker line shows the event, not the data point. */}
                 <rect x={x - POINT_HIT_HALF_WIDTH} y={top} width={POINT_HIT_HALF_WIDTH * 2} height={plotArea.height}
                   fill="transparent" pointerEvents="all" style={{ cursor }}

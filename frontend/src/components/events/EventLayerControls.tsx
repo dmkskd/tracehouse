@@ -8,13 +8,25 @@ import {
   EVENT_CATEGORY_LABELS,
   EVENT_SEVERITY_COLORS,
   EVENT_SEVERITY_VALUES,
+  eventCategoryCheckState,
   eventFilterCount,
+  eventKindCheckState,
   eventKindName,
+  filterEvents,
   observedEventFilterCategories,
   observedEventFilterKinds,
+  onlyEventCategory,
+  onlyEventKind,
+  onlyEventSeverity,
+  setAllEventCategories,
+  setAllEventKinds,
+  setAllEventSeverities,
   severityPresetFilter,
+  toggleEventCategory,
+  toggleEventKind,
   toggleSetValue,
   type EventFilter,
+  type EventFilterCheckState,
 } from './event-model';
 
 interface EventFilterProps {
@@ -356,15 +368,25 @@ export const EventFilterPanel: React.FC<EventFilterProps> = ({
     [filterUniverse],
   );
   const sources = coverageSummary(coverage);
+  // Counts are of events shown now, so an option filtered out elsewhere reads 0.
+  const shown = useMemo(() => filterEvents(filterUniverse, filter), [filterUniverse, filter]);
+  const countBy = <K extends 'severity' | 'category' | 'kind'>(key: K, value: OperationalEvent[K]) =>
+    shown.filter(event => event[key] === value).length;
   return (
     <>
-      <FilterSection title="Severity">
+      <FilterSection
+        title="Severity"
+        onAll={() => onFilterChange(setAllEventSeverities(filter, true))}
+        onNone={() => onFilterChange(setAllEventSeverities(filter, false))}
+      >
         {EVENT_SEVERITY_VALUES.map(severity => (
           <FilterCheckbox
             key={severity}
-            checked={!filter.hiddenSeverities.has(severity)}
+            state={filter.hiddenSeverities.has(severity) ? 'unchecked' : 'checked'}
+            count={countBy('severity', severity)}
             label={severity}
             color={EVENT_SEVERITY_COLORS[severity]}
+            onOnly={() => onFilterChange(onlyEventSeverity(filter, severity))}
             onChange={() => onFilterChange({
               ...filter,
               hiddenSeverities: toggleSetValue(filter.hiddenSeverities, severity),
@@ -373,31 +395,37 @@ export const EventFilterPanel: React.FC<EventFilterProps> = ({
         ))}
       </FilterSection>
       {observedCategories.length > 0 && (
-        <FilterSection title="Category">
+        <FilterSection
+          title="Category"
+          onAll={() => onFilterChange(setAllEventCategories(filter, true, filterUniverse))}
+          onNone={() => onFilterChange(setAllEventCategories(filter, false, filterUniverse))}
+        >
           {observedCategories.map(category => (
             <FilterCheckbox
               key={category}
-              checked={!filter.hiddenCategories.has(category)}
+              state={eventCategoryCheckState(category, filter, filterUniverse)}
+              count={countBy('category', category)}
               label={EVENT_CATEGORY_LABELS[category]}
-              onChange={() => onFilterChange({
-                ...filter,
-                hiddenCategories: toggleSetValue(filter.hiddenCategories, category),
-              })}
+              onChange={() => onFilterChange(toggleEventCategory(filter, category, filterUniverse))}
+              onOnly={() => onFilterChange(onlyEventCategory(filter, category, filterUniverse))}
             />
           ))}
         </FilterSection>
       )}
       {observedKinds.length > 0 && (
-        <FilterSection title="Event type">
+        <FilterSection
+          title="Event type"
+          onAll={() => onFilterChange(setAllEventKinds(filter, true, filterUniverse))}
+          onNone={() => onFilterChange(setAllEventKinds(filter, false, filterUniverse))}
+        >
           {observedKinds.map(kind => (
             <FilterCheckbox
               key={kind}
-              checked={!filter.hiddenKinds.has(kind)}
+              state={eventKindCheckState(kind, filter, filterUniverse)}
+              count={countBy('kind', kind)}
               label={eventKindName(kind)}
-              onChange={() => onFilterChange({
-                ...filter,
-                hiddenKinds: toggleSetValue(filter.hiddenKinds, kind),
-              })}
+              onChange={() => onFilterChange(toggleEventKind(filter, kind, filterUniverse))}
+              onOnly={() => onFilterChange(onlyEventKind(filter, kind, filterUniverse))}
             />
           ))}
         </FilterSection>
@@ -467,10 +495,14 @@ const controlButtonStyle = (active: boolean): React.CSSProperties => ({
 
 const FilterSection: React.FC<{
   title: string;
+  onAll: () => void;
+  onNone: () => void;
   children: React.ReactNode;
-}> = ({ title, children }) => (
+}> = ({ title, onAll, onNone, children }) => (
   <section style={{ marginBottom: 10 }}>
     <div style={{
+      display: 'flex',
+      alignItems: 'baseline',
       marginBottom: 5,
       color: 'var(--text-muted)',
       fontSize: 9,
@@ -479,6 +511,11 @@ const FilterSection: React.FC<{
       textTransform: 'uppercase',
     }}>
       {title}
+      <span style={{ marginLeft: 'auto', display: 'flex', gap: 2, paddingRight: 6, textTransform: 'none', letterSpacing: 0 }}>
+        <button type="button" onClick={onAll} style={textButtonStyle}>all</button>
+        <span aria-hidden="true">·</span>
+        <button type="button" onClick={onNone} style={textButtonStyle}>none</button>
+      </span>
     </div>
     <div style={{
       display: 'grid',
@@ -491,17 +528,27 @@ const FilterSection: React.FC<{
 );
 
 const FilterCheckbox: React.FC<{
-  checked: boolean;
+  state: EventFilterCheckState;
+  /** Events shown now with this value. */
+  count: number;
   label: string;
   color?: string;
   onChange: () => void;
-}> = ({ checked, label, color, onChange }) => (
-  <label style={{
+  /** Keep only this value in its section. */
+  onOnly: () => void;
+}> = ({ state, count, label, color, onChange, onOnly }) => {
+  const checked = state === 'checked';
+  const [hovered, setHovered] = useState(false);
+  return (
+  <label
+    onMouseEnter={() => setHovered(true)}
+    onMouseLeave={() => setHovered(false)}
+    style={{
     display: 'flex',
     alignItems: 'center',
     gap: 6,
     padding: '3px 4px',
-    color: checked ? 'var(--text-secondary)' : 'var(--text-muted)',
+    color: state === 'unchecked' ? 'var(--text-muted)' : 'var(--text-secondary)',
     fontSize: 10,
     cursor: 'pointer',
     textTransform: 'capitalize',
@@ -509,13 +556,41 @@ const FilterCheckbox: React.FC<{
     <input
       type="checkbox"
       checked={checked}
+      ref={input => { if (input) input.indeterminate = state === 'partial'; }}
+      aria-checked={state === 'partial' ? 'mixed' : checked}
       onChange={onChange}
       style={{ margin: 0, accentColor: color ?? '#58a6ff' }}
     />
     {color && <span aria-hidden="true" style={filterMarkerStyle(color)} />}
     <span>{label}</span>
+    <button
+      type="button"
+      onClick={event => {
+        event.preventDefault();
+        onOnly();
+      }}
+      title={`Show only ${label}`}
+      style={{ ...textButtonStyle, marginLeft: 'auto', visibility: hovered ? 'visible' : 'hidden' }}
+    >
+      only
+    </button>
+    <span style={{ paddingRight: 6, minWidth: 18, textAlign: 'right', color: 'var(--text-muted)', fontVariantNumeric: 'tabular-nums', opacity: count === 0 ? 0.6 : 1 }}>
+      {count}
+    </span>
   </label>
-);
+  );
+};
+
+const textButtonStyle: React.CSSProperties = {
+  padding: '0 3px',
+  border: 'none',
+  background: 'transparent',
+  color: '#58a6ff',
+  fontSize: 9,
+  fontWeight: 600,
+  textTransform: 'none',
+  cursor: 'pointer',
+};
 
 function filterMarkerStyle(color: string): React.CSSProperties {
   return {
