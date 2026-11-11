@@ -57,7 +57,7 @@
         "path": "img/screenshots/time-travel.png"
       }
     ],
-    "version": "0.20.0",
+    "version": "0.20.1-dev",
     "updated": "%TODAY%"
   },
   "includes": [
