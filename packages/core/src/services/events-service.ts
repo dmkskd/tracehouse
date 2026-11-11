@@ -3,7 +3,9 @@ import { normalizeAbsoluteTimestamp } from '../utils/absolute-timestamp.js';
 import type { IClickHouseAdapter } from '../adapters/types.js';
 import { buildQuery, tagQuery, utcDateTime } from '../queries/builder.js';
 import type { QueryParameter } from '../queries/builder.js';
-import { TAB_EVENTS, TAB_TIME_TRAVEL, sourceTag } from '../queries/source-tags.js';
+import { TAB_ANALYTICS, TAB_EVENTS, TAB_TIME_TRAVEL, sourceTag } from '../queries/source-tags.js';
+
+type EventsSourceTab = typeof TAB_EVENTS | typeof TAB_TIME_TRAVEL | typeof TAB_ANALYTICS;
 import {
   ASYNC_INSERT_FAILURE_EVENTS,
   BACKUP_EVENTS,
@@ -36,7 +38,7 @@ export interface EventsOptions {
   availableCapabilities: readonly string[];
   limit?: number;
   /** Consumer identity used only for query-source attribution. */
-  origin?: 'events' | 'timeTravel';
+  origin?: 'events' | 'timeTravel' | 'analytics';
 }
 
 export interface EventsResult {
@@ -217,7 +219,9 @@ export class EventsService {
         coverage,
       };
     }
-    const sourceTab = options.origin === 'timeTravel' ? TAB_TIME_TRAVEL : TAB_EVENTS;
+    const sourceTab: EventsSourceTab = options.origin === 'timeTravel' ? TAB_TIME_TRAVEL
+      : options.origin === 'analytics' ? TAB_ANALYTICS
+      : TAB_EVENTS;
     const limit = Math.max(1, Math.min(options.limit ?? 1000, 10_000));
     const params: Record<string, QueryParameter> = {
       start_time: utcDateTime(options.startTime),
@@ -303,7 +307,7 @@ export class EventsService {
 
   private async fetchQueryEvents(
     params: Record<string, QueryParameter>,
-    sourceTab: typeof TAB_EVENTS | typeof TAB_TIME_TRAVEL,
+    sourceTab: EventsSourceTab,
     supportsDistributedLimitBy: boolean,
   ): Promise<OperationalEvent[]> {
     const template = supportsDistributedLimitBy
@@ -362,7 +366,7 @@ export class EventsService {
 
   private async fetchAsyncInsertFailureEvents(
     params: Record<string, QueryParameter>,
-    sourceTab: typeof TAB_EVENTS | typeof TAB_TIME_TRAVEL,
+    sourceTab: EventsSourceTab,
   ): Promise<OperationalEvent[]> {
     const sql = buildQuery(ASYNC_INSERT_FAILURE_EVENTS, params);
     const rows = await this.adapter.executeQuery(
@@ -410,7 +414,7 @@ export class EventsService {
 
   private async fetchBackupEvents(
     params: Record<string, QueryParameter>,
-    sourceTab: typeof TAB_EVENTS | typeof TAB_TIME_TRAVEL,
+    sourceTab: EventsSourceTab,
   ): Promise<OperationalEvent[]> {
     const sql = buildQuery(BACKUP_EVENTS, params);
     const rows = await this.adapter.executeQuery(
@@ -473,7 +477,7 @@ export class EventsService {
 
   private async fetchKeeperConnectionEvents(
     params: Record<string, QueryParameter>,
-    sourceTab: typeof TAB_EVENTS | typeof TAB_TIME_TRAVEL,
+    sourceTab: EventsSourceTab,
   ): Promise<OperationalEvent[]> {
     const sql = buildQuery(KEEPER_CONNECTION_EVENTS, params);
     const rows = await this.adapter.executeQuery(
@@ -524,7 +528,7 @@ export class EventsService {
 
   private async fetchRestartEvents(
     params: Record<string, QueryParameter>,
-    sourceTab: typeof TAB_EVENTS | typeof TAB_TIME_TRAVEL,
+    sourceTab: EventsSourceTab,
   ): Promise<OperationalEvent[]> {
     const sql = buildQuery(SERVER_RESTART_EVENTS, params);
     const rows = await this.adapter.executeQuery(
@@ -563,7 +567,7 @@ export class EventsService {
 
   private async fetchCrashEvents(
     params: Record<string, QueryParameter>,
-    sourceTab: typeof TAB_EVENTS | typeof TAB_TIME_TRAVEL,
+    sourceTab: EventsSourceTab,
   ): Promise<OperationalEvent[]> {
     const sql = buildQuery(SERVER_CRASH_EVENTS, params);
     const rows = await this.adapter.executeQuery(
@@ -593,7 +597,7 @@ export class EventsService {
 
   private async fetchPartFailureEvents(
     params: Record<string, QueryParameter>,
-    sourceTab: typeof TAB_EVENTS | typeof TAB_TIME_TRAVEL,
+    sourceTab: EventsSourceTab,
   ): Promise<OperationalEvent[]> {
     const sql = buildQuery(PART_FAILURE_EVENTS, params);
     const rows = await this.adapter.executeQuery(
@@ -670,7 +674,7 @@ export class EventsService {
 
   private async fetchBackgroundTaskFailureEvents(
     params: Record<string, QueryParameter>,
-    sourceTab: typeof TAB_EVENTS | typeof TAB_TIME_TRAVEL,
+    sourceTab: EventsSourceTab,
   ): Promise<OperationalEvent[]> {
     const sql = buildQuery(BACKGROUND_TASK_FAILURE_EVENTS, params);
     const rows = await this.adapter.executeQuery(
@@ -722,7 +726,7 @@ export class EventsService {
 
   private async fetchOperationalErrorEvents(
     params: Record<string, QueryParameter>,
-    sourceTab: typeof TAB_EVENTS | typeof TAB_TIME_TRAVEL,
+    sourceTab: EventsSourceTab,
   ): Promise<OperationalEvent[]> {
     const sql = buildQuery(OPERATIONAL_ERROR_EVENTS, params);
     const rows = await this.adapter.executeQuery(
@@ -767,7 +771,7 @@ export class EventsService {
 
   private async fetchReplicaReadonlyEpisodes(
     params: Record<string, QueryParameter>,
-    sourceTab: typeof TAB_EVENTS | typeof TAB_TIME_TRAVEL,
+    sourceTab: EventsSourceTab,
   ): Promise<OperationalEvent[]> {
     const sql = buildQuery(REPLICA_READONLY_EPISODES, params);
     const rows = await this.adapter.executeQuery(
@@ -804,7 +808,7 @@ export class EventsService {
 
   private async fetchReplicationFailureEvents(
     params: Record<string, QueryParameter>,
-    sourceTab: typeof TAB_EVENTS | typeof TAB_TIME_TRAVEL,
+    sourceTab: EventsSourceTab,
   ): Promise<OperationalEvent[]> {
     const sql = buildQuery(REPLICATION_FAILURE_EVENTS, params);
     const rows = await this.adapter.executeQuery(

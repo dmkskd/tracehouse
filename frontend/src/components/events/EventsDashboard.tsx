@@ -32,6 +32,8 @@ import {
   MetricStripItem,
 } from '../common/MetricStrip';
 import { EventContextView } from './EventContextView';
+import { BackLink } from '../common/BackLink';
+import type { LinkOrigin } from '../../hooks/useReturnToOrigin';
 import {
   buildEventMarkerSelection,
   clusterSimilarEvents,
@@ -72,6 +74,8 @@ interface EventsDashboardProps {
   onOpenAnalyticsDashboard?: () => void;
   onInvestigateEvent?: (event: OperationalEvent) => void;
   onBackToTimeTravel?: () => void;
+  /** Page that linked here (Analytics), shown as a back link. */
+  linkOrigin?: LinkOrigin;
   search: string;
   onSearchChange: (value: string) => void;
   severity: 'all' | EventSeverity;
@@ -105,6 +109,7 @@ export const EventsDashboard: React.FC<EventsDashboardProps> = ({
   onOpenAnalyticsDashboard,
   onInvestigateEvent,
   onBackToTimeTravel,
+  linkOrigin,
   search,
   onSearchChange,
   severity,
@@ -425,6 +430,7 @@ export const EventsDashboard: React.FC<EventsDashboardProps> = ({
             ← Time Travel
           </button>
         )}
+        {linkOrigin && <BackLink from={linkOrigin} />}
         <span style={{ color: 'var(--text-secondary)', fontSize: 11 }}>
           Time range
         </span>

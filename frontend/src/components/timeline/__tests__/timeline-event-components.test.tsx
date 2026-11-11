@@ -2,7 +2,7 @@ import React, { act } from 'react';
 import { fireEvent, render, screen } from '@testing-library/react';
 import { beforeAll, describe, expect, it, vi } from 'vitest';
 import type { MemoryTimeline, OperationalEvent } from '@tracehouse/core';
-import { TimelineEventControls } from '../TimelineEventControls';
+import { EventLayerControls } from '../../events/EventLayerControls';
 import { TimelineEventOverlay } from '../TimelineEventOverlay';
 import { TimelineChart } from '../TimelineChart';
 import { emptyTimelineEventFilter } from '../timeline-event-model';
@@ -41,7 +41,7 @@ beforeAll(() => {
   vi.stubGlobal('ResizeObserver', ResizeObserverMock);
 });
 
-describe('TimelineEventControls', () => {
+describe('EventLayerControls', () => {
   it('keeps visibility separate from event filtering', () => {
     const onVisibilityChange = vi.fn();
     const onFilterChange = vi.fn();
@@ -50,7 +50,7 @@ describe('TimelineEventControls', () => {
       event('second', '2026-07-25T12:00:20.000Z'),
     ];
     const view = render(
-      <TimelineEventControls
+      <EventLayerControls
         visible
         shownCount={1}
         totalCount={2}
@@ -72,7 +72,7 @@ describe('TimelineEventControls', () => {
     expect(onVisibilityChange).toHaveBeenCalledWith(false);
 
     view.rerender(
-      <TimelineEventControls
+      <EventLayerControls
         visible={false}
         shownCount={1}
         totalCount={2}

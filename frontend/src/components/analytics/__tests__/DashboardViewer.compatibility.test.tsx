@@ -41,7 +41,10 @@ const localStorageMock: Storage = {
 vi.stubGlobal('localStorage', localStorageMock);
 
 vi.mock('../../../providers/ClickHouseProvider', () => {
-  const services = { interactiveQueryService: { run: mocks.run } };
+  const services = {
+    interactiveQueryService: { run: mocks.run },
+    eventsService: { getEvents: async () => ({ events: [], coverage: [] }) },
+  };
   return { useClickHouseServices: () => services };
 });
 

@@ -25,6 +25,10 @@ interface Props {
   presets?: { label: string; interval: string }[];
   /** Align the custom popover with the picker edge nearest the available space. */
   popoverAlign?: 'left' | 'right';
+  /** Shown as a zoom-out button after the presets when the caller has a range to return to. */
+  onZoomOut?: () => void;
+  /** Where the active custom range is written: beside the presets, or under them so the picker keeps its width. */
+  customRangeLabel?: 'inline' | 'below';
 }
 
 const SLIDER_ZOOMS = [
@@ -53,6 +57,8 @@ export const TimeRangePicker: React.FC<Props> = ({
   onChange,
   presets,
   popoverAlign = 'right',
+  onZoomOut,
+  customRangeLabel = 'inline',
 }) => {
   const effectivePresets = presets ?? TIME_RANGE_OPTIONS.map(o => ({ label: o.label, interval: o.interval! }));
   const [showCustom, setShowCustom] = useState(false);
@@ -149,6 +155,17 @@ export const TimeRangePicker: React.FC<Props> = ({
           title="Pick a custom date range">
           Custom
         </button>
+        {onZoomOut && (
+          <button onClick={onZoomOut}
+            style={{ ...btnStyle(false), display: 'inline-flex', alignItems: 'center', paddingInline: 7 }}
+            title="Zoom out: return to the time range before the last zoom"
+            aria-label="Zoom out">
+            <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+              <circle cx="11" cy="11" r="7" />
+              <path d="M8 11h6M21 21l-4.35-4.35" />
+            </svg>
+          </button>
+        )}
       </div>
 
       {/* Active custom range label */}
@@ -163,6 +180,9 @@ export const TimeRangePicker: React.FC<Props> = ({
           <span style={{
             fontSize: 9, color: 'var(--text-muted)', fontFamily: "'Share Tech Mono',monospace",
             whiteSpace: 'nowrap',
+            ...(customRangeLabel === 'below'
+              ? { position: 'absolute', top: 'calc(100% + 2px)', right: 4, pointerEvents: 'none' }
+              : {}),
           }}>
             {fmt(range.startTime)} - {fmt(range.endTime)}
           </span>

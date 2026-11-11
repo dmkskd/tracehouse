@@ -33,10 +33,15 @@ import {
   type SummaryDirectives,
 } from './metaLanguage';
 import { usePageLink } from './usePageLink';
+import { useDashboardEvents } from './useDashboardEvents';
+import { createCustomTimeRange } from '../../utils/customTimeRange';
+import { EventLayerMenu } from '../events/EventLayerControls';
+import { buildAnalyticsEventUrl, emptyEventFilter, eventFilterFromLists, filterEvents, type EventFilter } from '../events/event-model';
+import { useAppLocation, useNavigate } from '../../hooks/useAppLocation';
 import { LinkQueryModal } from './LinkQueryModal';
 import { PartInspector } from '../database/PartInspector';
 import { databaseApi } from '../../stores/databaseStore';
-import type { PartDetailInfo, QuerySeries } from '@tracehouse/core';
+import type { OperationalEvent, PartDetailInfo, QuerySeries, TimeWindow } from '@tracehouse/core';
 import type { QueryModalTab } from '../query/modal/QueryDetailModal';
 import { TimeRangePicker } from '../common/TimeRangePicker';
 import {
@@ -72,6 +77,10 @@ export const ANALYTICS_DASHBOARD_SHARE_SCHEMA = defineShareSchema({
   dashboard_fullscreen: { type: 'string' },
   dashboard_crosshair: { type: 'string' },
   dashboard_overlay: { type: 'string' },
+  dashboard_events: { type: 'string' },
+  dashboard_event_severity: { type: 'string[]' },
+  dashboard_event_category: { type: 'string[]' },
+  dashboard_event_kind: { type: 'string[]' },
 });
 import {
   adjacentPanelIndex,
@@ -572,7 +581,13 @@ const DashboardPanelCard: React.FC<{
   isFocusStageActive?: boolean;
   /** Read-only rendering for the dashboard list hover preview: no panel controls, fills its grid cell. */
   preview?: boolean;
-}> = ({ panel, queries, timeRangeOverride, dashboardId, isFocused, onToggleFocus, isFullscreen, onToggleFullscreen, isHidden, hoveredTimestamp, onTimestampHover, onTimeSeriesData, correlationValues, isHoveredPanel, filterParams, onTableSelect, panelIndex, onOpenQueryDetail, onOpenQuery, focusStage, isFocusStageActive = false, preview = false }) => {
+  /** Dashboard window and events shared by every time-axis chart on the dashboard. */
+  timeWindow?: TimeWindow | null;
+  events?: readonly OperationalEvent[];
+  /** Drag-to-zoom on a time-axis chart sets the dashboard time range. */
+  onTimeZoom?: (window: TimeWindow) => void;
+  onEventClick?: (event: OperationalEvent) => void;
+}> = ({ panel, queries, timeRangeOverride, dashboardId, isFocused, onToggleFocus, isFullscreen, onToggleFullscreen, isHidden, hoveredTimestamp, onTimestampHover, onTimeSeriesData, correlationValues, isHoveredPanel, filterParams, onTableSelect, panelIndex, onOpenQueryDetail, onOpenQuery, focusStage, isFocusStageActive = false, preview = false, timeWindow, events, onTimeZoom, onEventClick }) => {
   const services = useClickHouseServices();
   const xraySelection = useQueryXRaySelection();
   const xrayMeta = useMemo(() => selectQueryXRaySource(xraySelection), [xraySelection]);
@@ -1115,7 +1130,8 @@ const DashboardPanelCard: React.FC<{
                     onDrillDown={chartClick.onClick}
                     clickHint={chartClick.hint}
                     valueColumns={chartDirective?.valueColumns} renderMode={chartDirective?.render}
-                    hoveredTimestamp={hoveredTimestamp} onTimestampHover={onTimestampHover} correlationValues={correlationValues} currentPanelName={preset?.name} isHoveredPanel={isHoveredPanel} />
+                    hoveredTimestamp={hoveredTimestamp} onTimestampHover={onTimestampHover} correlationValues={correlationValues} currentPanelName={preset?.name} isHoveredPanel={isHoveredPanel}
+                    timeWindow={timeWindow} events={events} onTimeZoom={onTimeZoom} onEventClick={onEventClick} />
                 )}
               </div>
             )}
@@ -1743,6 +1759,19 @@ const inputStyle: React.CSSProperties = { width: '100%', padding: '8px 12px', fo
 const iconBtnStyle: React.CSSProperties = { background: 'none', border: 'none', cursor: 'pointer', color: 'var(--text-muted)', fontSize: 14, padding: '2px 4px', transition: 'color 0.15s ease' };
 const primaryBtnStyle: React.CSSProperties = { padding: '7px 18px', fontSize: 12, borderRadius: 7, border: '1px solid var(--border-primary)', background: 'var(--bg-primary)', color: 'var(--text-primary)', fontWeight: 600, cursor: 'pointer', transition: 'all 0.15s ease', boxShadow: '0 1px 3px rgba(0,0,0,0.08)' };
 const secondaryBtnStyle: React.CSSProperties = { padding: '7px 18px', fontSize: 12, borderRadius: 7, border: '1px solid var(--border-primary)', background: 'var(--bg-secondary)', color: 'var(--text-secondary)', cursor: 'pointer', transition: 'all 0.15s ease' };
+/** Hidden severities, categories and kinds from the dashboard URL. */
+function dashboardEventFilter(state: {
+  dashboard_event_severity?: string[];
+  dashboard_event_category?: string[];
+  dashboard_event_kind?: string[];
+}): EventFilter {
+  return eventFilterFromLists({
+    severities: state.dashboard_event_severity,
+    categories: state.dashboard_event_category,
+    kinds: state.dashboard_event_kind,
+  });
+}
+
 const dashboardHeaderGroupStyle: React.CSSProperties = {
   display: 'flex',
   alignItems: 'center',
@@ -2339,8 +2368,11 @@ export const DashboardViewer: React.FC<{
     };
   }, [exportMenuPosition]);
 
-  const setDashboardCoordinates = useCallback((updates: Record<string, string | null>) => {
-    if ('dashboard' in updates) previousUrlDashboardId.current = updates.dashboard ?? initialDashboardId;
+  const setDashboardCoordinates = useCallback((updates: Record<string, string | string[] | null>) => {
+    if ('dashboard' in updates) {
+      const dashboard = updates.dashboard;
+      previousUrlDashboardId.current = typeof dashboard === 'string' ? dashboard : initialDashboardId;
+    }
     updateSharedState(Object.fromEntries(
       Object.entries(updates).map(([key, value]) => [key, value ?? undefined]),
     ));
@@ -2405,6 +2437,23 @@ export const DashboardViewer: React.FC<{
     setView(current => current.mode === 'view' ? { mode: 'list' } : current);
   }, [listRequestKey]);
   const [timeRangeOverride, setTimeRangeOverride] = useState<string | null>(() => sharedState.dashboard_time ?? '1 HOUR');
+  // Ranges in effect before each drag-to-zoom, most recent last; Zoom out steps back through them.
+  const [zoomHistory, setZoomHistory] = useState<Array<string | null>>([]);
+  const zoomToWindow = useCallback((selected: TimeWindow) => {
+    const range = createCustomTimeRange(new Date(selected.startMs).toISOString(), new Date(selected.endMs).toISOString());
+    if (!range) return;
+    setZoomHistory(history => [...history, timeRangeOverride]);
+    setTimeRangeOverride(range);
+  }, [timeRangeOverride]);
+  const zoomOut = useCallback(() => {
+    if (zoomHistory.length === 0) return;
+    setTimeRangeOverride(zoomHistory[zoomHistory.length - 1]);
+    setZoomHistory(zoomHistory.slice(0, -1));
+  }, [zoomHistory]);
+  const pickTimeRange = useCallback((range: string | null) => {
+    setZoomHistory([]);
+    setTimeRangeOverride(range);
+  }, []);
 
   // ─── Global dashboard filters ───
   const [filterValues, setFilterValues] = useState<Record<string, string>>(() => dashboardFilters(sharedState.dashboard_filters ?? null));
@@ -2434,6 +2483,16 @@ export const DashboardViewer: React.FC<{
 
   // ─── Overlay mode ───
   const [overlayVisible, setOverlayVisible] = useState(() => sharedState.dashboard_overlay === '1');
+
+  // ─── Events layer: a link that turns events on wins, otherwise the viewer's last choice ───
+  const preferredEventsVisible = useUserPreferenceStore(s => s.analyticsEventsVisible);
+  const persistEventsVisible = useUserPreferenceStore(s => s.setAnalyticsEventsVisible);
+  const [eventsVisible, setEventsVisible] = useState(() => sharedState.dashboard_events === '1' || preferredEventsVisible);
+  const changeEventsVisible = useCallback((visible: boolean) => {
+    setEventsVisible(visible);
+    persistEventsVisible(visible);
+  }, [persistEventsVisible]);
+  const [eventFilter, setEventFilter] = useState<EventFilter>(() => dashboardEventFilter(sharedState));
 
   // ─── Cross-panel correlation ───
   const [correlationEnabled, setCorrelationEnabled] = useState(() => sharedState.dashboard_crosshair === '1');
@@ -2499,11 +2558,17 @@ export const DashboardViewer: React.FC<{
       dashboard_fullscreen: activeDashboardId && fullscreenPanelIndex !== null ? String(fullscreenPanelIndex) : null,
       dashboard_crosshair: activeDashboardId && correlationEnabled ? '1' : null,
       dashboard_overlay: activeDashboardId && overlayVisible ? '1' : null,
+      dashboard_events: activeDashboardId && eventsVisible ? '1' : null,
+      dashboard_event_severity: activeDashboardId && eventsVisible ? [...eventFilter.hiddenSeverities].sort() : null,
+      dashboard_event_category: activeDashboardId && eventsVisible ? [...eventFilter.hiddenCategories].sort() : null,
+      dashboard_event_kind: activeDashboardId && eventsVisible ? [...eventFilter.hiddenKinds].sort() : null,
     });
   }, [
     activeDashboardId,
     allFocusPanelsExpanded,
     correlationEnabled,
+    eventFilter,
+    eventsVisible,
     filterValues,
     focusedPanelIndex,
     fullscreenPanelIndex,
@@ -2522,7 +2587,10 @@ export const DashboardViewer: React.FC<{
     setFullscreenPanelIndex(restoringUrlDashboard ? dashboardPanelIndex(sharedState.dashboard_fullscreen ?? null) : null);
     setCorrelationEnabled(restoringUrlDashboard && sharedState.dashboard_crosshair === '1');
     setOverlayVisible(restoringUrlDashboard && sharedState.dashboard_overlay === '1');
+    setEventsVisible((restoringUrlDashboard && sharedState.dashboard_events === '1') || preferredEventsVisible);
+    setEventFilter(restoringUrlDashboard ? dashboardEventFilter(sharedState) : emptyEventFilter());
     setTimeRangeOverride(restoringUrlDashboard ? sharedState.dashboard_time ?? '1 HOUR' : '1 HOUR');
+    setZoomHistory([]);
     lastTimestampRef.current = null;
   }, [activeDashboardId]); // eslint-disable-line react-hooks/exhaustive-deps
 
@@ -2530,6 +2598,19 @@ export const DashboardViewer: React.FC<{
     ? dashboards.find(d => d.id === view.dashboardId)
     : undefined;
   const dashboardQueries = useMemo(() => getDashboardQueries(activeDashboard), [activeDashboard]);
+  const dashboardEvents = useDashboardEvents(timeRangeOverride, activeDashboard !== undefined, eventsVisible);
+  const shownEvents = useMemo(
+    () => filterEvents(dashboardEvents.events, eventFilter),
+    [dashboardEvents.events, eventFilter],
+  );
+  // Same tab, with a back link to this dashboard URL (time range, events toggle and filter included).
+  const navigate = useNavigate();
+  const location = useAppLocation();
+  const openEvent = useCallback((event: OperationalEvent) => {
+    navigate(buildAnalyticsEventUrl(event), {
+      state: { from: { path: `${location.pathname}${location.search}`, label: 'Analytics' } },
+    });
+  }, [navigate, location.pathname, location.search]);
 
   const handleSave = useCallback((d: Omit<Dashboard, 'builtin'>) => {
     const next = upsertDashboard(dashboards, d);
@@ -2828,7 +2909,7 @@ export const DashboardViewer: React.FC<{
           </div>
         </div>
         <div style={{ display: 'flex', gap: 10, alignItems: 'center', flexShrink: 0 }}>
-          <TimeRangePicker value={timeRangeOverride} onChange={setTimeRangeOverride} />
+          <TimeRangePicker value={timeRangeOverride} onChange={pickTimeRange} onZoomOut={zoomHistory.length > 0 ? zoomOut : undefined} customRangeLabel="below" />
 
           <div role="group" aria-label="Dashboard viewing modes" style={dashboardHeaderGroupStyle}>
             <button
@@ -2864,15 +2945,34 @@ export const DashboardViewer: React.FC<{
                 if (!correlationEnabled) setCorrelationEnabled(true);
               }}
               className={`tab dashboard-header-action${overlayVisible ? ' active' : ''}`}
-              style={dashboardHeaderButtonStyle}
+              style={{ ...dashboardHeaderButtonStyle, position: 'relative' }}
               aria-pressed={overlayVisible}
               title="Overlay all time-series to compare and correlate them"
             >
               Correlate
-              <span style={{ fontSize: 8, padding: '1px 4px', borderRadius: 3, background: 'rgba(234, 179, 8, 0.2)', color: '#eab308', border: '1px solid rgba(234, 179, 8, 0.3)', lineHeight: 1.3 }}>
+              <span style={{
+                position: 'absolute', top: -5, right: -3,
+                fontSize: 7, fontWeight: 700, color: '#eab308',
+                background: 'var(--bg-secondary)', border: '1px solid rgba(234, 179, 8, 0.35)',
+                borderRadius: 3, padding: '0 3px', lineHeight: '11px',
+                textTransform: 'uppercase', letterSpacing: '0.3px', pointerEvents: 'none',
+              }}>
                 beta
               </span>
             </button>
+            <EventLayerMenu
+              visible={eventsVisible}
+              shownCount={shownEvents.length}
+              totalCount={dashboardEvents.events.length}
+              filterUniverse={dashboardEvents.events}
+              coverage={dashboardEvents.coverage}
+              filter={eventFilter}
+              onVisibilityChange={changeEventsVisible}
+              onFilterChange={setEventFilter}
+              error={dashboardEvents.error}
+              buttonClassName={active => `tab dashboard-header-action${active ? ' active' : ''}`}
+              buttonStyle={dashboardHeaderButtonStyle}
+            />
             {hasSections && (
               <button
                 onClick={() => {
@@ -2957,6 +3057,10 @@ export const DashboardViewer: React.FC<{
             }) && <div style={{ fontSize: 11, color: 'var(--text-muted)', padding: '4px 12px' }}>Summaries are shown on individual panels, not the combined overlay.</div>}
             <div style={{ flex: 1, minHeight: 0 }}><OverlayChart
               panels={panelDataVersion >= 0 ? Array.from(panelDataRef.current.entries()).sort((a, b) => a[0] - b[0]).map(([, v]) => v) : []}
+              timeWindow={dashboardEvents.window}
+              events={shownEvents}
+              onTimeZoom={zoomToWindow}
+              onEventClick={openEvent}
             /></div>
           </div>
         )}
@@ -3046,6 +3150,10 @@ export const DashboardViewer: React.FC<{
                       onOpenQueryDetail={onOpenQueryDetail}
                       onOpenQuery={onOpenQuery}
                       focusStage={!allFocusPanelsExpanded && focusedPanelIndex === i ? focusStageContext : undefined}
+                      timeWindow={dashboardEvents.window}
+                      events={shownEvents}
+                      onTimeZoom={zoomToWindow}
+                      onEventClick={openEvent}
                     />
                   ))}
                 </div>

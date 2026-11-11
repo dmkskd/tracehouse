@@ -162,6 +162,64 @@ export function eventFilterCount(filter: EventFilter): number {
     + filter.hiddenKinds.size;
 }
 
+export function eventKindName(kind: EventKind): string {
+  return EVENT_KIND_LABELS[kind] ?? kind.replaceAll('_', ' ');
+}
+
+export function toggleSetValue<T>(
+  values: ReadonlySet<T>,
+  value: T,
+): ReadonlySet<T> {
+  const next = new Set(values);
+  if (next.has(value)) next.delete(value);
+  else next.add(value);
+  return next;
+}
+
+/** Categories present in the loaded events, in taxonomy order: the filter only offers these. */
+export function observedEventFilterCategories(
+  events: readonly OperationalEvent[],
+): EventCategory[] {
+  return EVENT_CATEGORIES.filter(category =>
+    events.some(event => event.category === category),
+  );
+}
+
+/** Kinds present in the loaded events, sorted by label. */
+export function observedEventFilterKinds(
+  events: readonly OperationalEvent[],
+): EventKind[] {
+  return [...new Set(events.map(event => event.kind))]
+    .sort((a, b) => eventKindName(a).localeCompare(eventKindName(b)));
+}
+
+/** A filter from lists of hidden values (URL parameters); values outside the taxonomy are dropped. */
+export function eventFilterFromLists(lists: {
+  severities?: readonly string[];
+  categories?: readonly string[];
+  kinds?: readonly string[];
+}): EventFilter {
+  const known = <T extends string>(values: readonly string[] | undefined, allowed: readonly T[]) =>
+    new Set((values ?? []).filter((value): value is T => (allowed as readonly string[]).includes(value)));
+  return {
+    hiddenSeverities: known(lists.severities, EVENT_SEVERITY_VALUES),
+    hiddenCategories: known(lists.categories, EVENT_CATEGORIES),
+    hiddenKinds: known(lists.kinds, Object.keys(EVENT_KIND_DEFINITIONS) as EventKind[]),
+  };
+}
+
+export function severityPresetFilter(
+  visible: ReadonlySet<EventSeverity>,
+): EventFilter {
+  return {
+    hiddenSeverities: new Set(
+      EVENT_SEVERITY_VALUES.filter(severity => !visible.has(severity)),
+    ),
+    hiddenCategories: new Set(),
+    hiddenKinds: new Set(),
+  };
+}
+
 export function buildEventsUrl(
   event: OperationalEvent,
   rangeHours = 1,
@@ -177,7 +235,19 @@ export function buildEventsUrl(
 }
 
 /** @deprecated Use buildEventsUrl. Retained for external callers during migration. */
-export const buildAnalyticsEventUrl = buildEventsUrl;
+/** Events page centered on an event, opened from Analytics; the back link travels in navigation state. */
+export function buildAnalyticsEventUrl(
+  event: OperationalEvent,
+  rangeHours = 1,
+): string {
+  const params = new URLSearchParams({
+    event_id: event.id,
+    event_time: event.occurred_at,
+    range_center: event.occurred_at,
+    event_range: String(rangeHours),
+  });
+  return `/events?${params.toString()}`;
+}
 
 export function buildTimeTravelEventUrl(event: OperationalEvent): string {
   const params = new URLSearchParams({

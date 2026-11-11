@@ -67,7 +67,7 @@ import { getTimelineChartHeight } from '../components/timeline/timeline-chart-he
 import { TimelineChart3D } from '../components/timeline/TimelineChart3D';
 import { TimelineChart3DSurface } from '../components/timeline/TimelineChart3DSurface';
 import { OperationsTable } from '../components/timeline/OperationsTable';
-import { TimelineEventControls } from '../components/timeline/TimelineEventControls';
+import { EventLayerControls } from '../components/events/EventLayerControls';
 import {
   buildTimelineNavigatorRequestScope,
   buildEventsUrl,
@@ -1684,7 +1684,7 @@ export const TimeTravelPage: React.FC = () => {
               )}
             </div>
             {viewMode === '2d' && (
-              <TimelineEventControls
+              <EventLayerControls
                 visible={timeTravelEventsVisible}
                 shownCount={filteredWindowEvents.length}
                 totalCount={eventData.events.length}

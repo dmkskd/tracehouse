@@ -1,30 +1,19 @@
-import type {
-  OperationalEvent,
-  EventCategory,
-  EventKind,
-  EventSeverity,
-} from '@tracehouse/core';
 import {
-  EVENT_KIND_LABELS,
-  EVENT_CATEGORIES,
-  EVENT_SEVERITY_VALUES,
+  eventKindName,
+  observedEventFilterCategories,
+  observedEventFilterKinds,
+  severityPresetFilter,
   type TimelineEventCluster,
-  type TimelineEventFilter,
 } from './timeline-event-model';
 
-export function timelineEventKindLabel(kind: EventKind): string {
-  return EVENT_KIND_LABELS[kind] ?? kind.replaceAll('_', ' ');
-}
-
-export function toggleSetValue<T>(
-  values: ReadonlySet<T>,
-  value: T,
-): ReadonlySet<T> {
-  const next = new Set(values);
-  if (next.has(value)) next.delete(value);
-  else next.add(value);
-  return next;
-}
+// Filter helpers live in the Events domain; these names remain for timeline callers.
+export {
+  toggleSetValue,
+} from './timeline-event-model';
+export const timelineEventKindLabel = eventKindName;
+export const observedTimelineEventCategories = observedEventFilterCategories;
+export const observedTimelineEventKinds = observedEventFilterKinds;
+export const buildSeverityPresetFilter = severityPresetFilter;
 
 export function formatTimelineEventTime(value: string): string {
   const date = new Date(value);
@@ -36,33 +25,6 @@ export function formatTimelineEventTime(value: string): string {
         second: '2-digit',
         fractionalSecondDigits: 3,
       });
-}
-
-export function observedTimelineEventCategories(
-  events: readonly OperationalEvent[],
-): EventCategory[] {
-  return EVENT_CATEGORIES.filter(category =>
-    events.some(event => event.category === category),
-  );
-}
-
-export function observedTimelineEventKinds(
-  events: readonly OperationalEvent[],
-): EventKind[] {
-  return [...new Set(events.map(event => event.kind))]
-    .sort((a, b) => timelineEventKindLabel(a).localeCompare(timelineEventKindLabel(b)));
-}
-
-export function buildSeverityPresetFilter(
-  visible: ReadonlySet<EventSeverity>,
-): TimelineEventFilter {
-  return {
-    hiddenSeverities: new Set(
-      EVENT_SEVERITY_VALUES.filter(severity => !visible.has(severity)),
-    ),
-    hiddenCategories: new Set(),
-    hiddenKinds: new Set(),
-  };
 }
 
 export function timelineEventMarkerTitle(cluster: TimelineEventCluster): string {

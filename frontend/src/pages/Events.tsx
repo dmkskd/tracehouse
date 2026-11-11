@@ -9,6 +9,7 @@ import { DeepLinkStatusBanner } from '../components/common/DeepLinkStatusBanner'
 import { useUrlState } from '../hooks/useUrlState';
 import { defineShareSchema } from '../share/shareSchema';
 import { buildTimeTravelEventUrl } from '../components/events/event-model';
+import { useReturnToOrigin } from '../hooks/useReturnToOrigin';
 import {
   buildMergeDetailsUrl,
   EVENT_HOURS_INTERVAL,
@@ -44,6 +45,8 @@ export const Events: React.FC = () => {
     () => setSelectedQuery(null),
   );
   const fromTimeTravel = state.from === 'timetravel';
+  // Analytics opens events with a navigation-state origin; the URL updates below would drop it.
+  const { from: linkOrigin } = useReturnToOrigin();
   const [legacyRangeCenter] = useState(() => legacyEventsRangeCenter(
     state.from,
     state.range_center,
@@ -187,6 +190,7 @@ export const Events: React.FC = () => {
           )}
           onInvestigateEvent={event => navigate(buildTimeTravelEventUrl(event))}
           onBackToTimeTravel={fromTimeTravel ? () => navigate(-1) : undefined}
+          linkOrigin={linkOrigin}
         />
       </div>
       <QueryDetailModal query={modalQuery} onClose={closeQueryDetails} />

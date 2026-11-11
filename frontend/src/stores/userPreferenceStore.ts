@@ -29,6 +29,9 @@ interface UserPreferenceState {
   /** Show event annotations on the Time Travel 2D chart and navigator. */
   timeTravelEventsVisible: boolean;
   setTimeTravelEventsVisible: (visible: boolean) => void;
+  /** Show operational events on Analytics dashboards. Off by default; the last choice is kept. */
+  analyticsEventsVisible: boolean;
+  setAnalyticsEventsVisible: (visible: boolean) => void;
   /** Time Travel navigator rollup shape. */
   timeTravelNavigatorShape: NavigatorShapeMode;
   setTimeTravelNavigatorShape: (shape: NavigatorShapeMode) => void;
@@ -57,6 +60,8 @@ export const useUserPreferenceStore = create<UserPreferenceState>()(
       setHideReplicaMerges: (enabled: boolean) => set({ hideReplicaMerges: enabled }),
       timeTravelEventsVisible: true,
       setTimeTravelEventsVisible: (visible: boolean) => set({ timeTravelEventsVisible: visible }),
+      analyticsEventsVisible: false,
+      setAnalyticsEventsVisible: (visible: boolean) => set({ analyticsEventsVisible: visible }),
       timeTravelNavigatorShape: 'peaks',
       setTimeTravelNavigatorShape: (shape: NavigatorShapeMode) => set({ timeTravelNavigatorShape: shape }),
       dashboardPreviewEnabled: buildConfig.dashboardPreview,

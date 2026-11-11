@@ -19,6 +19,7 @@ export {
 export type { MergeCategory, MergeCategoryInfo, MutationSubtype, MutationSubtypeInfo } from './merge-classification.js';
 export { parseTimeValue } from './time.js';
 export { parseAbsoluteTimestamp, parseAbsoluteTimestampMicros, parseOptionalTimestampMicros, normalizeAbsoluteTimestamp, parseUtcDateTimeInput, hasExplicitOffset } from './absolute-timestamp.js';
+export { timeAxisValues, timeAxisDomain, timeAxisTicks, relativeIntervalMs, resolveDashboardWindow, zoomSelection, MIN_ZOOM_SPAN_MS, type TimeWindow } from './time-axis.js';
 export { resolveEventIdentity } from './event-identity.js';
 export { parseClickHouseVersion, isClickHouseVersionAtLeast } from './clickhouse-version.js';
 export type { ClickHouseVersion } from './clickhouse-version.js';
