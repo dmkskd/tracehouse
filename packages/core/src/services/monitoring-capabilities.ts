@@ -831,8 +831,12 @@ export class MonitoringCapabilitiesService {
               return;
             }
           }
+          // `SELECT *` checks SELECT on every column; `SELECT 1` passes with a
+          // grant on any single column. `WHERE 0` skips the read on every
+          // replica. `LIMIT 0` does not: system storages such as parts_columns
+          // enumerate every part first (tens of seconds on a busy cluster).
           await this.adapter.executeQuery(tagQuery(
-            `SELECT * FROM {{cluster_aware:${table}}} LIMIT 0`,
+            `SELECT * FROM {{cluster_aware:${table}}} WHERE 0`,
             sourceTag(TAB_INTERNAL, 'tableReadAccess'),
           ));
         } catch (error) {

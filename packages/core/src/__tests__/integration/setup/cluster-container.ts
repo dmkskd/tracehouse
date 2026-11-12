@@ -132,7 +132,12 @@ export async function startCluster(): Promise<ClusterTestContext> {
     startWithPortRetry(() => new GenericContainer(CH_IMAGE)
       .withNetwork(network)
       .withNetworkAliases('ch1')
-      .withEnvironment({ CLICKHOUSE_USER: CH_USER, CLICKHOUSE_PASSWORD: CH_PASSWORD })
+      .withEnvironment({
+        CLICKHOUSE_USER: CH_USER,
+        CLICKHOUSE_PASSWORD: CH_PASSWORD,
+        // Lets tests create per-node users with differing grants.
+        CLICKHOUSE_DEFAULT_ACCESS_MANAGEMENT: '1',
+      })
       .withCopyContentToContainer([{
         content: chConfig('ch1'),
         target: '/etc/clickhouse-server/config.d/cluster.xml',
@@ -144,7 +149,12 @@ export async function startCluster(): Promise<ClusterTestContext> {
     startWithPortRetry(() => new GenericContainer(CH_IMAGE)
       .withNetwork(network)
       .withNetworkAliases('ch2')
-      .withEnvironment({ CLICKHOUSE_USER: CH_USER, CLICKHOUSE_PASSWORD: CH_PASSWORD })
+      .withEnvironment({
+        CLICKHOUSE_USER: CH_USER,
+        CLICKHOUSE_PASSWORD: CH_PASSWORD,
+        // Lets tests create per-node users with differing grants.
+        CLICKHOUSE_DEFAULT_ACCESS_MANAGEMENT: '1',
+      })
       .withCopyContentToContainer([{
         content: chConfig('ch2'),
         target: '/etc/clickhouse-server/config.d/cluster.xml',

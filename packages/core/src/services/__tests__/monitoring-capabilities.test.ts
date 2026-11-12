@@ -118,7 +118,7 @@ describe('MonitoringCapabilitiesService', () => {
     expect(result.capabilities.find(item => item.id === 'query_log')).toMatchObject({ available: true });
     const queries = vi.mocked(inner.executeQuery).mock.calls.map(([sql]) => String(sql));
     expect(queries.some(sql => sql.includes('CHECK GRANT'))).toBe(false);
-    expect(queries.some(sql => sql.includes("SELECT * FROM clusterAllReplicas('default', system.query_log) LIMIT 0"))).toBe(true);
+    expect(queries.some(sql => sql.includes("SELECT * FROM clusterAllReplicas('default', system.query_log) WHERE 0"))).toBe(true);
   });
 
   it('disables visible tables without SELECT permission before event collection', async () => {
@@ -154,7 +154,7 @@ describe('MonitoringCapabilitiesService', () => {
     await new MonitoringCapabilitiesService(mock).probe();
     const queries = vi.mocked(mock.executeQuery).mock.calls.map(([sql]) => String(sql));
     expect(queries.some(sql => sql.includes('CHECK GRANT'))).toBe(false);
-    expect(queries.some(sql => sql.includes('SELECT * FROM {{cluster_aware:system.asynchronous_insert_log}} LIMIT 0'))).toBe(true);
+    expect(queries.some(sql => sql.includes('SELECT * FROM {{cluster_aware:system.asynchronous_insert_log}} WHERE 0'))).toBe(true);
   });
 
   it('fails closed on a read probe error and rechecks when capabilities are refreshed', async () => {
@@ -314,7 +314,7 @@ describe('MonitoringCapabilitiesService', () => {
     expect(queries).toHaveLength(14);
     const reads = queries.filter(query => query.includes('source:TraceHouse:Internal:tableReadAccess'));
     expect(reads).toHaveLength(3);
-    expect(reads.every(query => query.includes('LIMIT 0'))).toBe(true);
+    expect(reads.every(query => query.includes('WHERE 0'))).toBe(true);
     expect(reads.some(query => query.includes('system.zookeeper}}'))).toBe(false);
     expect(queries.filter(query =>
       query.includes('source:TraceHouse:Internal:capabilitySnapshot'),
