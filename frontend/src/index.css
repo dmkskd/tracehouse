@@ -1,6 +1,7 @@
 @import "tailwindcss";
 @import "./styles/page-tabs.css";
 @import "./styles/dashboard-controls.css";
+@import "./styles/refreshing-overlay.css";
 
 /* CSS variables are defined in themes.css based on data-theme attribute */
 /* This file only contains component styles that use those variables */
@@ -428,11 +429,6 @@ span:has(> .split-3d-tooltip):hover > .split-3d-tooltip {
   transform: translateX(0);
 }
 
-@keyframes pulse-dot {
-  0%, 100% { opacity: 1; transform: scale(1); }
-  50% { opacity: 0.4; transform: scale(0.75); }
-}
-
 @keyframes activity-running-pulse {
   0%, 100% { opacity: 0.45; transform: scale(0.85); }
   50% { opacity: 1; transform: scale(1); }
@@ -441,93 +437,5 @@ span:has(> .split-3d-tooltip):hover > .split-3d-tooltip {
 @media (prefers-reduced-motion: reduce) {
   [style*="activity-running-pulse"] {
     animation: none !important;
-  }
-}
-
-/* RefreshingOverlay: indeterminate bar + pill over stale content.
-   Everything fades in after 1s: refreshes faster than that never show it. */
-@keyframes refreshing-overlay-slide {
-  0% { transform: translateX(-100%); }
-  100% { transform: translateX(250%); }
-}
-
-@keyframes refreshing-overlay-appear {
-  from { opacity: 0; }
-  to { opacity: 1; }
-}
-
-@keyframes refreshing-overlay-dim {
-  from { opacity: 1; }
-  to { opacity: 0.55; }
-}
-
-.refreshing-overlay {
-  position: relative;
-}
-
-.refreshing-overlay[data-dim] > .refreshing-overlay-content {
-  animation: refreshing-overlay-dim 0.2s ease 1s both;
-}
-
-.refreshing-overlay-bar {
-  position: absolute;
-  top: 0;
-  left: 0;
-  right: 0;
-  height: 3px;
-  overflow: hidden;
-  z-index: 20;
-  background: rgba(88, 166, 255, 0.15);
-  pointer-events: none;
-  animation: refreshing-overlay-appear 0.2s ease 1s both;
-}
-
-.refreshing-overlay-pill {
-  position: absolute;
-  top: 8px;
-  left: 50%;
-  transform: translateX(-50%);
-  z-index: 20;
-  display: flex;
-  align-items: center;
-  gap: 6px;
-  padding: 3px 10px;
-  border-radius: 6px;
-  font-size: 11px;
-  font-family: monospace;
-  background: var(--bg-tertiary);
-  border: 1px solid var(--border-primary);
-  color: var(--text-secondary);
-  box-shadow: var(--shadow-lg);
-  pointer-events: none;
-  animation: refreshing-overlay-appear 0.2s ease 1s both;
-}
-
-.refreshing-overlay-bar::after {
-  content: '';
-  position: absolute;
-  top: 0;
-  bottom: 0;
-  width: 40%;
-  background: #58a6ff;
-  animation: refreshing-overlay-slide 1.2s ease-in-out infinite;
-}
-
-.refreshing-overlay-dot {
-  width: 6px;
-  height: 6px;
-  border-radius: 50%;
-  background: #58a6ff;
-  animation: pulse-dot 1s ease-in-out infinite;
-}
-
-@media (prefers-reduced-motion: reduce) {
-  .refreshing-overlay-bar::after,
-  .refreshing-overlay-dot {
-    animation: none;
-  }
-  .refreshing-overlay-bar,
-  .refreshing-overlay-pill {
-    animation-duration: 0s;
   }
 }

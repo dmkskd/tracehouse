@@ -1959,11 +1959,13 @@ export const TimeTravelPage: React.FC = () => {
         </div>
       )}
 
-      {/* Empty state when no data loaded */}
-      {!data && !error && !isLoading && (
-        <div style={{ flex:1, display:'flex', flexDirection:'column', alignItems:'center', justifyContent:'center', gap:12 }}>
-          <div style={{ color:'var(--text-muted)', fontSize:13 }}>Pick a timestamp and hit Analyze to start exploring.</div>
-        </div>
+      {/* First load: nothing on screen yet, so show the indicator right away.
+          Stays mounted across the fetch debounce and restarts, so the
+          elapsed time covers the whole wait. */}
+      {!data && !error && (
+        <RefreshingOverlay active dim={false} delayed={false} label="Loading">
+          <div style={{ height:120 }} />
+        </RefreshingOverlay>
       )}
 
       {/* Modals */}

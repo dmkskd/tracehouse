@@ -2,6 +2,7 @@
 @import "../../frontend/src/styles/themes.css";
 @import "../../frontend/src/styles/page-tabs.css";
 @import "../../frontend/src/styles/dashboard-controls.css";
+@import "../../frontend/src/styles/refreshing-overlay.css";
 @config "../tailwind.config.js";
 
 /* Use tailwind.config.js for content scanning */
