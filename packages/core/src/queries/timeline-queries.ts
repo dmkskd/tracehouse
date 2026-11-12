@@ -234,7 +234,7 @@ export const SERVER_CPU_CAPACITY_HISTORY = `
     hostname() AS host,
     argMaxIf(value, event_time, metric = 'CGroupMaxCPU') AS cgroup_max_cpu,
     argMaxIf(value, event_time, metric = 'NumberOfCPUCores') AS reported_cores,
-    uniqExactIf(metric, metric LIKE 'OSUserTimeCPU%') AS os_cpu_count
+    uniqExactIf(metric, match(metric, '^OSUserTimeCPU[0-9]+$')) AS os_cpu_count
   FROM {{cluster_aware:system.asynchronous_metric_log}}
   WHERE event_time >= {start_time}
     AND event_time <= {end_time}
@@ -251,7 +251,7 @@ export const SERVER_CPU_CAPACITY_CURRENT = `
     hostname() AS host,
     maxIf(value, metric = 'CGroupMaxCPU') AS cgroup_max_cpu,
     maxIf(value, metric = 'NumberOfCPUCores') AS reported_cores,
-    uniqExactIf(metric, metric LIKE 'OSUserTimeCPU%') AS os_cpu_count
+    uniqExactIf(metric, match(metric, '^OSUserTimeCPU[0-9]+$')) AS os_cpu_count
   FROM {{cluster_aware:system.asynchronous_metrics}}
   WHERE (
     metric IN ('CGroupMaxCPU', 'NumberOfCPUCores')
@@ -272,7 +272,29 @@ export const SERVER_CPU_CORES_FALLBACK = `
 export const SERVER_CPU_CORES_FALLBACK2 = `
   SELECT count(DISTINCT metric)
   FROM system.asynchronous_metrics
-  WHERE metric LIKE 'OSUserTimeCPU%'
+  WHERE match(metric, '^OSUserTimeCPU[0-9]+$')
+`;
+
+/** Newer servers store per-core metrics in key/key_values rather than names. */
+export function withKeyedCpuCapacity(template: string, historical: boolean): string {
+  const legacyCount = "uniqExactIf(metric, match(metric, '^OSUserTimeCPU[0-9]+$'))";
+  const keyedCount = historical
+    ? "uniqExactIf(key, metric = 'OSUserTimeCPU' AND match(key, '^[0-9]+$'))"
+    : "maxIf(length(key_values), metric = 'OSUserTimeCPU')";
+  return template.replace(legacyCount, () => `greatest(${legacyCount}, ${keyedCount})`);
+}
+
+/** Probe all selected replicas before referencing columns absent on old servers. */
+export const SERVER_CPU_METRIC_SCHEMA = `
+  SELECT table, min(has_keys) AS has_keys
+  FROM (
+    SELECT hostName() AS host, table,
+      countIf(name = if(table = 'asynchronous_metric_log', 'key', 'key_values')) > 0 AS has_keys
+    FROM {{cluster_aware:system.columns}}
+    WHERE database = 'system' AND table IN ('asynchronous_metric_log', 'asynchronous_metrics')
+    GROUP BY host, table
+  )
+  GROUP BY table
 `;
 
 /**

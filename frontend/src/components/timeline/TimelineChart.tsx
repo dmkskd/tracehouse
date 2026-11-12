@@ -828,8 +828,15 @@ export const TimelineChart: React.FC<{
             WebkitBackdropFilter: TOOLTIP_BLUR_ENABLED ? 'blur(12px)' : undefined,
             boxShadow: '0 8px 32px rgba(0,0,0,0.45), 0 1px 4px rgba(0,0,0,0.2)',
           }}>
-            <div style={{ color: 'var(--text-primary)', fontWeight: 600, marginBottom: 6, fontSize: 12 }}>
-              {new Date(snap.t).toLocaleTimeString()}
+            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 8, marginBottom: 6 }}>
+              <span style={{ color: 'var(--text-primary)', fontWeight: 600, fontSize: 12, whiteSpace: 'nowrap' }}>
+                {new Date(snap.t).toLocaleTimeString()}
+              </span>
+              {failureCode !== 0 && (
+                <span style={{ color: '#f85149', fontSize: 9, fontWeight: 600, flexShrink: 0, whiteSpace: 'nowrap' }}>
+                  × Failed · {failureCode}
+                </span>
+              )}
             </div>
             {band && hovItem ? (
               /* Hovering on a specific band — rich multi-metric card */
@@ -837,7 +844,7 @@ export const TimelineChart: React.FC<{
                 {/* Header: type dot + label + duration */}
                 <div style={{ display: 'flex', alignItems: 'center', gap: 6, marginBottom: 6 }}>
                   <span style={{ width: 6, height: 6, borderRadius: '50%', background: accentColor!, flexShrink: 0 }} />
-                  <span style={{ color: accentColor!, fontWeight: 600, fontSize: 11 }}>
+                  <span style={{ color: accentColor!, fontWeight: 600, fontSize: 11, minWidth: 0, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
                     {band.type === 'query'
                       ? ((hovItem as any).query_kind || 'Query')
                       : band.type === 'merge'
@@ -845,7 +852,7 @@ export const TimelineChart: React.FC<{
                         : 'Mutation'}
                   </span>
                   <span style={{ color: 'var(--text-muted)', fontSize: 9 }}>·</span>
-                  <span style={{ color: 'var(--text-secondary)', fontSize: 9 }}>{fmtMs(hovItem.duration_ms)}</span>
+                  <span style={{ color: 'var(--text-secondary)', fontSize: 9, flexShrink: 0 }}>{fmtMs(hovItem.duration_ms)}</span>
                   {/* Running indicator with progress for merges/mutations */}
                   {hovItem.is_running && failureCode === 0 && (
                     <span style={{ fontSize: 9, color: '#3fb950', fontWeight: 600 }}>
@@ -853,11 +860,6 @@ export const TimelineChart: React.FC<{
                     </span>
                   )}
                 </div>
-                {failureCode !== 0 && (
-                  <div style={{ color: '#f85149', fontSize: 10, fontWeight: 600, marginBottom: 6 }}>
-                    × Failed · Code {failureCode}
-                  </div>
-                )}
                 {/* Identifier */}
                 {band.type === 'query' ? (
                   <>

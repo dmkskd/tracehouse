@@ -37,6 +37,8 @@ import {
   SERVER_TOTAL_RAM,
   SERVER_CPU_CAPACITY_HISTORY,
   SERVER_CPU_CAPACITY_CURRENT,
+  SERVER_CPU_METRIC_SCHEMA,
+  withKeyedCpuCapacity,
   ACTIVE_QUERIES,
   ACTIVE_QUERIES_BY_HASH,
   ACTIVE_QUERIES_COUNT,
@@ -969,7 +971,9 @@ export class TimelineService {
     sourceByHost: Record<string, 'historical' | 'current'>;
   }> {
     try {
-      const sql = xform(buildQuery(SERVER_CPU_CAPACITY_HISTORY, params));
+      const keyed = await this.hasKeyedCpuMetrics('asynchronous_metric_log', xform);
+      const template = keyed ? withKeyedCpuCapacity(SERVER_CPU_CAPACITY_HISTORY, true) : SERVER_CPU_CAPACITY_HISTORY;
+      const sql = xform(buildQuery(template, params));
       const rows = await this.adapter.executeQuery(
         tagQuery(sql, sourceTag(TAB_TIME_TRAVEL, 'cpuCapacityHistorical')),
       );
@@ -993,7 +997,8 @@ export class TimelineService {
     sourceByHost: Record<string, 'historical' | 'current'>;
   }> {
     try {
-      const sql = xform(SERVER_CPU_CAPACITY_CURRENT);
+      const keyed = await this.hasKeyedCpuMetrics('asynchronous_metrics', xform);
+      const sql = xform(keyed ? withKeyedCpuCapacity(SERVER_CPU_CAPACITY_CURRENT, false) : SERVER_CPU_CAPACITY_CURRENT);
       const rows = await this.adapter.executeQuery(
         tagQuery(sql, sourceTag(TAB_TIME_TRAVEL, 'cpuCapacityCurrent')),
       );
@@ -1007,6 +1012,18 @@ export class TimelineService {
     } catch (error) {
       console.error('[TimelineService] current CPU capacity fallback error:', error);
       return { byHost: {}, sourceByHost: {} };
+    }
+  }
+
+  private async hasKeyedCpuMetrics(table: string, xform: (s: string) => string): Promise<boolean> {
+    try {
+      const rows = await this.adapter.executeQuery(tagQuery(
+        xform(SERVER_CPU_METRIC_SCHEMA), sourceTag(TAB_TIME_TRAVEL, 'cpuMetricSchema'),
+      ));
+      return rows.some(row => row.table === table && Number(row.has_keys) === 1);
+    } catch {
+      // Older servers and restricted accounts retain the scalar-metric path.
+      return false;
     }
   }
 

@@ -19,7 +19,7 @@ import { OrbitControls, Line, Html } from '@react-three/drei';
 import { SafeText as Text } from '@tracehouse/ui-shared';
 import * as THREE from 'three';
 import type { MemoryTimeline, QuerySeries, MergeSeries, MutationSeries } from '@tracehouse/core';
-import { operationAverageRate, operationHighlightKey } from '@tracehouse/core';
+import { operationAverageRate, operationHighlightKey, getTimelineCpuCapacity, getTimelineRamCapacity } from '@tracehouse/core';
 import { parseTimestamp, formatBytes } from '../../utils/formatters';
 import { type MetricMode, type HighlightedItem, Q_COLORS, M_COLORS, MUT_COLORS, METRIC_CONFIG } from './timeline-constants';
 
@@ -81,10 +81,10 @@ const FloorGrid: React.FC = () => (
 
 /* ── Ceiling plane ──────────────────────────────────────────────────── */
 
-const CeilingPlane: React.FC = () => {
+const CeilingPlane: React.FC<{ y: number }> = ({ y }) => {
   const halfZ = MAX_Z_DEPTH / 2 + 1;
   return (
-    <group position={[RUNWAY_LENGTH / 2, CEILING_Y, MAX_Z_DEPTH / 2]}>
+    <group position={[RUNWAY_LENGTH / 2, y, MAX_Z_DEPTH / 2]}>
       <mesh rotation={[-Math.PI / 2, 0, 0]}>
         <planeGeometry args={[RUNWAY_LENGTH + 1, MAX_Z_DEPTH + 2]} />
         <meshStandardMaterial color="#ef4444" transparent opacity={0.08} side={THREE.DoubleSide} depthWrite={false} />
@@ -216,7 +216,7 @@ const ZAxisLabels: React.FC<{ memMin: number; memMax: number; memToDepth: (m: nu
   );
 };
 
-/* ── Server metric line ──────────────────────────────────────────────── */
+/* ── Server metric line (in front of ribbons from the default camera) ── */
 
 const ServerMetricLine: React.FC<{
   serverPts: { ms: number; v: number }[];
@@ -228,7 +228,7 @@ const ServerMetricLine: React.FC<{
     return serverPts.map(p => {
       const x = ((p.ms - tMin) / tRange) * RUNWAY_LENGTH;
       const y = (p.v / maxY) * CEILING_Y;
-      return new THREE.Vector3(x, Math.max(y, 0), -0.3);
+      return new THREE.Vector3(x, Math.max(y, 0), MAX_Z_DEPTH + 0.3);
     });
   }, [serverPts, tMin, tRange, maxY]);
 
@@ -661,11 +661,17 @@ export const TimelineChart3DSurface: React.FC<TimelineChart3DSurfaceProps> = ({
   // maxY for server line scaling
   const maxY = useMemo(() => {
     const sMax = serverPts.length > 0 ? Math.max(...serverPts.map(p => p.v)) : 0;
-    return Math.max(sMax, maxStack, 1);
+    return Math.max(sMax, maxStack, 1) * 1.15;
   }, [serverPts, maxStack]);
 
+  // The reference plane represents measured capacity, not the observed stack maximum.
+  const capacity = metricMode === 'cpu' ? getTimelineCpuCapacity(data) * 1_000_000
+    : metricMode === 'memory' ? getTimelineRamCapacity(data) : 0;
+  const capacityY = capacity > 0 && capacity <= maxY ? (capacity / maxY) * CEILING_Y : null;
+
+
   // Y scale: map raw cumulative value → world Y coordinate
-  const yScale = maxStack > 0 ? CEILING_Y / maxStack : 1;
+  const yScale = CEILING_Y / maxY;
 
   // Per-band scaled top/bot curves
   const bandCurves = useMemo(() => {
@@ -748,7 +754,7 @@ export const TimelineChart3DSurface: React.FC<TimelineChart3DSurfaceProps> = ({
         <pointLight position={[RUNWAY_LENGTH / 2, CEILING_Y * 1.5, MAX_Z_DEPTH / 2]} intensity={0.4} color="#60a5fa" />
 
         <FloorGrid />
-        <CeilingPlane />
+        {capacityY !== null && <CeilingPlane y={capacityY} />}
 
         {/* Fluid band ribbons */}
         {bandCurves.map((curves, bi) => (
@@ -775,7 +781,7 @@ export const TimelineChart3DSurface: React.FC<TimelineChart3DSurfaceProps> = ({
 
         {/* Labels & axes */}
         <TimeLabels tMin={tMin} tMax={tMax} />
-        <YAxisMarkers maxStack={maxStack} metricMode={metricMode} />
+        <YAxisMarkers maxStack={maxY} metricMode={metricMode} />
         <ZAxisLabels memMin={memMin} memMax={memMax} memToDepth={memToDepth} />
         <AxisLabels metricMode={metricMode} />
         <Legend
