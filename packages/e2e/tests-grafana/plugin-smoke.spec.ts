@@ -51,6 +51,41 @@ async function expectPluginPage(
 }
 
 test.describe('Grafana app plugin smoke tests', () => {
+  test('cluster startup, reload and cluster switching keep the plugin connected', async ({ page }) => {
+    const errors: string[] = [];
+    page.on('pageerror', error => errors.push(error.message));
+    page.on('console', message => {
+      if (message.type() === 'error' && message.text().includes('[ClusterDetect]')) {
+        errors.push(message.text());
+      }
+    });
+
+    await expectPluginPage(
+      page,
+      `/queries?th_ds=${encodeURIComponent(clickHouseDatasourceUid)}&th_cluster=default`,
+      'Query Tracker',
+    );
+    const cluster = page.locator('label').filter({ hasText: /^Cluster$/ })
+      .locator('..').getByRole('combobox');
+    await expect(cluster).toBeVisible();
+    await expect(page.getByText('Connecting to ClickHouse…', { exact: true })).toHaveCount(0);
+
+    await page.reload({ waitUntil: 'domcontentloaded' });
+    await expect(page.getByText('Query Tracker', { exact: false }).first()).toBeVisible({ timeout: 30_000 });
+    await expect(cluster).toBeVisible();
+
+    await cluster.click();
+    await page.getByText('Single node', { exact: true }).click();
+    await expect(page).toHaveURL(/(?:[?&])th_cluster=__connected__(?:&|$)/);
+    await expect(page.getByText('Query Tracker', { exact: false }).first()).toBeVisible();
+
+    await cluster.click();
+    await page.getByText('default', { exact: true }).last().click();
+    await expect(page).toHaveURL(/(?:[?&])th_cluster=default(?:&|$)/);
+    await expect(page.getByText('Query Tracker', { exact: false }).first()).toBeVisible();
+    expect(errors).toEqual([]);
+  });
+
   test('Merges loads with repeated URL filters and can write a quick filter', async ({ page }) => {
     await expectPluginPage(
       page,

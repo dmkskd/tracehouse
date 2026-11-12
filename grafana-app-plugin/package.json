@@ -11,6 +11,7 @@
   "author": "TraceHouse",
   "license": "Apache-2.0",
   "devDependencies": {
+    "@jridgewell/sourcemap-codec": "^1.5.5",
     "@swc/core": "^1.11.29",
     "@swc/helpers": "^0.5.17",
     "@tailwindcss/postcss": "^4.1.18",

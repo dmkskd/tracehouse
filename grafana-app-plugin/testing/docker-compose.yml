@@ -27,6 +27,8 @@ services:
       - "${CLICKHOUSE_TEST_HTTP_PORT:-8124}:8123"
     environment:
       CLICKHOUSE_DEFAULT_ACCESS_MANAGEMENT: "1"
+    volumes:
+      - ./clickhouse-cluster.xml:/etc/clickhouse-server/config.d/tracehouse-test-cluster.xml:ro
     healthcheck:
       test: ["CMD", "clickhouse-client", "--query", "SELECT 1"]
       interval: 5s

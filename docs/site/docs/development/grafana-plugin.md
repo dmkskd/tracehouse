@@ -52,6 +52,40 @@ docker volume rm tracehouse_tracehouse-grafana-data
 just docker-start-full 11.6.3
 ```
 
+### Automated Grafana tests
+
+Run the plugin tests, including the Grafana service provider's cluster startup,
+shared-link restoration, cluster switching, and permission-cache reset:
+
+```bash
+just test-grafana
+```
+
+Run the compiled plugin in a real Grafana browser session with a provisioned
+ClickHouse datasource and a named single-replica cluster:
+
+```bash
+just e2e-grafana
+just e2e-grafana 11.6.11 3004
+```
+
+The browser suite covers startup, reload, cluster switching, shared links, and
+the main plugin routes, and checks for uncaught browser errors. Each run builds
+the plugin, starts an isolated Docker Compose stack, and removes the stack on
+completion. The default Grafana version is 13.1.0; the second command exercises
+Grafana 11 on a separate port. Playwright saves screenshots on failure.
+`./scripts/build-release.sh` runs the same Grafana checks locally, including
+with `--full-matrix`; `--skip-tests` skips them.
+
+To test an already-running instance without building or starting containers:
+
+```bash
+GRAFANA_E2E_URL=http://localhost:3003 npm run test:grafana --workspace=@tracehouse/e2e
+```
+
+That instance needs anonymous admin access, the TraceHouse and ClickHouse
+plugins, a ClickHouse datasource, and a cluster named `default`.
+
 ### Running the exact release plugin locally
 
 `just docker-start-full` mounts your local `grafana-app-plugin/dist/` directory. To reproduce what users are testing from a GitHub release, run Grafana with the packaged release ZIP instead:

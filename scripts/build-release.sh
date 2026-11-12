@@ -73,6 +73,7 @@ else
   echo "=== Running tests ==="
   just test-frontend
   just test-core
+  just test-grafana
 
   if [[ "$FULL_MATRIX" == "true" ]]; then
     echo ""
@@ -88,6 +89,12 @@ else
     just e2e
     echo "  ✓ E2E smoke tests passed"
   fi
+
+  echo ""
+  echo "=== Running Grafana browser tests ==="
+  just e2e-grafana
+  just e2e-grafana 11.6.11 3004
+  echo "  ✓ Grafana 13 and 11 browser tests passed"
 fi
 
 # ── Single-file HTML ────────────────────────────────────────────

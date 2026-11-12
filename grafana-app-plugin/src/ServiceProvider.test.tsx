@@ -39,7 +39,13 @@ function ConnectionState() {
 
 describe('Grafana ServiceProvider cluster lifecycle', () => {
   beforeEach(() => {
-    localStorage.clear();
+    const stored = new Map<string, string>();
+    vi.stubGlobal('localStorage', {
+      getItem: (key: string) => stored.get(key) ?? null,
+      setItem: (key: string, value: string) => { stored.set(key, value); },
+      removeItem: (key: string) => { stored.delete(key); },
+      clear: () => stored.clear(),
+    });
     localStorage.setItem('tracehouse-datasource', JSON.stringify({ uid: 'clickhouse-test', name: 'ClickHouse' }));
     grafana.search = '';
     grafana.partial.mockClear();
@@ -53,6 +59,7 @@ describe('Grafana ServiceProvider cluster lifecycle', () => {
   afterEach(() => {
     cleanup();
     vi.restoreAllMocks();
+    vi.unstubAllGlobals();
     useClusterStore.getState().reset();
     useMonitoringCapabilitiesStore.getState().reset();
   });

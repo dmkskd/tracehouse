@@ -26,6 +26,7 @@ jobs:
       - run: just install
       - run: just test-frontend
       - run: just test-core
+      # - run: just test-grafana
 
   # ── Build the single-file HTML (platform-independent) ────────
   html:
@@ -71,6 +72,25 @@ jobs:
       - run: rm -f package-lock.json
       - run: just install
       - run: just grafana-plugin-build
+
+      # - name: Install Grafana browser test dependencies
+      #   working-directory: packages/e2e
+      #   run: npx playwright install --with-deps chromium
+      #
+      # - name: Test compiled plugin in Grafana 13
+      #   run: just e2e-grafana
+      #
+      # - name: Test compiled plugin in Grafana 11
+      #   run: just e2e-grafana 11.6.11 3004
+      #
+      # - name: Upload Grafana browser failure artifacts
+      #   if: failure()
+      #   uses: actions/upload-artifact@v4
+      #   with:
+      #     name: grafana-browser-failures
+      #     path: |
+      #       packages/e2e/test-results
+      #       packages/e2e/playwright-report
 
       - name: Sign Grafana plugin
         working-directory: grafana-app-plugin

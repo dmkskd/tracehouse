@@ -435,9 +435,9 @@ drop-data confirm="":
 # TESTING & QUALITY
 # ─────────────────────────────────────────────────────────────────
 
-# Run all tests (frontend + core unit + core integration + scripts)
+# Run all tests (frontend + Grafana + core unit + core integration + scripts)
 [group('test')]
-test: test-frontend test-core test-core-integration test-data-utils
+test: test-frontend test-grafana test-core test-core-integration test-data-utils
 
 [group('test')]
 test-timezone:
@@ -479,6 +479,11 @@ test-timezone-transports *args="":
 [group('test')]
 test-frontend:
     cd frontend && npm test
+
+# Run Grafana plugin component tests and swapped-module type checks
+[group('test')]
+test-grafana:
+    npm test --workspace=dmkskd-tracehouse-app
 
 # Run core unit tests
 [group('test')]

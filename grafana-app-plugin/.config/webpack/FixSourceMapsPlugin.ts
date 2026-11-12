@@ -1,6 +1,7 @@
 import webpack from 'webpack';
 import fs from 'fs';
 import path from 'path';
+import { decode, encode, type SourceMapSegment } from '@jridgewell/sourcemap-codec';
 
 const PLUGIN_NAME = 'FixSourceMapsPlugin';
 const SOURCE_ROOTS = [
@@ -128,13 +129,23 @@ export class FixSourceMapsPlugin {
           }
         }
 
-        // Mapping segments refer to source indices. Keep that array intact;
-        // remove dependency content without invalidating those references.
-        for (let i = 0; i < m.sources.length; i++) {
-          const src = m.sources[i];
-          if (src.includes('node_modules/') || src.includes('webpack/runtime')) {
-            m.sourcesContent[i] = null;
-          }
+        const keep: number[] = [];
+        const sourceIndices = m.sources.map((src: string, index: number) => {
+          if (src.includes('node_modules/') || src.includes('webpack/runtime')) return -1;
+          keep.push(index);
+          return keep.length - 1;
+        });
+        if (keep.length < m.sources.length) {
+          m.mappings = encode(decode(m.mappings).map(line => line.map((segment): SourceMapSegment => {
+            if (segment.length === 1) return segment;
+            const sourceIndex = sourceIndices[segment[1]];
+            if (sourceIndex === -1) return [segment[0]];
+            return segment.length === 5
+              ? [segment[0], sourceIndex, segment[2], segment[3], segment[4]]
+              : [segment[0], sourceIndex, segment[2], segment[3]];
+          })));
+          m.sources = keep.map(index => m.sources[index]);
+          m.sourcesContent = keep.map(index => m.sourcesContent[index]);
         }
 
         fs.writeFileSync(mapPath, JSON.stringify(m));
