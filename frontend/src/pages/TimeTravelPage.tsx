@@ -1764,7 +1764,7 @@ export const TimeTravelPage: React.FC = () => {
           /* Single chart (Overall selected-host total or one server) */
           <div ref={chartAnchorRef} style={{
             borderRadius:10, padding:0, background:'var(--bg-secondary)', border:'1px solid var(--border-primary)',
-            boxShadow:'0 1px 3px rgba(0,0,0,0.2)', overflow:'hidden', position:'relative',
+            boxShadow:'0 1px 3px rgba(0,0,0,0.2)', overflow:viewMode === '2d' ? 'visible' : 'hidden', position:'relative',
           }}>
             {viewMode === '3d' ? (
               <TimelineChart3D data={data} metricMode={metricMode} height={mainChartHeight} hiddenCategories={hiddenCategories}

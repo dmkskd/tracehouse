@@ -448,6 +448,7 @@ export const TimelineChart: React.FC<{
 
   const snap = useMemo(() => {
     if (hoverMs === null || serverPts.length === 0) return null;
+    const serverAvailable = hoverMs >= serverPts[0].ms && hoverMs <= serverPts[serverPts.length - 1].ms;
     let near = serverPts[0], best = Math.abs(serverPts[0].ms - hoverMs);
     for (const sp of serverPts) { const d = Math.abs(sp.ms - hoverMs); if (d < best) { best = d; near = sp; } }
     const aq = qRanges.map((qr, i) => (hoverMs >= qr.startMs && hoverMs <= qr.endMs) ? { i, p: qr.peak, rp: qr.realPeak } : null).filter(Boolean) as { i: number; p: number; rp: number }[];
@@ -466,7 +467,9 @@ export const TimelineChart: React.FC<{
     // Detect which band the mouse Y is in by interpolating between bucket points
     // (matches the linear interpolation the SVG path rendering uses)
     let hoveredBand: { type: 'query' | 'merge' | 'mutation'; idx: number; id: string } | null = null;
-    if (localSvgY !== null && buckets.length >= 2) {
+    // Areas are drawn only between metric buckets. Outside that domain,
+    // extrapolation can invent a band in otherwise empty chart space.
+    if (localSvgY !== null && localSvgY >= padTop && localSvgY <= padTop + ch && buckets.length >= 2 && serverAvailable) {
       const yVal = ((padTop + ch - localSvgY) / ch) * maxY;
       if (yVal >= 0) {
         // Find the two surrounding bucket points for interpolation
@@ -527,7 +530,7 @@ export const TimelineChart: React.FC<{
         return { host, v: nearest.v };
       });
     }
-    return { t: hoverMs, srv: near.v, aq, am, amut, qt: aq.reduce((s, x) => s + x.p, 0), mt: am.reduce((s, x) => s + x.p, 0), mutt: amut.reduce((s, x) => s + x.p, 0), line1Val, line2Val, hoveredBand, hostCpuValues };
+    return { t: hoverMs, srv: near.v, serverAvailable, aq, am, amut, qt: aq.reduce((s, x) => s + x.p, 0), mt: am.reduce((s, x) => s + x.p, 0), mutt: amut.reduce((s, x) => s + x.p, 0), line1Val, line2Val, hoveredBand, hostCpuValues };
   }, [hoverMs, serverPts, qRanges, mRanges, mutRanges, isDualMode, dualLine1, dualLine2, localSvgY, padTop, ch, maxY, buckets, nq, nm, nmut, perHostCpuPts]);
 
   // Sync chart hover to parent so table rows highlight when hovering graph bands.
@@ -698,7 +701,7 @@ export const TimelineChart: React.FC<{
               strokeWidth="2"
               filter="url(#glow)"
             />
-          ) : !isDualMode ? (
+          ) : !isDualMode && snap.serverAvailable ? (
             // Show dot on server line when not hovering a band
             <circle cx={crossX} cy={yScale(snap.srv)} r="3.5" fill={cfg.color} stroke="#0d1117" strokeWidth="1.5" />
           ) : null
@@ -811,16 +814,22 @@ export const TimelineChart: React.FC<{
             : band.type === 'merge' ? M_COLORS[band.idx % M_COLORS.length]
               : MUT_COLORS[band.idx % MUT_COLORS.length]
           : null;
+        const isOperation = !!(band && hovItem);
+        const tooltipWidth = Math.min(isOperation ? 240 : 300, W - 24);
+        const tooltipLeft = Math.max(12, Math.min(
+          crossX > W * 0.6 ? crossX - tooltipWidth - 12 : crossX + 12,
+          W - tooltipWidth - 12,
+        ));
         return (
           <div style={{
             position: 'absolute',
             top: localSvgY < H * 0.5 ? `${(localSvgY / H) * 100 + 2}%` : undefined,
             bottom: localSvgY >= H * 0.5 ? `${100 - (localSvgY / H) * 100 + 2}%` : undefined,
-            left: crossX > W * 0.6 ? undefined : `${(crossX / W) * 100 + 1}%`,
-            right: crossX > W * 0.6 ? `${100 - (crossX / W) * 100 + 1}%` : undefined,
-            border: '1px solid var(--border-primary)',
+            left: tooltipLeft,
+            border: failureCode !== 0 ? '1px solid #f85149' : '1px solid var(--border-primary)',
+            borderTop: failureCode !== 0 ? '2px solid #f85149' : accentColor ? `3px solid ${accentColor}` : '1px solid var(--border-primary)',
             borderRadius: 10, padding: '10px 14px', pointerEvents: 'none', zIndex: 10,
-            width: 240, fontSize: 10,
+            width: tooltipWidth, boxSizing: 'border-box', fontSize: 10,
             background: TOOLTIP_BLUR_ENABLED
               ? 'color-mix(in srgb, var(--bg-secondary), transparent 35%)'
               : 'var(--bg-secondary)',
@@ -828,10 +837,27 @@ export const TimelineChart: React.FC<{
             WebkitBackdropFilter: TOOLTIP_BLUR_ENABLED ? 'blur(12px)' : undefined,
             boxShadow: '0 8px 32px rgba(0,0,0,0.45), 0 1px 4px rgba(0,0,0,0.2)',
           }}>
-            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 8, marginBottom: 6 }}>
-              <span style={{ color: 'var(--text-primary)', fontWeight: 600, fontSize: 12, whiteSpace: 'nowrap' }}>
-                {new Date(snap.t).toLocaleTimeString()}
-              </span>
+            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 8, marginBottom: isOperation ? 6 : 10, paddingBottom: isOperation ? 0 : 8, borderBottom: isOperation ? undefined : '1px solid var(--border-primary)' }}>
+              {band && hovItem ? (
+                <span style={{ display: 'flex', alignItems: 'center', gap: 6, minWidth: 0 }}>
+                  <span style={{ width: 6, height: 6, borderRadius: '50%', background: accentColor!, flexShrink: 0 }} />
+                  <span style={{ color: accentColor!, fontWeight: 600, fontSize: 12, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                    {band.type === 'query'
+                      ? ((hovItem as any).query_kind || 'Query')
+                      : band.type === 'merge'
+                        ? (() => { const info = getMergeCategoryInfo(((hovItem as any).merge_reason || 'Regular') as MergeCategory); return `Merge · ${info ? info.label : 'Regular'}`; })()
+                        : 'Mutation'}
+                  </span>
+                </span>
+              ) : (
+                <span style={{ display: 'flex', alignItems: 'center', gap: 6, color: 'var(--text-primary)', fontWeight: 600, fontSize: 12 }}>
+                  <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" aria-hidden="true" style={{ color: 'var(--text-secondary)', flexShrink: 0 }}>
+                    <circle cx="12" cy="12" r="9" />
+                    <path d="M12 6v6l4 2" />
+                  </svg>
+                  Activity at {new Date(snap.t).toLocaleTimeString()}
+                </span>
+              )}
               {failureCode !== 0 && (
                 <span style={{ color: '#f85149', fontSize: 9, fontWeight: 600, flexShrink: 0, whiteSpace: 'nowrap' }}>
                   × Failed · {failureCode}
@@ -841,16 +867,9 @@ export const TimelineChart: React.FC<{
             {band && hovItem ? (
               /* Hovering on a specific band — rich multi-metric card */
               <>
-                {/* Header: type dot + label + duration */}
+                {/* Time and duration stay secondary to the operation type. */}
                 <div style={{ display: 'flex', alignItems: 'center', gap: 6, marginBottom: 6 }}>
-                  <span style={{ width: 6, height: 6, borderRadius: '50%', background: accentColor!, flexShrink: 0 }} />
-                  <span style={{ color: accentColor!, fontWeight: 600, fontSize: 11, minWidth: 0, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
-                    {band.type === 'query'
-                      ? ((hovItem as any).query_kind || 'Query')
-                      : band.type === 'merge'
-                        ? (() => { const info = getMergeCategoryInfo(((hovItem as any).merge_reason || 'Regular') as MergeCategory); return `Merge · ${info ? info.label : 'Regular'}`; })()
-                        : 'Mutation'}
-                  </span>
+                  <span style={{ color: 'var(--text-secondary)', fontSize: 9 }}>{new Date(snap.t).toLocaleTimeString()}</span>
                   <span style={{ color: 'var(--text-muted)', fontSize: 9 }}>·</span>
                   <span style={{ color: 'var(--text-secondary)', fontSize: 9, flexShrink: 0 }}>{fmtMs(hovItem.duration_ms)}</span>
                   {/* Running indicator with progress for merges/mutations */}
@@ -916,7 +935,18 @@ export const TimelineChart: React.FC<{
             ) : (
               /* Hovering on empty space — show full breakdown */
               <>
-                {isDualMode ? (
+                <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 8, color: 'var(--text-primary)', fontWeight: 600, fontSize: 11, marginBottom: 4 }}>
+                  <span>{metricMode === 'cpu' ? 'CPU usage' : metricMode === 'memory' ? 'Memory usage' : cfg.label}</span>
+                  {snap.serverAvailable && metricMode === 'cpu' && totalCpuCores > 0 && (
+                    <span>{((snap.srv / (totalCpuCores * 1_000_000)) * 100).toFixed(1)}%</span>
+                  )}
+                  {snap.serverAvailable && metricMode === 'memory' && totalRam > 0 && (
+                    <span>{((snap.srv / totalRam) * 100).toFixed(1)}%</span>
+                  )}
+                </div>
+                {!snap.serverAvailable ? (
+                  <div style={{ color: 'var(--text-muted)' }}>No server samples at this time</div>
+                ) : isDualMode ? (
                   <>
                     <div style={{ color: dualColors[0] }}>{dualLabels[0]}: {formatBytes(snap.line1Val)}/s</div>
                     <div style={{ color: dualColors[1] }}>{dualLabels[1]}: {formatBytes(snap.line2Val)}/s</div>
@@ -925,7 +955,7 @@ export const TimelineChart: React.FC<{
                 ) : (
                   <>
                     <div style={{ color: 'var(--text-secondary)' }}>
-                      {hc > 1 ? 'Total' : 'Server'}: {cfg.fmtVal(snap.srv)}{metricMode === 'cpu' ? '/s' : ''}{metricMode === 'cpu' && totalCpuCores > 0 ? ` (${((snap.srv / (totalCpuCores * 1_000_000)) * 100).toFixed(1)}%)` : ''}
+                      {hc > 1 ? 'Total' : 'Server'}: {cfg.fmtVal(snap.srv)}{metricMode === 'cpu' ? '/s' : ''}{hc > 1 ? ` across ${hc} servers` : ''}
                     </div>
                     {snap.hostCpuValues && (
                       <div style={{ marginTop: 6, marginBottom: 2, padding: '6px 0' }}>
@@ -956,15 +986,26 @@ export const TimelineChart: React.FC<{
                     )}
                   </>
                 )}
+                <div style={{ color: 'var(--text-primary)', fontWeight: 600, fontSize: 11, borderTop: '1px solid var(--border-primary)', paddingTop: 8, marginTop: 8, marginBottom: 6 }}>Active operations</div>
+                {snap.aq.length === 0 && snap.am.length === 0 && snap.amut.length === 0 && (
+                  <div style={{ color: 'var(--text-muted)' }}>No active operations</div>
+                )}
                 {snap.aq.length > 0 && (
-                  <div style={{ marginTop: 6 }}>
-                    <div style={{ color: '#58a6ff', fontWeight: 500 }}>Queries: {snap.aq.length} ({cfg.fmtVal(snap.aq.reduce((s, x) => s + x.rp, 0))}{metricMode !== 'memory' ? '/s' : ''})</div>
-                    {snap.aq.slice(0, 4).map(a => {
+                  <div style={{ marginTop: 8 }}>
+                    <div style={{ display: 'flex', justifyContent: 'space-between', gap: 8, color: '#58a6ff', fontWeight: 600, marginBottom: 4 }}>
+                      <span>Queries · {snap.aq.length}</span>
+                      <span style={{ color: 'var(--text-secondary)', whiteSpace: 'nowrap' }}>{cfg.fmtVal(snap.aq.reduce((s, x) => s + x.rp, 0))}{metricMode !== 'memory' ? '/s' : ''}</span>
+                    </div>
+                    {snap.aq.slice(0, 4).map((a, rowIndex) => {
                       const q = data.queries[a.i];
                       const hostTag = hc > 1 && q.hostname ? ` [${q.hostname.replace(/^[^-]*-/, '').slice(-14)}]` : '';
                       return (
-                        <div key={a.i} style={{ color: 'var(--text-muted)', paddingLeft: 8, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
-                          {q.query_id.slice(0, 8)} {cfg.fmtVal(a.rp)} {q.label.slice(0, 30)}{hostTag}
+                        <div key={a.i} style={{ padding: '4px 0', borderTop: rowIndex > 0 ? '1px solid var(--border-primary)' : undefined }}>
+                          <div style={{ display: 'flex', alignItems: 'baseline', justifyContent: 'space-between', gap: 8, color: 'var(--text-secondary)' }}>
+                            <span style={{ flexShrink: 0, fontFamily: 'monospace' }}>{q.query_id.slice(0, 8)}</span>
+                            <span style={{ flex: 1, minWidth: 0, color: 'var(--text-muted)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{q.label}{hostTag}</span>
+                            <span style={{ flexShrink: 0, whiteSpace: 'nowrap', fontVariantNumeric: 'tabular-nums' }}>{cfg.fmtVal(a.rp)}{metricMode !== 'memory' ? '/s' : ''}</span>
+                          </div>
                         </div>
                       );
                     })}
@@ -972,28 +1013,40 @@ export const TimelineChart: React.FC<{
                   </div>
                 )}
                 {snap.am.length > 0 && (
-                  <div style={{ marginTop: 4 }}>
-                    <div style={{ color: '#f0883e', fontWeight: 500 }}>Merges: {snap.am.length} ({cfg.fmtVal(snap.am.reduce((s, x) => s + x.rp, 0))}{metricMode !== 'memory' ? '/s' : ''})</div>
-                    {snap.am.slice(0, 3).map(a => {
+                  <div style={{ marginTop: 10 }}>
+                    <div style={{ display: 'flex', justifyContent: 'space-between', gap: 8, color: '#f0883e', fontWeight: 600, marginBottom: 4 }}>
+                      <span>Merges · {snap.am.length}</span>
+                      <span style={{ color: 'var(--text-secondary)', whiteSpace: 'nowrap' }}>{cfg.fmtVal(snap.am.reduce((s, x) => s + x.rp, 0))}{metricMode !== 'memory' ? '/s' : ''}</span>
+                    </div>
+                    {snap.am.slice(0, 3).map((a, rowIndex) => {
                       const m = data.merges[a.i];
                       const hostTag = hc > 1 && m.hostname ? ` [${m.hostname.replace(/^[^-]*-/, '').slice(-14)}]` : '';
                       return (
-                        <div key={a.i} style={{ color: 'var(--text-muted)', paddingLeft: 8, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
-                          {m.table} {cfg.fmtVal(a.rp)}/s{hostTag}
+                        <div key={a.i} style={{ padding: '4px 0', borderTop: rowIndex > 0 ? '1px solid var(--border-primary)' : undefined }}>
+                          <div style={{ display: 'flex', alignItems: 'baseline', justifyContent: 'space-between', gap: 8, color: 'var(--text-secondary)' }}>
+                            <span style={{ minWidth: 0, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', fontFamily: 'monospace' }}>{m.table}<span style={{ color: 'var(--text-muted)' }}>{hostTag}</span></span>
+                            <span style={{ flexShrink: 0, whiteSpace: 'nowrap', fontVariantNumeric: 'tabular-nums' }}>{cfg.fmtVal(a.rp)}{metricMode !== 'memory' ? '/s' : ''}</span>
+                          </div>
                         </div>
                       );
                     })}
                   </div>
                 )}
                 {snap.amut.length > 0 && (
-                  <div style={{ marginTop: 4 }}>
-                    <div style={{ color: '#f778ba', fontWeight: 500 }}>Mutations: {snap.amut.length} ({cfg.fmtVal(snap.amut.reduce((s, x) => s + x.rp, 0))}{metricMode !== 'memory' ? '/s' : ''})</div>
-                    {snap.amut.slice(0, 3).map(a => {
+                  <div style={{ marginTop: 10 }}>
+                    <div style={{ display: 'flex', justifyContent: 'space-between', gap: 8, color: '#f778ba', fontWeight: 600, marginBottom: 4 }}>
+                      <span>Mutations · {snap.amut.length}</span>
+                      <span style={{ color: 'var(--text-secondary)', whiteSpace: 'nowrap' }}>{cfg.fmtVal(snap.amut.reduce((s, x) => s + x.rp, 0))}{metricMode !== 'memory' ? '/s' : ''}</span>
+                    </div>
+                    {snap.amut.slice(0, 3).map((a, rowIndex) => {
                       const mu = (data.mutations ?? [])[a.i];
                       const hostTag = hc > 1 && mu?.hostname ? ` [${mu.hostname.replace(/^[^-]*-/, '').slice(-14)}]` : '';
                       return (
-                        <div key={a.i} style={{ color: 'var(--text-muted)', paddingLeft: 8, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
-                          {mu?.table} {cfg.fmtVal(a.rp)}/s{hostTag}
+                        <div key={a.i} style={{ padding: '4px 0', borderTop: rowIndex > 0 ? '1px solid var(--border-primary)' : undefined }}>
+                          <div style={{ display: 'flex', alignItems: 'baseline', justifyContent: 'space-between', gap: 8, color: 'var(--text-secondary)' }}>
+                            <span style={{ minWidth: 0, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', fontFamily: 'monospace' }}>{mu?.table}<span style={{ color: 'var(--text-muted)' }}>{hostTag}</span></span>
+                            <span style={{ flexShrink: 0, whiteSpace: 'nowrap', fontVariantNumeric: 'tabular-nums' }}>{cfg.fmtVal(a.rp)}{metricMode !== 'memory' ? '/s' : ''}</span>
+                          </div>
                         </div>
                       );
                     })}
