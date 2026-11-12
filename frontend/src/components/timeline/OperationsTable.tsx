@@ -198,8 +198,7 @@ export const OperationsTable = React.memo<{
               aria-label="Operation scope"
               value={scope}
               onChange={e => onScopeChange(e.target.value as OperationScope)}
-              title={pinnedMs === null ? 'Pin a time on the chart to scope to that instant' : 'Which operations to list'}
-              style={{ background:'transparent', color:'var(--text-primary)', border:'none', padding:'5px 10px', fontSize:11, outline:'none', cursor:'pointer' }}>
+              title={pinnedMs === null ? 'Pin a time on the chart to scope to that instant' : 'Which operations to list'}>
               <option value="window">In window</option>
               <option value="pin" disabled={pinnedMs === null}>Active at pin</option>
             </select>
