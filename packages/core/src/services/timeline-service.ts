@@ -1119,6 +1119,7 @@ export class TimelineService {
         if (visStart >= visEnd) continue;
 
         merges.push({
+          event_time_microseconds: `${row.operation_time || row.merge_end}Z`,
           operation_id: JSON.stringify([row.event_type || 'MergeParts', row.operation_time || row.merge_end]),
           part_name: String(row.part_name || ''),
           table: String(row.tbl || ''),
@@ -1206,6 +1207,7 @@ export class TimelineService {
         if (visStart >= visEnd) continue;
 
         mutations.push({
+          event_time_microseconds: `${row.operation_time || row.mut_end}Z`,
           operation_id: JSON.stringify([row.event_type || 'MutatePart', row.operation_time || row.mut_end]),
           part_name: String(row.part_name || ''),
           table: String(row.tbl || ''),

@@ -666,7 +666,7 @@ const MergeDetailInner: React.FC<{
 
   // Fetch text_log when switching to logs tab, or eagerly for vertical merges (column progress).
   // Only clear logs on tab/record identity changes, not on polling updates (avoids flicker).
-  const logRecordKey = `${record.part_name}:${record.database}.${record.table}`;
+  const logRecordKey = JSON.stringify([record.database, record.table, record.part_name, record.hostname, record.event_time_microseconds ?? record.event_time]);
   const [prevLogKey, setPrevLogKey] = useState(logRecordKey);
   if (logRecordKey !== prevLogKey) {
     setPrevLogKey(logRecordKey);
@@ -684,6 +684,7 @@ const MergeDetailInner: React.FC<{
     services.mergeTracker.getMergeEventTextLogs({
       query_id: record.query_id,
       event_time: record.event_time,
+      event_time_microseconds: record.event_time_microseconds,
       duration_ms: record.duration_ms,
       database: record.database,
       table: record.table,
@@ -697,7 +698,7 @@ const MergeDetailInner: React.FC<{
       if (!cancelled) setIsLoadingLogs(false);
     });
     return () => { cancelled = true; };
-  }, [record.event_time, record.part_name, activeTab, services, isVerticalMerge]); // eslint-disable-line react-hooks/exhaustive-deps
+  }, [logRecordKey, record.duration_ms, activeTab, services, isVerticalMerge]); // eslint-disable-line react-hooks/exhaustive-deps
 
   // Vertical merge: parse column progress from text_log
   const verticalProgress = useMemo(
@@ -723,6 +724,7 @@ const MergeDetailInner: React.FC<{
       services.mergeTracker.getMergeEventTextLogs({
         query_id: record.query_id,
         event_time: record.event_time,
+        event_time_microseconds: record.event_time_microseconds,
         duration_ms: record.duration_ms,
         database: record.database,
         table: record.table,
@@ -731,7 +733,7 @@ const MergeDetailInner: React.FC<{
       }).then(setTextLogs).catch(() => {});
     }, 5000);
     return () => clearInterval(timer);
-  }, [isActive, isVerticalMerge, services, activeTab, record.query_id, record.event_time, record.duration_ms, record.database, record.table, record.part_name, record.hostname]);
+  }, [isActive, isVerticalMerge, services, activeTab, record.query_id, record.event_time, record.event_time_microseconds, record.duration_ms, record.database, record.table, record.part_name, record.hostname]);
 
   // Fetch historical throughput for ETA estimation (active merges only)
   const [throughputEstimate, setThroughputEstimate] = useState<MergeThroughputEstimate | null>(null);
@@ -942,6 +944,7 @@ const MergeDetailInner: React.FC<{
             table={record.table}
             resultPartName={record.part_name}
             eventTime={record.event_time}
+            eventTimeMicroseconds={record.event_time_microseconds}
             durationMs={record.duration_ms}
             queryId={record.query_id}
             hostname={record.hostname}
@@ -1024,7 +1027,7 @@ export const MergeDetailModalFromRecord: React.FC<MergeDetailModalFromRecordProp
         setDetailError(err instanceof Error ? err.message : 'Failed to fetch detail record');
       });
     return () => { cancelled = true; };
-  }, [record?.database, record?.table, record?.part_name, record?.hostname, record?.event_time, record?.event_type, services]); // eslint-disable-line react-hooks/exhaustive-deps
+  }, [record?.database, record?.table, record?.part_name, record?.hostname, record?.event_time, record?.event_time_microseconds, record?.event_type, services]); // eslint-disable-line react-hooks/exhaustive-deps
 
   if (!record) return null;
   const displayRecord = fullRecord ?? record;
@@ -1063,12 +1066,17 @@ export const MergeDetailModal: React.FC<MergeDetailModalProps> = ({ merge, onClo
     const dotIdx = merge.table.indexOf('.');
     const db = dotIdx > 0 ? merge.table.slice(0, dotIdx) : 'default';
     const tbl = dotIdx > 0 ? merge.table.slice(dotIdx + 1) : merge.table;
-    services.mergeTracker.getMergeHistoryByPartName(db, tbl, merge.part_name)
+    services.mergeTracker.getMergeHistoryByPartName(db, tbl, merge.part_name, {
+      hostname: merge.hostname,
+      event_type: isMutation ? 'MutatePart' : 'MergeParts',
+      event_time_microseconds: merge.event_time_microseconds,
+      event_time: merge.event_time_microseconds ?? merge.end_time,
+    })
       .then(r => { if (!cancelled) setRecord(r); })
       .catch(e => { if (!cancelled) setError(e instanceof Error ? e.message : `Failed to fetch ${kind} details`); })
       .finally(() => { if (!cancelled) setLoading(false); });
     return () => { cancelled = true; };
-  }, [merge?.part_name, merge?.table, merge?.is_running, services, kind]);
+  }, [merge?.part_name, merge?.table, merge?.hostname, merge?.event_time_microseconds, merge?.end_time, merge?.is_running, services, kind, isMutation]);
 
   if (!merge) return null;
 

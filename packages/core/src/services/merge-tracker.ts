@@ -508,6 +508,7 @@ export class MergeTracker {
       async getMergeEventTextLogs(record: {
         query_id?: string;
         event_time: string;
+        event_time_microseconds?: string;
         duration_ms: number;
         database: string;
         table: string;
@@ -515,7 +516,18 @@ export class MergeTracker {
         hostname?: string;
       }): Promise<MergeTextLog[]> {
         try {
-          const dateBound = eventDateBound(record.event_time);
+          // query_id is reused by retries. Bound every lookup to this attempt,
+          // before LIMIT so an earlier attempt cannot consume the result budget.
+          const attemptEnd = record.event_time_microseconds || record.event_time;
+          const attemptParams = {
+            attempt_end: attemptEnd,
+            attempt_duration_ms: Math.max(0, Math.ceil(record.duration_ms)),
+            // part_log duration is in whole milliseconds. Legacy records only
+            // carry completion seconds, so allow their missing fractional second.
+            attempt_slack_ms: record.event_time_microseconds ? 1 : 1000,
+          };
+          const startMs = parseUtcDateTimeInput(attemptEnd) - attemptParams.attempt_duration_ms - attemptParams.attempt_slack_ms;
+          const dateBound = eventDateBound(new Date(startMs).toISOString());
 
           // Strategy 1: exact match on uuid::part_name (fast path).
           // ClickHouse logs background merges with query_id = {uuid}::{part_name}.
@@ -536,7 +548,7 @@ export class MergeTracker {
               : GET_MERGE_TEXT_LOGS_BY_QUERY_ID;
             const exactParams: Record<string, string> = { query_id: queryId };
             if (record.hostname) exactParams.hostname = record.hostname;
-            const exactSql = buildQuery(exactTemplate.replace('{event_date_bound}', dateBound), exactParams);
+            const exactSql = buildQuery(exactTemplate.replace('{event_date_bound}', dateBound), { ...exactParams, ...attemptParams });
             const exactRows = await this.adapter.executeQuery(tagQuery(exactSql, sourceTag(TAB_MERGES, 'mergeTextLogs')));
             if (exactRows.length > 0) return exactRows.map(mapMergeTextLog);
           }
@@ -549,7 +561,7 @@ export class MergeTracker {
               : GET_MERGE_TEXT_LOGS_BY_QUERY_ID;
             const partLogParams: Record<string, string> = { query_id: record.query_id };
             if (record.hostname) partLogParams.hostname = record.hostname;
-            const partLogSql = buildQuery(exactTemplate.replace('{event_date_bound}', dateBound), partLogParams);
+            const partLogSql = buildQuery(exactTemplate.replace('{event_date_bound}', dateBound), { ...partLogParams, ...attemptParams });
             const partLogRows = await this.adapter.executeQuery(tagQuery(partLogSql, sourceTag(TAB_MERGES, 'mergeTextLogsPartLogQid')));
             if (partLogRows.length > 0) return partLogRows.map(mapMergeTextLog);
           }
@@ -564,7 +576,7 @@ export class MergeTracker {
             : GET_MERGE_TEXT_LOGS_BY_PART_SUFFIX;
           const suffixParams: Record<string, string> = { query_id_suffix: `%::${record.part_name}` };
           if (record.hostname) suffixParams.hostname = record.hostname;
-          const suffixSql = buildQuery(suffixTemplate.replace('{event_date_bound}', dateBound), suffixParams);
+          const suffixSql = buildQuery(suffixTemplate.replace('{event_date_bound}', dateBound), { ...suffixParams, ...attemptParams });
           const suffixRows = await this.adapter.executeQuery(tagQuery(suffixSql, sourceTag(TAB_MERGES, 'mergeTextLogsSuffix')));
           if (suffixRows.length > 0) return suffixRows.map(mapMergeTextLog);
 
@@ -574,7 +586,7 @@ export class MergeTracker {
           if (baseName) {
             const baseParams: Record<string, string> = { query_id_suffix: `%::${baseName}` };
             if (record.hostname) baseParams.hostname = record.hostname;
-            const baseSql = buildQuery(suffixTemplate.replace('{event_date_bound}', dateBound), baseParams);
+            const baseSql = buildQuery(suffixTemplate.replace('{event_date_bound}', dateBound), { ...baseParams, ...attemptParams });
             const baseRows = await this.adapter.executeQuery(tagQuery(baseSql, sourceTag(TAB_MERGES, 'mergeTextLogsBasePart')));
             if (baseRows.length > 0) return baseRows.map(mapMergeTextLog);
           }

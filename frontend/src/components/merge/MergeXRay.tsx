@@ -21,6 +21,7 @@ interface MergeXRayProps {
   resultPartName: string;
   /** event_time from part_log — used to correlate text_log timestamps */
   eventTime?: string;
+  eventTimeMicroseconds?: string;
   /** duration_ms from part_log */
   durationMs?: number;
   /** query_id from part_log (often empty for background merges) */
@@ -92,7 +93,7 @@ const CustomTooltip: React.FC<{
   );
 };
 
-export const MergeXRay: React.FC<MergeXRayProps> = ({ database, table, resultPartName, eventTime, durationMs, queryId, hostname }) => {
+export const MergeXRay: React.FC<MergeXRayProps> = ({ database, table, resultPartName, eventTime, eventTimeMicroseconds, durationMs, queryId, hostname }) => {
   const services = useClickHouseServices();
   const { samples, isLoading, error, fetch } = useMergeSamples({
     database,
@@ -117,6 +118,7 @@ export const MergeXRay: React.FC<MergeXRayProps> = ({ database, table, resultPar
       const logs = await services.mergeTracker.getMergeEventTextLogs({
         query_id: queryId,
         event_time: eventTime,
+        event_time_microseconds: eventTimeMicroseconds,
         duration_ms: durationMs ?? 0,
         database,
         table,
@@ -129,7 +131,7 @@ export const MergeXRay: React.FC<MergeXRayProps> = ({ database, table, resultPar
     } finally {
       setIsLoadingLogs(false);
     }
-  }, [services, eventTime, durationMs, queryId, database, table, resultPartName]);
+  }, [services, eventTime, eventTimeMicroseconds, durationMs, queryId, database, table, resultPartName, hostname]);
 
   useEffect(() => {
     if (samples.length > 0) fetchLogs();

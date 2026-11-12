@@ -354,10 +354,14 @@ export const GET_MERGE_TEXT_LOGS_BY_QUERY_ID = `
     logger_name AS source,
     thread_id,
     thread_name
-  FROM {{cluster_aware:system.text_log}}
+  FROM {{cluster_aware:system.text_log}} AS log
   WHERE query_id = {query_id}
     AND event_date >= {event_date_bound}
-  ORDER BY event_time_microseconds ASC
+    AND log.event_time_microseconds >= parseDateTime64BestEffort({attempt_end}, 6, 'UTC')
+      - toIntervalMillisecond({attempt_duration_ms}) - toIntervalMillisecond({attempt_slack_ms})
+    AND log.event_time_microseconds <= parseDateTime64BestEffort({attempt_end}, 6, 'UTC')
+      + toIntervalMillisecond({attempt_slack_ms})
+  ORDER BY log.event_time_microseconds ASC
   LIMIT 500
 `;
 
@@ -372,11 +376,15 @@ export const GET_MERGE_TEXT_LOGS_BY_QUERY_ID_HOST = `
     logger_name AS source,
     thread_id,
     thread_name
-  FROM {{cluster_aware:system.text_log}}
+  FROM {{cluster_aware:system.text_log}} AS log
   WHERE query_id = {query_id}
     AND event_date >= {event_date_bound}
+    AND log.event_time_microseconds >= parseDateTime64BestEffort({attempt_end}, 6, 'UTC')
+      - toIntervalMillisecond({attempt_duration_ms}) - toIntervalMillisecond({attempt_slack_ms})
+    AND log.event_time_microseconds <= parseDateTime64BestEffort({attempt_end}, 6, 'UTC')
+      + toIntervalMillisecond({attempt_slack_ms})
     AND hostName() = {hostname}
-  ORDER BY event_time_microseconds ASC
+  ORDER BY log.event_time_microseconds ASC
   LIMIT 500
 `;
 
@@ -398,10 +406,14 @@ export const GET_MERGE_TEXT_LOGS_BY_PART_SUFFIX = `
     logger_name AS source,
     thread_id,
     thread_name
-  FROM {{cluster_aware:system.text_log}}
+  FROM {{cluster_aware:system.text_log}} AS log
   WHERE query_id LIKE {query_id_suffix}
     AND event_date >= {event_date_bound}
-  ORDER BY event_time_microseconds ASC
+    AND log.event_time_microseconds >= parseDateTime64BestEffort({attempt_end}, 6, 'UTC')
+      - toIntervalMillisecond({attempt_duration_ms}) - toIntervalMillisecond({attempt_slack_ms})
+    AND log.event_time_microseconds <= parseDateTime64BestEffort({attempt_end}, 6, 'UTC')
+      + toIntervalMillisecond({attempt_slack_ms})
+  ORDER BY log.event_time_microseconds ASC
   LIMIT 500
 `;
 
@@ -416,11 +428,15 @@ export const GET_MERGE_TEXT_LOGS_BY_PART_SUFFIX_HOST = `
     logger_name AS source,
     thread_id,
     thread_name
-  FROM {{cluster_aware:system.text_log}}
+  FROM {{cluster_aware:system.text_log}} AS log
   WHERE query_id LIKE {query_id_suffix}
     AND event_date >= {event_date_bound}
+    AND log.event_time_microseconds >= parseDateTime64BestEffort({attempt_end}, 6, 'UTC')
+      - toIntervalMillisecond({attempt_duration_ms}) - toIntervalMillisecond({attempt_slack_ms})
+    AND log.event_time_microseconds <= parseDateTime64BestEffort({attempt_end}, 6, 'UTC')
+      + toIntervalMillisecond({attempt_slack_ms})
     AND hostName() = {hostname}
-  ORDER BY event_time_microseconds ASC
+  ORDER BY log.event_time_microseconds ASC
   LIMIT 500
 `;
 

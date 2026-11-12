@@ -70,10 +70,21 @@ describe('Merge timezone identities', { tags: ['merge-engine'] }, () => {
         for (const template of [GET_MERGE_TEXT_LOGS_BY_QUERY_ID, GET_MERGE_TEXT_LOGS_BY_QUERY_ID_HOST, GET_MERGE_TEXT_LOGS_BY_PART_SUFFIX, GET_MERGE_TEXT_LOGS_BY_PART_SUFFIX_HOST]) {
           const sql = buildQuery(template.replace('{event_date_bound}', eventDateBound(instant)), {
             query_id: 'fixture-query', query_id_suffix: '%fixture-query', hostname: rows[0].hostname!,
+            attempt_end: rows[0].event_time_microseconds!, attempt_duration_ms: 10000, attempt_slack_ms: 1,
           });
           const logs = await adapter.executeQuery(tagQuery(sql, 'TraceHouse:Merges:timezoneRegression'));
           expect(logs).toHaveLength(2);
           expect(parseAbsoluteTimestamp(String(logs[0].event_time_microseconds))).toBe(epoch * 1000 + 123);
+          // A retry reuses query_id but starts after the failed attempt ends.
+          // Even with the same part and host it must not enter that attempt's logs.
+          const retrySql = sql.replace(
+            /\{\{cluster_aware:system\.text_log\}\}/g,
+            mergeTimezoneFixture('text_log', epoch, zone)
+              .replace('+ 123456 + number,', '+ 123456 + number * 8000000,'),
+          );
+          const attemptLogs = await ctx.rawAdapter.executeQuery(tagQuery(retrySql, 'TraceHouse:Merges:retryRegression'));
+          expect(attemptLogs).toHaveLength(1);
+          expect(String(attemptLogs[0].event_time_microseconds)).toContain('.123456');
         }
         const nearest = await tracker.getMergeHistoryByPartName('default', 'fixture', 'part-fixture', {
           hostname: rows[0].hostname, event_type: 'MergeParts', event_time: instant,

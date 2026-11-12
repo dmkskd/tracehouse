@@ -4,9 +4,11 @@ import { MergeTracker } from '../merge-tracker.js';
 
 class MockAdapter implements IClickHouseAdapter {
   public queries: string[] = [];
+  public tableUuid?: string;
 
   async executeQuery<T extends Record<string, unknown>>(sql: TaggedQuery): Promise<T[]> {
     this.queries.push(sql);
+    if (this.tableUuid && sql.includes('system.tables')) return [{ uuid: this.tableUuid }] as unknown as T[];
     return [];
   }
 }
@@ -26,6 +28,35 @@ describe('MergeTracker active merges', () => {
 });
 
 describe('MergeTracker merge detail identity', () => {
+  it('matches the exact microsecond identity of a failed attempt', async () => {
+    const adapter = new MockAdapter();
+    await new MergeTracker(adapter).getMergeHistoryByPartName('analytics', 'events', 'part', {
+      hostname: 'replica-2', event_type: 'MergeParts',
+      event_time_microseconds: '2026-11-12 14:48:06.684123Z',
+    });
+    expect(adapter.queries[0]).toContain("hostName() = 'replica-2'");
+    expect(adapter.queries[0]).toContain("event_time_microseconds = parseDateTime64BestEffort('2026-11-12 14:48:06.684123Z', 6, 'UTC')");
+  });
+
+  it('bounds every text-log fallback to the selected attempt before LIMIT', async () => {
+    const adapter = new MockAdapter();
+    adapter.tableUuid = 'fixture-uuid';
+    await new MergeTracker(adapter).getMergeEventTextLogs({
+      database: 'analytics', table: 'events', part_name: '202602_651_873_3_709',
+      hostname: 'replica-2', query_id: 'mutation-query',
+      event_time: '2026-11-12T14:48:06Z',
+      event_time_microseconds: '2026-11-12 14:48:06.684123Z', duration_ms: 7150,
+    });
+    const logQueries = adapter.queries.filter(sql => sql.includes('system.text_log'));
+    expect(logQueries).toHaveLength(4);
+    for (const sql of logQueries) {
+      expect(sql).toContain("hostName() = 'replica-2'");
+      expect(sql).toContain("parseDateTime64BestEffort('2026-11-12 14:48:06.684123Z', 6, 'UTC')");
+      expect(sql).toContain('- toIntervalMillisecond(7150) - toIntervalMillisecond(1)');
+      expect(sql.indexOf('AND log.event_time_microseconds >=')).toBeLessThan(sql.indexOf('LIMIT 500'));
+    }
+  });
+
   it('keeps detail hydration on the selected host, operation, and event time', async () => {
     const adapter = new MockAdapter();
     const tracker = new MergeTracker(adapter);

@@ -32,6 +32,12 @@ describe('TimelineService operation status', () => {
       JSON.stringify(['MergeParts', '2026-10-27 12:00:01.000001']),
     ]);
     expect(timeline.merges.map(merge => merge.error)).toEqual([0, 241]);
+    for (const series of [timeline.merges, timeline.mutations]) {
+      expect(series.map(operation => operation.event_time_microseconds)).toEqual([
+        '2026-10-27 12:00:01.000000Z',
+        '2026-10-27 12:00:01.000001Z',
+      ]);
+    }
     expect(timeline.mutations.map(mutation => mutation.error)).toEqual([0, 241]);
     const rows = buildOperationRows(timeline, {
       metricMode: 'memory', sortField: 'metric', sortDir: 'desc',

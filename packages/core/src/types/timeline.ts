@@ -78,6 +78,8 @@ export interface QuerySeries {
 }
 
 export interface MergeSeries {
+  /** Unclipped UTC part_log completion time, retaining microsecond precision. */
+  event_time_microseconds?: string;
   /** Original part_log event identity, independent of the visible window. */
   operation_id?: string;
   part_name: string;
@@ -102,6 +104,8 @@ export interface MergeSeries {
 }
 
 export interface MutationSeries {
+  /** Unclipped UTC part_log completion time, retaining microsecond precision. */
+  event_time_microseconds?: string;
   /** Original part_log event identity, independent of the visible window. */
   operation_id?: string;
   part_name: string;
