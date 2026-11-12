@@ -762,7 +762,7 @@ function AppContent({ path }: AppContentProps) {
       >
         {isLoading && routeRequiresDatasource(routeKey) ? (
           <div style={{ padding: 32, color: 'var(--text-secondary)', textAlign: 'center' }}>
-            Restoring shared datasource and cluster…
+            Connecting to ClickHouse…
           </div>
         ) : error && routeRequiresDatasource(routeKey) ? (
           <div style={{ padding: 32, color: 'var(--color-error)', textAlign: 'center' }}>

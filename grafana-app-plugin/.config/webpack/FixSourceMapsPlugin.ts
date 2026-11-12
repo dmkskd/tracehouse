@@ -128,16 +128,13 @@ export class FixSourceMapsPlugin {
           }
         }
 
-        const keep: number[] = [];
+        // Mapping segments refer to source indices. Keep that array intact;
+        // remove dependency content without invalidating those references.
         for (let i = 0; i < m.sources.length; i++) {
           const src = m.sources[i];
-          if (src.includes('node_modules/') || src.includes('webpack/runtime')) continue;
-          keep.push(i);
-        }
-
-        if (keep.length < m.sources.length) {
-          m.sources = keep.map((i) => m.sources[i]);
-          m.sourcesContent = keep.map((i) => m.sourcesContent[i]);
+          if (src.includes('node_modules/') || src.includes('webpack/runtime')) {
+            m.sourcesContent[i] = null;
+          }
         }
 
         fs.writeFileSync(mapPath, JSON.stringify(m));

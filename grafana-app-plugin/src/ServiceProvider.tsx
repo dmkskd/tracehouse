@@ -367,7 +367,7 @@ export function ServiceProvider({ children }: { children: React.ReactNode }) {
     return useClusterStore.subscribe((state, prev) => {
       if (state.clusterName !== prev.clusterName) {
         services.clusterAdapter.setClusterName(state.clusterName);
-        services.eventsService.resetSourceAccess();
+        services.svcs.eventsService.resetSourceAccess();
         if (restoringSharedClusterRef.current) return;
         locationService.partial(shareCoordinateUpdate(datasourceUid!, state.clusterName), true);
         setClusterReady(true);
