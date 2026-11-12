@@ -12,6 +12,8 @@
  */
 
 import {
+  createContext,
+  useContext,
   useMemo,
   useEffect,
   useRef,
@@ -62,6 +64,13 @@ import {
 // Re-export hooks for backward compatibility
 export { useClickHouseServices, useRequiredClickHouseServices };
 export type { ClickHouseServices };
+
+/** True while a connection exists but its services are still withheld. */
+const ConnectionPreparingContext = createContext(false);
+
+export function useConnectionPreparing(): boolean {
+  return useContext(ConnectionPreparingContext);
+}
 
 // ---------------------------------------------------------------------------
 // Helper: build services from a ConnectionConfig
@@ -334,7 +343,9 @@ export function ClickHouseProvider({ children }: ClickHouseProviderProps) {
 
   return (
     <ClickHouseContext.Provider value={value}>
-      {children}
+      <ConnectionPreparingContext.Provider value={unresolvedValue !== null && value === null}>
+        {children}
+      </ConnectionPreparingContext.Provider>
     </ClickHouseContext.Provider>
   );
 }

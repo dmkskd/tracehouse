@@ -8,6 +8,8 @@
 
 import { create } from 'zustand';
 import type {
+  CapabilityProbeProgress,
+  CapabilityProbeStage,
   IClickHouseAdapter,
   MonitoringCapabilities,
   MonitoringCapability,
@@ -23,6 +25,12 @@ export type ProbeStatus = 'idle' | 'probing' | 'done' | 'error';
 /** Longest the app waits for the first probe before opening without it. */
 export const CAPABILITY_GATE_TIMEOUT_MS = 30_000;
 
+/** Start and end of one probe stage, in epoch milliseconds. */
+export interface ProbeStageTiming {
+  startedAt: number;
+  finishedAt: number | null;
+}
+
 interface MonitoringCapabilitiesState {
   /** Probed capabilities (null until probed) */
   capabilities: MonitoringCapabilities | null;
@@ -32,11 +40,22 @@ interface MonitoringCapabilitiesState {
   probeStatus: ProbeStatus;
   /** Error message if probe failed */
   probeError: string | null;
+  /** Latest progress of the running probe */
+  probeProgress: CapabilityProbeProgress | null;
+  /** Timing of each stage the current or last probe reached */
+  probeStages: Partial<Record<CapabilityProbeStage, ProbeStageTiming>>;
+  /** When the current or last probe started, in epoch milliseconds */
+  probeStartedAt: number | null;
+  /** Wall time of the last finished probe */
+  lastProbeDurationMs: number | null;
 
   // Actions
   setCapabilities: (caps: MonitoringCapabilities) => void;
   setProbeStatus: (status: ProbeStatus) => void;
   setProbeError: (error: string | null) => void;
+  /** Mark a probe as started and clear the previous one's progress. */
+  beginProbe: () => void;
+  reportProbeProgress: (progress: CapabilityProbeProgress) => void;
   refresh: (adapter: IClickHouseAdapter) => Promise<MonitoringCapabilities>;
   /** Fail the first probe if it is still running; a late result still applies. */
   expireFirstProbe: () => void;
@@ -82,14 +101,33 @@ const EMPTY_FLAGS: MonitoringFlags = {
   hasSystemProcesses: false,
 };
 
+/** Close the open stage and record the probe's wall time. */
+function finishedProbeTiming(
+  state: Pick<MonitoringCapabilitiesState, 'probeProgress' | 'probeStages' | 'probeStartedAt'>,
+): Partial<MonitoringCapabilitiesState> {
+  if (state.probeStartedAt === null) return {};
+  const now = Date.now();
+  const stages = { ...state.probeStages };
+  const open = state.probeProgress ? stages[state.probeProgress.stage] : undefined;
+  if (open && open.finishedAt === null) {
+    stages[state.probeProgress!.stage] = { ...open, finishedAt: now };
+  }
+  return { probeStages: stages, lastProbeDurationMs: now - state.probeStartedAt };
+}
+
 export const useMonitoringCapabilitiesStore = create<MonitoringCapabilitiesState>((set, get) => ({
   capabilities: null,
   flags: EMPTY_FLAGS,
   probeStatus: 'idle',
   probeError: null,
+  probeProgress: null,
+  probeStages: {},
+  probeStartedAt: null,
+  lastProbeDurationMs: null,
 
   setCapabilities: (caps: MonitoringCapabilities) => {
     set({
+      ...finishedProbeTiming(get()),
       capabilities: caps,
       flags: deriveMonitoringFlags(caps.capabilities, caps.serverVersion),
       probeStatus: 'done',
@@ -103,15 +141,44 @@ export const useMonitoringCapabilitiesStore = create<MonitoringCapabilitiesState
 
   setProbeError: (error: string | null) => {
     set({
+      ...(error ? finishedProbeTiming(get()) : {}),
       probeError: error,
       probeStatus: error ? 'error' : get().probeStatus,
     });
   },
 
+  beginProbe: () => {
+    set({
+      probeStatus: 'probing',
+      probeError: null,
+      probeProgress: null,
+      probeStages: {},
+      probeStartedAt: Date.now(),
+    });
+  },
+
+  reportProbeProgress: (progress: CapabilityProbeProgress) => {
+    const { probeProgress, probeStages } = get();
+    if (probeProgress?.stage === progress.stage) {
+      set({ probeProgress: progress });
+      return;
+    }
+    const now = Date.now();
+    const stages = { ...probeStages };
+    if (probeProgress) {
+      const previous = stages[probeProgress.stage];
+      if (previous) stages[probeProgress.stage] = { ...previous, finishedAt: now };
+    }
+    stages[progress.stage] = { startedAt: now, finishedAt: null };
+    set({ probeProgress: progress, probeStages: stages });
+  },
+
   refresh: async (adapter: IClickHouseAdapter) => {
-    set({ probeStatus: 'probing', probeError: null });
+    get().beginProbe();
     try {
-      const capabilities = await new MonitoringCapabilitiesService(adapter).probe();
+      const capabilities = await new MonitoringCapabilitiesService(adapter).probe(
+        progress => get().reportProbeProgress(progress),
+      );
       get().setCapabilities(capabilities);
       return capabilities;
     } catch (cause) {
@@ -137,6 +204,10 @@ export const useMonitoringCapabilitiesStore = create<MonitoringCapabilitiesState
       flags: EMPTY_FLAGS,
       probeStatus: 'idle',
       probeError: null,
+      probeProgress: null,
+      probeStages: {},
+      probeStartedAt: null,
+      lastProbeDurationMs: null,
     });
   },
 

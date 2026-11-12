@@ -23,6 +23,8 @@ import {
 import { useRefreshSettingsStore, useGlobalLastUpdatedStore } from '../stores/refreshSettingsStore';
 import { buildConfig } from '../buildConfig';
 import { globalRefreshLabel } from './layout-refresh-model';
+import { useConnectionPreparing } from '../providers/ClickHouseProvider';
+import { StartupProgress } from './shared/StartupProgress';
 
 interface LayoutProps {
   children: React.ReactNode;
@@ -501,6 +503,7 @@ const GlobalRefreshIndicator: React.FC = () => {
 export const Layout: React.FC<LayoutProps> = ({ children }) => {
   const { theme } = useTheme();
   const location = useLocation();
+  const connectionPreparing = useConnectionPreparing();
   const {
     rowRef: navRowRef,
     triggerRef: navTriggerRef,
@@ -645,6 +648,7 @@ export const Layout: React.FC<LayoutProps> = ({ children }) => {
       {/* Page Content */}
       <main className="flex-1 overflow-auto">
         {children}
+        {connectionPreparing && <StartupProgress />}
       </main>
     </div>
   );

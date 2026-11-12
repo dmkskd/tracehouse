@@ -53,6 +53,18 @@ export interface MonitoringCapabilities {
   capabilities: MonitoringCapability[];
 }
 
+/** Probe stages reported while a capability probe runs. */
+export type CapabilityProbeStage = 'metadata' | 'tableAccess';
+
+/** Progress of a running capability probe. */
+export interface CapabilityProbeProgress {
+  stage: CapabilityProbeStage;
+  /** Read-access checks finished so far; 0 during the metadata stage. */
+  checked: number;
+  /** Read-access checks planned; 0 during the metadata stage. */
+  total: number;
+}
+
 /**
  * Quick-access boolean flags derived from capabilities.
  * Use these in conditional rendering instead of searching the array.

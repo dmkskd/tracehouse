@@ -8,6 +8,7 @@
 
 import type { IClickHouseAdapter } from '../adapters/types.js';
 import type {
+  CapabilityProbeProgress,
   MonitoringCapabilities,
   MonitoringCapability,
 } from '../types/monitoring-capabilities.js';
@@ -216,6 +217,19 @@ interface ProcessorProfileSchemaProbe {
   error?: string;
 }
 
+/** Simultaneous read-access checks during the capability probe. */
+const READ_ACCESS_CONCURRENCY = 4;
+
+/**
+ * Read checks measured at 0.7-2s on a 4-replica cluster: SELECT * analyzes
+ * every column of the wide metric tables, and the DDL queue reads Keeper.
+ */
+const SLOW_READ_ACCESS_TABLES = new Set([
+  'system.metric_log',
+  'system.query_metric_log',
+  'system.distributed_ddl_queue',
+]);
+
 function readAccessFailure(table: string, error: string | undefined): Partial<MonitoringCapability> {
   if (error === undefined) return {};
   const denied = /ACCESS_DENIED|Code:\s*497\b|Not enough privileges/i.test(error);
@@ -265,7 +279,10 @@ export class MonitoringCapabilitiesService {
    * Probe all monitoring capabilities. Safe to call — catches errors
    * per-probe so partial results are still returned.
    */
-  async probe(): Promise<MonitoringCapabilities> {
+  async probe(
+    onProgress?: (progress: CapabilityProbeProgress) => void,
+  ): Promise<MonitoringCapabilities> {
+    onProgress?.({ stage: 'metadata', checked: 0, total: 0 });
     const [
       snapshot,
       logTables,
@@ -304,7 +321,7 @@ export class MonitoringCapabilitiesService {
         && (table !== 'stack_trace' || hasIntrospection),
       ).map(table => `system.${table}`),
       ...[...tracehouseTables.keys()].map(table => `tracehouse.${table}`),
-    ], version);
+    ], version, onProgress);
     const readableLogTables = new Set([...logTables.keys()].filter(table => {
       const info = logTables.get(table)!;
       return info.availableHosts >= info.expectedHosts && !readErrors.has(`system.${table}`);
@@ -807,15 +824,28 @@ export class MonitoringCapabilitiesService {
     };
   }
 
-  private async probeTableReadAccess(tables: string[], version: string): Promise<Map<string, string>> {
+  private async probeTableReadAccess(
+    tables: string[],
+    version: string,
+    onProgress?: (progress: CapabilityProbeProgress) => void,
+  ): Promise<Map<string, string>> {
     const errors = new Map<string, string>();
+    let checked = 0;
+    const report = () => onProgress?.({ stage: 'tableAccess', checked, total: tables.length });
+    report();
     // CHECK GRANT is available in our supported 25.1+ releases. Unlike a
     // denied SELECT it returns 0 successfully and does not pollute query logs.
     const canCheckGrants = isClickHouseVersionAtLeast(version, 25, 1);
-    // Bound concurrency so connection setup does not exhaust a restricted
-    // account's simultaneous-query allowance. No table rows are read.
-    for (let offset = 0; offset < tables.length; offset += 4) {
-      await Promise.all(tables.slice(offset, offset + 4).map(async table => {
+    // Slowest checks start first so they overlap with the fast ones.
+    const queue = [
+      ...tables.filter(table => SLOW_READ_ACCESS_TABLES.has(table)),
+      ...tables.filter(table => !SLOW_READ_ACCESS_TABLES.has(table)),
+    ];
+    // A bounded pool keeps connection setup within a restricted account's
+    // simultaneous-query allowance. Each worker takes the next table as soon
+    // as its current check finishes. No table rows are read.
+    const worker = async () => {
+      for (let table = queue.shift(); table !== undefined; table = queue.shift()) {
         try {
           if (canCheckGrants && this.adapter.executeRawQuery) {
             // CHECK GRANT does not accept a FORMAT clause. The raw transport
@@ -828,7 +858,7 @@ export class MonitoringCapabilitiesService {
             if (granted === undefined) throw new Error('SELECT grant probe returned no result');
             if (Number(granted) !== 1) {
               errors.set(table, `Not enough privileges: SELECT ON ${table} (ACCESS_DENIED)`);
-              return;
+              continue;
             }
           }
           // `SELECT *` checks SELECT on every column; `SELECT 1` passes with a
@@ -842,9 +872,13 @@ export class MonitoringCapabilitiesService {
         } catch (error) {
           const message = error instanceof Error ? error.message : String(error);
           errors.set(table, message || 'Unknown read access error');
+        } finally {
+          checked++;
+          report();
         }
-      }));
-    }
+      }
+    };
+    await Promise.all(Array.from({ length: READ_ACCESS_CONCURRENCY }, worker));
     return errors;
   }
 

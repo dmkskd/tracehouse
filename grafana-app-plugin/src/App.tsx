@@ -10,6 +10,7 @@ import { DatasourceSelector } from './components/DatasourceSelector';
 import { LocationContext, AppLocation } from './hooks/useAppLocation';
 import { useUserPreferenceStore } from '@frontend/stores/userPreferenceStore';
 import { useRefreshSettingsStore, useGlobalLastUpdatedStore } from '@frontend/stores/refreshSettingsStore';
+import { StartupProgress } from '@frontend/components/shared/StartupProgress';
 import {
   TRACEHOUSE_OVERFLOW_ITEMS,
   TRACEHOUSE_OVERFLOW_NAVIGATION,
@@ -760,15 +761,12 @@ function AppContent({ path }: AppContentProps) {
           overflow: pageOwnsScroll ? 'hidden' : 'auto',
         }}
       >
-        {isLoading && routeRequiresDatasource(routeKey) ? (
-          <div style={{ padding: 32, color: 'var(--text-secondary)', textAlign: 'center' }}>
-            Connecting to ClickHouse…
-          </div>
-        ) : error && routeRequiresDatasource(routeKey) ? (
+        {isLoading && routeRequiresDatasource(routeKey) && <StartupProgress />}
+        {error && routeRequiresDatasource(routeKey) ? (
           <div style={{ padding: 32, color: 'var(--color-error)', textAlign: 'center' }}>
             {error}
           </div>
-        ) : !services && routeRequiresDatasource(routeKey) ? (
+        ) : !services && !isLoading && routeRequiresDatasource(routeKey) ? (
           <NoDatasourceMessage />
         ) : (
           <Suspense fallback={

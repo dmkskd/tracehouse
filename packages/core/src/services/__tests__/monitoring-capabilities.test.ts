@@ -302,6 +302,53 @@ describe('MonitoringCapabilitiesService', () => {
     });
   });
 
+  it('runs read checks in a bounded pool that starts slow tables first', async () => {
+    const adapter = adapterForCapabilities({
+      systemTables: [
+        'merges', 'mutations', 'clusters', 'replicas', 'parts',
+        'databases', 'processes', 'distributed_ddl_queue', 'zookeeper',
+      ],
+    });
+    const base = adapter.executeQuery.bind(adapter);
+    const started: string[] = [];
+    let inFlight = 0;
+    let peak = 0;
+    let releaseSlow!: () => void;
+    const slow = new Promise<void>(resolve => { releaseSlow = resolve; });
+    adapter.executeQuery = vi.fn(async (sql: TaggedQuery) => {
+      if (!sql.includes('source:TraceHouse:Internal:tableReadAccess')) return base(sql);
+      const table = /\{\{cluster_aware:([\w.]+)\}\}/.exec(sql)![1];
+      started.push(table);
+      peak = Math.max(peak, ++inFlight);
+      try {
+        await (table === 'system.distributed_ddl_queue'
+          ? slow
+          : new Promise(resolve => setTimeout(resolve, 5)));
+        return [];
+      } finally {
+        inFlight--;
+      }
+    }) as IClickHouseAdapter['executeQuery'];
+
+    const progress: string[] = [];
+    const probing = new MonitoringCapabilitiesService(adapter).probe(
+      update => progress.push(`${update.stage}:${update.checked}/${update.total}`),
+    );
+    // Every other table is checked while the slow one is still running.
+    await vi.waitFor(() => {
+      expect(started).toHaveLength(9);
+      expect(inFlight).toBe(1);
+    });
+    expect(started[0]).toBe('system.distributed_ddl_queue');
+    expect(peak).toBe(4);
+    expect(progress.at(-1)).toBe('tableAccess:8/9');
+    releaseSlow();
+    await probing;
+    expect(progress[0]).toBe('metadata:0/0');
+    expect(progress).toContain('tableAccess:0/9');
+    expect(progress.at(-1)).toBe('tableAccess:9/9');
+  });
+
   it('uses one snapshot and checks read access only for present, configured tables', async () => {
     const adapter = adapterForCapabilities();
 

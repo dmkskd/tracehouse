@@ -121,7 +121,7 @@ interface MonitoringCapabilitiesCardProps {
 }
 
 export function MonitoringCapabilitiesCard({ className = '' }: MonitoringCapabilitiesCardProps) {
-  const { capabilities, probeStatus, probeError } = useMonitoringCapabilitiesStore();
+  const { capabilities, probeStatus, probeError, lastProbeDurationMs } = useMonitoringCapabilitiesStore();
   const [showUnavailable, setShowUnavailable] = useState(false);
   const [viewMode, setViewMode] = useState<ViewMode>('capabilities');
   // Compute screen availability summaries from registry + probed capabilities
@@ -195,6 +195,11 @@ export function MonitoringCapabilitiesCard({ className = '' }: MonitoringCapabil
             <span style={{ fontFamily: 'monospace', color: '#22c55e' }}>{totalAvailable}</span>/{capabilities.capabilities.length}
           </span>
           <span style={{ fontFamily: 'monospace', color: 'var(--text-muted)' }}>v{capabilities.serverVersion}</span>
+          {lastProbeDurationMs !== null && (
+            <span style={{ fontFamily: 'monospace', color: 'var(--text-muted)' }} title="Time the last capability check took">
+              checked in {(lastProbeDurationMs / 1000).toFixed(1)}s
+            </span>
+          )}
         </div>
       </div>
 

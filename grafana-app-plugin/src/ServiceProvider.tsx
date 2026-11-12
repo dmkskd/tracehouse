@@ -261,12 +261,14 @@ export function ServiceProvider({ children }: { children: React.ReactNode }) {
       return;
     }
 
-    capStore.setProbeStatus('probing');
+    capStore.beginProbe();
     const timer = setTimeout(() => capStore.expireFirstProbe(), CAPABILITY_GATE_TIMEOUT_MS);
     const svc = new MonitoringCapabilitiesService(readyServices.adapter);
     let cancelled = false;
 
-    svc.probe().then(caps => {
+    svc.probe(progress => {
+      if (!cancelled) capStore.reportProbeProgress(progress);
+    }).then(caps => {
       if (!cancelled) {
         capStore.setCapabilities(caps);
       }
