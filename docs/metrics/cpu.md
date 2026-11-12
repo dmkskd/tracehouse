@@ -66,12 +66,19 @@ The first query reads the selected historical window from
 
 1. `CGroupMaxCPU`
 2. `NumberOfCPUCores`
-3. The distinct count of `OSUserTimeCPU*` metrics
+3. The count of per-core `OSUserTimeCPU` metrics
+
+Older servers expose numbered names such as `OSUserTimeCPU0`. Newer servers
+store the core number in `asynchronous_metric_log.key`, or in the
+`asynchronous_metrics.key_values` map. Time Travel probes the schema and counts
+the distinct keys or map entries when those columns are available. The bare
+`OSUserTimeCPU` name must never count as one core: doing so incorrectly clamps
+all server CPU readings to one core.
 
 The effective capacity for one host is:
 
 ```text
-host_cores = NumberOfCPUCores, otherwise count(OSUserTimeCPU*)
+host_cores = NumberOfCPUCores, otherwise per-core metric/key count
 capacity   = min(CGroupMaxCPU, host_cores) when both exist
              CGroupMaxCPU                  when only it exists
              host_cores                    otherwise
