@@ -50,6 +50,8 @@ describe('Events distributed LIMIT BY compatibility', { tags: ['cluster'] }, () 
     const capabilityResult = await new MonitoringCapabilitiesService(
       adapter,
     ).probe();
+    expect(capabilityResult.capabilities.find(capability => capability.id === 'query_log'))
+      .toMatchObject({ available: true });
     await Promise.all([
       ctx.client1.command({ query: 'SYSTEM FLUSH LOGS' }),
       ctx.client2.command({ query: 'SYSTEM FLUSH LOGS' }),

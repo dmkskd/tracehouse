@@ -11,8 +11,18 @@ import { ClusterService } from '../services/cluster-service.js';
 
 export class ClusterAwareAdapter implements IClickHouseAdapter {
   private clusterName: string | null = null;
+  readonly executeRawQuery?: NonNullable<IClickHouseAdapter['executeRawQuery']>;
 
-  constructor(private inner: IClickHouseAdapter) {}
+  constructor(private inner: IClickHouseAdapter) {
+    const rawQuery = inner.executeRawQuery?.bind(inner);
+    if (rawQuery) {
+      this.executeRawQuery = (sql, database, options) => rawQuery(
+        ClusterService.resolveTableRefs(sql, this.clusterName) as TaggedQuery,
+        database,
+        options,
+      );
+    }
+  }
 
   get supportsExplicitQueryId(): boolean {
     return this.inner.supportsExplicitQueryId === true;
@@ -32,16 +42,5 @@ export class ClusterAwareAdapter implements IClickHouseAdapter {
 
   async executeCommand(sql: TaggedQuery): Promise<void> {
     return this.inner.executeCommand?.(sql);
-  }
-
-  async executeRawQuery(sql: TaggedQuery, database?: string, options?: QueryExecutionOptions): Promise<string[]> {
-    if (!this.inner.executeRawQuery) {
-      throw new Error('executeRawQuery not supported by inner adapter');
-    }
-    return this.inner.executeRawQuery(
-      ClusterService.resolveTableRefs(sql, this.clusterName) as TaggedQuery,
-      database,
-      options,
-    );
   }
 }

@@ -4,6 +4,7 @@ import type {
   TaggedQuery,
 } from '../../adapters/types.js';
 import { MonitoringCapabilitiesService } from '../monitoring-capabilities.js';
+import { ClusterAwareAdapter } from '../../adapters/cluster-adapter.js';
 import { processorProfileCompatibilityFromMonitoringCapabilities } from '../distributed-query-topology.js';
 
 interface AdapterOptions {
@@ -105,6 +106,21 @@ function adapterForCapabilities(options: AdapterOptions = {}): IClickHouseAdapte
 }
 
 describe('MonitoringCapabilitiesService', () => {
+  it('falls back to zero-row reads when the wrapped cluster adapter lacks raw-query support', async () => {
+    const inner = adapterForCapabilities({ extraLogTables: ['query_log'] });
+    delete inner.executeRawQuery;
+    const adapter = new ClusterAwareAdapter(inner);
+    adapter.setClusterName('default');
+    expect(adapter.executeRawQuery).toBeUndefined();
+
+    const result = await new MonitoringCapabilitiesService(adapter).probe();
+
+    expect(result.capabilities.find(item => item.id === 'query_log')).toMatchObject({ available: true });
+    const queries = vi.mocked(inner.executeQuery).mock.calls.map(([sql]) => String(sql));
+    expect(queries.some(sql => sql.includes('CHECK GRANT'))).toBe(false);
+    expect(queries.some(sql => sql.includes("SELECT * FROM clusterAllReplicas('default', system.query_log) LIMIT 0"))).toBe(true);
+  });
+
   it('disables visible tables without SELECT permission before event collection', async () => {
     const mock = adapterForCapabilities({
       extraLogTables: ['zookeeper_connection_log', 'metric_log', 'query_metric_log'],

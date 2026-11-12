@@ -5,6 +5,20 @@ All notable changes to the TraceHouse Grafana plugin will be documented in this 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.21.0] - 2026-11-12
+
+### New features
+- **Analytics:** Added operational event overlays with filters, detail links, and shared-link support.
+- **Analytics:** Added drag-to-zoom across the dashboard, with Zoom out to restore previous ranges.
+
+### Improvements
+- **Time Travel:** Failed operations now show red hatching and error codes in the 2D timeline.
+- **Time Travel:** Improved hover tooltips for server usage and active operations.
+
+### Bug fixes
+- **Time Travel:** Fixed CPU capacity detection treating multi-core servers as having one core.
+- **Time Travel / Merges:** Fixed details, logs, and X-Ray mixing merge or mutation retries across attempts and servers.
+
 ## [0.20.0] - 2026-11-10
 
 This release's highlight is support for ClickHouse clusters configured with a timezone other than UTC, where TraceHouse used to show shifted or missing data ([#5](https://github.com/dmkskd/tracehouse/issues/5)).
