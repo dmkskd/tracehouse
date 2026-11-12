@@ -4,7 +4,7 @@
  *
  * Extracted from TimeTravelPage for clarity.
  */
-import React, { useState, useCallback, useMemo, useRef, useEffect } from 'react';
+import React, { useState, useCallback, useMemo, useRef, useEffect, useId } from 'react';
 import type { MemoryTimeline, OperationalEvent, ZoomSample } from '@tracehouse/core';
 import {
   getMergeCategoryInfo,
@@ -52,6 +52,10 @@ function lookupSample(samples: { ms: number; v: number }[], t: number): number {
 /** Highlight color for hash-matched queries */
 const HASH_MATCH_COLOR = '#58a6ff';
 
+// Temporary visual trial: diagonal red hatching marks failed operations in dense stacks.
+// Set to false to restore the original solid fills; no data or interaction changes needed.
+const ENABLE_FAILURE_HATCHING = true;
+
 /**
  * The hover tooltip floats over the chart with a blurred backdrop. Safari
  * repaints that blur against the whole SVG on every mouse move, which can
@@ -89,6 +93,7 @@ export const TimelineChart: React.FC<{
   hiddenCategories, queryHashActive, eventAnnotations = [], selectedEventId,
   onEventSelect, onClearEventSelection, onViewEventDetails,
 }) => {
+  const failureHatchId = `failure-hatch-${useId().replace(/:/g, '')}`;
   const containerRef = useRef<HTMLDivElement>(null);
   const [chartWidth, setChartWidth] = useState(1000);
   const W = chartWidth, H = height;
@@ -301,7 +306,7 @@ export const TimelineChart: React.FC<{
   const areas = useMemo(() => {
     if (buckets.length < 2 || cumStacks.length === 0) return [];
     const total = nq + nm + nmut;
-    const res: { d: string; color: string; isRunning: boolean; dimmed: boolean }[] = [];
+    const res: { d: string; color: string; isRunning: boolean; failed: boolean; dimmed: boolean }[] = [];
     for (let idx = 0; idx < total; idx++) {
       const top = cumStacks[idx];
       const bot = idx > 0 ? cumStacks[idx - 1] : null;
@@ -309,22 +314,26 @@ export const TimelineChart: React.FC<{
       const botPts = buckets.map((b, bi) => `${xScale(b.t)},${yScale(bot ? bot[bi] : 0)}`).reverse().join(' L');
       let color: string;
       let isRunning = false;
+      let failed = false;
       let dimmed = false;
       if (idx < nq) {
         const isMatch = data.queries[idx]?.matched_hash;
         color = queryHashActive && isMatch ? HASH_MATCH_COLOR : Q_COLORS[idx % Q_COLORS.length];
         isRunning = data.queries[idx]?.is_running ?? false;
+        failed = (data.queries[idx]?.exception_code ?? 0) !== 0;
         dimmed = !!queryHashActive && !isMatch;
       } else if (idx < nq + nm) {
         color = M_COLORS[(idx - nq) % M_COLORS.length];
         isRunning = data.merges[idx - nq]?.is_running ?? false;
+        failed = (data.merges[idx - nq]?.error ?? 0) !== 0;
         dimmed = !!queryHashActive;
       } else {
         color = MUT_COLORS[(idx - nq - nm) % MUT_COLORS.length];
         isRunning = (data.mutations ?? [])[idx - nq - nm]?.is_running ?? false;
+        failed = ((data.mutations ?? [])[idx - nq - nm]?.error ?? 0) !== 0;
         dimmed = !!queryHashActive;
       }
-      res.push({ d: `M${topPts} L${botPts} Z`, color, isRunning, dimmed });
+      res.push({ d: `M${topPts} L${botPts} Z`, color, isRunning, failed, dimmed });
     }
     return res;
   }, [buckets, cumStacks, nq, nm, nmut, xScale, yScale, data.queries, data.merges, data.mutations, queryHashActive]);
@@ -558,6 +567,10 @@ export const TimelineChart: React.FC<{
         onMouseDown={handleMouseDown} onMouseMove={handleMouseMove}
         onMouseUp={handleMouseUp} onMouseLeave={handleMouseLeave}>
         <defs>
+          {/* Overlay only: preserve each operation's colour and existing hover treatment. */}
+          <pattern id={failureHatchId} width="7" height="7" patternUnits="userSpaceOnUse">
+            <path d="M-1,1 L1,-1 M0,7 L7,0 M6,8 L8,6" stroke="#f85149" strokeWidth="1.5" />
+          </pattern>
           <linearGradient id="serverFill" x1="0" y1="0" x2="0" y2="1">
             <stop offset="0%" stopColor={cfg.color} stopOpacity="0.25" />
             <stop offset="100%" stopColor={cfg.color} stopOpacity="0.02" />
@@ -611,18 +624,24 @@ export const TimelineChart: React.FC<{
           const hasAnyHighlight = highlightedItem !== null || snap?.hoveredBand !== null;
           const baseOpacity = isHovered ? 1 : a.dimmed ? 0.12 : (hasAnyHighlight ? 0.3 : 0.6);
           return (
-            <path
+            <g
               key={i}
-              d={a.d}
-              fill={a.color}
               opacity={baseOpacity}
-              stroke={isHovered ? '#fff' : 'none'}
-              strokeWidth={isHovered ? 1.5 : 0}
-              filter={isHovered ? 'url(#glow)' : undefined}
               style={a.isRunning ? {
                 animation: 'bandPulse 4.5s ease-in-out infinite',
               } : undefined}
-            />
+            >
+              <path
+                d={a.d}
+                fill={a.color}
+                stroke={isHovered ? '#fff' : 'none'}
+                strokeWidth={isHovered ? 1.5 : 0}
+                filter={isHovered ? 'url(#glow)' : undefined}
+              />
+              {ENABLE_FAILURE_HATCHING && a.failed && (
+                <path d={a.d} fill={`url(#${failureHatchId})`} pointerEvents="none" />
+              )}
+            </g>
           );
         })}
         {/* Server line fill + stroke */}
@@ -782,6 +801,11 @@ export const TimelineChart: React.FC<{
             : band.type === 'merge' ? data.merges[band.idx]
               : (data.mutations ?? [])[band.idx]
           : null;
+        // Match the table/hatching failure codes for queries, merges, and mutations.
+        // Failure is the final outcome even when hovering an earlier point in its lifetime.
+        const failureCode = hovItem
+          ? ('query_id' in hovItem ? hovItem.exception_code : hovItem.error) ?? 0
+          : 0;
         const accentColor = band
           ? band.type === 'query' ? (queryHashActive && data.queries[band.idx]?.matched_hash ? HASH_MATCH_COLOR : Q_COLORS[band.idx % Q_COLORS.length])
             : band.type === 'merge' ? M_COLORS[band.idx % M_COLORS.length]
@@ -823,12 +847,17 @@ export const TimelineChart: React.FC<{
                   <span style={{ color: 'var(--text-muted)', fontSize: 9 }}>·</span>
                   <span style={{ color: 'var(--text-secondary)', fontSize: 9 }}>{fmtMs(hovItem.duration_ms)}</span>
                   {/* Running indicator with progress for merges/mutations */}
-                  {hovItem.is_running && (
+                  {hovItem.is_running && failureCode === 0 && (
                     <span style={{ fontSize: 9, color: '#3fb950', fontWeight: 600 }}>
                       Running{'progress' in hovItem && typeof hovItem.progress === 'number' ? ` ${(hovItem.progress * 100).toFixed(0)}%` : ''}
                     </span>
                   )}
                 </div>
+                {failureCode !== 0 && (
+                  <div style={{ color: '#f85149', fontSize: 10, fontWeight: 600, marginBottom: 6 }}>
+                    × Failed · Code {failureCode}
+                  </div>
+                )}
                 {/* Identifier */}
                 {band.type === 'query' ? (
                   <>

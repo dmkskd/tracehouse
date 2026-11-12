@@ -11,12 +11,14 @@ Usage:
 from __future__ import annotations
 
 import argparse
+import math
 import os
 import re
 import threading
 import time
 from collections.abc import Callable, Collection
 from datetime import datetime
+from functools import partial
 
 from clickhouse_driver import Client
 
@@ -55,14 +57,22 @@ SETTINGS
     max_execution_time = 5
 """
 
-TIMEOUT_QUERY = f"""
+def timeout_query(seconds: float = 15) -> str:
+    """Burn CPU before failing so the query spans multiple timeline samples."""
+    if not math.isfinite(seconds) or seconds <= 0:
+        raise ValueError("timeout seconds must be finite and greater than zero")
+    return f"""
 /* {EVENT_TAG} kind:query_timeout */
 SELECT sum(sipHash64(number))
 FROM numbers_mt(1000000000000)
 SETTINGS
-    max_execution_time = 0.05,
+    max_threads = 2,
+    max_execution_time = {seconds:g},
+    timeout_before_checking_execution_speed = 0,
     timeout_overflow_mode = 'throw'
 """
+
+TIMEOUT_QUERY = timeout_query()
 
 RESOURCE_LIMIT_QUERY = f"""
 /* {EVENT_TAG} kind:query_resource_limit */
@@ -166,10 +176,10 @@ def generate_oom(client: Client, database: str) -> bool:
     return execute_expected_failure(client, OOM_QUERY, 241, "query OOM")
 
 
-def generate_timeout(client: Client, database: str) -> bool:
+def generate_timeout(client: Client, database: str, seconds: float = 15) -> bool:
     """Generate a query-scoped TIMEOUT_EXCEEDED event."""
     del database
-    return execute_expected_failure(client, TIMEOUT_QUERY, 159, "query timeout")
+    return execute_expected_failure(client, timeout_query(seconds), 159, "query timeout")
 
 
 def generate_resource_limit(client: Client, database: str) -> bool:
@@ -433,12 +443,14 @@ def run_schedule(
     intervals: dict[str, float],
     once: bool,
     duration: float | None,
+    timeout_seconds: float = 15,
 ) -> int:
     """Run selected event generators once or on independent cadences."""
     generated = 0
+    generators = {**GENERATORS, "timeout": partial(generate_timeout, seconds=timeout_seconds)}
     if once:
         for event_type in event_types:
-            generated += int(GENERATORS[event_type](client, database))
+            generated += int(generators[event_type](client, database))
         flush_logs(client)
         return generated
 
@@ -451,7 +463,7 @@ def run_schedule(
 
         for event_type in event_types:
             if now >= due[event_type]:
-                generated += int(GENERATORS[event_type](client, database))
+                generated += int(generators[event_type](client, database))
                 due[event_type] = time.monotonic() + intervals[event_type]
 
         next_due = min(due.values())
@@ -508,6 +520,12 @@ def _parse_args() -> tuple[argparse.Namespace, str | None]:
         help="Seconds between query OOMs ($CH_EVENT_OOM_INTERVAL)",
     )
     parser.add_argument(
+        "--timeout-seconds",
+        type=float,
+        default=float(os.environ.get("CH_EVENT_TIMEOUT_SECONDS", "15")),
+        help="CPU workload seconds before an intentional query timeout ($CH_EVENT_TIMEOUT_SECONDS)",
+    )
+    parser.add_argument(
         "--timeout-interval",
         type=float,
         default=float(os.environ.get("CH_EVENT_TIMEOUT_INTERVAL", "600")),
@@ -545,6 +563,8 @@ def _parse_args() -> tuple[argparse.Namespace, str | None]:
     )
     args = parser.parse_args()
 
+    if not math.isfinite(args.timeout_seconds) or args.timeout_seconds <= 0:
+        parser.error("--timeout-seconds must be finite and greater than zero")
     try:
         quote_identifier(args.database)
     except ValueError as error:
@@ -566,6 +586,8 @@ def main() -> None:
     print("It does not restart, crash, fill, or corrupt the ClickHouse server.")
     print(f"  Types:    {', '.join(args.types)}")
     print(f"  Database: {args.database} (disposable event tables)")
+    if "timeout" in args.types:
+        print(f"  Timeout:  {args.timeout_seconds:g}s of CPU work before failure (up to 2 threads)")
     if not args.once:
         print(
             "  Cadence:  "
@@ -624,6 +646,7 @@ def main() -> None:
                 intervals,
                 args.once,
                 args.duration,
+                args.timeout_seconds,
             )
         except KeyboardInterrupt:
             _stop_event.set()

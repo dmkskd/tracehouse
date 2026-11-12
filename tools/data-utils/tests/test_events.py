@@ -20,6 +20,8 @@ from data_utils.cli.events import (
     generate_rejected,
     parse_event_types,
     quote_identifier,
+    generate_timeout,
+    timeout_query,
 )
 
 
@@ -95,7 +97,8 @@ def test_failure_queries_are_tagged_and_bounded() -> None:
     assert "max_memory_usage = 1000000" in OOM_QUERY
     assert "max_execution_time = 5" in OOM_QUERY
     assert EVENT_TAG in TIMEOUT_QUERY
-    assert "max_execution_time = 0.05" in TIMEOUT_QUERY
+    assert "max_execution_time = 15" in TIMEOUT_QUERY
+    assert "max_threads = 2" in TIMEOUT_QUERY
     assert "timeout_overflow_mode = 'throw'" in TIMEOUT_QUERY
     assert EVENT_TAG in NETWORK_QUERY
     assert "127.0.0.1:1" in NETWORK_QUERY
@@ -103,6 +106,19 @@ def test_failure_queries_are_tagged_and_bounded() -> None:
     assert EVENT_TAG in RESOURCE_LIMIT_QUERY
     assert "min_free_disk_space_for_temporary_data = 1000000000000000" in RESOURCE_LIMIT_QUERY
     assert "max_execution_time = 5" in RESOURCE_LIMIT_QUERY
+
+
+@pytest.mark.parametrize("seconds", [0, -1, float("inf"), float("nan")])
+def test_timeout_rejects_invalid_duration(seconds: float) -> None:
+    with pytest.raises(ValueError):
+        timeout_query(seconds)
+
+
+def test_timeout_runs_configured_workload_and_requires_timeout_error() -> None:
+    client = FailingClient(159)
+    assert generate_timeout(client, "unused", seconds=30)
+    assert "max_execution_time = 30" in client.queries[0]
+    assert not generate_timeout(FailingClient(241), "unused", seconds=30)
 
 
 def test_expected_failure_accepts_only_expected_code() -> None:
