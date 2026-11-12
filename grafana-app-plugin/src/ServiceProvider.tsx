@@ -355,12 +355,19 @@ export function ServiceProvider({ children }: { children: React.ReactNode }) {
     return () => { cancelled = true; };
   }, [unresolvedServices, services, preferredCluster, datasourceUid]);
 
+  useEffect(() => useMonitoringCapabilitiesStore.subscribe((state, prev) => {
+    if (state.capabilities && state.capabilities !== prev.capabilities) {
+      clickHouseServices?.eventsService.resetSourceAccess();
+    }
+  }), [clickHouseServices]);
+
   // Sync ClusterAwareAdapter when user switches cluster via dropdown
   useEffect(() => {
     if (!services) return;
     return useClusterStore.subscribe((state, prev) => {
       if (state.clusterName !== prev.clusterName) {
         services.clusterAdapter.setClusterName(state.clusterName);
+        services.eventsService.resetSourceAccess();
         if (restoringSharedClusterRef.current) return;
         locationService.partial(shareCoordinateUpdate(datasourceUid!, state.clusterName), true);
         setClusterReady(true);

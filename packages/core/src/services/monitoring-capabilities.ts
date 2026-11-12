@@ -216,6 +216,16 @@ interface ProcessorProfileSchemaProbe {
   error?: string;
 }
 
+function readAccessFailure(table: string, error: string | undefined): Partial<MonitoringCapability> {
+  if (error === undefined) return {};
+  const denied = /ACCESS_DENIED|Code:\s*497\b|Not enough privileges/i.test(error);
+  return {
+    probeError: error,
+    unavailableReason: denied ? 'grant' : 'config',
+    detail: denied ? `Missing SELECT permission on ${table}` : `Read access probe failed · ${error}`,
+  };
+}
+
 /**
  * Evaluate a declared minimum version against the connected server.
  * Unparseable versions fail closed, matching isClickHouseVersionAtLeast().
@@ -280,6 +290,25 @@ export class MonitoringCapabilitiesService {
     const hasZk = systemTableAccess.has('zookeeper');
     const hasIntrospection = snapshot.introspectionFunctionsPresent
       && snapshot.introspectionEnabled;
+    // Metadata visibility is not SELECT permission. Verify present tables once
+    // during connection setup, using the same cluster routing as feature reads.
+    const readErrors = await this.probeTableReadAccess([
+      ...Object.keys(LOG_TABLE_META)
+        .filter(table => {
+          const info = logTables.get(table);
+          return info && info.availableHosts >= info.expectedHosts;
+        }).map(table => `system.${table}`),
+      ...PROBE_SYSTEM_TABLE_ACCESS_TABLES.filter(table =>
+        systemTableAccess.has(table)
+        && (table !== 'distributed_ddl_queue' || hasZk)
+        && (table !== 'stack_trace' || hasIntrospection),
+      ).map(table => `system.${table}`),
+      ...[...tracehouseTables.keys()].map(table => `tracehouse.${table}`),
+    ]);
+    const readableLogTables = new Set([...logTables.keys()].filter(table => {
+      const info = logTables.get(table)!;
+      return info.availableHosts >= info.expectedHosts && !readErrors.has(`system.${table}`);
+    }));
     const profilerPeriodForProbe = settings.get(
       'query_profiler_cpu_time_period_ns',
     );
@@ -287,7 +316,7 @@ export class MonitoringCapabilitiesService {
       profilerPeriodForProbe?.value ?? '0',
       10,
     ) > 0;
-    const cpuProfilerSampleCount = logTables.has('trace_log')
+    const cpuProfilerSampleCount = readableLogTables.has('trace_log')
       && profilerEnabledForProbe
       ? await this.probeCPUProfilerSamples()
       : 0;
@@ -297,11 +326,12 @@ export class MonitoringCapabilitiesService {
     // Add log table capabilities
     for (const [tableId, meta] of Object.entries(LOG_TABLE_META)) {
       const tableInfo = logTables.get(tableId);
+      const readError = readErrors.get(`system.${tableId}`);
       const available = !!tableInfo
-        && tableInfo.availableHosts >= tableInfo.expectedHosts;
+        && readableLogTables.has(tableId);
       const detail = !tableInfo
         ? 'Table not found'
-        : available
+        : tableInfo.availableHosts >= tableInfo.expectedHosts
           ? `${tableInfo.engine} · ${formatRowCount(tableInfo.totalRows)} rows · ${tableInfo.availableHosts}/${tableInfo.expectedHosts} hosts`
           : `Partial cluster coverage · ${tableInfo.availableHosts}/${tableInfo.expectedHosts} hosts`;
 
@@ -314,6 +344,7 @@ export class MonitoringCapabilitiesService {
         detail,
         ttl: tableInfo?.ttl ?? null,
         source: meta.source,
+        ...readAccessFailure(`system.${tableId}`, readError),
       });
     }
 
@@ -357,7 +388,7 @@ export class MonitoringCapabilitiesService {
       }),
     });
 
-    const hasMetricLog = logTables.has('metric_log');
+    const hasMetricLog = readableLogTables.has('metric_log');
     const hasReadonlyReplicaMetric = metricLogReplicationColumns.has(
       'CurrentMetric_ReadonlyReplica',
     );
@@ -399,7 +430,7 @@ export class MonitoringCapabilitiesService {
     });
     // X-Ray alternate source: the table alone is not enough, the counters the
     // X-Ray reads must exist too. See PROBE_QUERY_METRIC_LOG_COLUMNS.
-    const hasQueryMetricLogTable = logTables.has('query_metric_log');
+    const hasQueryMetricLogTable = readableLogTables.has('query_metric_log');
     // Every column the SQL reads, not a subset: a missing one fails the query at
     // runtime, so partial coverage must report the capability as unavailable.
     const missingQueryMetricLogColumns = QUERY_METRIC_LOG_PROFILE_EVENT_COLUMNS.filter(
@@ -426,7 +457,7 @@ export class MonitoringCapabilitiesService {
     // Without the setting, query_log exists but ProfileEvents columns are empty.
     const logProfileEvents = settings.get('log_profile_events');
     const profileEventsEnabled = logProfileEvents?.value === '1';
-    const hasQueryLogTable = logTables.has('query_log');
+    const hasQueryLogTable = readableLogTables.has('query_log');
     capabilities.push({
       id: 'query_log_profile_events',
       label: 'Query Profile Events',
@@ -443,7 +474,7 @@ export class MonitoringCapabilitiesService {
 
     // Add OpenTelemetry tracing probability
     const otelProb = settings.get('opentelemetry_start_trace_probability');
-    const otelAvailable = logTables.has('opentelemetry_span_log');
+    const otelAvailable = readableLogTables.has('opentelemetry_span_log');
     if (otelProb) {
       const prob = parseFloat(otelProb.value);
       const otelCap = capabilities.find(c => c.id === 'opentelemetry_span_log');
@@ -474,7 +505,7 @@ export class MonitoringCapabilitiesService {
     // actually producing samples. Settings can say "on" but samples will be
     // empty when the container lacks the SYS_PTRACE Linux capability (common
     // in Kubernetes without explicit securityContext configuration).
-    const hasTraceLog = logTables.has('trace_log');
+    const hasTraceLog = readableLogTables.has('trace_log');
     const cpuNs = cpuProfilerPeriod ? parseInt(cpuProfilerPeriod.value, 10) : 0;
     const profilerSettingOn = cpuNs > 0;
     const hasCpuSamples = cpuProfilerSampleCount > 0;
@@ -586,7 +617,8 @@ export class MonitoringCapabilitiesService {
       : `Not supported — ClickHouse ${version} cannot create refreshable materialized views`;
     const samplerUnavailableReason = samplerDdlSupported ? 'config' as const : 'ddl' as const;
 
-    const hasProcessesHistory = tracehouseTables.has('processes_history');
+    const hasProcessesHistory = tracehouseTables.has('processes_history')
+      && !readErrors.has('tracehouse.processes_history');
     const processesInfo = tracehouseTables.get('processes_history');
     capabilities.push({
       id: 'tracehouse_processes_history',
@@ -599,10 +631,12 @@ export class MonitoringCapabilitiesService {
         : samplerUnavailableDetail,
       source: 'tracehouse.processes_history',
       ...(hasProcessesHistory ? {} : { unavailableReason: samplerUnavailableReason }),
+      ...readAccessFailure('tracehouse.processes_history', readErrors.get('tracehouse.processes_history')),
     });
 
     // Tracehouse merges_history — live merge sampling (setup_sampling.sh)
-    const hasMergesHistory = tracehouseTables.has('merges_history');
+    const hasMergesHistory = tracehouseTables.has('merges_history')
+      && !readErrors.has('tracehouse.merges_history');
     const mergesInfo = tracehouseTables.get('merges_history');
     capabilities.push({
       id: 'tracehouse_merges_history',
@@ -615,6 +649,7 @@ export class MonitoringCapabilitiesService {
         : samplerUnavailableDetail,
       source: 'tracehouse.merges_history',
       ...(hasMergesHistory ? {} : { unavailableReason: samplerUnavailableReason }),
+      ...readAccessFailure('tracehouse.merges_history', readErrors.get('tracehouse.merges_history')),
     });
 
     // System table access capabilities — these tables always exist on ClickHouse
@@ -739,11 +774,12 @@ export class MonitoringCapabilitiesService {
 
     for (const tableName of PROBE_SYSTEM_TABLE_ACCESS_TABLES) {
       const present = systemTableAccess.has(tableName);
-      const available = tableName === 'distributed_ddl_queue'
+      const readError = readErrors.get(`system.${tableName}`);
+      const available = !readError && (tableName === 'distributed_ddl_queue'
         ? present && hasZk
         : tableName === 'stack_trace'
           ? present && hasIntrospection
-          : present;
+          : present);
       const meta = SYSTEM_TABLE_META[tableName];
       if (!meta) continue;
       capabilities.push({
@@ -758,8 +794,9 @@ export class MonitoringCapabilitiesService {
             ? 'Present · Keeper not configured'
             : tableName === 'stack_trace' && !hasIntrospection
               ? 'Present · introspection disabled'
-              : 'Present · access verified when used',
+              : 'Present · read access verified',
         source: `system.${tableName}`,
+        ...readAccessFailure(`system.${tableName}`, readError),
       });
     }
 
@@ -768,6 +805,26 @@ export class MonitoringCapabilitiesService {
       serverVersion: version,
       capabilities,
     };
+  }
+
+  private async probeTableReadAccess(tables: string[]): Promise<Map<string, string>> {
+    const errors = new Map<string, string>();
+    // Bound concurrency so connection setup does not exhaust a restricted
+    // account's simultaneous-query allowance. No table rows are read.
+    for (let offset = 0; offset < tables.length; offset += 4) {
+      await Promise.all(tables.slice(offset, offset + 4).map(async table => {
+        try {
+          await this.adapter.executeQuery(tagQuery(
+            `SELECT * FROM {{cluster_aware:${table}}} LIMIT 0`,
+            sourceTag(TAB_INTERNAL, 'tableReadAccess'),
+          ));
+        } catch (error) {
+          const message = error instanceof Error ? error.message : String(error);
+          errors.set(table, message || 'Unknown read access error');
+        }
+      }));
+    }
+    return errors;
   }
 
   private async probeCapabilitySnapshot(): Promise<CapabilitySnapshot> {

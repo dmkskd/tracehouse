@@ -18,6 +18,54 @@ const OPTIONS = {
 };
 
 describe('EventsService', () => {
+  it('remembers denied sources across concurrent ranges, hosts and page origins', async () => {
+    const mock = adapter(async sql => {
+      if (sql.includes('system.zookeeper_connection_log')) {
+        throw new Error('Code: 497. Not enough privileges (ACCESS_DENIED)');
+      }
+      return [];
+    });
+    const service = new EventsService(mock);
+    const options = { ...OPTIONS, availableCapabilities: ['zookeeper_connection_log', 'query_log'] };
+    const results = await Promise.all([
+      service.getEvents({ ...options, origin: 'timeTravel' }),
+      service.getEvents({ ...options, startTime: '2026-07-25 11:00:00', origin: 'timeTravel' }),
+      service.getEvents({ ...options, hostname: ['host-a', 'host-b'], origin: 'analytics' }),
+    ]);
+    results.push(await service.getEvents({ ...options, origin: 'events' }));
+    expect(vi.mocked(mock.executeQuery).mock.calls.filter(([sql]) =>
+      sql.includes('system.zookeeper_connection_log'),
+    )).toHaveLength(1);
+    expect(vi.mocked(mock.executeQuery).mock.calls.filter(([sql]) =>
+      sql.includes('system.query_log'),
+    )).toHaveLength(5);
+    for (const result of results) {
+      expect(result.coverage.find(item => item.capability === 'zookeeper_connection_log')).toMatchObject({
+        status: 'failed', detail: expect.stringContaining('ACCESS_DENIED'),
+      });
+    }
+    service.resetSourceAccess();
+    await service.getEvents(options);
+    expect(vi.mocked(mock.executeQuery).mock.calls.filter(([sql]) =>
+      sql.includes('system.zookeeper_connection_log'),
+    )).toHaveLength(2);
+  });
+
+  it('retries transient errors rather than caching them as permission denials', async () => {
+    let attempts = 0;
+    const mock = adapter(async () => {
+      if (attempts++ === 0) throw new Error('Network timeout');
+      return [];
+    });
+    const service = new EventsService(mock);
+    const options = { ...OPTIONS, availableCapabilities: ['zookeeper_connection_log'] };
+    const failed = await service.getEvents(options);
+    expect(failed.coverage.find(item => item.capability === 'zookeeper_connection_log')?.status).toBe('failed');
+    const recovered = await service.getEvents(options);
+    expect(recovered.coverage.find(item => item.capability === 'zookeeper_connection_log')?.status).toBe('loaded');
+    expect(mock.executeQuery).toHaveBeenCalledTimes(2);
+  });
+
   it('normalizes millisecond range bounds for DateTime-backed event sources', async () => {
     let emittedSql = '';
     const mock = adapter(async sql => {

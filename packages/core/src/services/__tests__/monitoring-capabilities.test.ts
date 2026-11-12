@@ -13,6 +13,8 @@ interface AdapterOptions {
   systemTables?: string[];
   introspectionEnabled?: boolean;
   processorProfileSchema?: 'full' | 'legacy' | 'missing' | 'error';
+  extraLogTables?: string[];
+  readErrors?: Record<string, string>;
 }
 
 function adapterForCapabilities(options: AdapterOptions = {}): IClickHouseAdapter {
@@ -23,9 +25,17 @@ function adapterForCapabilities(options: AdapterOptions = {}): IClickHouseAdapte
     systemTables = ['merges', 'distributed_ddl_queue', 'zookeeper'],
     introspectionEnabled = false,
     processorProfileSchema = 'missing',
+    extraLogTables = [],
+    readErrors = {},
   } = options;
 
   const executeQuery = vi.fn(async (sql: TaggedQuery) => {
+    if (sql.includes('source:TraceHouse:Internal:tableReadAccess')) {
+      for (const [table, error] of Object.entries(readErrors)) {
+        if (sql.includes(`{{cluster_aware:${table}}}`)) throw new Error(error);
+      }
+      return [];
+    }
     if (sql.includes('source:TraceHouse:Internal:capabilitySnapshot')) {
       return [{
         version: serverVersion,
@@ -43,7 +53,15 @@ function adapterForCapabilities(options: AdapterOptions = {}): IClickHouseAdapte
         create_table_query: '',
         available_hosts: availableHosts,
         expected_hosts: expectedHosts,
-      }, ...(processorProfileSchema === 'missing' || processorProfileSchema === 'error'
+      }, ...extraLogTables.map(name => ({
+        name,
+        engine: 'MergeTree',
+        total_rows: 0,
+        total_bytes: 0,
+        create_table_query: '',
+        available_hosts: availableHosts,
+        expected_hosts: expectedHosts,
+      })), ...(processorProfileSchema === 'missing' || processorProfileSchema === 'error'
         ? []
         : [{
             name: 'processors_profile_log',
@@ -74,6 +92,46 @@ function adapterForCapabilities(options: AdapterOptions = {}): IClickHouseAdapte
 }
 
 describe('MonitoringCapabilitiesService', () => {
+  it('disables visible tables without SELECT permission before event collection', async () => {
+    const mock = adapterForCapabilities({
+      extraLogTables: ['zookeeper_connection_log', 'metric_log', 'query_metric_log'],
+      readErrors: {
+        'system.zookeeper_connection_log': 'Code: 497. Not enough privileges (ACCESS_DENIED)',
+        'system.metric_log': 'Not enough privileges',
+        'system.query_metric_log': 'Not enough privileges',
+        'system.merges': 'Not enough privileges',
+      },
+    });
+    const result = await new MonitoringCapabilitiesService(mock).probe();
+    for (const id of ['zookeeper_connection_log', 'metric_log', 'query_metric_log', 'system_merges']) {
+      expect(result.capabilities.find(item => item.id === id)).toMatchObject({
+        available: false,
+        unavailableReason: 'grant',
+        detail: expect.stringContaining('Missing SELECT permission on system.'),
+        probeError: expect.stringContaining('privileges'),
+      });
+    }
+    for (const id of ['metric_log_replication_state', 'metric_log_replication_failures', 'query_metric_log_xray']) {
+      expect(result.capabilities.find(item => item.id === id)?.available).toBe(false);
+    }
+    expect(result.capabilities.find(item => item.id === 'asynchronous_insert_log')?.available).toBe(true);
+  });
+
+  it('fails closed on a read probe error and rechecks when capabilities are refreshed', async () => {
+    const readErrors = { 'system.asynchronous_insert_log': 'Network timeout' };
+    const mock = adapterForCapabilities({ readErrors });
+    const service = new MonitoringCapabilitiesService(mock);
+    const failed = await service.probe();
+    expect(failed.capabilities.find(item => item.id === 'asynchronous_insert_log')).toMatchObject({
+      available: false,
+      unavailableReason: 'config',
+      probeError: 'Network timeout',
+    });
+    delete (readErrors as Record<string, string>)['system.asynchronous_insert_log'];
+    const refreshed = await service.probe();
+    expect(refreshed.capabilities.find(item => item.id === 'asynchronous_insert_log')?.available).toBe(true);
+  });
+
   it('marks a system log unavailable when it is missing on one replica', async () => {
     const service = new MonitoringCapabilitiesService(
       adapterForCapabilities({ availableHosts: 1, expectedHosts: 2 }),
@@ -194,7 +252,7 @@ describe('MonitoringCapabilitiesService', () => {
       item => item.id === 'system_merges',
     )).toMatchObject({
       available: true,
-      detail: 'Present · access verified when used',
+      detail: 'Present · read access verified',
     });
     expect(result.capabilities.find(
       item => item.id === 'system_distributed_ddl_queue',
@@ -204,7 +262,7 @@ describe('MonitoringCapabilitiesService', () => {
     });
   });
 
-  it('uses one successful snapshot and never runs intentional failure probes', async () => {
+  it('uses one snapshot and checks read access only for present, configured tables', async () => {
     const adapter = adapterForCapabilities();
 
     await new MonitoringCapabilitiesService(adapter).probe();
@@ -213,7 +271,11 @@ describe('MonitoringCapabilitiesService', () => {
     const queries = executeQuery.mock.calls.map(([sql]) => String(sql));
     // snapshot, log tables, settings, cloud, tracehouse tables,
     // metric_log replication columns, query_metric_log columns, processor schema
-    expect(queries).toHaveLength(8);
+    expect(queries).toHaveLength(11);
+    const reads = queries.filter(query => query.includes('source:TraceHouse:Internal:tableReadAccess'));
+    expect(reads).toHaveLength(3);
+    expect(reads.every(query => query.includes('LIMIT 0'))).toBe(true);
+    expect(reads.some(query => query.includes('system.zookeeper}}'))).toBe(false);
     expect(queries.filter(query =>
       query.includes('source:TraceHouse:Internal:capabilitySnapshot'),
     )).toHaveLength(1);

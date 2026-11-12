@@ -274,8 +274,8 @@ export const PROBE_SYSTEM_TABLE_ACCESS_TABLES = [
  * - which operational system tables are present/visible, including the
  *   system.zookeeper signal used for Keeper configuration.
  *
- * SELECT privileges for an individual feature are verified lazily when that
- * feature is actually used.
+ * Present tables are subsequently checked with zero-row reads before their
+ * capabilities are enabled; metadata visibility alone does not imply SELECT.
  */
 export const PROBE_CAPABILITY_SNAPSHOT = `
 SELECT

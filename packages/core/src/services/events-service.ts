@@ -47,6 +47,7 @@ export interface EventsResult {
 }
 
 interface BoundEventSourceDefinition extends EventSourceDefinition {
+  id: EventSourceId;
   fetch: (params: Record<string, QueryParameter>) => Promise<OperationalEvent[]>;
 }
 
@@ -163,12 +164,60 @@ function failureDetail(row: Record<string, unknown>): string | undefined {
   return value || undefined;
 }
 
+function isAccessDenied(error: unknown): boolean {
+  const message = error instanceof Error ? error.message : String(error);
+  return /\bACCESS_DENIED\b|\bCode:\s*497\b|\bNot enough privileges\b/i.test(message);
+}
+
 /**
- * Collects operational events independently per source. Capability checks are
- * authoritative; Promise.allSettled is only a race/permission/schema fallback.
+ * Collects operational events independently per source. Table capabilities do
+ * not imply SELECT permission; denied sources are remembered for this connection.
  */
 export class EventsService {
+  private sourceAccess = this.newSourceAccess();
+
   constructor(private adapter: IClickHouseAdapter) {}
+
+  private newSourceAccess() {
+    return {
+      denied: new Map<EventSourceId, unknown>(),
+      checked: new Set<EventSourceId>(),
+      pending: new Map<EventSourceId, Promise<void>>(),
+    };
+  }
+
+  /** Recheck access after switching clusters or explicitly refreshing permissions. */
+  resetSourceAccess(): void {
+    this.sourceAccess = this.newSourceAccess();
+  }
+
+  private async fetchSource(
+    source: BoundEventSourceDefinition,
+    params: Record<string, QueryParameter>,
+  ): Promise<OperationalEvent[]> {
+    // Viewport, navigator and per-host reads can start together. Let the first
+    // real read establish access before sending more queries to that source.
+    const access = this.sourceAccess;
+    const pendingCheck = access.pending.get(source.id);
+    if (pendingCheck) await pendingCheck;
+    if (access.denied.has(source.id)) throw access.denied.get(source.id);
+
+    const read = source.fetch(params).then(events => {
+      access.checked.add(source.id);
+      return events;
+    }).catch(error => {
+      if (isAccessDenied(error)) access.denied.set(source.id, error);
+      throw error;
+    });
+    if (!access.checked.has(source.id)) {
+      const check = read.then(() => {}, () => {});
+      access.pending.set(source.id, check);
+      void check.then(() => {
+        if (access.pending.get(source.id) === check) access.pending.delete(source.id);
+      });
+    }
+    return read;
+  }
 
   static notRequested(): EventsResult {
     return {
@@ -272,7 +321,7 @@ export class EventsService {
       .map((source, index) => ({ source, index }))
       .filter(({ source }) => available.has(source.capability));
     const settled = await Promise.allSettled(
-      requested.map(({ source }) => source.fetch(params)),
+      requested.map(({ source }) => this.fetchSource(source, params)),
     );
 
     const events: OperationalEvent[] = [];

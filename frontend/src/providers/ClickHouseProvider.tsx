@@ -237,6 +237,13 @@ export function ClickHouseProvider({ children }: ClickHouseProviderProps) {
     return () => { cancelled = true; };
   }, [unresolvedValue]);
 
+  // A completed capability refresh can restore access after grants change.
+  useEffect(() => useMonitoringCapabilitiesStore.subscribe((state, prev) => {
+    if (state.capabilities && state.capabilities !== prev.capabilities) {
+      unresolvedValue?.eventsService.resetSourceAccess();
+    }
+  }), [unresolvedValue]);
+
   // Sync cluster changes to the adapter and refresh behavioral capabilities
   // because the distributed query path may differ between clusters.
   useEffect(() => {
@@ -244,6 +251,7 @@ export function ClickHouseProvider({ children }: ClickHouseProviderProps) {
       if (state.clusterName !== prev.clusterName) {
         clusterAdapterRef.current?.setClusterName(state.clusterName);
         if (unresolvedValue) {
+          unresolvedValue.eventsService.resetSourceAccess();
           void useMonitoringCapabilitiesStore.getState()
             .refresh(unresolvedValue.adapter)
             .catch(() => {});

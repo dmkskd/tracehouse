@@ -17,7 +17,7 @@
  *   9. Settings overrides via SET (readonly=2 allows SET)
  */
 
-import { describe, it, expect, beforeAll, afterAll } from 'vitest';
+import { describe, it, expect, beforeAll, afterAll, vi } from 'vitest';
 import { GenericContainer, type StartedTestContainer, Wait } from 'testcontainers';
 import { createClient, type ClickHouseClient } from '@clickhouse/client';
 import { readFileSync, readdirSync } from 'node:fs';
@@ -25,6 +25,10 @@ import { resolve, dirname } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { CH_IMAGE, CONFIGURED_CH_VERSION } from './setup/constants.js';
 import { startWithPortRetry } from './setup/start-container.js';
+import { TestAdapter } from './setup/clickhouse-container.js';
+import { ClusterAwareAdapter } from '../../adapters/cluster-adapter.js';
+import { EventsService } from '../../services/events-service.js';
+import { MonitoringCapabilitiesService } from '../../services/monitoring-capabilities.js';
 
 const CONTAINER_TIMEOUT = 120_000;
 const RO_PASSWORD = 'testpass';
@@ -144,6 +148,41 @@ describe('read-only user sandbox escape tests', { tags: ['security'] }, () => {
   });
 
   // ── Helper ──
+
+  it.skipIf(HAS_KNOWN_23_8_SYSTEM_TABLE_AUTHORIZATION_BEHAVIOR)(
+    'detects denied SELECT during probing and skips event reads until grants are refreshed',
+    async () => {
+      const restricted = new ClusterAwareAdapter(new TestAdapter(roClient));
+      const reads = vi.spyOn(restricted, 'executeQuery');
+      await adminClient.command({ query: 'SYSTEM FLUSH LOGS' });
+      await adminClient.command({ query: 'REVOKE SELECT ON system.query_log FROM read_only' });
+      try {
+        const probe = new MonitoringCapabilitiesService(restricted);
+        const denied = await probe.probe();
+        expect(denied.capabilities.find(item => item.id === 'query_log')).toMatchObject({
+          available: false,
+          unavailableReason: 'grant',
+          probeError: expect.stringContaining('privileges'),
+        });
+        reads.mockClear();
+        const events = new EventsService(restricted);
+        const options = {
+          startTime: new Date(Date.now() - 60_000).toISOString(),
+          endTime: new Date().toISOString(),
+          availableCapabilities: denied.capabilities.filter(item => item.available).map(item => item.id),
+        };
+        await events.getEvents(options);
+        expect(reads.mock.calls.some(([sql]) => sql.includes('system.query_log'))).toBe(false);
+
+        await adminClient.command({ query: 'GRANT SELECT ON system.query_log TO read_only' });
+        const refreshed = await probe.probe();
+        expect(refreshed.capabilities.find(item => item.id === 'query_log')?.available).toBe(true);
+      } finally {
+        await adminClient.command({ query: 'GRANT SELECT ON system.query_log TO read_only' });
+        reads.mockRestore();
+      }
+    },
+  );
 
   /** Assert that a query throws (access denied / not allowed). */
   async function expectBlocked(sql: string, label?: string): Promise<void> {
