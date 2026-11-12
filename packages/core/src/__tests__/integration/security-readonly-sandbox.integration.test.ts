@@ -29,6 +29,7 @@ import { TestAdapter } from './setup/clickhouse-container.js';
 import { ClusterAwareAdapter } from '../../adapters/cluster-adapter.js';
 import { EventsService } from '../../services/events-service.js';
 import { MonitoringCapabilitiesService } from '../../services/monitoring-capabilities.js';
+import { isClickHouseVersionAtLeast } from '../../utils/clickhouse-version.js';
 
 const CONTAINER_TIMEOUT = 120_000;
 const RO_PASSWORD = 'testpass';
@@ -154,6 +155,7 @@ describe('read-only user sandbox escape tests', { tags: ['security'] }, () => {
     async () => {
       const restricted = new ClusterAwareAdapter(new TestAdapter(roClient));
       const reads = vi.spyOn(restricted, 'executeQuery');
+      const rawReads = vi.spyOn(restricted, 'executeRawQuery');
       await adminClient.command({ query: 'SYSTEM FLUSH LOGS' });
       await adminClient.command({ query: 'REVOKE SELECT ON system.query_log FROM read_only' });
       try {
@@ -164,6 +166,10 @@ describe('read-only user sandbox escape tests', { tags: ['security'] }, () => {
           unavailableReason: 'grant',
           probeError: expect.stringContaining('privileges'),
         });
+        if (isClickHouseVersionAtLeast(denied.serverVersion, 25, 1)) {
+          expect(rawReads.mock.calls.some(([sql]) => sql.includes('CHECK GRANT SELECT ON system.query_log'))).toBe(true);
+          expect(reads.mock.calls.some(([sql]) => sql.includes('SELECT * FROM {{cluster_aware:system.query_log}}'))).toBe(false);
+        }
         reads.mockClear();
         const events = new EventsService(restricted);
         const options = {
@@ -180,6 +186,7 @@ describe('read-only user sandbox escape tests', { tags: ['security'] }, () => {
       } finally {
         await adminClient.command({ query: 'GRANT SELECT ON system.query_log TO read_only' });
         reads.mockRestore();
+        rawReads.mockRestore();
       }
     },
   );

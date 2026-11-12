@@ -30,6 +30,15 @@ function adapterForCapabilities(options: AdapterOptions = {}): IClickHouseAdapte
   } = options;
 
   const executeQuery = vi.fn(async (sql: TaggedQuery) => {
+    if (sql.includes('source:TraceHouse:Internal:tableSelectGrant')) {
+      for (const [table, error] of Object.entries(readErrors)) {
+        if (sql.includes(`CHECK GRANT SELECT ON ${table}`)) {
+          if (/ACCESS_DENIED|privileges/.test(error)) return [{ result: 0 }];
+          throw new Error(error);
+        }
+      }
+      return [{ result: 1 }];
+    }
     if (sql.includes('source:TraceHouse:Internal:tableReadAccess')) {
       for (const [table, error] of Object.entries(readErrors)) {
         if (sql.includes(`{{cluster_aware:${table}}}`)) throw new Error(error);
@@ -88,6 +97,10 @@ function adapterForCapabilities(options: AdapterOptions = {}): IClickHouseAdapte
 
   return {
     executeQuery: executeQuery as IClickHouseAdapter['executeQuery'],
+    executeRawQuery: vi.fn(async (sql: TaggedQuery) => {
+      const rows = await executeQuery(sql);
+      return rows.map(row => String(Object.values(row)[0]));
+    }),
   };
 }
 
@@ -115,6 +128,17 @@ describe('MonitoringCapabilitiesService', () => {
       expect(result.capabilities.find(item => item.id === id)?.available).toBe(false);
     }
     expect(result.capabilities.find(item => item.id === 'asynchronous_insert_log')?.available).toBe(true);
+    const queries = vi.mocked(mock.executeQuery).mock.calls.map(([sql]) => String(sql));
+    expect(queries.some(sql => sql.includes('CHECK GRANT SELECT ON system.zookeeper_connection_log'))).toBe(true);
+    expect(queries.some(sql => sql.includes('SELECT * FROM {{cluster_aware:system.zookeeper_connection_log}}'))).toBe(false);
+  });
+
+  it('retains zero-row permission probes on older servers without CHECK GRANT', async () => {
+    const mock = adapterForCapabilities({ serverVersion: '23.8.2.7' });
+    await new MonitoringCapabilitiesService(mock).probe();
+    const queries = vi.mocked(mock.executeQuery).mock.calls.map(([sql]) => String(sql));
+    expect(queries.some(sql => sql.includes('CHECK GRANT'))).toBe(false);
+    expect(queries.some(sql => sql.includes('SELECT * FROM {{cluster_aware:system.asynchronous_insert_log}} LIMIT 0'))).toBe(true);
   });
 
   it('fails closed on a read probe error and rechecks when capabilities are refreshed', async () => {
@@ -271,7 +295,7 @@ describe('MonitoringCapabilitiesService', () => {
     const queries = executeQuery.mock.calls.map(([sql]) => String(sql));
     // snapshot, log tables, settings, cloud, tracehouse tables,
     // metric_log replication columns, query_metric_log columns, processor schema
-    expect(queries).toHaveLength(11);
+    expect(queries).toHaveLength(14);
     const reads = queries.filter(query => query.includes('source:TraceHouse:Internal:tableReadAccess'));
     expect(reads).toHaveLength(3);
     expect(reads.every(query => query.includes('LIMIT 0'))).toBe(true);

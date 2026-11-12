@@ -304,7 +304,7 @@ export class MonitoringCapabilitiesService {
         && (table !== 'stack_trace' || hasIntrospection),
       ).map(table => `system.${table}`),
       ...[...tracehouseTables.keys()].map(table => `tracehouse.${table}`),
-    ]);
+    ], version);
     const readableLogTables = new Set([...logTables.keys()].filter(table => {
       const info = logTables.get(table)!;
       return info.availableHosts >= info.expectedHosts && !readErrors.has(`system.${table}`);
@@ -807,13 +807,30 @@ export class MonitoringCapabilitiesService {
     };
   }
 
-  private async probeTableReadAccess(tables: string[]): Promise<Map<string, string>> {
+  private async probeTableReadAccess(tables: string[], version: string): Promise<Map<string, string>> {
     const errors = new Map<string, string>();
+    // CHECK GRANT is available in our supported 25.1+ releases. Unlike a
+    // denied SELECT it returns 0 successfully and does not pollute query logs.
+    const canCheckGrants = isClickHouseVersionAtLeast(version, 25, 1);
     // Bound concurrency so connection setup does not exhaust a restricted
     // account's simultaneous-query allowance. No table rows are read.
     for (let offset = 0; offset < tables.length; offset += 4) {
       await Promise.all(tables.slice(offset, offset + 4).map(async table => {
         try {
+          if (canCheckGrants && this.adapter.executeRawQuery) {
+            // CHECK GRANT does not accept a FORMAT clause. The raw transport
+            // preserves it instead of appending FORMAT JSONEachRow.
+            const rows = await this.adapter.executeRawQuery(tagQuery(
+              `CHECK GRANT SELECT ON ${table}`,
+              sourceTag(TAB_INTERNAL, 'tableSelectGrant'),
+            ));
+            const granted = rows[0]?.trim();
+            if (granted === undefined) throw new Error('SELECT grant probe returned no result');
+            if (Number(granted) !== 1) {
+              errors.set(table, `Not enough privileges: SELECT ON ${table} (ACCESS_DENIED)`);
+              return;
+            }
+          }
           await this.adapter.executeQuery(tagQuery(
             `SELECT * FROM {{cluster_aware:${table}}} LIMIT 0`,
             sourceTag(TAB_INTERNAL, 'tableReadAccess'),

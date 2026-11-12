@@ -50,7 +50,7 @@ export interface MergeCategoryInfo {
 
 /** Visual metadata for each merge category. */
 export const MERGE_CATEGORIES: Record<MergeCategory, MergeCategoryInfo> = {
-  Regular:            { label: 'Regular',            color: '#f0883e', icon: '🔄', description: 'Background size-based merge' },
+  Regular:            { label: 'Background',         color: '#f0883e', icon: '🔄', description: 'Background size-based merge' },
   TTLDelete:          { label: 'TTL Delete',         color: '#e5534b', icon: '🗑', description: 'Merge to remove expired rows' },
   TTLRecompress:      { label: 'TTL Recompress',     color: '#986ee2', icon: '🗜', description: 'Merge to apply new codec on aged data' },
   TTLMove:            { label: 'TTL Move',           color: '#58a6ff', icon: '📦', description: 'Part relocated to different volume/disk' },

@@ -845,7 +845,7 @@ export const TimelineChart: React.FC<{
                     {band.type === 'query'
                       ? ((hovItem as any).query_kind || 'Query')
                       : band.type === 'merge'
-                        ? (() => { const info = getMergeCategoryInfo(((hovItem as any).merge_reason || 'Regular') as MergeCategory); return `Merge · ${info ? info.label : 'Regular'}`; })()
+                        ? (() => { const info = getMergeCategoryInfo(((hovItem as any).merge_reason || 'Regular') as MergeCategory); return `Merge · ${info ? info.label : 'Background'}`; })()
                         : 'Mutation'}
                   </span>
                 </span>
