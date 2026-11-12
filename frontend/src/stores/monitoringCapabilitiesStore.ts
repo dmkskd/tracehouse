@@ -20,6 +20,9 @@ import {
 
 export type ProbeStatus = 'idle' | 'probing' | 'done' | 'error';
 
+/** Longest the app waits for the first probe before opening without it. */
+export const CAPABILITY_GATE_TIMEOUT_MS = 30_000;
+
 interface MonitoringCapabilitiesState {
   /** Probed capabilities (null until probed) */
   capabilities: MonitoringCapabilities | null;
@@ -35,6 +38,8 @@ interface MonitoringCapabilitiesState {
   setProbeStatus: (status: ProbeStatus) => void;
   setProbeError: (error: string | null) => void;
   refresh: (adapter: IClickHouseAdapter) => Promise<MonitoringCapabilities>;
+  /** Fail the first probe if it is still running; a late result still applies. */
+  expireFirstProbe: () => void;
   reset: () => void;
 
   // Selectors
@@ -118,6 +123,14 @@ export const useMonitoringCapabilitiesStore = create<MonitoringCapabilitiesState
     }
   },
 
+  expireFirstProbe: () => {
+    const { capabilities, probeStatus } = get();
+    if (capabilities !== null || probeStatus !== 'probing') return;
+    get().setProbeError(
+      `Capability probe did not finish within ${CAPABILITY_GATE_TIMEOUT_MS / 1000}s`,
+    );
+  },
+
   reset: () => {
     set({
       capabilities: null,
@@ -142,5 +155,16 @@ export const useMonitoringCapabilitiesStore = create<MonitoringCapabilitiesState
     return capabilities?.capabilities.filter(c => c.category === category) ?? [];
   },
 }));
+
+/**
+ * Pages receive services only after the first probe for a connection has
+ * settled, so they never run against unknown capabilities. Later refreshes
+ * keep the previous result and leave the gate open.
+ */
+export function isCapabilityGateOpen(
+  state: Pick<MonitoringCapabilitiesState, 'capabilities' | 'probeStatus'>,
+): boolean {
+  return state.capabilities !== null || state.probeStatus === 'error';
+}
 
 export default useMonitoringCapabilitiesStore;

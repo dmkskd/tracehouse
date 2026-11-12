@@ -42,7 +42,11 @@ import { ProxyAdapter } from '@tracehouse/core';
 import type { ConnectionConfig } from '@tracehouse/core';
 import { useConnectionStore } from '../stores/connectionStore';
 import { useProxyStore } from '../stores/proxyStore';
-import { useMonitoringCapabilitiesStore } from '../stores/monitoringCapabilitiesStore';
+import {
+  CAPABILITY_GATE_TIMEOUT_MS,
+  isCapabilityGateOpen,
+  useMonitoringCapabilitiesStore,
+} from '../stores/monitoringCapabilitiesStore';
 import { useClusterStore } from '../stores/clusterStore';
 import { useProfileEventDescriptionsStore } from '../stores/profileEventDescriptionsStore';
 import { useEnvironmentStore } from '../stores/environmentStore';
@@ -168,8 +172,11 @@ export function ClickHouseProvider({ children }: ClickHouseProviderProps) {
   // deep-linked fetch (e.g. ?qd_id=) firing in that window silently misses
   // rows that live on another replica. The Grafana plugin gates the same way
   // (ServiceProvider.tsx: `clusterReady ? unresolvedServices : null`).
+  // They are also withheld until the first capability probe settles, so pages
+  // never start against unknown capabilities and re-run once it finishes.
   const [clusterReady, setClusterReady] = useState(false);
-  const value = clusterReady ? unresolvedValue : null;
+  const capabilityGateOpen = useMonitoringCapabilitiesStore(isCapabilityGateOpen);
+  const value = clusterReady && capabilityGateOpen ? unresolvedValue : null;
 
   // Cleanup on unmount
   useEffect(() => {
@@ -194,6 +201,8 @@ export function ClickHouseProvider({ children }: ClickHouseProviderProps) {
     }
 
     setClusterReady(false);
+    // Drop the previous connection's result so the gate waits for this one.
+    capStore.reset();
     capStore.setProbeStatus('probing');
     let cancelled = false;
     const configuredCluster = buildConfig.defaultConnection.cluster;
@@ -236,6 +245,16 @@ export function ClickHouseProvider({ children }: ClickHouseProviderProps) {
 
     return () => { cancelled = true; };
   }, [unresolvedValue]);
+
+  // A hung probe must not keep pages waiting indefinitely.
+  useEffect(() => {
+    if (!unresolvedValue || !clusterReady) return;
+    const timer = setTimeout(
+      () => useMonitoringCapabilitiesStore.getState().expireFirstProbe(),
+      CAPABILITY_GATE_TIMEOUT_MS,
+    );
+    return () => clearTimeout(timer);
+  }, [unresolvedValue, clusterReady]);
 
   // A completed capability refresh can restore access after grants change.
   useEffect(() => useMonitoringCapabilitiesStore.subscribe((state, prev) => {

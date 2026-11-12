@@ -4,9 +4,12 @@ import { act, cleanup, render, screen, waitFor } from '@testing-library/react';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { ClusterService } from '@tracehouse/core/services/cluster-service';
 import { MonitoringCapabilitiesService } from '@tracehouse/core/services/monitoring-capabilities';
-import { EventsService, type ClusterInfo } from '@tracehouse/core';
+import { EventsService, type ClusterInfo, type MonitoringCapabilities } from '@tracehouse/core';
 import { useClusterStore } from '@frontend/stores/clusterStore';
-import { useMonitoringCapabilitiesStore } from '@frontend/stores/monitoringCapabilitiesStore';
+import {
+  CAPABILITY_GATE_TIMEOUT_MS,
+  useMonitoringCapabilitiesStore,
+} from '@frontend/stores/monitoringCapabilitiesStore';
 import { ServiceProvider, useServices } from './ServiceProvider';
 
 const grafana = vi.hoisted(() => ({ search: '', partial: vi.fn() }));
@@ -83,6 +86,45 @@ describe('Grafana ServiceProvider cluster lifecycle', () => {
     expect(screen.getByText('ready:other')).toBeTruthy();
     expect(reset.mock.calls.length).toBeGreaterThan(beforeSwitch);
     expect(grafana.partial).toHaveBeenLastCalledWith(expect.objectContaining({ th_cluster: 'other' }), true);
+  });
+
+  it('withholds services until the first capability probe settles and keeps them during a refresh', async () => {
+    vi.spyOn(ClusterService, 'detect').mockResolvedValue(topology);
+    let resolveProbe!: (caps: MonitoringCapabilities) => void;
+    vi.mocked(MonitoringCapabilitiesService.prototype.probe)
+      .mockImplementation(() => new Promise(resolve => { resolveProbe = resolve; }));
+    render(<ServiceProvider><ConnectionState /></ServiceProvider>);
+    await waitFor(() => expect(resolveProbe).toBeDefined());
+    expect(screen.getByText('loading')).toBeTruthy();
+
+    await act(async () => {
+      resolveProbe({ serverVersion: '26.9.7.9', probedAt: new Date(), capabilities: [] });
+    });
+    expect(screen.getByText('ready:default')).toBeTruthy();
+
+    act(() => useMonitoringCapabilitiesStore.getState().setProbeStatus('probing'));
+    expect(screen.getByText('ready:default')).toBeTruthy();
+  });
+
+  it('opens without capabilities when the first probe does not finish in time', async () => {
+    vi.useFakeTimers();
+    try {
+      vi.spyOn(ClusterService, 'detect').mockResolvedValue(topology);
+      vi.mocked(MonitoringCapabilitiesService.prototype.probe)
+        .mockImplementation(() => new Promise(() => {}));
+      render(<ServiceProvider><ConnectionState /></ServiceProvider>);
+      await act(async () => { await vi.advanceTimersByTimeAsync(0); });
+      expect(screen.getByText('loading')).toBeTruthy();
+
+      await act(async () => { await vi.advanceTimersByTimeAsync(CAPABILITY_GATE_TIMEOUT_MS); });
+      expect(screen.getByText('ready:default')).toBeTruthy();
+      expect(useMonitoringCapabilitiesStore.getState()).toMatchObject({
+        capabilities: null,
+        probeStatus: 'error',
+      });
+    } finally {
+      vi.useRealTimers();
+    }
   });
 
   it('restores a shared named cluster and rechecks permissions after capability refresh', async () => {

@@ -30,7 +30,11 @@ import {
   useClickHouseServices,
 } from '@tracehouse/ui-shared/hooks/useClickHouseServices';
 import { useConnectionStore } from './stores/connectionStore';
-import { useMonitoringCapabilitiesStore } from '@frontend/stores/monitoringCapabilitiesStore';
+import {
+  CAPABILITY_GATE_TIMEOUT_MS,
+  isCapabilityGateOpen,
+  useMonitoringCapabilitiesStore,
+} from '@frontend/stores/monitoringCapabilitiesStore';
 import { useClusterStore } from '@frontend/stores/clusterStore';
 import { usePluginConfig } from './PluginConfigContext';
 import {
@@ -238,24 +242,28 @@ export function ServiceProvider({ children }: { children: React.ReactNode }) {
 
   // Unwrap for context consumers
   const unresolvedServices = services?.svcs ?? null;
-  const clickHouseServices = clusterReady ? unresolvedServices : null;
+  const readyServices = clusterReady ? unresolvedServices : null;
+  // Pages also wait for the first capability probe (same as standalone frontend).
+  const capabilityGateOpen = useMonitoringCapabilitiesStore(isCapabilityGateOpen);
+  const clickHouseServices = capabilityGateOpen ? readyServices : null;
 
   useEffect(() => {
-    if (clickHouseServices) {
+    if (readyServices) {
       setError(null);
     }
-  }, [clickHouseServices]);
+  }, [readyServices]);
 
   // Probe monitoring capabilities when services change (same as standalone frontend)
   useEffect(() => {
     const capStore = useMonitoringCapabilitiesStore.getState();
-    if (!clickHouseServices) {
+    if (!readyServices) {
       capStore.reset();
       return;
     }
 
     capStore.setProbeStatus('probing');
-    const svc = new MonitoringCapabilitiesService(clickHouseServices.adapter);
+    const timer = setTimeout(() => capStore.expireFirstProbe(), CAPABILITY_GATE_TIMEOUT_MS);
+    const svc = new MonitoringCapabilitiesService(readyServices.adapter);
     let cancelled = false;
 
     svc.probe().then(caps => {
@@ -268,8 +276,8 @@ export function ServiceProvider({ children }: { children: React.ReactNode }) {
       }
     });
 
-    return () => { cancelled = true; };
-  }, [clickHouseServices]);
+    return () => { cancelled = true; clearTimeout(timer); };
+  }, [readyServices]);
 
   // Detect cluster topology when services change (same as standalone frontend)
   const { cluster: preferredCluster } = usePluginConfig();
@@ -357,9 +365,9 @@ export function ServiceProvider({ children }: { children: React.ReactNode }) {
 
   useEffect(() => useMonitoringCapabilitiesStore.subscribe((state, prev) => {
     if (state.capabilities && state.capabilities !== prev.capabilities) {
-      clickHouseServices?.eventsService.resetSourceAccess();
+      readyServices?.eventsService.resetSourceAccess();
     }
-  }), [clickHouseServices]);
+  }), [readyServices]);
 
   // Sync ClusterAwareAdapter when user switches cluster via dropdown
   useEffect(() => {
@@ -386,7 +394,7 @@ export function ServiceProvider({ children }: { children: React.ReactNode }) {
     datasourceName,
     setDatasourceUid,
     error,
-    isLoading: Boolean(datasourceUid && !clusterReady && !error),
+    isLoading: Boolean(datasourceUid && !error && (!clusterReady || !capabilityGateOpen)),
   };
 
   return (
