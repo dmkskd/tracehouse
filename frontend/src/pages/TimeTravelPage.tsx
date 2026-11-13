@@ -57,6 +57,7 @@ import { useUserPreferenceStore } from '../stores/userPreferenceStore';
 import { useMonitoringCapabilitiesStore } from '../stores/monitoringCapabilitiesStore';
 import { DocsLink } from '../components/common/DocsLink';
 import { RefreshingOverlay } from '../components/common/RefreshingOverlay';
+import { TimeTravelLoading } from '../components/timeline/TimeTravelLoading';
 import {
   MetricStrip,
   MetricStripDivider,
@@ -1959,14 +1960,9 @@ export const TimeTravelPage: React.FC = () => {
         </div>
       )}
 
-      {/* First load: nothing on screen yet, so show the indicator right away.
-          Stays mounted across the fetch debounce and restarts, so the
-          elapsed time covers the whole wait. */}
-      {!data && !error && (
-        <RefreshingOverlay active dim={false} delayed={false} label="Loading">
-          <div style={{ height:120 }} />
-        </RefreshingOverlay>
-      )}
+      {/* First load: nothing on screen yet. Stays mounted across the fetch
+          debounce and restarts, so the elapsed time covers the whole wait. */}
+      {!data && !error && <TimeTravelLoading />}
 
       {/* Modals */}
       <QueryDetailModal query={deepLinkedQuery} onClose={handleQueryClose} onViewInTimeTravel={activateQueryHashFilter} />

@@ -64,11 +64,6 @@
   animation: refreshing-overlay-appear 0.2s ease 1s both;
 }
 
-.refreshing-overlay[data-immediate] > .refreshing-overlay-bar,
-.refreshing-overlay[data-immediate] > .refreshing-overlay-pill {
-  animation-delay: 0s;
-}
-
 .refreshing-overlay-bar::after {
   content: '';
   position: absolute;

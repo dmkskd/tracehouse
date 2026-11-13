@@ -13,17 +13,16 @@ interface RefreshingOverlayProps {
   /** Dim the wrapped content while refreshing (stale data on screen). */
   dim?: boolean;
   label?: string;
-  /**
-   * Hold the indicator back for a moment so fast refreshes never flicker.
-   * Turn off for a first load, where nothing else is on screen.
-   */
-  delayed?: boolean;
   children: React.ReactNode;
 }
 
-/** Mounted only while active, so each refresh starts counting from zero. */
-const ElapsedSeconds: React.FC = () => {
-  const [startedAt] = useState(() => Date.now());
+/**
+ * Mounted only while active, so each refresh starts counting from zero.
+ * `since` counts from an earlier moment instead, for indicators that appear
+ * after a delay.
+ */
+export const ElapsedSeconds: React.FC<{ since?: number }> = ({ since }) => {
+  const [startedAt] = useState(() => since ?? Date.now());
   const [now, setNow] = useState(startedAt);
   useEffect(() => {
     const timer = setInterval(() => setNow(Date.now()), 250);
@@ -36,14 +35,12 @@ export const RefreshingOverlay: React.FC<RefreshingOverlayProps> = ({
   active,
   dim = true,
   label = 'Updating',
-  delayed = true,
   children,
 }) => (
   <div
     className="refreshing-overlay"
     aria-busy={active}
     data-dim={active && dim ? '' : undefined}
-    data-immediate={delayed ? undefined : ''}
   >
     <div className="refreshing-overlay-content">{children}</div>
     {active && (
