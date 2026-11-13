@@ -93,8 +93,8 @@ else
   echo ""
   echo "=== Running Grafana browser tests ==="
   just e2e-grafana
-  just e2e-grafana 11.6.11 3004
-  echo "  ✓ Grafana 13 and 11 browser tests passed"
+  just e2e-grafana 12.3.2 3004
+  echo "  ✓ Grafana 13 and 12.3 browser tests passed"
 fi
 
 # ── Single-file HTML ────────────────────────────────────────────

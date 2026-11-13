@@ -12,6 +12,7 @@ import {
   getTimelineRamCapacity,
   operationAverageRate,
   operationHighlightKey,
+  truncateHostname,
   type MergeCategory,
 } from '@tracehouse/core';
 import { formatBytes, parseTimestamp } from '../../utils/formatters';
@@ -90,11 +91,15 @@ export const TimelineChart: React.FC<{
   onUnpin?: () => void;
   onClearEventSelection?: () => void;
   onViewEventDetails?: (event: OperationalEvent) => void;
+  /** An event popup (cluster list or event card) opened or closed */
+  onEventPopupOpenChange?: (open: boolean) => void;
+  /** Server this chart shows, named in the hover tooltip (one chart per server) */
+  hostLabel?: string;
 }> = ({
   data, metricMode, height = 380, hoverMs, pinnedMs, onHover, onPin,
   zoomRange, onZoom, highlightedItem, onHighlightItem, onBandClick,
   hiddenCategories, queryHashActive, eventAnnotations = [], selectedEventId,
-  onEventSelect, onEventPin, onUnpin, onClearEventSelection, onViewEventDetails,
+  onEventSelect, onEventPin, onUnpin, onClearEventSelection, onViewEventDetails, onEventPopupOpenChange, hostLabel,
 }) => {
   const failureHatchId = `failure-hatch-${useId().replace(/:/g, '')}`;
   const containerRef = useRef<HTMLDivElement>(null);
@@ -787,6 +792,7 @@ export const TimelineChart: React.FC<{
             onUnpin={onUnpin}
             onClearEventSelection={onClearEventSelection}
             onViewEventDetails={onViewEventDetails}
+            onPopupOpenChange={onEventPopupOpenChange}
           />
         </div>
       )}
@@ -927,6 +933,7 @@ export const TimelineChart: React.FC<{
                     <path d="M12 6v6l4 2" />
                   </svg>
                   Activity at {new Date(snap.t).toLocaleTimeString()}
+                  {hostLabel && <span style={{ color: 'var(--text-muted)', fontWeight: 500 }}>· {truncateHostname(hostLabel)}</span>}
                 </span>
               )}
               {failureCode !== 0 && (

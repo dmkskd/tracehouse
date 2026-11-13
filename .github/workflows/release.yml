@@ -80,8 +80,8 @@ jobs:
       # - name: Test compiled plugin in Grafana 13
       #   run: just e2e-grafana
       #
-      # - name: Test compiled plugin in Grafana 11
-      #   run: just e2e-grafana 11.6.11 3004
+      # - name: Test compiled plugin in Grafana 12.3
+      #   run: just e2e-grafana 12.3.2 3004
       #
       # - name: Upload Grafana browser failure artifacts
       #   if: failure()

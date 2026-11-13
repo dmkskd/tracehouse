@@ -23,6 +23,8 @@ interface TimelineEventOverlayProps {
   onUnpin?: () => void;
   onClearEventSelection?: () => void;
   onViewEventDetails?: (event: OperationalEvent) => void;
+  /** Called when a popup (cluster list or selected event card) opens or closes, so the host can raise the chart above its neighbours. */
+  onPopupOpenChange?: (open: boolean) => void;
 }
 
 export const TimelineEventOverlay: React.FC<TimelineEventOverlayProps> = ({
@@ -36,6 +38,7 @@ export const TimelineEventOverlay: React.FC<TimelineEventOverlayProps> = ({
   onUnpin,
   onClearEventSelection,
   onViewEventDetails,
+  onPopupOpenChange,
 }) => {
   const overlayRef = useRef<HTMLDivElement>(null);
   const [overlayWidth, setOverlayWidth] = useState(800);
@@ -73,6 +76,12 @@ export const TimelineEventOverlay: React.FC<TimelineEventOverlayProps> = ({
     () => clusterTimelineEvents(events, rangeStartMs, rangeEndMs, overlayWidth, 72),
     [events, rangeStartMs, rangeEndMs, overlayWidth],
   );
+  const popupOpen = expandedClusterId !== null
+    || (selectedEventId != null && clusters.some(cluster => cluster.events.some(event => event.id === selectedEventId)));
+  useEffect(() => { onPopupOpenChange?.(popupOpen); }, [popupOpen, onPopupOpenChange]);
+  // Unmounting closes any popup
+  useEffect(() => () => onPopupOpenChange?.(false), [onPopupOpenChange]);
+
   const rangeMs = Math.max(1, rangeEndMs - rangeStartMs);
 
   if (clusters.length === 0) return null;

@@ -336,10 +336,22 @@ export const TimeTravelPage: React.FC = () => {
   const [perServerView, setPerServerView] = useState(initialCoordinates.perServerView);
   const [perHostData, setPerHostData] = useState<Map<string, MemoryTimeline>>(new Map());
   const [splitLoading, setSplitLoading] = useState(false);
+  const [hoveredRowHost, setHoveredRowHost] = useState<string | null>(null);
+  // Rows with an open event popup (cluster list or event card)
+  const [popupRowHosts, setPopupRowHosts] = useState<ReadonlySet<string>>(new Set());
+  // One stable callback per row: the overlay re-reports whenever its callback changes
   const rowHosts = useMemo(
     () => timeTravelRowHosts(clusterHosts, selectedHosts, perServerView),
     [clusterHosts, selectedHosts, perServerView],
   );
+  const rowPopupHandlers = useMemo(() => new Map(rowHosts.map(host => [host, (open: boolean) => {
+    setPopupRowHosts(current => {
+      if (current.has(host) === open) return current;
+      const next = new Set(current);
+      if (open) next.add(host); else next.delete(host);
+      return next;
+    });
+  }])), [rowHosts]);
   const handleHostClick = useCallback((
     event: React.MouseEvent<HTMLButtonElement>,
     host: string,
@@ -1280,7 +1292,7 @@ export const TimeTravelPage: React.FC = () => {
         <span style={{ display:'inline-flex', alignItems:'center', gap:8, padding:'2px 8px 2px 2px', borderRadius:6, fontSize:11, color:'#58a6ff', background:'color-mix(in srgb, #58a6ff 10%, var(--bg-secondary))', border:'1px solid color-mix(in srgb, #58a6ff 30%, var(--bg-secondary))', fontVariantNumeric:'tabular-nums' }}>
           <button onClick={() => setZoomRange(null)} title="Esc or double-click the chart" style={{ display:'inline-flex', alignItems:'center', gap:6, padding:'3px 8px', borderRadius:4, fontSize:11, fontWeight:600, background:'#58a6ff', border:'none', color:'#fff', cursor:'pointer' }}>
             Reset zoom
-            <kbd style={{ fontSize:9, fontFamily:'inherit', fontWeight:500, padding:'0 4px', borderRadius:3, background:'rgba(255,255,255,0.25)' }}>Esc</kbd>
+            <kbd style={{ fontSize:9, fontFamily:'inherit', fontWeight:500, padding:'0 4px', borderRadius:3, color:'inherit', border:'none', background:'rgba(0,0,0,0.2)' }}>Esc</kbd>
           </button>
           <span title={zoomDetailHint} style={{ cursor:'help' }}>
             {new Date(zoomRange[0]).toLocaleTimeString()} – {new Date(zoomRange[1]).toLocaleTimeString()}
@@ -1762,7 +1774,13 @@ export const TimeTravelPage: React.FC = () => {
           <RefreshingOverlay active={rowHosts.length > 0 ? splitLoading : isLoading} dim={!isLive}>
           {rowHosts.length > 0 ? (
             /* Per-server view: one chart per selected host */
-            <div ref={chartAnchorRef} style={{ display:'flex', flexDirection:'column', gap:2 }}>
+            <div ref={chartAnchorRef} style={{ display:'flex', flexDirection:'column', gap:2, position:'relative' }}>
+              {/* All rows share one zoom and one pin: one set of chips over the first row */}
+              {(pinnedMs !== null || zoomRange !== null) && (
+                <div style={{ position:'absolute', top:8, right:8, zIndex:30, display:'flex', alignItems:'center', gap:6 }}>
+                  {chartStatusChips}
+                </div>
+              )}
               {splitLoading && rowHosts.every(host => !perHostData.has(host)) && (
                 <div style={{ padding:20, textAlign:'center', color:'var(--text-muted)', fontSize:13 }}>Loading per-host data…</div>
               )}
@@ -1772,13 +1790,16 @@ export const TimeTravelPage: React.FC = () => {
                 const hostCpuCapacity = getTimelineCpuCapacity(hostData);
                 const hostRamCapacity = getTimelineRamCapacity(hostData);
                 const chartHeight = Math.max(140, Math.floor((mainChartHeight - 40) / rowHosts.length));
+                // Tooltips and event popups overflow into the next row: raise the row with an
+                // open event popup, else the hovered row
                 return (
                   <div key={host} style={{
                     borderRadius:8, background:'var(--bg-secondary)', border:'1px solid var(--border-primary)',
                     overflow:'visible', position:'relative',
+                    zIndex: popupRowHosts.has(host) ? 25 : hoveredRowHost === host ? 20 : 0,
                   }}
-                  onMouseEnter={(e) => { (e.currentTarget as HTMLElement).style.zIndex = '20'; }}
-                  onMouseLeave={(e) => { (e.currentTarget as HTMLElement).style.zIndex = '0'; }}
+                  onMouseEnter={() => setHoveredRowHost(host)}
+                  onMouseLeave={() => setHoveredRowHost(current => current === host ? null : current)}
                   >
                     <button
                       onClick={() => { setSelectedHosts([host]); setPerServerView(false); }}
@@ -1794,7 +1815,7 @@ export const TimeTravelPage: React.FC = () => {
                       {hostCpuCapacity > 0 && <span style={{ color:'var(--text-muted)', marginLeft:6 }}>{hostCpuCapacity} cores</span>}
                       {hostRamCapacity > 0 && <span style={{ color:'var(--text-muted)', marginLeft:6 }}>{formatBytes(hostRamCapacity)} RAM</span>}
                     </button>
-                    <TimelineChart data={hostData} metricMode={metricMode} height={chartHeight}
+                    <TimelineChart data={hostData} metricMode={metricMode} height={chartHeight} hostLabel={host}
                       hoverMs={hoverMs} pinnedMs={pinnedMs}
                       onHover={setHoverMs} onPin={handleChartPin}
                       zoomRange={zoomRange} onZoom={setZoomRange}
@@ -1814,6 +1835,7 @@ export const TimeTravelPage: React.FC = () => {
                       onUnpin={handleUnpin}
                       onClearEventSelection={handleClearEventSelection}
                       onViewEventDetails={handleViewEventDetails}
+                      onEventPopupOpenChange={rowPopupHandlers.get(host)}
                       onBandClick={(band) => {
                         if (band.type === 'query') handleBandSelect('query', hostData.queries[band.idx]);
                         else if (band.type === 'merge') handleBandSelect('merge', hostData.merges[band.idx]);

@@ -52,6 +52,9 @@ services:
       - plugin-dist:/var/lib/grafana/plugins/dmkskd-tracehouse-app:ro
     environment:
       GF_DEFAULT_APP_MODE: development
+      GF_ANALYTICS_REPORTING_ENABLED: "false"
+      GF_ANALYTICS_CHECK_FOR_UPDATES: "false"
+      GF_ANALYTICS_CHECK_FOR_PLUGIN_UPDATES: "false"
       GF_AUTH_ANONYMOUS_ENABLED: "true"
       GF_AUTH_ANONYMOUS_ORG_ROLE: Admin
       GF_INSTALL_PLUGINS: grafana-clickhouse-datasource
