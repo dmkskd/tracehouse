@@ -53,7 +53,7 @@ export function buildXRayWindowSamplesSQL(selection: SelectQueryXRaySourceInput,
       identity.query_start AS query_start, m.memory_usage AS memory_usage,
       ${Object.entries(counters).map(([alias, event]) => `m.ProfileEvent_${event} AS ${alias}`).join(',\n      ')}
     FROM (
-      SELECT *, hostName() AS hostname
+      SELECT * EXCEPT hostname, hostName() AS hostname
       FROM {{cluster_aware:system.query_metric_log}}
       WHERE event_date >= toDate(${start}) - 1
         AND event_date <= toDate(${opts.end})

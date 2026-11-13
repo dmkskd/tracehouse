@@ -108,6 +108,10 @@ export const TimelineChart: React.FC<{
   const [localSvgX, setLocalSvgX] = useState<number | null>(null);
   const [localSvgY, setLocalSvgY] = useState<number | null>(null);
   const hoveredBandRef = useRef<{ type: 'query' | 'merge' | 'mutation'; idx: number; id: string } | null>(null);
+  // Last rendered tooltip height, used to place the next one clear of the highlighted bands
+  const tooltipHeightRef = useRef(200);
+  // Last chosen tooltip side ([left/right index, below/above index]); kept unless clearly worse
+  const tooltipSideRef = useRef<[number, number]>([0, 0]);
   const cfg = METRIC_CONFIG[metricMode];
   const totalRam = getTimelineRamCapacity(data);
   const totalCpuCores = getTimelineCpuCapacity(data);
@@ -303,6 +307,17 @@ export const TimelineChart: React.FC<{
     return stacks;
   }, [buckets, nq, nm, nmut]);
 
+  // Paths only span the visible samples (plus one either side so shapes reach the edges).
+  // Zoomed in, paths over the whole window are many times wider than the chart, and every
+  // band's opacity group is painted at that full width on each hover repaint.
+  const [visLo, visHi] = useMemo(() => {
+    let lo = 0, hi = serverPts.length - 1;
+    while (lo < hi && serverPts[lo + 1].ms <= tMin) lo++;
+    while (hi > lo && serverPts[hi - 1].ms >= tMax) hi--;
+    return [lo, hi];
+  }, [serverPts, tMin, tMax]);
+  const visBucketIdx = useMemo(() => Array.from({ length: Math.max(0, visHi - visLo + 1) }, (_, k) => visLo + k), [visLo, visHi]);
+
   const areas = useMemo(() => {
     if (buckets.length < 2 || cumStacks.length === 0) return [];
     const total = nq + nm + nmut;
@@ -310,8 +325,8 @@ export const TimelineChart: React.FC<{
     for (let idx = 0; idx < total; idx++) {
       const top = cumStacks[idx];
       const bot = idx > 0 ? cumStacks[idx - 1] : null;
-      const topPts = buckets.map((b, bi) => `${xScale(b.t)},${yScale(top[bi])}`).join(' L');
-      const botPts = buckets.map((b, bi) => `${xScale(b.t)},${yScale(bot ? bot[bi] : 0)}`).reverse().join(' L');
+      const topPts = visBucketIdx.map(bi => `${xScale(buckets[bi].t)},${yScale(top[bi])}`).join(' L');
+      const botPts = visBucketIdx.map(bi => `${xScale(buckets[bi].t)},${yScale(bot ? bot[bi] : 0)}`).reverse().join(' L');
       let color: string;
       let isRunning = false;
       let failed = false;
@@ -336,9 +351,10 @@ export const TimelineChart: React.FC<{
       res.push({ d: `M${topPts} L${botPts} Z`, color, isRunning, failed, dimmed });
     }
     return res;
-  }, [buckets, cumStacks, nq, nm, nmut, xScale, yScale, data.queries, data.merges, data.mutations, queryHashActive]);
+  }, [buckets, visBucketIdx, cumStacks, nq, nm, nmut, xScale, yScale, data.queries, data.merges, data.mutations, queryHashActive]);
 
-  const serverLine = serverPts.length >= 2 ? 'M' + serverPts.map(p => `${xScale(p.ms)},${yScale(p.v)}`).join(' L') : '';
+  const visServerPts = serverPts.slice(visLo, visHi + 1);
+  const serverLine = visServerPts.length >= 2 ? 'M' + visServerPts.map(p => `${xScale(p.ms)},${yScale(p.v)}`).join(' L') : '';
   const line1Path = dualLine1.length >= 2 ? 'M' + dualLine1.map(p => `${xScale(p.ms)},${yScale(p.v)}`).join(' L') : '';
   const line2Path = dualLine2.length >= 2 ? 'M' + dualLine2.map(p => `${xScale(p.ms)},${yScale(p.v)}`).join(' L') : '';
 
@@ -449,11 +465,21 @@ export const TimelineChart: React.FC<{
   const snap = useMemo(() => {
     if (hoverMs === null || serverPts.length === 0) return null;
     const serverAvailable = hoverMs >= serverPts[0].ms && hoverMs <= serverPts[serverPts.length - 1].ms;
-    let near = serverPts[0], best = Math.abs(serverPts[0].ms - hoverMs);
-    for (const sp of serverPts) { const d = Math.abs(sp.ms - hoverMs); if (d < best) { best = d; near = sp; } }
-    const aq = qRanges.map((qr, i) => (hoverMs >= qr.startMs && hoverMs <= qr.endMs) ? { i, p: qr.peak, rp: qr.realPeak } : null).filter(Boolean) as { i: number; p: number; rp: number }[];
-    const am = mRanges.map((mr, i) => (hoverMs >= mr.startMs && hoverMs <= mr.endMs) ? { i, p: mr.peak, rp: mr.realPeak } : null).filter(Boolean) as { i: number; p: number; rp: number }[];
-    const amut = mutRanges.map((mu, i) => (hoverMs >= mu.startMs && hoverMs <= mu.endMs) ? { i, p: mu.peak, rp: mu.realPeak } : null).filter(Boolean) as { i: number; p: number; rp: number }[];
+    let nearIdx = 0, best = Math.abs(serverPts[0].ms - hoverMs);
+    serverPts.forEach((sp, k) => { const d = Math.abs(sp.ms - hoverMs); if (d < best) { best = d; nearIdx = k; } });
+    const near = serverPts[nearIdx];
+    // Bands only have values at sample times (straight lines in between), so inside the
+    // sampled domain "active" means non-zero drawn height at the nearest sample: the
+    // tooltip, the highlight and the crosshair then describe the same vertical slice.
+    const nearBucket = serverAvailable ? buckets[nearIdx] : undefined;
+    const activeAt = (rngs: Rng[], vals: number[] | undefined) => rngs
+      .map((r, i) => (vals ? vals[i] > 0 : hoverMs >= r.startMs && hoverMs <= r.endMs) ? { i, p: r.peak, rp: r.realPeak } : null)
+      .filter(Boolean) as { i: number; p: number; rp: number }[];
+    const aq = activeAt(qRanges, nearBucket?.qv);
+    const am = activeAt(mRanges, nearBucket?.mv);
+    const amut = activeAt(mutRanges, nearBucket?.mutv);
+    // Largest contributors first, so the tooltip's truncated lists show the ones that matter
+    for (const list of [aq, am, amut]) list.sort((a, b) => b.rp - a.rp);
     let line1Val = 0, line2Val = 0;
     if (isDualMode && dualLine1.length > 0) {
       let ni = dualLine1[0], nb = Math.abs(dualLine1[0].ms - hoverMs);
@@ -530,7 +556,7 @@ export const TimelineChart: React.FC<{
         return { host, v: nearest.v };
       });
     }
-    return { t: hoverMs, srv: near.v, serverAvailable, aq, am, amut, qt: aq.reduce((s, x) => s + x.p, 0), mt: am.reduce((s, x) => s + x.p, 0), mutt: amut.reduce((s, x) => s + x.p, 0), line1Val, line2Val, hoveredBand, hostCpuValues };
+    return { t: nearBucket ? near.ms : hoverMs, srv: near.v, serverAvailable, aq, am, amut, qt: aq.reduce((s, x) => s + x.p, 0), mt: am.reduce((s, x) => s + x.p, 0), mutt: amut.reduce((s, x) => s + x.p, 0), line1Val, line2Val, hoveredBand, hostCpuValues };
   }, [hoverMs, serverPts, qRanges, mRanges, mutRanges, isDualMode, dualLine1, dualLine2, localSvgY, padTop, ch, maxY, buckets, nq, nm, nmut, perHostCpuPts]);
 
   // Sync chart hover to parent so table rows highlight when hovering graph bands.
@@ -543,8 +569,17 @@ export const TimelineChart: React.FC<{
     onHighlightItem(snap?.hoveredBand ?? null);
   }, [hoveredBandKey]);
 
-  const crossX = localSvgX;
+  // The activity view describes the nearest sample, so the crosshair snaps to it;
+  // hovering a band keeps the crosshair under the mouse
+  const crossX = localSvgX !== null && snap?.serverAvailable && !snap.hoveredBand ? xScale(snap.t) : localSvgX;
   const pinX = pinnedMs !== null ? xScale(pinnedMs) : null;
+
+  // Hovering empty chart space shows the "Activity at" tooltip: highlight the
+  // bands it lists (area indices: queries, then merges, then mutations)
+  const activeAreas = useMemo(() => {
+    if (!snap || crossX === null || snap.hoveredBand) return null;
+    return new Set([...snap.aq.map(a => a.i), ...snap.am.map(a => nq + a.i), ...snap.amut.map(a => nq + nm + a.i)]);
+  }, [snap, crossX, nq, nm]);
 
   const dragRect = useMemo(() => {
     if (dragStart === null || dragCurrent === null) return null;
@@ -623,9 +658,14 @@ export const TimelineChart: React.FC<{
             isHovered = highlightedItem.id === areaId;
           } else if (snap?.hoveredBand) {
             isHovered = snap.hoveredBand.id === areaId;
+          } else if (activeAreas) {
+            isHovered = activeAreas.has(i);
           }
-          const hasAnyHighlight = highlightedItem !== null || snap?.hoveredBand !== null;
+          const hasAnyHighlight = highlightedItem !== null || !!snap?.hoveredBand || activeAreas !== null;
           const baseOpacity = isHovered ? 1 : a.dimmed ? 0.12 : (hasAnyHighlight ? 0.3 : 0.6);
+          // Outline + glow mark a single selected/hovered band; the activity highlight can light
+          // many large bands at once, and blurring all of them makes hover slow when zoomed in
+          const isSingleFocus = isHovered && (highlightedItem !== null || !!snap?.hoveredBand);
           return (
             <g
               key={i}
@@ -637,9 +677,9 @@ export const TimelineChart: React.FC<{
               <path
                 d={a.d}
                 fill={a.color}
-                stroke={isHovered ? '#fff' : 'none'}
-                strokeWidth={isHovered ? 1.5 : 0}
-                filter={isHovered ? 'url(#glow)' : undefined}
+                stroke={isSingleFocus ? '#fff' : 'none'}
+                strokeWidth={isSingleFocus ? 1.5 : 0}
+                filter={isSingleFocus ? 'url(#glow)' : undefined}
               />
               {ENABLE_FAILURE_HATCHING && a.failed && (
                 <path d={a.d} fill={`url(#${failureHatchId})`} pointerEvents="none" />
@@ -650,7 +690,7 @@ export const TimelineChart: React.FC<{
         {/* Server line fill + stroke */}
         {!isDualMode && serverLine && (
           <>
-            <path d={serverLine + ` L${xScale(serverPts[serverPts.length - 1].ms)},${yScale(0)} L${xScale(serverPts[0].ms)},${yScale(0)} Z`}
+            <path d={serverLine + ` L${xScale(visServerPts[visServerPts.length - 1].ms)},${yScale(0)} L${xScale(visServerPts[0].ms)},${yScale(0)} Z`}
               fill="url(#serverFill)" />
             <path d={serverLine} fill="none" stroke={cfg.color} strokeWidth="1.8" filter="url(#glow)" />
           </>
@@ -816,22 +856,62 @@ export const TimelineChart: React.FC<{
           : null;
         const isOperation = !!(band && hovItem);
         const tooltipWidth = Math.min(isOperation ? 240 : 300, W - 24);
-        const tooltipLeft = Math.max(12, Math.min(
-          crossX > W * 0.6 ? crossX - tooltipWidth - 12 : crossX + 12,
-          W - tooltipWidth - 12,
-        ));
+        // Keep the tooltip beside the cursor, choosing the side (left/right, top/bottom) that
+        // covers the least of the highlighted bands: the hovered band, or every band active
+        // at the cursor. Each candidate box is scored by the band area it would hide.
+        const highlighted = band
+          ? [band.type === 'query' ? band.idx : band.type === 'merge' ? nq + band.idx : nq + nm + band.idx]
+          : activeAreas ? [...activeAreas] : [];
+        const tooltipHeight = Math.min(tooltipHeightRef.current, ch);
+        const clampLeft = (x: number) => Math.max(12, Math.min(x, W - tooltipWidth - 12));
+        const lefts = [crossX + 24, crossX - tooltipWidth - 24].map(clampLeft);
+        // Vertically the tooltip is centred on the pointer (kept inside the plot) and glides
+        // with it, so it stays close without jumping between above and below
+        const tops = [Math.max(padTop + 4, Math.min(localSvgY - tooltipHeight / 2, padTop + ch - tooltipHeight - 4))];
+        const hiddenArea = (left: number, top: number) => {
+          let area = 0;
+          buckets.forEach((b, bi) => {
+            const x = xScale(b.t);
+            if (x < left || x > left + tooltipWidth) return;
+            for (const idx of highlighted) {
+              const yTop = yScale(cumStacks[idx][bi]);
+              const yBot = yScale(idx > 0 ? cumStacks[idx - 1][bi] : 0);
+              area += Math.max(0, Math.min(yBot, top + tooltipHeight) - Math.max(yTop, top));
+            }
+          });
+          // Covering the crosshair hides the moment being described
+          return area + (crossX >= left && crossX <= left + tooltipWidth ? 1e6 : 0);
+        };
+        let best: [number, number] = [0, 0], bestArea = Infinity;
+        for (let h = 0; h < lefts.length; h++) for (let v = 0; v < tops.length; v++) {
+          const area = hiddenArea(lefts[h], tops[v]);
+          if (area < bestArea) { bestArea = area; best = [h, v]; }
+        }
+        // Stay on the current side while it is nearly as good, so the tooltip does not
+        // flip back and forth as the cursor moves between bands
+        const [ph, pv] = tooltipSideRef.current;
+        if (hiddenArea(lefts[ph], tops[pv]) <= bestArea + 0.15 * tooltipWidth * tooltipHeight) best = [ph, pv];
+        tooltipSideRef.current = best;
+        const tooltipLeft = lefts[best[0]], tooltipTop = tops[best[1]];
+        // Rows hidden by the per-group cap, with their combined value so the shown rows add up to the group total
+        const renderMoreRow = (list: { rp: number }[], shown: number) => list.length > shown && (
+          <div style={{ display: 'flex', justifyContent: 'space-between', gap: 8, padding: '4px 0', borderTop: '1px solid var(--border-primary)', color: 'var(--text-muted)' }}>
+            <span>+{list.length - shown} more</span>
+            <span style={{ whiteSpace: 'nowrap', fontVariantNumeric: 'tabular-nums' }}>{cfg.fmtVal(list.slice(shown).reduce((s, x) => s + x.rp, 0))}{metricMode !== 'memory' ? '/s' : ''}</span>
+          </div>
+        );
         return (
-          <div style={{
+          <div ref={el => { if (el) tooltipHeightRef.current = el.offsetHeight; }} style={{
             position: 'absolute',
-            top: localSvgY < H * 0.5 ? `${(localSvgY / H) * 100 + 2}%` : undefined,
-            bottom: localSvgY >= H * 0.5 ? `${100 - (localSvgY / H) * 100 + 2}%` : undefined,
+            top: tooltipTop,
             left: tooltipLeft,
+            transition: 'top 0.15s ease-out',
             border: failureCode !== 0 ? '1px solid #f85149' : '1px solid var(--border-primary)',
             borderTop: failureCode !== 0 ? '2px solid #f85149' : accentColor ? `3px solid ${accentColor}` : '1px solid var(--border-primary)',
             borderRadius: 10, padding: '10px 14px', pointerEvents: 'none', zIndex: 10,
             width: tooltipWidth, boxSizing: 'border-box', fontSize: 10,
             background: TOOLTIP_BLUR_ENABLED
-              ? 'color-mix(in srgb, var(--bg-secondary), transparent 35%)'
+              ? 'color-mix(in srgb, var(--bg-secondary), transparent 45%)'
               : 'var(--bg-secondary)',
             backdropFilter: TOOLTIP_BLUR_ENABLED ? 'blur(12px)' : undefined,
             WebkitBackdropFilter: TOOLTIP_BLUR_ENABLED ? 'blur(12px)' : undefined,
@@ -1009,7 +1089,7 @@ export const TimelineChart: React.FC<{
                         </div>
                       );
                     })}
-                    {snap.aq.length > 4 && <div style={{ color: 'var(--text-muted)', paddingLeft: 8 }}>+{snap.aq.length - 4} more</div>}
+                    {renderMoreRow(snap.aq, 4)}
                   </div>
                 )}
                 {snap.am.length > 0 && (
@@ -1030,6 +1110,7 @@ export const TimelineChart: React.FC<{
                         </div>
                       );
                     })}
+                    {renderMoreRow(snap.am, 3)}
                   </div>
                 )}
                 {snap.amut.length > 0 && (
@@ -1050,6 +1131,7 @@ export const TimelineChart: React.FC<{
                         </div>
                       );
                     })}
+                    {renderMoreRow(snap.amut, 3)}
                   </div>
                 )}
               </>
