@@ -14,6 +14,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Improvements
 - **Time Travel:** Failed operations now show red hatching and error codes in the 2D timeline.
 - **Time Travel:** Improved hover tooltips for server usage and active operations.
+- **Monitoring Capabilities:** More precise permission checks when connecting.
 
 ### Bug fixes
 - **Time Travel:** Fixed CPU capacity detection treating multi-core servers as having one core.
