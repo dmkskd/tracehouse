@@ -989,6 +989,8 @@ export const TimeTravelPage: React.FC = () => {
     setPinnedMs(eventMs);
   }, []);
 
+  const handleUnpin = useCallback(() => setPinnedMs(null), []);
+
   const handleClearEventSelection = useCallback(() => {
     pendingEventPinRef.current = null;
     setSelectedEventId(null);
@@ -1266,7 +1268,7 @@ export const TimeTravelPage: React.FC = () => {
     <>
       {pinnedMs !== null && (
         <span style={{ display:'inline-flex', alignItems:'center', gap:8, padding:'2px 8px 2px 2px', borderRadius:6, fontSize:11, color:'#3fb950', background:'color-mix(in srgb, #3fb950 10%, var(--bg-secondary))', border:'1px solid color-mix(in srgb, #3fb950 30%, var(--bg-secondary))', fontVariantNumeric:'tabular-nums' }}>
-          <button onClick={() => setPinnedMs(null)} style={{ padding:'3px 8px', borderRadius:4, fontSize:11, fontWeight:600, background:'#3fb950', border:'none', color:'#fff', cursor:'pointer' }}>
+          <button onClick={handleUnpin} style={{ padding:'3px 8px', borderRadius:4, fontSize:11, fontWeight:600, background:'#3fb950', border:'none', color:'#fff', cursor:'pointer' }}>
             Unpin
           </button>
           <span title="The Operations table below shows only the operations running at this time. Click the chart to move the pin." style={{ cursor:'help' }}>
@@ -1809,6 +1811,7 @@ export const TimeTravelPage: React.FC = () => {
                       selectedEventId={selectedEventIdForDisplay}
                       onEventSelect={handleEventSelect}
                       onEventPin={handleEventPin}
+                      onUnpin={handleUnpin}
                       onClearEventSelection={handleClearEventSelection}
                       onViewEventDetails={handleViewEventDetails}
                       onBandClick={(band) => {
@@ -1869,6 +1872,7 @@ export const TimeTravelPage: React.FC = () => {
               selectedEventId={selectedEventIdForDisplay}
               onEventSelect={handleEventSelect}
               onEventPin={handleEventPin}
+              onUnpin={handleUnpin}
               onClearEventSelection={handleClearEventSelection}
               onViewEventDetails={handleViewEventDetails}
               onBandClick={(band) => {

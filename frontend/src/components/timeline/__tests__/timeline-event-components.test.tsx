@@ -125,6 +125,7 @@ describe('TimelineEventOverlay', () => {
     );
     // Selecting does not pin; pinning is the popover's own action
     const onPinEvent = vi.fn();
+    const onUnpin = vi.fn();
     view.rerender(
       <TimelineEventOverlay
         events={[sourceEvent]}
@@ -149,12 +150,14 @@ describe('TimelineEventOverlay', () => {
         pinnedMs={Date.parse(sourceEvent.occurred_at)}
         onSelectEvent={onSelectEvent}
         onPinEvent={onPinEvent}
+        onUnpin={onUnpin}
         onClearEventSelection={onClearEventSelection}
         onViewEventDetails={onViewEventDetails}
       />,
     );
-    expect(screen.getByText('Activity pinned at this time')).toBeInTheDocument();
     expect(screen.queryByRole('button', { name: 'Pin' })).toBeNull();
+    fireEvent.click(screen.getByRole('button', { name: 'Unpin' }));
+    expect(onUnpin).toHaveBeenCalledOnce();
     fireEvent.click(screen.getByRole('button', { name: 'View details →' }));
     expect(onViewEventDetails).toHaveBeenCalledWith(sourceEvent);
     fireEvent.keyDown(document, { key: 'Escape' });

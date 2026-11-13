@@ -20,6 +20,7 @@ interface TimelineEventOverlayProps {
   /** Current chart pin, to show whether the selected event's time is pinned. */
   pinnedMs?: number | null;
   onPinEvent?: (event: OperationalEvent) => void;
+  onUnpin?: () => void;
   onClearEventSelection?: () => void;
   onViewEventDetails?: (event: OperationalEvent) => void;
 }
@@ -32,6 +33,7 @@ export const TimelineEventOverlay: React.FC<TimelineEventOverlayProps> = ({
   onSelectEvent,
   pinnedMs,
   onPinEvent,
+  onUnpin,
   onClearEventSelection,
   onViewEventDetails,
 }) => {
@@ -374,11 +376,26 @@ export const TimelineEventOverlay: React.FC<TimelineEventOverlayProps> = ({
                   paddingTop: 7,
                   borderTop: '1px solid var(--border-primary)',
                 }}>
-                  {selectedPinned ? (
-                    <span style={{ color: 'var(--text-muted)', fontSize: 9 }}>
-                      Activity pinned at this time
-                    </span>
-                  ) : onPinEvent ? (
+                  {selectedPinned && onUnpin ? (
+                    <button
+                      type="button"
+                      onClick={onUnpin}
+                      title="Operations table filtered to what was running at this time"
+                      style={{
+                        padding: '3px 7px',
+                        borderRadius: 5,
+                        border: '1px solid #3fb950',
+                        background: '#3fb950',
+                        color: '#fff',
+                        fontSize: 9,
+                        fontWeight: 600,
+                        cursor: 'pointer',
+                        whiteSpace: 'nowrap',
+                      }}
+                    >
+                      Unpin
+                    </button>
+                  ) : !selectedPinned && onPinEvent ? (
                     <button
                       type="button"
                       onClick={() => onPinEvent(selectedEvent)}

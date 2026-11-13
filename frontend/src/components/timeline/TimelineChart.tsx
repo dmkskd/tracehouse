@@ -87,13 +87,14 @@ export const TimelineChart: React.FC<{
   selectedEventId?: string | null;
   onEventSelect?: (event: OperationalEvent) => void;
   onEventPin?: (event: OperationalEvent) => void;
+  onUnpin?: () => void;
   onClearEventSelection?: () => void;
   onViewEventDetails?: (event: OperationalEvent) => void;
 }> = ({
   data, metricMode, height = 380, hoverMs, pinnedMs, onHover, onPin,
   zoomRange, onZoom, highlightedItem, onHighlightItem, onBandClick,
   hiddenCategories, queryHashActive, eventAnnotations = [], selectedEventId,
-  onEventSelect, onEventPin, onClearEventSelection, onViewEventDetails,
+  onEventSelect, onEventPin, onUnpin, onClearEventSelection, onViewEventDetails,
 }) => {
   const failureHatchId = `failure-hatch-${useId().replace(/:/g, '')}`;
   const containerRef = useRef<HTMLDivElement>(null);
@@ -783,6 +784,7 @@ export const TimelineChart: React.FC<{
             onSelectEvent={onEventSelect}
             pinnedMs={pinnedMs}
             onPinEvent={onEventPin}
+            onUnpin={onUnpin}
             onClearEventSelection={onClearEventSelection}
             onViewEventDetails={onViewEventDetails}
           />
