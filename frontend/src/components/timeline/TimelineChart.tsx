@@ -373,12 +373,14 @@ export const TimelineChart: React.FC<{
   const cpuFullUs = totalCpuCores * 1_000_000;
   const cpuY = metricMode === 'cpu' && totalCpuCores > 0 ? yScale(cpuFullUs) : null;
 
-  const toSvgXY = useCallback((e: React.MouseEvent): { x: number; y: number } | null => {
+  /** Pointer position in svg units; null outside the plot unless `clamp` pins it to the plot edge. */
+  const toSvgXY = useCallback((e: React.MouseEvent, clamp = false): { x: number; y: number } | null => {
     const svg = svgRef.current; if (!svg) return null;
     const r = svg.getBoundingClientRect();
-    const svgX = ((e.clientX - r.left) / r.width) * W;
+    let svgX = ((e.clientX - r.left) / r.width) * W;
     const svgY = ((e.clientY - r.top) / r.height) * H;
-    if (svgX < padLeft || svgX > W - padRight) return null;
+    if (clamp) svgX = Math.max(padLeft, Math.min(svgX, W - padRight));
+    else if (svgX < padLeft || svgX > W - padRight) return null;
     return { x: svgX, y: svgY };
   }, [W, H, padLeft, padRight]);
 
@@ -386,13 +388,19 @@ export const TimelineChart: React.FC<{
     return tMin + ((svgX - padLeft) / cw) * tRange;
   }, [tMin, padLeft, cw, tRange]);
 
-  const handleMouseDown = useCallback((e: React.MouseEvent) => {
+  // A drag owns the pointer until release: capture keeps event badges from taking the
+  // pointer (and the svg from seeing a leave) while the zoom range is being drawn
+  const handlePointerDown = useCallback((e: React.PointerEvent<SVGSVGElement>) => {
     const pt = toSvgXY(e);
-    if (pt) { const ms = svgXtoMs(pt.x); setDragStart(ms); setDragCurrent(ms); }
+    if (pt) {
+      e.currentTarget.setPointerCapture?.(e.pointerId);
+      const ms = svgXtoMs(pt.x); setDragStart(ms); setDragCurrent(ms);
+    }
   }, [toSvgXY, svgXtoMs]);
 
-  const handleMouseMove = useCallback((e: React.MouseEvent) => {
-    const pt = toSvgXY(e);
+  const handlePointerMove = useCallback((e: React.PointerEvent) => {
+    // While dragging, a pointer past the plot edge selects up to that edge
+    const pt = toSvgXY(e, dragStart !== null);
     if (pt) {
       setLocalSvgX(pt.x); setLocalSvgY(pt.y);
       const ms = svgXtoMs(pt.x);
@@ -401,7 +409,11 @@ export const TimelineChart: React.FC<{
     } else { setLocalSvgX(null); setLocalSvgY(null); onHover(null); }
   }, [toSvgXY, svgXtoMs, onHover, dragStart]);
 
-  const handleMouseUp = useCallback((e: React.MouseEvent) => {
+  const handlePointerCancel = useCallback(() => {
+    setDragStart(null); setDragCurrent(null);
+  }, []);
+
+  const handlePointerUp = useCallback((e: React.PointerEvent) => {
     if (dragStart !== null && dragCurrent !== null) {
       const lo = Math.min(dragStart, dragCurrent);
       const hi = Math.max(dragStart, dragCurrent);
@@ -615,8 +627,9 @@ export const TimelineChart: React.FC<{
     <div ref={containerRef} style={{ position: 'relative', width: '100%' }}>
       <svg ref={svgRef} width="100%" height={H} viewBox={`0 0 ${W} ${H}`} preserveAspectRatio="none"
         style={{ cursor: snap?.hoveredBand ? 'pointer' : 'crosshair', userSelect: 'none' }}
-        onMouseDown={handleMouseDown} onMouseMove={handleMouseMove}
-        onMouseUp={handleMouseUp} onMouseLeave={handleMouseLeave} onDoubleClick={handleDoubleClick}>
+        onPointerDown={handlePointerDown} onPointerMove={handlePointerMove}
+        onPointerUp={handlePointerUp} onPointerCancel={handlePointerCancel}
+        onMouseLeave={handleMouseLeave} onDoubleClick={handleDoubleClick}>
         <defs>
           {/* Overlay only: preserve each operation's colour and existing hover treatment. */}
           <pattern id={failureHatchId} width="7" height="7" patternUnits="userSpaceOnUse">

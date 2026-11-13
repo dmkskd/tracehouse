@@ -8,6 +8,11 @@ const base = Date.parse('2026-11-12T17:29:00Z');
 const at = (seconds: number) => new Date(base + seconds * 1000).toISOString();
 beforeAll(() => {
   vi.stubGlobal('ResizeObserver', class { observe() {} unobserve() {} disconnect() {} });
+  // jsdom has no PointerEvent: without it fireEvent.pointer* drops clientX/clientY
+  vi.stubGlobal('PointerEvent', class extends MouseEvent {
+    pointerId: number;
+    constructor(type: string, init: PointerEventInit = {}) { super(type, init); this.pointerId = init.pointerId ?? 1; }
+  });
 });
 function timeline(rising = false): MemoryTimeline {
   return {
@@ -34,7 +39,7 @@ function hover(data: MemoryTimeline, seconds: number, y: number) {
     x: 0, y: 0, left: 0, top: 0, width: 1000, height: 300, right: 1000, bottom: 300, toJSON() {},
   });
   const coords = { clientX: 52 + seconds / 60 * 858, clientY: y };
-  fireEvent.mouseMove(svg, coords);
+  fireEvent.pointerMove(svg, coords);
   return { svg, coords, onBandClick, onHighlightItem };
 }
 
@@ -46,8 +51,8 @@ describe('timeline hover stays within drawn samples', () => {
       expect(screen.getByText('No server samples at this time')).toBeInTheDocument();
       expect(screen.queryByText('Click for details')).not.toBeInTheDocument();
       expect(onHighlightItem).not.toHaveBeenCalledWith(expect.objectContaining({ type: 'query' }));
-      fireEvent.mouseDown(svg, coords);
-      fireEvent.mouseUp(svg, coords);
+      fireEvent.pointerDown(svg, coords);
+      fireEvent.pointerUp(svg, coords);
       expect(onBandClick).not.toHaveBeenCalled();
     },
   );
