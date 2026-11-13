@@ -17,6 +17,9 @@ interface TimelineEventOverlayProps {
   rangeEndMs: number;
   selectedEventId?: string | null;
   onSelectEvent: (event: OperationalEvent) => void;
+  /** Current chart pin, to show whether the selected event's time is pinned. */
+  pinnedMs?: number | null;
+  onPinEvent?: (event: OperationalEvent) => void;
   onClearEventSelection?: () => void;
   onViewEventDetails?: (event: OperationalEvent) => void;
 }
@@ -27,6 +30,8 @@ export const TimelineEventOverlay: React.FC<TimelineEventOverlayProps> = ({
   rangeEndMs,
   selectedEventId,
   onSelectEvent,
+  pinnedMs,
+  onPinEvent,
   onClearEventSelection,
   onViewEventDetails,
 }) => {
@@ -88,6 +93,7 @@ export const TimelineEventOverlay: React.FC<TimelineEventOverlayProps> = ({
         ));
         const selectedEvent = cluster.events.find(event => event.id === selectedEventId);
         const selected = !!selectedEvent;
+        const selectedPinned = !!selectedEvent && pinnedMs === new Date(selectedEvent.occurred_at).getTime();
         const expanded = expandedClusterId === cluster.id;
         const hovered = hoveredClusterId === cluster.id;
         const color = EVENT_SEVERITY_COLORS[cluster.severity];
@@ -368,9 +374,29 @@ export const TimelineEventOverlay: React.FC<TimelineEventOverlayProps> = ({
                   paddingTop: 7,
                   borderTop: '1px solid var(--border-primary)',
                 }}>
-                  <span style={{ color: 'var(--text-muted)', fontSize: 9 }}>
-                    Activity pinned at this time
-                  </span>
+                  {selectedPinned ? (
+                    <span style={{ color: 'var(--text-muted)', fontSize: 9 }}>
+                      Activity pinned at this time
+                    </span>
+                  ) : onPinEvent ? (
+                    <button
+                      type="button"
+                      onClick={() => onPinEvent(selectedEvent)}
+                      title="Operations table filtered to what was running at this time"
+                      style={{
+                        padding: '3px 7px',
+                        borderRadius: 5,
+                        border: '1px solid rgba(63,185,80,0.35)',
+                        background: 'rgba(63,185,80,0.08)',
+                        color: '#3fb950',
+                        fontSize: 9,
+                        cursor: 'pointer',
+                        whiteSpace: 'nowrap',
+                      }}
+                    >
+                      Pin
+                    </button>
+                  ) : <span />}
                   {onViewEventDetails && (
                     <button
                       type="button"

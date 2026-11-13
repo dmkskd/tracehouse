@@ -16,6 +16,7 @@ import {
 } from '@tracehouse/core';
 import { formatBytes, parseTimestamp } from '../../utils/formatters';
 import { TimelineEventOverlay } from './TimelineEventOverlay';
+import { placeTooltip, type TooltipSide } from './timeline-tooltip-placement';
 import {
   type MetricMode, type HighlightedItem,
   Q_COLORS, M_COLORS, MUT_COLORS, METRIC_CONFIG, METRIC_BAR_CONFIG,
@@ -85,13 +86,14 @@ export const TimelineChart: React.FC<{
   eventAnnotations?: OperationalEvent[];
   selectedEventId?: string | null;
   onEventSelect?: (event: OperationalEvent) => void;
+  onEventPin?: (event: OperationalEvent) => void;
   onClearEventSelection?: () => void;
   onViewEventDetails?: (event: OperationalEvent) => void;
 }> = ({
   data, metricMode, height = 380, hoverMs, pinnedMs, onHover, onPin,
   zoomRange, onZoom, highlightedItem, onHighlightItem, onBandClick,
   hiddenCategories, queryHashActive, eventAnnotations = [], selectedEventId,
-  onEventSelect, onClearEventSelection, onViewEventDetails,
+  onEventSelect, onEventPin, onClearEventSelection, onViewEventDetails,
 }) => {
   const failureHatchId = `failure-hatch-${useId().replace(/:/g, '')}`;
   const containerRef = useRef<HTMLDivElement>(null);
@@ -110,8 +112,8 @@ export const TimelineChart: React.FC<{
   const hoveredBandRef = useRef<{ type: 'query' | 'merge' | 'mutation'; idx: number; id: string } | null>(null);
   // Last rendered tooltip height, used to place the next one clear of the highlighted bands
   const tooltipHeightRef = useRef(200);
-  // Last chosen tooltip side ([left/right index, below/above index]); kept unless clearly worse
-  const tooltipSideRef = useRef<[number, number]>([0, 0]);
+  // Last chosen tooltip side; kept unless clearly worse
+  const tooltipSideRef = useRef<TooltipSide>('right');
   const cfg = METRIC_CONFIG[metricMode];
   const totalRam = getTimelineRamCapacity(data);
   const totalCpuCores = getTimelineCpuCapacity(data);
@@ -779,6 +781,8 @@ export const TimelineChart: React.FC<{
             rangeEndMs={tMax}
             selectedEventId={selectedEventId}
             onSelectEvent={onEventSelect}
+            pinnedMs={pinnedMs}
+            onPinEvent={onEventPin}
             onClearEventSelection={onClearEventSelection}
             onViewEventDetails={onViewEventDetails}
           />
@@ -861,43 +865,23 @@ export const TimelineChart: React.FC<{
           : null;
         const isOperation = !!(band && hovItem);
         const tooltipWidth = Math.min(isOperation ? 240 : 300, W - 24);
-        // Keep the tooltip beside the cursor, choosing the side (left/right, top/bottom) that
-        // covers the least of the highlighted bands: the hovered band, or every band active
-        // at the cursor. Each candidate box is scored by the band area it would hide.
+        // Highlighted bands: the hovered band, or every band active at the cursor
         const highlighted = band
           ? [band.type === 'query' ? band.idx : band.type === 'merge' ? nq + band.idx : nq + nm + band.idx]
           : activeAreas ? [...activeAreas] : [];
-        const tooltipHeight = Math.min(tooltipHeightRef.current, ch);
-        const clampLeft = (x: number) => Math.max(12, Math.min(x, W - tooltipWidth - 12));
-        const lefts = [crossX + 24, crossX - tooltipWidth - 24].map(clampLeft);
-        // Vertically the tooltip is centred on the pointer (kept inside the plot) and glides
-        // with it, so it stays close without jumping between above and below
-        const tops = [Math.max(padTop + 4, Math.min(localSvgY - tooltipHeight / 2, padTop + ch - tooltipHeight - 4))];
-        const hiddenArea = (left: number, top: number) => {
-          let area = 0;
-          buckets.forEach((b, bi) => {
-            const x = xScale(b.t);
-            if (x < left || x > left + tooltipWidth) return;
-            for (const idx of highlighted) {
-              const yTop = yScale(cumStacks[idx][bi]);
-              const yBot = yScale(idx > 0 ? cumStacks[idx - 1][bi] : 0);
-              area += Math.max(0, Math.min(yBot, top + tooltipHeight) - Math.max(yTop, top));
-            }
-          });
-          // Covering the crosshair hides the moment being described
-          return area + (crossX >= left && crossX <= left + tooltipWidth ? 1e6 : 0);
-        };
-        let best: [number, number] = [0, 0], bestArea = Infinity;
-        for (let h = 0; h < lefts.length; h++) for (let v = 0; v < tops.length; v++) {
-          const area = hiddenArea(lefts[h], tops[v]);
-          if (area < bestArea) { bestArea = area; best = [h, v]; }
-        }
-        // Stay on the current side while it is nearly as good, so the tooltip does not
-        // flip back and forth as the cursor moves between bands
-        const [ph, pv] = tooltipSideRef.current;
-        if (hiddenArea(lefts[ph], tops[pv]) <= bestArea + 0.15 * tooltipWidth * tooltipHeight) best = [ph, pv];
-        tooltipSideRef.current = best;
-        const tooltipLeft = lefts[best[0]], tooltipTop = tops[best[1]];
+        const placement = placeTooltip({
+          cursorX: crossX, cursorY: localSvgY,
+          width: tooltipWidth, height: Math.min(tooltipHeightRef.current, ch),
+          chartWidth: W, plotTop: padTop, plotBottom: padTop + ch,
+          xs: visBucketIdx.map(bi => xScale(buckets[bi].t)),
+          bands: highlighted.map(idx => ({
+            top: visBucketIdx.map(bi => yScale(cumStacks[idx][bi])),
+            bottom: visBucketIdx.map(bi => yScale(idx > 0 ? cumStacks[idx - 1][bi] : 0)),
+          })),
+          previousSide: tooltipSideRef.current,
+        });
+        tooltipSideRef.current = placement.side;
+        const tooltipLeft = placement.left, tooltipTop = placement.top;
         // Rows hidden by the per-group cap, with their combined value so the shown rows add up to the group total
         const renderMoreRow = (list: { rp: number }[], shown: number) => list.length > shown && (
           <div style={{ display: 'flex', justifyContent: 'space-between', gap: 8, padding: '4px 0', borderTop: '1px solid var(--border-primary)', color: 'var(--text-muted)' }}>

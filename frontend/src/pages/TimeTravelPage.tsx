@@ -979,14 +979,19 @@ export const TimeTravelPage: React.FC = () => {
     if (!Number.isFinite(eventMs)) return;
     pendingEventPinRef.current = null;
     setSelectedEventId(event.id);
-    setPinnedMs(eventMs);
     setHoverMs(eventMs);
+  }, []);
+
+  // Pinning is a separate action from the event popover: selecting an event only shows it
+  const handleEventPin = useCallback((event: OperationalEvent) => {
+    const eventMs = new Date(event.occurred_at).getTime();
+    if (!Number.isFinite(eventMs)) return;
+    setPinnedMs(eventMs);
   }, []);
 
   const handleClearEventSelection = useCallback(() => {
     pendingEventPinRef.current = null;
     setSelectedEventId(null);
-    setPinnedMs(null);
     setHoverMs(null);
   }, []);
 
@@ -1256,12 +1261,12 @@ export const TimeTravelPage: React.FC = () => {
             : `Per-second samples from ${zoomSource.source === 'processes_history' ? 'tracehouse.processes_history' : 'system.query_metric_log'} (queries) and tracehouse.merges_history (merges).`
               + (zoomSource.source === 'query_metric_log' && metricMode === 'disk' ? " Query disk is the query's average." : '');
 
-  // Pin and zoom state, shown over the plot's top-right corner
+  // Pin and zoom state, shown over the plot's top-right corner. Opaque fills: event markers sit underneath
   const chartStatusChips = (
     <>
       {pinnedMs !== null && (
-        <span style={{ display:'inline-flex', alignItems:'center', gap:8, padding:'2px 8px 2px 2px', borderRadius:6, fontSize:11, color:'#3fb950', background:'rgba(63,185,80,0.1)', border:'1px solid rgba(63,185,80,0.3)', fontVariantNumeric:'tabular-nums' }}>
-          <button onClick={() => { setPinnedMs(null); setSelectedEventId(null); }} style={{ padding:'3px 8px', borderRadius:4, fontSize:11, fontWeight:600, background:'#3fb950', border:'none', color:'#fff', cursor:'pointer' }}>
+        <span style={{ display:'inline-flex', alignItems:'center', gap:8, padding:'2px 8px 2px 2px', borderRadius:6, fontSize:11, color:'#3fb950', background:'color-mix(in srgb, #3fb950 10%, var(--bg-secondary))', border:'1px solid color-mix(in srgb, #3fb950 30%, var(--bg-secondary))', fontVariantNumeric:'tabular-nums' }}>
+          <button onClick={() => setPinnedMs(null)} style={{ padding:'3px 8px', borderRadius:4, fontSize:11, fontWeight:600, background:'#3fb950', border:'none', color:'#fff', cursor:'pointer' }}>
             Unpin
           </button>
           <span title="The Operations table below shows only the operations running at this time. Click the chart to move the pin." style={{ cursor:'help' }}>
@@ -1270,7 +1275,7 @@ export const TimeTravelPage: React.FC = () => {
         </span>
       )}
       {zoomRange !== null && (
-        <span style={{ display:'inline-flex', alignItems:'center', gap:8, padding:'2px 8px 2px 2px', borderRadius:6, fontSize:11, color:'#58a6ff', background:'rgba(88,166,255,0.1)', border:'1px solid rgba(88,166,255,0.3)', fontVariantNumeric:'tabular-nums' }}>
+        <span style={{ display:'inline-flex', alignItems:'center', gap:8, padding:'2px 8px 2px 2px', borderRadius:6, fontSize:11, color:'#58a6ff', background:'color-mix(in srgb, #58a6ff 10%, var(--bg-secondary))', border:'1px solid color-mix(in srgb, #58a6ff 30%, var(--bg-secondary))', fontVariantNumeric:'tabular-nums' }}>
           <button onClick={() => setZoomRange(null)} title="Esc or double-click the chart" style={{ display:'inline-flex', alignItems:'center', gap:6, padding:'3px 8px', borderRadius:4, fontSize:11, fontWeight:600, background:'#58a6ff', border:'none', color:'#fff', cursor:'pointer' }}>
             Reset zoom
             <kbd style={{ fontSize:9, fontFamily:'inherit', fontWeight:500, padding:'0 4px', borderRadius:3, background:'rgba(255,255,255,0.25)' }}>Esc</kbd>
@@ -1803,6 +1808,7 @@ export const TimeTravelPage: React.FC = () => {
                         : []}
                       selectedEventId={selectedEventIdForDisplay}
                       onEventSelect={handleEventSelect}
+                      onEventPin={handleEventPin}
                       onClearEventSelection={handleClearEventSelection}
                       onViewEventDetails={handleViewEventDetails}
                       onBandClick={(band) => {
@@ -1862,6 +1868,7 @@ export const TimeTravelPage: React.FC = () => {
               eventAnnotations={timeTravelEventsVisible ? filteredWindowEvents : []}
               selectedEventId={selectedEventIdForDisplay}
               onEventSelect={handleEventSelect}
+              onEventPin={handleEventPin}
               onClearEventSelection={handleClearEventSelection}
               onViewEventDetails={handleViewEventDetails}
               onBandClick={(band) => {
