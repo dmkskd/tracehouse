@@ -413,6 +413,11 @@ export const TimelineChart: React.FC<{
     setDragStart(null); setDragCurrent(null);
   }, [dragStart, dragCurrent, toSvgXY, svgXtoMs, onZoom, onPin, onBandClick]);
 
+  // Double-click on empty chart space resets the zoom (on a band, clicks open its details)
+  const handleDoubleClick = useCallback(() => {
+    if (zoomRange && !hoveredBandRef.current) onZoom(null);
+  }, [zoomRange, onZoom]);
+
   const handleMouseLeave = useCallback(() => {
     onHover(null); setLocalSvgX(null); setLocalSvgY(null); setDragStart(null); setDragCurrent(null);
     onHighlightItem?.(null);
@@ -603,7 +608,7 @@ export const TimelineChart: React.FC<{
       <svg ref={svgRef} width="100%" height={H} viewBox={`0 0 ${W} ${H}`} preserveAspectRatio="none"
         style={{ cursor: snap?.hoveredBand ? 'pointer' : 'crosshair', userSelect: 'none' }}
         onMouseDown={handleMouseDown} onMouseMove={handleMouseMove}
-        onMouseUp={handleMouseUp} onMouseLeave={handleMouseLeave}>
+        onMouseUp={handleMouseUp} onMouseLeave={handleMouseLeave} onDoubleClick={handleDoubleClick}>
         <defs>
           {/* Overlay only: preserve each operation's colour and existing hover treatment. */}
           <pattern id={failureHatchId} width="7" height="7" patternUnits="userSpaceOnUse">
@@ -716,10 +721,10 @@ export const TimelineChart: React.FC<{
         {pinX !== null && (
           <>
             <line x1={pinX} y1={padTop} x2={pinX} y2={padTop + ch} stroke="#3fb950" strokeWidth="2" opacity="0.8">
-              <title>Pinned at {new Date(pinnedMs!).toLocaleTimeString()} — click elsewhere to move, or unpin from the toolbar</title>
+              <title>Pinned at {new Date(pinnedMs!).toLocaleTimeString()} — click elsewhere to move, or Unpin above the chart</title>
             </line>
             <line x1={pinX} y1={padTop} x2={pinX} y2={padTop + ch} stroke="transparent" strokeWidth="10" style={{ cursor: 'help' }}>
-              <title>Pinned at {new Date(pinnedMs!).toLocaleTimeString()} — click elsewhere to move, or unpin from the toolbar</title>
+              <title>Pinned at {new Date(pinnedMs!).toLocaleTimeString()} — click elsewhere to move, or Unpin above the chart</title>
             </line>
           </>
         )}

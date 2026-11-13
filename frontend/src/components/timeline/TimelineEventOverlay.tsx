@@ -50,6 +50,7 @@ export const TimelineEventOverlay: React.FC<TimelineEventOverlayProps> = ({
     if (!expandedClusterId && !selectedEventId) return;
     const onKeyDown = (event: KeyboardEvent) => {
       if (event.key !== 'Escape') return;
+      event.preventDefault();  // consumed: the page's Escape-to-reset-zoom must not also fire
       if (expandedClusterId) {
         setExpandedClusterId(null);
         setActiveListEventId(null);

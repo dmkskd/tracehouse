@@ -1162,6 +1162,20 @@ export const TimeTravelPage: React.FC = () => {
     return () => { document.removeEventListener('keydown', onKey); document.removeEventListener('mousedown', onClick); };
   }, [showCustomPopover]);
 
+  // Escape resets the chart zoom. Listening on window runs after document-level handlers,
+  // so anything that already used the key (event selection, popovers, dialogs) wins.
+  useEffect(() => {
+    if (zoomRange === null) return;
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key !== 'Escape' || e.defaultPrevented || showCustomPopover) return;
+      if (document.querySelector('[role="dialog"]')) return;
+      if ((e.target as HTMLElement | null)?.closest?.('input, textarea, select')) return;
+      setZoomRange(null);
+    };
+    window.addEventListener('keydown', onKey);
+    return () => window.removeEventListener('keydown', onKey);
+  }, [zoomRange, showCustomPopover]);
+
   if (!services || !isConnected) {
     return (
       <div style={{ display:'flex', flexDirection:'column', alignItems:'center', justifyContent:'center', height:'100%', gap:16, background:'var(--bg-primary)' }}>
@@ -1232,6 +1246,45 @@ export const TimeTravelPage: React.FC = () => {
     clearDragPosition();
     setShowCustomPopover(false);
   };
+
+  // What the zoomed bands are drawn from, shown when hovering the zoom range
+  const zoomDetailHint = zoomRange === null ? ''
+    : zoomRange[1] - zoomRange[0] > ZOOM_MAX_SPAN_MS ? 'Averages. Zoom in below 10 minutes for per-second samples.'
+      : zoomLoading ? 'Loading per-second samples.'
+        : zoomError ? 'Per-second samples failed to load. Showing averages.'
+          : !zoomSource.source ? 'Per-second samples for merges only (tracehouse.merges_history). Queries show their average.'
+            : `Per-second samples from ${zoomSource.source === 'processes_history' ? 'tracehouse.processes_history' : 'system.query_metric_log'} (queries) and tracehouse.merges_history (merges).`
+              + (zoomSource.source === 'query_metric_log' && metricMode === 'disk' ? " Query disk is the query's average." : '');
+
+  // Pin and zoom state, shown over the plot's top-right corner
+  const chartStatusChips = (
+    <>
+      {pinnedMs !== null && (
+        <span style={{ display:'inline-flex', alignItems:'center', gap:8, padding:'2px 8px 2px 2px', borderRadius:6, fontSize:11, color:'#3fb950', background:'rgba(63,185,80,0.1)', border:'1px solid rgba(63,185,80,0.3)', fontVariantNumeric:'tabular-nums' }}>
+          <button onClick={() => { setPinnedMs(null); setSelectedEventId(null); }} style={{ padding:'3px 8px', borderRadius:4, fontSize:11, fontWeight:600, background:'#3fb950', border:'none', color:'#fff', cursor:'pointer' }}>
+            Unpin
+          </button>
+          <span title="The Operations table below shows only the operations running at this time. Click the chart to move the pin." style={{ cursor:'help' }}>
+            {new Date(pinnedMs).toLocaleTimeString()}
+          </span>
+        </span>
+      )}
+      {zoomRange !== null && (
+        <span style={{ display:'inline-flex', alignItems:'center', gap:8, padding:'2px 8px 2px 2px', borderRadius:6, fontSize:11, color:'#58a6ff', background:'rgba(88,166,255,0.1)', border:'1px solid rgba(88,166,255,0.3)', fontVariantNumeric:'tabular-nums' }}>
+          <button onClick={() => setZoomRange(null)} title="Esc or double-click the chart" style={{ display:'inline-flex', alignItems:'center', gap:6, padding:'3px 8px', borderRadius:4, fontSize:11, fontWeight:600, background:'#58a6ff', border:'none', color:'#fff', cursor:'pointer' }}>
+            Reset zoom
+            <kbd style={{ fontSize:9, fontFamily:'inherit', fontWeight:500, padding:'0 4px', borderRadius:3, background:'rgba(255,255,255,0.25)' }}>Esc</kbd>
+          </button>
+          <span title={zoomDetailHint} style={{ cursor:'help' }}>
+            {new Date(zoomRange[0]).toLocaleTimeString()} – {new Date(zoomRange[1]).toLocaleTimeString()}
+            {/* Fixed-width slot: the chip is right-anchored, so changing its width while samples load would shift the Reset button */}
+            <span style={{ display:'inline-block', width:'1.2em', textAlign:'center', opacity:0.7 }}>{zoomLoading ? '…' : 'ⓘ'}</span>
+          </span>
+        </span>
+      )}
+      {zoomError && <span role="status" style={{ fontSize: 10, color: '#f85149' }}>{zoomError}</span>}
+    </>
+  );
 
   return (
     <div style={{ height:'100%', display:'flex', flexDirection:'column', overflow:'hidden', background:'var(--bg-primary)' }}>
@@ -1787,26 +1840,7 @@ export const TimeTravelPage: React.FC = () => {
             <>
             {(pinnedMs !== null || zoomRange !== null) && (
               <div style={{ position:'absolute', top:8, right:8, zIndex:10, display:'flex', alignItems:'center', gap:6 }}>
-                {pinnedMs !== null && (
-                  <button onClick={() => { setPinnedMs(null); setSelectedEventId(null); }} style={{ padding:'3px 8px', borderRadius:6, fontSize:11, background:'rgba(63,185,80,0.12)', border:'1px solid rgba(63,185,80,0.25)', color:'#3fb950', cursor:'pointer', backdropFilter:'blur(8px)' }}>
-                    ✕ Pinned at {new Date(pinnedMs).toLocaleTimeString()}
-                  </button>
-                )}
-                {zoomRange !== null && (
-                  <button onClick={() => setZoomRange(null)} style={{ padding:'3px 8px', borderRadius:6, fontSize:11, background:'rgba(88,166,255,0.12)', border:'1px solid rgba(88,166,255,0.25)', color:'#58a6ff', cursor:'pointer', backdropFilter:'blur(8px)' }}>
-                    ✕ Reset zoom
-                  </button>
-                )}
-                {zoomData && (
-                  <span style={{ fontSize:10, color:'#3fb950', opacity: 0.8 }}>
-                    {zoomLoading ? 'Loading samples...' : `Per-second sampled · ${zoomSource.source ?? 'merges only'}`}
-                    {!zoomLoading && zoomSource.source === 'query_metric_log' && metricMode === 'disk' && ' · Query disk uses query-log average'}
-                  </span>
-                )}
-                {zoomError && <span role="status" style={{ fontSize: 10, color: '#f85149' }}>{zoomError}</span>}
-                {zoomLoading && !zoomData && (
-                  <span style={{ fontSize:10, color:'#58a6ff', opacity: 0.8 }}>Loading samples...</span>
-                )}
+                {chartStatusChips}
               </div>
             )}
             {metricMode === 'cpu' && data.server_cpu.length > 0 && data.server_cpu.every(p => p.v === 0) && (
