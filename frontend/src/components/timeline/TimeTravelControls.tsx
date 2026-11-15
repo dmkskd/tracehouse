@@ -1,6 +1,6 @@
 import { TimeTravelServerSelector } from './TimeTravelServerSelector';
-import './TimeTravelSegments.css';
-import './TimeTravelControls.css';
+import { segmentsStyle } from './TimeTravelSegments.styles';
+import { controlsStyle } from './TimeTravelControls.styles';
 
 interface Props {
   hosts: readonly string[];
@@ -16,10 +16,10 @@ export function TimeTravelControls({
   perServerView, onPerServerViewChange, splitAvailable,
 }: Props) {
   return (
-    <div className="tt-server-controls">
+    <div className={`tt-server-controls ${controlsStyle}`}>
       <TimeTravelServerSelector hosts={hosts} selectedHosts={selectedHosts} onChange={onSelectedHostsChange} />
       <span className="tt-controls-divider" aria-hidden="true" />
-      <div className="tt-segments" role="group" aria-label="Chart layout">
+      <div className={`tt-segments ${segmentsStyle}`} role="group" aria-label="Chart layout">
         <button type="button" aria-pressed={!perServerView}
           onClick={() => onPerServerViewChange(false)}
           title="Aggregate resource usage across selected servers in one chart">

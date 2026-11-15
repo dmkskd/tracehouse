@@ -58,7 +58,7 @@ import { useMonitoringCapabilitiesStore } from '../stores/monitoringCapabilities
 import { DocsLink } from '../components/common/DocsLink';
 import { RefreshingOverlay } from '../components/common/RefreshingOverlay';
 import { TimeTravelControls } from '../components/timeline/TimeTravelControls';
-import './TimeTravelPage.css';
+import { headerStyle } from './TimeTravelPage.styles';
 import { TimeTravelLoading } from '../components/timeline/TimeTravelLoading';
 import {
   MetricStrip,
@@ -1297,7 +1297,7 @@ export const TimeTravelPage: React.FC = () => {
   return (
     <div style={{ height:'100%', display:'flex', flexDirection:'column', overflow:'hidden', background:'var(--bg-primary)' }}>
       {/* Header bar */}
-      <div className="tt-header" style={{ padding:'12px 16px 10px', borderBottom:'1px solid var(--border-primary)', background:'var(--bg-secondary)', flexShrink:0 }}>
+      <div className={`tt-header ${headerStyle}`} style={{ padding:'12px 16px 10px', borderBottom:'1px solid var(--border-primary)', background:'var(--bg-secondary)', flexShrink:0 }}>
         <div style={{ display:'flex', alignItems:'center', justifyContent:'space-between', marginBottom:12 }}>
           <div style={{ display:'flex', alignItems:'center', gap:12 }}>
             <h2 style={{ color:'var(--text-primary)', fontSize:18, fontWeight:600, margin:0 }}>Time Travel</h2>

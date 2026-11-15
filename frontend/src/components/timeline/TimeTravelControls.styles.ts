@@ -1,4 +1,7 @@
-.tt-server-controls {
+import { css } from '@emotion/css';
+
+export const controlsStyle = css`
+& {
   display: flex;
   align-items: center;
   flex-wrap: wrap;
@@ -11,10 +14,11 @@
   background: var(--bg-card);
   box-sizing: border-box;
 }
-.tt-controls-divider {
+& .tt-controls-divider {
   width: 1px;
   height: 20px;
   margin: 0 4px;
   flex-shrink: 0;
   background: var(--border-primary);
 }
+`;

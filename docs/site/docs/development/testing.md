@@ -340,6 +340,9 @@ The `connectedPage` fixture injects a ClickHouse connection via localStorage and
 ### Running
 
 ```bash
+# Install browser binaries only (also runs automatically before the commands below)
+just e2e-setup
+
 # Run all e2e tests (headless)
 just e2e
 
@@ -354,14 +357,21 @@ just e2e-headed 1000     # 1 second between actions
 just e2e-headed 200      # faster but still visible
 ```
 
-Or directly with npm:
+Or directly with npm from the repository root (the `pretest` hook installs Chromium):
+
+```bash
+npm test --workspace packages/e2e
+```
+
+For direct Playwright commands, run setup explicitly first:
 
 ```bash
 cd packages/e2e
-npx playwright test              # headless
-npx playwright test --ui         # interactive UI
-npx playwright test --headed     # visible browser (no slowdown)
-SLOWMO=500 npx playwright test --headed  # visible + slow
+npm run test:setup
+bash ./playwright.sh test              # headless
+bash ./playwright.sh test --ui         # interactive UI
+bash ./playwright.sh test --headed     # visible browser (no slowdown)
+SLOWMO=500 bash ./playwright.sh test --headed  # visible + slow
 ```
 
 ### Using an external ClickHouse

@@ -1,4 +1,7 @@
-.tt-segments {
+import { css } from '@emotion/css';
+
+export const segmentsStyle = css`
+& {
   display: flex;
   align-items: stretch;
   gap: 2px;
@@ -6,7 +9,7 @@
   min-width: 0;
   box-sizing: border-box;
 }
-.tt-segments button {
+& button {
   min-height: 26px;
   padding: 0 10px;
   border: none;
@@ -20,9 +23,10 @@
   cursor: pointer;
   transition: background 0.15s ease, color 0.15s ease;
 }
-.tt-segments button[aria-pressed="true"] {
+& button[aria-pressed="true"] {
   background: var(--bg-primary);
   color: var(--text-primary);
   box-shadow: 0 1px 3px rgba(0, 0, 0, 0.1);
 }
-.tt-segments button:disabled { opacity: 0.4; cursor: not-allowed; }
+& button:disabled { opacity: 0.4; cursor: not-allowed; }
+`;

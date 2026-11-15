@@ -9,6 +9,7 @@
     "build": "tsc -b && vite build",
     "preview": "vite preview",
     "lint": "eslint .",
+    "lint:styles": "eslint --no-config-lookup --config eslint.grafana-styles.config.js --report-unused-disable-directives-severity off src",
     "lint:fix": "eslint . --fix",
     "typecheck": "tsc -b",
     "test": "vitest run",

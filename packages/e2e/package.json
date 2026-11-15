@@ -4,13 +4,15 @@
   "version": "0.1.0",
   "type": "module",
   "scripts": {
-    "test": "playwright test",
-    "test:grafana": "playwright test --config playwright.grafana.config.ts",
-    "test:timezone": "playwright test --config playwright.timezone.config.ts",
-    "test:timezone-transports": "playwright test --config playwright.timezone-transports.config.ts",
-    "test:ui": "playwright test --ui",
-    "test:headed": "SLOWMO=500 playwright test --headed",
-    "test:report": "playwright show-report"
+    "test:setup": "bash ./playwright.sh install chromium",
+    "pretest": "npm run test:setup",
+    "test": "bash ./playwright.sh test",
+    "test:grafana": "bash ./playwright.sh test --config playwright.grafana.config.ts",
+    "test:timezone": "bash ./playwright.sh test --config playwright.timezone.config.ts",
+    "test:timezone-transports": "bash ./playwright.sh test --config playwright.timezone-transports.config.ts",
+    "test:ui": "bash ./playwright.sh test --ui",
+    "test:headed": "SLOWMO=500 bash ./playwright.sh test --headed",
+    "test:report": "bash ./playwright.sh show-report"
   },
   "devDependencies": {
     "@playwright/test": "^1.58.2"

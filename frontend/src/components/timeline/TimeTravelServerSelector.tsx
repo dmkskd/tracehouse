@@ -1,8 +1,8 @@
 import { useEffect, useId, useRef, useState } from 'react';
 import { TruncatedHost } from '../common/TruncatedHost';
 import { updateTimeTravelHostSelection } from './time-travel-host-selection';
-import './TimeTravelSegments.css';
-import './TimeTravelServerSelector.css';
+import { segmentsStyle } from './TimeTravelSegments.styles';
+import { serverSelectorStyle } from './TimeTravelServerSelector.styles';
 
 interface Props {
   hosts: readonly string[];
@@ -40,7 +40,7 @@ export function TimeTravelServerSelector({ hosts, selectedHosts, onChange }: Pro
   };
 
   return (
-    <div className="tt-server-selector" ref={rootRef} role="group" aria-label="Servers"
+    <div className={`tt-server-selector ${serverSelectorStyle}`} ref={rootRef} role="group" aria-label="Servers"
       onKeyDown={event => {
         if (event.key === 'Escape' && open) {
           event.stopPropagation();
@@ -49,7 +49,7 @@ export function TimeTravelServerSelector({ hosts, selectedHosts, onChange }: Pro
         }
       }}>
       {hosts.length <= 4 ? (
-        <div className="tt-segments tt-server-tabs">
+        <div className={`tt-segments tt-server-tabs ${segmentsStyle}`}>
           <button type="button"
             aria-pressed={allSelected} onClick={() => onChange([])}>All servers</button>
           {hosts.map(host => (

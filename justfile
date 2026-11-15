@@ -466,7 +466,7 @@ test-timezone-parser:
 # Install engines for the isolated parser browser matrix.
 [group('test')]
 test-timezone-browser-setup:
-    cd packages/e2e && npx playwright install chromium webkit firefox
+    cd packages/e2e && bash ./playwright.sh install chromium webkit firefox
 
 # Browser parser contract only; does not start or change ClickHouse/Grafana.
 [group('test')]
@@ -569,25 +569,30 @@ test-summary:
 test-report:
     cd packages/core && npx vite preview --outDir test-reports/html --open
 
-# Run Playwright e2e tests (starts ClickHouse + Vite dev server)
+# Install the workspace Playwright version's Chromium binaries (reuses the local cache)
 [group('test')]
-e2e:
-    cd packages/e2e && npx playwright test
+e2e-setup:
+    npm run test:setup --workspace packages/e2e
+
+# Run Playwright e2e tests (installs Chromium, starts ClickHouse + Vite dev server)
+[group('test')]
+e2e *args="":
+    npm test --workspace packages/e2e -- {{args}}
 
 # Run e2e tests with interactive UI
 [group('test')]
-e2e-ui:
-    cd packages/e2e && npx playwright test --ui
+e2e-ui: e2e-setup
+    npm run test:ui --workspace packages/e2e
 
 # Run e2e tests with visible browser (slow=ms, default 500)
 [group('test')]
-e2e-headed slow="500":
-    cd packages/e2e && SLOWMO={{slow}} npx playwright test --headed --workers=1
+e2e-headed slow="500": e2e-setup
+    cd packages/e2e && SLOWMO={{slow}} bash ./playwright.sh test --headed --workers=1
 
 # Build the real Grafana plugin and smoke-test it in provisioned Grafana + ClickHouse.
 [group('test')]
-e2e-grafana grafana_version="13.1.0" port="3003":
-    cd packages/e2e && GRAFANA_VERSION="{{grafana_version}}" GRAFANA_E2E_PORT="{{port}}" npx playwright test --config playwright.grafana.config.ts
+e2e-grafana grafana_version="13.1.0" port="3003": e2e-setup
+    GRAFANA_VERSION="{{grafana_version}}" GRAFANA_E2E_PORT="{{port}}" npm run test:grafana --workspace packages/e2e
 
 # Run Python data-utils tests (requires Docker)
 [group('test')]

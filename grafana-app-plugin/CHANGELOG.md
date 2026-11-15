@@ -5,6 +5,11 @@ All notable changes to the TraceHouse Grafana plugin will be documented in this 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.21.2] - 2026-11-15
+
+### Improvements
+- **Time Travel:** Improved server selection with search for larger clusters and responsive Aggregated / By Server controls.
+
 ## [0.21.1] - 2026-11-13
 
 ### Improvements
