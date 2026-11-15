@@ -12,6 +12,17 @@ function Selector() {
 afterEach(cleanup);
 
 describe('TimeTravelServerSelector', () => {
+  it('shortens names in the middle while selecting by their full identity', () => {
+    const onChange = vi.fn();
+    const host = '44695ac06af2';
+    render(<TimeTravelServerSelector hosts={[host, '7198dbce3b81']} selectedHosts={[]} onChange={onChange} />);
+    const button = screen.getByRole('button', { name: host });
+    expect(button).toHaveTextContent('44695…6af2');
+    expect(screen.getByText('44695…6af2')).toHaveAttribute('title', host);
+    fireEvent.click(button);
+    expect(onChange).toHaveBeenCalledWith([host]);
+  });
+
   it('uses inline buttons for four servers and emits selection through onChange', () => {
     const onChange = vi.fn();
     render(<TimeTravelServerSelector hosts={hosts.slice(0, 4)} selectedHosts={['server-a']} onChange={onChange} />);

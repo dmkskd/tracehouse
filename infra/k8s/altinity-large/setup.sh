@@ -6,6 +6,7 @@ set -e
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 K8S_DIR="$(cd "${SCRIPT_DIR}/.." && pwd)"
+REPO_ROOT="$(cd "${K8S_DIR}/../.." && pwd)"
 CLUSTER_NAME="tracehouse-dev"
 
 apply_altinity_manifest() {
@@ -25,11 +26,14 @@ log_error() { echo -e "${RED}[ERROR]${NC} $1"; }
 check_prerequisites() {
     log_info "Checking prerequisites..."
     local missing=()
+    for tool in docker just npm; do
+        if ! command -v "$tool" &> /dev/null; then missing+=("$tool"); fi
+    done
     if ! command -v kind &> /dev/null; then missing+=("kind"); fi
     if ! command -v kubectl &> /dev/null; then missing+=("kubectl"); fi
     if [ ${#missing[@]} -ne 0 ]; then
         log_error "Missing required tools: ${missing[*]}"
-        echo "  brew install ${missing[*]}"
+        echo "Install Docker Desktop and Node.js/npm, then: brew install kind kubectl just"
         exit 1
     fi
     log_info "All prerequisites satisfied"
@@ -37,6 +41,7 @@ check_prerequisites() {
 
 create_cluster() {
     if kind get clusters 2>/dev/null | grep -q "^${CLUSTER_NAME}$"; then
+        bash "${K8S_DIR}/check-kind-topology.sh" "$CLUSTER_NAME" "${SCRIPT_DIR}/kind-config.yaml"
         log_warn "Cluster '${CLUSTER_NAME}' already exists"
         return 0
     fi
@@ -191,10 +196,8 @@ EOF
     kubectl apply -f "${K8S_DIR}/prometheus.yaml"
     kubectl wait --for=condition=Available deployment/prometheus -n clickhouse --timeout=120s || true
 
-    log_info "Deploying Grafana..."
-    kubectl apply -f "${K8S_DIR}/grafana-dashboards-cm.yaml"
-    kubectl apply -f "${K8S_DIR}/grafana.yaml"
-    kubectl wait --for=condition=Available deployment/grafana -n clickhouse --timeout=120s || true
+    log_info "Building and deploying TraceHouse in Grafana..."
+    (cd "$REPO_ROOT" && just k8s-grafana)
 }
 
 print_info() {
@@ -206,7 +209,7 @@ print_info() {
     echo "Connection details:"
     echo "  ClickHouse Native: localhost:9000"
     echo "  ClickHouse HTTP:   localhost:8123"
-    echo "  Grafana:           localhost:3001"
+    echo "  Grafana:           http://localhost:3001/a/dmkskd-tracehouse-app"
     echo "  Prometheus:        localhost:9090"
     echo "  Lakekeeper:        kubectl port-forward -n clickhouse svc/lakekeeper 8181:8181"
     echo "  MinIO Console:     kubectl port-forward -n clickhouse svc/minio 9002:9001"

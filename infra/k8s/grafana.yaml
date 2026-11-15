@@ -16,7 +16,7 @@ data:
         isDefault: true
         editable: false
         jsonData:
-          host: dev-cluster-clickhouse-headless
+          host: clickhouse-external
           port: 8123
           protocol: http
           secure: false
@@ -52,6 +52,19 @@ data:
         options:
           path: /var/lib/grafana/dashboards
 ---
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: grafana-apps
+  namespace: clickhouse
+data:
+  tracehouse.yaml: |
+    apiVersion: 1
+    apps:
+      - type: dmkskd-tracehouse-app
+        org_id: 1
+        disabled: false
+---
 apiVersion: apps/v1
 kind: Deployment
 metadata:
@@ -69,9 +82,16 @@ spec:
     spec:
       containers:
         - name: grafana
-          image: grafana/grafana:12.3.2
+          image: tracehouse-grafana:dev
+          imagePullPolicy: Never
           ports:
             - containerPort: 3000
+          readinessProbe:
+            httpGet:
+              path: /api/health
+              port: 3000
+            periodSeconds: 5
+            timeoutSeconds: 3
           env:
             - name: GF_ANALYTICS_REPORTING_ENABLED
               value: "false"
@@ -87,6 +107,8 @@ spec:
               value: "true"
             - name: GF_INSTALL_PLUGINS
               value: "grafana-clickhouse-datasource"
+            - name: GF_PLUGINS_ALLOW_LOADING_UNSIGNED_PLUGINS
+              value: "dmkskd-tracehouse-app"
           volumeMounts:
             - name: datasources
               mountPath: /etc/grafana/provisioning/datasources
@@ -94,6 +116,8 @@ spec:
               mountPath: /etc/grafana/provisioning/dashboards
             - name: dashboards
               mountPath: /var/lib/grafana/dashboards
+            - name: apps
+              mountPath: /etc/grafana/provisioning/plugins
           resources:
             requests:
               cpu: "100m"
@@ -111,6 +135,9 @@ spec:
         - name: dashboards
           configMap:
             name: grafana-dashboards
+        - name: apps
+          configMap:
+            name: grafana-apps
 ---
 apiVersion: v1
 kind: Service

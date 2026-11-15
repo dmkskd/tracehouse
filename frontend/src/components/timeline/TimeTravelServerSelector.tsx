@@ -53,22 +53,25 @@ export function TimeTravelServerSelector({ hosts, selectedHosts, onChange }: Pro
           <button type="button"
             aria-pressed={allSelected} onClick={() => onChange([])}>All servers</button>
           {hosts.map(host => (
-            <button type="button" key={host}
+            <button type="button" key={host} aria-label={host}
               aria-pressed={selectedHosts.includes(host)} onClick={event => onChange(updateTimeTravelHostSelection(
                 selectedHosts, host, event.shiftKey || event.ctrlKey || event.metaKey,
               ))}
               title={`Select ${host}. Shift, Ctrl, or Command-click to select multiple servers.`}>
-              <TruncatedHost name={host} />
+              <TruncatedHost name={host} maxLen={10} />
             </button>
           ))}
         </div>
       ) : (
         <div className="tt-server-dropdown">
           <button type="button" ref={triggerRef} className="tt-server-trigger"
+            aria-label={!allSelected && selectedHosts.length === 1 ? selectedHosts[0] : undefined}
             aria-expanded={open} aria-controls={panelId}
             onClick={() => { setSearch(''); setOpen(!open); }}>
             <span className="tt-server-summary" title={selectedHosts.length === 1 ? selectedHosts[0] : undefined}>
-              {allSelected ? 'All servers' : selectedHosts.length === 1 ? selectedHosts[0] : `${selectedHosts.length} servers`}
+              {allSelected ? 'All servers' : selectedHosts.length === 1
+                ? <TruncatedHost name={selectedHosts[0]} maxLen={18} />
+                : `${selectedHosts.length} servers`}
             </span>
             <span aria-hidden="true">▾</span>
           </button>

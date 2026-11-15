@@ -6,6 +6,7 @@ Alternative to Docker Compose for running ClickHouse locally using Kubernetes.
 
 - [kind](https://kind.sigs.k8s.io/docs/user/quick-start/#installation) - Kubernetes in Docker
 - [kubectl](https://kubernetes.io/docs/tasks/tools/) - Kubernetes CLI
+- Docker, Node.js/npm, and `just` (also used to build the local Grafana app)
 
 ### Quick Install (macOS)
 
@@ -70,6 +71,32 @@ After deployment, ClickHouse is accessible at:
 - **HTTP interface**: `localhost:8123`
 - **Prometheus**: `localhost:30090`
 - **Grafana**: `localhost:3001`
+
+Grafana includes the locally built TraceHouse app, enabled automatically and
+connected through the provisioned ClickHouse datasource. Open
+<http://localhost:3001/a/dmkskd-tracehouse-app> after startup.
+
+`just k8s-start`, `just k8s-start-altinity`, and `just k8s-start-altinity-large`
+build the plugin, package it into a local Grafana image, load that image into
+Kind, and wait for Grafana's rollout. This also updates existing clusters;
+no cluster recreation or separate Grafana test stack is needed.
+
+To rebuild the app and refresh only Grafana after editing the frontend:
+
+```bash
+just k8s-grafana
+```
+
+This restarts Grafana but leaves ClickHouse running. The deployment uses the
+local unsigned plugin build and retains the existing anonymous Admin access
+for this development environment.
+
+The regular and large setups share the Kind cluster name `tracehouse-dev`.
+Startup refuses to reuse a cluster with a different node count: the regular
+configuration has four workers, while `k8s-start-altinity-large` requires eight.
+Switching between these configurations requires backing up any needed data,
+then running `just k8s-stop` before the intended startup command. Stopping the
+Kind cluster deletes its local data.
 
 ```bash
 # Using clickhouse client

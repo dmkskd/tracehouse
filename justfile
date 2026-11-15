@@ -297,6 +297,11 @@ k8s-start:
 k8s-start-altinity:
     @./infra/k8s/setup.sh --operator altinity
 
+# Build and deploy the local TraceHouse app into the existing Kind Grafana instance
+[group('k8s')]
+k8s-grafana: grafana-plugin-build
+    @bash infra/k8s/deploy-grafana.sh
+
 # Delete Kind cluster
 [group('k8s')]
 k8s-stop:

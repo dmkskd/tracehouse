@@ -1297,7 +1297,7 @@ export const TimeTravelPage: React.FC = () => {
   return (
     <div style={{ height:'100%', display:'flex', flexDirection:'column', overflow:'hidden', background:'var(--bg-primary)' }}>
       {/* Header bar */}
-      <div style={{ padding:'12px 16px 10px', borderBottom:'1px solid var(--border-primary)', background:'var(--bg-secondary)', flexShrink:0 }}>
+      <div className="tt-header" style={{ padding:'12px 16px 10px', borderBottom:'1px solid var(--border-primary)', background:'var(--bg-secondary)', flexShrink:0 }}>
         <div style={{ display:'flex', alignItems:'center', justifyContent:'space-between', marginBottom:12 }}>
           <div style={{ display:'flex', alignItems:'center', gap:12 }}>
             <h2 style={{ color:'var(--text-primary)', fontSize:18, fontWeight:600, margin:0 }}>Time Travel</h2>
@@ -1470,7 +1470,7 @@ export const TimeTravelPage: React.FC = () => {
         </div>
 
         {/* Second row: Host selector, stats */}
-        <div style={{ display:'flex', alignItems:'center', gap:12, flexWrap:'wrap' }}>
+        <div className={`tt-toolbar${clusterHosts.length <= 1 ? ' tt-toolbar-single' : ''}`}>
           {clusterHosts.length > 1 && (
             <TimeTravelControls
               hosts={clusterHosts}
@@ -1482,11 +1482,11 @@ export const TimeTravelPage: React.FC = () => {
             />
           )}
           {data && (
-            <div className="tt-summary" style={clusterHosts.length <= 1 ? { marginLeft: 0 } : undefined}>
+            <div className="tt-summary">
               {clusterHosts.length > 1 && <span className="tt-summary-divider" aria-hidden="true" />}
               <MetricStrip
                 ariaLabel="Time Travel summary"
-                style={{ minWidth:0, gap:'8px 12px' }}
+                style={{ minWidth:0, minHeight:42, gap:'8px 12px' }}
               >
                 <MetricStripItem
                   label="samples"
