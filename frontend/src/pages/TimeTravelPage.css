@@ -1,0 +1,15 @@
+.tt-summary {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  margin-left: auto;
+  min-width: 0;
+  max-width: 100%;
+}
+.tt-summary-divider {
+  width: 1px;
+  height: 24px;
+  margin: 0 4px;
+  flex-shrink: 0;
+  background: var(--border-primary);
+}

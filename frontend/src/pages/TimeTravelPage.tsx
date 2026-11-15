@@ -57,6 +57,8 @@ import { useUserPreferenceStore } from '../stores/userPreferenceStore';
 import { useMonitoringCapabilitiesStore } from '../stores/monitoringCapabilitiesStore';
 import { DocsLink } from '../components/common/DocsLink';
 import { RefreshingOverlay } from '../components/common/RefreshingOverlay';
+import { TimeTravelControls } from '../components/timeline/TimeTravelControls';
+import './TimeTravelPage.css';
 import { TimeTravelLoading } from '../components/timeline/TimeTravelLoading';
 import {
   MetricStrip,
@@ -83,7 +85,6 @@ import {
   createTimeTravelRequestGate,
   timeTravelHostnameFilter,
   timeTravelRowHosts,
-  updateTimeTravelHostSelection,
 } from '../components/timeline/time-travel-host-selection';
 import {
   readTimeTravelCoordinates,
@@ -352,18 +353,6 @@ export const TimeTravelPage: React.FC = () => {
       return next;
     });
   }])), [rowHosts]);
-  const handleHostClick = useCallback((
-    event: React.MouseEvent<HTMLButtonElement>,
-    host: string,
-  ) => {
-    const additive = event.shiftKey || event.ctrlKey || event.metaKey;
-    const nextSelection = updateTimeTravelHostSelection(selectedHosts, host, additive);
-    setSelectedHosts(nextSelection);
-    if (additive && nextSelection.length > 1) {
-      setPerServerView(true);
-      setViewMode('2d');
-    }
-  }, [selectedHosts]);
 
   // Modal state
   const [selectedTimelineQuery, setSelectedTimelineQuery] = useState<QuerySeries | null>(null);
@@ -1483,143 +1472,91 @@ export const TimeTravelPage: React.FC = () => {
         {/* Second row: Host selector, stats */}
         <div style={{ display:'flex', alignItems:'center', gap:12, flexWrap:'wrap' }}>
           {clusterHosts.length > 1 && (
-            <div className="tabs" style={{ alignItems:'center' }}>
-              <span role="group" aria-label="Timeline display" style={{ display:'inline-flex', gap:4 }}>
-                <button
-                  className={`tab ${!perServerView ? 'active' : ''}`}
-                  aria-pressed={!perServerView}
-                  onClick={() => setPerServerView(false)}
-                  title="Average resource usage across selected servers in one chart"
-                  style={{ padding:'6px 10px' }}
-                >
-                  Overall
-                </button>
-                <span style={{ position:'relative', display:'inline-flex' }}>
-                  <button
-                    className={`tab ${perServerView ? 'active' : ''}`}
-                    aria-pressed={perServerView}
-                    onClick={() => { if (viewMode === '2d') setPerServerView(true); }}
-                    title={viewMode === '2d' ? 'Show one chart row for each selected server' : undefined}
-                    style={{ display:'flex', alignItems:'center', padding:'6px 10px', ...(viewMode !== '2d' ? { opacity:0.35, cursor:'not-allowed' } : {}) }}
-                  >
-                    Per server
-                  </button>
-                  {viewMode !== '2d' && (
-                    <span className="split-3d-tooltip" style={{
-                      position:'absolute', bottom:'100%', left:'50%', transform:'translateX(-50%)',
-                      marginBottom:6, padding:'6px 10px', borderRadius:6, fontSize:11, lineHeight:'1.4',
-                      whiteSpace:'nowrap', pointerEvents:'none', opacity:0, transition:'opacity 0.15s ease',
-                      background:'var(--bg-tertiary)', color:'var(--text-secondary)',
-                      border:'1px solid var(--border-secondary)', boxShadow:'0 4px 12px rgba(0,0,0,0.3)',
-                      zIndex:50,
-                    }}>
-                      Per-server view is not available in experimental 3D modes
-                    </span>
-                  )}
-                </span>
-              </span>
-              <span
-                aria-hidden="true"
-                style={{ width:1, height:20, margin:'0 4px', background:'var(--border-primary)', flexShrink:0 }}
-              />
-              <span role="group" aria-label="Servers" style={{ display:'inline-flex', gap:4 }}>
-                <button
-                  className={`tab ${selectedHosts.length === 0 ? 'active' : ''}`}
-                  aria-pressed={selectedHosts.length === 0}
-                  onClick={() => setSelectedHosts([])}
-                  title="Select all servers"
-                  style={{ padding:'6px 10px' }}
-                >
-                  All
-                </button>
-                {clusterHosts.map(host => (
-                  <button
-                    key={host}
-                    className={`tab ${selectedHosts.includes(host) ? 'active' : ''}`}
-                    aria-pressed={selectedHosts.includes(host)}
-                    onClick={event => handleHostClick(event, host)}
-                    title={`Select ${host}. Shift, Ctrl, or Command-click to select multiple servers.`}
-                    style={{ padding:'6px 10px' }}
-                  >
-                    <TruncatedHost name={host} />
-                    </button>
-                  ))}
-              </span>
-            </div>
+            <TimeTravelControls
+              hosts={clusterHosts}
+              selectedHosts={selectedHosts}
+              onSelectedHostsChange={setSelectedHosts}
+              perServerView={perServerView}
+              onPerServerViewChange={setPerServerView}
+              splitAvailable={viewMode === '2d'}
+            />
           )}
           {data && (
-            <MetricStrip
-              ariaLabel="Time Travel summary"
-              style={{ flex:1, minWidth:0, gap:'8px 12px' }}
-            >
-              <MetricStripItem
-                label="samples"
-                value={activeMetricSampleCount}
-                indicatorColor="#58a6ff"
-              />
-              <MetricStripDivider />
-              <MetricStripItem
-                label="queries"
-                value={`${operationCounts.query}/${data.query_count ?? data.queries.length}`}
-                indicatorColor="#79c0ff"
-                title={SAMPLING_NOTE(metricMode)}
-              />
-              <MetricStripItem
-                label="merges"
-                value={`${operationCounts.merge}/${data.merge_count}`}
-                indicatorColor="#f0883e"
-                title={SAMPLING_NOTE(metricMode)}
-              />
-              {(data.mutation_count ?? 0) > 0 && (
+            <div className="tt-summary" style={clusterHosts.length <= 1 ? { marginLeft: 0 } : undefined}>
+              {clusterHosts.length > 1 && <span className="tt-summary-divider" aria-hidden="true" />}
+              <MetricStrip
+                ariaLabel="Time Travel summary"
+                style={{ minWidth:0, gap:'8px 12px' }}
+              >
                 <MetricStripItem
-                  label="mutations"
-                  value={`${operationCounts.mutation}/${data.mutation_count}`}
-                  indicatorColor="#f778ba"
+                  label="samples"
+                  value={activeMetricSampleCount}
+                  indicatorColor="#58a6ff"
+                />
+                <MetricStripDivider />
+                <MetricStripItem
+                  label="queries"
+                  value={`${operationCounts.query}/${data.query_count ?? data.queries.length}`}
+                  indicatorColor="#79c0ff"
                   title={SAMPLING_NOTE(metricMode)}
                 />
-              )}
-              <MetricStripDivider />
-              <button
-                type="button"
-                onClick={openWorkloadBreakdown}
-                title={SAMPLING_NOTE(metricMode)}
-                style={{
-                  display:'inline-flex', alignItems:'center', gap:5,
-                  padding:'2px 8px', fontSize:11, cursor:'pointer',
-                  color:'var(--text-muted)', background:'transparent',
-                  border:'1px solid var(--border-secondary)', borderRadius:5,
-                  fontFamily:'inherit', whiteSpace:'nowrap', transition:'color 0.15s ease, border-color 0.15s ease',
-                }}
-                onMouseEnter={e => { e.currentTarget.style.color = 'var(--text-primary)'; e.currentTarget.style.borderColor = 'var(--border-primary)'; }}
-                onMouseLeave={e => { e.currentTarget.style.color = 'var(--text-muted)'; e.currentTarget.style.borderColor = 'var(--border-secondary)'; }}
-              >
-                <span aria-hidden="true" style={{ opacity:0.8 }}>ⓘ</span>
-                sampled
-              </button>
-              {(timelineRamCapacity > 0 || timelineCpuCapacity > 0) && (
+                <MetricStripItem
+                  label="merges"
+                  value={`${operationCounts.merge}/${data.merge_count}`}
+                  indicatorColor="#f0883e"
+                  title={SAMPLING_NOTE(metricMode)}
+                />
+                {(data.mutation_count ?? 0) > 0 && (
+                  <MetricStripItem
+                    label="mutations"
+                    value={`${operationCounts.mutation}/${data.mutation_count}`}
+                    indicatorColor="#f778ba"
+                    title={SAMPLING_NOTE(metricMode)}
+                  />
+                )}
                 <MetricStripDivider />
-              )}
-              {(timelineRamCapacity > 0 || timelineCpuCapacity > 0) && (
-                <MetricStripItem
-                  label={(data.host_count || 1) === 1 ? 'host' : 'hosts'}
-                  value={data.host_count || 1}
-                />
-              )}
-              {timelineRamCapacity > 0 && (
-                <MetricStripItem
-                  label="RAM"
-                  value={formatBytes(timelineRamCapacity)}
-                  indicatorColor="#f85149"
-                />
-              )}
-              {timelineCpuCapacity > 0 && (
-                <MetricStripItem
-                  label="CPUs"
-                  value={timelineCpuCapacity}
-                  indicatorColor="#3fb950"
-                />
-              )}
-            </MetricStrip>
+                <button
+                  type="button"
+                  onClick={openWorkloadBreakdown}
+                  title={SAMPLING_NOTE(metricMode)}
+                  style={{
+                    display:'inline-flex', alignItems:'center', gap:5,
+                    padding:'2px 8px', fontSize:11, cursor:'pointer',
+                    color:'var(--text-muted)', background:'transparent',
+                    border:'1px solid var(--border-secondary)', borderRadius:5,
+                    fontFamily:'inherit', whiteSpace:'nowrap', transition:'color 0.15s ease, border-color 0.15s ease',
+                  }}
+                  onMouseEnter={e => { e.currentTarget.style.color = 'var(--text-primary)'; e.currentTarget.style.borderColor = 'var(--border-primary)'; }}
+                  onMouseLeave={e => { e.currentTarget.style.color = 'var(--text-muted)'; e.currentTarget.style.borderColor = 'var(--border-secondary)'; }}
+                >
+                  <span aria-hidden="true" style={{ opacity:0.8 }}>ⓘ</span>
+                  sampled
+                </button>
+                {(timelineRamCapacity > 0 || timelineCpuCapacity > 0) && (
+                  <MetricStripDivider />
+                )}
+                {(timelineRamCapacity > 0 || timelineCpuCapacity > 0) && (
+                  <MetricStripItem
+                    label={(data.host_count || 1) === 1 ? 'host' : 'hosts'}
+                    value={data.host_count || 1}
+                  />
+                )}
+                {timelineRamCapacity > 0 && (
+                  <MetricStripItem
+                    label="RAM"
+                    value={formatBytes(timelineRamCapacity)}
+                    indicatorColor="#f85149"
+                  />
+                )}
+                {timelineCpuCapacity > 0 && (
+                  <MetricStripItem
+                    label="CPUs"
+                    value={timelineCpuCapacity}
+                    indicatorColor="#3fb950"
+                  />
+                )}
+              </MetricStrip>
+            </div>
           )}
         </div>
       </div>
@@ -1802,8 +1739,8 @@ export const TimeTravelPage: React.FC = () => {
                   onMouseLeave={() => setHoveredRowHost(current => current === host ? null : current)}
                   >
                     <button
-                      onClick={() => { setSelectedHosts([host]); setPerServerView(false); }}
-                      title={`Switch to ${host}`}
+                      onClick={() => setSelectedHosts([host])}
+                      title={`Select only ${host}`}
                       style={{
                         position:'absolute', top:6, left:10, zIndex:10, fontSize:10, fontWeight:600,
                         color:'var(--text-secondary)', background:'var(--bg-tertiary)', padding:'2px 8px',

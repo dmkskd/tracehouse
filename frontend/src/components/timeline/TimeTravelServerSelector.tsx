@@ -1,0 +1,104 @@
+import { useEffect, useId, useRef, useState } from 'react';
+import { TruncatedHost } from '../common/TruncatedHost';
+import { updateTimeTravelHostSelection } from './time-travel-host-selection';
+import './TimeTravelSegments.css';
+import './TimeTravelServerSelector.css';
+
+interface Props {
+  hosts: readonly string[];
+  selectedHosts: readonly string[];
+  onChange: (hosts: string[]) => void;
+}
+
+export function TimeTravelServerSelector({ hosts, selectedHosts, onChange }: Props) {
+  const [open, setOpen] = useState(false);
+  const [search, setSearch] = useState('');
+  const rootRef = useRef<HTMLDivElement>(null);
+  const triggerRef = useRef<HTMLButtonElement>(null);
+  const searchRef = useRef<HTMLInputElement>(null);
+  const panelId = useId();
+  const allSelected = selectedHosts.length === 0 || hosts.every(host => selectedHosts.includes(host));
+
+  useEffect(() => {
+    if (!open) return;
+    searchRef.current?.focus();
+    const closeOutside = (event: PointerEvent | FocusEvent) => {
+      if (!rootRef.current?.contains(event.target as Node)) setOpen(false);
+    };
+    document.addEventListener('pointerdown', closeOutside);
+    document.addEventListener('focusin', closeOutside);
+    return () => {
+      document.removeEventListener('pointerdown', closeOutside);
+      document.removeEventListener('focusin', closeOutside);
+    };
+  }, [open]);
+
+  const toggleHost = (host: string) => {
+    const current = allSelected ? hosts : selectedHosts;
+    const next = updateTimeTravelHostSelection(current, host, true);
+    if (next.length > 0) onChange(next.length === hosts.length ? [] : next);
+  };
+
+  return (
+    <div className="tt-server-selector" ref={rootRef} role="group" aria-label="Servers"
+      onKeyDown={event => {
+        if (event.key === 'Escape' && open) {
+          event.stopPropagation();
+          setOpen(false);
+          triggerRef.current?.focus();
+        }
+      }}>
+      {hosts.length <= 4 ? (
+        <div className="tt-segments tt-server-tabs">
+          <button type="button"
+            aria-pressed={allSelected} onClick={() => onChange([])}>All servers</button>
+          {hosts.map(host => (
+            <button type="button" key={host}
+              aria-pressed={selectedHosts.includes(host)} onClick={event => onChange(updateTimeTravelHostSelection(
+                selectedHosts, host, event.shiftKey || event.ctrlKey || event.metaKey,
+              ))}
+              title={`Select ${host}. Shift, Ctrl, or Command-click to select multiple servers.`}>
+              <TruncatedHost name={host} />
+            </button>
+          ))}
+        </div>
+      ) : (
+        <div className="tt-server-dropdown">
+          <button type="button" ref={triggerRef} className="tt-server-trigger"
+            aria-expanded={open} aria-controls={panelId}
+            onClick={() => { setSearch(''); setOpen(!open); }}>
+            <span className="tt-server-summary" title={selectedHosts.length === 1 ? selectedHosts[0] : undefined}>
+              {allSelected ? 'All servers' : selectedHosts.length === 1 ? selectedHosts[0] : `${selectedHosts.length} servers`}
+            </span>
+            <span aria-hidden="true">▾</span>
+          </button>
+          {open && (
+            <div id={panelId} className="tt-server-panel">
+              <input ref={searchRef} className="tt-server-search" type="search" aria-label="Search servers"
+                placeholder="Search servers…" value={search} onChange={event => setSearch(event.target.value)} />
+              <button type="button" className="tt-server-all" onClick={() => onChange([])}
+                aria-pressed={allSelected}>All servers ({hosts.length})</button>
+              <div className="tt-server-options">
+                {hosts.filter(host => host.toLowerCase().includes(search.toLowerCase())).map(host => (
+                  <div key={host} className="tt-server-option">
+                    <label title={selectedHosts.length === 1 && selectedHosts[0] === host ? 'At least one server must be selected' : host}>
+                      <input type="checkbox" checked={allSelected || selectedHosts.includes(host)}
+                        disabled={selectedHosts.length === 1 && selectedHosts[0] === host}
+                        onChange={() => toggleHost(host)} />
+                      <span>{host}</span>
+                    </label>
+                    <button type="button" className="tt-server-only" aria-label={`Select only ${host}`}
+                      onClick={() => onChange([host])}>Only</button>
+                  </div>
+                ))}
+                {!hosts.some(host => host.toLowerCase().includes(search.toLowerCase())) && (
+                  <div className="tt-server-empty">No matching servers</div>
+                )}
+              </div>
+            </div>
+          )}
+        </div>
+      )}
+    </div>
+  );
+}
