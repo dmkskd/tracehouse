@@ -31,6 +31,7 @@ COPY packages/core/ packages/core/
 COPY packages/ui-shared/ packages/ui-shared/
 COPY grafana-app-plugin/ grafana-app-plugin/
 COPY frontend/src/ frontend/src/
+COPY frontend/eslint.grafana-styles.config.js frontend/
 
 # Build in dependency order
 RUN npm run build --workspace=packages/core && \
