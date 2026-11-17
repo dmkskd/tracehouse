@@ -99,8 +99,8 @@ describe('buildInstantBreakdown', () => {
     expect(b.segments).toHaveLength(1);
   });
 
-  it('honors the metric mode when valuing a band', () => {
-    const b = buildInstantBreakdown(input({ queries: [q()] }),
+  it('uses concurrent sampled memory instead of an execution peak', () => {
+    const b = buildInstantBreakdown(input({ queries: [q({ zoomSamples: [{ ms: AT, memory: 100 * MB, cpu_cores: 0, net_rate: 0, disk_rate: 0 }] })] }),
       { atMs: AT, mode: 'memory', capacity: 1024 * MB });
     expect(b.segments[0].value).toBe(100 * MB);
     expect(b.segments[0].shareOfCapacity).toBeCloseTo(100 / 1024);
@@ -194,9 +194,9 @@ describe('selectServerSeries', () => {
     expect(selectServerSeries(data, 'disk')).toEqual([{ t: 'd', v: 120 }]);
   });
 
-  it('treats a missing counterpart series as zero', () => {
-    expect(selectServerSeries({ ...data, server_network_recv: [] }, 'network')).toEqual([{ t: 'n', v: 10 }]);
-    expect(selectServerSeries({ ...data, server_disk_write: undefined }, 'disk')).toEqual([{ t: 'd', v: 100 }]);
+  it('keeps missing counterpart measurements unavailable', () => {
+    expect(selectServerSeries({ ...data, server_network_recv: [] }, 'network')).toEqual([]);
+    expect(selectServerSeries({ ...data, server_disk_write: undefined }, 'disk')).toEqual([]);
     expect(selectServerSeries({ ...data, server_disk_read: undefined }, 'disk')).toEqual([]);
   });
 });

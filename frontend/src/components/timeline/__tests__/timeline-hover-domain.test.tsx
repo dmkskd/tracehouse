@@ -49,7 +49,7 @@ describe('timeline hover stays within drawn samples', () => {
       const { svg, coords, onBandClick, onHighlightItem } = hover(timeline(rising), seconds, 100);
       expect(screen.getByText(/Activity at/)).toBeInTheDocument();
       expect(screen.getByText('No server samples at this time')).toBeInTheDocument();
-      expect(screen.queryByText('Click for details')).not.toBeInTheDocument();
+      expect(screen.queryByText('Open query details')).not.toBeInTheDocument();
       expect(onHighlightItem).not.toHaveBeenCalledWith(expect.objectContaining({ type: 'query' }));
       fireEvent.pointerDown(svg, coords);
       fireEvent.pointerUp(svg, coords);
@@ -59,7 +59,9 @@ describe('timeline hover stays within drawn samples', () => {
   it('still selects an operation inside its drawn band', () => {
     const { onHighlightItem } = hover(timeline(), 52.5, 220);
     expect(screen.getByText('Select')).toBeInTheDocument();
-    expect(screen.getByText('Click for details')).toBeInTheDocument();
+    expect(screen.getByText('Total CPU time')).toBeInTheDocument();
+    expect(screen.getByText('Peak memory')).toBeInTheDocument();
+    expect(screen.getByText('Open query details')).toBeInTheDocument();
     expect(onHighlightItem).toHaveBeenCalledWith(expect.objectContaining({ type: 'query', idx: 0 }));
   });
 });

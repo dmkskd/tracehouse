@@ -4,8 +4,13 @@
  * Provides: backdrop overlay, centered container, escape-to-close, body scroll lock.
  */
 
-import React, { useEffect, useCallback } from 'react';
+import React, { useEffect, useCallback, useRef } from 'react';
 import { createPortal } from 'react-dom';
+
+// Modals can be layered (resource exploration → query/merge details). Only the
+// topmost layer handles Escape; scroll remains locked until the last one closes.
+const modalStack: symbol[] = [];
+let previousBodyOverflow = '';
 
 /**
  * Modal wrapper component for consistent styling
@@ -31,23 +36,46 @@ export const ModalWrapper: React.FC<{
   backdropBlur = 8,
   ariaLabel,
 }) => {
+  const modalId = useRef(Symbol('modal'));
+  const dialogRef = useRef<HTMLDivElement>(null);
+  const onCloseRef = useRef(onClose);
+  useEffect(() => { onCloseRef.current = onClose; }, [onClose]);
   const handleKeyDown = useCallback((e: KeyboardEvent) => {
+    if (modalStack[modalStack.length - 1] !== modalId.current) return;
     if (e.key === 'Escape') {
       e.preventDefault();
       e.stopPropagation();
-      onClose();
+      onCloseRef.current();
+    } else if (e.key === 'Tab') {
+      const dialog = dialogRef.current;
+      if (!dialog) return;
+      const candidates = [...dialog.querySelectorAll<HTMLElement>('button, a[href], input, select, textarea, [tabindex]:not([tabindex="-1"])')];
+      const focusable = candidates.filter(el => !el.matches(':disabled, input[type="hidden"]') && !el.closest('[hidden], [inert]') && el.getClientRects().length > 0);
+      const first = focusable[0], last = focusable[focusable.length - 1];
+      if (!first) { e.preventDefault(); dialog.focus(); }
+      else if (!dialog.contains(document.activeElement) || document.activeElement === dialog || (e.shiftKey && document.activeElement === first) || (!e.shiftKey && document.activeElement === last)) {
+        e.preventDefault(); (e.shiftKey ? last : first).focus();
+      }
     }
-  }, [onClose]);
+  }, []);
 
   useEffect(() => {
-    if (isOpen) {
-      document.addEventListener('keydown', handleKeyDown);
-      document.body.style.overflow = 'hidden';
-      return () => {
-        document.removeEventListener('keydown', handleKeyDown);
-        document.body.style.overflow = '';
-      };
-    }
+    if (!isOpen) return;
+    const id = modalId.current;
+    const trigger = document.activeElement as HTMLElement | null;
+    if (!modalStack.length) previousBodyOverflow = document.body.style.overflow;
+    modalStack.push(id);
+    document.addEventListener('keydown', handleKeyDown);
+    document.body.style.overflow = 'hidden';
+    if (!dialogRef.current?.contains(document.activeElement)) dialogRef.current?.focus({ preventScroll: true });
+    return () => {
+      document.removeEventListener('keydown', handleKeyDown);
+      const wasTopmost = modalStack[modalStack.length - 1] === id;
+      const index = modalStack.indexOf(id);
+      if (index !== -1) modalStack.splice(index, 1);
+      if (!modalStack.length) document.body.style.overflow = previousBodyOverflow;
+      if (wasTopmost && trigger?.isConnected) trigger.focus({ preventScroll: true });
+    };
   }, [isOpen, handleKeyDown]);
 
   if (!isOpen) return null;
@@ -59,6 +87,8 @@ export const ModalWrapper: React.FC<{
 
   return createPortal(
     <div
+      ref={dialogRef}
+      tabIndex={-1}
       role="dialog"
       aria-modal="true"
       aria-label={ariaLabel}

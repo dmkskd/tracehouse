@@ -11,12 +11,16 @@ import {
   getTimelineCpuCapacity,
   getTimelineRamCapacity,
   operationAverageRate,
+  attributeTimeline,
+  selectServerSeries,
+  type AttributedOperation,
   operationHighlightKey,
   truncateHostname,
   type MergeCategory,
 } from '@tracehouse/core';
 import { formatBytes, parseTimestamp } from '../../utils/formatters';
 import { TimelineEventOverlay } from './TimelineEventOverlay';
+import { RESOURCE_SANKEY_ENABLED, PinnedResourceActivity, type ResourceDataLoader, type ResourceOperationOpen } from './resource-sankey';
 import { placeTooltip, type TooltipSide } from './timeline-tooltip-placement';
 import {
   type MetricMode, type HighlightedItem,
@@ -25,7 +29,7 @@ import {
 
 import { formatDurationMs as fmtMs } from '../../utils/formatters';
 
-interface Rng { startMs: number; endMs: number; peak: number; realPeak: number; samples?: { ms: number; v: number }[]; }
+interface Rng { startMs: number; endMs: number; peak: number; samples?: { ms: number; v: number }[]; }
 
 /** Binary search for nearest sample value at time t. Returns 0 if no match within tolerance. */
 function lookupSample(samples: { ms: number; v: number }[], t: number): number {
@@ -95,12 +99,22 @@ export const TimelineChart: React.FC<{
   onEventPopupOpenChange?: (open: boolean) => void;
   /** Server this chart shows, named in the hover tooltip (one chart per server) */
   hostLabel?: string;
+  /** Only the chart that originated a split-view pin owns its sticky activity. */
+  showPinnedActivity?: boolean;
+  /** Experiment switch; false retains the ordinary Time Travel hover and pin behavior. */
+  resourceSankeyEnabled?: boolean;
+  resourceHosts?: readonly string[];
+  onLoadResource?: ResourceDataLoader;
+  onExploreOperation?: ResourceOperationOpen;
 }> = ({
   data, metricMode, height = 380, hoverMs, pinnedMs, onHover, onPin,
   zoomRange, onZoom, highlightedItem, onHighlightItem, onBandClick,
   hiddenCategories, queryHashActive, eventAnnotations = [], selectedEventId,
-  onEventSelect, onEventPin, onUnpin, onClearEventSelection, onViewEventDetails, onEventPopupOpenChange, hostLabel,
+  onEventSelect, onEventPin, onUnpin, onClearEventSelection, onViewEventDetails, onEventPopupOpenChange, hostLabel, showPinnedActivity = true, onLoadResource, onExploreOperation, resourceSankeyEnabled = RESOURCE_SANKEY_ENABLED, resourceHosts,
 }) => {
+  const pinnedActivity = resourceSankeyEnabled && pinnedMs !== null && showPinnedActivity
+    && pinnedMs >= (zoomRange?.[0] ?? parseTimestamp(data.window_start))
+    && pinnedMs <= (zoomRange?.[1] ?? parseTimestamp(data.window_end));
   const failureHatchId = `failure-hatch-${useId().replace(/:/g, '')}`;
   const containerRef = useRef<HTMLDivElement>(null);
   const [chartWidth, setChartWidth] = useState(1000);
@@ -141,23 +155,7 @@ export const TimelineChart: React.FC<{
 
   // Pick the right server-level timeseries based on mode
   const rawServerPts = useMemo(() => {
-    if (metricMode === 'memory') return data.server_memory;
-    if (metricMode === 'cpu') return data.server_cpu;
-    if (metricMode === 'network') {
-      if (data.server_network_send.length > 0) {
-        return data.server_network_send.map((p, i) => ({
-          t: p.t, v: p.v + (data.server_network_recv[i]?.v ?? 0),
-        }));
-      }
-      return [];
-    }
-    // disk
-    if (data.server_disk_read && data.server_disk_read.length > 0) {
-      return data.server_disk_read.map((p, i) => ({
-        t: p.t, v: p.v + (data.server_disk_write?.[i]?.v ?? 0),
-      }));
-    }
-    return [];
+    return selectServerSeries(data, metricMode);
   }, [data, metricMode]);
 
   const serverPts = useMemo(() => rawServerPts.map(p => ({ ms: parseTimestamp(p.t), v: p.v })), [rawServerPts]);
@@ -181,7 +179,7 @@ export const TimelineChart: React.FC<{
 
   // Map ZoomSample[] to metric-specific {ms,v}[] for the current metricMode
   const mapZoomToMetric = useCallback((zs: ZoomSample[]): { ms: number; v: number }[] => {
-    return zs.map(s => ({
+    return zs.filter(sample => metricMode === 'memory' || sample.rate_sampled !== false).map(s => ({
       ms: s.ms,
       v: metricMode === 'memory' ? s.memory
         : metricMode === 'cpu' ? s.cpu_cores * 1_000_000  // cores → µs/s to match server CPU scale
@@ -197,7 +195,7 @@ export const TimelineChart: React.FC<{
       // breakdown so the chart and any panel reading it cannot disagree.
       const realPeak = operationAverageRate(q, metricMode);
       const samples = q.zoomSamples && !q.zoomMissing?.includes(metricMode) ? mapZoomToMetric(q.zoomSamples) : undefined;
-      return { startMs: parseTimestamp(q.start_time), endMs: parseTimestamp(q.end_time), peak: realPeak, realPeak, samples };
+      return { startMs: parseTimestamp(q.start_time), endMs: parseTimestamp(q.end_time), peak: realPeak, samples: samples?.length ? samples : undefined };
     });
   }, [data.queries, metricMode, mapZoomToMetric]);
   const mRanges: Rng[] = useMemo(() => {
@@ -206,7 +204,7 @@ export const TimelineChart: React.FC<{
       // breakdown so the chart and any panel reading it cannot disagree.
       const realPeak = operationAverageRate(m, metricMode);
       const samples = m.zoomSamples ? mapZoomToMetric(m.zoomSamples) : undefined;
-      return { startMs: parseTimestamp(m.start_time), endMs: parseTimestamp(m.end_time), peak: realPeak, realPeak, samples };
+      return { startMs: parseTimestamp(m.start_time), endMs: parseTimestamp(m.end_time), peak: realPeak, samples: samples?.length ? samples : undefined };
     });
   }, [data.merges, metricMode, mapZoomToMetric]);
   const mutRanges: Rng[] = useMemo(() => {
@@ -215,7 +213,7 @@ export const TimelineChart: React.FC<{
       // breakdown so the chart and any panel reading it cannot disagree.
       const realPeak = operationAverageRate(m, metricMode);
       const samples = m.zoomSamples ? mapZoomToMetric(m.zoomSamples) : undefined;
-      return { startMs: parseTimestamp(m.start_time), endMs: parseTimestamp(m.end_time), peak: realPeak, realPeak, samples };
+      return { startMs: parseTimestamp(m.start_time), endMs: parseTimestamp(m.end_time), peak: realPeak, samples: samples?.length ? samples : undefined };
     });
   }, [data.mutations, metricMode, mapZoomToMetric]);
 
@@ -267,18 +265,6 @@ export const TimelineChart: React.FC<{
   const xScale = useCallback((ms: number) => padLeft + ((ms - tMin) / tRange) * cw, [tMin, tRange, cw, padLeft]);
   const yScale = useCallback((v: number) => padTop + ch - (v / maxY) * ch, [maxY, ch, padTop]);
   const nq = data.queries.length, nm = data.merges.length, nmut = (data.mutations ?? []).length;
-
-  // Per-metric maximums across all items — used for proportional tooltip bars
-  const metricMaximums = useMemo(() => {
-    const allItems = [...data.queries, ...data.merges, ...(data.mutations ?? [])];
-    if (allItems.length === 0) return { cpu: 1, memory: 1, disk: 1, network: 1 };
-    return {
-      cpu: Math.max(1, ...allItems.map(it => it.cpu_us)),
-      memory: Math.max(1, ...allItems.map(it => it.peak_memory)),
-      disk: Math.max(1, ...allItems.map(it => it.disk_read + it.disk_write)),
-      network: Math.max(1, ...allItems.map(it => it.net_send + it.net_recv)),
-    };
-  }, [data.queries, data.merges, data.mutations]);
 
   // Stacked areas
   const buckets = useMemo(() => {
@@ -487,30 +473,21 @@ export const TimelineChart: React.FC<{
     };
   }, [W, padLeft, padRight, cw, tMin, tRange, fullTMin, fullTMax, onZoom]);
 
-  const snap = useMemo(() => {
-    if (hoverMs === null || serverPts.length === 0) return null;
-    const serverAvailable = hoverMs >= serverPts[0].ms && hoverMs <= serverPts[serverPts.length - 1].ms;
-    let nearIdx = 0, best = Math.abs(serverPts[0].ms - hoverMs);
-    serverPts.forEach((sp, k) => { const d = Math.abs(sp.ms - hoverMs); if (d < best) { best = d; nearIdx = k; } });
-    const near = serverPts[nearIdx];
-    // Bands only have values at sample times (straight lines in between), so inside the
-    // sampled domain "active" means non-zero drawn height at the nearest sample: the
-    // tooltip, the highlight and the crosshair then describe the same vertical slice.
-    const nearBucket = serverAvailable ? buckets[nearIdx] : undefined;
-    const activeAt = (rngs: Rng[], vals: number[] | undefined) => rngs
-      .map((r, i) => (vals ? vals[i] > 0 : hoverMs >= r.startMs && hoverMs <= r.endMs) ? { i, p: r.peak, rp: r.realPeak } : null)
-      .filter(Boolean) as { i: number; p: number; rp: number }[];
-    const aq = activeAt(qRanges, nearBucket?.qv);
-    const am = activeAt(mRanges, nearBucket?.mv);
-    const amut = activeAt(mutRanges, nearBucket?.mutv);
-    // Largest contributors first, so the tooltip's truncated lists show the ones that matter
-    for (const list of [aq, am, amut]) list.sort((a, b) => b.rp - a.rp);
+  const makeSnapshot = useCallback((snapshotMs: number | null, pointerY: number | null) => {
+    if (snapshotMs === null) return null;
+    const serverAvailable = serverPts.length > 0 && snapshotMs >= serverPts[0].ms && snapshotMs <= serverPts[serverPts.length - 1].ms;
+    // Attribution always describes the selected instant. Hit testing remains a separate
+    // interpolation of drawn bands and must not decide operation membership or values.
+    const attribution = attributeTimeline(data, { selection: { kind: 'instant', atMs: snapshotMs }, mode: metricMode, hiddenKinds: hiddenCategories });
+    const activityRows = (kind: AttributedOperation['kind']) => attribution.operations.filter(row => row.kind === kind)
+      .map(row => ({ i: row.index, rp: row.value, basis: row.basis }));
+    const aq = activityRows('query'), am = activityRows('merge'), amut = activityRows('mutation');
     let line1Val = 0, line2Val = 0;
     if (isDualMode && dualLine1.length > 0) {
-      let ni = dualLine1[0], nb = Math.abs(dualLine1[0].ms - hoverMs);
+      let ni = dualLine1[0], nb = Math.abs(dualLine1[0].ms - snapshotMs);
       let ri = dualLine2[0];
       for (let idx = 0; idx < dualLine1.length; idx++) {
-        const d = Math.abs(dualLine1[idx].ms - hoverMs);
+        const d = Math.abs(dualLine1[idx].ms - snapshotMs);
         if (d < nb) { nb = d; ni = dualLine1[idx]; ri = dualLine2[idx]; }
       }
       line1Val = ni.v; line2Val = ri?.v ?? 0;
@@ -520,18 +497,18 @@ export const TimelineChart: React.FC<{
     let hoveredBand: { type: 'query' | 'merge' | 'mutation'; idx: number; id: string } | null = null;
     // Areas are drawn only between metric buckets. Outside that domain,
     // extrapolation can invent a band in otherwise empty chart space.
-    if (localSvgY !== null && localSvgY >= padTop && localSvgY <= padTop + ch && buckets.length >= 2 && serverAvailable) {
-      const yVal = ((padTop + ch - localSvgY) / ch) * maxY;
+    if (pointerY !== null && pointerY >= padTop && pointerY <= padTop + ch && buckets.length >= 2 && serverAvailable) {
+      const yVal = ((padTop + ch - pointerY) / ch) * maxY;
       if (yVal >= 0) {
         // Find the two surrounding bucket points for interpolation
         let bi = 0;
         for (let k = 0; k < buckets.length - 1; k++) {
-          if (hoverMs >= buckets[k].t && hoverMs <= buckets[k + 1].t) { bi = k; break; }
+          if (snapshotMs >= buckets[k].t && snapshotMs <= buckets[k + 1].t) { bi = k; break; }
           if (k === buckets.length - 2) bi = k; // clamp to last segment
         }
         const b0 = buckets[bi], b1 = buckets[bi + 1];
         const segLen = b1.t - b0.t;
-        const frac = segLen > 0 ? (hoverMs - b0.t) / segLen : 0;
+        const frac = segLen > 0 ? (snapshotMs - b0.t) / segLen : 0;
 
         // Interpolate each band's value and build cumulative stack
         const total = nq + nm + nmut;
@@ -573,30 +550,35 @@ export const TimelineChart: React.FC<{
     if (perHostCpuPts) {
       hostCpuValues = perHostCpuPts.map(({ host, pts }) => {
         if (pts.length === 0) return { host, v: 0 };
-        let nearest = pts[0], bestDist = Math.abs(pts[0].ms - hoverMs);
+        let nearest = pts[0], bestDist = Math.abs(pts[0].ms - snapshotMs);
         for (const p of pts) {
-          const d = Math.abs(p.ms - hoverMs);
+          const d = Math.abs(p.ms - snapshotMs);
           if (d < bestDist) { bestDist = d; nearest = p; }
         }
         return { host, v: nearest.v };
       });
     }
-    return { t: nearBucket ? near.ms : hoverMs, srv: near.v, serverAvailable, aq, am, amut, qt: aq.reduce((s, x) => s + x.p, 0), mt: am.reduce((s, x) => s + x.p, 0), mutt: amut.reduce((s, x) => s + x.p, 0), line1Val, line2Val, hoveredBand, hostCpuValues };
-  }, [hoverMs, serverPts, qRanges, mRanges, mutRanges, isDualMode, dualLine1, dualLine2, localSvgY, padTop, ch, maxY, buckets, nq, nm, nmut, perHostCpuPts]);
+    return { t: snapshotMs, srv: attribution.measured.value ?? 0, serverAvailable: attribution.measured.value !== null,
+      aq, am, amut, attribution, line1Val, line2Val, hoveredBand, hostCpuValues };
+  }, [data, metricMode, serverPts, isDualMode, dualLine1, dualLine2, padTop, ch, maxY, buckets, nq, nm, nmut, perHostCpuPts, hiddenCategories]);
+
+  const hoverSnapshot = useMemo(() => makeSnapshot(hoverMs, localSvgY), [makeSnapshot, hoverMs, localSvgY]);
+  const pinnedSnapshot = useMemo(() => makeSnapshot(pinnedActivity ? pinnedMs : null, null), [makeSnapshot, pinnedActivity, pinnedMs]);
+  const snap = pinnedActivity ? pinnedSnapshot : hoverSnapshot;
 
   // Sync chart hover to parent so table rows highlight when hovering graph bands.
   // `snap` is rebuilt on every mouse move, so key on the band identity: syncing
   // a fresh object each move re-rendered the whole page twice per move.
-  const hoveredBandKey = snap?.hoveredBand ? `${snap.hoveredBand.type}:${snap.hoveredBand.id}` : null;
+  const hoveredBandKey = hoverSnapshot?.hoveredBand ? `${hoverSnapshot.hoveredBand.type}:${hoverSnapshot.hoveredBand.id}` : null;
   useEffect(() => {
-    hoveredBandRef.current = snap?.hoveredBand ?? null;
+    hoveredBandRef.current = hoverSnapshot?.hoveredBand ?? null;
     if (!onHighlightItem) return;
-    onHighlightItem(snap?.hoveredBand ?? null);
+    onHighlightItem(hoverSnapshot?.hoveredBand ?? null);
   }, [hoveredBandKey]);
 
   // The activity view describes the nearest sample, so the crosshair snaps to it;
   // hovering a band keeps the crosshair under the mouse
-  const crossX = localSvgX !== null && snap?.serverAvailable && !snap.hoveredBand ? xScale(snap.t) : localSvgX;
+  const crossX = pinnedActivity && snap ? xScale(snap.t) : localSvgX !== null && snap?.serverAvailable && !snap.hoveredBand ? xScale(snap.t) : localSvgX;
   const pinX = pinnedMs !== null ? xScale(pinnedMs) : null;
 
   // Hovering empty chart space shows the "Activity at" tooltip: highlight the
@@ -866,7 +848,7 @@ export const TimelineChart: React.FC<{
         </>
       )}
       {/* Tooltip */}
-      {snap && crossX !== null && localSvgY !== null && dragStart === null && (() => {
+      {snap && crossX !== null && (pinnedActivity || localSvgY !== null) && dragStart === null && (() => {
         // Resolve hovered item and its accent color
         const band = snap.hoveredBand;
         const hovItem = band
@@ -885,13 +867,13 @@ export const TimelineChart: React.FC<{
               : MUT_COLORS[band.idx % MUT_COLORS.length]
           : null;
         const isOperation = !!(band && hovItem);
-        const tooltipWidth = Math.min(isOperation ? 240 : 300, W - 24);
+        const tooltipWidth = Math.min(isOperation ? 310 : pinnedActivity ? 400 : 300, W - 24);
         // Highlighted bands: the hovered band, or every band active at the cursor
         const highlighted = band
           ? [band.type === 'query' ? band.idx : band.type === 'merge' ? nq + band.idx : nq + nm + band.idx]
           : activeAreas ? [...activeAreas] : [];
         const placement = placeTooltip({
-          cursorX: crossX, cursorY: localSvgY,
+          cursorX: crossX, cursorY: pinnedActivity ? ch / 2 : (localSvgY ?? ch / 2),
           width: tooltipWidth, height: Math.min(tooltipHeightRef.current, ch),
           chartWidth: W, plotTop: padTop, plotBottom: padTop + ch,
           xs: visBucketIdx.map(bi => xScale(buckets[bi].t)),
@@ -903,28 +885,32 @@ export const TimelineChart: React.FC<{
         });
         tooltipSideRef.current = placement.side;
         const tooltipLeft = placement.left, tooltipTop = placement.top;
+        const formatActivityValue = (value: number) => metricMode === 'cpu' ? `${(value / 1e6).toLocaleString(undefined, { maximumFractionDigits: 2 })} cores` : `${cfg.fmtVal(value)}${metricMode !== 'memory' ? '/s' : ''}`;
+        const formatActivityTotal = (rows: { rp: number | null }[]) => rows.every(row => row.rp === null) ? 'Unavailable'
+          : `${rows.some(row => row.rp === null) ? 'Known: ' : ''}${formatActivityValue(rows.reduce((sum, row) => sum + (row.rp ?? 0), 0))}`;
         // Rows hidden by the per-group cap, with their combined value so the shown rows add up to the group total
-        const renderMoreRow = (list: { rp: number }[], shown: number) => list.length > shown && (
+        const renderMoreRow = (list: { rp: number | null }[], shown: number) => list.length > shown && (
           <div style={{ display: 'flex', justifyContent: 'space-between', gap: 8, padding: '4px 0', borderTop: '1px solid var(--border-primary)', color: 'var(--text-muted)' }}>
             <span>+{list.length - shown} more</span>
-            <span style={{ whiteSpace: 'nowrap', fontVariantNumeric: 'tabular-nums' }}>{cfg.fmtVal(list.slice(shown).reduce((s, x) => s + x.rp, 0))}{metricMode !== 'memory' ? '/s' : ''}</span>
+            <span style={{ whiteSpace: 'nowrap', fontVariantNumeric: 'tabular-nums' }}>{formatActivityTotal(list.slice(shown))}</span>
           </div>
         );
         return (
-          <div ref={el => { if (el) tooltipHeightRef.current = el.offsetHeight; }} style={{
+          <div data-testid={pinnedActivity ? 'pinned-activity' : 'activity-preview'} ref={el => { if (el) tooltipHeightRef.current = el.offsetHeight; }} style={{
             position: 'absolute',
             top: tooltipTop,
             left: tooltipLeft,
             transition: 'top 0.15s ease-out',
             border: failureCode !== 0 ? '1px solid #f85149' : '1px solid var(--border-primary)',
             borderTop: failureCode !== 0 ? '2px solid #f85149' : accentColor ? `3px solid ${accentColor}` : '1px solid var(--border-primary)',
-            borderRadius: 10, padding: '10px 14px', pointerEvents: 'none', zIndex: 10,
+            borderRadius: 10, padding: '10px 14px', pointerEvents: pinnedActivity ? 'auto' : 'none', zIndex: 10,
+            maxHeight: pinnedActivity ? 'min(70vh, 600px)' : undefined, overflowY: pinnedActivity ? 'auto' : undefined,
             width: tooltipWidth, boxSizing: 'border-box', fontSize: 10,
-            background: TOOLTIP_BLUR_ENABLED
+            background: TOOLTIP_BLUR_ENABLED && !pinnedActivity && !isOperation
               ? 'color-mix(in srgb, var(--bg-secondary), transparent 45%)'
               : 'var(--bg-secondary)',
-            backdropFilter: TOOLTIP_BLUR_ENABLED ? 'blur(12px)' : undefined,
-            WebkitBackdropFilter: TOOLTIP_BLUR_ENABLED ? 'blur(12px)' : undefined,
+            backdropFilter: TOOLTIP_BLUR_ENABLED && !pinnedActivity && !isOperation ? 'blur(12px)' : undefined,
+            WebkitBackdropFilter: TOOLTIP_BLUR_ENABLED && !pinnedActivity && !isOperation ? 'blur(12px)' : undefined,
             boxShadow: '0 8px 32px rgba(0,0,0,0.45), 0 1px 4px rgba(0,0,0,0.2)',
           }}>
             <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 8, marginBottom: isOperation ? 6 : 10, paddingBottom: isOperation ? 0 : 8, borderBottom: isOperation ? undefined : '1px solid var(--border-primary)' }}>
@@ -945,10 +931,11 @@ export const TimelineChart: React.FC<{
                     <circle cx="12" cy="12" r="9" />
                     <path d="M12 6v6l4 2" />
                   </svg>
-                  Activity at {new Date(snap.t).toLocaleTimeString()}
+                  {pinnedActivity ? 'Pinned at' : 'Activity at'} {new Date(pinnedActivity ? pinnedMs! : snap.t).toLocaleTimeString()}
                   {hostLabel && <span style={{ color: 'var(--text-muted)', fontWeight: 500 }}>· {truncateHostname(hostLabel)}</span>}
                 </span>
               )}
+              {pinnedActivity && onUnpin && <button onClick={onUnpin} style={{ padding: '5px 8px', borderRadius: 4, border: '1px solid var(--border-primary)', background: 'var(--bg-tertiary)', color: 'var(--text-primary)', fontSize: 10, cursor: 'pointer' }}>Unpin</button>}
               {failureCode !== 0 && (
                 <span style={{ color: '#f85149', fontSize: 9, fontWeight: 600, flexShrink: 0, whiteSpace: 'nowrap' }}>
                   × Failed · {failureCode}
@@ -960,9 +947,9 @@ export const TimelineChart: React.FC<{
               <>
                 {/* Time and duration stay secondary to the operation type. */}
                 <div style={{ display: 'flex', alignItems: 'center', gap: 6, marginBottom: 6 }}>
-                  <span style={{ color: 'var(--text-secondary)', fontSize: 9 }}>{new Date(snap.t).toLocaleTimeString()}</span>
+                  <span style={{ color: 'var(--text-secondary)', fontSize: 10 }}>At {new Date(snap.t).toLocaleTimeString()}</span>
                   <span style={{ color: 'var(--text-muted)', fontSize: 9 }}>·</span>
-                  <span style={{ color: 'var(--text-secondary)', fontSize: 9, flexShrink: 0 }}>{fmtMs(hovItem.duration_ms)}</span>
+                  <span style={{ color: 'var(--text-secondary)', fontSize: 10, flexShrink: 0 }}>Duration {fmtMs(hovItem.duration_ms)}</span>
                   {/* Running indicator with progress for merges/mutations */}
                   {hovItem.is_running && failureCode === 0 && (
                     <span style={{ fontSize: 9, color: '#3fb950', fontWeight: 600 }}>
@@ -974,9 +961,9 @@ export const TimelineChart: React.FC<{
                 {band.type === 'query' ? (
                   <>
                     <div style={{ fontSize: 10, fontFamily: 'monospace', color: '#58a6ff', marginBottom: 2, letterSpacing: '-0.3px' }}>
-                      {(hovItem as any).query_id?.slice(0, 14)}
+                      {(hovItem as any).query_id?.slice(0, 12)}…
                     </div>
-                    <div style={{ color: 'var(--text-muted)', fontSize: 9, marginBottom: 6, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{(hovItem as any).user}</div>
+                    <div style={{ color: 'var(--text-muted)', fontSize: 9, marginBottom: 6, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>User: {(hovItem as any).user}{hovItem.hostname ? ` · ${truncateHostname(hovItem.hostname)}` : ''}</div>
                   </>
                 ) : (
                   <>
@@ -984,45 +971,29 @@ export const TimelineChart: React.FC<{
                     <div style={{ color: 'var(--text-muted)', fontSize: 9, marginBottom: 6, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{(hovItem as any).part_name}</div>
                   </>
                 )}
-                {/* Multi-metric bar chart grid */}
-                <div style={{ display: 'grid', gridTemplateColumns: '30px 1fr 50px', gap: '2px 6px', alignItems: 'center' }}>
+                <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 6, marginTop: 10, paddingTop: 10, borderTop: '1px solid var(--border-primary)' }}>
                   {METRIC_BAR_CONFIG.map(mc => {
-                    const val = mc.getValue(hovItem);
-                    const durS = Math.max(hovItem.duration_ms / 1000, 0.001);
-                    const isRateMetric = mc.key === 'network' || mc.key === 'disk';
-                    const displayVal = isRateMetric && metricMode === mc.key ? val / durS : val;
-                    const max = metricMaximums[mc.key];
-                    const pct = Math.min((val / max) * 100, 100);
-                    const isActive = metricMode === mc.key;
-                    const isEstimatedCpu = hovItem.is_running && mc.key === 'cpu' && (band.type === 'merge' || band.type === 'mutation');
-                    return (
-                      <React.Fragment key={mc.key}>
-                        <span style={{ fontSize: 9, fontWeight: isActive ? 700 : 500, color: isActive ? mc.color : 'var(--text-muted)', textTransform: 'uppercase', letterSpacing: '0.5px' }}>
-                          {mc.label}{isEstimatedCpu ? <span style={{ fontSize: 8, fontStyle: 'italic', fontWeight: 400, textTransform: 'none', opacity: 0.7 }}> est.</span> : ''}
-                        </span>
-                        <div style={{ height: 6, background: 'rgba(255,255,255,0.06)', borderRadius: 3, overflow: 'hidden', border: isActive ? `1px solid ${mc.color}33` : '1px solid transparent' }}>
-                          <div style={{
-                            width: `${Math.max(pct, val > 0 ? 2 : 0)}%`, height: '100%', borderRadius: 3,
-                            background: isActive ? mc.color : `${mc.color}88`,
-                            opacity: isActive ? 1 : 0.6,
-                          }} />
-                        </div>
-                        <span style={{ fontSize: 10, color: isActive ? 'var(--text-primary)' : 'var(--text-secondary)', fontFamily: 'monospace', textAlign: 'right', fontWeight: isActive ? 600 : 400 }}>
-                          {isEstimatedCpu ? `~${mc.fmt(displayVal)}` : `${mc.fmt(displayVal)}${isActive && isRateMetric ? '/s' : ''}`}
-                        </span>
-                      </React.Fragment>
-                    );
+                    const isEstimatedCpu = hovItem.is_running && mc.key === 'cpu' && band.type !== 'query';
+                    const labels = { cpu: 'Total CPU time', memory: 'Peak memory', disk: 'Disk read + written', network: 'Network sent + received' };
+                    return <div key={mc.key} style={{ padding: '7px 9px', borderRadius: 5, background: 'var(--bg-tertiary)' }}>
+                      <div style={{ fontSize: 9, color: 'var(--text-muted)', marginBottom: 4 }}>{labels[mc.key]}{isEstimatedCpu ? ' (estimated)' : ''}</div>
+                      <div style={{ fontSize: 13, color: 'var(--text-primary)', fontWeight: 600, fontVariantNumeric: 'tabular-nums' }}>{isEstimatedCpu ? '~' : ''}{mc.fmt(mc.getValue(hovItem))}</div>
+                    </div>;
                   })}
                 </div>
-                {/* Query text preview */}
                 {band.type === 'query' && (hovItem as any).label && (
-                  <div style={{ color: 'var(--text-muted)', fontSize: 10, marginTop: 6, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
-                    {(hovItem as any).label}
+                  <div style={{ color: 'var(--text-secondary)', fontFamily: 'monospace', fontSize: 10, lineHeight: 1.5, marginTop: 10, display: '-webkit-box', WebkitLineClamp: 2, WebkitBoxOrient: 'vertical', overflow: 'hidden', overflowWrap: 'anywhere' }}>
+                    {(hovItem as any).label.replace(/^\s*\/\*[\s\S]*?\*\/\s*/, '')}
                   </div>
                 )}
-                {/* Click hint */}
-                <div style={{ color: 'var(--text-muted)', fontSize: 9, marginTop: 6, opacity: 0.6 }}>Click for details</div>
+                <div style={{ display: 'flex', justifyContent: 'space-between', color: 'var(--text-secondary)', fontSize: 10, marginTop: 10, paddingTop: 8, borderTop: '1px solid var(--border-primary)' }}>
+                  <span>Open {band.type === 'query' ? 'query' : band.type === 'merge' ? 'merge' : 'mutation'} details</span><span aria-hidden="true">→</span>
+                </div>
               </>
+            ) : pinnedActivity ? (
+              <PinnedResourceActivity key={`${pinnedMs}:${metricMode}:${hostLabel ?? ''}`} data={data} atMs={pinnedMs!} mode={metricMode} width={tooltipWidth - 28}
+                hiddenCategories={hiddenCategories} hostLabel={hostLabel} availableHosts={resourceHosts}
+                onLoadResource={onLoadResource} onOpenOperation={onExploreOperation} onUnpin={onUnpin} />
             ) : (
               /* Hovering on empty space — show full breakdown */
               <>
@@ -1078,6 +1049,7 @@ export const TimelineChart: React.FC<{
                   </>
                 )}
                 <div style={{ color: 'var(--text-primary)', fontWeight: 600, fontSize: 11, borderTop: '1px solid var(--border-primary)', paddingTop: 8, marginTop: 8, marginBottom: 6 }}>Active operations</div>
+                <div style={{ color: 'var(--text-muted)', fontSize: 9 }}>{snap.attribution.coverage.sampled} sampled · {snap.attribution.coverage.estimated} estimated{snap.attribution.coverage.unavailable ? ` · ${snap.attribution.coverage.unavailable} unavailable` : ''}</div>
                 {snap.aq.length === 0 && snap.am.length === 0 && snap.amut.length === 0 && (
                   <div style={{ color: 'var(--text-muted)' }}>No active operations</div>
                 )}
@@ -1085,7 +1057,7 @@ export const TimelineChart: React.FC<{
                   <div style={{ marginTop: 8 }}>
                     <div style={{ display: 'flex', justifyContent: 'space-between', gap: 8, color: '#58a6ff', fontWeight: 600, marginBottom: 4 }}>
                       <span>Queries · {snap.aq.length}</span>
-                      <span style={{ color: 'var(--text-secondary)', whiteSpace: 'nowrap' }}>{cfg.fmtVal(snap.aq.reduce((s, x) => s + x.rp, 0))}{metricMode !== 'memory' ? '/s' : ''}</span>
+                      <span style={{ color: 'var(--text-secondary)', whiteSpace: 'nowrap' }}>{formatActivityTotal(snap.aq)}</span>
                     </div>
                     {snap.aq.slice(0, 4).map((a, rowIndex) => {
                       const q = data.queries[a.i];
@@ -1095,7 +1067,7 @@ export const TimelineChart: React.FC<{
                           <div style={{ display: 'flex', alignItems: 'baseline', justifyContent: 'space-between', gap: 8, color: 'var(--text-secondary)' }}>
                             <span style={{ flexShrink: 0, fontFamily: 'monospace' }}>{q.query_id.slice(0, 8)}</span>
                             <span style={{ flex: 1, minWidth: 0, color: 'var(--text-muted)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{q.label}{hostTag}</span>
-                            <span style={{ flexShrink: 0, whiteSpace: 'nowrap', fontVariantNumeric: 'tabular-nums' }}>{cfg.fmtVal(a.rp)}{metricMode !== 'memory' ? '/s' : ''}</span>
+                            <span style={{ flexShrink: 0, whiteSpace: 'nowrap', fontVariantNumeric: 'tabular-nums' }}>{a.rp === null ? 'Unavailable' : formatActivityValue(a.rp)}</span>
                           </div>
                         </div>
                       );
@@ -1107,7 +1079,7 @@ export const TimelineChart: React.FC<{
                   <div style={{ marginTop: 10 }}>
                     <div style={{ display: 'flex', justifyContent: 'space-between', gap: 8, color: '#f0883e', fontWeight: 600, marginBottom: 4 }}>
                       <span>Merges · {snap.am.length}</span>
-                      <span style={{ color: 'var(--text-secondary)', whiteSpace: 'nowrap' }}>{cfg.fmtVal(snap.am.reduce((s, x) => s + x.rp, 0))}{metricMode !== 'memory' ? '/s' : ''}</span>
+                      <span style={{ color: 'var(--text-secondary)', whiteSpace: 'nowrap' }}>{formatActivityTotal(snap.am)}</span>
                     </div>
                     {snap.am.slice(0, 3).map((a, rowIndex) => {
                       const m = data.merges[a.i];
@@ -1116,7 +1088,7 @@ export const TimelineChart: React.FC<{
                         <div key={a.i} style={{ padding: '4px 0', borderTop: rowIndex > 0 ? '1px solid var(--border-primary)' : undefined }}>
                           <div style={{ display: 'flex', alignItems: 'baseline', justifyContent: 'space-between', gap: 8, color: 'var(--text-secondary)' }}>
                             <span style={{ minWidth: 0, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', fontFamily: 'monospace' }}>{m.table}<span style={{ color: 'var(--text-muted)' }}>{hostTag}</span></span>
-                            <span style={{ flexShrink: 0, whiteSpace: 'nowrap', fontVariantNumeric: 'tabular-nums' }}>{cfg.fmtVal(a.rp)}{metricMode !== 'memory' ? '/s' : ''}</span>
+                            <span style={{ flexShrink: 0, whiteSpace: 'nowrap', fontVariantNumeric: 'tabular-nums' }}>{a.rp === null ? 'Unavailable' : formatActivityValue(a.rp)}</span>
                           </div>
                         </div>
                       );
@@ -1128,7 +1100,7 @@ export const TimelineChart: React.FC<{
                   <div style={{ marginTop: 10 }}>
                     <div style={{ display: 'flex', justifyContent: 'space-between', gap: 8, color: '#f778ba', fontWeight: 600, marginBottom: 4 }}>
                       <span>Mutations · {snap.amut.length}</span>
-                      <span style={{ color: 'var(--text-secondary)', whiteSpace: 'nowrap' }}>{cfg.fmtVal(snap.amut.reduce((s, x) => s + x.rp, 0))}{metricMode !== 'memory' ? '/s' : ''}</span>
+                      <span style={{ color: 'var(--text-secondary)', whiteSpace: 'nowrap' }}>{formatActivityTotal(snap.amut)}</span>
                     </div>
                     {snap.amut.slice(0, 3).map((a, rowIndex) => {
                       const mu = (data.mutations ?? [])[a.i];
@@ -1137,7 +1109,7 @@ export const TimelineChart: React.FC<{
                         <div key={a.i} style={{ padding: '4px 0', borderTop: rowIndex > 0 ? '1px solid var(--border-primary)' : undefined }}>
                           <div style={{ display: 'flex', alignItems: 'baseline', justifyContent: 'space-between', gap: 8, color: 'var(--text-secondary)' }}>
                             <span style={{ minWidth: 0, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', fontFamily: 'monospace' }}>{mu?.table}<span style={{ color: 'var(--text-muted)' }}>{hostTag}</span></span>
-                            <span style={{ flexShrink: 0, whiteSpace: 'nowrap', fontVariantNumeric: 'tabular-nums' }}>{cfg.fmtVal(a.rp)}{metricMode !== 'memory' ? '/s' : ''}</span>
+                            <span style={{ flexShrink: 0, whiteSpace: 'nowrap', fontVariantNumeric: 'tabular-nums' }}>{a.rp === null ? 'Unavailable' : formatActivityValue(a.rp)}</span>
                           </div>
                         </div>
                       );
@@ -1147,9 +1119,11 @@ export const TimelineChart: React.FC<{
                 )}
               </>
             )}
+            {!isOperation && !pinnedActivity && <div style={{ marginTop: 8, color: 'var(--text-muted)', fontSize: 9 }}>Click chart to pin and inspect this time.</div>}
           </div>
         );
       })()}
+
     </div>
   );
 };

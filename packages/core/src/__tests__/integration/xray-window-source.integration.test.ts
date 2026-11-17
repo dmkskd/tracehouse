@@ -86,6 +86,17 @@ describe('X-Ray window source parity', () => {
     }
   });
 
+  it('marks a cumulative-counter baseline as gauge-only, without invalidating real metric-log deltas', async () => {
+    const start = "toDateTime64('2026-09-18 11:59:59.999', 6, 'UTC')";
+    const sampler = await execute(buildXRayWindowSamplesSQL({ availability, preference: 'processes_history' }, { ...options, start }));
+    const local = sampler.filter(row => row.sample_query_id === 'root');
+    expect(Number(local[0].interval_valid)).toBe(0);
+    expect(Number(local[0].memory_usage)).toBeGreaterThan(0);
+    expect(Number(local[1].interval_valid)).toBe(1);
+    const metrics = await execute(buildXRayWindowSamplesSQL({ availability, preference: 'query_metric_log' }, { ...options, start }));
+    expect(Number(metrics.find(row => row.sample_query_id === 'root')!.interval_valid)).toBe(1);
+  });
+
   it('preserves the first metric-log interval instead of differencing away its work', async () => {
     const rows = await execute(buildXRayWindowSamplesSQL({ availability, preference: 'query_metric_log' }, { ...options, start: options.identityStart! }));
     const first = rows.find(row => row.sample_query_id === 'root')!;

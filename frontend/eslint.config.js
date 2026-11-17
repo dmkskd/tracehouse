@@ -21,5 +21,15 @@ export default defineConfig([
       globals: globals.browser,
     },
   },
+  {
+    files: ['src/**/*.{ts,tsx}'],
+    ignores: ['src/components/timeline/resource-sankey/**'],
+    rules: {
+      'no-restricted-syntax': ['error', {
+        selector: 'ImportDeclaration[source.value=/resource-sankey.+/]',
+        message: 'Import the resource Sankey views through its public directory index only.',
+      }],
+    },
+  },
   ...grafanaStyles,
 ])

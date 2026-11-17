@@ -40,6 +40,23 @@ describe('Time Travel zoom source propagation', () => {
     expect(input.queries[0].zoomSamples).toBeUndefined();
   });
 
+  it('weights irregular intervals across seconds instead of extending a short catch-up rate', async () => {
+    const baseMs = Date.parse('2026-09-18T12:00:00Z');
+    const rows = [
+      { ts_ms: baseMs + 774, dt: 1.69, cpu_us: 845000, memory_usage: 10 },
+      { ts_ms: baseMs + 1001, dt: 0.227, cpu_us: 2270000, memory_usage: 20 },
+      { ts_ms: baseMs + 2006, dt: 1.005, cpu_us: 1005000, memory_usage: 30 },
+    ].map(r => ({ ...r, query_id: 'root', sample_query_id: 'root', hostname: 'host', net_send_bytes: 0, net_recv_bytes: 0, read_bytes: 0, written_bytes: 0 }));
+    const adapter: IClickHouseAdapter = { async executeQuery<T extends Record<string, unknown>>(sql: string) { return (sql.includes('merges_history') ? [] : rows) as unknown as T[]; } };
+    const output = await new TimelineService(adapter).getZoomData(timeline(), baseMs, baseMs + 3000, 'host');
+    const samples = output.queries[0].zoomSamples!;
+    // First second: 774 ms at 0.5 cores + 226 ms at 10 cores.
+    expect(samples.find(s => s.ms === baseMs)!.cpu_cores).toBeCloseTo(2.647);
+    // Next second: only 1 ms of the catch-up interval, then 999 ms at 1 core.
+    expect(samples.find(s => s.ms === baseMs + 1000)!.cpu_cores).toBeCloseTo(1.009);
+    expect(samples.map(s => s.memory)).toEqual([10, 20, 30]);
+  });
+
   it('does not retain old query samples when neither query source is available', async () => {
     const input = timeline();
     input.queries[0].zoomSamples = [{ ms: 1, memory: 1, cpu_cores: 1, net_rate: 1, disk_rate: 1 }];

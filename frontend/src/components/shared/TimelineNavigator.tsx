@@ -65,6 +65,8 @@ interface TimelineNavigatorProps {
   selectedEventId?: string | null;
   /** Select and navigate to an event marker. */
   onEventSelect?: (event: OperationalEvent) => void;
+  /** Optional point-selection caption when the navigator is used to inspect a sample. */
+  selectionLabel?: string;
 }
 
 const fmtTime = (ms: number): string => new Date(ms).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
@@ -88,6 +90,7 @@ export const TimelineNavigator: React.FC<TimelineNavigatorProps> = ({
   events = [],
   selectedEventId,
   onEventSelect,
+  selectionLabel,
 }) => {
   const containerRef = useRef<HTMLDivElement>(null);
   const [containerWidth, setContainerWidth] = useState(1000);
@@ -478,6 +481,7 @@ export const TimelineNavigator: React.FC<TimelineNavigatorProps> = ({
   return (
     <div 
       ref={containerRef}
+      data-testid="timeline-navigator"
       style={{
         position: 'relative',
         height,
@@ -561,6 +565,7 @@ export const TimelineNavigator: React.FC<TimelineNavigatorProps> = ({
 
       {/* Viewport window (draggable) */}
       <div
+        data-testid="navigator-viewport"
         style={{
           position: 'absolute',
           top: 0,
@@ -723,7 +728,7 @@ export const TimelineNavigator: React.FC<TimelineNavigatorProps> = ({
               whiteSpace: 'nowrap',
             }}
           >
-            {fmtTime(label.ms)}
+            {selectionLabel ? new Date(label.ms).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', second: '2-digit' }) : fmtTime(label.ms)}
           </div>
         ))}
       </div>
@@ -743,7 +748,7 @@ export const TimelineNavigator: React.FC<TimelineNavigatorProps> = ({
         whiteSpace: 'nowrap',
         pointerEvents: 'none',
       }}>
-        {fmtTime(viewportStartMs)} - {fmtTime(viewportEndMs)}
+        {selectionLabel ?? `${fmtTime(viewportStartMs)} - ${fmtTime(viewportEndMs)}`}
       </div>
 
       {/* Hover tooltip showing percentage */}

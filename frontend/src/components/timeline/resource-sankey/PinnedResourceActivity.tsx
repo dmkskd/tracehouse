@@ -1,0 +1,47 @@
+import { useEffect, useRef, useState } from 'react';
+import type { MemoryTimeline, OperationKind } from '@tracehouse/core';
+import { ModalWrapper } from '../../shared/ModalWrapper';
+import type { MetricMode } from '../timeline-constants';
+import { PinnedResourcePreview } from './PinnedResourcePreview';
+import { ResourceExplorationModal } from './ResourceExplorationModal';
+import type { ResourceDataLoader, ResourceOperationOpen } from './resource-exploration-model';
+import { useResourceData } from './useResourceData';
+
+/** One materialized snapshot owns both the pin and its expanded view. Repinning remounts it. */
+export function PinnedResourceActivity({ data, atMs, mode, width, hiddenCategories, hostLabel, availableHosts, onLoadResource, onOpenOperation, onUnpin }: {
+  data: MemoryTimeline; atMs: number; mode: MetricMode; width: number;
+  hiddenCategories?: ReadonlySet<OperationKind>; hostLabel?: string; availableHosts?: readonly string[];
+  onLoadResource?: ResourceDataLoader; onOpenOperation?: ResourceOperationOpen; onUnpin?: () => void;
+}) {
+  const [original] = useState(data);
+  const [exploring, setExploring] = useState(false);
+  const trigger = useRef<HTMLButtonElement>(null);
+  const resource = useResourceData(original, mode, atMs, hostLabel, onLoadResource);
+  const close = () => { setExploring(false); trigger.current?.focus(); };
+  useEffect(() => {
+    if (exploring || !onUnpin) return;
+    const unpin = (event: KeyboardEvent) => {
+      if (event.key === 'Escape' && !event.defaultPrevented && !document.querySelector('[role="dialog"][aria-modal="true"]')) {
+        event.preventDefault(); onUnpin();
+      }
+    };
+    document.addEventListener('keydown', unpin);
+    return () => document.removeEventListener('keydown', unpin);
+  }, [exploring, onUnpin]);
+  return <>
+    <PinnedResourcePreview data={resource.source} atMs={atMs} mode={mode} width={width} hiddenCategories={hiddenCategories}
+      onExplore={() => setExploring(true)} buttonRef={trigger} />
+    {resource.loading && <div role="status" style={{ fontSize: 10, color: 'var(--text-muted)', marginTop: 6 }}>Loading interval samples…</div>}
+    {resource.samplingWarning && <div style={{ fontSize: 10, color: 'var(--text-muted)', marginTop: 6 }}>{resource.samplingWarning}</div>}
+    {resource.loadError && <div role="alert" style={{ fontSize: 10, marginTop: 6 }}>Could not load interval samples. Open exploration to retry.</div>}
+    {exploring && (resource.loading || resource.loadError ? <ModalWrapper isOpen onClose={close} maxWidth={1100} height="85vh" ariaLabel="Resource usage at the selected time">
+      <div style={{ padding: 16 }}>
+        <button onClick={close} aria-label="Close resource exploration" style={{ float: 'right', cursor: 'pointer' }}>×</button>
+        {resource.loadError ? <><p role="alert">Could not load resource samples: {resource.loadError}</p><button onClick={resource.retry}>Retry</button></>
+          : <p role="status">Loading the pinned resource snapshot…</p>}
+      </div>
+    </ModalWrapper> : <ResourceExplorationModal data={resource.source} atMs={atMs} initialMode={mode} hostLabel={hostLabel}
+      availableHosts={availableHosts} hiddenCategories={hiddenCategories} onLoadResource={onLoadResource} onOpenOperation={onOpenOperation}
+      initialDataLoaded={!!onLoadResource} initialSamplingWarning={resource.samplingWarning} onClose={close} />)}
+  </>;
+}

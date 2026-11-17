@@ -1,3 +1,4 @@
+import { useState } from 'react';
 import { fireEvent, render, screen } from '@testing-library/react';
 import { describe, expect, it, vi } from 'vitest';
 import { ModalWrapper } from '../ModalWrapper';
@@ -38,4 +39,38 @@ describe('ModalWrapper', () => {
 
     expect(onClose).toHaveBeenCalledOnce();
   });
+  it('keeps keyboard focus in the top dialog and excludes hidden controls', () => {
+    render(<ModalWrapper isOpen onClose={vi.fn()} ariaLabel="Focus scope"><button>First</button><div hidden><button>Hidden</button></div><button>Last</button></ModalWrapper>);
+    const first = screen.getByRole('button', { name: 'First' }), last = screen.getByRole('button', { name: 'Last' });
+    for (const el of [first, last]) vi.spyOn(el, 'getClientRects').mockReturnValue([{}] as unknown as DOMRectList);
+    last.focus(); fireEvent.keyDown(document, { key: 'Tab' });
+    expect(first).toHaveFocus();
+    fireEvent.keyDown(document, { key: 'Tab', shiftKey: true });
+    expect(last).toHaveFocus();
+  });
+  it('closes only the top modal and restores its parent focus and scroll lock', () => {
+    const parentClose = vi.fn(), childClose = vi.fn();
+    function Nested() {
+      const [child, setChild] = useState(false);
+      return <>
+        <ModalWrapper isOpen onClose={() => parentClose()} ariaLabel="Resource flow">
+          <button onClick={() => setChild(true)}>Open query</button>
+        </ModalWrapper>
+        {child && <ModalWrapper isOpen onClose={() => { childClose(); setChild(false); }} ariaLabel="Query details"><button>Close query</button></ModalWrapper>}
+      </>;
+    }
+    render(<Nested />);
+    const trigger = screen.getByRole('button', { name: 'Open query' });
+    trigger.focus(); fireEvent.click(trigger);
+    expect(screen.getAllByRole('dialog')).toHaveLength(2);
+    fireEvent.keyDown(document, { key: 'Escape' });
+    expect(childClose).toHaveBeenCalledOnce();
+    expect(parentClose).not.toHaveBeenCalled();
+    expect(screen.getByRole('dialog', { name: 'Resource flow' })).toBeInTheDocument();
+    expect(document.body.style.overflow).toBe('hidden');
+    expect(trigger).toHaveFocus();
+    fireEvent.keyDown(document, { key: 'Escape' });
+    expect(parentClose).toHaveBeenCalledOnce();
+  });
+
 });

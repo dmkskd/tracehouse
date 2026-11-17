@@ -95,3 +95,6 @@ export type { LaneItem } from './arena-lanes.js';
 export { resolveDeepLink, buildQueryLinkUrl, buildMergeLinkUrl, buildMergeRecordLinkUrl, describeLinkStatus } from './deep-link-resolution.js';
 export type { ResolveDeepLinkOptions, DeepLinkKind } from './deep-link-resolution.js';
 export { describeErrorCounterState } from './error-counter-state.js';
+
+export { attributeTimeline, measureTimelineSeries } from './timeline-attribution.js';
+export type { AttributionSelection, AttributionBasis, AttributionOptions, AttributedOperation, AttributedSource, TimelineAttribution } from './timeline-attribution.js';

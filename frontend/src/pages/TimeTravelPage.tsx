@@ -65,6 +65,7 @@ import {
   MetricStripDivider,
   MetricStripItem,
 } from '../components/common/MetricStrip';
+import { createResourceDataLoader } from '../components/timeline/resource-sankey';
 import { TimelineChart } from '../components/timeline/TimelineChart';
 import { getTimelineChartHeight } from '../components/timeline/timeline-chart-height';
 import { TimelineChart3D } from '../components/timeline/TimelineChart3D';
@@ -296,6 +297,7 @@ export const TimeTravelPage: React.FC = () => {
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [hoverMs, setHoverMs] = useState<number | null>(null);
+  const [pinnedActivityHost, setPinnedActivityHost] = useState<string | null>(null);
   const [pinnedMs, setPinnedMs] = useState<number | null>(initialCoordinates.pinnedMs);
   const [selectedEventId, setSelectedEventId] = useState<string | null>(initialCoordinates.selectedEventId);
   const [eventFilter, setEventFilter] = useState<TimelineEventFilter>(
@@ -728,6 +730,11 @@ export const TimeTravelPage: React.FC = () => {
       mutations: [],
     };
   }, [effectiveData, queryHashOnly, queryHashFilter]);
+
+  const loadExplorationResource = useMemo(() => services ? createResourceDataLoader({
+    timelineService: services.timelineService, hostnameFilter, includeRunning, activityLimit,
+    queryHashFilter, queryHashOnly, xraySelection,
+  }) : undefined, [services, hostnameFilter, includeRunning, activityLimit, queryHashFilter, queryHashOnly, xraySelection]);
 
   const navigatorSpanMs = Math.max(60_000, navigatorHours * 60 * 60_000);
   const navigatorBucketSec = navigatorBucketSeconds(navigatorSpanMs);
@@ -1724,6 +1731,8 @@ export const TimeTravelPage: React.FC = () => {
               {rowHosts.map((host) => {
                 const hostData = perHostData.get(host);
                 if (!hostData) return null;
+                const ownsPinnedActivity = pinnedActivityHost === host
+                  || (!rowHosts.includes(pinnedActivityHost ?? '') && host === rowHosts[0]);
                 const hostCpuCapacity = getTimelineCpuCapacity(hostData);
                 const hostRamCapacity = getTimelineRamCapacity(hostData);
                 const chartHeight = Math.max(140, Math.floor((mainChartHeight - 40) / rowHosts.length));
@@ -1733,7 +1742,7 @@ export const TimeTravelPage: React.FC = () => {
                   <div key={host} style={{
                     borderRadius:8, background:'var(--bg-secondary)', border:'1px solid var(--border-primary)',
                     overflow:'visible', position:'relative',
-                    zIndex: popupRowHosts.has(host) ? 25 : hoveredRowHost === host ? 20 : 0,
+                    zIndex: popupRowHosts.has(host) ? 25 : pinnedMs !== null && ownsPinnedActivity ? 20 : hoveredRowHost === host ? 15 : 0,
                   }}
                   onMouseEnter={() => setHoveredRowHost(host)}
                   onMouseLeave={() => setHoveredRowHost(current => current === host ? null : current)}
@@ -1753,8 +1762,9 @@ export const TimeTravelPage: React.FC = () => {
                       {hostRamCapacity > 0 && <span style={{ color:'var(--text-muted)', marginLeft:6 }}>{formatBytes(hostRamCapacity)} RAM</span>}
                     </button>
                     <TimelineChart data={hostData} metricMode={metricMode} height={chartHeight} hostLabel={host}
+                      showPinnedActivity={ownsPinnedActivity} resourceHosts={[host]} onLoadResource={loadExplorationResource} onExploreOperation={handleBandSelect}
                       hoverMs={hoverMs} pinnedMs={pinnedMs}
-                      onHover={setHoverMs} onPin={handleChartPin}
+                      onHover={setHoverMs} onPin={ms => { setPinnedActivityHost(host); handleChartPin(ms); }}
                       zoomRange={zoomRange} onZoom={setZoomRange}
                       highlightedItem={highlightedItem}
                       onHighlightItem={setHighlightedItem}
@@ -1768,7 +1778,7 @@ export const TimeTravelPage: React.FC = () => {
                         : []}
                       selectedEventId={selectedEventIdForDisplay}
                       onEventSelect={handleEventSelect}
-                      onEventPin={handleEventPin}
+                      onEventPin={event => { setPinnedActivityHost(host); handleEventPin(event); }}
                       onUnpin={handleUnpin}
                       onClearEventSelection={handleClearEventSelection}
                       onViewEventDetails={handleViewEventDetails}
@@ -1819,7 +1829,7 @@ export const TimeTravelPage: React.FC = () => {
                 Server CPU reads as 0 — ClickHouse on macOS does not expose CPU metrics. Run in Docker or Linux for CPU data.
               </div>
             )}
-            <TimelineChart data={chartData!} metricMode={metricMode} height={mainChartHeight}
+            <TimelineChart data={chartData!} metricMode={metricMode} height={mainChartHeight} resourceHosts={selectedHosts.length ? selectedHosts : clusterHosts} onLoadResource={loadExplorationResource} onExploreOperation={handleBandSelect}
               hoverMs={hoverMs} pinnedMs={pinnedMs}
               onHover={setHoverMs} onPin={handleChartPin}
               zoomRange={zoomRange} onZoom={setZoomRange}

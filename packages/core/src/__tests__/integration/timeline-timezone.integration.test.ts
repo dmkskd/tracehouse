@@ -73,7 +73,7 @@ describe('Time Travel server timezone round trip', { tags: ['query-analysis'] },
       fromUnixTimestamp64Micro(toInt64(${epoch} * 1000000 + 123456), '${timezone}') AS event_time_microseconds,
       event_time - INTERVAL 10 SECOND AS query_start_time,
       'fixture-query' AS query_id, 'default' AS user, 'SELECT 1' AS query,
-      'Select' AS query_kind, 'QueryFinish' AS type, toUInt64(10000) AS query_duration_ms,
+      'Select' AS query_kind, CAST([], 'Array(String)') AS tables, 'QueryFinish' AS type, toUInt64(10000) AS query_duration_ms,
       toUInt64(2097152) AS memory_usage, memory_usage AS peak_memory_usage,
       toUInt64(10000) AS duration_ms, toUInt32(0) AS error, 0 AS exception_code, '' AS exception,
       map('OSCPUVirtualTimeMicroseconds', toUInt64(100000), 'UserTimeMicroseconds', toUInt64(100000)) AS ProfileEvents,
@@ -139,6 +139,7 @@ describe('Time Travel server timezone round trip', { tags: ['query-analysis'] },
         });
         expect(errors).toEqual([]);
         expect(timeline.queries).toHaveLength(1);
+        expect(timeline.queries[0].tables).toEqual([]);
         expect(timeline.merges).toHaveLength(1);
         expect(timeline.mutations).toHaveLength(1);
         expect(timeline.queries[0].start_time).toBe(new Date((epoch - 10) * 1000).toISOString());

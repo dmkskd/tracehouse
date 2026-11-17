@@ -76,6 +76,7 @@ export function buildXRayWindowSamplesSQL(selection: SelectQueryXRaySourceInput,
   const delta = (name: string) => metricLog ? name : `greatest(toFloat64(${name}) - toFloat64(lagInFrame(${name}, 1, ${name}) OVER w), 0)`;
   return `SELECT * FROM (
   SELECT query_id, sample_query_id, hostname, sample_time AS event_time, toUnixTimestamp64Milli(sample_time) AS ts_ms, memory_usage,
+    ${metricLog ? 'sample_time > lagInFrame(sample_time, 1, query_start) OVER w' : 'row_number() OVER w > 1'} AS interval_valid,
     greatest(dateDiff('microsecond', lagInFrame(sample_time, 1, query_start) OVER w, sample_time) / 1e6, 0.01) AS dt,
     ${Object.keys(counters).map(name => `${delta(name)} AS ${name}`).join(',\n    ')}${metricLog ? '' : `,\n    ${delta('read_bytes')} AS read_bytes,\n    ${delta('written_bytes')} AS written_bytes`}
   FROM (${raw})

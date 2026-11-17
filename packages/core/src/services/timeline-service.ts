@@ -1,3 +1,4 @@
+import { resampleQueryIntervals, type QueryZoomInterval } from '../utils/query-interval-resampling.js';
 import { parseAbsoluteTimestamp } from '../utils/absolute-timestamp.js';
 import { selectQueryXRaySource, type SelectQueryXRaySourceInput } from '../types/xray-source.js';
 /**
@@ -81,17 +82,7 @@ function parseChTime(s: string): Date {
   return new Date(parseAbsoluteTimestamp(s));
 }
 
-interface QueryZoomInterval {
-  query_id: string;
-  sample_query_id: string;
-  hostname: string;
-  ts_ms: number;
-  memory_usage: number;
-  dt: number;
-  cpu_us: number;
-  net_bytes: number;
-  disk_bytes: number;
-}
+
 
 export class TimelineService {
   private _cachedRam = new Map<string, {
@@ -607,7 +598,7 @@ export class TimelineService {
     ]);
 
     // Compute ZoomSamples per query_id from raw process samples
-    const queryZoom = this.computeQueryZoomSamples(processSamples);
+    const queryZoom = resampleQueryIntervals(processSamples);
 
     // Compute ZoomSamples per part_name from raw merge samples
     const mergeZoom = this.computeMergeZoomSamples(mergeSamples);
@@ -662,6 +653,7 @@ export class TimelineService {
           hostname: String(row.hostname ?? ''),
           ts_ms: Number(row.ts_ms),
           memory_usage: Number(row.memory_usage ?? 0), dt: Number(row.dt ?? 0.001),
+          interval_valid: row.interval_valid === undefined ? true : Number(row.interval_valid) === 1,
           cpu_us: Number(row.cpu_us ?? 0),
           net_bytes: Number(row.net_send_bytes ?? 0) + Number(row.net_recv_bytes ?? 0),
           disk_bytes: Number(row.read_bytes ?? 0) + Number(row.written_bytes ?? 0),
@@ -695,36 +687,6 @@ export class TimelineService {
       console.error('[TimelineService] zoom merge samples error:', e);
       return [];
     }
-  }
-
-  /**
-   * Convert normalized local-query intervals into per-second ZoomSample arrays.
-   */
-  private computeQueryZoomSamples(raw: QueryZoomInterval[]): Map<string, ZoomSample[]> {
-    // First average intervals of each LOCAL execution within a wall-clock
-    // second, then sum local executions. Interleaved shards never share deltas
-    // and sub-second samples never multiply gauges or rates.
-    const localBuckets = new Map<string, { queryId: string; ms: number; memory: number; count: number; dt: number; cpu: number; net: number; disk: number }>();
-    for (const row of raw) {
-      const ms = Math.floor(row.ts_ms / 1000) * 1000;
-      const key = JSON.stringify([row.query_id, row.hostname, row.sample_query_id, ms]);
-      const bucket = localBuckets.get(key) ?? { queryId: row.query_id, ms, memory: 0, count: 0, dt: 0, cpu: 0, net: 0, disk: 0 };
-      bucket.memory += row.memory_usage; bucket.count++;
-      bucket.dt += row.dt; bucket.cpu += row.cpu_us;
-      bucket.net += row.net_bytes; bucket.disk += row.disk_bytes;
-      localBuckets.set(key, bucket);
-    }
-    const grouped = new Map<string, Map<number, ZoomSample>>();
-    for (const bucket of localBuckets.values()) {
-      const samples = grouped.get(bucket.queryId) ?? new Map<number, ZoomSample>();
-      const sample = samples.get(bucket.ms) ?? { ms: bucket.ms, memory: 0, cpu_cores: 0, net_rate: 0, disk_rate: 0 };
-      sample.memory += bucket.memory / bucket.count;
-      sample.cpu_cores += bucket.cpu / 1e6 / bucket.dt;
-      sample.net_rate += bucket.net / bucket.dt;
-      sample.disk_rate += bucket.disk / bucket.dt;
-      samples.set(bucket.ms, sample); grouped.set(bucket.queryId, samples);
-    }
-    return new Map([...grouped].map(([id, samples]) => [id, [...samples.values()].sort((a, b) => a.ms - b.ms)]));
   }
 
   /**
@@ -1072,6 +1034,7 @@ export class TimelineService {
           end_time: qet.toISOString(),
           status: String(row.status || ''),
           query_kind: row.query_kind ? String(row.query_kind) : undefined,
+          tables: Array.isArray(row.tables) ? row.tables.filter((table): table is string => typeof table === 'string' && table.length > 0) : undefined,
           exception_code: Number(row.exception_code || 0),
           exception: row.exception ? String(row.exception) : undefined,
           points,

@@ -43,6 +43,8 @@ export interface ZoomSample {
   memory: number;
   /** CPU cores used (delta µs / 1e6 / dt) */
   cpu_cores: number;
+  /** False when only a gauge/counter baseline was captured, without a rate interval. */
+  rate_sampled?: boolean;
   /** Network bytes/s (send + recv) */
   net_rate: number;
   /** Disk bytes/s (read + write) */
@@ -66,6 +68,8 @@ export interface QuerySeries {
   status?: string;  // QueryFinish, QueryFailed, Running, etc.
   exception_code?: number;
   query_kind?: string;  // SELECT, INSERT, ALTER, etc.
+  /** Referenced tables from query_log; a set, not per-table cost attribution. */
+  tables?: string[];
   exception?: string;  // Error message if query failed
   is_running?: boolean;  // True if query is currently in-flight
   /** True when this query matches the normalizedQueryHash filter (pattern mode overlay) */
