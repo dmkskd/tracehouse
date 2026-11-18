@@ -34,7 +34,8 @@ export function buildResourceAttributionSQL(options: ResourceAggregationSQLReque
   const hosts = typeof options.hostname === 'string' ? [options.hostname] : options.hostname ?? [];
   const hostFilter = hosts.length ? `AND hostName() IN (${hosts.map(literal).join(',')})` : '';
   const hashFilter = options.queryHashOnly && options.normalizedQueryHash ? `AND normalized_query_hash = ${options.normalizedQueryHash}` : '';
-  const partsEnabled = !(options.queryHashOnly && options.normalizedQueryHash);
+  const queriesEnabled = !options.details || options.details.groups.some(group => group.kind === 'query');
+  const partsEnabled = !(options.queryHashOnly && options.normalizedQueryHash) && (!options.details || options.details.groups.some(group => group.kind !== 'query'));
   const sqlRate = mode === 'cpu' ? 'cpu_us' : mode === 'network' ? 'net_bytes' : 'disk_bytes';
   const queryOps = `SELECT 'query' AS kind, upper(toString(query_kind)) AS activity, arraySort(arrayDistinct(tables)) AS tables,
     if(empty(tables),'none','recorded') AS table_state, hostName() AS hostname, query_id AS local_id,
@@ -83,7 +84,7 @@ export function buildResourceAttributionSQL(options: ResourceAggregationSQLReque
     if(is_mutation,'MutatePart','MergeParts') AS source_event_type,'' AS source_event_time_us
     FROM {{cluster_aware:system.merges}} WHERE op_start_ms<window_end_ms AND op_end_ms>=window_start_ms
     ${hostFilter}`;
-  const source = options.sampleSelection ? selectQueryXRaySource(options.sampleSelection).source : null;
+  const source = queriesEnabled && options.sampleSelection ? selectQueryXRaySource(options.sampleSelection).source : null;
   // Progress read_bytes/written_bytes are logical input/output, not OS disk I/O.
   // Keep disk attribution on execution OSReadBytes/OSWriteBytes averages.
   const canSampleRates = source !== null && mode !== 'disk';
@@ -146,8 +147,8 @@ export function buildResourceAttributionSQL(options: ResourceAggregationSQLReque
     sum(sampled_ms) AS sampled_ms,sum(estimated_ms) AS estimated_ms,sum(missing_ms) AS missing_ms
     FROM evaluated GROUP BY snapshot_ms,kind,activity,tables,table_state ORDER BY snapshot_ms,kind,activity,tables,table_state`;
   return `WITH toInt64(${startMs}) AS window_start_ms,toInt64(${endMs}) AS window_end_ms,toUnixTimestamp64Milli(now64(3)) AS now_ms,
-    logged AS (SELECT ${columns} FROM (${queryOps})${partsEnabled ? ` UNION ALL SELECT ${columns} FROM (${partOps})` : ''}),
-    operations AS (SELECT * FROM (SELECT * FROM logged${options.includeRunning ? ` UNION ALL SELECT ${columns} FROM (${runningQueries})${partsEnabled ? ` UNION ALL SELECT ${columns} FROM (${runningParts})` : ''}` : ''})
+    logged AS (${[...(queriesEnabled ? [queryOps] : []), ...(partsEnabled ? [partOps] : [])].map(sql => `SELECT ${columns} FROM (${sql})`).join(' UNION ALL ')}),
+    operations AS (SELECT * FROM (SELECT * FROM logged${options.includeRunning ? [...(queriesEnabled ? [runningQueries] : []), ...(partsEnabled ? [runningParts] : [])].map(sql => ` UNION ALL SELECT ${columns} FROM (${sql})`).join('') : ''})
       ${options.includeRunning ? 'QUALIFY is_running=0 OR countIf(is_running=0) OVER (PARTITION BY kind,hostname,local_id)=0' : ''}),
     ${source ? `query_samples AS (${raw}),` : ''}
     sample_spans AS (${mode === 'memory' ? memorySpans : rateSpans}),
