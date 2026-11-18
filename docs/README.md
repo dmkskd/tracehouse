@@ -22,6 +22,11 @@
 | Document | What it covers |
 |----------|---------------|
 | [development/clickhouse-compatibility.md](development/clickhouse-compatibility.md) | Exact matrix checkpoints, ClickHouse version boundaries, runtime capability findings, and compatibility-related test defects |
+| [Grafana plugin development](site/docs/development/grafana-plugin.md#analytics-result-types-and-metadata-lookup) | Datasource integration and Analytics metadata lookup: extra request cost, lack of caching, failure symptoms and troubleshooting |
+| [issues/time-travel-timezones.md](issues/time-travel-timezones.md) | Open Time Travel timezone issue, reproduction, affected code paths, and existing UTC work |
+| [proposals/time-travel-utc-round-trips.md](proposals/time-travel-utc-round-trips.md) | Proposed UTC return-path fix and timezone regression coverage |
+| [proposals/application-timezone-correctness.md](proposals/application-timezone-correctness.md) | Review of the partial Time Travel fix, remaining timezone defects, proposed changes, and regression checks |
+| [development/timezone-implementation-plan.md](development/timezone-implementation-plan.md) | Staged timezone implementation, producer/consumer rollout gates, and regression checks for standalone and Grafana |
 
 ## Nice to Know
 

@@ -95,14 +95,17 @@ The available cluster hosts are separate from a pin's initial host selection.
 Reset restores that initial selection; selecting all hosts explicitly overrides
 the originating page's filter.
 
-The Events toggle controls the existing `TimelineNavigator` event ticks. Time Travel
+The Events toggle controls the shared `TimelineEventOverlay` on the navigator. Time Travel
 passes its deduplicated, filtered window and overview events through the chart and
 pin; the Sankey does not fetch events. The modal filters host-specific events to
-its server selection and retains events without a hostname. A marker moves the
-local exploration time, never the originating page's pin. Event coverage is limited
+its server selection and retains events without a hostname. Markers highlight on
+hover; clicking opens an event summary or a group list without changing the slider
+or originating pin. Only one popup is open at a time. Popups are portalled outside
+the scrolling content, into the enclosing modal's focus scope, and positioned within
+the viewport. Event coverage is limited
 to the data already loaded by Time Travel, including when exploring another server
-or a wider interval. Existing navigator clustering, severity colours, and hover
-titles are reused.
+or a wider interval. Existing event clustering, severity colours, summaries, and
+detail navigation are reused.
 
 ## Disable or remove the Sankey
 

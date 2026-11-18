@@ -460,6 +460,35 @@ describe('pinned activity exploration', () => {
     expect(within(dialog).getByRole('button', { name: 'Cluster change' })).toBeInTheDocument();
     expect(within(dialog).queryByRole('button', { name: 'Host two change' })).not.toBeInTheDocument();
   });
+  it('highlights event hover and replaces the current popup when another marker opens', () => {
+    const event = (id: string, seconds: number): OperationalEvent => ({
+      id, title: id, occurred_at: at(seconds), kind: 'ddl', category: 'changes', severity: 'info',
+      precision: 'exact', source: 'system.query_log', capability: 'query_log', hostname: 'ch-01',
+    });
+    const single = event('Single event', 30);
+    const viewDetails = vi.fn();
+    render(<ResourceExplorationModal data={fixture()} atMs={base + 30000} initialMode="cpu" onClose={() => {}}
+      events={[event('First group A', 10), event('First group B', 10.1), single, event('Second group A', 50), event('Second group B', 50.1)]}
+      onViewEventDetails={viewDetails} />);
+    const groups = screen.getAllByRole('button', { name: '2 events' });
+    const border = groups[0].style.border;
+    fireEvent.mouseEnter(groups[0]);
+    expect(groups[0].style.border).not.toBe(border);
+    expect(groups[0]).toHaveStyle({ cursor: 'pointer' });
+    fireEvent.click(groups[0]);
+    expect(screen.getByTestId('timeline-event-popover')).toHaveTextContent('First group A');
+    fireEvent.click(screen.getByRole('button', { name: 'Single event' }));
+    expect(screen.getAllByTestId('timeline-event-popover')).toHaveLength(1);
+    expect(screen.getByTestId('timeline-event-popover')).toHaveTextContent('Single event');
+    expect(screen.queryByText('First group A')).not.toBeInTheDocument();
+    fireEvent.click(screen.getByRole('button', { name: 'View details →' }));
+    expect(viewDetails).toHaveBeenCalledWith(single);
+    fireEvent.click(groups[1]);
+    expect(screen.getAllByTestId('timeline-event-popover')).toHaveLength(1);
+    expect(screen.getByTestId('timeline-event-popover')).toHaveTextContent('Second group A');
+    expect(screen.queryByRole('button', { name: 'Clear selected event' })).not.toBeInTheDocument();
+    expect(screen.getByRole('slider', { name: 'Exploration time' })).toHaveAttribute('aria-valuenow', String(base + 30000));
+  });
   it('opens query or merge details while preserving the exploration and expansion', () => {
     const data = fixture();
     data.merges = [{ ...query, table: 'db.merged', part_name: 'part-1', zoomSamples: undefined }];

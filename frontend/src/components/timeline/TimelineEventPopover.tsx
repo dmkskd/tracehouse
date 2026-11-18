@@ -33,7 +33,7 @@ export function TimelineEventPopover({ getAnchor, width, style, children }: {
       window.removeEventListener('resize', place);
       document.removeEventListener('scroll', place, true);
     };
-  }, [getAnchor, width]);
+  }, [getAnchor, width, position.anchor]);
   const { anchor, ...coordinates } = position;
   if (!anchor) return null;
   const target = anchor.closest('[role="dialog"][aria-modal="true"]') ?? document.body;

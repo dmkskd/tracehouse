@@ -61,12 +61,19 @@ export const TimelineEventOverlay: React.FC<TimelineEventOverlayProps> = ({
     return () => observer.disconnect();
   }, []);
 
+  const clusters = useMemo(
+    () => clusterTimelineEvents(events, rangeStartMs, rangeEndMs, overlayWidth, 72),
+    [events, rangeStartMs, rangeEndMs, overlayWidth],
+  );
+  const popupOpen = clusters.some(cluster => cluster.id === expandedClusterId)
+    || (selectedEventId != null && clusters.some(cluster => cluster.events.some(event => event.id === selectedEventId)));
   useEffect(() => {
-    if (!expandedClusterId && !selectedEventId) return;
+    if (!popupOpen) return;
     const onKeyDown = (event: KeyboardEvent) => {
       if (event.key !== 'Escape') return;
       event.preventDefault();  // consumed: the page's Escape-to-reset-zoom must not also fire
       if (consumeEscape) event.stopPropagation();
+      overlayRef.current?.querySelector<HTMLButtonElement>('button[aria-expanded="true"], button[aria-pressed="true"]')?.focus();
       if (expandedClusterId) {
         setExpandedClusterId(null);
         setActiveListEventId(null);
@@ -76,14 +83,8 @@ export const TimelineEventOverlay: React.FC<TimelineEventOverlayProps> = ({
     };
     document.addEventListener('keydown', onKeyDown, consumeEscape);
     return () => document.removeEventListener('keydown', onKeyDown, consumeEscape);
-  }, [expandedClusterId, selectedEventId, onClearEventSelection, consumeEscape]);
+  }, [expandedClusterId, popupOpen, onClearEventSelection, consumeEscape]);
 
-  const clusters = useMemo(
-    () => clusterTimelineEvents(events, rangeStartMs, rangeEndMs, overlayWidth, 72),
-    [events, rangeStartMs, rangeEndMs, overlayWidth],
-  );
-  const popupOpen = expandedClusterId !== null
-    || (selectedEventId != null && clusters.some(cluster => cluster.events.some(event => event.id === selectedEventId)));
   useEffect(() => { onPopupOpenChange?.(popupOpen); }, [popupOpen, onPopupOpenChange]);
   // Unmounting closes any popup
   useEffect(() => () => onPopupOpenChange?.(false), [onPopupOpenChange]);
@@ -146,6 +147,7 @@ export const TimelineEventOverlay: React.FC<TimelineEventOverlayProps> = ({
                 ? cluster.primaryEvent.title
                 : `${cluster.events.length} events`}
               aria-expanded={cluster.events.length > 1 ? expanded : undefined}
+              aria-pressed={cluster.events.length === 1 ? selected : undefined}
               onMouseDown={event => event.stopPropagation()}
               onMouseEnter={() => setHoveredClusterId(cluster.id)}
               onFocus={() => setHoveredClusterId(cluster.id)}
