@@ -10,6 +10,8 @@ export interface XRayWindowOptions {
   queryIdsSQL?: string;
   /** Earliest query start, including queries that started before the window. */
   identityStart?: string;
+  /** Attribution joins physical executions by local ID + host, without root rollup or SQL-text filtering. */
+  localExecutions?: boolean;
   hostname?: string | readonly string[];
 }
 
@@ -38,12 +40,12 @@ export function buildXRayWindowSamplesSQL(selection: SelectQueryXRaySourceInput,
   const identity = `SELECT
       hostName() AS hostname,
       l.query_id AS sample_query_id,
-      if(empty(any(l.initial_query_id)), sample_query_id, any(l.initial_query_id)) AS query_id,
+      ${opts.localExecutions ? 'sample_query_id' : 'if(empty(any(l.initial_query_id)), sample_query_id, any(l.initial_query_id))'} AS query_id,
       min(l.query_start_time_microseconds) AS query_start
     FROM {{cluster_aware:system.query_log}} AS l
     WHERE event_date >= toDate(${start}) - 1
       AND event_date <= toDate(${opts.end}) + 1
-      AND query NOT LIKE ${APP_SOURCE_LIKE}
+      ${opts.localExecutions ? '' : `AND query NOT LIKE ${APP_SOURCE_LIKE}`}
       ${opts.queryIdsSQL ? `AND (l.query_id IN (${opts.queryIdsSQL}) OR l.initial_query_id IN (${opts.queryIdsSQL}))` : ''}
       ${hostFilter}
     GROUP BY hostname, sample_query_id`;
@@ -63,7 +65,7 @@ export function buildXRayWindowSamplesSQL(selection: SelectQueryXRaySourceInput,
     INNER JOIN (${identity}) AS identity
       ON m.hostname = identity.hostname AND m.query_id = identity.sample_query_id
       AND m.event_time_microseconds >= identity.query_start` : `SELECT
-      if(empty(p.initial_query_id), p.query_id, p.initial_query_id) AS query_id,
+      ${opts.localExecutions ? 'p.query_id' : 'if(empty(p.initial_query_id), p.query_id, p.initial_query_id)'} AS query_id,
       p.query_id AS sample_query_id, hostName() AS hostname,
       sample_time, sample_time AS query_start, memory_usage,
       ${Object.entries(counters).map(([alias, event]) => `ProfileEvents['${event}'] AS ${alias}`).join(',\n      ')},
@@ -71,7 +73,7 @@ export function buildXRayWindowSamplesSQL(selection: SelectQueryXRaySourceInput,
     FROM {{cluster_aware:tracehouse.processes_history}} AS p
     WHERE sample_time >= ${opts.start} - INTERVAL 1 MINUTE
       AND sample_time <= ${opts.end}
-      AND query NOT LIKE ${APP_SOURCE_LIKE}
+      ${opts.localExecutions ? '' : `AND query NOT LIKE ${APP_SOURCE_LIKE}`}
       ${hostFilter}`;
   const delta = (name: string) => metricLog ? name : `greatest(toFloat64(${name}) - toFloat64(lagInFrame(${name}, 1, ${name}) OVER w), 0)`;
   return `SELECT * FROM (
