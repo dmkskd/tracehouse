@@ -172,10 +172,14 @@ describe('pinned activity exploration', () => {
     render(<TimelineChart data={original} metricMode="cpu" height={300} pinnedMs={base + 30000} hoverMs={null}
       onLoadResource={loader} onHover={() => {}} onPin={() => {}} zoomRange={null} onZoom={() => {}} highlightedItem={null} />);
     fireEvent.click(screen.getByRole('button', { name: 'Explore resource usage…' }));
-    expect(screen.getByText('Loading the pinned resource snapshot…')).toBeInTheDocument();
+    const loading = screen.getByRole('dialog', { name: 'Loading resource usage' });
+    expect(loading).toHaveTextContent('Server resources');
+    expect(loading).toHaveTextContent('Queries, merges, and mutations');
+    expect(loading).not.toHaveTextContent('Events');
     await act(async () => { finish({ data: sampled }); });
     const pin = screen.getByTestId('pinned-activity');
     const dialog = screen.getByRole('dialog', { name: 'Resource usage at the selected time' });
+    expect(within(pin).getByRole('note', { name: 'Zero resource contributions' }).closest('button')).toBeNull();
     expect(within(pin).getByRole('note', { name: 'Zero resource contributions' })).toHaveTextContent('INSERT · 1 operation · 0 cores (sampled)');
     expect(within(dialog).getByRole('note', { name: 'Zero resource contributions' })).toHaveTextContent('INSERT · 1 operation · 0 cores (sampled)');
     expect(dialog).toHaveTextContent('1 sampled · 1 estimated');
@@ -184,6 +188,43 @@ describe('pinned activity exploration', () => {
     fireEvent.click(screen.getByRole('button', { name: 'Explore resource usage…' }));
     expect(loader).toHaveBeenCalledTimes(1);
     expect(screen.getByRole('dialog')).toHaveTextContent('INSERT · 1 operation · 0 cores (sampled)');
+  });
+  it('allows closing the loading screen without reopening exploration when the request finishes', async () => {
+    const data = fixture();
+    let finish!: (result: { data: MemoryTimeline }) => void;
+    const loader = vi.fn(() => new Promise<{ data: MemoryTimeline }>(resolve => { finish = resolve; }));
+    render(<TimelineChart data={data} metricMode="cpu" height={300} pinnedMs={base+30000} hoverMs={null}
+      onLoadResource={loader} onHover={() => {}} onPin={() => {}} zoomRange={null} onZoom={() => {}} highlightedItem={null} />);
+    fireEvent.click(screen.getByRole('button', { name: 'Explore resource usage…' }));
+    fireEvent.click(screen.getByRole('button', { name: 'Close loading resource usage' }));
+    expect(screen.queryByRole('dialog')).not.toBeInTheDocument();
+    await act(async () => finish({ data }));
+    expect(screen.queryByRole('dialog')).not.toBeInTheDocument();
+  });
+  it('shows the shared loading modal during a slow resource reload and removes it when complete', async () => {
+    const data = fixture();
+    let finish!: (result: { data: MemoryTimeline }) => void;
+    const loader = vi.fn(() => new Promise<{ data: MemoryTimeline }>(resolve => { finish = resolve; }));
+    render(<ResourceExplorationModal data={data} atMs={base+30000} initialMode="cpu" initialDataLoaded onLoadResource={loader} onClose={() => {}} />);
+    fireEvent.change(screen.getByRole('combobox', { name: 'Resource' }), { target: { value: 'memory' } });
+    expect(screen.queryByRole('dialog', { name: 'Loading resource usage' })).not.toBeInTheDocument();
+    const loading = await screen.findByRole('dialog', { name: 'Loading resource usage' }, { timeout: 1600 });
+    expect(within(loading).getByRole('status')).toBeInTheDocument();
+    expect(loading).toHaveTextContent('Calculating resource usage');
+    await act(async () => finish({ data }));
+    expect(screen.queryByRole('dialog', { name: 'Loading resource usage' })).not.toBeInTheDocument();
+    expect(screen.getByRole('dialog', { name: 'Resource usage at the selected time' })).toHaveTextContent('800 B');
+  });
+  it('summarizes unplotted operations with recorded-resource wording and collapsed per-type counts', () => {
+    const data = fixture();
+    data.queries = [{ ...query, zoomSamples: [{ ms: base+30000, cpu_cores: 0, memory: 10, net_rate: 0, disk_rate: 0 }] }];
+    render(<ResourceExplorationModal data={data} atMs={base+30000} initialMode="cpu" onClose={() => {}} />);
+    const note = screen.getByRole('note', { name: 'Zero resource contributions' });
+    expect(note).toHaveTextContent('No CPU usage recorded · 1 operation');
+    expect(note.querySelector('details')).not.toHaveAttribute('open');
+    fireEvent.click(within(note).getByText('No CPU usage recorded · 1 operation'));
+    expect(note).toHaveTextContent('They are counted but have no visible flow.');
+    expect(note).not.toHaveTextContent('Zero attributed');
   });
   it('uses exact pin-time membership, matching Operations even when a nearby bucket contains short queries', () => {
     const data = fixture();
@@ -395,7 +436,9 @@ describe('pinned activity exploration', () => {
     expect(screen.getAllByTestId('failed-resource-preview')).toHaveLength(2);
     preview.unmount();
     render(<ResourceExplorationModal data={data} atMs={base + 30000} initialMode="cpu" onClose={() => {}} />);
-    expect(screen.getByText(/Hatched: failed outcome/)).toHaveTextContent('2 operations');
+    expect(screen.getByText('Failed operations · 2')).toBeInTheDocument();
+    fireEvent.click(screen.getByRole('button', { name: 'Failed operations explanation' }));
+    expect(screen.getByText('Red stripes show resource usage from operations that ended with an error.')).toBeInTheDocument();
     expect(screen.getAllByTestId('failed-resource-flow')).toHaveLength(4);
     // The SELECT table mixes 2 failed cores with 1 successful core: only 2 are hatched.
     const sourceHatches = document.querySelectorAll('rect[x="12"][fill^="url("]');

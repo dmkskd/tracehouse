@@ -1,4 +1,13 @@
+import { css } from '@emotion/css';
 import type { TimelineAttribution, ResourceAttributionSummary } from '@tracehouse/core';
+
+const style = css`
+  font-size: 11px; color: var(--text-secondary); line-height: 1.6;
+  summary { cursor: pointer; padding: 3px 0; }
+  summary:focus-visible { outline: 2px solid #58a6ff; outline-offset: 3px; border-radius: 3px; }
+  .zero-resource-body { padding: 6px 0 4px 14px; }
+  .zero-resource-body p { margin: 0 0 5px; max-width: 440px; }
+`;
 
 /** Zero-width flows cannot be drawn; keep their operation membership visible without inventing usage. */
 export function ZeroResourceActivity({ attribution, formattedZero, summary }: { attribution: TimelineAttribution; formattedZero: string; summary?: ResourceAttributionSummary }) {
@@ -14,8 +23,15 @@ export function ZeroResourceActivity({ attribution, formattedZero, summary }: { 
     }
   }
   if (!groups.length) return null;
-  return <div role="note" aria-label="Zero resource contributions" style={{ marginTop: 8, fontSize: 10, color: 'var(--text-muted)', lineHeight: 1.6 }}>
-    <div>{attribution.selection.kind === 'instant' ? 'Active with zero attributed usage' : 'Zero attributed work in this range'}</div>
-    {groups.map(group => <div key={group.activity}>{group.activity} · {group.count} {group.count === 1 ? 'operation' : 'operations'} · {formattedZero}{group.basis ? ` (${group.basis})` : ''}</div>)}
+  const count = groups.reduce((sum,group) => sum+group.count,0);
+  const resource = attribution.mode === 'cpu' ? attribution.selection.kind === 'range' ? 'CPU time' : 'CPU usage'
+    : attribution.mode === 'memory' ? 'memory' : attribution.mode === 'disk' ? 'disk I/O' : 'network traffic';
+  return <div role="note" aria-label="Zero resource contributions" className={style}>
+    <details><summary>No {resource} recorded · {count.toLocaleString()} {count === 1 ? 'operation' : 'operations'}</summary>
+      <div className="zero-resource-body">
+        <p>The available data gives these operations a {resource} value of 0 for the selected time. They are counted but have no visible flow.</p>
+        {groups.map(group => <div key={group.activity}>{group.activity} · {group.count.toLocaleString()} {group.count === 1 ? 'operation' : 'operations'}{attribution.selection.kind === 'instant' ? ` · ${formattedZero}` : ''}{group.basis ? ` (${group.basis})` : ''}</div>)}
+      </div>
+    </details>
   </div>;
 }

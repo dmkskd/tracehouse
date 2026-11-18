@@ -1,17 +1,19 @@
 import { useEffect, useId, useRef } from 'react';
 import type { MetricMode } from '../timeline-constants';
 import { buildResourceFlowLayout, resourceRibbon as ribbon, type ResourceFlowSelection } from './resource-flow-layout';
+import { ResourceFailureLegend } from './ResourceFailureLegend';
 import { flowGroupCount, flowGroupKind, flowGroupFailedCount, type ResourceFlowGroup } from './resource-exploration-model';
 
 export type { ResourceFlowSelection } from './resource-flow-layout';
 
 /** Preserve readable columns; reveal the selected table's operations without scaling the whole graph down. */
-export function ResourceAttributionFlow({ groups, mode, selection, onSelect, format, scaleReference, selectionKind = 'instant', groupBy = 'activity', operationLimit = 5, onShowMoreTables, onShowMoreOperations, detailsLoading = false, onShowMoreActivities }: {
+export function ResourceAttributionFlow({ groups, mode, selection, onSelect, format, scaleReference, selectionKind = 'instant', groupBy = 'activity', operationLimit = 5, onShowMoreTables, onShowMoreOperations, detailsLoading = false, onShowMoreActivities, showFailureLegend = true }: {
   groupBy?: 'activity' | 'table';
   operationLimit?: number;
   onShowMoreTables?: (primaryId: string) => void;
   onShowMoreOperations?: (groupId: string) => void;
   detailsLoading?: boolean;
+  showFailureLegend?: boolean;
   onShowMoreActivities?: (nextLimit: number) => void;
   selectionKind?: 'instant' | 'range'; scaleReference: number; groups: ResourceFlowGroup[]; mode: MetricMode; selection: ResourceFlowSelection | null;
   onSelect: (selection: ResourceFlowSelection | null) => void; format: (value: number, mode: MetricMode) => string;
@@ -34,7 +36,7 @@ export function ResourceAttributionFlow({ groups, mode, selection, onSelect, for
   const hatch = (x1: number, y1: number, x2: number, y2: number, h: number) => h > 0
     ? <path d={ribbon(x1, y1, x2, y2, h)} fill={`url(#${failurePattern})`} data-testid="failed-resource-flow" /> : null;
   return <div className="flow">
-    {failedCount > 0 && <div className="muted" style={{ margin: '6px 12px' }}>▨ Hatched: failed outcome · {failedCount} {failedCount === 1 ? 'operation' : 'operations'}</div>}
+    {showFailureLegend && <ResourceFailureLegend count={failedCount} />}
     {(expanded || primaryExpanded) && <div className="heading flow-navigation" style={{ justifyContent: 'flex-end' }}>
       <button type="button" className="resource-action" aria-label={expanded ? `Collapse ${flowGroupKind(expanded) === 'query' ? 'queries' : 'operations'}` : 'Collapse table'}
         onClick={() => onSelect(expanded ? { primaryId: expanded.primaryId } : null)}>Collapse</button>

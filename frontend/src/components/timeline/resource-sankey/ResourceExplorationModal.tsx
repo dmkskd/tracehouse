@@ -12,11 +12,13 @@ import { segmentsStyle } from '../TimeTravelSegments.styles';
 import { controlsStyle } from '../TimeTravelControls.styles';
 import { ResourceInfoPopover } from './ResourceInfoPopover';
 import { ZeroResourceActivity } from './ZeroResourceActivity';
+import { ResourceFailureLegend } from './ResourceFailureLegend';
+import { ResourceLoading } from './ResourceLoading';
 import { ResourceTimeSelection } from './ResourceTimeSelection';
 import { useResourceOperations } from './useResourceOperations';
 import { useResourceData } from './useResourceData';
 import { ResourceAttributionFlow, type ResourceFlowSelection } from './ResourceAttributionFlow';
-import { explorationServerSeries, attributionConsumers, resourceConsumers, groupResourceFlow, summaryResourceFlow, applyResourceSummary, type ResourceLoadResult, type ResourceDataLoader, type ResourceOperationOpen } from './resource-exploration-model';
+import { explorationServerSeries, attributionConsumers, resourceConsumers, groupResourceFlow, summaryResourceFlow, applyResourceSummary, flowGroupFailedCount, type ResourceLoadResult, type ResourceDataLoader, type ResourceOperationOpen } from './resource-exploration-model';
 
 const styles = css`
   padding: 16px; overflow: auto; color: var(--text-primary); font-size: 12px;
@@ -45,6 +47,7 @@ const styles = css`
   .time-toolbar { display: grid; grid-template-columns: minmax(0, 1fr) auto; align-items: center; gap: 12px; margin: 8px 0 6px; }
   .time-selection-keyboard { position: absolute; inset: 0; pointer-events: none; border-radius: 8px; }
   .time-selection-keyboard:focus-visible { outline: 2px solid #58a6ff; outline-offset: 3px; }
+  .resource-notes { display: flex; flex-wrap: wrap; align-items: flex-start; column-gap: 20px; row-gap: 5px; margin: 8px 0; font-size: 11px; color: var(--text-secondary); }
   .notice { margin: 12px 0; padding: 10px; background: var(--bg-tertiary); line-height: 1.6; }
   .flow-viewport { overflow-x: auto; overscroll-behavior-x: contain; scrollbar-gutter: stable; }
   .flow-navigation { margin: 12px 0 8px; }
@@ -150,7 +153,8 @@ export function ResourceExplorationModal({ data, atMs, initialMode, hiddenCatego
     setSelected(selection);
     if (consumer && onOpenOperation) onOpenOperation(consumer.kind, consumer.source);
   };
-  return <ModalWrapper isOpen onClose={onClose} maxWidth={1100} height="85vh" ariaLabel="Resource usage at the selected time">
+  return <>
+  <ModalWrapper isOpen onClose={onClose} maxWidth={1100} height="85vh" ariaLabel="Resource usage at the selected time">
     <div className={styles}>
       <div className="heading modal-heading"><h2>Resource usage</h2>
         <div className="muted origin">Pinned {new Date(atMs).toLocaleString()} · {hostLabel || `${originalData.host_count} server${originalData.host_count === 1 ? '' : 's'}`}</div>
@@ -241,16 +245,21 @@ export function ResourceExplorationModal({ data, atMs, initialMode, hiddenCatego
           </div>}
         </div>
       </div>
-      {selectionMode === 'range' && measured.value !== null && measured.coverageMs < selectionSpan * .95 && <div className="muted">Server measurement coverage: {((measured.coverageMs / selectionSpan) * 100).toFixed(1)}% of the selected time.</div>}
-      {selectionMode === 'range' && missingMemory > 0 && <div className="muted" role="status">Partial memory coverage: {missingMemory} operations have unsampled intervals. Occupancy and peak include observed samples only.</div>}
-      {!loading && !loadError && <ZeroResourceActivity summary={summary ? { ...summary, groups: summary.groups.filter(group => !hiddenCategories?.has(group.kind)) } : undefined} attribution={attribution} formattedZero={fmt(0, mode)} />}
+      {!loading && !loadError && <div className="resource-notes">
+        {selectionMode === 'range' && measured.value !== null && measured.coverageMs < selectionSpan*.95 && <span style={{ padding: '3px 0' }}>Server data available for {((measured.coverageMs/selectionSpan)*100).toFixed(1)}% of the selected time</span>}
+        {selectionMode === 'range' && missingMemory > 0 && <span style={{ padding: '3px 0' }}>Memory samples unavailable for {missingMemory.toLocaleString()} operations</span>}
+        <ZeroResourceActivity summary={summary ? { ...summary, groups: summary.groups.filter(group => !hiddenCategories?.has(group.kind)) } : undefined} attribution={attribution} formattedZero={fmt(0, mode)} />
+        <ResourceFailureLegend count={tableGroups.reduce((sum,group) => sum+flowGroupFailedCount(group),0)} />
+      </div>}
       {details.loading && <div role="status" className="muted">Loading operation details…</div>}
       {details.error && <div role="alert" className="notice">{details.error} <button className="resource-action" onClick={details.retry}>Retry details</button></div>}
       {!loading && !loadError && (tableGroups.length > 0 ? <>
-        <ResourceAttributionFlow groupBy={groupBy} operationLimit={operationLimit} selectionKind={selectionMode} scaleReference={flowScaleReference} groups={tableGroups} mode={mode} detailsLoading={details.loading} onShowMoreActivities={setActivityLimit}
+        <ResourceAttributionFlow showFailureLegend={false} groupBy={groupBy} operationLimit={operationLimit} selectionKind={selectionMode} scaleReference={flowScaleReference} groups={tableGroups} mode={mode} detailsLoading={details.loading} onShowMoreActivities={setActivityLimit}
           onShowMoreTables={(primaryId) => { const key = groupBy === 'table' ? '*' : primaryId; setTableLimit(previous => ({ ...previous, [key]: (previous[key] ?? 5)+5 })); }}
           onShowMoreOperations={(groupId) => setOperationLimits(previous => ({ ...previous, [groupId]: (previous[groupId] ?? 5)+5 }))} selection={selected} onSelect={selectFlow} format={flowFormat} />
       </> : <div className="notice">{mode === 'memory' && missingMemory > 0 ? 'Concurrent memory attribution is unavailable at this time. Choose a time with operation samples.' : 'No contributing operations at this time.'}</div>)}
     </div>
-  </ModalWrapper>;
+  </ModalWrapper>
+  {loading && <ResourceLoading onClose={onClose} delayMs={1000} />}
+  </>;
 }

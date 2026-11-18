@@ -79,9 +79,10 @@ export function PinnedResourcePreview({ data, atMs, mode, width, hiddenCategorie
         })}
         <text x={4} y={H - 10}>{fmt(total)}</text>
       </svg> : <div style={{ padding: '18px 8px', color: 'var(--text-muted)', fontSize: 11, lineHeight: 1.6 }}>{mode === 'memory' && missingMemory ? 'Concurrent memory samples are not loaded. Open exploration to load available history.' : attribution.coverage.active > 0 ? 'Active operations have no positive attributed usage at this instant.' : 'No loaded operations active at this time.'}</div>}
-      <ZeroResourceActivity summary={summary ? { ...summary, groups: summary.groups.filter(group => !hiddenCategories?.has(group.kind)) } : undefined} attribution={attribution} formattedZero={fmt(0)} />
+
       <div className="explore-hint" style={{ marginTop: 4, color: '#58a6ff', fontSize: 11 }}>Click the diagram to explore tables and queries →</div>
     </button>
+    <ZeroResourceActivity summary={summary ? { ...summary, groups: summary.groups.filter(group => !hiddenCategories?.has(group.kind)) } : undefined} attribution={attribution} formattedZero={fmt(0)} />
     <div style={{ marginTop: 8, color: 'var(--text-muted)', fontSize: 9, lineHeight: 1.5 }}>{sampled} sampled · {attribution.coverage.estimated} estimated contributions{missingMemory ? ` · ${missingMemory} without memory samples` : ''}. {summary ? 'All matching operations. One-second snapshot.' : 'Loaded operations only.'}{(summary ? summary.groups.some(group => !hiddenCategories?.has(group.kind) && group.failureValue > 0) : consumers.some(c => c.failureCode)) ? ' Hatching marks failed outcomes.' : ''}</div>
   </>;
 }

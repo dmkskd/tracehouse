@@ -3,6 +3,7 @@ import type { MemoryTimeline, OperationKind, OperationalEvent } from '@tracehous
 import { ModalWrapper } from '../../shared/ModalWrapper';
 import type { MetricMode } from '../timeline-constants';
 import { PinnedResourcePreview } from './PinnedResourcePreview';
+import { ResourceLoading } from './ResourceLoading';
 import { ResourceExplorationModal } from './ResourceExplorationModal';
 import type { ResourceDataLoader, ResourceOperationOpen } from './resource-exploration-model';
 import { useResourceData } from './useResourceData';
@@ -38,11 +39,10 @@ export function PinnedResourceActivity({ data, atMs, mode, width, hiddenCategori
     {resource.loading && <div role="status" style={{ fontSize: 10, color: 'var(--text-muted)', marginTop: 6 }}>Loading interval samples…</div>}
     {resource.samplingWarning && <div style={{ fontSize: 10, color: 'var(--text-muted)', marginTop: 6 }}>{resource.samplingWarning}</div>}
     {resource.loadError && <div role="alert" style={{ fontSize: 10, marginTop: 6 }}>Could not load interval samples. Open exploration to retry.</div>}
-    {exploring && (resource.loading || resource.loadError ? <ModalWrapper isOpen onClose={close} maxWidth={1100} height="85vh" ariaLabel="Resource usage at the selected time">
+    {exploring && (resource.loading ? <ResourceLoading onClose={close} /> : resource.loadError ? <ModalWrapper isOpen onClose={close} maxWidth={1100} height="85vh" ariaLabel="Resource usage at the selected time">
       <div style={{ padding: 16 }}>
         <button onClick={close} aria-label="Close resource exploration" style={{ float: 'right', cursor: 'pointer' }}>×</button>
-        {resource.loadError ? <><p role="alert">Could not load resource samples: {resource.loadError}</p><button onClick={resource.retry}>Retry</button></>
-          : <p role="status">Loading the pinned resource snapshot…</p>}
+        <p role="alert">Could not load resource samples: {resource.loadError}</p><button onClick={resource.retry}>Retry</button>
       </div>
     </ModalWrapper> : <ResourceExplorationModal data={resource.source} atMs={atMs} initialMode={mode} hostLabel={hostLabel}
       availableHosts={availableHosts} initialHosts={originHosts} events={events} onViewEventDetails={onViewEventDetails} hiddenCategories={hiddenCategories} onLoadResource={onLoadResource} onOpenOperation={onOpenOperation}
