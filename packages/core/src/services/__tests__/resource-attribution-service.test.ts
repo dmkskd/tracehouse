@@ -41,6 +41,18 @@ describe('resource aggregation request boundaries', () => {
     expect(result.warnings).toHaveLength(1);
     expect(result.warnings[0]).toContain('execution averages');
   });
+  it('narrows detail identities without recursive population scans and skips unrelated source kinds', () => {
+    const sampleSelection = { availability: { processesHistory: false, queryMetricLog: true } };
+    const sql = buildResourceAttributionSQL({ ...request, sampleSelection, details: { groups: [{ kind: 'query', activity: 'SELECT', tables: ['db.table'], tableState: 'recorded' }], limit: 5 } });
+    expect(sql).toContain("AND ((upper(toString(query_kind))='SELECT' AND arraySort(arrayDistinct(tables))=['db.table']))");
+    expect(sql).toContain('AS active_ms FROM (SELECT * FROM operations WHERE');
+    expect(sql.match(/FROM operations\b/g)).toHaveLength(1);
+    expect(sql).not.toContain('system.part_log');
+    const parts = buildResourceAttributionSQL({ ...request, sampleSelection, details: { groups: [{ kind: 'merge', activity: 'MERGE', tables: ['db.table'], tableState: 'recorded' }], limit: 5 } });
+    expect(parts).not.toContain('system.query_log');
+    expect(parts).not.toContain('system.query_metric_log');
+    expect(parts).toContain('system.part_log');
+  });
   it('propagates query and transport errors instead of reporting a partial total', async () => {
     const executeQuery = vi.fn().mockRejectedValue(new Error('NO_COMMON_TYPE'));
     const service = new ResourceAttributionService({ executeQuery } as IClickHouseAdapter);

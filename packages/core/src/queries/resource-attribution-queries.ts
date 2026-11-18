@@ -146,8 +146,10 @@ export function buildResourceAttributionSQL(options: ResourceAggregationSQLReque
     countIf(attributed_value IS NULL) AS unavailable_count,countIf(attributed_value=0) AS zero_count,
     sum(sampled_ms) AS sampled_ms,sum(estimated_ms) AS estimated_ms,sum(missing_ms) AS missing_ms
     FROM evaluated GROUP BY snapshot_ms,kind,activity,tables,table_state ORDER BY snapshot_ms,kind,activity,tables,table_state`;
+  const loggedSources = [...(queriesEnabled ? [queryOps] : []), ...(partsEnabled ? [partOps] : [])];
+  if (!loggedSources.length) loggedSources.push(`${queryOps} AND 0`);
   return `WITH toInt64(${startMs}) AS window_start_ms,toInt64(${endMs}) AS window_end_ms,toUnixTimestamp64Milli(now64(3)) AS now_ms,
-    logged AS (${[...(queriesEnabled ? [queryOps] : []), ...(partsEnabled ? [partOps] : [])].map(sql => `SELECT ${columns} FROM (${sql})`).join(' UNION ALL ')}),
+    logged AS (${loggedSources.map(sql => `SELECT ${columns} FROM (${sql})`).join(' UNION ALL ')}),
     operations AS (SELECT * FROM (SELECT * FROM logged${options.includeRunning ? [...(queriesEnabled ? [runningQueries] : []), ...(partsEnabled ? [runningParts] : [])].map(sql => ` UNION ALL SELECT ${columns} FROM (${sql})`).join('') : ''})
       ${options.includeRunning ? 'QUALIFY is_running=0 OR countIf(is_running=0) OVER (PARTITION BY kind,hostname,local_id)=0' : ''}),
     ${source ? `query_samples AS (${raw}),` : ''}

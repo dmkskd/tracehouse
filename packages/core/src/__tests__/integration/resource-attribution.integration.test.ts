@@ -109,6 +109,21 @@ describe('whole-population resource attribution', () => {
     const network = await service.getSnapshots({ ...request, mode: 'network' });
     expect(resourceSnapshotAt(network,startMs+1000).groups[0].value).toBe(25000);
   });
+  it('keeps detail values equal to unfiltered attribution after narrowing metric-log identities', async () => {
+    const metricSource = { availability: { processesHistory: false, queryMetricLog: true } };
+    for (const mode of ['cpu', 'memory'] as const) {
+      const summary = await service.getRange({ ...request, mode, sampleSelection: metricSource });
+      const details = await service.getDetails({ mode, sampleSelection: metricSource, selection: summary.selection, groups: summary.groups, limit: 1000 });
+      expect(details.operations.reduce((sum,op) => sum+(op.value ?? 0),0)).toBeCloseTo(summary.groups[0].value);
+      const window = await service.getSnapshots({ ...request, mode, sampleSelection: metricSource });
+      const instant = resourceSnapshotAt(window,startMs+1000);
+      const instantDetails = await service.getDetails({ mode, sampleSelection: metricSource, selection: instant.selection, groups: instant.groups, limit: 1000 });
+      expect(instantDetails.operations.reduce((sum,op) => sum+(op.value ?? 0),0)).toBeCloseTo(instant.groups[0].value);
+      const wrongTable = await service.getDetails({ mode, sampleSelection: metricSource, selection: summary.selection,
+        groups: [{ ...summary.groups[0], tables: ['db.other'] }], limit: 5 });
+      expect(wrongTable.operations).toEqual([]);
+    }
+  });
 
   it('supports live-source unions without duplicating completed executions', async () => {
     const summary = await service.getRange({ ...request, includeRunning: true });
