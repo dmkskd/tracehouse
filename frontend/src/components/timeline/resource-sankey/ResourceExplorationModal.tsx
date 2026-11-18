@@ -24,6 +24,9 @@ const styles = css`
   padding: 16px; display: flex; flex-direction: column; flex: 1; min-height: 0; overflow: hidden; color: var(--text-primary); font-size: 12px;
   .resource-header { flex: 0 0 auto; position: relative; z-index: 1; padding-bottom: 8px; border-bottom: 1px solid var(--border-primary); }
   .resource-body { flex: 1; min-height: 0; overflow: auto; overscroll-behavior: contain; scrollbar-gutter: stable; }
+  .resource-body-frame { position: relative; display: flex; flex-direction: column; flex: 1; min-height: 0; }
+  .resource-flow-tools { position: absolute; top: 6px; right: 16px; z-index: 2; pointer-events: none; }
+  .resource-flow-tools > * { pointer-events: auto; background: var(--bg-secondary); border-radius: 5px; }
   .resource-action, .resource-select { font: inherit; color: var(--text-primary); background: var(--bg-tertiary); border: 1px solid var(--border-primary); border-radius: 4px; padding: 6px 10px; }
   .resource-action { cursor: pointer; }
   button:focus-visible, select:focus-visible, input:focus-visible, [role=button]:focus-visible { outline: 2px solid #58a6ff; outline-offset: 2px; }
@@ -55,7 +58,6 @@ const styles = css`
   .resource-notes { display: flex; flex-wrap: wrap; align-items: flex-start; column-gap: 20px; row-gap: 5px; margin: 8px 0; font-size: 11px; color: var(--text-secondary); }
   .notice { margin: 12px 0; padding: 10px; background: var(--bg-tertiary); line-height: 1.6; }
   .flow-viewport { overflow-x: auto; overscroll-behavior-x: contain; scrollbar-gutter: stable; }
-  .flow-navigation { margin: 12px 0 8px; }
   .flow svg { height: auto; display: block; max-width: none; }
   .flow text { fill: var(--text-primary); font-size: 12px; }
   .flow .value { fill: var(--text-muted); font-size: 11px; }
@@ -77,6 +79,7 @@ export function ResourceExplorationModal({ data, atMs, initialMode, hiddenCatego
 }) {
   const [mode, setMode] = useState(initialMode);
   const [fullscreen, setFullscreen] = useState(false);
+  const [flowToolbar, setFlowToolbar] = useState<HTMLDivElement | null>(null);
   const [groupBy, setGroupBy] = useState<'activity' | 'table'>('activity');
   const [operationLimits, setOperationLimits] = useState<Record<string, number>>({});
   const [activityLimit, setActivityLimit] = useState<number>();
@@ -106,6 +109,7 @@ export function ResourceExplorationModal({ data, atMs, initialMode, hiddenCatego
 
   const [selected, setSelected] = useState<ResourceFlowSelection | null>(null);
   const closeButton = useRef<HTMLButtonElement>(null);
+  const breakdownViewport = useRef<HTMLDivElement>(null);
   useEffect(() => {
     closeButton.current?.focus();
   }, []);
@@ -265,7 +269,9 @@ export function ResourceExplorationModal({ data, atMs, initialMode, hiddenCatego
         </div>
       </div>
       </div>
-      <div className="resource-body" role="region" aria-label="Resource usage breakdown" tabIndex={0}>
+      <div className="resource-body-frame">
+      <div className="resource-flow-tools" ref={setFlowToolbar} />
+      <div ref={breakdownViewport} className="resource-body" role="region" aria-label="Resource usage breakdown" tabIndex={0}>
       {!loading && !loadError && <div className="resource-notes">
         {selectionMode === 'range' && measured.value !== null && measured.coverageMs < selectionSpan*.95 && <span style={{ padding: '3px 0' }}>Server data available for {((measured.coverageMs/selectionSpan)*100).toFixed(1)}% of the selected time</span>}
         {selectionMode === 'range' && missingMemory > 0 && <span style={{ padding: '3px 0' }}>Memory samples unavailable for {missingMemory.toLocaleString()} operations</span>}
@@ -275,10 +281,11 @@ export function ResourceExplorationModal({ data, atMs, initialMode, hiddenCatego
       {details.loading && <div role="status" className="muted">Loading operation details…</div>}
       {details.error && <div role="alert" className="notice">{details.error} <button className="resource-action" onClick={details.retry}>Retry details</button></div>}
       {!loading && !loadError && (tableGroups.length > 0 ? <>
-        <ResourceAttributionFlow showFailureLegend={false} groupBy={groupBy} operationLimit={operationLimit} selectionKind={selectionMode} scaleReference={flowScaleReference} groups={tableGroups} mode={mode} detailsLoading={details.loading} onShowMoreActivities={setActivityLimit}
+        <ResourceAttributionFlow toolbarTarget={flowToolbar} verticalViewport={breakdownViewport} showFailureLegend={false} groupBy={groupBy} operationLimit={operationLimit} selectionKind={selectionMode} scaleReference={flowScaleReference} groups={tableGroups} mode={mode} detailsLoading={details.loading} onShowMoreActivities={setActivityLimit}
           onShowMoreTables={(primaryId) => { const key = groupBy === 'table' ? '*' : primaryId; setTableLimit(previous => ({ ...previous, [key]: (previous[key] ?? 5)+5 })); }}
           onShowMoreOperations={(groupId) => setOperationLimits(previous => ({ ...previous, [groupId]: (previous[groupId] ?? 5)+5 }))} selection={selected} onSelect={selectFlow} format={flowFormat} />
       </> : <div className="notice">{mode === 'memory' && missingMemory > 0 ? 'Concurrent memory attribution is unavailable at this time. Choose a time with operation samples.' : 'No contributing operations at this time.'}</div>)}
+      </div>
       </div>
     </div>
   </ModalWrapper>

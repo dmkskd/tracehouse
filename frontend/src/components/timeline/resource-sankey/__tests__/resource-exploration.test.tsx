@@ -35,6 +35,34 @@ beforeAll(() => {
 });
 
 describe('resource exploration accounting', () => {
+  it('zooms the diagram and pans by dragging without expanding a branch', () => {
+    render(<ResourceExplorationModal data={fixture()} atMs={base + 30000} initialMode="cpu" onClose={vi.fn()} />);
+    const flow = screen.getByRole('region', { name: 'Resource attribution flow' });
+    const svg = within(flow).getByRole('img');
+    fireEvent.click(screen.getByRole('button', { name: 'Zoom in Sankey' }));
+    expect(svg.style.minWidth).toBe('125%');
+    fireEvent.click(screen.getByRole('button', { name: 'Zoom out Sankey' }));
+    expect(svg.style.minWidth).toBe('100%');
+    fireEvent.click(screen.getByRole('button', { name: 'Zoom out Sankey' }));
+    expect(svg.style.minWidth).toBe('75%');
+    fireEvent.click(screen.getByRole('button', { name: 'Reset Sankey zoom' }));
+    expect(svg.style.minWidth).toBe('100%');
+    const body = screen.getByRole('region', { name: 'Resource usage breakdown' });
+    expect(body).not.toContainElement(screen.getByRole('group', { name: 'Sankey zoom' }));
+    flow.scrollLeft = 100; body.scrollTop = 100;
+    const branch = within(flow).getByRole('button', { name: /Expand default.events/ });
+    fireEvent.pointerDown(branch, { button: 0, clientX: 100, clientY: 100 });
+    fireEvent.pointerMove(flow, { clientX: 70, clientY: 60 });
+    fireEvent.pointerUp(flow);
+    fireEvent.click(branch, { detail: 1 });
+    expect(flow.scrollLeft).toBe(130);
+    expect(body.scrollTop).toBe(140);
+    expect(branch).toHaveAttribute('aria-expanded', 'false');
+    fireEvent.pointerDown(branch, { button: 0, clientX: 100, clientY: 100 });
+    fireEvent.pointerUp(branch);
+    fireEvent.click(branch, { detail: 1 });
+    expect(branch).toHaveAttribute('aria-expanded', 'true');
+  });
   it('toggles viewport fullscreen with the header button and F without intercepting input keys', () => {
     render(<ResourceExplorationModal data={fixture()} atMs={base + 30000} initialMode="cpu" onClose={vi.fn()} />);
     const close = screen.getByRole('button', { name: 'Close resource exploration' });
@@ -256,10 +284,10 @@ describe('pinned activity exploration', () => {
   it('expands a table into queries and requests smooth horizontal scrolling', async () => {
     render(<ResourceExplorationModal data={fixture()} atMs={base + 30000} initialMode="cpu" onClose={() => {}} />);
     fireEvent.click(screen.getByRole('button', { name: 'Expand default.events in SELECT' }));
-    expect(screen.getByRole('button', { name: 'Collapse queries' })).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Hide queries' })).toBeInTheDocument();
     expect(screen.getByText('Queries / operations')).toBeInTheDocument();
     await waitFor(() => expect(HTMLElement.prototype.scrollTo).toHaveBeenCalledWith(expect.objectContaining({ behavior: 'smooth' })));
-    fireEvent.click(screen.getByRole('button', { name: 'Collapse queries' }));
+    fireEvent.click(screen.getByRole('button', { name: 'Hide queries' }));
     expect(screen.queryByText('Queries / operations')).not.toBeInTheDocument();
   });
   it('ranks tables by combined activity usage and expands through types to operation details', () => {
@@ -284,7 +312,7 @@ describe('pinned activity exploration', () => {
     fireEvent.click(screen.getByRole('button', { name: 'Expand SELECT in default.events' }));
     fireEvent.click(screen.getByRole('button', { name: /Open operation sampled-quer/ }));
     expect(open).toHaveBeenLastCalledWith('query', data.queries[0]);
-    fireEvent.click(screen.getByRole('button', { name: 'Collapse queries' }));
+    fireEvent.click(screen.getByRole('button', { name: 'Hide queries' }));
     fireEvent.click(screen.getByRole('button', { name: 'Expand MERGE in default.events' }));
     fireEvent.click(screen.getByRole('button', { name: /Open operation default.events/ }));
     expect(open).toHaveBeenLastCalledWith('merge', data.merges[0]);
@@ -320,7 +348,7 @@ describe('pinned activity exploration', () => {
     expect(screen.getAllByRole('button', { name: /^Open operation q-/ })).toHaveLength(12);
     expect(screen.queryByText(/^[0-9]+ other operations$/)).not.toBeInTheDocument();
     expect(screen.getByTestId('resource-flow-total')).toHaveAttribute('height', height!);
-    expect(screen.getByRole('button', { name: 'Collapse queries' })).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Hide queries' })).toBeInTheDocument();
   });
   it('reveals only five more tables and preserves totals', () => {
     const data = fixture();
@@ -626,7 +654,7 @@ describe('pinned activity exploration', () => {
     fireEvent.click(screen.getByRole('button', { name: 'Expand default.events in SELECT' }));
     fireEvent.click(screen.getByRole('button', { name: /Open operation sampled-quer/ }));
     expect(close).not.toHaveBeenCalled();
-    expect(screen.getByRole('button', { name: 'Collapse queries' })).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Hide queries' })).toBeInTheDocument();
     expect(open).toHaveBeenLastCalledWith('query', data.queries[0]);
     fireEvent.click(screen.getByRole('button', { name: 'Expand db.merged in MERGE' }));
     fireEvent.click(screen.getByRole('button', { name: /Open operation db.merged/ }));
