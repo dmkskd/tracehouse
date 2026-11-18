@@ -21,7 +21,9 @@ import { ResourceAttributionFlow, type ResourceFlowSelection } from './ResourceA
 import { explorationServerSeries, attributionConsumers, resourceConsumers, groupResourceFlow, summaryResourceFlow, applyResourceSummary, flowGroupFailedCount, type ResourceLoadResult, type ResourceDataLoader, type ResourceOperationOpen } from './resource-exploration-model';
 
 const styles = css`
-  padding: 16px; overflow: auto; color: var(--text-primary); font-size: 12px;
+  padding: 16px; display: flex; flex-direction: column; flex: 1; min-height: 0; overflow: hidden; color: var(--text-primary); font-size: 12px;
+  .resource-header { flex: 0 0 auto; position: relative; z-index: 1; padding-bottom: 8px; border-bottom: 1px solid var(--border-primary); }
+  .resource-body { flex: 1; min-height: 0; overflow: auto; overscroll-behavior: contain; scrollbar-gutter: stable; }
   .resource-action, .resource-select { font: inherit; color: var(--text-primary); background: var(--bg-tertiary); border: 1px solid var(--border-primary); border-radius: 4px; padding: 6px 10px; }
   .resource-action { cursor: pointer; }
   button:focus-visible, select:focus-visible, input:focus-visible, [role=button]:focus-visible { outline: 2px solid #58a6ff; outline-offset: 2px; }
@@ -32,9 +34,12 @@ const styles = css`
   .origin { flex: 1; min-width: 180px; }
   .metrics-line { display: grid; grid-template-columns: 390px minmax(0, 1fr); align-items: center; gap: 12px; min-width: 0; }
   .muted { color: var(--text-muted); font-size: 11px; line-height: 1.6; }
-  .controls { display: grid; grid-template-columns: 80px 160px minmax(0, 1fr); gap: 8px; margin: 10px 0 6px; padding-bottom: 8px; border-bottom: 1px solid var(--border-primary); }
+  .controls { display: grid; grid-template-columns: 110px 160px minmax(0, 1fr); gap: 8px; margin: 10px 0 6px; padding-bottom: 8px; border-bottom: 1px solid var(--border-primary); }
   label { display: flex; align-items: center; gap: 6px; min-width: 0; }
   label select { width: 100%; min-width: 0; }
+  .resource-picker { position: relative; }
+  .resource-picker .resource-select { appearance: none; height: 26px; padding: 0 24px 0 9px; border: none; border-radius: 5px; background: var(--bg-primary); box-shadow: 0 1px 3px rgba(0, 0, 0, 0.1); font-size: 13px; cursor: pointer; }
+  .resource-picker-arrow { position: absolute; right: 12px; pointer-events: none; font-size: 10px; }
   .context { margin: 8px 0 0; }
   .comparison { width: 390px; max-width: 100%; display: grid; grid-template-columns: 148px minmax(40px, 1fr) 78px; align-items: center; gap: 5px 10px; font-size: 11px; }
   .comparison strong { font-size: 12px; font-weight: 500; text-align: right; font-variant-numeric: tabular-nums; }
@@ -71,6 +76,7 @@ export function ResourceExplorationModal({ data, atMs, initialMode, hiddenCatego
   data: MemoryTimeline; atMs: number; initialMode: MetricMode; hiddenCategories?: ReadonlySet<OperationKind>; hostLabel?: string; availableHosts?: readonly string[]; initialHosts?: readonly string[]; events?: OperationalEvent[]; onViewEventDetails?: (event: OperationalEvent) => void; onLoadResource?: ResourceDataLoader; onOpenOperation?: ResourceOperationOpen; initialDataLoaded?: boolean; initialSamplingWarning?: string; initialResource?: Omit<ResourceLoadResult, 'data'>; onClose: () => void;
 }) {
   const [mode, setMode] = useState(initialMode);
+  const [fullscreen, setFullscreen] = useState(false);
   const [groupBy, setGroupBy] = useState<'activity' | 'table'>('activity');
   const [operationLimits, setOperationLimits] = useState<Record<string, number>>({});
   const [activityLimit, setActivityLimit] = useState<number>();
@@ -154,14 +160,27 @@ export function ResourceExplorationModal({ data, atMs, initialMode, hiddenCatego
     if (consumer && onOpenOperation) onOpenOperation(consumer.kind, consumer.source);
   };
   return <>
-  <ModalWrapper isOpen onClose={onClose} maxWidth={1100} height="85vh" ariaLabel="Resource usage at the selected time">
-    <div className={styles}>
+  <ModalWrapper isOpen onClose={onClose} maxWidth={fullscreen ? 'none' : 1100} height={fullscreen ? 'calc(100dvh - 32px)' : '85vh'} maxHeight={fullscreen ? 'calc(100dvh - 32px)' : 960} ariaLabel="Resource usage at the selected time">
+    <div className={styles} onKeyDown={event => {
+      if (event.defaultPrevented || event.repeat || event.ctrlKey || event.metaKey || event.altKey || event.shiftKey) return;
+      const target = event.target as HTMLElement;
+      if (target.closest('input, textarea, select, [contenteditable="true"], [role="textbox"]')) return;
+      if (event.key.toLowerCase() === 'f') {
+        event.preventDefault(); event.stopPropagation(); setFullscreen(value => !value);
+      }
+    }}>
+      <div className="resource-header">
       <div className="heading modal-heading"><h2>Resource usage</h2>
         <div className="muted origin">Pinned {new Date(atMs).toLocaleString()} · {hostLabel || `${originalData.host_count} server${originalData.host_count === 1 ? '' : 's'}`}</div>
+        <button className="resource-action" onClick={() => setFullscreen(value => !value)} aria-label={fullscreen ? 'Exit fullscreen' : 'Fullscreen'} aria-pressed={fullscreen} aria-keyshortcuts="f" title={fullscreen ? 'Exit fullscreen (F)' : 'Fullscreen (F)'}>
+          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true" style={{ display: 'block' }}>
+            <path d={fullscreen ? 'M4 9h5V4M20 9h-5V4M4 15h5v5M20 15h-5v5' : 'M9 4H4v5M15 4h5v5M4 15v5h5M20 15v5h-5'} />
+          </svg>
+        </button>
         <button className="resource-action" ref={closeButton} onClick={onClose} aria-label="Close resource exploration">×</button>
       </div>
       <div className="controls">
-        <label><select className="resource-select" aria-label="Resource" value={mode} onChange={e => { setMode(e.target.value as MetricMode); change(); }}>{Object.entries(METRIC_CONFIG).map(([key, cfg]) => <option key={key} value={key}>{cfg.label}</option>)}</select></label>
+        <label className={`${controlsStyle} resource-picker`}><select className="resource-select" aria-label="Resource" value={mode} onChange={e => { setMode(e.target.value as MetricMode); change(); }}>{Object.entries(METRIC_CONFIG).map(([key, cfg]) => <option key={key} value={key}>{cfg.label}</option>)}</select><span className="resource-picker-arrow" aria-hidden="true">▾</span></label>
         <div className={controlsStyle}><TimeTravelServerSelector display="dropdown" hosts={hosts} selectedHosts={selectedHosts} onChange={next => { setSelectedHosts(next); change(); }} /></div>
         <div className="metrics-line">
           <div className="comparison" role="group" aria-label={`${resourceLabel} comparison`}>
@@ -245,6 +264,8 @@ export function ResourceExplorationModal({ data, atMs, initialMode, hiddenCatego
           </div>}
         </div>
       </div>
+      </div>
+      <div className="resource-body" role="region" aria-label="Resource usage breakdown" tabIndex={0}>
       {!loading && !loadError && <div className="resource-notes">
         {selectionMode === 'range' && measured.value !== null && measured.coverageMs < selectionSpan*.95 && <span style={{ padding: '3px 0' }}>Server data available for {((measured.coverageMs/selectionSpan)*100).toFixed(1)}% of the selected time</span>}
         {selectionMode === 'range' && missingMemory > 0 && <span style={{ padding: '3px 0' }}>Memory samples unavailable for {missingMemory.toLocaleString()} operations</span>}
@@ -258,6 +279,7 @@ export function ResourceExplorationModal({ data, atMs, initialMode, hiddenCatego
           onShowMoreTables={(primaryId) => { const key = groupBy === 'table' ? '*' : primaryId; setTableLimit(previous => ({ ...previous, [key]: (previous[key] ?? 5)+5 })); }}
           onShowMoreOperations={(groupId) => setOperationLimits(previous => ({ ...previous, [groupId]: (previous[groupId] ?? 5)+5 }))} selection={selected} onSelect={selectFlow} format={flowFormat} />
       </> : <div className="notice">{mode === 'memory' && missingMemory > 0 ? 'Concurrent memory attribution is unavailable at this time. Choose a time with operation samples.' : 'No contributing operations at this time.'}</div>)}
+      </div>
     </div>
   </ModalWrapper>
   {loading && <ResourceLoading onClose={onClose} delayMs={1000} />}

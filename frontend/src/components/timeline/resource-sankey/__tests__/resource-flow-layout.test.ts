@@ -45,6 +45,7 @@ describe('resource flow layout', () => {
     const activity = buildResourceFlowLayout(groupResourceFlow(rows, 'activity'), { groupBy: 'activity', selection: null, scaleReference: 20, operationLimit: Infinity });
     const table = buildResourceFlowLayout(groupResourceFlow(rows, 'table'), { groupBy: 'table', selection: null, scaleReference: 20, operationLimit: Infinity });
     expect(activity.total).toBe(table.total);
+    expect(activity.width).toBe(table.width);
     expect(activity.sourceHeight).toBe(table.sourceHeight);
     expect(activity.primaries.flatMap(node => node.tables).every(node => node.leaves.length === 0)).toBe(true);
   });

@@ -76,7 +76,9 @@ export function buildResourceFlowLayout(groups: ResourceFlowGroup[], {
     sourceY += height; nextY += 18;
     return node;
   });
-  const width = expanded ? 1440 : tableFirst && !primaryExpanded ? 680 : 1000, height = Math.max(340, nextY + 10, 50 + sourceHeight + 38);
+  // Both pivots need the same viewBox width: min-width: 100% scales SVG text
+  // and ribbons together, so a narrower Table view would enlarge everything.
+  const width = expanded ? 1440 : 1000, height = Math.max(340, nextY + 10, 50 + sourceHeight + 38);
   return { expanded, tableFirst, primaryExpanded, failedCount, total, scale, sourceHeight, primaries, width, height };
 }
 

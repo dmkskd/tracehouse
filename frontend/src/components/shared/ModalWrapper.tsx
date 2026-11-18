@@ -19,7 +19,7 @@ export const ModalWrapper: React.FC<{
   isOpen: boolean;
   onClose: () => void;
   children: React.ReactNode;
-  maxWidth?: number;
+  maxWidth?: number | string;
   height?: number | string;
   maxHeight?: number | string;
   backdropBackground?: string;

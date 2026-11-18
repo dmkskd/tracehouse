@@ -35,6 +35,23 @@ beforeAll(() => {
 });
 
 describe('resource exploration accounting', () => {
+  it('toggles viewport fullscreen with the header button and F without intercepting input keys', () => {
+    render(<ResourceExplorationModal data={fixture()} atMs={base + 30000} initialMode="cpu" onClose={vi.fn()} />);
+    const close = screen.getByRole('button', { name: 'Close resource exploration' });
+    const chrome = screen.getByRole('dialog').lastElementChild as HTMLElement;
+    fireEvent.click(screen.getByRole('button', { name: 'Fullscreen', exact: true }));
+    expect(chrome.style.maxWidth).toBe('none');
+    expect(screen.getByRole('button', { name: 'Exit fullscreen' })).toHaveAttribute('aria-pressed', 'true');
+    fireEvent.keyDown(close, { key: 'f' });
+    expect(chrome.style.maxWidth).toBe('1100px');
+    fireEvent.keyDown(close, { key: 'f', ctrlKey: true });
+    fireEvent.keyDown(screen.getByRole('combobox', { name: 'Resource' }), { key: 'f' });
+    expect(chrome.style.maxWidth).toBe('1100px');
+    fireEvent.keyDown(close, { key: 'f' });
+    expect(chrome.style.maxWidth).toBe('none');
+    fireEvent.click(screen.getByRole('button', { name: 'Exit fullscreen' }));
+    expect(chrome.style.maxWidth).toBe('1100px');
+  });
   it('keeps sampled interval CPU distinct from lifetime-average contributions', () => {
     const { consumers } = resourceConsumers(fixture(), base + 30000, 'cpu');
     expect(consumers.map(c => [c.value, c.basis])).toEqual([[2000000, 'sampled'], [1000000, 'average']]);
