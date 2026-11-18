@@ -1,5 +1,6 @@
 import React, { useEffect, useMemo, useRef, useState } from 'react';
 import type { OperationalEvent } from '@tracehouse/core';
+import { TimelineEventPopover } from './TimelineEventPopover';
 import {
   EVENT_SEVERITY_COLORS,
   clusterTimelineEvents,
@@ -25,6 +26,8 @@ interface TimelineEventOverlayProps {
   onViewEventDetails?: (event: OperationalEvent) => void;
   /** Called when a popup (cluster list or selected event card) opens or closes, so the host can raise the chart above its neighbours. */
   onPopupOpenChange?: (open: boolean) => void;
+  /** Inside a modal, close this popup before the enclosing dialog handles Escape. */
+  consumeEscape?: boolean;
 }
 
 export const TimelineEventOverlay: React.FC<TimelineEventOverlayProps> = ({
@@ -39,8 +42,10 @@ export const TimelineEventOverlay: React.FC<TimelineEventOverlayProps> = ({
   onClearEventSelection,
   onViewEventDetails,
   onPopupOpenChange,
+  consumeEscape = false,
 }) => {
   const overlayRef = useRef<HTMLDivElement>(null);
+  const markerRefs = useRef(new Map<string, HTMLButtonElement>());
   const [overlayWidth, setOverlayWidth] = useState(800);
   const [expandedClusterId, setExpandedClusterId] = useState<string | null>(null);
   const [hoveredClusterId, setHoveredClusterId] = useState<string | null>(null);
@@ -61,6 +66,7 @@ export const TimelineEventOverlay: React.FC<TimelineEventOverlayProps> = ({
     const onKeyDown = (event: KeyboardEvent) => {
       if (event.key !== 'Escape') return;
       event.preventDefault();  // consumed: the page's Escape-to-reset-zoom must not also fire
+      if (consumeEscape) event.stopPropagation();
       if (expandedClusterId) {
         setExpandedClusterId(null);
         setActiveListEventId(null);
@@ -68,9 +74,9 @@ export const TimelineEventOverlay: React.FC<TimelineEventOverlayProps> = ({
         onClearEventSelection?.();
       }
     };
-    document.addEventListener('keydown', onKeyDown);
-    return () => document.removeEventListener('keydown', onKeyDown);
-  }, [expandedClusterId, selectedEventId, onClearEventSelection]);
+    document.addEventListener('keydown', onKeyDown, consumeEscape);
+    return () => document.removeEventListener('keydown', onKeyDown, consumeEscape);
+  }, [expandedClusterId, selectedEventId, onClearEventSelection, consumeEscape]);
 
   const clusters = useMemo(
     () => clusterTimelineEvents(events, rangeStartMs, rangeEndMs, overlayWidth, 72),
@@ -108,8 +114,6 @@ export const TimelineEventOverlay: React.FC<TimelineEventOverlayProps> = ({
         const expanded = expandedClusterId === cluster.id;
         const hovered = hoveredClusterId === cluster.id;
         const color = EVENT_SEVERITY_COLORS[cluster.severity];
-        const alignLeft = left < 18;
-        const alignRight = left > 82;
 
         return (
           <div
@@ -135,6 +139,7 @@ export const TimelineEventOverlay: React.FC<TimelineEventOverlayProps> = ({
               transition: 'opacity 0.12s ease',
             }} />
             <button
+              ref={element => { if (element) markerRefs.current.set(cluster.id, element); else markerRefs.current.delete(cluster.id); }}
               type="button"
               title={timelineEventMarkerTitle(cluster)}
               aria-label={cluster.events.length === 1
@@ -143,6 +148,8 @@ export const TimelineEventOverlay: React.FC<TimelineEventOverlayProps> = ({
               aria-expanded={cluster.events.length > 1 ? expanded : undefined}
               onMouseDown={event => event.stopPropagation()}
               onMouseEnter={() => setHoveredClusterId(cluster.id)}
+              onFocus={() => setHoveredClusterId(cluster.id)}
+              onBlur={() => setHoveredClusterId(current => current === cluster.id ? null : current)}
               onMouseLeave={() => setHoveredClusterId(current =>
                 current === cluster.id ? null : current,
               )}
@@ -153,6 +160,7 @@ export const TimelineEventOverlay: React.FC<TimelineEventOverlayProps> = ({
                   else onSelectEvent(cluster.primaryEvent);
                   setExpandedClusterId(null);
                 } else {
+                  onClearEventSelection?.();
                   setExpandedClusterId(expanded ? null : cluster.id);
                 }
               }}
@@ -169,10 +177,10 @@ export const TimelineEventOverlay: React.FC<TimelineEventOverlayProps> = ({
                 height: 22,
                 padding: '0 7px',
                 borderRadius: 6,
-                background: 'color-mix(in srgb, var(--bg-secondary), transparent 8%)',
+                background: hovered || expanded ? `color-mix(in srgb, ${color}, var(--bg-secondary) 88%)` : 'color-mix(in srgb, var(--bg-secondary), transparent 8%)',
                 border: selected
                   ? `2px solid ${color}`
-                  : `1px solid ${color}99`,
+                  : `1px solid ${hovered || expanded ? color : `${color}99`}`,
                 color,
                 boxShadow: selected
                   ? `0 0 0 3px ${color}33, 0 3px 8px rgba(0,0,0,0.35)`
@@ -210,15 +218,7 @@ export const TimelineEventOverlay: React.FC<TimelineEventOverlayProps> = ({
             </button>
 
             {expanded && (
-              <div style={{
-                position: 'absolute',
-                top: 29,
-                left: alignLeft ? 0 : alignRight ? 'auto' : '50%',
-                right: alignRight ? 0 : 'auto',
-                transform: alignLeft || alignRight ? 'none' : 'translateX(-50%)',
-                width: 310,
-                maxHeight: 250,
-                overflow: 'auto',
+              <TimelineEventPopover getAnchor={() => markerRefs.current.get(cluster.id)} width={310} style={{
                 padding: 6,
                 borderRadius: 8,
                 background: 'var(--bg-secondary)',
@@ -310,17 +310,11 @@ export const TimelineEventOverlay: React.FC<TimelineEventOverlayProps> = ({
                     </button>
                   );
                 })}
-              </div>
+              </TimelineEventPopover>
             )}
 
             {selectedEvent && !expanded && (
-              <div style={{
-                position: 'absolute',
-                top: 29,
-                left: alignLeft ? 0 : alignRight ? 'auto' : '50%',
-                right: alignRight ? 0 : 'auto',
-                transform: alignLeft || alignRight ? 'none' : 'translateX(-50%)',
-                width: 290,
+              <TimelineEventPopover getAnchor={() => markerRefs.current.get(cluster.id)} width={290} style={{
                 padding: 10,
                 borderRadius: 8,
                 background: 'var(--bg-secondary)',
@@ -374,6 +368,7 @@ export const TimelineEventOverlay: React.FC<TimelineEventOverlayProps> = ({
                 }}>
                   <span>{formatTimelineEventTime(selectedEvent.occurred_at)}</span>
                   <span>{timelineEventKindLabel(selectedEvent.kind)}</span>
+                  <span>{selectedEvent.severity}</span>
                   {selectedEvent.hostname && <span>{selectedEvent.hostname}</span>}
                 </div>
                 <div style={{
@@ -442,7 +437,7 @@ export const TimelineEventOverlay: React.FC<TimelineEventOverlayProps> = ({
                     </button>
                   )}
                 </div>
-              </div>
+              </TimelineEventPopover>
             )}
           </div>
         );

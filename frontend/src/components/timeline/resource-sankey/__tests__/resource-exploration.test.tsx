@@ -1,7 +1,7 @@
 import { createRef, useState } from 'react';
 import { act, fireEvent, render, screen, within, waitFor } from '@testing-library/react';
 import { beforeAll, describe, expect, it, vi } from 'vitest';
-import { attributeTimeline, buildOperationRows, type MemoryTimeline, type QuerySeries } from '@tracehouse/core';
+import { attributeTimeline, buildOperationRows, type MemoryTimeline, type QuerySeries, type OperationalEvent } from '@tracehouse/core';
 import { ResourceExplorationModal } from '../ResourceExplorationModal';
 import { explorationMeasurement, explorationServerSeries, resourceConsumers, groupResourceTables, groupResourceActivitiesByTable } from '../resource-exploration-model';
 import { TimelineChart } from '../../TimelineChart';
@@ -418,6 +418,47 @@ describe('pinned activity exploration', () => {
     await waitFor(() => expect(loader).toHaveBeenLastCalledWith(data, 'cpu', base + 30000, [], undefined));
     fireEvent.click(screen.getByRole('button', { name: 'Reset to pin' }));
     await waitFor(() => expect(loader).toHaveBeenLastCalledWith(data, 'cpu', base + 30000, ['ch-01', 'ch-02'], undefined));
+  });
+  it('opens loaded event summaries without moving exploration time or repinning', () => {
+    const event = (id: string, seconds: number, hostname?: string): OperationalEvent => ({
+      id, title: id, occurred_at: at(seconds), hostname, kind: 'ddl', category: 'changes', severity: 'info',
+      precision: 'exact', source: 'system.query_log', capability: 'query_log',
+    });
+    const onPin = vi.fn();
+    render(<TimelineChart data={fixture()} metricMode="cpu" height={300} pinnedMs={base + 30000} hoverMs={null}
+      resourceEvents={[event('Host one change', 10, 'ch-01'), event('Host two change', 30, 'ch-02'), event('Cluster change', 50), event('Outside loaded view', 120)]}
+      onHover={() => {}} onPin={onPin} zoomRange={null} onZoom={() => {}} highlightedItem={null} />);
+    fireEvent.click(screen.getByRole('button', { name: 'Explore resource usage…' }));
+    const dialog = screen.getByRole('dialog');
+    const toggle = within(dialog).getByRole('button', { name: 'Events' });
+    expect(toggle).toHaveAttribute('aria-pressed', 'true');
+    expect(within(dialog).getByRole('button', { name: 'Host two change' })).toBeInTheDocument();
+    expect(within(dialog).queryByRole('button', { name: 'Outside loaded view' })).not.toBeInTheDocument();
+    const marker = within(dialog).getByRole('button', { name: 'Host one change' });
+    const selection = within(dialog).getByRole('slider', { name: 'Exploration time' });
+    expect(selection.contains(marker)).toBe(false);
+    fireEvent.mouseDown(marker);
+    fireEvent.click(marker);
+    expect(selection).toHaveAttribute('aria-valuenow', String(base + 30000));
+    const popup = within(dialog).getByTestId('timeline-event-popover');
+    expect(popup.parentElement).toBe(dialog);
+    expect(popup).toHaveTextContent('Host one change');
+    expect(popup).toHaveTextContent('ch-01');
+    expect(popup).toHaveTextContent('info');
+    fireEvent.keyDown(document, { key: 'Escape' });
+    expect(dialog).toBeInTheDocument();
+    expect(within(dialog).queryByTestId('timeline-event-popover')).not.toBeInTheDocument();
+    expect(onPin).not.toHaveBeenCalled();
+    fireEvent.click(toggle);
+    expect(toggle).toHaveAttribute('aria-pressed', 'false');
+    expect(within(dialog).queryByRole('button', { name: 'Host one change' })).not.toBeInTheDocument();
+    fireEvent.click(toggle);
+    const servers = within(dialog).getByRole('group', { name: 'Servers' });
+    fireEvent.click(within(servers).getByRole('button', { name: 'All servers' }));
+    fireEvent.click(within(servers).getByRole('button', { name: 'Select only ch-01' }));
+    expect(within(dialog).getByRole('button', { name: 'Host one change' })).toBeInTheDocument();
+    expect(within(dialog).getByRole('button', { name: 'Cluster change' })).toBeInTheDocument();
+    expect(within(dialog).queryByRole('button', { name: 'Host two change' })).not.toBeInTheDocument();
   });
   it('opens query or merge details while preserving the exploration and expansion', () => {
     const data = fixture();

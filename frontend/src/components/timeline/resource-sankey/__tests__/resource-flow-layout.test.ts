@@ -28,13 +28,16 @@ describe('resource flow layout', () => {
     expect(branch.leaves.reduce((sum, leaf) => sum + leaf.failureValue, 0)).toBe(branch.failureValue);
     expect(groups[0].rows.map(row => row.id)).toEqual(rows.map(row => row.id));
   });
-  it('keeps table colours stable when usage ranking changes', () => {
+  it('keeps operation colours stable when table ranking changes', () => {
     const options = { groupBy: 'table' as const, selection: null, scaleReference: 10, operationLimit: 5 };
     const before = buildResourceFlowLayout(groupResourceFlow([consumer('a', 2), consumer('b', 8, 0, 'db.b')], 'table'), options);
     const after = buildResourceFlowLayout(groupResourceFlow([consumer('a', 8), consumer('b', 2, 0, 'db.b')], 'table'), options);
     expect(before.primaries.map(node => node.primaryId)).toEqual(after.primaries.map(node => node.primaryId).reverse());
-    for (const node of before.primaries) expect(after.primaries.find(next => next.primaryId === node.primaryId)?.color).toBe(node.color);
-    expect(before.primaries[0].color).not.toBe(before.primaries[1].color);
+    for (const node of before.primaries) {
+      const next = after.primaries.find(candidate => candidate.primaryId === node.primaryId)!;
+      expect(next.segments[0].color).toBe(node.segments[0].color);
+    }
+    expect(before.primaries.every(node => node.segments[0].color === '#3b82f6')).toBe(true);
     expect(before.primaries.every(node => node.tables.length === 0)).toBe(true);
   });
   it('uses the same total and scale in both pivots and emits no hidden leaves', () => {
@@ -45,16 +48,22 @@ describe('resource flow layout', () => {
     expect(activity.sourceHeight).toBe(table.sourceHeight);
     expect(activity.primaries.flatMap(node => node.tables).every(node => node.leaves.length === 0)).toBe(true);
   });
-  it('uses operation-type colours after a table is expanded', () => {
-    const query = consumer('query', 2);
+  it('preserves operation-type colours and failed shares through every stage of a table expansion', () => {
+    const query = consumer('query', 2, 241);
     const merge: ResourceConsumer = { ...consumer('merge', 3), group: 'MERGE', kind: 'merge',
       source: { ...query.source, table: 'db.a', part_name: 'part-1' } };
     const groups = groupResourceFlow([query, merge], 'table');
     const collapsed = buildResourceFlowLayout(groups, { groupBy: 'table', selection: null, scaleReference: 10, operationLimit: 5 });
     const expanded = buildResourceFlowLayout(groups, { groupBy: 'table', selection: { primaryId: groups[0].primaryId }, scaleReference: 10, operationLimit: 5 });
-    expect(expanded.primaries[0].color).toBe(collapsed.primaries[0].color);
+    expect(expanded.primaries[0].segments).toEqual(collapsed.primaries[0].segments);
+    const segments = expanded.primaries[0].segments;
+    expect(segments.reduce((sum, segment) => sum + segment.height, 0)).toBeCloseTo(expanded.primaries[0].height);
+    expect(segments.reduce((sum, segment) => sum + segment.failureValue, 0)).toBe(2);
+    expect(segments.find(segment => segment.color === '#3b82f6')?.value).toBe(2);
+    expect(segments.find(segment => segment.color === '#f0883e')?.value).toBe(3);
     const branches = expanded.primaries[0].tables;
     expect(branches.find(b => b.secondaryLabel === 'SELECT')?.color).toBe('#3b82f6');
     expect(branches.find(b => b.secondaryLabel === 'MERGE')?.color).toBe('#f0883e');
+    for (const branch of branches) expect(segments.find(segment => segment.id === branch.id)?.color).toBe(branch.color);
   });
 });

@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from 'react';
-import type { MemoryTimeline, OperationKind } from '@tracehouse/core';
+import type { MemoryTimeline, OperationKind, OperationalEvent } from '@tracehouse/core';
 import { ModalWrapper } from '../../shared/ModalWrapper';
 import type { MetricMode } from '../timeline-constants';
 import { PinnedResourcePreview } from './PinnedResourcePreview';
@@ -8,10 +8,12 @@ import type { ResourceDataLoader, ResourceOperationOpen } from './resource-explo
 import { useResourceData } from './useResourceData';
 
 /** One materialized snapshot owns both the pin and its expanded view. Repinning remounts it. */
-export function PinnedResourceActivity({ data, atMs, mode, width, hiddenCategories, hostLabel, availableHosts, initialHosts, onLoadResource, onOpenOperation, onUnpin }: {
+export function PinnedResourceActivity({ data, atMs, mode, width, hiddenCategories, hostLabel, availableHosts, initialHosts, events, onViewEventDetails, onLoadResource, onOpenOperation, onUnpin }: {
   data: MemoryTimeline; atMs: number; mode: MetricMode; width: number;
   hiddenCategories?: ReadonlySet<OperationKind>; hostLabel?: string; availableHosts?: readonly string[];
   initialHosts?: readonly string[];
+  events?: OperationalEvent[];
+  onViewEventDetails?: (event: OperationalEvent) => void;
   onLoadResource?: ResourceDataLoader; onOpenOperation?: ResourceOperationOpen; onUnpin?: () => void;
 }) {
   const [original] = useState(data);
@@ -43,7 +45,7 @@ export function PinnedResourceActivity({ data, atMs, mode, width, hiddenCategori
           : <p role="status">Loading the pinned resource snapshot…</p>}
       </div>
     </ModalWrapper> : <ResourceExplorationModal data={resource.source} atMs={atMs} initialMode={mode} hostLabel={hostLabel}
-      availableHosts={availableHosts} initialHosts={originHosts} hiddenCategories={hiddenCategories} onLoadResource={onLoadResource} onOpenOperation={onOpenOperation}
+      availableHosts={availableHosts} initialHosts={originHosts} events={events} onViewEventDetails={onViewEventDetails} hiddenCategories={hiddenCategories} onLoadResource={onLoadResource} onOpenOperation={onOpenOperation}
       initialDataLoaded={!!onLoadResource} initialSamplingWarning={resource.samplingWarning} onClose={close} />)}
   </>;
 }

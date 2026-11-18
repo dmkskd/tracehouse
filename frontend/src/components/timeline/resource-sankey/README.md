@@ -20,12 +20,11 @@ usage across all operation types, and expands into types and individual operatio
 Both orders use the same attributed consumers and conserve the same total. Table
 ranking happens before presentation limits; multi-table costs remain in one table-set
 branch rather than being duplicated or divided between tables.
-Activity colours identify operation types. In Table mode, colours identify table
-sets up to the table node and remain stable across ranking changes. Expanded
-activity nodes and their operation leaves use the shared operation-type colours.
-The source bar uses
-the same coloured segments as its outgoing branches. Labels identify each node;
-colour is not the only identifier.
+Colours identify operation types in both grouping orders. A table containing
+multiple types has matching stacked colour segments on its incoming ribbon and
+node, including when collapsed. Expansion preserves those colours and widths
+through activity branches and individual operations. Failed portions are hatched
+within each segment. Labels identify tables; tables have no separate colour palette.
 
 The Operations control limits individual operations in each expanded activity/table
 branch (5 by default). It selects the largest contributions; omitted operations
@@ -95,6 +94,15 @@ including multiple-host selection. There are no parallel control implementations
 The available cluster hosts are separate from a pin's initial host selection.
 Reset restores that initial selection; selecting all hosts explicitly overrides
 the originating page's filter.
+
+The Events toggle controls the existing `TimelineNavigator` event ticks. Time Travel
+passes its deduplicated, filtered window and overview events through the chart and
+pin; the Sankey does not fetch events. The modal filters host-specific events to
+its server selection and retains events without a hostname. A marker moves the
+local exploration time, never the originating page's pin. Event coverage is limited
+to the data already loaded by Time Travel, including when exploring another server
+or a wider interval. Existing navigator clustering, severity colours, and hover
+titles are reused.
 
 ## Disable or remove the Sankey
 

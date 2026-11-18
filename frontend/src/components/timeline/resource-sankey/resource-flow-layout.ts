@@ -3,14 +3,6 @@ import type { ResourceFlowGroup } from './resource-exploration-model';
 
 export interface ResourceFlowSelection { primaryId: string; groupId?: string; consumerId?: string }
 
-const TABLE_COLORS = ['#5b8ff9', '#61b5a4', '#9270ca', '#da9955', '#d36d91', '#55a8c5', '#95ac57', '#bd8266'];
-/** Stable table-set identity, independent of usage rank and selected time. */
-function tableColor(key: string) {
-  let hash = 0;
-  for (let i = 0; i < key.length; i++) hash = (Math.imul(hash, 31) + key.charCodeAt(i)) | 0;
-  return TABLE_COLORS[(hash >>> 0) % TABLE_COLORS.length];
-}
-
 /** Pure presentation layout. Resource values and membership are supplied by core attribution. */
 export function buildResourceFlowLayout(groups: ResourceFlowGroup[], {
   selection, groupBy, scaleReference, operationLimit,
@@ -34,6 +26,15 @@ export function buildResourceFlowLayout(groups: ResourceFlowGroup[], {
     const value = tables.reduce((s, g) => s + g.value, 0);
     const top = nextY;
     const showChildren = !tableFirst || selection?.primaryId === primaryId;
+    let offset = 0;
+    const segments = tables.map(table => {
+      const height = table.value * scale;
+      const failureValue = table.rows.reduce((sum, row) => sum + (row.failureCode ? row.value : 0), 0);
+      const segment = { id: table.id, offset, height, failureValue, value: table.value,
+        color: segmentColor(tableFirst ? table.secondaryLabel : primaryId, table.rows[0].kind) };
+      offset += height;
+      return segment;
+    });
     const tableNodes = (showChildren ? tables : []).map(table => {
       const height = table.value * scale;
       const selected = table.id === expanded?.id;
@@ -66,7 +67,7 @@ export function buildResourceFlowLayout(groups: ResourceFlowGroup[], {
       label: tables[0].primaryLabel, count: tables.reduce((sum, t) => sum + t.rows.length, 0),
       sharedCost: tables[0].rows[0].tables.length > 1,
       failureValue: tables.reduce((sum, t) => sum + t.rows.reduce((s, r) => s + (r.failureCode ? r.value : 0), 0), 0),
-      sourceY, tables: tableNodes, color: tableFirst ? tableColor(primaryId) : segmentColor(primaryId, tables[0].rows[0].kind) };
+      sourceY, tables: tableNodes, segments };
     sourceY += height; nextY += 18;
     return node;
   });

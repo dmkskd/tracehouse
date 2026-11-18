@@ -45,28 +45,30 @@ export function ResourceAttributionFlow({ groups, mode, selection, onSelect, for
         {primaries.map(a => {
           let tableSourceY = a.y;
           return <g key={a.primaryId}>
-            <rect x={12} y={a.sourceY} width={8} height={a.height} fill={a.color} />
-            <path d={ribbon(20, a.sourceY, 240, a.y, a.height)} fill={a.color} opacity={0.24} />
-            <rect x={240} y={a.y} width={8} height={a.height} fill={a.color} />
-            {tableFirst && a.tables.length === 0 && a.failureValue > 0 && <>
-              {hatch(20, a.sourceY + a.height - a.failureValue * scale, 240, a.y + a.height - a.failureValue * scale, a.failureValue * scale)}
-              <rect x={240} y={a.y + a.height - a.failureValue * scale} width={8} height={a.failureValue * scale} fill={`url(#${failurePattern})`} />
-              <rect x={12} y={a.sourceY + a.height - a.failureValue * scale} width={8} height={a.failureValue * scale} fill={`url(#${failurePattern})`} />
-            </>}
+            {a.segments.map(segment => {
+              const source = a.sourceY + segment.offset, target = a.y + segment.offset;
+              const failedHeight = segment.failureValue * scale, failedOffset = segment.height - failedHeight;
+              return <g key={segment.id}>
+                <rect x={12} y={source} width={8} height={segment.height} fill={segment.color} />
+                <path d={ribbon(20, source, 240, target, segment.height)} fill={segment.color} opacity={0.24} />
+                <rect x={240} y={target} width={8} height={segment.height} fill={segment.color} />
+                {failedHeight > 0 && <>
+                  <rect x={12} y={source + failedOffset} width={8} height={failedHeight} fill={`url(#${failurePattern})`} />
+                  {hatch(20, source + failedOffset, 240, target + failedOffset, failedHeight)}
+                  <rect x={240} y={target + failedOffset} width={8} height={failedHeight} fill={`url(#${failurePattern})`} />
+                </>}
+              </g>;
+            })}
             {a.tables.map(table => {
               const color = table.color;
               const start = tableSourceY; tableSourceY += table.height;
               let leafSourceY = table.y;
               const failedHeight = table.failureValue * scale;
               const failedOffset = table.height - failedHeight;
-              const sourceOffset = start - a.y;
               return <g key={table.id}>
                 <path d={ribbon(248, start, 560, table.y, table.height)} fill={color} opacity={table.selected ? 0.3 : 0.15} />
                 <rect x={560} y={table.y} width={8} height={table.height} fill={color} />
                 {failedHeight > 0 && <>
-                  <rect x={12} y={a.sourceY + sourceOffset + failedOffset} width={8} height={failedHeight} fill={`url(#${failurePattern})`} />
-                  {hatch(20, a.sourceY + sourceOffset + failedOffset, 240, start + failedOffset, failedHeight)}
-                  <rect x={240} y={start + failedOffset} width={8} height={failedHeight} fill={`url(#${failurePattern})`} />
                   {hatch(248, start + failedOffset, 560, table.y + failedOffset, failedHeight)}
                   <rect x={560} y={table.y + failedOffset} width={8} height={failedHeight} fill={`url(#${failurePattern})`} />
                 </>}

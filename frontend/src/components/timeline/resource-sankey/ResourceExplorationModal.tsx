@@ -1,12 +1,13 @@
 import { useEffect, useId, useMemo, useRef, useState } from 'react';
 import { css } from '@emotion/css';
-import type { MemoryTimeline, OperationKind, AttributionSelection } from '@tracehouse/core';
+import type { MemoryTimeline, OperationKind, AttributionSelection, OperationalEvent } from '@tracehouse/core';
 import { attributeTimeline, getTimelineRamCapacity, parseOperationTimestamp } from '@tracehouse/core';
 import { formatBytes } from '../../../utils/formatters';
 import { ModalWrapper } from '../../shared/ModalWrapper';
 import { TimelineNavigator } from '../../shared/TimelineNavigator';
 import { METRIC_CONFIG, type MetricMode } from '../timeline-constants';
 import { TimeTravelServerSelector } from '../TimeTravelServerSelector';
+import { TimelineEventOverlay } from '../TimelineEventOverlay';
 import { segmentsStyle } from '../TimeTravelSegments.styles';
 import { controlsStyle } from '../TimeTravelControls.styles';
 import { ResourceInfoPopover } from './ResourceInfoPopover';
@@ -43,7 +44,8 @@ const styles = css`
   .leaf-select select { appearance: none; width: 60px; height: 26px; padding: 0 22px 0 10px; border: 0; border-radius: 5px; background: var(--bg-primary); color: var(--text-primary); box-shadow: 0 1px 3px rgba(0,0,0,.1); font: inherit; cursor: pointer; }
   .leaf-select svg { position: absolute; right: 7px; top: 9px; pointer-events: none; }
   .time-navigation { position: relative; border-radius: 8px; }
-  .time-navigation:focus-visible { outline: 2px solid #58a6ff; outline-offset: 3px; }
+  .time-selection-keyboard { position: absolute; inset: 0; pointer-events: none; border-radius: 8px; }
+  .time-selection-keyboard:focus-visible { outline: 2px solid #58a6ff; outline-offset: 3px; }
   .notice { margin: 12px 0; padding: 10px; background: var(--bg-tertiary); line-height: 1.6; }
   .flow-viewport { overflow-x: auto; overscroll-behavior-x: contain; scrollbar-gutter: stable; }
   .flow-navigation { margin: 12px 0 8px; }
@@ -63,12 +65,14 @@ function instantFormat(value: number, mode: MetricMode) {
     : `${formatBytes(value)}${mode === 'memory' ? '' : '/s'}`;
 }
 
-export function ResourceExplorationModal({ data, atMs, initialMode, hiddenCategories, hostLabel, availableHosts, initialHosts, onLoadResource, onOpenOperation, onClose, initialDataLoaded = false, initialSamplingWarning }: {
-  data: MemoryTimeline; atMs: number; initialMode: MetricMode; hiddenCategories?: ReadonlySet<OperationKind>; hostLabel?: string; availableHosts?: readonly string[]; initialHosts?: readonly string[]; onLoadResource?: ResourceDataLoader; onOpenOperation?: ResourceOperationOpen; initialDataLoaded?: boolean; initialSamplingWarning?: string; onClose: () => void;
+export function ResourceExplorationModal({ data, atMs, initialMode, hiddenCategories, hostLabel, availableHosts, initialHosts, events, onViewEventDetails, onLoadResource, onOpenOperation, onClose, initialDataLoaded = false, initialSamplingWarning }: {
+  data: MemoryTimeline; atMs: number; initialMode: MetricMode; hiddenCategories?: ReadonlySet<OperationKind>; hostLabel?: string; availableHosts?: readonly string[]; initialHosts?: readonly string[]; events?: OperationalEvent[]; onViewEventDetails?: (event: OperationalEvent) => void; onLoadResource?: ResourceDataLoader; onOpenOperation?: ResourceOperationOpen; initialDataLoaded?: boolean; initialSamplingWarning?: string; onClose: () => void;
 }) {
   const [mode, setMode] = useState(initialMode);
   const [groupBy, setGroupBy] = useState<'activity' | 'table'>('activity');
   const [operationLimit, setOperationLimit] = useState(5);
+  const [eventsVisible, setEventsVisible] = useState(true);
+  const [selectedEventId, setSelectedEventId] = useState<string | null>(null);
   const accountingId = useId();
   const [originalData] = useState(data);
   const [time, setTime] = useState(atMs);
@@ -78,6 +82,8 @@ export function ResourceExplorationModal({ data, atMs, initialMode, hiddenCatego
   const [selectedHosts, setSelectedHosts] = useState<string[]>(originHosts);
   // An explicit empty scope overrides the originating page's hostname filter.
   const hostScope = useMemo(() => selectedHosts.length ? selectedHosts : hostLabel || initialHosts ? [] : undefined, [selectedHosts, hostLabel, initialHosts]);
+  const scopedEvents = useMemo(() => (events ?? []).filter(event =>
+    !selectedHosts.length || !event.hostname || selectedHosts.includes(event.hostname)), [events, selectedHosts]);
   const originStart = Math.min(atMs, parseOperationTimestamp(originalData.window_start));
   const originEnd = Math.max(atMs, parseOperationTimestamp(originalData.window_end), originStart + 1);
   const min = selectionMode === 'range' ? Math.min(originStart, atMs - rangeSpan / 2) : originStart;
@@ -131,7 +137,7 @@ export function ResourceExplorationModal({ data, atMs, initialMode, hiddenCatego
   const tableGroups = useMemo(() => groupResourceFlow(consumers, groupBy), [consumers, groupBy]);
   // A narrow native navigator window supplies the same grip/drag behavior as
   // Time Travel while selecting one instant, not aggregating an interval.
-  const change = () => setSelected(null);
+  const change = () => { setSelected(null); setSelectedEventId(null); };
   const selectFlow = (selection: ResourceFlowSelection | null) => {
     const consumer = selection?.consumerId ? consumers.find(c => c.id === selection.consumerId) : undefined;
     setSelected(selection);
@@ -218,25 +224,38 @@ export function ResourceExplorationModal({ data, atMs, initialMode, hiddenCatego
               Shows the largest individual operations per expanded activity branch. Remaining operations are combined into an Other operations branch; totals are unchanged.
             </ResourceInfoPopover>
           </div>
+          <span className={controlsStyle} style={{ padding: 0, border: 0, background: 'transparent' }} aria-hidden="true"><span className="tt-controls-divider" /></span>
+          <div className={controlsStyle}><div className={segmentsStyle}>
+            <button type="button" aria-pressed={eventsVisible} title="Show events already loaded by Time Travel" onClick={() => { setEventsVisible(value => !value); setSelectedEventId(null); }}>Events</button>
+          </div></div>
         </div>
         {selectionMode === 'range' && <span className="muted">Shares of accumulated {mode === 'cpu' ? 'CPU time' : mode === 'memory' ? 'sampled memory occupancy' : mode === 'disk' ? 'disk I/O' : 'network I/O'} · {total > 0 ? 'Attributed total = 100%' : 'No attributed resource use'}</span>}
-        <button type="button" className="resource-action" title="Restore the pinned time, resource, and server selection" onClick={() => { if (loadError) retry(); setSelectionMode('instant'); setTime(atMs); setMode(initialMode); setSelectedHosts(originHosts); setSelected(null); }} style={{ marginLeft: 'auto' }}>Reset to pin</button>
+        <button type="button" className="resource-action" title="Restore the pinned time, resource, and server selection" onClick={() => { if (loadError) retry(); setSelectionMode('instant'); setTime(atMs); setMode(initialMode); setSelectedHosts(originHosts); change(); }} style={{ marginLeft: 'auto' }}>Reset to pin</button>
       </div>
       <div className="context">
-        <div className="time-navigation" role="slider" tabIndex={0} aria-label="Exploration time" aria-valuemin={min} aria-valuemax={max} aria-valuenow={time} aria-valuetext={new Date(time).toLocaleString()}
+        <div className="time-navigation">
+        <div className="time-selection-keyboard" role="slider" tabIndex={0} aria-label="Exploration time" aria-valuemin={min} aria-valuemax={max} aria-valuenow={time} aria-valuetext={new Date(time).toLocaleString()}
           onKeyDown={event => {
             const step = event.shiftKey ? 10000 : 1000;
             const next = event.key === 'Home' ? min : event.key === 'End' ? max
               : event.key === 'ArrowLeft' || event.key === 'ArrowDown' ? time - step
               : event.key === 'ArrowRight' || event.key === 'ArrowUp' ? time + step : null;
             if (next !== null) { event.preventDefault(); setTime(Math.max(min, Math.min(max, next))); change(); }
-          }}>
+          }} />
           <TimelineNavigator data={series} metricMode={mode} height={70} isLoading={loading}
             rangeStartMs={selectionMode === 'range' ? min : min - selectionSpan / 2} rangeEndMs={selectionMode === 'range' ? max : max + selectionSpan / 2}
             viewportStartMs={selectionMode === 'range' ? rangeStart : time - selectionSpan / 2} viewportEndMs={selectionMode === 'range' ? rangeStart + selectionSpan : time + selectionSpan / 2}
             selectionLabel={selectionMode === 'instant' ? new Date(time).toLocaleTimeString() : undefined}
             cpuCores={capacity} totalRam={host && source.host_count > 1 ? 0 : getTimelineRamCapacity(source)}
             onViewportChange={endMs => { setTime(Math.max(min, Math.min(max, endMs - selectionSpan / 2))); change(); }} />
+          {eventsVisible && <div style={{ position: 'absolute', inset: '0 0 20px', pointerEvents: 'none' }}>
+            <TimelineEventOverlay events={scopedEvents}
+              rangeStartMs={selectionMode === 'range' ? min : min - selectionSpan / 2}
+              rangeEndMs={selectionMode === 'range' ? max : max + selectionSpan / 2}
+              selectedEventId={selectedEventId} onSelectEvent={event => setSelectedEventId(event.id)}
+              onClearEventSelection={() => setSelectedEventId(null)} onViewEventDetails={onViewEventDetails}
+              consumeEscape />
+          </div>}
         </div>
       </div>
       {selectionMode === 'range' && measured.value !== null && measured.coverageMs < selectionSpan * .95 && <div className="muted">Server measurement coverage: {((measured.coverageMs / selectionSpan) * 100).toFixed(1)}% of the selected time.</div>}
