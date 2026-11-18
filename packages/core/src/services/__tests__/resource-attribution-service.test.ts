@@ -22,6 +22,16 @@ describe('resource aggregation request boundaries', () => {
     expect(sql).toMatch(/LIMIT 5$/);
     expect(sql).toContain("db.x\\' OR 1=1 --");
   });
+  it('does not recursively expand distributed operation scans or read samples twice', () => {
+    const sql = buildResourceAttributionSQL({ ...request, includeRunning: true,
+      sampleSelection: { availability: { processesHistory: false, queryMetricLog: true } } });
+    expect(sql.match(/FROM operations\b/g)).toHaveLength(1);
+    expect(sql.match(/FROM query_samples\b/g)).toHaveLength(1);
+    expect(sql).not.toContain('SELECT local_id FROM operations');
+    expect(sql).not.toContain('SELECT hostname,local_id FROM logged');
+    expect(sql).toContain('groupBitmapState');
+    expect(sql).not.toContain('initial_query_id');
+  });
   it('retries missing optional sample sources with an explicit warning', async () => {
     const executeQuery = vi.fn().mockRejectedValueOnce(new Error('UNKNOWN_TABLE tracehouse.processes_history')).mockResolvedValue([]);
     const service = new ResourceAttributionService({ executeQuery } as IClickHouseAdapter);

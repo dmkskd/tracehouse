@@ -1068,7 +1068,7 @@ export const MergeDetailModal: React.FC<MergeDetailModalProps> = ({ merge, onClo
     const tbl = dotIdx > 0 ? merge.table.slice(dotIdx + 1) : merge.table;
     services.mergeTracker.getMergeHistoryByPartName(db, tbl, merge.part_name, {
       hostname: merge.hostname,
-      event_type: isMutation ? 'MutatePart' : 'MergeParts',
+      event_type: merge.event_type ?? (isMutation ? 'MutatePart' : 'MergeParts'),
       event_time_microseconds: merge.event_time_microseconds,
       event_time: merge.event_time_microseconds ?? merge.end_time,
     })
@@ -1076,7 +1076,7 @@ export const MergeDetailModal: React.FC<MergeDetailModalProps> = ({ merge, onClo
       .catch(e => { if (!cancelled) setError(e instanceof Error ? e.message : `Failed to fetch ${kind} details`); })
       .finally(() => { if (!cancelled) setLoading(false); });
     return () => { cancelled = true; };
-  }, [merge?.part_name, merge?.table, merge?.hostname, merge?.event_time_microseconds, merge?.end_time, merge?.is_running, services, kind, isMutation]);
+  }, [merge?.part_name, merge?.table, merge?.hostname, merge?.event_type, merge?.event_time_microseconds, merge?.end_time, merge?.is_running, services, kind, isMutation]);
 
   if (!merge) return null;
 

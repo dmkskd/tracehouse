@@ -1101,6 +1101,7 @@ export class TimelineService {
         merges.push({
           event_time_microseconds: `${row.operation_time || row.merge_end}Z`,
           operation_id: JSON.stringify([row.event_type || 'MergeParts', row.operation_time || row.merge_end]),
+          event_type: String(row.event_type || 'MergeParts'),
           part_name: String(row.part_name || ''),
           table: String(row.tbl || ''),
           hostname: row.host ? String(row.host) : undefined,
@@ -1189,6 +1190,7 @@ export class TimelineService {
         mutations.push({
           event_time_microseconds: `${row.operation_time || row.mut_end}Z`,
           operation_id: JSON.stringify([row.event_type || 'MutatePart', row.operation_time || row.mut_end]),
+          event_type: String(row.event_type || 'MutatePart'),
           part_name: String(row.part_name || ''),
           table: String(row.tbl || ''),
           hostname: row.host ? String(row.host) : undefined,

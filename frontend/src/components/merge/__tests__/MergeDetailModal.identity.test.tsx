@@ -48,6 +48,14 @@ describe('Time Travel merge detail identity', () => {
     await waitFor(() => expect(mocks.getMergeHistoryByPartName).toHaveBeenCalledTimes(3));
   });
 
+  it('preserves the original event type for moved parts opened from attribution', async () => {
+    render(<MergeDetailModal merge={{ ...failed, event_type: 'MovePart' }} onClose={() => {}} />);
+    await waitFor(() => expect(mocks.getMergeHistoryByPartName).toHaveBeenCalledWith(
+      'web_analytics', 'pageviews_local', failed.part_name,
+      expect.objectContaining({ event_type: 'MovePart', event_time_microseconds: failed.event_time_microseconds }),
+    ));
+  });
+
   it('uses the mutation event type for mutation attempts', async () => {
     render(<MutationDetailModal mutation={failed} onClose={() => {}} />);
     await waitFor(() => expect(mocks.getMergeHistoryByPartName).toHaveBeenCalledWith(

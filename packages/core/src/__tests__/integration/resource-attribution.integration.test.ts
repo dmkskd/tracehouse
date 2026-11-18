@@ -12,7 +12,7 @@ describe('whole-population resource attribution', () => {
   let service: ResourceAttributionService;
   const queryLog = `(SELECT toDate(fromUnixTimestamp64Milli(${startMs})) AS event_date,
     fromUnixTimestamp64Milli(${startMs}) AS query_start_time_microseconds,
-    concat('q',toString(number)) AS query_id, '' AS initial_query_id, 'default' AS user,
+    concat('q',toString(number)) AS query_id, if(number=0,'outside-window-root','') AS initial_query_id, 'default' AS user,
     'SELECT fixture' AS query, 'Select' AS query_kind, ['db.table'] AS tables,
     'QueryFinish' AS type, toUInt64(10000) AS query_duration_ms, toUInt64(999999) AS memory_usage,
     toUInt32(if(number=1,735,0)) AS exception_code, toUInt64(123) AS normalized_query_hash,
@@ -24,20 +24,29 @@ describe('whole-population resource attribution', () => {
     toUInt64(10000) AS duration_ms,toUInt64(999999) AS peak_memory_usage,toUInt32(0) AS error,
     map('OSCPUVirtualTimeMicroseconds',toUInt64(10000000)) AS ProfileEvents FROM numbers(0))`;
   const samples = `(SELECT fromUnixTimestamp64Milli(${startMs}+(number+1)*1000) AS sample_time,
-    'q0' AS query_id,'' AS initial_query_id,'SELECT fixture' AS query,toUInt64(if(number=0,100,300)) AS memory_usage,
+    'q0' AS query_id,'outside-window-root' AS initial_query_id,'SELECT fixture' AS query,toUInt64(if(number=0,100,300)) AS memory_usage,
     map('OSCPUVirtualTimeMicroseconds',toUInt64(if(number=0,1000000,4000000))) AS ProfileEvents,
     toUInt64(0) AS read_bytes,toUInt64(0) AS written_bytes FROM numbers(2))`;
 
-  beforeAll(async () => {
-    ctx = await startClickHouse();
+  const metricSamples = `(SELECT fromUnixTimestamp64Milli(${startMs}+(number+1)*1000) AS event_time_microseconds,
+    toDate(event_time_microseconds) AS event_date, 'q0' AS query_id,'' AS hostname,
+    toUInt64(if(number=0,100,300)) AS memory_usage,
+    toUInt64(if(number=0,1000000,3000000)) AS ProfileEvent_OSCPUVirtualTimeMicroseconds,
+    toUInt64(0) AS ProfileEvent_OSCPUWaitMicroseconds,toUInt64(0) AS ProfileEvent_OSIOWaitMicroseconds,
+    toUInt64(0) AS ProfileEvent_NetworkReceiveElapsedMicroseconds,toUInt64(0) AS ProfileEvent_NetworkSendBytes,
+    toUInt64(0) AS ProfileEvent_NetworkReceiveBytes FROM numbers(2))`;
+
+  function fixtureService(processSamples = samples, parts = partLog) {
     const adapter: IClickHouseAdapter = { executeQuery: (sql, options) => ctx.rawAdapter.executeQuery(
       sql.replaceAll('{{cluster_aware:system.query_log}}',queryLog)
-        .replaceAll('{{cluster_aware:system.part_log}}',partLog)
-        .replaceAll('{{cluster_aware:tracehouse.processes_history}}',samples)
+        .replaceAll('{{cluster_aware:system.part_log}}',parts)
+        .replaceAll('{{cluster_aware:tracehouse.processes_history}}',processSamples)
+        .replaceAll('{{cluster_aware:system.query_metric_log}}',metricSamples)
         .replaceAll('{{cluster_aware:system.processes}}','system.processes')
         .replaceAll('{{cluster_aware:system.merges}}','system.merges') as typeof sql, options) };
-    service = new ResourceAttributionService(adapter);
-  }, 120000);
+    return new ResourceAttributionService(adapter);
+  }
+  beforeAll(async () => { ctx = await startClickHouse(); service = fixtureService(); }, 120000);
   afterAll(async () => { if (ctx) await stopClickHouse(ctx); });
   const request = { startMs, endMs: startMs+10000, includeRunning: false, mode: 'cpu' as const };
 
@@ -57,6 +66,22 @@ describe('whole-population resource attribution', () => {
     expect(resourceSnapshotAt(window,startMs+4000).groups[0]).toMatchObject({ value: 250000000, sampledCount: 0, estimatedCount: 250 });
     const range = await service.getRange({ ...request, sampleSelection });
     expect(range.groups[0]).toMatchObject({ value: 2502000000, sampledCount: 1, estimatedCount: 250, sampledMs: 1000, estimatedMs: 2499000 });
+  });
+
+  it('retains captured baseline buckets without manufacturing measured coverage during an outage', async () => {
+    const sparse = samples.replace('(number+1)*1000','if(number=0,1000,5000)').replace('1000000,4000000','1000000,9000000');
+    const range = await fixtureService(sparse).getRange({ ...request, sampleSelection });
+    // The 8M CPU-us delta spans four seconds, but only the captured bucket at t=1s is measured.
+    // The remaining three seconds retain the 1-core execution estimate.
+    expect(range.groups[0]).toMatchObject({ value: 2501000000, sampledMs: 1000, estimatedMs: 2499000 });
+  });
+
+  it('uses local child-query samples when the root execution is outside the population', async () => {
+    const metricSource = { availability: { processesHistory: false, queryMetricLog: true } };
+    const range = await service.getRange({ ...request, sampleSelection: metricSource });
+    expect(range.groups[0]).toMatchObject({ value: 2502000000, sampledCount: 1, sampledMs: 1000 });
+    const window = await service.getSnapshots({ ...request, sampleSelection: metricSource });
+    expect(resourceSnapshotAt(window,startMs+1000).groups[0]).toMatchObject({ value: 252000000, sampledCount: 1 });
   });
 
   it('preserves unknown memory, integrates observed occupancy, and never substitutes execution peak memory', async () => {
@@ -88,6 +113,25 @@ describe('whole-population resource attribution', () => {
   it('supports live-source unions without duplicating completed executions', async () => {
     const summary = await service.getRange({ ...request, includeRunning: true });
     expect(summary.groups[0]).toMatchObject({ operationCount: 250, value: 2500000000 });
+  });
+
+  it('preserves microsecond part-log identity for merge and moved-part detail lookup', async () => {
+    for (const eventType of ['MergeParts','MovePart','MutatePart']) {
+      const parts = partLog.replace('numbers(0)','numbers(1)').replace("'MergeParts' AS event_type",`'${eventType}' AS event_type`)
+        .replace(`fromUnixTimestamp64Milli(${startMs+10000})`,`fromUnixTimestamp64Micro(toInt64(${(startMs+10000)*1000+123}))`);
+      const withParts = fixtureService(samples,parts);
+      const summary = await withParts.getRange(request);
+      const group = summary.groups.find(group => group.kind !== 'query')!;
+      const details = await withParts.getDetails({ mode: 'cpu', selection: summary.selection, groups: [group], limit: 5 });
+      expect(details.operations).toHaveLength(1);
+      const source = details.operations[0].source;
+      expect(source).toMatchObject({ event_type: eventType, event_time_microseconds: '2026-11-18 10:00:10.000123Z' });
+      const exact = (source as { event_time_microseconds: string }).event_time_microseconds;
+      const rows = await ctx.rawAdapter.executeQuery(`SELECT countIf(event_time_microseconds=parseDateTime64BestEffort('${exact}',6,'UTC')) AS exact_matches,
+        countIf(event_time_microseconds=fromUnixTimestamp64Milli(${startMs+10000})) AS millisecond_matches FROM ${parts}`);
+      expect(Number(rows[0].exact_matches)).toBe(1);
+      expect(Number(rows[0].millisecond_matches)).toBe(0);
+    }
   });
 
   it('applies server and query-hash filters before aggregation', async () => {

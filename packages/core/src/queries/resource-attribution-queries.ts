@@ -36,7 +36,8 @@ export function buildResourceAttributionSQL(options: ResourceAggregationSQLReque
     toFloat64(ProfileEvents['NetworkSendBytes'] + ProfileEvents['NetworkReceiveBytes']) AS net_bytes,
     toFloat64(ProfileEvents['OSReadBytes'] + ProfileEvents['OSWriteBytes']) AS disk_bytes,
     toFloat64(memory_usage) AS peak_memory, toUInt32(exception_code) AS failure_code,
-    substring(query,1,500) AS label, user, toUInt8(0) AS is_running
+    substring(query,1,500) AS label, user, toUInt8(0) AS is_running,
+    '' AS source_event_type,'' AS source_event_time_us
     FROM {{cluster_aware:system.query_log}}
     WHERE event_date >= toDate(fromUnixTimestamp64Milli(window_start_ms),'UTC') - 1
       AND type IN ('QueryFinish','ExceptionWhileProcessing') AND query NOT LIKE ${APP_SOURCE_LIKE}
@@ -49,18 +50,19 @@ export function buildResourceAttributionSQL(options: ResourceAggregationSQLReque
     toFloat64(ProfileEvents['NetworkSendBytes'] + ProfileEvents['NetworkReceiveBytes']) AS net_bytes,
     toFloat64(ProfileEvents['OSReadBytes'] + ProfileEvents['OSWriteBytes']) AS disk_bytes,
     toFloat64(peak_memory_usage) AS peak_memory, toUInt32(error) AS failure_code,
-    part_name AS label, '' AS user, toUInt8(0) AS is_running
+    part_name AS label, '' AS user, toUInt8(0) AS is_running,
+    toString(event_type) AS source_event_type,concat(toString(event_time_microseconds,'UTC'),'Z') AS source_event_time_us
     FROM {{cluster_aware:system.part_log}}
     WHERE event_date >= toDate(fromUnixTimestamp64Milli(window_start_ms),'UTC') - 1
       AND event_type IN ('MergeParts','MutatePart','MovePart') AND op_start_ms < window_end_ms AND op_end_ms >= window_start_ms ${hostFilter}`;
-  const columns = 'kind,activity,tables,table_state,hostname,local_id,op_start_ms,op_end_ms,duration_ms,cpu_us,net_bytes,disk_bytes,peak_memory,failure_code,label,user,is_running';
+  const columns = 'kind,activity,tables,table_state,hostname,local_id,op_start_ms,op_end_ms,duration_ms,cpu_us,net_bytes,disk_bytes,peak_memory,failure_code,label,user,is_running,source_event_type,source_event_time_us';
   const runningQueries = `SELECT 'query' AS kind, upper(toString(query_kind)) AS activity, CAST([],'Array(String)') AS tables,
     'running' AS table_state, hostName() AS hostname, query_id AS local_id,
     now_ms-toInt64(elapsed*1000) AS op_start_ms, now_ms AS op_end_ms, greatest(elapsed*1000,1) AS duration_ms,
     toFloat64(ProfileEvents['UserTimeMicroseconds']+ProfileEvents['SystemTimeMicroseconds']) AS cpu_us,
     toFloat64(ProfileEvents['NetworkSendBytes']+ProfileEvents['NetworkReceiveBytes']) AS net_bytes,
     toFloat64(ProfileEvents['OSReadBytes']+ProfileEvents['OSWriteBytes']) AS disk_bytes, toFloat64(memory_usage) AS peak_memory,
-    toUInt32(0) AS failure_code, substring(query,1,500) AS label, user, toUInt8(1) AS is_running
+    toUInt32(0) AS failure_code, substring(query,1,500) AS label, user, toUInt8(1) AS is_running,'' AS source_event_type,'' AS source_event_time_us
     FROM {{cluster_aware:system.processes}} WHERE query NOT LIKE ${APP_SOURCE_LIKE} AND op_start_ms<window_end_ms AND op_end_ms>=window_start_ms
     ${hostFilter}
     ${hashFilter ? `AND normalizedQueryHash(query) = ${options.normalizedQueryHash}` : ''}`;
@@ -69,7 +71,8 @@ export function buildResourceAttributionSQL(options: ResourceAggregationSQLReque
     now_ms-toInt64(elapsed*1000) AS op_start_ms, now_ms AS op_end_ms, greatest(elapsed*1000,1) AS duration_ms,
     toFloat64(elapsed*500000) AS cpu_us, toFloat64(0) AS net_bytes,
     toFloat64(bytes_read_uncompressed+bytes_written_uncompressed) AS disk_bytes, toFloat64(memory_usage) AS peak_memory,
-    toUInt32(0) AS failure_code, result_part_name AS label, '' AS user, toUInt8(1) AS is_running
+    toUInt32(0) AS failure_code, result_part_name AS label, '' AS user, toUInt8(1) AS is_running,
+    if(is_mutation,'MutatePart','MergeParts') AS source_event_type,'' AS source_event_time_us
     FROM {{cluster_aware:system.merges}} WHERE op_start_ms<window_end_ms AND op_end_ms>=window_start_ms
     ${hostFilter}`;
   const source = options.sampleSelection ? selectQueryXRaySource(options.sampleSelection).source : null;

@@ -82,6 +82,8 @@ export interface QuerySeries {
 }
 
 export interface MergeSeries {
+  /** Original part_log event type for exact attempt lookup (including MovePart). */
+  event_type?: string;
   /** Unclipped UTC part_log completion time, retaining microsecond precision. */
   event_time_microseconds?: string;
   /** Original part_log event identity, independent of the visible window. */
@@ -108,6 +110,7 @@ export interface MergeSeries {
 }
 
 export interface MutationSeries {
+  event_type?: string;
   /** Unclipped UTC part_log completion time, retaining microsecond precision. */
   event_time_microseconds?: string;
   /** Original part_log event identity, independent of the visible window. */

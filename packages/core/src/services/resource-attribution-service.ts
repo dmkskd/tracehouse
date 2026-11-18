@@ -67,9 +67,11 @@ export class ResourceAttributionService {
       const source: QuerySeries | MergeSeries | MutationSeries = kind === 'query'
         ? { ...metrics, query_id: String(row.local_id), label: String(row.label), user: String(row.user), query_kind: String(row.activity), tables: row.tables as string[], exception_code: number(row.failure_code), points: [] }
         : { ...metrics, table: (row.tables as string[])[0] ?? '', part_name: String(row.label), error: number(row.failure_code),
-          event_time_microseconds: metrics.end_time, operation_id: JSON.stringify([kind,row.op_end_ms]) };
+          event_time_microseconds: row.source_event_time_us ? String(row.source_event_time_us) : undefined,
+          event_type: String(row.source_event_type || (kind === 'mutation' ? 'MutatePart' : 'MergeParts')),
+          operation_id: JSON.stringify([row.source_event_type,row.source_event_time_us]) };
       const value = number(row.attributed_value), sampled = !!number(row.sampled), estimated = !!number(row.estimated);
-      return { id: JSON.stringify([kind,row.hostname,row.local_id,row.op_start_ms]), source, kind, index, activity: String(row.activity), tables: row.tables as string[], failureCode: number(row.failure_code),
+      return { id: JSON.stringify([kind,row.hostname,row.local_id,kind === 'query' ? row.op_start_ms : row.source_event_time_us]), source, kind, index, activity: String(row.activity), tables: row.tables as string[], failureCode: number(row.failure_code),
         value, meanValue: instant ? null : value / ((endMs-startMs)/1000), basis: sampled && estimated ? 'mixed' : sampled ? 'sampled' : 'average',
         work: !instant && options.mode !== 'memory' ? value : null, activeMs: number(row.active_ms), sampledMs: number(row.sampled_ms), estimatedMs: number(row.estimated_ms), missingMs: number(row.missing_ms) };
     }) };

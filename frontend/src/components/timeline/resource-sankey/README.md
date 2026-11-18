@@ -101,6 +101,13 @@ not abort queries already submitted: the core adapter currently has no abort API
   limited operation rows never supply production Sankey totals.
 - `getNavigatorMetric`: broader server context outside a selected range.
 
+The aggregation SQL reads the operation population once. Running/logged execution
+membership is reconciled by a window count, rather than repeated CTE subqueries.
+Sample identities use local query IDs and hosts; root-query rollup remains unchanged
+for ordinary X-Ray callers. A compressed bitmap identifies captured sample buckets
+without a self-join that would reread the sampling source. The query does not depend
+on experimental materialized CTE support or introduce a population limit.
+
 Aggregation errors are shown, rather than silently falling back to limited timeline
 rows. Missing optional sampler tables produce a visible estimation warning.
 Instant snapshots have one-second resolution: a sub-second execution between ticks
