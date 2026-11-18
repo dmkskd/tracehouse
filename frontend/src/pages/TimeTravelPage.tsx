@@ -1,3 +1,4 @@
+import { ResourceAttributionService } from '@tracehouse/core';
 import { useQueryXRaySelection } from '../components/query/query-xray-preference';
 import { selectQueryXRaySource, resolveEventIdentity } from '@tracehouse/core';
 /**
@@ -732,7 +733,7 @@ export const TimeTravelPage: React.FC = () => {
   }, [effectiveData, queryHashOnly, queryHashFilter]);
 
   const loadExplorationResource = useMemo(() => services ? createResourceDataLoader({
-    timelineService: services.timelineService, hostnameFilter, includeRunning, activityLimit,
+    attributionService: new ResourceAttributionService(services.adapter), timelineService: services.timelineService, hostnameFilter, includeRunning, activityLimit,
     queryHashFilter, queryHashOnly, xraySelection,
   }) : undefined, [services, hostnameFilter, includeRunning, activityLimit, queryHashFilter, queryHashOnly, xraySelection]);
 

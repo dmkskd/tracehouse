@@ -251,26 +251,88 @@ describe('pinned activity exploration', () => {
     data.queries = Array.from({ length: 12 }, (_, i) => ({ ...query, query_id: `q-${i}`, cpu_us: (i + 1) * 60000000, zoomSamples: undefined }));
     render(<ResourceExplorationModal data={data} atMs={base + 30000} initialMode="cpu" onClose={() => {}} />);
     fireEvent.click(screen.getByRole('button', { name: 'Expand default.events in SELECT' }));
-    const limit = screen.getByRole('combobox', { name: 'Operations per type' });
-    expect(limit).toHaveValue('5');
-    const info = screen.getByRole('button', { name: 'Leaf limit information' });
-    fireEvent.click(info);
-    expect(info).toHaveAttribute('aria-expanded', 'true');
-    fireEvent.keyDown(limit, { key: 'Escape' });
-    expect(info).toHaveAttribute('aria-expanded', 'false');
-    expect(screen.getByRole('dialog')).toBeInTheDocument();
     const height = screen.getByTestId('resource-flow-total').getAttribute('height');
     expect(screen.getAllByRole('button', { name: /^Open operation q-/ })).toHaveLength(5);
     expect(screen.getByText('7 other operations')).toBeInTheDocument();
     expect(screen.getByRole('button', { name: /^Open operation q-11/ })).toBeInTheDocument();
     expect(screen.queryByRole('button', { name: /^Open operation q-0 / })).not.toBeInTheDocument();
-    fireEvent.change(limit, { target: { value: '10' } });
+    fireEvent.click(screen.getByRole('button', { name: 'Show 5 more operations in default.events' }));
     expect(screen.getAllByRole('button', { name: /^Open operation q-/ })).toHaveLength(10);
-    fireEvent.change(limit, { target: { value: 'all' } });
+    fireEvent.click(screen.getByRole('button', { name: 'Show 2 more operations in default.events' }));
     expect(screen.getAllByRole('button', { name: /^Open operation q-/ })).toHaveLength(12);
     expect(screen.queryByText(/^[0-9]+ other operations$/)).not.toBeInTheDocument();
     expect(screen.getByTestId('resource-flow-total')).toHaveAttribute('height', height!);
     expect(screen.getByRole('button', { name: 'Collapse queries' })).toBeInTheDocument();
+  });
+  it('reveals only five more tables and preserves totals', () => {
+    const data = fixture();
+    data.queries = Array.from({ length: 17 }, (_, i) => ({ ...query, query_id: `q-${i}`, tables: [`db.t${i}`], cpu_us: (18-i)*60000000, zoomSamples: undefined }));
+    render(<ResourceExplorationModal data={data} atMs={base+30000} initialMode="cpu" onClose={() => {}} />);
+    const count = () => screen.getAllByRole('button', { name: /^Expand db.t/ }).length;
+    const height = screen.getByTestId('resource-flow-total').getAttribute('height');
+    expect(count()).toBe(5);
+    fireEvent.click(screen.getByRole('button', { name: 'Show 5 more tables in SELECT' }));
+    expect(count()).toBe(10);
+    fireEvent.keyDown(screen.getByRole('button', { name: 'Show 5 more tables in SELECT' }), { key: 'Enter' });
+    expect(count()).toBe(15);
+    fireEvent.click(screen.getByRole('button', { name: 'Show 2 more tables in SELECT' }));
+    expect(count()).toBe(17);
+    expect(screen.getByTestId('resource-flow-total')).toHaveAttribute('height',height!);
+    expect(screen.queryByRole('combobox', { name: 'Operations per type' })).not.toBeInTheDocument();
+  });
+  it('collapses low-usage activity types and reveals them five at a time', () => {
+    const data = fixture();
+    data.queries = [{ ...query, cpu_us: 60000000000, zoomSamples: undefined },
+      ...Array.from({ length: 12 }, (_,i) => ({ ...query, query_id: `small-${i}`, query_kind: `SMALL${i}`, cpu_us: 6000, zoomSamples: undefined }))];
+    render(<ResourceExplorationModal data={data} atMs={base+30000} initialMode="cpu" onClose={() => {}} />);
+    const count = () => screen.queryAllByRole('button', { name: /^Inspect SMALL/ }).length;
+    const height = screen.getByTestId('resource-flow-total').getAttribute('height');
+    expect(count()).toBe(0);
+    fireEvent.click(screen.getByRole('button', { name: 'Show 5 more activity types' }));
+    expect(count()).toBe(5);
+    fireEvent.click(screen.getByRole('button', { name: 'Show 5 more activity types' }));
+    expect(count()).toBe(10);
+    fireEvent.click(screen.getByRole('button', { name: 'Show 2 more activity types' }));
+    expect(count()).toBe(12);
+    expect(screen.getByTestId('resource-flow-total')).toHaveAttribute('height',height!);
+  });
+  it('closes the range options on selection or Escape without closing exploration', () => {
+    render(<ResourceExplorationModal data={fixture()} atMs={base+30000} initialMode="cpu" onClose={() => {}} />);
+    fireEvent.click(screen.getByRole('button', { name: 'Time range' }));
+    expect(screen.queryByRole('group', { name: 'Attribution range' })).not.toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Time range' })).toHaveTextContent('1m');
+    fireEvent.click(screen.getByRole('button', { name: 'Time range' }));
+    fireEvent.click(within(screen.getByRole('group', { name: 'Attribution range' })).getByRole('button', { name: '5m' }));
+    expect(screen.queryByRole('group', { name: 'Attribution range' })).not.toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Time range' })).toHaveTextContent('5m');
+    fireEvent.click(screen.getByRole('button', { name: 'Time range' }));
+    fireEvent.keyDown(document, { key: 'Escape' });
+    expect(screen.queryByRole('group', { name: 'Attribution range' })).not.toBeInTheDocument();
+    expect(screen.getByRole('dialog')).toBeInTheDocument();
+  });
+  it('loads individual operations only when expanded and keeps aggregate totals while revealing more', async () => {
+    const data = fixture();
+    data.queries = Array.from({ length: 12 }, (_,i) => ({ ...query, query_id: `q-${i}`, cpu_us: (i+1)*60000000, zoomSamples: undefined }));
+    const attribution = attributeTimeline(data,{ selection: { kind: 'instant', atMs: base+30000 }, mode: 'cpu' });
+    const summary = { mode: 'cpu' as const, selection: attribution.selection, warnings: [], groups: [{
+      id: 'select-events', kind: 'query' as const, activity: 'SELECT', tables: ['default.events'], tableState: 'recorded' as const,
+      value: attribution.total, failureValue: 0, operationCount: 12, failedCount: 0, sampledCount: 0, estimatedCount: 12,
+      unavailableCount: 0, zeroCount: 0, sampledMs: 0, estimatedMs: 0, missingMs: 0,
+    }] };
+    const details = vi.fn(async ({ limit }: { limit: number }) => ({ operations: [...attribution.operations].sort((a,b) => b.value!-a.value!).slice(0,limit), warnings: [] }));
+    const loader = Object.assign(vi.fn(async () => ({ data, summary })), { loadDetails: details });
+    render(<ResourceExplorationModal data={data} atMs={base+30000} initialMode="cpu" onLoadResource={loader} onClose={() => {}} />);
+    await waitFor(() => expect(screen.getByRole('button', { name: 'Expand default.events in SELECT' })).toBeInTheDocument());
+    expect(details).not.toHaveBeenCalled();
+    const height = screen.getByTestId('resource-flow-total').getAttribute('height');
+    fireEvent.click(screen.getByRole('button', { name: 'Expand default.events in SELECT' }));
+    await waitFor(() => expect(screen.getAllByRole('button', { name: /^Open operation q-/ })).toHaveLength(5));
+    expect(details).toHaveBeenLastCalledWith(expect.objectContaining({ limit: 5 }));
+    fireEvent.click(screen.getByRole('button', { name: 'Show 5 more operations in default.events' }));
+    await waitFor(() => expect(screen.getAllByRole('button', { name: /^Open operation q-/ })).toHaveLength(10));
+    expect(details).toHaveBeenLastCalledWith(expect.objectContaining({ limit: 10 }));
+    expect(loader).toHaveBeenCalledTimes(1);
+    expect(screen.getByTestId('resource-flow-total')).toHaveAttribute('height',height!);
   });
   it('loads memory history on resource change and ignores a superseded response', async () => {
     const original = fixture(); original.server_memory = [];
@@ -364,12 +426,15 @@ describe('pinned activity exploration', () => {
     render(<ResourceExplorationModal data={data} atMs={base + 30000} initialMode="cpu" onLoadResource={loader} onClose={() => {}} />);
     await waitFor(() => expect(screen.queryByText('Loading cpu history and operation samples…')).not.toBeInTheDocument());
     fireEvent.click(screen.getByRole('button', { name: 'Time range' }));
+    expect(screen.queryByRole('group', { name: 'Attribution range' })).not.toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Time range' })).toHaveTextContent('1m');
+    fireEvent.click(screen.getByRole('button', { name: 'Time range' }));
     fireEvent.click(within(screen.getByRole('group', { name: 'Attribution range' })).getByRole('button', { name: '1h' }));
     await waitFor(() => expect(loader).toHaveBeenLastCalledWith(data, 'cpu', base + 30000, undefined,
       { kind: 'range', startMs: base + 30000 - 1800000, endMs: base + 30000 + 1800000 }));
     await waitFor(() => expect(screen.queryByText('Loading cpu history and operation samples…')).not.toBeInTheDocument());
     expect(screen.getByRole('group', { name: 'CPU comparison' })).toHaveTextContent('Server / capacity');
-    expect(screen.getByText(/Attributed total = 100%/)).toBeInTheDocument();
+    expect(screen.queryByText(/Shares of accumulated/)).not.toBeInTheDocument();
     expect(screen.getByRole('region', { name: 'Resource attribution flow' })).toHaveTextContent('100%');
     fireEvent.click(screen.getByRole('button', { name: 'Selected instant' }));
     await waitFor(() => expect(screen.getByRole('group', { name: 'CPU comparison' })).toHaveTextContent('Server CPU usage'));
@@ -431,6 +496,9 @@ describe('pinned activity exploration', () => {
     fireEvent.click(screen.getByRole('button', { name: 'Explore resource usage…' }));
     const dialog = screen.getByRole('dialog');
     const toggle = within(dialog).getByRole('button', { name: 'Events' });
+    expect(toggle).toHaveAttribute('aria-pressed', 'false');
+    expect(within(dialog).queryByRole('button', { name: 'Host two change' })).not.toBeInTheDocument();
+    fireEvent.click(toggle);
     expect(toggle).toHaveAttribute('aria-pressed', 'true');
     expect(within(dialog).getByRole('button', { name: 'Host two change' })).toBeInTheDocument();
     expect(within(dialog).queryByRole('button', { name: 'Outside loaded view' })).not.toBeInTheDocument();
@@ -470,6 +538,7 @@ describe('pinned activity exploration', () => {
     render(<ResourceExplorationModal data={fixture()} atMs={base + 30000} initialMode="cpu" onClose={() => {}}
       events={[event('First group A', 10), event('First group B', 10.1), single, event('Second group A', 50), event('Second group B', 50.1)]}
       onViewEventDetails={viewDetails} />);
+    fireEvent.click(screen.getByRole('button', { name: 'Events' }));
     const groups = screen.getAllByRole('button', { name: '2 events' });
     const border = groups[0].style.border;
     fireEvent.mouseEnter(groups[0]);

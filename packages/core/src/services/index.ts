@@ -16,6 +16,7 @@ export type { MergeHistoryOptions } from './merge-tracker.js';
 export { ConnectionManager, ConnectionManagerError } from './connection-manager.js';
 export type { AdapterFactory } from './connection-manager.js';
 export { TimelineService, TimelineServiceError } from './timeline-service.js';
+export { ResourceAttributionService, resourceSnapshotAt } from './resource-attribution-service.js';
 export { EventsService } from './events-service.js';
 export type {
   EventsOptions,

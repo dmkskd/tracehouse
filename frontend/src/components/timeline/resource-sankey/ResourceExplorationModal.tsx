@@ -12,9 +12,11 @@ import { segmentsStyle } from '../TimeTravelSegments.styles';
 import { controlsStyle } from '../TimeTravelControls.styles';
 import { ResourceInfoPopover } from './ResourceInfoPopover';
 import { ZeroResourceActivity } from './ZeroResourceActivity';
+import { ResourceTimeSelection } from './ResourceTimeSelection';
+import { useResourceOperations } from './useResourceOperations';
 import { useResourceData } from './useResourceData';
 import { ResourceAttributionFlow, type ResourceFlowSelection } from './ResourceAttributionFlow';
-import { explorationServerSeries, attributionConsumers, resourceConsumers, groupResourceFlow, type ResourceDataLoader, type ResourceOperationOpen } from './resource-exploration-model';
+import { explorationServerSeries, attributionConsumers, resourceConsumers, groupResourceFlow, summaryResourceFlow, applyResourceSummary, type ResourceLoadResult, type ResourceDataLoader, type ResourceOperationOpen } from './resource-exploration-model';
 
 const styles = css`
   padding: 16px; overflow: auto; color: var(--text-primary); font-size: 12px;
@@ -39,11 +41,8 @@ const styles = css`
   .comparison-capacity { position: absolute; top: -2px; bottom: -2px; border-left: 1px solid var(--text-muted); }
   .comparison .operation-fill { background: repeating-linear-gradient(135deg, #7b9eed 0px, #7b9eed 3px, #a4bdf2 3px, #a4bdf2 6px); }
   .coverage { display: grid; grid-template-columns: minmax(0, 1fr) auto; align-items: center; gap: 12px; min-width: 0; margin-top: 0; }
-  .leaf-limit { display: flex; align-items: center; gap: 6px; white-space: nowrap; }
-  .leaf-select { position: relative; }
-  .leaf-select select { appearance: none; width: 60px; height: 26px; padding: 0 22px 0 10px; border: 0; border-radius: 5px; background: var(--bg-primary); color: var(--text-primary); box-shadow: 0 1px 3px rgba(0,0,0,.1); font: inherit; cursor: pointer; }
-  .leaf-select svg { position: absolute; right: 7px; top: 9px; pointer-events: none; }
   .time-navigation { position: relative; border-radius: 8px; }
+  .time-toolbar { display: grid; grid-template-columns: minmax(0, 1fr) auto; align-items: center; gap: 12px; margin: 8px 0 6px; }
   .time-selection-keyboard { position: absolute; inset: 0; pointer-events: none; border-radius: 8px; }
   .time-selection-keyboard:focus-visible { outline: 2px solid #58a6ff; outline-offset: 3px; }
   .notice { margin: 12px 0; padding: 10px; background: var(--bg-tertiary); line-height: 1.6; }
@@ -65,13 +64,15 @@ function instantFormat(value: number, mode: MetricMode) {
     : `${formatBytes(value)}${mode === 'memory' ? '' : '/s'}`;
 }
 
-export function ResourceExplorationModal({ data, atMs, initialMode, hiddenCategories, hostLabel, availableHosts, initialHosts, events, onViewEventDetails, onLoadResource, onOpenOperation, onClose, initialDataLoaded = false, initialSamplingWarning }: {
-  data: MemoryTimeline; atMs: number; initialMode: MetricMode; hiddenCategories?: ReadonlySet<OperationKind>; hostLabel?: string; availableHosts?: readonly string[]; initialHosts?: readonly string[]; events?: OperationalEvent[]; onViewEventDetails?: (event: OperationalEvent) => void; onLoadResource?: ResourceDataLoader; onOpenOperation?: ResourceOperationOpen; initialDataLoaded?: boolean; initialSamplingWarning?: string; onClose: () => void;
+export function ResourceExplorationModal({ data, atMs, initialMode, hiddenCategories, hostLabel, availableHosts, initialHosts, events, onViewEventDetails, onLoadResource, onOpenOperation, onClose, initialDataLoaded = false, initialSamplingWarning, initialResource }: {
+  data: MemoryTimeline; atMs: number; initialMode: MetricMode; hiddenCategories?: ReadonlySet<OperationKind>; hostLabel?: string; availableHosts?: readonly string[]; initialHosts?: readonly string[]; events?: OperationalEvent[]; onViewEventDetails?: (event: OperationalEvent) => void; onLoadResource?: ResourceDataLoader; onOpenOperation?: ResourceOperationOpen; initialDataLoaded?: boolean; initialSamplingWarning?: string; initialResource?: Omit<ResourceLoadResult, 'data'>; onClose: () => void;
 }) {
   const [mode, setMode] = useState(initialMode);
   const [groupBy, setGroupBy] = useState<'activity' | 'table'>('activity');
-  const [operationLimit, setOperationLimit] = useState(5);
-  const [eventsVisible, setEventsVisible] = useState(true);
+  const [operationLimits, setOperationLimits] = useState<Record<string, number>>({});
+  const [activityLimit, setActivityLimit] = useState<number>();
+  const [tableLimit, setTableLimit] = useState<Record<string, number>>({});
+  const [eventsVisible, setEventsVisible] = useState(false);
   const [selectedEventId, setSelectedEventId] = useState<string | null>(null);
   const accountingId = useId();
   const [originalData] = useState(data);
@@ -92,7 +93,7 @@ export function ResourceExplorationModal({ data, atMs, initialMode, hiddenCatego
   const rangeStart = Math.max(min, Math.min(max - selectionSpan, time - selectionSpan / 2));
   const selection: AttributionSelection = selectionMode === 'instant' ? { kind: 'instant', atMs: time }
     : { kind: 'range', startMs: rangeStart, endMs: rangeStart + selectionSpan };
-  const { source, loading, loadError, samplingWarning, contextSeries, retry } = useResourceData(originalData, mode, time, hostScope, onLoadResource, selection, initialDataLoaded ? { samplingWarning: initialSamplingWarning } : undefined);
+  const { source, loading, loadError, samplingWarning, contextSeries, summary, retry } = useResourceData(originalData, mode, time, hostScope, onLoadResource, selection, initialDataLoaded ? { samplingWarning: initialSamplingWarning, ...initialResource } : undefined);
 
   const [selected, setSelected] = useState<ResourceFlowSelection | null>(null);
   const closeButton = useRef<HTMLButtonElement>(null);
@@ -100,10 +101,12 @@ export function ResourceExplorationModal({ data, atMs, initialMode, hiddenCatego
     closeButton.current?.focus();
   }, []);
   const host = onLoadResource && !loading && !loadError ? undefined : hostScope;
-  const attribution = useMemo(() => attributeTimeline(source, { selection: selectionMode === 'instant' ? { kind: 'instant', atMs: time }
+  const contextAttribution = useMemo(() => attributeTimeline(source, { selection: selectionMode === 'instant' ? { kind: 'instant', atMs: time }
     : { kind: 'range', startMs: rangeStart, endMs: rangeStart + selectionSpan }, mode, hostname: host, hiddenKinds: hiddenCategories }),
   [source, selectionMode, time, rangeStart, selectionSpan, mode, host, hiddenCategories]);
-  const { consumers, missingMemory } = useMemo(() => attributionConsumers(attribution), [attribution]);
+  const attribution = useMemo(() => summary ? applyResourceSummary(contextAttribution, summary, hiddenCategories) : contextAttribution, [contextAttribution, summary, hiddenCategories]);
+  const { consumers, missingMemory: legacyMissingMemory } = useMemo(() => attributionConsumers(attribution), [attribution]);
+  const missingMemory = summary && mode === 'memory' ? attribution.coverage.unavailable : legacyMissingMemory;
   const series = useMemo(() => contextSeries ?? explorationServerSeries(source, mode, host ?? ''), [source, mode, host, contextSeries]);
   const measured = attribution.measured;
   const total = attribution.total;
@@ -123,7 +126,7 @@ export function ResourceExplorationModal({ data, atMs, initialMode, hiddenCatego
   const comparisonCapacity = attribution.capacity ?? 0;
   // Independent values on one scale: estimates may exceed the server measurement or capacity.
   const comparisonMax = Math.max(comparisonCapacity, measured.value ?? 0, total, 1);
-  const operationsUnavailable = mode === 'memory' && missingMemory > 0 && consumers.length === 0;
+  const operationsUnavailable = mode === 'memory' && missingMemory > 0 && attribution.total === 0;
   const resourceLabel = METRIC_CONFIG[mode].label;
   // Instant values use a fixed resource reference while scrubbing; range shares normalize to 100%.
   const flowScaleReference = useMemo(() => {
@@ -134,12 +137,16 @@ export function ResourceExplorationModal({ data, atMs, initialMode, hiddenCatego
     const pinTotal = resourceConsumers(source, atMs, mode, host, hiddenCategories).consumers.reduce((sum, c) => sum + c.value, 0);
     return series.reduce((peak, point) => Math.max(peak, point.v), Math.max(pinTotal, 1));
   }, [source, atMs, mode, host, hiddenCategories, series, attribution.capacity, selectionMode, total]);
-  const tableGroups = useMemo(() => groupResourceFlow(consumers, groupBy), [consumers, groupBy]);
+  const baseGroups = useMemo(() => summary ? summaryResourceFlow({ ...summary, groups: summary.groups.filter(group => !hiddenCategories?.has(group.kind)) }, groupBy, tableLimit, activityLimit) : groupResourceFlow(consumers, groupBy, tableLimit, activityLimit), [summary, consumers, groupBy, hiddenCategories, tableLimit, activityLimit]);
+  const expandedGroup = baseGroups.find(group => group.id === selected?.groupId);
+  const operationLimit = operationLimits[expandedGroup?.id ?? ''] ?? 5;
+  const details = useResourceOperations(onLoadResource, expandedGroup, mode, summary?.selection ?? selection, hostScope, operationLimit);
+  const tableGroups = useMemo(() => baseGroups.map(group => group.id === expandedGroup?.id && group.aggregates ? { ...group, rows: details.rows } : group), [baseGroups, expandedGroup, details.rows]);
   // A narrow native navigator window supplies the same grip/drag behavior as
   // Time Travel while selecting one instant, not aggregating an interval.
   const change = () => { setSelected(null); setSelectedEventId(null); };
   const selectFlow = (selection: ResourceFlowSelection | null) => {
-    const consumer = selection?.consumerId ? consumers.find(c => c.id === selection.consumerId) : undefined;
+    const consumer = selection?.consumerId ? [...consumers, ...details.rows].find(c => c.id === selection.consumerId) : undefined;
     setSelected(selection);
     if (consumer && onOpenOperation) onOpenOperation(consumer.kind, consumer.source);
   };
@@ -173,9 +180,9 @@ export function ResourceExplorationModal({ data, atMs, initialMode, hiddenCatego
         <strong>How to read these values</strong>
         <ul>
           <li><strong>Server usage:</strong> {mode === 'cpu' ? 'Total CPU usage' : mode === 'memory' ? 'Memory tracked by ClickHouse' : mode === 'disk' ? 'Total disk read and write rate' : 'Total network send and receive rate'} across the selected servers.</li>
-          <li><strong>Operation usage:</strong> Total usage attributed to queries, merges, and mutations in the current results. Operations excluded by filters or query result limits are omitted from this total.</li>
+          <li><strong>Operation usage:</strong> {summary ? 'Includes all queries, merges, and mutations matching the selected servers, time, and query filter. Expanding a branch loads individual operation details; totals include all matching operations.' : 'Includes queries, merges, and mutations in the loaded timeline results.'}</li>
           {mode === 'memory' ? <li><strong>Sampled memory:</strong> Uses concurrent memory samples. Missing samples are excluded; peak memory is not substituted.</li> : <>
-            <li><strong>Sampled:</strong> {selectionMode === 'instant' ? 'Uses a measurement recorded near the selected time.' : 'Uses measurements recorded during the selected range.'}</li>
+            <li><strong>Sampled:</strong> {selectionMode === 'instant' ? 'Uses a measurement near the selected time. Instant snapshots have one-second resolution.' : 'Uses measurements recorded during the selected range.'}</li>
             <li><strong>Estimated:</strong> {selectionMode === 'instant' ? 'No measurement is available near the selected time, so we use the operation’s average usage over its full execution. This cannot show whether it was busy or idle at that time.' : 'Where measurements are missing, we use the operation’s average usage over its full execution. This cannot show whether it was busy or idle during those gaps.'}</li>
           </>}
           {selectionMode === 'range' && <li><strong>Range percentages:</strong> Each branch’s share of accumulated {mode === 'cpu' ? 'CPU time' : mode === 'memory' ? 'memory occupancy (bytes × time)' : mode === 'disk' ? 'disk I/O bytes' : 'network I/O bytes'}. The Sankey total is 100%.</li>}
@@ -189,18 +196,10 @@ export function ResourceExplorationModal({ data, atMs, initialMode, hiddenCatego
       {loading && <div className="notice" role="status">Loading {METRIC_CONFIG[mode].label.toLowerCase()} history and operation samples…</div>}
       {loadError && <div className="notice" role="alert">Could not load this resource: {loadError} <button className="resource-action" onClick={retry}>Retry</button></div>}
       {samplingWarning && <div className="notice">{samplingWarning}</div>}
-      <div className="heading" style={{ marginTop: 8, marginBottom: 6 }}>
-        <div style={{ display: 'flex', gap: 6, alignItems: 'center', flexWrap: 'wrap' }}>
-          <div className={controlsStyle}>
-            <div className={segmentsStyle} role="group" aria-label="Attribution time selection">
-              <button type="button" aria-pressed={selectionMode === 'instant'} onClick={() => { setSelectionMode('instant'); change(); }}>Selected instant</button>
-              <button type="button" aria-pressed={selectionMode === 'range'} onClick={() => { setSelectionMode('range'); change(); }}>Time range</button>
-            </div>
-          </div>
-          {selectionMode === 'range' && <div className={controlsStyle}><div className={segmentsStyle} role="group" aria-label="Attribution range">
-            {[{ label: '1m', ms: 60_000 }, { label: '5m', ms: 300_000 }, { label: '15m', ms: 900_000 }, { label: '1h', ms: 3600_000 }, ...([60_000, 300_000, 900_000, 3600_000].includes(originEnd - originStart) ? [] : [{ label: 'Current view', ms: originEnd - originStart }])].map(preset =>
-              <button type="button" key={preset.label} aria-pressed={rangeSpan === preset.ms} onClick={() => { setRangeSpan(preset.ms); change(); }}>{preset.label}</button>)}
-          </div></div>}
+      <div className="time-toolbar">
+        <div style={{ display: 'flex', gap: 6, alignItems: 'center', flexWrap: 'wrap', minWidth: 0 }}>
+          <ResourceTimeSelection mode={selectionMode} span={rangeSpan} currentViewMs={originEnd-originStart}
+            onMode={next => { setSelectionMode(next); change(); }} onSpan={next => { setRangeSpan(next); change(); }} />
           <span className={controlsStyle} style={{ padding: 0, border: 0, background: 'transparent' }} aria-hidden="true"><span className="tt-controls-divider" /></span>
           <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
             <span className="muted">Group by</span>
@@ -210,26 +209,10 @@ export function ResourceExplorationModal({ data, atMs, initialMode, hiddenCatego
             </div></div>
           </div>
           <span className={controlsStyle} style={{ padding: 0, border: 0, background: 'transparent' }} aria-hidden="true"><span className="tt-controls-divider" /></span>
-          <div className="leaf-limit">
-            <span className="muted">Operations</span>
-            <div className={controlsStyle}><div className="leaf-select">
-            <select aria-label="Operations per type" aria-describedby={`${accountingId}-leaves`} value={Number.isFinite(operationLimit) ? operationLimit : 'all'}
-              onChange={event => setOperationLimit(event.target.value === 'all' ? Infinity : Number(event.target.value))}>
-              {[5, 10, 20, 50].map(limit => <option key={limit} value={limit}>{limit}</option>)}
-              <option value="all">All</option>
-            </select>
-            <svg width="8" height="8" viewBox="0 0 8 8" aria-hidden="true"><path d="m1 2 3 3 3-3" fill="none" stroke="currentColor" /></svg>
-            </div></div>
-            <ResourceInfoPopover id={`${accountingId}-leaves`} label="Leaf limit information" title="Maximum operations per branch">
-              Shows the largest individual operations per expanded activity branch. Remaining operations are combined into an Other operations branch; totals are unchanged.
-            </ResourceInfoPopover>
-          </div>
-          <span className={controlsStyle} style={{ padding: 0, border: 0, background: 'transparent' }} aria-hidden="true"><span className="tt-controls-divider" /></span>
           <div className={controlsStyle}><div className={segmentsStyle}>
             <button type="button" aria-pressed={eventsVisible} title="Show events already loaded by Time Travel" onClick={() => { setEventsVisible(value => !value); setSelectedEventId(null); }}>Events</button>
           </div></div>
         </div>
-        {selectionMode === 'range' && <span className="muted">Shares of accumulated {mode === 'cpu' ? 'CPU time' : mode === 'memory' ? 'sampled memory occupancy' : mode === 'disk' ? 'disk I/O' : 'network I/O'} · {total > 0 ? 'Attributed total = 100%' : 'No attributed resource use'}</span>}
         <button type="button" className="resource-action" title="Restore the pinned time, resource, and server selection" onClick={() => { if (loadError) retry(); setSelectionMode('instant'); setTime(atMs); setMode(initialMode); setSelectedHosts(originHosts); change(); }} style={{ marginLeft: 'auto' }}>Reset to pin</button>
       </div>
       <div className="context">
@@ -260,10 +243,14 @@ export function ResourceExplorationModal({ data, atMs, initialMode, hiddenCatego
       </div>
       {selectionMode === 'range' && measured.value !== null && measured.coverageMs < selectionSpan * .95 && <div className="muted">Server measurement coverage: {((measured.coverageMs / selectionSpan) * 100).toFixed(1)}% of the selected time.</div>}
       {selectionMode === 'range' && missingMemory > 0 && <div className="muted" role="status">Partial memory coverage: {missingMemory} operations have unsampled intervals. Occupancy and peak include observed samples only.</div>}
-      {!loading && !loadError && <ZeroResourceActivity attribution={attribution} formattedZero={fmt(0, mode)} />}
-      {!loading && !loadError && (consumers.length > 0 ? <>
-        <ResourceAttributionFlow groupBy={groupBy} operationLimit={operationLimit} selectionKind={selectionMode} scaleReference={flowScaleReference} groups={tableGroups} mode={mode} selection={selected} onSelect={selectFlow} format={flowFormat} />
-      </> : <div className="notice">{mode === 'memory' && missingMemory > 0 ? 'Concurrent memory attribution is unavailable at this time. Choose a time with operation samples.' : 'No contributing loaded operations at this time.'}</div>)}
+      {!loading && !loadError && <ZeroResourceActivity summary={summary ? { ...summary, groups: summary.groups.filter(group => !hiddenCategories?.has(group.kind)) } : undefined} attribution={attribution} formattedZero={fmt(0, mode)} />}
+      {details.loading && <div role="status" className="muted">Loading operation details…</div>}
+      {details.error && <div role="alert" className="notice">{details.error} <button className="resource-action" onClick={details.retry}>Retry details</button></div>}
+      {!loading && !loadError && (tableGroups.length > 0 ? <>
+        <ResourceAttributionFlow groupBy={groupBy} operationLimit={operationLimit} selectionKind={selectionMode} scaleReference={flowScaleReference} groups={tableGroups} mode={mode} detailsLoading={details.loading} onShowMoreActivities={setActivityLimit}
+          onShowMoreTables={(primaryId) => { const key = groupBy === 'table' ? '*' : primaryId; setTableLimit(previous => ({ ...previous, [key]: (previous[key] ?? 5)+5 })); }}
+          onShowMoreOperations={(groupId) => setOperationLimits(previous => ({ ...previous, [groupId]: (previous[groupId] ?? 5)+5 }))} selection={selected} onSelect={selectFlow} format={flowFormat} />
+      </> : <div className="notice">{mode === 'memory' && missingMemory > 0 ? 'Concurrent memory attribution is unavailable at this time. Choose a time with operation samples.' : 'No contributing operations at this time.'}</div>)}
     </div>
   </ModalWrapper>;
 }

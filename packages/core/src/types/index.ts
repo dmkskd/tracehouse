@@ -18,3 +18,4 @@ export * from './version-gated-capabilities.js';
 export * from './analytics.js';
 export * from './chart.js';
 export * from './replication-topology.js';
+export * from './resource-attribution.js';

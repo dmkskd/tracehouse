@@ -1,18 +1,19 @@
 import { useEffect, useState } from 'react';
-import type { MemoryTimeline, AttributionSelection, TimeseriesPoint } from '@tracehouse/core';
+import type { MemoryTimeline, AttributionSelection } from '@tracehouse/core';
 import type { MetricMode } from '../timeline-constants';
-import type { ResourceDataLoader } from './resource-exploration-model';
+import { resourceSnapshotAt } from '@tracehouse/core';
+import type { ResourceLoadResult, ResourceDataLoader } from './resource-exploration-model';
 import { resourceSampleWindow } from './resource-data-loader';
 
 /** Request identity includes resource, host, and sample window; late responses cannot replace the current view. */
-export function useResourceData(original: MemoryTimeline, mode: MetricMode, timeMs: number, scope: string | readonly string[] | undefined, loader?: ResourceDataLoader, selection?: AttributionSelection, initial?: { samplingWarning?: string }) {
+export function useResourceData(original: MemoryTimeline, mode: MetricMode, timeMs: number, scope: string | readonly string[] | undefined, loader?: ResourceDataLoader, selection?: AttributionSelection, initial?: Omit<ResourceLoadResult, 'data'>) {
   const isRange = selection?.kind === 'range';
   const { start, end } = isRange ? { start: selection.startMs, end: selection.endMs } : resourceSampleWindow(original, timeMs);
   const scopeKey = JSON.stringify([mode, scope ?? null]);
   const key = JSON.stringify([mode, scope ?? null, isRange ? 'range' : 'instant', start, end]);
-  const [initialRequest, setInitialRequest] = useState(() => initial && loader ? { key, scopeKey, loader, data: original, samplingWarning: initial.samplingWarning, contextSeries: undefined as TimeseriesPoint[] | undefined } : null);
+  const [initialRequest, setInitialRequest] = useState(() => initial && loader ? { key, scopeKey, loader, data: original, ...initial } : null);
   const [revision, setRevision] = useState(0);
-  const [loaded, setLoaded] = useState<{ key: string; scopeKey: string; loader: ResourceDataLoader; data: MemoryTimeline; samplingWarning?: string; contextSeries?: TimeseriesPoint[] } | null>(null);
+  const [loaded, setLoaded] = useState<{ key: string; scopeKey: string; loader: ResourceDataLoader; } & ResourceLoadResult | null>(null);
   const [error, setError] = useState<{ key: string; loader: ResourceDataLoader; message: string } | null>(null);
   useEffect(() => {
     if (!loader) return;
@@ -35,6 +36,8 @@ export function useResourceData(original: MemoryTimeline, mode: MetricMode, time
   return {
     retry: () => { setInitialRequest(null); setError(null); setLoaded(null); setRevision(value => value + 1); },
     source: current?.data ?? original,
+    summary: current?.snapshots ? resourceSnapshotAt(current.snapshots, timeMs) : current?.summary,
+    snapshots: current?.snapshots,
     loading: !!loader && !current && !loadError,
     loadError,
     samplingWarning: current?.samplingWarning,

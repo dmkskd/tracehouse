@@ -102,3 +102,54 @@ describe('resource data loading boundary', () => {
     expect(result.current.loadError).toBeNull();
   });
 });
+
+describe('server aggregate loading and local scrubbing', () => {
+  function setup() {
+    const data = timeline();
+    const summary = { mode: 'cpu' as const, selection: { kind: 'range' as const, startMs: start, endMs: start+3600000 }, groups: [], warnings: [] };
+    const aggregation = {
+      getSnapshots: vi.fn(async (request: { startMs: number; endMs: number }) => ({ ...request, mode: 'cpu' as const, stepMs: 1000 as const,
+        snapshots: new Map([[request.startMs, { ...summary, selection: { kind: 'instant' as const, atMs: request.startMs } }]]), warnings: [] })),
+      getRange: vi.fn(async () => summary), getDetails: vi.fn(async () => ({ operations: [], warnings: [] })),
+    };
+    const service = { getTimeline: vi.fn(async () => data), getZoomData: vi.fn(async () => data) };
+    const loader = createResourceDataLoader({ attributionService: aggregation, timelineService: service, hostnameFilter: ['ch-01'],
+      includeRunning: false, activityLimit: 100, queryHashFilter: null, queryHashOnly: false, xraySelection: undefined });
+    return { data, aggregation, service, loader, summary };
+  }
+  it('scrubs 100 cursor positions locally and fetches only once per new chunk', async () => {
+    const { data, loader, aggregation, service } = setup();
+    const { result, rerender } = renderHook(({ time }) => useResourceData(data, 'cpu', time, undefined, loader), { initialProps: { time: start } });
+    await waitFor(() => expect(result.current.loading).toBe(false));
+    for (let i=1;i<=100;i++) rerender({ time: start+i*1000 });
+    expect(aggregation.getSnapshots).toHaveBeenCalledTimes(1);
+    expect(service.getZoomData).not.toHaveBeenCalled();
+    expect(aggregation.getDetails).not.toHaveBeenCalled();
+    expect(result.current.summary?.selection).toEqual({ kind: 'instant', atMs: start+100000 });
+    rerender({ time: start+121000 });
+    await waitFor(() => expect(result.current.loading).toBe(false));
+    expect(aggregation.getSnapshots).toHaveBeenCalledTimes(2);
+    rerender({ time: start+1000 });
+    await waitFor(() => expect(result.current.loading).toBe(false));
+    expect(aggregation.getSnapshots).toHaveBeenCalledTimes(2);
+    expect(service.getTimeline).toHaveBeenCalledTimes(1);
+  });
+  it('gets range totals from the aggregation service and loads details separately', async () => {
+    const { data, loader, aggregation, summary, service } = setup();
+    const result = await loader(data,'cpu',start,[],summary.selection);
+    expect(result.summary).toBe(summary);
+    expect(aggregation.getRange).toHaveBeenCalledWith(expect.objectContaining({ startMs: start, endMs: start+3600000, hostname: [] }));
+    expect(service.getZoomData).not.toHaveBeenCalled();
+    expect(aggregation.getDetails).not.toHaveBeenCalled();
+    await loader.loadDetails!({ mode: 'cpu', selection: summary.selection, groups: [], limit: 5, hostname: [] });
+    expect(aggregation.getDetails).toHaveBeenCalledWith(expect.objectContaining({ limit: 5, hostname: [] }));
+    expect(result.summary).toBe(summary);
+  });
+  it('does not fall back to limited timeline rows after an aggregation error and permits retry', async () => {
+    const { data, loader, aggregation } = setup();
+    aggregation.getSnapshots.mockRejectedValueOnce(new Error('aggregate failed'));
+    await expect(loader(data,'cpu',start)).rejects.toThrow('aggregate failed');
+    await expect(loader(data,'cpu',start)).resolves.toHaveProperty('snapshots');
+    expect(aggregation.getSnapshots).toHaveBeenCalledTimes(2);
+  });
+});

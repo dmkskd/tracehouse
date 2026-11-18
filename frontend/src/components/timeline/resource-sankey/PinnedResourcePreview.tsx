@@ -1,9 +1,9 @@
 import { useId, useMemo, type RefObject } from 'react';
-import { attributeTimeline, type MemoryTimeline, type OperationKind } from '@tracehouse/core';
+import { attributeTimeline, type MemoryTimeline, type OperationKind, type ResourceAttributionSummary } from '@tracehouse/core';
 import { css } from '@emotion/css';
 import { formatBytes } from '../../../utils/formatters';
 import { ZeroResourceActivity } from './ZeroResourceActivity';
-import { attributionConsumers } from './resource-exploration-model';
+import { applyResourceSummary, attributionConsumers } from './resource-exploration-model';
 import { METRIC_CONFIG, segmentColor, type MetricMode } from '../timeline-constants';
 
 const previewStyle = css`
@@ -17,21 +17,31 @@ const previewStyle = css`
 `;
 
 /** A pinned selection becomes a resource preview, rather than a duplicate hover list. */
-export function PinnedResourcePreview({ data, atMs, mode, width, hiddenCategories, onExplore, buttonRef }: {
-  data: MemoryTimeline; atMs: number; mode: MetricMode; width: number; hiddenCategories?: ReadonlySet<OperationKind>;
+export function PinnedResourcePreview({ data, atMs, mode, width, hiddenCategories, onExplore, buttonRef, summary }: {
+  summary?: ResourceAttributionSummary; data: MemoryTimeline; atMs: number; mode: MetricMode; width: number; hiddenCategories?: ReadonlySet<OperationKind>;
   onExplore: () => void; buttonRef: RefObject<HTMLButtonElement>;
 }) {
   const failurePattern = `preview-failure-${useId().replace(/:/g, '')}`;
-  const attribution = useMemo(() => attributeTimeline(data, { selection: { kind: 'instant', atMs }, mode, hiddenKinds: hiddenCategories }), [data, atMs, mode, hiddenCategories]);
-  const { consumers, missingMemory } = useMemo(() => attributionConsumers(attribution), [attribution]);
+  const contextAttribution = useMemo(() => attributeTimeline(data, { selection: { kind: 'instant', atMs }, mode, hiddenKinds: hiddenCategories }), [data, atMs, mode, hiddenCategories]);
+  const attribution = useMemo(() => summary ? applyResourceSummary(contextAttribution, summary, hiddenCategories) : contextAttribution, [summary, contextAttribution, hiddenCategories]);
+  const { consumers, missingMemory: legacyMissingMemory } = useMemo(() => attributionConsumers(attribution), [attribution]);
+  const missingMemory = summary && mode === 'memory' ? attribution.coverage.unavailable : legacyMissingMemory;
   const measured = attribution.measured;
-  const total = consumers.reduce((s, c) => s + c.value, 0);
+  const total = attribution.total;
   const sampled = attribution.coverage.sampled;
   const fmt = (v: number) => mode === 'cpu' ? `${(v / 1e6).toLocaleString(undefined, { maximumFractionDigits: 2 })} cores` : `${formatBytes(v)}${mode === 'memory' ? '' : '/s'}`;
   const groups = [...new Set(consumers.map(c => c.group))].map(key => {
     const rows = consumers.filter(c => c.group === key);
     return { key, value: rows.reduce((s, c) => s + c.value, 0), color: segmentColor(key, rows[0].kind), count: rows.length, failureValue: rows.reduce((sum, c) => sum + (c.failureCode ? c.value : 0), 0), failureCodes: [...new Set(rows.map(c => c.failureCode).filter(Boolean))] };
   });
+  if (summary) {
+    const selected = summary.groups.filter(group => !hiddenCategories?.has(group.kind) && group.value > 0);
+    for (const activity of new Set(selected.map(group => group.activity))) {
+      const rows = selected.filter(group => group.activity === activity);
+      groups.push({ key: activity, value: rows.reduce((sum,g) => sum+g.value,0), color: segmentColor(activity, rows[0].kind),
+        count: rows.reduce((sum,g) => sum+g.operationCount-g.unavailableCount,0), failureValue: rows.reduce((sum,g) => sum+g.failureValue,0), failureCodes: [] });
+    }
+  }
   const shown = groups.slice(0, 4);
   if (groups.length > 4) shown.push({ key: 'Other activity', value: groups.slice(4).reduce((s, g) => s + g.value, 0), color: 'var(--text-muted)', count: groups.slice(4).reduce((s, g) => s + g.count, 0), failureValue: groups.slice(4).reduce((s, g) => s + g.failureValue, 0), failureCodes: [...new Set(groups.slice(4).flatMap(g => g.failureCodes))] });
   const W = Math.max(200, width), rootY = 35, rootH = 120;
@@ -69,9 +79,9 @@ export function PinnedResourcePreview({ data, atMs, mode, width, hiddenCategorie
         })}
         <text x={4} y={H - 10}>{fmt(total)}</text>
       </svg> : <div style={{ padding: '18px 8px', color: 'var(--text-muted)', fontSize: 11, lineHeight: 1.6 }}>{mode === 'memory' && missingMemory ? 'Concurrent memory samples are not loaded. Open exploration to load available history.' : attribution.coverage.active > 0 ? 'Active operations have no positive attributed usage at this instant.' : 'No loaded operations active at this time.'}</div>}
-      <ZeroResourceActivity attribution={attribution} formattedZero={fmt(0)} />
+      <ZeroResourceActivity summary={summary ? { ...summary, groups: summary.groups.filter(group => !hiddenCategories?.has(group.kind)) } : undefined} attribution={attribution} formattedZero={fmt(0)} />
       <div className="explore-hint" style={{ marginTop: 4, color: '#58a6ff', fontSize: 11 }}>Click the diagram to explore tables and queries →</div>
     </button>
-    <div style={{ marginTop: 8, color: 'var(--text-muted)', fontSize: 9, lineHeight: 1.5 }}>{sampled} sampled · {attribution.coverage.estimated} estimated contributions{missingMemory ? ` · ${missingMemory} without memory samples` : ''}. Loaded operations only.{consumers.some(c => c.failureCode) ? ' Hatching marks failed outcomes.' : ''}</div>
+    <div style={{ marginTop: 8, color: 'var(--text-muted)', fontSize: 9, lineHeight: 1.5 }}>{sampled} sampled · {attribution.coverage.estimated} estimated contributions{missingMemory ? ` · ${missingMemory} without memory samples` : ''}. {summary ? 'All matching operations. One-second snapshot.' : 'Loaded operations only.'}{(summary ? summary.groups.some(group => !hiddenCategories?.has(group.kind) && group.failureValue > 0) : consumers.some(c => c.failureCode)) ? ' Hatching marks failed outcomes.' : ''}</div>
   </>;
 }

@@ -1,14 +1,18 @@
 import { useEffect, useId, useRef } from 'react';
 import type { MetricMode } from '../timeline-constants';
 import { buildResourceFlowLayout, resourceRibbon as ribbon, type ResourceFlowSelection } from './resource-flow-layout';
-import type { ResourceFlowGroup } from './resource-exploration-model';
+import { flowGroupCount, flowGroupKind, flowGroupFailedCount, type ResourceFlowGroup } from './resource-exploration-model';
 
 export type { ResourceFlowSelection } from './resource-flow-layout';
 
 /** Preserve readable columns; reveal the selected table's operations without scaling the whole graph down. */
-export function ResourceAttributionFlow({ groups, mode, selection, onSelect, format, scaleReference, selectionKind = 'instant', groupBy = 'activity', operationLimit = 5 }: {
+export function ResourceAttributionFlow({ groups, mode, selection, onSelect, format, scaleReference, selectionKind = 'instant', groupBy = 'activity', operationLimit = 5, onShowMoreTables, onShowMoreOperations, detailsLoading = false, onShowMoreActivities }: {
   groupBy?: 'activity' | 'table';
   operationLimit?: number;
+  onShowMoreTables?: (primaryId: string) => void;
+  onShowMoreOperations?: (groupId: string) => void;
+  detailsLoading?: boolean;
+  onShowMoreActivities?: (nextLimit: number) => void;
   selectionKind?: 'instant' | 'range'; scaleReference: number; groups: ResourceFlowGroup[]; mode: MetricMode; selection: ResourceFlowSelection | null;
   onSelect: (selection: ResourceFlowSelection | null) => void; format: (value: number, mode: MetricMode) => string;
 }) {
@@ -32,7 +36,7 @@ export function ResourceAttributionFlow({ groups, mode, selection, onSelect, for
   return <div className="flow">
     {failedCount > 0 && <div className="muted" style={{ margin: '6px 12px' }}>▨ Hatched: failed outcome · {failedCount} {failedCount === 1 ? 'operation' : 'operations'}</div>}
     {(expanded || primaryExpanded) && <div className="heading flow-navigation" style={{ justifyContent: 'flex-end' }}>
-      <button type="button" className="resource-action" aria-label={expanded ? `Collapse ${expanded.rows[0].kind === 'query' ? 'queries' : 'operations'}` : 'Collapse table'}
+      <button type="button" className="resource-action" aria-label={expanded ? `Collapse ${flowGroupKind(expanded) === 'query' ? 'queries' : 'operations'}` : 'Collapse table'}
         onClick={() => onSelect(expanded ? { primaryId: expanded.primaryId } : null)}>Collapse</button>
     </div>}
     <div ref={viewport} className="flow-viewport" role="region" aria-label="Resource attribution flow" tabIndex={0}>
@@ -74,9 +78,13 @@ export function ResourceAttributionFlow({ groups, mode, selection, onSelect, for
                 </>}
                 {table.selected && table.leaves.map(leaf => {
                   const startY = leafSourceY; leafSourceY += leaf.height;
-                  return <g key={leaf.id} role={leaf.id === 'remainder' ? undefined : 'button'} tabIndex={leaf.id === 'remainder' ? undefined : 0} aria-label={leaf.id === 'remainder' ? undefined : `Open operation ${leaf.label}${leaf.failureCode ? ` · Failed · code ${leaf.failureCode}` : ''}`} onClick={leaf.id === 'remainder' ? undefined : () => onSelect({ primaryId: a.primaryId, groupId: table.id, consumerId: leaf.id })}
-                    onKeyDown={leaf.id === 'remainder' ? undefined : e => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); onSelect({ primaryId: a.primaryId, groupId: table.id, consumerId: leaf.id }); } }}>
-                    <title>{leaf.id === 'remainder' ? 'Additional operations' : `Open ${table.rows[0].kind === 'query' ? 'query' : table.rows[0].kind} details`} · {leaf.label}: {format(leaf.value, mode)}{leaf.failureCode ? ` · Failed · code ${leaf.failureCode}` : leaf.failureValue > 0 ? ' · Includes failed operations' : ''}</title>
+                  const isMore = leaf.id === 'remainder';
+                  const activate = () => { if (isMore) { if (!detailsLoading) onShowMoreOperations?.(table.id); }
+                    else onSelect({ primaryId: a.primaryId, groupId: table.id, consumerId: leaf.id }); };
+                  return <g key={leaf.id} role="button" tabIndex={0} aria-disabled={isMore && detailsLoading || undefined}
+                    aria-label={isMore ? `Show ${Math.min(5,leaf.remainingCount)} more operations in ${table.secondaryLabel}` : `Open operation ${leaf.label}${leaf.failureCode ? ` · Failed · code ${leaf.failureCode}` : ''}`}
+                    onClick={activate} onKeyDown={e => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); activate(); } }}>
+                    <title>{leaf.id === 'remainder' ? 'Additional operations' : `Open ${flowGroupKind(table) === 'query' ? 'query' : flowGroupKind(table)} details`} · {leaf.label}: {format(leaf.value, mode)}{leaf.failureCode ? ` · Failed · code ${leaf.failureCode}` : leaf.failureValue > 0 ? ' · Includes failed operations' : ''}</title>
                     <path d={ribbon(568, startY, 1000, leaf.y, leaf.height)} fill={color} opacity={selection?.consumerId === leaf.id ? 0.35 : 0.15} />
                     <rect x={1000} y={leaf.y} width={8} height={leaf.height} fill={color} />
                     {leaf.failureValue > 0 && <>
@@ -84,25 +92,25 @@ export function ResourceAttributionFlow({ groups, mode, selection, onSelect, for
                       <rect x={1000} y={leaf.y + leaf.height - leaf.failureValue * scale} width={8} height={leaf.failureValue * scale} fill={`url(#${failurePattern})`} />
                     </>}
                     <rect x={1015} y={leaf.labelY - 18} width={400} height={34} fill="transparent" />
-                    <text className={leaf.id === 'remainder' ? undefined : 'operation-link'} x={1020} y={leaf.labelY - 3}>{short(leaf.label, 53)}</text><text className="value" x={1020} y={leaf.labelY + 13}>{format(leaf.value, mode)}{leaf.failureCode ? ` · Failed · code ${leaf.failureCode}` : ''}{leaf.id !== 'remainder' && <tspan className="operation-hint"> · View details →</tspan>}</text>
+                    <text className={leaf.id === 'remainder' ? undefined : 'operation-link'} x={1020} y={leaf.labelY - 3}>{short(leaf.label, 53)}</text><text className="value" x={1020} y={leaf.labelY + 13}>{format(leaf.value, mode)}{leaf.failureCode ? ` · Failed · code ${leaf.failureCode}` : ''}{leaf.id === 'remainder' && <tspan className="operation-hint"> · {detailsLoading ? 'Loading…' : `Show ${Math.min(5,leaf.remainingCount)} more`}</tspan>}{leaf.id !== 'remainder' && <tspan className="operation-hint"> · View details →</tspan>}</text>
                   </g>;
                 })}
-                <g role="button" tabIndex={0} aria-label={`Expand ${table.secondaryLabel} in ${a.label}`} aria-expanded={table.selected}
-                  onClick={() => onSelect({ primaryId: a.primaryId, groupId: table.id })} onKeyDown={e => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); onSelect({ primaryId: a.primaryId, groupId: table.id }); } }}>
-                  <title>{table.secondaryLabel}{table.failureValue > 0 ? ` · ${table.rows.filter(r => r.failureCode).length} failed operations · codes ${[...new Set(table.rows.map(r => r.failureCode).filter(Boolean))].join(", ")}` : ''}{table.tables.length ? `: ${table.tables.join(', ')}` : ''} · {table.rows.length} operations · {format(table.value, mode)}</title>
+                <g role="button" tabIndex={0} aria-label={table.remainingTables && !tableFirst ? `Show ${Math.min(5,table.remainingTables)} more tables in ${a.label}` : `Expand ${table.secondaryLabel} in ${a.label}`} aria-expanded={table.selected}
+                  onClick={() => table.remainingTables && !tableFirst ? onShowMoreTables?.(a.primaryId) : onSelect({ primaryId: a.primaryId, groupId: table.id })} onKeyDown={e => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); if (table.remainingTables && !tableFirst) onShowMoreTables?.(a.primaryId); else onSelect({ primaryId: a.primaryId, groupId: table.id }); } }}>
+                  <title>{table.secondaryLabel}{table.failureValue > 0 ? ` · ${flowGroupFailedCount(table)} failed operations · codes ${[...new Set(table.rows.map(r => r.failureCode).filter(Boolean))].join(", ")}` : ''}{table.tables.length ? `: ${table.tables.join(', ')}` : ''} · {flowGroupCount(table)} operations · {format(table.value, mode)}</title>
                   <rect x={575} y={table.labelY - 28} width={expanded ? 410 : 405} height={54} fill="transparent" />
                   {!tableFirst && table.tables.length > 1 && !table.remainder ? <>
                     <text x={580} y={table.labelY - 17}>{short(table.tables[0], 46)}</text>
                     <text x={580} y={table.labelY - 2}>+ {short(table.tables[1], 40)}{table.tables.length > 2 ? ` (+${table.tables.length - 2})` : ''} →</text>
-                  </> : <text x={580} y={table.labelY - 3}>{short(table.secondaryLabel, expanded ? 46 : 50)} →</text>}
-                  <text className="value" x={580} y={table.labelY + 14}>{format(table.value, mode)} · {table.rows.length} {table.rows.length === 1 ? 'operation' : 'operations'}{!tableFirst && table.tables.length > 1 && !table.remainder ? ' · shared cost' : ''}</text>
+                  </> : <text x={580} y={table.labelY - 3}>{table.remainingTables && !tableFirst ? `${table.remainingTables} more tables` : `${short(table.secondaryLabel, expanded ? 46 : 50)} →`}</text>}
+                  <text className="value" x={580} y={table.labelY + 14}>{format(table.value, mode)} · {flowGroupCount(table)} {flowGroupCount(table) === 1 ? 'operation' : 'operations'}{!tableFirst && table.tables.length > 1 && !table.remainder ? ' · shared cost' : ''}{table.remainingTables && !tableFirst ? <tspan className="operation-hint"> · Show {Math.min(5,table.remainingTables)} more</tspan> : null}</text>
                 </g>
               </g>;
             })}
-            <g role="button" tabIndex={0} aria-label={tableFirst ? `Expand table ${a.label}` : `Inspect ${a.primaryId}`} aria-expanded={tableFirst ? selection?.primaryId === a.primaryId : undefined} onClick={() => onSelect({ primaryId: a.primaryId })} onKeyDown={e => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); onSelect({ primaryId: a.primaryId }); } }}>
+            <g role="button" tabIndex={0} aria-label={a.remainingActivities ? `Show ${Math.min(5,a.remainingActivities)} more activity types` : tableFirst && a.remainingTables ? `Show ${Math.min(5,a.remainingTables)} more tables` : tableFirst ? `Expand table ${a.label}` : `Inspect ${a.primaryId}`} aria-expanded={tableFirst ? selection?.primaryId === a.primaryId : undefined} onClick={() => a.remainingActivities ? onShowMoreActivities?.((a.visibleActivities ?? 0)+5) : tableFirst && a.remainingTables ? onShowMoreTables?.(a.primaryId) : onSelect({ primaryId: a.primaryId })} onKeyDown={e => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); if (a.remainingActivities) onShowMoreActivities?.((a.visibleActivities ?? 0)+5); else if (tableFirst && a.remainingTables) onShowMoreTables?.(a.primaryId); else onSelect({ primaryId: a.primaryId }); } }}>
               <rect x={255} y={a.labelY - 24} width={285} height={48} fill="transparent" />
               <title>{a.label} · {format(a.value, mode)}{tableFirst ? ' · Expand activity types' : ''}</title>
-              <text x={260} y={a.labelY - 3}>{short(a.label, tableFirst ? 38 : 46)}{tableFirst ? ' →' : ''}</text><text className="value" x={260} y={a.labelY + 13}>{format(a.value, mode)}{tableFirst ? ` · ${a.count} ${a.count === 1 ? 'operation' : 'operations'}${a.sharedCost ? ' · shared cost' : ''}` : ''}</text>
+              <text x={260} y={a.labelY - 3}>{tableFirst && a.remainingTables ? `${a.remainingTables} more tables` : short(a.label, tableFirst ? 38 : 46)}{tableFirst && !a.remainingTables ? ' →' : ''}</text><text className="value" x={260} y={a.labelY + 13}>{format(a.value, mode)}{tableFirst ? ` · ${a.count} ${a.count === 1 ? 'operation' : 'operations'}${a.sharedCost ? ' · shared cost' : ''}` : ''}{a.remainingActivities ? <tspan className="operation-hint"> · Show {Math.min(5,a.remainingActivities)} more</tspan> : null}{tableFirst && a.remainingTables ? <tspan className="operation-hint"> · Show {Math.min(5,a.remainingTables)} more</tspan> : null}</text>
             </g>
           </g>;
         })}

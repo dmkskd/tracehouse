@@ -34,7 +34,7 @@ export function PinnedResourceActivity({ data, atMs, mode, width, hiddenCategori
   }, [exploring, onUnpin]);
   return <>
     <PinnedResourcePreview data={resource.source} atMs={atMs} mode={mode} width={width} hiddenCategories={hiddenCategories}
-      onExplore={() => setExploring(true)} buttonRef={trigger} />
+      onExplore={() => setExploring(true)} buttonRef={trigger} summary={resource.summary} />
     {resource.loading && <div role="status" style={{ fontSize: 10, color: 'var(--text-muted)', marginTop: 6 }}>Loading interval samples…</div>}
     {resource.samplingWarning && <div style={{ fontSize: 10, color: 'var(--text-muted)', marginTop: 6 }}>{resource.samplingWarning}</div>}
     {resource.loadError && <div role="alert" style={{ fontSize: 10, marginTop: 6 }}>Could not load interval samples. Open exploration to retry.</div>}
@@ -46,6 +46,6 @@ export function PinnedResourceActivity({ data, atMs, mode, width, hiddenCategori
       </div>
     </ModalWrapper> : <ResourceExplorationModal data={resource.source} atMs={atMs} initialMode={mode} hostLabel={hostLabel}
       availableHosts={availableHosts} initialHosts={originHosts} events={events} onViewEventDetails={onViewEventDetails} hiddenCategories={hiddenCategories} onLoadResource={onLoadResource} onOpenOperation={onOpenOperation}
-      initialDataLoaded={!!onLoadResource} initialSamplingWarning={resource.samplingWarning} onClose={close} />)}
+      initialResource={{ summary: resource.summary, snapshots: resource.snapshots }} initialDataLoaded={!!onLoadResource} initialSamplingWarning={resource.samplingWarning} onClose={close} />)}
   </>;
 }

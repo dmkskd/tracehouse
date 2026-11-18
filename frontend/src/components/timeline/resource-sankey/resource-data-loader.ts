@@ -1,4 +1,4 @@
-import type { MemoryTimeline, TimelineService, TimeseriesPoint } from '@tracehouse/core';
+import type { MemoryTimeline, TimelineService, TimeseriesPoint, ResourceAttributionService } from '@tracehouse/core';
 import { parseOperationTimestamp } from '@tracehouse/core';
 import type { ResourceDataLoader } from './resource-exploration-model';
 
@@ -17,6 +17,7 @@ export function resourceSampleWindow(source: MemoryTimeline, timeMs: number) {
 type TimelineOptions = Parameters<TimelineService['getTimeline']>[0];
 type XRaySelection = Parameters<TimelineService['getZoomData']>[4];
 export interface ResourceLoaderOptions {
+  attributionService?: Pick<ResourceAttributionService, 'getSnapshots' | 'getRange' | 'getDetails'>;
   timelineService: Pick<TimelineService, 'getTimeline' | 'getZoomData'> & Partial<Pick<TimelineService, 'getNavigatorMetric'>>;
   hostnameFilter: TimelineOptions['hostname'];
   includeRunning: boolean;
@@ -29,7 +30,7 @@ export interface ResourceLoaderOptions {
 /** Adapter to existing core APIs; core has no dependency on the experiment. */
 export function createResourceDataLoader(options: ResourceLoaderOptions): ResourceDataLoader {
   const contextCache = new Map<string, Promise<TimeseriesPoint[]>>();
-  return async (source, mode, timeMs, selectedHost, selection) => {
+  const legacy: ResourceDataLoader = async (source, mode, timeMs, selectedHost, selection) => {
     const { timelineService, hostnameFilter, includeRunning, activityLimit, queryHashFilter, queryHashOnly, xraySelection } = options;
     const startMs = selection?.kind === 'range' ? selection.startMs : parseOperationTimestamp(source.window_start);
     const endMs = selection?.kind === 'range' ? selection.endMs : parseOperationTimestamp(source.window_end);
@@ -68,4 +69,57 @@ export function createResourceDataLoader(options: ResourceLoaderOptions): Resour
       return { data: filter(loaded), ...extras, samplingWarning: `Operation samples could not be loaded: ${error instanceof Error ? error.message : String(error)}${context.warning ? ` · ${context.warning}` : ''}` };
     }
   };
+  if (!options.attributionService) return legacy;
+  const service = options.attributionService;
+  const cache = new Map<string, ReturnType<ResourceDataLoader>>();
+  const timelineCache = new Map<string, Promise<MemoryTimeline>>();
+  const loader: ResourceDataLoader = (source, mode, timeMs, selectedHost, selection) => {
+    const hostname = selectedHost ?? options.hostnameFilter;
+    const range = selection?.kind === 'range';
+    const chunk = range ? { start: selection.startMs, end: selection.endMs } : resourceSampleWindow(source, timeMs);
+    const startMs = range ? Math.floor(chunk.start) : Math.floor(chunk.start / 1000) * 1000;
+    const endMs = range ? Math.ceil(chunk.end) : Math.floor(chunk.end / 1000) * 1000 + 1000;
+    const key = JSON.stringify([mode, hostname, range, startMs, endMs]);
+    const cached = cache.get(key);
+    if (cached) return cached;
+    const request = { mode, hostname, includeRunning: options.includeRunning,
+      normalizedQueryHash: options.queryHashFilter, queryHashOnly: options.queryHashOnly,
+      sampleSelection: options.xraySelection, startMs, endMs };
+    const result = (async () => {
+      // Timeline rows provide server measurements and capacity only. They never supply operation totals.
+      const contextStart = range ? startMs : parseOperationTimestamp(source.window_start);
+      const contextEnd = range ? endMs : parseOperationTimestamp(source.window_end);
+      const contextKey = JSON.stringify([mode,hostname,contextStart,contextEnd]);
+      let timelineRequest = timelineCache.get(contextKey);
+      if (!timelineRequest) {
+        timelineRequest = options.timelineService.getTimeline({ timestamp: new Date((contextStart+contextEnd)/2),
+          windowSeconds: (contextEnd-contextStart)/2000, hostname, includeRunning: false, activityLimit: 1, activeMetric: mode })
+          .catch(error => { timelineCache.delete(contextKey); throw error; });
+        if (timelineCache.size >= 8) timelineCache.delete(timelineCache.keys().next().value!);
+        timelineCache.set(contextKey,timelineRequest);
+      }
+      const [data, aggregation] = await Promise.all([
+        timelineRequest,
+        range ? service.getRange(request) : service.getSnapshots(request),
+      ]);
+      let contextSeries: TimeseriesPoint[] | undefined;
+      if (range && options.timelineService.getNavigatorMetric) {
+        const result = await options.timelineService.getNavigatorMetric({
+          startTime: new Date(Math.min(parseOperationTimestamp(source.window_start), startMs)),
+          endTime: new Date(Math.max(parseOperationTimestamp(source.window_end), endMs)),
+          metric: mode, hostname, bucketSeconds: Math.max(1, Math.ceil((endMs-startMs)/1000000)),
+        });
+        contextSeries = result.points.map(point => ({ t: point.t, v: point.average_v }));
+      }
+      return { data, contextSeries, samplingWarning: aggregation.warnings.join(' ') || undefined,
+        ...('snapshots' in aggregation ? { snapshots: aggregation } : { summary: aggregation }) };
+    })().catch(error => { cache.delete(key); throw error; });
+    if (cache.size >= 8) cache.delete(cache.keys().next().value!);
+    cache.set(key, result);
+    return result;
+  };
+  loader.loadDetails = request => service.getDetails({ ...request,
+    hostname: request.hostname ?? options.hostnameFilter, includeRunning: options.includeRunning,
+    normalizedQueryHash: options.queryHashFilter, queryHashOnly: options.queryHashOnly, sampleSelection: options.xraySelection });
+  return loader;
 }

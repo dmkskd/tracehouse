@@ -2,11 +2,13 @@
 
 ## Calculation and presentation
 
-Activity attribution belongs to `packages/core/src/utils/timeline-attribution.ts`.
-The normal Time Travel activity list, pinned preview, and this modal all consume
-`attributeTimeline`. This directory owns presentation: grouping attributed rows into
-activity/table branches, rendering the flows, and opening existing detail modals.
-There is no separate page or backend service.
+Core provides two attribution inputs. `utils/timeline-attribution.ts` attributes the
+already-loaded timeline rows used by the ordinary activity list.
+`services/resource-attribution-service.ts` executes the Sankey's whole-population
+aggregation SQL. Its totals include every matching logged execution; timeline
+ranking, memory thresholds, and top-N limits do not restrict this population.
+There is no separate page or backend endpoint. Both interfaces expose the same
+instant/range units, lifetime-average fallback, and missing-memory semantics.
 
 `resource-exploration-model.ts` converts core attribution into explicit primary
 and secondary presentation groups. `resource-flow-layout.ts` calculates geometry,
@@ -26,10 +28,12 @@ node, including when collapsed. Expansion preserves those colours and widths
 through activity branches and individual operations. Failed portions are hatched
 within each segment. Labels identify tables; tables have no separate colour palette.
 
-The Operations control limits individual operations in each expanded activity/table
-branch (5 by default). It selects the largest contributions; omitted operations
-remain in an aggregate branch, preserving totals and failed-operation usage.
-This display limit does not change the data loader's query result limits.
+Initially, five table groups and five expanded individual operations are displayed.
+Each remaining branch offers **Show 5 more** (or the exact smaller remaining count).
+The count is local to that branch. Additional table groups and operation values
+remain in the aggregate remainder, preserving the total and failed-operation share.
+Activity types below 0.1% of attributed usage, and types beyond the largest five,
+are initially combined; the same progressive expansion reveals them.
 
 The shared calculation accepts an explicit selection:
 
@@ -50,16 +54,17 @@ the range Sankey uses totals. Peak sampled memory is computed from simultaneous
 contributions, never by adding each operation's execution peak.
 
 Range Sankey labels show each accumulated contribution divided by the attributed
-total. **100% means all attributed work from loaded operations**, not all cluster
+total. **100% means all attributed work from matching operations**, not all cluster
 capacity or all actual resource consumption. Header comparisons explicitly use
 capacity where available, otherwise the attributed total. Absolute CPU time and
 coverage remain available from the shared attribution result.
 
 Query-rate samples apply to their containing one-second bucket. Missing rate
 intervals use explicitly marked lifetime-average estimates; merge-history CPU is
-always estimated. Memory is supported by nearby captured samples only. Sampled
+always estimated. Disk I/O uses execution OS read/write counter averages; logical
+progress bytes are not substituted for physical I/O. Memory is supported by nearby captured samples only. Sampled
 coverage describes available reconstructed sample buckets, not raw sampler uptime.
-Missing periods and operations omitted by filters/top-N remain unknown.
+Missing sample periods use explicit estimates for rates; memory remains unknown. User filters restrict the population; presentation limits do not.
 
 ## Loading and controls
 
@@ -80,13 +85,26 @@ valid memory gauge. Unknown rates are not reclassified as measured zeros.
 identity. It discards superseded responses and debounces range dragging. Cleanup does
 not abort queries already submitted: the core adapter currently has no abort API.
 
-`createResourceDataLoader` uses existing core services:
+`createResourceDataLoader` uses:
 
-- `getTimeline`: metric-ranked operations and server data for the selected interval.
-- `getZoomData`: per-operation samples across that interval, including a full hour
-  when requested from a shorter originating timeline.
-- `getNavigatorMetric`: the broader server context outside the selection. This
-  series is separate from the selected-range data and has a bounded per-loader cache.
+- `ResourceAttributionService.getRange`: one SQL statement unions queries, merges,
+  and mutations, computes interval contributions, and groups by table set/type.
+  No per-execution rows or top-N restriction are used for totals.
+- `getSnapshots`: one request prefetches one-second grouped snapshots. Windows up
+  to ten minutes are prefetched together; longer windows use two-minute chunks.
+  Cursor changes inside a chunk perform local Map lookups. Eight cached windows
+  deduplicate in-flight requests and support returning to a previous chunk.
+- `getDetails`: only an expanded branch requests individual execution rows. Each
+  Show more raises that branch's detail limit by five. Totals remain unchanged.
+  Details have an explicit 10,000-row safety bound; exceeding it reports an error.
+- `TimelineService.getTimeline`: supplies server series and capacity only. Its
+  limited operation rows never supply production Sankey totals.
+- `getNavigatorMetric`: broader server context outside a selected range.
+
+Aggregation errors are shown, rather than silently falling back to limited timeline
+rows. Missing optional sampler tables produce a visible estimation warning.
+Instant snapshots have one-second resolution: a sub-second execution between ticks
+can be absent from the instant view while contributing to the range integral.
 
 The time-mode and duration controls use `TimeTravelSegments.styles` and
 `TimeTravelControls.styles`. Server selection reuses `TimeTravelServerSelector`,
@@ -95,7 +113,7 @@ The available cluster hosts are separate from a pin's initial host selection.
 Reset restores that initial selection; selecting all hosts explicitly overrides
 the originating page's filter.
 
-The Events toggle controls the shared `TimelineEventOverlay` on the navigator. Time Travel
+Events are disabled by default. The Events toggle controls the shared `TimelineEventOverlay` on the navigator. Time Travel
 passes its deduplicated, filtered window and overview events through the chart and
 pin; the Sankey does not fetch events. The modal filters host-specific events to
 its server selection and retains events without a hostname. Markers highlight on
@@ -120,10 +138,12 @@ For permanent removal:
    normal `attributeTimeline` calls, activity rows, and operation hit testing.
 2. Remove the Sankey loader construction, related props, and split-chart preview
    ownership from `TimeTravelPage.tsx`.
-3. Delete this directory and its import-boundary rule in `frontend/eslint.config.js`.
-4. Optionally remove the navigator's `selectionLabel` prop when there are no other
+3. Remove the optional resource-attribution service, SQL builder, types, and exports
+   if no other caller uses them. Keep ordinary timeline attribution.
+4. Delete this directory and its import-boundary rule in `frontend/eslint.config.js`.
+5. Optionally remove the navigator's `selectionLabel` prop when there are no other
    point-selector callers. Its ordinary range behavior remains the default.
-5. Run frontend typecheck, tests, style checks, and build.
+6. Run frontend typecheck, tests, style checks, and build.
 
 Keep the shared attribution module, interval-resampling correction, optional query
 metadata, ordinary hover-card improvements, and shared modal keyboard fixes. None
@@ -132,8 +152,9 @@ breakdown now delegates to the same attribution rules.
 
 ## Remaining measurement constraints
 
-This is a breakdown of loaded operations. It is not a reconciled allocation of total
-server usage. Operation estimates are never subtracted from server usage to invent
+The aggregate covers operations retained in the queried system logs and matching the
+selected filters. Log retention, disabled logs, and missing samples constrain coverage.
+Server usage and operation accounting have different instrumentation coverage. Operation estimates are never subtracted from server usage to invent
 an idle or unattributed branch. Distributed root/child execution rollups still need
 an explicit multi-host integration fixture before claiming complete allocation.
 
@@ -150,3 +171,10 @@ CPU totals, simultaneous memory peaks, missing coverage, host selection, request
 races/retry, full navigator context, percentage labels, controls, disable behavior,
 operation details, and proportional failure hatching. These tests do not replace a
 production load test or a full distributed ClickHouse attribution integration test.
+
+The real ClickHouse regression suite substitutes deterministic log subqueries into
+the production SQL. It verifies 250 executions without truncation, clipped ranges,
+CPU sample intervals and fallback, signed snapshot joins, unknown memory and observed
+occupancy, detail limits, and filters. Frontend tests verify local scrubbing across
+100 cursor positions, chunk caching, progressive expansion with invariant totals,
+range selection, and events disabled by default.
