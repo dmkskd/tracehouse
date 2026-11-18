@@ -63,6 +63,36 @@ export interface ResourceTableGroup {
   remainder?: boolean;
 }
 
+/** Presentation hierarchy; identities retain their meaning in either pivot order. */
+export interface ResourceFlowGroup extends Omit<ResourceTableGroup, 'activity' | 'label'> {
+  primaryId: string;
+  primaryLabel: string;
+  secondaryLabel: string;
+}
+
+/** Aggregate all activity types before ranking tables; never split a multi-table cost. */
+export function groupResourceActivitiesByTable(consumers: ResourceConsumer[]): ResourceFlowGroup[] {
+  const groups = new Map<string, ResourceFlowGroup>();
+  const totals = new Map<string, number>();
+  for (const c of consumers) {
+    const id = JSON.stringify([c.tableKey, c.group]);
+    const group = groups.get(id) ?? { id, primaryId: c.tableKey, primaryLabel: c.tableLabel,
+      secondaryLabel: c.group, tables: c.tables, rows: [], value: 0 };
+    group.rows.push(c); group.value += c.value;
+    groups.set(id, group);
+    totals.set(c.tableKey, (totals.get(c.tableKey) ?? 0) + c.value);
+  }
+  return [...groups.values()].sort((a, b) => (totals.get(b.primaryId)! - totals.get(a.primaryId)!)
+    || a.primaryId.localeCompare(b.primaryId) || b.value - a.value || a.id.localeCompare(b.id));
+}
+
+export function groupResourceFlow(consumers: ResourceConsumer[], groupBy: 'activity' | 'table'): ResourceFlowGroup[] {
+  return groupBy === 'table' ? groupResourceActivitiesByTable(consumers)
+    : groupResourceTables(consumers).map(({ activity, label, ...group }) => ({
+      ...group, primaryId: activity, primaryLabel: activity, secondaryLabel: label,
+    }));
+}
+
 /** Every operation has exactly one branch, including multi-table and unknown queries. */
 export function groupResourceTables(consumers: ResourceConsumer[], limitPerActivity = 6): ResourceTableGroup[] {
   const groups = new Map<string, ResourceTableGroup>();

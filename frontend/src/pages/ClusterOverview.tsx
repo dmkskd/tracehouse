@@ -244,7 +244,7 @@ const DatabaseReplicationTable: React.FC<DatabaseReplicationTableProps> = ({ dat
     >
       <div style={{ padding: '12px 16px', borderBottom: '1px solid var(--border-secondary)', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
         <h3 style={{ fontSize: 11, fontWeight: 500, color: 'var(--text-secondary)' }}>
-          Databases & Replication
+          Databases &amp; Replication
           <span style={{ marginLeft: 8, color: 'var(--text-muted)' }}>({filtered.length})</span>
         </h3>
         <Link

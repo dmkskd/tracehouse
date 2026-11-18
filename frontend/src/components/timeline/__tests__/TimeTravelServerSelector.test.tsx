@@ -15,7 +15,7 @@ describe('TimeTravelServerSelector', () => {
   it('shortens names in the middle while selecting by their full identity', () => {
     const onChange = vi.fn();
     const host = '44695ac06af2';
-    render(<TimeTravelServerSelector hosts={[host, '7198dbce3b81']} selectedHosts={[]} onChange={onChange} />);
+    render(<TimeTravelServerSelector hosts={[host]} selectedHosts={[]} onChange={onChange} />);
     const button = screen.getByRole('button', { name: host });
     expect(button).toHaveTextContent('44695…6af2');
     expect(screen.getByText('44695…6af2')).toHaveAttribute('title', host);
@@ -23,15 +23,16 @@ describe('TimeTravelServerSelector', () => {
     expect(onChange).toHaveBeenCalledWith([host]);
   });
 
-  it('uses inline buttons for four servers and emits selection through onChange', () => {
+  it.each([2, 4])('uses a dropdown for %i servers and emits selection through onChange', count => {
     const onChange = vi.fn();
-    render(<TimeTravelServerSelector hosts={hosts.slice(0, 4)} selectedHosts={['server-a']} onChange={onChange} />);
-    expect(screen.queryByRole('button', { expanded: false })).not.toBeInTheDocument();
-    fireEvent.click(screen.getByRole('button', { name: 'server-b' }), { shiftKey: true });
-    expect(onChange).toHaveBeenLastCalledWith(['server-a', 'server-b']);
-    fireEvent.click(screen.getByRole('button', { name: 'server-c' }));
-    expect(onChange).toHaveBeenLastCalledWith(['server-c']);
-    fireEvent.click(screen.getByRole('button', { name: 'All servers' }));
+    render(<TimeTravelServerSelector hosts={hosts.slice(0, count)} selectedHosts={['server-a']} onChange={onChange} />);
+    expect(screen.queryByRole('checkbox')).not.toBeInTheDocument();
+    fireEvent.click(screen.getByRole('button', { name: 'server-a', expanded: false }));
+    fireEvent.click(screen.getByRole('checkbox', { name: 'server-b' }));
+    expect(onChange).toHaveBeenLastCalledWith(count === 2 ? [] : ['server-a', 'server-b']);
+    fireEvent.click(screen.getByRole('button', { name: 'Select only server-b' }));
+    expect(onChange).toHaveBeenLastCalledWith(['server-b']);
+    fireEvent.click(screen.getByRole('button', { name: `All servers (${count})` }));
     expect(onChange).toHaveBeenLastCalledWith([]);
   });
 
@@ -83,7 +84,11 @@ describe('TimeTravelServerSelector', () => {
     fireEvent.mouseDown(target);
     // macOS browsers may blur the input without focusing the clicked control.
     fireEvent.blur(screen.getByRole('searchbox'), { relatedTarget: null });
+    // A modal/container can receive transient focus during a Safari pointer
+    // interaction. It must not unmount the option before click is delivered.
+    fireEvent.focusIn(document.body);
     expect(target).toBeInTheDocument();
+    fireEvent.pointerUp(target);
     fireEvent.mouseUp(target);
     fireEvent.click(target);
     expect(screen.getByRole('button', {

@@ -3,7 +3,7 @@ import { act, fireEvent, render, screen, within, waitFor } from '@testing-librar
 import { beforeAll, describe, expect, it, vi } from 'vitest';
 import { attributeTimeline, buildOperationRows, type MemoryTimeline, type QuerySeries } from '@tracehouse/core';
 import { ResourceExplorationModal } from '../ResourceExplorationModal';
-import { explorationMeasurement, explorationServerSeries, resourceConsumers, groupResourceTables } from '../resource-exploration-model';
+import { explorationMeasurement, explorationServerSeries, resourceConsumers, groupResourceTables, groupResourceActivitiesByTable } from '../resource-exploration-model';
 import { TimelineChart } from '../../TimelineChart';
 import { PinnedResourcePreview } from '../PinnedResourcePreview';
 
@@ -131,11 +131,21 @@ describe('pinned activity exploration', () => {
     expect(details).not.toBeVisible();
     fireEvent.click(accounting);
     expect(details).toBeVisible();
-    expect(details.parentElement).toBe(accounting.closest('.controls')?.parentElement);
+    expect(details.parentElement).toBe(accounting.parentElement);
     expect(accounting).toHaveAttribute('aria-expanded', 'true');
+    fireEvent.keyDown(accounting, { key: 'Escape' });
+    expect(details).not.toBeVisible();
+    expect(dialog).toBeInTheDocument();
+    fireEvent.click(accounting);
+    fireEvent.pointerDown(within(dialog).getByRole('button', { name: 'Reset to pin' }));
+    expect(details).not.toBeVisible();
+    fireEvent.click(accounting);
     fireEvent.change(within(dialog).getByRole('combobox', { name: 'Resource' }), { target: { value: 'memory' } });
-    expect(dialog).toHaveTextContent('Unsampled per-operation peaks are excluded');
-    expect(dialog).toHaveTextContent('1 active operations lack concurrent memory samples');
+    expect(dialog).toHaveTextContent('Missing samples are excluded; peak memory is not substituted');
+    expect(dialog).toHaveTextContent('1 missing memory samples');
+    fireEvent.keyDown(document, { key: 'Escape' });
+    expect(details).not.toBeVisible();
+    expect(dialog).toBeInTheDocument();
     fireEvent.keyDown(document, { key: 'Escape' });
     expect(screen.queryByRole('dialog')).not.toBeInTheDocument();
     expect(trigger).toHaveFocus();
@@ -193,6 +203,74 @@ describe('pinned activity exploration', () => {
     await waitFor(() => expect(HTMLElement.prototype.scrollTo).toHaveBeenCalledWith(expect.objectContaining({ behavior: 'smooth' })));
     fireEvent.click(screen.getByRole('button', { name: 'Collapse queries' }));
     expect(screen.queryByText('Queries / operations')).not.toBeInTheDocument();
+  });
+  it('ranks tables by combined activity usage and expands through types to operation details', () => {
+    const data = fixture();
+    data.queries.push({ ...query, query_id: 'larger-single-type', tables: ['db.other'], cpu_us: 210000000, zoomSamples: undefined });
+    data.merges = [{ ...query, table: 'default.events', part_name: 'part-1', cpu_us: 120000000, error: 1, zoomSamples: undefined }];
+    const open = vi.fn();
+    render(<ResourceExplorationModal data={data} atMs={base + 30000} initialMode="cpu" onOpenOperation={open} onClose={() => {}} />);
+    const initialHeight = screen.getByTestId('resource-flow-total').getAttribute('height');
+    const grouping = screen.getByRole('group', { name: 'Sankey grouping' });
+    expect(within(grouping).getByRole('button', { name: 'Activity' })).toHaveAttribute('aria-pressed', 'true');
+    fireEvent.click(within(grouping).getByRole('button', { name: 'Table' }));
+    expect(screen.getAllByRole('button', { name: /^Expand table / }).map(node => node.getAttribute('aria-label')))
+      .toEqual(['Expand table default.events', 'Expand table db.other']);
+    expect(screen.getByRole('button', { name: 'Expand table default.events' })).toHaveTextContent('5 cores · 58.8%');
+    expect(screen.getByRole('button', { name: 'Expand table db.other' })).toHaveTextContent('3.5 cores · 41.2%');
+    expect(screen.getByTestId('resource-flow-total')).toHaveAttribute('height', initialHeight!);
+    expect(screen.queryByText('Activity', { selector: 'text' })).not.toBeInTheDocument();
+    fireEvent.click(screen.getByRole('button', { name: 'Expand table default.events' }));
+    expect(screen.getByRole('button', { name: 'Expand SELECT in default.events' })).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Expand MERGE in default.events' })).toBeInTheDocument();
+    fireEvent.click(screen.getByRole('button', { name: 'Expand SELECT in default.events' }));
+    fireEvent.click(screen.getByRole('button', { name: /Open operation sampled-quer/ }));
+    expect(open).toHaveBeenLastCalledWith('query', data.queries[0]);
+    fireEvent.click(screen.getByRole('button', { name: 'Collapse queries' }));
+    fireEvent.click(screen.getByRole('button', { name: 'Expand MERGE in default.events' }));
+    fireEvent.click(screen.getByRole('button', { name: /Open operation default.events/ }));
+    expect(open).toHaveBeenLastCalledWith('merge', data.merges[0]);
+    expect(screen.getAllByTestId('failed-resource-flow').length).toBeGreaterThan(0);
+    fireEvent.click(within(grouping).getByRole('button', { name: 'Activity' }));
+    expect(screen.queryByRole('button', { name: /Open operation/ })).not.toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Expand default.events in SELECT' })).toBeInTheDocument();
+  });
+  it('preserves every contribution and shared table-set cost when pivoting', () => {
+    const data = fixture();
+    data.queries = Array.from({ length: 9 }, (_, i) => ({ ...query, query_id: `q-${i}`, tables: [`db.t${i}`] }));
+    data.queries.push({ ...query, query_id: 'shared', tables: ['db.t0', 'db.t1'] });
+    const { consumers } = resourceConsumers(data, base + 30000, 'cpu');
+    const groups = groupResourceActivitiesByTable(consumers);
+    expect(groups).toHaveLength(10);
+    expect(groups.reduce((sum, g) => sum + g.value, 0)).toBe(consumers.reduce((sum, c) => sum + c.value, 0));
+    expect(groups.flatMap(g => g.rows).filter(c => c.source === data.queries[9])).toHaveLength(1);
+    expect(groups.find(g => g.rows.some(c => c.source === data.queries[9]))?.primaryLabel).toBe('db.t0 + db.t1');
+  });
+  it('limits operation leaves by contribution without changing the total or collapsing the branch', () => {
+    const data = fixture();
+    data.queries = Array.from({ length: 12 }, (_, i) => ({ ...query, query_id: `q-${i}`, cpu_us: (i + 1) * 60000000, zoomSamples: undefined }));
+    render(<ResourceExplorationModal data={data} atMs={base + 30000} initialMode="cpu" onClose={() => {}} />);
+    fireEvent.click(screen.getByRole('button', { name: 'Expand default.events in SELECT' }));
+    const limit = screen.getByRole('combobox', { name: 'Operations per type' });
+    expect(limit).toHaveValue('5');
+    const info = screen.getByRole('button', { name: 'Leaf limit information' });
+    fireEvent.click(info);
+    expect(info).toHaveAttribute('aria-expanded', 'true');
+    fireEvent.keyDown(limit, { key: 'Escape' });
+    expect(info).toHaveAttribute('aria-expanded', 'false');
+    expect(screen.getByRole('dialog')).toBeInTheDocument();
+    const height = screen.getByTestId('resource-flow-total').getAttribute('height');
+    expect(screen.getAllByRole('button', { name: /^Open operation q-/ })).toHaveLength(5);
+    expect(screen.getByText('7 other operations')).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: /^Open operation q-11/ })).toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: /^Open operation q-0 / })).not.toBeInTheDocument();
+    fireEvent.change(limit, { target: { value: '10' } });
+    expect(screen.getAllByRole('button', { name: /^Open operation q-/ })).toHaveLength(10);
+    fireEvent.change(limit, { target: { value: 'all' } });
+    expect(screen.getAllByRole('button', { name: /^Open operation q-/ })).toHaveLength(12);
+    expect(screen.queryByText(/^[0-9]+ other operations$/)).not.toBeInTheDocument();
+    expect(screen.getByTestId('resource-flow-total')).toHaveAttribute('height', height!);
+    expect(screen.getByRole('button', { name: 'Collapse queries' })).toBeInTheDocument();
   });
   it('loads memory history on resource change and ignores a superseded response', async () => {
     const original = fixture(); original.server_memory = [];
@@ -261,10 +339,10 @@ describe('pinned activity exploration', () => {
     const sourceHatches = document.querySelectorAll('rect[x="12"][fill^="url("]');
     expect(Number(sourceHatches[0].getAttribute('height'))).toBeCloseTo(230 * 2 / 8);
     fireEvent.click(screen.getByRole('button', { name: 'Expand default.events in SELECT' }));
-    expect(screen.getByText('2 cores · Failed · code 241')).toBeInTheDocument();
+    expect(screen.getByText('2 cores · 50% · Failed · code 241')).toBeInTheDocument();
     expect(screen.getAllByTestId('failed-resource-flow')).toHaveLength(5);
     fireEvent.click(screen.getByRole('button', { name: 'Expand db.failed_merge in MERGE' }));
-    expect(screen.getByText('1 cores · Failed · code 243')).toBeInTheDocument();
+    expect(screen.getByText('1 cores · 25% · Failed · code 243')).toBeInTheDocument();
   });
   it('uses the same instant contributions for the ordinary activity list and Sankey', () => {
     const data = fixture();
@@ -299,12 +377,46 @@ describe('pinned activity exploration', () => {
   it('reuses the Time Travel server selector for multiple hosts and requests that exact scope', async () => {
     const data = fixture();
     const loader = vi.fn(async () => ({ data }));
-    render(<ResourceExplorationModal data={data} atMs={base + 30000} initialMode="cpu" availableHosts={['ch-01', 'ch-02']} onLoadResource={loader} onClose={() => {}} />);
+    render(<ResourceExplorationModal data={data} atMs={base + 30000} initialMode="cpu" availableHosts={['ch-01', 'ch-02', 'ch-03', 'ch-04']} onLoadResource={loader} onClose={() => {}} />);
     await waitFor(() => expect(loader).toHaveBeenCalledTimes(1));
     const selector = screen.getByRole('group', { name: 'Servers' });
-    fireEvent.click(within(selector).getByRole('button', { name: 'ch-01' }));
+    expect(within(selector).queryByRole('checkbox')).not.toBeInTheDocument();
+    fireEvent.click(within(selector).getByRole('button', { name: 'All servers', expanded: false }));
+    fireEvent.click(within(selector).getByRole('button', { name: 'Select only ch-01' }));
     await waitFor(() => expect(loader).toHaveBeenLastCalledWith(data, 'cpu', base + 30000, ['ch-01'], undefined));
-    fireEvent.click(within(selector).getByRole('button', { name: 'ch-02' }), { shiftKey: true });
+    fireEvent.click(within(selector).getByRole('checkbox', { name: 'ch-02' }));
+    await waitFor(() => expect(loader).toHaveBeenLastCalledWith(data, 'cpu', base + 30000, ['ch-01', 'ch-02'], undefined));
+  });
+  it('starts on the pinned server, allows switching across the cluster, and restores the pinned scope', async () => {
+    const data = fixture();
+    const loader = vi.fn(async () => ({ data }));
+    render(<ResourceExplorationModal data={data} atMs={base + 30000} initialMode="cpu" hostLabel="ch-01"
+      availableHosts={['ch-01', 'ch-02', 'ch-03']} onLoadResource={loader} onClose={() => {}} />);
+    await waitFor(() => expect(loader).toHaveBeenLastCalledWith(data, 'cpu', base + 30000, ['ch-01'], undefined));
+    const selector = screen.getByRole('group', { name: 'Servers' });
+    fireEvent.click(within(selector).getByRole('button', { name: 'ch-01', expanded: false }));
+    expect(within(selector).getAllByRole('checkbox')).toHaveLength(3);
+    expect(within(selector).getByRole('checkbox', { name: 'ch-01' })).toBeChecked();
+    expect(within(selector).getByRole('checkbox', { name: 'ch-02' })).not.toBeChecked();
+    fireEvent.click(within(selector).getByRole('button', { name: 'Select only ch-02' }));
+    await waitFor(() => expect(loader).toHaveBeenLastCalledWith(data, 'cpu', base + 30000, ['ch-02'], undefined));
+    fireEvent.click(within(selector).getByRole('button', { name: 'All servers (3)' }));
+    await waitFor(() => expect(loader).toHaveBeenLastCalledWith(data, 'cpu', base + 30000, [], undefined));
+    fireEvent.click(screen.getByRole('button', { name: 'Reset to pin' }));
+    await waitFor(() => expect(loader).toHaveBeenLastCalledWith(data, 'cpu', base + 30000, ['ch-01'], undefined));
+  });
+  it('keeps an aggregate pin’s initial selection separate from its available servers', async () => {
+    const data = fixture();
+    const loader = vi.fn(async () => ({ data }));
+    render(<ResourceExplorationModal data={data} atMs={base + 30000} initialMode="cpu"
+      initialHosts={['ch-01', 'ch-02']} availableHosts={['ch-01', 'ch-02', 'ch-03']} onLoadResource={loader} onClose={() => {}} />);
+    await waitFor(() => expect(loader).toHaveBeenLastCalledWith(data, 'cpu', base + 30000, ['ch-01', 'ch-02'], undefined));
+    const selector = screen.getByRole('group', { name: 'Servers' });
+    fireEvent.click(within(selector).getByRole('button', { name: '2 servers' }));
+    expect(within(selector).getAllByRole('checkbox')).toHaveLength(3);
+    fireEvent.click(within(selector).getByRole('button', { name: 'All servers (3)' }));
+    await waitFor(() => expect(loader).toHaveBeenLastCalledWith(data, 'cpu', base + 30000, [], undefined));
+    fireEvent.click(screen.getByRole('button', { name: 'Reset to pin' }));
     await waitFor(() => expect(loader).toHaveBeenLastCalledWith(data, 'cpu', base + 30000, ['ch-01', 'ch-02'], undefined));
   });
   it('opens query or merge details while preserving the exploration and expansion', () => {

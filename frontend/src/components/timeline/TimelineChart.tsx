@@ -104,13 +104,14 @@ export const TimelineChart: React.FC<{
   /** Experiment switch; false retains the ordinary Time Travel hover and pin behavior. */
   resourceSankeyEnabled?: boolean;
   resourceHosts?: readonly string[];
+  resourceInitialHosts?: readonly string[];
   onLoadResource?: ResourceDataLoader;
   onExploreOperation?: ResourceOperationOpen;
 }> = ({
   data, metricMode, height = 380, hoverMs, pinnedMs, onHover, onPin,
   zoomRange, onZoom, highlightedItem, onHighlightItem, onBandClick,
   hiddenCategories, queryHashActive, eventAnnotations = [], selectedEventId,
-  onEventSelect, onEventPin, onUnpin, onClearEventSelection, onViewEventDetails, onEventPopupOpenChange, hostLabel, showPinnedActivity = true, onLoadResource, onExploreOperation, resourceSankeyEnabled = RESOURCE_SANKEY_ENABLED, resourceHosts,
+  onEventSelect, onEventPin, onUnpin, onClearEventSelection, onViewEventDetails, onEventPopupOpenChange, hostLabel, showPinnedActivity = true, onLoadResource, onExploreOperation, resourceSankeyEnabled = RESOURCE_SANKEY_ENABLED, resourceHosts, resourceInitialHosts,
 }) => {
   const pinnedActivity = resourceSankeyEnabled && pinnedMs !== null && showPinnedActivity
     && pinnedMs >= (zoomRange?.[0] ?? parseTimestamp(data.window_start))
@@ -992,7 +993,7 @@ export const TimelineChart: React.FC<{
               </>
             ) : pinnedActivity ? (
               <PinnedResourceActivity key={`${pinnedMs}:${metricMode}:${hostLabel ?? ''}`} data={data} atMs={pinnedMs!} mode={metricMode} width={tooltipWidth - 28}
-                hiddenCategories={hiddenCategories} hostLabel={hostLabel} availableHosts={resourceHosts}
+                hiddenCategories={hiddenCategories} hostLabel={hostLabel} availableHosts={resourceHosts} initialHosts={resourceInitialHosts}
                 onLoadResource={onLoadResource} onOpenOperation={onExploreOperation} onUnpin={onUnpin} />
             ) : (
               /* Hovering on empty space — show full breakdown */

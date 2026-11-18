@@ -8,6 +8,30 @@ The normal Time Travel activity list, pinned preview, and this modal all consume
 activity/table branches, rendering the flows, and opening existing detail modals.
 There is no separate page or backend service.
 
+`resource-exploration-model.ts` converts core attribution into explicit primary
+and secondary presentation groups. `resource-flow-layout.ts` calculates geometry,
+leaf limits, colours, and failure portions without React or DOM access.
+`ResourceAttributionFlow.tsx` renders those nodes and handles expansion and scrolling.
+`ResourceInfoPopover.tsx` owns shared help-popover interaction and dismissal.
+
+The modal supports two presentation orders. Activity (default) groups by operation
+type, then table set. Table groups by table set first, ranks by total attributed
+usage across all operation types, and expands into types and individual operations.
+Both orders use the same attributed consumers and conserve the same total. Table
+ranking happens before presentation limits; multi-table costs remain in one table-set
+branch rather than being duplicated or divided between tables.
+Activity colours identify operation types. In Table mode, colours identify table
+sets up to the table node and remain stable across ranking changes. Expanded
+activity nodes and their operation leaves use the shared operation-type colours.
+The source bar uses
+the same coloured segments as its outgoing branches. Labels identify each node;
+colour is not the only identifier.
+
+The Operations control limits individual operations in each expanded activity/table
+branch (5 by default). It selects the largest contributions; omitted operations
+remain in an aggregate branch, preserving totals and failed-operation usage.
+This display limit does not change the data loader's query result limits.
+
 The shared calculation accepts an explicit selection:
 
 ```ts
@@ -30,7 +54,7 @@ Range Sankey labels show each accumulated contribution divided by the attributed
 total. **100% means all attributed work from loaded operations**, not all cluster
 capacity or all actual resource consumption. Header comparisons explicitly use
 capacity where available, otherwise the attributed total. Absolute CPU time and
-coverage are available in Measurement details.
+coverage remain available from the shared attribution result.
 
 Query-rate samples apply to their containing one-second bucket. Missing rate
 intervals use explicitly marked lifetime-average estimates; merge-history CPU is
@@ -68,6 +92,9 @@ not abort queries already submitted: the core adapter currently has no abort API
 The time-mode and duration controls use `TimeTravelSegments.styles` and
 `TimeTravelControls.styles`. Server selection reuses `TimeTravelServerSelector`,
 including multiple-host selection. There are no parallel control implementations.
+The available cluster hosts are separate from a pin's initial host selection.
+Reset restores that initial selection; selecting all hosts explicitly overrides
+the originating page's filter.
 
 ## Disable or remove the Sankey
 

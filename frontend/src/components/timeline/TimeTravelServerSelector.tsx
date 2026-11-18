@@ -8,9 +8,11 @@ interface Props {
   hosts: readonly string[];
   selectedHosts: readonly string[];
   onChange: (hosts: string[]) => void;
+  /** Keep constrained layouts compact regardless of cluster size. */
+  display?: 'auto' | 'dropdown';
 }
 
-export function TimeTravelServerSelector({ hosts, selectedHosts, onChange }: Props) {
+export function TimeTravelServerSelector({ hosts, selectedHosts, onChange, display = 'auto' }: Props) {
   const [open, setOpen] = useState(false);
   const [search, setSearch] = useState('');
   const rootRef = useRef<HTMLDivElement>(null);
@@ -22,14 +24,33 @@ export function TimeTravelServerSelector({ hosts, selectedHosts, onChange }: Pro
   useEffect(() => {
     if (!open) return;
     searchRef.current?.focus();
-    const closeOutside = (event: PointerEvent | FocusEvent) => {
+    let pointerInside = false;
+    let releaseTimer: ReturnType<typeof setTimeout> | undefined;
+    const closeOutside = (event: PointerEvent) => {
+      clearTimeout(releaseTimer);
+      pointerInside = !!rootRef.current?.contains(event.target as Node);
+      if (!pointerInside) setOpen(false);
+    };
+    const closeOnFocusOutside = (event: FocusEvent) => {
+      // Safari can move focus out of the search field without focusing the
+      // clicked option. Keep that option mounted until its click completes.
+      if (pointerInside) return;
       if (!rootRef.current?.contains(event.target as Node)) setOpen(false);
     };
-    document.addEventListener('pointerdown', closeOutside);
-    document.addEventListener('focusin', closeOutside);
+    const releasePointer = () => {
+      clearTimeout(releaseTimer);
+      releaseTimer = setTimeout(() => { pointerInside = false; }, 0);
+    };
+    document.addEventListener('pointerdown', closeOutside, true);
+    document.addEventListener('pointerup', releasePointer, true);
+    document.addEventListener('pointercancel', releasePointer, true);
+    document.addEventListener('focusin', closeOnFocusOutside);
     return () => {
-      document.removeEventListener('pointerdown', closeOutside);
-      document.removeEventListener('focusin', closeOutside);
+      clearTimeout(releaseTimer);
+      document.removeEventListener('pointerdown', closeOutside, true);
+      document.removeEventListener('pointerup', releasePointer, true);
+      document.removeEventListener('pointercancel', releasePointer, true);
+      document.removeEventListener('focusin', closeOnFocusOutside);
     };
   }, [open]);
 
@@ -48,7 +69,7 @@ export function TimeTravelServerSelector({ hosts, selectedHosts, onChange }: Pro
           triggerRef.current?.focus();
         }
       }}>
-      {hosts.length <= 4 ? (
+      {display === 'auto' && hosts.length <= 1 ? (
         <div className={`tt-segments tt-server-tabs ${segmentsStyle}`}>
           <button type="button"
             aria-pressed={allSelected} onClick={() => onChange([])}>All servers</button>

@@ -8,15 +8,17 @@ import type { ResourceDataLoader, ResourceOperationOpen } from './resource-explo
 import { useResourceData } from './useResourceData';
 
 /** One materialized snapshot owns both the pin and its expanded view. Repinning remounts it. */
-export function PinnedResourceActivity({ data, atMs, mode, width, hiddenCategories, hostLabel, availableHosts, onLoadResource, onOpenOperation, onUnpin }: {
+export function PinnedResourceActivity({ data, atMs, mode, width, hiddenCategories, hostLabel, availableHosts, initialHosts, onLoadResource, onOpenOperation, onUnpin }: {
   data: MemoryTimeline; atMs: number; mode: MetricMode; width: number;
   hiddenCategories?: ReadonlySet<OperationKind>; hostLabel?: string; availableHosts?: readonly string[];
+  initialHosts?: readonly string[];
   onLoadResource?: ResourceDataLoader; onOpenOperation?: ResourceOperationOpen; onUnpin?: () => void;
 }) {
   const [original] = useState(data);
+  const [originHosts] = useState(() => initialHosts ? [...initialHosts] : undefined);
   const [exploring, setExploring] = useState(false);
   const trigger = useRef<HTMLButtonElement>(null);
-  const resource = useResourceData(original, mode, atMs, hostLabel, onLoadResource);
+  const resource = useResourceData(original, mode, atMs, hostLabel ?? originHosts, onLoadResource);
   const close = () => { setExploring(false); trigger.current?.focus(); };
   useEffect(() => {
     if (exploring || !onUnpin) return;
@@ -41,7 +43,7 @@ export function PinnedResourceActivity({ data, atMs, mode, width, hiddenCategori
           : <p role="status">Loading the pinned resource snapshot…</p>}
       </div>
     </ModalWrapper> : <ResourceExplorationModal data={resource.source} atMs={atMs} initialMode={mode} hostLabel={hostLabel}
-      availableHosts={availableHosts} hiddenCategories={hiddenCategories} onLoadResource={onLoadResource} onOpenOperation={onOpenOperation}
+      availableHosts={availableHosts} initialHosts={originHosts} hiddenCategories={hiddenCategories} onLoadResource={onLoadResource} onOpenOperation={onOpenOperation}
       initialDataLoaded={!!onLoadResource} initialSamplingWarning={resource.samplingWarning} onClose={close} />)}
   </>;
 }

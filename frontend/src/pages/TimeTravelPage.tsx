@@ -1762,7 +1762,7 @@ export const TimeTravelPage: React.FC = () => {
                       {hostRamCapacity > 0 && <span style={{ color:'var(--text-muted)', marginLeft:6 }}>{formatBytes(hostRamCapacity)} RAM</span>}
                     </button>
                     <TimelineChart data={hostData} metricMode={metricMode} height={chartHeight} hostLabel={host}
-                      showPinnedActivity={ownsPinnedActivity} resourceHosts={[host]} onLoadResource={loadExplorationResource} onExploreOperation={handleBandSelect}
+                      showPinnedActivity={ownsPinnedActivity} resourceHosts={clusterHosts} onLoadResource={loadExplorationResource} onExploreOperation={handleBandSelect}
                       hoverMs={hoverMs} pinnedMs={pinnedMs}
                       onHover={setHoverMs} onPin={ms => { setPinnedActivityHost(host); handleChartPin(ms); }}
                       zoomRange={zoomRange} onZoom={setZoomRange}
@@ -1829,7 +1829,7 @@ export const TimeTravelPage: React.FC = () => {
                 Server CPU reads as 0 — ClickHouse on macOS does not expose CPU metrics. Run in Docker or Linux for CPU data.
               </div>
             )}
-            <TimelineChart data={chartData!} metricMode={metricMode} height={mainChartHeight} resourceHosts={selectedHosts.length ? selectedHosts : clusterHosts} onLoadResource={loadExplorationResource} onExploreOperation={handleBandSelect}
+            <TimelineChart data={chartData!} metricMode={metricMode} height={mainChartHeight} resourceHosts={clusterHosts} resourceInitialHosts={selectedHosts} onLoadResource={loadExplorationResource} onExploreOperation={handleBandSelect}
               hoverMs={hoverMs} pinnedMs={pinnedMs}
               onHover={setHoverMs} onPin={handleChartPin}
               zoomRange={zoomRange} onZoom={setZoomRange}

@@ -27,6 +27,10 @@ describe('resource data loading boundary', () => {
     await load(data, 'memory', start + 130000, 'ch-02');
     expect(service.getTimeline).toHaveBeenCalledWith(expect.objectContaining({ hostname: 'ch-02', activeMetric: 'memory' }));
     expect(service.getZoomData).toHaveBeenCalledWith(data, start + 120000, start + 240000, 'ch-02', undefined);
+    // All servers must override the page filter rather than falling back to it.
+    await load(data, 'cpu', start + 130000, []);
+    expect(service.getTimeline).toHaveBeenLastCalledWith(expect.objectContaining({ hostname: [], activeMetric: 'cpu' }));
+    expect(service.getZoomData).toHaveBeenLastCalledWith(data, start + 120000, start + 240000, [], undefined);
   });
   it('loads the complete selected hour, even when the originating timeline was only one minute', async () => {
     const original = timeline(60_000), loaded = timeline();
