@@ -23,6 +23,14 @@ export function buildResourceAttributionSQL(options: ResourceAggregationSQLReque
   if (snapshots && (startMs % 1000 || endMs % 1000 || endMs - startMs > 601000)) throw new Error('Instant snapshot windows must be aligned to seconds and at most ten minutes');
   if (options.normalizedQueryHash && !/^\d+$/.test(options.normalizedQueryHash)) throw new Error('Invalid normalized query hash');
   if (options.details && (!Number.isSafeInteger(options.details.limit) || options.details.limit < 1 || options.details.limit > 10000 || !options.details.groups.length)) throw new Error('Choose at most 10,000 operation details');
+  const groupPredicate = options.details?.groups.map(group => {
+    if (!['query','merge','mutation'].includes(group.kind)) throw new Error('Invalid operation kind');
+    return `(kind=${literal(group.kind)} AND activity=${literal(group.activity)} AND table_state=${literal(group.tableState)} AND tables=[${group.tables.map(literal).join(',')}])`;
+  }).join(' OR ');
+  // Narrow identities, rather than referencing the operations CTE from the sample
+  // scan: distributed CTE expansion would repeat the expensive log scans.
+  const identityFilter = options.details?.groups.filter(group => group.kind === 'query').map(group =>
+    `(upper(toString(query_kind))=${literal(group.activity)}${group.tableState === 'running' ? '' : ` AND arraySort(arrayDistinct(tables))=[${group.tables.map(literal).join(',')}]`})`).join(' OR ');
   const hosts = typeof options.hostname === 'string' ? [options.hostname] : options.hostname ?? [];
   const hostFilter = hosts.length ? `AND hostName() IN (${hosts.map(literal).join(',')})` : '';
   const hashFilter = options.queryHashOnly && options.normalizedQueryHash ? `AND normalized_query_hash = ${options.normalizedQueryHash}` : '';
@@ -81,7 +89,7 @@ export function buildResourceAttributionSQL(options: ResourceAggregationSQLReque
   const canSampleRates = source !== null && mode !== 'disk';
   const raw = source ? buildXRayWindowSamplesSQL(options.sampleSelection!, {
     start: 'fromUnixTimestamp64Milli(window_start_ms-2000)', end: 'fromUnixTimestamp64Milli(window_end_ms+2000)',
-    hostname: options.hostname ?? undefined, localExecutions: true,
+    hostname: options.hostname ?? undefined, localExecutions: true, localIdentityFilter: identityFilter,
   }) : '';
   const gaugeQuery = source ? `SELECT 'query' AS kind, hostname, sample_query_id AS local_id,
     intDiv(ts_ms,1000)*1000 AS ms, avg(toFloat64(memory_usage)) AS memory FROM query_samples GROUP BY kind,hostname,local_id,ms` : '';
@@ -110,11 +118,12 @@ export function buildResourceAttributionSQL(options: ResourceAggregationSQLReque
     WHERE bitmapContains(r.captured_buckets,toUInt64(intDiv(r.ms,1000)))
       AND r.ms<r.ts_ms AND r.ms+1000>r.ts_ms-toInt64(r.dt*1000)
     GROUP BY kind,r.hostname,r.sample_query_id,r.ms` : emptySpans;
+  const selectedOperations = groupPredicate ? `(SELECT * FROM operations WHERE (${groupPredicate}))` : 'operations';
   const opTimes = snapshots ? `SELECT *,toInt64(arrayJoin(range(
       toUInt64(intDiv(greatest(op_start_ms,window_start_ms)+999,1000)),
       toUInt64(greatest(intDiv(greatest(op_start_ms,window_start_ms)+999,1000),intDiv(least(op_end_ms,window_end_ms-1),1000)+1))
-    ))*1000) AS snapshot_ms, toFloat64(0) AS active_ms FROM operations` : `SELECT *,toUInt64(0) AS snapshot_ms,
-      toFloat64(greatest(0,least(op_end_ms,window_end_ms)-greatest(op_start_ms,window_start_ms))) AS active_ms FROM operations
+    ))*1000) AS snapshot_ms, toFloat64(0) AS active_ms FROM ${selectedOperations}` : `SELECT *,toUInt64(0) AS snapshot_ms,
+      toFloat64(greatest(0,least(op_end_ms,window_end_ms)-greatest(op_start_ms,window_start_ms))) AS active_ms FROM ${selectedOperations}
       WHERE active_ms>0`;
   const overlap = 'greatest(0,least(o.op_end_ms,window_end_ms,s.span_end_ms)-greatest(o.op_start_ms,window_start_ms,s.span_start_ms))';
   const evaluations = snapshots ? `SELECT o.*,if(s.span_start_ms<=o.snapshot_ms AND s.span_end_ms>o.snapshot_ms,1,0) AS sampled,
@@ -129,10 +138,6 @@ export function buildResourceAttributionSQL(options: ResourceAggregationSQLReque
       ${mode === 'memory' ? 'if(sampled_ms>0,toNullable(sampled_value),NULL)' : `sampled_value+${sqlRate}/duration_ms*greatest(0,active_ms-sampled_ms)`} AS attributed_value
       FROM (SELECT o.*,sum(${overlap}) AS sampled_ms,sum(s.sample_value*(${overlap})/1000) AS sampled_value
         FROM op_times AS o LEFT JOIN sample_spans AS s ON o.kind=s.kind AND o.hostname=s.hostname AND o.local_id=s.local_id GROUP BY ALL)`;
-  const groupPredicate = options.details?.groups.map(group => {
-    if (!['query','merge','mutation'].includes(group.kind)) throw new Error('Invalid operation kind');
-    return `(kind=${literal(group.kind)} AND activity=${literal(group.activity)} AND table_state=${literal(group.tableState)} AND tables=[${group.tables.map(literal).join(',')}])`;
-  }).join(' OR ');
   const projection = options.details ? `SELECT * FROM evaluated WHERE (${groupPredicate}) AND attributed_value IS NOT NULL
     ORDER BY attributed_value DESC,hostname,local_id,op_start_ms LIMIT ${options.details.limit}` : `SELECT snapshot_ms,kind,activity,tables,table_state,
     sum(ifNull(attributed_value,0)) AS value,sumIf(ifNull(attributed_value,0),failure_code!=0) AS failure_value,

@@ -12,6 +12,8 @@ export interface XRayWindowOptions {
   identityStart?: string;
   /** Attribution joins physical executions by local ID + host, without root rollup or SQL-text filtering. */
   localExecutions?: boolean;
+  /** Trusted predicate on query_log identities; never filters sample predecessors. */
+  localIdentityFilter?: string;
   hostname?: string | readonly string[];
 }
 
@@ -46,6 +48,7 @@ export function buildXRayWindowSamplesSQL(selection: SelectQueryXRaySourceInput,
     WHERE event_date >= toDate(${start}) - 1
       AND event_date <= toDate(${opts.end}) + 1
       ${opts.localExecutions ? '' : `AND query NOT LIKE ${APP_SOURCE_LIKE}`}
+      ${opts.localExecutions && opts.localIdentityFilter ? `AND (${opts.localIdentityFilter})` : ''}
       ${opts.queryIdsSQL ? `AND (l.query_id IN (${opts.queryIdsSQL}) OR l.initial_query_id IN (${opts.queryIdsSQL}))` : ''}
       ${hostFilter}
     GROUP BY hostname, sample_query_id`;
