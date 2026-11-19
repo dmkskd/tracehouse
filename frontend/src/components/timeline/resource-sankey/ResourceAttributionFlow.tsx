@@ -54,18 +54,18 @@ export function ResourceAttributionFlow({ groups, mode, selection, onSelect, for
     ? <path d={ribbon(x1, y1, x2, y2, h)} fill={`url(#${failurePattern})`} data-testid="failed-resource-flow" /> : null;
   const hideLabel = expanded ? `Hide ${flowGroupKind(expanded) === 'query' ? 'queries' : 'operations'}` : 'Hide activity types';
   const toolbar = <div className={toolbarStyle}>
+      {(expanded || primaryExpanded) && <>
+        <button type="button" title={hideLabel} onClick={() => onSelect(expanded ? { primaryId: expanded.primaryId } : null)}>
+          <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true"><path d="m11 5-7 7 7 7m9-14-7 7 7 7" /></svg>
+          {hideLabel}
+        </button>
+        <span className="toolbar-divider" aria-hidden="true" />
+      </>}
       <div className="zoom-controls" role="group" aria-label="Sankey zoom">
         <button type="button" aria-label="Zoom out Sankey" title="Zoom out" disabled={zoom <= .5} onClick={zoomOut}>−</button>
         <button type="button" className="zoom-value" aria-label="Reset Sankey zoom" title="Reset zoom" onClick={resetZoom}>{Math.round(zoom*100)}%</button>
         <button type="button" aria-label="Zoom in Sankey" title="Zoom in" disabled={zoom >= 2} onClick={zoomIn}>+</button>
       </div>
-      {(expanded || primaryExpanded) && <>
-        <span className="toolbar-divider" aria-hidden="true" />
-        <button type="button" title={hideLabel} onClick={() => onSelect(expanded ? { primaryId: expanded.primaryId } : null)}>
-          <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true"><path d="m11 5-7 7 7 7m9-14-7 7 7 7" /></svg>
-          {hideLabel}
-        </button>
-      </>}
     </div>;
   return <div className="flow">
     {showFailureLegend && <ResourceFailureLegend count={failedCount} />}

@@ -36,8 +36,8 @@ export function ResourceTimeSelection({ mode, span, currentViewMs, onMode, onSpa
   },[open]);
   return <div className={style} ref={root}>
     <div className={controlsStyle}><div className={segmentsStyle} role="group" aria-label="Attribution time selection">
-      <button type="button" aria-pressed={mode === 'instant'} onClick={() => { setOpen(false); onMode('instant'); }}>Selected instant</button>
-      <button ref={trigger} type="button" aria-label="Time range" aria-pressed={mode === 'range'} aria-expanded={open} aria-controls={id}
+      <button type="button" title="Resource usage at the selected timestamp" aria-pressed={mode === 'instant'} onClick={() => { setOpen(false); onMode('instant'); }}>Instant</button>
+      <button ref={trigger} type="button" title="Resource usage over the selected time range" aria-label="Time range" aria-pressed={mode === 'range'} aria-expanded={open} aria-controls={id}
         onClick={() => { if (mode === 'instant') { onSpan(60000); onMode('range'); setOpen(false); } else setOpen(value => !value); }}>Time range · {options.find(option => option.ms === (mode === 'instant' ? 60000 : span))?.label ?? 'Custom'} ▾</button>
     </div></div>
     {open && <div id={id} className="range-options" role="group" aria-label="Attribution range">

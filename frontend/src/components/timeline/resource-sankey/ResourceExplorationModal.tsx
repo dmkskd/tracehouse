@@ -29,6 +29,7 @@ const styles = css`
   .resource-flow-tools > * { pointer-events: auto; background: var(--bg-secondary); border-radius: 5px; }
   .resource-action, .resource-select { font: inherit; color: var(--text-primary); background: var(--bg-tertiary); border: 1px solid var(--border-primary); border-radius: 4px; padding: 6px 10px; }
   .resource-action { cursor: pointer; }
+  .resource-icon-action { display: inline-flex; align-items: center; justify-content: center; box-sizing: border-box; width: 32px; height: 32px; padding: 0; flex-shrink: 0; }
   button:focus-visible, select:focus-visible, input:focus-visible, [role=button]:focus-visible { outline: 2px solid #58a6ff; outline-offset: 2px; }
   .heading, .controls { display: flex; align-items: center; flex-wrap: wrap; gap: 12px; }
   .heading { justify-content: space-between; }
@@ -176,12 +177,16 @@ export function ResourceExplorationModal({ data, atMs, initialMode, hiddenCatego
       <div className="resource-header">
       <div className="heading modal-heading"><h2>Resource usage</h2>
         <div className="muted origin">Pinned {new Date(atMs).toLocaleString()} · {hostLabel || `${originalData.host_count} server${originalData.host_count === 1 ? '' : 's'}`}</div>
-        <button className="resource-action" onClick={() => setFullscreen(value => !value)} aria-label={fullscreen ? 'Exit fullscreen' : 'Fullscreen'} aria-pressed={fullscreen} aria-keyshortcuts="f" title={fullscreen ? 'Exit fullscreen (F)' : 'Fullscreen (F)'}>
+        <button className="resource-action resource-icon-action" onClick={() => setFullscreen(value => !value)} aria-label={fullscreen ? 'Exit fullscreen' : 'Fullscreen'} aria-pressed={fullscreen} aria-keyshortcuts="f" title={fullscreen ? 'Exit fullscreen (F)' : 'Fullscreen (F)'}>
           <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true" style={{ display: 'block' }}>
             <path d={fullscreen ? 'M4 9h5V4M20 9h-5V4M4 15h5v5M20 15h-5v5' : 'M9 4H4v5M15 4h5v5M4 15v5h5M20 15v5h-5'} />
           </svg>
         </button>
-        <button className="resource-action" ref={closeButton} onClick={onClose} aria-label="Close resource exploration">×</button>
+        <button className="resource-action resource-icon-action" ref={closeButton} onClick={onClose} aria-label="Close resource exploration">
+          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true" style={{ display: 'block' }}>
+            <path d="M5 5l14 14M19 5L5 19" />
+          </svg>
+        </button>
       </div>
       <div className="controls">
         <label className={`${controlsStyle} resource-picker`}><select className="resource-select" aria-label="Resource" value={mode} onChange={e => { setMode(e.target.value as MetricMode); change(); }}>{Object.entries(METRIC_CONFIG).map(([key, cfg]) => <option key={key} value={key}>{cfg.label}</option>)}</select><span className="resource-picker-arrow" aria-hidden="true">▾</span></label>
@@ -231,13 +236,13 @@ export function ResourceExplorationModal({ data, atMs, initialMode, hiddenCatego
           <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
             <span className="muted">Group by</span>
             <div className={controlsStyle}><div className={segmentsStyle} role="group" aria-label="Sankey grouping">
-              <button type="button" aria-pressed={groupBy === 'activity'} onClick={() => { setGroupBy('activity'); change(); }}>Activity</button>
-              <button type="button" aria-pressed={groupBy === 'table'} onClick={() => { setGroupBy('table'); change(); }}>Table</button>
+              <button type="button" title="Group resource usage by activity type" aria-pressed={groupBy === 'activity'} onClick={() => { setGroupBy('activity'); change(); }}>Activity</button>
+              <button type="button" title="Group resource usage by table" aria-pressed={groupBy === 'table'} onClick={() => { setGroupBy('table'); change(); }}>Table</button>
             </div></div>
           </div>
           <span className={controlsStyle} style={{ padding: 0, border: 0, background: 'transparent' }} aria-hidden="true"><span className="tt-controls-divider" /></span>
           <div className={controlsStyle}><div className={segmentsStyle}>
-            <button type="button" aria-pressed={eventsVisible} title="Show events already loaded by Time Travel" onClick={() => { setEventsVisible(value => !value); setSelectedEventId(null); }}>Events</button>
+            <button type="button" aria-pressed={eventsVisible} title="Show events in the selected time range" onClick={() => { setEventsVisible(value => !value); setSelectedEventId(null); }}>Events</button>
           </div></div>
         </div>
         <button type="button" className="resource-action" title="Restore the pinned time, resource, and server selection" onClick={() => { if (loadError) retry(); setSelectionMode('instant'); setTime(atMs); setMode(initialMode); setSelectedHosts(originHosts); change(); }} style={{ marginLeft: 'auto' }}>Reset to pin</button>

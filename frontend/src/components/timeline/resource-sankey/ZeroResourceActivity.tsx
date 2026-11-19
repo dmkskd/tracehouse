@@ -27,9 +27,9 @@ export function ZeroResourceActivity({ attribution, formattedZero, summary }: { 
   const resource = attribution.mode === 'cpu' ? attribution.selection.kind === 'range' ? 'CPU time' : 'CPU usage'
     : attribution.mode === 'memory' ? 'memory' : attribution.mode === 'disk' ? 'disk I/O' : 'network traffic';
   return <div role="note" aria-label="Zero resource contributions" className={style}>
-    <details><summary>No {resource} recorded · {count.toLocaleString()} {count === 1 ? 'operation' : 'operations'}</summary>
+    <details><summary>0 {resource} · {count.toLocaleString()} {count === 1 ? 'operation' : 'operations'}</summary>
       <div className="zero-resource-body">
-        <p>The available data gives these operations a {resource} value of 0 for the selected time. They are counted but have no visible flow.</p>
+        <p>Operations with an attributed {resource} value of 0 {attribution.selection.kind === 'range' ? 'over the selected time range' : 'at the selected timestamp'} are counted but omitted from the flow.</p>
         {groups.map(group => <div key={group.activity}>{group.activity} · {group.count.toLocaleString()} {group.count === 1 ? 'operation' : 'operations'}{attribution.selection.kind === 'instant' ? ` · ${formattedZero}` : ''}{group.basis ? ` (${group.basis})` : ''}</div>)}
       </div>
     </details>

@@ -260,15 +260,15 @@ describe('pinned activity exploration', () => {
     expect(screen.queryByRole('dialog', { name: 'Loading resource usage' })).not.toBeInTheDocument();
     expect(screen.getByRole('dialog', { name: 'Resource usage at the selected time' })).toHaveTextContent('800 B');
   });
-  it('summarizes unplotted operations with recorded-resource wording and collapsed per-type counts', () => {
+  it('summarizes operations with zero usage and collapsed per-type counts', () => {
     const data = fixture();
     data.queries = [{ ...query, zoomSamples: [{ ms: base+30000, cpu_cores: 0, memory: 10, net_rate: 0, disk_rate: 0 }] }];
     render(<ResourceExplorationModal data={data} atMs={base+30000} initialMode="cpu" onClose={() => {}} />);
     const note = screen.getByRole('note', { name: 'Zero resource contributions' });
-    expect(note).toHaveTextContent('No CPU usage recorded · 1 operation');
+    expect(note).toHaveTextContent('0 CPU usage · 1 operation');
     expect(note.querySelector('details')).not.toHaveAttribute('open');
-    fireEvent.click(within(note).getByText('No CPU usage recorded · 1 operation'));
-    expect(note).toHaveTextContent('They are counted but have no visible flow.');
+    fireEvent.click(within(note).getByText('0 CPU usage · 1 operation'));
+    expect(note).toHaveTextContent('Operations with an attributed CPU usage value of 0 at the selected timestamp are counted but omitted from the flow.');
     expect(note).not.toHaveTextContent('Zero attributed');
   });
   it('uses exact pin-time membership, matching Operations even when a nearby bucket contains short queries', () => {
@@ -483,7 +483,7 @@ describe('pinned activity exploration', () => {
     render(<ResourceExplorationModal data={data} atMs={base + 30000} initialMode="cpu" onClose={() => {}} />);
     expect(screen.getByText('Failed operations · 2')).toBeInTheDocument();
     fireEvent.click(screen.getByRole('button', { name: 'Failed operations explanation' }));
-    expect(screen.getByText('Red stripes show resource usage from operations that ended with an error.')).toBeInTheDocument();
+    expect(screen.getByText('Striped areas indicate resource usage attributed to operations that ended with an error.')).toBeInTheDocument();
     expect(screen.getAllByTestId('failed-resource-flow')).toHaveLength(4);
     // The SELECT table mixes 2 failed cores with 1 successful core: only 2 are hatched.
     const sourceHatches = document.querySelectorAll('rect[x="12"][fill^="url("]');
@@ -524,7 +524,7 @@ describe('pinned activity exploration', () => {
     expect(screen.getByRole('group', { name: 'CPU comparison' })).toHaveTextContent('Server / capacity');
     expect(screen.queryByText(/Shares of accumulated/)).not.toBeInTheDocument();
     expect(screen.getByRole('region', { name: 'Resource attribution flow' })).toHaveTextContent('100%');
-    fireEvent.click(screen.getByRole('button', { name: 'Selected instant' }));
+    fireEvent.click(screen.getByRole('button', { name: 'Instant' }));
     await waitFor(() => expect(screen.getByRole('group', { name: 'CPU comparison' })).toHaveTextContent('Server CPU usage'));
   });
   it('reuses the Time Travel server selector for multiple hosts and requests that exact scope', async () => {
