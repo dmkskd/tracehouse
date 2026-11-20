@@ -1,3 +1,4 @@
+import { tracehouseLocalStorage } from '@tracehouse/core';
 import { parseOptionalTimestampMicros } from '@tracehouse/core';
 /**
  * DistributedQueryTopology — Gantt-style timeline showing coordinator + node sub-queries.
@@ -74,7 +75,7 @@ function topologyViewParam(value: string | null | undefined): TopologyView | nul
 function loadTopologyView(): TopologyView {
   if (typeof window === 'undefined') return 'timeline';
   try {
-    return window.localStorage.getItem(VIEW_STORAGE_KEY) === 'flow' ? 'flow' : 'timeline';
+    return tracehouseLocalStorage.getItem(VIEW_STORAGE_KEY) === 'flow' ? 'flow' : 'timeline';
   } catch {
     return 'timeline';
   }
@@ -83,7 +84,7 @@ function loadTopologyView(): TopologyView {
 function saveTopologyView(view: TopologyView): void {
   if (typeof window === 'undefined') return;
   try {
-    window.localStorage.setItem(VIEW_STORAGE_KEY, view);
+    tracehouseLocalStorage.setItem(VIEW_STORAGE_KEY, view);
   } catch {
     // Keep the in-memory choice when storage is unavailable.
   }
@@ -98,7 +99,6 @@ function stableHostColor(host: string, index = 0): string {
 }
 
 /** Parse ClickHouse microsecond timestamp to epoch microseconds */
-
 
 /**
  * A hostname trimmed to its first segment, for when a participant has no

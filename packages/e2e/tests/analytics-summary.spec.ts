@@ -16,7 +16,7 @@ for (const scenario of [{ theme: 'light', width: 1280 }, { theme: 'dark', width:
     test.setTimeout(60_000);
     await page.setViewportSize({ width: scenario.width, height: 1000 });
     await page.evaluate(({ sql, theme }) => {
-      localStorage.setItem('tracehouse-theme', theme);
+      localStorage.setItem('dmkskd-tracehouse-app:tracehouse-theme', theme);
       localStorage.setItem('tracehouse-dashboards-user', JSON.stringify([{
         id: 'summary-browser-fixture', title: 'Summary browser fixture', columns: 1,
         panels: [{ queryName: 'Custom#Summary fixture' }], queries: [sql],

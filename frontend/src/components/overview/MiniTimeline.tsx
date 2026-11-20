@@ -1,3 +1,5 @@
+import { keyframes } from '@emotion/css';
+
 /**
  * MiniTimeline - Compact live CPU+Memory area chart with activity pulse
  *
@@ -9,6 +11,10 @@
 import React, { useMemo } from 'react';
 import { Link } from 'react-router-dom';
 import type { ServerMetrics } from '@tracehouse/core';
+
+const pulseRingAnimation = keyframes`0% { transform: scale(1); opacity: 0.4; }
+          70% { transform: scale(1.8); opacity: 0; }
+          100% { transform: scale(1.8); opacity: 0; }`;
 
 interface MiniTimelineProps {
   history: Array<{ metrics: ServerMetrics; timestamp: Date }>;
@@ -70,7 +76,7 @@ function ActivityDot({ count, color, label }: { count: number; color: string; la
               borderRadius: '50%',
               border: `1.5px solid ${color}`,
               opacity: 0.4,
-              animation: 'pulse-ring 2s ease-out infinite',
+              animation: `${pulseRingAnimation} 2s ease-out infinite`,
             }}
           />
         )}
@@ -190,13 +196,7 @@ export const MiniTimeline: React.FC<MiniTimelineProps> = ({
       </div>
 
       {/* Keyframe for pulse animation */}
-      <style>{`
-        @keyframes pulse-ring {
-          0% { transform: scale(1); opacity: 0.4; }
-          70% { transform: scale(1.8); opacity: 0; }
-          100% { transform: scale(1.8); opacity: 0; }
-        }
-      `}</style>
+
     </div>
   );
 };

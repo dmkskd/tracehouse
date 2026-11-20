@@ -108,7 +108,17 @@ const config = async (env: Env): Promise<Configuration[]> => {
           test: /\.css$/,
           use: [
             'style-loader',
-            'css-loader',
+            {
+              loader: 'css-loader',
+              options: {
+                modules: {
+                  auto: /\.module\.css$/,
+                  mode: 'global',
+                  namedExport: false,
+                  localIdentName: 'dmkskd-tracehouse-app__[local]__[hash:base64:6]',
+                },
+              },
+            },
             {
               loader: 'postcss-loader',
               options: {

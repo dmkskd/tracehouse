@@ -1,3 +1,5 @@
+import { spinAnimation } from '../../styles/animations';
+
 import { parseAbsoluteTimestamp } from '@tracehouse/core';
 /**
  * TraceLogViewer - Clean, minimal trace log viewer
@@ -5,21 +7,19 @@ import { parseAbsoluteTimestamp } from '@tracehouse/core';
  * Scandinavian-inspired design with focus on readability and clarity.
  */
 
-import React, { useState, useMemo, useEffect } from 'react';
+import React, { useState, useMemo } from 'react';
 import type { TraceLog, TraceLogFilter, LogLevel } from '../../stores/traceStore';
 import { THREAD_LABELS } from '@tracehouse/core';
 import {
   filterTraceLogs,
   VALID_LOG_LEVELS,
 } from '../../stores/traceStore';
-import { useClickStackStore, buildClickStackUrl, buildClickStackUrlNoSource } from '../../stores/clickStackStore';
-import { useConnectionStore } from '../../stores/connectionStore';
-import { useMonitoringCapabilitiesStore } from '../../stores/monitoringCapabilitiesStore';
 import { ZoomPanContainer } from '../common/ZoomPanContainer';
 import { useThemeDetection } from '../../hooks/useThemeDetection';
 import { getLevelColor, stringToHslColor, getThreadIdColor, processLogsWithDuration } from './traceUtils';
 import type { ProcessedLog } from './traceUtils';
 import { copyToClipboard } from '@tracehouse/ui-shared';
+
 
 interface TraceLogViewerProps {
   logs: TraceLog[];
@@ -28,14 +28,7 @@ interface TraceLogViewerProps {
   filter: TraceLogFilter;
   onFilterChange: (filter: Partial<TraceLogFilter>) => void;
   onRefresh?: () => void;
-  /** Query ID for ClickStack deep link */
-  queryId?: string;
-  /** Query start time (ISO string) for ClickStack time window */
-  queryStartTime?: string;
-  /** Query end time (ISO string) for ClickStack time window */
-  queryEndTime?: string;
 }
-
 
 function formatTime(ts: string): string {
   if (!ts) return '';
@@ -1038,52 +1031,11 @@ export const TraceLogViewer: React.FC<TraceLogViewerProps> = ({
   filter,
   onFilterChange,
   onRefresh,
-  queryId,
-  queryStartTime,
-  queryEndTime,
 }) => {
   const [activeView, setActiveView] = useState<'logs' | 'timeline'>('logs');
   const [showFilter, setShowFilter] = useState(false);
   const [searchTerm, setSearchTerm] = useState('');
   const [copied, setCopied] = useState(false);
-
-  // ClickStack integration
-  const clickStackEnabled = useClickStackStore(s => s.enabled);
-  const clickStackSourceId = useClickStackStore(s => s.sourceId);
-  const setClickStackEnabled = useClickStackStore(s => s.setEnabled);
-  const setClickStackSourceId = useClickStackStore(s => s.setSourceId);
-  const [showClickStackConfig, setShowClickStackConfig] = useState(false);
-  const hasClickStack = useMonitoringCapabilitiesStore(s => s.flags.hasClickStack);
-
-  // Reset manual override when connecting to a server without ClickStack
-  useEffect(() => {
-    if (!hasClickStack && clickStackEnabled) {
-      setClickStackEnabled(false);
-    }
-  }, [hasClickStack, clickStackEnabled, setClickStackEnabled]);
-
-  // Show ClickStack link only when version detected OR manually enabled
-  const clickStackAvailable = hasClickStack || clickStackEnabled;
-
-  const activeProfile = useConnectionStore(s => {
-    const id = s.activeProfileId;
-    return id ? s.profiles.find(p => p.id === id) : null;
-  });
-
-  const clickStackUrl = useMemo(() => {
-    if (!clickStackAvailable || !queryId) return null;
-    if (!activeProfile) return null;
-    const { host, port, secure } = activeProfile.config;
-    const protocol = secure ? 'https' : 'http';
-    const base = `${protocol}://${host}:${port}`;
-    const start = queryStartTime || new Date(Date.now() - 300_000).toISOString();
-    const end = queryEndTime || new Date().toISOString();
-    if (clickStackSourceId) {
-      return buildClickStackUrl(base, queryId, clickStackSourceId, start, end);
-    }
-    // Fallback: open without source, ClickStack will use whatever is selected
-    return buildClickStackUrlNoSource(base, queryId, start, end);
-  }, [clickStackAvailable, clickStackSourceId, queryId, queryStartTime, queryEndTime, activeProfile]);
 
   const filteredLogs = useMemo(() => {
     let result = filterTraceLogs(logs, filter);
@@ -1215,214 +1167,7 @@ export const TraceLogViewer: React.FC<TraceLogViewerProps> = ({
                 Refresh
               </button>
             )}
-            {/* ClickStack deep link */}
-            {queryId && clickStackAvailable && (
-              <div style={{ position: 'relative' }}>
-                <a
-                  href={clickStackUrl || '#'}
-                  target="_blank"
-                  rel="noopener noreferrer"
-                  title={clickStackSourceId ? 'Open in ClickStack' : 'Open in ClickStack (no source configured — will use last selected)'}
-                  onClick={(e) => {
-                    if (!clickStackUrl) e.preventDefault();
-                  }}
-                  style={{
-                    display: 'inline-flex',
-                    alignItems: 'center',
-                    gap: 4,
-                    padding: '5px 12px',
-                    fontSize: 11,
-                    fontWeight: 500,
-                    borderRadius: 6,
-                    border: 'none',
-                    background: 'rgba(var(--accent-primary-rgb), 0.12)',
-                    color: 'var(--accent-primary)',
-                    cursor: 'pointer',
-                    textDecoration: 'none',
-                    transition: 'all 0.15s ease',
-                  }}
-                >
-                  ↗ ClickStack
-                </a>
-                <button
-                  onClick={() => setShowClickStackConfig(!showClickStackConfig)}
-                  title="Configure ClickStack source"
-                  style={{
-                    padding: '5px 6px',
-                    fontSize: 10,
-                    borderRadius: 4,
-                    border: 'none',
-                    background: 'transparent',
-                    color: 'var(--text-muted)',
-                    cursor: 'pointer',
-                    marginLeft: 2,
-                  }}
-                >
-                  ⚙
-                </button>
-                {showClickStackConfig && (
-                  <div style={{
-                    position: 'absolute',
-                    top: '100%',
-                    right: 0,
-                    marginTop: 8,
-                    padding: 16,
-                    background: 'var(--bg-card)',
-                    border: '1px solid var(--border-secondary)',
-                    borderRadius: 8,
-                    boxShadow: '0 4px 12px rgba(0,0,0,0.15)',
-                    zIndex: 100,
-                    width: 320,
-                    fontSize: 12,
-                  }}>
-                    <div style={{ marginBottom: 12, color: 'var(--text-secondary)', fontWeight: 600 }}>
-                      ClickStack Source
-                    </div>
-                    <div style={{ marginBottom: 8, color: 'var(--text-muted)', fontSize: 11, lineHeight: 1.5 }}>
-                      Create a data source in ClickStack pointing to <code style={{ background: 'var(--bg-code)', padding: '1px 4px', borderRadius: 3 }}>system.text_log</code> with
-                      timestamp column <code style={{ background: 'var(--bg-code)', padding: '1px 4px', borderRadius: 3 }}>event_date</code>.
-                      The source ID is optional — without it, ClickStack uses your last selected source.
-                    </div>
-                    <div>
-                      <label style={{ display: 'block', marginBottom: 4, color: 'var(--text-muted)', fontSize: 11 }}>
-                        Source ID <span style={{ color: 'var(--text-disabled)' }}>(optional, from <code style={{ background: 'var(--bg-code)', padding: '1px 3px', borderRadius: 2 }}>source=</code> in URL)</span>
-                      </label>
-                      <input
-                        type="text"
-                        value={clickStackSourceId}
-                        onChange={(e) => setClickStackSourceId(e.target.value)}
-                        placeholder="l1933286829"
-                        style={{
-                          width: '100%',
-                          padding: '6px 10px',
-                          fontSize: 12,
-                          fontFamily: 'monospace',
-                          borderRadius: 6,
-                          border: '1px solid var(--border-primary)',
-                          background: 'var(--bg-input)',
-                          color: 'var(--text-primary)',
-                          outline: 'none',
-                          boxSizing: 'border-box',
-                        }}
-                      />
-                      <div style={{ marginTop: 4, fontSize: 10, color: 'var(--text-disabled)', lineHeight: 1.4 }}>
-                        Tip: in ClickStack DevTools console, run: <code style={{ background: 'var(--bg-code)', padding: '1px 3px', borderRadius: 2 }}>localStorage.getItem('hdx-last-selected-source-id')</code>
-                      </div>
-                    </div>
-                    <button
-                      onClick={() => setShowClickStackConfig(false)}
-                      style={{
-                        marginTop: 12,
-                        padding: '4px 12px',
-                        fontSize: 11,
-                        borderRadius: 4,
-                        border: 'none',
-                        background: 'var(--bg-hover)',
-                        color: 'var(--text-tertiary)',
-                        cursor: 'pointer',
-                      }}
-                    >
-                      Done
-                    </button>
-                  </div>
-                )}
-              </div>
-            )}
-            {queryId && !clickStackAvailable && (
-              <div style={{ position: 'relative' }}>
-                <button
-                  onClick={() => setShowClickStackConfig(!showClickStackConfig)}
-                  title="Enable ClickStack integration (requires CH 26.2+)"
-                  style={{
-                    padding: '5px 12px',
-                    fontSize: 11,
-                    fontWeight: 500,
-                    borderRadius: 6,
-                    border: '1px dashed var(--border-primary)',
-                    background: showClickStackConfig ? 'rgba(var(--accent-primary-rgb), 0.08)' : 'transparent',
-                    color: 'var(--text-muted)',
-                    cursor: 'pointer',
-                    transition: 'all 0.15s ease',
-                  }}
-                >
-                  ↗ ClickStack
-                </button>
-                {showClickStackConfig && (
-                  <div style={{
-                    position: 'absolute',
-                    top: '100%',
-                    right: 0,
-                    marginTop: 8,
-                    padding: 16,
-                    background: 'var(--bg-card)',
-                    border: '1px solid var(--border-secondary)',
-                    borderRadius: 8,
-                    boxShadow: '0 4px 12px rgba(0,0,0,0.15)',
-                    zIndex: 100,
-                    width: 320,
-                    fontSize: 12,
-                  }}>
-                    <div style={{ marginBottom: 12, color: 'var(--text-secondary)', fontWeight: 600 }}>
-                      ClickStack Integration
-                    </div>
-                    <div style={{ marginBottom: 8, color: 'var(--text-muted)', fontSize: 11, lineHeight: 1.5 }}>
-                      Requires ClickHouse 26.2+ with ClickStack enabled.
-                      Create a data source in ClickStack pointing to <code style={{ background: 'var(--bg-code)', padding: '1px 4px', borderRadius: 3 }}>system.text_log</code> with
-                      timestamp column <code style={{ background: 'var(--bg-code)', padding: '1px 4px', borderRadius: 3 }}>event_date</code>.
-                    </div>
-                    <label style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 12, cursor: 'pointer' }}>
-                      <input
-                        type="checkbox"
-                        checked={clickStackEnabled}
-                        onChange={(e) => setClickStackEnabled(e.target.checked)}
-                        style={{ accentColor: 'var(--accent-primary)' }}
-                      />
-                      <span style={{ color: 'var(--text-secondary)' }}>Enable manually (version not detected as 26.2+)</span>
-                    </label>
-                    {clickStackEnabled && (
-                      <div>
-                        <label style={{ display: 'block', marginBottom: 4, color: 'var(--text-muted)', fontSize: 11 }}>
-                          Source ID <span style={{ color: 'var(--text-disabled)' }}>(optional)</span>
-                        </label>
-                        <input
-                          type="text"
-                          value={clickStackSourceId}
-                          onChange={(e) => setClickStackSourceId(e.target.value)}
-                          placeholder="l1933286829"
-                          style={{
-                            width: '100%',
-                            padding: '6px 10px',
-                            fontSize: 12,
-                            fontFamily: 'monospace',
-                            borderRadius: 6,
-                            border: '1px solid var(--border-primary)',
-                            background: 'var(--bg-input)',
-                            color: 'var(--text-primary)',
-                            outline: 'none',
-                            boxSizing: 'border-box',
-                          }}
-                        />
-                      </div>
-                    )}
-                    <button
-                      onClick={() => setShowClickStackConfig(false)}
-                      style={{
-                        marginTop: 12,
-                        padding: '4px 12px',
-                        fontSize: 11,
-                        borderRadius: 4,
-                        border: 'none',
-                        background: 'var(--bg-hover)',
-                        color: 'var(--text-tertiary)',
-                        cursor: 'pointer',
-                      }}
-                    >
-                      Done
-                    </button>
-                  </div>
-                )}
-              </div>
-            )}
+
           </div>
         </div>
 
@@ -1588,11 +1333,11 @@ export const TraceLogViewer: React.FC<TraceLogViewerProps> = ({
                     border: '2px solid var(--border-primary)',
                     borderTopColor: 'var(--text-tertiary)',
                     borderRadius: '50%',
-                    animation: 'spin 1s linear infinite',
+                    animation: `${spinAnimation} 1s linear infinite`,
                     margin: '0 auto 8px',
                   }} />
                   <span style={{ fontSize: 12, color: 'var(--text-muted)' }}>Loading...</span>
-                  <style>{`@keyframes spin { to { transform: rotate(360deg); } }`}</style>
+
                 </div>
               </div>
             )}

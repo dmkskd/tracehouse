@@ -1,3 +1,5 @@
+import { bandPulseAnimation } from '../../styles/animations';
+import { tracehouseLocalStorage } from '@tracehouse/core';
 /**
  * TimelineChart — Interactive SVG chart with stacked query/merge/mutation areas,
  * server metric line, hover tooltips, click-to-pin, drag-to-zoom, and scroll-to-zoom.
@@ -66,11 +68,11 @@ const ENABLE_FAILURE_HATCHING = true;
  * The hover tooltip floats over the chart with a blurred backdrop. Safari
  * repaints that blur against the whole SVG on every mouse move, which can
  * dominate hover cost on a dense timeline; other engines composite it cheaply.
- * Set localStorage `th_tooltip_blur` to `off` to drop the blur and compare.
+ * Set localStorage `dmkskd-tracehouse-app:th_tooltip_blur` to `off` to drop the blur and compare.
  */
 const TOOLTIP_BLUR_ENABLED = (() => {
   try {
-    return localStorage.getItem('th_tooltip_blur') !== 'off';
+    return tracehouseLocalStorage.getItem('th_tooltip_blur') !== 'off';
   } catch {
     return true;  // Storage can be blocked; the blur is the normal appearance.
   }
@@ -681,7 +683,7 @@ export const TimelineChart: React.FC<{
               key={i}
               opacity={baseOpacity}
               style={a.isRunning ? {
-                animation: 'bandPulse 4.5s ease-in-out infinite',
+                animation: `${bandPulseAnimation} 4.5s ease-in-out infinite`,
               } : undefined}
             >
               <path

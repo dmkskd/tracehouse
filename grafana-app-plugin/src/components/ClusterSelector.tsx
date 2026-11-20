@@ -1,3 +1,4 @@
+import { GrafanaControl } from './GrafanaControl';
 import React from 'react';
 import { Select } from '@grafana/ui';
 import { useClusterStore } from '@frontend/stores/clusterStore';
@@ -20,7 +21,7 @@ export function ClusterSelector() {
   ];
 
   return (
-    <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+    <GrafanaControl><div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
       <label style={{ fontSize: 12, whiteSpace: 'nowrap', opacity: 0.6 }}>
         Cluster
       </label>
@@ -32,6 +33,6 @@ export function ClusterSelector() {
         }}
         width={20}
       />
-    </div>
+    </div></GrafanaControl>
   );
 }

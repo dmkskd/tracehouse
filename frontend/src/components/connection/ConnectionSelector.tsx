@@ -3,7 +3,7 @@
  */
 
 import React, { useEffect, useState, useCallback, useRef } from 'react';
-import { createPortal } from 'react-dom';
+import { createTracehousePortal as createPortal } from '../../providers/TracehousePortal';
 import { useConnectionStore } from '../../stores/connectionStore';
 import type { ConnectionProfile, ConnectionConfigResponse } from '../../stores/connectionStore';
 import { useClusterStore } from '../../stores/clusterStore';

@@ -1,4 +1,7 @@
-import React, { Suspense, lazy, useMemo } from 'react';
+import { TracehouseStyleContext } from '@frontend/providers/TracehouseStyleContext';
+import { useThemeDetection } from '@frontend/hooks/useThemeDetection';
+import type { RuntimeThemeProps } from './runtimeTheme';
+import React, { Suspense, lazy, useMemo, useContext } from 'react';
 import pluginJson from '../plugin.json';
 
 declare const __webpack_public_path__: string;
@@ -41,7 +44,10 @@ export function createRuntimeComponent<P extends object>(
   loadingText: string,
   minHeight = 320
 ): React.FC<P> {
-  const lazyByRuntime = new Map<Runtime, React.LazyExoticComponent<React.ComponentType<P>>>();
+  // Keep generic component props nested at the lazy boundary. React's lazy
+  // prop inference otherwise treats a possible `ref` in P as a forwarded ref.
+  type LoaderProps = RuntimeThemeProps & { componentProps: P };
+  const lazyByRuntime = new Map<Runtime, React.LazyExoticComponent<React.FC<LoaderProps>>>();
 
   function getComponent(runtime: Runtime) {
     const existing = lazyByRuntime.get(runtime);
@@ -51,12 +57,15 @@ export function createRuntimeComponent<P extends object>(
 
     const component = lazy(async () => {
       const url = getPluginAssetUrl(`${chunkName}-${runtime}.js`);
-      const mod = await getSystemLoader<P>().import(url);
+      const mod = await getSystemLoader<P & RuntimeThemeProps>().import(url);
       const RuntimeComponent = mod[exportName] ?? mod.default;
       if (!RuntimeComponent) {
         throw new Error(`${exportName} export was not found in ${url}`);
       }
-      return { default: RuntimeComponent };
+      const LoadedComponent: React.FC<LoaderProps> = ({ componentProps, tracehouseTheme, tracehouseStyleClassName }) => (
+        <RuntimeComponent {...componentProps} tracehouseTheme={tracehouseTheme} tracehouseStyleClassName={tracehouseStyleClassName} />
+      );
+      return { default: LoadedComponent };
     });
 
     lazyByRuntime.set(runtime, component);
@@ -64,6 +73,8 @@ export function createRuntimeComponent<P extends object>(
   }
 
   const RuntimeComponent: React.FC<P> = (props) => {
+    const theme = useThemeDetection();
+    const styleClassName = useContext(TracehouseStyleContext);
     const runtime = getReactRuntime();
     const Component = useMemo(() => getComponent(runtime), [runtime]);
     const fallback = minHeight > 0 ? (
@@ -82,7 +93,7 @@ export function createRuntimeComponent<P extends object>(
 
     return (
       <Suspense fallback={fallback}>
-        <Component {...props} />
+        <Component componentProps={props} tracehouseTheme={theme} tracehouseStyleClassName={styleClassName} />
       </Suspense>
     );
   };

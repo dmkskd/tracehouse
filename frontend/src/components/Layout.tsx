@@ -1,3 +1,5 @@
+import { css } from '@emotion/css';
+
 import { QueryXRaySourceControl } from './query/QueryXRayPreference';
 import { SettingsSection, SegmentedControl, SETTINGS_POPOVER_WIDTH } from './settings/SettingsControls';
 /**
@@ -25,6 +27,23 @@ import { buildConfig } from '../buildConfig';
 import { globalRefreshLabel } from './layout-refresh-model';
 import { useConnectionPreparing } from '../providers/ClickHouseProvider';
 import { StartupProgress } from './shared/StartupProgress';
+
+const responsiveLayoutClass = css`
+  @media (max-width: 900px) {
+    .tracehouse-app-header {
+      padding-left: 12px !important;
+      padding-right: 12px !important;
+    }
+
+    .tracehouse-mobile-secondary-action {
+      display: none !important;
+    }
+
+    .tracehouse-header-actions {
+      gap: 8px !important;
+    }
+  }
+`;
 
 interface LayoutProps {
   children: React.ReactNode;
@@ -405,10 +424,11 @@ const SettingsPopover: React.FC = () => {
             <button
               onClick={() => {
                 if (!confirm('Remove all Tracehouse data? This includes saved connections, credentials, dashboards, and preferences.')) return;
-                const PREFIXES = ['tracehouse-', 'hdx-'];
+                const PREFIXES = ['dmkskd-tracehouse-app:', 'tracehouse-', 'tracehouse.'];
+                const LEGACY_KEYS = ['th_tooltip_blur', 'obsmap:selectedTable'];
                 [localStorage, sessionStorage].forEach(store => {
                   const keys = Array.from({ length: store.length }, (_, i) => store.key(i)!);
-                  keys.forEach(k => { if (PREFIXES.some(p => k.startsWith(p))) store.removeItem(k); });
+                  keys.forEach(k => { if (LEGACY_KEYS.includes(k) || PREFIXES.some(p => k.startsWith(p))) store.removeItem(k); });
                 });
                 setOpen(false);
                 window.location.reload();
@@ -517,7 +537,7 @@ export const Layout: React.FC<LayoutProps> = ({ children }) => {
 
   return (
     <div 
-      className="flex flex-col h-screen" 
+      className={`flex flex-col h-screen ${responsiveLayoutClass}`}
       style={{ 
         background: 'var(--bg-primary)',
         color: 'var(--text-primary)',
@@ -529,22 +549,7 @@ export const Layout: React.FC<LayoutProps> = ({ children }) => {
         overflow menu one at a time by useNavigationOverflow, which measures the row instead
         of guessing a viewport width, so the tabs are left out of this block.
       */}
-      <style>{`
-        @media (max-width: 900px) {
-          .tracehouse-app-header {
-            padding-left: 12px !important;
-            padding-right: 12px !important;
-          }
 
-          .tracehouse-mobile-secondary-action {
-            display: none !important;
-          }
-
-          .tracehouse-header-actions {
-            gap: 8px !important;
-          }
-        }
-      `}</style>
       {/* Top Navigation Bar */}
       <header 
         className="tracehouse-app-header h-12 flex items-center justify-between pr-4 flex-shrink-0"

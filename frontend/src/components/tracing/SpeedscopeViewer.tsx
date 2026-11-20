@@ -1,3 +1,5 @@
+import { spinAnimation } from '../../styles/animations';
+
 /**
  * React wrapper around the speedscope-widget Web Component.
  * Renders an interactive flamegraph with left-heavy, sandwich, and time-ordered views.
@@ -7,7 +9,9 @@
  */
 import React, { useRef, useEffect, useCallback, useState } from 'react';
 
+
 const SPEEDSCOPE_WIDGET_TAG = 'speedscope-widget';
+let speedscopeWidgetPromise: Promise<unknown> | undefined;
 
 const ensureSpeedscopeWidget = async (): Promise<void> => {
   if (typeof window === 'undefined' || !window.customElements) {
@@ -18,25 +22,22 @@ const ensureSpeedscopeWidget = async (): Promise<void> => {
     return;
   }
 
-  if (!window.__tracehouseSpeedscopeWidgetPromise) {
-    window.__tracehouseSpeedscopeWidgetPromise = import('speedscope-widget')
+  if (!speedscopeWidgetPromise) {
+    speedscopeWidgetPromise = import('speedscope-widget')
       .catch((error) => {
         if (window.customElements.get(SPEEDSCOPE_WIDGET_TAG)) {
           return;
         }
+        speedscopeWidgetPromise = undefined;
         throw error;
       });
   }
 
-  await window.__tracehouseSpeedscopeWidgetPromise;
+  await speedscopeWidgetPromise;
 };
 
 // Extend JSX to accept the custom element
 declare global {
-  interface Window {
-    __tracehouseSpeedscopeWidgetPromise?: Promise<unknown>;
-  }
-
   // eslint-disable-next-line @typescript-eslint/no-namespace
   namespace JSX {
     interface IntrinsicElements {
@@ -311,11 +312,11 @@ export const SpeedscopeViewer: React.FC<SpeedscopeViewerProps> = ({
           borderColor: 'var(--border-primary)',
           borderTopColor: 'var(--accent-primary)',
           borderRadius: '50%',
-          animation: 'spin 1s linear infinite',
+          animation: `${spinAnimation} 1s linear infinite`,
           margin: '0 auto 12px',
         }} />
         <span style={{ fontSize: 13, color: 'var(--text-muted)' }}>{isLoading ? `Loading ${profileType} profile...` : 'Loading flamegraph renderer...'}</span>
-        <style>{`@keyframes spin { to { transform: rotate(360deg); } }`}</style>
+
       </div>
     </div>
   ) : error ? (

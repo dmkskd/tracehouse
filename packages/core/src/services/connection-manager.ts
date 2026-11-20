@@ -1,3 +1,4 @@
+import { tracehouseLocalStorage } from '../utils/browser-storage.js';
 import type { ConnectionConfig, ConnectionProfile, ConnectionTestResult } from '../types/connection.js';
 import type { IClickHouseAdapter } from '../adapters/types.js';
 import { AdapterError } from '../adapters/types.js';
@@ -36,7 +37,7 @@ export class ConnectionManager {
 
   listProfiles(): ConnectionProfile[] {
     try {
-      const raw = localStorage.getItem(STORAGE_KEY);
+      const raw = tracehouseLocalStorage.getItem(STORAGE_KEY);
       return raw ? JSON.parse(raw) : [];
     } catch {
       return [];
@@ -55,12 +56,12 @@ export class ConnectionManager {
     } else {
       profiles.push(safeProfile);
     }
-    localStorage.setItem(STORAGE_KEY, JSON.stringify(profiles));
+    tracehouseLocalStorage.setItem(STORAGE_KEY, JSON.stringify(profiles));
   }
 
   removeProfile(id: string): void {
     const profiles = this.listProfiles().filter(p => p.id !== id);
-    localStorage.setItem(STORAGE_KEY, JSON.stringify(profiles));
+    tracehouseLocalStorage.setItem(STORAGE_KEY, JSON.stringify(profiles));
   }
 
   async testConnection(config: ConnectionConfig): Promise<ConnectionTestResult> {

@@ -1,3 +1,4 @@
+import { keyframes } from '@emotion/css';
 /**
  * Shared 2D chart components used by both QueryExplorer and DashboardViewer.
  *
@@ -6,7 +7,7 @@
  */
 
 import React, { useState, useMemo } from 'react';
-import { createPortal } from 'react-dom';
+import { createTracehousePortal as createPortal } from '../../providers/TracehousePortal';
 import {
   BarChart as RBarChart,
   Bar,
@@ -703,25 +704,16 @@ export function isTimeSeriesChartType(type: ChartType): boolean {
 
 // ─── Pulsating active dot for drillable charts ───
 
-const pulseKeyframes = `@keyframes chartDotPulse { 0%,100% { opacity: .3; r: 8; } 50% { opacity: 0; r: 14; } }`;
-let pulseStyleInjected = false;
-function ensurePulseStyle() {
-  if (pulseStyleInjected) return;
-  const s = document.createElement('style');
-  s.textContent = pulseKeyframes;
-  document.head.appendChild(s);
-  pulseStyleInjected = true;
-}
+const chartDotPulse = keyframes`0%,100% { opacity: .3; r: 8; } 50% { opacity: 0; r: 14; }`;
 
 /** Active dot that gently pulsates when the chart supports drill-down. */
 const PulsatingDot: React.FC<{ cx?: number; cy?: number; fill?: string; drillable?: boolean; onClick?: () => void }> = ({ cx, cy, fill, drillable, onClick }) => {
   if (cx == null || cy == null) return null;
-  ensurePulseStyle();
   return (
     <g style={{ cursor: drillable ? 'pointer' : undefined }} onClick={onClick}>
       {drillable && (
         <circle cx={cx} cy={cy} r={8} fill={fill} opacity={0.3}
-          style={{ animation: 'chartDotPulse 1.8s ease-in-out infinite' }} />
+          style={{ animation: `${chartDotPulse} 1.8s ease-in-out infinite` }} />
       )}
       <circle cx={cx} cy={cy} r={4} fill={fill} stroke={fill} strokeWidth={2} />
     </g>

@@ -1,3 +1,4 @@
+import { useThemeDetection } from '../../hooks/useThemeDetection';
 /**
  * ModalWrapper — Shared modal chrome used by query, merge, and mutation detail modals.
  *
@@ -5,7 +6,7 @@
  */
 
 import React, { useEffect, useCallback, useRef } from 'react';
-import { createPortal } from 'react-dom';
+import { createTracehousePortal as createPortal } from '../../providers/TracehousePortal';
 
 // Modals can be layered (resource exploration → query/merge details). Only the
 // topmost layer handles Escape; scroll remains locked until the last one closes.
@@ -36,6 +37,7 @@ export const ModalWrapper: React.FC<{
   backdropBlur = 8,
   ariaLabel,
 }) => {
+  const isDark = useThemeDetection() === 'dark';
   const modalId = useRef(Symbol('modal'));
   const dialogRef = useRef<HTMLDivElement>(null);
   const onCloseRef = useRef(onClose);
@@ -80,8 +82,6 @@ export const ModalWrapper: React.FC<{
 
   if (!isOpen) return null;
 
-  const isDark = document.documentElement.getAttribute('data-theme') !== 'light' 
-    && !document.documentElement.classList.contains('theme-light');
   const modalBg = isDark ? '#0a0a1a' : '#f8fafc';
   const borderColor = isDark ? '#2a2a4a' : '#e2e8f0';
 

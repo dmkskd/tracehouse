@@ -48,14 +48,15 @@ describe('Query X-Ray preference layers', () => {
     act(() => connection.setState({ activeProfileId: 'b' }));
     expect(result.current.preference).toBe('auto');
     act(() => result.current.setPreference('processes_history'));
-    const stored = localStorage.getItem('tracehouse-view-preference')!;
+    const stored = localStorage.getItem('dmkskd-tracehouse-app:tracehouse-view-preference')!;
     act(() => useUserPreferenceStore.setState({ queryXraySource: {} }));
-    localStorage.setItem('tracehouse-view-preference', stored);
+    localStorage.setItem('dmkskd-tracehouse-app:tracehouse-view-preference', stored);
     await act(() => useUserPreferenceStore.persist.rehydrate());
     expect(useUserPreferenceStore.getState().queryXraySource).toEqual({ a: 'query_metric_log', b: 'processes_history' });
   });
 
   it('drops the legacy browser-wide pin and keeps the rest of the persisted state', async () => {
+    localStorage.removeItem('dmkskd-tracehouse-app:tracehouse-view-preference');
     localStorage.setItem('tracehouse-view-preference', JSON.stringify({ version: 0, state: { xraySource: 'query_metric_log', preferredViewMode: '2d' } }));
     await act(() => useUserPreferenceStore.persist.rehydrate());
     // A browser-wide string cannot be attributed to a connection, so it is not
@@ -63,6 +64,8 @@ describe('Query X-Ray preference layers', () => {
     expect(useUserPreferenceStore.getState().queryXraySource).toEqual({});
     expect(useUserPreferenceStore.getState()).not.toHaveProperty('xraySource');
     expect(useUserPreferenceStore.getState().preferredViewMode).toBe('2d');
+    expect(localStorage.getItem('tracehouse-view-preference')).not.toBeNull();
+    expect(localStorage.getItem('dmkskd-tracehouse-app:tracehouse-view-preference')).not.toBeNull();
   });
 
   it('disables editing while disconnected and exposes an inherit option', () => {

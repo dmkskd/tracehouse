@@ -1,5 +1,5 @@
 import React, { useEffect } from 'react';
-import { createPortal } from 'react-dom';
+import { createTracehousePortal as createPortal } from '@frontend/providers/TracehousePortal';
 
 interface PortalModalProps {
   isOpen: boolean;

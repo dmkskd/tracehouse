@@ -64,7 +64,7 @@ const viewButton = (name: 'timeline' | 'flow') => screen.getByRole('button', { n
 
 describe('DistributedQueryTopology view coordinate', () => {
   it('opens on the view named by qd_topo, overriding the stored preference', () => {
-    localStorage.setItem('tracehouse.distributedTopology.view', 'timeline');
+    localStorage.setItem('dmkskd-tracehouse-app:tracehouse.distributedTopology.view', 'timeline');
     renderAt('?qd_topo=flow');
 
     expect(viewButton('flow')).toHaveAttribute('aria-pressed', 'true');
@@ -72,7 +72,7 @@ describe('DistributedQueryTopology view coordinate', () => {
   });
 
   it('falls back to the stored preference when qd_topo is absent or junk', () => {
-    localStorage.setItem('tracehouse.distributedTopology.view', 'flow');
+    localStorage.setItem('dmkskd-tracehouse-app:tracehouse.distributedTopology.view', 'flow');
     renderAt('?qd_topo=nonsense');
 
     expect(viewButton('flow')).toHaveAttribute('aria-pressed', 'true');
@@ -86,6 +86,6 @@ describe('DistributedQueryTopology view coordinate', () => {
 
     expect(screen.getByTestId('location-search')).toHaveTextContent('qd_topo=flow');
     expect(viewButton('flow')).toHaveAttribute('aria-pressed', 'true');
-    expect(localStorage.getItem('tracehouse.distributedTopology.view')).toBe('flow');
+    expect(localStorage.getItem('dmkskd-tracehouse-app:tracehouse.distributedTopology.view')).toBe('flow');
   });
 });

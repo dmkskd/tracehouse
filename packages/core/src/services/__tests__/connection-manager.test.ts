@@ -103,7 +103,7 @@ describe('ConnectionManager', { tags: ['connectivity'] }, () => {
       const stored = mgr.listProfiles();
       expect(stored[0].config.password).toBe('');
 
-      const raw = localStorage.getItem('tracehouse-connections')!;
+      const raw = localStorage.getItem('dmkskd-tracehouse-app:tracehouse-connections')!;
       expect(raw).not.toContain('super-secret');
     });
 

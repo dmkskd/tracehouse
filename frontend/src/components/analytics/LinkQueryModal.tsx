@@ -13,7 +13,7 @@ import { formatAnalyticsCell } from './timestamp';
  */
 
 import React, { useEffect, useState, useMemo, useCallback } from 'react';
-import { createPortal } from 'react-dom';
+import { createTracehousePortal as createPortal } from '../../providers/TracehousePortal';
 import { useClickHouseServices } from '../../providers/ClickHouseProvider';
 import { sourceTag, TAB_ANALYTICS } from '@tracehouse/core';
 import { type Query } from './types';

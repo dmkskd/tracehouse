@@ -1,3 +1,5 @@
+import { spinAnimation } from '../../styles/animations';
+import { css } from '@emotion/css';
 /**
  * MergeTracker - Dark theme merge tracking view
  */
@@ -71,6 +73,12 @@ import { LINK_TIME_PARAMS, hasLinkTimeParams, linkTimeToCustomRange, readLinkTim
 import { createRequestGate } from '../../utils/requestGate';
 import { useUrlState } from '../../hooks/useUrlState';
 import { defineShareSchema } from '../../share/shareSchema';
+
+const mutationRowClass = css`
+  &:hover {
+    background: var(--bg-hover) !important;
+  }
+`;
 
 /** State listed here must survive copying and reopening a Merge Tracker URL. */
 export const MERGE_TRACKER_SHARE_SCHEMA = defineShareSchema({
@@ -238,7 +246,7 @@ const MutationsPanel: React.FC<{
     return (
       <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', height: 80, color: 'var(--text-muted)' }}>
         <div style={{ textAlign: 'center' }}>
-          <div style={{ width: 16, height: 16, border: '2px solid var(--border-primary)', borderTopColor: 'var(--accent-primary)', borderRadius: '50%', animation: 'spin 1s linear infinite', marginBottom: 4 }} />
+          <div style={{ width: 16, height: 16, border: '2px solid var(--border-primary)', borderTopColor: 'var(--accent-primary)', borderRadius: '50%', animation: `${spinAnimation} 1s linear infinite`, marginBottom: 4 }} />
           <p style={{ fontSize: 11 }}>Loading...</p>
         </div>
       </div>
@@ -293,9 +301,6 @@ const MutationsPanel: React.FC<{
 
   return (
     <div style={{ overflow: 'auto' }}>
-      <style>{`
-        .mutation-row:hover { background: var(--bg-hover) !important; }
-      `}</style>
 
       {killedStateUnavailable && (
         <div style={{
@@ -444,7 +449,7 @@ const MutationsPanel: React.FC<{
             return (
               <tr 
                 key={`${mutation.mutation_id}-${idx}`}
-                className="mutation-row"
+                className={mutationRowClass}
                 onMouseEnter={() => onPreviewMutation?.(mutation)}
                 onClick={() => onSelectMutation(mutation)}
                 style={{ 
@@ -561,7 +566,7 @@ const MutationHistoryPanel: React.FC<{
     return (
       <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', height: 80, color: 'var(--text-muted)' }}>
         <div style={{ textAlign: 'center' }}>
-          <div style={{ width: 16, height: 16, border: '2px solid var(--border-primary)', borderTopColor: 'var(--accent-primary)', borderRadius: '50%', animation: 'spin 1s linear infinite', marginBottom: 4 }} />
+          <div style={{ width: 16, height: 16, border: '2px solid var(--border-primary)', borderTopColor: 'var(--accent-primary)', borderRadius: '50%', animation: `${spinAnimation} 1s linear infinite`, marginBottom: 4 }} />
           <p style={{ fontSize: 11 }}>Loading...</p>
         </div>
       </div>
@@ -596,9 +601,6 @@ const MutationHistoryPanel: React.FC<{
 
   return (
     <div style={{ overflow: 'auto' }}>
-      <style>{`
-        .mutation-history-row:hover { background: var(--bg-hover) !important; }
-      `}</style>
       {killedStateUnavailable && (
         <div style={{
           margin: '0 0 10px', padding: '7px 10px', borderRadius: 4,
@@ -639,7 +641,7 @@ const MutationHistoryPanel: React.FC<{
             return (
               <tr 
                 key={`${record.mutation_id}-${idx}`}
-                className="mutation-history-row"
+                className={mutationRowClass}
                 onMouseEnter={() => onPreviewRecord?.(record)}
                 onClick={() => onSelectRecord(record)}
                 style={{ 

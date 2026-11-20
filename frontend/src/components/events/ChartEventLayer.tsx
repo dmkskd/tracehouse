@@ -1,5 +1,5 @@
 import React, { useEffect, useRef, useState } from 'react';
-import { createPortal } from 'react-dom';
+import { createTracehousePortal as createPortal } from '../../providers/TracehousePortal';
 import { DefaultZIndexes, ZIndexLayer, usePlotArea, useXAxisDomain } from 'recharts';
 import type { OperationalEvent } from '@tracehouse/core';
 import { EVENT_SEVERITY_COLORS, eventKindName, type EventCluster } from './event-model';

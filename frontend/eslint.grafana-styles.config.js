@@ -7,6 +7,13 @@ export default [{
   languageOptions: { parser: tseslint.parser },
   plugins: { '@typescript-eslint': tseslint.plugin, 'react-hooks': reactHooks },
   rules: {
+    'no-restricted-syntax': ['error', {
+      selector: "CallExpression[callee.type='MemberExpression'][callee.property.name='createElement'][arguments.0.value='style']",
+      message: 'Use Emotion css/keyframes instead of inserting styles into the shared document.',
+    }, {
+      selector: "JSXOpeningElement[name.name='style']",
+      message: 'Use Emotion css/keyframes instead of global JSX style elements.',
+    }],
     'no-restricted-imports': ['error', {
       patterns: [{
         group: ['**/*.css', '**/*.scss', '**/*.sass', '**/*.less', '**/*.css?*', '**/*.scss?*', '**/*.sass?*', '**/*.less?*'],

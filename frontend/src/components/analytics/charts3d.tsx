@@ -1,3 +1,4 @@
+import { useThemeDetection } from '../../hooks/useThemeDetection';
 /**
  * Shared 3D chart components (Three.js via @react-three/fiber).
  *
@@ -20,21 +21,6 @@ function formatValue(v: number, unit?: string): string {
 }
 
 // ─── Theme helpers ───
-
-/** Detect current theme and re-render on change */
-function use3DTheme(): 'dark' | 'light' {
-  const [theme, setTheme] = useState<'dark' | 'light'>(() =>
-    typeof document !== 'undefined' && document.documentElement.getAttribute('data-theme') === 'light' ? 'light' : 'dark'
-  );
-  useEffect(() => {
-    const obs = new MutationObserver(() => {
-      setTheme(document.documentElement.getAttribute('data-theme') === 'light' ? 'light' : 'dark');
-    });
-    obs.observe(document.documentElement, { attributes: true, attributeFilter: ['data-theme'] });
-    return () => obs.disconnect();
-  }, []);
-  return theme;
-}
 
 /** Lighten a hex color by mixing with white. amt 0-1 */
 function lightenHex(hex: string, amt: number): string {
@@ -120,7 +106,7 @@ function AutoRotate({ speed = 0.15 }: { speed?: number }) {
 // ─── 3D Scene components ───
 
 function Bar3DScene({ data, onDrillDown }: { data: ChartDataPoint[]; title?: string; onDrillDown?: (e: DrillDownEvent) => void }) {
-  const theme = use3DTheme();
+  const theme = useThemeDetection();
   const t = theme === 'light' ? LIGHT_3D : DARK_3D;
   const maxVal = Math.max(...data.map(d => d.value), 1);
   const spacing = 1.8;
@@ -167,7 +153,7 @@ function Bar3DScene({ data, onDrillDown }: { data: ChartDataPoint[]; title?: str
 }
 
 function Line3DScene({ data }: { data: ChartDataPoint[]; title?: string }) {
-  const theme = use3DTheme();
+  const theme = useThemeDetection();
   const t = theme === 'light' ? LIGHT_3D : DARK_3D;
   const maxVal = Math.max(...data.map(d => d.value), 1);
   const minVal = Math.min(...data.map(d => d.value));
@@ -339,7 +325,7 @@ function Line3DScene({ data }: { data: ChartDataPoint[]; title?: string }) {
 // ─── Multi-series ridge / waterfall line chart ───
 
 function GroupedLine3DScene({ data }: { data: GroupedChartData[] }) {
-  const theme = use3DTheme();
+  const theme = useThemeDetection();
   const t = theme === 'light' ? LIGHT_3D : DARK_3D;
 
   // Extract series names and build per-series point arrays
@@ -594,7 +580,7 @@ function PieSlice3D({ s, i, sliceHeight, radius, innerRadius, theme, t, onDrillD
 }
 
 function Pie3DScene({ data, onDrillDown, unit }: { data: ChartDataPoint[]; title?: string; onDrillDown?: (e: DrillDownEvent) => void; unit?: string }) {
-  const theme = use3DTheme();
+  const theme = useThemeDetection();
   const t = theme === 'light' ? LIGHT_3D : DARK_3D;
   const total = data.reduce((s, d) => s + d.value, 0);
   const radius = 2;
@@ -650,7 +636,7 @@ function flattenGrouped3D(data: GroupedChartData[]): { labels: string[]; groupNa
 }
 
 function GroupedBar3DScene({ data, orientation = 'horizontal', onDrillDown }: { data: GroupedChartData[]; orientation?: 'horizontal' | 'vertical'; onDrillDown?: (e: DrillDownEvent) => void }) {
-  const theme = use3DTheme();
+  const theme = useThemeDetection();
   const t = theme === 'light' ? LIGHT_3D : DARK_3D;
   const { labels, groupNames, colorMap, matrix } = useMemo(() => flattenGrouped3D(data), [data]);
   const globalMax = Math.max(...matrix.flat(), 1);
@@ -727,7 +713,7 @@ function GroupedBar3DScene({ data, orientation = 'horizontal', onDrillDown }: { 
 }
 
 function StackedBar3DScene({ data, orientation = 'horizontal', onDrillDown }: { data: GroupedChartData[]; orientation?: 'horizontal' | 'vertical'; onDrillDown?: (e: DrillDownEvent) => void }) {
-  const theme = use3DTheme();
+  const theme = useThemeDetection();
   const t = theme === 'light' ? LIGHT_3D : DARK_3D;
   const { labels, groupNames, colorMap, matrix } = useMemo(() => flattenGrouped3D(data), [data]);
   const stackTotals = matrix.map(row => row.reduce((s, v) => s + v, 0));
@@ -816,7 +802,7 @@ export const Chart3DCanvas: React.FC<{
   onDrillDown?: (e: DrillDownEvent) => void;
   unit?: string;
 }> = ({ data, groupedData, type, orientation, title, description, isFullscreen, onToggleFullscreen, onDrillDown, unit }) => {
-  const theme = use3DTheme();
+  const theme = useThemeDetection();
   const bg = theme === 'light' ? LIGHT_3D.bg : DARK_3D.bg;
   const labelColor = theme === 'light' ? LIGHT_3D.labelColor : DARK_3D.labelColor;
   const cameraPos: [number, number, number] = [0, 4, 12];

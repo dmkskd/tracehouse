@@ -1,3 +1,6 @@
+import { TracehouseHeaderContext } from '../../providers/TracehouseHeaderContext';
+
+
 import { selectQueryXRaySource } from '@tracehouse/core';
 import { acceptDashboardImport, inspectDashboardImport } from '@tracehouse/core/analytics/dashboard-import';
 import { XRaySourceBadge } from '../query/modal/XRaySourceBadge';
@@ -9,11 +12,10 @@ import { useQueryXRaySelection } from '../query/query-xray-preference';
  * Also provides a dashboard list/selector, create/edit/delete/import/export UI.
  */
 
-import React, { useState, useEffect, useCallback, useMemo, useRef } from 'react';
-import { createPortal } from 'react-dom';
+import React, { useState, useContext, useEffect, useCallback, useMemo, useRef } from 'react';
+import { createTracehousePortal as createPortal } from '../../providers/TracehousePortal';
 import { useUrlState } from '../../hooks/useUrlState';
 import { defineShareSchema } from '../../share/shareSchema';
-import { buildConfig } from '../../buildConfig';
 import { useClickHouseServices } from '../../providers/ClickHouseProvider';
 import { sourceTag, TAB_ANALYTICS } from '@tracehouse/core';
 import { type Query } from './types';
@@ -96,9 +98,19 @@ import {
 import { useMonitoringCapabilitiesStore } from '../../stores/monitoringCapabilitiesStore';
 import { useUserPreferenceStore } from '../../stores/userPreferenceStore';
 import { copyToClipboard } from '@tracehouse/ui-shared';
-import { css } from '@emotion/css';
+import { css, keyframes } from '@emotion/css';
 import { useDashboardScrollFocus } from './useDashboardScrollFocus';
 import { ChartSummary } from './ChartSummary';
+
+const popupRevealAnimation = keyframes`from { opacity: 0; transform: scale(0.96) translateY(8px); filter: blur(6px); }
+          to   { opacity: 1; transform: scale(1)    translateY(0);   filter: blur(0);   }`;
+const panelColourInAnimation = keyframes`from { opacity: 0; transform: translateY(6px); filter: grayscale(1) brightness(0.6); }
+          to   { opacity: 1; transform: translateY(0);   filter: grayscale(0) brightness(1);   }`;
+const previewPanelClass = css`
+  & {
+    animation: ${panelColourInAnimation} 0.45s cubic-bezier(0.22, 1, 0.36, 1) both;
+  }
+`;
 
 // ─── Panel component - executes one preset query and shows result ───
 
@@ -155,9 +167,7 @@ const FOCUS_STAGE_CHART_HEIGHT = 'clamp(300px, 38vh, 430px)';
 const FOCUS_STAGE_Z_INDEX = 800;
 const FOCUS_STAGE_RAIL_Z_INDEX = FOCUS_STAGE_Z_INDEX + 1;
 
-function resolveFocusStageTop(): number {
-  if (typeof document === 'undefined' || !buildConfig.grafanaPlugin) return 48;
-  const appHeader = document.querySelector<HTMLElement>('.grafana-app-container > div:first-child');
+function resolveFocusStageTop(appHeader: HTMLElement | null | undefined): number {
   return appHeader ? Math.max(48, Math.round(appHeader.getBoundingClientRect().bottom)) : 48;
 }
 
@@ -1948,21 +1958,9 @@ const DashboardPreviewPopup: React.FC<{
       display: 'flex',
       flexDirection: 'column',
       pointerEvents: 'none',
-      animation: 'popupReveal 0.5s cubic-bezier(0.22,1,0.36,1) both',
+      animation: `${popupRevealAnimation} 0.5s cubic-bezier(0.22,1,0.36,1) both`,
     }}>
-      <style>{`
-        @keyframes popupReveal {
-          from { opacity: 0; transform: scale(0.96) translateY(8px); filter: blur(6px); }
-          to   { opacity: 1; transform: scale(1)    translateY(0);   filter: blur(0);   }
-        }
-        @keyframes panelColourIn {
-          from { opacity: 0; transform: translateY(6px); filter: grayscale(1) brightness(0.6); }
-          to   { opacity: 1; transform: translateY(0);   filter: grayscale(0) brightness(1);   }
-        }
-        .preview-panel {
-          animation: panelColourIn 0.45s cubic-bezier(0.22,1,0.36,1) both;
-        }
-      `}</style>
+
       {/* Header */}
       <div style={{
         padding: '10px 16px 8px',
@@ -1993,7 +1991,7 @@ const DashboardPreviewPopup: React.FC<{
         {dashboard.panels.slice(0, MAX_PANELS).map((panel, i) => (
           <div
             key={`${panel.queryName}-${i}`}
-            className="preview-panel"
+            className={previewPanelClass}
             style={{ animationDelay: `${i * 0.12}s`, minHeight: 0, minWidth: 0 }}
           >
             <DashboardPanelCard
@@ -2329,13 +2327,14 @@ export const DashboardViewer: React.FC<{
   /** Bumped by the host (e.g. re-clicking the active Dashboards tab) to return an open dashboard to the list. */
   listRequestKey?: number;
 }> = ({ initialDashboardId, onOpenQueryDetail, onOpenQuery, listRequestKey }) => {
+  const appHeaderRef = useContext(TracehouseHeaderContext);
   const { state: sharedState, update: updateSharedState } = useUrlState(ANALYTICS_DASHBOARD_SHARE_SCHEMA);
   const dashboardIdFromUrl = sharedState.dashboard ?? initialDashboardId;
   const [dashboards, setDashboards] = useState<Dashboard[]>(() => loadDashboards());
   const [focusedPanelIndex, setFocusedPanelIndex] = useState<number | null>(() => dashboardPanelIndex(sharedState.dashboard_focus ?? null));
   const [allFocusPanelsExpanded, setAllFocusPanelsExpanded] = useState(() => sharedState.dashboard_focus_all === '1');
   const [fullscreenPanelIndex, setFullscreenPanelIndex] = useState<number | null>(() => dashboardPanelIndex(sharedState.dashboard_fullscreen ?? null));
-  const [focusStageTop, setFocusStageTop] = useState(resolveFocusStageTop);
+  const [focusStageTop, setFocusStageTop] = useState(() => resolveFocusStageTop(appHeaderRef?.current));
   const [railFilterQuery, setRailFilterQuery] = useState('');
   const [toast, setToast] = useState<string | null>(null);
   const [exportMenuPosition, setExportMenuPosition] = useState<{ top: number; right: number } | null>(null);
@@ -2390,14 +2389,14 @@ export const DashboardViewer: React.FC<{
 
   useEffect(() => {
     if (focusedPanelIndex === null) return;
-    const updateTop = () => setFocusStageTop(resolveFocusStageTop());
+    const updateTop = () => setFocusStageTop(resolveFocusStageTop(appHeaderRef?.current));
     const frame = window.requestAnimationFrame(updateTop);
     window.addEventListener('resize', updateTop);
     return () => {
       window.cancelAnimationFrame(frame);
       window.removeEventListener('resize', updateTop);
     };
-  }, [focusedPanelIndex]);
+  }, [focusedPanelIndex, appHeaderRef]);
   useEffect(() => {
     if (!toast) return;
     const t = setTimeout(() => setToast(null), 2500);

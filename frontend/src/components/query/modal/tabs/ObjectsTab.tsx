@@ -1,3 +1,4 @@
+import { spinAnimation } from '../../../../styles/animations';
 import React from 'react';
 import type { QueryDetail as QueryDetailType } from '@tracehouse/core';
 
@@ -12,7 +13,7 @@ export const ObjectsTab: React.FC<{
     return (
       <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', height: 200 }}>
         <div style={{ textAlign: 'center' }}>
-          <div style={{ width: 24, height: 24, borderWidth: 2, borderStyle: 'solid', borderColor: 'var(--border-primary)', borderTopColor: 'var(--text-tertiary)', borderRadius: '50%', animation: 'spin 1s linear infinite', margin: '0 auto 8px' }} />
+          <div style={{ width: 24, height: 24, borderWidth: 2, borderStyle: 'solid', borderColor: 'var(--border-primary)', borderTopColor: 'var(--text-tertiary)', borderRadius: '50%', animation: `${spinAnimation} 1s linear infinite`, margin: '0 auto 8px' }} />
           <span style={{ fontSize: 12, color: 'var(--text-muted)' }}>Loading...</span>
         </div>
       </div>

@@ -1,3 +1,4 @@
+import { tracehouseLocalStorage, tracehouseSessionStorage } from '@tracehouse/core';
 /**
  * Connection Store - Zustand store for managing ClickHouse connections
  * 
@@ -26,7 +27,7 @@ export type CredentialStorageMode = 'persistent' | 'session' | 'memory';
 /** Read the current storage mode preference */
 export function getCredentialStorageMode(): CredentialStorageMode {
   if (typeof localStorage === 'undefined' || typeof localStorage.getItem !== 'function') return 'session';
-  const v = localStorage.getItem(STORAGE_MODE_KEY);
+  const v = tracehouseLocalStorage.getItem(STORAGE_MODE_KEY);
   if (v === 'persistent' || v === 'memory') return v;
   return 'session';
 }
@@ -46,13 +47,13 @@ const SESSION_PASSWORDS_KEY = 'tracehouse-session-passwords';
 
 /** Save session-mode passwords to sessionStorage (map of profileId → password) */
 function setSessionPasswords(passwords: Record<string, string>): void {
-  sessionStorage.setItem(SESSION_PASSWORDS_KEY, JSON.stringify(passwords));
+  tracehouseSessionStorage.setItem(SESSION_PASSWORDS_KEY, JSON.stringify(passwords));
 }
 
 /** Read session-mode passwords from sessionStorage */
 function getSessionPasswords(): Record<string, string> {
   try {
-    const raw = sessionStorage.getItem(SESSION_PASSWORDS_KEY);
+    const raw = tracehouseSessionStorage.getItem(SESSION_PASSWORDS_KEY);
     return raw ? JSON.parse(raw) : {};
   } catch { return {}; }
 }
@@ -453,18 +454,18 @@ export const useConnectionStore = create<ConnectionState>()(
 
         // When switching away FROM session mode, clear session passwords
         if (prev === 'session') {
-          sessionStorage.removeItem(SESSION_PASSWORDS_KEY);
+          tracehouseSessionStorage.removeItem(SESSION_PASSWORDS_KEY);
         }
 
         // Persist the preference (always in localStorage)
-        localStorage.setItem(STORAGE_MODE_KEY, mode);
+        tracehouseLocalStorage.setItem(STORAGE_MODE_KEY, mode);
         set({ credentialStorageMode: mode });
       },
     }),
     {
       name: STORAGE_KEY,
       // Always persist to localStorage — connection config survives in all modes
-      storage: createJSONStorage(() => localStorage),
+      storage: createJSONStorage(() => tracehouseLocalStorage),
       // Persist profiles and activeProfileId, not transient UI state.
       // In session/memory mode, strip passwords from localStorage.
       // - session: passwords are stored separately in sessionStorage

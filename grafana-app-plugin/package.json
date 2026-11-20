@@ -1,12 +1,13 @@
 {
   "name": "dmkskd-tracehouse-app",
-  "version": "0.22.0",
+  "version": "0.22.1",
   "description": "Full TraceHouse application as a Grafana App Plugin",
   "type": "module",
   "scripts": {
     "build": "npm run lint:styles --workspace tracehouse-frontend && webpack -c ./.config/webpack/webpack.config.ts --env production && node scripts/check-runtime-isolation.mjs",
     "dev": "webpack -w -c ./.config/webpack/webpack.config.ts --env development",
-    "test": "tsc -p tsconfig.alias-parity.json && vitest run --passWithNoTests"
+    "test": "tsc -p tsconfig.alias-parity.json && vitest run --passWithNoTests",
+    "test:styles": "tsx scripts/check-style-isolation.mts"
   },
   "author": "TraceHouse",
   "license": "Apache-2.0",
@@ -29,8 +30,10 @@
     "glob": "^10.5.0",
     "imports-loader": "^5.0.0",
     "mini-css-extract-plugin": "^2.9.2",
+    "playwright": "^1.58.2",
     "postcss": "^8.5.4",
     "postcss-loader": "^8.1.1",
+    "postcss-selector-parser": "^7.1.6",
     "replace-in-file-webpack-plugin": "^1.0.6",
     "style-loader": "^4.0.0",
     "swc-loader": "^0.2.6",

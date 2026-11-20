@@ -1,3 +1,4 @@
+import { tracehouseLocalStorage } from '@tracehouse/core';
 /**
  * Custom query CRUD (localStorage).
  */
@@ -26,7 +27,7 @@ LIMIT 10`;
 /** Load user-created queries from localStorage. */
 export function loadCustomQueries(): Query[] {
   try {
-    const raw = localStorage.getItem(CUSTOM_QUERIES_KEY);
+    const raw = tracehouseLocalStorage.getItem(CUSTOM_QUERIES_KEY);
     if (raw) {
       const parsed = JSON.parse(raw) as string[];
       if (Array.isArray(parsed)) {
@@ -40,12 +41,12 @@ export function loadCustomQueries(): Query[] {
 }
 
 function saveCustomQuerySqls(sqls: string[]): void {
-  localStorage.setItem(CUSTOM_QUERIES_KEY, JSON.stringify(sqls));
+  tracehouseLocalStorage.setItem(CUSTOM_QUERIES_KEY, JSON.stringify(sqls));
 }
 
 function loadCustomQuerySqls(): string[] {
   try {
-    const raw = localStorage.getItem(CUSTOM_QUERIES_KEY);
+    const raw = tracehouseLocalStorage.getItem(CUSTOM_QUERIES_KEY);
     if (raw) {
       const parsed = JSON.parse(raw);
       if (Array.isArray(parsed)) return parsed.filter(s => typeof s === 'string');
@@ -91,7 +92,7 @@ export function deleteCustomQuery(name: string): Query[] {
 
 /** Wipe all custom queries. */
 export function resetCustomQueries(): void {
-  localStorage.removeItem(CUSTOM_QUERIES_KEY);
+  tracehouseLocalStorage.removeItem(CUSTOM_QUERIES_KEY);
 }
 
 /** Get all queries: builtins + custom. */

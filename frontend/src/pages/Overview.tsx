@@ -1,3 +1,4 @@
+import { tracehouseSessionStorage } from '@tracehouse/core';
 /**
  * Overview - Unified system dashboard
  * 
@@ -63,7 +64,6 @@ export const OVERVIEW_SHARE_SCHEMA = defineShareSchema({
   overview_map_node: { type: 'string' },
   overview_map_detail: { type: 'boolean', default: false, persistDefault: true },
 });
-
 
 // No Connection Component
 const NoConnection: React.FC<{ onConnect: () => void }> = ({ onConnect }) => (
@@ -142,7 +142,6 @@ export const Overview: React.FC = () => {
     clearData: clearLiveData,
   } = useOverviewStore();
 
-
   // Historical metrics state (cluster-aware)
   const [clusterHosts, setClusterHosts] = useState<string[]>([]);
   const [clusterMetrics, setClusterMetrics] = useState<ClusterHistoricalMetricsPoint[]>([]);
@@ -166,7 +165,7 @@ export const Overview: React.FC = () => {
   const mapSearchQuery = sharedState.overview_map_search ?? '';
   const setMapSearchQuery = (value: string) => updateSharedState({ overview_map_search: value || undefined });
   const [mapClickedNode, setMapClickedNode] = useState<SunburstNodeData | null>(() => {
-    const saved = sharedState.overview_map_node ?? sessionStorage.getItem('obsmap:selectedTable');
+    const saved = sharedState.overview_map_node ?? tracehouseSessionStorage.getItem('obsmap:selectedTable');
     if (saved) {
       // Find the table in data to rebuild the node with full metadata
       for (const cat of OBSERVABILITY_DATA.children) {
@@ -275,16 +274,16 @@ export const Overview: React.FC = () => {
     if (mapClickedNode && node && mapClickedNode.name === node.name && mapClickedNode.meta?.type === node.meta?.type) {
       setMapClickedNode(null);
       setMapHoveredNode(null);
-      sessionStorage.removeItem('obsmap:selectedTable');
+      tracehouseSessionStorage.removeItem('obsmap:selectedTable');
       updateSharedState({ overview_map_node: undefined });
     } else {
       setMapClickedNode(node);
       setMapHoveredNode(null);
       if (node?.meta?.type === 'table') {
-        sessionStorage.setItem('obsmap:selectedTable', node.name);
+        tracehouseSessionStorage.setItem('obsmap:selectedTable', node.name);
         updateSharedState({ overview_map_node: node.name });
       } else {
-        sessionStorage.removeItem('obsmap:selectedTable');
+        tracehouseSessionStorage.removeItem('obsmap:selectedTable');
         updateSharedState({ overview_map_node: undefined });
       }
     }
@@ -891,7 +890,6 @@ export const Overview: React.FC = () => {
           </div>
         </div>
       )}
-
 
       {/* Observability Map */}
       {viewMode === 'map' && (

@@ -1,3 +1,4 @@
+import { spinAnimation } from '../../../../styles/animations';
 /**
  * ScanEfficiencyTab - Visual breakdown of a SELECT query's logical data flow.
  *
@@ -569,7 +570,7 @@ export const ScanEfficiencyTab: React.FC<ScanEfficiencyTabProps> = ({ queryDetai
           <div style={{
             width: 24, height: 24, borderWidth: 2, borderStyle: 'solid',
             borderColor: 'var(--border-primary)', borderTopColor: 'var(--text-tertiary)',
-            borderRadius: '50%', animation: 'spin 1s linear infinite', margin: '0 auto 8px',
+            borderRadius: '50%', animation: `${spinAnimation} 1s linear infinite`, margin: '0 auto 8px',
           }} />
           <span style={{ fontSize: 12, color: 'var(--text-muted)' }}>Analyzing query…</span>
         </div>

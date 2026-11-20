@@ -1,3 +1,4 @@
+import { tracehouseLocalStorage } from '@tracehouse/core';
 /**
  * User Preference Store - Persisted UI preferences
  *
@@ -5,7 +6,7 @@
  */
 
 import { create } from 'zustand';
-import { persist } from 'zustand/middleware';
+import { persist, createJSONStorage } from 'zustand/middleware';
 import type { QueryXRaySourcePreference } from '@tracehouse/core';
 import { buildConfig } from '../buildConfig';
 
@@ -76,6 +77,7 @@ export const useUserPreferenceStore = create<UserPreferenceState>()(
     }),
     {
       name: 'tracehouse-view-preference',
+      storage: createJSONStorage(() => tracehouseLocalStorage),
       version: 1,
       // The old preference was one browser-wide string with no connection
       // identity, so there is nothing faithful to convert it into. Drop it and

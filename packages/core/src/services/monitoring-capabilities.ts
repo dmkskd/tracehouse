@@ -577,20 +577,6 @@ export class MonitoringCapabilitiesService {
       source: 'metadata: system.functions + system.settings',
     });
 
-    // ClickStack (HyperDX) embedded log viewer — available in CH 26.2+
-    const hasClickStack = isClickHouseVersionAtLeast(version, 26, 2);
-    capabilities.push({
-      id: 'clickstack',
-      label: 'ClickStack',
-      description: 'Embedded HyperDX log viewer UI at /clickstack/. Enables deep-link from trace logs.',
-      available: hasClickStack,
-      category: 'logging',
-      detail: hasClickStack
-        ? `Available (v${version})`
-        : `Requires ClickHouse 26.2+ (current: v${version})`,
-      source: 'server version ≥ 26.2',
-    });
-
     // EXPLAIN ANALYZE — available in CH 26.7+. This is version-derived rather
     // than functionally probed because even a probe executes its wrapped query.
     const hasExplainAnalyze = isClickHouseVersionAtLeast(

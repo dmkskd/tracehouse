@@ -237,3 +237,78 @@ Realistic choices:
 - Make `grafana-app-plugin` self-contained so `https://github.com/dmkskd/tracehouse/tree/vX.Y.Z/grafana-app-plugin` works.
 
 Do not resubmit based on assumptions.
+
+---
+
+## CSS isolation review changes (2026-11-20)
+
+### 1. CSS and theme isolation
+
+The plugin imports `src/styles.module.css`. Its exported `root` class is applied
+to the plugin container and to TraceHouse portal wrappers. Shared utility and
+component class names remain unchanged. A PostCSS step scopes the compiled
+selectors under `:where(:local(.root))`; css-loader resolves that local name to
+the CSS module's generated class. This is selector scoping through a CSS module,
+not Shadow DOM isolation.
+
+The scope and Grafana-control exclusion add zero specificity. Tailwind's cascade
+layers remain in their original relative order and receive plugin-specific names.
+Unlayered Emotion rules continue to take precedence over layered utilities.
+Keyframe names and Tailwind's registered custom properties are namespaced with
+the plugin ID. The two inline ring-color overrides supply both the standalone
+and namespaced variable names.
+
+Full Tailwind Preflight is excluded. A reduced reset supplies border, typography,
+control, image, list, and table defaults only within the plugin scope. Rules
+exclude both `[data-tracehouse-grafana]` and its descendants. Datasource and cluster
+selectors use this marker and Grafana's theme typography, including their error
+states. Grafana's own portalled menus retain Grafana's styles.
+
+Grafana supplies theme state through React context. The plugin does not read or
+modify the host document's theme attribute. Each separately compiled React 18/19
+runtime receives the theme and CSS-module class as props, then provides them
+through that bundle's local contexts. TraceHouse portals use the same class and
+theme. Their wrappers use `display: contents`, with no transform, filter,
+containment, positioning, or z-index; existing overlay children retain their
+positioning and stacking behavior.
+
+The standalone app retains its entry-point styles and theme controls. Shared
+components use the same Emotion styles and context-based theme detection. Without
+a Grafana style scope, the portal adapter preserves the standalone DOM structure.
+
+Verification includes selector tests against the compiled Tailwind entry,
+independent runtime-context tests, both builds, and a browser fixture using the
+production webpack CSS rule and Grafana's Select implementation. The fixture
+checks host styles before/after loading and unmounting, light/dark controls,
+Tailwind borders, Emotion precedence, and viewport-positioned portals. Run it with
+`npm run test:styles --workspace grafana-app-plugin` after installing Playwright
+Chromium. This does not replace a visual audit of every plugin page inside Grafana.
+
+### 2. Component style injection
+
+Imperative and JSX style injection sites now use Emotion classes and keyframes.
+The shared style lint rejects both injection patterns.
+
+### 3. Speedscope cache
+
+The loading promise is module-local, with retry after failure and the existing
+custom-element registration checks preserved.
+
+### 4. Browser storage
+
+The storage adapter prefixes TraceHouse-owned keys with `dmkskd-tracehouse-app:`.
+Legacy values are copied on read and retained as pre-upgrade rollback snapshots;
+new writes use only namespaced keys. Migration failures emit a diagnostic and
+continue reading the original value. Explicit deletion removes both keys.
+Rollback does not include edits made after the upgrade.
+
+### 5. Catalog README
+
+Installation instructions are in `INSTALLATION.md`, linked through an absolute
+repository URL from the catalog README.
+
+### Additional authorized removal
+
+ClickStack/HyperDX settings, links, and capability metadata were removed. Native
+trace-log and flamegraph functionality remains. Its former documentation page is
+marked as historical material for a removed integration.

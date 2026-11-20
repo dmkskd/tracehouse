@@ -1,3 +1,9 @@
+import { TracehouseHeaderContext } from '@frontend/providers/TracehouseHeaderContext';
+import pluginStyles from './styles.module.css';
+import { TracehouseStyleContext } from '@frontend/providers/TracehouseStyleContext';
+import { useThemeDetection } from '@frontend/hooks/useThemeDetection';
+import { useTheme2 } from '@grafana/ui';
+import { TracehouseThemeContext, type TracehouseTheme } from '@frontend/providers/TracehouseThemeContext';
 import { QueryXRaySourceControl } from '@frontend/components/query/QueryXRayPreference';
 import React, { lazy, Suspense, useState, useCallback, useMemo, useEffect, useRef } from 'react';
 import { AppRootProps, PageLayoutType } from '@grafana/data';
@@ -25,27 +31,9 @@ import {
 } from '@tracehouse/ui-shared';
 import pluginJson from './plugin.json';
 
-// eslint-disable-next-line @typescript-eslint/no-require-imports
-require('./styles.css');
-
 const pluginVersion = (pluginJson as { info?: { version?: string } }).info?.version ?? 'dev';
 const reactRuntimeVersion = React.version ?? 'unknown';
 const grafanaRuntimeVersion = (config as unknown as { buildInfo?: { version?: string } }).buildInfo?.version;
-
-/**
- * Bridge Grafana's theme to the frontend's data-theme attribute.
- * The frontend CSS variables are driven by [data-theme="dark"|"light"] on <html>.
- */
-function useGrafanaThemeBridge() {
-  useEffect(() => {
-    const isDark = config.theme2.isDark;
-    document.documentElement.setAttribute('data-theme', isDark ? 'dark' : 'light');
-    return () => {
-      // Clean up on unmount (restore default)
-      document.documentElement.removeAttribute('data-theme');
-    };
-  }, []);
-}
 
 // Lazy load pages
 const Overview = lazy(() => import('@frontend/pages/Overview').then(m => ({ default: m.Overview })));
@@ -584,6 +572,8 @@ interface AppContentProps {
 }
 
 function AppContent({ path }: AppContentProps) {
+  const appHeaderRef = useRef<HTMLDivElement>(null);
+  const theme = useThemeDetection();
   const { services, datasourceUid, setDatasourceUid, error, isLoading } = useServices();
   const pluginConfig = usePluginConfig();
 
@@ -606,9 +596,11 @@ function AppContent({ path }: AppContentProps) {
   } = useNavigationOverflow({ itemKeys: PRIMARY_NAV_KEYS, gap: NAV_ITEM_GAP, resetKey: routeKey });
 
   return (
+    <TracehouseHeaderContext.Provider value={appHeaderRef}>
     <PluginPage layout={PageLayoutType.Custom} pageNav={pageNav}>
     <div
-      className="grafana-app-container"
+      className={`${pluginStyles.root} grafana-app-container`}
+      data-theme={theme}
       style={{
         display: 'flex',
         flexDirection: 'column',
@@ -622,7 +614,7 @@ function AppContent({ path }: AppContentProps) {
       }}
     >
       {/* Header with datasource selector - always visible */}
-      <div style={{
+      <div ref={appHeaderRef} style={{
         display: 'flex',
         alignItems: 'center',
         justifyContent: 'space-between',
@@ -786,12 +778,14 @@ function AppContent({ path }: AppContentProps) {
       </div>
     </div>
     </PluginPage>
+    </TracehouseHeaderContext.Provider>
   );
 }
 
 export function App(props: AppRootProps<AppPluginSettings>) {
   // Bridge Grafana theme to frontend CSS variables
-  useGrafanaThemeBridge();
+  const grafanaTheme = useTheme2();
+  const theme: TracehouseTheme = grafanaTheme.isDark ? 'dark' : 'light';
 
   // Our own location state - no react-router needed
   const [location, setLocation] = useState<AppLocation>(() => ({
@@ -835,12 +829,16 @@ export function App(props: AppRootProps<AppPluginSettings>) {
   }), [location, navigate]);
 
   return (
-    <LocationContext.Provider value={locationContextValue}>
-      <PluginConfigProvider jsonData={props.meta.jsonData}>
-        <ServiceProvider>
-          <AppContent path={props.path} />
-        </ServiceProvider>
-      </PluginConfigProvider>
-    </LocationContext.Provider>
+    <TracehouseStyleContext.Provider value={pluginStyles.root}>
+    <TracehouseThemeContext.Provider value={theme}>
+      <LocationContext.Provider value={locationContextValue}>
+        <PluginConfigProvider jsonData={props.meta.jsonData}>
+          <ServiceProvider>
+            <AppContent path={props.path} />
+          </ServiceProvider>
+        </PluginConfigProvider>
+      </LocationContext.Provider>
+    </TracehouseThemeContext.Provider>
+    </TracehouseStyleContext.Provider>
   );
 }

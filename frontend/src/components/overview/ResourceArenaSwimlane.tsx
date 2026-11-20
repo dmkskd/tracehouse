@@ -1,3 +1,4 @@
+import { keyframes } from '@emotion/css';
 /**
  * ResourceArenaSwimlane — Pure 2D Gantt-style swimlane view of the resource arena.
  *
@@ -125,22 +126,13 @@ const DECK_LABELS: Record<Deck, { label: string; color: string }> = {
 
 const panelFont = "'JetBrains Mono', 'Fira Code', 'SF Mono', monospace";
 
-/* ── inject animation styles ─────────────────────────── */
+/* ── component animations ───────────────────────────── */
 
-if (typeof document !== 'undefined' && !document.getElementById('arena-swim-styles')) {
-  const style = document.createElement('style');
-  style.id = 'arena-swim-styles';
-  style.textContent = `
-    @keyframes swim-live-pulse {
-      0%,100% { filter: brightness(1); }
-      50% { filter: brightness(1.35); }
-    }
-    @keyframes swim-fade-in { 0% { opacity: 0; transform: translateY(6px); } 100% { opacity: 1; transform: translateY(0); } }
-    @keyframes swim-scan { 0% { top: -2px; } 100% { top: 100%; } }
-    @keyframes swim-glow-pulse { 0%,100% { opacity: 0.6; } 50% { opacity: 1; } }
-  `;
-  document.head.appendChild(style);
-}
+const swimLivePulseAnimation = keyframes`0%,100% { filter: brightness(1); }
+      50% { filter: brightness(1.35); }`;
+const swimFadeInAnimation = keyframes`0% { opacity: 0; transform: translateY(6px); } 100% { opacity: 1; transform: translateY(0); }`;
+const swimScanAnimation = keyframes`0% { top: -2px; } 100% { top: 100%; }`;
+const swimGlowPulseAnimation = keyframes`0%,100% { opacity: 0.6; } 50% { opacity: 1; }`;
 
 /* ── SwimBar component ───────────────────────────────── */
 
@@ -193,7 +185,7 @@ const SwimBar: React.FC<{
         border: isHighlighted
           ? '1px solid rgba(255,255,255,0.5)'
           : '1px solid rgba(255,255,255,0.06)',
-        animation: running ? 'swim-live-pulse 2s ease infinite' : undefined,
+        animation: running ? `${swimLivePulseAnimation} 2s ease infinite` : undefined,
         display: 'flex',
         alignItems: 'center',
         paddingLeft: 5,
@@ -261,7 +253,7 @@ function DetailPanel({ entry, onClose }: { entry: SwimEntry; onClose: () => void
         borderTop: `2px solid ${accent}50`,
         padding: '12px 16px 10px',
         fontFamily: panelFont,
-        animation: 'swim-fade-in 0.2s ease both',
+        animation: `${swimFadeInAnimation} 0.2s ease both`,
         backdropFilter: 'blur(12px)',
       }}
       onClick={e => e.stopPropagation()}
@@ -270,7 +262,7 @@ function DetailPanel({ entry, onClose }: { entry: SwimEntry; onClose: () => void
       <div style={{
         position: 'absolute', left: 0, right: 0, height: 1,
         background: `linear-gradient(90deg, transparent, ${accent}60, transparent)`,
-        animation: 'swim-scan 3s linear infinite',
+        animation: `${swimScanAnimation} 3s linear infinite`,
         pointerEvents: 'none',
       }} />
 
@@ -284,7 +276,7 @@ function DetailPanel({ entry, onClose }: { entry: SwimEntry; onClose: () => void
               border: `1px solid ${accent}30`,
             }}>{entry.kind}</span>
             {running ? (
-              <span style={{ fontSize: 9, color: '#4ade80', animation: 'swim-glow-pulse 2s ease infinite' }}>● LIVE</span>
+              <span style={{ fontSize: 9, color: '#4ade80', animation: `${swimGlowPulseAnimation} 2s ease infinite` }}>● LIVE</span>
             ) : (
               <span style={{ fontSize: 9, color: 'rgba(255,255,255,0.2)' }}>■ DONE</span>
             )}

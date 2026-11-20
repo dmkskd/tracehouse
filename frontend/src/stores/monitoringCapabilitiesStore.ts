@@ -87,7 +87,6 @@ const EMPTY_FLAGS: MonitoringFlags = {
   hasBlobStorageLog: false,
   hasIntrospectionFunctions: false,
   hasCPUProfilerActive: false,
-  hasClickStack: false,
   hasExplainAnalyze: false,
   isCloudService: false,
   hasProcessesHistory: false,

@@ -1,3 +1,4 @@
+import { spinAnimation } from '../../../../styles/animations';
 import React, { useState } from 'react';
 import { useProfileEventDescriptionsStore } from '../../../../stores/profileEventDescriptionsStore';
 import { formatBytes } from '../../../../stores/databaseStore';
@@ -25,7 +26,7 @@ export const PerformanceTab: React.FC<{
             borderColor: 'var(--border-primary)',
             borderTopColor: 'var(--text-tertiary)',
             borderRadius: '50%',
-            animation: 'spin 1s linear infinite',
+            animation: `${spinAnimation} 1s linear infinite`,
             margin: '0 auto 8px',
           }} />
           <span style={{ fontSize: 12, color: 'var(--text-muted)' }}>Loading performance data...</span>

@@ -1,3 +1,5 @@
+import { css } from '@emotion/css';
+import { pulseAnimation } from '../styles/animations';
 import { ResourceAttributionService } from '@tracehouse/core';
 import { useQueryXRaySelection } from '../components/query/query-xray-preference';
 import { selectQueryXRaySource, resolveEventIdentity } from '@tracehouse/core';
@@ -110,18 +112,11 @@ import {
   type TimelineRange,
 } from '../components/timeline/timeline-navigator-buffer';
 
-// CSS animation for pulse effect + experimental badge tooltip
-const pulseKeyframes = `
-  @keyframes pulse {
-    0%, 100% { opacity: 1; }
-    50% { opacity: 0.5; }
+const experimentalBadgeClass = css`
+  & {
+    position: relative;
   }
-  @keyframes bandPulse {
-    0%, 100% { opacity: 0.7; }
-    50% { opacity: 0.45; }
-  }
-  .exp-badge { position: relative; }
-  .exp-badge::after {
+  &::after {
     content: 'Experimental feature';
     position: absolute;
     top: calc(100% + 6px);
@@ -134,24 +129,21 @@ const pulseKeyframes = `
     text-transform: none;
     color: #f0883e;
     background: var(--bg-secondary);
-    border: 1px solid rgba(240,136,62,0.25);
+    border: 1px solid rgba(240, 136, 62, 0.25);
     border-radius: 5px;
     padding: 3px 8px;
     pointer-events: none;
     opacity: 0;
-    transition: opacity 0.15s ease, transform 0.15s ease;
+    transition:
+      opacity 0.15s ease,
+      transform 0.15s ease;
     z-index: 100;
   }
-  .exp-badge:hover::after {
+  &:hover::after {
     opacity: 1;
     transform: translateX(-50%) scale(1);
   }
 `;
-if (typeof document !== 'undefined') {
-  const style = document.createElement('style');
-  style.textContent = pulseKeyframes;
-  document.head.appendChild(style);
-}
 
 /** Format a Date (or ms timestamp) as a local datetime string matching <input type="datetime-local"> format. */
 function toLocalDatetimeStr(d: Date | number): string {
@@ -1449,7 +1441,7 @@ export const TimeTravelPage: React.FC = () => {
                   borderRadius:6, padding:'8px 12px', fontSize:11, cursor:'pointer',
                   fontWeight: includeRunning ? 500 : 400,
                 }}>
-                {includeRunning && <span style={{ display:'inline-block', width:6, height:6, borderRadius:'50%', background:'#58a6ff', animation:'pulse 1.5s ease-in-out infinite' }} />}
+                {includeRunning && <span style={{ display:'inline-block', width:6, height:6, borderRadius:'50%', background:'#58a6ff', animation:`${pulseAnimation} 1.5s ease-in-out infinite` }} />}
                 In-flight
               </button>
             ) : (
@@ -1469,7 +1461,7 @@ export const TimeTravelPage: React.FC = () => {
                 border: autoRefresh ? '1px solid rgba(63,185,80,0.3)' : '1px solid var(--border-primary)',
                 borderRadius:6, padding:'8px 12px', fontSize:11, cursor:'pointer', fontWeight: autoRefresh ? 500 : 400,
               }}>
-              {autoRefresh && <span style={{ display:'inline-block', width:6, height:6, borderRadius:'50%', background:'#3fb950', animation:'pulse 1.5s ease-in-out infinite' }} />}
+              {autoRefresh && <span style={{ display:'inline-block', width:6, height:6, borderRadius:'50%', background:'#3fb950', animation:`${pulseAnimation} 1.5s ease-in-out infinite` }} />}
               Auto
             </button>
 
@@ -1689,7 +1681,7 @@ export const TimeTravelPage: React.FC = () => {
                     {label}
                     {mode !== '2d' && (
                       <span
-                        className="exp-badge"
+                        className={experimentalBadgeClass}
                         style={{
                           position: 'absolute', top: -6, right: -4,
                           fontSize: 7, fontWeight: 700, color: '#f0883e',

@@ -1,3 +1,6 @@
+import { pulseAnimation } from '../../styles/animations';
+import { css, keyframes } from '@emotion/css';
+
 /**
  * HierarchyVisualization2D - Clean 2D grid view for databases, tables, and partitions
  * 
@@ -8,6 +11,14 @@
 import React, { useState, useMemo, useCallback, useRef } from 'react';
 import type { HierarchyItem, HierarchyLevel } from './HierarchyVisualization';
 import { formatBytes } from '../../utils/formatters';
+
+const mergingPulse = keyframes`
+  0%, 100% { box-shadow: 0 0 6px rgba(6,182,212,0.15); }
+  50% { box-shadow: 0 0 18px rgba(6,182,212,0.35); }
+`;
+const mergingPulseClass = css`
+  animation: ${mergingPulse} 2s ease-in-out infinite;
+`;
 
 // Health status colors
 const HEALTH_COLORS: Record<string, { bg: string; border: string; text: string; glow: string }> = {
@@ -46,7 +57,7 @@ const ItemCard: React.FC<{
       onClick={onClick}
       onMouseEnter={onMouseEnter}
       onMouseLeave={onMouseLeave}
-      className={item.merging ? 'card-pulse-merging' : ''}
+      className={item.merging ? mergingPulseClass : ''}
       style={{
         background: isHovered ? colors.bg : 'var(--bg-card)',
         border: `1px solid ${isHovered ? colors.border : item.merging ? colors.border : 'var(--border-primary)'}`,
@@ -67,7 +78,7 @@ const ItemCard: React.FC<{
           position: 'absolute', top: 6, right: 6,
           width: 8, height: 8, borderRadius: '50%',
           background: '#06b6d4',
-          animation: 'pulse 1.5s ease-in-out infinite',
+          animation: `${pulseAnimation} 1.5s ease-in-out infinite`,
           boxShadow: '0 0 8px rgba(6,182,212,0.6)',
         }} />
       )}
@@ -160,27 +171,6 @@ export const HierarchyVisualization2D: React.FC<HierarchyVisualization2DProps> =
   const [zoom, setZoom] = useState(1);
   const containerRef = useRef<HTMLDivElement>(null);
 
-  // Inject pulse keyframes once
-  const styleInjected = useRef(false);
-  if (!styleInjected.current && typeof document !== 'undefined') {
-    styleInjected.current = true;
-    const id = 'card-pulse-merging-style';
-    if (!document.getElementById(id)) {
-      const style = document.createElement('style');
-      style.id = id;
-      style.textContent = `
-        @keyframes cardPulseMerging {
-          0%, 100% { box-shadow: 0 0 6px rgba(6,182,212,0.15); }
-          50% { box-shadow: 0 0 18px rgba(6,182,212,0.35); }
-        }
-        .card-pulse-merging {
-          animation: cardPulseMerging 2s ease-in-out infinite;
-        }
-      `;
-      document.head.appendChild(style);
-    }
-  }
-
   const handleZoomIn = useCallback(() => setZoom(z => Math.min(z + 0.25, 2)), []);
   const handleZoomOut = useCallback(() => setZoom(z => Math.max(z - 0.25, 0.5)), []);
   const handleZoomReset = useCallback(() => setZoom(1), []);
@@ -268,7 +258,6 @@ export const HierarchyVisualization2D: React.FC<HierarchyVisualization2DProps> =
     </div>
   );
 };
-
 
 const zoomBtnStyle: React.CSSProperties = {
   background: 'transparent', border: 'none', cursor: 'pointer',

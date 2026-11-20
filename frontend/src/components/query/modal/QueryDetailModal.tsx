@@ -390,9 +390,6 @@ export const QueryDetailModal: React.FC<TimelineQueryModalProps> = ({
                 filter={logsHook.filter}
                 onFilterChange={(newFilter) => logsHook.setFilter(prev => ({ ...prev, ...newFilter }))}
                 onRefresh={logsHook.refresh}
-                queryId={activeQuery?.query_id}
-                queryStartTime={activeQuery?.start_time}
-                queryEndTime={activeQuery?.end_time}
               />
             </div>
           )}

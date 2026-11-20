@@ -1,3 +1,4 @@
+import { tracehouseLocalStorage } from '@tracehouse/core';
 /**
  * Dashboard definitions - a dashboard is a titled grid of preset query references.
  *
@@ -112,7 +113,7 @@ function loadUserDashboards(): Dashboard[] {
   migrateLegacyStorage();
 
   try {
-    const raw = localStorage.getItem(STORAGE_KEY);
+    const raw = tracehouseLocalStorage.getItem(STORAGE_KEY);
     if (raw) {
       const parsed = JSON.parse(raw) as Dashboard[];
       if (Array.isArray(parsed)) return parsed;
@@ -123,7 +124,7 @@ function loadUserDashboards(): Dashboard[] {
 
 /** Migrate from old storage format that mixed builtins and user dashboards. */
 function migrateLegacyStorage(): void {
-  const legacy = localStorage.getItem(LEGACY_STORAGE_KEY);
+  const legacy = tracehouseLocalStorage.getItem(LEGACY_STORAGE_KEY);
   if (!legacy) return;
   try {
     const parsed = JSON.parse(legacy) as Dashboard[];
@@ -131,23 +132,23 @@ function migrateLegacyStorage(): void {
       // Keep only non-builtin dashboards
       const userOnly = parsed.filter(d => !d.builtin && !getBuiltinIds().has(d.id));
       if (userOnly.length > 0) {
-        localStorage.setItem(STORAGE_KEY, JSON.stringify(userOnly));
+        tracehouseLocalStorage.setItem(STORAGE_KEY, JSON.stringify(userOnly));
       }
     }
   } catch { /* ignore corrupt data */ }
-  localStorage.removeItem(LEGACY_STORAGE_KEY);
+  tracehouseLocalStorage.removeItem(LEGACY_STORAGE_KEY);
 }
 
 /** Persist user dashboards to localStorage (builtins are never stored). */
 export function saveDashboards(dashboards: Dashboard[]): void {
   const userOnly = dashboards.filter(d => !d.builtin && !getBuiltinIds().has(d.id));
-  localStorage.setItem(STORAGE_KEY, JSON.stringify(userOnly));
+  tracehouseLocalStorage.setItem(STORAGE_KEY, JSON.stringify(userOnly));
 }
 
 /** Clear user dashboards and custom queries. */
 export function resetDashboardsToBuiltin(): Dashboard[] {
-  localStorage.removeItem(STORAGE_KEY);
-  localStorage.removeItem(LEGACY_STORAGE_KEY);
+  tracehouseLocalStorage.removeItem(STORAGE_KEY);
+  tracehouseLocalStorage.removeItem(LEGACY_STORAGE_KEY);
   resetCustomQueries();
   return loadDashboards();
 }

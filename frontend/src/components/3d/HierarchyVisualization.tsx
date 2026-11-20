@@ -1,3 +1,4 @@
+import { pulseAnimation } from '../../styles/animations';
 /**
  * HierarchyVisualization v3 - Glass Boxes
  * Beautiful transparent boxes with glowing edges
@@ -429,7 +430,7 @@ const GlassBox: React.FC<GlassBoxProps> = ({ item, position, size, level, mergeL
           borderRadius: '2px',
           border: `1px solid ${isMerging ? labelBorderColor : (level === 'parts' ? (theme === 'light' ? 'rgba(0,0,0,0.15)' : 'rgba(255,255,255,0.15)') : colors.edge + '40')}`,
           backdropFilter: 'blur(4px)',
-          animation: isMerging ? 'pulse 1s ease-in-out infinite' : 'none',
+          animation: isMerging ? `${pulseAnimation} 1s ease-in-out infinite` : 'none',
         }}>
           <div style={{ 
             color: isMerging ? labelTextColor : (level === 'parts' ? (theme === 'light' ? 'rgba(0,0,0,0.5)' : 'rgba(255,255,255,0.5)') : labelTextColor), 
@@ -555,7 +556,6 @@ const GlassBox: React.FC<GlassBoxProps> = ({ item, position, size, level, mergeL
     </group>
   );
 };
-
 
 const Ground: React.FC<{ size: number; theme: 'dark' | 'light' }> = ({ size, theme }) => {
   const meshRef = useRef<THREE.Mesh>(null);

@@ -1,3 +1,5 @@
+import { keyframes } from '@emotion/css';
+
 /**
  * LiveActivityStream — live htop-style view of server activity
  *
@@ -10,6 +12,9 @@ import React, { useEffect, useRef, useState, useMemo, useCallback } from 'react'
 import { Link } from 'react-router-dom';
 import type { RunningQueryInfo, ActiveMergeInfo } from '@tracehouse/core';
 import { formatElapsed, truncateQuery, formatBytes } from '../../utils/formatters';
+
+const flashInAnimation = keyframes`0% { opacity: 1; }
+          100% { opacity: 0; }`;
 
 const BAR_H = 28;
 const BAR_GAP = 2;
@@ -207,7 +212,7 @@ export const LiveActivityStream: React.FC<LiveActivityStreamProps> = ({
                   position: 'absolute', inset: 0,
                   borderRadius: 5,
                   background: `${color}20`,
-                  animation: 'flash-in 0.6s ease-out forwards',
+                  animation: `${flashInAnimation} 0.6s ease-out forwards`,
                 }} />
               )}
 
@@ -350,12 +355,7 @@ export const LiveActivityStream: React.FC<LiveActivityStreamProps> = ({
       )}
 
       {/* CSS animations */}
-      <style>{`
-        @keyframes flash-in {
-          0% { opacity: 1; }
-          100% { opacity: 0; }
-        }
-      `}</style>
+
     </div>
   );
 };

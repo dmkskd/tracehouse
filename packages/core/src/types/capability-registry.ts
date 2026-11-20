@@ -237,12 +237,6 @@ export const CAPABILITY_REGISTRY: CapabilityRegistryEntry[] = [
     ],
   },
   {
-    capabilityId: 'clickstack',
-    consumers: [
-      { screen: 'Query Detail Modal', tab: 'Queries', enables: 'Deep-link trace logs to ClickStack embedded viewer', importance: 'optional' },
-    ],
-  },
-  {
     capabilityId: 'system_merges',
     consumers: [
       { screen: 'Merge Tracker', tab: 'Merges', route: '/merge-tracker', enables: 'Active merge monitoring and background pool utilization', importance: 'required' },

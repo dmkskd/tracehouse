@@ -1,3 +1,5 @@
+import { spinAnimation } from '../../../../styles/animations';
+import { css } from '@emotion/css';
 import { parseAbsoluteTimestamp } from '@tracehouse/core';
 /**
  * XRayTab — 3D resource corridor with log event scrubber.
@@ -84,63 +86,61 @@ const navBtnStyle: React.CSSProperties = {
   transition: 'all 0.15s ease',
 };
 
-/* Custom range slider styles injected once */
-const SLIDER_STYLE_ID = 'xray-slider-styles';
-function ensureSliderStyles() {
-  let el = document.getElementById(SLIDER_STYLE_ID) as HTMLStyleElement | null;
-  const css = `
-    .xray-scrubber-slider {
-      -webkit-appearance: none;
-      appearance: none;
-      width: 100%;
-      height: 6px;
-      border-radius: 3px;
-      background: linear-gradient(90deg, rgba(255,255,255,0.06) 0%, rgba(255,255,255,0.1) 100%);
-      outline: none;
-      cursor: pointer;
-      margin: 0;
-    }
-    .xray-scrubber-slider::-webkit-slider-thumb {
-      -webkit-appearance: none;
-      appearance: none;
-      width: 14px;
-      height: 14px;
-      border-radius: 50%;
-      background: var(--xray-accent);
-      border: 2px solid rgba(0,0,0,0.4);
-      box-shadow: 0 0 8px var(--xray-accent-glow), 0 1px 3px rgba(0,0,0,0.5);
-      cursor: pointer;
-      transition: transform 0.1s ease, box-shadow 0.15s ease;
-    }
-    .xray-scrubber-slider::-webkit-slider-thumb:hover {
-      transform: scale(1.2);
-      box-shadow: 0 0 14px var(--xray-accent-glow), 0 1px 4px rgba(0,0,0,0.6);
-    }
-    .xray-scrubber-slider::-webkit-slider-thumb:active {
-      transform: scale(1.1);
-    }
-    .xray-scrubber-slider::-moz-range-thumb {
-      width: 14px;
-      height: 14px;
-      border-radius: 50%;
-      background: var(--xray-accent);
-      border: 2px solid rgba(0,0,0,0.4);
-      box-shadow: 0 0 8px var(--xray-accent-glow), 0 1px 3px rgba(0,0,0,0.5);
-      cursor: pointer;
-    }
-    .xray-scrubber-slider::-moz-range-track {
-      height: 6px;
-      border-radius: 3px;
-      background: linear-gradient(90deg, rgba(255,255,255,0.06) 0%, rgba(255,255,255,0.1) 100%);
-    }
-  `;
-  if (!el) {
-    el = document.createElement('style');
-    el.id = SLIDER_STYLE_ID;
-    document.head.appendChild(el);
+/* Component-scoped range slider styles. */
+const scrubberSliderClass = css`
+  & {
+    -webkit-appearance: none;
+    appearance: none;
+    width: 100%;
+    height: 6px;
+    border-radius: 3px;
+    background: linear-gradient(90deg, rgba(255, 255, 255, 0.06) 0%, rgba(255, 255, 255, 0.1) 100%);
+    outline: none;
+    cursor: pointer;
+    margin: 0;
   }
-  el.textContent = css;
-}
+  &::-webkit-slider-thumb {
+    -webkit-appearance: none;
+    appearance: none;
+    width: 14px;
+    height: 14px;
+    border-radius: 50%;
+    background: var(--xray-accent);
+    border: 2px solid rgba(0, 0, 0, 0.4);
+    box-shadow:
+      0 0 8px var(--xray-accent-glow),
+      0 1px 3px rgba(0, 0, 0, 0.5);
+    cursor: pointer;
+    transition:
+      transform 0.1s ease,
+      box-shadow 0.15s ease;
+  }
+  &::-webkit-slider-thumb:hover {
+    transform: scale(1.2);
+    box-shadow:
+      0 0 14px var(--xray-accent-glow),
+      0 1px 4px rgba(0, 0, 0, 0.6);
+  }
+  &::-webkit-slider-thumb:active {
+    transform: scale(1.1);
+  }
+  &::-moz-range-thumb {
+    width: 14px;
+    height: 14px;
+    border-radius: 50%;
+    background: var(--xray-accent);
+    border: 2px solid rgba(0, 0, 0, 0.4);
+    box-shadow:
+      0 0 8px var(--xray-accent-glow),
+      0 1px 3px rgba(0, 0, 0, 0.5);
+    cursor: pointer;
+  }
+  &::-moz-range-track {
+    height: 6px;
+    border-radius: 3px;
+    background: linear-gradient(90deg, rgba(255, 255, 255, 0.06) 0%, rgba(255, 255, 255, 0.1) 100%);
+  }
+`;
 
 const levelColors: Record<string, string> = {
   Fatal: '#ef4444', Critical: '#ef4444', Error: '#ef4444',
@@ -161,9 +161,6 @@ const Scrubber: React.FC<{
   const items = mode === 'logs' ? logEvents : samples;
   const count = items.length;
   const sliderRef = useRef<HTMLInputElement>(null);
-
-  // Inject custom slider CSS
-  useEffect(() => { ensureSliderStyles(); }, []);
 
   if (count === 0) return null;
 
@@ -284,7 +281,7 @@ const Scrubber: React.FC<{
         <input
           ref={sliderRef}
           type="range"
-          className="xray-scrubber-slider"
+          className={scrubberSliderClass}
           min={0}
           max={count - 1}
           value={clampedIdx}
@@ -549,7 +546,7 @@ export const XRayTab: React.FC<XRayTabProps> = ({
           <div style={{
             width: 24, height: 24, borderWidth: 2,
             borderStyle: 'solid', borderColor: 'var(--text-muted) transparent var(--text-muted) transparent',
-            borderRadius: '50%', animation: 'spin 1s linear infinite',
+            borderRadius: '50%', animation: `${spinAnimation} 1s linear infinite`,
             margin: '0 auto 12px',
           }} />
           Loading process samples...

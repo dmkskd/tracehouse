@@ -1,3 +1,5 @@
+import { TracehouseThemeContext } from './TracehouseThemeContext';
+import { tracehouseLocalStorage } from '@tracehouse/core';
 /**
  * ThemeProvider - Context for managing light/dark theme
  */
@@ -19,7 +21,7 @@ const STORAGE_KEY = 'tracehouse-theme';
 export const ThemeProvider: React.FC<{ children: React.ReactNode }> = ({ children }) => {
   const [theme, setThemeState] = useState<Theme>(() => {
     // Check localStorage first
-    const stored = localStorage.getItem(STORAGE_KEY);
+    const stored = tracehouseLocalStorage.getItem(STORAGE_KEY);
     if (stored === 'light' || stored === 'dark') {
       return stored;
     }
@@ -30,7 +32,7 @@ export const ThemeProvider: React.FC<{ children: React.ReactNode }> = ({ childre
   // Apply theme to document
   useEffect(() => {
     document.documentElement.setAttribute('data-theme', theme);
-    localStorage.setItem(STORAGE_KEY, theme);
+    tracehouseLocalStorage.setItem(STORAGE_KEY, theme);
   }, [theme]);
 
   const toggleTheme = useCallback(() => {
@@ -42,9 +44,11 @@ export const ThemeProvider: React.FC<{ children: React.ReactNode }> = ({ childre
   }, []);
 
   return (
-    <ThemeContext.Provider value={{ theme, toggleTheme, setTheme }}>
-      {children}
-    </ThemeContext.Provider>
+    <TracehouseThemeContext.Provider value={theme}>
+      <ThemeContext.Provider value={{ theme, toggleTheme, setTheme }}>
+        {children}
+      </ThemeContext.Provider>
+    </TracehouseThemeContext.Provider>
   );
 };
 

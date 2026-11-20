@@ -13,7 +13,7 @@
  */
 
 import React from 'react';
-import { createPortal } from 'react-dom';
+import { createTracehousePortal as createPortal } from '../../../../providers/TracehousePortal';
 import { useThemeDetection } from '../../../../hooks/useThemeDetection';
 
 export interface PopoverSegment {

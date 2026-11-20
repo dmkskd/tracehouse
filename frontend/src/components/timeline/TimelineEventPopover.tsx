@@ -1,5 +1,5 @@
 import { useLayoutEffect, useRef, useState, type CSSProperties, type ReactNode } from 'react';
-import { createPortal } from 'react-dom';
+import { createTracehousePortal as createPortal } from '../../providers/TracehousePortal';
 
 /** Escape scroll-container clipping while retaining the enclosing modal's focus scope. */
 export function TimelineEventPopover({ getAnchor, width, style, children }: {

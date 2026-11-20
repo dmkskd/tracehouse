@@ -1,3 +1,4 @@
+import { GrafanaControl } from './GrafanaControl';
 import React, { useState, useEffect, useMemo } from 'react';
 import { getDataSourceSrv, type DataSourceInstanceSettings } from '@grafana/runtime';
 import { Select, Alert } from '@grafana/ui';
@@ -33,15 +34,15 @@ export function DatasourceSelector({ value, onChange }: DatasourceSelectorProps)
 
   if (datasources.length === 0) {
     return (
-      <Alert title="No ClickHouse Datasources Found" severity="error">
+      <GrafanaControl><Alert title="No ClickHouse Datasources Found" severity="error">
         Please configure a <code>grafana-clickhouse-datasource</code> first.
         Go to Configuration → Data Sources → Add data source → ClickHouse.
-      </Alert>
+      </Alert></GrafanaControl>
     );
   }
 
   return (
-    <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+    <GrafanaControl><div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
       <label style={{ fontSize: 12, whiteSpace: 'nowrap', opacity: 0.6 }}>
         Datasource
       </label>
@@ -57,6 +58,6 @@ export function DatasourceSelector({ value, onChange }: DatasourceSelectorProps)
         placeholder="Select..."
         width={20}
       />
-    </div>
+    </div></GrafanaControl>
   );
 }

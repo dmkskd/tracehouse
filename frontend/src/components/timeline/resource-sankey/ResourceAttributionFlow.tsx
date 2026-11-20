@@ -1,5 +1,5 @@
 import { useEffect, useId, type RefObject } from 'react';
-import { createPortal } from 'react-dom';
+import { createTracehousePortal as createPortal } from '../../../providers/TracehousePortal';
 import { css } from '@emotion/css';
 import { useResourceFlowViewport } from './useResourceFlowViewport';
 import type { MetricMode } from '../timeline-constants';

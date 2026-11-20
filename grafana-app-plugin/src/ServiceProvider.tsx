@@ -1,3 +1,4 @@
+import { tracehouseLocalStorage } from '@tracehouse/core';
 import React, { createContext, useContext, useState, useEffect, useMemo, useCallback, useRef } from 'react';
 import { getDataSourceSrv, locationService } from '@grafana/runtime';
 import { dateTime } from '@grafana/data';
@@ -70,7 +71,7 @@ function listClickHouseDatasources() {
 
 function loadClusterOverride(datasourceUid: string): string | null {
   try {
-    const stored = localStorage.getItem(CLUSTER_STORAGE_KEY);
+    const stored = tracehouseLocalStorage.getItem(CLUSTER_STORAGE_KEY);
     if (stored) {
       const map = JSON.parse(stored);
       return map[datasourceUid] ?? null;
@@ -81,14 +82,14 @@ function loadClusterOverride(datasourceUid: string): string | null {
 
 function saveClusterOverride(datasourceUid: string, clusterName: string | null): void {
   try {
-    const stored = localStorage.getItem(CLUSTER_STORAGE_KEY);
+    const stored = tracehouseLocalStorage.getItem(CLUSTER_STORAGE_KEY);
     const map = stored ? JSON.parse(stored) : {};
     if (clusterName) {
       map[datasourceUid] = clusterName;
     } else {
       delete map[datasourceUid];
     }
-    localStorage.setItem(CLUSTER_STORAGE_KEY, JSON.stringify(map));
+    tracehouseLocalStorage.setItem(CLUSTER_STORAGE_KEY, JSON.stringify(map));
   } catch { /* ignore */ }
 }
 
@@ -104,7 +105,7 @@ export function ServiceProvider({ children }: { children: React.ReactNode }) {
       return null;
     }
     try {
-      const stored = localStorage.getItem(STORAGE_KEY);
+      const stored = tracehouseLocalStorage.getItem(STORAGE_KEY);
       if (stored) {
         const parsed = JSON.parse(stored);
         // Sync with connectionStore on initial load
@@ -126,7 +127,7 @@ export function ServiceProvider({ children }: { children: React.ReactNode }) {
         .find(candidate => candidate.uid === requestedUid)?.name ?? null;
     }
     try {
-      const stored = localStorage.getItem(STORAGE_KEY);
+      const stored = tracehouseLocalStorage.getItem(STORAGE_KEY);
       if (stored) {
         const parsed = JSON.parse(stored);
         return parsed.name || null;
@@ -152,7 +153,7 @@ export function ServiceProvider({ children }: { children: React.ReactNode }) {
     setDatasourceName(name || null);
     locationService.partial(shareCoordinateUpdate(uid, undefined), true);
     try {
-      localStorage.setItem(STORAGE_KEY, JSON.stringify({ uid, name }));
+      tracehouseLocalStorage.setItem(STORAGE_KEY, JSON.stringify({ uid, name }));
     } catch { /* ignore */ }
     
     // Sync with connectionStore so pages see the connection as active

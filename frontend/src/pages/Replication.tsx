@@ -1,3 +1,4 @@
+import { pulseDotAnimation } from '../styles/animations';
 /**
  * Replication — dedicated tab for replication health, queue inspection, and per-table detail.
  * Split layout: table list (left) + always-visible 3D topology (right).
@@ -545,7 +546,7 @@ export const Replication: React.FC = () => {
                                             <td style={{ ...TD_C, fontSize: 10, fontFamily: 'monospace', color: stuck ? '#ef4444' : tries > 0 ? '#f59e0b' : 'var(--text-muted)' }}>{tries}</td>
                                             <td style={{ ...TD_C, fontSize: 10 }}>
                                               {Number(q.is_currently_executing) ? (
-                                                <span style={{ display: 'inline-block', width: 8, height: 8, borderRadius: '50%', backgroundColor: '#22c55e', animation: 'pulse-dot 1.5s ease-in-out infinite' }} title="Currently executing" />
+                                                <span style={{ display: 'inline-block', width: 8, height: 8, borderRadius: '50%', backgroundColor: '#22c55e', animation: `${pulseDotAnimation} 1.5s ease-in-out infinite` }} title="Currently executing" />
                                               ) : (
                                                 <span style={{ color: 'var(--text-muted)' }}>—</span>
                                               )}

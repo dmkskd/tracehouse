@@ -98,3 +98,5 @@ export { describeErrorCounterState } from './error-counter-state.js';
 
 export { attributeTimeline, measureTimelineSeries } from './timeline-attribution.js';
 export type { AttributionSelection, AttributionBasis, AttributionOptions, AttributedOperation, AttributedSource, TimelineAttribution } from './timeline-attribution.js';
+
+export { TRACEHOUSE_STORAGE_PREFIX, storageKey, createTracehouseStorage, tracehouseLocalStorage, tracehouseSessionStorage } from './browser-storage.js';

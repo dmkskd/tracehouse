@@ -779,7 +779,6 @@ export const QueryTracer: React.FC = () => {
                 filter={logFilter}
                 onFilterChange={handleFilterChange}
                 onRefresh={fetchLogs}
-                queryId={selectedQueryId}
               />
               ) : (
                 <div style={{ padding: 32, textAlign: 'center', fontSize: 12, color: 'var(--text-muted)' }}>

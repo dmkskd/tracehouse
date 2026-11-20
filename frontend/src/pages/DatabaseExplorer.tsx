@@ -651,8 +651,8 @@ const MergeInfoCardCompact: React.FC<MergeInfoCardCompactProps> = ({ merge, comp
             : 'var(--shadow-lg)',
         zIndex: 100,
         position: 'relative',
-        ...(isHighlighted ? { '--tw-ring-color': `${mergeColor.main}60` } as React.CSSProperties : {}),
-        ...(isOldest && !completed && !isHighlighted ? { '--tw-ring-color': 'var(--border-primary)' } as React.CSSProperties : {}),
+        ...(isHighlighted ? { '--tw-ring-color': `${mergeColor.main}60`, '--dmkskd-tracehouse-app-tw-ring-color': `${mergeColor.main}60` } as React.CSSProperties : {}),
+        ...(isOldest && !completed && !isHighlighted ? { '--tw-ring-color': 'var(--border-primary)', '--dmkskd-tracehouse-app-tw-ring-color': 'var(--border-primary)' } as React.CSSProperties : {}),
       }}
       onMouseEnter={handleMouseEnter}
       onMouseLeave={handleMouseLeave}

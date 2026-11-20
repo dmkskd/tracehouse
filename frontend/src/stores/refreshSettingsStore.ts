@@ -1,3 +1,4 @@
+import { tracehouseLocalStorage } from '@tracehouse/core';
 /**
  * Refresh Settings Store - Global user-selected refresh rate
  * 
@@ -7,7 +8,7 @@
  */
 
 import { create } from 'zustand';
-import { persist } from 'zustand/middleware';
+import { persist, createJSONStorage } from 'zustand/middleware';
 
 interface RefreshSettingsState {
   /** User-selected refresh rate in seconds (0 = paused) */
@@ -21,7 +22,10 @@ export const useRefreshSettingsStore = create<RefreshSettingsState>()(
       refreshRateSeconds: 5,
       setRefreshRate: (seconds) => set({ refreshRateSeconds: seconds }),
     }),
-    { name: 'tracehouse-refresh-settings' }
+    {
+      name: 'tracehouse-refresh-settings',
+      storage: createJSONStorage(() => tracehouseLocalStorage),
+    }
   )
 );
 

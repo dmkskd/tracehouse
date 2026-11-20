@@ -1,3 +1,4 @@
+import { keyframes } from '@emotion/css';
 /**
  * ArenaCheatMode — FPS "cheat" mode for the 3D Resource Arena
  *
@@ -848,7 +849,7 @@ export function CheatHUD({ state, onExit, aimedEntry, cheatInfoMap }: {
           width: 40, height: 40,
           border: '1.5px solid rgba(0,255,255,0.4)',
           borderRadius: '50%', position: 'absolute', top: -20, left: -20,
-          animation: 'cheat-crosshair-spin 4s linear infinite',
+          animation: `${cheatCrosshairSpinAnimation} 4s linear infinite`,
         }} />
         <div style={{
           width: 4, height: 4, background: '#00ffff', borderRadius: '50%',
@@ -962,7 +963,7 @@ export function CheatHUD({ state, onExit, aimedEntry, cheatInfoMap }: {
         <div style={{
           position: 'absolute', top: '35%', left: '50%',
           transform: 'translate(-50%, -50%)', textAlign: 'center',
-          animation: 'cheat-combo-pop 0.3s ease-out',
+          animation: `${cheatComboPopAnimation} 0.3s ease-out`,
         }}>
           <div style={{
             fontSize: 28, fontWeight: 900, letterSpacing: 3,
@@ -1038,7 +1039,7 @@ export function CheatHUD({ state, onExit, aimedEntry, cheatInfoMap }: {
         position: 'absolute', top: 14, left: '50%', transform: 'translateX(-50%)',
         fontSize: 10, letterSpacing: 4, fontWeight: 700,
         color: 'rgba(255,0,0,0.6)',
-        animation: 'cheat-banner-glow 2s ease infinite',
+        animation: `${cheatBannerGlowAnimation} 2s ease infinite`,
       }}>
         ▸ CHEAT MODE ACTIVE ◂
       </div>
@@ -1079,28 +1080,10 @@ export function CheatHUD({ state, onExit, aimedEntry, cheatInfoMap }: {
 
 /* ── CSS Animations ─────────────────────────────────── */
 
-export function injectCheatStyles() {
-  if (typeof document === 'undefined') return;
-  if (document.getElementById('arena-cheat-styles')) return;
-
-  const style = document.createElement('style');
-  style.id = 'arena-cheat-styles';
-  style.textContent = `
-    @keyframes cheat-crosshair-spin {
-      0% { transform: rotate(0deg); }
-      100% { transform: rotate(360deg); }
-    }
-    @keyframes cheat-combo-pop {
-      0% { transform: translate(-50%, -50%) scale(1.8); opacity: 0; }
+const cheatCrosshairSpinAnimation = keyframes`0% { transform: rotate(0deg); }
+      100% { transform: rotate(360deg); }`;
+const cheatComboPopAnimation = keyframes`0% { transform: translate(-50%, -50%) scale(1.8); opacity: 0; }
       50% { transform: translate(-50%, -50%) scale(0.95); opacity: 1; }
-      100% { transform: translate(-50%, -50%) scale(1); opacity: 1; }
-    }
-    @keyframes cheat-banner-glow {
-      0%, 100% { opacity: 0.5; text-shadow: 0 0 10px rgba(255,0,0,0.3); }
-      50% { opacity: 1; text-shadow: 0 0 20px rgba(255,0,0,0.6), 0 0 40px rgba(255,0,0,0.2); }
-    }
-  `;
-  document.head.appendChild(style);
-}
-
-injectCheatStyles();
+      100% { transform: translate(-50%, -50%) scale(1); opacity: 1; }`;
+const cheatBannerGlowAnimation = keyframes`0%, 100% { opacity: 0.5; text-shadow: 0 0 10px rgba(255,0,0,0.3); }
+      50% { opacity: 1; text-shadow: 0 0 20px rgba(255,0,0,0.6), 0 0 40px rgba(255,0,0,0.2); }`;

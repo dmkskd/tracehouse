@@ -1,3 +1,4 @@
+import { tracehouseLocalStorage } from '@tracehouse/core';
 /**
  * Proxy Store — manages the CORS proxy configuration.
  *
@@ -12,7 +13,7 @@
  */
 
 import { create } from 'zustand';
-import { persist } from 'zustand/middleware';
+import { persist, createJSONStorage } from 'zustand/middleware';
 
 const DEFAULT_PROXY_URL = 'http://localhost:8990/proxy';
 const BUNDLED_PROXY_URL = '/proxy';
@@ -69,6 +70,7 @@ export const useProxyStore = create<ProxyState>()(
     }),
     {
       name: STORAGE_KEY,
+      storage: createJSONStorage(() => tracehouseLocalStorage),
       partialize: (state) => ({
         // Don't persist bundled-mode values — they're fixed at build time
         enabled: state.bundled ? undefined : state.enabled,

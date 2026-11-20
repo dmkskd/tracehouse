@@ -1,3 +1,4 @@
+import { spinAnimation } from '../../styles/animations';
 import { useQueryXRayPreference } from './query-xray-preference';
 /**
  * QueryComparisonPanel - Reusable comparison panel for 2+ queries
@@ -464,7 +465,7 @@ const fmtNum = (v: number) => {
 const DetailedState: React.FC<{ isLoading: boolean; error: string | null; isEmpty: boolean }> = ({ isLoading, error, isEmpty }) => {
   if (isLoading) return (
     <div style={{ padding: 20, textAlign: 'center' }}>
-      <div style={{ width: 20, height: 20, borderWidth: 2, borderStyle: 'solid', borderColor: 'var(--border-primary)', borderTopColor: 'var(--text-tertiary)', borderRadius: '50%', animation: 'spin 1s linear infinite', margin: '0 auto 8px' }} />
+      <div style={{ width: 20, height: 20, borderWidth: 2, borderStyle: 'solid', borderColor: 'var(--border-primary)', borderTopColor: 'var(--text-tertiary)', borderRadius: '50%', animation: `${spinAnimation} 1s linear infinite`, margin: '0 auto 8px' }} />
       <span style={{ fontSize: 11, color: 'var(--text-muted)' }}>Loading ProfileEvents comparison...</span>
     </div>
   );
@@ -685,7 +686,7 @@ const TimelineComparison: React.FC<{
 
   if (isLoading) return (
     <div style={{ padding: 20, textAlign: 'center' }}>
-      <div style={{ width: 20, height: 20, borderWidth: 2, borderStyle: 'solid', borderColor: 'var(--border-primary)', borderTopColor: 'var(--text-tertiary)', borderRadius: '50%', animation: 'spin 1s linear infinite', margin: '0 auto 8px' }} />
+      <div style={{ width: 20, height: 20, borderWidth: 2, borderStyle: 'solid', borderColor: 'var(--border-primary)', borderTopColor: 'var(--text-tertiary)', borderRadius: '50%', animation: `${spinAnimation} 1s linear infinite`, margin: '0 auto 8px' }} />
       <span style={{ fontSize: 11, color: 'var(--text-muted)' }}>Loading process samples...</span>
     </div>
   );

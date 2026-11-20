@@ -87,10 +87,7 @@ Replication queue depth, log lag, and inter-replica sync status.
 
 ## Getting Started
 
-1. Install the plugin from the Grafana plugin catalog or side-load the signed zip
-2. Enable the plugin under **Administration > Plugins > TraceHouse**
-3. Ensure you have a ClickHouse datasource configured pointing to your cluster
-4. Open **TraceHouse** from the sidebar and start exploring
+See the [installation guide](https://github.com/dmkskd/tracehouse/blob/main/grafana-app-plugin/INSTALLATION.md) for installation and initial setup.
 
 ## Configuration
 

@@ -1,3 +1,4 @@
+import { arenaFadeInAnimation, arenaGlowPulseAnimation } from './arena-animations';
 /**
  * ArenaInspector — docked right-hand panel shown when a block is clicked in
  * ResourceArena3D ("Essential" design): status line, identity, one hero
@@ -156,7 +157,7 @@ export function ArenaInspector({ entry, onClose, logs, compact }: {
         display: 'flex', flexDirection: 'column',
         background: C.ground, borderLeft: `1px solid ${C.hairline}`,
         color: C.text, fontFamily: sansFont,
-        animation: 'arena-fade-in 0.2s ease both',
+        animation: `${arenaFadeInAnimation} 0.2s ease both`,
       }}
     >
       {/* Status line */}
@@ -164,7 +165,7 @@ export function ArenaInspector({ entry, onClose, logs, compact }: {
         <span aria-hidden="true" style={{
           width: 8, height: 8, borderRadius: '50%', background: accent,
           boxShadow: running ? `0 0 0 3px ${withAlpha(accent, 0.18)}` : undefined,
-          animation: running ? 'arena-glow-pulse 2s ease infinite' : undefined,
+          animation: running ? `${arenaGlowPulseAnimation} 2s ease infinite` : undefined,
         }} />
         <span style={{ fontSize: 12, fontWeight: 500, color: C.secondary }}>
           {kindLabel} · {running ? 'running' : 'finished'}

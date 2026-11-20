@@ -1,3 +1,4 @@
+import { TracehouseHeaderContext } from '../../../providers/TracehouseHeaderContext';
 import { QueryXRayDefaultContext } from '../../query/query-xray-preference';
 import { act, cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/react';
 import { MemoryRouter, useNavigate } from 'react-router-dom';
@@ -78,8 +79,38 @@ describe('DashboardViewer query version compatibility', () => {
     mocks.run.mockReset().mockResolvedValue([]);
   });
 
+  test.each([true, false])('positions focus using the supplied header ref (provided: %s)', async provided => {
+    const originalScroll = HTMLElement.prototype.scrollIntoView;
+    HTMLElement.prototype.scrollIntoView = vi.fn();
+    const unrelatedApp = document.createElement('div');
+    unrelatedApp.className = 'grafana-app-container';
+    unrelatedApp.appendChild(document.createElement('div'));
+    document.body.appendChild(unrelatedApp);
+    vi.spyOn(unrelatedApp.firstElementChild!, 'getBoundingClientRect').mockReturnValue({ bottom: 900 } as DOMRect);
+    const header = document.createElement('div');
+    let bottom = 123.6;
+    vi.spyOn(header, 'getBoundingClientRect').mockImplementation(() => ({ bottom }) as DOMRect);
+    try {
+      render(
+        <TracehouseHeaderContext.Provider value={provided ? { current: header } : null}>
+          <MemoryRouter initialEntries={['/?dashboard=ops-overview&dashboard_focus=0']}>
+            <DashboardViewer />
+          </MemoryRouter>
+        </TracehouseHeaderContext.Provider>,
+      );
+      const navigator = await screen.findByRole('complementary', { name: 'Dashboard panel navigator' });
+      expect(navigator.style.top).toBe(provided ? '124px' : '48px');
+      bottom = 156.5;
+      fireEvent(window, new Event('resize'));
+      expect(navigator.style.top).toBe(provided ? '157px' : '48px');
+    } finally {
+      unrelatedApp.remove();
+      HTMLElement.prototype.scrollIntoView = originalScroll;
+    }
+  });
+
   test('updates summary totals with the selected time range and retains them in table view', async () => {
-    localStorage.setItem('tracehouse-dashboards-user', JSON.stringify([{
+    localStorage.setItem('dmkskd-tracehouse-app:tracehouse-dashboards-user', JSON.stringify([{
       id: 'merge-totals-test', title: 'Merge totals test', columns: 1,
       panels: [{ queryName: 'Merge Analytics#Merge Elapsed Time by Level Transition' }],
     }]));
@@ -103,7 +134,7 @@ describe('DashboardViewer query version compatibility', () => {
   });
 
   test('shows the corresponding totals on both CPU and elapsed panels', async () => {
-    localStorage.setItem('tracehouse-dashboards-user', JSON.stringify([{
+    localStorage.setItem('dmkskd-tracehouse-app:tracehouse-dashboards-user', JSON.stringify([{
       id: 'paired-summaries', title: 'Paired summaries', columns: 2,
       panels: [
         { queryName: 'Merge Analytics#Merge CPU by Table' },
@@ -122,7 +153,7 @@ describe('DashboardViewer query version compatibility', () => {
 
   test.each(['bar', 'line', 'area', 'pie', 'grouped_bar', 'stacked_bar', 'grouped_stacked_bar', 'grouped_line', 'radar'])(
     'uses the shared result summary for dashboard %s charts', async type => {
-      localStorage.setItem('tracehouse-dashboards-user', JSON.stringify([{
+      localStorage.setItem('dmkskd-tracehouse-app:tracehouse-dashboards-user', JSON.stringify([{
         id: 'summary-family', title: 'Summary family', columns: 1,
         panels: [{ queryName: 'Custom#Family' }],
         queries: [`-- @meta: title='Family' group='Custom'
@@ -138,7 +169,7 @@ SELECT 1`],
   );
 
   test('states the 3D limitation and still shows the same result summary in table view', async () => {
-    localStorage.setItem('tracehouse-dashboards-user', JSON.stringify([{
+    localStorage.setItem('dmkskd-tracehouse-app:tracehouse-dashboards-user', JSON.stringify([{
       id: 'summary-3d', title: '3D summary', columns: 1,
       panels: [{ queryName: 'Custom#3D' }],
       queries: ["-- @meta: title='3D' group='Custom'\n-- @chart: type=bar style=3d group_by=region value=metric\n-- @summary: value=total label='Total' unit=s\nSELECT 1"],
@@ -152,7 +183,7 @@ SELECT 1`],
   });
 
   test('discards stale summaries after a time change and clears them on a failed refresh', async () => {
-    localStorage.setItem('tracehouse-dashboards-user', JSON.stringify([{
+    localStorage.setItem('dmkskd-tracehouse-app:tracehouse-dashboards-user', JSON.stringify([{
       id: 'summary-race', title: 'Summary race', columns: 1,
       panels: [{ queryName: 'Merge Analytics#Merge Elapsed Time by Level Transition' }],
     }]));
@@ -199,7 +230,7 @@ SELECT 1`],
     expect(screen.getByDisplayValue('My merge dashboard')).toBeInTheDocument();
     fireEvent.click(screen.getByRole('button', { name: 'Cancel' }));
     expect(await screen.findByText('Merge Analytics', { exact: true })).toBeInTheDocument();
-    expect(localStorage.getItem('tracehouse-dashboards-user')).toBeNull();
+    expect(localStorage.getItem('dmkskd-tracehouse-app:tracehouse-dashboards-user')).toBeNull();
     fireEvent.click(screen.getByRole('button', { name: 'Clone', exact: true }));
     expect(await screen.findByText('Edit Dashboard')).toBeInTheDocument();
     fireEvent.change(screen.getByDisplayValue('Merge Analytics (copy)'), { target: { value: 'Saved merge dashboard' } });
@@ -237,11 +268,11 @@ SELECT 1`],
     fireEvent.change(editor, { target: { value: String((editor as HTMLTextAreaElement).value).replace('SELECT 1 AS value', 'SELECT 42 AS value') } });
     fireEvent.click(screen.getByRole('button', { name: 'Save Changes' }));
     expect(await screen.findByText('Merge Analytics (copy)', { exact: true })).toBeInTheDocument();
-    const saved = JSON.parse(localStorage.getItem('tracehouse-dashboards-user')!);
+    const saved = JSON.parse(localStorage.getItem('dmkskd-tracehouse-app:tracehouse-dashboards-user')!);
     expect(saved).toHaveLength(1);
     expect(saved[0].queries[0]).toContain('SELECT 42 AS value');
     expect(saved[0].filters).toHaveLength(1);
-    expect(localStorage.getItem('tracehouse-custom-queries')).toBeNull();
+    expect(localStorage.getItem('dmkskd-tracehouse-app:tracehouse-custom-queries')).toBeNull();
     fireEvent.click(screen.getByRole('button', { name: 'Edit', exact: true }));
     expect(screen.getByRole('textbox', { name: 'Query SQL', hidden: true })).toHaveValue(saved[0].queries[0]);
     fireEvent.click(screen.getByRole('button', { name: 'Cancel' }));
@@ -266,7 +297,7 @@ SELECT 1`],
     const source = kind === 'builtin' ? builtin : {
       ...builtin, id: 'team-waits', title: 'Team Wait Breakdown', builtin: false,
     };
-    if (kind === 'custom') localStorage.setItem('tracehouse-dashboards-user', JSON.stringify([source]));
+    if (kind === 'custom') localStorage.setItem('dmkskd-tracehouse-app:tracehouse-dashboards-user', JSON.stringify([source]));
     const payload = JSON.parse(exportDashboardJson(source, true));
     payload.queries[0] += '\n-- imported wait-breakdown SQL';
     const before = loadDashboards();
@@ -301,7 +332,7 @@ SELECT 1`],
     const imported = reloaded.find(dashboard => dashboard.title === newTitle)!;
     expect(imported.id).not.toBe(source.id);
     expect(imported.queries).toEqual(payload.queries);
-    expect(localStorage.getItem('tracehouse-custom-queries')).toBeNull();
+    expect(localStorage.getItem('dmkskd-tracehouse-app:tracehouse-custom-queries')).toBeNull();
   });
 
   test.each(['query', 'filter'])('requires SQL confirmation after supplying a missing title for a %s', async kind => {
@@ -330,7 +361,7 @@ SELECT 1`],
   });
 
   test('table drill updates the dashboard filter and later table selections reach the drilled panel', async () => {
-    localStorage.setItem('tracehouse-dashboards-user', JSON.stringify([{
+    localStorage.setItem('dmkskd-tracehouse-app:tracehouse-dashboards-user', JSON.stringify([{
       id: 'scoped', title: 'Scoped dashboard', columns: 2,
       panels: [{ queryName: 'Custom#Root' }, { queryName: 'Custom#Companion' }],
       filters: [{ param: 'tbl', label: 'Table', query: 'SELECT filter_options' }],
@@ -359,7 +390,7 @@ SELECT 1`],
     const originalScroll = HTMLElement.prototype.scrollIntoView;
     HTMLElement.prototype.scrollIntoView = vi.fn();
     try {
-      localStorage.setItem('tracehouse-dashboards-user', JSON.stringify([{
+      localStorage.setItem('dmkskd-tracehouse-app:tracehouse-dashboards-user', JSON.stringify([{
         id: 'focus-filters', title: 'Focus filters', columns: 2,
         panels: [{ queryName: 'Custom#First' }, { queryName: 'Custom#Second' }],
         filters: [{ param: 'tbl', label: 'Table', query: 'SELECT filter_options' }],
@@ -434,7 +465,6 @@ SELECT 1`],
     expect(screen.queryByText(/Not run · Requires ClickHouse ≥ 24\.8/)).not.toBeInTheDocument();
   });
 });
-
 
 describe('Series dashboard source preference', () => {
   afterEach(() => { cleanup(); useMonitoringCapabilitiesStore.getState().reset(); });

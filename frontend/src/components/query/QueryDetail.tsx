@@ -513,7 +513,6 @@ const QueryLogsSection: React.FC<{ queryId: string; eventDate?: string; autoExpa
             filter={filter}
             onFilterChange={(partial) => setFilter(prev => ({ ...prev, ...partial }))}
             onRefresh={fetchLogs}
-            queryId={queryId}
           />
         )}
         {activeTab === 'spans' && (
@@ -607,7 +606,6 @@ export const ThreadBreakdownSection: React.FC<{
     if (threads.length === 0) return { rows: [], totalDurationUs: 0 };
 
     // Parse microsecond timestamps: "2026-02-20 11:26:43.867493"
-
 
     const rows = threads.map(t => {
       const t0 = parseOptionalTimestampMicros(t.initial_query_start_time_us); // true T=0

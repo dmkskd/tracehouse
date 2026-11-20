@@ -1,3 +1,4 @@
+import { arenaScanAnimation, arenaFadeInAnimation, arenaGlowPulseAnimation, arenaBarFillAnimation, arenaLogPulseAnimation } from './arena-animations';
 /**
  * ResourceArena3D — Guitar-Hero style scrolling resource timeline
  *
@@ -262,8 +263,8 @@ function LogTail({ logs, maxLines = 6, elapsedSec = 0 }: { logs: TraceLog[]; max
             borderBottom: '1px solid rgba(255,255,255,0.05)',
             padding: '3px 0',
             animation: isLast
-              ? 'arena-log-pulse 1.5s ease infinite'
-              : i >= visible.length - 3 ? 'arena-fade-in 0.3s ease both' : undefined,
+              ? `${arenaLogPulseAnimation} 1.5s ease infinite`
+              : i >= visible.length - 3 ? `${arenaFadeInAnimation} 0.3s ease both` : undefined,
             background: isLast
               ? `linear-gradient(90deg, ${levelColor}25 0%, ${levelColor}08 50%, transparent 100%)`
               : undefined,
@@ -313,7 +314,7 @@ function LogTail({ logs, maxLines = 6, elapsedSec = 0 }: { logs: TraceLog[]; max
             {isSilent && (
               <span style={{
                 color: silenceMs > 30000 ? '#fbbf24' : 'rgba(255,255,255,0.3)',
-                animation: silenceMs > 30000 ? 'arena-glow-pulse 2s ease infinite' : undefined,
+                animation: silenceMs > 30000 ? `${arenaGlowPulseAnimation} 2s ease infinite` : undefined,
               }}>
                 {fmtDelta(silenceMs)} without logs
               </span>
@@ -539,19 +540,6 @@ function CardPositionBridge({ entry, domRef, offsetY, offsetZ }: {
 /* ── Immersive HUD: full-viewport cinematic detail overlay ── */
 
 // Inject HUD animation styles once
-if (typeof document !== 'undefined' && !document.getElementById('arena3d-hud-styles')) {
-  const style = document.createElement('style');
-  style.id = 'arena3d-hud-styles';
-  style.textContent = `
-    @keyframes arena-scan { 0% { top: -2px; } 100% { top: 100%; } }
-    @keyframes arena-fade-in { 0% { opacity: 0; transform: translateY(8px); } 100% { opacity: 1; transform: translateY(0); } }
-    @keyframes arena-glow-pulse { 0%,100% { opacity: 0.6; } 50% { opacity: 1; } }
-    @keyframes arena-bar-fill { 0% { width: 0%; } 100% { width: var(--bar-pct); } }
-    @keyframes arena-typing { 0% { width: 0; } 100% { width: 100%; } }
-    @keyframes arena-log-pulse { 0%,100% { background-position: 0% 0%; opacity: 0.7; } 50% { background-position: 100% 0%; opacity: 1; } }
-  `;
-  document.head.appendChild(style);
-}
 
 /** Animated bar with fill-in effect */
 function HudBar({ label, ratio, color, value, delay = 0 }: {
@@ -561,7 +549,7 @@ function HudBar({ label, ratio, color, value, delay = 0 }: {
   return (
     <div style={{
       display: 'flex', alignItems: 'center', gap: 8, marginBottom: 8,
-      animation: `arena-fade-in 0.4s ease ${delay}s both`,
+      animation: `${arenaFadeInAnimation} 0.4s ease ${delay}s both`,
     }}>
       <span style={{
         width: 32, fontSize: 9, color: 'rgba(255,255,255,0.3)', textAlign: 'right', flexShrink: 0,
@@ -576,7 +564,7 @@ function HudBar({ label, ratio, color, value, delay = 0 }: {
           height: '100%', borderRadius: 4,
           background: `linear-gradient(90deg, ${color}CC, ${color})`,
           boxShadow: `0 0 12px ${color}50, inset 0 1px 0 rgba(255,255,255,0.15)`,
-          animation: `arena-bar-fill 0.8s ease ${delay + 0.2}s both`,
+          animation: `${arenaBarFillAnimation} 0.8s ease ${delay + 0.2}s both`,
         } as React.CSSProperties} />
       </div>
       <span style={{
@@ -637,7 +625,7 @@ function ImmersiveHUD({ entry, onClose, history, logs }: { entry: BlockEntry; on
         position: 'absolute', top: 0, left: 0, bottom: BOTTOM_H, width: LEFT_W,
         padding: '50px 18px 16px',
         display: 'flex', flexDirection: 'column', gap: 0,
-        animation: 'arena-fade-in 0.3s ease both',
+        animation: `${arenaFadeInAnimation} 0.3s ease both`,
         overflowX: 'hidden', overflowY: 'auto',
         scrollbarWidth: 'none',
         pointerEvents: 'auto',
@@ -646,7 +634,7 @@ function ImmersiveHUD({ entry, onClose, history, logs }: { entry: BlockEntry; on
         <div style={{
           position: 'absolute', left: 0, right: 0, height: 2,
           background: `linear-gradient(90deg, transparent, ${accent}80, transparent)`,
-          animation: 'arena-scan 3s linear infinite',
+          animation: `${arenaScanAnimation} 3s linear infinite`,
           pointerEvents: 'none',
         }} />
 
@@ -660,7 +648,7 @@ function ImmersiveHUD({ entry, onClose, history, logs }: { entry: BlockEntry; on
           {running ? (
             <span style={{
               fontSize: 9, color: '#4ade80', letterSpacing: 1.5,
-              animation: 'arena-glow-pulse 2s ease infinite',
+              animation: `${arenaGlowPulseAnimation} 2s ease infinite`,
             }}>● LIVE</span>
           ) : (
             <span style={{ fontSize: 9, color: '#fbbf24', letterSpacing: 1.5 }}>■ FINISHED</span>
@@ -672,7 +660,7 @@ function ImmersiveHUD({ entry, onClose, history, logs }: { entry: BlockEntry; on
           <div style={{
             fontSize: 11, color: 'rgba(255,255,255,0.6)', marginBottom: 2,
             fontWeight: 600, letterSpacing: 0.5,
-            animation: 'arena-fade-in 0.4s ease 0.1s both',
+            animation: `${arenaFadeInAnimation} 0.4s ease 0.1s both`,
             overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap',
           }}>{tableInfo}</div>
         )}
@@ -682,7 +670,7 @@ function ImmersiveHUD({ entry, onClose, history, logs }: { entry: BlockEntry; on
           <div style={{
             fontSize: 10, color: 'rgba(255,255,255,0.5)', marginBottom: 4,
             fontFamily: panelFont, letterSpacing: 0.3,
-            animation: 'arena-fade-in 0.4s ease 0.12s both',
+            animation: `${arenaFadeInAnimation} 0.4s ease 0.12s both`,
             overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap',
           }}>&rarr; {entry.partName}</div>
         )}
@@ -692,14 +680,14 @@ function ImmersiveHUD({ entry, onClose, history, logs }: { entry: BlockEntry; on
           <div style={{
             fontSize: 9, color: 'rgba(255,255,255,0.3)', marginBottom: 12,
             lineHeight: 1.4, maxHeight: 44, overflow: 'hidden',
-            animation: 'arena-fade-in 0.4s ease 0.15s both',
+            animation: `${arenaFadeInAnimation} 0.4s ease 0.15s both`,
           }}>{entry.label}</div>
         )}
 
         {/* Big elapsed time */}
         <div style={{
           display: 'flex', alignItems: 'baseline', gap: 8, marginBottom: 16,
-          animation: 'arena-fade-in 0.4s ease 0.2s both',
+          animation: `${arenaFadeInAnimation} 0.4s ease 0.2s both`,
         }}>
           <span style={{ fontSize: 32, fontWeight: 700, color: accent, letterSpacing: -1 }}>
             {liveElapsed.toFixed(1)}
@@ -707,10 +695,9 @@ function ImmersiveHUD({ entry, onClose, history, logs }: { entry: BlockEntry; on
           <span style={{ fontSize: 12, color: `${accent}80`, fontWeight: 600 }}>sec</span>
         </div>
 
-
         {/* Profile events snapshot or merge info */}
         {pe && (
-          <div style={{ animation: 'arena-fade-in 0.4s ease 0.5s both' }}>
+          <div style={{ animation: `${arenaFadeInAnimation} 0.4s ease 0.5s both` }}>
             <div style={{
               fontSize: 8, color: 'rgba(255,255,255,0.25)', letterSpacing: 2, fontWeight: 700, marginBottom: 6,
             }}>PROFILE EVENTS</div>
@@ -723,7 +710,7 @@ function ImmersiveHUD({ entry, onClose, history, logs }: { entry: BlockEntry; on
                 { label: 'PARTS', value: fmtNum(pe.selectedParts), color: 'rgba(255,255,255,0.5)' },
                 { label: 'MARKS', value: fmtNum(pe.selectedMarks), color: 'rgba(255,255,255,0.5)' },
               ].map((item, i) => (
-                <div key={item.label} style={{ animation: `arena-fade-in 0.3s ease ${0.55 + i * 0.04}s both` }}>
+                <div key={item.label} style={{ animation: `${arenaFadeInAnimation} 0.3s ease ${0.55 + i * 0.04}s both` }}>
                   <div style={{ fontSize: 8, color: 'rgba(255,255,255,0.25)', letterSpacing: 1.2, marginBottom: 1 }}>{item.label}</div>
                   <div style={{ color: item.color, fontWeight: 600, fontVariantNumeric: 'tabular-nums' }}>{item.value}</div>
                 </div>
@@ -740,14 +727,14 @@ function ImmersiveHUD({ entry, onClose, history, logs }: { entry: BlockEntry; on
         )}
 
         {entry.isMerge && !pe && (
-          <div style={{ animation: 'arena-fade-in 0.4s ease 0.5s both' }}>
+          <div style={{ animation: `${arenaFadeInAnimation} 0.4s ease 0.5s both` }}>
             <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '8px 14px', fontSize: 12 }}>
               {[
                 { label: 'ROWS', value: fmtNum(entry.rowsRead), color: 'rgba(255,255,255,0.6)' },
                 ...(entry.numParts !== undefined ? [{ label: 'PARTS', value: String(entry.numParts), color: 'rgba(255,255,255,0.6)' }] : []),
                 ...(entry.mergeType ? [{ label: 'TYPE', value: entry.mergeType, color: 'rgba(255,255,255,0.6)' }] : []),
               ].map((item, i) => (
-                <div key={item.label} style={{ animation: `arena-fade-in 0.3s ease ${0.55 + i * 0.04}s both` }}>
+                <div key={item.label} style={{ animation: `${arenaFadeInAnimation} 0.3s ease ${0.55 + i * 0.04}s both` }}>
                   <div style={{ fontSize: 9, color: 'rgba(255,255,255,0.3)', letterSpacing: 1.2, marginBottom: 2 }}>{item.label}</div>
                   <div style={{ color: item.color, fontWeight: 600 }}>{item.value}</div>
                 </div>
@@ -767,7 +754,7 @@ function ImmersiveHUD({ entry, onClose, history, logs }: { entry: BlockEntry; on
           position: 'absolute', top: 44, right: 12, bottom: BOTTOM_H + 8,
           width: RIGHT_W,
           display: 'flex', flexDirection: 'column', justifyContent: 'center', gap: 2,
-          animation: 'arena-fade-in 0.4s ease 0.2s both',
+          animation: `${arenaFadeInAnimation} 0.4s ease 0.2s both`,
           pointerEvents: 'none',
         }}>
           <Sparkline data={cpuData} color="#60a5fa" label="CPU" width={sparkW} height={28}
@@ -800,7 +787,7 @@ function ImmersiveHUD({ entry, onClose, history, logs }: { entry: BlockEntry; on
         background: 'linear-gradient(0deg, rgba(4,4,12,0.72) 0%, rgba(4,4,12,0.55) 70%, transparent 100%)',
         padding: '24px 20px 14px',
         display: 'flex', flexDirection: 'column',
-        animation: 'arena-fade-in 0.4s ease 0.4s both',
+        animation: `${arenaFadeInAnimation} 0.4s ease 0.4s both`,
         pointerEvents: 'auto',
       }}>
         <div style={{
@@ -821,7 +808,7 @@ function ImmersiveHUD({ entry, onClose, history, logs }: { entry: BlockEntry; on
       <div style={{
         position: 'absolute', bottom: 12, right: 20,
         fontSize: 9, color: 'rgba(255,255,255,0.12)', letterSpacing: 1.5,
-        animation: 'arena-fade-in 0.5s ease 1s both',
+        animation: `${arenaFadeInAnimation} 0.5s ease 1s both`,
         pointerEvents: 'auto', cursor: 'pointer',
       }} onClick={onClose}>
         ESC or click to exit
@@ -832,7 +819,7 @@ function ImmersiveHUD({ entry, onClose, history, logs }: { entry: BlockEntry; on
         <div style={{
           position: 'absolute', top: 14, right: 20,
           display: 'flex', flexDirection: 'column', alignItems: 'flex-end', gap: 6,
-          animation: 'arena-fade-in 0.4s ease 0.6s both',
+          animation: `${arenaFadeInAnimation} 0.4s ease 0.6s both`,
         }}>
           {entry.queryId && (
             <div style={{ fontSize: 8, color: 'rgba(255,255,255,0.1)', letterSpacing: 1 }}>{entry.queryId}</div>
@@ -1131,7 +1118,6 @@ function Floor({ maxLane = 0 }: { maxLane?: number }) {
     </>
   );
 }
-
 
 /* ── Scene ────────────────────────────────────────────── */
 

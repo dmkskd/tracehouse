@@ -13,7 +13,7 @@
  */
 
 import React, { useState, useEffect, useMemo } from 'react';
-import { createPortal } from 'react-dom';
+import { createTracehousePortal as createPortal } from '../../providers/TracehousePortal';
 import { useClickHouseServices } from '../../providers/ClickHouseProvider';
 import { databaseApi, formatBytes } from '../../stores/databaseStore';
 import type { PartDetailInfo, PartLineageInfo } from '../../stores/databaseStore';
@@ -226,37 +226,6 @@ export const PartInspector: React.FC<PartInspectorProps> = ({
       className={currentTheme === 'light' ? 'theme-light' : 'theme-dark'}
       style={portalStyle}
     >
-      {/* Inject theme styles for portal - ensures CSS variables work correctly */}
-      {currentTheme === 'light' && (
-        <style>{`
-          .theme-light, .theme-light * {
-            --bg-primary: #f8fafc;
-            --bg-secondary: #ffffff;
-            --bg-tertiary: #f1f5f9;
-            --bg-card: rgba(0, 0, 0, 0.02);
-            --bg-card-hover: rgba(0, 0, 0, 0.04);
-            --bg-input: rgba(0, 0, 0, 0.03);
-            --bg-modal: linear-gradient(180deg, #ffffff 0%, #f8fafc 100%);
-            --bg-code: #f6f8fa;
-            --bg-hover: rgba(0, 0, 0, 0.04);
-            --border-primary: rgba(0, 0, 0, 0.12);
-            --border-secondary: rgba(0, 0, 0, 0.06);
-            --border-accent: rgba(37, 99, 235, 0.3);
-            --border-input: rgba(0, 0, 0, 0.15);
-            --text-primary: #1e293b;
-            --text-secondary: #475569;
-            --text-tertiary: #64748b;
-            --text-muted: #94a3b8;
-            --text-disabled: #cbd5e1;
-            --accent-primary: #7c3aed;
-            --accent-primary-rgb: 124, 58, 237;
-            --accent-secondary: #8b5cf6;
-            --accent-secondary-rgb: 139, 92, 246;
-            --shadow-modal: 0 25px 50px -12px rgba(0, 0, 0, 0.25), 0 0 0 1px rgba(0, 0, 0, 0.05);
-            --backdrop-overlay: rgba(0, 0, 0, 0.5);
-          }
-        `}</style>
-      )}
       {/* Breadcrumb */}
       {breadcrumbPath.length > 0 && (
         <div
@@ -384,7 +353,6 @@ export const PartInspector: React.FC<PartInspectorProps> = ({
     document.body
   );
 };
-
 
 // ============================================================================
 // TAB COMPONENTS (Exported for reuse in TimelinePartModal)
@@ -537,7 +505,6 @@ export const OverviewTab: React.FC<{
     </div>
   );
 };
-
 
 type SortField = 'default' | 'column_name' | 'type' | 'raw' | 'compressed' | 'ratio';
 type SortDir = 'asc' | 'desc';
@@ -761,7 +728,6 @@ export const ColumnsTab: React.FC<{
     </div>
   </>);
 };
-
 
 export const DataTab: React.FC<{ 
   partData: PartDataResponse | null; 

@@ -1,3 +1,5 @@
+import { css } from '@emotion/css';
+
 /**
  * MergeActivityTable - one lifecycle table for live and completed merges.
  */
@@ -23,6 +25,16 @@ import {
   sortMergeActivityRecords,
   type MergeActivityRecord,
 } from './merge-activity-model';
+
+const mergeActivityRowClass = css`
+  &:hover {
+    background: var(--bg-hover) !important;
+  }
+  &.selected,
+  &.selected:hover {
+    background: rgba(240, 136, 62, 0.2) !important;
+  }
+`;
 
 interface MergeActivityTableProps {
   activity: MergeActivityRecord[];
@@ -183,11 +195,7 @@ export const MergeActivityTable: React.FC<MergeActivityTableProps> = ({
 
   return (
     <div style={{ overflow: 'auto', contain: 'content' }}>
-      <style>{`
-        .merge-activity-row:hover { background: var(--bg-hover) !important; }
-        .merge-activity-row.selected,
-        .merge-activity-row.selected:hover { background: rgba(240,136,62,0.2) !important; }
-      `}</style>
+
       <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 11 }}>
         <thead>
           <tr style={{ borderBottom: '1px solid var(--border-primary)' }}>
@@ -258,7 +266,7 @@ export const MergeActivityTable: React.FC<MergeActivityTableProps> = ({
             return (
               <tr
                 key={record.activityKey}
-                className={`merge-activity-row${selected ? ' selected' : ''}`}
+                className={`${mergeActivityRowClass}${selected ? ' selected' : ''}`}
                 onClick={handleClick}
                 onMouseEnter={handlePreview}
                 style={{

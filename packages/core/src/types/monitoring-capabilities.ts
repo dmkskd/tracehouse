@@ -92,8 +92,6 @@ export interface MonitoringFlags {
   hasIntrospectionFunctions: boolean;
   /** CPU profiler is actually producing samples (not just configured) */
   hasCPUProfilerActive: boolean;
-  /** ClickStack (HyperDX) embedded UI available at /clickstack/ (CH 26.2+) */
-  hasClickStack: boolean;
   /** Runtime query-plan analysis via EXPLAIN ANALYZE (CH 26.7+) */
   hasExplainAnalyze: boolean;
   /** Connected to ClickHouse Cloud (some OS-level metrics unavailable) */
@@ -141,7 +139,6 @@ export function deriveMonitoringFlags(capabilities: MonitoringCapability[], serv
     hasBlobStorageLog: has('blob_storage_log'),
     hasIntrospectionFunctions: has('introspection_functions'),
     hasCPUProfilerActive: has('cpu_profiler_active'),
-    hasClickStack: has('clickstack') || isClickHouseVersionAtLeast(serverVersion ?? '', 26, 2),
     hasExplainAnalyze: has('explain_analyze') || isClickHouseVersionAtLeast(
       serverVersion ?? '',
       EXPLAIN_ANALYZE_MIN_CLICKHOUSE_VERSION.major,

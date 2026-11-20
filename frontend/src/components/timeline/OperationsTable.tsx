@@ -1,3 +1,4 @@
+import { pulseAnimation } from '../../styles/animations';
 /**
  * OperationsTable — one full-width table for every Time Travel operation:
  * queries, merges and mutations together, filtered by kind, scoped to the
@@ -295,7 +296,7 @@ export const OperationsTable = React.memo<{
                         ? (row.progress !== undefined ? `Running — ${Math.round(row.progress * 100)}% complete` : 'Running')
                         : row.failed ? 'Failed' : 'Completed'}>
                     {row.isRunning ? (
-                      <span style={{ display:'inline-block', width:8, height:8, borderRadius:'50%', background: KIND_ACCENT[row.kind], animation:'pulse 1.5s ease-in-out infinite' }} />
+                      <span style={{ display:'inline-block', width:8, height:8, borderRadius:'50%', background: KIND_ACCENT[row.kind], animation:`${pulseAnimation} 1.5s ease-in-out infinite` }} />
                     ) : row.failed ? (
                       <span style={{ color:'var(--color-error)', fontSize:10 }}>✕</span>
                     ) : (

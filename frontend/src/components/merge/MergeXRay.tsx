@@ -1,3 +1,4 @@
+import { css } from '@emotion/css';
 import { parseAbsoluteTimestamp } from '@tracehouse/core';
 /**
  * MergeXRay — 2D timeline visualization of merge progress from tracehouse.merges_history.
@@ -362,38 +363,47 @@ const MODE_META: Record<ScrubberMode, { label: string; color: string }> = {
   logs: { label: 'Logs', color: '#FECB52' },
 };
 
-const SCRUBBER_SLIDER_ID = 'merge-xray-scrubber-styles';
-function ensureScrubberStyles() {
-  if (document.getElementById(SCRUBBER_SLIDER_ID)) return;
-  const el = document.createElement('style');
-  el.id = SCRUBBER_SLIDER_ID;
-  el.textContent = `
-    .merge-scrubber-slider {
-      -webkit-appearance: none; appearance: none;
-      width: 100%; height: 6px; border-radius: 3px;
-      outline: none; cursor: pointer; margin: 0;
-    }
-    .merge-scrubber-slider::-webkit-slider-thumb {
-      -webkit-appearance: none; appearance: none;
-      width: 14px; height: 14px; border-radius: 50%;
-      background: var(--xray-accent, #636EFA); border: 2px solid rgba(0,0,0,0.4);
-      box-shadow: 0 0 8px var(--xray-accent-glow, rgba(99,110,250,0.4));
-      cursor: pointer; transition: transform 0.1s ease;
-    }
-    .merge-scrubber-slider::-webkit-slider-thumb:hover { transform: scale(1.2); }
-    .merge-scrubber-slider::-moz-range-thumb {
-      width: 14px; height: 14px; border-radius: 50%;
-      background: var(--xray-accent, #636EFA); border: 2px solid rgba(0,0,0,0.4);
-      box-shadow: 0 0 8px var(--xray-accent-glow, rgba(99,110,250,0.4));
-      cursor: pointer;
-    }
-    .merge-scrubber-slider::-moz-range-track {
-      height: 6px; border-radius: 3px;
-      background: linear-gradient(90deg, rgba(255,255,255,0.06) 0%, rgba(255,255,255,0.1) 100%);
-    }
-  `;
-  document.head.appendChild(el);
-}
+const scrubberSliderClass = css`
+  & {
+    -webkit-appearance: none;
+    appearance: none;
+    width: 100%;
+    height: 6px;
+    border-radius: 3px;
+    outline: none;
+    cursor: pointer;
+    margin: 0;
+  }
+  &::-webkit-slider-thumb {
+    -webkit-appearance: none;
+    appearance: none;
+    width: 14px;
+    height: 14px;
+    border-radius: 50%;
+    background: var(--xray-accent, #636efa);
+    border: 2px solid rgba(0, 0, 0, 0.4);
+    box-shadow: 0 0 8px var(--xray-accent-glow, rgba(99, 110, 250, 0.4));
+    cursor: pointer;
+    transition: transform 0.1s ease;
+  }
+  &::-webkit-slider-thumb:hover {
+    transform: scale(1.2);
+  }
+  &::-moz-range-thumb {
+    width: 14px;
+    height: 14px;
+    border-radius: 50%;
+    background: var(--xray-accent, #636efa);
+    border: 2px solid rgba(0, 0, 0, 0.4);
+    box-shadow: 0 0 8px var(--xray-accent-glow, rgba(99, 110, 250, 0.4));
+    cursor: pointer;
+  }
+  &::-moz-range-track {
+    height: 6px;
+    border-radius: 3px;
+    background: linear-gradient(90deg, rgba(255, 255, 255, 0.06) 0%, rgba(255, 255, 255, 0.1) 100%);
+  }
+`;
 
 const pillStyle = (active: boolean, color: string): React.CSSProperties => ({
   display: 'inline-flex', alignItems: 'center', gap: 3,
@@ -422,8 +432,6 @@ const MergeScrubber: React.FC<{
   const items = mode === 'logs' ? logEvents : samples;
   const count = items.length;
   const sliderRef = useRef<HTMLInputElement>(null);
-
-  useEffect(() => { ensureScrubberStyles(); }, []);
 
   // Keyboard navigation
   useEffect(() => {
@@ -550,7 +558,7 @@ const MergeScrubber: React.FC<{
         <input
           ref={sliderRef}
           type="range"
-          className="merge-scrubber-slider"
+          className={scrubberSliderClass}
           min={0}
           max={count - 1}
           value={clampedIdx}
@@ -566,4 +574,3 @@ const MergeScrubber: React.FC<{
     </div>
   );
 };
-
