@@ -31,19 +31,19 @@ Background on the ClickHouse system tables and concepts that TraceHouse relies o
 | OpenTelemetry spans | `system.opentelemetry_span_log` | MergeTree | All |
 | Crash records | `system.crash_log` | MergeTree | Server |
 
-**Virtual tables** are computed from in-memory state - free to query.
+**Virtual tables** expose current state. Query cost depends on the table, row count, and computation required.
 **MergeTree tables** (the `*_log` tables) are persisted and grow over time - they need TTL management.
 
 ## Observability Tiers
 
 ### Tier 1: Server-Wide Metrics
-Global counters and gauges. Cheap to collect, always available. Tells you "how is the server doing" but not "who is responsible."
+Global counters and gauges describe server-wide resource usage without attribution to individual operations.
 
 ### Tier 2: Per-Table Metrics
-Part counts, sizes, merge activity per table. Available from virtual tables. Tells you "which tables are hot."
+Part counts, sizes, and merge activity describe workload and storage at table level.
 
 ### Tier 3: Per-Operation Metrics
-Per-query ProfileEvents, per-merge CPU/IO from part_log. The most detailed level. Tells you "this specific query used X CPU."
+Per-query ProfileEvents and per-merge CPU/I/O from `part_log` attribute recorded resource usage to individual operations.
 
 ## ProfileEvents
 

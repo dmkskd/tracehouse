@@ -40,7 +40,7 @@ The lineage visualization traces the full lifecycle of parts over time:
 3. Mutations rewrite parts in place, creating new versions
 4. The resulting hierarchy shows the progression from many small parts to fewer large ones
 
-This makes it easy to see how ClickHouse decides what to merge and when, and to spot problems like:
+Use the recorded lineage to inspect merge outcomes and investigate conditions such as:
 - Parts not merging (too many small parts accumulating)
 - Unbalanced merge trees (some partitions merging faster than others)
 - Stuck mutations blocking normal merge progress

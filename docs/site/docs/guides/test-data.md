@@ -51,7 +51,7 @@ just generate-data-quick
 
 ### Heavy Generate (Merge Stress Test)
 
-To generate lots of merge activity:
+To generate a sustained merge workload:
 
 ```bash
 just generate-data-heavy
@@ -275,5 +275,5 @@ CH_ASSUME_YES=true just generate-data
 ```
 
 :::info
-By default, all CLI tools automatically look for a `.env` file in the repo root. If no `.env` is found and no `CH_ENV_FILE` is set, the tools fall back to built-in defaults (`localhost:9000`, user `default`, no password) - which works out of the box for local Docker Compose or Local Binary setups.
+By default, all CLI tools automatically look for a `.env` file in the repo root. If no `.env` is found and no `CH_ENV_FILE` is set, the tools fall back to built-in defaults (`localhost:9000`, user `default`, no password) - which matches the local Docker Compose and Local Binary defaults.
 :::

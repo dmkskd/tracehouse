@@ -1,6 +1,6 @@
 # Getting Started
 
-:::caution Early Stage
+:::caution[Early Stage]
 TraceHouse is under heavy development and breaking changes are expected. Saved connections, dashboards, and queries are stored in your browser and may be affected by updates.
 :::
 
@@ -17,7 +17,7 @@ TraceHouse is available as a Grafana app plugin, a standalone application, or a 
 
 All options require a modern web browser. If you are unsure whether your ClickHouse endpoint supports browser connections, see [Connecting to ClickHouse](./guides/connecting#cors-proxy) for an explanation of CORS and the available proxy options.
 
-If you already use Grafana, the Grafana app plugin is the easiest option. Otherwise, use the standalone app unless your ClickHouse HTTP endpoint already allows browser requests.
+If you already use Grafana, use the Grafana app plugin. Otherwise, use the standalone app unless your ClickHouse HTTP endpoint already allows browser requests.
 
 ## Option 1: Install the Grafana App Plugin
 
@@ -61,7 +61,7 @@ tar -xzf "tracehouse-${PLATFORM}.tar.gz"
 
 Open [http://localhost:8990](http://localhost:8990), add your ClickHouse connection, and connect.
 
-:::warning Before Sharing a Deployment
+:::warning[Before Sharing a Deployment]
 The standalone app does not provide user authentication or TLS. It is safe to bind locally for personal use. Before exposing it to a network, restrict access or put it behind an authenticated HTTPS reverse proxy, and always connect with a read-only ClickHouse account.
 :::
 
@@ -74,7 +74,7 @@ The single-file build runs entirely in your browser:
 - [Try TraceHouse online](https://dmkskd.github.io/tracehouse-assets/tracehouse.html)
 - [Download `tracehouse.html`](https://github.com/dmkskd/tracehouse/releases/latest/download/tracehouse.html) and open it locally
 
-:::caution CORS Required
+:::caution[CORS Required]
 The HTML build connects directly from your browser to ClickHouse. Your ClickHouse HTTP endpoint must return suitable CORS headers. If it does not, use the standalone app or Grafana plugin instead.
 
 ClickHouse Cloud supports browser connections. Many self-managed, Kubernetes, and hosted ClickHouse environments do not enable CORS by default.

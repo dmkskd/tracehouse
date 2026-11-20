@@ -1,28 +1,28 @@
 # Polling & Performance
 
-:::caution Work In Progress
+:::caution[Work In Progress]
 The tiered polling model described below is planned but not yet fully implemented.
 :::
 
-Reference for every polling interval in the app - what each page queries, which system tables are hit, and the load impact.
+Proposed polling intervals, source tables, and query-cost considerations.
 
 ## Polling Tiers
 
 | Tier | Interval | Tables | Cost |
 |------|----------|--------|------|
-| Tier 1 (live state) | 2–5s | `asynchronous_metrics`, `metrics`, `processes`, `merges`, `mutations` | Near-zero (all virtual) |
+| Tier 1 (live state) | 2–5s | `asynchronous_metrics`, `metrics`, `processes`, `merges`, `mutations` | In-memory state reads; cost depends on cardinality and query shape |
 | Tier 2 (recent completed) | 30s | `query_log`, `part_log`, `events` (deltas) | MergeTree reads, small time windows |
 | Tier 3 (structural) | 60s | `parts`, `disks`, `replicas`, `dictionaries` | Virtual or light aggregation |
 
 ## Total Overhead
 
-~10 lightweight read-only queries per 30-second cycle. All are `SELECT` statements against `system.*` tables.
+The proposed model targets approximately 10 read-only queries per 30-second cycle; this is a design estimate, not a measurement. All are `SELECT` statements against `system.*` tables.
 
 ## System Table Types
 
 | Type | Examples | Cost |
 |------|----------|------|
-| Virtual | `metrics`, `processes`, `merges`, `parts` | Computed from in-memory state - free |
+| Virtual | `metrics`, `processes`, `merges`, `parts` | Current state reads; cost varies by table and query |
 | MergeTree | `query_log`, `part_log`, `metric_log` | Persisted, grow over time, need TTL management |
 
 ## Per-Page Breakdown

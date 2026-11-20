@@ -69,13 +69,13 @@ The system runs all three and compares them to produce an interpretation:
 
 Series with weak overall correlation are checked with a rolling window to find localized bursts where the metrics temporarily move together.
 
-Overlay lines are dimmed by correlation strength: strongly correlated series stay bright, weakly correlated ones fade out, so patterns are visible at a glance.
+Overlay lines are dimmed by correlation strength: strongly correlated series stay bright, weakly correlated ones fade out, to emphasize the more strongly correlated series.
 
 ## Surfaces
 
 <FeatureVideo src="analytics-surfaces-1920.mp4" />
 
-:::caution Experimental
+:::caution[Experimental]
 Requires the experimental features toggle in Settings. We are evaluating which composition of resource metrics, combined on a surface, best exposes critically stressed resources at both the system and table level. The surfaces shown here are still being refined.
 :::
 
@@ -101,7 +101,7 @@ The nine resource channels are:
 
 Each channel is independently normalized to [0, 1], so the surface reveals the *shape* of stress across dimensions rather than absolute values. The color scale runs from deep blue (idle) through green and yellow to red and magenta (peak stress).
 
-Insert activity appears as blue markers below the surface, sized by inserted rows. Merge activity appears as orange markers at the far edge, sized by merge count. This makes it easy to spot recurring stress patterns (e.g. a batch job that spikes CPU every hour) or correlate insert bursts with merge storms.
+Insert activity appears as blue markers below the surface, sized by inserted rows. Merge activity appears as orange markers at the far edge, sized by merge count. These markers support comparison of recurring resource peaks, insert activity, and merge activity.
 
 Controls: time range picker (15 minutes to 30 days), database/table selector.
 

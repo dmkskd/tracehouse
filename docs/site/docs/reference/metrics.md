@@ -15,7 +15,7 @@ Total CPU = Query CPU + Merge CPU + Mutation CPU + Other
 | Per-merge CPU | Heuristic: ~1.5 cores per active merge from `system.merges` | `part_log` → ProfileEvents (MergeParts) |
 | Per-mutation CPU | Heuristic: ~1.0 cores per active mutation from `system.merges` (is_mutation=1) | `part_log` → ProfileEvents (MutatePart) |
 
-:::note The Merge CPU Gap
+:::note[The Merge CPU Gap]
 `system.merges` has no ProfileEvents. Live merge CPU is estimated using: `active_merge_count × estimated_cores_per_merge`. Actual CPU data comes from `system.part_log` for completed merges.
 :::
 
@@ -26,7 +26,7 @@ RSS = Query memory + Merge memory + Mark cache + Uncompressed cache
     + Primary keys + Dictionaries + Other
 ```
 
-"Other" includes jemalloc overhead, fragmentation, memory-mapped files, and anything not tracked by the categories above (`RSS - sum(tracked)`). All tracked components are directly queryable from virtual tables (zero-cost reads).
+"Other" includes jemalloc overhead, fragmentation, memory-mapped files, and anything not tracked by the categories above (`RSS - sum(tracked)`). Tracked components are read from virtual tables; query cost depends on the table and aggregation.
 
 ## I/O Attribution
 

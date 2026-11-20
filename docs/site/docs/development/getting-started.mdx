@@ -6,7 +6,7 @@ This guide is for contributors working with the TraceHouse source code. For inst
 
 ## Source-Based Docker Demo
 
-The fastest way to run the current source with a local ClickHouse requires Git and Docker:
+To build the current source and run it with a local ClickHouse instance, install Git and Docker, then run:
 
 ```bash
 git clone https://github.com/dmkskd/tracehouse.git
@@ -42,7 +42,7 @@ The ClickHouse data is kept in a Docker volume between runs.
 - **Python 3.10+ and uv** - required for test-data and workload scripts
 - **Kind and kubectl** - required only for Kubernetes development
 
-:::tip Bootstrap Script
+:::tip[Bootstrap Script]
 `./scripts/setup.sh --check` reports missing tools without changing your system.
 
 `./scripts/setup.sh` can install missing dependencies and then offers to install the npm workspace dependencies. On macOS it uses Homebrew and may install Homebrew if it is not present.
@@ -90,7 +90,7 @@ For the usual development environment:
 just docker-start
 ```
 
-:::tip Full Development Stack
+:::tip[Full Development Stack]
 `just start` starts the frontend and the full Docker Compose profile, including ClickHouse, MinIO, Prometheus, Grafana, Tempo, and the locally built Grafana plugin.
 :::
 

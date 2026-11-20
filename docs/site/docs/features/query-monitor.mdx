@@ -18,7 +18,7 @@ Live view of all currently executing queries from `system.processes`:
 
 ## Query Analytics
 
-Drill into any query to understand exactly where time and resources were spent. The analytics view decomposes a single query into its resource dimensions - helping you spot whether a query is I/O-bound, CPU-bound, or simply reading too much data.
+Open a query to inspect its recorded resource usage. The analytics view breaks down CPU, I/O, and rows read to support investigation of execution time and scan efficiency.
 
 - **Read profile** - rows read, bytes read, marks read
 - **Write profile** - rows written, bytes written
@@ -36,7 +36,7 @@ The pruning score combines both stages: `1 − (parts surviving partition prunin
 
 The query analytics includes a flamegraph view powered by [Speedscope](https://www.speedscope.app/) for visualizing query execution.
 
-:::note ClickHouse Cloud
+:::note[ClickHouse Cloud]
 On ClickHouse Cloud, introspection functions are disabled by default. You need to enable them before flamegraph data can be collected.
 
 Per session:
@@ -54,8 +54,8 @@ ALTER ROLE my_role SETTINGS allow_introspection_functions = 1;
 
 ## Health Map
 
-:::caution Experimental
-Requires the experimental features toggle in Settings. This is an early exploration - we are still figuring out which signals and hierarchy best surface actionable query health at a glance.
+:::caution[Experimental]
+Requires the experimental features toggle in Settings. The query health signals and their visual hierarchy are experimental and may change.
 :::
 
 The **Health Map** tab shows an interactive sunburst that summarizes the overall health of query activity. The center ring shows a single green/yellow/red health state. Outer rings break this down by category - running query load, recent history patterns, concurrency slot usage - and then into individual queries at the leaf level.

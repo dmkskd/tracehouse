@@ -131,12 +131,12 @@ function HeroSection(): ReactNode {
         <h1 className="hero-title">
           <span>TraceHouse</span>
           <br />
-          ClickHouse monitoring under one roof
+          ClickHouse monitoring and resource analysis
         </h1>
         <p>
           An open-source tool to visually explore and monitor ClickHouse.
           <br />
-          Resource attribution, merge activity, query performance, and engine internals in one place.
+          Inspect resource attribution, merge activity, query performance, and engine internals.
         </p>
         <div className="hero-buttons">
           <Link className="button button--primary button--lg" to="/docs/getting-started">

@@ -1,4 +1,5 @@
 import React, { useEffect, useState } from 'react';
+import Link from '@docusaurus/Link';
 import useDocusaurusContext from '@docusaurus/useDocusaurusContext';
 
 type FAQItem = {
@@ -17,7 +18,7 @@ const faqItems: FAQItem[] = [
   {
     title: 'Does TraceHouse require any changes to my ClickHouse configuration?',
     description:
-      <>TraceHouse only runs read-only queries against system tables. On connect it probes the server for available capabilities (log tables, introspection functions, profiler settings, cluster topology, Keeper, Cloud mode) and gracefully disables features that aren't available. Some features (e.g. query profiling, trace_log) may require enabling specific settings on your server. See <a href="/docs/guides/connecting">Connecting to ClickHouse</a> for details.</>,
+      <>The monitoring views read ClickHouse system tables. Optional sampling setup creates tables and writes sample data. On connect it probes the server for available capabilities (log tables, introspection functions, profiler settings, cluster topology, Keeper, Cloud mode) and disables features that aren't available. Some features (e.g. query profiling, trace_log) may require enabling specific settings on your server. See <Link to="/docs/guides/connecting">Connecting to ClickHouse</Link> for details.</>,
   },
   {
     title: 'Which ClickHouse versions are supported?',
@@ -42,7 +43,7 @@ const faqItems: FAQItem[] = [
   {
     title: 'Is TraceHouse suitable for production use?',
     description:
-      <>TraceHouse only performs read-only queries over the HTTP interface, but we strongly recommend using a dedicated <strong>read-only</strong> ClickHouse account. We strongly suggest testing it against a staging or development cluster first. Pay attention to query load, memory usage, and network overhead that matter for your environment. That said, we haven't tested it at every scale. If you run into issues with large clusters or high-cardinality workloads, we'd love to hear about it.</>,
+      <>Use a dedicated <strong>read-only</strong> ClickHouse account for monitoring and evaluate query load, memory usage, and network overhead in a staging environment before production deployment. Optional sampling setup requires write permissions and creates persistent data. Performance has not been validated for every cluster size or workload.</>,
   },
 ];
 

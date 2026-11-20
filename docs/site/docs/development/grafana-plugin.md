@@ -8,7 +8,7 @@ All pages are available as Grafana navigation entries: Overview, Engine Internal
 
 ## Running with Docker
 
-The easiest way to run TraceHouse inside Grafana is with the full Docker Compose profile:
+To run TraceHouse inside Grafana using the full Docker Compose profile:
 
 ```bash
 just docker-start-full

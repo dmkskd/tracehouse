@@ -1,12 +1,12 @@
 # Connecting to ClickHouse
 
-TraceHouse connects to any ClickHouse instance over its HTTP interface. You bring your own cluster - the app just needs HTTP(S) access and read permissions on system tables.
+TraceHouse connects to ClickHouse over HTTP(S) and requires read access to the system tables used for monitoring.
 
 ## Supported Environments
 
 | Environment | CORS | Proxy needed | Notes |
 | --- | --- | --- | --- |
-| ClickHouse Cloud | Built-in | No | Works out of the box |
+| ClickHouse Cloud | Built-in | No | Direct browser access supported |
 | Self-managed (on-prem / VM) | Needs config | Usually yes | Enable CORS in ClickHouse config, or use the bundled proxy |
 | Kubernetes (Altinity Operator, ClickHouse Operator) | Needs config | Usually yes | Same as self-managed; ensure the HTTP interface is exposed |
 | Aiven for ClickHouse | No CORS | Yes | Use the bundled proxy and configure credentials in `.env` |
@@ -24,7 +24,7 @@ The `.env` file configures connection details for CLI scripts (`just generate-da
 
 When connecting to a ClickHouse instance that doesn't return CORS headers (common with self-managed and Aiven), the browser will block requests. The app routes these through a lightweight proxy that forwards them server-side. See [Deployment](./deployment.md) for the different ways to run TraceHouse with the proxy included.
 
-**Docker image** - the proxy is bundled and always active. No setup needed - just enter your ClickHouse host in the connection form and the proxy handles the rest.
+**Docker image** - the proxy is bundled and always active. Enter the ClickHouse host in the connection form; requests are routed through the bundled proxy.
 
 **Development / standalone** - the proxy starts automatically with `just frontend-start` on `localhost:8990`. To run it separately:
 
@@ -36,7 +36,7 @@ Then enable "Use CORS proxy" in the connection form and point it at `http://loca
 
 The proxy is a small Express server (`packages/proxy/`) that forwards requests to ClickHouse server-side and streams responses back with permissive CORS headers. It's completely stateless - connection details are passed in request headers on every call.
 
-:::tip Docker networking
+:::tip[Docker networking]
 When running the Docker image and connecting to ClickHouse on your host machine, use `host.docker.internal` instead of `localhost` as the host. Inside Docker, `localhost` refers to the container itself.
 :::
 
@@ -98,7 +98,7 @@ Screens that depend on a missing capability are either hidden or show a message 
 | **Query profiler** | Available | Needs config | Not available | Needs config |
 | **Flamegraphs** | Requires introspection functions | Requires introspection functions + profiler | Not supported (no `trace_log`) | Requires introspection functions + profiler |
 
-:::tip Aiven
+:::tip[Aiven]
 Aiven has significant system table restrictions that affect several features. Aiven also enforces a short TTL (typically 1 hour) on most system log tables - their recommended workaround is to create materialized views that copy log data into regular tables for longer retention. We are planning to support configurable system table locations so the app can read from those materialized views instead. See the dedicated [Aiven for ClickHouse](./aiven.md) guide for full details on limitations and workarounds.
 :::
 

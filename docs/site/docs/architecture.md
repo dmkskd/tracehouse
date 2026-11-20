@@ -7,9 +7,9 @@ TraceHouse is a fully static, client-side application. It doesn't need a backend
 This means:
 
 - You can serve it from any static file host (Nginx, S3, `file://`, etc.)
-- There is nothing to deploy, scale, or keep running on the server side
+- Direct browser mode requires static file hosting and a reachable ClickHouse HTTP endpoint
 - Connection credentials are managed in the browser. In direct mode they're sent straight to ClickHouse; in proxy mode they're forwarded via request headers through the local CORS proxy (which is stateless and stores nothing)
-- You can even build the whole app as a [single self-contained HTML file](./guides/deployment) that works from `file://`
+- The app can also be built as a [single self-contained HTML file](./guides/deployment) that works from `file://`
 
 The browser uses [`@clickhouse/client-web`](https://github.com/ClickHouse/clickhouse-js), the official ClickHouse JavaScript client for browser environments, to send SQL queries over HTTP or HTTPS and receive JSON results. When you enter a remote host in the connection form, the app defaults to HTTPS (port 8443). For localhost connections it defaults to plain HTTP (port 8123). You can override both the protocol and port manually.
 
@@ -27,7 +27,7 @@ Because the browser makes HTTP requests directly to ClickHouse, the ClickHouse s
 
 There are two ways to handle this:
 
-**Option 1 - ClickHouse has CORS enabled (simplest)**
+**Option 1 - ClickHouse has CORS enabled**
 
 If your ClickHouse instance returns the right `Access-Control-Allow-*` headers, the browser can talk to it directly. This is the case for:
 
@@ -60,7 +60,7 @@ The proxy is completely stateless - connection details (host, port, user, passwo
 
 ## Grafana App Plugin
 
-TraceHouse can be deployed as a Grafana app plugin (`grafana-app-plugin/`). The same static frontend is packaged and served inside Grafana, giving you the full monitoring experience without a separate deployment.
+TraceHouse can be deployed as a Grafana app plugin (`grafana-app-plugin/`). The same static frontend is packaged and served inside Grafana, with the frontend served by Grafana.
 
 Instead of connecting to ClickHouse directly via `@clickhouse/client-web`, the app routes all queries through the [Grafana ClickHouse data source plugin](https://grafana.com/grafana/plugins/grafana-clickhouse-datasource/) - an external plugin maintained by Grafana. This means:
 
@@ -88,7 +88,7 @@ before it reaches the ClickHouse adapter.
 
 ## Data Collection
 
-:::caution Work In Progress
+:::caution[Work In Progress]
 The tiered polling model described below is planned but not yet fully implemented.
 :::
 
@@ -96,15 +96,15 @@ The app collects data from ClickHouse system tables in three tiers:
 
 | Tier | Interval | Tables | Cost |
 |------|----------|--------|------|
-| Tier 1 (live state) | 2–5s | `asynchronous_metrics`, `metrics`, `processes`, `merges`, `mutations` | Near-zero (virtual tables) |
+| Tier 1 (live state) | 2–5s | `asynchronous_metrics`, `metrics`, `processes`, `merges`, `mutations` | In-memory state reads; cost depends on cardinality and query shape |
 | Tier 2 (recent completed) | 30s | `query_log`, `part_log`, `events` | Light MergeTree reads |
 | Tier 3 (structural) | 60s | `parts`, `disks`, `replicas`, `dictionaries` | Virtual or light aggregation |
 
-Total overhead: ~10 lightweight read-only queries per 30-second cycle.
+Total overhead: The proposed model targets approximately 10 read-only queries per 30-second cycle; this is a design estimate, not a measurement.
 
 ## Attribution Model
 
-The core innovation is resource attribution - breaking down aggregate metrics into per-actor contributions:
+Resource attribution breaks aggregate metrics down into contributions from queries, merges, and background operations:
 
 ```
 Total CPU = Query CPU + Merge CPU + Mutation CPU + Replication CPU + Other

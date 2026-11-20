@@ -6,7 +6,7 @@ The project uses [Vitest](https://vitest.dev/) across the entire monorepo. Tests
 
 ### Unit tests
 
-Pure logic tests with no external dependencies. These run instantly and cover things like SQL template resolution, query literal escaping, and pure computation helpers.
+Pure logic tests with no external dependencies. These cover SQL template resolution, query literal escaping, and pure computation helpers.
 
 ```
 packages/core/src/__tests__/cluster-service.test.ts
@@ -35,7 +35,7 @@ just test-frontend
 
 ### Backend integration tests (testcontainers)
 
-This is the most important test layer. Integration tests in `packages/core/src/__tests__/integration/` run against a real ClickHouse instance - either a [testcontainer](https://testcontainers.com/) (default) or an external server you provide.
+Integration tests in `packages/core/src/__tests__/integration/` run against a real ClickHouse instance - either a [testcontainer](https://testcontainers.com/) (default) or an external server you provide.
 
 Each test file spins up a fresh ClickHouse Docker container, creates databases and tables, inserts data to trigger real merges/mutations, and validates the service layer against actual system tables. Everything is torn down automatically after the test.
 
@@ -335,7 +335,7 @@ Browser-based e2e tests live in `packages/e2e/` and use [Playwright](https://pla
 | `connection.spec.ts` | "Add Connection" form flow and "Test Connection" button against real ClickHouse |
 | `connected-pages.spec.ts` | Overview metrics, Engine Internals, Explorer databases, Queries, Analytics - all with real data |
 
-The `connectedPage` fixture injects a ClickHouse connection via localStorage and **waits for actual data to arrive** (the refresh indicator must show "Just now" or "Xs ago", not "Connecting...") before handing the page to the test. This means tests that pass are genuinely connected and showing real ClickHouse data.
+The `connectedPage` fixture injects a ClickHouse connection via localStorage and **waits for actual data to arrive** (the refresh indicator must show "Just now" or "Xs ago", not "Connecting...") before handing the page to the test. This fixture verifies that the page has received ClickHouse data before the test continues.
 
 ### Running
 

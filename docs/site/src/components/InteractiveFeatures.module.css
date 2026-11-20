@@ -33,6 +33,16 @@
   margin-bottom: 1rem;
 }
 
+.textContainer h2 a {
+  color: inherit;
+  text-decoration: none;
+}
+
+.textContainer h2 a:hover {
+  color: var(--ifm-color-primary);
+  text-decoration: none;
+}
+
 .imageContainer {
   flex: 1;
   display: flex;

@@ -4,7 +4,7 @@ import FeatureVideo from '@site/src/components/FeatureVideo';
 
 <FeatureVideo src="time-travel-1920.mp4" />
 
-A ClickHouse cluster is constantly busy - merges, mutations, replication, background moves - even when no user queries are running. Most users only think about their own queries, but all this background activity competes for the same CPU, memory, and I/O. Time Travel lets you see everything that was happening at any point in time, so you can understand what else might have affected your workload's performance.
+Background merges, mutations, replication, and data moves share CPU, memory, and I/O resources with user queries. Time Travel correlates recorded resource metrics with query and background activity to support historical workload analysis. Available history depends on the configured log tables, sampling sources, and retention.
 
 ## Timeline Chart
 
@@ -50,7 +50,7 @@ page and see more information.
 
 ## Navigator
 
-A 1-hour miniature timeline sits below the main chart, showing the full window at a glance. A draggable viewport indicator shows which portion you are viewing. Drag the viewport to scroll through time without changing zoom level.
+A 1-hour miniature timeline sits below the main chart, showing the full time window. A draggable viewport indicator shows which portion you are viewing. Drag the viewport to scroll through time without changing zoom level.
 
 ## Live Mode
 

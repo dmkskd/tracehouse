@@ -1,6 +1,6 @@
 # Deployment
 
-:::tip Use a Read-Only Account
+:::tip[Use a Read-Only Account]
 TraceHouse only reads from system tables. Always connect it with a read-only user to limit its access to the cluster.
 :::
 
@@ -17,7 +17,7 @@ TraceHouse can be deployed as a standalone binary, a Docker container, a single 
 | **Size**              | ~3 MB                  | ~200 MB                | ~1 MB                  | ~3 MB                           |
 | **Best for**          | Production / sharing   | Production deployments | Embedding / sharing    | Teams already using Grafana     |
 
-:::warning Resource Usage on Production Clusters
+:::warning[Resource Usage on Production Clusters]
 TraceHouse polls system tables at regular intervals to power its dashboards. While the overhead is typically small, the actual cost depends on your environment - some users are sensitive to network egress, others to CPU time or read I/O on shared clusters.
 
 After deploying, check the **Self-Monitoring dashboard** (Analytics > Self-Monitoring > TraceHouse Query Cost Details) to see exactly what the app is reading and how often. Different environments have different cost profiles, so review the numbers for your setup. We are constantly reviewing and improving the app's query efficiency.
@@ -27,7 +27,7 @@ See the [Polling Reference](/docs/reference/polling) for tuning intervals or dis
 
 ## Standalone Binary
 
-A single ~3 MB binary with the frontend and CORS proxy embedded. No runtime dependencies - just copy and run. Built with Rust using the `rust-embed` crate for asset embedding.
+A single ~3 MB binary with the frontend and CORS proxy embedded. The binary includes its runtime components. Built with Rust using the `rust-embed` crate for asset embedding.
 
 ### Download the Official Release
 
@@ -158,7 +158,7 @@ just build-single
 # Output: frontend/dist/tracehouse.html
 ```
 
-The single HTML file is the best format for embedding into other tools and workflows - it's what the standalone binary uses internally. It is also useful for sharing with colleagues, offline usage, and air-gapped environments.
+The standalone binary embeds the single HTML build, which can also be embedded into other tools and workflows. It is also useful for sharing with colleagues, offline usage, and air-gapped environments.
 
 :::note
 The single-file build connects directly from the browser (no proxy). Your ClickHouse instance must have CORS enabled, or you'll need to run the proxy separately (`just proxy-start`).
@@ -170,7 +170,7 @@ See [Building](../development/building) for details on the build process, bundle
 
 ## Grafana App Plugin
 
-The same app can be deployed as a Grafana app plugin. In this mode, queries are routed through the [Grafana ClickHouse data source plugin](https://grafana.com/grafana/plugins/grafana-clickhouse-datasource/) instead of connecting to ClickHouse directly - so users just pick an existing Grafana data source and Grafana handles auth, permissions, and connectivity.
+The same app can be deployed as a Grafana app plugin. In this mode, queries are routed through the [Grafana ClickHouse data source plugin](https://grafana.com/grafana/plugins/grafana-clickhouse-datasource/) instead of connecting to ClickHouse directly - users select a configured Grafana data source, which supplies authentication and connection settings. Requests use the current Grafana session and applicable permissions.
 
 ### Prerequisites
 

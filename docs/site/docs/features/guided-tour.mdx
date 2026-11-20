@@ -2,28 +2,28 @@ import FeatureVideo from '@site/src/components/FeatureVideo';
 
 # Guided Tour
 
-:::note Work in Progress
-TraceHouse is under active development. The initial focus has been on delivering features. The current phase is about stabilizing and polishing the existing functionality.
+:::note[Work in Progress]
+TraceHouse is under active development. Feature behavior and interfaces may change between releases.
 :::
 
-## Why TraceHouse
+## Monitoring and Investigation
 
-ClickHouse exposes detailed internals through its `system.*` tables - query logs, merge activity, resource usage, part metadata. You can query these directly or build Grafana dashboards on top of them. TraceHouse adds a more interactive UI specialized for ClickHouse - letting you drill from a cluster overview down to a specific query's resource footprint, or from a table's storage layout to the merges that shaped it. It's also a place to experiment with new visualizations that aren't practical to build in a general-purpose dashboarding tool.
+TraceHouse queries ClickHouse `system.*` tables for query logs, merge activity, resource usage, and part metadata. Its views connect cluster-level metrics to individual query resource usage and table storage layouts to recorded merge history.
 
-## What It's Good At
+## Investigation Workflows
 
 - **Understanding workload in real time**: see which queries, merges, and background tasks are consuming CPU, memory, and I/O right now
 - **Investigating specific queries or merges**: trace a slow query's resource footprint, or follow a merge from start to finish
 - **Exploring table structure and storage**: inspect parts, columns, compression ratios, and how data is physically organized
 - **Historical analysis**: look at past query patterns, merge throughput, and resource trends over time
 
-## What It's Not
+## Scope and Limitations
 
-TraceHouse is an observability and exploration tool, not a replacement for:
+TraceHouse focuses on ClickHouse monitoring and investigation:
 
-- **Alerting**: it won't page you at 3am (pair it with Grafana or your existing alerting stack for that)
-- **Cluster management**: it reads system tables, it doesn't manage configuration, users, or schema
-- **General-purpose dashboards**: it's purpose-built for ClickHouse internals, not arbitrary metrics
+- **Alerting**: configure notifications separately in Grafana or another alerting system.
+- **Cluster management**: server configuration, user administration, and schema management remain outside its scope.
+- **Dashboard data**: the built-in views focus on ClickHouse system tables and operational metrics.
 
 ## Features
 
@@ -31,7 +31,7 @@ TraceHouse is an observability and exploration tool, not a replacement for:
 
 <FeatureVideo src="time-travel-1920.mp4" />
 
-Replay your cluster's state at any point in the past. Time Travel lets you scrub through historical snapshots of CPU, memory, merges, and queries, useful for post-incident investigation or understanding how workload patterns change over the course of a day.
+Inspect recorded CPU, memory, merge, and query activity over time. Historical coverage depends on the available log tables, sampling sources, and retention settings.
 
 [Learn more →](./time-travel)
 
@@ -55,6 +55,6 @@ Watch merges as they happen and review past merge activity. See which tables are
 
 <FeatureVideo src="analytics-1920.mp4" />
 
-Aggregate query and merge data over time to spot trends. Which queries are getting slower? Which tables produce the most merge work? Analytics gives you the longer-term view that real-time monitoring can't.
+Aggregate query and merge data over time to compare query latency, per-table merge activity, and resource trends.
 
 [Learn more →](./analytics)
