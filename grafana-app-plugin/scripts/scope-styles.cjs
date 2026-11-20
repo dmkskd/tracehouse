@@ -12,7 +12,7 @@ function inKeyframes(rule) {
   return false;
 }
 
-/** Scope the compiled CSS module without adding specificity or removing layers. */
+/** Scope generated/shared CSS; preserve explicit source scopes and cascade layers. */
 module.exports = () => ({
   postcssPlugin: 'tracehouse-style-scope',
   OnceExit(root) {
@@ -63,13 +63,19 @@ module.exports = () => ({
             first &&
             ((first.type === 'attribute' && first.attribute === 'data-theme') ||
               (first.type === 'class' && ['theme-light', 'theme-dark'].includes(first.value)));
-          if (!nested) {
+          // Handwritten plugin CSS already names the local root. Tailwind and
+          // shared standalone styles still need their scope added here.
+          const explicitlyScoped = first?.toString().trim() === scope;
+          if (!nested && !explicitlyScoped) {
             const nodes = parseSelector(scope).map((node) => node.clone());
             if (rootSelector) first.replaceWith(...nodes);
             else if (themed) {
               first.spaces.before = '';
               selector.prepend(...nodes);
             } else {
+              // Leading list whitespace must not separate an exclusion from
+              // its pseudo-element (for example ", ::before").
+              first.spaces.before = '';
               selector.prepend(selectorParser.combinator({ value: ' ' }));
               selector.prepend(...nodes);
             }

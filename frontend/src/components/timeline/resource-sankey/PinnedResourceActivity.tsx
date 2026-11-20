@@ -9,13 +9,14 @@ import type { ResourceDataLoader, ResourceOperationOpen } from './resource-explo
 import { useResourceData } from './useResourceData';
 
 /** One materialized snapshot owns both the pin and its expanded view. Repinning remounts it. */
-export function PinnedResourceActivity({ data, atMs, mode, width, hiddenCategories, hostLabel, availableHosts, initialHosts, events, onViewEventDetails, onLoadResource, onOpenOperation, onUnpin }: {
+export function PinnedResourceActivity({ data, atMs, mode, width, hiddenCategories, hostLabel, availableHosts, initialHosts, events, onViewEventDetails, onLoadResource, onOpenOperation, onUnpin, eventPopupOpen = false }: {
   data: MemoryTimeline; atMs: number; mode: MetricMode; width: number;
   hiddenCategories?: ReadonlySet<OperationKind>; hostLabel?: string; availableHosts?: readonly string[];
   initialHosts?: readonly string[];
   events?: OperationalEvent[];
   onViewEventDetails?: (event: OperationalEvent) => void;
   onLoadResource?: ResourceDataLoader; onOpenOperation?: ResourceOperationOpen; onUnpin?: () => void;
+  eventPopupOpen?: boolean;
 }) {
   const [original] = useState(data);
   const [originHosts] = useState(() => initialHosts ? [...initialHosts] : undefined);
@@ -24,15 +25,21 @@ export function PinnedResourceActivity({ data, atMs, mode, width, hiddenCategori
   const resource = useResourceData(original, mode, atMs, hostLabel ?? originHosts, onLoadResource);
   const close = () => { setExploring(false); trigger.current?.focus(); };
   useEffect(() => {
-    if (exploring || !onUnpin) return;
+    if (exploring || eventPopupOpen || !onUnpin) return;
     const unpin = (event: KeyboardEvent) => {
       if (event.key === 'Escape' && !event.defaultPrevented && !document.querySelector('[role="dialog"][aria-modal="true"]')) {
-        event.preventDefault(); onUnpin();
+        const target = event.target instanceof Element ? event.target : null;
+        if (target?.closest('[role="combobox"][aria-expanded="true"], [aria-haspopup][aria-expanded="true"]')) return;
+        event.preventDefault();
+        event.stopPropagation();
+        onUnpin();
       }
     };
-    document.addEventListener('keydown', unpin);
-    return () => document.removeEventListener('keydown', unpin);
-  }, [exploring, onUnpin]);
+    // Handle the pin before Grafana's bubbling keyboard shortcuts can consume Escape.
+    // Dialogs, open event popups, and expanded controls handle their own dismissal.
+    document.addEventListener('keydown', unpin, true);
+    return () => document.removeEventListener('keydown', unpin, true);
+  }, [exploring, eventPopupOpen, onUnpin]);
   return <>
     <PinnedResourcePreview data={resource.source} atMs={atMs} mode={mode} width={width} hiddenCategories={hiddenCategories}
       onExplore={() => setExploring(true)} buttonRef={trigger} summary={resource.summary} />

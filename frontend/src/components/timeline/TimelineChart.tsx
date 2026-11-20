@@ -116,6 +116,11 @@ export const TimelineChart: React.FC<{
   hiddenCategories, queryHashActive, eventAnnotations = [], selectedEventId,
   onEventSelect, onEventPin, onUnpin, onClearEventSelection, onViewEventDetails, onEventPopupOpenChange, hostLabel, showPinnedActivity = true, onLoadResource, onExploreOperation, resourceSankeyEnabled = RESOURCE_SANKEY_ENABLED, resourceHosts, resourceInitialHosts, resourceEvents,
 }) => {
+  const [eventPopupOpen, setEventPopupOpen] = useState(false);
+  const handleEventPopupOpenChange = useCallback((open: boolean) => {
+    setEventPopupOpen(open);
+    onEventPopupOpenChange?.(open);
+  }, [onEventPopupOpenChange]);
   const pinnedActivity = resourceSankeyEnabled && pinnedMs !== null && showPinnedActivity
     && pinnedMs >= (zoomRange?.[0] ?? parseTimestamp(data.window_start))
     && pinnedMs <= (zoomRange?.[1] ?? parseTimestamp(data.window_end));
@@ -791,7 +796,7 @@ export const TimelineChart: React.FC<{
             onUnpin={onUnpin}
             onClearEventSelection={onClearEventSelection}
             onViewEventDetails={onViewEventDetails}
-            onPopupOpenChange={onEventPopupOpenChange}
+            onPopupOpenChange={handleEventPopupOpenChange}
           />
         </div>
       )}
@@ -997,7 +1002,7 @@ export const TimelineChart: React.FC<{
             ) : pinnedActivity ? (
               <PinnedResourceActivity key={`${pinnedMs}:${metricMode}:${hostLabel ?? ''}`} data={data} atMs={pinnedMs!} mode={metricMode} width={tooltipWidth - 28}
                 hiddenCategories={hiddenCategories} hostLabel={hostLabel} availableHosts={resourceHosts} initialHosts={resourceInitialHosts} events={resourceEvents} onViewEventDetails={onViewEventDetails}
-                onLoadResource={onLoadResource} onOpenOperation={onExploreOperation} onUnpin={onUnpin} />
+                onLoadResource={onLoadResource} onOpenOperation={onExploreOperation} onUnpin={onUnpin} eventPopupOpen={eventPopupOpen} />
             ) : (
               /* Hovering on empty space — show full breakdown */
               <>

@@ -3,6 +3,7 @@
 @import "tailwindcss/theme.css" layer(theme);
 @import "tailwindcss/utilities.css" layer(utilities);
 @import "./reset.css" layer(base);
+/* Shared standalone styles: scope-styles.cjs scopes these imports after expansion. */
 @import "../../frontend/src/styles/themes.css";
 @import "../../frontend/src/styles/page-tabs.css";
 @import "../../frontend/src/styles/dashboard-controls.css";
@@ -15,10 +16,10 @@
 @source "../../packages/ui-shared/src";
 @custom-variant dark (&:where(:local(.root)[data-theme="dark"], :local(.root)[data-theme="dark"] *));
 
-/* Use tailwind.config.js for content scanning */
-
-/* Import the frontend CSS variables and custom styles */
-:root {
+/* Handwritten plugin rules explicitly target the CSS module root.
+ * :where() keeps the scope at zero specificity; utility class names stay shared.
+ * The build also excludes marked Grafana controls from these rules. */
+:where(:local(.root)) {
   /* Dark theme as default */
   --bg-primary: #0d1117;
   --bg-secondary: #161b22;
@@ -47,41 +48,41 @@
 }
 
 /* Scrollbar styling */
-::-webkit-scrollbar {
+:where(:local(.root)) ::-webkit-scrollbar {
   width: 6px;
   height: 6px;
 }
 
-::-webkit-scrollbar-track {
+:where(:local(.root)) ::-webkit-scrollbar-track {
   background: transparent;
 }
 
-::-webkit-scrollbar-thumb {
+:where(:local(.root)) ::-webkit-scrollbar-thumb {
   background: rgba(255, 255, 255, 0.15);
   border-radius: 3px;
 }
 
-::-webkit-scrollbar-thumb:hover {
+:where(:local(.root)) ::-webkit-scrollbar-thumb:hover {
   background: rgba(255, 255, 255, 0.25);
 }
 
 /* Thin scrollbar for horizontal lists */
-.scrollbar-thin::-webkit-scrollbar {
+:where(:local(.root)) .scrollbar-thin::-webkit-scrollbar {
   width: 5px;
   height: 5px;
 }
 
-.scrollbar-thin::-webkit-scrollbar-thumb {
+:where(:local(.root)) .scrollbar-thin::-webkit-scrollbar-thumb {
   background: rgba(255, 255, 255, 0.2);
   border-radius: 3px;
 }
 
-.scrollbar-thin::-webkit-scrollbar-thumb:hover {
+:where(:local(.root)) .scrollbar-thin::-webkit-scrollbar-thumb:hover {
   background: rgba(255, 255, 255, 0.35);
 }
 
 /* Custom utility classes */
-.page-layout {
+:where(:local(.root)) .page-layout {
   min-height: 100%;
   padding: var(--page-padding);
   display: flex;
@@ -90,13 +91,13 @@
   background: var(--bg-primary);
 }
 
-.card {
+:where(:local(.root)) .card {
   background: var(--bg-card);
   border: 1px solid var(--border-primary);
   border-radius: 8px;
 }
 
-.card-header {
+:where(:local(.root)) .card-header {
   padding: 12px 16px;
   border-bottom: 1px solid var(--border-primary);
   font-weight: 600;
@@ -104,25 +105,25 @@
   color: var(--text-primary);
 }
 
-.card-body {
+:where(:local(.root)) .card-body {
   padding: 16px;
 }
 
-.stat-card {
+:where(:local(.root)) .stat-card {
   background: var(--bg-card);
   border: 1px solid var(--border-primary);
   border-radius: 8px;
   padding: 16px 20px;
 }
 
-.stat-value {
+:where(:local(.root)) .stat-value {
   font-size: 28px;
   font-weight: 600;
   color: var(--text-primary);
   line-height: 1.2;
 }
 
-.stat-label {
+:where(:local(.root)) .stat-label {
   font-size: 12px;
   color: var(--text-secondary);
   text-transform: uppercase;
@@ -130,7 +131,7 @@
   margin-top: 4px;
 }
 
-.badge {
+:where(:local(.root)) .badge {
   display: inline-flex;
   align-items: center;
   padding: 2px 8px;
@@ -142,37 +143,37 @@
   border: 1px solid var(--border-primary);
 }
 
-.badge-purple {
+:where(:local(.root)) .badge-purple {
   background: rgba(139, 92, 246, 0.15);
   color: var(--accent-secondary);
   border-color: rgba(139, 92, 246, 0.3);
 }
 
-.badge-blue {
+:where(:local(.root)) .badge-blue {
   background: rgba(88, 166, 255, 0.15);
   color: var(--accent-blue);
   border-color: rgba(88, 166, 255, 0.3);
 }
 
-.badge-green {
+:where(:local(.root)) .badge-green {
   background: rgba(63, 185, 80, 0.15);
   color: var(--accent-green);
   border-color: rgba(63, 185, 80, 0.3);
 }
 
-.badge-yellow {
+:where(:local(.root)) .badge-yellow {
   background: rgba(210, 153, 34, 0.15);
   color: var(--accent-yellow);
   border-color: rgba(210, 153, 34, 0.3);
 }
 
-.badge-red {
+:where(:local(.root)) .badge-red {
   background: rgba(248, 81, 73, 0.15);
   color: var(--accent-red);
   border-color: rgba(248, 81, 73, 0.3);
 }
 
-.btn {
+:where(:local(.root)) .btn {
   display: inline-flex;
   align-items: center;
   justify-content: center;
@@ -187,23 +188,23 @@
   transition: all 0.15s ease;
 }
 
-.btn:hover {
+:where(:local(.root)) .btn:hover {
   background: var(--bg-hover);
   border-color: var(--text-muted);
 }
 
-.btn-primary {
+:where(:local(.root)) .btn-primary {
   background: var(--accent-primary);
   border-color: var(--accent-primary);
   color: white;
 }
 
-.btn-primary:hover {
+:where(:local(.root)) .btn-primary:hover {
   background: var(--accent-secondary);
   border-color: var(--accent-secondary);
 }
 
-.input {
+:where(:local(.root)) .input {
   width: 100%;
   padding: 8px 12px;
   font-size: 14px;
@@ -214,23 +215,23 @@
   transition: border-color 0.15s ease;
 }
 
-.input:focus {
+:where(:local(.root)) .input:focus {
   outline: none;
   border-color: var(--accent-primary);
   box-shadow: 0 0 0 3px rgba(139, 92, 246, 0.15);
 }
 
-.input::placeholder {
+:where(:local(.root)) .input::placeholder {
   color: var(--text-muted);
 }
 
 /* Table styles */
-.table {
+:where(:local(.root)) .table {
   width: 100%;
   border-collapse: collapse;
 }
 
-.table th {
+:where(:local(.root)) .table th {
   text-align: left;
   padding: 10px 12px;
   font-size: 12px;
@@ -242,19 +243,19 @@
   background: var(--bg-secondary);
 }
 
-.table td {
+:where(:local(.root)) .table td {
   padding: 10px 12px;
   font-size: 13px;
   color: var(--text-primary);
   border-bottom: 1px solid var(--border-secondary);
 }
 
-.table tr:hover td {
+:where(:local(.root)) .table tr:hover td {
   background: var(--bg-hover);
 }
 
 /* Nav styles */
-.nav-item {
+:where(:local(.root)) .nav-item {
   display: flex;
   align-items: center;
   padding: 10px 12px;
@@ -264,19 +265,19 @@
   cursor: pointer;
 }
 
-.nav-item:hover {
+:where(:local(.root)) .nav-item:hover {
   background: var(--bg-hover);
   color: var(--text-primary);
 }
 
-.nav-item.active {
+:where(:local(.root)) .nav-item.active {
   background: rgba(139, 92, 246, 0.15);
   color: var(--accent-secondary);
   border-left: 2px solid var(--accent-primary);
 }
 
 /* Highlight cards */
-.highlight-card {
+:where(:local(.root)) .highlight-card {
   display: flex;
   align-items: center;
   gap: 12px;
@@ -286,7 +287,7 @@
   border-radius: 8px;
 }
 
-.highlight-card .icon {
+:where(:local(.root)) .highlight-card .icon {
   width: 32px;
   height: 32px;
   display: flex;
@@ -296,23 +297,23 @@
   font-size: 16px;
 }
 
-.highlight-card .icon.green {
+:where(:local(.root)) .highlight-card .icon.green {
   background: rgba(63, 185, 80, 0.15);
   color: var(--accent-green);
 }
 
-.highlight-card .icon.purple {
+:where(:local(.root)) .highlight-card .icon.purple {
   background: rgba(139, 92, 246, 0.15);
   color: var(--accent-primary);
 }
 
-.highlight-card .icon.blue {
+:where(:local(.root)) .highlight-card .icon.blue {
   background: rgba(88, 166, 255, 0.15);
   color: var(--accent-blue);
 }
 
 /* Tabs */
-.tabs {
+:where(:local(.root)) .tabs {
   display: flex;
   gap: 4px;
   padding: 4px;
@@ -321,7 +322,7 @@
   border: 1px solid var(--border-primary);
 }
 
-.tab {
+:where(:local(.root)) .tab {
   padding: 6px 16px;
   font-size: 13px;
   font-weight: 600;
@@ -331,18 +332,18 @@
   transition: all 0.15s ease;
 }
 
-.tab:hover {
+:where(:local(.root)) .tab:hover {
   color: var(--text-primary);
 }
 
-.tab.active {
+:where(:local(.root)) .tab.active {
   background: var(--bg-primary);
   color: var(--text-primary);
   box-shadow: 0 1px 3px rgba(0, 0, 0, 0.1);
 }
 
 /* Section headers */
-.section-header {
+:where(:local(.root)) .section-header {
   font-size: 11px;
   font-weight: 600;
   color: var(--text-muted);
@@ -352,12 +353,12 @@
 }
 
 /* Custom tooltip styles */
-.tooltip-trigger {
+:where(:local(.root)) .tooltip-trigger {
   position: relative;
   cursor: help;
 }
 
-.tooltip-trigger::after {
+:where(:local(.root)) .tooltip-trigger::after {
   content: attr(data-tooltip);
   position: absolute;
   bottom: calc(100% + 8px);
@@ -379,7 +380,7 @@
   pointer-events: none;
 }
 
-.tooltip-trigger::before {
+:where(:local(.root)) .tooltip-trigger::before {
   content: '';
   position: absolute;
   bottom: calc(100% + 2px);
@@ -393,19 +394,19 @@
   z-index: 100001;
 }
 
-.tooltip-trigger:hover::after,
-.tooltip-trigger:hover::before {
+:where(:local(.root)) .tooltip-trigger:hover::after,
+:where(:local(.root)) .tooltip-trigger:hover::before {
   opacity: 1;
   visibility: visible;
 }
 
 /* Tooltip positioned below */
-.tooltip-trigger.tooltip-bottom::after {
+:where(:local(.root)) .tooltip-trigger.tooltip-bottom::after {
   bottom: auto;
   top: calc(100% + 8px);
 }
 
-.tooltip-trigger.tooltip-bottom::before {
+:where(:local(.root)) .tooltip-trigger.tooltip-bottom::before {
   bottom: auto;
   top: calc(100% + 2px);
   border-top-color: transparent;
@@ -413,7 +414,7 @@
 }
 
 /* Allow wrapping for longer tooltips */
-.tooltip-trigger.tooltip-wrap::after {
+:where(:local(.root)) .tooltip-trigger.tooltip-wrap::after {
   white-space: normal;
   width: max-content;
   max-width: 220px;
@@ -421,19 +422,19 @@
 }
 
 /* Prevent tooltip from causing container overflow */
-.tooltip-trigger.tooltip-left::after {
+:where(:local(.root)) .tooltip-trigger.tooltip-left::after {
   left: 0;
   transform: translateX(0);
 }
 
-.tooltip-trigger.tooltip-right::after {
+:where(:local(.root)) .tooltip-trigger.tooltip-right::after {
   left: auto;
   right: 0;
   transform: translateX(0);
 }
 
 /* Grafana plugin container styles */
-.grafana-app-container {
+:where(:local(.root)) {
   height: 100%;
   width: 100%;
   background: var(--bg-primary);
@@ -446,7 +447,7 @@
 }
 
 /* Portal scopes have no layout box, but provide the same inherited text defaults. */
-:root {
+:where(:local(.root)) {
   font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', 'Noto Sans', Helvetica, Arial, sans-serif;
   font-size: 14px;
   line-height: 1.5;

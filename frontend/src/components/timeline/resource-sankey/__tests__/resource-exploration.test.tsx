@@ -6,6 +6,7 @@ import { ResourceExplorationModal } from '../ResourceExplorationModal';
 import { explorationMeasurement, explorationServerSeries, resourceConsumers, groupResourceTables, groupResourceActivitiesByTable } from '../resource-exploration-model';
 import { TimelineChart } from '../../TimelineChart';
 import { PinnedResourcePreview } from '../PinnedResourcePreview';
+import { PinnedResourceActivity } from '../PinnedResourceActivity';
 
 const base = Date.parse('2026-11-17T11:30:00Z');
 const at = (seconds: number) => new Date(base + seconds * 1000).toISOString();
@@ -664,6 +665,60 @@ describe('pinned activity exploration', () => {
     render(<Chart />);
     fireEvent.keyDown(document, { key: 'Escape' });
     expect(screen.queryByTestId('pinned-activity')).not.toBeInTheDocument();
+  });
+  it('unpins before a host shortcut consumes Escape during bubbling', () => {
+    const hostShortcut = vi.fn((event: KeyboardEvent) => {
+      event.preventDefault();
+      event.stopImmediatePropagation();
+    });
+    document.body.addEventListener('keydown', hostShortcut);
+    try {
+      render(<Chart />);
+      fireEvent.keyDown(screen.getByRole('button', { name: 'Explore resource usage…' }), { key: 'Escape' });
+      expect(screen.queryByTestId('pinned-activity')).not.toBeInTheDocument();
+      expect(hostShortcut).not.toHaveBeenCalled();
+    } finally {
+      document.body.removeEventListener('keydown', hostShortcut);
+    }
+  });
+  it('leaves Escape to an open modal or expanded control', () => {
+    render(<Chart />);
+    const dialog = document.createElement('div');
+    dialog.setAttribute('role', 'dialog');
+    dialog.setAttribute('aria-modal', 'true');
+    document.body.append(dialog);
+    try {
+      fireEvent.keyDown(dialog, { key: 'Escape' });
+      expect(screen.getByTestId('pinned-activity')).toBeInTheDocument();
+    } finally {
+      dialog.remove();
+    }
+    const control = document.createElement('input');
+    control.setAttribute('role', 'combobox');
+    control.setAttribute('aria-expanded', 'true');
+    document.body.append(control);
+    try {
+      fireEvent.keyDown(control, { key: 'Escape' });
+      expect(screen.getByTestId('pinned-activity')).toBeInTheDocument();
+    } finally {
+      control.remove();
+    }
+    fireEvent.keyDown(document, { key: 'Escape' });
+    expect(screen.queryByTestId('pinned-activity')).not.toBeInTheDocument();
+  });
+  it('leaves Escape to the event popup until it closes and removes the listener on unmount', () => {
+    const unpin = vi.fn();
+    const activity = (eventPopupOpen: boolean) => <PinnedResourceActivity data={fixture()} atMs={base + 30000}
+      mode="cpu" width={300} onUnpin={unpin} eventPopupOpen={eventPopupOpen} />;
+    const view = render(activity(true));
+    fireEvent.keyDown(document, { key: 'Escape' });
+    expect(unpin).not.toHaveBeenCalled();
+    view.rerender(activity(false));
+    fireEvent.keyDown(document, { key: 'Escape' });
+    expect(unpin).toHaveBeenCalledOnce();
+    view.unmount();
+    fireEvent.keyDown(document, { key: 'Escape' });
+    expect(unpin).toHaveBeenCalledOnce();
   });
   it('does not duplicate the sticky activity in other split-view charts', () => {
     render(<Chart splitOwner={false} />);

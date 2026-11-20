@@ -1,18 +1,58 @@
-/* Reduced Preflight: the build scopes each selector and excludes Grafana controls. */
-*, ::before, ::after, ::backdrop, ::file-selector-button {
+/* Reduced Preflight, explicitly scoped to the CSS module root.
+ * The build excludes marked Grafana controls without adding specificity. */
+:where(:local(.root)) *,
+:where(:local(.root)) ::before,
+:where(:local(.root)) ::after,
+:where(:local(.root)) ::backdrop,
+:where(:local(.root)) ::file-selector-button {
   box-sizing: border-box;
   margin: 0;
   padding: 0;
   border: 0 solid;
 }
-h1, h2, h3, h4, h5, h6 { font-size: inherit; font-weight: inherit; }
-a { color: inherit; text-decoration: inherit; }
-b, strong { font-weight: bolder; }
-code, kbd, samp, pre { font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace; font-size: 1em; }
-small { font-size: 80%; }
-ol, ul, menu { list-style: none; }
-table { text-indent: 0; border-color: inherit; border-collapse: collapse; }
-button, input, select, optgroup, textarea, ::file-selector-button {
+:where(:local(.root)) h1,
+:where(:local(.root)) h2,
+:where(:local(.root)) h3,
+:where(:local(.root)) h4,
+:where(:local(.root)) h5,
+:where(:local(.root)) h6 {
+  font-size: inherit;
+  font-weight: inherit;
+}
+:where(:local(.root)) a {
+  color: inherit;
+  text-decoration: inherit;
+}
+:where(:local(.root)) b,
+:where(:local(.root)) strong {
+  font-weight: bolder;
+}
+:where(:local(.root)) code,
+:where(:local(.root)) kbd,
+:where(:local(.root)) samp,
+:where(:local(.root)) pre {
+  font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
+  font-size: 1em;
+}
+:where(:local(.root)) small {
+  font-size: 80%;
+}
+:where(:local(.root)) ol,
+:where(:local(.root)) ul,
+:where(:local(.root)) menu {
+  list-style: none;
+}
+:where(:local(.root)) table {
+  text-indent: 0;
+  border-color: inherit;
+  border-collapse: collapse;
+}
+:where(:local(.root)) button,
+:where(:local(.root)) input,
+:where(:local(.root)) select,
+:where(:local(.root)) optgroup,
+:where(:local(.root)) textarea,
+:where(:local(.root)) ::file-selector-button {
   font: inherit;
   letter-spacing: inherit;
   color: inherit;
@@ -20,9 +60,34 @@ button, input, select, optgroup, textarea, ::file-selector-button {
   background-color: transparent;
   opacity: 1;
 }
-button, input:where([type='button'], [type='reset'], [type='submit']), ::file-selector-button { appearance: button; }
-textarea { resize: vertical; }
-::placeholder { opacity: 1; color: color-mix(in oklab, currentColor 50%, transparent); }
-img, svg, video, canvas, audio, iframe, embed, object { display: block; vertical-align: middle; }
-img, video { max-width: 100%; height: auto; }
-[hidden]:where(:not([hidden='until-found'])) { display: none !important; }
+:where(:local(.root)) button,
+:where(:local(.root)) input:where([type='button'], [type='reset'], [type='submit']),
+:where(:local(.root)) ::file-selector-button {
+  appearance: button;
+}
+:where(:local(.root)) textarea {
+  resize: vertical;
+}
+:where(:local(.root)) ::placeholder {
+  opacity: 1;
+  color: color-mix(in oklab, currentColor 50%, transparent);
+}
+:where(:local(.root)) img,
+:where(:local(.root)) svg,
+:where(:local(.root)) video,
+:where(:local(.root)) canvas,
+:where(:local(.root)) audio,
+:where(:local(.root)) iframe,
+:where(:local(.root)) embed,
+:where(:local(.root)) object {
+  display: block;
+  vertical-align: middle;
+}
+:where(:local(.root)) img,
+:where(:local(.root)) video {
+  max-width: 100%;
+  height: auto;
+}
+:where(:local(.root)) [hidden]:where(:not([hidden='until-found'])) {
+  display: none !important;
+}

@@ -246,10 +246,12 @@ Do not resubmit based on assumptions.
 
 The plugin imports `src/styles.module.css`. Its exported `root` class is applied
 to the plugin container and to TraceHouse portal wrappers. Shared utility and
-component class names remain unchanged. A PostCSS step scopes the compiled
-selectors under `:where(:local(.root))`; css-loader resolves that local name to
-the CSS module's generated class. This is selector scoping through a CSS module,
-not Shadow DOM isolation.
+component class names remain unchanged. Handwritten rules in `styles.module.css`
+and `reset.css` explicitly start with `:where(:local(.root))`, including variable
+and scrollbar rules. A PostCSS step adds this scope to generated Tailwind rules
+and imported standalone styles; it preserves scopes already written in the source.
+css-loader resolves the local root to the CSS module's generated class. This is
+selector scoping through a CSS module, not Shadow DOM isolation.
 
 The scope and Grafana-control exclusion add zero specificity. Tailwind's cascade
 layers remain in their original relative order and receive plugin-specific names.
