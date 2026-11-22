@@ -37,7 +37,7 @@ export function ObjectGraphView({ graph, cards, columns, selected, onSelect, onF
     ? hoverConnected.has(from) && hoverConnected.has(to)
     : showAll || !selected || (connected.has(from) && connected.has(to));
   const byKey = new Map(graph.nodes.map(n => [n.key, n]));
-  const shown: { title?: string; band: LayoutColumn['band']; items: (GraphNode | string)[] }[] = columns.map(c => ({ title: c.title, band: c.band,
+  const shown: { title?: string; band: LayoutColumn['band']; notices?: string[]; items: (GraphNode | string)[] }[] = columns.map(c => ({ title: c.title, band: c.band, notices: c.notices,
     items: c.keys.flatMap((k): (GraphNode | string)[] => isWaypoint(k) || isGap(k) ? [k] : [byKey.get(k)].filter((n): n is GraphNode => !!n)) }));
   const nodes = shown.flatMap(c => c.items.filter((item): item is GraphNode => typeof item !== 'string'));
   const lanesWidth = shown.length * COLUMN_WIDTH + Math.max(0, shown.length - 1) * COLUMN_GAP;
@@ -124,6 +124,7 @@ export function ObjectGraphView({ graph, cards, columns, selected, onSelect, onF
           <div className="band-title">{bandStart ? BAND_TITLES[c.band] : '\u00a0'}</div>
           {/* Header strip: the column title, kept visible while the diagram scrolls. */}
           <div className="lane-title"><span>{c.title ?? '\u00a0'}</span></div>
+          {c.notices?.map(notice => <p key={notice} className="lane-notice">{notice}</p>)}
           <div className="lane-items">{c.items.map(item => typeof item !== 'string' ? tile(item)
             : isGap(item) ? <div key={item} className="slot" aria-hidden="true" />
             : <div key={item} className="waypoint" ref={element => { if (element) elements.current.set(item, element);else elements.current.delete(item); }} />)}</div>

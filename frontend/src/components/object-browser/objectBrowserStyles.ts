@@ -47,6 +47,7 @@ export const page = css`
   .lane-title { position: sticky; top: 0; z-index: 3; display: flex; align-items: center; gap: 6px; height: 28px; margin-bottom: 12px; padding: 0 10px; border-radius: 6px;
     background: var(--bg-tertiary); color: var(--text-primary); font-size: 12px; font-weight: 500; white-space: nowrap; overflow: hidden; }
   .lane-title > span:last-child { overflow: hidden; text-overflow: ellipsis; }
+  .lane-notice { margin: 0 0 12px; padding: 8px 10px; border: 1px dashed var(--border-primary); border-radius: 6px; font-size: 11px; line-height: 1.4; color: var(--text-muted); }
   .node { box-sizing: border-box; display: block; position: relative; z-index: 1; width: 100%; text-align: left; transition: opacity .15s, background .15s; }
   .node-select { display: block; width: 100%; border: 0; padding: 0; background: transparent; text-align: left; color: inherit; }
   .node-focus { position: absolute; top: 6px; right: 6px; padding: 0 5px; font-size: 11px; line-height: 18px; opacity: 0; transition: opacity .15s; }

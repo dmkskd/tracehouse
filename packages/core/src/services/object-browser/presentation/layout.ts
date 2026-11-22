@@ -1,4 +1,4 @@
-import type { GraphEdge, GraphNode, ObjectGraph, ObjectKind } from '../model/types.js';
+import type { Coverage, GraphEdge, GraphNode, ObjectGraph, ObjectKind, Source } from '../model/types.js';
 import { RELATIONSHIPS } from '../model/relationships.js';
 import { isAccessType, objectTypeOf, type ObjectType } from './cards.js';
 import { lineage } from '../projections/focus.js';
@@ -6,7 +6,8 @@ import { lineage } from '../projections/focus.js';
 /** Access configuration, ClickHouse data objects, and what lies outside ClickHouse. */
 export type LayoutBand = 'access' | 'data' | 'external';
 /** Column keys are object keys, plus `isGap` keys for empty rows and `isWaypoint` keys for lines. */
-export interface LayoutColumn { title?: string; band: LayoutBand; keys: string[] }
+/** `notices` explain what the column lacks, such as a source without SELECT (withSourceNotices). */
+export interface LayoutColumn { title?: string; band: LayoutBand; keys: string[]; notices?: string[] }
 /** Title shown once over the first column of each band. */
 export const BAND_TITLES: Record<LayoutBand, string> = { access: 'Access', data: 'Data', external: 'External' };
 const GAP = 'gap:';
@@ -159,6 +160,24 @@ export function layoutFocus(graph: ObjectGraph): LayoutColumn[] {
     const band = KIND_LAYOUT[kind.get(objects.find(k => kind.get(k) !== 'row-policy') ?? objects[0])!].band;
     return title ? { title, band, keys } : { band, keys };
   });
+}
+
+/** The kind whose catalog column shows a source's objects. Role assignments show with roles. */
+const SOURCE_KIND: Record<Source, ObjectKind> = {
+  users: 'user', roles: 'role', role_grants: 'role', grants: 'grant-scope', row_policies: 'row-policy', tables: 'table',
+};
+/** Coverage shown in the diagram's columns rather than with the other coverage notes. */
+export const isColumnNotice = (coverage: Coverage) => coverage.state === 'not-granted';
+/** Puts each not-granted source's reason in the catalog column of its objects, so an empty
+ * column says why. Access kinds have their own column; data kinds use the first data column. */
+export function withSourceNotices(columns: LayoutColumn[], coverage: Coverage[]): LayoutColumn[] {
+  const notices = new Map<number, string[]>();
+  for (const entry of coverage.filter(isColumnNotice)) {
+    const { lane, band } = KIND_LAYOUT[SOURCE_KIND[entry.source]];
+    const index = columns.findIndex(column => band === 'access' ? column.title === lane : column.band === band);
+    if (index >= 0) notices.set(index, [...notices.get(index) ?? [], entry.reason ?? entry.source]);
+  }
+  return columns.map((column, i) => notices.has(i) ? { ...column, notices: notices.get(i) } : column);
 }
 
 const WAYPOINT = 'waypoint:';

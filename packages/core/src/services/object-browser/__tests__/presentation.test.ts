@@ -5,7 +5,7 @@ import { privilegeGroup, privilegeTree } from '../model/privileges.js';
 import { objectKey } from '../model/types.js';
 import type { Attributes, Capture, ObjectKind, Relationship, Source } from '../model/types.js';
 import { describeObjects } from '../presentation/cards.js';
-import { isGap, isWaypoint, layoutCatalog, layoutFocus, routeEdges, withRoutes } from '../presentation/layout.js';
+import { isGap, isWaypoint, layoutCatalog, layoutFocus, routeEdges, withRoutes, withSourceNotices } from '../presentation/layout.js';
 import { essentialEdges, focusGraphFrom, searchGraph } from '../projections/focus.js';
 import { GUIDES, investigationFor } from '../presentation/guides.js';
 import { describeDetail } from '../presentation/details.js';
@@ -257,5 +257,22 @@ describe('diagram options', () => {
     // With routing off the layout passes through unchanged.
     expect(withRoutes(graph, layoutFocus(graph), false)).toEqual({ columns: layoutFocus(graph), routes: new Map() });
     expect(withRoutes(graph, layoutFocus(graph), true).routes.size).toBe(1);
+  });
+});
+
+describe('source notices', () => {
+  it('explains each not-granted source in the column its objects would fill', () => {
+    const table = { key: objectKey('c', 'table', 'db', 't'), kind: 'table' as ObjectKind, name: 'db.t', records: [], observedHosts: [], expectedHosts: [], differs: false, partial: false };
+    const columns = layoutCatalog({ nodes: [table], edges: [] }, null);
+    const missing = (source: Source) => ({ source, state: 'not-granted' as const, hosts: [], visibility: 'unknown' as const, reason: `Missing SELECT permission on system.${source}` });
+    const noticed = withSourceNotices(columns, [missing('users'), missing('role_grants'), missing('grants'), missing('row_policies'),
+      { source: 'tables', state: 'truncated', hosts: [], visibility: 'unknown', reason: 'Row limit 1000 reached; more rows exist.' }]);
+    expect(noticed.map(column => [column.title, column.notices ?? []])).toEqual([
+      ['Users', ['Missing SELECT permission on system.users']],
+      ['Roles', ['Missing SELECT permission on system.role_grants']],
+      ['Privileges', ['Missing SELECT permission on system.grants']],
+      // Row policies sit with the tables they filter; other coverage stays out of the columns.
+      [columns[3].title, ['Missing SELECT permission on system.row_policies']],
+    ]);
   });
 });

@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import { useUrlState } from '../../hooks/useUrlState';
-import { describeObjects, essentialEdges, layoutCatalog, withRoutes, objectKey, projectGraph, projectCatalogGraph, provenancePaths, searchGraph, withoutDefaultUser, type ObjectCard } from '@tracehouse/core/services/object-browser';
+import { describeObjects, essentialEdges, isColumnNotice, layoutCatalog, withRoutes, withSourceNotices, objectKey, projectGraph, projectCatalogGraph, provenancePaths, searchGraph, withoutDefaultUser, type ObjectCard } from '@tracehouse/core/services/object-browser';
 import { ObjectTypeIcon } from './ObjectCard';
 import { ObjectGraphView } from './ObjectGraphView';
 import { ModalWrapper } from '../../components/shared/ModalWrapper';
@@ -42,13 +42,17 @@ export function ObjectBrowserPage() {
   const catalogLayout = useMemo(() => {
     if (!searched) return { ...withRoutes(null, [], false), graph: null, stubs: [] as string[] };
     const drawn = lines.essential ? essentialEdges(searched.graph) : { graph: searched.graph, stubs: [] as string[] };
-    return { ...withRoutes(drawn.graph, layoutCatalog(drawn.graph, selectedKey), lines.route), ...drawn };
-  }, [searched, selectedKey, lines.route, lines.essential]);
+    // A source without SELECT is explained in the column its objects would fill.
+    const columns = withSourceNotices(layoutCatalog(drawn.graph, selectedKey), capture?.coverage ?? []);
+    return { ...withRoutes(drawn.graph, columns, lines.route), ...drawn };
+  }, [searched, selectedKey, lines.route, lines.essential, capture]);
   // Provenance paths answer the provenance question; a catalog capture has none to show.
   const paths = useMemo(() => capture && graph && capture.mode !== 'catalog' ? provenancePaths(graph,
     objectKey(capture.investigation.connection, 'user', capture.investigation.principal),
     objectKey(capture.investigation.connection, 'table', capture.investigation.database, capture.investigation.table)) : [], [capture, graph]);
   const chosen = graph?.nodes.find(n => n.key === selectedKey);
+  // Coverage not already shown in a diagram column.
+  const notes = capture?.coverage.filter(c => !isColumnNotice(c)) ?? [];
   const cards = useMemo(() => graph ? describeObjects(graph) : new Map<string, ObjectCard>(), [graph]);
   const focus = useObjectFocus(projectFor);
   const choose = (key: string | null) => {
@@ -86,13 +90,13 @@ export function ObjectBrowserPage() {
     {error && <p role="alert">Collection failed: {error}</p>}
     {loading && !capture && <ObjectsLoading />}
     {capture && graph && <>
-      {(capture.mode !== 'catalog' || capture.coverage.some(c => c.state !== 'readable' || c.reason)) && <div className="panel">
+      {(capture.mode !== 'catalog' || notes.some(c => c.state !== 'readable' || c.reason)) && <div className="panel">
         {/* Same trail shape as the focus header: the catalog is the way back. */}
         {capture.mode !== 'catalog' && <h2 className="scope-trail"><button className="focus-start" title="Back to the catalog" onClick={() => { setSelected(null);void browse(); }}>Catalog</button>
           <span className="focus-separator" aria-hidden="true">›</span>
           <span>Provenance · {capture.investigation.principal} → {capture.investigation.database}.{capture.investigation.table} · {capture.investigation.operation}</span></h2>}
-        <div className="coverage">{capture.coverage.filter(c => c.state !== 'readable').map(c => <span className="badge warn" key={c.source}>{c.source}: {c.state}</span>)}</div>
-        {capture.coverage.filter(c => c.reason).map(c => <p className="diagnostic" key={c.source}>{c.source}: {c.reason}</p>)}
+        <div className="coverage">{notes.filter(c => c.state !== 'readable').map(c => <span className="badge warn" key={c.source}>{c.source}: {c.state}</span>)}</div>
+        {notes.filter(c => c.reason).map(c => <p className="diagnostic" key={c.source}>{c.source}: {c.reason}</p>)}
       </div>}
       <div className="panel catalog-panel">
         <ObjectGraphView graph={catalogLayout.graph ?? graph} cards={cards} columns={catalogLayout.columns} routes={catalogLayout.routes} stubs={catalogLayout.stubs} highlight={lines.highlight} selected={selectedKey} onSelect={key => choose(key === selectedKey ? null : key)}

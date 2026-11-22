@@ -16,6 +16,19 @@ describe('object browser entry point', () => {
     expect(collect).not.toHaveBeenCalled();
     expect(screen.getByRole('button', { name: 'Refresh catalog' })).toBeTruthy();
   });
+  it('explains a source without SELECT in its column, not in the coverage notes', () => {
+    state.capture = {
+      schemaVersion: 1, mode: 'catalog', investigation: { connection: 'test', principal: '', database: '', table: '', operation: 'SELECT' },
+      startedAt: '', completedAt: '', hosts: [{ host: 'ch-1', version: '26.9.7.9' }], verdict: { kind: 'not-checked', reason: 'provenance' },
+      coverage: [{ source: 'users', state: 'not-granted', hosts: [], visibility: 'unknown', reason: 'Missing SELECT permission on system.users' }],
+      observations: [{ key: 'trips', name: 'trips', kind: 'table', source: 'tables', host: 'ch-1', attributes: {} }], relationships: [],
+    };
+    render(<ObjectBrowserPage />);
+    const lane = [...document.querySelectorAll('.lane')].find(element => element.querySelector('.lane-title')?.textContent === 'Users')!;
+    expect(lane.querySelector('.lane-notice')?.textContent).toBe('Missing SELECT permission on system.users');
+    expect(screen.queryByText('users: not-granted')).toBeNull();
+    expect(screen.queryByText(/^users: Missing SELECT/)).toBeNull();
+  });
   it('keeps navigation separate from explicit, transitive focus', () => {
     const observation = (key: string, kind: ObjectKind, source: Source) => ({ key, name: key, kind, source, host: 'ch-1', attributes: {} });
     state.capture = {
