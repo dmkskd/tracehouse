@@ -11,7 +11,7 @@ import { tagQuery } from '../../queries/builder.js';
 import { collectObjects } from '../../services/object-browser/collectors/collect.js';
 import { projectCatalogGraph, provenancePaths } from '../../services/object-browser/projections/graph.js';
 import { objectKey, type Capture } from '../../services/object-browser/model/types.js';
-import { describeDetail, loadDetailStatement } from '../../services/object-browser/presentation/details.js';
+import { describeDetail, loadDetailStatement, loadTableActivity } from '../../services/object-browser/presentation/details.js';
 
 /** Server extraction proof is deliberately separate from production-model coverage.
  * Run through the normal integration runner with an exact CLICKHOUSE_IMAGE. */
@@ -322,6 +322,28 @@ describe('Object browser metadata extraction', { tags: ['security', 'storage'] }
     // The observer fixture holds SHOW USERS; the denied user holds no SHOW privilege.
     await expect(loadDetailStatement(asUser(fixture.denied), statementsFor(objectKey(input.connection, 'user', fixture.alice))[0]))
       .rejects.toThrow(/privilege|ACCESS_DENIED/i);
+  });
+  it('counts the queries on a table from query_log, per kind and user, and links the latest query', async () => {
+    const graph = projectCatalogGraph(capture);
+    const activityOf = async (table: string) => {
+      const section = describeDetail(graph.nodes.find(n => n.key === objectKey(input.connection, 'table', fixture.db, table))!, graph)
+        .sections.find(s => s.kind === 'activity')!;
+      return (await loadTableActivity(adapter, section.statement, section.kind === 'activity' ? section.table : ''))!;
+    };
+    const count = (activity: Awaited<ReturnType<typeof activityOf>>, label: string) => activity.counts.find(c => c.label === label)!.value;
+    const alice = asUser(fixture.alice);
+    await alice.executeQuery(q(fixture.read));await alice.executeQuery(q(fixture.read));
+    await client.command({ query: 'SYSTEM FLUSH LOGS' });
+    const trips = await activityOf('trips');
+    expect(count(trips, 'SELECT')).toBeGreaterThanOrEqual(2);
+    expect(trips.topUsers.find(u => u.user === fixture.alice)!.queries).toBeGreaterThanOrEqual(2);
+    expect(trips.lastQueryAgo).toBe('just now');
+    // The latest query's id is one of alice's reads on the table.
+    const latestId = new URLSearchParams(trips.lastQueryUrl.split('?')[1]).get('qd_id');
+    const [latest] = await read(`SELECT user, query FROM system.query_log WHERE query_id = '${latestId}' AND type = 'QueryFinish'`);
+    expect(latest).toMatchObject({ user: fixture.alice });
+    // The fixture setup inserts into `samples`.
+    expect(count(await activityOf('samples'), 'INSERT')).toBeGreaterThanOrEqual(1);
   });
   it('does not report a restricted observer as an empty successful catalog', async () => {
     const restricted = await collectObjects(asUser(fixture.observer), input, { mode: 'catalog' });

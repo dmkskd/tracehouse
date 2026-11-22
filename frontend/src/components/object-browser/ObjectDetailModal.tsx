@@ -1,6 +1,6 @@
 import { css } from '@emotion/css';
 import { useState, type ReactNode } from 'react';
-import type { DetailLinks, DetailSection, ObjectDetail } from '@tracehouse/core/services/object-browser';
+import type { DetailLinks, DetailSection, ObjectDetail, TableActivity } from '@tracehouse/core/services/object-browser';
 import { ModalWrapper } from '../../components/shared/ModalWrapper';
 import { SqlHighlight } from '../common/SqlHighlight';
 import { ObjectTypeIcon } from './ObjectCard';
@@ -36,10 +36,47 @@ const styles = css`
   .relation-item:hover { color: var(--accent-blue, #58a6ff); text-decoration: underline; }
   .sep { color: var(--text-muted); }
   .detail-body h3 { font-size: 11px; font-weight: 600; letter-spacing: 0.05em; text-transform: uppercase; color: var(--text-muted); }
+  .stat-tiles { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 8px; margin-bottom: 12px; }
+  .stat-tile { display: flex; flex-direction: column; align-items: flex-start; gap: 2px; padding: 10px 12px; border: 1px solid var(--border-secondary); border-radius: 6px; background: var(--bg-secondary); text-align: left; font: inherit; color: var(--text-primary); }
+  button.stat-tile { cursor: pointer; }
+  button.stat-tile:hover { border-color: var(--border-accent); background: var(--bg-hover); }
+  .stat-value { font-size: 20px; font-weight: 600; font-variant-numeric: tabular-nums; line-height: 1.2; }
+  .stat-label { font-size: 11px; color: var(--text-muted); }
+  .stat-tile.zero .stat-value { color: var(--text-muted); }
+  .stat-tile.failed .stat-value { color: var(--accent-red, #e5534b); }
+  .stat-lines dd { font-family: inherit; }
+  .stat-count { font-variant-numeric: tabular-nums; color: var(--text-muted); }
   details summary { cursor: pointer; font-size: 12px; color: var(--text-secondary); margin: 6px 0; }
 `;
 
+const number = (value: number) => value.toLocaleString('en-US');
+/** Query counts as tiles, then when the last query ran and who queried most. Each count,
+ * user and the last query opens the Queries page on it. */
+function Activity({ activity, open }: { activity: TableActivity | null; open: (url: string) => void }) {
+  if (!activity) return <p className="muted">No queries in the last 24 hours.</p>;
+  return <>
+    <div className="stat-tiles">{activity.counts.map(({ label, value, description, url }) => {
+      const className = `stat-tile${value === 0 ? ' zero' : ''}${label === 'Failed' && value > 0 ? ' failed' : ''}`;
+      const body = <><span className="stat-value">{number(value)}</span><span className="stat-label">{label}</span></>;
+      return value === 0 ? <div key={label} className={className} title={description}>{body}</div>
+        : <button key={label} type="button" className={className} title={description} onClick={() => open(url)}>{body}</button>;
+    })}</div>
+    <dl className="stat-lines">
+      <dt>Last query</dt><dd><button type="button" className="relation-item" title={`${activity.lastQuery} (server time)`}
+        onClick={() => open(activity.lastQueryUrl)}>{activity.lastQueryAgo}</button></dd>
+      <dt>{activity.users === 1 ? 'User' : `Users (${number(activity.users)})`}</dt>
+      <dd className="stat-users">{activity.topUsers.map(({ user, queries, url }, i) => <span key={user}>
+        {i > 0 && <span className="sep" aria-hidden="true"> · </span>}
+        <button type="button" className="relation-item" title={`Queries by ${user}`} onClick={() => open(url)}>{user}</button>{' '}
+        <span className="stat-count">{number(queries)}</span></span>)}
+        {activity.users > activity.topUsers.length && <span className="muted"> · {number(activity.users - activity.topUsers.length)} more</span>}</dd>
+    </dl>
+  </>;
+}
+
 type SectionContext = { results: Record<string, StatementResult>; requested: ReadonlySet<string>; load: (sql: string) => void; title: string;
+  /** Navigates to another page. */
+  open: (url: string) => void;
   /** Opens the detail of another object. */
   select: (key: string) => void };
 type Renderers = { [K in DetailSection['kind']]: (section: Extract<DetailSection, { kind: K }>, context: SectionContext) => ReactNode };
@@ -47,6 +84,12 @@ type Renderers = { [K in DetailSection['kind']]: (section: Extract<DetailSection
 const SECTION_RENDERERS: Renderers = {
   facts: section => <><h3>{section.title}</h3>
     <dl>{section.facts.map((f, i) => <div key={i} style={{ display: 'contents' }}><dt>{f.label}</dt><dd>{f.value}</dd></div>)}</dl></>,
+  activity: (section, { results, open }) => {
+    const result = results[section.statement.sql];
+    return <><h3>{section.title}</h3>
+      {!result ? <p className="muted">Loading…</p> : 'error' in result ? <p className="error">Unavailable: {result.error}</p>
+        : 'activity' in result ? <Activity activity={result.activity} open={open} /> : null}</>;
+  },
   statement: (section, { results, requested, load }) => {
     const { sql, title, external } = section.statement;
     const result = results[sql];
@@ -54,7 +97,7 @@ const SECTION_RENDERERS: Renderers = {
       ? <button className="load-external" onClick={() => load(sql)}>Load · {external}</button> : <p className="muted">Loading…</p>;
     return <><h3>{title}</h3>
       {!result ? waiting : 'error' in result ? <p className="error">Unavailable: {result.error}</p>
-        : section.statement.highlight && result.text ? <SqlHighlight>{result.text}</SqlHighlight> : <pre>{result.text || '(empty)'}</pre>}</>;
+        : !('text' in result) ? null : section.statement.highlight && result.text ? <SqlHighlight>{result.text}</SqlHighlight> : <pre>{result.text || '(empty)'}</pre>}</>;
   },
   relationships: (section, { select }) => <><h3>{section.title}</h3>
     {section.groups.map(group => <div key={group.title} className="relation-group">
@@ -102,7 +145,8 @@ function Actions({ links, open }: { links: DetailLinks; open: (url: string) => v
 export function ObjectDetailModal({ detail, onClose, open, select }: { detail: ObjectDetail | null; onClose: () => void; open: (url: string) => void;
   select: (key: string) => void }) {
   const statements = detail?.sections.flatMap(s => s.kind === 'statement' ? [s.statement] : []) ?? [];
-  const { results, requested, load } = useDetailStatements(statements);
+  const activity = detail?.sections.flatMap(s => s.kind === 'activity' ? [{ statement: s.statement, table: s.table }] : []) ?? [];
+  const { results, requested, load } = useDetailStatements(statements, activity);
   const card = detail?.card;
   return <ModalWrapper isOpen={!!detail} onClose={onClose} ariaLabel="Object detail" maxWidth={900} backdropBackground="rgba(0, 0, 0, 0.3)" backdropBlur={0}>
     {detail && card && <div className={styles}>
@@ -112,7 +156,7 @@ export function ObjectDetailModal({ detail, onClose, open, select }: { detail: O
           <Actions key={`${card.qualifier ?? ''}.${card.title}`} links={detail.links} open={open} /></div>
         <button className="modal-close" aria-label="Close" title="Close (Esc)" onClick={onClose}>✕</button>
       </div>
-      <div className="detail-body">{detail.sections.map((section, i) => <section key={i}>{renderSection(section, { results, requested, load, title: card.title, select })}</section>)}</div>
+      <div className="detail-body">{detail.sections.map((section, i) => <section key={i}>{renderSection(section, { results, requested, load, title: card.title, select, open })}</section>)}</div>
     </div>}
   </ModalWrapper>;
 }

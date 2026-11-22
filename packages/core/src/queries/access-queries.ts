@@ -107,6 +107,37 @@ FROM system.tables WHERE database = {database} AND name = {table}`;
 export const OBJECT_TABLE_DDL_FORMATTED = `
 SELECT coalesce(formatQueryOrNull(create_table_query), create_table_query) AS statement
 FROM system.tables WHERE database = {database} AND name = {table}`;
+/** Queries that touched a table (`{table}` = `database.table`, as query_log.tables holds it) in the
+ * last 24 hours, per kind. A query counts once by initial_query_id, so a query through a
+ * Distributed table that fans out to the shards' local tables counts once, under its initial user.
+ * `top_users` holds up to 5 (user, queries) pairs, most queries first; `other_kinds` the query
+ * kinds counted in `other`; `last_query_id` the initial_query_id of the latest query. */
+export const OBJECT_TABLE_ACTIVITY = `
+SELECT
+  sum(selects) AS selects, sum(inserts) AS inserts, sum(other) AS other, sum(failed) AS failed,
+  count() AS users,
+  arraySlice(arrayReverseSort(pair -> pair.2, groupArray((user, total))), 1, 5) AS top_users,
+  arraySort(arrayDistinct(arrayFlatten(groupArray(kinds)))) AS other_kinds,
+  toString(toDateTime(max(latest))) AS last_query,
+  argMax(latest_id, latest) AS last_query_id,
+  toUnixTimestamp64Milli(max(latest)) AS last_query_ms,
+  dateDiff('second', toDateTime(max(latest)), now()) AS seconds_ago
+FROM (
+  SELECT initial_user AS user,
+    uniqExactIf(initial_query_id, query_kind = 'Select') AS selects,
+    uniqExactIf(initial_query_id, query_kind = 'Insert') AS inserts,
+    uniqExactIf(initial_query_id, query_kind NOT IN ('Select', 'Insert')) AS other,
+    uniqExactIf(initial_query_id, type IN ('ExceptionBeforeStart', 'ExceptionWhileProcessing')) AS failed,
+    groupUniqArrayIf(toString(query_kind), query_kind NOT IN ('Select', 'Insert')) AS kinds,
+    uniqExact(initial_query_id) AS total,
+    max(event_time_microseconds) AS latest,
+    argMax(initial_query_id, event_time_microseconds) AS latest_id
+  FROM {{cluster_aware:system.query_log}}
+  WHERE event_date >= yesterday() AND event_time >= now() - INTERVAL 1 DAY
+    AND type != 'QueryStart' AND has(tables, {table})
+  GROUP BY initial_user
+)
+HAVING users > 0`;
 /** Secrets stay hidden even where the server allows displaying them. */
 export const showCreateUser = (name: string) =>
   `SHOW CREATE USER ${ident(name)} SETTINGS format_display_secrets_in_show_and_select = 0`;

@@ -180,7 +180,7 @@ describe('object detail', () => {
     expect(statements(key('row-policy', DB, 'events', 'tenant'))).toEqual([`SHOW CREATE ROW POLICY \`tenant\` ON \`${DB}\`.\`events\``]);
     expect(statements(SCOPE)).toEqual([]);
     const mv = detail(table('events_to_minute_mv'));
-    expect(mv.sections.map(s => s.kind)).toEqual(['facts', 'statement', 'relationships', 'records']);
+    expect(mv.sections.map(s => s.kind)).toEqual(['facts', 'activity', 'statement', 'relationships', 'records']);
     // One row per wording from the view's side; names drop the shared database.
     expect(mv.sections.find(s => s.kind === 'relationships')).toMatchObject({ groups: [{ title: 'Data flow', rows: [
       { relation: 'Triggered by inserts into', items: [{ name: 'events', fullName: `${DB}.events` }] },

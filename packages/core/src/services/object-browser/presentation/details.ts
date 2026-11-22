@@ -1,5 +1,6 @@
-import { ICEBERG_SNAPSHOTS, OBJECT_TABLE_DDL, OBJECT_TABLE_DDL_FORMATTED, explainViewSources, showCreateRole, showCreateRowPolicy, showCreateUser, showGrantsFor } from '../../../queries/access-queries.js';
+import { ICEBERG_SNAPSHOTS, OBJECT_TABLE_ACTIVITY, OBJECT_TABLE_DDL, OBJECT_TABLE_DDL_FORMATTED, explainViewSources, showCreateRole, showCreateRowPolicy, showCreateUser, showGrantsFor } from '../../../queries/access-queries.js';
 import { buildQuery, tagQuery } from '../../../queries/builder.js';
+import { buildQueryLinkUrl } from '../../../utils/deep-link-resolution.js';
 import type { IClickHouseAdapter } from '../../../adapters/types.js';
 import { OWN_ACCESS, type GraphNode, type ObjectGraph, type Observation } from '../model/types.js';
 import { canonical } from '../model/canonical.js';
@@ -34,6 +35,8 @@ export interface DetailRelationGroup { title: DetailGroup; rows: DetailRelationR
 export type DetailSection =
   | { kind: 'facts'; title: string; facts: CardFact[] }
   | { kind: 'statement'; statement: DetailStatement }
+  /** Query activity read from the server when the detail opens (loadTableActivity). */
+  | { kind: 'activity'; title: string; statement: DetailStatement; table: string }
   | { kind: 'relationships'; title: string; groups: DetailRelationGroup[] }
   | { kind: 'records'; title: string; records: Observation[] };
 /** `links` open other pages filtered to the object; they belong with the title, not the sections. */
@@ -178,9 +181,12 @@ export function describeDetail(node: GraphNode, graph: ObjectGraph, options: { c
     if (value != null && !shown.has(label)) facts.push({ label, value: String(value) });
   }
   const groups = relationGroups(node, graph);
+  const [database, table] = nameParts(node);
   return { card, links: destinations, sections: [
     ...(node.differences?.length ? [{ kind: 'facts' as const, title: 'Differs across hosts', facts: hostDifferences(node) }] : []),
     ...(facts.length ? [{ kind: 'facts' as const, title: 'Summary', facts }] : []),
+    ...(node.kind === 'table' && table !== undefined && !node.records.some(r => r.attributes.unresolvedReference) ? [{ kind: 'activity' as const, title: 'Activity · last 24 hours',
+      statement: { title: 'Activity', sql: buildQuery(OBJECT_TABLE_ACTIVITY, { table: `${database}.${table}` }) }, table: `${database}.${table}` }] : []),
     ...statements[card.type](node).map(statement => ({ kind: 'statement' as const, statement })),
     ...(groups.length ? [{ kind: 'relationships' as const, title: 'Relationships', groups }] : []),
     { kind: 'records', title: 'Host records', records: node.records },
@@ -208,4 +214,40 @@ export async function loadDetailStatement(adapter: IClickHouseAdapter, statement
     if (!statement.fallbackSql || !/UNKNOWN_FUNCTION|Unknown function|Function with name .* does not exist|Code: 46\b/i.test(message)) throw error;
     return run(statement.fallbackSql);
   }
+}
+
+/** A table's queries in the last 24 hours; null when there were none. `lastQuery` is server
+ * time, `lastQueryAgo` the same as a distance ("1 h 40 min ago"). Each count has `url`: the
+ * Queries page over the last day, filtered to the table and to what the count counts;
+ * `lastQueryUrl` opens the latest query's detail. */
+export interface TableActivity {
+  counts: { label: 'SELECT' | 'INSERT' | 'Other' | 'Failed'; value: number; description: string; url: string }[];
+  users: number; topUsers: { user: string; queries: number; url: string }[];
+  lastQuery: string; lastQueryAgo: string; lastQueryUrl: string;
+}
+const ago = (seconds: number) => {
+  if (seconds < 60) return 'just now';
+  const minutes = Math.floor(seconds / 60) % 60, hours = Math.floor(seconds / 3600);
+  return hours === 0 ? `${minutes} min ago` : minutes === 0 ? `${hours} h ago` : `${hours} h ${minutes} min ago`;
+};
+const url = (path: string, params: [string, string][]) => `${path}?${new URLSearchParams(params).toString()}`;
+/** Reads a table's query activity (OBJECT_TABLE_ACTIVITY); `table` is `database.table`. */
+export async function loadTableActivity(adapter: IClickHouseAdapter, statement: DetailStatement, table: string): Promise<TableActivity | null> {
+  const [row] = await adapter.executeQuery<Record<string, unknown>>(tagQuery(statement.sql, 'TraceHouse:Objects:detail'));
+  if (!row) return null;
+  const queries = (...filters: [string, string][]) => url('/queries', [['timeRange', '1 DAY'], ['tableName', table], ...filters]);
+  const otherKinds = (row.other_kinds as string[]).map(kind => ['queryKind', kind] as [string, string]);
+  return {
+    counts: [
+      { label: 'SELECT', value: Number(row.selects), description: `SELECT queries on ${table}`, url: queries(['queryKind', 'Select']) },
+      { label: 'INSERT', value: Number(row.inserts), description: `INSERT queries on ${table}`, url: queries(['queryKind', 'Insert']) },
+      { label: 'Other', value: Number(row.other), description: `Other queries on ${table}: ${(row.other_kinds as string[]).join(', ') || 'none'}`,
+        url: queries(...otherKinds) },
+      { label: 'Failed', value: Number(row.failed), description: `Queries on ${table} that ended with an exception`, url: queries(['status', 'error']) },
+    ],
+    users: Number(row.users),
+    topUsers: (row.top_users as [string, unknown][]).map(([user, total]) => ({ user, queries: Number(total), url: queries(['user', user]) })),
+    lastQuery: String(row.last_query), lastQueryAgo: ago(Math.max(0, Number(row.seconds_ago))),
+    lastQueryUrl: buildQueryLinkUrl(String(row.last_query_id), Number(row.last_query_ms)),
+  };
 }
