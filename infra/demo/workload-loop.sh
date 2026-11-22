@@ -51,7 +51,7 @@ insert_loop() {
     run tracehouse-generate --mode append --skip-create || log "WARNING: generate exited with error"
     # Keep both MV stages active with bounded 100-row batches on each host.
     for object_host in "${CH_HOSTS[@]}"; do
-      CH_HOST=$object_host CH_CLUSTER= run tracehouse-objects append --yes || log "WARNING: object cascade append failed on $object_host"
+      CH_HOST=$object_host CH_CLUSTER= run tracehouse-objects append -y || log "WARNING: object cascade append failed on $object_host"
     done
     sleep 10
   done
@@ -65,7 +65,7 @@ wait_for_clickhouse
 # It persists between workload cycles and is separate from th_* traffic users.
 for object_host in "${CH_HOSTS[@]}"; do
   log "Preparing object and cascading-MV demo on $object_host"
-  CH_HOST=$object_host CH_CLUSTER= run tracehouse-objects setup --yes
+  CH_HOST=$object_host CH_CLUSTER= run tracehouse-objects setup -y
 done
 
 # Phase 1: Generate initial data (blocking — tables must exist before queries start)
