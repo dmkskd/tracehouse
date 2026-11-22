@@ -273,6 +273,38 @@ export const CAPABILITY_REGISTRY: CapabilityRegistryEntry[] = [
       { screen: 'Database Explorer', tab: 'Explorer', route: '/database', enables: 'Database listing and metadata', importance: 'required' },
     ],
   },
+  // Access definitions. The object browser shows the objects it can read and names
+  // each missing grant in the diagram column the objects would fill.
+  {
+    capabilityId: 'system_users',
+    consumers: [
+      { screen: 'Object Browser', tab: 'Objects', route: '/objects', enables: 'Users and their default roles', importance: 'optional' },
+    ],
+  },
+  {
+    capabilityId: 'system_roles',
+    consumers: [
+      { screen: 'Object Browser', tab: 'Objects', route: '/objects', enables: 'Roles', importance: 'optional' },
+    ],
+  },
+  {
+    capabilityId: 'system_role_grants',
+    consumers: [
+      { screen: 'Object Browser', tab: 'Objects', route: '/objects', enables: 'Role assignments to users and roles', importance: 'optional' },
+    ],
+  },
+  {
+    capabilityId: 'system_grants',
+    consumers: [
+      { screen: 'Object Browser', tab: 'Objects', route: '/objects', enables: 'Privileges and the tables they reach', importance: 'optional' },
+    ],
+  },
+  {
+    capabilityId: 'system_row_policies',
+    consumers: [
+      { screen: 'Object Browser', tab: 'Objects', route: '/objects', enables: 'Row policies and the tables they filter', importance: 'optional' },
+    ],
+  },
   {
     capabilityId: 'system_processes',
     consumers: [
