@@ -55,8 +55,13 @@ export interface GraphNode {
   observedHosts: string[];
   expectedHosts: string[];
   differs: boolean;
+  /** What differs between hosts when `differs`: record fields, and OWN_ACCESS when the
+   * object's own grants or role assignments differ. */
+  differences?: string[];
   partial: boolean;
 }
+/** `GraphNode.differences` entry for grants and role assignments that differ between hosts. */
+export const OWN_ACCESS = 'grants and roles';
 export interface GraphEdge {
   key: string;
   from: string;

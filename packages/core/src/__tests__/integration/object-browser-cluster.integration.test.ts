@@ -36,9 +36,10 @@ describe('Object browser real cluster collection', { tags: ['cluster', 'security
     const users = graph.nodes.filter(node => node.kind === 'user' && node.name === fixture.alice);
     expect(users).toHaveLength(1);expect(users[0].records).toHaveLength(2);
     expect(users[0].observedHosts).toHaveLength(2);
-    // Independent CREATE USER assigns different native IDs: this must be visible.
+    // Independent CREATE USER assigns different native IDs; each host keeps its own in the
+    // records, and the IDs alone do not make the user differ.
     expect(new Set(users[0].records.map(record => record.attributes.id)).size).toBe(2);
-    expect(users[0].differs).toBe(true);
+    expect(users[0].differs).toBe(false);
   });
   it('preserves both replicas on an actual nested-role provenance path', () => {
     const target = objectKey(input.connection,'table',fixture.db,'trips');

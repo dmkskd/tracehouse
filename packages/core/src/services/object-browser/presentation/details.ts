@@ -1,7 +1,8 @@
 import { ICEBERG_SNAPSHOTS, OBJECT_TABLE_DDL, explainViewSources, showCreateRole, showCreateRowPolicy, showCreateUser, showGrantsFor } from '../../../queries/access-queries.js';
 import { buildQuery, tagQuery } from '../../../queries/builder.js';
 import type { IClickHouseAdapter } from '../../../adapters/types.js';
-import type { GraphNode, ObjectGraph, Observation } from '../model/types.js';
+import { OWN_ACCESS, type GraphNode, type ObjectGraph, type Observation } from '../model/types.js';
+import { canonical } from '../model/canonical.js';
 import { REFERENCE_METHODS, type ReferenceMethod } from '../model/methods.js';
 import { RELATIONSHIPS } from '../model/relationships.js';
 import { analyzerTableNames } from '../collectors/references.js';
@@ -62,6 +63,26 @@ const statements: Record<ObjectType, Statements> = {
 const IDENTITY_FIELDS: [string, string][] = [['id', 'ID'], ['uuid', 'UUID'], ['engine', 'Engine'], ['storage', 'Storage'],
   ['primary_key', 'Primary key'], ['storage_policy', 'Storage policy']];
 
+const MAX_VALUE = 160;
+const shownValue = (value: unknown) => {
+  const text = value === undefined ? '(absent)' : typeof value === 'string' ? value : JSON.stringify(value);
+  return text.length > MAX_VALUE ? `${text.slice(0, MAX_VALUE)}…` : text;
+};
+/** One row per distinct value of each differing field, naming the hosts that hold it. */
+function hostDifferences(node: GraphNode): CardFact[] {
+  const resolved = node.records.filter(r => !r.attributes.unresolvedReference);
+  return (node.differences ?? []).flatMap(field => {
+    if (field === OWN_ACCESS) return [{ label: field, value: 'differ between hosts; see Relationships' }];
+    const groups = new Map<string, { value: unknown; hosts: string[] }>();
+    for (const r of resolved) {
+      const value = r.attributes[field], id = field in r.attributes ? canonical(value) : '';
+      const group = groups.get(id) ?? { value, hosts: [] };
+      group.hosts.push(r.host);groups.set(id, group);
+    }
+    return [...groups.values()].map((group, i) => ({ label: i === 0 ? field : '', value: `${group.hosts.sort().join(', ')}: ${shownValue(group.value)}` }));
+  });
+}
+
 /** Full detail for one object: type facts, server statements, relationships and host records. */
 export function describeDetail(node: GraphNode, graph: ObjectGraph): ObjectDetail {
   const { card, facts } = describeCard(node, graph);
@@ -81,6 +102,7 @@ export function describeDetail(node: GraphNode, graph: ObjectGraph): ObjectDetai
     ...(e.to === node.key ? [{ relation: e.label, direction: 'in' as const, key: e.from, name: names.get(e.from) ?? e.from, ...method(e) }] : []),
   ]);
   return { card, sections: [
+    ...(node.differences?.length ? [{ kind: 'facts' as const, title: 'Differs across hosts', facts: hostDifferences(node) }] : []),
     ...(facts.length ? [{ kind: 'facts' as const, title: 'Summary', facts }] : []),
     ...statements[card.type](node).map(statement => ({ kind: 'statement' as const, statement })),
     ...(relationships.length ? [{ kind: 'relationships' as const, title: 'Relationships', relationships }] : []),

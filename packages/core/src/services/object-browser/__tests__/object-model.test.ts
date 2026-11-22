@@ -141,12 +141,14 @@ it('rejects stale in-flight results and does not schedule the next probe', async
   expect(calls).toBe(1);
 });
 
-it('keeps native ID differences and unsupported prefix semantics visible', async () => {
+it('keeps per-host native IDs in the records without flagging them, and unsupported prefix semantics visible', async () => {
   const s = setup();s.fixture.rows.roles[3].id = 'different-native-id';
   s.fixture.rows.grants.forEach(r => { r.table = 'trip';r.is_wildcard = 1; });
   const graph = projectGraph(await s.collect());
   expect(graph.nodes.filter(n => n.kind === 'role')).toHaveLength(1);
-  expect(graph.nodes.find(n => n.kind === 'role')!.differs).toBe(true);
+  const role = graph.nodes.find(n => n.kind === 'role')!;
+  expect(role.records.some(r => r.attributes.id === 'different-native-id')).toBe(true);
+  expect(role.differs).toBe(false);
   expect(graph.edges.some(e => e.kind === 'grant')).toBe(true);
   expect(graph.edges.some(e => e.kind === 'candidate-scope')).toBe(false);
 });

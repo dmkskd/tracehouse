@@ -6,6 +6,8 @@ import { ObjectTypeIcon } from './ObjectCard';
 import { useDetailStatements, type StatementResult } from './useDetailStatements';
 
 const styles = css`
+  /* The modal box clips its content; the detail scrolls inside it, under the sticky header. */
+  flex: 1; min-height: 0; overflow-y: auto;
   color: var(--text-primary);
   .detail-header { position: sticky; top: 0; z-index: 1; display: flex; justify-content: space-between; align-items: start; gap: 16px; padding: 16px 24px; background: var(--bg-card); border-bottom: 1px solid var(--border-primary); }
   .detail-header small { display: block; font-size: 11px; color: var(--text-muted); }
@@ -31,7 +33,7 @@ type Renderers = { [K in DetailSection['kind']]: (section: Extract<DetailSection
 /** One renderer per section kind; the core descriptor decides which sections an object has. */
 const SECTION_RENDERERS: Renderers = {
   facts: section => <><h3>{section.title}</h3>
-    <dl>{section.facts.map(f => <div key={f.label} style={{ display: 'contents' }}><dt>{f.label}</dt><dd>{f.value}</dd></div>)}</dl></>,
+    <dl>{section.facts.map((f, i) => <div key={i} style={{ display: 'contents' }}><dt>{f.label}</dt><dd>{f.value}</dd></div>)}</dl></>,
   statement: (section, { results, requested, load }) => {
     const { sql, title, external } = section.statement;
     const result = results[sql];

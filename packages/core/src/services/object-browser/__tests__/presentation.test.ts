@@ -184,6 +184,17 @@ describe('object detail', () => {
     expect(mv.sections.find(s => s.kind === 'relationships')).toMatchObject({ relationships: [
       { direction: 'in', name: `${DB}.events` }, { direction: 'out', name: `${DB}.events_minute` }] });
   });
+  it('names the fields that differ between hosts and which hosts hold each value, ignoring per-host ids and sizes', () => {
+    const capture = demo(['ch-1', 'ch-2', 'ch-3']);
+    capture.observations.filter(r => r.key === table('events')).forEach((r, i) =>
+      r.attributes = { ...r.attributes, uuid: `uuid-${i}`, total_rows: String(i), sorting_key: i === 2 ? 'tenant_id' : 'tenant_id, minute' });
+    const graph = projectGraph(capture);
+    const node = graph.nodes.find(n => n.key === table('events'))!;
+    expect(node.differences).toEqual(['sorting_key']);
+    expect(describeDetail(node, graph).sections[0]).toEqual({ kind: 'facts', title: 'Differs across hosts', facts: [
+      { label: 'sorting_key', value: 'ch-1, ch-2: tenant_id, minute' }, { label: '', value: 'ch-3: tenant_id' }] });
+    expect(graph.nodes.find(n => n.key === table('events_minute'))!.differs).toBe(false);
+  });
 });
 
 describe('broad scope expansion for a focus object', () => {

@@ -1,13 +1,20 @@
 import { canonical } from '../model/canonical.js';
 import { KINDS } from '../model/kinds.js';
 import { RELATIONSHIPS } from '../model/relationships.js';
-import type { Capture, GraphNode, ObjectGraph, ObjectKind, Source } from '../model/types.js';
+import { OWN_ACCESS, type Capture, type GraphNode, type ObjectGraph, type ObjectKind, type Source } from '../model/types.js';
 
-/** Per-host measurements: replicas and shards hold different amounts of data, so these
- * are left out when host records are compared. */
+/** Left out when host records are compared: per-host measurements (replicas and shards hold
+ * different amounts of data) and identifiers each host assigns to its own copy of an object. */
 const MEASURED = new Set(['total_rows', 'total_bytes', 'active_parts', 'newest_part']);
-const definition = (attributes: Record<string, unknown>) =>
-  canonical(Object.fromEntries(Object.entries(attributes).filter(([name]) => !MEASURED.has(name))));
+const HOST_IDS = new Set(['id', 'uuid', 'granted_role_id']);
+const comparable = (name: string) => !MEASURED.has(name) && !HOST_IDS.has(name);
+const withoutHostIds = (evidence: Record<string, unknown>) =>
+  Object.fromEntries(Object.entries(evidence).filter(([name]) => !HOST_IDS.has(name)));
+/** Record fields whose value is not the same on every record; a field missing from a record counts as a value. */
+function differingFields(records: { attributes: Record<string, unknown> }[]): string[] {
+  const names = new Set(records.flatMap(r => Object.keys(r.attributes)).filter(comparable));
+  return [...names].filter(name => new Set(records.map(r => name in r.attributes ? canonical(r.attributes[name]) : '')).size > 1).sort();
+}
 
 /** Display coalescing preserves native records. Never union grants into a principal. */
 export function projectGraph(capture: Capture): ObjectGraph {
@@ -27,7 +34,6 @@ export function projectGraph(capture: Capture): ObjectGraph {
   for (const node of grouped.values()) {
     const resolved = node.records.filter(r => !r.attributes.unresolvedReference);
     node.observedHosts = [...new Set(resolved.map(r => r.host))].sort();
-    const attributes = new Set(resolved.map(r => definition(r.attributes)));
     const ownSets = new Set<string>();
     for (const record of node.records) {
       const ownReadable = readable('grants', record.host) && readable('role_grants', record.host);
@@ -36,13 +42,15 @@ export function projectGraph(capture: Capture): ObjectGraph {
       if (!record.attributes.unresolvedReference && ownReadable) {
         const own = capture.relationships.filter(e => e.host === record.host && e.from === node.key
           && (e.kind === 'grant' || e.kind === 'has-role'))
-          .map(e => canonical([e.kind, e.to, e.evidence])).sort();
+          .map(e => canonical([e.kind, e.to, withoutHostIds(e.evidence)])).sort();
         ownSets.add(canonical([...new Set(own)]));
       }
     }
     // Host comparison applies only to kinds expected on every host (KINDS[kind].everyHost).
     const everyHost = KINDS[node.kind].everyHost;
-    node.differs = everyHost && (attributes.size > 1 || ownSets.size > 1);
+    const differences = everyHost ? [...differingFields(resolved), ...(ownSets.size > 1 ? [OWN_ACCESS] : [])] : [];
+    node.differs = differences.length > 0;
+    if (node.differs) node.differences = differences;
     if (everyHost) node.partial ||= node.observedHosts.length !== expectedHosts.length;
   }
   const edges = new Map<string, ObjectGraph['edges'][number]>();
