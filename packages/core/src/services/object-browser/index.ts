@@ -1,7 +1,7 @@
 /** Public boundary: no UI, global store, import-time collection or SQL definitions. */
 export * from './model/types.js';
 export { canonical } from './model/canonical.js';
-export { collectObjects, type CollectOptions } from './collectors/collect.js';
+export { collectObjects, notGrantedSources, type CollectOptions } from './collectors/collect.js';
 export { projectGraph, projectCatalogGraph, provenancePaths } from './projections/graph.js';
 export { lineage, focusGraphFrom, searchGraph, essentialEdges } from './projections/focus.js';
 export { withoutDefaultUser } from './projections/filters.js';

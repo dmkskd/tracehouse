@@ -6,9 +6,12 @@ import type { Attributes, Capture, Investigation, Observation, Relationship, Sou
 import { canonical, sortedSet } from '../model/canonical.js';
 import { tableLinks } from './tables.js';
 import { privilegeGroup, privilegeTree, type PrivilegeTree } from '../model/privileges.js';
+import type { MonitoringCapability } from '../../../types/monitoring-capabilities.js';
 
 type Row = Record<string, unknown>;
-export interface CollectOptions { limit?: number; mode?: 'catalog' | 'investigation'; cancellation?: { readonly aborted: boolean } }
+export interface CollectOptions { limit?: number; mode?: 'catalog' | 'investigation'; cancellation?: { readonly aborted: boolean };
+  /** Sources the capability probe found without SELECT (notGrantedSources); skipped without a query. */
+  notGranted?: readonly Source[] }
 const setFields = new Set(['default_roles_list','default_roles_except','host_ip','host_names',
   'host_names_regexp','host_names_like','apply_to_list','apply_to_except']);
 function attributes(row: Row): Attributes {
@@ -18,6 +21,13 @@ function attributes(row: Row): Attributes {
 const text = (v: unknown) => String(v ?? '');
 const EXCLUDED_DATABASES = new Set(['system', 'information_schema', 'INFORMATION_SCHEMA']);
 const flag = (v: unknown) => Number(v) === 1;
+
+/** Catalog sources whose system table the capability probe (capability `system_<source>`)
+ * found without SELECT. Sources it did not probe are read and report their own errors. */
+export function notGrantedSources(capabilities: readonly MonitoringCapability[]): Source[] {
+  return (Object.keys(ACCESS_CATALOGS) as Source[]).filter(source =>
+    capabilities.some(c => c.id === `system_${source}` && !c.available && c.unavailableReason === 'grant'));
+}
 
 /** Read-only, manual capture; schema probes precede every optional catalog SELECT. */
 export async function collectObjects(adapter: IClickHouseAdapter, investigation: Investigation,
@@ -51,6 +61,9 @@ export async function collectObjects(adapter: IClickHouseAdapter, investigation:
     check();
     await Promise.all(sources.slice(offset, offset + 3).map(async source => {
       const spec = ACCESS_CATALOGS[source];
+      if (options.notGranted?.includes(source)) {
+        capture.coverage.push({ source, state: 'not-granted', hosts: [], visibility: 'unknown', reason: `Missing SELECT permission on system.${source}` });return;
+      }
       const missing = capture.hosts.flatMap(h => spec.columns.filter(name =>
         !schema.some(r => r.host === h.host && r.table === source && r.name === name)).map(name => `${h.host}:${name}`));
       if (missing.length) {

@@ -173,7 +173,13 @@ that do not name it, and its card shows no host count.
 - Definition references analyze each distinct definition once, at most 300 per
   capture, three at a time, with a 10 second limit each. Failures, table
   functions and unsupported arguments are added to the tables coverage note.
-- Every source records `readable`, `schema-unavailable`, `failed` or `truncated`.
+- Every source records `readable`, `schema-unavailable`, `failed`, `truncated` or
+  `not-granted`. `not-granted` sources are skipped without a query: the caller passes
+  `notGranted`, from `notGrantedSources` over the connection's capability probe
+  (`system_users`, `system_grants` and the other access tables).
+- EXPLAIN runs as a statement of its own through the adapter's `executeRawQuery`.
+  Inside `SELECT … FROM (EXPLAIN …)` ClickHouse uses the `viewExplain` table function,
+  which requires `CREATE TEMPORARY TABLE`.
   A failed read never becomes an empty catalog.
 
 ## Version notes

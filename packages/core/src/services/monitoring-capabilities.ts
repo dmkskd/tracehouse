@@ -773,6 +773,33 @@ export class MonitoringCapabilitiesService {
         description: 'Cached query results and their sizes. Enables query-cache memory accounting.',
         category: 'introspection',
       },
+      // Access definitions. Reading them lists every account and what it may read,
+      // so restricted or public accounts often have no grant here.
+      users: {
+        label: 'Users',
+        description: 'Every user name with its authentication type, host restrictions, expiry and default roles; no passwords or password hashes. Enables users in the object browser.',
+        category: 'introspection',
+      },
+      roles: {
+        label: 'Roles',
+        description: 'Role names and where they are stored. Enables roles in the object browser.',
+        category: 'introspection',
+      },
+      role_grants: {
+        label: 'Role Grants',
+        description: 'Which users and roles hold which roles, and which are default. Enables role assignments in the object browser.',
+        category: 'introspection',
+      },
+      grants: {
+        label: 'Grants',
+        description: 'Every privilege of every user and role, down to databases, tables and columns. Enables privileges in the object browser.',
+        category: 'introspection',
+      },
+      row_policies: {
+        label: 'Row Policies',
+        description: 'Row filter expressions, including any values they compare against, and who they apply to. Enables row policies in the object browser.',
+        category: 'introspection',
+      },
     };
 
     for (const tableName of PROBE_SYSTEM_TABLE_ACCESS_TABLES) {

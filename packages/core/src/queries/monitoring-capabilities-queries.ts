@@ -261,6 +261,12 @@ export const PROBE_SYSTEM_TABLE_ACCESS_TABLES = [
   'asynchronous_inserts',   // pending async insert buffers
   'user_processes',         // per-user resource usage
   'query_cache',            // cached query results
+  // Access definitions, read by the object browser.
+  'users',                  // users, host restrictions, default roles
+  'roles',                  // role names
+  'role_grants',            // role assignments
+  'grants',                 // privileges per user and role
+  'row_policies',           // row filters and who they apply to
 ] as const;
 
 /**

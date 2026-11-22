@@ -22,7 +22,7 @@ export interface Relationship {
 }
 export interface Coverage {
   source: Source;
-  state: 'readable' | 'schema-unavailable' | 'failed' | 'truncated';
+  state: 'readable' | 'schema-unavailable' | 'failed' | 'truncated' | 'not-granted';
   hosts: string[];
   reason?: string;
   /** Reading rows does not prove the observer sees every catalog entry. */

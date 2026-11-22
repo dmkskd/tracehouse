@@ -1,7 +1,8 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
-import { collectObjects } from '@tracehouse/core/services/object-browser';
+import { collectObjects, notGrantedSources } from '@tracehouse/core/services/object-browser';
 import type { Capture, Investigation } from '@tracehouse/core/services/object-browser';
 import { useClickHouseServices } from '@tracehouse/ui-shared';
+import { useMonitoringCapabilitiesStore } from '../../stores/monitoringCapabilitiesStore';
 
 /** Manual capture only; request lifetime is bounded by route and adapter identity. */
 let nextContext = 0;
@@ -27,7 +28,10 @@ export function useObjectCapture() {
     const cancellation = { aborted: false };current.current = cancellation;
     setLoading(true);setError(null);setCapture(null);
     try {
-      const result = await collectObjects(services.adapter, { ...input, connection: contextFor(services.adapter) }, { cancellation, mode });
+      // Sources the capability probe found without SELECT are skipped; before the probe finishes every source is read.
+      const { capabilities, probeStatus } = useMonitoringCapabilitiesStore.getState();
+      const notGranted = probeStatus === 'done' && capabilities ? notGrantedSources(capabilities.capabilities) : [];
+      const result = await collectObjects(services.adapter, { ...input, connection: contextFor(services.adapter) }, { cancellation, mode, notGranted });
       if (!cancellation.aborted) setCapture(result);
     } catch (e) {
       if (!cancellation.aborted) setError(e instanceof Error ? e.message : String(e));
