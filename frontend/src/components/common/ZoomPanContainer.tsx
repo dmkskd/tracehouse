@@ -3,6 +3,7 @@
  * Supports mouse wheel zoom, button controls, and click-drag panning.
  */
 import React, { useState, useRef, useCallback, useEffect } from 'react';
+import { ZoomControls } from './ZoomControls';
 
 interface ZoomPanContainerProps {
   children: React.ReactNode;
@@ -135,8 +136,6 @@ export const ZoomPanContainer: React.FC<ZoomPanContainerProps> = ({
     setTranslate({ x: 0, y: 0 });
   }, [clampScale, handleReset]);
 
-  const pct = Math.round(scale * 100);
-
   return (
     <div
       ref={containerRef}
@@ -163,79 +162,13 @@ export const ZoomPanContainer: React.FC<ZoomPanContainerProps> = ({
         {children}
       </div>
 
-      {/* Zoom controls overlay */}
       {showControls && (
-        <div style={{
-          position: 'absolute',
-          bottom: 12,
-          right: 12,
-          display: 'flex',
-          alignItems: 'center',
-          gap: 2,
-          background: 'color-mix(in srgb, var(--bg-secondary), transparent 15%)',
-          backdropFilter: 'blur(12px)',
-          WebkitBackdropFilter: 'blur(12px)',
-          border: '1px solid var(--border-primary)',
-          borderRadius: 8,
-          padding: '4px 6px',
-          zIndex: 10,
-          boxShadow: '0 2px 8px rgba(0,0,0,0.3)',
-        }}>
-          <ZoomButton onClick={handleZoomOut} title="Zoom out" disabled={scale <= minScale}>−</ZoomButton>
-          <span
-            onClick={handleReset}
-            title="Reset zoom"
-            style={{
-              fontSize: 10,
-              color: 'var(--text-muted)',
-              minWidth: 38,
-              textAlign: 'center',
-              cursor: 'pointer',
-              userSelect: 'none',
-              fontFamily: 'monospace',
-            }}
-          >
-            {pct}%
-          </span>
-          <ZoomButton onClick={handleZoomIn} title="Zoom in" disabled={scale >= maxScale}>+</ZoomButton>
-          <div style={{ width: 1, height: 16, background: 'var(--border-primary)', margin: '0 4px' }} />
-          <ZoomButton onClick={handleFitWidth} title="Fit to width">⤢</ZoomButton>
-        </div>
+        <ZoomControls name="view" zoom={scale} canZoomOut={scale > minScale} canZoomIn={scale < maxScale}
+          onZoomOut={handleZoomOut} onZoomIn={handleZoomIn} onReset={handleReset}>
+          <button type="button" aria-label="Fit view to width" title="Fit to width" onClick={handleFitWidth}>⤢</button>
+        </ZoomControls>
       )}
     </div>
   );
 };
 
-const ZoomButton: React.FC<{
-  onClick: () => void;
-  title: string;
-  disabled?: boolean;
-  children: React.ReactNode;
-}> = ({ onClick, title, disabled, children }) => (
-  <button
-    onClick={(e) => { e.stopPropagation(); onClick(); }}
-    title={title}
-    disabled={disabled}
-    style={{
-      width: 26,
-      height: 26,
-      display: 'flex',
-      alignItems: 'center',
-      justifyContent: 'center',
-      background: 'transparent',
-      border: 'none',
-      borderRadius: 4,
-      color: disabled ? 'var(--text-disabled)' : 'var(--text-secondary)',
-      cursor: disabled ? 'default' : 'pointer',
-      fontSize: 14,
-      fontWeight: 600,
-      lineHeight: 1,
-      padding: 0,
-      transition: 'color 0.1s ease, background 0.1s ease',
-    }}
-    onMouseEnter={(e) => { if (!disabled) e.currentTarget.style.background = 'var(--bg-hover)'; }}
-    onMouseLeave={(e) => { e.currentTarget.style.background = 'transparent'; }}
-  >
-    {children}
-  </button>
-);

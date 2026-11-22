@@ -374,6 +374,11 @@ logs:
 data-tools-tui *args="":
     uv run --project tools/data-utils tracehouse-data-tools-tui {{args}}
 
+# Persistent users, roles, policies, views and a two-stage materialized-view cascade
+[group('data')]
+object-demo *args="setup":
+    uv run --project tools/data-utils tracehouse-objects {{args}}
+
 # When args are omitted, the script reads defaults from .env (CH_GEN_*)
 [group('data')]
 generate-data table="all" *args="":

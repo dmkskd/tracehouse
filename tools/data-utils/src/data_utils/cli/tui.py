@@ -517,6 +517,8 @@ def _parse_args():
     for name in TOOL_DEFS:
         flag = f"--{name}-args"
         parser.add_argument(flag, default="", help=f"Extra arguments for {name}")
+    parser.add_argument("--object-demo", action="store_true", default=os.environ.get("CH_OBJECT_DEMO", "").lower() in ("1", "true", "yes"), help="Set up persistent object catalog and cascading materialized views before opening the TUI")
+    parser.add_argument("--object-demo-cluster", default=os.environ.get("CH_CLUSTER", ""), help="Optional ON CLUSTER for object-demo DDL")
     args = parser.parse_args()
     return args, env_path
 
@@ -525,6 +527,15 @@ def main() -> None:
     args, env_path = _parse_args()
 
     print_connection(args, env_path)
+
+    if args.object_demo:
+        from data_utils.object_demo import setup_object_demo
+        client = make_client(args)
+        try:
+            setup_object_demo(client, args.object_demo_cluster)
+            print("Object demo ready: tracehouse_object_demo (persistent; th_ob_* users cannot log in)")
+        finally:
+            client.disconnect()
 
     # Optionally create test users
     test_users: list[TestUser] = []

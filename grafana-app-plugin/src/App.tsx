@@ -1,3 +1,4 @@
+import { ObjectBrowser } from '@frontend/components/object-browser';
 import { TracehouseHeaderContext } from '@frontend/providers/TracehouseHeaderContext';
 import pluginStyles from './styles.module.css';
 import { TracehouseStyleContext } from '@frontend/providers/TracehouseStyleContext';
@@ -223,6 +224,7 @@ const Events = lazy(() => import('@frontend/pages/Events').then(m => ({ default:
 const Analytics = lazy(() => import('@frontend/pages/Analytics').then(m => ({ default: m.Analytics })));
 const ClusterOverview = lazy(() => import('@frontend/pages/ClusterOverview').then(m => ({ default: m.ClusterOverview })));
 const Replication = lazy(() => import('@frontend/pages/Replication').then(m => ({ default: m.Replication })));
+const Objects = lazy(async () => ({ default: ObjectBrowser }));
 const Notebooks = lazy(() => import('@frontend/pages/Notebooks').then(m => ({ default: m.Notebooks })));
 
 // Route mapping based on plugin.json paths (matching main app order)
@@ -238,6 +240,7 @@ const ROUTES: Record<string, React.LazyExoticComponent<React.ComponentType>> = {
   'replication': Replication,
   'analytics': Analytics,
   'notebooks': Notebooks,
+  'objects': Objects,
 };
 
 function NoDatasourceMessage() {

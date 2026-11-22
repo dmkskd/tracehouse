@@ -10,7 +10,7 @@ import { TimeTravelServerSelector } from '../TimeTravelServerSelector';
 import { TimelineEventOverlay } from '../TimelineEventOverlay';
 import { segmentsStyle } from '../TimeTravelSegments.styles';
 import { controlsStyle } from '../TimeTravelControls.styles';
-import { ResourceInfoPopover } from './ResourceInfoPopover';
+import { InfoPopover } from '../../common/InfoPopover';
 import { ZeroResourceActivity } from './ZeroResourceActivity';
 import { ResourceFailureLegend } from './ResourceFailureLegend';
 import { ResourceLoading } from './ResourceLoading';
@@ -81,6 +81,7 @@ export function ResourceExplorationModal({ data, atMs, initialMode, hiddenCatego
   const [mode, setMode] = useState(initialMode);
   const [fullscreen, setFullscreen] = useState(false);
   const [flowToolbar, setFlowToolbar] = useState<HTMLDivElement | null>(null);
+  const [flowFrame, setFlowFrame] = useState<HTMLDivElement | null>(null);
   const [groupBy, setGroupBy] = useState<'activity' | 'table'>('activity');
   const [operationLimits, setOperationLimits] = useState<Record<string, number>>({});
   const [activityLimit, setActivityLimit] = useState<number>();
@@ -208,7 +209,7 @@ export function ResourceExplorationModal({ data, atMs, initialMode, hiddenCatego
           </div>
       <div className="coverage">
         <span className="muted">{sampled} sampled · {attribution.coverage.estimated} estimated{missingMemory > 0 ? ` · ${missingMemory} missing memory samples` : ''}{selectionMode === 'instant' && capacity > 0 ? ` · ${capacity} cores capacity` : ''}</span>
-        <ResourceInfoPopover id={accountingId} label="Measurement details" title="How resource usage is calculated">
+        <InfoPopover id={accountingId} label="Measurement details" title="How resource usage is calculated">
         <strong>How to read these values</strong>
         <ul>
           <li><strong>Server usage:</strong> {mode === 'cpu' ? 'Total CPU usage' : mode === 'memory' ? 'Memory tracked by ClickHouse' : mode === 'disk' ? 'Total disk read and write rate' : 'Total network send and receive rate'} across the selected servers.</li>
@@ -221,7 +222,7 @@ export function ResourceExplorationModal({ data, atMs, initialMode, hiddenCatego
           {selectionMode === 'instant' && <li><strong>Sankey percentages:</strong> Each branch’s share of total operation usage at the selected time. The operation total is 100%.</li>}
           <li><strong>Multiple tables:</strong> Each operation’s cost is counted once under its table set. No per-table cost split is available.</li>
         </ul>
-        </ResourceInfoPopover>
+        </InfoPopover>
       </div>
         </div>
       </div>
@@ -274,7 +275,7 @@ export function ResourceExplorationModal({ data, atMs, initialMode, hiddenCatego
         </div>
       </div>
       </div>
-      <div className="resource-body-frame">
+      <div className="resource-body-frame" ref={setFlowFrame}>
       <div className="resource-flow-tools" ref={setFlowToolbar} />
       <div ref={breakdownViewport} className="resource-body" role="region" aria-label="Resource usage breakdown" tabIndex={0}>
       {!loading && !loadError && <div className="resource-notes">
@@ -286,7 +287,7 @@ export function ResourceExplorationModal({ data, atMs, initialMode, hiddenCatego
       {details.loading && <div role="status" className="muted">Loading operation details…</div>}
       {details.error && <div role="alert" className="notice">{details.error} <button className="resource-action" onClick={details.retry}>Retry details</button></div>}
       {!loading && !loadError && (tableGroups.length > 0 ? <>
-        <ResourceAttributionFlow toolbarTarget={flowToolbar} verticalViewport={breakdownViewport} showFailureLegend={false} groupBy={groupBy} operationLimit={operationLimit} selectionKind={selectionMode} scaleReference={flowScaleReference} groups={tableGroups} mode={mode} detailsLoading={details.loading} onShowMoreActivities={setActivityLimit}
+        <ResourceAttributionFlow toolbarTarget={flowToolbar} zoomTarget={flowFrame} verticalViewport={breakdownViewport} showFailureLegend={false} groupBy={groupBy} operationLimit={operationLimit} selectionKind={selectionMode} scaleReference={flowScaleReference} groups={tableGroups} mode={mode} detailsLoading={details.loading} onShowMoreActivities={setActivityLimit}
           onShowMoreTables={(primaryId) => { const key = groupBy === 'table' ? '*' : primaryId; setTableLimit(previous => ({ ...previous, [key]: (previous[key] ?? 5)+5 })); }}
           onShowMoreOperations={(groupId) => setOperationLimits(previous => ({ ...previous, [groupId]: (previous[groupId] ?? 5)+5 }))} selection={selected} onSelect={selectFlow} format={flowFormat} />
       </> : <div className="notice">{mode === 'memory' && missingMemory > 0 ? 'Concurrent memory attribution is unavailable at this time. Choose a time with operation samples.' : 'No contributing operations at this time.'}</div>)}

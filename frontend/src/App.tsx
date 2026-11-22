@@ -15,6 +15,7 @@ import { ClickHouseProvider } from './providers/ClickHouseProvider';
 import { ThemeProvider } from './providers/ThemeProvider';
 import { RefreshConfigContext, DEFAULT_REFRESH_CONFIG } from '@tracehouse/ui-shared';
 import './styles/themes.css';
+import { ObjectBrowser } from './components/object-browser';
 
 function App() {
   return (
@@ -37,6 +38,7 @@ function App() {
                 <Route path="/cluster" element={<ClusterOverview />} />
                 <Route path="/replication" element={<Replication />} />
                 <Route path="/analytics" element={<Analytics />} />
+                <Route path="/objects" element={<ObjectBrowser />} />
                 <Route path="/notebooks" element={<Notebooks />} />
               </Routes>
             </Layout>

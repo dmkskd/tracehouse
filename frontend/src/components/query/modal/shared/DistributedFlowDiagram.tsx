@@ -7,6 +7,7 @@
  * buildDistributedFlowDiagram in @tracehouse/core; this file only paints it.
  */
 
+import { ZoomControls } from '../../../common/ZoomControls';
 import React, { useEffect, useId, useMemo, useRef, useState } from 'react';
 import {
   computeTimeBreakdown,
@@ -299,28 +300,9 @@ export const DistributedFlowDiagram: React.FC<DistributedFlowDiagramProps> = ({
           profileEvents={profileEventsByNodeId.get(hoveredNode.id)}
         />
       )}
-      <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 4, marginBottom: 4 }}>
-        <ZoomButton label="−" title="Zoom out" disabled={zoom <= MIN_ZOOM} onClick={() => setZoom(step(zoom, -1))} />
-        <button
-          type="button"
-          onClick={() => setZoom(1)}
-          title="Fit to width"
-          style={{
-            border: '1px solid var(--border-secondary)',
-            background: 'transparent',
-            color: 'var(--text-secondary)',
-            borderRadius: 4,
-            fontSize: 10,
-            padding: '2px 8px',
-            cursor: 'pointer',
-            fontFamily: 'var(--font-mono, monospace)',
-            minWidth: 48,
-          }}
-        >
-          {Math.round(zoom * 100)}%
-        </button>
-        <ZoomButton label="+" title="Zoom in" disabled={zoom >= MAX_ZOOM} onClick={() => setZoom(step(zoom, 1))} />
-      </div>
+      <div style={{ position: 'relative' }}>
+      <ZoomControls name="flow diagram" zoom={zoom} canZoomOut={zoom > MIN_ZOOM} canZoomIn={zoom < MAX_ZOOM} resetTitle="Fit to width"
+        onZoomOut={() => setZoom(step(zoom, -1))} onZoomIn={() => setZoom(step(zoom, 1))} onReset={() => setZoom(1)} />
       <div ref={panelRef} style={{ width: '100%', maxHeight: 620, overflow: 'auto' }}>
       <svg
         viewBox={`0 ${viewTop} ${diagram.width} ${diagram.height - viewTop}`}
@@ -624,6 +606,7 @@ export const DistributedFlowDiagram: React.FC<DistributedFlowDiagramProps> = ({
         )}
       </svg>
       </div>
+      </div>
     </div>
   );
 };
@@ -727,33 +710,5 @@ const NodePopover: React.FC<{
     />
   );
 };
-
-const ZoomButton: React.FC<{
-  label: string;
-  title: string;
-  disabled: boolean;
-  onClick: () => void;
-}> = ({ label, title, disabled, onClick }) => (
-  <button
-    type="button"
-    onClick={onClick}
-    disabled={disabled}
-    title={title}
-    aria-label={title}
-    style={{
-      border: '1px solid var(--border-secondary)',
-      background: 'transparent',
-      color: disabled ? 'var(--text-muted)' : 'var(--text-secondary)',
-      borderRadius: 4,
-      fontSize: 12,
-      lineHeight: 1,
-      width: 22,
-      height: 20,
-      cursor: disabled ? 'default' : 'pointer',
-    }}
-  >
-    {label}
-  </button>
-);
 
 export default DistributedFlowDiagram;

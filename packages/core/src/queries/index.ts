@@ -62,3 +62,5 @@ export { buildXRaySamplesSQL } from './xray-samples-queries.js';
 export { buildXRayWindowSamplesSQL, type XRayWindowOptions } from './xray-window-queries.js';
 export { buildSelectedXRayOverlaySQL, type XRayOverlayMetric } from './xray-overlay-queries.js';
 export * from './link-resolution-queries.js';
+export * from './access-queries.js';
+export { accessFixtureQueries } from './access-fixture-queries.js';

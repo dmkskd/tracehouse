@@ -14,7 +14,7 @@ instant/range units, lifetime-average fallback, and missing-memory semantics.
 and secondary presentation groups. `resource-flow-layout.ts` calculates geometry,
 leaf limits, colours, and failure portions without React or DOM access.
 `ResourceAttributionFlow.tsx` renders those nodes and handles expansion and scrolling.
-`ResourceInfoPopover.tsx` owns shared help-popover interaction and dismissal.
+`components/common/InfoPopover.tsx` owns the shared help-popover interaction and dismissal.
 
 The modal supports two presentation orders. Activity (default) groups by operation
 type, then table set. Table groups by table set first, ranks by total attributed

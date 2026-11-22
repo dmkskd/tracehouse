@@ -76,6 +76,10 @@
     "./analytics/types": {
       "import": "./dist/analytics/types.js",
       "types": "./dist/analytics/types.d.ts"
+    },
+    "./services/object-browser": {
+      "import": "./dist/services/object-browser/index.js",
+      "types": "./dist/services/object-browser/index.d.ts"
     }
   },
   "scripts": {

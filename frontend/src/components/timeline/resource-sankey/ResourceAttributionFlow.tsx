@@ -5,6 +5,7 @@ import { useResourceFlowViewport } from './useResourceFlowViewport';
 import type { MetricMode } from '../timeline-constants';
 import { buildResourceFlowLayout, resourceRibbon as ribbon, type ResourceFlowSelection } from './resource-flow-layout';
 import { ResourceFailureLegend } from './ResourceFailureLegend';
+import { ZoomControls } from '../../common/ZoomControls';
 import { flowGroupCount, flowGroupKind, flowGroupFailedCount, type ResourceFlowGroup } from './resource-exploration-model';
 
 export type { ResourceFlowSelection } from './resource-flow-layout';
@@ -12,18 +13,17 @@ export type { ResourceFlowSelection } from './resource-flow-layout';
 const toolbarStyle = css`
   display: flex; align-items: center; justify-content: flex-end; gap: 8px;
   font-size: 11px; color: var(--text-secondary);
-  .zoom-controls { display: flex; align-items: center; border: 1px solid var(--border-primary); border-radius: 5px; padding: 1px; }
   button { display: inline-flex; align-items: center; justify-content: center; gap: 4px; height: 22px; padding: 0 6px; border: none; border-radius: 3px; background: transparent; color: inherit; font: inherit; cursor: pointer; white-space: nowrap; }
   button:hover { background: var(--bg-tertiary); }
   button:disabled { opacity: .4; cursor: default; }
   button:focus-visible { outline: 2px solid #58a6ff; outline-offset: 2px; }
-  .zoom-value { min-width: 42px; font-variant-numeric: tabular-nums; }
-  .toolbar-divider { width: 1px; height: 16px; background: var(--border-primary); }
 `;
 
 /** Preserve readable columns; reveal the selected table's operations without scaling the whole graph down. */
-export function ResourceAttributionFlow({ groups, mode, selection, onSelect, format, scaleReference, selectionKind = 'instant', groupBy = 'activity', operationLimit = 5, onShowMoreTables, onShowMoreOperations, detailsLoading = false, onShowMoreActivities, showFailureLegend = true, verticalViewport, toolbarTarget }: {
+export function ResourceAttributionFlow({ groups, mode, selection, onSelect, format, scaleReference, selectionKind = 'instant', groupBy = 'activity', operationLimit = 5, onShowMoreTables, onShowMoreOperations, detailsLoading = false, onShowMoreActivities, showFailureLegend = true, verticalViewport, toolbarTarget, zoomTarget }: {
   toolbarTarget?: HTMLDivElement | null;
+  /** Positioned element the zoom controls float in, outside any vertical scroll. Defaults to the flow itself. */
+  zoomTarget?: HTMLDivElement | null;
   verticalViewport?: RefObject<HTMLDivElement>;
   groupBy?: 'activity' | 'table';
   operationLimit?: number;
@@ -54,22 +54,16 @@ export function ResourceAttributionFlow({ groups, mode, selection, onSelect, for
     ? <path d={ribbon(x1, y1, x2, y2, h)} fill={`url(#${failurePattern})`} data-testid="failed-resource-flow" /> : null;
   const hideLabel = expanded ? `Hide ${flowGroupKind(expanded) === 'query' ? 'queries' : 'operations'}` : 'Hide activity types';
   const toolbar = <div className={toolbarStyle}>
-      {(expanded || primaryExpanded) && <>
-        <button type="button" title={hideLabel} onClick={() => onSelect(expanded ? { primaryId: expanded.primaryId } : null)}>
+      {(expanded || primaryExpanded) && <button type="button" title={hideLabel} onClick={() => onSelect(expanded ? { primaryId: expanded.primaryId } : null)}>
           <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true"><path d="m11 5-7 7 7 7m9-14-7 7 7 7" /></svg>
           {hideLabel}
-        </button>
-        <span className="toolbar-divider" aria-hidden="true" />
-      </>}
-      <div className="zoom-controls" role="group" aria-label="Sankey zoom">
-        <button type="button" aria-label="Zoom out Sankey" title="Zoom out" disabled={zoom <= .5} onClick={zoomOut}>−</button>
-        <button type="button" className="zoom-value" aria-label="Reset Sankey zoom" title="Reset zoom" onClick={resetZoom}>{Math.round(zoom*100)}%</button>
-        <button type="button" aria-label="Zoom in Sankey" title="Zoom in" disabled={zoom >= 2} onClick={zoomIn}>+</button>
-      </div>
+        </button>}
     </div>;
-  return <div className="flow">
+  const zoomControls = <ZoomControls name="Sankey" zoom={zoom} canZoomOut={zoom > .5} canZoomIn={zoom < 2} onZoomOut={zoomOut} onZoomIn={zoomIn} onReset={resetZoom} />;
+  return <div className="flow" style={{ position: 'relative' }}>
     {showFailureLegend && <ResourceFailureLegend count={failedCount} />}
     {toolbarTarget ? createPortal(toolbar, toolbarTarget) : toolbar}
+    {zoomTarget ? createPortal(zoomControls, zoomTarget) : zoomControls}
     <div ref={viewport} className="flow-viewport" role="region" aria-label="Resource attribution flow" tabIndex={0} {...panHandlers} onDragStart={event => event.preventDefault()} style={{ cursor: dragging ? 'grabbing' : 'grab', userSelect: 'none', WebkitUserSelect: 'none' }}>
       <svg viewBox={`0 0 ${width} ${height}`} style={{ width: width*zoom, minWidth: `${zoom*100}%` }} role="img" aria-label={tableFirst ? 'Loaded operation usage ranked by table; select a table to expand activity types' : 'Loaded operation usage by activity and table; select a table to expand queries'}>
         <defs><pattern id={failurePattern} width={6} height={6} patternUnits="userSpaceOnUse" patternTransform="rotate(35)"><path d="M0 0V6" stroke="#e06c65" strokeWidth={2} /></pattern></defs>

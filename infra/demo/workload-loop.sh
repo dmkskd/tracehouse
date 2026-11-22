@@ -49,6 +49,10 @@ insert_loop() {
     # CREATE ... IF NOT EXISTS through each Replicated database on every
     # append cycle; those no-op DDL entries otherwise flood Events.
     run tracehouse-generate --mode append --skip-create || log "WARNING: generate exited with error"
+    # Keep both MV stages active with bounded 100-row batches on each host.
+    for object_host in "${CH_HOSTS[@]}"; do
+      CH_HOST=$object_host CH_CLUSTER= run tracehouse-objects append --yes || log "WARNING: object cascade append failed on $object_host"
+    done
     sleep 10
   done
 }
@@ -56,6 +60,13 @@ insert_loop() {
 # ── Main ────────────────────────────────────────────────────────────────
 
 wait_for_clickhouse
+
+# Small independent catalog and cascading-MV scenario on every demo host.
+# It persists between workload cycles and is separate from th_* traffic users.
+for object_host in "${CH_HOSTS[@]}"; do
+  log "Preparing object and cascading-MV demo on $object_host"
+  CH_HOST=$object_host CH_CLUSTER= run tracehouse-objects setup --yes
+done
 
 # Phase 1: Generate initial data (blocking — tables must exist before queries start)
 # No throttle for initial load — fill tables fast, TTL handles cleanup later

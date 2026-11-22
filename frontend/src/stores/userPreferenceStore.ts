@@ -14,6 +14,13 @@ export type ViewMode = '3d' | '2d';
 
 export type NavigatorShapeMode = 'trend' | 'peaks' | 'change';
 
+/** Object browser diagram style, under trial: quiet cards, Sankey bars, grouped columns, metro lines. */
+export type ObjectDiagramStyle = 'cards' | 'bars' | 'columns' | 'metro';
+/** Object browser line options: route lines between cards, dim lines outside the hovered card's lineage,
+ * and essential lines only (broad privileges end at the data band). */
+export interface ObjectDiagramLines { route: boolean; highlight: boolean; essential: boolean }
+export const OBJECT_DIAGRAM_LINE_DEFAULTS: ObjectDiagramLines = { route: false, highlight: true, essential: false };
+
 interface UserPreferenceState {
   preferredViewMode: ViewMode;
   setPreferredViewMode: (mode: ViewMode) => void;
@@ -45,6 +52,10 @@ interface UserPreferenceState {
    */
   queryXraySource: Record<string, QueryXRaySourcePreference>;
   setQueryXraySource: (connectionId: string, source: QueryXRaySourcePreference | undefined) => void;
+  objectDiagramStyle: ObjectDiagramStyle;
+  setObjectDiagramStyle: (style: ObjectDiagramStyle) => void;
+  objectDiagramLines: ObjectDiagramLines;
+  toggleObjectDiagramLine: (name: keyof ObjectDiagramLines) => void;
 }
 
 export const useUserPreferenceStore = create<UserPreferenceState>()(
@@ -74,6 +85,10 @@ export const useUserPreferenceStore = create<UserPreferenceState>()(
         else queryXraySource[connectionId] = source;
         return { queryXraySource };
       }),
+      objectDiagramStyle: 'cards',
+      setObjectDiagramStyle: (style) => set({ objectDiagramStyle: style }),
+      objectDiagramLines: OBJECT_DIAGRAM_LINE_DEFAULTS,
+      toggleObjectDiagramLine: (name) => set(state => ({ objectDiagramLines: { ...state.objectDiagramLines, [name]: !state.objectDiagramLines[name] } })),
     }),
     {
       name: 'tracehouse-view-preference',
@@ -85,6 +100,11 @@ export const useUserPreferenceStore = create<UserPreferenceState>()(
       migrate: (persisted) => {
         const { xraySource: _legacy, ...state } = persisted as Record<string, unknown>;
         return { ...state, queryXraySource: {} };
+      },
+      // Line options saved before an option existed take that option's default.
+      merge: (persisted, current) => {
+        const saved = (persisted ?? {}) as Partial<UserPreferenceState>;
+        return { ...current, ...saved, objectDiagramLines: { ...OBJECT_DIAGRAM_LINE_DEFAULTS, ...saved.objectDiagramLines } };
       },
     }
   )

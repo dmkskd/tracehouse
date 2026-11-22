@@ -90,3 +90,12 @@ describe('Query X-Ray preference layers', () => {
     expect(screen.getByRole('button', { name: 'auto' })).toHaveAttribute('aria-pressed', 'true');
   });
 });
+
+describe('object diagram line options', () => {
+  it('gives a saved set of options the default of any option it lacks', async () => {
+    localStorage.setItem('dmkskd-tracehouse-app:tracehouse-view-preference',
+      JSON.stringify({ version: 1, state: { objectDiagramLines: { route: true, highlight: false } } }));
+    await act(() => useUserPreferenceStore.persist.rehydrate());
+    expect(useUserPreferenceStore.getState().objectDiagramLines).toEqual({ route: true, highlight: false, essential: false });
+  });
+});

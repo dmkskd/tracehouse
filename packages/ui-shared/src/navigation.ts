@@ -47,6 +47,7 @@ export const TRACEHOUSE_OVERFLOW_NAVIGATION = [
     items: [
       { key: 'cluster', label: 'Cluster', path: '/cluster' },
       { key: 'replication', label: 'Replication', path: '/replication' },
+      { key: 'objects', label: 'Objects', path: '/objects', requiresDatasource: false },
     ],
   },
   {

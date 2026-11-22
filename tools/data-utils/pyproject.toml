@@ -10,6 +10,7 @@ dependencies = [
 ]
 
 [project.scripts]
+tracehouse-objects = "data_utils.cli.objects:main"
 tracehouse-generate = "data_utils.cli.generate:main"
 tracehouse-drop = "data_utils.cli.drop:main"
 tracehouse-queries = "data_utils.cli.queries:main"
