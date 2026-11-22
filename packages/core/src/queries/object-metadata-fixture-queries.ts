@@ -7,10 +7,10 @@ export function objectMetadataFixtureQueries(prefix: string) {
   // Shaped like the demo read_only account: readonly = 2, SELECT on what the object
   // browser reads, and no CREATE TEMPORARY TABLE.
   const catalog = `${prefix}_catalog`;
-  const bob = `${prefix}_bob`, profile = `${prefix}_profile`, baseProfile = `${prefix}_base_profile`, quota = `${prefix}_quota`;
+  const bob = `${prefix}_bob`, admin = `${prefix}_admin`, profile = `${prefix}_profile`, baseProfile = `${prefix}_base_profile`, quota = `${prefix}_quota`;
   const db = access.db;
   return {
-    ...access, bob, catalog, profile, baseProfile, quota,
+    ...access, bob, admin, catalog, profile, baseProfile, quota,
     setup: [...access.setup,
       `CREATE USER ${bob}`,
       `CREATE USER ${catalog} SETTINGS readonly = 2`,
@@ -18,6 +18,9 @@ export function objectMetadataFixtureQueries(prefix: string) {
       ...['one', 'columns', 'tables', 'users', 'roles', 'role_grants', 'grants', 'row_policies', 'privileges']
         .map(table => `GRANT SELECT ON system.${table} TO ${catalog}`),
       `GRANT ${access.parent} TO ${bob}`,
+      // system.grants keeps ALL ON *.* as one ALL row; ALL ON db.* is split into one row per privilege.
+      `CREATE USER ${admin}`,
+      `GRANT ALL ON *.* TO ${admin}`,
       `SET DEFAULT ROLE NONE TO ${bob}`,
       `CREATE TABLE ${db}.events (id UInt64, tenant_id UInt64, ts DateTime DEFAULT now(), amount UInt64,
         note String DEFAULT 'sample' CODEC(ZSTD(1))) ENGINE = MergeTree
@@ -63,7 +66,7 @@ export function objectMetadataFixtureQueries(prefix: string) {
     ],
     teardown: [
       `DROP QUOTA IF EXISTS ${quota}`, `DROP SETTINGS PROFILE IF EXISTS ${profile}`,
-      `DROP SETTINGS PROFILE IF EXISTS ${baseProfile}`, `DROP USER IF EXISTS ${bob}`, `DROP USER IF EXISTS ${catalog}`, ...access.teardown,
+      `DROP SETTINGS PROFILE IF EXISTS ${baseProfile}`, `DROP USER IF EXISTS ${bob}`, `DROP USER IF EXISTS ${admin}`, `DROP USER IF EXISTS ${catalog}`, ...access.teardown,
     ],
     probes: {
       schema: `SELECT hostName() AS host, table, name, type FROM {{cluster_aware:system.columns}}

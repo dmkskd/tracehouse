@@ -1,3 +1,4 @@
+import type { TimelineFilters } from '../utils/timeline-filters.js';
 /**
  * Types for timeline/snapshot analysis.
  */
@@ -72,8 +73,8 @@ export interface QuerySeries {
   tables?: string[];
   exception?: string;  // Error message if query failed
   is_running?: boolean;  // True if query is currently in-flight
-  /** True when this query matches the normalizedQueryHash filter (pattern mode overlay) */
-  matched_hash?: boolean;
+  /** True when this query matches the tracking filter (TimelineTracking). */
+  tracked?: boolean;
   points: TimeseriesPoint[];
   /** Metrics that lack sampled values; retain the query-log average estimate. */
   zoomMissing?: TimelineMetricMode[];
@@ -101,6 +102,8 @@ export interface MergeSeries {
   start_time: string;
   end_time: string;
   merge_reason?: string;  // RegularMerge, TTLDeleteMerge, TTLRecompressMerge, etc.
+  /** True when a table is tracked and this merge belongs to it. */
+  tracked?: boolean;
   is_running?: boolean;  // True if merge is currently in-flight
   /** ClickHouse part_log error code; zero means success. */
   error?: number;
@@ -128,6 +131,8 @@ export interface MutationSeries {
   start_time: string;
   end_time: string;
   is_running?: boolean;  // True if mutation is currently in-flight
+  /** True when a table is tracked and this mutation belongs to it. */
+  tracked?: boolean;
   /** ClickHouse part_log error code; zero means success. */
   error?: number;
   progress?: number;  // Progress 0-1 for running mutations
@@ -211,8 +216,22 @@ export interface TimelineOptions {
   activityLimit?: number;
   /** Active metric tab. Controls which server metrics are fetched and which "top N" sort is used. Default: 'memory' */
   activeMetric?: TimelineMetricMode;
-  /** When set, only fetch queries matching this normalized_query_hash (pattern mode). */
-  normalizedQueryHash?: string;
+  /** Operations to track: every matching query in the window is fetched and marked `tracked`. */
+  tracking?: TimelineTracking;
+  /** Which operations are listed; unset fields take DEFAULT_TIMELINE_FILTERS. */
+  filters?: Partial<TimelineFilters>;
+}
+
+/**
+ * What Time Travel tracks. Every set field must match. `table` is `database.table`:
+ * queries match on query_log.tables, merges and mutations on their table. Merges and
+ * mutations have no user or query hash, so they match only when the table alone is tracked.
+ */
+export interface TimelineTracking {
+  /** normalized_query_hash, decimal UInt64. */
+  queryHash?: string;
+  user?: string;
+  table?: string;
 }
 
 /**

@@ -1,6 +1,7 @@
 /**
  * BackLink - Contextual "back" navigation shown when a user drills down
- * from one page to another (e.g. Overview → Queries).
+ * from one page to another (e.g. Overview → Queries): a square ← before the
+ * page title, as on an Analytics dashboard. The tooltip names the origin.
  *
  * Reads `location.state.from` which is set by the originating Link/navigate call.
  * If no `from` state exists, renders nothing.
@@ -25,32 +26,19 @@ export const BackLink: React.FC<{ from?: FromState }> = ({ from: fromProp }) => 
 
   return (
     <button
+      type="button"
+      className="tab dashboard-header-action dashboard-back-button"
       onClick={() => navigate(from.path)}
+      aria-label={`Back to ${from.label}`}
+      title={`Back to ${from.label}`}
       style={{
-        display: 'inline-flex',
-        alignItems: 'center',
-        gap: 4,
-        padding: '2px 8px',
-        fontSize: 11,
-        color: 'var(--text-muted)',
-        background: 'transparent',
-        border: '1px solid var(--border-secondary)',
-        borderRadius: 4,
-        cursor: 'pointer',
-        fontFamily: 'inherit',
-        transition: 'color 0.15s ease, border-color 0.15s ease',
-      }}
-      onMouseEnter={(e) => {
-        e.currentTarget.style.color = 'var(--text-primary)';
-        e.currentTarget.style.borderColor = 'var(--border-primary)';
-      }}
-      onMouseLeave={(e) => {
-        e.currentTarget.style.color = 'var(--text-muted)';
-        e.currentTarget.style.borderColor = 'var(--border-secondary)';
+        display: 'inline-flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0,
+        width: 32, height: 32, padding: 0, fontSize: 15, borderRadius: 8, cursor: 'pointer', fontFamily: 'inherit',
+        color: 'var(--text-secondary)', background: 'var(--bg-secondary)', border: '1px solid var(--border-primary)',
+        boxShadow: '0 1px 2px rgba(0, 0, 0, 0.06)',
       }}
     >
-      <span>←</span>
-      <span>{from.label}</span>
+      <span aria-hidden="true">←</span>
     </button>
   );
 };

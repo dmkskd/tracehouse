@@ -72,9 +72,12 @@ card shows the raw privilege name.
 |---|---|---|
 | candidate name match | privilege → table | Computed by `projectCatalogGraph` from names |
 
-Only `SELECT` and `INSERT` privileges without `access_object` or wildcard link
-to tables. Without a focus object, only exact table privileges link. With one,
-database-wide and global privileges link too, over the tables `FOCUS_TABLES`
+A privilege links to tables when it is `SELECT` or `INSERT` or one of their
+ancestors in `system.privileges`, such as `ALL`, and has no `access_object` or
+wildcard. The collector stores the operations it includes as the scope's
+`table_operations`. `system.grants` keeps `ALL ON *.*` as one `ALL` row and
+splits `ALL ON db.*` into one row per privilege. Without a focus object, only
+exact table privileges link. With one, database-wide and global privileges link too, over the tables `FOCUS_TABLES`
 (`projections/graph.ts`) gives for the focus kind:
 
 | Focus | Tables considered |

@@ -1,3 +1,5 @@
+import { activeTracking, tracksParts } from '../utils/timeline-tracking.js';
+import { passesThresholds, resolveTimelineFilters, timelineFilterParams } from '../utils/timeline-filters.js';
 import { resampleQueryIntervals, type QueryZoomInterval } from '../utils/query-interval-resampling.js';
 import { parseAbsoluteTimestamp } from '../utils/absolute-timestamp.js';
 import { selectQueryXRaySource, type SelectQueryXRaySourceInput } from '../types/xray-source.js';
@@ -41,7 +43,7 @@ import {
   SERVER_CPU_METRIC_SCHEMA,
   withKeyedCpuCapacity,
   ACTIVE_QUERIES,
-  ACTIVE_QUERIES_BY_HASH,
+  ACTIVE_QUERIES_TRACKED,
   ACTIVE_QUERIES_COUNT,
   ACTIVE_MERGES_COUNT,
   ACTIVE_MERGES_DETAIL,
@@ -168,15 +170,19 @@ export class TimelineService {
       hostname = null,
       activityLimit = 100,
       activeMetric = 'memory',
-      normalizedQueryHash,
+      tracking,
+      filters,
     } = options;
+    const resolvedFilters = resolveTimelineFilters(filters);
+    const filterParams = timelineFilterParams(resolvedFilters);
+    const tracked = activeTracking(tracking);
     const hostnames = (Array.isArray(hostname) ? hostname : hostname ? [hostname] : [])
       .map(host => host.replace(/[^a-zA-Z0-9._\-]/g, ''))
       .filter((host, index, hosts) => host.length > 0 && hosts.indexOf(host) === index);
     const hostCacheKey = [...hostnames].sort().join('\u0000') || 'all-hosts';
 
-    // Validate hash early (before any queries run) to reject injection attempts
-    if (normalizedQueryHash && !/^\d+$/.test(normalizedQueryHash)) {
+    // Validate hash early (before any queries run)
+    if (tracked?.queryHash && !/^\d+$/.test(tracked.queryHash)) {
       throw new TimelineServiceError(`Invalid normalized_query_hash: expected numeric UInt64`);
     }
 
@@ -220,6 +226,7 @@ export class TimelineService {
       end_time: utcDateTime(end),
       start_date: eventDateBoundParameter(start.toISOString()),
       activity_limit: activityLimit,
+      ...filterParams,
     };
 
     // Replace ORDER BY placeholders with raw SQL expressions.
@@ -341,8 +348,8 @@ export class TimelineService {
       this.fetchMerges(params, start, end, (sql) => applyOrder(withHost(sql))),
       this.fetchMutationCount(params, withHost),
       this.fetchMutations(params, start, end, (sql) => applyOrder(withHost(sql))),
-      includesNow ? this.fetchRunningQueries(start, end, activityLimit, queryOrderBy, withHost) : Promise.resolve([]),
-      includesNow ? this.fetchRunningMergesAndMutations(start, end, activityLimit, withHost) : Promise.resolve({ merges: [], mutations: [] }),
+      includesNow ? this.fetchRunningQueries(start, end, activityLimit, queryOrderBy, withHost, filterParams) : Promise.resolve([]),
+      includesNow ? this.fetchRunningMergesAndMutations(start, end, activityLimit, withHost, filterParams) : Promise.resolve({ merges: [], mutations: [] }),
     ]);
 
     // Merge completed and running queries (dedupe by query_id)
@@ -352,27 +359,23 @@ export class TimelineService {
       ...runningQueries.filter(q => !completedQueryIds.has(q.query_id)),
     ];
 
-    // Hash filter overlay: fetch hash-matched queries and merge them in
-    if (normalizedQueryHash) {
-      const hashParams = { ...params };
-      delete hashParams.activity_limit; // hash query has no LIMIT — bounded by time window
-      const patternQueries = await this.fetchQueries(
-        hashParams,
-        start, end,
-        (sql) => withHost(sql),
-        normalizedQueryHash,
-      );
-      // Mark hash-matched queries and merge any that aren't already in the top-N
+    // Tracking overlay: fetch every matching query in the window and merge them in. Tracked
+    // queries below the thresholds are not in the threshold count; they are added to the total.
+    let trackedBelowThresholds = 0;
+    if (tracked) {
+      const trackParams: Record<string, QueryParameter> = { ...params,
+        track_hash: tracked.queryHash ?? '', track_user: tracked.user ?? '', track_table: tracked.table ?? '' };
+      delete trackParams.activity_limit; // the tracked query has no LIMIT — bounded by time window
+      const trackedQueries = await this.fetchQueries(trackParams, start, end, (sql) => withHost(sql), true);
+      // Mark tracked queries and merge any that aren't already in the top-N
+      const trackedIds = new Set(trackedQueries.map(q => q.query_id));
       const existingIds = new Set(allQueries.map(q => q.query_id));
-      for (const q of allQueries) {
-        if (patternQueries.some(pq => pq.query_id === q.query_id)) {
-          q.matched_hash = true;
-        }
-      }
-      for (const pq of patternQueries) {
-        if (!existingIds.has(pq.query_id)) {
-          pq.matched_hash = true;
-          allQueries.push(pq);
+      for (const q of allQueries) if (trackedIds.has(q.query_id)) q.tracked = true;
+      for (const q of trackedQueries) {
+        if (!existingIds.has(q.query_id)) {
+          q.tracked = true;allQueries.push(q);
+          // Queries that failed before start are counted by the total whenever they are listed.
+          if (q.status !== 'ExceptionBeforeStart' && !passesThresholds(resolvedFilters, q.peak_memory, q.duration_ms)) trackedBelowThresholds++;
         }
       }
     }
@@ -395,8 +398,12 @@ export class TimelineService {
     ];
     allMutations.sort(sortByMetric);
 
+    // A tracked table also marks its merges and mutations in the window.
+    const trackedTable = tracksParts(tracked);
+    if (trackedTable) for (const part of [...allMerges, ...allMutations]) if (part.table === trackedTable) part.tracked = true;
+
     // Update counts to include running operations
-    const totalQueryCount = queryCount + runningQueries.length;
+    const totalQueryCount = queryCount + runningQueries.length + trackedBelowThresholds;
     const totalMergeCount = mergeStats.count + runningMergesAndMutations.merges.length;
     const totalMergePeak = mergeStats.peakTotal + 
       runningMergesAndMutations.merges.reduce((sum, m) => sum + m.peak_memory, 0);
@@ -989,16 +996,9 @@ export class TimelineService {
     }
   }
 
-  private async fetchQueries(params: Record<string, QueryParameter>, start: Date, end: Date, xform: (s: string) => string, normalizedQueryHash?: string): Promise<QuerySeries[]> {
+  private async fetchQueries(params: Record<string, QueryParameter>, start: Date, end: Date, xform: (s: string) => string, tracked = false): Promise<QuerySeries[]> {
     try {
-      let sql: string;
-      if (normalizedQueryHash) {
-        // Hash already validated in getTimeline() — safe to inject as raw UInt64
-        sql = xform(buildQuery(ACTIVE_QUERIES_BY_HASH, params))
-          .replaceAll('{normalized_query_hash}', normalizedQueryHash);
-      } else {
-        sql = xform(buildQuery(ACTIVE_QUERIES, params));
-      }
+      const sql = xform(buildQuery(tracked ? ACTIVE_QUERIES_TRACKED : ACTIVE_QUERIES, params));
       const rows = await this.adapter.executeQuery(tagQuery(sql, sourceTag(TAB_TIME_TRAVEL, 'queries')));
       
       const queries: QuerySeries[] = [];
@@ -1008,10 +1008,11 @@ export class TimelineService {
         const qet = parseChTime(String(row.qet || ''));
         const peak = Number(row.memory_usage || 0);
         
-        // Clamp to window
+        // Clamp to window. A tracked query and a query that failed before start keep a
+        // zero-length interval: they are listed even though they draw no band.
         const visStart = new Date(Math.max(qst.getTime(), start.getTime()));
         const visEnd = new Date(Math.min(qet.getTime(), end.getTime()));
-        if (visStart >= visEnd) continue;
+        if (visStart > visEnd || (visStart.getTime() === visEnd.getTime() && !tracked && row.status !== 'ExceptionBeforeStart')) continue;
 
         const points: TimeseriesPoint[] = [
           { t: toClickHouseDateTime(visStart), v: peak },
@@ -1043,9 +1044,9 @@ export class TimelineService {
       
       return queries;
     } catch (e) {
-      // For hash-filtered queries, propagate the error so the caller can report it
+      // For tracked queries, propagate the error so the caller can report it
       // instead of silently returning 0 matches
-      if (normalizedQueryHash) throw e;
+      if (tracked) throw e;
       console.error('[TimelineService] query_log error:', e);
       return [];
     }
@@ -1249,10 +1250,10 @@ export class TimelineService {
   /**
    * Fetch currently running queries from system.processes
    */
-  private async fetchRunningQueries(start: Date, end: Date, activityLimit: number = 100, queryOrderBy: string = 'memory_usage', xform: (s: string) => string = s => s): Promise<QuerySeries[]> {
+  private async fetchRunningQueries(start: Date, end: Date, activityLimit: number = 100, queryOrderBy: string = 'memory_usage', xform: (s: string) => string = s => s,
+    filterParams: Record<string, QueryParameter> = timelineFilterParams(resolveTimelineFilters())): Promise<QuerySeries[]> {
     try {
-      const sql = xform(RUNNING_QUERIES_TIMELINE
-        .replaceAll('{activity_limit}', String(activityLimit))
+      const sql = xform(buildQuery(RUNNING_QUERIES_TIMELINE, { ...filterParams, activity_limit: activityLimit })
         .replaceAll('{query_order_by}', queryOrderBy));
       const rows = await this.adapter.executeQuery(tagQuery(sql, sourceTag(TAB_TIME_TRAVEL, 'runningQueries')));
       const now = new Date();
@@ -1309,10 +1310,11 @@ export class TimelineService {
     start: Date,
     end: Date,
     activityLimit: number = 100,
-    xform: (s: string) => string = s => s
+    xform: (s: string) => string = s => s,
+    filterParams: Record<string, QueryParameter> = timelineFilterParams(resolveTimelineFilters()),
   ): Promise<{ merges: MergeSeries[]; mutations: MutationSeries[] }> {
     try {
-      const sql = xform(RUNNING_MERGES_TIMELINE.replaceAll('{activity_limit}', String(activityLimit)));
+      const sql = xform(buildQuery(RUNNING_MERGES_TIMELINE, { ...filterParams, activity_limit: activityLimit }));
       const rows = await this.adapter.executeQuery(tagQuery(sql, sourceTag(TAB_TIME_TRAVEL, 'runningMerges')));
       const now = new Date();
       const merges: MergeSeries[] = [];

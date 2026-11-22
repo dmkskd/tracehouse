@@ -52,6 +52,9 @@ export interface ResultsTableProps {
   queryLinkOnColumn?: string;
   /** Called when a query-link cell is clicked */
   onQueryLinkClick?: (row: Record<string, unknown>) => void;
+  /** @object_link columns: a click opens the object named in the row in the object browser. */
+  objectLinkColumns?: string[];
+  onObjectLinkClick?: (column: string, row: Record<string, unknown>) => void;
   /** Visual density variant */
   compact?: boolean;
   /** Allow clicking a table row to expand all row values */
@@ -85,6 +88,7 @@ export const ResultsTable: React.FC<ResultsTableProps> = ({
   partLinkOnColumn, onPartLinkClick,
   mergeLinkOnColumn, onMergeLinkClick,
   queryLinkOnColumn, onQueryLinkClick,
+  objectLinkColumns, onObjectLinkClick,
   compact = false,
   enableRowDetails = false,
 }) => {
@@ -274,7 +278,8 @@ export const ResultsTable: React.FC<ResultsTableProps> = ({
                   const isPartLink = hasPartLink && col === partLinkOnColumn;
                   const isMergeLink = hasMergeLink && col === mergeLinkOnColumn;
                   const isQueryLink = hasQueryLink && col === queryLinkOnColumn;
-                  const isClickable = isLink || isDrill || isPartLink || isMergeLink || isQueryLink;
+                  const isObjectLink = !!onObjectLinkClick && !!objectLinkColumns?.includes(col) && row[col] != null && row[col] !== '';
+                  const isClickable = isLink || isDrill || isPartLink || isMergeLink || isQueryLink || isObjectLink;
                   const cellValue = formatAnalyticsCell(formatCell(row[col], col), col, row);
                   const ragColor = getRagColor(col, row[col], cellStyles);
                   const numeric = numericCols.has(col);
@@ -333,8 +338,8 @@ export const ResultsTable: React.FC<ResultsTableProps> = ({
                       textAlign: numeric ? 'right' : 'left',
                       fontVariantNumeric: numeric ? 'tabular-nums' : undefined,
                     }}
-                    title={isDrill && drillIntoQuery ? `Drill into: ${drillIntoQuery}` : isPartLink ? 'Open part details' : isMergeLink ? 'Open this merge on the Merges page' : isQueryLink ? 'Open this query on the Queries page' : enableRowDetails ? 'Open row details' : undefined}
-                    onClick={isLink ? (e) => { e.stopPropagation(); onLinkClick!(col, cellValue); } : isDrill ? (e) => { e.stopPropagation(); onDrillClick!(col, cellValue); } : isPartLink ? (e) => { e.stopPropagation(); onPartLinkClick!(col, cellValue, row); } : isMergeLink ? (e) => { e.stopPropagation(); onMergeLinkClick!(row); } : isQueryLink ? (e) => { e.stopPropagation(); onQueryLinkClick!(row); } : undefined}
+                    title={isDrill && drillIntoQuery ? `Drill into: ${drillIntoQuery}` : isPartLink ? 'Open part details' : isMergeLink ? 'Open this merge on the Merges page' : isQueryLink ? 'Open this query on the Queries page' : isObjectLink ? 'Open in the object browser' : enableRowDetails ? 'Open row details' : undefined}
+                    onClick={isLink ? (e) => { e.stopPropagation(); onLinkClick!(col, cellValue); } : isDrill ? (e) => { e.stopPropagation(); onDrillClick!(col, cellValue); } : isPartLink ? (e) => { e.stopPropagation(); onPartLinkClick!(col, cellValue, row); } : isMergeLink ? (e) => { e.stopPropagation(); onMergeLinkClick!(row); } : isQueryLink ? (e) => { e.stopPropagation(); onQueryLinkClick!(row); } : isObjectLink ? (e) => { e.stopPropagation(); onObjectLinkClick!(col, row); } : undefined}
                     >{renderCell ? renderCell(col, row) : cellValue}</td>
                   );
                 })}

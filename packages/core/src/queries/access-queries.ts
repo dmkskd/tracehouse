@@ -102,6 +102,11 @@ const ident = (name: string) => `\`${escapeIdentifier(name)}\``;
 export const OBJECT_TABLE_DDL = `
 SELECT create_table_query AS statement
 FROM system.tables WHERE database = {database} AND name = {table}`;
+/** The definition laid out by ClickHouse's own formatter (formatQueryOrNull, 23.11+); the stored
+ * single-line text when the formatter cannot parse it. Older servers use OBJECT_TABLE_DDL. */
+export const OBJECT_TABLE_DDL_FORMATTED = `
+SELECT coalesce(formatQueryOrNull(create_table_query), create_table_query) AS statement
+FROM system.tables WHERE database = {database} AND name = {table}`;
 /** Secrets stay hidden even where the server allows displaying them. */
 export const showCreateUser = (name: string) =>
   `SHOW CREATE USER ${ident(name)} SETTINGS format_display_secrets_in_show_and_select = 0`;

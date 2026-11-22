@@ -69,7 +69,7 @@ describe('focus from a storage server', () => {
     // `other` comes first in the catalog and would take the only slot of a global cap.
     const observed = capture(['ch-1'], [...nodes.observations, tableRecord('other'), tableRecord('stored'),
       { key: user, kind: 'user', name: 'reader', host: 'ch-1', source: 'users', attributes: {} },
-      { key: scope, kind: 'grant-scope', name: 'SELECT ON *.*', host: 'ch-1', source: 'grants', attributes: {} }],
+      { key: scope, kind: 'grant-scope', name: 'SELECT ON *.*', host: 'ch-1', source: 'grants', attributes: { table_operations: ['SELECT'] } }],
     [...nodes.relationships, { id: 'g', host: 'ch-1', from: user, to: scope, kind: 'grant', label: 'SELECT grant', source: 'grants',
       evidence: { access_type: 'SELECT', access_object: '', database: null, table: null, is_wildcard: 0, is_partial_revoke: 0 } }]);
     // Without a focus object the global privilege has no table link; focused on the server it links.
@@ -89,7 +89,7 @@ describe('storage servers on a cluster', () => {
       expect(cards.get(server.key)!.hosts).toBeUndefined();
     }
     const detail = describeDetail(graph.nodes.find(n => n.key === t('b'))!, graph);
-    expect(detail.sections.find(s => s.kind === 'relationships')).toMatchObject({ relationships: [
-      { relation: 'stored on', name: 'http://minio:9000', method: expect.stringContaining('no storage request') }] });
+    expect(detail.sections.find(s => s.kind === 'relationships')).toMatchObject({ groups: [{ title: 'Storage', rows: [
+      { relation: 'Stored on', items: [{ name: 'http://minio:9000', method: expect.stringContaining('no storage request') }] }] }] });
   });
 });

@@ -14,7 +14,8 @@
  */
 
 import { useCallback, useMemo } from 'react';
-import { useSearchParams } from 'react-router-dom';
+// Keeps navigation state (state.from) on URL writes; see useAppLocation.
+import { useSearchParams } from './useAppLocation';
 import { copyToClipboard } from '@tracehouse/ui-shared';
 import {
   parseShareParam,

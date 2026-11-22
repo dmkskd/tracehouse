@@ -1,4 +1,4 @@
-import type { QueryXRaySourcePreference } from '@tracehouse/core';
+import { formatBytesThreshold, formatDurationThreshold, MIN_DURATION_CHOICES, MIN_MEMORY_CHOICES, resolveTimelineFilters, type QueryXRaySourcePreference } from '@tracehouse/core';
 import React, { useState, useEffect } from 'react';
 import { AppPluginMeta, PluginConfigPageProps } from '@grafana/data';
 import { getBackendSrv } from '@grafana/runtime';
@@ -20,6 +20,7 @@ export function AppConfig({ plugin }: AppConfigProps) {
   const [defaultRate, setDefaultRate] = useState<number>(resolved.defaultRefreshRate);
   const [queryXraySource, setQueryXraySource] = useState(resolved.queryXraySource);
   const [cluster, setCluster] = useState<string>(resolved.cluster ?? '');
+  const [timeTravelFilters, setTimeTravelFilters] = useState(() => resolveTimelineFilters(resolved.timeTravelFilters));
   const [saving, setSaving] = useState(false);
   const [saved, setSaved] = useState(false);
 
@@ -60,6 +61,7 @@ export function AppConfig({ plugin }: AppConfigProps) {
           .map(o => o.seconds),
         defaultRefreshRate: defaultRate,
         cluster: cluster.trim() || undefined,
+        timeTravelFilters,
       };
 
       await getBackendSrv().post(`/api/plugins/${plugin.meta.id}/settings`, {
@@ -105,6 +107,28 @@ export function AppConfig({ plugin }: AppConfigProps) {
         </select>
       </label>
       <p>Users can override this default for each datasource.</p>
+      <fieldset style={{ border: '1px solid var(--border-primary, rgba(255,255,255,0.1))', borderRadius: 8, padding: 16, marginBottom: 24 }}>
+        <legend>Time Travel: listed operations</legend>
+        <label>Min memory{' '}
+          <select value={timeTravelFilters.minMemoryBytes} onChange={e => setTimeTravelFilters({ ...timeTravelFilters, minMemoryBytes: Number(e.target.value) })}>
+            {MIN_MEMORY_CHOICES.map(bytes => <option key={bytes} value={bytes}>{bytes === 0 ? 'Off' : formatBytesThreshold(bytes)}</option>)}
+          </select>
+        </label>{' '}
+        <label>or min duration{' '}
+          <select value={timeTravelFilters.minDurationMs} onChange={e => setTimeTravelFilters({ ...timeTravelFilters, minDurationMs: Number(e.target.value) })}>
+            {MIN_DURATION_CHOICES.map(ms => <option key={ms} value={ms}>{ms === 0 ? 'Off' : formatDurationThreshold(ms)}</option>)}
+          </select>
+        </label>
+        <label style={{ display: 'block', marginTop: 8 }}>
+          <input type="checkbox" checked={timeTravelFilters.includeFailedBeforeStart} onChange={e => setTimeTravelFilters({ ...timeTravelFilters, includeFailedBeforeStart: e.target.checked })} />
+          {' '}Queries that failed before start (e.g. access denied)
+        </label>
+        <label style={{ display: 'block' }}>
+          <input type="checkbox" checked={timeTravelFilters.includeTraceHouse} onChange={e => setTimeTravelFilters({ ...timeTravelFilters, includeTraceHouse: e.target.checked })} />
+          {' '}TraceHouse's own queries
+        </label>
+        <p>An operation is listed when it is over either threshold. Users can override these defaults in Time Travel.</p>
+      </fieldset>
       {/* Cluster Section */}
       <div style={{
         background: 'var(--bg-secondary, rgba(255,255,255,0.04))',

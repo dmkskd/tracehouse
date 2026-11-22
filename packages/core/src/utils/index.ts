@@ -86,6 +86,11 @@ export type {
   OperationHostSummary,
   OperationSummary,
 } from './timeline-operations.js';
+export { DEFAULT_TIMELINE_FILTERS, MIN_MEMORY_CHOICES, MIN_DURATION_CHOICES, TIMELINE_FILTER_PARAMS, cleanTimelineFilters, readTimelineFilters,
+  resolveTimelineFilters, describeTimelineFilters, explainListedOperations, passesThresholds, formatBytesThreshold, formatDurationThreshold, timelineFilterParams } from './timeline-filters.js';
+export type { TimelineFilters } from './timeline-filters.js';
+export { TRACKING_PARAMS, trackingParamsFor, activeTracking, tracksParts, readTracking, describeTracking } from './timeline-tracking.js';
+export type { TrackingDimension } from './timeline-tracking.js';
 export { buildOperationContext, buildOperationSpan, operationsOverlap } from './operation-context.js';
 export type { OperationContext, OperationSpan } from './operation-context.js';
 export { buildInstantBreakdown, measuredValueAt, operationAverageRate, selectServerSeries } from './operation-instant.js';

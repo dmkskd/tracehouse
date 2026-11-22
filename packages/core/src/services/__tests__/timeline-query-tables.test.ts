@@ -1,12 +1,12 @@
 import { describe, expect, it } from 'vitest';
 import type { IClickHouseAdapter } from '../../adapters/types.js';
 import { TimelineService } from '../timeline-service.js';
-import { ACTIVE_QUERIES, ACTIVE_QUERIES_BY_HASH, RUNNING_QUERIES_TIMELINE } from '../../queries/timeline-queries.js';
+import { ACTIVE_QUERIES, ACTIVE_QUERIES_TRACKED, RUNNING_QUERIES_TIMELINE } from '../../queries/timeline-queries.js';
 
 describe('timeline query table metadata', () => {
   it('fetches query-log table sets without asking system.processes for an unavailable field', () => {
     expect(ACTIVE_QUERIES).toMatch(/query_kind,\s+tables,/);
-    expect(ACTIVE_QUERIES_BY_HASH).toMatch(/query_kind,\s+tables,/);
+    expect(ACTIVE_QUERIES_TRACKED).toMatch(/query_kind,\s+tables,/);
     expect(RUNNING_QUERIES_TIMELINE).not.toMatch(/\btables\b/);
   });
   it('preserves reported table arrays and leaves unavailable metadata unknown', async () => {

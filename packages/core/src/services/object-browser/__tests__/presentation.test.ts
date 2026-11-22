@@ -27,7 +27,7 @@ function demo(hosts = ['ch-1'], extra: Relationship[] = []): Capture {
     default_roles_list: ['th_ob_analyst'], default_roles_except: [], host_ip: ['::/0'], host_names: [], host_names_regexp: [], host_names_like: [] });
   add(key('role', 'th_ob_analyst'), 'role', 'th_ob_analyst', 'roles', { storage: 'local_directory' });
   add(SCOPE, 'grant-scope', `SELECT ON ${DB}.*`, 'grants', { access_type: 'SELECT', access_object: '', database: DB, table: null, column: null, is_wildcard: 0,
-    privilege_group: 'SELECT', privilege_level: 'COLUMN' });
+    table_operations: ['SELECT'], privilege_group: 'SELECT', privilege_level: 'COLUMN' });
   const mergeTree = (name: string, engine: string) => add(table(name), 'table', `${DB}.${name}`, 'tables',
     { database: DB, name, engine, sorting_key: 'tenant_id, minute', partition_key: '', storage_policy: 'default' });
   mergeTree('events', 'MergeTree');mergeTree('events_minute', 'SummingMergeTree');mergeTree('events_hourly', 'SummingMergeTree');
@@ -181,8 +181,13 @@ describe('object detail', () => {
     expect(statements(SCOPE)).toEqual([]);
     const mv = detail(table('events_to_minute_mv'));
     expect(mv.sections.map(s => s.kind)).toEqual(['facts', 'statement', 'relationships', 'records']);
-    expect(mv.sections.find(s => s.kind === 'relationships')).toMatchObject({ relationships: [
-      { direction: 'in', name: `${DB}.events` }, { direction: 'out', name: `${DB}.events_minute` }] });
+    // One row per wording from the view's side; names drop the shared database.
+    expect(mv.sections.find(s => s.kind === 'relationships')).toMatchObject({ groups: [{ title: 'Data flow', rows: [
+      { relation: 'Triggered by inserts into', items: [{ name: 'events', fullName: `${DB}.events` }] },
+      { relation: 'Writes to', items: [{ name: 'events_minute' }] }] }] });
+    // A table read through a database-wide SELECT lists it once under the privilege's coverage.
+    const events = detail(table('events')).sections.find(s => s.kind === 'relationships');
+    expect(events?.kind === 'relationships' && events.groups.find(g => g.title === 'Access')?.rows.map(r => r.relation)).toContain('Row policies');
   });
   it('names the fields that differ between hosts and which hosts hold each value, ignoring per-host ids and sizes', () => {
     const capture = demo(['ch-1', 'ch-2', 'ch-3']);

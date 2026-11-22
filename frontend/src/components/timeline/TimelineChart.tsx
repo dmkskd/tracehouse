@@ -58,7 +58,7 @@ function lookupSample(samples: { ms: number; v: number }[], t: number): number {
 }
 
 /** Highlight color for hash-matched queries */
-const HASH_MATCH_COLOR = '#58a6ff';
+const TRACKED_COLOR = '#58a6ff';
 
 // Temporary visual trial: diagonal red hatching marks failed operations in dense stacks.
 // Set to false to restore the original solid fills; no data or interaction changes needed.
@@ -89,7 +89,7 @@ export const TimelineChart: React.FC<{
   onBandClick?: (band: { type: 'query' | 'merge' | 'mutation'; idx: number }) => void;
   hiddenCategories?: Set<'query' | 'merge' | 'mutation'>;
   /** When true, all queries are rendered with a uniform color (query hash filter) */
-  queryHashActive?: boolean;
+  trackingActive?: boolean;
   eventAnnotations?: OperationalEvent[];
   selectedEventId?: string | null;
   onEventSelect?: (event: OperationalEvent) => void;
@@ -113,7 +113,7 @@ export const TimelineChart: React.FC<{
 }> = ({
   data, metricMode, height = 380, hoverMs, pinnedMs, onHover, onPin,
   zoomRange, onZoom, highlightedItem, onHighlightItem, onBandClick,
-  hiddenCategories, queryHashActive, eventAnnotations = [], selectedEventId,
+  hiddenCategories, trackingActive, eventAnnotations = [], selectedEventId,
   onEventSelect, onEventPin, onUnpin, onClearEventSelection, onViewEventDetails, onEventPopupOpenChange, hostLabel, showPinnedActivity = true, onLoadResource, onExploreOperation, resourceSankeyEnabled = RESOURCE_SANKEY_ENABLED, resourceHosts, resourceInitialHosts, resourceEvents,
 }) => {
   const [eventPopupOpen, setEventPopupOpen] = useState(false);
@@ -139,6 +139,13 @@ export const TimelineChart: React.FC<{
   const [localSvgX, setLocalSvgX] = useState<number | null>(null);
   const [localSvgY, setLocalSvgY] = useState<number | null>(null);
   const hoveredBandRef = useRef<{ type: 'query' | 'merge' | 'mutation'; idx: number; id: string } | null>(null);
+  /** Colour of one operation's band: the tracked colour while tracking matches it, else its kind's palette. */
+  const bandColor = (type: 'query' | 'merge' | 'mutation', idx: number): string => {
+    const item = type === 'query' ? data.queries[idx] : type === 'merge' ? data.merges[idx] : (data.mutations ?? [])[idx];
+    if (trackingActive && item?.tracked) return TRACKED_COLOR;
+    const palette = type === 'query' ? Q_COLORS : type === 'merge' ? M_COLORS : MUT_COLORS;
+    return palette[idx % palette.length];
+  };
   // Last rendered tooltip height, used to place the next one clear of the highlighted bands
   const tooltipHeightRef = useRef(200);
   // Last chosen tooltip side; kept unless clearly worse
@@ -335,26 +342,29 @@ export const TimelineChart: React.FC<{
       let failed = false;
       let dimmed = false;
       if (idx < nq) {
-        const isMatch = data.queries[idx]?.matched_hash;
-        color = queryHashActive && isMatch ? HASH_MATCH_COLOR : Q_COLORS[idx % Q_COLORS.length];
+        const isMatch = data.queries[idx]?.tracked;
+        color = trackingActive && isMatch ? TRACKED_COLOR : Q_COLORS[idx % Q_COLORS.length];
         isRunning = data.queries[idx]?.is_running ?? false;
         failed = (data.queries[idx]?.exception_code ?? 0) !== 0;
-        dimmed = !!queryHashActive && !isMatch;
+        dimmed = !!trackingActive && !isMatch;
       } else if (idx < nq + nm) {
-        color = M_COLORS[(idx - nq) % M_COLORS.length];
+        // Merges and mutations of a tracked table are tracked too (TimelineTracking).
+        const isMatch = data.merges[idx - nq]?.tracked;
+        color = trackingActive && isMatch ? TRACKED_COLOR : M_COLORS[(idx - nq) % M_COLORS.length];
         isRunning = data.merges[idx - nq]?.is_running ?? false;
         failed = (data.merges[idx - nq]?.error ?? 0) !== 0;
-        dimmed = !!queryHashActive;
+        dimmed = !!trackingActive && !isMatch;
       } else {
-        color = MUT_COLORS[(idx - nq - nm) % MUT_COLORS.length];
+        const isMatch = (data.mutations ?? [])[idx - nq - nm]?.tracked;
+        color = trackingActive && isMatch ? TRACKED_COLOR : MUT_COLORS[(idx - nq - nm) % MUT_COLORS.length];
         isRunning = (data.mutations ?? [])[idx - nq - nm]?.is_running ?? false;
         failed = ((data.mutations ?? [])[idx - nq - nm]?.error ?? 0) !== 0;
-        dimmed = !!queryHashActive;
+        dimmed = !!trackingActive && !isMatch;
       }
       res.push({ d: `M${topPts} L${botPts} Z`, color, isRunning, failed, dimmed });
     }
     return res;
-  }, [buckets, visBucketIdx, cumStacks, nq, nm, nmut, xScale, yScale, data.queries, data.merges, data.mutations, queryHashActive]);
+  }, [buckets, visBucketIdx, cumStacks, nq, nm, nmut, xScale, yScale, data.queries, data.merges, data.mutations, trackingActive]);
 
   const visServerPts = serverPts.slice(visLo, visHi + 1);
   const serverLine = visServerPts.length >= 2 ? 'M' + visServerPts.map(p => `${xScale(p.ms)},${yScale(p.v)}`).join(' L') : '';
@@ -750,9 +760,7 @@ export const TimelineChart: React.FC<{
               cy={localSvgY}
               r="5"
               fill={
-                snap.hoveredBand.type === 'query' ? (queryHashActive && data.queries[snap.hoveredBand.idx]?.matched_hash ? HASH_MATCH_COLOR : Q_COLORS[snap.hoveredBand.idx % Q_COLORS.length]) :
-                  snap.hoveredBand.type === 'merge' ? M_COLORS[snap.hoveredBand.idx % M_COLORS.length] :
-                    MUT_COLORS[snap.hoveredBand.idx % MUT_COLORS.length]
+                bandColor(snap.hoveredBand.type, snap.hoveredBand.idx)
               }
               stroke="#0d1117"
               strokeWidth="2"
@@ -871,9 +879,7 @@ export const TimelineChart: React.FC<{
           ? ('query_id' in hovItem ? hovItem.exception_code : hovItem.error) ?? 0
           : 0;
         const accentColor = band
-          ? band.type === 'query' ? (queryHashActive && data.queries[band.idx]?.matched_hash ? HASH_MATCH_COLOR : Q_COLORS[band.idx % Q_COLORS.length])
-            : band.type === 'merge' ? M_COLORS[band.idx % M_COLORS.length]
-              : MUT_COLORS[band.idx % MUT_COLORS.length]
+          ? bandColor(band.type, band.idx)
           : null;
         const isOperation = !!(band && hovItem);
         const tooltipWidth = Math.min(isOperation ? 310 : pinnedActivity ? 400 : 300, W - 24);

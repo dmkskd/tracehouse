@@ -1,0 +1,108 @@
+import { describe, expect, it } from 'vitest';
+import { projectGraph } from '../projections/graph.js';
+import { describeDetail } from '../presentation/details.js';
+import { describeObjects } from '../presentation/cards.js';
+import { focusGraphFrom } from '../projections/focus.js';
+import { describeMissingLink, describePrincipalContext, objectLinkFor, objectLinkUrl, parseObjectLink, resolveObjectLink, withPrincipalContext, type ObjectLink } from '../presentation/links.js';
+import type { Capture, ObjectKind, Relationship, Source } from '../model/types.js';
+
+const record = (key: string, kind: ObjectKind, source: Source, attributes: Record<string, unknown> = {}) =>
+  ({ key, name: key, kind, source, host: 'ch-1', attributes });
+const edge = (from: string, to: string, kind: Relationship['kind'], source: Source): Relationship =>
+  ({ id: `${from}>${to}`, host: 'ch-1', from, to, kind, label: kind, source, evidence: {} });
+// alice and bob share the reader role; writer holds the same privilege; tenant-filter names alice.
+const capture: Capture = {
+  schemaVersion: 1, mode: 'catalog', investigation: { connection: 'c', principal: '', database: '', table: '', operation: 'SELECT' },
+  startedAt: '', completedAt: '', hosts: [{ host: 'ch-1', version: '26.9.7.9' }], coverage: [], verdict: { kind: 'not-checked', reason: '' },
+  observations: [record('alice', 'user', 'users'), record('bob', 'user', 'users'), record('carol', 'user', 'users'),
+    record('reader', 'role', 'roles'), record('writer', 'role', 'roles'), record('scope', 'grant-scope', 'grants'),
+    { ...record('trips', 'table', 'tables', { database: 'demo', name: 'trips' }), name: 'demo.trips' },
+    { ...record('daily', 'table', 'tables', { database: 'demo', name: 'daily' }), name: 'demo.daily' },
+    record('tenant-filter', 'row-policy', 'row_policies'), record('bob-filter', 'row-policy', 'row_policies')],
+  relationships: [edge('alice', 'reader', 'has-role', 'role_grants'), edge('bob', 'reader', 'has-role', 'role_grants'),
+    edge('reader', 'scope', 'grant', 'grants'), edge('writer', 'scope', 'grant', 'grants'), edge('scope', 'trips', 'candidate-scope', 'grants'),
+    edge('trips', 'daily', 'insert-trigger', 'tables'),
+    edge('tenant-filter', 'alice', 'policy-recipient', 'row_policies'), edge('tenant-filter', 'trips', 'policy-target', 'row_policies'),
+    edge('bob-filter', 'bob', 'policy-recipient', 'row_policies'), edge('bob-filter', 'trips', 'policy-target', 'row_policies')],
+};
+
+describe('object links', () => {
+  it('reads back the URL it writes and resolves names to graph keys', () => {
+    const url = objectLinkUrl({ kind: 'table', database: 'demo', table: 'trips', user: 'alice' });
+    const link = parseObjectLink(name => new URLSearchParams(url.split('?')[1]).get(name)) as Extract<ObjectLink, { kind: 'table' }>;
+    expect(link).toEqual({ kind: 'table', database: 'demo', table: 'trips', user: 'alice' });
+    expect(resolveObjectLink(projectGraph(capture), link)).toEqual({ focus: 'trips', context: 'alice' });
+    expect(resolveObjectLink(projectGraph(capture), { ...link, table: 'gone', user: 'nobody' }))
+      .toEqual({ missing: [{ kind: 'table', name: 'demo.gone' }, { kind: 'user', name: 'nobody' }] });
+    expect(parseObjectLink(name => ({ ob_kind: 'table', ob_db: 'demo' } as Record<string, string>)[name])).toBeNull();
+  });
+  it('narrows a table focus to one user: its path and its row policies, data flow unchanged', () => {
+    const focus = focusGraphFrom(projectGraph(capture), 'trips');
+    const narrowed = withPrincipalContext(focus, 'alice', 'trips');
+    expect(narrowed.paths).toBe(1);
+    expect(narrowed.graph.nodes.map(n => n.key).sort()).toEqual(['alice', 'daily', 'reader', 'scope', 'tenant-filter', 'trips']);
+    expect(narrowed.graph.edges.map(e => `${e.from}>${e.to}`).sort()).toEqual(['alice>reader', 'reader>scope', 'scope>trips',
+      'tenant-filter>alice', 'tenant-filter>trips', 'trips>daily']);
+    // A user with no configured path leaves no access objects.
+    const none = withPrincipalContext(focus, 'carol', 'trips');
+    expect(none.paths).toBe(0);
+    expect(none.graph.nodes.map(n => n.key).sort()).toEqual(['daily', 'trips']);
+  });
+  it('explains a link that opened nothing with similar names and incomplete sources', () => {
+    const graph = projectGraph(capture);
+    // A user two edits away is offered on the same table; a truncated source is named.
+    const link = { kind: 'table' as const, database: 'demo', table: 'trips', user: 'alise' };
+    const missing = [{ kind: 'user' as const, name: 'alise' }];
+    expect(describeMissingLink(graph, link, missing, [{ source: 'users', state: 'truncated', hosts: [], visibility: 'unknown' }])).toEqual({
+      requested: 'demo.trips for alise', missing, incomplete: ['system.users: truncated'],
+      suggestions: [{ focus: 'trips', context: 'alice', name: 'demo.trips for alice' }] });
+    // Each part of the name present in another one is a match.
+    expect(describeMissingLink(graph, { kind: 'user', user: 'th_alice' }, [{ kind: 'user', name: 'th_alice' }], []).suggestions)
+      .toEqual([{ focus: 'alice', context: null, name: 'alice' }]);
+    // A name contained in another one is a match: `trip` finds demo.trips.
+    expect(describeMissingLink(graph, { kind: 'table', database: 'demo', table: 'trip' }, [{ kind: 'table', name: 'demo.trip' }], []).suggestions)
+      .toEqual([{ focus: 'trips', context: null, name: 'demo.trips' }]);
+  });
+  it('offers the pages each object type opens, with the chain user carried to a table', () => {
+    const graph = projectGraph({ ...capture, observations: capture.observations.map(o => o.key === 'trips' ? { ...o, attributes: { ...o.attributes, engine: 'MergeTree' } }
+      : o.key === 'daily' ? { ...o, attributes: { ...o.attributes, engine: 'View' } } : o) });
+    const links = (key: string, contextUser?: string) => describeDetail(graph.nodes.find(n => n.key === key)!, graph, { contextUser })
+      .links.map(d => `${d.page}: ${d.label} | ${d.description} | ${d.url}`);
+    expect(links('trips', 'alice')).toEqual([
+      'Queries: Show queries | Queries on demo.trips | /queries?tableName=demo.trips',
+      'Time Travel: Track in Time Travel | Time Travel tracking demo.trips | /timetravel?tt_table=demo.trips&tt_matched_only=1',
+      'Merges: Show merges | Merges of demo.trips | /merges?database=demo&table=trips',
+      'Queries: Show their queries | Queries by alice on demo.trips | /queries?user=alice&tableName=demo.trips',
+      'Queries: Show their failed queries | Failed queries by alice on demo.trips | /queries?user=alice&tableName=demo.trips&status=error',
+      'Time Travel: Track them in Time Travel | Time Travel tracking alice on demo.trips | /timetravel?tt_user=alice&tt_failed_start=1&tt_table=demo.trips&tt_matched_only=1']);
+    // A view has no merges; without a chain user only the table's own links remain.
+    expect(links('daily')).toEqual(['Queries: Show queries | Queries on demo.daily | /queries?tableName=demo.daily',
+      'Time Travel: Track in Time Travel | Time Travel tracking demo.daily | /timetravel?tt_table=demo.daily&tt_matched_only=1']);
+    expect(links('alice')).toEqual(['Queries: Show queries | Queries by alice | /queries?user=alice', 'Queries: Show failed queries | Failed queries by alice | /queries?user=alice&status=error',
+      'Time Travel: Track in Time Travel | Time Travel tracking alice | /timetravel?tt_user=alice&tt_failed_start=1&tt_matched_only=1']);
+    expect(links('reader', 'alice')).toEqual([]);
+    // Returning reopens focus on the origin, with the chain user on a table.
+    expect(objectLinkUrl(objectLinkFor(graph.nodes.find(n => n.key === 'trips'), 'alice')!)).toBe('/objects?ob_kind=table&ob_db=demo&ob_tbl=trips&ob_user=alice');
+  });
+  it('tells a revoke from a grant: own card, own count, and roles that are not default', () => {
+    const rec = (key: string, kind: ObjectKind, source: Source, attributes: Record<string, unknown> = {}) => ({ key, name: key, kind, source, host: 'ch-1', attributes });
+    const link = (from: string, to: string, kind: Relationship['kind'], source: Source, evidence: Record<string, unknown> = {}): Relationship =>
+      ({ id: `${from}>${to}`, host: 'ch-1', from, to, kind, label: kind, source, evidence });
+    // GRANT SELECT ON demo.* TO analyst; REVOKE SELECT ON demo.audit FROM analyst; bob holds analyst, not by default.
+    const graph = projectGraph({ ...capture, observations: [rec('bob', 'user', 'users'), rec('analyst', 'role', 'roles'),
+      rec('all', 'grant-scope', 'grants', { access_type: 'SELECT', database: 'demo', table: null }),
+      rec('revoke', 'grant-scope', 'grants', { access_type: 'SELECT', database: 'demo', table: 'audit', partial_revoke: 1 }),
+      { ...rec('audit', 'table', 'tables', { database: 'demo', name: 'audit', engine: 'MergeTree' }), name: 'demo.audit' }],
+    relationships: [link('bob', 'analyst', 'has-role', 'role_grants', { granted_role_is_default: 0 }),
+      link('analyst', 'all', 'grant', 'grants', { is_partial_revoke: 0 }), link('analyst', 'revoke', 'grant', 'grants', { is_partial_revoke: 1 }),
+      link('all', 'audit', 'candidate-scope', 'grants', { is_partial_revoke: 0 }), link('revoke', 'audit', 'candidate-scope', 'grants', { is_partial_revoke: 1 })] });
+    const narrowed = withPrincipalContext(focusGraphFrom(graph, 'audit'), 'bob', 'audit');
+    expect({ paths: narrowed.paths, revokes: narrowed.revokes, inactiveRoles: narrowed.inactiveRoles }).toEqual({ paths: 1, revokes: 1, inactiveRoles: ['analyst'] });
+    expect(describePrincipalContext(narrowed)).toBe('1 grant path · 1 revoke · analyst not a default role');
+    const revoke = describeObjects(graph).get('revoke')!;
+    expect(revoke.title).toBe('REVOKE SELECT');
+    expect(revoke.flags).toContain('revoke');
+    const rows = describeDetail(graph.nodes.find(n => n.key === 'audit')!, graph).sections.flatMap(s => s.kind === 'relationships' ? s.groups.flatMap(g => g.rows) : []);
+    expect(rows.find(r => r.relation === 'Revoked by')?.items.map(i => i.key)).toEqual(['revoke']);
+  });
+});

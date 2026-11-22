@@ -97,14 +97,14 @@ assignments, a partial revoke, two row policies, a settings profile, a quota,
 ordinary views, TTLs and a two-stage insert-trigger cascade:
 
 ```text
-events → events_to_minute_mv → events_minute
-       → minute_to_hourly_mv → events_hourly → hourly_report (ordinary view)
+payments → payments_to_minute_mv → payments_minute
+         → minute_to_hourly_mv → payments_hourly → hourly_report (ordinary view)
 ```
 
-The second materialized view reads inserts into `events_minute`. Both target tables
+The second materialized view reads inserts into `payments_minute`. Both target tables
 use SummingMergeTree, and queries sum their stored counts and amounts, so correctness
 does not depend on background merges having completed. Initial setup seeds six
-events; append inserts another 100. Verify compares per-tenant counts and amounts
+payments; append inserts another 100. Verify compares per-tenant counts and amounts
 across the source and both aggregate tables in the current hour. Run it with inserts
 paused: the three SELECTs do not form a transactional snapshot. Repeated setup avoids
 reseeding a populated current hour; it does not repair incompatible existing definitions.
@@ -120,6 +120,20 @@ on each configured query host and appends batches during its insert loop. Local
 tables are independent per host. Optional `--cluster <name>` (or `CH_CLUSTER`) applies
 DDL ON CLUSTER; data seeding and verification still run only on the connected host.
 The multi-host path has not yet been integration-tested.
+
+To see queries from the demo users, run their activity script:
+
+```bash
+just object-demo activity
+just object-demo activity --rounds 20 --interval 10
+```
+
+Each round lets the four `th_ob_*` users log in with random passwords, runs a fixed
+list of queries as each of them and sets them back to `HOST NONE`. Some queries are
+allowed and some fail with `ACCESS_DENIED` (497). Alice reads `payments` through her
+default role and a row policy. Bob needs `SET ROLE` before his role applies, and a
+partial revoke refuses him `audit_log`. Carol and `th_ob_denied` are refused reads. The output marks each query against its expected result. In `system.query_log`
+these queries carry `log_comment = 'tracehouse:object-demo'`.
 
 Remove only this scenario's database and access entities with:
 

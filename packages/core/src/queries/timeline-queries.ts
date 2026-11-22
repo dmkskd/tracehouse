@@ -9,9 +9,6 @@
 /** Max rows returned per activity type (queries, merges, mutations). */
 export const TIMELINE_ACTIVITY_LIMIT = 100;
 
-/** Minimum memory (bytes) to include an activity row — filters out noise from tiny operations. */
-const MIN_MEMORY_BYTES = 1048576; // 1 MB
-
 /** Seconds → milliseconds multiplier. */
 const SEC_TO_MS = 1000;
 
@@ -339,17 +336,24 @@ export const ACTIVE_QUERIES = `
     exception_code,
     exception
   FROM {{cluster_aware:system.query_log}}
-  WHERE type IN ('QueryFinish', 'ExceptionWhileProcessing')
-    AND event_date >= {start_date}
+  WHERE event_date >= {start_date}
     AND query_start_time <= {end_time}
     AND (query_start_time + toIntervalMillisecond(query_duration_ms)) >= {start_time}
-    AND query NOT LIKE ${APP_SOURCE_LIKE}
-    AND memory_usage > ${MIN_MEMORY_BYTES}
+    AND ({include_app} = 1 OR query NOT LIKE ${APP_SOURCE_LIKE})
+    AND (
+      (type IN ('QueryFinish', 'ExceptionWhileProcessing')
+        AND ({min_memory_bytes} = 0 OR memory_usage > {min_memory_bytes}
+          OR ({min_duration_ms} > 0 AND query_duration_ms >= {min_duration_ms})))
+      OR ({include_failed_before_start} = 1 AND type = 'ExceptionBeforeStart'))
   ORDER BY {query_order_by} DESC
   LIMIT {activity_limit}
 `;
-/** Active queries filtered by normalized_query_hash — shows ALL executions of a query hash (no memory filter, no limit) */
-export const ACTIVE_QUERIES_BY_HASH = `
+/**
+ * Active queries matching the tracking filter: every match in the window, whatever its
+ * memory or duration, with no limit. Queries that failed before start and TraceHouse queries follow the filters.
+ * An empty tracking parameter leaves its dimension open.
+ */
+export const ACTIVE_QUERIES_TRACKED = `
   SELECT
     query_id,
     user,
@@ -370,32 +374,36 @@ export const ACTIVE_QUERIES_BY_HASH = `
     exception_code,
     exception
   FROM {{cluster_aware:system.query_log}}
-  WHERE type IN ('QueryFinish', 'ExceptionWhileProcessing')
-    AND event_date >= {start_date}
+  WHERE event_date >= {start_date}
     AND query_start_time <= {end_time}
     AND (query_start_time + toIntervalMillisecond(query_duration_ms)) >= {start_time}
-    AND query NOT LIKE ${APP_SOURCE_LIKE}
-    AND normalized_query_hash = {normalized_query_hash}
+    AND ({include_app} = 1 OR query NOT LIKE ${APP_SOURCE_LIKE})
+    AND (type IN ('QueryFinish', 'ExceptionWhileProcessing') OR ({include_failed_before_start} = 1 AND type = 'ExceptionBeforeStart'))
+    AND ({track_hash} = '' OR toString(normalized_query_hash) = {track_hash})
+    AND ({track_user} = '' OR user = {track_user})
+    AND ({track_table} = '' OR has(tables, {track_table}))
   ORDER BY query_start_time DESC
 `;
 
-/** Count of queries active during the window (before LIMIT/memory filter of detail query) */
+/** Count of queries active during the window that pass the filters (before LIMIT) */
 export const ACTIVE_QUERIES_COUNT = `
   SELECT count()
   FROM {{cluster_aware:system.query_log}}
-  WHERE type IN ('QueryFinish', 'ExceptionWhileProcessing')
-    AND event_date >= {start_date}
+  WHERE event_date >= {start_date}
     AND query_start_time <= {end_time}
     AND (query_start_time + toIntervalMillisecond(query_duration_ms)) >= {start_time}
-    AND query NOT LIKE ${APP_SOURCE_LIKE}
-    AND memory_usage > ${MIN_MEMORY_BYTES}
+    AND ({include_app} = 1 OR query NOT LIKE ${APP_SOURCE_LIKE})
+    AND (
+      (type IN ('QueryFinish', 'ExceptionWhileProcessing')
+        AND ({min_memory_bytes} = 0 OR memory_usage > {min_memory_bytes}
+          OR ({min_duration_ms} > 0 AND query_duration_ms >= {min_duration_ms})))
+      OR ({include_failed_before_start} = 1 AND type = 'ExceptionBeforeStart'))
 `;
 
 /**
  * Count and sum of active merges (includes TTL moves).
- * The 1MB memory filter keeps the timeline from flooding with tiny merges.
- * MovePart events bypass it since they're file relocations with ~0 memory.
- * TODO: consider making the memory threshold configurable via UI filter.
+ * The thresholds (TimelineFilters) keep the timeline from flooding with tiny merges.
+ * MovePart events bypass them since they're file relocations with ~0 memory.
  */
 export const ACTIVE_MERGES_COUNT = `
   SELECT count(), sum(peak_memory_usage)
@@ -404,7 +412,8 @@ export const ACTIVE_MERGES_COUNT = `
     AND event_date >= {start_date}
     AND (event_time - toIntervalMillisecond(duration_ms)) <= {end_time}
     AND event_time >= {start_time}
-    AND (peak_memory_usage > ${MIN_MEMORY_BYTES} OR event_type = 'MovePart')
+    AND (event_type = 'MovePart' OR {min_memory_bytes} = 0 OR peak_memory_usage > {min_memory_bytes}
+      OR ({min_duration_ms} > 0 AND duration_ms >= {min_duration_ms}))
 `;
 
 /** Individual merges active during the window (includes TTL moves) */
@@ -426,7 +435,8 @@ export const ACTIVE_MERGES_DETAIL = `
     AND event_date >= {start_date}
     AND (event_time - toIntervalMillisecond(duration_ms)) <= {end_time}
     AND event_time >= {start_time}
-    AND (peak_memory_usage > ${MIN_MEMORY_BYTES} OR event_type = 'MovePart')
+    AND (event_type = 'MovePart' OR {min_memory_bytes} = 0 OR peak_memory_usage > {min_memory_bytes}
+      OR ({min_duration_ms} > 0 AND duration_ms >= {min_duration_ms}))
   ORDER BY {merge_order_by} DESC
   LIMIT {activity_limit}
 `;
@@ -445,7 +455,8 @@ export const ACTIVE_MERGES_PROFILE = `
     AND event_date >= {start_date}
     AND (event_time - toIntervalMillisecond(duration_ms)) <= {end_time}
     AND event_time >= {start_time}
-    AND (peak_memory_usage > ${MIN_MEMORY_BYTES} OR event_type = 'MovePart')
+    AND (event_type = 'MovePart' OR {min_memory_bytes} = 0 OR peak_memory_usage > {min_memory_bytes}
+      OR ({min_duration_ms} > 0 AND duration_ms >= {min_duration_ms}))
   ORDER BY {merge_order_by} DESC
   LIMIT {activity_limit}
 `;
@@ -522,8 +533,9 @@ export const RUNNING_QUERIES_TIMELINE = `
     ProfileEvents['OSWriteBytes'] AS disk_write
   FROM system.processes
   WHERE is_initial_query = 1
-    AND query NOT LIKE ${APP_SOURCE_LIKE}
-    AND memory_usage > ${MIN_MEMORY_BYTES}
+    AND ({include_app} = 1 OR query NOT LIKE ${APP_SOURCE_LIKE})
+    AND ({min_memory_bytes} = 0 OR memory_usage > {min_memory_bytes}
+      OR ({min_duration_ms} > 0 AND elapsed * ${SEC_TO_MS} >= {min_duration_ms}))
   ORDER BY {query_order_by} DESC
   LIMIT {activity_limit}
 `;
@@ -548,7 +560,8 @@ export const RUNNING_MERGES_TIMELINE = `
     bytes_written_uncompressed AS disk_write,
     is_mutation
   FROM {{cluster_aware:system.merges}}
-  WHERE (memory_usage > ${MIN_MEMORY_BYTES} OR is_mutation = 1)
+  WHERE (is_mutation = 1 OR {min_memory_bytes} = 0 OR memory_usage > {min_memory_bytes}
+    OR ({min_duration_ms} > 0 AND elapsed * ${SEC_TO_MS} >= {min_duration_ms}))
   ORDER BY memory_usage DESC
   LIMIT {activity_limit}
 `;

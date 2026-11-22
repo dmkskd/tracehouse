@@ -559,6 +559,7 @@ export const QueryExplorer: React.FC<QueryExplorerProps> = ({ urlState, onUrlSta
       partLink: handlePartLinkChartClick,
       queryLink: event => pageLink.openLabel('queryLink', event.label),
       mergeLink: event => pageLink.openLabel('mergeLink', event.label),
+      objectLink: event => pageLink.openObjectLabel(event.label),
     };
     return { onClick: handlers[action], hint: chartClickHint(action, currentQuery?.directives.drill?.into) };
   }, [currentQuery, result?.columns, handleDrillDown, handlePartLinkChartClick, pageLink]);
@@ -1186,6 +1187,8 @@ export const QueryExplorer: React.FC<QueryExplorerProps> = ({ urlState, onUrlSta
                 onMergeLinkClick={isMergeLinkable ? row => pageLink.openRow('mergeLink', row) : undefined}
                 queryLinkOnColumn={isQueryLinkable ? currentQuery?.directives.queryLink?.on : undefined}
                 onQueryLinkClick={isQueryLinkable ? row => pageLink.openRow('queryLink', row) : undefined}
+                    objectLinkColumns={currentQuery?.directives.objectLinks?.map(link => link.on)}
+                    onObjectLinkClick={pageLink.openObject}
                 enableRowDetails
               />
               </div>

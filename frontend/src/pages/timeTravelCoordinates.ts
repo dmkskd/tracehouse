@@ -9,7 +9,7 @@ export type TimeTravelSortDir = 'asc' | 'desc';
 export type TimeTravelNavigatorShape = 'trend' | 'peaks' | 'change';
 
 export interface TimeTravelCoordinates {
-  queryHashOnly: boolean;
+  trackedOnly: boolean;
   windowSec: number;
   isLive: boolean;
   autoRefresh: boolean;
@@ -153,7 +153,8 @@ function readPageCoordinates(
   const range = params.get('tt_range');
 
   return {
-    queryHashOnly: params.get('tt_hash_only') === '1',
+    // tt_hash_only is the name from when only query hashes could be tracked.
+    trackedOnly: (params.get('tt_matched_only') ?? params.get('tt_hash_only')) === '1',
     windowSec: finiteNumber(params, 'tt_window', 150),
     isLive: params.has('tt_live') ? params.get('tt_live') === '1' : !hasEvent,
     autoRefresh: params.get('tt_auto') === '1',
@@ -208,7 +209,8 @@ function setOptional(params: URLSearchParams, key: string, value: string | null,
 export function writeTimeTravelCoordinates(params: URLSearchParams, coordinates: TimeTravelCoordinates): URLSearchParams {
   const next = new URLSearchParams(params);
   LINK_TIME_PARAMS.forEach(key => next.delete(key));
-  next.set('tt_hash_only', coordinates.queryHashOnly ? '1' : '0');
+  next.delete('tt_hash_only');
+  next.set('tt_matched_only', coordinates.trackedOnly ? '1' : '0');
   next.set('tt_window', String(coordinates.windowSec));
   next.set('tt_live', coordinates.isLive ? '1' : '0');
   next.set('tt_auto', coordinates.autoRefresh ? '1' : '0');

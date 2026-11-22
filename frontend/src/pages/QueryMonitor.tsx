@@ -476,9 +476,9 @@ export const QueryMonitor: React.FC = () => {
         <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 12 }}>
           <div>
             <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+              <BackLink from={cameFrom} />
               <h2 style={{ color: 'var(--text-primary)', fontSize: 18, fontWeight: 600, margin: 0 }}>Query Tracker</h2>
               <DocsLink path="/features/query-monitor" />
-              <BackLink from={cameFrom} />
             </div>
           </div>
           <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>

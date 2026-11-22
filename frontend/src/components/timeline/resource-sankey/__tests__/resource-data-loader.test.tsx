@@ -23,7 +23,7 @@ describe('resource data loading boundary', () => {
     const data = timeline();
     const service = { getTimeline: vi.fn(async () => data), getZoomData: vi.fn(async () => data) };
     const load = createResourceDataLoader({ timelineService: service, hostnameFilter: ['ch-01', 'ch-02'], includeRunning: false,
-      activityLimit: 100, queryHashFilter: null, queryHashOnly: false, xraySelection: undefined });
+      activityLimit: 100, tracking: null, trackedOnly: false, xraySelection: undefined });
     await load(data, 'memory', start + 130000, 'ch-02');
     expect(service.getTimeline).toHaveBeenCalledWith(expect.objectContaining({ hostname: 'ch-02', activeMetric: 'memory' }));
     expect(service.getZoomData).toHaveBeenCalledWith(data, start + 120000, start + 240000, 'ch-02', undefined);
@@ -36,7 +36,7 @@ describe('resource data loading boundary', () => {
     const original = timeline(60_000), loaded = timeline();
     const service = { getTimeline: vi.fn(async () => loaded), getZoomData: vi.fn(async () => loaded) };
     const load = createResourceDataLoader({ timelineService: service, hostnameFilter: null, includeRunning: false, activityLimit: 100,
-      queryHashFilter: null, queryHashOnly: false, xraySelection: undefined });
+      tracking: null, trackedOnly: false, xraySelection: undefined });
     const selection = { kind: 'range' as const, startMs: start - 1800_000, endMs: start + 1800_000 };
     await load(original, 'cpu', start, undefined, selection);
     expect(service.getTimeline).toHaveBeenCalledWith(expect.objectContaining({ timestamp: new Date(start), windowSeconds: 1800 }));
@@ -48,7 +48,7 @@ describe('resource data loading boundary', () => {
     const service = { getTimeline: vi.fn(async () => timeline(60000)), getZoomData: vi.fn(async () => timeline(60000)),
       getNavigatorMetric: vi.fn(async () => ({ window_start: original.window_start, window_end: original.window_end, bucket_seconds: 4, points: contextPoints })) };
     const load = createResourceDataLoader({ timelineService: service, hostnameFilter: ['ch-01', 'ch-02'], includeRunning: false, activityLimit: 100,
-      queryHashFilter: null, queryHashOnly: false, xraySelection: undefined });
+      tracking: null, trackedOnly: false, xraySelection: undefined });
     const result = await load(original, 'cpu', start + 150000, undefined, { kind: 'range', startMs: start + 120000, endMs: start + 180000 });
     expect(service.getNavigatorMetric).toHaveBeenCalledWith(expect.objectContaining({ startTime: new Date(start), endTime: new Date(start + 3600000), hostname: ['ch-01', 'ch-02'] }));
     expect(result.contextSeries).toEqual(contextPoints.map(point => ({ t: point.t, v: point.average_v })));
@@ -58,7 +58,7 @@ describe('resource data loading boundary', () => {
   it('discloses sampling errors and retains the successfully loaded server data', async () => {
     const data = timeline();
     const load = createResourceDataLoader({ timelineService: { getTimeline: vi.fn(async () => data), getZoomData: vi.fn(async () => { throw new Error('sampler unavailable'); }) },
-      hostnameFilter: null, includeRunning: false, activityLimit: 100, queryHashFilter: null, queryHashOnly: false, xraySelection: undefined });
+      hostnameFilter: null, includeRunning: false, activityLimit: 100, tracking: null, trackedOnly: false, xraySelection: undefined });
     await expect(load(data, 'cpu', start)).resolves.toEqual({ data, samplingWarning: 'Operation samples could not be loaded: sampler unavailable' });
   });
   it('reloads only when crossing a sample chunk and ignores stale host responses', async () => {
@@ -114,7 +114,7 @@ describe('server aggregate loading and local scrubbing', () => {
     };
     const service = { getTimeline: vi.fn(async () => data), getZoomData: vi.fn(async () => data) };
     const loader = createResourceDataLoader({ attributionService: aggregation, timelineService: service, hostnameFilter: ['ch-01'],
-      includeRunning: false, activityLimit: 100, queryHashFilter: null, queryHashOnly: false, xraySelection: undefined });
+      includeRunning: false, activityLimit: 100, tracking: null, trackedOnly: false, xraySelection: undefined });
     return { data, aggregation, service, loader, summary };
   }
   it('scrubs 100 cursor positions locally and fetches only once per new chunk', async () => {

@@ -61,7 +61,8 @@ export interface OperationRow {
    */
   metricEstimated: boolean;
   /** Queries only: matches the active normalized-hash filter. */
-  matchedHash: boolean;
+  /** Matches the tracking filter. */
+  tracked: boolean;
   /** Finished with a query exception or a part_log error. */
   failed: boolean;
   /** Merges only: the merge reason, for the category badge. */
@@ -85,10 +86,10 @@ export interface OperationRowOptions {
   pinnedMs: number | null;
   /** Zoom selection [startMs, endMs] restricting the 'window' scope. */
   zoomRange: readonly [number, number] | null;
-  /** A normalized-hash filter is active: matching queries float to the top. */
-  hashFilterActive?: boolean;
-  /** Hash filter is exclusive: drop everything that does not match. */
-  hashOnly?: boolean;
+  /** A tracking filter is active: tracked operations float to the top. */
+  trackingActive?: boolean;
+  /** Tracking is exclusive: drop every operation that is not tracked. */
+  trackedOnly?: boolean;
   /** Free-text filter over id, label, user, host and kind. */
   search?: string;
 }
@@ -151,7 +152,7 @@ function toRow(
     progress: part?.progress,
     isRunning: item.is_running === true,
     metricEstimated: mode === 'cpu' && kind !== 'query' && item.is_running === true,
-    matchedHash: query?.matched_hash === true,
+    tracked: item.tracked === true,
     failed: (query ? query.exception_code ?? 0 : part?.error ?? 0) !== 0,
     mergeReason: merge?.merge_reason,
     source: item,
@@ -177,9 +178,9 @@ function sortText(row: OperationRow, field: OperationSortField): string {
 }
 
 function compareRows(a: OperationRow, b: OperationRow, options: OperationRowOptions): number {
-  const { sortField, sortDir, hashFilterActive, hashOnly } = options;
-  if (hashFilterActive && !hashOnly && a.matchedHash !== b.matchedHash) {
-    return a.matchedHash ? -1 : 1;
+  const { sortField, sortDir, trackingActive, trackedOnly } = options;
+  if (trackingActive && !trackedOnly && a.tracked !== b.tracked) {
+    return a.tracked ? -1 : 1;
   }
   if (sortField === 'kind' || sortField === 'user' || sortField === 'server') {
     const cmp = sortText(a, sortField).localeCompare(sortText(b, sortField));
@@ -218,13 +219,11 @@ export function buildOperationRows(
 ): OperationRow[] {
   const rows: OperationRow[] = [];
   input.queries.forEach((q, idx) => rows.push(toRow('query', idx, q, options.metricMode)));
-  if (!(options.hashOnly && options.hashFilterActive)) {
-    input.merges.forEach((m, idx) => rows.push(toRow('merge', idx, m, options.metricMode)));
-    input.mutations.forEach((m, idx) => rows.push(toRow('mutation', idx, m, options.metricMode)));
-  }
+  input.merges.forEach((m, idx) => rows.push(toRow('merge', idx, m, options.metricMode)));
+  input.mutations.forEach((m, idx) => rows.push(toRow('mutation', idx, m, options.metricMode)));
   const search = options.search?.trim() ?? '';
   const scoped = rows.filter(row => inScope(row, options)
-    && !(options.hashOnly && options.hashFilterActive && row.kind === 'query' && !row.matchedHash)
+    && !(options.trackedOnly && options.trackingActive && !row.tracked)
     && (search === '' || matchesOperationSearch(row, search)));
   return scoped.sort((a, b) => compareRows(a, b, options));
 }

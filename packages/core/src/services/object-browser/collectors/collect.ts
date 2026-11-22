@@ -5,7 +5,7 @@ import { objectKey } from '../model/types.js';
 import type { Attributes, Capture, Investigation, Observation, Relationship, Source } from '../model/types.js';
 import { canonical, sortedSet } from '../model/canonical.js';
 import { tableLinks } from './tables.js';
-import { privilegeGroup, privilegeTree, type PrivilegeTree } from '../model/privileges.js';
+import { privilegeGroup, privilegeTree, tableOperations, type PrivilegeTree } from '../model/privileges.js';
 import type { MonitoringCapability } from '../../../types/monitoring-capabilities.js';
 
 type Row = Record<string, unknown>;
@@ -161,13 +161,16 @@ export async function collectObjects(adapter: IClickHouseAdapter, investigation:
     if (!closure.get(text(r.host))?.has(recipient)) continue;
     const scope = { access_type: r.access_type, access_object: r.access_object, database: r.database,
       table: r.table, column: r.column, is_wildcard: r.is_wildcard,
+      table_operations: tableOperations(privileges, text(r.access_type)),
+      // A partial revoke is its own object: it removes the privilege it names.
+      ...(flag(r.is_partial_revoke) ? { partial_revoke: 1 } : {}),
       ...(privileges ? { privilege_group: privilegeGroup(privileges, text(r.access_type)), privilege_level: privileges.get(text(r.access_type))?.level ?? null } : {}) };
     const scopeKey = k('grant-scope', canonical(scope));
-    const name = `${r.access_type}${r.column == null ? '' : `(${r.column})`} ON ${r.database ?? '*'}.${r.table ?? '*'}`;
+    const name = `${flag(r.is_partial_revoke) ? 'REVOKE ' : ''}${r.access_type}${r.column == null ? '' : `(${r.column})`} ON ${r.database ?? '*'}.${r.table ?? '*'}`;
     add('grant-scope', name, 'grants', { host: r.host, ...scope }, scopeKey);
     rel(recipient, scopeKey, 'grant', flag(r.is_partial_revoke) ? 'partial revoke · evidence' : `${r.access_type} grant`, 'grants', r);
-    // Candidate name coverage only: no privilege hierarchy, prefix, revoke or union evaluator.
-    if (!browse && r.access_type === investigation.operation && !flag(r.is_wildcard) && !text(r.access_object)
+    // Candidate name coverage only: no prefix, revoke or union evaluator.
+    if (!browse && scope.table_operations.includes(investigation.operation) && !flag(r.is_wildcard) && !text(r.access_object)
       && (r.database == null || r.database === investigation.database) && (r.table == null || r.table === investigation.table)) {
       rel(scopeKey, tableKey, 'candidate-scope', flag(r.is_partial_revoke) ? 'excluded scope · evidence' : 'candidate name match', 'grants', r);
     }

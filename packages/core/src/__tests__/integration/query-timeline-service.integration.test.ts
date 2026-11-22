@@ -437,6 +437,114 @@ describe('TimelineService integration', { tags: ['query-analysis'] }, () => {
     });
   });
 
+  // ── Filters: thresholds, failed before start and TraceHouse queries ───────────
+
+  describe('filters decide which operations are listed', () => {
+    beforeAll(async () => {
+      // Small and slow; small and instant; failed before start; tagged as TraceHouse's own.
+      await runAndDrainQuery(ctx, `SELECT 'tt_probe_slow', sleep(0.3)`);
+      // A few ms: an untracked zero-length query has no band and is not listed.
+      await runAndDrainQuery(ctx, `SELECT 'tt_probe_small', sleep(0.01)`);
+      await expect(runAndDrainQuery(ctx, `SELECT 'tt_probe_failed_start' FROM ${TEST_DB}.tt_missing_table`)).rejects.toThrow();
+      await runAndDrainQuery(ctx, `SELECT 'tt_probe_self', sleep(0.2) /* source:TraceHouse:Test:probe */`);
+      await ctx.client.command({ query: 'SYSTEM FLUSH LOGS' });
+    });
+    const listed = async (filters: Parameters<TimelineService['getTimeline']>[0]['filters']) => {
+      const result = await service.getTimeline({ timestamp: new Date(), windowSeconds: 300, includeRunning: false, activityLimit: 1000, filters });
+      return { labels: result.queries.map(q => q.label), result };
+    };
+    const has = (labels: string[], probe: string) => labels.some(label => label.includes(probe));
+
+    // Each probe uses a few MB here (client format buffers): 64 MB is above all of them.
+    const above = 64 * 1024 * 1024;
+
+    it('lists nothing below the memory threshold', async () => {
+      const { labels } = await listed({ minMemoryBytes: above });
+      for (const probe of ['tt_probe_slow', 'tt_probe_small', 'tt_probe_failed_start', 'tt_probe_self']) expect(has(labels, probe)).toBe(false);
+    });
+
+    it('adds operations over the duration threshold, and counts them', async () => {
+      const { labels, result } = await listed({ minMemoryBytes: above, minDurationMs: 200 });
+      expect(has(labels, 'tt_probe_slow')).toBe(true);
+      expect(has(labels, 'tt_probe_small')).toBe(false);
+      expect(result.query_count).toBeGreaterThanOrEqual(labels.length);
+    });
+
+    it('lists every size with the memory threshold off, still without queries that failed before start or TraceHouse queries', async () => {
+      const { labels } = await listed({ minMemoryBytes: 0 });
+      expect(has(labels, 'tt_probe_small')).toBe(true);
+      expect(has(labels, 'tt_probe_failed_start')).toBe(false);
+      expect(has(labels, 'tt_probe_self')).toBe(false);
+    });
+
+    it('lists queries that failed before start as failures and TraceHouse queries when asked', async () => {
+      const { result } = await listed({ includeFailedBeforeStart: true, includeTraceHouse: true, minMemoryBytes: above, minDurationMs: 150 });
+      const failedStart = result.queries.find(q => q.label.includes('tt_probe_failed_start'));
+      expect(failedStart?.exception_code).toBeGreaterThan(0);
+      expect(result.queries.some(q => q.label.includes('tt_probe_self'))).toBe(true);
+    });
+  });
+
+  // ── Tracking by user and table ────────────────────────────────────
+
+  describe('tracking by user and table marks every matching operation', () => {
+    let currentUser: string;
+    beforeAll(async () => {
+      for (let i = 0; i < 2; i++) await runAndDrainQuery(ctx, `SELECT max(value), sleep(0.01) FROM ${TEST_DB}.events WHERE id > ${i}`);
+      // Fails before start (UNKNOWN_TABLE): no memory, no duration.
+      await expect(runAndDrainQuery(ctx, `SELECT 1 FROM ${TEST_DB}.tracked_missing_table`)).rejects.toThrow();
+      await ctx.client.command({ query: 'SYSTEM FLUSH LOGS' });
+      currentUser = (await ctx.rawAdapter.executeQuery<{ u: string }>('SELECT currentUser() AS u'))[0].u;
+    });
+    const timeline = (tracking: { user?: string; table?: string }) =>
+      service.getTimeline({ timestamp: new Date(), windowSeconds: 300, includeRunning: false, tracking });
+
+    it('tracks a table: its queries by query_log.tables, and its merges and mutations', async () => {
+      const table = `${TEST_DB}.events`;
+      const result = await timeline({ table });
+      const tracked = result.queries.filter(q => q.tracked);
+      expect(tracked.length).toBeGreaterThanOrEqual(2);
+      for (const q of tracked) expect(q.tables).toContain(table);
+      expect(result.queries.filter(q => !q.tracked).every(q => !q.tables?.includes(table))).toBe(true);
+      const parts = [...result.merges, ...result.mutations];
+      expect(parts.some(p => p.tracked)).toBe(true);
+      for (const p of parts) expect(p.tracked === true).toBe(p.table === table);
+    });
+
+    it('tracks a user on a table: only queries by that user, and no merges', async () => {
+      const result = await timeline({ user: currentUser, table: `${TEST_DB}.events` });
+      const tracked = result.queries.filter(q => q.tracked);
+      expect(tracked.length).toBeGreaterThanOrEqual(2);
+      for (const q of tracked) expect(q.user).toBe(currentUser);
+      expect([...result.merges, ...result.mutations].some(p => p.tracked)).toBe(false);
+    });
+
+    it('lists a tracked query under a millisecond, which untracked has no band to draw', async () => {
+      await runAndDrainQuery(ctx, `SELECT 'tt_probe_instant'`);
+      await ctx.client.command({ query: 'SYSTEM FLUSH LOGS' });
+      const instant = (await timeline({ user: currentUser })).queries.find(q => q.label.includes('tt_probe_instant'));
+      expect(instant?.tracked).toBe(true);
+    });
+
+    it('keeps each tracking value inside its own literal, whatever it contains', async () => {
+      // A value naming another placeholder, and one closing the quote: both stay text and match nothing.
+      const result = await timeline({ user: '{track_table}', table: "x' OR 1=1 --" });
+      expect(result.queries.filter(q => q.tracked)).toEqual([]);
+    });
+
+    it('counts tracked queries below the thresholds in the total, so listed never exceeds it', async () => {
+      const result = await service.getTimeline({ timestamp: new Date(), windowSeconds: 300, includeRunning: false,
+        tracking: { user: currentUser }, filters: { minMemoryBytes: 1024 ** 4 } });
+      expect(result.queries.filter(q => q.tracked).length).toBeGreaterThan(0);
+      expect(result.query_count).toBeGreaterThanOrEqual(result.queries.length);
+    });
+
+    it('tracks nothing for a user without queries', async () => {
+      const result = await timeline({ user: 'th_nobody_here' });
+      expect(result.queries.filter(q => q.tracked)).toEqual([]);
+    });
+  });
+
   // ── normalizedQueryHash pattern mode ──────────────────────────────
 
   describe('normalizedQueryHash filters to a specific query pattern', () => {
@@ -480,15 +588,15 @@ describe('TimelineService integration', { tags: ['query-analysis'] }, () => {
       knownQueryId = rows[0].query_id;
     });
 
-    it('marks hash-matched queries with matched_hash flag', async () => {
+    it('marks hash-matched queries as tracked', async () => {
       const result = await service.getTimeline({
         timestamp: new Date(),
         windowSeconds: 300,
-        normalizedQueryHash: knownHash,
+        tracking: { queryHash: knownHash },
         includeRunning: false,
       });
 
-      const matched = result.queries.filter(q => q.matched_hash);
+      const matched = result.queries.filter(q => q.tracked);
       expect(matched.length).toBeGreaterThanOrEqual(3);
 
       // Every matched query should contain our distinctive pattern
@@ -501,12 +609,12 @@ describe('TimelineService integration', { tags: ['query-analysis'] }, () => {
       const result = await service.getTimeline({
         timestamp: new Date(),
         windowSeconds: 300,
-        normalizedQueryHash: knownHash,
+        tracking: { queryHash: knownHash },
         includeRunning: false,
       });
 
-      const matched = result.queries.filter(q => q.matched_hash);
-      const unmatched = result.queries.filter(q => !q.matched_hash);
+      const matched = result.queries.filter(q => q.tracked);
+      const unmatched = result.queries.filter(q => !q.tracked);
 
       // Should have both types
       expect(matched.length).toBeGreaterThanOrEqual(3);
@@ -517,7 +625,7 @@ describe('TimelineService integration', { tags: ['query-analysis'] }, () => {
       const withHash = await service.getTimeline({
         timestamp: new Date(),
         windowSeconds: 300,
-        normalizedQueryHash: knownHash,
+        tracking: { queryHash: knownHash },
         includeRunning: false,
       });
 
@@ -535,7 +643,7 @@ describe('TimelineService integration', { tags: ['query-analysis'] }, () => {
       const withHash = await service.getTimeline({
         timestamp: new Date(),
         windowSeconds: 300,
-        normalizedQueryHash: knownHash,
+        tracking: { queryHash: knownHash },
         includeRunning: false,
       });
 
@@ -561,7 +669,7 @@ describe('TimelineService integration', { tags: ['query-analysis'] }, () => {
         service.getTimeline({
           timestamp: new Date(),
           windowSeconds: 300,
-          normalizedQueryHash: 'DROP TABLE foo',
+          tracking: { queryHash: 'DROP TABLE foo' },
         }),
       ).rejects.toThrow(/Invalid normalized_query_hash|expected numeric UInt64/);
     });
@@ -570,14 +678,14 @@ describe('TimelineService integration', { tags: ['query-analysis'] }, () => {
       const result = await service.getTimeline({
         timestamp: new Date(),
         windowSeconds: 300,
-        normalizedQueryHash: '99999999999999999',
+        tracking: { queryHash: '99999999999999999' },
         includeRunning: false,
       });
 
       // Normal queries are still present (overlay mode)
       expect(result.queries.length).toBeGreaterThan(0);
       // But none should be marked as matched
-      const matched = result.queries.filter(q => q.matched_hash);
+      const matched = result.queries.filter(q => q.tracked);
       expect(matched.length).toBe(0);
     });
   });

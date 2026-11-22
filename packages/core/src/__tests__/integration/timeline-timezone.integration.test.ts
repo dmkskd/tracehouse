@@ -1,3 +1,4 @@
+import { resolveTimelineFilters, timelineFilterParams } from '../../utils/timeline-filters.js';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { TimelineService } from '../../services/timeline-service.js';
 import type { IClickHouseAdapter } from '../../adapters/types.js';
@@ -166,7 +167,7 @@ describe('Time Travel server timezone round trip', { tags: ['query-analysis'] },
 
     it(`${timezone}: running query, merge and mutation projections use UTC`, async () => {
       for (const template of [queries.RUNNING_QUERIES_TIMELINE, queries.RUNNING_MERGES_TIMELINE]) {
-        const sql = buildQuery(template, { activity_limit: 10 })
+        const sql = buildQuery(template, { ...timelineFilterParams(resolveTimelineFilters()), activity_limit: 10 })
           .replaceAll('{query_order_by}', 'memory_usage')
           .replace(/\{\{cluster_aware:system\.merges\}\}|system\.processes/g, fixture(1793880000, timezone, true));
         const rows = await ctx.rawAdapter.executeQuery<{ qst?: string; merge_start?: string; expected_epoch: number }>(

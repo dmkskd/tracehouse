@@ -10,6 +10,8 @@ import {
   chartClickAction,
   chartClickHint,
   pageLinkUrl,
+  objectLinkUrlFor,
+  objectLinkOn,
   type CellStyleRule,
 } from '../metaLanguage';
 import mergeCostQueries from '../queries/mergeCost';
@@ -938,5 +940,29 @@ describe('chart click action', { tags: ['analytics'] }, () => {
     expect(pageLinkUrl({ queryLink: { on: 'query_id', tab: 'xray' } }, 'queryLink', { query_id: 'q-1' })).toBe('/queries?qd_id=q-1&qd_tab=xray');
     expect(pageLinkUrl({ queryLink }, 'queryLink', { query_id: '' })).toBeNull();
     expect(pageLinkUrl({}, 'mergeLink', { part: 'p' })).toBeNull();
+  });
+});
+
+describe('@object_link', () => {
+  const sql = `-- @meta: title='Tables by user' group='Access'
+-- @object_link: on=tbl kind=table database=db table=tbl user=user
+-- @object_link: on=user kind=user user=user
+-- @object_link: on=broken kind=table database=db
+SELECT db, tbl, user FROM t`;
+
+  test('one directive per clickable column; incomplete ones are dropped', () => {
+    expect(parseDirectives(sql)!.objectLinks).toEqual([
+      { on: 'tbl', kind: 'table', database: 'db', table: 'tbl', user: 'user' },
+      { on: 'user', kind: 'user', user: 'user' }]);
+  });
+
+  test('a table cell opens the table with the row user in context; a user cell opens the user', () => {
+    const directives = parseDirectives(sql)!;
+    const row = { db: 'demo', tbl: 'payments', user: 'th_ob_bob' };
+    expect(objectLinkUrlFor(objectLinkOn(directives, 'tbl')!, row)).toBe('/objects?ob_kind=table&ob_db=demo&ob_tbl=payments&ob_user=th_ob_bob');
+    expect(objectLinkUrlFor(objectLinkOn(directives, 'user')!, row)).toBe('/objects?ob_kind=user&ob_user=th_ob_bob');
+    expect(objectLinkUrlFor(objectLinkOn(directives, 'tbl')!, { ...row, db: '' })).toBeNull();
+    expect(chartClickAction(directives, ['db', 'tbl', 'user'])).toBe('objectLink');
+    expect(chartClickHint('objectLink')).toBe('Click to open in the object browser');
   });
 });

@@ -17,7 +17,7 @@ export interface ObjectCard {
   /** One muted line under the title: the type and the fact that matters most for it. */
   summary: string;
   facts: CardFact[];
-  flags: ('differs' | 'partial' | 'unresolved')[];
+  flags: ('differs' | 'partial' | 'unresolved' | 'revoke')[];
   /** Present only when host coverage carries information: several hosts or partial. */
   hosts?: string;
   hover: ObjectHover;
@@ -46,6 +46,7 @@ export interface ObjectHover {
 }
 export const FLAG_LABELS: Record<ObjectCard['flags'][number], string> = {
   differs: 'differs across hosts', partial: 'partial / not comparable', unresolved: 'unresolved reference',
+  revoke: 'partial revoke',
 };
 
 const MAX_FACTS = 3;
@@ -166,9 +167,10 @@ const describers: Record<ObjectType, Describe> = {
       global: matched ? `All tables${matched}` : 'Global', database: `All tables in ${str(database)}${matched}`,
       table: `ON ${str(database)}.${str(table)}`, column: `ON ${str(database)}.${str(table)}`, object: `ON ${object}`,
     };
+    const revoke = Number(attr(node, 'partial_revoke')) === 1;
     return {
-      title: column == null ? access : `${access}(${str(column)})`,
-      summary: covers[scope],
+      title: `${revoke ? 'REVOKE ' : ''}${column == null ? access : `${access}(${str(column)})`}`,
+      summary: revoke ? `Removed ${covers[scope].replace(/^ON /, 'on ').replace(/^All tables/, 'from all tables')}` : covers[scope],
       qualifier: `ON ${object || `${str(database ?? '*')}.${str(table ?? '*')}`}`,
       // Group and level come from system.privileges; the scope is the grant target.
       facts: [
@@ -237,6 +239,7 @@ export function describeCard(node: GraphNode, graph: ObjectGraph): { card: Objec
   if (node.differs) flags.push('differs');
   if (node.partial) flags.push('partial');
   if (node.records.some(r => r.attributes.unresolvedReference)) flags.push('unresolved');
+  if (node.kind === 'grant-scope' && node.records.some(r => Number(r.attributes.partial_revoke) === 1)) flags.push('revoke');
   const showHosts = KINDS[node.kind].everyHost && (node.expectedHosts.length > 1 || node.partial);
   const first = facts[0];
   const hosts = `${node.observedHosts.length}/${node.expectedHosts.length} hosts`;

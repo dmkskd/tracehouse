@@ -1,3 +1,4 @@
+import type { TimelineFilters } from '@tracehouse/core';
 import { tracehouseLocalStorage } from '@tracehouse/core';
 /**
  * User Preference Store - Persisted UI preferences
@@ -52,6 +53,9 @@ interface UserPreferenceState {
    */
   queryXraySource: Record<string, QueryXRaySourcePreference>;
   setQueryXraySource: (connectionId: string, source: QueryXRaySourcePreference | undefined) => void;
+  /** Personal Time Travel filters; unset fields follow the admin default. */
+  timeTravelFilters: Partial<TimelineFilters>;
+  setTimeTravelFilters: (filters: Partial<TimelineFilters>) => void;
   objectDiagramStyle: ObjectDiagramStyle;
   setObjectDiagramStyle: (style: ObjectDiagramStyle) => void;
   objectDiagramLines: ObjectDiagramLines;
@@ -85,6 +89,8 @@ export const useUserPreferenceStore = create<UserPreferenceState>()(
         else queryXraySource[connectionId] = source;
         return { queryXraySource };
       }),
+      timeTravelFilters: {},
+      setTimeTravelFilters: (filters) => set({ timeTravelFilters: filters }),
       objectDiagramStyle: 'cards',
       setObjectDiagramStyle: (style) => set({ objectDiagramStyle: style }),
       objectDiagramLines: OBJECT_DIAGRAM_LINE_DEFAULTS,

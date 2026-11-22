@@ -62,9 +62,23 @@ A custom end-time picker lets you jump to a specific point in history.
 
 The window size control sets how many seconds of data the main chart shows (default: 150s). Larger windows give more context but with less detail per data point.
 
-## Activity Limit
+## Listed Operations
 
-The activity limit controls how many queries/merges/mutations are shown on the chart. The default cap keeps the view readable; increase it if you need to see everything during a busy period.
+The **Show** button (e.g. `top 100 by CPU · over 1 MB`) in the header says which operations the chart and the Operations list include, and opens the settings:
+
+- **Top per kind**: how many queries, merges and mutations each, ranked by the active metric.
+- **Min memory** and **min duration**: an operation is listed when it is over either threshold. The defaults are 1 MB and off, so small, short operations stay out of the way. Set min memory to Off to list every operation.
+- **In-flight operations**: running queries and merges, in live mode.
+- **Failed before start**: queries that failed before they started (`ExceptionBeforeStart` in `query_log`), such as access denied or an unknown table, shown as failures.
+- **TraceHouse's own queries**: hidden unless this is on.
+
+The counters in the summary use the same thresholds. **Reset to default** in the panel returns to the default. In Grafana, an admin sets the default in the app settings. Each person's changes are kept in their browser, and a link can carry its own values (`tt_min_mem`, `tt_min_dur`, `tt_failed_start`, `tt_self`).
+
+## Tracking
+
+Time Travel can track a user, a table or a query pattern. Every matching query in the window is listed and highlighted, whatever its size, and a tracked table also marks its merges and mutations. The strip under the header shows each tracked value with a button to remove it, the number of matches, and **All + highlighted** or **Matched only**.
+
+Links set tracking with `tt_user`, `tt_table` (`database.table`) and `nqh` (normalized query hash). The object browser's Time Travel links use them, and Query Details opens a query's pattern this way.
 
 ## Cluster Features
 

@@ -37,7 +37,10 @@ describe('Object browser metadata extraction', { tags: ['security', 'storage'] }
     // This suite's disposable server needs access-management DDL. Do not broaden
     // the shared dataset-test user or any external deployment's privileges.
     container = await startWithPortRetry(() => new ClickHouseContainer(CH_IMAGE)
-      .withEnvironment({ CLICKHOUSE_DEFAULT_ACCESS_MANAGEMENT: '1' }));
+      .withEnvironment({ CLICKHOUSE_DEFAULT_ACCESS_MANAGEMENT: '1' })
+      // Granting ALL ON *.* needs the named-collection privileges, which users.xml enables per user.
+      .withCopyContentToContainer([{ target: '/etc/clickhouse-server/users.d/named-collections.xml',
+        content: '<clickhouse><users><test><named_collection_control>1</named_collection_control><show_named_collections_secrets>1</show_named_collections_secrets></test></users></clickhouse>' }]));
     client = createClient(container.getClientOptions());
     adapter = new ClusterAwareAdapter(new TestAdapter(client));
     // Lets the fixture create IcebergLocal tables; other statements ignore it.
@@ -74,6 +77,12 @@ describe('Object browser metadata extraction', { tags: ['security', 'storage'] }
     const grants = grantsReadable() ? capture.relationships.filter(edge => edge.kind === 'grant').map(edge => edge.evidence) : await read(fixture.probes.grants);
     expect(grants.some(row => row.column === 'id' && Number(row.grant_option) === 1)).toBe(true);
     expect(grants.some(row => row.table === 'excluded' && Number(row.is_partial_revoke) === 1)).toBe(true);
+    // The revoke is its own privilege object, named as a revoke, apart from the grant it narrows.
+    if (grantsReadable()) {
+      const revoke = capture.observations.find(record => record.kind === 'grant-scope' && record.attributes.table === 'excluded')!;
+      expect(revoke.name).toBe(`REVOKE SELECT ON ${fixture.db}.excluded`);
+      expect(revoke.attributes.partial_revoke).toBe(1);
+    }
     const policy = capture.observations.find(record => record.kind === 'row-policy' && record.attributes.short_name === 'tenant_filter')!;
     expect(policy.attributes.select_filter).toBe('tenant_id = 42');
     expect(policy.attributes.apply_to_list).toEqual([fixture.reader]);
@@ -122,6 +131,18 @@ describe('Object browser metadata extraction', { tags: ['security', 'storage'] }
     // SHOW USERS sits under SHOW ACCESS, which ClickHouse files under ACCESS MANAGEMENT.
     expect(scope('SHOW USERS').attributes).toMatchObject({ privilege_group: 'ACCESS MANAGEMENT', privilege_level: 'GLOBAL' });
     expect(capture.coverage.find(source => source.source === 'grants')!.reason ?? '').not.toContain('Privilege groups unavailable');
+  });
+  it('links a privilege that includes SELECT and INSERT, such as ALL, to the tables in its scope', () => {
+    if (!grantsReadable()) return expect(capture.observations.some(record => record.kind === 'grant-scope')).toBe(false);
+    const all = capture.observations.find(record => record.kind === 'grant-scope' && record.attributes.access_type === 'ALL'
+      && record.attributes.database == null)!;
+    expect(all.attributes.table_operations).toEqual(['SELECT', 'INSERT']);
+    const linked = (graph: ReturnType<typeof projectCatalogGraph>) =>
+      graph.edges.filter(e => e.kind === 'candidate-scope' && e.from === all.key).map(e => e.to);
+    // A global scope links only under a focus object, like a global SELECT.
+    expect(linked(projectCatalogGraph(capture))).toEqual([]);
+    expect(linked(projectCatalogGraph(capture, objectKey(input.connection, 'user', fixture.admin))))
+      .toContain(objectKey(input.connection, 'table', fixture.db, 'events'));
   });
   it('links view sources through the analyzer and engine destinations through server-parsed arguments', () => {
     const name = (key: string) => (JSON.parse(key) as string[]).slice(2).join('.');
@@ -290,6 +311,12 @@ describe('Object browser metadata extraction', { tags: ['security', 'storage'] }
       expect(statements).toHaveLength(patterns.length);
       for (const [i, statement] of statements.entries()) expect(await loadDetailStatement(adapter, statement)).toMatch(patterns[i]);
     }
+    // Table definitions come laid out by ClickHouse's formatter, one clause per line.
+    const ddl = statementsFor(objectKey(input.connection, 'table', fixture.db, 'trips'))[0];
+    expect(await loadDetailStatement(adapter, ddl)).toMatch(/^CREATE TABLE [^\n]+\n\(\n {4}`/);
+    // A server without the formatter returns UNKNOWN_FUNCTION; the stored single-line text is used.
+    const withoutFormatter = { ...ddl, sql: ddl.sql.replace('formatQueryOrNull', 'formatQueryMissingInThisServer') };
+    expect(await loadDetailStatement(adapter, withoutFormatter)).toMatch(/^CREATE TABLE [^\n]+$/);
     const user = await loadDetailStatement(adapter, statementsFor(objectKey(input.connection, 'user', fixture.alice))[0]);
     expect(user).not.toMatch(/ BY '|HASH|SALT/);
     // The observer fixture holds SHOW USERS; the denied user holds no SHOW privilege.

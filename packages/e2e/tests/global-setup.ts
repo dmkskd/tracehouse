@@ -9,6 +9,7 @@
  * can read them.
  */
 
+import { E2E_FRONTEND_ORIGIN } from '../frontend-server';
 import { execSync, execFileSync } from 'node:child_process';
 import fs from 'node:fs';
 import path from 'node:path';
@@ -17,7 +18,7 @@ const CH_IMAGE =
   process.env.CLICKHOUSE_IMAGE ?? 'clickhouse/clickhouse-server:latest';
 const CONTAINER_NAME = 'tracehouse-e2e-clickhouse';
 const STATE_FILE = path.join(import.meta.dirname, '.ch-state.json');
-const FRONTEND_ORIGIN = 'http://localhost:5173';
+const FRONTEND_ORIGIN = E2E_FRONTEND_ORIGIN;
 const PROXY_URL = 'http://localhost:8990/proxy';
 
 /**

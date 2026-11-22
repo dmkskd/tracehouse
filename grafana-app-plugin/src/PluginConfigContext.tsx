@@ -1,4 +1,5 @@
 import { QueryXRayDefaultContext } from '@frontend/components/query/query-xray-preference';
+import { TimelineFiltersDefaultContext } from '@frontend/components/timeline/timeline-filters-preference';
 import React, { createContext, useContext, useMemo } from 'react';
 import {
   type AppPluginSettings,
@@ -43,9 +44,11 @@ export function PluginConfigProvider({ jsonData, children }: PluginConfigProvide
   return (
     <PluginConfigContext.Provider value={resolved}>
       <QueryXRayDefaultContext.Provider value={resolved.queryXraySource}>
+      <TimelineFiltersDefaultContext.Provider value={resolved.timeTravelFilters}>
         <RefreshConfigContext.Provider value={sharedConfig}>
           {children}
         </RefreshConfigContext.Provider>
+      </TimelineFiltersDefaultContext.Provider>
       </QueryXRayDefaultContext.Provider>
     </PluginConfigContext.Provider>
   );

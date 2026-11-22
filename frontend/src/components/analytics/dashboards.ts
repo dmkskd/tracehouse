@@ -423,6 +423,19 @@ const BUILTIN_DASHBOARDS: Dashboard[] = [
     ],
   },
   {
+    id: 'access',
+    title: 'Access',
+    description: 'Refused queries, who used which table, and privileged users and roles. Names open the object browser.',
+    group: 'TraceHouse',
+    columns: 2,
+    panels: [
+      { queryName: 'Access#Access Failures by User', requiredCapability: 'query_log' },
+      { queryName: 'Access#Privileged Principals' },
+      { queryName: 'Access#Recent Access Failures', requiredCapability: 'query_log' },
+      { queryName: 'Access#Table Usage by User', requiredCapability: 'query_log' },
+    ],
+  },
+  {
     id: 'self-monitoring',
     title: 'TraceHouse Query Cost',
     description:

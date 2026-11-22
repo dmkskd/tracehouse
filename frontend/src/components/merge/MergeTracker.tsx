@@ -2360,11 +2360,11 @@ export const MergeTrackerView: React.FC = () => {
         <div className="flex items-center justify-between" style={{ marginBottom: 12 }}>
           <div>
             <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+              <BackLink from={cameFrom} />
               <h1 style={{ margin: 0, color: 'var(--text-primary)', fontSize: 18, fontWeight: 600 }}>
                 Merge Tracker
               </h1>
               <DocsLink path="/features/merge-tracker" />
-              <BackLink from={cameFrom} />
             </div>
           </div>
         </div>

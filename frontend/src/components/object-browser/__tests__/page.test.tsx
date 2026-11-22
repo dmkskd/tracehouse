@@ -1,17 +1,28 @@
-import { fireEvent, render, screen, within } from '@testing-library/react';
+import { cleanup, fireEvent, render, screen, within } from '@testing-library/react';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import type { Capture, ObjectKind, Source } from '@tracehouse/core/services/object-browser';
-const { browse, collect, state } = vi.hoisted(() => ({ browse: vi.fn(), collect: vi.fn(), state: { capture: null as Capture | null } }));
+const { browse, collect, update, state } = vi.hoisted(() => ({ browse: vi.fn(), collect: vi.fn(), update: vi.fn(),
+  state: { capture: null as Capture | null, url: {} as Record<string, string> } }));
 vi.mock('../useObjectCapture', () => ({ useObjectCapture: () => ({ browse, collect, capture: state.capture, loading: false, error: null, connected: true }) }));
-vi.mock('../../../hooks/useUrlState', () => ({ useUrlState: () => ({ state: { ob_principal: 'alice', ob_database: 'demo', ob_table: 'trips', ob_operation: 'SELECT' }, update: vi.fn() }) }));
+vi.mock('../../../hooks/useUrlState', () => ({ useUrlState: () => ({ state: state.url, update }) }));
+import { MemoryRouter, Route, Routes, useLocation } from 'react-router-dom';
 import { ObjectBrowserPage } from '../ObjectBrowserPage';
+// Stands in for another page: shows the URL and the origin it was opened with.
+function Landed() {
+  const location = useLocation();
+  return <p>{`${location.pathname}${location.search} from ${(location.state as { from?: { path: string } } | null)?.from?.path}`}</p>;
+}
+const renderPage = (from?: { path: string; label: string }) => render(<MemoryRouter initialEntries={[{ pathname: '/objects', state: from ? { from } : null }]}>
+  <Routes><Route path="/objects" element={<ObjectBrowserPage />} /><Route path="/analytics" element={<p>Analytics page</p>} />
+    <Route path="/queries" element={<Landed />} /></Routes>
+</MemoryRouter>);
 // Diagram menu choices persist to localStorage; Node's own global replaces jsdom's.
 const memory = new Map<string, string>();
 vi.stubGlobal('localStorage', { getItem: (k: string) => memory.get(k) ?? null, setItem: (k: string, v: string) => memory.set(k, v), removeItem: (k: string) => memory.delete(k) });
 describe('object browser entry point', () => {
-  beforeEach(() => { vi.clearAllMocks();state.capture = null; });
+  beforeEach(() => { vi.clearAllMocks();state.capture = null;state.url = { ob_selected: '' }; });
   it('loads the catalog on entry without executing the restored scoped question', () => {
-    render(<ObjectBrowserPage />);
+    renderPage();
     expect(browse).toHaveBeenCalledTimes(1);
     expect(collect).not.toHaveBeenCalled();
     expect(screen.getByRole('button', { name: 'Refresh catalog' })).toBeTruthy();
@@ -23,7 +34,7 @@ describe('object browser entry point', () => {
       coverage: [{ source: 'users', state: 'not-granted', hosts: [], visibility: 'unknown', reason: 'Missing SELECT permission on system.users' }],
       observations: [{ key: 'trips', name: 'trips', kind: 'table', source: 'tables', host: 'ch-1', attributes: {} }], relationships: [],
     };
-    render(<ObjectBrowserPage />);
+    renderPage();
     const lane = [...document.querySelectorAll('.lane')].find(element => element.querySelector('.lane-title')?.textContent === 'Users')!;
     expect(lane.querySelector('.lane-notice')?.textContent).toBe('Missing SELECT permission on system.users');
     expect(screen.queryByText('users: not-granted')).toBeNull();
@@ -47,7 +58,7 @@ describe('object browser entry point', () => {
         { id: 'other-target', host: 'ch-1', from: 'other-filter', to: 'trips', kind: 'policy-target', label: 'configured filter target', source: 'row_policies', evidence: {} },
       ],
     };
-    render(<ObjectBrowserPage />);
+    renderPage();
     const cards = () => [...document.querySelectorAll('.node-select')].map(node => node.textContent);
     const initialOrder = cards();
     fireEvent.click(screen.getByRole('button', { name: /alice user/i }));
@@ -93,7 +104,12 @@ describe('object browser entry point', () => {
     const focus = screen.getByRole('dialog', { name: 'Object focus' });
     fireEvent.doubleClick(within(focus).getByRole('button', { name: /alice user/i }));
     const detail = screen.getByRole('dialog', { name: 'Object detail' });
-    expect(within(detail).getByText('has role → reader')).toBeTruthy();
+    // Relationships read from the object's side, one row per wording; a name opens that object's detail.
+    expect(within(detail).getByText('Has role')).toBeTruthy();
+    fireEvent.click(within(detail).getByRole('button', { name: 'reader' }));
+    expect(within(screen.getByRole('dialog', { name: 'Object detail' })).getByRole('heading', { level: 2 }).textContent).toBe('reader');
+    expect(within(screen.getByRole('dialog', { name: 'Object detail' })).getByText('Granted to')).toBeTruthy();
+    fireEvent.doubleClick(within(screen.getByRole('dialog', { name: 'Object focus' })).getByRole('button', { name: /alice user/i }));
     expect(within(detail).getByText('ch-1 · system.users')).toBeTruthy();
     fireEvent.click(within(detail).getByRole('button', { name: 'Close' }));
     expect(screen.queryByRole('dialog', { name: 'Object detail' })).toBeNull();
@@ -108,11 +124,11 @@ describe('object browser entry point', () => {
       schemaVersion: 1, mode: 'catalog', investigation: { connection: 'test', principal: '', database: '', table: '', operation: 'SELECT' },
       startedAt: '', completedAt: '', hosts: [{ host: 'ch-1', version: '26.9.7.9' }], coverage: [], verdict: { kind: 'not-checked', reason: 'provenance' },
       observations: [{ key: 'read_only', name: 'read_only', kind: 'user', source: 'users', host: 'ch-1', attributes: {} },
-        { key: 'scope', name: 'SELECT ON *.*', kind: 'grant-scope', source: 'grants', host: 'ch-1', attributes: { access_type: 'SELECT', database: null, table: null } },
+        { key: 'scope', name: 'SELECT ON *.*', kind: 'grant-scope', source: 'grants', host: 'ch-1', attributes: { access_type: 'SELECT', database: null, table: null, table_operations: ['SELECT'] } },
         { key: 'sampler', name: 'tracehouse.sampler', kind: 'table', source: 'tables', host: 'ch-1', attributes: { database: 'tracehouse', name: 'sampler', engine: 'MaterializedView' } }],
       relationships: [{ id: 'grant', host: 'ch-1', from: 'read_only', to: 'scope', kind: 'grant', label: 'SELECT grant', source: 'grants', evidence }],
     };
-    render(<ObjectBrowserPage />);
+    renderPage();
     fireEvent.click(screen.getByRole('button', { name: 'Focus tracehouse.sampler' }));
     const dialog = screen.getByRole('dialog', { name: 'Object focus' });
     expect(within(dialog).getByRole('button', { name: /read_only user/i })).toBeTruthy();
@@ -139,14 +155,14 @@ describe('object browser entry point', () => {
       startedAt: '', completedAt: '', hosts: [{ host: 'ch-1', version: '26.9.7.9' }], coverage: [], verdict: { kind: 'not-checked', reason: 'provenance' },
       observations: [{ key: 'reader', name: 'reader', kind: 'user', source: 'users', host: 'ch-1', attributes: {} },
         { key: 'auditor', name: 'auditor', kind: 'user', source: 'users', host: 'ch-1', attributes: {} },
-        { key: 'scope', name: 'SELECT ON *.*', kind: 'grant-scope', source: 'grants', host: 'ch-1', attributes: {} },
+        { key: 'scope', name: 'SELECT ON *.*', kind: 'grant-scope', source: 'grants', host: 'ch-1', attributes: { table_operations: ['SELECT'] } },
         { key: 'trips', name: 'lake.trips', kind: 'table', source: 'tables', host: 'ch-1', attributes: { database: 'lake', name: 'trips', engine: 'IcebergS3' } },
         { key: 'minio', name: 'http://minio:9000', kind: 'location', source: 'tables', host: 'ch-1', attributes: { server: 'http://minio:9000', backend: 'S3' } }],
       relationships: [{ id: 'grant', host: 'ch-1', from: 'reader', to: 'scope', kind: 'grant', label: 'SELECT grant', source: 'grants', evidence },
         { id: 'auditor-grant', host: 'ch-1', from: 'auditor', to: 'scope', kind: 'grant', label: 'SELECT grant', source: 'grants', evidence },
         { id: 'stored', host: 'ch-1', from: 'trips', to: 'minio', kind: 'points-to', label: 'stored on', source: 'tables', evidence: { method: 'engine-location' } }],
     };
-    render(<ObjectBrowserPage />);
+    renderPage();
     fireEvent.click(screen.getByRole('button', { name: 'Focus http://minio:9000' }));
     const dialog = screen.getByRole('dialog', { name: 'Object focus' });
     expect(within(dialog).getByRole('button', { name: /trips\s*IcebergS3/i })).toBeTruthy();
@@ -182,7 +198,7 @@ describe('object browser entry point', () => {
         { key: k('location', 'http://minio:9000'), name: 'http://minio:9000', kind: 'location', source: 'tables', host: 'ch-1', attributes: { backend: 'S3' } }],
       relationships: [{ id: 'stored', host: 'ch-1', from: k('table', 'lake', 'trips'), to: k('location', 'http://minio:9000'), kind: 'points-to', label: 'stored on', source: 'tables', evidence: { method: 'engine-location' } }],
     };
-    render(<ObjectBrowserPage />);
+    renderPage();
     expect(screen.getByRole('button', { name: /Which tables are stored externally\?.*1 storage server · 1 table/ })).toBeTruthy();
     // Shown by default; the Explore label above them collapses the row.
     const toggle = () => screen.getByRole('button', { name: /^Explore/ });
@@ -201,5 +217,64 @@ describe('object browser entry point', () => {
     fireEvent.change(within(picker()).getByRole('searchbox', { name: 'Find table' }), { target: { value: 'trips' } });
     fireEvent.click(within(picker()).getByRole('button', { name: /lake\.trips/ }));
     expect(collect).toHaveBeenCalledWith({ principal: 'reader', database: 'lake', table: 'trips', operation: 'SELECT' });
+  });
+  describe('opened by an object link', () => {
+    const observation = (key: string, kind: ObjectKind, source: Source, attributes: Record<string, unknown> = {}) => ({ key, name: key, kind, source, host: 'ch-1', attributes });
+    const linked = (): Capture => ({
+      schemaVersion: 1, mode: 'catalog', investigation: { connection: 'test', principal: '', database: '', table: '', operation: 'SELECT' },
+      startedAt: '', completedAt: 'done', hosts: [{ host: 'ch-1', version: '26.9.7.9' }], coverage: [], verdict: { kind: 'not-checked', reason: 'provenance' },
+      observations: [observation('alice', 'user', 'users'), observation('bob', 'user', 'users'), observation('reader', 'role', 'roles'),
+        observation('writer', 'role', 'roles'), observation('scope', 'grant-scope', 'grants'),
+        { ...observation('trips', 'table', 'tables', { database: 'demo', name: 'trips', engine: 'MergeTree' }), name: 'demo.trips' }],
+      relationships: [
+        { id: 'a', host: 'ch-1', from: 'alice', to: 'reader', kind: 'has-role', label: 'has role', source: 'role_grants', evidence: {} },
+        { id: 'w', host: 'ch-1', from: 'bob', to: 'writer', kind: 'has-role', label: 'has role', source: 'role_grants', evidence: {} },
+        { id: 'g1', host: 'ch-1', from: 'reader', to: 'scope', kind: 'grant', label: 'SELECT grant', source: 'grants', evidence: {} },
+        { id: 'g2', host: 'ch-1', from: 'writer', to: 'scope', kind: 'grant', label: 'SELECT grant', source: 'grants', evidence: {} },
+        { id: 'm', host: 'ch-1', from: 'scope', to: 'trips', kind: 'candidate-scope', label: 'candidate name match', source: 'grants', evidence: {} }],
+    });
+    it('opens focus on the table for one user, shows everyone on request, and closes back to the page it came from', () => {
+      state.capture = linked();
+      state.url = { ob_selected: '', ob_kind: 'table', ob_db: 'demo', ob_tbl: 'trips', ob_user: 'alice' };
+      renderPage({ path: '/analytics', label: 'Analytics' });
+      const dialog = screen.getByRole('dialog', { name: 'Object focus' });
+      expect(within(dialog).getByRole('heading', { level: 2 }).textContent).toContain('demo.trips');
+      expect(within(dialog).getByText(/for alice · 1 grant path/)).toBeTruthy();
+      expect(within(dialog).getByRole('button', { name: /alice user/i })).toBeTruthy();
+      expect(within(dialog).queryByRole('button', { name: /bob user/i })).toBeNull();
+      fireEvent.click(within(dialog).getByRole('button', { name: 'Show all principals' }));
+      expect(within(dialog).getByRole('button', { name: /bob user/i })).toBeTruthy();
+      fireEvent.click(within(dialog).getByRole('button', { name: 'Close focus' }));
+      expect(screen.getByText('Analytics page')).toBeTruthy();
+    });
+    it('names what the catalog does not hold and offers similar names; without an origin closing clears the link', () => {
+      state.capture = linked();
+      state.url = { ob_selected: '', ob_kind: 'table', ob_db: 'demo', ob_tbl: 'trips', ob_user: 'alise' };
+      renderPage();
+      const alert = screen.getByRole('alert');
+      expect(within(alert).getByText('Link not opened: demo.trips for alise')).toBeTruthy();
+      expect(within(alert).getByText(/Not in the collected catalog: user alise/)).toBeTruthy();
+      expect(screen.queryByRole('dialog')).toBeNull();
+      // The similar user opens the table for that user.
+      fireEvent.click(within(alert).getByRole('button', { name: 'demo.trips for alice' }));
+      expect(within(screen.getByRole('dialog', { name: 'Object focus' })).getByText(/for alice · 1 grant path/)).toBeTruthy();
+      state.url = { ob_selected: '', ob_kind: 'user', ob_user: 'bob' };
+      cleanup();renderPage();
+      fireEvent.click(within(screen.getByRole('dialog', { name: 'Object focus' })).getByRole('button', { name: 'Close focus' }));
+      expect(update).toHaveBeenCalledWith({ ob_kind: '', ob_db: '', ob_tbl: '', ob_user: '', ob_role: '' });
+    });
+    it('carries the user a focus chain starts from into the table detail links, and back', () => {
+      state.capture = linked();
+      state.url = { ob_selected: '', ob_kind: 'user', ob_user: 'alice' };
+      renderPage();
+      const dialog = screen.getByRole('dialog', { name: 'Object focus' });
+      fireEvent.click(within(dialog).getByRole('button', { name: /trips\s*MergeTree/i }));
+      fireEvent.doubleClick(within(dialog).getByRole('button', { name: /trips\s*MergeTree/i }));
+      const detail = screen.getByRole('dialog', { name: 'Object detail' });
+      const openIn = within(detail).getByRole('group', { name: 'Open in' });
+      expect(within(openIn).getByRole('button', { name: 'Merges of demo.trips' })).toBeTruthy();
+      fireEvent.click(within(openIn).getByRole('button', { name: 'Failed queries by alice on demo.trips' }));
+      expect(screen.getByText('/queries?user=alice&tableName=demo.trips&status=error from /objects?ob_kind=table&ob_db=demo&ob_tbl=trips&ob_user=alice')).toBeTruthy();
+    });
   });
 });

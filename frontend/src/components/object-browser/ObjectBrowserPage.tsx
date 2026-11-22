@@ -1,6 +1,8 @@
-import { useCallback, useEffect, useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useUrlState } from '../../hooks/useUrlState';
-import { describeObjects, essentialEdges, isColumnNotice, layoutCatalog, withRoutes, withSourceNotices, objectKey, projectGraph, projectCatalogGraph, provenancePaths, searchGraph, withoutDefaultUser, type ObjectCard } from '@tracehouse/core/services/object-browser';
+import { describeObjects, essentialEdges, isColumnNotice, layoutCatalog, withRoutes, withSourceNotices, objectKey, projectGraph, projectCatalogGraph, provenancePaths, searchGraph, withoutDefaultUser, parseObjectLink, resolveObjectLink, describeMissingLink, describePrincipalContext, OBJECT_LINK_PARAMS, type ObjectCard } from '@tracehouse/core/services/object-browser';
+import { useReturnToOrigin } from '../../hooks/useReturnToOrigin';
+import { useNavigate } from '../../hooks/useAppLocation';
 import { ObjectTypeIcon } from './ObjectCard';
 import { ObjectGraphView } from './ObjectGraphView';
 import { ModalWrapper } from '../../components/shared/ModalWrapper';
@@ -17,6 +19,12 @@ import { useUserPreferenceStore } from '../../stores/userPreferenceStore';
 
 const urlSchema = {
   ob_selected: { type: 'string', default: '' },
+  // An object link from another page: open focus on this object (objectLinkUrl).
+  ob_kind: { type: 'string', default: '' },
+  ob_db: { type: 'string', default: '' },
+  ob_tbl: { type: 'string', default: '' },
+  ob_user: { type: 'string', default: '' },
+  ob_role: { type: 'string', default: '' },
 } as const;
 export function ObjectBrowserPage() {
   const { state: url, update } = useUrlState(urlSchema);
@@ -55,6 +63,31 @@ export function ObjectBrowserPage() {
   const notes = capture?.coverage.filter(c => !isColumnNotice(c)) ?? [];
   const cards = useMemo(() => graph ? describeObjects(graph) : new Map<string, ObjectCard>(), [graph]);
   const focus = useObjectFocus(projectFor);
+  // A link opens focus once per capture; closing it returns to the page the link came from.
+  const link = useMemo(() => parseObjectLink(name => url[name as keyof typeof url]), [url]);
+  const { from, returnToOrigin } = useReturnToOrigin();
+  const navigate = useNavigate();
+  // A detail link leaves for another page; its back link and close reopen this focus.
+  const openElsewhere = (url: string) => navigate(url, { state: { from: { path: focus.returnUrl, label: 'Object browser' } } });
+  const resolvedLink = useMemo(() => link && baseGraph && capture?.mode === 'catalog' ? resolveObjectLink(baseGraph, link) : null, [link, baseGraph, capture]);
+  const missingLink = useMemo(() => link && baseGraph && capture && resolvedLink && 'missing' in resolvedLink
+    ? describeMissingLink(baseGraph, link, resolvedLink.missing, capture.coverage) : null, [link, baseGraph, capture, resolvedLink]);
+  const clearLink = () => update(Object.fromEntries(OBJECT_LINK_PARAMS.map(name => [name, ''])));
+  const openedLink = useRef<string | null>(null);
+  const { openAt } = focus;
+  useEffect(() => {
+    if (!resolvedLink || 'missing' in resolvedLink) return;
+    const id = `${capture?.completedAt}|${JSON.stringify(link)}`;
+    if (openedLink.current === id) return;
+    openedLink.current = id;
+    openAt(resolvedLink.focus, resolvedLink.context);
+  }, [resolvedLink, capture, link, openAt]);
+  const closeFocus = () => {
+    focus.close();
+    if (!link) return;
+    if (from) returnToOrigin();
+    else clearLink();
+  };
   const choose = (key: string | null) => {
     setSelected(key);setSearch('');if (!key) focus.close();
     const node = graph?.nodes.find(n => n.key === key);
@@ -88,6 +121,16 @@ export function ObjectBrowserPage() {
       onInvestigate={input => { setSelected(null);update({ ob_selected: '' });void collect(input); }} />}
     {!connected && <p>Connect a ClickHouse datasource to collect metadata.</p>}
     {error && <p role="alert">Collection failed: {error}</p>}
+    {missingLink && <div className="link-missing" role="alert">
+      <div className="link-missing-text">
+        <strong>Link not opened: {missingLink.requested}</strong>
+        <span>Not in the collected catalog: {missingLink.missing.map(m => `${m.kind} ${m.name}`).join(', ')}. Showing the full catalog.</span>
+        {missingLink.incomplete.length > 0 && <span>Catalog incomplete: {missingLink.incomplete.join(', ')}</span>}
+        {missingLink.suggestions.length > 0 && <span className="link-missing-suggestions">Similar:{missingLink.suggestions.map(s =>
+          <button key={`${s.focus}|${s.context}`} onClick={() => focus.openAt(s.focus, s.context)}>{s.name}</button>)}</span>}
+      </div>
+      <button className="link-missing-dismiss" onClick={from ? returnToOrigin : clearLink}>{from ? `Back to ${from.label}` : 'Dismiss'}</button>
+    </div>}
     {loading && !capture && <ObjectsLoading />}
     {capture && graph && <>
       {(capture.mode !== 'catalog' || notes.some(c => c.state !== 'readable' || c.reason)) && <div className="panel">
@@ -108,12 +151,15 @@ export function ObjectBrowserPage() {
       </div>
     </>}
     {!capture && !loading && <p className="muted">The catalog loads when this page opens. Refresh explicitly to collect again; no background polling runs.</p>}
-    <ModalWrapper isOpen={focus.open} onClose={focus.close} ariaLabel="Object focus" maxWidth="min(1800px, 96vw)" backdropBackground="rgba(0, 0, 0, 0.45)" backdropBlur={0}>
+    <ModalWrapper isOpen={focus.open} onClose={closeFocus} ariaLabel="Object focus" maxWidth="min(1800px, 96vw)" backdropBackground="rgba(0, 0, 0, 0.45)" backdropBlur={0}>
       <div className={`${page} focus-shell`}>
         <div className="focus-header">
           <FocusTrailHeader trail={focus.trail} cards={focus.cards} nameOf={focus.nameOf} onStep={focus.reroot} />
+          {focus.context && <span className="focus-context" title="Access objects on this user's configured paths to the table. Other principals are hidden.">
+            for {focus.nameOf(focus.context)} · {describePrincipalContext(focus.contextSummary)}
+            <button onClick={focus.clearContext}>Show all principals</button></span>}
           <div className="focus-actions">
-            <button className="modal-close" aria-label="Close focus" title="Close (Esc)" onClick={focus.close}>✕</button>
+            <button className="modal-close" aria-label="Close focus" title={link && from ? `Close and return to ${from.label} (Esc)` : 'Close (Esc)'} onClick={closeFocus}>✕</button>
           </div>
         </div>
         <div className="focus-body">
@@ -124,6 +170,6 @@ export function ObjectBrowserPage() {
         </div>
       </div>
     </ModalWrapper>
-    <ObjectDetailModal detail={focus.detail} onClose={focus.closeDetail} />
+    <ObjectDetailModal detail={focus.detail} onClose={focus.closeDetail} open={openElsewhere} select={focus.openDetail} />
   </div>;
 }

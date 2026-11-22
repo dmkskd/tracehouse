@@ -32,7 +32,7 @@ type SortDir = OperationSortDir;
 const BODY_MAX_HEIGHT = 420;
 
 /** Highlight color for hash-matched queries */
-const HASH_MATCH_COLOR = '#58a6ff';
+const TRACKED_COLOR = '#58a6ff';
 
 const KIND_ACCENT: Record<OperationRow['kind'], string> = {
   query: Q_COLORS[0],
@@ -107,11 +107,11 @@ export const OperationsTable = React.memo<{
   /** Currently selected operation, shown in the inspector. */
   selectedId?: string | null;
   showHost?: boolean;
-  queryHashActive?: boolean;
+  trackingActive?: boolean;
 }>(({
   rows, counts, totalCount, loadedCount, kindFilter, onKindFilterChange, scope, onScopeChange,
   pinnedMs, metricMode, sortField, sortDir, onSort, highlightedItem, onHighlightItem, onSelect,
-  search, onSearchChange, selectedId, showHost, queryHashActive,
+  search, onSearchChange, selectedId, showHost, trackingActive,
 }) => {
   const metric = METRIC_CONFIG[metricMode];
   // Bars are scaled to the heaviest row in view, so they stay readable when the
@@ -241,7 +241,7 @@ export const OperationsTable = React.memo<{
               const id = operationRowHighlightKey(row);
               const isHighlighted = highlightedItem?.type === row.kind && highlightedItem.id === id;
               const isSelected = selectedId === id;
-              const isDimmed = queryHashActive === true && !row.matchedHash;
+              const isDimmed = trackingActive === true && !row.tracked;
               const notableReason = notableMergeReason(row);
               return (
                 <tr key={`${row.kind}-${id}-${i}`}
@@ -259,8 +259,8 @@ export const OperationsTable = React.memo<{
                   <td style={{ padding:'5px 4px 5px 12px', width:18 }}>
                     <div style={{
                       width:8, height:8, borderRadius:2,
-                      background: queryHashActive && row.matchedHash ? HASH_MATCH_COLOR : operationBandColor(row.kind, row.idx),
-                      boxShadow: queryHashActive && row.matchedHash ? `0 0 4px ${HASH_MATCH_COLOR}` : undefined,
+                      background: trackingActive && row.tracked ? TRACKED_COLOR : operationBandColor(row.kind, row.idx),
+                      boxShadow: trackingActive && row.tracked ? `0 0 4px ${TRACKED_COLOR}` : undefined,
                     }} />
                   </td>
                   <td style={{ padding:'5px 8px' }}><KindBadge row={row} /></td>

@@ -2,6 +2,8 @@ import { css } from '@emotion/css';
 
 export const headerStyle = css`
 & { container-type: inline-size; }
+/* Header selects show no focus outline. */
+& .tracehouse-compact-native-select:focus-visible { outline: none; }
 & .tt-toolbar {
   display: grid;
   grid-template-columns: max-content minmax(0, 1fr);

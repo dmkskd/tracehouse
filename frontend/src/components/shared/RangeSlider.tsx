@@ -24,6 +24,8 @@ export interface RangeSliderProps {
   end: string;
   onStartChange: (v: string) => void;
   onEndChange: (v: string) => void;
+  /** Selection colour as an `r, g, b` triplet. Default: indigo. */
+  accentRgb?: string;
 }
 
 function toLocalISOString(d: Date): string {
@@ -32,7 +34,7 @@ function toLocalISOString(d: Date): string {
 }
 
 export const RangeSlider: React.FC<RangeSliderProps> = ({
-  rangeStartMs, rangeEndMs, start, end, onStartChange, onEndChange,
+  rangeStartMs, rangeEndMs, start, end, onStartChange, onEndChange, accentRgb = '99, 102, 241',
 }) => {
   const trackRef = useRef<HTMLDivElement>(null);
   const dragging = useRef<'start' | 'end' | 'range' | null>(null);
@@ -198,25 +200,25 @@ export const RangeSlider: React.FC<RangeSliderProps> = ({
           position: 'absolute', top: trackY - 1,
           left: `${startFrac * 100}%`, width: `${(endFrac - startFrac) * 100}%`,
           height: TRACK_HEIGHT + 2, borderRadius: (TRACK_HEIGHT + 2) / 2,
-          background: 'rgba(99, 102, 241, 0.85)',
-          boxShadow: '0 0 6px rgba(99, 102, 241, 0.5)',
+          background: `rgba(${accentRgb}, 0.85)`,
+          boxShadow: `0 0 6px rgba(${accentRgb}, 0.5)`,
           cursor: 'grab', zIndex: 1,
         }} />
         <div onMouseDown={onMouseDown('start')} style={{
           position: 'absolute', top: (totalH - HANDLE_SIZE) / 2,
           left: `${startFrac * 100}%`, marginLeft: -HANDLE_SIZE / 2,
           width: HANDLE_SIZE, height: HANDLE_SIZE, borderRadius: '50%',
-          background: '#e0e0ff', border: '2px solid rgba(99, 102, 241, 0.9)',
+          background: 'var(--bg-card)', border: `2px solid rgba(${accentRgb}, 0.9)`,
           cursor: 'ew-resize', zIndex: 2,
-          boxShadow: '0 0 4px rgba(99, 102, 241, 0.4)',
+          boxShadow: `0 0 4px rgba(${accentRgb}, 0.4)`,
         }} />
         <div onMouseDown={onMouseDown('end')} style={{
           position: 'absolute', top: (totalH - HANDLE_SIZE) / 2,
           left: `${endFrac * 100}%`, marginLeft: -HANDLE_SIZE / 2,
           width: HANDLE_SIZE, height: HANDLE_SIZE, borderRadius: '50%',
-          background: '#e0e0ff', border: '2px solid rgba(99, 102, 241, 0.9)',
+          background: 'var(--bg-card)', border: `2px solid rgba(${accentRgb}, 0.9)`,
           cursor: 'ew-resize', zIndex: 2,
-          boxShadow: '0 0 4px rgba(99, 102, 241, 0.4)',
+          boxShadow: `0 0 4px rgba(${accentRgb}, 0.4)`,
         }} />
       </div>
       <div style={{ position: 'relative', height: 12, marginTop: 1 }}>

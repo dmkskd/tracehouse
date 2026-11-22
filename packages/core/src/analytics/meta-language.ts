@@ -9,6 +9,7 @@
  *   -- @drill:      click-through navigation between queries
  *   -- @link:       modal popup navigation between queries
  *   -- @merge_link: click a merge attempt to open it on the Merges page
+ *   -- @object_link: click a table, user or role to open it in the object browser (repeatable)
  *   -- @requires:   minimum ClickHouse version
  *   -- Source:      attribution URL
  */
@@ -18,6 +19,7 @@ import {
   parseClickHouseVersion,
 } from '../utils/clickhouse-version.js';
 import { buildMergeLinkUrl, buildMergeRecordLinkUrl, buildQueryLinkUrl } from '../utils/deep-link-resolution.js';
+import { objectLinkUrl } from '../services/object-browser/presentation/links.js';
 
 /* ─── types ─── */
 
@@ -177,6 +179,8 @@ export interface ParsedDirectives {
   };
   /** @merge_link: click a merge attempt to open that part_log record on the Merges page. */
   mergeLink?: MergeLinkDirective;
+  /** @object_link: click a cell to open that table, user or role in the object browser. One per clickable column. */
+  objectLinks?: ObjectLinkDirective[];
   /** All cell style rules (rag, gauge, sparkline) from @cell: directives. */
   cellStyles: CellStyleRule[];
   summaries?: SummaryDirectives;
@@ -184,6 +188,21 @@ export interface ParsedDirectives {
     clickhouseMinVersion?: string;
   };
   source?: string;
+}
+
+/**
+ * Column names, in the panel's result rows, naming an object for the object browser.
+ * `kind=table` needs `database` and `table`, and may add `user` (focus shows that user's
+ * paths to the table); `kind=user` needs `user`; `kind=role` needs `role`.
+ */
+export interface ObjectLinkDirective {
+  /** Clickable column (chart group_by / table cell) */
+  on: string;
+  kind: 'table' | 'user' | 'role';
+  database?: string;
+  table?: string;
+  user?: string;
+  role?: string;
 }
 
 /**
@@ -701,6 +720,17 @@ export function parseDirectives(sql: string): ParsedDirectives | null {
     }
   }
 
+  const objectLinks: ObjectLinkDirective[] = [];
+  for (const match of sql.matchAll(/--\s*@object_link:\s*(.+)/gi)) {
+    const field = (name: string) => match[1].match(new RegExp(`\\b${name}=(\\w+)`))?.[1];
+    const on = field('on'), kind = field('kind'), database = field('database'), table = field('table'), user = field('user'), role = field('role');
+    if (!on) continue;
+    if (kind === 'table' && database && table) objectLinks.push({ on, kind, database, table, ...(user ? { user } : {}) });
+    else if (kind === 'user' && user) objectLinks.push({ on, kind, user });
+    else if (kind === 'role' && role) objectLinks.push({ on, kind, role });
+  }
+  if (objectLinks.length) result.objectLinks = objectLinks;
+
   const requiresMatch = sql.match(
     /--\s*@requires:\s*clickhouse\s*>=\s*(\d+\.\d+(?:\.\d+)?)/i,
   );
@@ -739,16 +769,38 @@ export function mergeLinkUrl(link: MergeLinkDirective, row: Record<string, unkno
   return buildMergeRecordLinkUrl(database, table, part, { hostname, eventTimeMicroseconds, eventType: 'MergeParts' });
 }
 
+/**
+ * Object browser URL for the object named in `row`, or null when the row lacks a value. The
+ * URL is app-relative (`/objects?...`); the caller maps it to the standalone or Grafana href.
+ */
+export function objectLinkUrlFor(link: ObjectLinkDirective, row: Record<string, unknown>): string | null {
+  const value = (col?: string) => {
+    const v = col ? row[col] : undefined;
+    return v == null || v === '' ? undefined : String(v);
+  };
+  if (link.kind === 'table') {
+    const database = value(link.database), table = value(link.table), user = value(link.user);
+    return database && table ? objectLinkUrl({ kind: 'table', database, table, ...(user ? { user } : {}) }) : null;
+  }
+  if (link.kind === 'user') { const user = value(link.user); return user ? objectLinkUrl({ kind: 'user', user }) : null; }
+  const role = value(link.role);
+  return role ? objectLinkUrl({ kind: 'role', role }) : null;
+}
+
+/** The @object_link of a clicked column, if any. */
+export const objectLinkOn = (directives: Pick<ParsedDirectives, 'objectLinks'>, column: string): ObjectLinkDirective | undefined =>
+  directives.objectLinks?.find(link => link.on === column);
+
 /** What a click on a chart bar / point does. One per panel. */
-export type ChartClickAction = 'drill' | 'partLink' | 'queryLink' | 'mergeLink';
+export type ChartClickAction = 'drill' | 'partLink' | 'queryLink' | 'mergeLink' | 'objectLink';
 
 /**
  * The directive a chart click follows, in this order: @drill, @part_link,
- * @query_link, @merge_link. A directive whose `on` column is missing from the
+ * @query_link, @merge_link, @object_link. A directive whose `on` column is missing from the
  * result does not apply; before the first run (`columns` undefined) it does.
  */
 export function chartClickAction(
-  directives: Pick<ParsedDirectives, 'drill' | 'partLink' | 'queryLink' | 'mergeLink'>,
+  directives: Pick<ParsedDirectives, 'drill' | 'partLink' | 'queryLink' | 'mergeLink' | 'objectLinks'>,
   columns?: string[],
 ): ChartClickAction | null {
   const has = (on?: string) => !!on && (!columns || columns.includes(on));
@@ -756,6 +808,7 @@ export function chartClickAction(
   if (has(directives.partLink?.on)) return 'partLink';
   if (has(directives.queryLink?.on)) return 'queryLink';
   if (has(directives.mergeLink?.on)) return 'mergeLink';
+  if (directives.objectLinks?.some(link => has(link.on))) return 'objectLink';
   return null;
 }
 
@@ -766,6 +819,7 @@ export function chartClickHint(action: ChartClickAction, drillInto?: string): st
     case 'partLink': return 'Click to inspect part';
     case 'queryLink': return 'Click to open this query on the Queries page';
     case 'mergeLink': return 'Click to open this merge on the Merges page';
+    case 'objectLink': return 'Click to open in the object browser';
   }
 }
 

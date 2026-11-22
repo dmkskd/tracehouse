@@ -36,7 +36,6 @@ import {
   operationKeyFor,
   operationRowHighlightKey,
   operationTotals,
-  TIMELINE_ACTIVITY_LIMIT,
 } from '@tracehouse/core';
 import type {
   OperationKind,
@@ -55,10 +54,15 @@ import { DeepLinkStatusBanner } from '../components/common/DeepLinkStatusBanner'
 import { useAvailableHeight } from '../hooks/useAvailableHeight';
 import { TruncatedHost } from '../components/common/TruncatedHost';
 import { formatBytes } from '../utils/formatters';
-import { getUrlParam } from '../utils/urlParams';
 import { useUserPreferenceStore } from '../stores/userPreferenceStore';
 import { useMonitoringCapabilitiesStore } from '../stores/monitoringCapabilitiesStore';
 import { DocsLink } from '../components/common/DocsLink';
+import { BackLink } from '../components/common/BackLink';
+import { OperationsMenu } from '../components/timeline/OperationsMenu';
+import { TrackingStrip } from '../components/timeline/TrackingStrip';
+import { useTimelineFilters } from '../components/timeline/timeline-filters-preference';
+import { describeTimelineFilters, describeTracking, readTracking, trackingParamsFor, type TimelineFilters, type TrackingDimension } from '@tracehouse/core';
+import { useReturnToOrigin } from '../hooks/useReturnToOrigin';
 import { RefreshingOverlay } from '../components/common/RefreshingOverlay';
 import { TimeTravelControls } from '../components/timeline/TimeTravelControls';
 import { headerStyle } from './TimeTravelPage.styles';
@@ -152,6 +156,16 @@ function toLocalDatetimeStr(d: Date | number): string {
   return `${date.getFullYear()}-${pad(date.getMonth() + 1)}-${pad(date.getDate())}T${pad(date.getHours())}:${pad(date.getMinutes())}`;
 }
 
+/** Short label of a custom range for the range selector, e.g. 11/22 13:00 — 11/22 14:00. */
+function formatCustomRange(startIso: string, endIso: string): string {
+  const fmt = (iso: string) => {
+    const d = new Date(iso);
+    const pad = (n: number) => String(n).padStart(2, '0');
+    return `${pad(d.getMonth() + 1)}/${pad(d.getDate())} ${pad(d.getHours())}:${pad(d.getMinutes())}`;
+  };
+  return `${fmt(startIso)} — ${fmt(endIso)}`;
+}
+
 // Time range presets: each means "show last N hours in scrub bar, ending at now"
 const TIME_RANGES = [
   { label: '1h', hoursAgo: 1 },
@@ -174,7 +188,7 @@ const CUSTOM_RANGE_PRESETS = [
 
 /** State listed here must survive copying and reopening a Time Travel URL. */
 export const TIME_TRAVEL_SHARE_SCHEMA = defineShareSchema({
-  tt_hash_only: { type: 'boolean', default: false, persistDefault: true },
+  tt_matched_only: { type: 'boolean', default: false, persistDefault: true },
   tt_window: { type: 'number', default: 150, persistDefault: true },
   tt_live: { type: 'boolean', default: true, persistDefault: true },
   tt_auto: { type: 'boolean', default: false, persistDefault: true },
@@ -212,10 +226,11 @@ type SortDir = 'asc' | 'desc';
  * the activity counts and the breakdown link. Time Travel is a fast first
  * glance; the Analytics "Workload Breakdown" dashboard is the precise view.
  */
-const SAMPLING_NOTE = (metric: MetricMode): string =>
-  `Time Travel is a sampled first glance: it shows the top ${TIMELINE_ACTIVITY_LIMIT} `
-  + `queries / merges / mutations by ${metric.toUpperCase()}, and operations under `
-  + `1 MB of memory are not collected (excluded from these totals too).\n\n`
+/** What the summary counters count, from the listed-operations settings (Show menu). */
+const SAMPLING_NOTE = (metric: MetricMode, limit: number, filters: TimelineFilters): string =>
+  `Time Travel is a sampled first glance: it shows the top ${limit} `
+  + `queries / merges / mutations by ${metric.toUpperCase()}, ${describeTimelineFilters(filters)}. `
+  + `Totals count the operations that pass the same thresholds.\n\n`
   + `For a complete, precise accounting of CPU / memory / disk split across `
   + `queries, merges, and mutations, open Analytics → Workload Breakdown.`;
 
@@ -231,6 +246,8 @@ export const TimeTravelPage: React.FC = () => {
   const [chartAnchorRef, chartAvailableHeight] = useAvailableHeight();
   const mainChartHeight = getTimelineChartHeight(chartAvailableHeight);
   const navigate = useNavigate();
+  // Captured on mount: this page's own URL updates drop navigation state.
+  const { from: cameFrom } = useReturnToOrigin();
   const refreshConfig = useRefreshConfig();
   const { refreshRateSeconds } = useRefreshSettingsStore();
   const manualRefreshTick = useGlobalLastUpdatedStore(s => s.manualRefreshTick);
@@ -254,16 +271,14 @@ export const TimeTravelPage: React.FC = () => {
     navigatorShape: preferredNavigatorShape,
   }));
 
-  // Query hash filter: highlight/filter timeline to a specific normalized_query_hash (from URL ?nqh=...)
-  const [queryHashFilter, setQueryHashFilter] = useState<string | null>(() => getUrlParam('nqh'));
-  // When true, show only hash-matched queries (hide everything else including merges/mutations)
-  const [queryHashOnly, setQueryHashOnly] = useState(initialCoordinates.queryHashOnly);
-
-  // Sync queryHashFilter from URL search params (e.g. when navigating from another page)
-  useEffect(() => {
-    const nqh = searchParams.get('nqh');
-    if (nqh !== queryHashFilter) setQueryHashFilter(nqh);
-  }, [searchParams]); // eslint-disable-line react-hooks/exhaustive-deps
+  // Tracking (URL nqh, tt_user, tt_table): every matching operation is fetched and highlighted.
+  // Keyed by value: the page rewrites its URL on every zoom or pin, which must not refetch.
+  const trackingKey = JSON.stringify(readTracking(name => searchParams.get(name)));
+  const tracking = useMemo(() => JSON.parse(trackingKey) as ReturnType<typeof readTracking>, [trackingKey]);
+  // When true, show only tracked operations
+  const [trackedOnly, setTrackedOnly] = useState(initialCoordinates.trackedOnly);
+  // Which operations are listed: admin default, personal setting and link (OperationsMenu).
+  const { filters: timelineFilters } = useTimelineFilters();
   const [timeTravelEventsVisible, setEventsVisible] = useState(initialCoordinates.eventsVisible);
   const [timeTravelNavigatorShape, setNavigatorShape] = useState(initialCoordinates.navigatorShape);
   const setTimeTravelEventsVisible = useCallback((visible: boolean) => {
@@ -417,7 +432,7 @@ export const TimeTravelPage: React.FC = () => {
       navigatorShape: preferredNavigatorShape,
     });
     preserveInitialInspectionRef.current = coordinates.pinnedMs != null || coordinates.zoomRange != null;
-    setQueryHashOnly(coordinates.queryHashOnly);
+    setTrackedOnly(coordinates.trackedOnly);
     setWindowSec(coordinates.windowSec);
     setIsLive(coordinates.isLive);
     setAutoRefresh(coordinates.autoRefresh);
@@ -454,7 +469,7 @@ export const TimeTravelPage: React.FC = () => {
   useEffect(() => {
     setSearchParams(previous => {
       const next = writeTimeTravelCoordinates(previous, {
-      queryHashOnly,
+      trackedOnly,
       windowSec,
       isLive,
       autoRefresh,
@@ -486,7 +501,7 @@ export const TimeTravelPage: React.FC = () => {
       return next;
     }, { replace: true });
   }, [
-    queryHashOnly, windowSec, isLive, autoRefresh, customStartTime, customEndTime,
+    trackedOnly, windowSec, isLive, autoRefresh, customStartTime, customEndTime,
     viewportEndTime, pinnedMs, selectedEventId, zoomRange, metricMode, viewMode,
     activityLimit, selectedHosts, perServerView, selectedTimeRange,
     sortField, sortDir, operationKinds, operationScope, operationSearch,
@@ -525,7 +540,8 @@ export const TimeTravelPage: React.FC = () => {
           hostname: hostnameFilter,
           activityLimit,
           activeMetric: metricMode,
-          normalizedQueryHash: queryHashFilter ?? undefined,
+          tracking: tracking ?? undefined,
+          filters: timelineFilters,
         }),
         eventCapabilities
           ? services.eventsService.getEvents({
@@ -573,7 +589,7 @@ export const TimeTravelPage: React.FC = () => {
     finally {
       if (fetchDataRequestGateRef.current.isLatest(requestId)) setIsLoading(false);
     }
-  }, [services, isLive, effectiveViewportEnd, windowSec, includeRunning, hostnameFilter, activityLimit, metricMode, queryHashFilter, eventCapabilities, selectedEventId]);
+  }, [services, isLive, effectiveViewportEnd, windowSec, includeRunning, hostnameFilter, activityLimit, metricMode, tracking, timelineFilters, eventCapabilities, selectedEventId]);
 
   // Fetch cluster hosts on connect (after cluster detection completes)
   useEffect(() => {
@@ -639,21 +655,19 @@ export const TimeTravelPage: React.FC = () => {
       fetchDataTimeoutRef.current = setTimeout(() => fetchData(), 200);
     }
     return () => { if (fetchDataTimeoutRef.current) clearTimeout(fetchDataTimeoutRef.current); };
-  }, [services, isConnected, clusterDetected, windowSec, isLive, effectiveViewportEnd, includeRunning, hostnameFilter, activityLimit, metricMode, queryHashFilter, eventCapabilities]); // eslint-disable-line react-hooks/exhaustive-deps
+  }, [services, isConnected, clusterDetected, windowSec, isLive, effectiveViewportEnd, includeRunning, hostnameFilter, activityLimit, metricMode, tracking, timelineFilters, eventCapabilities]); // eslint-disable-line react-hooks/exhaustive-deps
 
-  // Clear hash filter: remove nqh from URL and re-fetch normally
-  const clearQueryHashFilter = useCallback(() => {
-    setQueryHashFilter(null);
+  // Stop tracking one dimension: remove its URL parameter and re-fetch
+  const clearTracking = useCallback((dimension: TrackingDimension) => {
     setSearchParams(prev => {
       const next = new URLSearchParams(prev);
-      next.delete('nqh');
+      for (const param of trackingParamsFor(dimension)) next.delete(param);
       return next;
     }, { replace: true });
   }, [setSearchParams]);
 
-  // Set hash filter mode: write nqh to URL and trigger filtered fetch
+  // Track a query hash: write nqh to URL and trigger the tracked fetch
   const activateQueryHashFilter = useCallback((hash: string) => {
-    setQueryHashFilter(hash);
     setSearchParams(prev => {
       const next = new URLSearchParams(prev);
       next.set('nqh', hash);
@@ -713,21 +727,21 @@ export const TimeTravelPage: React.FC = () => {
   // Effective data: use zoom-enriched data when available, else base data
   const effectiveData = zoomData ?? data;
 
-  // Chart data: in queryHashOnly mode, show only hash-matched queries and hide merges/mutations
+  // Chart data: in tracked-only mode, show only tracked operations
   const chartData = useMemo(() => {
-    if (!effectiveData || !queryHashOnly || !queryHashFilter) return effectiveData;
+    if (!effectiveData || !trackedOnly || !tracking) return effectiveData;
     return {
       ...effectiveData,
-      queries: effectiveData.queries.filter(q => q.matched_hash),
-      merges: [],
-      mutations: [],
+      queries: effectiveData.queries.filter(q => q.tracked),
+      merges: effectiveData.merges.filter(m => m.tracked),
+      mutations: (effectiveData.mutations ?? []).filter(m => m.tracked),
     };
-  }, [effectiveData, queryHashOnly, queryHashFilter]);
+  }, [effectiveData, trackedOnly, tracking]);
 
   const loadExplorationResource = useMemo(() => services ? createResourceDataLoader({
     attributionService: new ResourceAttributionService(services.adapter), timelineService: services.timelineService, hostnameFilter, includeRunning, activityLimit,
-    queryHashFilter, queryHashOnly, xraySelection,
-  }) : undefined, [services, hostnameFilter, includeRunning, activityLimit, queryHashFilter, queryHashOnly, xraySelection]);
+    tracking, trackedOnly, filters: timelineFilters, xraySelection,
+  }) : undefined, [services, hostnameFilter, includeRunning, activityLimit, tracking, trackedOnly, timelineFilters, xraySelection]);
 
   const navigatorSpanMs = Math.max(60_000, navigatorHours * 60 * 60_000);
   const navigatorBucketSec = navigatorBucketSeconds(navigatorSpanMs);
@@ -1088,12 +1102,12 @@ export const TimeTravelPage: React.FC = () => {
         scope: operationScope,
         pinnedMs,
         zoomRange,
-        hashFilterActive: !!queryHashFilter,
-        hashOnly: queryHashOnly,
+        trackingActive: !!tracking,
+        trackedOnly,
         search: operationSearch,
       },
     );
-  }, [data, metricMode, sortField, sortDir, operationScope, pinnedMs, zoomRange, queryHashFilter, queryHashOnly, operationSearch]);
+  }, [data, metricMode, sortField, sortDir, operationScope, pinnedMs, zoomRange, tracking, trackedOnly, operationSearch]);
 
   const operationCounts = useMemo(() => countOperationRows(operationRows), [operationRows]);
   const visibleOperationRows = useMemo(
@@ -1304,6 +1318,7 @@ export const TimeTravelPage: React.FC = () => {
       <div className={`tt-header ${headerStyle}`} style={{ padding:'12px 16px 10px', borderBottom:'1px solid var(--border-primary)', background:'var(--bg-secondary)', flexShrink:0 }}>
         <div style={{ display:'flex', alignItems:'center', justifyContent:'space-between', marginBottom:12 }}>
           <div style={{ display:'flex', alignItems:'center', gap:12 }}>
+            <BackLink from={cameFrom} />
             <h2 style={{ color:'var(--text-primary)', fontSize:18, fontWeight:600, margin:0 }}>Time Travel</h2>
             <DocsLink path="/features/time-travel" />
             <span style={{ color:'var(--text-muted)', fontSize:12 }}>Hover to inspect · Click to pin · Drag to zoom</span>
@@ -1311,53 +1326,18 @@ export const TimeTravelPage: React.FC = () => {
 
           {/* Right side: Time range picker */}
           <div style={{ display:'flex', alignItems:'center', gap:8 }}>
-            {/* Time range tab buttons */}
-            <div style={{
-              display:'flex', gap:2, padding:3, borderRadius:8,
-              background:'var(--bg-tertiary)', border:'1px solid var(--border-primary)',
-              position:'relative',
-            }}>
-              <span style={{ padding:'5px 8px', fontSize:10, color:'var(--text-muted)', fontWeight:600, alignSelf:'center' }}>Last</span>
-              {TIME_RANGES.map(r => (
-                <button key={r.label} onClick={() => handleTimeRangeChange(r.label)}
-                  style={{
-                    padding:'5px 10px', fontSize:11, fontWeight:600, border:'none', borderRadius:5, cursor:'pointer',
-                    fontFamily:"'Share Tech Mono',monospace",
-                    background: selectedTimeRange === r.label ? 'var(--bg-primary)' : 'transparent',
-                    color: selectedTimeRange === r.label ? 'var(--text-primary)' : 'var(--text-muted)',
-                    boxShadow: selectedTimeRange === r.label ? '0 1px 3px rgba(0,0,0,0.1)' : 'none',
-                    transition:'all 0.15s ease',
-                  }}>
-                  {r.label}
-                </button>
-              ))}
-              <button onClick={handleCustomToggle}
-                style={{
-                  padding:'5px 10px', fontSize:11, fontWeight:600, border:'none', borderRadius:5, cursor:'pointer',
-                  fontFamily:"'Share Tech Mono',monospace",
-                  background: selectedTimeRange === 'Custom' || showCustomPopover ? 'var(--bg-primary)' : 'transparent',
-                  color: selectedTimeRange === 'Custom' || showCustomPopover ? 'var(--text-primary)' : 'var(--text-muted)',
-                  boxShadow: selectedTimeRange === 'Custom' || showCustomPopover ? '0 1px 3px rgba(0,0,0,0.1)' : 'none',
-                  transition:'all 0.15s ease',
-                }}>
-                Custom
-              </button>
-              {/* Active custom range label (inline inside tab bar) */}
-              {selectedTimeRange === 'Custom' && !showCustomPopover && customStartTime && customEndTime && (() => {
-                const fmt = (iso: string) => {
-                  const d = new Date(iso);
-                  const pad = (n: number) => String(n).padStart(2, '0');
-                  return `${pad(d.getMonth() + 1)}/${pad(d.getDate())} ${pad(d.getHours())}:${pad(d.getMinutes())}`;
-                };
-                return (
-                  <span style={{
-                    fontSize:9, color:'var(--text-muted)', fontFamily:"'Share Tech Mono',monospace",
-                    whiteSpace:'nowrap', padding:'0 4px', alignSelf:'center',
-                  }}>
-                    {fmt(customStartTime)} — {fmt(customEndTime)}
-                  </span>
-                );
-              })()}
+            {/* Overview span: presets and a custom range in one control */}
+            <div className="tracehouse-compact-select-control" style={{ display:'flex', alignItems:'center', gap:0, background:'var(--bg-tertiary)', borderRadius:6, border:'1px solid var(--border-primary)', position:'relative' }}>
+              <span className="tracehouse-compact-select-label">Overview</span>
+              <select className="tracehouse-compact-native-select" value={selectedTimeRange} title="Time span of the overview strip under the chart"
+                onChange={e => e.target.value === 'Custom' ? handleCustomToggle() : handleTimeRangeChange(e.target.value)} style={{ minWidth:90 }}>
+                {TIME_RANGES.map(r => <option key={r.label} value={r.label}>Last {r.label}</option>)}
+                <option value="Custom">{selectedTimeRange === 'Custom' && customStartTime && customEndTime ? formatCustomRange(customStartTime, customEndTime) : 'Custom…'}</option>
+              </select>
+              {selectedTimeRange === 'Custom' && !showCustomPopover && (
+                <button type="button" onClick={handleCustomToggle} aria-label="Edit custom range" title="Edit custom range"
+                  style={{ border:'none', background:'transparent', color:'var(--text-muted)', cursor:'pointer', padding:'0 8px', fontSize:12 }}>✎</button>
+              )}
               {/* Custom range popover — drops below the tab bar */}
               {showCustomPopover && (
                 <div ref={customPopoverRef} style={{
@@ -1378,7 +1358,7 @@ export const TimeTravelPage: React.FC = () => {
                       style={{
                         padding:'4px 12px', fontSize:10, fontWeight:600, borderRadius:5, border:'none',
                         cursor: customStartTime && customEndTime ? 'pointer' : 'not-allowed',
-                        background: customStartTime && customEndTime ? 'rgba(99,102,241,0.85)' : 'transparent',
+                        background: customStartTime && customEndTime ? 'rgba(88,166,255,0.9)' : 'transparent',
                         color: customStartTime && customEndTime ? '#fff' : 'var(--text-muted)',
                         transition:'all 0.15s ease', whiteSpace:'nowrap',
                       }}>
@@ -1406,6 +1386,7 @@ export const TimeTravelPage: React.FC = () => {
                     rangeStartMs={Date.now() - sliderZoomMs} rangeEndMs={Date.now()}
                     start={customStartTime || ''} end={customEndTime || ''}
                     onStartChange={setCustomStartTime} onEndChange={setCustomEndTime}
+                    accentRgb="88, 166, 255"
                   />
                 </div>
               )}
@@ -1413,63 +1394,41 @@ export const TimeTravelPage: React.FC = () => {
 
             {/* Window size selector */}
             <div className="tracehouse-compact-select-control" style={{ display:'flex', alignItems:'center', gap:0, background:'var(--bg-tertiary)', borderRadius:6, border:'1px solid var(--border-primary)', overflow:'hidden' }}>
-              <span className="tracehouse-compact-select-label">Zoom</span>
-              <select className="tracehouse-compact-native-select" value={windowSec} onChange={(e) => setWindowSec(Number(e.target.value))} title="Select time window duration"
+              <span className="tracehouse-compact-select-label">Chart</span>
+              <select className="tracehouse-compact-native-select" value={windowSec} onChange={(e) => setWindowSec(Number(e.target.value))} title="Time span of the main chart"
                 style={{ minWidth:60 }}>
                 {WINDOW_SIZES.map(w => <option key={w.sec} value={w.sec}>{w.label}</option>)}
               </select>
             </div>
 
-            {/* Activity limit selector */}
-            <div className="tracehouse-compact-select-control" style={{ display:'flex', alignItems:'center', gap:0, background:'var(--bg-tertiary)', borderRadius:6, border:'1px solid var(--border-primary)', overflow:'hidden' }}>
-              <span className="tracehouse-compact-select-label">Show</span>
-              <select className="tracehouse-compact-native-select" value={activityLimit} onChange={(e) => setActivityLimit(Number(e.target.value))} title="Max items per activity type (queries, merges, mutations)"
-                style={{ minWidth:50 }}>
-                {[25, 50, 100, 250, 500].map(n => <option key={n} value={n}>{n}</option>)}
-              </select>
-            </div>
+            <OperationsMenu activityLimit={activityLimit} onActivityLimit={setActivityLimit}
+              includeRunning={includeRunning} onIncludeRunning={setIncludeRunning} isLive={isLive} metric={metricMode} />
 
-            {/* One stable slot: in-flight control while live, return action while historical. */}
-            {isLive ? (
-              <button onClick={() => setIncludeRunning(!includeRunning)}
-                title={includeRunning ? 'Showing in-flight queries/merges - click to hide' : 'Hiding in-flight queries/merges - click to show'}
-                style={{
-                  display:'flex', alignItems:'center', justifyContent:'center', gap:6, minWidth:88,
-                  background: includeRunning ? 'rgba(88,166,255,0.1)' : 'var(--bg-tertiary)',
-                  color: includeRunning ? '#58a6ff' : 'var(--text-muted)',
-                  border: includeRunning ? '1px solid rgba(88,166,255,0.3)' : '1px solid var(--border-primary)',
-                  borderRadius:6, padding:'8px 12px', fontSize:11, cursor:'pointer',
-                  fontWeight: includeRunning ? 500 : 400,
-                }}>
-                {includeRunning && <span style={{ display:'inline-block', width:6, height:6, borderRadius:'50%', background:'#58a6ff', animation:`${pulseAnimation} 1.5s ease-in-out infinite` }} />}
-                In-flight
-              </button>
-            ) : (
+            {!isLive && (
               <button onClick={() => enterLiveMode()} title="Jump to current time"
-                style={{ display:'flex', alignItems:'center', justifyContent:'center', gap:6, minWidth:88, background:'rgba(63,185,80,0.15)', color:'#3fb950', border:'1px solid rgba(63,185,80,0.4)', borderRadius:6, padding:'8px 12px', fontSize:11, cursor:'pointer', fontWeight:500 }}>
+                style={{ display:'flex', alignItems:'center', justifyContent:'center', gap:6, background:'rgba(63,185,80,0.15)', color:'#3fb950', border:'1px solid rgba(63,185,80,0.4)', borderRadius:6, padding:'8px 12px', fontSize:11, cursor:'pointer', fontWeight:500 }}>
                 <span style={{ display:'inline-block', width:6, height:6, borderRadius:'50%', background:'#3fb950' }} />
                 Go Live
               </button>
             )}
 
-            {/* Auto-refresh toggle */}
-            <button onClick={() => setAutoRefresh(!autoRefresh)} title={autoRefresh ? 'Auto-refresh is on — click to pause' : 'Auto-refresh is off — click to enable'}
-              style={{
-                display:'flex', alignItems:'center', gap:6,
-                background: autoRefresh ? 'rgba(63,185,80,0.1)' : 'var(--bg-tertiary)',
-                color: autoRefresh ? '#3fb950' : 'var(--text-muted)',
-                border: autoRefresh ? '1px solid rgba(63,185,80,0.3)' : '1px solid var(--border-primary)',
-                borderRadius:6, padding:'8px 12px', fontSize:11, cursor:'pointer', fontWeight: autoRefresh ? 500 : 400,
-              }}>
-              {autoRefresh && <span style={{ display:'inline-block', width:6, height:6, borderRadius:'50%', background:'#3fb950', animation:`${pulseAnimation} 1.5s ease-in-out infinite` }} />}
-              Auto
-            </button>
-
-            {/* Manual refresh */}
-            <button onClick={fetchData} disabled={isLoading} title="Refresh data manually"
-              style={{ background:'var(--bg-tertiary)', color:'var(--text-primary)', border:'1px solid var(--border-primary)', borderRadius:6, padding:'8px 14px', fontSize:14, cursor:'pointer', opacity: isLoading ? 0.5 : 1, fontFamily:'monospace' }}>
-              {isLoading ? '⋯' : '↻'}
-            </button>
+            {/* Refresh: now, and automatically while live */}
+            <div role="group" aria-label="Refresh" style={{ display:'flex', alignItems:'stretch', border:'1px solid var(--border-primary)', borderRadius:6, overflow:'hidden', background:'var(--bg-tertiary)' }}>
+              <button onClick={fetchData} disabled={isLoading} title="Refresh now" aria-label="Refresh now"
+                style={{ background:'transparent', color:'var(--text-primary)', border:'none', padding:'6px 12px', fontSize:14, cursor:'pointer', opacity: isLoading ? 0.5 : 1, fontFamily:'monospace' }}>
+                {isLoading ? '⋯' : '↻'}
+              </button>
+              <button onClick={() => setAutoRefresh(!autoRefresh)} aria-pressed={autoRefresh}
+                title={autoRefresh ? 'Auto-refresh on while live. Click to pause' : 'Auto-refresh off. Click to refresh automatically while live'}
+                style={{
+                  display:'flex', alignItems:'center', gap:6, border:'none', borderLeft:'1px solid var(--border-primary)',
+                  background: autoRefresh ? 'rgba(63,185,80,0.1)' : 'transparent', color: autoRefresh ? '#3fb950' : 'var(--text-muted)',
+                  padding:'6px 10px', fontSize:11, cursor:'pointer', fontWeight: autoRefresh ? 500 : 400,
+                }}>
+                {autoRefresh && <span style={{ display:'inline-block', width:6, height:6, borderRadius:'50%', background:'#3fb950', animation:`${pulseAnimation} 1.5s ease-in-out infinite` }} />}
+                Auto
+              </button>
+            </div>
           </div>
         </div>
 
@@ -1502,27 +1461,27 @@ export const TimeTravelPage: React.FC = () => {
                   label="queries"
                   value={`${operationCounts.query}/${data.query_count ?? data.queries.length}`}
                   indicatorColor="#79c0ff"
-                  title={SAMPLING_NOTE(metricMode)}
+                  title={SAMPLING_NOTE(metricMode, activityLimit, timelineFilters)}
                 />
                 <MetricStripItem
                   label="merges"
                   value={`${operationCounts.merge}/${data.merge_count}`}
                   indicatorColor="#f0883e"
-                  title={SAMPLING_NOTE(metricMode)}
+                  title={SAMPLING_NOTE(metricMode, activityLimit, timelineFilters)}
                 />
                 {(data.mutation_count ?? 0) > 0 && (
                   <MetricStripItem
                     label="mutations"
                     value={`${operationCounts.mutation}/${data.mutation_count}`}
                     indicatorColor="#f778ba"
-                    title={SAMPLING_NOTE(metricMode)}
+                    title={SAMPLING_NOTE(metricMode, activityLimit, timelineFilters)}
                   />
                 )}
                 <MetricStripDivider />
                 <button
                   type="button"
                   onClick={openWorkloadBreakdown}
-                  title={SAMPLING_NOTE(metricMode)}
+                  title={SAMPLING_NOTE(metricMode, activityLimit, timelineFilters)}
                   style={{
                     display:'inline-flex', alignItems:'center', gap:5,
                     padding:'2px 8px', fontSize:11, cursor:'pointer',
@@ -1571,56 +1530,14 @@ export const TimeTravelPage: React.FC = () => {
         </div>
       )}
 
-      {queryHashFilter && (
-        <div style={{
-          margin:'12px 16px 0', padding:'8px 14px', borderRadius:8, fontSize:12,
-          background:'rgba(88,166,255,0.08)', color:'#58a6ff', border:'1px solid rgba(88,166,255,0.2)',
-          display:'flex', alignItems:'center', justifyContent:'space-between',
-        }}>
-          <div style={{ display:'flex', alignItems:'center', gap:12 }}>
-            <span>
-              Tracking query hash <span style={{ fontFamily:'monospace', opacity:0.7 }}>{queryHashFilter?.slice(0, 12)}{(queryHashFilter?.length ?? 0) > 12 ? '…' : ''}</span>
-              {data && (() => {
-                const matchCount = data.queries.filter(q => q.matched_hash).length;
-                return <span style={{ marginLeft:4, opacity:0.8 }}>— {matchCount} {matchCount === 1 ? 'match' : 'matches'} in window</span>;
-              })()}
-            </span>
-            <div style={{
-              display:'flex', gap:2, padding:2, borderRadius:6,
-              background:'rgba(88,166,255,0.1)', border:'1px solid rgba(88,166,255,0.2)',
-            }}>
-              <button
-                onClick={() => setQueryHashOnly(false)}
-                style={{
-                  padding:'3px 10px', fontSize:11, fontWeight:600, borderRadius:4, border:'none', cursor:'pointer',
-                  background: !queryHashOnly ? 'rgba(88,166,255,0.25)' : 'transparent',
-                  color:'#58a6ff',
-                }}
-              >
-                All + highlighted
-              </button>
-              <button
-                onClick={() => setQueryHashOnly(true)}
-                style={{
-                  padding:'3px 10px', fontSize:11, fontWeight:600, borderRadius:4, border:'none', cursor:'pointer',
-                  background: queryHashOnly ? 'rgba(88,166,255,0.25)' : 'transparent',
-                  color:'#58a6ff',
-                }}
-              >
-                Matched only
-              </button>
-            </div>
-          </div>
-          <button
-            onClick={() => { clearQueryHashFilter(); setQueryHashOnly(false); }}
-            style={{
-              background:'rgba(88,166,255,0.15)', border:'1px solid rgba(88,166,255,0.3)', borderRadius:6,
-              color:'#58a6ff', padding:'4px 12px', fontSize:11, cursor:'pointer', fontWeight:600,
-            }}
-          >
-            Clear filter
-          </button>
-        </div>
+      {tracking && (
+        <TrackingStrip
+          tracking={tracking}
+          matches={data ? [...data.queries, ...data.merges, ...(data.mutations ?? [])].filter(o => o.tracked).length : null}
+          trackedOnly={trackedOnly}
+          onTrackedOnly={setTrackedOnly}
+          onClear={dimension => { clearTracking(dimension); if (describeTracking(tracking).length === 1) setTrackedOnly(false); }}
+        />
       )}
 
       {data && (
@@ -1766,7 +1683,7 @@ export const TimeTravelPage: React.FC = () => {
                       highlightedItem={highlightedItem}
                       onHighlightItem={setHighlightedItem}
                       hiddenCategories={hiddenCategories}
-                      queryHashActive={!!queryHashFilter}
+                      trackingActive={!!tracking}
                       eventAnnotations={timeTravelEventsVisible
                         ? filterTimelineEvents(
                             eventData.events.filter(event => event.hostname === host),
@@ -1833,7 +1750,7 @@ export const TimeTravelPage: React.FC = () => {
               highlightedItem={highlightedItem}
               onHighlightItem={setHighlightedItem}
               hiddenCategories={hiddenCategories}
-              queryHashActive={!!queryHashFilter}
+              trackingActive={!!tracking}
               eventAnnotations={timeTravelEventsVisible ? filteredWindowEvents : []}
               selectedEventId={selectedEventIdForDisplay}
               onEventSelect={handleEventSelect}
@@ -1964,7 +1881,7 @@ export const TimeTravelPage: React.FC = () => {
               onSearchChange={setOperationSearch}
               selectedId={selectedOperation ? operationRowHighlightKey(selectedOperation) : null}
               showHost={clusterHosts.length > 1}
-              queryHashActive={!!queryHashFilter}
+              trackingActive={!!tracking}
             />
           </div>
 

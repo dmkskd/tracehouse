@@ -102,9 +102,12 @@ export function projectCatalogGraph(capture: Capture, focus?: string, maxMatches
   const tables = capture.observations.filter(o => o.kind === 'table' && !o.attributes.unresolvedReference
     && (!scoped || scoped.has(o.key)));
   const matched = new Map<string, Set<string>>(), linked = new Map<string, Set<string>>();
+  const scopes = new Map(capture.observations.filter(o => o.kind === 'grant-scope').map(o => [o.key, o.attributes]));
   for (const grant of capture.relationships.filter(e => e.kind === 'grant')) {
     const r = grant.evidence;
-    if (Number(r.is_wildcard) === 1 || r.access_object || !['SELECT', 'INSERT'].includes(String(r.access_type))) continue;
+    // A privilege links when it is or includes SELECT or INSERT (ALL includes both).
+    const operations = scopes.get(grant.to)?.table_operations;
+    if (Number(r.is_wildcard) === 1 || r.access_object || !Array.isArray(operations) || !operations.length) continue;
     // Without a focus object, only exact scopes are expanded.
     if (!focusKind && (r.database == null || r.table == null)) continue;
     const all = matched.get(grant.to) ?? new Set<string>(), shown = linked.get(grant.to) ?? new Set<string>();

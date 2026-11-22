@@ -924,6 +924,7 @@ const DashboardPanelCard: React.FC<{
       partLink: handlePartLinkChartClick,
       queryLink: event => pageLink.openLabel('queryLink', event.label),
       mergeLink: event => pageLink.openLabel('mergeLink', event.label),
+      objectLink: event => pageLink.openObjectLabel(event.label),
     };
     return { onClick: handlers[action], hint: chartClickHint(action, preset?.directives.drill?.into) };
   }, [preset, result?.columns, handleDrillDown, handlePartLinkChartClick, pageLink]);
@@ -1177,6 +1178,8 @@ const DashboardPanelCard: React.FC<{
                     onMergeLinkClick={isMergeLinkable ? row => pageLink.openRow('mergeLink', row) : undefined}
                     queryLinkOnColumn={isQueryLinkable ? preset?.directives.queryLink?.on : undefined}
                     onQueryLinkClick={isQueryLinkable ? row => pageLink.openRow('queryLink', row) : undefined}
+                    objectLinkColumns={preset?.directives.objectLinks?.map(link => link.on)}
+                    onObjectLinkClick={pageLink.openObject}
                     compact
                     enableRowDetails
                   />

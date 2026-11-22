@@ -8,18 +8,18 @@
     "CREATE USER IF NOT EXISTS th_ob_bob __ON_CLUSTER__ HOST NONE",
     "CREATE USER IF NOT EXISTS th_ob_carol __ON_CLUSTER__ HOST NONE",
     "CREATE USER IF NOT EXISTS th_ob_denied __ON_CLUSTER__ HOST NONE",
-    "CREATE TABLE IF NOT EXISTS tracehouse_object_demo.events __ON_CLUSTER__ (\n id UInt64, tenant_id UInt32, event_time DateTime, amount UInt64\n) ENGINE = MergeTree ORDER BY (tenant_id, event_time, id)\n TTL event_time + INTERVAL 30 DAY DELETE SETTINGS index_granularity = 4096",
-    "CREATE TABLE IF NOT EXISTS tracehouse_object_demo.events_minute __ON_CLUSTER__ (\n tenant_id UInt32, minute DateTime, amount UInt64, events UInt64\n) ENGINE = SummingMergeTree ORDER BY (tenant_id, minute)\n TTL minute + INTERVAL 90 DAY DELETE",
-    "CREATE TABLE IF NOT EXISTS tracehouse_object_demo.events_hourly __ON_CLUSTER__ (\n tenant_id UInt32, hour DateTime, amount UInt64, events UInt64\n) ENGINE = SummingMergeTree ORDER BY (tenant_id, hour)\n TTL hour + INTERVAL 365 DAY DELETE",
+    "CREATE TABLE IF NOT EXISTS tracehouse_object_demo.payments __ON_CLUSTER__ (\n id UInt64, tenant_id UInt32, event_time DateTime, amount UInt64\n) ENGINE = MergeTree ORDER BY (tenant_id, event_time, id)\n TTL event_time + INTERVAL 30 DAY DELETE SETTINGS index_granularity = 4096",
+    "CREATE TABLE IF NOT EXISTS tracehouse_object_demo.payments_minute __ON_CLUSTER__ (\n tenant_id UInt32, minute DateTime, amount UInt64, events UInt64\n) ENGINE = SummingMergeTree ORDER BY (tenant_id, minute)\n TTL minute + INTERVAL 90 DAY DELETE",
+    "CREATE TABLE IF NOT EXISTS tracehouse_object_demo.payments_hourly __ON_CLUSTER__ (\n tenant_id UInt32, hour DateTime, amount UInt64, events UInt64\n) ENGINE = SummingMergeTree ORDER BY (tenant_id, hour)\n TTL hour + INTERVAL 365 DAY DELETE",
     "CREATE TABLE IF NOT EXISTS tracehouse_object_demo.audit_log __ON_CLUSTER__ (\n id UInt64, message String\n) ENGINE = MergeTree ORDER BY id",
-    "CREATE MATERIALIZED VIEW IF NOT EXISTS tracehouse_object_demo.minute_to_hourly_mv __ON_CLUSTER__\n TO tracehouse_object_demo.events_hourly AS SELECT tenant_id, toStartOfHour(minute) AS hour,\n sum(amount) AS amount, sum(events) AS events FROM tracehouse_object_demo.events_minute GROUP BY tenant_id, hour",
-    "CREATE MATERIALIZED VIEW IF NOT EXISTS tracehouse_object_demo.events_to_minute_mv __ON_CLUSTER__\n TO tracehouse_object_demo.events_minute AS SELECT tenant_id, toStartOfMinute(event_time) AS minute,\n sum(amount) AS amount, count() AS events FROM tracehouse_object_demo.events GROUP BY tenant_id, minute",
-    "CREATE VIEW IF NOT EXISTS tracehouse_object_demo.hourly_report __ON_CLUSTER__ AS\n SELECT tenant_id, hour, sum(amount) AS amount, sum(events) AS events\n FROM tracehouse_object_demo.events_hourly GROUP BY tenant_id, hour",
-    "CREATE VIEW IF NOT EXISTS tracehouse_object_demo.events_public __ON_CLUSTER__ AS\n SELECT id, tenant_id, event_time FROM tracehouse_object_demo.events",
-    "GRANT __ON_CLUSTER__ SELECT ON tracehouse_object_demo.events TO th_ob_reader",
+    "CREATE MATERIALIZED VIEW IF NOT EXISTS tracehouse_object_demo.minute_to_hourly_mv __ON_CLUSTER__\n TO tracehouse_object_demo.payments_hourly AS SELECT tenant_id, toStartOfHour(minute) AS hour,\n sum(amount) AS amount, sum(events) AS events FROM tracehouse_object_demo.payments_minute GROUP BY tenant_id, hour",
+    "CREATE MATERIALIZED VIEW IF NOT EXISTS tracehouse_object_demo.payments_to_minute_mv __ON_CLUSTER__\n TO tracehouse_object_demo.payments_minute AS SELECT tenant_id, toStartOfMinute(event_time) AS minute,\n sum(amount) AS amount, count() AS events FROM tracehouse_object_demo.payments GROUP BY tenant_id, minute",
+    "CREATE VIEW IF NOT EXISTS tracehouse_object_demo.hourly_report __ON_CLUSTER__ AS\n SELECT tenant_id, hour, sum(amount) AS amount, sum(events) AS events\n FROM tracehouse_object_demo.payments_hourly GROUP BY tenant_id, hour",
+    "CREATE VIEW IF NOT EXISTS tracehouse_object_demo.payments_public __ON_CLUSTER__ AS\n SELECT id, tenant_id, event_time FROM tracehouse_object_demo.payments",
+    "GRANT __ON_CLUSTER__ SELECT ON tracehouse_object_demo.payments TO th_ob_reader",
     "GRANT __ON_CLUSTER__ SELECT ON tracehouse_object_demo.* TO th_ob_analyst",
     "REVOKE __ON_CLUSTER__ SELECT ON tracehouse_object_demo.audit_log FROM th_ob_analyst",
-    "GRANT __ON_CLUSTER__ INSERT ON tracehouse_object_demo.events TO th_ob_writer",
+    "GRANT __ON_CLUSTER__ INSERT ON tracehouse_object_demo.payments TO th_ob_writer",
     "GRANT __ON_CLUSTER__ th_ob_reader TO th_ob_analyst",
     "GRANT __ON_CLUSTER__ th_ob_reader TO th_ob_alice",
     "GRANT __ON_CLUSTER__ th_ob_analyst TO th_ob_bob",
@@ -27,17 +27,17 @@
     "SET DEFAULT ROLE th_ob_reader TO th_ob_alice __ON_CLUSTER__",
     "SET DEFAULT ROLE NONE TO th_ob_bob __ON_CLUSTER__",
     "SET DEFAULT ROLE th_ob_writer TO th_ob_carol __ON_CLUSTER__",
-    "CREATE ROW POLICY IF NOT EXISTS tenant_42 __ON_CLUSTER__ ON tracehouse_object_demo.events USING tenant_id = 42 TO th_ob_alice",
-    "CREATE ROW POLICY IF NOT EXISTS other_observers __ON_CLUSTER__ ON tracehouse_object_demo.events USING 1 TO ALL EXCEPT th_ob_alice",
+    "CREATE ROW POLICY IF NOT EXISTS tenant_42 __ON_CLUSTER__ ON tracehouse_object_demo.payments USING tenant_id = 42 TO th_ob_alice",
+    "CREATE ROW POLICY IF NOT EXISTS other_observers __ON_CLUSTER__ ON tracehouse_object_demo.payments USING 1 TO ALL EXCEPT th_ob_alice",
     "CREATE SETTINGS PROFILE IF NOT EXISTS th_ob_reporting __ON_CLUSTER__ SETTINGS max_threads = 2, max_memory_usage = 268435456 TO th_ob_reader",
     "CREATE QUOTA IF NOT EXISTS th_ob_quota __ON_CLUSTER__ KEYED BY user_name FOR INTERVAL 1 HOUR MAX queries = 10000 TO th_ob_reader"
   ],
-  "seed": "INSERT INTO tracehouse_object_demo.events SELECT number + 1, if(number % 2 = 0, 42, 7),\n toStartOfHour(now()) + toIntervalMinute(number % 3), (number + 1) * 10\n FROM numbers(6) WHERE NOT EXISTS (SELECT 1 FROM tracehouse_object_demo.events WHERE event_time >= toStartOfHour(now()) AND event_time < toStartOfHour(now()) + INTERVAL 1 HOUR LIMIT 1)",
-  "append": "INSERT INTO tracehouse_object_demo.events SELECT toUInt64(toUnixTimestamp(now())) * 1000 + number,\n if(number % 2 = 0, 42, 7), now(), number % 10 + 1 FROM numbers(100)",
+  "seed": "INSERT INTO tracehouse_object_demo.payments SELECT number + 1, if(number % 2 = 0, 42, 7),\n toStartOfHour(now()) + toIntervalMinute(number % 3), (number + 1) * 10\n FROM numbers(6) WHERE NOT EXISTS (SELECT 1 FROM tracehouse_object_demo.payments WHERE event_time >= toStartOfHour(now()) AND event_time < toStartOfHour(now()) + INTERVAL 1 HOUR LIMIT 1)",
+  "append": "INSERT INTO tracehouse_object_demo.payments SELECT toUInt64(toUnixTimestamp(now())) * 1000 + number,\n if(number % 2 = 0, 42, 7), now(), number % 10 + 1 FROM numbers(100)",
   "verify": [
-    "SELECT tenant_id, sum(amount), count() FROM tracehouse_object_demo.events WHERE event_time >= toDateTime(%(window)s) AND event_time < toDateTime(%(window)s) + INTERVAL 1 HOUR GROUP BY tenant_id ORDER BY tenant_id",
-    "SELECT tenant_id, sum(amount), sum(events) FROM tracehouse_object_demo.events_minute WHERE minute >= toDateTime(%(window)s) AND minute < toDateTime(%(window)s) + INTERVAL 1 HOUR GROUP BY tenant_id ORDER BY tenant_id",
-    "SELECT tenant_id, sum(amount), sum(events) FROM tracehouse_object_demo.events_hourly WHERE hour >= toDateTime(%(window)s) AND hour < toDateTime(%(window)s) + INTERVAL 1 HOUR GROUP BY tenant_id ORDER BY tenant_id"
+    "SELECT tenant_id, sum(amount), count() FROM tracehouse_object_demo.payments WHERE event_time >= toDateTime(%(window)s) AND event_time < toDateTime(%(window)s) + INTERVAL 1 HOUR GROUP BY tenant_id ORDER BY tenant_id",
+    "SELECT tenant_id, sum(amount), sum(events) FROM tracehouse_object_demo.payments_minute WHERE minute >= toDateTime(%(window)s) AND minute < toDateTime(%(window)s) + INTERVAL 1 HOUR GROUP BY tenant_id ORDER BY tenant_id",
+    "SELECT tenant_id, sum(amount), sum(events) FROM tracehouse_object_demo.payments_hourly WHERE hour >= toDateTime(%(window)s) AND hour < toDateTime(%(window)s) + INTERVAL 1 HOUR GROUP BY tenant_id ORDER BY tenant_id"
   ],
   "teardown": [
     "DROP QUOTA IF EXISTS th_ob_quota __ON_CLUSTER__",
@@ -51,5 +51,69 @@
     "DROP ROLE IF EXISTS th_ob_writer __ON_CLUSTER__",
     "DROP DATABASE IF EXISTS tracehouse_object_demo __ON_CLUSTER__ SYNC"
   ],
-  "clock": "SELECT toUnixTimestamp(toStartOfHour(now()))"
+  "clock": "SELECT toUnixTimestamp(toStartOfHour(now()))",
+  "activity": [
+    {
+      "user": "th_ob_alice",
+      "sql": "SELECT tenant_id, count() FROM tracehouse_object_demo.payments GROUP BY tenant_id",
+      "expect": "ok",
+      "why": "default role th_ob_reader; row policy tenant_42 keeps tenant 42"
+    },
+    {
+      "user": "th_ob_alice",
+      "sql": "SELECT count() FROM tracehouse_object_demo.payments_minute",
+      "expect": 497,
+      "why": "th_ob_reader grants SELECT on events only"
+    },
+    {
+      "user": "th_ob_alice",
+      "sql": "SELECT tenant_id, sum(amount) FROM tracehouse_object_demo.hourly_report GROUP BY tenant_id",
+      "expect": 497,
+      "why": "no SELECT on the view"
+    },
+    {
+      "user": "th_ob_bob",
+      "sql": "SELECT count() FROM tracehouse_object_demo.payments",
+      "expect": 497,
+      "why": "th_ob_analyst is assigned but not a default role"
+    },
+    {
+      "user": "th_ob_bob",
+      "sql": "SET ROLE th_ob_analyst",
+      "expect": "ok",
+      "why": "activates the non-default role for this session"
+    },
+    {
+      "user": "th_ob_bob",
+      "sql": "SELECT tenant_id, count() FROM tracehouse_object_demo.payments GROUP BY tenant_id",
+      "expect": "ok",
+      "why": "analyst reads the whole database; row policy other_observers keeps every row"
+    },
+    {
+      "user": "th_ob_bob",
+      "sql": "SELECT tenant_id, sum(amount) FROM tracehouse_object_demo.hourly_report GROUP BY tenant_id",
+      "expect": "ok",
+      "why": "view and its source both in SELECT ON tracehouse_object_demo.*"
+    },
+    {
+      "user": "th_ob_bob",
+      "sql": "SELECT count() FROM tracehouse_object_demo.audit_log",
+      "expect": 497,
+      "why": "partial revoke on audit_log"
+    },
+    {
+      "user": "th_ob_carol",
+      "sql": "SELECT count() FROM tracehouse_object_demo.payments",
+      "expect": 497,
+      "why": "writer has no SELECT"
+    },
+    {
+      "user": "th_ob_denied",
+      "sql": "SELECT count() FROM tracehouse_object_demo.payments",
+      "expect": 497,
+      "why": "no grants and no roles"
+    }
+  ],
+  "login": "ALTER USER {user} __ON_CLUSTER__ IDENTIFIED BY '{password}' HOST ANY",
+  "lock": "ALTER USER {user} __ON_CLUSTER__ HOST NONE"
 }

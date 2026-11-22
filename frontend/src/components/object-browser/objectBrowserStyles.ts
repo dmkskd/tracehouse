@@ -107,6 +107,8 @@ export const page = css`
   .scope-trail { display: flex; align-items: center; gap: 6px; font-size: 15px; font-weight: 500; }
   .focus-current { display: inline-flex; align-items: center; gap: 6px; min-width: 0; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
   .focus-actions { display: flex; align-items: center; gap: 8px; flex-shrink: 0; }
+  .focus-context { display: inline-flex; align-items: center; gap: 8px; padding: 3px 4px 3px 10px; border-radius: 999px; font-size: 12px; white-space: nowrap; color: var(--text-secondary); background: rgba(var(--accent-primary-rgb), 0.12); }
+  .focus-context button { font-size: 11px; padding: 2px 8px; }
   .diagram-menu { position: relative; }
   .diagram-menu > button[data-active=true] { color: #58a6ff; background: rgba(88, 166, 255, .1); border-color: rgba(88, 166, 255, .35); }
   /* The menu sits in the zoom bar at the bottom of the diagram, so it opens upward. */
@@ -125,6 +127,11 @@ export const page = css`
   .focus-body { padding: 0 24px 24px; }
   .coverage { display: flex; gap: 7px; flex-wrap: wrap; margin: 14px 0; }
   .diagnostic { margin: 8px 0; font-size: 12px; color: var(--text-secondary); }
+  .link-missing { display: flex; align-items: flex-start; justify-content: space-between; gap: 16px; margin: 12px 0; padding: 12px 16px; border: 1px solid rgba(var(--color-warning-rgb, 186, 145, 63), 0.45); border-radius: 6px; background: rgba(var(--color-warning-rgb, 186, 145, 63), 0.1); }
+  .link-missing-text { display: flex; flex-direction: column; gap: 4px; font-size: 13px; color: var(--text-secondary); }
+  .link-missing-text strong { font-size: 14px; color: var(--text-primary); }
+  .link-missing-suggestions { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; margin-top: 4px; }
+  .link-missing-suggestions button, .link-missing-dismiss { font-size: 12px; padding: 3px 10px; }
   h2 { font-size: 15px; margin: 0 0 10px; overflow-wrap: anywhere; }
   h3 { font-size: 12px; margin: 15px 0 8px; }
 `;

@@ -14,6 +14,9 @@ const reactDomPath = path.resolve(__dirname, '..', 'node_modules', 'react-dom')
 export default defineConfig({
   define: tracehouseBuildDefines(),
   plugins: [react(), tailwindcss()],
+  // A separate dependency cache for a second dev server (the e2e tests set it), so it never
+  // invalidates the cache of a dev server already running.
+  cacheDir: process.env.VITE_CACHE_DIR ?? 'node_modules/.vite',
   server: {
     port: 5173,
     fs: {

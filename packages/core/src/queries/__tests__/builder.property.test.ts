@@ -201,7 +201,8 @@ describe('buildQuery substitutes all placeholders with escaped values', { tags: 
         (key, value) => {
           const template = `SELECT {${key}} FROM t`;
           const result = buildQuery(template, { [key]: value });
-          const escaped = escapeValue(value);
+          // Quotes and backslashes escaped; braces as \x7B / \x7D so later replacements cannot match them.
+          const escaped = escapeValue(value).replace(/\{/g, '\\x7B').replace(/\}/g, '\\x7D');
           // The result should contain the value wrapped in single quotes
           expect(result).toContain(`'${escaped}'`);
           // And no leftover placeholder
@@ -296,3 +297,13 @@ describe('UTC datetime query parameters', { tags: ['security'] }, () => {
       .toThrow('Invalid datetime');
   });
 });
+
+describe('buildQuery keeps every value inside its own literal', () => {
+  it('a value naming another placeholder is not expanded, and survives a later raw replacement', () => {
+    const template = "SELECT 1 WHERE user = {track_user} AND has(tables, {track_table}) ORDER BY {query_order_by}";
+    const sql = buildQuery(template, { track_user: '{track_table}', track_table: "x' OR 1=1 --" })
+      .replaceAll('{query_order_by}', "ProfileEvents['OSCPUVirtualTimeMicroseconds']");
+    expect(sql).toBe("SELECT 1 WHERE user = '\\x7Btrack_table\\x7D' AND has(tables, 'x\\' OR 1=1 --') ORDER BY ProfileEvents['OSCPUVirtualTimeMicroseconds']");
+  });
+});
+

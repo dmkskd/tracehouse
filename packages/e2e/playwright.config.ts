@@ -1,10 +1,12 @@
 import { defineConfig, devices } from '@playwright/test';
+import { E2E_FRONTEND_ORIGIN, E2E_FRONTEND_PORT, E2E_VITE_CACHE_DIR } from './frontend-server';
 
 /**
  * Playwright config for TraceHouse e2e tests.
  *
  * Global setup starts a ClickHouse container (or uses CH_E2E_URL).
- * Vite dev server is auto-started from the frontend workspace.
+ * Vite dev server is always started from the frontend workspace, on its own port with its own
+ * dependency cache (frontend-server.ts): a dev server already running is never reused.
  */
 export default defineConfig({
   testDir: './tests',
@@ -18,7 +20,7 @@ export default defineConfig({
   timeout: 30_000,
 
   use: {
-    baseURL: 'http://localhost:5173',
+    baseURL: E2E_FRONTEND_ORIGIN,
     trace: 'on-first-retry',
     screenshot: 'only-on-failure',
     video: 'on-first-retry',
@@ -50,10 +52,11 @@ export default defineConfig({
 
   webServer: [
     {
-      command: 'npm run dev',
+      command: `npm run dev -- --port ${E2E_FRONTEND_PORT} --strictPort`,
       cwd: '../../frontend',
-      url: 'http://localhost:5173',
-      reuseExistingServer: !process.env.CI,
+      url: E2E_FRONTEND_ORIGIN,
+      env: { VITE_CACHE_DIR: E2E_VITE_CACHE_DIR },
+      reuseExistingServer: false,
       timeout: 30_000,
     },
     {

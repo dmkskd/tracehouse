@@ -2,11 +2,11 @@ import { ObjectCardBody, ObjectHoverCard } from './ObjectCard';
 import { placeHover, type Box } from './hoverPlacement';
 import { createTracehousePortal } from '../../providers/TracehousePortal';
 import { ZoomControls } from '../../components/common/ZoomControls';
-import { EDGE_STYLES, toneStyle } from './objectStyle';
+import { EDGE_STYLES, toneStyle, REVOKE_EDGE_STYLE } from './objectStyle';
 import { DIAGRAM_STYLES } from './diagramStyles';
 import type { ObjectDiagramStyle } from '../../stores/userPreferenceStore';
 import { useEffect, useId, useLayoutEffect, useMemo, useRef, useState, type ReactNode } from 'react';
-import { BAND_TITLES, isGap, isWaypoint, lineage, RELATIONSHIPS, type GraphNode, type RelationshipFamily, type LayoutColumn, type ObjectCard, type ObjectGraph } from '@tracehouse/core/services/object-browser';
+import { BAND_TITLES, isGap, isWaypoint, lineage, RELATIONSHIPS, type GraphNode, type RelationshipFamily, type LayoutColumn, type ObjectCard, type ObjectGraph, isRevokeEdge } from '@tracehouse/core/services/object-browser';
 
 // Card width and gap as in the mockups.
 const COLUMN_WIDTH = 176, COLUMN_GAP = 40;
@@ -32,7 +32,7 @@ export function ObjectGraphView({ graph, cards, columns, selected, onSelect, onF
   const [zoom, setZoom] = useState(1);
   const elements = useRef(new Map<string, HTMLDivElement>());
   const [geometry, setGeometry] = useState<{ width: number; height: number;
-    paths: { key: string; from: string; to: string; d: string; family: RelationshipFamily }[];
+    paths: { key: string; from: string; to: string; d: string; family: RelationshipFamily; revoke: boolean }[];
     stubs: { from: string; d: string; x: number; y: number }[]; bracket: { x: number; top: number; bottom: number } | null }>({ width: 0, height: 0, paths: [], stubs: [], bracket: null });
   const [hovered, setHovered] = useState<string | null>(null);
   // Hover card: the card under the pointer after HOVER_DELAY_MS, measured then placed beside it.
@@ -86,8 +86,8 @@ export function ObjectGraphView({ graph, cards, columns, selected, onSelect, onF
         const sameLane = Math.abs(b.left - a.left) < 1;
         const forward = b.left > a.left;
         const sx = forward || sameLane ? a.right : a.left, tx = forward && !sameLane ? b.left : b.right;
-        const family = RELATIONSHIPS[edge.kind].family;
-        if (sameLane) return [{ key: edge.key, from: edge.from, to: edge.to, family, d: `M${sx} ${a.y} C${sx + 28} ${a.y} ${sx + 28} ${b.y} ${tx} ${b.y}` }];
+        const family = RELATIONSHIPS[edge.kind].family, revoke = isRevokeEdge(edge);
+        if (sameLane) return [{ key: edge.key, from: edge.from, to: edge.to, family, revoke, d: `M${sx} ${a.y} C${sx + 28} ${a.y} ${sx + 28} ${b.y} ${tx} ${b.y}` }];
         // Through each waypoint: enter on the near side, cross it level, leave on the far side.
         let d = `M${sx} ${a.y}`, x = sx, y = a.y;
         for (const waypoint of (routes?.get(edge.key) ?? []).map(point)) {
@@ -96,7 +96,7 @@ export function ObjectGraphView({ graph, cards, columns, selected, onSelect, onF
           d += `${style.segment(x, y, enter, waypoint.y)} L${leave} ${waypoint.y}`;
           x = leave; y = waypoint.y;
         }
-        return [{ key: edge.key, from: edge.from, to: edge.to, family, d: d + style.segment(x, y, tx, b.y) }];
+        return [{ key: edge.key, from: edge.from, to: edge.to, family, revoke, d: d + style.segment(x, y, tx, b.y) }];
       });
       // Essential lines: each broad privilege runs to the divider before the data band and meets
       // a bracket spanning that band's objects, so the stub reads as reaching all of them.
@@ -117,7 +117,7 @@ export function ObjectGraphView({ graph, cards, columns, selected, onSelect, onF
   const tile = (n: GraphNode) => {
     const card = cards.get(n.key);
     return <div key={n.key} ref={element => { if (element) elements.current.set(n.key, element);else elements.current.delete(n.key); }}
-      className={`node ${!showAll && selected && !connected.has(n.key) ? 'dim' : ''}`} style={card && toneStyle(card.type)} data-selected={n.key === selected} data-origin={n.key === origin} onDoubleClick={() => (onOpen ?? onFocus)?.(n.key)}
+      className={`node ${!showAll && selected && !connected.has(n.key) ? 'dim' : ''}`} style={card && toneStyle(card.flags.includes('revoke') ? 'revoke' : card.type)} data-selected={n.key === selected} data-origin={n.key === origin} onDoubleClick={() => (onOpen ?? onFocus)?.(n.key)}
       onMouseEnter={event => { if (highlight) setHovered(n.key); if (card) showTip(n.key, event.currentTarget); }}
       onMouseLeave={() => { if (highlight) setHovered(null); hideTip(); }}>
       <button className="node-select" aria-pressed={n.key === selected} onClick={() => onSelect(n.key)}>
@@ -134,7 +134,8 @@ export function ObjectGraphView({ graph, cards, columns, selected, onSelect, onF
       <svg className="wire-layer" width={geometry.width + 36} height={geometry.height} aria-hidden="true">
         <defs><marker id={arrowId} viewBox="0 0 10 10" refX="9" refY="5" markerWidth="6" markerHeight="6" orient="auto"><path d="M0 0L10 5L0 10Z" fill="#26948c" /></marker></defs>
         {geometry.paths.map(p => {
-          const color = EDGE_STYLES[p.family], weight = style.weight(p.family);
+          // A partial revoke is drawn as its own kind of line: it removes access, it does not grant it.
+          const color = p.revoke ? REVOKE_EDGE_STYLE : EDGE_STYLES[p.family], weight = style.weight(p.family);
           return <path key={p.key} d={p.d} fill="none" stroke={color.stroke} strokeWidth={weight.width} strokeDasharray={color.dash}
             markerEnd={color.arrow && weight.arrow ? `url(#${arrowId})` : undefined} opacity={linked(p.from, p.to) ? weight.opacity : weight.opacity / 6} />;
         })}

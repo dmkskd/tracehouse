@@ -127,7 +127,9 @@ export function utcDateTime64Literal(
 }
 
 function formatParameter(value: QueryParameter): string {
-  if (typeof value === 'string') return `'${escapeValue(value)}'`;
+  // Braces are written as \x7B / \x7D (ClickHouse string escapes) so that no later placeholder
+  // replacement, such as an ORDER BY expression, can match text inside the value.
+  if (typeof value === 'string') return `'${escapeValue(value).replace(/\{/g, '\\x7B').replace(/\}/g, '\\x7D')}'`;
   if (typeof value === 'number') return String(value);
   if (value.kind === 'event_date_bound') return eventDateBound(value.value);
   return value.kind === 'utc_datetime'
@@ -145,16 +147,11 @@ export function buildQuery(
   template: string,
   params: Record<string, QueryParameter>
 ): string {
-  let sql = template;
-  for (const [key, value] of Object.entries(params)) {
-    const escaped = formatParameter(value);
-    // Replace both {key} and {key:Type} formats
-    sql = sql.replaceAll(`{${key}}`, () => escaped);
-    // Also handle ClickHouse typed placeholders like {key:UInt32}
-    const typedPattern = new RegExp(`\\{${key}:[^}]+\\}`, 'g');
-    sql = sql.replace(typedPattern, escaped);
-  }
-  return sql;
+  // One pass over the template: an inserted value is never scanned again, so a value that
+  // contains another placeholder's name stays text. Both {key} and {key:Type} are replaced;
+  // placeholders without a parameter (and {{cluster_aware:…}}) are left for later steps.
+  return template.replace(/\{(\w+)(?::[^{}]+)?\}/g, (placeholder, key: string) =>
+    Object.prototype.hasOwnProperty.call(params, key) ? formatParameter(params[key]!) : placeholder);
 }
 
 /**

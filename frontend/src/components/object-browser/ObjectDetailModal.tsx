@@ -1,7 +1,8 @@
 import { css } from '@emotion/css';
 import type { ReactNode } from 'react';
-import type { DetailSection, ObjectDetail } from '@tracehouse/core/services/object-browser';
+import type { DetailDestination, DetailSection, ObjectDetail } from '@tracehouse/core/services/object-browser';
 import { ModalWrapper } from '../../components/shared/ModalWrapper';
+import { SqlHighlight } from '../common/SqlHighlight';
 import { ObjectTypeIcon } from './ObjectCard';
 import { useDetailStatements, type StatementResult } from './useDetailStatements';
 
@@ -9,7 +10,7 @@ const styles = css`
   /* The modal box clips its content; the detail scrolls inside it, under the sticky header. */
   flex: 1; min-height: 0; overflow-y: auto;
   color: var(--text-primary);
-  .detail-header { position: sticky; top: 0; z-index: 1; display: flex; justify-content: space-between; align-items: start; gap: 16px; padding: 16px 24px; background: var(--bg-card); border-bottom: 1px solid var(--border-primary); }
+  .detail-header { position: sticky; top: 0; z-index: 2; display: flex; justify-content: space-between; align-items: start; gap: 16px; padding: 16px 24px; background: var(--bg-secondary); border-bottom: 1px solid var(--border-primary); }
   .detail-header small { display: block; font-size: 11px; color: var(--text-muted); }
   .detail-header h2 { margin: 2px 0; font-size: 17px; overflow-wrap: break-word; }
   .detail-body { padding: 8px 24px 24px; }
@@ -23,12 +24,25 @@ const styles = css`
   pre { margin: 0; font: 11px/1.65 monospace; white-space: pre-wrap; overflow-wrap: anywhere; color: var(--text-secondary); background: var(--bg-secondary); padding: 12px; border-radius: 4px; }
   .muted { font-size: 12px; color: var(--text-muted); }
   .error { font-size: 12px; color: var(--accent-yellow, #ba913f); }
-  ul { margin: 0; padding: 0; list-style: none; font-size: 12px; line-height: 1.9; }
-  .method { display: block; font-size: 10px; color: var(--text-muted); line-height: 1.4; margin-bottom: 4px; }
+  .actions { display: flex; flex-direction: column; gap: 6px; margin-top: 12px; }
+  .action-row { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; }
+  .action { padding: 5px 12px; font-size: 12px; color: var(--text-primary); }
+  .action:hover { border-color: var(--border-accent); background: var(--bg-hover); }
+  .for-user { font-size: 12px; color: var(--text-muted); margin-right: 2px; }
+  .detail-body section + section { margin-top: 18px; padding-top: 2px; border-top: 1px solid var(--border-secondary); }
+  .relation-group + .relation-group { margin-top: 12px; }
+  h4 { margin: 0 0 6px; font-size: 12px; font-weight: 600; color: var(--text-secondary); }
+  dd.relation-items { font-family: inherit; line-height: 1.7; }
+  .relation-item { padding: 0; border: none; background: none; font: inherit; font-size: 12px; color: var(--text-primary); cursor: pointer; }
+  .relation-item:hover { color: var(--accent-blue, #58a6ff); text-decoration: underline; }
+  .sep { color: var(--text-muted); }
+  .detail-body h3 { font-size: 11px; font-weight: 600; letter-spacing: 0.05em; text-transform: uppercase; color: var(--text-muted); }
   details summary { cursor: pointer; font-size: 12px; color: var(--text-secondary); margin: 6px 0; }
 `;
 
-type SectionContext = { results: Record<string, StatementResult>; requested: ReadonlySet<string>; load: (sql: string) => void; title: string };
+type SectionContext = { results: Record<string, StatementResult>; requested: ReadonlySet<string>; load: (sql: string) => void; title: string;
+  /** Opens the detail of another object. */
+  select: (key: string) => void };
 type Renderers = { [K in DetailSection['kind']]: (section: Extract<DetailSection, { kind: K }>, context: SectionContext) => ReactNode };
 /** One renderer per section kind; the core descriptor decides which sections an object has. */
 const SECTION_RENDERERS: Renderers = {
@@ -40,11 +54,21 @@ const SECTION_RENDERERS: Renderers = {
     const waiting = external && !requested.has(sql)
       ? <button className="load-external" onClick={() => load(sql)}>Load · {external}</button> : <p className="muted">Loading…</p>;
     return <><h3>{title}</h3>
-      {!result ? waiting : 'error' in result ? <p className="error">Unavailable: {result.error}</p> : <pre>{result.text || '(empty)'}</pre>}</>;
+      {!result ? waiting : 'error' in result ? <p className="error">Unavailable: {result.error}</p>
+        : section.statement.highlight && result.text ? <SqlHighlight>{result.text}</SqlHighlight> : <pre>{result.text || '(empty)'}</pre>}</>;
   },
-  relationships: (section, { title }) => <><h3>{section.title}</h3>
-    <ul>{section.relationships.map((r, j) => <li key={j}>{r.direction === 'out' ? `${r.relation} → ${r.name}` : `${r.name} → ${r.relation} → ${title}`}
-      {r.method && <span className="method">{r.method}</span>}</li>)}</ul></>,
+  relationships: (section, { select }) => <><h3>{section.title}</h3>
+    {section.groups.map(group => <div key={group.title} className="relation-group">
+      <h4>{group.title}</h4>
+      <dl>{group.rows.map(row => <div key={row.relation} style={{ display: 'contents' }}>
+        <dt>{row.relation}</dt>
+        <dd className="relation-items">{row.items.map((item, i) => <span key={item.key}>
+          {i > 0 && <span className="sep" aria-hidden="true"> · </span>}
+          <button type="button" className="relation-item" onClick={() => select(item.key)}
+            title={[item.fullName, item.method].filter(Boolean).join('\n')}>{item.name}</button>
+        </span>)}</dd>
+      </div>)}</dl>
+    </div>)}</>,
   records: section => <><h3>{section.title}</h3>{section.records.map((record, j) =>
     <details key={j}><summary>{record.host} · system.{record.source}</summary><pre>{JSON.stringify(record.attributes, null, 2)}</pre></details>)}</>,
 };
@@ -52,17 +76,35 @@ const renderSection = (section: DetailSection, context: SectionContext) =>
   (SECTION_RENDERERS[section.kind] as (s: DetailSection, c: SectionContext) => ReactNode)(section, context);
 
 /** Generic renderer for an object's detail sections; content comes from the core descriptor. */
-export function ObjectDetailModal({ detail, onClose }: { detail: ObjectDetail | null; onClose: () => void }) {
+/** Links to other pages filtered to the object, as one line of text links; links filtered to
+ * the user in focus context too get a second line. The tooltip says what each page shows. */
+/** Buttons that open other pages filtered to the object, under the title. Buttons filtered to the
+ * user in focus context too get their own row. The tooltip says what the page shows. */
+function Actions({ links, open }: { links: DetailDestination[]; open: (url: string) => void }) {
+  if (!links.length) return null;
+  const buttons = (items: DetailDestination[]) => items.map(link => <button key={link.url} type="button" className="action"
+    title={link.description} aria-label={link.description} onClick={() => open(link.url)}>{link.label}</button>);
+  const own = links.filter(l => !l.forUser), forUser = links.filter(l => l.forUser);
+  return <div className="actions" role="group" aria-label="Open in">
+    {own.length > 0 && <div className="action-row">{buttons(own)}</div>}
+    {forUser.length > 0 && <div className="action-row"><span className="for-user">for {forUser[0].forUser}:</span>{buttons(forUser)}</div>}
+  </div>;
+}
+
+/** `open` navigates to another page from a link in the header. */
+export function ObjectDetailModal({ detail, onClose, open, select }: { detail: ObjectDetail | null; onClose: () => void; open: (url: string) => void;
+  select: (key: string) => void }) {
   const statements = detail?.sections.flatMap(s => s.kind === 'statement' ? [s.statement] : []) ?? [];
   const { results, requested, load } = useDetailStatements(statements);
   const card = detail?.card;
   return <ModalWrapper isOpen={!!detail} onClose={onClose} ariaLabel="Object detail" maxWidth={900} backdropBackground="rgba(0, 0, 0, 0.3)" backdropBlur={0}>
     {detail && card && <div className={styles}>
       <div className="detail-header">
-        <div><ObjectTypeIcon card={card} />{card.qualifier && <small>{card.qualifier}</small>}<h2>{card.title}</h2><small>{card.label}{card.hosts && ` · ${card.hosts}`}</small></div>
+        <div><ObjectTypeIcon card={card} />{card.qualifier && <small>{card.qualifier}</small>}<h2>{card.title}</h2><small>{card.label}{card.hosts && ` · ${card.hosts}`}</small>
+          <Actions links={detail.links} open={open} /></div>
         <button className="modal-close" aria-label="Close" title="Close (Esc)" onClick={onClose}>✕</button>
       </div>
-      <div className="detail-body">{detail.sections.map((section, i) => <section key={i}>{renderSection(section, { results, requested, load, title: card.title })}</section>)}</div>
+      <div className="detail-body">{detail.sections.map((section, i) => <section key={i}>{renderSection(section, { results, requested, load, title: card.title, select })}</section>)}</div>
     </div>}
   </ModalWrapper>;
 }

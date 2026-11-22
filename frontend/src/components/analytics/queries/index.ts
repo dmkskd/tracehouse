@@ -29,6 +29,7 @@ import xray from './xray';
 import waitBreakdown from './waitBreakdown';
 import events from './events';
 import workloadBreakdown from './workloadBreakdown';
+import access from './access';
 
 export const RAW_QUERIES: string[] = [
   ...overview,
@@ -54,4 +55,5 @@ export const RAW_QUERIES: string[] = [
   ...waitBreakdown,
   ...events,
   ...workloadBreakdown,
+  ...access,
 ];

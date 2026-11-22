@@ -1,4 +1,4 @@
-import type { MemoryTimeline, TimelineService, TimeseriesPoint, ResourceAttributionService } from '@tracehouse/core';
+import type { MemoryTimeline, TimelineFilters, TimelineService, TimelineTracking, TimeseriesPoint, ResourceAttributionService } from '@tracehouse/core';
 import { parseOperationTimestamp } from '@tracehouse/core';
 import type { ResourceDataLoader } from './resource-exploration-model';
 
@@ -22,8 +22,11 @@ export interface ResourceLoaderOptions {
   hostnameFilter: TimelineOptions['hostname'];
   includeRunning: boolean;
   activityLimit: number;
-  queryHashFilter: string | null;
-  queryHashOnly: boolean;
+  tracking: TimelineTracking | null;
+  /** Show only tracked operations. Resource attribution narrows by query hash only. */
+  trackedOnly: boolean;
+  /** Which operations the timeline lists (Time Travel filters). */
+  filters?: TimelineFilters;
   xraySelection: XRaySelection;
 }
 
@@ -31,14 +34,14 @@ export interface ResourceLoaderOptions {
 export function createResourceDataLoader(options: ResourceLoaderOptions): ResourceDataLoader {
   const contextCache = new Map<string, Promise<TimeseriesPoint[]>>();
   const legacy: ResourceDataLoader = async (source, mode, timeMs, selectedHost, selection) => {
-    const { timelineService, hostnameFilter, includeRunning, activityLimit, queryHashFilter, queryHashOnly, xraySelection } = options;
+    const { timelineService, hostnameFilter, includeRunning, activityLimit, tracking, trackedOnly, filters, xraySelection } = options;
     const startMs = selection?.kind === 'range' ? selection.startMs : parseOperationTimestamp(source.window_start);
     const endMs = selection?.kind === 'range' ? selection.endMs : parseOperationTimestamp(source.window_end);
     const hostname = selectedHost ?? hostnameFilter;
     const timelineRequest = timelineService.getTimeline({
       timestamp: new Date((startMs + endMs) / 2), windowSeconds: (endMs - startMs) / 2000,
       includeRunning, hostname, activityLimit, activeMetric: mode,
-      normalizedQueryHash: queryHashFilter ?? undefined,
+      tracking: tracking ?? undefined, filters,
     });
     let contextRequest: Promise<{ contextSeries?: TimeseriesPoint[]; warning?: string }> = Promise.resolve({});
     if (selection?.kind === 'range' && timelineService.getNavigatorMetric) {
@@ -59,8 +62,8 @@ export function createResourceDataLoader(options: ResourceLoaderOptions): Resour
     }
     const [loaded, context] = await Promise.all([timelineRequest, contextRequest]);
     const extras = context.contextSeries ? { contextSeries: context.contextSeries } : {};
-    const filter = (data: MemoryTimeline) => queryHashOnly && queryHashFilter
-      ? { ...data, queries: data.queries.filter(q => q.matched_hash), merges: [], mutations: [] } : data;
+    const filter = (data: MemoryTimeline) => trackedOnly && tracking
+      ? { ...data, queries: data.queries.filter(q => q.tracked), merges: data.merges.filter(m => m.tracked), mutations: data.mutations.filter(m => m.tracked) } : data;
     const window = selection?.kind === 'range' ? { start: startMs, end: endMs } : resourceSampleWindow(source, timeMs);
     try {
       const sampled = await timelineService.getZoomData(loaded, window.start, window.end, hostname, xraySelection);
@@ -83,7 +86,7 @@ export function createResourceDataLoader(options: ResourceLoaderOptions): Resour
     const cached = cache.get(key);
     if (cached) return cached;
     const request = { mode, hostname, includeRunning: options.includeRunning,
-      normalizedQueryHash: options.queryHashFilter, queryHashOnly: options.queryHashOnly,
+      normalizedQueryHash: options.tracking?.queryHash ?? null, queryHashOnly: options.trackedOnly && !!options.tracking?.queryHash,
       sampleSelection: options.xraySelection, startMs, endMs };
     const result = (async () => {
       // Timeline rows provide server measurements and capacity only. They never supply operation totals.
@@ -120,6 +123,6 @@ export function createResourceDataLoader(options: ResourceLoaderOptions): Resour
   };
   loader.loadDetails = request => service.getDetails({ ...request,
     hostname: request.hostname ?? options.hostnameFilter, includeRunning: options.includeRunning,
-    normalizedQueryHash: options.queryHashFilter, queryHashOnly: options.queryHashOnly, sampleSelection: options.xraySelection });
+    normalizedQueryHash: options.tracking?.queryHash ?? null, queryHashOnly: options.trackedOnly && !!options.tracking?.queryHash, sampleSelection: options.xraySelection });
   return loader;
 }

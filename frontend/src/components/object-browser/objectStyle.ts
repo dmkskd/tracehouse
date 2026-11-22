@@ -15,8 +15,12 @@ const OBJECT_COLORS: Record<ObjectType, string> = {
   dictionary: 'var(--accent-blue, #6696cf)', buffer: DATA, table: DATA,
   iceberg: LAKE, lake: LAKE, 'object-storage': LAKE, location: '#5b8fb0',
 };
-/** Sets `--tone`, which the card border and the type icon read. */
-export const toneStyle = (type: ObjectType) => ({ '--tone': OBJECT_COLORS[type] }) as CSSProperties;
+/** Colour of a partial revoke: its card and its lines. */
+const REVOKE_COLOR = '#d29922';
+/** Sets `--tone`, which the card border and the type icon read. A revoke takes the warning colour. */
+export const toneStyle = (type: ObjectType | 'revoke') => ({ '--tone': type === 'revoke' ? REVOKE_COLOR : OBJECT_COLORS[type] }) as CSSProperties;
+/** Lines of a partial revoke: dashed, in the warning colour. */
+export const REVOKE_EDGE_STYLE = { stroke: REVOKE_COLOR, dash: '5 3', arrow: false };
 
 /** Connector style per relationship family. Only data flow has a direction arrow. */
 export const EDGE_STYLES: Record<RelationshipFamily, { stroke: string; dash?: string; arrow: boolean }> = {

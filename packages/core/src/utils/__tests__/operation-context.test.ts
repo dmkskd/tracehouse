@@ -11,7 +11,7 @@ function row(overrides: Partial<OperationRow> = {}): OperationRow {
     startMs: T0, endMs: T0 + 10_000, durationMs: 10_000,
     metricValue: 100, cpuUs: 100, peakMemory: 0,
     diskBytes: 0, diskReadBytes: 0, diskWriteBytes: 0, netBytes: 0,
-    isRunning: false, metricEstimated: false, matchedHash: false, failed: false,
+    isRunning: false, metricEstimated: false, tracked: false, failed: false,
     source: {} as OperationRow['source'],
   };
   return { ...base, ...overrides };

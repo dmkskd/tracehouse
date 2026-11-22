@@ -5,7 +5,7 @@ describe('Time Travel URL coordinates', () => {
   it('round-trips the durable investigation state while preserving unrelated params', () => {
     const initial = new URLSearchParams('nqh=42&qd_id=query-1');
     const encoded = writeTimeTravelCoordinates(initial, {
-      queryHashOnly: true,
+      trackedOnly: true,
       windowSec: 450,
       isLive: false,
       autoRefresh: true,
@@ -40,7 +40,7 @@ describe('Time Travel URL coordinates', () => {
     expect(encoded.getAll('tt_ops')).toEqual(['merge', 'query']);
     const decoded = readTimeTravelCoordinates(encoded, { eventsVisible: true, navigatorShape: 'trend' });
     expect(decoded).toMatchObject({
-      queryHashOnly: true,
+      trackedOnly: true,
       windowSec: 450,
       isLive: false,
       autoRefresh: true,
@@ -134,7 +134,7 @@ describe('Time Travel URL coordinates', () => {
 /** Minimal valid coordinates, for cases that only care about one field. */
 function baseCoordinates() {
   return {
-    queryHashOnly: false,
+    trackedOnly: false,
     windowSec: 150,
     isLive: true,
     autoRefresh: false,

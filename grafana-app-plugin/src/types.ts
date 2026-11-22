@@ -1,4 +1,4 @@
-import type { QueryXRaySourcePreference } from '@tracehouse/core';
+import { cleanTimelineFilters, type QueryXRaySourcePreference, type TimelineFilters } from '@tracehouse/core';
 /**
  * Admin-configurable settings for the TraceHouse app plugin.
  * Stored in Grafana's plugin jsonData (persisted by Grafana API).
@@ -51,6 +51,8 @@ export interface AppPluginSettings {
    */
   queryXraySource?: QueryXRaySourcePreference;
   cluster?: string;
+  /** Default Time Travel filters (which operations are listed). Users can override them. */
+  timeTravelFilters?: Partial<TimelineFilters>;
 }
 
 /** Resolved config after applying defaults */
@@ -64,6 +66,8 @@ export interface ResolvedPluginConfig {
   /** Preferred cluster name, or undefined for auto-detection */
   queryXraySource: QueryXRaySourcePreference;
   cluster: string | undefined;
+  /** Valid fields of the admin's Time Travel filters; unset fields take the built-in defaults. */
+  timeTravelFilters: Partial<TimelineFilters>;
 }
 
 /** Apply defaults to raw jsonData */
@@ -88,5 +92,6 @@ export function resolvePluginConfig(jsonData?: AppPluginSettings): ResolvedPlugi
     killQueriesEnabled: jsonData?.killQueriesEnabled ?? false,
     queryXraySource: jsonData?.queryXraySource ?? 'auto',
     cluster: jsonData?.cluster || undefined,
+    timeTravelFilters: cleanTimelineFilters(jsonData?.timeTravelFilters),
   };
 }

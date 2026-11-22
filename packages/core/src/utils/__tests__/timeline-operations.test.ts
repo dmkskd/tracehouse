@@ -206,22 +206,22 @@ describe('buildOperationRows', () => {
     expect(rows.map(r => r.kind)).toEqual(['merge']);
   });
 
-  it('floats hash-matched queries above everything else', () => {
+  it('floats tracked operations above everything else', () => {
     const rows = buildOperationRows({
-      queries: [makeQuery({ query_id: 'small', cpu_us: 1, matched_hash: true })],
+      queries: [makeQuery({ query_id: 'small', cpu_us: 1, tracked: true })],
       merges: [makeMerge({ cpu_us: 999 })],
       mutations: [],
-    }, { ...baseOptions, hashFilterActive: true });
+    }, { ...baseOptions, trackingActive: true });
     expect(rows.map(r => r.id)).toEqual(['small', 'all_1_5_1']);
   });
 
-  it('drops non-matching operations in hash-only mode', () => {
+  it('drops untracked operations in tracked-only mode, keeping tracked merges of a tracked table', () => {
     const rows = buildOperationRows({
-      queries: [makeQuery({ query_id: 'match', matched_hash: true }), makeQuery({ query_id: 'other' })],
-      merges: [makeMerge()],
+      queries: [makeQuery({ query_id: 'match', tracked: true }), makeQuery({ query_id: 'other' })],
+      merges: [makeMerge({ tracked: true }), makeMerge({ part_name: 'all_6_9_1' })],
       mutations: [makeMutation()],
-    }, { ...baseOptions, hashFilterActive: true, hashOnly: true });
-    expect(rows.map(r => r.id)).toEqual(['match']);
+    }, { ...baseOptions, trackingActive: true, trackedOnly: true });
+    expect(rows.map(r => r.id)).toEqual(['match', 'all_1_5_1']);
   });
 
   it('marks running and failed operations', () => {
