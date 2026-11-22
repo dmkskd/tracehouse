@@ -48,7 +48,7 @@ export const ACCESS_CATALOGS = {
   tables: {
     columns: ['database','name','uuid','engine','partition_key','sorting_key','primary_key','storage_policy'],
     sql: `SELECT hostName() AS host, database, name, toString(uuid) AS uuid, engine,
-      partition_key, sorting_key, primary_key, storage_policy /* dependency_fields */
+      partition_key, sorting_key, primary_key, storage_policy /* optional_fields */
       FROM {{cluster_aware:system.tables}} WHERE ({browse} = 0 AND database = {database} AND name = {table})
         OR ({browse} = 1 AND database NOT IN ('system', 'information_schema', 'INFORMATION_SCHEMA'))
       ORDER BY host LIMIT {limit} SETTINGS skip_unavailable_shards = 0`,
@@ -65,9 +65,35 @@ export const ACCESS_CATALOGS = {
 
 /** Fixed optional projections, selected only after host-labelled schema probing. */
 export const ACCESS_TABLE_DEPENDENCY_FIELDS = ['dependencies_database','dependencies_table','target_database','target_table','as_select','engine_full'] as const;
+/** Size and comment for the object hover. Size is null for engines that store no data. */
+export const ACCESS_TABLE_SUMMARY_FIELDS = ['total_rows','total_bytes','comment'] as const;
 export function accessTableCatalogQuery(available: ReadonlySet<string>): string {
-  const fields = ACCESS_TABLE_DEPENDENCY_FIELDS.filter(field => available.has(field));
-  return ACCESS_CATALOGS.tables.sql.replace('/* dependency_fields */', fields.length ? `, ${fields.join(', ')}` : '');
+  const fields = [...ACCESS_TABLE_DEPENDENCY_FIELDS, ...ACCESS_TABLE_SUMMARY_FIELDS].filter(field => available.has(field));
+  return ACCESS_CATALOGS.tables.sql.replace('/* optional_fields */', fields.length ? `, ${fields.join(', ')}` : '');
+}
+
+/** Active parts per table and host, and when the newest one was written (Unix seconds). */
+export const ACTIVE_PARTS_BY_TABLE = `
+SELECT hostName() AS host, database, table, count() AS active_parts,
+  toUnixTimestamp(max(modification_time)) AS newest_part
+FROM {{cluster_aware:system.parts}}
+WHERE active AND (({browse} = 0 AND database = {database} AND table = {table})
+  OR ({browse} = 1 AND database NOT IN ('system', 'information_schema', 'INFORMATION_SCHEMA')))
+GROUP BY host, database, table
+SETTINGS skip_unavailable_shards = 0`;
+
+/** System tables the collected views read from. The catalog skips the system databases,
+ * so these rows are read by name: {tables} is a JSON array of [database, name] pairs. */
+const SYSTEM_TABLES_BY_NAME = `
+SELECT hostName() AS host, database, name, toString(uuid) AS uuid, engine,
+  partition_key, sorting_key, primary_key, storage_policy /* optional_fields */
+FROM {{cluster_aware:system.tables}}
+WHERE database IN ('system', 'information_schema', 'INFORMATION_SCHEMA')
+  AND has(JSONExtract({tables}, 'Array(Tuple(String, String))'), (database, name))
+ORDER BY host SETTINGS skip_unavailable_shards = 0`;
+export function systemTablesByNameQuery(available: ReadonlySet<string>): string {
+  const fields = ACCESS_TABLE_SUMMARY_FIELDS.filter(field => available.has(field));
+  return SYSTEM_TABLES_BY_NAME.replace('/* optional_fields */', fields.length ? `, ${fields.join(', ')}` : '');
 }
 
 /** Object detail statements, read from the connected server when a detail opens.

@@ -63,6 +63,26 @@ For full functionality, the following system tables are queried:
 
 Grants are only one of the two requirements. A feature the connecting user has access to can still be unavailable if the server is older than the version that feature needs. See [ClickHouse Compatibility](../reference/clickhouse-compatibility) for the minimum version of each gated feature.
 
+### Object browser
+
+The object browser reads access and table definitions. Without the access tables it still shows tables and the links between them.
+
+| Table | What it lists for every account and object |
+|---|---|
+| `system.tables` | Table definitions, including view queries and engine arguments such as storage URLs. Embedded credentials are masked as `[HIDDEN]` by default. |
+| `system.users` | User names, authentication type, host restrictions, expiry and default roles. Passwords and password hashes are not included. |
+| `system.roles` | Role names |
+| `system.role_grants` | Which users and roles hold which roles |
+| `system.grants` | Every privilege of every user and role, down to columns |
+| `system.row_policies` | Row filter expressions, including the values they compare against, and who they apply to |
+| `system.privileges` | ClickHouse's privilege list. Every user can read it. |
+
+**Secrets and passwords:** None of these `SELECT` grants expose user passwords or password hashes. In `system.tables` and `SHOW CREATE` output, ClickHouse masks embedded credentials (such as storage keys or external database passwords) as `[HIDDEN]` unless **all three** of the following are enabled: the server setting `display_secrets_in_show_and_select = 1`, the session setting `format_display_secrets_in_show_and_select = 1`, and the `displaySecretsInShowAndSelect` privilege. Do not grant `displaySecretsInShowAndSelect` to a monitoring or read-only account; TraceHouse never requests it and explicitly sets `format_display_secrets_in_show_and_select = 0` when running `SHOW CREATE USER`.
+
+**Metadata sensitivity:** The access tables describe every account on the server, not only the connected one. They do not leak passwords, but they do expose account and role inventory, authentication types (including whether any account uses `no_password`), host allowlists, full privilege maps, and literal row-policy filter expressions (which in multi-tenant setups may contain tenant identifiers). Grant them only to accounts that may see that. A shared or public read-only account usually should not have them. The TraceHouse demo's `read_only` account has them.
+
+To find links that `system.tables` does not store directly, the object browser runs `EXPLAIN AST` and `EXPLAIN QUERY TREE` on view queries and engine definitions. These need no grant beyond `SELECT` on `system.tables`. A view whose query uses a table function or a scalar subquery is not analyzed when the catalog loads, because analysis could contact the source or run the subquery. Its details offer the analysis on request.
+
 ### Imported dashboards and custom SQL
 
 Dashboards may contain SQL that runs automatically when opened. Dashboard queries and SQL entered in the Query Explorer run with your ClickHouse connection's permissions. TraceHouse does not restrict them to read-only statements.
@@ -81,6 +101,7 @@ On connect, the app probes the server to determine what is available and degrade
 - **CPU profiler** - reads `query_profiler_cpu_time_period_ns` / `query_profiler_real_time_period_ns` from `system.settings`
 - **Cluster topology** - queries `system.clusters`, falls back to `system.replicas` if inaccessible
 - **ZooKeeper / Keeper** - checks if `system.zookeeper` is present
+- **Access definitions** - checks `SELECT` on `system.users`, `system.roles`, `system.role_grants`, `system.grants` and `system.row_policies`. The object browser skips the ones without it and names the missing grant.
 - **ClickHouse Cloud** - detects cloud via `cloud_mode_engine` setting and `system.build_options`
 - **Container environment** - reads cgroup CPU/memory limits, detects Kubernetes by hostname pattern
 

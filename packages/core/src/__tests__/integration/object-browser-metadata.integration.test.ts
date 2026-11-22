@@ -142,7 +142,9 @@ describe('Object browser metadata extraction', { tags: ['security', 'storage'] }
     // Insert-triggered MV sources stay native; the analyzer does not duplicate them.
     expect(links.some(link => link[3] === q('events_to_minute'))).toBe(false);
     const system = capture.observations.find(record => record.key === objectKey(input.connection, 'table', 'system', 'one'))!;
-    expect(system.attributes).toMatchObject({ unresolvedReference: true, outsideCatalog: true });
+    // Read by name although the catalog skips the system database.
+    expect(system.attributes).toMatchObject({ database: 'system', name: 'one', engine: 'SystemOne' });
+    expect(system.attributes.unresolvedReference).toBeUndefined();
     expect(capture.coverage.find(source => source.source === 'tables')!.reason ?? '').not.toContain('failed');
   });
   it('does not analyze view queries whose analysis contacts a source or runs a subquery, and analyzes them on request', async () => {

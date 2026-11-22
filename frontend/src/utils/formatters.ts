@@ -42,6 +42,15 @@ export function formatNumberCompact(num: number): string {
 
 // ── Durations ──────────────────────────────────────────────────────────────
 
+/** Time since a Unix timestamp in seconds, in its largest whole unit (45s, 12m, 3h, 5d). */
+export function formatAge(unixSeconds: number, now = Date.now()): string {
+  const s = Math.max(0, Math.round(now / 1000 - unixSeconds));
+  if (s < 60) return `${s}s`;
+  if (s < 3600) return `${Math.floor(s / 60)}m`;
+  if (s < 86400) return `${Math.floor(s / 3600)}h`;
+  return `${Math.floor(s / 86400)}d`;
+}
+
 /** Format seconds → human-readable (e.g. 250ms, 3.14s, 2m 30s, 1h 5m, 2d 3h) */
 export function formatDuration(seconds: number): string {
   if (seconds < 1) {

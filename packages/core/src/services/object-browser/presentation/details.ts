@@ -7,7 +7,7 @@ import { RELATIONSHIPS } from '../model/relationships.js';
 import { analyzerTableNames } from '../collectors/references.js';
 import { describeCard, nameParts, type CardFact, type ObjectCard, type ObjectType } from './cards.js';
 
-/** `external` describes the outside call a statement makes; such statements load only on request.
+/** `external` describes the external call a statement makes; such statements load only on request.
  * `sources` marks an EXPLAIN QUERY TREE, shown as the tables and table functions it resolved. */
 export interface DetailStatement { title: string; sql: string; external?: string; sources?: true }
 /** `method` names how a link was obtained, for kinds that record it (RELATIONSHIPS[kind].methods). */

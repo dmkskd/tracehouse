@@ -78,6 +78,12 @@
         <query>GRANT SELECT ON system.query_views_log</query>
         <query>GRANT SELECT ON system.crash_log</query>
         <query>GRANT SELECT ON system.session_log</query>
+        <!-- Object browser: access definitions (no passwords or hashes) -->
+        <query>GRANT SELECT ON system.users</query>
+        <query>GRANT SELECT ON system.roles</query>
+        <query>GRANT SELECT ON system.role_grants</query>
+        <query>GRANT SELECT ON system.grants</query>
+        <query>GRANT SELECT ON system.row_policies</query>
         <!-- Schema browsing -->
         <query>GRANT SHOW DATABASES ON *.*</query>
         <query>GRANT SHOW TABLES ON *.*</query>

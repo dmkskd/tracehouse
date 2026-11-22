@@ -152,23 +152,18 @@ describe('read-only user sandbox escape tests', { tags: ['security'] }, () => {
   // ── Helper ──
 
   it.skipIf(HAS_KNOWN_23_8_SYSTEM_TABLE_AUTHORIZATION_BEHAVIOR)(
-    'reports access tables as not granted and the object browser skips them without a query',
+    'reads the access tables the demo grants for the object browser',
     async () => {
       const restricted = new ClusterAwareAdapter(new TestAdapter(roClient));
       const { capabilities } = await new MonitoringCapabilitiesService(restricted).probe();
       const access = ['users', 'roles', 'role_grants', 'grants', 'row_policies'];
-      for (const table of access) {
-        expect(capabilities.find(item => item.id === `system_${table}`)).toMatchObject({ available: false, unavailableReason: 'grant' });
-      }
+      for (const table of access) expect(capabilities.find(item => item.id === `system_${table}`)).toMatchObject({ available: true });
       const notGranted = notGrantedSources(capabilities);
-      expect([...notGranted].sort()).toEqual([...access].sort());
-      const reads = vi.spyOn(restricted, 'executeQuery');
+      expect(notGranted).toEqual([]);
       const capture = await collectObjects(restricted, { connection: 'sandbox', principal: '', database: '', table: '', operation: 'SELECT' },
         { mode: 'catalog', notGranted });
-      expect(capture.coverage.filter(c => c.state === 'not-granted').map(c => [c.source, c.reason]).sort()).toEqual(
-        access.map(table => [table, `Missing SELECT permission on system.${table}`]).sort());
-      expect(capture.coverage.find(c => c.source === 'tables')?.state).toBe('readable');
-      expect(reads.mock.calls.some(([sql]) => access.some(table => sql.includes(`system.${table}}`)))).toBe(false);
+      expect(capture.coverage.filter(c => c.state !== 'readable')).toEqual([]);
+      expect(capture.observations.some(record => record.kind === 'user' && record.name === 'read_only')).toBe(true);
     },
   );
 
@@ -551,20 +546,6 @@ describe('read-only user sandbox escape tests', { tags: ['security'] }, () => {
   // ═══════════════════════════════════════════════════════════════
 
   describe('ungrouped system tables', () => {
-    it('blocks system.users (credential / user enumeration)', async () => {
-      await expectBlocked(
-        `SELECT * FROM system.users`,
-        'system.users',
-      );
-    });
-
-    it('blocks system.grants (permission enumeration)', async () => {
-      await expectBlocked(
-        `SELECT * FROM system.grants`,
-        'system.grants',
-      );
-    });
-
     it.skipIf(HAS_KNOWN_23_8_SYSTEM_TABLE_AUTHORIZATION_BEHAVIOR)(
       'system.quota_usage is accessible (per-user, low risk)',
       async () => {
@@ -588,13 +569,6 @@ describe('read-only user sandbox escape tests', { tags: ['security'] }, () => {
         );
       },
     );
-
-    it('blocks system.role_grants', async () => {
-      await expectBlocked(
-        `SELECT * FROM system.role_grants`,
-        'system.role_grants',
-      );
-    });
 
     it.skipIf(HAS_KNOWN_23_8_SYSTEM_TABLE_AUTHORIZATION_BEHAVIOR)(
       'blocks system.user_directories',

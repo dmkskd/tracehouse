@@ -3,6 +3,7 @@ import type { GraphNode, ObjectGraph } from '../model/types.js';
 import { engineSpec, type TableType } from '../model/engines.js';
 import { KINDS } from '../model/kinds.js';
 import { RELATIONSHIPS } from '../model/relationships.js';
+import { engineCall } from '../collectors/references.js';
 
 /** Access objects keep their kind; tables take their engine family's type. */
 export type ObjectType = 'user' | 'role' | 'grant-scope' | 'row-policy' | 'location' | TableType;
@@ -16,10 +17,36 @@ export interface ObjectCard {
   /** One muted line under the title: the type and the fact that matters most for it. */
   summary: string;
   facts: CardFact[];
-  flags: ('differs' | 'partial' | 'unresolved' | 'outside-catalog')[];
+  flags: ('differs' | 'partial' | 'unresolved')[];
   /** Present only when host coverage carries information: several hosts or partial. */
   hosts?: string;
+  hover: ObjectHover;
 }
+export interface ValueRange { min: number; max: number }
+/** What the hover shows: what the object is and where it lives, its size and comment,
+ * and host or flag notes only when something is off. Keys and links stay in the detail. */
+export interface ObjectHover {
+  /** Type family: MergeTree, Materialized view, Role. */
+  type: string;
+  /** Where the object lives: its database (label `db`), or the target of a privilege or row policy. */
+  context?: { label?: string; value: string };
+  title: string;
+  /** Exact engine where it names more than the type (ReplicatedReplacingMergeTree). */
+  engine?: string;
+  /** Lowest and highest value across hosts; absent for engines that store no data. */
+  rows?: ValueRange;
+  bytes?: ValueRange;
+  parts?: ValueRange;
+  /** Write time of the newest active part on any host, Unix seconds. */
+  newestPart?: number;
+  /** The stored definition that says what the object does: a view's query, or the engine call. */
+  definition?: { label: string; text: string };
+  comment?: string;
+  notes: string[];
+}
+export const FLAG_LABELS: Record<ObjectCard['flags'][number], string> = {
+  differs: 'differs across hosts', partial: 'partial / not comparable', unresolved: 'unresolved reference',
+};
 
 const MAX_FACTS = 3;
 const ACCESS_TYPES = new Set<ObjectType>(['user', 'role', 'grant-scope', 'row-policy']);
@@ -184,6 +211,19 @@ const describers: Record<ObjectType, Describe> = {
   },
 };
 
+/** Range of a numeric attribute over the host records that report it. */
+function valueRange(node: GraphNode, name: string): ValueRange | undefined {
+  const values = node.records.map(r => r.attributes[name]).filter(v => v != null && v !== '').map(Number).filter(Number.isFinite);
+  return values.length ? { min: Math.min(...values), max: Math.max(...values) } : undefined;
+}
+
+const viewQuery = (node: GraphNode) => { const text = str(attr(node, 'as_select')).trim(); return text ? { label: 'Query', text } : undefined; };
+const engineDefinition = (node: GraphNode) => { const text = engineCall(str(attr(node, 'engine_full'))); return text ? { label: 'Engine', text } : undefined; };
+/** Types whose definition the hover shows; the others are described by their name and engine. */
+const DEFINITIONS: Partial<Record<ObjectType, (node: GraphNode) => ObjectHover['definition']>> = {
+  view: viewQuery, 'materialized-view': viewQuery, distributed: engineDefinition, buffer: engineDefinition,
+};
+
 /** Native names: [database, table] for tables, [database, table, policy] for row policies. */
 export { nameParts };
 
@@ -195,16 +235,22 @@ export function describeCard(node: GraphNode, graph: ObjectGraph): { card: Objec
   const typeLabel = label || TYPE_LABELS[type];
   const flags: ObjectCard['flags'] = [];
   if (node.differs) flags.push('differs');
-  if (node.records.some(r => r.attributes.outsideCatalog)) flags.push('outside-catalog');
-  else {
-    if (node.partial) flags.push('partial');
-    if (node.records.some(r => r.attributes.unresolvedReference)) flags.push('unresolved');
-  }
-  const showHosts = KINDS[node.kind].everyHost && !flags.includes('outside-catalog') && (node.expectedHosts.length > 1 || node.partial);
+  if (node.partial) flags.push('partial');
+  if (node.records.some(r => r.attributes.unresolvedReference)) flags.push('unresolved');
+  const showHosts = KINDS[node.kind].everyHost && (node.expectedHosts.length > 1 || node.partial);
   const first = facts[0];
+  const hosts = `${node.observedHosts.length}/${node.expectedHosts.length} hosts`;
+  const rows = valueRange(node, 'total_rows'), bytes = valueRange(node, 'total_bytes'), parts = valueRange(node, 'active_parts');
+  const newestPart = valueRange(node, 'newest_part')?.max, definition = DEFINITIONS[type]?.(node), comment = str(attr(node, 'comment')).trim();
+  const hover: ObjectHover = { type: TYPE_LABELS[type], title: naming.title,
+    ...(naming.qualifier ? { context: node.kind === 'table' ? { label: 'db', value: naming.qualifier } : { value: naming.qualifier } } : {}),
+    ...(typeLabel !== TYPE_LABELS[type] ? { engine: typeLabel } : {}),
+    ...(rows ? { rows } : {}), ...(bytes ? { bytes } : {}), ...(parts ? { parts } : {}), ...(newestPart ? { newestPart } : {}),
+    ...(definition ? { definition } : {}), ...(comment ? { comment } : {}),
+    notes: [...(showHosts && node.observedHosts.length < node.expectedHosts.length ? [hosts] : []), ...flags.map(flag => FLAG_LABELS[flag])] };
   return { facts, card: { type, ...naming, label: typeLabel, facts: facts.slice(0, MAX_FACTS), flags,
     summary: summary ?? [typeLabel, first && `${first.label} ${first.value}`].filter(Boolean).join(' · '),
-    ...(showHosts ? { hosts: `${node.observedHosts.length}/${node.expectedHosts.length} hosts` } : {}) } };
+    ...(showHosts ? { hosts } : {}), hover } };
 }
 export const describeObject = (node: GraphNode, graph: ObjectGraph): ObjectCard => describeCard(node, graph).card;
 

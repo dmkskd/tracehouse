@@ -134,10 +134,10 @@ gets `analysisEffects`, the coverage notes name it, and the detail view offers
 A named collection in place of the location (an identifier argument) is
 reported in the coverage notes and not resolved.
 
-A referenced table that the catalog did not collect becomes a placeholder node
-with `unresolvedReference`. Tables in `system` and `information_schema` are
-excluded from the catalog, so they get `outsideCatalog` as well and the card
-says "outside catalog".
+The catalog skips the `system` and `information_schema` databases. Tables in
+them that a collected view reads from are read by name afterwards
+(`systemTablesByNameQuery`) and show as ordinary tables. A referenced table
+that is still not found becomes a placeholder node with `unresolvedReference`.
 
 ### Storage server
 
@@ -214,7 +214,7 @@ the table and does not branch on engine names or relationship kinds.
 | `FOCUS_TABLES` | `projections/graph.ts` | Tables a broad privilege may link to, per focus kind |
 | `describers` | `presentation/cards.ts` | Card title, qualifier, summary line and facts per object type |
 | `statements` | `presentation/details.ts` | Server statements in the detail view per object type |
-| `KIND_LAYOUT` | `presentation/layout.ts` | Catalog lane for access objects and band (access, data, outside ClickHouse) per object kind; the page draws a divider where the band changes. Catalog data objects use the focus layout. |
+| `KIND_LAYOUT` | `presentation/layout.ts` | Catalog lane for access objects and band (access, data, external) per object kind; the page draws a divider where the band changes. Catalog data objects use the focus layout. |
 | `GUIDES` | `presentation/guides.ts` | Guided questions on the page: what to pick, footer counts, and whether to focus or collect provenance |
 
 Graph traversal is in core too: `lineage` and `focusGraphFrom` build the focus

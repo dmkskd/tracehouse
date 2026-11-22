@@ -3,7 +3,7 @@ import { RELATIONSHIPS } from '../model/relationships.js';
 import { isAccessType, objectTypeOf, type ObjectType } from './cards.js';
 import { lineage } from '../projections/focus.js';
 
-/** Access configuration, ClickHouse data objects, and what lies outside ClickHouse. */
+/** Access configuration, ClickHouse data objects, and external storage. */
 export type LayoutBand = 'access' | 'data' | 'external';
 /** Column keys are object keys, plus `isGap` keys for empty rows and `isWaypoint` keys for lines. */
 /** `notices` explain what the column lacks, such as a source without SELECT (withSourceNotices). */

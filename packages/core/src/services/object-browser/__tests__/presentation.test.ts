@@ -70,6 +70,20 @@ describe('object cards', () => {
     expect(cards.get(table('events_minute'))!.summary).toBe(`SummingMergeTree · ${DB}`);
     expect(cards.get(SCOPE)!.summary).toBe(`All tables in ${DB} · 2 matched`);
   });
+  it('gives the hover the database, size and parts across hosts, the view query and comment, without flagging size differences', () => {
+    const capture = demo(['ch-1', 'ch-2']);
+    capture.observations.filter(r => r.key === table('events_minute')).forEach((r, i) =>
+      r.attributes = { ...r.attributes, total_rows: String(1000 * (i + 1)), total_bytes: '4096', active_parts: String(3 + i), newest_part: 1700000000 + i, comment: 'Per-minute rollup' });
+    capture.observations.filter(r => r.key === table('events_to_minute_mv')).forEach(r =>
+      r.attributes = { ...r.attributes, as_select: 'SELECT tenant_id, count() FROM events GROUP BY tenant_id' });
+    const cards = describeObjects(projectGraph(capture));
+    expect(cards.get(table('events_minute'))!.hover).toEqual({ type: 'MergeTree', context: { label: 'db', value: DB }, title: 'events_minute',
+      engine: 'SummingMergeTree', rows: { min: 1000, max: 2000 }, bytes: { min: 4096, max: 4096 }, parts: { min: 3, max: 4 },
+      newestPart: 1700000001, comment: 'Per-minute rollup', notes: [] });
+    expect(cards.get(table('events_to_minute_mv'))!.hover).toEqual({ type: 'Materialized view', context: { label: 'db', value: DB },
+      title: 'events_to_minute_mv', definition: { label: 'Query', text: 'SELECT tenant_id, count() FROM events GROUP BY tenant_id' }, notes: [] });
+    expect(cards.get(SCOPE)!.hover.context).toEqual({ value: `ON ${DB}.*` });
+  });
   it('shows host coverage only when it carries information', () => {
     expect(describeObjects(projectGraph(demo())).get(table('events'))!.hosts).toBeUndefined();
     const capture = demo(['ch-1', 'ch-2']);

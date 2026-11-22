@@ -1,4 +1,6 @@
-import { ObjectCardBody } from './ObjectCard';
+import { ObjectCardBody, ObjectHoverCard } from './ObjectCard';
+import { placeHover, type Box } from './hoverPlacement';
+import { createTracehousePortal } from '../../providers/TracehousePortal';
 import { ZoomControls } from '../../components/common/ZoomControls';
 import { EDGE_STYLES, toneStyle } from './objectStyle';
 import { DIAGRAM_STYLES } from './diagramStyles';
@@ -10,6 +12,8 @@ import { BAND_TITLES, isGap, isWaypoint, lineage, RELATIONSHIPS, type GraphNode,
 const COLUMN_WIDTH = 176, COLUMN_GAP = 40;
 // Stable default: the measuring effect depends on `stubs`.
 const NO_STUBS: string[] = [];
+// Pause before the hover card opens, so moving across the diagram does not flash cards.
+const HOVER_DELAY_MS = 350;
 type Point = { left: number; right: number; y: number };
 
 /** Pure presentation of a laid-out graph (layoutCatalog or layoutFocus); contains no
@@ -31,6 +35,29 @@ export function ObjectGraphView({ graph, cards, columns, selected, onSelect, onF
     paths: { key: string; from: string; to: string; d: string; family: RelationshipFamily }[];
     stubs: { from: string; d: string; x: number; y: number }[]; bracket: { x: number; top: number; bottom: number } | null }>({ width: 0, height: 0, paths: [], stubs: [], bracket: null });
   const [hovered, setHovered] = useState<string | null>(null);
+  // Hover card: the card under the pointer after HOVER_DELAY_MS, measured then placed beside it.
+  const [tip, setTip] = useState<{ key: string; anchor: Box } | null>(null);
+  const [tipPosition, setTipPosition] = useState<{ left: number; top: number } | null>(null);
+  const tipElement = useRef<HTMLDivElement>(null);
+  const tipTimer = useRef<ReturnType<typeof setTimeout>>();
+  const showTip = (key: string, element: HTMLElement) => {
+    clearTimeout(tipTimer.current);
+    tipTimer.current = setTimeout(() => setTip({ key, anchor: element.getBoundingClientRect() }), HOVER_DELAY_MS);
+  };
+  const hideTip = () => { clearTimeout(tipTimer.current);setTip(null); };
+  useEffect(() => () => clearTimeout(tipTimer.current), []);
+  useLayoutEffect(() => {
+    const element = tipElement.current;
+    if (!tip || !element) { setTipPosition(null); return; }
+    setTipPosition(placeHover(tip.anchor, { width: element.offsetWidth, height: element.offsetHeight }, { width: window.innerWidth, height: window.innerHeight }));
+  }, [tip]);
+  // Scrolling moves the card away from its anchor; a press starts selecting, dragging or opening.
+  useEffect(() => {
+    if (!tip) return;
+    const hide = () => { clearTimeout(tipTimer.current);setTip(null); };
+    window.addEventListener('scroll', hide, true);window.addEventListener('mousedown', hide, true);
+    return () => { window.removeEventListener('scroll', hide, true);window.removeEventListener('mousedown', hide, true); };
+  }, [tip]);
   const connected = useMemo(() => selected ? lineage(graph, selected) : new Set<string>(), [graph, selected]);
   const hoverConnected = useMemo(() => hovered ? lineage(graph, hovered) : new Set<string>(), [graph, hovered]);
   const linked = (from: string, to: string) => highlight && hovered
@@ -91,8 +118,9 @@ export function ObjectGraphView({ graph, cards, columns, selected, onSelect, onF
     const card = cards.get(n.key);
     return <div key={n.key} ref={element => { if (element) elements.current.set(n.key, element);else elements.current.delete(n.key); }}
       className={`node ${!showAll && selected && !connected.has(n.key) ? 'dim' : ''}`} style={card && toneStyle(card.type)} data-selected={n.key === selected} data-origin={n.key === origin} onDoubleClick={() => (onOpen ?? onFocus)?.(n.key)}
-      onMouseEnter={highlight ? () => setHovered(n.key) : undefined} onMouseLeave={highlight ? () => setHovered(null) : undefined}>
-      <button className="node-select" aria-pressed={n.key === selected} title={onOpen ? 'Double-click for details' : undefined} onClick={() => onSelect(n.key)}>
+      onMouseEnter={event => { if (highlight) setHovered(n.key); if (card) showTip(n.key, event.currentTarget); }}
+      onMouseLeave={() => { if (highlight) setHovered(null); hideTip(); }}>
+      <button className="node-select" aria-pressed={n.key === selected} onClick={() => onSelect(n.key)}>
         {card ? <ObjectCardBody card={card} /> : <strong>{n.name}</strong>}
       </button>
       {onFocus && <button className="node-focus" aria-label={`Focus ${n.name}`} title="Focus object and relationships · or double-click the card" onClick={() => onFocus(n.key)}>↗</button>}
@@ -134,5 +162,7 @@ export function ObjectGraphView({ graph, cards, columns, selected, onSelect, onF
     <ZoomControls sticky name="object graph" zoom={zoom} canZoomOut={zoom > .5} canZoomIn={zoom < 2}
       onZoomOut={() => setZoom(value => Math.max(.5, value - .25))} onZoomIn={() => setZoom(value => Math.min(2, value + .25))} onReset={() => setZoom(1)}>{actions}</ZoomControls>
     </div>
+    {tip && cards.get(tip.key) && createTracehousePortal(<ObjectHoverCard ref={tipElement} card={cards.get(tip.key)!} diagramStyle={diagramStyle}
+      position={tipPosition ?? { left: 0, top: 0, visibility: 'hidden' }} />, document.body)}
   </>;
 }

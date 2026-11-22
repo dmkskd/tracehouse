@@ -73,6 +73,65 @@ table to exist already; omit `--skip-create` for initial setup or recovery.
 
 ## Generating Activity
 
+### Object catalog and cascading materialized views
+
+Create a small persistent scenario for browsing users, roles, grants, policies,
+tables and views. This is a data-tools scenario, independent of the experimental
+object-browser feature and its gate:
+
+```bash
+just object-demo setup
+just object-demo append
+just object-demo verify
+```
+
+These commands use the normal `CH_*` connection settings and confirmation prompt
+(`--yes` skips confirmation). Setup requires access-management privileges as well
+as database/table/view creation privileges. It creates only the
+`tracehouse_object_demo` database and `th_ob_*` access entities. The four users
+have `HOST NONE`: they provide catalog examples and cannot log in. Existing
+workload-user credentials and privileges are unchanged.
+
+The scenario includes three roles, nested role inheritance, default and non-default
+assignments, a partial revoke, two row policies, a settings profile, a quota,
+ordinary views, TTLs and a two-stage insert-trigger cascade:
+
+```text
+events → events_to_minute_mv → events_minute
+       → minute_to_hourly_mv → events_hourly → hourly_report (ordinary view)
+```
+
+The second materialized view reads inserts into `events_minute`. Both target tables
+use SummingMergeTree, and queries sum their stored counts and amounts, so correctness
+does not depend on background merges having completed. Initial setup seeds six
+events; append inserts another 100. Verify compares per-tenant counts and amounts
+across the source and both aggregate tables in the current hour. Run it with inserts
+paused: the three SELECTs do not form a transactional snapshot. Repeated setup avoids
+reseeding a populated current hour; it does not repair incompatible existing definitions.
+
+To prepare the scenario before opening the data-tools TUI:
+
+```bash
+just data-tools-tui --object-demo
+```
+
+Or set `CH_OBJECT_DEMO=true`. The Docker demo workload prepares the scenario locally
+on each configured query host and appends batches during its insert loop. Local
+tables are independent per host. Optional `--cluster <name>` (or `CH_CLUSTER`) applies
+DDL ON CLUSTER; data seeding and verification still run only on the connected host.
+The multi-host path has not yet been integration-tested.
+
+Remove only this scenario's database and access entities with:
+
+```bash
+just object-demo drop
+```
+
+In **Objects**, search for `th_ob_alice` or `tracehouse_object_demo`. The current
+browser shows view types, access provenance and native materialized-view trigger/
+destination links where the server exposes them. Refresh catalog to load new links.
+Ordinary-view source parsing, TTL definitions, profiles and quotas remain unfinished.
+
 ### Slow Queries
 
 Generate query activity for the query monitor:

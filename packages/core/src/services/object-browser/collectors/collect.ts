@@ -1,4 +1,4 @@
-import { ACCESS_HOSTS, ACCESS_PRIVILEGES, ACCESS_SCHEMA, ACCESS_CATALOGS, ACCESS_TABLE_DEPENDENCY_FIELDS, accessTableCatalogQuery } from '../../../queries/access-queries.js';
+import { ACCESS_HOSTS, ACCESS_PRIVILEGES, ACCESS_SCHEMA, ACCESS_CATALOGS, ACCESS_TABLE_DEPENDENCY_FIELDS, ACCESS_TABLE_SUMMARY_FIELDS, accessTableCatalogQuery, systemTablesByNameQuery, ACTIVE_PARTS_BY_TABLE } from '../../../queries/access-queries.js';
 import { buildQuery, tagQuery } from '../../../queries/builder.js';
 import type { IClickHouseAdapter } from '../../../adapters/types.js';
 import { objectKey } from '../model/types.js';
@@ -19,7 +19,8 @@ function attributes(row: Row): Attributes {
     .map(([k, v]) => [k, setFields.has(k) ? sortedSet(v) : v]));
 }
 const text = (v: unknown) => String(v ?? '');
-const EXCLUDED_DATABASES = new Set(['system', 'information_schema', 'INFORMATION_SCHEMA']);
+/** Databases the catalog skips; their tables are read by name when a view reads from them. */
+const SYSTEM_DATABASES = new Set(['system', 'information_schema', 'INFORMATION_SCHEMA']);
 const flag = (v: unknown) => Number(v) === 1;
 
 /** Catalog sources whose system table the capability probe (capability `system_<source>`)
@@ -52,8 +53,10 @@ export async function collectObjects(adapter: IClickHouseAdapter, investigation:
   let privileges: PrivilegeTree | null = null, privilegesError: string | null = null;
   try { privileges = privilegeTree(await run(ACCESS_PRIVILEGES, 'privileges')); }
   catch (e) { check();privilegesError = e instanceof Error ? e.message : String(e); }
-  const tableFields = new Set(ACCESS_TABLE_DEPENDENCY_FIELDS.filter(name => capture.hosts.every(host =>
-    schema.some(row => row.host === host.host && row.table === 'tables' && row.name === name))));
+  const onEveryHost = (name: string) => capture.hosts.every(host =>
+    schema.some(row => row.host === host.host && row.table === 'tables' && row.name === name));
+  const tableFields = new Set(ACCESS_TABLE_DEPENDENCY_FIELDS.filter(onEveryHost));
+  const summaryFields = ACCESS_TABLE_SUMMARY_FIELDS.filter(onEveryHost);
   const sources = Object.keys(ACCESS_CATALOGS) as Source[];
   const data = new Map<Source, Row[]>();
   // Three at a time, rather than an unbounded catalog fan-out.
@@ -70,7 +73,7 @@ export async function collectObjects(adapter: IClickHouseAdapter, investigation:
         capture.coverage.push({ source, state: 'schema-unavailable', hosts: [], visibility: 'unknown', reason: `Missing/unreadable schema: ${missing.join(', ')}` });return;
       }
       try {
-        const rows = await run(source === 'tables' ? accessTableCatalogQuery(tableFields) : spec.sql, source);
+        const rows = await run(source === 'tables' ? accessTableCatalogQuery(new Set([...tableFields, ...summaryFields])) : spec.sql, source);
         if (rows.some(r => !capture.hosts.some(h => h.host === r.host) || spec.columns.some(k => !(k in r)) || Object.entries(r).some(([k, v]) => setFields.has(k) && !Array.isArray(v)))) throw new Error('Malformed catalog result or unexpected host');
         data.set(source, rows.slice(0, limit));
         capture.coverage.push({ source, state: rows.length > limit ? 'truncated' : 'readable',
@@ -103,6 +106,30 @@ export async function collectObjects(adapter: IClickHouseAdapter, investigation:
   }
   capture.relationships.push(...links.relationships);
   const tablesCoverage = capture.coverage.find(entry => entry.source === 'tables');
+  // System tables that views read from are read by name, so they show as ordinary tables.
+  const systemTables = [...new Set(links.relationships.flatMap(r => [r.from, r.to]))]
+    .map(key => JSON.parse(key) as string[]).filter(([, kind, database]) => kind === 'table' && SYSTEM_DATABASES.has(database));
+  if (systemTables.length && data.has('tables')) {
+    try {
+      const rows = await run(buildQuery(systemTablesByNameQuery(new Set(summaryFields)),
+        { tables: JSON.stringify(systemTables.map(([, , database, name]) => [database, name])) }), 'tables');
+      for (const r of rows) add('table', `${r.database}.${r.name}`, 'tables', r, k('table', text(r.database), text(r.name)));
+    } catch (e) {
+      check();links.notes.push(`System tables read by views unavailable: ${e instanceof Error ? e.message : String(e)}`);
+    }
+  }
+  // Part counts join the table records of the same host; they are measurements, not definition.
+  if (data.has('tables')) {
+    try {
+      for (const r of await run(ACTIVE_PARTS_BY_TABLE, 'tables')) {
+        const key = k('table', text(r.database), text(r.table));
+        const record = capture.observations.find(o => o.key === key && o.host === text(r.host));
+        if (record) record.attributes = { ...record.attributes, active_parts: r.active_parts, newest_part: r.newest_part };
+      }
+    } catch (e) {
+      check();links.notes.push(`Part counts unavailable: ${e instanceof Error ? e.message : String(e)}`);
+    }
+  }
   if (tablesCoverage && links.notes.length) tablesCoverage.reason = [tablesCoverage.reason, ...links.notes].filter(Boolean).join(' ');
   for (const r of data.get('role_grants') ?? []) {
     const recipient = r.user_name != null ? k('user', text(r.user_name)) : k('role', text(r.role_name));
@@ -164,10 +191,8 @@ export async function collectObjects(adapter: IClickHouseAdapter, investigation:
   for (const r of capture.relationships) for (const key of [r.from,r.to]) {
     const identity = canonical([key,r.host]);if (observed.has(identity)) continue;
     const [,kind,...names] = JSON.parse(key) as string[];
-    // Catalog browsing excludes system databases; their tables appear only as referenced.
-    const outsideCatalog = kind === 'table' && EXCLUDED_DATABASES.has(names[0]);
     capture.observations.push({ key, kind: kind as Observation['kind'], name: names.join('.'), host: r.host,
-      source: r.source, attributes: { unresolvedReference: true, referencedBy: r.source, ...(outsideCatalog ? { outsideCatalog: true } : {}) } });
+      source: r.source, attributes: { unresolvedReference: true, referencedBy: r.source } });
     observed.add(identity);
   }
   // Deduplicate repeated scope/metadata rows within a host without collapsing host records.

@@ -3,6 +3,12 @@ import { KINDS } from '../model/kinds.js';
 import { RELATIONSHIPS } from '../model/relationships.js';
 import type { Capture, GraphNode, ObjectGraph, ObjectKind, Source } from '../model/types.js';
 
+/** Per-host measurements: replicas and shards hold different amounts of data, so these
+ * are left out when host records are compared. */
+const MEASURED = new Set(['total_rows', 'total_bytes', 'active_parts', 'newest_part']);
+const definition = (attributes: Record<string, unknown>) =>
+  canonical(Object.fromEntries(Object.entries(attributes).filter(([name]) => !MEASURED.has(name))));
+
 /** Display coalescing preserves native records. Never union grants into a principal. */
 export function projectGraph(capture: Capture): ObjectGraph {
   const expectedHosts = [...new Set(capture.hosts.map(h => h.host))].sort();
@@ -21,7 +27,7 @@ export function projectGraph(capture: Capture): ObjectGraph {
   for (const node of grouped.values()) {
     const resolved = node.records.filter(r => !r.attributes.unresolvedReference);
     node.observedHosts = [...new Set(resolved.map(r => r.host))].sort();
-    const attributes = new Set(resolved.map(r => canonical(r.attributes)));
+    const attributes = new Set(resolved.map(r => definition(r.attributes)));
     const ownSets = new Set<string>();
     for (const record of node.records) {
       const ownReadable = readable('grants', record.host) && readable('role_grants', record.host);

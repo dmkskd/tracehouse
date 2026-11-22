@@ -128,3 +128,35 @@ export const page = css`
   h2 { font-size: 15px; margin: 0 0 10px; overflow-wrap: anywhere; }
   h3 { font-size: 12px; margin: 15px 0 8px; }
 `;
+
+/** Hover card (ObjectHoverCard), rendered in a portal above the diagram. One layout;
+ * `data-style` changes only the frame and the type marker to match the diagram style. */
+export const hoverCard = css`
+  position: fixed; z-index: 100001; width: 300px; box-sizing: border-box; display: grid; gap: 10px; padding: 14px 16px;
+  font-size: 12px; color: var(--text-primary); background: var(--bg-secondary); pointer-events: none;
+  border-radius: 8px; box-shadow: 0 8px 28px rgba(0, 0, 0, .18), 0 0 0 1px var(--border-primary);
+  .head { display: flex; align-items: baseline; gap: 12px; min-width: 0; }
+  .kind { display: inline-flex; align-items: center; gap: 7px; font-size: 10px; font-weight: 600; letter-spacing: .07em; text-transform: uppercase; color: var(--tone); white-space: nowrap; }
+  .kind::before { content: ''; width: 8px; height: 8px; border-radius: 2px; background: var(--tone); }
+  .context { margin-left: auto; min-width: 0; font-size: 11px; color: var(--text-secondary); text-align: right; overflow-wrap: anywhere; }
+  .context span { margin-right: 4px; color: var(--text-muted); }
+  .context code { font-family: monospace; }
+  .name { margin-top: -4px; font-size: 14px; font-weight: 600; line-height: 1.3; overflow-wrap: anywhere; }
+  .engine { margin-top: -6px; font-family: monospace; font-size: 11px; color: var(--text-secondary); overflow-wrap: anywhere; }
+  .stats { display: flex; flex-wrap: wrap; gap: 4px 16px; padding-top: 10px; border-top: 1px solid var(--border-secondary, var(--border-primary)); font-size: 11.5px; color: var(--text-muted); }
+  .stats b { font-weight: 600; color: var(--text-primary); font-variant-numeric: tabular-nums; }
+  .definition { display: grid; gap: 3px; min-width: 0; }
+  .definition span { font-size: 10px; color: var(--text-muted); }
+  .definition code { display: -webkit-box; -webkit-line-clamp: 4; -webkit-box-orient: vertical; overflow: hidden;
+    font: 11px/1.5 monospace; color: var(--text-secondary); white-space: pre-wrap; overflow-wrap: anywhere; }
+  .comment { margin: 0; font-size: 12px; line-height: 1.45; color: var(--text-secondary); overflow-wrap: anywhere; }
+  .notes { display: flex; flex-wrap: wrap; gap: 6px; }
+  .notes span { padding: 2px 7px; border-radius: 4px; font-size: 11px; background: var(--bg-tertiary); color: var(--accent-yellow, #ba913f); }
+  &[data-style=bars] { border-radius: 4px; }
+  &[data-style=bars] .kind::before { width: 4px; height: 12px; border-radius: 1px; }
+  &[data-style=columns] { box-shadow: none; border: 1px solid var(--border-primary); }
+  &[data-style=columns] .kind::before { width: 7px; height: 7px; border-radius: 50%; }
+  &[data-style=metro] { border-radius: 16px; padding: 14px 18px; }
+  &[data-style=metro] .kind::before { display: none; }
+  &[data-style=metro] .notes span { border-radius: 10px; padding: 2px 9px; }
+`;

@@ -11,8 +11,8 @@ export interface RelationshipSpec {
   ranks: boolean;
   /** All `to` objects of this kind share one focus column (privileges, tables in storage). */
   alignTargets?: boolean;
-  /** `to` objects sit in the last focus column, after every other object: what lies
-   * outside ClickHouse ends the chain. */
+  /** `to` objects sit in the last focus column, after every other object: external
+   * storage ends the chain. */
   lastColumn?: boolean;
   /** Links record how they were obtained in `evidence.method` (REFERENCE_METHODS). */
   methods?: boolean;
@@ -31,6 +31,6 @@ export const RELATIONSHIPS: Record<RelationshipKind, RelationshipSpec> = {
   'insert-trigger': { family: 'data-flow', provenance: false, ranks: true, methods: true, fact: { incoming: 'Reads from' } },
   'reads-from': { family: 'data-flow', provenance: false, ranks: true, methods: true, fact: { incoming: 'Reads from' } },
   'writes-to': { family: 'data-flow', provenance: false, ranks: true, methods: true, fact: { outgoing: 'label' } },
-  /** ClickHouse table → the storage server outside ClickHouse named by its engine arguments. */
+  /** ClickHouse table → the external storage server named by its engine arguments. */
   'points-to': { family: 'storage', provenance: false, ranks: true, alignTargets: true, lastColumn: true, methods: true, fact: { outgoing: 'Stored on' } },
 };

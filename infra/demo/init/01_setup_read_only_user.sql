@@ -94,6 +94,15 @@ GRANT SELECT ON system.crash_log TO read_only;
 GRANT SELECT ON system.session_log TO read_only;
 
 -- ============================================================
+-- Grants — object browser access definitions (no passwords or hashes)
+-- ============================================================
+GRANT SELECT ON system.users TO read_only;
+GRANT SELECT ON system.roles TO read_only;
+GRANT SELECT ON system.role_grants TO read_only;
+GRANT SELECT ON system.grants TO read_only;
+GRANT SELECT ON system.row_policies TO read_only;
+
+-- ============================================================
 -- Grants — schema browsing
 -- ============================================================
 GRANT SHOW DATABASES ON *.* TO read_only;
