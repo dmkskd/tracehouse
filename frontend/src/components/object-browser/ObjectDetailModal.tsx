@@ -1,6 +1,6 @@
 import { css } from '@emotion/css';
-import type { ReactNode } from 'react';
-import type { DetailDestination, DetailSection, ObjectDetail } from '@tracehouse/core/services/object-browser';
+import { useState, type ReactNode } from 'react';
+import type { DetailLinks, DetailSection, ObjectDetail } from '@tracehouse/core/services/object-browser';
 import { ModalWrapper } from '../../components/shared/ModalWrapper';
 import { SqlHighlight } from '../common/SqlHighlight';
 import { ObjectTypeIcon } from './ObjectCard';
@@ -24,11 +24,10 @@ const styles = css`
   pre { margin: 0; font: 11px/1.65 monospace; white-space: pre-wrap; overflow-wrap: anywhere; color: var(--text-secondary); background: var(--bg-secondary); padding: 12px; border-radius: 4px; }
   .muted { font-size: 12px; color: var(--text-muted); }
   .error { font-size: 12px; color: var(--accent-yellow, #ba913f); }
-  .actions { display: flex; flex-direction: column; gap: 6px; margin-top: 12px; }
-  .action-row { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; }
-  .action { padding: 5px 12px; font-size: 12px; color: var(--text-primary); }
+  .actions { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; margin-top: 12px; }
+  .action { height: 30px; padding: 0 12px; font-size: 12px; color: var(--text-primary); }
   .action:hover { border-color: var(--border-accent); background: var(--bg-hover); }
-  .for-user { font-size: 12px; color: var(--text-muted); margin-right: 2px; }
+  .action-user { display: flex; align-items: center; background: var(--bg-tertiary); border: 1px solid var(--border-primary); border-radius: 6px; overflow: hidden; margin-right: 4px; }
   .detail-body section + section { margin-top: 18px; padding-top: 2px; border-top: 1px solid var(--border-secondary); }
   .relation-group + .relation-group { margin-top: 12px; }
   h4 { margin: 0 0 6px; font-size: 12px; font-weight: 600; color: var(--text-secondary); }
@@ -80,14 +79,22 @@ const renderSection = (section: DetailSection, context: SectionContext) =>
  * the user in focus context too get a second line. The tooltip says what each page shows. */
 /** Buttons that open other pages filtered to the object, under the title. Buttons filtered to the
  * user in focus context too get their own row. The tooltip says what the page shows. */
-function Actions({ links, open }: { links: DetailDestination[]; open: (url: string) => void }) {
-  if (!links.length) return null;
-  const buttons = (items: DetailDestination[]) => items.map(link => <button key={link.url} type="button" className="action"
-    title={link.description} aria-label={link.description} onClick={() => open(link.url)}>{link.label}</button>);
-  const own = links.filter(l => !l.forUser), forUser = links.filter(l => l.forUser);
+function Actions({ links, open }: { links: DetailLinks; open: (url: string) => void }) {
+  const [user, setUser] = useState(links.defaultUser);
+  const shown = links.byUser[user] ?? links.byUser[''] ?? [];
+  if (!shown.length) return null;
   return <div className="actions" role="group" aria-label="Open in">
-    {own.length > 0 && <div className="action-row">{buttons(own)}</div>}
-    {forUser.length > 0 && <div className="action-row"><span className="for-user">for {forUser[0].forUser}:</span>{buttons(forUser)}</div>}
+    {/* One set of pages; the filter decides whose activity they show. */}
+    {links.users.length > 0 && <div className="tracehouse-compact-select-control action-user">
+      <span className="tracehouse-compact-select-label">User</span>
+      <select className="tracehouse-compact-native-select" aria-label="Show activity of" title="Show the activity of one user, or of all users"
+        value={user} onChange={e => setUser(e.target.value)}>
+        <option value="">All users</option>
+        {links.users.map(name => <option key={name} value={name}>{name}</option>)}
+      </select>
+    </div>}
+    {shown.map(link => <button key={link.url} type="button" className="action" title={link.description} aria-label={link.description}
+      onClick={() => open(link.url)}>{link.label}</button>)}
   </div>;
 }
 
@@ -101,7 +108,8 @@ export function ObjectDetailModal({ detail, onClose, open, select }: { detail: O
     {detail && card && <div className={styles}>
       <div className="detail-header">
         <div><ObjectTypeIcon card={card} />{card.qualifier && <small>{card.qualifier}</small>}<h2>{card.title}</h2><small>{card.label}{card.hosts && ` · ${card.hosts}`}</small>
-          <Actions links={detail.links} open={open} /></div>
+          {/* Keyed by object so the user filter starts from its default for each object. */}
+          <Actions key={`${card.qualifier ?? ''}.${card.title}`} links={detail.links} open={open} /></div>
         <button className="modal-close" aria-label="Close" title="Close (Esc)" onClick={onClose}>✕</button>
       </div>
       <div className="detail-body">{detail.sections.map((section, i) => <section key={i}>{renderSection(section, { results, requested, load, title: card.title, select })}</section>)}</div>

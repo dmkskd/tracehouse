@@ -37,13 +37,14 @@ export function ObjectBrowserPage() {
   useEffect(() => { void browse(); }, [browse]);
   const baseGraph = useMemo(() => capture ? projectGraph(capture) : null, [capture]);
   const selectedKey = selected ?? baseGraph?.nodes.find(n => JSON.stringify([n.kind,n.name]) === url.ob_selected)?.key ?? null;
-  // Broad scopes expand for one focus object: a selected table in the catalog, any starting point in focus.
+  // Broad scopes expand for one object: the selection in the catalog, the starting point in focus.
   const projectFor = useCallback((focus: string | null) => {
     const projected = capture ? capture.mode === 'catalog' ? projectCatalogGraph(capture, focus ?? undefined) : baseGraph : null;
     return projected && hideDefaultUser ? withoutDefaultUser(projected) : projected;
   }, [capture, baseGraph, hideDefaultUser]);
-  const selectedTable = baseGraph?.nodes.find(n => n.key === selectedKey && n.kind === 'table')?.key ?? null;
-  const graph = useMemo(() => projectFor(selectedTable), [projectFor, selectedTable]);
+  // The selected object scopes broad grants: for a table, the grants that may cover it; for a
+  // user, role or privilege, the tables its database-wide and global grants may cover.
+  const graph = useMemo(() => projectFor(selectedKey), [projectFor, selectedKey]);
   const searched = useMemo(() => graph ? searchGraph(graph, search, selectedKey) : null, [graph, search, selectedKey]);
   const matches = searched?.matches ?? [];
   // The catalog shares the diagram's line options with focus.
@@ -110,7 +111,7 @@ export function ObjectBrowserPage() {
           <li><strong>Click</strong> a card: highlights what it is connected to</li>
           <li><strong>↗ or double-click</strong>: opens focus on it</li>
           <li><strong>Double-click in focus</strong>: opens its details</li>
-          <li><strong>Selected table</strong>: adds the broad privileges that may cover it</li>
+          <li><strong>Selected object</strong>: adds the tables its broad privileges may cover, or for a table the privileges that may cover it</li>
           <li>Up to 20 cards per column; search finds the rest</li>
           <li>System tables are not listed</li>
         </ul>

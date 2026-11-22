@@ -8,6 +8,7 @@ import { DETAIL_GROUPS, RELATIONSHIPS, isRevokeEdge, type DetailGroup } from '..
 import { analyzerTableNames } from '../collectors/references.js';
 import { describeCard, nameParts, type CardFact, type ObjectCard, type ObjectType } from './cards.js';
 import { DESTINATIONS, type DestinationInput } from '../model/destinations.js';
+import { provenancePaths } from '../projections/graph.js';
 
 /** `external` describes the external call a statement makes; such statements load only on request.
  * `sources` marks an EXPLAIN QUERY TREE, shown as the tables and table functions it resolved.
@@ -17,7 +18,13 @@ export interface DetailStatement { title: string; sql: string; external?: string
 /** Another TraceHouse page filtered to this object: `label` is the button text ("Show queries"),
  * `description` says what the page shows. `forUser` names the user in focus context when the
  * link is filtered to that user too. */
-export interface DetailDestination { label: string; description: string; page: string; url: string; forUser?: string }
+export interface DetailDestination { label: string; description: string; page: string; url: string }
+/**
+ * Links to other pages filtered to the object. On a table, `users` lists who the pages can also
+ * be filtered to: the user in focus context first, then users with a configured path to the
+ * table (at most 25). `byUser['']` holds the links for all users; `byUser[name]` for that user.
+ */
+export interface DetailLinks { users: string[]; defaultUser: string; byUser: Record<string, DetailDestination[]> }
 /** An object at the other end of a relationship. `name` drops the database the object shares
  * with the detail's object; `method` says how the link was obtained, for the tooltip. */
 export interface DetailRelationItem { key: string; name: string; fullName: string; method?: string }
@@ -30,7 +37,7 @@ export type DetailSection =
   | { kind: 'relationships'; title: string; groups: DetailRelationGroup[] }
   | { kind: 'records'; title: string; records: Observation[] };
 /** `links` open other pages filtered to the object; they belong with the title, not the sections. */
-export interface ObjectDetail { card: ObjectCard; links: DetailDestination[]; sections: DetailSection[] }
+export interface ObjectDetail { card: ObjectCard; links: DetailLinks; sections: DetailSection[] }
 
 type Statements = (node: GraphNode) => DetailStatement[];
 /** Reading Iceberg snapshots makes ClickHouse read the table's metadata from storage,
@@ -96,19 +103,25 @@ function hostDifferences(node: GraphNode): CardFact[] {
   });
 }
 
-/** The pages DESTINATIONS lists for the object's type. Links that name the user in focus
- * context appear only with one. A placeholder for an unresolved reference opens nothing. */
-function destinationsOf(node: GraphNode, type: ObjectType, contextUser?: string): DetailDestination[] {
-  if (node.records.some(r => r.attributes.unresolvedReference)) return [];
+/** The pages DESTINATIONS lists for the object's type, for all users and for each user the
+ * filter offers. A placeholder for an unresolved reference opens nothing. */
+const MAX_FILTER_USERS = 25;
+function destinationsOf(node: GraphNode, graph: ObjectGraph, type: ObjectType, contextUser?: string): DetailLinks {
+  if (node.records.some(r => r.attributes.unresolvedReference)) return { users: [], defaultUser: '', byUser: { '': [] } };
   const record = node.records[0]?.attributes ?? {};
-  const input: DestinationInput = node.kind === 'table' ? { database: String(record.database), table: String(record.name), contextUser }
+  const base: DestinationInput = node.kind === 'table' ? { database: String(record.database), table: String(record.name) }
     : node.kind === 'user' ? { user: node.name } : {};
-  const object = node.kind === 'table' ? `${input.database}.${input.table}` : node.name;
-  return DESTINATIONS[type].filter(spec => !spec.contextUser || contextUser).map(spec => ({
+  const object = node.kind === 'table' ? `${base.database}.${base.table}` : node.name;
+  const linksFor = (user?: string): DetailDestination[] => DESTINATIONS[type].map(spec => ({
     label: spec.label, page: spec.page,
-    description: spec.description.replace('{object}', object).replace('{user}', contextUser ?? ''),
-    url: `${spec.path}?${new URLSearchParams(spec.params(input)).toString()}`,
-    ...(spec.contextUser ? { forUser: contextUser } : {}) }));
+    description: (user && spec.descriptionForUser ? spec.descriptionForUser : spec.description).replace('{object}', object).replace('{user}', user ?? ''),
+    url: `${spec.path}?${new URLSearchParams(spec.params({ ...base, contextUser: user })).toString()}` }));
+  // Only pages about a table filter by user; a user's own pages are already that user's.
+  const filters = DESTINATIONS[type].some(spec => spec.descriptionForUser);
+  const withPath = filters ? graph.nodes.filter(n => n.kind === 'user' && provenancePaths(graph, n.key, node.key, 1).length > 0).map(n => n.name).sort() : [];
+  const users = filters ? [...new Set([...(contextUser ? [contextUser] : []), ...withPath])].slice(0, MAX_FILTER_USERS) : [];
+  return { users, defaultUser: contextUser && users.includes(contextUser) ? contextUser : '',
+    byUser: Object.fromEntries([['', linksFor()], ...users.map(user => [user, linksFor(user)])]) };
 }
 
 /** The wording of a link to a table from a privilege, by what the privilege covers. */
@@ -158,7 +171,7 @@ function relationGroups(node: GraphNode, graph: ObjectGraph): DetailRelationGrou
  * relationships and host records. `contextUser` is the user in focus context. */
 export function describeDetail(node: GraphNode, graph: ObjectGraph, options: { contextUser?: string } = {}): ObjectDetail {
   const { card, facts } = describeCard(node, graph);
-  const destinations = destinationsOf(node, card.type, options.contextUser);
+  const destinations = destinationsOf(node, graph, card.type, options.contextUser);
   const shown = new Set(facts.map(f => f.label));
   for (const [field, label] of IDENTITY_FIELDS) {
     const value = node.records.find(r => r.attributes[field] != null && r.attributes[field] !== '')?.attributes[field];

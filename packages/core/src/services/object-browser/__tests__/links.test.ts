@@ -66,21 +66,31 @@ describe('object links', () => {
   it('offers the pages each object type opens, with the chain user carried to a table', () => {
     const graph = projectGraph({ ...capture, observations: capture.observations.map(o => o.key === 'trips' ? { ...o, attributes: { ...o.attributes, engine: 'MergeTree' } }
       : o.key === 'daily' ? { ...o, attributes: { ...o.attributes, engine: 'View' } } : o) });
-    const links = (key: string, contextUser?: string) => describeDetail(graph.nodes.find(n => n.key === key)!, graph, { contextUser })
-      .links.map(d => `${d.page}: ${d.label} | ${d.description} | ${d.url}`);
-    expect(links('trips', 'alice')).toEqual([
-      'Queries: Show queries | Queries on demo.trips | /queries?tableName=demo.trips',
-      'Time Travel: Track in Time Travel | Time Travel tracking demo.trips | /timetravel?tt_table=demo.trips&tt_matched_only=1',
-      'Merges: Show merges | Merges of demo.trips | /merges?database=demo&table=trips',
-      'Queries: Show their queries | Queries by alice on demo.trips | /queries?user=alice&tableName=demo.trips',
-      'Queries: Show their failed queries | Failed queries by alice on demo.trips | /queries?user=alice&tableName=demo.trips&status=error',
-      'Time Travel: Track them in Time Travel | Time Travel tracking alice on demo.trips | /timetravel?tt_user=alice&tt_failed_start=1&tt_table=demo.trips&tt_matched_only=1']);
-    // A view has no merges; without a chain user only the table's own links remain.
-    expect(links('daily')).toEqual(['Queries: Show queries | Queries on demo.daily | /queries?tableName=demo.daily',
-      'Time Travel: Track in Time Travel | Time Travel tracking demo.daily | /timetravel?tt_table=demo.daily&tt_matched_only=1']);
-    expect(links('alice')).toEqual(['Queries: Show queries | Queries by alice | /queries?user=alice', 'Queries: Show failed queries | Failed queries by alice | /queries?user=alice&status=error',
-      'Time Travel: Track in Time Travel | Time Travel tracking alice | /timetravel?tt_user=alice&tt_failed_start=1&tt_matched_only=1']);
-    expect(links('reader', 'alice')).toEqual([]);
+    const detailLinks = (key: string, contextUser?: string) => describeDetail(graph.nodes.find(n => n.key === key)!, graph, { contextUser }).links;
+    const format = (list: { page: string; label: string; description: string; url: string }[]) =>
+      list.map(d => `${d.page}: ${d.label} | ${d.description} | ${d.url}`);
+    const trips = detailLinks('trips', 'alice');
+    expect(trips.users).toEqual(['alice', 'bob']);
+    expect(trips.defaultUser).toBe('alice');
+    expect(format(trips.byUser[''])).toEqual([
+      'Queries: Queries | Queries on demo.trips | /queries?tableName=demo.trips',
+      'Time Travel: Time Travel | Time Travel tracking demo.trips | /timetravel?tt_table=demo.trips&tt_matched_only=1',
+      'Merges: Merges | Merges of demo.trips (merges have no user) | /merges?database=demo&table=trips']);
+    expect(format(trips.byUser['alice'])).toEqual([
+      'Queries: Queries | Queries by alice on demo.trips | /queries?user=alice&tableName=demo.trips',
+      'Time Travel: Time Travel | Time Travel tracking alice on demo.trips | /timetravel?tt_user=alice&tt_failed_start=1&tt_table=demo.trips&tt_matched_only=1',
+      'Merges: Merges | Merges of demo.trips (merges have no user) | /merges?database=demo&table=trips']);
+    // A view has no merges; without a chain user defaultUser is empty.
+    const daily = detailLinks('daily');
+    expect(daily.defaultUser).toBe('');
+    expect(format(daily.byUser[''])).toEqual([
+      'Queries: Queries | Queries on demo.daily | /queries?tableName=demo.daily',
+      'Time Travel: Time Travel | Time Travel tracking demo.daily | /timetravel?tt_table=demo.daily&tt_matched_only=1']);
+    const alice = detailLinks('alice');
+    expect(alice.users).toEqual([]);
+    // Only tables and views link to other pages.
+    expect(alice.byUser['']).toEqual([]);
+    expect(detailLinks('reader', 'alice')).toEqual({ users: [], defaultUser: '', byUser: { '': [] } });
     // Returning reopens focus on the origin, with the chain user on a table.
     expect(objectLinkUrl(objectLinkFor(graph.nodes.find(n => n.key === 'trips'), 'alice')!)).toBe('/objects?ob_kind=table&ob_db=demo&ob_tbl=trips&ob_user=alice');
   });

@@ -129,6 +129,10 @@ describe('object browser entry point', () => {
       relationships: [{ id: 'grant', host: 'ch-1', from: 'read_only', to: 'scope', kind: 'grant', label: 'SELECT grant', source: 'grants', evidence }],
     };
     renderPage();
+    // Selecting the user in the catalog lights up what its global grant may cover, not only the grant.
+    fireEvent.click(screen.getByRole('button', { name: /read_only user/i }));
+    expect(screen.getByRole('button', { name: /sampler\s*Materialized view/i }).closest('.node')!.classList.contains('dim')).toBe(false);
+    fireEvent.click(screen.getByRole('button', { name: /read_only user/i }));
     fireEvent.click(screen.getByRole('button', { name: 'Focus tracehouse.sampler' }));
     const dialog = screen.getByRole('dialog', { name: 'Object focus' });
     expect(within(dialog).getByRole('button', { name: /read_only user/i })).toBeTruthy();
@@ -272,9 +276,15 @@ describe('object browser entry point', () => {
       fireEvent.doubleClick(within(dialog).getByRole('button', { name: /trips\s*MergeTree/i }));
       const detail = screen.getByRole('dialog', { name: 'Object detail' });
       const openIn = within(detail).getByRole('group', { name: 'Open in' });
-      expect(within(openIn).getByRole('button', { name: 'Merges of demo.trips' })).toBeTruthy();
-      fireEvent.click(within(openIn).getByRole('button', { name: 'Failed queries by alice on demo.trips' }));
-      expect(screen.getByText('/queries?user=alice&tableName=demo.trips&status=error from /objects?ob_kind=table&ob_db=demo&ob_tbl=trips&ob_user=alice')).toBeTruthy();
+      // One set of pages; the user filter starts on the user the chain began with.
+      const userFilter = within(openIn).getByRole('combobox', { name: 'Show activity of' }) as HTMLSelectElement;
+      expect(userFilter.value).toBe('alice');
+      expect(within(openIn).getByRole('button', { name: 'Merges of demo.trips (merges have no user)' })).toBeTruthy();
+      fireEvent.change(userFilter, { target: { value: '' } });
+      expect(within(openIn).getByRole('button', { name: 'Queries on demo.trips' })).toBeTruthy();
+      fireEvent.change(userFilter, { target: { value: 'alice' } });
+      fireEvent.click(within(openIn).getByRole('button', { name: 'Queries by alice on demo.trips' }));
+      expect(screen.getByText('/queries?user=alice&tableName=demo.trips from /objects?ob_kind=table&ob_db=demo&ob_tbl=trips&ob_user=alice')).toBeTruthy();
     });
   });
 });
