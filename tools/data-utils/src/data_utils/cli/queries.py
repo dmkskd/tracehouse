@@ -27,7 +27,7 @@ from datetime import datetime
 from clickhouse_driver import Client
 
 from data_utils.capabilities import Capabilities, probe
-from data_utils.env import env_int, pre_parse_env_file, print_connection, add_connection_args, make_client
+from data_utils.env import env_int, pre_parse_env_file, print_connection, add_connection_args, make_client, DATA_TOOLS_SETTINGS
 from data_utils.tables import build_all_datasets, DATASET_ALIASES, list_datasets
 from data_utils.tables import nyc_taxi
 from data_utils.users import (
@@ -66,7 +66,7 @@ S3_PARQUET_QUERIES = [
         count() as review_count,
         avg(star_rating) as avg_rating,
         sum(helpful_votes) as total_helpful
-    FROM s3('https://datasets-documentation.s3.eu-west-3.amazonaws.com/amazon_reviews/amazon_reviews_2015.snappy.parquet')
+    FROM s3('https://datasets-documentation.s3.eu-west-3.amazonaws.com/amazon_reviews/amazon_reviews_2015.snappy.parquet', NOSIGN)
     GROUP BY product_category
     ORDER BY review_count DESC
     LIMIT 20
@@ -77,7 +77,7 @@ S3_PARQUET_QUERIES = [
         count() as posts,
         avg(Score) as avg_score,
         sum(ViewCount) as total_views
-    FROM s3('https://datasets-documentation.s3.eu-west-3.amazonaws.com/stackoverflow/parquet/posts/2023.parquet')
+    FROM s3('https://datasets-documentation.s3.eu-west-3.amazonaws.com/stackoverflow/parquet/posts/2023.parquet', NOSIGN)
     GROUP BY year
     """,
     """
@@ -86,7 +86,7 @@ S3_PARQUET_QUERIES = [
         Title,
         Score,
         ViewCount
-    FROM s3('https://datasets-documentation.s3.eu-west-3.amazonaws.com/stackoverflow/parquet/posts/2023.parquet')
+    FROM s3('https://datasets-documentation.s3.eu-west-3.amazonaws.com/stackoverflow/parquet/posts/2023.parquet', NOSIGN)
     WHERE Title IS NOT NULL AND position(lower(Title), 'clickhouse') > 0
     ORDER BY Score DESC
     LIMIT 50
@@ -97,7 +97,7 @@ S3_PARQUET_QUERIES = [
         any(product_title) as title,
         avg(star_rating) as avg_rating,
         count() as mention_count
-    FROM s3('https://datasets-documentation.s3.eu-west-3.amazonaws.com/amazon_reviews/amazon_reviews_2015.snappy.parquet')
+    FROM s3('https://datasets-documentation.s3.eu-west-3.amazonaws.com/amazon_reviews/amazon_reviews_2015.snappy.parquet', NOSIGN)
     WHERE position(review_body, 'awesome') > 0
     GROUP BY product_id
     ORDER BY mention_count DESC
@@ -109,7 +109,7 @@ S3_PARQUET_QUERIES = [
         count() as transactions,
         avg(price) as avg_price,
         max(price) as max_price
-    FROM s3('https://datasets-documentation.s3.eu-west-3.amazonaws.com/uk-house-prices/parquet/house_prices_*.parquet')
+    FROM s3('https://datasets-documentation.s3.eu-west-3.amazonaws.com/uk-house-prices/parquet/house_prices_*.parquet', NOSIGN)
     GROUP BY yr
     ORDER BY yr DESC
     LIMIT 20
@@ -120,7 +120,7 @@ S3_PARQUET_QUERIES = [
         count() as user_count,
         avg(toInt64OrZero(toString(Reputation))) as avg_reputation,
         max(toInt64OrZero(toString(Reputation))) as max_reputation
-    FROM s3('https://datasets-documentation.s3.eu-west-3.amazonaws.com/stackoverflow/parquet/users.parquet')
+    FROM s3('https://datasets-documentation.s3.eu-west-3.amazonaws.com/stackoverflow/parquet/users.parquet', NOSIGN)
     WHERE Location != ''
     GROUP BY Location
     ORDER BY user_count DESC
@@ -133,7 +133,7 @@ S3_PARQUET_QUERIES = [
         count() as reviews,
         avg(star_rating) as avg_stars,
         countIf(verified_purchase) as verified_count
-    FROM s3('https://datasets-documentation.s3.eu-west-3.amazonaws.com/amazon_reviews/amazon_reviews_2015.snappy.parquet')
+    FROM s3('https://datasets-documentation.s3.eu-west-3.amazonaws.com/amazon_reviews/amazon_reviews_2015.snappy.parquet', NOSIGN)
     GROUP BY marketplace, product_category
     ORDER BY reviews DESC
     LIMIT 50
@@ -143,7 +143,7 @@ S3_PARQUET_QUERIES = [
         VoteTypeId,
         toYear(toDateTime64OrZero(toString(CreationDate), 3)) as year,
         count() as vote_count
-    FROM s3('https://datasets-documentation.s3.eu-west-3.amazonaws.com/stackoverflow/parquet/votes.parquet')
+    FROM s3('https://datasets-documentation.s3.eu-west-3.amazonaws.com/stackoverflow/parquet/votes.parquet', NOSIGN)
     WHERE year > 2000
     GROUP BY VoteTypeId, year
     ORDER BY year DESC, vote_count DESC
@@ -379,7 +379,7 @@ def main():
         list_datasets()
         return
 
-    conn_kwargs = dict(user=args.user, password=args.password, secure=args.secure)
+    conn_kwargs = dict(user=args.user, password=args.password, secure=args.secure, settings=DATA_TOOLS_SETTINGS)
     nyc_taxi.REFACTOR_CPU_OPS = args.refactor_cpu_ops
 
     # ── Probe capabilities ──────────────────────────────────────────

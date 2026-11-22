@@ -106,11 +106,13 @@ def probe(client: Client) -> Capabilities:
     except Exception:
         caps.has_s3_storage_policy = False
 
+    # A public bucket: NOSIGN, since recent servers refuse their own credentials in user queries
+    # (s3_allow_server_credentials_in_user_queries).
     log.info("probing s3() table function (5s timeout)")
     try:
         client.execute(
             "SELECT 1 FROM s3('https://datasets-documentation.s3.eu-west-3.amazonaws.com/"
-            "amazon_reviews/amazon_reviews_2015.snappy.parquet') LIMIT 0",
+            "amazon_reviews/amazon_reviews_2015.snappy.parquet', NOSIGN) LIMIT 0",
             settings={"max_execution_time": 5},
         )
         caps.has_s3_function = True

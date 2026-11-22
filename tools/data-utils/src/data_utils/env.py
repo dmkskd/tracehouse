@@ -106,6 +106,10 @@ def add_connection_args(parser: argparse.ArgumentParser) -> None:
     parser.add_argument("--user-skew", type=float, default=float(os.environ.get("CH_USER_SKEW", "0")), help="Skew user distribution: 0 = equal, 1 = Zipf, 2+ = very skewed (default: $CH_USER_SKEW or 0)")
 
 
+# Tags every data-tools query in system.query_log; a query's own log_comment setting overrides it.
+DATA_TOOLS_SETTINGS = {"log_comment": "tracehouse:data-tools"}
+
+
 def make_client(args: argparse.Namespace, **kwargs) -> Client:
     """Create a clickhouse-driver Client from parsed args."""
     return Client(
@@ -115,6 +119,7 @@ def make_client(args: argparse.Namespace, **kwargs) -> Client:
         password=args.password,
         secure=args.secure,
         compression=kwargs.pop("compression", False),
+        settings={**DATA_TOOLS_SETTINGS, **kwargs.pop("settings", {})},
         **kwargs,
     )
 

@@ -26,6 +26,7 @@ const styles = css`
   .candidates { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 10px; }
   .candidates button { display: flex; align-items: center; padding: 4px 9px; font-size: 12px; border-radius: 5px; }
   .candidates .object-symbol { font-size: 15px; margin-right: 6px; }
+  .candidates .more { color: var(--accent-blue, #58a6ff); border-style: dashed; }
   .close { margin-left: auto; border: 0; background: none; color: var(--text-muted); padding: 2px 6px; }
 `;
 
@@ -39,13 +40,18 @@ export function ObjectGuides({ graph, cards, onFocus, onInvestigate }: {
   const [active, setActive] = useState<Guide | null>(null);
   const [picked, setPicked] = useState<GraphNode[]>([]);
   const [filter, setFilter] = useState('');
-  const start = (guide: Guide | null) => { setActive(guide); setPicked([]); setFilter(''); };
+  // The first MAX_CANDIDATES matches show; "+N more" shows the rest until the question or search changes.
+  const [showAll, setShowAll] = useState(false);
+  const search = (text: string) => { setFilter(text); setShowAll(false); };
+  const start = (guide: Guide | null) => { setActive(guide); setPicked([]); search(''); };
   const pick = active?.picks[picked.length];
   const candidates = pick ? pick.candidates(graph).filter(n => n.name.toLowerCase().includes(filter.trim().toLowerCase())) : [];
+  const shown = showAll ? candidates : candidates.slice(0, MAX_CANDIDATES);
+  const hidden = candidates.length - shown.length;
   const choose = (node: GraphNode) => {
     if (!active) return;
     const chosen = [...picked, node];
-    if (chosen.length < active.picks.length) { setPicked(chosen); setFilter(''); return; }
+    if (chosen.length < active.picks.length) { setPicked(chosen); search(''); return; }
     if (active.action === 'investigate') onInvestigate(investigationFor(chosen[0], chosen[1]));
     else onFocus(node.key);
     start(null);
@@ -63,12 +69,13 @@ export function ObjectGuides({ graph, cards, onFocus, onInvestigate }: {
       <div className="picker-head">
         {picked.map(node => <span key={node.key} className="picked">{node.name} ·</span>)}
         <span>{pick.label}</span>
-        <input type="search" aria-label={`Find ${pick.label.toLowerCase()}`} placeholder={`Find ${pick.label.toLowerCase()}`} value={filter} onChange={e => setFilter(e.target.value)} autoFocus />
-        <span className="muted">{candidates.length} in the catalog</span>
+        <input type="search" aria-label={`Find ${pick.label.toLowerCase()}`} placeholder={`Find ${pick.label.toLowerCase()}`} value={filter} onChange={e => search(e.target.value)} autoFocus />
+        <span className="muted">{hidden > 0 ? `${shown.length} of ${candidates.length} shown` : `${candidates.length} in the catalog`}</span>
         <button className="close" aria-label="Close question" onClick={() => start(null)}>✕</button>
       </div>
-      <div className="candidates">{candidates.slice(0, MAX_CANDIDATES).map(node =>
+      <div className="candidates">{shown.map(node =>
         <button key={node.key} onClick={() => choose(node)}>{cards.get(node.key) && <ObjectTypeIcon card={cards.get(node.key)!} />}{node.name}</button>)}
+        {hidden > 0 && <button className="more" onClick={() => setShowAll(true)} title="Show every match">+{hidden} more</button>}
         {!candidates.length && <span className="muted">None in this catalog.</span>}
       </div>
     </div>}

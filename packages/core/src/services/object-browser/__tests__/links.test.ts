@@ -2,8 +2,9 @@ import { describe, expect, it } from 'vitest';
 import { projectGraph } from '../projections/graph.js';
 import { describeDetail } from '../presentation/details.js';
 import { describeObjects } from '../presentation/cards.js';
+import { withEmptyAccessNotices } from '../presentation/layout.js';
 import { focusGraphFrom } from '../projections/focus.js';
-import { describeMissingLink, describePrincipalContext, objectLinkFor, objectLinkUrl, parseObjectLink, resolveObjectLink, withPrincipalContext, type ObjectLink } from '../presentation/links.js';
+import { describeMissingLink, describeProvenance, summarizePrincipalPaths, objectLinkFor, objectLinkUrl, parseObjectLink, resolveObjectLink, withPrincipalContext, type ObjectLink } from '../presentation/links.js';
 import type { Capture, ObjectKind, Relationship, Source } from '../model/types.js';
 
 const record = (key: string, kind: ObjectKind, source: Source, attributes: Record<string, unknown> = {}) =>
@@ -107,12 +108,27 @@ describe('object links', () => {
       link('analyst', 'all', 'grant', 'grants', { is_partial_revoke: 0 }), link('analyst', 'revoke', 'grant', 'grants', { is_partial_revoke: 1 }),
       link('all', 'audit', 'candidate-scope', 'grants', { is_partial_revoke: 0 }), link('revoke', 'audit', 'candidate-scope', 'grants', { is_partial_revoke: 1 })] });
     const narrowed = withPrincipalContext(focusGraphFrom(graph, 'audit'), 'bob', 'audit');
-    expect({ paths: narrowed.paths, revokes: narrowed.revokes, inactiveRoles: narrowed.inactiveRoles }).toEqual({ paths: 1, revokes: 1, inactiveRoles: ['analyst'] });
-    expect(describePrincipalContext(narrowed)).toBe('1 grant path · 1 revoke · analyst not a default role');
+    // The revoke sits on the same role as the database grant: that grant is cancelled for the table.
+    expect({ paths: narrowed.paths, revokes: narrowed.revokes, inactiveRoles: narrowed.inactiveRoles, cancelled: narrowed.cancelled })
+      .toEqual({ paths: 0, revokes: 1, inactiveRoles: ['analyst'], cancelled: [{ holder: 'analyst', grant: 'all' }] });
+    expect(narrowed.cancelledEdges.map(key => narrowed.graph.edges.find(e => e.key === key)).map(e => `${e?.from}>${e?.to}`)).toEqual(['all>audit']);
+    expect(describeProvenance(narrowed, 'bob', 'demo.audit').text)
+      .toBe("No grant path left: analyst's all is revoked for demo.audit. analyst is not active when bob logs in; it needs SET ROLE analyst");
     const revoke = describeObjects(graph).get('revoke')!;
     expect(revoke.title).toBe('REVOKE SELECT');
     expect(revoke.flags).toContain('revoke');
     const rows = describeDetail(graph.nodes.find(n => n.key === 'audit')!, graph).sections.flatMap(s => s.kind === 'relationships' ? s.groups.flatMap(g => g.rows) : []);
     expect(rows.find(r => r.relation === 'Revoked by')?.items.map(i => i.key)).toEqual(['revoke']);
+  });
+  it('says in words when a provenance has no grant path, and marks its empty access columns', () => {
+    const graph = projectGraph(capture);
+    // carol holds no role or privilege that names trips.
+    const none = describeProvenance(summarizePrincipalPaths(graph, 'carol', 'trips'), 'carol', 'demo.trips');
+    expect(none.tone).toBe('warning');
+    expect(none.text).toBe('No grant path: no role or privilege of carol names demo.trips');
+    expect(none.parts.filter(p => p.kind === 'name').map(p => p.text)).toEqual(['carol', 'demo.trips']);
+    expect(describeProvenance(summarizePrincipalPaths(graph, 'alice', 'trips'), 'alice', 'demo.trips').text).toBe('Granted through reader');
+    expect(withEmptyAccessNotices([{ title: 'Roles', band: 'access', keys: [] }, { title: 'Tables', band: 'data', keys: [] }], 'None on a path'))
+      .toEqual([{ title: 'Roles', band: 'access', keys: [], notices: ['None on a path'] }, { title: 'Tables', band: 'data', keys: [] }]);
   });
 });

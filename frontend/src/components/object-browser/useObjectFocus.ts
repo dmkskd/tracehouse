@@ -1,7 +1,7 @@
 import { useMemo, useState } from 'react';
 import { stepTo, type FocusTrail } from './focusTrail';
 import { useUserPreferenceStore } from '../../stores/userPreferenceStore';
-import { describeDetail, describeObjects, focusGraphFrom, layoutFocus, objectLinkFor, objectLinkUrl, withPrincipalContext, withRoutes, essentialEdges, type ObjectCard, type ObjectGraph } from '@tracehouse/core/services/object-browser';
+import { describeDetail, describeObjects, focusGraphFrom, layoutFocus, objectLinkFor, objectLinkUrl, withPrincipalContext, withRoutes, essentialEdges, type ObjectCard, type ObjectGraph, type PrincipalContextSummary } from '@tracehouse/core/services/object-browser';
 
 
 /** Focus modal state. `trail` runs from where focus opened to the current `origin`;
@@ -26,6 +26,10 @@ export function useObjectFocus(project: (focus: string | null) => ObjectGraph | 
     return activeContext ? withPrincipalContext(lineage, activeContext, origin) : { graph: lineage };
   }, [source, origin, activeContext]);
   const graph = focused?.graph ?? null;
+  // What the paths to the table hold, when a user is in context (withPrincipalContext).
+  const contextSummary = useMemo((): PrincipalContextSummary | null => focused && 'revokes' in focused
+    ? { paths: focused.paths, revokes: focused.revokes, inactiveRoles: focused.inactiveRoles, grantedThrough: focused.grantedThrough,
+      revokedOn: focused.revokedOn, cancelled: focused.cancelled, cancelledEdges: focused.cancelledEdges } : null, [focused]);
   const cards = useMemo(() => source ? describeObjects(source) : new Map<string, ObjectCard>(), [source]);
   // Essential lines drop broad privileges' per-table lines before layout; the view draws their stubs.
   const drawn = useMemo(() => graph && essential ? essentialEdges(graph) : { graph, stubs: [] as string[] }, [graph, essential]);
@@ -46,7 +50,7 @@ export function useObjectFocus(project: (focus: string | null) => ObjectGraph | 
   }, [source, origin, chainUser]);
   return {
     open: open && !!source?.nodes.some(n => n.key === origin),
-    trail, origin, chainUser, returnUrl, graph: drawn.graph, context: activeContext, contextSummary: focused && 'revokes' in focused ? { paths: focused.paths, revokes: focused.revokes, inactiveRoles: focused.inactiveRoles } : null, stubs: drawn.stubs, cards, columns: layout.columns, routes: layout.routes, detail,
+    trail, origin, chainUser, returnUrl, graph: drawn.graph, context: activeContext, contextSummary, stubs: drawn.stubs, cards, columns: layout.columns, routes: layout.routes, detail,
     /** Name of any object in the current projection, for the trail. */
     nameOf: (key: string) => source?.nodes.find(n => n.key === key)?.name ?? key,
     openAt: (key: string, principal: string | null = null) => {

@@ -180,6 +180,11 @@ export function withSourceNotices(columns: LayoutColumn[], coverage: Coverage[])
   return columns.map((column, i) => notices.has(i) ? { ...column, notices: notices.get(i) } : column);
 }
 
+/** Empty access columns of a provenance view say so, so a gap reads as a result. */
+export function withEmptyAccessNotices(columns: LayoutColumn[], notice: string): LayoutColumn[] {
+  return columns.map(column => column.band === 'access' && column.keys.length === 0 && !column.notices?.length ? { ...column, notices: [notice] } : column);
+}
+
 const WAYPOINT = 'waypoint:';
 /** A key `routeEdges` placed in a column for a line to pass through. */
 export const isWaypoint = (key: string) => key.startsWith(WAYPOINT);

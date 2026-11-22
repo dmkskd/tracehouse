@@ -10,6 +10,7 @@
 import React from 'react';
 import { useAppLocation, useNavigate } from '../../hooks/useAppLocation';
 import type { LinkOrigin } from '../../hooks/useReturnToOrigin';
+import { BackButton } from './BackButton';
 
 type FromState = LinkOrigin;
 
@@ -24,21 +25,5 @@ export const BackLink: React.FC<{ from?: FromState }> = ({ from: fromProp }) => 
 
   if (!from) return null;
 
-  return (
-    <button
-      type="button"
-      className="tab dashboard-header-action dashboard-back-button"
-      onClick={() => navigate(from.path)}
-      aria-label={`Back to ${from.label}`}
-      title={`Back to ${from.label}`}
-      style={{
-        display: 'inline-flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0,
-        width: 32, height: 32, padding: 0, fontSize: 15, borderRadius: 8, cursor: 'pointer', fontFamily: 'inherit',
-        color: 'var(--text-secondary)', background: 'var(--bg-secondary)', border: '1px solid var(--border-primary)',
-        boxShadow: '0 1px 2px rgba(0, 0, 0, 0.06)',
-      }}
-    >
-      <span aria-hidden="true">←</span>
-    </button>
-  );
+  return <BackButton label={`Back to ${from.label}`} onClick={() => navigate(from.path)} />;
 };

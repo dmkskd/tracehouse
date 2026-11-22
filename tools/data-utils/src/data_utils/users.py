@@ -26,6 +26,8 @@ from dataclasses import dataclass
 
 from clickhouse_driver import Client
 
+from data_utils.env import DATA_TOOLS_SETTINGS
+
 # Static list of friendly user names — max 10.
 # Prefixed with th_ (tracehouse) to avoid collisions with real users.
 TEST_USER_NAMES = [
@@ -137,6 +139,7 @@ def make_user_client(args, user: TestUser) -> Client:
         user=user.name,
         password=user.password,
         secure=args.secure,
+        settings=DATA_TOOLS_SETTINGS,
     )
 
 

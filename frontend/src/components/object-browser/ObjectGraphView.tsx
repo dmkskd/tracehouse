@@ -20,10 +20,14 @@ type Point = { left: number; right: number; y: number };
  * collection, access or layout rules. `routes` (routeEdges) pass lines through
  * waypoints, `highlight` dims lines outside the hovered card's lineage, and
  * `diagramStyle` picks how cards and lines are drawn (DIAGRAM_STYLES). */
-export function ObjectGraphView({ graph, cards, columns, selected, onSelect, onFocus, onOpen, actions, showAll = false, origin, routes, stubs = NO_STUBS, highlight = false, diagramStyle = 'cards' }: {
+export function ObjectGraphView({ graph, cards, columns, selected, onSelect, onFocus, onOpen, actions, caption, cancelledEdges = NO_STUBS, showAll = false, origin, routes, stubs = NO_STUBS, highlight = false, diagramStyle = 'cards' }: {
   graph: ObjectGraph; cards: Map<string, ObjectCard>; columns: LayoutColumn[]; selected: string | null;
   onSelect: (key: string) => void; onFocus?: (key: string) => void; onOpen?: (key: string) => void;
-  actions?: ReactNode; showAll?: boolean; origin?: string | null;
+  actions?: ReactNode;
+  /** Shown under the cards, inside the scrolling diagram: a line about what the diagram shows. */
+  caption?: ReactNode;
+  /** Links of grants a revoke on the same holder cancels: drawn dashed and faint. */
+  cancelledEdges?: readonly string[]; showAll?: boolean; origin?: string | null;
   routes?: Map<string, string[]>; stubs?: string[]; highlight?: boolean; diagramStyle?: ObjectDiagramStyle;
 }) {
   const style = DIAGRAM_STYLES[diagramStyle];
@@ -136,8 +140,9 @@ export function ObjectGraphView({ graph, cards, columns, selected, onSelect, onF
         {geometry.paths.map(p => {
           // A partial revoke is drawn as its own kind of line: it removes access, it does not grant it.
           const color = p.revoke ? REVOKE_EDGE_STYLE : EDGE_STYLES[p.family], weight = style.weight(p.family);
-          return <path key={p.key} d={p.d} fill="none" stroke={color.stroke} strokeWidth={weight.width} strokeDasharray={color.dash}
-            markerEnd={color.arrow && weight.arrow ? `url(#${arrowId})` : undefined} opacity={linked(p.from, p.to) ? weight.opacity : weight.opacity / 6} />;
+          const cancelled = cancelledEdges.includes(p.key);
+          return <path key={p.key} d={p.d} fill="none" stroke={color.stroke} strokeWidth={weight.width} strokeDasharray={cancelled ? '2 4' : color.dash}
+            markerEnd={color.arrow && weight.arrow ? `url(#${arrowId})` : undefined} opacity={(linked(p.from, p.to) ? weight.opacity : weight.opacity / 6) * (cancelled ? .5 : 1)} />;
         })}
         {geometry.bracket && <path d={`M${geometry.bracket.x} ${geometry.bracket.top} L${geometry.bracket.x} ${geometry.bracket.bottom}`}
           stroke={EDGE_STYLES.access.stroke} strokeWidth={2} strokeLinecap="round" opacity={.28} />}
@@ -159,7 +164,7 @@ export function ObjectGraphView({ graph, cards, columns, selected, onSelect, onF
             : <div key={item} className="waypoint" ref={element => { if (element) elements.current.set(item, element);else elements.current.delete(item); }} />)}</div>
         </div>;
       })}
-    </div></div></div>
+    </div></div>{caption && <div className="graph-caption">{caption}</div>}</div>
     <ZoomControls sticky name="object graph" zoom={zoom} canZoomOut={zoom > .5} canZoomIn={zoom < 2}
       onZoomOut={() => setZoom(value => Math.max(.5, value - .25))} onZoomIn={() => setZoom(value => Math.min(2, value + .25))} onReset={() => setZoom(1)}>{actions}</ZoomControls>
     </div>

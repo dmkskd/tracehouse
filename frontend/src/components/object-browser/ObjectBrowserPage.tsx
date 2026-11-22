@@ -1,7 +1,8 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useUrlState } from '../../hooks/useUrlState';
-import { describeObjects, essentialEdges, isColumnNotice, layoutCatalog, withRoutes, withSourceNotices, objectKey, projectGraph, projectCatalogGraph, provenancePaths, searchGraph, withoutDefaultUser, parseObjectLink, resolveObjectLink, describeMissingLink, describePrincipalContext, OBJECT_LINK_PARAMS, type ObjectCard } from '@tracehouse/core/services/object-browser';
+import { describeObjects, essentialEdges, isColumnNotice, layoutCatalog, withRoutes, withSourceNotices, objectKey, projectGraph, projectCatalogGraph, summarizePrincipalPaths, describeProvenance, withEmptyAccessNotices, searchGraph, withoutDefaultUser, parseObjectLink, resolveObjectLink, describeMissingLink, OBJECT_LINK_PARAMS, type ObjectCard, type ProvenanceLine } from '@tracehouse/core/services/object-browser';
 import { useReturnToOrigin } from '../../hooks/useReturnToOrigin';
+import { BackButton } from '../common/BackButton';
 import { useNavigate } from '../../hooks/useAppLocation';
 import { ObjectTypeIcon } from './ObjectCard';
 import { ObjectGraphView } from './ObjectGraphView';
@@ -26,6 +27,12 @@ const urlSchema = {
   ob_user: { type: 'string', default: '' },
   ob_role: { type: 'string', default: '' },
 } as const;
+/** A path summary line, with names and the lead styled (core describeProvenance). */
+function ProvenanceSummary({ line }: { line: ProvenanceLine }) {
+  return <p className={`provenance-summary ${line.tone}`} role="status">
+    {line.parts.map((part, i) => part.kind === 'plain' ? part.text : <span key={i} className={part.kind}>{part.text}</span>)}</p>;
+}
+
 export function ObjectBrowserPage() {
   const { state: url, update } = useUrlState(urlSchema);
   const { capture, error, loading, collect, browse, connected } = useObjectCapture();
@@ -52,13 +59,19 @@ export function ObjectBrowserPage() {
     if (!searched) return { ...withRoutes(null, [], false), graph: null, stubs: [] as string[] };
     const drawn = lines.essential ? essentialEdges(searched.graph) : { graph: searched.graph, stubs: [] as string[] };
     // A source without SELECT is explained in the column its objects would fill.
-    const columns = withSourceNotices(layoutCatalog(drawn.graph, selectedKey), capture?.coverage ?? []);
+    const withCoverage = withSourceNotices(layoutCatalog(drawn.graph, selectedKey), capture?.coverage ?? []);
+    // In a provenance capture an empty Roles or Privileges column is a result, not missing data.
+    const columns = capture?.mode === 'catalog' ? withCoverage : withEmptyAccessNotices(withCoverage, 'None on a path');
     return { ...withRoutes(drawn.graph, columns, lines.route), ...drawn };
   }, [searched, selectedKey, lines.route, lines.essential, capture]);
   // Provenance paths answer the provenance question; a catalog capture has none to show.
-  const paths = useMemo(() => capture && graph && capture.mode !== 'catalog' ? provenancePaths(graph,
-    objectKey(capture.investigation.connection, 'user', capture.investigation.principal),
-    objectKey(capture.investigation.connection, 'table', capture.investigation.database, capture.investigation.table)) : [], [capture, graph]);
+  // A provenance capture: what the configured paths from its user to its table hold, in words.
+  const provenance = useMemo(() => {
+    if (!capture || !graph || capture.mode === 'catalog') return null;
+    const { connection, principal, database, table } = capture.investigation;
+    const summary = summarizePrincipalPaths(graph, objectKey(connection, 'user', principal), objectKey(connection, 'table', database, table));
+    return { line: describeProvenance(summary, principal, `${database}.${table}`), cancelledEdges: summary.cancelledEdges };
+  }, [capture, graph]);
   const chosen = graph?.nodes.find(n => n.key === selectedKey);
   // Coverage not already shown in a diagram column.
   const notes = capture?.coverage.filter(c => !isColumnNotice(c)) ?? [];
@@ -136,19 +149,18 @@ export function ObjectBrowserPage() {
     {capture && graph && <>
       {(capture.mode !== 'catalog' || notes.some(c => c.state !== 'readable' || c.reason)) && <div className="panel">
         {/* Same trail shape as the focus header: the catalog is the way back. */}
-        {capture.mode !== 'catalog' && <h2 className="scope-trail"><button className="focus-start" title="Back to the catalog" onClick={() => { setSelected(null);void browse(); }}>Catalog</button>
+        {capture.mode !== 'catalog' && <div className="scope-trail-row"><BackButton label="Back to the catalog" onClick={() => { setSelected(null);void browse(); }} /><h2 className="scope-trail"><button className="focus-start" title="Back to the catalog" onClick={() => { setSelected(null);void browse(); }}>Catalog</button>
           <span className="focus-separator" aria-hidden="true">›</span>
-          <span>Provenance · {capture.investigation.principal} → {capture.investigation.database}.{capture.investigation.table} · {capture.investigation.operation}</span></h2>}
+          <span>Provenance · {capture.investigation.principal} → {capture.investigation.database}.{capture.investigation.table} · {capture.investigation.operation}</span></h2></div>}
         <div className="coverage">{notes.filter(c => c.state !== 'readable').map(c => <span className="badge warn" key={c.source}>{c.source}: {c.state}</span>)}</div>
         {notes.filter(c => c.reason).map(c => <p className="diagnostic" key={c.source}>{c.source}: {c.reason}</p>)}
       </div>}
       <div className="panel catalog-panel">
         <ObjectGraphView graph={catalogLayout.graph ?? graph} cards={cards} columns={catalogLayout.columns} routes={catalogLayout.routes} stubs={catalogLayout.stubs} highlight={lines.highlight} selected={selectedKey} onSelect={key => choose(key === selectedKey ? null : key)}
           onFocus={key => { choose(key);focus.openAt(key); }}
+          caption={provenance && <ProvenanceSummary line={provenance.line} />} cancelledEdges={provenance?.cancelledEdges}
           diagramStyle={diagramStyle} actions={<>{selectedKey && <button onClick={() => choose(null)}>Clear selection</button>}<DiagramMenu /></>} />
         {!graph.nodes.length && <p>No object records observed. Inspect source coverage above.</p>}
-        {capture.mode !== 'catalog' && <><h3>Common-host provenance paths</h3><p className="muted">{paths.length ? `${paths.length} bounded candidate path(s); exclusions and role activation remain evidence, not evaluated access.` : 'No common-host candidate path observed. This is not a denial result.'}</p>
-        {paths.map((p, i) => <p className="muted" key={i}>{p.edges.map(k => graph.edges.find(e => e.key === k)?.label).join(' / ')} · hosts: {p.hosts.join(', ')}</p>)}</>}
       </div>
     </>}
     {!capture && !loading && <p className="muted">The catalog loads when this page opens. Refresh explicitly to collect again; no background polling runs.</p>}
@@ -157,7 +169,7 @@ export function ObjectBrowserPage() {
         <div className="focus-header">
           <FocusTrailHeader trail={focus.trail} cards={focus.cards} nameOf={focus.nameOf} onStep={focus.reroot} />
           {focus.context && <span className="focus-context" title="Access objects on this user's configured paths to the table. Other principals are hidden.">
-            for {focus.nameOf(focus.context)} · {describePrincipalContext(focus.contextSummary)}
+            for {focus.nameOf(focus.context)}
             <button onClick={focus.clearContext}>Show all principals</button></span>}
           <div className="focus-actions">
             <button className="modal-close" aria-label="Close focus" title={link && from ? `Close and return to ${from.label} (Esc)` : 'Close (Esc)'} onClick={closeFocus}>✕</button>
@@ -165,6 +177,9 @@ export function ObjectBrowserPage() {
         </div>
         <div className="focus-body">
         {focus.graph && <ObjectGraphView graph={focus.graph} cards={focus.cards} columns={focus.columns} selected={focus.origin} origin={focus.origin} onSelect={focus.reroot} onOpen={focus.openDetail} showAll
+          cancelledEdges={focus.contextSummary?.cancelledEdges}
+          caption={focus.context && focus.contextSummary && focus.origin
+            && <ProvenanceSummary line={describeProvenance(focus.contextSummary, focus.nameOf(focus.context), focus.nameOf(focus.origin))} />}
           routes={focus.routes} stubs={focus.stubs} highlight={lines.highlight} diagramStyle={diagramStyle}
           actions={<DiagramMenu />} />}
         {!focus.graph?.edges.length && <p className="muted">No relationships observed in this capture.</p>}

@@ -127,6 +127,14 @@ export const page = css`
   .focus-body { padding: 0 24px 24px; }
   .coverage { display: flex; gap: 7px; flex-wrap: wrap; margin: 14px 0; }
   .diagnostic { margin: 8px 0; font-size: 12px; color: var(--text-secondary); }
+  .scope-trail-row { display: flex; align-items: center; gap: 12px; }
+  .scope-trail-row .scope-trail { margin: 0; }
+  .graph-caption { padding: 4px 8px 0; max-width: 900px; }
+  .provenance-summary { width: fit-content; margin: 8px 0 0; padding: 8px 12px; border-radius: 6px; font-size: 13px; color: var(--text-primary); }
+  .provenance-summary.warning { background: rgba(var(--color-warning-rgb, 186, 145, 63), 0.12); border: 1px solid rgba(var(--color-warning-rgb, 186, 145, 63), 0.45); }
+  .provenance-summary.info { background: var(--bg-secondary); border: 1px solid var(--border-secondary); }
+  .provenance-summary .lead { font-weight: 600; }
+  .provenance-summary .name { font-family: monospace; font-weight: 600; }
   .link-missing { display: flex; align-items: flex-start; justify-content: space-between; gap: 16px; margin: 12px 0; padding: 12px 16px; border: 1px solid rgba(var(--color-warning-rgb, 186, 145, 63), 0.45); border-radius: 6px; background: rgba(var(--color-warning-rgb, 186, 145, 63), 0.1); }
   .link-missing-text { display: flex; flex-direction: column; gap: 4px; font-size: 13px; color: var(--text-secondary); }
   .link-missing-text strong { font-size: 14px; color: var(--text-primary); }

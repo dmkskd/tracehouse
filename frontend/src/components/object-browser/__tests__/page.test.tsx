@@ -243,7 +243,9 @@ describe('object browser entry point', () => {
       renderPage({ path: '/analytics', label: 'Analytics' });
       const dialog = screen.getByRole('dialog', { name: 'Object focus' });
       expect(within(dialog).getByRole('heading', { level: 2 }).textContent).toContain('demo.trips');
-      expect(within(dialog).getByText(/for alice · 1 grant path/)).toBeTruthy();
+      expect(within(dialog).getByText(/for alice/)).toBeTruthy();
+      // The path summary sits under the diagram: reader grants the privilege that names trips.
+      expect(within(dialog).getByRole('status').textContent).toBe('Granted through reader');
       expect(within(dialog).getByRole('button', { name: /alice user/i })).toBeTruthy();
       expect(within(dialog).queryByRole('button', { name: /bob user/i })).toBeNull();
       fireEvent.click(within(dialog).getByRole('button', { name: 'Show all principals' }));
@@ -261,7 +263,7 @@ describe('object browser entry point', () => {
       expect(screen.queryByRole('dialog')).toBeNull();
       // The similar user opens the table for that user.
       fireEvent.click(within(alert).getByRole('button', { name: 'demo.trips for alice' }));
-      expect(within(screen.getByRole('dialog', { name: 'Object focus' })).getByText(/for alice · 1 grant path/)).toBeTruthy();
+      expect(within(screen.getByRole('dialog', { name: 'Object focus' })).getByRole('status').textContent).toBe('Granted through reader');
       state.url = { ob_selected: '', ob_kind: 'user', ob_user: 'bob' };
       cleanup();renderPage();
       fireEvent.click(within(screen.getByRole('dialog', { name: 'Object focus' })).getByRole('button', { name: 'Close focus' }));
@@ -286,5 +288,19 @@ describe('object browser entry point', () => {
       fireEvent.click(within(openIn).getByRole('button', { name: 'Queries by alice on demo.trips' }));
       expect(screen.getByText('/queries?user=alice&tableName=demo.trips from /objects?ob_kind=table&ob_db=demo&ob_tbl=trips&ob_user=alice')).toBeTruthy();
     });
+  });
+  it('says when the guide picker shows only part of the catalog, and shows the rest on request', () => {
+    const table = (i: number) => ({ key: `t${i}`, name: `db.t${i}`, kind: 'table' as const, source: 'tables' as const, host: 'ch-1',
+      attributes: { database: 'db', name: `t${i}`, engine: 'MergeTree' } });
+    state.capture = { schemaVersion: 1, mode: 'catalog', investigation: { connection: 'test', principal: '', database: '', table: '', operation: 'SELECT' },
+      startedAt: '', completedAt: '', hosts: [{ host: 'ch-1', version: '26.9.7.9' }], coverage: [], verdict: { kind: 'not-checked', reason: '' },
+      observations: Array.from({ length: 15 }, (_, i) => table(i)), relationships: [] };
+    renderPage();
+    fireEvent.click(screen.getByRole('button', { name: /Who can read this table\?/ }));
+    const picker = screen.getByRole('group', { name: 'Who can read this table?' });
+    expect(within(picker).getByText('12 of 15 shown')).toBeTruthy();
+    fireEvent.click(within(picker).getByRole('button', { name: '+3 more' }));
+    expect(within(picker).getByText('15 in the catalog')).toBeTruthy();
+    expect(within(picker).getByRole('button', { name: /db\.t14/ })).toBeTruthy();
   });
 });
