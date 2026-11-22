@@ -178,9 +178,11 @@ export async function collectDefinitionReferences(adapter: IClickHouseAdapter, r
   if (queue.length > MAX_DEFINITIONS) notes.push(`Definition references bounded to ${MAX_DEFINITIONS} of ${queue.length} definitions.`);
   const references: DefinitionReference[] = [], unanalyzed: UnanalyzedQuery[] = [];
   const failures: string[] = [];
+  // EXPLAIN runs as its own statement; executeQuery would append FORMAT, which EXPLAIN AST parses as part of the query.
   const explain: Explain = async sql => {
-    const rows = await adapter.executeQuery<{ explain: string }>(tagQuery(sql, 'TraceHouse:Objects:references'));
-    check();return rows.map(r => String(r.explain));
+    if (!adapter.executeRawQuery) throw new Error('connection cannot run EXPLAIN statements');
+    const lines = await adapter.executeRawQuery(tagQuery(sql, 'TraceHouse:Objects:references'));
+    check();return lines;
   };
   const work = queue.slice(0, MAX_DEFINITIONS);
   const worker = async () => {

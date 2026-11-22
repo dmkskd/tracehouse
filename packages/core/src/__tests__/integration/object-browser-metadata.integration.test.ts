@@ -173,12 +173,29 @@ describe('Object browser metadata extraction', { tags: ['security', 'storage'] }
       const node = graph.nodes.find(n => n.key === objectKey(input.connection, 'table', fixture.db, table))!;
       const statement = describeDetail(node, graph).sections.flatMap(s => s.kind === 'statement' ? [s.statement] : []).find(s => s.title === 'Tables read')!;
       expect(statement.external).toBeTruthy();
-      expect((await loadDetailStatement(adapter, statement.sql)).split('\n')).toContain(expected);
+      expect((await loadDetailStatement(adapter, statement)).split('\n')).toContain(expected);
     }
     await client.command({ query: 'SYSTEM FLUSH LOGS' });
     const requested = await effects('TraceHouse:Objects:detail');
     expect(Number(requested.http)).toBeGreaterThan(0);
     expect(Number(requested.scalars)).toBeGreaterThan(0);
+  });
+  it('collects every table link for a read-only account without CREATE TEMPORARY TABLE', async () => {
+    const restricted = asUser(fixture.catalog);
+    expect(await restricted.executeRawQuery!(q('CHECK GRANT CREATE TEMPORARY TABLE ON *.*'))).toEqual(['0']);
+    const scoped = await collectObjects(restricted, input, { mode: 'catalog' });
+    const links = (c: Capture) => c.relationships.filter(e => e.evidence.method !== undefined)
+      .map(e => JSON.stringify([e.from, e.to, e.kind, e.evidence.method, e.evidence.location ?? null])).sort();
+    expect(links(scoped)).toEqual(links(capture));
+    expect(scoped.coverage.find(source => source.source === 'tables')!.reason ?? '').not.toContain('failed');
+  });
+  it('returns EXPLAIN text over HTTP as ClickHouse produced it', async () => {
+    // Quotes, a backslash and a line break inside one row, compared with the JSON rows of the same EXPLAIN.
+    // Explicit FROM: inside SELECT … FROM (EXPLAIN …) ClickHouse adds FROM system.one to a query without one.
+    for (const sql of [`EXPLAIN AST SELECT 'it''s', 'a\\\\b' FROM system.one`, `EXPLAIN SYNTAX SELECT 'it''s' FROM system.one`]) {
+      const json = await (await client.query({ query: `SELECT explain FROM (${sql})`, format: 'JSONEachRow' })).json<{ explain: string }>();
+      expect(await asUser(fixture.catalog).executeRawQuery!(q(sql))).toEqual(json.map(row => row.explain));
+    }
   });
   it('reads MV dependency pairs and verifies structured target availability or absence', async () => {
     const tables = await read(fixture.probes.tables);
@@ -269,12 +286,12 @@ describe('Object browser metadata extraction', { tags: ['security', 'storage'] }
     for (const [key, patterns] of expected) {
       const statements = statementsFor(key);
       expect(statements).toHaveLength(patterns.length);
-      for (const [i, statement] of statements.entries()) expect(await loadDetailStatement(adapter, statement.sql)).toMatch(patterns[i]);
+      for (const [i, statement] of statements.entries()) expect(await loadDetailStatement(adapter, statement)).toMatch(patterns[i]);
     }
-    const user = await loadDetailStatement(adapter, statementsFor(objectKey(input.connection, 'user', fixture.alice))[0].sql);
+    const user = await loadDetailStatement(adapter, statementsFor(objectKey(input.connection, 'user', fixture.alice))[0]);
     expect(user).not.toMatch(/ BY '|HASH|SALT/);
     // The observer fixture holds SHOW USERS; the denied user holds no SHOW privilege.
-    await expect(loadDetailStatement(asUser(fixture.denied), statementsFor(objectKey(input.connection, 'user', fixture.alice))[0].sql))
+    await expect(loadDetailStatement(asUser(fixture.denied), statementsFor(objectKey(input.connection, 'user', fixture.alice))[0]))
       .rejects.toThrow(/privilege|ACCESS_DENIED/i);
   });
   it('does not report a restricted observer as an empty successful catalog', async () => {

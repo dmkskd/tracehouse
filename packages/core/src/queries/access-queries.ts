@@ -86,27 +86,19 @@ export const showCreateRowPolicy = (name: string, database: string, table: strin
   `SHOW CREATE ROW POLICY ${ident(name)} ON ${ident(database)}.${table ? ident(table) : '*'}`;
 
 /** References missing from the native fields. The input is the stored definition
- * from system.tables. EXPLAIN only parses or analyzes it, with a time limit.
- * Wrapping EXPLAIN in a SELECT returns ordinary rows on every adapter. */
-const EXPLAIN_LIMITS = 'SETTINGS max_execution_time = 10';
+ * from system.tables. Each EXPLAIN is a statement of its own, run with the adapter's
+ * executeRawQuery: inside `SELECT … FROM (EXPLAIN …)` ClickHouse reads it through the
+ * viewExplain table function, which requires CREATE TEMPORARY TABLE. */
 /** Server parse of a stored view query (system.tables.as_select). Parsing reads no
  * table, source or dictionary. */
-export const explainViewAst = (asSelect: string) =>
-  `SELECT explain FROM (EXPLAIN AST ${asSelect}) ${EXPLAIN_LIMITS}`;
+export const explainViewAst = (asSelect: string) => `EXPLAIN AST ${asSelect}`;
 /** Analyzer-resolved tables of a stored view query (system.tables.as_select). Resolution
  * runs scalar subqueries and asks table functions for their columns, which can contact
- * their source; explainViewAst shows beforehand whether the query has either. */
-export const explainViewSources = (asSelect: string) =>
-  `SELECT explain FROM (EXPLAIN QUERY TREE ${asSelect}) ${EXPLAIN_LIMITS}`;
-/** Tables and table functions the analyzer resolved, one per row, for the detail view. */
-export const explainViewSourceList = (asSelect: string) => `
-SELECT DISTINCT if(match(explain, '^\\\\s*TABLE id:'), extract(explain, 'table_name: (.+)$'),
-  concat(extract(explain, 'table_function_name: (.+)$'), '()')) AS source
-FROM (EXPLAIN QUERY TREE ${asSelect})
-WHERE match(explain, '^\\\\s*TABLE(_FUNCTION)? id:') ${EXPLAIN_LIMITS}`;
+ * their source; explainViewAst shows beforehand whether the query has either. The query
+ * is parenthesized so the time limit applies to EXPLAIN. */
+export const explainViewSources = (asSelect: string) => `EXPLAIN QUERY TREE (${asSelect}) SETTINGS max_execution_time = 10`;
 /** Server parse of an engine call isolated from system.tables.engine_full. */
-export const explainEngineCall = (engineCall: string) =>
-  `SELECT explain FROM (EXPLAIN AST SELECT ${engineCall}) ${EXPLAIN_LIMITS}`;
+export const explainEngineCall = (engineCall: string) => `EXPLAIN AST SELECT ${engineCall}`;
 
 /** The server's privilege tree: each privilege's parent group and the level it applies to.
  * Read from the connected host; it depends on the server version. */

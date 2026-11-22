@@ -15,8 +15,8 @@ export function useDetailStatements(statements: DetailStatement[]) {
   const [requested, setRequested] = useState<ReadonlySet<string>>(new Set());
   const started = useRef<{ adapter: unknown; sqls: Set<string> }>({ adapter: null, sqls: new Set() });
   const current = useRef<unknown>(adapter);
-  // JSON keeps multi-line SQL intact; joining on newlines would split a table's DDL query.
-  const key = JSON.stringify(statements.filter(s => !s.external || requested.has(s.sql)).map(s => s.sql));
+  // The statements to load, as JSON: it keeps multi-line SQL intact and is a stable effect dependency.
+  const key = JSON.stringify(statements.filter(s => !s.external || requested.has(s.sql)));
   useEffect(() => {
     current.current = adapter;
     return () => { current.current = null; };
@@ -27,10 +27,11 @@ export function useDetailStatements(statements: DetailStatement[]) {
     const publish = (sql: string, result: StatementResult) => {
       if (current.current === adapter) setState(previous => ({ adapter, results: { ...(previous.adapter === adapter ? previous.results : {}), [sql]: result } }));
     };
-    for (const sql of JSON.parse(key) as string[]) {
+    for (const statement of JSON.parse(key) as DetailStatement[]) {
+      const { sql } = statement;
       if (started.current.sqls.has(sql)) continue;
       started.current.sqls.add(sql);
-      loadDetailStatement(adapter, sql).then(
+      loadDetailStatement(adapter, statement).then(
         text => publish(sql, { text }),
         (e: unknown) => publish(sql, { error: e instanceof Error ? e.message : String(e) }));
     }

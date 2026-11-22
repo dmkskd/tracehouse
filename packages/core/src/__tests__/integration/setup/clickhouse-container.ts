@@ -12,6 +12,7 @@
  */
 
 import { ClickHouseContainer, type StartedClickHouseContainer } from '@testcontainers/clickhouse';
+import { rawResponseLines, responseFormat } from '../../../adapters/raw-lines.js';
 import { createClient, type ClickHouseClient } from '@clickhouse/client';
 import type { IClickHouseAdapter, QueryExecutionOptions } from '../../../adapters/types.js';
 import { AdapterError } from '../../../adapters/types.js';
@@ -48,7 +49,7 @@ export class TestAdapter implements IClickHouseAdapter {
     database?: string,
     options?: QueryExecutionOptions,
   ): Promise<string[]> {
-    const { stream } = await this.client.exec({
+    const { stream, response_headers } = await this.client.exec({
       query: sql,
       ...(database ? { clickhouse_settings: { database } } : {}),
       ...(options?.queryId ? { query_id: options.queryId } : {}),
@@ -57,10 +58,8 @@ export class TestAdapter implements IClickHouseAdapter {
     for await (const chunk of stream) {
       chunks.push(Buffer.isBuffer(chunk) ? chunk : Buffer.from(chunk));
     }
-    return Buffer.concat(chunks)
-      .toString('utf8')
-      .split('\n')
-      .filter(line => line !== '');
+    // Decoded as the app adapters do.
+    return rawResponseLines(Buffer.concat(chunks).toString('utf8'), responseFormat(response_headers));
   }
 }
 

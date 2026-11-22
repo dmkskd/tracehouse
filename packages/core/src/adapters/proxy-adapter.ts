@@ -11,6 +11,7 @@
  */
 
 import type { IClickHouseAdapter, QueryExecutionOptions, TaggedQuery } from './types.js';
+import { rawResponseLines, responseFormat } from './raw-lines.js';
 import { AdapterError } from './types.js';
 import type { AdapterErrorCategory } from './types.js';
 import type { ConnectionConfig } from '../types/connection.js';
@@ -106,23 +107,7 @@ export class ProxyAdapter implements IClickHouseAdapter {
         throw new Error(text || `HTTP ${resp.status}`);
       }
 
-      const text = await resp.text();
-      const rawLines = text.split('\n').filter(line => line !== '');
-
-      // Detect JSONEachRow and extract first field value
-      if (rawLines.length > 0 && rawLines[0].trimStart().startsWith('{')) {
-        return rawLines.map(line => {
-          try {
-            const obj = JSON.parse(line);
-            const vals = Object.values(obj);
-            return vals.length > 0 ? String(vals[0]) : line;
-          } catch {
-            return line;
-          }
-        });
-      }
-
-      return rawLines;
+      return rawResponseLines(await resp.text(), responseFormat(resp.headers));
     } catch (error) {
       throw this.wrapError(error, sql);
     }

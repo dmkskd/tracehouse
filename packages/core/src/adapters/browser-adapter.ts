@@ -1,4 +1,5 @@
 import { createClient, type ClickHouseClient } from '@clickhouse/client-web';
+import { rawResponseLines, responseFormat } from './raw-lines.js';
 import type { IClickHouseAdapter, QueryExecutionOptions, TaggedQuery } from './types.js';
 import { AdapterError, CLIENT_COMPRESSION } from './types.js';
 import type { AdapterErrorCategory } from './types.js';
@@ -72,7 +73,7 @@ export class BrowserAdapter implements IClickHouseAdapter {
       // EXPLAIN and similar statements don't support FORMAT clauses.
       // client.query() always appends FORMAT, so we use exec() which
       // sends the query as-is and returns a raw stream.
-      const { stream } = await this.client.exec({
+      const { stream, response_headers } = await this.client.exec({
         query: sql,
         session_id: this.sessionIdFor(sql),
         ...(database ? { clickhouse_settings: { database } } : {}),
@@ -88,25 +89,7 @@ export class BrowserAdapter implements IClickHouseAdapter {
       }
       chunks.push(decoder.decode()); // flush
       const text = chunks.join('');
-      const rawLines = text.split('\n').filter(line => line !== '');
-
-      // The server may return TabSeparated plain text or JSONEachRow
-      // depending on default_format. Detect and handle both.
-      if (rawLines.length > 0 && rawLines[0].trimStart().startsWith('{')) {
-        // JSONEachRow — extract the first (typically 'explain') field value
-        return rawLines.map(line => {
-          try {
-            const obj = JSON.parse(line);
-            // Return the first string value found
-            const vals = Object.values(obj);
-            return vals.length > 0 ? String(vals[0]) : line;
-          } catch {
-            return line;
-          }
-        });
-      }
-
-      return rawLines;
+      return rawResponseLines(text, responseFormat(response_headers));
     } catch (error) {
       throw this.wrapError(error, sql);
     }

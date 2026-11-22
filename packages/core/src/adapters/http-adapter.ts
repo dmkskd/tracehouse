@@ -1,4 +1,5 @@
 import { createClient, type ClickHouseClient } from '@clickhouse/client';
+import { rawResponseLines, responseFormat } from './raw-lines.js';
 import type { IClickHouseAdapter, QueryExecutionOptions, TaggedQuery } from './types.js';
 import { AdapterError, CLIENT_COMPRESSION } from './types.js';
 import type { ConnectionConfig } from '../types/connection.js';
@@ -54,7 +55,7 @@ export class HttpAdapter implements IClickHouseAdapter {
 
   async executeRawQuery(sql: TaggedQuery, database?: string, options?: QueryExecutionOptions): Promise<string[]> {
     try {
-      const { stream } = await this.client.exec({
+      const { stream, response_headers } = await this.client.exec({
         query: sql,
         session_id: this.sessionIdFor(sql),
         ...(database ? { clickhouse_settings: { database } } : {}),
@@ -64,24 +65,7 @@ export class HttpAdapter implements IClickHouseAdapter {
       for await (const chunk of stream) {
         chunks.push(Buffer.isBuffer(chunk) ? chunk : Buffer.from(chunk));
       }
-      const text = Buffer.concat(chunks).toString('utf-8');
-      const rawLines = text.split('\n').filter(line => line !== '');
-
-      // Server may return JSONEachRow depending on default_format setting.
-      // Detect and extract the field value if so.
-      if (rawLines.length > 0 && rawLines[0].trimStart().startsWith('{')) {
-        return rawLines.map(line => {
-          try {
-            const obj = JSON.parse(line);
-            const vals = Object.values(obj);
-            return vals.length > 0 ? String(vals[0]) : line;
-          } catch {
-            return line;
-          }
-        });
-      }
-
-      return rawLines;
+      return rawResponseLines(Buffer.concat(chunks).toString('utf-8'), responseFormat(response_headers));
     } catch (error) {
       throw this.wrapError(error);
     }

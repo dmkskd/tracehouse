@@ -43,7 +43,8 @@ describe('definition reference parsing', () => {
 describe('table links', () => {
   it('links qualified analyzer sources and reports an unqualified one', async () => {
     const lines = ['  TABLE id: 3, alias: __table1, table_name: default.t', '  TABLE id: 5, alias: __table2, table_name: tmp'];
-    const adapter = { executeQuery: async () => lines.map(explain => ({ explain })) } as unknown as IClickHouseAdapter;
+    // EXPLAIN runs as its own statement; both the parse and the analysis get these lines.
+    const adapter = { executeRawQuery: async () => lines } as unknown as IClickHouseAdapter;
     const rows = [{ host: 'ch-1', database: 'default', name: 'v', engine: 'View', as_select: 'SELECT * FROM default.t, tmp' }];
     const links = await tableLinks(adapter, 'c', rows, new Set(['as_select']), () => {});
     expect(links.relationships.map(r => [r.from, r.to, r.kind, r.evidence.method])).toEqual([

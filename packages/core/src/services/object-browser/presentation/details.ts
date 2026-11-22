@@ -1,13 +1,15 @@
-import { ICEBERG_SNAPSHOTS, OBJECT_TABLE_DDL, explainViewSourceList, showCreateRole, showCreateRowPolicy, showCreateUser, showGrantsFor } from '../../../queries/access-queries.js';
+import { ICEBERG_SNAPSHOTS, OBJECT_TABLE_DDL, explainViewSources, showCreateRole, showCreateRowPolicy, showCreateUser, showGrantsFor } from '../../../queries/access-queries.js';
 import { buildQuery, tagQuery } from '../../../queries/builder.js';
 import type { IClickHouseAdapter } from '../../../adapters/types.js';
 import type { GraphNode, ObjectGraph, Observation } from '../model/types.js';
 import { REFERENCE_METHODS, type ReferenceMethod } from '../model/methods.js';
 import { RELATIONSHIPS } from '../model/relationships.js';
+import { analyzerTableNames } from '../collectors/references.js';
 import { describeCard, nameParts, type CardFact, type ObjectCard, type ObjectType } from './cards.js';
 
-/** `external` describes the outside call a statement makes; such statements load only on request. */
-export interface DetailStatement { title: string; sql: string; external?: string }
+/** `external` describes the outside call a statement makes; such statements load only on request.
+ * `sources` marks an EXPLAIN QUERY TREE, shown as the tables and table functions it resolved. */
+export interface DetailStatement { title: string; sql: string; external?: string; sources?: true }
 /** `method` names how a link was obtained, for kinds that record it (RELATIONSHIPS[kind].methods). */
 export interface DetailRelationship { relation: string; direction: 'out' | 'in'; key: string; name: string; method?: string }
 export type DetailSection =
@@ -33,7 +35,7 @@ const viewSources: Statements = node => {
   const record = node.records.find(r => Array.isArray(r.attributes.analysisEffects) && typeof r.attributes.as_select === 'string');
   if (!record) return [];
   const effects = record.attributes.analysisEffects as string[];
-  return [{ title: 'Tables read', sql: explainViewSourceList(String(record.attributes.as_select)), external: effects.map(effectText).join(' · ') }];
+  return [{ title: 'Tables read', sql: explainViewSources(String(record.attributes.as_select)), external: effects.map(effectText).join(' · '), sources: true }];
 };
 const tableDdl: Statements = node => {
   const [database, table] = nameParts(node);
@@ -87,8 +89,15 @@ export function describeDetail(node: GraphNode, graph: ObjectGraph): ObjectDetai
 }
 
 /** Reads one statement from the connected host. Errors such as missing SHOW
- * privileges propagate so the caller can show them in place of the text. */
-export async function loadDetailStatement(adapter: IClickHouseAdapter, sql: string): Promise<string> {
-  const rows = await adapter.executeQuery<Record<string, unknown>>(tagQuery(sql, 'TraceHouse:Objects:detail'));
+ * privileges propagate so the caller can show them in place of the text. An EXPLAIN
+ * runs as its own statement (executeRawQuery), as in collection. */
+export async function loadDetailStatement(adapter: IClickHouseAdapter, statement: DetailStatement): Promise<string> {
+  const sql = tagQuery(statement.sql, 'TraceHouse:Objects:detail');
+  if (statement.sources) {
+    if (!adapter.executeRawQuery) throw new Error('connection cannot run EXPLAIN statements');
+    const { tables, tableFunctions } = analyzerTableNames(await adapter.executeRawQuery(sql));
+    return [...tables, ...tableFunctions.map(name => `${name}()`)].join('\n');
+  }
+  const rows = await adapter.executeQuery<Record<string, unknown>>(sql);
   return rows.map(row => String(Object.values(row)[0] ?? '')).join('\n');
 }
