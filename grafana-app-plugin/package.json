@@ -1,6 +1,6 @@
 {
   "name": "dmkskd-tracehouse-app",
-  "version": "v0.23.0-alpha.1",
+  "version": "0.23.0-alpha.1",
   "description": "Full TraceHouse application as a Grafana App Plugin",
   "type": "module",
   "scripts": {
