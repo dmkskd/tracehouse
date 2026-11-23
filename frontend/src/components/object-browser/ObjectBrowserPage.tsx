@@ -116,7 +116,7 @@ export function ObjectBrowserPage() {
         setHideDefaultUser(e.target.checked);
         if (e.target.checked && chosen && graph && !withoutDefaultUser(graph).nodes.some(node => node.key === chosen.key)) choose(null);
       }} />Hide default user</label>
-      <span className="capture-info">{graph && capture ? `${graph.nodes.length} objects · ${graph.edges.length} relationships · captured ${new Date(capture.completedAt).toLocaleTimeString()} from ${capture.hosts.map(h => `${h.host} (${h.version})`).join(', ')}` : loading ? 'Loading objects…' : 'Read-only catalog from the active connection'}
+      <span className="capture-info">{graph && capture ? `${graph.nodes.length} objects · ${graph.edges.length} relationships · captured ${new Date(capture.completedAt).toLocaleTimeString()}` : loading ? 'Loading objects…' : 'Read-only catalog from the active connection'}
         <button className="icon-button" aria-label="Refresh catalog" title="Collect the catalog again" disabled={!connected || loading} onClick={() => { setSelected(null);void browse(); }}>↻</button></span>
       <InfoPopover id="object-browser-help" label="About the object browser" title="About the object browser">
         <p style={{ margin: '0 0 6px' }}>Experimental. Shows configured metadata: grants, roles and table links. It never decides whether a user is allowed to run a query.</p>
@@ -128,6 +128,7 @@ export function ObjectBrowserPage() {
           <li>Up to 20 cards per column; search finds the rest</li>
           <li>System tables are not listed</li>
         </ul>
+        {capture && <p style={{ margin: '6px 0 0' }}>Captured {new Date(capture.completedAt).toLocaleTimeString()} from {capture.hosts.map(h => `${h.host} (${h.version})`).join(', ')}</p>}
       </InfoPopover>
     </div>
     {search.trim() && <div className="coverage">{matches.slice(0, 30).map(n => <button key={n.key} onClick={() => choose(n.key)}>{cards.get(n.key) && <ObjectTypeIcon card={cards.get(n.key)!} />}{n.name} · {cards.get(n.key)?.label}</button>)}<span className="muted">{matches.length} matches in the collected catalog</span></div>}
