@@ -6,7 +6,7 @@ import { EDGE_STYLES, toneStyle, REVOKE_EDGE_STYLE } from './objectStyle';
 import { DIAGRAM_STYLES } from './diagramStyles';
 import type { ObjectDiagramStyle } from '../../stores/userPreferenceStore';
 import { useEffect, useId, useLayoutEffect, useMemo, useRef, useState, type ReactNode } from 'react';
-import { BAND_TITLES, isGap, isWaypoint, lineage, RELATIONSHIPS, type GraphNode, type RelationshipFamily, type LayoutColumn, type ObjectCard, type ObjectGraph, isRevokeEdge } from '@tracehouse/core/services/object-browser';
+import { BAND_TITLES, isGap, isWaypoint, lineage, RELATIONSHIPS, type GraphNode, type RelationshipFamily, type LayoutColumn, type ObjectCard, type ObjectGraph, isRevokeEdge, edgeCaption } from '@tracehouse/core/services/object-browser';
 
 // Card width and gap as in the mockups.
 const COLUMN_WIDTH = 176, COLUMN_GAP = 40;
@@ -36,7 +36,9 @@ export function ObjectGraphView({ graph, cards, columns, selected, onSelect, onF
   const [zoom, setZoom] = useState(1);
   const elements = useRef(new Map<string, HTMLDivElement>());
   const [geometry, setGeometry] = useState<{ width: number; height: number;
-    paths: { key: string; from: string; to: string; d: string; family: RelationshipFamily; revoke: boolean }[];
+    paths: { key: string; from: string; to: string; d: string; family: RelationshipFamily; revoke: boolean;
+      /** Text drawn at the target end (edgeCaption), with that end point and the side the line arrives from. */
+      caption?: { text: string; x: number; y: number; fromLeft: boolean } }[];
     stubs: { from: string; d: string; x: number; y: number }[]; bracket: { x: number; top: number; bottom: number } | null }>({ width: 0, height: 0, paths: [], stubs: [], bracket: null });
   const [hovered, setHovered] = useState<string | null>(null);
   // Hover card: the card under the pointer after HOVER_DELAY_MS, measured then placed beside it.
@@ -100,7 +102,8 @@ export function ObjectGraphView({ graph, cards, columns, selected, onSelect, onF
           d += `${style.segment(x, y, enter, waypoint.y)} L${leave} ${waypoint.y}`;
           x = leave; y = waypoint.y;
         }
-        return [{ key: edge.key, from: edge.from, to: edge.to, family, revoke, d: d + style.segment(x, y, tx, b.y) }];
+        const text = edgeCaption(edge), caption = text ? { text, x: tx, y: b.y, fromLeft: forward } : undefined;
+        return [{ key: edge.key, from: edge.from, to: edge.to, family, revoke, d: d + style.segment(x, y, tx, b.y), ...(caption ? { caption } : {}) }];
       });
       // Essential lines: each broad privilege runs to the divider before the data band and meets
       // a bracket spanning that band's objects, so the stub reads as reaching all of them.
@@ -127,6 +130,7 @@ export function ObjectGraphView({ graph, cards, columns, selected, onSelect, onF
       <button className="node-select" aria-pressed={n.key === selected} onClick={() => onSelect(n.key)}>
         {card ? <ObjectCardBody card={card} /> : <strong>{n.name}</strong>}
       </button>
+      {card?.badge && <span className="node-badge" title={card.badge.detail}>{card.badge.text}</span>}
       {onFocus && <button className="node-focus" aria-label={`Focus ${n.name}`} title="Focus object and relationships · or double-click the card" onClick={() => onFocus(n.key)}>↗</button>}
     </div>;
   };
@@ -144,6 +148,8 @@ export function ObjectGraphView({ graph, cards, columns, selected, onSelect, onF
           return <path key={p.key} d={p.d} fill="none" stroke={color.stroke} strokeWidth={weight.width} strokeDasharray={cancelled ? '2 4' : color.dash}
             markerEnd={color.arrow && weight.arrow ? `url(#${arrowId})` : undefined} opacity={(linked(p.from, p.to) ? weight.opacity : weight.opacity / 6) * (cancelled ? .5 : 1)} />;
         })}
+        {geometry.paths.flatMap(p => p.caption ? [<text key={`${p.key}:caption`} className="edge-caption" x={p.caption.x + (p.caption.fromLeft ? -4 : 4)} y={p.caption.y - 5}
+          textAnchor={p.caption.fromLeft ? 'end' : 'start'} opacity={linked(p.from, p.to) ? 1 : .3}>{p.caption.text}</text>] : [])}
         {geometry.bracket && <path d={`M${geometry.bracket.x} ${geometry.bracket.top} L${geometry.bracket.x} ${geometry.bracket.bottom}`}
           stroke={EDGE_STYLES.access.stroke} strokeWidth={2} strokeLinecap="round" opacity={.28} />}
         {geometry.stubs.map(s => <g key={s.from} opacity={linked(s.from, s.from) ? 1 : .3}>

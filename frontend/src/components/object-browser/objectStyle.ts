@@ -4,7 +4,7 @@ import type { ObjectType, RelationshipFamily } from '@tracehouse/core/services/o
 export const OBJECT_SYMBOLS: Record<ObjectType, string> = {
   user: '♙', role: '◇', 'grant-scope': '⚿', 'row-policy': '⊟', 'merge-tree': '▦', view: '▤',
   'materialized-view': '▧', distributed: '◈', dictionary: '▥', buffer: '▦', table: '▦',
-  iceberg: '◭', lake: '◭', 'object-storage': '▭', location: '⌂',
+  iceberg: '◭', lake: '◭', 'object-storage': '▭', location: '⌂', disk: '▥',
 };
 
 const ACCESS = 'var(--accent-purple, #9672c9)', DATA = 'var(--accent-teal, #26948c)', LAKE = '#3f88c5';
@@ -13,7 +13,7 @@ const OBJECT_COLORS: Record<ObjectType, string> = {
   user: ACCESS, role: ACCESS, 'grant-scope': ACCESS, 'row-policy': ACCESS,
   'merge-tree': '#a88712', view: 'var(--text-secondary)', 'materialized-view': ACCESS, distributed: '#d56920',
   dictionary: 'var(--accent-blue, #6696cf)', buffer: DATA, table: DATA,
-  iceberg: LAKE, lake: LAKE, 'object-storage': LAKE, location: '#5b8fb0',
+  iceberg: LAKE, lake: LAKE, 'object-storage': LAKE, location: '#5b8fb0', disk: '#5b8fb0',
 };
 /** Colour of a partial revoke: its card and its lines. */
 const REVOKE_COLOR = '#d29922';

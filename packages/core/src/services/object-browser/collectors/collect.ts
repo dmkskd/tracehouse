@@ -1,10 +1,12 @@
-import { ACCESS_HOSTS, ACCESS_PRIVILEGES, ACCESS_SCHEMA, ACCESS_CATALOGS, ACCESS_TABLE_DEPENDENCY_FIELDS, ACCESS_TABLE_SUMMARY_FIELDS, accessTableCatalogQuery, systemTablesByNameQuery, ACTIVE_PARTS_BY_TABLE } from '../../../queries/access-queries.js';
+import { ACCESS_HOSTS, ACCESS_PRIVILEGES, ACCESS_SCHEMA, ACCESS_CATALOGS, ACCESS_TABLE_DEPENDENCY_FIELDS, ACCESS_TABLE_SUMMARY_FIELDS, accessTableCatalogQuery, systemTablesByNameQuery, ACTIVE_PARTS_BY_TABLE, ACCESS_STORAGE_POLICIES, ACCESS_DISKS, ACCESS_DISK_BUCKETS } from '../../../queries/access-queries.js';
 import { buildQuery, tagQuery } from '../../../queries/builder.js';
 import type { IClickHouseAdapter } from '../../../adapters/types.js';
 import { objectKey } from '../model/types.js';
 import type { Attributes, Capture, Investigation, Observation, Relationship, Source } from '../model/types.js';
 import { canonical, sortedSet } from '../model/canonical.js';
 import { tableLinks } from './tables.js';
+import { diskLocations } from './storage.js';
+import { parseTTLRules } from '../../../utils/ttl-parser.js';
 import { privilegeGroup, privilegeTree, tableOperations, type PrivilegeTree } from '../model/privileges.js';
 import type { MonitoringCapability } from '../../../types/monitoring-capabilities.js';
 
@@ -96,7 +98,10 @@ export async function collectObjects(adapter: IClickHouseAdapter, investigation:
   for (const r of data.get('users') ?? []) add('user', text(r.name), 'users', r);
   for (const r of data.get('roles') ?? []) add('role', text(r.name), 'roles', r);
   const tableKey = k('table', investigation.database, investigation.table);
-  for (const r of data.get('tables') ?? []) add('table', `${r.database}.${r.name}`, 'tables', r, k('table', text(r.database), text(r.name)));
+  for (const r of data.get('tables') ?? []) {
+    const ttl = parseTTLRules(text(r.engine_full));
+    add('table', `${r.database}.${r.name}`, 'tables', ttl.length ? { ...r, ttl_rules: ttl } : r, k('table', text(r.database), text(r.name)));
+  }
   const links = await tableLinks(adapter, investigation.connection, data.get('tables') ?? [], tableFields, check);
   capture.observations.push(...links.observations);
   // Kept on the view's record, so its detail can offer analysis on request.
@@ -128,6 +133,23 @@ export async function collectObjects(adapter: IClickHouseAdapter, investigation:
       }
     } catch (e) {
       check();links.notes.push(`Part counts unavailable: ${e instanceof Error ? e.message : String(e)}`);
+    }
+  }
+  // Remote disks of the tables' storage policies, from server configuration tables.
+  const policyTables = (data.get('tables') ?? []).filter(r => text(r.storage_policy));
+  if (policyTables.length) {
+    try {
+      const policies = await run(ACCESS_STORAGE_POLICIES, 'tables'), disks = await run(ACCESS_DISKS, 'tables');
+      let stored = diskLocations(investigation.connection, policyTables, { policies, disks, buckets: [] });
+      // Buckets only for disks in use, and only where the server keeps system.blob_storage_log.
+      const blobLog = capture.hosts.every(host => schema.some(row => row.host === host.host && row.table === 'blob_storage_log'));
+      if (stored.observations.length && blobLog) {
+        try { stored = diskLocations(investigation.connection, policyTables, { policies, disks, buckets: await run(ACCESS_DISK_BUCKETS, 'tables') }); }
+        catch (e) { check();links.notes.push(`Disk buckets unavailable: ${e instanceof Error ? e.message : String(e)}`); }
+      }
+      capture.observations.push(...stored.observations);capture.relationships.push(...stored.relationships);
+    } catch (e) {
+      check();links.notes.push(`Storage policies unavailable: ${e instanceof Error ? e.message : String(e)}`);
     }
   }
   if (tablesCoverage && links.notes.length) tablesCoverage.reason = [tablesCoverage.reason, ...links.notes].filter(Boolean).join(' ');

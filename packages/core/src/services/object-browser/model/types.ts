@@ -1,5 +1,6 @@
-/** `location` is the storage server a table definition points to (an S3 endpoint, an HDFS namenode, a local disk). */
-export type ObjectKind = 'user' | 'role' | 'table' | 'grant-scope' | 'row-policy' | 'location';
+/** `location` is the storage server a table definition points to (an S3 endpoint, an HDFS namenode, a local disk).
+ * `disk` is a remote disk of a table's storage policy (collectors/storage.ts). */
+export type ObjectKind = 'user' | 'role' | 'table' | 'grant-scope' | 'row-policy' | 'location' | 'disk';
 export type Source = 'users' | 'roles' | 'role_grants' | 'grants' | 'tables' | 'row_policies';
 export type Attributes = Record<string, unknown>;
 export interface Observation {

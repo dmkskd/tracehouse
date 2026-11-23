@@ -1,7 +1,7 @@
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { ClickHouseContainer, type StartedClickHouseContainer } from '@testcontainers/clickhouse';
 import { createClient, type ClickHouseClient } from '@clickhouse/client';
-import { CH_IMAGE } from './setup/constants.js';
+import { CH_IMAGE, configuredClickHouseIsBefore } from './setup/constants.js';
 import { startWithPortRetry } from './setup/start-container.js';
 import { TestAdapter } from './setup/clickhouse-container.js';
 import { HttpAdapter } from '../../adapters/http-adapter.js';
@@ -11,7 +11,7 @@ import { tagQuery } from '../../queries/builder.js';
 import { collectObjects } from '../../services/object-browser/collectors/collect.js';
 import { projectCatalogGraph, provenancePaths } from '../../services/object-browser/projections/graph.js';
 import { objectKey, type Capture } from '../../services/object-browser/model/types.js';
-import { describeDetail, loadDetailStatement, loadTableActivity } from '../../services/object-browser/presentation/details.js';
+import { describeDetail, loadDetailStatement, loadTableActivity, loadTablePlacement } from '../../services/object-browser/presentation/details.js';
 
 /** Server extraction proof is deliberately separate from production-model coverage.
  * Run through the normal integration runner with an exact CLICKHOUSE_IMAGE. */
@@ -27,6 +27,10 @@ describe('Object browser metadata extraction', { tags: ['security', 'storage'] }
   const q = (sql: string) => tagQuery(sql, 'TraceHouse:Objects:metadata-proof');
   const read = (sql: string) => adapter.executeQuery(q(sql));
   const hasField = (table: string, name: string) => schema.some(row => row.table === table && row.name === name);
+  // A cache disk accepts skip_access_check on 26.9.7 and rejects it on 26.3.62.3, where its startup
+  // check would contact the endpoint; older servers get the S3 disk without the cache.
+  const cacheDisk = !configuredClickHouseIsBefore(26, 9);
+  const coldDisk = cacheDisk ? 'th_s3_cache' : 'th_s3';
   const grantsReadable = () => capture.coverage.find(source => source.source === 'grants')!.state === 'readable';
   function asUser(user: string) {
     const transport = new HttpAdapter({ host: container.getHost(), port: container.getHttpPort(), user,
@@ -40,7 +44,18 @@ describe('Object browser metadata extraction', { tags: ['security', 'storage'] }
       .withEnvironment({ CLICKHOUSE_DEFAULT_ACCESS_MANAGEMENT: '1' })
       // Granting ALL ON *.* needs the named-collection privileges, which users.xml enables per user.
       .withCopyContentToContainer([{ target: '/etc/clickhouse-server/users.d/named-collections.xml',
-        content: '<clickhouse><users><test><named_collection_control>1</named_collection_control><show_named_collections_secrets>1</show_named_collections_secrets></test></users></clickhouse>' }]));
+        content: '<clickhouse><users><test><named_collection_control>1</named_collection_control><show_named_collections_secrets>1</show_named_collections_secrets></test></users></clickhouse>' },
+      // Shaped like the demo's s3_storage.xml. The endpoint host does not resolve and is never contacted; the disks skip the startup access check.
+      { target: '/etc/clickhouse-server/config.d/th-storage.xml', content: `<clickhouse><storage_configuration>
+        <disks>
+          <th_s3><type>s3</type><endpoint>http://lake.invalid:9000/fixture-bucket/data/</endpoint>
+            <access_key_id>fixture</access_key_id><secret_access_key>fixture_secret</secret_access_key><skip_access_check>true</skip_access_check></th_s3>
+          ${cacheDisk ? '<th_s3_cache><type>cache</type><disk>th_s3</disk><path>th_s3_cache</path><max_size>10Mi</max_size><skip_access_check>true</skip_access_check></th_s3_cache>' : ''}
+        </disks>
+        <policies><th_fixture_tiered><volumes>
+          <hot><disk>default</disk></hot><cold><disk>${coldDisk}</disk></cold>
+        </volumes></th_fixture_tiered></policies>
+      </storage_configuration></clickhouse>` }]));
     client = createClient(container.getClientOptions());
     adapter = new ClusterAwareAdapter(new TestAdapter(client));
     // Lets the fixture create IcebergLocal tables; other statements ignore it.
@@ -241,6 +256,28 @@ describe('Object browser metadata extraction', { tags: ['security', 'storage'] }
     await client.command({ query: fixture.seed });await client.command({ query: fixture.seed });
     const totals = await Promise.all(fixture.totals.map(read));
     for (const rows of totals) expect(rows.map(row => [Number(row.amount), Number(row.events)])).toEqual([[12,6]]);
+  });
+  it('links a table to the remote disk its storage policy moves parts to, with the TTL rule, from configuration only', () => {
+    const tiered = objectKey(input.connection, 'table', fixture.db, 'tiered'), disk = objectKey(input.connection, 'disk', 'S3 disk · th_s3');
+    expect(capture.relationships.filter(edge => edge.from === tiered && edge.kind === 'points-to').map(edge => [edge.to, edge.label, edge.evidence])).toEqual([
+      [disk, 'moves after TTL ts + toIntervalDay(7)', { method: 'storage-policy', policy: 'th_fixture_tiered', volume: 'cold', disk: coldDisk, ttl: ['ts + toIntervalDay(7)'] }]]);
+    expect(capture.observations.find(record => record.key === disk)!.attributes).toMatchObject({ backend: 'S3 disk', disk: 'th_s3', tables: 1,
+      ...(cacheDisk ? { cache_disks: ['th_s3_cache'] } : {}) });
+    // The rules as the server normalized them in engine_full.
+    expect(capture.observations.find(record => record.key === tiered)!.attributes.ttl_rules).toEqual([
+      { expression: 'ts + toIntervalDay(7)', action: 'move', destination: { type: 'volume', name: 'cold', ifExists: false } },
+      { expression: 'ts + toIntervalDay(90)', action: 'delete' }]);
+    // No link for tables whose policy has only local disks.
+    expect(capture.relationships.some(edge => edge.from === objectKey(input.connection, 'table', fixture.db, 'events') && edge.evidence.method === 'storage-policy')).toBe(false);
+  });
+  it('reads where a table\'s parts are per disk, with the next move TTL', async () => {
+    await client.command({ query: `INSERT INTO ${fixture.db}.tiered SELECT now(), number FROM numbers(3)` });
+    const graph = projectCatalogGraph(capture);
+    const node = graph.nodes.find(n => n.key === objectKey(input.connection, 'table', fixture.db, 'tiered'))!;
+    const section = describeDetail(node, graph).sections.find(s => s.kind === 'lifecycle');
+    if (section?.kind !== 'lifecycle') throw new Error('tiered has no lifecycle section');
+    // A fresh part stays on the first volume until its move TTL, 7 days out.
+    expect(await loadTablePlacement(adapter, section.statement)).toMatchObject([{ disk: 'default', storage: 'Local', parts: 1, rows: 3, pastMoveTTL: 0, nextMove: 'in 7 days' }]);
   });
   it('reads keys, table settings and TTL definition text, including an ALTER', async () => {
     const before = (await read(fixture.probes.tables)).find(row => row.name === 'events')!;

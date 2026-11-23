@@ -1,4 +1,4 @@
-import { ICEBERG_SNAPSHOTS, OBJECT_TABLE_ACTIVITY, OBJECT_TABLE_DDL, OBJECT_TABLE_DDL_FORMATTED, explainViewSources, showCreateRole, showCreateRowPolicy, showCreateUser, showGrantsFor } from '../../../queries/access-queries.js';
+import { ICEBERG_SNAPSHOTS, OBJECT_TABLE_ACTIVITY, OBJECT_TABLE_PLACEMENT, OBJECT_TABLE_DDL, OBJECT_TABLE_DDL_FORMATTED, explainViewSources, showCreateRole, showCreateRowPolicy, showCreateUser, showGrantsFor } from '../../../queries/access-queries.js';
 import { buildQuery, tagQuery } from '../../../queries/builder.js';
 import { buildQueryLinkUrl } from '../../../utils/deep-link-resolution.js';
 import type { IClickHouseAdapter } from '../../../adapters/types.js';
@@ -10,6 +10,8 @@ import { analyzerTableNames } from '../collectors/references.js';
 import { describeCard, nameParts, type CardFact, type ObjectCard, type ObjectType } from './cards.js';
 import { DESTINATIONS, type DestinationInput } from '../model/destinations.js';
 import { provenancePaths } from '../projections/graph.js';
+import { ttlDelay, ttlSettings, type TTLRule } from '../../../utils/ttl-parser.js';
+import { diskLinkEvidence, movingTTL } from '../model/disk-links.js';
 
 /** `external` describes the external call a statement makes; such statements load only on request.
  * `sources` marks an EXPLAIN QUERY TREE, shown as the tables and table functions it resolved.
@@ -38,7 +40,17 @@ export type DetailSection =
   /** Query activity read from the server when the detail opens (loadTableActivity). */
   | { kind: 'activity'; title: string; statement: DetailStatement; table: string }
   | { kind: 'relationships'; title: string; groups: DetailRelationGroup[] }
+  /** TTL rules in order, the TTL settings of the definition, and where the parts are now
+   * (`statement`, read with loadTablePlacement when the detail opens). */
+  | { kind: 'lifecycle'; title: string; steps: LifecycleStep[]; settings: CardFact[]; statement: DetailStatement }
   | { kind: 'records'; title: string; records: Observation[] };
+/** One TTL rule: when it applies ("5 minutes after _inserted_at"), what it does, and for a move,
+ * the storage node the parts go to. */
+export interface LifecycleStep { when: string; action: string; target?: { key: string; name: string } }
+/** Active parts of a table on one disk of the connected host. `storage` is the object storage type
+ * (S3) or the disk type (Local). `pastMoveTTL` counts parts whose earliest move TTL has passed;
+ * `nextMove` says when the next one is due ("in 3 min"), or is null. */
+export interface TablePlacement { disk: string; storage: string; parts: number; rows: number; bytes: number; pastMoveTTL: number; nextMove: string | null }
 /** `links` open other pages filtered to the object; they belong with the title, not the sections. */
 export interface ObjectDetail { card: ObjectCard; links: DetailLinks; sections: DetailSection[] }
 
@@ -81,6 +93,8 @@ const statements: Record<ObjectType, Statements> = {
   'object-storage': tableDdl,
   // A location is TraceHouse's grouping of definition text; ClickHouse has no DDL for it.
   location: () => [],
+  // A disk is server configuration; ClickHouse has no DDL for it.
+  disk: () => [],
 };
 
 const IDENTITY_FIELDS: [string, string][] = [['id', 'ID'], ['uuid', 'UUID'], ['engine', 'Engine'], ['storage', 'Storage'],
@@ -170,6 +184,32 @@ function relationGroups(node: GraphNode, graph: ObjectGraph): DetailRelationGrou
     rows: [...rows.get(title)!].map(([relation, items]) => ({ relation, items: items.sort((a, b) => a.name.localeCompare(b.name)) })) }));
 }
 
+const TTL_STEPS: Record<TTLRule['action'], (rule: TTLRule) => string> = {
+  delete: rule => rule.where ? `Delete rows where ${rule.where}` : 'Delete rows',
+  move: rule => `Move parts to ${rule.destination!.type} ${rule.destination!.name}`,
+  recompress: rule => `Recompress with ${rule.codec}`,
+  'group-by': rule => `Roll up by ${rule.groupBy}${rule.set ? `, set ${rule.set}` : ''}`,
+};
+/** Lifecycle of a table with TTL rules or a remote disk: the rules in order, each move with the
+ * disk it reaches (DiskLinkEvidence.ttl). */
+function lifecycle(node: GraphNode, graph: ObjectGraph): DetailSection[] {
+  const [database, table] = nameParts(node);
+  const record = node.records.find(r => Array.isArray(r.attributes.ttl_rules))?.attributes;
+  const rules = (record?.ttl_rules ?? []) as TTLRule[];
+  const stored = graph.edges.filter(e => e.from === node.key && e.records.some(r => diskLinkEvidence(r.evidence)));
+  if (table === undefined || (!rules.length && !stored.length)) return [];
+  const steps = rules.map((rule): LifecycleStep => {
+    const delay = ttlDelay(rule.expression);
+    const edge = rule.action === 'move' ? stored.find(e => movingTTL(e.records).includes(rule.expression)) : undefined;
+    const target = edge && graph.nodes.find(n => n.key === edge.to);
+    return { when: delay ? `${delay.long} after ${delay.column}` : `At ${rule.expression}`, action: TTL_STEPS[rule.action](rule),
+      ...(target ? { target: { key: target.key, name: target.name } } : {}) };
+  });
+  const definition = String(node.records.find(r => typeof r.attributes.engine_full === 'string')?.attributes.engine_full ?? '');
+  return [{ kind: 'lifecycle', title: 'Lifecycle', steps, settings: ttlSettings(definition).map(([label, value]) => ({ label, value })),
+    statement: { title: 'Placement', sql: buildQuery(OBJECT_TABLE_PLACEMENT, { database, table }) } }];
+}
+
 /** Full detail for one object: type facts, links to other pages, server statements,
  * relationships and host records. `contextUser` is the user in focus context. */
 export function describeDetail(node: GraphNode, graph: ObjectGraph, options: { contextUser?: string } = {}): ObjectDetail {
@@ -187,6 +227,7 @@ export function describeDetail(node: GraphNode, graph: ObjectGraph, options: { c
     ...(facts.length ? [{ kind: 'facts' as const, title: 'Summary', facts }] : []),
     ...(node.kind === 'table' && table !== undefined && !node.records.some(r => r.attributes.unresolvedReference) ? [{ kind: 'activity' as const, title: 'Activity · last 24 hours',
       statement: { title: 'Activity', sql: buildQuery(OBJECT_TABLE_ACTIVITY, { table: `${database}.${table}` }) }, table: `${database}.${table}` }] : []),
+    ...(node.kind === 'table' ? lifecycle(node, graph) : []),
     ...statements[card.type](node).map(statement => ({ kind: 'statement' as const, statement })),
     ...(groups.length ? [{ kind: 'relationships' as const, title: 'Relationships', groups }] : []),
     { kind: 'records', title: 'Host records', records: node.records },
@@ -214,6 +255,20 @@ export async function loadDetailStatement(adapter: IClickHouseAdapter, statement
     if (!statement.fallbackSql || !/UNKNOWN_FUNCTION|Unknown function|Function with name .* does not exist|Code: 46\b/i.test(message)) throw error;
     return run(statement.fallbackSql);
   }
+}
+
+const inTime = (seconds: number) => seconds < 60 ? 'in under a minute'
+  : seconds < 3600 ? `in ${Math.round(seconds / 60)} min` : seconds < 172800 ? `in ${Math.round(seconds / 3600)} h` : `in ${Math.round(seconds / 86400)} days`;
+/** Reads where a table's active parts are on the connected host (OBJECT_TABLE_PLACEMENT). */
+export async function loadTablePlacement(adapter: IClickHouseAdapter, statement: DetailStatement): Promise<TablePlacement[]> {
+  const rows = await adapter.executeQuery<Record<string, unknown>>(tagQuery(statement.sql, 'TraceHouse:Objects:detail'));
+  return rows.map(row => {
+    const next = Number(row.next_move), now = Number(row.server_now);
+    const objectStorage = String(row.object_storage_type ?? '');
+    return { disk: String(row.disk), storage: objectStorage && objectStorage !== 'None' ? objectStorage : String(row.type ?? ''),
+      parts: Number(row.parts), rows: Number(row.rows), bytes: Number(row.bytes), pastMoveTTL: Number(row.past_move_ttl),
+      nextMove: next > now ? inTime(next - now) : null };
+  });
 }
 
 /** A table's queries in the last 24 hours; null when there were none. `lastQuery` is server

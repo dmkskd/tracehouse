@@ -1,6 +1,7 @@
 import { css } from '@emotion/css';
 import { useState, type ReactNode } from 'react';
-import type { DetailLinks, DetailSection, ObjectDetail, TableActivity } from '@tracehouse/core/services/object-browser';
+import type { DetailLinks, DetailSection, ObjectDetail, TableActivity, TablePlacement } from '@tracehouse/core/services/object-browser';
+import { formatBytes } from '../../utils/formatters';
 import { ModalWrapper } from '../../components/shared/ModalWrapper';
 import { SqlHighlight } from '../common/SqlHighlight';
 import { ObjectTypeIcon } from './ObjectCard';
@@ -46,6 +47,12 @@ const styles = css`
   .stat-tile.failed .stat-value { color: var(--accent-red, #e5534b); }
   .stat-lines dd { font-family: inherit; }
   .stat-count { font-variant-numeric: tabular-nums; color: var(--text-muted); }
+  .lifecycle-steps { margin: 0 0 12px; padding-left: 18px; font-size: 12px; line-height: 1.8; }
+  .lifecycle-steps .when { color: var(--text-muted); margin-right: 8px; }
+  .placement { width: 100%; border-collapse: collapse; font-size: 12px; font-variant-numeric: tabular-nums; }
+  .placement th { text-align: left; font-weight: 500; color: var(--text-muted); padding: 4px 12px 4px 0; border-bottom: 1px solid var(--border-secondary); }
+  .placement td { padding: 4px 12px 4px 0; }
+  .lifecycle-settings { margin-bottom: 12px; }
   details summary { cursor: pointer; font-size: 12px; color: var(--text-secondary); margin: 6px 0; }
 `;
 
@@ -80,6 +87,13 @@ type SectionContext = { results: Record<string, StatementResult>; requested: Rea
   /** Opens the detail of another object. */
   select: (key: string) => void };
 type Renderers = { [K in DetailSection['kind']]: (section: Extract<DetailSection, { kind: K }>, context: SectionContext) => ReactNode };
+/** Active parts per disk on the connected host, with move TTL state. */
+function Placement({ rows }: { rows: TablePlacement[] }) {
+  if (!rows.length) return <p className="muted">No active parts.</p>;
+  return <table className="placement"><thead><tr><th>Disk</th><th>Storage</th><th>Parts</th><th>Rows</th><th>Size</th><th>Past move TTL</th><th>Next move</th></tr></thead>
+    <tbody>{rows.map(row => <tr key={row.disk}><td>{row.disk}</td><td>{row.storage}</td><td>{number(row.parts)}</td><td>{number(row.rows)}</td>
+      <td>{formatBytes(row.bytes)}</td><td>{row.pastMoveTTL ? `${number(row.pastMoveTTL)} parts` : ''}</td><td>{row.nextMove ?? ''}</td></tr>)}</tbody></table>;
+}
 /** One renderer per section kind; the core descriptor decides which sections an object has. */
 const SECTION_RENDERERS: Renderers = {
   facts: section => <><h3>{section.title}</h3>
@@ -98,6 +112,18 @@ const SECTION_RENDERERS: Renderers = {
     return <><h3>{title}</h3>
       {!result ? waiting : 'error' in result ? <p className="error">Unavailable: {result.error}</p>
         : !('text' in result) ? null : section.statement.highlight && result.text ? <SqlHighlight>{result.text}</SqlHighlight> : <pre>{result.text || '(empty)'}</pre>}</>;
+  },
+  lifecycle: (section, { results, select }) => {
+    const result = results[section.statement.sql];
+    return <><h3>{section.title}</h3>
+      {section.steps.length > 0 && <ol className="lifecycle-steps">{section.steps.map((step, i) => <li key={i}>
+        <span className="when">{step.when}</span>{step.action}
+        {step.target && <><span className="sep"> · </span><button type="button" className="relation-item" onClick={() => select(step.target!.key)}>{step.target.name}</button></>}
+      </li>)}</ol>}
+      {section.settings.length > 0 && <dl className="lifecycle-settings">{section.settings.map(f => <div key={f.label} style={{ display: 'contents' }}><dt>{f.label}</dt><dd>{f.value}</dd></div>)}</dl>}
+      <h4>Parts on this host</h4>
+      {!result ? <p className="muted">Loading…</p> : 'error' in result ? <p className="error">Unavailable: {result.error}</p>
+        : 'placement' in result ? <Placement rows={result.placement} /> : null}</>;
   },
   relationships: (section, { select }) => <><h3>{section.title}</h3>
     {section.groups.map(group => <div key={group.title} className="relation-group">
@@ -141,12 +167,11 @@ function Actions({ links, open }: { links: DetailLinks; open: (url: string) => v
   </div>;
 }
 
+const NO_SECTIONS: DetailSection[] = [];
 /** `open` navigates to another page from a link in the header. */
 export function ObjectDetailModal({ detail, onClose, open, select }: { detail: ObjectDetail | null; onClose: () => void; open: (url: string) => void;
   select: (key: string) => void }) {
-  const statements = detail?.sections.flatMap(s => s.kind === 'statement' ? [s.statement] : []) ?? [];
-  const activity = detail?.sections.flatMap(s => s.kind === 'activity' ? [{ statement: s.statement, table: s.table }] : []) ?? [];
-  const { results, requested, load } = useDetailStatements(statements, activity);
+  const { results, requested, load } = useDetailStatements(detail?.sections ?? NO_SECTIONS);
   const card = detail?.card;
   return <ModalWrapper isOpen={!!detail} onClose={onClose} ariaLabel="Object detail" maxWidth={900} backdropBackground="rgba(0, 0, 0, 0.3)" backdropBlur={0}>
     {detail && card && <div className={styles}>

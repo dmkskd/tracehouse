@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { parseTTL, formatTTLDuration } from '../ttl-parser.js';
+import { parseTTL, parseTTLRules, ttlDelay, ttlSettings, formatTTLDuration } from '../ttl-parser.js';
 
 describe('parseTTL', { tags: ['storage'] }, () => {
   describe('toIntervalDay syntax', () => {
@@ -140,4 +140,55 @@ describe('formatTTLDuration', { tags: ['storage'] }, () => {
   it('plural hours', () => expect(formatTTLDuration(24, 'hour')).toBe('24 hours'));
   it('handles unit with trailing s', () => expect(formatTTLDuration(3, 'days')).toBe('3 days'));
   it('unknown unit passes through', () => expect(formatTTLDuration(5, 'quarter')).toBe('5 quarter'));
+});
+
+/** Definitions as system.tables.engine_full stored them on ClickHouse 26.10. */
+describe('parseTTLRules', { tags: ['storage'] }, () => {
+  it('reads every rule kind, with commas and keywords inside quotes and parentheses', () => {
+    const definition = "MergeTree ORDER BY (k, d) TTL d + toIntervalDay(1), d + toIntervalDay(7) TO VOLUME 's3cached', d + toIntervalDay(8) TO DISK 's3cache', d + toIntervalDay(30) RECOMPRESS CODEC(Delta, ZSTD(9)), d + toIntervalDay(90) WHERE (k > 5) AND (v != 'a,b'), toStartOfDay(d) + toIntervalHour(36) GROUP BY k SET v = any(v), w = max(w) SETTINGS storage_policy = 's3tiered', index_granularity = 8192";
+    expect(parseTTLRules(definition)).toEqual([
+      { expression: 'd + toIntervalDay(1)', action: 'delete' },
+      { expression: 'd + toIntervalDay(7)', action: 'move', destination: { type: 'volume', name: 's3cached', ifExists: false } },
+      { expression: 'd + toIntervalDay(8)', action: 'move', destination: { type: 'disk', name: 's3cache', ifExists: false } },
+      { expression: 'd + toIntervalDay(30)', action: 'recompress', codec: 'CODEC(Delta, ZSTD(9))' },
+      { expression: 'd + toIntervalDay(90)', action: 'delete', where: "(k > 5) AND (v != 'a,b')" },
+      { expression: 'toStartOfDay(d) + toIntervalHour(36)', action: 'group-by', groupBy: 'k', set: 'v = any(v), w = max(w)' },
+    ]);
+  });
+  it('keeps a multi-column GROUP BY key in one rule', () => {
+    expect(parseTTLRules('MergeTree ORDER BY (k, d) TTL d + toIntervalMonth(1) GROUP BY k, d SET w = sum(w) SETTINGS index_granularity = 8192'))
+      .toEqual([{ expression: 'd + toIntervalMonth(1)', action: 'group-by', groupBy: 'k, d', set: 'w = sum(w)' }]);
+    expect(parseTTLRules('MergeTree ORDER BY k TTL d + toIntervalDay(1) GROUP BY k SETTINGS index_granularity = 8192'))
+      .toEqual([{ expression: 'd + toIntervalDay(1)', action: 'group-by', groupBy: 'k' }]);
+  });
+  it('reads IF EXISTS moves and a bare column expression', () => {
+    expect(parseTTLRules("MergeTree ORDER BY k TTL d + toIntervalDay(7) TO VOLUME IF EXISTS 's3cached' SETTINGS storage_policy = 's3tiered', index_granularity = 8192"))
+      .toEqual([{ expression: 'd + toIntervalDay(7)', action: 'move', destination: { type: 'volume', name: 's3cached', ifExists: true } }]);
+    expect(parseTTLRules("MergeTree ORDER BY k TTL d TO VOLUME 'cold_x27_v' SETTINGS storage_policy = 'odd', index_granularity = 8192"))
+      .toEqual([{ expression: 'd', action: 'move', destination: { type: 'volume', name: 'cold_x27_v', ifExists: false } }]);
+  });
+  it('does not read columns named ttl or settings as keywords', () => {
+    // Printed by ClickHouse 26.10 for ORDER BY ttl, and for a WHERE on a column named settings.
+    expect(parseTTLRules('MergeTree ORDER BY ttl SETTINGS index_granularity = 8192')).toEqual([]);
+    expect(parseTTLRules('MergeTree ORDER BY (TTL, settings) TTL d + toIntervalDay(1) WHERE settings = 1 SETTINGS index_granularity = 8192'))
+      .toEqual([{ expression: 'd + toIntervalDay(1)', action: 'delete', where: 'settings = 1' }]);
+  });
+  it('returns no rules without a TTL clause, or when TTL appears only in quoted text', () => {
+    expect(parseTTLRules('MergeTree ORDER BY k SETTINGS index_granularity = 8192')).toEqual([]);
+    expect(parseTTLRules("S3('http://h/TTL d TO VOLUME x', 'Parquet')")).toEqual([]);
+  });
+});
+
+describe('ttlDelay and ttlSettings', { tags: ['storage'] }, () => {
+  it('reads the delay of a column + interval rule, and nothing from other expressions', () => {
+    expect(ttlDelay('_inserted_at + toIntervalMinute(5)')).toEqual({ column: '_inserted_at', long: '5 minutes', short: '5 min' });
+    expect(ttlDelay('toStartOfDay(d) + toIntervalHour(36)')).toEqual({ column: 'toStartOfDay(d)', long: '36 hours', short: '36 h' });
+    expect(ttlDelay('d')).toBeNull();
+  });
+  it('reads the TTL settings of the SETTINGS clause', () => {
+    // nyc_taxi.trips on the dev server (26.9.7).
+    const definition = "MergeTree PARTITION BY toYYYYMM(pickup_date) ORDER BY (pickup_date, pickup_location_id, pickup_datetime) TTL _inserted_at + toIntervalMinute(5) TO VOLUME 's3cached' SETTINGS old_parts_lifetime = 60, storage_policy = 's3tiered', merge_with_ttl_timeout = 60, ttl_only_drop_parts = 1, index_granularity = 8192";
+    expect(ttlSettings(definition)).toEqual([['merge_with_ttl_timeout', '60'], ['ttl_only_drop_parts', '1']]);
+    expect(ttlSettings('MergeTree ORDER BY k')).toEqual([]);
+  });
 });

@@ -14,4 +14,6 @@ export const KINDS: Record<ObjectKind, KindSpec> = {
   table: { everyHost: true },
   'row-policy': { everyHost: true },
   location: { everyHost: false },
+  // A remote disk exists on the hosts whose tables' storage policies use it.
+  disk: { everyHost: false },
 };

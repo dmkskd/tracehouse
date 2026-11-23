@@ -23,6 +23,7 @@ nothing usable, and every derived link records how it was obtained in
 | `analyzer` | `SELECT explain FROM (EXPLAIN AST <as_select>)`, then, when the parse has no effects, `SELECT explain FROM (EXPLAIN QUERY TREE <as_select>)` | View and refreshable MV sources |
 | `engine-arguments` | TraceHouse cuts the engine call out of `engine_full`, then `SELECT explain FROM (EXPLAIN AST SELECT <call>)` | Buffer and Distributed destinations |
 | `engine-location` | Same engine-call parse; TraceHouse then takes scheme and host from the location argument | Storage servers of Iceberg, DeltaLake, Hudi, S3, HDFS and URL tables |
+| `storage-policy` | `system.tables.storage_policy`, `system.storage_policies`, `system.disks`; TTL move rules from the TTL clause of `engine_full` (`parseTTLRules`, `utils/ttl-parser.ts`) | Remote disks of MergeTree tables |
 
 Access links come from their rows and carry no method. Every table and storage
 link records its method in `evidence.method`. The detail view shows the text
@@ -116,7 +117,8 @@ entry per engine.
 | Iceberg, IcebergS3, IcebergHDFS, IcebergLocal | table → storage server, `stored on` | engine-location | Argument 0 |
 | DeltaLake, DeltaLakeS3, DeltaLakeLocal, Hudi | table → storage server, `stored on` | engine-location | Argument 0 |
 | S3, S3Queue, HDFS, URL | table → storage server, `stored on` | engine-location | Argument 0 |
-| Azure variants, MergeTree family, Dictionary, others | none | | |
+| MergeTree family | table → remote disk, `stored on` or `moves after TTL …` | storage-policy | Volumes of the table's storage policy |
+| Azure variants, Dictionary, others | none | | |
 
 The analyzer resolves CTEs, joins and subqueries. ClickHouse stores view queries
 with qualified names (checked on 26.10: a view created as `FROM t` under `USE d1`
@@ -163,6 +165,39 @@ in `engine_full` (checked on 26.10), so locations carry no secrets. Reading
 Iceberg snapshots (`system.iceberg_history`) reads the table's metadata from
 storage, so the detail view runs it only when the user asks.
 
+### Remote disk
+
+A remote disk (`is_remote = 1` in `system.disks`) that a table's storage policy
+uses is a `disk` object named `<object storage type> disk · <disk>`, such as
+`S3 disk · s3` (`collectors/storage.ts`). It sits in the Storage lane with the
+storage servers. A cache disk resolves to the disk it
+caches, the one with the same `path` and no `cache_path`. Local disks are not
+linked.
+
+| Link | Direction | Label |
+|---|---|---|
+| stored on | table → remote disk | `moves after TTL <expression>` when a TTL rule moves parts to the volume or disk, `stored on` for the policy's first volume, `stored on · volume <name>` otherwise |
+
+`system.disks` has no endpoint or bucket column (checked on 26.10), so a remote
+disk does not join the storage server of engine tables on the same server. The
+bucket comes from `system.blob_storage_log` (rows since yesterday). The collector
+reads it only when a table uses a remote disk and `ACCESS_SCHEMA` finds the log
+on every host. The card says when the bucket is missing and that the
+endpoint is not in system tables.
+
+Table TTL rules are parsed from `engine_full` into the table's `ttl_rules`
+attribute and shown as `TTL` facts. ClickHouse stores the clause normalized
+(`INTERVAL 7 DAY` as `toIntervalDay(7)`, `DELETE WHERE` as `WHERE`), and
+`EXPLAIN AST` gives the rule expressions without the action or destination.
+Column TTLs are not in `engine_full`.
+
+A table with TTL rules gets a `TTL` corner badge (`card.badge`), and its hover
+lists the rules. A link that a TTL rule moves parts along carries a caption
+(`edgeCaption`): the delay, such as `5 min`, or `TTL`. The table detail has a
+Lifecycle section: the rules in order with the disk each move reaches, the TTL
+settings of the definition, and the table's active parts per disk on the
+connected host (`OBJECT_TABLE_PLACEMENT`, read by `loadTablePlacement`).
+
 A storage server is not expected on every host (`KINDS.location.everyHost` is
 false in `model/kinds.ts`). It is never marked partial or different for hosts
 that do not name it, and its card shows no host count.
@@ -196,9 +231,9 @@ that do not name it, and its card shows no host count.
 
 Named collections used by engines, `DataLakeCatalog` database engines, dictionary
 sources, the semantics of source privileges (`READ`, `WRITE`, `S3`), settings
-profiles, quotas, columns and storage policies. Extraction probes in the
-metadata integration test show the server data for profiles, quotas, columns and
-storage is readable. The collector does not use it yet.
+profiles, quotas, columns, local disks and column TTLs. Extraction probes in the
+metadata integration test show the server data for profiles, quotas and columns
+is readable. The collector does not use it yet.
 
 ## Where behavior is defined
 
@@ -241,6 +276,9 @@ engine with a storage location is one entry with a `storedOn(backend)` source.
 | Privilege group and level | metadata integration (`labels grant scopes…`) and `presentation.test.ts` |
 | Detail statements, secret hiding, denied observer | metadata integration (`reads each detail statement…`) |
 | Storage servers, shared nodes, no S3 calls | metadata integration (`builds storage locations…`) and `locations.test.ts` |
+| Remote disks, cache disks, TTL move labels, badge, caption, Lifecycle steps | metadata integration (`links a table to the remote disk…`) and `storage.test.ts` |
+| Part placement per disk | metadata integration (`reads where a table's parts are per disk…`) |
+| TTL rule parsing | `utils/__tests__/ttl-parser.test.ts`, using `engine_full` captured from ClickHouse 26.10 |
 | Focus scoping past the cap, storage servers on several hosts | `locations.test.ts` |
 | Parsing of analyzer and AST output, unqualified sources | `references.test.ts`, using output captured from ClickHouse 26.10 |
 | Name matching, caps, layouts, focus, search, cards | `presentation.test.ts`, `object-model.test.ts` |

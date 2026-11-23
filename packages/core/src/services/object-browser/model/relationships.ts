@@ -47,7 +47,8 @@ export const RELATIONSHIPS: Record<RelationshipKind, RelationshipSpec> = {
     detail: { group: 'Data flow', outgoing: 'Read by', incoming: 'Reads from' } },
   'writes-to': { family: 'data-flow', provenance: false, ranks: true, methods: true, fact: { outgoing: 'label' },
     detail: { group: 'Data flow', outgoing: 'label', incoming: 'Written by' } },
-  /** ClickHouse table → the external storage server named by its engine arguments. */
+  /** ClickHouse table → the external storage server named by its engine arguments, or a remote
+   * disk of its storage policy. The label says how data gets there (stored on, moves after TTL …). */
   'points-to': { family: 'storage', provenance: false, ranks: true, alignTargets: true, lastColumn: true, methods: true, fact: { outgoing: 'Stored on' },
-    detail: { group: 'Storage', outgoing: 'Stored on', incoming: 'Stores' } },
+    detail: { group: 'Storage', outgoing: 'label', incoming: 'Stores' } },
 };

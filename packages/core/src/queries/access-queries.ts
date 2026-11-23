@@ -9,7 +9,7 @@ export const ACCESS_SCHEMA = `
 SELECT hostName() AS host, table, name
 FROM {{cluster_aware:system.columns}}
 WHERE database = 'system'
-  AND table IN ('users','roles','role_grants','grants','tables','row_policies')
+  AND table IN ('users','roles','role_grants','grants','tables','row_policies','blob_storage_log')
 SETTINGS skip_unavailable_shards = 0`;
 
 export const ACCESS_CATALOGS = {
@@ -82,6 +82,31 @@ WHERE active AND (({browse} = 0 AND database = {database} AND table = {table})
 GROUP BY host, database, table
 SETTINGS skip_unavailable_shards = 0`;
 
+/** Volumes of each storage policy, in the order parts fill them. */
+export const ACCESS_STORAGE_POLICIES = `
+SELECT hostName() AS host, policy_name, volume_name, volume_priority, disks
+FROM {{cluster_aware:system.storage_policies}}
+ORDER BY host, policy_name, volume_priority
+SETTINGS skip_unavailable_shards = 0`;
+
+/** Disks as the server configured them. system.disks holds no endpoint or bucket. A cache disk
+ * has a cache_path and shares `path` with the disk it caches. */
+export const ACCESS_DISKS = `
+SELECT hostName() AS host, name, type, object_storage_type, is_remote, path, cache_path
+FROM {{cluster_aware:system.disks}}
+ORDER BY host, name
+SETTINGS skip_unavailable_shards = 0`;
+
+/** The bucket each disk wrote to or read from since yesterday, from system.blob_storage_log.
+ * The server has that log only when its config enables it, so the collector runs this when
+ * ACCESS_SCHEMA finds the table on every host. No storage request. */
+export const ACCESS_DISK_BUCKETS = `
+SELECT hostName() AS host, disk_name, groupUniqArray(3)(bucket) AS buckets
+FROM {{cluster_aware:system.blob_storage_log}}
+WHERE event_date >= yesterday() AND disk_name != '' AND bucket != ''
+GROUP BY host, disk_name
+SETTINGS skip_unavailable_shards = 0`;
+
 /** System tables the collected views read from. The catalog skips the system databases,
  * so these rows are read by name: {tables} is a JSON array of [database, name] pairs. */
 const SYSTEM_TABLES_BY_NAME = `
@@ -95,6 +120,19 @@ export function systemTablesByNameQuery(available: ReadonlySet<string>): string 
   const fields = ACCESS_TABLE_SUMMARY_FIELDS.filter(field => available.has(field));
   return SYSTEM_TABLES_BY_NAME.replace('/* optional_fields */', fields.length ? `, ${fields.join(', ')}` : '');
 }
+
+/** Where a table's active parts are on the connected host, per disk: count, rows and bytes, how
+ * many have passed their earliest move TTL, and the next move TTL still ahead (Unix seconds, 0 when
+ * none). Reads part metadata only. */
+export const OBJECT_TABLE_PLACEMENT = `
+SELECT p.disk_name AS disk, any(d.type) AS type, any(d.object_storage_type) AS object_storage_type,
+  count() AS parts, sum(p.rows) AS rows, sum(p.bytes_on_disk) AS bytes,
+  countIf(notEmpty(p.move_ttl_info.min) AND arrayMin(p.move_ttl_info.min) <= now()) AS past_move_ttl,
+  toUnixTimestamp(minIf(arrayMin(p.move_ttl_info.min), notEmpty(p.move_ttl_info.min) AND arrayMin(p.move_ttl_info.min) > now())) AS next_move,
+  toUnixTimestamp(now()) AS server_now
+FROM system.parts AS p LEFT JOIN system.disks AS d ON d.name = p.disk_name
+WHERE p.active AND p.database = {database} AND p.table = {table}
+GROUP BY p.disk_name ORDER BY p.disk_name`;
 
 /** Object detail statements, read from the connected server when a detail opens.
  * Names are native identifiers, backtick-quoted after escaping. */

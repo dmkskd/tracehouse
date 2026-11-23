@@ -50,7 +50,11 @@ export const page = css`
   .lane-notice { margin: 0 0 12px; padding: 8px 10px; border: 1px dashed var(--border-primary); border-radius: 6px; font-size: 11px; line-height: 1.4; color: var(--text-muted); }
   .node { box-sizing: border-box; display: block; position: relative; z-index: 1; width: 100%; text-align: left; transition: opacity .15s, background .15s; }
   .node-select { display: block; width: 100%; border: 0; padding: 0; background: transparent; text-align: left; color: inherit; }
-  .node-focus { position: absolute; top: 6px; right: 6px; padding: 0 5px; font-size: 11px; line-height: 18px; opacity: 0; transition: opacity .15s; }
+  .node-focus { position: absolute; z-index: 2; top: 6px; right: 6px; padding: 0 5px; font-size: 11px; line-height: 18px; opacity: 0; transition: opacity .15s; }
+  .edge-caption { font-size: 9.5px; font-weight: 600; fill: var(--text-secondary); paint-order: stroke; stroke: var(--bg-primary, #fff); stroke-width: 3px; }
+  /* Corner badge (card.badge) over the card text; the focus button covers it on hover. */
+  .node-badge { position: absolute; z-index: 1; top: 6px; right: 6px; padding: 0 5px; font-size: 10px; font-weight: 600; line-height: 16px; letter-spacing: .02em;
+    color: var(--tone); background: var(--bg-secondary); border: 1px solid color-mix(in srgb, var(--tone, #9672c9) 45%, transparent); border-radius: 4px; white-space: nowrap; }
   .node:hover .node-focus, .node:focus-within .node-focus { opacity: 1; }
   .node-copy { display: block; min-width: 0; padding-right: 18px; }
   .object-symbol { color: var(--tone); display: inline-block; font: 25px/1.2 sans-serif; vertical-align: middle; margin-right: 8px; }
@@ -95,7 +99,7 @@ export const page = css`
   [data-style=metro] .type-label { display: block; position: absolute; left: 14px; right: 0; top: -16px; font-size: 9.5px; line-height: 12px; font-weight: 600; letter-spacing: .06em; text-transform: uppercase; color: var(--tone); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
   [data-style=metro] .node[data-origin=true] { background: var(--accent-purple, #9672c9); border-color: var(--accent-purple, #9672c9); }
   [data-style=metro] .node[data-origin=true] strong { color: #fff; }
-  [data-style=metro] .node-focus { top: 5px; }
+  [data-style=metro] .node-focus, [data-style=metro] .node-badge { top: 5px; }
   [data-style=metro] .type-dot { display: none; }
   .focus-start { display: inline-flex; align-items: center; gap: 6px; min-width: 0; padding: 0; border: 0; background: none; font: inherit; color: var(--text-secondary); white-space: nowrap; }
   .step-name { max-width: 220px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }

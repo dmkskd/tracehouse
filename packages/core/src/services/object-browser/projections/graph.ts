@@ -87,6 +87,7 @@ export function provenancePaths(graph: ObjectGraph, start: string, target: strin
 const FOCUS_TABLES: Record<ObjectKind, (capture: Capture, focus: string) => ReadonlySet<string> | null> = {
   table: (_, focus) => new Set([focus]),
   location: (capture, focus) => new Set(capture.relationships.filter(r => r.kind === 'points-to' && r.to === focus).map(r => r.from)),
+  disk: (capture, focus) => new Set(capture.relationships.filter(r => r.kind === 'points-to' && r.to === focus).map(r => r.from)),
   'row-policy': (capture, focus) => new Set(capture.relationships.filter(r => r.kind === 'policy-target' && r.from === focus).map(r => r.to)),
   user: () => null, role: () => null, 'grant-scope': () => null,
 };

@@ -15,7 +15,7 @@ export function objectMetadataFixtureQueries(prefix: string) {
       `CREATE USER ${bob}`,
       `CREATE USER ${catalog} SETTINGS readonly = 2`,
       `GRANT SELECT ON ${db}.* TO ${catalog}`,
-      ...['one', 'columns', 'tables', 'users', 'roles', 'role_grants', 'grants', 'row_policies', 'privileges']
+      ...['one', 'columns', 'tables', 'users', 'roles', 'role_grants', 'grants', 'row_policies', 'privileges', 'storage_policies', 'disks']
         .map(table => `GRANT SELECT ON system.${table} TO ${catalog}`),
       `GRANT ${access.parent} TO ${bob}`,
       // system.grants keeps ALL ON *.* as one ALL row; ALL ON db.* is split into one row per privilege.
@@ -57,6 +57,10 @@ export function objectMetadataFixtureQueries(prefix: string) {
       `CREATE TABLE ${db}.lake_locations (id UInt64) ENGINE = IcebergLocal('/var/lib/clickhouse/user_files/${db}/wh/nyc/locations/')`,
       `CREATE TABLE ${db}.raw_events (id UInt64) ENGINE = S3('http://lake.invalid:9000/fixture-bucket/raw/events.parquet', NOSIGN, 'Parquet')`,
       `CREATE TABLE ${db}.raw_events_copy (id UInt64) ENGINE = S3('http://lake.invalid:9000/fixture-bucket/raw/events.parquet', NOSIGN, 'Parquet')`,
+      // Needs the storage policy th_fixture_tiered (a local volume, then a cache disk over an S3
+      // disk at a host that is never contacted), which the suite mounts as server config.
+      `CREATE TABLE ${db}.tiered (ts DateTime, id UInt64) ENGINE = MergeTree ORDER BY id
+        TTL ts + INTERVAL 7 DAY TO VOLUME 'cold', ts + INTERVAL 90 DAY DELETE SETTINGS storage_policy = 'th_fixture_tiered'`,
       `CREATE TABLE ${db}.excluded (id UInt64) ENGINE = MergeTree ORDER BY id`,
       `REVOKE SELECT ON ${db}.excluded FROM ${access.reader}`,
       `GRANT SELECT(id) ON ${db}.events TO ${bob} WITH GRANT OPTION`,

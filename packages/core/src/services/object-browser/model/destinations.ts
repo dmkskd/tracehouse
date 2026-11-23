@@ -40,5 +40,5 @@ export const DESTINATIONS: Record<ObjectType, readonly DestinationSpec[]> = {
   'merge-tree': [...ON_TABLE, MERGES],
   view: ON_TABLE, 'materialized-view': ON_TABLE, distributed: ON_TABLE, dictionary: ON_TABLE, buffer: ON_TABLE,
   iceberg: ON_TABLE, lake: ON_TABLE, 'object-storage': ON_TABLE, table: ON_TABLE,
-  user: [], role: [], 'grant-scope': [], 'row-policy': [], location: [],
+  user: [], role: [], 'grant-scope': [], 'row-policy': [], location: [], disk: [],
 };

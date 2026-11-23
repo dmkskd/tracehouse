@@ -19,7 +19,7 @@ export const isGap = (key: string) => key.startsWith(GAP);
 const KIND_LAYOUT: Record<ObjectKind, { lane: string; band: LayoutBand }> = {
   user: { lane: 'Users', band: 'access' }, role: { lane: 'Roles', band: 'access' }, 'grant-scope': { lane: 'Privileges', band: 'access' },
   table: { lane: 'Tables / row policies', band: 'data' }, 'row-policy': { lane: 'Tables / row policies', band: 'data' },
-  location: { lane: 'Storage', band: 'external' },
+  location: { lane: 'Storage', band: 'external' }, disk: { lane: 'Storage', band: 'external' },
 };
 const KIND_ORDER = Object.keys(KIND_LAYOUT) as ObjectKind[];
 
@@ -49,7 +49,7 @@ export function layoutCatalog(graph: ObjectGraph, selected: string | null, maxNo
 const COLUMN_TITLES: Partial<Record<ObjectType, string>> = {
   user: 'Users', role: 'Roles', 'grant-scope': 'Privileges', view: 'Views', 'materialized-view': 'Materialized views',
   'merge-tree': 'Tables', table: 'Tables', distributed: 'Distributed tables', dictionary: 'Dictionaries', buffer: 'Buffers',
-  iceberg: 'Tables', lake: 'Tables', 'object-storage': 'Tables', location: 'Storage',
+  iceberg: 'Tables', lake: 'Tables', 'object-storage': 'Tables', location: 'Storage', disk: 'Storage',
 };
 /** One title per column: a single type's title, two joined ("Buffers and views"), else a general one. */
 function columnTitle(titles: string[]): string | undefined {

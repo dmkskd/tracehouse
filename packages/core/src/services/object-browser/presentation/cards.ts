@@ -1,12 +1,14 @@
 import { sortedSet } from '../model/canonical.js';
-import type { GraphNode, ObjectGraph } from '../model/types.js';
+import type { GraphEdge, GraphNode, ObjectGraph } from '../model/types.js';
 import { engineSpec, type TableType } from '../model/engines.js';
 import { KINDS } from '../model/kinds.js';
 import { RELATIONSHIPS } from '../model/relationships.js';
 import { engineCall } from '../collectors/references.js';
+import { ttlDelay, type TTLRule } from '../../../utils/ttl-parser.js';
+import { movingTTL } from '../model/disk-links.js';
 
 /** Access objects keep their kind; tables take their engine family's type. */
-export type ObjectType = 'user' | 'role' | 'grant-scope' | 'row-policy' | 'location' | TableType;
+export type ObjectType = 'user' | 'role' | 'grant-scope' | 'row-policy' | 'location' | 'disk' | TableType;
 export interface CardFact { label: string; value: string }
 export interface ObjectCard {
   type: ObjectType;
@@ -20,6 +22,8 @@ export interface ObjectCard {
   flags: ('differs' | 'partial' | 'unresolved' | 'revoke')[];
   /** Present only when host coverage carries information: several hosts or partial. */
   hosts?: string;
+  /** Corner badge for behavior the card text does not show (`TTL`); `detail` lists the rules. */
+  badge?: { text: string; detail: string };
   hover: ObjectHover;
 }
 export interface ValueRange { min: number; max: number }
@@ -58,6 +62,29 @@ function attr(node: GraphNode, name: string): unknown {
   return node.records.find(r => r.attributes[name] != null)?.attributes[name];
 }
 const str = (value: unknown) => value == null ? '' : String(value);
+const TTL_ACTIONS: Record<TTLRule['action'], (rule: TTLRule) => string> = {
+  delete: rule => rule.where ? `delete where ${rule.where}` : 'delete',
+  move: rule => `move to ${rule.destination!.type} ${rule.destination!.name}`,
+  recompress: rule => `recompress ${rule.codec}`,
+  'group-by': rule => `group by ${rule.groupBy}${rule.set ? ` set ${rule.set}` : ''}`,
+};
+/** `TTL` on a table with TTL rules; the detail lists them, one per line. */
+function ttlBadge(node: GraphNode): ObjectCard['badge'] {
+  const rules = ttlFacts(node);
+  return rules.length ? { text: 'TTL', detail: rules.map(rule => rule.value).join('\n') } : undefined;
+}
+/** Caption drawn on a link that a TTL rule moves parts along: the delay (`5 min`) when there is
+ * one `<column> + interval` rule, `TTL` otherwise. Other links have none. */
+export function edgeCaption(edge: GraphEdge): string | undefined {
+  const rules = movingTTL(edge.records);
+  if (!rules.length) return undefined;
+  return rules.length === 1 ? ttlDelay(rules[0])?.short ?? 'TTL' : 'TTL';
+}
+/** One fact per table TTL rule (`ttl_rules`, parsed from engine_full at collection). */
+const ttlFacts = (node: GraphNode): CardFact[] => {
+  const rules = attr(node, 'ttl_rules');
+  return Array.isArray(rules) ? (rules as TTLRule[]).map(rule => ({ label: 'TTL', value: `${rule.expression} · ${TTL_ACTIONS[rule.action](rule)}` })) : [];
+};
 const list = (values: string[]) => values.join(', ');
 
 /** Native names from the observation key; display names can contain dots. */
@@ -71,7 +98,7 @@ function nameParts(node: GraphNode): string[] {
 const KIND_TYPES: Record<GraphNode['kind'], (node: GraphNode) => ObjectType> = {
   user: () => 'user', role: () => 'role', 'grant-scope': () => 'grant-scope', 'row-policy': () => 'row-policy',
   table: node => engineSpec(attr(node, 'engine')).type,
-  location: () => 'location',
+  location: () => 'location', disk: () => 'disk',
 };
 export function objectTypeOf(node: GraphNode): ObjectType {
   return KIND_TYPES[node.kind](node);
@@ -81,7 +108,7 @@ const TYPE_LABELS: Record<ObjectType, string> = {
   user: 'User', role: 'Role', 'grant-scope': 'Privilege', 'row-policy': 'Row policy',
   'merge-tree': 'MergeTree', view: 'View', 'materialized-view': 'Materialized view',
   distributed: 'Distributed', dictionary: 'Dictionary', buffer: 'Buffer', table: 'Table',
-  iceberg: 'Iceberg', lake: 'Data lake', 'object-storage': 'Object storage', location: 'Storage',
+  iceberg: 'Iceberg', lake: 'Data lake', 'object-storage': 'Object storage', location: 'Storage', disk: 'Disk',
 };
 
 /** Table reference relative to the owning database: same-database names stay short. */
@@ -200,6 +227,7 @@ const describers: Record<ObjectType, Describe> = {
     ...(attr(node, 'sorting_key') ? [{ label: 'ORDER BY', value: str(attr(node, 'sorting_key')) }] : []),
     ...(attr(node, 'partition_key') ? [{ label: 'PARTITION BY', value: str(attr(node, 'partition_key')) }] : []),
     ...(attr(node, 'storage_policy') && attr(node, 'storage_policy') !== 'default' ? [{ label: 'Storage policy', value: str(attr(node, 'storage_policy')) }] : []),
+    ...ttlFacts(node),
   ] })),
   'materialized-view': flowCard, view: flowCard, distributed: flowCard, buffer: flowCard,
   dictionary: withDatabase(tableCard),
@@ -211,6 +239,18 @@ const describers: Record<ObjectType, Describe> = {
     const label = str(attr(node, 'backend')) || TYPE_LABELS.location;
     return { title: node.name, label, summary: `${label} · ${tables} table${tables === 1 ? '' : 's'}`, facts: [{ label: 'Tables', value: String(tables) }] };
   },
+  // A remote disk of tables' storage policies (collectors/storage.ts); system.disks holds no endpoint.
+  disk: (node, graph) => {
+    const tables = new Set(graph.edges.filter(e => e.kind === 'points-to' && e.to === node.key).map(e => e.from)).size;
+    const label = str(attr(node, 'backend')) || TYPE_LABELS.disk;
+    const cache = attr(node, 'cache_disks'), buckets = attr(node, 'buckets');
+    return { title: node.name, label, summary: `${label} · ${tables} table${tables === 1 ? '' : 's'}`, facts: [{ label: 'Tables', value: String(tables) },
+      { label: 'Disk', value: str(attr(node, 'disk')) },
+      ...(Array.isArray(cache) ? [{ label: 'Cached by', value: cache.join(', ') }] : []),
+      { label: 'Bucket', value: Array.isArray(buckets) ? buckets.join(', ') : 'not in system.blob_storage_log' },
+      { label: 'Endpoint', value: 'not in system tables' },
+    ] };
+  },
 };
 
 /** Range of a numeric attribute over the host records that report it. */
@@ -221,9 +261,11 @@ function valueRange(node: GraphNode, name: string): ValueRange | undefined {
 
 const viewQuery = (node: GraphNode) => { const text = str(attr(node, 'as_select')).trim(); return text ? { label: 'Query', text } : undefined; };
 const engineDefinition = (node: GraphNode) => { const text = engineCall(str(attr(node, 'engine_full'))); return text ? { label: 'Engine', text } : undefined; };
-/** Types whose definition the hover shows; the others are described by their name and engine. */
+/** Types whose definition the hover shows (for MergeTree tables, their TTL rules); the others are
+ * described by their name and engine. */
+const ttlDefinition = (node: GraphNode) => { const text = ttlFacts(node).map(fact => fact.value).join('\n'); return text ? { label: 'TTL', text } : undefined; };
 const DEFINITIONS: Partial<Record<ObjectType, (node: GraphNode) => ObjectHover['definition']>> = {
-  view: viewQuery, 'materialized-view': viewQuery, distributed: engineDefinition, buffer: engineDefinition,
+  'merge-tree': ttlDefinition, view: viewQuery, 'materialized-view': viewQuery, distributed: engineDefinition, buffer: engineDefinition,
 };
 
 /** Native names: [database, table] for tables, [database, table, policy] for row policies. */
@@ -251,7 +293,8 @@ export function describeCard(node: GraphNode, graph: ObjectGraph): { card: Objec
     ...(rows ? { rows } : {}), ...(bytes ? { bytes } : {}), ...(parts ? { parts } : {}), ...(newestPart ? { newestPart } : {}),
     ...(definition ? { definition } : {}), ...(comment ? { comment } : {}),
     notes: [...(showHosts && node.observedHosts.length < node.expectedHosts.length ? [hosts] : []), ...flags.map(flag => FLAG_LABELS[flag])] };
-  return { facts, card: { type, ...naming, label: typeLabel, facts: facts.slice(0, MAX_FACTS), flags,
+  const badge = node.kind === 'table' ? ttlBadge(node) : undefined;
+  return { facts, card: { type, ...naming, label: typeLabel, facts: facts.slice(0, MAX_FACTS), flags, ...(badge ? { badge } : {}),
     summary: summary ?? [typeLabel, first && `${first.label} ${first.value}`].filter(Boolean).join(' · '),
     ...(showHosts ? { hosts } : {}), hover } };
 }
