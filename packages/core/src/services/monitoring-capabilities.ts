@@ -23,6 +23,8 @@ import {
   PROBE_METRIC_LOG_REPLICATION_COLUMNS,
   PROBE_QUERY_METRIC_LOG_COLUMNS,
   PROBE_PROCESSORS_PROFILE_LOG_SCHEMA,
+  PROBE_ACCESS_SHOW_PRIVILEGES,
+  checkShowGrant,
 } from '../queries/monitoring-capabilities-queries.js';
 import { QUERY_METRIC_LOG_PROFILE_EVENT_COLUMNS } from '../queries/query-metric-log-queries.js';
 import { tagQuery } from '../queries/builder.js';
@@ -44,6 +46,13 @@ export class MonitoringCapabilitiesServiceError extends Error {
     this.name = 'MonitoringCapabilitiesServiceError';
   }
 }
+
+/** Capabilities for the SHOW privileges behind the object browser's detail statements. */
+const SHOW_PRIVILEGE_META: Record<string, { id: string; description: string }> = {
+  'SHOW USERS': { id: 'show_users', description: 'SHOW CREATE USER and SHOW GRANTS FOR a user. Same data as system.users and system.grants, without passwords or hashes.' },
+  'SHOW ROLES': { id: 'show_roles', description: 'SHOW CREATE ROLE and SHOW GRANTS FOR a role. Same data as system.roles and system.grants.' },
+  'SHOW ROW POLICIES': { id: 'show_row_policies', description: 'SHOW CREATE ROW POLICY. Same data as system.row_policies, including filter expressions.' },
+};
 
 /** Metadata for each system log table we probe */
 const LOG_TABLE_META: Record<string, { label: string; description: string; category: MonitoringCapability['category']; source: string }> = {
@@ -830,6 +839,23 @@ export class MonitoringCapabilitiesService {
       });
     }
 
+    const showErrors = await this.probeShowPrivileges(version);
+    for (const privilege of PROBE_ACCESS_SHOW_PRIVILEGES) {
+      const meta = SHOW_PRIVILEGE_META[privilege];
+      const error = showErrors.get(privilege);
+      const denied = error !== undefined && /ACCESS_DENIED|Code:\s*497\b|Not enough privileges/i.test(error);
+      capabilities.push({
+        id: meta.id,
+        label: privilege,
+        description: meta.description,
+        available: error === undefined,
+        category: 'introspection',
+        detail: error === undefined ? 'Granted' : denied ? `Missing ${privilege} grant` : `Grant probe failed · ${error}`,
+        source: `grant: ${privilege}`,
+        ...(error === undefined ? {} : { probeError: error, unavailableReason: denied ? 'grant' as const : 'config' as const }),
+      });
+    }
+
     return {
       probedAt: new Date(),
       serverVersion: version,
@@ -892,6 +918,29 @@ export class MonitoringCapabilitiesService {
       }
     };
     await Promise.all(Array.from({ length: READ_ACCESS_CONCURRENCY }, worker));
+    return errors;
+  }
+
+  /** Errors by privilege for the SHOW privileges the object browser's detail statements
+   * need. CHECK GRANT on 25.1+, otherwise the listing statement the privilege allows. */
+  private async probeShowPrivileges(version: string): Promise<Map<string, string>> {
+    const errors = new Map<string, string>();
+    const canCheckGrants = isClickHouseVersionAtLeast(version, 25, 1) && !!this.adapter.executeRawQuery;
+    await Promise.all(PROBE_ACCESS_SHOW_PRIVILEGES.map(async privilege => {
+      try {
+        if (canCheckGrants) {
+          const rows = await this.adapter.executeRawQuery!(tagQuery(checkShowGrant(privilege), sourceTag(TAB_INTERNAL, 'showPrivilegeGrant')));
+          const granted = rows[0]?.trim();
+          if (granted === undefined) throw new Error(`${privilege} grant probe returned no result`);
+          if (Number(granted) !== 1) errors.set(privilege, `Not enough privileges: ${privilege} ON *.* (ACCESS_DENIED)`);
+        } else {
+          await this.adapter.executeQuery(tagQuery(privilege, sourceTag(TAB_INTERNAL, 'showPrivilegeList')));
+        }
+      } catch (error) {
+        const message = error instanceof Error ? error.message : String(error);
+        errors.set(privilege, message || 'Unknown grant probe error');
+      }
+    }));
     return errors;
   }
 

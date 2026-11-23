@@ -102,6 +102,13 @@ GRANT SELECT ON system.role_grants TO read_only;
 GRANT SELECT ON system.grants TO read_only;
 GRANT SELECT ON system.row_policies TO read_only;
 
+-- Object browser detail statements: SHOW CREATE ROLE, SHOW GRANTS FOR a role,
+-- SHOW CREATE ROW POLICY. Same data as the access tables above.
+-- SHOW USERS is not granted: SHOW CREATE USER prints per-user SETTINGS, which
+-- system.settings_profile_elements hides (see the sandbox test).
+GRANT SHOW ROLES ON *.* TO read_only;
+GRANT SHOW ROW POLICIES ON *.* TO read_only;
+
 -- ============================================================
 -- Grants — schema browsing
 -- ============================================================

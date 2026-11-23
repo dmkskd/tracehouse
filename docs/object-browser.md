@@ -42,6 +42,8 @@ Opening an object's detail view executes statements against the connected host o
 - Row policy: `SHOW CREATE ROW POLICY <name> ON <db>.<table>` (or `ON <db>.*` for database-wide policies)
 - Iceberg snapshots: `SELECT ... FROM system.iceberg_history` (reads metadata from storage, so never run during catalog collection)
 
+User statements need `SHOW USERS`, role statements `SHOW ROLES`, and the row policy statement `SHOW ROW POLICIES`. `SHOW GRANTS FOR` needs no privilege for the connected user or for a role granted to it. The capability probe checks each privilege (`show_users`, `show_roles`, `show_row_policies`).
+
 ### Host scoping and schema probing
 
 In clustered setups, catalog queries run through `clusterAllReplicas` (`{{cluster_aware:...}}`) with `skip_unavailable_shards = 0` and label every row with `hostName()`.
@@ -222,18 +224,16 @@ Status: §6.1 and §6.2 are implemented. The rest is proposed.
 
 ### 6.2 From the object detail to other pages (implemented)
 
-The object detail (double-click a card in focus) has an "Open in" section. The links come from `DESTINATIONS` in `model/destinations.ts`, one list per object type, so each type shows only the pages that apply to it:
+The detail of a table or view (double-click a card in focus) has buttons under its title that open other pages filtered to it. The links come from `DESTINATIONS` in `model/destinations.ts`, one list per object type. Only tables and views have links:
 
-| Type | Links |
+| Type | Buttons |
 |---|---|
-| MergeTree table | Queries on this table · Time Travel · Merges |
-| Other tables and views | Queries on this table · Time Travel |
-| Table, with a chain user | adds Queries by that user on this table · Failed ones · That user in Time Travel |
-| User | Queries by this user · Failed ones · Time Travel |
-| Role, privilege, row policy, storage server | none: no page filters by them |
+| MergeTree table | Queries · Time Travel · Merges |
+| Other tables and views | Queries · Time Travel |
+| User, role, privilege, row policy, storage server | none |
 
-- **Chain user:** the user a link put in context (`ob_user`), or the user the focus trail starts from. Starting focus on `alice` and stepping to a table offers "Queries by alice on this table".
-- **Parameters:** Queries gets `user`, `tableName=<db>.<table>` and `status=error`, and Merges gets `database` and `table`, as their share schemas read them. Time Travel gets its tracking parameters, `tt_user` and `tt_table`, which list every matching query in the window. A user link also sets `tt_failed_start=1`, so queries that failed before start, such as access denied, appear.
+- **User filter:** a `User` select before the buttons chooses whose activity Queries and Time Travel show: all users, the user a link put in context (`ob_user`) or the focus trail started from (the default), or any user with a configured path to the table (at most 25). Merges ignore it: merges have no user. Each button's tooltip says what the page will show.
+- **Parameters:** Queries gets `user` and `tableName=<db>.<table>`, and Merges gets `database` and `table`, as their share schemas read them. Time Travel gets its tracking parameters, `tt_table` and `tt_user`, opens on matched operations only (`tt_matched_only=1`), and with a user also sets `tt_failed_start=1`, so queries that failed before start, such as access denied, appear.
 - **Return:** each link navigates with `state.from` set to the URL that reopens this focus (`objectLinkFor`, with the chain user on a table). Queries, Merges and Time Travel show the back link.
 
 ### 6.3 From Analytics: `@object_link`

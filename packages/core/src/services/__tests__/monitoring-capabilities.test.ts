@@ -357,8 +357,9 @@ describe('MonitoringCapabilitiesService', () => {
     const executeQuery = vi.mocked(adapter.executeQuery);
     const queries = executeQuery.mock.calls.map(([sql]) => String(sql));
     // snapshot, log tables, settings, cloud, tracehouse tables,
-    // metric_log replication columns, query_metric_log columns, processor schema
-    expect(queries).toHaveLength(14);
+    // metric_log replication columns, query_metric_log columns, processor schema,
+    // SHOW USERS / SHOW ROLES / SHOW ROW POLICIES grants
+    expect(queries).toHaveLength(17);
     const reads = queries.filter(query => query.includes('source:TraceHouse:Internal:tableReadAccess'));
     expect(reads).toHaveLength(3);
     expect(reads.every(query => query.includes('WHERE 0'))).toBe(true);

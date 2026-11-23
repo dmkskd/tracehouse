@@ -31,6 +31,7 @@ import { EventsService } from '../../services/events-service.js';
 import { collectObjects, notGrantedSources } from '../../services/object-browser/collectors/collect.js';
 import { MonitoringCapabilitiesService } from '../../services/monitoring-capabilities.js';
 import { isClickHouseVersionAtLeast } from '../../utils/clickhouse-version.js';
+import { showCreateRole, showCreateRowPolicy, showGrantsFor } from '../../queries/access-queries.js';
 
 const CONTAINER_TIMEOUT = 120_000;
 const RO_PASSWORD = 'testpass';
@@ -166,6 +167,29 @@ describe('read-only user sandbox escape tests', { tags: ['security'] }, () => {
       expect(capture.observations.some(record => record.kind === 'user' && record.name === 'read_only')).toBe(true);
     },
   );
+
+  it('runs the role and row policy detail statements; user details need SHOW USERS, which the demo withholds', async () => {
+    // A table of its own: a row policy on test_data would change what other tests read.
+    await adminClient.command({ query: 'CREATE TABLE IF NOT EXISTS default.sandbox_policy_target (id UInt64) ENGINE = MergeTree ORDER BY id' });
+    await adminClient.command({ query: 'CREATE ROLE IF NOT EXISTS sandbox_reader' });
+    await adminClient.command({ query: 'GRANT SELECT ON default.sandbox_policy_target TO sandbox_reader' });
+    await adminClient.command({ query: 'CREATE ROW POLICY IF NOT EXISTS sandbox_filter ON default.sandbox_policy_target FOR SELECT USING id = 1 TO sandbox_reader' });
+    try {
+      const restricted = new ClusterAwareAdapter(new TestAdapter(roClient));
+      const { capabilities } = await new MonitoringCapabilitiesService(restricted).probe();
+      expect(capabilities.find(item => item.id === 'show_roles')).toMatchObject({ available: true });
+      expect(capabilities.find(item => item.id === 'show_row_policies')).toMatchObject({ available: true });
+      expect(capabilities.find(item => item.id === 'show_users')).toMatchObject({ available: false, unavailableReason: 'grant' });
+      for (const sql of [showCreateRole('sandbox_reader'), showGrantsFor('sandbox_reader'), showCreateRowPolicy('sandbox_filter', 'default', 'sandbox_policy_target')]) {
+        const text = await (await roClient.query({ query: sql, format: 'TabSeparatedRaw' })).text();
+        expect(text, sql).toContain('sandbox_');
+      }
+    } finally {
+      await adminClient.command({ query: 'DROP ROW POLICY IF EXISTS sandbox_filter ON default.sandbox_policy_target' });
+      await adminClient.command({ query: 'DROP ROLE IF EXISTS sandbox_reader' });
+      await adminClient.command({ query: 'DROP TABLE IF EXISTS default.sandbox_policy_target' });
+    }
+  });
 
 
   it.skipIf(HAS_KNOWN_23_8_SYSTEM_TABLE_AUTHORIZATION_BEHAVIOR)(

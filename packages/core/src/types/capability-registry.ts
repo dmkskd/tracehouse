@@ -306,6 +306,24 @@ export const CAPABILITY_REGISTRY: CapabilityRegistryEntry[] = [
     ],
   },
   {
+    capabilityId: 'show_users',
+    consumers: [
+      { screen: 'Object Browser', tab: 'Objects', route: '/objects', enables: 'CREATE statement and grants in user details', importance: 'optional' },
+    ],
+  },
+  {
+    capabilityId: 'show_roles',
+    consumers: [
+      { screen: 'Object Browser', tab: 'Objects', route: '/objects', enables: 'CREATE statement and grants in role details', importance: 'optional' },
+    ],
+  },
+  {
+    capabilityId: 'show_row_policies',
+    consumers: [
+      { screen: 'Object Browser', tab: 'Objects', route: '/objects', enables: 'CREATE statement in row policy details', importance: 'optional' },
+    ],
+  },
+  {
     capabilityId: 'system_processes',
     consumers: [
       { screen: 'Query Tracker', tab: 'Queries', route: '/query-monitor', enables: 'Running query list and real-time query monitoring', importance: 'required' },

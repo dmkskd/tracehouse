@@ -77,6 +77,16 @@ The object browser reads access and table definitions. Without the access tables
 | `system.row_policies` | Row filter expressions, including the values they compare against, and who they apply to |
 | `system.privileges` | ClickHouse's privilege list. Every user can read it. |
 
+Object details show the server's own `CREATE` statement and grants. These statements need privileges of their own. Without them the catalog still loads and only the statement is unavailable.
+
+| Privilege | What it shows |
+|---|---|
+| `SHOW ROLES` | `SHOW CREATE ROLE` and `SHOW GRANTS FOR` a role. The data is the same as in `system.roles` and `system.grants`, plus any settings defined on the role. |
+| `SHOW ROW POLICIES` | `SHOW CREATE ROW POLICY`. The data is the same as in `system.row_policies`. |
+| `SHOW USERS` | `SHOW CREATE USER` and `SHOW GRANTS FOR` a user. Besides what `system.users` lists, the output includes the settings defined on the user, which are otherwise only in `system.settings_profile_elements`. |
+
+Grant them with `GRANT SHOW ROLES, SHOW ROW POLICIES ON *.* TO <user>`. Grant `SHOW USERS` only to accounts that may read every user's settings. The TraceHouse demo's `read_only` account has `SHOW ROLES` and `SHOW ROW POLICIES` but not `SHOW USERS`.
+
 **Secrets and passwords:** None of these `SELECT` grants expose user passwords or password hashes. In `system.tables` and `SHOW CREATE` output, ClickHouse masks embedded credentials (such as storage keys or external database passwords) as `[HIDDEN]` unless **all three** of the following are enabled: the server setting `display_secrets_in_show_and_select = 1`, the session setting `format_display_secrets_in_show_and_select = 1`, and the `displaySecretsInShowAndSelect` privilege. Do not grant `displaySecretsInShowAndSelect` to a monitoring or read-only account; TraceHouse never requests it and explicitly sets `format_display_secrets_in_show_and_select = 0` when running `SHOW CREATE USER`.
 
 **Metadata sensitivity:** The access tables describe every account on the server, not only the connected one. They do not leak passwords, but they do expose account and role inventory, authentication types (including whether any account uses `no_password`), host allowlists, full privilege maps, and literal row-policy filter expressions (which in multi-tenant setups may contain tenant identifiers). Grant them only to accounts that may see that. A shared or public read-only account usually should not have them. The TraceHouse demo's `read_only` account has them.
@@ -102,6 +112,7 @@ On connect, the app probes the server to determine what is available and degrade
 - **Cluster topology** - queries `system.clusters`, falls back to `system.replicas` if inaccessible
 - **ZooKeeper / Keeper** - checks if `system.zookeeper` is present
 - **Access definitions** - checks `SELECT` on `system.users`, `system.roles`, `system.role_grants`, `system.grants` and `system.row_policies`. The object browser skips the ones without it and names the missing grant.
+- **Access statements** - checks the `SHOW USERS`, `SHOW ROLES` and `SHOW ROW POLICIES` privileges that object details need
 - **ClickHouse Cloud** - detects cloud via `cloud_mode_engine` setting and `system.build_options`
 - **Container environment** - reads cgroup CPU/memory limits, detects Kubernetes by hostname pattern
 

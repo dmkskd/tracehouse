@@ -269,6 +269,12 @@ export const PROBE_SYSTEM_TABLE_ACCESS_TABLES = [
   'row_policies',           // row filters and who they apply to
 ] as const;
 
+/** Privileges the object browser's detail statements need (SHOW CREATE USER / ROLE /
+ * ROW POLICY, SHOW GRANTS FOR). Each is also a statement that lists the same entities,
+ * which serves as the probe on servers without CHECK GRANT. */
+export const PROBE_ACCESS_SHOW_PRIVILEGES = ['SHOW USERS', 'SHOW ROLES', 'SHOW ROW POLICIES'] as const;
+export const checkShowGrant = (privilege: string) => `CHECK GRANT ${privilege} ON *.*`;
+
 /**
  * One successful metadata snapshot for connection-wide capability detection.
  *

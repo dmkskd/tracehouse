@@ -84,6 +84,10 @@
         <query>GRANT SELECT ON system.role_grants</query>
         <query>GRANT SELECT ON system.grants</query>
         <query>GRANT SELECT ON system.row_policies</query>
+        <!-- Object browser: role and row policy detail statements. SHOW USERS is not granted:
+             SHOW CREATE USER prints per-user SETTINGS, which system.settings_profile_elements hides. -->
+        <query>GRANT SHOW ROLES ON *.*</query>
+        <query>GRANT SHOW ROW POLICIES ON *.*</query>
         <!-- Schema browsing -->
         <query>GRANT SHOW DATABASES ON *.*</query>
         <query>GRANT SHOW TABLES ON *.*</query>
