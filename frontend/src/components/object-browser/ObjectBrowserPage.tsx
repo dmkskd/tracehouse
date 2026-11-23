@@ -128,7 +128,10 @@ export function ObjectBrowserPage() {
           <li>Up to 20 cards per column; search finds the rest</li>
           <li>System tables are not listed</li>
         </ul>
-        {capture && <p style={{ margin: '6px 0 0' }}>Captured {new Date(capture.completedAt).toLocaleTimeString()} from {capture.hosts.map(h => `${h.host} (${h.version})`).join(', ')}</p>}
+        {capture && <div style={{ marginTop: 8, paddingTop: 8, borderTop: '1px solid var(--border-secondary)' }}>
+          <div style={{ color: 'var(--text-muted)', marginBottom: 4 }}>Captured {new Date(capture.completedAt).toLocaleTimeString()} from</div>
+          {capture.hosts.map(h => <div key={h.host} style={{ display: 'flex', justifyContent: 'space-between', gap: 16 }}><span style={{ fontFamily: 'monospace' }}>{h.host}</span><span style={{ color: 'var(--text-muted)' }}>{h.version}</span></div>)}
+        </div>}
       </InfoPopover>
     </div>
     {search.trim() && <div className="coverage">{matches.slice(0, 30).map(n => <button key={n.key} onClick={() => choose(n.key)}>{cards.get(n.key) && <ObjectTypeIcon card={cards.get(n.key)!} />}{n.name} · {cards.get(n.key)?.label}</button>)}<span className="muted">{matches.length} matches in the collected catalog</span></div>}
