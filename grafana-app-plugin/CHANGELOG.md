@@ -9,7 +9,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Bug fixes
 
-- **Grafana plugin:** Scoped CSS to plugin components, namespaced browser storage.
+- **Grafana plugin:** Scoped CSS to plugin components.
+- **Grafana plugin:** Namespaced browser storage keys under `dmkskd-tracehouse-app:`. Existing settings are copied to the new prefixed keys and the old keys are kept, so a rollback finds the settings as they were before the upgrade.
 
 ## [0.22.0] - 2026-11-19
 
