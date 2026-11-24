@@ -8,6 +8,7 @@
 import React, { useState } from 'react';
 import type { ExplainResult, ExplainType } from '../../stores/traceStore';
 import { copyToClipboard } from '@tracehouse/ui-shared';
+import { escapeHtml } from '../../utils/sqlHighlighter';
 
 interface ExplainViewerProps {
   result: ExplainResult | null;
@@ -133,7 +134,8 @@ const ExplainOutput: React.FC<{
     
     return lines.map((line, index) => {
       // Highlight different parts based on EXPLAIN type
-      let highlightedLine = line;
+      // Escape first: EXPLAIN output echoes identifiers and literals from the query.
+      let highlightedLine = escapeHtml(line);
       
       // Common patterns to highlight
       const patterns = [
@@ -142,7 +144,7 @@ const ExplainOutput: React.FC<{
         // Numbers
         { regex: /\b(\d+(?:\.\d+)?)\b/g, replacement: '<span class="text-green-600 dark:text-green-400">$1</span>' },
         // Arrows and operators
-        { regex: /(→|->|=>|<-|←)/g, replacement: '<span class="text-purple-600 dark:text-purple-400">$1</span>' },
+        { regex: /(→|-&gt;|=&gt;|&lt;-|←)/g, replacement: '<span class="text-purple-600 dark:text-purple-400">$1</span>' },
         // Column names in brackets
         { regex: /\[([^\]]+)\]/g, replacement: '[<span class="text-orange-600 dark:text-orange-400">$1</span>]' },
         // Table names after FROM

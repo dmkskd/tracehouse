@@ -17,6 +17,7 @@ import React, { useRef, useEffect } from 'react';
 import * as d3 from 'd3';
 import type { MergeInfo, MutationInfo, BackgroundPoolMetrics } from '../../stores/mergeStore';
 import { deriveHealth } from '@tracehouse/core';
+import { escapeHtml } from '../../utils/sqlHighlighter';
 import type { HealthNode, ThroughputMap } from '@tracehouse/core';
 
 type PartitionedNode = d3.HierarchyRectangularNode<HealthNode>;
@@ -214,14 +215,14 @@ export const MergeHealthSunburst: React.FC<MergeHealthSunburstProps> = ({
         // Build breadcrumb from ancestors (skip root)
         const crumbs = d.ancestors().reverse().slice(1, -1); // skip root and self
         const breadcrumb = crumbs.length > 0
-          ? `<div style="color:var(--text-muted,#555570);font-size:10px;margin-bottom:4px">${crumbs.map(a => a.data.name).join(' › ')}</div>`
+          ? `<div style="color:var(--text-muted,#555570);font-size:10px;margin-bottom:4px">${crumbs.map(a => escapeHtml(a.data.name)).join(' › ')}</div>`
           : '';
         tooltip.style('opacity', '1').html(
           breadcrumb +
           `<div style="display:flex;align-items:center;gap:6px;margin-bottom:4px">` +
           `<span style="width:8px;height:8px;border-radius:50%;background:${c.base};flex-shrink:0"></span>` +
-          `<span style="font-weight:600;color:var(--text-primary,#e0e0f0)">${d.data.name}</span></div>` +
-          `<div style="color:var(--text-muted,#8888aa);font-size:11px">${d.data.metric}</div>` +
+          `<span style="font-weight:600;color:var(--text-primary,#e0e0f0)">${escapeHtml(d.data.name)}</span></div>` +
+          `<div style="color:var(--text-muted,#8888aa);font-size:11px">${escapeHtml(d.data.metric)}</div>` +
           (d.children ? '<div style="color:var(--text-muted,#555570);font-size:10px;margin-top:4px">Hover to expand</div>'
             : d.depth >= 3 ? '<div style="color:var(--text-muted,#555570);font-size:10px;margin-top:4px">Click to open details</div>'
             : ''),
