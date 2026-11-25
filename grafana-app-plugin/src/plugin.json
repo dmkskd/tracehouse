@@ -113,6 +113,13 @@
     },
     {
       "type": "page",
+      "name": "Objects",
+      "path": "/a/dmkskd-tracehouse-app/objects",
+      "role": "Viewer",
+      "addToNav": true
+    },
+    {
+      "type": "page",
       "name": "Cluster",
       "path": "/a/dmkskd-tracehouse-app/cluster",
       "role": "Viewer",
