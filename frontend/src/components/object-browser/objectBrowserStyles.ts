@@ -124,7 +124,6 @@ export const page = css`
     background: var(--bg-secondary); border: 1px solid var(--border-primary); border-radius: 8px; box-shadow: 0 8px 28px rgba(0, 0, 0, .35); }
   .focus-start:hover { color: var(--accent-blue, #6696cf); text-decoration: underline; }
   .focus-separator { color: var(--text-muted); margin: 0 4px; }
-  .scope-trail { display: flex; align-items: center; gap: 6px; font-size: 15px; font-weight: 500; }
   .focus-current { display: inline-flex; align-items: center; gap: 6px; min-width: 0; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
   .focus-actions { display: flex; align-items: center; gap: 8px; flex-shrink: 0; }
   .focus-context { display: inline-flex; align-items: center; gap: 8px; padding: 3px 4px 3px 10px; border-radius: 999px; font-size: 12px; white-space: nowrap; color: var(--text-secondary); background: rgba(var(--accent-primary-rgb), 0.12); }
@@ -147,10 +146,12 @@ export const page = css`
   .focus-header .toolbar-separator { align-self: stretch; width: 1px; margin: 2px 4px; background: var(--border-primary); }
   .focus-header { position: sticky; top: 0; z-index: 3; display: flex; justify-content: space-between; align-items: center; gap: 16px; padding: 10px 24px; background: var(--bg-card); border-bottom: 1px solid var(--border-primary); }
   .focus-body { padding: 0 24px 24px; }
+  .focus-answers { display: flex; flex-wrap: wrap; align-items: center; gap: 12px; padding: 12px 24px 0; }
+  .focus-answers .operation-answers { margin: 0; }
+  .table-picker { display: inline-flex; align-items: center; gap: 8px; font-size: 12px; color: var(--text-secondary); }
+  .table-picker input { width: 240px; padding: 5px 8px; font: 12px monospace; border: 1px solid var(--border-primary); border-radius: 6px; background: var(--bg-secondary); color: var(--text-primary); }
   .coverage { display: flex; gap: 7px; flex-wrap: wrap; margin: 14px 0; }
   .diagnostic { margin: 8px 0; font-size: 12px; color: var(--text-secondary); }
-  .scope-trail-row { display: flex; align-items: center; gap: 12px; }
-  .scope-trail-row .scope-trail { margin: 0; }
   .graph-caption { padding: 4px 8px 0; max-width: 900px; }
   /* Provenance operation: picker in the title row, one answer chip per operation asked. */
   .operation-picker { display: inline-flex; align-items: center; gap: 2px; padding: 2px; border: 1px solid var(--border-primary); border-radius: 6px; background: var(--bg-secondary); }
@@ -178,10 +179,6 @@ export const page = css`
   .operation-answers { position: relative; }
   .operation-desc { position: absolute; width: 1px; height: 1px; overflow: hidden; clip-path: inset(50%); white-space: nowrap; }
   .operation-answer:hover .hint { color: var(--text-secondary); }
-  .provenance-summary { width: fit-content; margin: 8px 0 0; padding: 8px 12px; border-radius: 6px; font-size: 13px; color: var(--text-secondary);
-    background: var(--bg-secondary); border: 1px solid var(--border-primary); }
-  .provenance-summary .lead { font-weight: 600; color: var(--text-primary); }
-  .provenance-summary .name { font-family: monospace; color: var(--text-primary); }
   .link-missing { display: flex; align-items: flex-start; justify-content: space-between; gap: 16px; margin: 12px 0; padding: 12px 16px; border: 1px solid rgba(var(--color-warning-rgb, 186, 145, 63), 0.45); border-radius: 6px; background: rgba(var(--color-warning-rgb, 186, 145, 63), 0.1); }
   .link-missing-text { display: flex; flex-direction: column; gap: 4px; font-size: 13px; color: var(--text-secondary); }
   .link-missing-text strong { font-size: 14px; color: var(--text-primary); }

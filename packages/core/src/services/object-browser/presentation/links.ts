@@ -1,4 +1,4 @@
-import { projectGraph, provenancePaths } from '../projections/graph.js';
+import { projectCatalogGraph, provenancePaths } from '../projections/graph.js';
 import { RELATIONSHIPS, isRevokeEdge } from '../model/relationships.js';
 import { objectKey, type Capture, type Coverage, type GraphNode, type ObjectGraph, type Source } from '../model/types.js';
 
@@ -149,7 +149,6 @@ export interface PrincipalContextSummary {
 
 /** A line about a principal and a table: the text, and the same text in parts for styling. */
 export interface ProvenanceLine {
-  tone: 'warning' | 'info';
   text: string;
   parts: { text: string; kind: 'lead' | 'name' | 'plain' }[];
 }
@@ -205,14 +204,25 @@ export function provenanceState(summary: Pick<PrincipalContextSummary, 'paths' |
   return summary.cancelled.length ? 'revoked' : 'no-path';
 }
 
-/** A provenance capture's answer for its operation: the state, the line explaining it, and the
- * summary with the graph keys of its user and table. */
+/** Graph key of the table `database.table` names, split at its first dot; null without one. */
+export function tableKeyOf(connection: string, qualified: string): string | null {
+  const dot = qualified.indexOf('.');
+  return dot > 0 && dot < qualified.length - 1 ? objectKey(connection, 'table', qualified.slice(0, dot), qualified.slice(dot + 1)) : null;
+}
+
+/** How the configured paths from a user to a table answer one access type: the state, the line
+ * explaining it, and the summary with the graph keys of the user and table. */
 export interface ProvenanceAnswer { operation: string; state: ProvenanceState; line: ProvenanceLine; summary: PrincipalContextSummary; user: string; target: string }
-export function provenanceAnswer(capture: Capture): ProvenanceAnswer {
-  const { connection, principal, database, table, operation } = capture.investigation;
-  const user = objectKey(connection, 'user', principal), target = objectKey(connection, 'table', database, table);
-  const { all: _all, ...summary } = summarizePrincipalPaths(projectGraph(capture), user, target);
-  return { operation, state: provenanceState(summary), line: describeProvenance(summary, principal, `${database}.${table}`, operation), summary, user, target };
+
+/** The answer for `user`, `table` and `operation` from any capture holding both: a catalog, or a
+ * read of the user and table by name. Privileges link to the table as the catalog links them for a
+ * focused table (projectCatalogGraph), whatever links the capture was collected with. */
+export function answerFor(capture: Capture, user: string, table: string, operation: string): ProvenanceAnswer {
+  const unlinked = { ...capture, relationships: capture.relationships.filter(r => r.kind !== 'candidate-scope') };
+  const graph = projectCatalogGraph(unlinked, table, Number.MAX_SAFE_INTEGER, [operation]);
+  const { all: _all, ...summary } = summarizePrincipalPaths(graph, user, table);
+  const nameOf = (key: string) => graph.nodes.find(n => n.key === key)?.name ?? key;
+  return { operation, state: provenanceState(summary), line: describeProvenance(summary, nameOf(user), nameOf(table), operation), summary, user, target: table };
 }
 
 /**
@@ -241,7 +251,7 @@ export function describeProvenance(summary: PrincipalContextSummary, principal: 
   for (const role of summary.inactiveRoles) {
     parts.push(plain('. '), name(role), plain(' is not active when '), name(principal), plain(' logs in; it needs '), name(`SET ROLE ${role}`));
   }
-  return { tone: summary.paths > 0 ? 'info' : 'warning', text: parts.map(p => p.text).join(''), parts };
+  return { text: parts.map(p => p.text).join(''), parts };
 }
 
 /** A table's focus graph narrowed to one principal: access objects on its configured paths

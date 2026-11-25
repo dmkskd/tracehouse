@@ -1,9 +1,9 @@
 import { cleanup, fireEvent, render, screen, within } from '@testing-library/react';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
-import { objectKey, type Capture, type ObjectKind, type Source } from '@tracehouse/core/services/object-browser';
-const { browse, collect, show, update, state } = vi.hoisted(() => ({ browse: vi.fn(), collect: vi.fn(), show: vi.fn(), update: vi.fn(),
+import type { Capture, ObjectKind, Source } from '@tracehouse/core/services/object-browser';
+const { browse, collect, read, update, state } = vi.hoisted(() => ({ browse: vi.fn(), collect: vi.fn(), read: vi.fn(), update: vi.fn(),
   state: { capture: null as Capture | null, url: {} as Record<string, string> } }));
-vi.mock('../useObjectCapture', () => ({ useObjectCapture: () => ({ browse, collect, show, capture: state.capture, loading: false, error: null, connected: true }) }));
+vi.mock('../useObjectCapture', () => ({ useObjectCapture: () => ({ browse, collect, read, capture: state.capture, loading: false, error: null, connected: true }) }));
 vi.mock('../../../hooks/useUrlState', () => ({ useUrlState: () => ({ state: state.url, update }) }));
 import { MemoryRouter, Route, Routes, useLocation } from 'react-router-dom';
 import { ObjectBrowserPage } from '../ObjectBrowserPage';
@@ -192,7 +192,7 @@ describe('object browser entry point', () => {
     fireEvent.click(within(dialog).getByRole('radio', { name: 'Bars' }));
     expect(dialog.querySelector('.graph-frame')!.getAttribute('data-style')).toBe('bars');
   });
-  it('answers a guided question by focusing the pick, or by collecting provenance for a user and table', () => {
+  it('answers a guided question by focusing the pick, or by focusing a user on a table', () => {
     const k = (kind: ObjectKind, ...names: string[]) => JSON.stringify(['test', kind, ...names]);
     state.capture = {
       schemaVersion: 1, mode: 'catalog', investigation: { connection: 'test', principal: '', database: '', table: '', operation: 'SELECT' },
@@ -220,7 +220,13 @@ describe('object browser entry point', () => {
     fireEvent.click(within(picker()).getByRole('button', { name: /reader/ }));
     fireEvent.change(within(picker()).getByRole('searchbox', { name: 'Find table' }), { target: { value: 'trips' } });
     fireEvent.click(within(picker()).getByRole('button', { name: /lake\.trips/ }));
-    expect(collect).toHaveBeenCalledWith({ principal: 'reader', database: 'lake', table: 'trips', operation: 'SELECT' });
+    // Focus opens on the user, answering for the table from the catalog: no collection.
+    const answered = screen.getByRole('dialog', { name: 'Object focus' });
+    expect(within(answered).getByRole('heading', { level: 2 }).textContent).toContain('reader');
+    expect((within(answered).getByRole('combobox', { name: 'Table' }) as HTMLInputElement).value).toBe('lake.trips');
+    expect(within(answered).getByRole('button', { name: 'SELECT', description: /No grant path/ }).getAttribute('data-state')).toBe('no-path');
+    expect(collect).not.toHaveBeenCalled();
+    expect(read).not.toHaveBeenCalled();
   });
   it('counts a cut column in its title and shows the next 20 of its cards on request', () => {
     // 25 users: the catalog shows 20 per column.
@@ -273,33 +279,59 @@ describe('object browser entry point', () => {
     expect(picker.getByRole('button', { name: 'ALTER DELETE' }).getAttribute('aria-pressed')).toBe('true');
     expect(muted()).toEqual([expect.stringContaining('SELECT')]);
   });
-  it('asks a provenance about another operation from the title and answers each one asked in a chip', () => {
-    const k = (kind: ObjectKind, ...parts: string[]) => objectKey('test', kind, ...parts);
-    // alice holds SELECT on trips through reader; the question is INSERT.
+  it('answers in focus for a user and a picked table, per access type, reading a table the catalog lacks by name', () => {
+    const k = (kind: ObjectKind, ...parts: string[]) => JSON.stringify(['test', kind, ...parts]);
+    // alice holds SELECT on demo.trips through reader.
     state.capture = {
-      schemaVersion: 1, mode: 'investigation', investigation: { connection: 'test', principal: 'alice', database: 'demo', table: 'trips', operation: 'INSERT' },
+      schemaVersion: 1, mode: 'catalog', investigation: { connection: 'test', principal: '', database: '', table: '', operation: 'SELECT' },
       startedAt: '', completedAt: 'done', hosts: [{ host: 'ch-1', version: '26.9.7.9' }], coverage: [], verdict: { kind: 'not-checked', reason: 'provenance' },
-      operations: [{ name: 'SELECT', group: 'SELECT' }, { name: 'INSERT', group: 'INSERT' }, { name: 'DROP TABLE', group: 'DROP' }],
+      operations: [{ name: 'SELECT', group: 'SELECT' }, { name: 'INSERT', group: 'INSERT' }],
       observations: [{ key: k('user', 'alice'), name: 'alice', kind: 'user', source: 'users', host: 'ch-1', attributes: {} },
         { key: k('role', 'reader'), name: 'reader', kind: 'role', source: 'roles', host: 'ch-1', attributes: {} },
-        { key: 'scope', name: 'SELECT ON demo.trips', kind: 'grant-scope', source: 'grants', host: 'ch-1', attributes: { access_type: 'SELECT' } },
+        { key: 'scope', name: 'SELECT ON demo.trips', kind: 'grant-scope', source: 'grants', host: 'ch-1', attributes: { access_type: 'SELECT', database: 'demo', table: 'trips', table_operations: ['SELECT'] } },
         { key: k('table', 'demo', 'trips'), name: 'demo.trips', kind: 'table', source: 'tables', host: 'ch-1', attributes: { database: 'demo', name: 'trips', engine: 'MergeTree' } }],
       relationships: [{ id: 'assignment', host: 'ch-1', from: k('user', 'alice'), to: k('role', 'reader'), kind: 'has-role', label: 'has role', source: 'role_grants', evidence: {} },
-        { id: 'grant', host: 'ch-1', from: k('role', 'reader'), to: 'scope', kind: 'grant', label: 'SELECT grant', source: 'grants', evidence: {} }],
+        { id: 'grant', host: 'ch-1', from: k('role', 'reader'), to: 'scope', kind: 'grant', label: 'SELECT grant', source: 'grants', evidence: { database: 'demo', table: 'trips', is_wildcard: 0, is_partial_revoke: 0 } }],
     };
+    read.mockReturnValue(new Promise(() => {}));
     renderPage();
-    const chip = within(document.querySelector<HTMLElement>('.operation-answers')!).getByRole('button', { name: 'INSERT', pressed: true });
-    expect(chip.getAttribute('data-state')).toBe('no-path');
-    expect(document.getElementById(chip.getAttribute('aria-describedby')!)?.textContent).toBe('No grant path: no role or privilege of alice covers INSERT on demo.trips');
-    const picker = within(screen.getByRole('group', { name: 'Operation' }));
-    fireEvent.click(picker.getByRole('button', { name: 'SELECT' }));
-    expect(collect).toHaveBeenLastCalledWith({ principal: 'alice', database: 'demo', table: 'trips', operation: 'SELECT' });
-    // Operations beyond SELECT and INSERT come from the server, grouped.
-    fireEvent.click(picker.getByRole('button', { name: 'DROP TABLE' }));
-    expect(collect).toHaveBeenLastCalledWith({ principal: 'alice', database: 'demo', table: 'trips', operation: 'DROP TABLE' });
-    // The operation already asked shows its capture again.
-    fireEvent.click(chip);
-    expect(show).toHaveBeenCalledWith(state.capture);
+    fireEvent.click(screen.getByRole('button', { name: 'Focus alice' }));
+    const dialog = screen.getByRole('dialog', { name: 'Object focus' });
+    // The field remounts for each picked table, so it is looked up each time.
+    const table = () => within(dialog).getByRole('combobox', { name: 'Table' });
+    fireEvent.change(table(), { target: { value: 'demo.trips' } });
+    const chip = (name: string) => within(dialog.querySelector<HTMLElement>('.focus-answers')!).getByRole('button', { name });
+    expect(chip('SELECT').getAttribute('data-state')).toBe('granted');
+    expect(document.getElementById(chip('SELECT').getAttribute('aria-describedby')!)?.textContent).toBe('Granted through reader for SELECT');
+    // Another access type adds a chip; alice holds no INSERT.
+    fireEvent.click(within(within(dialog).getByRole('group', { name: 'Operation' })).getByRole('button', { name: 'INSERT' }));
+    expect(chip('INSERT').getAttribute('data-state')).toBe('no-path');
+    expect(document.getElementById(chip('INSERT').getAttribute('aria-describedby')!)?.textContent).toBe('No grant path: no role or privilege of alice covers INSERT on demo.trips');
+    expect(read).not.toHaveBeenCalled();
+    // A table the catalog does not list is read by name, once for every access type.
+    fireEvent.change(table(), { target: { value: 'system.query_log' } });
+    fireEvent.keyDown(table(), { key: 'Enter' });
+    expect(read).toHaveBeenCalledTimes(1);
+    expect(read).toHaveBeenCalledWith({ principal: 'alice', database: 'system', table: 'query_log', operation: 'SELECT' });
+    expect(within(dialog).getByText('Reading the user and table by name…')).toBeTruthy();
+    // Changing the access types keeps the one read.
+    fireEvent.click(within(within(dialog).getByRole('group', { name: 'Operation' })).getByRole('button', { name: 'INSERT' }));
+    expect(read).toHaveBeenCalledTimes(1);
+  });
+  it('says what a by-name read did not find, instead of answering', async () => {
+    const k = (kind: ObjectKind, ...parts: string[]) => JSON.stringify(['test', kind, ...parts]);
+    const base = { schemaVersion: 1 as const, startedAt: '', completedAt: 'done', hosts: [{ host: 'ch-1', version: '26.9.7.9' }], coverage: [], verdict: { kind: 'not-checked' as const, reason: 'provenance' } };
+    const alice = { key: k('user', 'alice'), name: 'alice', kind: 'user' as const, source: 'users' as const, host: 'ch-1', attributes: {} };
+    state.capture = { ...base, mode: 'catalog', investigation: { connection: 'test', principal: '', database: '', table: '', operation: 'SELECT' }, observations: [alice], relationships: [] };
+    // The server has no system.nope: the read returns the user only.
+    read.mockResolvedValue({ ...base, mode: 'investigation', investigation: { connection: 'test', principal: 'alice', database: 'system', table: 'nope', operation: 'SELECT' }, observations: [alice], relationships: [] });
+    renderPage();
+    fireEvent.click(screen.getByRole('button', { name: 'Focus alice' }));
+    const dialog = screen.getByRole('dialog', { name: 'Object focus' });
+    fireEvent.change(within(dialog).getByRole('combobox', { name: 'Table' }), { target: { value: 'system.nope' } });
+    fireEvent.keyDown(within(dialog).getByRole('combobox', { name: 'Table' }), { key: 'Enter' });
+    expect((await within(dialog).findByRole('alert')).textContent).toBe('Not found on the server: table system.nope');
+    expect(dialog.querySelector('.operation-answer')).toBeNull();
   });
   describe('opened by an object link', () => {
     const observation = (key: string, kind: ObjectKind, source: Source, attributes: Record<string, unknown> = {}) => ({ key, name: key, kind, source, host: 'ch-1', attributes });
@@ -307,7 +339,7 @@ describe('object browser entry point', () => {
       schemaVersion: 1, mode: 'catalog', investigation: { connection: 'test', principal: '', database: '', table: '', operation: 'SELECT' },
       startedAt: '', completedAt: 'done', hosts: [{ host: 'ch-1', version: '26.9.7.9' }], coverage: [], verdict: { kind: 'not-checked', reason: 'provenance' },
       observations: [observation('alice', 'user', 'users'), observation('bob', 'user', 'users'), observation('reader', 'role', 'roles'),
-        observation('writer', 'role', 'roles'), observation('scope', 'grant-scope', 'grants'),
+        observation('writer', 'role', 'roles'), observation('scope', 'grant-scope', 'grants', { access_type: 'SELECT', table_operations: ['SELECT'] }),
         { ...observation('trips', 'table', 'tables', { database: 'demo', name: 'trips', engine: 'MergeTree' }), name: 'demo.trips' }],
       relationships: [
         { id: 'a', host: 'ch-1', from: 'alice', to: 'reader', kind: 'has-role', label: 'has role', source: 'role_grants', evidence: {} },
@@ -323,8 +355,8 @@ describe('object browser entry point', () => {
       const dialog = screen.getByRole('dialog', { name: 'Object focus' });
       expect(within(dialog).getByRole('heading', { level: 2 }).textContent).toContain('demo.trips');
       expect(within(dialog).getByText(/for alice/)).toBeTruthy();
-      // The path summary sits under the diagram: reader grants the privilege that names trips.
-      expect(within(dialog).getByRole('status').textContent).toBe('Granted through reader for SELECT');
+      // The answer sits under the header: reader grants the privilege that covers trips.
+      expect(within(dialog).getByRole('button', { name: 'SELECT', description: 'Granted through reader for SELECT' }).getAttribute('data-state')).toBe('granted');
       expect(within(dialog).getByRole('button', { name: /alice user/i })).toBeTruthy();
       expect(within(dialog).queryByRole('button', { name: /bob user/i })).toBeNull();
       fireEvent.click(within(dialog).getByRole('button', { name: 'Show all principals' }));
@@ -342,7 +374,7 @@ describe('object browser entry point', () => {
       expect(screen.queryByRole('dialog')).toBeNull();
       // The similar user opens the table for that user.
       fireEvent.click(within(alert).getByRole('button', { name: 'demo.trips for alice' }));
-      expect(within(screen.getByRole('dialog', { name: 'Object focus' })).getByRole('status').textContent).toBe('Granted through reader for SELECT');
+      expect(within(screen.getByRole('dialog', { name: 'Object focus' })).getByRole('button', { name: 'SELECT', description: 'Granted through reader for SELECT' })).toBeTruthy();
       state.url = { ob_selected: '', ob_kind: 'user', ob_user: 'bob' };
       cleanup();renderPage();
       fireEvent.click(within(screen.getByRole('dialog', { name: 'Object focus' })).getByRole('button', { name: 'Close focus' }));

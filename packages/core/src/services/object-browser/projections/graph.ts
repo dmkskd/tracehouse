@@ -123,6 +123,11 @@ export function coveredOperations(graph: ObjectGraph, operations: readonly strin
   return covered;
 }
 
+/** Data objects in `graph` other than `table`: dimmed while a focus answers for that table. */
+export function dataOutside(graph: ObjectGraph, table: string): Set<string> {
+  return new Set(graph.nodes.filter(n => !['user', 'role', 'grant-scope'].includes(n.kind) && n.key !== table).map(n => n.key));
+}
+
 /** Catalog projection expands broad name scopes for one focus object, over the tables
  * FOCUS_TABLES gives for its kind, at most `maxMatches` per scope, with the full count
  * in `scopeMatches`. Without a focus object only exact scopes link. Only privileges that

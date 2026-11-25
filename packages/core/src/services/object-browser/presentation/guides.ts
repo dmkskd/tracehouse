@@ -48,7 +48,7 @@ export const GUIDES: Guide[] = [
     signal: graph => countOf(resolved(graph, 'row-policy').length, 'row policy', 'row policies') },
   { id: 'provenance', title: 'Provenance', question: 'How does a user reach a table?', description: 'Configured paths per host, no verdict',
     picks: [{ label: 'User', candidates: graph => resolved(graph, 'user') }, TABLE], action: 'investigate',
-    signal: () => 'SELECT · paths per host' },
+    signal: () => 'Answer per access type' },
 ];
 
 /** The provenance capture for a picked user and table. */

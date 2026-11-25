@@ -1,16 +1,14 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useUrlState } from '../../hooks/useUrlState';
-import { describeObjects, essentialEdges, isColumnNotice, layoutCatalog, withRoutes, withSourceNotices, projectGraph, projectCatalogGraph, privilegesOutside, coveredOperations, toggleOperation, describeProvenance, withEmptyAccessNotices, searchGraph, withoutDefaultUser, parseObjectLink, resolveObjectLink, describeMissingLink, OBJECT_LINK_PARAMS, type ObjectCard, type ProvenanceLine } from '@tracehouse/core/services/object-browser';
+import { describeObjects, essentialEdges, isColumnNotice, layoutCatalog, withRoutes, withSourceNotices, projectGraph, projectCatalogGraph, privilegesOutside, coveredOperations, toggleOperation, objectKey, tableKeyOf, searchGraph, withoutDefaultUser, parseObjectLink, resolveObjectLink, describeMissingLink, OBJECT_LINK_PARAMS, type Capture, type ObjectCard } from '@tracehouse/core/services/object-browser';
 import { useReturnToOrigin } from '../../hooks/useReturnToOrigin';
-import { BackButton } from '../common/BackButton';
 import { useNavigate } from '../../hooks/useAppLocation';
 import { ObjectTypeIcon } from './ObjectCard';
 import { ObjectGraphView } from './ObjectGraphView';
 import { ModalWrapper } from '../../components/shared/ModalWrapper';
 import { ObjectDetailModal } from './ObjectDetailModal';
 import { useObjectCapture } from './useObjectCapture';
-import { useProvenanceOperations } from './useProvenanceOperations';
-import { OperationAnswers, OperationPicker } from './ProvenanceOperations';
+import { OperationAnswers, OperationPicker, TablePicker } from './ProvenanceOperations';
 import { useObjectFocus } from './useObjectFocus';
 import { DiagramMenu } from './DiagramMenu';
 import { InfoPopover } from '../../components/common/InfoPopover';
@@ -29,16 +27,12 @@ const urlSchema = {
   ob_user: { type: 'string', default: '' },
   ob_role: { type: 'string', default: '' },
 } as const;
-/** A path summary line, with names and the lead styled (core describeProvenance). */
-function ProvenanceSummary({ line }: { line: ProvenanceLine }) {
-  return <p className="provenance-summary" role="status">
-    {line.parts.map((part, i) => part.kind === 'plain' ? part.text : <span key={i} className={part.kind}>{part.text}</span>)}</p>;
-}
+
+const NO_PAGES: number[] = [];
 
 export function ObjectBrowserPage() {
   const { state: url, update } = useUrlState(urlSchema);
-  const { capture, error, loading, collect, browse, show, connected } = useObjectCapture();
-  const operations = useProvenanceOperations(capture, input => { void collect(input); }, show);
+  const { capture, error, loading, browse, read, connected } = useObjectCapture();
   const diagramStyle = useUserPreferenceStore(s => s.objectDiagramStyle);
   const lines = useUserPreferenceStore(s => s.objectDiagramLines);
   const [selected, setSelected] = useState<string | null>(null);
@@ -48,16 +42,22 @@ export function ObjectBrowserPage() {
   const [systemTables, setSystemTables] = useState(false);
   // Access types catalog lines follow: privileges that include any of them link to tables.
   const [catalogOperations, setCatalogOperations] = useState<string[]>(['SELECT']);
-  // Extra pages of cards per catalog column (layoutCatalog), from "Show more".
-  const [pages, setPages] = useState<number[]>([]);
+  // Extra pages of cards per catalog column (layoutCatalog), from "Show more". Another capture,
+  // search, filter or access type starts every column at its first page; selecting a card does not.
+  const pagesFor = JSON.stringify([capture?.completedAt, search, showDefaultUser, catalogOperations]);
+  const [paged, setPaged] = useState<{ key: string; pages: number[] }>({ key: '', pages: [] });
+  const pages = paged.key === pagesFor ? paged.pages : NO_PAGES;
   // A new connection collects the catalog as the toggle stands.
-  const systemTablesRef = useRef(systemTables);systemTablesRef.current = systemTables;
+  const systemTablesRef = useRef(systemTables);
+  useEffect(() => { systemTablesRef.current = systemTables; }, [systemTables]);
   useEffect(() => { void browse(systemTablesRef.current); }, [browse]);
   const baseGraph = useMemo(() => capture ? projectGraph(capture) : null, [capture]);
   const selectedKey = selected ?? baseGraph?.nodes.find(n => JSON.stringify([n.kind,n.name]) === url.ob_selected)?.key ?? null;
   // Broad scopes expand for one object: the selection in the catalog, the starting point in focus.
-  const projectFor = useCallback((focus: string | null) => {
-    const projected = capture ? capture.mode === 'catalog' ? projectCatalogGraph(capture, focus ?? undefined, undefined, catalogOperations) : baseGraph : null;
+  // `from` is another capture to project the same way, such as a focus read by name.
+  const projectFor = useCallback((focus: string | null, from?: Capture) => {
+    const source = from ?? capture;
+    const projected = source ? source.mode === 'catalog' || from ? projectCatalogGraph(source, focus ?? undefined, undefined, catalogOperations) : baseGraph : null;
     return projected && !showDefaultUser ? withoutDefaultUser(projected) : projected;
   }, [capture, baseGraph, showDefaultUser, catalogOperations]);
   // The selected object scopes broad grants: for a table, the grants that may cover it; for a
@@ -65,10 +65,6 @@ export function ObjectBrowserPage() {
   const graph = useMemo(() => projectFor(selectedKey), [projectFor, selectedKey]);
   const searched = useMemo(() => graph ? searchGraph(graph, search, selectedKey) : null, [graph, search, selectedKey]);
   const matches = searched?.matches ?? [];
-  // A provenance capture's answer (provenanceAnswer), the same one its chip shows.
-  const answer = operations.current;
-  const provenance = useMemo(() => answer && { cancelledEdges: answer.summary.cancelledEdges,
-    noPath: answer.state === 'no-path' ? { from: answer.user, to: answer.target } : undefined }, [answer]);
   // The catalog shares the diagram's line options with focus.
   // Privileges without the catalog's operation: dimmed, and listed after the others.
   const outside = useMemo(() => graph && capture?.mode === 'catalog' ? privilegesOutside(graph, catalogOperations) : undefined, [graph, capture, catalogOperations]);
@@ -79,19 +75,17 @@ export function ObjectBrowserPage() {
     const drawn = lines.essential ? essentialEdges(searched.graph) : { graph: searched.graph, stubs: [] as string[] };
     // A source without SELECT is explained in the column its objects would fill.
     const withCoverage = withSourceNotices(layoutCatalog(drawn.graph, selectedKey, undefined, pages, outside), capture?.coverage ?? []);
-    // In a provenance capture an empty Roles or Privileges column is a result, not missing data.
-    // With no configured path at all, the broken line across those columns says it instead.
-    const columns = capture?.mode === 'catalog' || provenance?.noPath ? withCoverage : withEmptyAccessNotices(withCoverage, 'None on a path');
-    return { ...withRoutes(drawn.graph, columns, lines.route), ...drawn };
-  }, [searched, selectedKey, lines.route, lines.essential, capture, provenance?.noPath, pages, outside]);
-  // Another capture, search or filter starts every column at its first page; selecting a card does not.
-  useEffect(() => setPages([]), [capture, search, showDefaultUser, catalogOperations]);
+    return { ...withRoutes(drawn.graph, withCoverage, lines.route), ...drawn };
+  }, [searched, selectedKey, lines.route, lines.essential, capture, pages, outside]);
   const chosen = graph?.nodes.find(n => n.key === selectedKey);
   // Coverage not already shown in a diagram column.
   const notes = capture?.coverage.filter(c => !isColumnNotice(c)) ?? [];
   const cards = useMemo(() => graph ? describeObjects(graph) : new Map<string, ObjectCard>(), [graph]);
   // Focus applies the catalog's access types too: matching privileges first, the rest dimmed.
-  const focus = useObjectFocus(projectFor, capture?.mode === 'catalog' ? catalogOperations : undefined);
+  const focus = useObjectFocus(projectFor, catalogOperations, capture, read);
+  const focusOrigin = focus.graph?.nodes.find(n => n.key === focus.origin);
+  // Tables focus can answer for without a read: those in the catalog.
+  const tableNames = useMemo(() => [...new Set(capture?.observations.filter(o => o.kind === 'table' && !o.attributes.unresolvedReference).map(o => o.name) ?? [])].sort(), [capture]);
   // A link opens focus once per capture; closing it returns to the page the link came from.
   const link = useMemo(() => parseObjectLink(name => url[name as keyof typeof url]), [url]);
   const { from, returnToOrigin } = useReturnToOrigin();
@@ -158,7 +152,11 @@ export function ObjectBrowserPage() {
     </div>
     {search.trim() && <div className="coverage">{matches.slice(0, 30).map(n => <button key={n.key} onClick={() => choose(n.key)}>{cards.get(n.key) && <ObjectTypeIcon card={cards.get(n.key)!} />}{n.name} · {cards.get(n.key)?.label}</button>)}<span className="muted">{matches.length} matches in the collected catalog</span></div>}
     {capture?.mode === 'catalog' && graph && <ObjectGuides graph={graph} cards={cards} onFocus={key => { choose(key);focus.openAt(key); }}
-      onInvestigate={input => { setSelected(null);update({ ob_selected: '' });operations.start(input, catalogOperations); }} />}
+      onInvestigate={input => {
+        // "How does a user reach a table?" opens focus on the user, answering for the table.
+        const connection = capture.investigation.connection;
+        choose(null);focus.openAt(objectKey(connection, 'user', input.principal), null, objectKey(connection, 'table', input.database, input.table));
+      }} />}
     {!connected && <p>Connect a ClickHouse datasource to collect metadata.</p>}
     {error && <p role="alert">Collection failed: {error}</p>}
     {missingLink && <div className="link-missing" role="alert">
@@ -173,21 +171,14 @@ export function ObjectBrowserPage() {
     </div>}
     {loading && !capture && <ObjectsLoading />}
     {capture && graph && <>
-      {(capture.mode !== 'catalog' || notes.some(c => c.state !== 'readable' || c.reason)) && <div className="panel">
-        {/* Same trail shape as the focus header: the catalog is the way back. */}
-        {capture.mode !== 'catalog' && <div className="scope-trail-row"><BackButton label="Back to the catalog" onClick={() => { setSelected(null);void browse(systemTables); }} /><h2 className="scope-trail"><button className="focus-start" title="Back to the catalog" onClick={() => { setSelected(null);void browse(systemTables); }}>Catalog</button>
-          <span className="focus-separator" aria-hidden="true">›</span>
-          <span>Provenance · {capture.investigation.principal} → {capture.investigation.database}.{capture.investigation.table}</span></h2>
-          <OperationPicker multiple current={operations.operations.length ? operations.operations : [capture.investigation.operation]} operations={capture.operations} onPick={operations.toggle} /></div>}
-        {capture.mode !== 'catalog' && <OperationAnswers answers={operations.answers} current={capture.investigation.operation} onPick={operations.pick} />}
+      {notes.some(c => c.state !== 'readable' || c.reason) && <div className="panel">
         <div className="coverage">{notes.filter(c => c.state !== 'readable').map(c => <span className="badge warn" key={c.source}>{c.source}: {c.state}</span>)}</div>
         {notes.filter(c => c.reason).map(c => <p className="diagnostic" key={c.source}>{c.source}: {c.reason}</p>)}
       </div>}
       <div className="panel catalog-panel">
         <ObjectGraphView graph={catalogLayout.graph ?? graph} cards={cards} columns={catalogLayout.columns} routes={catalogLayout.routes} stubs={catalogLayout.stubs} muted={outside} covered={covered}
-          onMore={column => setPages(prev => { const next = [...prev]; next[column] = (next[column] ?? 0) + 1; return next; })} highlight={lines.highlight} selected={selectedKey} onSelect={key => choose(key === selectedKey ? null : key)}
+          onMore={column => setPaged(() => { const next = [...pages]; next[column] = (next[column] ?? 0) + 1; return { key: pagesFor, pages: next }; })} highlight={lines.highlight} selected={selectedKey} onSelect={key => choose(key === selectedKey ? null : key)}
           onFocus={key => { choose(key);focus.openAt(key); }}
-          cancelledEdges={provenance?.cancelledEdges} noPath={provenance?.noPath}
           diagramStyle={diagramStyle} actions={<>{selectedKey && <button onClick={() => choose(null)}>Clear selection</button>}<DiagramMenu /></>} />
         {!graph.nodes.length && <p>No object records observed. Inspect source coverage above.</p>}
       </div>
@@ -201,6 +192,10 @@ export function ObjectBrowserPage() {
           {capture?.mode === 'catalog' && <span className="toolbar-separator" aria-hidden="true" />}
           {capture?.mode === 'catalog' && <span className="lines-for" title="Privilege-to-table links for the selected access types. Privileges that include none of them are dimmed.">Access type
             <OperationPicker multiple current={catalogOperations} operations={capture.operations} onPick={op => setCatalogOperations(prev => toggleOperation(prev, op))} /></span>}
+          {capture?.mode === 'catalog' && focusOrigin?.kind === 'user' && <>
+            <span className="toolbar-separator" aria-hidden="true" />
+            <TablePicker key={focus.targetTable ?? ''} tables={tableNames} value={focus.targetTable ? focus.nameOf(focus.targetTable) : null}
+              onPick={name => focus.pickTable(name ? tableKeyOf(capture.investigation.connection, name) : null)} /></>}
           {focus.context && <span className="focus-context" title="Access objects on this user's configured paths to the table. Other principals are hidden.">
             for {focus.nameOf(focus.context)}
             <button onClick={focus.clearContext}>Show all principals</button></span>}
@@ -208,12 +203,15 @@ export function ObjectBrowserPage() {
             <button className="modal-close" aria-label="Close focus" title={link && from ? `Close and return to ${from.label} (Esc)` : 'Close (Esc)'} onClick={closeFocus}>✕</button>
           </div>
         </div>
+        {(focus.answers.length > 0 || focus.reading || focus.readError || focus.notFound.length > 0) && <div className="focus-answers">
+          {focus.answers.length > 0 && <OperationAnswers answers={focus.answers} />}
+          {focus.reading && <span className="muted">Reading the user and table by name…</span>}
+          {focus.readError && <span className="diagnostic" role="alert">Read failed: {focus.readError}</span>}
+          {focus.notFound.length > 0 && <span className="diagnostic" role="alert">Not found on the server: {focus.notFound.join(', ')}</span>}
+        </div>}
         <div className="focus-body">
         {focus.graph && <ObjectGraphView graph={focus.graph} cards={focus.cards} columns={focus.columns} selected={focus.origin} origin={focus.origin} onSelect={focus.reroot} onOpen={focus.openDetail} showAll
-          muted={focus.outside} covered={focus.covered}
-          cancelledEdges={focus.contextSummary?.cancelledEdges}
-          caption={focus.context && focus.contextSummary && focus.origin
-            && <ProvenanceSummary line={describeProvenance(focus.contextSummary, focus.nameOf(focus.context), focus.nameOf(focus.origin), catalogOperations)} />}
+          muted={focus.muted} covered={focus.covered} noPath={focus.noPath} cancelledEdges={focus.cancelledEdges}
           routes={focus.routes} stubs={focus.stubs} highlight={lines.highlight} diagramStyle={diagramStyle}
           actions={<DiagramMenu />} />}
         {!focus.graph?.edges.length && <p className="muted">No relationships observed in this capture.</p>}

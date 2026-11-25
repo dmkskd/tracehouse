@@ -9,9 +9,10 @@ import { ClusterAwareAdapter } from '../../adapters/cluster-adapter.js';
 import { objectMetadataFixtureQueries } from '../../queries/object-metadata-fixture-queries.js';
 import { tagQuery } from '../../queries/builder.js';
 import { collectObjects } from '../../services/object-browser/collectors/collect.js';
-import { coveredOperations, projectCatalogGraph, projectGraph, provenancePaths } from '../../services/object-browser/projections/graph.js';
+import { coveredOperations, projectCatalogGraph, provenancePaths } from '../../services/object-browser/projections/graph.js';
 import { objectKey, type Capture } from '../../services/object-browser/model/types.js';
 import { describeDetail, loadDetailStatement, loadTableActivity, loadTablePlacement } from '../../services/object-browser/presentation/details.js';
+import { answerFor } from '../../services/object-browser/presentation/links.js';
 
 /** Server extraction proof is deliberately separate from production-model coverage.
  * Run through the normal integration runner with an exact CLICKHOUSE_IMAGE. */
@@ -366,15 +367,14 @@ describe('Object browser metadata extraction', { tags: ['security', 'storage'] }
     expect(capture.operations).toContainEqual({ name: 'ALTER DELETE', group: 'ALTER' });
     expect(capture.operations).toContainEqual({ name: 'DROP TABLE', group: 'DROP' });
     const trips = objectKey(input.connection, 'table', fixture.db, 'trips');
-    const pathsFor = async (principal: string, operation: string) => {
-      const asked = await collectObjects(adapter, { ...input, principal, operation });
-      // The provenance page projects an investigation capture as collected (projectGraph).
-      return provenancePaths(projectGraph(asked), objectKey(input.connection, 'user', principal), trips);
-    };
-    // alice reads trips and holds nothing that writes or drops it; ALL ON *.* includes DROP TABLE.
-    expect((await pathsFor(fixture.alice, 'INSERT'))).toEqual([]);
-    expect((await pathsFor(fixture.alice, 'DROP TABLE'))).toEqual([]);
-    expect((await pathsFor(fixture.admin, 'DROP TABLE')).length).toBeGreaterThan(0);
+    const user = (name: string) => objectKey(input.connection, 'user', name);
+    // Focus answers from the catalog, or from a read of the user and table by name: both agree.
+    const byName = async (principal: string) => collectObjects(adapter, { ...input, principal, operation: 'SELECT' });
+    for (const [principal, operation, state] of [[fixture.alice, 'SELECT', 'granted'], [fixture.alice, 'INSERT', 'no-path'],
+      [fixture.alice, 'DROP TABLE', 'no-path'], [fixture.admin, 'DROP TABLE', 'granted']] as const) {
+      expect(answerFor(capture, user(principal), trips, operation).state).toBe(state);
+      expect(answerFor(await byName(principal), user(principal), trips, operation).state).toBe(state);
+    }
   });
   it('preserves nested provenance and checks real execution without inferring a verdict', async () => {
     const graph = projectCatalogGraph(capture, objectKey(input.connection,'table',fixture.db,'trips'));

@@ -291,7 +291,7 @@ describe('guided questions', () => {
     expect(names('data-flow')).toHaveLength(5);
     expect(names('storage')).toEqual([]);
     expect(GUIDES.map(g => g.signal(graph))).toEqual(['5 tables · 1 privilege', '1 user · 1 role', '4 links between tables',
-      '0 storage servers · 0 tables', '1 row policy', 'SELECT · paths per host']);
+      '0 storage servers · 0 tables', '1 row policy', 'Answer per access type']);
     const [user, events] = [key('user', 'th_ob_bob'), table('events')].map(k => graph.nodes.find(n => n.key === k)!);
     expect(investigationFor(user, events)).toEqual({ principal: 'th_ob_bob', database: DB, table: 'events', operation: 'SELECT' });
   });

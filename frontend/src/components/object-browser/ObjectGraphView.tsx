@@ -40,6 +40,7 @@ export function ObjectGraphView({ graph, cards, columns, selected, onSelect, onF
   routes?: Map<string, string[]>; stubs?: string[]; highlight?: boolean; diagramStyle?: ObjectDiagramStyle;
 }) {
   const style = DIAGRAM_STYLES[diagramStyle];
+  const noPathFrom = noPath?.from;
   const root = useRef<HTMLDivElement>(null);
   const arrowId = `object-flow-${useId().replace(/:/g, '')}`;
   const [zoom, setZoom] = useState(1);
@@ -53,8 +54,6 @@ export function ObjectGraphView({ graph, cards, columns, selected, onSelect, onF
   const [hovered, setHovered] = useState<string | null>(null);
   // Hover card: the card under the pointer after HOVER_DELAY_MS, measured then placed beside it.
   const [tip, setTip] = useState<{ key: string; anchor: Box } | null>(null);
-  const [tipPosition, setTipPosition] = useState<{ left: number; top: number } | null>(null);
-  const tipElement = useRef<HTMLDivElement>(null);
   const tipTimer = useRef<ReturnType<typeof setTimeout>>();
   const showTip = (key: string, element: HTMLElement) => {
     clearTimeout(tipTimer.current);
@@ -62,11 +61,12 @@ export function ObjectGraphView({ graph, cards, columns, selected, onSelect, onF
   };
   const hideTip = () => { clearTimeout(tipTimer.current);setTip(null); };
   useEffect(() => () => clearTimeout(tipTimer.current), []);
-  useLayoutEffect(() => {
-    const element = tipElement.current;
-    if (!tip || !element) { setTipPosition(null); return; }
-    setTipPosition(placeHover(tip.anchor, { width: element.offsetWidth, height: element.offsetHeight }, { width: window.innerWidth, height: window.innerHeight }));
-  }, [tip]);
+  // Placed once mounted and measured, then shown (placeHover).
+  const placeTip = (element: HTMLDivElement | null) => {
+    if (!element || !tip) return;
+    const { left, top } = placeHover(tip.anchor, { width: element.offsetWidth, height: element.offsetHeight }, { width: window.innerWidth, height: window.innerHeight });
+    element.style.left = `${left}px`;element.style.top = `${top}px`;element.style.visibility = 'visible';
+  };
   // Scrolling moves the card away from its anchor; a press starts selecting, dragging or opening.
   useEffect(() => {
     if (!tip) return;
@@ -128,9 +128,9 @@ export function ObjectGraphView({ graph, cards, columns, selected, onSelect, onF
         ? { x: divider, top: (items.top - bounds.top) / zoom, bottom: (items.bottom - bounds.top) / zoom } : null;
       // The broken line leaves the last card in the user's row (the user, or a grant of theirs that
       // does not cover the table) and stops at the divider. Across a clear row it carries a label.
-      const user = noPath ? point(noPath.from) : null;
+      const user = noPathFrom ? point(noPathFrom) : null;
       const inRow = user && divider !== null ? [...elements.current].flatMap(([key, element]) => {
-        if (key === noPath?.from || isWaypoint(key)) return [];
+        if (key === noPathFrom || isWaypoint(key)) return [];
         const r = element.getBoundingClientRect();
         const top = (r.top - bounds.top) / zoom, bottom = (r.bottom - bounds.top) / zoom, right = (r.right - bounds.left) / zoom;
         return top < user.y && bottom > user.y && right > user.right && right < divider ? [right] : [];
@@ -141,7 +141,7 @@ export function ObjectGraphView({ graph, cards, columns, selected, onSelect, onF
     };
     measure();window.addEventListener('resize', measure);
     return () => window.removeEventListener('resize', measure);
-  }, [graph, columns, routes, stubs, zoom, style, noPath?.from]);
+  }, [graph, columns, routes, stubs, zoom, style, noPathFrom]);
   const tile = (n: GraphNode) => {
     const card = cards.get(n.key);
     return <div key={n.key} ref={element => { if (element) elements.current.set(n.key, element);else elements.current.delete(n.key); }}
@@ -205,7 +205,7 @@ export function ObjectGraphView({ graph, cards, columns, selected, onSelect, onF
     <ZoomControls sticky name="object graph" zoom={zoom} canZoomOut={zoom > .5} canZoomIn={zoom < 2}
       onZoomOut={() => setZoom(value => Math.max(.5, value - .25))} onZoomIn={() => setZoom(value => Math.min(2, value + .25))} onReset={() => setZoom(1)}>{actions}</ZoomControls>
     </div>
-    {tip && cards.get(tip.key) && createTracehousePortal(<ObjectHoverCard ref={tipElement} card={cards.get(tip.key)!} diagramStyle={diagramStyle}
-      position={tipPosition ?? { left: 0, top: 0, visibility: 'hidden' }} />, document.body)}
+    {tip && cards.get(tip.key) && createTracehousePortal(<ObjectHoverCard key={tip.key} ref={placeTip} card={cards.get(tip.key)!} diagramStyle={diagramStyle}
+      position={{ left: 0, top: 0, visibility: 'hidden' }} />, document.body)}
   </>;
 }

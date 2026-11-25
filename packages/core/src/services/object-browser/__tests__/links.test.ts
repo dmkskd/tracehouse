@@ -2,9 +2,8 @@ import { describe, expect, it } from 'vitest';
 import { projectGraph } from '../projections/graph.js';
 import { describeDetail } from '../presentation/details.js';
 import { describeObjects } from '../presentation/cards.js';
-import { withEmptyAccessNotices } from '../presentation/layout.js';
 import { focusGraphFrom } from '../projections/focus.js';
-import { describeMissingLink, describeProvenance, provenanceState, summarizePrincipalPaths, objectLinkFor, objectLinkUrl, parseObjectLink, resolveObjectLink, withPrincipalContext, type ObjectLink } from '../presentation/links.js';
+import { describeMissingLink, describeProvenance, provenanceState, tableKeyOf, summarizePrincipalPaths, objectLinkFor, objectLinkUrl, parseObjectLink, resolveObjectLink, withPrincipalContext, type ObjectLink } from '../presentation/links.js';
 import type { Capture, ObjectKind, Relationship, Source } from '../model/types.js';
 
 const record = (key: string, kind: ObjectKind, source: Source, attributes: Record<string, unknown> = {}) =>
@@ -134,11 +133,16 @@ describe('object links', () => {
     const rows = describeDetail(graph.nodes.find(n => n.key === 'audit')!, graph).sections.flatMap(s => s.kind === 'relationships' ? s.groups.flatMap(g => g.rows) : []);
     expect(rows.find(r => r.relation === 'Revoked by')?.items.map(i => i.key)).toEqual(['revoke']);
   });
-  it('says in words when a provenance has no grant path, and marks its empty access columns', () => {
+  it('reads a table key from database.table, split at the first dot', () => {
+    expect(tableKeyOf('c', 'demo.trips')).toBe(JSON.stringify(['c', 'table', 'demo', 'trips']));
+    expect(tableKeyOf('c', 'demo.trips.v2')).toBe(JSON.stringify(['c', 'table', 'demo', 'trips.v2']));
+    expect(tableKeyOf('c', 'trips')).toBeNull();
+    expect(tableKeyOf('c', 'demo.')).toBeNull();
+  });
+  it('says in words when a provenance has no grant path', () => {
     const graph = projectGraph(capture);
     // carol holds no role or privilege that covers trips.
     const none = describeProvenance(summarizePrincipalPaths(graph, 'carol', 'trips'), 'carol', 'demo.trips', 'SELECT');
-    expect(none.tone).toBe('warning');
     expect(none.text).toBe('No grant path: no role or privilege of carol covers SELECT on demo.trips');
     expect(none.parts.filter(p => p.kind === 'name').map(p => p.text)).toEqual(['carol', 'SELECT', 'demo.trips']);
     expect(provenanceState(summarizePrincipalPaths(graph, 'carol', 'trips'))).toBe('no-path');
@@ -148,7 +152,5 @@ describe('object links', () => {
     expect(describeProvenance(summarizePrincipalPaths(graph, 'carol', 'trips'), 'carol', 'demo.trips', ['SELECT', 'INSERT']).text)
       .toBe('No grant path: no role or privilege of carol covers SELECT or INSERT on demo.trips');
     expect(describeProvenance(summarizePrincipalPaths(graph, 'alice', 'trips'), 'alice', 'demo.trips').text).toBe('Granted through reader');
-    expect(withEmptyAccessNotices([{ title: 'Roles', band: 'access', keys: [] }, { title: 'Tables', band: 'data', keys: [] }], 'None on a path'))
-      .toEqual([{ title: 'Roles', band: 'access', keys: [], notices: ['None on a path'] }, { title: 'Tables', band: 'data', keys: [] }]);
   });
 });

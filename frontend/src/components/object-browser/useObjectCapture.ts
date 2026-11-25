@@ -38,10 +38,13 @@ export function useObjectCapture() {
     } finally { if (!cancellation.aborted) setLoading(false); }
   }, [services]);
   const browse = useCallback((systemTables = false) => collect({ principal: '', database: '', table: '', operation: 'SELECT' }, 'catalog', systemTables), [collect]);
-  /** Shows a capture collected earlier in this session, cancelling any collection in flight. */
-  const show = useCallback((earlier: Capture) => {
-    if (current.current) current.current.aborted = true;
-    current.current = null;setError(null);setLoading(false);setCapture(earlier);
-  }, []);
-  return { browse, capture, error, loading, collect, show, connected: !!services };
+  /** Reads one user and table by name, for a focus answer the catalog cannot give (a table it does
+   * not list). The catalog shown stays; the result is returned, not shown. */
+  const read = useCallback(async (input: Omit<Investigation, 'connection'>): Promise<Capture> => {
+    if (!services) throw new Error('No ClickHouse connection');
+    const { capabilities, probeStatus } = useMonitoringCapabilitiesStore.getState();
+    const notGranted = probeStatus === 'done' && capabilities ? notGrantedSources(capabilities.capabilities) : [];
+    return collectObjects(services.adapter, { ...input, connection: contextFor(services.adapter) }, { mode: 'investigation', notGranted });
+  }, [services]);
+  return { browse, capture, error, loading, collect, read, connected: !!services };
 }
