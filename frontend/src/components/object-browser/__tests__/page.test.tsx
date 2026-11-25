@@ -27,6 +27,24 @@ describe('object browser entry point', () => {
     expect(collect).not.toHaveBeenCalled();
     expect(screen.getByRole('button', { name: 'Refresh catalog' })).toBeTruthy();
   });
+  it('chooses what the catalog shows from one Show menu: system tables collect again, the default user hides in place', () => {
+    const user = (name: string) => ({ key: name, name, kind: 'user' as const, source: 'users' as const, host: 'ch-1', attributes: {} });
+    state.capture = { schemaVersion: 1, mode: 'catalog', investigation: { connection: 'test', principal: '', database: '', table: '', operation: 'SELECT' },
+      startedAt: '', completedAt: 'done', hosts: [{ host: 'ch-1', version: '26.9.7.9' }], coverage: [], verdict: { kind: 'not-checked', reason: 'provenance' },
+      observations: [user('default'), user('alice')], relationships: [] };
+    renderPage();
+    const menu = () => screen.getByRole('button', { name: 'Shown objects' });
+    expect(menu().textContent).toContain('all databases');
+    fireEvent.click(menu());
+    const panel = within(screen.getByRole('dialog', { name: 'Shown objects' }));
+    fireEvent.click(panel.getByRole('button', { name: /default user/ }));
+    expect(menu().textContent).toContain('all databases · no default');
+    expect([...document.querySelectorAll('.node')].map(n => n.textContent)).not.toContainEqual(expect.stringContaining('default'));
+    browse.mockClear();
+    fireEvent.click(panel.getByRole('button', { name: 'system' }));
+    expect(browse).toHaveBeenCalledWith(true);
+    expect(menu().textContent).toContain('system · no default');
+  });
   it('explains a source without SELECT in its column, not in the coverage notes', () => {
     state.capture = {
       schemaVersion: 1, mode: 'catalog', investigation: { connection: 'test', principal: '', database: '', table: '', operation: 'SELECT' },
@@ -196,7 +214,7 @@ describe('object browser entry point', () => {
     const k = (kind: ObjectKind, ...names: string[]) => JSON.stringify(['test', kind, ...names]);
     state.capture = {
       schemaVersion: 1, mode: 'catalog', investigation: { connection: 'test', principal: '', database: '', table: '', operation: 'SELECT' },
-      startedAt: '', completedAt: '', hosts: [{ host: 'ch-1', version: '26.9.7.9' }], coverage: [], verdict: { kind: 'not-checked', reason: 'provenance' },
+      startedAt: '', completedAt: '', hosts: [{ host: 'ch-1', version: '26.9.7.9' }], coverage: [], verdict: { kind: 'not-checked', reason: 'provenance' }, operations: [{ name: 'SELECT', group: 'SELECT' }],
       observations: [{ key: k('user', 'reader'), name: 'reader', kind: 'user', source: 'users', host: 'ch-1', attributes: {} },
         { key: k('table', 'lake', 'trips'), name: 'lake.trips', kind: 'table', source: 'tables', host: 'ch-1', attributes: { database: 'lake', name: 'trips', engine: 'IcebergS3' } },
         { key: k('location', 'http://minio:9000'), name: 'http://minio:9000', kind: 'location', source: 'tables', host: 'ch-1', attributes: { backend: 'S3' } }],
@@ -324,7 +342,7 @@ describe('object browser entry point', () => {
   it('lays out a user who reaches nothing with empty access columns and a data column the line ends at', () => {
     const denied = { key: JSON.stringify(['test', 'user', 'denied']), name: 'denied', kind: 'user' as const, source: 'users' as const, host: 'ch-1', attributes: {} };
     state.capture = { schemaVersion: 1, mode: 'catalog', investigation: { connection: 'test', principal: '', database: '', table: '', operation: 'SELECT' },
-      startedAt: '', completedAt: 'done', hosts: [{ host: 'ch-1', version: '26.9.7.9' }], coverage: [], verdict: { kind: 'not-checked', reason: 'provenance' },
+      startedAt: '', completedAt: 'done', hosts: [{ host: 'ch-1', version: '26.9.7.9' }], coverage: [], verdict: { kind: 'not-checked', reason: 'provenance' }, operations: [{ name: 'SELECT', group: 'SELECT' }],
       observations: [denied], relationships: [] };
     renderPage();
     fireEvent.click(screen.getByRole('button', { name: 'Focus denied' }));
@@ -338,8 +356,10 @@ describe('object browser entry point', () => {
     const base = { schemaVersion: 1 as const, startedAt: '', completedAt: 'done', hosts: [{ host: 'ch-1', version: '26.9.7.9' }], coverage: [], verdict: { kind: 'not-checked' as const, reason: 'provenance' } };
     const alice = { key: k('user', 'alice'), name: 'alice', kind: 'user' as const, source: 'users' as const, host: 'ch-1', attributes: {} };
     state.capture = { ...base, mode: 'catalog', investigation: { connection: 'test', principal: '', database: '', table: '', operation: 'SELECT' }, observations: [alice], relationships: [] };
-    // The server has no system.nope: the read returns the user only.
-    read.mockResolvedValue({ ...base, mode: 'investigation', investigation: { connection: 'test', principal: 'alice', database: 'system', table: 'nope', operation: 'SELECT' }, observations: [alice], relationships: [] });
+    // The server has no system.nope: a full read returns the user only.
+    const readable = (source: 'users' | 'tables') => ({ source, state: 'readable' as const, hosts: ['ch-1'], visibility: 'unknown' as const });
+    read.mockResolvedValue({ ...base, mode: 'investigation', investigation: { connection: 'test', principal: 'alice', database: 'system', table: 'nope', operation: 'SELECT' },
+      coverage: [readable('users'), readable('tables')], observations: [alice], relationships: [] });
     renderPage();
     fireEvent.click(screen.getByRole('button', { name: 'Focus alice' }));
     const dialog = screen.getByRole('dialog', { name: 'Object focus' });
@@ -347,12 +367,24 @@ describe('object browser entry point', () => {
     fireEvent.keyDown(within(dialog).getByRole('combobox', { name: 'Table' }), { key: 'Enter' });
     expect((await within(dialog).findByRole('alert')).textContent).toBe('Not found on the server: table system.nope');
     expect(dialog.querySelector('.operation-answer')).toBeNull();
+    // When the tables read fails, the table is unknown, not absent: the answer says incomplete.
+    cleanup();
+    read.mockResolvedValue({ ...base, mode: 'investigation', investigation: { connection: 'test', principal: 'alice', database: 'system', table: 'nope', operation: 'SELECT' },
+      coverage: [readable('users'), { source: 'tables', state: 'failed', hosts: ['ch-1'], visibility: 'unknown', reason: 'timeout' }], observations: [alice], relationships: [] });
+    renderPage();
+    fireEvent.click(screen.getByRole('button', { name: 'Focus alice' }));
+    const again = screen.getByRole('dialog', { name: 'Object focus' });
+    fireEvent.change(within(again).getByRole('combobox', { name: 'Table' }), { target: { value: 'system.nope' } });
+    fireEvent.keyDown(within(again).getByRole('combobox', { name: 'Table' }), { key: 'Enter' });
+    const chip = await within(again).findByRole('button', { name: 'SELECT', description: /Incomplete: tables failed/ });
+    expect(chip.getAttribute('data-state')).toBe('incomplete');
+    expect(within(again).queryByText(/Not found on the server/)).toBeNull();
   });
   describe('opened by an object link', () => {
     const observation = (key: string, kind: ObjectKind, source: Source, attributes: Record<string, unknown> = {}) => ({ key, name: key, kind, source, host: 'ch-1', attributes });
     const linked = (): Capture => ({
       schemaVersion: 1, mode: 'catalog', investigation: { connection: 'test', principal: '', database: '', table: '', operation: 'SELECT' },
-      startedAt: '', completedAt: 'done', hosts: [{ host: 'ch-1', version: '26.9.7.9' }], coverage: [], verdict: { kind: 'not-checked', reason: 'provenance' },
+      startedAt: '', completedAt: 'done', hosts: [{ host: 'ch-1', version: '26.9.7.9' }], coverage: [], verdict: { kind: 'not-checked', reason: 'provenance' }, operations: [{ name: 'SELECT', group: 'SELECT' }],
       observations: [observation('alice', 'user', 'users'), observation('bob', 'user', 'users'), observation('reader', 'role', 'roles'),
         observation('writer', 'role', 'roles'), observation('scope', 'grant-scope', 'grants', { access_type: 'SELECT', table_operations: ['SELECT'] }),
         { ...observation('trips', 'table', 'tables', { database: 'demo', name: 'trips', engine: 'MergeTree' }), name: 'demo.trips' }],

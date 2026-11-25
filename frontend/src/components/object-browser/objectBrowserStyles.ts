@@ -154,9 +154,12 @@ export const page = css`
   .diagnostic { margin: 8px 0; font-size: 12px; color: var(--text-secondary); }
   .graph-caption { padding: 4px 8px 0; max-width: 900px; }
   /* Provenance operation: picker in the title row, one answer chip per operation asked. */
-  .operation-picker { display: inline-flex; align-items: center; gap: 2px; padding: 2px; border: 1px solid var(--border-primary); border-radius: 6px; background: var(--bg-secondary); }
-  .operation-picker button, .operation-more summary { font: 600 12px monospace; color: var(--text-secondary); background: none; border: 0; border-radius: 4px; padding: 4px 9px; cursor: pointer; white-space: nowrap; }
-  .operation-picker button[aria-pressed=true], .operation-more summary[aria-pressed=true] { color: var(--text-primary); background: color-mix(in srgb, var(--accent-purple, #7c3aed) 26%, transparent); }
+  /* Same frame as the Show menu (showMenuStyles): a muted label segment, then the choices. */
+  .operation-picker { display: inline-flex; align-items: center; gap: 2px; box-sizing: border-box; height: 32px; padding: 0 3px 0 0;
+    border: 1px solid var(--border-primary); border-radius: 6px; background: var(--bg-tertiary); }
+  .operation-label { align-self: stretch; display: flex; align-items: center; margin-right: 3px; padding: 0 10px; font-size: 12px; color: var(--text-muted); border-right: 1px solid var(--border-primary); }
+  .operation-picker button, .operation-more summary { font: 600 12px monospace; color: var(--text-secondary); background: none; border: 1px solid transparent; border-radius: 4px; padding: 3px 8px; cursor: pointer; white-space: nowrap; }
+  .operation-picker button[aria-pressed=true], .operation-more summary[aria-pressed=true] { color: var(--text-primary); background: rgba(88, 166, 255, 0.15); border-color: var(--border-accent); }
   .operation-more { position: relative; }
   .operation-more summary { list-style: none; }
   .operation-more summary::-webkit-details-marker { display: none; }
@@ -173,7 +176,8 @@ export const page = css`
   .operation-answer b { font: 600 12px monospace; color: var(--text-primary); }
   .operation-answer .mark { width: 14px; text-align: center; font-weight: 700; }
   .operation-answer[data-state=granted] .mark { color: var(--accent-green, #3fb950); }
-  .operation-answer[data-state=set-role] .mark, .operation-answer[data-state=columns] .mark { color: var(--accent-yellow, #d29922); }
+  .operation-answer[data-state=set-role] .mark, .operation-answer[data-state=columns] .mark, .operation-answer[data-state=differs] .mark { color: var(--accent-yellow, #d29922); }
+  .operation-answer[data-state=incomplete] .mark { color: var(--text-muted); }
   .operation-answer[data-state=revoked] .mark, .operation-answer[data-state=no-path] .mark { color: var(--accent-red, #f85149); }
   .operation-answer .hint { margin-left: auto; padding-left: 6px; font-size: 11px; color: var(--text-muted); }
   .operation-answers { position: relative; }

@@ -7,10 +7,12 @@ export function objectMetadataFixtureQueries(prefix: string) {
   // Shaped like the demo read_only account: readonly = 2, SELECT on what the object
   // browser reads, and no CREATE TEMPORARY TABLE.
   const catalog = `${prefix}_catalog`;
+  // wild: wildcard and column scopes, to prove how system.grants records them.
+  const wild = `${prefix}_wild`;
   const bob = `${prefix}_bob`, admin = `${prefix}_admin`, profile = `${prefix}_profile`, baseProfile = `${prefix}_base_profile`, quota = `${prefix}_quota`;
   const db = access.db;
   return {
-    ...access, bob, admin, catalog, profile, baseProfile, quota,
+    ...access, bob, admin, wild, catalog, profile, baseProfile, quota,
     setup: [...access.setup,
       `CREATE USER ${bob}`,
       `CREATE USER ${catalog} SETTINGS readonly = 2`,
@@ -64,13 +66,21 @@ export function objectMetadataFixtureQueries(prefix: string) {
       `CREATE TABLE ${db}.excluded (id UInt64) ENGINE = MergeTree ORDER BY id`,
       `REVOKE SELECT ON ${db}.excluded FROM ${access.reader}`,
       `GRANT SELECT(id) ON ${db}.events TO ${bob} WITH GRANT OPTION`,
+      `CREATE USER ${wild}`,
+      `GRANT SELECT ON ${db}.* TO ${wild}`,
+      `REVOKE SELECT ON ${db}.ho* FROM ${wild}`,
+      `GRANT SELECT ON ${db}.hourly TO ${wild}`,
+      `REVOKE SELECT ON ${db}.mi* FROM ${wild}`,
+      `REVOKE SELECT(note) ON ${db}.events FROM ${wild}`,
+      // A database prefix: every fixture database starts with the prefix's first words.
+      `GRANT INSERT ON th_object_model*.* TO ${wild}`,
       `CREATE SETTINGS PROFILE ${baseProfile} SETTINGS max_threads = 2`,
       `CREATE SETTINGS PROFILE ${profile} SETTINGS INHERIT ${baseProfile}, max_memory_usage = 268435456 MIN 1048576 MAX 536870912 TO ${access.reader}`,
       `CREATE QUOTA ${quota} KEYED BY user_name FOR INTERVAL 1 HOUR MAX queries = 100 TO ${access.reader}`,
     ],
     teardown: [
       `DROP QUOTA IF EXISTS ${quota}`, `DROP SETTINGS PROFILE IF EXISTS ${profile}`,
-      `DROP SETTINGS PROFILE IF EXISTS ${baseProfile}`, `DROP USER IF EXISTS ${bob}`, `DROP USER IF EXISTS ${admin}`, `DROP USER IF EXISTS ${catalog}`, ...access.teardown,
+      `DROP SETTINGS PROFILE IF EXISTS ${baseProfile}`, `DROP USER IF EXISTS ${bob}`, `DROP USER IF EXISTS ${wild}`, `DROP USER IF EXISTS ${admin}`, `DROP USER IF EXISTS ${catalog}`, ...access.teardown,
     ],
     probes: {
       schema: `SELECT hostName() AS host, table, name, type FROM {{cluster_aware:system.columns}}

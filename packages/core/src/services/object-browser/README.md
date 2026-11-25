@@ -10,6 +10,37 @@ The service shows configured relationships. It does not decide whether a user is
 allowed to run a query. Paths are provenance, revokes are shown as evidence, and
 the capture verdict is always `not-checked`.
 
+## Access evaluation and snapshot lifetime
+
+`access/` evaluates configured rights without React, graph layout, or formatted text:
+
+- `scope.ts` normalizes raw grant metadata into explicit global, database, prefix,
+  table and column targets. Its matcher is shared by collection, catalog projection
+  and access evaluation.
+- `index.ts` copies inventory, assignments and scopes into a private readonly
+  snapshot. Resolved inventory objects and unresolved references are distinct.
+  Normalized records and arrays are frozen; raw attributes are not retained.
+- `evaluate.ts` computes host-specific rights, column unions and aggregate reach.
+  `accessEvaluator(capture)` builds one snapshot for a batch of answers. A new
+  evaluator observes changes to a mutable caller-owned capture; the existing
+  evaluator continues to describe its original snapshot. There are no identity
+  caches over mutable captures or graphs.
+- `evidence.ts` distinguishes unread sources from objects absent in readable
+  inventory and combines cancellation evidence across selected operations.
+- `traversal.ts` builds host-specific forward/reverse adjacency lists. Focus uses
+  `edgesBetween`; a table's user picker uses one reverse traversal per host via
+  `principalsReaching`, rather than searching separately for every user.
+
+`presentation/access.ts` formats these structured results into chip explanations.
+Evaluation reads the complete capture, independently of display filtering and
+path-list bounds. The capture verdict remains `not-checked`: configured rights
+are not a guarantee that a query executes successfully.
+
+Focus keeps its catalog origin visible if a by-name read cannot inventory that
+origin. Its answer uses only the side read and reports the source gaps. A side
+read belongs to its user/table pair, catalog capture and connection reader;
+refreshing or replacing the reader invalidates its results immediately.
+
 ## Where relationships come from
 
 ClickHouse is asked first. TraceHouse parses text only where the server exposes
@@ -74,7 +105,8 @@ card shows the raw privilege name.
 | candidate name match | privilege → table | Computed by `projectCatalogGraph` from names |
 
 A privilege links to tables when it includes one of the access types selected in
-the catalog (`SELECT` by default) and has no `access_object` or wildcard. The
+the catalog (`SELECT` by default) and has no `access_object`. Focus also expands
+database and table prefix scopes using the shared scope matcher. The
 collector stores the table-level access types a privilege includes as the scope's
 `table_operations`, from the privilege tree in `system.privileges`: `ALL`
 includes `SELECT` and `DROP TABLE`, `ALTER` includes `ALTER DELETE`. Privileges
@@ -94,8 +126,9 @@ exact table privileges link. With one, database-wide and global privileges link 
 At most 100 tables are linked per privilege, and the full count of a capped
 privilege is kept in `graph.scopeMatches`. Scoping a table or storage focus to
 its own tables keeps the cap from dropping them. A partial revoke keeps its
-link with the label `excluded scope · evidence`. No grant and revoke union is
-computed.
+link with the label `excluded scope · evidence`. The access evaluator applies
+revokes within each host and holder before unioning holders; the graph retains
+the original evidence links.
 
 ### Row policy
 
@@ -272,6 +305,8 @@ engine with a storage location is one entry with a `storedOn(backend)` source.
 
 | Relationship | Test |
 |---|---|
+| Scope matching, immutable snapshots, graph/evaluator parity, deep host-specific traversal | `access-domain.test.ts` |
+| Partial side reads, refresh and connection-reader replacement | frontend `focusLifetime.test.tsx` |
 | Users, roles, nested roles, grants, partial revokes, row policies | `object-browser-metadata.integration.test.ts`, `object-browser-cluster.integration.test.ts` |
 | MV insert triggers and targets | metadata integration (`reads MV dependency pairs…`, `retains both cascade views…`) and `object-model.test.ts` |
 | View, refreshable MV, Buffer and Distributed links with their methods | metadata integration (`links view sources through the analyzer…`) |

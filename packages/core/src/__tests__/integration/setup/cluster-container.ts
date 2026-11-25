@@ -10,6 +10,8 @@ import { createClient, type ClickHouseClient } from '@clickhouse/client';
 import type { IClickHouseAdapter } from '../../../adapters/types.js';
 import { AdapterError } from '../../../adapters/types.js';
 import { CH_IMAGE } from './constants.js';
+import { TestAdapter } from './clickhouse-container.js';
+import type { QueryExecutionOptions } from '../../../adapters/types.js';
 import { startWithPortRetry } from './start-container.js';
 
 const CH_USER = 'default';
@@ -87,6 +89,11 @@ export class ClusterTestAdapter implements IClickHouseAdapter {
 
   async executeCommand(sql: string): Promise<void> {
     await this.client.command({ query: sql });
+  }
+
+  /** EXPLAIN and other raw statements, decoded as the single-node test adapter does. */
+  executeRawQuery(sql: string, database?: string, options?: QueryExecutionOptions): Promise<string[]> {
+    return new TestAdapter(this.client).executeRawQuery(sql, database, options);
   }
 }
 

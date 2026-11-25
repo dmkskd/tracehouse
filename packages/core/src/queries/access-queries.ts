@@ -1,5 +1,8 @@
 /** Object-browser metadata only. All variants/probes remain in the core SQL layer. */
 import { escapeIdentifier } from './builder.js';
+/** The node this connection's statements run on, such as EXPLAIN, which cannot go through clusterAllReplicas. */
+export const ACCESS_CONNECTED_HOST = `SELECT hostName() AS host`;
+
 export const ACCESS_HOSTS = `
 SELECT hostName() AS host, version() AS version
 FROM {{cluster_aware:system.one}}

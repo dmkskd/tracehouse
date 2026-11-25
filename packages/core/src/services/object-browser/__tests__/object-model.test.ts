@@ -141,7 +141,7 @@ it('rejects stale in-flight results and does not schedule the next probe', async
   expect(calls).toBe(1);
 });
 
-it('keeps per-host native IDs in the records without flagging them, and unsupported prefix semantics visible', async () => {
+it('keeps per-host native IDs in the records without flagging them, and matches supported prefix scopes', async () => {
   const s = setup();s.fixture.rows.roles[3].id = 'different-native-id';
   s.fixture.rows.grants.forEach(r => { r.table = 'trip';r.is_wildcard = 1; });
   const graph = projectGraph(await s.collect());
@@ -150,7 +150,7 @@ it('keeps per-host native IDs in the records without flagging them, and unsuppor
   expect(role.records.some(r => r.attributes.id === 'different-native-id')).toBe(true);
   expect(role.differs).toBe(false);
   expect(graph.edges.some(e => e.kind === 'grant')).toBe(true);
-  expect(graph.edges.some(e => e.kind === 'candidate-scope')).toBe(false);
+  expect(graph.edges.some(e => e.kind === 'candidate-scope')).toBe(true);
 });
 
 it('normalizes known selector sets but does not rewrite expression text', async () => {

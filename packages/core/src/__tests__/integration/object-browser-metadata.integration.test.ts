@@ -12,7 +12,7 @@ import { collectObjects } from '../../services/object-browser/collectors/collect
 import { coveredOperations, projectCatalogGraph, provenancePaths } from '../../services/object-browser/projections/graph.js';
 import { objectKey, type Capture } from '../../services/object-browser/model/types.js';
 import { describeDetail, loadDetailStatement, loadTableActivity, loadTablePlacement } from '../../services/object-browser/presentation/details.js';
-import { answerFor, reachFor } from '../../services/object-browser/presentation/links.js';
+import { answerFor, reachFor } from '../../services/object-browser/presentation/access.js';
 
 /** Server extraction proof is deliberately separate from production-model coverage.
  * Run through the normal integration runner with an exact CLICKHOUSE_IMAGE. */
@@ -147,6 +147,28 @@ describe('Object browser metadata extraction', { tags: ['security', 'storage'] }
     // SHOW USERS sits under SHOW ACCESS, which ClickHouse files under ACCESS MANAGEMENT.
     expect(scope('SHOW USERS').attributes).toMatchObject({ privilege_group: 'ACCESS MANAGEMENT', privilege_level: 'GLOBAL' });
     expect(capture.coverage.find(source => source.source === 'grants')!.reason ?? '').not.toContain('Privilege groups unavailable');
+  });
+  it('reads wildcard and column scopes as system.grants records them and ClickHouse ranks them', async () => {
+    const rows = await read(`SELECT access_type, database, table, column, is_partial_revoke, is_wildcard FROM system.grants
+      WHERE user_name = '${fixture.wild}' ORDER BY is_partial_revoke, database, table, column`);
+    const row = (table: string | null, partial: number, wildcard: number, column: string | null = null, database: string = fixture.db) =>
+      ({ access_type: 'SELECT', database, table, column, is_partial_revoke: partial, is_wildcard: wildcard });
+    // A table prefix is the table column with is_wildcard = 1; a re-grant under a revoked prefix is its own exact row.
+    expect(rows).toEqual(expect.arrayContaining([row('hourly', 0, 0), row(null, 0, 0), row('events', 1, 0, 'note'), row('ho', 1, 1), row('mi', 1, 1)]));
+    // A database prefix is the database column with is_wildcard = 1.
+    expect(await read(`SELECT database, table, is_wildcard FROM system.grants WHERE user_name = '${fixture.wild}' AND access_type = 'INSERT'`))
+      .toEqual([{ database: 'th_object_model', table: null, is_wildcard: 1 }]);
+    // The evaluator reads them as ClickHouse ranks them: exact table over prefix, prefix over database.
+    const wild = objectKey(input.connection, 'user', fixture.wild), table = (name: string) => objectKey(input.connection, 'table', fixture.db, name);
+    expect(answerFor(capture, wild, table('hourly'), 'SELECT').state).toBe('granted');
+    expect(answerFor(capture, wild, table('minute'), 'SELECT').state).toBe('revoked');
+    expect(answerFor(capture, wild, table('events'), 'SELECT')).toMatchObject({ state: 'columns', hosts: [{ columns: { kind: 'except', columns: ['note'] } }] });
+    expect(answerFor(capture, wild, table('events'), 'INSERT').state).toBe('granted');
+    // The diagram links a prefix scope to the tables it names, as the evaluator reads it.
+    const prefix = capture.observations.find(o => o.kind === 'grant-scope' && o.attributes.table === 'ho' && Number(o.attributes.is_wildcard) === 1)!;
+    const linked = (focus: string) => projectCatalogGraph(capture, focus).edges.filter(e => e.kind === 'candidate-scope' && e.from === prefix.key).map(e => e.to);
+    expect(linked(table('hourly'))).toEqual([table('hourly')]);
+    expect(linked(table('minute'))).toEqual([]);
   });
   it('links a privilege to the tables in its scope for each table operation it includes, such as ALL', () => {
     if (!grantsReadable()) return expect(capture.observations.some(record => record.kind === 'grant-scope')).toBe(false);
@@ -375,6 +397,9 @@ describe('Object browser metadata extraction', { tags: ['security', 'storage'] }
       expect(answerFor(capture, user(principal), trips, operation).state).toBe(state);
       expect(answerFor(await byName(principal), user(principal), trips, operation).state).toBe(state);
     }
+    // The reader role's REVOKE SELECT ON excluded takes back its database grant there, on the server's own records.
+    const excluded = objectKey(input.connection, 'table', fixture.db, 'excluded');
+    expect(answerFor(capture, user(fixture.alice), excluded, 'SELECT').state).toBe('revoked');
     // Across every table: alice reads some and writes none; ALL ON *.* reaches tables for DROP TABLE.
     expect(reachFor(capture, user(fixture.alice), 'SELECT').state).toBe('granted');
     expect(reachFor(capture, user(fixture.alice), 'INSERT').state).toBe('no-path');

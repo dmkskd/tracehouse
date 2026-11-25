@@ -1,3 +1,4 @@
+import { exactTableScope, normalizeScope, nameScopeRank } from '../access/scope.js';
 import { canonical } from '../model/canonical.js';
 import { KINDS } from '../model/kinds.js';
 import { RELATIONSHIPS } from '../model/relationships.js';
@@ -143,14 +144,14 @@ export function projectCatalogGraph(capture: Capture, focus?: string, maxMatches
   const scopes = new Map(capture.observations.filter(o => o.kind === 'grant-scope').map(o => [o.key, o.attributes]));
   for (const grant of capture.relationships.filter(e => e.kind === 'grant')) {
     const r = grant.evidence;
-    if (Number(r.is_wildcard) === 1 || r.access_object || !coversAny(scopes.get(grant.to), operations)) continue;
-    // Without a focus object, only exact scopes are expanded.
-    if (!focusKind && (r.database == null || r.table == null)) continue;
+    if (r.access_object || !coversAny(scopes.get(grant.to), operations)) continue;
+    const scope = normalizeScope(r);
+    // Without focus, broad and prefix scopes remain unexpanded.
+    if (!focusKind && !exactTableScope(scope.target)) continue;
     const all = matched.get(grant.to) ?? new Set<string>(), shown = linked.get(grant.to) ?? new Set<string>();
     matched.set(grant.to, all);linked.set(grant.to, shown);
     for (const table of tables) {
-      if (table.host !== grant.host || (r.database != null && r.database !== table.attributes.database)
-        || (r.table != null && r.table !== table.attributes.name)) continue;
+      if (table.host !== grant.host || nameScopeRank(scope.target, { database: String(table.attributes.database), name: String(table.attributes.name) }) === null) continue;
       all.add(table.key);
       if (!shown.has(table.key) && shown.size >= maxMatches) continue;
       shown.add(table.key);

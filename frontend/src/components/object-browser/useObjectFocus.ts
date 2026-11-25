@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { stepTo, type FocusTrail } from './focusTrail';
 import { useUserPreferenceStore } from '../../stores/userPreferenceStore';
-import { answerFor, reachFor, withPathColumns, coveredOperations, dataOutside, describeDetail, describeObjects, focusGraphFrom, layoutFocus, privilegesOutside, objectLinkFor, objectLinkUrl, withPrincipalContext, withRoutes, essentialEdges, type Capture, type Investigation, type ObjectCard, type ObjectGraph, type ProvenanceAnswer } from '@tracehouse/core/services/object-browser';
+import { absentFrom, accessEvaluator, describeAccess, describeReach, cancelledAcross, withPathColumns, coveredOperations, dataOutside, describeDetail, describeObjects, focusGraphFrom, layoutFocus, privilegesOutside, objectLinkFor, objectLinkUrl, withPrincipalContext, withRoutes, essentialEdges, type Capture, type Investigation, type ObjectCard, type ObjectGraph, type ProvenanceAnswer } from '@tracehouse/core/services/object-browser';
 
 
 /** Focus modal state. `trail` runs from where focus opened to the current `origin`;
@@ -29,29 +29,35 @@ export function useObjectFocus(project: (focus: string | null, from?: Capture) =
   const pair = useMemo(() => targetTable && origin ? { user: origin, table: targetTable } : activeContext && origin ? { user: activeContext, table: origin } : null,
     [targetTable, origin, activeContext]);
   const pairKey = pair ? JSON.stringify([pair.user, pair.table]) : '';
-  const inCatalog = !!pair && !!capture && [pair.user, pair.table].every(key => capture.observations.some(o => o.key === key));
+  // Held means listed by the inventory: a placeholder named by a view or policy is not the object.
+  const holds = (from: Capture, key: string) => from.observations.some(o => o.key === key && !o.attributes.unresolvedReference);
+  const inCatalog = !!pair && !!capture && [pair.user, pair.table].every(key => holds(capture, key));
   // The by-name read for a pair the catalog does not hold; one per pair, for every access type.
-  const [side, setSide] = useState<{ key: string; capture?: Capture; error?: string } | null>(null);
+  const [side, setSide] = useState<{ key: string; context: Capture; reader: typeof read; capture?: Capture; error?: string } | null>(null);
   // The read depends on the pair only; its access type is any one, since a read serves them all.
   const firstOperation = useRef(operations[0] ?? 'SELECT');
   useEffect(() => { firstOperation.current = operations[0] ?? 'SELECT'; }, [operations]);
   useEffect(() => {
-    if (!pairKey || inCatalog || !read) return;
+    if (!capture || !pairKey || inCatalog || !read) return;
     const [user, table] = JSON.parse(pairKey) as [string, string];
     const [, , principal] = JSON.parse(user) as string[], [, , database, name] = JSON.parse(table) as string[];
     let live = true;
     read({ principal, database, table: name, operation: firstOperation.current }).then(
-      result => { if (live) setSide({ key: pairKey, capture: result }); },
-      (error: unknown) => { if (live) setSide({ key: pairKey, error: error instanceof Error ? error.message : String(error) }); });
+      result => { if (live) setSide({ key: pairKey, context: capture, reader: read, capture: result }); },
+      (error: unknown) => { if (live) setSide({ key: pairKey, context: capture, reader: read, error: error instanceof Error ? error.message : String(error) }); });
     return () => { live = false; };
-  }, [pairKey, inCatalog, read]);
-  const sideCapture = !inCatalog && side?.key === pairKey ? side.capture : undefined;
+  }, [pairKey, inCatalog, read, capture]);
+  const activeSide = !inCatalog && side?.key === pairKey && side.context === capture && side.reader === read ? side : null;
+  const sideCapture = activeSide?.capture;
   // A read that finds no such user or table answers nothing; focus says what it did not find.
-  const missing = pair && sideCapture ? [pair.user, pair.table].filter(key => !sideCapture.observations.some(o => o.key === key))
+  // Absent only when the source listing it was read in full; an unreadable source gives an incomplete answer instead.
+  const missing = pair && sideCapture ? absentFrom(sideCapture, [pair.user, pair.table])
     .map(key => { const [, kind, ...name] = JSON.parse(key) as string[]; return `${kind} ${name.join('.')}`; }) : [];
   const answerSource = inCatalog ? capture : missing.length ? undefined : sideCapture;
-  const answers = useMemo((): ProvenanceAnswer[] => pair && answerSource
-    ? operations.map(operation => answerFor(answerSource, pair.user, pair.table, operation)) : [], [pair, answerSource, operations]);
+  const evaluator = useMemo(() => answerSource ? accessEvaluator(answerSource) : null, [answerSource]);
+  const catalogEvaluator = useMemo(() => capture ? accessEvaluator(capture) : null, [capture]);
+  const answers = useMemo((): ProvenanceAnswer[] => pair && evaluator
+    ? operations.map(operation => describeAccess(evaluator.answer(pair.user, pair.table, operation))) : [], [pair, evaluator, operations]);
   const route = useUserPreferenceStore(s => s.objectDiagramLines.route);
   const essential = useUserPreferenceStore(s => s.objectDiagramLines.essential);
   // With a target table, privileges link to that table as for a focused table; a by-name read is
@@ -59,7 +65,14 @@ export function useObjectFocus(project: (focus: string | null, from?: Capture) =
   const source = useMemo(() => {
     if (!origin) return null;
     if (targetTable && sideCapture && !missing.length) {
-      return project(targetTable, { ...sideCapture, relationships: sideCapture.relationships.filter(r => r.kind !== 'candidate-scope') });
+      const projected = project(targetTable, { ...sideCapture, relationships: sideCapture.relationships.filter(r => r.kind !== 'candidate-scope') });
+      // Keep the catalog's origin as a navigation anchor when the side read cannot inventory it.
+      // Answers still use only side-read evidence and report its gaps.
+      if (projected && !holds(sideCapture, origin)) {
+        const anchor = project(origin)?.nodes.find(node => node.key === origin);
+        if (anchor) return { ...projected, nodes: [...projected.nodes.filter(node => node.key !== origin), anchor] };
+      }
+      return projected;
     }
     return project(targetTable && inCatalog ? targetTable : origin);
   }, [project, origin, targetTable, inCatalog, sideCapture, missing.length]);
@@ -80,10 +93,14 @@ export function useObjectFocus(project: (focus: string | null, from?: Capture) =
   const muted = useMemo(() => pair && drawn.graph ? new Set([...outside ?? [], ...dataOutside(drawn.graph, pair.table)]) : outside, [outside, drawn, pair]);
   // A user without a table: what each access type reaches across every catalog table.
   const reach = useMemo(() => !pair && origin && capture?.mode === 'catalog' && capture.observations.some(o => o.key === origin && o.kind === 'user')
-    ? operations.map(operation => reachFor(capture, origin, operation)) : [], [pair, origin, capture, operations]);
+    ? operations.map(operation => describeReach(catalogEvaluator!.reach(origin, operation))) : [], [pair, origin, capture, catalogEvaluator, operations]);
   const noPath = pair && answers.length && answers.every(a => a.state === 'no-path') ? { from: pair.user, to: pair.table }
     : origin && reach.length && reach.every(a => a.state === 'no-path') ? { from: origin } : undefined;
-  const cancelledEdges = useMemo(() => answers.flatMap(a => a.summary.cancelledEdges), [answers]);
+  // Links of grants a revoke takes back for the table, for the diagram to mark.
+  const cancelledEdges = useMemo(() => {
+    const scopes = new Set(cancelledAcross(answers));
+    return pair && drawn.graph ? drawn.graph.edges.filter(e => e.kind === 'candidate-scope' && scopes.has(e.from) && e.to === pair.table).map(e => e.key) : [];
+  }, [answers, pair, drawn]);
   // With no path, the empty access columns and a data column give the broken line its length and end.
   const noPathShown = !!noPath;
   const layout = useMemo(() => {
@@ -108,8 +125,8 @@ export function useObjectFocus(project: (focus: string | null, from?: Capture) =
     /** One answer per access type: for the user and table, or for the user across every table. */
     answers: pair ? answers : reach,
     /** The by-name read for a pair the catalog does not hold: in flight, or its error. */
-    reading: !!pair && !inCatalog && side?.key !== pairKey,
-    readError: !inCatalog && side?.key === pairKey ? side.error ?? null : null,
+    reading: !!pair && !!capture && !inCatalog && !activeSide,
+    readError: activeSide?.error ?? null,
     /** What a by-name read did not find, such as `table system.query_logs`. */
     notFound: missing,
     open: open && !!source?.nodes.some(n => n.key === origin),

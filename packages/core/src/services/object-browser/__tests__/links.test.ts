@@ -3,7 +3,7 @@ import { projectGraph } from '../projections/graph.js';
 import { describeDetail } from '../presentation/details.js';
 import { describeObjects } from '../presentation/cards.js';
 import { focusGraphFrom } from '../projections/focus.js';
-import { describeMissingLink, describeProvenance, provenanceState, reachFor, tableKeyOf, summarizePrincipalPaths, objectLinkFor, objectLinkUrl, parseObjectLink, resolveObjectLink, withPrincipalContext, type ObjectLink } from '../presentation/links.js';
+import { describeMissingLink, tableKeyOf, objectLinkFor, objectLinkUrl, parseObjectLink, resolveObjectLink, withPrincipalContext, type ObjectLink } from '../presentation/links.js';
 import type { Capture, ObjectKind, Relationship, Source } from '../model/types.js';
 
 const record = (key: string, kind: ObjectKind, source: Source, attributes: Record<string, unknown> = {}) =>
@@ -39,13 +39,11 @@ describe('object links', () => {
   it('narrows a table focus to one user: its path and its row policies, data flow unchanged', () => {
     const focus = focusGraphFrom(projectGraph(capture), 'trips');
     const narrowed = withPrincipalContext(focus, 'alice', 'trips');
-    expect(narrowed.paths).toBe(1);
     expect(narrowed.graph.nodes.map(n => n.key).sort()).toEqual(['alice', 'daily', 'reader', 'scope', 'tenant-filter', 'trips']);
     expect(narrowed.graph.edges.map(e => `${e.from}>${e.to}`).sort()).toEqual(['alice>reader', 'reader>scope', 'scope>trips',
       'tenant-filter>alice', 'tenant-filter>trips', 'trips>daily']);
     // A user with no configured path leaves no access objects.
     const none = withPrincipalContext(focus, 'carol', 'trips');
-    expect(none.paths).toBe(0);
     expect(none.graph.nodes.map(n => n.key).sort()).toEqual(['daily', 'trips']);
   });
   it('explains a link that opened nothing with similar names and incomplete sources', () => {
@@ -94,7 +92,7 @@ describe('object links', () => {
     // Returning reopens focus on the origin, with the chain user on a table.
     expect(objectLinkUrl(objectLinkFor(graph.nodes.find(n => n.key === 'trips'), 'alice')!)).toBe('/objects?ob_kind=table&ob_db=demo&ob_tbl=trips&ob_user=alice');
   });
-  it('tells a revoke from a grant: own card, own count, and roles that are not default', () => {
+  it('tells a revoke from a grant: its own card and its own relation on the table', () => {
     const rec = (key: string, kind: ObjectKind, source: Source, attributes: Record<string, unknown> = {}) => ({ key, name: key, kind, source, host: 'ch-1', attributes });
     const link = (from: string, to: string, kind: Relationship['kind'], source: Source, evidence: Record<string, unknown> = {}): Relationship =>
       ({ id: `${from}>${to}`, host: 'ch-1', from, to, kind, label: kind, source, evidence });
@@ -112,60 +110,16 @@ describe('object links', () => {
       link('all', 'audit', 'candidate-scope', 'grants', { is_partial_revoke: 0 }), link('revoke', 'audit', 'candidate-scope', 'grants', { is_partial_revoke: 1 }),
       link('all', 'sales', 'candidate-scope', 'grants', { is_partial_revoke: 0 }),
       link('bob', 'orders-id', 'grant', 'grants', { is_partial_revoke: 0 }), link('orders-id', 'orders', 'candidate-scope', 'grants', { is_partial_revoke: 0 })] });
-    const narrowed = withPrincipalContext(focusGraphFrom(graph, 'audit'), 'bob', 'audit');
-    // The revoke sits on the same role as the database grant: that grant is cancelled for the table.
-    expect({ paths: narrowed.paths, revokes: narrowed.revokes, inactiveRoles: narrowed.inactiveRoles, cancelled: narrowed.cancelled })
-      .toEqual({ paths: 0, revokes: 1, inactiveRoles: ['analyst'], cancelled: [{ holder: 'analyst', grant: 'all' }] });
-    expect(narrowed.cancelledEdges.map(key => narrowed.graph.edges.find(e => e.key === key)).map(e => `${e?.from}>${e?.to}`)).toEqual(['all>audit']);
-    expect(describeProvenance(narrowed, 'bob', 'demo.audit').text)
-      .toBe("No grant path left: analyst's all is revoked for demo.audit. analyst is not active when bob logs in; it needs SET ROLE analyst");
-    expect(provenanceState(narrowed)).toBe('revoked');
-    // No revoke on sales: the grant holds, but only through analyst, which bob must SET ROLE first.
-    const sales = withPrincipalContext(focusGraphFrom(graph, 'sales'), 'bob', 'sales');
-    expect({ paths: sales.paths, activePaths: sales.activePaths, state: provenanceState(sales) }).toEqual({ paths: 1, activePaths: 0, state: 'set-role' });
-    // A grant on some columns is a path to those columns only.
-    const orders = withPrincipalContext(focusGraphFrom(graph, 'orders'), 'bob', 'orders');
-    expect({ columnsOnly: orders.columnsOnly, state: provenanceState(orders) }).toEqual({ columnsOnly: ['id'], state: 'columns' });
-    expect(describeProvenance(orders, 'bob', 'demo.orders').text).toBe('Granted through bob · only columns id');
     const revoke = describeObjects(graph).get('revoke')!;
     expect(revoke.title).toBe('REVOKE SELECT');
     expect(revoke.flags).toContain('revoke');
     const rows = describeDetail(graph.nodes.find(n => n.key === 'audit')!, graph).sections.flatMap(s => s.kind === 'relationships' ? s.groups.flatMap(g => g.rows) : []);
     expect(rows.find(r => r.relation === 'Revoked by')?.items.map(i => i.key)).toEqual(['revoke']);
   });
-  it('says what a user reaches for an access type across every table, and when it reaches nothing', () => {
-    const rec = (key: string, kind: ObjectKind, source: Source, attributes: Record<string, unknown> = {}) => ({ key, name: key, kind, source, host: 'ch-1', attributes });
-    const link = (from: string, to: string, kind: Relationship['kind'], source: Source, evidence: Record<string, unknown> = {}): Relationship =>
-      ({ id: `${from}>${to}`, host: 'ch-1', from, to, kind, label: kind, source, evidence });
-    const table = (name: string) => ({ ...rec(name, 'table', 'tables', { database: 'demo', name }), name: `demo.${name}` });
-    // GRANT SELECT ON demo.* TO analyst, reader; bob holds analyst, not by default; carol holds reader by default.
-    const reach = { ...capture, observations: [rec('bob', 'user', 'users'), rec('carol', 'user', 'users'), rec('analyst', 'role', 'roles'), rec('reader', 'role', 'roles'),
-      rec('all', 'grant-scope', 'grants', { access_type: 'SELECT', database: 'demo', table: null, table_operations: ['SELECT'] }), table('a'), table('b')],
-    relationships: [link('bob', 'analyst', 'has-role', 'role_grants', { granted_role_is_default: 0 }), link('carol', 'reader', 'has-role', 'role_grants', { granted_role_is_default: 1 }),
-      link('analyst', 'all', 'grant', 'grants', { database: 'demo', table: null, is_wildcard: 0, is_partial_revoke: 0 }),
-      link('reader', 'all', 'grant', 'grants', { database: 'demo', table: null, is_wildcard: 0, is_partial_revoke: 0 })] };
-    expect(reachFor(reach, 'carol', 'SELECT')).toMatchObject({ state: 'granted', tables: 2, line: { text: 'Reaches 2 tables for SELECT' } });
-    expect(reachFor(reach, 'bob', 'SELECT')).toMatchObject({ state: 'set-role', tables: 2, line: { text: 'Reaches 2 tables for SELECT after SET ROLE analyst' } });
-    expect(reachFor(reach, 'bob', 'INSERT')).toMatchObject({ state: 'no-path', tables: 0, line: { text: 'No privilege of bob includes INSERT' } });
-  });
   it('reads a table key from database.table, split at the first dot', () => {
     expect(tableKeyOf('c', 'demo.trips')).toBe(JSON.stringify(['c', 'table', 'demo', 'trips']));
     expect(tableKeyOf('c', 'demo.trips.v2')).toBe(JSON.stringify(['c', 'table', 'demo', 'trips.v2']));
     expect(tableKeyOf('c', 'trips')).toBeNull();
     expect(tableKeyOf('c', 'demo.')).toBeNull();
-  });
-  it('says in words when a provenance has no grant path', () => {
-    const graph = projectGraph(capture);
-    // carol holds no role or privilege that covers trips.
-    const none = describeProvenance(summarizePrincipalPaths(graph, 'carol', 'trips'), 'carol', 'demo.trips', 'SELECT');
-    expect(none.text).toBe('No grant path: no role or privilege of carol covers SELECT on demo.trips');
-    expect(none.parts.filter(p => p.kind === 'name').map(p => p.text)).toEqual(['carol', 'SELECT', 'demo.trips']);
-    expect(provenanceState(summarizePrincipalPaths(graph, 'carol', 'trips'))).toBe('no-path');
-    expect(provenanceState(summarizePrincipalPaths(graph, 'alice', 'trips'))).toBe('granted');
-    // A catalog focus asks about any of several access types.
-    expect(describeProvenance(summarizePrincipalPaths(graph, 'alice', 'trips'), 'alice', 'demo.trips', ['SELECT', 'INSERT']).text).toBe('Granted through reader for SELECT or INSERT');
-    expect(describeProvenance(summarizePrincipalPaths(graph, 'carol', 'trips'), 'carol', 'demo.trips', ['SELECT', 'INSERT']).text)
-      .toBe('No grant path: no role or privilege of carol covers SELECT or INSERT on demo.trips');
-    expect(describeProvenance(summarizePrincipalPaths(graph, 'alice', 'trips'), 'alice', 'demo.trips').text).toBe('Granted through reader');
   });
 });

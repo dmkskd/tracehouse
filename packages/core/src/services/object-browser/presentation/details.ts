@@ -9,7 +9,7 @@ import { DETAIL_GROUPS, RELATIONSHIPS, isRevokeEdge, type DetailGroup } from '..
 import { analyzerTableNames } from '../collectors/references.js';
 import { describeCard, nameParts, type CardFact, type ObjectCard, type ObjectType } from './cards.js';
 import { DESTINATIONS, type DestinationInput } from '../model/destinations.js';
-import { provenancePaths } from '../projections/graph.js';
+import { principalsReaching } from '../access/traversal.js';
 import { ttlDelay, ttlSettings, type TTLRule } from '../../../utils/ttl-parser.js';
 import { diskLinkEvidence, movingTTL } from '../model/disk-links.js';
 
@@ -135,7 +135,8 @@ function destinationsOf(node: GraphNode, graph: ObjectGraph, type: ObjectType, c
     url: `${spec.path}?${new URLSearchParams(spec.params({ ...base, contextUser: user })).toString()}` }));
   // Only pages about a table filter by user; a user's own pages are already that user's.
   const filters = DESTINATIONS[type].some(spec => spec.descriptionForUser);
-  const withPath = filters ? graph.nodes.filter(n => n.kind === 'user' && provenancePaths(graph, n.key, node.key, 1).length > 0).map(n => n.name).sort() : [];
+  const reaching = filters ? principalsReaching(graph, node.key) : new Set<string>();
+  const withPath = filters ? graph.nodes.filter(n => n.kind === 'user' && reaching.has(n.key)).map(n => n.name).sort() : [];
   const users = filters ? [...new Set([...(contextUser ? [contextUser] : []), ...withPath])].slice(0, MAX_FILTER_USERS) : [];
   return { users, defaultUser: contextUser && users.includes(contextUser) ? contextUser : '',
     byUser: Object.fromEntries([['', linksFor()], ...users.map(user => [user, linksFor(user)])]) };
@@ -162,7 +163,9 @@ function relationGroups(node: GraphNode, graph: ObjectGraph): DetailRelationGrou
   const method = (e: ObjectGraph['edges'][number]) => {
     if (!RELATIONSHIPS[e.kind].methods) return {};
     const recorded = e.records.find(r => typeof r.evidence.method === 'string')?.evidence.method as ReferenceMethod | undefined;
-    return recorded && REFERENCE_METHODS[recorded] ? { method: REFERENCE_METHODS[recorded] } : {};
+    const analyzedOn = e.records.find(r => typeof r.evidence.analyzedOn === 'string')?.evidence.analyzedOn;
+    return recorded && REFERENCE_METHODS[recorded]
+      ? { method: analyzedOn ? `${REFERENCE_METHODS[recorded]}, run on ${analyzedOn}; on other hosts, kept where the source exists with the same engine` : REFERENCE_METHODS[recorded] } : {};
   };
   const rows = new Map<DetailGroup, Map<string, DetailRelationItem[]>>();
   for (const e of graph.edges) {

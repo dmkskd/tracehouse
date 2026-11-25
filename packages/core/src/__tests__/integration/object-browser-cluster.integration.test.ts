@@ -31,6 +31,25 @@ describe('Object browser real cluster collection', { tags: ['cluster', 'security
     expect(capture.coverage).toHaveLength(6);
     for (const source of capture.coverage) { expect(source.state).toBe('readable');expect(source.hosts).toHaveLength(2); }
   });
+  it('keeps a view source analyzed on the connected node only on hosts whose catalog agrees', async () => {
+    // Same view text on both nodes; src is MergeTree on node 1 and Memory on node 2. trips matches on both.
+    await ctx.client1.command({ query: `CREATE TABLE ${fixture.db}.src (id UInt64) ENGINE = MergeTree ORDER BY id` });
+    await ctx.client2.command({ query: `CREATE TABLE ${fixture.db}.src (id UInt64) ENGINE = Memory` });
+    for (const client of [ctx.client1, ctx.client2]) {
+      await client.command({ query: `CREATE VIEW ${fixture.db}.reads_src AS SELECT id FROM ${fixture.db}.src` });
+      await client.command({ query: `CREATE VIEW ${fixture.db}.reads_trips AS SELECT id FROM ${fixture.db}.trips` });
+    }
+    const analyzed = await collectObjects(adapter, input, { mode: 'catalog' });
+    const [connected] = await ctx.adapter1.executeQuery<{ host: string }>('SELECT hostName() AS host');
+    const other = analyzed.hosts.map(h => h.host).find(h => h !== connected.host)!;
+    const key = (name: string) => objectKey(input.connection, 'table', fixture.db, name);
+    const reads = (source: string, view: string) => analyzed.relationships.filter(r => r.kind === 'reads-from' && r.from === key(source) && r.to === key(view));
+    expect(reads('trips', 'reads_trips').map(r => r.host).sort()).toEqual([connected.host, other].sort());
+    expect(reads('src', 'reads_src').map(r => r.host)).toEqual([connected.host]);
+    expect(reads('trips', 'reads_trips').every(r => r.evidence.analyzedOn === connected.host)).toBe(true);
+    const tables = analyzed.coverage.find(c => c.source === 'tables')!;
+    expect(tables.reason).toContain(`${fixture.db}.reads_src on ${other}: analyzed on ${connected.host}; ${fixture.db}.src has another engine there, link omitted`);
+  });
   it('draws one logical user with both native records rather than merging attributes', () => {
     const graph = projectCatalogGraph(capture);
     const users = graph.nodes.filter(node => node.kind === 'user' && node.name === fixture.alice);

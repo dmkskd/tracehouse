@@ -1,4 +1,5 @@
-import { ACCESS_HOSTS, ACCESS_PRIVILEGES, ACCESS_SCHEMA, ACCESS_CATALOGS, ACCESS_TABLE_DEPENDENCY_FIELDS, ACCESS_TABLE_SUMMARY_FIELDS, accessTableCatalogQuery, systemTablesByNameQuery, ACTIVE_PARTS_BY_TABLE, ACCESS_STORAGE_POLICIES, ACCESS_DISKS, ACCESS_DISK_BUCKETS } from '../../../queries/access-queries.js';
+import { normalizeScope, scopeRank } from '../access/scope.js';
+import { ACCESS_CONNECTED_HOST, ACCESS_HOSTS, ACCESS_PRIVILEGES, ACCESS_SCHEMA, ACCESS_CATALOGS, ACCESS_TABLE_DEPENDENCY_FIELDS, ACCESS_TABLE_SUMMARY_FIELDS, accessTableCatalogQuery, systemTablesByNameQuery, ACTIVE_PARTS_BY_TABLE, ACCESS_STORAGE_POLICIES, ACCESS_DISKS, ACCESS_DISK_BUCKETS } from '../../../queries/access-queries.js';
 import { buildQuery, tagQuery } from '../../../queries/builder.js';
 import type { IClickHouseAdapter } from '../../../adapters/types.js';
 import { objectKey } from '../model/types.js';
@@ -7,7 +8,7 @@ import { canonical, sortedSet } from '../model/canonical.js';
 import { tableLinks } from './tables.js';
 import { diskLocations } from './storage.js';
 import { parseTTLRules } from '../../../utils/ttl-parser.js';
-import { privilegeGroup, privilegeIncludes, privilegeTree, tableLevelOperations, tableOperations, type PrivilegeTree } from '../model/privileges.js';
+import { privilegeGroup, privilegeTree, tableLevelOperations, tableOperations, type PrivilegeTree } from '../model/privileges.js';
 import type { MonitoringCapability } from '../../../types/monitoring-capabilities.js';
 
 type Row = Record<string, unknown>;
@@ -58,8 +59,6 @@ export async function collectObjects(adapter: IClickHouseAdapter, investigation:
   try { privileges = privilegeTree(await run(ACCESS_PRIVILEGES, 'privileges')); }
   catch (e) { check();privilegesError = e instanceof Error ? e.message : String(e); }
   if (privileges) capture.operations = tableLevelOperations(privileges);
-  // Without the tree only the exact privilege name counts.
-  const covers = (granted: string) => privileges ? privilegeIncludes(privileges, granted, investigation.operation) : granted === investigation.operation;
   const onEveryHost = (name: string) => capture.hosts.every(host =>
     schema.some(row => row.host === host.host && row.table === 'tables' && row.name === name));
   const tableFields = new Set(ACCESS_TABLE_DEPENDENCY_FIELDS.filter(onEveryHost));
@@ -107,7 +106,9 @@ export async function collectObjects(adapter: IClickHouseAdapter, investigation:
     const ttl = parseTTLRules(text(r.engine_full));
     add('table', `${r.database}.${r.name}`, 'tables', ttl.length ? { ...r, ttl_rules: ttl } : r, k('table', text(r.database), text(r.name)));
   }
-  const links = await tableLinks(adapter, investigation.connection, data.get('tables') ?? [], tableFields, check);
+  // View queries are analyzed on the connected node; tableLinks checks other hosts against their own catalog.
+  const analyzedOn = text((await run(ACCESS_CONNECTED_HOST, 'hosts'))[0]?.host) || null;
+  const links = await tableLinks(adapter, investigation.connection, data.get('tables') ?? [], tableFields, check, analyzedOn);
   capture.observations.push(...links.observations);
   // Kept on the view's record, so its detail can offer analysis on request.
   for (const { table, host, effects } of links.unanalyzed) {
@@ -198,9 +199,8 @@ export async function collectObjects(adapter: IClickHouseAdapter, investigation:
     const name = `${flag(r.is_partial_revoke) ? 'REVOKE ' : ''}${r.access_type}${r.column == null ? '' : `(${r.column})`} ON ${r.database ?? '*'}.${r.table ?? '*'}`;
     add('grant-scope', name, 'grants', { host: r.host, ...scope }, scopeKey);
     rel(recipient, scopeKey, 'grant', flag(r.is_partial_revoke) ? 'partial revoke · evidence' : `${r.access_type} grant`, 'grants', r);
-    // Candidate name coverage only: no prefix, revoke or union evaluator.
-    if (!browse && covers(text(r.access_type)) && !flag(r.is_wildcard) && !text(r.access_object)
-      && (r.database == null || r.database === investigation.database) && (r.table == null || r.table === investigation.table)) {
+    // The same name/operation matcher drives collection, projection and evaluation.
+    if (!browse && scopeRank(normalizeScope(scope), { database: investigation.database, name: investigation.table }, investigation.operation) !== null) {
       rel(scopeKey, tableKey, 'candidate-scope', flag(r.is_partial_revoke) ? 'excluded scope · evidence' : 'candidate name match', 'grants', r);
     }
   }

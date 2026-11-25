@@ -14,6 +14,7 @@ import { DiagramMenu } from './DiagramMenu';
 import { InfoPopover } from '../../components/common/InfoPopover';
 import { FocusTrailHeader } from './FocusTrailHeader';
 import { ObjectGuides } from './ObjectGuides';
+import { ObjectShowMenu } from './ObjectShowMenu';
 import { ObjectsLoading } from './ObjectsLoading';
 import { page } from './objectBrowserStyles';
 import { useUserPreferenceStore } from '../../stores/userPreferenceStore';
@@ -121,16 +122,15 @@ export function ObjectBrowserPage() {
     <div className="toolbar">
       <span className="title"><h1>Object browser</h1><span className="beta" title="Early access. Layout and behavior may change.">Beta</span></span>
       <input type="search" aria-label="Find an object" placeholder="Find a user, role, table or privilege" value={search} onChange={e => setSearch(e.target.value)} />
-      {capture?.mode === 'catalog' && <span className="lines-for" title="Privilege-to-table links for the selected access types. Privileges that include none of them are dimmed and listed last.">Access type
-        <OperationPicker multiple current={catalogOperations} operations={capture.operations} onPick={op => setCatalogOperations(prev => toggleOperation(prev, op))} /></span>}
+      {capture?.mode === 'catalog' && <span className="lines-for" title="Privilege-to-table links for the selected access types. Privileges that include none of them are dimmed and listed last.">
+        <OperationPicker label="Access type" multiple current={catalogOperations} operations={capture.operations} onPick={op => setCatalogOperations(prev => toggleOperation(prev, op))} /></span>}
       {capture?.mode === 'catalog' && <span className="toolbar-separator" aria-hidden="true" />}
-      <label className="toggle" title="Off: hides the default user, its links and privileges held only by it. Collected metadata stays."><input type="checkbox" checked={showDefaultUser} onChange={e => {
-        setShowDefaultUser(e.target.checked);
-        if (!e.target.checked && chosen && graph && !withoutDefaultUser(graph).nodes.some(node => node.key === chosen.key)) choose(null);
-      }} />Show default user</label>
-      <label className="toggle" title="On: lists only the tables of the system database. Collects the catalog again."><input type="checkbox" checked={systemTables} disabled={!connected || loading} onChange={e => {
-        setSystemTables(e.target.checked);choose(null);void browse(e.target.checked);
-      }} />Show system tables</label>
+      <ObjectShowMenu disabled={!connected || loading}
+        systemTables={systemTables} onSystemTables={system => { if (system === systemTables) return;setSystemTables(system);choose(null);void browse(system); }}
+        defaultUser={showDefaultUser} onDefaultUser={show => {
+          setShowDefaultUser(show);
+          if (!show && chosen && graph && !withoutDefaultUser(graph).nodes.some(node => node.key === chosen.key)) choose(null);
+        }} />
       <span className="capture-info">{graph && capture ? `${graph.nodes.length} objects · ${graph.edges.length} relationships · captured ${new Date(capture.completedAt).toLocaleTimeString()}` : loading ? 'Loading objects…' : 'Read-only catalog from the active connection'}
         <button className="icon-button" aria-label="Refresh catalog" title="Collect the catalog again" disabled={!connected || loading} onClick={() => { setSelected(null);void browse(systemTables); }}>↻</button></span>
       <InfoPopover id="object-browser-help" label="About the object browser" title="About the object browser">
@@ -142,7 +142,7 @@ export function ObjectBrowserPage() {
           <li><strong>Selected object</strong>: adds the tables its broad privileges may cover, or for a table the privileges that may cover it</li>
           <li>20 cards per column; Show more adds 20, search finds the rest</li>
           <li>Access type: privileges that include any selected type link to tables; the rest are dimmed and listed last</li>
-          <li>Show system tables: lists the system database alone; otherwise only system tables a view reads from</li>
+          <li>Show › Databases: all databases, or system alone; with all databases, only the system tables a view reads from</li>
         </ul>
         {capture && <div style={{ marginTop: 8, paddingTop: 8, borderTop: '1px solid var(--border-secondary)' }}>
           <div style={{ color: 'var(--text-muted)', marginBottom: 4 }}>Captured {new Date(capture.completedAt).toLocaleTimeString()} from</div>
@@ -190,8 +190,8 @@ export function ObjectBrowserPage() {
           <FocusTrailHeader trail={focus.trail} cards={focus.cards} nameOf={focus.nameOf} onStep={focus.reroot} />
           {/* Focus follows the catalog's access types; changing them here changes both. */}
           {capture?.mode === 'catalog' && <span className="toolbar-separator" aria-hidden="true" />}
-          {capture?.mode === 'catalog' && <span className="lines-for" title="Privilege-to-table links for the selected access types. Privileges that include none of them are dimmed.">Access type
-            <OperationPicker multiple current={catalogOperations} operations={capture.operations} onPick={op => setCatalogOperations(prev => toggleOperation(prev, op))} /></span>}
+          {capture?.mode === 'catalog' && <span className="lines-for" title="Privilege-to-table links for the selected access types. Privileges that include none of them are dimmed.">
+            <OperationPicker label="Access type" multiple current={catalogOperations} operations={capture.operations} onPick={op => setCatalogOperations(prev => toggleOperation(prev, op))} /></span>}
           {capture?.mode === 'catalog' && focusOrigin?.kind === 'user' && <>
             <span className="toolbar-separator" aria-hidden="true" />
             <TablePicker key={focus.targetTable ?? ''} tables={tableNames} value={focus.targetTable ? focus.nameOf(focus.targetTable) : null}

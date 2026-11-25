@@ -14,5 +14,10 @@ export { edgeCaption, describeCard, describeObject, describeObjects, objectTypeO
 export { describeDetail, loadDetailStatement, loadTableActivity, loadTablePlacement, type TablePlacement, type LifecycleStep, type TableActivity, type ObjectDetail, type DetailSection, type DetailStatement, type DetailRelationItem, type DetailRelationRow, type DetailRelationGroup, type DetailDestination, type DetailLinks } from './presentation/details.js';
 export { DESTINATIONS, type DestinationSpec, type DestinationInput } from './model/destinations.js';
 export { layoutCatalog, catalogPageSize, layoutFocus, routeEdges, withRoutes, withSourceNotices, withPathColumns, isColumnNotice, isWaypoint, isGap, BAND_TITLES, type RoutedLayout, type LayoutBand, type LayoutColumn } from './presentation/layout.js';
+export { answerFor, reachFor, describeAccess, describeReach, type ProvenanceAnswer, type ReachAnswer, type ProvenanceLine } from './presentation/access.js';
+export { accessEvaluator } from './access/evaluate.js';
+export { evidenceGaps, absentFrom, cancelledAcross } from './access/evidence.js';
+export { edgesBetween, principalsReaching } from './access/traversal.js';
+export type { AccessEvaluation, ReachEvaluation, ProvenanceState, HostAccess, Columns } from './access/types.js';
 export { GUIDES, investigationFor, type Guide, type GuidePick } from './presentation/guides.js';
-export { OBJECT_LINK_PARAMS, objectLinkUrl, parseObjectLink, objectLinkName, resolveObjectLink, withPrincipalContext, summarizePrincipalPaths, describeProvenance, provenanceState, answerFor, reachFor, tableKeyOf, type ReachAnswer, type ProvenanceState, type ProvenanceAnswer, describeMissingLink, objectLinkFor, type PrincipalContextSummary, type ProvenanceLine, type ObjectLink, type ResolvedObjectLink, type MissingObject, type MissingLinkNotice, type MissingLinkSuggestion } from './presentation/links.js';
+export { OBJECT_LINK_PARAMS, objectLinkUrl, parseObjectLink, objectLinkName, resolveObjectLink, withPrincipalContext, tableKeyOf, describeMissingLink, objectLinkFor, type ObjectLink, type ResolvedObjectLink, type MissingObject, type MissingLinkNotice, type MissingLinkSuggestion } from './presentation/links.js';

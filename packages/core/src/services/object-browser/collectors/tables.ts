@@ -10,9 +10,11 @@ const text = (v: unknown) => String(v ?? '');
 
 /** Links between tables and to their storage: native dependency and target fields
  * first, then definition references for what the native fields do not cover.
- * `fields` are the optional system.tables fields every host has. */
+ * `fields` are the optional system.tables fields every host has. View queries are analyzed
+ * on `analyzedOn`, the connected node: names resolve against its catalog, so on another host a
+ * link is kept only when the object it resolved to exists there with the same engine. */
 export async function tableLinks(adapter: IClickHouseAdapter, connection: string, tables: Row[], fields: ReadonlySet<string>,
-  check: () => void): Promise<{ observations: Observation[]; relationships: Relationship[]; notes: string[];
+  check: () => void, analyzedOn: string | null = null): Promise<{ observations: Observation[]; relationships: Relationship[]; notes: string[];
     /** Views whose query was not analyzed, by table key and host, with what analysis would do. */
     unanalyzed: { table: string; host: string; effects: string[] }[] }> {
   const k = (...names: string[]) => objectKey(connection, 'table', ...names);
@@ -67,6 +69,16 @@ export async function tableLinks(adapter: IClickHouseAdapter, connection: string
     const [from, to] = ref.flow === 'upstream' ? [other, self] : [self, other];
     // A native link between the same objects takes precedence.
     if (relationships.some(r => r.host === host && r.from === from && r.to === to && r.evidence.method === 'native')) continue;
+    if (ref.method === 'analyzer' && analyzedOn) {
+      // Resolved on the connected node: on another host the object must be there with the same engine.
+      const engineOn = (on: string) => tables.find(t => t.host === on && k(text(t.database), text(t.name)) === other)?.engine;
+      if (host !== analyzedOn && (engineOn(host) === undefined || engineOn(host) !== engineOn(analyzedOn))) {
+        notes.push(`${row.database}.${row.name} on ${host}: analyzed on ${analyzedOn}; ${JSON.parse(other).slice(2).join('.')} ${engineOn(host) === undefined ? 'is missing' : 'has another engine'} there, link omitted`);
+        continue;
+      }
+      link(host, from, to, ref.kind, ref.label, { method: ref.method, definition: ref.definition, analyzedOn });
+      continue;
+    }
     link(host, from, to, ref.kind, ref.label, { method: ref.method, definition: ref.definition });
   }
   const stored = locationNodes(connection, locations);

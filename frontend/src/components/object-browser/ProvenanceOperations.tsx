@@ -4,14 +4,14 @@ import { createTracehousePortal } from '../../providers/TracehousePortal';
 import { operationTip } from './objectBrowserStyles';
 
 const PINNED = ['SELECT', 'INSERT'];
-const MARKS: Record<ProvenanceState, string> = { granted: '✓', columns: '◐', 'set-role': '!', revoked: '✕', 'no-path': '✕' };
+const MARKS: Record<ProvenanceState, string> = { granted: '✓', columns: '◐', 'set-role': '!', revoked: '✕', 'no-path': '✕', incomplete: '?', differs: '≠' };
 // Pause before the explanation opens, so moving along the chips does not flash it.
 const TIP_DELAY_MS = 250, MARGIN = 8;
 
 /** Table-level access types from the server: SELECT and INSERT pinned, the rest under More. One is
  * picked (a provenance), or with `multiple` each pick toggles one and the menu stays open (the catalog). */
-export function OperationPicker({ current, operations, onPick, multiple = false }: { current: string | readonly string[]; operations?: TableOperation[];
-  onPick: (operation: string) => void; multiple?: boolean }) {
+export function OperationPicker({ current, operations, onPick, multiple = false, label }: { current: string | readonly string[]; operations?: TableOperation[];
+  onPick: (operation: string) => void; multiple?: boolean; label?: string }) {
   const selected: readonly string[] = typeof current === 'string' ? [current] : current;
   const selectedMore = selected.filter(op => !PINNED.includes(op));
   const menu = useRef<HTMLDetailsElement>(null);
@@ -33,6 +33,7 @@ export function OperationPicker({ current, operations, onPick, multiple = false 
   }, [open]);
   const pick = (operation: string) => { if (!multiple) close();onPick(operation); };
   return <span className="operation-picker" role="group" aria-label="Operation">
+    {label && <span className="operation-label">{label}</span>}
     {PINNED.map(op => <button key={op} type="button" aria-pressed={selected.includes(op)} onClick={() => pick(op)}>{op}</button>)}
     {others.length > 0 && <details className="operation-more" ref={menu} onToggle={event => { setOpen(event.currentTarget.open); if (!event.currentTarget.open) setFilter(''); }}>
       <summary aria-pressed={selectedMore.length > 0}>{selectedMore.length === 0 ? 'More' : selectedMore.length === 1 ? selectedMore[0] : `More · ${selectedMore.length}`} ▾</summary>
