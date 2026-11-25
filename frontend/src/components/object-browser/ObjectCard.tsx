@@ -12,11 +12,12 @@ export function ObjectTypeIcon({ card }: { card: ObjectCard }) {
 
 /** Card text: the name and one summary line. The type's color is `--tone`; each diagram
  * style places the dot and summary in its own way. The hover card (ObjectHoverCard) adds the rest. */
-export function ObjectCardBody({ card }: { card: ObjectCard }) {
+/** `includes` replaces the summary line with the selected access types a broad privilege includes. */
+export function ObjectCardBody({ card, includes }: { card: ObjectCard; includes?: readonly string[] }) {
   return <span className="node-copy">
     <span className="type-label" aria-hidden="true">{card.label}</span>
     <strong><span className="type-dot" aria-hidden="true" />{card.title}</strong>
-    <small>{card.summary}{card.hosts && ` · ${card.hosts}`}{card.flags.map(flag => <span key={flag} className="badge warn">{FLAG_LABELS[flag]}</span>)}</small>
+    <small>{includes ? <span className="node-includes" title={`Includes ${includes.join(', ')}`}>Includes {includes.join(', ')}</span> : card.summary}{!includes && card.hosts && ` · ${card.hosts}`}{card.flags.map(flag => <span key={flag} className="badge warn">{FLAG_LABELS[flag]}</span>)}</small>
   </span>;
 }
 

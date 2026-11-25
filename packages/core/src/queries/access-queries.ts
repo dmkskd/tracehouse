@@ -50,7 +50,8 @@ export const ACCESS_CATALOGS = {
     sql: `SELECT hostName() AS host, database, name, toString(uuid) AS uuid, engine,
       partition_key, sorting_key, primary_key, storage_policy /* optional_fields */
       FROM {{cluster_aware:system.tables}} WHERE ({browse} = 0 AND database = {database} AND name = {table})
-        OR ({browse} = 1 AND database NOT IN ('system', 'information_schema', 'INFORMATION_SCHEMA'))
+        OR ({browse} = 1 AND {system} = 1 AND database = 'system')
+        OR ({browse} = 1 AND {system} = 0 AND database NOT IN ('system', 'information_schema', 'INFORMATION_SCHEMA'))
       ORDER BY host LIMIT {limit} SETTINGS skip_unavailable_shards = 0`,
   },
   row_policies: {
@@ -58,7 +59,7 @@ export const ACCESS_CATALOGS = {
     sql: `SELECT hostName() AS host, name, short_name, toString(id) AS id, storage,
       database, table, select_filter, is_restrictive, apply_to_all, apply_to_list, apply_to_except
       FROM {{cluster_aware:system.row_policies}}
-      WHERE {browse} = 1 OR (database = {database} AND (table = {table} OR table = ''))
+      WHERE ({browse} = 1 AND ({system} = 0 OR database = 'system')) OR ({browse} = 0 AND database = {database} AND (table = {table} OR table = ''))
       ORDER BY host, name LIMIT {limit} SETTINGS skip_unavailable_shards = 0`,
   },
 } as const;
@@ -78,7 +79,8 @@ SELECT hostName() AS host, database, table, count() AS active_parts,
   toUnixTimestamp(max(modification_time)) AS newest_part
 FROM {{cluster_aware:system.parts}}
 WHERE active AND (({browse} = 0 AND database = {database} AND table = {table})
-  OR ({browse} = 1 AND database NOT IN ('system', 'information_schema', 'INFORMATION_SCHEMA')))
+  OR ({browse} = 1 AND {system} = 1 AND database = 'system')
+  OR ({browse} = 1 AND {system} = 0 AND database NOT IN ('system', 'information_schema', 'INFORMATION_SCHEMA')))
 GROUP BY host, database, table
 SETTINGS skip_unavailable_shards = 0`;
 

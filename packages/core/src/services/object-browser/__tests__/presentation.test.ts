@@ -1,11 +1,11 @@
 import { describe, expect, it } from 'vitest';
 import { projectCatalogGraph, projectGraph } from '../projections/graph.js';
 import { withoutDefaultUser } from '../projections/filters.js';
-import { privilegeGroup, privilegeTree } from '../model/privileges.js';
+import { groupOperations, privilegeGroup, toggleOperation, privilegeTree, tableLevelOperations } from '../model/privileges.js';
 import { objectKey } from '../model/types.js';
 import type { Attributes, Capture, ObjectKind, Relationship, Source } from '../model/types.js';
 import { describeObjects } from '../presentation/cards.js';
-import { isGap, isWaypoint, layoutCatalog, layoutFocus, routeEdges, withRoutes, withSourceNotices } from '../presentation/layout.js';
+import { catalogPageSize, isGap, isWaypoint, layoutCatalog, layoutFocus, routeEdges, withRoutes, withSourceNotices } from '../presentation/layout.js';
 import { essentialEdges, focusGraphFrom, searchGraph } from '../projections/focus.js';
 import { GUIDES, investigationFor } from '../presentation/guides.js';
 import { describeDetail } from '../presentation/details.js';
@@ -146,6 +146,23 @@ describe('catalog layout', () => {
     // One card per lane at this bound: 'first' fills the Privileges lane, and bob's privilege is kept after it.
     expect(lanes[2].keys).toEqual([key('grant-scope', 'first'), SCOPE]);
   });
+  it('counts the cards a column hides and shows one more page of them per request', () => {
+    const graph = projectGraph(demo());
+    const crowded = { ...graph, nodes: [...['aaa', 'bbb', 'ccc'].map(name => ({ ...graph.nodes.find(n => n.kind === 'user')!, key: key('user', name), name })), ...graph.nodes] };
+    const users = (pages: number[]) => layoutCatalog(crowded, null, 8, pages)[0];
+    // One card per column at this bound.
+    expect(catalogPageSize(8)).toBe(1);
+    const total = crowded.nodes.filter(n => n.kind === 'user').length;
+    expect(users([])).toMatchObject({ total, hidden: total - 1 });
+    expect(users([]).keys).toHaveLength(1);
+    expect(users([2]).keys).toHaveLength(3);
+    expect(users([2])).toMatchObject({ total, hidden: total - 3 });
+    // Other columns keep their bound.
+    expect(layoutCatalog(crowded, null, 8, [2])[2].keys).toHaveLength(1);
+    // Objects to show later move behind the rest of their lane, so the bound keeps the others.
+    const first = users([]).keys[0];
+    expect(layoutCatalog(crowded, null, 8, [], new Set([first]))[0].keys[0]).not.toBe(first);
+  });
 });
 
 describe('focus graph', () => {
@@ -246,6 +263,15 @@ describe('privilege groups', () => {
     expect(privilegeGroup(tree, 'ALL')).toBe('ALL');
     expect(privilegeGroup(tree, 'UNKNOWN')).toBeNull();
     expect(tree.get('READ')!.level).toBe('SOURCE');
+  });
+  it('lists the privileges that act on one table, with their group', () => {
+    expect(tableLevelOperations(tree)).toEqual([{ name: 'SHOW TABLES', group: 'SHOW' }, { name: 'SELECT', group: 'SELECT' }]);
+    expect(groupOperations([{ name: 'ALTER UPDATE', group: 'ALTER' }, { name: 'DROP TABLE', group: 'DROP' }, { name: 'ALTER DELETE', group: 'ALTER' }, { name: 'OPTIMIZE', group: null }]))
+      .toEqual([{ group: 'ALTER', names: ['ALTER UPDATE', 'ALTER DELETE'] }, { group: 'DROP', names: ['DROP TABLE'] }, { group: 'OPTIMIZE', names: ['OPTIMIZE'] }]);
+    expect(toggleOperation(['SELECT'], 'INSERT')).toEqual(['SELECT', 'INSERT']);
+    expect(toggleOperation(['SELECT', 'INSERT'], 'SELECT')).toEqual(['INSERT']);
+    // The last selected operation stays.
+    expect(toggleOperation(['SELECT'], 'SELECT')).toEqual(['SELECT']);
   });
 });
 

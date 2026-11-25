@@ -27,9 +27,11 @@ export function useObjectFocus(project: (focus: string | null) => ObjectGraph | 
   }, [source, origin, activeContext]);
   const graph = focused?.graph ?? null;
   // What the paths to the table hold, when a user is in context (withPrincipalContext).
-  const contextSummary = useMemo((): PrincipalContextSummary | null => focused && 'revokes' in focused
-    ? { paths: focused.paths, revokes: focused.revokes, inactiveRoles: focused.inactiveRoles, grantedThrough: focused.grantedThrough,
-      revokedOn: focused.revokedOn, cancelled: focused.cancelled, cancelledEdges: focused.cancelledEdges } : null, [focused]);
+  const contextSummary = useMemo((): PrincipalContextSummary | null => {
+    if (!focused || !('revokes' in focused)) return null;
+    const { graph: _graph, ...summary } = focused;
+    return summary;
+  }, [focused]);
   const cards = useMemo(() => source ? describeObjects(source) : new Map<string, ObjectCard>(), [source]);
   // Essential lines drop broad privileges' per-table lines before layout; the view draws their stubs.
   const drawn = useMemo(() => graph && essential ? essentialEdges(graph) : { graph, stubs: [] as string[] }, [graph, essential]);

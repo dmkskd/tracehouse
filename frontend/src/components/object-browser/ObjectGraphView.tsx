@@ -6,7 +6,7 @@ import { EDGE_STYLES, toneStyle, REVOKE_EDGE_STYLE } from './objectStyle';
 import { DIAGRAM_STYLES } from './diagramStyles';
 import type { ObjectDiagramStyle } from '../../stores/userPreferenceStore';
 import { useEffect, useId, useLayoutEffect, useMemo, useRef, useState, type ReactNode } from 'react';
-import { BAND_TITLES, isGap, isWaypoint, lineage, RELATIONSHIPS, type GraphNode, type RelationshipFamily, type LayoutColumn, type ObjectCard, type ObjectGraph, isRevokeEdge, edgeCaption } from '@tracehouse/core/services/object-browser';
+import { BAND_TITLES, catalogPageSize, isGap, isWaypoint, lineage, RELATIONSHIPS, type GraphNode, type RelationshipFamily, type LayoutColumn, type ObjectCard, type ObjectGraph, isRevokeEdge, edgeCaption } from '@tracehouse/core/services/object-browser';
 
 // Card width and gap as in the mockups.
 const COLUMN_WIDTH = 176, COLUMN_GAP = 40;
@@ -20,12 +20,21 @@ type Point = { left: number; right: number; y: number };
  * collection, access or layout rules. `routes` (routeEdges) pass lines through
  * waypoints, `highlight` dims lines outside the hovered card's lineage, and
  * `diagramStyle` picks how cards and lines are drawn (DIAGRAM_STYLES). */
-export function ObjectGraphView({ graph, cards, columns, selected, onSelect, onFocus, onOpen, actions, caption, cancelledEdges = NO_STUBS, showAll = false, origin, routes, stubs = NO_STUBS, highlight = false, diagramStyle = 'cards' }: {
+export function ObjectGraphView({ graph, cards, columns, selected, onSelect, onFocus, onOpen, onMore, muted, covered, actions, caption, noPath, cancelledEdges = NO_STUBS, showAll = false, origin, routes, stubs = NO_STUBS, highlight = false, diagramStyle = 'cards' }: {
   graph: ObjectGraph; cards: Map<string, ObjectCard>; columns: LayoutColumn[]; selected: string | null;
   onSelect: (key: string) => void; onFocus?: (key: string) => void; onOpen?: (key: string) => void;
   actions?: ReactNode;
   /** Shown under the cards, inside the scrolling diagram: a line about what the diagram shows. */
   caption?: ReactNode;
+  /** Shows the next page of a column the catalog bound cut (LayoutColumn.hidden). */
+  onMore?: (column: number) => void;
+  /** Objects drawn faded, such as privileges without the catalog's operation (privilegesOutside). */
+  muted?: ReadonlySet<string>;
+  /** Selected access types a broad privilege includes (coveredOperations), shown on its card. */
+  covered?: ReadonlyMap<string, readonly string[]>;
+  /** A provenance with no configured path (hasNoConfiguredPath): a broken line runs from the
+   * user to the data divider and stops there, and the table is outlined. */
+  noPath?: { from: string; to: string };
   /** Links of grants a revoke on the same holder cancels: drawn dashed and faint. */
   cancelledEdges?: readonly string[]; showAll?: boolean; origin?: string | null;
   routes?: Map<string, string[]>; stubs?: string[]; highlight?: boolean; diagramStyle?: ObjectDiagramStyle;
@@ -39,7 +48,8 @@ export function ObjectGraphView({ graph, cards, columns, selected, onSelect, onF
     paths: { key: string; from: string; to: string; d: string; family: RelationshipFamily; revoke: boolean;
       /** Text drawn at the target end (edgeCaption), with that end point and the side the line arrives from. */
       caption?: { text: string; x: number; y: number; fromLeft: boolean } }[];
-    stubs: { from: string; d: string; x: number; y: number }[]; bracket: { x: number; top: number; bottom: number } | null }>({ width: 0, height: 0, paths: [], stubs: [], bracket: null });
+    stubs: { from: string; d: string; x: number; y: number }[]; bracket: { x: number; top: number; bottom: number } | null;
+    cut: { from: number; to: number; y: number; label: boolean } | null }>({ width: 0, height: 0, paths: [], stubs: [], bracket: null, cut: null });
   const [hovered, setHovered] = useState<string | null>(null);
   // Hover card: the card under the pointer after HOVER_DELAY_MS, measured then placed beside it.
   const [tip, setTip] = useState<{ key: string; anchor: Box } | null>(null);
@@ -70,7 +80,7 @@ export function ObjectGraphView({ graph, cards, columns, selected, onSelect, onF
     ? hoverConnected.has(from) && hoverConnected.has(to)
     : showAll || !selected || (connected.has(from) && connected.has(to));
   const byKey = new Map(graph.nodes.map(n => [n.key, n]));
-  const shown: { title?: string; band: LayoutColumn['band']; notices?: string[]; items: (GraphNode | string)[] }[] = columns.map(c => ({ title: c.title, band: c.band, notices: c.notices,
+  const shown: { title?: string; band: LayoutColumn['band']; notices?: string[]; total?: number; hidden?: number; items: (GraphNode | string)[] }[] = columns.map(c => ({ title: c.title, band: c.band, notices: c.notices, total: c.total, hidden: c.hidden,
     items: c.keys.flatMap((k): (GraphNode | string)[] => isWaypoint(k) || isGap(k) ? [k] : [byKey.get(k)].filter((n): n is GraphNode => !!n)) }));
   const nodes = shown.flatMap(c => c.items.filter((item): item is GraphNode => typeof item !== 'string'));
   const lanesWidth = shown.length * COLUMN_WIDTH + Math.max(0, shown.length - 1) * COLUMN_GAP;
@@ -116,19 +126,30 @@ export function ObjectGraphView({ graph, cards, columns, selected, onSelect, onF
       });
       const bracket = divider !== null && items && drawnStubs.length
         ? { x: divider, top: (items.top - bounds.top) / zoom, bottom: (items.bottom - bounds.top) / zoom } : null;
-      setGeometry({ width: root.current.offsetWidth, height: root.current.offsetHeight, paths, stubs: drawnStubs, bracket });
+      // The broken line leaves the last card in the user's row (the user, or a grant of theirs that
+      // does not cover the table) and stops at the divider. Across a clear row it carries a label.
+      const user = noPath ? point(noPath.from) : null;
+      const inRow = user && divider !== null ? [...elements.current].flatMap(([key, element]) => {
+        if (key === noPath?.from || isWaypoint(key)) return [];
+        const r = element.getBoundingClientRect();
+        const top = (r.top - bounds.top) / zoom, bottom = (r.bottom - bounds.top) / zoom, right = (r.right - bounds.left) / zoom;
+        return top < user.y && bottom > user.y && right > user.right && right < divider ? [right] : [];
+      }) : [];
+      const cut = divider === null || !user ? null
+        : { from: Math.max(user.right, ...inRow), to: divider, y: user.y, label: inRow.length === 0 };
+      setGeometry({ width: root.current.offsetWidth, height: root.current.offsetHeight, paths, stubs: drawnStubs, bracket, cut });
     };
     measure();window.addEventListener('resize', measure);
     return () => window.removeEventListener('resize', measure);
-  }, [graph, columns, routes, stubs, zoom, style]);
+  }, [graph, columns, routes, stubs, zoom, style, noPath?.from]);
   const tile = (n: GraphNode) => {
     const card = cards.get(n.key);
     return <div key={n.key} ref={element => { if (element) elements.current.set(n.key, element);else elements.current.delete(n.key); }}
-      className={`node ${!showAll && selected && !connected.has(n.key) ? 'dim' : ''}`} style={card && toneStyle(card.flags.includes('revoke') ? 'revoke' : card.type)} data-selected={n.key === selected} data-origin={n.key === origin} onDoubleClick={() => (onOpen ?? onFocus)?.(n.key)}
+      className={`node ${!showAll && selected && !connected.has(n.key) ? 'dim' : ''}`} style={card && toneStyle(card.flags.includes('revoke') ? 'revoke' : card.type)} data-selected={n.key === selected} data-origin={n.key === origin} data-unreached={n.key === noPath?.to} data-muted={muted?.has(n.key) || undefined} onDoubleClick={() => (onOpen ?? onFocus)?.(n.key)}
       onMouseEnter={event => { if (highlight) setHovered(n.key); if (card) showTip(n.key, event.currentTarget); }}
       onMouseLeave={() => { if (highlight) setHovered(null); hideTip(); }}>
       <button className="node-select" aria-pressed={n.key === selected} onClick={() => onSelect(n.key)}>
-        {card ? <ObjectCardBody card={card} /> : <strong>{n.name}</strong>}
+        {card ? <ObjectCardBody card={card} includes={covered?.get(n.key)} /> : <strong>{n.name}</strong>}
       </button>
       {card?.badge && <span className="node-badge" title={card.badge.detail}>{card.badge.text}</span>}
       {onFocus && <button className="node-focus" aria-label={`Focus ${n.name}`} title="Focus object and relationships · or double-click the card" onClick={() => onFocus(n.key)}>↗</button>}
@@ -152,6 +173,14 @@ export function ObjectGraphView({ graph, cards, columns, selected, onSelect, onF
           textAnchor={p.caption.fromLeft ? 'end' : 'start'} opacity={linked(p.from, p.to) ? 1 : .3}>{p.caption.text}</text>] : [])}
         {geometry.bracket && <path d={`M${geometry.bracket.x} ${geometry.bracket.top} L${geometry.bracket.x} ${geometry.bracket.bottom}`}
           stroke={EDGE_STYLES.access.stroke} strokeWidth={2} strokeLinecap="round" opacity={.28} />}
+        {geometry.cut && <g className="no-path">
+          <path d={`M${geometry.cut.from} ${geometry.cut.y} L${geometry.cut.to - 9} ${geometry.cut.y}`} fill="none" strokeWidth={1.6} strokeDasharray="5 4" />
+          {/* The disc covers the dashed divider under the mark. */}
+          <circle cx={geometry.cut.to} cy={geometry.cut.y} r={9} className="no-path-disc" />
+          <path d={`M${geometry.cut.to - 5} ${geometry.cut.y - 5} L${geometry.cut.to + 5} ${geometry.cut.y + 5} M${geometry.cut.to + 5} ${geometry.cut.y - 5} L${geometry.cut.to - 5} ${geometry.cut.y + 5}`}
+            fill="none" strokeWidth={2} strokeLinecap="round" />
+          {geometry.cut.label && <text x={(geometry.cut.from + geometry.cut.to) / 2} y={geometry.cut.y - 8} textAnchor="middle">No role or privilege on this path</text>}
+        </g>}
         {geometry.stubs.map(s => <g key={s.from} opacity={linked(s.from, s.from) ? 1 : .3}>
           <path d={s.d} fill="none" stroke={EDGE_STYLES.access.stroke} strokeWidth={1.5} opacity={.6} />
           <circle cx={s.x} cy={s.y} r={4} fill="var(--bg-secondary, #fff)" stroke={EDGE_STYLES.access.stroke} strokeWidth={1.5} />
@@ -163,11 +192,13 @@ export function ObjectGraphView({ graph, cards, columns, selected, onSelect, onF
         return <div key={i} className={i > 0 && bandStart ? 'lane band-start' : 'lane'} data-band={c.band}>
           <div className="band-title">{bandStart ? BAND_TITLES[c.band] : '\u00a0'}</div>
           {/* Header strip: the column title, kept visible while the diagram scrolls. */}
-          <div className="lane-title"><span>{c.title ?? '\u00a0'}</span></div>
+          <div className="lane-title"><span>{c.title ?? '\u00a0'}</span>
+            {c.total !== undefined && c.total > 0 && <span className="lane-count">{c.hidden ? `${c.total - c.hidden} of ${c.total}` : c.total}</span>}</div>
           {c.notices?.map(notice => <p key={notice} className="lane-notice">{notice}</p>)}
           <div className="lane-items">{c.items.map(item => typeof item !== 'string' ? tile(item)
             : isGap(item) ? <div key={item} className="slot" aria-hidden="true" />
             : <div key={item} className="waypoint" ref={element => { if (element) elements.current.set(item, element);else elements.current.delete(item); }} />)}</div>
+          {onMore && !!c.hidden && <button type="button" className="lane-more" onClick={() => onMore(i)}>Show {Math.min(c.hidden, catalogPageSize())} more</button>}
         </div>;
       })}
     </div></div>{caption && <div className="graph-caption">{caption}</div>}</div>

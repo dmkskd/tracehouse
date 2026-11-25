@@ -6,8 +6,9 @@ import { lineage } from '../projections/focus.js';
 /** Access configuration, ClickHouse data objects, and external storage. */
 export type LayoutBand = 'access' | 'data' | 'external';
 /** Column keys are object keys, plus `isGap` keys for empty rows and `isWaypoint` keys for lines. */
-/** `notices` explain what the column lacks, such as a source without SELECT (withSourceNotices). */
-export interface LayoutColumn { title?: string; band: LayoutBand; keys: string[]; notices?: string[] }
+/** `notices` explain what the column lacks, such as a source without SELECT (withSourceNotices).
+ * `total` counts the column's objects and `hidden` those past the catalog bound (layoutCatalog). */
+export interface LayoutColumn { title?: string; band: LayoutBand; keys: string[]; notices?: string[]; total?: number; hidden?: number }
 /** Title shown once over the first column of each band. */
 export const BAND_TITLES: Record<LayoutBand, string> = { access: 'Access', data: 'Data', external: 'External' };
 const GAP = 'gap:';
@@ -26,25 +27,34 @@ const KIND_ORDER = Object.keys(KIND_LAYOUT) as ObjectKind[];
 /** Catalog layout. Access objects (users, roles, privileges) are lists, so each kind
  * keeps its KIND_LAYOUT lane in collection order. Data objects (tables, views, storage)
  * are laid out as in focus, so chains read left to right. Every column is bounded to an
- * equal share of `maxNodes`; the selected object and its lineage are kept past the bound
- * so a search result and its connections stay reachable, and selection never reorders cards. */
-export function layoutCatalog(graph: ObjectGraph, selected: string | null, maxNodes = 100): LayoutColumn[] {
-  const lanes = [...new Map(KIND_ORDER.map(kind => [KIND_LAYOUT[kind].lane, KIND_LAYOUT[kind].band])).entries()];
-  const perColumn = Math.floor(maxNodes / lanes.length);
+ * equal share of `maxNodes` (catalogPageSize), raised by that share for each page in `pages[i]`
+ * for column `i`; the selected object and its lineage are kept past the bound so a search result
+ * and its connections stay reachable, and selection never reorders cards. Access objects in
+ * `later` (privilegesOutside) follow the rest of their lane, so the bound keeps the others. */
+export function layoutCatalog(graph: ObjectGraph, selected: string | null, maxNodes = 100, pages: readonly number[] = [], later: ReadonlySet<string> = new Set()): LayoutColumn[] {
+  const perColumn = catalogPageSize(maxNodes);
   // Gaps do not count toward the bound, and trailing gaps are dropped. The selected object
   // and everything connected to it stay past the bound, so selecting a user shows its grants.
   const connected = selected ? lineage(graph, selected) : new Set<string>();
-  const bound = (keys: string[]) => {
+  const bound = (column: LayoutColumn, index: number): LayoutColumn => {
+    const limit = perColumn * (1 + (pages[index] ?? 0));
     let shown = 0;
-    const kept = keys.filter(key => isGap(key) || shown++ < perColumn || connected.has(key));
+    const kept = column.keys.filter(key => isGap(key) || shown++ < limit || connected.has(key));
     while (kept.length && isGap(kept[kept.length - 1])) kept.pop();
-    return kept;
+    const total = column.keys.filter(key => !isGap(key)).length;
+    return { ...column, keys: kept, total, hidden: total - kept.filter(key => !isGap(key)).length };
   };
-  const access = lanes.filter(([, band]) => band === 'access').map(([title, band]) => ({ title, band,
-    keys: bound(graph.nodes.filter(n => KIND_LAYOUT[n.kind].lane === title).map(n => n.key)) }));
+  const access = LANES.filter(([, band]) => band === 'access').map(([title, band]): LayoutColumn => ({ title, band,
+    keys: graph.nodes.filter(n => KIND_LAYOUT[n.kind].lane === title).map(n => n.key)
+      .sort((a, b) => Number(later.has(a)) - Number(later.has(b))) }));
   const data = new Set(graph.nodes.filter(n => KIND_LAYOUT[n.kind].band !== 'access').map(n => n.key));
   const flow = layoutFocus({ nodes: graph.nodes.filter(n => data.has(n.key)), edges: graph.edges.filter(e => data.has(e.from) && data.has(e.to)) });
-  return [...access, ...flow.map(column => ({ ...column, keys: bound(column.keys) }))];
+  return [...access, ...flow].map(bound);
+}
+const LANES = [...new Map(KIND_ORDER.map(kind => [KIND_LAYOUT[kind].lane, KIND_LAYOUT[kind].band])).entries()];
+/** Cards per catalog column before "more": an equal share of `maxNodes` across the lanes. */
+export function catalogPageSize(maxNodes = 100): number {
+  return Math.floor(maxNodes / LANES.length);
 }
 const COLUMN_TITLES: Partial<Record<ObjectType, string>> = {
   user: 'Users', role: 'Roles', 'grant-scope': 'Privileges', view: 'Views', 'materialized-view': 'Materialized views',

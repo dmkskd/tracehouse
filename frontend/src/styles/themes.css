@@ -21,6 +21,8 @@
   --bg-primary: #0a0a1a;
   --bg-secondary: #0d0d20;
   --bg-tertiary: #14142a;
+  /* Fill for items that sit on the page background and need to read as raised */
+  --bg-raised: #131328;
   --bg-card: rgba(255, 255, 255, 0.03);
   --bg-card-hover: rgba(255, 255, 255, 0.06);
   --bg-input: rgba(255, 255, 255, 0.05);
@@ -118,6 +120,8 @@
   --bg-primary: #f8fafc;
   --bg-secondary: #ffffff;
   --bg-tertiary: #f1f5f9;
+  /* Fill for items that sit on the page background and need to read as raised */
+  --bg-raised: #ffffff;
   --bg-card: rgba(0, 0, 0, 0.02);
   --bg-card-hover: rgba(0, 0, 0, 0.04);
   --bg-input: rgba(0, 0, 0, 0.03);

@@ -34,11 +34,14 @@ export interface Investigation {
   principal: string;
   database: string;
   table: string;
-  operation: 'SELECT' | 'INSERT';
+  /** A table-level privilege, as system.privileges names it (SELECT, INSERT, DROP TABLE, ALTER DELETE). */
+  operation: string;
 }
 export interface Capture {
   schemaVersion: 1;
   mode?: 'catalog' | 'investigation';
+  /** A catalog of the system database's tables only (CollectOptions.systemTables). */
+  systemTables?: boolean;
   investigation: Investigation;
   startedAt: string;
   completedAt: string;
@@ -46,6 +49,8 @@ export interface Capture {
   observations: Observation[];
   relationships: Relationship[];
   coverage: Coverage[];
+  /** Privileges a provenance can ask about (tableLevelOperations); absent when system.privileges is unreadable. */
+  operations?: { name: string; group: string | null }[];
   verdict: { kind: 'not-checked'; reason: string };
 }
 export interface GraphNode {

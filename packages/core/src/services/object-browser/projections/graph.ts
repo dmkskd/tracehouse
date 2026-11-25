@@ -1,7 +1,7 @@
 import { canonical } from '../model/canonical.js';
 import { KINDS } from '../model/kinds.js';
 import { RELATIONSHIPS } from '../model/relationships.js';
-import { OWN_ACCESS, type Capture, type GraphNode, type ObjectGraph, type ObjectKind, type Source } from '../model/types.js';
+import { OWN_ACCESS, type Attributes, type Capture, type GraphNode, type ObjectGraph, type ObjectKind, type Source } from '../model/types.js';
 
 /** Left out when host records are compared: per-host measurements (replicas and shards hold
  * different amounts of data) and identifiers each host assigns to its own copy of an object. */
@@ -92,11 +92,42 @@ const FOCUS_TABLES: Record<ObjectKind, (capture: Capture, focus: string) => Read
   user: () => null, role: () => null, 'grant-scope': () => null,
 };
 
+/** Whether a privilege's scope includes a table-level operation, from the operations the
+ * collector stored (tableOperations): ALL ON *.* includes ALTER DELETE. */
+export function coversOperation(scope: Attributes | undefined, operation: string): boolean {
+  const operations = scope?.table_operations;
+  return Array.isArray(operations) && operations.includes(operation);
+}
+
+/** Whether a privilege's scope includes at least one of `operations`. */
+export function coversAny(scope: Attributes | undefined, operations: readonly string[]): boolean {
+  return operations.some(operation => coversOperation(scope, operation));
+}
+
+/** Privileges in `graph` that include none of `operations`: the catalog draws them without lines to tables. */
+export function privilegesOutside(graph: ObjectGraph, operations: readonly string[]): Set<string> {
+  return new Set(graph.nodes.filter(n => n.kind === 'grant-scope' && !coversAny(n.records[0]?.attributes, operations)).map(n => n.key));
+}
+
+/** For privileges that include some of `operations` without being one of them (ALL, ALTER), the
+ * ones they include, in the order given: what their lines to tables stand for. */
+export function coveredOperations(graph: ObjectGraph, operations: readonly string[]): Map<string, string[]> {
+  const covered = new Map<string, string[]>();
+  for (const n of graph.nodes) {
+    const scope = n.records[0]?.attributes;
+    if (n.kind !== 'grant-scope' || operations.includes(String(scope?.access_type))) continue;
+    const included = operations.filter(operation => coversOperation(scope, operation));
+    if (included.length) covered.set(n.key, included);
+  }
+  return covered;
+}
+
 /** Catalog projection expands broad name scopes for one focus object, over the tables
  * FOCUS_TABLES gives for its kind, at most `maxMatches` per scope, with the full count
- * in `scopeMatches`. Without a focus object only exact scopes link. Edges remain
- * host-specific metadata candidates, including revokes as evidence. */
-export function projectCatalogGraph(capture: Capture, focus?: string, maxMatches = 100): ObjectGraph {
+ * in `scopeMatches`. Without a focus object only exact scopes link. Only privileges that
+ * include one of `operations` link (coversAny). Edges remain host-specific metadata
+ * candidates, including revokes as evidence. */
+export function projectCatalogGraph(capture: Capture, focus?: string, maxMatches = 100, operations: readonly string[] = ['SELECT']): ObjectGraph {
   const relationships = [...capture.relationships];
   const focusKind = capture.observations.find(o => o.key === focus)?.kind;
   const scoped = focus && focusKind ? FOCUS_TABLES[focusKind](capture, focus) : null;
@@ -106,9 +137,7 @@ export function projectCatalogGraph(capture: Capture, focus?: string, maxMatches
   const scopes = new Map(capture.observations.filter(o => o.kind === 'grant-scope').map(o => [o.key, o.attributes]));
   for (const grant of capture.relationships.filter(e => e.kind === 'grant')) {
     const r = grant.evidence;
-    // A privilege links when it is or includes SELECT or INSERT (ALL includes both).
-    const operations = scopes.get(grant.to)?.table_operations;
-    if (Number(r.is_wildcard) === 1 || r.access_object || !Array.isArray(operations) || !operations.length) continue;
+    if (Number(r.is_wildcard) === 1 || r.access_object || !coversAny(scopes.get(grant.to), operations)) continue;
     // Without a focus object, only exact scopes are expanded.
     if (!focusKind && (r.database == null || r.table == null)) continue;
     const all = matched.get(grant.to) ?? new Set<string>(), shown = linked.get(grant.to) ?? new Set<string>();

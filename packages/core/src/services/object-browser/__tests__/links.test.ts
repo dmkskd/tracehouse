@@ -4,7 +4,7 @@ import { describeDetail } from '../presentation/details.js';
 import { describeObjects } from '../presentation/cards.js';
 import { withEmptyAccessNotices } from '../presentation/layout.js';
 import { focusGraphFrom } from '../projections/focus.js';
-import { describeMissingLink, describeProvenance, summarizePrincipalPaths, objectLinkFor, objectLinkUrl, parseObjectLink, resolveObjectLink, withPrincipalContext, type ObjectLink } from '../presentation/links.js';
+import { describeMissingLink, describeProvenance, provenanceState, summarizePrincipalPaths, objectLinkFor, objectLinkUrl, parseObjectLink, resolveObjectLink, withPrincipalContext, type ObjectLink } from '../presentation/links.js';
 import type { Capture, ObjectKind, Relationship, Source } from '../model/types.js';
 
 const record = (key: string, kind: ObjectKind, source: Source, attributes: Record<string, unknown> = {}) =>
@@ -103,10 +103,16 @@ describe('object links', () => {
     const graph = projectGraph({ ...capture, observations: [rec('bob', 'user', 'users'), rec('analyst', 'role', 'roles'),
       rec('all', 'grant-scope', 'grants', { access_type: 'SELECT', database: 'demo', table: null }),
       rec('revoke', 'grant-scope', 'grants', { access_type: 'SELECT', database: 'demo', table: 'audit', partial_revoke: 1 }),
-      { ...rec('audit', 'table', 'tables', { database: 'demo', name: 'audit', engine: 'MergeTree' }), name: 'demo.audit' }],
+      { ...rec('audit', 'table', 'tables', { database: 'demo', name: 'audit', engine: 'MergeTree' }), name: 'demo.audit' },
+      { ...rec('sales', 'table', 'tables', { database: 'demo', name: 'sales', engine: 'MergeTree' }), name: 'demo.sales' },
+      // GRANT SELECT(id) ON demo.orders TO bob
+      rec('orders-id', 'grant-scope', 'grants', { access_type: 'SELECT', database: 'demo', table: 'orders', column: 'id' }),
+      { ...rec('orders', 'table', 'tables', { database: 'demo', name: 'orders', engine: 'MergeTree' }), name: 'demo.orders' }],
     relationships: [link('bob', 'analyst', 'has-role', 'role_grants', { granted_role_is_default: 0 }),
       link('analyst', 'all', 'grant', 'grants', { is_partial_revoke: 0 }), link('analyst', 'revoke', 'grant', 'grants', { is_partial_revoke: 1 }),
-      link('all', 'audit', 'candidate-scope', 'grants', { is_partial_revoke: 0 }), link('revoke', 'audit', 'candidate-scope', 'grants', { is_partial_revoke: 1 })] });
+      link('all', 'audit', 'candidate-scope', 'grants', { is_partial_revoke: 0 }), link('revoke', 'audit', 'candidate-scope', 'grants', { is_partial_revoke: 1 }),
+      link('all', 'sales', 'candidate-scope', 'grants', { is_partial_revoke: 0 }),
+      link('bob', 'orders-id', 'grant', 'grants', { is_partial_revoke: 0 }), link('orders-id', 'orders', 'candidate-scope', 'grants', { is_partial_revoke: 0 })] });
     const narrowed = withPrincipalContext(focusGraphFrom(graph, 'audit'), 'bob', 'audit');
     // The revoke sits on the same role as the database grant: that grant is cancelled for the table.
     expect({ paths: narrowed.paths, revokes: narrowed.revokes, inactiveRoles: narrowed.inactiveRoles, cancelled: narrowed.cancelled })
@@ -114,6 +120,14 @@ describe('object links', () => {
     expect(narrowed.cancelledEdges.map(key => narrowed.graph.edges.find(e => e.key === key)).map(e => `${e?.from}>${e?.to}`)).toEqual(['all>audit']);
     expect(describeProvenance(narrowed, 'bob', 'demo.audit').text)
       .toBe("No grant path left: analyst's all is revoked for demo.audit. analyst is not active when bob logs in; it needs SET ROLE analyst");
+    expect(provenanceState(narrowed)).toBe('revoked');
+    // No revoke on sales: the grant holds, but only through analyst, which bob must SET ROLE first.
+    const sales = withPrincipalContext(focusGraphFrom(graph, 'sales'), 'bob', 'sales');
+    expect({ paths: sales.paths, activePaths: sales.activePaths, state: provenanceState(sales) }).toEqual({ paths: 1, activePaths: 0, state: 'set-role' });
+    // A grant on some columns is a path to those columns only.
+    const orders = withPrincipalContext(focusGraphFrom(graph, 'orders'), 'bob', 'orders');
+    expect({ columnsOnly: orders.columnsOnly, state: provenanceState(orders) }).toEqual({ columnsOnly: ['id'], state: 'columns' });
+    expect(describeProvenance(orders, 'bob', 'demo.orders').text).toBe('Granted through bob · only columns id');
     const revoke = describeObjects(graph).get('revoke')!;
     expect(revoke.title).toBe('REVOKE SELECT');
     expect(revoke.flags).toContain('revoke');
@@ -122,11 +136,17 @@ describe('object links', () => {
   });
   it('says in words when a provenance has no grant path, and marks its empty access columns', () => {
     const graph = projectGraph(capture);
-    // carol holds no role or privilege that names trips.
-    const none = describeProvenance(summarizePrincipalPaths(graph, 'carol', 'trips'), 'carol', 'demo.trips');
+    // carol holds no role or privilege that covers trips.
+    const none = describeProvenance(summarizePrincipalPaths(graph, 'carol', 'trips'), 'carol', 'demo.trips', 'SELECT');
     expect(none.tone).toBe('warning');
-    expect(none.text).toBe('No grant path: no role or privilege of carol names demo.trips');
-    expect(none.parts.filter(p => p.kind === 'name').map(p => p.text)).toEqual(['carol', 'demo.trips']);
+    expect(none.text).toBe('No grant path: no role or privilege of carol covers SELECT on demo.trips');
+    expect(none.parts.filter(p => p.kind === 'name').map(p => p.text)).toEqual(['carol', 'SELECT', 'demo.trips']);
+    expect(provenanceState(summarizePrincipalPaths(graph, 'carol', 'trips'))).toBe('no-path');
+    expect(provenanceState(summarizePrincipalPaths(graph, 'alice', 'trips'))).toBe('granted');
+    // A catalog focus asks about any of several access types.
+    expect(describeProvenance(summarizePrincipalPaths(graph, 'alice', 'trips'), 'alice', 'demo.trips', ['SELECT', 'INSERT']).text).toBe('Granted through reader for SELECT or INSERT');
+    expect(describeProvenance(summarizePrincipalPaths(graph, 'carol', 'trips'), 'carol', 'demo.trips', ['SELECT', 'INSERT']).text)
+      .toBe('No grant path: no role or privilege of carol covers SELECT or INSERT on demo.trips');
     expect(describeProvenance(summarizePrincipalPaths(graph, 'alice', 'trips'), 'alice', 'demo.trips').text).toBe('Granted through reader');
     expect(withEmptyAccessNotices([{ title: 'Roles', band: 'access', keys: [] }, { title: 'Tables', band: 'data', keys: [] }], 'None on a path'))
       .toEqual([{ title: 'Roles', band: 'access', keys: [], notices: ['None on a path'] }, { title: 'Tables', band: 'data', keys: [] }]);

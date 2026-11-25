@@ -1,6 +1,6 @@
-import { provenancePaths } from '../projections/graph.js';
+import { projectGraph, provenancePaths } from '../projections/graph.js';
 import { RELATIONSHIPS, isRevokeEdge } from '../model/relationships.js';
-import type { Coverage, GraphNode, ObjectGraph, Source } from '../model/types.js';
+import { objectKey, type Capture, type Coverage, type GraphNode, type ObjectGraph, type Source } from '../model/types.js';
 
 /** An object another page opens the object browser on. `user` on a table is the
  * principal in context: focus then shows only that user's paths to the table. */
@@ -128,6 +128,10 @@ export function objectLinkFor(node: GraphNode | undefined, chainUser?: string): 
 export interface PrincipalContextSummary {
   /** Grant paths that no revoke on the same holder cancels. */
   paths: number;
+  /** Of `paths`, those whose first role the principal holds as a default role, or with no role. */
+  activePaths: number;
+  /** Columns the active paths' grants name, when every one of them names columns (SELECT(id)); else empty. */
+  columnsOnly: string[];
   /** Paths that end in a partial revoke. */
   revokes: number;
   /** Roles on a path the principal holds without them being default roles (inactive until SET ROLE). */
@@ -156,13 +160,16 @@ export function summarizePrincipalPaths(graph: ObjectGraph, principal: string, t
   const edgeOf = new Map(graph.edges.map(e => [e.key, e]));
   const nameOf = (key: string) => graph.nodes.find(n => n.key === key)?.name ?? key;
   const accessOf = (key: string) => graph.nodes.find(n => n.key === key)?.records[0]?.attributes.access_type;
+  const columnOf = (key: string) => graph.nodes.find(n => n.key === key)?.records[0]?.attributes.column;
   // Each path's grant link (holder → privilege), its link to the table, and whether it is a revoke.
   const steps = all.map(p => {
     const edges = p.edges.map(key => edgeOf.get(key)).filter((e): e is ObjectGraph['edges'][number] => !!e);
     const grant = [...edges].reverse().find(e => e.kind === 'grant');
     const toTable = edges.find(e => e.kind === 'candidate-scope' && e.to === target);
-    return { grant, toTable, revoke: edges.some(isRevokeEdge) };
-  }).filter((s): s is { grant: ObjectGraph['edges'][number]; toTable: ObjectGraph['edges'][number] | undefined; revoke: boolean } => !!s.grant);
+    // A role the principal holds without it being a default role is inactive until SET ROLE; roles it grants follow it.
+    const inactive = edges.some(e => e.kind === 'has-role' && e.from === principal && e.records.every(r => Number(r.evidence.granted_role_is_default) === 0));
+    return { grant, toTable, revoke: edges.some(isRevokeEdge), inactive };
+  }).filter((s): s is { grant: ObjectGraph['edges'][number]; toTable: ObjectGraph['edges'][number] | undefined; revoke: boolean; inactive: boolean } => !!s.grant);
   const revokedByHolder = new Map<string, Set<unknown>>();
   for (const s of steps.filter(s => s.revoke)) {
     const revoked = revokedByHolder.get(s.grant.from) ?? new Set();
@@ -172,11 +179,15 @@ export function summarizePrincipalPaths(graph: ObjectGraph, principal: string, t
   const cancelledSteps = grants.filter(s => revokedByHolder.get(s.grant.from)?.has(accessOf(s.grant.to)));
   const live = grants.filter(s => !cancelledSteps.includes(s));
   const cancellingHolders = new Set(cancelledSteps.map(s => s.grant.from));
+  const active = live.filter(s => !s.inactive);
+  const columns = active.map(s => columnOf(s.grant.to));
   const inactiveRoles = [...new Set(all.flatMap(p => p.edges.map(key => edgeOf.get(key)).filter((e): e is ObjectGraph['edges'][number] => !!e)
     .filter(e => e.kind === 'has-role' && e.from === principal && e.records.every(r => Number(r.evidence.granted_role_is_default) === 0))
     .map(e => nameOf(e.to))))].sort();
   return {
-    all, paths: live.length, revokes: steps.filter(s => s.revoke).length, inactiveRoles,
+    all, paths: live.length, activePaths: active.length,
+    columnsOnly: columns.length && columns.every(c => c != null && c !== '') ? [...new Set(columns.map(String))].sort() : [],
+    revokes: steps.filter(s => s.revoke).length, inactiveRoles,
     grantedThrough: [...new Set(live.map(s => nameOf(s.grant.from)))].sort(),
     revokedOn: [...revokedByHolder.keys()].filter(holder => !cancellingHolders.has(holder)).map(nameOf).sort(),
     cancelled: [...new Map(cancelledSteps.map(s => [`${s.grant.from}|${s.grant.to}`, { holder: nameOf(s.grant.from), grant: nameOf(s.grant.to) }])).values()],
@@ -184,24 +195,49 @@ export function summarizePrincipalPaths(graph: ObjectGraph, principal: string, t
   };
 }
 
+/** How the configured paths answer one operation: `granted` with a path active at login,
+ * `columns` when the active paths' grants name only some columns, `set-role` with paths only
+ * through roles that need SET ROLE, `revoked` when a revoke on the same holder cancels every
+ * grant, `no-path` with no grant at all. Configuration only. */
+export type ProvenanceState = 'granted' | 'columns' | 'set-role' | 'revoked' | 'no-path';
+export function provenanceState(summary: Pick<PrincipalContextSummary, 'paths' | 'activePaths' | 'columnsOnly' | 'cancelled'>): ProvenanceState {
+  if (summary.paths > 0) return summary.activePaths === 0 ? 'set-role' : summary.columnsOnly.length ? 'columns' : 'granted';
+  return summary.cancelled.length ? 'revoked' : 'no-path';
+}
+
+/** A provenance capture's answer for its operation: the state, the line explaining it, and the
+ * summary with the graph keys of its user and table. */
+export interface ProvenanceAnswer { operation: string; state: ProvenanceState; line: ProvenanceLine; summary: PrincipalContextSummary; user: string; target: string }
+export function provenanceAnswer(capture: Capture): ProvenanceAnswer {
+  const { connection, principal, database, table, operation } = capture.investigation;
+  const user = objectKey(connection, 'user', principal), target = objectKey(connection, 'table', database, table);
+  const { all: _all, ...summary } = summarizePrincipalPaths(projectGraph(capture), user, target);
+  return { operation, state: provenanceState(summary), line: describeProvenance(summary, principal, `${database}.${table}`, operation), summary, user, target };
+}
+
 /**
  * The line under a provenance view and in the focus header: which holders grant the
  * privilege, which grants a revoke on the same holder cancels, and roles that need SET ROLE.
  * Configuration only: ClickHouse decides access when a query runs.
  */
-export function describeProvenance(summary: PrincipalContextSummary, principal: string, table: string): ProvenanceLine {
+export function describeProvenance(summary: PrincipalContextSummary, principal: string, table: string, operation?: string | readonly string[]): ProvenanceLine {
   type Part = ProvenanceLine['parts'][number];
   const plain = (text: string): Part => ({ text, kind: 'plain' }), name = (text: string): Part => ({ text, kind: 'name' });
   const list = (names: string[]): Part[] => names.flatMap((n, i) => [...(i ? [plain(', ')] : []), name(n)]);
+  // The access types asked: one for a provenance, any of several for a catalog focus.
+  const operations = operation === undefined ? [] : typeof operation === 'string' ? [operation] : [...operation];
+  const asked = operations.flatMap((op, i): Part[] => [...(i ? [plain(' or ')] : []), name(op)]);
   const cancelled = summary.cancelled.flatMap((c, i): Part[] => [...(i ? [plain('; ')] : []), name(c.holder), plain("'s "), name(c.grant), plain(' is revoked for '), name(table)]);
   const parts: Part[] = summary.paths > 0
-    ? [{ text: 'Granted through', kind: 'lead' }, plain(' '), ...list(summary.grantedThrough),
+    ? [{ text: 'Granted through', kind: 'lead' }, plain(' '), ...list(summary.grantedThrough), ...(asked.length ? [plain(' for '), ...asked] : []),
       ...(summary.revokedOn.length ? [plain(' · revoked on '), ...list(summary.revokedOn)] : []),
       ...(cancelled.length ? [plain(' · '), ...cancelled] : [])]
     : cancelled.length
       ? [{ text: 'No grant path left:', kind: 'lead' }, plain(' '), ...cancelled]
-      : [{ text: 'No grant path:', kind: 'lead' }, plain(' no role or privilege of '), name(principal), plain(' names '), name(table),
+      : [{ text: 'No grant path:', kind: 'lead' }, plain(' no role or privilege of '), name(principal), plain(' covers '),
+        ...(asked.length ? [...asked, plain(' on ')] : []), name(table),
         ...(summary.revokes ? [plain(` (${summary.revokes} revoke${summary.revokes === 1 ? '' : 's'})`)] : [])];
+  if (summary.columnsOnly.length) parts.push(plain(' · only columns '), ...list(summary.columnsOnly));
   for (const role of summary.inactiveRoles) {
     parts.push(plain('. '), name(role), plain(' is not active when '), name(principal), plain(' logs in; it needs '), name(`SET ROLE ${role}`));
   }

@@ -73,10 +73,13 @@ card shows the raw privilege name.
 |---|---|---|
 | candidate name match | privilege → table | Computed by `projectCatalogGraph` from names |
 
-A privilege links to tables when it is `SELECT` or `INSERT` or one of their
-ancestors in `system.privileges`, such as `ALL`, and has no `access_object` or
-wildcard. The collector stores the operations it includes as the scope's
-`table_operations`. `system.grants` keeps `ALL ON *.*` as one `ALL` row and
+A privilege links to tables when it includes one of the access types selected in
+the catalog (`SELECT` by default) and has no `access_object` or wildcard. The
+collector stores the table-level access types a privilege includes as the scope's
+`table_operations`, from the privilege tree in `system.privileges`: `ALL`
+includes `SELECT` and `DROP TABLE`, `ALTER` includes `ALTER DELETE`. Privileges
+that include none of the selected types are listed last and dimmed
+(`privilegesOutside`). `system.grants` keeps `ALL ON *.*` as one `ALL` row and
 splits `ALL ON db.*` into one row per privilege. Without a focus object, only
 exact table privileges link. With one, database-wide and global privileges link too, over the tables `FOCUS_TABLES`
 (`projections/graph.ts`) gives for the focus kind:

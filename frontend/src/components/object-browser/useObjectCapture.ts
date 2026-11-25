@@ -22,7 +22,7 @@ export function useObjectCapture() {
     setCapture(null);setError(null);setLoading(false);
     return () => { if (current.current) current.current.aborted = true; };
   }, [services?.adapter]);
-  const collect = useCallback(async (input: Omit<Investigation, 'connection'>, mode: 'catalog' | 'investigation' = 'investigation') => {
+  const collect = useCallback(async (input: Omit<Investigation, 'connection'>, mode: 'catalog' | 'investigation' = 'investigation', systemTables = false) => {
     if (!services) return;
     if (current.current) current.current.aborted = true;
     const cancellation = { aborted: false };current.current = cancellation;
@@ -31,12 +31,17 @@ export function useObjectCapture() {
       // Sources the capability probe found without SELECT are skipped; before the probe finishes every source is read.
       const { capabilities, probeStatus } = useMonitoringCapabilitiesStore.getState();
       const notGranted = probeStatus === 'done' && capabilities ? notGrantedSources(capabilities.capabilities) : [];
-      const result = await collectObjects(services.adapter, { ...input, connection: contextFor(services.adapter) }, { cancellation, mode, notGranted });
+      const result = await collectObjects(services.adapter, { ...input, connection: contextFor(services.adapter) }, { cancellation, mode, notGranted, systemTables });
       if (!cancellation.aborted) setCapture(result);
     } catch (e) {
       if (!cancellation.aborted) setError(e instanceof Error ? e.message : String(e));
     } finally { if (!cancellation.aborted) setLoading(false); }
   }, [services]);
-  const browse = useCallback(() => collect({ principal: '', database: '', table: '', operation: 'SELECT' }, 'catalog'), [collect]);
-  return { browse, capture, error, loading, collect, connected: !!services };
+  const browse = useCallback((systemTables = false) => collect({ principal: '', database: '', table: '', operation: 'SELECT' }, 'catalog', systemTables), [collect]);
+  /** Shows a capture collected earlier in this session, cancelling any collection in flight. */
+  const show = useCallback((earlier: Capture) => {
+    if (current.current) current.current.aborted = true;
+    current.current = null;setError(null);setLoading(false);setCapture(earlier);
+  }, []);
+  return { browse, capture, error, loading, collect, show, connected: !!services };
 }

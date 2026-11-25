@@ -7,11 +7,13 @@ import { canonical, sortedSet } from '../model/canonical.js';
 import { tableLinks } from './tables.js';
 import { diskLocations } from './storage.js';
 import { parseTTLRules } from '../../../utils/ttl-parser.js';
-import { privilegeGroup, privilegeTree, tableOperations, type PrivilegeTree } from '../model/privileges.js';
+import { privilegeGroup, privilegeIncludes, privilegeTree, tableLevelOperations, tableOperations, type PrivilegeTree } from '../model/privileges.js';
 import type { MonitoringCapability } from '../../../types/monitoring-capabilities.js';
 
 type Row = Record<string, unknown>;
 export interface CollectOptions { limit?: number; mode?: 'catalog' | 'investigation'; cancellation?: { readonly aborted: boolean };
+  /** In a catalog, list the tables of the system database in place of every other database's. */
+  systemTables?: boolean;
   /** Sources the capability probe found without SELECT (notGrantedSources); skipped without a query. */
   notGranted?: readonly Source[] }
 const setFields = new Set(['default_roles_list','default_roles_except','host_ip','host_names',
@@ -40,11 +42,11 @@ export async function collectObjects(adapter: IClickHouseAdapter, investigation:
   const check = () => { if (options.cancellation?.aborted) throw new Error('Object capture disposed'); };
   const run = async (sql: string, source: string) => {
     check();
-    const rows = await adapter.executeQuery(tagQuery(buildQuery(sql, { ...investigation, browse: browse ? 1 : 0, limit: limit + 1 }),
+    const rows = await adapter.executeQuery(tagQuery(buildQuery(sql, { ...investigation, browse: browse ? 1 : 0, system: options.systemTables ? 1 : 0, limit: limit + 1 }),
       `TraceHouse:Objects:${source}`));
     check();return rows;
   };
-  const capture: Capture = { schemaVersion: 1, mode: browse ? 'catalog' : 'investigation', investigation, startedAt: new Date().toISOString(),
+  const capture: Capture = { schemaVersion: 1, mode: browse ? 'catalog' : 'investigation', ...(browse && options.systemTables ? { systemTables: true } : {}), investigation, startedAt: new Date().toISOString(),
     completedAt: '', hosts: [], observations: [], relationships: [], coverage: [],
     verdict: { kind: 'not-checked', reason: `Not checked for ${investigation.principal}: configured paths only.` } };
   const hosts = await run(ACCESS_HOSTS, 'hosts');
@@ -55,6 +57,9 @@ export async function collectObjects(adapter: IClickHouseAdapter, investigation:
   let privileges: PrivilegeTree | null = null, privilegesError: string | null = null;
   try { privileges = privilegeTree(await run(ACCESS_PRIVILEGES, 'privileges')); }
   catch (e) { check();privilegesError = e instanceof Error ? e.message : String(e); }
+  if (privileges) capture.operations = tableLevelOperations(privileges);
+  // Without the tree only the exact privilege name counts.
+  const covers = (granted: string) => privileges ? privilegeIncludes(privileges, granted, investigation.operation) : granted === investigation.operation;
   const onEveryHost = (name: string) => capture.hosts.every(host =>
     schema.some(row => row.host === host.host && row.table === 'tables' && row.name === name));
   const tableFields = new Set(ACCESS_TABLE_DEPENDENCY_FIELDS.filter(onEveryHost));
@@ -111,8 +116,10 @@ export async function collectObjects(adapter: IClickHouseAdapter, investigation:
   }
   capture.relationships.push(...links.relationships);
   const tablesCoverage = capture.coverage.find(entry => entry.source === 'tables');
-  // System tables that views read from are read by name, so they show as ordinary tables.
-  const systemTables = [...new Set(links.relationships.flatMap(r => [r.from, r.to]))]
+  // System tables that views read from are read by name, so they show as ordinary tables,
+  // unless the catalog already lists them.
+  const listed = new Set(capture.observations.map(o => o.key));
+  const systemTables = [...new Set(links.relationships.flatMap(r => [r.from, r.to]))].filter(key => !listed.has(key))
     .map(key => JSON.parse(key) as string[]).filter(([, kind, database]) => kind === 'table' && SYSTEM_DATABASES.has(database));
   if (systemTables.length && data.has('tables')) {
     try {
@@ -192,7 +199,7 @@ export async function collectObjects(adapter: IClickHouseAdapter, investigation:
     add('grant-scope', name, 'grants', { host: r.host, ...scope }, scopeKey);
     rel(recipient, scopeKey, 'grant', flag(r.is_partial_revoke) ? 'partial revoke · evidence' : `${r.access_type} grant`, 'grants', r);
     // Candidate name coverage only: no prefix, revoke or union evaluator.
-    if (!browse && scope.table_operations.includes(investigation.operation) && !flag(r.is_wildcard) && !text(r.access_object)
+    if (!browse && covers(text(r.access_type)) && !flag(r.is_wildcard) && !text(r.access_object)
       && (r.database == null || r.database === investigation.database) && (r.table == null || r.table === investigation.table)) {
       rel(scopeKey, tableKey, 'candidate-scope', flag(r.is_partial_revoke) ? 'excluded scope · evidence' : 'candidate name match', 'grants', r);
     }

@@ -9,7 +9,7 @@ import { ClusterAwareAdapter } from '../../adapters/cluster-adapter.js';
 import { objectMetadataFixtureQueries } from '../../queries/object-metadata-fixture-queries.js';
 import { tagQuery } from '../../queries/builder.js';
 import { collectObjects } from '../../services/object-browser/collectors/collect.js';
-import { projectCatalogGraph, provenancePaths } from '../../services/object-browser/projections/graph.js';
+import { coveredOperations, projectCatalogGraph, projectGraph, provenancePaths } from '../../services/object-browser/projections/graph.js';
 import { objectKey, type Capture } from '../../services/object-browser/model/types.js';
 import { describeDetail, loadDetailStatement, loadTableActivity, loadTablePlacement } from '../../services/object-browser/presentation/details.js';
 
@@ -147,17 +147,32 @@ describe('Object browser metadata extraction', { tags: ['security', 'storage'] }
     expect(scope('SHOW USERS').attributes).toMatchObject({ privilege_group: 'ACCESS MANAGEMENT', privilege_level: 'GLOBAL' });
     expect(capture.coverage.find(source => source.source === 'grants')!.reason ?? '').not.toContain('Privilege groups unavailable');
   });
-  it('links a privilege that includes SELECT and INSERT, such as ALL, to the tables in its scope', () => {
+  it('links a privilege to the tables in its scope for each table operation it includes, such as ALL', () => {
     if (!grantsReadable()) return expect(capture.observations.some(record => record.kind === 'grant-scope')).toBe(false);
     const all = capture.observations.find(record => record.kind === 'grant-scope' && record.attributes.access_type === 'ALL'
       && record.attributes.database == null)!;
-    expect(all.attributes.table_operations).toEqual(['SELECT', 'INSERT']);
-    const linked = (graph: ReturnType<typeof projectCatalogGraph>) =>
-      graph.edges.filter(e => e.kind === 'candidate-scope' && e.from === all.key).map(e => e.to);
+    // The server's privilege tree: ALL includes every table-level operation.
+    expect(all.attributes.table_operations).toEqual(expect.arrayContaining(['SELECT', 'INSERT', 'DROP TABLE', 'ALTER DELETE']));
+    const reader = capture.observations.find(record => record.kind === 'grant-scope' && record.attributes.access_type === 'SELECT'
+      && record.attributes.database === fixture.db && record.attributes.table == null)!;
+    expect(reader.attributes.table_operations).toEqual(['SELECT']);
+    const linked = (scope: string, focus?: string, operations?: string[]) => projectCatalogGraph(capture, focus, 100, operations)
+      .edges.filter(e => e.kind === 'candidate-scope' && e.from === scope).map(e => e.to);
+    const admin = objectKey(input.connection, 'user', fixture.admin), events = objectKey(input.connection, 'table', fixture.db, 'events');
     // A global scope links only under a focus object, like a global SELECT.
-    expect(linked(projectCatalogGraph(capture))).toEqual([]);
-    expect(linked(projectCatalogGraph(capture, objectKey(input.connection, 'user', fixture.admin))))
-      .toContain(objectKey(input.connection, 'table', fixture.db, 'events'));
+    expect(linked(all.key)).toEqual([]);
+    expect(linked(all.key, admin)).toContain(events);
+    expect(linked(all.key, admin, ['DROP TABLE'])).toContain(events);
+    // A database-wide SELECT links for SELECT, the default, and not for INSERT. Two holders share
+    // this scope (the reader role and the catalog user), so it links once per grant.
+    expect(new Set(linked(reader.key, events))).toEqual(new Set([events]));
+    expect(linked(reader.key, events, ['INSERT'])).toEqual([]);
+    // Several access types link a privilege that includes any of them.
+    expect(new Set(linked(reader.key, events, ['INSERT', 'SELECT']))).toEqual(new Set([events]));
+    // ALL is not named after either type: its tag says which selected types it includes.
+    const tags = coveredOperations(projectCatalogGraph(capture, admin, 100, ['SELECT', 'INSERT']), ['SELECT', 'INSERT']);
+    expect(tags.get(all.key)).toEqual(['SELECT', 'INSERT']);
+    expect(tags.has(reader.key)).toBe(false);
   });
   it('links view sources through the analyzer and engine destinations through server-parsed arguments', () => {
     const name = (key: string) => (JSON.parse(key) as string[]).slice(2).join('.');
@@ -322,6 +337,37 @@ describe('Object browser metadata extraction', { tags: ['security', 'storage'] }
     }
     const view = (await read(fixture.probes.tables)).find(row => row.name === 'events_to_minute')!;
     expect('target_table' in view).toBe(hasField('tables','target_table'));
+  });
+  it('lists the system database alone on request, each table once', async () => {
+    // No fixture view reads system.contributors; views do read other system tables.
+    const contributors = objectKey(input.connection, 'table', 'system', 'contributors');
+    expect(capture.observations.some(o => o.key === contributors)).toBe(false);
+    const withSystem = await collectObjects(adapter, input, { mode: 'catalog', systemTables: true });
+    expect(withSystem.systemTables).toBe(true);
+    expect(withSystem.observations.filter(o => o.key === contributors)).toHaveLength(1);
+    // The fixture database and information_schema are left out.
+    expect(new Set(withSystem.observations.filter(o => o.kind === 'table').map(o => o.attributes.database))).toEqual(new Set(['system']));
+    // Row policies on other databases stay out too, so they bring in no placeholder tables.
+    expect(withSystem.observations.some(o => o.kind === 'row-policy')).toBe(false);
+    // A system table a view reads from is listed once, not again by name.
+    const keys = withSystem.observations.filter(o => o.kind === 'table').map(o => `${o.host}|${o.key}`);
+    expect(new Set(keys).size).toBe(keys.length);
+  });
+  it('links only the grants that include the asked operation, from the server privilege tree', async () => {
+    if (!grantsReadable()) return;
+    // The operations come from system.privileges: ALTER DELETE sits under ALTER.
+    expect(capture.operations).toContainEqual({ name: 'ALTER DELETE', group: 'ALTER' });
+    expect(capture.operations).toContainEqual({ name: 'DROP TABLE', group: 'DROP' });
+    const trips = objectKey(input.connection, 'table', fixture.db, 'trips');
+    const pathsFor = async (principal: string, operation: string) => {
+      const asked = await collectObjects(adapter, { ...input, principal, operation });
+      // The provenance page projects an investigation capture as collected (projectGraph).
+      return provenancePaths(projectGraph(asked), objectKey(input.connection, 'user', principal), trips);
+    };
+    // alice reads trips and holds nothing that writes or drops it; ALL ON *.* includes DROP TABLE.
+    expect((await pathsFor(fixture.alice, 'INSERT'))).toEqual([]);
+    expect((await pathsFor(fixture.alice, 'DROP TABLE'))).toEqual([]);
+    expect((await pathsFor(fixture.admin, 'DROP TABLE')).length).toBeGreaterThan(0);
   });
   it('preserves nested provenance and checks real execution without inferring a verdict', async () => {
     const graph = projectCatalogGraph(capture, objectKey(input.connection,'table',fixture.db,'trips'));
