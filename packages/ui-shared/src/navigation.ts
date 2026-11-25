@@ -39,6 +39,7 @@ export const TRACEHOUSE_PRIMARY_NAVIGATION = [
   { key: 'analytics', label: 'Analytics', path: '/analytics' },
   { key: 'events', label: 'Events', path: '/events' },
   { key: 'databases', label: 'Explorer', path: '/databases' },
+  { key: 'objects', label: 'Objects', path: '/objects', requiresDatasource: false },
 ] as const satisfies readonly TracehouseNavigationItem[];
 
 export const TRACEHOUSE_OVERFLOW_NAVIGATION = [
@@ -47,7 +48,6 @@ export const TRACEHOUSE_OVERFLOW_NAVIGATION = [
     items: [
       { key: 'cluster', label: 'Cluster', path: '/cluster' },
       { key: 'replication', label: 'Replication', path: '/replication' },
-      { key: 'objects', label: 'Objects', path: '/objects', requiresDatasource: false },
     ],
   },
   {

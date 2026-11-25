@@ -6,6 +6,8 @@ import {
   visibleNavigationItems,
   routeRequiresDatasource,
   TRACEHOUSE_OVERFLOW_NAVIGATION,
+  TRACEHOUSE_PRIMARY_NAVIGATION,
+  TRACEHOUSE_NAVIGATION,
 } from '../navigation.js';
 
 const fit = (
@@ -98,6 +100,15 @@ describe('experimental navigation gating', () => {
       .flatMap(g => g.items).map(i => i.key);
     expect(off).not.toContain('notebooks');
     expect(on).not.toContain('notebooks');
+  });
+});
+
+describe('Object Browser navigation', () => {
+  it('uses a primary tab and the normal responsive overflow instead of Infrastructure', () => {
+    expect(TRACEHOUSE_PRIMARY_NAVIGATION.map(item => item.key).slice(-2)).toEqual(['databases', 'objects']);
+    expect(TRACEHOUSE_OVERFLOW_NAVIGATION.flatMap(group => group.items.map(item => String(item.key)))).not.toContain('objects');
+    expect(TRACEHOUSE_NAVIGATION.filter(item => item.key === 'objects')).toHaveLength(1);
+    expect(routeRequiresDatasource('objects')).toBe(false);
   });
 });
 

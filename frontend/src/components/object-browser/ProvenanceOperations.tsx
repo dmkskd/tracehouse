@@ -72,11 +72,11 @@ export function OperationAnswers({ answers, current, onPick }: { answers: readon
     {answers.map((a, i) => <button key={a.operation} type="button" className="operation-answer" data-state={a.state} aria-pressed={current === undefined ? undefined : a.operation === current}
       aria-describedby={`${id}-${i}`} onClick={() => onPick?.(a.operation)}
       onMouseEnter={event => show(i, event.currentTarget)} onMouseLeave={hide} onFocus={event => show(i, event.currentTarget)} onBlur={hide}>
-      <span className="mark" aria-hidden="true">{MARKS[a.state]}</span><b>{a.operation}</b><span className="hint" aria-hidden="true">ⓘ</span>
+      <span className="operation-answer-mark" aria-hidden="true">{MARKS[a.state]}</span><b>{a.operation}</b><span className="operation-answer-hint" aria-hidden="true">ⓘ</span>
     </button>)}
     {answers.map((a, i) => <span key={a.operation} id={`${id}-${i}`} className="operation-desc">{a.line.text}</span>)}
     {shown && createTracehousePortal(<div ref={place} className={operationTip} aria-hidden="true" style={{ left: 0, top: 0, visibility: 'hidden' }}>
-      {shown.line.parts.map((part, j) => part.kind === 'plain' ? part.text : <span key={j} className={part.kind}>{part.text}</span>)}
+      {shown.line.parts.map((part, j) => part.kind === 'plain' ? part.text : <span key={j} className={`operation-tip-${part.kind}`}>{part.text}</span>)}
     </div>, document.body)}
   </div>;
 }

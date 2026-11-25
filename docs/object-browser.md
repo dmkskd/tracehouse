@@ -9,7 +9,7 @@ The Object Browser collects ClickHouse access definitions, tables, views, and ex
 - Frontend renderer and detail modal: `frontend/src/components/object-browser/`
 - User-facing connection and grant notes: [Connecting to ClickHouse — Object browser](site/docs/guides/connecting.md#object-browser)
 
-**Claim boundary:** the Object Browser displays configured relationships and provenance. It does not evaluate whether a principal is authorized to execute a query. Partial revokes are shown as evidence, no grant/revoke union is computed, and the capture verdict is always `not-checked`.
+**Claim boundary:** the Object Browser evaluates configured access: for a user, a table and an access type, it reads the grants, partial revokes and role assignments it collected and combines them the way ClickHouse does (see [Access answers](#access-answers)). It does not check whether a query would succeed. Row policies, settings constraints and other execution gates are shown but not applied, and the capture verdict is always `not-checked`.
 
 ---
 
@@ -65,7 +65,7 @@ ClickHouse is queried first. Text is parsed in TraceHouse only where the server 
 |---|---|---|
 | `has role` | user/role → role | `system.role_grants`. Direction is recipient → assigned role (`GRANT role1 TO role2` yields `role2 → role1`). Carries `granted_role_is_default` and `with_admin_option`. Nested traversal is bounded at 16 levels with cycle protection. |
 | `grant` | user/role → privilege | `system.grants`. Principals holding the same `(access_type, access_object, database, table, column, is_wildcard)` share one privilege node. Group and level come from `system.privileges` (ancestor directly below `ALL`). |
-| `candidate name match` | privilege → table | Computed in `projectCatalogGraph` for privileges that are `SELECT` or `INSERT` or one of their ancestors in `system.privileges` (such as `ALL ON *.*`), without `access_object` or wildcard. In the catalog view, only exact table grants link. Under focus, database-wide and global grants also link across tables relevant to the focus kind (capped at 100 tables per privilege; full count retained in `graph.scopeMatches`). Partial revokes stay linked as `excluded scope · evidence`. |
+| `candidate name match` | privilege → table | Computed in `projectCatalogGraph` for privileges that include one of the selected access types (`SELECT` by default) through the privilege tree in `system.privileges` (such as `ALL ON *.*`), without `access_object`. Prefix scopes (`db.tri*`, `db*.*`) link to the tables they name. In the catalog view, only exact table grants link. Under focus, database-wide and global grants also link across tables relevant to the focus kind (capped at 100 tables per privilege; full count retained in `graph.scopeMatches`). Partial revokes stay linked as `excluded scope · evidence`. |
 | `configured filter target` | row policy → table | `system.row_policies.database` and `table`. An empty `table` matches every catalog table in that database. |
 | `configured selector` | row policy → user/role | `system.row_policies.apply_to_list`. `ALL` and `EXCEPT` remain in the policy's evidence without generating edges. |
 
@@ -95,6 +95,10 @@ To avoid unintended network calls or subquery execution during catalog load:
 2. `analysisEffects` flags table functions (excluding `numbers`, `zeros`, `generate_series`, `values`) and scalar subqueries.
 3. Views with flagged effects are not passed to `EXPLAIN QUERY TREE` during collection. Their detail view offers on-request analysis labeled with the detected effects.
 4. Safe views run `EXPLAIN QUERY TREE (<as_select>) SETTINGS max_execution_time = 10`.
+
+#### Analyzer links on a cluster
+
+`EXPLAIN` cannot run through `clusterAllReplicas`, so every view query is analyzed on the connected node (`SELECT hostName()`), and names resolve against that node's catalog. Identical view texts on several hosts are analyzed once. On the connected node, the analyzer's sources are linked as found. On another host, a source is linked only when an object with that name exists there with the same engine; otherwise the link is omitted and the tables coverage note says which view, host and source, for example `db.reads_src on ch-2: analyzed on ch-1; db.src has another engine there, link omitted`. Kept links record the node in `evidence.analyzedOn`, and the detail view shows it with the method.
 
 #### Engine-argument parsing and storage servers
 
@@ -140,6 +144,19 @@ REVOKE SELECT ON sales.payroll FROM sales_reader;
 ```
 
 A partial revoke narrows that single principal's grant. In ClickHouse (`src/Access/ContextAccess.cpp`, `mixAccessRightsFromUserAndRoles`), user grants and enabled-role grants combine by union. An independent grant on another enabled role restores access that was revoked from `sales_reader`. Evaluating effective access therefore requires evaluating each source's exclusions before unioning all active sources.
+
+### Access answers
+
+`access/evaluate.ts` evaluates configured rights for a user, a table and an access type; `presentation/access.ts` formats the result. Both use a capture: the catalog, or a read of the user and table by name when the catalog does not hold them.
+
+- Each host is evaluated on its own records. A role assignment on one host does not connect to a grant on another.
+- The holders are the user and every role it holds on that host. Roles active at login are the default roles and the roles they hold. The rest are reachable only after `SET ROLE`.
+- For each holder, the most specific matching rule decides the table: global, database prefix, database, table prefix, table, with a longer prefix ranking higher and a revoke winning a tie. Column rules then narrow it. `system.grants` records a table prefix as `table` with `is_wildcard = 1` and a database prefix as `database` with `is_wildcard = 1`.
+- Holders combine by union. A revoke takes back only its own holder's grant.
+- The answer is `granted`, `columns` (only some columns, or all but some), `set-role`, `revoked`, `no-path`, `incomplete` or `differs`. `incomplete` replaces a negative answer when users, roles, role grants, grants or tables were not fully read, or the privilege tree was unavailable. `differs` lists each host's outcome when hosts disagree on the state or the columns.
+- `reachFor` counts tables across the catalog from the same per-table answers, keeping tables that differ by host, need `SET ROLE` or are incomplete as their own notes.
+
+The focus view shows one chip per selected access type with this answer, and the diagram marks a privilege-to-table line cancelled only when every holder of that privilege, on every host, has revoked it.
 
 ### Execution gates outside table grants
 
@@ -196,7 +213,7 @@ All graph traversal and layout logic runs in `@tracehouse/core/services/object-b
 
 ### Not implemented / deferred
 
-- **Authorization evaluation:** No client-side `AccessRights` evaluator and no server-side `CHECK GRANT` (24.11+) or `EXECUTE AS <user> CHECK GRANT` (25.11+, requires `IMPERSONATE`, unsupported in Cloud) integration in the UI.
+- **Server-side check:** answers come from collected configuration only. `EXECUTE AS <user> CHECK GRANT` (25.11+) would let the server answer for the host it runs on, but it needs `IMPERSONATE`, which lets the observer run any statement as that user, and it is unsupported in Cloud. If added, it would be an opt-in cross-check, not the source of answers.
 - **Uncollected metadata families:** Settings profiles (`system.settings_profiles`, `system.settings_profile_elements`), quotas (`system.quotas`, `system.quota_limits`), columns, storage policies (`system.storage_policies`), workloads/resources (`system.workloads`, `system.resources`), named-collection resolution for table engines, `DataLakeCatalog` database engines, dictionary sources, and source privileges (`READ`, `WRITE`, `S3`).
 - **Historical failure correlation:** Query-level permission failures in `system.query_log` (`used_privileges`, `missing_privileges`, `Settings`) and login roles in `system.session_log` are not yet linked into the Object Browser. Any future integration must keep three states distinct: **observed at execution** (server-reported missing privileges on a host), **reconstructed now** (current grant paths under stated role assumptions), and **unknown historically** (active roles after `SET ROLE`, grants, or remote identity not captured at execution time).
 
@@ -217,7 +234,7 @@ Status: §6.1 and §6.2 are implemented. The rest is proposed.
 ```
 
 - The page loads the catalog as on any entry, then `resolveObjectLink` finds the object by database and table name, or by user or role name. Views are tables here. An object or user the catalog does not hold is named in an alert, and focus stays closed.
-- `ob_user` on a table puts that user in context. `withPrincipalContext` keeps the access objects on the user's configured paths to the table (`provenancePaths`) and row policies that name a principal on those paths. Data-flow and storage objects stay. The focus header shows the user and the number of configured paths, with "Show all principals" to drop the context. Re-rooting focus on another object drops it as well.
+- `ob_user` on a table puts that user in context. `withPrincipalContext` keeps the access objects on the user's configured paths to the table (`edgesBetween`, per host, with no path limit) and row policies that name a principal on those paths. Data-flow and storage objects stay. The focus header shows the user, with "Show all principals" to drop the context, and one answer per selected access type. Re-rooting focus on another object drops it as well.
 - Opened with `state.from`, closing focus navigates back to `from.path`. Without it, closing removes the `ob_*` parameters and stays on the catalog.
 - Grafana data links open in a new tab, following the Grafana deep-link convention.
 - Not implemented: `ob_host` (focus merges the hosts an object was observed on) and row-policy targets.
@@ -252,6 +269,14 @@ Parsed in `meta-language.ts` next to `@query_link` and `@merge_link`, and turned
 First step before building this: an integration test that records what a denied query writes to `query_log` (`exception_code`, `missing_privileges`, `tables`, `user`).
 
 ### 6.5 From Grafana panels
+
+The provisioned **TraceHouse · Panel links** dashboard (`tracehouse-primitives`)
+demonstrates these entry points with native Grafana panels. A User cell opens
+user focus; a Table cell opens table focus. Its failed-query, query-details,
+time-series and merge panels also invoke Time Travel, Queries, Events, Merges
+and Explorer. Each data link preserves the selected ClickHouse datasource and
+cluster. See the [dashboard and link reference](../infra/docker/grafana/dashboards/TraceHouse/README.md).
+
 
 Recipes with no plugin-specific code beyond the opening contract, using data links to `/a/<plugin-id>/objects?th_ds=${th_datasource}&ob_...`:
 

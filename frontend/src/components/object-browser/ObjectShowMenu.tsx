@@ -20,8 +20,8 @@ export function ObjectShowMenu({ systemTables, onSystemTables, defaultUser, onDe
   const changed = systemTables || !defaultUser;
   return <div className={showMenu} ref={root} data-align="left">
     <button type="button" className="filters-button" aria-expanded={open} aria-haspopup="dialog" aria-label="Shown objects" onClick={() => setOpen(!open)}>
-      <span className="label">Show</span><span className="value">{summary}</span>
-      <span className="caret" aria-hidden="true">▾</span>
+      <span className="filters-label">Show</span><span className="filters-value">{summary}</span>
+      <span className="filters-caret" aria-hidden="true">▾</span>
     </button>
     {open && <div className="menu-panel" role="dialog" aria-label="Shown objects">
       <div className="rows">

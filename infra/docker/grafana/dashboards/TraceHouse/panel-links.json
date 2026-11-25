@@ -1,0 +1,735 @@
+{
+  "uid": "tracehouse-primitives",
+  "title": "TraceHouse \u00b7 Panel links",
+  "description": "Grafana data links to Object Browser, Query Details, Time Travel, Merges, Events and Explorer.",
+  "tags": [
+    "tracehouse",
+    "data-links",
+    "composable-primitives"
+  ],
+  "schemaVersion": 39,
+  "version": 1,
+  "editable": true,
+  "timezone": "browser",
+  "refresh": "1m",
+  "time": {
+    "from": "now-1h",
+    "to": "now"
+  },
+  "links": [],
+  "annotations": {
+    "list": []
+  },
+  "templating": {
+    "list": [
+      {
+        "name": "datasource",
+        "label": "ClickHouse",
+        "type": "datasource",
+        "query": "grafana-clickhouse-datasource",
+        "current": {},
+        "options": [],
+        "refresh": 1,
+        "multi": false,
+        "includeAll": false
+      },
+      {
+        "name": "cluster",
+        "label": "Cluster",
+        "type": "query",
+        "datasource": {
+          "type": "grafana-clickhouse-datasource",
+          "uid": "${datasource}"
+        },
+        "query": "SELECT cluster FROM system.clusters GROUP BY cluster ORDER BY cluster = 'default', uniqExact(host_name) DESC, cluster",
+        "definition": "SELECT cluster FROM system.clusters GROUP BY cluster ORDER BY cluster = 'default', uniqExact(host_name) DESC, cluster",
+        "current": {},
+        "options": [],
+        "refresh": 1,
+        "multi": false,
+        "includeAll": false,
+        "sort": 0
+      }
+    ]
+  },
+  "panels": [
+    {
+      "id": 1,
+      "type": "text",
+      "title": "Open TraceHouse from a Grafana panel",
+      "gridPos": {
+        "x": 0,
+        "y": 0,
+        "w": 24,
+        "h": 3
+      },
+      "options": {
+        "mode": "markdown",
+        "content": "Click a **User** or **Table** to open Object Browser, Time Travel, or Queries. Click a **Query id** for query details, a **Part** for merge details, or a chart point to inspect activity at that time."
+      }
+    },
+    {
+      "id": 2,
+      "type": "table",
+      "title": "Users",
+      "description": "Click a user to inspect roles and grants, find their queries, or track them in Time Travel.",
+      "datasource": {
+        "type": "grafana-clickhouse-datasource",
+        "uid": "${datasource}"
+      },
+      "gridPos": {
+        "x": 0,
+        "y": 3,
+        "w": 10,
+        "h": 9
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "editorType": "sql",
+          "queryType": "sql",
+          "rawSql": "SELECT name AS User, count() AS Hosts\nFROM clusterAllReplicas(${cluster:singlequote}, system.users)\nGROUP BY name\nORDER BY startsWith(name, 'th_ob_') DESC, name\nLIMIT 100",
+          "format": 1
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "custom": {
+            "align": "auto",
+            "cellOptions": {
+              "type": "auto"
+            },
+            "filterable": true
+          },
+          "mappings": []
+        },
+        "overrides": [
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "User"
+            },
+            "properties": [
+              {
+                "id": "links",
+                "value": [
+                  {
+                    "title": "Object Browser \u00b7 configured access",
+                    "url": "/a/dmkskd-tracehouse-app/objects?th_ds=${datasource:percentencode}&th_cluster=${cluster:percentencode}&ob_kind=user&ob_user=${__value.raw:percentencode}",
+                    "targetBlank": true
+                  },
+                  {
+                    "title": "Time Travel \u00b7 this user",
+                    "url": "/a/dmkskd-tracehouse-app/timetravel?th_ds=${datasource:percentencode}&th_cluster=${cluster:percentencode}&tt_user=${__value.raw:percentencode}&tt_matched_only=1&tt_failed_start=1&th_from=${__from}&th_to=${__to}",
+                    "targetBlank": true
+                  },
+                  {
+                    "title": "Queries \u00b7 this user",
+                    "url": "/a/dmkskd-tracehouse-app/queries?th_ds=${datasource:percentencode}&th_cluster=${cluster:percentencode}&user=${__value.raw:percentencode}&th_from=${__from}&th_to=${__to}",
+                    "targetBlank": true
+                  }
+                ]
+              },
+              {
+                "id": "custom.width",
+                "value": 220
+              }
+            ]
+          }
+        ]
+      },
+      "options": {
+        "showHeader": true,
+        "cellHeight": "sm",
+        "footer": {
+          "show": false
+        },
+        "sortBy": []
+      }
+    },
+    {
+      "id": 3,
+      "type": "table",
+      "title": "Tables",
+      "description": "Click a table to inspect its dependencies, queries, merges or parts.",
+      "datasource": {
+        "type": "grafana-clickhouse-datasource",
+        "uid": "${datasource}"
+      },
+      "gridPos": {
+        "x": 10,
+        "y": 3,
+        "w": 14,
+        "h": 9
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "editorType": "sql",
+          "queryType": "sql",
+          "rawSql": "SELECT database AS Database, name AS Table, engine AS Engine, count() AS Hosts\nFROM clusterAllReplicas(${cluster:singlequote}, system.tables)\nWHERE database NOT IN ('system', 'information_schema', 'INFORMATION_SCHEMA')\nGROUP BY database, name, engine\nORDER BY database = 'tracehouse_object_demo' DESC, database, name\nLIMIT 100",
+          "format": 1
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "custom": {
+            "align": "auto",
+            "cellOptions": {
+              "type": "auto"
+            },
+            "filterable": true
+          },
+          "mappings": []
+        },
+        "overrides": [
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "Table"
+            },
+            "properties": [
+              {
+                "id": "links",
+                "value": [
+                  {
+                    "title": "Object Browser \u00b7 table relationships",
+                    "url": "/a/dmkskd-tracehouse-app/objects?th_ds=${datasource:percentencode}&th_cluster=${cluster:percentencode}&ob_kind=table&ob_db=${__data.fields[\"Database\"]:percentencode}&ob_tbl=${__value.raw:percentencode}",
+                    "targetBlank": true
+                  },
+                  {
+                    "title": "Time Travel \u00b7 this table",
+                    "url": "/a/dmkskd-tracehouse-app/timetravel?th_ds=${datasource:percentencode}&th_cluster=${cluster:percentencode}&tt_table=${__data.fields[\"Database\"]:percentencode}.${__value.raw:percentencode}&tt_matched_only=1&th_from=${__from}&th_to=${__to}",
+                    "targetBlank": true
+                  },
+                  {
+                    "title": "Queries \u00b7 this table",
+                    "url": "/a/dmkskd-tracehouse-app/queries?th_ds=${datasource:percentencode}&th_cluster=${cluster:percentencode}&tableName=${__data.fields[\"Database\"]:percentencode}.${__value.raw:percentencode}&th_from=${__from}&th_to=${__to}",
+                    "targetBlank": true
+                  },
+                  {
+                    "title": "Merges \u00b7 this table",
+                    "url": "/a/dmkskd-tracehouse-app/merges?th_ds=${datasource:percentencode}&th_cluster=${cluster:percentencode}&database=${__data.fields[\"Database\"]:percentencode}&table=${__value.raw:percentencode}&th_from=${__from}&th_to=${__to}",
+                    "targetBlank": true
+                  },
+                  {
+                    "title": "Explorer \u00b7 this table",
+                    "url": "/a/dmkskd-tracehouse-app/databases?th_ds=${datasource:percentencode}&th_cluster=${cluster:percentencode}&db=${__data.fields[\"Database\"]:percentencode}&table=${__value.raw:percentencode}",
+                    "targetBlank": true
+                  }
+                ]
+              },
+              {
+                "id": "custom.width",
+                "value": 230
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "Database"
+            },
+            "properties": [
+              {
+                "id": "custom.width",
+                "value": 200
+              }
+            ]
+          }
+        ]
+      },
+      "options": {
+        "showHeader": true,
+        "cellHeight": "sm",
+        "footer": {
+          "show": false
+        },
+        "sortBy": []
+      }
+    },
+    {
+      "id": 4,
+      "type": "table",
+      "title": "Failed queries",
+      "description": "Click User for roles and grants, Query id for query details, Time for Time Travel, or Error code for Events. Roles and grants are read as they are now, not as they were when the query failed.",
+      "datasource": {
+        "type": "grafana-clickhouse-datasource",
+        "uid": "${datasource}"
+      },
+      "gridPos": {
+        "x": 0,
+        "y": 12,
+        "w": 24,
+        "h": 10
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "editorType": "sql",
+          "queryType": "sql",
+          "rawSql": "SELECT toUnixTimestamp64Milli(event_time_microseconds) AS Time,\n  initial_user AS User, query_id AS `Query id`, query_kind AS Kind,\n  exception_code AS `Error code`, exception AS Exception, tables AS Tables\nFROM clusterAllReplicas(${cluster:singlequote}, system.query_log)\nWHERE $__timeFilter(event_time)\n  AND type IN ('ExceptionBeforeStart', 'ExceptionWhileProcessing')\n  AND is_initial_query = 1\nORDER BY event_time_microseconds DESC\nLIMIT 100",
+          "format": 1
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "custom": {
+            "align": "auto",
+            "cellOptions": {
+              "type": "auto"
+            },
+            "filterable": true
+          },
+          "mappings": []
+        },
+        "overrides": [
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "Time"
+            },
+            "properties": [
+              {
+                "id": "links",
+                "value": [
+                  {
+                    "title": "Time Travel \u00b7 around this failure",
+                    "url": "/a/dmkskd-tracehouse-app/timetravel?th_ds=${datasource:percentencode}&th_cluster=${cluster:percentencode}&tt_ops=query&tt_failed_start=1&th_at=${__value.raw:percentencode}",
+                    "targetBlank": true
+                  }
+                ]
+              },
+              {
+                "id": "unit",
+                "value": "dateTimeAsIso"
+              },
+              {
+                "id": "custom.width",
+                "value": 175
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "User"
+            },
+            "properties": [
+              {
+                "id": "links",
+                "value": [
+                  {
+                    "title": "Object Browser \u00b7 this user",
+                    "url": "/a/dmkskd-tracehouse-app/objects?th_ds=${datasource:percentencode}&th_cluster=${cluster:percentencode}&ob_kind=user&ob_user=${__value.raw:percentencode}",
+                    "targetBlank": true
+                  },
+                  {
+                    "title": "Time Travel \u00b7 this user at the failure",
+                    "url": "/a/dmkskd-tracehouse-app/timetravel?th_ds=${datasource:percentencode}&th_cluster=${cluster:percentencode}&tt_user=${__value.raw:percentencode}&tt_matched_only=1&tt_failed_start=1&th_at=${__data.fields[\"Time\"]:percentencode}",
+                    "targetBlank": true
+                  }
+                ]
+              },
+              {
+                "id": "custom.width",
+                "value": 160
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "Query id"
+            },
+            "properties": [
+              {
+                "id": "links",
+                "value": [
+                  {
+                    "title": "Query Details \u00b7 this query",
+                    "url": "/a/dmkskd-tracehouse-app/queries?th_ds=${datasource:percentencode}&th_cluster=${cluster:percentencode}&qd_id=${__value.raw:percentencode}&qd_end=${__data.fields[\"Time\"]:percentencode}&th_from=${__from}&th_to=${__to}",
+                    "targetBlank": true
+                  }
+                ]
+              },
+              {
+                "id": "custom.width",
+                "value": 240
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "Error code"
+            },
+            "properties": [
+              {
+                "id": "links",
+                "value": [
+                  {
+                    "title": "Events \u00b7 query failures around this time",
+                    "url": "/a/dmkskd-tracehouse-app/events?th_ds=${datasource:percentencode}&th_cluster=${cluster:percentencode}&event_kind=query_failure&th_at=${__data.fields[\"Time\"]:percentencode}",
+                    "targetBlank": true
+                  }
+                ]
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "Exception"
+            },
+            "properties": [
+              {
+                "id": "custom.width",
+                "value": 480
+              }
+            ]
+          }
+        ]
+      },
+      "options": {
+        "showHeader": true,
+        "cellHeight": "sm",
+        "footer": {
+          "show": false
+        },
+        "sortBy": []
+      }
+    },
+    {
+      "id": 5,
+      "type": "timeseries",
+      "title": "Failures over time",
+      "description": "Click a point to open Events, failed Queries or Time Travel around that timestamp.",
+      "gridPos": {
+        "x": 0,
+        "y": 22,
+        "w": 12,
+        "h": 8
+      },
+      "datasource": {
+        "type": "grafana-clickhouse-datasource",
+        "uid": "${datasource}"
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "editorType": "sql",
+          "queryType": "sql",
+          "format": 0,
+          "rawSql": "SELECT toStartOfInterval(event_time, INTERVAL $__interval_s SECOND) AS time, count() AS Failures\nFROM clusterAllReplicas(${cluster:singlequote}, system.query_log)\nWHERE $__timeFilter(event_time)\n  AND type IN ('ExceptionBeforeStart', 'ExceptionWhileProcessing') AND is_initial_query = 1\nGROUP BY time ORDER BY time"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "short",
+          "min": 0,
+          "links": [
+            {
+              "title": "Events \u00b7 query failures at this point",
+              "url": "/a/dmkskd-tracehouse-app/events?th_ds=${datasource:percentencode}&th_cluster=${cluster:percentencode}&event_kind=query_failure&th_at=${__value.time}",
+              "targetBlank": true
+            },
+            {
+              "title": "Queries \u00b7 failures at this point",
+              "url": "/a/dmkskd-tracehouse-app/queries?th_ds=${datasource:percentencode}&th_cluster=${cluster:percentencode}&status=error&th_at=${__value.time}",
+              "targetBlank": true
+            },
+            {
+              "title": "Time Travel \u00b7 around this point",
+              "url": "/a/dmkskd-tracehouse-app/timetravel?th_ds=${datasource:percentencode}&th_cluster=${cluster:percentencode}&tt_ops=query&tt_failed_start=1&th_at=${__value.time}",
+              "targetBlank": true
+            }
+          ],
+          "custom": {
+            "drawStyle": "bars",
+            "fillOpacity": 30,
+            "lineWidth": 1
+          }
+        },
+        "overrides": []
+      },
+      "options": {
+        "legend": {
+          "displayMode": "list",
+          "placement": "bottom"
+        },
+        "tooltip": {
+          "mode": "single"
+        }
+      }
+    },
+    {
+      "id": 6,
+      "type": "table",
+      "title": "Slow queries",
+      "description": "Click Query id to open Query Details. User opens configured access, query activity or Time Travel.",
+      "datasource": {
+        "type": "grafana-clickhouse-datasource",
+        "uid": "${datasource}"
+      },
+      "gridPos": {
+        "x": 12,
+        "y": 22,
+        "w": 12,
+        "h": 8
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "editorType": "sql",
+          "queryType": "sql",
+          "rawSql": "SELECT toUnixTimestamp64Milli(event_time_microseconds) AS Time,\n  initial_user AS User, query_id AS `Query id`, query_duration_ms AS `Duration`,\n  memory_usage AS Memory\nFROM clusterAllReplicas(${cluster:singlequote}, system.query_log)\nWHERE $__timeFilter(event_time) AND type = 'QueryFinish' AND is_initial_query = 1\nORDER BY query_duration_ms DESC\nLIMIT 20",
+          "format": 1
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "custom": {
+            "align": "auto",
+            "cellOptions": {
+              "type": "auto"
+            },
+            "filterable": true
+          },
+          "mappings": []
+        },
+        "overrides": [
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "User"
+            },
+            "properties": [
+              {
+                "id": "links",
+                "value": [
+                  {
+                    "title": "Object Browser \u00b7 configured access",
+                    "url": "/a/dmkskd-tracehouse-app/objects?th_ds=${datasource:percentencode}&th_cluster=${cluster:percentencode}&ob_kind=user&ob_user=${__value.raw:percentencode}",
+                    "targetBlank": true
+                  },
+                  {
+                    "title": "Time Travel \u00b7 this user",
+                    "url": "/a/dmkskd-tracehouse-app/timetravel?th_ds=${datasource:percentencode}&th_cluster=${cluster:percentencode}&tt_user=${__value.raw:percentencode}&tt_matched_only=1&tt_failed_start=1&th_from=${__from}&th_to=${__to}",
+                    "targetBlank": true
+                  },
+                  {
+                    "title": "Queries \u00b7 this user",
+                    "url": "/a/dmkskd-tracehouse-app/queries?th_ds=${datasource:percentencode}&th_cluster=${cluster:percentencode}&user=${__value.raw:percentencode}&th_from=${__from}&th_to=${__to}",
+                    "targetBlank": true
+                  }
+                ]
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "Query id"
+            },
+            "properties": [
+              {
+                "id": "links",
+                "value": [
+                  {
+                    "title": "Query Details \u00b7 this query",
+                    "url": "/a/dmkskd-tracehouse-app/queries?th_ds=${datasource:percentencode}&th_cluster=${cluster:percentencode}&qd_id=${__value.raw:percentencode}&qd_end=${__data.fields[\"Time\"]:percentencode}&th_from=${__from}&th_to=${__to}",
+                    "targetBlank": true
+                  }
+                ]
+              },
+              {
+                "id": "custom.width",
+                "value": 240
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "Time"
+            },
+            "properties": [
+              {
+                "id": "unit",
+                "value": "dateTimeAsIso"
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "Duration"
+            },
+            "properties": [
+              {
+                "id": "unit",
+                "value": "ms"
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "Memory"
+            },
+            "properties": [
+              {
+                "id": "unit",
+                "value": "bytes"
+              }
+            ]
+          }
+        ]
+      },
+      "options": {
+        "showHeader": true,
+        "cellHeight": "sm",
+        "footer": {
+          "show": false
+        },
+        "sortBy": []
+      }
+    },
+    {
+      "id": 7,
+      "type": "table",
+      "title": "Recent merges",
+      "description": "Click Part to open the exact host-specific merge record. Click Table for object relationships, Time Travel, Queries, Merges or Explorer. No rows means no recorded merges in this range.",
+      "datasource": {
+        "type": "grafana-clickhouse-datasource",
+        "uid": "${datasource}"
+      },
+      "gridPos": {
+        "x": 0,
+        "y": 30,
+        "w": 24,
+        "h": 9
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "editorType": "sql",
+          "queryType": "sql",
+          "rawSql": "SELECT toString(event_time_microseconds) AS Time, database AS Database, table AS Table,\n  part_name AS Part, hostName() AS Host, toString(event_type) AS `Event type`,\n  duration_ms AS Duration, rows AS Rows, size_in_bytes AS Bytes\nFROM clusterAllReplicas(${cluster:singlequote}, system.part_log)\nWHERE $__timeFilter(event_time) AND event_type IN ('MergeParts', 'MutatePart')\n  AND database NOT IN ('system', 'information_schema', 'INFORMATION_SCHEMA')\nORDER BY event_time_microseconds DESC\nLIMIT 100",
+          "format": 1
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "custom": {
+            "align": "auto",
+            "cellOptions": {
+              "type": "auto"
+            },
+            "filterable": true
+          },
+          "mappings": []
+        },
+        "overrides": [
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "Part"
+            },
+            "properties": [
+              {
+                "id": "links",
+                "value": [
+                  {
+                    "title": "Merge Details \u00b7 this record",
+                    "url": "/a/dmkskd-tracehouse-app/merges?th_ds=${datasource:percentencode}&th_cluster=${cluster:percentencode}&md_db=${__data.fields[\"Database\"]:percentencode}&md_tbl=${__data.fields[\"Table\"]:percentencode}&md_part=${__value.raw:percentencode}&md_host=${__data.fields[\"Host\"]:percentencode}&md_us=${__data.fields[\"Time\"]:percentencode}&md_type=${__data.fields[\"Event type\"]:percentencode}",
+                    "targetBlank": true
+                  }
+                ]
+              },
+              {
+                "id": "custom.width",
+                "value": 280
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "Table"
+            },
+            "properties": [
+              {
+                "id": "links",
+                "value": [
+                  {
+                    "title": "Object Browser \u00b7 table relationships",
+                    "url": "/a/dmkskd-tracehouse-app/objects?th_ds=${datasource:percentencode}&th_cluster=${cluster:percentencode}&ob_kind=table&ob_db=${__data.fields[\"Database\"]:percentencode}&ob_tbl=${__value.raw:percentencode}",
+                    "targetBlank": true
+                  },
+                  {
+                    "title": "Time Travel \u00b7 this table",
+                    "url": "/a/dmkskd-tracehouse-app/timetravel?th_ds=${datasource:percentencode}&th_cluster=${cluster:percentencode}&tt_table=${__data.fields[\"Database\"]:percentencode}.${__value.raw:percentencode}&tt_matched_only=1&th_from=${__from}&th_to=${__to}",
+                    "targetBlank": true
+                  },
+                  {
+                    "title": "Queries \u00b7 this table",
+                    "url": "/a/dmkskd-tracehouse-app/queries?th_ds=${datasource:percentencode}&th_cluster=${cluster:percentencode}&tableName=${__data.fields[\"Database\"]:percentencode}.${__value.raw:percentencode}&th_from=${__from}&th_to=${__to}",
+                    "targetBlank": true
+                  },
+                  {
+                    "title": "Merges \u00b7 this table",
+                    "url": "/a/dmkskd-tracehouse-app/merges?th_ds=${datasource:percentencode}&th_cluster=${cluster:percentencode}&database=${__data.fields[\"Database\"]:percentencode}&table=${__value.raw:percentencode}&th_from=${__from}&th_to=${__to}",
+                    "targetBlank": true
+                  },
+                  {
+                    "title": "Explorer \u00b7 this table",
+                    "url": "/a/dmkskd-tracehouse-app/databases?th_ds=${datasource:percentencode}&th_cluster=${cluster:percentencode}&db=${__data.fields[\"Database\"]:percentencode}&table=${__value.raw:percentencode}",
+                    "targetBlank": true
+                  }
+                ]
+              },
+              {
+                "id": "custom.width",
+                "value": 220
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "Duration"
+            },
+            "properties": [
+              {
+                "id": "unit",
+                "value": "ms"
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "Bytes"
+            },
+            "properties": [
+              {
+                "id": "unit",
+                "value": "bytes"
+              }
+            ]
+          }
+        ]
+      },
+      "options": {
+        "showHeader": true,
+        "cellHeight": "sm",
+        "footer": {
+          "show": false
+        },
+        "sortBy": []
+      }
+    }
+  ]
+}

@@ -33,8 +33,8 @@ export function OperationsMenu({ activityLimit, onActivityLimit, includeRunning,
     <button type="button" className="filters-button" aria-expanded={open} aria-haspopup="dialog" onClick={() => setOpen(!open)}
       aria-label="Listed operations"
       title={explainListedOperations(activityLimit, metricName, filters)}>
-      <span className="label">Show</span><span className="value">{summary}</span>
-      <span className="caret" aria-hidden="true">▾</span>
+      <span className="filters-label">Show</span><span className="filters-value">{summary}</span>
+      <span className="filters-caret" aria-hidden="true">▾</span>
     </button>
     {open && <div className="menu-panel" role="dialog" aria-label="Listed operations">
       <div className="rows">
