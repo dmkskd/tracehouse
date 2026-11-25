@@ -5,6 +5,17 @@ All notable changes to the TraceHouse Grafana plugin will be documented in this 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.23.0] - 2026-11-25
+
+### New features
+
+- **Object Browser (beta):** A read-only view of relationships and configured access paths for tables, users, roles, and other objects.
+- **Analytics:** An Access dashboard and an `@object_link` directive to open objects in the Object Browser.
+
+### Improvements
+
+- **Time Travel:** Added configurable memory and duration thresholds, with options to include queries that failed before starting and TraceHouse's own queries.
+
 ## [0.22.1] - 2026-11-20
 
 ### Bug fixes
