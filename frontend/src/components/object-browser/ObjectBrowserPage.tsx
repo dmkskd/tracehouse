@@ -18,6 +18,7 @@ import { ObjectShowMenu } from './ObjectShowMenu';
 import { ObjectsLoading } from './ObjectsLoading';
 import { page } from './objectBrowserStyles';
 import { useUserPreferenceStore } from '../../stores/userPreferenceStore';
+import { CollectionNotice } from './CollectionNotice';
 
 const urlSchema = {
   ob_selected: { type: 'string', default: '' },
@@ -117,6 +118,7 @@ export function ObjectBrowserPage() {
     const node = graph?.nodes.find(n => n.key === key);
     update({ ob_selected: node ? JSON.stringify([node.kind,node.name]) : '' });
   };
+  const retryCollection = () => { setSelected(null);void browse(systemTables); };
   return <div className={page}>
     {/* One row: the diagram gets the height. Notes and help live in the ⓘ. */}
     <div className="toolbar">
@@ -132,7 +134,7 @@ export function ObjectBrowserPage() {
           if (!show && chosen && graph && !withoutDefaultUser(graph).nodes.some(node => node.key === chosen.key)) choose(null);
         }} />
       <span className="capture-info">{graph && capture ? `${graph.nodes.length} objects · ${graph.edges.length} relationships · captured ${new Date(capture.completedAt).toLocaleTimeString()}` : loading ? 'Loading objects…' : 'Read-only catalog from the active connection'}
-        <button className="icon-button" aria-label="Refresh catalog" title="Collect the catalog again" disabled={!connected || loading} onClick={() => { setSelected(null);void browse(systemTables); }}>↻</button></span>
+        <button className="icon-button" aria-label="Refresh catalog" title="Collect the catalog again" disabled={!connected || loading} onClick={retryCollection}>↻</button></span>
       <InfoPopover id="object-browser-help" label="About the object browser" title="About the object browser">
         <p style={{ margin: '0 0 6px' }}>Experimental. Shows configured metadata: grants, roles and table links. It never decides whether a user is allowed to run a query.</p>
         <ul style={{ margin: 0 }}>
@@ -158,7 +160,7 @@ export function ObjectBrowserPage() {
         choose(null);focus.openAt(objectKey(connection, 'user', input.principal), null, objectKey(connection, 'table', input.database, input.table));
       }} />}
     {!connected && <p>Connect a ClickHouse datasource to collect metadata.</p>}
-    {error && <p role="alert">Collection failed: {error}</p>}
+    <CollectionNotice key={`${capture?.completedAt}|${error}`} coverage={notes} error={error} disabled={!connected || loading} onRetry={retryCollection} />
     {missingLink && <div className="link-missing" role="alert">
       <div className="link-missing-text">
         <strong>Link not opened: {missingLink.requested}</strong>
@@ -171,10 +173,6 @@ export function ObjectBrowserPage() {
     </div>}
     {loading && !capture && <ObjectsLoading />}
     {capture && graph && <>
-      {notes.some(c => c.state !== 'readable' || c.reason) && <div className="panel">
-        <div className="coverage">{notes.filter(c => c.state !== 'readable').map(c => <span className="badge warn" key={c.source}>{c.source}: {c.state}</span>)}</div>
-        {notes.filter(c => c.reason).map(c => <p className="diagnostic" key={c.source}>{c.source}: {c.reason}</p>)}
-      </div>}
       <div className="panel catalog-panel">
         <ObjectGraphView graph={catalogLayout.graph ?? graph} cards={cards} columns={catalogLayout.columns} routes={catalogLayout.routes} stubs={catalogLayout.stubs} muted={outside} covered={covered}
           onMore={column => setPaged(() => { const next = [...pages]; next[column] = (next[column] ?? 0) + 1; return { key: pagesFor, pages: next }; })} highlight={lines.highlight} selected={selectedKey} onSelect={key => choose(key === selectedKey ? null : key)}
