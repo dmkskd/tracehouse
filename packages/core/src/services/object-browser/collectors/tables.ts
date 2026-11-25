@@ -11,8 +11,8 @@ const text = (v: unknown) => String(v ?? '');
 /** Links between tables and to their storage: native dependency and target fields
  * first, then definition references for what the native fields do not cover.
  * `fields` are the optional system.tables fields every host has. View queries are analyzed
- * on `analyzedOn`, the connected node: names resolve against its catalog, so on another host a
- * link is kept only when the object it resolved to exists there with the same engine. */
+ * on `analyzedOn`, the connected node. These are candidate links: validateAnalyzedLinks
+ * checks cross-host catalog agreement after referenced system tables have been loaded. */
 export async function tableLinks(adapter: IClickHouseAdapter, connection: string, tables: Row[], fields: ReadonlySet<string>,
   check: () => void, analyzedOn: string | null = null): Promise<{ observations: Observation[]; relationships: Relationship[]; notes: string[];
     /** Views whose query was not analyzed, by table key and host, with what analysis would do. */
@@ -69,19 +69,32 @@ export async function tableLinks(adapter: IClickHouseAdapter, connection: string
     const [from, to] = ref.flow === 'upstream' ? [other, self] : [self, other];
     // A native link between the same objects takes precedence.
     if (relationships.some(r => r.host === host && r.from === from && r.to === to && r.evidence.method === 'native')) continue;
-    if (ref.method === 'analyzer' && analyzedOn) {
-      // Resolved on the connected node: on another host the object must be there with the same engine.
-      const engineOn = (on: string) => tables.find(t => t.host === on && k(text(t.database), text(t.name)) === other)?.engine;
-      if (host !== analyzedOn && (engineOn(host) === undefined || engineOn(host) !== engineOn(analyzedOn))) {
-        notes.push(`${row.database}.${row.name} on ${host}: analyzed on ${analyzedOn}; ${JSON.parse(other).slice(2).join('.')} ${engineOn(host) === undefined ? 'is missing' : 'has another engine'} there, link omitted`);
-        continue;
-      }
-      link(host, from, to, ref.kind, ref.label, { method: ref.method, definition: ref.definition, analyzedOn });
-      continue;
-    }
-    link(host, from, to, ref.kind, ref.label, { method: ref.method, definition: ref.definition });
+    link(host, from, to, ref.kind, ref.label, { method: ref.method, definition: ref.definition,
+      ...(ref.method === 'analyzer' && analyzedOn ? { analyzedOn } : {}) });
   }
   const stored = locationNodes(connection, locations);
   const unanalyzed = found.unanalyzed.map(({ row, effects }) => ({ table: k(text(tables[row].database), text(tables[row].name)), host: text(tables[row].host), effects }));
   return { observations: stored.observations, relationships: [...relationships, ...stored.relationships], notes, unanalyzed };
+}
+
+/** Validate candidate analyzer links against enriched host inventories. Discovery must precede
+ * this step: otherwise excluded system tables look absent before their by-name lookup runs. */
+export function validateAnalyzedLinks(relationships: Relationship[], observations: Observation[]): { relationships: Relationship[]; notes: string[] } {
+  const inventory = new Map(observations.filter(o => o.kind === 'table' && !o.attributes.unresolvedReference)
+    .map(o => [canonical([o.key, o.host]), o]));
+  const notes: string[] = [];
+  const accepted = relationships.filter(link => {
+    const analyzedOn = link.evidence.analyzedOn;
+    if (link.evidence.method !== 'analyzer' || typeof analyzedOn !== 'string' || link.host === analyzedOn) return true;
+    // Analyzer links run source → view; compare the resolved source on both hosts.
+    const source = inventory.get(canonical([link.from, link.host]));
+    const connected = inventory.get(canonical([link.from, analyzedOn]));
+    if (source && connected && source.attributes.engine === connected.attributes.engine) return true;
+    const sourceName = (JSON.parse(link.from) as string[]).slice(2).join('.');
+    const viewName = (JSON.parse(link.to) as string[]).slice(2).join('.');
+    const reason = !source || !connected ? 'is not in the collected inventory' : 'has another engine';
+    notes.push(`${viewName} on ${link.host}: analyzed on ${analyzedOn}; ${sourceName} ${reason} there, link omitted`);
+    return false;
+  });
+  return { relationships: accepted, notes };
 }

@@ -5,7 +5,7 @@ import type { IClickHouseAdapter } from '../../../adapters/types.js';
 import { objectKey } from '../model/types.js';
 import type { Attributes, Capture, Investigation, Observation, Relationship, Source } from '../model/types.js';
 import { canonical, sortedSet } from '../model/canonical.js';
-import { tableLinks } from './tables.js';
+import { tableLinks, validateAnalyzedLinks } from './tables.js';
 import { diskLocations } from './storage.js';
 import { parseTTLRules } from '../../../utils/ttl-parser.js';
 import { privilegeGroup, privilegeTree, tableLevelOperations, tableOperations, type PrivilegeTree } from '../model/privileges.js';
@@ -106,7 +106,7 @@ export async function collectObjects(adapter: IClickHouseAdapter, investigation:
     const ttl = parseTTLRules(text(r.engine_full));
     add('table', `${r.database}.${r.name}`, 'tables', ttl.length ? { ...r, ttl_rules: ttl } : r, k('table', text(r.database), text(r.name)));
   }
-  // View queries are analyzed on the connected node; tableLinks checks other hosts against their own catalog.
+  // Discover references first; validate cross-host sources after enriching the inventory below.
   const analyzedOn = text((await run(ACCESS_CONNECTED_HOST, 'hosts'))[0]?.host) || null;
   const links = await tableLinks(adapter, investigation.connection, data.get('tables') ?? [], tableFields, check, analyzedOn);
   capture.observations.push(...links.observations);
@@ -115,7 +115,6 @@ export async function collectObjects(adapter: IClickHouseAdapter, investigation:
     const record = capture.observations.find(o => o.key === table && o.host === host);
     if (record) record.attributes = { ...record.attributes, analysisEffects: effects };
   }
-  capture.relationships.push(...links.relationships);
   const tablesCoverage = capture.coverage.find(entry => entry.source === 'tables');
   // System tables that views read from are read by name, so they show as ordinary tables,
   // unless the catalog already lists them.
@@ -131,6 +130,9 @@ export async function collectObjects(adapter: IClickHouseAdapter, investigation:
       check();links.notes.push(`System tables read by views unavailable: ${e instanceof Error ? e.message : String(e)}`);
     }
   }
+  const validated = validateAnalyzedLinks(links.relationships, capture.observations);
+  capture.relationships.push(...validated.relationships);
+  links.notes.push(...validated.notes);
   // Part counts join the table records of the same host; they are measurements, not definition.
   if (data.has('tables')) {
     try {

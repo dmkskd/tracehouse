@@ -178,7 +178,9 @@ reported in the coverage notes and not resolved.
 The catalog skips the `system` and `information_schema` databases. Tables in
 them that a collected view reads from are read by name afterwards
 (`systemTablesByNameQuery`) and show as ordinary tables. A referenced table
-that is still not found becomes a placeholder node with `unresolvedReference`.
+that is still not found becomes a placeholder node with `unresolvedReference`. Cross-host analyzer
+validation runs after this inventory enrichment, so excluded system tables do
+not produce false missing-source warnings.
 
 ### Storage server
 

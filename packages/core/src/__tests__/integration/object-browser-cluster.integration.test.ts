@@ -50,6 +50,21 @@ describe('Object browser real cluster collection', { tags: ['cluster', 'security
     const tables = analyzed.coverage.find(c => c.source === 'tables')!;
     expect(tables.reason).toContain(`${fixture.db}.reads_src on ${other}: analyzed on ${connected.host}; ${fixture.db}.src has another engine there, link omitted`);
   });
+  it('loads referenced system inventories before checking analyzer links on other hosts', async () => {
+    for (const client of [ctx.client1, ctx.client2]) for (const source of ['merges', 'processes']) {
+      await client.command({ query: `CREATE VIEW ${fixture.db}.reads_system_${source} AS SELECT * FROM system.${source}` });
+    }
+    const enriched = await collectObjects(adapter, input, { mode: 'catalog' });
+    for (const source of ['merges', 'processes']) {
+      const from = objectKey(input.connection, 'table', 'system', source);
+      const to = objectKey(input.connection, 'table', fixture.db, `reads_system_${source}`);
+      expect(enriched.observations.filter(o => o.key === from && !o.attributes.unresolvedReference).map(o => o.host).sort())
+        .toEqual(enriched.hosts.map(h => h.host).sort());
+      expect(enriched.relationships.filter(r => r.kind === 'reads-from' && r.from === from && r.to === to).map(r => r.host).sort())
+        .toEqual(enriched.hosts.map(h => h.host).sort());
+      expect(enriched.coverage.find(c => c.source === 'tables')?.reason ?? '').not.toContain(`system.${source} is`);
+    }
+  });
   it('draws one logical user with both native records rather than merging attributes', () => {
     const graph = projectCatalogGraph(capture);
     const users = graph.nodes.filter(node => node.kind === 'user' && node.name === fixture.alice);
