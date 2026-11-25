@@ -10,6 +10,8 @@ import { BAND_TITLES, catalogPageSize, isGap, isWaypoint, lineage, RELATIONSHIPS
 
 // Card width and gap as in the mockups.
 const COLUMN_WIDTH = 176, COLUMN_GAP = 40;
+// Room the cut's label needs, "No role or privilege on this path" at 11px.
+const CUT_LABEL_WIDTH = 200;
 // Stable default: the measuring effect depends on `stubs`.
 const NO_STUBS: string[] = [];
 // Pause before the hover card opens, so moving across the diagram does not flash cards.
@@ -32,9 +34,9 @@ export function ObjectGraphView({ graph, cards, columns, selected, onSelect, onF
   muted?: ReadonlySet<string>;
   /** Selected access types a broad privilege includes (coveredOperations), shown on its card. */
   covered?: ReadonlyMap<string, readonly string[]>;
-  /** A provenance with no configured path (hasNoConfiguredPath): a broken line runs from the
-   * user to the data divider and stops there, and the table is outlined. */
-  noPath?: { from: string; to: string };
+  /** No configured path from the user: a broken line runs from the user's row to the data
+   * divider and stops there, and the table, when there is one, is outlined. */
+  noPath?: { from: string; to?: string };
   /** Links of grants a revoke on the same holder cancels: drawn dashed and faint. */
   cancelledEdges?: readonly string[]; showAll?: boolean; origin?: string | null;
   routes?: Map<string, string[]>; stubs?: string[]; highlight?: boolean; diagramStyle?: ObjectDiagramStyle;
@@ -129,14 +131,18 @@ export function ObjectGraphView({ graph, cards, columns, selected, onSelect, onF
       // The broken line leaves the last card in the user's row (the user, or a grant of theirs that
       // does not cover the table) and stops at the divider. Across a clear row it carries a label.
       const user = noPathFrom ? point(noPathFrom) : null;
-      const inRow = user && divider !== null ? [...elements.current].flatMap(([key, element]) => {
+      // Without a data band, the cut sits where it would begin: half a gap past the last column.
+      const last = [...root.current.querySelectorAll('.lane')].at(-1)?.getBoundingClientRect();
+      const edge = divider ?? (user && last ? (last.right - bounds.left) / zoom + COLUMN_GAP / 2 : null);
+      const inRow = user && edge !== null ? [...elements.current].flatMap(([key, element]) => {
         if (key === noPathFrom || isWaypoint(key)) return [];
         const r = element.getBoundingClientRect();
         const top = (r.top - bounds.top) / zoom, bottom = (r.bottom - bounds.top) / zoom, right = (r.right - bounds.left) / zoom;
-        return top < user.y && bottom > user.y && right > user.right && right < divider ? [right] : [];
+        return top < user.y && bottom > user.y && right > user.right && right < edge ? [right] : [];
       }) : [];
-      const cut = divider === null || !user ? null
-        : { from: Math.max(user.right, ...inRow), to: divider, y: user.y, label: inRow.length === 0 };
+      const cut = edge === null || !user ? null
+        // The label rides on a clear row long enough to hold it; a short cut keeps only the mark.
+        : { from: Math.max(user.right, ...inRow), to: edge, y: user.y, label: inRow.length === 0 && edge - Math.max(user.right, ...inRow) >= CUT_LABEL_WIDTH };
       setGeometry({ width: root.current.offsetWidth, height: root.current.offsetHeight, paths, stubs: drawnStubs, bracket, cut });
     };
     measure();window.addEventListener('resize', measure);

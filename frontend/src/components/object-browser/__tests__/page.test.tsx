@@ -299,8 +299,11 @@ describe('object browser entry point', () => {
     const dialog = screen.getByRole('dialog', { name: 'Object focus' });
     // The field remounts for each picked table, so it is looked up each time.
     const table = () => within(dialog).getByRole('combobox', { name: 'Table' });
-    fireEvent.change(table(), { target: { value: 'demo.trips' } });
     const chip = (name: string) => within(dialog.querySelector<HTMLElement>('.focus-answers')!).getByRole('button', { name });
+    // With any table, each access type answers across every table.
+    expect(chip('SELECT').getAttribute('data-state')).toBe('granted');
+    expect(document.getElementById(chip('SELECT').getAttribute('aria-describedby')!)?.textContent).toBe('Reaches 1 table for SELECT');
+    fireEvent.change(table(), { target: { value: 'demo.trips' } });
     expect(chip('SELECT').getAttribute('data-state')).toBe('granted');
     expect(document.getElementById(chip('SELECT').getAttribute('aria-describedby')!)?.textContent).toBe('Granted through reader for SELECT');
     // Another access type adds a chip; alice holds no INSERT.
@@ -317,6 +320,18 @@ describe('object browser entry point', () => {
     // Changing the access types keeps the one read.
     fireEvent.click(within(within(dialog).getByRole('group', { name: 'Operation' })).getByRole('button', { name: 'INSERT' }));
     expect(read).toHaveBeenCalledTimes(1);
+  });
+  it('lays out a user who reaches nothing with empty access columns and a data column the line ends at', () => {
+    const denied = { key: JSON.stringify(['test', 'user', 'denied']), name: 'denied', kind: 'user' as const, source: 'users' as const, host: 'ch-1', attributes: {} };
+    state.capture = { schemaVersion: 1, mode: 'catalog', investigation: { connection: 'test', principal: '', database: '', table: '', operation: 'SELECT' },
+      startedAt: '', completedAt: 'done', hosts: [{ host: 'ch-1', version: '26.9.7.9' }], coverage: [], verdict: { kind: 'not-checked', reason: 'provenance' },
+      observations: [denied], relationships: [] };
+    renderPage();
+    fireEvent.click(screen.getByRole('button', { name: 'Focus denied' }));
+    const dialog = screen.getByRole('dialog', { name: 'Object focus' });
+    expect(within(dialog.querySelector<HTMLElement>('.focus-answers')!).getByRole('button', { name: 'SELECT' }).getAttribute('data-state')).toBe('no-path');
+    expect([...dialog.querySelectorAll('.lane-title')].map(t => t.querySelector('span')?.textContent)).toEqual(['Users', 'Roles', 'Privileges', 'Tables']);
+    expect(dialog.querySelector('.lane[data-band="data"] .lane-notice')?.textContent).toBe('No table reached for SELECT');
   });
   it('says what a by-name read did not find, instead of answering', async () => {
     const k = (kind: ObjectKind, ...parts: string[]) => JSON.stringify(['test', kind, ...parts]);

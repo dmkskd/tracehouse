@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { stepTo, type FocusTrail } from './focusTrail';
 import { useUserPreferenceStore } from '../../stores/userPreferenceStore';
-import { answerFor, coveredOperations, dataOutside, describeDetail, describeObjects, focusGraphFrom, layoutFocus, privilegesOutside, objectLinkFor, objectLinkUrl, withPrincipalContext, withRoutes, essentialEdges, type Capture, type Investigation, type ObjectCard, type ObjectGraph, type ProvenanceAnswer } from '@tracehouse/core/services/object-browser';
+import { answerFor, reachFor, withPathColumns, coveredOperations, dataOutside, describeDetail, describeObjects, focusGraphFrom, layoutFocus, privilegesOutside, objectLinkFor, objectLinkUrl, withPrincipalContext, withRoutes, essentialEdges, type Capture, type Investigation, type ObjectCard, type ObjectGraph, type ProvenanceAnswer } from '@tracehouse/core/services/object-browser';
 
 
 /** Focus modal state. `trail` runs from where focus opened to the current `origin`;
@@ -76,11 +76,20 @@ export function useObjectFocus(project: (focus: string | null, from?: Capture) =
   const drawn = useMemo(() => graph && essential ? essentialEdges(graph) : { graph, stubs: [] as string[] }, [graph, essential]);
   const outside = useMemo(() => drawn.graph ? privilegesOutside(drawn.graph, operations) : undefined, [drawn, operations]);
   const covered = useMemo(() => drawn.graph ? coveredOperations(drawn.graph, operations) : undefined, [drawn, operations]);
-  const layout = useMemo(() => withRoutes(drawn.graph, drawn.graph ? layoutFocus(drawn.graph, outside) : [], route), [drawn, route, outside]);
   // Dimmed: privileges without a selected access type and, while answering for a table, other data objects.
   const muted = useMemo(() => pair && drawn.graph ? new Set([...outside ?? [], ...dataOutside(drawn.graph, pair.table)]) : outside, [outside, drawn, pair]);
-  const noPath = pair && answers.length && answers.every(a => a.state === 'no-path') ? { from: pair.user, to: pair.table } : undefined;
+  // A user without a table: what each access type reaches across every catalog table.
+  const reach = useMemo(() => !pair && origin && capture?.mode === 'catalog' && capture.observations.some(o => o.key === origin && o.kind === 'user')
+    ? operations.map(operation => reachFor(capture, origin, operation)) : [], [pair, origin, capture, operations]);
+  const noPath = pair && answers.length && answers.every(a => a.state === 'no-path') ? { from: pair.user, to: pair.table }
+    : origin && reach.length && reach.every(a => a.state === 'no-path') ? { from: origin } : undefined;
   const cancelledEdges = useMemo(() => answers.flatMap(a => a.summary.cancelledEdges), [answers]);
+  // With no path, the empty access columns and a data column give the broken line its length and end.
+  const noPathShown = !!noPath;
+  const layout = useMemo(() => {
+    const columns = drawn.graph ? layoutFocus(drawn.graph, outside) : [];
+    return withRoutes(drawn.graph, noPathShown ? withPathColumns(columns, `No table reached for ${operations.join(' or ')}`) : columns, route);
+  }, [drawn, route, outside, noPathShown, operations]);
   const chainUser = useMemo(() => {
     const key = context?.principal ?? trail[0];
     const node = source?.nodes.find(n => n.key === key);
@@ -95,7 +104,9 @@ export function useObjectFocus(project: (focus: string | null, from?: Capture) =
     const link = objectLinkFor(source?.nodes.find(n => n.key === origin), chainUser);
     return link ? objectLinkUrl(link) : '/objects';
   }, [source, origin, chainUser]);
-  return { muted, covered, answers, noPath, cancelledEdges, targetTable,
+  return { muted, covered, noPath, cancelledEdges, targetTable,
+    /** One answer per access type: for the user and table, or for the user across every table. */
+    answers: pair ? answers : reach,
     /** The by-name read for a pair the catalog does not hold: in flight, or its error. */
     reading: !!pair && !inCatalog && side?.key !== pairKey,
     readError: !inCatalog && side?.key === pairKey ? side.error ?? null : null,

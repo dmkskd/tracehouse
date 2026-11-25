@@ -194,6 +194,18 @@ export function withSourceNotices(columns: LayoutColumn[], coverage: Coverage[])
 }
 
 
+/** Columns for a focus with no path from its user: the Roles and Privileges columns it lacks, empty,
+ * so the broken line runs across them, and a Tables column with `notice` when no data column exists,
+ * so the line ends at the data divider. Other layouts pass through. */
+export function withPathColumns(columns: LayoutColumn[], notice: string): LayoutColumn[] {
+  const access = columns.filter(c => c.band === 'access'), rest = columns.filter(c => c.band !== 'access');
+  const lane = (title: string): LayoutColumn => access.find(c => c.title === title) ?? { title, band: 'access', keys: [] };
+  const others = access.filter(c => !['Users', 'Roles', 'Privileges'].includes(c.title ?? ''));
+  const users = access.filter(c => c.title === 'Users');
+  const data = rest.some(c => c.band === 'data') ? rest : [{ title: 'Tables', band: 'data' as const, keys: [], notices: [notice] }, ...rest];
+  return [...users, lane('Roles'), ...others, lane('Privileges'), ...data];
+}
+
 const WAYPOINT = 'waypoint:';
 /** A key `routeEdges` placed in a column for a line to pass through. */
 export const isWaypoint = (key: string) => key.startsWith(WAYPOINT);

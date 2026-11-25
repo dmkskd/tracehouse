@@ -3,7 +3,7 @@ import { projectGraph } from '../projections/graph.js';
 import { describeDetail } from '../presentation/details.js';
 import { describeObjects } from '../presentation/cards.js';
 import { focusGraphFrom } from '../projections/focus.js';
-import { describeMissingLink, describeProvenance, provenanceState, tableKeyOf, summarizePrincipalPaths, objectLinkFor, objectLinkUrl, parseObjectLink, resolveObjectLink, withPrincipalContext, type ObjectLink } from '../presentation/links.js';
+import { describeMissingLink, describeProvenance, provenanceState, reachFor, tableKeyOf, summarizePrincipalPaths, objectLinkFor, objectLinkUrl, parseObjectLink, resolveObjectLink, withPrincipalContext, type ObjectLink } from '../presentation/links.js';
 import type { Capture, ObjectKind, Relationship, Source } from '../model/types.js';
 
 const record = (key: string, kind: ObjectKind, source: Source, attributes: Record<string, unknown> = {}) =>
@@ -132,6 +132,21 @@ describe('object links', () => {
     expect(revoke.flags).toContain('revoke');
     const rows = describeDetail(graph.nodes.find(n => n.key === 'audit')!, graph).sections.flatMap(s => s.kind === 'relationships' ? s.groups.flatMap(g => g.rows) : []);
     expect(rows.find(r => r.relation === 'Revoked by')?.items.map(i => i.key)).toEqual(['revoke']);
+  });
+  it('says what a user reaches for an access type across every table, and when it reaches nothing', () => {
+    const rec = (key: string, kind: ObjectKind, source: Source, attributes: Record<string, unknown> = {}) => ({ key, name: key, kind, source, host: 'ch-1', attributes });
+    const link = (from: string, to: string, kind: Relationship['kind'], source: Source, evidence: Record<string, unknown> = {}): Relationship =>
+      ({ id: `${from}>${to}`, host: 'ch-1', from, to, kind, label: kind, source, evidence });
+    const table = (name: string) => ({ ...rec(name, 'table', 'tables', { database: 'demo', name }), name: `demo.${name}` });
+    // GRANT SELECT ON demo.* TO analyst, reader; bob holds analyst, not by default; carol holds reader by default.
+    const reach = { ...capture, observations: [rec('bob', 'user', 'users'), rec('carol', 'user', 'users'), rec('analyst', 'role', 'roles'), rec('reader', 'role', 'roles'),
+      rec('all', 'grant-scope', 'grants', { access_type: 'SELECT', database: 'demo', table: null, table_operations: ['SELECT'] }), table('a'), table('b')],
+    relationships: [link('bob', 'analyst', 'has-role', 'role_grants', { granted_role_is_default: 0 }), link('carol', 'reader', 'has-role', 'role_grants', { granted_role_is_default: 1 }),
+      link('analyst', 'all', 'grant', 'grants', { database: 'demo', table: null, is_wildcard: 0, is_partial_revoke: 0 }),
+      link('reader', 'all', 'grant', 'grants', { database: 'demo', table: null, is_wildcard: 0, is_partial_revoke: 0 })] };
+    expect(reachFor(reach, 'carol', 'SELECT')).toMatchObject({ state: 'granted', tables: 2, line: { text: 'Reaches 2 tables for SELECT' } });
+    expect(reachFor(reach, 'bob', 'SELECT')).toMatchObject({ state: 'set-role', tables: 2, line: { text: 'Reaches 2 tables for SELECT after SET ROLE analyst' } });
+    expect(reachFor(reach, 'bob', 'INSERT')).toMatchObject({ state: 'no-path', tables: 0, line: { text: 'No privilege of bob includes INSERT' } });
   });
   it('reads a table key from database.table, split at the first dot', () => {
     expect(tableKeyOf('c', 'demo.trips')).toBe(JSON.stringify(['c', 'table', 'demo', 'trips']));

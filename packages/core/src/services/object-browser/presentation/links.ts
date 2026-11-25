@@ -204,6 +204,39 @@ export function provenanceState(summary: Pick<PrincipalContextSummary, 'paths' |
   return summary.cancelled.length ? 'revoked' : 'no-path';
 }
 
+/** What a user reaches for one access type, across every table: `granted` with tables reached at
+ * login, `set-role` with tables reached only through roles that need SET ROLE, `no-path` with none.
+ * Revoked scopes are left out; a revoke cancelling a grant on one table is not counted here. */
+export interface ReachAnswer { operation: string; state: Exclude<ProvenanceState, 'columns' | 'revoked'>; line: ProvenanceLine; tables: number }
+export function reachFor(capture: Capture, user: string, operation: string): ReachAnswer {
+  const unlinked = { ...capture, relationships: capture.relationships.filter(r => r.kind !== 'candidate-scope') };
+  const graph = projectCatalogGraph(unlinked, user, Number.MAX_SAFE_INTEGER, [operation]);
+  const nodeOf = new Map(graph.nodes.map(n => [n.key, n]));
+  const inactive = (e: ObjectGraph['edges'][number]) => e.kind === 'has-role' && e.from === user && e.records.every(r => Number(r.evidence.granted_role_is_default) === 0);
+  const reach = (activeOnly: boolean) => {
+    const seen = new Set([user]), tables = new Set<string>(), queue = [user];
+    while (queue.length) {
+      const at = queue.shift()!;
+      for (const e of graph.edges) {
+        if (e.from !== at || seen.has(e.to) || isRevokeEdge(e) || !['has-role', 'grant', 'candidate-scope'].includes(e.kind)) continue;
+        if (activeOnly && inactive(e)) continue;
+        seen.add(e.to);
+        if (nodeOf.get(e.to)?.kind === 'table') tables.add(e.to);else queue.push(e.to);
+      }
+    }
+    return tables.size;
+  };
+  type Part = ProvenanceLine['parts'][number];
+  const name = (text: string): Part => ({ text, kind: 'name' }), plain = (text: string): Part => ({ text, kind: 'plain' });
+  const count = (n: number): Part => ({ text: `Reaches ${n} table${n === 1 ? '' : 's'}`, kind: 'lead' });
+  const active = reach(true), all = active ? active : reach(false);
+  const roles = graph.edges.filter(inactive).map(e => nodeOf.get(e.to)?.name ?? e.to).sort();
+  const parts: Part[] = active ? [count(active), plain(' for '), name(operation)]
+    : all ? [count(all), plain(' for '), name(operation), plain(' after '), name(`SET ROLE ${roles.join(', ')}`)]
+    : [{ text: 'No privilege', kind: 'lead' }, plain(' of '), name(nodeOf.get(user)?.name ?? user), plain(' includes '), name(operation)];
+  return { operation, state: active ? 'granted' : all ? 'set-role' : 'no-path', line: { text: parts.map(p => p.text).join(''), parts }, tables: all };
+}
+
 /** Graph key of the table `database.table` names, split at its first dot; null without one. */
 export function tableKeyOf(connection: string, qualified: string): string | null {
   const dot = qualified.indexOf('.');

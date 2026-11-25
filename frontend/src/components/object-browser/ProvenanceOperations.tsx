@@ -49,7 +49,7 @@ export function OperationPicker({ current, operations, onPick, multiple = false 
 
 /** One chip per operation asked for this user and table: the state, with the explanation on
  * hover or focus. The explanation opens below the chip and stays inside the viewport. */
-export function OperationAnswers({ answers, current, onPick }: { answers: ProvenanceAnswer[]; current?: string; onPick?: (operation: string) => void }) {
+export function OperationAnswers({ answers, current, onPick }: { answers: readonly Pick<ProvenanceAnswer, 'operation' | 'state' | 'line'>[]; current?: string; onPick?: (operation: string) => void }) {
   const id = useId();
   const [tip, setTip] = useState<{ index: number; anchor: DOMRect } | null>(null);
   const timer = useRef<ReturnType<typeof setTimeout>>();

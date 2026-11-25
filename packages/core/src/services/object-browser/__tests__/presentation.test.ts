@@ -5,7 +5,7 @@ import { groupOperations, privilegeGroup, toggleOperation, privilegeTree, tableL
 import { objectKey } from '../model/types.js';
 import type { Attributes, Capture, ObjectKind, Relationship, Source } from '../model/types.js';
 import { describeObjects } from '../presentation/cards.js';
-import { catalogPageSize, isGap, isWaypoint, layoutCatalog, layoutFocus, routeEdges, withRoutes, withSourceNotices } from '../presentation/layout.js';
+import { catalogPageSize, withPathColumns, isGap, isWaypoint, layoutCatalog, layoutFocus, routeEdges, withRoutes, withSourceNotices } from '../presentation/layout.js';
 import { essentialEdges, focusGraphFrom, searchGraph } from '../projections/focus.js';
 import { GUIDES, investigationFor } from '../presentation/guides.js';
 import { describeDetail } from '../presentation/details.js';
@@ -145,6 +145,15 @@ describe('catalog layout', () => {
     expect(lanes[0].keys).toEqual([key('user', 'aaa'), key('user', 'th_ob_bob')]);
     // One card per lane at this bound: 'first' fills the Privileges lane, and bob's privilege is kept after it.
     expect(lanes[2].keys).toEqual([key('grant-scope', 'first'), SCOPE]);
+  });
+  it('gives a focus with no path the empty access columns and a data column to end at', () => {
+    const users = { title: 'Users', band: 'access' as const, keys: ['denied'] };
+    expect(withPathColumns([users], 'No table reached for SELECT')).toEqual([users,
+      { title: 'Roles', band: 'access', keys: [] }, { title: 'Privileges', band: 'access', keys: [] },
+      { title: 'Tables', band: 'data', keys: [], notices: ['No table reached for SELECT'] }]);
+    // Columns present stay as they are; an existing data column takes no notice.
+    const roles = { title: 'Roles', band: 'access' as const, keys: ['r'] }, tables = { title: 'Tables', band: 'data' as const, keys: ['t'] };
+    expect(withPathColumns([users, roles, tables], 'n')).toEqual([users, roles, { title: 'Privileges', band: 'access', keys: [] }, tables]);
   });
   it('counts the cards a column hides and shows one more page of them per request', () => {
     const graph = projectGraph(demo());

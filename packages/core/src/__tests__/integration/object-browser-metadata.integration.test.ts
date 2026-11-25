@@ -12,7 +12,7 @@ import { collectObjects } from '../../services/object-browser/collectors/collect
 import { coveredOperations, projectCatalogGraph, provenancePaths } from '../../services/object-browser/projections/graph.js';
 import { objectKey, type Capture } from '../../services/object-browser/model/types.js';
 import { describeDetail, loadDetailStatement, loadTableActivity, loadTablePlacement } from '../../services/object-browser/presentation/details.js';
-import { answerFor } from '../../services/object-browser/presentation/links.js';
+import { answerFor, reachFor } from '../../services/object-browser/presentation/links.js';
 
 /** Server extraction proof is deliberately separate from production-model coverage.
  * Run through the normal integration runner with an exact CLICKHOUSE_IMAGE. */
@@ -375,6 +375,10 @@ describe('Object browser metadata extraction', { tags: ['security', 'storage'] }
       expect(answerFor(capture, user(principal), trips, operation).state).toBe(state);
       expect(answerFor(await byName(principal), user(principal), trips, operation).state).toBe(state);
     }
+    // Across every table: alice reads some and writes none; ALL ON *.* reaches tables for DROP TABLE.
+    expect(reachFor(capture, user(fixture.alice), 'SELECT').state).toBe('granted');
+    expect(reachFor(capture, user(fixture.alice), 'INSERT').state).toBe('no-path');
+    expect(reachFor(capture, user(fixture.admin), 'DROP TABLE').state).toBe('granted');
   });
   it('preserves nested provenance and checks real execution without inferring a verdict', async () => {
     const graph = projectCatalogGraph(capture, objectKey(input.connection,'table',fixture.db,'trips'));
