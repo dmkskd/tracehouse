@@ -41,7 +41,11 @@ export const ACCESS_CATALOGS = {
     sql: `SELECT hostName() AS host, user_name, role_name, toString(access_type) AS access_type,
       access_object, database, table, column, is_partial_revoke, grant_option, is_wildcard
       FROM {{cluster_aware:system.grants}}
-      WHERE {browse} = 1 OR user_name = {principal} OR role_name IS NOT NULL
+      WHERE ({browse} = 0 AND (user_name = {principal} OR role_name IS NOT NULL))
+        -- A catalog lists global grants, and grants on the databases its tables come from:
+        -- the system database with {system} = 1, every other database without.
+        OR ({browse} = 1 AND (database IS NULL
+          OR ({system} = 1) = (database IN ('system', 'information_schema', 'INFORMATION_SCHEMA'))))
       ORDER BY host, user_name, role_name, access_type, database, table, column
       LIMIT {limit} SETTINGS skip_unavailable_shards = 0`,
   },

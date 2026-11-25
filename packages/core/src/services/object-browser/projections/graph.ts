@@ -115,7 +115,8 @@ export function coveredOperations(graph: ObjectGraph, operations: readonly strin
   const covered = new Map<string, string[]>();
   for (const n of graph.nodes) {
     const scope = n.records[0]?.attributes;
-    if (n.kind !== 'grant-scope' || operations.includes(String(scope?.access_type))) continue;
+    // Without a recorded access type there is no telling whether the privilege is a broad one.
+    if (n.kind !== 'grant-scope' || scope?.access_type == null || operations.includes(String(scope.access_type))) continue;
     const included = operations.filter(operation => coversOperation(scope, operation));
     if (included.length) covered.set(n.key, included);
   }

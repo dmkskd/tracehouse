@@ -1,7 +1,7 @@
 import { useMemo, useState } from 'react';
 import { stepTo, type FocusTrail } from './focusTrail';
 import { useUserPreferenceStore } from '../../stores/userPreferenceStore';
-import { describeDetail, describeObjects, focusGraphFrom, layoutFocus, objectLinkFor, objectLinkUrl, withPrincipalContext, withRoutes, essentialEdges, type ObjectCard, type ObjectGraph, type PrincipalContextSummary } from '@tracehouse/core/services/object-browser';
+import { coveredOperations, describeDetail, describeObjects, focusGraphFrom, layoutFocus, privilegesOutside, objectLinkFor, objectLinkUrl, withPrincipalContext, withRoutes, essentialEdges, type ObjectCard, type ObjectGraph, type PrincipalContextSummary } from '@tracehouse/core/services/object-browser';
 
 
 /** Focus modal state. `trail` runs from where focus opened to the current `origin`;
@@ -10,7 +10,8 @@ import { describeDetail, describeObjects, focusGraphFrom, layoutFocus, objectLin
  * principal, set when a link opens focus on a table for one user, narrows the access side
  * to that user's paths while the table is the origin. The chain's user, that context user or
  * the user the trail starts from, is passed on by the detail's links to other pages. */
-export function useObjectFocus(project: (focus: string | null) => ObjectGraph | null) {
+/** `operations`: the catalog's access types; privileges with none of them are dimmed and listed last. */
+export function useObjectFocus(project: (focus: string | null) => ObjectGraph | null, operations?: readonly string[]) {
   const [open, setOpen] = useState(false);
   const [trail, setTrail] = useState<FocusTrail>([]);
   const origin = trail.at(-1) ?? null;
@@ -35,7 +36,9 @@ export function useObjectFocus(project: (focus: string | null) => ObjectGraph | 
   const cards = useMemo(() => source ? describeObjects(source) : new Map<string, ObjectCard>(), [source]);
   // Essential lines drop broad privileges' per-table lines before layout; the view draws their stubs.
   const drawn = useMemo(() => graph && essential ? essentialEdges(graph) : { graph, stubs: [] as string[] }, [graph, essential]);
-  const layout = useMemo(() => withRoutes(drawn.graph, drawn.graph ? layoutFocus(drawn.graph) : [], route), [drawn, route]);
+  const outside = useMemo(() => drawn.graph && operations ? privilegesOutside(drawn.graph, operations) : undefined, [drawn, operations]);
+  const covered = useMemo(() => drawn.graph && operations ? coveredOperations(drawn.graph, operations) : undefined, [drawn, operations]);
+  const layout = useMemo(() => withRoutes(drawn.graph, drawn.graph ? layoutFocus(drawn.graph, outside) : [], route), [drawn, route, outside]);
   const chainUser = useMemo(() => {
     const key = context?.principal ?? trail[0];
     const node = source?.nodes.find(n => n.key === key);
@@ -50,7 +53,7 @@ export function useObjectFocus(project: (focus: string | null) => ObjectGraph | 
     const link = objectLinkFor(source?.nodes.find(n => n.key === origin), chainUser);
     return link ? objectLinkUrl(link) : '/objects';
   }, [source, origin, chainUser]);
-  return {
+  return { outside, covered,
     open: open && !!source?.nodes.some(n => n.key === origin),
     trail, origin, chainUser, returnUrl, graph: drawn.graph, context: activeContext, contextSummary, stubs: drawn.stubs, cards, columns: layout.columns, routes: layout.routes, detail,
     /** Name of any object in the current projection, for the trail. */

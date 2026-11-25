@@ -347,6 +347,13 @@ describe('Object browser metadata extraction', { tags: ['security', 'storage'] }
     expect(withSystem.observations.filter(o => o.key === contributors)).toHaveLength(1);
     // The fixture database and information_schema are left out.
     expect(new Set(withSystem.observations.filter(o => o.kind === 'table').map(o => o.attributes.database))).toEqual(new Set(['system']));
+    // Grants follow the tables: on system only with system tables, never on system without them; global grants in both.
+    const scopes = (c: Capture) => c.observations.filter(o => o.kind === 'grant-scope').map(o => o.attributes.database);
+    expect(scopes(capture)).not.toContain('system');
+    expect(scopes(capture)).toContain(fixture.db);
+    expect(scopes(withSystem)).toContain('system');
+    expect(scopes(withSystem)).not.toContain(fixture.db);
+    expect(scopes(capture).some(database => database == null) && scopes(withSystem).some(database => database == null)).toBe(true);
     // Row policies on other databases stay out too, so they bring in no placeholder tables.
     expect(withSystem.observations.some(o => o.kind === 'row-policy')).toBe(false);
     // A system table a view reads from is listed once, not again by name.

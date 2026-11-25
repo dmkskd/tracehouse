@@ -90,7 +90,8 @@ export function ObjectBrowserPage() {
   // Coverage not already shown in a diagram column.
   const notes = capture?.coverage.filter(c => !isColumnNotice(c)) ?? [];
   const cards = useMemo(() => graph ? describeObjects(graph) : new Map<string, ObjectCard>(), [graph]);
-  const focus = useObjectFocus(projectFor);
+  // Focus applies the catalog's access types too: matching privileges first, the rest dimmed.
+  const focus = useObjectFocus(projectFor, capture?.mode === 'catalog' ? catalogOperations : undefined);
   // A link opens focus once per capture; closing it returns to the page the link came from.
   const link = useMemo(() => parseObjectLink(name => url[name as keyof typeof url]), [url]);
   const { from, returnToOrigin } = useReturnToOrigin();
@@ -196,6 +197,10 @@ export function ObjectBrowserPage() {
       <div className={`${page} focus-shell`}>
         <div className="focus-header">
           <FocusTrailHeader trail={focus.trail} cards={focus.cards} nameOf={focus.nameOf} onStep={focus.reroot} />
+          {/* Focus follows the catalog's access types; changing them here changes both. */}
+          {capture?.mode === 'catalog' && <span className="toolbar-separator" aria-hidden="true" />}
+          {capture?.mode === 'catalog' && <span className="lines-for" title="Privilege-to-table links for the selected access types. Privileges that include none of them are dimmed.">Access type
+            <OperationPicker multiple current={catalogOperations} operations={capture.operations} onPick={op => setCatalogOperations(prev => toggleOperation(prev, op))} /></span>}
           {focus.context && <span className="focus-context" title="Access objects on this user's configured paths to the table. Other principals are hidden.">
             for {focus.nameOf(focus.context)}
             <button onClick={focus.clearContext}>Show all principals</button></span>}
@@ -205,6 +210,7 @@ export function ObjectBrowserPage() {
         </div>
         <div className="focus-body">
         {focus.graph && <ObjectGraphView graph={focus.graph} cards={focus.cards} columns={focus.columns} selected={focus.origin} origin={focus.origin} onSelect={focus.reroot} onOpen={focus.openDetail} showAll
+          muted={focus.outside} covered={focus.covered}
           cancelledEdges={focus.contextSummary?.cancelledEdges}
           caption={focus.context && focus.contextSummary && focus.origin
             && <ProvenanceSummary line={describeProvenance(focus.contextSummary, focus.nameOf(focus.context), focus.nameOf(focus.origin), catalogOperations)} />}

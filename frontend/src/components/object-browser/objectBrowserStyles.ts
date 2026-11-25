@@ -143,6 +143,8 @@ export const page = css`
   .focus-header h2 { display: flex; align-items: center; gap: 6px; margin: 0; min-width: 0; white-space: nowrap; }
   .focus-header .object-symbol { margin-right: 0; font-size: 18px; }
   .focus-origin-label { flex-shrink: 0; font-size: 11px; color: var(--text-muted); margin-right: 4px; }
+  .focus-header .lines-for { margin-right: auto; }
+  .focus-header .toolbar-separator { align-self: stretch; width: 1px; margin: 2px 4px; background: var(--border-primary); }
   .focus-header { position: sticky; top: 0; z-index: 3; display: flex; justify-content: space-between; align-items: center; gap: 16px; padding: 10px 24px; background: var(--bg-card); border-bottom: 1px solid var(--border-primary); }
   .focus-body { padding: 0 24px 24px; }
   .coverage { display: flex; gap: 7px; flex-wrap: wrap; margin: 14px 0; }

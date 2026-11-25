@@ -162,6 +162,12 @@ describe('catalog layout', () => {
     // Objects to show later move behind the rest of their lane, so the bound keeps the others.
     const first = users([]).keys[0];
     expect(layoutCatalog(crowded, null, 8, [], new Set([first]))[0].keys[0]).not.toBe(first);
+    // Focus orders its columns the same way.
+    const focusUsers = (later: Set<string>) => layoutFocus(crowded, later).find(c => c.keys.includes(first))!.keys.filter(k => !isGap(k));
+    expect(focusUsers(new Set()).indexOf(first)).toBe(0);
+    expect(focusUsers(new Set([first])).at(-1)).toBe(first);
+    // Connected to the selection, it keeps its place.
+    expect(layoutCatalog(crowded, first, 8, [], new Set([first]))[0].keys[0]).toBe(first);
   });
 });
 

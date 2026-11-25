@@ -30,7 +30,8 @@ const KIND_ORDER = Object.keys(KIND_LAYOUT) as ObjectKind[];
  * equal share of `maxNodes` (catalogPageSize), raised by that share for each page in `pages[i]`
  * for column `i`; the selected object and its lineage are kept past the bound so a search result
  * and its connections stay reachable, and selection never reorders cards. Access objects in
- * `later` (privilegesOutside) follow the rest of their lane, so the bound keeps the others. */
+ * `later` (privilegesOutside) follow the rest of their lane, so the bound keeps the others;
+ * those connected to the selection stay in place, next to the lines that reach them. */
 export function layoutCatalog(graph: ObjectGraph, selected: string | null, maxNodes = 100, pages: readonly number[] = [], later: ReadonlySet<string> = new Set()): LayoutColumn[] {
   const perColumn = catalogPageSize(maxNodes);
   // Gaps do not count toward the bound, and trailing gaps are dropped. The selected object
@@ -46,7 +47,7 @@ export function layoutCatalog(graph: ObjectGraph, selected: string | null, maxNo
   };
   const access = LANES.filter(([, band]) => band === 'access').map(([title, band]): LayoutColumn => ({ title, band,
     keys: graph.nodes.filter(n => KIND_LAYOUT[n.kind].lane === title).map(n => n.key)
-      .sort((a, b) => Number(later.has(a)) - Number(later.has(b))) }));
+      .sort((a, b) => Number(later.has(a) && !connected.has(a)) - Number(later.has(b) && !connected.has(b))) }));
   const data = new Set(graph.nodes.filter(n => KIND_LAYOUT[n.kind].band !== 'access').map(n => n.key));
   const flow = layoutFocus({ nodes: graph.nodes.filter(n => data.has(n.key)), edges: graph.edges.filter(e => data.has(e.from) && data.has(e.to)) });
   return [...access, ...flow].map(bound);
@@ -70,8 +71,9 @@ function columnTitle(titles: string[]): string | undefined {
 const SWEEPS = 4;
 
 /** Layered layout for a focus graph: access configuration first, then data flow,
- * so a materialized view chain reads left to right. Deterministic for equal input. */
-export function layoutFocus(graph: ObjectGraph): LayoutColumn[] {
+ * so a materialized view chain reads left to right. Objects in `later` (privilegesOutside)
+ * follow the rest of their column. Deterministic for equal input. */
+export function layoutFocus(graph: ObjectGraph, later: ReadonlySet<string> = new Set()): LayoutColumn[] {
   const initial = [...graph.nodes].sort((a, b) =>
     KIND_ORDER.indexOf(a.kind) - KIND_ORDER.indexOf(b.kind) || (a.name < b.name ? -1 : a.name > b.name ? 1 : 0));
   const present = new Set(initial.map(n => n.key));
@@ -139,6 +141,7 @@ export function layoutFocus(graph: ObjectGraph): LayoutColumn[] {
       columns[c] = [...columns[c]].sort((a, b) => weights.get(a)! - weights.get(b)!);
     }
   }
+  for (let c = 0; c < columns.length; c++) columns[c] = [...columns[c]].sort((a, b) => Number(later.has(a)) - Number(later.has(b)));
   // Policies sit directly below their first target table, else in the last column.
   for (const policy of initial.filter(n => n.kind === 'row-policy')) {
     const target = graph.edges.find(e => e.kind === 'policy-target' && e.from === policy.key && present.has(e.to))?.to;
