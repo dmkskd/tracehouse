@@ -37,9 +37,17 @@ describe('object browser entry point', () => {
     expect(menu().textContent).toContain('all databases');
     fireEvent.click(menu());
     const panel = within(screen.getByRole('dialog', { name: 'Shown objects' }));
-    fireEvent.click(panel.getByRole('button', { name: /default user/ }));
+    const defaultUser = within(panel.getByRole('group', { name: 'Default user' }));
+    expect(defaultUser.getByRole('button', { name: 'Show' }).getAttribute('aria-pressed')).toBe('true');
+    fireEvent.click(defaultUser.getByRole('button', { name: 'Hide' }));
     expect(menu().textContent).toContain('all databases · no default');
     expect([...document.querySelectorAll('.node')].map(n => n.textContent)).not.toContainEqual(expect.stringContaining('default'));
+    expect(defaultUser.getByRole('button', { name: 'Hide' }).getAttribute('aria-pressed')).toBe('true');
+    fireEvent.click(defaultUser.getByRole('button', { name: 'Show' }));
+    expect(menu().textContent).not.toContain('no default');
+    expect(defaultUser.getByRole('button', { name: 'Show' }).getAttribute('aria-pressed')).toBe('true');
+    expect([...document.querySelectorAll('.node')].some(n => n.textContent?.includes('default'))).toBe(true);
+    fireEvent.click(defaultUser.getByRole('button', { name: 'Hide' }));
     browse.mockClear();
     fireEvent.click(panel.getByRole('button', { name: 'system' }));
     expect(browse).toHaveBeenCalledWith(true);

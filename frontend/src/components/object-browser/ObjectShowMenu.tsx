@@ -32,10 +32,11 @@ export function ObjectShowMenu({ systemTables, onSystemTables, defaultUser, onDe
         </span>
         <span />
         <span className="note">Collects the catalog again</span>
-        <span className="phrase">Hide</span>
-        <span className="choices">
-          <button type="button" aria-pressed={!defaultUser} title="The default user, its links and privileges held only by it"
-            onClick={() => onDefaultUser(!defaultUser)}>{!defaultUser && <span aria-hidden="true">✓ </span>}default user</button>
+        <span className="phrase">Default user</span>
+        <span className="choices" role="group" aria-label="Default user">
+          <button type="button" aria-pressed={defaultUser} onClick={() => onDefaultUser(true)}>Show</button>
+          <button type="button" aria-pressed={!defaultUser} title="Hide the default user, its links and privileges held only by it"
+            onClick={() => onDefaultUser(false)}>Hide</button>
         </span>
       </div>
       <div className="footer">
