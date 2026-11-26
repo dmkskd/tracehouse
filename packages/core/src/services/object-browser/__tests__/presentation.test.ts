@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { projectCatalogGraph, projectGraph } from '../projections/graph.js';
-import { withoutDefaultUser } from '../projections/filters.js';
+import { withoutDefaultUser, databaseOf, inDatabases } from '../projections/filters.js';
 import { groupOperations, privilegeGroup, toggleOperation, privilegeTree, tableLevelOperations } from '../model/privileges.js';
 import { objectKey } from '../model/types.js';
 import type { Attributes, Capture, ObjectKind, Relationship, Source } from '../model/types.js';
@@ -345,5 +345,119 @@ describe('source notices', () => {
       // Row policies sit with the tables they filter; other coverage stays out of the columns.
       [columns[3].title, ['Missing SELECT permission on system.row_policies']],
     ]);
+  });
+});
+
+describe('catalog database filtering', () => {
+  it('keeps access configuration, selected policies and referenced storage without dangling edges', () => {
+    const capture = demo();
+    const otherTable = key('table', 'other.db', 'events');
+    const sharedStorage = key('location', 'shared');
+    const otherStorage = key('location', 'other');
+    for (const [k, kind, name, source] of [
+      [otherTable, 'table', 'other.db.events', 'tables'],
+      [sharedStorage, 'location', 'shared', 'tables'],
+      [otherStorage, 'location', 'other', 'tables'],
+    ] as const) capture.observations.push({ key: k, kind, name, source, host: 'ch-1', attributes: {} });
+    for (const [from, to] of [[table('events'), sharedStorage], [otherTable, sharedStorage], [otherTable, otherStorage]]) {
+      capture.relationships.push({ id: `${from}>${to}`, host: 'ch-1', from, to, kind: 'points-to', label: 'stored on', source: 'tables', evidence: {} });
+    }
+    const graph = projectGraph(capture);
+    expect(databaseOf(graph.nodes.find(n => n.key === otherTable)!)).toBe('other.db');
+    expect(inDatabases(graph, null)).toBe(graph);
+    const filtered = inDatabases(graph, [DB]);
+    const keys = new Set(filtered.nodes.map(n => n.key));
+    expect(keys.has(otherTable)).toBe(false);
+    expect(keys.has(sharedStorage)).toBe(true);
+    expect(keys.has(otherStorage)).toBe(false);
+    expect(keys.has(key('row-policy', DB, 'events', 'tenant'))).toBe(true);
+    expect(keys.has(SCOPE)).toBe(true);
+    expect(filtered.edges.every(e => keys.has(e.from) && keys.has(e.to))).toBe(true);
+    expect(inDatabases(graph, []).nodes.every(n => ['user', 'role', 'grant-scope'].includes(n.kind))).toBe(true);
+  });
+});
+
+describe('catalog database row alignment', () => {
+  function crossDatabaseCatalog() {
+    const capture = demo();
+    capture.observations = [];
+    capture.relationships = [];
+    const add = (db: string, name: string, engine = 'MergeTree') => {
+      const k = key('table', db, name);
+      capture.observations.push({ key: k, name: `${db}.${name}`, kind: 'table', source: 'tables', host: 'ch-1', attributes: { database: db, name, engine } });
+      return k;
+    };
+    const sources = Array.from({ length: 25 }, (_, i) => add('a.raw', `events_${String(i).padStart(2, '0')}`));
+    const other = add('z_other', 'events');
+    const mv = add('reporting', 'events_mv', 'MaterializedView');
+    const target = add('reporting', 'events');
+    const view = add('a.raw', 'report_view', 'View');
+    const link = (from: string, to: string, kind: Relationship['kind']) => capture.relationships.push({ id: `${from}>${to}`, host: 'ch-1', from, to, kind, label: kind, source: 'tables', evidence: {} });
+    link(sources[0], mv, 'insert-trigger');link(mv, target, 'writes-to');link(target, view, 'reads-from');
+    return { graph: projectGraph(capture), sources, other, mv, target, view };
+  }
+  const positions = (columns: ReturnType<typeof layoutCatalog>) => new Map(columns.flatMap((c, column) => c.keys.flatMap((key, row) => isGap(key) ? [] : [[key, { column, row }] as const])));
+
+  it('groups displayed owners into rows while preserving a cross-database MV and view chain', () => {
+    const { graph, sources, mv, target, view } = crossDatabaseCatalog();
+    const columns = layoutCatalog(graph, null);
+    const at = positions(columns);
+    expect(at.get(sources[0])!.row).toBe(0);
+    expect(at.get(view)!.row).toBe(0); // belongs to raw, despite reading reporting.events
+    expect(at.get(mv)!.row).toBe(20);
+    expect(at.get(target)!.row).toBe(20);
+    for (const [from, to] of [[sources[0], mv], [mv, target], [target, view]]) {
+      expect(at.get(from)!.column).toBeLessThan(at.get(to)!.column);
+    }
+    expect(graph.edges).toHaveLength(3);
+    for (const column of columns) expect(column.keys.filter(k => !isGap(k)).length).toBeLessThanOrEqual(20);
+    expect(layoutCatalog(graph, null)).toEqual(columns);
+  });
+
+  it('reserves rows only for visible cards and realigns after Show more on the original column index', () => {
+    const { graph, sources, other, mv } = crossDatabaseCatalog();
+    const initial = layoutCatalog(graph, null);
+    const sourceColumn = initial.findIndex(c => c.keys.includes(sources[0]));
+    expect(initial[sourceColumn].total).toBe(26);
+    expect(initial[sourceColumn].hidden).toBe(6);
+    expect(positions(initial).has(other)).toBe(false);
+    expect(positions(initial).get(mv)!.row).toBe(20);
+    const pages: number[] = [];pages[sourceColumn] = 1;
+    const expanded = layoutCatalog(graph, null, undefined, pages);
+    const withoutDatabases = layoutCatalog(graph, null, undefined, pages, undefined, false);
+    expect(withoutDatabases.map(c => [c.total, c.hidden])).toEqual(expanded.map(c => [c.total, c.hidden]));
+    expect(new Set(withoutDatabases.flatMap(c => c.keys.filter(k => !isGap(k))))).toEqual(new Set(expanded.flatMap(c => c.keys.filter(k => !isGap(k)))));
+
+    expect(expanded[sourceColumn].hidden).toBe(0);
+    expect(positions(expanded).has(other)).toBe(true);
+    expect(positions(expanded).get(mv)!.row).toBe(26);
+    expect(expanded[sourceColumn].keys.filter(k => !isGap(k))).toHaveLength(26);
+    const routed = withRoutes(graph, expanded, true);
+    for (const edge of graph.edges) {
+      expect(positions(routed.columns).get(edge.from)!.column).toBeLessThan(positions(routed.columns).get(edge.to)!.column);
+    }
+  });
+});
+
+
+describe('catalog database filtering before grant expansion', () => {
+  it('does not spend the match limit on tables outside the selected databases', () => {
+    const capture = demo();
+    const user = key('user', 'reader'), scope = key('grant-scope', 'global');
+    const observation = (database: string, name: string) => ({ key: key('table', database, name), kind: 'table' as const, name: `${database}.${name}`,
+      host: 'ch-1', source: 'tables' as const, attributes: { database, name, engine: 'MergeTree' } });
+    capture.observations = [
+      { key: user, kind: 'user', name: 'reader', host: 'ch-1', source: 'users', attributes: {} },
+      { key: scope, kind: 'grant-scope', name: 'SELECT ON *.*', host: 'ch-1', source: 'grants', attributes: { access_type: 'SELECT', database: null, table: null, table_operations: ['SELECT'] } },
+      ...Array.from({ length: 101 }, (_, i) => observation('a', `table_${i}`)), observation('z.with.dots', 'events'),
+    ];
+    capture.relationships = [{ id: 'grant', from: user, to: scope, kind: 'grant', label: 'grant', host: 'ch-1', source: 'grants', evidence: { database: null, table: null } }];
+    const unfiltered = projectCatalogGraph(capture, user);
+    expect(unfiltered.edges.filter(e => e.kind === 'candidate-scope')).toHaveLength(100);
+    const filtered = inDatabases(projectCatalogGraph(capture, user, undefined, undefined, ['z.with.dots']), ['z.with.dots']);
+    expect(filtered.nodes.filter(n => n.kind === 'table')).toHaveLength(1);
+    expect(filtered.edges.filter(e => e.kind === 'candidate-scope').map(e => e.to)).toEqual([key('table', 'z.with.dots', 'events')]);
+    expect(filtered.scopeMatches).toBeUndefined();
+    expect(projectCatalogGraph(capture, user, undefined, undefined, []).edges.filter(e => e.kind === 'candidate-scope')).toHaveLength(0);
   });
 });

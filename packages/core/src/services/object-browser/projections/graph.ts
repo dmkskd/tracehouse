@@ -134,11 +134,12 @@ export function dataOutside(graph: ObjectGraph, table: string): Set<string> {
  * in `scopeMatches`. Without a focus object only exact scopes link. Only privileges that
  * include one of `operations` link (coversAny). Edges remain host-specific metadata
  * candidates, including revokes as evidence. */
-export function projectCatalogGraph(capture: Capture, focus?: string, maxMatches = 100, operations: readonly string[] = ['SELECT']): ObjectGraph {
+export function projectCatalogGraph(capture: Capture, focus?: string, maxMatches = 100, operations: readonly string[] = ['SELECT'], databases: readonly string[] | null = null): ObjectGraph {
   const relationships = [...capture.relationships];
   const focusKind = capture.observations.find(o => o.key === focus)?.kind;
   const scoped = focus && focusKind ? FOCUS_TABLES[focusKind](capture, focus) : null;
   const tables = capture.observations.filter(o => o.kind === 'table' && !o.attributes.unresolvedReference
+    && (databases === null || databases.includes(String(o.attributes.database)))
     && (!scoped || scoped.has(o.key)));
   const matched = new Map<string, Set<string>>(), linked = new Map<string, Set<string>>();
   const scopes = new Map(capture.observations.filter(o => o.kind === 'grant-scope').map(o => [o.key, o.attributes]));

@@ -14,10 +14,14 @@ export function ObjectTypeIcon({ card }: { card: ObjectCard }) {
  * style places the dot and summary in its own way. The hover card (ObjectHoverCard) adds the rest. */
 /** `includes` replaces the summary line with the selected access types a broad privilege includes. */
 export function ObjectCardBody({ card, includes }: { card: ObjectCard; includes?: readonly string[] }) {
+  const database = card.hover.context?.label === 'db' ? card.hover.context.value : undefined;
+  const suffix = database ? ` · ${database}` : '';
+  const summary = suffix && card.summary.endsWith(suffix) ? card.summary.slice(0, -suffix.length) : card.summary;
   return <span className="node-copy">
-    <span className="type-label" aria-hidden="true">{card.label}</span>
+    <span className="type-label" aria-hidden="true">{database ? `${database} · ${card.label}` : card.label}</span>
+    {database && <span className="node-database" title={database}>{database}</span>}
     <strong><span className="type-dot" aria-hidden="true" />{card.title}</strong>
-    <small>{includes ? <span className="node-includes" title={`Includes ${includes.join(', ')}`}>Includes {includes.join(', ')}</span> : card.summary}{!includes && card.hosts && ` · ${card.hosts}`}{card.flags.map(flag => <span key={flag} className="badge warn">{FLAG_LABELS[flag]}</span>)}</small>
+    <small>{includes ? <span className="node-includes" title={`Includes ${includes.join(', ')}`}>Includes {includes.join(', ')}</span> : summary}{!includes && card.hosts && ` · ${card.hosts}`}{card.flags.map(flag => <span key={flag} className="badge warn">{FLAG_LABELS[flag]}</span>)}</small>
   </span>;
 }
 

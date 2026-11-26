@@ -16,6 +16,7 @@ import { absentFrom, accessEvaluator, describeAccess, describeReach, cancelledAc
  * table by name when the catalog does not hold both. Other data objects are then dimmed. */
 export function useObjectFocus(project: (focus: string | null, from?: Capture) => ObjectGraph | null, operations: readonly string[] = ['SELECT'],
   capture?: Capture | null, read?: (input: Omit<Investigation, 'connection'>) => Promise<Capture>) {
+  const showDatabase = useUserPreferenceStore(s => s.objectDatabaseColumn);
   const [open, setOpen] = useState(false);
   const [trail, setTrail] = useState<FocusTrail>([]);
   const origin = trail.at(-1) ?? null;
@@ -104,9 +105,9 @@ export function useObjectFocus(project: (focus: string | null, from?: Capture) =
   // With no path, the empty access columns and a data column give the broken line its length and end.
   const noPathShown = !!noPath;
   const layout = useMemo(() => {
-    const columns = drawn.graph ? layoutFocus(drawn.graph, outside) : [];
+    const columns = drawn.graph ? layoutFocus(drawn.graph, outside, showDatabase) : [];
     return withRoutes(drawn.graph, noPathShown ? withPathColumns(columns, `No table reached for ${operations.join(' or ')}`) : columns, route);
-  }, [drawn, route, outside, noPathShown, operations]);
+  }, [drawn, route, outside, noPathShown, operations, showDatabase]);
   const chainUser = useMemo(() => {
     const key = context?.principal ?? trail[0];
     const node = source?.nodes.find(n => n.key === key);

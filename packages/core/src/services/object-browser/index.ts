@@ -5,7 +5,7 @@ export { groupOperations, toggleOperation, type TableOperation } from './model/p
 export { collectObjects, notGrantedSources, type CollectOptions } from './collectors/collect.js';
 export { projectGraph, projectCatalogGraph, provenancePaths, coversOperation, coversAny, privilegesOutside, coveredOperations, dataOutside } from './projections/graph.js';
 export { lineage, focusGraphFrom, searchGraph, essentialEdges } from './projections/focus.js';
-export { withoutDefaultUser } from './projections/filters.js';
+export { withoutDefaultUser, databaseOf, inDatabases } from './projections/filters.js';
 export { KINDS, type KindSpec } from './model/kinds.js';
 export { REFERENCE_METHODS, type ReferenceMethod } from './model/methods.js';
 export { DETAIL_GROUPS, RELATIONSHIPS, isRevokeEdge, type DetailGroup, type RelationshipFamily, type RelationshipKind, type RelationshipSpec } from './model/relationships.js';

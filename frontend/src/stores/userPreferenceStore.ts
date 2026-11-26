@@ -58,6 +58,8 @@ interface UserPreferenceState {
   setTimeTravelFilters: (filters: Partial<TimelineFilters>) => void;
   objectDiagramStyle: ObjectDiagramStyle;
   setObjectDiagramStyle: (style: ObjectDiagramStyle) => void;
+  objectDatabaseColumn: boolean;
+  toggleObjectDatabaseColumn: () => void;
   objectDiagramLines: ObjectDiagramLines;
   toggleObjectDiagramLine: (name: keyof ObjectDiagramLines) => void;
 }
@@ -93,6 +95,8 @@ export const useUserPreferenceStore = create<UserPreferenceState>()(
       setTimeTravelFilters: (filters) => set({ timeTravelFilters: filters }),
       objectDiagramStyle: 'cards',
       setObjectDiagramStyle: (style) => set({ objectDiagramStyle: style }),
+      objectDatabaseColumn: false,
+      toggleObjectDatabaseColumn: () => set(state => ({ objectDatabaseColumn: !state.objectDatabaseColumn })),
       objectDiagramLines: OBJECT_DIAGRAM_LINE_DEFAULTS,
       toggleObjectDiagramLine: (name) => set(state => ({ objectDiagramLines: { ...state.objectDiagramLines, [name]: !state.objectDiagramLines[name] } })),
     }),

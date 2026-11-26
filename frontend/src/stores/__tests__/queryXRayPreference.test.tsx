@@ -99,3 +99,20 @@ describe('object diagram line options', () => {
     expect(useUserPreferenceStore.getState().objectDiagramLines).toEqual({ route: true, highlight: false, essential: false });
   });
 });
+
+
+describe('object database column preference', () => {
+  it('defaults to hidden, preserves saved choices and restores them on rehydration', async () => {
+    expect(useUserPreferenceStore.getInitialState().objectDatabaseColumn).toBe(false);
+    act(() => useUserPreferenceStore.setState({ objectDatabaseColumn: true }));
+    act(() => useUserPreferenceStore.getState().toggleObjectDatabaseColumn());
+    expect(useUserPreferenceStore.getState().objectDatabaseColumn).toBe(false);
+    const saved = localStorage.getItem('dmkskd-tracehouse-app:tracehouse-view-preference')!;
+    expect(JSON.parse(saved).state.objectDatabaseColumn).toBe(false);
+    act(() => useUserPreferenceStore.setState({ objectDatabaseColumn: true }));
+    localStorage.setItem('dmkskd-tracehouse-app:tracehouse-view-preference', saved);
+    await act(() => useUserPreferenceStore.persist.rehydrate());
+    expect(useUserPreferenceStore.getState().objectDatabaseColumn).toBe(false);
+    act(() => useUserPreferenceStore.setState({ objectDatabaseColumn: true }));
+  });
+});

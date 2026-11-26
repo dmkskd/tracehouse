@@ -29,13 +29,22 @@ export const page = css`
   .graph-frame { position: relative; }
   .wire-layer { position: absolute; inset: 0; pointer-events: none; }
   .lanes { position: relative; display: grid; row-gap: 24px; align-items: start; }
+  [data-databases] .lane-items { position: relative; border: 0; background: transparent; overflow: visible; }
+  .database-card { position: absolute; height: 66px; box-sizing: border-box; display: block; width: 100%; margin: 0; padding: 10px; text-align: left; background: var(--bg-secondary); }
+  [data-style=bars] .database-card, [data-style=columns] .database-card { height: 58px; }
+  [data-style=metro] .database-card { height: 32px; padding: 4px 10px; }
+  [data-style=metro] .database-card small { display: none; }
+  .database-card strong { display: block; font-size: 12px; font-weight: 500; overflow-wrap: anywhere; }
+  .database-card small { display: block; margin-top: 4px; font-size: 11px; color: var(--text-muted); }
+  .database-card[aria-pressed=true] { border-color: var(--border-accent); background: color-mix(in srgb, var(--accent-blue, #6696cf) 10%, var(--bg-secondary)); }
   .lane { position: relative; align-self: stretch; }
   .band-start::before { content: ''; position: absolute; top: 0; bottom: 0; left: -20px; border-left: 1px dashed var(--border-primary); }
   .band-title { height: 14px; margin-bottom: 8px; font-size: 10px; font-weight: 600; letter-spacing: .08em; text-transform: uppercase; color: var(--text-muted); white-space: nowrap; }
   /* An empty row keeps rows level across columns: same height and spacing as a card of the style. */
-  .slot { height: 52px; margin-bottom: 16px; }
-  [data-style=bars] .slot { height: 44px; margin-bottom: 24px; }
+  .slot { height: 66px; margin-bottom: 16px; }
+  [data-style=bars] .slot { height: 58px; margin-bottom: 24px; }
   [data-style=columns] .slot { display: none; }
+  [data-style=columns] [data-database-layout] .slot { display: block; box-sizing: border-box; height: 58px; margin: 0; }
   [data-style=metro] .slot { height: 32px; margin: 18px 0; }
   .waypoint { height: 6px; margin-bottom: 12px; }
   /* Focus fills the modal: the graph takes the height left under the header, so zoom stays in view. */
@@ -62,6 +71,7 @@ export const page = css`
   .node:hover .node-focus, .node:focus-within .node-focus { opacity: 1; }
   .node-copy { display: block; min-width: 0; padding-right: 18px; }
   .object-symbol { color: var(--tone); display: inline-block; font: 25px/1.2 sans-serif; vertical-align: middle; margin-right: 8px; }
+  .node-database { display: block; font-size: 10px; line-height: 14px; color: var(--text-secondary); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
   .node strong { display: block; font-size: 13px; font-weight: 500; line-height: 18px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
   .node small { display: block; font-size: 11px; line-height: 16px; color: var(--text-muted); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
   .node small .badge { margin: 0 0 0 6px; padding: 0 4px; }
@@ -81,18 +91,18 @@ export const page = css`
   .no-path text { font-size: 11px; fill: var(--accent-red, #f85149); }
   .node[data-selected=true] { outline: 1.5px solid var(--accent-purple, #9672c9); outline-offset: 2px; }
   .node[data-origin=true] strong { font-weight: 600; }
-  .node.dim { opacity: .3; }
-  .node.dim:hover { opacity: .8; }
+  .node.dim, .database-card.dim { opacity: .3; }
+  .node.dim:hover, .database-card.dim:hover { opacity: .8; }
   .badge { display: inline-block; margin: 7px 4px 0 0; font-size: 10px; color: var(--text-secondary); background: var(--bg-secondary); padding: 3px 5px; border-radius: 3px; }
   .badge.warn { color: var(--accent-yellow, #ba913f); }
 
   /* A · cards: small cards with a soft shadow. */
-  [data-style=cards] .node { height: 52px; margin-bottom: 16px; padding: 8px 10px; background: var(--bg-raised, var(--bg-secondary)); border-radius: 6px;
+  [data-style=cards] .node { height: 66px; margin-bottom: 16px; padding: 8px 10px; background: var(--bg-raised, var(--bg-secondary)); border-radius: 6px;
     box-shadow: 0 1px 2px rgba(16, 24, 40, .06), 0 0 0 1px rgba(16, 24, 40, .05); }
   [data-style=cards] .node[data-origin=true] { box-shadow: 0 0 0 1.5px var(--accent-purple, #9672c9); }
 
   /* B · bars: a colored bar with its label, as in Resource usage. */
-  [data-style=bars] .node { height: 44px; margin-bottom: 24px; padding: 4px 8px 4px 18px; background: transparent; border-radius: 3px; }
+  [data-style=bars] .node { height: 58px; margin-bottom: 24px; padding: 4px 8px 4px 18px; background: transparent; border-radius: 3px; }
   [data-style=bars] .node::before { content: ''; position: absolute; left: 0; top: 0; bottom: 0; width: 8px; border-radius: 2px; background: var(--tone); }
   [data-style=bars] .node:hover { background: color-mix(in srgb, var(--tone, #9672c9) 6%, transparent); }
   [data-style=bars] .node[data-origin=true]::before { width: 10px; }
@@ -101,7 +111,7 @@ export const page = css`
   /* C · columns: each column is one list. */
   [data-style=columns] .lane-items { background: var(--bg-secondary); border: 1px solid var(--border-primary); border-radius: 8px; overflow: hidden; }
   [data-style=columns] .lane-items:empty { border: 0; }
-  [data-style=columns] .node { height: 44px; padding: 5px 12px; }
+  [data-style=columns] .node { height: 58px; padding: 5px 12px; }
   [data-style=columns] .lane-items > * + * { border-top: 1px solid var(--border-secondary, var(--border-primary)); }
   [data-style=columns] .node[data-origin=true] { background: color-mix(in srgb, var(--accent-purple, #9672c9) 10%, var(--bg-secondary)); }
   [data-style=columns] .node[data-selected=true] { outline-offset: -2px; }
@@ -111,6 +121,7 @@ export const page = css`
   /* D · metro: pills with the summary as a colored caption above. */
   [data-style=metro] .node { height: 32px; margin: 18px 0; padding: 0 14px; background: var(--bg-secondary); border: 1px solid var(--border-primary); border-radius: 16px; }
   [data-style=metro] .node strong { font-size: 12.5px; line-height: 30px; }
+  [data-style=metro] .node-database { display: none; }
   [data-style=metro] .node small { display: none; }
   [data-style=metro] .type-label { display: block; position: absolute; left: 14px; right: 0; top: -16px; font-size: 9.5px; line-height: 12px; font-weight: 600; letter-spacing: .06em; text-transform: uppercase; color: var(--tone); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
   [data-style=metro] .node[data-origin=true] { background: var(--accent-purple, #9672c9); border-color: var(--accent-purple, #9672c9); }

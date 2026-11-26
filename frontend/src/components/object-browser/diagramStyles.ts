@@ -21,7 +21,7 @@ const elbow = (x1: number, y1: number, x2: number, y2: number) => {
   return ` L${mx - dx * r} ${y1} Q${mx} ${y1} ${mx} ${y1 + dy * r} L${mx} ${y2 - dy * r} Q${mx} ${y2} ${mx + dx * r} ${y2} L${x2} ${y2}`;
 };
 const line = (width: number, opacity: number, arrow = false): LineWeight => ({ width, opacity, arrow });
-/** Name-matched privilege links are possible matches, often to every table: faint in every style. */
+/** Name-matched privilege links are possible matches, often to every table: faint until highlighted. */
 const CANDIDATE = line(1, .16);
 
 /** Diagram styles under trial. Each says how lines are drawn; the cards' look is the

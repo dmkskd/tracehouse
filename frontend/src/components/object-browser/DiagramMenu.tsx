@@ -20,6 +20,8 @@ export function DiagramMenu() {
   const setStyle = useUserPreferenceStore(s => s.setObjectDiagramStyle);
   const lines = useUserPreferenceStore(s => s.objectDiagramLines);
   const toggleLine = useUserPreferenceStore(s => s.toggleObjectDiagramLine);
+  const databaseColumn = useUserPreferenceStore(s => s.objectDatabaseColumn);
+  const toggleDatabaseColumn = useUserPreferenceStore(s => s.toggleObjectDatabaseColumn);
   useEffect(() => {
     if (!open) return;
     const close = (event: MouseEvent) => { if (!root.current?.contains(event.target as Node)) setOpen(false); };
@@ -34,6 +36,9 @@ export function DiagramMenu() {
       <div className="menu-section" role="radiogroup" aria-labelledby={`${id}-style`}><span id={`${id}-style`} className="menu-heading">Style</span>
         {(Object.entries(DIAGRAM_STYLES) as [ObjectDiagramStyle, typeof DIAGRAM_STYLES[ObjectDiagramStyle]][]).map(([name, entry]) =>
           <label key={name} title={entry.hint}><input type="radio" name={`${id}-style`} checked={style === name} onChange={() => setStyle(name)} />{entry.label}</label>)}
+      </div>
+      <div className="menu-section" role="group" aria-labelledby={`${id}-columns`}><span id={`${id}-columns`} className="menu-heading">Columns</span>
+        <label title="Show databases aligned with their tables · Default: off"><input type="checkbox" checked={databaseColumn} onChange={toggleDatabaseColumn} />Show Database</label>
       </div>
       <div className="menu-section" role="group" aria-labelledby={`${id}-lines`}><span id={`${id}-lines`} className="menu-heading">Lines</span>
         {OPTIONS.map(([name, label, hint]) => <label key={name} title={`${hint} · Default: ${OBJECT_DIAGRAM_LINE_DEFAULTS[name] ? 'on' : 'off'}`}>

@@ -2,6 +2,7 @@ import type { Coverage, GraphEdge, GraphNode, ObjectGraph, ObjectKind, Source } 
 import { RELATIONSHIPS } from '../model/relationships.js';
 import { isAccessType, objectTypeOf, type ObjectType } from './cards.js';
 import { lineage } from '../projections/focus.js';
+import { databaseOf } from '../projections/filters.js';
 
 /** Access configuration, ClickHouse data objects, and external storage. */
 export type LayoutBand = 'access' | 'data' | 'external';
@@ -32,7 +33,7 @@ const KIND_ORDER = Object.keys(KIND_LAYOUT) as ObjectKind[];
  * and its connections stay reachable, and selection never reorders cards. Access objects in
  * `later` (privilegesOutside) follow the rest of their lane, so the bound keeps the others;
  * those connected to the selection stay in place, next to the lines that reach them. */
-export function layoutCatalog(graph: ObjectGraph, selected: string | null, maxNodes = 100, pages: readonly number[] = [], later: ReadonlySet<string> = new Set()): LayoutColumn[] {
+export function layoutCatalog(graph: ObjectGraph, selected: string | null, maxNodes = 100, pages: readonly number[] = [], later: ReadonlySet<string> = new Set(), groupDatabases = true): LayoutColumn[] {
   const perColumn = catalogPageSize(maxNodes);
   // Gaps do not count toward the bound, and trailing gaps are dropped. The selected object
   // and everything connected to it stay past the bound, so selecting a user shows its grants.
@@ -50,7 +51,37 @@ export function layoutCatalog(graph: ObjectGraph, selected: string | null, maxNo
       .sort((a, b) => Number(later.has(a) && !connected.has(a)) - Number(later.has(b) && !connected.has(b))) }));
   const data = new Set(graph.nodes.filter(n => KIND_LAYOUT[n.kind].band !== 'access').map(n => n.key));
   const flow = layoutFocus({ nodes: graph.nodes.filter(n => data.has(n.key)), edges: graph.edges.filter(e => data.has(e.from) && data.has(e.to)) });
-  return [...access, ...flow].map(bound);
+  const columns = [...access, ...flow].map(bound);
+  return groupDatabases ? alignCatalogDatabases(graph, columns) : columns;
+}
+
+/** Group only displayed data cards into database bands after pagination. Column ranks
+ * still describe dependencies, including cross-database views; ownership only sets rows.
+ * Hidden cards reserve no rows. Each database starts with an object at its band's top. */
+function alignCatalogDatabases(graph: ObjectGraph, columns: LayoutColumn[]): LayoutColumn[] {
+  const nodes = new Map(graph.nodes.map(n => [n.key, n]));
+  const groups = new Map<string, Map<number, string[]>>();
+  columns.forEach((column, c) => {
+    if (column.band !== 'data') return;
+    for (const key of column.keys) {
+      const node = nodes.get(key), database = node && databaseOf(node);
+      if (database === undefined) continue;
+      if (!groups.has(database)) groups.set(database, new Map());
+      const group = groups.get(database)!;
+      group.set(c, [...group.get(c) ?? [], key]);
+    }
+  });
+  const rows = new Map<number, string[]>();
+  let start = 0;
+  for (const group of groups.values()) {
+    for (const [c, keys] of group) {
+      const out = rows.get(c) ?? [];
+      while (out.length < start) out.push(`${GAP}database:${c}:${out.length}`);
+      out.push(...keys);rows.set(c, out);
+    }
+    start += Math.max(...[...group.values()].map(keys => keys.length));
+  }
+  return columns.map((column, c) => column.band === 'data' ? { ...column, keys: rows.get(c) ?? [] } : column);
 }
 const LANES = [...new Map(KIND_ORDER.map(kind => [KIND_LAYOUT[kind].lane, KIND_LAYOUT[kind].band])).entries()];
 /** Cards per catalog column before "more": an equal share of `maxNodes` across the lanes. */
@@ -73,7 +104,7 @@ const SWEEPS = 4;
 /** Layered layout for a focus graph: access configuration first, then data flow,
  * so a materialized view chain reads left to right. Objects in `later` (privilegesOutside)
  * follow the rest of their column. Deterministic for equal input. */
-export function layoutFocus(graph: ObjectGraph, later: ReadonlySet<string> = new Set()): LayoutColumn[] {
+export function layoutFocus(graph: ObjectGraph, later: ReadonlySet<string> = new Set(), groupDatabases = false): LayoutColumn[] {
   const initial = [...graph.nodes].sort((a, b) =>
     KIND_ORDER.indexOf(a.kind) - KIND_ORDER.indexOf(b.kind) || (a.name < b.name ? -1 : a.name > b.name ? 1 : 0));
   const present = new Set(initial.map(n => n.key));
@@ -166,13 +197,14 @@ export function layoutFocus(graph: ObjectGraph, later: ReadonlySet<string> = new
     return out;
   });
   const kind = new Map(initial.map(n => [n.key, n.kind]));
-  return rowed.map(keys => {
+  const laidOut: LayoutColumn[] = rowed.map(keys => {
     const objects = keys.filter(k => !isGap(k));
     const title = columnTitle(objects.filter(k => type.get(k) !== 'row-policy').flatMap(k => COLUMN_TITLES[type.get(k)!] ?? []));
     // Access objects lead the layout and storage ends it, so one object names the band.
     const band = KIND_LAYOUT[kind.get(objects.find(k => kind.get(k) !== 'row-policy') ?? objects[0])!].band;
     return title ? { title, band, keys } : { band, keys };
   });
+  return groupDatabases ? alignCatalogDatabases(graph, laidOut) : laidOut;
 }
 
 /** The kind whose catalog column shows a source's objects. Role assignments show with roles. */

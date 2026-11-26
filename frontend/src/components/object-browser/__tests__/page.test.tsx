@@ -6,6 +6,7 @@ const { browse, collect, read, update, state } = vi.hoisted(() => ({ browse: vi.
 vi.mock('../useObjectCapture', () => ({ useObjectCapture: () => ({ browse, collect, read, capture: state.capture, loading: false, error: null, connected: true }) }));
 vi.mock('../../../hooks/useUrlState', () => ({ useUrlState: () => ({ state: state.url, update }) }));
 import { MemoryRouter, Route, Routes, useLocation } from 'react-router-dom';
+import { useUserPreferenceStore } from '../../../stores/userPreferenceStore';
 import { ObjectBrowserPage } from '../ObjectBrowserPage';
 // Stands in for another page: shows the URL and the origin it was opened with.
 function Landed() {
@@ -20,7 +21,7 @@ const renderPage = (from?: { path: string; label: string }) => render(<MemoryRou
 const memory = new Map<string, string>();
 vi.stubGlobal('localStorage', { getItem: (k: string) => memory.get(k) ?? null, setItem: (k: string, v: string) => memory.set(k, v), removeItem: (k: string) => memory.delete(k) });
 describe('object browser entry point', () => {
-  beforeEach(() => { vi.clearAllMocks();state.capture = null;state.url = { ob_selected: '' }; });
+  beforeEach(() => { useUserPreferenceStore.setState({ objectDatabaseColumn: false, objectDiagramStyle: 'cards', objectDiagramLines: { route: false, highlight: true, essential: false } });vi.clearAllMocks();state.capture = null;state.url = { ob_selected: '' }; });
   it('loads the catalog on entry without executing the restored scoped question', () => {
     renderPage();
     expect(browse).toHaveBeenCalledTimes(1);
@@ -52,6 +53,132 @@ describe('object browser entry point', () => {
     fireEvent.click(panel.getByRole('button', { name: 'system' }));
     expect(browse).toHaveBeenCalledWith(true);
     expect(menu().textContent).toContain('system · no default');
+  });
+  it('highlights database cards independently of the Show filter without collecting again', () => {
+    useUserPreferenceStore.setState({ objectDatabaseColumn: true });
+    const table = (database: string) => ({ key: JSON.stringify(['test', 'table', database, 'trips']), name: `${database}.trips`,
+      kind: 'table' as const, source: 'tables' as const, host: 'ch-1', attributes: { database, name: 'trips', engine: 'MergeTree' } });
+    state.capture = { schemaVersion: 1, mode: 'catalog', investigation: { connection: 'test', principal: '', database: '', table: '', operation: 'SELECT' },
+      startedAt: '', completedAt: 'done', hosts: [{ host: 'ch-1', version: '26.9.7.9' }], coverage: [], verdict: { kind: 'not-checked', reason: 'provenance' },
+      observations: [table('taxi'), table('lake.with.dots')], relationships: [] };
+    renderPage();
+    browse.mockClear();
+    const databases = [...document.querySelectorAll<HTMLElement>('.lane')].find(lane => lane.querySelector('.lane-title span')?.textContent === 'Databases')!;
+    expect(databases.dataset.band).toBe('data');
+    expect(databases.previousElementSibling?.getAttribute('data-band')).toBe('access');
+    expect([...document.querySelectorAll('.node-database')].map(n => n.textContent)).toEqual(['lake.with.dots', 'taxi']);
+    fireEvent.click(within(databases).getByRole('button', { name: /taxi/ }));
+    expect(document.querySelectorAll('.node-database')).toHaveLength(2);
+    expect(screen.getByRole('button', { name: 'Shown objects' }).textContent).toContain('all databases');
+    expect(document.querySelectorAll('.node.dim')).toHaveLength(1);
+    expect(within(databases).getByRole('button', { name: /lake.with.dots/ }).classList.contains('dim')).toBe(true);
+    expect(within(databases).getByRole('button', { name: /taxi/ }).classList.contains('dim')).toBe(false);
+    expect(within(databases).getByRole('button', { name: /taxi/ }).getAttribute('aria-pressed')).toBe('true');
+    fireEvent.click(within(databases).getByRole('button', { name: /taxi/ }));
+    expect(document.querySelectorAll('.node.dim')).toHaveLength(0);
+    expect(document.querySelectorAll('.database-card.dim')).toHaveLength(0);
+    const taxi = [...document.querySelectorAll<HTMLElement>('.node-select')].find(el => el.querySelector('.node-database')?.textContent === 'taxi')!;
+    fireEvent.click(taxi);
+    expect(within(databases).getByRole('button', { name: /lake.with.dots/ }).classList.contains('dim')).toBe(true);
+    expect(within(databases).getByRole('button', { name: /taxi/ }).classList.contains('dim')).toBe(false);
+    fireEvent.click(screen.getByRole('button', { name: 'Clear selection' }));
+    expect(document.querySelectorAll('.database-card.dim')).toHaveLength(0);
+    fireEvent.click(screen.getByRole('button', { name: 'Shown objects' }));
+    const menu = within(screen.getByRole('dialog', { name: 'Shown objects' }));
+    expect(menu.queryByRole('button', { name: /^Only$/ })).toBeNull();
+    fireEvent.click(menu.getByRole('button', { name: 'None' }));
+    fireEvent.click(menu.getByRole('checkbox', { name: /taxi/ }));
+    fireEvent.click(menu.getByRole('checkbox', { name: /lake.with.dots/ }));
+    expect(document.querySelectorAll('.node-database')).toHaveLength(2);
+    fireEvent.click(menu.getByRole('checkbox', { name: /taxi/ }));
+    expect([...document.querySelectorAll('.node-database')].map(n => n.textContent)).toEqual(['lake.with.dots']);
+    fireEvent.click(menu.getByRole('checkbox', { name: /lake.with.dots/ }));
+    expect(screen.getByText(/No tables or views in the selected databases/)).toBeTruthy();
+    fireEvent.change(menu.getByRole('searchbox', { name: 'Find database' }), { target: { value: 'missing' } });
+    expect(menu.getByText('No matching databases')).toBeTruthy();
+    fireEvent.click(menu.getByRole('button', { name: 'All' }));
+    expect(document.querySelectorAll('.node-database')).toHaveLength(2);
+    fireEvent.change(menu.getByRole('searchbox', { name: 'Find database' }), { target: { value: 'taxi' } });
+    expect(menu.getAllByRole('checkbox')).toHaveLength(1);
+    fireEvent.click(menu.getByRole('button', { name: 'None' }));
+    fireEvent.click(menu.getByRole('button', { name: 'Reset to default' }));
+    expect(document.querySelectorAll('.node-database')).toHaveLength(2);
+    expect(browse).not.toHaveBeenCalled();
+  });
+  it('routes each privilege match through the target database and retains cross-database data flow', () => {
+    useUserPreferenceStore.setState({ objectDatabaseColumn: true });
+    const key = (kind: string, ...names: string[]) => JSON.stringify(['test', kind, ...names]);
+    const raw = key('table', 'raw', 'events'), view = key('table', 'reporting', 'events_view');
+    const user = key('user', 'alice'), scope = key('grant-scope', 'select');
+    state.capture = { schemaVersion: 1, mode: 'catalog', investigation: { connection: 'test', principal: '', database: '', table: '', operation: 'SELECT' },
+      startedAt: '', completedAt: 'done', hosts: [{ host: 'ch-1', version: '26.9.7.9' }], coverage: [], verdict: { kind: 'not-checked', reason: 'provenance' },
+      observations: [
+        { key: user, name: 'alice', kind: 'user', source: 'users', host: 'ch-1', attributes: {} },
+        { key: scope, name: 'SELECT ON *.*', kind: 'grant-scope', source: 'grants', host: 'ch-1', attributes: { access_type: 'SELECT', table_operations: ['SELECT'] } },
+        { key: raw, name: 'raw.events', kind: 'table', source: 'tables', host: 'ch-1', attributes: { database: 'raw', name: 'events', engine: 'MergeTree' } },
+        { key: view, name: 'reporting.events_view', kind: 'table', source: 'tables', host: 'ch-1', attributes: { database: 'reporting', name: 'events_view', engine: 'View' } },
+      ],
+      relationships: [
+        { id: 'grant', host: 'ch-1', from: user, to: scope, kind: 'grant', label: 'grant', source: 'grants', evidence: { database: null, table: null } },
+        { id: 'read', host: 'ch-1', from: raw, to: view, kind: 'reads-from', label: 'reads from', source: 'tables', evidence: {} },
+      ] };
+    renderPage();
+    const alice = [...document.querySelectorAll<HTMLElement>('.node-select')].find(el => el.textContent?.includes('alice'))!;
+    const beforeHover = [...document.querySelectorAll('.lane')].map(lane => [...lane.querySelectorAll('.node-select')].map(el => el.textContent));
+    expect(document.querySelectorAll('path[data-via-database]')).toHaveLength(0);
+    fireEvent.mouseEnter(alice.closest('.node')!);
+    expect(document.querySelectorAll('path[data-via-database]')).toHaveLength(2);
+    expect([...document.querySelectorAll('path[data-via-database]')].every(el => Number(el.getAttribute('opacity')) >= 0.5)).toBe(true);
+    expect(alice.getAttribute('aria-pressed')).toBe('false');
+    expect([...document.querySelectorAll('.lane')].map(lane => [...lane.querySelectorAll('.node-select')].map(el => el.textContent))).toEqual(beforeHover);
+    fireEvent.mouseLeave(alice.closest('.node')!);
+    expect(document.querySelectorAll('path[data-via-database]')).toHaveLength(0);
+    fireEvent.click(screen.getByRole('button', { name: 'Diagram' }));
+    fireEvent.click(screen.getByRole('checkbox', { name: 'Essential lines' }));
+    fireEvent.mouseEnter(alice.closest('.node')!);
+    expect(document.querySelectorAll('path[data-via-database]')).toHaveLength(0);
+    fireEvent.mouseLeave(alice.closest('.node')!);
+    fireEvent.click(screen.getByRole('checkbox', { name: 'Essential lines' }));
+    fireEvent.click(screen.getByRole('radio', { name: 'Columns' }));
+    const slot = document.querySelector('.slot')!;
+    expect(slot).toBeTruthy();
+    expect(getComputedStyle(slot).display).toBe('block');
+    expect(getComputedStyle(slot).height).toBe('58px');
+    fireEvent.click(screen.getByRole('radio', { name: 'Cards' }));
+    fireEvent.click(screen.getByRole('button', { name: 'Diagram' }));
+
+    expect(browse).toHaveBeenCalledTimes(1);
+    fireEvent.click(alice);
+    expect([...document.querySelectorAll('path[data-via-database]')].map(el => el.getAttribute('data-via-database')).sort()).toEqual(['raw', 'reporting']);
+    expect([...document.querySelectorAll('path[data-via-database]')].every(el => Number(el.getAttribute('opacity')) >= 0.5)).toBe(true);
+    expect(document.querySelectorAll('path[marker-end]')).toHaveLength(1);
+    expect(document.querySelectorAll('.node-database')).toHaveLength(2);
+    const edgeCount = document.querySelectorAll('.wire-layer > g[mask] > path').length;
+    fireEvent.click(screen.getByRole('button', { name: 'Diagram' }));
+    const toggle = screen.getByRole('checkbox', { name: 'Show Database' });
+    expect((toggle as HTMLInputElement).checked).toBe(true);
+    fireEvent.click(toggle);
+    expect(document.querySelectorAll('.database-card')).toHaveLength(0);
+    expect(document.querySelectorAll('path[data-via-database]')).toHaveLength(0);
+    expect(document.querySelectorAll('.wire-layer > g[mask] > path')).toHaveLength(edgeCount);
+    expect(document.querySelectorAll('.node-database')).toHaveLength(2);
+    expect(document.querySelectorAll('path[marker-end]')).toHaveLength(1);
+    fireEvent.click(toggle);
+    expect(document.querySelectorAll('.database-card')).toHaveLength(2);
+    expect(document.querySelectorAll('path[data-via-database]')).toHaveLength(2);
+    fireEvent.click(screen.getByRole('button', { name: 'Diagram' }));
+    fireEvent.click(screen.getByRole('button', { name: 'Focus raw.events' }));
+    const dialog = screen.getByRole('dialog', { name: 'Object focus' });
+    expect(dialog.querySelectorAll('.database-card')).toHaveLength(2);
+    // Focus scopes the privilege match to raw.events; the downstream view keeps its data-flow link.
+    expect(dialog.querySelectorAll('path[data-via-database]')).toHaveLength(1);
+    fireEvent.click(within(dialog).getByRole('button', { name: 'Diagram' }));
+    fireEvent.click(within(dialog).getByRole('checkbox', { name: 'Show Database' }));
+    expect(document.querySelectorAll('.database-card')).toHaveLength(0);
+    expect(document.querySelectorAll('path[data-via-database]')).toHaveLength(0);
+    expect(dialog.querySelectorAll('.node-database')).toHaveLength(2);
+    fireEvent.click(within(dialog).getByRole('checkbox', { name: 'Show Database' }));
+    expect(dialog.querySelectorAll('.database-card')).toHaveLength(2);
   });
   it('explains a source without SELECT in its column, not in the coverage notes', () => {
     state.capture = {
@@ -166,7 +293,7 @@ describe('object browser entry point', () => {
     expect(within(dialog).getByRole('heading', { level: 2 }).textContent).toContain('read_only');
     // Rooted at the user, both links of the path are drawn: user → privilege and privilege → table.
     expect(within(dialog).getByRole('button', { name: /sampler\s*Materialized view/i })).toBeTruthy();
-    expect(dialog.querySelectorAll('.wire-layer > path')).toHaveLength(2);
+    expect(dialog.querySelectorAll('.wire-layer > g[mask] > path')).toHaveLength(2);
     fireEvent.click(within(dialog).getByRole('button', { name: /Back to tracehouse.sampler/ }));
     expect(within(dialog).getByRole('heading', { level: 2 }).textContent).toContain('tracehouse.sampler');
     expect(within(dialog).getByRole('button', { name: /read_only user/i })).toBeTruthy();
@@ -204,7 +331,7 @@ describe('object browser entry point', () => {
     fireEvent.click(within(dialog).getByRole('button', { name: /Diagram/ }));
     const toggle = (name: string) => within(dialog).getByRole('checkbox', { name });
     expect([toggle('Route lines'), toggle('Highlight on hover')].map(b => (b as HTMLInputElement).checked)).toEqual([false, true]);
-    const opacities = () => [...dialog.querySelectorAll('.wire-layer > path')].map(path => path.getAttribute('opacity'));
+    const opacities = () => [...dialog.querySelectorAll('.wire-layer > g[mask] > path')].map(path => path.getAttribute('opacity'));
     const before = opacities().map(Number);
     fireEvent.mouseEnter(within(dialog).getByRole('button', { name: /reader\s*user/i }).closest('.node')!);
     // The reader's lineage runs to the privilege, the table and storage; the other user's grant dims.
