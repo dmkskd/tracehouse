@@ -81,8 +81,25 @@ describe('object browser entry point', () => {
     fireEvent.click(taxi);
     expect(within(databases).getByRole('button', { name: /lake.with.dots/ }).classList.contains('dim')).toBe(true);
     expect(within(databases).getByRole('button', { name: /taxi/ }).classList.contains('dim')).toBe(false);
+    const lake = [...document.querySelectorAll<HTMLElement>('.node-select')].find(el => el.querySelector('.node-database')?.textContent === 'lake.with.dots')!;
+    // Hover temporarily overrides the selected table for both cards and database summaries.
+    fireEvent.mouseEnter(lake.closest('.node')!);
+    expect(lake.closest('.node')!.classList.contains('dim')).toBe(false);
+    expect(taxi.closest('.node')!.classList.contains('dim')).toBe(true);
+    expect(taxi.getAttribute('aria-pressed')).toBe('true');
+    expect(within(databases).getByRole('button', { name: /lake.with.dots/ }).classList.contains('dim')).toBe(false);
+    expect(within(databases).getByRole('button', { name: /taxi/ }).classList.contains('dim')).toBe(true);
+    fireEvent.mouseLeave(lake.closest('.node')!);
+    expect(lake.closest('.node')!.classList.contains('dim')).toBe(true);
+    expect(taxi.closest('.node')!.classList.contains('dim')).toBe(false);
     fireEvent.click(screen.getByRole('button', { name: 'Clear selection' }));
     expect(document.querySelectorAll('.database-card.dim')).toHaveLength(0);
+    // The hover option must also distinguish related cards without a clicked selection.
+    fireEvent.mouseEnter(lake.closest('.node')!);
+    expect(lake.closest('.node')!.classList.contains('dim')).toBe(false);
+    expect(taxi.closest('.node')!.classList.contains('dim')).toBe(true);
+    fireEvent.mouseLeave(lake.closest('.node')!);
+    expect(document.querySelectorAll('.node.dim')).toHaveLength(0);
     fireEvent.click(screen.getByRole('button', { name: 'Shown objects' }));
     const menu = within(screen.getByRole('dialog', { name: 'Shown objects' }));
     expect(menu.queryByRole('button', { name: /^Only$/ })).toBeNull();

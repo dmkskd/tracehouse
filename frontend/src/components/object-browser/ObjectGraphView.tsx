@@ -97,7 +97,11 @@ export function ObjectGraphView({ graph, cards, columns, selected, onSelect, onF
   const databaseMembers = new Set(graph.nodes.filter(n => databaseSelected && databaseOf(n) === databaseSelected).map(n => n.key));
   const otherDatabaseMembers = new Set(graph.nodes.filter(n => databaseSelected && databaseOf(n) !== undefined && databaseOf(n) !== databaseSelected).map(n => n.key));
   const outsideDatabase = (key: string) => otherDatabaseMembers.has(key);
-  const dimmed = (key: string) => outsideDatabase(key) || (!showAll && !!selected && !connected.has(key));
+  // Hover previews the same lineage for cards and connectors, then restores the
+  // persistent object/database selection when the pointer leaves.
+  const dimmed = (key: string) => highlight && hovered
+    ? !hoverConnected.has(key)
+    : outsideDatabase(key) || (!showAll && !!selected && !connected.has(key));
   const activeDatabases = new Set(graph.nodes.filter(n => n.kind === 'table' && !dimmed(n.key) && !muted?.has(n.key)).map(databaseOf));
   const linked = (from: string, to: string) => highlight && hovered
     ? hoverConnected.has(from) && hoverConnected.has(to)
