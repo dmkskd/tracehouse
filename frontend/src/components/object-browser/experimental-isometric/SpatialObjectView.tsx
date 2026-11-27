@@ -12,6 +12,7 @@ import { MAX_ZOOM, MIN_ZOOM, useCamera } from './useCamera';
 import { spatialStyles } from './styles';
 import { ZoomControls } from '../../common/ZoomControls';
 import { CameraControlsMenu } from './CameraControlsMenu';
+import { SceneOverview } from './SceneOverview';
 import type { ObjectGraph } from '@tracehouse/core/services/object-browser';
 
 interface Props extends ObjectViewActions {
@@ -42,6 +43,7 @@ export default function SpatialObjectView({ model, hoverGraph, onHover, highligh
   }, [allGroups, groupLimit, model.selected]);
   const [folds, setFolds] = useState<ReadonlyMap<string, boolean>>(new Map());
   const [pages, setPages] = useState<ReadonlyMap<string, number>>(new Map());
+  const [showMinimap, setShowMinimap] = useState(true);
   const [hovered, setHovered] = useState<string | null>(null);
   // Keys are scoped to this capture's graph by the model. A selected search result
   // is revealed even when its group was collapsed or the group has reached its cap.
@@ -49,7 +51,7 @@ export default function SpatialObjectView({ model, hoverGraph, onHover, highligh
   const scene = useMemo(() => layoutScene(model.graph, groups, expanded, pages, model.selected, privilegeLimit), [model.graph, groups, expanded, pages, model.selected, privilegeLimit]);
   const privilegeTotal = allGroups.filter(g => g.kind === 'scope').reduce((n, g) => n + g.keys.length, 0);
   const drawnPrivileges = scene.groups.filter(g => g.group.kind === 'scope').reduce((n, g) => n + g.tiles.length, 0);
-  const { viewport, scale, dragging, reset, zoomIn, zoomOut, reveal, frame, transform, pointerHandlers } = useCamera(scene.width, scene.height);
+  const { viewport, scale, dragging, reset, zoomIn, zoomOut, reveal, frame, transform, pointerHandlers, overviewCamera, centreOn } = useCamera(scene.width, scene.height);
   const { showTip, hideTip, tooltip } = useObjectHover(model.cards);
   const graph = useMemo(() => {
     if (!hovered || !highlight || !hoverGraph) return model.graph;
@@ -159,11 +161,14 @@ export default function SpatialObjectView({ model, hoverGraph, onHover, highligh
         </div>
       </div>
     </div>
+    <div className="spatial-navigation">
+    {showMinimap && <SceneOverview scene={scene} camera={overviewCamera} frame={frame} onNavigate={centreOn} />}
     <ZoomControls name="isometric view" zoom={scale} canZoomOut={scale > MIN_ZOOM} canZoomIn={scale < MAX_ZOOM}
       onZoomOut={zoomOut} onZoomIn={zoomIn} onReset={reset} resetTitle="Reset camera">
       {(model.selected || model.selectedDatabase) && <button onClick={onClear}>Clear selection</button>}
-      {actions}<CameraControlsMenu onReset={reset} />
+      {actions}<CameraControlsMenu onReset={reset} showMinimap={showMinimap} onMinimapChange={setShowMinimap} />
     </ZoomControls>
+    </div>
     </div>
     {groups.length < allGroups.length && <button className="spatial-group-more" onClick={() => setGroupLimit(n => n + 12)}>Show more groups · {allGroups.length - groups.length} hidden</button>}
     {model.coverage.filter(c => c.state !== 'readable').map((c, i) => <p key={`${c.source}:${i}`} className="spatial-caption">{c.source}: {c.state} · {c.reason}</p>)}

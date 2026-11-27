@@ -5,7 +5,7 @@ import { DiagramMenu } from './DiagramMenu';
 
 // The only import of the experiment outside its directory. Delete this loader and
 // the Spatial branch/choice to remove it; neither shared nor core code depends on it.
-const SpatialObjectView = lazy(() => import('./experimental-spatial/SpatialObjectView'));
+const SpatialObjectView = lazy(() => import('./experimental-isometric/SpatialObjectView'));
 
 const catalogView = css`
   display: flex; flex: 1; flex-direction: column; min-height: 0; min-width: 0;

@@ -7,14 +7,24 @@ export const spatialStyles = css`
   color: var(--text-primary);
   .spatial-gesture-help { position: absolute; width: 1px; height: 1px; overflow: hidden; clip-path: inset(50%); white-space: nowrap; }
   .spatial-canvas-wrap { position: relative; display: flex; flex: 1; min-width: 0; min-height: 380px; }
-  .spatial-canvas-wrap > [role=group] { max-width: calc(100% - 32px); flex-wrap: wrap; justify-content: flex-end; }
+  .spatial-navigation { position: absolute; right: 16px; bottom: 16px; z-index: 10; max-width: calc(100% - 32px); display: flex; flex-direction: column; align-items: stretch; gap: 8px; }
+  .spatial-navigation > [role=group] { position: static; max-width: 100%; flex-wrap: wrap; justify-content: flex-end; }
   .spatial-canvas-wrap .zoom-extra { flex-wrap: wrap; }
+  .spatial-overview { box-sizing: border-box; width: 0; min-width: 100%; padding: 8px; border: 1px solid var(--border-primary); border-radius: 8px; background: color-mix(in srgb, var(--bg-secondary) 80%, transparent); backdrop-filter: blur(6px); box-shadow: 0 2px 8px rgba(0,0,0,.12); font-size: 11px; color: var(--text-secondary); }
+  .spatial-overview svg { display: block; width: 100%; height: 96px; cursor: grab; touch-action: none; overflow: hidden; }
+  .spatial-map-group { fill: var(--bg-tertiary); stroke: var(--text-muted); stroke-width: 1; vector-effect: non-scaling-stroke; }
+  .spatial-map-group[data-kind=database] { stroke: #26948c; }
+  .spatial-map-group[data-kind=external] { stroke: #5996bc; }
+  .spatial-map-tile { fill: var(--text-muted); opacity: .5; }
+  .spatial-map-viewport { fill: #9672c9; fill-opacity: .18; stroke: #8950e8; stroke-width: 2; vector-effect: non-scaling-stroke; pointer-events: auto; }
   .spatial-controls-menu { position: relative; }
   .spatial-controls-panel { position: fixed; z-index: 100; box-sizing: border-box; width: min(340px, calc(100vw - 32px)); max-height: calc(100vh - 32px); overflow: auto;
     padding: 12px; border: 1px solid var(--border-primary); border-radius: 8px; background: var(--bg-secondary); color: var(--text-primary); box-shadow: 0 8px 28px rgba(0,0,0,.25); font-size: 12px; }
-  .spatial-controls-panel > button { display: inline-flex; align-items: center; gap: 6px; width: auto; padding: 6px 10px; text-align: left; font-size: 12px; font-weight: 500;
+  .spatial-camera-actions > button { display: inline-flex; align-items: center; gap: 6px; width: auto; padding: 6px 10px; text-align: left; font-size: 12px; font-weight: 500;
     background: var(--bg-tertiary); border: 1px solid var(--border-primary); border-radius: 5px; }
-  .spatial-controls-panel > button:hover { background: var(--bg-hover, var(--bg-primary)); border-color: var(--text-muted); }
+  .spatial-camera-actions > button:hover { background: var(--bg-hover, var(--bg-primary)); border-color: var(--text-muted); }
+  .spatial-camera-actions { display: flex; align-items: center; justify-content: space-between; gap: 12px; flex-wrap: wrap; padding-bottom: 12px; border-bottom: 1px solid var(--border-primary); }
+  .spatial-minimap-toggle { display: flex; align-items: center; gap: 8px; cursor: pointer; }
   .spatial-controls-panel dl { margin: 12px 0; }
   .spatial-controls-panel dl > div { display: grid; grid-template-columns: 55px 1fr; gap: 12px; margin-top: 8px; }
   .spatial-controls-panel dt { color: var(--text-secondary); }

@@ -25,6 +25,7 @@ describe('spatial aggregation and model-space geometry', () => {
   });
   it('keeps database ownership, bounded display and original anchors when groups collapse', () => {
     const graph = projectCatalogGraph(captureFixture(), key('user','bob'));
+    graph.nodes.push({ ...graph.nodes[0], key: 'external-fixture', name: 's3://fixture', kind: 'location' });
     const groups = groupObjects(graph), open = new Set(groups.map(g => g.id));
     const scene = layoutScene(graph, groups, open, new Map(), null);
     expect(scene.tiles.length).toBe(graph.nodes.length);

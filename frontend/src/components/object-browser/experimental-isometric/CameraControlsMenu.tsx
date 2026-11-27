@@ -2,7 +2,7 @@ import { useEffect, useId, useRef, useState } from 'react';
 import { EDGE_STYLES, REVOKE_EDGE_STYLE } from '../objectStyle';
 
 /** Camera actions and gesture help beside the shared zoom controls. */
-export function CameraControlsMenu({ onReset }: { onReset: () => void }) {
+export function CameraControlsMenu({ onReset, showMinimap, onMinimapChange }: { onReset: () => void; showMinimap: boolean; onMinimapChange: (show: boolean) => void }) {
   const [open, setOpen] = useState(false);
   const root = useRef<HTMLDivElement>(null);
   const trigger = useRef<HTMLButtonElement>(null);
@@ -32,7 +32,10 @@ export function CameraControlsMenu({ onReset }: { onReset: () => void }) {
   return <div ref={root} className="spatial-controls-menu">
     <button ref={trigger} type="button" aria-haspopup="dialog" aria-controls={id} aria-expanded={open} onClick={() => setOpen(value => !value)}>Controls</button>
     {open && <div ref={place} id={id} className="spatial-controls-panel" role="dialog" aria-label="Camera controls">
-      <button type="button" onClick={() => { onReset();setOpen(false);trigger.current?.focus(); }}><span aria-hidden="true">↺</span>Reset camera</button>
+      <div className="spatial-camera-actions">
+        <label className="spatial-minimap-toggle"><input type="checkbox" checked={showMinimap} onChange={event => onMinimapChange(event.target.checked)} />Show minimap</label>
+        <button type="button" onClick={() => { onReset();setOpen(false);trigger.current?.focus(); }}><span aria-hidden="true">↺</span>Reset camera</button>
+      </div>
       <dl>
         <div><dt>Rotate</dt><dd>Drag</dd></div>
         <div><dt>Pan</dt><dd>Shift-drag or middle-drag</dd></div>

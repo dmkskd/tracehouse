@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { CAMERA_HOME, fitCamera, MAX_ZOOM, MIN_ZOOM, orbitCamera, projectedBounds, zoomCamera, type CameraState } from '../useCamera';
+import { CAMERA_HOME, fitCamera, homeCamera, groundPoint, projectPoint, MAX_ZOOM, MIN_ZOOM, orbitCamera, projectedBounds, zoomCamera, type CameraState } from '../useCamera';
 
 const home: CameraState = { ...CAMERA_HOME, panX: 0, panY: 0, scale: 1 };
 
@@ -12,6 +12,22 @@ describe('spatial camera controls', () => {
     expect(bounds.height * fitted.scale).toBeLessThanOrEqual(552);
     expect(fitted.panX + (bounds.left + bounds.width / 2) * fitted.scale).toBeCloseTo(0);
     expect(fitted.panY + (bounds.top + bounds.height / 2) * fitted.scale).toBeCloseTo(0);
+  });
+  it('starts large catalogs at a readable scale and maps viewport points back to the ground plane', () => {
+    const size = { width: 1500, height: 900 };
+    const camera = homeCamera(2400, 6000, size);
+    expect(camera.scale).toBeGreaterThanOrEqual(.8);
+    const point = projectPoint(2400, 6000, camera.tilt, camera.rotation, 1200, 450);
+    expect(point.x * camera.scale + camera.panX).toBeCloseTo(0);
+    expect(point.y * camera.scale + camera.panY).toBeCloseTo(0);
+    for (const model of [{ x: 100, y: 100 }, { x: 2200, y: 5800 }]) {
+      const projected = projectPoint(2400, 6000, camera.tilt, camera.rotation, model.x, model.y);
+      const inverse = groundPoint(2400, 6000, camera, size, {
+        x: size.width / 2 + camera.panX + projected.x * camera.scale,
+        y: size.height / 2 + camera.panY + projected.y * camera.scale,
+      });
+      expect(inverse.x).toBeCloseTo(model.x);expect(inverse.y).toBeCloseTo(model.y);
+    }
   });
   it('orbits continuously around the scene and clamps tilt without limiting horizontal rotation', () => {
     expect(orbitCamera(home, 100, 50)).toMatchObject({ rotation: -80, tilt: 39 });

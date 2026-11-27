@@ -49,6 +49,25 @@ export function fitCamera(camera: CameraState, width: number, height: number, si
   return { ...camera, panX: -(bounds.left + bounds.width / 2) * scale, panY: -(bounds.top + bounds.height / 2) * scale, scale };
 }
 
+/** Readable entry framing is independent of a long catalog's full-scene fit. */
+export function homeCamera(width: number, height: number, size: Size): CameraState {
+  const fitted = fitCamera({ ...CAMERA_HOME, scale: 1, panX: 0, panY: 0 }, width, height, size);
+  const scale = Math.max(.8, fitted.scale);
+  const anchor = projectPoint(width, height, CAMERA_HOME.tilt, CAMERA_HOME.rotation, width / 2, Math.min(height / 2, 450));
+  return { ...fitted, scale, panX: -anchor.x * scale, panY: -anchor.y * scale };
+}
+
+/** Inverse ground-plane projection, used only for the overview viewport outline. */
+export function groundPoint(width: number, height: number, camera: CameraState, size: Size, point: Point): Point {
+  const u = (point.x - size.width / 2 - camera.panX) / camera.scale;
+  const v = (point.y - size.height / 2 - camera.panY) / camera.scale;
+  const tilt = camera.tilt * Math.PI / 180, rotation = camera.rotation * Math.PI / 180;
+  const denominator = 1 + v * Math.tan(tilt) / cameraDistance(width, height);
+  const x = u / denominator, y = v / (Math.cos(tilt) * denominator);
+  return { x: width / 2 + Math.cos(rotation) * x + Math.sin(rotation) * y,
+    y: height / 2 - Math.sin(rotation) * x + Math.cos(rotation) * y };
+}
+
 export function useCamera(width: number, height: number) {
   const viewport = useRef<HTMLDivElement>(null);
   const [size, setSize] = useState<Size>({ width: 800, height: 500 });
@@ -67,7 +86,7 @@ export function useCamera(width: number, height: number) {
       const next = { width: element.clientWidth, height: element.clientHeight };
       if (!next.width || !next.height) return;
       setSize(previous => previous.width === next.width && previous.height === next.height ? previous : next);
-      if (!initialized.current) { initialized.current = true;setCamera(c => fitCamera(c, width, height, next)); }
+      if (!initialized.current) { initialized.current = true;setCamera(homeCamera(width, height, next)); }
     };
     const frame = requestAnimationFrame(measure);
     const observer = typeof ResizeObserver === 'undefined' ? null : new ResizeObserver(measure);
@@ -133,7 +152,12 @@ export function useCamera(width: number, height: number) {
   }), [width, height, size]);
   return {
     viewport, ...camera, dragging, reveal,
-    reset: () => setCamera(c => fitCamera({ ...c, ...CAMERA_HOME }, width, height, size)),
+    overviewCamera: camera,
+    centreOn: (x: number, y: number) => setCamera(c => {
+      const point = projectPoint(width, height, c.tilt, c.rotation, x, y);
+      return { ...c, panX: -point.x * c.scale, panY: -point.y * c.scale };
+    }),
+    reset: () => setCamera(homeCamera(width, height, size)),
     zoomIn: () => setCamera(c => zoomCamera(c, 1.2, centre, size)),
     zoomOut: () => setCamera(c => zoomCamera(c, 1 / 1.2, centre, size)),
     frame: { width: size.width, height: size.height },

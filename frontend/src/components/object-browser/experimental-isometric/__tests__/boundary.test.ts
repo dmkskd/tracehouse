@@ -10,8 +10,8 @@ describe('removable spatial renderer boundary', () => {
     const scan = (dir: string) => {
       for (const item of readdirSync(dir, { withFileTypes: true })) {
         const path = join(dir, item.name);
-        if (item.isDirectory()) { if (item.name !== 'experimental-spatial' && item.name !== '__tests__') scan(path); }
-        else if (/\.[jt]sx?$/.test(item.name) && /(?:from\s*|import\s*\()['"][^'"]*experimental-spatial/.test(readFileSync(path, 'utf8'))) imports.push(relative(root, path));
+        if (item.isDirectory()) { if (item.name !== 'experimental-isometric' && item.name !== '__tests__') scan(path); }
+        else if (/\.[jt]sx?$/.test(item.name) && /(?:from\s*|import\s*\()['"][^'"]*experimental-isometric/.test(readFileSync(path, 'utf8'))) imports.push(relative(root, path));
       }
     };
     scan(root);

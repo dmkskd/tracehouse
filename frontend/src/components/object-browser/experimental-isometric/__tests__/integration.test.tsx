@@ -29,6 +29,13 @@ describe('spatial catalog integration', () => {
     fireEvent.click(within(spatial).getByRole('button', { name: 'Controls', exact: true }));
     const controls = screen.getByRole('dialog', { name: 'Camera controls' });
     expect(within(controls).getByText('Shift-drag or middle-drag')).toBeTruthy();
+    const minimapName = 'Catalog minimap. Click or drag to pan; arrow keys to move.';
+    const minimapToggle = within(controls).getByRole('checkbox', { name: 'Show minimap' });
+    expect(within(spatial).getByRole('button', { name: minimapName })).toBeTruthy();
+    fireEvent.click(minimapToggle);
+    expect(within(spatial).queryByRole('button', { name: minimapName })).toBeNull();
+    fireEvent.click(minimapToggle);
+    expect(within(spatial).getByRole('button', { name: minimapName })).toBeTruthy();
     fireEvent.keyDown(document, { key: 'Escape' });
     expect(screen.queryByRole('dialog', { name: 'Camera controls' })).toBeNull();
     expect(document.activeElement).toBe(within(spatial).getByRole('button', { name: 'Controls', exact: true }));
@@ -45,6 +52,12 @@ describe('spatial catalog integration', () => {
     expect(payments.textContent).toContain('needs SET ROLE');
     expect(within(spatial).getByRole('button', { name: 'Select db.with.dots.audit_log', exact: true }).textContent).toContain('revoked');
     const frame = spatial.querySelector('.spatial-scene')!;
+    const overview = within(spatial).getByRole('button', { name: 'Catalog minimap. Click or drag to pan; arrow keys to move.' });
+    const beforeNavigation = frame.getAttribute('style');
+    const outline = overview.querySelector('polygon')!.getAttribute('points');
+    fireEvent.keyDown(overview, { key: 'ArrowDown' });
+    expect(frame.getAttribute('style')).not.toBe(beforeNavigation);
+    expect(overview.querySelector('polygon')!.getAttribute('points')).not.toBe(outline);
     const beforeSelection = frame.getAttribute('style');
     fireEvent.click(payments);
     expect(frame.getAttribute('style')).toBe(beforeSelection);

@@ -48,16 +48,19 @@ gaps are preserved. Data-flow reachability is never used to compute access.
   sits at the canvas's bottom-right with Diagram and Controls. The Controls popover
   contains Reset camera, gesture instructions and a collapsible legend. Rotation and pan
   use gestures; there are no angle sliders or drag-mode buttons. Reset uses
-  both viewport dimensions, restores the initial angles and fits. A movement
+  the initial angles and readable entry framing (at least 80% zoom), centred near
+  the top of the catalog rather than shrinking to fit a long privilege lane. A movement
   threshold preserves clicks, and completed drags suppress object activation.
   Fitting and selection framing use the same perspective distance as the CSS camera.
+- `SceneOverview.tsx`: flat model-space overview with a projected viewport polygon.
+  The overview sits above the bottom-right toolbar. Clicking, dragging the viewport
+  outline, or using arrow keys pans without changing rotation or zoom.
 - `styles.ts`: scoped Emotion selectors, including extrusion and card-content styling.
 
 The shared `ObjectCardBody` and hover retain the same descriptions and warnings as
 the graph. The spatial view uses existing focus/detail dialogs rather than a second
 inspection implementation. Group/camera state is local and resets when unmounted.
-Scene headings distinguish Users, Roles, Privileges by scope, and Databases &
-storage. Privilege group titles use `ON <scope>` and grant cards identify holders.
+Scene headings distinguish Users, Roles, Privileges by scope, Databases, and External storage. Privilege group titles use `ON <scope>` and grant cards identify holders.
 The footer shows only the visible/collected object count. The shared-storage group
 appears only when the graph contains an external endpoint or remote disk; local
 storage-policy disks are intentionally not collected as external storage.
