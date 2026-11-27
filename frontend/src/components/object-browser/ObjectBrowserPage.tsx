@@ -81,11 +81,12 @@ export function ObjectBrowserPage() {
     const projected = projectFor(selectedKey, undefined, selectedDatabases);
     return projected ? inDatabases(projected, selectedDatabases) : null;
   }, [projectFor, selectedKey, selectedDatabases]);
-  const hoverEdges = useMemo(() => {
-    if (!catalogHover || !lines.highlight) return undefined;
-    const projected = projectFor(catalogHover, undefined, selectedDatabases);
-    return (projected && lines.essential ? essentialEdges(projected).graph : projected)?.edges.filter(e => e.kind === 'candidate-scope');
-  }, [catalogHover, lines.highlight, lines.essential, selectedDatabases, projectFor]);
+  const hoverGraph = useMemo(() => catalogHover && lines.highlight
+    ? projectFor(catalogHover, undefined, selectedDatabases) : null,
+  [catalogHover, lines.highlight, selectedDatabases, projectFor]);
+  const hoverEdges = useMemo(() =>
+    (hoverGraph && lines.essential ? essentialEdges(hoverGraph).graph : hoverGraph)?.edges.filter(e => e.kind === 'candidate-scope'),
+  [hoverGraph, lines.essential]);
   const searched = useMemo(() => graph ? searchGraph(graph, search, selectedKey) : null, [graph, search, selectedKey]);
   const matches = searched?.matches ?? [];
   // The catalog shares the diagram's line options with focus.
@@ -97,9 +98,13 @@ export function ObjectBrowserPage() {
     if (!searched) return { ...withRoutes(null, [], false), graph: null, stubs: [] as string[] };
     const drawn = lines.essential ? essentialEdges(searched.graph) : { graph: searched.graph, stubs: [] as string[] };
     // A source without SELECT is explained in the column its objects would fill.
-    const withCoverage = withSourceNotices(layoutCatalog(drawn.graph, selectedKey, undefined, pages, outside, showDatabaseColumn), capture?.coverage ?? []);
+    const withCoverage = withSourceNotices(layoutCatalog(searched.graph, selectedKey, undefined, pages, outside, showDatabaseColumn), capture?.coverage ?? []);
     return { ...withRoutes(drawn.graph, withCoverage, lines.route), ...drawn };
   }, [searched, selectedKey, lines.route, lines.essential, capture, pages, outside, showDatabaseColumn]);
+  // Hover keeps the catalog's rows and adds only transient essential connectors.
+  const catalogStubs = useMemo(() => hoverGraph && lines.essential
+    ? [...new Set([...catalogLayout.stubs, ...essentialEdges(hoverGraph).stubs])]
+    : catalogLayout.stubs, [hoverGraph, lines.essential, catalogLayout.stubs]);
   const chosen = graph?.nodes.find(n => n.key === selectedKey);
   // Coverage not already shown in a diagram column.
   const notes = capture?.coverage.filter(c => !isColumnNotice(c)) ?? [];
@@ -206,7 +211,7 @@ export function ObjectBrowserPage() {
     {loading && !capture && <ObjectsLoading />}
     {capture && graph && <>
       <div className="panel catalog-panel">
-        <ObjectGraphView routePreviews={lines.route} previewEdges={hoverEdges} onHover={setCatalogHover} databases={showDatabaseColumn ? { items: databases.filter(db => selectedDatabases === null || selectedDatabases.includes(db.name)), selected: selectedDatabase, onSelect: name => { choose(null);setSelectedDatabase(name === selectedDatabase ? null : name); } } : undefined} graph={catalogLayout.graph ?? graph} cards={cards} columns={catalogLayout.columns} routes={catalogLayout.routes} stubs={catalogLayout.stubs} muted={outside} covered={covered}
+        <ObjectGraphView lineageGraph={searched?.graph} hoverLineageGraph={hoverGraph} routePreviews={lines.route} previewEdges={hoverEdges} onHover={setCatalogHover} databases={showDatabaseColumn ? { items: databases.filter(db => selectedDatabases === null || selectedDatabases.includes(db.name)), selected: selectedDatabase, onSelect: name => { choose(null);setSelectedDatabase(name === selectedDatabase ? null : name); } } : undefined} graph={catalogLayout.graph ?? graph} cards={cards} columns={catalogLayout.columns} routes={catalogLayout.routes} stubs={catalogStubs} muted={outside} covered={covered}
           onMore={column => setPaged(() => { const next = [...pages]; next[column] = (next[column] ?? 0) + 1; return { key: pagesFor, pages: next }; })} highlight={lines.highlight} selected={selectedKey} onSelect={key => choose(key === selectedKey ? null : key)}
           onFocus={key => { choose(key);focus.openAt(key); }}
           diagramStyle={diagramStyle} actions={<>{(selectedKey || selectedDatabase) && <button onClick={() => choose(null)}>Clear selection</button>}<DiagramMenu /></>} />
@@ -242,7 +247,7 @@ export function ObjectBrowserPage() {
         </div>}
         <div className="focus-body">
         {focus.graph && <ObjectGraphView databases={showDatabaseColumn ? { items: focusDatabases, selected: focusDatabase,
-          onSelect: name => setFocusDatabase(name === focusDatabase ? null : name) } : undefined} graph={focus.graph} cards={focus.cards} columns={focus.columns} selected={focus.origin} origin={focus.origin} onSelect={focus.reroot} onOpen={focus.openDetail} showAll
+          onSelect: name => setFocusDatabase(name === focusDatabase ? null : name) } : undefined} graph={focus.graph} lineageGraph={focus.lineageGraph ?? undefined} cards={focus.cards} columns={focus.columns} selected={focus.origin} origin={focus.origin} onSelect={focus.reroot} onOpen={focus.openDetail} showAll
           muted={focus.muted} covered={focus.covered} noPath={focus.noPath} cancelledEdges={focus.cancelledEdges}
           routes={focus.routes} stubs={focus.stubs} highlight={lines.highlight} diagramStyle={diagramStyle}
           actions={<DiagramMenu />} />}

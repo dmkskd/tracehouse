@@ -23,7 +23,11 @@ type Point = { left: number; right: number; y: number };
  * collection, access or layout rules. `routes` (routeEdges) pass lines through
  * waypoints, `highlight` dims lines outside the hovered card's lineage, and
  * `diagramStyle` picks how cards and lines are drawn (DIAGRAM_STYLES). */
-export function ObjectGraphView({ graph, cards, columns, selected, onSelect, onFocus, onOpen, onMore, muted, covered, actions, caption, noPath, cancelledEdges = NO_STUBS, showAll = false, origin, routes, stubs = NO_STUBS, highlight = false, diagramStyle = 'cards', databases, previewEdges, routePreviews = false, onHover }: {
+export function ObjectGraphView({ graph, lineageGraph = graph, hoverLineageGraph, cards, columns, selected, onSelect, onFocus, onOpen, onMore, muted, covered, actions, caption, noPath, cancelledEdges = NO_STUBS, showAll = false, origin, routes, stubs = NO_STUBS, highlight = false, diagramStyle = 'cards', databases, previewEdges, routePreviews = false, onHover }: {
+  /** Complete relationships before drawing options remove connectors. */
+  lineageGraph?: ObjectGraph;
+  /** Complete projection scoped to the hovered object, independent of selection. */
+  hoverLineageGraph?: ObjectGraph | null;
   /** Transient privilege matches for hover; never changes layout or selection. */
   previewEdges?: readonly GraphEdge[];
   routePreviews?: boolean;
@@ -84,7 +88,7 @@ export function ObjectGraphView({ graph, cards, columns, selected, onSelect, onF
     window.addEventListener('scroll', hide, true);window.addEventListener('mousedown', hide, true);
     return () => { window.removeEventListener('scroll', hide, true);window.removeEventListener('mousedown', hide, true); };
   }, [tip]);
-  const connected = useMemo(() => selected ? lineage(graph, selected) : new Set<string>(), [graph, selected]);
+  const connected = useMemo(() => selected ? lineage(lineageGraph, selected) : new Set<string>(), [lineageGraph, selected]);
   const previewGraph = useMemo(() => {
     if (!hovered || !previewEdges) return graph;
     const present = new Set(graph.nodes.map(n => n.key));
@@ -92,7 +96,7 @@ export function ObjectGraphView({ graph, cards, columns, selected, onSelect, onF
     for (const edge of previewEdges) if (present.has(edge.from) && present.has(edge.to)) edges.set(edge.key, edge);
     return { ...graph, edges: [...edges.values()] };
   }, [graph, hovered, previewEdges]);
-  const hoverConnected = useMemo(() => hovered ? lineage(previewGraph, hovered) : new Set<string>(), [previewGraph, hovered]);
+  const hoverConnected = useMemo(() => hovered ? lineage(hoverLineageGraph ?? (lineageGraph === graph ? previewGraph : lineageGraph), hovered) : new Set<string>(), [hoverLineageGraph, lineageGraph, graph, previewGraph, hovered]);
   const databaseSelected = databases?.selected;
   const databaseMembers = new Set(graph.nodes.filter(n => databaseSelected && databaseOf(n) === databaseSelected).map(n => n.key));
   const otherDatabaseMembers = new Set(graph.nodes.filter(n => databaseSelected && databaseOf(n) !== undefined && databaseOf(n) !== databaseSelected).map(n => n.key));

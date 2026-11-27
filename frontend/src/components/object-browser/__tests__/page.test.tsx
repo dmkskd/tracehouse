@@ -154,7 +154,19 @@ describe('object browser entry point', () => {
     fireEvent.click(screen.getByRole('checkbox', { name: 'Essential lines' }));
     fireEvent.mouseEnter(alice.closest('.node')!);
     expect(document.querySelectorAll('path[data-via-database]')).toHaveLength(0);
+    expect(document.querySelectorAll('.node.dim')).toHaveLength(0);
+    expect(document.querySelectorAll('.database-card.dim')).toHaveLength(0);
     fireEvent.mouseLeave(alice.closest('.node')!);
+    fireEvent.click(alice);
+    // Simplifying connectors preserves selected lineage as well as hover lineage.
+    expect(document.querySelectorAll('path[data-via-database]')).toHaveLength(0);
+    expect(document.querySelectorAll('.node.dim')).toHaveLength(0);
+    expect(document.querySelectorAll('.database-card.dim')).toHaveLength(0);
+    const rawCard = screen.getByRole('button', { name: 'Focus raw.events' }).closest('.node')!;
+    fireEvent.mouseEnter(rawCard);
+    expect(document.querySelectorAll('.node.dim')).toHaveLength(0);
+    fireEvent.mouseLeave(rawCard);
+    fireEvent.click(screen.getByRole('button', { name: 'Clear selection' }));
     fireEvent.click(screen.getByRole('checkbox', { name: 'Essential lines' }));
     fireEvent.click(screen.getByRole('radio', { name: 'Columns' }));
     const slot = document.querySelector('.slot')!;
@@ -196,6 +208,49 @@ describe('object browser entry point', () => {
     expect(dialog.querySelectorAll('.node-database')).toHaveLength(2);
     fireEvent.click(within(dialog).getByRole('checkbox', { name: 'Show Database' }));
     expect(dialog.querySelectorAll('.database-card')).toHaveLength(2);
+    fireEvent.click(within(dialog).getByRole('checkbox', { name: 'Essential lines' }));
+    const focusTable = dialog.querySelector('.node[data-origin=true]')!;
+    fireEvent.mouseEnter(focusTable);
+    expect(dialog.querySelectorAll('path[data-via-database]')).toHaveLength(0);
+    expect(dialog.querySelectorAll('.node.dim')).toHaveLength(0);
+    expect(dialog.querySelectorAll('.database-card.dim')).toHaveLength(0);
+    fireEvent.mouseLeave(focusTable);
+  });
+  it('preserves scoped hover, essential stubs and selected tables beyond the page bound', () => {
+    useUserPreferenceStore.setState({ objectDatabaseColumn: true });
+    const table = (database: string, name: string) => ({ key: JSON.stringify(['test', 'table', database, name]), name: `${database}.${name}`,
+      kind: 'table' as const, source: 'tables' as const, host: 'ch-1', attributes: { database, name, engine: 'MergeTree' } });
+    state.capture = { schemaVersion: 1, mode: 'catalog', investigation: { connection: 'test', principal: '', database: '', table: '', operation: 'SELECT' },
+      startedAt: '', completedAt: 'done', hosts: [{ host: 'ch-1', version: '26.9.7.9' }], coverage: [], verdict: { kind: 'not-checked', reason: 'provenance' },
+      observations: [
+        { key: 'reader', name: 'reader', kind: 'user', source: 'users', host: 'ch-1', attributes: {} },
+        { key: 'unrelated', name: 'unrelated', kind: 'user', source: 'users', host: 'ch-1', attributes: {} },
+        { key: 'scope', name: 'SELECT', kind: 'grant-scope', source: 'grants', host: 'ch-1', attributes: { access_type: 'SELECT', database: 'raw', table_operations: ['SELECT'] } },
+        table('other', 'unrelated'), ...Array.from({ length: 25 }, (_, i) => table('raw', `events_${i}`)),
+      ], relationships: [{ id: 'grant', host: 'ch-1', from: 'reader', to: 'scope', kind: 'grant', label: 'grant', source: 'grants', evidence: { database: 'raw', table: null } }] };
+    renderPage();
+    const reader = screen.getByRole('button', { name: 'Focus reader' }).closest('.node')!;
+    const unrelated = screen.getByRole('button', { name: 'Focus unrelated' }).closest('.node')!;
+    const other = screen.getByRole('button', { name: 'Focus other.unrelated' }).closest('.node')!;
+    fireEvent.click(screen.getByRole('button', { name: 'Diagram' }));
+    fireEvent.click(screen.getByRole('checkbox', { name: 'Essential lines' }));
+    fireEvent.mouseEnter(reader);
+    expect(reader.classList.contains('dim')).toBe(false);
+    expect(unrelated.classList.contains('dim')).toBe(true);
+    expect(other.classList.contains('dim')).toBe(true);
+    const rawCards = () => [...document.querySelectorAll('.node')].filter(node => node.querySelector('.node-database')?.textContent === 'raw');
+    expect(rawCards().length).toBeGreaterThan(0);
+    expect(rawCards().every(node => !node.classList.contains('dim'))).toBe(true);
+    expect(document.querySelectorAll('.wire-layer > g[mask] > g circle')).toHaveLength(1);
+    expect(document.querySelectorAll('path[data-via-database]')).toHaveLength(0);
+    fireEvent.mouseLeave(reader);
+    expect(document.querySelectorAll('.node.dim')).toHaveLength(0);
+    expect(document.querySelectorAll('.wire-layer > g[mask] > g circle')).toHaveLength(0);
+    // Selection keeps all 25 related tables visible under either drawing option.
+    fireEvent.click(within(reader as HTMLElement).getByRole('button', { pressed: false, name: /reader/ }));
+    expect(rawCards()).toHaveLength(25);
+    fireEvent.click(screen.getByRole('checkbox', { name: 'Essential lines' }));
+    expect(rawCards()).toHaveLength(25);
   });
   it('explains a source without SELECT in its column, not in the coverage notes', () => {
     state.capture = {

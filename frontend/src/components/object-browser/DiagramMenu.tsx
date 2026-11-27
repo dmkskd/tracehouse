@@ -5,7 +5,7 @@ import { OBJECT_DIAGRAM_LINE_DEFAULTS, useUserPreferenceStore, type ObjectDiagra
 /** Diagram options: label and what the option does. */
 const OPTIONS: [keyof ObjectDiagramLines, string, string][] = [
   ['route', 'Route lines', 'Long lines run between cards'],
-  ['highlight', 'Highlight on hover', 'Hovering a card dims unrelated lines'],
+  ['highlight', 'Highlight on hover', 'Hovering a card dims unrelated objects and lines'],
   ['essential', 'Essential lines', 'Database and global privileges draw one short line'],
 ];
 

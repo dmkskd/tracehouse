@@ -131,7 +131,7 @@ export function useObjectFocus(project: (focus: string | null, from?: Capture) =
     /** What a by-name read did not find, such as `table system.query_logs`. */
     notFound: missing,
     open: open && !!source?.nodes.some(n => n.key === origin),
-    trail, origin, chainUser, returnUrl, graph: drawn.graph, context: activeContext, stubs: drawn.stubs, cards, columns: layout.columns, routes: layout.routes, detail,
+    trail, origin, chainUser, returnUrl, lineageGraph: graph, graph: drawn.graph, context: activeContext, stubs: drawn.stubs, cards, columns: layout.columns, routes: layout.routes, detail,
     /** Name of any object in the current projection, for the trail. */
     nameOf: (key: string) => source?.nodes.find(n => n.key === key)?.name ?? key,
     openAt: (key: string, principal: string | null = null, table: string | null = null) => {
