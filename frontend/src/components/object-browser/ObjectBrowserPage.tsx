@@ -1,10 +1,14 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useUrlState } from '../../hooks/useUrlState';
-import { describeObjects, essentialEdges, isColumnNotice, layoutCatalog, withRoutes, withSourceNotices, projectGraph, projectCatalogGraph, privilegesOutside, coveredOperations, toggleOperation, objectKey, tableKeyOf, searchGraph, withoutDefaultUser, databaseOf, inDatabases, parseObjectLink, resolveObjectLink, describeMissingLink, OBJECT_LINK_PARAMS, type Capture, type ObjectCard } from '@tracehouse/core/services/object-browser';
+import { isColumnNotice, projectGraph, projectCatalogGraph, toggleOperation, objectKey, tableKeyOf, searchGraph, withoutDefaultUser, inDatabases, parseObjectLink, resolveObjectLink, describeMissingLink, OBJECT_LINK_PARAMS, type Capture } from '@tracehouse/core/services/object-browser';
 import { useReturnToOrigin } from '../../hooks/useReturnToOrigin';
 import { useNavigate } from '../../hooks/useAppLocation';
 import { ObjectTypeIcon } from './ObjectCard';
 import { ObjectGraphView } from './ObjectGraphView';
+import { ObjectCatalogView } from './ObjectCatalogView';
+import { databaseGroups } from './shared/databaseGroups';
+import { useObjectPresentation } from './shared/useObjectPresentation';
+import type { ObjectViewModel } from './shared/ObjectViewModel';
 import { ModalWrapper } from '../../components/shared/ModalWrapper';
 import { ObjectDetailModal } from './ObjectDetailModal';
 import { useObjectCapture } from './useObjectCapture';
@@ -59,14 +63,7 @@ export function ObjectBrowserPage() {
   useEffect(() => { systemTablesRef.current = systemTables; }, [systemTables]);
   useEffect(() => { void browse(systemTablesRef.current); }, [browse]);
   const baseGraph = useMemo(() => capture ? projectGraph(capture) : null, [capture]);
-  const databases = useMemo(() => {
-    const counts = new Map<string, number>();
-    for (const node of baseGraph?.nodes ?? []) {
-      const db = databaseOf(node);
-      if (node.kind === 'table' && db !== undefined) counts.set(db, (counts.get(db) ?? 0) + 1);
-    }
-    return [...counts].sort(([a], [b]) => a.localeCompare(b)).map(([name, count]) => ({ name, count }));
-  }, [baseGraph]);
+  const databases = useMemo(() => databaseGroups(baseGraph), [baseGraph]);
   const selectedKey = selected ?? baseGraph?.nodes.find(n => JSON.stringify([n.kind,n.name]) === url.ob_selected)?.key ?? null;
   // Broad scopes expand for one object: the selection in the catalog, the starting point in focus.
   // `from` is another capture to project the same way, such as a focus read by name.
@@ -84,43 +81,24 @@ export function ObjectBrowserPage() {
   const hoverGraph = useMemo(() => catalogHover && lines.highlight
     ? projectFor(catalogHover, undefined, selectedDatabases) : null,
   [catalogHover, lines.highlight, selectedDatabases, projectFor]);
-  const hoverEdges = useMemo(() =>
-    (hoverGraph && lines.essential ? essentialEdges(hoverGraph).graph : hoverGraph)?.edges.filter(e => e.kind === 'candidate-scope'),
-  [hoverGraph, lines.essential]);
   const searched = useMemo(() => graph ? searchGraph(graph, search, selectedKey) : null, [graph, search, selectedKey]);
   const matches = searched?.matches ?? [];
-  // The catalog shares the diagram's line options with focus.
-  // Privileges without the catalog's operation: dimmed, and listed after the others.
-  const outside = useMemo(() => graph && capture?.mode === 'catalog' ? privilegesOutside(graph, catalogOperations) : undefined, [graph, capture, catalogOperations]);
-  // Broad privileges (ALL, ALTER) name the selected types they include.
-  const covered = useMemo(() => graph && capture?.mode === 'catalog' ? coveredOperations(graph, catalogOperations) : undefined, [graph, capture, catalogOperations]);
-  const catalogLayout = useMemo(() => {
-    if (!searched) return { ...withRoutes(null, [], false), graph: null, stubs: [] as string[] };
-    const drawn = lines.essential ? essentialEdges(searched.graph) : { graph: searched.graph, stubs: [] as string[] };
-    // A source without SELECT is explained in the column its objects would fill.
-    const withCoverage = withSourceNotices(layoutCatalog(searched.graph, selectedKey, undefined, pages, outside, showDatabaseColumn), capture?.coverage ?? []);
-    return { ...withRoutes(drawn.graph, withCoverage, lines.route), ...drawn };
-  }, [searched, selectedKey, lines.route, lines.essential, capture, pages, outside, showDatabaseColumn]);
-  // Hover keeps the catalog's rows and adds only transient essential connectors.
-  const catalogStubs = useMemo(() => hoverGraph && lines.essential
-    ? [...new Set([...catalogLayout.stubs, ...essentialEdges(hoverGraph).stubs])]
-    : catalogLayout.stubs, [hoverGraph, lines.essential, catalogLayout.stubs]);
+  const presentation = useObjectPresentation(graph, catalogOperations, capture, selectedKey);
+  const { cards, covered } = presentation;
+  const outside = capture?.mode === 'catalog' ? presentation.muted : undefined;
+  const catalogModel: ObjectViewModel | null = searched && capture ? {
+    graph: searched.graph, cards, selected: selectedKey, selectedDatabase,
+    databases: presentation.databases, coverage: capture.coverage, muted: outside, covered,
+    accessForTable: presentation.accessForTable,
+  } : null;
   const chosen = graph?.nodes.find(n => n.key === selectedKey);
   // Coverage not already shown in a diagram column.
   const notes = capture?.coverage.filter(c => !isColumnNotice(c)) ?? [];
-  const cards = useMemo(() => graph ? describeObjects(graph) : new Map<string, ObjectCard>(), [graph]);
   // Focus applies the catalog's access types too: matching privileges first, the rest dimmed.
   const focus = useObjectFocus(projectFor, catalogOperations, capture, read);
   const [focusDatabase, setFocusDatabase] = useState<string | null>(null);
   useEffect(() => { setFocusDatabase(null); }, [focus.origin, showDatabaseColumn]);
-  const focusDatabases = useMemo(() => {
-    const counts = new Map<string, number>();
-    for (const node of focus.graph?.nodes ?? []) {
-      const db = databaseOf(node);
-      if (node.kind === 'table' && db !== undefined) counts.set(db, (counts.get(db) ?? 0) + 1);
-    }
-    return [...counts].sort(([a], [b]) => a.localeCompare(b)).map(([name, count]) => ({ name, count }));
-  }, [focus.graph]);
+  const focusDatabases = useMemo(() => databaseGroups(focus.graph), [focus.graph]);
   const focusOrigin = focus.graph?.nodes.find(n => n.key === focus.origin);
   // Tables focus can answer for without a read: those in the catalog.
   const tableNames = useMemo(() => [...new Set(capture?.observations.filter(o => o.kind === 'table' && !o.attributes.unresolvedReference).map(o => o.name) ?? [])].sort(), [capture]);
@@ -211,10 +189,11 @@ export function ObjectBrowserPage() {
     {loading && !capture && <ObjectsLoading />}
     {capture && graph && <>
       <div className="panel catalog-panel">
-        <ObjectGraphView lineageGraph={searched?.graph} hoverLineageGraph={hoverGraph} routePreviews={lines.route} previewEdges={hoverEdges} onHover={setCatalogHover} databases={showDatabaseColumn ? { items: databases.filter(db => selectedDatabases === null || selectedDatabases.includes(db.name)), selected: selectedDatabase, onSelect: name => { choose(null);setSelectedDatabase(name === selectedDatabase ? null : name); } } : undefined} graph={catalogLayout.graph ?? graph} cards={cards} columns={catalogLayout.columns} routes={catalogLayout.routes} stubs={catalogStubs} muted={outside} covered={covered}
-          onMore={column => setPaged(() => { const next = [...pages]; next[column] = (next[column] ?? 0) + 1; return { key: pagesFor, pages: next }; })} highlight={lines.highlight} selected={selectedKey} onSelect={key => choose(key === selectedKey ? null : key)}
-          onFocus={key => { choose(key);focus.openAt(key); }}
-          diagramStyle={diagramStyle} actions={<>{(selectedKey || selectedDatabase) && <button onClick={() => choose(null)}>Clear selection</button>}<DiagramMenu /></>} />
+        {catalogModel && <ObjectCatalogView model={catalogModel} hoverGraph={hoverGraph} onHover={setCatalogHover}
+          lines={lines} diagramStyle={diagramStyle} pages={pages} showDatabaseColumn={showDatabaseColumn}
+          onMore={column => setPaged(() => { const next = [...pages]; next[column] = (next[column] ?? 0) + 1; return { key: pagesFor, pages: next }; })}
+          onSelect={key => choose(key === selectedKey ? null : key)} onFocus={key => { choose(key);focus.openAt(key); }}
+          onDatabase={name => { choose(null);setSelectedDatabase(name === selectedDatabase ? null : name); }} onClear={() => choose(null)} />}
         {selectedDatabases !== null && !graph.nodes.some(n => n.kind === 'table') && <p className="muted">No tables or views in the selected databases. Change Show › Databases to see more.</p>}
         {!graph.nodes.length && selectedDatabases === null && <p>No object records observed. Inspect source coverage above.</p>}
       </div>

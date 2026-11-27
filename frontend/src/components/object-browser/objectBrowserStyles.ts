@@ -142,12 +142,16 @@ export const page = css`
   .diagram-menu { position: relative; }
   .diagram-menu > button[data-active=true] { color: #58a6ff; background: rgba(88, 166, 255, .1); border-color: rgba(88, 166, 255, .35); }
   /* The menu sits in the zoom bar at the bottom of the diagram, so it opens upward. */
-  .diagram-panel { position: absolute; right: 0; bottom: calc(100% + 11px); z-index: 80; display: grid; gap: 8px; padding: 12px; width: max-content;
+  .diagram-panel { position: absolute; right: 0; bottom: calc(100% + 11px); z-index: 80; display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 14px 20px; padding: 14px; width: min(400px, calc(100vw - 48px)); box-sizing: border-box;
     background: var(--bg-secondary); border: 1px solid var(--border-primary); border-radius: 8px; box-shadow: 0 8px 28px rgba(0, 0, 0, .35); }
   .diagram-panel label { display: flex; align-items: center; gap: 6px; font-size: 11px; color: var(--text-primary); cursor: pointer; }
   .diagram-panel input { margin: 0; accent-color: #58a6ff; }
-  .diagram-panel .menu-section { display: grid; gap: 7px; }
-  .diagram-panel .menu-section + .menu-section { padding-top: 10px; border-top: 1px solid var(--border-primary); }
+  .diagram-panel .menu-section { display: grid; align-content: start; gap: 7px; }
+  .diagram-panel .menu-section:nth-child(n+3) { padding-top: 10px; border-top: 1px solid var(--border-primary); }
+  @media (max-width: 480px) {
+    .diagram-panel { grid-template-columns: 1fr; width: min(280px, calc(100vw - 32px)); }
+    .diagram-panel .menu-section + .menu-section { padding-top: 10px; border-top: 1px solid var(--border-primary); }
+  }
   .diagram-panel .menu-heading { font-size: 10px; font-weight: 600; letter-spacing: .06em; text-transform: uppercase; color: var(--text-muted); }
   .modal-close { border: 0; background: none; padding: 4px 6px; font-size: 14px; color: var(--text-muted); }
   .focus-header h2 { display: flex; align-items: center; gap: 6px; margin: 0; min-width: 0; white-space: nowrap; }

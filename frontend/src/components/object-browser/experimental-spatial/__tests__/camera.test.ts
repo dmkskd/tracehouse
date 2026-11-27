@@ -1,0 +1,33 @@
+import { describe, expect, it } from 'vitest';
+import { CAMERA_HOME, fitCamera, MAX_ZOOM, MIN_ZOOM, orbitCamera, projectedBounds, zoomCamera, type CameraState } from '../useCamera';
+
+const home: CameraState = { ...CAMERA_HOME, panX: 0, panY: 0, scale: 1 };
+
+describe('spatial camera controls', () => {
+  it('starts at tf-view angles and fits both projected dimensions into the viewport', () => {
+    expect(home.tilt).toBe(54);expect(home.rotation).toBe(-45);
+    const fitted = fitCamera({ ...home, panX: 123, panY: -76 }, 1400, 1800, { width: 1000, height: 600 });
+    const bounds = projectedBounds(1400, 1800, home.tilt, home.rotation);
+    expect(bounds.width * fitted.scale).toBeLessThanOrEqual(952);
+    expect(bounds.height * fitted.scale).toBeLessThanOrEqual(552);
+    expect(fitted.panX + (bounds.left + bounds.width / 2) * fitted.scale).toBeCloseTo(0);
+    expect(fitted.panY + (bounds.top + bounds.height / 2) * fitted.scale).toBeCloseTo(0);
+  });
+  it('orbits continuously around the scene and clamps tilt without limiting horizontal rotation', () => {
+    expect(orbitCamera(home, 100, 50)).toMatchObject({ rotation: -80, tilt: 39 });
+    expect(orbitCamera(home, 10000, 10000).rotation).toBeGreaterThanOrEqual(-180);
+    expect(orbitCamera(home, 10000, 10000).rotation).toBeLessThan(180);
+    expect(orbitCamera(home, 0, 10000).tilt).toBe(20);
+    expect(orbitCamera(home, 0, -10000).tilt).toBe(72);
+  });
+  it('keeps a model point under the cursor fixed when zooming after pan, including at limits', () => {
+    const size = { width: 1000, height: 600 }, pointer = { x: 130, y: 420 };
+    const start = { ...home, panX: 175, panY: -43, scale: .7 };
+    for (const factor of [1.5, .2, 1000, .00001]) {
+      const next = zoomCamera(start, factor, pointer, size);
+      expect((pointer.x - size.width / 2 - next.panX) / next.scale).toBeCloseTo((pointer.x - size.width / 2 - start.panX) / start.scale);
+      expect((pointer.y - size.height / 2 - next.panY) / next.scale).toBeCloseTo((pointer.y - size.height / 2 - start.panY) / start.scale);
+      expect(next.scale).toBeGreaterThanOrEqual(MIN_ZOOM);expect(next.scale).toBeLessThanOrEqual(MAX_ZOOM);
+    }
+  });
+});

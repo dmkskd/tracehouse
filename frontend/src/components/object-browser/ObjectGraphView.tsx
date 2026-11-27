@@ -1,13 +1,13 @@
-import { ObjectCardBody, ObjectHoverCard } from './ObjectCard';
-import { placeHover, type Box } from './hoverPlacement';
-import { createTracehousePortal } from '../../providers/TracehousePortal';
+import { ObjectCardBody } from './ObjectCard';
+import { useObjectHover } from './shared/useObjectHover';
+import { selectionEmphasis } from './shared/selectionEmphasis';
 import { ZoomControls } from '../../components/common/ZoomControls';
 import { EDGE_STYLES, toneStyle, REVOKE_EDGE_STYLE } from './objectStyle';
 import { DIAGRAM_STYLES } from './diagramStyles';
 import { accessConnector, previewWaypoints, type ConnectorLane } from './accessConnector';
 import type { ObjectDiagramStyle } from '../../stores/userPreferenceStore';
 import { useEffect, useId, useLayoutEffect, useMemo, useRef, useState, type ReactNode } from 'react';
-import { BAND_TITLES, databaseOf, catalogPageSize, isGap, isWaypoint, lineage, RELATIONSHIPS, type GraphNode, type GraphEdge, type RelationshipFamily, type LayoutColumn, type ObjectCard, type ObjectGraph, isRevokeEdge, edgeCaption } from '@tracehouse/core/services/object-browser';
+import { BAND_TITLES, databaseOf, catalogPageSize, isGap, isWaypoint, RELATIONSHIPS, type GraphNode, type GraphEdge, type RelationshipFamily, type LayoutColumn, type ObjectCard, type ObjectGraph, isRevokeEdge, edgeCaption } from '@tracehouse/core/services/object-browser';
 
 // Card width and gap as in the mockups.
 const COLUMN_WIDTH = 176, COLUMN_GAP = 40;
@@ -15,8 +15,6 @@ const COLUMN_WIDTH = 176, COLUMN_GAP = 40;
 const CUT_LABEL_WIDTH = 200;
 // Stable default: the measuring effect depends on `stubs`.
 const NO_STUBS: string[] = [];
-// Pause before the hover card opens, so moving across the diagram does not flash cards.
-const HOVER_DELAY_MS = 350;
 type Point = { left: number; right: number; y: number };
 
 /** Pure presentation of a laid-out graph (layoutCatalog or layoutFocus); contains no
@@ -33,7 +31,7 @@ export function ObjectGraphView({ graph, lineageGraph = graph, hoverLineageGraph
   routePreviews?: boolean;
   onHover?: (key: string | null) => void;
   databases?: { items: { name: string; count: number }[]; selected: string | null; onSelect: (name: string) => void };
-  graph: ObjectGraph; cards: Map<string, ObjectCard>; columns: LayoutColumn[]; selected: string | null;
+  graph: ObjectGraph; cards: ReadonlyMap<string, ObjectCard>; columns: LayoutColumn[]; selected: string | null;
   onSelect: (key: string) => void; onFocus?: (key: string) => void; onOpen?: (key: string) => void;
   actions?: ReactNode;
   /** Shown under the cards, inside the scrolling diagram: a line about what the diagram shows. */
@@ -66,29 +64,7 @@ export function ObjectGraphView({ graph, lineageGraph = graph, hoverLineageGraph
     stubs: { from: string; d: string; x: number; y: number }[]; bracket: { x: number; top: number; bottom: number } | null;
     cut: { from: number; to: number; y: number; label: boolean } | null }>({ width: 0, height: 0, occluders: [], paths: [], stubs: [], bracket: null, cut: null });
   const [hovered, setHovered] = useState<string | null>(null);
-  // Hover card: the card under the pointer after HOVER_DELAY_MS, measured then placed beside it.
-  const [tip, setTip] = useState<{ key: string; anchor: Box } | null>(null);
-  const tipTimer = useRef<ReturnType<typeof setTimeout>>();
-  const showTip = (key: string, element: HTMLElement) => {
-    clearTimeout(tipTimer.current);
-    tipTimer.current = setTimeout(() => setTip({ key, anchor: element.getBoundingClientRect() }), HOVER_DELAY_MS);
-  };
-  const hideTip = () => { clearTimeout(tipTimer.current);setTip(null); };
-  useEffect(() => () => clearTimeout(tipTimer.current), []);
-  // Placed once mounted and measured, then shown (placeHover).
-  const placeTip = (element: HTMLDivElement | null) => {
-    if (!element || !tip) return;
-    const { left, top } = placeHover(tip.anchor, { width: element.offsetWidth, height: element.offsetHeight }, { width: window.innerWidth, height: window.innerHeight });
-    element.style.left = `${left}px`;element.style.top = `${top}px`;element.style.visibility = 'visible';
-  };
-  // Scrolling moves the card away from its anchor; a press starts selecting, dragging or opening.
-  useEffect(() => {
-    if (!tip) return;
-    const hide = () => { clearTimeout(tipTimer.current);setTip(null); };
-    window.addEventListener('scroll', hide, true);window.addEventListener('mousedown', hide, true);
-    return () => { window.removeEventListener('scroll', hide, true);window.removeEventListener('mousedown', hide, true); };
-  }, [tip]);
-  const connected = useMemo(() => selected ? lineage(lineageGraph, selected) : new Set<string>(), [lineageGraph, selected]);
+  const { showTip, hideTip, tooltip } = useObjectHover(cards, diagramStyle);
   const previewGraph = useMemo(() => {
     if (!hovered || !previewEdges) return graph;
     const present = new Set(graph.nodes.map(n => n.key));
@@ -96,20 +72,11 @@ export function ObjectGraphView({ graph, lineageGraph = graph, hoverLineageGraph
     for (const edge of previewEdges) if (present.has(edge.from) && present.has(edge.to)) edges.set(edge.key, edge);
     return { ...graph, edges: [...edges.values()] };
   }, [graph, hovered, previewEdges]);
-  const hoverConnected = useMemo(() => hovered ? lineage(hoverLineageGraph ?? (lineageGraph === graph ? previewGraph : lineageGraph), hovered) : new Set<string>(), [hoverLineageGraph, lineageGraph, graph, previewGraph, hovered]);
   const databaseSelected = databases?.selected;
-  const databaseMembers = new Set(graph.nodes.filter(n => databaseSelected && databaseOf(n) === databaseSelected).map(n => n.key));
-  const otherDatabaseMembers = new Set(graph.nodes.filter(n => databaseSelected && databaseOf(n) !== undefined && databaseOf(n) !== databaseSelected).map(n => n.key));
-  const outsideDatabase = (key: string) => otherDatabaseMembers.has(key);
-  // Hover previews the same lineage for cards and connectors, then restores the
-  // persistent object/database selection when the pointer leaves.
-  const dimmed = (key: string) => highlight && hovered
-    ? !hoverConnected.has(key)
-    : outsideDatabase(key) || (!showAll && !!selected && !connected.has(key));
-  const activeDatabases = new Set(graph.nodes.filter(n => n.kind === 'table' && !dimmed(n.key) && !muted?.has(n.key)).map(databaseOf));
-  const linked = (from: string, to: string) => highlight && hovered
-    ? hoverConnected.has(from) && hoverConnected.has(to)
-    : databaseSelected ? !outsideDatabase(from) && !outsideDatabase(to) : showAll || !selected || (connected.has(from) && connected.has(to));
+  const { dimmed, linked, databaseMembers, activeDatabases } = useMemo(() => selectionEmphasis({
+    graph, lineageGraph, hoverGraph: hoverLineageGraph ?? (lineageGraph === graph ? previewGraph : lineageGraph),
+    selected, hovered, highlight, selectedDatabase: databaseSelected, showAll, muted,
+  }), [graph, lineageGraph, hoverLineageGraph, previewGraph, selected, hovered, highlight, databaseSelected, showAll, muted]);
   const byKey = new Map(graph.nodes.map(n => [n.key, n]));
   const shown: { databaseColumn?: boolean; columnIndex?: number; title?: string; band: LayoutColumn['band']; notices?: string[]; total?: number; hidden?: number; items: (GraphNode | string)[] }[] = columns.map((c, columnIndex) => ({ columnIndex, title: c.title, band: c.band, notices: c.notices, total: c.total, hidden: c.hidden,
     items: c.keys.flatMap((k): (GraphNode | string)[] => isWaypoint(k) || isGap(k) ? [k] : [byKey.get(k)].filter((n): n is GraphNode => !!n)) }));
@@ -311,7 +278,6 @@ export function ObjectGraphView({ graph, lineageGraph = graph, hoverLineageGraph
     <ZoomControls sticky name="object graph" zoom={zoom} canZoomOut={zoom > .5} canZoomIn={zoom < 2}
       onZoomOut={() => setZoom(value => Math.max(.5, value - .25))} onZoomIn={() => setZoom(value => Math.min(2, value + .25))} onReset={() => setZoom(1)}>{actions}</ZoomControls>
     </div>
-    {tip && cards.get(tip.key) && createTracehousePortal(<ObjectHoverCard key={tip.key} ref={placeTip} card={cards.get(tip.key)!} diagramStyle={diagramStyle}
-      position={{ left: 0, top: 0, visibility: 'hidden' }} />, document.body)}
+    {tooltip}
   </>;
 }
