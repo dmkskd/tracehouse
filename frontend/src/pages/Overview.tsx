@@ -676,6 +676,7 @@ export const Overview: React.FC = () => {
             <ResourceArena3D
               key={`3d-${activeProfileId}-${servicesGenRef.current}`}
               height={getArenaHeight(arenaAvailableHeight)}
+              hosts={arenaHosts}
               queries={liveData?.runningQueries ?? EMPTY_QUERIES}
               merges={liveData?.activeMerges ?? EMPTY_MERGES}
               cpuUsage={isCluster ? clusterCpuPct : (metrics?.cpu_usage ?? 0)}

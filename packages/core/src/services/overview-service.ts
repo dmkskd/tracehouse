@@ -471,6 +471,7 @@ export class OverviewService {
         user: string;
         elapsed: number;
         ended_ago_sec: number;
+        exception_code: number;
         memory_usage: number;
         read_rows: number;
         read_bytes: number;
@@ -530,6 +531,7 @@ export class OverviewService {
         user: String(row.user),
         elapsed,
         endedAgoSec: Math.max(0, Number(row.ended_ago_sec) || 0),
+        exceptionCode: Number(row.exception_code) || 0,
         cpuCores: calculateCpuCores(userTimeUs, systemTimeUs, elapsed),
         memoryUsage: Number(row.memory_usage) || 0,
         ioReadRate: calculateRate(osReadBytes, elapsed),

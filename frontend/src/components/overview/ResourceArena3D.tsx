@@ -20,6 +20,12 @@ import { buildQueryLinkUrl, buildMergeLinkUrl } from '@tracehouse/core';
 import type { RecentActivity } from '@tracehouse/core';
 import { useSelectedLiveRefresh } from './useSelectedLiveRefresh';
 import { seedRegistry, repackFinishedLanes } from './arena-history';
+import { arenaEventHosts, arenaQueryKey, buildArenaEventMarks, type ArenaEventMark } from './arena-events';
+import { useArenaEvents, useReducedArenaMotion } from './useArenaEvents';
+import { ArenaEventCard, ArenaEventMarker, ArenaEventPins } from './ArenaEvents3D';
+import { EventLayerMenu } from '../events/EventLayerControls';
+import { emptyEventFilter, filterEvents } from '../events/event-model';
+import { FAILURE_COLOR } from '../shared/operation-outcome';
 import {
   fmtRate, fmtMicro, fmtNum, fmtCpuCores, LOG_LEVEL_COLORS, parseLogTime, fmtDelta, panelFont, type MetricSnapshot,
 } from './arena-hud-format';
@@ -343,8 +349,10 @@ function LiveBlock({ entry, hoveredId, selectedId, onHover, onClick, cheatInfo }
   const matRef = useRef<THREE.MeshStandardMaterial>(null);
   const edgeMatRef = useRef<THREE.LineBasicMaterial>(null);
   const plateMatRef = useRef<THREE.MeshBasicMaterial>(null);
+  const hatchRef = useRef<THREE.ShaderMaterial>(null);
   const downXY = useRef<[number, number] | null>(null);
   const col = new THREE.Color(entry.color);
+  const failed = entry.endTime !== null && (entry.failureCode ?? 0) !== 0;
 
   const cpuH = Math.max(MIN_DIM, heightCpu(entry) * Cs);
   // Log scale for memory depth so huge allocations don't swallow the scene
@@ -440,6 +448,7 @@ function LiveBlock({ entry, hoveredId, selectedId, onHover, onClick, cheatInfo }
       matRef.current.emissiveIntensity = emissiveIntensity;
     }
     if (edgeMatRef.current) edgeMatRef.current.opacity = edgeOpacity;
+    if (hatchRef.current) hatchRef.current.uniforms.opacity.value = edgeOpacity * .9;
     if (plateMatRef.current) plateMatRef.current.opacity = isHighlighted ? 0.25 : running ? 0.12 : opacity * 0.3;
   });
 
@@ -471,10 +480,25 @@ function LiveBlock({ entry, hoveredId, selectedId, onHover, onClick, cheatInfo }
           />
         </mesh>
         <lineSegments geometry={_edges} renderOrder={2} raycast={noRay}>
-          <lineBasicMaterial ref={edgeMatRef} color={col} transparent opacity={0.8}
+          <lineBasicMaterial ref={edgeMatRef} color={failed ? FAILURE_COLOR : col} transparent opacity={0.8}
             depthWrite={false}
           />
         </lineSegments>
+        {failed && <mesh geometry={_box} renderOrder={3} raycast={noRay}>
+          {/* Screen-space spacing matches Time Travel: diagonal 1.5px red
+              strokes every 7px, clipped to the actual operation geometry. */}
+          <shaderMaterial ref={hatchRef} transparent depthWrite={false}
+            polygonOffset polygonOffsetFactor={-1} polygonOffsetUnits={-1}
+            uniforms={{ color: { value: new THREE.Color(FAILURE_COLOR) }, opacity: { value: .72 } }}
+            vertexShader={'void main() { gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0); }'}
+            fragmentShader={`uniform vec3 color; uniform float opacity;
+              void main() {
+                if (mod(gl_FragCoord.x - gl_FragCoord.y, 7.0) > 1.5) discard;
+                gl_FragColor = vec4(color, opacity);
+                #include <tonemapping_fragment>
+                #include <colorspace_fragment>
+              }`} />
+        </mesh>}
       </group>
 
       {/* Thin invisible hitbox at right edge */}
@@ -890,6 +914,7 @@ function HoverCardOverlay({ entry, domRef }: {
             background: `${accent}18`, padding: '2px 6px', borderRadius: 3,
           }}>{entry.kind}</span>
           {running && <span style={{ fontSize: 9, color: '#4ade80' }}>● LIVE</span>}
+          {!running && !!entry.failureCode && <span style={{ fontSize: 9, color: FAILURE_COLOR }}>× FAILED · {entry.failureCode}</span>}
           <span style={{ marginLeft: 'auto', fontSize: 15, fontWeight: 700, color: accent }}>
             {entry.elapsed.toFixed(1)}s
           </span>
@@ -1146,7 +1171,7 @@ function HostLabels({ hosts }: { hosts: string[] }) {
               fontWeight={700}
               raycast={noRay}
             >
-              {host}
+              {host || 'Unspecified host'}
             </Text>
             {sepZ !== null && (
               <mesh position={[-(horizonX / 2), 0.01, sepZ]} rotation={[-Math.PI / 2, 0, 0]} raycast={noRay}>
@@ -1211,7 +1236,7 @@ interface CheatBundle {
   onAimUpdate: (entry: BlockEntry | null) => void;
 }
 
-function ArenaScene({ entries, hoveredId, selectedId, hoveredEntry, selectedEntry, onHover, onClick, hoverDomRef, hostNames, cinematic, cheat }: {
+function ArenaScene({ entries, hoveredId, selectedId, hoveredEntry, selectedEntry, onHover, onClick, hoverDomRef, hostNames, cinematic, cheat, eventMarks, eventArrivals, selectedEventId, eventPinRefs, eventCardRef, reducedMotion }: {
   entries: BlockEntry[];
   hoveredId: string | null;
   selectedId: string | null;
@@ -1223,6 +1248,12 @@ function ArenaScene({ entries, hoveredId, selectedId, hoveredEntry, selectedEntr
   hostNames: string[];
   cinematic: CinematicSettings;
   cheat: CheatBundle | null;
+  eventMarks: ArenaEventMark[];
+  eventArrivals: ReadonlyMap<string, number>;
+  selectedEventId: string | null;
+  eventPinRefs: React.RefObject<Map<string, HTMLButtonElement>>;
+  eventCardRef: React.RefObject<HTMLDivElement>;
+  reducedMotion: boolean;
 }) {
   const cheating = !!cheat;
   const visibleEntries = cheat
@@ -1238,7 +1269,7 @@ function ArenaScene({ entries, hoveredId, selectedId, hoveredEntry, selectedEntr
       <directionalLight position={[-5, 8, -5]} intensity={0.3} color="#8B5CF6" />
       <pointLight position={[0, 6, -3]} intensity={0.5} color="#3B82F6" distance={20} />
 
-      <Floor maxLane={entries.reduce((m, e) => Math.max(m, e.lane), 0)} />
+      <Floor maxLane={Math.max(hostNames.length * HOST_LANE_BLOCK - 1, entries.reduce((m, e) => Math.max(m, e.lane), 0))} />
       <HostLabels hosts={hostNames} />
       {visibleEntries.map(e => (
         <LiveBlock
@@ -1251,6 +1282,11 @@ function ArenaScene({ entries, hoveredId, selectedId, hoveredEntry, selectedEntr
           cheatInfo={cheat ? getOrCreateCheatInfo(cheat.infoMap, e) : undefined}
         />
       ))}
+
+      {!cheating && eventMarks.map(mark => <ArenaEventMarker key={mark.id} mark={mark}
+        arrival={Math.max(...mark.events.map(event => eventArrivals.get(event.id) ?? -Infinity))}
+        reducedMotion={reducedMotion} selected={selectedEventId === mark.id}
+        pinRefs={eventPinRefs} cardRef={eventCardRef} />)}
 
       {!cheating && (
         <CardPositionBridge
@@ -1303,6 +1339,8 @@ export interface ResourceArena3DProps {
   onOperationsFinished?: () => void;
   /** Height in px when not fullscreen */
   height?: number;
+  /** All known servers, including servers with events but no sampled operations. */
+  hosts?: readonly string[];
 }
 
 const hdrLabel: React.CSSProperties = {
@@ -1312,12 +1350,24 @@ const hdrVal: React.CSSProperties = { marginLeft: 6, fontWeight: 700 };
 
 export const ResourceArena3D: React.FC<ResourceArena3DProps> = ({
   queries, merges, cpuUsage, memoryPct, compact,
-  splitAvailable, splitActive, onSplitToggle, history, onOperationsFinished, height = 520,
+  splitAvailable, splitActive, onSplitToggle, history, onOperationsFinished, height = 520, hosts = [],
 }) => {
   const [hovered, setHovered] = useState<BlockEntry | null>(null);
   const [selected, setSelected] = useState<BlockEntry | null>(null);
+  const [eventsVisible, setEventsVisible] = useState(true);
+  const [eventFilter, setEventFilter] = useState(emptyEventFilter);
+  const [selectedEventId, setSelectedEventId] = useState<string | null>(null);
+  const eventCardRef = useRef<HTMLDivElement>(null);
+  const eventPinRefs = useRef(new Map<string, HTMLButtonElement>());
+  const reducedMotion = useReducedArenaMotion();
+  const eventData = useArenaEvents(eventsVisible, hosts);
 
   const registryRef = useRef<Map<string, BlockEntry>>(new Map());
+  // Operation layout depends only on Split and operation/server identities.
+  // Event visibility, filters and newly discovered observations are overlays.
+  const operationHostNames = arenaEventHosts(hosts, [...registryRef.current.values()], []);
+  const hostKey = JSON.stringify(operationHostNames);
+  const groupByHost = !!splitActive;
   const [visibleIds, setVisibleIds] = useState<string[]>([]);
 
   const hoverCardRef = useRef<HTMLDivElement>(null);
@@ -1343,6 +1393,7 @@ export const ResourceArena3D: React.FC<ResourceArena3DProps> = ({
   }, []);
 
   const handleClick = useCallback((v: BlockEntry) => {
+    setSelectedEventId(null);
     setSelected(prev => {
       if (prev?.id === v.id) return null;
       // Fire log fetch immediately — don't wait for React effect cycle
@@ -1352,17 +1403,18 @@ export const ResourceArena3D: React.FC<ResourceArena3DProps> = ({
   }, [prefetchLogs]);
 
   const handleBgClick = useCallback(() => {
+    setSelectedEventId(null);
     setSelected(null);
     setHovered(null);
   }, []);
 
   // ESC key to deselect
   useEffect(() => {
-    if (!selected) return;
-    const onKey = (e: KeyboardEvent) => { if (e.key === 'Escape') { setSelected(null); setHovered(null); } };
+    if (!selected && !selectedEventId) return;
+    const onKey = (e: KeyboardEvent) => { if (e.key === 'Escape') { setSelected(null); setHovered(null); setSelectedEventId(null); } };
     window.addEventListener('keydown', onKey);
     return () => window.removeEventListener('keydown', onKey);
-  }, [selected]);
+  }, [selected, selectedEventId]);
 
   // Fullscreen toggle
   const toggleFullscreen = useCallback(() => {
@@ -1395,14 +1447,15 @@ export const ResourceArena3D: React.FC<ResourceArena3DProps> = ({
   }, [toggleFullscreen, handleKeyDown]);
 
   // Backfill finished operations (page load, connection switch) and re-pack lanes when split mode changes
-  const seedStateRef = useRef<{ history: RecentActivity | null | undefined; split: boolean | undefined }>({ history: null, split: undefined });
-  if (seedStateRef.current.history !== history || seedStateRef.current.split !== !!splitActive) {
+  const seedStateRef = useRef<{ history: RecentActivity | null | undefined; split: boolean | undefined; hosts?: string }>({ history: null, split: undefined });
+  if (seedStateRef.current.history !== history || seedStateRef.current.split !== groupByHost || seedStateRef.current.hosts !== hostKey) {
     const historyChanged = seedStateRef.current.history !== history;
-    seedStateRef.current = { history, split: !!splitActive };
+    seedStateRef.current = { history, split: groupByHost, hosts: hostKey };
     const registry = registryRef.current;
     const now = Date.now();
     if (history && historyChanged) {
-      const finalized = seedRegistry(registry, history, { horizonSec: HORIZON, splitActive: !!splitActive, now }, (it, deck) => ({
+      const finalized = seedRegistry(registry, history, { horizonSec: HORIZON, splitActive: groupByHost, now, knownHosts: operationHostNames,
+        entryKey: it => it.isMerge ? it.id : arenaQueryKey(it.queryId!, it.hostname) }, (it, deck) => ({
         id: it.id, kind: it.kind, color: colorForBlock(it.kind, it.tableHint),
         label: it.isMerge ? it.label : truncateQuery(it.label, 50), tableHint: it.tableHint,
         isMerge: it.isMerge, deck, lane: 0,
@@ -1415,12 +1468,13 @@ export const ResourceArena3D: React.FC<ResourceArena3DProps> = ({
         numParts: it.numParts, mergeType: it.mergeType,
         database: it.database, table: it.table, partName: it.partName,
         hostname: it.hostname,
+        failureCode: it.failureCode,
       }));
       if (selected && finalized.includes(selected.id)) {
         setSelected({ ...registry.get(selected.id)! });
       }
     } else {
-      repackFinishedLanes(registry, !!splitActive, now);
+      repackFinishedLanes(registry, groupByHost, now, operationHostNames);
     }
     setVisibleIds([...registry.keys()].sort());
   }
@@ -1472,7 +1526,7 @@ export const ResourceArena3D: React.FC<ResourceArena3DProps> = ({
         const tm = q.query.match(/(?:FROM|INTO|TABLE|JOIN)\s+([`"]?[\w.]+[`"]?)/i);
         const tableHint = tm ? tm[1].replace(/[`"]/g, '') : 'unknown';
         return {
-          id: q.queryId, kind: q.queryKind || 'OTHER',
+          id: arenaQueryKey(q.queryId, q.hostname), kind: q.queryKind || 'OTHER',
           elapsed: q.elapsed, cpu: q.cpuCores, mem: q.memoryUsage,
           label: truncateQuery(q.query, 50), tableHint, isMerge: false,
           queryId: q.queryId, user: q.user, progress: q.progress,
@@ -1520,8 +1574,9 @@ export const ResourceArena3D: React.FC<ResourceArena3DProps> = ({
 
     // Build host index map for split-by-host lane grouping
     // Include hosts from both current items AND registry (fading entries) so indices stay stable
-    const hostNames = splitActive
+    const hostNames = groupByHost
       ? [...new Set([
+          ...operationHostNames,
           ...items.map(it => it.hostname || ''),
           ...[...registry.values()].map(e => e.hostname || ''),
         ].filter(Boolean))].sort()
@@ -1552,7 +1607,7 @@ export const ResourceArena3D: React.FC<ResourceArena3DProps> = ({
         existing.writeBytesPerSec = it.writeBytesPerSec;
         existing.hostname = it.hostname;
         // Re-assign lane when split mode changes
-        if (splitActive && existing.hostname) {
+        if (groupByHost && existing.hostname) {
           const hIdx = hostIndex.get(existing.hostname) ?? 0;
           const baseOffset = hIdx * HOST_LANE_BLOCK;
           if (existing.lane < baseOffset || existing.lane >= baseOffset + HOST_LANE_BLOCK) {
@@ -1563,7 +1618,7 @@ export const ResourceArena3D: React.FC<ResourceArena3DProps> = ({
             existing.lane = lane;
             used.add(lane);
           }
-        } else if (!splitActive && existing.lane >= HOST_LANE_BLOCK) {
+        } else if (!groupByHost && existing.lane >= HOST_LANE_BLOCK) {
           // Compact lanes back when split mode is turned off
           const used = usedLanesPerDeck[existing.deck];
           used.delete(existing.lane);
@@ -1578,8 +1633,8 @@ export const ResourceArena3D: React.FC<ResourceArena3DProps> = ({
       } else {
         const deck = deckOf(it.kind, it.isMerge);
         const used = usedLanesPerDeck[deck];
-        const hIdx = splitActive && it.hostname ? (hostIndex.get(it.hostname) ?? 0) : 0;
-        const baseOffset = splitActive ? hIdx * HOST_LANE_BLOCK : 0;
+        const hIdx = groupByHost && it.hostname ? (hostIndex.get(it.hostname) ?? 0) : 0;
+        const baseOffset = groupByHost ? hIdx * HOST_LANE_BLOCK : 0;
         let lane = baseOffset;
         while (used.has(lane)) lane++;
         used.add(lane);
@@ -1598,6 +1653,9 @@ export const ResourceArena3D: React.FC<ResourceArena3DProps> = ({
         });
       }
     }
+
+    // Only explicit Split mode reserves a bounded block of lanes per server.
+    if (groupByHost) repackFinishedLanes(registry, true, now, operationHostNames);
 
     if (selected) {
       const current = registry.get(selected.id);
@@ -1618,9 +1676,16 @@ export const ResourceArena3D: React.FC<ResourceArena3DProps> = ({
   const hasActivity = entries.some(e => e.endTime === null);
 
   // Compute sorted host names for 3D labels when split is active
-  const activeHostNames = splitActive
-    ? [...new Set(entries.map(e => e.hostname).filter(Boolean) as string[])].sort()
+  const activeHostNames = groupByHost
+    ? arenaEventHosts(hosts, entries, [])
     : [];
+
+  const filteredEvents = filterEvents(eventData.events, eventFilter);
+  const allEventHosts = arenaEventHosts(hosts, entries, eventData.events);
+  const eventHostNames = [...activeHostNames, ...allEventHosts.filter(host => !activeHostNames.includes(host))];
+  const eventMarks = eventsVisible ? buildArenaEventMarks(filteredEvents, entries, eventHostNames, Date.now(), groupByHost) : [];
+  const selectedEvent = eventMarks.find(mark => mark.id === selectedEventId);
+  const selectEvent = (id: string) => { setSelected(null); setHovered(null); setSelectedEventId(previous => previous === id ? null : id); };
 
   const showHover = hovered && !selected;
 
@@ -1635,14 +1700,14 @@ export const ResourceArena3D: React.FC<ResourceArena3DProps> = ({
         cursor: USE_ARENA_INSPECTOR && hovered ? 'pointer' : undefined,
       }}
     >
-      {/* Header */}
+      {/* Header menus must sit above scene pins (11) and detail cards (15). */}
       <div style={{
-        position: 'absolute', top: 0, left: 0, right: 0, zIndex: 10,
-        display: 'flex', justifyContent: 'space-between', alignItems: 'center',
+        position: 'absolute', top: 0, left: 0, right: 0, zIndex: 30,
+        display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: 8,
         padding: '8px 14px',
         background: 'linear-gradient(180deg, rgba(12,12,20,0.9) 0%, transparent 100%)',
       }}>
-        <div style={{ display: 'flex', gap: 12, alignItems: 'center' }}>
+        <div style={{ display: 'flex', gap: 12, alignItems: 'center', flexWrap: 'wrap' }}>
           {splitAvailable && onSplitToggle && (
             <button
               onClick={onSplitToggle}
@@ -1671,6 +1736,11 @@ export const ResourceArena3D: React.FC<ResourceArena3DProps> = ({
               MERGES <span style={{ ...hdrVal, color: '#F59E0B' }}>{merges.length}</span>
             </span>
           )}
+          <EventLayerMenu appearance="dark" boundaryRef={containerRef} showVisibilitySwitch visible={eventsVisible} shownCount={eventMarks.reduce((count, mark) => count + mark.events.length, 0)}
+            totalCount={eventData.events.length} filterUniverse={eventData.events} coverage={eventData.coverage}
+            filter={eventFilter} onFilterChange={setEventFilter} error={eventData.error}
+            onVisibilityChange={visible => { setEventsVisible(visible); setSelectedEventId(null); }}
+            buttonStyle={{ display: 'inline-flex', alignItems: 'center', gap: 6, color: '#cbd5e1', background: eventsVisible ? 'rgba(96,165,250,.12)' : 'transparent', border: 0, borderLeft: '1px solid rgba(255,255,255,.15)', borderRadius: '0 4px 4px 0', padding: '4px 7px', fontFamily: 'monospace', fontSize: 11, cursor: 'pointer' }} />
         </div>
         <div style={{ display: 'flex', gap: 14, alignItems: 'center' }}>
           <span style={{ ...hdrLabel, color: `rgba(59,130,246,${0.5 + Math.min(1, cpuUsage / 100) * 0.5})` }}>
@@ -1700,6 +1770,9 @@ export const ResourceArena3D: React.FC<ResourceArena3DProps> = ({
           ))}
           <span style={{ fontSize: 8, fontFamily: 'monospace', color: 'rgba(255,255,255,0.15)', marginLeft: 8 }}>
             length = duration &middot; tall = cpu &middot; deep = memory
+          </span>
+          <span style={{ display: 'inline-flex', alignItems: 'center', gap: 4, fontSize: 8, fontFamily: 'monospace', color: '#94a3b8' }}>
+            <span style={{ width: 12, height: 8, background: `repeating-linear-gradient(135deg, transparent 0 4px, ${FAILURE_COLOR} 4px 5.5px)` }} /> FAILED
           </span>
         </div>
       )}
@@ -1764,6 +1837,8 @@ export const ResourceArena3D: React.FC<ResourceArena3DProps> = ({
           hoverDomRef={hoverCardRef}
           hostNames={activeHostNames}
           cinematic={cinematic}
+          eventMarks={eventMarks} eventArrivals={eventData.arrivals} selectedEventId={selectedEventId}
+          eventPinRefs={eventPinRefs} eventCardRef={eventCardRef} reducedMotion={reducedMotion}
           cheat={cheatState.active ? {
             state: cheatState,
             infoMap: cheatInfoMap,
@@ -1778,6 +1853,9 @@ export const ResourceArena3D: React.FC<ResourceArena3DProps> = ({
       <CheatHUD state={cheatState} onExit={toggleCheatMode} aimedEntry={aimedEntry} cheatInfoMap={cheatInfoMap} />
 
       {/* DOM overlay cards */}
+      {eventsVisible && !cheatState.active && <ArenaEventPins marks={eventMarks} selectedId={selectedEventId} onSelect={selectEvent} pinRefs={eventPinRefs} />}
+      {selectedEvent && eventsVisible && !cheatState.active && <ArenaEventCard mark={selectedEvent} domRef={eventCardRef}
+        onClose={() => setSelectedEventId(null)} />}
       {showHover && !cheatState.active && (
         <HoverCardOverlay entry={hovered} domRef={hoverCardRef} />
       )}
@@ -1875,7 +1953,7 @@ export const ResourceArena3D: React.FC<ResourceArena3DProps> = ({
       )}
 
       {/* Idle */}
-      {!hasActivity && entries.length === 0 && (
+      {!hasActivity && entries.length === 0 && eventMarks.length === 0 && (
         <div style={{ position: 'absolute', inset: 0, display: 'flex', alignItems: 'center', justifyContent: 'center', pointerEvents: 'none' }}>
           <span style={{ fontSize: 12, fontFamily: 'monospace', color: 'rgba(255,255,255,0.1)' }}>idle</span>
         </div>

@@ -1,4 +1,5 @@
-import React, { useEffect, useMemo, useRef, useState } from 'react';
+import React, { useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
+import { css } from '@emotion/css';
 import type {
   OperationalEvent,
   EventSeverity,
@@ -184,6 +185,12 @@ export const EventLayerControls: React.FC<EventLayerControlsProps> = ({
 const MENU_CLOSE_DELAY_MS = 200;
 
 interface EventLayerMenuProps extends EventLayerControlsProps {
+  /** Keep scene controls dark even when the surrounding application is light. */
+  appearance?: 'default' | 'dark';
+  /** Optional clipping container, including a fullscreen scene. */
+  boundaryRef?: React.RefObject<HTMLElement | null>;
+  /** Explicit visibility checkbox for scenes where annotations are interactive. */
+  showVisibilitySwitch?: boolean;
   /** Class name for the toggle button; receives whether events are on. */
   buttonClassName?: (active: boolean) => string;
   buttonStyle?: React.CSSProperties;
@@ -208,8 +215,12 @@ export const EventLayerMenu: React.FC<EventLayerMenuProps> = ({
   buttonClassName,
   buttonStyle,
   error,
+  showVisibilitySwitch = false,
+  appearance = 'default',
+  boundaryRef,
 }) => {
   const rootRef = useRef<HTMLDivElement>(null);
+  const popoverRef = useRef<HTMLDivElement>(null);
   const closeTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const [open, setOpen] = useState(false);
   const close = useMemo(() => () => setOpen(false), []);
@@ -217,6 +228,27 @@ export const EventLayerMenu: React.FC<EventLayerMenuProps> = ({
   useEffect(() => () => {
     if (closeTimer.current) clearTimeout(closeTimer.current);
   }, []);
+
+  useLayoutEffect(() => {
+    const root = rootRef.current, popup = popoverRef.current, boundary = boundaryRef?.current;
+    if (!visible || !open || !root || !popup || !boundary) return;
+    const place = () => {
+      const bounds = boundary.getBoundingClientRect(), anchor = root.getBoundingClientRect();
+      const leftEdge = Math.max(8, bounds.left + 8), rightEdge = Math.min(window.innerWidth - 8, bounds.right - 8);
+      const width = Math.max(0, Math.min(340, rightEdge - leftEdge));
+      const left = Math.max(leftEdge, Math.min(anchor.left, rightEdge - width));
+      popup.style.left = `${left - anchor.left}px`;
+      popup.style.right = 'auto';
+      popup.style.width = `${width}px`;
+      popup.style.maxHeight = `${Math.max(0, Math.min(420, bounds.bottom - anchor.bottom - 15, window.innerHeight - anchor.bottom - 15))}px`;
+    };
+    place();
+    const observer = typeof ResizeObserver === 'undefined' ? null : new ResizeObserver(place);
+    observer?.observe(boundary); observer?.observe(root);
+    window.addEventListener('resize', place);
+    document.addEventListener('scroll', place, true);
+    return () => { observer?.disconnect(); window.removeEventListener('resize', place); document.removeEventListener('scroll', place, true); };
+  }, [visible, open, boundaryRef]);
 
   const hiddenCount = eventFilterCount(filter);
   const sources = coverageSummary(coverage);
@@ -228,7 +260,9 @@ export const EventLayerMenu: React.FC<EventLayerMenuProps> = ({
   return (
     <div
       ref={rootRef}
-      style={{ position: 'relative', display: 'inline-flex' }}
+      className={appearance === 'dark' ? darkEventMenu : undefined}
+      style={{ position: 'relative', display: 'inline-flex', alignItems: 'center', gap: showVisibilitySwitch ? 0 : 4,
+        ...(showVisibilitySwitch ? { border: '1px solid var(--border-primary)', borderRadius: 5, background: 'var(--bg-tertiary)' } : {}) }}
       onMouseEnter={() => {
         cancelClose();
         if (visible) setOpen(true);
@@ -238,9 +272,17 @@ export const EventLayerMenu: React.FC<EventLayerMenuProps> = ({
         closeTimer.current = setTimeout(close, MENU_CLOSE_DELAY_MS);
       }}
     >
+      {showVisibilitySwitch && <label style={{ display: 'inline-flex', alignItems: 'center', gap: 6,
+        padding: '4px 7px', color: 'var(--text-secondary)', fontSize: 11, cursor: 'pointer', whiteSpace: 'nowrap' }}>
+        <input type="checkbox" role="switch" aria-label="Show operational events"
+          checked={visible} style={{ margin: 0, accentColor: '#60a5fa', cursor: 'pointer' }}
+          onChange={event => { onVisibilityChange(event.target.checked); setOpen(false); }} />
+        Events
+      </label>}
       <button
         type="button"
         onClick={() => {
+          if (showVisibilitySwitch && visible) { setOpen(value => !value); return; }
           const next = !visible;
           onVisibilityChange(next);
           setOpen(next);
@@ -249,14 +291,16 @@ export const EventLayerMenu: React.FC<EventLayerMenuProps> = ({
         style={buttonStyle}
         aria-pressed={visible}
         aria-expanded={visible ? open : undefined}
-        title={visible ? 'Hide operational events' : 'Show operational events (restarts, failures, DDL, ...) on time-series panels'}
+        aria-label={appearance === 'dark' || showVisibilitySwitch ? 'Event filters and source coverage' : undefined}
+        title={appearance === 'dark' ? undefined : visible ? showVisibilitySwitch ? 'Event filters and source coverage' : 'Hide operational events' : 'Show operational events (restarts, failures, DDL, ...) on time-series panels'}
       >
-        Events
+        {!showVisibilitySwitch && 'Events'}
         {visible && (
           <span style={{ fontSize: 10, fontWeight: 500, opacity: 0.75 }}>
             {shownCount === totalCount ? totalCount : `${shownCount}/${totalCount}`}
           </span>
         )}
+        {showVisibilitySwitch && <span aria-hidden="true">▾</span>}
         {visible && (hiddenCount > 0 || sources.problems.length > 0 || error) && (
           <CoverageDot
             title={error ?? (sources.problems.length > 0 ? sources.title : `${hiddenCount} filters active`)}
@@ -265,7 +309,7 @@ export const EventLayerMenu: React.FC<EventLayerMenuProps> = ({
         )}
       </button>
       {visible && open && (
-        <div style={popoverStyle}>
+        <div ref={popoverRef} role="dialog" aria-label="Event filters" style={{ ...popoverStyle, boxSizing: 'border-box' }}>
           <div style={{ display: 'flex', alignItems: 'center', gap: 4, marginBottom: 10 }}>
             <EventCount shownCount={shownCount} totalCount={totalCount} />
             <SeverityPresets filter={filter} onFilterChange={onFilterChange} />
@@ -479,6 +523,19 @@ const popoverStyle: React.CSSProperties = {
   textAlign: 'left',
 };
 
+const darkEventMenu = css`
+  color-scheme: dark;
+  font-family: monospace;
+  --bg-secondary: #141422;
+  --bg-tertiary: #1e1e32;
+  --text-primary: #e2e8f0;
+  --text-secondary: #cbd5e1;
+  --text-muted: #94a3b8;
+  --border-primary: rgba(255, 255, 255, .15);
+  --event-filter-columns: minmax(0, 1fr);
+  button, input { font-family: inherit; }
+`;
+
 const controlButtonStyle = (active: boolean): React.CSSProperties => ({
   height: 26,
   padding: '0 9px',
@@ -519,7 +576,7 @@ const FilterSection: React.FC<{
     </div>
     <div style={{
       display: 'grid',
-      gridTemplateColumns: 'repeat(2, minmax(0, 1fr))',
+      gridTemplateColumns: 'var(--event-filter-columns, repeat(2, minmax(0, 1fr)))',
       gap: '3px 8px',
     }}>
       {children}

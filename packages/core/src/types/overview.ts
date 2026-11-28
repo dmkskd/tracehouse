@@ -87,6 +87,8 @@ export interface ActiveMergeInfo {
 
 /** A query that finished within the arena lookback window */
 export interface CompletedQueryInfo extends RunningQueryInfo {
+  /** Recorded final query_log exception code; zero means no exception. */
+  exceptionCode?: number;
   /** Seconds between the query finishing and the moment the backfill was fetched */
   endedAgoSec: number;
 }

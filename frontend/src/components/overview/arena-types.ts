@@ -52,6 +52,8 @@ export interface BlockEntry {
   endTime: number | null;
   /** Values are final (from query_log / part_log), not the last live poll. See HistoryEntryBase. */
   final?: boolean;
+  /** Final query failure, from query_log; independent of event annotations. */
+  failureCode?: number;
   cpu: number;
   mem: number;
   elapsed: number;

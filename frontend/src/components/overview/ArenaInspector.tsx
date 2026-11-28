@@ -15,6 +15,7 @@ import type { TraceLog } from '@tracehouse/core';
 import { buildQueryLinkUrl, buildMergeLinkUrl } from '@tracehouse/core';
 import { formatElapsed } from '../../utils/formatters';
 import type { BlockEntry } from './arena-types';
+import { FAILURE_COLOR } from '../shared/operation-outcome';
 import { panelFont, withAlpha } from './arena-hud-format';
 import { buildInspectorModel, type InspectorValue } from './arena-inspector-model';
 
@@ -138,7 +139,7 @@ export function ArenaInspector({ entry, onClose, logs, compact }: {
     setLogsOpen(false);
   }
 
-  const accent = entry.color;
+  const accent = entry.failureCode ? FAILURE_COLOR : entry.color;
   const kindLabel = entry.kind.charAt(0) + entry.kind.slice(1).toLowerCase();
   const title = entry.tableHint !== 'unknown' ? entry.tableHint
     : (entry.database && entry.table ? `${entry.database}.${entry.table}` : kindLabel);
@@ -168,7 +169,7 @@ export function ArenaInspector({ entry, onClose, logs, compact }: {
           animation: running ? `${arenaGlowPulseAnimation} 2s ease infinite` : undefined,
         }} />
         <span style={{ fontSize: 12, fontWeight: 500, color: C.secondary }}>
-          {kindLabel} · {running ? 'running' : 'finished'}
+          {kindLabel} · {running ? 'running' : entry.failureCode ? `failed · ${entry.failureCode}` : 'finished'}
         </span>
         <span style={{ ...mono, marginLeft: 'auto', fontSize: 13 }}>{model.hero ? '' : formatElapsed(elapsed)}</span>
         <button

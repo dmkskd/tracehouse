@@ -378,13 +378,14 @@ export function severityPresetFilter(
 export function buildEventsUrl(
   event: OperationalEvent,
   rangeHours = 1,
+  from = 'timetravel',
 ): string {
   const params = new URLSearchParams({
     event_id: event.id,
     event_time: event.occurred_at,
     range_center: event.occurred_at,
     event_range: String(rangeHours),
-    from: 'timetravel',
+    from,
   });
   return `/events?${params.toString()}`;
 }

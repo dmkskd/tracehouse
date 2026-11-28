@@ -3,9 +3,9 @@ import { normalizeAbsoluteTimestamp } from '../utils/absolute-timestamp.js';
 import type { IClickHouseAdapter } from '../adapters/types.js';
 import { buildQuery, tagQuery, utcDateTime } from '../queries/builder.js';
 import type { QueryParameter } from '../queries/builder.js';
-import { TAB_ANALYTICS, TAB_EVENTS, TAB_TIME_TRAVEL, sourceTag } from '../queries/source-tags.js';
+import { TAB_ANALYTICS, TAB_EVENTS, TAB_TIME_TRAVEL, TAB_OVERVIEW, sourceTag } from '../queries/source-tags.js';
 
-type EventsSourceTab = typeof TAB_EVENTS | typeof TAB_TIME_TRAVEL | typeof TAB_ANALYTICS;
+type EventsSourceTab = typeof TAB_EVENTS | typeof TAB_TIME_TRAVEL | typeof TAB_ANALYTICS | typeof TAB_OVERVIEW;
 import {
   ASYNC_INSERT_FAILURE_EVENTS,
   BACKUP_EVENTS,
@@ -38,7 +38,7 @@ export interface EventsOptions {
   availableCapabilities: readonly string[];
   limit?: number;
   /** Consumer identity used only for query-source attribution. */
-  origin?: 'events' | 'timeTravel' | 'analytics';
+  origin?: 'events' | 'timeTravel' | 'analytics' | 'overview';
 }
 
 export interface EventsResult {
@@ -270,6 +270,7 @@ export class EventsService {
     }
     const sourceTab: EventsSourceTab = options.origin === 'timeTravel' ? TAB_TIME_TRAVEL
       : options.origin === 'analytics' ? TAB_ANALYTICS
+      : options.origin === 'overview' ? TAB_OVERVIEW
       : TAB_EVENTS;
     const limit = Math.max(1, Math.min(options.limit ?? 1000, 10_000));
     const params: Record<string, QueryParameter> = {

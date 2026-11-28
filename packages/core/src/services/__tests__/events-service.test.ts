@@ -18,6 +18,12 @@ const OPTIONS = {
 };
 
 describe('EventsService', () => {
+  it('attributes arena event reads to Overview', async () => {
+    const mock = adapter(async () => []);
+    await new EventsService(mock).getEvents({ ...OPTIONS, origin: 'overview', availableCapabilities: ['query_log'] });
+    expect(mock.executeQuery).toHaveBeenCalled();
+    expect(vi.mocked(mock.executeQuery).mock.calls[0][0]).toContain('/* source:TraceHouse:Overview:eventsQueryLog */');
+  });
   it('remembers denied sources across concurrent ranges, hosts and page origins', async () => {
     const mock = adapter(async sql => {
       if (sql.includes('system.zookeeper_connection_log')) {

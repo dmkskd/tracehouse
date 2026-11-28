@@ -18,6 +18,10 @@ const merge = (partName: string, elapsed: number, endedAgoSec: number): Complete
 });
 
 describe('historyItems', () => {
+  it('keeps a failed final outcome with its query independently of event annotations', () => {
+    const items = historyItems({ queries: [query('failed', 4, 10, { exceptionCode: 241 })], merges: [] }, 120, NOW);
+    expect(items[0]).toMatchObject({ id: 'failed', failureCode: 241, elapsed: 4 });
+  });
   it('derives start/end from endedAgoSec and elapsed, and drops items past the horizon', () => {
     const items = historyItems(
       { queries: [query('q1', 4, 10), query('old', 2, 500)], merges: [merge('all_1_2_1', 3, 20)] },
@@ -36,6 +40,15 @@ describe('seedRegistry', () => {
   type Entry = HistoryEntryBase & { tag?: string };
   const make = (it: { id: string; startTime: number; endTime: number }, deck: HistoryEntryBase['deck']): Entry =>
     ({ id: it.id, deck, lane: 0, startTime: it.startTime, endTime: it.endTime });
+
+  it('updates late outcome metadata on an already finalized block', () => {
+    const q: Entry = { id: 'q', deck: 'select', lane: 0, startTime: NOW - 10000, endTime: NOW - 5000, final: true };
+    const registry = new Map([['q', q]]);
+    expect(seedRegistry(registry, { queries: [query('q', 5, 5, { exceptionCode: 159 })], merges: [] },
+      { horizonSec: 120, splitActive: false, now: NOW }, make)).toEqual(['q']);
+    expect(q.failureCode).toBe(159);
+    expect(q.endTime).toBe(NOW - 5000);
+  });
 
   it('does not overwrite running entries and keeps their lane', () => {
     const registry = new Map<string, Entry>([

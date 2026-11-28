@@ -1,3 +1,4 @@
+import { FAILURE_COLOR } from '../shared/operation-outcome';
 import { bandPulseAnimation } from '../../styles/animations';
 import { tracehouseLocalStorage } from '@tracehouse/core';
 /**
@@ -634,7 +635,7 @@ export const TimelineChart: React.FC<{
         <defs>
           {/* Overlay only: preserve each operation's colour and existing hover treatment. */}
           <pattern id={failureHatchId} width="7" height="7" patternUnits="userSpaceOnUse">
-            <path d="M-1,1 L1,-1 M0,7 L7,0 M6,8 L8,6" stroke="#f85149" strokeWidth="1.5" />
+            <path d="M-1,1 L1,-1 M0,7 L7,0 M6,8 L8,6" stroke={FAILURE_COLOR} strokeWidth="1.5" />
           </pattern>
           <linearGradient id="serverFill" x1="0" y1="0" x2="0" y2="1">
             <stop offset="0%" stopColor={cfg.color} stopOpacity="0.25" />

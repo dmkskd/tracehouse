@@ -248,6 +248,7 @@ SELECT
     read_bytes,
     query_kind,
     query,
+    exception_code,
     ProfileEvents['UserTimeMicroseconds'] AS user_time_us,
     ProfileEvents['SystemTimeMicroseconds'] AS system_time_us,
     ProfileEvents['OSReadBytes'] AS os_read_bytes,

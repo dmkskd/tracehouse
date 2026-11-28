@@ -20,10 +20,12 @@ export interface HistoryEntryBase {
    * are still those of the last live poll.
    */
   final?: boolean;
+  failureCode?: number;
 }
 
 /** Normalised finished operation handed to each arena's entry factory. */
 export interface HistoryItem {
+  failureCode?: number;
   id: string;
   kind: string;
   isMerge: boolean;
@@ -73,6 +75,7 @@ export function historyItems(activity: RecentActivity, horizonSec: number, now: 
       ioReadRate: q.ioReadRate, rowsRead: q.rowsRead, bytesRead: q.bytesRead,
       queryId: q.queryId, user: q.user, label: q.query, tableHint: tableHintOf(q.query), profileEvents: q.profileEvents,
       hostname: q.hostname,
+      failureCode: q.exceptionCode,
       startTime: endTime - q.elapsed * 1000, endTime,
     });
   }
@@ -105,9 +108,10 @@ export function repackFinishedLanes<E extends HistoryEntryBase>(
   registry: Map<string, E>,
   splitActive: boolean,
   now: number,
+  knownHosts: readonly string[] = [],
 ): void {
   const hosts = splitActive
-    ? [...new Set([...registry.values()].map(e => e.hostname || '').filter(Boolean))].sort()
+    ? [...new Set([...knownHosts, ...[...registry.values()].map(e => e.hostname || '').filter(Boolean)])].sort()
     : [];
   const laneItems: LaneItem[] = [...registry.values()].map(e => {
     const hostIdx = splitActive && e.hostname ? Math.max(0, hosts.indexOf(e.hostname)) : 0;
@@ -141,19 +145,24 @@ export function repackFinishedLanes<E extends HistoryEntryBase>(
 export function seedRegistry<E extends HistoryEntryBase>(
   registry: Map<string, E>,
   activity: RecentActivity,
-  opts: { horizonSec: number; splitActive: boolean; now: number },
+  opts: { horizonSec: number; splitActive: boolean; now: number; knownHosts?: readonly string[]; entryKey?: (item: HistoryItem) => string },
   makeEntry: (item: HistoryItem, deck: Deck) => E,
 ): string[] {
   const finalized: string[] = [];
   for (const item of historyItems(activity, opts.horizonSec, opts.now)) {
+    if (opts.entryKey) item.id = opts.entryKey(item);
     const existing = registry.get(item.id);
     if (!existing) {
       registry.set(item.id, { ...makeEntry(item, deckOf(item.kind, item.isMerge)), final: true });
     } else if (existing.endTime !== null && !existing.final) {
       Object.assign(existing, makeEntry(item, existing.deck), { lane: existing.lane, final: true });
       finalized.push(item.id);
+    } else if (existing.endTime !== null && item.failureCode !== undefined && existing.failureCode !== item.failureCode) {
+      // Outcome metadata may arrive after an earlier backfill of the same block.
+      existing.failureCode = item.failureCode;
+      finalized.push(item.id);
     }
   }
-  repackFinishedLanes(registry, opts.splitActive, opts.now);
+  repackFinishedLanes(registry, opts.splitActive, opts.now, opts.knownHosts);
   return finalized;
 }
