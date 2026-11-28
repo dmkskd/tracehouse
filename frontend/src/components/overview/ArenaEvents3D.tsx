@@ -57,6 +57,9 @@ export function ArenaEventMarker({ mark, arrival, reducedMotion, selected, cardR
       // DOM hit targets keep their pixel size and are not occluded by blocks.
       pin.style.display = visible && vector.z > -1 && vector.z < 1 && px >= 0 && px <= size.width && py >= 76 && py <= size.height ? '' : 'none';
       pin.style.transform = `translate3d(${px - 22}px, ${py - 22}px, 0)`;
+      // Projected depth follows the camera, including orbit changes. DOM order
+      // follows severity/recency and must not decide which overlapping pin wins.
+      pin.style.setProperty('--event-depth', String(Math.round((1 - vector.z) * 500_000)));
       pin.dataset.side = px > size.width / 2 ? 'left' : 'right';
       pin.dataset.arriving = !reducedMotion && arrival !== undefined && now - arrival < 2000 ? 'true' : 'false';
     }
@@ -103,12 +106,13 @@ export function ArenaEventMarker({ mark, arrival, reducedMotion, selected, cardR
 const pinLayer = css`
   position: absolute; inset: 0; pointer-events: none; z-index: 11;
   .arena-event-pin { position: absolute; top: 0; left: 0; width: 44px; height: 44px;
+    z-index: var(--event-depth, 0);
     display: grid; place-items: center; padding: 0; border: 0; background: transparent;
     color: var(--event-color); pointer-events: auto; cursor: pointer; }
   .arena-event-badge { display: grid; place-items: center; width: 28px; height: 28px;
     border: 2px solid currentColor; border-radius: 50%; background: #131321;
     box-shadow: 0 0 0 3px #131321; font: 600 15px/1 monospace; }
-  .arena-event-pin:hover, .arena-event-pin:focus-visible, .arena-event-pin[aria-pressed='true'] { z-index: 2; }
+  .arena-event-pin:hover, .arena-event-pin:focus-visible, .arena-event-pin[aria-pressed='true'] { z-index: 1000001; }
   .arena-event-pin:hover .arena-event-badge, .arena-event-pin:focus-visible .arena-event-badge,
   .arena-event-pin[aria-pressed='true'] .arena-event-badge { background: currentColor; }
   .arena-event-pin:hover .arena-event-symbol, .arena-event-pin:focus-visible .arena-event-symbol,
