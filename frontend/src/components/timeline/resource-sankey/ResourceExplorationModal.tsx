@@ -3,6 +3,7 @@ import { css } from '@emotion/css';
 import type { MemoryTimeline, OperationKind, AttributionSelection, OperationalEvent } from '@tracehouse/core';
 import { attributeTimeline, getTimelineRamCapacity, parseOperationTimestamp } from '@tracehouse/core';
 import { formatBytes } from '../../../utils/formatters';
+import { LoadingSpinner } from '../../shared/LoadingSpinner';
 import { ModalWrapper } from '../../shared/ModalWrapper';
 import { TimelineNavigator } from '../../shared/TimelineNavigator';
 import { METRIC_CONFIG, type MetricMode } from '../timeline-constants';
@@ -226,7 +227,7 @@ export function ResourceExplorationModal({ data, atMs, initialMode, hiddenCatego
       </div>
         </div>
       </div>
-      {loading && <div className="notice" role="status">Loading {METRIC_CONFIG[mode].label.toLowerCase()} history and operation samples…</div>}
+      {loading && <div className="notice" role="status"><LoadingSpinner /> Loading {METRIC_CONFIG[mode].label.toLowerCase()} history and operation samples…</div>}
       {loadError && <div className="notice" role="alert">Could not load this resource: {loadError} <button className="resource-action" onClick={retry}>Retry</button></div>}
       {samplingWarning && <div className="notice">{samplingWarning}</div>}
       <div className="time-toolbar">
@@ -284,7 +285,7 @@ export function ResourceExplorationModal({ data, atMs, initialMode, hiddenCatego
         <ZeroResourceActivity summary={summary ? { ...summary, groups: summary.groups.filter(group => !hiddenCategories?.has(group.kind)) } : undefined} attribution={attribution} formattedZero={fmt(0, mode)} />
         <ResourceFailureLegend count={tableGroups.reduce((sum,group) => sum+flowGroupFailedCount(group),0)} />
       </div>}
-      {details.loading && <div role="status" className="muted">Loading operation details…</div>}
+      {details.loading && <div role="status" className="muted"><LoadingSpinner /> Loading operation details…</div>}
       {details.error && <div role="alert" className="notice">{details.error} <button className="resource-action" onClick={details.retry}>Retry details</button></div>}
       {!loading && !loadError && (tableGroups.length > 0 ? <>
         <ResourceAttributionFlow toolbarTarget={flowToolbar} zoomTarget={flowFrame} verticalViewport={breakdownViewport} showFailureLegend={false} groupBy={groupBy} operationLimit={operationLimit} selectionKind={selectionMode} scaleReference={flowScaleReference} groups={tableGroups} mode={mode} detailsLoading={details.loading} onShowMoreActivities={setActivityLimit}

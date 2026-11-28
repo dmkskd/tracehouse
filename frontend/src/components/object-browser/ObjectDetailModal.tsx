@@ -2,6 +2,7 @@ import { css } from '@emotion/css';
 import { useState, type ReactNode } from 'react';
 import type { DetailLinks, DetailSection, ObjectDetail, TableActivity, TablePlacement } from '@tracehouse/core/services/object-browser';
 import { formatBytes } from '../../utils/formatters';
+import { LoadingSpinner } from '../shared/LoadingSpinner';
 import { ModalWrapper } from '../../components/shared/ModalWrapper';
 import { SqlHighlight } from '../common/SqlHighlight';
 import { ObjectTypeIcon } from './ObjectCard';
@@ -101,14 +102,14 @@ const SECTION_RENDERERS: Renderers = {
   activity: (section, { results, open }) => {
     const result = results[section.statement.sql];
     return <><h3>{section.title}</h3>
-      {!result ? <p className="muted">Loading…</p> : 'error' in result ? <p className="error">Unavailable: {result.error}</p>
+      {!result ? <p className="muted"><LoadingSpinner /> Loading…</p> : 'error' in result ? <p className="error">Unavailable: {result.error}</p>
         : 'activity' in result ? <Activity activity={result.activity} open={open} /> : null}</>;
   },
   statement: (section, { results, requested, load }) => {
     const { sql, title, external } = section.statement;
     const result = results[sql];
     const waiting = external && !requested.has(sql)
-      ? <button className="load-external" onClick={() => load(sql)}>Load · {external}</button> : <p className="muted">Loading…</p>;
+      ? <button className="load-external" onClick={() => load(sql)}>Load · {external}</button> : <p className="muted"><LoadingSpinner /> Loading…</p>;
     return <><h3>{title}</h3>
       {!result ? waiting : 'error' in result ? <p className="error">Unavailable: {result.error}</p>
         : !('text' in result) ? null : section.statement.highlight && result.text ? <SqlHighlight>{result.text}</SqlHighlight> : <pre>{result.text || '(empty)'}</pre>}</>;
@@ -122,7 +123,7 @@ const SECTION_RENDERERS: Renderers = {
       </li>)}</ol>}
       {section.settings.length > 0 && <dl className="lifecycle-settings">{section.settings.map(f => <div key={f.label} style={{ display: 'contents' }}><dt>{f.label}</dt><dd>{f.value}</dd></div>)}</dl>}
       <h4>Parts on this host</h4>
-      {!result ? <p className="muted">Loading…</p> : 'error' in result ? <p className="error">Unavailable: {result.error}</p>
+      {!result ? <p className="muted"><LoadingSpinner /> Loading…</p> : 'error' in result ? <p className="error">Unavailable: {result.error}</p>
         : 'placement' in result ? <Placement rows={result.placement} /> : null}</>;
   },
   relationships: (section, { select }) => <><h3>{section.title}</h3>

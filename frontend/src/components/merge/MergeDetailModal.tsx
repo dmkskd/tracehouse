@@ -16,6 +16,7 @@ import type { VerticalMergeProgress } from '@tracehouse/core';
 import type { PartDetailInfo } from '@tracehouse/core';
 import { classifyActiveMerge, parseVerticalMergeProgress, isMergedPart, computeMergeEta, pickThroughputEstimate, escapeValue } from '@tracehouse/core';
 import { useNavigate } from '../../hooks/useAppLocation';
+import { LoadingSpinner } from '../shared/LoadingSpinner';
 import { ModalWrapper } from '../shared/ModalWrapper';
 import { formatBytes, databaseApi } from '../../stores/databaseStore';
 import { formatDuration } from '../../utils/formatters';
@@ -917,7 +918,7 @@ const MergeDetailInner: React.FC<{
       {/* Content */}
       <div style={{ flex: 1, overflow: 'auto', padding: 20 }}>
         {isDrilling && (
-          <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', height: 80, color: 'var(--text-muted)', fontSize: 11 }}>Loading source part…</div>
+          <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 8, height: 80, color: 'var(--text-muted)', fontSize: 11 }}><LoadingSpinner /> Loading source part…</div>
         )}
         {activeTab === 'details' && <DetailsTab record={record} volumeInfo={volumeInfo} isActive={isActive} verticalProgress={verticalProgress} columnsWritten={activeMerge?.columns_written} allColumns={allColumns} onSourcePartClick={handleSourcePartClick} onInspectPart={setInspectPartName} />}
         {activeTab === 'logs' && (
@@ -1087,6 +1088,7 @@ export const MergeDetailModal: React.FC<MergeDetailModalProps> = ({ merge, onClo
       {loading && (
         <div style={{ flex: 1, display: 'flex', alignItems: 'center', justifyContent: 'center', color: 'var(--text-muted)' }}>
           <div style={{ textAlign: 'center' }}>
+            <div style={{ marginBottom: 8 }}><LoadingSpinner size={24} /></div>
             <div style={{ fontSize: 13, marginBottom: 4 }}>Loading {kind} details…</div>
             <div style={{ fontSize: 11 }}>{merge.table} → {merge.part_name}</div>
           </div>

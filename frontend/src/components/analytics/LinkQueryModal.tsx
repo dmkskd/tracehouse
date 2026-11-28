@@ -1,3 +1,4 @@
+import { LoadingSpinner } from '../shared/LoadingSpinner';
 import { rowToQuerySeries, type QueryRow } from './query-series';
 import { formatAnalyticsCell } from './timestamp';
 /**
@@ -206,7 +207,7 @@ export const LinkQueryModal: React.FC<LinkQueryModalProps> = ({
         <div style={{ flex: 1, overflow: 'auto', padding: 0 }}>
           {loading && (
             <div style={{ padding: 40, textAlign: 'center', color: 'var(--text-muted)', fontSize: 13 }}>
-              Finding executions…
+              <LoadingSpinner /> Finding executions…
             </div>
           )}
           {error && (

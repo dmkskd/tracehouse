@@ -6,6 +6,7 @@
 
 import React from 'react';
 import { ModalWrapper } from './ModalWrapper';
+import { LoadingSpinner } from './LoadingSpinner';
 import { useClusterStore } from '../../stores/clusterStore';
 import { useMonitoringCapabilitiesStore } from '../../stores/monitoringCapabilitiesStore';
 import { buildStartupSteps, type StartupStepState } from './startupProgressModel';
@@ -14,7 +15,7 @@ const noop = () => {};
 
 const MARKER: Record<StartupStepState, { glyph: string; color: string }> = {
   done: { glyph: '✓', color: 'var(--color-success)' },
-  running: { glyph: '◌', color: 'var(--color-info)' },
+  running: { glyph: '', color: 'var(--color-info)' },
   pending: { glyph: '·', color: 'var(--text-muted)' },
 };
 
@@ -66,7 +67,7 @@ export const StartupProgress: React.FC = () => {
               }}
             >
               <span style={{ width: 12, color: MARKER[step.state].color, fontFamily: 'monospace' }}>
-                {MARKER[step.state].glyph}
+                {step.state === 'running' ? <LoadingSpinner /> : MARKER[step.state].glyph}
               </span>
               <span style={{ flex: 1, minWidth: 0 }}>
                 <span style={{ fontSize: 12, color: 'var(--text-primary)' }}>{step.label}</span>
