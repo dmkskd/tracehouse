@@ -9,9 +9,11 @@ interface Props {
   onNavigate: (x: number, y: number) => void;
 }
 
-/** Flat model-space map. Camera rotation is represented by the viewport polygon. */
+/** Flat model-space map with an axis-aligned approximation of the viewport. */
 export function SceneOverview({ scene, camera, frame, onNavigate }: Props) {
   const drag = useRef<{ pointer: number; offsetX: number; offsetY: number } | null>(null);
+  // Match the map's inner dimensions; omit object marks that would become noise.
+  const mapScale = Math.min(158 / (scene.width + 40), 140 / (scene.height + 40));
   const mapPoint = (event: PointerEvent<SVGSVGElement>) => {
     const matrix = event.currentTarget.getScreenCTM();
     return matrix ? new DOMPoint(event.clientX, event.clientY).matrixTransform(matrix.inverse()) : null;
@@ -24,6 +26,10 @@ export function SceneOverview({ scene, camera, frame, onNavigate }: Props) {
   };
   const corners = [{ x: 0, y: 0 }, { x: frame.width, y: 0 }, { x: frame.width, y: frame.height }, { x: 0, y: frame.height }]
     .map(point => groundPoint(scene.width, scene.height, camera, frame, point));
+  const left = Math.min(...corners.map(point => point.x));
+  const top = Math.min(...corners.map(point => point.y));
+  const width = Math.max(...corners.map(point => point.x)) - left;
+  const height = Math.max(...corners.map(point => point.y)) - top;
   return <div className="spatial-overview" title="Click or drag to pan · Arrow keys to move">
     <svg viewBox={`-20 -20 ${scene.width + 40} ${scene.height + 40}`} preserveAspectRatio="xMidYMid meet"
       role="button" tabIndex={0} aria-label="Catalog minimap. Click or drag to pan; arrow keys to move."
@@ -54,8 +60,8 @@ export function SceneOverview({ scene, camera, frame, onNavigate }: Props) {
       onPointerUp={finishDrag} onPointerCancel={finishDrag} onLostPointerCapture={() => { drag.current = null; }}>
       {scene.groups.map(group => <rect key={group.group.id} x={group.x} y={group.y} width={group.width} height={group.height}
         className="spatial-map-group" data-kind={group.group.kind} />)}
-      {scene.tiles.map(tile => <rect key={tile.key} x={tile.x} y={tile.y} width={tile.width} height={tile.height} className="spatial-map-tile" />)}
-      <polygon points={corners.map(p => `${p.x},${p.y}`).join(' ')} className="spatial-map-viewport" />
+      {scene.tiles.filter(tile => tile.width * mapScale >= 3 && tile.height * mapScale >= 2).map(tile => <rect key={tile.key} x={tile.x} y={tile.y} width={tile.width} height={tile.height} className="spatial-map-tile" />)}
+      <rect x={left} y={top} width={width} height={height} className="spatial-map-viewport" />
     </svg>
   </div>;
 }

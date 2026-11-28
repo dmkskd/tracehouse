@@ -54,7 +54,7 @@ gaps are preserved. Data-flow reachability is never used to compute access.
   including after panning or minimap navigation. A movement
   threshold preserves clicks, and completed drags suppress object activation.
   Fitting and selection framing use the same perspective distance as the CSS camera.
-- `SceneOverview.tsx`: flat model-space overview with a projected viewport polygon.
+- `SceneOverview.tsx`: flat model-space overview with an axis-aligned bounding rectangle of the projected viewport.
   The overview sits above the bottom-right toolbar. Clicking, dragging the viewport
   outline, or using arrow keys pans without changing rotation or zoom.
 - `styles.ts`: scoped Emotion selectors, including extrusion and card-content styling.

@@ -54,10 +54,10 @@ describe('spatial catalog integration', () => {
     const frame = spatial.querySelector('.spatial-scene')!;
     const overview = within(spatial).getByRole('button', { name: 'Catalog minimap. Click or drag to pan; arrow keys to move.' });
     const beforeNavigation = frame.getAttribute('style');
-    const outline = overview.querySelector('polygon')!.getAttribute('points');
+    const outline = overview.querySelector('.spatial-map-viewport')!.outerHTML;
     fireEvent.keyDown(overview, { key: 'ArrowDown' });
     expect(frame.getAttribute('style')).not.toBe(beforeNavigation);
-    expect(overview.querySelector('polygon')!.getAttribute('points')).not.toBe(outline);
+    expect(overview.querySelector('.spatial-map-viewport')!.outerHTML).not.toBe(outline);
     const beforeSelection = frame.getAttribute('style');
     fireEvent.click(payments);
     expect(frame.getAttribute('style')).toBe(beforeSelection);

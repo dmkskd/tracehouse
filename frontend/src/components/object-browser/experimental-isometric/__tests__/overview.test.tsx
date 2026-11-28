@@ -16,7 +16,7 @@ it('drags the viewport without snapping its centre, and stops on release or canc
   render(<SceneOverview scene={scene} camera={{ ...CAMERA_HOME, scale: 1, panX: 0, panY: 0 }} frame={{ width: 800, height: 600 }} onNavigate={navigate} />);
   const map = screen.getByRole('button');
   Object.assign(map, { getScreenCTM: () => ({ inverse: () => ({}) }), setPointerCapture: vi.fn(), hasPointerCapture: () => true, releasePointerCapture: vi.fn() });
-  fireEvent.pointerDown(map.querySelector('polygon')!, { button: 0, clientX: 100, clientY: 200 });
+  fireEvent.pointerDown(map.querySelector('.spatial-map-viewport')!, { button: 0, clientX: 100, clientY: 200 });
   expect(navigate).not.toHaveBeenCalled();
   fireEvent.pointerMove(map, { clientX: 140, clientY: 230 });
   expect(navigate).toHaveBeenLastCalledWith(540, 530);

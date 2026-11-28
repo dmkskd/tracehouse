@@ -7,16 +7,17 @@ export const spatialStyles = css`
   color: var(--text-primary);
   .spatial-gesture-help { position: absolute; width: 1px; height: 1px; overflow: hidden; clip-path: inset(50%); white-space: nowrap; }
   .spatial-canvas-wrap { position: relative; display: flex; flex: 1; min-width: 0; min-height: 380px; }
-  .spatial-navigation { position: absolute; right: 16px; bottom: 16px; z-index: 10; max-width: calc(100% - 32px); display: flex; flex-direction: column; align-items: stretch; gap: 8px; }
+  .spatial-navigation { position: absolute; right: 16px; bottom: 16px; z-index: 10; max-width: calc(100% - 32px); display: flex; flex-direction: column; align-items: flex-end; gap: 8px; }
   .spatial-navigation > [role=group] { position: static; max-width: 100%; flex-wrap: wrap; justify-content: flex-end; }
   .spatial-canvas-wrap .zoom-extra { flex-wrap: wrap; }
-  .spatial-overview { box-sizing: border-box; width: 0; min-width: 100%; padding: 8px; border: 1px solid var(--border-primary); border-radius: 8px; background: color-mix(in srgb, var(--bg-secondary) 80%, transparent); backdrop-filter: blur(6px); box-shadow: 0 2px 8px rgba(0,0,0,.12); font-size: 11px; color: var(--text-secondary); }
-  .spatial-overview svg { display: block; width: 100%; height: 96px; cursor: grab; touch-action: none; overflow: hidden; }
-  .spatial-map-group { fill: var(--bg-tertiary); stroke: var(--text-muted); stroke-width: 1; vector-effect: non-scaling-stroke; }
-  .spatial-map-group[data-kind=database] { stroke: #26948c; }
-  .spatial-map-group[data-kind=external] { stroke: #5996bc; }
-  .spatial-map-tile { fill: var(--text-muted); opacity: .5; }
-  .spatial-map-viewport { fill: #9672c9; fill-opacity: .18; stroke: #8950e8; stroke-width: 2; vector-effect: non-scaling-stroke; pointer-events: auto; }
+  .spatial-overview { box-sizing: border-box; width: 180px; max-width: 100%; padding: 10px; border: 1px solid var(--border-primary); border-radius: 8px; background: var(--bg-secondary); box-shadow: 0 1px 4px rgba(0,0,0,.06); font-size: 11px; color: var(--text-secondary); }
+  .spatial-overview svg { display: block; width: 100%; height: 140px; cursor: grab; touch-action: none; overflow: hidden; border-radius: 3px; }
+  .spatial-map-group { fill: var(--bg-tertiary); stroke: color-mix(in srgb, var(--text-muted) 40%, transparent); stroke-width: .6; vector-effect: non-scaling-stroke; }
+  .spatial-map-group[data-kind=database] { fill: color-mix(in srgb, var(--accent-teal, #26948c) 10%, var(--bg-secondary)); }
+  .spatial-map-group[data-kind=external] { fill: color-mix(in srgb, #5996bc 10%, var(--bg-secondary)); }
+  .spatial-map-tile { fill: var(--text-muted); opacity: .25; }
+  .spatial-map-viewport { fill: var(--accent-purple, #9672c9); fill-opacity: .07; stroke: var(--accent-purple, #9672c9); stroke-width: 1; stroke-linejoin: round; vector-effect: non-scaling-stroke; pointer-events: auto; }
+  .spatial-overview svg:hover .spatial-map-viewport, .spatial-overview svg:focus-visible .spatial-map-viewport { fill-opacity: .12; stroke-width: 1.5; }
   .spatial-controls-menu { position: relative; }
   .spatial-controls-panel { position: fixed; z-index: 100; box-sizing: border-box; width: min(340px, calc(100vw - 32px)); max-height: calc(100vh - 32px); overflow: auto;
     padding: 12px; border: 1px solid var(--border-primary); border-radius: 8px; background: var(--bg-secondary); color: var(--text-primary); box-shadow: 0 8px 28px rgba(0,0,0,.25); font-size: 12px; }
