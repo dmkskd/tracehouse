@@ -57,11 +57,13 @@ export function fitCamera(camera: CameraState, width: number, height: number, si
   return { ...camera, panX: -(bounds.left + bounds.width / 2) * scale, panY: -(bounds.top + bounds.height / 2) * scale, scale };
 }
 
-/** Readable entry framing is independent of a long catalog's full-scene fit. */
+/** Frame the start of a long catalog at a readable scale. Orbit anchoring is
+ * computed separately from the displayed view when a rotation gesture begins. */
 export function homeCamera(width: number, height: number, size: Size): CameraState {
   const fitted = fitCamera({ ...CAMERA_HOME, scale: 1, panX: 0, panY: 0 }, width, height, size);
-  const scale = Math.max(.8, fitted.scale);
-  return { ...fitted, scale, panX: 0, panY: 0 };
+  const scale = Math.max(1, fitted.scale);
+  const anchor = projectPoint(width, height, CAMERA_HOME.tilt, CAMERA_HOME.rotation, width / 2, Math.min(height / 2, 450));
+  return { ...fitted, scale, panX: -anchor.x * scale, panY: -anchor.y * scale };
 }
 
 /** Inverse ground-plane projection for the overview outline and orbit anchor. */

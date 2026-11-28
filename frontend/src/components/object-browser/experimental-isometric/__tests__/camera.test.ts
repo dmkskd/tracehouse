@@ -13,11 +13,11 @@ describe('spatial camera controls', () => {
     expect(fitted.panX + (bounds.left + bounds.width / 2) * fitted.scale).toBeCloseTo(0);
     expect(fitted.panY + (bounds.top + bounds.height / 2) * fitted.scale).toBeCloseTo(0);
   });
-  it('starts large catalogs at a readable scale and maps viewport points back to the ground plane', () => {
+  it('frames the start of large catalogs at a readable scale and maps viewport points back to the ground plane', () => {
     const size = { width: 1500, height: 900 };
     const camera = homeCamera(2400, 6000, size);
-    expect(camera.scale).toBeGreaterThanOrEqual(.8);
-    const point = projectPoint(2400, 6000, camera.tilt, camera.rotation, 1200, 3000);
+    expect(camera.scale).toBe(1);
+    const point = projectPoint(2400, 6000, camera.tilt, camera.rotation, 1200, 450);
     expect(point.x * camera.scale + camera.panX).toBeCloseTo(0);
     expect(point.y * camera.scale + camera.panY).toBeCloseTo(0);
     for (const model of [{ x: 100, y: 100 }, { x: 2200, y: 5800 }]) {
@@ -40,6 +40,9 @@ describe('spatial camera controls', () => {
     const size = { width: 1500, height: 900 };
     for (const camera of [homeCamera(2400, 6000, size), { ...home, panX: 850, panY: -320, scale: .8 }]) {
       const anchor = groundPoint(2400, 6000, camera, size, { x: 750, y: 450 });
+      const unchanged = orbitCameraAtCentre(camera, 0, 0, 2400, 6000, size);
+      expect(unchanged.panX).toBeCloseTo(camera.panX);
+      expect(unchanged.panY).toBeCloseTo(camera.panY);
       for (const [dx, dy] of [[100, 50], [600, -150], [-1100, 200]]) {
         const next = orbitCameraAtCentre(camera, dx, dy, 2400, 6000, size);
         const point = projectPoint(2400, 6000, next.tilt, next.rotation, anchor.x, anchor.y);
