@@ -1316,6 +1316,12 @@ function ArenaScene({ entries, hoveredId, selectedId, hoveredEntry, selectedEntr
 /* ── Main wrapper ────────────────────────────────────── */
 
 export interface ResourceArena3DProps {
+  /** Events collected by the host when this scene runs in an isolated bundle. */
+  eventState?: {
+    data: ReturnType<typeof useArenaEvents>;
+    visible: boolean;
+    onVisibilityChange: (visible: boolean) => void;
+  };
   queries: RunningQueryInfo[];
   merges: ActiveMergeInfo[];
   cpuUsage: number;
@@ -1350,17 +1356,20 @@ const hdrVal: React.CSSProperties = { marginLeft: 6, fontWeight: 700 };
 
 export const ResourceArena3D: React.FC<ResourceArena3DProps> = ({
   queries, merges, cpuUsage, memoryPct, compact,
-  splitAvailable, splitActive, onSplitToggle, history, onOperationsFinished, height = 520, hosts = [],
+  splitAvailable, splitActive, onSplitToggle, history, onOperationsFinished, height = 520, hosts = [], eventState,
 }) => {
   const [hovered, setHovered] = useState<BlockEntry | null>(null);
   const [selected, setSelected] = useState<BlockEntry | null>(null);
-  const [eventsVisible, setEventsVisible] = useState(true);
+  const [localEventsVisible, setLocalEventsVisible] = useState(true);
+  const eventsVisible = eventState?.visible ?? localEventsVisible;
+  const setEventsVisible = eventState?.onVisibilityChange ?? setLocalEventsVisible;
   const [eventFilter, setEventFilter] = useState(emptyEventFilter);
   const [selectedEventId, setSelectedEventId] = useState<string | null>(null);
   const eventCardRef = useRef<HTMLDivElement>(null);
   const eventPinRefs = useRef(new Map<string, HTMLButtonElement>());
   const reducedMotion = useReducedArenaMotion();
-  const eventData = useArenaEvents(eventsVisible, hosts);
+  const localEventData = useArenaEvents(!eventState && eventsVisible, hosts);
+  const eventData = eventState?.data ?? localEventData;
 
   const registryRef = useRef<Map<string, BlockEntry>>(new Map());
   // Operation layout depends only on Split and operation/server identities.

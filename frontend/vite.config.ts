@@ -19,6 +19,8 @@ export default defineConfig({
   cacheDir: process.env.VITE_CACHE_DIR ?? 'node_modules/.vite',
   server: {
     port: 5173,
+    // E2E assertions must not be interrupted by updates from watched files.
+    hmr: process.env.VITE_E2E === '1' ? false : undefined,
     fs: {
       // Allow serving files from the monorepo root so that workspace symlinks
       // (packages/core, packages/ui-shared) resolve correctly.

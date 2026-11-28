@@ -2,7 +2,7 @@ import type { ReactElement } from 'react';
 import { cleanup, fireEvent, render, screen } from '@testing-library/react';
 import { MemoryRouter } from 'react-router-dom';
 import { afterEach, describe, expect, it, vi } from 'vitest';
-import type { RecentActivity } from '@tracehouse/core';
+import type { OperationalEvent, RecentActivity } from '@tracehouse/core';
 import type { BlockEntry } from '../arena-types';
 
 // Inspect the scene inputs without requiring a WebGL context in jsdom.
@@ -18,6 +18,18 @@ import { ResourceArena3D } from '../ResourceArena3D';
 
 afterEach(cleanup);
 describe('event visibility and operation layout', () => {
+  it('renders host-provided events without services in the scene bundle', () => {
+    const onVisibilityChange = vi.fn();
+    const data = { events: [{ id: 'oom', occurred_at: new Date().toISOString(), hostname: 'node-01',
+      kind: 'query_oom', category: 'queries', severity: 'error', precision: 'exact', title: 'Query OOM',
+      source: 'system.query_log', capability: 'query_log' } as OperationalEvent],
+      coverage: [], arrivals: new Map<string, number>(), error: null };
+    render(<MemoryRouter><ResourceArena3D queries={[]} merges={[]} cpuUsage={1} memoryPct={1}
+      hosts={['node-01']} eventState={{ data, visible: true, onVisibilityChange }} /></MemoryRouter>);
+    expect(screen.getByLabelText('Events in the arena').textContent).toContain('Query OOM');
+    fireEvent.click(screen.getByRole('switch', { name: 'Show operational events' }));
+    expect(onVisibilityChange).toHaveBeenCalledWith(false);
+  });
   it.each([false, true])('does not repack operations when toggling events with Split=%s', splitActive => {
     const history = { queries: ['node-01', 'node-02'].map((hostname, i) => ({
       queryId: `q-${i}`, hostname, user: 'default', elapsed: 10, endedAgoSec: 5,
