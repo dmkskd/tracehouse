@@ -36,6 +36,14 @@ export function orbitCamera(camera: CameraState, dx: number, dy: number): Camera
   return { ...camera, rotation: angle(camera.rotation - dx * .35), tilt: clamp(camera.tilt - dy * .3, 20, 72) };
 }
 
+/** Keep the ground point at the viewport centre fixed, including after panning. */
+export function orbitCameraAtCentre(camera: CameraState, dx: number, dy: number, width: number, height: number, size: Size): CameraState {
+  const anchor = groundPoint(width, height, camera, size, { x: size.width / 2, y: size.height / 2 });
+  const next = orbitCamera(camera, dx, dy);
+  const projected = projectPoint(width, height, next.tilt, next.rotation, anchor.x, anchor.y);
+  return { ...next, panX: -projected.x * next.scale, panY: -projected.y * next.scale };
+}
+
 /** Zoom about the pointer's position, preserving its model-space anchor after pan. */
 export function zoomCamera(camera: CameraState, factor: number, point: Point, size: Size): CameraState {
   const scale = clamp(camera.scale * factor, MIN_ZOOM, MAX_ZOOM), ratio = scale / camera.scale;
@@ -53,11 +61,10 @@ export function fitCamera(camera: CameraState, width: number, height: number, si
 export function homeCamera(width: number, height: number, size: Size): CameraState {
   const fitted = fitCamera({ ...CAMERA_HOME, scale: 1, panX: 0, panY: 0 }, width, height, size);
   const scale = Math.max(.8, fitted.scale);
-  const anchor = projectPoint(width, height, CAMERA_HOME.tilt, CAMERA_HOME.rotation, width / 2, Math.min(height / 2, 450));
-  return { ...fitted, scale, panX: -anchor.x * scale, panY: -anchor.y * scale };
+  return { ...fitted, scale, panX: 0, panY: 0 };
 }
 
-/** Inverse ground-plane projection, used only for the overview viewport outline. */
+/** Inverse ground-plane projection for the overview outline and orbit anchor. */
 export function groundPoint(width: number, height: number, camera: CameraState, size: Size, point: Point): Point {
   const u = (point.x - size.width / 2 - camera.panX) / camera.scale;
   const v = (point.y - size.height / 2 - camera.panY) / camera.scale;
@@ -132,7 +139,7 @@ export function useCamera(width: number, height: number) {
       const zoomed = zoomCamera(start.camera, Math.hypot(b.x - a.x, b.y - a.y) / start.distance,
         { x: start.origin.x - rect.left, y: start.origin.y - rect.top }, size);
       setCamera({ ...zoomed, panX: zoomed.panX + dx, panY: zoomed.panY + dy });
-    } else setCamera(start.pan ? { ...start.camera, panX: start.camera.panX + dx, panY: start.camera.panY + dy } : orbitCamera(start.camera, dx, dy));
+    } else setCamera(start.pan ? { ...start.camera, panX: start.camera.panX + dx, panY: start.camera.panY + dy } : orbitCameraAtCentre(start.camera, dx, dy, width, height, size));
   };
   const endGesture = () => {
     if (!gesture.current) return;

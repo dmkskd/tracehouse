@@ -8,6 +8,7 @@
 import React, { useEffect, useState } from 'react';
 import { ModalWrapper } from '../shared/ModalWrapper';
 import { ElapsedSeconds } from '../common/RefreshingOverlay';
+import { spinAnimation } from '../../styles/animations';
 
 const noop = () => {};
 
@@ -75,7 +76,11 @@ export const TimeTravelLoading: React.FC<TimeTravelLoadingProps> = ({
                 borderTop: '1px solid var(--border-secondary)',
               }}
             >
-              <span style={{ width: 12, color: 'var(--color-info)', fontFamily: 'monospace' }}>◌</span>
+              <span aria-hidden="true" style={{
+                display: 'inline-block', width: 8, height: 8, flexShrink: 0,
+                border: '2px solid var(--border-secondary)', borderTopColor: 'var(--color-info)',
+                borderRadius: '50%', animation: `${spinAnimation} 1s linear infinite`,
+              }} />
               <span style={{ fontSize: 12, color: 'var(--text-primary)' }}>{read.label}</span>
               <span style={{ fontSize: 11, color: 'var(--text-tertiary)' }}>{read.detail}</span>
             </li>

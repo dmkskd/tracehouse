@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { CAMERA_HOME, fitCamera, homeCamera, groundPoint, projectPoint, MAX_ZOOM, MIN_ZOOM, orbitCamera, projectedBounds, zoomCamera, type CameraState } from '../useCamera';
+import { CAMERA_HOME, fitCamera, homeCamera, groundPoint, projectPoint, MAX_ZOOM, MIN_ZOOM, orbitCamera, orbitCameraAtCentre, projectedBounds, zoomCamera, type CameraState } from '../useCamera';
 
 const home: CameraState = { ...CAMERA_HOME, panX: 0, panY: 0, scale: 1 };
 
@@ -17,7 +17,7 @@ describe('spatial camera controls', () => {
     const size = { width: 1500, height: 900 };
     const camera = homeCamera(2400, 6000, size);
     expect(camera.scale).toBeGreaterThanOrEqual(.8);
-    const point = projectPoint(2400, 6000, camera.tilt, camera.rotation, 1200, 450);
+    const point = projectPoint(2400, 6000, camera.tilt, camera.rotation, 1200, 3000);
     expect(point.x * camera.scale + camera.panX).toBeCloseTo(0);
     expect(point.y * camera.scale + camera.panY).toBeCloseTo(0);
     for (const model of [{ x: 100, y: 100 }, { x: 2200, y: 5800 }]) {
@@ -35,6 +35,19 @@ describe('spatial camera controls', () => {
     expect(orbitCamera(home, 10000, 10000).rotation).toBeLessThan(180);
     expect(orbitCamera(home, 0, 10000).tilt).toBe(20);
     expect(orbitCamera(home, 0, -10000).tilt).toBe(72);
+  });
+  it('keeps the visible centre stationary during orbit for long diagrams and after navigation', () => {
+    const size = { width: 1500, height: 900 };
+    for (const camera of [homeCamera(2400, 6000, size), { ...home, panX: 850, panY: -320, scale: .8 }]) {
+      const anchor = groundPoint(2400, 6000, camera, size, { x: 750, y: 450 });
+      for (const [dx, dy] of [[100, 50], [600, -150], [-1100, 200]]) {
+        const next = orbitCameraAtCentre(camera, dx, dy, 2400, 6000, size);
+        const point = projectPoint(2400, 6000, next.tilt, next.rotation, anchor.x, anchor.y);
+        expect(point.x * next.scale + next.panX).toBeCloseTo(0);
+        expect(point.y * next.scale + next.panY).toBeCloseTo(0);
+        expect(next.scale).toBe(camera.scale);
+      }
+    }
   });
   it('keeps a model point under the cursor fixed when zooming after pan, including at limits', () => {
     const size = { width: 1000, height: 600 }, pointer = { x: 130, y: 420 };

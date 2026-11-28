@@ -48,8 +48,9 @@ gaps are preserved. Data-flow reachability is never used to compute access.
   sits at the canvas's bottom-right with Diagram and Controls. The Controls popover
   contains Reset camera, gesture instructions and a collapsible legend. Rotation and pan
   use gestures; there are no angle sliders or drag-mode buttons. Reset uses
-  the initial angles and readable entry framing (at least 80% zoom), centred near
-  the top of the catalog rather than shrinking to fit a long privilege lane. A movement
+  the initial angles and readable entry framing (at least 80% zoom), centred on
+  the diagram. Orbit keeps the ground point at the viewport centre stationary,
+  including after panning or minimap navigation. A movement
   threshold preserves clicks, and completed drags suppress object activation.
   Fitting and selection framing use the same perspective distance as the CSS camera.
 - `SceneOverview.tsx`: flat model-space overview with a projected viewport polygon.
